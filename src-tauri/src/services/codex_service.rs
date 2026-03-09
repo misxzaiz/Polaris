@@ -332,17 +332,20 @@ impl CodexService {
                 "assistant" => "助手",
                 _ => role,
             };
-            context_parts.push(format!("**{}**: {}", role_name, text));
+            // 将换行符替换为空格，避免 Windows batch file 参数问题
+            let text_clean = text.replace('\n', " ").replace('\r', "");
+            context_parts.push(format!("【{}】: {}", role_name, text_clean));
         }
 
         // 添加新消息
-        context_parts.push(format!("**用户**: {}", new_message));
+        let new_message_clean = new_message.replace('\n', " ").replace('\r', "");
+        context_parts.push(format!("【用户】: {}", new_message_clean));
 
-        // 构建完整消息
-        let history_text = context_parts.join("\n\n---\n\n");
+        // 使用分号作为分隔符，避免 Windows batch file 参数问题
+        let history_text = context_parts.join("；");
 
         format!(
-            "{}\n\n---\n\n请继续上述对话。",
+            "历史对话：{}。请继续上述对话。",
             history_text
         )
     }

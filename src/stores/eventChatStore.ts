@@ -47,6 +47,10 @@ const SESSION_HISTORY_KEY = 'event_chat_session_history'
 /** 最大会话历史数量 */
 const MAX_SESSION_HISTORY = 50
 
+/** 事件监听器初始化状态（防止重复注册） */
+let eventListenersInitialized = false
+let eventListenersCleanup: (() => void) | null = null
+
 /**
  * 历史会话记录（localStorage 存储）
  */
@@ -1142,12 +1146,18 @@ export const useEventChatStore = create<EventChatState>((set, get) => ({
    * - 代码减少约 100 行
    */
   initializeEventListeners: async (): Promise<() => void> => {
+    // 防止重复初始化
+    if (eventListenersInitialized && eventListenersCleanup) {
+      console.log('[EventChatStore] 事件监听器已初始化，跳过重复注册')
+      return eventListenersCleanup
+    }
+
     const cleanupCallbacks: Array<() => void> = []
 
     const eventBus = getEventBus({ debug: false })
 
     const router = getEventRouter()
-    
+
     // 同步等待初始化完成，确保 register 在监听开始前完成
     await router.initialize()
     
@@ -1176,11 +1186,16 @@ export const useEventChatStore = create<EventChatState>((set, get) => ({
       }
     })
     cleanupCallbacks.push(unregister)
+    eventListenersInitialized = true
     console.log('[EventChatStore] EventRouter 初始化完成，已注册 main 处理器')
 
-    return () => {
-      cleanupCallbacks.forEach((cleanup) => cleanup())
+    const cleanup = () => {
+      cleanupCallbacks.forEach((cb) => cb())
+      eventListenersInitialized = false
+      eventListenersCleanup = null
     }
+    eventListenersCleanup = cleanup
+    return cleanup
   },
 
   sendMessage: async (content, workspaceDir) => {

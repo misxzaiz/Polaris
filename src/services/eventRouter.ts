@@ -75,10 +75,20 @@ export class EventRouter {
   }
 
   register(contextId: ContextId, handler: EventHandler): () => void {
-    if (!this.handlers.has(contextId)) {
+    // 强制单例模式：每个 contextId 只保留一个 handler
+    // 这是防止 React StrictMode 导致重复注册的最可靠方式
+    if (this.handlers.has(contextId)) {
+      const existingHandlers = this.handlers.get(contextId)!
+      if (existingHandlers.size > 0) {
+        console.log('[EventRouter] contextId', contextId, '已存在 handler，清除旧 handler')
+        existingHandlers.clear()
+      }
+    } else {
       this.handlers.set(contextId, new Set())
     }
+    
     this.handlers.get(contextId)!.add(handler)
+    console.log('[EventRouter] 注册 handler for', contextId)
 
     return () => {
       this.handlers.get(contextId)?.delete(handler)
@@ -88,6 +98,7 @@ export class EventRouter {
   private dispatch(event: RoutedEvent): void {
     const handlers = this.handlers.get(event.contextId)
     if (handlers) {
+      console.log('[EventRouter] dispatch 到', handlers.size, '个 handler')
       handlers.forEach(handler => {
         try {
           handler(event.payload)
@@ -95,6 +106,8 @@ export class EventRouter {
           console.error(`[EventRouter] Handler error for ${event.contextId}:`, e)
         }
       })
+    } else {
+      console.log('[EventRouter] 没有找到 handler for', event.contextId)
     }
 
     const wildcardHandlers = this.handlers.get('*')
