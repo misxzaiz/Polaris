@@ -18,6 +18,7 @@ import {
   Archive,
   Plus,
   X,
+  Trash2,
 } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -46,6 +47,7 @@ export function BranchTab() {
   const getBranches = useGitStore((s) => s.getBranches)
   const checkoutBranch = useGitStore((s) => s.checkoutBranch)
   const createBranch = useGitStore((s) => s.createBranch)
+  const deleteBranch = useGitStore((s) => s.deleteBranch)
   const refreshStatus = useGitStore((s) => s.refreshStatus)
   const stashSave = useGitStore((s) => s.stashSave)
   const currentWorkspace = useWorkspaceStore((s) => s.getCurrentWorkspace())
@@ -184,6 +186,45 @@ export function BranchTab() {
     }
   }, [currentWorkspace, newBranchName, checkoutNewBranch, branches, createBranch, loadBranches, refreshStatus, toast])
 
+  // 删除分支状态
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [branchToDelete, setBranchToDelete] = useState<string | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [forceDelete, setForceDelete] = useState(false)
+
+  const handleDeleteBranch = useCallback(async () => {
+    if (!currentWorkspace || !branchToDelete) return
+
+    setIsDeleting(true)
+    setError(null)
+    try {
+      await deleteBranch(currentWorkspace.path, branchToDelete, forceDelete)
+      await loadBranches()
+      setShowDeleteDialog(false)
+      setBranchToDelete(null)
+      setForceDelete(false)
+      toast.success(t('branch.deleteSuccess', { branch: branchToDelete }))
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      // 如果是未合并分支错误，显示强制删除选项
+      if (errorMsg.includes('not fully merged')) {
+        setForceDelete(true)
+        toast.error(t('errors.deleteBranchFailed'), t('branch.notMerged'))
+      } else {
+        setError(errorMsg)
+        toast.error(t('errors.deleteBranchFailed'), errorMsg)
+      }
+    } finally {
+      setIsDeleting(false)
+    }
+  }, [currentWorkspace, branchToDelete, forceDelete, deleteBranch, loadBranches, toast])
+
+  const openDeleteDialog = useCallback((branchName: string) => {
+    setBranchToDelete(branchName)
+    setForceDelete(false)
+    setShowDeleteDialog(true)
+  }, [])
+
   const localBranches = branches.filter((b) => !b.isRemote)
   const remoteBranches = branches.filter((b) => b.isRemote)
 
@@ -207,11 +248,9 @@ export function BranchTab() {
   const renderBranchItem = (branch: GitBranch, isRemote = false) => {
     const isCurrent = branch.isCurrent
     return (
-      <button
+      <div
         key={branch.name}
-        onClick={() => !isRemote && handleSwitchBranch(branch.name)}
-        disabled={isSwitching || isCurrent || isRemote}
-        className={`w-full px-4 py-3 text-left flex items-start gap-3 hover:bg-background-hover transition-colors border-b border-border-subtle ${
+        className={`w-full px-4 py-3 flex items-start gap-3 hover:bg-background-hover transition-colors border-b border-border-subtle group ${
           isCurrent ? 'bg-primary/5' : ''
         } ${isRemote ? 'opacity-70' : ''}`}
       >
@@ -228,7 +267,7 @@ export function BranchTab() {
             <GitBranchIcon size={12} className="text-text-tertiary" />
           )}
         </div>
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 cursor-pointer" onClick={() => !isRemote && handleSwitchBranch(branch.name)}>
           <div className="flex items-center gap-2 mb-1">
             <span
               className={`text-sm font-medium truncate ${
@@ -255,15 +294,30 @@ export function BranchTab() {
             )}
           </div>
         </div>
-        {!isRemote && (
-          <ChevronRightIcon
-            size={14}
-            className={`flex-shrink-0 mt-1 ${
-              isCurrent ? 'text-primary/50' : 'text-text-tertiary'
-            }`}
-          />
-        )}
-      </button>
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {!isRemote && !isCurrent && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                openDeleteDialog(branch.name)
+              }}
+              disabled={isSwitching || isDeleting}
+              className="p-1 text-text-tertiary hover:text-danger hover:bg-danger/10 rounded transition-colors disabled:opacity-50"
+              title={t('branch.delete')}
+            >
+              <Trash2 size={14} />
+            </button>
+          )}
+          {!isRemote && (
+            <ChevronRightIcon
+              size={14}
+              className={`flex-shrink-0 mt-1 ${
+                isCurrent ? 'text-primary/50' : 'text-text-tertiary'
+              }`}
+            />
+          )}
+        </div>
+      </div>
     )
   }
 
@@ -476,6 +530,55 @@ export function BranchTab() {
               >
                 {isCreating && <Loader2 size={14} className="animate-spin" />}
                 {t('branch.create')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 删除分支确认弹窗 */}
+      {showDeleteDialog && branchToDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-background-elevated rounded-xl p-6 w-full max-w-md border border-border shadow-lg">
+            <div className="flex items-start gap-3 mb-4">
+              <AlertTriangle size={20} className="text-warning shrink-0 mt-0.5" />
+              <div>
+                <h2 className="text-lg font-semibold text-text-primary mb-1">
+                  {t('branch.delete')}
+                </h2>
+                <p className="text-sm text-text-secondary">
+                  {t('branch.deleteConfirm', { branch: branchToDelete })}
+                </p>
+              </div>
+            </div>
+
+            {forceDelete && (
+              <div className="mb-4 px-3 py-2 bg-warning/10 border border-warning/30 rounded-lg">
+                <p className="text-sm text-warning">
+                  {t('branch.notMergedWarning')}
+                </p>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setShowDeleteDialog(false)
+                  setBranchToDelete(null)
+                  setForceDelete(false)
+                }}
+                disabled={isDeleting}
+                className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-background-hover rounded-lg transition-colors disabled:opacity-50"
+              >
+                {t('cancel', { ns: 'common' })}
+              </button>
+              <button
+                onClick={handleDeleteBranch}
+                disabled={isDeleting}
+                className="px-4 py-2 text-sm bg-danger text-white rounded-lg hover:bg-danger/90 transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {isDeleting && <Loader2 size={14} className="animate-spin" />}
+                {forceDelete ? t('branch.forceDelete') : t('branch.delete')}
               </button>
             </div>
           </div>

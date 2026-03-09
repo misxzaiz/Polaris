@@ -76,6 +76,7 @@ interface GitState {
   isRepository: (workspacePath: string) => Promise<boolean>
   initRepository: (workspacePath: string, initialBranch?: string) => Promise<string>
   createBranch: (workspacePath: string, name: string, checkout?: boolean) => Promise<void>
+  deleteBranch: (workspacePath: string, name: string, force?: boolean) => Promise<void>
   checkoutBranch: (workspacePath: string, name: string) => Promise<void>
   commitChanges: (workspacePath: string, message: string, stageAll?: boolean, selectedFiles?: string[]) => Promise<string>
   stageFile: (workspacePath: string, filePath: string) => Promise<void>
@@ -332,6 +333,27 @@ export const useGitStore = create<GitState>((set, get) => ({
 
       // 刷新状态和分支列表
       await get().refreshStatus(workspacePath)
+      await get().getBranches(workspacePath)
+
+      set({ isLoading: false })
+    } catch (err) {
+      set({ error: parseGitError(err), isLoading: false })
+      throw err
+    }
+  },
+
+  // 删除分支
+  async deleteBranch(workspacePath: string, name: string, force = false) {
+    set({ isLoading: true, error: null })
+
+    try {
+      await invoke('git_delete_branch', {
+        workspacePath,
+        name,
+        force,
+      })
+
+      // 刷新分支列表
       await get().getBranches(workspacePath)
 
       set({ isLoading: false })
