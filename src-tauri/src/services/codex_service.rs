@@ -190,10 +190,11 @@ impl CodexService {
 
         // 如果是恢复会话，使用 resume 子命令
         if let Some(id) = session_id {
-            // codex resume <SESSION_ID> <PROMPT>
+            // codex resume --json <SESSION_ID> <PROMPT>
             // 注意: --last 和 SESSION_ID 不能同时使用
             cmd.arg("resume")
-                .arg(id)        // 会话 ID
+                .arg("--json")        // JSON 输出模式，避免终端检测
+                .arg(id)              // 会话 ID
                 .arg("--full-auto");  // 自动执行模式
             
             // 消息作为参数传递

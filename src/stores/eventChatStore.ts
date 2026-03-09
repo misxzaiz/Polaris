@@ -71,7 +71,7 @@ export interface UnifiedHistoryItem {
   timestamp: string
   messageCount: number
   engineId: 'claude-code' | 'iflow' | 'deepseek' | 'codex'
-  source: 'local' | 'iflow' | 'claude-code-native'
+  source: 'local' | 'iflow' | 'claude-code-native' | 'codex'
   fileSize?: number
   inputTokens?: number
   outputTokens?: number
@@ -634,7 +634,7 @@ interface EventChatState {
   restoreFromHistory: (sessionId: string, engineId?: 'claude-code' | 'iflow' | 'deepseek' | 'codex') => Promise<boolean>
 
   /** 删除历史会话 */
-  deleteHistorySession: (sessionId: string, source?: 'local' | 'iflow') => void
+  deleteHistorySession: (sessionId: string, source?: 'local' | 'iflow' | 'codex') => void
 
   /** 清空历史 */
   clearHistory: () => void
@@ -1696,7 +1696,29 @@ export const useEventChatStore = create<EventChatState>((set, get) => ({
         console.warn('[EventChatStore] 获取 IFlow 会话失败:', e)
       }
 
-      // 4. 按时间戳排序
+      // 4. 获取 Codex 会话列表
+      try {
+        const { listCodexSessions } = await import('../services/tauri')
+        const codexSessions = await listCodexSessions(currentWorkspace?.path || '')
+        for (const session of codexSessions) {
+          // 排除已经存在的会话
+          if (!items.find(item => item.id === session.sessionId)) {
+            items.push({
+              id: session.sessionId,
+              title: session.title,
+              timestamp: session.updatedAt,
+              messageCount: session.messageCount,
+              engineId: 'codex',
+              source: 'codex',
+              fileSize: session.fileSize,
+            })
+          }
+        }
+      } catch (e) {
+        console.warn('[EventChatStore] 获取 Codex 会话失败:', e)
+      }
+
+      // 5. 按时间戳排序
       items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
 
       return items
@@ -1837,11 +1859,16 @@ export const useEventChatStore = create<EventChatState>((set, get) => ({
   /**
    * 删除历史会话
    */
-  deleteHistorySession: (sessionId: string, source?: 'local' | 'iflow') => {
+  deleteHistorySession: (sessionId: string, source?: 'local' | 'iflow' | 'codex') => {
     try {
       if (source === 'iflow' || (!source && sessionId.startsWith('session-'))) {
         // IFlow 会话不能删除，只能忽略
         console.log('[EventChatStore] IFlow 会话无法删除，仅作忽略:', sessionId)
+        return
+      }
+      if (source === 'codex') {
+        // Codex 会话不能删除，只能忽略
+        console.log('[EventChatStore] Codex 会话无法删除，仅作忽略:', sessionId)
         return
       }
 

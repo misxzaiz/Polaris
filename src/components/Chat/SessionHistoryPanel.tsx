@@ -17,7 +17,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
   const [history, setHistory] = useState<UnifiedHistoryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [restoring, setRestoring] = useState<string | null>(null)
-  const [filter, setFilter] = useState<'all' | 'claude-code' | 'iflow' | 'deepseek'>('all')
+  const [filter, setFilter] = useState<'all' | 'claude-code' | 'iflow' | 'deepseek' | 'codex'>('all')
   const [searchQuery, setSearchQuery] = useState('')
 
   const currentWorkspace = useWorkspaceStore(state => state.getCurrentWorkspace())
@@ -58,7 +58,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
   }
 
   // 删除会话
-  const handleDelete = (sessionId: string, source: 'local' | 'iflow' | 'claude-code-native') => {
+  const handleDelete = (sessionId: string, source: 'local' | 'iflow' | 'claude-code-native' | 'codex') => {
     useEventChatStore.getState().deleteHistorySession(sessionId, source === 'local' ? 'local' : undefined)
     setHistory(prev => prev.filter(h => h.id !== sessionId))
   }
@@ -202,6 +202,16 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
           }`}
         >
           IFlow
+        </button>
+        <button
+          onClick={() => setFilter('codex')}
+          className={`px-2 py-1 rounded-md text-xs transition-colors ${
+            filter === 'codex'
+              ? 'bg-orange-100 text-orange-600 dark:bg-orange-900 dark:text-orange-300'
+              : 'text-text-secondary hover:bg-background-hover'
+          }`}
+        >
+          Codex
         </button>
       </div>
 
