@@ -131,8 +131,16 @@
     "discardFailed": "Failed to discard changes",
     "commitFailed": "Failed to commit",
     "pushFailed": "Failed to push",
-    "pullFailed": "Failed to pull"
+    "pullFailed": "Failed to pull",
+    "getDiffFailed": "Failed to get diff",
+    "batchStageFailed": "Batch stage failed",
+    "batchUnstageFailed": "Batch unstage failed",
+    "batchDiscardFailed": "Batch discard failed",
+    "initFailed": "Failed to initialize repository"
   },
+  "batchStageSuccess": "Batch stage successful",
+  "batchUnstageSuccess": "Batch unstage successful",
+  "batchDiscardSuccess": "Batch discard successful",
   "push": {
     "setUpstream": "Set Upstream",
     "setUpstreamDesc": "Branch \"{{branch}}\" has no upstream. Set upstream and push?",

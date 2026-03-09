@@ -11,6 +11,7 @@ export { ClaudePathSelector } from './ClaudePathSelector';
 export { ErrorBoundary } from './ErrorBoundary';
 export { DropdownMenu } from './DropdownMenu';
 export { LanguageSwitcher } from './LanguageSwitcher';
+export { ToastContainer } from './Toast';
 export * from './Icons';
 export * from '../Workspace';
 export * from '../Settings';

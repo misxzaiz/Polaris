@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { ChevronRight, GitPullRequest, X, Check, RotateCcw, MoreHorizontal, GitBranch, FolderGit2, FileText, History, Archive } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { useToastStore } from '@/stores/toastStore'
 import { GitStatusHeader } from './GitStatusHeader'
 import { FileChangesList } from './FileChangesList'
 import { CommitInput } from './CommitInput'
@@ -31,6 +32,7 @@ export function GitPanel({ width, className = '', onOpenDiffInTab }: GitPanelPro
   const { t } = useTranslation('git')
   const { status, isLoading, error, refreshStatus, getWorktreeFileDiff, getIndexFileDiff, stageFile, unstageFile, discardChanges, initRepository } = useGitStore()
   const currentWorkspace = useWorkspaceStore((s) => s.getCurrentWorkspace())
+  const toast = useToastStore()
 
   const [activeTab, setActiveTab] = useState<TabType>('changes')
   const [selectedDiff, setSelectedDiff] = useState<GitDiffEntry | null>(null)
@@ -74,6 +76,7 @@ export function GitPanel({ width, className = '', onOpenDiffInTab }: GitPanelPro
       }
     } catch (err) {
       logger.error('[GitPanel] 获取文件 diff 失败:', err)
+      toast.error(t('errors.getDiffFailed'), err instanceof Error ? err.message : String(err))
     } finally {
       setIsDiffLoading(false)
     }
@@ -93,6 +96,7 @@ export function GitPanel({ width, className = '', onOpenDiffInTab }: GitPanelPro
       }
     } catch (err) {
       console.error('[GitPanel] 获取未跟踪文件 diff 失败:', err)
+      toast.error(t('errors.getDiffFailed'), err instanceof Error ? err.message : String(err))
     } finally {
       setIsDiffLoading(false)
     }
@@ -152,11 +156,16 @@ export function GitPanel({ width, className = '', onOpenDiffInTab }: GitPanelPro
 
       await refreshStatus(currentWorkspace.path)
       setSelectedFiles(new Set())
+      toast.success(t('batchStageSuccess'))
+    } catch (err) {
+      toast.error(t('errors.batchStageFailed'), err instanceof Error ? err.message : String(err))
+      // 操作失败后刷新状态
+      await refreshStatus(currentWorkspace.path)
     } finally {
       setIsBatchOperating(false)
       setBatchProgress(null)
     }
-  }, [currentWorkspace, selectedFiles, status, stageFile, refreshStatus])
+  }, [currentWorkspace, selectedFiles, status, stageFile, refreshStatus, toast])
 
   const handleBatchUnstage = useCallback(async () => {
     if (!currentWorkspace || selectedFiles.size === 0) return
@@ -177,11 +186,16 @@ export function GitPanel({ width, className = '', onOpenDiffInTab }: GitPanelPro
 
       await refreshStatus(currentWorkspace.path)
       setSelectedFiles(new Set())
+      toast.success(t('batchUnstageSuccess'))
+    } catch (err) {
+      toast.error(t('errors.batchUnstageFailed'), err instanceof Error ? err.message : String(err))
+      // 操作失败后刷新状态
+      await refreshStatus(currentWorkspace.path)
     } finally {
       setIsBatchOperating(false)
       setBatchProgress(null)
     }
-  }, [currentWorkspace, selectedFiles, status, unstageFile, refreshStatus])
+  }, [currentWorkspace, selectedFiles, status, unstageFile, refreshStatus, toast])
 
   const handleBatchDiscard = useCallback(async () => {
     if (!currentWorkspace || selectedFiles.size === 0) return
@@ -205,11 +219,16 @@ export function GitPanel({ width, className = '', onOpenDiffInTab }: GitPanelPro
 
       await refreshStatus(currentWorkspace.path)
       setSelectedFiles(new Set())
+      toast.success(t('batchDiscardSuccess'))
+    } catch (err) {
+      toast.error(t('errors.batchDiscardFailed'), err instanceof Error ? err.message : String(err))
+      // 操作失败后刷新状态
+      await refreshStatus(currentWorkspace.path)
     } finally {
       setIsBatchOperating(false)
       setBatchProgress(null)
     }
-  }, [currentWorkspace, selectedFiles, status, discardChanges, refreshStatus])
+  }, [currentWorkspace, selectedFiles, status, discardChanges, refreshStatus, toast])
 
   const handleInitRepository = useCallback(async () => {
     if (!currentWorkspace) return
@@ -219,12 +238,14 @@ export function GitPanel({ width, className = '', onOpenDiffInTab }: GitPanelPro
       await initRepository(currentWorkspace.path, initBranchName)
       setShowInitPrompt(false)
       setInitBranchName('main')
+      toast.success(t('init.success'))
     } catch (err) {
       logger.error('[GitPanel] 初始化仓库失败:', err)
+      toast.error(t('errors.initFailed'), err instanceof Error ? err.message : String(err))
     } finally {
       setIsInitializing(false)
     }
-  }, [currentWorkspace, initBranchName, initRepository])
+  }, [currentWorkspace, initBranchName, initRepository, toast])
 
   const useInternalDiff = !onOpenDiffInTab
 

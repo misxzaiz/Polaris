@@ -76,5 +76,8 @@
     "aiOnlyMode": "仅 AI 对话",
     "resetView": "重置视图",
     "deleteFailed": "删除工作区失败"
+  },
+  "toast": {
+    "close": "关闭通知"
   }
 }

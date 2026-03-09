@@ -131,8 +131,16 @@
     "discardFailed": "丢弃更改失败",
     "commitFailed": "提交失败",
     "pushFailed": "推送失败",
-    "pullFailed": "拉取失败"
+    "pullFailed": "拉取失败",
+    "getDiffFailed": "获取差异失败",
+    "batchStageFailed": "批量暂存失败",
+    "batchUnstageFailed": "批量取消暂存失败",
+    "batchDiscardFailed": "批量丢弃失败",
+    "initFailed": "初始化仓库失败"
   },
+  "batchStageSuccess": "批量暂存成功",
+  "batchUnstageSuccess": "批量取消暂存成功",
+  "batchDiscardSuccess": "批量丢弃成功",
   "push": {
     "setUpstream": "设置上游分支",
     "setUpstreamDesc": "分支 \"{{branch}}\" 没有上游分支。是否设置 upstream 并推送？",

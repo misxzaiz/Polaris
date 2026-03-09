@@ -76,5 +76,8 @@
     "aiOnlyMode": "AI Chat Only",
     "resetView": "Reset View",
     "deleteFailed": "Failed to delete workspace"
+  },
+  "toast": {
+    "close": "Close notification"
   }
 }

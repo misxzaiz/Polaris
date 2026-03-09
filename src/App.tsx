@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Layout, StatusIndicator, FileExplorer, ResizeHandle, ConnectingOverlay, ErrorBoundary } from './components/Common';
+import { Layout, StatusIndicator, FileExplorer, ResizeHandle, ConnectingOverlay, ErrorBoundary, ToastContainer } from './components/Common';
 
 import { EnhancedChatMessages, ChatInput } from './components/Chat';
 import { ToolPanel } from './components/ToolPanel';
@@ -470,6 +470,9 @@ function App() {
 
       {/* 全局右键翻译菜单 */}
       <GlobalTranslateMenu />
+
+      {/* 全局 Toast 通知 */}
+      <ToastContainer />
 
       </Layout>
     </ErrorBoundary>
