@@ -38,6 +38,7 @@ export function GitPanel({ width, className = '', onOpenDiffInTab }: GitPanelPro
 
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set())
   const [isBatchOperating, setIsBatchOperating] = useState(false)
+  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null)
   const [isInitializing, setIsInitializing] = useState(false)
   const [showInitPrompt, setShowInitPrompt] = useState(false)
   const [initBranchName, setInitBranchName] = useState('main')
@@ -141,14 +142,19 @@ export function GitPanel({ width, className = '', onOpenDiffInTab }: GitPanelPro
                status?.untracked.includes(path)
       })
 
-      for (const path of stageablePaths) {
+      setBatchProgress({ current: 0, total: stageablePaths.length })
+
+      for (let i = 0; i < stageablePaths.length; i++) {
+        const path = stageablePaths[i]
         await stageFile(currentWorkspace.path, path)
+        setBatchProgress({ current: i + 1, total: stageablePaths.length })
       }
 
       await refreshStatus(currentWorkspace.path)
       setSelectedFiles(new Set())
     } finally {
       setIsBatchOperating(false)
+      setBatchProgress(null)
     }
   }, [currentWorkspace, selectedFiles, status, stageFile, refreshStatus])
 
@@ -161,14 +167,19 @@ export function GitPanel({ width, className = '', onOpenDiffInTab }: GitPanelPro
         return status?.staged.some(f => f.path === path)
       })
 
-      for (const path of unstageablePaths) {
+      setBatchProgress({ current: 0, total: unstageablePaths.length })
+
+      for (let i = 0; i < unstageablePaths.length; i++) {
+        const path = unstageablePaths[i]
         await unstageFile(currentWorkspace.path, path)
+        setBatchProgress({ current: i + 1, total: unstageablePaths.length })
       }
 
       await refreshStatus(currentWorkspace.path)
       setSelectedFiles(new Set())
     } finally {
       setIsBatchOperating(false)
+      setBatchProgress(null)
     }
   }, [currentWorkspace, selectedFiles, status, unstageFile, refreshStatus])
 
@@ -184,14 +195,19 @@ export function GitPanel({ width, className = '', onOpenDiffInTab }: GitPanelPro
         return status?.unstaged.some(f => f.path === path)
       })
 
-      for (const path of discardablePaths) {
+      setBatchProgress({ current: 0, total: discardablePaths.length })
+
+      for (let i = 0; i < discardablePaths.length; i++) {
+        const path = discardablePaths[i]
         await discardChanges(currentWorkspace.path, path)
+        setBatchProgress({ current: i + 1, total: discardablePaths.length })
       }
 
       await refreshStatus(currentWorkspace.path)
       setSelectedFiles(new Set())
     } finally {
       setIsBatchOperating(false)
+      setBatchProgress(null)
     }
   }, [currentWorkspace, selectedFiles, status, discardChanges, refreshStatus])
 
@@ -391,7 +407,10 @@ export function GitPanel({ width, className = '', onOpenDiffInTab }: GitPanelPro
               {selectedFiles.size > 0 && (
                 <div className="px-3 py-2 bg-primary/5 border-b border-primary/20 flex items-center justify-between gap-2">
                   <span className="text-xs text-text-secondary flex-1 truncate">
-                    {t('selectedFiles', { count: selectedFiles.size })}
+                    {batchProgress
+                      ? t('batchProgress', { current: batchProgress.current, total: batchProgress.total })
+                      : t('selectedFiles', { count: selectedFiles.size })
+                    }
                   </span>
 
                   <div className="flex items-center gap-1 shrink-0">

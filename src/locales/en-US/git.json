@@ -7,6 +7,7 @@
   "loading": "Loading...",
   "closeDiff": "Close Diff",
   "selectedFiles": "{{count}} files selected",
+  "batchProgress": "Processing: {{current}}/{{total}}",
   "stage": "Stage",
   "unstage": "Unstage",
   "discard": "Discard Changes",
