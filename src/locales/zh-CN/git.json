@@ -22,6 +22,7 @@
   "tabs": {
     "changes": "变更",
     "history": "历史",
+    "branch": "分支",
     "stash": "Stash"
   },
 
@@ -83,12 +84,22 @@
     "fetch": "获取"
   },
   "branch": {
+    "title": "分支",
     "current": "当前分支",
+    "local": "本地分支",
+    "remote": "远程分支",
+    "empty": "没有分支",
     "switch": "切换分支",
     "create": "创建分支",
     "merge": "合并分支",
-    "remote": "远程分支",
+    "switchSuccess": "已切换到分支 {{branch}}",
+    "createSuccess": "分支 {{branch}} 创建成功",
     "newBranchPlaceholder": "输入新分支名称...",
+    "nameLabel": "分支名称",
+    "checkoutAfterCreate": "创建后立即切换",
+    "createFrom": "将从 {{branch}} 创建",
+    "invalidName": "分支名称包含非法字符",
+    "alreadyExists": "分支已存在",
     "uncommittedChanges": "未提交的变更",
     "uncommittedChangesDesc": "当前有 {{count}} 个未提交的变更，切换分支可能会丢失这些变更。",
     "stashAndSwitch": "Stash 并切换",
@@ -136,7 +147,10 @@
     "batchStageFailed": "批量暂存失败",
     "batchUnstageFailed": "批量取消暂存失败",
     "batchDiscardFailed": "批量丢弃失败",
-    "initFailed": "初始化仓库失败"
+    "initFailed": "初始化仓库失败",
+    "getBranchesFailed": "获取分支列表失败",
+    "switchBranchFailed": "切换分支失败",
+    "createBranchFailed": "创建分支失败"
   },
   "batchStageSuccess": "批量暂存成功",
   "batchUnstageSuccess": "批量取消暂存成功",

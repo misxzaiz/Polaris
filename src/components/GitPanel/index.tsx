@@ -13,6 +13,7 @@ import { FileChangesList } from './FileChangesList'
 import { CommitInput } from './CommitInput'
 import { QuickActions } from './QuickActions'
 import { HistoryTab } from './HistoryTab'
+import { BranchTab } from './BranchTab'
 import { StashTab } from './StashTab'
 import { DiffViewer } from '@/components/Diff/DiffViewer'
 import { Button } from '@/components/Common/Button'
@@ -20,7 +21,7 @@ import { DropdownMenu } from '@/components/Common/DropdownMenu'
 import { logger } from '@/utils/logger'
 import type { GitFileChange, GitDiffEntry } from '@/types'
 
-type TabType = 'changes' | 'history' | 'stash'
+type TabType = 'changes' | 'history' | 'branch' | 'stash'
 
 interface GitPanelProps {
   width?: number
@@ -264,6 +265,7 @@ export function GitPanel({ width, className = '', onOpenDiffInTab }: GitPanelPro
   const tabs = [
     { id: 'changes' as const, icon: FileText, label: t('tabs.changes'), count: hasChanges ? (status.staged.length + status.unstaged.length + status.untracked.length) : 0 },
     { id: 'history' as const, icon: History, label: t('tabs.history'), count: 0 },
+    { id: 'branch' as const, icon: GitBranch, label: t('tabs.branch'), count: 0 },
     { id: 'stash' as const, icon: Archive, label: t('tabs.stash'), count: 0 },
   ]
 
@@ -504,6 +506,7 @@ export function GitPanel({ width, className = '', onOpenDiffInTab }: GitPanelPro
           )}
 
           {activeTab === 'history' && <HistoryTab />}
+          {activeTab === 'branch' && <BranchTab />}
           {activeTab === 'stash' && <StashTab />}
         </>
       )}

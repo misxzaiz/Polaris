@@ -22,6 +22,7 @@
   "tabs": {
     "changes": "Changes",
     "history": "History",
+    "branch": "Branches",
     "stash": "Stash"
   },
 
@@ -83,12 +84,22 @@
     "fetch": "Fetch"
   },
   "branch": {
+    "title": "Branches",
     "current": "Current branch",
+    "local": "Local branches",
+    "remote": "Remote branches",
+    "empty": "No branches",
     "switch": "Switch Branch",
     "create": "Create Branch",
     "merge": "Merge Branch",
-    "remote": "Remote branches",
+    "switchSuccess": "Switched to branch {{branch}}",
+    "createSuccess": "Branch {{branch}} created successfully",
     "newBranchPlaceholder": "Enter new branch name...",
+    "nameLabel": "Branch name",
+    "checkoutAfterCreate": "Checkout after creation",
+    "createFrom": "Will be created from {{branch}}",
+    "invalidName": "Branch name contains invalid characters",
+    "alreadyExists": "Branch already exists",
     "uncommittedChanges": "Uncommitted Changes",
     "uncommittedChangesDesc": "You have {{count}} uncommitted changes. Switching branches may lose these changes.",
     "stashAndSwitch": "Stash and Switch",
@@ -136,7 +147,9 @@
     "batchStageFailed": "Batch stage failed",
     "batchUnstageFailed": "Batch unstage failed",
     "batchDiscardFailed": "Batch discard failed",
-    "initFailed": "Failed to initialize repository"
+    "initFailed": "Failed to initialize repository",
+    "getBranchesFailed": "Failed to get branch list",
+    "switchBranchFailed": "Failed to switch branch"
   },
   "batchStageSuccess": "Batch stage successful",
   "batchUnstageSuccess": "Batch unstage successful",
