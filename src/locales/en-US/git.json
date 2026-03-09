@@ -149,7 +149,8 @@
     "batchDiscardFailed": "Batch discard failed",
     "initFailed": "Failed to initialize repository",
     "getBranchesFailed": "Failed to get branch list",
-    "switchBranchFailed": "Failed to switch branch"
+    "switchBranchFailed": "Failed to switch branch",
+    "createBranchFailed": "Failed to create branch"
   },
   "batchStageSuccess": "Batch stage successful",
   "batchUnstageSuccess": "Batch unstage successful",

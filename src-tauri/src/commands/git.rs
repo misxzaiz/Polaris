@@ -117,6 +117,17 @@ pub fn git_checkout_branch(
     GitService::checkout_branch(&path, &name).map_err(GitError::from)
 }
 
+/// 删除分支
+#[tauri::command]
+pub fn git_delete_branch(
+    workspacePath: String,
+    name: String,
+    force: bool,
+) -> Result<(), GitError> {
+    let path = PathBuf::from(workspacePath);
+    GitService::delete_branch(&path, &name, force).map_err(GitError::from)
+}
+
 /// 提交变更
 #[tauri::command]
 pub async fn git_commit_changes(

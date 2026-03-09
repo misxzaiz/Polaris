@@ -1166,6 +1166,54 @@ impl GitService {
         Ok(())
     }
 
+    /// 删除分支
+    pub fn delete_branch(path: &Path, name: &str, force: bool) -> Result<(), GitServiceError> {
+        let repo = Self::open_repository(path)?;
+
+        // 获取当前分支名
+        let current_branch = repo.head()
+            .ok()
+            .and_then(|h| h.shorthand().map(|s| s.to_string()))
+            .unwrap_or_default();
+
+        // 不能删除当前分支
+        if name == current_branch {
+            return Err(GitServiceError::CLIError(
+                format!("Cannot delete the current branch '{}'", name)
+            ));
+        }
+
+        // 查找分支
+        let mut branch = repo.find_branch(name, BranchType::Local)?;
+
+        // 检查是否已合并（如果不强制删除）
+        if !force {
+            // 获取当前 HEAD commit
+            let head = repo.head()?.peel_to_commit()?;
+            let head_oid = head.id();
+
+            // 获取要删除的分支的 commit
+            let branch_commit = branch.get().target()
+                .ok_or_else(|| GitServiceError::BranchNotFound(name.to_string()))?;
+
+            // 检查分支是否已合并到 HEAD
+            let is_merged = repo.merge_base(head_oid, branch_commit)
+                .map(|base| base == branch_commit)
+                .unwrap_or(false);
+
+            if !is_merged {
+                return Err(GitServiceError::CLIError(
+                    format!("Branch '{}' is not fully merged. Use force option to delete anyway.", name)
+                ));
+            }
+        }
+
+        // 删除分支
+        branch.delete()?;
+
+        Ok(())
+    }
+
     // ========================================================================
     // 提交操作
     // ========================================================================

@@ -1,7 +1,7 @@
 /**
  * 分支列表组件
  *
- * 显示本地和远程分支，支持分支切换
+ * 显示本地和远程分支，支持分支切换和创建
  */
 
 import { useState, useEffect, useCallback } from 'react'
@@ -16,6 +16,8 @@ import {
   FolderGit2,
   AlertTriangle,
   Archive,
+  Plus,
+  X,
 } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -34,9 +36,16 @@ export function BranchTab() {
   const [switchState, setSwitchState] = useState<SwitchState>({ type: 'idle' })
   const [error, setError] = useState<string | null>(null)
 
+  // 创建分支状态
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [newBranchName, setNewBranchName] = useState('')
+  const [checkoutNewBranch, setCheckoutNewBranch] = useState(true)
+  const [isCreating, setIsCreating] = useState(false)
+
   const status = useGitStore((s) => s.status)
   const getBranches = useGitStore((s) => s.getBranches)
   const checkoutBranch = useGitStore((s) => s.checkoutBranch)
+  const createBranch = useGitStore((s) => s.createBranch)
   const refreshStatus = useGitStore((s) => s.refreshStatus)
   const stashSave = useGitStore((s) => s.stashSave)
   const currentWorkspace = useWorkspaceStore((s) => s.getCurrentWorkspace())
@@ -139,6 +148,42 @@ export function BranchTab() {
     setError(null)
   }, [])
 
+  const handleCreateBranch = useCallback(async () => {
+    if (!currentWorkspace || !newBranchName.trim()) return
+
+    // 验证分支名称（简单验证）
+    const branchName = newBranchName.trim()
+    const invalidChars = /[\s~^:?*\[\\]/
+    if (invalidChars.test(branchName)) {
+      toast.error(t('errors.createBranchFailed'), t('branch.invalidName'))
+      return
+    }
+
+    // 检查分支是否已存在
+    if (branches.some(b => b.name === branchName)) {
+      toast.error(t('errors.createBranchFailed'), t('branch.alreadyExists'))
+      return
+    }
+
+    setIsCreating(true)
+    setError(null)
+    try {
+      await createBranch(currentWorkspace.path, branchName, checkoutNewBranch)
+      await loadBranches()
+      await refreshStatus(currentWorkspace.path)
+      setShowCreateDialog(false)
+      setNewBranchName('')
+      setCheckoutNewBranch(true)
+      toast.success(t('branch.createSuccess', { branch: branchName }))
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      setError(errorMsg)
+      toast.error(t('errors.createBranchFailed'), errorMsg)
+    } finally {
+      setIsCreating(false)
+    }
+  }, [currentWorkspace, newBranchName, checkoutNewBranch, branches, createBranch, loadBranches, refreshStatus, toast])
+
   const localBranches = branches.filter((b) => !b.isRemote)
   const remoteBranches = branches.filter((b) => b.isRemote)
 
@@ -233,14 +278,24 @@ export function BranchTab() {
             </span>
           )}
         </span>
-        <button
-          onClick={loadBranches}
-          disabled={isLoading}
-          className="p-1 text-text-tertiary hover:text-text-primary hover:bg-background-hover rounded transition-colors disabled:opacity-50"
-          title={t('refresh', { ns: 'common' })}
-        >
-          <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setShowCreateDialog(true)}
+            disabled={isLoading || isSwitching}
+            className="p-1 text-text-tertiary hover:text-primary hover:bg-primary/10 rounded transition-colors disabled:opacity-50"
+            title={t('branch.create')}
+          >
+            <Plus size={14} />
+          </button>
+          <button
+            onClick={loadBranches}
+            disabled={isLoading}
+            className="p-1 text-text-tertiary hover:text-text-primary hover:bg-background-hover rounded transition-colors disabled:opacity-50"
+            title={t('refresh', { ns: 'common' })}
+          >
+            <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -341,6 +396,88 @@ export function BranchTab() {
                 <Loader2 size={24} className="animate-spin text-primary" />
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 创建分支弹窗 */}
+      {showCreateDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-background-elevated rounded-xl p-6 w-full max-w-md border border-border shadow-lg">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-text-primary">
+                {t('branch.create')}
+              </h2>
+              <button
+                onClick={() => {
+                  setShowCreateDialog(false)
+                  setNewBranchName('')
+                  setCheckoutNewBranch(true)
+                }}
+                className="p-1 text-text-tertiary hover:text-text-primary hover:bg-background-hover rounded transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm text-text-secondary mb-1.5">
+                  {t('branch.nameLabel')}
+                </label>
+                <input
+                  type="text"
+                  value={newBranchName}
+                  onChange={(e) => setNewBranchName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleCreateBranch()
+                    }
+                  }}
+                  placeholder={t('branch.newBranchPlaceholder')}
+                  className="w-full px-3 py-2 text-sm bg-background-surface border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                  autoFocus
+                />
+              </div>
+
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={checkoutNewBranch}
+                  onChange={(e) => setCheckoutNewBranch(e.target.checked)}
+                  className="w-4 h-4 rounded border-border text-primary focus:ring-primary/50"
+                />
+                <span className="text-sm text-text-secondary">
+                  {t('branch.checkoutAfterCreate')}
+                </span>
+              </label>
+
+              <div className="text-xs text-text-tertiary">
+                {t('branch.createFrom', { branch: status?.branch || 'HEAD' })}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                onClick={() => {
+                  setShowCreateDialog(false)
+                  setNewBranchName('')
+                  setCheckoutNewBranch(true)
+                }}
+                disabled={isCreating}
+                className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-background-hover rounded-lg transition-colors disabled:opacity-50"
+              >
+                {t('cancel', { ns: 'common' })}
+              </button>
+              <button
+                onClick={handleCreateBranch}
+                disabled={isCreating || !newBranchName.trim()}
+                className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {isCreating && <Loader2 size={14} className="animate-spin" />}
+                {t('branch.create')}
+              </button>
+            </div>
           </div>
         </div>
       )}
