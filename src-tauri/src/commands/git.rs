@@ -96,6 +96,13 @@ pub fn git_get_branches(workspacePath: String) -> Result<Vec<GitBranch>, GitErro
     GitService::get_branches(&path).map_err(GitError::from)
 }
 
+/// 获取所有标签
+#[tauri::command]
+pub fn git_get_tags(workspacePath: String) -> Result<Vec<GitTag>, GitError> {
+    let path = PathBuf::from(workspacePath);
+    GitService::get_tags(&path).map_err(GitError::from)
+}
+
 /// 创建分支
 #[tauri::command]
 pub fn git_create_branch(
@@ -491,3 +498,4 @@ pub fn read_file_absolute(path: String) -> Result<String, GitError> {
         details: None,
     })
 }
+

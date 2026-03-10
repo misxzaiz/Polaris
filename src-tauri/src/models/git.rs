@@ -197,6 +197,33 @@ pub struct GitBranch {
 }
 
 // ============================================================================
+// Git 标签
+// ============================================================================
+
+/// Git 标签信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitTag {
+    /// 标签名称
+    pub name: String,
+    /// 是否为附注标签
+    pub is_annotated: bool,
+    /// 标签对应的提交 SHA
+    pub commit_sha: String,
+    /// 短 SHA
+    pub short_sha: String,
+    /// 标签消息（仅附注标签）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    /// 标签创建者（仅附注标签）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tagger: Option<String>,
+    /// 标签创建时间（仅附注标签）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<i64>,
+}
+
+// ============================================================================
 // Git 远程仓库
 // ============================================================================
 

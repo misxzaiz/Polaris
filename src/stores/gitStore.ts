@@ -21,6 +21,7 @@ import type {
   GitCherryPickResult,
   GitRevertResult,
   GitCommit,
+  GitTag,
   BatchStageResult,
   GitStashEntry,
   GitError,
@@ -54,6 +55,7 @@ interface GitState {
   indexDiffs: GitDiffEntry[]
   branches: GitBranch[]
   remotes: GitRemote[]
+  tags: GitTag[]
   currentPR: PullRequest | null
   commits: GitCommit[]
   stashList: GitStashEntry[]
@@ -78,6 +80,7 @@ interface GitState {
   getIndexFileDiff: (workspacePath: string, filePath: string) => Promise<GitDiffEntry>
   getBranches: (workspacePath: string) => Promise<void>
   getRemotes: (workspacePath: string) => Promise<void>
+  getTags: (workspacePath: string) => Promise<GitTag[]>
   getLog: (workspacePath: string, limit?: number, skip?: number, branch?: string) => Promise<GitCommit[]>
   getStashList: (workspacePath: string) => Promise<GitStashEntry[]>
 
@@ -137,6 +140,7 @@ export const useGitStore = create<GitState>((set, get) => ({
   indexDiffs: [],
   branches: [],
   remotes: [],
+  tags: [],
   currentPR: null,
   commits: [],
   stashList: [],
@@ -317,6 +321,21 @@ export const useGitStore = create<GitState>((set, get) => ({
       set({ remotes })
     } catch (err) {
       set({ error: parseGitError(err), remotes: [] })
+    }
+  },
+
+  // 获取标签列表
+  async getTags(workspacePath: string) {
+    try {
+      const tags = await invoke<GitTag[]>('git_get_tags', {
+        workspacePath,
+      })
+
+      set({ tags })
+      return tags
+    } catch (err) {
+      set({ error: parseGitError(err), tags: [] })
+      return []
     }
   },
 
@@ -1076,6 +1095,7 @@ export const useGitStore = create<GitState>((set, get) => ({
       indexDiffs: [],
       branches: [],
       remotes: [],
+      tags: [],
       currentPR: null,
       commits: [],
       stashList: [],

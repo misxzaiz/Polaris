@@ -4,7 +4,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, GitPullRequest, X, Check, RotateCcw, MoreHorizontal, GitBranch, FolderGit2, FileText, History, Archive, Globe } from 'lucide-react'
+import { ChevronRight, GitPullRequest, X, Check, RotateCcw, MoreHorizontal, GitBranch, FolderGit2, FileText, History, Archive, Globe, Tag } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useToastStore } from '@/stores/toastStore'
@@ -16,13 +16,14 @@ import { HistoryTab } from './HistoryTab'
 import { BranchTab } from './BranchTab'
 import { StashTab } from './StashTab'
 import { RemoteTab } from './RemoteTab'
+import { TagsTab } from './TagsTab'
 import { DiffViewer } from '@/components/Diff/DiffViewer'
 import { Button } from '@/components/Common/Button'
 import { DropdownMenu } from '@/components/Common/DropdownMenu'
 import { logger } from '@/utils/logger'
 import type { GitFileChange, GitDiffEntry } from '@/types'
 
-type TabType = 'changes' | 'history' | 'branch' | 'remote' | 'stash'
+type TabType = 'changes' | 'history' | 'branch' | 'remote' | 'tags' | 'stash'
 
 interface GitPanelProps {
   width?: number
@@ -268,6 +269,7 @@ export function GitPanel({ width, className = '', onOpenDiffInTab }: GitPanelPro
     { id: 'history' as const, icon: History, label: t('tabs.history'), count: 0 },
     { id: 'branch' as const, icon: GitBranch, label: t('tabs.branch'), count: 0 },
     { id: 'remote' as const, icon: Globe, label: t('tabs.remote'), count: 0 },
+    { id: 'tags' as const, icon: Tag, label: t('tabs.tags'), count: 0 },
     { id: 'stash' as const, icon: Archive, label: t('tabs.stash'), count: 0 },
   ]
 
@@ -511,6 +513,7 @@ export function GitPanel({ width, className = '', onOpenDiffInTab }: GitPanelPro
           {activeTab === 'history' && <HistoryTab />}
           {activeTab === 'branch' && <BranchTab />}
           {activeTab === 'remote' && <RemoteTab />}
+          {activeTab === 'tags' && <TagsTab />}
           {activeTab === 'stash' && <StashTab />}
           </div>
         </div>

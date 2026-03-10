@@ -96,6 +96,26 @@ export interface GitBranch {
 }
 
 /**
+ * Git 标签
+ */
+export interface GitTag {
+  /** 标签名称 */
+  name: string
+  /** 是否为轻量标签（true = 轻量标签，false = 附注标签） */
+  isLightweight: boolean
+  /** 标签对应的提交 SHA */
+  commitSha: string
+  /** 短 SHA */
+  shortSha: string
+  /** 标签消息（仅附注标签） */
+  message?: string
+  /** 标签创建者（仅附注标签） */
+  tagger?: string
+  /** 标签创建时间（仅附注标签） */
+  timestamp?: number
+}
+
+/**
  * Git 远程仓库
  */
 export interface GitRemote {

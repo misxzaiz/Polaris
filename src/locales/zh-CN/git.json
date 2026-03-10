@@ -24,6 +24,7 @@
     "history": "历史",
     "branch": "分支",
     "remote": "远程",
+    "tags": "标签",
     "stash": "Stash"
   },
 
@@ -181,6 +182,16 @@
     "pushNeedsUpstream": "分支没有上游分支",
     "pushNeedsForce": "需要强制推送或先拉取"
   },
+  "tags": {
+    "title": "标签",
+    "empty": "没有标签",
+    "annotated": "附注标签",
+    "lightweight": "轻量标签",
+    "count": "共 {{count}} 个标签",
+    "copySha": "复制提交 SHA",
+    "shaCopied": "已复制提交 SHA",
+    "copyFailed": "复制失败"
+  },
   "stash": {
     "title": "Stash",
     "save": "保存到 Stash",
@@ -224,6 +235,7 @@
     "initFailed": "初始化仓库失败",
     "getBranchesFailed": "获取分支列表失败",
     "getRemotesFailed": "获取远程仓库失败",
+    "getTagsFailed": "获取标签列表失败",
     "switchBranchFailed": "切换分支失败",
     "createBranchFailed": "创建分支失败",
     "deleteBranchFailed": "删除分支失败",

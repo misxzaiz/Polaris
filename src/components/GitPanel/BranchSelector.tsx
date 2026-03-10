@@ -176,8 +176,8 @@ export function BranchSelector() {
         </button>
 
         {isOpen && (
-          <div className="absolute top-full left-0 mt-1 w-64 bg-background-surface border border-border rounded-lg shadow-lg z-50 overflow-hidden">
-            <div className="px-3 py-2 border-b border-border flex items-center justify-between">
+          <div className="absolute top-full left-0 mt-1 w-80 bg-background-surface border border-border rounded-lg shadow-lg z-50 flex flex-col max-h-[500px]">
+            <div className="px-3 py-2 border-b border-border flex items-center justify-between shrink-0">
               <span className="text-xs font-medium text-text-secondary">
                 {t('branch.switch')}
               </span>
@@ -191,7 +191,7 @@ export function BranchSelector() {
             </div>
 
             {showNewBranch && (
-              <div className="px-3 py-2 border-b border-border flex items-center gap-2">
+              <div className="px-3 py-2 border-b border-border flex items-center gap-2 shrink-0">
                 <input
                   ref={inputRef}
                   type="text"
@@ -212,38 +212,45 @@ export function BranchSelector() {
             )}
 
             {error && (
-              <div className="px-3 py-2 bg-danger/10 border-b border-danger/20 text-xs text-danger">
+              <div className="px-3 py-2 bg-danger/10 border-b border-danger/20 text-xs text-danger shrink-0">
                 {error}
               </div>
             )}
 
-            <div className="max-h-60 overflow-y-auto">
+            <div className="overflow-y-auto flex-1 min-h-0">
               {isLoading ? (
                 <div className="px-3 py-4 text-center text-text-tertiary">
                   <Loader2 size={16} className="animate-spin mx-auto" />
                 </div>
               ) : (
                 <>
-                  {localBranches.map((branch) => (
-                    <button
-                      key={branch.name}
-                      onClick={() => handleSwitchBranch(branch.name)}
-                      disabled={isSwitching || branch.isCurrent}
-                      className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 hover:bg-background-hover ${
-                        branch.isCurrent ? 'bg-primary/10 text-primary' : 'text-text-primary'
-                      }`}
-                    >
-                      {branch.isCurrent && <Check size={12} />}
-                      <span className={branch.isCurrent ? '' : 'ml-4'}>{branch.name}</span>
-                    </button>
-                  ))}
+                  {localBranches.length > 0 && (
+                    <>
+                      <div className="px-3 py-1 text-xs text-text-tertiary bg-background sticky top-0">
+                        本地分支 ({localBranches.length})
+                      </div>
+                      {localBranches.map((branch) => (
+                        <button
+                          key={branch.name}
+                          onClick={() => handleSwitchBranch(branch.name)}
+                          disabled={isSwitching || branch.isCurrent}
+                          className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 hover:bg-background-hover ${
+                            branch.isCurrent ? 'bg-primary/10 text-primary' : 'text-text-primary'
+                          }`}
+                        >
+                          {branch.isCurrent && <Check size={12} />}
+                          <span className={branch.isCurrent ? '' : 'ml-4'}>{branch.name}</span>
+                        </button>
+                      ))}
+                    </>
+                  )}
 
                   {remoteBranches.length > 0 && (
                     <>
-                      <div className="px-3 py-1 text-xs text-text-tertiary bg-background">
-                        {t('branch.remote')}
+                      <div className="px-3 py-1 text-xs text-text-tertiary bg-background sticky top-0">
+                        远程分支 ({remoteBranches.length})
                       </div>
-                      {remoteBranches.slice(0, 10).map((branch) => (
+                      {remoteBranches.map((branch) => (
                         <button
                           key={branch.name}
                           onClick={() => handleSwitchBranch(branch.name)}

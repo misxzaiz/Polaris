@@ -24,6 +24,7 @@
     "history": "History",
     "branch": "Branches",
     "remote": "Remotes",
+    "tags": "Tags",
     "stash": "Stash"
   },
 
@@ -181,6 +182,16 @@
     "pushNeedsUpstream": "Branch has no upstream",
     "pushNeedsForce": "Force push or pull first required"
   },
+  "tags": {
+    "title": "Tags",
+    "empty": "No tags",
+    "annotated": "Annotated",
+    "lightweight": "Lightweight",
+    "count": "{{count}} tags",
+    "copySha": "Copy commit SHA",
+    "shaCopied": "Commit SHA copied",
+    "copyFailed": "Copy failed"
+  },
   "stash": {
     "title": "Stash",
     "save": "Save to Stash",
@@ -224,6 +235,7 @@
     "initFailed": "Failed to initialize repository",
     "getBranchesFailed": "Failed to get branch list",
     "getRemotesFailed": "Failed to get remote repositories",
+    "getTagsFailed": "Failed to get tag list",
     "switchBranchFailed": "Failed to switch branch",
     "createBranchFailed": "Failed to create branch",
     "deleteBranchFailed": "Failed to delete branch",
