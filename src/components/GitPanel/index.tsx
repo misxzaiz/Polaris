@@ -363,7 +363,7 @@ export function GitPanel({ width, className = '', onOpenDiffInTab }: GitPanelPro
 
   return (
     <aside
-      className={`flex flex-col bg-background-elevated border-l border-border ${className}`}
+      className={`flex flex-col h-full bg-background-elevated border-l border-border ${className}`}
       style={{ width: width ? `${width}px` : '320px' }}
     >
       <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle shrink-0">
