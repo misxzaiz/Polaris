@@ -1,12 +1,12 @@
 /**
  * Tags 列表组件
  *
- * 显示 Git 标签列表
+ * 显示 Git 标签列表，支持创建和删除标签
  */
 
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Tag, RefreshCw, Loader2, Inbox, Copy, GitCommit } from 'lucide-react'
+import { Tag, RefreshCw, Loader2, Inbox, Copy, GitCommit, Plus, Trash2, X, MessageSquare } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useToastStore } from '@/stores/toastStore'
@@ -18,7 +18,23 @@ export function TagsTab() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // 创建标签状态
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [newTagName, setNewTagName] = useState('')
+  const [newTagMessage, setNewTagMessage] = useState('')
+  const [newTagCommitish, setNewTagCommitish] = useState('')
+  const [isCreating, setIsCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+
+  // 删除标签状态
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [tagToDelete, setTagToDelete] = useState<GitTag | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+
   const getTags = useGitStore((s) => s.getTags)
+  const createTag = useGitStore((s) => s.createTag)
+  const deleteTag = useGitStore((s) => s.deleteTag)
+  const status = useGitStore((s) => s.status)
   const currentWorkspace = useWorkspaceStore((s) => s.getCurrentWorkspace())
   const toast = useToastStore()
 
@@ -41,6 +57,90 @@ export function TagsTab() {
   useEffect(() => {
     loadTags()
   }, [loadTags])
+
+  // 打开创建标签弹窗
+  const handleOpenCreateModal = () => {
+    setNewTagName('')
+    setNewTagMessage('')
+    setNewTagCommitish('') // 默认使用 HEAD
+    setCreateError(null)
+    setShowCreateModal(true)
+  }
+
+  // 验证标签名
+  const validateTagName = (name: string): boolean => {
+    if (!name.trim()) return false
+    const invalidChars = /[\s~^:?*\[\\]/
+    return !invalidChars.test(name)
+  }
+
+  // 创建标签
+  const handleCreateTag = async () => {
+    if (!currentWorkspace) return
+
+    // 验证标签名
+    if (!newTagName.trim()) {
+      setCreateError(t('tags.nameRequired'))
+      return
+    }
+
+    if (!validateTagName(newTagName)) {
+      setCreateError(t('tags.invalidName'))
+      return
+    }
+
+    // 检查标签是否已存在
+    if (tags.some(t => t.name === newTagName)) {
+      setCreateError(t('tags.alreadyExists'))
+      return
+    }
+
+    setIsCreating(true)
+    setCreateError(null)
+
+    try {
+      await createTag(
+        currentWorkspace.path,
+        newTagName.trim(),
+        newTagCommitish.trim() || undefined,
+        newTagMessage.trim() || undefined
+      )
+      toast.success(t('tags.createSuccess', { name: newTagName }))
+      setShowCreateModal(false)
+      await loadTags()
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      setCreateError(errorMsg)
+    } finally {
+      setIsCreating(false)
+    }
+  }
+
+  // 打开删除确认弹窗
+  const handleOpenDeleteModal = (tag: GitTag) => {
+    setTagToDelete(tag)
+    setShowDeleteModal(true)
+  }
+
+  // 删除标签
+  const handleDeleteTag = async () => {
+    if (!currentWorkspace || !tagToDelete) return
+
+    setIsDeleting(true)
+
+    try {
+      await deleteTag(currentWorkspace.path, tagToDelete.name)
+      toast.success(t('tags.deleteSuccess', { name: tagToDelete.name }))
+      setShowDeleteModal(false)
+      setTagToDelete(null)
+      await loadTags()
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      toast.error(errorMsg)
+    } finally {
+      setIsDeleting(false)
+    }
+  }
 
   const handleCopySha = async (sha: string) => {
     try {
@@ -65,6 +165,13 @@ export function TagsTab() {
           {tags.length > 0 && (
             <span className="text-xs text-text-tertiary">{t('tags.count', { count: tags.length })}</span>
           )}
+          <button
+            onClick={handleOpenCreateModal}
+            className="p-1 text-text-tertiary hover:text-text-primary hover:bg-background-hover rounded transition-colors"
+            title={t('tags.createTag')}
+          >
+            <Plus size={14} />
+          </button>
           <button
             onClick={loadTags}
             disabled={isLoading}
@@ -91,6 +198,12 @@ export function TagsTab() {
           <div className="flex flex-col items-center justify-center py-8 text-text-tertiary">
             <Inbox size={24} className="mb-2 opacity-50" />
             <span className="text-sm">{t('tags.empty')}</span>
+            <button
+              onClick={handleOpenCreateModal}
+              className="mt-3 text-xs text-primary hover:underline"
+            >
+              {t('tags.createFirst')}
+            </button>
           </div>
         ) : (
           <div className="divide-y divide-border-subtle">
@@ -139,6 +252,13 @@ export function TagsTab() {
                     >
                       <Copy size={14} />
                     </button>
+                    <button
+                      onClick={() => handleOpenDeleteModal(tag)}
+                      className="p-1.5 text-text-tertiary hover:text-danger hover:bg-danger/10 rounded transition-colors"
+                      title={t('tags.deleteTag')}
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
                 </div>
               </div>
@@ -146,6 +266,142 @@ export function TagsTab() {
           </div>
         )}
       </div>
+
+      {/* 创建标签弹窗 */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-background-surface border border-border-subtle rounded-lg shadow-lg w-[400px] max-w-[90vw]">
+            <div className="px-4 py-3 border-b border-border-subtle flex items-center justify-between">
+              <span className="text-sm font-medium text-text-primary">{t('tags.createTag')}</span>
+              <button
+                onClick={() => setShowCreateModal(false)}
+                className="p-1 text-text-tertiary hover:text-text-primary rounded transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              {/* 标签名 */}
+              <div>
+                <label className="block text-xs text-text-secondary mb-1">
+                  {t('tags.tagName')} <span className="text-danger">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newTagName}
+                  onChange={(e) => setNewTagName(e.target.value)}
+                  placeholder={t('tags.tagNamePlaceholder')}
+                  className="w-full px-3 py-2 text-sm bg-background border border-border-subtle rounded focus:outline-none focus:ring-1 focus:ring-primary text-text-primary placeholder-text-tertiary"
+                  autoFocus
+                />
+              </div>
+
+              {/* 目标提交（可选） */}
+              <div>
+                <label className="block text-xs text-text-secondary mb-1">
+                  {t('tags.targetCommit')}
+                </label>
+                <input
+                  type="text"
+                  value={newTagCommitish}
+                  onChange={(e) => setNewTagCommitish(e.target.value)}
+                  placeholder={t('tags.targetCommitPlaceholder', { head: status?.shortCommit || 'HEAD' })}
+                  className="w-full px-3 py-2 text-sm bg-background border border-border-subtle rounded focus:outline-none focus:ring-1 focus:ring-primary text-text-primary placeholder-text-tertiary"
+                />
+                <p className="text-xs text-text-tertiary mt-1">{t('tags.targetCommitHint')}</p>
+              </div>
+
+              {/* 标签消息（可选，用于 annotated tag） */}
+              <div>
+                <label className="block text-xs text-text-secondary mb-1 flex items-center gap-1">
+                  <MessageSquare size={10} />
+                  {t('tags.tagMessage')}
+                </label>
+                <textarea
+                  value={newTagMessage}
+                  onChange={(e) => setNewTagMessage(e.target.value)}
+                  placeholder={t('tags.tagMessagePlaceholder')}
+                  rows={3}
+                  className="w-full px-3 py-2 text-sm bg-background border border-border-subtle rounded focus:outline-none focus:ring-1 focus:ring-primary text-text-primary placeholder-text-tertiary resize-none"
+                />
+                <p className="text-xs text-text-tertiary mt-1">{t('tags.tagMessageHint')}</p>
+              </div>
+
+              {/* 错误提示 */}
+              {createError && (
+                <div className="px-3 py-2 text-xs text-danger bg-danger/10 rounded">
+                  {createError}
+                </div>
+              )}
+            </div>
+            <div className="px-4 py-3 border-t border-border-subtle flex justify-end gap-2">
+              <button
+                onClick={() => setShowCreateModal(false)}
+                className="px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors"
+              >
+                {t('cancel', { ns: 'common' })}
+              </button>
+              <button
+                onClick={handleCreateTag}
+                disabled={isCreating || !newTagName.trim()}
+                className="px-3 py-1.5 text-sm bg-primary text-white rounded hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isCreating ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  t('tags.createTag')
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 删除确认弹窗 */}
+      {showDeleteModal && tagToDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-background-surface border border-border-subtle rounded-lg shadow-lg w-[360px] max-w-[90vw]">
+            <div className="px-4 py-3 border-b border-border-subtle flex items-center justify-between">
+              <span className="text-sm font-medium text-text-primary">{t('tags.deleteTag')}</span>
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="p-1 text-text-tertiary hover:text-text-primary rounded transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-4">
+              <p className="text-sm text-text-secondary">
+                {t('tags.deleteConfirm', { name: tagToDelete.name })}
+              </p>
+              {tagToDelete.isLightweight && (
+                <p className="text-xs text-text-tertiary mt-2">
+                  {t('tags.lightweightTagHint')}
+                </p>
+              )}
+            </div>
+            <div className="px-4 py-3 border-t border-border-subtle flex justify-end gap-2">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors"
+              >
+                {t('cancel', { ns: 'common' })}
+              </button>
+              <button
+                onClick={handleDeleteTag}
+                disabled={isDeleting}
+                className="px-3 py-1.5 text-sm bg-danger text-white rounded hover:bg-danger/90 transition-colors disabled:opacity-50"
+              >
+                {isDeleting ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  t('delete', { ns: 'common' })
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

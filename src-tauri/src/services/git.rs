@@ -1182,6 +1182,98 @@ impl GitService {
         Ok(tags)
     }
 
+    /// 创建标签
+    pub fn create_tag(
+        path: &Path,
+        name: &str,
+        commitish: Option<&str>,
+        message: Option<&str>,
+    ) -> Result<GitTag, GitServiceError> {
+        let repo = Self::open_repository(path)?;
+
+        // 验证标签名
+        let invalid_chars = [' ', '~', '^', ':', '?', '*', '[', '\\'];
+        if name.chars().any(|c| invalid_chars.contains(&c)) {
+            return Err(GitServiceError::CLIError(
+                format!("Invalid tag name '{}': contains illegal characters", name)
+            ));
+        }
+
+        // 检查标签是否已存在
+        let tag_ref = format!("refs/tags/{}", name);
+        if repo.find_reference(&tag_ref).is_ok() {
+            return Err(GitServiceError::CLIError(
+                format!("Tag '{}' already exists", name)
+            ));
+        }
+
+        // 获取目标 commit
+        let target = if let Some(commitish) = commitish {
+            // 使用指定的 commitish
+            repo.revparse_single(commitish)?
+                .peel_to_commit()?
+        } else {
+            // 默认使用 HEAD
+            repo.head()?.peel_to_commit()?
+        };
+        let target_oid = target.id();
+
+        // 创建标签
+        if let Some(msg) = message {
+            // 创建 annotated 标签
+            let sig = repo.signature()?;
+            let tag_id = repo.tag(name, &target.as_object(), &sig, msg, false)?;
+
+            // 获取创建的标签信息
+            let tag_obj = repo.find_tag(tag_id)?;
+            let message = tag_obj.message().map(|s| s.to_string());
+            let tagger = tag_obj.tagger().and_then(|s| s.name().map(|n| n.to_string()));
+            let timestamp = tag_obj.tagger().map(|s| {
+                let time = s.when();
+                i64::from(time.seconds())
+            });
+
+            Ok(GitTag {
+                name: name.to_string(),
+                is_annotated: true,
+                commit_sha: target_oid.to_string(),
+                short_sha: target_oid.to_string()[..8].to_string(),
+                message,
+                tagger,
+                timestamp,
+            })
+        } else {
+            // 创建 lightweight 标签
+            repo.reference(&tag_ref, target_oid, false, "Create lightweight tag")?;
+
+            Ok(GitTag {
+                name: name.to_string(),
+                is_annotated: false,
+                commit_sha: target_oid.to_string(),
+                short_sha: target_oid.to_string()[..8].to_string(),
+                message: None,
+                tagger: None,
+                timestamp: None,
+            })
+        }
+    }
+
+    /// 删除标签
+    pub fn delete_tag(path: &Path, name: &str) -> Result<(), GitServiceError> {
+        let repo = Self::open_repository(path)?;
+
+        // 查找标签引用
+        let tag_ref = format!("refs/tags/{}", name);
+        let mut reference = repo.find_reference(&tag_ref).map_err(|_| {
+            GitServiceError::CLIError(format!("Tag '{}' not found", name))
+        })?;
+
+        // 删除标签
+        reference.delete()?;
+
+        Ok(())
+    }
+
     /// 创建分支
     pub fn create_branch(
         path: &Path,

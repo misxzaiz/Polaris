@@ -81,6 +81,8 @@ interface GitState {
   getBranches: (workspacePath: string) => Promise<void>
   getRemotes: (workspacePath: string) => Promise<void>
   getTags: (workspacePath: string) => Promise<GitTag[]>
+  createTag: (workspacePath: string, name: string, commitish?: string, message?: string) => Promise<GitTag>
+  deleteTag: (workspacePath: string, name: string) => Promise<void>
   getLog: (workspacePath: string, limit?: number, skip?: number, branch?: string) => Promise<GitCommit[]>
   getStashList: (workspacePath: string) => Promise<GitStashEntry[]>
 
@@ -336,6 +338,49 @@ export const useGitStore = create<GitState>((set, get) => ({
     } catch (err) {
       set({ error: parseGitError(err), tags: [] })
       return []
+    }
+  },
+
+  // 创建标签
+  async createTag(workspacePath: string, name: string, commitish?: string, message?: string) {
+    set({ isLoading: true, error: null })
+
+    try {
+      const tag = await invoke<GitTag>('git_create_tag', {
+        workspacePath,
+        name,
+        commitish: commitish || null,
+        message: message || null,
+      })
+
+      // 刷新标签列表
+      await get().getTags(workspacePath)
+
+      set({ isLoading: false })
+      return tag
+    } catch (err) {
+      set({ error: parseGitError(err), isLoading: false })
+      throw err
+    }
+  },
+
+  // 删除标签
+  async deleteTag(workspacePath: string, name: string) {
+    set({ isLoading: true, error: null })
+
+    try {
+      await invoke('git_delete_tag', {
+        workspacePath,
+        name,
+      })
+
+      // 刷新标签列表
+      await get().getTags(workspacePath)
+
+      set({ isLoading: false })
+    } catch (err) {
+      set({ error: parseGitError(err), isLoading: false })
+      throw err
     }
   },
 

@@ -103,6 +103,26 @@ pub fn git_get_tags(workspacePath: String) -> Result<Vec<GitTag>, GitError> {
     GitService::get_tags(&path).map_err(GitError::from)
 }
 
+/// 创建标签
+#[tauri::command]
+pub fn git_create_tag(
+    workspacePath: String,
+    name: String,
+    commitish: Option<String>,
+    message: Option<String>,
+) -> Result<GitTag, GitError> {
+    let path = PathBuf::from(workspacePath);
+    GitService::create_tag(&path, &name, commitish.as_deref(), message.as_deref())
+        .map_err(GitError::from)
+}
+
+/// 删除标签
+#[tauri::command]
+pub fn git_delete_tag(workspacePath: String, name: String) -> Result<(), GitError> {
+    let path = PathBuf::from(workspacePath);
+    GitService::delete_tag(&path, &name).map_err(GitError::from)
+}
+
 /// 创建分支
 #[tauri::command]
 pub fn git_create_branch(
