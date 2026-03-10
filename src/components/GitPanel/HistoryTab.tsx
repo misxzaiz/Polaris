@@ -502,7 +502,6 @@ export function HistoryTab({ targetCommitSha, onCommitSelected }: HistoryTabProp
               Footer,
             }}
             className="h-full"
-            style={{ minHeight: '400px' }}
           />
         )}
       </div>
