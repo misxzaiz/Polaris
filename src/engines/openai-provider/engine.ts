@@ -42,6 +42,8 @@ export interface OpenAIProviderEngineConfig {
   workspaceDir?: string
   /** 请求超时时间 (毫秒，可选) */
   timeout?: number
+  /** 是否支持工具调用 (Function Calling，默认 false) */
+  supportsTools?: boolean
 }
 
 /**
@@ -51,6 +53,7 @@ const DEFAULT_CONFIG = {
   temperature: 0.7,
   maxTokens: 8192,
   timeout: 300000,
+  supportsTools: false, // 默认不支持工具调用
 }
 
 /**
@@ -169,6 +172,7 @@ export class OpenAIProviderEngine implements AIEngine {
       maxTokens: config?.maxTokens ?? this.config.maxTokens,
       workspaceDir: config?.workspaceDir || this.config.workspaceDir,
       timeout: config?.timeout ?? this.config.timeout,
+      supportsTools: config?.supportsTools ?? this.config.supportsTools,
     }
 
     console.log(`[OpenAIProviderEngine] Creating session ${sessionId}:`, {

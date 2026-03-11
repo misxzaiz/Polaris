@@ -26,6 +26,8 @@ export interface OpenAIProvider {
   max_tokens: number;
   /** 是否启用 */
   enabled: boolean;
+  /** 是否支持工具调用（Function Calling） */
+  supports_tools: boolean;
 }
 
 /** AI 引擎配置 */

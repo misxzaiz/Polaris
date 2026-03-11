@@ -104,6 +104,12 @@ pub struct OpenAIProvider {
     /// 是否启用
     #[serde(default = "default_openai_enabled")]
     pub enabled: bool,
+
+    /// 是否支持工具调用（Function Calling）
+    ///
+    /// 部分OpenAI兼容API不支持tools参数，需要禁用
+    #[serde(default = "default_openai_supports_tools")]
+    pub supports_tools: bool,
 }
 
 fn default_openai_api_base() -> String {
@@ -126,6 +132,10 @@ fn default_openai_enabled() -> bool {
     true
 }
 
+fn default_openai_supports_tools() -> bool {
+    false // 默认不启用工具调用，因为很多 API 不支持
+}
+
 impl Default for OpenAIProvider {
     fn default() -> Self {
         Self {
@@ -137,6 +147,7 @@ impl Default for OpenAIProvider {
             temperature: default_openai_temperature(),
             max_tokens: default_openai_max_tokens(),
             enabled: default_openai_enabled(),
+            supports_tools: default_openai_supports_tools(),
         }
     }
 }

@@ -87,6 +87,8 @@ export interface OpenAIProviderSessionConfig extends AISessionConfig {
   workspaceDir?: string
   /** 超时时间 */
   timeout: number
+  /** 是否支持工具调用 */
+  supportsTools: boolean
 }
 
 /**
@@ -294,28 +296,38 @@ export class OpenAIProviderSession extends BaseSession {
    */
   private async callOpenAIAPI(): Promise<OpenAIResponse | null> {
     try {
+      // 检查是否支持工具调用
+      const supportsTools = this.config.supportsTools
+
       // 根据意图生成工具 Schema（按需优化）
-      const tools = this.currentIntent && this.currentIntent.requiresTools
+      const tools = supportsTools && this.currentIntent && this.currentIntent.requiresTools
         ? generateToolSchemasForIntent(this.currentIntent.requiredTools)
-        : generateToolSchemas()
+        : supportsTools
+        ? generateToolSchemas()
+        : []
 
       console.log(`[OpenAIProviderSession] Tools included:`, {
         count: tools.length,
         intent: this.currentIntent?.type,
         requiredTools: this.currentIntent?.requiredTools,
+        supportsTools,
       })
 
       // 裁剪消息历史以适应 token 预算
       const trimmedMessages = this.trimMessagesToFitBudget()
 
       // 构建请求
-      const requestBody = {
+      const requestBody: any = {
         model: this.config.model,
         messages: trimmedMessages, // 使用裁剪后的消息
         temperature: this.config.temperature,
         max_tokens: this.config.maxTokens,
         stream: false, // 工具调用需要完整响应
-        tools,
+      }
+
+      // 只在支持工具调用时添加 tools 参数
+      if (supportsTools && tools.length > 0) {
+        requestBody.tools = tools
       }
 
       console.log('[OpenAIProviderSession] Calling API', {
