@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConfigStore } from '../../stores';
 import { Button, ClaudePathSelector } from '../Common';
-import { OpenAIProvidersTab } from './OpenAIProvidersTab';
 // import { LanguageSwitcher } from '../Common';
 import type { Config, EngineId, FloatingWindowMode, Language } from '../../types';
 
@@ -13,9 +12,10 @@ interface SettingsModalProps {
 export function SettingsModal({ onClose }: SettingsModalProps) {
   const { t } = useTranslation('settings');
   const { t: tCommon } = useTranslation('common');
-  const [showOpenAIProviders, setShowOpenAIProviders] = useState(false)
+  const [editingProviderId, setEditingProviderId] = useState<string | null>(null)
 
-  const ENGINE_OPTIONS: { id: EngineId; name: string; description: string }[] = [
+  // 固定的传统引擎选项
+  const FIXED_ENGINE_OPTIONS: { id: EngineId; name: string; description: string }[] = [
     {
       id: 'claude-code',
       name: 'Claude Code',
@@ -132,6 +132,61 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     });
   };
 
+  const handleAddProvider = () => {
+    if (!localConfig) return;
+    const newProvider: import('../../types/config').OpenAIProvider = {
+      id: `provider-${Date.now()}`,
+      name: 'New Provider',
+      api_key: '',
+      api_base: 'https://api.openai.com/v1',
+      model: 'gpt-4o-mini',
+      temperature: 0.7,
+      max_tokens: 8192,
+      enabled: true,
+    };
+    setLocalConfig({
+      ...localConfig,
+      openaiProviders: [...localConfig.openaiProviders, newProvider],
+    });
+    // 自动展开新 Provider 的编辑
+    setEditingProviderId(newProvider.id);
+  };
+
+  const handleUpdateProvider = (providerId: string, updates: Partial<import('../../types/config').OpenAIProvider>) => {
+    if (!localConfig) return;
+    const updatedProviders = localConfig.openaiProviders.map(p =>
+      p.id === providerId ? { ...p, ...updates } : p
+    );
+    setLocalConfig({
+      ...localConfig,
+      openaiProviders: updatedProviders,
+    });
+  };
+
+  const handleRemoveProvider = (providerId: string) => {
+    if (!localConfig) return;
+    const updatedProviders = localConfig.openaiProviders.filter(p => p.id !== providerId);
+
+    // 如果删除的是当前选中的 Provider，清空选中状态
+    if (localConfig.activeProviderId === providerId) {
+      setLocalConfig({
+        ...localConfig,
+        openaiProviders: updatedProviders,
+        activeProviderId: undefined,
+      });
+    } else {
+      setLocalConfig({
+        ...localConfig,
+        openaiProviders: updatedProviders,
+      });
+    }
+
+    // 如果删除的是当前引擎，切换到默认引擎
+    if (localConfig.defaultEngine === `provider-${providerId}`) {
+      handleEngineChange('claude-code');
+    }
+  };
+
   const handleBaiduTranslateAppIdChange = (appId: string) => {
     if (!localConfig) return;
     setLocalConfig({
@@ -225,7 +280,8 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
             {t('aiEngine')}
           </label>
           <div className="space-y-2">
-            {ENGINE_OPTIONS.map((option) => (
+            {/* 固定的传统引擎 */}
+            {FIXED_ENGINE_OPTIONS.map((option) => (
               <button
                 key={option.id}
                 type="button"
@@ -255,6 +311,144 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 </div>
               </button>
             ))}
+
+            {/* 动态的 OpenAI Providers */}
+            {localConfig.openaiProviders?.map((provider) => (
+              <div
+                key={provider.id}
+                className={`border-2 rounded-lg transition-all ${
+                  localConfig.defaultEngine === `provider-${provider.id}`
+                    ? 'border-primary bg-primary/5'
+                    : 'border-border bg-surface'
+                }`}
+              >
+                {/* 引擎选择行 */}
+                <div className="flex items-center justify-between p-4">
+                  <button
+                    type="button"
+                    onClick={() => handleEngineChange(`provider-${provider.id}` as any)}
+                    className="flex-1 text-left flex items-center gap-3"
+                  >
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                      localConfig.defaultEngine === `provider-${provider.id}`
+                        ? 'border-primary bg-primary'
+                        : 'border-border'
+                    }`}>
+                      {localConfig.defaultEngine === `provider-${provider.id}` && (
+                        <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </div>
+                    <div>
+                      <div className="font-medium text-text-primary flex items-center gap-2">
+                        {provider.name}
+                        {!provider.enabled && (
+                          <span className="px-2 py-0.5 text-xs bg-disabled text-text-muted rounded">已禁用</span>
+                        )}
+                      </div>
+                      <div className="text-sm text-text-secondary">
+                        {provider.model} • {provider.api_base}
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* 操作按钮 */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setEditingProviderId(provider.id)}
+                      className="p-2 text-text-tertiary hover:text-primary transition-colors"
+                      title="配置"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.996h1.945c.132-1.856 1.724-2.937 2.924-2.937.912 0 1.532.789 2.323 1.506 1.506l.44.44c.578.578.627 1.332.836 2.062.402.73.568 1.438 1.485 1.438 2.344 0 .492-.05.842-.136 1.047-.426.205-.284.402-.688.402-1.187 0-.857.345-1.638.863-2.218.518-.58.578-.974-1.146-1.102-1.738-.207-.832.712-1.728 1.228-2.738 1.228-.646 0-1.31-.09-1.876-.253-.566-.164-1.033-.493-1.393-.329-.329-.584-.57-.778-.868-.194-.298-.445-.55-.757-.841-.313-.293-.548-.552-.746-.848-.198-.296-.372-.555-.521-.772-.149-.217-.288-.437-.415-.67-.127-.232-.237-.492-.327-.776-.09-.285-.153-.605-.153-.927 0-.363.09-.694.27-.99.45-.296.63-.715 1.228-.715 2.206 0 .317.032.636.094.942.063.313.127.628.206.937.08.31.09.652.206.937.08.31.09.652.127.937.206.31.09.628.206.937.08.31.09.652.127.937.206z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => handleRemoveProvider(provider.id)}
+                      className="p-2 text-text-tertiary hover:text-error transition-colors"
+                      title="删除"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 011-1h2a1 1 0 011 1v3a1 1 0 001 1h1a1 1 0 001-1V7a1 1 0 011-1h2a1 1 0 011 1v3a1 1 0 001 1h1a1 1 0 011-1V7a1 1 0 011-1h2a1 1 0 011 1v3a1 1 0 001 1h1a1 1 0 011-1V7a1 1 0 011-1h2a1 1 0 011 1v3a1 1 0 001 1h1a1 1 0 011-1V7a1 1 0 011-1h2a1 1 0 011 1v3a1 1 0 001 1h1a1 1 0 011-1V7a1 1 0 011-1h2a1 1 0 011 1v3a1 1 0 001 1h1a1 1 0 011-1V7a1 1 0 011-1h2a1 1 0 011 1v3a1 1 0 001 1h1a1 1 0 011-1V7a1 1 0 011-1h2a1 1 0 011 1v3a1 1 0 001 1h1a1 1 0 011-1V7a1 1 0 011-1h2a1 1 0 011 1v3a1 1 0 001 1h1a1 1 0 011-1V7a1 1 0 011-1h2a1 1 0 011 1v3a1 1 0 001 1h1a1 1 0 011-1V7a1 1 0 011-1h2a1 1 0 011 1v3a1 1 0 001 1h1a1 1 0 011-1V7a1 1 0 011-1h2a1 1 0 011 1v3a1 1 0 001 1h1a1 1 0 011-1V7z" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 展开的配置表单 */}
+                {editingProviderId === provider.id && (
+                  <div className="px-4 pb-4 border-t border-border-subtle">
+                    <div className="pt-4 space-y-3">
+                      <div>
+                        <label className="block text-xs text-text-secondary mb-1">Provider 名称</label>
+                        <input
+                          type="text"
+                          value={provider.name}
+                          onChange={(e) => handleUpdateProvider(provider.id, { name: e.target.value })}
+                          className="w-full px-3 py-2 rounded border border-border bg-background"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-text-secondary mb-1">API Key</label>
+                        <input
+                          type="password"
+                          value={provider.api_key}
+                          onChange={(e) => handleUpdateProvider(provider.id, { api_key: e.target.value })}
+                          className="w-full px-3 py-2 rounded border border-border bg-background"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-text-secondary mb-1">API Base URL</label>
+                        <input
+                          type="text"
+                          value={provider.api_base}
+                          onChange={(e) => handleUpdateProvider(provider.id, { api_base: e.target.value })}
+                          className="w-full px-3 py-2 rounded border border-border bg-background"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-text-secondary mb-1">模型名称</label>
+                        <input
+                          type="text"
+                          value={provider.model}
+                          onChange={(e) => handleUpdateProvider(provider.id, { model: e.target.value })}
+                          className="w-full px-3 py-2 rounded border border-border bg-background"
+                        />
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <label className="flex items-center gap-2 text-xs text-text-secondary">
+                          <input
+                            type="checkbox"
+                            checked={provider.enabled}
+                            onChange={(e) => handleUpdateProvider(provider.id, { enabled: e.target.checked })}
+                            className="w-4 h-4"
+                          />
+                          启用此 Provider
+                        </label>
+                        <button
+                          onClick={() => setEditingProviderId(null)}
+                          className="ml-auto px-3 py-1.5 text-xs border border-border rounded hover:bg-background-hover"
+                        >
+                          收起
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {/* 添加新 Provider 按钮 */}
+            <button
+              onClick={handleAddProvider}
+              className="w-full text-left p-4 rounded-lg border-2 border-dashed border-border-subtle text-text-tertiary hover:border-primary/50 hover:text-primary transition-all flex items-center justify-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              <span className="text-sm">添加 OpenAI Provider</span>
+            </button>
           </div>
         </div>
 
@@ -599,30 +793,6 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
             {t('baiduTranslate.applyHint')} <a href="https://fanyi-api.baidu.com/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{t('baiduTranslate.platform')}</a>
           </p>
         </div>
-
-        {/* OpenAI Providers 配置入口 */}
-        <div className="mb-6 p-4 bg-surface rounded-lg border border-border">
-          <h3 className="text-sm font-medium text-text-primary mb-3">OpenAI Providers</h3>
-          <p className="text-xs text-text-secondary mb-3">
-            配置多个 OpenAI 协议兼容的 API 服务（OpenAI、DeepSeek、Ollama 等）
-          </p>
-          <Button
-            onClick={() => setShowOpenAIProviders(true)}
-            variant="secondary"
-            className="w-full"
-          >
-            配置 Providers
-          </Button>
-        </div>
-
-        {/* OpenAI Providers 配置对话框 */}
-        {showOpenAIProviders && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
-            <div className="bg-background-elevated rounded-xl p-6 max-w-4xl w-full mx-4 max-h-[85vh] overflow-y-auto shadow-soft">
-              <OpenAIProvidersTab onClose={() => setShowOpenAIProviders(false)} />
-            </div>
-          </div>
-        )}
 
         <div className="flex justify-end gap-3">
           <Button
