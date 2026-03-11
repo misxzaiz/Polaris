@@ -18,7 +18,7 @@ const CreateWorkspaceModal = lazy(() => import('./components/Workspace/CreateWor
 const SessionHistoryPanel = lazy(() => import('./components/Chat/SessionHistoryPanel').then(m => ({ default: m.SessionHistoryPanel })));
 import { useConfigStore, useEventChatStore, useViewStore, useWorkspaceStore, useFloatingWindowStore, useTabStore } from './stores';
 import * as tauri from './services/tauri';
-import { bootstrapEngines } from './core/engine-bootstrap';
+import { bootstrapEngines, bootstrapOpenAIProviders } from './core/engine-bootstrap';
 import { bootstrapAgents } from './core/agent-bootstrap';
 import { bootstrapTools } from './core/tool-bootstrap';
 import { listen, emit } from '@tauri-apps/api/event';

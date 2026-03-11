@@ -47,7 +47,7 @@ export class PromptBuilder {
   /**
    * 构建完整的提示词（包含工作区规则）
    */
-  async buildFullPrompt(userMessage: string, intent?: Intent): Promise<string> {
+  async buildFullPrompt(_userMessage: string, _intent?: Intent): Promise<string> {
     const basePrompt = this.buildBasePrompt()
 
     try {

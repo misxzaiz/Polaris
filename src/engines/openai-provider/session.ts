@@ -121,7 +121,7 @@ export class OpenAIProviderSession extends BaseSession {
   private toolCallManager: ToolCallManager
 
   /** 当前任务 ID */
-  private currentTaskId: string | null = null
+  // private currentTaskId: string | null = null
 
   /** 当前意图 */
   private currentIntent: Intent | null = null
@@ -148,7 +148,7 @@ export class OpenAIProviderSession extends BaseSession {
 
     // 初始化核心组件
     this.promptBuilder = new PromptBuilder({
-      workspaceDir: config.workspaceDir,
+      workspaceDir: config.workspaceDir || '',
       verbose: config.verbose
     })
     this.intentDetector = new IntentDetector()
@@ -166,7 +166,7 @@ export class OpenAIProviderSession extends BaseSession {
    * @returns 事件流
    */
   protected async executeTask(task: AITask): Promise<AsyncIterable<AIEvent>> {
-    this.currentTaskId = task.id
+    // this.currentTaskId = task.id
 
     // 🔄 渐进式提示词：根据意图动态构建系统提示词
     const userMessage = task.input.prompt
@@ -452,7 +452,7 @@ export class OpenAIProviderSession extends BaseSession {
    * @returns 完整系统提示词
    */
   private async buildFullSystemPrompt(userMessage: string): Promise<string> {
-    return this.promptBuilder.buildFullPrompt(userMessage, this.currentIntent)
+    return this.promptBuilder.buildFullPrompt(userMessage, this.currentIntent || undefined)
   }
 
   /**
@@ -472,9 +472,9 @@ export class OpenAIProviderSession extends BaseSession {
    *
    * @param toolCallId - 工具调用 ID
    * @param result - 工具执行结果
-   * @param isError - 是否为错误结果
+   * @param _isError - 是否为错误结果（未使用）
    */
-  private addToolResultMessage(toolCallId: string, result: string, isError: boolean): void {
+  private addToolResultMessage(toolCallId: string, result: string, _isError: boolean): void {
     this.messages.push({
       role: 'tool',
       tool_call_id: toolCallId,
