@@ -583,6 +583,9 @@ interface EventChatState {
     lastUsed: number
   } | null
 
+  /** 流式更新计数器 - 用于强制触发React重新渲染 */
+  streamingUpdateCounter: number
+
   /** 添加消息 */
   addMessage: (message: ChatMessage) => void
   /** 清空消息 */
@@ -670,6 +673,7 @@ export const useEventChatStore = create<EventChatState>((set, get) => ({
   toolBlockMap: new Map(),
   tokenBuffer: null,
   deepseekSessionCache: null,
+  streamingUpdateCounter: 0, // 🔧 新增：流式更新计数器
 
   addMessage: (message) => {
     set((state) => {
@@ -897,6 +901,7 @@ export const useEventChatStore = create<EventChatState>((set, get) => ({
             currentMessage: state.currentMessage
               ? { ...state.currentMessage, blocks: updatedBlocks }
               : null,
+            streamingUpdateCounter: (state.streamingUpdateCounter || 0) + 1, // 🔧 强制触发更新
           }))
           // 注意：流式阶段不调用 updateCurrentAssistantMessage
           // 让组件从 currentMessage 读取流式内容，避免频繁更新 messages 数组
@@ -909,6 +914,7 @@ export const useEventChatStore = create<EventChatState>((set, get) => ({
             currentMessage: state.currentMessage
               ? { ...state.currentMessage, blocks: updatedBlocks }
               : null,
+            streamingUpdateCounter: (state.streamingUpdateCounter || 0) + 1, // 🔧 强制触发更新
           }))
           // 注意：流式阶段不调用 updateCurrentAssistantMessage
         }
