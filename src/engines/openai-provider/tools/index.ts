@@ -22,6 +22,7 @@ interface DeepSeekToolSchema {
         type: string
         description: string
         enum?: string[]
+        items?: any
       }>
       required?: string[]
       additionalProperties?: boolean
@@ -46,6 +47,50 @@ const READ_FILE_TOOL: DeepSeekToolSchema = {
         path: {
           type: 'string',
           description: '相对路径',
+        },
+      },
+      required: ['path'],
+      additionalProperties: false,
+    },
+  },
+}
+
+/**
+ * 批量读取文件工具
+ */
+const READ_MANY_FILES_TOOL: DeepSeekToolSchema = {
+  type: 'function',
+  function: {
+    name: 'read_many_files',
+    description: '批量读取文件内容',
+    parameters: {
+      type: 'object',
+      properties: {
+        paths: {
+          type: 'array',
+          description: '文件路径列表（相对路径）',
+        },
+      },
+      required: ['paths'],
+      additionalProperties: false,
+    },
+  },
+}
+
+/**
+ * 读取图片工具
+ */
+const IMAGE_READ_TOOL: DeepSeekToolSchema = {
+  type: 'function',
+  function: {
+    name: 'image_read',
+    description: '读取图片内容（当前仅支持通过文件路径读取）',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: '图片路径（相对路径）',
         },
       },
       required: ['path'],
@@ -111,6 +156,58 @@ const EDIT_FILE_TOOL: DeepSeekToolSchema = {
 }
 
 /**
+ * 替换工具（别名）
+ */
+const REPLACE_TOOL: DeepSeekToolSchema = {
+  type: 'function',
+  function: {
+    name: 'replace',
+    description: '编辑文件（与 edit_file 等价）',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: '相对路径',
+        },
+        oldStr: {
+          type: 'string',
+          description: '原文（精确匹配）',
+        },
+        newStr: {
+          type: 'string',
+          description: '新文本',
+        },
+      },
+      required: ['path', 'oldStr', 'newStr'],
+      additionalProperties: false,
+    },
+  },
+}
+
+/**
+ * 多文件编辑工具
+ */
+const MULTI_EDIT_TOOL: DeepSeekToolSchema = {
+  type: 'function',
+  function: {
+    name: 'multi_edit',
+    description: '批量编辑多个文件',
+    parameters: {
+      type: 'object',
+      properties: {
+        edits: {
+          type: 'array',
+          description: '编辑列表',
+        },
+      },
+      required: ['edits'],
+      additionalProperties: false,
+    },
+  },
+}
+
+/**
  * 列出文件工具
  */
 const LIST_FILES_TOOL: DeepSeekToolSchema = {
@@ -137,6 +234,54 @@ const LIST_FILES_TOOL: DeepSeekToolSchema = {
 }
 
 /**
+ * 列出目录工具（别名）
+ */
+const LIST_DIRECTORY_TOOL: DeepSeekToolSchema = {
+  type: 'function',
+  function: {
+    name: 'list_directory',
+    description: '列出目录内容（与 list_files 等价）',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: '目录路径（相对路径）',
+        },
+        recursive: {
+          type: 'boolean',
+          description: '是否递归',
+        },
+      },
+      required: [],
+      additionalProperties: false,
+    },
+  },
+}
+
+/**
+ * XML 转义工具
+ */
+const XML_ESCAPE_TOOL: DeepSeekToolSchema = {
+  type: 'function',
+  function: {
+    name: 'xml_escape',
+    description: '对文本进行 XML 转义',
+    parameters: {
+      type: 'object',
+      properties: {
+        text: {
+          type: 'string',
+          description: '输入文本',
+        },
+      },
+      required: ['text'],
+      additionalProperties: false,
+    },
+  },
+}
+
+/**
  * Bash 工具
  */
 const BASH_TOOL: DeepSeekToolSchema = {
@@ -144,6 +289,28 @@ const BASH_TOOL: DeepSeekToolSchema = {
   function: {
     name: 'bash',
     description: '执行 shell 命令（工作目录已设置为工作区，避免使用 cd）',
+    parameters: {
+      type: 'object',
+      properties: {
+        command: {
+          type: 'string',
+          description: '命令内容',
+        },
+      },
+      required: ['command'],
+      additionalProperties: false,
+    },
+  },
+}
+
+/**
+ * 运行 Shell 命令工具（别名）
+ */
+const RUN_SHELL_COMMAND_TOOL: DeepSeekToolSchema = {
+  type: 'function',
+  function: {
+    name: 'run_shell_command',
+    description: '执行 shell 命令（与 bash 等价）',
     parameters: {
       type: 'object',
       properties: {
@@ -230,6 +397,56 @@ const TODO_ADD_TOOL: DeepSeekToolSchema = {
   function: {
     name: 'todo_add',
     description: '添加待办',
+    parameters: {
+      type: 'object',
+      properties: {
+        content: {
+          type: 'string',
+          description: '待办内容',
+        },
+        priority: {
+          type: 'string',
+          enum: ['low', 'normal', 'high', 'urgent'],
+          description: '优先级',
+        },
+      },
+      required: ['content'],
+      additionalProperties: false,
+    },
+  },
+}
+
+/**
+ * Todo 读取工具（别名）
+ */
+const TODO_READ_TOOL: DeepSeekToolSchema = {
+  type: 'function',
+  function: {
+    name: 'todo_read',
+    description: '读取待办（与 todo_list 等价）',
+    parameters: {
+      type: 'object',
+      properties: {
+        status: {
+          type: 'string',
+          enum: ['pending', 'in_progress', 'completed', 'all'],
+          description: '状态筛选',
+        },
+      },
+      required: [],
+      additionalProperties: false,
+    },
+  },
+}
+
+/**
+ * Todo 写入工具（别名）
+ */
+const TODO_WRITE_TOOL: DeepSeekToolSchema = {
+  type: 'function',
+  function: {
+    name: 'todo_write',
+    description: '写入待办（与 todo_add 等价）',
     parameters: {
       type: 'object',
       properties: {
@@ -372,6 +589,240 @@ const SEARCH_CODE_TOOL: DeepSeekToolSchema = {
   },
 }
 
+/**
+ * 搜索文件内容工具（别名）
+ */
+const SEARCH_FILE_CONTENT_TOOL: DeepSeekToolSchema = {
+  type: 'function',
+  function: {
+    name: 'search_file_content',
+    description: '在文件内容中搜索（与 search_code 等价）',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: '搜索内容',
+        },
+        path: {
+          type: 'string',
+          description: '搜索目录',
+        },
+        file_pattern: {
+          type: 'string',
+          description: '文件模式过滤',
+        },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
+  },
+}
+
+/**
+ * Glob 匹配工具（别名）
+ */
+const GLOB_TOOL: DeepSeekToolSchema = {
+  type: 'function',
+  function: {
+    name: 'glob',
+    description: '按模式匹配文件（与 search_files 等价）',
+    parameters: {
+      type: 'object',
+      properties: {
+        pattern: {
+          type: 'string',
+          description: '搜索模式（支持 *）',
+        },
+        path: {
+          type: 'string',
+          description: '搜索目录',
+        },
+      },
+      required: ['pattern'],
+      additionalProperties: false,
+    },
+  },
+}
+
+/**
+ * Web 搜索工具
+ */
+const WEB_SEARCH_TOOL: DeepSeekToolSchema = {
+  type: 'function',
+  function: {
+    name: 'web_search',
+    description: '网络搜索（返回简要结果）',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: '搜索内容',
+        },
+        count: {
+          type: 'number',
+          description: '返回数量（1-10）',
+        },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
+  },
+}
+
+/**
+ * Web 抓取工具
+ */
+const WEB_FETCH_TOOL: DeepSeekToolSchema = {
+  type: 'function',
+  function: {
+    name: 'web_fetch',
+    description: '获取网页内容',
+    parameters: {
+      type: 'object',
+      properties: {
+        url: {
+          type: 'string',
+          description: '网页 URL',
+        },
+      },
+      required: ['url'],
+      additionalProperties: false,
+    },
+  },
+}
+
+/**
+ * 任务工具
+ */
+const TASK_TOOL: DeepSeekToolSchema = {
+  type: 'function',
+  function: {
+    name: 'task',
+    description: '执行子任务（当前实现为简单记录）',
+    parameters: {
+      type: 'object',
+      properties: {
+        input: {
+          type: 'string',
+          description: '任务输入',
+        },
+      },
+      required: ['input'],
+      additionalProperties: false,
+    },
+  },
+}
+
+/**
+ * Skill 工具
+ */
+const SKILL_TOOL: DeepSeekToolSchema = {
+  type: 'function',
+  function: {
+    name: 'Skill',
+    description: '执行技能（读取工作区 .codex/skills）',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: '技能名称',
+        },
+        input: {
+          type: 'string',
+          description: '技能输入',
+        },
+      },
+      required: ['name'],
+      additionalProperties: false,
+    },
+  },
+}
+
+/**
+ * 读取命令输出工具
+ */
+const READ_COMMAND_OUTPUT_TOOL: DeepSeekToolSchema = {
+  type: 'function',
+  function: {
+    name: 'ReadCommandOutput',
+    description: '读取命令输出',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: {
+          type: 'string',
+          description: '输出 ID',
+        },
+      },
+      required: ['id'],
+      additionalProperties: false,
+    },
+  },
+}
+
+/**
+ * 退出规划模式工具
+ */
+const EXIT_PLAN_MODE_TOOL: DeepSeekToolSchema = {
+  type: 'function',
+  function: {
+    name: 'exit_plan_mode',
+    description: '退出规划模式',
+    parameters: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+}
+
+/**
+ * 询问用户问题工具
+ */
+const ASK_USER_QUESTION_TOOL: DeepSeekToolSchema = {
+  type: 'function',
+  function: {
+    name: 'ask_user_question',
+    description: '询问用户问题',
+    parameters: {
+      type: 'object',
+      properties: {
+        question: {
+          type: 'string',
+          description: '问题内容',
+        },
+      },
+      required: ['question'],
+      additionalProperties: false,
+    },
+  },
+}
+
+/**
+ * 保存记忆工具
+ */
+const SAVE_MEMORY_TOOL: DeepSeekToolSchema = {
+  type: 'function',
+  function: {
+    name: 'save_memory',
+    description: '保存记忆',
+    parameters: {
+      type: 'object',
+      properties: {
+        content: {
+          type: 'string',
+          description: '记忆内容',
+        },
+      },
+      required: ['content'],
+      additionalProperties: false,
+    },
+  },
+}
+
 // ==================== 导出 ====================
 
 /**
@@ -380,12 +831,19 @@ const SEARCH_CODE_TOOL: DeepSeekToolSchema = {
 export const TOOL_SCHEMAS: DeepSeekToolSchema[] = [
   // ===== 文件操作工具 =====
   READ_FILE_TOOL,
+  READ_MANY_FILES_TOOL,
+  IMAGE_READ_TOOL,
   WRITE_FILE_TOOL,
   EDIT_FILE_TOOL,
+  REPLACE_TOOL,
+  MULTI_EDIT_TOOL,
   LIST_FILES_TOOL,
+  LIST_DIRECTORY_TOOL,
+  XML_ESCAPE_TOOL,
 
   // ===== Bash 工具 =====
   BASH_TOOL,
+  RUN_SHELL_COMMAND_TOOL,
 
   // ===== Git 工具 =====
   GIT_STATUS_TOOL,
@@ -397,10 +855,24 @@ export const TOOL_SCHEMAS: DeepSeekToolSchema[] = [
   TODO_LIST_TOOL,
   TODO_COMPLETE_TOOL,
   TODO_DELETE_TOOL,
+  TODO_READ_TOOL,
+  TODO_WRITE_TOOL,
 
   // ===== 搜索工具 =====
   SEARCH_FILES_TOOL,
   SEARCH_CODE_TOOL,
+  SEARCH_FILE_CONTENT_TOOL,
+  GLOB_TOOL,
+  WEB_SEARCH_TOOL,
+  WEB_FETCH_TOOL,
+
+  // ===== 其他工具（占位）=====
+  TASK_TOOL,
+  SKILL_TOOL,
+  READ_COMMAND_OUTPUT_TOOL,
+  EXIT_PLAN_MODE_TOOL,
+  ASK_USER_QUESTION_TOOL,
+  SAVE_MEMORY_TOOL,
 ]
 
 /**
@@ -424,10 +896,32 @@ export function generateToolSchemasForIntent(requiredTools: string[]): Array<any
     return []
   }
 
-  // 只返回需要的工具
-  return TOOL_SCHEMAS.filter(tool =>
-    requiredTools.includes(tool.function.name)
-  )
+  const alwaysAvailable = [
+    'read_many_files',
+    'image_read',
+    'replace',
+    'multi_edit',
+    'list_directory',
+    'xml_escape',
+    'run_shell_command',
+    'todo_read',
+    'todo_write',
+    'search_file_content',
+    'glob',
+    'web_search',
+    'web_fetch',
+    'ask_user_question',
+    'save_memory',
+    'task',
+    'Skill',
+    'ReadCommandOutput',
+    'exit_plan_mode',
+  ]
+
+  const toolSet = new Set([...requiredTools, ...alwaysAvailable])
+
+  // 只返回需要的工具 + 始终可用工具
+  return TOOL_SCHEMAS.filter(tool => toolSet.has(tool.function.name))
 }
 
 /**

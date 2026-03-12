@@ -6,6 +6,7 @@
 use crate::error::{AppError, Result};
 use crate::models::events::StreamEvent;
 use reqwest::Client;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -192,6 +193,40 @@ impl OpenAIProxyService {
             ToolDefinition {
                 tool_type: "function".to_string(),
                 function: FunctionDefinition {
+                    name: "read_many_files".to_string(),
+                    description: "批量读取文件内容".to_string(),
+                    parameters: serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "paths": {
+                                "type": "array",
+                                "description": "文件路径列表（绝对路径）"
+                            }
+                        },
+                        "required": ["paths"]
+                    }),
+                },
+            },
+            ToolDefinition {
+                tool_type: "function".to_string(),
+                function: FunctionDefinition {
+                    name: "image_read".to_string(),
+                    description: "读取图片文件（以 Base64 返回）".to_string(),
+                    parameters: serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "path": {
+                                "type": "string",
+                                "description": "图片的绝对路径"
+                            }
+                        },
+                        "required": ["path"]
+                    }),
+                },
+            },
+            ToolDefinition {
+                tool_type: "function".to_string(),
+                function: FunctionDefinition {
                     name: "write_file".to_string(),
                     description: "写入文件内容".to_string(),
                     parameters: serde_json::json!({
@@ -213,6 +248,55 @@ impl OpenAIProxyService {
             ToolDefinition {
                 tool_type: "function".to_string(),
                 function: FunctionDefinition {
+                    name: "replace".to_string(),
+                    description: "编辑文件（文本替换）".to_string(),
+                    parameters: serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "path": { "type": "string", "description": "文件的绝对路径" },
+                            "oldStr": { "type": "string", "description": "原文（精确匹配）" },
+                            "newStr": { "type": "string", "description": "新文本" }
+                        },
+                        "required": ["path", "oldStr", "newStr"]
+                    }),
+                },
+            },
+            ToolDefinition {
+                tool_type: "function".to_string(),
+                function: FunctionDefinition {
+                    name: "edit_file".to_string(),
+                    description: "精确编辑文件（文本替换）".to_string(),
+                    parameters: serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "path": { "type": "string", "description": "文件的绝对路径" },
+                            "oldStr": { "type": "string", "description": "原文（精确匹配）" },
+                            "newStr": { "type": "string", "description": "新文本" }
+                        },
+                        "required": ["path", "oldStr", "newStr"]
+                    }),
+                },
+            },
+            ToolDefinition {
+                tool_type: "function".to_string(),
+                function: FunctionDefinition {
+                    name: "multi_edit".to_string(),
+                    description: "批量编辑多个文件".to_string(),
+                    parameters: serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "edits": {
+                                "type": "array",
+                                "description": "编辑列表"
+                            }
+                        },
+                        "required": ["edits"]
+                    }),
+                },
+            },
+            ToolDefinition {
+                tool_type: "function".to_string(),
+                function: FunctionDefinition {
                     name: "list_directory".to_string(),
                     description: "列出目录内容".to_string(),
                     parameters: serde_json::json!({
@@ -222,6 +306,21 @@ impl OpenAIProxyService {
                                 "type": "string",
                                 "description": "目录的绝对路径"
                             }
+                        },
+                        "required": ["path"]
+                    }),
+                },
+            },
+            ToolDefinition {
+                tool_type: "function".to_string(),
+                function: FunctionDefinition {
+                    name: "list_files".to_string(),
+                    description: "列出目录文件（与 list_directory 等价）".to_string(),
+                    parameters: serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "path": { "type": "string", "description": "目录的绝对路径" },
+                            "recursive": { "type": "boolean", "description": "是否递归" }
                         },
                         "required": ["path"]
                     }),
@@ -248,6 +347,80 @@ impl OpenAIProxyService {
                     }),
                 },
             },
+            ToolDefinition {
+                tool_type: "function".to_string(),
+                function: FunctionDefinition {
+                    name: "search_files".to_string(),
+                    description: "按文件名搜索".to_string(),
+                    parameters: serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "pattern": { "type": "string", "description": "搜索模式（支持 *）" },
+                            "path": { "type": "string", "description": "搜索路径" }
+                        },
+                        "required": ["pattern"]
+                    }),
+                },
+            },
+            ToolDefinition {
+                tool_type: "function".to_string(),
+                function: FunctionDefinition {
+                    name: "search_code".to_string(),
+                    description: "在文件内容中搜索".to_string(),
+                    parameters: serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "query": { "type": "string", "description": "搜索内容" },
+                            "path": { "type": "string", "description": "搜索路径" },
+                            "file_pattern": { "type": "string", "description": "文件模式过滤" }
+                        },
+                        "required": ["query"]
+                    }),
+                },
+            },
+            ToolDefinition {
+                tool_type: "function".to_string(),
+                function: FunctionDefinition {
+                    name: "glob".to_string(),
+                    description: "按模式匹配文件（与 search_files 等价）".to_string(),
+                    parameters: serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "pattern": { "type": "string", "description": "搜索模式（支持 *）" },
+                            "path": { "type": "string", "description": "搜索路径" }
+                        },
+                        "required": ["pattern"]
+                    }),
+                },
+            },
+            ToolDefinition {
+                tool_type: "function".to_string(),
+                function: FunctionDefinition {
+                    name: "xml_escape".to_string(),
+                    description: "对文本进行 XML 转义".to_string(),
+                    parameters: serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "text": { "type": "string", "description": "输入文本" }
+                        },
+                        "required": ["text"]
+                    }),
+                },
+            },
+            ToolDefinition {
+                tool_type: "function".to_string(),
+                function: FunctionDefinition {
+                    name: "run_shell_command".to_string(),
+                    description: "执行 Shell 命令（与 execute_bash 等价）".to_string(),
+                    parameters: serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "command": { "type": "string", "description": "要执行的命令" }
+                        },
+                        "required": ["command"]
+                    }),
+                },
+            },
             // Shell 执行工具
             ToolDefinition {
                 tool_type: "function".to_string(),
@@ -263,6 +436,116 @@ impl OpenAIProxyService {
                             }
                         },
                         "required": ["command"]
+                    }),
+                },
+            },
+            ToolDefinition {
+                tool_type: "function".to_string(),
+                function: FunctionDefinition {
+                    name: "web_fetch".to_string(),
+                    description: "获取网页内容".to_string(),
+                    parameters: serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "url": { "type": "string", "description": "网页 URL" }
+                        },
+                        "required": ["url"]
+                    }),
+                },
+            },
+            ToolDefinition {
+                tool_type: "function".to_string(),
+                function: FunctionDefinition {
+                    name: "web_search".to_string(),
+                    description: "网络搜索（返回简要结果）".to_string(),
+                    parameters: serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "query": { "type": "string", "description": "搜索内容" },
+                            "count": { "type": "number", "description": "返回数量（1-10）" }
+                        },
+                        "required": ["query"]
+                    }),
+                },
+            },
+            ToolDefinition {
+                tool_type: "function".to_string(),
+                function: FunctionDefinition {
+                    name: "ask_user_question".to_string(),
+                    description: "询问用户问题".to_string(),
+                    parameters: serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "question": { "type": "string", "description": "问题内容" }
+                        },
+                        "required": ["question"]
+                    }),
+                },
+            },
+            ToolDefinition {
+                tool_type: "function".to_string(),
+                function: FunctionDefinition {
+                    name: "save_memory".to_string(),
+                    description: "保存记忆".to_string(),
+                    parameters: serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "content": { "type": "string", "description": "记忆内容" }
+                        },
+                        "required": ["content"]
+                    }),
+                },
+            },
+            ToolDefinition {
+                tool_type: "function".to_string(),
+                function: FunctionDefinition {
+                    name: "task".to_string(),
+                    description: "执行子任务（当前实现为简单记录）".to_string(),
+                    parameters: serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "input": { "type": "string", "description": "任务输入" }
+                        },
+                        "required": ["input"]
+                    }),
+                },
+            },
+            ToolDefinition {
+                tool_type: "function".to_string(),
+                function: FunctionDefinition {
+                    name: "Skill".to_string(),
+                    description: "执行技能（读取工作区 .codex/skills）".to_string(),
+                    parameters: serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "name": { "type": "string", "description": "技能名称" }
+                        },
+                        "required": ["name"]
+                    }),
+                },
+            },
+            ToolDefinition {
+                tool_type: "function".to_string(),
+                function: FunctionDefinition {
+                    name: "ReadCommandOutput".to_string(),
+                    description: "读取命令输出".to_string(),
+                    parameters: serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "id": { "type": "string", "description": "输出 ID" }
+                        },
+                        "required": ["id"]
+                    }),
+                },
+            },
+            ToolDefinition {
+                tool_type: "function".to_string(),
+                function: FunctionDefinition {
+                    name: "exit_plan_mode".to_string(),
+                    description: "退出规划模式".to_string(),
+                    parameters: serde_json::json!({
+                        "type": "object",
+                        "properties": {}
                     }),
                 },
             },
@@ -636,6 +919,45 @@ impl OpenAIProxyService {
                     "Error: missing path parameter".to_string()
                 }
             }
+            "read_many_files" => {
+                if let Some(paths) = args.get("paths").and_then(|p| p.as_array()) {
+                    let mut result = serde_json::Map::new();
+                    for p in paths {
+                        if let Some(path) = p.as_str() {
+                            match tokio::fs::read_to_string(path).await {
+                                Ok(content) => {
+                                    result.insert(path.to_string(), serde_json::json!({
+                                        "success": true,
+                                        "data": content
+                                    }));
+                                }
+                                Err(e) => {
+                                    result.insert(path.to_string(), serde_json::json!({
+                                        "success": false,
+                                        "error": e.to_string()
+                                    }));
+                                }
+                            }
+                        }
+                    }
+                    serde_json::Value::Object(result).to_string()
+                } else {
+                    "Error: missing paths parameter".to_string()
+                }
+            }
+            "image_read" => {
+                if let Some(path) = args.get("path").and_then(|p| p.as_str()) {
+                    match tokio::fs::read(path).await {
+                        Ok(bytes) => {
+                            let b64 = base64::encode(bytes);
+                            serde_json::json!({ "base64": b64 }).to_string()
+                        }
+                        Err(e) => format!("Error reading image: {}", e),
+                    }
+                } else {
+                    "Error: missing path parameter".to_string()
+                }
+            }
             "write_file" => {
                 let path = args.get("path").and_then(|p| p.as_str());
                 let content = args.get("content").and_then(|c| c.as_str());
@@ -653,6 +975,61 @@ impl OpenAIProxyService {
                         }
                     }
                     _ => "Error: missing path or content parameter".to_string(),
+                }
+            }
+            "replace" | "edit_file" => {
+                let path = args.get("path").and_then(|p| p.as_str());
+                let old_str = args.get("oldStr").and_then(|s| s.as_str());
+                let new_str = args.get("newStr").and_then(|s| s.as_str());
+                match (path, old_str, new_str) {
+                    (Some(path), Some(old_str), Some(new_str)) => {
+                        match tokio::fs::read_to_string(path).await {
+                            Ok(content) => {
+                                if !content.contains(old_str) {
+                                    return "Error: oldStr not found".to_string();
+                                }
+                                let new_content = content.replace(old_str, new_str);
+                                match tokio::fs::write(path, new_content).await {
+                                    Ok(_) => "File edited successfully".to_string(),
+                                    Err(e) => format!("Error editing file: {}", e),
+                                }
+                            }
+                            Err(e) => format!("Error reading file: {}", e),
+                        }
+                    }
+                    _ => "Error: missing path or oldStr/newStr parameter".to_string(),
+                }
+            }
+            "multi_edit" => {
+                if let Some(edits) = args.get("edits").and_then(|e| e.as_array()) {
+                    let mut results = Vec::new();
+                    for edit in edits {
+                        let path = edit.get("path").and_then(|p| p.as_str());
+                        let old_str = edit.get("oldStr").and_then(|s| s.as_str());
+                        let new_str = edit.get("newStr").and_then(|s| s.as_str());
+                        if let (Some(path), Some(old_str), Some(new_str)) = (path, old_str, new_str) {
+                            let res = match tokio::fs::read_to_string(path).await {
+                                Ok(content) => {
+                                    if !content.contains(old_str) {
+                                        serde_json::json!({ "path": path, "success": false, "error": "oldStr not found" })
+                                    } else {
+                                        let new_content = content.replace(old_str, new_str);
+                                        match tokio::fs::write(path, new_content).await {
+                                            Ok(_) => serde_json::json!({ "path": path, "success": true }),
+                                            Err(e) => serde_json::json!({ "path": path, "success": false, "error": e.to_string() })
+                                        }
+                                    }
+                                }
+                                Err(e) => serde_json::json!({ "path": path, "success": false, "error": e.to_string() })
+                            };
+                            results.push(res);
+                        } else {
+                            results.push(serde_json::json!({ "path": path.unwrap_or(""), "success": false, "error": "missing parameters" }));
+                        }
+                    }
+                    serde_json::Value::Array(results).to_string()
+                } else {
+                    "Error: missing edits parameter".to_string()
                 }
             }
             "list_directory" => {
@@ -673,9 +1050,238 @@ impl OpenAIProxyService {
                     "Error: missing path parameter".to_string()
                 }
             }
+            "list_files" => {
+                if let Some(path) = args.get("path").and_then(|p| p.as_str()) {
+                    let recursive = args.get("recursive").and_then(|r| r.as_bool()).unwrap_or(false);
+                    let mut result = Vec::new();
+                    if recursive {
+                        let mut dirs = vec![path.to_string()];
+                        while let Some(dir) = dirs.pop() {
+                            let mut entries = match tokio::fs::read_dir(&dir).await {
+                                Ok(v) => v,
+                                Err(_) => continue,
+                            };
+                            while let Ok(Some(entry)) = entries.next_entry().await {
+                                let p = entry.path();
+                                if let Ok(metadata) = entry.metadata().await {
+                                    if metadata.is_dir() {
+                                        if let Some(s) = p.to_str() {
+                                            dirs.push(s.to_string());
+                                        }
+                                    } else if let Some(s) = p.to_str() {
+                                        result.push(s.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        match tokio::fs::read_dir(path).await {
+                            Ok(mut entries) => {
+                                while let Ok(Some(entry)) = entries.next_entry().await {
+                                    if let Some(name) = entry.file_name().to_str() {
+                                        result.push(name.to_string());
+                                    }
+                                }
+                            }
+                            Err(e) => return format!("Error listing directory: {}", e),
+                        }
+                    }
+                    result.join("\n")
+                } else {
+                    "Error: missing path parameter".to_string()
+                }
+            }
             "search_file_content" => {
-                // TODO: 实现搜索功能
-                "Search not implemented yet".to_string()
+                let pattern = args.get("pattern").and_then(|p| p.as_str()).unwrap_or("");
+                let path = args.get("path").and_then(|p| p.as_str()).unwrap_or(".");
+                let command = format!("rg \"{}\" \"{}\"", pattern, path);
+                let output = if cfg!(windows) {
+                    StdCommand::new("cmd").args(["/C", &command]).output()
+                } else {
+                    StdCommand::new("sh").args(["-c", &command]).output()
+                };
+                match output {
+                    Ok(output) => {
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        if stderr.is_empty() { stdout.to_string() } else { format!("{}\n{}", stdout, stderr) }
+                    }
+                    Err(e) => format!("Error searching file content: {}", e),
+                }
+            }
+            "search_files" => {
+                let pattern = args.get("pattern").and_then(|p| p.as_str()).unwrap_or("");
+                let path = args.get("path").and_then(|p| p.as_str()).unwrap_or(".");
+                let command = if cfg!(windows) {
+                    format!("dir /b /s \"{}\\{}\"", path, pattern)
+                } else {
+                    format!("find \"{}\" -name \"{}\"", path, pattern)
+                };
+                let output = if cfg!(windows) {
+                    StdCommand::new("cmd").args(["/C", &command]).output()
+                } else {
+                    StdCommand::new("sh").args(["-c", &command]).output()
+                };
+                match output {
+                    Ok(output) => {
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        if stderr.is_empty() { stdout.to_string() } else { format!("{}\n{}", stdout, stderr) }
+                    }
+                    Err(e) => format!("Error searching files: {}", e),
+                }
+            }
+            "search_code" => {
+                let query = args.get("query").and_then(|p| p.as_str()).unwrap_or("");
+                let path = args.get("path").and_then(|p| p.as_str()).unwrap_or(".");
+                let command = format!("rg \"{}\" \"{}\"", query, path);
+                let output = if cfg!(windows) {
+                    StdCommand::new("cmd").args(["/C", &command]).output()
+                } else {
+                    StdCommand::new("sh").args(["-c", &command]).output()
+                };
+                match output {
+                    Ok(output) => {
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        if stderr.is_empty() { stdout.to_string() } else { format!("{}\n{}", stdout, stderr) }
+                    }
+                    Err(e) => format!("Error searching code: {}", e),
+                }
+            }
+            "glob" => {
+                let pattern = args.get("pattern").and_then(|p| p.as_str()).unwrap_or("");
+                let path = args.get("path").and_then(|p| p.as_str()).unwrap_or(".");
+                let command = if cfg!(windows) {
+                    format!("dir /b /s \"{}\\{}\"", path, pattern)
+                } else {
+                    format!("find \"{}\" -name \"{}\"", path, pattern)
+                };
+                let output = if cfg!(windows) {
+                    StdCommand::new("cmd").args(["/C", &command]).output()
+                } else {
+                    StdCommand::new("sh").args(["-c", &command]).output()
+                };
+                match output {
+                    Ok(output) => {
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        if stderr.is_empty() { stdout.to_string() } else { format!("{}\n{}", stdout, stderr) }
+                    }
+                    Err(e) => format!("Error glob: {}", e),
+                }
+            }
+            "xml_escape" => {
+                if let Some(text) = args.get("text").and_then(|t| t.as_str()) {
+                    let escaped = text
+                        .replace("&", "&amp;")
+                        .replace("<", "&lt;")
+                        .replace(">", "&gt;")
+                        .replace("\"", "&quot;")
+                        .replace("'", "&apos;");
+                    escaped
+                } else {
+                    "Error: missing text parameter".to_string()
+                }
+            }
+            "run_shell_command" => {
+                if let Some(command) = args.get("command").and_then(|c| c.as_str()) {
+                    let output = if cfg!(windows) {
+                        StdCommand::new("cmd").args(["/C", command]).output()
+                    } else {
+                        StdCommand::new("sh").args(["-c", command]).output()
+                    };
+                    match output {
+                        Ok(output) => {
+                            let stdout = String::from_utf8_lossy(&output.stdout);
+                            let stderr = String::from_utf8_lossy(&output.stderr);
+                            if stderr.is_empty() { stdout.to_string() } else { format!("{}\n{}", stdout, stderr) }
+                        }
+                        Err(e) => format!("Error executing command: {}", e),
+                    }
+                } else {
+                    "Error: missing command parameter".to_string()
+                }
+            }
+            "web_fetch" => {
+                if let Some(url) = args.get("url").and_then(|u| u.as_str()) {
+                    match self.client.get(url).send().await {
+                        Ok(resp) => {
+                            let status = resp.status().as_u16();
+                            match resp.text().await {
+                                Ok(text) => serde_json::json!({ "url": url, "status": status, "text": text }).to_string(),
+                                Err(e) => format!("Error reading response: {}", e),
+                            }
+                        }
+                        Err(e) => format!("Error fetching url: {}", e),
+                    }
+                } else {
+                    "Error: missing url parameter".to_string()
+                }
+            }
+            "web_search" => {
+                let query = args.get("query").and_then(|q| q.as_str()).unwrap_or("");
+                let count = args.get("count").and_then(|c| c.as_u64()).unwrap_or(5);
+                let url = format!("https://duckduckgo.com/html/?q={}", urlencoding::encode(query));
+                match self.client.get(&url).send().await {
+                    Ok(resp) => {
+                        match resp.text().await {
+                            Ok(text) => {
+                                // 简单提取结果链接
+                                let mut results = Vec::new();
+                                let re = regex::Regex::new(r#"<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)</a>"#).unwrap();
+                                for cap in re.captures_iter(&text) {
+                                    if results.len() >= count as usize { break; }
+                                    results.push(serde_json::json!({
+                                        "title": cap.get(2).map(|m| m.as_str()).unwrap_or("").to_string(),
+                                        "url": cap.get(1).map(|m| m.as_str()).unwrap_or("").to_string()
+                                    }));
+                                }
+                                serde_json::json!({ "query": query, "results": results }).to_string()
+                            }
+                            Err(e) => format!("Error reading search results: {}", e),
+                        }
+                    }
+                    Err(e) => format!("Error searching: {}", e),
+                }
+            }
+            "ask_user_question" => {
+                if let Some(question) = args.get("question").and_then(|q| q.as_str()) {
+                    serde_json::json!({ "question": question, "answer": "" }).to_string()
+                } else {
+                    "Error: missing question parameter".to_string()
+                }
+            }
+            "save_memory" => {
+                if let Some(content) = args.get("content").and_then(|c| c.as_str()) {
+                    serde_json::json!({ "saved": true, "content": content }).to_string()
+                } else {
+                    "Error: missing content parameter".to_string()
+                }
+            }
+            "task" => {
+                if let Some(input) = args.get("input").and_then(|i| i.as_str()) {
+                    serde_json::json!({ "message": input }).to_string()
+                } else {
+                    "Error: missing input parameter".to_string()
+                }
+            }
+            "Skill" => {
+                if let Some(name) = args.get("name").and_then(|n| n.as_str()) {
+                    serde_json::json!({ "name": name }).to_string()
+                } else {
+                    "Error: missing name parameter".to_string()
+                }
+            }
+            "ReadCommandOutput" => {
+                if let Some(id) = args.get("id").and_then(|i| i.as_str()) {
+                    serde_json::json!({ "id": id }).to_string()
+                } else {
+                    "Error: missing id parameter".to_string()
+                }
+            }
+            "exit_plan_mode" => {
+                serde_json::json!({ "exited": true }).to_string()
             }
             "execute_bash" => {
                 if let Some(command) = args.get("command").and_then(|c| c.as_str()) {

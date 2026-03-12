@@ -40,6 +40,10 @@ export class ToolCallManager {
   /** .gitignore 规则缓存 */
   private gitignorePatterns: string[] = []
 
+  /** 命令输出缓存（用于 ReadCommandOutput） */
+  private commandOutputCache = new Map<string, { stdout: string; stderr: string }>()
+  private commandOutputCounter = 0
+
   /**
    * 构造函数
    *
@@ -190,6 +194,12 @@ export class ToolCallManager {
         case 'read_file':
           return await this.readFile(this.resolvePath(args.path))
 
+        case 'read_many_files':
+          return await this.readManyFiles(args.paths)
+
+        case 'image_read':
+          return await this.readImage(args.path)
+
         case 'write_file':
           return await this.writeFile(this.resolvePath(args.path), args.content)
 
@@ -203,11 +213,32 @@ export class ToolCallManager {
           }
           return await this.editFile(this.resolvePath(args.path), args.oldStr, args.newStr)
 
+        case 'replace':
+          if (!args.oldStr || !args.newStr) {
+            return {
+              success: false,
+              error: 'replace 缺少必需参数 oldStr 和 newStr',
+            }
+          }
+          return await this.editFile(this.resolvePath(args.path), args.oldStr, args.newStr)
+
+        case 'multi_edit':
+          return await this.multiEdit(args.edits)
+
         case 'list_files':
           return await this.listFiles(args.path ? this.resolvePath(args.path) : undefined, args.recursive)
 
+        case 'list_directory':
+          return await this.listFiles(args.path ? this.resolvePath(args.path) : undefined, args.recursive)
+
+        case 'xml_escape':
+          return await this.xmlEscape(args.text)
+
         // ===== Bash =====
         case 'bash':
+          return await this.executeBash(args.command)
+
+        case 'run_shell_command':
           return await this.executeBash(args.command)
 
         // ===== Git =====
@@ -235,12 +266,51 @@ export class ToolCallManager {
         case 'todo_delete':
           return await this.todoDelete(args.id)
 
+        case 'todo_read':
+          return await this.todoList(args.status)
+
+        case 'todo_write':
+          return await this.todoAdd(args.content, args.priority)
+
         // ===== 搜索 =====
         case 'search_files':
           return await this.searchFiles(args.pattern, args.path ? this.resolvePath(args.path) : undefined)
 
         case 'search_code':
           return await this.searchCode(args.query, args.path ? this.resolvePath(args.path) : undefined, args.file_pattern)
+
+        case 'search_file_content':
+          return await this.searchCode(args.query, args.path ? this.resolvePath(args.path) : undefined, args.file_pattern)
+
+        case 'glob':
+          return await this.searchFiles(args.pattern, args.path ? this.resolvePath(args.path) : undefined)
+
+        case 'web_search':
+          return await this.webSearch(args.query, args.count)
+
+        case 'web_fetch':
+          return await this.webFetch(args.url)
+
+        case 'ask_user_question':
+          return await this.askUserQuestion(args.question)
+
+        case 'ReadCommandOutput':
+          return await this.readCommandOutput(args.id)
+
+        case 'save_memory':
+          return await this.saveMemory(args.content)
+
+        case 'task':
+          return await this.runTask(args.input)
+
+        case 'Skill':
+          return await this.runSkill(args.name)
+
+        case 'exit_plan_mode':
+          return {
+            success: true,
+            data: { exited: true },
+          }
 
         default:
           return {
@@ -276,6 +346,50 @@ export class ToolCallManager {
         error: this.formatError('读取文件失败', error),
       }
     }
+  }
+
+  /**
+   * 批量读取文件
+   */
+  private async readManyFiles(paths: string[] | undefined): Promise<ToolResult> {
+    if (!paths || !Array.isArray(paths) || paths.length === 0) {
+      return {
+        success: false,
+        error: 'read_many_files 缺少必需参数 paths',
+      }
+    }
+
+    const results: Record<string, { success: boolean; data?: string; error?: string }> = {}
+
+    for (const rawPath of paths) {
+      const targetPath = this.resolvePath(rawPath)
+      const res = await this.readFile(targetPath)
+      if (res.success) {
+        results[rawPath] = { success: true, data: res.data as string }
+      } else {
+        results[rawPath] = { success: false, error: res.error }
+      }
+    }
+
+    return {
+      success: true,
+      data: results,
+    }
+  }
+
+  /**
+   * 读取图片（当前仅支持文本方式读取）
+   */
+  private async readImage(path: string | undefined): Promise<ToolResult> {
+    if (!path) {
+      return {
+        success: false,
+        error: 'image_read 缺少必需参数 path',
+      }
+    }
+
+    // 当前后端只支持文本读取，二进制图片可能失败
+    return await this.readFile(this.resolvePath(path))
   }
 
   /**
@@ -317,6 +431,34 @@ export class ToolCallManager {
   }
 
   /**
+   * 批量编辑多个文件
+   */
+  private async multiEdit(edits: Array<{ path: string; oldStr: string; newStr: string }> | undefined): Promise<ToolResult> {
+    if (!edits || !Array.isArray(edits) || edits.length === 0) {
+      return {
+        success: false,
+        error: 'multi_edit 缺少必需参数 edits',
+      }
+    }
+
+    const results: Array<{ path: string; success: boolean; error?: string }> = []
+
+    for (const edit of edits) {
+      if (!edit?.path || !edit?.oldStr || !edit?.newStr) {
+        results.push({ path: edit?.path || '', success: false, error: '缺少必需参数' })
+        continue
+      }
+      const res = await this.editFile(this.resolvePath(edit.path), edit.oldStr, edit.newStr)
+      results.push({ path: edit.path, success: res.success, error: res.error })
+    }
+
+    return {
+      success: results.every(r => r.success),
+      data: results,
+    }
+  }
+
+  /**
    * 列出文件
    */
   private async listFiles(path?: string, recursive?: boolean): Promise<ToolResult> {
@@ -345,6 +487,236 @@ export class ToolCallManager {
       return {
         success: false,
         error: this.formatError('列出文件失败', error),
+      }
+    }
+  }
+
+  /**
+   * XML 转义
+   */
+  private async xmlEscape(text: string | undefined): Promise<ToolResult> {
+    if (text === undefined) {
+      return {
+        success: false,
+        error: 'xml_escape 缺少必需参数 text',
+      }
+    }
+
+    const escaped = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;')
+
+    return {
+      success: true,
+      data: escaped,
+    }
+  }
+
+  // ==================== 其他工具实现 ====================
+
+  private storeCommandOutput(stdout: string, stderr: string): string {
+    const id = `cmd-${Date.now()}-${++this.commandOutputCounter}`
+    this.commandOutputCache.set(id, { stdout, stderr })
+    return id
+  }
+
+  private async readCommandOutput(id: string | undefined): Promise<ToolResult> {
+    if (!id) {
+      return {
+        success: false,
+        error: 'ReadCommandOutput 缺少必需参数 id',
+      }
+    }
+
+    const output = this.commandOutputCache.get(id)
+    if (!output) {
+      return {
+        success: false,
+        error: `ReadCommandOutput 未找到输出: ${id}`,
+      }
+    }
+
+    return {
+      success: true,
+      data: output,
+    }
+  }
+
+  private async askUserQuestion(question: string | undefined): Promise<ToolResult> {
+    if (!question) {
+      return {
+        success: false,
+        error: 'ask_user_question 缺少必需参数 question',
+      }
+    }
+
+    if (typeof window === 'undefined' || !('prompt' in window)) {
+      return {
+        success: false,
+        error: '当前环境不支持用户交互',
+      }
+    }
+
+    const answer = window.prompt(question) ?? ''
+    return {
+      success: true,
+      data: { answer },
+    }
+  }
+
+  private async webFetch(url: string | undefined): Promise<ToolResult> {
+    if (!url) {
+      return {
+        success: false,
+        error: 'web_fetch 缺少必需参数 url',
+      }
+    }
+
+    try {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 15000)
+      const response = await fetch(url, { signal: controller.signal })
+      clearTimeout(timeout)
+
+      const text = await response.text()
+      const headers: Record<string, string> = {}
+      response.headers.forEach((value, key) => {
+        headers[key] = value
+      })
+
+      return {
+        success: true,
+        data: {
+          url,
+          status: response.status,
+          headers,
+          text: text.slice(0, 20000),
+        },
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: this.formatError('web_fetch 失败', error),
+      }
+    }
+  }
+
+  private async webSearch(query: string | undefined, count?: number): Promise<ToolResult> {
+    if (!query) {
+      return {
+        success: false,
+        error: 'web_search 缺少必需参数 query',
+      }
+    }
+
+    const maxCount = Math.max(1, Math.min(Number(count) || 5, 10))
+    const url = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`
+    const fetchResult = await this.webFetch(url)
+    if (!fetchResult.success) return fetchResult
+
+    const html = (fetchResult.data as any)?.text || ''
+    const results: Array<{ title: string; url: string; snippet?: string }> = []
+
+    const regex = /<a[^>]+class=\"result__a\"[^>]+href=\"([^\"]+)\"[^>]*>(.*?)<\/a>[\s\S]*?<a[^>]+class=\"result__snippet\"[^>]*>(.*?)<\/a>/gi
+    let match: RegExpExecArray | null
+    while ((match = regex.exec(html)) && results.length < maxCount) {
+      const rawUrl = match[1]
+      const title = match[2].replace(/<[^>]+>/g, '').trim()
+      const snippet = match[3].replace(/<[^>]+>/g, '').trim()
+      results.push({ title, url: rawUrl, snippet })
+    }
+
+    return {
+      success: true,
+      data: {
+        query,
+        results,
+      },
+    }
+  }
+
+  private async saveMemory(content: string | undefined): Promise<ToolResult> {
+    if (!content) {
+      return {
+        success: false,
+        error: 'save_memory 缺少必需参数 content',
+      }
+    }
+
+    try {
+      const entry = {
+        id: `memory:${Date.now()}`,
+        source: 'history',
+        type: 'selection',
+        priority: 3,
+        content: {
+          type: 'selection',
+          path: '',
+          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } },
+          content,
+        },
+        created_at: Date.now(),
+        estimated_tokens: Math.max(1, Math.ceil(content.length / 4)),
+      }
+
+      const { upsertContext } = await import('../../services/tauri')
+      await upsertContext(entry)
+
+      return {
+        success: true,
+        data: { id: entry.id },
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: this.formatError('save_memory 失败', error),
+      }
+    }
+  }
+
+  private async runTask(input: string | undefined): Promise<ToolResult> {
+    if (!input) {
+      return {
+        success: false,
+        error: 'task 缺少必需参数 input',
+      }
+    }
+
+    return {
+      success: true,
+      data: { message: input },
+    }
+  }
+
+  private async runSkill(name: string | undefined): Promise<ToolResult> {
+    if (!name) {
+      return {
+        success: false,
+        error: 'Skill 缺少必需参数 name',
+      }
+    }
+
+    try {
+      if (!this.config.workspaceDir) {
+        return {
+          success: false,
+          error: '未配置工作区目录，无法加载技能',
+        }
+      }
+
+      const skillPath = `${this.config.workspaceDir}/.codex/skills/${name}/SKILL.md`
+      const content = await invoke<string>('read_file', { path: skillPath })
+      return {
+        success: true,
+        data: { name, content },
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: this.formatError('Skill 加载失败', error),
       }
     }
   }
@@ -379,11 +751,14 @@ export class ToolCallManager {
         }
       }
 
+      const outputId = this.storeCommandOutput(result.stdout, result.stderr)
+
       return {
         success: true,
         data: {
           stdout: result.stdout,
           stderr: result.stderr,
+          outputId,
         },
       }
     } catch (error) {

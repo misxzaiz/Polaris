@@ -34,6 +34,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 tracing-appender = "0.2"
 regex = "1"
+base64 = "0.22"
+urlencoding = "2"
 git2 = "0.18"
 similar = "2.4"
 bitflags = "2.4"
