@@ -42,7 +42,7 @@ export interface WorkspaceState {
 /** 工作区操作 */
 export interface WorkspaceActions {
   // 基础操作
-  createWorkspace: (name: string, path: string) => Promise<void>;
+  createWorkspace: (name: string, path: string, switchAfterCreate?: boolean) => Promise<void>;
   switchWorkspace: (id: string) => Promise<void>;
   deleteWorkspace: (id: string) => Promise<void>;
   updateWorkspace: (id: string, updates: Partial<Workspace>) => Promise<void>;

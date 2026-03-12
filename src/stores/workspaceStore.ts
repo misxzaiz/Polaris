@@ -18,8 +18,8 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       isLoading: false,
       error: null,
 
-      // 创建工作区
-      createWorkspace: async (name: string, path: string) => {
+      // 创建工作区 - 添加 switchAfterCreate 参数，允许选择是否切换到新工作区
+      createWorkspace: async (name: string, path: string, switchAfterCreate: boolean = true) => {
         set({ isLoading: true, error: null });
         
         try {
@@ -47,12 +47,18 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
           // 更新状态
           set((state) => ({
             workspaces: [...state.workspaces, workspace],
-            currentWorkspaceId: workspace.id,
+            currentWorkspaceId: switchAfterCreate ? workspace.id : state.currentWorkspaceId,
             isLoading: false,
           }));
 
-          // 切换到新工作区
-          await get().switchWorkspace(workspace.id);
+          // 根据参数决定是否切换工作区
+          if (switchAfterCreate) {
+            // 切换到新工作区
+            await get().switchWorkspace(workspace.id);
+          } else {
+            // 添加到关联工作区但不切换
+            get().addContextWorkspace(workspace.id);
+          }
         } catch (error) {
           set({
             error: error instanceof Error ? error.message : '创建工作区失败',

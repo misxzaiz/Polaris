@@ -14,6 +14,7 @@ export function CreateWorkspaceModal({ onClose }: CreateWorkspaceModalProps) {
   const { createWorkspace } = useWorkspaceStore();
   const [name, setName] = useState('');
   const [path, setPath] = useState('');
+  const [switchAfterCreate, setSwitchAfterCreate] = useState(true); // 默认切换到新工作区
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -28,7 +29,7 @@ export function CreateWorkspaceModal({ onClose }: CreateWorkspaceModalProps) {
     setError('');
     
     try {
-      await createWorkspace(name.trim(), path.trim());
+      await createWorkspace(name.trim(), path.trim(), switchAfterCreate);
       onClose();
     } catch (error) {
       setError(error instanceof Error ? error.message : '创建工作区失败');
@@ -112,6 +113,27 @@ export function CreateWorkspaceModal({ onClose }: CreateWorkspaceModalProps) {
                 浏览
               </Button>
             </div>
+          </div>
+
+          {/* 选择是否切换到新工作区 */}
+          <div className="flex items-start gap-2 pt-2 border-t border-border-subtle pt-4">
+            <input
+              type="checkbox"
+              id="switchAfterCreate"
+              checked={switchAfterCreate}
+              onChange={(e) => setSwitchAfterCreate(e.target.checked)}
+              className="mt-1 w-4 h-4 rounded border-border text-primary focus:ring-primary"
+              disabled={isLoading}
+            />
+            <label htmlFor="switchAfterCreate" className="flex-1 text-sm text-text-secondary">
+              <div className="font-medium">切换到新工作区</div>
+              <div className="text-xs text-text-tertiary mt-1">
+                {switchAfterCreate
+                  ? '创建后立即切换到新工作区'
+                  : '创建后添加到关联工作区，不切换当前工作区'
+                }
+              </div>
+            </label>
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
