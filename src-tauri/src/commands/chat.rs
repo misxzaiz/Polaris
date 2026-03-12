@@ -4,7 +4,8 @@
  * 提供统一的 AI 聊天接口，使用 EngineRegistry 管理多种 AI 引擎。
  */
 
-use crate::ai::{EngineId, SessionOptions};
+use crate::ai::{EngineId, Pagination, PagedResult, SessionOptions};
+use crate::ai::{SessionMeta, HistoryMessage, ClaudeHistoryProvider, IFlowHistoryProvider, SessionHistoryProvider};
 use crate::error::{AppError, Result};
 use crate::models::events::StreamEvent;
 use tauri::{Emitter, State, Window};
@@ -18,12 +19,10 @@ use std::os::windows::process::CommandExt;
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 // ============================================================================
-// Tauri Commands
+// Tauri Commands - 聊天
 // ============================================================================
 
 /// 启动聊天会话
-///
-/// 统一接口，使用 EngineRegistry 调用对应的 AI 引擎
 #[tauri::command]
 pub async fn start_chat(
     message: String,
@@ -36,7 +35,6 @@ pub async fn start_chat(
 ) -> Result<String> {
     tracing::info!("[start_chat] 收到消息，长度: {} 字符", message.len());
 
-    // 解析引擎 ID
     let engine = engine_id
         .as_ref()
         .and_then(|id| EngineId::from_str(id))
@@ -44,21 +42,13 @@ pub async fn start_chat(
 
     tracing::info!("[start_chat] 使用引擎: {:?}", engine);
 
-    // 构建事件回调
     let window_clone = window.clone();
     let ctx_id = context_id.clone();
     let event_callback = move |event: StreamEvent| {
-        // 包装事件，添加 contextId
         let event_json = if let Some(ref cid) = ctx_id {
-            serde_json::json!({
-                "contextId": cid,
-                "payload": event
-            })
+            serde_json::json!({ "contextId": cid, "payload": event })
         } else {
-            serde_json::json!({
-                "contextId": "main",
-                "payload": event
-            })
+            serde_json::json!({ "contextId": "main", "payload": event })
         };
 
         tracing::debug!("[start_chat] 发送事件: {}", event_json.to_string().chars().take(200).collect::<String>());
@@ -69,7 +59,6 @@ pub async fn start_chat(
         }
     };
 
-    // 构建 SessionOptions
     let mut options = SessionOptions::new(event_callback);
 
     if let Some(ref dir) = work_dir {
@@ -80,15 +69,11 @@ pub async fn start_chat(
         options = options.with_system_prompt(prompt.clone());
     }
 
-    // 获取引擎注册表并启动会话
     let mut registry = state.engine_registry.lock().await;
-
     registry.start_session(Some(engine), &message, options)
 }
 
 /// 继续聊天会话
-///
-/// 继续已有的 AI 会话
 #[tauri::command]
 pub async fn continue_chat(
     session_id: String,
@@ -102,7 +87,6 @@ pub async fn continue_chat(
 ) -> Result<()> {
     tracing::info!("[continue_chat] 继续会话: {}", session_id);
 
-    // 解析引擎 ID（必须提供）
     let engine = engine_id
         .as_ref()
         .and_then(|id| EngineId::from_str(id))
@@ -110,21 +94,13 @@ pub async fn continue_chat(
 
     tracing::info!("[continue_chat] 使用引擎: {:?}", engine);
 
-    // 构建事件回调
     let window_clone = window.clone();
     let ctx_id = context_id.clone();
     let event_callback = move |event: StreamEvent| {
-        // 包装事件，添加 contextId
         let event_json = if let Some(ref cid) = ctx_id {
-            serde_json::json!({
-                "contextId": cid,
-                "payload": event
-            })
+            serde_json::json!({ "contextId": cid, "payload": event })
         } else {
-            serde_json::json!({
-                "contextId": "main",
-                "payload": event
-            })
+            serde_json::json!({ "contextId": "main", "payload": event })
         };
 
         tracing::debug!("[continue_chat] 发送事件: {}", event_json.to_string().chars().take(200).collect::<String>());
@@ -135,7 +111,6 @@ pub async fn continue_chat(
         }
     };
 
-    // 构建 SessionOptions
     let mut options = SessionOptions::new(event_callback);
 
     if let Some(ref dir) = work_dir {
@@ -146,15 +121,11 @@ pub async fn continue_chat(
         options = options.with_system_prompt(prompt.clone());
     }
 
-    // 获取引擎注册表并继续会话
     let mut registry = state.engine_registry.lock().await;
-
     registry.continue_session(engine, &session_id, &message, options)
 }
 
 /// 中断聊天会话
-///
-/// 通过 session_id 中断正在运行的会话
 #[tauri::command]
 pub async fn interrupt_chat(
     session_id: String,
@@ -163,19 +134,13 @@ pub async fn interrupt_chat(
 ) -> Result<()> {
     tracing::info!("[interrupt_chat] 中断会话: {}", session_id);
 
-    // 解析引擎 ID
-    let engine = engine_id
-        .as_ref()
-        .and_then(|id| EngineId::from_str(id));
+    let engine = engine_id.as_ref().and_then(|id| EngineId::from_str(id));
 
-    // 获取引擎注册表
     let mut registry = state.engine_registry.lock().await;
 
     if let Some(engine) = engine {
-        // 使用指定的引擎中断
         registry.interrupt(engine, &session_id)?;
     } else {
-        // 尝试所有引擎（向后兼容）
         let engines = [EngineId::ClaudeCode, EngineId::IFlow, EngineId::Codex];
         let mut found = false;
 
@@ -201,7 +166,6 @@ pub async fn interrupt_chat(
 // 辅助函数
 // ============================================================================
 
-/// 发送 AI 回复完成通知
 fn notify_ai_reply_complete(window: &Window) {
     let _ = window
         .notification()
@@ -212,14 +176,104 @@ fn notify_ai_reply_complete(window: &Window) {
 }
 
 // ============================================================================
-// 会话历史相关命令
+// 统一会话历史接口（支持分页）
+// ============================================================================
+
+/// 列出会话（统一接口，支持分页）
+#[tauri::command]
+pub async fn list_sessions(
+    engine_id: String,
+    page: Option<usize>,
+    page_size: Option<usize>,
+    work_dir: Option<String>,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<PagedResult<SessionMeta>> {
+    tracing::info!("[list_sessions] 引擎: {}, 页码: {:?}", engine_id, page);
+
+    let pagination = Pagination::new(page.unwrap_or(1), page_size.unwrap_or(50));
+
+    let config_store = state.config_store.lock()
+        .map_err(|e| AppError::Unknown(e.to_string()))?;
+    let config = config_store.get().clone();
+
+    match engine_id.as_str() {
+        "claude" | "claude-code" => {
+            let provider = ClaudeHistoryProvider::new(config);
+            provider.list_sessions(work_dir.as_deref(), pagination)
+        }
+        "iflow" => {
+            let provider = IFlowHistoryProvider::new(config);
+            provider.list_sessions(work_dir.as_deref(), pagination)
+        }
+        _ => Err(AppError::ValidationError(format!("不支持的引擎: {}", engine_id))),
+    }
+}
+
+/// 获取会话历史（统一接口，支持分页）
+#[tauri::command]
+pub async fn get_session_history(
+    session_id: String,
+    engine_id: String,
+    page: Option<usize>,
+    page_size: Option<usize>,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<PagedResult<HistoryMessage>> {
+    tracing::info!("[get_session_history] 会话: {}, 页码: {:?}", session_id, page);
+
+    let pagination = Pagination::new(page.unwrap_or(1), page_size.unwrap_or(50));
+
+    let config_store = state.config_store.lock()
+        .map_err(|e| AppError::Unknown(e.to_string()))?;
+    let config = config_store.get().clone();
+
+    match engine_id.as_str() {
+        "claude" | "claude-code" => {
+            let provider = ClaudeHistoryProvider::new(config);
+            provider.get_session_history(&session_id, pagination)
+        }
+        "iflow" => {
+            let provider = IFlowHistoryProvider::new(config);
+            provider.get_session_history(&session_id, pagination)
+        }
+        _ => Err(AppError::ValidationError(format!("不支持的引擎: {}", engine_id))),
+    }
+}
+
+/// 删除会话
+#[tauri::command]
+pub async fn delete_session(
+    session_id: String,
+    engine_id: String,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<()> {
+    tracing::info!("[delete_session] 删除会话: {}", session_id);
+
+    let config_store = state.config_store.lock()
+        .map_err(|e| AppError::Unknown(e.to_string()))?;
+    let config = config_store.get().clone();
+
+    match engine_id.as_str() {
+        "claude" | "claude-code" => {
+            let provider = ClaudeHistoryProvider::new(config);
+            provider.delete_session(&session_id)
+        }
+        "iflow" => {
+            let provider = IFlowHistoryProvider::new(config);
+            provider.delete_session(&session_id)
+        }
+        _ => Err(AppError::ValidationError(format!("不支持的引擎: {}", engine_id))),
+    }
+}
+
+// ============================================================================
+// IFlow 特有功能（保留向后兼容）
 // ============================================================================
 
 use crate::models::iflow_events::{
     IFlowSessionMeta, IFlowHistoryMessage, IFlowFileContext, IFlowTokenStats,
 };
 
-/// 列出 IFlow 会话
+/// 列出 IFlow 会话（旧接口，保留向后兼容）
 #[tauri::command]
 pub async fn list_iflow_sessions(
     state: tauri::State<'_, crate::AppState>,
@@ -233,7 +287,7 @@ pub async fn list_iflow_sessions(
     crate::services::iflow_service::IFlowService::list_sessions(&config)
 }
 
-/// 获取 IFlow 会话历史
+/// 获取 IFlow 会话历史（旧接口，保留向后兼容）
 #[tauri::command]
 pub async fn get_iflow_session_history(
     session_id: String,
@@ -279,12 +333,11 @@ pub async fn get_iflow_token_stats(
 }
 
 // ============================================================================
-// Claude Code 会话历史
+// Claude Code 会话历史（旧接口，保留向后兼容）
 // ============================================================================
 
-use crate::models::config::Config;
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::Command;
 use std::io::{BufRead, BufReader};
 
 /// Claude Code 会话元数据
@@ -306,26 +359,13 @@ pub struct ClaudeHistoryMessage {
     pub timestamp: Option<String>,
 }
 
-/// 列出 Claude Code 会话
+/// 列出 Claude Code 会话（旧接口）
 #[tauri::command]
 pub async fn list_claude_code_sessions(
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<Vec<ClaudeSessionMeta>> {
     tracing::info!("[list_claude_code_sessions] 获取 Claude Code 会话列表");
 
-    let config_store = state.config_store.lock()
-        .map_err(|e| AppError::Unknown(e.to_string()))?;
-
-    let config = config_store.get().clone();
-    let work_dir = config.work_dir.as_ref()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|| {
-            std::env::var("USERPROFILE")
-                .or_else(|_| std::env::var("HOME"))
-                .unwrap_or_else(|_| ".".to_string())
-        });
-
-    // Claude Code 会话存储在 ~/.claude/projects/ 目录下
     let claude_dir = if cfg!(windows) {
         std::env::var("USERPROFILE")
             .map(|p| PathBuf::from(p).join(".claude").join("projects"))
@@ -343,7 +383,6 @@ pub async fn list_claude_code_sessions(
             if entry.path().is_dir() {
                 let project_name = entry.file_name().to_string_lossy().to_string();
 
-                // 查找项目下的会话文件
                 if let Ok(session_entries) = std::fs::read_dir(entry.path()) {
                     for session_entry in session_entries.flatten() {
                         let path = session_entry.path();
@@ -368,7 +407,7 @@ pub async fn list_claude_code_sessions(
     Ok(sessions)
 }
 
-/// 获取 Claude Code 会话历史
+/// 获取 Claude Code 会话历史（旧接口）
 #[tauri::command]
 pub async fn get_claude_code_session_history(
     session_id: String,
@@ -377,12 +416,6 @@ pub async fn get_claude_code_session_history(
 ) -> Result<Vec<ClaudeHistoryMessage>> {
     tracing::info!("[get_claude_code_session_history] 获取会话历史: {}", session_id);
 
-    let config_store = state.config_store.lock()
-        .map_err(|e| AppError::Unknown(e.to_string()))?;
-
-    let config = config_store.get().clone();
-
-    // 构建 session 文件路径
     let claude_dir = if cfg!(windows) {
         std::env::var("USERPROFILE")
             .map(|p| PathBuf::from(p).join(".claude").join("projects"))
@@ -393,11 +426,9 @@ pub async fn get_claude_code_session_history(
             .unwrap_or_else(|_| PathBuf::from(".claude").join("projects"))
     };
 
-    // 查找会话文件
     let session_file = if let Some(project) = &project_path {
         claude_dir.join(project).join(format!("{}.jsonl", session_id))
     } else {
-        // 搜索所有项目目录
         let mut found = None;
         if let Ok(entries) = std::fs::read_dir(&claude_dir) {
             for entry in entries.flatten() {
@@ -417,7 +448,6 @@ pub async fn get_claude_code_session_history(
         return Err(AppError::ValidationError(format!("会话文件不存在: {:?}", session_file)));
     }
 
-    // 读取并解析 JSONL 文件
     let mut messages = Vec::new();
 
     if let Ok(file) = std::fs::File::open(&session_file) {
@@ -503,7 +533,6 @@ pub struct CodexPathValidationResult {
 pub fn find_codex_paths() -> Vec<String> {
     let mut paths = Vec::new();
 
-    // 检查 PATH 环境变量
     if let Ok(path_env) = std::env::var("PATH") {
         let separator = if cfg!(windows) { ";" } else { ":" };
         for dir in path_env.split(separator) {
@@ -514,15 +543,9 @@ pub fn find_codex_paths() -> Vec<String> {
         }
     }
 
-    // 检查常见位置
     if cfg!(windows) {
-        let common_paths = vec![
-            r"C:\Users\{}\AppData\Roaming\npm\codex.cmd",
-            r"C:\Program Files\nodejs\codex.cmd",
-        ];
-
-        for template in common_paths {
-            if let Ok(username) = std::env::var("USERNAME") {
+        if let Ok(username) = std::env::var("USERNAME") {
+            for template in [r"C:\Users\{}\AppData\Roaming\npm\codex.cmd"] {
                 let path = template.replace("{}", &username);
                 if PathBuf::from(&path).exists() {
                     paths.push(path);
@@ -530,13 +553,7 @@ pub fn find_codex_paths() -> Vec<String> {
             }
         }
     } else {
-        let common_paths = vec![
-            "/usr/local/bin/codex",
-            "/usr/bin/codex",
-            "/opt/homebrew/bin/codex",
-        ];
-
-        for path in common_paths {
+        for path in ["/usr/local/bin/codex", "/usr/bin/codex", "/opt/homebrew/bin/codex"] {
             if PathBuf::from(path).exists() {
                 paths.push(path.to_string());
             }
@@ -559,7 +576,6 @@ pub fn validate_codex_path(path: String) -> CodexPathValidationResult {
         };
     }
 
-    // 尝试获取版本
     let version = Command::new(&path)
         .arg("--version")
         .output()

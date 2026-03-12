@@ -11,6 +11,7 @@ use services::config_store::ConfigStore;
 use services::logger::Logger;
 use commands::chat::{start_chat, continue_chat, interrupt_chat};
 use commands::chat::{
+    list_sessions, get_session_history, delete_session,
     list_iflow_sessions, get_iflow_session_history,
     get_iflow_file_contexts, get_iflow_token_stats,
     list_claude_code_sessions, get_claude_code_session_history,
@@ -264,12 +265,16 @@ pub fn run() {
             start_chat,
             continue_chat,
             interrupt_chat,
-            // IFlow 会话历史相关
+            // 统一会话历史接口（支持分页）
+            list_sessions,
+            get_session_history,
+            delete_session,
+            // IFlow 会话历史相关（旧接口，保留兼容）
             list_iflow_sessions,
             get_iflow_session_history,
             get_iflow_file_contexts,
             get_iflow_token_stats,
-            // Claude Code 原生会话历史相关
+            // Claude Code 原生会话历史相关（旧接口，保留兼容）
             list_claude_code_sessions,
             get_claude_code_session_history,
             // Codex 相关
