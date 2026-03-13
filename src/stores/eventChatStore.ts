@@ -305,7 +305,7 @@ interface EventChatState {
   isArchiveExpanded: boolean
   /** 当前会话 ID */
   conversationId: string | null
-  /** 当前对话的唯一标识（用于区分不同对话，特别是 DeepSeek） */
+  /** 当前对话的唯一标识（用于区分不同对话） */
   currentConversationSeed: string | null
   /** 是否正在流式传输 */
   isStreaming: boolean
@@ -328,7 +328,7 @@ interface EventChatState {
   /** Token Buffer - 用于批量处理流式 token */
   tokenBuffer: TokenBuffer | null
 
-  /** DeepSeek Session 缓存 */
+  /** OpenAI Provider Session 缓存 */
   providerSessionCache: {
     session: any | null
     conversationId: string | null
@@ -479,7 +479,7 @@ export const useEventChatStore = create<EventChatState>((set, get) => ({
       tokenBuffer.destroy()
     }
 
-    // 清理 DeepSeek Session
+    // 清理 Provider Session
     if (providerSessionCache?.session) {
       try {
         providerSessionCache.session.dispose()
@@ -506,9 +506,9 @@ export const useEventChatStore = create<EventChatState>((set, get) => ({
   setConversationId: (id) => {
     const { providerSessionCache, conversationId: currentId } = get()
 
-    // 如果切换到不同的对话，清理 DeepSeek Session
+    // 如果切换到不同的对话，清理 Provider Session
     if (providerSessionCache && currentId !== id) {
-      console.log('[EventChatStore] 切换对话，清理 DeepSeek session')
+      console.log('[EventChatStore] 切换对话，清理 Provider session')
       try {
         providerSessionCache.session.dispose()
       } catch (e) {
@@ -1167,7 +1167,7 @@ export const useEventChatStore = create<EventChatState>((set, get) => ({
       }
 
       // 检查是否可以复用现有 session
-      // 使用 conversationSeed 而不是 conversationId，因为 DeepSeek 不使用后端会话 ID
+      // 使用 conversationSeed 而不是 conversationId，因为 Provider 不使用后端会话 ID
       const SESSION_TIMEOUT = 30 * 60 * 1000 // 30 分钟超时
       const canReuseSession =
         providerSessionCache?.session &&
@@ -1178,7 +1178,7 @@ export const useEventChatStore = create<EventChatState>((set, get) => ({
 
       if (canReuseSession) {
         // 复用现有 session，保留消息历史
-        console.log('[eventChatStore] 复用现有 DeepSeek session')
+        console.log('[eventChatStore] 复用现有 Provider session')
         session = providerSessionCache.session
 
         // 更新最后使用时间
@@ -1196,7 +1196,7 @@ export const useEventChatStore = create<EventChatState>((set, get) => ({
           timeout: 300000, // 5 分钟（与 maxTokens 32K 匹配）
         }
 
-        console.log('[eventChatStore] 创建新 DeepSeek session:', {
+        console.log('[eventChatStore] 创建新 Provider session:', {
           workspaceDir,
           systemPrompt: systemPrompt ? `${systemPrompt.slice(0, 50)}...` : undefined,
           timeout: sessionConfig.timeout,

@@ -8,7 +8,7 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as tauri from '../../services/tauri';
 
-type EngineType = 'claude-code' | 'iflow' | 'deepseek' | 'codex';
+type EngineType = 'claude-code' | 'iflow' | 'codex';
 
 interface ClaudePathSelectorProps {
   /** 当前路径值 */
@@ -113,27 +113,6 @@ export function ClaudePathSelector({
       detectPaths();
     }
   }, [mode, engineType]);
-
-  if (engineType === 'deepseek') {
-    return (
-      <div className="p-4 bg-primary/5 border border-primary/20 rounded-lg">
-        <div className="flex items-start gap-3">
-          <svg className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-          </svg>
-          <div className="flex-1">
-            <p className="text-sm text-text-primary font-medium">{config.name}</p>
-            <p className="text-xs text-text-secondary mt-1">
-              {t('pathSelector.deepseek.hint')}
-            </p>
-            <p className="text-xs text-text-tertiary mt-1">
-              {config.example}
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   // claude-code, iflow, codex 使用 CLI 路径选择
 

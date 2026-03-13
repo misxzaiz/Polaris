@@ -4,7 +4,6 @@ pub mod file_explorer;
 pub mod window;
 pub mod context;
 pub mod git;
-pub mod deepseek_tools;
 pub mod translate;
 pub mod dingtalk;
 pub mod openai_proxy;
@@ -44,12 +43,6 @@ pub use git::{
     git_get_remotes, git_add_remote, git_remove_remote, git_detect_host, git_push_branch, git_push_set_upstream, git_create_pr, git_get_pr_status,
     git_pull, git_get_log, git_batch_stage,
     git_stash_save, git_stash_list, git_stash_pop, git_stash_drop,
-};
-
-// DeepSeek 工具命令
-pub use deepseek_tools::{
-    execute_bash, read_file, write_file, edit_file, list_directory,
-    git_status_deepseek, git_diff_deepseek, git_log_deepseek,
 };
 
 // 翻译命令

@@ -2,7 +2,6 @@
  * 翻译配置 Tab
  */
 
-import { useTranslation } from 'react-i18next';
 import type { Config } from '../../../types';
 
 interface TranslateTabProps {
@@ -12,7 +11,6 @@ interface TranslateTabProps {
 }
 
 export function TranslateTab({ config, onConfigChange, loading }: TranslateTabProps) {
-  const { t } = useTranslation('settings');
 
   const handleAppIdChange = (appId: string) => {
     onConfigChange({

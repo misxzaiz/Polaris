@@ -22,9 +22,6 @@
     },
     "iflow": {
       "description": "Smart coding assistant CLI tool"
-    },
-    "deepseek": {
-      "description": "High-performance AI coding assistant (1/10 cost of Claude)"
     }
   },
   "claudeCode": {
@@ -34,26 +31,6 @@
   "iflow": {
     "title": "IFlow Configuration",
     "cliPath": "IFlow CLI Path (Optional)"
-  },
-  "deepseek": {
-    "title": "DeepSeek Configuration",
-    "apiKey": "API Key",
-    "apiKeyHint": "Get API Key at",
-    "platform": "Platform",
-    "model": "Model Selection",
-    "models": {
-      "chat": "DeepSeek Chat (General)",
-      "coder": "DeepSeek Coder (Code Generation, Recommended)",
-      "reasoner": "DeepSeek Reasoner (Complex Reasoning)"
-    },
-    "temperature": "Temperature",
-    "temperaturePrecise": "Precise",
-    "temperatureBalanced": "Balanced",
-    "temperatureCreative": "Creative",
-    "maxTokens": "Max Tokens",
-    "costAdvantage": "Cost Advantage: ",
-    "costDetail": "DeepSeek costs about 1-2% of Claude",
-    "pricing": "Input ¥0.14/1M tokens, Output ¥0.28/1M tokens"
   },
   "language": {
     "title": "Language Settings",
@@ -103,11 +80,6 @@
       "name": "IFlow",
       "placeholder": "Enter the full path to IFlow CLI",
       "example": "e.g., C:\\Users\\[Username]\\AppData\\Roaming\\npm\\iflow.cmd"
-    },
-    "deepseek": {
-      "name": "DeepSeek",
-      "hint": "DeepSeek connects via API Key, no CLI path needed. Please enter your API Key in settings.",
-      "example": "Please enter your API Key in the field below"
     }
   }
 }

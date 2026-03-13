@@ -49,10 +49,6 @@ use commands::git::{
     git_get_gitignore, git_save_gitignore, git_add_to_gitignore, git_get_gitignore_templates,
     test_param_serialization, write_file_absolute, read_file_absolute,
 };
-use commands::deepseek_tools::{
-    execute_bash, read_file, write_file, edit_file, list_directory,
-    git_status_deepseek, git_diff_deepseek, git_log_deepseek,
-};
 use commands::translate::baidu_translate;
 use commands::dingtalk::{
     start_dingtalk_service, stop_dingtalk_service, send_dingtalk_message,
@@ -372,15 +368,6 @@ pub fn run() {
             git_stash_pop,
             git_stash_drop,
             test_param_serialization,
-            // DeepSeek 工具相关
-            execute_bash,
-            read_file,
-            write_file,
-            edit_file,
-            list_directory,
-            git_status_deepseek,
-            git_diff_deepseek,
-            git_log_deepseek,
             write_file_absolute,
             read_file_absolute,
             // 翻译相关

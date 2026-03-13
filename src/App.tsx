@@ -173,7 +173,7 @@ function App() {
           executablePath: config?.codex.cliPath || 'codex',
         };
 
-        await bootstrapEngines(defaultEngine as any, undefined, codexConfig);
+        await bootstrapEngines(defaultEngine as any, codexConfig);
 
         // 初始化 Agent 系统
         await bootstrapAgents();

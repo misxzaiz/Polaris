@@ -7,9 +7,8 @@
  * @since 2025-03-11
  */
 
-import { useState, useEffect } from 'react'
-import { Button } from '../Common'
-import type { Config, OpenAIProvider } from '../../types'
+import { useState } from 'react'
+import type { Config, OpenAIProvider, EngineId } from '../../types'
 import { clsx } from 'clsx'
 
 interface OpenAIProvidersTabProps {
@@ -115,7 +114,7 @@ export function OpenAIProvidersTab({ config, onConfigChange, loading }: OpenAIPr
     onConfigChange({
       ...config,
       activeProviderId: id,
-      defaultEngine: id
+      defaultEngine: id as EngineId
     })
   }
 

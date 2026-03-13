@@ -41,21 +41,6 @@ interface EnginePricing {
  * 引擎定价配置
  */
 const ENGINE_PRICING: Record<string, EnginePricing> = {
-  'deepseek-chat': {
-    inputPrice: 1.0,
-    outputPrice: 2.0,
-    currency: 'USD',
-  },
-  'deepseek-coder': {
-    inputPrice: 0.14,
-    outputPrice: 0.28,
-    currency: 'USD',
-  },
-  'deepseek-reasoner': {
-    inputPrice: 5.5,
-    outputPrice: 5.5,
-    currency: 'USD',
-  },
   'gpt-4': {
     inputPrice: 30.0,
     outputPrice: 60.0,

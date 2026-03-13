@@ -22,9 +22,6 @@
     },
     "iflow": {
       "description": "智能编程助手 CLI 工具"
-    },
-    "deepseek": {
-      "description": "国产高性能 AI 编程助手（成本仅为 Claude 的 1/10）"
     }
   },
   "claudeCode": {
@@ -34,26 +31,6 @@
   "iflow": {
     "title": "IFlow 配置",
     "cliPath": "IFlow CLI 命令路径（可选）"
-  },
-  "deepseek": {
-    "title": "DeepSeek 配置",
-    "apiKey": "API Key",
-    "apiKeyHint": "在",
-    "platform": "开放平台",
-    "model": "模型选择",
-    "models": {
-      "chat": "DeepSeek Chat (通用对话)",
-      "coder": "DeepSeek Coder (代码生成，推荐)",
-      "reasoner": "DeepSeek Reasoner (复杂推理)"
-    },
-    "temperature": "温度参数 (Temperature)",
-    "temperaturePrecise": "精确",
-    "temperatureBalanced": "平衡",
-    "temperatureCreative": "创造",
-    "maxTokens": "最大 Token 数 (Max Tokens)",
-    "costAdvantage": "成本优势：",
-    "costDetail": "DeepSeek 价格约为 Claude 的 1-2%",
-    "pricing": "输入 ¥0.14/1M tokens，输出 ¥0.28/1M tokens"
   },
   "language": {
     "title": "语言设置",
@@ -103,11 +80,6 @@
       "name": "IFlow",
       "placeholder": "请输入 IFlow CLI 的完整路径",
       "example": "例如: C:\\Users\\[用户名]\\AppData\\Roaming\\npm\\iflow.cmd"
-    },
-    "deepseek": {
-      "name": "DeepSeek",
-      "hint": "DeepSeek 使用 API Key 连接，无需配置 CLI 路径。请在设置中填写 API Key 即可使用。",
-      "example": "请在下方 API Key 输入框中填写密钥"
     }
   }
 }

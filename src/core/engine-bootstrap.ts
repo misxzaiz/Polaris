@@ -8,7 +8,6 @@
 import { getEngineRegistry, registerEngine } from '../ai-runtime'
 import { ClaudeCodeEngine } from '../engines/claude-code'
 import { IFlowEngine } from '../engines/iflow'
-import { DeepSeekEngine, type DeepSeekEngineConfig } from '../engines/deepseek'
 import { CodexEngine, type CodexEngineConfig } from '../engines/codex'
 import { getOpenAIProviderEngine, clearOpenAIProviderEngines, type OpenAIProviderEngineConfig } from '../engines/openai-provider'
 import type { OpenAIProvider } from '../types/config'
@@ -16,7 +15,7 @@ import type { OpenAIProvider } from '../types/config'
 /**
  * 已注册的 Engine ID 列表（传统引擎）
  */
-export const REGISTERED_ENGINE_IDS = ['claude-code', 'iflow', 'deepseek', 'codex'] as const
+export const REGISTERED_ENGINE_IDS = ['claude-code', 'iflow', 'codex'] as const
 
 /**
  * Engine 类型
@@ -73,13 +72,11 @@ export async function bootstrapOpenAIProviders(
  * 按需初始化 AI Engine（兼容旧版本）
  *
  * @param defaultEngineId 默认引擎 ID
- * @param deepSeekConfig DeepSeek 引擎配置
  * @param codexConfig Codex 引擎配置
  * @deprecated 建议使用 bootstrapEnginesFromConfig
  */
 export async function bootstrapEngines(
   defaultEngineId: EngineId = 'claude-code',
-  deepSeekConfig?: DeepSeekEngineConfig,
   codexConfig?: CodexEngineConfig
 ): Promise<void> {
   const registry = getEngineRegistry()
@@ -91,15 +88,6 @@ export async function bootstrapEngines(
   } else if (defaultEngineId === 'iflow') {
     const iflowEngine = new IFlowEngine()
     registerEngine(iflowEngine, { asDefault: true })
-  } else if (defaultEngineId === 'deepseek') {
-    if (!deepSeekConfig) {
-      console.warn('[EngineBootstrap] DeepSeek config required but not provided, falling back to claude-code')
-      const claudeEngine = new ClaudeCodeEngine()
-      registerEngine(claudeEngine, { asDefault: true })
-    } else {
-      const deepseekEngine = new DeepSeekEngine(deepSeekConfig)
-      registerEngine(deepseekEngine, { asDefault: true })
-    }
   } else if (defaultEngineId === 'codex') {
     const codexEngine = new CodexEngine(codexConfig)
     registerEngine(codexEngine, { asDefault: true })
@@ -115,12 +103,10 @@ export async function bootstrapEngines(
  * 延迟注册引擎（用于切换引擎时）
  *
  * @param engineId 要注册的引擎 ID
- * @param deepSeekConfig DeepSeek 引擎配置
  * @param codexConfig Codex 引擎配置
  */
 export async function registerEngineLazy(
   engineId: EngineId,
-  deepSeekConfig?: DeepSeekEngineConfig,
   codexConfig?: CodexEngineConfig
 ): Promise<void> {
   const registry = getEngineRegistry()
@@ -138,13 +124,6 @@ export async function registerEngineLazy(
     const iflowEngine = new IFlowEngine()
     registerEngine(iflowEngine)
     await iflowEngine.initialize()
-  } else if (engineId === 'deepseek') {
-    if (!deepSeekConfig) {
-      throw new Error('[EngineBootstrap] DeepSeek config required')
-    }
-    const deepseekEngine = new DeepSeekEngine(deepSeekConfig)
-    registerEngine(deepseekEngine)
-    await deepseekEngine.initialize()
   } else if (engineId === 'codex') {
     const codexEngine = new CodexEngine(codexConfig)
     registerEngine(codexEngine)

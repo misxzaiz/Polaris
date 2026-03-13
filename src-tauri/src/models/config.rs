@@ -162,8 +162,6 @@ pub enum EngineId {
     ClaudeCode,
     /// IFlow 引擎
     IFlow,
-    /// DeepSeek 引擎
-    DeepSeek,
     /// OpenAI Codex 引擎
     Codex,
 }
@@ -180,7 +178,6 @@ impl EngineId {
         match self {
             Self::ClaudeCode => "claude-code",
             Self::IFlow => "iflow",
-            Self::DeepSeek => "deepseek",
             Self::Codex => "codex",
         }
     }
@@ -190,7 +187,6 @@ impl EngineId {
         match s {
             "claude-code" => Some(Self::ClaudeCode),
             "iflow" => Some(Self::IFlow),
-            "deepseek" => Some(Self::DeepSeek),
             "codex" => Some(Self::Codex),
             _ => None,
         }

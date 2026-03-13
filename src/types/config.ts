@@ -3,7 +3,7 @@
  */
 
 /**  引擎 ID（扩展以支持动态 Provider） */
-export type EngineId = 'claude-code' | 'iflow' | 'deepseek' | 'codex' | `provider-${string}`
+export type EngineId = 'claude-code' | 'iflow' | 'codex' | `provider-${string}`
 
 /** 支持的语言 */
 export type Language = 'zh-CN' | 'en-US'
@@ -40,12 +40,6 @@ export interface EngineConfig {
   cliPath?: string;
   /** 是否可用 */
   available?: boolean;
-  /** API Key (用于 DeepSeek) */
-  apiKey?: string;
-  /** API Base URL (用于 DeepSeek) */
-  apiBase?: string;
-  /** 模型名称 (用于 DeepSeek) */
-  model?: 'deepseek-chat' | 'deepseek-coder' | 'deepseek-reasoner';
 }
 
 /** 悬浮窗模式 */
@@ -161,10 +155,6 @@ export interface HealthStatus {
   iflowAvailable?: boolean;
   /** IFlow 版本 */
   iflowVersion?: string;
-  /** DeepSeek API 是否可用 */
-  deepseekAvailable?: boolean;
-  /** DeepSeek API Key 是否配置 */
-  deepseekConfigured?: boolean;
   /** Codex CLI 是否可用 */
   codexAvailable?: boolean;
   /** Codex 版本 */
