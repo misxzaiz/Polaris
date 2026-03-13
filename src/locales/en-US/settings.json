@@ -6,7 +6,6 @@
     "aiEngine": "AI Engine",
     "openaiProviders": "OpenAI Providers",
     "translate": "Translate",
-    "dingtalk": "DingTalk",
     "qqbot": "QQ Bot",
     "floatingWindow": "Floating Window",
     "advanced": "Advanced"

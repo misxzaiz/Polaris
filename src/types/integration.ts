@@ -3,7 +3,7 @@
  */
 
 /** 平台类型 */
-export type Platform = 'qqbot' | 'dingtalk' | 'wechat' | 'telegram';
+export type Platform = 'qqbot' | 'wechat' | 'telegram';
 
 /** 消息内容类型 */
 export interface TextContent {

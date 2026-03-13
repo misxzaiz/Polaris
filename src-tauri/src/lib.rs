@@ -50,10 +50,6 @@ use commands::git::{
     test_param_serialization, write_file_absolute, read_file_absolute,
 };
 use commands::translate::baidu_translate;
-use commands::dingtalk::{
-    start_dingtalk_service, stop_dingtalk_service, send_dingtalk_message,
-    is_dingtalk_service_running, get_dingtalk_service_status, test_dingtalk_connection,
-};
 use commands::openai_proxy::start_openai_chat;
 use commands::integration::{
     start_integration, stop_integration, get_integration_status,
@@ -66,7 +62,6 @@ use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio_util::sync::CancellationToken;
-use services::dingtalk_service::DingTalkService;
 use integrations::IntegrationManager;
 use ai::EngineRegistry;
 
@@ -80,8 +75,6 @@ pub struct AppState {
     pub openai_tasks: Arc<Mutex<HashMap<String, CancellationToken>>>,
     /// 上下文存储
     pub context_store: Arc<Mutex<ContextMemoryStore>>,
-    /// 钉钉服务
-    pub dingtalk_service: Mutex<DingTalkService>,
     /// 集成管理器 (使用 tokio::sync::Mutex 支持异步操作)
     pub integration_manager: AsyncMutex<IntegrationManager>,
     /// AI 引擎注册表（使用 tokio::sync::Mutex 支持异步操作和共享）
@@ -247,7 +240,6 @@ pub fn run() {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             openai_tasks: Arc::new(Mutex::new(HashMap::new())),
             context_store: Arc::new(Mutex::new(ContextMemoryStore::new())),
-            dingtalk_service: Mutex::new(DingTalkService::new()),
             integration_manager: AsyncMutex::new(integration_manager),
             engine_registry: engine_registry_arc,
         })
@@ -372,13 +364,6 @@ pub fn run() {
             read_file_absolute,
             // 翻译相关
             baidu_translate,
-            // 钉钉相关
-            start_dingtalk_service,
-            stop_dingtalk_service,
-            send_dingtalk_message,
-            is_dingtalk_service_running,
-            get_dingtalk_service_status,
-            test_dingtalk_connection,
             // OpenAI Proxy 相关
             start_openai_chat,
             // 集成相关

@@ -15,7 +15,6 @@ import { SettingsSidebar, type SettingsTabId } from './SettingsSidebar';
 import { AIEngineTab } from './tabs/AIEngineTab';
 import { OpenAIProvidersTab } from './OpenAIProvidersTab';
 import { TranslateTab } from './tabs/TranslateTab';
-import { DingTalkTab } from './tabs/DingTalkTab';
 import { QQBotTab } from './tabs/QQBotTab';
 import { FloatingWindowTab } from './tabs/FloatingWindowTab';
 import { AdvancedTab } from './tabs/AdvancedTab';
@@ -30,7 +29,6 @@ const TAB_TITLES: Record<SettingsTabId, string> = {
   'ai-engine': 'AI 引擎',
   'openai-providers': 'OpenAI Providers',
   'translate': '翻译',
-  'dingtalk': '钉钉集成',
   'qqbot': 'QQ Bot',
   'floating-window': '悬浮窗',
   'advanced': '高级',
@@ -165,14 +163,6 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
               {activeTab === 'translate' && (
                 <TranslateTab
-                  config={localConfig}
-                  onConfigChange={setLocalConfig}
-                  loading={loading}
-                />
-              )}
-
-              {activeTab === 'dingtalk' && (
-                <DingTalkTab
                   config={localConfig}
                   onConfigChange={setLocalConfig}
                   loading={loading}

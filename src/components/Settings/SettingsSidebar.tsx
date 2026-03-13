@@ -8,7 +8,6 @@ export type SettingsTabId =
   | 'ai-engine'
   | 'openai-providers'
   | 'translate'
-  | 'dingtalk'
   | 'qqbot'
   | 'floating-window'
   | 'advanced';
@@ -30,7 +29,6 @@ const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'ai-engine', icon: '🤖', labelKey: 'nav.aiEngine' },
   { id: 'openai-providers', icon: '📡', labelKey: 'nav.openaiProviders' },
   { id: 'translate', icon: '🌐', labelKey: 'nav.translate' },
-  { id: 'dingtalk', icon: '💬', labelKey: 'nav.dingtalk' },
   { id: 'qqbot', icon: '🤖', labelKey: 'nav.qqbot' },
   { id: 'floating-window', icon: '🪟', labelKey: 'nav.floatingWindow' },
   { id: 'advanced', icon: '⚙️', labelKey: 'nav.advanced' },

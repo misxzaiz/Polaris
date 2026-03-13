@@ -6,7 +6,6 @@
     "aiEngine": "AI 引擎",
     "openaiProviders": "OpenAI Providers",
     "translate": "翻译",
-    "dingtalk": "钉钉集成",
     "qqbot": "QQ Bot",
     "floatingWindow": "悬浮窗",
     "advanced": "高级"

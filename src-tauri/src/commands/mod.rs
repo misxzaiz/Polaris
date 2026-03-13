@@ -5,7 +5,6 @@ pub mod window;
 pub mod context;
 pub mod git;
 pub mod translate;
-pub mod dingtalk;
 pub mod openai_proxy;
 pub mod integration;
 
@@ -47,12 +46,6 @@ pub use git::{
 
 // 翻译命令
 pub use translate::{baidu_translate, TranslateResult};
-
-// 钉钉命令
-pub use dingtalk::{
-    start_dingtalk_service, stop_dingtalk_service, send_dingtalk_message,
-    is_dingtalk_service_running, get_dingtalk_service_status, test_dingtalk_connection,
-};
 
 // OpenAI Proxy 命令
 pub use openai_proxy::start_openai_chat;

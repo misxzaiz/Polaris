@@ -773,7 +773,6 @@ impl OldConfig {
             codex: Default::default(),
             openai_providers: Vec::new(),
             active_provider_id: None,
-            dingtalk: Default::default(),
             qqbot: Default::default(),
             work_dir: self.work_dir,
             session_dir: self.session_dir,
