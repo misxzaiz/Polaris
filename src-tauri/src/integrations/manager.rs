@@ -136,29 +136,7 @@ impl IntegrationManager {
                             tracing::info!("[IntegrationManager] ✅ 消息已发送到前端");
                         }
 
-                        // 2. 立即发送确认消息
-                        let platform = msg.platform;
-                        let conversation_id = msg.conversation_id.clone();
-                        let adapters_for_ack = adapters.clone();
-
-                        {
-                            let mut adapters_guard = adapters_for_ack.lock().await;
-                            if let Some(adapter) = adapters_guard.get_mut(&platform) {
-                                let target = SendTarget::Conversation(conversation_id.clone());
-                                let ack_content = MessageContent::text("已收到消息，正在处理...");
-
-                                match adapter.send(target, ack_content).await {
-                                    Ok(_) => {
-                                        tracing::info!("[IntegrationManager] ✅ 确认消息已发送");
-                                    }
-                                    Err(e) => {
-                                        tracing::error!("[IntegrationManager] ❌ 发送确认消息失败: {:?}", e);
-                                    }
-                                }
-                            }
-                        }
-
-                        // 3. 调用 AI 生成回复
+                        // 2. 调用 AI 生成回复
                         if let Some(ref registry) = engine_registry {
                             tracing::info!("[IntegrationManager] 🔧 engine_registry 存在，准备调用 AI");
                             if let Some(text) = msg.content.as_text() {
@@ -209,6 +187,9 @@ impl IntegrationManager {
         adapters: Arc<Mutex<HashMap<Platform, Box<dyn PlatformIntegration>>>>,
     ) {
         tracing::info!("[IntegrationManager] 🤖 开始 AI 回复: conversation={}, message_len={}", conversation_id, message.len());
+
+        // 记录开始时间
+        let start_time = std::time::Instant::now();
 
         // 检查引擎可用性
         {
@@ -326,6 +307,18 @@ impl IntegrationManager {
                         match adapter.send(target, content).await {
                             Ok(_) => {
                                 tracing::info!("[IntegrationManager] ✅ 回复已发送到 QQ");
+
+                                // 发送完成消息（包含处理时间）
+                                let elapsed = start_time.elapsed();
+                                let elapsed_secs = elapsed.as_secs_f32();
+                                let complete_msg = format!("✅ 处理完成，耗时 {:.1}s", elapsed_secs);
+
+                                let target = SendTarget::Conversation(conversation_id.clone());
+                                let complete_content = MessageContent::text(&complete_msg);
+
+                                if let Err(e) = adapter.send(target, complete_content).await {
+                                    tracing::error!("[IntegrationManager] ❌ 发送完成消息失败: {:?}", e);
+                                }
                             }
                             Err(e) => {
                                 tracing::error!("[IntegrationManager] ❌ 发送回复失败: {:?}", e);
