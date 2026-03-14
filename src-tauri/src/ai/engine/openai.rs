@@ -301,90 +301,75 @@ impl OpenAIEngine {
         serde_json::from_str(data).ok()
     }
 
-    /// 执行聊天请求（异步）
-    async fn execute_chat(
+    /// 执行聊天请求（使用统一的 OpenAIService，支持工具调用）
+    async fn execute_chat_with_tools(
         &mut self,
         messages: Vec<ChatMessage>,
         options: SessionOptions,
         session_id: String,
         provider_id: Option<String>,
     ) -> Result<()> {
-        let config = self.get_config_for_provider(provider_id.as_deref())
+        let provider_config = self.get_config_for_provider(provider_id.as_deref())
             .ok_or_else(|| AppError::ValidationError("OpenAI 配置未设置".to_string()))?;
 
         let cancel_token = CancellationToken::new();
         self.cancel_tokens.insert(session_id.clone(), cancel_token.clone());
 
-        let client = self.client.clone();
         let event_callback = options.event_callback.clone();
+        let sid = session_id.clone();
 
-        // 构建请求
-        let request = ChatRequest {
-            model: config.model.clone(),
-            messages,
-            temperature: Some(config.temperature),
-            max_tokens: Some(config.max_tokens),
-            stream: Some(true),
+        // 转换配置格式
+        let config = crate::services::openai_service::OpenAIConfig {
+            provider_id: provider_config.provider_id,
+            provider_name: provider_config.provider_name,
+            api_key: provider_config.api_key,
+            api_base: provider_config.api_base,
+            model: provider_config.model,
+            temperature: provider_config.temperature,
+            max_tokens: provider_config.max_tokens,
+            supports_tools: provider_config.supports_tools,
         };
 
-        tracing::info!("[OpenAIEngine] 发送请求到 {} (provider: {})", config.api_base, config.provider_id);
+        // 转换消息格式
+        let service_messages: Vec<crate::services::openai_service::ChatMessage> = messages
+            .into_iter()
+            .map(|m| crate::services::openai_service::ChatMessage {
+                role: m.role,
+                content: m.content,
+                tool_calls: None,
+                tool_call_id: None,
+            })
+            .collect();
 
-        // 发送请求
-        let response = client
-            .post(format!("{}/chat/completions", config.api_base.trim_end_matches('/')))
-            .header("Authorization", format!("Bearer {}", config.api_key))
-            .header("Content-Type", "application/json")
-            .json(&request)
-            .send()
-            .await
-            .map_err(|e| AppError::NetworkError(format!("API 请求失败: {}", e)))?;
+        tracing::info!("[OpenAIEngine] 使用 OpenAIService 执行请求（支持工具）");
 
-        let status = response.status();
-        if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
-            return Err(AppError::NetworkError(format!("API 错误 ({}): {}", status, body)));
-        }
+        // 使用 OpenAIService 执行
+        let service = crate::services::openai_service::OpenAIService::new();
 
-        // 使用字节流处理 SSE
-        use futures_util::StreamExt;
-
-        let mut stream = response.bytes_stream();
-        let mut buffer = String::new();
-
-        while let Some(chunk) = stream.next().await {
-            // 检查取消
-            if cancel_token.is_cancelled() {
-                tracing::info!("[OpenAIEngine] 会话已取消: {}", session_id);
-                break;
-            }
-
-            let chunk = chunk.map_err(|e| AppError::NetworkError(format!("读取流失败: {}", e)))?;
-            buffer.push_str(&String::from_utf8_lossy(&chunk));
-
-            // 处理完整的行
-            while let Some(newline_pos) = buffer.find('\n') {
-                let line = buffer[..newline_pos].to_string();
-                buffer = buffer[newline_pos + 1..].to_string();
-
-                if let Some(response) = self.parse_sse_line(&line) {
-                    for choice in response.choices {
-                        if let Some(content) = &choice.delta.content {
-                            event_callback(AIEvent::assistant_message(content, true));
-                        }
-
-                        // 检查完成
-                        if choice.finish_reason.is_some() {
-                            event_callback(AIEvent::session_end(&session_id));
-                        }
-                    }
-                }
-            }
-        }
+        // 检查取消
+        let result = if cancel_token.is_cancelled() {
+            tracing::info!("[OpenAIEngine] 会话已取消: {}", sid);
+            return Ok(());
+        } else {
+            service.chat_complete(&config, service_messages).await
+        };
 
         // 清理
-        self.cancel_tokens.remove(&session_id);
+        self.cancel_tokens.remove(&sid);
 
-        Ok(())
+        match result {
+            Ok(response) => {
+                // 发送完整响应
+                event_callback(AIEvent::assistant_message(&response, false));
+                event_callback(AIEvent::session_end(&sid));
+                Ok(())
+            }
+            Err(e) => {
+                tracing::error!("[OpenAIEngine] 执行失败: {}", e);
+                event_callback(AIEvent::Error(crate::models::ErrorEvent::new(e.to_string())));
+                Err(e)
+            }
+        }
     }
 }
 
@@ -464,7 +449,7 @@ impl AIEngine for OpenAIEngine {
 
         // 在异步运行时中执行
         tokio::spawn(async move {
-            if let Err(e) = engine_clone.execute_chat(messages, options, sid.clone(), provider_id).await {
+            if let Err(e) = engine_clone.execute_chat_with_tools(messages, options, sid.clone(), provider_id).await {
                 tracing::error!("[OpenAIEngine] 执行失败: {}", e);
             }
         });
@@ -533,7 +518,7 @@ impl AIEngine for OpenAIEngine {
 
         // 在异步运行时中执行
         tokio::spawn(async move {
-            if let Err(e) = engine_clone.execute_chat(messages, options, sid.clone(), provider_id).await {
+            if let Err(e) = engine_clone.execute_chat_with_tools(messages, options, sid.clone(), provider_id).await {
                 tracing::error!("[OpenAIEngine] 继续会话执行失败: {}", e);
             }
         });
