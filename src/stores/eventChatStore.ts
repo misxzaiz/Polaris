@@ -1343,7 +1343,7 @@ export const useEventChatStore = create<EventChatState>((set, get) => ({
 
     try {
       const { invoke } = await import('@tauri-apps/api/core')
-      await invoke('interrupt_chat', { sessionId: conversationId })
+      await invoke('interrupt_chat', { sessionId: conversationId, engineId: currentEngine })
       set({ isStreaming: false, tokenBuffer: null }) // 同时清空 tokenBuffer 引用
       get().finishMessage()
     } catch (e) {
