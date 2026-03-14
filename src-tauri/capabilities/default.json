@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window and floating window",
-  "windows": ["main", "floating"],
+  "description": "Capability for the main window, floating window and webview tabs",
+  "windows": ["main", "floating", "webview-*"],
   "permissions": [
     "core:default",
     "core:window:allow-center",
@@ -26,6 +26,10 @@
     {
       "identifier": "opener:allow-open-path",
       "allow": [{ "path": "**" }]
+    },
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "https://**" }, { "url": "http://**" }]
     },
     "dialog:default"
   ]
