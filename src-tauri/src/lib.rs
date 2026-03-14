@@ -63,12 +63,6 @@ use commands::integration::{
     get_active_integration_instance, switch_integration_instance,
     disconnect_integration_instance, update_integration_instance,
 };
-use commands::webview::{
-    create_webview_tab, show_webview_tab, hide_webview_tab,
-    hide_all_webview_tabs, close_webview_tab, resize_webview_tab,
-    webview_go_back, webview_go_forward, webview_refresh, webview_navigate,
-    get_webview_url, get_all_webview_tabs,
-};
 
 use std::sync::Arc;
 use tokio::sync::Mutex as AsyncMutex;
@@ -410,19 +404,6 @@ pub fn run() {
             switch_integration_instance,
             disconnect_integration_instance,
             update_integration_instance,
-            // Webview 标签页管理
-            create_webview_tab,
-            show_webview_tab,
-            hide_webview_tab,
-            hide_all_webview_tabs,
-            close_webview_tab,
-            resize_webview_tab,
-            webview_go_back,
-            webview_go_forward,
-            webview_refresh,
-            webview_navigate,
-            get_webview_url,
-            get_all_webview_tabs,
 
         ])
         .run(tauri::generate_context!())

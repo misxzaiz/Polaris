@@ -7,7 +7,6 @@ pub mod git;
 pub mod translate;
 pub mod openai_proxy;
 pub mod integration;
-pub mod webview;
 
 // 重新导出命令函数，确保它们在模块级别可见
 pub use chat::{start_chat, continue_chat, interrupt_chat};

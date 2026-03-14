@@ -430,19 +430,32 @@ function App() {
     }
   }, [config]);
 
-  // 监听文件打开事件,创建 Editor Tab
-  useEffect(() => {
-    const unlistenPromise = listen('file:opened', (event: any) => {
-      const { path, name } = event.payload;
-      console.log('[App] 收到 file:opened 事件:', { path, name });
-      // 创建 Editor Tab
-      useTabStore.getState().openEditorTab(path, name);
-    });
+    // 监听文件打开事件,创建 Editor Tab
+    useEffect(() => {
+      const unlistenPromise = listen('file:opened', (event: any) => {
+        const { path, name } = event.payload;
+        console.log('[App] 收到 file:opened 事件:', { path, name });
+        // 创建 Editor Tab
+        useTabStore.getState().openEditorTab(path, name);
+      });
 
-    return () => {
-      unlistenPromise.then(unlisten => unlisten());
-    };
-  }, []);
+      return () => {
+        unlistenPromise.then(unlisten => unlisten());
+      };
+    }, []);
+
+    // 监听文件预览事件,创建 Preview Tab
+    useEffect(() => {
+      const unlistenPromise = listen('file:preview', (event: any) => {
+        const { path, name, kind } = event.payload;
+        console.log('[App] 收到 file:preview 事件:', { path, name, kind });
+        useTabStore.getState().openPreviewTab(path, name, { kind });
+      });
+
+      return () => {
+        unlistenPromise.then(unlisten => unlisten());
+      };
+    }, []);
 
   // F12 快捷键 - 切换 DevTools
   useEffect(() => {

@@ -1,17 +1,16 @@
 /**
  * CenterStage - 中间编辑区组件
  *
- * 包含 TabBar 和 TabContent,支持 Editor、DiffViewer 和 Webview 切换
+ * 包含 TabBar 和 TabContent,支持 Editor 和 DiffViewer 切换
  */
 
-import { ReactNode, useCallback, useState, useEffect } from 'react'
-import { X, FileDiff, FileText, Globe } from 'lucide-react'
+import { ReactNode, useCallback, useState } from 'react'
+import { X, FileDiff, FileText, Image as ImageIcon } from 'lucide-react'
 import { useTabStore, Tab } from '@/stores/tabStore'
 import { DiffViewer } from '@/components/Diff/DiffViewer'
 import { EditorPanel } from '@/components/Editor'
-import { WebviewPanel } from '@/components/Webview'
 import { TabContextMenu } from './TabContextMenu'
-import { invoke } from '@tauri-apps/api/core'
+import { ImagePreview } from '@/components/Preview/ImagePreview'
 
 interface TabBarProps {
   className?: string
@@ -41,30 +40,19 @@ export function TabBar({ className = '' }: TabBarProps) {
     if (tab.type === 'diff') {
       return <FileDiff size={14} />
     }
-    if (tab.type === 'webview') {
-      return <Globe size={14} />
+    if (tab.type === 'preview') {
+      return <ImageIcon size={14} />
     }
     return <FileText size={14} />
   }
 
   // 关闭 Tab 时阻止事件冒泡
   const handleClose = useCallback(
-    async (e: React.MouseEvent, tabId: string) => {
+    (e: React.MouseEvent, tabId: string) => {
       e.stopPropagation()
-
-      // 如果是 Webview Tab，先关闭 Tauri Webview 窗口
-      const tab = tabs.find(t => t.id === tabId)
-      if (tab?.type === 'webview') {
-        try {
-          await invoke('close_webview_tab', { id: tabId })
-        } catch (err) {
-          console.error('关闭 Webview 失败:', err)
-        }
-      }
-
       closeTab(tabId)
     },
-    [closeTab, tabs]
+    [closeTab]
   )
 
   // 右键菜单处理
@@ -156,30 +144,6 @@ interface TabContentProps {
  */
 export function TabContent({ className = '' }: TabContentProps) {
   const activeTab = useTabStore((state) => state.getActiveTab())
-  const activeTabId = useTabStore((state) => state.activeTabId)
-
-  // 管理 Webview 可见性
-  useEffect(() => {
-    const manageWebviewVisibility = async () => {
-      // 隐藏所有 Webview
-      try {
-        await invoke('hide_all_webview_tabs')
-      } catch (err) {
-        console.error('隐藏 Webview 失败:', err)
-      }
-
-      // 如果当前激活的是 Webview Tab，显示它
-      if (activeTab?.type === 'webview' && activeTab.id) {
-        try {
-          await invoke('show_webview_tab', { id: activeTab.id })
-        } catch (err) {
-          console.error('显示 Webview 失败:', err)
-        }
-      }
-    }
-
-    manageWebviewVisibility()
-  }, [activeTabId, activeTab])
 
   if (!activeTab) {
     return (
@@ -225,15 +189,14 @@ export function TabContent({ className = '' }: TabContentProps) {
         </div>
       )
 
-    case 'webview':
-      return (
-        <div className={`flex-1 flex flex-col overflow-hidden ${className}`}>
-          <WebviewPanel tabId={activeTab.id} url={activeTab.url || ''} />
-        </div>
-      )
-
     case 'preview':
-      // 未来可以添加预览功能
+      if (activeTab.metadata?.kind === 'image') {
+        return (
+          <div className={`flex-1 flex flex-col overflow-hidden ${className}`}>
+            <ImagePreview filePath={activeTab.filePath} title={activeTab.title} />
+          </div>
+        )
+      }
       return (
         <div className={`flex-1 flex items-center justify-center ${className}`}>
           <p className="text-sm text-text-tertiary">预览功能开发中...</p>

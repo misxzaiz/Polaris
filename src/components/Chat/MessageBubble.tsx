@@ -15,10 +15,17 @@ interface MessageBubbleProps {
   isStreaming?: boolean;
 }
 
-// 配置 marked
+// 配置 marked - 自定义 renderer 让链接在外部浏览器打开
+const renderer = new marked.Renderer();
+renderer.link = ({ href, title, text }) => {
+  const titleAttr = title ? ` title="${title}"` : '';
+  return `<a href="${href}" target="_blank" rel="noopener noreferrer"${titleAttr}>${text}</a>`;
+};
+
 marked.setOptions({
   breaks: true,  // 支持 GFM 换行
   gfm: true,     // GitHub Flavored Markdown
+  renderer,
 });
 
 /** Markdown 渲染器（使用 marked + DOMPurify） */
@@ -27,7 +34,7 @@ function formatContent(content: string): string {
     const raw = marked.parse(content) as string;
     return DOMPurify.sanitize(raw, {
       ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'code', 'pre', 'blockquote', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a', 'span', 'div'],
-      ALLOWED_ATTR: ['class', 'href', 'target', 'rel'],
+      ALLOWED_ATTR: ['class', 'href', 'target', 'rel', 'title'],
     });
   } catch {
     // 降级到简单处理

@@ -9,7 +9,7 @@ import { persist } from 'zustand/middleware'
 import type { GitDiffEntry } from '@/types/git'
 
 /** Tab 类型 */
-export type TabType = 'editor' | 'diff' | 'preview' | 'webview'
+export type TabType = 'editor' | 'diff' | 'preview'
 
 /** Tab 数据结构 */
 export interface Tab {
@@ -21,8 +21,6 @@ export interface Tab {
   filePath?: string
   // Diff Tab 数据
   diffData?: GitDiffEntry
-  // Webview Tab 数据
-  url?: string
   // 其他元数据
   metadata?: Record<string, any>
 }
@@ -35,8 +33,8 @@ interface TabState {
 interface TabActions {
   // Tab 操作
   openEditorTab: (filePath: string, title?: string) => string
+  openPreviewTab: (filePath: string, title?: string, metadata?: Record<string, any>) => string
   openDiffTab: (diff: GitDiffEntry) => string
-  openWebviewTab: (url: string, title?: string) => Promise<string>
   closeTab: (tabId: string) => void
   switchTab: (tabId: string) => void
   closeAllTabs: () => void
@@ -114,45 +112,25 @@ export const useTabStore = create<TabStore>()(
         return tabId
       },
 
-      // 打开 Webview Tab
-      openWebviewTab: async (url: string, title?: string) => {
-        // 查找现有的 Webview Tab
-        const existingTab = get().tabs.find((tab) => tab.type === 'webview')
+      // 打开 Preview Tab
+      openPreviewTab: (filePath: string, title?: string, metadata?: Record<string, any>) => {
+        const existingTab = get().tabs.find(
+          (tab) => tab.type === 'preview' && tab.filePath === filePath
+        )
 
         if (existingTab) {
-          // 如果已存在 Webview Tab，更新其 URL 并导航
-          set((state) => ({
-            tabs: state.tabs.map((tab) =>
-              tab.id === existingTab.id
-                ? { ...tab, url, title: title || extractDomainTitle(url) }
-                : tab
-            ),
-            activeTabId: existingTab.id,
-          }))
-
-          // 导航到新 URL
-          try {
-            const { invoke } = await import('@tauri-apps/api/core')
-            await invoke('webview_navigate', { id: existingTab.id, url })
-          } catch (e) {
-            console.error('导航失败:', e)
-          }
-
+          set({ activeTabId: existingTab.id })
           return existingTab.id
         }
 
-        // 否则创建新 Tab
-        const tabId = `webview-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
-
-        // 提取标题
-        const tabTitle = title || extractDomainTitle(url)
-
+        const tabId = `preview-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
         const newTab: Tab = {
           id: tabId,
-          type: 'webview',
-          title: tabTitle,
+          type: 'preview',
+          title: title || filePath.split('/').pop() || filePath,
           closable: true,
-          url,
+          filePath,
+          metadata,
         }
 
         set((state) => ({
@@ -229,29 +207,3 @@ export const useTabStore = create<TabStore>()(
     }
   )
 )
-
-/** 从 URL 提取标题 */
-function extractDomainTitle(url: string): string {
-  try {
-    const parsed = new URL(url)
-    const host = parsed.hostname.replace(/^www\./, '')
-
-    // 搜索引擎特殊处理
-    if (host.includes('google.')) return 'Google 搜索'
-    if (host.includes('baidu.')) return '百度搜索'
-    if (host.includes('bing.')) return 'Bing 搜索'
-    if (host.includes('github.')) return 'GitHub'
-    if (host.includes('stackoverflow.')) return 'Stack Overflow'
-
-    return host
-  } catch {
-    return '网页'
-  }
-}
-
-/** Webview Tab 信息（与 Rust 端对应） */
-export interface WebviewTabInfo {
-  id: string
-  url: string
-  title: string
-}

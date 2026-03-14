@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updatedAt": "2026-03-14T18:26:29.374Z",
+  "updatedAt": "2026-03-14T18:55:26.683Z",
   "todos": [
     {
       "id": "d64fe89c-dfae-43b7-b816-0e3543b32176",
@@ -21,6 +21,15 @@
       "subtasks": [],
       "createdAt": "2026-03-14T18:26:29.374Z",
       "updatedAt": "2026-03-14T18:26:29.374Z"
+    },
+    {
+      "id": "eeaa335d-0d80-4642-b677-473801069850",
+      "content": "新增不了.env文件",
+      "status": "pending",
+      "priority": "normal",
+      "subtasks": [],
+      "createdAt": "2026-03-14T18:55:26.683Z",
+      "updatedAt": "2026-03-14T18:55:26.683Z"
     }
   ]
 }

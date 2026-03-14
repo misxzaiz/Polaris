@@ -51,6 +51,11 @@ function getLanguageFromPath(path: string): string {
   return languageMap[ext || ''] || 'text';
 }
 
+function isImagePath(path: string): boolean {
+  const ext = path.split('.').pop()?.toLowerCase();
+  return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext || '');
+}
+
 export const useFileEditorStore = create<FileEditorStore>((set, get) => ({
   // 初始状态
   isOpen: false,
@@ -64,6 +69,12 @@ export const useFileEditorStore = create<FileEditorStore>((set, get) => ({
     set({ isOpen: true, status: 'loading', error: null });
 
     try {
+      if (isImagePath(path)) {
+        set({ isOpen: false, status: 'idle', error: null, currentFile: null });
+        await emit('file:preview', { path, name, kind: 'image' });
+        return;
+      }
+
       const content = await tauri.getFileContent(path) as string;
       console.log('[Editor] 文件内容长度:', content?.length);
       const language = getLanguageFromPath(path);
