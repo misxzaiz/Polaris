@@ -431,17 +431,35 @@ fn parse_session_metadata(file_path: &PathBuf) -> (Option<String>, usize, Option
                         message_count += 1;
                         // 获取第一条用户消息作为标题
                         if first_prompt.is_none() {
-                            if let Some(content) = json.get("message")
-                                .and_then(|m| m.get("content"))
-                                .and_then(|c| c.as_str())
-                            {
-                                // 截取前 100 个字符作为标题
-                                let title = if content.len() > 100 {
-                                    format!("{}...", &content[..100])
+                            if let Some(content) = json.get("message").and_then(|m| m.get("content")) {
+                                let prompt_text = if let Some(text) = content.as_str() {
+                                    // 字符串格式
+                                    Some(text.to_string())
+                                } else if let Some(arr) = content.as_array() {
+                                    // 数组格式，提取第一个 text 类型
+                                    let mut found = None;
+                                    for item in arr {
+                                        if item.get("type").and_then(|t| t.as_str()) == Some("text") {
+                                            if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
+                                                found = Some(text.to_string());
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    found
                                 } else {
-                                    content.to_string()
+                                    None
                                 };
-                                first_prompt = Some(title);
+
+                                if let Some(text) = prompt_text {
+                                    // 截取前 100 个字符作为标题
+                                    let title = if text.len() > 100 {
+                                        format!("{}...", &text[..100])
+                                    } else {
+                                        text
+                                    };
+                                    first_prompt = Some(title);
+                                }
                             }
                         }
                         // 获取创建时间（第一条消息的时间戳）
