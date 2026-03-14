@@ -4,6 +4,8 @@
  * 提供统一的 AI 聊天接口，使用 EngineRegistry 管理多种 AI 引擎。
  */
 
+use std::sync::Arc;
+
 use crate::ai::{EngineId, Pagination, PagedResult, SessionOptions};
 use crate::ai::{SessionMeta, HistoryMessage, ClaudeHistoryProvider, IFlowHistoryProvider, SessionHistoryProvider};
 use crate::error::{AppError, Result};
@@ -52,7 +54,35 @@ pub async fn start_chat(
         }
     };
 
+    // session_id 更新回调 - 发送 session_start 事件给前端
+    let window_for_session = window.clone();
+    let ctx_id_for_session = context_id.clone();
+    let session_id_update_callback = move |new_session_id: String| {
+        tracing::info!("[start_chat] session_id 更新，发送 session_start 事件: {}", new_session_id);
+
+        let event_json = if let Some(ref cid) = ctx_id_for_session {
+            serde_json::json!({
+                "contextId": cid,
+                "payload": {
+                    "type": "session_start",
+                    "sessionId": new_session_id
+                }
+            })
+        } else {
+            serde_json::json!({
+                "contextId": "main",
+                "payload": {
+                    "type": "session_start",
+                    "sessionId": new_session_id
+                }
+            })
+        };
+
+        let _ = window_for_session.emit("chat-event", &event_json);
+    };
+
     let mut options = SessionOptions::new(event_callback);
+    options.on_session_id_update = Some(Arc::new(session_id_update_callback));
 
     if let Some(ref dir) = work_dir {
         options = options.with_work_dir(dir.clone());
@@ -104,7 +134,35 @@ pub async fn continue_chat(
         }
     };
 
+    // session_id 更新回调
+    let window_for_session = window.clone();
+    let ctx_id_for_session = context_id.clone();
+    let session_id_update_callback = move |new_session_id: String| {
+        tracing::info!("[continue_chat] session_id 更新: {}", new_session_id);
+
+        let event_json = if let Some(ref cid) = ctx_id_for_session {
+            serde_json::json!({
+                "contextId": cid,
+                "payload": {
+                    "type": "session_start",
+                    "sessionId": new_session_id
+                }
+            })
+        } else {
+            serde_json::json!({
+                "contextId": "main",
+                "payload": {
+                    "type": "session_start",
+                    "sessionId": new_session_id
+                }
+            })
+        };
+
+        let _ = window_for_session.emit("chat-event", &event_json);
+    };
+
     let mut options = SessionOptions::new(event_callback);
+    options.on_session_id_update = Some(Arc::new(session_id_update_callback));
 
     if let Some(ref dir) = work_dir {
         options = options.with_work_dir(dir.clone());
