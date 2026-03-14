@@ -38,6 +38,19 @@ export enum FileType {
   Unknown = 'unknown',
 }
 
+/** 剪贴板操作类型 */
+export type ClipboardOperation = 'copy' | 'cut';
+
+/** 剪贴板状态 */
+export interface FileClipboard {
+  /** 操作类型 */
+  operation: ClipboardOperation;
+  /** 源文件路径 */
+  sourcePath: string;
+  /** 源文件信息 */
+  sourceFile: FileInfo;
+}
+
 export interface FileExplorerState {
   /** 当前路径 */
   current_path: string;
@@ -65,6 +78,8 @@ export interface FileExplorerState {
   loading_folders: Set<string>;
   /** 是否正在刷新 */
   is_refreshing: boolean;
+  /** 剪贴板状态 */
+  clipboard: FileClipboard | null;
 }
 
 export interface FileExplorerActions {
@@ -100,6 +115,14 @@ export interface FileExplorerActions {
   get_file_content: (path: string) => Promise<string>;
   /** 清除错误 */
   clear_error: () => void;
+  /** 复制文件到剪贴板 */
+  copy_file: (file: FileInfo) => void;
+  /** 剪切文件到剪贴板 */
+  cut_file: (file: FileInfo) => void;
+  /** 粘贴文件到目标目录 */
+  paste_file: (targetPath: string) => Promise<void>;
+  /** 清除剪贴板 */
+  clear_clipboard: () => void;
 }
 
 export type FileExplorerStore = FileExplorerState & FileExplorerActions;

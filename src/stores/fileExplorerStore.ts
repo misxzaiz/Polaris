@@ -85,6 +85,7 @@ export const useFileExplorerStore = create<FileExplorerStore>((set, get) => ({
   folder_cache: new Map(), // 文件夹内容缓存
   loading_folders: new Set(), // 正在加载的文件夹
   is_refreshing: false, // 是否正在刷新
+  clipboard: null, // 剪贴板状态
 
   // 加载目录内容
   load_directory: async (path: string) => {
@@ -457,5 +458,60 @@ export const useFileExplorerStore = create<FileExplorerStore>((set, get) => ({
   // 清除错误
   clear_error: () => {
     set({ error: null });
+  },
+
+  // 复制文件到剪贴板
+  copy_file: (file: FileInfo) => {
+    set({
+      clipboard: {
+        operation: 'copy',
+        sourcePath: file.path,
+        sourceFile: file
+      }
+    });
+  },
+
+  // 剪切文件到剪贴板
+  cut_file: (file: FileInfo) => {
+    set({
+      clipboard: {
+        operation: 'cut',
+        sourcePath: file.path,
+        sourceFile: file
+      }
+    });
+  },
+
+  // 粘贴文件到目标目录
+  paste_file: async (targetPath: string) => {
+    const { clipboard } = get();
+    if (!clipboard) {
+      return;
+    }
+
+    const { operation, sourcePath, sourceFile } = clipboard;
+    const fileName = sourceFile.name;
+    const destPath = `${targetPath}/${fileName}`.replace(/\/+/g, '/');
+
+    try {
+      if (operation === 'copy') {
+        await tauri.copyPath(sourcePath, destPath);
+      } else {
+        // 移动操作
+        await tauri.movePath(sourcePath, destPath);
+        // 清除剪贴板（剪切只能粘贴一次）
+        set({ clipboard: null });
+      }
+
+      // 刷新目标目录
+      await get().refresh_folder(targetPath);
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : '粘贴文件失败' });
+    }
+  },
+
+  // 清除剪贴板
+  clear_clipboard: () => {
+    set({ clipboard: null });
   },
 }));

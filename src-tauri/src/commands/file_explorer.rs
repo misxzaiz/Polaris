@@ -203,7 +203,75 @@ pub async fn rename_file(old_path: String, new_name: String) -> Result<()> {
     };
     
     fs::rename(old_path_obj, &new_path)?;
-    
+
+    Ok(())
+}
+
+/// 复制文件或目录
+#[tauri::command]
+pub async fn copy_path(source: String, destination: String) -> Result<()> {
+    let source_path = Path::new(&source);
+    let dest_path = Path::new(&destination);
+
+    if !source_path.exists() {
+        return Err(AppError::InvalidPath("源路径不存在".to_string()));
+    }
+
+    if source_path.is_dir() {
+        // 复制目录
+        copy_dir_all(source_path, dest_path)?;
+    } else {
+        // 复制文件
+        // 确保目标目录存在
+        if let Some(parent) = dest_path.parent() {
+            if !parent.exists() {
+                fs::create_dir_all(parent)?;
+            }
+        }
+        fs::copy(source_path, dest_path)?;
+    }
+
+    Ok(())
+}
+
+/// 移动文件或目录
+#[tauri::command]
+pub async fn move_path(source: String, destination: String) -> Result<()> {
+    let source_path = Path::new(&source);
+    let dest_path = Path::new(&destination);
+
+    if !source_path.exists() {
+        return Err(AppError::InvalidPath("源路径不存在".to_string()));
+    }
+
+    // 确保目标目录存在
+    if let Some(parent) = dest_path.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent)?;
+        }
+    }
+
+    fs::rename(source_path, dest_path)?;
+
+    Ok(())
+}
+
+/// 递归复制目录
+fn copy_dir_all(source: &Path, destination: &Path) -> Result<()> {
+    fs::create_dir_all(destination)?;
+
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let path = entry.path();
+        let dest_path = destination.join(entry.file_name());
+
+        if path.is_dir() {
+            copy_dir_all(&path, &dest_path)?;
+        } else {
+            fs::copy(&path, &dest_path)?;
+        }
+    }
+
     Ok(())
 }
 

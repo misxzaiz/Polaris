@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updatedAt": "2026-03-14T19:19:38.892Z",
+  "updatedAt": "2026-03-14T19:27:45.928Z",
   "todos": [
     {
       "id": "d64fe89c-dfae-43b7-b816-0e3543b32176",
@@ -38,6 +38,24 @@
       "subtasks": [],
       "createdAt": "2026-03-14T19:19:38.892Z",
       "updatedAt": "2026-03-14T19:19:38.892Z"
+    },
+    {
+      "id": "7a6aed0e-e50f-468b-ac89-20ed752db78c",
+      "content": "lsp支持",
+      "status": "pending",
+      "priority": "normal",
+      "subtasks": [],
+      "createdAt": "2026-03-14T19:21:07.255Z",
+      "updatedAt": "2026-03-14T19:21:07.255Z"
+    },
+    {
+      "id": "0b8db2b3-f562-4d7c-b453-1157ee97e594",
+      "content": "ai对话面板支持全关闭显示，支持任意宽度",
+      "status": "pending",
+      "priority": "normal",
+      "subtasks": [],
+      "createdAt": "2026-03-14T19:27:45.928Z",
+      "updatedAt": "2026-03-14T19:27:45.928Z"
     }
   ]
 }

@@ -65,7 +65,20 @@ export const FileTreeNode = memo<FileTreeNodeProps>(({
   loadingFolders,
 }) => {
   const { t } = useTranslation('fileExplorer');
-  const { load_folder_content, get_cached_folder_content, toggle_folder, select_file, create_file, create_directory, delete_file, rename_file } = useFileExplorerStore();
+  const {
+    load_folder_content,
+    get_cached_folder_content,
+    toggle_folder,
+    select_file,
+    create_file,
+    create_directory,
+    delete_file,
+    rename_file,
+    copy_file,
+    cut_file,
+    paste_file,
+    clipboard
+  } = useFileExplorerStore();
   const { openFile } = useFileEditorStore();
 
   const [contextMenu, setContextMenu] = useState<{
@@ -225,6 +238,40 @@ export const FileTreeNode = memo<FileTreeNodeProps>(({
 
     items.push({ id: 'separator-2', label: '-', icon: undefined, action: () => {} });
 
+    // 复制文件
+    items.push({
+      id: 'copy',
+      label: t('contextMenu.copy'),
+      icon: <Copy size={14} />,
+      action: () => {
+        copy_file(file);
+      },
+    });
+
+    // 剪切文件
+    items.push({
+      id: 'cut',
+      label: t('contextMenu.cut'),
+      icon: <IconEdit size={14} />,
+      action: () => {
+        cut_file(file);
+      },
+    });
+
+    // 粘贴（仅目录显示）
+    if (file.is_dir && clipboard) {
+      items.push({
+        id: 'paste',
+        label: t('contextMenu.paste'),
+        icon: <IconFolder size={14} />,
+        action: async () => {
+          await paste_file(file.path);
+        },
+      });
+    }
+
+    items.push({ id: 'separator-rename', label: '-', icon: undefined, action: () => {} });
+
     items.push({
       id: 'rename',
       label: t('contextMenu.rename'),
@@ -266,7 +313,7 @@ export const FileTreeNode = memo<FileTreeNodeProps>(({
     }
 
     return items;
-  }, [file, toggle_folder, openFile, t]);
+  }, [file, toggle_folder, openFile, t, copy_file, cut_file, paste_file, clipboard]);
 
   const handleInputDialogConfirm = async (value: string) => {
     if (!value) return;
