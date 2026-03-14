@@ -425,8 +425,8 @@ impl IntegrationManager {
     ) {
         tracing::info!("[IntegrationManager] 🤖 开始 AI 回复: conversation={}, message_len={}", conversation_id, message.len());
 
-        // 获取会话状态（包括已有的 ai_session_id）
-        let (engine_id, work_dir, system_prompt, existing_session_id) = {
+        // 获取会话状态（包括已有的 ai_session_id 和消息历史）
+        let (engine_id, work_dir, system_prompt, existing_session_id, message_history, is_openai) = {
             let mut states = conversation_states.lock().await;
             let state = states.get_or_create(&conversation_id);
 
@@ -443,11 +443,28 @@ impl IntegrationManager {
             };
 
             let session_id = state.ai_session_id.clone();
+            let engine_id = state.get_engine_id();
+            let is_openai = engine_id.is_openai();
+
+            // 获取消息历史（仅 OpenAI 需要）
+            let history: Vec<crate::ai::HistoryEntry> = if is_openai {
+                state.message_history.iter()
+                    .map(|h| crate::ai::HistoryEntry {
+                        role: h.role.clone(),
+                        content: h.content.clone(),
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+
             (
-                state.get_engine_id(),
+                engine_id,
                 state.work_dir.clone(),
                 system_prompt,
                 session_id,
+                history,
+                is_openai,
             )
         };
 
@@ -562,6 +579,11 @@ impl IntegrationManager {
                         .with_on_complete(complete_callback);
                     options.on_session_id_update = Some(session_id_update_callback.clone());
 
+                    // OpenAI 引擎传递消息历史
+                    if is_openai {
+                        options = options.with_message_history(message_history.clone());
+                    }
+
                     if let Some(ref dir) = work_dir {
                         options = options.with_work_dir(dir);
                     }
@@ -651,6 +673,14 @@ impl IntegrationManager {
             if !final_text.is_empty() {
                 Self::send_reply(&task_adapters, platform, &task_conversation_id, &final_text).await;
                 tracing::info!("[IntegrationManager] ✅ 回复已发送");
+
+                // OpenAI 引擎保存消息历史
+                if is_openai {
+                    let mut states = task_conversation_states.lock().await;
+                    states.add_user_message(&task_conversation_id, &message);
+                    states.add_assistant_message(&task_conversation_id, &final_text);
+                    tracing::info!("[IntegrationManager] 📝 消息历史已更新");
+                }
 
                 // 发送完成消息
                 let elapsed = start_time.elapsed();

@@ -475,14 +475,70 @@ impl AIEngine for OpenAIEngine {
     fn continue_session(
         &mut self,
         _session_id: &str,
-        _message: &str,
-        _options: SessionOptions,
+        message: &str,
+        options: SessionOptions,
     ) -> Result<()> {
-        // OpenAI API 是无状态的，继续会话需要维护消息历史
-        // 这里简化处理，返回错误提示
-        Err(AppError::ValidationError(
-            "OpenAI 引擎暂不支持继续会话，请使用前端维护消息历史".to_string(),
-        ))
+        // 优先使用传入的 provider_id，否则使用引擎默认的
+        let provider_id = options.openai_provider_id.clone()
+            .or_else(|| self.provider_id.clone());
+
+        tracing::info!("[OpenAIEngine] 继续会话 (provider: {:?}, history_len: {})",
+            provider_id, options.message_history.len());
+
+        // 检查配置
+        if self.get_config_for_provider(provider_id.as_deref()).is_none() {
+            return Err(AppError::ValidationError("OpenAI 配置未设置".to_string()));
+        }
+
+        let session_id = uuid::Uuid::new_v4().to_string();
+
+        // 注册会话
+        self.sessions.register(
+            session_id.clone(),
+            0,
+            "openai".to_string(),
+        )?;
+
+        // 构建消息：历史 + 新消息
+        let mut messages: Vec<ChatMessage> = options.message_history
+            .iter()
+            .map(|h| ChatMessage {
+                role: h.role.clone(),
+                content: Some(h.content.clone()),
+                tool_calls: None,
+                tool_call_id: None,
+            })
+            .collect();
+
+        // 添加新消息
+        messages.push(ChatMessage {
+            role: "user".to_string(),
+            content: Some(message.to_string()),
+            tool_calls: None,
+            tool_call_id: None,
+        });
+
+        // 克隆必要的数据用于异步任务
+        let mut engine_clone = OpenAIEngine {
+            provider_id: provider_id.clone(),
+            config: self.config.clone(),
+            providers: self.providers.clone(),
+            active_provider_id: self.active_provider_id.clone(),
+            client: self.client.clone(),
+            sessions: SessionManager::new(),
+            cancel_tokens: HashMap::new(),
+        };
+
+        let sid = session_id.clone();
+
+        // 在异步运行时中执行
+        tokio::spawn(async move {
+            if let Err(e) = engine_clone.execute_chat(messages, options, sid.clone(), provider_id).await {
+                tracing::error!("[OpenAIEngine] 继续会话执行失败: {}", e);
+            }
+        });
+
+        Ok(())
     }
 
     fn interrupt(&mut self, session_id: &str) -> Result<()> {

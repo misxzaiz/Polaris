@@ -211,6 +211,38 @@ impl CommandParser {
     }
 }
 
+/// 历史消息（用于 OpenAI 等无状态引擎的上下文）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryMessage {
+    /// 角色：user 或 assistant
+    pub role: String,
+    /// 消息内容
+    pub content: String,
+    /// 时间戳
+    pub timestamp: i64,
+}
+
+impl HistoryMessage {
+    pub fn user(content: impl Into<String>) -> Self {
+        use chrono::Utc;
+        Self {
+            role: "user".to_string(),
+            content: content.into(),
+            timestamp: Utc::now().timestamp_millis(),
+        }
+    }
+
+    pub fn assistant(content: impl Into<String>) -> Self {
+        use chrono::Utc;
+        Self {
+            role: "assistant".to_string(),
+            content: content.into(),
+            timestamp: Utc::now().timestamp_millis(),
+        }
+    }
+}
+
 /// 会话状态
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -231,6 +263,16 @@ pub struct ConversationState {
     pub last_activity: i64,
     /// 消息计数
     pub message_count: u32,
+    /// 消息历史（用于 OpenAI 等无状态引擎）
+    #[serde(default)]
+    pub message_history: Vec<HistoryMessage>,
+    /// 最大历史条数
+    #[serde(default = "default_max_history")]
+    pub max_history: usize,
+}
+
+fn default_max_history() -> usize {
+    20
 }
 
 impl ConversationState {
@@ -247,6 +289,8 @@ impl ConversationState {
             prompt_mode: PromptMode::default(),
             last_activity: Utc::now().timestamp_millis(),
             message_count: 0,
+            message_history: Vec::new(),
+            max_history: default_max_history(),
         }
     }
 
@@ -263,6 +307,7 @@ impl ConversationState {
         self.custom_prompt = None;
         self.prompt_mode = PromptMode::default();
         self.message_count = 0;
+        self.message_history.clear();
         use chrono::Utc;
         self.last_activity = Utc::now().timestamp_millis();
     }
@@ -275,6 +320,37 @@ impl ConversationState {
     /// 设置引擎
     pub fn set_engine(&mut self, engine_id: &EngineId) {
         self.engine_id = engine_id.as_str();
+    }
+
+    /// 添加用户消息到历史
+    pub fn add_user_message(&mut self, content: impl Into<String>) {
+        self.message_history.push(HistoryMessage::user(content));
+        self.trim_history();
+    }
+
+    /// 添加助手回复到历史
+    pub fn add_assistant_message(&mut self, content: impl Into<String>) {
+        self.message_history.push(HistoryMessage::assistant(content));
+        self.trim_history();
+    }
+
+    /// 裁剪历史，保持在 max_history 限制内
+    fn trim_history(&mut self) {
+        if self.message_history.len() > self.max_history {
+            // 保留最近的 N 条消息
+            let keep = self.max_history;
+            self.message_history.drain(0..self.message_history.len() - keep);
+        }
+    }
+
+    /// 获取消息历史
+    pub fn get_message_history(&self) -> &[HistoryMessage] {
+        &self.message_history
+    }
+
+    /// 清空消息历史
+    pub fn clear_history(&mut self) {
+        self.message_history.clear();
     }
 }
 

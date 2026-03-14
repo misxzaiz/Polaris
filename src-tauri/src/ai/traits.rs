@@ -108,6 +108,15 @@ pub struct SessionOptions {
     pub on_session_id_update: Option<Arc<dyn Fn(String) + Send + Sync>>,
     /// OpenAI Provider ID（用于 OpenAI 引擎选择具体的 Provider）
     pub openai_provider_id: Option<String>,
+    /// 消息历史（用于 OpenAI 等无状态引擎继续对话）
+    pub message_history: Vec<HistoryEntry>,
+}
+
+/// 历史消息条目
+#[derive(Debug, Clone)]
+pub struct HistoryEntry {
+    pub role: String,
+    pub content: String,
 }
 
 impl SessionOptions {
@@ -124,6 +133,7 @@ impl SessionOptions {
             on_error: None,
             on_session_id_update: None,
             openai_provider_id: None,
+            message_history: Vec::new(),
         }
     }
 
@@ -169,6 +179,12 @@ impl SessionOptions {
     /// 设置 OpenAI Provider ID
     pub fn with_openai_provider_id(mut self, provider_id: impl Into<String>) -> Self {
         self.openai_provider_id = Some(provider_id.into());
+        self
+    }
+
+    /// 设置消息历史
+    pub fn with_message_history(mut self, history: Vec<HistoryEntry>) -> Self {
+        self.message_history = history;
         self
     }
 }

@@ -18,7 +18,7 @@ mod history_claude;
 mod history_iflow;
 mod event_parser;
 
-pub use traits::{AIEngine, EngineId, SessionOptions};
+pub use traits::{AIEngine, EngineId, SessionOptions, HistoryEntry};
 pub use types::{EngineStatus, EngineDescriptor};
 pub use session::SessionManager;
 pub use registry::EngineRegistry;
