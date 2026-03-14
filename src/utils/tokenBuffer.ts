@@ -19,25 +19,74 @@ interface TokenBufferOptions {
   maxDelay?: number;
   /** 最大缓冲大小（字符数），超过立即刷新 */
   maxSize?: number;
+  /** 动态调整策略：根据已累积内容长度动态调整参数 */
+  dynamicConfig?: {
+    /** 内容长度阈值，超过后使用更大的批处理参数 */
+    contentLengthThreshold: number;
+    /** 长内容时的最大延迟 */
+    longContentMaxDelay: number;
+    /** 长内容时的最大缓冲大小 */
+    longContentMaxSize: number;
+  };
 }
 
 interface BufferFlushCallback {
   (content: string, isFinal: boolean): void;
 }
 
+// 默认配置
+const DEFAULT_MAX_DELAY = 80; // 优化：从 50ms 提升到 80ms
+const DEFAULT_MAX_SIZE = 800; // 优化：从 500 提升到 800
+
+// 长内容配置（内容超过阈值时使用）
+const LONG_CONTENT_THRESHOLD = 3000;
+const LONG_CONTENT_MAX_DELAY = 120;
+const LONG_CONTENT_MAX_SIZE = 1500;
+
 export class TokenBuffer {
   private buffer: string[] = [];
   private rafId: number | null = null;
   private timeoutId: number | null = null;
-  private readonly maxDelay: number;
-  private readonly maxSize: number;
+  private readonly baseMaxDelay: number;
+  private readonly baseMaxSize: number;
   private readonly onFlush: BufferFlushCallback;
   private isDestroyed = false;
+  private totalContentLength = 0;
+  private readonly dynamicConfig?: TokenBufferOptions['dynamicConfig'];
 
   constructor(onFlush: BufferFlushCallback, options: TokenBufferOptions = {}) {
     this.onFlush = onFlush;
-    this.maxDelay = options.maxDelay ?? 50; // 默认 50ms 最大延迟
-    this.maxSize = options.maxSize ?? 500;  // 默认 500 字符强制刷新
+    this.baseMaxDelay = options.maxDelay ?? DEFAULT_MAX_DELAY;
+    this.baseMaxSize = options.maxSize ?? DEFAULT_MAX_SIZE;
+
+    // 动态配置（可选）
+    this.dynamicConfig = options.dynamicConfig ?? {
+      contentLengthThreshold: LONG_CONTENT_THRESHOLD,
+      longContentMaxDelay: LONG_CONTENT_MAX_DELAY,
+      longContentMaxSize: LONG_CONTENT_MAX_SIZE,
+    };
+  }
+
+  /**
+   * 获取当前应使用的最大延迟（动态调整）
+   */
+  private getCurrentMaxDelay(): number {
+    if (!this.dynamicConfig) return this.baseMaxDelay;
+    if (this.totalContentLength > this.dynamicConfig.contentLengthThreshold) {
+      return this.dynamicConfig.longContentMaxDelay;
+    }
+    return this.baseMaxDelay;
+  }
+
+  /**
+   * 获取当前应使用的最大缓冲大小（动态调整）
+   */
+  private getCurrentMaxSize(): number {
+    if (!this.dynamicConfig) return this.baseMaxSize;
+    if (this.totalContentLength > this.dynamicConfig.contentLengthThreshold) {
+      return this.dynamicConfig.longContentMaxSize;
+    }
+    return this.baseMaxSize;
   }
 
   /**
@@ -48,10 +97,11 @@ export class TokenBuffer {
     if (!token) return;
 
     this.buffer.push(token);
+    this.totalContentLength += token.length;
 
-    // 检查是否达到最大缓冲大小
+    // 检查是否达到最大缓冲大小（动态）
     const bufferSize = this.buffer.reduce((sum, s) => sum + s.length, 0);
-    if (bufferSize >= this.maxSize) {
+    if (bufferSize >= this.getCurrentMaxSize()) {
       this.flush(false);
       return;
     }
@@ -82,7 +132,7 @@ export class TokenBuffer {
         this.rafId = null;
       }
       this.flush(false);
-    }, this.maxDelay);
+    }, this.getCurrentMaxDelay());
   }
 
   /**
@@ -167,6 +217,20 @@ export class TokenBuffer {
       this.timeoutId = null;
     }
     this.buffer = [];
+  }
+
+  /**
+   * 重置内容长度计数器（在消息完成时调用）
+   */
+  resetContentLength(): void {
+    this.totalContentLength = 0;
+  }
+
+  /**
+   * 获取已累积的总内容长度
+   */
+  get contentLength(): number {
+    return this.totalContentLength;
   }
 }
 

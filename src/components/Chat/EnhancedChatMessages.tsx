@@ -45,6 +45,7 @@ import { BilingualTextRenderer } from './BilingualTextRenderer';
 import { MessageTranslateButton } from './MessageTranslateButton';
 import { useMessageTranslationStore } from '../../stores/messageTranslationStore';
 import { extractTranslatableParagraphsFromMarkdown } from '../../utils/translateUtils';
+import { calculateRenderMode, type MessageRenderMode, DEFAULT_LAYER_CONFIG } from '../../utils/messageLayer';
 
 /** Markdown 渲染器（使用缓存优化） */
 function formatContent(content: string): string {
@@ -67,31 +68,34 @@ const UserBubble = memo(function UserBubble({ message }: { message: UserChatMess
 });
 
 /** 文本内容块组件（支持 Mermaid 渲染 + 代码高亮 + 双语翻译）
- * 
+ *
  * 性能优化策略：
  * 1. 流式输出时使用节流（而非防抖），确保固定间隔渲染，提供更好的实时性
  * 2. 流式阶段显示简化版内容（纯文本），避免复杂 markdown 渲染
  * 3. 使用 useDeferredValue 降低渲染优先级，保持 UI 响应
  * 4. 流式结束后显示完整渲染结果
+ * 5. 分层渲染：preview/archive 模式使用简化渲染
  */
-const TextBlockRenderer = memo(function TextBlockRenderer({ 
-  block, 
+const TextBlockRenderer = memo(function TextBlockRenderer({
+  block,
   messageId,
   onTranslateAll,
-  isStreaming = false
-}: { 
+  isStreaming = false,
+  renderMode = 'full'
+}: {
   block: TextBlock;
   messageId: string;
   onTranslateAll?: () => void;
   isStreaming?: boolean;
+  renderMode?: MessageRenderMode;
 }) {
   // 流式输出时使用节流（200ms 间隔），确保固定频率渲染
   // 节流比防抖更适合流式场景：用户能看到内容持续更新，而不是等待结束后才显示
   const throttledContent = useThrottle(block.content, isStreaming ? 200 : 0);
-  
+
   // 使用 useDeferredValue 延迟渲染复杂内容，保持 UI 响应
   const deferredContent = useDeferredValue(throttledContent);
-  
+
   // 流式阶段使用节流内容，非流式使用原始内容
   const contentToRender = isStreaming ? deferredContent : block.content;
 
@@ -108,7 +112,28 @@ const TextBlockRenderer = memo(function TextBlockRenderer({
     );
   }
 
-  // 非流式阶段：完整渲染
+  // 归档模式：仅显示摘要（截取前 200 字符）
+  if (renderMode === 'archive') {
+    const summaryContent = block.content.length > 200
+      ? block.content.slice(0, 200) + '...'
+      : block.content;
+    return (
+      <div className="prose prose-invert prose-sm max-w-none text-text-secondary">
+        <span className="whitespace-pre-wrap">{summaryContent}</span>
+      </div>
+    );
+  }
+
+  // 预览模式：简化渲染（不渲染 Mermaid，不渲染复杂代码高亮）
+  if (renderMode === 'preview') {
+    return (
+      <div className="prose prose-invert prose-sm max-w-none">
+        <PreviewTextContent content={block.content} />
+      </div>
+    );
+  }
+
+  // 完整模式：完整渲染
   return (
     <div className="prose prose-invert prose-sm max-w-none">
       {parts.map((part, partIndex) => {
@@ -125,6 +150,20 @@ const TextBlockRenderer = memo(function TextBlockRenderer({
         }
       })}
     </div>
+  );
+});
+
+/**
+ * 预览模式文本渲染器 - 简化版，避免 Mermaid 和复杂代码高亮
+ */
+const PreviewTextContent = memo(function PreviewTextContent({ content }: { content: string }) {
+  const formattedHTML = useMemo(() => formatContent(content), [content]);
+
+  return (
+    <div
+      className="whitespace-pre-wrap break-words"
+      dangerouslySetInnerHTML={{ __html: formattedHTML }}
+    />
   );
 });
 
@@ -1114,21 +1153,59 @@ const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block }: { b
 });
 
 /** 内容块渲染器 */
-function renderContentBlock(block: ContentBlock, messageId: string, onTranslateAll?: () => void, isStreaming?: boolean): React.ReactNode {
+function renderContentBlock(
+  block: ContentBlock,
+  messageId: string,
+  onTranslateAll?: () => void,
+  isStreaming?: boolean,
+  renderMode: MessageRenderMode = 'full'
+): React.ReactNode {
   switch (block.type) {
     case 'text':
-      return <TextBlockRenderer key={`text-${block.content.slice(0, 20)}`} block={block} messageId={messageId} onTranslateAll={onTranslateAll} isStreaming={isStreaming} />;
+      return <TextBlockRenderer key={`text-${block.content.slice(0, 20)}`} block={block} messageId={messageId} onTranslateAll={onTranslateAll} isStreaming={isStreaming} renderMode={renderMode} />;
     case 'thinking':
+      // 归档模式下不渲染思考块
+      if (renderMode === 'archive') return null;
       return <ThinkingBlockRenderer key={`thinking-${block.content.slice(0, 20)}`} block={block} />;
     case 'tool_call':
+      // 归档模式下使用简化工具渲染
+      if (renderMode === 'archive') {
+        return <SimplifiedToolCallRenderer key={block.id} block={block} />;
+      }
       return <ToolCallBlockRenderer key={block.id} block={block} />;
     default:
       return null;
   }
 }
 
+/**
+ * 简化版工具调用渲染器 - 用于归档层
+ */
+const SimplifiedToolCallRenderer = memo(function SimplifiedToolCallRenderer({ block }: { block: ToolCallBlock }) {
+  const toolConfig = getToolConfig(block.name);
+  const ToolIcon = toolConfig.icon;
+
+  return (
+    <div className="my-1 flex items-center gap-2 text-xs text-text-tertiary">
+      <ToolIcon className={clsx('w-3 h-3', toolConfig.color)} />
+      <span>{toolConfig.label}</span>
+      {block.status === 'completed' ? (
+        <Check className="w-3 h-3 text-success" />
+      ) : block.status === 'failed' ? (
+        <XCircle className="w-3 h-3 text-error" />
+      ) : null}
+    </div>
+  );
+});
+
 /** 助手消息组件 - 使用内容块架构 */
-const AssistantBubble = memo(function AssistantBubble({ message }: { message: AssistantChatMessage }) {
+const AssistantBubble = memo(function AssistantBubble({
+  message,
+  renderMode = 'full'
+}: {
+  message: AssistantChatMessage;
+  renderMode?: MessageRenderMode;
+}) {
   const hasBlocks = message.blocks && message.blocks.length > 0;
   const translateMessage = useMessageTranslationStore((state) => state.translateMessage);
 
@@ -1161,12 +1238,14 @@ const AssistantBubble = memo(function AssistantBubble({ message }: { message: As
           <span className="text-xs text-text-tertiary">
             {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
           </span>
-          {/* 消息级翻译按钮 */}
-          <MessageTranslateButton 
-            messageId={message.id}
-            blocks={message.blocks || []}
-            isStreaming={message.isStreaming}
-          />
+          {/* 消息级翻译按钮 - 归档模式不显示 */}
+          {renderMode === 'full' && (
+            <MessageTranslateButton
+              messageId={message.id}
+              blocks={message.blocks || []}
+              isStreaming={message.isStreaming}
+            />
+          )}
         </div>
 
         {/* 渲染内容块 */}
@@ -1174,7 +1253,7 @@ const AssistantBubble = memo(function AssistantBubble({ message }: { message: As
           <div className="space-y-1">
             {message.blocks.map((block, index) => (
               <div key={index}>
-                {renderContentBlock(block, message.id, handleTranslateAll, message.isStreaming)}
+                {renderContentBlock(block, message.id, handleTranslateAll, message.isStreaming, renderMode)}
               </div>
             ))}
           </div>
@@ -1251,12 +1330,12 @@ const SystemBubble = memo(function SystemBubble({ content }: { content: string }
 });
 
 /** 消息渲染器 */
-function renderChatMessage(message: ChatMessage): React.ReactNode {
+function renderChatMessage(message: ChatMessage, renderMode: MessageRenderMode = 'full'): React.ReactNode {
   switch (message.type) {
     case 'user':
       return <UserBubble key={message.id} message={message} />;
     case 'assistant':
-      return <AssistantBubble key={message.id} message={message} />;
+      return <AssistantBubble key={message.id} message={message} renderMode={renderMode} />;
     case 'system':
       return <SystemBubble key={message.id} content={(message as any).content} />;
     default:
@@ -1325,7 +1404,7 @@ const EmptyState = memo(function EmptyState() {
  * - 避免 50ms 一次的整个消息列表重渲染
  */
 export function EnhancedChatMessages() {
-  const { messages, archivedMessages, loadArchivedMessages, currentMessage, isStreaming } = useEventChatStore();
+  const { messages, archivedMessages, loadMoreArchivedMessages, currentMessage, isStreaming } = useEventChatStore();
 
   // 性能优化：流式阶段合并 currentMessage 到消息列表
   // 这样就不需要频繁更新 messages 数组，避免整个列表重渲染
@@ -1467,17 +1546,17 @@ export function EnhancedChatMessages() {
 
   return (
     <div className="flex-1 overflow-hidden flex flex-col">
-      {/* 归档消息提示 */}
+      {/* 归档消息提示 - 分批加载 */}
       {hasArchive && (
-        <div className="flex justify-center py-3 bg-background-surface border-b border-border">
+        <div className="flex justify-center py-2 bg-background-surface border-b border-border">
           <button
-            onClick={loadArchivedMessages}
-            className="text-xs text-primary hover:text-primary-hover transition-colors flex items-center gap-2"
+            onClick={() => loadMoreArchivedMessages(20)}
+            className="text-xs text-primary hover:text-primary-hover transition-colors flex items-center gap-2 px-3 py-1.5 rounded-full hover:bg-primary-faint"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
             </svg>
-            加载 {archivedMessages.length} 条历史消息
+            加载更早的消息 ({archivedMessages.length} 条)
           </button>
         </div>
       )}
@@ -1492,9 +1571,24 @@ export function EnhancedChatMessages() {
               ref={virtuosoRef}
               style={{ height: '100%' }}
               data={displayMessages}
-              itemContent={(_index, item) => renderChatMessage(item)}
+              itemContent={(index, item) => {
+                // 计算当前消息的渲染模式
+                const renderMode = calculateRenderMode(index, displayMessages.length, DEFAULT_LAYER_CONFIG);
+                return renderChatMessage(item, renderMode);
+              }}
               components={{
                 EmptyPlaceholder: () => null,
+                Header: hasArchive ? (() => (
+                  <div className="flex justify-center py-3">
+                    <button
+                      onClick={() => loadMoreArchivedMessages(20)}
+                      className="text-xs text-text-tertiary hover:text-primary transition-colors flex items-center gap-1"
+                    >
+                      <ChevronDown className="w-3 h-3" />
+                      加载更早 20 条消息
+                    </button>
+                  </div>
+                )) : undefined,
                 Footer: () => <div style={{ height: '120px' }} />,
               }}
               followOutput={autoScroll ? (isStreaming ? true : 'smooth') : false}

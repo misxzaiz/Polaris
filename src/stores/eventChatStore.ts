@@ -37,6 +37,9 @@ const MAX_MESSAGES = 500
 /** 消息保留阈值 */
 const MESSAGE_ARCHIVE_THRESHOLD = 550
 
+/** 每批次加载的消息数量 */
+const BATCH_LOAD_COUNT = 20
+
 /** 本地存储键 */
 const STORAGE_KEY = 'event_chat_state_backup'
 const STORAGE_VERSION = '5' // 版本升级：添加历史管理功能
@@ -392,8 +395,10 @@ interface EventChatState {
   setMaxMessages: (max: number) => void
   /** 切换归档展开状态 */
   toggleArchive: () => void
-  /** 加载归档消息 */
+  /** 加载归档消息（一次性全部加载） */
   loadArchivedMessages: () => void
+  /** 分批加载归档消息 */
+  loadMoreArchivedMessages: (count?: number) => void
 
   /** 保存状态到本地存储 */
   saveToStorage: () => void
@@ -1457,6 +1462,31 @@ export const useEventChatStore = create<EventChatState>((set, get) => ({
       archivedMessages: [],
       isArchiveExpanded: false,
     })
+  },
+
+  /**
+   * 分批加载归档消息
+   * @param count 要加载的消息数量，默认 BATCH_LOAD_COUNT
+   */
+  loadMoreArchivedMessages: (count: number = BATCH_LOAD_COUNT) => {
+    const { archivedMessages, messages } = get()
+    if (archivedMessages.length === 0) return
+
+    // 从归档末尾取 count 条消息（最新的归档消息）
+    const loadCount = Math.min(count, archivedMessages.length)
+    const toLoad = archivedMessages.slice(-loadCount)
+    const remaining = archivedMessages.slice(0, -loadCount)
+
+    console.log(`[EventChatStore] 分批加载 ${loadCount} 条消息，剩余 ${remaining.length} 条归档`)
+
+    set({
+      // 将加载的消息添加到 messages 开头
+      messages: [...toLoad, ...messages],
+      archivedMessages: remaining,
+    })
+
+    // 保存状态
+    get().saveToStorage()
   },
 
   saveToStorage: () => {

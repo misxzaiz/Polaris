@@ -3,6 +3,7 @@
  *
  * 功能：
  * - 懒加载 mermaid 库，减少首屏体积
+ * - IntersectionObserver：只在可见时渲染图表
  * - 支持暗色主题（匹配项目配色）
  * - 错误处理和友好提示
  * - 加载状态显示
@@ -20,6 +21,15 @@ interface MermaidDiagramProps {
   /** 唯一标识符（用于生成图表 ID） */
   id: string;
 }
+
+/**
+ * 可见性检测阈值配置
+ */
+const INTERSECTION_OPTIONS: IntersectionObserverInit = {
+  root: null,
+  rootMargin: '100px', // 提前 100px 开始加载
+  threshold: 0.1,      // 10% 可见时触发
+};
 
 /**
  * Mermaid 渲染状态
@@ -90,6 +100,8 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code, id }: Mermaid
   const contentRef = useRef<HTMLDivElement>(null);
   const [renderState, setRenderState] = useState<RenderState>('idle');
   const [svg, setSvg] = useState<string>('');
+  const [isVisible, setIsVisible] = useState(false); // 是否在视口中可见
+  const hasRenderedRef = useRef(false); // 是否已渲染过（避免重复渲染）
 
   // 图表交互状态
   const [diagramState, setDiagramState] = useState<DiagramState>(() => getDiagramState(id));
@@ -104,8 +116,33 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code, id }: Mermaid
     });
   }, [id]);
 
-  // ===== Mermaid 渲染逻辑 =====
+  // ===== 可见性检测 =====
   useEffect(() => {
+    const container = containerRef.current;
+    if (!container || hasRenderedRef.current) return;
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting && !hasRenderedRef.current) {
+          setIsVisible(true);
+          hasRenderedRef.current = true;
+          observer.disconnect();
+        }
+      });
+    }, INTERSECTION_OPTIONS);
+
+    observer.observe(container);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  // ===== Mermaid 渲染逻辑（只在可见时执行）=====
+  useEffect(() => {
+    // 只在可见时才渲染
+    if (!isVisible) return;
+
     let mounted = true;
     let mermaidInstance: any = null;
 
@@ -152,7 +189,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code, id }: Mermaid
     return () => {
       mounted = false;
     };
-  }, [code, id]);
+  }, [isVisible, code, id]);
 
   // ===== 事件处理函数 =====
 
@@ -426,8 +463,20 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code, id }: Mermaid
     );
   }
 
-  // 4. 空状态（初始状态）
-  return null;
+  // 4. 空状态/未可见状态（显示占位符）
+  return (
+    <div
+      ref={containerRef}
+      className="my-4 p-6 bg-background-surface border border-border-subtle rounded-lg"
+    >
+      <div className="flex items-center justify-center gap-3">
+        <svg className="w-5 h-5 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+        <span className="text-sm text-text-tertiary">图表将在滚动到可视区域时渲染</span>
+      </div>
+    </div>
+  );
 }, (prevProps, nextProps) => {
   // 自定义比较：只在代码或 ID 变化时重新渲染
   return prevProps.code === nextProps.code && prevProps.id === nextProps.id;

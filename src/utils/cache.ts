@@ -264,12 +264,13 @@ function getContentFingerprint(content: string): string {
  *
  * 性能优化：
  * - 使用 LRU 缓存避免重复解析
- * - 增量内容检测，避免对相同前缀的内容重复渲染
+ * - 增量内容检测：新内容是旧内容延伸时，只渲染新增部分
  * - 预设允许的 HTML 标签和属性
  */
 export class MarkdownRenderCache {
   private cache: LRUCache<MarkdownCacheEntry>;
   private lastContent: string = '';
+  private lastHtml: string = '';
   private lastRenderedLength: number = 0;
 
   // 允许的 HTML 标签和属性（与原 EnhancedChatMessages 一致）
@@ -286,31 +287,60 @@ export class MarkdownRenderCache {
   }
 
   /**
-   * 渲染 Markdown（带缓存）
+   * 检测是否为增量追加（新内容以旧内容为前缀）
+   */
+  private isIncrementalAppend(newContent: string, oldContent: string): boolean {
+    if (!oldContent) return false;
+    if (newContent.length <= oldContent.length) return false;
+    return newContent.startsWith(oldContent);
+  }
+
+  /**
+   * 渲染 Markdown（带缓存 + 增量更新）
    *
    * 优化策略：
    * 1. 检查是否为增量更新（新内容是旧内容的延伸）
-   * 2. 如果是增量，复用之前的渲染结果
-   * 3. 否则使用完整缓存
+   * 2. 如果是增量，只渲染新增部分并追加
+   * 3. 否则完整渲染
    */
   render(content: string): string {
     // 空内容快速返回
     if (!content) return '';
 
-    // 检查是否为新内容
-    const isNewContent = content !== this.lastContent;
+    // 如果内容没变，返回缓存的 HTML
+    if (content === this.lastContent && this.lastHtml) {
+      return this.lastHtml;
+    }
 
-    // 如果内容没变，返回缓存
-    if (!isNewContent && this.lastContent) {
-      const entry = this.cache.get(getContentFingerprint(this.lastContent));
-      if (entry) {
-        return entry.html;
+    // 检查缓存
+    const fingerprint = getContentFingerprint(content);
+    const cached = this.cache.get(fingerprint);
+    if (cached) {
+      this.lastContent = content;
+      this.lastHtml = cached.html;
+      this.lastRenderedLength = content.length;
+      return cached.html;
+    }
+
+    // 尝试增量渲染
+    if (this.isIncrementalAppend(content, this.lastContent)) {
+      const incrementalHtml = this.renderIncremental(content, this.lastContent, this.lastHtml);
+      if (incrementalHtml) {
+        this.lastContent = content;
+        this.lastHtml = incrementalHtml;
+        this.lastRenderedLength = content.length;
+
+        // 缓存结果
+        this.cache.set(fingerprint, {
+          html: incrementalHtml,
+          contentLength: content.length,
+        });
+
+        return incrementalHtml;
       }
     }
 
-    // 如果是增量更新且新增部分较小，可以优化（这里简化处理，直接重新渲染）
-    // 对于流式场景，完整内容已经在最后一次调用时传入
-
+    // 完整渲染
     try {
       const raw = marked.parse(content) as string;
       const html = DOMPurify.sanitize(raw, {
@@ -319,13 +349,13 @@ export class MarkdownRenderCache {
       });
 
       // 缓存结果
-      const fingerprint = getContentFingerprint(content);
       this.cache.set(fingerprint, {
         html,
         contentLength: content.length,
       });
 
       this.lastContent = content;
+      this.lastHtml = html;
       this.lastRenderedLength = content.length;
 
       return html;
@@ -337,6 +367,48 @@ export class MarkdownRenderCache {
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/\n/g, '<br>');
+    }
+  }
+
+  /**
+   * 增量渲染：只渲染新增部分并合并
+   *
+   * 注意：增量渲染有局限性，对于跨块的内容（如代码块、表格）可能不准确
+   * 因此只在满足特定条件时使用
+   */
+  private renderIncremental(
+    newContent: string,
+    oldContent: string,
+    oldHtml: string
+  ): string | null {
+    const newPart = newContent.slice(oldContent.length);
+
+    // 如果新增部分太长，直接完整渲染（避免增量渲染不准确）
+    if (newPart.length > 2000) {
+      return null;
+    }
+
+    // 检查是否有未闭合的代码块
+    const codeBlockCount = (oldContent.match(/```/g) || []).length;
+    if (codeBlockCount % 2 !== 0) {
+      // 有未闭合的代码块，不能增量渲染
+      return null;
+    }
+
+    try {
+      // 渲染新增部分
+      const newRaw = marked.parse(newPart) as string;
+      const newHtml = DOMPurify.sanitize(newRaw, {
+        ALLOWED_TAGS: this.ALLOWED_TAGS,
+        ALLOWED_ATTR: this.ALLOWED_ATTR,
+      });
+
+      // 合并 HTML
+      // 注意：这里简化处理，直接拼接。对于块级元素可能需要额外处理
+      return oldHtml + newHtml;
+    } catch (error) {
+      // 增量渲染失败，返回 null 表示需要完整渲染
+      return null;
     }
   }
 
