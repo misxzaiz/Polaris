@@ -452,9 +452,9 @@ fn parse_session_metadata(file_path: &PathBuf) -> (Option<String>, usize, Option
                                 };
 
                                 if let Some(text) = prompt_text {
-                                    // 截取前 100 个字符作为标题
-                                    let title = if text.len() > 100 {
-                                        format!("{}...", &text[..100])
+                                    // 截取前 100 个字符作为标题（使用 chars() 正确处理 Unicode）
+                                    let title = if text.chars().count() > 100 {
+                                        format!("{}...", text.chars().take(100).collect::<String>())
                                     } else {
                                         text
                                     };
