@@ -124,15 +124,16 @@ function TerminalInstance({ sessionId, isActive }: TerminalInstanceProps) {
     };
   }, [sessionId]);
 
-  // 调整大小
+  // 调整大小 - 使用 ResizeObserver 监听容器尺寸变化
   useEffect(() => {
     if (!isActive) return;
 
-    const handleResize = () => {
-      const fitAddon = fitAddonRef.current;
-      const xterm = xtermRef.current;
-      if (!fitAddon || !xterm) return;
+    const fitAddon = fitAddonRef.current;
+    const xterm = xtermRef.current;
+    const container = terminalRef.current;
+    if (!fitAddon || !xterm || !container) return;
 
+    const handleResize = () => {
       fitAddon.fit();
       const dims = fitAddon.proposeDimensions();
       if (dims) {
@@ -140,12 +141,19 @@ function TerminalInstance({ sessionId, isActive }: TerminalInstanceProps) {
       }
     };
 
-    window.addEventListener('resize', handleResize);
-    // 延迟执行一次调整
+    // 使用 ResizeObserver 监听容器尺寸变化
+    // 这样可以响应父容器宽度变化（如拖拽调整左侧面板宽度）
+    const resizeObserver = new ResizeObserver(() => {
+      handleResize();
+    });
+
+    resizeObserver.observe(container);
+
+    // 初始调整
     setTimeout(handleResize, 50);
 
     return () => {
-      window.removeEventListener('resize', handleResize);
+      resizeObserver.disconnect();
     };
   }, [sessionId, isActive, resize]);
 
