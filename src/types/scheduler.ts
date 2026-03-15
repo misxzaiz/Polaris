@@ -43,6 +43,10 @@ export interface ScheduledTask {
   createdAt: number;
   /** 更新时间 */
   updatedAt: number;
+  /** 最大执行轮次 (可选，undefined 表示不限) */
+  maxRuns?: number;
+  /** 当前已执行轮次 */
+  currentRuns: number;
 }
 
 /** 执行日志 */
@@ -92,6 +96,8 @@ export interface CreateTaskParams {
   mode?: TaskMode;
   /** 任务目标 (protocol 模式使用，用于生成协议文档) */
   mission?: string;
+  /** 最大执行轮次 (可选，undefined 表示不限) */
+  maxRuns?: number;
 }
 
 /** 协议任务目录结构 */

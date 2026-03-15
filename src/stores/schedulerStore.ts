@@ -77,6 +77,7 @@ export const useSchedulerStore = create<SchedulerState>((set) => ({
         workDir: params.workDir,
         mode: params.mode,
         mission: params.mission,
+        maxRuns: params.maxRuns,
       });
 
       // 刷新列表

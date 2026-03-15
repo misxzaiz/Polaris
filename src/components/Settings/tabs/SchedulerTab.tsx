@@ -6,8 +6,9 @@ import { useEffect, useState } from 'react';
 import { useSchedulerStore, useToastStore } from '../../../stores';
 import { schedulerGetLockStatus, schedulerStart, schedulerStop } from '../../../services/tauri';
 import { ConfirmDialog } from '../../Common/ConfirmDialog';
-import type { ScheduledTask, TriggerType, CreateTaskParams, LockStatus } from '../../../types/scheduler';
-import { TriggerTypeLabels, IntervalUnitLabels, parseIntervalValue } from '../../../types/scheduler';
+import { TaskEditor } from '../../Scheduler/TaskEditor';
+import type { ScheduledTask, CreateTaskParams, LockStatus } from '../../../types/scheduler';
+import { TriggerTypeLabels } from '../../../types/scheduler';
 
 /** 格式化时间戳 */
 function formatTime(timestamp: number | undefined): string {
@@ -48,191 +49,6 @@ function StatusBadge({ status }: { status?: 'running' | 'success' | 'failed' }) 
     <span className={`px-2 py-0.5 rounded text-xs ${styles[status]}`}>
       {labels[status]}
     </span>
-  );
-}
-
-/** 任务编辑弹窗 */
-function TaskEditor({
-  task,
-  onSave,
-  onClose,
-}: {
-  task?: ScheduledTask;
-  onSave: (params: CreateTaskParams) => void;
-  onClose: () => void;
-}) {
-  const [name, setName] = useState(task?.name || '');
-  const [triggerType, setTriggerType] = useState<TriggerType>(task?.triggerType || 'interval');
-  const [triggerValue, setTriggerValue] = useState(task?.triggerValue || '1h');
-  const [engineId, setEngineId] = useState(task?.engineId || 'claude');
-  const [prompt, setPrompt] = useState(task?.prompt || '');
-  const [workDir, setWorkDir] = useState(task?.workDir || '');
-
-  const [intervalNum, setIntervalNum] = useState(1);
-  const [intervalUnit, setIntervalUnit] = useState<'s' | 'm' | 'h' | 'd'>('h');
-
-  useEffect(() => {
-    if (triggerType === 'interval') {
-      const parsed = parseIntervalValue(triggerValue);
-      if (parsed) {
-        setIntervalNum(parsed.num);
-        setIntervalUnit(parsed.unit);
-      }
-    }
-  }, [triggerType, triggerValue]);
-
-  const handleIntervalChange = (num: number, unit: 's' | 'm' | 'h' | 'd') => {
-    setIntervalNum(num);
-    setIntervalUnit(unit);
-    setTriggerValue(`${num}${unit}`);
-  };
-
-  const handleSave = () => {
-    if (!name.trim() || !prompt.trim()) {
-      alert('请填写任务名称和提示词');
-      return;
-    }
-
-    onSave({
-      name,
-      triggerType,
-      triggerValue,
-      engineId,
-      prompt,
-      workDir: workDir || undefined,
-      enabled: task?.enabled ?? true,
-    });
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-[#16162a] rounded-lg w-[550px] max-h-[80vh] overflow-y-auto border border-[#2a2a4a]">
-        <div className="p-4 border-b border-[#2a2a4a] flex items-center justify-between">
-          <h2 className="text-lg font-medium text-text-primary">
-            {task ? '编辑任务' : '新建任务'}
-          </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">✕</button>
-        </div>
-
-        <div className="p-4 space-y-4">
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">任务名称</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-primary"
-              placeholder="例如：每日日报生成"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">触发方式</label>
-            <div className="flex gap-2">
-              <select
-                value={triggerType}
-                onChange={(e) => setTriggerType(e.target.value as TriggerType)}
-                className="px-3 py-2 bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-primary"
-              >
-                {Object.entries(TriggerTypeLabels).map(([value, label]) => (
-                  <option key={value} value={value}>{label}</option>
-                ))}
-              </select>
-
-              {triggerType === 'interval' ? (
-                <div className="flex gap-2 flex-1">
-                  <input
-                    type="number"
-                    value={intervalNum}
-                    onChange={(e) => handleIntervalChange(parseInt(e.target.value) || 1, intervalUnit)}
-                    min={1}
-                    className="w-24 px-3 py-2 bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-primary"
-                  />
-                  <select
-                    value={intervalUnit}
-                    onChange={(e) => handleIntervalChange(intervalNum, e.target.value as 's' | 'm' | 'h' | 'd')}
-                    className="px-3 py-2 bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-primary"
-                  >
-                    {Object.entries(IntervalUnitLabels).map(([value, label]) => (
-                      <option key={value} value={value}>{label}</option>
-                    ))}
-                  </select>
-                </div>
-              ) : triggerType === 'cron' ? (
-                <input
-                  type="text"
-                  value={triggerValue}
-                  onChange={(e) => setTriggerValue(e.target.value)}
-                  className="flex-1 px-3 py-2 bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-primary font-mono"
-                  placeholder="0 9 * * 1-5"
-                />
-              ) : (
-                <input
-                  type="datetime-local"
-                  value={triggerValue}
-                  onChange={(e) => setTriggerValue(e.target.value)}
-                  className="flex-1 px-3 py-2 bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-primary"
-                />
-              )}
-            </div>
-            {triggerType === 'cron' && (
-              <p className="mt-1 text-xs text-text-muted">示例: "0 9 * * 1-5" 表示工作日早9点</p>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">AI 引擎</label>
-            <select
-              value={engineId}
-              onChange={(e) => setEngineId(e.target.value)}
-              className="w-full px-3 py-2 bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-primary"
-            >
-              <option value="claude">Claude Code</option>
-              <option value="iflow">IFlow</option>
-              <option value="codex">Codex</option>
-              <option value="openai">OpenAI</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">工作目录（可选）</label>
-            <input
-              type="text"
-              value={workDir}
-              onChange={(e) => setWorkDir(e.target.value)}
-              className="w-full px-3 py-2 bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-primary"
-              placeholder="留空使用默认目录"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">提示词</label>
-            <textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              rows={5}
-              className="w-full px-3 py-2 bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-primary resize-none"
-              placeholder="输入 AI 要执行的提示词..."
-            />
-          </div>
-        </div>
-
-        <div className="p-4 border-t border-[#2a2a4a] flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-surface text-text-secondary hover:text-text-primary rounded transition-colors"
-          >
-            取消
-          </button>
-          <button
-            onClick={handleSave}
-            className="px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded transition-colors"
-          >
-            保存
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -610,6 +426,8 @@ export function SchedulerTab() {
             setShowEditor(false);
             setEditingTask(undefined);
           }}
+          fullMode={false}
+          title={editingTask ? '编辑任务' : '新建任务'}
         />
       )}
 

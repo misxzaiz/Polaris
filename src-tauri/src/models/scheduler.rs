@@ -25,6 +25,8 @@ pub struct CreateTaskParams {
     pub mode: TaskMode,
     /// 任务目标（protocol 模式使用）
     pub mission: Option<String>,
+    /// 最大执行轮次（可选，None 表示不限）
+    pub max_runs: Option<u32>,
 }
 
 fn default_enabled() -> bool {
@@ -80,6 +82,12 @@ pub struct ScheduledTask {
     pub created_at: i64,
     /// 更新时间
     pub updated_at: i64,
+    /// 最大执行轮次（可选，None 表示不限）
+    #[serde(default)]
+    pub max_runs: Option<u32>,
+    /// 当前已执行轮次
+    #[serde(default)]
+    pub current_runs: u32,
 }
 
 impl From<CreateTaskParams> for ScheduledTask {
@@ -100,6 +108,8 @@ impl From<CreateTaskParams> for ScheduledTask {
             next_run_at: None,
             created_at: 0,
             updated_at: 0,
+            max_runs: params.max_runs,
+            current_runs: 0,
         }
     }
 }

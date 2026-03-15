@@ -90,6 +90,8 @@ impl TaskStoreService {
             next_run_at: None,
             created_at: now,
             updated_at: now,
+            max_runs: params.max_runs,
+            current_runs: 0,
         };
 
         // 如果是协议模式，创建任务目录结构
@@ -127,6 +129,8 @@ impl TaskStoreService {
             existing.work_dir = task.work_dir;
             existing.mode = task.mode;
             existing.task_path = task.task_path;
+            existing.max_runs = task.max_runs;
+            // 保留 current_runs，不更新
             existing.updated_at = now;
 
             // 重新计算下次执行时间
@@ -179,6 +183,22 @@ impl TaskStoreService {
             task.last_run_at = Some(now);
             task.last_run_status = Some(status);
 
+            // 只有成功时才增加执行轮次
+            if status == crate::models::scheduler::TaskStatus::Success {
+                task.current_runs += 1;
+            }
+
+            // 检查是否达到最大执行轮次
+            if let Some(max_runs) = task.max_runs {
+                if task.current_runs >= max_runs {
+                    task.enabled = false;
+                    task.next_run_at = None;
+                    tracing::info!("[Scheduler] 任务 {} 已达到最大执行轮次 {}，自动禁用", task.name, max_runs);
+                    self.save()?;
+                    return Ok(());
+                }
+            }
+
             // 如果是间隔或 cron 任务，计算下次执行时间
             if task.enabled {
                 task.next_run_at = task.trigger_type.calculate_next_run(&task.trigger_value, now);
@@ -194,8 +214,24 @@ impl TaskStoreService {
         let now = Utc::now().timestamp();
         self.store.tasks.iter()
             .filter(|t| {
-                t.enabled &&
-                t.next_run_at.map(|nr| nr <= now).unwrap_or(false)
+                // 检查是否启用
+                if !t.enabled {
+                    return false;
+                }
+
+                // 检查是否到达执行时间
+                if !t.next_run_at.map(|nr| nr <= now).unwrap_or(false) {
+                    return false;
+                }
+
+                // 检查是否达到最大执行轮次
+                if let Some(max_runs) = t.max_runs {
+                    if t.current_runs >= max_runs {
+                        return false;
+                    }
+                }
+
+                true
             })
             .collect()
     }
