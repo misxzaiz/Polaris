@@ -68,11 +68,53 @@ impl IFlowEngine {
         self.get_cli_path().is_ok()
     }
 
+    /// 检查是否为 Windows 批处理文件
+    fn is_batch_file(path: &str) -> bool {
+        let path_lower = path.to_lowercase();
+        path_lower.ends_with(".cmd") || path_lower.ends_with(".bat")
+    }
+
     /// 构建 IFlow 命令
     fn build_command(&self, message: &str, session_id: Option<&str>) -> Result<Command> {
         let cli_path = self.cli_path.as_ref()
             .ok_or_else(|| AppError::ProcessError("CLI 路径未初始化".to_string()))?;
 
+        // Windows 上如果是批处理文件，需要使用 cmd.exe /S /C 来执行
+        // 这样可以正确处理包含特殊字符（如方括号、换行符等）的参数
+        #[cfg(windows)]
+        {
+            if Self::is_batch_file(cli_path) {
+                // 使用环境变量传递消息，避免批处理参数解析问题
+                // 这是 Windows 上处理复杂参数最可靠的方式
+                let mut cmd = Command::new("cmd");
+                cmd.arg("/S").arg("/C");
+
+                // 构建完整的命令行
+                let mut cmd_parts = vec![cli_path.to_string(), "--yolo".to_string()];
+
+                if let Some(sid) = session_id {
+                    cmd_parts.push("--resume".to_string());
+                    cmd_parts.push(sid.to_string());
+                }
+
+                cmd_parts.push("--prompt".to_string());
+                // 使用环境变量引用来传递消息
+                // 在 cmd 中，%IFLOW_MSG% 会被替换为环境变量的值
+                cmd_parts.push("%IFLOW_MSG%".to_string());
+
+                // 设置环境变量
+                cmd.env("IFLOW_MSG", message);
+
+                // 构建命令行字符串
+                let cmd_line = cmd_parts.join(" ");
+                cmd.arg(&cmd_line);
+
+                tracing::debug!("[IFlowEngine] Windows 批处理命令行: cmd /S /C \"{}\"", cmd_line);
+                return Ok(cmd);
+            }
+        }
+
+        // 非 Windows 或非批处理文件，使用直接执行方式
         let mut cmd = Command::new(cli_path);
         cmd.arg("--yolo"); // 自动确认
 
