@@ -92,17 +92,17 @@ r#"# Task Protocol
 每次触发时按以下顺序执行：
 
 ### 1. 检查用户补充
-- 读取 `user-supplement.md`
+- 读取 `.polaris/tasks/[id]/user-supplement.md`
 - 如有新内容，优先处理并归档
 
 ### 2. 推进主任务
-- 读取 `memory/index.md` 了解当前进度
+- 读取 `.polaris/tasks/[id]/memory/index.md` 了解当前进度
 - 选择下一个待办事项执行
 - 完成后更新记忆
 
 ### 3. 记忆更新
-- 新成果写入 `memory/index.md`
-- 待办任务写入 `memory/tasks.md`
+- 新成果写入 `.polaris/tasks/[id]/memory/index.md`
+- 待办任务写入 `.polaris/tasks/[id]/memory/tasks.md`
 
 ### 4. 文档备份
 - 用户补充处理完成后迁移到 `.oprcli/tasks/[id]/supplement-history/`
