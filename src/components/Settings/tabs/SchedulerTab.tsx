@@ -7,6 +7,7 @@ import { useSchedulerStore, useToastStore } from '../../../stores';
 import { schedulerGetLockStatus, schedulerStart, schedulerStop } from '../../../services/tauri';
 import { ConfirmDialog } from '../../Common/ConfirmDialog';
 import { TaskEditor } from '../../Scheduler/TaskEditor';
+import { ProtocolTemplateManager } from '../../Scheduler/ProtocolTemplateManager';
 import type { ScheduledTask, CreateTaskParams, LockStatus } from '../../../types/scheduler';
 import { TriggerTypeLabels } from '../../../types/scheduler';
 
@@ -64,6 +65,7 @@ export function SchedulerTab() {
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
   const [lockStatus, setLockStatus] = useState<LockStatus | null>(null);
   const [operating, setOperating] = useState(false);
+  const [showTemplateManager, setShowTemplateManager] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{
     show: boolean;
     title?: string;
@@ -185,15 +187,23 @@ export function SchedulerTab() {
           <h3 className="text-lg font-medium text-text-primary">定时任务</h3>
           <p className="text-sm text-text-muted mt-1">创建定时执行的 AI 任务</p>
         </div>
-        <button
-          onClick={() => {
-            setEditingTask(undefined);
-            setShowEditor(true);
-          }}
-          className="px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded transition-colors"
-        >
-          + 新建任务
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowTemplateManager(true)}
+            className="px-4 py-2 bg-surface text-text-secondary hover:text-text-primary border border-border-subtle rounded transition-colors"
+          >
+            📝 模板管理
+          </button>
+          <button
+            onClick={() => {
+              setEditingTask(undefined);
+              setShowEditor(true);
+            }}
+            className="px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded transition-colors"
+          >
+            + 新建任务
+          </button>
+        </div>
       </div>
 
       {/* 调度器锁状态 */}
@@ -440,6 +450,24 @@ export function SchedulerTab() {
           onConfirm={confirmDialog.onConfirm}
           onCancel={() => setConfirmDialog(null)}
         />
+      )}
+
+      {/* 模板管理弹窗 */}
+      {showTemplateManager && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background-elevated rounded-xl w-full max-w-3xl max-h-[85vh] overflow-y-auto p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-text-primary">协议模板管理</h2>
+              <button
+                onClick={() => setShowTemplateManager(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+            <ProtocolTemplateManager />
+          </div>
+        </div>
       )}
     </div>
   );
