@@ -5,6 +5,7 @@ mod commands;
 mod integrations;
 mod ai;
 mod state;
+mod utils;
 
 pub use state::AppState;
 
@@ -69,6 +70,7 @@ use commands::scheduler::{
     scheduler_update_task, scheduler_delete_task, scheduler_toggle_task,
     scheduler_run_task, scheduler_get_task_logs, scheduler_get_all_logs,
     scheduler_cleanup_logs, scheduler_validate_trigger, scheduler_parse_interval,
+    scheduler_get_lock_status, scheduler_reset_lock,
 };
 
 use std::sync::Arc;
@@ -248,10 +250,25 @@ pub fn run() {
             integration_manager,
         ))
         .setup(|app| {
-            // 启动定时任务调度器
+            // 尝试获取调度器单例锁
             let state = app.handle().state::<state::AppState>();
-            state.scheduler_dispatcher.blocking_lock().start();
-            tracing::info!("[Scheduler] 调度器已启动");
+
+            match utils::SchedulerLock::try_acquire() {
+                Ok(Some(lock)) => {
+                    // 成功获取锁，保存并启动调度器
+                    *state.scheduler_lock.blocking_lock() = Some(lock);
+                    state.scheduler_dispatcher.blocking_lock().start();
+                    tracing::info!("[Scheduler] 当前实例获取调度器锁成功，调度器已启动");
+                }
+                Ok(None) => {
+                    // 其他实例已持有锁
+                    tracing::info!("[Scheduler] 其他实例已持有调度器锁，本实例跳过调度器启动");
+                }
+                Err(e) => {
+                    tracing::error!("[Scheduler] 获取调度器锁失败: {:?}", e);
+                }
+            }
+
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -432,6 +449,8 @@ pub fn run() {
             scheduler_cleanup_logs,
             scheduler_validate_trigger,
             scheduler_parse_interval,
+            scheduler_get_lock_status,
+            scheduler_reset_lock,
 
         ])
         .run(tauri::generate_context!())

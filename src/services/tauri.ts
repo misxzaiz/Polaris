@@ -678,7 +678,7 @@ export async function updateIntegrationInstance(
 // 定时任务相关命令
 // ============================================================================
 
-import type { ScheduledTask, TaskLog, TriggerType, CreateTaskParams } from '../types/scheduler';
+import type { ScheduledTask, TaskLog, TriggerType, CreateTaskParams, LockStatus } from '../types/scheduler';
 
 /** 获取所有任务 */
 export async function schedulerGetTasks(): Promise<ScheduledTask[]> {
@@ -741,4 +741,14 @@ export async function schedulerValidateTrigger(
 /** 解析间隔表达式 */
 export async function schedulerParseInterval(value: string): Promise<number | null> {
   return invoke<number | null>('scheduler_parse_interval', { value });
+}
+
+/** 获取调度器锁状态 */
+export async function schedulerGetLockStatus(): Promise<LockStatus> {
+  return invoke<LockStatus>('scheduler_get_lock_status');
+}
+
+/** 重置调度器锁（强制接管） */
+export async function schedulerResetLock(): Promise<string> {
+  return invoke<string>('scheduler_reset_lock');
 }

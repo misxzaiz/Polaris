@@ -103,3 +103,13 @@ export function parseIntervalValue(value: string): { num: number; unit: Interval
 export function formatIntervalValue(num: number, unit: IntervalUnit): string {
   return `${num}${unit}`;
 }
+
+/** 调度器锁状态 */
+export interface LockStatus {
+  /** 当前实例是否持有锁 */
+  isHolder: boolean;
+  /** 是否有其他实例持有锁 */
+  isLockedByOther: boolean;
+  /** 当前进程 PID */
+  pid: number;
+}

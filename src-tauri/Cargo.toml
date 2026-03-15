@@ -56,3 +56,6 @@ async-trait = "0.1"
 
 # 定时任务依赖
 cron = "0.12"
+
+# 单例锁依赖
+libloading = "0.8"

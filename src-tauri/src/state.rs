@@ -14,6 +14,7 @@ use crate::commands::context::ContextMemoryStore;
 use crate::integrations::IntegrationManager;
 use crate::services::config_store::ConfigStore;
 use crate::services::scheduler::{TaskStoreService, LogStoreService, SchedulerDispatcher};
+use crate::utils::SchedulerLock;
 
 /// 全局配置状态
 pub struct AppState {
@@ -36,6 +37,8 @@ pub struct AppState {
     pub scheduler_log_store: Arc<AsyncMutex<LogStoreService>>,
     /// 定时任务调度器
     pub scheduler_dispatcher: Arc<AsyncMutex<SchedulerDispatcher>>,
+    /// 调度器单例锁（持有表示当前实例负责调度）
+    pub scheduler_lock: AsyncMutex<Option<SchedulerLock>>,
 }
 
 /// 创建应用状态
@@ -70,5 +73,6 @@ pub fn create_app_state(
         scheduler_task_store: task_store,
         scheduler_log_store: log_store,
         scheduler_dispatcher: Arc::new(AsyncMutex::new(dispatcher)),
+        scheduler_lock: AsyncMutex::new(None),
     }
 }

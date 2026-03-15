@@ -5,6 +5,7 @@
 use crate::error::Result;
 use crate::models::scheduler::{CreateTaskParams, ScheduledTask, TaskLog, TriggerType};
 use crate::state::AppState;
+use crate::utils::{LockStatus, SchedulerLock};
 
 /// 获取所有任务
 #[tauri::command]
@@ -119,4 +120,57 @@ pub fn scheduler_validate_trigger(
 #[tauri::command]
 pub fn scheduler_parse_interval(value: String) -> Option<i64> {
     crate::models::scheduler::parse_interval(&value)
+}
+
+/// 获取调度器锁状态
+#[tauri::command]
+pub async fn scheduler_get_lock_status(
+    state: tauri::State<'_, AppState>,
+) -> Result<LockStatus> {
+    let is_holder = state.scheduler_lock.lock().await.is_some();
+    let is_locked_by_other = if !is_holder {
+        // 如果当前实例没有锁，检查是否有其他实例持有
+        SchedulerLock::is_locked()
+    } else {
+        false
+    };
+
+    Ok(LockStatus {
+        is_holder,
+        is_locked_by_other,
+        pid: std::process::id(),
+    })
+}
+
+/// 重置调度器锁（强制接管）
+#[tauri::command]
+pub async fn scheduler_reset_lock(
+    state: tauri::State<'_, AppState>,
+) -> Result<String> {
+    // 先释放当前持有的锁（如果有）
+    {
+        let mut lock = state.scheduler_lock.lock().await;
+        *lock = None; // drop old lock
+    }
+
+    // 强制清理残留锁（Unix 有效，Windows 会失败）
+    SchedulerLock::force_release()?;
+
+    // 尝试重新获取锁
+    match SchedulerLock::try_acquire()? {
+        Some(new_lock) => {
+            // 保存新锁
+            *state.scheduler_lock.lock().await = Some(new_lock);
+
+            // 启动调度器
+            state.scheduler_dispatcher.lock().await.start();
+
+            tracing::info!("[Scheduler] 成功重置并接管调度器锁");
+            Ok("成功接管调度器锁".to_string())
+        }
+        None => {
+            tracing::warn!("[Scheduler] 无法获取调度器锁，其他实例可能仍在运行");
+            Ok("无法获取锁，其他实例可能仍在运行".to_string())
+        }
+    }
 }

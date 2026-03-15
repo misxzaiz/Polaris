@@ -4,7 +4,8 @@
 
 import { useEffect, useState } from 'react';
 import { useSchedulerStore } from '../../../stores';
-import type { ScheduledTask, TriggerType, CreateTaskParams } from '../../../types/scheduler';
+import { schedulerGetLockStatus, schedulerResetLock } from '../../../services/tauri';
+import type { ScheduledTask, TriggerType, CreateTaskParams, LockStatus } from '../../../types/scheduler';
 import { TriggerTypeLabels, IntervalUnitLabels, parseIntervalValue } from '../../../types/scheduler';
 
 /** 格式化时间戳 */
@@ -243,11 +244,38 @@ export function SchedulerTab() {
   const [editingTask, setEditingTask] = useState<ScheduledTask | undefined>();
   const [activeView, setActiveView] = useState<'tasks' | 'logs'>('tasks');
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+  const [lockStatus, setLockStatus] = useState<LockStatus | null>(null);
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     loadTasks();
     loadLogs(50);
+    loadLockStatus();
   }, [loadTasks, loadLogs]);
+
+  const loadLockStatus = async () => {
+    try {
+      const status = await schedulerGetLockStatus();
+      setLockStatus(status);
+    } catch (e) {
+      console.error('获取锁状态失败:', e);
+    }
+  };
+
+  const handleResetLock = async () => {
+    if (!confirm('确定要重置调度器锁吗？如果其他实例正在运行调度任务，可能会导致重复执行。')) return;
+
+    setResetting(true);
+    try {
+      const result = await schedulerResetLock();
+      alert(result);
+      await loadLockStatus();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '重置失败');
+    } finally {
+      setResetting(false);
+    }
+  };
 
   const handleCreate = async (params: CreateTaskParams) => {
     try {
@@ -299,6 +327,61 @@ export function SchedulerTab() {
           + 新建任务
         </button>
       </div>
+
+      {/* 调度器锁状态 */}
+      {lockStatus && (
+        <div className={`p-3 rounded-lg border ${
+          lockStatus.isHolder
+            ? 'bg-green-500/10 border-green-500/30'
+            : lockStatus.isLockedByOther
+            ? 'bg-yellow-500/10 border-yellow-500/30'
+            : 'bg-gray-500/10 border-gray-500/30'
+        }`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className={`w-2.5 h-2.5 rounded-full ${
+                lockStatus.isHolder
+                  ? 'bg-green-500'
+                  : lockStatus.isLockedByOther
+                  ? 'bg-yellow-500'
+                  : 'bg-gray-500'
+              }`} />
+              <div>
+                <p className={`text-sm font-medium ${
+                  lockStatus.isHolder
+                    ? 'text-green-400'
+                    : lockStatus.isLockedByOther
+                    ? 'text-yellow-400'
+                    : 'text-gray-400'
+                }`}>
+                  {lockStatus.isHolder
+                    ? '当前实例负责调度'
+                    : lockStatus.isLockedByOther
+                    ? '其他实例正在调度'
+                    : '无调度器运行'}
+                </p>
+                <p className="text-xs text-text-muted">
+                  PID: {lockStatus.pid}
+                  {!lockStatus.isHolder && lockStatus.isLockedByOther && (
+                    <span className="ml-2">· 定时任务将由其他实例执行</span>
+                  )}
+                </p>
+              </div>
+            </div>
+            {!lockStatus.isHolder && (
+              <button
+                onClick={handleResetLock}
+                disabled={resetting}
+                className="px-3 py-1.5 text-sm bg-yellow-500/20 text-yellow-400
+                           hover:bg-yellow-500/30 rounded transition-colors
+                           disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {resetting ? '重置中...' : '接管调度'}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 切换视图 */}
       <div className="flex border-b border-border-subtle">
