@@ -44,7 +44,8 @@
     "gitPanel": "Git 面板",
     "todoPanel": "待办面板",
     "translatePanel": "翻译面板",
-    "schedulerPanel": "定时任务"
+    "schedulerPanel": "定时任务",
+    "terminalPanel": "终端"
   },
   "messages": {
     "noWorkspace": "请先打开一个工作区",

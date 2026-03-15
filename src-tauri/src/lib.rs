@@ -76,6 +76,10 @@ use commands::scheduler::{
     scheduler_read_protocol_file, scheduler_write_protocol_file,
     scheduler_get_protocol_file_path,
 };
+use commands::terminal::{
+    terminal_create, terminal_write, terminal_resize,
+    terminal_close, terminal_list, terminal_get,
+};
 
 use std::sync::Arc;
 use tokio::sync::Mutex as AsyncMutex;
@@ -464,6 +468,13 @@ pub fn run() {
             scheduler_read_protocol_file,
             scheduler_write_protocol_file,
             scheduler_get_protocol_file_path,
+            // 终端相关
+            terminal_create,
+            terminal_write,
+            terminal_resize,
+            terminal_close,
+            terminal_list,
+            terminal_get,
 
         ])
         .run(tauri::generate_context!())

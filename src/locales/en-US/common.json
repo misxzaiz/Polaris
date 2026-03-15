@@ -44,7 +44,8 @@
     "gitPanel": "Git Panel",
     "todoPanel": "Todo Panel",
     "translatePanel": "Translate Panel",
-    "schedulerPanel": "Scheduler"
+    "schedulerPanel": "Scheduler",
+    "terminalPanel": "Terminal"
   },
   "messages": {
     "noWorkspace": "Please open a workspace first",

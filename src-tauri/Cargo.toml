@@ -59,3 +59,7 @@ cron = "0.12"
 
 # 单例锁依赖
 libloading = "0.8"
+
+# 终端 PTY 支持
+portable-pty = "0.8"
+crossbeam-channel = "0.5"

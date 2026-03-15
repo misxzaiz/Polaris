@@ -8,6 +8,7 @@ pub mod translate;
 pub mod openai_proxy;
 pub mod integration;
 pub mod scheduler;
+pub mod terminal;
 
 // 重新导出命令函数，确保它们在模块级别可见
 pub use chat::{start_chat, continue_chat, interrupt_chat};
@@ -62,4 +63,11 @@ pub use integration::{
     list_integration_instances, list_integration_instances_by_platform,
     get_active_integration_instance, switch_integration_instance,
     disconnect_integration_instance, update_integration_instance,
+};
+
+// 终端命令
+pub use terminal::{
+    terminal_create, terminal_write, terminal_resize,
+    terminal_close, terminal_list, terminal_get,
+    TerminalSession, TerminalOutputEvent, TerminalExitEvent,
 };

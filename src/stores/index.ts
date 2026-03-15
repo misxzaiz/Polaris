@@ -31,3 +31,4 @@ export {
 } from './integrationStore';
 export { useToastStore, type Toast, type ToastType } from './toastStore';
 export { useSchedulerStore } from './schedulerStore';
+export { useTerminalStore } from './terminalStore';

@@ -11,6 +11,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::ai::EngineRegistry;
 use crate::commands::context::ContextMemoryStore;
+use crate::commands::terminal::TerminalManager;
 use crate::integrations::IntegrationManager;
 use crate::services::config_store::ConfigStore;
 use crate::services::scheduler::{TaskStoreService, LogStoreService, SchedulerDispatcher};
@@ -39,6 +40,8 @@ pub struct AppState {
     pub scheduler_dispatcher: Arc<AsyncMutex<SchedulerDispatcher>>,
     /// 调度器单例锁（持有表示当前实例负责调度）
     pub scheduler_lock: AsyncMutex<Option<SchedulerLock>>,
+    /// 终端管理器
+    pub terminal_manager: Mutex<TerminalManager>,
 }
 
 /// 创建应用状态
@@ -74,5 +77,6 @@ pub fn create_app_state(
         scheduler_log_store: log_store,
         scheduler_dispatcher: Arc::new(AsyncMutex::new(dispatcher)),
         scheduler_lock: AsyncMutex::new(None),
+        terminal_manager: Mutex::new(TerminalManager::new()),
     }
 }
