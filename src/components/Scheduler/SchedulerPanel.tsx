@@ -57,6 +57,7 @@ function StatusBadge({ status }: { status?: 'running' | 'success' | 'failed' }) 
 function TaskCard({
   task,
   onEdit,
+  onCopy,
   onDelete,
   onToggle,
   onRun,
@@ -69,6 +70,7 @@ function TaskCard({
 }: {
   task: ScheduledTask;
   onEdit: () => void;
+  onCopy: () => void;
   onDelete: () => void;
   onToggle: () => void;
   onRun: () => void;
@@ -197,6 +199,13 @@ function TaskCard({
             className="px-3 py-1 text-sm bg-gray-600/20 text-gray-300 hover:bg-gray-600/30 rounded transition-colors"
           >
             编辑
+          </button>
+          <button
+            onClick={onCopy}
+            className="px-3 py-1 text-sm bg-teal-600/20 text-teal-400 hover:bg-teal-600/30 rounded transition-colors"
+            title="复制任务"
+          >
+            复制
           </button>
           <button
             onClick={onDelete}
@@ -357,6 +366,7 @@ export function SchedulerPanel() {
 
   const [showEditor, setShowEditor] = useState(false);
   const [editingTask, setEditingTask] = useState<ScheduledTask | undefined>();
+  const [copyingTask, setCopyingTask] = useState<ScheduledTask | undefined>();
   const [activeTab, setActiveTab] = useState<'tasks' | 'logs'>('tasks');
   const [viewingTask, setViewingTask] = useState<ScheduledTask | undefined>();
 
@@ -449,6 +459,37 @@ export function SchedulerPanel() {
     }
   };
 
+  /** 处理复制任务 */
+  const handleCopy = (task: ScheduledTask) => {
+    // 清除编辑状态，设置复制状态
+    setEditingTask(undefined);
+    // 复制任务，清除运行时状态字段
+    setCopyingTask({
+      ...task,
+      name: `${task.name}（副本）`,
+      // 清除运行时状态
+      subscribedContextId: undefined,
+      retryCount: 0,
+      currentRuns: 0,
+      lastRunStatus: undefined,
+      lastRunAt: undefined,
+      nextRunAt: undefined,
+    });
+    setShowEditor(true);
+  };
+
+  /** 处理复制任务保存 */
+  const handleCopySave = async (params: CreateTaskParams) => {
+    try {
+      await createTask(params);
+      toast.success('复制成功');
+      setShowEditor(false);
+      setCopyingTask(undefined);
+    } catch (e) {
+      toast.error('复制失败', e instanceof Error ? e.message : '未知错误');
+    }
+  };
+
   const handleUpdate = async (params: CreateTaskParams) => {
     if (!editingTask) return;
     try {
@@ -534,9 +575,11 @@ export function SchedulerPanel() {
                   key={task.id}
                   task={task}
                   onEdit={() => {
+                    setCopyingTask(undefined);
                     setEditingTask(task);
                     setShowEditor(true);
                   }}
+                  onCopy={() => handleCopy(task)}
                   onDelete={() => handleDelete(task.id)}
                   onToggle={() => toggleTask(task.id, !task.enabled)}
                   onRun={() => handleRunTask(task)}
@@ -558,11 +601,13 @@ export function SchedulerPanel() {
       {/* 编辑弹窗 */}
       {showEditor && (
         <TaskEditor
-          task={editingTask}
-          onSave={editingTask ? handleUpdate : handleCreate}
+          task={editingTask || copyingTask}
+          onSave={editingTask ? handleUpdate : (copyingTask ? handleCopySave : handleCreate)}
+          title={editingTask ? '编辑任务' : (copyingTask ? '复制任务' : '新建任务')}
           onClose={() => {
             setShowEditor(false);
             setEditingTask(undefined);
+            setCopyingTask(undefined);
           }}
         />
       )}
