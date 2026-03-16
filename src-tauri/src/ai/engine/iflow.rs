@@ -786,8 +786,8 @@ impl AIEngine for IFlowEngine {
                 }
                 if wait_count % 10 == 0 {
                     tracing::info!(
-                        "[IFlowEngine] 等待会话文件... ({}/100), 目录: {:?}",
-                        wait_count, session_dir
+                        "[IFlowEngine] 等待会话文件... ({}/{}), 目录: {:?}",
+                        wait_count, 10000, session_dir
                     );
                 }
                 std::thread::sleep(Duration::from_millis(100));
