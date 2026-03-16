@@ -820,3 +820,16 @@ export async function schedulerGetProtocolFilePath(
 ): Promise<string> {
   return invoke<string>('scheduler_get_protocol_file_path', { workDir, taskPath, fileType });
 }
+
+/** 订阅任务（设置任务的 subscribedContextId） */
+export async function schedulerSubscribeTask(
+  id: string,
+  contextId: string
+): Promise<void> {
+  return invoke('scheduler_subscribe_task', { id, contextId });
+}
+
+/** 取消订阅任务 */
+export async function schedulerUnsubscribeTask(id: string): Promise<void> {
+  return invoke('scheduler_unsubscribe_task', { id });
+}

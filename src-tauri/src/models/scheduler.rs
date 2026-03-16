@@ -104,6 +104,9 @@ pub struct ScheduledTask {
     /// 模板参数值（protocol 模式使用，用于编辑时回显）
     #[serde(default)]
     pub template_param_values: Option<HashMap<String, String>>,
+    /// 订阅的上下文 ID（持久化订阅状态，定时执行时会发送事件到该上下文）
+    #[serde(default)]
+    pub subscribed_context_id: Option<String>,
 }
 
 impl From<CreateTaskParams> for ScheduledTask {
@@ -129,6 +132,7 @@ impl From<CreateTaskParams> for ScheduledTask {
             run_in_terminal: params.run_in_terminal,
             template_id: params.template_id,
             template_param_values: params.template_param_values,
+            subscribed_context_id: None,
         }
     }
 }

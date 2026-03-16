@@ -75,6 +75,7 @@ use commands::scheduler::{
     scheduler_clear_task_logs,
     scheduler_read_protocol_file, scheduler_write_protocol_file,
     scheduler_get_protocol_file_path,
+    scheduler_subscribe_task, scheduler_unsubscribe_task,
 };
 use commands::terminal::{
     terminal_create, terminal_write, terminal_resize,
@@ -265,7 +266,8 @@ pub fn run() {
                 Ok(Some(lock)) => {
                     // 成功获取锁，保存并启动调度器
                     *state.scheduler_lock.blocking_lock() = Some(lock);
-                    state.scheduler_dispatcher.blocking_lock().start();
+                    // 传递 app_handle 以支持发送事件到前端
+                    state.scheduler_dispatcher.blocking_lock().start(Some(app.handle().clone()));
                     tracing::info!("[Scheduler] 当前实例获取调度器锁成功，调度器已启动");
                 }
                 Ok(None) => {
@@ -469,6 +471,9 @@ pub fn run() {
             scheduler_read_protocol_file,
             scheduler_write_protocol_file,
             scheduler_get_protocol_file_path,
+            // 订阅任务
+            scheduler_subscribe_task,
+            scheduler_unsubscribe_task,
             // 终端相关
             terminal_create,
             terminal_write,

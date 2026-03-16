@@ -16,7 +16,7 @@ use tokio::sync::Mutex as AsyncMutex;
 use std::collections::HashMap;
 use tokio_util::sync::CancellationToken;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::{Window, Emitter};
+use tauri::{AppHandle, Window, Emitter, Manager};
 
 /// 调度执行器
 #[derive(Clone)]
@@ -28,6 +28,8 @@ pub struct SchedulerDispatcher {
     running_tasks: Arc<AsyncMutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
     /// 调度循环取消令牌
     cancel_token: Arc<AsyncMutex<Option<CancellationToken>>>,
+    /// Tauri AppHandle 用于发送事件
+    app_handle: Option<AppHandle>,
 }
 
 impl SchedulerDispatcher {
@@ -43,11 +45,21 @@ impl SchedulerDispatcher {
             engine_registry,
             running_tasks: Arc::new(AsyncMutex::new(HashMap::new())),
             cancel_token: Arc::new(AsyncMutex::new(None)),
+            app_handle: None,
         }
     }
 
+    /// 设置 AppHandle
+    pub fn with_app_handle(mut self, handle: AppHandle) -> Self {
+        self.app_handle = Some(handle);
+        self
+    }
+
     /// 启动调度循环
-    pub fn start(&self) {
+    pub fn start(&mut self, app_handle: Option<AppHandle>) {
+        // 保存 app_handle
+        self.app_handle = app_handle;
+
         // 检查是否已经在运行
         if let Ok(token) = self.cancel_token.try_lock() {
             if token.is_some() {
@@ -127,9 +139,38 @@ impl SchedulerDispatcher {
                 continue;
             }
 
-            // 执行任务（忽略错误，已记录日志）
-            if let Err(e) = self.execute_task(task).await {
-                tracing::error!("[Scheduler] 执行任务失败: {:?}", e);
+            // 检查任务是否有订阅
+            if let Some(ref context_id) = task.subscribed_context_id {
+                // 有订阅：发送事件通知前端，让前端调用 runTaskWithSubscription
+                if let Some(ref app_handle) = self.app_handle {
+                    let task_id = task.id.clone();
+                    let task_name = task.name.clone();
+                    let ctx_id = context_id.clone();
+
+                    tracing::info!("[Scheduler] 任务 {} 有订阅，发送 scheduler-task-due 事件", task_name);
+
+                    if let Err(e) = app_handle.emit("scheduler-event", serde_json::json!({
+                        "contextId": ctx_id,
+                        "payload": {
+                            "type": "task_due",
+                            "taskId": task_id,
+                            "taskName": task_name,
+                        }
+                    })) {
+                        tracing::error!("[Scheduler] 发送 scheduler-task-due 事件失败: {:?}", e);
+                    }
+                } else {
+                    // 没有 app_handle，回退到直接执行
+                    tracing::warn!("[Scheduler] 无 AppHandle，直接执行订阅任务");
+                    if let Err(e) = self.execute_task(task).await {
+                        tracing::error!("[Scheduler] 执行任务失败: {:?}", e);
+                    }
+                }
+            } else {
+                // 无订阅：直接执行任务（后台执行，不发送事件到前端）
+                if let Err(e) = self.execute_task(task).await {
+                    tracing::error!("[Scheduler] 执行任务失败: {:?}", e);
+                }
             }
         }
 

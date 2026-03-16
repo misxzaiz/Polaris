@@ -53,6 +53,8 @@ export interface ScheduledTask {
   templateId?: string;
   /** 模板参数值 (protocol 模式使用，用于编辑时回显) */
   templateParamValues?: Record<string, string>;
+  /** 订阅的上下文 ID（持久化订阅状态，定时执行时会发送事件到该上下文） */
+  subscribedContextId?: string;
 }
 
 /** 执行日志 */

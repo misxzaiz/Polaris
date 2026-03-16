@@ -95,6 +95,7 @@ impl TaskStoreService {
             run_in_terminal: params.run_in_terminal,
             template_id: params.template_id,
             template_param_values: params.template_param_values,
+            subscribed_context_id: None,
         };
 
         // 如果是协议模式，创建任务目录结构
@@ -238,6 +239,33 @@ impl TaskStoreService {
                 true
             })
             .collect()
+    }
+
+    /// 设置/取消任务的订阅状态
+    /// 
+    /// context_id 为 Some 时表示订阅，为 None 时表示取消订阅
+    pub fn set_subscription(&mut self, id: &str, context_id: Option<&str>) -> Result<()> {
+        // 先找到任务，记录更新信息
+        let (task_name, sub_ctx_id) = {
+            if let Some(task) = self.store.tasks.iter().find(|t| t.id == id) {
+                let name = task.name.clone();
+                let ctx = context_id.map(|s| s.to_string());
+                (name, ctx)
+            } else {
+                return Ok(());
+            }
+        };
+
+        // 更新任务
+        if let Some(task) = self.store.tasks.iter_mut().find(|t| t.id == id) {
+            task.subscribed_context_id = sub_ctx_id.clone();
+            task.updated_at = Utc::now().timestamp();
+        }
+
+        // 保存
+        self.save()?;
+        tracing::info!("[Scheduler] 任务 {} 订阅状态已更新: {:?}", task_name, sub_ctx_id);
+        Ok(())
     }
 }
 

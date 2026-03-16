@@ -36,6 +36,10 @@ interface SchedulerState {
   runTask: (id: string) => Promise<RunTaskResult>;
   /** 立即执行任务（订阅模式 - 发送事件到 AI 对话窗口） */
   runTaskWithSubscription: (id: string, taskName: string, contextId?: string) => Promise<RunTaskResult>;
+  /** 订阅任务（持久化订阅状态） */
+  subscribeTask: (id: string, contextId: string) => Promise<void>;
+  /** 取消订阅任务 */
+  unsubscribeTask: (id: string) => Promise<void>;
   /** 验证触发表达式 */
   validateTrigger: (type: TriggerType, value: string) => Promise<number | null>;
   /** 清理过期日志 */
@@ -188,6 +192,32 @@ export const useSchedulerStore = create<SchedulerState>((set, get) => ({
     }
   },
 
+  subscribeTask: async (id, contextId) => {
+    try {
+      await tauri.schedulerSubscribeTask(id, contextId);
+      // 刷新任务列表获取最新状态
+      const tasks = await tauri.schedulerGetTasks();
+      set({ tasks });
+    } catch (e) {
+      console.error('订阅任务失败:', e);
+      throw e;
+    }
+  },
+
+  unsubscribeTask: async (id) => {
+    try {
+      await tauri.schedulerUnsubscribeTask(id);
+      // 清除本地订阅状态
+      set({ subscribingTaskId: null, subscribingTaskName: null });
+      // 刷新任务列表获取最新状态
+      const tasks = await tauri.schedulerGetTasks();
+      set({ tasks });
+    } catch (e) {
+      console.error('取消订阅任务失败:', e);
+      throw e;
+    }
+  },
+
   validateTrigger: async (type, value) => {
     try {
       return await tauri.schedulerValidateTrigger(type, value);
@@ -218,8 +248,8 @@ export const useSchedulerStore = create<SchedulerState>((set, get) => ({
       return schedulerEventCleanup;
     }
 
-    const handleSchedulerEvent = (event: { payload: { type: string; taskId: string; taskName?: string; success?: boolean } }) => {
-      const { type, taskId, success } = event.payload;
+    const handleSchedulerEvent = (event: { payload: { type: string; taskId: string; taskName?: string; success?: boolean; contextId?: string } }) => {
+      const { type, taskId, taskName, success, contextId } = event.payload;
       console.log('[SchedulerStore] 收到 scheduler-event:', type, taskId, success);
 
       if (type === 'task_end') {
@@ -233,11 +263,23 @@ export const useSchedulerStore = create<SchedulerState>((set, get) => ({
           get().loadTasks();
           get().loadLogs(50);
         }
+      } else if (type === 'task_due') {
+        // 任务到期且有订阅，自动调用 runTaskWithSubscription
+        console.log('[SchedulerStore] 收到 task_due 事件，自动执行订阅任务:', taskId, taskName);
+
+        // 设置订阅状态
+        set({ subscribingTaskId: taskId, subscribingTaskName: taskName || null });
+
+        // 调用 runTaskWithSubscription
+        tauri.schedulerRunTaskWithWindow(taskId, contextId).catch((e) => {
+          console.error('[SchedulerStore] 自动执行订阅任务失败:', e);
+          set({ subscribingTaskId: null, subscribingTaskName: null });
+        });
       }
     };
 
     // 监听 scheduler-event 事件
-    const unlisten = tauri.listen<{ type: string; taskId: string; taskName?: string; success?: boolean }>(
+    const unlisten = tauri.listen<{ type: string; taskId: string; taskName?: string; success?: boolean; contextId?: string }>(
       'scheduler-event',
       (event) => handleSchedulerEvent(event)
     );

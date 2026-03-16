@@ -178,8 +178,8 @@ pub async fn scheduler_start(
             // 保存锁
             *state.scheduler_lock.lock().await = Some(new_lock);
 
-            // 启动调度器
-            state.scheduler_dispatcher.lock().await.start();
+            // 启动调度器（不传递 app_handle，因为前端无法获取）
+            state.scheduler_dispatcher.lock().await.start(None);
 
             tracing::info!("[Scheduler] 成功启动调度器");
             Ok("成功启动调度器".to_string())
@@ -331,4 +331,27 @@ pub fn scheduler_get_protocol_file_path(
 
     let full_path = std::path::PathBuf::from(&work_dir).join(&task_path).join(file_name);
     Ok(full_path.to_string_lossy().to_string())
+}
+
+/// 订阅任务（设置任务的 subscribedContextId）
+/// 
+/// 订阅后，定时执行时任务会自动发送事件到前端窗口
+#[tauri::command]
+pub async fn scheduler_subscribe_task(
+    id: String,
+    context_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<()> {
+    let mut store = state.scheduler_task_store.lock().await;
+    store.set_subscription(&id, Some(&context_id))
+}
+
+/// 取消订阅任务
+#[tauri::command]
+pub async fn scheduler_unsubscribe_task(
+    id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<()> {
+    let mut store = state.scheduler_task_store.lock().await;
+    store.set_subscription(&id, None)
 }
