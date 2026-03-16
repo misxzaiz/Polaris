@@ -68,6 +68,8 @@ export const useProtocolTemplateStore = create<ProtocolTemplateState>()(
           category: params.category,
           builtin: false,
           missionTemplate: params.missionTemplate,
+          fullTemplate: params.fullTemplate,
+          templateParams: params.templateParams,
           protocolTemplate: params.protocolTemplate,
           defaultTriggerType: params.defaultTriggerType,
           defaultTriggerValue: params.defaultTriggerValue,
