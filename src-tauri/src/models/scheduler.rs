@@ -30,6 +30,10 @@ pub struct CreateTaskParams {
     /// 是否在终端中执行（便于用户查看过程）
     #[serde(default)]
     pub run_in_terminal: bool,
+    /// 使用的协议模板ID（protocol 模式使用，用于编辑时回显）
+    pub template_id: Option<String>,
+    /// 模板参数值（protocol 模式使用，用于编辑时回显）
+    pub template_param_values: Option<HashMap<String, String>>,
 }
 
 fn default_enabled() -> bool {
@@ -94,6 +98,12 @@ pub struct ScheduledTask {
     /// 是否在终端中执行（便于用户查看过程）
     #[serde(default)]
     pub run_in_terminal: bool,
+    /// 使用的协议模板ID（protocol 模式使用，用于编辑时回显）
+    #[serde(default)]
+    pub template_id: Option<String>,
+    /// 模板参数值（protocol 模式使用，用于编辑时回显）
+    #[serde(default)]
+    pub template_param_values: Option<HashMap<String, String>>,
 }
 
 impl From<CreateTaskParams> for ScheduledTask {
@@ -117,6 +127,8 @@ impl From<CreateTaskParams> for ScheduledTask {
             max_runs: params.max_runs,
             current_runs: 0,
             run_in_terminal: params.run_in_terminal,
+            template_id: params.template_id,
+            template_param_values: params.template_param_values,
         }
     }
 }

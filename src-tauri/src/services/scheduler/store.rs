@@ -93,6 +93,8 @@ impl TaskStoreService {
             max_runs: params.max_runs,
             current_runs: 0,
             run_in_terminal: params.run_in_terminal,
+            template_id: params.template_id,
+            template_param_values: params.template_param_values,
         };
 
         // 如果是协议模式，创建任务目录结构

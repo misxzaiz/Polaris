@@ -49,6 +49,10 @@ export interface ScheduledTask {
   currentRuns: number;
   /** 是否在终端中执行 (便于用户查看过程) */
   runInTerminal: boolean;
+  /** 使用的协议模板ID (protocol 模式使用，用于编辑时回显) */
+  templateId?: string;
+  /** 模板参数值 (protocol 模式使用，用于编辑时回显) */
+  templateParamValues?: Record<string, string>;
 }
 
 /** 执行日志 */
@@ -102,6 +106,10 @@ export interface CreateTaskParams {
   maxRuns?: number;
   /** 是否在终端中执行 (便于用户查看过程) */
   runInTerminal?: boolean;
+  /** 使用的协议模板ID (protocol 模式使用，用于编辑时回显) */
+  templateId?: string;
+  /** 模板参数值 (protocol 模式使用，用于编辑时回显) */
+  templateParamValues?: Record<string, string>;
 }
 
 /** 协议任务目录结构 */

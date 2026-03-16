@@ -9,8 +9,8 @@ import { useToastStore } from '../../stores';
 import { useProtocolTemplateStore } from '../../stores/protocolTemplateStore';
 import type { ScheduledTask, TriggerType, CreateTaskParams, TaskMode } from '../../types/scheduler';
 import { TriggerTypeLabels, IntervalUnitLabels, TaskModeLabels, parseIntervalValue } from '../../types/scheduler';
-import { ProtocolTemplateCategoryLabels } from '../../types/protocolTemplate';
-import type { ProtocolTemplate } from '../../types/protocolTemplate';
+import { ProtocolTemplateCategoryLabels, renderFullTemplate } from '../../types/protocolTemplate';
+import type { ProtocolTemplate, TemplateParam } from '../../types/protocolTemplate';
 import * as tauri from '../../services/tauri';
 
 /** 预设时间选项 */
@@ -115,6 +115,9 @@ function ProtocolTemplateSelector({
                   ) : (
                     <span className="text-xs px-1.5 py-0.5 bg-green-500/20 text-green-400 rounded">自定义</span>
                   )}
+                  {template.fullTemplate && (
+                    <span className="text-xs px-1.5 py-0.5 bg-purple-500/20 text-purple-400 rounded">完整模板</span>
+                  )}
                 </div>
                 <p className="text-xs text-gray-500 mt-0.5 truncate">{template.description}</p>
               </button>
@@ -122,6 +125,78 @@ function ProtocolTemplateSelector({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** 模板参数输入组件 */
+function TemplateParamInput({
+  param,
+  value,
+  onChange,
+  disabled,
+}: {
+  param: TemplateParam;
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}) {
+  const label = (
+    <label className="block text-sm text-gray-400 mb-1">
+      {param.label}
+      {param.required && <span className="text-red-400 ml-1">*</span>}
+    </label>
+  );
+
+  if (param.type === 'textarea') {
+    return (
+      <div>
+        {label}
+        <textarea
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          rows={4}
+          disabled={disabled}
+          placeholder={param.placeholder}
+          className="w-full px-3 py-2 bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500 resize-none font-mono text-sm disabled:opacity-50"
+        />
+      </div>
+    );
+  }
+
+  if (param.type === 'select' && param.options) {
+    return (
+      <div>
+        {label}
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
+          className="w-full px-3 py-2 bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500 disabled:opacity-50"
+        >
+          <option value="">请选择...</option>
+          {param.options.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+
+  // 默认 text 类型
+  return (
+    <div>
+      {label}
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        placeholder={param.placeholder}
+        className="w-full px-3 py-2 bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500 disabled:opacity-50"
+      />
     </div>
   );
 }
@@ -156,6 +231,8 @@ export function TaskEditor({
 
   // 协议模式字段
   const [mission, setMission] = useState('');
+  const [selectedTemplate, setSelectedTemplate] = useState<ProtocolTemplate | null>(null);
+  const [templateParamValues, setTemplateParamValues] = useState<Record<string, string>>({});
 
   // 执行轮次
   const [maxRuns, setMaxRuns] = useState<number | undefined>(task?.maxRuns);
@@ -184,22 +261,46 @@ export function TaskEditor({
     }
   }, [triggerType, triggerValue]);
 
-  // 初始化协议模式数据 - 从协议文档中读取任务目标
+  // 初始化协议模式数据 - 从协议文档中读取任务目标，并回显模板信息
   useEffect(() => {
-    if (task?.mode === 'protocol' && task.taskPath && task.workDir) {
-      // 读取任务目标（从 task.md 中解析）
-      tauri.schedulerReadProtocolFile(task.workDir, task.taskPath, 'task')
-        .then((content) => {
-          // 解析任务目标部分
-          const missionMatch = content.match(/## 任务目标\s*\n([\s\S]*?)(?=\n##|$)/);
-          if (missionMatch && missionMatch[1]) {
-            const extractedMission = missionMatch[1].trim();
-            setMission(extractedMission);
+    if (task?.mode === 'protocol') {
+      // 1. 回显模板信息
+      if (task.templateId) {
+        const { getTemplate } = useProtocolTemplateStore.getState();
+        const template = getTemplate(task.templateId);
+        if (template) {
+          setSelectedTemplate(template);
+          // 回显模板参数值
+          if (task.templateParamValues) {
+            setTemplateParamValues(task.templateParamValues);
+          } else {
+            // 没有保存的参数值，使用默认值
+            const initialValues: Record<string, string> = {};
+            if (template.templateParams) {
+              template.templateParams.forEach((param) => {
+                initialValues[param.key] = param.default || '';
+              });
+            }
+            setTemplateParamValues(initialValues);
           }
-        })
-        .catch((e) => {
-          console.error('读取协议文档失败:', e);
-        });
+        }
+      }
+
+      // 2. 读取任务目标（从 task.md 中解析，仅当没有使用 fullTemplate 时）
+      if (task.taskPath && task.workDir && !task.templateId) {
+        tauri.schedulerReadProtocolFile(task.workDir, task.taskPath, 'task')
+          .then((content) => {
+            // 解析任务目标部分
+            const missionMatch = content.match(/## 任务目标\s*\n([\s\S]*?)(?=\n##|$)/);
+            if (missionMatch && missionMatch[1]) {
+              const extractedMission = missionMatch[1].trim();
+              setMission(extractedMission);
+            }
+          })
+          .catch((e) => {
+            console.error('读取协议文档失败:', e);
+          });
+      }
     }
   }, [task]);
 
@@ -258,10 +359,28 @@ export function TaskEditor({
         toast.warning('协议模式需要指定工作目录');
         return;
       }
-      if (!mission.trim() && !task?.taskPath) {
+
+      // 如果使用 fullTemplate 模式
+      if (selectedTemplate?.fullTemplate) {
+        // 检查必填参数
+        const missingParams = selectedTemplate.templateParams
+          ?.filter((p) => p.required && !templateParamValues[p.key]?.trim())
+          .map((p) => p.label);
+        if (missingParams && missingParams.length > 0) {
+          toast.warning(`请填写: ${missingParams.join(', ')}`);
+          return;
+        }
+      } else if (!mission.trim() && !task?.taskPath) {
+        // 传统模式检查 mission
         toast.warning('协议模式需要填写任务目标');
         return;
       }
+    }
+
+    // 计算 mission：如果是 fullTemplate 模式，渲染完整模板
+    let finalMission = mission;
+    if (mode === 'protocol' && selectedTemplate?.fullTemplate) {
+      finalMission = renderFullTemplate(selectedTemplate.fullTemplate, templateParamValues);
     }
 
     onSave({
@@ -272,10 +391,15 @@ export function TaskEditor({
       prompt,
       workDir: workDir || undefined,
       mode,
-      mission: mode === 'protocol' ? mission : undefined,
+      mission: mode === 'protocol' ? finalMission : undefined,
       maxRuns: maxRuns || undefined,
       runInTerminal,
       enabled: task?.enabled ?? true,
+      // 保存模板信息，用于编辑时回显
+      templateId: mode === 'protocol' ? selectedTemplate?.id : undefined,
+      templateParamValues: mode === 'protocol' && selectedTemplate?.fullTemplate
+        ? templateParamValues
+        : undefined,
     });
   };
 
@@ -360,8 +484,27 @@ export function TaskEditor({
               {/* 模板选择 */}
               <ProtocolTemplateSelector
                 onTemplateSelect={(template) => {
-                  // 应用模板到 mission 字段
-                  setMission(template.missionTemplate);
+                  // 设置选中的模板
+                  setSelectedTemplate(template);
+                  
+                  // 初始化模板参数值（使用默认值）
+                  const initialValues: Record<string, string> = {};
+                  if (template.templateParams) {
+                    template.templateParams.forEach((param) => {
+                      initialValues[param.key] = param.default || '';
+                    });
+                  }
+                  setTemplateParamValues(initialValues);
+                  
+                  // 如果模板有 fullTemplate，使用它；否则使用 missionTemplate
+                  if (template.fullTemplate) {
+                    // fullTemplate 模式：参数将动态填充
+                    setMission('');
+                  } else {
+                    // 传统模式：使用 missionTemplate
+                    setMission(template.missionTemplate);
+                  }
+                  
                   // 应用默认触发设置
                   if (template.defaultTriggerType) {
                     setTriggerType(template.defaultTriggerType);
@@ -383,24 +526,51 @@ export function TaskEditor({
                 disabled={!!task?.taskPath}
               />
 
-              <div>
-                <label className="block text-sm text-gray-400 mb-1">
-                  任务目标 <span className="text-red-400">*</span>
-                </label>
-                <textarea
-                  value={mission}
-                  onChange={(e) => setMission(e.target.value)}
-                  rows={5}
-                  className="w-full px-3 py-2 bg-[#1a1a2e] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500 resize-none font-mono text-sm"
-                  placeholder="描述任务目标，例如：帮我持续优化 ERP 查询性能&#10;&#10;支持占位符：{dateTime} - 当前时间"
-                  disabled={!!task?.taskPath} // 已创建的任务不允许修改目标
-                />
-                {task?.taskPath && (
-                  <p className="mt-1 text-xs text-gray-500">
-                    已创建的任务目标不可修改，可在文档管理中查看
-                  </p>
-                )}
-              </div>
+              {/* 动态模板参数输入 */}
+              {selectedTemplate?.templateParams && selectedTemplate.templateParams.length > 0 && (
+                <div className="space-y-3 p-3 bg-[#1a1a2e] rounded-lg border border-[#2a2a4a]">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-400">模板参数</span>
+                    <span className="text-xs text-gray-500">{selectedTemplate.name}</span>
+                  </div>
+                  {selectedTemplate.templateParams.map((param) => (
+                    <TemplateParamInput
+                      key={param.key}
+                      param={param}
+                      value={templateParamValues[param.key] || ''}
+                      onChange={(value) =>
+                        setTemplateParamValues((prev) => ({
+                          ...prev,
+                          [param.key]: value,
+                        }))
+                      }
+                      disabled={!!task?.taskPath}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* 传统任务目标输入框：仅当没有使用 fullTemplate 模式时显示 */}
+              {!(selectedTemplate?.fullTemplate && selectedTemplate?.templateParams?.length) && (
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">
+                    任务目标 <span className="text-red-400">*</span>
+                  </label>
+                  <textarea
+                    value={mission}
+                    onChange={(e) => setMission(e.target.value)}
+                    rows={5}
+                    className="w-full px-3 py-2 bg-[#1a1a2e] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500 resize-none font-mono text-sm"
+                    placeholder="描述任务目标，例如：帮我持续优化 ERP 查询性能&#10;&#10;支持占位符：{dateTime} - 当前时间"
+                    disabled={!!task?.taskPath} // 已创建的任务不允许修改目标
+                  />
+                  {task?.taskPath && (
+                    <p className="mt-1 text-xs text-gray-500">
+                      已创建的任务目标不可修改，可在文档管理中查看
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="p-3 bg-purple-500/10 rounded border border-purple-500/20">
                 <p className="text-sm text-purple-400">
                   创建后将自动生成协议文档，包含任务目标、执行规则、记忆系统等。
