@@ -61,6 +61,7 @@ function TaskCard({
   onToggle,
   onRun,
   onSubscribe,
+  onCancelSubscription,
   onViewDocs,
   isSubscribing,
 }: {
@@ -70,6 +71,7 @@ function TaskCard({
   onToggle: () => void;
   onRun: () => void;
   onSubscribe: () => void;
+  onCancelSubscription?: () => void;
   onViewDocs?: () => void;
   isSubscribing?: boolean;
 }) {
@@ -135,27 +137,25 @@ function TaskCard({
             </button>
           )}
           {/* 订阅执行按钮 - 在 AI 对话窗口实时显示执行过程 */}
-          <button
-            onClick={onSubscribe}
-            disabled={isSubscribing}
-            className={`px-3 py-1 text-sm rounded transition-colors flex items-center gap-1 ${
-              isSubscribing
-                ? 'bg-cyan-600 text-white cursor-wait'
-                : 'bg-cyan-600/20 text-cyan-400 hover:bg-cyan-600/30'
-            }`}
-            title={isSubscribing ? '正在执行中...' : '订阅执行 - 在 AI 对话窗口查看执行过程'}
-          >
-            {isSubscribing ? (
-              <>
-                <span className="animate-spin">⏳</span>
-                执行中
-              </>
-            ) : (
-              <>
-                👁 订阅
-              </>
-            )}
-          </button>
+          {isSubscribing ? (
+            // 正在订阅执行中 - 显示取消按钮
+            <button
+              onClick={onCancelSubscription}
+              className="px-3 py-1 text-sm bg-red-600 hover:bg-red-700 text-white rounded transition-colors flex items-center gap-1"
+              title="取消订阅并中断任务"
+            >
+              ⏹ 停止
+            </button>
+          ) : (
+            // 未订阅 - 显示订阅按钮
+            <button
+              onClick={onSubscribe}
+              className="px-3 py-1 text-sm bg-cyan-600/20 text-cyan-400 hover:bg-cyan-600/30 rounded transition-colors flex items-center gap-1"
+              title="订阅执行 - 在 AI 对话窗口查看执行过程"
+            >
+              👁 订阅
+            </button>
+          )}
           <button
             onClick={onRun}
             className="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
@@ -332,7 +332,7 @@ function LogList({ logs }: { logs: TaskLog[] }) {
 
 /** 主面板 */
 export function SchedulerPanel() {
-  const { tasks, logs, loading, subscribingTaskId, loadTasks, loadLogs, createTask, updateTask, deleteTask, toggleTask, runTask, runTaskWithSubscription, clearSubscription } =
+  const { tasks, logs, loading, subscribingTaskId, loadTasks, loadLogs, createTask, updateTask, deleteTask, toggleTask, runTask, runTaskWithSubscription, clearSubscription, initSchedulerEventListener } =
     useSchedulerStore();
   const toast = useToastStore();
 
@@ -340,6 +340,14 @@ export function SchedulerPanel() {
   const [editingTask, setEditingTask] = useState<ScheduledTask | undefined>();
   const [activeTab, setActiveTab] = useState<'tasks' | 'logs'>('tasks');
   const [viewingTask, setViewingTask] = useState<ScheduledTask | undefined>();
+
+  // 初始化事件监听
+  useEffect(() => {
+    const cleanup = initSchedulerEventListener();
+    return () => {
+      cleanup();
+    };
+  }, [initSchedulerEventListener]);
 
   useEffect(() => {
     loadTasks();
@@ -363,15 +371,27 @@ export function SchedulerPanel() {
   /** 处理订阅执行任务（在 AI 对话窗口实时显示） */
   const handleSubscribeTask = async (task: ScheduledTask) => {
     try {
-      await runTaskWithSubscription(task.id);
+      await runTaskWithSubscription(task.id, task.name);
       toast.info('订阅执行', `任务「${task.name}」正在执行，请在 AI 对话窗口查看实时进度`);
       // 刷新任务列表和日志
       loadTasks();
       loadLogs(50);
     } catch (e) {
       toast.error('执行失败', e instanceof Error ? e.message : '未知错误');
-      clearSubscription();
     }
+  };
+
+  /** 取消订阅（中断正在执行的任务） */
+  const handleCancelSubscription = async () => {
+    // 通过 eventChatStore 的 interruptChat 来中断
+    const { useEventChatStore } = await import('../../stores/eventChatStore');
+    try {
+      await useEventChatStore.getState().interruptChat();
+      toast.info('已中断', '任务执行已被中断');
+    } catch (e) {
+      console.error('中断任务失败:', e);
+    }
+    clearSubscription();
   };
 
   const handleCreate = async (params: CreateTaskParams) => {
@@ -476,6 +496,7 @@ export function SchedulerPanel() {
                   onToggle={() => toggleTask(task.id, !task.enabled)}
                   onRun={() => handleRunTask(task)}
                   onSubscribe={() => handleSubscribeTask(task)}
+                  onCancelSubscription={handleCancelSubscription}
                   onViewDocs={() => setViewingTask(task)}
                   isSubscribing={subscribingTaskId === task.id}
                 />
