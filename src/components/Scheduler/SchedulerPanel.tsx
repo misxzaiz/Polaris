@@ -67,6 +67,7 @@ function TaskCard({
   onViewDocs,
   isSubscribing,
   isSubscribed,
+  showGroupTag,
 }: {
   task: ScheduledTask;
   onEdit: () => void;
@@ -81,6 +82,8 @@ function TaskCard({
   isSubscribing?: boolean;
   /** 是否已订阅（有 subscribedContextId） */
   isSubscribed?: boolean;
+  /** 是否显示分组标签（当任务列表有多个分组时显示） */
+  showGroupTag?: boolean;
 }) {
   return (
     <div className="bg-[#1a1a2e] rounded-lg p-4 border border-[#2a2a4a]">
@@ -89,6 +92,12 @@ function TaskCard({
           <div className="flex items-center gap-2">
             <span className={`w-2 h-2 rounded-full ${task.enabled ? 'bg-green-500' : 'bg-gray-500'}`} />
             <h3 className="text-white font-medium">{task.name}</h3>
+            {/* 分组标签 */}
+            {showGroupTag && task.group && (
+              <span className="px-2 py-0.5 rounded text-xs bg-orange-500/20 text-orange-400">
+                {task.group}
+              </span>
+            )}
             {/* 模式徽章 */}
             <span className={`px-2 py-0.5 rounded text-xs ${
               task.mode === 'protocol'
@@ -358,6 +367,49 @@ function LogList({ logs }: { logs: TaskLog[] }) {
   );
 }
 
+/** 分组折叠组件 */
+function TaskGroup({
+  name,
+  tasks,
+  defaultExpanded = true,
+  children,
+}: {
+  name: string;
+  tasks: ScheduledTask[];
+  defaultExpanded?: boolean;
+  children: (task: ScheduledTask) => React.ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+
+  return (
+    <div className="mb-4">
+      {/* 分组标题 */}
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between px-3 py-2 bg-[#1a1a2e] rounded-t border border-[#2a2a4a] hover:bg-[#22224a] transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <span className={`transform transition-transform ${expanded ? 'rotate-90' : ''}`}>▶</span>
+          <span className="text-white font-medium">{name}</span>
+          <span className="text-xs px-2 py-0.5 bg-[#2a2a4a] text-gray-400 rounded-full">
+            {tasks.length}
+          </span>
+        </div>
+        <span className="text-xs text-gray-500">
+          {expanded ? '点击收起' : '点击展开'}
+        </span>
+      </button>
+
+      {/* 任务列表 */}
+      {expanded && (
+        <div className="space-y-2 p-2 bg-[#16162a] border-x border-b border-[#2a2a4a] rounded-b">
+          {tasks.map((task) => children(task))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** 主面板 */
 export function SchedulerPanel() {
   const { tasks, logs, loading, subscribingTaskId, loadTasks, loadLogs, createTask, updateTask, deleteTask, toggleTask, runTask, runTaskWithSubscription, clearSubscription, subscribeTask, unsubscribeTask, initSchedulerEventListener } =
@@ -369,6 +421,24 @@ export function SchedulerPanel() {
   const [copyingTask, setCopyingTask] = useState<ScheduledTask | undefined>();
   const [activeTab, setActiveTab] = useState<'tasks' | 'logs'>('tasks');
   const [viewingTask, setViewingTask] = useState<ScheduledTask | undefined>();
+
+  // 按分组整理任务
+  const groupedTasks = tasks.reduce((acc, task) => {
+    const groupKey = task.group || '默认';
+    if (!acc[groupKey]) {
+      acc[groupKey] = [];
+    }
+    acc[groupKey].push(task);
+    return acc;
+  }, {} as Record<string, ScheduledTask[]>);
+
+  // 获取排序后的分组名
+  const groupNames = Object.keys(groupedTasks).sort((a, b) => {
+    // "默认" 组放在最后
+    if (a === '默认') return 1;
+    if (b === '默认') return -1;
+    return a.localeCompare(b);
+  });
 
   // 初始化事件监听
   useEffect(() => {
@@ -569,27 +639,37 @@ export function SchedulerPanel() {
               暂无定时任务，点击右上角按钮创建
             </div>
           ) : (
-            <div className="space-y-3">
-              {tasks.map((task) => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  onEdit={() => {
-                    setCopyingTask(undefined);
-                    setEditingTask(task);
-                    setShowEditor(true);
-                  }}
-                  onCopy={() => handleCopy(task)}
-                  onDelete={() => handleDelete(task.id)}
-                  onToggle={() => toggleTask(task.id, !task.enabled)}
-                  onRun={() => handleRunTask(task)}
-                  onSubscribe={() => handleSubscribeAndRun(task)}
-                  onCancelSubscription={handleCancelSubscription}
-                  onUnsubscribe={() => handleUnsubscribe(task)}
-                  onViewDocs={() => setViewingTask(task)}
-                  isSubscribing={subscribingTaskId === task.id}
-                  isSubscribed={!!task.subscribedContextId}
-                />
+            <div className="space-y-2">
+              {/* 按分组显示任务 */}
+              {groupNames.map((groupName) => (
+                <TaskGroup
+                  key={groupName}
+                  name={groupName}
+                  tasks={groupedTasks[groupName]}
+                >
+                  {(task) => (
+                    <TaskCard
+                      key={task.id}
+                      task={task}
+                      showGroupTag={tasks.length > groupedTasks[groupName].length}
+                      onEdit={() => {
+                        setCopyingTask(undefined);
+                        setEditingTask(task);
+                        setShowEditor(true);
+                      }}
+                      onCopy={() => handleCopy(task)}
+                      onDelete={() => handleDelete(task.id)}
+                      onToggle={() => toggleTask(task.id, !task.enabled)}
+                      onRun={() => handleRunTask(task)}
+                      onSubscribe={() => handleSubscribeAndRun(task)}
+                      onCancelSubscription={handleCancelSubscription}
+                      onUnsubscribe={() => handleUnsubscribe(task)}
+                      onViewDocs={() => setViewingTask(task)}
+                      isSubscribing={subscribingTaskId === task.id}
+                      isSubscribed={!!task.subscribedContextId}
+                    />
+                  )}
+                </TaskGroup>
               ))}
             </div>
           )

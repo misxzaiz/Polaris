@@ -246,6 +246,8 @@ export function TaskEditor({
   const [prompt, setPrompt] = useState(task?.prompt || '');
   // 新建任务时自动填充当前工作区路径，编辑任务保持原值
   const [workDir, setWorkDir] = useState(task?.workDir || defaultWorkDir);
+  // 分组字段（可选）
+  const [group, setGroup] = useState(task?.group || '');
 
   // 协议模式字段
   const [mission, setMission] = useState('');
@@ -427,6 +429,7 @@ export function TaskEditor({
       prompt,
       workDir: workDir || undefined,
       mode,
+      group: group || undefined,
       mission: mode === 'protocol' ? finalMission : undefined,
       maxRuns: maxRuns || undefined,
       runInTerminal,
@@ -469,6 +472,25 @@ export function TaskEditor({
               placeholder="例如：每日日报生成"
             />
           </div>
+
+          {/* 分组（可选） */}
+          {fullMode && (
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">
+                分组 <span className="text-gray-600">(可选)</span>
+              </label>
+              <input
+                type="text"
+                value={group}
+                onChange={(e) => setGroup(e.target.value)}
+                className="w-full px-3 py-2 bg-[#1a1a2e] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+                placeholder="例如：项目A、代码审查、日常维护..."
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                分组可以帮助你更好地管理任务，相同分组的任务会显示在一起
+              </p>
+            </div>
+          )}
 
           {/* 任务模式（仅完整模式显示） */}
           {fullMode && (
