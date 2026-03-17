@@ -525,7 +525,6 @@ function App() {
               filesContent={<FileExplorer />}
               gitContent={
                 <GitPanel
-                  width={leftPanelWidth}
                   onOpenDiffInTab={(diff) => {
                     openDiffTab(diff);
                   }}

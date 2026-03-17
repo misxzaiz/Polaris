@@ -29,12 +29,11 @@ import type { GitFileChange, GitDiffEntry } from '@/types'
 type TabType = 'changes' | 'history' | 'branch' | 'remote' | 'tags' | 'stash' | 'gitignore'
 
 interface GitPanelProps {
-  width?: number
   className?: string
   onOpenDiffInTab?: (diff: GitDiffEntry) => void
 }
 
-export function GitPanel({ width, className = '', onOpenDiffInTab }: GitPanelProps) {
+export function GitPanel({ className = '', onOpenDiffInTab }: GitPanelProps) {
   const { t } = useTranslation('git')
   const { status, isLoading, error, refreshStatus, getWorktreeFileDiff, getIndexFileDiff, stageFile, unstageFile, discardChanges, initRepository } = useGitStore()
   const currentWorkspace = useWorkspaceStore((s) => {
@@ -299,10 +298,7 @@ export function GitPanel({ width, className = '', onOpenDiffInTab }: GitPanelPro
 
   if (!status) {
     return (
-      <aside
-        className={`flex flex-col bg-background-elevated border-l border-border ${className}`}
-        style={{ width: width ? `${width}px` : '320px' }}
-      >
+      <div className={`h-full flex flex-col ${className}`}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
           <div className="flex items-center gap-2">
             <GitPullRequest size={16} className="text-primary" />
@@ -372,15 +368,12 @@ export function GitPanel({ width, className = '', onOpenDiffInTab }: GitPanelPro
             </>
           )}
         </div>
-      </aside>
+      </div>
     )
   }
 
   return (
-    <aside
-      className={`flex flex-col h-full bg-background-elevated border-l border-border ${className}`}
-      style={{ width: width ? `${width}px` : '320px' }}
-    >
+    <div className={`h-full flex flex-col ${className}`}>
       <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle shrink-0">
         <div className="flex items-center gap-2">
           <GitPullRequest size={16} className="text-primary" />
@@ -590,6 +583,6 @@ export function GitPanel({ width, className = '', onOpenDiffInTab }: GitPanelPro
           onCancel={() => setConfirmDialog(null)}
         />
       )}
-    </aside>
+    </div>
   )
 }
