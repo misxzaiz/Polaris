@@ -37,6 +37,8 @@ export interface ScheduledTask {
   description?: string;
   /** 任务路径 (protocol 模式使用，相对于 workDir) */
   taskPath?: string;
+  /** 任务目标 (protocol 模式使用，用于保存协议文档中的任务目标) */
+  mission?: string;
   /** 上次执行时间 */
   lastRunAt?: number;
   /** 上次执行状态 */

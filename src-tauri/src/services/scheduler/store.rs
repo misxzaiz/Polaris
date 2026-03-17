@@ -86,6 +86,7 @@ impl TaskStoreService {
             mode: params.mode.clone(),
             group: params.group,
             task_path: None,
+            mission: params.mission,
             last_run_at: None,
             last_run_status: None,
             next_run_at: None,
@@ -108,7 +109,7 @@ impl TaskStoreService {
         // 如果是协议模式，创建任务目录结构
         if params.mode == TaskMode::Protocol {
             let work_dir = params.work_dir.clone().unwrap_or_else(|| ".".to_string());
-            let mission = params.mission.clone().unwrap_or_else(|| task.name.clone());
+            let mission = task.mission.clone().unwrap_or_else(|| task.name.clone());
 
             let task_path = ProtocolTaskService::create_task_structure(
                 &work_dir,

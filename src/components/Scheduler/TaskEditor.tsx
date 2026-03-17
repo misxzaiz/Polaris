@@ -233,9 +233,9 @@ export function TaskEditor({
   // 获取 OpenAI Providers 列表
   const openaiProviders = config?.openaiProviders || [];
 
-  // 获取当前工作区路径作为默认工作目录
+  // 获取当前工作区路径作为默认工作目录，备选使用配置中的工作目录
   const currentWorkspace = getCurrentWorkspace();
-  const defaultWorkDir = currentWorkspace?.path || '';
+  const defaultWorkDir = currentWorkspace?.path || config?.workDir || '';
 
   // 基础字段
   const [name, setName] = useState(task?.name || '');
@@ -320,21 +320,37 @@ export function TaskEditor({
           setSelectedTemplate(template);
           // 回显模板参数值
           if (task.templateParamValues) {
-            setTemplateParamValues(task.templateParamValues);
+            // 如果模板参数中有 userSupplement，同步到独立字段
+            const paramValues = { ...task.templateParamValues };
+            if (paramValues.userSupplement !== undefined) {
+              // 从模板参数中恢复 userSupplement
+              setUserSupplement(paramValues.userSupplement);
+            }
+            setTemplateParamValues(paramValues);
           } else {
             // 没有保存的参数值，使用默认值
             const initialValues: Record<string, string> = {};
             if (template.templateParams) {
               template.templateParams.forEach((param) => {
-                initialValues[param.key] = param.default || '';
+                // userSupplement 参数使用独立字段的值（如果有的话）
+                if (param.key === 'userSupplement' && task.userSupplement) {
+                  initialValues[param.key] = task.userSupplement;
+                } else {
+                  initialValues[param.key] = param.default || '';
+                }
               });
             }
             setTemplateParamValues(initialValues);
           }
         }
       }
+      
+      // 2. 初始化 mission 字段（从任务数据中）
+      if (task.mission) {
+        setMission(task.mission);
+      }
 
-      // 2. 读取任务目标（从 task.md 中解析，仅当没有使用 fullTemplate 时）
+      // 3. 读取任务目标（从 task.md 中解析，仅当没有使用 fullTemplate 时）
       if (task.taskPath && task.workDir && !task.templateId) {
         tauri.schedulerReadProtocolFile(task.workDir, task.taskPath, 'task')
           .then((content) => {
@@ -431,6 +447,17 @@ export function TaskEditor({
       finalMission = renderFullTemplate(selectedTemplate.fullTemplate, templateParamValues);
     }
 
+    // 如果模板有 userSupplement 参数，同步独立字段的值
+    const finalTemplateParamValues = mode === 'protocol' && selectedTemplate
+      ? {
+          ...templateParamValues,
+          // 同步独立的 userSupplement 字段到模板参数
+          ...(selectedTemplate.templateParams?.some(p => p.key === 'userSupplement') && userSupplement.trim()
+            ? { userSupplement: userSupplement.trim() }
+            : {}),
+        }
+      : undefined;
+
     onSave({
       name,
       triggerType,
@@ -444,10 +471,11 @@ export function TaskEditor({
       maxRuns: maxRuns || undefined,
       runInTerminal,
       enabled: task?.enabled ?? true,
-      // 保存模板信息，用于编辑时回显
+      // 保存模板信息，用于编辑时回显 - 始终保存（如果选择了模板）
       templateId: mode === 'protocol' ? selectedTemplate?.id : undefined,
-      templateParamValues: mode === 'protocol' && selectedTemplate?.fullTemplate
-        ? templateParamValues
+      // 始终保存模板参数值（如果选择了模板且有参数）
+      templateParamValues: finalTemplateParamValues && Object.keys(finalTemplateParamValues).length > 0
+        ? finalTemplateParamValues
         : undefined,
       // 重试配置
       maxRetries: maxRetries && maxRetries > 0 ? maxRetries : undefined,
