@@ -49,10 +49,6 @@ const SESSION_HISTORY_KEY = 'event_chat_session_history'
 /** 最大会话历史数量 */
 const MAX_SESSION_HISTORY = 50
 
-/** 事件监听器初始化状态（防止重复注册） */
-let eventListenersInitialized = false
-let eventListenersCleanup: (() => void) | null = null
-
 /**
  * 历史会话记录（localStorage 存储）
  */
@@ -346,6 +342,12 @@ interface EventChatState {
   /** 流式更新计数器 - 用于强制触发React重新渲染 */
   streamingUpdateCounter: number
 
+  // ===== 事件监听器内部状态（从模块级变量迁移）=====
+  /** 事件监听器是否已初始化 */
+  _eventListenersInitialized: boolean
+  /** 事件监听器清理函数 */
+  _eventListenersCleanup: (() => void) | null
+
   /** 添加消息 */
   addMessage: (message: ChatMessage) => void
   /** 清空消息 */
@@ -437,6 +439,10 @@ export const useEventChatStore = create<EventChatState>((set, get) => ({
   toolBlockMap: new Map(),
   providerSessionCache: null,
   streamingUpdateCounter: 0,
+
+  // 事件监听器内部状态
+  _eventListenersInitialized: false,
+  _eventListenersCleanup: null,
 
   addMessage: (message) => {
     set((state) => {
@@ -913,10 +919,12 @@ export const useEventChatStore = create<EventChatState>((set, get) => ({
    * - 代码简洁，职责分离
    */
   initializeEventListeners: async (): Promise<() => void> => {
-    // 防止重复初始化
-    if (eventListenersInitialized && eventListenersCleanup) {
+    const state = get()
+
+    // 防止重复初始化 - 使用 store 内部状态而非模块级变量
+    if (state._eventListenersInitialized && state._eventListenersCleanup) {
       console.log('[EventChatStore] 事件监听器已初始化，跳过重复注册')
-      return eventListenersCleanup
+      return state._eventListenersCleanup
     }
 
     const cleanupCallbacks: Array<() => void> = []
@@ -949,15 +957,22 @@ export const useEventChatStore = create<EventChatState>((set, get) => ({
       }
     })
     cleanupCallbacks.push(unregister)
-    eventListenersInitialized = true
+
+    // 更新 store 内部状态
+    set({ _eventListenersInitialized: true })
     console.log('[EventChatStore] EventRouter 初始化完成，已注册 main 处理器')
 
     const cleanup = () => {
       cleanupCallbacks.forEach((cb) => cb())
-      eventListenersInitialized = false
-      eventListenersCleanup = null
+      // 重置 store 内部状态
+      set({
+        _eventListenersInitialized: false,
+        _eventListenersCleanup: null
+      })
     }
-    eventListenersCleanup = cleanup
+
+    // 存储 cleanup 函数到 store 内部状态
+    set({ _eventListenersCleanup: cleanup })
     return cleanup
   },
 
