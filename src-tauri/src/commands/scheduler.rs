@@ -3,7 +3,8 @@
  */
 
 use crate::error::Result;
-use crate::models::scheduler::{CreateTaskParams, ScheduledTask, TaskLog, TriggerType, RunTaskResult, PaginatedLogs};
+use crate::models::scheduler::{CreateTaskParams, ScheduledTask, TaskLog, TriggerType, RunTaskResult, PaginatedLogs, LogRetentionConfig};
+use crate::services::scheduler::LogStats;
 use crate::state::AppState;
 use crate::utils::{LockStatus, SchedulerLock};
 use crate::services::scheduler::ProtocolTaskService;
@@ -118,7 +119,7 @@ pub async fn scheduler_get_all_logs(
 #[tauri::command]
 pub async fn scheduler_cleanup_logs(
     state: tauri::State<'_, AppState>,
-) -> Result<()> {
+) -> Result<usize> {
     let mut store = state.scheduler_log_store.lock().await;
     store.cleanup_expired_logs()
 }
@@ -454,4 +455,36 @@ pub async fn scheduler_import_tasks(
         }
         None => Ok(vec![]), // 用户取消
     }
+}
+
+// ============================================================================
+// 日志配置管理
+// ============================================================================
+
+/// 获取日志统计信息
+#[tauri::command]
+pub async fn scheduler_get_log_stats(
+    state: tauri::State<'_, AppState>,
+) -> Result<LogStats> {
+    let store = state.scheduler_log_store.lock().await;
+    Ok(store.get_log_stats())
+}
+
+/// 获取日志保留配置
+#[tauri::command]
+pub async fn scheduler_get_log_retention_config(
+    state: tauri::State<'_, AppState>,
+) -> Result<LogRetentionConfig> {
+    let store = state.scheduler_log_store.lock().await;
+    Ok(store.get_retention_config().clone())
+}
+
+/// 更新日志保留配置
+#[tauri::command]
+pub async fn scheduler_update_log_retention_config(
+    config: LogRetentionConfig,
+    state: tauri::State<'_, AppState>,
+) -> Result<()> {
+    let mut store = state.scheduler_log_store.lock().await;
+    store.update_retention_config(config)
 }

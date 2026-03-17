@@ -265,6 +265,51 @@ pub struct TaskStore {
     pub tasks: Vec<ScheduledTask>,
 }
 
+/// 日志保留配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogRetentionConfig {
+    /// 保留天数（0 表示不限）
+    #[serde(default = "default_retention_days")]
+    pub retention_days: u32,
+    /// 每任务最大日志数（0 表示不限）
+    #[serde(default = "default_max_logs_per_task")]
+    pub max_logs_per_task: u32,
+    /// 是否启用自动清理
+    #[serde(default = "default_auto_cleanup_enabled")]
+    pub auto_cleanup_enabled: bool,
+    /// 自动清理间隔（小时）
+    #[serde(default = "default_auto_cleanup_interval_hours")]
+    pub auto_cleanup_interval_hours: u32,
+}
+
+fn default_retention_days() -> u32 {
+    30
+}
+
+fn default_max_logs_per_task() -> u32 {
+    100
+}
+
+fn default_auto_cleanup_enabled() -> bool {
+    true
+}
+
+fn default_auto_cleanup_interval_hours() -> u32 {
+    24
+}
+
+impl Default for LogRetentionConfig {
+    fn default() -> Self {
+        Self {
+            retention_days: default_retention_days(),
+            max_logs_per_task: default_max_logs_per_task(),
+            auto_cleanup_enabled: default_auto_cleanup_enabled(),
+            auto_cleanup_interval_hours: default_auto_cleanup_interval_hours(),
+        }
+    }
+}
+
 /// 日志存储
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LogStore {
@@ -272,6 +317,12 @@ pub struct LogStore {
     pub logs: HashMap<String, Vec<TaskLog>>,
     /// 所有日志（按时间倒序）
     pub all_logs: Vec<TaskLog>,
+    /// 保留配置
+    #[serde(default)]
+    pub retention_config: LogRetentionConfig,
+    /// 上次自动清理时间
+    #[serde(default)]
+    pub last_cleanup_at: Option<i64>,
 }
 
 // ============================================================================

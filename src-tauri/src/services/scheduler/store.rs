@@ -1,5 +1,5 @@
 use crate::error::{AppError, Result};
-use crate::models::scheduler::{CreateTaskParams, ScheduledTask, TaskLog, TaskStore, LogStore, PaginatedLogs, TaskMode};
+use crate::models::scheduler::{CreateTaskParams, ScheduledTask, TaskLog, TaskStore, LogStore, PaginatedLogs, TaskMode, LogRetentionConfig};
 use crate::services::scheduler::ProtocolTaskService;
 use std::path::PathBuf;
 use uuid::Uuid;
@@ -360,7 +360,6 @@ impl TaskStoreService {
 pub struct LogStoreService {
     store: LogStore,
     store_path: PathBuf,
-    max_logs_per_task: usize,
     max_output_length: usize,
 }
 
@@ -379,7 +378,6 @@ impl LogStoreService {
         Ok(Self {
             store,
             store_path,
-            max_logs_per_task: 100,
             max_output_length: 2000,
         })
     }
@@ -543,9 +541,14 @@ impl LogStoreService {
 
     /// 清理旧日志
     fn cleanup_old_logs(&mut self, task_id: &str) -> Result<()> {
+        let max_logs = self.store.retention_config.max_logs_per_task as usize;
+        if max_logs == 0 {
+            return Ok(()); // 0 表示不限制
+        }
+
         if let Some(logs) = self.store.logs.get_mut(task_id) {
-            if logs.len() > self.max_logs_per_task {
-                let removed: Vec<_> = logs.drain(self.max_logs_per_task..).collect();
+            if logs.len() > max_logs {
+                let removed: Vec<_> = logs.drain(max_logs..).collect();
                 // 从 all_logs 中移除
                 let removed_ids: std::collections::HashSet<_> = removed.iter().map(|l| l.id.as_str()).collect();
                 self.store.all_logs.retain(|l| !removed_ids.contains(l.id.as_str()));
@@ -554,18 +557,35 @@ impl LogStoreService {
         Ok(())
     }
 
-    /// 清理过期日志（超过 30 天）
-    pub fn cleanup_expired_logs(&mut self) -> Result<()> {
-        let thirty_days_ago = Utc::now().timestamp() - (30 * 24 * 60 * 60);
-
-        self.store.all_logs.retain(|log| log.started_at > thirty_days_ago);
-
-        for logs in self.store.logs.values_mut() {
-            logs.retain(|log| log.started_at > thirty_days_ago);
+    /// 清理过期日志
+    pub fn cleanup_expired_logs(&mut self) -> Result<usize> {
+        let retention_days = self.store.retention_config.retention_days;
+        if retention_days == 0 {
+            return Ok(0); // 0 表示不限制
         }
 
-        self.save()?;
-        Ok(())
+        let cutoff_time = Utc::now().timestamp() - (retention_days as i64 * 24 * 60 * 60);
+        let mut removed_count = 0;
+
+        // 统计要删除的数量
+        let before_count = self.store.all_logs.len();
+
+        self.store.all_logs.retain(|log| log.started_at > cutoff_time);
+        removed_count = before_count - self.store.all_logs.len();
+
+        for logs in self.store.logs.values_mut() {
+            logs.retain(|log| log.started_at > cutoff_time);
+        }
+
+        // 更新上次清理时间
+        self.store.last_cleanup_at = Some(Utc::now().timestamp());
+
+        if removed_count > 0 {
+            self.save()?;
+            tracing::info!("[Scheduler] 已清理 {} 条过期日志（保留 {} 天）", removed_count, retention_days);
+        }
+
+        Ok(removed_count)
     }
 
     /// 分页获取日志
@@ -679,4 +699,70 @@ impl LogStoreService {
 
         Ok(count)
     }
+
+    /// 获取日志保留配置
+    pub fn get_retention_config(&self) -> &LogRetentionConfig {
+        &self.store.retention_config
+    }
+
+    /// 更新日志保留配置
+    pub fn update_retention_config(&mut self, config: LogRetentionConfig) -> Result<()> {
+        self.store.retention_config = config;
+        self.save()?;
+        tracing::info!("[Scheduler] 日志保留配置已更新");
+        Ok(())
+    }
+
+    /// 检查是否需要自动清理
+    pub fn should_auto_cleanup(&self) -> bool {
+        if !self.store.retention_config.auto_cleanup_enabled {
+            return false;
+        }
+
+        let interval_hours = self.store.retention_config.auto_cleanup_interval_hours;
+        if interval_hours == 0 {
+            return false;
+        }
+
+        let now = Utc::now().timestamp();
+        let interval_secs = interval_hours as i64 * 3600;
+
+        match self.store.last_cleanup_at {
+            Some(last) => now - last >= interval_secs,
+            None => true, // 从未清理过，需要清理
+        }
+    }
+
+    /// 获取日志统计信息
+    pub fn get_log_stats(&self) -> LogStats {
+        let total_logs = self.store.all_logs.len();
+        let total_tasks = self.store.logs.len();
+        let total_size_bytes = std::fs::metadata(&self.store_path)
+            .map(|m| m.len())
+            .unwrap_or(0);
+
+        LogStats {
+            total_logs,
+            total_tasks,
+            total_size_bytes,
+            retention_config: self.store.retention_config.clone(),
+            last_cleanup_at: self.store.last_cleanup_at,
+        }
+    }
+}
+
+/// 日志统计信息
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogStats {
+    /// 总日志数
+    pub total_logs: usize,
+    /// 有日志的任务数
+    pub total_tasks: usize,
+    /// 日志文件大小（字节）
+    pub total_size_bytes: u64,
+    /// 保留配置
+    pub retention_config: LogRetentionConfig,
+    /// 上次清理时间
+    pub last_cleanup_at: Option<i64>,
 }

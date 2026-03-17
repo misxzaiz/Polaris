@@ -79,7 +79,28 @@ impl SchedulerDispatcher {
 
         let dispatcher = self.clone();
         tauri::async_runtime::spawn(async move {
+            // 启动时检查是否需要自动清理日志
+            {
+                let mut log_store = dispatcher.log_store.lock().await;
+                if log_store.should_auto_cleanup() {
+                    tracing::info!("[Scheduler] 启动时执行自动日志清理");
+                    match log_store.cleanup_expired_logs() {
+                        Ok(count) => {
+                            if count > 0 {
+                                tracing::info!("[Scheduler] 自动清理了 {} 条过期日志", count);
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("[Scheduler] 自动日志清理失败: {:?}", e);
+                        }
+                    }
+                }
+            }
+
             let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
+            // 每小时检查一次自动清理
+            let mut cleanup_interval = tokio::time::interval(tokio::time::Duration::from_secs(3600));
+            cleanup_interval.tick().await; // 跳过第一次立即触发
 
             loop {
                 tokio::select! {
@@ -91,6 +112,23 @@ impl SchedulerDispatcher {
                         // 检查并执行待执行任务
                         if let Err(e) = dispatcher.check_and_execute().await {
                             tracing::error!("[Scheduler] 调度检查失败: {:?}", e);
+                        }
+                    }
+                    _ = cleanup_interval.tick() => {
+                        // 每小时检查是否需要自动清理日志
+                        let mut log_store = dispatcher.log_store.lock().await;
+                        if log_store.should_auto_cleanup() {
+                            tracing::info!("[Scheduler] 定时检查：执行自动日志清理");
+                            match log_store.cleanup_expired_logs() {
+                                Ok(count) => {
+                                    if count > 0 {
+                                        tracing::info!("[Scheduler] 自动清理了 {} 条过期日志", count);
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::error!("[Scheduler] 自动日志清理失败: {:?}", e);
+                                }
+                            }
                         }
                     }
                 }

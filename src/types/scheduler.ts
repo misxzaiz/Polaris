@@ -222,3 +222,29 @@ export interface PaginatedLogs {
   /** 总页数 */
   totalPages: number;
 }
+
+/** 日志保留配置 */
+export interface LogRetentionConfig {
+  /** 保留天数（0 表示不限） */
+  retentionDays: number;
+  /** 每任务最大日志数（0 表示不限） */
+  maxLogsPerTask: number;
+  /** 是否启用自动清理 */
+  autoCleanupEnabled: boolean;
+  /** 自动清理间隔（小时） */
+  autoCleanupIntervalHours: number;
+}
+
+/** 日志统计信息 */
+export interface LogStats {
+  /** 总日志数 */
+  totalLogs: number;
+  /** 有日志的任务数 */
+  totalTasks: number;
+  /** 日志文件大小（字节） */
+  totalSizeBytes: number;
+  /** 保留配置 */
+  retentionConfig: LogRetentionConfig;
+  /** 上次清理时间 */
+  lastCleanupAt?: number;
+}

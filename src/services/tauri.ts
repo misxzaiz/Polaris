@@ -734,8 +734,8 @@ export async function schedulerGetAllLogs(limit?: number): Promise<TaskLog[]> {
 }
 
 /** 清理过期日志 */
-export async function schedulerCleanupLogs(): Promise<void> {
-  return invoke('scheduler_cleanup_logs');
+export async function schedulerCleanupLogs(): Promise<number> {
+  return invoke<number>('scheduler_cleanup_logs');
 }
 
 /** 验证触发表达式 */
@@ -876,4 +876,51 @@ export async function schedulerExportTasks(tasks: TaskExportItem[]): Promise<boo
 /** 从 JSON 文件导入任务 */
 export async function schedulerImportTasks(): Promise<TaskExportItem[]> {
   return invoke<TaskExportItem[]>('scheduler_import_tasks');
+}
+
+// ============================================================================
+// 日志配置管理
+// ============================================================================
+
+/** 日志保留配置 */
+export interface LogRetentionConfig {
+  /** 保留天数（0 表示不限） */
+  retentionDays: number;
+  /** 每任务最大日志数（0 表示不限） */
+  maxLogsPerTask: number;
+  /** 是否启用自动清理 */
+  autoCleanupEnabled: boolean;
+  /** 自动清理间隔（小时） */
+  autoCleanupIntervalHours: number;
+}
+
+/** 日志统计信息 */
+export interface LogStats {
+  /** 总日志数 */
+  totalLogs: number;
+  /** 有日志的任务数 */
+  totalTasks: number;
+  /** 日志文件大小（字节） */
+  totalSizeBytes: number;
+  /** 保留配置 */
+  retentionConfig: LogRetentionConfig;
+  /** 上次清理时间 */
+  lastCleanupAt?: number;
+}
+
+/** 获取日志统计信息 */
+export async function schedulerGetLogStats(): Promise<LogStats> {
+  return invoke<LogStats>('scheduler_get_log_stats');
+}
+
+/** 获取日志保留配置 */
+export async function schedulerGetLogRetentionConfig(): Promise<LogRetentionConfig> {
+  return invoke<LogRetentionConfig>('scheduler_get_log_retention_config');
+}
+
+/** 更新日志保留配置 */
+export async function schedulerUpdateLogRetentionConfig(
+  config: LogRetentionConfig
+): Promise<void> {
+  return invoke('scheduler_update_log_retention_config', { config });
 }

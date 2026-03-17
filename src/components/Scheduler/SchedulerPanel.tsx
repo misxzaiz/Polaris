@@ -499,6 +499,180 @@ function LogList({
   );
 }
 
+/** 日志设置组件 */
+function LogSettings({
+  stats,
+  config,
+  onConfigChange,
+  onCleanup,
+  cleaning,
+}: {
+  stats?: {
+    totalLogs: number;
+    totalTasks: number;
+    totalSizeBytes: number;
+    lastCleanupAt?: number;
+  };
+  config: {
+    retentionDays: number;
+    maxLogsPerTask: number;
+    autoCleanupEnabled: boolean;
+    autoCleanupIntervalHours: number;
+  };
+  onConfigChange: (config: {
+    retentionDays: number;
+    maxLogsPerTask: number;
+    autoCleanupEnabled: boolean;
+    autoCleanupIntervalHours: number;
+  }) => void;
+  onCleanup: () => void;
+  cleaning: boolean;
+}) {
+  const formatBytes = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  };
+
+  const formatTime = (timestamp: number | undefined): string => {
+    if (!timestamp) return '从未';
+    return new Date(timestamp * 1000).toLocaleString('zh-CN');
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* 日志统计 */}
+      <div className="bg-[#1a1a2e] rounded-lg p-4 border border-[#2a2a4a]">
+        <h3 className="text-white font-medium mb-3">日志统计</h3>
+        <div className="grid grid-cols-2 gap-4 text-sm">
+          <div>
+            <span className="text-gray-400">总日志数：</span>
+            <span className="text-white ml-2">{stats?.totalLogs ?? 0}</span>
+          </div>
+          <div>
+            <span className="text-gray-400">有日志的任务：</span>
+            <span className="text-white ml-2">{stats?.totalTasks ?? 0}</span>
+          </div>
+          <div>
+            <span className="text-gray-400">存储大小：</span>
+            <span className="text-white ml-2">{formatBytes(stats?.totalSizeBytes ?? 0)}</span>
+          </div>
+          <div>
+            <span className="text-gray-400">上次清理：</span>
+            <span className="text-white ml-2">{formatTime(stats?.lastCleanupAt)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 保留配置 */}
+      <div className="bg-[#1a1a2e] rounded-lg p-4 border border-[#2a2a4a]">
+        <h3 className="text-white font-medium mb-3">保留策略</h3>
+        <div className="space-y-4">
+          {/* 保留天数 */}
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-gray-300 text-sm">保留天数</label>
+              <p className="text-xs text-gray-500">超过此天数的日志将被自动清理（0 表示不限）</p>
+            </div>
+            <select
+              value={config.retentionDays}
+              onChange={(e) => onConfigChange({ ...config, retentionDays: parseInt(e.target.value) })}
+              className="px-3 py-1.5 text-sm bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+            >
+              <option value={0}>不限</option>
+              <option value={7}>7 天</option>
+              <option value={14}>14 天</option>
+              <option value={30}>30 天</option>
+              <option value={60}>60 天</option>
+              <option value={90}>90 天</option>
+            </select>
+          </div>
+
+          {/* 每任务最大日志数 */}
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-gray-300 text-sm">每任务最大日志数</label>
+              <p className="text-xs text-gray-500">每个任务最多保留的日志条数（0 表示不限）</p>
+            </div>
+            <select
+              value={config.maxLogsPerTask}
+              onChange={(e) => onConfigChange({ ...config, maxLogsPerTask: parseInt(e.target.value) })}
+              className="px-3 py-1.5 text-sm bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+            >
+              <option value={0}>不限</option>
+              <option value={10}>10 条</option>
+              <option value={20}>20 条</option>
+              <option value={50}>50 条</option>
+              <option value={100}>100 条</option>
+              <option value={200}>200 条</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* 自动清理 */}
+      <div className="bg-[#1a1a2e] rounded-lg p-4 border border-[#2a2a4a]">
+        <h3 className="text-white font-medium mb-3">自动清理</h3>
+        <div className="space-y-4">
+          {/* 启用自动清理 */}
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-gray-300 text-sm">启用自动清理</label>
+              <p className="text-xs text-gray-500">定时检查并清理过期日志</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={config.autoCleanupEnabled}
+                onChange={(e) => onConfigChange({ ...config, autoCleanupEnabled: e.target.checked })}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+
+          {/* 清理间隔 */}
+          {config.autoCleanupEnabled && (
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-gray-300 text-sm">清理间隔</label>
+                <p className="text-xs text-gray-500">自动检查清理的时间间隔</p>
+              </div>
+              <select
+                value={config.autoCleanupIntervalHours}
+                onChange={(e) => onConfigChange({ ...config, autoCleanupIntervalHours: parseInt(e.target.value) })}
+                className="px-3 py-1.5 text-sm bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+              >
+                <option value={1}>每小时</option>
+                <option value={6}>每 6 小时</option>
+                <option value={12}>每 12 小时</option>
+                <option value={24}>每天</option>
+                <option value={72}>每 3 天</option>
+              </select>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 手动清理 */}
+      <div className="bg-[#1a1a2e] rounded-lg p-4 border border-[#2a2a4a]">
+        <h3 className="text-white font-medium mb-3">手动清理</h3>
+        <p className="text-sm text-gray-400 mb-3">
+          立即清理所有超过保留天数的日志。此操作不可撤销。
+        </p>
+        <button
+          onClick={onCleanup}
+          disabled={cleaning}
+          className="px-4 py-2 bg-red-600/20 text-red-400 hover:bg-red-600/30 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {cleaning ? '清理中...' : '立即清理过期日志'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** 分组折叠组件 */
 function TaskGroup({
   name,
@@ -615,7 +789,7 @@ export function SchedulerPanel() {
   const [showEditor, setShowEditor] = useState(false);
   const [editingTask, setEditingTask] = useState<ScheduledTask | undefined>();
   const [copyingTask, setCopyingTask] = useState<ScheduledTask | undefined>();
-  const [activeTab, setActiveTab] = useState<'tasks' | 'logs'>('tasks');
+  const [activeTab, setActiveTab] = useState<'tasks' | 'logs' | 'settings'>('tasks');
   const [viewingTask, setViewingTask] = useState<ScheduledTask | undefined>();
   const [filter, setFilter] = useState<TaskFilter>(defaultFilter);
   const [logFilter, setLogFilter] = useState<LogFilterState>(defaultLogFilter);
@@ -623,6 +797,25 @@ export function SchedulerPanel() {
   // 批量选择状态
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  // 日志设置状态
+  const [logStats, setLogStats] = useState<{
+    totalLogs: number;
+    totalTasks: number;
+    totalSizeBytes: number;
+    lastCleanupAt?: number;
+  } | undefined>();
+  const [logRetentionConfig, setLogRetentionConfig] = useState<{
+    retentionDays: number;
+    maxLogsPerTask: number;
+    autoCleanupEnabled: boolean;
+    autoCleanupIntervalHours: number;
+  }>({
+    retentionDays: 30,
+    maxLogsPerTask: 100,
+    autoCleanupEnabled: true,
+    autoCleanupIntervalHours: 24,
+  });
+  const [cleaning, setCleaning] = useState(false);
 
   // 从任务列表提取引擎和分组选项
   const engineOptions = [...new Set(tasks.map((t) => t.engineId))].sort();
@@ -671,6 +864,56 @@ export function SchedulerPanel() {
       loadLogsPaginated(logFilter.taskId || undefined, logPage, 20);
     }
   }, [activeTab, logPage, logFilter.taskId, loadLogsPaginated]);
+
+  // 切换到设置标签页时加载日志统计和配置
+  useEffect(() => {
+    if (activeTab === 'settings') {
+      loadLogSettings();
+    }
+  }, [activeTab]);
+
+  /** 加载日志统计和配置 */
+  const loadLogSettings = async () => {
+    try {
+      const [stats, config] = await Promise.all([
+        tauri.schedulerGetLogStats(),
+        tauri.schedulerGetLogRetentionConfig(),
+      ]);
+      setLogStats(stats);
+      setLogRetentionConfig(config);
+    } catch (e) {
+      console.error('加载日志设置失败:', e);
+    }
+  };
+
+  /** 处理配置更改 */
+  const handleConfigChange = async (newConfig: typeof logRetentionConfig) => {
+    setLogRetentionConfig(newConfig);
+    try {
+      await tauri.schedulerUpdateLogRetentionConfig(newConfig);
+      toast.success('配置已保存', '日志保留策略已更新');
+    } catch (e) {
+      toast.error('保存失败', e instanceof Error ? e.message : '未知错误');
+    }
+  };
+
+  /** 处理手动清理 */
+  const handleCleanup = async () => {
+    if (!confirm('确定要清理过期日志吗？此操作不可撤销。')) {
+      return;
+    }
+    setCleaning(true);
+    try {
+      const count = await tauri.schedulerCleanupLogs();
+      toast.success('清理完成', `已清理 ${count} 条过期日志`);
+      // 刷新统计
+      loadLogSettings();
+    } catch (e) {
+      toast.error('清理失败', e instanceof Error ? e.message : '未知错误');
+    } finally {
+      setCleaning(false);
+    }
+  };
 
   // 前端筛选日志（搜索和状态）
   const filteredLogs = logs.filter((log) => {
@@ -1048,6 +1291,16 @@ export function SchedulerPanel() {
           >
             执行日志 ({logs.length})
           </button>
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`px-4 py-2 text-sm transition-colors ${
+              activeTab === 'settings'
+                ? 'text-blue-400 border-b-2 border-blue-400'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            设置
+          </button>
         </div>
       </div>
 
@@ -1216,7 +1469,7 @@ export function SchedulerPanel() {
               ))}
             </div>
           )
-        ) : (
+        ) : activeTab === 'logs' ? (
           <LogList
             logs={filteredLogs}
             tasks={tasks}
@@ -1228,7 +1481,15 @@ export function SchedulerPanel() {
             }}
             onPageChange={setLogPage}
           />
-        )}
+        ) : activeTab === 'settings' ? (
+          <LogSettings
+            stats={logStats}
+            config={logRetentionConfig}
+            onConfigChange={handleConfigChange}
+            onCleanup={handleCleanup}
+            cleaning={cleaning}
+          />
+        ) : null}
       </div>
 
       {/* 批量操作工具栏 */}
