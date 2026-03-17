@@ -102,13 +102,21 @@ function TaskCard({
   isCompact?: boolean;
 }) {
   // 构建操作菜单项
-  const actionMenuItems: DropdownMenuItem[] = [
+  const actionMenuItems: DropdownMenuItem[] = [];
+
+  // 协议模式添加文档菜单项
+  if (task.mode === 'protocol' && onViewDocs) {
+    actionMenuItems.push({ key: 'docs', label: '文档', onClick: onViewDocs });
+  }
+
+  // 通用操作菜单项
+  actionMenuItems.push(
     { key: 'run', label: '执行', onClick: onRun },
     { key: 'toggle', label: task.enabled ? '禁用' : '启用', onClick: onToggle },
     { key: 'edit', label: '编辑', onClick: onEdit },
     { key: 'copy', label: '复制', onClick: onCopy },
-    { key: 'delete', label: '删除', variant: 'danger', onClick: onDelete },
-  ];
+    { key: 'delete', label: '删除', variant: 'danger', onClick: onDelete }
+  );
 
   // 紧凑模式：使用下拉菜单
   if (isCompact) {
