@@ -8,6 +8,10 @@ import type { HistorySlice, HistoryEntry, UnifiedHistoryItem } from './types'
 import { MAX_MESSAGES, STORAGE_KEY, STORAGE_VERSION, SESSION_HISTORY_KEY, MAX_SESSION_HISTORY } from './types'
 import { useToolPanelStore } from '../toolPanelStore'
 import { useConfigStore } from '../configStore'
+import { useWorkspaceStore } from '../workspaceStore'
+import { getIFlowHistoryService } from '../../services/iflowHistoryService'
+import { getClaudeCodeHistoryService } from '../../services/claudeCodeHistoryService'
+import { listCodexSessions, getCodexSessionHistory } from '../../services/tauri'
 
 /**
  * 创建历史管理 Slice
@@ -178,11 +182,6 @@ export const createHistorySlice: HistorySlice = (set, get) => ({
   getUnifiedHistory: async () => {
     const items: UnifiedHistoryItem[] = []
 
-    // 动态导入服务
-    const { getIFlowHistoryService } = await import('../../services/iflowHistoryService')
-    const { getClaudeCodeHistoryService } = await import('../../services/claudeCodeHistoryService')
-    const { useWorkspaceStore } = await import('../workspaceStore')
-
     const iflowService = getIFlowHistoryService()
     const claudeCodeService = getClaudeCodeHistoryService()
     const workspaceStore = useWorkspaceStore.getState()
@@ -251,7 +250,6 @@ export const createHistorySlice: HistorySlice = (set, get) => ({
 
       // 4. 获取 Codex 会话列表
       try {
-        const { listCodexSessions } = await import('../../services/tauri')
         const codexSessions = await listCodexSessions(currentWorkspace?.path || '')
         for (const session of codexSessions) {
           if (!items.find(item => item.id === session.sessionId)) {
@@ -283,10 +281,6 @@ export const createHistorySlice: HistorySlice = (set, get) => ({
   restoreFromHistory: async (sessionId, engineId, projectPath) => {
     try {
       set({ isLoadingHistory: true })
-
-      // 动态导入服务
-      const { getIFlowHistoryService } = await import('../../services/iflowHistoryService')
-      const { getClaudeCodeHistoryService } = await import('../../services/claudeCodeHistoryService')
 
       // 1. 先尝试从 localStorage 恢复
       const historyJson = localStorage.getItem(SESSION_HISTORY_KEY)
@@ -394,7 +388,6 @@ export const createHistorySlice: HistorySlice = (set, get) => ({
 
       // 4. 尝试从 Codex 恢复
       if (engineId === 'codex') {
-        const { getCodexSessionHistory } = await import('../../services/tauri')
         const messages = await getCodexSessionHistory(sessionId)
 
         if (messages && messages.length > 0) {

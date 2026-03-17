@@ -17,7 +17,7 @@ import type {
   AISession,
   EngineCapabilities,
 } from '../../ai-runtime'
-import { createCapabilities } from '../../ai-runtime'
+import { createCapabilities, getEngineRegistry } from '../../ai-runtime'
 import { OpenAIProviderSession, type OpenAIProviderSessionConfig } from './session'
 
 /**
@@ -397,7 +397,6 @@ export function removeOpenAIProviderEngine(providerId: string): void {
  */
 export async function clearOpenAIProviderEngines(): Promise<void> {
   // 从全局注册表中注销所有 provider 引擎
-  const { getEngineRegistry } = await import('../../ai-runtime/engine-registry')
   const registry = getEngineRegistry()
   const allEngines = registry.list()
 

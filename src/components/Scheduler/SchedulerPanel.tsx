@@ -3,7 +3,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { useSchedulerStore, useToastStore } from '../../stores';
+import { useSchedulerStore, useToastStore, useEventChatStore } from '../../stores';
 import type { TaskLog, CreateTaskParams, LockStatus } from '../../types/scheduler';
 import { ConfirmDialog } from '../Common/ConfirmDialog';
 import { DropdownMenu } from '../Common/DropdownMenu';
@@ -1183,7 +1183,6 @@ export function SchedulerPanel() {
   /** 取消订阅（中断正在执行的任务） */
   const handleCancelSubscription = async () => {
     // 通过 eventChatStore 的 interruptChat 来中断
-    const { useEventChatStore } = await import('../../stores/eventChatStore');
     try {
       await useEventChatStore.getState().interruptChat();
       toast.info('已中断', '任务执行已被中断');
@@ -1203,7 +1202,6 @@ export function SchedulerPanel() {
 
     try {
       // 获取当前会话 ID 作为上下文 ID
-      const { useEventChatStore } = await import('../../stores/eventChatStore');
       const conversationId = useEventChatStore.getState().conversationId;
       
       // 先持久化订阅状态

@@ -9,12 +9,13 @@ import type { EventHandlerSlice } from './types'
 import { handleAIEvent } from './utils'
 import { getEventBus } from '../../ai-runtime'
 import { getEventRouter } from '../../services/eventRouter'
-import { getEngine } from '../../core/engine-bootstrap'
+import { getEngine, listEngines } from '../../core/engine-bootstrap'
 import { useToolPanelStore } from '../toolPanelStore'
 import { useWorkspaceStore } from '../workspaceStore'
 import { useConfigStore } from '../configStore'
 import { parseWorkspaceReferences, buildSystemPrompt } from '../../services/workspaceReference'
 import { isTextFile } from '../../types/attachment'
+import { optionsToCliArgs } from '../../utils/engineOptions'
 
 /**
  * 创建事件处理 Slice
@@ -196,7 +197,6 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
         // 转换引擎选项
         let cliArgs: string[] = []
         if (engineOptions && engineOptions.length > 0) {
-          const { optionsToCliArgs } = await import('../../utils/engineOptions')
           cliArgs = optionsToCliArgs(currentEngine, engineOptions)
         }
 
@@ -256,7 +256,6 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
     try {
       const engineId = `provider-${activeProvider.id}` as const
 
-      const { listEngines } = await import('../../core/engine-bootstrap')
       const allEngines = listEngines()
       console.log('[EventChatStore] 当前注册的所有引擎:', allEngines.map(e => e.id))
       console.log('[EventChatStore] 尝试获取引擎 ID:', engineId)

@@ -25,6 +25,7 @@ import * as tauri from './services/tauri';
 import { bootstrapEngines, bootstrapOpenAIProviders } from './core/engine-bootstrap';
 import { bootstrapAgents } from './core/agent-bootstrap';
 import { bootstrapTools } from './core/tool-bootstrap';
+import { clearOpenAIProviderEngines } from './engines/openai-provider';
 import { listen, emit } from '@tauri-apps/api/event';
 import './index.css';
 import type { EngineId } from './types';
@@ -265,9 +266,7 @@ function App() {
         });
       } else {
         // 如果没有 Providers 了，清理所有 provider 引擎
-        import('./engines/openai-provider').then(({ clearOpenAIProviderEngines }) => {
-          clearOpenAIProviderEngines().catch(console.error);
-        });
+        clearOpenAIProviderEngines().catch(console.error);
       }
     }
   }, [config?.openaiProviders, config?.activeProviderId]);
