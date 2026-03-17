@@ -767,6 +767,59 @@ function filterTasks(tasks: ScheduledTask[], filter: TaskFilter): ScheduledTask[
   });
 }
 
+/** 任务排序字段 */
+type TaskSortBy = 'name' | 'createdAt' | 'nextRunAt' | 'lastRunStatus' | 'enabled';
+
+/** 排序方向 */
+type SortOrder = 'asc' | 'desc';
+
+/** 任务排序状态 */
+interface TaskSortState {
+  sortBy: TaskSortBy;
+  sortOrder: SortOrder;
+}
+
+const defaultSortState: TaskSortState = {
+  sortBy: 'createdAt',
+  sortOrder: 'desc',
+};
+
+/** 排序任务 */
+function sortTasks(tasks: ScheduledTask[], sortState: TaskSortState): ScheduledTask[] {
+  const { sortBy, sortOrder } = sortState;
+  const multiplier = sortOrder === 'asc' ? 1 : -1;
+
+  return [...tasks].sort((a, b) => {
+    switch (sortBy) {
+      case 'name':
+        return a.name.localeCompare(b.name) * multiplier;
+      case 'createdAt': {
+        const aTime = a.createdAt || 0;
+        const bTime = b.createdAt || 0;
+        return (aTime - bTime) * multiplier;
+      }
+      case 'nextRunAt': {
+        const aNext = a.nextRunAt || 0;
+        const bNext = b.nextRunAt || 0;
+        return (aNext - bNext) * multiplier;
+      }
+      case 'lastRunStatus': {
+        const statusOrder = { running: 0, success: 1, failed: 2, undefined: 3 };
+        const aStatus = statusOrder[a.lastRunStatus as keyof typeof statusOrder] ?? 3;
+        const bStatus = statusOrder[b.lastRunStatus as keyof typeof statusOrder] ?? 3;
+        return (aStatus - bStatus) * multiplier;
+      }
+      case 'enabled': {
+        const aEnabled = a.enabled ? 0 : 1;
+        const bEnabled = b.enabled ? 0 : 1;
+        return (aEnabled - bEnabled) * multiplier;
+      }
+      default:
+        return 0;
+    }
+  });
+}
+
 /** 日志筛选状态 */
 interface LogFilterState {
   search: string;
@@ -794,6 +847,8 @@ export function SchedulerPanel() {
   const [filter, setFilter] = useState<TaskFilter>(defaultFilter);
   const [logFilter, setLogFilter] = useState<LogFilterState>(defaultLogFilter);
   const [logPage, setLogPage] = useState(1);
+  // 排序状态
+  const [sortState, setSortState] = useState<TaskSortState>(defaultSortState);
   // 批量选择状态
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
@@ -828,7 +883,7 @@ export function SchedulerPanel() {
   // 应用筛选
   const filteredTasks = filterTasks(tasks, filter);
 
-  // 按分组整理筛选后的任务
+  // 按分组整理筛选后的任务，并排序
   const groupedTasks = filteredTasks.reduce((acc, task) => {
     const groupKey = task.group || '默认';
     if (!acc[groupKey]) {
@@ -837,6 +892,11 @@ export function SchedulerPanel() {
     acc[groupKey].push(task);
     return acc;
   }, {} as Record<string, ScheduledTask[]>);
+
+  // 对每个分组内的任务进行排序
+  Object.keys(groupedTasks).forEach((groupKey) => {
+    groupedTasks[groupKey] = sortTasks(groupedTasks[groupKey], sortState);
+  });
 
   // 获取排序后的分组名
   const groupNames = Object.keys(groupedTasks).sort((a, b) => {
@@ -1380,6 +1440,26 @@ export function SchedulerPanel() {
               {groupOptions.map((group) => (
                 <option key={group} value={group}>{group}</option>
               ))}
+            </select>
+            {/* 排序 */}
+            <select
+              value={`${sortState.sortBy}-${sortState.sortOrder}`}
+              onChange={(e) => {
+                const [sortBy, sortOrder] = e.target.value.split('-') as [TaskSortBy, SortOrder];
+                setSortState({ sortBy, sortOrder });
+              }}
+              className="px-2 py-1.5 text-sm bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+            >
+              <option value="createdAt-desc">创建时间 ↓</option>
+              <option value="createdAt-asc">创建时间 ↑</option>
+              <option value="name-asc">名称 A-Z</option>
+              <option value="name-desc">名称 Z-A</option>
+              <option value="nextRunAt-asc">下次执行 ↑</option>
+              <option value="nextRunAt-desc">下次执行 ↓</option>
+              <option value="lastRunStatus-asc">执行状态 ↑</option>
+              <option value="lastRunStatus-desc">执行状态 ↓</option>
+              <option value="enabled-asc">启用状态 ↑</option>
+              <option value="enabled-desc">启用状态 ↓</option>
             </select>
             {/* 清除筛选 */}
             <button
