@@ -1,0 +1,17 @@
+{
+  "$schema": "https://raw.githubusercontent.com/IBM/audit-ci/main/schema.json",
+  "package-manager": "npm",
+  "report-type": "summary",
+  "allowlist": [],
+  "advisories": [],
+  "severity": {
+    "level": "high",
+    "ignore": []
+  },
+  "skip-dev": false,
+  "show-found": true,
+  "show-not-found": true,
+  "show-suppressed": false,
+  "summary": true,
+  "omit-ephemeral": false
+}
