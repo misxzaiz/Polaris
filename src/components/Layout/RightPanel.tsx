@@ -8,13 +8,16 @@ import { ResizeHandle } from '../Common'
 
 interface RightPanelProps {
   children: ReactNode
+  /** 是否填充剩余空间（当中间区域为空时） */
+  fillRemaining?: boolean
 }
 
 /**
  * 右侧面板组件
  * 支持折叠（完全隐藏）和任意宽度调整
+ * 当 fillRemaining 为 true 时，自动扩展填充剩余空间
  */
-export function RightPanel({ children }: RightPanelProps) {
+export function RightPanel({ children, fillRemaining = false }: RightPanelProps) {
   const width = useViewStore((state) => state.rightPanelWidth)
   const setWidth = useViewStore((state) => state.setRightPanelWidth)
   const collapsed = useViewStore((state) => state.rightPanelCollapsed)
@@ -28,6 +31,15 @@ export function RightPanel({ children }: RightPanelProps) {
   const handleResize = (delta: number) => {
     const newWidth = Math.max(200, Math.min(1200, width + delta))
     setWidth(newWidth)
+  }
+
+  // 填充模式：使用 flex-1 自动扩展，不显示拖拽手柄
+  if (fillRemaining) {
+    return (
+      <aside className="flex flex-col flex-1 bg-background-elevated border-l border-border min-w-[200px]">
+        {children}
+      </aside>
+    )
   }
 
   return (

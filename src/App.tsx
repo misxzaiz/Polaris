@@ -84,7 +84,8 @@ function App() {
     leftPanelType,
   } = useViewStore();
   const { showFloatingWindow } = useFloatingWindowStore();
-  const { openDiffTab } = useTabStore();
+  const { openDiffTab, tabs } = useTabStore();
+  const hasOpenTabs = tabs.length > 0;
 
   const engineOptions = useMemo(() => {
     const options: { id: EngineId; name: string }[] = [
@@ -545,7 +546,7 @@ function App() {
         <CenterStage />
 
         {/* 右侧 AI 对话面板 */}
-        <RightPanel>
+        <RightPanel fillRemaining={!hasOpenTabs}>
           {/* 状态指示器 */}
           <div className="flex items-center justify-between px-4 py-2 bg-background-elevated border-b border-border-subtle">
             <span className="text-sm text-text-primary">{t('labels.aiChat')}</span>
