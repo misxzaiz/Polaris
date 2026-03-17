@@ -3,14 +3,26 @@
  */
 
 import { create } from 'zustand';
-import type { ScheduledTask, TaskLog, TriggerType, CreateTaskParams, RunTaskResult } from '../types/scheduler';
+import type { ScheduledTask, TaskLog, TriggerType, CreateTaskParams, RunTaskResult, PaginatedLogs } from '../types/scheduler';
 import * as tauri from '../services/tauri';
+
+/** 日志分页状态 */
+interface LogPagination {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+}
 
 interface SchedulerState {
   /** 任务列表 */
   tasks: ScheduledTask[];
   /** 日志列表 */
   logs: TaskLog[];
+  /** 日志分页信息 */
+  logPagination: LogPagination;
+  /** 当前日志筛选的任务 ID */
+  logFilterTaskId: string | undefined;
   /** 加载中 */
   loading: boolean;
   /** 错误信息 */
@@ -24,6 +36,8 @@ interface SchedulerState {
   loadTasks: () => Promise<void>;
   /** 加载日志列表 */
   loadLogs: (limit?: number) => Promise<void>;
+  /** 分页加载日志 */
+  loadLogsPaginated: (taskId?: string, page?: number, pageSize?: number) => Promise<void>;
   /** 创建任务 */
   createTask: (params: CreateTaskParams) => Promise<ScheduledTask>;
   /** 更新任务 */
@@ -56,6 +70,8 @@ let schedulerEventCleanup: (() => void) | null = null;
 export const useSchedulerStore = create<SchedulerState>((set, get) => ({
   tasks: [],
   logs: [],
+  logPagination: { page: 1, pageSize: 20, total: 0, totalPages: 0 },
+  logFilterTaskId: undefined,
   loading: false,
   error: null,
   subscribingTaskId: null,
@@ -80,6 +96,26 @@ export const useSchedulerStore = create<SchedulerState>((set, get) => ({
       set({ logs });
     } catch (e) {
       console.error('加载日志失败:', e);
+    }
+  },
+
+  loadLogsPaginated: async (taskId?: string, page: number = 1, pageSize: number = 20) => {
+    try {
+      set({ loading: true, logFilterTaskId: taskId });
+      const result: PaginatedLogs = await tauri.schedulerGetLogsPaginated(taskId, page, pageSize);
+      set({
+        logs: result.logs,
+        logPagination: {
+          page: result.page,
+          pageSize: result.pageSize,
+          total: result.total,
+          totalPages: result.totalPages,
+        },
+        loading: false,
+      });
+    } catch (e) {
+      console.error('分页加载日志失败:', e);
+      set({ loading: false });
     }
   },
 

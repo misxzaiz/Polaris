@@ -270,99 +270,211 @@ function CollapsibleContent({
 }
 
 /** 日志列表 */
-function LogList({ logs }: { logs: TaskLog[] }) {
+function LogList({
+  logs,
+  tasks,
+  pagination,
+  filter,
+  onFilterChange,
+  onPageChange,
+}: {
+  logs: TaskLog[];
+  tasks: ScheduledTask[];
+  pagination: { page: number; pageSize: number; total: number; totalPages: number };
+  filter: LogFilterState;
+  onFilterChange: (filter: LogFilterState) => void;
+  onPageChange: (page: number) => void;
+}) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  if (logs.length === 0) {
-    return (
-      <div className="text-center text-gray-500 py-8">
-        暂无执行日志
-      </div>
-    );
-  }
+  // 获取任务选项用于筛选下拉
+  const taskOptions = tasks.map((t) => ({ id: t.id, name: t.name }));
 
   return (
-    <div className="space-y-2">
-      {logs.map((log) => (
-        <div key={log.id} className="bg-[#1a1a2e] rounded-lg p-3 border border-[#2a2a4a]">
-          <div
-            className="flex items-center justify-between cursor-pointer"
-            onClick={() => setExpandedId(expandedId === log.id ? null : log.id)}
-          >
-            <div className="flex items-center gap-3">
-              <StatusBadge status={log.status} />
-              <span className="text-white">{log.taskName}</span>
-            </div>
-            <div className="text-sm text-gray-400">
-              {formatTime(log.startedAt)}
-              {/* 使用 durationMs 显示耗时 */}
-              {log.durationMs != null && log.durationMs > 0 ? (
-                <span className="ml-2">
-                  耗时 {log.durationMs < 1000 ? `${log.durationMs}ms` : `${(log.durationMs / 1000).toFixed(1)}s`}
-                </span>
-              ) : log.finishedAt && log.startedAt ? (
-                <span className="ml-2">
-                  耗时 {log.finishedAt - log.startedAt}s
-                </span>
-              ) : null}
-            </div>
-          </div>
+    <div className="space-y-3">
+      {/* 筛选栏 */}
+      <div className="flex flex-wrap items-center gap-2 p-3 bg-[#1a1a2e] border border-[#2a2a4a] rounded">
+        {/* 搜索框 */}
+        <input
+          type="text"
+          placeholder="搜索任务名称..."
+          value={filter.search}
+          onChange={(e) => onFilterChange({ ...filter, search: e.target.value })}
+          className="px-3 py-1.5 text-sm bg-[#12122a] border border-[#2a2a4a] rounded text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 w-48"
+        />
+        {/* 任务筛选 */}
+        <select
+          value={filter.taskId}
+          onChange={(e) => onFilterChange({ ...filter, taskId: e.target.value })}
+          className="px-2 py-1.5 text-sm bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+        >
+          <option value="">全部任务</option>
+          {taskOptions.map((t) => (
+            <option key={t.id} value={t.id}>{t.name}</option>
+          ))}
+        </select>
+        {/* 状态筛选 */}
+        <select
+          value={filter.status}
+          onChange={(e) => onFilterChange({ ...filter, status: e.target.value as LogFilterState['status'] })}
+          className="px-2 py-1.5 text-sm bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+        >
+          <option value="all">全部状态</option>
+          <option value="running">执行中</option>
+          <option value="success">成功</option>
+          <option value="failed">失败</option>
+        </select>
+        {/* 清除筛选 */}
+        <button
+          onClick={() => onFilterChange(defaultLogFilter)}
+          className="px-3 py-1.5 text-sm bg-gray-600/20 text-gray-400 hover:bg-gray-600/30 rounded transition-colors"
+        >
+          清除筛选
+        </button>
+      </div>
 
-          {expandedId === log.id && (
-            <div className="mt-3 pt-3 border-t border-[#2a2a4a] space-y-3">
-              {/* 显示增强字段：Session ID、工具调用次数 */}
-              <div className="flex flex-wrap gap-4 text-xs text-gray-500">
-                {log.sessionId && (
-                  <span>
-                    Session: <code className="text-blue-400 bg-[#12122a] px-1 rounded">{log.sessionId.slice(0, 8)}...</code>
-                  </span>
-                )}
-                {log.toolCallCount != null && log.toolCallCount > 0 && (
-                  <span className="text-yellow-400">
-                    工具调用: {log.toolCallCount} 次
-                  </span>
-                )}
+      {/* 日志列表 */}
+      {logs.length === 0 ? (
+        <div className="text-center text-gray-500 py-8">
+          暂无执行日志
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {logs.map((log) => (
+            <div key={log.id} className="bg-[#1a1a2e] rounded-lg p-3 border border-[#2a2a4a]">
+              <div
+                className="flex items-center justify-between cursor-pointer"
+                onClick={() => setExpandedId(expandedId === log.id ? null : log.id)}
+              >
+                <div className="flex items-center gap-3">
+                  <StatusBadge status={log.status} />
+                  <span className="text-white">{log.taskName}</span>
+                </div>
+                <div className="text-sm text-gray-400">
+                  {formatTime(log.startedAt)}
+                  {/* 使用 durationMs 显示耗时 */}
+                  {log.durationMs != null && log.durationMs > 0 ? (
+                    <span className="ml-2">
+                      耗时 {log.durationMs < 1000 ? `${log.durationMs}ms` : `${(log.durationMs / 1000).toFixed(1)}s`}
+                    </span>
+                  ) : log.finishedAt && log.startedAt ? (
+                    <span className="ml-2">
+                      耗时 {log.finishedAt - log.startedAt}s
+                    </span>
+                  ) : null}
+                </div>
               </div>
 
-              {/* 提示词 - 默认折叠 */}
-              <CollapsibleContent
-                label="提示词"
-                content={log.prompt}
-                maxHeight={60}
-                className="text-gray-300"
-              />
+              {expandedId === log.id && (
+                <div className="mt-3 pt-3 border-t border-[#2a2a4a] space-y-3">
+                  {/* 显示增强字段：Session ID、工具调用次数 */}
+                  <div className="flex flex-wrap gap-4 text-xs text-gray-500">
+                    {log.sessionId && (
+                      <span>
+                        Session: <code className="text-blue-400 bg-[#12122a] px-1 rounded">{log.sessionId.slice(0, 8)}...</code>
+                      </span>
+                    )}
+                    {log.toolCallCount != null && log.toolCallCount > 0 && (
+                      <span className="text-yellow-400">
+                        工具调用: {log.toolCallCount} 次
+                      </span>
+                    )}
+                  </div>
 
-              {/* 显示思考过程摘要 */}
-              {log.thinkingSummary && (
-                <CollapsibleContent
-                  label="思考过程"
-                  content={log.thinkingSummary}
-                  maxHeight={80}
-                  className="text-purple-400"
-                />
-              )}
+                  {/* 提示词 - 默认折叠 */}
+                  <CollapsibleContent
+                    label="提示词"
+                    content={log.prompt}
+                    maxHeight={60}
+                    className="text-gray-300"
+                  />
 
-              {log.output && (
-                <CollapsibleContent
-                  label="输出"
-                  content={log.output}
-                  maxHeight={120}
-                  className="text-green-400"
-                />
-              )}
+                  {/* 显示思考过程摘要 */}
+                  {log.thinkingSummary && (
+                    <CollapsibleContent
+                      label="思考过程"
+                      content={log.thinkingSummary}
+                      maxHeight={80}
+                      className="text-purple-400"
+                    />
+                  )}
 
-              {log.error && (
-                <CollapsibleContent
-                  label="错误"
-                  content={log.error}
-                  maxHeight={80}
-                  className="text-red-400"
-                />
+                  {log.output && (
+                    <CollapsibleContent
+                      label="输出"
+                      content={log.output}
+                      maxHeight={120}
+                      className="text-green-400"
+                    />
+                  )}
+
+                  {log.error && (
+                    <CollapsibleContent
+                      label="错误"
+                      content={log.error}
+                      maxHeight={80}
+                      className="text-red-400"
+                    />
+                  )}
+                </div>
               )}
             </div>
-          )}
+          ))}
         </div>
-      ))}
+      )}
+
+      {/* 分页控制 */}
+      {pagination.totalPages > 1 && (
+        <div className="flex items-center justify-between px-3 py-2 bg-[#1a1a2e] border border-[#2a2a4a] rounded">
+          <div className="text-sm text-gray-400">
+            共 {pagination.total} 条日志，第 {pagination.page}/{pagination.totalPages} 页
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onPageChange(pagination.page - 1)}
+              disabled={pagination.page <= 1}
+              className="px-3 py-1 text-sm bg-[#2a2a4a] text-white rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#3a3a5a] transition-colors"
+            >
+              上一页
+            </button>
+            {/* 页码 */}
+            <div className="flex items-center gap-1">
+              {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                let pageNum: number;
+                if (pagination.totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (pagination.page <= 3) {
+                  pageNum = i + 1;
+                } else if (pagination.page >= pagination.totalPages - 2) {
+                  pageNum = pagination.totalPages - 4 + i;
+                } else {
+                  pageNum = pagination.page - 2 + i;
+                }
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => onPageChange(pageNum)}
+                    className={`w-8 h-8 text-sm rounded ${
+                      pageNum === pagination.page
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-[#2a2a4a] text-gray-400 hover:bg-[#3a3a5a]'
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              onClick={() => onPageChange(pagination.page + 1)}
+              disabled={pagination.page >= pagination.totalPages}
+              className="px-3 py-1 text-sm bg-[#2a2a4a] text-white rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#3a3a5a] transition-colors"
+            >
+              下一页
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -461,9 +573,22 @@ function filterTasks(tasks: ScheduledTask[], filter: TaskFilter): ScheduledTask[
   });
 }
 
+/** 日志筛选状态 */
+interface LogFilterState {
+  search: string;
+  status: 'all' | 'running' | 'success' | 'failed';
+  taskId: string;
+}
+
+const defaultLogFilter: LogFilterState = {
+  search: '',
+  status: 'all',
+  taskId: '',
+};
+
 /** 主面板 */
 export function SchedulerPanel() {
-  const { tasks, logs, loading, subscribingTaskId, loadTasks, loadLogs, createTask, updateTask, deleteTask, toggleTask, runTask, runTaskWithSubscription, clearSubscription, subscribeTask, unsubscribeTask, initSchedulerEventListener } =
+  const { tasks, logs, logPagination, loading, subscribingTaskId, loadTasks, loadLogsPaginated, createTask, updateTask, deleteTask, toggleTask, runTask, runTaskWithSubscription, clearSubscription, subscribeTask, unsubscribeTask, initSchedulerEventListener } =
     useSchedulerStore();
   const toast = useToastStore();
 
@@ -473,6 +598,8 @@ export function SchedulerPanel() {
   const [activeTab, setActiveTab] = useState<'tasks' | 'logs'>('tasks');
   const [viewingTask, setViewingTask] = useState<ScheduledTask | undefined>();
   const [filter, setFilter] = useState<TaskFilter>(defaultFilter);
+  const [logFilter, setLogFilter] = useState<LogFilterState>(defaultLogFilter);
+  const [logPage, setLogPage] = useState(1);
 
   // 从任务列表提取引擎和分组选项
   const engineOptions = [...new Set(tasks.map((t) => t.engineId))].sort();
@@ -513,8 +640,27 @@ export function SchedulerPanel() {
 
   useEffect(() => {
     loadTasks();
-    loadLogs(50);
-  }, [loadTasks, loadLogs]);
+  }, [loadTasks]);
+
+  // 切换到日志标签页时加载分页日志
+  useEffect(() => {
+    if (activeTab === 'logs') {
+      loadLogsPaginated(logFilter.taskId || undefined, logPage, 20);
+    }
+  }, [activeTab, logPage, logFilter.taskId, loadLogsPaginated]);
+
+  // 前端筛选日志（搜索和状态）
+  const filteredLogs = logs.filter((log) => {
+    // 搜索筛选
+    if (logFilter.search && !log.taskName.toLowerCase().includes(logFilter.search.toLowerCase())) {
+      return false;
+    }
+    // 状态筛选
+    if (logFilter.status !== 'all' && log.status !== logFilter.status) {
+      return false;
+    }
+    return true;
+  });
 
   /** 处理立即执行任务（后台执行） */
   const handleRunTask = async (task: ScheduledTask) => {
@@ -524,7 +670,9 @@ export function SchedulerPanel() {
       toast.info('任务已提交', `任务 ${task.name} 已在后台开始执行`);
       // 刷新任务列表和日志
       loadTasks();
-      loadLogs(50);
+      if (activeTab === 'logs') {
+        loadLogsPaginated(logFilter.taskId || undefined, logPage, 20);
+      }
     } catch (e) {
       toast.error('提交失败', e instanceof Error ? e.message : '未知错误');
     }
@@ -565,7 +713,9 @@ export function SchedulerPanel() {
       toast.info('订阅执行', `任务「${task.name}」正在执行，请在 AI 对话窗口查看实时进度`);
       // 刷新任务列表和日志
       loadTasks();
-      loadLogs(50);
+      if (activeTab === 'logs') {
+        loadLogsPaginated(logFilter.taskId || undefined, logPage, 20);
+      }
     } catch (e) {
       toast.error('执行失败', e instanceof Error ? e.message : '未知错误');
     }
@@ -831,7 +981,17 @@ export function SchedulerPanel() {
             </div>
           )
         ) : (
-          <LogList logs={logs} />
+          <LogList
+            logs={filteredLogs}
+            tasks={tasks}
+            pagination={logPagination}
+            filter={logFilter}
+            onFilterChange={(newFilter) => {
+              setLogFilter(newFilter);
+              setLogPage(1); // 筛选变化时重置页码
+            }}
+            onPageChange={setLogPage}
+          />
         )}
       </div>
 
