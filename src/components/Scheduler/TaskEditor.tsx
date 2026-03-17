@@ -571,25 +571,6 @@ export function TaskEditor({
             </div>
           )}
 
-          {/* 用户补充内容（简单模式和协议模式都可填写） */}
-          {/*{(mode === 'simple' || mode === 'protocol') && (*/}
-          {/*  <div>*/}
-          {/*    <label className="block text-sm text-gray-400 mb-1">*/}
-          {/*      用户补充 <span className="text-gray-600">(可选，一次性提示词)</span>*/}
-          {/*    </label>*/}
-          {/*    <textarea*/}
-          {/*      value={userSupplement}*/}
-          {/*      onChange={(e) => setUserSupplement(e.target.value)}*/}
-          {/*      rows={3}*/}
-          {/*      className="w-full px-3 py-2 bg-[#1a1a2e] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500 resize-none text-sm"*/}
-          {/*      placeholder="可选：补充说明、特殊要求或临时调整..."*/}
-          {/*    />*/}
-          {/*    <p className="mt-1 text-xs text-gray-500">*/}
-          {/*      在任务执行时会将此内容追加到提示词中，适合添加临时指令或补充说明*/}
-          {/*    </p>*/}
-          {/*  </div>*/}
-          {/*)}*/}
-
           {/* 协议模式：任务目标和工作目录 */}
           {mode === 'protocol' && fullMode && (
             <>
@@ -711,6 +692,22 @@ export function TaskEditor({
                 </p>
               </div>
             </>
+          )}
+
+          {/* 用户补充内容（简单模式和协议模式都可填写） */}
+          {(mode === 'simple' || mode === 'protocol') && (
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">
+                  用户补充 <span className="text-gray-600">(可选，一次性提示词)</span>
+                </label>
+                <textarea
+                    value={userSupplement}
+                    onChange={(e) => setUserSupplement(e.target.value)}
+                    rows={1}
+                    className="w-full px-3 py-2 bg-[#1a1a2e] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500 resize-none text-sm"
+                    placeholder="可选：补充说明、特殊要求或临时调整..."
+                />
+              </div>
           )}
 
           {/* 触发类型 */}
