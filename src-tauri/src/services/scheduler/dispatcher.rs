@@ -17,7 +17,7 @@ use tokio::sync::Mutex as AsyncMutex;
 use std::collections::HashMap;
 use tokio_util::sync::CancellationToken;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::{AppHandle, Window, Emitter, Manager};
+use tauri::{AppHandle, Window, Emitter};
 
 /// 调度执行器
 #[derive(Clone)]

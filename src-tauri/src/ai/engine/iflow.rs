@@ -855,16 +855,16 @@ impl AIEngine for IFlowEngine {
             let mut wait_count = 0;
             let jsonl_path = loop {
                 if let Ok(entries) = std::fs::read_dir(&session_dir) {
-                    let mut newest: Option<PathBuf> = None;
+                    let mut _newest: Option<PathBuf> = None;
                     let mut newest_time_ms: u64 = 0;
                     let mut newest_new_file: Option<PathBuf> = None;
                     let mut newest_new_file_time_ms: u64 = 0;
-                    let mut jsonl_count = 0;
+                    let mut _jsonl_count = 0;
 
                     for entry in entries.flatten() {
                         let path = entry.path();
                         if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
-                            jsonl_count += 1;
+                            _jsonl_count += 1;
                             if let Ok(meta) = std::fs::metadata(&path) {
                                 if let Ok(modified) = meta.modified() {
                                     // 使用毫秒级时间戳提高精度
@@ -879,7 +879,7 @@ impl AIEngine for IFlowEngine {
                                     // 跟踪最新文件
                                     if modified_ms > newest_time_ms {
                                         newest_time_ms = modified_ms;
-                                        newest = Some(path.clone());
+                                        _newest = Some(path.clone());
                                     }
                                     // 检查是否是新创建的文件（修改时间 >= 启动时间，允许 1 秒误差）
                                     // 修复：当有多个新文件时，选择时间戳最大的那个

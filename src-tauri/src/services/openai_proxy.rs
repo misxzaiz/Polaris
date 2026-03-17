@@ -5,6 +5,7 @@
 
 use crate::error::{AppError, Result};
 use crate::models::events::StreamEvent;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -882,7 +883,7 @@ impl OpenAIProxyService {
                 if let Some(path) = args.get("path").and_then(|p| p.as_str()) {
                     match tokio::fs::read(path).await {
                         Ok(bytes) => {
-                            let b64 = base64::encode(bytes);
+                            let b64 = BASE64_STANDARD.encode(bytes);
                             serde_json::json!({ "base64": b64 }).to_string()
                         }
                         Err(e) => format!("Error reading image: {}", e),

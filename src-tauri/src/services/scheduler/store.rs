@@ -570,13 +570,12 @@ impl LogStoreService {
         }
 
         let cutoff_time = Utc::now().timestamp() - (retention_days as i64 * 24 * 60 * 60);
-        let mut removed_count = 0;
 
         // 统计要删除的数量
         let before_count = self.store.all_logs.len();
 
         self.store.all_logs.retain(|log| log.started_at > cutoff_time);
-        removed_count = before_count - self.store.all_logs.len();
+        let removed_count = before_count - self.store.all_logs.len();
 
         for logs in self.store.logs.values_mut() {
             logs.retain(|log| log.started_at > cutoff_time);
