@@ -71,7 +71,11 @@ impl CodexEngine {
                 }
             }
 
-            if let Ok(output) = Command::new("where").arg("codex").output() {
+            if let Ok(output) = Command::new("where")
+                .arg("codex")
+                .creation_flags(CREATE_NO_WINDOW)
+                .output()
+            {
                 if output.status.success() {
                     return String::from_utf8_lossy(&output.stdout)
                         .lines()

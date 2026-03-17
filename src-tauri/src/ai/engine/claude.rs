@@ -86,25 +86,13 @@ impl ClaudeEngine {
                 Err(_) => return false,
             };
 
-            // 使用 which/where 查找命令
-            #[cfg(target_os = "windows")]
-            {
-                std::process::Command::new("where")
+            // Unix/Linux/Mac: 检查文件是否存在或使用 which 查找
+            Path::new(cli_path).exists() ||
+                std::process::Command::new("which")
                     .arg(cli_path)
                     .output()
                     .map(|o| o.status.success())
                     .unwrap_or(false)
-            }
-
-            #[cfg(not(target_os = "windows"))]
-            {
-                Path::new(cli_path).exists() ||
-                    std::process::Command::new("which")
-                        .arg(cli_path)
-                        .output()
-                        .map(|o| o.status.success())
-                        .unwrap_or(false)
-            }
         }
     }
 
