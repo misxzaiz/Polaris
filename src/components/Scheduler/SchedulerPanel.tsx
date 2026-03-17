@@ -1051,7 +1051,7 @@ export function SchedulerPanel() {
       toast.success(result);
       await loadLockStatus();
     } catch (e) {
-      toast.error('启动失败', e instanceof Error ? e.message : '未知错误');
+      toast.error('启动失败', e instanceof Error ? e.message : '其他实例占用任务');
     } finally {
       setSchedulerOperating(false);
     }
