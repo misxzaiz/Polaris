@@ -6,6 +6,9 @@ import { create } from 'zustand';
 import i18n from '../i18n';
 import type { Config, HealthStatus } from '../types';
 import * as tauri from '../services/tauri';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('ConfigStore');
 
 interface ConfigState {
   /** 当前配置 */
@@ -120,7 +123,7 @@ export const useConfigStore = create<ConfigState>((set) => ({
       const connectionState = health.claudeAvailable ? 'success' : 'failed';
       set({ healthStatus: health, connectionState });
     } catch (e) {
-      console.error(i18n.t('errors:refreshHealthFailed'), e);
+      log.error(i18n.t('errors:refreshHealthFailed'), e instanceof Error ? e : new Error(String(e)));
       set({ connectionState: 'failed' });
     }
   },

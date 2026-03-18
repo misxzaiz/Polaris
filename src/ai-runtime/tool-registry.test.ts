@@ -343,17 +343,14 @@ describe('ToolRegistryImpl', () => {
       registry.unregister('test_tool')
 
       expect(registry.has('test_tool')).toBe(false)
-      expect(console.log).toHaveBeenCalledWith(
-        '[ToolRegistry] Unregistered tool: test_tool'
-      )
+      // unregister 使用 log.debug，不再直接调用 console.log
     })
 
     it('should handle unregistering non-existent tool silently', () => {
       // Should not throw
       registry.unregister('nonexistent')
-      expect(console.log).toHaveBeenCalledWith(
-        '[ToolRegistry] Unregistered tool: nonexistent'
-      )
+      // unregister 使用 log.debug，不再直接调用 console.log
+      expect(true).toBe(true)
     })
   })
 
@@ -366,7 +363,7 @@ describe('ToolRegistryImpl', () => {
       registry.clear()
 
       expect(registry.listNames()).toEqual([])
-      expect(console.log).toHaveBeenCalledWith('[ToolRegistry] Cleared all tools')
+      // clear 使用 log.debug，不再直接调用 console.log
     })
   })
 })

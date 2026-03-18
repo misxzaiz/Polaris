@@ -10,6 +10,9 @@
  */
 
 import type { HistorySlice, HistoryEntry, UnifiedHistoryItem } from './types'
+import { createLogger } from '../../utils/logger'
+
+const log = createLogger('EventChatStore')
 import { MAX_MESSAGES, STORAGE_KEY, STORAGE_VERSION, SESSION_HISTORY_KEY, MAX_SESSION_HISTORY } from './types'
 import { getIFlowHistoryService } from '../../services/iflowHistoryService'
 import { getClaudeCodeHistoryService } from '../../services/claudeCodeHistoryService'
@@ -69,7 +72,7 @@ export const createHistorySlice: HistorySlice = (set, get) => ({
     const toLoad = archivedMessages.slice(-loadCount)
     const remaining = archivedMessages.slice(0, -loadCount)
 
-    console.log(`[EventChatStore] 分批加载 ${loadCount} 条消息，剩余 ${remaining.length} 条归档`)
+    log.debug(`分批加载消息`, { loadCount, remaining: remaining.length })
 
     set({
       messages: [...toLoad, ...messages],
@@ -249,7 +252,7 @@ export const createHistorySlice: HistorySlice = (set, get) => ({
           }
         }
       } catch (e) {
-        console.warn('[EventChatStore] 获取 IFlow 会话失败:', e)
+        log.warn('获取 IFlow 会话失败', { error: String(e) })
       }
 
       // 4. 获取 Codex 会话列表
@@ -301,7 +304,7 @@ export const createHistorySlice: HistorySlice = (set, get) => ({
         })
 
         get().saveToStorage()
-        console.log('[EventChatStore] 已从本地历史恢复会话:', localSession.title)
+        log.info('已从本地历史恢复会话', { title: localSession.title })
         return true
       }
 
@@ -333,7 +336,7 @@ export const createHistorySlice: HistorySlice = (set, get) => ({
             error: null,
           })
 
-          console.log('[EventChatStore] 已从 Claude Code 原生历史恢复会话:', sessionId)
+          log.info('已从 Claude Code 原生历史恢复会话', { sessionId })
           return true
         }
       }
@@ -389,7 +392,7 @@ export const createHistorySlice: HistorySlice = (set, get) => ({
             error: null,
           })
 
-          console.log('[EventChatStore] 已从 IFlow 恢复会话:', sessionId)
+          log.info('已从 IFlow 恢复会话', { sessionId })
           return true
         }
       }
@@ -426,14 +429,14 @@ export const createHistorySlice: HistorySlice = (set, get) => ({
             error: null,
           })
 
-          console.log('[EventChatStore] 已从 Codex 恢复会话:', sessionId)
+          log.info('已从 Codex 恢复会话', { sessionId })
           return true
         }
       }
 
       return false
     } catch (e) {
-      console.error('[EventChatStore] 从历史恢复失败:', e)
+      log.error('从历史恢复失败', e instanceof Error ? e : new Error(String(e)))
       return false
     } finally {
       set({ isLoadingHistory: false })
@@ -443,11 +446,11 @@ export const createHistorySlice: HistorySlice = (set, get) => ({
   deleteHistorySession: (sessionId, source) => {
     try {
       if (source === 'iflow' || (!source && sessionId.startsWith('session-'))) {
-        console.log('[EventChatStore] IFlow 会话无法删除，仅作忽略:', sessionId)
+        log.debug('IFlow 会话无法删除，仅作忽略', { sessionId })
         return
       }
       if (source === 'codex') {
-        console.log('[EventChatStore] Codex 会话无法删除，仅作忽略:', sessionId)
+        log.debug('Codex 会话无法删除，仅作忽略', { sessionId })
         return
       }
 
@@ -457,16 +460,16 @@ export const createHistorySlice: HistorySlice = (set, get) => ({
       const filteredHistory = history.filter((h: HistoryEntry) => h.id !== sessionId)
       localStorage.setItem(SESSION_HISTORY_KEY, JSON.stringify(filteredHistory))
     } catch (e) {
-      console.error('[EventChatStore] 删除历史会话失败:', e)
+      log.error('删除历史会话失败', e instanceof Error ? e : new Error(String(e)))
     }
   },
 
   clearHistory: () => {
     try {
       localStorage.removeItem(SESSION_HISTORY_KEY)
-      console.log('[EventChatStore] 历史已清空')
+      log.info('历史已清空')
     } catch (e) {
-      console.error('[EventChatStore] 清空历史失败:', e)
+      log.error('清空历史失败', e instanceof Error ? e : new Error(String(e)))
     }
   },
 })

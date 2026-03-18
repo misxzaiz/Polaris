@@ -5,6 +5,9 @@
 import { create } from 'zustand';
 import type { FileExplorerStore, FileInfo } from '../types';
 import * as tauri from '../services/tauri';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('FileExplorer');
 
 // 搜索取消令牌（用于取消正在进行的搜索）
 let searchAbortController: AbortController | null = null;
@@ -317,7 +320,7 @@ export const useFileExplorerStore = create<FileExplorerStore>((set, get) => ({
       }
     } catch (error) {
       if ((error as Error).name !== 'AbortError') {
-        console.error('深度搜索失败:', error);
+        log.error('深度搜索失败', error instanceof Error ? error : new Error(String(error)))
         set({ search_is_deep_loading: false });
       }
     }

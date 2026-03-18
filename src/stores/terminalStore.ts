@@ -6,6 +6,9 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { TerminalSession, TerminalOutputEvent, TerminalExitEvent } from '@/types/terminal';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('Terminal');
 
 interface TerminalState {
   /** 所有会话 */
@@ -106,7 +109,7 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
       const sessions = await invoke<TerminalSession[]>('terminal_list');
       set({ sessions });
     } catch (e) {
-      console.error('[Terminal] 获取会话列表失败:', e);
+      log.error('获取会话列表失败', e instanceof Error ? e : new Error(String(e)));
     }
   },
 

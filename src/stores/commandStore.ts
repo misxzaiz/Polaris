@@ -6,6 +6,9 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import type { Command } from '../types/command';
 import { builtinCommands } from '../types/command';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('CommandStore');
 
 interface CommandFile {
   name: string;
@@ -64,7 +67,7 @@ export const useCommandStore = create<CommandState>((set, get) => ({
       set({ commands, isLoading: false, error: null });
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
-      console.error('Failed to load custom commands:', errorMsg);
+      log.error('加载自定义命令失败', err instanceof Error ? err : new Error(errorMsg));
       // 不阻断，使用内置命令
       set({ commands: builtinCommands, isLoading: false, error: null });
     }

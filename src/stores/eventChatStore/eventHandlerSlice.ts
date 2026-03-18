@@ -280,13 +280,13 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
       const engineId = `provider-${activeProvider.id}` as const
 
       const allEngines = listEngines()
-      console.log('[EventChatStore] 当前注册的所有引擎:', allEngines.map(e => e.id))
-      console.log('[EventChatStore] 尝试获取引擎 ID:', engineId)
+      log.debug('当前注册的所有引擎', { engines: allEngines.map(e => e.id) })
+      log.debug('尝试获取引擎 ID', { engineId })
 
       const engine = getEngine(engineId)
 
       if (!engine) {
-        console.error('[EventChatStore] 引擎未注册. 期望ID:', engineId, '实际注册的引擎:', allEngines.map(e => e.id))
+        log.error('引擎未注册', new Error(`期望ID: ${engineId}, 实际注册的引擎: ${allEngines.map(e => e.id).join(', ')}`))
         throw new Error(`OpenAI Provider 引擎未注册，请重启应用`)
       }
 

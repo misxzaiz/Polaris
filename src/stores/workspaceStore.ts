@@ -6,6 +6,9 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Workspace, WorkspaceStore } from '../types';
 import * as tauri from '../services/tauri';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('WorkspaceStore');
 
 export const useWorkspaceStore = create<WorkspaceStore>()(
   persist(
@@ -80,7 +83,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         try {
           await tauri.setWorkDir(workspace.path);
         } catch (error) {
-          console.error('更新工作目录失败:', error);
+          log.error('更新工作目录失败', error instanceof Error ? error : new Error(String(error)));
           throw new Error(`切换工作区失败: ${error instanceof Error ? error.message : '未知错误'}`);
         }
 

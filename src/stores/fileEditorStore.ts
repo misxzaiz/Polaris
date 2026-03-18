@@ -6,6 +6,9 @@ import { create } from 'zustand';
 import type { FileEditorStore } from '../types';
 import * as tauri from '../services/tauri';
 import { emit } from '@tauri-apps/api/event';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('Editor');
 
 /** 根据文件扩展名获取语言类型 */
 function getLanguageFromPath(path: string): string {
@@ -64,7 +67,7 @@ export const useFileEditorStore = create<FileEditorStore>((set, get) => ({
 
   // 打开文件
   openFile: async (path: string, name: string) => {
-    console.log('[Editor] 打开文件:', { path, name });
+    log.debug('打开文件', { path, name });
     set({ isOpen: true, status: 'loading', error: null });
 
     try {
@@ -75,7 +78,7 @@ export const useFileEditorStore = create<FileEditorStore>((set, get) => ({
       }
 
       const content = await tauri.getFileContent(path) as string;
-      console.log('[Editor] 文件内容长度:', content?.length);
+      log.debug('文件内容长度', { length: content?.length });
       const language = getLanguageFromPath(path);
 
       set({
@@ -96,11 +99,11 @@ export const useFileEditorStore = create<FileEditorStore>((set, get) => ({
       try {
         await emit('file:opened', { path, name });
       } catch (emitError) {
-        console.warn('[Editor] 发送 file:opened 事件失败:', emitError);
+        log.warn('发送 file:opened 事件失败', { error: String(emitError) });
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '读取文件失败';
-      console.error('[Editor] 打开文件失败:', error);
+      log.error('打开文件失败', error instanceof Error ? error : new Error(String(error)));
       set({
         status: 'error',
         error: errorMessage,
@@ -126,7 +129,7 @@ export const useFileEditorStore = create<FileEditorStore>((set, get) => ({
     try {
       await emit('editor:closed', { path: currentFile?.path });
     } catch (e) {
-      console.warn('[Editor] 发送 editor:closed 事件失败:', e);
+      log.warn('发送 editor:closed 事件失败', { error: String(e) });
     }
   },
 

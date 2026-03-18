@@ -9,6 +9,9 @@
  */
 
 import type { StateCreator } from 'zustand'
+import { createLogger } from '../../utils/logger'
+
+const log = createLogger('EventChatStore')
 import type {
   EventChatState,
   DependencyState,
@@ -36,7 +39,7 @@ export const createDependencySlice: StateCreator<
 
   setDependencies: (deps: ExternalDependencies) => {
     set({ _dependencies: deps })
-    console.log('[EventChatStore] 依赖注入完成:', Object.keys(deps))
+    log.debug('依赖注入完成', { keys: Object.keys(deps) })
   },
 
   getToolPanelActions: (): ToolPanelActions | undefined => {
