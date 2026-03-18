@@ -212,6 +212,84 @@ describe('eventHandlerSlice', () => {
       expect(store.getState()._eventListenersInitialized).toBe(false)
       expect(store.getState()._eventListenersCleanup).toBeNull()
     })
+
+    // ============================================================
+    // StrictMode 场景测试
+    // ============================================================
+    describe('StrictMode 兼容性', () => {
+      it('应正确处理 StrictMode 双重挂载', async () => {
+        const store = createTestStore()
+
+        // 模拟 StrictMode 行为：mount -> unmount -> remount
+        // 第一次 mount
+        const cleanup1 = await store.getState().initializeEventListeners()
+        expect(store.getState()._eventListenersInitialized).toBe(true)
+
+        // StrictMode unmount
+        cleanup1()
+        expect(store.getState()._eventListenersInitialized).toBe(false)
+
+        // 第二次 mount (StrictMode remount)
+        const cleanup2 = await store.getState().initializeEventListeners()
+        expect(store.getState()._eventListenersInitialized).toBe(true)
+
+        // 清理
+        cleanup2()
+        expect(store.getState()._eventListenersInitialized).toBe(false)
+      })
+
+      it('未完成初始化时的并发调用应安全处理', async () => {
+        const store = createTestStore()
+
+        // 同时发起多次初始化（模拟竞态）
+        const [cleanup1, cleanup2] = await Promise.all([
+          store.getState().initializeEventListeners(),
+          store.getState().initializeEventListeners(),
+        ])
+
+        // 并发调用时，两个 cleanup 函数可能不同，但最终状态应一致
+        // EventRouter 的 register 强制单例模式确保不会有重复 handler
+        expect(store.getState()._eventListenersInitialized).toBe(true)
+
+        // 任一 cleanup 都能正确清理状态
+        cleanup1()
+        expect(store.getState()._eventListenersInitialized).toBe(false)
+
+        // cleanup2 也应该是安全的（幂等）
+        expect(() => cleanup2()).not.toThrow()
+      })
+
+      it('清理后再初始化应成功', async () => {
+        const store = createTestStore()
+
+        // 初始化
+        const cleanup1 = await store.getState().initializeEventListeners()
+        expect(store.getState()._eventListenersInitialized).toBe(true)
+
+        // 清理
+        cleanup1()
+
+        // 再次初始化
+        const cleanup2 = await store.getState().initializeEventListeners()
+        expect(store.getState()._eventListenersInitialized).toBe(true)
+
+        cleanup2()
+      })
+
+      it('cleanup 函数应幂等', async () => {
+        const store = createTestStore()
+
+        const cleanup = await store.getState().initializeEventListeners()
+        expect(store.getState()._eventListenersInitialized).toBe(true)
+
+        // 多次调用 cleanup 不应抛出错误
+        cleanup()
+        cleanup()
+        cleanup()
+
+        expect(store.getState()._eventListenersInitialized).toBe(false)
+      })
+    })
   })
 
   // ============================================================
