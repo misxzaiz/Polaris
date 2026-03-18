@@ -8,6 +8,13 @@ import { persist } from 'zustand/middleware';
 /** 左侧面板类型 */
 export type LeftPanelType = 'files' | 'git' | 'todo' | 'translate' | 'scheduler' | 'terminal' | 'tools' | 'developer' | 'none';
 
+/** 小屏模式状态 */
+export interface CompactModeState {
+  isCompactMode: boolean;      // 是否处于小屏模式
+  windowWidth: number;         // 窗口宽度
+  windowHeight: number;        // 窗口高度
+}
+
 /** 视图状态 */
 interface ViewState {
   showSidebar: boolean;
@@ -26,6 +33,8 @@ interface ViewState {
   leftPanelWidth: number;        // 左侧面板宽度
   rightPanelWidth: number;       // 右侧 AI 面板宽度
   rightPanelCollapsed: boolean;  // 右侧面板是否折叠
+  // 小屏模式状态
+  compactMode: CompactModeState; // 小屏模式
 }
 
 /** 视图操作 */
@@ -52,6 +61,8 @@ interface ViewActions {
   setLeftPanelWidth: (width: number) => void;
   setRightPanelWidth: (width: number) => void;
   toggleRightPanel: () => void;
+  // 小屏模式操作
+  updateCompactMode: (state: Partial<CompactModeState>) => void;
 }
 
 /** 完整的 View Store 类型 */
@@ -77,6 +88,12 @@ export const useViewStore = create<ViewStore>()(
       leftPanelWidth: 280,        // 左侧面板默认宽度
       rightPanelWidth: 400,       // 右侧 AI 面板默认宽度
       rightPanelCollapsed: false, // 右侧面板默认不折叠
+      // 小屏模式初始状态
+      compactMode: {
+        isCompactMode: false,
+        windowWidth: 1200,
+        windowHeight: 800,
+      },
 
       // 切换侧边栏
       toggleSidebar: () => set((state) => ({ showSidebar: !state.showSidebar })),
@@ -166,6 +183,11 @@ export const useViewStore = create<ViewStore>()(
 
       // 切换右侧面板折叠状态
       toggleRightPanel: () => set((state) => ({ rightPanelCollapsed: !state.rightPanelCollapsed })),
+
+      // 更新小屏模式状态
+      updateCompactMode: (newState: Partial<CompactModeState>) => set((state) => ({
+        compactMode: { ...state.compactMode, ...newState },
+      })),
     }),
     {
       name: 'view-store',
