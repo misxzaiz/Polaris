@@ -8,6 +8,7 @@ import { TopMenuBar as TopMenuBarComponent } from './components/TopMenuBar';
 import { GitPanel } from './components/GitPanel';
 import { ActivityBar, LeftPanel, LeftPanelContent, CenterStage, RightPanel } from './components/Layout';
 import { EnhancedChatMessages, ChatInput } from './components/Chat';
+import { CompactMode } from './components/CompactMode';
 import type { SettingsTabId } from './components/Settings/SettingsSidebar';
 import { SimpleTodoPanel } from './components/TodoPanel/SimpleTodoPanel';
 import { TranslatePanel, SelectionContextMenu } from './components/Translate';
@@ -466,7 +467,7 @@ function App() {
         {/* 连接中蒙板 */}
         {(isConnecting || connectionState === 'failed') && <ConnectingOverlay />}
 
-      {/* 顶部菜单栏 */}
+      {/* 顶部菜单栏 - 小屏模式下简化 */}
       <TopMenuBarComponent
         onNewConversation={() => {
           // 新对话功能直接清空消息
@@ -474,94 +475,103 @@ function App() {
         onCreateWorkspace={() => setShowCreateWorkspace(true)}
         onToggleRightPanel={toggleRightPanel}
         rightPanelCollapsed={rightPanelCollapsed}
+        isCompactMode={isCompact}
       />
 
-      {/* 主体内容区域：新布局 */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Activity Bar - 小屏模式下隐藏 */}
-        {!isCompact && (
+      {/* 小屏模式：精简对话界面 */}
+      {isCompact ? (
+        <CompactMode
+          onSend={sendMessage}
+          onInterrupt={interruptChat}
+          disabled={!currentWorkspace}
+          isStreaming={isStreaming}
+        />
+      ) : (
+        /* 正常模式：完整布局 */
+        <div className="flex flex-1 overflow-hidden">
+          {/* Activity Bar */}
           <ActivityBar
             onOpenSettings={() => setShowSettings(true)}
             onToggleRightPanel={toggleRightPanel}
             rightPanelCollapsed={rightPanelCollapsed}
           />
-        )}
 
-        {/* 左侧可切换面板 (FileExplorer 或 GitPanel 或 TodoPanel 或 ToolPanel 或 DeveloperPanel) - 条件显示 */}
-        {hasLeftPanel && (
-          <LeftPanel fillRemaining={leftPanelFillRemaining}>
-            <LeftPanelContent
-              filesContent={<FileExplorer />}
-              gitContent={
-                <GitPanel
-                  onOpenDiffInTab={(diff) => {
-                    openDiffTab(diff);
-                  }}
-                />
-              }
-              todoContent={<SimpleTodoPanel />}
-              translateContent={<TranslatePanel onSendToChat={sendMessage} />}
-              schedulerContent={<SchedulerPanel />}
-              terminalContent={<TerminalPanel />}
-              toolsContent={<ToolPanel fillRemaining />}
-              developerContent={
-                <Suspense fallback={<div className="flex items-center justify-center h-full text-text-muted">{t('status.loading')}</div>}>
-                  <DeveloperPanel fillRemaining />
-                </Suspense>
-              }
-            />
-          </LeftPanel>
-        )}
+          {/* 左侧可切换面板 (FileExplorer 或 GitPanel 或 TodoPanel 或 ToolPanel 或 DeveloperPanel) - 条件显示 */}
+          {hasLeftPanel && (
+            <LeftPanel fillRemaining={leftPanelFillRemaining}>
+              <LeftPanelContent
+                filesContent={<FileExplorer />}
+                gitContent={
+                  <GitPanel
+                    onOpenDiffInTab={(diff) => {
+                      openDiffTab(diff);
+                    }}
+                  />
+                }
+                todoContent={<SimpleTodoPanel />}
+                translateContent={<TranslatePanel onSendToChat={sendMessage} />}
+                schedulerContent={<SchedulerPanel />}
+                terminalContent={<TerminalPanel />}
+                toolsContent={<ToolPanel fillRemaining />}
+                developerContent={
+                  <Suspense fallback={<div className="flex items-center justify-center h-full text-text-muted">{t('status.loading')}</div>}>
+                    <DeveloperPanel fillRemaining />
+                  </Suspense>
+                }
+              />
+            </LeftPanel>
+          )}
 
-        {/* 中间编辑区 (Tab 系统) */}
-        <CenterStage fillRemaining={centerStageFillRemaining} />
+          {/* 中间编辑区 (Tab 系统) */}
+          <CenterStage fillRemaining={centerStageFillRemaining} />
 
-        {/* 右侧 AI 对话面板 */}
-        {!rightPanelCollapsed && (
-          <RightPanel fillRemaining={rightPanelFillRemaining}>
-            {/* 头部 - 引擎选择器 */}
-            <div className="flex items-center justify-between px-4 py-2 bg-background-elevated border-b border-border shrink-0">
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-text-primary">{t('labels.aiChat')}</span>
-                <select
-                  className="bg-background-surface border border-border text-text-primary text-xs px-2 py-1 rounded-md hover:border-primary/50 transition-colors cursor-pointer"
-                  value={config?.defaultEngine || 'claude-code'}
-                  onChange={(e) => {
-                    const engineId = e.target.value as EngineId;
-                    if (engineId !== config?.defaultEngine) {
-                      setPendingEngineId(engineId);
-                      setShowEngineSwitchConfirm(true);
-                    }
-                  }}
-                  disabled={isStreaming}
-                >
-                  {engineOptions.map((opt) => (
-                    <option key={opt.id} value={opt.id} className="bg-background text-text-primary">{opt.name}</option>
-                  ))}
-                </select>
+          {/* 右侧 AI 对话面板 */}
+          {!rightPanelCollapsed && (
+            <RightPanel fillRemaining={rightPanelFillRemaining}>
+              {/* 头部 - 引擎选择器 */}
+              <div className="flex items-center justify-between px-4 py-2 bg-background-elevated border-b border-border shrink-0">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-text-primary">{t('labels.aiChat')}</span>
+                  <select
+                    className="bg-background-surface border border-border text-text-primary text-xs px-2 py-1 rounded-md hover:border-primary/50 transition-colors cursor-pointer"
+                    value={config?.defaultEngine || 'claude-code'}
+                    onChange={(e) => {
+                      const engineId = e.target.value as EngineId;
+                      if (engineId !== config?.defaultEngine) {
+                        setPendingEngineId(engineId);
+                        setShowEngineSwitchConfirm(true);
+                      }
+                    }}
+                    disabled={isStreaming}
+                  >
+                    {engineOptions.map((opt) => (
+                      <option key={opt.id} value={opt.id} className="bg-background text-text-primary">{opt.name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
-            </div>
 
-            {/* 错误提示 */}
-            {error && (
-              <div className="mx-4 mt-4 p-3 bg-danger-faint border border-danger/30 rounded-xl text-danger text-sm shrink-0">
-                {error}
-              </div>
-            )}
+              {/* 错误提示 */}
+              {error && (
+                <div className="mx-4 mt-4 p-3 bg-danger-faint border border-danger/30 rounded-xl text-danger text-sm shrink-0">
+                  {error}
+                </div>
+              )}
 
-            {/* 消息区域 */}
-            <EnhancedChatMessages />
+              {/* 消息区域 */}
+              <EnhancedChatMessages />
 
-            {/* 输入区域 */}
-            <ChatInput
-              onSend={sendMessage}
-              onInterrupt={interruptChat}
-              disabled={!currentWorkspace}
-              isStreaming={isStreaming}
-            />
-          </RightPanel>
-        )}
-      </div>
+              {/* 输入区域 */}
+              <ChatInput
+                onSend={sendMessage}
+                onInterrupt={interruptChat}
+                disabled={!currentWorkspace}
+                isStreaming={isStreaming}
+              />
+            </RightPanel>
+          )}
+        </div>
+      )}
 
       {/* 设置模态框 */}
       {showSettings && (

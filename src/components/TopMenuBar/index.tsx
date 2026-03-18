@@ -22,9 +22,10 @@ interface TopMenuBarProps {
   onCreateWorkspace: () => void;
   onToggleRightPanel?: () => void;
   rightPanelCollapsed?: boolean;
+  isCompactMode?: boolean;
 }
 
-export function TopMenuBar({ onNewConversation, onCreateWorkspace, onToggleRightPanel, rightPanelCollapsed }: TopMenuBarProps) {
+export function TopMenuBar({ onNewConversation, onCreateWorkspace, onToggleRightPanel, rightPanelCollapsed, isCompactMode }: TopMenuBarProps) {
   const { t } = useTranslation('common');
   const { getCurrentWorkspace } = useWorkspaceStore();
   const { toggleSessionHistory } = useViewStore();
@@ -141,156 +142,209 @@ export function TopMenuBar({ onNewConversation, onCreateWorkspace, onToggleRight
 
   return (
     <div className="flex items-center h-10 bg-background-elevated border-b border-border shrink-0">
-      {/* 左侧:Logo/应用名称 */}
-      <div data-tauri-drag-region className="flex items-center gap-2 px-4">
+      {/* 左侧:Logo/应用名称 - 小屏模式下更紧凑 */}
+      <div data-tauri-drag-region className={`flex items-center gap-2 ${isCompactMode ? 'px-2' : 'px-4'}`}>
         <div className="w-6 h-6 rounded bg-gradient-to-br from-primary to-primary-600 flex items-center justify-center shadow-glow" data-tauri-drag-region={false}>
           <span className="text-xs font-bold text-white">P</span>
         </div>
-        <span className="text-sm font-medium text-text-primary">Polaris</span>
+        {!isCompactMode && <span className="text-sm font-medium text-text-primary">Polaris</span>}
       </div>
 
       {/* 中间:可拖拽区域 (自动填充剩余空间) */}
       <div data-tauri-drag-region className="flex-1 h-full cursor-move" />
 
-      {/* 右侧:菜单 + 窗口控制 */}
+      {/* 右侧:菜单 + 窗口控制 - 小屏模式下简化 */}
       <div className="flex items-center">
-        {/* 工作区选择器 */}
-        <div className="relative">
-          <button
-            onClick={() => setShowWorkspaceMenu(!showWorkspaceMenu)}
-            className="min-w-0 max-w-[200px] flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs text-text-secondary
-                     hover:text-text-primary hover:bg-background-hover transition-colors"
-            title={t('labels.workspace')}
-            data-tauri-drag-region={false}
-          >
-            <span className="flex-1 truncate">
-              {currentWorkspace?.name || t('labels.noWorkspaceSelected')}
-            </span>
-            {contextCount > 0 && (
-              <span className="flex items-center justify-center w-4 h-4 text-xs bg-primary/20 text-primary rounded-full">
-                {contextCount}
-              </span>
-            )}
-            <svg className="shrink-0 w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
+        {/* 小屏模式：只显示置顶和窗口控制按钮 */}
+        {isCompactMode ? (
+          <>
+            {/* 窗口置顶按钮 */}
+            <button
+              onClick={handleToggleAlwaysOnTop}
+              className={`p-1.5 rounded-md transition-colors ${
+                isAlwaysOnTop
+                  ? 'text-primary bg-primary/10 hover:bg-primary/20'
+                  : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
+              }`}
+              title={isAlwaysOnTop ? t('window.alwaysOnTop') : t('window.alwaysOnTopHint')}
+              data-tauri-drag-region={false}
+            >
+              <Pin className="w-4 h-4" />
+            </button>
 
-          {/* 工作区下拉菜单 */}
-          {showWorkspaceMenu && (
-            <>
-              <div
-                className="fixed inset-0 z-10"
-                onClick={() => setShowWorkspaceMenu(false)}
-              />
-              <div className="absolute right-0 top-full mt-1 w-56 bg-background-surface border border-border rounded-lg shadow-xl z-20 overflow-hidden">
-                <WorkspaceMenuContent
-                  onClose={() => setShowWorkspaceMenu(false)}
-                  onCreateWorkspace={onCreateWorkspace}
-                />
-              </div>
-            </>
-          )}
-        </div>
+            {/* 分隔线 */}
+            <div data-tauri-drag-region className="w-px h-4 bg-border-subtle mx-1" />
 
-        {/* 分隔线 */}
-        <div data-tauri-drag-region className="w-px h-4 bg-border-subtle mx-1" />
+            {/* 窗口控制 */}
+            <div className="flex items-center">
+              <button
+                onClick={() => tauri.minimizeWindow()}
+                className="px-2 py-2 hover:bg-background-hover transition-colors text-text-secondary hover:text-text-primary"
+                title={t('window.minimize')}
+                data-tauri-drag-region={false}
+              >
+                <Minus className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => tauri.toggleMaximizeWindow()}
+                className="px-2 py-2 hover:bg-background-hover transition-colors text-text-secondary hover:text-text-primary"
+                title={isMaximized ? t('window.restore') : t('window.maximize')}
+                data-tauri-drag-region={false}
+              >
+                <Square className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => tauri.closeWindow()}
+                className="px-2 py-2 hover:bg-red-500 hover:text-white transition-colors text-text-secondary"
+                title={t('window.close')}
+                data-tauri-drag-region={false}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* 正常模式：完整菜单 */}
+            {/* 工作区选择器 */}
+            <div className="relative">
+              <button
+                onClick={() => setShowWorkspaceMenu(!showWorkspaceMenu)}
+                className="min-w-0 max-w-[200px] flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs text-text-secondary
+                         hover:text-text-primary hover:bg-background-hover transition-colors"
+                title={t('labels.workspace')}
+                data-tauri-drag-region={false}
+              >
+                <span className="flex-1 truncate">
+                  {currentWorkspace?.name || t('labels.noWorkspaceSelected')}
+                </span>
+                {contextCount > 0 && (
+                  <span className="flex items-center justify-center w-4 h-4 text-xs bg-primary/20 text-primary rounded-full">
+                    {contextCount}
+                  </span>
+                )}
+                <svg className="shrink-0 w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
 
-        {/* 右侧 AI 面板切换按钮 */}
-        <button
-          onClick={onToggleRightPanel}
-          className={`p-1.5 rounded-md transition-colors ${
-            rightPanelCollapsed
-              ? 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
-              : 'text-primary bg-primary/10 hover:bg-primary/20'
-          }`}
-          title={rightPanelCollapsed ? t('labels.showAIPanel') : t('labels.hideAIPanel')}
-          data-tauri-drag-region={false}
-        >
-          <PanelRight className="w-4 h-4" />
-        </button>
+              {/* 工作区下拉菜单 */}
+              {showWorkspaceMenu && (
+                <>
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setShowWorkspaceMenu(false)}
+                  />
+                  <div className="absolute right-0 top-full mt-1 w-56 bg-background-surface border border-border rounded-lg shadow-xl z-20 overflow-hidden">
+                    <WorkspaceMenuContent
+                      onClose={() => setShowWorkspaceMenu(false)}
+                      onCreateWorkspace={onCreateWorkspace}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
 
-        <button
-          onClick={handleExportChat}
-          disabled={messages.length === 0 || isExporting}
-          className="p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          title={t('menu.exportChat')}
-          data-tauri-drag-region={false}
-        >
-          {isExporting ? (
-            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16 2l4 4-4 4" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M20 6h-4" />
-            </svg>
-          ) : (
-            <Download className="w-4 h-4" />
-          )}
-        </button>
+            {/* 分隔线 */}
+            <div data-tauri-drag-region className="w-px h-4 bg-border-subtle mx-1" />
 
-        <button
-          onClick={toggleSessionHistory}
-          className="p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors"
-          title={t('menu.sessionHistory')}
-          data-tauri-drag-region={false}
-        >
-          <Clock className="w-4 h-4" />
-        </button>
+            {/* 右侧 AI 面板切换按钮 */}
+            <button
+              onClick={onToggleRightPanel}
+              className={`p-1.5 rounded-md transition-colors ${
+                rightPanelCollapsed
+                  ? 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
+                  : 'text-primary bg-primary/10 hover:bg-primary/20'
+              }`}
+              title={rightPanelCollapsed ? t('labels.showAIPanel') : t('labels.hideAIPanel')}
+              data-tauri-drag-region={false}
+            >
+              <PanelRight className="w-4 h-4" />
+            </button>
 
-        <button
-          onClick={handleNewConversation}
-          className="p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors"
-          title={t('menu.newChat')}
-          data-tauri-drag-region={false}
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-          </svg>
-        </button>
+            <button
+              onClick={handleExportChat}
+              disabled={messages.length === 0 || isExporting}
+              className="p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title={t('menu.exportChat')}
+              data-tauri-drag-region={false}
+            >
+              {isExporting ? (
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16 2l4 4-4 4" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M20 6h-4" />
+                </svg>
+              ) : (
+                <Download className="w-4 h-4" />
+              )}
+            </button>
 
-        {/* 窗口置顶按钮 */}
-        <button
-          onClick={handleToggleAlwaysOnTop}
-          className={`p-1.5 rounded-md transition-colors ${
-            isAlwaysOnTop
-              ? 'text-primary bg-primary/10 hover:bg-primary/20'
-              : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
-          }`}
-          title={isAlwaysOnTop ? t('window.alwaysOnTop') : t('window.alwaysOnTopHint')}
-          data-tauri-drag-region={false}
-        >
-          <Pin className="w-4 h-4" />
-        </button>
+            <button
+              onClick={toggleSessionHistory}
+              className="p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors"
+              title={t('menu.sessionHistory')}
+              data-tauri-drag-region={false}
+            >
+              <Clock className="w-4 h-4" />
+            </button>
 
-        {/* 分隔线 */}
-        <div data-tauri-drag-region className="w-px h-4 bg-border-subtle mx-1" />
+            <button
+              onClick={handleNewConversation}
+              className="p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors"
+              title={t('menu.newChat')}
+              data-tauri-drag-region={false}
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
 
-        <div className="flex items-center">
-          <button
-            onClick={() => tauri.minimizeWindow()}
-            className="px-3 py-2 hover:bg-background-hover transition-colors text-text-secondary hover:text-text-primary"
-            title={t('window.minimize')}
-            data-tauri-drag-region={false}
-          >
-            <Minus className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => tauri.toggleMaximizeWindow()}
-            className="px-3 py-2 hover:bg-background-hover transition-colors text-text-secondary hover:text-text-primary"
-            title={isMaximized ? t('window.restore') : t('window.maximize')}
-            data-tauri-drag-region={false}
-          >
-            <Square className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => tauri.closeWindow()}
-            className="px-3 py-2 hover:bg-red-500 hover:text-white transition-colors text-text-secondary"
-            title={t('window.close')}
-            data-tauri-drag-region={false}
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+            {/* 窗口置顶按钮 */}
+            <button
+              onClick={handleToggleAlwaysOnTop}
+              className={`p-1.5 rounded-md transition-colors ${
+                isAlwaysOnTop
+                  ? 'text-primary bg-primary/10 hover:bg-primary/20'
+                  : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
+              }`}
+              title={isAlwaysOnTop ? t('window.alwaysOnTop') : t('window.alwaysOnTopHint')}
+              data-tauri-drag-region={false}
+            >
+              <Pin className="w-4 h-4" />
+            </button>
+
+            {/* 分隔线 */}
+            <div data-tauri-drag-region className="w-px h-4 bg-border-subtle mx-1" />
+
+            <div className="flex items-center">
+              <button
+                onClick={() => tauri.minimizeWindow()}
+                className="px-3 py-2 hover:bg-background-hover transition-colors text-text-secondary hover:text-text-primary"
+                title={t('window.minimize')}
+                data-tauri-drag-region={false}
+              >
+                <Minus className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => tauri.toggleMaximizeWindow()}
+                className="px-3 py-2 hover:bg-background-hover transition-colors text-text-secondary hover:text-text-primary"
+                title={isMaximized ? t('window.restore') : t('window.maximize')}
+                data-tauri-drag-region={false}
+              >
+                <Square className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => tauri.closeWindow()}
+                className="px-3 py-2 hover:bg-red-500 hover:text-white transition-colors text-text-secondary"
+                title={t('window.close')}
+                data-tauri-drag-region={false}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* 新对话确认对话框 */}
