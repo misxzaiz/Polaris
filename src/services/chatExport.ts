@@ -4,14 +4,15 @@
  */
 
 import type { ChatMessage, AssistantChatMessage, UserChatMessage, ContentBlock } from '../types';
+import { isTextBlock, isToolCallBlock, isSystemMessage } from '../types';
 
 /**
  * 从内容块中提取文本内容
  */
 function extractTextFromBlocks(blocks: ContentBlock[]): string {
   return blocks
-    .filter(block => block.type === 'text')
-    .map(block => (block as any).content)
+    .filter(isTextBlock)
+    .map(block => block.content)
     .join('');
 }
 
@@ -19,12 +20,12 @@ function extractTextFromBlocks(blocks: ContentBlock[]): string {
  * 从内容块中提取工具调用摘要
  */
 function extractToolSummary(blocks: ContentBlock[]): { count: number; names: string[] } | undefined {
-  const toolBlocks = blocks.filter(block => block.type === 'tool_call');
+  const toolBlocks = blocks.filter(isToolCallBlock);
   if (toolBlocks.length === 0) return undefined;
 
   return {
     count: toolBlocks.length,
-    names: Array.from(new Set(toolBlocks.map(block => (block as any).name))),
+    names: Array.from(new Set(toolBlocks.map(block => block.name))),
   };
 }
 
@@ -82,10 +83,10 @@ export function exportToMarkdown(
       }
 
       md += '\n\n---\n\n';
-    } else if (message.type === 'system') {
+    } else if (isSystemMessage(message)) {
       md += `## 系统\n\n`;
       md += `<small>${time}</small>\n\n`;
-      md += `*${(message as any).content}*\n\n`;
+      md += `*${message.content}*\n\n`;
       md += '---\n\n';
     }
   }

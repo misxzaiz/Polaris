@@ -15,6 +15,7 @@
  */
 
 import type { HistorySlice, HistoryEntry, UnifiedHistoryItem } from './types'
+import type { ChatMessage, UserChatMessage, AssistantChatMessage, SystemChatMessage, EngineId } from '../../types'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('EventChatStore')
@@ -46,7 +47,7 @@ export const createHistorySlice: HistorySlice = (set, get) => ({
 
       set({
         messages: remaining,
-        archivedMessages: [...toArchive, ...archivedMessages] as any[],
+        archivedMessages: [...toArchive, ...archivedMessages] as ChatMessage[],
       })
     }
   },
@@ -114,7 +115,7 @@ export const createHistorySlice: HistorySlice = (set, get) => ({
       // 使用依赖注入获取当前引擎 ID
       const configActions = get().getConfigActions()
       const config = configActions?.getConfig()
-      const engineId: 'claude-code' | 'iflow' | 'codex' | `provider-${string}` = (config?.defaultEngine || 'claude-code') as any
+      const engineId: EngineId = (config?.defaultEngine || 'claude-code') as EngineId
 
       // 获取现有历史
       const historyJson = localStorage.getItem(SESSION_HISTORY_KEY)
@@ -328,30 +329,30 @@ export const createHistorySlice: HistorySlice = (set, get) => ({
             toolPanelActions?.addTool(tool)
           }
 
-          const chatMessages = convertedMessages.map((msg): any => {
+          const chatMessages: ChatMessage[] = convertedMessages.map((msg) => {
             if (msg.role === 'user') {
               return {
                 id: msg.id,
-                type: 'user',
+                type: 'user' as const,
                 content: msg.content,
                 timestamp: msg.timestamp,
-              }
+              } satisfies UserChatMessage
             } else if (msg.role === 'assistant') {
               return {
                 id: msg.id,
-                type: 'assistant',
+                type: 'assistant' as const,
                 blocks: [{ type: 'text', content: msg.content }],
                 timestamp: msg.timestamp,
                 content: msg.content,
                 toolSummary: msg.toolSummary,
-              }
+              } satisfies AssistantChatMessage
             } else {
               return {
                 id: msg.id,
-                type: 'system',
+                type: 'system' as const,
                 content: msg.content,
                 timestamp: msg.timestamp,
-              }
+              } satisfies SystemChatMessage
             }
           })
 
@@ -373,22 +374,22 @@ export const createHistorySlice: HistorySlice = (set, get) => ({
         const messages = await getCodexSessionHistory(sessionId)
 
         if (messages && messages.length > 0) {
-          const chatMessages = messages.map((msg): any => {
+          const chatMessages: ChatMessage[] = messages.map((msg) => {
             if (msg.type === 'user') {
               return {
                 id: msg.id,
-                type: 'user',
+                type: 'user' as const,
                 content: msg.content,
                 timestamp: msg.timestamp,
-              }
+              } satisfies UserChatMessage
             } else {
               return {
                 id: msg.id,
-                type: 'assistant',
+                type: 'assistant' as const,
                 blocks: [{ type: 'text', content: msg.content }],
                 timestamp: msg.timestamp,
                 content: msg.content,
-              }
+              } satisfies AssistantChatMessage
             }
           })
 

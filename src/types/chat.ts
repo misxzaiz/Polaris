@@ -137,6 +137,11 @@ export interface AssistantChatMessage extends BaseChatMessage {
   isStreaming?: boolean;
   /** 兼容字段：完整文本内容（由 blocks 合成） */
   content?: string;
+  /** 工具调用摘要（用于历史恢复和导出） */
+  toolSummary?: {
+    count: number;
+    names: string[];
+  };
 }
 
 /** 系统消息 */
@@ -221,4 +226,24 @@ export function isAssistantMessage(message: ChatMessage): message is AssistantCh
 /** 类型守卫：判断是否为用户消息 */
 export function isUserMessage(message: ChatMessage): message is UserChatMessage {
   return message.type === 'user';
+}
+
+/** 类型守卫：判断是否为系统消息 */
+export function isSystemMessage(message: ChatMessage): message is SystemChatMessage {
+  return message.type === 'system';
+}
+
+/** 类型守卫：判断是否为文本块 */
+export function isTextBlock(block: ContentBlock): block is TextBlock {
+  return block.type === 'text';
+}
+
+/** 类型守卫：判断是否为思考块 */
+export function isThinkingBlock(block: ContentBlock): block is ThinkingBlock {
+  return block.type === 'thinking';
+}
+
+/** 类型守卫：判断是否为工具调用块 */
+export function isToolCallBlock(block: ContentBlock): block is ToolCallBlock {
+  return block.type === 'tool_call';
 }

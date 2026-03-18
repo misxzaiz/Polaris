@@ -11,6 +11,7 @@
 import type { MessageSlice, CurrentAssistantMessage } from './types'
 import type { ContentBlock, ToolCallBlock } from '../../types'
 import { MESSAGE_ARCHIVE_THRESHOLD } from './types'
+import { isTextBlock } from '../../types'
 import { generateToolSummary, calculateDuration } from '../../utils/toolSummary'
 import { clearFileReadCache } from './utils'
 
@@ -163,11 +164,11 @@ export const createMessageSlice: MessageSlice = (set, get) => ({
 
     // 追加到最后一个文本块
     const lastBlock = currentMessage.blocks[currentMessage.blocks.length - 1]
-    if (lastBlock && lastBlock.type === 'text') {
+    if (lastBlock && isTextBlock(lastBlock)) {
       const updatedBlocks: ContentBlock[] = [...currentMessage.blocks]
       updatedBlocks[updatedBlocks.length - 1] = {
         type: 'text',
-        content: (lastBlock as any).content + content,
+        content: lastBlock.content + content,
       }
       set((state) => ({
         currentMessage: state.currentMessage

@@ -5,6 +5,7 @@
  */
 
 import type { ChatMessage, UserChatMessage, AssistantChatMessage } from '../types';
+import { isTextBlock, isToolCallBlock } from '../types';
 
 /** 对话轮次摘要 */
 export interface ConversationRound {
@@ -41,14 +42,14 @@ function extractAssistantSummary(message: AssistantChatMessage): string {
 
   if (message.blocks && message.blocks.length > 0) {
     // 查找第一个文本块
-    const textBlock = message.blocks.find(block => block.type === 'text');
+    const textBlock = message.blocks.find(isTextBlock);
     if (textBlock) {
-      return extractSummary((textBlock as any).content);
+      return extractSummary(textBlock.content);
     }
     // 如果没有文本块，使用工具名称
-    const toolBlock = message.blocks.find(block => block.type === 'tool_call');
+    const toolBlock = message.blocks.find(isToolCallBlock);
     if (toolBlock) {
-      return `使用工具: ${(toolBlock as any).name}`;
+      return `使用工具: ${toolBlock.name}`;
     }
   }
 
