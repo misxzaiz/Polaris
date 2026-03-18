@@ -8,6 +8,10 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+
+// 取消其他测试文件可能设置的 mock，确保使用真实模块
+vi.unmock('./eventRouter')
+
 import { EventRouter, getEventRouter, ensureEventRouterInitialized, createContextId, resetEventRouter } from './eventRouter'
 
 // Mock Tauri event API
