@@ -777,6 +777,7 @@ impl OldConfig {
             git_bin_path: self.git_bin_path,
             floating_window: Default::default(),
             baidu_translate: None,
+            window: Default::default(),
             claude_cmd: Some(claude_cmd_clone),
         }
     }

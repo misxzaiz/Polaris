@@ -330,6 +330,32 @@ impl Default for FloatingWindowConfig {
     }
 }
 
+/// 窗口设置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowSettings {
+    /// 是否始终置顶
+    #[serde(default)]
+    pub always_on_top: bool,
+
+    /// 窗口透明度 (0.5 - 1.0)
+    #[serde(default = "default_window_opacity")]
+    pub opacity: f64,
+}
+
+fn default_window_opacity() -> f64 {
+    1.0
+}
+
+impl Default for WindowSettings {
+    fn default() -> Self {
+        Self {
+            always_on_top: false,
+            opacity: default_window_opacity(),
+        }
+    }
+}
+
 /// 应用配置（新版本）
 ///
 /// 使用嵌套结构，支持多个 AI 引擎
@@ -385,6 +411,10 @@ pub struct Config {
     #[serde(default)]
     pub qqbot: QQBotConfig,
 
+    /// 窗口设置
+    #[serde(default)]
+    pub window: WindowSettings,
+
     // === 旧字段，保持向后兼容 ===
     /// @deprecated 请使用 claude_code.cli_path
     #[serde(default)]
@@ -411,6 +441,7 @@ impl Default for Config {
             floating_window: FloatingWindowConfig::default(),
             baidu_translate: None,
             qqbot: QQBotConfig::default(),
+            window: WindowSettings::default(),
             claude_cmd: None,
         }
     }

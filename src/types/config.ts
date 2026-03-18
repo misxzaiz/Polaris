@@ -69,6 +69,14 @@ export interface QQBotConfig {
   autoConnect: boolean;
 }
 
+/** 窗口设置 */
+export interface WindowSettings {
+  /** 是否始终置顶 */
+  alwaysOnTop: boolean;
+  /** 窗口透明度 (0.5 - 1.0) */
+  opacity: number;
+}
+
 /** 应用配置 */
 export interface Config {
   /** 当前选择的引擎 */
@@ -110,6 +118,8 @@ export interface Config {
   baiduTranslate?: BaiduTranslateConfig;
   /** QQ Bot 集成配置 */
   qqbot: QQBotConfig;
+  /** 窗口设置 */
+  window?: WindowSettings;
 }
 
 /** 健康状态 */
