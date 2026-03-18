@@ -16,6 +16,11 @@ import { useConfigStore } from '../configStore'
 import { parseWorkspaceReferences, buildSystemPrompt } from '../../services/workspaceReference'
 import { isTextFile } from '../../types/attachment'
 import { optionsToCliArgs } from '../../utils/engineOptions'
+import {
+  toAppError,
+  errorLogger,
+  ErrorSource,
+} from '../../types/errors'
 
 /**
  * 创建事件处理 Slice
@@ -225,14 +230,18 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
         }
       }
     } catch (e) {
+      const appError = toAppError(e, {
+        source: ErrorSource.AI,
+        context: { conversationId, workspaceDir: actualWorkspaceDir }
+      })
+      errorLogger.log(appError)
+
       set({
-        error: e instanceof Error ? e.message : '发送消息失败',
+        error: appError.getUserMessage(),
         isStreaming: false,
         currentMessage: null,
         progressMessage: null,
       })
-
-      console.error('[EventChatStore] 发送消息失败:', e)
     }
   },
 
@@ -347,14 +356,18 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
         }
       }
     } catch (e) {
+      const appError = toAppError(e, {
+        source: ErrorSource.AI,
+        context: { workspaceDir }
+      })
+      errorLogger.log(appError)
+
       set({
-        error: e instanceof Error ? e.message : '发送消息失败',
+        error: appError.getUserMessage(),
         isStreaming: false,
         currentMessage: null,
         progressMessage: null,
       })
-
-      console.error('[EventChatStore] 前端引擎发送消息失败:', e)
     }
   },
 
@@ -397,14 +410,18 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
         engineId: currentEngine,
       })
     } catch (e) {
+      const appError = toAppError(e, {
+        source: ErrorSource.AI,
+        context: { conversationId, workspaceDir: actualWorkspaceDir }
+      })
+      errorLogger.log(appError)
+
       set({
-        error: e instanceof Error ? e.message : '继续对话失败',
+        error: appError.getUserMessage(),
         isStreaming: false,
         currentMessage: null,
         progressMessage: null,
       })
-
-      console.error('[EventChatStore] 继续对话失败:', e)
     }
   },
 

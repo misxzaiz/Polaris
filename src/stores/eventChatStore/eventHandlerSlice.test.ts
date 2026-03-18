@@ -379,7 +379,8 @@ describe('eventHandlerSlice', () => {
 
       await store.getState().sendMessage('Hello')
 
-      expect(store.getState().error).toBe('Network error')
+      // 统一错误处理返回用户友好消息
+      expect(store.getState().error).toBe('AI 处理失败，请稍后重试')
       expect(store.getState().isStreaming).toBe(false)
     })
 
@@ -432,7 +433,8 @@ describe('eventHandlerSlice', () => {
 
       await store.getState().continueChat()
 
-      expect(store.getState().error).toBe('Continue failed')
+      // 统一错误处理返回用户友好消息
+      expect(store.getState().error).toBe('AI 处理失败，请稍后重试')
       expect(store.getState().isStreaming).toBe(false)
     })
   })
