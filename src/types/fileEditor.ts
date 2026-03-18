@@ -37,8 +37,8 @@ export interface FileEditorState {
 export interface FileEditorActions {
   /** 打开文件 */
   openFile: (path: string, name: string) => Promise<void>;
-  /** 关闭文件 */
-  closeFile: () => void;
+  /** 关闭文件（发送 editor:closed 事件） */
+  closeFile: () => Promise<void>;
   /** 更新内容 */
   setContent: (content: string) => void;
   /** 保存文件 */

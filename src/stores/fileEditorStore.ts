@@ -5,7 +5,6 @@
 import { create } from 'zustand';
 import type { FileEditorStore } from '../types';
 import * as tauri from '../services/tauri';
-import { useViewStore } from './viewStore';
 import { emit } from '@tauri-apps/api/event';
 
 /** 根据文件扩展名获取语言类型 */
@@ -111,7 +110,7 @@ export const useFileEditorStore = create<FileEditorStore>((set, get) => ({
   },
 
   // 关闭文件
-  closeFile: () => {
+  closeFile: async () => {
     const { currentFile } = get();
     if (currentFile?.isModified) {
       // TODO: 显示未保存提示
@@ -122,8 +121,13 @@ export const useFileEditorStore = create<FileEditorStore>((set, get) => ({
       status: 'idle',
       error: null,
     });
-    // 自动隐藏编辑器
-    useViewStore.getState().setShowEditor(false);
+    // 发送事件通知外部组件（事件驱动解耦）
+    // 替代直接调用 viewStore.setShowEditor(false)
+    try {
+      await emit('editor:closed', { path: currentFile?.path });
+    } catch (e) {
+      console.warn('[Editor] 发送 editor:closed 事件失败:', e);
+    }
   },
 
   // 更新内容

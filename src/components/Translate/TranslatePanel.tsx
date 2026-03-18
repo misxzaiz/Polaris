@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useTranslateStore } from '../../stores';
+import { useTranslateStore, useConfigStore } from '../../stores';
 import { ArrowRightLeft, Copy, Send, Trash2, Clock } from 'lucide-react';
 
 interface TranslatePanelProps {
@@ -25,6 +25,9 @@ export function TranslatePanel({ onSendToChat }: TranslatePanelProps) {
     removeFromHistory,
     clearHistory,
   } = useTranslateStore();
+
+  // 获取百度翻译配置用于参数注入
+  const baiduConfig = useConfigStore((state) => state.config?.baiduTranslate);
 
   const [showHistory, setShowHistory] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -150,7 +153,7 @@ export function TranslatePanel({ onSendToChat }: TranslatePanelProps) {
               </button>
             </div>
             <button
-              onClick={translate}
+              onClick={() => translate(baiduConfig)}
               disabled={isTranslating || !sourceText.trim()}
               className="px-4 py-1.5 text-xs bg-primary text-white rounded-full hover:bg-primary/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >

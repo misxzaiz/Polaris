@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import i18n from '../i18n';
 import { baiduTranslate } from '../services/tauri';
-import { useConfigStore } from './configStore';
 
 export type TranslateDirection = 'toEn' | 'toZh';
 
@@ -11,6 +10,12 @@ export interface TranslateHistoryItem {
   translatedText: string;
   direction: TranslateDirection;
   timestamp: number;
+}
+
+/** 百度翻译配置（参数注入用） */
+export interface BaiduTranslateConfig {
+  appId: string;
+  secretKey: string;
 }
 
 interface TranslateState {
@@ -26,7 +31,12 @@ interface TranslateState {
 interface TranslateActions {
   setSourceText: (text: string) => void;
   setDirection: (direction: TranslateDirection) => void;
-  translate: () => Promise<void>;
+  /** 
+   * 执行翻译
+   * @param config - 可选的百度翻译配置，如未提供将从 configStore 获取（向后兼容）
+   * @deprecated 建议传入 config 参数以实现更好的解耦和测试友好性
+   */
+  translate: (config?: BaiduTranslateConfig) => Promise<void>;
   clearResult: () => void;
   addToHistory: (item: Omit<TranslateHistoryItem, 'id' | 'timestamp'>) => void;
   clearHistory: () => void;
@@ -51,14 +61,20 @@ export const useTranslateStore = create<TranslateStore>((set, get) => ({
 
   setTranslatedText: (text) => set({ translatedText: text }),
 
-  translate: async () => {
+  translate: async (baiduConfig?: BaiduTranslateConfig) => {
     const { sourceText, direction } = get();
     if (!sourceText.trim()) return;
 
-    const config = useConfigStore.getState().config;
-    const baiduConfig = config?.baiduTranslate;
+    // 参数注入模式：优先使用传入的配置，否则从 configStore 获取（向后兼容）
+    let configToUse = baiduConfig;
+    if (!configToUse) {
+      // 延迟导入以避免循环依赖
+      const { useConfigStore } = await import('./configStore');
+      const config = useConfigStore.getState().config;
+      configToUse = config?.baiduTranslate;
+    }
 
-    if (!baiduConfig?.appId || !baiduConfig?.secretKey) {
+    if (!configToUse?.appId || !configToUse?.secretKey) {
       set({ error: i18n.t('translate:errors.notConfigured') });
       return;
     }
@@ -70,8 +86,8 @@ export const useTranslateStore = create<TranslateStore>((set, get) => ({
     try {
       const result = await baiduTranslate(
         sourceText,
-        baiduConfig.appId,
-        baiduConfig.secretKey,
+        configToUse.appId,
+        configToUse.secretKey,
         to
       );
 

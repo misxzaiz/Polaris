@@ -482,6 +482,18 @@ function App() {
       };
     }, []);
 
+    // 监听编辑器关闭事件，自动隐藏编辑器视图（事件驱动解耦）
+    useEffect(() => {
+      const unlistenPromise = listen('editor:closed', () => {
+        console.log('[App] 收到 editor:closed 事件，隐藏编辑器视图');
+        useViewStore.getState().setShowEditor(false);
+      });
+
+      return () => {
+        unlistenPromise.then(unlisten => unlisten());
+      };
+    }, []);
+
   // F12 快捷键 - 切换 DevTools
   useEffect(() => {
     const handleKeyDown = async (e: KeyboardEvent) => {

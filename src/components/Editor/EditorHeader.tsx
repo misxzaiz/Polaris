@@ -24,6 +24,14 @@ export function EditorHeader({ className = '' }: EditorHeaderProps) {
     }
   };
 
+  const handleClose = async () => {
+    try {
+      await closeFile();
+    } catch (error) {
+      console.error('Failed to close file:', error);
+    }
+  };
+
   return (
     <div className={`flex items-center justify-between px-3 py-2 bg-background-elevated border-b border-border-subtle ${className}`}>
       {/* 文件名 */}
@@ -77,7 +85,7 @@ export function EditorHeader({ className = '' }: EditorHeaderProps) {
         )}
 
         <button
-          onClick={closeFile}
+          onClick={handleClose}
           className="p-1 rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover
                    transition-colors"
           title="关闭文件"
