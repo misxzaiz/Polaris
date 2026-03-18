@@ -12,3 +12,7 @@ export { useThrottle, useThrottledCallback, useThrottledStreamingValue } from '.
 // 响应式 Hooks
 export { useContainerWidth, useContainerSize } from './useContainerWidth';
 export type { ContainerSize, ContainerWidthInfo } from './useContainerWidth';
+
+// 错误处理 Hooks
+export { useError, useGlobalErrorHandler, safeAsync } from './useError';
+export type { ErrorState, UseErrorReturn, ErrorOptions, StoreErrorState, StoreErrorActions } from './useError';

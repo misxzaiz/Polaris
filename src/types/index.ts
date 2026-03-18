@@ -15,3 +15,4 @@ export * from './scheduler';
 export * from './terminal';
 export * from './engineCommand';
 export * from './attachment';
+export * from './errors';
