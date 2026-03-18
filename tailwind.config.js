@@ -22,15 +22,15 @@ module.exports = {
           faint: 'rgba(59, 130, 246, 0.15)',
           glow: 'rgba(59, 130, 246, 0.3)',
         },
-        // 背景色系 - 优化的分层深色
+        // 背景色系 - 优化的分层深色，支持透明度调节
         background: {
-          base: '#0F0F11',           // 全局背景 - 稍微提亮
-          elevated: '#1A1A1F',        // 侧边栏/面板 - 增加层次
-          surface: '#25252B',         // 卡片/输入框 - 更明显的区分
-          hover: '#2D2D35',           // 悬停 - 增强交互反馈
-          active: '#35353D',          // 激活 - 更强的反馈
-          tertiary: '#21262D',         // 兼容旧名
-          secondary: '#161B22',       // 兼容旧名
+          base: 'rgba(15, 15, 17, var(--window-opacity, 1))',           // 全局背景 - 透明度可调
+          elevated: 'rgba(26, 26, 31, var(--window-opacity, 1))',        // 侧边栏/面板 - 增加层次
+          surface: 'rgba(37, 37, 43, var(--window-opacity, 1))',         // 卡片/输入框 - 更明显的区分
+          hover: 'rgba(45, 45, 53, var(--window-opacity, 1))',           // 悬停 - 增强交互反馈
+          active: 'rgba(53, 53, 61, var(--window-opacity, 1))',          // 激活 - 更强的反馈
+          tertiary: 'rgba(33, 38, 45, var(--window-opacity, 1))',         // 兼容旧名
+          secondary: 'rgba(22, 27, 34, var(--window-opacity, 1))',       // 兼容旧名
         },
         // 边框色系 - 增强对比度
         border: {
