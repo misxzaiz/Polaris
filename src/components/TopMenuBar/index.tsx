@@ -10,6 +10,9 @@ import { useFloatingWindowStore } from '../../stores/floatingWindowStore';
 import * as tauri from '../../services/tauri';
 import { exportToMarkdown, generateFileName } from '../../services/chatExport';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { createLogger } from '../../utils/logger';
+
+const log = createLogger('TopMenuBar');
 
 interface TopMenuBarProps {
   onNewConversation: () => void;
@@ -65,10 +68,10 @@ export function TopMenuBar({ onNewConversation, onCreateWorkspace, onToggleRight
       const filePath = await tauri.saveChatToFile(content, fileName);
 
       if (filePath) {
-        console.log(t('messages.exportSuccess', { path: filePath }));
+        log.info('导出聊天成功', { path: filePath });
       }
     } catch (error) {
-      console.error(t('messages.exportFailed'), error);
+      log.error('导出聊天失败', error instanceof Error ? error : new Error(String(error)));
     } finally {
       setIsExporting(false);
     }

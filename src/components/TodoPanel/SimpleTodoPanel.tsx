@@ -11,6 +11,9 @@ import { TodoCard } from './TodoCard'
 import { TodoDetailDialog } from './TodoDetailDialog'
 import { TodoForm } from './TodoForm'
 import type { TodoItem, TodoStatus, TodoPriority } from '@/types'
+import { createLogger } from '@/utils/logger'
+
+const log = createLogger('SimpleTodoPanel')
 
 export function SimpleTodoPanel() {
   const { t } = useTranslation('todo')
@@ -169,7 +172,7 @@ export function SimpleTodoPanel() {
       await simpleTodoService.deleteTodo(todo.id)
       refreshTodos()
     } catch (error) {
-      console.error(t('errors.deleteFailed'), error)
+      log.error(t('errors.deleteFailed'), error instanceof Error ? error : new Error(String(error)))
       alert(t('errors.deleteFailed') + ': ' + (error as Error).message)
     }
   }

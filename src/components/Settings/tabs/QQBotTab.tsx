@@ -15,6 +15,9 @@ import {
   useActiveIntegrationInstance,
 } from '../../../stores';
 import type { Config, IntegrationDisplayMode, PlatformInstance } from '../../../types';
+import { createLogger } from '../../../utils/logger';
+
+const log = createLogger('QQBotTab');
 
 interface QQBotTabProps {
   config: Config;
@@ -133,7 +136,7 @@ export function QQBotTab({ config, onConfigChange, loading }: QQBotTabProps) {
         setHasChanges(false);
       }
     } catch (error) {
-      console.error('Failed to remove instance:', error);
+      log.error('删除实例失败', error instanceof Error ? error : new Error(String(error)));
     }
   };
 

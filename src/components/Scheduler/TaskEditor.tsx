@@ -12,6 +12,9 @@ import { TriggerTypeLabels, IntervalUnitLabels, TaskModeLabels, parseIntervalVal
 import { ProtocolTemplateCategoryLabels, renderFullTemplate } from '../../types/protocolTemplate';
 import type { ProtocolTemplate, TemplateParam } from '../../types/protocolTemplate';
 import * as tauri from '../../services/tauri';
+import { createLogger } from '../../utils/logger';
+
+const log = createLogger('TaskEditor');
 
 /** 解析引擎ID，返回基础引擎和可能的 provider ID */
 function parseEngineId(engineId: string): { baseEngine: string; providerId?: string } {
@@ -351,7 +354,7 @@ export function TaskEditor({
             }
           })
           .catch((e) => {
-            console.error('读取协议文档失败:', e);
+            log.error('读取协议文档失败', e instanceof Error ? e : new Error(String(e)));
           });
       }
     }

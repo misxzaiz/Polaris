@@ -5,6 +5,9 @@
 import React, { useState } from 'react';
 import { useWorkspaceStore } from '../../stores';
 import { Button } from '../Common';
+import { createLogger } from '../../utils/logger';
+
+const log = createLogger('CreateWorkspaceModal');
 
 interface CreateWorkspaceModalProps {
   onClose: () => void;
@@ -57,7 +60,7 @@ export function CreateWorkspaceModal({ onClose }: CreateWorkspaceModalProps) {
         }
       }
     } catch (error) {
-      console.error('选择文件夹失败:', error);
+      log.error('选择文件夹失败', error instanceof Error ? error : new Error(String(error)));
       setError('选择文件夹失败，请手动输入路径');
     }
   };

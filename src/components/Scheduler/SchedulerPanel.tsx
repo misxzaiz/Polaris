@@ -14,6 +14,9 @@ import * as tauri from '../../services/tauri';
 import type { ProtocolFileType, TaskExportItem } from '../../services/tauri';
 import { TaskEditor } from './TaskEditor';
 import { useContainerSize } from '../../hooks';
+import { createLogger } from '../../utils/logger';
+
+const log = createLogger('SchedulerPanel');
 
 /** 格式化时间戳 */
 function formatTime(timestamp: number | undefined): string {
@@ -1048,7 +1051,7 @@ export function SchedulerPanel() {
       const status = await tauri.schedulerGetLockStatus();
       setLockStatus(status);
     } catch (e) {
-      console.error('获取锁状态失败:', e);
+      log.error('获取锁状态失败', e instanceof Error ? e : new Error(String(e)));
     }
   };
 

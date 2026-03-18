@@ -18,6 +18,9 @@ import { OpenAIProvidersTab } from './OpenAIProvidersTab';
 import { TranslateTab } from './tabs/TranslateTab';
 import { QQBotTab } from './tabs/QQBotTab';
 import { FloatingWindowTab } from './tabs/FloatingWindowTab';
+import { createLogger } from '../../utils/logger';
+
+const log = createLogger('SettingsModal');
 import { AdvancedTab } from './tabs/AdvancedTab';
 import { SchedulerTab } from './tabs/SchedulerTab';
 import type { Config } from '../../types';
@@ -85,7 +88,7 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
       success(t('messages.saved'), t('messages.configSavedDesc'));
       onClose();
     } catch (err) {
-      console.error('Failed to save config:', err);
+      log.error('保存配置失败', err instanceof Error ? err : new Error(String(err)));
       toastError(t('messages.saveFailed'), err instanceof Error ? err.message : String(err));
     } finally {
       setSaving(false);

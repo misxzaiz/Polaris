@@ -21,7 +21,10 @@ import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import type { ChatMessage } from '../../types'
 import { extractMermaidBlocks } from '../../utils/markdown'
+import { createLogger } from '../../utils/logger'
 import './FloatingWindow.css'
+
+const log = createLogger('FloatingWindow')
 
 // 配置 marked（与主窗口保持一致）
 marked.setOptions({
@@ -130,16 +133,16 @@ export function FloatingWindow() {
         try {
           const parsedMessages = JSON.parse(e.newValue) as ChatMessage[]
           setMessages(parsedMessages)
-          console.log('[FloatingWindow] 收到消息更新:', parsedMessages.length)
+          log.debug('收到消息更新', { count: parsedMessages.length })
         } catch (e) {
-          console.error('[FloatingWindow] 解析消息失败:', e)
+          log.error('解析消息失败', e instanceof Error ? e : new Error(String(e)))
         }
       }
       if (e.key === 'chat_is_streaming' && e.newValue) {
         try {
           setIsStreaming(JSON.parse(e.newValue))
         } catch (e) {
-          console.error('[FloatingWindow] 解析流式状态失败:', e)
+          log.error('解析流式状态失败', e instanceof Error ? e : new Error(String(e)))
         }
       }
     }

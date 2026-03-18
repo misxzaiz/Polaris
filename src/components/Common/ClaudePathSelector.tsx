@@ -8,6 +8,9 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as tauri from '../../services/tauri';
 import { mapErrorMessage } from '../../utils/errorMapping';
+import { createLogger } from '../../utils/logger';
+
+const log = createLogger('ClaudePathSelector');
 
 type EngineType = 'claude-code' | 'iflow' | 'codex';
 
@@ -73,7 +76,7 @@ export function ClaudePathSelector({
         onChange(paths[0]);
       }
     } catch (e) {
-      console.error(`检测 ${config.name} 路径失败:`, e);
+      log.error(`检测 ${config.name} 路径失败`, e instanceof Error ? e : new Error(String(e)));
       setDetectedPaths([]);
     } finally {
       setDetecting(false);

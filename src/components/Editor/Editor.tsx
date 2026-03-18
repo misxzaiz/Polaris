@@ -21,6 +21,9 @@ import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { lintGutter } from '@codemirror/lint';
 import { tags } from '@lezer/highlight';
+import { createLogger } from '../../utils/logger';
+
+const log = createLogger('Editor');
 
 // 现代化主题
 import { modernTheme } from './modernTheme';
@@ -214,7 +217,7 @@ export function CodeMirrorEditor({
       });
       viewRef.current = view;
 
-      console.log('[Editor] Editor view created successfully, DOM classes:', {
+      log.debug('Editor view created successfully', {
         className: view.dom.className,
         childElementCount: view.dom.childElementCount,
       });

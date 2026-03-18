@@ -10,6 +10,9 @@ import { TaskEditor } from '../../Scheduler/TaskEditor';
 import { ProtocolTemplateManager } from '../../Scheduler/ProtocolTemplateManager';
 import type { ScheduledTask, CreateTaskParams, LockStatus } from '../../../types/scheduler';
 import { TriggerTypeLabels } from '../../../types/scheduler';
+import { createLogger } from '../../../utils/logger';
+
+const log = createLogger('SchedulerTab');
 
 /** 格式化时间戳 */
 function formatTime(timestamp: number | undefined): string {
@@ -123,7 +126,7 @@ export function SchedulerTab() {
       const status = await schedulerGetLockStatus();
       setLockStatus(status);
     } catch (e) {
-      console.error('获取锁状态失败:', e);
+      log.error('获取锁状态失败', e instanceof Error ? e : new Error(String(e)));
     }
   };
 

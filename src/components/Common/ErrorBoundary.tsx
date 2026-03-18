@@ -3,6 +3,9 @@
  */
 
 import { Component, ReactNode, useEffect } from 'react';
+import { createLogger } from '../../utils/logger';
+
+const log = createLogger('ErrorBoundary');
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -40,7 +43,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('[ErrorBoundary] 捕获到渲染错误:', error, errorInfo);
+    log.error('捕获到渲染错误', error, { componentStack: errorInfo.componentStack });
 
     // 保存错误信息用于调试
     try {
@@ -102,7 +105,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   /** 尝试从错误中恢复 */
   private attemptRecovery() {
-    console.log('[ErrorBoundary] 尝试自动恢复...');
+    log.info('尝试自动恢复...');
 
     // 重置错误状态
     this.setState({

@@ -3,6 +3,9 @@
  */
 
 import { useFileEditorStore } from '../../stores';
+import { createLogger } from '../../utils/logger';
+
+const log = createLogger('EditorHeader');
 
 interface EditorHeaderProps {
   className?: string;
@@ -20,7 +23,7 @@ export function EditorHeader({ className = '' }: EditorHeaderProps) {
     try {
       await saveFile();
     } catch (error) {
-      console.error('Failed to save file:', error);
+      log.error('Failed to save file:', error instanceof Error ? error : new Error(String(error)));
     }
   };
 
@@ -28,7 +31,7 @@ export function EditorHeader({ className = '' }: EditorHeaderProps) {
     try {
       await closeFile();
     } catch (error) {
-      console.error('Failed to close file:', error);
+      log.error('Failed to close file:', error instanceof Error ? error : new Error(String(error)));
     }
   };
 

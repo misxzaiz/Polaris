@@ -6,6 +6,9 @@ import { useState } from 'react';
 import { useWorkspaceStore } from '../../stores';
 import { Button } from '../Common';
 import { CreateWorkspaceModal } from './CreateWorkspaceModal';
+import { createLogger } from '../../utils/logger';
+
+const log = createLogger('WorkspaceSelector');
 
 export function WorkspaceSelector() {
   const {
@@ -26,7 +29,7 @@ export function WorkspaceSelector() {
     try {
       await switchWorkspace(id);
     } catch (error) {
-      console.error('切换工作区失败:', error);
+      log.error('切换工作区失败', error instanceof Error ? error : new Error(String(error)));
     }
   };
 
@@ -35,7 +38,7 @@ export function WorkspaceSelector() {
       await deleteWorkspace(id);
       setShowDeleteConfirm(null);
     } catch (error) {
-      console.error('删除工作区失败:', error);
+      log.error('删除工作区失败', error instanceof Error ? error : new Error(String(error)));
     }
   };
 

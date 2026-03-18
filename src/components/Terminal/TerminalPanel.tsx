@@ -11,7 +11,10 @@ import { WebLinksAddon } from 'xterm-addon-web-links';
 import { useTerminalStore } from '@/stores/terminalStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { Plus, X, Terminal as TerminalIcon } from 'lucide-react';
+import { createLogger } from '@/utils/logger';
 import 'xterm/css/xterm.css';
+
+const log = createLogger('TerminalPanel');
 
 interface TerminalInstanceProps {
   sessionId: string;
@@ -114,7 +117,7 @@ function TerminalInstance({ sessionId, isActive }: TerminalInstanceProps) {
         }
         xterm.write(bytes);
       } catch (err) {
-        console.error('[Terminal] 解码输出失败:', err);
+        log.error('解码输出失败', err instanceof Error ? err : new Error(String(err)));
       }
     };
 
