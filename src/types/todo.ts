@@ -4,6 +4,8 @@
  * 定义了 Todo 系统的所有数据结构和类型
  */
 
+import type { AIEvent } from '../ai-runtime/event'
+
 /**
  * 待办事项优先级
  */
@@ -413,10 +415,10 @@ export interface TodoSyncRule {
   eventType: string
 
   /** 匹配条件函数 */
-  condition: (event: any, todo: TodoItem) => boolean
+  condition: (event: AIEvent, todo: TodoItem) => boolean
 
   /** 状态转换函数 */
-  transform: (event: any, todo: TodoItem) => Partial<TodoItem>
+  transform: (event: AIEvent, todo: TodoItem) => Partial<TodoItem>
 }
 
 /**
