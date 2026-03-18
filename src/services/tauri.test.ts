@@ -31,6 +31,9 @@ import {
   validateIFlowPath,
   findCodexPaths,
   validateCodexPath,
+  // Codex 会话
+  listCodexSessions,
+  getCodexSessionHistory,
   // 健康检查
   healthCheck,
   // 文件操作
@@ -58,9 +61,14 @@ import {
   // 上下文管理
   queryContext,
   upsertContext,
+  upsertContextMany,
   getAllContext,
   removeContext,
   clearContext,
+  // IDE 上报
+  ideReportCurrentFile,
+  ideReportFileStructure,
+  ideReportDiagnostics,
   // 定时任务
   schedulerGetTasks,
   schedulerCreateTask,
@@ -72,6 +80,25 @@ import {
   stopIntegration,
   getIntegrationStatus,
   getAllIntegrationStatus,
+  // 钉钉服务
+  startDingTalkService,
+  stopDingTalkService,
+  sendDingTalkMessage,
+  isDingTalkServiceRunning,
+  getDingTalkServiceStatus,
+  testDingTalkConnection,
+  // 翻译
+  baiduTranslate,
+  // 废弃命令（向后兼容）
+  startChat,
+  continueChat,
+  interruptChat,
+  startIFlowChat,
+  continueIFlowChat,
+  interruptIFlowChat,
+  startCodexChat,
+  continueCodexChat,
+  interruptCodexChat,
   // 类型导出
   type PathValidationResult,
   type ContextEntry,
@@ -728,6 +755,404 @@ describe('集成相关命令', () => {
 
       expect(mockInvoke).toHaveBeenCalledWith('get_all_integration_status');
       expect(result).toEqual(mockStatuses);
+    });
+  });
+});
+
+// ============================================================
+// Codex 会话命令测试
+// ============================================================
+describe('Codex 会话命令', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('listCodexSessions', () => {
+    it('应列出 Codex 会话', async () => {
+      const mockSessions = [
+        { sessionId: '1', title: 'Session 1', messageCount: 5 },
+      ];
+      mockInvoke.mockResolvedValueOnce(mockSessions);
+
+      const result = await listCodexSessions('/workspace');
+
+      expect(mockInvoke).toHaveBeenCalledWith('list_codex_sessions', { workDir: '/workspace' });
+      expect(result).toEqual(mockSessions);
+    });
+
+    it('应支持不传 workDir', async () => {
+      mockInvoke.mockResolvedValueOnce([]);
+
+      const result = await listCodexSessions();
+
+      expect(mockInvoke).toHaveBeenCalledWith('list_codex_sessions', { workDir: undefined });
+    });
+  });
+
+  describe('getCodexSessionHistory', () => {
+    it('应获取会话历史', async () => {
+      const mockHistory = [
+        { id: '1', timestamp: '2026-01-01', type: 'user', content: 'Hello' },
+      ];
+      mockInvoke.mockResolvedValueOnce(mockHistory);
+
+      const result = await getCodexSessionHistory('/path/to/session.json');
+
+      expect(mockInvoke).toHaveBeenCalledWith('get_codex_session_history', {
+        filePath: '/path/to/session.json',
+      });
+      expect(result).toEqual(mockHistory);
+    });
+  });
+});
+
+// ============================================================
+// 钉钉服务命令测试
+// ============================================================
+describe('钉钉服务命令', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('startDingTalkService', () => {
+    it('应启动钉钉服务', async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+
+      await startDingTalkService();
+
+      expect(mockInvoke).toHaveBeenCalledWith('start_dingtalk_service');
+    });
+  });
+
+  describe('stopDingTalkService', () => {
+    it('应停止钉钉服务', async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+
+      await stopDingTalkService();
+
+      expect(mockInvoke).toHaveBeenCalledWith('stop_dingtalk_service');
+    });
+  });
+
+  describe('sendDingTalkMessage', () => {
+    it('应发送钉钉消息', async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+
+      await sendDingTalkMessage('test message', 'conv-123');
+
+      expect(mockInvoke).toHaveBeenCalledWith('send_dingtalk_message', {
+        content: 'test message',
+        conversationId: 'conv-123',
+      });
+    });
+  });
+
+  describe('isDingTalkServiceRunning', () => {
+    it('应检查服务是否运行', async () => {
+      mockInvoke.mockResolvedValueOnce(true);
+
+      const result = await isDingTalkServiceRunning();
+
+      expect(mockInvoke).toHaveBeenCalledWith('is_dingtalk_service_running');
+      expect(result).toBe(true);
+    });
+  });
+
+  describe('getDingTalkServiceStatus', () => {
+    it('应获取服务状态', async () => {
+      const mockStatus = { isRunning: true, pid: 12345, port: 8080 };
+      mockInvoke.mockResolvedValueOnce(mockStatus);
+
+      const result = await getDingTalkServiceStatus();
+
+      expect(mockInvoke).toHaveBeenCalledWith('get_dingtalk_service_status');
+      expect(result).toEqual(mockStatus);
+    });
+  });
+
+  describe('testDingTalkConnection', () => {
+    it('应测试钉钉连接', async () => {
+      mockInvoke.mockResolvedValueOnce('success');
+
+      const result = await testDingTalkConnection('test', 'conv-123');
+
+      expect(mockInvoke).toHaveBeenCalledWith('test_dingtalk_connection', {
+        testMessage: 'test',
+        conversationId: 'conv-123',
+      });
+      expect(result).toBe('success');
+    });
+  });
+});
+
+// ============================================================
+// 翻译命令测试
+// ============================================================
+describe('翻译命令', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('baiduTranslate', () => {
+    it('应调用百度翻译', async () => {
+      const mockResult = { success: true, result: '你好' };
+      mockInvoke.mockResolvedValueOnce(mockResult);
+
+      const result = await baiduTranslate('hello', 'appId', 'secretKey');
+
+      expect(mockInvoke).toHaveBeenCalledWith('baidu_translate', {
+        text: 'hello',
+        appId: 'appId',
+        secretKey: 'secretKey',
+        to: undefined,
+      });
+      expect(result).toEqual(mockResult);
+    });
+
+    it('应支持指定目标语言', async () => {
+      const mockResult = { success: true, result: '你好' };
+      mockInvoke.mockResolvedValueOnce(mockResult);
+
+      await baiduTranslate('hello', 'appId', 'secretKey', 'zh');
+
+      expect(mockInvoke).toHaveBeenCalledWith('baidu_translate', {
+        text: 'hello',
+        appId: 'appId',
+        secretKey: 'secretKey',
+        to: 'zh',
+      });
+    });
+
+    it('应处理翻译失败', async () => {
+      const mockResult = { success: false, error: 'Network error' };
+      mockInvoke.mockResolvedValueOnce(mockResult);
+
+      const result = await baiduTranslate('hello', 'appId', 'secretKey');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Network error');
+    });
+  });
+});
+
+// ============================================================
+// IDE 上报命令测试
+// ============================================================
+describe('IDE 上报命令', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('ideReportCurrentFile', () => {
+    it('应上报当前文件', async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+
+      await ideReportCurrentFile({
+        workspace_id: 'ws-1',
+        file_path: '/test.ts',
+        content: 'const x = 1;',
+        language: 'typescript',
+        cursor_offset: 5,
+      });
+
+      expect(mockInvoke).toHaveBeenCalledWith('ide_report_current_file', {
+        context: {
+          workspace_id: 'ws-1',
+          file_path: '/test.ts',
+          content: 'const x = 1;',
+          language: 'typescript',
+          cursor_offset: 5,
+        },
+      });
+    });
+  });
+
+  describe('ideReportFileStructure', () => {
+    it('应上报文件结构', async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+
+      await ideReportFileStructure({
+        workspace_id: 'ws-1',
+        file_path: '/test.ts',
+        symbols: [{ name: 'MyClass', kind: 'class', location: { path: '/test.ts', line_start: 1, line_end: 10 } }],
+      });
+
+      expect(mockInvoke).toHaveBeenCalledWith('ide_report_file_structure', {
+        structure: {
+          workspace_id: 'ws-1',
+          file_path: '/test.ts',
+          symbols: [{ name: 'MyClass', kind: 'class', location: { path: '/test.ts', line_start: 1, line_end: 10 } }],
+        },
+      });
+    });
+  });
+
+  describe('ideReportDiagnostics', () => {
+    it('应上报诊断信息', async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+
+      await ideReportDiagnostics({
+        workspace_id: 'ws-1',
+        file_path: '/test.ts',
+        diagnostics: [{
+          path: '/test.ts',
+          severity: 'error',
+          message: 'Unused variable',
+          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } },
+        }],
+      });
+
+      expect(mockInvoke).toHaveBeenCalledWith('ide_report_diagnostics', {
+        diagnostics: {
+          workspace_id: 'ws-1',
+          file_path: '/test.ts',
+          diagnostics: [{
+            path: '/test.ts',
+            severity: 'error',
+            message: 'Unused variable',
+            range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } },
+          }],
+        },
+      });
+    });
+  });
+});
+
+// ============================================================
+// 上下文扩展命令测试
+// ============================================================
+describe('上下文扩展命令', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('upsertContextMany', () => {
+    it('应批量添加上下文', async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+      const entries: ContextEntry[] = [
+        {
+          id: '1',
+          source: 'user_selection',
+          type: 'file',
+          priority: 1,
+          content: { type: 'file', path: '/a.ts', content: 'a', language: 'ts' },
+          created_at: Date.now(),
+          estimated_tokens: 10,
+        },
+        {
+          id: '2',
+          source: 'user_selection',
+          type: 'file',
+          priority: 2,
+          content: { type: 'file', path: '/b.ts', content: 'b', language: 'ts' },
+          created_at: Date.now(),
+          estimated_tokens: 10,
+        },
+      ];
+
+      await upsertContextMany(entries);
+
+      expect(mockInvoke).toHaveBeenCalledWith('context_upsert_many', { entries });
+    });
+  });
+});
+
+// ============================================================
+// 废弃命令测试（确保向后兼容）
+// ============================================================
+describe('废弃命令（向后兼容）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('Claude 聊天命令（废弃）', () => {
+    it('startChat 应正常调用', async () => {
+      mockInvoke.mockResolvedValueOnce('session-1');
+
+      const result = await startChat('hello', '/workspace');
+
+      expect(mockInvoke).toHaveBeenCalledWith('start_chat', { message: 'hello', workDir: '/workspace' });
+      expect(result).toBe('session-1');
+    });
+
+    it('continueChat 应正常调用', async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+
+      await continueChat('session-1', 'continue');
+
+      expect(mockInvoke).toHaveBeenCalledWith('continue_chat', {
+        sessionId: 'session-1',
+        message: 'continue',
+        workDir: undefined,
+      });
+    });
+
+    it('interruptChat 应正常调用', async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+
+      await interruptChat('session-1');
+
+      expect(mockInvoke).toHaveBeenCalledWith('interrupt_chat', { sessionId: 'session-1' });
+    });
+  });
+
+  describe('IFlow 聊天命令（废弃）', () => {
+    it('startIFlowChat 应正常调用', async () => {
+      mockInvoke.mockResolvedValueOnce('session-1');
+
+      const result = await startIFlowChat('hello');
+
+      expect(mockInvoke).toHaveBeenCalledWith('start_iflow_chat', { message: 'hello' });
+      expect(result).toBe('session-1');
+    });
+
+    it('continueIFlowChat 应正常调用', async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+
+      await continueIFlowChat('session-1', 'continue');
+
+      expect(mockInvoke).toHaveBeenCalledWith('continue_iflow_chat', {
+        sessionId: 'session-1',
+        message: 'continue',
+      });
+    });
+
+    it('interruptIFlowChat 应正常调用', async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+
+      await interruptIFlowChat('session-1');
+
+      expect(mockInvoke).toHaveBeenCalledWith('interrupt_iflow_chat', { sessionId: 'session-1' });
+    });
+  });
+
+  describe('Codex 聊天命令（废弃）', () => {
+    it('startCodexChat 应正常调用', async () => {
+      mockInvoke.mockResolvedValueOnce('session-1');
+
+      const result = await startCodexChat('hello');
+
+      expect(mockInvoke).toHaveBeenCalledWith('start_codex_chat', { message: 'hello' });
+      expect(result).toBe('session-1');
+    });
+
+    it('continueCodexChat 应正常调用', async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+
+      await continueCodexChat('session-1', 'continue');
+
+      expect(mockInvoke).toHaveBeenCalledWith('continue_codex_chat', {
+        sessionId: 'session-1',
+        message: 'continue',
+      });
+    });
+
+    it('interruptCodexChat 应正常调用', async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+
+      await interruptCodexChat('session-1');
+
+      expect(mockInvoke).toHaveBeenCalledWith('interrupt_codex_chat', { sessionId: 'session-1' });
     });
   });
 });
