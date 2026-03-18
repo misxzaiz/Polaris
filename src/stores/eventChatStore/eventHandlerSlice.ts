@@ -3,9 +3,10 @@
  *
  * 负责事件监听初始化、消息发送、会话控制
  *
- * TODO: 解耦外部 Store 依赖（下一次推进）
- * 当前仍使用 useWorkspaceStore/useConfigStore/useToolPanelStore
- * 需要逐步迁移到依赖注入模式
+ * 已使用依赖注入模式解耦外部 Store：
+ * - toolPanelActions: clearTools, addTool, updateTool
+ * - workspaceActions: getCurrentWorkspace, getWorkspaces, getContextWorkspaces
+ * - configActions: getConfig
  */
 
 import { invoke } from '@tauri-apps/api/core'
@@ -14,9 +15,6 @@ import { handleAIEvent } from './utils'
 import { getEventBus } from '../../ai-runtime'
 import { getEventRouter } from '../../services/eventRouter'
 import { getEngine, listEngines } from '../../core/engine-bootstrap'
-import { useToolPanelStore } from '../toolPanelStore'
-import { useWorkspaceStore } from '../workspaceStore'
-import { useConfigStore } from '../configStore'
 import { parseWorkspaceReferences, buildSystemPrompt } from '../../services/workspaceReference'
 import { isTextFile } from '../../types/attachment'
 import { optionsToCliArgs } from '../../utils/engineOptions'
@@ -57,10 +55,9 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
         const aiEvent = payload as any
         console.log('[EventChatStore] 收到 AIEvent:', aiEvent.type)
 
-        // 尝试使用注入的依赖，如果没有则回退到直接调用
+        // 使用依赖注入获取工作区路径
         const workspaceActions = get().getWorkspaceActions()
         const workspacePath = workspaceActions?.getCurrentWorkspace()?.path
-          ?? useWorkspaceStore.getState().getCurrentWorkspace()?.path
 
         try {
           eventBus.emit(aiEvent)
@@ -96,8 +93,9 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
     const router = getEventRouter()
     await router.initialize()
 
-    const workspaceStore = useWorkspaceStore.getState()
-    const currentWorkspace = workspaceStore.getCurrentWorkspace()
+    // 使用依赖注入获取工作区
+    const workspaceActions = get().getWorkspaceActions()
+    const currentWorkspace = workspaceActions?.getCurrentWorkspace()
 
     if (!currentWorkspace) {
       set({ error: '请先创建或选择一个工作区' })
@@ -108,15 +106,15 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
 
     const { processedMessage } = parseWorkspaceReferences(
       content,
-      workspaceStore.workspaces,
-      workspaceStore.getContextWorkspaces(),
-      workspaceStore.currentWorkspaceId
+      workspaceActions?.getWorkspaces() || [],
+      workspaceActions?.getContextWorkspaces() || [],
+      workspaceActions?.getCurrentWorkspaceId() || null
     )
 
     const systemPrompt = buildSystemPrompt(
-      workspaceStore.workspaces,
-      workspaceStore.getContextWorkspaces(),
-      workspaceStore.currentWorkspaceId
+      workspaceActions?.getWorkspaces() || [],
+      workspaceActions?.getContextWorkspaces() || [],
+      workspaceActions?.getCurrentWorkspaceId() || null
     )
 
     const normalizedMessage = processedMessage
@@ -154,10 +152,14 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
       toolBlockMap: new Map(),
     })
 
-    useToolPanelStore.getState().clearTools()
+    // 使用依赖注入清理工具面板
+    const toolPanelActions = get().getToolPanelActions()
+    toolPanelActions?.clearTools()
 
     try {
-      const config = useConfigStore.getState().config
+      // 使用依赖注入获取配置
+      const configActions = get().getConfigActions()
+      const config = configActions?.getConfig()
       const currentEngine = config?.defaultEngine || 'claude-code'
 
       // 检查是否是 Provider 引擎
@@ -253,7 +255,9 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
   },
 
   sendMessageToFrontendEngine: async (content, workspaceDir, systemPrompt, attachments) => {
-    const config = useConfigStore.getState().config
+    // 使用依赖注入获取配置
+    const configActions = get().getConfigActions()
+    const config = configActions?.getConfig()
 
     if (!config?.openaiProviders || config.openaiProviders.length === 0) {
       set({ error: '未配置 OpenAI Provider，请在设置中添加', isStreaming: false })
@@ -388,8 +392,11 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
     const router = getEventRouter()
     await router.initialize()
 
-    const actualWorkspaceDir = useWorkspaceStore.getState().getCurrentWorkspace()?.path
-    const config = useConfigStore.getState().config
+    // 使用依赖注入获取工作区和配置
+    const workspaceActions = get().getWorkspaceActions()
+    const configActions = get().getConfigActions()
+    const actualWorkspaceDir = workspaceActions?.getCurrentWorkspace()?.path
+    const config = configActions?.getConfig()
     const currentEngine = config?.defaultEngine || 'claude-code'
 
     const normalizedPrompt = prompt
@@ -435,7 +442,9 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
   interruptChat: async () => {
     const { conversationId, providerSessionCache } = get()
 
-    const config = useConfigStore.getState().config
+    // 使用依赖注入获取配置
+    const configActions = get().getConfigActions()
+    const config = configActions?.getConfig()
     const currentEngine = config?.defaultEngine || 'claude-code'
 
     if (currentEngine.startsWith('provider-')) {

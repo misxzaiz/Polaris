@@ -7,37 +7,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { create } from 'zustand'
 
-// Mock toolPanelStore
-vi.mock('../toolPanelStore', () => ({
-  useToolPanelStore: {
-    getState: () => ({
-      addTool: vi.fn(),
-      updateTool: vi.fn(),
-      clearTools: vi.fn(),
-    }),
-  },
-}))
-
-// Mock configStore
-vi.mock('../configStore', () => ({
-  useConfigStore: {
-    getState: () => ({
-      config: {
-        defaultEngine: 'claude-code',
-      },
-    }),
-  },
-}))
-
-// Mock workspaceStore
-vi.mock('../workspaceStore', () => ({
-  useWorkspaceStore: {
-    getState: () => ({
-      getCurrentWorkspace: () => ({ path: '/test/workspace' }),
-    }),
-  },
-}))
-
 // Mock iflowHistoryService
 vi.mock('../../services/iflowHistoryService', () => ({
   getIFlowHistoryService: () => ({
@@ -68,8 +37,35 @@ vi.mock('../../services/tauri', () => ({
 import { createHistorySlice } from './historySlice'
 import type { EventChatState } from './types'
 
+// 创建测试用的依赖
+function createMockDependencies() {
+  return {
+    toolPanelActions: {
+      clearTools: vi.fn(),
+      addTool: vi.fn(),
+      updateTool: vi.fn(),
+    },
+    workspaceActions: {
+      getCurrentWorkspace: vi.fn(() => ({ path: '/test/workspace' })),
+      getWorkspaces: vi.fn(() => []),
+      getContextWorkspaces: vi.fn(() => []),
+      getCurrentWorkspaceId: vi.fn(() => null),
+    },
+    configActions: {
+      getConfig: vi.fn(() => ({
+        defaultEngine: 'claude-code',
+        openaiProviders: [],
+        activeProviderId: null,
+      })),
+    },
+    gitActions: {
+      refreshStatusDebounced: vi.fn(),
+    },
+  }
+}
+
 // 创建测试用的 store
-function createTestStore() {
+function createTestStore(deps = createMockDependencies()) {
   return create<EventChatState>((...args) => ({
     // 最小状态集合用于测试
     messages: [],
@@ -85,6 +81,7 @@ function createTestStore() {
     providerSessionCache: null,
     _eventListenersInitialized: false,
     _eventListenersCleanup: null,
+    _dependencies: deps,
     isInitialized: false,
     isLoadingHistory: false,
     isArchiveExpanded: false,
@@ -96,6 +93,13 @@ function createTestStore() {
     setStreaming: vi.fn(),
     setError: vi.fn(),
 
+    // 依赖注入方法
+    setDependencies: vi.fn(),
+    getToolPanelActions: () => deps?.toolPanelActions,
+    getGitActions: () => deps?.gitActions,
+    getConfigActions: () => deps?.configActions,
+    getWorkspaceActions: () => deps?.workspaceActions,
+
     // 应用 historySlice
     ...createHistorySlice(...args),
   }) as any)
@@ -104,9 +108,13 @@ function createTestStore() {
 describe('historySlice', () => {
   let localStorageMock: Record<string, string> = {}
   let sessionStorageMock: Record<string, string> = {}
+  let mockDeps: ReturnType<typeof createMockDependencies>
 
   beforeEach(() => {
     vi.clearAllMocks()
+
+    // 创建新的 mock 依赖
+    mockDeps = createMockDependencies()
 
     // Mock localStorage
     localStorageMock = {}
@@ -424,7 +432,7 @@ describe('historySlice', () => {
 
   describe('saveToHistory', () => {
     it('应保存会话到 localStorage 历史', () => {
-      const store = createTestStore()
+      const store = createTestStore(mockDeps)
 
       store.setState({
         conversationId: 'conv-123',
@@ -450,7 +458,7 @@ describe('historySlice', () => {
     })
 
     it('应使用自定义标题', () => {
-      const store = createTestStore()
+      const store = createTestStore(mockDeps)
 
       store.setState({
         conversationId: 'conv-123',
@@ -464,7 +472,7 @@ describe('historySlice', () => {
     })
 
     it('无 conversationId 时不应保存', () => {
-      const store = createTestStore()
+      const store = createTestStore(mockDeps)
 
       store.setState({
         conversationId: null,
@@ -477,7 +485,7 @@ describe('historySlice', () => {
     })
 
     it('无消息时不应保存', () => {
-      const store = createTestStore()
+      const store = createTestStore(mockDeps)
 
       store.setState({
         conversationId: 'conv-123',
@@ -490,7 +498,7 @@ describe('historySlice', () => {
     })
 
     it('应移除同 ID 的旧记录并添加到开头', () => {
-      const store = createTestStore()
+      const store = createTestStore(mockDeps)
 
       // 模拟已有历史
       localStorageMock['event_chat_session_history'] = JSON.stringify([
@@ -517,7 +525,7 @@ describe('historySlice', () => {
 
   describe('getUnifiedHistory', () => {
     it('应返回合并后的历史列表', async () => {
-      const store = createTestStore()
+      const store = createTestStore(mockDeps)
 
       // 设置 localStorage 历史
       localStorageMock['event_chat_session_history'] = JSON.stringify([
@@ -533,7 +541,7 @@ describe('historySlice', () => {
     })
 
     it('应按时间戳降序排列', async () => {
-      const store = createTestStore()
+      const store = createTestStore(mockDeps)
 
       localStorageMock['event_chat_session_history'] = JSON.stringify([
         { id: 'old', title: 'Old', timestamp: '2026-03-17T10:00:00Z', messageCount: 1, engineId: 'claude-code' },

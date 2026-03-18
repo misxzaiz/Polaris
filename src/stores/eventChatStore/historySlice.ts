@@ -2,13 +2,15 @@
  * 历史管理 Slice
  *
  * 负责存储持久化、历史会话管理和归档操作
+ *
+ * 已使用依赖注入模式解耦外部 Store：
+ * - configActions: getConfig
+ * - workspaceActions: getCurrentWorkspace
+ * - toolPanelActions: clearTools, addTool
  */
 
 import type { HistorySlice, HistoryEntry, UnifiedHistoryItem } from './types'
 import { MAX_MESSAGES, STORAGE_KEY, STORAGE_VERSION, SESSION_HISTORY_KEY, MAX_SESSION_HISTORY } from './types'
-import { useToolPanelStore } from '../toolPanelStore'
-import { useConfigStore } from '../configStore'
-import { useWorkspaceStore } from '../workspaceStore'
 import { getIFlowHistoryService } from '../../services/iflowHistoryService'
 import { getClaudeCodeHistoryService } from '../../services/claudeCodeHistoryService'
 import { listCodexSessions, getCodexSessionHistory } from '../../services/tauri'
@@ -135,8 +137,9 @@ export const createHistorySlice: HistorySlice = (set, get) => ({
       const state = get()
       if (!state.conversationId || state.messages.length === 0) return
 
-      // 获取当前引擎 ID
-      const config = useConfigStore.getState().config
+      // 使用依赖注入获取当前引擎 ID
+      const configActions = get().getConfigActions()
+      const config = configActions?.getConfig()
       const engineId: 'claude-code' | 'iflow' | 'codex' | `provider-${string}` = (config?.defaultEngine || 'claude-code') as any
 
       // 获取现有历史
@@ -184,8 +187,9 @@ export const createHistorySlice: HistorySlice = (set, get) => ({
 
     const iflowService = getIFlowHistoryService()
     const claudeCodeService = getClaudeCodeHistoryService()
-    const workspaceStore = useWorkspaceStore.getState()
-    const currentWorkspace = workspaceStore.getCurrentWorkspace()
+    // 使用依赖注入获取当前工作区
+    const workspaceActions = get().getWorkspaceActions()
+    const currentWorkspace = workspaceActions?.getCurrentWorkspace()
 
     try {
       // 1. 获取 localStorage 中的会话历史
@@ -314,9 +318,11 @@ export const createHistorySlice: HistorySlice = (set, get) => ({
           const chatMessages = claudeCodeService.convertToChatMessages(messages)
           const toolCalls = claudeCodeService.extractToolCalls(messages)
 
-          useToolPanelStore.getState().clearTools()
+          // 使用依赖注入操作工具面板
+          const toolPanelActions = get().getToolPanelActions()
+          toolPanelActions?.clearTools()
           for (const tool of toolCalls) {
-            useToolPanelStore.getState().addTool(tool)
+            toolPanelActions?.addTool(tool)
           }
 
           set({
@@ -341,9 +347,11 @@ export const createHistorySlice: HistorySlice = (set, get) => ({
           const convertedMessages = iflowService.convertMessagesToFormat(messages)
           const toolCalls = iflowService.extractToolCalls(messages)
 
-          useToolPanelStore.getState().clearTools()
+          // 使用依赖注入操作工具面板
+          const toolPanelActions = get().getToolPanelActions()
+          toolPanelActions?.clearTools()
           for (const tool of toolCalls) {
-            useToolPanelStore.getState().addTool(tool)
+            toolPanelActions?.addTool(tool)
           }
 
           const chatMessages = convertedMessages.map((msg): any => {

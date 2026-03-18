@@ -5,7 +5,7 @@
  */
 
 import type { StateCreator } from 'zustand'
-import type { ChatMessage, ContentBlock, ToolStatus } from '../../types'
+import type { ChatMessage, ContentBlock, ToolStatus, Workspace } from '../../types'
 
 /** 最大保留消息数量 */
 export const MAX_MESSAGES = 500
@@ -130,11 +130,11 @@ export interface ConfigActions {
  */
 export interface WorkspaceActions {
   /** 获取当前工作区 */
-  getCurrentWorkspace: () => { path: string; [key: string]: any } | null
+  getCurrentWorkspace: () => Workspace | null
   /** 获取所有工作区 */
-  getWorkspaces: () => Array<{ path: string; [key: string]: any }>
+  getWorkspaces: () => Workspace[]
   /** 获取上下文工作区 */
-  getContextWorkspaces: () => Array<{ path: string; [key: string]: any }>
+  getContextWorkspaces: () => Workspace[]
   /** 获取当前工作区 ID */
   getCurrentWorkspaceId: () => string | null
 }

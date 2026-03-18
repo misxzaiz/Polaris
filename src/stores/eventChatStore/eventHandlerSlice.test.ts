@@ -8,22 +8,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
 
-// 使用 vi.hoisted 确保变量在 mock 提升前定义
-const mockWorkspaceStoreState = vi.hoisted(() => vi.fn(() => ({
-  getCurrentWorkspace: vi.fn(() => ({ path: '/test/workspace' })),
-  workspaces: [],
-  getContextWorkspaces: vi.fn(() => []),
-  currentWorkspaceId: null,
-})))
-
-const mockConfigStoreState = vi.hoisted(() => vi.fn(() => ({
-  config: {
-    defaultEngine: 'claude-code',
-    openaiProviders: [],
-    activeProviderId: null,
-  },
-})))
-
 // Mock Tauri invoke
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -50,29 +34,6 @@ vi.mock('../../core/engine-bootstrap', () => ({
   listEngines: vi.fn(() => []),
 }))
 
-// Mock toolPanelStore
-vi.mock('../toolPanelStore', () => ({
-  useToolPanelStore: {
-    getState: () => ({
-      clearTools: vi.fn(),
-    }),
-  },
-}))
-
-// Mock workspaceStore
-vi.mock('../workspaceStore', () => ({
-  useWorkspaceStore: {
-    getState: mockWorkspaceStoreState,
-  },
-}))
-
-// Mock configStore
-vi.mock('../configStore', () => ({
-  useConfigStore: {
-    getState: mockConfigStoreState,
-  },
-}))
-
 // Mock workspaceReference
 vi.mock('../../services/workspaceReference', () => ({
   parseWorkspaceReferences: vi.fn((content) => ({ processedMessage: content })),
@@ -88,8 +49,35 @@ vi.mock('./utils', () => ({
 import { createEventHandlerSlice } from './eventHandlerSlice'
 import type { EventChatState } from './types'
 
+// 创建测试用的依赖
+function createMockDependencies() {
+  return {
+    toolPanelActions: {
+      clearTools: vi.fn(),
+      addTool: vi.fn(),
+      updateTool: vi.fn(),
+    },
+    workspaceActions: {
+      getCurrentWorkspace: vi.fn(() => ({ path: '/test/workspace' })),
+      getWorkspaces: vi.fn(() => []),
+      getContextWorkspaces: vi.fn(() => []),
+      getCurrentWorkspaceId: vi.fn(() => null),
+    },
+    configActions: {
+      getConfig: vi.fn(() => ({
+        defaultEngine: 'claude-code',
+        openaiProviders: [],
+        activeProviderId: null,
+      })),
+    },
+    gitActions: {
+      refreshStatusDebounced: vi.fn(),
+    },
+  }
+}
+
 // 创建测试用的 store
-function createTestStore() {
+function createTestStore(deps = createMockDependencies()) {
   return create<EventChatState>((...args) => ({
     // 最小状态集合用于测试
     messages: [],
@@ -105,19 +93,30 @@ function createTestStore() {
     providerSessionCache: null,
     _eventListenersInitialized: false,
     _eventListenersCleanup: null,
+    _dependencies: deps,
     isInitialized: true,
     isLoadingHistory: false,
     isArchiveExpanded: false,
     maxMessages: 500,
 
     // Mock 方法
-    addMessage: vi.fn(),
+    addMessage: vi.fn((msg) => {
+      const store = createTestStore(deps)
+      store.setState((state: any) => ({ messages: [...state.messages, msg] }))
+    }),
     finishMessage: vi.fn(),
     saveToStorage: vi.fn(),
     setConversationId: vi.fn((id) => {
-      const store = createTestStore()
+      const store = createTestStore(deps)
       store.setState({ conversationId: id })
     }),
+
+    // 依赖注入方法
+    setDependencies: vi.fn(),
+    getToolPanelActions: () => deps?.toolPanelActions,
+    getGitActions: () => deps?.gitActions,
+    getConfigActions: () => deps?.configActions,
+    getWorkspaceActions: () => deps?.workspaceActions,
 
     // 应用 eventHandlerSlice
     ...createEventHandlerSlice(...args),
@@ -125,24 +124,13 @@ function createTestStore() {
 }
 
 describe('eventHandlerSlice', () => {
+  let mockDeps: ReturnType<typeof createMockDependencies>
+
   beforeEach(() => {
     vi.clearAllMocks()
     
-    // 重置 mock 返回默认值
-    mockWorkspaceStoreState.mockReturnValue({
-      getCurrentWorkspace: () => ({ path: '/test/workspace' }),
-      workspaces: [],
-      getContextWorkspaces: () => [],
-      currentWorkspaceId: null,
-    } as any)
-    
-    mockConfigStoreState.mockReturnValue({
-      config: {
-        defaultEngine: 'claude-code',
-        openaiProviders: [],
-        activeProviderId: null,
-      },
-    })
+    // 创建新的 mock 依赖
+    mockDeps = createMockDependencies()
     
     // Mock sessionStorage
     vi.stubGlobal('sessionStorage', {
@@ -297,15 +285,9 @@ describe('eventHandlerSlice', () => {
   // ============================================================
   describe('sendMessage', () => {
     it('无工作区时应设置错误', async () => {
-      const store = createTestStore()
-
       // Mock 无工作区
-      mockWorkspaceStoreState.mockReturnValue({
-        getCurrentWorkspace: () => null,
-        workspaces: [],
-        getContextWorkspaces: () => [],
-        currentWorkspaceId: null,
-      } as any)
+      mockDeps.workspaceActions.getCurrentWorkspace.mockReturnValue(null)
+      const store = createTestStore(mockDeps)
 
       await store.getState().sendMessage('Hello')
 
@@ -313,7 +295,7 @@ describe('eventHandlerSlice', () => {
     })
 
     it('应添加用户消息到列表', async () => {
-      const store = createTestStore()
+      const store = createTestStore(mockDeps)
       const addMessageSpy = vi.spyOn(store.getState(), 'addMessage')
 
       // Mock start_chat invoke
@@ -328,7 +310,7 @@ describe('eventHandlerSlice', () => {
     })
 
     it('新会话应调用 start_chat', async () => {
-      const store = createTestStore()
+      const store = createTestStore(mockDeps)
       store.setState({ conversationId: null })
 
       vi.mocked(invoke).mockResolvedValueOnce('new-session-id')
@@ -348,7 +330,7 @@ describe('eventHandlerSlice', () => {
     })
 
     it('已有会话应调用 continue_chat', async () => {
-      const store = createTestStore()
+      const store = createTestStore(mockDeps)
       store.setState({ conversationId: 'existing-session-id' })
 
       vi.mocked(invoke).mockResolvedValueOnce(undefined)
@@ -365,7 +347,7 @@ describe('eventHandlerSlice', () => {
     })
 
     it('发送消息时应设置 isStreaming 为 true', async () => {
-      const store = createTestStore()
+      const store = createTestStore(mockDeps)
       vi.mocked(invoke).mockResolvedValueOnce('new-session-id')
 
       await store.getState().sendMessage('Hello')
@@ -374,7 +356,7 @@ describe('eventHandlerSlice', () => {
     })
 
     it('发送失败时应设置错误', async () => {
-      const store = createTestStore()
+      const store = createTestStore(mockDeps)
       vi.mocked(invoke).mockRejectedValueOnce(new Error('Network error'))
 
       await store.getState().sendMessage('Hello')
@@ -385,7 +367,7 @@ describe('eventHandlerSlice', () => {
     })
 
     it('发送消息时应清空之前的错误', async () => {
-      const store = createTestStore()
+      const store = createTestStore(mockDeps)
       store.setState({ error: 'Previous error' })
       vi.mocked(invoke).mockResolvedValueOnce('new-session-id')
 
@@ -400,7 +382,7 @@ describe('eventHandlerSlice', () => {
   // ============================================================
   describe('continueChat', () => {
     it('无会话 ID 应设置错误', async () => {
-      const store = createTestStore()
+      const store = createTestStore(mockDeps)
       store.setState({ conversationId: null })
 
       await store.getState().continueChat()
@@ -409,7 +391,7 @@ describe('eventHandlerSlice', () => {
     })
 
     it('有会话 ID 应调用 continue_chat', async () => {
-      const store = createTestStore()
+      const store = createTestStore(mockDeps)
       store.setState({ conversationId: 'test-session-id' })
 
       vi.mocked(invoke).mockResolvedValueOnce(undefined)
@@ -426,7 +408,7 @@ describe('eventHandlerSlice', () => {
     })
 
     it('continueChat 失败应设置错误', async () => {
-      const store = createTestStore()
+      const store = createTestStore(mockDeps)
       store.setState({ conversationId: 'test-session-id' })
 
       vi.mocked(invoke).mockRejectedValueOnce(new Error('Continue failed'))
@@ -444,7 +426,7 @@ describe('eventHandlerSlice', () => {
   // ============================================================
   describe('interruptChat', () => {
     it('应调用 interrupt_chat', async () => {
-      const store = createTestStore()
+      const store = createTestStore(mockDeps)
       store.setState({ conversationId: 'test-session-id' })
 
       vi.mocked(invoke).mockResolvedValueOnce(undefined)
@@ -460,7 +442,7 @@ describe('eventHandlerSlice', () => {
     })
 
     it('中断后应设置 isStreaming 为 false', async () => {
-      const store = createTestStore()
+      const store = createTestStore(mockDeps)
       store.setState({ conversationId: 'test-session-id', isStreaming: true })
 
       vi.mocked(invoke).mockResolvedValueOnce(undefined)
@@ -471,7 +453,7 @@ describe('eventHandlerSlice', () => {
     })
 
     it('无会话 ID 时不应调用 interrupt_chat', async () => {
-      const store = createTestStore()
+      const store = createTestStore(mockDeps)
       store.setState({ conversationId: null })
 
       await store.getState().interruptChat()
@@ -485,16 +467,13 @@ describe('eventHandlerSlice', () => {
   // ============================================================
   describe('sendMessageToFrontendEngine', () => {
     it('未配置 Provider 应设置错误', async () => {
-      const store = createTestStore()
-
       // Mock 无 Provider 配置
-      mockConfigStoreState.mockReturnValue({
-        config: {
-          defaultEngine: 'provider-test',
-          openaiProviders: [],
-          activeProviderId: null,
-        },
+      mockDeps.configActions.getConfig.mockReturnValue({
+        defaultEngine: 'provider-test',
+        openaiProviders: [],
+        activeProviderId: null,
       })
+      const store = createTestStore(mockDeps)
 
       await store.getState().sendMessageToFrontendEngine('Hello')
 
@@ -502,16 +481,13 @@ describe('eventHandlerSlice', () => {
     })
 
     it('无启用 Provider 应设置错误', async () => {
-      const store = createTestStore()
-
       // Mock 有配置但未启用
-      mockConfigStoreState.mockReturnValue({
-        config: {
-          defaultEngine: 'provider-test',
-          openaiProviders: [{ id: 'test', enabled: false, name: 'Test' }],
-          activeProviderId: null,
-        },
+      mockDeps.configActions.getConfig.mockReturnValue({
+        defaultEngine: 'provider-test',
+        openaiProviders: [{ id: 'test', enabled: false, name: 'Test' }],
+        activeProviderId: null,
       })
+      const store = createTestStore(mockDeps)
 
       await store.getState().sendMessageToFrontendEngine('Hello')
 
