@@ -21,6 +21,7 @@ const DeveloperPanel = lazy(() => import('./components/Developer/DeveloperPanel'
 const CreateWorkspaceModal = lazy(() => import('./components/Workspace/CreateWorkspaceModal').then(m => ({ default: m.CreateWorkspaceModal })));
 const SessionHistoryPanel = lazy(() => import('./components/Chat/SessionHistoryPanel').then(m => ({ default: m.SessionHistoryPanel })));
 import { useConfigStore, useEventChatStore, useViewStore, useWorkspaceStore, useTabStore, useIntegrationStore, useToolPanelStore, useGitStore } from './stores';
+import { useWindowSize } from './hooks';
 import * as tauri from './services/tauri';
 import { bootstrapEngines, bootstrapOpenAIProviders } from './core/engine-bootstrap';
 import { bootstrapAgents } from './core/agent-bootstrap';
@@ -78,13 +79,33 @@ function App() {
     leftPanelType,
     rightPanelCollapsed,
     toggleRightPanel,
+    // 小屏模式
+    compactMode,
+    updateCompactMode,
   } = useViewStore();
   const { openDiffTab, tabs } = useTabStore();
   const hasOpenTabs = tabs.length > 0;
 
+  // 窗口尺寸监听 - 小屏模式检测
+  const { width: windowWidth, height: windowHeight, isCompact } = useWindowSize({ compactThreshold: 500 });
+
+  // 同步小屏模式状态到 store
+  useEffect(() => {
+    if (compactMode.isCompactMode !== isCompact ||
+        compactMode.windowWidth !== windowWidth ||
+        compactMode.windowHeight !== windowHeight) {
+      updateCompactMode({
+        isCompactMode: isCompact,
+        windowWidth,
+        windowHeight,
+      });
+    }
+  }, [isCompact, windowWidth, windowHeight, compactMode, updateCompactMode]);
+
   // 计算各面板的显示状态
-  const hasLeftPanel = leftPanelType !== 'none';
-  const hasCenterStage = hasOpenTabs;
+  // 小屏模式下隐藏左侧面板和中间编辑区
+  const hasLeftPanel = !isCompact && leftPanelType !== 'none';
+  const hasCenterStage = !isCompact && hasOpenTabs;
   const hasRightPanel = !rightPanelCollapsed;
 
   // 计算各面板是否需要填充剩余空间
