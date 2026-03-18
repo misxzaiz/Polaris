@@ -14,6 +14,9 @@ import { createLogger } from '../../utils/logger';
 
 const log = createLogger('TopMenuBar');
 
+// 检测是否在 Tauri 环境中运行
+const isTauriEnv = typeof window !== 'undefined' && '__TAURI__' in window;
+
 interface TopMenuBarProps {
   onNewConversation: () => void;
   onCreateWorkspace: () => void;
@@ -39,6 +42,8 @@ export function TopMenuBar({ onNewConversation, onCreateWorkspace, onToggleRight
 
   // 同步置顶状态
   useEffect(() => {
+    if (!isTauriEnv) return;
+
     const syncOnTopState = async () => {
       try {
         const onTop = await invoke<boolean>('is_always_on_top');
@@ -51,10 +56,16 @@ export function TopMenuBar({ onNewConversation, onCreateWorkspace, onToggleRight
   }, []);
 
   useEffect(() => {
+    if (!isTauriEnv) return;
+
     const checkMaximized = async () => {
-      const window = getCurrentWindow();
-      const maximized = await window.isMaximized();
-      setIsMaximized(maximized);
+      try {
+        const window = getCurrentWindow();
+        const maximized = await window.isMaximized();
+        setIsMaximized(maximized);
+      } catch (error) {
+        log.warn('Failed to check maximized state:', { error: String(error) });
+      }
     };
 
     checkMaximized();
