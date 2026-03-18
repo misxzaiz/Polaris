@@ -4,7 +4,8 @@
 
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Minus, Square, X, Clock, Download, PanelRight } from 'lucide-react';
+import { Minus, Square, X, Clock, Download, PanelRight, Pin } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 import { useWorkspaceStore, useViewStore, useEventChatStore } from '../../stores';
 import * as tauri from '../../services/tauri';
 import { exportToMarkdown, generateFileName } from '../../services/chatExport';
@@ -32,6 +33,7 @@ export function TopMenuBar({ onNewConversation, onCreateWorkspace, onToggleRight
   const [showNewChatConfirm, setShowNewChatConfirm] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
+  const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
   const { clearMessages, messages } = useEventChatStore();
 
   const currentWorkspace = getCurrentWorkspace();
@@ -61,6 +63,21 @@ export function TopMenuBar({ onNewConversation, onCreateWorkspace, onToggleRight
     return () => {
       unlisten.then(fn => fn());
     };
+  }, []);
+
+  // 同步置顶状态
+  useEffect(() => {
+    if (!isTauriEnv) return;
+
+    const syncOnTopState = async () => {
+      try {
+        const onTop = await invoke<boolean>('is_always_on_top');
+        setIsAlwaysOnTop(onTop);
+      } catch (error) {
+        log.warn('Failed to get always on top state:', { error: String(error) });
+      }
+    };
+    syncOnTopState();
   }, []);
 
   const handleExportChat = async () => {
@@ -99,6 +116,18 @@ export function TopMenuBar({ onNewConversation, onCreateWorkspace, onToggleRight
     setShowNewChatConfirm(false);
   };
 
+  // 切换窗口置顶状态
+  const handleToggleAlwaysOnTop = async () => {
+    try {
+      const newOnTop = !isAlwaysOnTop;
+      await invoke('set_always_on_top', { alwaysOnTop: newOnTop });
+      setIsAlwaysOnTop(newOnTop);
+      log.info(`窗口置顶: ${newOnTop}`);
+    } catch (error) {
+      log.error('切换置顶失败', error instanceof Error ? error : new Error(String(error)));
+    }
+  };
+
   return (
     <div className="flex items-center h-10 bg-background-elevated border-b border-border shrink-0">
       {/* 左侧:Logo/应用名称 - 小屏模式下更紧凑 */}
@@ -114,34 +143,54 @@ export function TopMenuBar({ onNewConversation, onCreateWorkspace, onToggleRight
 
       {/* 右侧:菜单 + 窗口控制 - 小屏模式下简化 */}
       <div className="flex items-center">
-        {/* 小屏模式：只显示窗口控制按钮 */}
+        {/* 小屏模式：显示置顶按钮和窗口控制按钮 */}
         {isCompactMode ? (
-          <div className="flex items-center">
+          <>
+            {/* 窗口置顶按钮 */}
             <button
-              onClick={() => tauri.minimizeWindow()}
-              className="px-2 py-2 hover:bg-background-hover transition-colors text-text-secondary hover:text-text-primary"
-              title={t('window.minimize')}
+              onClick={handleToggleAlwaysOnTop}
+              className={`p-1.5 rounded-md transition-colors ${
+                isAlwaysOnTop
+                  ? 'text-primary bg-primary/10 hover:bg-primary/20'
+                  : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
+              }`}
+              title={isAlwaysOnTop ? t('window.alwaysOnTop') : t('window.alwaysOnTopHint')}
               data-tauri-drag-region={false}
             >
-              <Minus className="w-4 h-4" />
+              <Pin className="w-4 h-4" />
             </button>
-            <button
-              onClick={() => tauri.toggleMaximizeWindow()}
-              className="px-2 py-2 hover:bg-background-hover transition-colors text-text-secondary hover:text-text-primary"
-              title={isMaximized ? t('window.restore') : t('window.maximize')}
-              data-tauri-drag-region={false}
-            >
-              <Square className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => tauri.closeWindow()}
-              className="px-2 py-2 hover:bg-red-500 hover:text-white transition-colors text-text-secondary"
-              title={t('window.close')}
-              data-tauri-drag-region={false}
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+
+            {/* 分隔线 */}
+            <div data-tauri-drag-region className="w-px h-4 bg-border-subtle mx-1" />
+
+            {/* 窗口控制 */}
+            <div className="flex items-center">
+              <button
+                onClick={() => tauri.minimizeWindow()}
+                className="px-2 py-2 hover:bg-background-hover transition-colors text-text-secondary hover:text-text-primary"
+                title={t('window.minimize')}
+                data-tauri-drag-region={false}
+              >
+                <Minus className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => tauri.toggleMaximizeWindow()}
+                className="px-2 py-2 hover:bg-background-hover transition-colors text-text-secondary hover:text-text-primary"
+                title={isMaximized ? t('window.restore') : t('window.maximize')}
+                data-tauri-drag-region={false}
+              >
+                <Square className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => tauri.closeWindow()}
+                className="px-2 py-2 hover:bg-red-500 hover:text-white transition-colors text-text-secondary"
+                title={t('window.close')}
+                data-tauri-drag-region={false}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </>
         ) : (
           <>
             {/* 正常模式：完整菜单 */}
@@ -237,6 +286,20 @@ export function TopMenuBar({ onNewConversation, onCreateWorkspace, onToggleRight
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
               </svg>
+            </button>
+
+            {/* 窗口置顶按钮 */}
+            <button
+              onClick={handleToggleAlwaysOnTop}
+              className={`p-1.5 rounded-md transition-colors ${
+                isAlwaysOnTop
+                  ? 'text-primary bg-primary/10 hover:bg-primary/20'
+                  : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
+              }`}
+              title={isAlwaysOnTop ? t('window.alwaysOnTop') : t('window.alwaysOnTopHint')}
+              data-tauri-drag-region={false}
+            >
+              <Pin className="w-4 h-4" />
             </button>
 
             {/* 分隔线 */}
