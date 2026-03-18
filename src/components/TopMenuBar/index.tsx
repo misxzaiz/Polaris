@@ -4,8 +4,9 @@
 
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Minus, Square, X, Clock, Download, PanelRight } from 'lucide-react';
-import { useWorkspaceStore, useViewStore, useEventChatStore } from '../../stores';
+import { Minus, Square, X, Clock, Download, PanelRight, Pin } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
+import { useWorkspaceStore, useViewStore, useEventChatStore, useConfigStore } from '../../stores';
 import * as tauri from '../../services/tauri';
 import { exportToMarkdown, generateFileName } from '../../services/chatExport';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -24,15 +25,30 @@ export function TopMenuBar({ onNewConversation, onCreateWorkspace, onToggleRight
   const { t } = useTranslation('common');
   const { getCurrentWorkspace } = useWorkspaceStore();
   const { toggleSessionHistory } = useViewStore();
+  const { config, updateConfig } = useConfigStore();
   const [showWorkspaceMenu, setShowWorkspaceMenu] = useState(false);
   const [showNewChatConfirm, setShowNewChatConfirm] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
+  const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
   const { clearMessages, messages } = useEventChatStore();
 
   const currentWorkspace = getCurrentWorkspace();
 
   const contextCount = useWorkspaceStore(state => state.contextWorkspaceIds.length);
+
+  // 同步置顶状态
+  useEffect(() => {
+    const syncOnTopState = async () => {
+      try {
+        const onTop = await invoke<boolean>('is_always_on_top');
+        setIsAlwaysOnTop(onTop);
+      } catch (error) {
+        log.warn('Failed to get always on top state:', { error: String(error) });
+      }
+    };
+    syncOnTopState();
+  }, []);
 
   useEffect(() => {
     const checkMaximized = async () => {
@@ -87,6 +103,29 @@ export function TopMenuBar({ onNewConversation, onCreateWorkspace, onToggleRight
     clearMessages();
     onNewConversation();
     setShowNewChatConfirm(false);
+  };
+
+  // 切换窗口置顶状态
+  const handleToggleAlwaysOnTop = async () => {
+    try {
+      const newOnTop = !isAlwaysOnTop;
+      await invoke('set_always_on_top', { alwaysOnTop: newOnTop });
+      setIsAlwaysOnTop(newOnTop);
+
+      // 更新配置
+      if (config) {
+        await updateConfig({
+          ...config,
+          window: {
+            alwaysOnTop: newOnTop,
+            opacity: config.window?.opacity ?? 1.0,
+          },
+        });
+      }
+      log.info(`窗口置顶: ${newOnTop}`);
+    } catch (error) {
+      log.error('切换置顶失败', error instanceof Error ? error : new Error(String(error)));
+    }
   };
 
   return (
@@ -196,6 +235,20 @@ export function TopMenuBar({ onNewConversation, onCreateWorkspace, onToggleRight
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
           </svg>
+        </button>
+
+        {/* 窗口置顶按钮 */}
+        <button
+          onClick={handleToggleAlwaysOnTop}
+          className={`p-1.5 rounded-md transition-colors ${
+            isAlwaysOnTop
+              ? 'text-primary bg-primary/10 hover:bg-primary/20'
+              : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
+          }`}
+          title={isAlwaysOnTop ? t('window.alwaysOnTop') : t('window.alwaysOnTopHint')}
+          data-tauri-drag-region={false}
+        >
+          <Pin className="w-4 h-4" />
         </button>
 
         {/* 分隔线 */}

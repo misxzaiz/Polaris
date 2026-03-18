@@ -75,7 +75,9 @@
     "minimize": "Minimize",
     "maximize": "Maximize",
     "restore": "Restore",
-    "close": "Close"
+    "close": "Close",
+    "alwaysOnTop": "Always on Top",
+    "alwaysOnTopHint": "Keep window always on top"
   },
   "workspace": {
     "removeFromContext": "Remove from context",
