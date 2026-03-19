@@ -55,3 +55,20 @@ export {
   type INodeSelector,
   type NodeSelectionStrategy,
 } from './executor';
+
+// 调度器
+export {
+  // 调度器实现
+  PriorityDispatcher,
+  DefaultWorkflowSelector,
+
+  // 类型
+  type DispatcherState,
+  type WorkflowEntry,
+  type DispatchStrategy,
+  type IWorkflowSelector,
+  type IDispatcher,
+  type PriorityDispatcherConfig,
+  type DispatchResult,
+  type DispatcherRunResult,
+} from './dispatcher';

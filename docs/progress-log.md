@@ -108,8 +108,60 @@
 
 ---
 
+## Round 3 - 2026-03-20
+
+### 完成内容
+1. **Priority Dispatcher 实现** (`src/vnext/dispatcher/index.ts`)
+   - `IDispatcher` 接口定义
+   - `PriorityDispatcher` 优先级调度器
+   - `DefaultWorkflowSelector` 默认 Workflow 选择器
+   - 支持四种调度策略: priority/fifo/round_robin/shortest_first
+   - 并发执行控制 (maxConcurrency)
+   - 暂停/恢复/停止控制
+
+2. **调度器类型定义** (`src/vnext/dispatcher/types.ts`)
+   - `DispatcherState` 调度器状态
+   - `WorkflowEntry` 队列条目
+   - `DispatchStrategy` 调度策略
+   - `IWorkflowSelector` Workflow 选择器接口
+   - `PriorityDispatcherConfig` 配置项
+
+3. **核心功能**
+   - Workflow 队列管理: enqueue/dequeue/updatePriority
+   - 优先级调度: 按优先级选择执行 Workflow
+   - 并发控制: 限制同时执行的 Workflow 数量
+   - 执行器集成: 自动创建和管理 ContinuousExecutor
+
+4. **单元测试** (30 个新增，总计 187 个)
+   - DefaultWorkflowSelector 测试 (10 个)
+   - PriorityDispatcher 测试 (15 个)
+   - 集成测试 (5 个)
+
+### 修改文件
+- 新增: `src/vnext/dispatcher/index.ts`
+- 新增: `src/vnext/dispatcher/types.ts`
+- 新增: `src/vnext/__tests__/dispatcher.test.ts`
+- 更新: `src/vnext/index.ts` (导出调度器模块)
+
+### 技术决策
+1. 调度器与执行器分离: PriorityDispatcher 管理 Workflow 调度，ContinuousExecutor 管理节点执行
+2. 支持自定义执行器工厂函数，便于扩展不同的执行策略
+3. Workflow 选择器采用策略模式，支持自定义选择算法
+4. 异步执行 Workflow，不阻塞调度循环
+
+### 风险
+- 暂无
+
+### 下一轮建议
+- 实现 Node subscribe / emit 实现
+- 实现 Pipeline 推进机制
+- 实现 Execution Record 存储
+
+---
+
 ## 进度评分
 
 Round 1: +2% (新增稳定功能)
 Round 2: +2% (新增稳定功能)
-当前总进度: 4%
+Round 3: +2% (新增稳定功能)
+当前总进度: 6%
