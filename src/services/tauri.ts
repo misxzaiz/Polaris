@@ -123,7 +123,10 @@ export async function healthCheck(): Promise<HealthStatus> {
  * @deprecated 使用 eventChatStore.sendMessage 代替
  */
 export async function startChat(message: string, workDir?: string): Promise<string> {
-  return invoke<string>('start_chat', { message, workDir });
+  return invoke<string>('start_chat', {
+    message,
+    options: { workDir },
+  });
 }
 
 /**
@@ -131,7 +134,11 @@ export async function startChat(message: string, workDir?: string): Promise<stri
  * @deprecated 使用 eventChatStore.continueChat 代替
  */
 export async function continueChat(sessionId: string, message: string, workDir?: string): Promise<void> {
-  return invoke('continue_chat', { sessionId, message, workDir });
+  return invoke('continue_chat', {
+    sessionId,
+    message,
+    options: { workDir },
+  });
 }
 
 /**

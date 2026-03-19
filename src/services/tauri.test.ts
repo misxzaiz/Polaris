@@ -1071,7 +1071,7 @@ describe('废弃命令（向后兼容）', () => {
 
       const result = await startChat('hello', '/workspace');
 
-      expect(mockInvoke).toHaveBeenCalledWith('start_chat', { message: 'hello', workDir: '/workspace' });
+      expect(mockInvoke).toHaveBeenCalledWith('start_chat', { message: 'hello', options: { workDir: '/workspace' } });
       expect(result).toBe('session-1');
     });
 
@@ -1083,7 +1083,7 @@ describe('废弃命令（向后兼容）', () => {
       expect(mockInvoke).toHaveBeenCalledWith('continue_chat', {
         sessionId: 'session-1',
         message: 'continue',
-        workDir: undefined,
+        options: { workDir: undefined },
       });
     });
 

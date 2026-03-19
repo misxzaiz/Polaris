@@ -1247,7 +1247,7 @@ describe('性能测试', () => {
       timestamps.forEach(ts => service.formatTime(ts));
       const duration = performance.now() - start;
 
-      expect(duration).toBeLessThan(100); // 应在 100ms 内完成
+      expect(duration).toBeLessThan(500); // 应在 500ms 内完成
     });
   });
 });

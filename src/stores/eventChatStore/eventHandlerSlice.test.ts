@@ -321,10 +321,12 @@ describe('eventHandlerSlice', () => {
         'start_chat',
         expect.objectContaining({
           message: expect.any(String),
-          systemPrompt: expect.any(String),
-          workDir: expect.any(String),
-          contextId: 'main',
-          engineId: expect.any(String),
+          options: expect.objectContaining({
+            systemPrompt: expect.any(String),
+            workDir: expect.any(String),
+            contextId: 'main',
+            engineId: expect.any(String),
+          }),
         })
       )
     })
@@ -342,6 +344,7 @@ describe('eventHandlerSlice', () => {
         expect.objectContaining({
           sessionId: 'existing-session-id',
           message: expect.any(String),
+          options: expect.any(Object),
         })
       )
     })

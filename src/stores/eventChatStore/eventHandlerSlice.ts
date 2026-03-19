@@ -226,22 +226,26 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
           await invoke('continue_chat', {
             sessionId: conversationId,
             message: messageWithAttachments,
-            systemPrompt: normalizedSystemPrompt,
-            workDir: actualWorkspaceDir,
-            contextId: 'main',
-            engineId: currentEngine,
-            attachments: attachmentsForBackend,
-            cliArgs,
+            options: {
+              systemPrompt: normalizedSystemPrompt,
+              workDir: actualWorkspaceDir,
+              contextId: 'main',
+              engineId: currentEngine,
+              attachments: attachmentsForBackend,
+              cliArgs,
+            },
           })
         } else {
           const newSessionId = await invoke<string>('start_chat', {
             message: messageWithAttachments,
-            systemPrompt: normalizedSystemPrompt,
-            workDir: actualWorkspaceDir,
-            contextId: 'main',
-            engineId: currentEngine,
-            attachments: attachmentsForBackend,
-            cliArgs,
+            options: {
+              systemPrompt: normalizedSystemPrompt,
+              workDir: actualWorkspaceDir,
+              contextId: 'main',
+              engineId: currentEngine,
+              attachments: attachmentsForBackend,
+              cliArgs,
+            },
           })
           set({ conversationId: newSessionId })
         }
@@ -427,9 +431,11 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
       await invoke('continue_chat', {
         sessionId: conversationId,
         message: normalizedPrompt,
-        workDir: actualWorkspaceDir,
-        contextId: 'main',
-        engineId: currentEngine,
+        options: {
+          workDir: actualWorkspaceDir,
+          contextId: 'main',
+          engineId: currentEngine,
+        },
       })
     } catch (e) {
       const appError = toAppError(e, {
