@@ -302,3 +302,75 @@ export {
   type NodeExecutionResult,
   type WorkflowRegistration,
 } from './runtime';
+
+// Plugin System
+export {
+  // Plugin Manager
+  PluginManager,
+
+  // Built-in Plugins
+  loggingPlugin,
+  metricsPlugin,
+  rateLimitPlugin,
+  cachingPlugin,
+  getBuiltinPlugins,
+
+  // Types
+  BUILTIN_PLUGINS,
+  type Plugin,
+  type PluginMeta,
+  type PluginHooks,
+  type PluginHook,
+  type PluginContext,
+  type PluginLogger,
+  type PluginPriority,
+  type PluginState,
+  type PluginStatus,
+  type HookResult,
+  type PluginManagerConfig,
+  type PluginConfigSchema,
+  type ConfigField,
+
+  // Hook Payloads
+  type BeforeWorkflowStartPayload,
+  type AfterWorkflowCompletePayload,
+  type BeforeNodeExecutePayload,
+  type AfterNodeExecutePayload,
+  type WorkflowErrorPayload,
+  type NodeErrorPayload,
+  type EventEmitPayload,
+  type EventReceivePayload,
+  type MemorySavePayload,
+  type MemoryLoadPayload,
+  type PersistPayload,
+  type RestorePayload,
+
+  // Metrics Types
+  type MetricsData,
+  type RateLimitConfig,
+  type CacheEntry,
+} from './plugin';
+
+// Benchmark
+export {
+  // Benchmark runners
+  runBenchmark,
+  runAllBenchmarks,
+  BenchmarkSuite,
+  createStateMachineBenchmarkSuite,
+  createEventBusBenchmarkSuite,
+  createNodeSelectionBenchmarkSuite,
+  createExecutionStoreBenchmarkSuite,
+  createMemoryBenchmarkSuite,
+
+  // Helpers
+  createBenchmarkWorkflow,
+  createBenchmarkNodes,
+  formatBenchmarkResult,
+  formatSuiteResult,
+
+  // Types
+  type BenchmarkResult,
+  type BenchmarkSuiteResult,
+  type BenchmarkConfig,
+} from './benchmark';
