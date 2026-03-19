@@ -868,3 +868,5 @@ export function resetRuntimeMonitor(): void {
 }
 
 export * from './types';
+export * from './visualization-types';
+export * from './visualization';
