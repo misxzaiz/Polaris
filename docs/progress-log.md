@@ -56,7 +56,60 @@
 
 ---
 
+## Round 2 - 2026-03-20
+
+### 完成内容
+1. **Continuous Executor 实现** (`src/vnext/executor/index.ts`)
+   - `IExecutor` 接口定义
+   - `ContinuousExecutor` 连续执行引擎
+   - `DefaultNodeSelector` 默认节点选择器
+   - 支持三种节点选择策略: priority/sequential/ready_first
+   - 暂停/恢复/停止控制
+   - 执行循环核心逻辑
+
+2. **执行器类型定义** (`src/vnext/executor/types.ts`)
+   - `ExecutorState` 执行器状态
+   - `ExecutionContext` 执行上下文
+   - `ExecutionResult` 单次执行结果
+   - `ExecutorRunResult` 执行循环结果
+   - `INodeSelector` 节点选择器接口
+   - `ContinuousExecutorConfig` 配置项
+
+3. **核心功能**
+   - 节点执行: 自动将 IDLE 节点激活为 READY 后执行
+   - Pipeline 推进: 依赖节点完成后自动触发下游节点
+   - 事件触发: 执行后自动将事件添加到 pendingEvents
+   - 防无限循环: 最大迭代次数保护
+
+4. **单元测试** (87 个新增，总计 157 个)
+   - DefaultNodeSelector 测试 (10 个)
+   - ContinuousExecutor 测试 (17 个)
+   - 集成测试 (2 个)
+
+### 修改文件
+- 新增: `src/vnext/executor/index.ts`
+- 新增: `src/vnext/executor/types.ts`
+- 新增: `src/vnext/__tests__/executor.test.ts`
+- 更新: `src/vnext/index.ts` (导出执行器模块)
+
+### 技术决策
+1. 节点选择器支持策略模式，可扩展自定义选择逻辑
+2. 执行器采用模板方法模式，`doExecute()` 可由子类覆盖
+3. IDLE 节点在执行时自动激活为 READY，简化使用
+4. 执行结果事件自动同步到 context.pendingEvents
+
+### 风险
+- 暂无
+
+### 下一轮建议
+- 实现 Priority Dispatcher（优先级调度器）
+- 实现 Workflow 持久化
+- 实现 AI Session Manager 抽象
+
+---
+
 ## 进度评分
 
-本轮完成度: +2% (新增稳定功能)
-当前总进度: 2%
+Round 1: +2% (新增稳定功能)
+Round 2: +2% (新增稳定功能)
+当前总进度: 4%

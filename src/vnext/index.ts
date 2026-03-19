@@ -38,3 +38,20 @@ export {
   resetEventBus,
   type EventBusConfig,
 } from './event-bus';
+
+// 执行器
+export {
+  // 执行器实现
+  ContinuousExecutor,
+  DefaultNodeSelector,
+
+  // 类型
+  type ExecutorState,
+  type ExecutionContext,
+  type ExecutionResult,
+  type ExecutorRunResult,
+  type IExecutor,
+  type ContinuousExecutorConfig,
+  type INodeSelector,
+  type NodeSelectionStrategy,
+} from './executor';
