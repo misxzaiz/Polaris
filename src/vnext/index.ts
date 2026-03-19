@@ -280,3 +280,25 @@ export {
   type RecoveryListener,
   type RecoveryResult,
 } from './recovery';
+
+// Workflow Runtime
+export {
+  // 运行时实现
+  WorkflowRuntime,
+  getWorkflowRuntime,
+  resetWorkflowRuntime,
+
+  // 类型
+  DEFAULT_RUNTIME_CONFIG,
+  type WorkflowRuntimeConfig,
+  type RuntimeState,
+  type WorkflowRunStatus,
+  type RuntimeEvent,
+  type RuntimeEventListener,
+  type RuntimeEventType,
+  type WorkflowRunResult,
+  type NodeExecutorFn,
+  type NodeExecutionContext,
+  type NodeExecutionResult,
+  type WorkflowRegistration,
+} from './runtime';
