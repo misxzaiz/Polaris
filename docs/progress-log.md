@@ -708,7 +708,134 @@ Round 11: +1% (React 可视化组件)
 - 暂无
 
 ### 下一轮建议
-- 添加 CLI 工具支持
+- ~~添加 CLI 工具支持~~ ✅ 已完成
 - 完善 API 文档
 - 添加更多使用示例
 - 考虑添加 Web Components 版本
+
+---
+
+## Round 12 - 2026-03-20 (EVOLVING Phase - CLI Tool)
+
+### 完成内容
+
+#### 1. CLI 工具模块 (`src/vnext/cli/`)
+
+- **types.ts** - CLI 类型定义
+  - CLICommand - 命令类型
+  - CLIOptions - 命令选项
+  - CLIResult - 命令结果
+  - WorkflowTemplate - 工作流模板
+  - CLIContext - CLI 上下文
+  - CLIConfig - CLI 配置
+  - BUILTIN_TEMPLATES - 内置模板 (dev-pipeline, feature-flow, test-suite)
+
+- **index.ts** - CLI 实现
+  - CLITool - CLI 工具类
+  - createCLITool - 工厂函数
+  - 14 个命令处理器:
+    - create: 创建新工作流
+    - list: 列出所有工作流
+    - show: 显示工作流详情
+    - start: 启动工作流
+    - pause: 暂停工作流
+    - resume: 恢复工作流
+    - stop: 停止工作流
+    - delete: 删除工作流
+    - run: 执行工作流节点
+    - status: 显示运行状态
+    - monitor: 监控面板
+    - template: 模板管理
+    - help: 帮助信息
+    - version: 版本信息
+  - 格式化工具:
+    - formatTable: 表格格式化
+    - formatJSON: JSON 格式化
+    - formatYAML: YAML 格式化
+    - formatStatusBadge: 状态徽章
+    - formatDuration: 时长格式化
+    - formatRelativeTime: 相对时间格式化
+
+### 修改文件
+- 新增: `src/vnext/cli/types.ts`
+- 新增: `src/vnext/cli/index.ts`
+- 新增: `src/vnext/__tests__/cli.test.ts`
+- 更新: `src/vnext/index.ts` (导出 CLI 模块)
+
+### 单元测试
+- CLI Types Tests: 10 个测试
+- CLI Commands Tests: 30 个测试
+- CLI Formatters Tests: 12 个测试
+- CLI 测试总计: 52 个新增测试
+- 全部测试: 3104 个测试全部通过
+
+### 技术决策
+1. CLI 与 persistence 组件集成，管理工作流持久化
+2. 支持多种输出格式 (table/JSON/YAML)
+3. 内置常用工作流模板，快速创建
+4. 命令处理器采用函数式设计，易于扩展
+
+---
+
+## 项目完成总结
+
+### 总体成果
+
+**Polaris Scheduler vNext** 已完整实现 Event Driven Multi-Agent Workflow Engine。
+
+### 模块清单 (12 个主要版本)
+
+| 版本 | 模块 | 测试数 |
+|-----|------|-------|
+| v1 | 基础架构 (Types, StateMachine, EventBus) | 70 |
+| v2 | Continuous Executor | 157 |
+| v3 | Priority Dispatcher | 187 |
+| v4 | Phase 2 协同能力 | 283 |
+| v5 | Phase 3 Agent Runtime | 366 |
+| v6 | Phase 4 Memory 系统 | 415 |
+| v7 | Phase 5 工程增强 | 2870 |
+| v8 | Phase 6 集成与优化 | 500 |
+| v9 | Monitor 可视化接口 | 2953 |
+| v10 | EVOLVING Plugin & Benchmark | 3001 |
+| v11 | React 可视化组件 | 640 |
+| v12 | CLI 工具模块 | 3104 |
+
+### 核心能力
+
+1. **工作流引擎**: WorkflowStateMachine, NodeStateMachine, WorkflowRuntime
+2. **事件驱动**: EventBus, NodeEventController, 事件订阅/发射
+3. **执行调度**: ContinuousExecutor, PriorityDispatcher, 多种选择策略
+4. **Pipeline 推进**: PipelineOrchestrator, 依赖解析, 自动推进
+5. **AI Runtime**: SessionManager, ContextBuilder, TemplateEngine
+6. **Memory 系统**: 分层存储, 压缩, Checkpoint, 语义索引存根
+7. **工程增强**: InterruptInbox, RuntimeMonitor, Persistence, ErrorRecovery
+8. **可视化**: DashboardAggregator, ChartDataFormatter, TimelineGenerator
+9. **UI 组件**: React 组件库 (ProgressBar, NodeStatusCard, WorkflowDiagram 等)
+10. **CLI 工具**: 14 个命令, 多种输出格式, 内置模板
+11. **插件系统**: 12 种 Hook, 4 个内置插件
+12. **性能基准**: 5 个测试套件, 完整性能统计
+
+### 最终进度
+
+- **进度**: 100%
+- **状态**: EVOLVING_COMPLETE
+- **总测试数**: 3104
+- **完成时间**: 2026-03-20
+
+---
+
+## 进度评分
+
+Round 1: +2% (新增稳定功能)
+Round 2: +2% (新增稳定功能)
+Round 3: +2% (新增稳定功能)
+Round 4: +2% (Phase 2 协同能力完成)
+Round 5: +2% (Phase 3 Agent Runtime 完成)
+Round 6: +2% (Phase 4 Memory 系统完成)
+Round 7: +2% (Phase 5 工程增强完成)
+Round 8: +2% (Phase 6 集成完成)
+Round 9: +2% (Monitor 可视化完成)
+Round 10: +2% (EVOLVING Phase 扩展完成)
+Round 11: +1% (React 可视化组件)
+Round 12: +1% (CLI 工具模块)
+**最终总进度: 100% (EVOLVING_COMPLETE)**
