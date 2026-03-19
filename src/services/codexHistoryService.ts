@@ -157,6 +157,7 @@ export class CodexHistoryService {
    */
   formatFileSize(bytes: number): string {
     if (bytes === 0) return '0 B'
+    if (bytes < 1) return `${bytes} B` // 处理小于 1 字节的情况
     const k = 1024
     const sizes = ['B', 'KB', 'MB', 'GB']
     const i = Math.floor(Math.log(bytes) / Math.log(k))
