@@ -1710,7 +1710,7 @@ describe('IFlowHistoryService', () => {
       expect(result[0].input).toBe('simple string input')
     })
 
-    it('应正确处理数字 input', () => {
+    it('应正确处理多个工具调用', () => {
       const messages: IFlowHistoryMessage[] = [
         {
           uuid: 'msg-1',
