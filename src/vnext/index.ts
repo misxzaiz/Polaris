@@ -199,3 +199,84 @@ export {
   type MemoryWorkflowState,
   type MemoryLayerInfo,
 } from './memory-manager';
+
+// Interrupt Inbox
+export {
+  // 中断收件箱
+  InterruptInbox,
+  getInterruptInbox,
+  resetInterruptInbox,
+
+  // 类型
+  InterruptType,
+  InterruptPriority,
+  InterruptStatus,
+  UserInputType,
+  type InterruptRequest,
+  type UserInputEntry,
+  type InterruptConfig,
+  type InterruptInboxState,
+  type InterruptEvent,
+  type InterruptListener,
+  type InterruptFilter,
+} from './interrupt';
+
+// Runtime Monitor
+export {
+  // 运行时监控器
+  RuntimeMonitor,
+  getRuntimeMonitor,
+  resetRuntimeMonitor,
+
+  // 类型
+  MonitorEventType,
+  type WorkflowRuntimeStatus,
+  type NodeRuntimeStatus,
+  type TokenUsage,
+  type ExecutionLogEntry,
+  type ResourceUsageStats,
+  type RealtimeMetrics,
+  type MonitorConfig,
+  type MonitorEvent,
+  type MonitorListener,
+} from './monitor';
+
+// Workflow Persistence
+export {
+  // 持久化管理器
+  WorkflowPersistence,
+  MemoryStorage,
+  getWorkflowPersistence,
+  resetWorkflowPersistence,
+
+  // 类型
+  StorageType,
+  SnapshotType,
+  type PersistenceSnapshot,
+  type PersistenceConfig,
+  type PersistenceState,
+  type PersistenceEvent,
+  type PersistenceListener,
+  type IStorage,
+  type ExportFormat,
+} from './persistence';
+
+// Error Recovery
+export {
+  // 错误恢复管理器
+  ErrorRecovery,
+  getErrorRecovery,
+  resetErrorRecovery,
+
+  // 类型
+  ErrorType,
+  ErrorSeverity,
+  RecoveryStrategy,
+  RecoveryStatus,
+  type ErrorRecord,
+  type ErrorRecoveryConfig,
+  type RecoveryStrategyConfig,
+  type RecoveryEvent,
+  type RecoveryListener,
+  type RecoveryResult,
+} from './recovery';
