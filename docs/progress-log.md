@@ -445,6 +445,95 @@
 
 ---
 
+## Round 8 - 2026-03-20
+
+### 完成内容
+1. **WorkflowRuntime 实现** (`src/vnext/runtime/index.ts`)
+   - 统一集成所有 vnext 组件
+   - 工作流注册和管理
+   - 自定义节点执行器支持
+   - 生命周期控制 (start/pause/resume/stop)
+   - 节点状态追踪
+   - 事件监听和发射
+   - 自动保存支持
+
+2. **Phase 6 集成测试** (`src/vnext/__tests__/phase6-integration.test.ts`)
+   - Pipeline 完整执行测试
+   - 事件驱动执行测试
+   - 错误处理与恢复测试
+   - 持久化与恢复测试
+   - 运行时监控测试
+   - Memory 集成测试
+   - Interrupt 处理测试
+   - 完整 AI 开发流水线模拟
+
+3. **单元测试** (22 个新增，总计 500 个)
+
+### 修改文件
+- 新增: `src/vnext/runtime/types.ts`
+- 新增: `src/vnext/runtime/index.ts`
+- 新增: `src/vnext/__tests__/phase6-integration.test.ts`
+- 新增: `src/vnext/__tests__/runtime.test.ts`
+- 更新: `src/vnext/index.ts` (导出 runtime 模块)
+
+### 技术决策
+1. WorkflowRuntime 作为统一入口，简化 vnext 模块使用
+2. 支持自定义节点执行器，灵活扩展执行逻辑
+3. 集成所有组件实现完整的工作流生命周期管理
+
+---
+
+## Round 9 - 2026-03-20
+
+### 完成内容
+1. **Monitor 可视化接口** (`src/vnext/monitor/visualization.ts`)
+   - DashboardAggregator: 仪表板数据聚合器
+     - 工作流概览数据 (DashboardOverview)
+     - 进度数据计算 (ProgressData)
+     - Token 和成本摘要 (TokenSummary, CostSummary)
+     - 错误统计 (ErrorStats)
+     - 状态卡片数据 (StatusCardData, NodeStatusCard)
+   - ChartDataFormatter: 图表数据格式化器
+     - Token 使用图表数据 (TokenChartData)
+     - 成本图表数据 (CostChartData)
+     - 执行时间图表数据 (ExecutionTimeChartData)
+     - 节点状态分布图 (NodeStatusChartData)
+   - TimelineGenerator: 时间线生成器
+     - 时间线事件数据 (TimelineData, TimelineEvent)
+     - 节点范围数据 (TimelineNodeRange) 用于甘特图
+   - DataExporter: 数据导出器
+     - JSON 导出 (ExportData)
+     - CSV 导出
+
+2. **可视化类型定义** (`src/vnext/monitor/visualization-types.ts`)
+   - DashboardOverview, ProgressData, TokenSummary, CostSummary
+   - ChartDataPoint, TokenChartData, CostChartData
+   - TimelineData, TimelineEvent, TimelineNodeRange
+   - VisualizationConfig 配置接口
+
+3. **工具函数**
+   - formatNumberShort: 数字短格式
+   - formatDuration: 时间格式化
+   - formatRelativeTime: 相对时间
+   - formatCost: 成本格式化
+   - getStatusColor/getStatusColorClass: 状态颜色
+
+4. **单元测试** (41 个新增，总计 2953 个)
+
+### 修改文件
+- 新增: `src/vnext/monitor/visualization-types.ts`
+- 新增: `src/vnext/monitor/visualization.ts`
+- 新增: `src/vnext/__tests__/visualization.test.ts`
+- 更新: `src/vnext/monitor/index.ts` (导出可视化模块)
+
+### 技术决策
+1. 可视化接口与监控器分离，独立使用
+2. 支持自定义配置 (tokenPricing, currencySymbol, timeFormat)
+3. 时间线支持甘特图样式的节点范围数据
+4. 数据导出支持 JSON 和 CSV 格式
+
+---
+
 ## 进度评分
 
 Round 1: +2% (新增稳定功能)
@@ -454,4 +543,6 @@ Round 4: +2% (Phase 2 协同能力完成)
 Round 5: +2% (Phase 3 Agent Runtime 完成)
 Round 6: +2% (Phase 4 Memory 系统完成)
 Round 7: +2% (Phase 5 工程增强完成)
-当前总进度: 14%
+Round 8: +2% (Phase 6 集成完成)
+Round 9: +2% (Monitor 可视化完成)
+当前总进度: 18%
