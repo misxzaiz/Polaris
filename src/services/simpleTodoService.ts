@@ -64,8 +64,10 @@ export class SimpleTodoService {
       const content = await invoke('read_file_absolute', { path: filePath })
 
       const data = JSON.parse(content as string)
-      // 确保 todos 是数组类型，防止文件内容异常
-      this.todos = Array.isArray(data.todos) ? data.todos : []
+      // 确保 data 是对象且 todos 是数组类型，防止文件内容异常
+      this.todos = (data && typeof data === 'object' && Array.isArray(data.todos))
+        ? data.todos
+        : []
     } catch (error) {
       // 文件不存在或读取失败,初始化为空
       console.log('[SimpleTodoService] 文件不存在或读取失败,初始化为空:', error)
