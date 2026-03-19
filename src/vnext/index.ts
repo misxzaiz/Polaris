@@ -424,3 +424,32 @@ export {
   type NodeStatusConfig,
   type TimelineEventTypeConfig,
 } from './components';
+
+// CLI Tool
+export {
+  // CLI Tool
+  CLITool,
+  createCLITool,
+
+  // Formatters
+  formatTable,
+  formatJSON,
+  formatYAML,
+  formatStatusBadge,
+  formatDuration,
+  formatRelativeTime,
+
+  // Types
+  DEFAULT_CLI_CONFIG,
+  BUILTIN_TEMPLATES,
+  type CLICommand,
+  type CLIOptions,
+  type CLIResult,
+  type CLIContext,
+  type CLIConfig,
+  type CLICommandDefinition,
+  type WorkflowTemplate as CLIWorkflowTemplate,
+  type MonitorData,
+  type TableColumn,
+  type TableOptions,
+} from './cli';

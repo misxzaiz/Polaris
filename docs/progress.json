@@ -1,5 +1,5 @@
 {
-  "progress": 98,
+  "progress": 99,
   "phase": "EVOLVING",
   "modules": {
     "core": "complete",
@@ -7,6 +7,7 @@
     "visualization": "complete",
     "plugin": "complete",
     "benchmark": "complete",
-    "react-components": "complete"
+    "react-components": "complete",
+    "cli": "complete"
   }
 }
