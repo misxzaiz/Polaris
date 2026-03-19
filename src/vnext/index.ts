@@ -374,3 +374,53 @@ export {
   type BenchmarkSuiteResult,
   type BenchmarkConfig,
 } from './benchmark';
+
+// React Components
+export {
+  // Types
+  getNodeStatusConfig,
+  getTimelineEventTypeConfig,
+
+  // Progress Components
+  ProgressBar,
+  SimpleProgressBar,
+  CircularProgress,
+
+  // Node Status Components
+  NodeStatusCard,
+  NodeStatusMiniCard,
+  NodeStatusGrid,
+  NodeStatusList,
+
+  // Workflow Diagram
+  WorkflowDiagram,
+  SimpleWorkflowDiagram,
+
+  // Dashboard
+  DashboardOverview,
+  TokenSummaryCard,
+  CostSummaryCard,
+  StatsCardGroup,
+  QuickStatsBar,
+
+  // Timeline
+  TimelineView,
+  SimpleTimeline,
+  NodeGanttChart,
+
+  // Component Types
+  type WorkflowDiagramProps,
+  type NodeStatusCardProps,
+  type DashboardOverviewProps,
+  type ProgressBarProps,
+  type TokenSummaryCardProps,
+  type CostSummaryCardProps,
+  type TimelineViewProps,
+  type TimelineEventItemProps,
+  type WorkflowListProps,
+  type WorkflowListItemProps,
+  type NodePosition,
+  type ConnectionLine,
+  type NodeStatusConfig,
+  type TimelineEventTypeConfig,
+} from './components';
