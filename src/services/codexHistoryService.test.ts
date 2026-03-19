@@ -1655,3 +1655,394 @@ Some **bold** and *italic* text.
     });
   });
 });
+
+// ============================================================
+// 服务方法集成测试
+// ============================================================
+describe('服务方法集成', () => {
+  let service: CodexHistoryService;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    service = new CodexHistoryService();
+  });
+
+  describe('完整工作流', () => {
+    it('应支持完整的历史会话处理流程', async () => {
+      // 模拟会话列表
+      const mockSessions = [
+        createMockSessionMeta({
+          sessionId: 'session-1',
+          title: 'Test Session',
+          messageCount: 3,
+          filePath: '/test/session-1.json',
+        }),
+      ];
+      mockInvoke.mockResolvedValueOnce(mockSessions);
+
+      // 获取会话列表
+      const sessions = await service.listSessions('/workspace');
+      expect(sessions).toHaveLength(1);
+
+      // 模拟会话历史
+      const mockHistory = [
+        createMockMessage({ uuid: 'msg-1', type: 'user', content: 'Hello' }),
+        createMockMessage({ uuid: 'msg-2', type: 'assistant', content: 'Hi!' }),
+        createMockMessage({
+          uuid: 'msg-3',
+          type: 'assistant',
+          content: '',
+          toolCalls: [{ id: 'tc-1', name: 'read_file', input: { path: '/test.ts' } }],
+        }),
+      ];
+      mockInvoke.mockResolvedValueOnce(mockHistory);
+
+      // 获取历史消息
+      const history = await service.getSessionHistory('/test/session-1.json');
+      expect(history).toHaveLength(3);
+
+      // 转换消息格式
+      const messages = service.convertMessagesToFormat(history);
+      expect(messages).toHaveLength(3);
+      expect(messages[2].toolSummary?.count).toBe(1);
+
+      // 提取工具调用
+      const toolCalls = service.extractToolCalls(history);
+      expect(toolCalls).toHaveLength(1);
+      expect(toolCalls[0].name).toBe('read_file');
+
+      // 生成标题
+      const title = service.generateSessionTitle(history);
+      expect(title).toBe('Hello');
+
+      // 获取摘要
+      const summary = service.getSessionSummary(sessions[0]);
+      expect(summary).toContain('3');
+    });
+
+    it('应正确处理空会话', async () => {
+      mockInvoke.mockResolvedValueOnce([]);
+
+      const sessions = await service.listSessions();
+      expect(sessions).toEqual([]);
+
+      const title = service.generateSessionTitle([]);
+      expect(title).toBe('Codex 对话');
+
+      const summary = service.getSessionSummary(createMockSessionMeta({ messageCount: 0 }));
+      expect(summary).toBe('0 条消息');
+    });
+
+    it('应正确处理多会话场景', async () => {
+      const mockSessions = [
+        createMockSessionMeta({ sessionId: 's1', messageCount: 10, fileSize: 1024 }),
+        createMockSessionMeta({ sessionId: 's2', messageCount: 20, fileSize: 2048 }),
+        createMockSessionMeta({ sessionId: 's3', messageCount: 5, fileSize: 512 }),
+      ];
+      mockInvoke.mockResolvedValueOnce(mockSessions);
+
+      const sessions = await service.listSessions();
+
+      // 验证摘要生成
+      const summaries = sessions.map(s => service.getSessionSummary(s));
+      expect(summaries[0]).toContain('10');
+      expect(summaries[1]).toContain('20');
+      expect(summaries[2]).toContain('5');
+
+      // 验证文件大小格式化
+      const sizes = sessions.map(s => service.formatFileSize(s.fileSize));
+      expect(sizes[0]).toBe('1 KB');
+      expect(sizes[1]).toBe('2 KB');
+      expect(sizes[2]).toBe('512 B');
+    });
+  });
+
+  describe('错误场景集成', () => {
+    it('网络错误后应能恢复并继续使用', async () => {
+      // 第一次调用失败
+      mockInvoke.mockRejectedValueOnce(new Error('Network error'));
+      const sessions1 = await service.listSessions();
+      expect(sessions1).toEqual([]);
+
+      // 第二次调用成功
+      mockInvoke.mockResolvedValueOnce([createMockSessionMeta()]);
+      const sessions2 = await service.listSessions();
+      expect(sessions2).toHaveLength(1);
+
+      // 历史获取失败后恢复
+      mockInvoke.mockRejectedValueOnce(new Error('File not found'));
+      const history1 = await service.getSessionHistory('/notfound.json');
+      expect(history1).toEqual([]);
+
+      mockInvoke.mockResolvedValueOnce([createMockMessage()]);
+      const history2 = await service.getSessionHistory('/found.json');
+      expect(history2).toHaveLength(1);
+    });
+  });
+});
+
+// ============================================================
+// 返回值类型验证
+// ============================================================
+describe('返回值类型验证', () => {
+  let service: CodexHistoryService;
+
+  beforeEach(() => {
+    service = new CodexHistoryService();
+  });
+
+  it('listSessions 返回值应为数组', async () => {
+    vi.mocked(invoke).mockResolvedValueOnce([]);
+
+    const result = await service.listSessions();
+
+    expect(Array.isArray(result)).toBe(true);
+  });
+
+  it('getSessionHistory 返回值应为数组', async () => {
+    vi.mocked(invoke).mockResolvedValueOnce([]);
+
+    const result = await service.getSessionHistory('/test.json');
+
+    expect(Array.isArray(result)).toBe(true);
+  });
+
+  it('convertMessagesToFormat 返回值应为数组', () => {
+    const result = service.convertMessagesToFormat([]);
+
+    expect(Array.isArray(result)).toBe(true);
+  });
+
+  it('extractToolCalls 返回值应为数组', () => {
+    const result = service.extractToolCalls([]);
+
+    expect(Array.isArray(result)).toBe(true);
+  });
+
+  it('generateSessionTitle 返回值应为字符串', () => {
+    const result = service.generateSessionTitle([]);
+
+    expect(typeof result).toBe('string');
+  });
+
+  it('getSessionSummary 返回值应为字符串', () => {
+    const result = service.getSessionSummary(createMockSessionMeta());
+
+    expect(typeof result).toBe('string');
+  });
+
+  it('formatFileSize 返回值应为字符串', () => {
+    const result = service.formatFileSize(1024);
+
+    expect(typeof result).toBe('string');
+  });
+
+  it('formatTime 返回值应为字符串', () => {
+    const result = service.formatTime(new Date().toISOString());
+
+    expect(typeof result).toBe('string');
+  });
+});
+
+// ============================================================
+// 极端边界值测试
+// ============================================================
+describe('极端边界值', () => {
+  let service: CodexHistoryService;
+
+  beforeEach(() => {
+    service = new CodexHistoryService();
+  });
+
+  describe('数值边界', () => {
+    it('formatFileSize 应处理 Number.MAX_SAFE_INTEGER', () => {
+      const result = service.formatFileSize(Number.MAX_SAFE_INTEGER);
+      expect(typeof result).toBe('string');
+      // MAX_SAFE_INTEGER 约等于 8 PB，应该返回 PB 单位
+      expect(result).toMatch(/PB|EB/);
+    });
+
+    it('formatFileSize 应处理 Number.MIN_VALUE', () => {
+      const result = service.formatFileSize(Number.MIN_VALUE);
+      expect(typeof result).toBe('string');
+    });
+
+    it('formatFileSize 应处理 NaN', () => {
+      const result = service.formatFileSize(NaN);
+      expect(typeof result).toBe('string');
+    });
+
+    it('formatFileSize 应处理 Infinity', () => {
+      const result = service.formatFileSize(Infinity);
+      expect(typeof result).toBe('string');
+    });
+
+    it('formatFileSize 应处理负无穷', () => {
+      const result = service.formatFileSize(-Infinity);
+      expect(typeof result).toBe('string');
+    });
+  });
+
+  describe('时间边界', () => {
+    it('formatTime 应处理 Unix 纪元时间', () => {
+      const result = service.formatTime('1970-01-01T00:00:00.000Z');
+      expect(typeof result).toBe('string');
+    });
+
+    it('formatTime 应处理未来远期时间', () => {
+      const farFuture = '2100-01-01T00:00:00.000Z';
+      const result = service.formatTime(farFuture);
+      expect(typeof result).toBe('string');
+    });
+
+    it('formatTime 应处理非常近的过去', () => {
+      const justNow = new Date(Date.now() - 100).toISOString();
+      const result = service.formatTime(justNow);
+      expect(result).toBe('刚刚');
+    });
+
+    it('formatTime 应处理刚好 59 秒前', () => {
+      const time = new Date(Date.now() - 59000).toISOString();
+      const result = service.formatTime(time);
+      expect(result).toMatch(/秒前|刚刚/);
+    });
+  });
+
+  describe('字符串边界', () => {
+    it('generateSessionTitle 应处理单字符内容', () => {
+      const messages = [createMockMessage({ type: 'user', content: 'A' })];
+      const title = service.generateSessionTitle(messages);
+      expect(title).toBe('A');
+    });
+
+    it('generateSessionTitle 应处理刚好 50 字符内容', () => {
+      const content = 'A'.repeat(50);
+      const messages = [createMockMessage({ type: 'user', content })];
+      const title = service.generateSessionTitle(messages);
+      expect(title).toBe(content);
+      expect(title.endsWith('...')).toBe(false);
+    });
+
+    it('generateSessionTitle 应处理刚好 51 字符内容', () => {
+      const content = 'A'.repeat(51);
+      const messages = [createMockMessage({ type: 'user', content })];
+      const title = service.generateSessionTitle(messages);
+      expect(title.endsWith('...')).toBe(true);
+      expect(title.length).toBe(53);
+    });
+  });
+});
+
+// ============================================================
+// 服务实例行为测试
+// ============================================================
+describe('服务实例行为', () => {
+  beforeEach(() => {
+    resetCodexHistoryService();
+  });
+
+  afterEach(() => {
+    resetCodexHistoryService();
+  });
+
+  it('多个服务实例应独立工作', async () => {
+    vi.clearAllMocks();
+
+    const service1 = new CodexHistoryService();
+    const service2 = new CodexHistoryService();
+
+    vi.mocked(invoke)
+      .mockResolvedValueOnce([createMockSessionMeta({ sessionId: 's1' })])
+      .mockResolvedValueOnce([createMockSessionMeta({ sessionId: 's2' })]);
+
+    const [result1, result2] = await Promise.all([
+      service1.listSessions('/ws1'),
+      service2.listSessions('/ws2'),
+    ]);
+
+    expect(result1[0].sessionId).toBe('s1');
+    expect(result2[0].sessionId).toBe('s2');
+  });
+
+  it('单例应返回同一个实例', () => {
+    const instance1 = getCodexHistoryService();
+    const instance2 = getCodexHistoryService();
+
+    expect(instance1).toBe(instance2);
+  });
+
+  it('重置后应返回新实例', () => {
+    const instance1 = getCodexHistoryService();
+    resetCodexHistoryService();
+    const instance2 = getCodexHistoryService();
+
+    expect(instance1).not.toBe(instance2);
+  });
+});
+
+// ============================================================
+// CodexHistoryMessage 字段完整性测试
+// ============================================================
+describe('CodexHistoryMessage 字段完整性', () => {
+  let service: CodexHistoryService;
+
+  beforeEach(() => {
+    service = new CodexHistoryService();
+  });
+
+  it('应正确处理包含 model 字段的消息', () => {
+    const messages = [
+      createMockMessage({ type: 'assistant', model: 'claude-3-opus' }),
+    ];
+
+    const result = service.convertMessagesToFormat(messages);
+
+    expect(result).toHaveLength(1);
+    // model 字段在转换中未保留，但不应出错
+  });
+
+  it('应正确处理包含 stopReason 字段的消息', () => {
+    const messages = [
+      createMockMessage({ type: 'assistant', stopReason: 'end_turn' }),
+    ];
+
+    const result = service.convertMessagesToFormat(messages);
+
+    expect(result).toHaveLength(1);
+    // stopReason 字段在转换中未保留，但不应出错
+  });
+
+  it('应正确处理包含 parentUuid 字段的消息', () => {
+    const messages = [
+      createMockMessage({ uuid: 'msg-2', parentUuid: 'msg-1', type: 'assistant' }),
+    ];
+
+    const result = service.convertMessagesToFormat(messages);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('msg-2');
+    // parentUuid 在转换中未保留，但不应出错
+  });
+
+  it('应正确处理包含所有可选字段的消息', () => {
+    const messages = [
+      createMockMessage({
+        uuid: 'msg-full',
+        parentUuid: 'msg-parent',
+        type: 'assistant',
+        content: 'Full message',
+        model: 'claude-3-opus',
+        stopReason: 'end_turn',
+        toolCalls: [{ id: 'tc-1', name: 'test', input: {} }],
+      }),
+    ];
+
+    const result = service.convertMessagesToFormat(messages);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('msg-full');
+    expect(result[0].content).toBe('Full message');
+    expect(result[0].role).toBe('assistant');
+    expect(result[0].toolSummary?.count).toBe(1);
+  });
+});
