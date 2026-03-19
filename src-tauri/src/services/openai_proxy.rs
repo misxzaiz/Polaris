@@ -1,7 +1,7 @@
-/// OpenAI API 代理服务
-///
-/// 为 OpenAI 兼容 API 提供后端代理，支持工具调用。
-/// 解决前端直接调用 API 的安全问题。
+//! OpenAI API 代理服务
+//!
+//! 为 OpenAI 兼容 API 提供后端代理，支持工具调用。
+//! 解决前端直接调用 API 的安全问题。
 
 use crate::error::{AppError, Result};
 use crate::models::events::StreamEvent;

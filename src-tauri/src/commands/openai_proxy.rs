@@ -1,6 +1,6 @@
-/// OpenAI Proxy Commands
-///
-/// 提供 OpenAI 兼容 API 的后端代理命令。
+//! OpenAI Proxy Commands
+//!
+//! 提供 OpenAI 兼容 API 的后端代理命令。
 
 use crate::error::Result;
 use crate::services::openai_proxy::{ChatMessage, OpenAIProviderConfig, OpenAIProxyService};

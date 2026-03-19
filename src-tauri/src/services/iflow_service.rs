@@ -1,7 +1,7 @@
-/// IFlow CLI 服务
-///
-/// 提供 IFlow 会话历史查询功能
-/// 注：会话执行功能已迁移到 ai/engine/iflow.rs
+//! IFlow CLI 服务
+//!
+//! 提供 IFlow 会话历史查询功能
+//! 注：会话执行功能已迁移到 ai/engine/iflow.rs
 
 use crate::error::{AppError, Result};
 use crate::models::config::Config;

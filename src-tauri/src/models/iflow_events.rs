@@ -1,7 +1,7 @@
-﻿/// IFlow JSONL 事件模型
-///
-/// IFlow CLI 将会话保存为 JSONL 格式文件
-/// 文件位置: ~/.iflow/projects/[编码项目路径]/session-[id].jsonl
+﻿//! IFlow JSONL 事件模型
+//!
+//! IFlow CLI 将会话保存为 JSONL 格式文件
+//! 文件位置: ~/.iflow/projects/[编码项目路径]/session-[id].jsonl
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

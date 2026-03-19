@@ -1,5 +1,4 @@
-/**
- * IM 机器人命令解析和处理
+/*! IM 机器人命令解析和处理
  *
  * 支持的命令：
  * - 模型切换: /claude, /iflow, /codex, /openai, /agent

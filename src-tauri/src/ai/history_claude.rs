@@ -1,5 +1,4 @@
-/**
- * Claude Code 会话历史提供者
+/*! Claude Code 会话历史提供者
  */
 
 use std::collections::HashMap;

@@ -1,5 +1,4 @@
-/**
- * QQ Bot 适配器
+/*! QQ Bot 适配器
  *
  * 实现 PlatformIntegration Trait，提供 QQ Bot 的连接、消息收发功能。
  */

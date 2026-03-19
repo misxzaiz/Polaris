@@ -1,5 +1,4 @@
-/**
- * IFlow 会话历史提供者
+/*! IFlow 会话历史提供者
  */
 
 use std::collections::HashMap;

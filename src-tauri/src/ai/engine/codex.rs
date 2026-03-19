@@ -1,5 +1,4 @@
-/**
- * Codex 引擎实现
+/*! Codex 引擎实现
  *
  * 封装 OpenAI Codex CLI 的调用逻辑。
  */

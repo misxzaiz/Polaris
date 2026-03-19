@@ -1,5 +1,4 @@
-/**
- * Git Cherry-pick 操作
+/*! Git Cherry-pick 操作
  *
  * 提供提交挑选、中止、继续等功能
  */

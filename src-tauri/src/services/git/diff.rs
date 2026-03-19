@@ -1,5 +1,4 @@
-/**
- * Git Diff 操作
+/*! Git Diff 操作
  *
  * 提供各种 Diff 查询功能：工作区 Diff、暂存区 Diff、文件 Diff 等
  */

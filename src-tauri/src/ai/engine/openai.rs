@@ -1,5 +1,4 @@
-/**
- * OpenAI 兼容 API 引擎实现
+/*! OpenAI 兼容 API 引擎实现
  *
  * 支持 OpenAI 兼容的 API（如 DeepSeek、Moonshot 等）
  * 支持多 Provider 配置

@@ -1,5 +1,4 @@
-/**
- * Git Ignore 操作
+/*! Git Ignore 操作
  *
  * 提供 .gitignore 文件的读取、写入和管理功能
  */

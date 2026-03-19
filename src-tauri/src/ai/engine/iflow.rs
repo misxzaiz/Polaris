@@ -1,5 +1,4 @@
-/**
- * IFlow 引擎实现
+/*! IFlow 引擎实现
  *
  * 封装 IFlow CLI 的调用逻辑。
  * IFlow 通过监控 JSONL 文件来获取事件。

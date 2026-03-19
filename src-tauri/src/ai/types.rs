@@ -1,5 +1,4 @@
-/**
- * AI 模块公共类型定义
+/*! AI 模块公共类型定义
  */
 
 use serde::{Deserialize, Serialize};
