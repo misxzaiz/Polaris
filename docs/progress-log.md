@@ -159,9 +159,74 @@
 
 ---
 
+## Round 4 - 2026-03-20
+
+### 完成内容
+
+#### 1. NodeEventController 节点事件控制器 (`src/vnext/event-controller/`)
+- 节点订阅管理 (activateNodeSubscriptions, deactivateNodeSubscriptions)
+- 事件发射 (emitNodeEvent, emitNodeEvents, emitNodeCompleted, emitNodeFailed)
+- 事件匹配和路由 (isEventMatched, findMatchingNodes, matchEventsToNodes)
+- 待处理事件管理 (getPendingEventsForNode, consumePendingEventsForNode)
+- 全局实例支持 (getNodeEventController, resetNodeEventController)
+
+#### 2. PipelineOrchestrator Pipeline 推进协调器 (`src/vnext/pipeline/`)
+- Pipeline 生命周期控制 (start, pause, resume, stop)
+- 节点依赖检查 (checkDependenciesMet, getBlockedNodes)
+- 节点状态管理 (completeNode, skipNode)
+- 执行进度跟踪 (getProgress, getNodesByStatus)
+- 并行执行控制 (maxParallel)
+- 自动推进支持 (autoAdvance)
+
+#### 3. ExecutionStore 执行记录存储 (`src/vnext/execution-store/`)
+- CRUD 操作 (create, get, update, delete)
+- 状态更新方法 (startExecution, completeExecution, failExecution, timeoutExecution, cancelExecution)
+- 工具调用记录 (addToolCall)
+- 查询功能 (query, getByNode, getByWorkflow, getRunning, getFailed)
+- 统计信息 (getStats, getNodeStats)
+- 自动清理 (cleanupExpired, cleanupOverflow)
+- 导入导出 (export, import)
+
+### 修改文件
+- 新增: `src/vnext/event-controller/index.ts`
+- 新增: `src/vnext/event-controller/types.ts`
+- 新增: `src/vnext/pipeline/index.ts`
+- 新增: `src/vnext/pipeline/types.ts`
+- 新增: `src/vnext/execution-store/index.ts`
+- 新增: `src/vnext/execution-store/types.ts`
+- 新增: `src/vnext/__tests__/event-controller.test.ts`
+- 新增: `src/vnext/__tests__/pipeline.test.ts`
+- 新增: `src/vnext/__tests__/execution-store.test.ts`
+- 更新: `src/vnext/index.ts` (导出新模块)
+- 更新: `src/vnext/types/node.ts` (添加 enabled 字段)
+
+### 单元测试
+- NodeEventController: 30 个新增测试
+- PipelineOrchestrator: 33 个新增测试
+- ExecutionStore: 33 个新增测试
+- 总计: 283 个测试全部通过
+
+### 技术决策
+1. 事件控制器统一管理节点的订阅和发射，简化事件协同逻辑
+2. Pipeline 推进支持自动推进模式，节点完成后自动触发下游节点
+3. 执行存储独立定义类型，避免循环依赖问题
+4. WorkflowNode 添加 enabled 字段，支持节点级别的启用/禁用
+
+### 风险
+- 暂无
+
+### 下一轮建议
+- 开始 Phase 3: Agent Runtime
+- 实现 AI Session Manager 抽象
+- 实现执行上下文构建器
+- 实现模板系统 v1
+
+---
+
 ## 进度评分
 
 Round 1: +2% (新增稳定功能)
 Round 2: +2% (新增稳定功能)
 Round 3: +2% (新增稳定功能)
-当前总进度: 6%
+Round 4: +2% (Phase 2 协同能力完成)
+当前总进度: 8%

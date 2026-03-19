@@ -72,3 +72,45 @@ export {
   type DispatchResult,
   type DispatcherRunResult,
 } from './dispatcher';
+
+// 事件控制器
+export {
+  // 控制器实现
+  NodeEventController,
+  getNodeEventController,
+  resetNodeEventController,
+
+  // 类型
+  type NodeSubscriptionRecord,
+  type EventMatchResult,
+  type NodeEventControllerConfig,
+  type EmitEventOptions,
+  type NodeCompletionResult,
+} from './event-controller';
+
+// Pipeline 推进
+export {
+  // Pipeline 实现
+  PipelineOrchestrator,
+
+  // 类型
+  type PipelineState,
+  type NodeExecutionState,
+  type PipelineAdvanceResult,
+  type PipelineConfig,
+  type PipelineProgress,
+} from './pipeline';
+
+// 执行记录存储
+export {
+  // 存储实现
+  ExecutionStore,
+  getExecutionStore,
+  resetExecutionStore,
+
+  // 类型
+  type ExecutionStoreConfig,
+  type ExecutionStats,
+  type CreateExecutionParams,
+  type CompleteExecutionParams,
+} from './execution-store';

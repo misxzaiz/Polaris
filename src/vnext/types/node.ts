@@ -62,6 +62,9 @@ export interface WorkflowNode {
   /** Agent profile template ID */
   agentProfileId?: string;
 
+  /** Whether this node is enabled */
+  enabled: boolean;
+
   /** Current execution state */
   state: NodeState;
 
@@ -123,6 +126,7 @@ export interface CreateNodeParams {
   name: string;
   role: string;
   agentProfileId?: string;
+  enabled?: boolean;
   triggerType?: NodeTriggerType;
   subscribeEvents?: string[];
   emitEvents?: string[];
