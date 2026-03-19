@@ -40,6 +40,31 @@ pub struct Attachment {
     pub content: String,
 }
 
+/// 聊天请求的可选参数
+/// 用于减少 start_chat 和 continue_chat 函数的参数数量
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatRequestOptions {
+    /// 工作目录
+    #[serde(default)]
+    pub work_dir: Option<String>,
+    /// 引擎 ID
+    #[serde(default)]
+    pub engine_id: Option<String>,
+    /// 系统提示词
+    #[serde(default)]
+    pub system_prompt: Option<String>,
+    /// 上下文 ID
+    #[serde(default)]
+    pub context_id: Option<String>,
+    /// 附件列表
+    #[serde(default)]
+    pub attachments: Option<Vec<Attachment>>,
+    /// CLI 参数
+    #[serde(default)]
+    pub cli_args: Option<Vec<String>>,
+}
+
 // ============================================================================
 // 辅助函数
 // ============================================================================
@@ -122,17 +147,12 @@ pub async fn start_chat(
     message: String,
     window: Window,
     state: State<'_, crate::AppState>,
-    work_dir: Option<String>,
-    engine_id: Option<String>,
-    system_prompt: Option<String>,
-    context_id: Option<String>,
-    attachments: Option<Vec<Attachment>>,
-    cli_args: Option<Vec<String>>,
+    options: ChatRequestOptions,
 ) -> Result<String> {
-    tracing::info!("[start_chat] 收到消息，长度: {} 字符, 附件数: {:?}, CLI 参数: {:?}", message.len(), attachments.as_ref().map(|a| a.len()), cli_args);
+    tracing::info!("[start_chat] 收到消息，长度: {} 字符, 附件数: {:?}, CLI 参数: {:?}", message.len(), options.attachments.as_ref().map(|a| a.len()), options.cli_args);
 
     // 保存附件到工作区并获取图片路径
-    let saved_image_paths = if let (Some(ref dir), Some(ref atts)) = (&work_dir, &attachments) {
+    let saved_image_paths = if let (Some(ref dir), Some(ref atts)) = (&options.work_dir, &options.attachments) {
         if !atts.is_empty() {
             save_attachments(dir, atts)?
         } else {
@@ -152,7 +172,7 @@ pub async fn start_chat(
         message
     };
 
-    let engine = engine_id
+    let engine = options.engine_id
         .as_ref()
         .and_then(|id| EngineId::from_str(id))
         .unwrap_or(EngineId::ClaudeCode);
@@ -160,7 +180,7 @@ pub async fn start_chat(
     tracing::info!("[start_chat] 使用引擎: {:?}", engine);
 
     let window_clone = window.clone();
-    let ctx_id = context_id.clone();
+    let ctx_id = options.context_id.clone();
     let event_callback = move |event: AIEvent| {
         let event_json = if let Some(ref cid) = ctx_id {
             serde_json::json!({ "contextId": cid, "payload": event })
@@ -178,7 +198,7 @@ pub async fn start_chat(
 
     // session_id 更新回调 - 发送 session_start 事件给前端
     let window_for_session = window.clone();
-    let ctx_id_for_session = context_id.clone();
+    let ctx_id_for_session = options.context_id.clone();
     let session_id_update_callback = move |new_session_id: String| {
         tracing::info!("[start_chat] session_id 更新，发送 session_start 事件: {}", new_session_id);
 
@@ -203,23 +223,23 @@ pub async fn start_chat(
         let _ = window_for_session.emit("chat-event", &event_json);
     };
 
-    let mut options = SessionOptions::new(event_callback);
-    options.on_session_id_update = Some(Arc::new(session_id_update_callback));
+    let mut session_opts = SessionOptions::new(event_callback);
+    session_opts.on_session_id_update = Some(Arc::new(session_id_update_callback));
 
-    if let Some(ref dir) = work_dir {
-        options = options.with_work_dir(dir.clone());
+    if let Some(ref dir) = options.work_dir {
+        session_opts = session_opts.with_work_dir(dir.clone());
     }
 
-    if let Some(ref prompt) = system_prompt {
-        options = options.with_system_prompt(prompt.clone());
+    if let Some(ref prompt) = options.system_prompt {
+        session_opts = session_opts.with_system_prompt(prompt.clone());
     }
 
-    if let Some(ref args) = cli_args {
-        options = options.with_cli_args(args.clone());
+    if let Some(ref args) = options.cli_args {
+        session_opts = session_opts.with_cli_args(args.clone());
     }
 
     let mut registry = state.engine_registry.lock().await;
-    registry.start_session(Some(engine), &final_message, options)
+    registry.start_session(Some(engine), &final_message, session_opts)
 }
 
 /// 继续聊天会话
@@ -229,17 +249,12 @@ pub async fn continue_chat(
     message: String,
     window: Window,
     state: State<'_, crate::AppState>,
-    work_dir: Option<String>,
-    engine_id: Option<String>,
-    system_prompt: Option<String>,
-    context_id: Option<String>,
-    attachments: Option<Vec<Attachment>>,
-    cli_args: Option<Vec<String>>,
+    options: ChatRequestOptions,
 ) -> Result<()> {
-    tracing::info!("[continue_chat] 继续会话: {}, 附件数: {:?}, CLI 参数: {:?}", session_id, attachments.as_ref().map(|a| a.len()), cli_args);
+    tracing::info!("[continue_chat] 继续会话: {}, 附件数: {:?}, CLI 参数: {:?}", session_id, options.attachments.as_ref().map(|a| a.len()), options.cli_args);
 
     // 保存附件到工作区并获取图片路径
-    let saved_image_paths = if let (Some(dir), Some(atts)) = (&work_dir, &attachments) {
+    let saved_image_paths = if let (Some(dir), Some(atts)) = (&options.work_dir, &options.attachments) {
         if !atts.is_empty() {
             save_attachments(dir, atts)?
         } else {
@@ -259,7 +274,7 @@ pub async fn continue_chat(
         message
     };
 
-    let engine = engine_id
+    let engine = options.engine_id
         .as_ref()
         .and_then(|id| EngineId::from_str(id))
         .ok_or_else(|| AppError::ValidationError("必须提供有效的 engine_id".to_string()))?;
@@ -267,7 +282,7 @@ pub async fn continue_chat(
     tracing::info!("[continue_chat] 使用引擎: {:?}", engine);
 
     let window_clone = window.clone();
-    let ctx_id = context_id.clone();
+    let ctx_id = options.context_id.clone();
     let event_callback = move |event: AIEvent| {
         let event_json = if let Some(ref cid) = ctx_id {
             serde_json::json!({ "contextId": cid, "payload": event })
@@ -285,7 +300,7 @@ pub async fn continue_chat(
 
     // session_id 更新回调
     let window_for_session = window.clone();
-    let ctx_id_for_session = context_id.clone();
+    let ctx_id_for_session = options.context_id.clone();
     let session_id_update_callback = move |new_session_id: String| {
         tracing::info!("[continue_chat] session_id 更新: {}", new_session_id);
 
@@ -310,23 +325,23 @@ pub async fn continue_chat(
         let _ = window_for_session.emit("chat-event", &event_json);
     };
 
-    let mut options = SessionOptions::new(event_callback);
-    options.on_session_id_update = Some(Arc::new(session_id_update_callback));
+    let mut session_opts = SessionOptions::new(event_callback);
+    session_opts.on_session_id_update = Some(Arc::new(session_id_update_callback));
 
-    if let Some(ref dir) = work_dir {
-        options = options.with_work_dir(dir.clone());
+    if let Some(ref dir) = options.work_dir {
+        session_opts = session_opts.with_work_dir(dir.clone());
     }
 
-    if let Some(ref prompt) = system_prompt {
-        options = options.with_system_prompt(prompt.clone());
+    if let Some(ref prompt) = options.system_prompt {
+        session_opts = session_opts.with_system_prompt(prompt.clone());
     }
 
-    if let Some(ref args) = cli_args {
-        options = options.with_cli_args(args.clone());
+    if let Some(ref args) = options.cli_args {
+        session_opts = session_opts.with_cli_args(args.clone());
     }
 
     let mut registry = state.engine_registry.lock().await;
-    registry.continue_session(engine, &session_id, &final_message, options)
+    registry.continue_session(engine, &session_id, &final_message, session_opts)
 }
 
 /// 中断聊天会话

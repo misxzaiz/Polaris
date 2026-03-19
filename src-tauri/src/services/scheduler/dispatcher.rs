@@ -7,7 +7,7 @@ use crate::error::Result;
 use crate::models::scheduler::{ScheduledTask, TaskStatus, RunTaskResult, TaskMode};
 use crate::ai::{EngineRegistry, EngineId, SessionOptions};
 use crate::models::AIEvent;
-use super::store::{TaskStoreService, LogStoreService};
+use super::store::{TaskStoreService, LogStoreService, UpdateCompleteParams};
 use super::ProtocolTaskService;
 
 use std::sync::Arc;
@@ -370,12 +370,13 @@ impl SchedulerDispatcher {
                         if is_success {
                             if let Err(e) = log_store.update_complete(
                                 &log_id,
-                                final_session_id,
-                                Some(final_output),
-                                None,
-                                if final_thinking.is_empty() { None } else { Some(final_thinking) },
-                                final_tool_count,
-                                None,
+                                UpdateCompleteParams {
+                                    session_id: final_session_id,
+                                    output: Some(final_output),
+                                    thinking_summary: if final_thinking.is_empty() { None } else { Some(final_thinking) },
+                                    tool_call_count: final_tool_count,
+                                    ..Default::default()
+                                },
                             ) {
                                 tracing::error!("[Scheduler] 更新日志失败: {:?}", e);
                             }
@@ -418,12 +419,14 @@ impl SchedulerDispatcher {
                             let error_msg = format!("进程退出码: {}", exit_code);
                             if let Err(e) = log_store.update_complete(
                                 &log_id,
-                                final_session_id,
-                                Some(final_output),
-                                Some(error_msg.clone()),
-                                if final_thinking.is_empty() { None } else { Some(final_thinking) },
-                                final_tool_count,
-                                None,
+                                UpdateCompleteParams {
+                                    session_id: final_session_id,
+                                    output: Some(final_output),
+                                    error: Some(error_msg.clone()),
+                                    thinking_summary: if final_thinking.is_empty() { None } else { Some(final_thinking) },
+                                    tool_call_count: final_tool_count,
+                                    ..Default::default()
+                                },
                             ) {
                                 tracing::error!("[Scheduler] 更新日志失败: {:?}", e);
                             }
@@ -516,30 +519,29 @@ impl SchedulerDispatcher {
                                     tracing::warn!("[Scheduler] 未能终止会话 {}", session_id_for_timeout);
                                 }
                             }
-                            
+
                             // 更新日志和任务状态
                             {
                                 let mut log_store = log_store_for_timeout.lock().await;
                                 let mut task_store = task_store_for_timeout.lock().await;
-                                
+
                                 let error_msg = format!("任务执行超时 ({}分钟)", timeout / 60);
                                 if let Err(e) = log_store.update_complete(
                                     &log_id_for_timeout,
-                                    Some(session_id_for_timeout),
-                                    None,
-                                    Some(error_msg.clone()),
-                                    None,
-                                    0,
-                                    None,
+                                    UpdateCompleteParams {
+                                        session_id: Some(session_id_for_timeout),
+                                        error: Some(error_msg.clone()),
+                                        ..Default::default()
+                                    },
                                 ) {
                                     tracing::error!("[Scheduler] 更新日志失败: {:?}", e);
                                 }
-                                
+
                                 if let Err(e) = task_store.update_run_status(&task_id_for_timeout, TaskStatus::Failed) {
                                     tracing::error!("[Scheduler] 更新任务状态失败: {:?}", e);
                                 }
                             }
-                            
+
                             // 发送桌面通知
                             if notify_for_timeout {
                                 if let Some(ref app_handle) = app_handle_for_timeout {
@@ -553,7 +555,7 @@ impl SchedulerDispatcher {
                                     }
                                 }
                             }
-                            
+
                             // 从运行列表中移除
                             {
                                 let mut running = running_tasks_for_timeout.lock().await;
@@ -571,12 +573,10 @@ impl SchedulerDispatcher {
 
                     if let Err(update_err) = log_store.update_complete(
                         &log_id_clone,
-                        None,
-                        None,
-                        Some(e.to_string()),
-                        None,
-                        0,
-                        None,
+                        UpdateCompleteParams {
+                            error: Some(e.to_string()),
+                            ..Default::default()
+                        },
                     ) {
                         tracing::error!("[Scheduler] 更新日志失败: {:?}", update_err);
                     }
@@ -847,12 +847,13 @@ impl SchedulerDispatcher {
                         if is_success {
                             if let Err(e) = log_store.update_complete(
                                 &log_id,
-                                final_session_id,
-                                Some(final_output),
-                                None,
-                                if final_thinking.is_empty() { None } else { Some(final_thinking) },
-                                final_tool_count,
-                                None,
+                                UpdateCompleteParams {
+                                    session_id: final_session_id,
+                                    output: Some(final_output),
+                                    thinking_summary: if final_thinking.is_empty() { None } else { Some(final_thinking) },
+                                    tool_call_count: final_tool_count,
+                                    ..Default::default()
+                                },
                             ) {
                                 tracing::error!("[Scheduler] 更新日志失败: {:?}", e);
                             }
@@ -890,19 +891,21 @@ impl SchedulerDispatcher {
                                                         let error_msg = format!("进程退出码: {}", exit_code);
                                                         if let Err(e) = log_store.update_complete(
                                                             &log_id,
-                                                            final_session_id,
-                                                            Some(final_output),
-                                                            Some(error_msg.clone()),
-                                                            if final_thinking.is_empty() { None } else { Some(final_thinking) },
-                                                            final_tool_count,
-                                                            None,
+                                                            UpdateCompleteParams {
+                                                                session_id: final_session_id,
+                                                                output: Some(final_output),
+                                                                error: Some(error_msg.clone()),
+                                                                thinking_summary: if final_thinking.is_empty() { None } else { Some(final_thinking) },
+                                                                tool_call_count: final_tool_count,
+                                                                ..Default::default()
+                                                            },
                                                         ) {
                                                             tracing::error!("[Scheduler] 更新日志失败: {:?}", e);
                                                         }
-                            
+
                                                         // 检查是否可以重试
                                                         let can_retry = task_store.update_retry_status(&task_id).unwrap_or(false);
-                            
+
                                                         if can_retry {
                                                             tracing::info!("[Scheduler] 任务 {} 失败，将自动重试", task_name);
                                                             // 不更新状态为 Failed
@@ -1004,25 +1007,24 @@ impl SchedulerDispatcher {
                             {
                                 let mut log_store = log_store_for_timeout.lock().await;
                                 let mut task_store = task_store_for_timeout.lock().await;
-                                
+
                                 let error_msg = format!("任务执行超时 ({}分钟)", timeout / 60);
                                 if let Err(e) = log_store.update_complete(
                                     &log_id_for_timeout,
-                                    Some(session_id_for_timeout),
-                                    None,
-                                    Some(error_msg.clone()),
-                                    None,
-                                    0,
-                                    None,
+                                    UpdateCompleteParams {
+                                        session_id: Some(session_id_for_timeout),
+                                        error: Some(error_msg.clone()),
+                                        ..Default::default()
+                                    },
                                 ) {
                                     tracing::error!("[Scheduler] 更新日志失败: {:?}", e);
                                 }
-                                
+
                                 if let Err(e) = task_store.update_run_status(&task_id_for_timeout, TaskStatus::Failed) {
                                     tracing::error!("[Scheduler] 更新任务状态失败: {:?}", e);
                                 }
                             }
-                            
+
                             // 发送超时事件到前端
                             let _ = window_for_timeout.emit("scheduler-event", serde_json::json!({
                                 "contextId": ctx_id_for_timeout,
@@ -1063,12 +1065,10 @@ impl SchedulerDispatcher {
 
                     if let Err(update_err) = log_store.update_complete(
                         &log_id_clone,
-                        None,
-                        None,
-                        Some(e.to_string()),
-                        None,
-                        0,
-                        None,
+                        UpdateCompleteParams {
+                            error: Some(e.to_string()),
+                            ..Default::default()
+                        },
                     ) {
                         tracing::error!("[Scheduler] 更新日志失败: {:?}", update_err);
                     }

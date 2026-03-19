@@ -5,6 +5,24 @@ use std::path::PathBuf;
 use uuid::Uuid;
 use chrono::Utc;
 
+/// update_complete 函数的参数
+/// 用于减少参数数量，避免 too_many_arguments 警告
+#[derive(Debug, Clone, Default)]
+pub struct UpdateCompleteParams {
+    /// 会话 ID
+    pub session_id: Option<String>,
+    /// 输出内容
+    pub output: Option<String>,
+    /// 错误信息
+    pub error: Option<String>,
+    /// 思考摘要
+    pub thinking_summary: Option<String>,
+    /// 工具调用次数
+    pub tool_call_count: u32,
+    /// Token 数量
+    pub token_count: Option<u32>,
+}
+
 /// UTF-8 安全截取字符串（按字节限制，确保不切断多字节字符）
 fn truncate_utf8_safe(s: &str, max_bytes: usize) -> &str {
     if s.len() <= max_bytes {
@@ -445,14 +463,9 @@ impl LogStoreService {
     pub fn update_complete(
         &mut self,
         log_id: &str,
-        session_id: Option<String>,
-        output: Option<String>,
-        error: Option<String>,
-        thinking_summary: Option<String>,
-        tool_call_count: u32,
-        token_count: Option<u32>,
+        params: UpdateCompleteParams,
     ) -> Result<()> {
-        let status = if error.is_some() {
+        let status = if params.error.is_some() {
             crate::models::scheduler::TaskStatus::Failed
         } else {
             crate::models::scheduler::TaskStatus::Success
@@ -466,7 +479,7 @@ impl LogStoreService {
         let duration_ms = (finished_at - started_at) * 1000;
 
         // 截取输出（UTF-8 安全）
-        let truncated_output = output.map(|o| {
+        let truncated_output = params.output.map(|o| {
             if o.len() > self.max_output_length {
                 let truncated = truncate_utf8_safe(&o, self.max_output_length);
                 format!("{}...\n[输出已截断，共 {} 字符]",
@@ -477,7 +490,7 @@ impl LogStoreService {
         });
 
         // 截取思考摘要（UTF-8 安全）
-        let truncated_thinking = thinking_summary.map(|t| {
+        let truncated_thinking = params.thinking_summary.map(|t| {
             if t.len() > 500 {
                 let truncated = truncate_utf8_safe(&t, 500);
                 format!("{}...", truncated)
@@ -489,15 +502,15 @@ impl LogStoreService {
         // 更新所有日志中的记录
         for log in &mut self.store.all_logs {
             if log.id == log_id {
-                log.session_id = session_id.clone();
+                log.session_id = params.session_id.clone();
                 log.finished_at = Some(finished_at);
                 log.duration_ms = Some(duration_ms);
                 log.status = status;
                 log.output = truncated_output.clone();
-                log.error = error.clone();
+                log.error = params.error.clone();
                 log.thinking_summary = truncated_thinking.clone();
-                log.tool_call_count = tool_call_count;
-                log.token_count = token_count;
+                log.tool_call_count = params.tool_call_count;
+                log.token_count = params.token_count;
                 break;
             }
         }
@@ -506,15 +519,15 @@ impl LogStoreService {
         for logs in self.store.logs.values_mut() {
             for log in logs.iter_mut() {
                 if log.id == log_id {
-                    log.session_id = session_id.clone();
+                    log.session_id = params.session_id.clone();
                     log.finished_at = Some(finished_at);
                     log.duration_ms = Some(duration_ms);
                     log.status = status;
                     log.output = truncated_output.clone();
-                    log.error = error.clone();
+                    log.error = params.error.clone();
                     log.thinking_summary = truncated_thinking.clone();
-                    log.tool_call_count = tool_call_count;
-                    log.token_count = token_count;
+                    log.tool_call_count = params.tool_call_count;
+                    log.token_count = params.token_count;
                     break;
                 }
             }
@@ -526,7 +539,11 @@ impl LogStoreService {
 
     /// 更新日志（兼容旧接口）
     pub fn update(&mut self, log_id: &str, output: Option<String>, error: Option<String>) -> Result<()> {
-        self.update_complete(log_id, None, output, error, None, 0, None)
+        self.update_complete(log_id, UpdateCompleteParams {
+            output,
+            error,
+            ..Default::default()
+        })
     }
 
     /// 获取任务日志
