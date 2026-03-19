@@ -222,9 +222,7 @@ fn get_diff_content(
         if !oid.is_zero() {
             match repo.find_blob(oid) {
                 Ok(blob) => {
-                    if blob.size() > MAX_INLINE_DIFF_BYTES {
-                        Some(None)
-                    } else if blob.is_binary() {
+                    if blob.size() > MAX_INLINE_DIFF_BYTES || blob.is_binary() {
                         Some(None)
                     } else {
                         Some(
@@ -249,9 +247,7 @@ fn get_diff_content(
         if !oid.is_zero() {
             match repo.find_blob(oid) {
                 Ok(blob) => {
-                    if blob.size() > MAX_INLINE_DIFF_BYTES {
-                        Some(None)
-                    } else if blob.is_binary() {
+                    if blob.size() > MAX_INLINE_DIFF_BYTES || blob.is_binary() {
                         Some(None)
                     } else {
                         Some(
@@ -327,9 +323,7 @@ fn get_diff_head_to_workdir_direct(
         if let Ok(entry) = head_tree.get_path(std::path::Path::new(file_path)) {
             let obj = entry.to_object(repo)?;
             if let Some(blob) = obj.as_blob() {
-                if blob.size() > MAX_INLINE_DIFF_BYTES {
-                    Some(None)
-                } else if blob.is_binary() {
+                if blob.size() > MAX_INLINE_DIFF_BYTES || blob.is_binary() {
                     Some(None)
                 } else {
                     Some(
@@ -487,9 +481,7 @@ fn get_diff_index_to_workdir(
                 Ok(bytes) => {
                     let is_bin = is_binary_bytes(&bytes);
                     debug!("从文件系统读取工作区内容成功，字节长度: {}", bytes.len());
-                    if is_bin {
-                        Some(None)
-                    } else if bytes.len() > MAX_INLINE_DIFF_BYTES {
+                    if is_bin || bytes.len() > MAX_INLINE_DIFF_BYTES {
                         Some(None)
                     } else {
                         let content =
