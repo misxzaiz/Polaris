@@ -223,10 +223,86 @@
 
 ---
 
+## Round 5 - 2026-03-20
+
+### 完成内容
+
+#### 1. AI Session Manager 抽象 (`src/vnext/session/`)
+- 会话状态管理 (SessionState: IDLE/RUNNING/PAUSED/COMPLETED/FAILED/CANCELLED)
+- 会话配置 (SessionConfig: engineId, workDir, maxTokens, temperature, timeout, systemPrompt, profile)
+- 会话信息追踪 (SessionInfo: id, nodeId, workflowId, state, tokenUsage, rounds)
+- 消息管理 (Message: role, content, timestamp, tokenCount)
+- 执行事件 (ExecutionEvent: thinking/reading/writing/tool_call/decision/error/complete)
+- MockSession 模拟实现 (用于测试和开发)
+- SessionManager 会话管理器 (createSession, getSession, getActiveSessions, closeSession)
+- 流式回调支持 (SessionEventCallbacks: onThinking, onToolCall, onOutput, onError, onComplete)
+
+#### 2. Context Builder 执行上下文构建器 (`src/vnext/context/`)
+- 节点执行上下文 (NodeExecutionContext: workflow, node, profile, round, memory, pendingEvents, executionHistory, userInputs)
+- 提示词上下文 (PromptContext: systemPrompt, userPrompt, contextInfo, templateVars)
+- 上下文构建选项 (ContextBuildOptions: includeMemory, includeHistory, includeUserInputs, maxHistoryItems, maxMemoryLines)
+- 用户输入管理 (UserInput: type, content, timestamp, processed)
+- 依赖状态追踪 (DependencyStatus: nodeId, nodeName, status, outputSummary)
+- 模板渲染 (renderTemplate: 变量替换, 条件块, 循环)
+- Profile 约束注入系统提示词
+- 内存摘要格式化
+
+#### 3. Template System 模板系统 v1 (`src/vnext/template/`)
+- 模板类型 (ProfileTemplate, PromptTemplate, WorkflowTemplate, NodeTemplate)
+- 模板变量定义 (TemplateVariable: name, type, defaultValue, required, validation)
+- 模板渲染上下文 (TemplateRenderContext: variables, workflowContext, nodeContext, memoryContext)
+- 模板渲染结果 (TemplateRenderResult: success, content, usedVariables, errors, warnings)
+- 内置 Profile 模板 (builtin-developer-v1, builtin-product-v1, builtin-tester-v1)
+- 内置 Prompt 模板 (builtin-task-prompt, builtin-review-prompt)
+- 内置 Workflow 模板 (builtin-dev-pipeline, builtin-feature-flow)
+- 模板语法支持:
+  - 简单变量 `{{variable}}`
+  - 嵌套变量 `{{context.workflow.name}}`
+  - 条件块 `{{#if variable}}...{{/if}}`
+  - 条件-否则 `{{#if variable}}...{{else}}...{{/if}}`
+  - 循环 `{{#each items}}...{{this}}...{{/each}}`
+
+### 修改文件
+- 新增: `src/vnext/session/types.ts`
+- 新增: `src/vnext/session/index.ts`
+- 新增: `src/vnext/context/types.ts`
+- 新增: `src/vnext/context/index.ts`
+- 新增: `src/vnext/template/types.ts`
+- 新增: `src/vnext/template/index.ts`
+- 新增: `src/vnext/__tests__/session.test.ts`
+- 新增: `src/vnext/__tests__/context.test.ts`
+- 新增: `src/vnext/__tests__/template.test.ts`
+- 更新: `src/vnext/index.ts` (导出新模块)
+
+### 单元测试
+- SessionManager: 34 个新增测试
+- ContextBuilder: 20 个新增测试
+- TemplateEngine: 29 个新增测试
+- Phase 3 总计: 83 个新增测试
+- 全部测试: 366 个测试全部通过
+
+### 技术决策
+1. Session 抽象接口化，支持 Mock 实现和未来真实 AI 引擎集成
+2. Context Builder 职责单一：构建节点执行所需的完整上下文信息
+3. Template Engine 采用内置模板 + 自定义模板模式，支持灵活扩展
+4. 模板渲染顺序：先处理控制结构(each/if)，再处理变量替换
+
+### 风险
+- 暂无
+
+### 下一轮建议
+- 开始 Phase 4: Memory 系统
+- 实现 active / summary / archive 分层
+- 实现压缩触发策略
+- 实现 semantic index stub
+
+---
+
 ## 进度评分
 
 Round 1: +2% (新增稳定功能)
 Round 2: +2% (新增稳定功能)
 Round 3: +2% (新增稳定功能)
 Round 4: +2% (Phase 2 协同能力完成)
-当前总进度: 8%
+Round 5: +2% (Phase 3 Agent Runtime 完成)
+当前总进度: 10%

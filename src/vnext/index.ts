@@ -114,3 +114,63 @@ export {
   type CreateExecutionParams,
   type CompleteExecutionParams,
 } from './execution-store';
+
+// AI Session Manager
+export {
+  // 会话管理器
+  SessionManager,
+  MockSession,
+  getSessionManager,
+  resetSessionManager,
+
+  // 类型
+  type ISession,
+  type ISessionManager,
+  type SessionFactory,
+  type SessionState,
+  type SessionConfig,
+  type SessionInfo,
+  type SessionResult,
+  type Message,
+  type ExecutionEvent,
+  type SessionEventCallbacks,
+  type ToolCallRecord,
+  type TokenUsage,
+} from './session';
+
+// 上下文构建器
+export {
+  // 构建器实现
+  ContextBuilder,
+  getContextBuilder,
+  resetContextBuilder,
+
+  // 类型
+  type IContextBuilder,
+  type NodeExecutionContext,
+  type PromptContext,
+  type ContextBuildOptions,
+  type UserInput,
+  type UserInputType,
+  type DependencyStatus,
+  type ContextInfo,
+} from './context';
+
+// 模板系统
+export {
+  // 模板引擎
+  TemplateEngine,
+  getTemplateEngine,
+  resetTemplateEngine,
+
+  // 类型
+  type ITemplateEngine,
+  type TemplateType,
+  type ProfileTemplate,
+  type PromptTemplate,
+  type WorkflowTemplate,
+  type NodeTemplate,
+  type TemplateVariable,
+  type TemplateRenderContext,
+  type TemplateRenderResult,
+} from './template';
