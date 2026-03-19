@@ -298,6 +298,70 @@
 
 ---
 
+## Round 6 - 2026-03-20
+
+### 完成内容
+
+#### 1. MemoryManager 内存管理器 (`src/vnext/memory-manager/`)
+- 分层存储管理 (MemoryLayer: active/summaries/archives/checkpoints/semantic/tasks/user_inputs)
+- Active Memory 管理 (currentGoal, completed, inProgress, pending, decisions, risks)
+- Entry 管理 (CRUD: addEntry, getEntry, updateEntry, deleteEntry, moveEntry)
+- Checkpoint 管理 (createCheckpoint, getCheckpoint, listCheckpoints, restoreCheckpoint)
+- 内存压缩支持 (needsCompaction, runCompaction)
+- 统计信息 (getStats, getWorkflowState)
+- 归档功能 (archiveOld, clearAll)
+- 事件监听支持 (addListener, removeListener)
+
+#### 2. InMemoryStore 内存存储 (`src/vnext/memory-manager/`)
+- Entry 存储和检索
+- Layer 索引管理
+- 查询过滤 (type, tags, date range, relevance score)
+- 分页支持 (limit, offset)
+
+#### 3. DefaultMemoryCompactor 压缩器 (`src/vnext/memory-manager/`)
+- 压缩触发检查 (maxLines, maxTokens, completedNodesThreshold)
+- Summary 生成 (completedGoals, keyDecisions, pending, risks)
+- Entry 归档策略
+
+#### 4. SemanticIndexStub 语义索引存根 (`src/vnext/memory-manager/`)
+- Entry 索引 (index)
+- 简单文本搜索 (search)
+- 工作流和类型过滤
+- 删除和清理支持
+
+### 修改文件
+- 新增: `src/vnext/memory-manager/types.ts`
+- 新增: `src/vnext/memory-manager/index.ts`
+- 新增: `src/vnext/__tests__/memory-manager.test.ts`
+- 更新: `src/vnext/index.ts` (导出 Memory 模块)
+
+### 单元测试
+- InMemoryStore: 8 个测试
+- DefaultMemoryCompactor: 4 个测试
+- SemanticIndexStub: 7 个测试
+- MemoryManager: 30 个测试
+- Phase 4 总计: 49 个新增测试
+- 全部测试: 415 个测试全部通过
+
+### 技术决策
+1. Memory 分为 7 层: active, summaries, archives, checkpoints, semantic, tasks, user_inputs
+2. Active Memory 采用结构化存储: goals, decisions, risks, completed, pending
+3. 压缩触发条件: 行数、Token数、完成节点数阈值
+4. Semantic Index 采用存根实现，预留未来集成向量数据库
+5. Event-driven 架构，支持外部监听内存变化
+
+### 风险
+- 暂无
+
+### 下一轮建议
+- 开始 Phase 5: 工程增强
+- 实现 Interrupt Inbox
+- 实现 Runtime Monitor 数据输出
+- 实现 Workflow persistence
+- 实现 Error Recovery
+
+---
+
 ## 进度评分
 
 Round 1: +2% (新增稳定功能)
@@ -305,4 +369,5 @@ Round 2: +2% (新增稳定功能)
 Round 3: +2% (新增稳定功能)
 Round 4: +2% (Phase 2 协同能力完成)
 Round 5: +2% (Phase 3 Agent Runtime 完成)
-当前总进度: 10%
+Round 6: +2% (Phase 4 Memory 系统完成)
+当前总进度: 12%

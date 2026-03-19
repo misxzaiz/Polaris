@@ -174,3 +174,28 @@ export {
   type TemplateRenderContext,
   type TemplateRenderResult,
 } from './template';
+
+// Memory 管理
+export {
+  // Memory 管理器
+  MemoryManager,
+  InMemoryStore,
+  DefaultMemoryCompactor,
+  SemanticIndexStub,
+  getMemoryManager,
+  resetMemoryManager,
+
+  // 类型
+  type IMemoryManager,
+  type IMemoryStore,
+  type IMemoryCompactor,
+  type ISemanticIndex,
+  type MemoryManagerConfig,
+  type MemoryEventListener,
+  type MemoryEvent,
+  type MemoryEventType,
+  type MemoryQueryFilter,
+  type CompactionResult,
+  type MemoryWorkflowState,
+  type MemoryLayerInfo,
+} from './memory-manager';
