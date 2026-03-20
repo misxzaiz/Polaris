@@ -59,10 +59,11 @@ export class DefaultNodeSelector implements INodeSelector {
         return executableNodes.sort((a, b) => a.createdAt - b.createdAt)[0];
 
       case 'ready_first':
-      default:
+      default: {
         // 优先选择 READY 状态的节点
         const readyNode = executableNodes.find(n => n.state === 'READY');
         return readyNode ?? executableNodes[0];
+      }
     }
   }
 

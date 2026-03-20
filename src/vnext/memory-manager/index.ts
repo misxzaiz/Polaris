@@ -455,7 +455,7 @@ export class MemoryManager implements IMemoryManager {
           active.pending.push(entry.content);
         }
         break;
-      case 'decision':
+      case 'decision': {
         const decision: Decision = {
           id: entry.id,
           description: entry.content,
@@ -463,7 +463,8 @@ export class MemoryManager implements IMemoryManager {
         };
         active.decisions.push(decision);
         break;
-      case 'risk':
+      }
+      case 'risk': {
         const risk: Risk = {
           id: entry.id,
           description: entry.content,
@@ -473,6 +474,7 @@ export class MemoryManager implements IMemoryManager {
         };
         active.risks.push(risk);
         break;
+      }
     }
 
     active.updatedAt = Date.now();

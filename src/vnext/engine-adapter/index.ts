@@ -231,7 +231,7 @@ export class AIEngineAdapter implements ISession {
         callbacks.onToolCall?.(event.tool, event.args || {});
         break;
 
-      case 'tool_call_end':
+      case 'tool_call_end': {
         const toolRecord: ToolCallRecord = {
           tool: event.tool,
           input: {},
@@ -242,6 +242,7 @@ export class AIEngineAdapter implements ISession {
         this._toolCalls.push(toolRecord);
         callbacks.onToolResult?.(event.tool, event.result ? String(event.result) : '', !event.success);
         break;
+      }
 
       case 'thinking':
         callbacks.onThinking?.(event.content);

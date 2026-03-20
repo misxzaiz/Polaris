@@ -140,10 +140,10 @@ export class TemplateEngine implements ITemplateEngine {
     }
 
     // 渲染系统提示词
-    let systemPrompt = this.renderString(promptTemplate.systemTemplate, context, usedVariables, warnings);
+    const systemPrompt = this.renderString(promptTemplate.systemTemplate, context, usedVariables, warnings);
 
     // 渲染用户提示词
-    let userPrompt = this.renderString(promptTemplate.userTemplate, context, usedVariables, warnings);
+    const userPrompt = this.renderString(promptTemplate.userTemplate, context, usedVariables, warnings);
 
     // 组合最终内容
     const content = this.combinePrompts(systemPrompt, userPrompt);

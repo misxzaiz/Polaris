@@ -10,6 +10,11 @@ import type {
   BenchmarkSuiteResult,
   BenchmarkConfig,
 } from './types';
+import { canTransitionWorkflow, canTransitionNode } from '../state-machine';
+import { EventBus } from '../event-bus';
+import { DefaultNodeSelector } from '../executor';
+import { ExecutionStore } from '../execution-store';
+import { MemoryManager } from '../memory-manager';
 
 export type { BenchmarkResult, BenchmarkSuiteResult, BenchmarkConfig };
 
@@ -276,8 +281,6 @@ export class BenchmarkSuite {
  * State Machine Benchmarks
  */
 export function createStateMachineBenchmarkSuite(): BenchmarkSuite {
-  const { canTransitionWorkflow, canTransitionNode } = require('../state-machine');
-
   return new BenchmarkSuite('State Machine Benchmarks')
     .add('workflow transition check', () => {
       canTransitionWorkflow('CREATED', 'RUNNING');
@@ -297,8 +300,6 @@ export function createStateMachineBenchmarkSuite(): BenchmarkSuite {
  * EventBus Benchmarks
  */
 export function createEventBusBenchmarkSuite(): BenchmarkSuite {
-  const { EventBus } = require('../event-bus');
-
   return new BenchmarkSuite('EventBus Benchmarks')
     .add('subscribe and emit', () => {
       const bus = new EventBus();
@@ -309,8 +310,6 @@ export function createEventBusBenchmarkSuite(): BenchmarkSuite {
     })
     .add('emit event', () => {
       const bus = new EventBus();
-      let count = 0;
-      bus.subscribe('test-event', () => { count++; });
       bus.emit('test-event', { data: 'test' }, { workflowId: 'bench' });
     })
     .add('emit to 10 subscribers', () => {
@@ -326,8 +325,6 @@ export function createEventBusBenchmarkSuite(): BenchmarkSuite {
  * Node Selection Benchmarks
  */
 export function createNodeSelectionBenchmarkSuite(): BenchmarkSuite {
-  const { DefaultNodeSelector } = require('../executor');
-
   return new BenchmarkSuite('Node Selection Benchmarks')
     .add('select from 10 nodes', () => {
       const selector = new DefaultNodeSelector('priority');
@@ -362,8 +359,6 @@ export function createNodeSelectionBenchmarkSuite(): BenchmarkSuite {
  * Execution Store Benchmarks
  */
 export function createExecutionStoreBenchmarkSuite(): BenchmarkSuite {
-  const { ExecutionStore } = require('../execution-store');
-
   return new BenchmarkSuite('Execution Store Benchmarks')
     .add('create and get execution', () => {
       const store = new ExecutionStore();
@@ -398,8 +393,6 @@ export function createExecutionStoreBenchmarkSuite(): BenchmarkSuite {
  * Memory Manager Benchmarks
  */
 export function createMemoryBenchmarkSuite(): BenchmarkSuite {
-  const { MemoryManager } = require('../memory-manager');
-
   return new BenchmarkSuite('Memory Manager Benchmarks')
     .add('add entry to active layer', async () => {
       const manager = new MemoryManager();

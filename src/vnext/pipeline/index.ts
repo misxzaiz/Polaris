@@ -572,8 +572,8 @@ export class PipelineOrchestrator {
     _message: string,
     extras: Partial<PipelineAdvanceResult> = {}
   ): PipelineAdvanceResult {
-    const progress = this.getProgress();
-    progress; // Used for potential future logging
+    // Get progress for potential future logging/debugging
+    void this.getProgress();
     const emittedEvents = extras.emittedEvents ?? [];
 
     return {

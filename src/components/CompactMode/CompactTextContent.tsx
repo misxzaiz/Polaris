@@ -23,6 +23,10 @@ interface CompactTextContentProps {
  * 单个 Markdown 部分渲染组件
  */
 const MarkdownPartRenderer = memo(function MarkdownPartRenderer({ part }: { part: MarkdownPart }) {
+  // 文本部分使用完整的 Markdown 渲染
+  // Note: Hook must be called before any early returns to satisfy rules-of-hooks
+  const html = useMemo(() => markdownCache.render(part.content), [part.content])
+
   if (part.type === 'mermaid' && part.id) {
     return (
       <div className="my-2">
@@ -30,9 +34,6 @@ const MarkdownPartRenderer = memo(function MarkdownPartRenderer({ part }: { part
       </div>
     )
   }
-
-  // 文本部分使用完整的 Markdown 渲染
-  const html = useMemo(() => markdownCache.render(part.content), [part.content])
 
   return (
     <div
