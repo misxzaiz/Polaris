@@ -4,65 +4,29 @@
  * 执行记录存储系统，管理执行历史
  */
 
+import type { ExecutionRecord, ExecutionStatus, TokenUsage } from '../types';
+import type {
+  ExecutionStoreConfig as ExecutionStoreConfigType,
+  ExecutionStats as ExecutionStatsType,
+  CreateExecutionParams,
+  CompleteExecutionParams,
+} from './types';
+
+// Re-export types from types.ts
+export type {
+  ExecutionStoreConfig,
+  ExecutionStats,
+  CreateExecutionParams,
+  CompleteExecutionParams,
+} from './types';
+
+// Use aliased names for local use
+type ExecutionStoreConfig = ExecutionStoreConfigType;
+type ExecutionStats = ExecutionStatsType;
+
 // ============================================================================
-// 类型定义（与 types/index.ts 保持一致）
+// 类型定义
 // ============================================================================
-
-/**
- * 执行状态
- */
-export type ExecutionStatus =
-  | 'PENDING'
-  | 'RUNNING'
-  | 'SUCCESS'
-  | 'FAILED'
-  | 'TIMEOUT'
-  | 'CANCELLED';
-
-/**
- * Token 使用量
- */
-export interface TokenUsage {
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-}
-
-/**
- * 工具调用记录
- */
-export interface ToolCallRecord {
-  tool: string;
-  input: string;
-  timestamp: number;
-  success: boolean;
-  resultSnippet?: string;
-  error?: string;
-}
-
-/**
- * 执行记录
- */
-export interface ExecutionRecord {
-  id: string;
-  nodeId: string;
-  workflowId: string;
-  round: number;
-  status: ExecutionStatus;
-  startTime: number;
-  endTime?: number;
-  durationMs?: number;
-  sessionId?: string;
-  engineId?: string;
-  summaryPath?: string;
-  outputSummary?: string;
-  error?: string;
-  tokenCount?: number;
-  toolCallCount?: number;
-  tokenUsage?: TokenUsage;
-  toolCalls: ToolCallRecord[];
-  score?: number;
-}
 
 /**
  * 执行查询参数
@@ -86,59 +50,14 @@ function generateExecutionId(): string {
 }
 
 function calculateDuration(record: ExecutionRecord): number {
-  if (!record.endTime || !record.startTime) return 0;
-  return record.endTime - record.startTime;
+  const start = record.startedAt ?? record.startTime;
+  const end = record.finishedAt ?? record.endTime;
+  if (!end || !start) return 0;
+  return end - start;
 }
 
 function isExecutionTerminal(status: ExecutionStatus): boolean {
   return status !== 'PENDING' && status !== 'RUNNING';
-}
-
-// ============================================================================
-// 存储配置
-// ============================================================================
-
-/**
- * 执行记录存储配置
- */
-export interface ExecutionStoreConfig {
-  /** 最大记录数量 */
-  maxRecords?: number;
-
-  /** 记录保留时间（毫秒） */
-  retentionMs?: number;
-
-  /** 是否自动清理 */
-  autoCleanup?: boolean;
-
-  /** 清理间隔（毫秒） */
-  cleanupInterval?: number;
-
-  /** 是否启用日志 */
-  enableLog?: boolean;
-}
-
-/**
- * 执行记录统计
- */
-export interface ExecutionStats {
-  /** 总记录数 */
-  totalRecords: number;
-
-  /** 成功数 */
-  successCount: number;
-
-  /** 失败数 */
-  failedCount: number;
-
-  /** 运行中数 */
-  runningCount: number;
-
-  /** 平均执行时间 */
-  avgDurationMs: number;
-
-  /** 总 Token 消耗 */
-  totalTokens: number;
 }
 
 // ============================================================================
@@ -181,21 +100,17 @@ export class ExecutionStore {
   /**
    * 创建新的执行记录
    */
-  create(params: {
-    nodeId: string;
-    workflowId: string;
-    round: number;
-    sessionId?: string;
-    engineId?: string;
-  }): ExecutionRecord {
+  create(params: CreateExecutionParams): ExecutionRecord {
     const id = generateExecutionId();
+    const now = Date.now();
     const record: ExecutionRecord = {
       id,
       nodeId: params.nodeId,
       workflowId: params.workflowId,
       round: params.round,
       status: 'PENDING',
-      startTime: Date.now(),
+      startedAt: now,
+      startTime: now,
       sessionId: params.sessionId,
       engineId: params.engineId,
       toolCalls: [],
@@ -224,8 +139,10 @@ export class ExecutionStore {
     Object.assign(record, updates);
 
     // 计算持续时间
-    if (record.endTime && record.startTime) {
-      record.durationMs = calculateDuration(record);
+    const endTime = record.finishedAt ?? record.endTime;
+    const startTime = record.startedAt ?? record.startTime;
+    if (endTime && startTime) {
+      record.durationMs = endTime - startTime;
     }
 
     this.log(`Updated execution record: ${id}`);
@@ -257,9 +174,11 @@ export class ExecutionStore {
    * 标记执行开始
    */
   startExecution(id: string): ExecutionRecord | undefined {
+    const now = Date.now();
     return this.update(id, {
       status: 'RUNNING',
-      startTime: Date.now(),
+      startedAt: now,
+      startTime: now,
     });
   }
 
@@ -268,18 +187,17 @@ export class ExecutionStore {
    */
   completeExecution(
     id: string,
-    result: {
-      outputSummary?: string;
-      summaryPath?: string;
-      tokenUsage?: TokenUsage;
-      score?: number;
-    } = {}
+    result: CompleteExecutionParams = {}
   ): ExecutionRecord | undefined {
     const endTime = Date.now();
     return this.update(id, {
       status: 'SUCCESS',
+      finishedAt: endTime,
       endTime,
-      ...result,
+      outputSnippet: result.outputSnippet,
+      summaryPath: result.summaryPath,
+      tokenUsage: result.tokenUsage,
+      score: result.score,
     });
   }
 
@@ -287,9 +205,11 @@ export class ExecutionStore {
    * 标记执行失败
    */
   failExecution(id: string, error: string): ExecutionRecord | undefined {
+    const endTime = Date.now();
     return this.update(id, {
       status: 'FAILED',
-      endTime: Date.now(),
+      finishedAt: endTime,
+      endTime,
       error,
     });
   }
@@ -298,9 +218,11 @@ export class ExecutionStore {
    * 标记执行超时
    */
   timeoutExecution(id: string): ExecutionRecord | undefined {
+    const endTime = Date.now();
     return this.update(id, {
       status: 'TIMEOUT',
-      endTime: Date.now(),
+      finishedAt: endTime,
+      endTime,
       error: 'Execution timed out',
     });
   }
@@ -309,9 +231,11 @@ export class ExecutionStore {
    * 标记执行取消
    */
   cancelExecution(id: string, reason?: string): ExecutionRecord | undefined {
+    const endTime = Date.now();
     return this.update(id, {
       status: 'CANCELLED',
-      endTime: Date.now(),
+      finishedAt: endTime,
+      endTime,
       error: reason ?? 'Execution cancelled',
     });
   }
@@ -325,7 +249,7 @@ export class ExecutionStore {
    */
   addToolCall(
     id: string,
-    toolCall: Omit<ToolCallRecord, 'timestamp'>
+    toolCall: { tool: string; input: string; success: boolean; resultSnippet?: string; error?: string }
   ): ExecutionRecord | undefined {
     const record = this.records.get(id);
     if (!record) return undefined;
@@ -345,12 +269,12 @@ export class ExecutionStore {
   /**
    * 查询执行记录
    */
-  query(query: ExecutionQuery): ExecutionRecord[] {
+  query(queryParams: ExecutionQuery): ExecutionRecord[] {
     let results = Array.from(this.records.values());
 
     // 按工作流过滤
-    if (query.workflowId) {
-      const ids = this.recordsByWorkflow.get(query.workflowId);
+    if (queryParams.workflowId) {
+      const ids = this.recordsByWorkflow.get(queryParams.workflowId);
       if (ids) {
         results = results.filter(r => ids.has(r.id));
       } else {
@@ -359,8 +283,8 @@ export class ExecutionStore {
     }
 
     // 按节点过滤
-    if (query.nodeId) {
-      const ids = this.recordsByNode.get(query.nodeId);
+    if (queryParams.nodeId) {
+      const ids = this.recordsByNode.get(queryParams.nodeId);
       if (ids) {
         results = results.filter(r => ids.has(r.id));
       } else {
@@ -369,27 +293,37 @@ export class ExecutionStore {
     }
 
     // 按状态过滤
-    if (query.status) {
-      results = results.filter(r => r.status === query.status);
+    if (queryParams.status) {
+      results = results.filter(r => r.status === queryParams.status);
     }
 
     // 按时间过滤
-    if (query.fromTime) {
-      results = results.filter(r => r.startTime >= query.fromTime!);
+    if (queryParams.fromTime) {
+      results = results.filter(r => {
+        const start = r.startedAt ?? r.startTime ?? 0;
+        return start >= queryParams.fromTime!;
+      });
     }
-    if (query.toTime) {
-      results = results.filter(r => r.startTime <= query.toTime!);
+    if (queryParams.toTime) {
+      results = results.filter(r => {
+        const start = r.startedAt ?? r.startTime ?? 0;
+        return start <= queryParams.toTime!;
+      });
     }
 
     // 按时间排序（最新优先）
-    results.sort((a, b) => b.startTime - a.startTime);
+    results.sort((a, b) => {
+      const aStart = a.startedAt ?? a.startTime ?? 0;
+      const bStart = b.startedAt ?? b.startTime ?? 0;
+      return bStart - aStart;
+    });
 
     // 分页
-    if (query.offset) {
-      results = results.slice(query.offset);
+    if (queryParams.offset) {
+      results = results.slice(queryParams.offset);
     }
-    if (query.limit) {
-      results = results.slice(0, query.limit);
+    if (queryParams.limit) {
+      results = results.slice(0, queryParams.limit);
     }
 
     return results;
@@ -543,7 +477,8 @@ export class ExecutionStore {
     let removed = 0;
 
     this.records.forEach((record, id) => {
-      if (record.startTime < cutoff && isExecutionTerminal(record.status)) {
+      const start = record.startedAt ?? record.startTime ?? 0;
+      if (start < cutoff && isExecutionTerminal(record.status)) {
         this.delete(id);
         removed++;
       }
@@ -567,7 +502,11 @@ export class ExecutionStore {
     // 按时间排序，移除最旧的
     const sorted = Array.from(this.records.values())
       .filter(r => isExecutionTerminal(r.status))
-      .sort((a, b) => a.startTime - b.startTime);
+      .sort((a, b) => {
+        const aStart = a.startedAt ?? a.startTime ?? 0;
+        const bStart = b.startedAt ?? b.startTime ?? 0;
+        return aStart - bStart;
+      });
 
     const toRemove = this.records.size - this.config.maxRecords;
     let removed = 0;

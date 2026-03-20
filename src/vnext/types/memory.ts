@@ -307,3 +307,72 @@ export interface MemoryStats {
   /** Average access count */
   avgAccessCount: number;
 }
+
+// ============================================================================
+// Memory State
+// ============================================================================
+
+/**
+ * Memory state for a workflow
+ */
+export interface MemoryState {
+  /** Workflow ID */
+  workflowId: string;
+
+  /** Active memory */
+  active: ActiveMemory;
+
+  /** Summary count */
+  summaryCount: number;
+
+  /** Archive count */
+  archiveCount: number;
+
+  /** Checkpoint count */
+  checkpointCount: number;
+
+  /** Last compaction time */
+  lastCompaction?: number;
+
+  /** Current token count */
+  currentTokens: number;
+
+  /** Current line count */
+  currentLines: number;
+}
+
+// ============================================================================
+// Checkpoint Data
+// ============================================================================
+
+/**
+ * Checkpoint data structure
+ */
+export interface CheckpointData {
+  /** Checkpoint ID */
+  id: string;
+
+  /** Workflow ID */
+  workflowId: string;
+
+  /** Node ID */
+  nodeId?: string;
+
+  /** Round number */
+  round: number;
+
+  /** Memory snapshot */
+  memorySnapshot: {
+    active: ActiveMemory;
+    entries: MemoryEntry[];
+  };
+
+  /** Git commit hash (if applicable) */
+  gitCommit?: string;
+
+  /** Created at timestamp */
+  createdAt: number;
+
+  /** Description */
+  description?: string;
+}

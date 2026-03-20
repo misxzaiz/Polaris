@@ -4,11 +4,44 @@
  * 执行上下文构建器类型定义
  */
 
-import type { Workflow, WorkflowNode } from '../types/workflow';
+import type { Workflow, WorkflowNode, AgentEvent, ExecutionRecord } from '../types';
 import type { AgentProfile } from '../types/profile';
-import type { AgentEvent } from '../types/event';
-import type { MemoryState } from '../types/memory';
-import type { ExecutionRecord } from '../types/execution';
+
+// ============================================================================
+// Context Memory State (simplified for context builder)
+// ============================================================================
+
+/**
+ * 简化的内存状态（用于上下文构建器）
+ */
+export interface ContextMemoryState {
+  /** 活跃内存行 */
+  active: string[];
+
+  /** 摘要 */
+  summary?: string;
+
+  /** 摘要列表 */
+  summaries: string[];
+
+  /** 归档 */
+  archives: string[];
+
+  /** 检查点 */
+  checkpoints: string[];
+
+  /** 语义索引 */
+  semantic: string[];
+
+  /** 任务 */
+  tasks: string[];
+
+  /** 用户输入 */
+  userInputs: string[];
+}
+
+// Re-export for convenience
+export type { ContextMemoryState as MemoryState };
 
 // ============================================================================
 // Node Execution Context
@@ -34,7 +67,7 @@ export interface NodeExecutionContext {
   workDir: string;
 
   /** 内存状态 */
-  memory: MemoryState;
+  memory: ContextMemoryState;
 
   /** 待处理事件 */
   pendingEvents: AgentEvent[];

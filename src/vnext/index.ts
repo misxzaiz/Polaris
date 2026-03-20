@@ -135,8 +135,10 @@ export {
   type ExecutionEvent,
   type SessionEventCallbacks,
   type ToolCallRecord,
-  type TokenUsage,
 } from './session';
+
+// TokenUsage from session (alias to avoid conflict with monitor)
+export type { TokenUsage as SessionTokenUsage } from './session';
 
 // 上下文构建器
 export {
@@ -147,14 +149,15 @@ export {
 
   // 类型
   type IContextBuilder,
-  type NodeExecutionContext,
   type PromptContext,
   type ContextBuildOptions,
   type UserInput,
-  type UserInputType,
   type DependencyStatus,
   type ContextInfo,
 } from './context';
+
+// NodeExecutionContext from context (alias to avoid conflict with runtime)
+export type { NodeExecutionContext as ContextNodeExecutionContext, UserInputType as ContextUserInputType } from './context';
 
 // 模板系统
 export {
@@ -211,7 +214,6 @@ export {
   InterruptType,
   InterruptPriority,
   InterruptStatus,
-  UserInputType,
   type InterruptRequest,
   type UserInputEntry,
   type InterruptConfig,
@@ -220,6 +222,9 @@ export {
   type InterruptListener,
   type InterruptFilter,
 } from './interrupt';
+
+// UserInputType from interrupt (the main one)
+export { UserInputType } from './interrupt';
 
 // Runtime Monitor
 export {
@@ -232,7 +237,6 @@ export {
   MonitorEventType,
   type WorkflowRuntimeStatus,
   type NodeRuntimeStatus,
-  type TokenUsage,
   type ExecutionLogEntry,
   type ResourceUsageStats,
   type RealtimeMetrics,
@@ -240,6 +244,9 @@ export {
   type MonitorEvent,
   type MonitorListener,
 } from './monitor';
+
+// TokenUsage from monitor (the main one)
+export type { TokenUsage } from './monitor';
 
 // Workflow Persistence
 export {
@@ -298,10 +305,12 @@ export {
   type RuntimeEventType,
   type WorkflowRunResult,
   type NodeExecutorFn,
-  type NodeExecutionContext,
   type NodeExecutionResult,
   type WorkflowRegistration,
 } from './runtime';
+
+// NodeExecutionContext from runtime (alias to avoid conflict with context)
+export type { NodeExecutionContext as RuntimeNodeExecutionContext } from './runtime';
 
 // Plugin System
 export {

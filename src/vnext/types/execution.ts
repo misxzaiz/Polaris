@@ -4,8 +4,6 @@
  * Tracks execution history for workflow nodes
  */
 
-import type { NodeState } from './node';
-
 // ============================================================================
 // Execution Status
 // ============================================================================
@@ -47,8 +45,14 @@ export interface ExecutionRecord {
   /** Execution start timestamp */
   startedAt: number;
 
+  /** Execution start timestamp (alias for startedAt) */
+  startTime?: number;
+
   /** Execution end timestamp */
   finishedAt?: number;
+
+  /** Execution end timestamp (alias for finishedAt) */
+  endTime?: number;
 
   /** Duration in milliseconds */
   durationMs?: number;
@@ -67,6 +71,12 @@ export interface ExecutionRecord {
 
   /** Error message if failed */
   error?: string;
+
+  /** Token count */
+  tokenCount?: number;
+
+  /** Tool call count */
+  toolCallCount?: number;
 
   /** Token usage */
   tokenUsage?: TokenUsage;

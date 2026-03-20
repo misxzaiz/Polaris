@@ -4,7 +4,7 @@
  * Agent 间通信的事件总线实现（内存版）
  */
 
-import type { AgentEvent, EventHandler, EventTypes } from '../types';
+import type { AgentEvent, EventHandler } from '../types';
 
 // ============================================================================
 // EventBus 配置
@@ -62,7 +62,7 @@ export class EventBus {
     options: {
       workflowId: string;
       sourceNodeId?: string;
-      targetNodeId?: string;
+      targetNodeIds?: string[];
       priority?: number;
     }
   ): AgentEvent {
@@ -72,10 +72,11 @@ export class EventBus {
       payload,
       workflowId: options.workflowId,
       sourceNodeId: options.sourceNodeId,
-      targetNodeId: options.targetNodeId,
+      targetNodeIds: options.targetNodeIds,
       createdAt: Date.now(),
       consumed: false,
       priority: options.priority ?? 50,
+      ttl: 0,
     };
 
     // 检查队列大小限制
@@ -110,7 +111,7 @@ export class EventBus {
     options: {
       workflowId: string;
       sourceNodeId?: string;
-      targetNodeId?: string;
+      targetNodeIds?: string[];
       priority?: number;
     };
   }>): AgentEvent[] {

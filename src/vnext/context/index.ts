@@ -4,11 +4,8 @@
  * 执行上下文构建器实现
  */
 
-import type { Workflow, WorkflowNode } from '../types/workflow';
+import type { Workflow, WorkflowNode, AgentEvent, ExecutionRecord } from '../types';
 import type { AgentProfile, MemoryPolicy } from '../types/profile';
-import type { AgentEvent } from '../types/event';
-import type { MemoryState } from '../types/memory';
-import type { ExecutionRecord } from '../types/execution';
 import type {
   NodeExecutionContext,
   PromptContext,
@@ -16,6 +13,7 @@ import type {
   UserInput,
   DependencyStatus,
   ContextInfo,
+  ContextMemoryState,
 } from './types';
 import { DEFAULT_BUILD_OPTIONS } from './types';
 
@@ -52,13 +50,13 @@ export interface IContextBuilder {
  * 上下文构建器实现
  */
 export class ContextBuilder implements IContextBuilder {
-  private memoryState: MemoryState;
+  private memoryState: ContextMemoryState;
   private executionHistory: Map<string, ExecutionRecord[]> = new Map();
   private userInputs: Map<string, UserInput[]> = new Map();
   private profiles: Map<string, AgentProfile> = new Map();
 
   constructor(
-    memoryState?: MemoryState,
+    memoryState?: ContextMemoryState,
     profiles?: AgentProfile[]
   ) {
     this.memoryState = memoryState || this.createEmptyMemoryState();
@@ -151,7 +149,7 @@ export class ContextBuilder implements IContextBuilder {
   /**
    * 更新内存状态
    */
-  updateMemoryState(state: MemoryState): void {
+  updateMemoryState(state: ContextMemoryState): void {
     this.memoryState = state;
   }
 
@@ -333,7 +331,7 @@ export class ContextBuilder implements IContextBuilder {
     };
   }
 
-  private formatMemorySummary(memory: MemoryState): string {
+  private formatMemorySummary(memory: ContextMemoryState): string {
     const parts: string[] = [];
 
     if (memory.active.length > 0) {
@@ -376,7 +374,7 @@ export class ContextBuilder implements IContextBuilder {
     return inputs.filter(i => !i.processed);
   }
 
-  private createEmptyMemoryState(): MemoryState {
+  private createEmptyMemoryState(): ContextMemoryState {
     return {
       active: [],
       summaries: [],

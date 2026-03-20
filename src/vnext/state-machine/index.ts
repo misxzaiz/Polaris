@@ -23,9 +23,10 @@ import type {
 const WORKFLOW_TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
   CREATED: ['PLANNING', 'RUNNING', 'FAILED'],
   PLANNING: ['RUNNING', 'FAILED', 'COMPLETED', 'CREATED'],
-  RUNNING: ['WAITING_EVENT', 'BLOCKED', 'FAILED', 'COMPLETED', 'EVOLVING', 'CREATED'],
+  RUNNING: ['WAITING_EVENT', 'BLOCKED', 'COMPACTING_MEMORY', 'FAILED', 'COMPLETED', 'EVOLVING', 'CREATED'],
   WAITING_EVENT: ['RUNNING', 'BLOCKED', 'FAILED', 'COMPLETED', 'CREATED'],
   BLOCKED: ['RUNNING', 'FAILED', 'COMPLETED', 'CREATED'],
+  COMPACTING_MEMORY: ['RUNNING', 'FAILED'],
   FAILED: ['RUNNING', 'CREATED'], // 允许重试
   COMPLETED: ['EVOLVING', 'CREATED'], // 允许重新启动
   EVOLVING: ['RUNNING', 'COMPLETED', 'FAILED', 'CREATED'],
@@ -160,13 +161,14 @@ export class WorkflowStateMachine {
  * Node 状态转换规则
  */
 const NODE_TRANSITIONS: Record<NodeState, NodeState[]> = {
-  IDLE: ['READY', 'RUNNING'],
-  READY: ['RUNNING', 'IDLE'],
+  IDLE: ['READY', 'RUNNING', 'SKIPPED'],
+  READY: ['RUNNING', 'IDLE', 'SKIPPED'],
   RUNNING: ['WAITING_INPUT', 'WAITING_EVENT', 'DONE', 'FAILED'],
   WAITING_INPUT: ['RUNNING', 'DONE', 'FAILED'],
   WAITING_EVENT: ['RUNNING', 'DONE', 'FAILED'],
   DONE: ['IDLE', 'READY'], // 连续模式下可以重新激活
   FAILED: ['IDLE', 'READY'], // 允许重试
+  SKIPPED: [],
 };
 
 /**
@@ -258,7 +260,7 @@ export class NodeStateMachine {
     if (this.node.state === 'RUNNING' ||
         this.node.state === 'WAITING_INPUT' ||
         this.node.state === 'WAITING_EVENT') {
-      this.node.currentRounds++;
+      this.node.currentRounds = (this.node.currentRounds ?? 0) + 1;
       return this.transition('DONE');
     }
     return false;
@@ -289,7 +291,7 @@ export class NodeStateMachine {
    * 检查是否已完成最大轮次
    */
   isMaxRoundsReached(): boolean {
-    return this.node.currentRounds >= this.node.maxRounds;
+    return (this.node.currentRounds ?? 0) >= this.node.maxRounds;
   }
 
   /**
@@ -325,7 +327,7 @@ export function canNodeBeReady(
   }
 
   // 检查是否达到最大轮次
-  if (node.currentRounds >= node.maxRounds) {
+  if ((node.currentRounds ?? 0) >= node.maxRounds) {
     return false;
   }
 

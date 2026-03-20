@@ -4,9 +4,7 @@
  * 工作流运行时类型定义
  */
 
-import type { Workflow, WorkflowNode } from '../types/workflow';
-import type { AgentProfile } from '../types/profile';
-import type { ExecutionStatus, ExecutionRecord } from '../types/execution';
+import type { Workflow, WorkflowNode, ExecutionRecord, AgentProfile } from '../types';
 
 // ============================================================================
 // Runtime Configuration

@@ -119,6 +119,9 @@ export interface NodeTemplateRef {
 
   /** 触发类型 */
   triggerType: 'start' | 'dependency' | 'event';
+
+  /** 优先级 */
+  priority?: number;
 }
 
 /**

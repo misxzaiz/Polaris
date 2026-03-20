@@ -109,11 +109,12 @@ describe('Workflow State Machine', () => {
       const transitions = getValidWorkflowTransitions('RUNNING');
       expect(transitions).toContain('WAITING_EVENT');
       expect(transitions).toContain('BLOCKED');
+      expect(transitions).toContain('COMPACTING_MEMORY');
       expect(transitions).toContain('FAILED');
       expect(transitions).toContain('COMPLETED');
       expect(transitions).toContain('EVOLVING');
       expect(transitions).toContain('CREATED');
-      expect(transitions).toHaveLength(6);
+      expect(transitions).toHaveLength(7);
     });
 
     it('should return empty array for unknown status', () => {

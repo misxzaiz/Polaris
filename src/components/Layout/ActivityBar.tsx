@@ -5,7 +5,7 @@
  * 参考 VSCode 的 Activity Bar 设计
  */
 
-import { Files, GitPullRequest, CheckSquare, Settings, Languages, Clock, Terminal, Code2, PanelRight } from 'lucide-react'
+import { Files, GitPullRequest, CheckSquare, Settings, Languages, Clock, Terminal, Code2, PanelRight, Workflow } from 'lucide-react'
 import { useViewStore } from '@/stores/viewStore'
 import { ActivityBarIcon } from './ActivityBarIcon'
 import { useTranslation } from 'react-i18next'
@@ -50,6 +50,11 @@ export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rig
       id: 'scheduler' as const,
       icon: Clock,
       label: t('labels.schedulerPanel'),
+    },
+    {
+      id: 'vnext' as const,
+      icon: Workflow,
+      label: t('labels.vnextPanel'),
     },
     {
       id: 'terminal' as const,

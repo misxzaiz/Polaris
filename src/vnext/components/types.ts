@@ -17,6 +17,16 @@ import type {
   TimelineEvent,
 } from '../monitor/visualization-types';
 
+// Re-export visualization types for components
+export type {
+  ProgressData,
+  TokenSummary,
+  CostSummary,
+  TimelineData,
+  TimelineEvent,
+  DashboardOverview,
+} from '../monitor/visualization-types';
+
 // ============================================================================
 // Workflow Diagram Types
 // ============================================================================
@@ -138,6 +148,13 @@ export function getNodeStatusConfig(state: NodeState): NodeStatusConfig {
       borderColor: 'border-purple-300',
       icon: '◎',
       label: '等待输入',
+    },
+    WAITING_EVENT: {
+      color: 'text-cyan-500',
+      bgColor: 'bg-cyan-50',
+      borderColor: 'border-cyan-300',
+      icon: '◐',
+      label: '等待事件',
     },
     DONE: {
       color: 'text-green-500',

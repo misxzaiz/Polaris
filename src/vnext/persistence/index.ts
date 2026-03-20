@@ -25,6 +25,7 @@ import {
   calculateChecksum,
   verifySnapshot,
   ExportFormat,
+  type SnapshotMetadata,
 } from './types';
 
 /**

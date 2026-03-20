@@ -171,3 +171,69 @@ export interface EventQueueItem {
   attempts: number;
   lastError?: string;
 }
+
+// ============================================================================
+// Event Types Constant (for backward compatibility)
+// ============================================================================
+
+/**
+ * Built-in event types as constant object
+ */
+export const EventTypes = {
+  /** 工作流启动 */
+  WORKFLOW_START: 'workflow:start',
+  /** 工作流完成 */
+  WORKFLOW_COMPLETE: 'workflow:complete',
+  /** 工作流失败 */
+  WORKFLOW_FAILED: 'workflow:failed',
+
+  /** 节点就绪 */
+  NODE_READY: 'node:ready',
+  /** 节点开始执行 */
+  NODE_START: 'node:start',
+  /** 节点完成 */
+  NODE_COMPLETE: 'node:complete',
+  /** 节点失败 */
+  NODE_FAILED: 'node:failed',
+
+  /** 需求就绪 */
+  REQUIREMENT_READY: 'requirement:ready',
+  /** 代码就绪 */
+  CODE_READY: 'code:ready',
+  /** 测试完成 */
+  TEST_DONE: 'test:done',
+  /** 部署完成 */
+  DEPLOY_DONE: 'deploy:done',
+
+  /** 用户输入 */
+  USER_INPUT: 'user:input',
+  /** 用户中断 */
+  USER_INTERRUPT: 'user:interrupt',
+} as const;
+
+// ============================================================================
+// Context Types
+// ============================================================================
+
+import type { Workflow, WorkflowNode, AgentProfile, ExecutionRecord, NodeState } from './index';
+
+/**
+ * 工作流执行上下文
+ */
+export interface WorkflowContext {
+  workflow: Workflow;
+  nodes: WorkflowNode[];
+  currentNode?: WorkflowNode;
+  events: AgentEvent[];
+  executionRecords: ExecutionRecord[];
+}
+
+/**
+ * 节点状态转换
+ */
+export interface NodeStateTransition {
+  from: NodeState;
+  to: NodeState;
+  event?: AgentEvent;
+  timestamp: number;
+}

@@ -5,49 +5,23 @@
  */
 
 import type { WorkflowNode, AgentEvent, EventHandler } from '../types';
+import type {
+  NodeSubscriptionRecord,
+  EventMatchResult,
+  NodeEventControllerConfig,
+  EmitEventOptions,
+  NodeCompletionResult,
+} from './types';
 import { EventBus, getEventBus } from '../event-bus';
 
-// ============================================================================
-// 类型定义
-// ============================================================================
-
-/**
- * 节点事件订阅记录
- */
-export interface NodeSubscriptionRecord {
-  /** 节点 ID */
-  nodeId: string;
-  /** 订阅的事件类型 */
-  eventType: string;
-  /** 取消订阅函数 */
-  unsubscribe: () => void;
-  /** 订阅时间 */
-  subscribedAt: number;
-}
-
-/**
- * 事件匹配结果
- */
-export interface EventMatchResult {
-  /** 是否匹配 */
-  matched: boolean;
-  /** 匹配的事件 */
-  event: AgentEvent;
-  /** 匹配的目标节点 */
-  targetNodes: WorkflowNode[];
-}
-
-/**
- * 节点事件控制器配置
- */
-export interface NodeEventControllerConfig {
-  /** 是否自动激活订阅 */
-  autoActivate?: boolean;
-  /** 事件回调 */
-  onEventReceived?: (nodeId: string, event: AgentEvent) => void;
-  /** 是否启用日志 */
-  enableLog?: boolean;
-}
+// Re-export types from types.ts
+export type {
+  NodeSubscriptionRecord,
+  EventMatchResult,
+  NodeEventControllerConfig,
+  EmitEventOptions,
+  NodeCompletionResult,
+} from './types';
 
 // ============================================================================
 // NodeEventController 实现

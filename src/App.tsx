@@ -14,6 +14,7 @@ import { SimpleTodoPanel } from './components/TodoPanel/SimpleTodoPanel';
 import { TranslatePanel, SelectionContextMenu } from './components/Translate';
 import { SchedulerPanel } from './components/Scheduler/SchedulerPanel';
 import { TerminalPanel } from './components/Terminal/TerminalPanel';
+import { VNextPanel } from './components/VNext';
 
 // 懒加载大型组件，减少初始 bundle 大小
 // 这些组件使用命名导出，所以需要使用 then 提取
@@ -512,6 +513,7 @@ function App() {
                 todoContent={<SimpleTodoPanel />}
                 translateContent={<TranslatePanel onSendToChat={sendMessage} />}
                 schedulerContent={<SchedulerPanel />}
+                vnextContent={<VNextPanel />}
                 terminalContent={<TerminalPanel />}
                 toolsContent={<ToolPanel fillRemaining />}
                 developerContent={

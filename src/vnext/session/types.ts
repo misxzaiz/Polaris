@@ -7,6 +7,9 @@
 import type { AgentProfile } from '../types/profile';
 import type { TokenUsage } from '../types/execution';
 
+// Re-export TokenUsage for external use
+export type { TokenUsage };
+
 // ============================================================================
 // Session State
 // ============================================================================

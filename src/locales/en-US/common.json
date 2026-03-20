@@ -45,6 +45,7 @@
     "todoPanel": "Todo Panel",
     "translatePanel": "Translate Panel",
     "schedulerPanel": "Scheduler",
+    "vnextPanel": "Workflow Engine",
     "terminalPanel": "Terminal",
     "toolPanel": "Tool Panel",
     "developerPanel": "Developer Panel",

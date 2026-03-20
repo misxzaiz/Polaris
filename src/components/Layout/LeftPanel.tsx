@@ -66,6 +66,7 @@ export function LeftPanelContent({
   todoContent,
   translateContent,
   schedulerContent,
+  vnextContent,
   terminalContent,
   toolsContent,
   developerContent,
@@ -76,6 +77,7 @@ export function LeftPanelContent({
   todoContent: ReactNode
   translateContent?: ReactNode
   schedulerContent?: ReactNode
+  vnextContent?: ReactNode
   terminalContent?: ReactNode
   toolsContent?: ReactNode
   developerContent?: ReactNode
@@ -95,6 +97,8 @@ export function LeftPanelContent({
     return <>{translateContent}</>
   } else if (type === 'scheduler') {
     return <>{schedulerContent}</>
+  } else if (type === 'vnext') {
+    return <>{vnextContent}</>
   } else if (type === 'terminal') {
     return <>{terminalContent}</>
   } else if (type === 'tools') {

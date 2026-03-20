@@ -4,9 +4,8 @@
  * 工作流运行时环境，集成所有 vnext 组件
  */
 
-import type { Workflow, WorkflowNode } from '../types/workflow';
+import type { Workflow, WorkflowNode, ExecutionRecord } from '../types';
 import type { AgentProfile } from '../types/profile';
-import type { ExecutionRecord } from '../types/execution';
 
 import { EventBus, getEventBus } from '../event-bus';
 import { ExecutionStore, getExecutionStore } from '../execution-store';

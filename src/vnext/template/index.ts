@@ -418,6 +418,7 @@ Always:
             { type: 'forbidden', description: 'No deletion without confirmation', rule: 'delete_*', severity: 'error' },
           ],
           requiredTools: ['read', 'write', 'bash'],
+          tags: ['development', 'coding'],
         },
       },
       {
@@ -483,6 +484,7 @@ Always:
           selfEvolve: false,
           constraints: [],
           requiredTools: ['read', 'write'],
+          tags: ['product', 'requirements'],
         },
       },
       {
@@ -548,6 +550,7 @@ Always:
           selfEvolve: false,
           constraints: [],
           requiredTools: ['read', 'write', 'bash'],
+          tags: ['testing', 'qa'],
         },
       },
     ];

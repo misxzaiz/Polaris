@@ -100,13 +100,14 @@ describe('ExecutionStore', () => {
         round: 1,
       });
 
+      // Use startedAt to override the create timestamp
       store.update(created.id, {
         status: 'RUNNING',
-        startTime: Date.now() - 1000,
+        startedAt: Date.now() - 1000,
       });
       store.update(created.id, {
         status: 'SUCCESS',
-        endTime: Date.now(),
+        finishedAt: Date.now(),
       });
 
       const record = store.get(created.id);
@@ -169,13 +170,13 @@ describe('ExecutionStore', () => {
       });
 
       store.completeExecution(created.id, {
-        outputSummary: 'Test output',
+        outputSnippet: 'Test output',
         tokenUsage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
       });
 
       const record = store.get(created.id);
       expect(record?.status).toBe('SUCCESS');
-      expect(record?.outputSummary).toBe('Test output');
+      expect(record?.outputSnippet).toBe('Test output');
       expect(record?.tokenUsage?.totalTokens).toBe(150);
     });
   });
