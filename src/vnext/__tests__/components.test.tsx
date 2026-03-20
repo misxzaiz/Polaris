@@ -159,13 +159,13 @@ describe('CircularProgress', () => {
   });
 
   it('should show label by default', () => {
-    const { container } = render(<CircularProgress percentage={60} />);
+    render(<CircularProgress percentage={60} />);
 
     expect(screen.getByText('60%')).toBeInTheDocument();
   });
 
   it('should hide label when showLabel is false', () => {
-    const { container } = render(<CircularProgress percentage={60} showLabel={false} />);
+    render(<CircularProgress percentage={60} showLabel={false} />);
 
     expect(screen.queryByText('60%')).not.toBeInTheDocument();
   });

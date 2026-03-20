@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ContinuousExecutor, DefaultNodeSelector } from '../executor';
 import { resetEventBus, getEventBus } from '../event-bus';
 import type { Workflow, WorkflowNode, AgentEvent, NodeState } from '../types';
-import type { ExecutionContext, ExecutorState, NodeSelectionStrategy } from '../executor/types';
+import type { ExecutionContext } from '../executor/types';
 
 // ============================================================================
 // 测试数据工厂

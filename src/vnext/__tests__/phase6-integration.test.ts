@@ -8,35 +8,22 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   // 核心组件
   ContinuousExecutor,
-  DefaultNodeSelector,
   PriorityDispatcher,
-  DefaultWorkflowSelector,
   PipelineOrchestrator,
 
-  // 状态机
-  WorkflowStateMachine,
-  NodeStateMachine,
-  getReadyNodes,
-
   // 事件系统
-  EventBus,
   getEventBus,
   resetEventBus,
-  NodeEventController,
   resetNodeEventController,
 
   // 存储和管理器
   ExecutionStore,
   resetExecutionStore,
   SessionManager,
-  MockSession,
   resetSessionManager,
   ContextBuilder,
   resetContextBuilder,
-  TemplateEngine,
   resetTemplateEngine,
-  MemoryManager,
-  InMemoryStore,
   getMemoryManager,
   resetMemoryManager,
   InterruptInbox,
@@ -44,7 +31,6 @@ import {
   RuntimeMonitor,
   resetRuntimeMonitor,
   WorkflowPersistence,
-  MemoryStorage,
   resetWorkflowPersistence,
   ErrorRecovery,
   resetErrorRecovery,
@@ -52,9 +38,7 @@ import {
   // 类型
   type Workflow,
   type WorkflowNode,
-  type AgentEvent,
   type ExecutionContext,
-  type ExecutionResult,
 } from '../index';
 
 // ============================================================================
@@ -900,7 +884,9 @@ describe('Phase 6 - Pipeline Integration Tests', () => {
         enableLog: false,
       });
 
-      const errorRecovery = new ErrorRecovery({
+      // ErrorRecovery could be used here for auto-recovery
+      // but for this test we just verify the pipeline handles failure
+      new ErrorRecovery({
         enableAutoRecovery: true,
         defaultStrategy: 'RETRY_IMMEDIATE',
         maxRetryAttempts: 2,

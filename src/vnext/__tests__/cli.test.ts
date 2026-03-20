@@ -16,7 +16,6 @@ import {
 import { WorkflowRuntime } from '../runtime';
 import { getWorkflowPersistence, resetWorkflowPersistence } from '../persistence';
 import type { Workflow } from '../types';
-import type { CLIOptions, MonitorData, TableColumn } from '../cli/types';
 
 describe('CLI Formatters', () => {
   describe('formatTable', () => {

@@ -12,9 +12,8 @@ import {
   createDefaultSessionInfo,
   isSessionActive,
   isSessionTerminal,
-  DEFAULT_SESSION_CONFIG,
 } from '../session';
-import type { SessionConfig, SessionState } from '../session';
+import type { SessionConfig } from '../session';
 
 describe('Session Types', () => {
   describe('generateSessionId', () => {

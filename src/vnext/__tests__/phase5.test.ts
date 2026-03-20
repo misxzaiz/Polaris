@@ -24,8 +24,6 @@ import {
 // Workflow Persistence
 import {
   WorkflowPersistence,
-  MemoryStorage,
-  StorageType,
   SnapshotType,
   resetWorkflowPersistence,
 } from '../persistence';
@@ -603,7 +601,7 @@ describe('ErrorRecovery', () => {
 
     it('应该计算恢复成功率', async () => {
       const error1 = recovery.captureError('w1', ErrorType.NETWORK, 'Error 1', { severity: ErrorSeverity.LOW });
-      const error2 = recovery.captureError('w1', ErrorType.API, 'Error 2', { severity: ErrorSeverity.LOW });
+      recovery.captureError('w1', ErrorType.API, 'Error 2', { severity: ErrorSeverity.LOW });
 
       await recovery.attemptRecovery(error1.id);
 

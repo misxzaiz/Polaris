@@ -858,6 +858,54 @@ Round 11: +1% (React 可视化组件)
 
 ---
 
+## Round 20 - 2026-03-20 (Code Quality Improvement Continued)
+
+### 完成内容
+
+1. **测试文件未使用导入修复**
+   - session.test.ts: 移除未使用的 DEFAULT_SESSION_CONFIG 和 SessionType
+   - template.test.ts: 移除未使用的 afterEach
+   - runtime.test.ts: 移除未使用的 WorkflowRegistration, NodeExecutionResult 和 startPromise
+   - plugin.test.ts: 移除未使用的类型导入
+   - phase5.test.ts: 移除未使用的 MemoryStorage, StorageType 和 error2
+   - phase6-integration.test.ts: 大幅清理未使用的导入
+   - cli.test.ts: 移除未使用的 CLIOptions, MonitorData, TableColumn
+   - context.test.ts: 移除未使用的 DEFAULT_BUILD_OPTIONS 和 UserInput
+   - dispatcher.test.ts: 移除未使用的 vi 和 ContinuousExecutor
+   - execution-store.test.ts: 移除未使用的 vi 和 r1
+   - executor.test.ts: 移除未使用的 ExecutorState 和 NodeSelectionStrategy
+   - components.test.tsx: 移除未使用的 container 变量
+
+2. **源码 non-null assertions 修复**
+   - context/index.ts: 使用安全 null 检查替代 `!`
+   - execution-store/index.ts: 使用局部变量替代 `!`
+   - executor/index.ts: 重构 runExecutionLoop 使用局部变量 ctx，避免重复 null 检查
+
+### 修改文件
+- src/vnext/__tests__/session.test.ts
+- src/vnext/__tests__/template.test.ts
+- src/vnext/__tests__/runtime.test.ts
+- src/vnext/__tests__/plugin.test.ts
+- src/vnext/__tests__/phase5.test.ts
+- src/vnext/__tests__/phase6-integration.test.ts
+- src/vnext/__tests__/cli.test.ts
+- src/vnext/__tests__/context.test.ts
+- src/vnext/__tests__/dispatcher.test.ts
+- src/vnext/__tests__/execution-store.test.ts
+- src/vnext/__tests__/executor.test.ts
+- src/vnext/__tests__/components.test.tsx
+- src/vnext/context/index.ts
+- src/vnext/execution-store/index.ts
+- src/vnext/executor/index.ts
+
+### 测试状态
+- 所有 3104 个测试通过
+- ESLint 警告从 162 减少到 106 (减少 56 个)
+- vnext 模块无 lint 警告
+- 构建成功
+
+---
+
 ## Round 19 - 2026-03-20 (Code Quality Improvement)
 
 ### 完成内容

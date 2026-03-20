@@ -2,7 +2,7 @@
  * Priority Dispatcher Tests
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
   PriorityDispatcher,
   DefaultWorkflowSelector,
@@ -13,7 +13,6 @@ import type {
   PriorityDispatcherConfig,
 } from '../dispatcher/types';
 import type { Workflow, WorkflowNode } from '../types';
-import { ContinuousExecutor } from '../executor';
 
 // ============================================================================
 // Test Helpers
@@ -467,13 +466,11 @@ describe('PriorityDispatcher', () => {
 
 describe('PriorityDispatcher Integration', () => {
   it('should work with ContinuousExecutor', async () => {
-    let completedWorkflows = 0;
-
     const config: PriorityDispatcherConfig = {
       maxConcurrency: 1,
       dispatchInterval: 10,
       onWorkflowComplete: () => {
-        completedWorkflows++;
+        // Track completed workflows
       },
     };
 

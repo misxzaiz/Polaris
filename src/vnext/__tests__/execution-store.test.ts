@@ -2,7 +2,7 @@
  * Scheduler vNext - ExecutionStore Tests
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   ExecutionStore,
   getExecutionStore,
@@ -485,7 +485,7 @@ describe('ExecutionStore', () => {
     });
 
     it('should not duplicate on import', () => {
-      const r1 = store.create({ nodeId: 'node-1', workflowId: 'wf-1', round: 1 });
+      store.create({ nodeId: 'node-1', workflowId: 'wf-1', round: 1 });
 
       const exported = store.export();
       const imported = store.import(exported);

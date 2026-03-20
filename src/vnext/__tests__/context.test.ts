@@ -9,12 +9,10 @@ import {
   resetContextBuilder,
   createEmptyUserInput,
   generateContextId,
-  DEFAULT_BUILD_OPTIONS,
 } from '../context';
 import type { Workflow, WorkflowNode } from '../types/workflow';
 import type { MemoryState } from '../types/memory';
 import type { ExecutionRecord } from '../types/execution';
-import type { UserInput } from '../context/types';
 
 describe('Context Types', () => {
   describe('createEmptyUserInput', () => {

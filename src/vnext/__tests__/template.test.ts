@@ -2,7 +2,7 @@
  * Scheduler vNext - Template System Tests
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
   TemplateEngine,
   getTemplateEngine,

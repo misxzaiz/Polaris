@@ -9,8 +9,6 @@ import {
   WorkflowRuntime,
   getWorkflowRuntime,
   resetWorkflowRuntime,
-  type WorkflowRegistration,
-  type NodeExecutionResult,
   type RuntimeEvent,
 } from '../runtime';
 import { getInterruptInbox } from '../interrupt';
@@ -240,7 +238,7 @@ describe('WorkflowRuntime', () => {
       });
 
       // 启动
-      const startPromise = runtime.start();
+      runtime.start();
 
       // 等待一段时间后停止
       await new Promise(resolve => setTimeout(resolve, 50));

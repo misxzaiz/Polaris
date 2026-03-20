@@ -584,13 +584,19 @@ export class ExecutionStore {
     if (!this.recordsByWorkflow.has(record.workflowId)) {
       this.recordsByWorkflow.set(record.workflowId, new Set());
     }
-    this.recordsByWorkflow.get(record.workflowId)!.add(record.id);
+    const workflowSet = this.recordsByWorkflow.get(record.workflowId);
+    if (workflowSet) {
+      workflowSet.add(record.id);
+    }
 
     // 更新节点索引
     if (!this.recordsByNode.has(record.nodeId)) {
       this.recordsByNode.set(record.nodeId, new Set());
     }
-    this.recordsByNode.get(record.nodeId)!.add(record.id);
+    const nodeSet = this.recordsByNode.get(record.nodeId);
+    if (nodeSet) {
+      nodeSet.add(record.id);
+    }
 
     // 检查是否需要清理
     this.cleanupOverflow();

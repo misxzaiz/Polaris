@@ -13,12 +13,7 @@ import {
 } from '../plugin';
 import type {
   Plugin,
-  PluginContext,
-  HookResult,
   BeforeWorkflowStartPayload,
-  AfterWorkflowCompletePayload,
-  BeforeNodeExecutePayload,
-  AfterNodeExecutePayload,
 } from '../plugin';
 
 // Test helper to create a mock workflow

@@ -173,7 +173,10 @@ export class ContextBuilder implements IContextBuilder {
     if (!this.userInputs.has(nodeId)) {
       this.userInputs.set(nodeId, []);
     }
-    this.userInputs.get(nodeId)!.push(input);
+    const inputs = this.userInputs.get(nodeId);
+    if (inputs) {
+      inputs.push(input);
+    }
   }
 
   /**

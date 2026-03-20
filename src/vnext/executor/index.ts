@@ -308,6 +308,12 @@ export class ContinuousExecutor implements IExecutor {
     const MAX_ITERATIONS = 10000;
     let iterations = 0;
 
+    // 使用局部变量避免重复的 null 检查
+    const ctx = this.context;
+    if (!ctx) {
+      return this.createResult(0, 0, 0, 0, false, false, 'No context available');
+    }
+
     while (!this.shouldStop() && iterations < MAX_ITERATIONS) {
       iterations++;
 
@@ -329,7 +335,7 @@ export class ContinuousExecutor implements IExecutor {
       this.refreshPendingEvents();
 
       // 选择下一个节点
-      const node = this.nodeSelector.selectNode(this.context!);
+      const node = this.nodeSelector.selectNode(ctx);
 
       if (!node) {
         // 没有可执行节点，检查是否完成
@@ -349,11 +355,11 @@ export class ContinuousExecutor implements IExecutor {
 
         // 没有可执行节点也没有完成，说明被阻塞
         // 检查是否有等待事件的节点
-        const waitingForEvent = this.context!.nodes.some(
+        const waitingForEvent = ctx.nodes.some(
           n => n.state === 'IDLE' && n.triggerType === 'event' && n.enabled
         );
 
-        if (waitingForEvent && this.context!.pendingEvents.length === 0) {
+        if (waitingForEvent && ctx.pendingEvents.length === 0) {
           // 等待事件但无事件，标记为完成（避免无限等待）
           this._state = 'IDLE';
           return this.createResult(
@@ -373,10 +379,10 @@ export class ContinuousExecutor implements IExecutor {
       }
 
       // 更新当前节点
-      this.context!.currentNodeId = node.id;
+      ctx.currentNodeId = node.id;
 
       // 执行节点
-      const result = await this.executeNode(node, this.context!);
+      const result = await this.executeNode(node, ctx);
       executedNodes++;
 
       if (result.success) {
@@ -384,8 +390,8 @@ export class ContinuousExecutor implements IExecutor {
 
         // 将发出的事件添加到 pendingEvents
         result.emittedEvents.forEach(event => {
-          if (!this.context!.pendingEvents.some(e => e.id === event.id)) {
-            this.context!.pendingEvents.push(event);
+          if (!ctx.pendingEvents.some(e => e.id === event.id)) {
+            ctx.pendingEvents.push(event);
           }
         });
       } else {
@@ -419,7 +425,7 @@ export class ContinuousExecutor implements IExecutor {
       }
 
       // 更新上下文
-      this.context!.currentRound++;
+      ctx.currentRound++;
     }
 
     // 被停止或达到最大迭代
@@ -445,9 +451,10 @@ export class ContinuousExecutor implements IExecutor {
     const workflowEvents = eventBus.getPendingEvents(this.context.workflow.id);
 
     // 合并新事件
+    const ctx = this.context;
     workflowEvents.forEach(event => {
-      if (!this.context!.pendingEvents.some(e => e.id === event.id)) {
-        this.context!.pendingEvents.push(event);
+      if (!ctx.pendingEvents.some(e => e.id === event.id)) {
+        ctx.pendingEvents.push(event);
       }
     });
   }
