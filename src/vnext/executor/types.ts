@@ -153,7 +153,8 @@ export interface ContinuousExecutorConfig {
   onAfterExecute?: (result: ExecutionResult, context: ExecutionContext) => void;
 }
 
-const _DEFAULT_CONFIG: Required<Omit<ContinuousExecutorConfig, 'onBeforeExecute' | 'onAfterExecute'>> = {
+// Default configuration - exported for external use
+export const DEFAULT_EXECUTOR_CONFIG: Required<Omit<ContinuousExecutorConfig, 'onBeforeExecute' | 'onAfterExecute'>> = {
   maxRounds: 0,
   nodeTimeout: 5 * 60 * 1000, // 5 分钟
   executionInterval: 100, // 100ms

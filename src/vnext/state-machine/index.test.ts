@@ -114,7 +114,8 @@ describe('Workflow State Machine', () => {
       expect(transitions).toContain('COMPLETED');
       expect(transitions).toContain('EVOLVING');
       expect(transitions).toContain('CREATED');
-      expect(transitions).toHaveLength(7);
+      expect(transitions).toContain('STOPPED');
+      expect(transitions).toHaveLength(8);
     });
 
     it('should return empty array for unknown status', () => {

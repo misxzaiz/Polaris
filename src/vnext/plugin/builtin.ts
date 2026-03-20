@@ -421,11 +421,12 @@ export const cachingPlugin: Plugin = {
       cache.set(cacheKey, {
         output: payload.output,
         timestamp: Date.now(),
-        ttl: payload.node.config?.cacheTTL || (context.config as { defaultTTL?: number }).defaultTTL || 60000,
+        ttl: (payload.node.config?.cacheTTL as number | undefined) || (context.config as { defaultTTL?: number }).defaultTTL || 60000,
       });
 
       // Enforce max size
-      if (cache.size > (context.config as { maxSize?: number }).maxSize) {
+      const maxSize = (context.config as { maxSize?: number }).maxSize || 1000;
+      if (cache.size > maxSize) {
         const firstKey = cache.keys().next().value;
         if (firstKey) {
           cache.delete(firstKey);

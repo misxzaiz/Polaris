@@ -571,12 +571,9 @@ export class ChartDataFormatter {
  */
 export class TimelineGenerator {
   private monitor: RuntimeMonitor;
-  private config: VisualizationConfig;
 
-  constructor(monitor: RuntimeMonitor, config: Partial<VisualizationConfig> = {}) {
+  constructor(monitor: RuntimeMonitor, _config: Partial<VisualizationConfig> = {}) {
     this.monitor = monitor;
-    this.config = { ...DEFAULT_VISUALIZATION_CONFIG, ...config };
-    // config is stored for future use
   }
 
   /**

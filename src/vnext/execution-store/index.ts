@@ -49,7 +49,8 @@ function generateExecutionId(): string {
   return `exec_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
 }
 
-function _calculateDuration(record: ExecutionRecord): number {
+// Duration calculation utility - kept for potential future use
+export function calculateDuration(record: ExecutionRecord): number {
   const start = record.startedAt ?? record.startTime;
   const end = record.finishedAt ?? record.endTime;
   if (!end || !start) return 0;

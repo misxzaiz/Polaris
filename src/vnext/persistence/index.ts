@@ -529,8 +529,6 @@ export class WorkflowPersistence {
     let totalRemoved = 0;
 
     for (const [workflowId, snapshots] of this.snapshots.entries()) {
-      const _before = snapshots.length;
-
       // 保留至少一个快照
       const toKeep: PersistenceSnapshot[] = [];
       const toRemove: PersistenceSnapshot[] = [];

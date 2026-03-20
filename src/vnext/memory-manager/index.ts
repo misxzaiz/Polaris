@@ -86,7 +86,7 @@ export class InMemoryStore implements IMemoryStore {
     this.entries.delete(id);
 
     // Remove from all layer indexes
-    for (const [key, ids] of this.layerIndex) {
+    for (const [_key, ids] of this.layerIndex) {
       ids.delete(id);
     }
 
@@ -157,7 +157,7 @@ export class InMemoryStore implements IMemoryStore {
  * Default memory compactor implementation
  */
 export class DefaultMemoryCompactor implements IMemoryCompactor {
-  shouldCompact(activeMemory: ActiveMemory, stats: MemoryStats, trigger: CompactionTrigger): boolean {
+  shouldCompact(activeMemory: ActiveMemory, _stats: MemoryStats, trigger: CompactionTrigger): boolean {
     // Check line threshold
     if (activeMemory.totalLines >= trigger.maxLines) {
       return true;

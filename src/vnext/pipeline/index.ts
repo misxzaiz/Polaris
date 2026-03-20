@@ -120,7 +120,7 @@ export class PipelineOrchestrator {
    * 初始化 Pipeline
    */
   initialize(workflow: Workflow, nodes: WorkflowNode[]): void {
-    this.workflow = workflow;
+    this.workflow = workflow; // Stored for workflow reference
     this.nodes = nodes;
     this._state = 'IDLE';
     this.nodeStates.clear();
@@ -176,7 +176,7 @@ export class PipelineOrchestrator {
 
     // 获取当前状态
     const runningNodes = this.getNodesByStatus('running');
-    const completedNodes = this.getNodesByStatus('completed');
+    this.getNodesByStatus('completed'); // For potential future use
 
     // 检查并行限制
     if (runningNodes.length >= this.config.maxParallel) {
@@ -471,6 +471,13 @@ export class PipelineOrchestrator {
    */
   get state(): PipelineState {
     return this._state;
+  }
+
+  /**
+   * 获取关联的工作流
+   */
+  get currentWorkflow(): Workflow | null {
+    return this.workflow;
   }
 
   /**

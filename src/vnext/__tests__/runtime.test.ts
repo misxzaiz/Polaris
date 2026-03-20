@@ -23,12 +23,11 @@ function createTestWorkflow(overrides: Record<string, unknown> = {}): Record<str
   return {
     id: `wf-${Math.random().toString(36).substring(7)}`,
     name: 'Test Workflow',
-    state: 'IDLE',
+    status: 'CREATED',
+    mode: 'continuous',
     priority: 50,
-    triggerType: 'manual',
-    nodes: [],
     maxRounds: 100,
-    currentRound: 0,
+    currentRounds: 0,
     createdAt: Date.now(),
     updatedAt: Date.now(),
     ...overrides,
@@ -49,7 +48,7 @@ function createTestNode(overrides: Record<string, unknown> = {}): Record<string,
     dependencies: [],
     nextNodes: [],
     maxRounds: 10,
-    currentRound: 0,
+    currentRounds: 0,
     timeoutMs: 60000,
     retryCount: 0,
     maxRetries: 3,
@@ -133,7 +132,14 @@ describe('WorkflowRuntime', () => {
         }),
       ] as any[];
 
-      runtime.registerWorkflow({ workflow, nodes });
+      // 注册带模拟执行器的 workflow
+      runtime.registerWorkflow({
+        workflow,
+        nodes,
+        executors: {
+          'node-1': async () => ({ success: true, output: 'Test output' }),
+        },
+      });
 
       const result = await runtime.start();
 
@@ -167,7 +173,15 @@ describe('WorkflowRuntime', () => {
         }),
       ] as any[];
 
-      runtime.registerWorkflow({ workflow, nodes });
+      runtime.registerWorkflow({
+        workflow,
+        nodes,
+        executors: {
+          'node-1': async () => ({ success: true, output: 'Node 1 output', emitEvents: [{ type: 'node-1-done' }] }),
+          'node-2': async () => ({ success: true, output: 'Node 2 output' }),
+          'node-3': async () => ({ success: true, output: 'Node 3 output' }),
+        },
+      });
 
       const result = await runtime.start();
 
@@ -189,7 +203,14 @@ describe('WorkflowRuntime', () => {
         executionInterval: 50,
       });
 
-      slowRuntime.registerWorkflow({ workflow, nodes });
+      slowRuntime.registerWorkflow({
+        workflow,
+        nodes,
+        executors: {
+          'node-1': async () => ({ success: true, output: 'Node 1 output' }),
+          'node-2': async () => ({ success: true, output: 'Node 2 output' }),
+        },
+      });
 
       // 由于 executeAll 是同步完成的，无法在执行中暂停
       // 这个测试验证 pause/resume 方法的行为
@@ -210,7 +231,13 @@ describe('WorkflowRuntime', () => {
         createTestNode({ id: 'node-3', workflowId: workflow.id, dependencies: ['node-2'] }),
       ] as any[];
 
-      runtime.registerWorkflow({ workflow, nodes });
+      runtime.registerWorkflow({
+        workflow,
+        nodes,
+        executors: {
+          'node-1': async () => ({ success: true, output: 'Node 1 output' }),
+        },
+      });
 
       // 启动
       const startPromise = runtime.start();
@@ -231,9 +258,15 @@ describe('WorkflowRuntime', () => {
   describe('Event Handling', () => {
     it('should emit runtime events', async () => {
       const workflow = createTestWorkflow() as any;
-      const nodes = [createTestNode({ workflowId: workflow.id, triggerType: 'start' })] as any[];
+      const nodes = [createTestNode({ id: 'node-1', workflowId: workflow.id, triggerType: 'start' })] as any[];
 
-      runtime.registerWorkflow({ workflow, nodes });
+      runtime.registerWorkflow({
+        workflow,
+        nodes,
+        executors: {
+          'node-1': async () => ({ success: true, output: 'Test output' }),
+        },
+      });
 
       const events: RuntimeEvent[] = [];
       runtime.addEventListener((event) => {
@@ -250,9 +283,15 @@ describe('WorkflowRuntime', () => {
 
     it('should remove event listener', async () => {
       const workflow = createTestWorkflow() as any;
-      const nodes = [createTestNode({ workflowId: workflow.id, triggerType: 'start' })] as any[];
+      const nodes = [createTestNode({ id: 'node-1', workflowId: workflow.id, triggerType: 'start' })] as any[];
 
-      runtime.registerWorkflow({ workflow, nodes });
+      runtime.registerWorkflow({
+        workflow,
+        nodes,
+        executors: {
+          'node-1': async () => ({ success: true, output: 'Test output' }),
+        },
+      });
 
       const listener = vi.fn();
       runtime.addEventListener(listener);
@@ -342,7 +381,17 @@ describe('WorkflowRuntime', () => {
         executionInterval: 10,
       });
 
-      runtimeWithConcurrency.registerWorkflow({ workflow, nodes });
+      runtimeWithConcurrency.registerWorkflow({
+        workflow,
+        nodes,
+        executors: {
+          'start': async () => ({ success: true, output: 'Start' }),
+          'parallel-1': async () => ({ success: true, output: 'P1' }),
+          'parallel-2': async () => ({ success: true, output: 'P2' }),
+          'parallel-3': async () => ({ success: true, output: 'P3' }),
+          'end': async () => ({ success: true, output: 'End' }),
+        },
+      });
 
       const result = await runtimeWithConcurrency.start();
 
@@ -360,9 +409,15 @@ describe('WorkflowRuntime', () => {
   describe('Interrupts', () => {
     it('should send interrupt request', async () => {
       const workflow = createTestWorkflow() as any;
-      const nodes = [createTestNode({ workflowId: workflow.id, triggerType: 'start' })] as any[];
+      const nodes = [createTestNode({ id: 'node-1', workflowId: workflow.id, triggerType: 'start' })] as any[];
 
-      runtime.registerWorkflow({ workflow, nodes });
+      runtime.registerWorkflow({
+        workflow,
+        nodes,
+        executors: {
+          'node-1': async () => ({ success: true, output: 'Test output' }),
+        },
+      });
 
       // 先执行完成
       await runtime.start();
@@ -382,7 +437,7 @@ describe('WorkflowRuntime', () => {
 
     it('should add user input', () => {
       const workflow = createTestWorkflow() as any;
-      const nodes = [createTestNode({ workflowId: workflow.id, triggerType: 'start' })] as any[];
+      const nodes = [createTestNode({ id: 'node-1', workflowId: workflow.id, triggerType: 'start' })] as any[];
 
       runtime.registerWorkflow({ workflow, nodes });
 
@@ -409,7 +464,14 @@ describe('WorkflowRuntime', () => {
         createTestNode({ id: 'node-2', workflowId: workflow.id, dependencies: ['node-1'] }),
       ] as any[];
 
-      runtime.registerWorkflow({ workflow, nodes });
+      runtime.registerWorkflow({
+        workflow,
+        nodes,
+        executors: {
+          'node-1': async () => ({ success: true, output: 'Node 1' }),
+          'node-2': async () => ({ success: true, output: 'Node 2' }),
+        },
+      });
 
       const statusBefore = runtime.getStatus();
       expect(statusBefore?.state).toBe('IDLE');
@@ -430,7 +492,15 @@ describe('WorkflowRuntime', () => {
         createTestNode({ id: 'node-3', workflowId: workflow.id, dependencies: ['node-2'] }),
       ] as any[];
 
-      runtime.registerWorkflow({ workflow, nodes });
+      runtime.registerWorkflow({
+        workflow,
+        nodes,
+        executors: {
+          'node-1': async () => ({ success: true, output: 'Node 1' }),
+          'node-2': async () => ({ success: true, output: 'Node 2' }),
+          'node-3': async () => ({ success: true, output: 'Node 3' }),
+        },
+      });
 
       const result = await runtime.start();
 
