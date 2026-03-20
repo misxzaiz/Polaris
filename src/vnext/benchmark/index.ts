@@ -145,6 +145,22 @@ export function createBenchmarkWorkflow(nodeCount: number): BenchmarkWorkflow {
 }
 
 /**
+ * Create simple workflow for node selection benchmarks
+ */
+export function createSimpleBenchmarkWorkflow(id = 'benchmark-workflow'): Workflow {
+  const now = Date.now();
+  return {
+    id,
+    name: `Workflow ${id}`,
+    status: 'RUNNING' as WorkflowStatus,
+    mode: 'continuous',
+    priority: 1,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+/**
  * Create mock nodes for benchmarking with correct WorkflowNode type
  */
 export function createBenchmarkNodes(count: number, workflowId = 'benchmark-workflow'): WorkflowNode[] {
@@ -329,28 +345,34 @@ export function createNodeSelectionBenchmarkSuite(): BenchmarkSuite {
     .add('select from 10 nodes', () => {
       const selector = new DefaultNodeSelector('priority');
       const nodes = createBenchmarkNodes(10);
+      const workflow = createSimpleBenchmarkWorkflow('test');
       selector.selectNode({
         nodes,
-        workflow: { id: 'test', status: 'RUNNING' },
+        workflow,
         pendingEvents: [],
+        currentRound: 1,
       });
     })
     .add('select from 100 nodes', () => {
       const selector = new DefaultNodeSelector('priority');
       const nodes = createBenchmarkNodes(100);
+      const workflow = createSimpleBenchmarkWorkflow('test');
       selector.selectNode({
         nodes,
-        workflow: { id: 'test', status: 'RUNNING' },
+        workflow,
         pendingEvents: [],
+        currentRound: 1,
       });
     })
     .add('select from 1000 nodes', () => {
       const selector = new DefaultNodeSelector('priority');
       const nodes = createBenchmarkNodes(1000);
+      const workflow = createSimpleBenchmarkWorkflow('test');
       selector.selectNode({
         nodes,
-        workflow: { id: 'test', status: 'RUNNING' },
+        workflow,
         pendingEvents: [],
+        currentRound: 1,
       });
     });
 }
@@ -362,11 +384,12 @@ export function createExecutionStoreBenchmarkSuite(): BenchmarkSuite {
   return new BenchmarkSuite('Execution Store Benchmarks')
     .add('create and get execution', () => {
       const store = new ExecutionStore();
-      const id = store.create({
+      const record = store.create({
         workflowId: 'test-workflow',
         nodeId: 'test-node',
+        round: 1,
       });
-      store.get(id);
+      store.get(record.id);
     })
     .add('create 100 executions', () => {
       const store = new ExecutionStore();
@@ -374,6 +397,7 @@ export function createExecutionStoreBenchmarkSuite(): BenchmarkSuite {
         store.create({
           workflowId: `workflow-${i}`,
           nodeId: `node-${i}`,
+          round: 1,
         });
       }
     })
@@ -383,6 +407,7 @@ export function createExecutionStoreBenchmarkSuite(): BenchmarkSuite {
         store.create({
           workflowId: 'test-workflow',
           nodeId: `node-${i}`,
+          round: 1,
         });
       }
       store.getByWorkflow('test-workflow');
