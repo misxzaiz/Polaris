@@ -125,7 +125,7 @@ function calculateNodePositions(
 function buildConnectionLines(
   nodes: WorkflowNode[],
   showDependencies: boolean,
-  showEventConnections: boolean
+  showEventConnections?: boolean
 ): ConnectionLine[] {
   const lines: ConnectionLine[] = [];
 
@@ -162,7 +162,7 @@ function buildConnectionLines(
  * 工作流图形化展示组件
  */
 export function WorkflowDiagram({
-  workflow,
+  workflow: _workflow,
   nodes,
   selectedNodeId,
   onNodeClick,

@@ -4,7 +4,7 @@
  * 执行记录存储系统，管理执行历史
  */
 
-import type { ExecutionRecord, ExecutionStatus, TokenUsage } from '../types';
+import type { ExecutionRecord, ExecutionStatus } from '../types';
 import type {
   ExecutionStoreConfig as ExecutionStoreConfigType,
   ExecutionStats as ExecutionStatsType,
@@ -49,7 +49,7 @@ function generateExecutionId(): string {
   return `exec_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
 }
 
-function calculateDuration(record: ExecutionRecord): number {
+function _calculateDuration(record: ExecutionRecord): number {
   const start = record.startedAt ?? record.startTime;
   const end = record.finishedAt ?? record.endTime;
   if (!end || !start) return 0;

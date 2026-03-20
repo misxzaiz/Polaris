@@ -4,8 +4,8 @@
  * 执行上下文构建器实现
  */
 
-import type { Workflow, WorkflowNode, AgentEvent, ExecutionRecord } from '../types';
-import type { AgentProfile, MemoryPolicy } from '../types/profile';
+import type { Workflow, WorkflowNode, ExecutionRecord } from '../types';
+import type { AgentProfile } from '../types/profile';
 import type {
   NodeExecutionContext,
   PromptContext,
@@ -101,7 +101,7 @@ export class ContextBuilder implements IContextBuilder {
     options?: ContextBuildOptions
   ): PromptContext {
     const opts = { ...DEFAULT_BUILD_OPTIONS, ...options };
-    const { workflow, node, profile } = context;
+    const { profile } = context;
 
     // 构建系统提示词
     const systemPrompt = this.buildSystemPrompt(context, profile);
@@ -348,7 +348,7 @@ export class ContextBuilder implements IContextBuilder {
   }
 
   private getDependencyStatus(context: NodeExecutionContext): DependencyStatus[] {
-    const { node, workflow } = context;
+    const { node } = context;
     const statuses: DependencyStatus[] = [];
 
     if (node.dependsOn) {

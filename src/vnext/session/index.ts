@@ -4,7 +4,6 @@
  * 管理 AI 会话的创建、生命周期、销毁
  */
 
-import type { AgentProfile } from '../types/profile';
 import type {
   SessionConfig,
   SessionInfo,

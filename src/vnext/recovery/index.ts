@@ -114,7 +114,7 @@ export class ErrorRecovery {
     return this.captureError(workflowId, type, exception.message, {
       nodeId: options?.nodeId,
       severity: options?.severity,
-      details: exception.cause?.toString(),
+      details: (exception as Error & { cause?: unknown }).cause?.toString(),
       stack: exception.stack,
       context: options?.context,
     });

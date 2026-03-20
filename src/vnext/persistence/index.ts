@@ -18,7 +18,6 @@ import {
   PersistenceEvent,
   PersistenceListener,
   SnapshotType,
-  StorageType,
   IStorage,
   DEFAULT_PERSISTENCE_CONFIG,
   createSnapshot,
@@ -530,7 +529,7 @@ export class WorkflowPersistence {
     let totalRemoved = 0;
 
     for (const [workflowId, snapshots] of this.snapshots.entries()) {
-      const before = snapshots.length;
+      const _before = snapshots.length;
 
       // 保留至少一个快照
       const toKeep: PersistenceSnapshot[] = [];

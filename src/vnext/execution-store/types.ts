@@ -4,7 +4,7 @@
  * 执行存储相关类型定义
  */
 
-import type { ExecutionRecord, ExecutionStatus, TokenUsage } from '../types';
+import type { TokenUsage } from '../types';
 
 // ============================================================================
 // 存储配置

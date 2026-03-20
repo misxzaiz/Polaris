@@ -152,7 +152,7 @@ export const metricsPlugin: Plugin = {
   },
   hooks: {
     beforeWorkflowStart: async (
-      payload: BeforeWorkflowStartPayload,
+      _payload: BeforeWorkflowStartPayload,
       context: PluginContext
     ): Promise<HookResult> => {
       const metrics = context.state.get('metrics') as MetricsData | undefined;
@@ -199,7 +199,7 @@ export const metricsPlugin: Plugin = {
       context: PluginContext
     ): Promise<HookResult> => {
       const metrics = context.state.get('metrics') as MetricsData | undefined;
-      const config = context.config;
+      const config = context.config as { collectErrors?: boolean; maxErrorHistory?: number };
       if (metrics && config.collectErrors) {
         metrics.errors.push({
           workflowId: payload.workflow.id,
@@ -218,7 +218,7 @@ export const metricsPlugin: Plugin = {
       context: PluginContext
     ): Promise<HookResult> => {
       const metrics = context.state.get('metrics') as MetricsData | undefined;
-      const config = context.config;
+      const config = context.config as { collectErrors?: boolean; maxErrorHistory?: number };
       if (metrics && config.collectErrors) {
         metrics.errors.push({
           workflowId: payload.workflow.id,
@@ -279,7 +279,7 @@ export const rateLimitPlugin: Plugin = {
     ): Promise<HookResult> => {
       const state = context.state;
       const activeCount = (state.get('activeWorkflows') as Set<string>)?.size || 0;
-      const config = context.config as RateLimitConfig;
+      const config = context.config as unknown as RateLimitConfig;
 
       if (activeCount >= config.maxConcurrentWorkflows) {
         context.logger.warn(
@@ -312,7 +312,7 @@ export const rateLimitPlugin: Plugin = {
     ): Promise<HookResult> => {
       const state = context.state;
       const activeCount = (state.get('activeNodes') as Set<string>)?.size || 0;
-      const config = context.config as RateLimitConfig;
+      const config = context.config as unknown as RateLimitConfig;
 
       if (activeCount >= config.maxConcurrentNodes) {
         context.logger.warn(`Rate limit reached: ${activeCount} active nodes`);
@@ -421,11 +421,11 @@ export const cachingPlugin: Plugin = {
       cache.set(cacheKey, {
         output: payload.output,
         timestamp: Date.now(),
-        ttl: payload.node.config?.cacheTTL || context.config.defaultTTL,
+        ttl: payload.node.config?.cacheTTL || (context.config as { defaultTTL?: number }).defaultTTL || 60000,
       });
 
       // Enforce max size
-      if (cache.size > context.config.maxSize) {
+      if (cache.size > (context.config as { maxSize?: number }).maxSize) {
         const firstKey = cache.keys().next().value;
         if (firstKey) {
           cache.delete(firstKey);

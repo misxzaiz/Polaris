@@ -4,7 +4,7 @@
  * 事件控制器相关类型定义
  */
 
-import type { WorkflowNode, AgentEvent, EventHandler } from '../types';
+import type { WorkflowNode, AgentEvent } from '../types';
 
 // ============================================================================
 // 节点事件订阅记录

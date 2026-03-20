@@ -215,7 +215,7 @@ export const EventTypes = {
 // Context Types
 // ============================================================================
 
-import type { Workflow, WorkflowNode, AgentProfile, ExecutionRecord, NodeState } from './index';
+import type { Workflow, WorkflowNode, ExecutionRecord, NodeState } from './index';
 
 /**
  * 工作流执行上下文

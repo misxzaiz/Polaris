@@ -403,7 +403,7 @@ export function isNodeExecutable(node: WorkflowNode): boolean {
  * 获取工作流进度
  */
 export function getWorkflowProgress(
-  workflow: Workflow,
+  _workflow: Workflow,
   nodes: WorkflowNode[]
 ): {
   totalNodes: number;

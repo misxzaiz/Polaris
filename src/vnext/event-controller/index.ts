@@ -9,8 +9,6 @@ import type {
   NodeSubscriptionRecord,
   EventMatchResult,
   NodeEventControllerConfig,
-  EmitEventOptions,
-  NodeCompletionResult,
 } from './types';
 import { EventBus, getEventBus } from '../event-bus';
 
@@ -45,7 +43,7 @@ export class NodeEventController {
     this.eventBus = getEventBus();
     this.config = {
       autoActivate: config.autoActivate ?? true,
-      onEventReceived: config.onEventReceived,
+      onEventReceived: config.onEventReceived ?? ((_nodeId: string, _event: AgentEvent) => {}),
       enableLog: config.enableLog ?? false,
     };
   }
@@ -59,7 +57,7 @@ export class NodeEventController {
    */
   activateNodeSubscriptions(node: WorkflowNode): void {
     const nodeId = node.id;
-    const { subscribeEvents, workflowId } = node;
+    const { subscribeEvents } = node;
 
     if (subscribeEvents.length === 0) {
       this.log(`Node ${nodeId} has no events to subscribe`);
@@ -123,7 +121,7 @@ export class NodeEventController {
    * 批量取消节点订阅
    */
   deactivateAllSubscriptions(): void {
-    this.subscriptionRecords.forEach((records, nodeId) => {
+    this.subscriptionRecords.forEach((_records, nodeId) => {
       this.deactivateNodeSubscriptions(nodeId);
     });
   }

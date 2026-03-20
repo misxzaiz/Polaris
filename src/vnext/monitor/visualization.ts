@@ -12,7 +12,6 @@
 
 import type { RuntimeMonitor } from './index';
 import type {
-  WorkflowRuntimeStatus,
   NodeRuntimeStatus,
   ExecutionLogEntry,
   MonitorEventType,
@@ -25,7 +24,6 @@ import type {
   TokenSummary,
   CostSummary,
   ErrorStats,
-  ErrorItem,
   ChartDataPoint,
   TokenChartData,
   CostChartData,
@@ -578,6 +576,7 @@ export class TimelineGenerator {
   constructor(monitor: RuntimeMonitor, config: Partial<VisualizationConfig> = {}) {
     this.monitor = monitor;
     this.config = { ...DEFAULT_VISUALIZATION_CONFIG, ...config };
+    // config is stored for future use
   }
 
   /**

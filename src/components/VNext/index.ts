@@ -3,4 +3,3 @@
  */
 
 export { VNextPanel } from './VNextPanel';
-export type { VNextPanelProps } from './VNextPanel';

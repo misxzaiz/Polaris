@@ -5,54 +5,30 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
 import {
-  Play,
-  Pause,
-  Square,
   Plus,
   RefreshCw,
   Trash2,
   ChevronRight,
   Activity,
   Layers,
-  Clock,
   Zap,
 } from 'lucide-react';
 import {
   // vnext 核心模块
-  WorkflowRuntime,
-  WorkflowPersistence,
-  getWorkflowRuntime,
   getWorkflowPersistence,
-  resetWorkflowRuntime,
-  resetWorkflowPersistence,
   // 类型
   type Workflow,
   type WorkflowNode,
-  type WorkflowStatus,
-  type NodeStatus,
-  WorkflowStatus as WS,
-  NodeStatus as NS,
   // 可视化组件
   SimpleWorkflowDiagram,
-  NodeStatusGrid,
   SimpleProgressBar,
   QuickStatsBar,
-  SimpleTimeline,
-  type NodeStatusConfig,
   getNodeStatusConfig,
 } from '@/vnext';
 import { createLogger } from '@/utils/logger';
 
 const log = createLogger('VNextPanel');
-
-/** 格式化持续时间 */
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${(ms / 60000).toFixed(1)}m`;
-}
 
 /** 格式化相对时间 */
 function formatRelativeTime(timestamp: number): string {
@@ -66,33 +42,35 @@ function formatRelativeTime(timestamp: number): string {
 }
 
 /** 状态颜色映射 */
-const statusColors: Record<WorkflowStatus, string> = {
-  [WS.IDLE]: 'bg-gray-500',
-  [WS.READY]: 'bg-blue-500',
-  [WS.RUNNING]: 'bg-green-500 animate-pulse',
-  [WS.PAUSED]: 'bg-yellow-500',
-  [WS.COMPLETED]: 'bg-emerald-500',
-  [WS.FAILED]: 'bg-red-500',
-  [WS.CANCELLED]: 'bg-gray-400',
-  [WS.WAITING]: 'bg-orange-500',
-  [WS.WAITING_FOR_EVENTS]: 'bg-orange-400',
-  [WS.COMPACTING_MEMORY]: 'bg-purple-500',
-  [WS.SKIPPED]: 'bg-gray-300',
+const getStatusColor = (status: string): string => {
+  const colors: Record<string, string> = {
+    'CREATED': 'bg-gray-500',
+    'PLANNING': 'bg-blue-400',
+    'RUNNING': 'bg-green-500 animate-pulse',
+    'WAITING_EVENT': 'bg-orange-500',
+    'BLOCKED': 'bg-red-400',
+    'COMPACTING_MEMORY': 'bg-purple-500',
+    'FAILED': 'bg-red-500',
+    'COMPLETED': 'bg-emerald-500',
+    'EVOLVING': 'bg-indigo-500',
+  };
+  return colors[status] || 'bg-gray-400';
 };
 
 /** 状态标签 */
-const statusLabels: Record<WorkflowStatus, string> = {
-  [WS.IDLE]: '空闲',
-  [WS.READY]: '就绪',
-  [WS.RUNNING]: '运行中',
-  [WS.PAUSED]: '已暂停',
-  [WS.COMPLETED]: '已完成',
-  [WS.FAILED]: '失败',
-  [WS.CANCELLED]: '已取消',
-  [WS.WAITING]: '等待中',
-  [WS.WAITING_FOR_EVENTS]: '等待事件',
-  [WS.COMPACTING_MEMORY]: '压缩内存',
-  [WS.SKIPPED]: '已跳过',
+const getStatusLabel = (status: string): string => {
+  const labels: Record<string, string> = {
+    'CREATED': '已创建',
+    'PLANNING': '规划中',
+    'RUNNING': '运行中',
+    'WAITING_EVENT': '等待事件',
+    'BLOCKED': '阻塞',
+    'COMPACTING_MEMORY': '压缩内存',
+    'FAILED': '失败',
+    'COMPLETED': '已完成',
+    'EVOLVING': '进化中',
+  };
+  return labels[status] || status;
 };
 
 interface VNextPanelProps {
@@ -101,8 +79,8 @@ interface VNextPanelProps {
 }
 
 export function VNextPanel({ fillRemaining = false }: VNextPanelProps) {
-  const { t } = useTranslation('common');
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [nodes, setNodes] = useState<Map<string, WorkflowNode[]>>(new Map());
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'workflows' | 'monitor' | 'templates'>('workflows');
@@ -112,13 +90,32 @@ export function VNextPanel({ fillRemaining = false }: VNextPanelProps) {
     return workflows.find(w => w.id === selectedWorkflowId) || null;
   }, [workflows, selectedWorkflowId]);
 
+  // 获取选中工作流的节点
+  const selectedNodes = useMemo(() => {
+    if (!selectedWorkflowId) return [];
+    return nodes.get(selectedWorkflowId) || [];
+  }, [nodes, selectedWorkflowId]);
+
   // 刷新工作流列表
   const refreshWorkflows = useCallback(async () => {
     setIsLoading(true);
     try {
       const persistence = getWorkflowPersistence();
-      const allWorkflows = persistence.getAllWorkflows();
-      setWorkflows(allWorkflows);
+      const workflowIds = persistence.getWorkflowIds();
+      const workflowList: Workflow[] = [];
+      const nodesMap = new Map<string, WorkflowNode[]>();
+
+      for (const id of workflowIds) {
+        const workflow = persistence.getWorkflow(id);
+        if (workflow) {
+          workflowList.push(workflow);
+          const workflowNodes = persistence.getNodes(id);
+          nodesMap.set(id, workflowNodes);
+        }
+      }
+
+      setWorkflows(workflowList);
+      setNodes(nodesMap);
     } catch (error) {
       log.error('刷新工作流列表失败', error as Error);
     } finally {
@@ -133,114 +130,102 @@ export function VNextPanel({ fillRemaining = false }: VNextPanelProps) {
 
   // 创建示例工作流
   const createSampleWorkflow = useCallback(() => {
+    const now = Date.now();
+    const workflowId = `workflow-${now}`;
+
     const workflow: Workflow = {
-      id: `workflow-${Date.now()}`,
+      id: workflowId,
       name: `工作流 ${workflows.length + 1}`,
       description: '示例工作流',
-      status: WS.IDLE,
-      nodes: [
-        {
-          id: 'node-1',
-          name: '需求分析',
-          type: 'task',
-          status: NS.IDLE,
-          profileId: 'developer-v1',
-          dependencies: [],
-          triggers: [],
-          conditions: {},
-        },
-        {
-          id: 'node-2',
-          name: '代码实现',
-          type: 'task',
-          status: NS.IDLE,
-          profileId: 'developer-v1',
-          dependencies: ['node-1'],
-          triggers: [],
-          conditions: {},
-        },
-        {
-          id: 'node-3',
-          name: '代码审查',
-          type: 'task',
-          status: NS.IDLE,
-          profileId: 'developer-v1',
-          dependencies: ['node-2'],
-          triggers: [],
-          conditions: {},
-        },
-        {
-          id: 'node-4',
-          name: '测试验证',
-          type: 'task',
-          status: NS.IDLE,
-          profileId: 'tester-v1',
-          dependencies: ['node-3'],
-          triggers: [],
-          conditions: {},
-        },
-      ],
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+      status: 'CREATED',
+      mode: 'single',
       priority: 5,
+      createdAt: now,
+      updatedAt: now,
       tags: ['demo'],
     };
 
+    const sampleNodes: WorkflowNode[] = [
+      {
+        id: 'node-1',
+        name: '需求分析',
+        role: 'analyst',
+        workflowId,
+        state: 'IDLE',
+        triggerType: 'start',
+        subscribeEvents: [],
+        emitEvents: ['analysis-done'],
+        dependencies: [],
+        enabled: true,
+        maxRounds: 1,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 'node-2',
+        name: '代码实现',
+        role: 'developer',
+        workflowId,
+        state: 'IDLE',
+        triggerType: 'dependency',
+        subscribeEvents: ['analysis-done'],
+        emitEvents: ['code-done'],
+        dependencies: ['node-1'],
+        enabled: true,
+        maxRounds: 3,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 'node-3',
+        name: '代码审查',
+        role: 'reviewer',
+        workflowId,
+        state: 'IDLE',
+        triggerType: 'dependency',
+        subscribeEvents: ['code-done'],
+        emitEvents: ['review-done'],
+        dependencies: ['node-2'],
+        enabled: true,
+        maxRounds: 1,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 'node-4',
+        name: '测试验证',
+        role: 'tester',
+        workflowId,
+        state: 'IDLE',
+        triggerType: 'dependency',
+        subscribeEvents: ['review-done'],
+        emitEvents: ['test-done'],
+        dependencies: ['node-3'],
+        enabled: true,
+        maxRounds: 2,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ];
+
     const persistence = getWorkflowPersistence();
-    persistence.registerWorkflow(workflow);
+    persistence.registerWorkflow(workflow, sampleNodes);
+
     setWorkflows(prev => [...prev, workflow]);
+    setNodes(prev => new Map(prev).set(workflowId, sampleNodes));
     setSelectedWorkflowId(workflow.id);
   }, [workflows.length]);
-
-  // 启动工作流
-  const startWorkflow = useCallback(async (workflowId: string) => {
-    try {
-      const runtime = getWorkflowRuntime();
-      await runtime.start(workflowId);
-      await refreshWorkflows();
-    } catch (error) {
-      log.error('启动工作流失败', error as Error);
-    }
-  }, [refreshWorkflows]);
-
-  // 暂停工作流
-  const pauseWorkflow = useCallback(async (workflowId: string) => {
-    try {
-      const runtime = getWorkflowRuntime();
-      await runtime.pause(workflowId);
-      await refreshWorkflows();
-    } catch (error) {
-      log.error('暂停工作流失败', error as Error);
-    }
-  }, [refreshWorkflows]);
-
-  // 恢复工作流
-  const resumeWorkflow = useCallback(async (workflowId: string) => {
-    try {
-      const runtime = getWorkflowRuntime();
-      await runtime.resume(workflowId);
-      await refreshWorkflows();
-    } catch (error) {
-      log.error('恢复工作流失败', error as Error);
-    }
-  }, [refreshWorkflows]);
-
-  // 停止工作流
-  const stopWorkflow = useCallback(async (workflowId: string) => {
-    try {
-      const runtime = getWorkflowRuntime();
-      await runtime.stop(workflowId);
-      await refreshWorkflows();
-    } catch (error) {
-      log.error('停止工作流失败', error as Error);
-    }
-  }, [refreshWorkflows]);
 
   // 删除工作流
   const deleteWorkflow = useCallback((workflowId: string) => {
     const persistence = getWorkflowPersistence();
     persistence.removeWorkflow(workflowId);
     setWorkflows(prev => prev.filter(w => w.id !== workflowId));
+    setNodes(prev => {
+      const newMap = new Map(prev);
+      newMap.delete(workflowId);
+      return newMap;
+    });
     if (selectedWorkflowId === workflowId) {
       setSelectedWorkflowId(null);
     }
@@ -248,11 +233,18 @@ export function VNextPanel({ fillRemaining = false }: VNextPanelProps) {
 
   // 计算统计信息
   const stats = useMemo(() => {
-    const running = workflows.filter(w => w.status === WS.RUNNING).length;
-    const completed = workflows.filter(w => w.status === WS.COMPLETED).length;
-    const failed = workflows.filter(w => w.status === WS.FAILED).length;
+    const running = workflows.filter(w => w.status === 'RUNNING').length;
+    const completed = workflows.filter(w => w.status === 'COMPLETED').length;
+    const failed = workflows.filter(w => w.status === 'FAILED').length;
     return { running, completed, failed, total: workflows.length };
   }, [workflows]);
+
+  // 计算节点进度
+  const nodeProgress = useMemo(() => {
+    if (selectedNodes.length === 0) return 0;
+    const completed = selectedNodes.filter(n => n.state === 'DONE').length;
+    return (completed / selectedNodes.length) * 100;
+  }, [selectedNodes]);
 
   return (
     <div className={`flex flex-col h-full bg-background ${fillRemaining ? 'flex-1' : ''}`}>
@@ -351,11 +343,11 @@ export function VNextPanel({ fillRemaining = false }: VNextPanelProps) {
                           <span className="text-sm font-medium text-text-primary truncate">
                             {workflow.name}
                           </span>
-                          <span className={`w-2 h-2 rounded-full ${statusColors[workflow.status]}`} />
+                          <span className={`w-2 h-2 rounded-full ${getStatusColor(workflow.status)}`} />
                         </div>
                         <div className="flex items-center gap-2 mt-1">
                           <span className="text-xs text-text-muted">
-                            {workflow.nodes.length} 节点
+                            {getStatusLabel(workflow.status)}
                           </span>
                           <span className="text-xs text-text-muted">•</span>
                           <span className="text-xs text-text-muted">
@@ -385,43 +377,6 @@ export function VNextPanel({ fillRemaining = false }: VNextPanelProps) {
                         </p>
                       </div>
                       <div className="flex items-center gap-1">
-                        {selectedWorkflow.status === WS.IDLE && (
-                          <button
-                            onClick={() => startWorkflow(selectedWorkflow.id)}
-                            className="p-1.5 text-green-500 hover:bg-green-500/10 rounded"
-                            title="启动"
-                          >
-                            <Play className="w-4 h-4" />
-                          </button>
-                        )}
-                        {selectedWorkflow.status === WS.RUNNING && (
-                          <button
-                            onClick={() => pauseWorkflow(selectedWorkflow.id)}
-                            className="p-1.5 text-yellow-500 hover:bg-yellow-500/10 rounded"
-                            title="暂停"
-                          >
-                            <Pause className="w-4 h-4" />
-                          </button>
-                        )}
-                        {selectedWorkflow.status === WS.PAUSED && (
-                          <button
-                            onClick={() => resumeWorkflow(selectedWorkflow.id)}
-                            className="p-1.5 text-green-500 hover:bg-green-500/10 rounded"
-                            title="恢复"
-                          >
-                            <Play className="w-4 h-4" />
-                          </button>
-                        )}
-                        {(selectedWorkflow.status === WS.RUNNING ||
-                          selectedWorkflow.status === WS.PAUSED) && (
-                          <button
-                            onClick={() => stopWorkflow(selectedWorkflow.id)}
-                            className="p-1.5 text-red-500 hover:bg-red-500/10 rounded"
-                            title="停止"
-                          >
-                            <Square className="w-4 h-4" />
-                          </button>
-                        )}
                         <button
                           onClick={() => deleteWorkflow(selectedWorkflow.id)}
                           className="p-1.5 text-text-muted hover:text-red-500 hover:bg-red-500/10 rounded"
@@ -434,56 +389,68 @@ export function VNextPanel({ fillRemaining = false }: VNextPanelProps) {
 
                     {/* 进度条 */}
                     <div className="mt-2">
+                      <div className="flex items-center justify-between text-xs text-text-muted mb-1">
+                        <span>{selectedNodes.filter(n => n.state === 'DONE').length}/{selectedNodes.length} 节点完成</span>
+                        <span>{nodeProgress.toFixed(0)}%</span>
+                      </div>
                       <SimpleProgressBar
-                        progress={(() => {
-                          const completed = selectedWorkflow.nodes.filter(
-                            n => n.status === NS.COMPLETED
-                          ).length;
-                          return (completed / selectedWorkflow.nodes.length) * 100;
-                        })()}
-                        height={4}
-                        showLabel
-                        label={`${selectedWorkflow.nodes.filter(n => n.status === NS.COMPLETED).length}/${selectedWorkflow.nodes.length} 节点完成`}
+                        percentage={nodeProgress}
+                        height="sm"
+                        showLabel={false}
                       />
                     </div>
                   </div>
 
                   {/* 工作流图 */}
                   <div className="flex-1 overflow-auto p-3">
-                    <SimpleWorkflowDiagram
-                      workflow={selectedWorkflow}
-                      onNodeClick={node => {
-                        log.info('点击节点', node);
-                      }}
-                    />
+                    {selectedNodes.length > 0 ? (
+                      <SimpleWorkflowDiagram
+                        nodes={selectedNodes.map(n => ({
+                          id: n.id,
+                          name: n.name,
+                          state: n.state,
+                          role: n.role,
+                          dependencies: n.dependencies,
+                        }))}
+                        onNodeClick={(nodeId: string) => {
+                          log.info('点击节点', { nodeId });
+                        }}
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-full text-text-muted">
+                        <p className="text-sm">此工作流暂无节点</p>
+                      </div>
+                    )}
                   </div>
 
                   {/* 节点状态列表 */}
-                  <div className="border-t border-border p-2 max-h-40 overflow-auto">
-                    <h4 className="text-xs font-medium text-text-muted mb-2">节点状态</h4>
-                    <div className="grid grid-cols-2 gap-1">
-                      {selectedWorkflow.nodes.map(node => {
-                        const config = getNodeStatusConfig(node.status);
-                        return (
-                          <div
-                            key={node.id}
-                            className="flex items-center gap-2 p-1.5 rounded bg-background-surface"
-                          >
-                            <span
-                              className="w-2 h-2 rounded-full"
-                              style={{ backgroundColor: config.color }}
-                            />
-                            <span className="text-xs text-text-primary truncate">
-                              {node.name}
-                            </span>
-                            <span className="text-xs text-text-muted ml-auto">
-                              {config.label}
-                            </span>
-                          </div>
-                        );
-                      })}
+                  {selectedNodes.length > 0 && (
+                    <div className="border-t border-border p-2 max-h-40 overflow-auto">
+                      <h4 className="text-xs font-medium text-text-muted mb-2">节点状态</h4>
+                      <div className="grid grid-cols-2 gap-1">
+                        {selectedNodes.map(node => {
+                          const config = getNodeStatusConfig(node.state);
+                          return (
+                            <div
+                              key={node.id}
+                              className="flex items-center gap-2 p-1.5 rounded bg-background-surface"
+                            >
+                              <span
+                                className="w-2 h-2 rounded-full"
+                                style={{ backgroundColor: config.color.replace('text-', '').replace('-500', '') }}
+                              />
+                              <span className="text-xs text-text-primary truncate">
+                                {node.name}
+                              </span>
+                              <span className="text-xs text-text-muted ml-auto">
+                                {config.label}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </>
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center text-text-muted">

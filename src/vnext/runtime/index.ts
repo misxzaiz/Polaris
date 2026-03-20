@@ -59,9 +59,9 @@ export class WorkflowRuntime {
   // 组件实例
   private eventBus: EventBus;
   private executionStore: ExecutionStore;
-  private sessionManager: SessionManager;
+  private _sessionManager: SessionManager;
   private contextBuilder: ContextBuilder;
-  private templateEngine: TemplateEngine;
+  private _templateEngine: TemplateEngine;
   private memoryManager: MemoryManager;
   private interruptInbox: InterruptInbox;
   private monitor: RuntimeMonitor;
@@ -79,9 +79,9 @@ export class WorkflowRuntime {
 
     this.eventBus = getEventBus();
     this.executionStore = getExecutionStore();
-    this.sessionManager = new SessionManager();
+    this._sessionManager = new SessionManager();
     this.contextBuilder = new ContextBuilder();
-    this.templateEngine = new TemplateEngine();
+    this._templateEngine = new TemplateEngine();
     this.memoryManager = getMemoryManager();
     this.interruptInbox = getInterruptInbox();
     this.monitor = getRuntimeMonitor();
@@ -339,7 +339,7 @@ export class WorkflowRuntime {
   private checkDependencies(node: WorkflowNode): boolean {
     if (!node.dependencies || node.dependencies.length === 0) {
       // 没有依赖，检查 triggerType
-      return node.triggerType === 'start' || node.triggerType === 'manual';
+      return node.triggerType === 'start';
     }
 
     // 检查所有依赖是否已完成
@@ -365,11 +365,10 @@ export class WorkflowRuntime {
     this.monitor.startNode(this.workflow.id, nodeId);
 
     // 创建执行记录
-    this.executionStore.create({
+    const executionRecord = this.executionStore.create({
       workflowId: this.workflow.id,
       nodeId,
-      status: 'RUNNING',
-      startedAt: Date.now(),
+      round: this.workflow.currentRound ?? 0,
     });
 
     try {
@@ -377,7 +376,7 @@ export class WorkflowRuntime {
       const profile = profileId ? this.profiles.get(profileId) : undefined;
 
       const context: NodeExecutionContext = {
-        round: this.workflow.currentRound,
+        round: this.workflow.currentRound ?? 0,
         profile,
         pendingEvents: [],
       };
@@ -394,17 +393,16 @@ export class WorkflowRuntime {
         this.nodeStates.set(nodeId, 'completed');
         this.monitor.completeNode(this.workflow.id, nodeId);
 
-        this.executionStore.completeExecution({
-          workflowId: this.workflow.id,
-          nodeId,
-          status: 'SUCCESS',
-          completedAt: Date.now(),
-          outputSummary: result.output,
+        this.executionStore.completeExecution(executionRecord.id, {
+          outputSnippet: result.output,
         });
 
         if (result.emitEvents) {
           for (const event of result.emitEvents) {
-            this.eventBus.publish(event.type, event.data);
+            this.eventBus.emit(event.type, event.data, {
+              workflowId: this.workflow!.id,
+              sourceNodeId: nodeId,
+            });
           }
         }
 
@@ -432,13 +430,7 @@ export class WorkflowRuntime {
 
       this.monitor.failNode(this.workflow.id, nodeId, errorMsg);
 
-      this.executionStore.failExecution({
-        workflowId: this.workflow.id,
-        nodeId,
-        status: 'FAILED',
-        completedAt: Date.now(),
-        error: errorMsg,
-      });
+      this.executionStore.failExecution(executionRecord.id, errorMsg);
 
       if (this.config.enableErrorRecovery) {
         this.errorRecovery.captureException(this.workflow.id, error as Error, { nodeId });
@@ -497,7 +489,7 @@ export class WorkflowRuntime {
     return {
       workflowId: this.workflow.id,
       state: this.state,
-      currentRound: this.workflow.currentRound,
+      currentRound: this.workflow.currentRound ?? 0,
       executedNodes: stats.executedNodes,
       successNodes: stats.successNodes,
       failedNodes: stats.failedNodes,
@@ -618,7 +610,7 @@ export class WorkflowRuntime {
 
   async createSnapshot(label: string): Promise<string | null> {
     if (!this.workflow) return null;
-    const snapshot = this.persistence.createSnapshot(this.workflow.id, 'manual' as any, label);
+    const snapshot = this.persistence.createSnapshot(this.workflow.id, 'manual' as any, { description: label });
     return snapshot?.id || null;
   }
 
@@ -635,10 +627,14 @@ export class WorkflowRuntime {
     if (!this.workflow) throw new Error('No workflow registered');
 
     const interrupt = this.interruptInbox.addInterrupt({
+      id: `interrupt-${Date.now()}`,
       workflowId: this.workflow.id,
       type: type as any,
       priority: priority as any,
-      data,
+      status: 'pending' as any,
+      title: `Interrupt: ${type}`,
+      content: data ? String(data) : '',
+      createdAt: Date.now(),
     });
 
     return interrupt.id;

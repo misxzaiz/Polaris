@@ -7,7 +7,6 @@
 import type {
   MemoryLayer,
   MemoryEntry,
-  MemoryEntryType,
   ActiveMemory,
   MemorySummary,
   MemoryCheckpoint,
@@ -70,9 +69,9 @@ export class InMemoryStore implements IMemoryStore {
     this.entries.set(entry.id, entry);
 
     // Find workflowId from tags
-    const workflowId = entry.tags.find(t => t.startsWith('workflow:'))?.split(':')[1];
-    if (workflowId) {
-      const activeKey = this.getLayerKey('active', workflowId);
+    const _workflowId = entry.tags.find(t => t.startsWith('workflow:'))?.split(':')[1];
+    if (_workflowId) {
+      const activeKey = this.getLayerKey('active', _workflowId);
       if (!this.layerIndex.has(activeKey)) {
         this.layerIndex.set(activeKey, new Set());
       }
@@ -703,7 +702,7 @@ export class MemoryManager implements IMemoryManager {
   // =========================================================================
 
   async getStats(workflowId: string): Promise<MemoryStats> {
-    const activeMemory = this.activeMemories.get(workflowId);
+    const _activeMemory = this.activeMemories.get(workflowId);
 
     const stats: MemoryStats = {
       totalEntries: 0,
@@ -746,9 +745,9 @@ export class MemoryManager implements IMemoryManager {
     }
 
     // Add active memory stats
-    if (activeMemory) {
-      stats.totalTokens += activeMemory.totalTokens;
-      stats.totalLines += activeMemory.totalLines;
+    if (_activeMemory) {
+      stats.totalTokens += _activeMemory.totalTokens;
+      stats.totalLines += _activeMemory.totalLines;
     }
 
     return stats;

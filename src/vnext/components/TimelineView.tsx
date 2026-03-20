@@ -14,7 +14,7 @@ import type { TimelineEvent } from '../monitor/visualization-types';
  */
 export function TimelineView({
   data,
-  autoScroll = false,
+  autoScroll: _autoScroll = false,
   maxEvents,
   onEventClick,
   className,
@@ -69,7 +69,7 @@ export function TimelineView({
 function TimelineEventItem({
   event,
   onClick,
-  isLast,
+  isLast: _isLast,
   className,
 }: TimelineEventItemProps & { isLast?: boolean }) {
   const config = getTimelineEventTypeConfig(event.type);

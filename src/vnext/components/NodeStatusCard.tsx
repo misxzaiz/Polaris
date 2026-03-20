@@ -82,7 +82,7 @@ export function NodeStatusCard({
             <div
               className="h-full bg-blue-500 transition-all duration-300"
               style={{
-                width: `${(node.currentRound / node.maxRounds) * 100}%`,
+                width: `${((node.currentRound ?? 0) / node.maxRounds) * 100}%`,
               }}
             />
           </div>
@@ -133,7 +133,6 @@ export function NodeStatusCard({
  * 状态徽章
  */
 function StatusBadge({
-  state,
   config,
 }: {
   state: string;

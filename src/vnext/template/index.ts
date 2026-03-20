@@ -6,13 +6,11 @@
 
 import type { AgentProfile } from '../types/profile';
 import type {
-  TemplateBase,
   TemplateType,
   ProfileTemplate,
   PromptTemplate,
   WorkflowTemplate,
   NodeTemplate,
-  TemplateVariable,
   TemplateRegistryEntry,
   TemplateRenderContext,
   TemplateRenderResult,

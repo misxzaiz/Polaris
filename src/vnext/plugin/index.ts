@@ -115,7 +115,7 @@ export class PluginManager {
     // Destroy plugin if active
     const status = this.statuses.get(pluginId);
     if (status?.state === 'active') {
-      await this.deactivatePlugin(pluginId);
+      await this.deactivate(pluginId);
     }
 
     // Remove plugin
@@ -303,7 +303,7 @@ export class PluginManager {
       }
 
       try {
-        const result = await handler(currentPayload as never, context);
+        const result = await handler!(currentPayload as never, context);
 
         if (!result.continue) {
           return result;

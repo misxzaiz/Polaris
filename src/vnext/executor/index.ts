@@ -4,13 +4,10 @@
  * 连续执行引擎，支持无等待的 Pipeline 推进
  */
 
-import type { Workflow, WorkflowNode, AgentEvent } from '../types';
+import type { WorkflowNode, AgentEvent } from '../types';
 import {
-  WorkflowStateMachine,
   NodeStateMachine,
-  canNodeBeReady,
   getReadyNodes,
-  isWorkflowActive,
 } from '../state-machine';
 import { getEventBus } from '../event-bus';
 import type {
@@ -120,8 +117,8 @@ export class ContinuousExecutor implements IExecutor {
       executionInterval: config.executionInterval ?? 100,
       continueOnFailure: config.continueOnFailure ?? false,
       enableLog: config.enableLog ?? false,
-      onBeforeExecute: config.onBeforeExecute,
-      onAfterExecute: config.onAfterExecute,
+      onBeforeExecute: config.onBeforeExecute ?? ((_node: WorkflowNode, _context: ExecutionContext) => {}),
+      onAfterExecute: config.onAfterExecute ?? ((_result: ExecutionResult, _context: ExecutionContext) => {}),
     };
     this.nodeSelector = nodeSelector ?? new DefaultNodeSelector();
   }

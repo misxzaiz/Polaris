@@ -4,8 +4,8 @@
  * 优先级调度器相关类型定义
  */
 
-import type { Workflow, WorkflowNode, AgentEvent } from '../types';
-import type { IExecutor, ExecutionResult, ExecutorRunResult } from '../executor/types';
+import type { Workflow, WorkflowNode } from '../types';
+import type { IExecutor, ExecutorRunResult } from '../executor/types';
 
 // ============================================================================
 // 调度器状态

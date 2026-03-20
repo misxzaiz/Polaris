@@ -15,9 +15,7 @@ import type {
   IDispatcher,
   PriorityDispatcherConfig,
   DispatcherRunResult,
-  DEFAULT_DISPATCHER_CONFIG,
 } from './types';
-import { getEventBus } from '../event-bus';
 
 // ============================================================================
 // 默认 Workflow 选择器
@@ -74,7 +72,7 @@ export class DefaultWorkflowSelector implements IWorkflowSelector {
   getExecutableEntries(entries: WorkflowEntry[]): WorkflowEntry[] {
     return entries.filter(entry =>
       entry.status === 'pending' &&
-      entry.workflow.status === 'IDLE'
+      entry.workflow.status === 'CREATED'
     );
   }
 }

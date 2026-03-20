@@ -4,7 +4,7 @@
  */
 
 import clsx from 'clsx';
-import type { ProgressBarProps, ProgressData } from './types';
+import type { ProgressBarProps } from './types';
 
 /**
  * 进度条组件

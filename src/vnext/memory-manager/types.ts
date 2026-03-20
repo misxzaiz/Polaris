@@ -13,8 +13,6 @@ import type {
   MemoryCheckpoint,
   CompactionTrigger,
   MemoryStats,
-  Decision,
-  Risk,
 } from '../types/memory';
 
 // ============================================================================

@@ -4,8 +4,8 @@
  * Pipeline 推进机制，管理节点间的执行流程
  */
 
-import type { Workflow, WorkflowNode, AgentEvent } from '../types';
-import { NodeStateMachine, getReadyNodes } from '../state-machine';
+import type { WorkflowNode, AgentEvent, Workflow } from '../types';
+import { NodeStateMachine } from '../state-machine';
 import { NodeEventController } from '../event-controller';
 
 // ============================================================================
@@ -105,8 +105,8 @@ export class PipelineOrchestrator {
     this.config = {
       autoAdvance: config.autoAdvance ?? true,
       maxParallel: config.maxParallel ?? 1,
-      onNodeStart: config.onNodeStart,
-      onNodeComplete: config.onNodeComplete,
+      onNodeStart: config.onNodeStart ?? ((_node: WorkflowNode) => {}),
+      onNodeComplete: config.onNodeComplete ?? ((_node: WorkflowNode, _success: boolean) => {}),
       enableLog: config.enableLog ?? false,
     };
     this.eventController = new NodeEventController();
@@ -562,10 +562,11 @@ export class PipelineOrchestrator {
 
   private createResult(
     success: boolean,
-    message: string,
+    _message: string,
     extras: Partial<PipelineAdvanceResult> = {}
   ): PipelineAdvanceResult {
     const progress = this.getProgress();
+    progress; // Used for potential future logging
     const emittedEvents = extras.emittedEvents ?? [];
 
     return {

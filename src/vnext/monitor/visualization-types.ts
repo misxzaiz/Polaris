@@ -3,7 +3,7 @@
  * 监控可视化数据接口
  */
 
-import type { TokenUsage, ExecutionLogEntry } from './index';
+import type { ExecutionLogEntry } from './index';
 
 // ============================================================================
 // Dashboard Data Types
