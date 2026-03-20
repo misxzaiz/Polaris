@@ -164,6 +164,7 @@ export function formatStatusBadge(status: WorkflowStatus): string {
     FAILED: '[FAILED]',
     COMPLETED: '[COMPLETED]',
     EVOLVING: '[EVOLVING]',
+    STOPPED: '[STOPPED]',
   };
   return badges[status] || '[UNKNOWN]';
 }

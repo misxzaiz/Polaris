@@ -13,13 +13,20 @@ import {
   Activity,
   Layers,
   Zap,
+  Play,
+  Square,
+  RotateCcw,
 } from 'lucide-react';
 import {
   // vnext 核心模块
   getWorkflowPersistence,
+  getWorkflowRuntime,
+  resetWorkflowRuntime,
   // 类型
   type Workflow,
   type WorkflowNode,
+  type RuntimeState,
+  type WorkflowRunResult,
   // 可视化组件
   SimpleWorkflowDiagram,
   SimpleProgressBar,
@@ -53,6 +60,7 @@ const getStatusColor = (status: string): string => {
     'FAILED': 'bg-red-500',
     'COMPLETED': 'bg-emerald-500',
     'EVOLVING': 'bg-indigo-500',
+    'STOPPED': 'bg-gray-400',
   };
   return colors[status] || 'bg-gray-400';
 };
@@ -69,8 +77,24 @@ const getStatusLabel = (status: string): string => {
     'FAILED': '失败',
     'COMPLETED': '已完成',
     'EVOLVING': '进化中',
+    'STOPPED': '已停止',
   };
   return labels[status] || status;
+};
+
+/** 运行时状态标签 */
+const getRuntimeStateLabel = (state: RuntimeState): string => {
+  const labels: Record<string, string> = {
+    'IDLE': '空闲',
+    'STARTING': '启动中',
+    'RUNNING': '运行中',
+    'PAUSED': '已暂停',
+    'STOPPING': '停止中',
+    'STOPPED': '已停止',
+    'COMPLETED': '已完成',
+    'FAILED': '失败',
+  };
+  return labels[state] || state;
 };
 
 interface VNextPanelProps {
@@ -84,6 +108,9 @@ export function VNextPanel({ fillRemaining = false }: VNextPanelProps) {
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'workflows' | 'monitor' | 'templates'>('workflows');
+  const [runtimeState, setRuntimeState] = useState<RuntimeState>('IDLE');
+  const [executionResult, setExecutionResult] = useState<WorkflowRunResult | null>(null);
+  const [isExecuting, setIsExecuting] = useState(false);
 
   // 获取选中的工作流
   const selectedWorkflow = useMemo(() => {
@@ -231,6 +258,81 @@ export function VNextPanel({ fillRemaining = false }: VNextPanelProps) {
     }
   }, [selectedWorkflowId]);
 
+  // 运行工作流
+  const runWorkflow = useCallback(async () => {
+    if (!selectedWorkflowId || !selectedWorkflow) {
+      log.warn('请先选择一个工作流');
+      return;
+    }
+
+    setIsExecuting(true);
+    setExecutionResult(null);
+
+    try {
+      // 重置运行时
+      resetWorkflowRuntime();
+      const runtime = getWorkflowRuntime({
+        workDir: process.cwd(),
+        enableLog: true,
+        enableMonitoring: true,
+      });
+
+      // 注册工作流
+      runtime.registerWorkflow({
+        workflow: selectedWorkflow,
+        nodes: selectedNodes,
+      });
+
+      // 添加事件监听
+      runtime.addEventListener((event) => {
+        log.info(`[Runtime Event] ${event.type}`, event.data);
+        setRuntimeState(runtime.getState());
+      });
+
+      // 更新工作流状态
+      const updatedWorkflow = { ...selectedWorkflow, status: 'RUNNING' as const };
+      setWorkflows(prev => prev.map(w => w.id === selectedWorkflowId ? updatedWorkflow : w));
+
+      // 执行
+      setRuntimeState('STARTING');
+      const result = await runtime.start();
+
+      setExecutionResult(result);
+      setRuntimeState(result.finalState);
+
+      // 更新工作流状态
+      const finalStatus = result.success ? 'COMPLETED' as const : 'FAILED' as const;
+      const finalWorkflow = { ...selectedWorkflow, status: finalStatus };
+      setWorkflows(prev => prev.map(w => w.id === selectedWorkflowId ? finalWorkflow : w));
+
+      // 刷新节点状态
+      await refreshWorkflows();
+
+    } catch (error) {
+      log.error('工作流执行失败', error as Error);
+      setRuntimeState('FAILED');
+    } finally {
+      setIsExecuting(false);
+    }
+  }, [selectedWorkflowId, selectedWorkflow, selectedNodes, refreshWorkflows]);
+
+  // 停止工作流
+  const stopWorkflow = useCallback(() => {
+    try {
+      const runtime = getWorkflowRuntime();
+      runtime.stop();
+      setRuntimeState('STOPPED');
+
+      // 更新工作流状态
+      if (selectedWorkflowId && selectedWorkflow) {
+        const stoppedWorkflow = { ...selectedWorkflow, status: 'STOPPED' as const };
+        setWorkflows(prev => prev.map(w => w.id === selectedWorkflowId ? stoppedWorkflow : w));
+      }
+    } catch (error) {
+      log.error('停止工作流失败', error as Error);
+    }
+  }, [selectedWorkflowId, selectedWorkflow]);
+
   // 计算统计信息
   const stats = useMemo(() => {
     const running = workflows.filter(w => w.status === 'RUNNING').length;
@@ -377,6 +479,37 @@ export function VNextPanel({ fillRemaining = false }: VNextPanelProps) {
                         </p>
                       </div>
                       <div className="flex items-center gap-1">
+                        {/* 运行控制按钮 */}
+                        {(runtimeState === 'IDLE' || runtimeState === 'COMPLETED' || runtimeState === 'FAILED' || runtimeState === 'STOPPED') ? (
+                          <button
+                            onClick={runWorkflow}
+                            disabled={isExecuting || selectedNodes.length === 0}
+                            className="flex items-center gap-1 px-2 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50"
+                            title="运行工作流"
+                          >
+                            <Play className="w-3 h-3" />
+                            运行
+                          </button>
+                        ) : runtimeState === 'RUNNING' ? (
+                          <button
+                            onClick={stopWorkflow}
+                            className="flex items-center gap-1 px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600"
+                            title="停止工作流"
+                          >
+                            <Square className="w-3 h-3" />
+                            停止
+                          </button>
+                        ) : runtimeState === 'PAUSED' ? (
+                          <button
+                            onClick={runWorkflow}
+                            className="flex items-center gap-1 px-2 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600"
+                            title="继续工作流"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            继续
+                          </button>
+                        ) : null}
+
                         <button
                           onClick={() => deleteWorkflow(selectedWorkflow.id)}
                           className="p-1.5 text-text-muted hover:text-red-500 hover:bg-red-500/10 rounded"
@@ -386,6 +519,35 @@ export function VNextPanel({ fillRemaining = false }: VNextPanelProps) {
                         </button>
                       </div>
                     </div>
+
+                    {/* 运行状态 */}
+                    {(runtimeState !== 'IDLE' || executionResult) && (
+                      <div className="mt-2 p-2 bg-background-surface rounded text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="text-text-muted">运行状态:</span>
+                          <span className={`font-medium ${
+                            runtimeState === 'RUNNING' ? 'text-green-500' :
+                            runtimeState === 'FAILED' ? 'text-red-500' :
+                            runtimeState === 'COMPLETED' ? 'text-blue-500' :
+                            'text-text-primary'
+                          }`}>
+                            {getRuntimeStateLabel(runtimeState)}
+                          </span>
+                        </div>
+                        {executionResult && (
+                          <>
+                            <div className="flex items-center justify-between mt-1">
+                              <span className="text-text-muted">执行节点:</span>
+                              <span>{executionResult.stats.executedNodes}/{executionResult.stats.totalNodes}</span>
+                            </div>
+                            <div className="flex items-center justify-between mt-1">
+                              <span className="text-text-muted">执行时长:</span>
+                              <span>{(executionResult.stats.duration / 1000).toFixed(2)}s</span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
 
                     {/* 进度条 */}
                     <div className="mt-2">
@@ -451,6 +613,18 @@ export function VNextPanel({ fillRemaining = false }: VNextPanelProps) {
                       </div>
                     </div>
                   )}
+
+                  {/* 执行结果 */}
+                  {executionResult && executionResult.errors.length > 0 && (
+                    <div className="border-t border-border p-2 max-h-32 overflow-auto bg-red-500/5">
+                      <h4 className="text-xs font-medium text-red-500 mb-2">错误信息</h4>
+                      {executionResult.errors.map((err, idx) => (
+                        <div key={idx} className="text-xs text-red-600 mb-1">
+                          [{err.nodeId}] {err.error}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center text-text-muted">
@@ -468,6 +642,11 @@ export function VNextPanel({ fillRemaining = false }: VNextPanelProps) {
             <Activity className="w-12 h-12 mb-3 opacity-50" />
             <p className="text-sm">运行时监控</p>
             <p className="text-xs mt-1">启动工作流后可查看实时数据</p>
+            {runtimeState !== 'IDLE' && (
+              <div className="mt-4 p-4 bg-background-surface rounded-lg text-xs">
+                <p>当前状态: <span className="font-medium">{getRuntimeStateLabel(runtimeState)}</span></p>
+              </div>
+            )}
           </div>
         )}
 
@@ -499,6 +678,10 @@ export function VNextPanel({ fillRemaining = false }: VNextPanelProps) {
                 <div
                   key={template.id}
                   className="p-3 border border-border rounded-lg hover:border-primary/50 cursor-pointer transition-colors"
+                  onClick={() => {
+                    // 使用模板创建工作流
+                    createSampleWorkflow();
+                  }}
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium text-text-primary">

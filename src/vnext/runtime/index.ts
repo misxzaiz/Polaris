@@ -9,14 +9,13 @@ import type { AgentProfile } from '../types/profile';
 
 import { EventBus, getEventBus } from '../event-bus';
 import { ExecutionStore, getExecutionStore } from '../execution-store';
-import { SessionManager } from '../session';
 import { ContextBuilder } from '../context';
-import { TemplateEngine } from '../template';
 import { MemoryManager, getMemoryManager } from '../memory-manager';
 import { InterruptInbox, getInterruptInbox } from '../interrupt';
 import { RuntimeMonitor, getRuntimeMonitor } from '../monitor';
 import { WorkflowPersistence, getWorkflowPersistence } from '../persistence';
 import { ErrorRecovery, getErrorRecovery } from '../recovery';
+import { AIEngineAdapter, type ISession } from '../engine-adapter';
 
 import type {
   WorkflowRuntimeConfig,
@@ -59,9 +58,7 @@ export class WorkflowRuntime {
   // 组件实例
   private eventBus: EventBus;
   private executionStore: ExecutionStore;
-  private _sessionManager: SessionManager;
   private contextBuilder: ContextBuilder;
-  private _templateEngine: TemplateEngine;
   private memoryManager: MemoryManager;
   private interruptInbox: InterruptInbox;
   private monitor: RuntimeMonitor;
@@ -71,6 +68,10 @@ export class WorkflowRuntime {
   // 节点状态追踪
   private nodeStates: Map<string, 'pending' | 'running' | 'completed' | 'failed' | 'skipped'> = new Map();
 
+  // AI 会话管理
+  private sessions: Map<string, ISession> = new Map();
+  private defaultEngineId: string = 'claude-code';
+
   // 自动保存定时器
   private autoSaveTimer?: ReturnType<typeof setInterval>;
 
@@ -79,9 +80,7 @@ export class WorkflowRuntime {
 
     this.eventBus = getEventBus();
     this.executionStore = getExecutionStore();
-    this._sessionManager = new SessionManager();
     this.contextBuilder = new ContextBuilder();
-    this._templateEngine = new TemplateEngine();
     this.memoryManager = getMemoryManager();
     this.interruptInbox = getInterruptInbox();
     this.monitor = getRuntimeMonitor();
@@ -440,18 +439,155 @@ export class WorkflowRuntime {
     }
   }
 
+  /**
+   * 设置默认引擎 ID
+   */
+  setDefaultEngine(engineId: string): void {
+    this.defaultEngineId = engineId;
+  }
+
+  /**
+   * 默认执行器 - 使用真实 AI 引擎
+   */
   private async defaultExecutor(
     node: WorkflowNode,
-    _context: NodeExecutionContext
+    context: NodeExecutionContext
   ): Promise<NodeExecutionResult> {
-    await this.delay(10);
+    if (!this.workflow) {
+      throw new Error('No workflow registered');
+    }
 
-    return {
-      success: true,
-      output: `Node ${node.name} completed`,
-      emitEvents: node.emitEvents?.map(type => ({ type })) || [],
-      tokenUsage: { input: 100, output: 50 },
-    };
+    // 获取节点对应的 Profile
+    const profileId = this.nodeProfiles.get(node.id);
+    const profile = profileId ? this.profiles.get(profileId) : undefined;
+
+    // 创建 AI 会话
+    const sessionId = `session-${this.workflow.id}-${node.id}-${Date.now()}`;
+    const session = new AIEngineAdapter(sessionId, {
+      engineId: this.defaultEngineId,
+      workDir: this.config.workDir || process.cwd(),
+      timeout: this.config.nodeTimeout,
+      profile,
+      systemPrompt: profile?.systemPolicy ?? '',
+    });
+
+    this.sessions.set(node.id, session);
+
+    // 构建执行提示词
+    const prompt = this.buildNodePrompt(node, context, profile);
+
+    // 执行并收集结果
+    let output = '';
+    const events: Array<{ type: string; data: unknown }> = [];
+    let tokenUsage = { input: 0, output: 0 };
+
+    try {
+      const aiResult = await session.sendMessage(prompt, {
+        onThinking: (thinking) => {
+          this.log(`[${node.name}] Thinking: ${thinking.substring(0, 50)}...`);
+        },
+        onToolCall: (tool, input) => {
+          this.log(`[${node.name}] Tool call: ${tool}`);
+          events.push({ type: tool, data: input });
+        },
+        onToolResult: (tool, _toolResult, isError) => {
+          this.log(`[${node.name}] Tool result: ${tool} (${isError ? 'error' : 'success'})`);
+        },
+        onOutput: (text) => {
+          output += text;
+        },
+        onError: (error) => {
+          this.log(`[${node.name}] Error: ${error}`);
+        },
+      });
+
+      tokenUsage = {
+        input: aiResult.tokenUsage.inputTokens,
+        output: aiResult.tokenUsage.outputTokens,
+      };
+
+      // 清理会话
+      this.sessions.delete(node.id);
+
+      return {
+        success: aiResult.success,
+        output: aiResult.output || output,
+        error: aiResult.error,
+        emitEvents: node.emitEvents?.map(type => ({ type })) || [],
+        tokenUsage,
+      };
+
+    } catch (error) {
+      this.sessions.delete(node.id);
+      throw error;
+    }
+  }
+
+  /**
+   * 构建节点执行提示词
+   */
+  private buildNodePrompt(
+    node: WorkflowNode,
+    context: NodeExecutionContext,
+    profile?: AgentProfile
+  ): string {
+    const parts: string[] = [];
+
+    // 添加 Profile 角色描述
+    if (profile) {
+      parts.push(`## 角色: ${profile.role}`);
+      parts.push(``);
+      if (profile.description) {
+        parts.push(profile.description);
+        parts.push(``);
+      }
+      if (profile.tags && profile.tags.length > 0) {
+        parts.push(`**标签**: ${profile.tags.join(', ')}`);
+        parts.push(``);
+      }
+    }
+
+    // 添加节点任务描述
+    parts.push(`## 任务: ${node.name}`);
+    parts.push(``);
+
+    if (node.role) {
+      parts.push(`作为 ${node.role}，请完成以下任务。`);
+      parts.push(``);
+    }
+
+    // 添加执行上下文
+    if (context.round > 0) {
+      parts.push(`**当前轮次**: ${context.round}`);
+      parts.push(``);
+    }
+
+    // 添加待处理事件
+    if (context.pendingEvents && context.pendingEvents.length > 0) {
+      parts.push(`## 输入事件`);
+      parts.push(``);
+      for (const event of context.pendingEvents) {
+        parts.push(`- [${event.type}] ${JSON.stringify(event.data)}`);
+      }
+      parts.push(``);
+    }
+
+    // 添加工作流目标
+    if (this.workflow?.description) {
+      parts.push(`## 工作流目标`);
+      parts.push(``);
+      parts.push(this.workflow.description);
+      parts.push(``);
+    }
+
+    // 添加指令
+    parts.push(`## 要求`);
+    parts.push(``);
+    parts.push(`1. 完成任务并输出结果`);
+    parts.push(`2. 如果需要执行工具操作，请明确说明`);
+    parts.push(`3. 如果遇到问题，请描述具体情况`);
+
+    return parts.join('\n');
   }
 
   // --------------------------------------------------------------------------

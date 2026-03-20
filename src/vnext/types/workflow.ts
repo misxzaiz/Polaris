@@ -20,7 +20,8 @@ export type WorkflowStatus =
   | 'COMPACTING_MEMORY'  // 压缩内存
   | 'FAILED'             // 失败
   | 'COMPLETED'          // 完成
-  | 'EVOLVING';          // 进化中
+  | 'EVOLVING'           // 进化中
+  | 'STOPPED';           // 已停止
 
 /**
  * 工作流模式

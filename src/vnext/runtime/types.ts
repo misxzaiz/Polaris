@@ -43,6 +43,12 @@ export interface WorkflowRuntimeConfig {
 
   /** 错误重试次数 */
   maxRetries?: number;
+
+  /** 工作目录 */
+  workDir?: string;
+
+  /** 节点执行超时时间（毫秒） */
+  nodeTimeout?: number;
 }
 
 /**
@@ -59,6 +65,8 @@ export const DEFAULT_RUNTIME_CONFIG: Required<WorkflowRuntimeConfig> = {
   enableLog: true,
   autoSaveInterval: 30000,
   maxRetries: 3,
+  workDir: '',
+  nodeTimeout: 300000, // 5 分钟
 };
 
 // ============================================================================

@@ -462,3 +462,16 @@ export {
   type TableColumn,
   type TableOptions,
 } from './cli';
+
+// Engine Adapter
+export {
+  // Adapter
+  AIEngineAdapter,
+  createAIEngineSession,
+
+  // Types
+  type EngineAdapterConfig,
+  type EngineAdapterState,
+  type EngineAdapterInfo,
+  type EngineAdapterEvent,
+} from './engine-adapter';
