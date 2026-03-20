@@ -236,7 +236,8 @@ export class NodeEventController {
       this.pendingEventsForNodes.set(nodeId, []);
     }
 
-    const events = this.pendingEventsForNodes.get(nodeId)!;
+    const events = this.pendingEventsForNodes.get(nodeId);
+    if (!events) return;
 
     // 避免重复添加
     if (!events.some(e => e.id === event.id)) {

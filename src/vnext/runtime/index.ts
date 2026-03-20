@@ -12,8 +12,10 @@ import { ExecutionStore, getExecutionStore } from '../execution-store';
 import { ContextBuilder } from '../context';
 import { MemoryManager, getMemoryManager } from '../memory-manager';
 import { InterruptInbox, getInterruptInbox } from '../interrupt';
+import { InterruptType, InterruptPriority, InterruptStatus, UserInputType } from '../interrupt/types';
 import { RuntimeMonitor, getRuntimeMonitor } from '../monitor';
 import { WorkflowPersistence, getWorkflowPersistence } from '../persistence';
+import { SnapshotType } from '../persistence/types';
 import { ErrorRecovery, getErrorRecovery } from '../recovery';
 import { AIEngineAdapter, type ISession } from '../engine-adapter';
 
@@ -353,21 +355,22 @@ export class WorkflowRuntime {
   }
 
   private async executeNode(nodeId: string): Promise<void> {
-    if (!this.workflow) return;
+    const workflow = this.workflow;
+    if (!workflow) return;
 
     const node = this.nodes.find(n => n.id === nodeId);
     if (!node) return;
 
     this.nodeStates.set(nodeId, 'running');
-    this.emitEvent('node_started', { workflowId: this.workflow.id, nodeId });
+    this.emitEvent('node_started', { workflowId: workflow.id, nodeId });
 
-    this.monitor.startNode(this.workflow.id, nodeId);
+    this.monitor.startNode(workflow.id, nodeId);
 
     // 创建执行记录
     const executionRecord = this.executionStore.create({
-      workflowId: this.workflow.id,
+      workflowId: workflow.id,
       nodeId,
-      round: this.workflow.currentRound ?? 0,
+      round: workflow.currentRound ?? 0,
     });
 
     try {
@@ -375,7 +378,7 @@ export class WorkflowRuntime {
       const profile = profileId ? this.profiles.get(profileId) : undefined;
 
       const context: NodeExecutionContext = {
-        round: this.workflow.currentRound ?? 0,
+        round: workflow.currentRound ?? 0,
         profile,
         pendingEvents: [],
       };
@@ -383,14 +386,19 @@ export class WorkflowRuntime {
       let result: NodeExecutionResult;
 
       if (this.customExecutors.has(nodeId)) {
-        result = await this.customExecutors.get(nodeId)!(this.workflow, node, context);
+        const customExecutor = this.customExecutors.get(nodeId);
+        if (customExecutor) {
+          result = await customExecutor(workflow, node, context);
+        } else {
+          result = await this.defaultExecutor(node, context);
+        }
       } else {
         result = await this.defaultExecutor(node, context);
       }
 
       if (result.success) {
         this.nodeStates.set(nodeId, 'completed');
-        this.monitor.completeNode(this.workflow.id, nodeId);
+        this.monitor.completeNode(workflow.id, nodeId);
 
         this.executionStore.completeExecution(executionRecord.id, {
           outputSnippet: result.output,
@@ -399,18 +407,18 @@ export class WorkflowRuntime {
         if (result.emitEvents) {
           for (const event of result.emitEvents) {
             this.eventBus.emit(event.type, event.data, {
-              workflowId: this.workflow!.id,
+              workflowId: workflow.id,
               sourceNodeId: nodeId,
             });
           }
         }
 
         if (result.tokenUsage) {
-          this.monitor.updateTokenUsage(this.workflow.id, nodeId, result.tokenUsage);
+          this.monitor.updateTokenUsage(workflow.id, nodeId, result.tokenUsage);
         }
 
         if (this.config.enableMemory) {
-          await this.memoryManager.addEntry(this.workflow.id, 'active', {
+          await this.memoryManager.addEntry(workflow.id, 'active', {
             type: 'accomplishment',
             content: `Completed ${node.name}: ${result.output || 'success'}`,
             tags: ['node', node.role, nodeId],
@@ -418,7 +426,7 @@ export class WorkflowRuntime {
           });
         }
 
-        this.emitEvent('node_completed', { workflowId: this.workflow.id, nodeId, output: result.output });
+        this.emitEvent('node_completed', { workflowId: workflow.id, nodeId, output: result.output });
       } else {
         throw new Error(result.error || 'Node execution failed');
       }
@@ -427,15 +435,15 @@ export class WorkflowRuntime {
       this.nodeStates.set(nodeId, 'failed');
       const errorMsg = error instanceof Error ? error.message : String(error);
 
-      this.monitor.failNode(this.workflow.id, nodeId, errorMsg);
+      this.monitor.failNode(workflow.id, nodeId, errorMsg);
 
       this.executionStore.failExecution(executionRecord.id, errorMsg);
 
       if (this.config.enableErrorRecovery) {
-        this.errorRecovery.captureException(this.workflow.id, error as Error, { nodeId });
+        this.errorRecovery.captureException(workflow.id, error as Error, { nodeId });
       }
 
-      this.emitEvent('node_failed', { workflowId: this.workflow.id, nodeId, error: errorMsg });
+      this.emitEvent('node_failed', { workflowId: workflow.id, nodeId, error: errorMsg });
     }
   }
 
@@ -746,7 +754,7 @@ export class WorkflowRuntime {
 
   async createSnapshot(label: string): Promise<string | null> {
     if (!this.workflow) return null;
-    const snapshot = this.persistence.createSnapshot(this.workflow.id, 'manual' as any, { description: label });
+    const snapshot = this.persistence.createSnapshot(this.workflow.id, SnapshotType.MANUAL, { description: label });
     return snapshot?.id || null;
   }
 
@@ -765,9 +773,9 @@ export class WorkflowRuntime {
     const interrupt = this.interruptInbox.addInterrupt({
       id: `interrupt-${Date.now()}`,
       workflowId: this.workflow.id,
-      type: type as any,
-      priority: priority as any,
-      status: 'pending' as any,
+      type: type as InterruptType,
+      priority: priority as InterruptPriority,
+      status: InterruptStatus.PENDING,
       title: `Interrupt: ${type}`,
       content: data ? String(data) : '',
       createdAt: Date.now(),
@@ -781,7 +789,7 @@ export class WorkflowRuntime {
 
     const input = this.interruptInbox.createUserInput(
       this.workflow.id,
-      type as any,
+      type as UserInputType,
       `User ${type}`,
       content
     );

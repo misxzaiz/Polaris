@@ -299,16 +299,18 @@ export class ExecutionStore {
     }
 
     // 按时间过滤
-    if (queryParams.fromTime) {
+    const fromTime = queryParams.fromTime;
+    if (fromTime) {
       results = results.filter(r => {
         const start = r.startedAt ?? r.startTime ?? 0;
-        return start >= queryParams.fromTime!;
+        return start >= fromTime;
       });
     }
-    if (queryParams.toTime) {
+    const toTime = queryParams.toTime;
+    if (toTime) {
       results = results.filter(r => {
         const start = r.startedAt ?? r.startTime ?? 0;
-        return start <= queryParams.toTime!;
+        return start <= toTime;
       });
     }
 

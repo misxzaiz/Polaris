@@ -303,7 +303,7 @@ export class PluginManager {
       }
 
       try {
-        const result = await handler!(currentPayload as never, context);
+        const result = await handler(currentPayload as never, context);
 
         if (!result.continue) {
           return result;
@@ -437,11 +437,11 @@ export class PluginManager {
 
   private getHookHandlers(hook: PluginHook): Array<{
     pluginId: string;
-    handler: PluginHooks[PluginHook];
+    handler: NonNullable<PluginHooks[PluginHook]>;
   }> {
     const handlers: Array<{
       pluginId: string;
-      handler: PluginHooks[PluginHook];
+      handler: NonNullable<PluginHooks[PluginHook]>;
       priority: number;
     }> = [];
 
@@ -455,7 +455,7 @@ export class PluginManager {
       if (handler) {
         handlers.push({
           pluginId,
-          handler,
+          handler: handler as NonNullable<PluginHooks[PluginHook]>,
           priority: PRIORITY_WEIGHTS[plugin.meta.priority || 'normal'],
         });
       }

@@ -617,7 +617,8 @@ export class InterruptInbox {
       if (filter.nodeId && i.nodeId !== filter.nodeId) return false;
 
       if (filter.tags && filter.tags.length > 0) {
-        if (!i.tags || !filter.tags.some((t) => i.tags!.includes(t))) return false;
+        const interruptTags = i.tags;
+        if (!interruptTags || !filter.tags.some((t) => interruptTags.includes(t))) return false;
       }
 
       if (filter.timeRange) {

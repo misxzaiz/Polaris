@@ -160,7 +160,10 @@ export class ContextBuilder implements IContextBuilder {
     if (!this.executionHistory.has(nodeId)) {
       this.executionHistory.set(nodeId, []);
     }
-    this.executionHistory.get(nodeId)!.push(record);
+    const records = this.executionHistory.get(nodeId);
+    if (records) {
+      records.push(record);
+    }
   }
 
   /**

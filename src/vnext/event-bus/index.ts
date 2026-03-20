@@ -129,7 +129,10 @@ export class EventBus {
     if (!this.subscribers.has(eventType)) {
       this.subscribers.set(eventType, new Set());
     }
-    this.subscribers.get(eventType)!.add(handler);
+    const handlers = this.subscribers.get(eventType);
+    if (handlers) {
+      handlers.add(handler);
+    }
 
     // 返回取消订阅函数
     return () => {

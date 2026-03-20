@@ -595,7 +595,8 @@ export class RuntimeMonitor {
     }
 
     if (options?.types && options.types.length > 0) {
-      filtered = filtered.filter((log) => options.types!.includes(log.type));
+      const types = options.types;
+      filtered = filtered.filter((log) => types.includes(log.type));
     }
 
     if (options?.level) {

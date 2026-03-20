@@ -75,7 +75,7 @@ export class InMemoryStore implements IMemoryStore {
       if (!this.layerIndex.has(activeKey)) {
         this.layerIndex.set(activeKey, new Set());
       }
-      this.layerIndex.get(activeKey)!.add(entry.id);
+      this.layerIndex.get(activeKey)?.add(entry.id);
     }
   }
 
@@ -86,7 +86,7 @@ export class InMemoryStore implements IMemoryStore {
     this.entries.delete(id);
 
     // Remove from all layer indexes
-    for (const [_key, ids] of this.layerIndex) {
+    for (const [, ids] of this.layerIndex) {
       ids.delete(id);
     }
 
@@ -109,24 +109,29 @@ export class InMemoryStore implements IMemoryStore {
   async query(filter: MemoryQueryFilter): Promise<MemoryEntry[]> {
     let results = Array.from(this.entries.values());
 
-    if (filter.types && filter.types.length > 0) {
-      results = results.filter(e => filter.types!.includes(e.type));
+    const filterTypes = filter.types;
+    if (filterTypes && filterTypes.length > 0) {
+      results = results.filter(e => filterTypes.includes(e.type));
     }
 
-    if (filter.tags && filter.tags.length > 0) {
-      results = results.filter(e => filter.tags!.some(t => e.tags.includes(t)));
+    const filterTags = filter.tags;
+    if (filterTags && filterTags.length > 0) {
+      results = results.filter(e => filterTags.some(t => e.tags.includes(t)));
     }
 
-    if (filter.fromDate !== undefined) {
-      results = results.filter(e => e.createdAt >= filter.fromDate!);
+    const fromDate = filter.fromDate;
+    if (fromDate !== undefined) {
+      results = results.filter(e => e.createdAt >= fromDate);
     }
 
-    if (filter.toDate !== undefined) {
-      results = results.filter(e => e.createdAt <= filter.toDate!);
+    const toDate = filter.toDate;
+    if (toDate !== undefined) {
+      results = results.filter(e => e.createdAt <= toDate);
     }
 
-    if (filter.minRelevanceScore !== undefined) {
-      results = results.filter(e => (e.relevanceScore || 0) >= filter.minRelevanceScore!);
+    const minRelevanceScore = filter.minRelevanceScore;
+    if (minRelevanceScore !== undefined) {
+      results = results.filter(e => (e.relevanceScore || 0) >= minRelevanceScore);
     }
 
     results.sort((a, b) => b.createdAt - a.createdAt);
