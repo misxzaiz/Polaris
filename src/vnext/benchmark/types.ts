@@ -3,6 +3,46 @@
  */
 
 /**
+ * Benchmark result
+ */
+export interface BenchmarkResult {
+  /** Benchmark name */
+  name: string;
+  /** Number of iterations */
+  iterations: number;
+  /** Total time in milliseconds */
+  totalTime: number;
+  /** Average time per iteration in milliseconds */
+  avgTime: number;
+  /** Minimum time in milliseconds */
+  minTime: number;
+  /** Maximum time in milliseconds */
+  maxTime: number;
+  /** Operations per second */
+  opsPerSecond: number;
+  /** Memory usage (if available) */
+  memoryUsage?: {
+    heapUsed: number;
+    heapTotal: number;
+    external: number;
+  };
+}
+
+/**
+ * Benchmark suite result
+ */
+export interface BenchmarkSuiteResult {
+  /** Suite name */
+  suite: string;
+  /** Individual benchmark results */
+  benchmarks: BenchmarkResult[];
+  /** Total suite time */
+  totalTime: number;
+  /** Timestamp */
+  timestamp: number;
+}
+
+/**
  * Benchmark summary report
  */
 export interface BenchmarkReport {
@@ -101,4 +141,16 @@ export interface BenchmarkHistoryEntry {
   commit?: string;
   /** Benchmark results */
   results: BenchmarkSuiteResult[];
+}
+
+/**
+ * Benchmark configuration
+ */
+export interface BenchmarkConfig {
+  /** Number of warmup iterations */
+  warmupIterations?: number;
+  /** Number of benchmark iterations */
+  iterations?: number;
+  /** Collect memory usage */
+  collectMemory?: boolean;
 }

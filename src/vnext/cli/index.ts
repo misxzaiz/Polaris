@@ -13,7 +13,6 @@ import type {
   WorkflowTemplate,
   MonitorData,
   TableOptions,
-  TableColumn,
 } from './types';
 import {
   DEFAULT_CLI_CONFIG,
@@ -21,7 +20,7 @@ import {
 } from './types';
 import { WorkflowRuntime } from '../runtime';
 import { getWorkflowPersistence } from '../persistence';
-import type { Workflow, WorkflowNode, WorkflowStatus } from '../types';
+import type { Workflow, WorkflowNode, WorkflowStatus, NodeState } from '../types';
 
 /**
  * Format table output
@@ -34,7 +33,7 @@ export function formatTable(data: Record<string, unknown>[], options: TableOptio
   const { columns, showHeaders = true, showBorders = true, showRowNumbers = false } = options;
 
   // Calculate column widths
-  const widths: number[] = columns.map((col, index) => {
+  const widths: number[] = columns.map((col) => {
     const headerWidth = col.header.length;
     const dataWidth = Math.max(
       ...data.map((row) => {
@@ -56,9 +55,9 @@ export function formatTable(data: Record<string, unknown>[], options: TableOptio
   // Build header
   if (showHeaders) {
     if (separator) lines.push(separator);
-    const headerCells = columns.map((col, index) => {
+    const headerCells = columns.map((col, idx) => {
       const align = col.align ?? 'left';
-      const width = widths[index];
+      const width = widths[idx];
       const text = col.header;
       return align === 'right'
         ? text.padStart(width)
@@ -75,10 +74,10 @@ export function formatTable(data: Record<string, unknown>[], options: TableOptio
 
   // Build rows
   data.forEach((row, rowIndex) => {
-    const cells = columns.map((col, colIndex) => {
+    const cells = columns.map((col, colIdx) => {
       const value = row[col.property];
       const formatted = col.format ? col.format(value) : String(value ?? '');
-      const width = widths[colIndex];
+      const width = widths[colIdx];
       const align = col.align ?? 'left';
 
       return align === 'right'
@@ -156,12 +155,15 @@ export function formatYAML(data: unknown, indent = 0): string {
  */
 export function formatStatusBadge(status: WorkflowStatus): string {
   const badges: Record<WorkflowStatus, string> = {
-    idle: '[IDLE]',
-    running: '[RUNNING]',
-    paused: '[PAUSED]',
-    completed: '[COMPLETED]',
-    failed: '[FAILED]',
-    cancelled: '[CANCELLED]',
+    CREATED: '[CREATED]',
+    PLANNING: '[PLANNING]',
+    RUNNING: '[RUNNING]',
+    WAITING_EVENT: '[WAITING]',
+    BLOCKED: '[BLOCKED]',
+    COMPACTING_MEMORY: '[COMPACTING]',
+    FAILED: '[FAILED]',
+    COMPLETED: '[COMPLETED]',
+    EVOLVING: '[EVOLVING]',
   };
   return badges[status] || '[UNKNOWN]';
 }
@@ -190,6 +192,87 @@ export function formatRelativeTime(timestamp: number): string {
 }
 
 /**
+ * Helper function to get priority number from string
+ */
+function getPriorityNumber(priority?: string): number {
+  const priorityMap: Record<string, number> = {
+    low: 3,
+    normal: 5,
+    high: 7,
+    urgent: 10,
+  };
+  return priorityMap[priority || 'normal'] ?? 5;
+}
+
+/**
+ * Helper function to create a WorkflowNode from template
+ */
+function createNodeFromTemplate(
+  templateNode: Partial<WorkflowNode>,
+  workflowId: string,
+  index: number
+): WorkflowNode {
+  const now = Date.now();
+  return {
+    id: templateNode.id || `node-${index}`,
+    workflowId,
+    name: templateNode.name || `Node ${index}`,
+    role: templateNode.role || 'agent',
+    enabled: true,
+    state: 'IDLE' as NodeState,
+    triggerType: 'dependency' as const,
+    subscribeEvents: [],
+    emitEvents: [],
+    dependencies: templateNode.dependencies || [],
+    nextNodes: [],
+    maxRounds: 10,
+    currentRounds: 0,
+    timeoutMs: 30000,
+    retryCount: 0,
+    maxRetries: 3,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+/**
+ * Helper function to create a Workflow from options
+ */
+function createWorkflowFromOptions(
+  options: CLIOptions,
+  template?: WorkflowTemplate
+): { workflow: Workflow; nodes: WorkflowNode[] } {
+  const now = Date.now();
+  const workflowId = options.id || `workflow-${Date.now()}`;
+
+  const workflow: Workflow = {
+    id: workflowId,
+    name: options.name || template?.name || 'Untitled Workflow',
+    description: options.description || template?.description || '',
+    status: 'CREATED' as WorkflowStatus,
+    mode: (template?.workflow as Partial<Workflow>)?.mode || 'continuous',
+    priority: typeof options.priority === 'number'
+      ? options.priority
+      : getPriorityNumber(options.priority as string)
+        || (template?.workflow as Partial<Workflow>)?.priority
+        || 5,
+    memoryRoot: (template?.workflow as Partial<Workflow>)?.memoryRoot || '/tmp/memory',
+    workDir: (template?.workflow as Partial<Workflow>)?.workDir || '/tmp/workdir',
+    createdAt: now,
+    updatedAt: now,
+    currentRounds: 0,
+    maxRounds: 100,
+    tags: [],
+  };
+
+  const nodes: WorkflowNode[] = (template?.nodes || []).map((n, i) =>
+    createNodeFromTemplate(n as Partial<WorkflowNode>, workflowId, i)
+  );
+
+  return { workflow, nodes };
+}
+
+/**
  * CLI Tool implementation
  */
 export class CLITool {
@@ -198,6 +281,7 @@ export class CLITool {
   private config: CLIConfig;
   private context: CLIContext;
   private commandRegistry: Map<CLICommand, CLICommandDefinition>;
+  private nodeStore: Map<string, WorkflowNode[]>;
 
   constructor(runtime: WorkflowRuntime, config: Partial<CLIConfig> = {}) {
     this.runtime = runtime;
@@ -205,6 +289,7 @@ export class CLITool {
     this.config = { ...DEFAULT_CLI_CONFIG, ...config };
     this.context = this.createContext();
     this.commandRegistry = new Map();
+    this.nodeStore = new Map();
     this.registerCommands();
   }
 
@@ -338,7 +423,6 @@ export class CLITool {
 
     try {
       const result = await definition.handler(options, this.context);
-      historyEntry.result = result;
       return result;
     } catch (error) {
       const result: CLIResult = {
@@ -346,7 +430,6 @@ export class CLITool {
         error: error instanceof Error ? error.message : String(error),
         exitCode: 1,
       };
-      historyEntry.result = result;
       return result;
     }
   }
@@ -391,35 +474,16 @@ export class CLITool {
       }
     }
 
-    const nodes: WorkflowNode[] = ((template?.nodes || []) as WorkflowNode[]).map((n, i) => ({
-      id: n.id || `node-${i}`,
-      name: n.name || `Node ${i}`,
-      type: n.type || 'task',
-      status: 'pending' as const,
-      dependencies: n.dependencies || [],
-      profileId: n.profileId || 'default',
-    }));
-
-    const workflow: Workflow = {
-      id: options.id || `workflow-${Date.now()}`,
-      name: options.name,
-      description: options.description || template?.description || '',
-      version: '1.0.0',
-      status: 'idle',
-      priority: options.priority || template?.workflow.priority || 'normal',
-      nodes,
-      edges: [],
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
+    const { workflow, nodes } = createWorkflowFromOptions(options, template);
 
     // Store in persistence
     this.persistence.registerWorkflow(workflow, nodes);
+    this.nodeStore.set(workflow.id, nodes);
 
     return {
       success: true,
       message: `Workflow created: ${workflow.id}`,
-      data: workflow,
+      data: { workflow, nodes },
       exitCode: 0,
     };
   }
@@ -439,7 +503,7 @@ export class CLITool {
       name: w.name,
       status: w.status,
       priority: w.priority,
-      nodes: w.nodes?.length || 0,
+      nodes: this.nodeStore.get(w.id)?.length || 0,
       created: formatRelativeTime(w.createdAt),
     }));
 
@@ -461,10 +525,12 @@ export class CLITool {
       return { success: false, error: `Workflow not found: ${options.id}`, exitCode: 1 };
     }
 
+    const nodes = this.nodeStore.get(options.id) || [];
+
     return {
       success: true,
-      data: workflow,
-      message: this.formatOutput(workflow, options.format),
+      data: { workflow, nodes },
+      message: this.formatOutput({ workflow, nodes }, options.format),
       exitCode: 0,
     };
   }
@@ -479,10 +545,12 @@ export class CLITool {
       return { success: false, error: `Workflow not found: ${options.id}`, exitCode: 1 };
     }
 
+    const nodes = this.nodeStore.get(options.id) || [];
+
     // Register to runtime and start
     this.runtime.registerWorkflow({
       workflow,
-      nodes: workflow.nodes || [],
+      nodes,
     });
 
     await this.runtime.start();
@@ -494,7 +562,7 @@ export class CLITool {
     };
   }
 
-  private async handlePause(options: CLIOptions): Promise<CLIResult> {
+  private async handlePause(_options: CLIOptions): Promise<CLIResult> {
     const paused = this.runtime.pause();
 
     if (!paused) {
@@ -552,6 +620,7 @@ export class CLITool {
 
     // Remove from persistence
     this.persistence.removeWorkflow(options.id);
+    this.nodeStore.delete(options.id);
 
     return {
       success: true,
@@ -567,12 +636,12 @@ export class CLITool {
       return createResult;
     }
 
-    const workflow = createResult.data as Workflow;
+    const { workflow, nodes } = createResult.data as { workflow: Workflow; nodes: WorkflowNode[] };
 
     // Register to runtime and start
     this.runtime.registerWorkflow({
       workflow,
-      nodes: workflow.nodes || [],
+      nodes,
     });
 
     await this.runtime.start();
@@ -580,7 +649,7 @@ export class CLITool {
     return {
       success: true,
       message: `Workflow created and started: ${workflow.id}`,
-      data: workflow,
+      data: { workflow, nodes },
       exitCode: 0,
     };
   }
@@ -595,7 +664,8 @@ export class CLITool {
       return { success: false, error: `Workflow not found: ${options.id}`, exitCode: 1 };
     }
 
-    const nodes = workflow.nodes || [];
+    const nodes = this.nodeStore.get(options.id) || [];
+
     const status = {
       id: workflow.id,
       name: workflow.name,
@@ -603,10 +673,10 @@ export class CLITool {
       priority: workflow.priority,
       nodes: {
         total: nodes.length,
-        completed: nodes.filter((n) => n.status === 'completed').length,
-        running: nodes.filter((n) => n.status === 'running').length,
-        pending: nodes.filter((n) => n.status === 'pending').length,
-        failed: nodes.filter((n) => n.status === 'failed').length,
+        completed: nodes.filter((n) => n.state === 'DONE').length,
+        running: nodes.filter((n) => n.state === 'RUNNING').length,
+        pending: nodes.filter((n) => n.state === 'IDLE').length,
+        failed: nodes.filter((n) => n.state === 'FAILED').length,
       },
     };
 
@@ -618,7 +688,7 @@ export class CLITool {
     };
   }
 
-  private async handleMonitor(options: CLIOptions): Promise<CLIResult> {
+  private async handleMonitor(_options: CLIOptions): Promise<CLIResult> {
     const workflowIds = this.persistence.getWorkflowIds();
     const workflows = workflowIds
       .map((id) => this.persistence.getWorkflow(id))
@@ -626,37 +696,37 @@ export class CLITool {
 
     const monitorData: MonitorData = {
       timestamp: Date.now(),
-      activeWorkflows: workflows.filter((w) => w.status === 'running').length,
+      activeWorkflows: workflows.filter((w) => w.status === 'RUNNING').length,
       runningNodes: workflows.reduce(
-        (sum, w) => sum + (w.nodes || []).filter((n) => n.status === 'running').length,
+        (sum, w) => sum + (this.nodeStore.get(w.id) || []).filter((n) => n.state === 'RUNNING').length,
         0
       ),
       pendingNodes: workflows.reduce(
-        (sum, w) => sum + (w.nodes || []).filter((n) => n.status === 'pending').length,
+        (sum, w) => sum + (this.nodeStore.get(w.id) || []).filter((n) => n.state === 'IDLE').length,
         0
       ),
       completedNodes: workflows.reduce(
-        (sum, w) => sum + (w.nodes || []).filter((n) => n.status === 'completed').length,
+        (sum, w) => sum + (this.nodeStore.get(w.id) || []).filter((n) => n.state === 'DONE').length,
         0
       ),
       failedNodes: workflows.reduce(
-        (sum, w) => sum + (w.nodes || []).filter((n) => n.status === 'failed').length,
+        (sum, w) => sum + (this.nodeStore.get(w.id) || []).filter((n) => n.state === 'FAILED').length,
         0
       ),
       totalTokens: 0,
       estimatedCost: 0,
       workflows: workflows.map((w) => {
-        const nodes = w.nodes || [];
+        const nodes = this.nodeStore.get(w.id) || [];
         return {
           id: w.id,
           name: w.name,
           status: w.status,
           progress: nodes.length > 0
-            ? Math.round((nodes.filter((n) => n.status === 'completed').length / nodes.length) * 100)
+            ? Math.round((nodes.filter((n) => n.state === 'DONE').length / nodes.length) * 100)
             : 0,
           tokens: 0,
           cost: 0,
-          duration: w.startedAt ? Date.now() - w.startedAt : 0,
+          duration: w.updatedAt ? Date.now() - w.updatedAt : 0,
         };
       }),
     };
@@ -664,7 +734,7 @@ export class CLITool {
     return {
       success: true,
       data: monitorData,
-      message: this.formatOutput(monitorData, options.format),
+      message: this.formatOutput(monitorData, _options.format),
       exitCode: 0,
     };
   }
@@ -685,7 +755,7 @@ export class CLITool {
     };
   }
 
-  private async handleHelp(options: CLIOptions): Promise<CLIResult> {
+  private async handleHelp(_options: CLIOptions): Promise<CLIResult> {
     const commands = Array.from(this.commandRegistry.values());
 
     const lines: string[] = [

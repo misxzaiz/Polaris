@@ -4,58 +4,21 @@
  * Provides performance benchmarks for critical components
  */
 
-import type { Workflow, WorkflowNode } from '../types';
+import type { Workflow, WorkflowNode, NodeState, WorkflowStatus } from '../types';
+import type {
+  BenchmarkResult,
+  BenchmarkSuiteResult,
+  BenchmarkConfig,
+} from './types';
+
+export type { BenchmarkResult, BenchmarkSuiteResult, BenchmarkConfig };
 
 /**
- * Benchmark result
+ * Extended workflow with nodes for benchmarking
  */
-export interface BenchmarkResult {
-  /** Benchmark name */
-  name: string;
-  /** Number of iterations */
-  iterations: number;
-  /** Total time in milliseconds */
-  totalTime: number;
-  /** Average time per iteration in milliseconds */
-  avgTime: number;
-  /** Minimum time in milliseconds */
-  minTime: number;
-  /** Maximum time in milliseconds */
-  maxTime: number;
-  /** Operations per second */
-  opsPerSecond: number;
-  /** Memory usage (if available) */
-  memoryUsage?: {
-    heapUsed: number;
-    heapTotal: number;
-    external: number;
-  };
-}
-
-/**
- * Benchmark suite result
- */
-export interface BenchmarkSuiteResult {
-  /** Suite name */
-  suite: string;
-  /** Individual benchmark results */
-  benchmarks: BenchmarkResult[];
-  /** Total suite time */
-  totalTime: number;
-  /** Timestamp */
-  timestamp: number;
-}
-
-/**
- * Benchmark configuration
- */
-export interface BenchmarkConfig {
-  /** Number of warmup iterations */
-  warmupIterations?: number;
-  /** Number of benchmark iterations */
-  iterations?: number;
-  /** Collect memory usage */
-  collectMemory?: boolean;
+export interface BenchmarkWorkflow extends Workflow {
+  nodes: WorkflowNode[];
+  edges: Array<{ id: string; source: string; target: string }>;
 }
 
 const DEFAULT_CONFIG: Required<BenchmarkConfig> = {
@@ -121,50 +84,86 @@ export async function runBenchmark(
 /**
  * Create a mock workflow for benchmarking
  */
-export function createBenchmarkWorkflow(nodeCount: number): Workflow {
+export function createBenchmarkWorkflow(nodeCount: number): BenchmarkWorkflow {
+  const now = Date.now();
   const nodes: WorkflowNode[] = [];
 
   for (let i = 0; i < nodeCount; i++) {
     nodes.push({
       id: `node-${i}`,
+      workflowId: 'benchmark-workflow',
       name: `Node ${i}`,
-      type: 'task',
-      status: 'idle',
+      role: 'agent',
+      enabled: true,
+      state: 'IDLE' as NodeState,
+      triggerType: 'dependency' as const,
+      subscribeEvents: [],
+      emitEvents: [],
       dependencies: i > 0 ? [`node-${i - 1}`] : [],
-      createdAt: Date.now(),
+      nextNodes: i < nodeCount - 1 ? [`node-${i + 1}`] : [],
+      maxRounds: 10,
+      currentRounds: 0,
+      timeoutMs: 30000,
+      retryCount: 0,
+      maxRetries: 3,
+      createdAt: now,
+      updatedAt: now,
       config: {
         priority: Math.floor(Math.random() * 10),
       },
     });
   }
 
+  const edges = nodes.slice(1).map((node, i) => ({
+    id: `edge-${i}`,
+    source: `node-${i}`,
+    target: node.id,
+  }));
+
   return {
     id: 'benchmark-workflow',
     name: 'Benchmark Workflow',
-    version: '1.0.0',
-    status: 'idle',
+    description: 'A workflow for performance benchmarking',
+    status: 'CREATED' as WorkflowStatus,
+    mode: 'continuous',
+    priority: 5,
+    memoryRoot: '/tmp/benchmark-memory',
+    workDir: '/tmp/benchmark-workdir',
+    createdAt: now,
+    updatedAt: now,
+    currentRounds: 0,
+    maxRounds: 100,
+    tags: ['benchmark'],
     nodes,
-    edges: nodes.slice(1).map((node, i) => ({
-      id: `edge-${i}`,
-      source: `node-${i}`,
-      target: node.id,
-    })),
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
+    edges,
   };
 }
 
 /**
- * Create mock nodes for benchmarking
+ * Create mock nodes for benchmarking with correct WorkflowNode type
  */
-export function createBenchmarkNodes(count: number): WorkflowNode[] {
+export function createBenchmarkNodes(count: number, workflowId = 'benchmark-workflow'): WorkflowNode[] {
+  const now = Date.now();
+
   return Array.from({ length: count }, (_, i) => ({
     id: `node-${i}`,
+    workflowId,
     name: `Node ${i}`,
-    type: 'task' as const,
-    status: 'idle' as const,
-    dependencies: [],
-    createdAt: Date.now(),
+    role: 'agent',
+    enabled: true,
+    state: 'IDLE' as NodeState,
+    triggerType: 'dependency' as const,
+    subscribeEvents: [],
+    emitEvents: [],
+    dependencies: i > 0 ? [`node-${i - 1}`] : [],
+    nextNodes: i < count - 1 ? [`node-${i + 1}`] : [],
+    maxRounds: 10,
+    currentRounds: 0,
+    timeoutMs: 30000,
+    retryCount: 0,
+    maxRetries: 3,
+    createdAt: now,
+    updatedAt: now,
     config: {
       priority: Math.floor(Math.random() * 10),
     },
@@ -281,16 +280,16 @@ export function createStateMachineBenchmarkSuite(): BenchmarkSuite {
 
   return new BenchmarkSuite('State Machine Benchmarks')
     .add('workflow transition check', () => {
-      canTransitionWorkflow('idle', 'running');
-      canTransitionWorkflow('running', 'paused');
-      canTransitionWorkflow('paused', 'running');
-      canTransitionWorkflow('running', 'completed');
+      canTransitionWorkflow('CREATED', 'RUNNING');
+      canTransitionWorkflow('RUNNING', 'WAITING_EVENT');
+      canTransitionWorkflow('WAITING_EVENT', 'RUNNING');
+      canTransitionWorkflow('RUNNING', 'COMPLETED');
     })
     .add('node transition check', () => {
-      canTransitionNode('idle', 'ready');
-      canTransitionNode('ready', 'running');
-      canTransitionNode('running', 'completed');
-      canTransitionNode('completed', 'idle');
+      canTransitionNode('IDLE', 'READY');
+      canTransitionNode('READY', 'RUNNING');
+      canTransitionNode('RUNNING', 'DONE');
+      canTransitionNode('DONE', 'READY');
     });
 }
 
@@ -332,28 +331,28 @@ export function createNodeSelectionBenchmarkSuite(): BenchmarkSuite {
   return new BenchmarkSuite('Node Selection Benchmarks')
     .add('select from 10 nodes', () => {
       const selector = new DefaultNodeSelector('priority');
-      const nodes = createBenchmarkNodes(10).map(n => ({ ...n, state: 'IDLE' as const }));
+      const nodes = createBenchmarkNodes(10);
       selector.selectNode({
         nodes,
-        workflow: { id: 'test', status: 'running' },
+        workflow: { id: 'test', status: 'RUNNING' },
         pendingEvents: [],
       });
     })
     .add('select from 100 nodes', () => {
       const selector = new DefaultNodeSelector('priority');
-      const nodes = createBenchmarkNodes(100).map(n => ({ ...n, state: 'IDLE' as const }));
+      const nodes = createBenchmarkNodes(100);
       selector.selectNode({
         nodes,
-        workflow: { id: 'test', status: 'running' },
+        workflow: { id: 'test', status: 'RUNNING' },
         pendingEvents: [],
       });
     })
     .add('select from 1000 nodes', () => {
       const selector = new DefaultNodeSelector('priority');
-      const nodes = createBenchmarkNodes(1000).map(n => ({ ...n, state: 'IDLE' as const }));
+      const nodes = createBenchmarkNodes(1000);
       selector.selectNode({
         nodes,
-        workflow: { id: 'test', status: 'running' },
+        workflow: { id: 'test', status: 'RUNNING' },
         pendingEvents: [],
       });
     });
@@ -440,7 +439,7 @@ export function createMemoryBenchmarkSuite(): BenchmarkSuite {
  * Run all benchmark suites
  */
 export async function runAllBenchmarks(
-  config: BenchmarkConfig = {}
+  _config: BenchmarkConfig = {}
 ): Promise<BenchmarkSuiteResult[]> {
   const suites = [
     createStateMachineBenchmarkSuite(),

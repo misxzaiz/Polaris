@@ -168,12 +168,12 @@ describe('CLI Formatters', () => {
 
   describe('formatStatusBadge', () => {
     it('should format status badges', () => {
-      expect(formatStatusBadge('idle')).toBe('[IDLE]');
-      expect(formatStatusBadge('running')).toBe('[RUNNING]');
-      expect(formatStatusBadge('paused')).toBe('[PAUSED]');
-      expect(formatStatusBadge('completed')).toBe('[COMPLETED]');
-      expect(formatStatusBadge('failed')).toBe('[FAILED]');
-      expect(formatStatusBadge('cancelled')).toBe('[CANCELLED]');
+      expect(formatStatusBadge('CREATED')).toBe('[CREATED]');
+      expect(formatStatusBadge('RUNNING')).toBe('[RUNNING]');
+      expect(formatStatusBadge('WAITING_EVENT')).toBe('[WAITING]');
+      expect(formatStatusBadge('COMPLETED')).toBe('[COMPLETED]');
+      expect(formatStatusBadge('FAILED')).toBe('[FAILED]');
+      expect(formatStatusBadge('EVOLVING')).toBe('[EVOLVING]');
     });
   });
 
@@ -235,26 +235,36 @@ describe('CLITool', () => {
     id: 'test-workflow',
     name: 'Test Workflow',
     description: 'A test workflow',
-    version: '1.0.0',
-    status: 'idle',
-    priority: 'normal',
-    nodes: [
-      {
-        id: 'node-1',
-        name: 'Node 1',
-        type: 'task',
-        status: 'pending',
-        dependencies: [],
-        profileId: 'default',
-      },
-    ],
-    edges: [],
+    status: 'CREATED',
+    priority: 5,
+    mode: 'continuous',
     createdAt: Date.now(),
     updatedAt: Date.now(),
+    currentRounds: 0,
+    maxRounds: 100,
+    tags: [],
   };
 
+  const testNodes: WorkflowNode[] = [
+    {
+      id: 'node-1',
+      workflowId: 'test-workflow',
+      name: 'Node 1',
+      role: 'agent',
+      enabled: true,
+      state: 'IDLE',
+      triggerType: 'dependency',
+      subscribeEvents: [],
+      emitEvents: [],
+      dependencies: [],
+      nextNodes: [],
+      maxRounds: 10,
+      currentRounds: 0,
+    },
+  ];
+
   const registerTestWorkflow = () => {
-    persistence.registerWorkflow(testWorkflow, testWorkflow.nodes);
+    persistence.registerWorkflow(testWorkflow, testNodes);
   };
 
   beforeEach(() => {
@@ -291,8 +301,8 @@ describe('CLITool', () => {
       });
 
       expect(result.success).toBe(true);
-      const workflow = result.data as Workflow;
-      expect(workflow.nodes.length).toBeGreaterThan(0);
+      const data = result.data as { workflow: Workflow; nodes: WorkflowNode[] };
+      expect(data.nodes.length).toBeGreaterThan(0);
     });
 
     it('should fail with invalid template', async () => {
@@ -341,7 +351,9 @@ describe('CLITool', () => {
       const result = await cli.execute('show', { id: 'test-workflow' });
 
       expect(result.success).toBe(true);
-      expect(result.data).toEqual(testWorkflow);
+      expect(result.data).toHaveProperty('workflow');
+      expect(result.data).toHaveProperty('nodes');
+      expect((result.data as { workflow: Workflow }).workflow.id).toBe('test-workflow');
     });
 
     it('should fail without id', async () => {

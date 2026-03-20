@@ -18,6 +18,7 @@ export type WorkflowStatus =
   | 'RUNNING'      // 正在执行
   | 'WAITING_EVENT' // 等待事件触发
   | 'BLOCKED'      // 被阻塞
+  | 'COMPACTING_MEMORY' // 内存压缩中
   | 'FAILED'       // 执行失败
   | 'COMPLETED'    // 已完成
   | 'EVOLVING';    // 进化模式（自动优化）
@@ -44,7 +45,8 @@ export type NodeState =
   | 'WAITING_INPUT' // 等待用户输入
   | 'WAITING_EVENT' // 等待事件
   | 'DONE'          // 已完成
-  | 'FAILED';       // 执行失败
+  | 'FAILED'        // 执行失败
+  | 'SKIPPED';      // 已跳过
 
 /**
  * Node 触发类型
@@ -79,8 +81,11 @@ export interface Workflow {
   /** 工作流名称 */
   name: string;
 
+  /** 描述 */
+  description?: string;
+
   /** 使用的模板 ID */
-  templateId: string;
+  templateId?: string;
 
   /** 当前状态 */
   status: WorkflowStatus;
@@ -92,7 +97,7 @@ export interface Workflow {
   priority: number;
 
   /** 是否启用连续执行模式 */
-  continuousMode: boolean;
+  continuousMode?: boolean;
 
   /** 创建时间戳 */
   createdAt: number;
@@ -113,10 +118,13 @@ export interface Workflow {
   maxRounds?: number;
 
   /** 当前已执行轮次 */
-  currentRounds: number;
+  currentRounds?: number;
 
   /** 标签 */
   tags?: string[];
+
+  /** 元数据 */
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -156,7 +164,7 @@ export interface WorkflowNode {
   role: string;
 
   /** 使用的 Agent 模板 ID */
-  agentProfileId: string;
+  agentProfileId?: string;
 
   /** 当前状态 */
   state: NodeState;
@@ -180,13 +188,31 @@ export interface WorkflowNode {
   maxRounds: number;
 
   /** 当前已执行轮次 */
-  currentRounds: number;
+  currentRounds?: number;
 
   /** 执行顺序 */
-  order: number;
+  order?: number;
 
   /** 是否启用 */
   enabled: boolean;
+
+  /** 创建时间 */
+  createdAt?: number;
+
+  /** 更新时间 */
+  updatedAt?: number;
+
+  /** 超时时间（毫秒） */
+  timeoutMs?: number;
+
+  /** 重试次数 */
+  retryCount?: number;
+
+  /** 最大重试次数 */
+  maxRetries?: number;
+
+  /** 自定义配置 */
+  config?: Record<string, unknown>;
 }
 
 /**
