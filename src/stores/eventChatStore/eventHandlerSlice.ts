@@ -18,7 +18,6 @@ import { getEventRouter } from '../../services/eventRouter'
 import { getEngine, listEngines } from '../../core/engine-bootstrap'
 import { parseWorkspaceReferences, buildSystemPrompt } from '../../services/workspaceReference'
 import { isTextFile } from '../../types/attachment'
-import { optionsToCliArgs } from '../../utils/engineOptions'
 import {
   toAppError,
   errorLogger,
@@ -95,7 +94,7 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
     return cleanup
   },
 
-  sendMessage: async (content, workspaceDir, attachments, engineOptions) => {
+  sendMessage: async (content, workspaceDir, attachments) => {
     const { conversationId } = get()
 
     const router = getEventRouter()
@@ -216,12 +215,6 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
           content: a.content,
         }))
 
-        // 转换引擎选项
-        let cliArgs: string[] = []
-        if (engineOptions && engineOptions.length > 0) {
-          cliArgs = optionsToCliArgs(currentEngine, engineOptions)
-        }
-
         if (conversationId) {
           await invoke('continue_chat', {
             sessionId: conversationId,
@@ -232,7 +225,6 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
               contextId: 'main',
               engineId: currentEngine,
               attachments: attachmentsForBackend,
-              cliArgs,
             },
           })
         } else {
@@ -244,7 +236,6 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
               contextId: 'main',
               engineId: currentEngine,
               attachments: attachmentsForBackend,
-              cliArgs,
             },
           })
           set({ conversationId: newSessionId })

@@ -17,10 +17,9 @@ import { CompactChatInput } from './CompactChatInput'
 import { CompactChatNavigator } from './CompactChatNavigator'
 import type { EngineId } from '../../types'
 import type { Attachment } from '../../types/attachment'
-import type { CommandOptionValue } from '../../types/engineCommand'
 
 interface CompactModeProps {
-  onSend: (message: string, workspaceDir?: string, attachments?: Attachment[], engineOptions?: CommandOptionValue[]) => void
+  onSend: (message: string, workspaceDir?: string, attachments?: Attachment[]) => void
   onInterrupt: () => void
   disabled?: boolean
   isStreaming?: boolean

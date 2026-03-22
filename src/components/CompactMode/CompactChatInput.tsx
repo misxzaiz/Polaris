@@ -20,10 +20,9 @@ import {
   isImageType,
 } from '../../types/attachment'
 import type { Attachment } from '../../types/attachment'
-import type { CommandOptionValue } from '../../types/engineCommand'
 
 interface CompactChatInputProps {
-  onSend: (message: string, workspaceDir?: string, attachments?: Attachment[], engineOptions?: CommandOptionValue[]) => void
+  onSend: (message: string, workspaceDir?: string, attachments?: Attachment[]) => void
   onInterrupt: () => void
   disabled?: boolean
   isStreaming?: boolean
@@ -103,7 +102,7 @@ export function CompactChatInput({ onSend, onInterrupt, disabled, isStreaming }:
     if ((disabled || isStreaming) && attachments.length === 0) return
     if (!trimmed && attachments.length === 0) return
 
-    onSend(trimmed, undefined, attachments.length > 0 ? attachments : undefined, undefined)
+    onSend(trimmed, undefined, attachments.length > 0 ? attachments : undefined)
     setValue('')
     setAttachments([])
   }, [value, disabled, isStreaming, attachments, onSend])

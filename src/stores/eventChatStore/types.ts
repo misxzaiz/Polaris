@@ -269,7 +269,7 @@ export interface EventHandlerActions {
   initializeEventListeners: () => Promise<() => void>
 
   /** 发送消息 */
-  sendMessage: (content: string, workspaceDir?: string, attachments?: import('../../types/attachment').Attachment[], engineOptions?: import('../../types/engineCommand').CommandOptionValue[]) => Promise<void>
+  sendMessage: (content: string, workspaceDir?: string, attachments?: import('../../types/attachment').Attachment[]) => Promise<void>
   /** 使用前端引擎发送消息（OpenAI Provider） */
   sendMessageToFrontendEngine: (content: string, workspaceDir?: string, systemPrompt?: string, attachments?: import('../../types/attachment').Attachment[]) => Promise<void>
   /** 继续会话 */
