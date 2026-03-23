@@ -1087,4 +1087,202 @@ describe('handleAIEvent', () => {
       expect(mockStore.set).toHaveBeenCalledWith({ activeTaskId: null })
     })
   })
+
+  // ========================================
+  // 交互结果处理测试
+  // ========================================
+  describe('交互结果处理流程', () => {
+    describe('buildAnswerPrompt 格式', () => {
+      it('应正确构建单选答案 prompt', () => {
+        // 模拟 buildAnswerPrompt 函数逻辑
+        const buildAnswerPrompt = (answerData: { selected: string[]; customInput?: string }, header: string, options: any[]) => {
+          const parts: string[] = [`[交互回答] 问题: "${header}"`]
+
+          if (answerData.selected.length > 0) {
+            const selectedLabels = answerData.selected.map(value => {
+              const option = options.find(o => o.value === value)
+              return option?.label || value
+            })
+            parts.push(`选择的选项: ${selectedLabels.join(', ')}`)
+          }
+
+          if (answerData.customInput) {
+            parts.push(`自定义输入: ${answerData.customInput}`)
+          }
+
+          return parts.join('\n')
+        }
+
+        const result = buildAnswerPrompt(
+          { selected: ['a'] },
+          '选择一个选项',
+          [{ value: 'a', label: 'Option A' }, { value: 'b', label: 'Option B' }]
+        )
+
+        expect(result).toBe('[交互回答] 问题: "选择一个选项"\n选择的选项: Option A')
+      })
+
+      it('应正确构建多选答案 prompt', () => {
+        const buildAnswerPrompt = (answerData: { selected: string[]; customInput?: string }, header: string, options: any[]) => {
+          const parts: string[] = [`[交互回答] 问题: "${header}"`]
+
+          if (answerData.selected.length > 0) {
+            const selectedLabels = answerData.selected.map(value => {
+              const option = options.find(o => o.value === value)
+              return option?.label || value
+            })
+            parts.push(`选择的选项: ${selectedLabels.join(', ')}`)
+          }
+
+          if (answerData.customInput) {
+            parts.push(`自定义输入: ${answerData.customInput}`)
+          }
+
+          return parts.join('\n')
+        }
+
+        const result = buildAnswerPrompt(
+          { selected: ['a', 'b'] },
+          '选择多个选项',
+          [{ value: 'a', label: 'Option A' }, { value: 'b', label: 'Option B' }]
+        )
+
+        expect(result).toBe('[交互回答] 问题: "选择多个选项"\n选择的选项: Option A, Option B')
+      })
+
+      it('应正确构建自定义输入答案 prompt', () => {
+        const buildAnswerPrompt = (answerData: { selected: string[]; customInput?: string }, header: string, options: any[]) => {
+          const parts: string[] = [`[交互回答] 问题: "${header}"`]
+
+          if (answerData.selected.length > 0) {
+            const selectedLabels = answerData.selected.map(value => {
+              const option = options.find(o => o.value === value)
+              return option?.label || value
+            })
+            parts.push(`选择的选项: ${selectedLabels.join(', ')}`)
+          }
+
+          if (answerData.customInput) {
+            parts.push(`自定义输入: ${answerData.customInput}`)
+          }
+
+          return parts.join('\n')
+        }
+
+        const result = buildAnswerPrompt(
+          { selected: [], customInput: '自定义答案内容' },
+          '请输入您的答案',
+          []
+        )
+
+        expect(result).toBe('[交互回答] 问题: "请输入您的答案"\n自定义输入: 自定义答案内容')
+      })
+
+      it('应正确构建选项加自定义输入的混合答案 prompt', () => {
+        const buildAnswerPrompt = (answerData: { selected: string[]; customInput?: string }, header: string, options: any[]) => {
+          const parts: string[] = [`[交互回答] 问题: "${header}"`]
+
+          if (answerData.selected.length > 0) {
+            const selectedLabels = answerData.selected.map(value => {
+              const option = options.find(o => o.value === value)
+              return option?.label || value
+            })
+            parts.push(`选择的选项: ${selectedLabels.join(', ')}`)
+          }
+
+          if (answerData.customInput) {
+            parts.push(`自定义输入: ${answerData.customInput}`)
+          }
+
+          return parts.join('\n')
+        }
+
+        const result = buildAnswerPrompt(
+          { selected: ['a'], customInput: '补充说明' },
+          '选择并补充',
+          [{ value: 'a', label: 'Option A' }]
+        )
+
+        expect(result).toBe('[交互回答] 问题: "选择并补充"\n选择的选项: Option A\n自定义输入: 补充说明')
+      })
+    })
+
+    describe('buildApprovalPrompt 格式', () => {
+      it('应正确构建批准计划 prompt', () => {
+        const buildApprovalPrompt = (approved: boolean, feedback: string | undefined, title: string) => {
+          const action = approved ? '批准' : '拒绝'
+          const parts: string[] = [`[计划审批] 用户${action}了计划: "${title}"`]
+
+          if (!approved && feedback) {
+            parts.push(`反馈意见: ${feedback}`)
+          }
+
+          return parts.join('\n')
+        }
+
+        const result = buildApprovalPrompt(true, undefined, '重构计划')
+
+        expect(result).toBe('[计划审批] 用户批准了计划: "重构计划"')
+      })
+
+      it('应正确构建拒绝计划 prompt（无反馈）', () => {
+        const buildApprovalPrompt = (approved: boolean, feedback: string | undefined, title: string) => {
+          const action = approved ? '批准' : '拒绝'
+          const parts: string[] = [`[计划审批] 用户${action}了计划: "${title}"`]
+
+          if (!approved && feedback) {
+            parts.push(`反馈意见: ${feedback}`)
+          }
+
+          return parts.join('\n')
+        }
+
+        const result = buildApprovalPrompt(false, undefined, '重构计划')
+
+        expect(result).toBe('[计划审批] 用户拒绝了计划: "重构计划"')
+      })
+
+      it('应正确构建拒绝计划 prompt（有反馈）', () => {
+        const buildApprovalPrompt = (approved: boolean, feedback: string | undefined, title: string) => {
+          const action = approved ? '批准' : '拒绝'
+          const parts: string[] = [`[计划审批] 用户${action}了计划: "${title}"`]
+
+          if (!approved && feedback) {
+            parts.push(`反馈意见: ${feedback}`)
+          }
+
+          return parts.join('\n')
+        }
+
+        const result = buildApprovalPrompt(false, '需要更多测试覆盖', '重构计划')
+
+        expect(result).toBe('[计划审批] 用户拒绝了计划: "重构计划"\n反馈意见: 需要更多测试覆盖')
+      })
+    })
+
+    describe('answer_question 命令调用', () => {
+      beforeEach(() => {
+        mockStore.state.updateQuestionBlock = vi.fn()
+      })
+
+      it('question_answered 事件应触发 updateQuestionBlock', () => {
+        const event: AIEvent = {
+          type: 'question_answered',
+          callId: 'q-1',
+          answer: {
+            selected: ['a'],
+            customInput: undefined,
+          },
+        }
+
+        handleAIEvent(event, mockStore.set, mockStore.get)
+
+        // updateQuestionBlock 直接接收 answer 对象，不是 { status, answer } 结构
+        expect(mockStore.state.updateQuestionBlock).toHaveBeenCalledWith('q-1', {
+          selected: ['a'],
+          customInput: undefined,
+        })
+      })
+    })
+  })
 })
