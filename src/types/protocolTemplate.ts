@@ -123,7 +123,7 @@ export const BUILTIN_PROTOCOL_TEMPLATES: ProtocolTemplate[] = [
 
 ### 4. 文档备份
 - 用户补充处理完成后迁移到 \`.oprcli/tasks/{timestamp}/supplement-history/\`
-- 文档超过 300 行时总结后备份
+- 文档超过 800 行时总结后备份
 
 ---
 
