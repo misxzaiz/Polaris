@@ -201,6 +201,10 @@ export interface MessageState {
   toolGroupBlockMap: Map<string, number>
   /** 待聚合的工具组（用于智能聚合） */
   pendingToolGroup: PendingToolGroup | null
+  /** PermissionRequest 块映射 (requestId -> blockIndex) */
+  permissionRequestBlockMap: Map<string, number>
+  /** 当前活跃的权限请求 ID（用于追踪待处理的权限请求） */
+  activePermissionRequestId: string | null
   /** 流式更新计数器 - 用于强制触发React重新渲染 */
   streamingUpdateCounter: number
 }
@@ -322,6 +326,13 @@ export interface MessageActions {
   addToolToPendingGroup: (tool: { id: string; name: string; input?: Record<string, unknown>; startedAt: string }) => void
   /** 完成待聚合组并创建 ToolGroupBlock */
   finalizePendingToolGroup: () => void
+
+  /** 添加权限请求块 */
+  appendPermissionRequestBlock: (requestId: string, sessionId: string, denials: Array<{ toolName: string; reason: string; extra?: Record<string, unknown> }>) => void
+  /** 更新权限请求块状态 */
+  updatePermissionRequestBlock: (requestId: string, status: 'pending' | 'approved' | 'denied', decision?: { approved: boolean; timestamp: string }) => void
+  /** 设置活跃权限请求 */
+  setActivePermissionRequest: (requestId: string | null) => void
 }
 
 /**

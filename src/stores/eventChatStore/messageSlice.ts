@@ -31,6 +31,8 @@ export const createMessageSlice: MessageSlice = (set, get) => ({
   activeTaskId: null,
   toolGroupBlockMap: new Map(),
   pendingToolGroup: null,
+  permissionRequestBlockMap: new Map(),
+  activePermissionRequestId: null,
   streamingUpdateCounter: 0,
 
   // ===== 方法 =====
@@ -100,6 +102,8 @@ export const createMessageSlice: MessageSlice = (set, get) => ({
       activeTaskId: null,
       toolGroupBlockMap: new Map(),
       pendingToolGroup: null,
+      permissionRequestBlockMap: new Map(),
+      activePermissionRequestId: null,
       providerSessionCache: null,
       // 不重置事件监听器状态，保持其在应用生命周期内活跃
     })
@@ -1124,5 +1128,106 @@ export const createMessageSlice: MessageSlice = (set, get) => ({
 
     // 清除待聚合组
     set({ pendingToolGroup: null })
+  },
+
+  /**
+   * 添加权限请求块
+   */
+  appendPermissionRequestBlock: (requestId, sessionId, denials) => {
+    const { currentMessage } = get()
+
+    const permissionRequestBlock: import('../../types/chat').PermissionRequestBlock = {
+      type: 'permission_request',
+      id: requestId,
+      sessionId,
+      denials: denials.map(d => ({
+        toolName: d.toolName,
+        reason: d.reason,
+        extra: d.extra,
+      })),
+      status: 'pending',
+    }
+
+    // 如果没有当前消息，创建一个新的
+    if (!currentMessage) {
+      const newMessage: CurrentAssistantMessage = {
+        id: crypto.randomUUID(),
+        blocks: [permissionRequestBlock],
+        isStreaming: true,
+      }
+      set({
+        currentMessage: newMessage,
+        isStreaming: true,
+        permissionRequestBlockMap: new Map([[requestId, 0]]),
+        activePermissionRequestId: requestId,
+      })
+      return
+    }
+
+    // 添加权限请求块
+    const updatedBlocks: ContentBlock[] = [...currentMessage.blocks, permissionRequestBlock]
+    const blockIndex = updatedBlocks.length - 1
+
+    // 更新 permissionRequestBlockMap
+    const existingMap = get().permissionRequestBlockMap
+    existingMap.set(requestId, blockIndex)
+
+    set((state) => ({
+      currentMessage: state.currentMessage
+        ? { ...state.currentMessage, blocks: updatedBlocks }
+        : null,
+      permissionRequestBlockMap: existingMap,
+      activePermissionRequestId: requestId,
+    }))
+
+    // 更新消息列表中的消息
+    get().updateCurrentAssistantMessage(updatedBlocks)
+  },
+
+  /**
+   * 更新权限请求块状态
+   */
+  updatePermissionRequestBlock: (requestId, status, decision) => {
+    const { currentMessage, permissionRequestBlockMap } = get()
+    const blockIndex = permissionRequestBlockMap.get(requestId)
+
+    if (!currentMessage || blockIndex === undefined) {
+      console.warn('[EventChatStore] PermissionRequest block not found:', requestId)
+      return
+    }
+
+    const block = currentMessage.blocks[blockIndex]
+    if (!block || block.type !== 'permission_request') {
+      console.warn('[EventChatStore] Invalid permission_request block at index:', blockIndex)
+      return
+    }
+
+    // 更新权限请求块
+    const updatedBlock: import('../../types/chat').PermissionRequestBlock = {
+      ...block,
+      status,
+      decision,
+    }
+
+    const updatedBlocks = [...currentMessage.blocks]
+    updatedBlocks[blockIndex] = updatedBlock
+
+    set((state) => ({
+      currentMessage: state.currentMessage
+        ? { ...state.currentMessage, blocks: updatedBlocks }
+        : null,
+      // 如果权限请求已处理，清除活跃 ID
+      activePermissionRequestId: status !== 'pending' ? null : state.activePermissionRequestId,
+    }))
+
+    // 更新消息列表中的消息
+    get().updateCurrentAssistantMessage(updatedBlocks)
+  },
+
+  /**
+   * 设置活跃权限请求
+   */
+  setActivePermissionRequest: (requestId) => {
+    set({ activePermissionRequestId: requestId })
   },
 })

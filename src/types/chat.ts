@@ -63,7 +63,7 @@ export interface PermissionRequest {
  */
 
 /** 内容块类型 - 用于 Assistant 消息的内容分段 */
-export type ContentBlock = TextBlock | ThinkingBlock | ToolCallBlock | QuestionBlock | PlanModeBlock | AgentRunBlock | ToolGroupBlock;
+export type ContentBlock = TextBlock | ThinkingBlock | ToolCallBlock | QuestionBlock | PlanModeBlock | AgentRunBlock | ToolGroupBlock | PermissionRequestBlock;
 
 /** 文本内容块 */
 export interface TextBlock {
@@ -315,6 +315,43 @@ export interface ToolGroupBlock {
   collapsed?: boolean;
 }
 
+/** ========================================
+ * PermissionRequest 相关类型
+ * ======================================== */
+
+/** 权限请求状态 */
+export type PermissionRequestStatus = 'pending' | 'approved' | 'denied';
+
+/** 权限拒绝详情（内容块内） */
+export interface PermissionDenialBlock {
+  /** 工具名称 */
+  toolName: string;
+  /** 拒绝原因 */
+  reason: string;
+  /** 额外信息 */
+  extra?: Record<string, unknown>;
+}
+
+/** 权限请求内容块 - 用于工具调用被拒绝时的确认界面 */
+export interface PermissionRequestBlock {
+  type: 'permission_request';
+  /** 请求 ID */
+  id: string;
+  /** 会话 ID */
+  sessionId: string;
+  /** 拒绝详情列表 */
+  denials: PermissionDenialBlock[];
+  /** 当前状态 */
+  status: PermissionRequestStatus;
+  /** 用户决策（批准/拒绝后的额外信息） */
+  decision?: {
+    /** 是否批准 */
+    approved: boolean;
+    /** 时间戳 */
+    timestamp: string;
+  };
+}
+
 /** 聊天消息类型标识符 */
 export type ChatMessageType = 'user' | 'assistant' | 'system' | 'tool' | 'tool_group';
 
@@ -476,4 +513,9 @@ export function isAgentRunBlock(block: ContentBlock): block is AgentRunBlock {
 /** 类型守卫：判断是否为工具组块 */
 export function isToolGroupBlock(block: ContentBlock): block is ToolGroupBlock {
   return block.type === 'tool_group';
+}
+
+/** 类型守卫：判断是否为权限请求块 */
+export function isPermissionRequestBlock(block: ContentBlock): block is PermissionRequestBlock {
+  return block.type === 'permission_request';
 }

@@ -15,4 +15,6 @@ pub use ai_event::{
     PlanStatus, PlanTaskStatus, PlanStageStatus, PlanTask, PlanStage,
     PlanStartEvent, PlanContentEvent, PlanStageUpdateEvent,
     PlanApprovalRequestEvent, PlanApprovalResultEvent, PlanEndEvent,
+    // PermissionRequest 类型
+    PermissionDenial, PermissionRequestEvent,
 };

@@ -9,6 +9,7 @@ use crate::models::{
     AIEvent, AssistantMessageEvent, ErrorEvent, ProgressEvent,
     SessionEndEvent, SessionEndReason, ThinkingEvent,
     ToolCallEndEvent, ToolCallInfo, ToolCallStartEvent, ToolCallStatus, UserMessageEvent,
+    PermissionDenial, PermissionRequestEvent,
 };
 use std::collections::HashMap;
 
@@ -129,8 +130,19 @@ impl EventParser {
             StreamEvent::ToolEnd { tool_use_id, tool_name, output } => {
                 self.parse_tool_end(tool_use_id, tool_name, output)
             }
-            StreamEvent::PermissionRequest { .. } => {
-                vec![AIEvent::Progress(ProgressEvent::new("等待权限确认..."))]
+            StreamEvent::PermissionRequest { session_id, denials } => {
+                // 将 StreamEvent 的 PermissionDenial 转换为 AIEvent 的 PermissionDenial
+                let permission_denials: Vec<PermissionDenial> = denials
+                    .into_iter()
+                    .map(|d| {
+                        PermissionDenial::new(d.tool_name, d.reason)
+                            .with_extra(d.extra)
+                    })
+                    .collect();
+
+                vec![AIEvent::PermissionRequest(
+                    PermissionRequestEvent::new(session_id, permission_denials)
+                )]
             }
             StreamEvent::Result { subtype, extra } => {
                 self.parse_result_event(subtype, extra)

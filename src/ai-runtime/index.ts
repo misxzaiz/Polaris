@@ -58,6 +58,7 @@ export {
   isTaskCompletedEvent,
   isTaskCanceledEvent,
   isQuestionAnsweredEvent,
+  isPermissionRequestEvent,
   isAIEvent,
 } from './event'
 
@@ -83,6 +84,8 @@ export type {
   TaskCanceledEvent,
   QuestionAnsweredEvent,
   QuestionAnswerData,
+  PermissionRequestEvent,
+  PermissionDenial,
 } from './event'
 
 export {

@@ -142,6 +142,22 @@
     "ariaLabel": "Tool group, {{count}} tools",
     "toggleLabel": "Expand or collapse tool list"
   },
+  "permissionRequest": {
+    "title": "Permission Request",
+    "approved": "Approved",
+    "denied": "Denied",
+    "items": "items",
+    "reason": "Reason",
+    "details": "Details",
+    "approve": "Approve",
+    "deny": "Deny",
+    "processing": "Processing...",
+    "decisionTime": "Decision Time",
+    "ariaLabel": "Permission request",
+    "approveAriaLabel": "Approve operation",
+    "denyAriaLabel": "Deny operation",
+    "permissionRequest": "Permission Request"
+  },
   "errorBlock": {
     "title": "Content Block Error",
     "description": "Error rendering {{blockType}}",

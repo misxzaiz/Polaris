@@ -427,6 +427,33 @@ export interface PlanEndEvent {
   reason?: string
 }
 
+// ========================================
+// PermissionRequest 相关事件
+// ========================================
+
+/**
+ * 权限拒绝详情
+ */
+export interface PermissionDenial {
+  /** 工具名称 */
+  toolName: string
+  /** 拒绝原因 */
+  reason: string
+  /** 额外信息 */
+  extra?: Record<string, unknown>
+}
+
+/**
+ * 权限请求事件 - 工具调用被拒绝，需要用户确认
+ */
+export interface PermissionRequestEvent {
+  type: 'permission_request'
+  /** 会话 ID */
+  sessionId: string
+  /** 拒绝详情列表 */
+  denials: PermissionDenial[]
+}
+
 /**
  * 问题已回答事件
  */
@@ -475,6 +502,7 @@ export type AIEvent =
   | PlanApprovalRequestEvent
   | PlanApprovalResultEvent
   | PlanEndEvent
+  | PermissionRequestEvent
 
 /**
  * 事件监听器类型
@@ -825,6 +853,7 @@ const AI_EVENT_TYPES = new Set([
   'plan_approval_request',
   'plan_approval_result',
   'plan_end',
+  'permission_request',
 ])
 
 /**
@@ -878,4 +907,12 @@ export function isPlanEndEvent(event: AIEvent): event is PlanEndEvent {
 /** 判断是否为任意 PlanMode 事件 */
 export function isPlanEvent(event: AIEvent): event is PlanStartEvent | PlanContentEvent | PlanStageUpdateEvent | PlanApprovalRequestEvent | PlanApprovalResultEvent | PlanEndEvent {
   return event.type.startsWith('plan_')
+}
+
+// ========================================
+// PermissionRequest 事件类型守卫
+// ========================================
+
+export function isPermissionRequestEvent(event: AIEvent): event is PermissionRequestEvent {
+  return event.type === 'permission_request'
 }

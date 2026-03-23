@@ -759,6 +759,60 @@ impl PlanEndEvent {
 }
 
 // ============================================================================
+// PermissionRequest 相关类型和事件
+// ============================================================================
+
+/// 权限拒绝详情
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionDenial {
+    /// 工具名称
+    pub tool_name: String,
+    /// 拒绝原因
+    pub reason: String,
+    /// 额外信息
+    #[serde(flatten)]
+    pub extra: HashMap<String, serde_json::Value>,
+}
+
+impl PermissionDenial {
+    pub fn new(tool_name: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self {
+            tool_name: tool_name.into(),
+            reason: reason.into(),
+            extra: HashMap::new(),
+        }
+    }
+
+    pub fn with_extra(mut self, extra: HashMap<String, serde_json::Value>) -> Self {
+        self.extra = extra;
+        self
+    }
+}
+
+/// 权限请求事件 - 工具调用被拒绝，需要用户确认
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionRequestEvent {
+    #[serde(rename = "type")]
+    pub event_type: String,
+    /// 会话 ID
+    pub session_id: String,
+    /// 拒绝详情列表
+    pub denials: Vec<PermissionDenial>,
+}
+
+impl PermissionRequestEvent {
+    pub fn new(session_id: impl Into<String>, denials: Vec<PermissionDenial>) -> Self {
+        Self {
+            event_type: "permission_request".to_string(),
+            session_id: session_id.into(),
+            denials,
+        }
+    }
+}
+
+// ============================================================================
 // 统一 AIEvent 枚举
 // ============================================================================
 
@@ -789,6 +843,8 @@ pub enum AIEvent {
     PlanApprovalRequest(PlanApprovalRequestEvent),
     PlanApprovalResult(PlanApprovalResultEvent),
     PlanEnd(PlanEndEvent),
+    // PermissionRequest 事件
+    PermissionRequest(PermissionRequestEvent),
 }
 
 impl AIEvent {
@@ -815,6 +871,7 @@ impl AIEvent {
             AIEvent::PlanApprovalRequest(e) => &e.event_type,
             AIEvent::PlanApprovalResult(e) => &e.event_type,
             AIEvent::PlanEnd(e) => &e.event_type,
+            AIEvent::PermissionRequest(e) => &e.event_type,
         }
     }
 

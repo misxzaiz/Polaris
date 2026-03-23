@@ -37,6 +37,7 @@ import { ChatNavigator } from './ChatNavigator';
 import { QuestionBlockRenderer, SimplifiedQuestionRenderer } from './QuestionBlockRenderer';
 import { PlanModeBlockRenderer, SimplifiedPlanModeRenderer } from './PlanModeBlockRenderer';
 import { AgentRunBlockRenderer, SimplifiedAgentRunRenderer } from './AgentRunBlockRenderer';
+import { PermissionRequestRenderer, SimplifiedPermissionRequestRenderer } from './PermissionRequestRenderer';
 import { ToolGroupRenderer } from './ToolGroupRenderer';
 import { ContentBlockErrorBoundary } from './ContentBlockErrorBoundary';
 import { groupConversationRounds } from '../../utils/conversationRounds';
@@ -1204,6 +1205,18 @@ function renderContentBlock(
       }
       return wrapWithErrorBoundary(
         <AgentRunBlockRenderer block={block} />,
+        block.id
+      );
+    case 'permission_request':
+      // 归档模式下使用简化权限请求渲染
+      if (renderMode === 'archive') {
+        return wrapWithErrorBoundary(
+          <SimplifiedPermissionRequestRenderer block={block} />,
+          block.id
+        );
+      }
+      return wrapWithErrorBoundary(
+        <PermissionRequestRenderer block={block} />,
         block.id
       );
     default:

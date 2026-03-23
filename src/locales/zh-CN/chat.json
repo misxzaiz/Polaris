@@ -142,6 +142,22 @@
     "ariaLabel": "工具组，共 {{count}} 个工具",
     "toggleLabel": "展开或折叠工具列表"
   },
+  "permissionRequest": {
+    "title": "权限请求",
+    "approved": "已批准",
+    "denied": "已拒绝",
+    "items": "项",
+    "reason": "原因",
+    "details": "详情",
+    "approve": "批准",
+    "deny": "拒绝",
+    "processing": "处理中...",
+    "decisionTime": "决策时间",
+    "ariaLabel": "权限请求",
+    "approveAriaLabel": "批准操作",
+    "denyAriaLabel": "拒绝操作",
+    "permissionRequest": "权限请求"
+  },
   "errorBlock": {
     "title": "内容块渲染错误",
     "description": "{{blockType}} 渲染时出现问题",

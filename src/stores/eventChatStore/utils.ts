@@ -579,6 +579,31 @@ export function handleAIEvent(
       break
     }
 
+    // ========================================
+    // PermissionRequest 事件处理
+    // ========================================
+
+    case 'permission_request': {
+      // 权限请求：创建 PermissionRequestBlock
+      const permEvent = event as {
+        sessionId: string
+        denials: Array<{
+          toolName: string
+          reason: string
+          extra?: Record<string, unknown>
+        }>
+      }
+
+      const requestId = `perm-${Date.now()}`
+      state.appendPermissionRequestBlock(
+        requestId,
+        permEvent.sessionId,
+        permEvent.denials
+      )
+      console.log('[EventChatStore] PermissionRequest received:', requestId, 'denials:', permEvent.denials.length)
+      break
+    }
+
     default:
       console.log('[EventChatStore] 未处理的 AIEvent 类型:', (event as { type: string }).type)
   }
