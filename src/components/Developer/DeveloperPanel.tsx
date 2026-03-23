@@ -159,7 +159,7 @@ export function DeveloperPanel({ className = '', width, fillRemaining = false }:
       <div
         ref={containerRef}
         className={clsx(
-          'flex min-h-0 flex-1 flex-col overflow-hidden bg-background-elevated',
+          'flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background-elevated',
           className
         )}
       >
@@ -177,7 +177,7 @@ export function DeveloperPanel({ className = '', width, fillRemaining = false }:
         {/* 内容区 */}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {/* 过滤器栏 */}
-          <div className="flex flex-col gap-2 px-4 py-3 border-b border-border-subtle bg-background-surface">
+          <div className="flex flex-col gap-2 px-4 py-3 border-b border-border-subtle bg-background-surface shrink-0">
             {/* 第一行：过滤类型 */}
             <div className="flex items-center gap-2">
               <select
@@ -267,7 +267,7 @@ export function DeveloperPanel({ className = '', width, fillRemaining = false }:
                 <span className="text-sm">暂无事件</span>
               </div>
             ) : (
-              <div className="space-y-1">
+              <div className="min-w-0 space-y-1">
                 {filteredEvents.map((record) => {
                   const eventType = record.event.type
                   const colorClass = EVENT_TYPE_COLORS[eventType] || 'text-text-secondary'
@@ -311,7 +311,7 @@ export function DeveloperPanel({ className = '', width, fillRemaining = false }:
           </div>
 
           {/* 底部状态栏 */}
-          <div className="px-4 py-2 border-t border-border-subtle text-xs text-text-tertiary bg-background-surface flex items-center justify-between">
+          <div className="px-4 py-2 border-t border-border-subtle text-xs text-text-tertiary bg-background-surface flex items-center justify-between shrink-0">
             <span>总计: {events.length}</span>
             <span>已过滤: {filteredEvents.length}</span>
           </div>
@@ -328,7 +328,7 @@ export function DeveloperPanel({ className = '', width, fillRemaining = false }:
     <aside
       ref={containerRef}
       className={clsx(
-        'flex flex-col border-l border-border bg-background-elevated transition-all duration-300 shrink-0',
+        'flex min-h-0 min-w-0 flex-col border-l border-border bg-background-elevated transition-all duration-300 shrink-0',
         className
       )}
       style={widthStyle}
@@ -371,7 +371,7 @@ export function DeveloperPanel({ className = '', width, fillRemaining = false }:
       {isOpen && (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {/* 过滤器栏 */}
-          <div className="flex flex-col gap-2 px-4 py-3 border-b border-border-subtle bg-background-surface">
+          <div className="flex flex-col gap-2 px-4 py-3 border-b border-border-subtle bg-background-surface shrink-0">
             {/* 第一行：过滤类型 */}
             <div className="flex items-center gap-2">
               <select
@@ -461,7 +461,7 @@ export function DeveloperPanel({ className = '', width, fillRemaining = false }:
                 <span className="text-sm">暂无事件</span>
               </div>
             ) : (
-              <div className="space-y-1">
+              <div className="min-w-0 space-y-1">
                 {filteredEvents.map((record) => {
                   const eventType = record.event.type
                   const colorClass = EVENT_TYPE_COLORS[eventType] || 'text-text-secondary'
@@ -505,7 +505,7 @@ export function DeveloperPanel({ className = '', width, fillRemaining = false }:
           </div>
 
           {/* 底部状态栏 */}
-          <div className="px-4 py-2 border-t border-border-subtle text-xs text-text-tertiary bg-background-surface flex items-center justify-between">
+          <div className="px-4 py-2 border-t border-border-subtle text-xs text-text-tertiary bg-background-surface flex items-center justify-between shrink-0">
             <span>总计: {events.length}</span>
             <span>已过滤: {filteredEvents.length}</span>
           </div>

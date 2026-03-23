@@ -48,7 +48,7 @@ export function LeftPanel({ children, className = '', fillRemaining = false }: L
         style={{ width: `${width}px` }}
       >
         {/* 面板内容 */}
-        <div className="flex-1 overflow-hidden">{children}</div>
+        <div className="flex-1 min-h-0 overflow-hidden">{children}</div>
       </aside>
 
       {/* 拖拽手柄 */}
