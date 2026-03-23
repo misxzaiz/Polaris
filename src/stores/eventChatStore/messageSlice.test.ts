@@ -772,4 +772,347 @@ describe('messageSlice', () => {
       expect(store.getState().activeTaskId).toBeNull()
     })
   })
+
+  // ========================================
+  // ToolGroup 测试
+  // ========================================
+  describe('appendToolGroupBlock', () => {
+    it('无 currentMessage 时应创建新消息', () => {
+      const store = createTestStore()
+
+      const tools = [
+        { id: 'tool-1', name: 'read_file', status: 'completed' as const },
+        { id: 'tool-2', name: 'write_file', status: 'running' as const },
+      ]
+
+      store.getState().appendToolGroupBlock('group-1', tools, '2 个工具')
+
+      const { currentMessage, toolGroupBlockMap } = store.getState()
+      expect(currentMessage).not.toBeNull()
+      expect(currentMessage?.blocks).toHaveLength(1)
+      expect(currentMessage?.blocks[0]).toMatchObject({
+        type: 'tool_group',
+        id: 'group-1',
+        summary: '2 个工具',
+        status: 'running', // 默认状态
+      })
+      expect(toolGroupBlockMap.get('group-1')).toBe(0)
+    })
+
+    it('应追加到现有消息', () => {
+      const store = createTestStore()
+
+      store.getState().appendTextBlock('Processing...')
+      store.getState().appendToolGroupBlock('group-1', [])
+
+      const { currentMessage, toolGroupBlockMap } = store.getState()
+      expect(currentMessage?.blocks).toHaveLength(2)
+      expect(currentMessage?.blocks[1]).toMatchObject({
+        type: 'tool_group',
+        id: 'group-1',
+      })
+      expect(toolGroupBlockMap.get('group-1')).toBe(1)
+    })
+
+    it('应正确设置工具列表', () => {
+      const store = createTestStore()
+
+      const tools = [
+        { id: 'tool-1', name: 'read_file', status: 'completed' as const, startedAt: Date.now() },
+        { id: 'tool-2', name: 'write_file', status: 'running' as const, startedAt: Date.now() },
+      ]
+
+      store.getState().appendToolGroupBlock('group-1', tools)
+
+      const block = store.getState().currentMessage?.blocks[0] as any
+      expect(block.tools).toHaveLength(2)
+      expect(block.tools[0]).toMatchObject({
+        id: 'tool-1',
+        name: 'read_file',
+        status: 'completed',
+      })
+    })
+
+    it('应提取工具名称列表', () => {
+      const store = createTestStore()
+
+      const tools = [
+        { id: 'tool-1', name: 'read_file', status: 'running' as const },
+        { id: 'tool-2', name: 'write_file', status: 'running' as const },
+        { id: 'tool-3', name: 'read_file', status: 'running' as const },
+      ]
+
+      store.getState().appendToolGroupBlock('group-1', tools)
+
+      const block = store.getState().currentMessage?.blocks[0] as any
+      expect(block.toolNames).toEqual(['read_file', 'write_file'])
+    })
+  })
+
+  describe('updateToolGroupBlock', () => {
+    it('应更新工具组状态', () => {
+      const store = createTestStore()
+
+      store.getState().appendToolGroupBlock('group-1', [])
+      store.getState().updateToolGroupBlock('group-1', { status: 'completed' })
+
+      const block = store.getState().currentMessage?.blocks[0] as any
+      expect(block.status).toBe('completed')
+    })
+
+    it('应更新展开状态', () => {
+      const store = createTestStore()
+
+      store.getState().appendToolGroupBlock('group-1', [])
+      store.getState().updateToolGroupBlock('group-1', { isExpanded: true })
+
+      const block = store.getState().currentMessage?.blocks[0] as any
+      expect(block.isExpanded).toBe(true)
+    })
+
+    it('应更新摘要', () => {
+      const store = createTestStore()
+
+      store.getState().appendToolGroupBlock('group-1', [])
+      store.getState().updateToolGroupBlock('group-1', { summary: '更新后的摘要' })
+
+      const block = store.getState().currentMessage?.blocks[0] as any
+      expect(block.summary).toBe('更新后的摘要')
+    })
+
+    it('不存在的组 ID 应不影响状态', () => {
+      const store = createTestStore()
+
+      store.getState().appendToolGroupBlock('group-1', [])
+      store.getState().updateToolGroupBlock('nonexistent', { status: 'completed' })
+
+      const block = store.getState().currentMessage?.blocks[0] as any
+      expect(block.status).toBe('running') // 状态不变
+    })
+  })
+
+  describe('updateToolInGroup', () => {
+    it('应更新组内单个工具状态', () => {
+      const store = createTestStore()
+
+      const tools = [
+        { id: 'tool-1', name: 'read_file', status: 'running' as const },
+      ]
+      store.getState().appendToolGroupBlock('group-1', tools)
+      store.getState().updateToolInGroup('group-1', 'tool-1', { status: 'completed' })
+
+      const block = store.getState().currentMessage?.blocks[0] as any
+      expect(block.tools[0].status).toBe('completed')
+    })
+
+    it('更新工具状态应触发聚合状态更新', () => {
+      const store = createTestStore()
+
+      const tools = [
+        { id: 'tool-1', name: 'read_file', status: 'running' as const },
+        { id: 'tool-2', name: 'write_file', status: 'running' as const },
+      ]
+      store.getState().appendToolGroupBlock('group-1', tools)
+
+      // 更新第一个工具
+      store.getState().updateToolInGroup('group-1', 'tool-1', { status: 'completed' })
+
+      let block = store.getState().currentMessage?.blocks[0] as any
+      expect(block.tools[0].status).toBe('completed')
+      expect(block.status).toBe('running') // 还有运行中的
+
+      // 更新第二个工具
+      store.getState().updateToolInGroup('group-1', 'tool-2', { status: 'completed' })
+
+      block = store.getState().currentMessage?.blocks[0] as any
+      expect(block.tools[1].status).toBe('completed')
+      expect(block.status).toBe('completed') // 全部完成
+    })
+
+    it('不存在的组 ID 应不影响状态', () => {
+      const store = createTestStore()
+
+      const tools = [{ id: 'tool-1', name: 'read_file', status: 'running' as const }]
+      store.getState().appendToolGroupBlock('group-1', tools)
+      store.getState().updateToolInGroup('nonexistent', 'tool-1', { status: 'completed' })
+
+      const block = store.getState().currentMessage?.blocks[0] as any
+      expect(block.tools[0].status).toBe('running')
+    })
+
+    it('不存在的工具 ID 应不影响状态', () => {
+      const store = createTestStore()
+
+      const tools = [{ id: 'tool-1', name: 'read_file', status: 'running' as const }]
+      store.getState().appendToolGroupBlock('group-1', tools)
+      store.getState().updateToolInGroup('group-1', 'nonexistent', { status: 'completed' })
+
+      const block = store.getState().currentMessage?.blocks[0] as any
+      expect(block.tools[0].status).toBe('running')
+    })
+  })
+
+  describe('setPendingToolGroup', () => {
+    it('应设置待聚合工具组', () => {
+      const store = createTestStore()
+
+      const group = {
+        groupId: 'group-1',
+        tools: [{ id: 'tool-1', name: 'read_file', status: 'running' as const, startedAt: Date.now() }],
+        startedAt: Date.now(),
+        timerId: null as any,
+      }
+
+      store.getState().setPendingToolGroup(group)
+      expect(store.getState().pendingToolGroup).toEqual(group)
+    })
+
+    it('应支持设置为 null', () => {
+      const store = createTestStore()
+
+      const group = {
+        groupId: 'group-1',
+        tools: [],
+        startedAt: Date.now(),
+        timerId: null as any,
+      }
+
+      store.getState().setPendingToolGroup(group)
+      store.getState().setPendingToolGroup(null)
+      expect(store.getState().pendingToolGroup).toBeNull()
+    })
+  })
+
+  describe('addToolToPendingGroup', () => {
+    it('无待聚合组时应创建新组', () => {
+      const store = createTestStore()
+
+      store.getState().addToolToPendingGroup({
+        id: 'tool-1',
+        name: 'read_file',
+        startedAt: Date.now(),
+      })
+
+      const { pendingToolGroup } = store.getState()
+      expect(pendingToolGroup).not.toBeNull()
+      expect(pendingToolGroup?.tools).toHaveLength(1)
+      expect(pendingToolGroup?.tools[0]).toMatchObject({
+        id: 'tool-1',
+        name: 'read_file',
+        status: 'running',
+      })
+    })
+
+    it('应追加到现有待聚合组', () => {
+      const store = createTestStore()
+
+      store.getState().addToolToPendingGroup({
+        id: 'tool-1',
+        name: 'read_file',
+        startedAt: Date.now(),
+      })
+      store.getState().addToolToPendingGroup({
+        id: 'tool-2',
+        name: 'write_file',
+        startedAt: Date.now(),
+      })
+
+      const { pendingToolGroup } = store.getState()
+      expect(pendingToolGroup?.tools).toHaveLength(2)
+    })
+  })
+
+  describe('finalizePendingToolGroup', () => {
+    it('工具数不足 2 时不创建组', () => {
+      const store = createTestStore()
+
+      store.getState().addToolToPendingGroup({
+        id: 'tool-1',
+        name: 'read_file',
+        startedAt: Date.now(),
+      })
+      store.getState().finalizePendingToolGroup()
+
+      const { currentMessage, pendingToolGroup } = store.getState()
+      expect(currentMessage).toBeNull()
+      expect(pendingToolGroup).toBeNull()
+    })
+
+    it('工具数 >= 2 时应创建 ToolGroupBlock', () => {
+      const store = createTestStore()
+
+      store.getState().addToolToPendingGroup({
+        id: 'tool-1',
+        name: 'read_file',
+        startedAt: Date.now(),
+      })
+      store.getState().addToolToPendingGroup({
+        id: 'tool-2',
+        name: 'write_file',
+        startedAt: Date.now(),
+      })
+      store.getState().finalizePendingToolGroup()
+
+      const { currentMessage, pendingToolGroup, toolGroupBlockMap } = store.getState()
+      expect(currentMessage).not.toBeNull()
+      expect(currentMessage?.blocks).toHaveLength(1)
+      expect(currentMessage?.blocks[0]).toMatchObject({
+        type: 'tool_group',
+        tools: expect.arrayContaining([
+          expect.objectContaining({ id: 'tool-1', name: 'read_file' }),
+          expect.objectContaining({ id: 'tool-2', name: 'write_file' }),
+        ]),
+      })
+      expect(pendingToolGroup).toBeNull()
+      expect(toolGroupBlockMap.size).toBe(1)
+    })
+
+    it('无待聚合组时应安全处理', () => {
+      const store = createTestStore()
+
+      store.getState().finalizePendingToolGroup()
+
+      const { currentMessage, pendingToolGroup } = store.getState()
+      expect(currentMessage).toBeNull()
+      expect(pendingToolGroup).toBeNull()
+    })
+
+    it('相同工具名应显示计数', () => {
+      const store = createTestStore()
+
+      store.getState().addToolToPendingGroup({
+        id: 'tool-1',
+        name: 'read_file',
+        startedAt: Date.now(),
+      })
+      store.getState().addToolToPendingGroup({
+        id: 'tool-2',
+        name: 'read_file',
+        startedAt: Date.now(),
+      })
+      store.getState().finalizePendingToolGroup()
+
+      const block = store.getState().currentMessage?.blocks[0] as any
+      expect(block.summary).toBe('read_file ×2')
+    })
+
+    it('不同工具名应显示数量', () => {
+      const store = createTestStore()
+
+      store.getState().addToolToPendingGroup({
+        id: 'tool-1',
+        name: 'read_file',
+        startedAt: Date.now(),
+      })
+      store.getState().addToolToPendingGroup({
+        id: 'tool-2',
+        name: 'write_file',
+        startedAt: Date.now(),
+      })
+      store.getState().finalizePendingToolGroup()
+
+      const block = store.getState().currentMessage?.blocks[0] as any
+      expect(block.summary).toBe('2 个工具')
+    })
+  })
 })
