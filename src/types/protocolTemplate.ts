@@ -29,12 +29,18 @@ export interface ProtocolTemplate {
   builtin: boolean;
   /** 任务目标模板（支持占位符）- 保留向后兼容 */
   missionTemplate: string;
-  /** 完整文档模板（支持占位符）- 新增：完整 task.md 内容模板 */
+  /** 完整文档模板（支持占位符）- 完整 task.md 内容模板 */
   fullTemplate?: string;
-  /** 模板参数定义 - 新增：用于动态生成输入框 */
+  /** 模板参数定义 - 用于动态生成输入框 */
   templateParams?: TemplateParam[];
   /** 协议文档模板（可选，支持占位符） */
   protocolTemplate?: string;
+  /** 记忆系统模板 - memory/index.md 内容模板 */
+  memoryTemplate?: string;
+  /** 任务队列模板 - memory/tasks.md 内容模板 */
+  tasksTemplate?: string;
+  /** 用户补充模板 - user-supplement.md 内容模板 */
+  supplementTemplate?: string;
   /** 默认触发类型 */
   defaultTriggerType?: 'once' | 'cron' | 'interval';
   /** 默认触发值 */
@@ -56,6 +62,12 @@ export interface CreateProtocolTemplateParams {
   fullTemplate?: string;
   templateParams?: TemplateParam[];
   protocolTemplate?: string;
+  /** 记忆系统模板 */
+  memoryTemplate?: string;
+  /** 任务队列模板 */
+  tasksTemplate?: string;
+  /** 用户补充模板 */
+  supplementTemplate?: string;
   defaultTriggerType?: 'once' | 'cron' | 'interval';
   defaultTriggerValue?: string;
   defaultEngineId?: string;
@@ -66,13 +78,13 @@ export const BUILTIN_PROTOCOL_TEMPLATES: ProtocolTemplate[] = [
   {
     id: 'protocol-assist',
     name: '协议协助模式',
-    description: '完整的协议任务模板，支持任务目标和用户补充内容',
+    description: '完整的协议任务模板，支持任务目标、记忆系统和用户补充内容',
     category: 'development',
     builtin: true,
-    missionTemplate: '{task}', // 向后兼容
+    missionTemplate: '{task}',
     fullTemplate: `# 任务协议
 
-> 任务ID: 自动生成
+> 任务ID: {taskId}
 > 创建时间: {dateTime}
 > 版本: 1.0.0
 
@@ -84,9 +96,11 @@ export const BUILTIN_PROTOCOL_TEMPLATES: ProtocolTemplate[] = [
 
 ---
 
-## 用户补充
+## 工作区
 
-{userSupplement}
+\`\`\`
+{workDir}
+\`\`\`
 
 ---
 
@@ -95,17 +109,29 @@ export const BUILTIN_PROTOCOL_TEMPLATES: ProtocolTemplate[] = [
 每次触发时按以下顺序执行：
 
 ### 1. 检查用户补充
-- 读取用户补充文件
+- 读取 \`.polaris/tasks/{timestamp}/user-supplement.md\`
 - 如有新内容，优先处理并归档
 
 ### 2. 推进主任务
-- 读取记忆索引了解当前进度
+- 读取 \`.polaris/tasks/{timestamp}/memory/index.md\` 了解当前进度
 - 选择下一个待办事项执行
 - 完成后更新记忆
 
 ### 3. 记忆更新
-- 新成果写入记忆文件
-- 待办任务写入任务文件
+- 新成果写入 \`.polaris/tasks/{timestamp}/memory/index.md\`
+- 待办任务写入 \`.polaris/tasks/{timestamp}/memory/tasks.md\`
+
+### 4. 文档备份
+- 用户补充处理完成后迁移到 \`.oprcli/tasks/{timestamp}/supplement-history/\`
+- 文档超过 300 行时总结后备份
+
+---
+
+## 补充
+
+1. 分析后无需用户审查
+2. 修改内容后及时提交git
+3. 将任务拆分处理，每次完成一部分，当任务都完成后，就测试，审查，优化，改造
 
 ---
 
@@ -120,6 +146,41 @@ export const BUILTIN_PROTOCOL_TEMPLATES: ProtocolTemplate[] = [
 避免：
 - 无产出的探索
 - 重复性工作
+`,
+    memoryTemplate: `# 成果索引
+
+## 当前状态
+状态: 初始化
+进度: 0%
+
+## 已完成
+- [暂无]
+
+## 进行中
+- [暂无]
+`,
+    tasksTemplate: `# 任务队列
+
+## 待办
+1. 分析任务目标：{task}
+2. 拆解为可执行步骤
+3. 逐步推进
+
+## 已完成
+- [暂无]
+`,
+    supplementTemplate: `# 用户补充
+
+> 用于临时调整任务方向或补充要求
+> AI 处理后会清空内容，历史记录保存在 .oprcli/tasks/{timestamp}/supplement-history/
+
+---
+
+<!-- 在下方添加补充内容 -->
+
+
+
+
 `,
     templateParams: [
       {
@@ -164,6 +225,9 @@ export const TEMPLATE_PLACEHOLDERS = {
   time: '{time}',
   task: '{task}',
   userSupplement: '{userSupplement}',
+  taskId: '{taskId}',
+  workDir: '{workDir}',
+  timestamp: '{timestamp}',
 };
 
 /** 格式化日期时间 */
@@ -235,10 +299,13 @@ export interface TemplateParamValues {
   task?: string;
   userSupplement?: string;
   mission?: string;
+  taskId?: string;
+  workDir?: string;
+  timestamp?: string;
   [key: string]: string | undefined;
 }
 
-/** 渲染完整模板 - 新版，支持所有占位符 */
+/** 渲染完整模板 - 支持所有占位符 */
 export function renderFullTemplate(
   template: string,
   params: TemplateParamValues
@@ -259,6 +326,45 @@ export function renderFullTemplate(
   });
 
   return result;
+}
+
+/** 渲染模板集 - 返回 task.md、memory/index.md、memory/tasks.md、user-supplement.md 内容 */
+export interface RenderedTemplateSet {
+  /** task.md 内容 */
+  taskContent: string;
+  /** memory/index.md 内容 */
+  memoryContent: string;
+  /** memory/tasks.md 内容 */
+  tasksContent: string;
+  /** user-supplement.md 内容 */
+  supplementContent: string;
+}
+
+/** 渲染完整模板集 */
+export function renderTemplateSet(
+  template: ProtocolTemplate,
+  params: TemplateParamValues
+): RenderedTemplateSet {
+  const baseParams: TemplateParamValues = {
+    ...params,
+    taskId: params.taskId || 'auto-generated',
+    timestamp: params.timestamp || Date.now().toString(),
+  };
+
+  return {
+    taskContent: template.fullTemplate
+      ? renderFullTemplate(template.fullTemplate, baseParams)
+      : `# 任务协议\n\n## 任务目标\n\n${params.task || params.mission || ''}`,
+    memoryContent: template.memoryTemplate
+      ? renderFullTemplate(template.memoryTemplate, baseParams)
+      : `# 成果索引\n\n## 当前状态\n状态: 初始化\n进度: 0%\n`,
+    tasksContent: template.tasksTemplate
+      ? renderFullTemplate(template.tasksTemplate, baseParams)
+      : `# 任务队列\n\n## 待办\n1. 分析任务目标\n\n## 已完成\n- [暂无]\n`,
+    supplementContent: template.supplementTemplate
+      ? renderFullTemplate(template.supplementTemplate, baseParams)
+      : `# 用户补充\n\n<!-- 在下方添加补充内容 -->\n\n`,
+  };
 }
 
 /** 从模板中提取占位符列表 */

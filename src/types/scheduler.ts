@@ -68,6 +68,14 @@ export interface ScheduledTask {
   timeoutMinutes?: number;
   /** 用户补充内容（一次性提示词，每次执行时可以修改） */
   userSupplement?: string;
+  /** 任务文档模板（task.md 内容） */
+  taskTemplate?: string;
+  /** 记忆系统模板（memory/index.md 内容） */
+  memoryTemplate?: string;
+  /** 任务队列模板（memory/tasks.md 内容） */
+  tasksTemplate?: string;
+  /** 用户补充模板（user-supplement.md 内容） */
+  supplementTemplate?: string;
 }
 
 /** 执行日志 */
@@ -137,6 +145,14 @@ export interface CreateTaskParams {
   timeoutMinutes?: number;
   /** 用户补充内容（一次性提示词，每次执行时可以修改） */
   userSupplement?: string;
+  /** 任务文档模板（task.md 内容） */
+  taskTemplate?: string;
+  /** 记忆系统模板（memory/index.md 内容） */
+  memoryTemplate?: string;
+  /** 任务队列模板（memory/tasks.md 内容） */
+  tasksTemplate?: string;
+  /** 用户补充模板（user-supplement.md 内容） */
+  supplementTemplate?: string;
 }
 
 /** 协议任务目录结构 */

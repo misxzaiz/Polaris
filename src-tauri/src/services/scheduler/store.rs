@@ -104,7 +104,7 @@ impl TaskStoreService {
             group: params.group,
             description: params.description,
             task_path: None,
-            mission: params.mission,
+            mission: params.mission.clone(),
             last_run_at: None,
             last_run_status: None,
             next_run_at: None,
@@ -122,16 +122,24 @@ impl TaskStoreService {
             notify_on_complete: params.notify_on_complete,
             timeout_minutes: params.timeout_minutes,
             user_supplement: params.user_supplement,
+            task_template: params.task_template.clone(),
+            memory_template: params.memory_template.clone(),
+            tasks_template: params.tasks_template.clone(),
+            supplement_template: params.supplement_template.clone(),
         };
 
-        // 创建任务目录结构
+        // 创建任务目录结构（使用自定义模板）
         let work_dir = params.work_dir.clone().unwrap_or_else(|| ".".to_string());
         let mission = task.mission.clone().unwrap_or_else(|| task.name.clone());
 
-        let task_path = ProtocolTaskService::create_task_structure(
+        let task_path = ProtocolTaskService::create_task_structure_with_templates(
             &work_dir,
             &id,
             &mission,
+            params.task_template.as_deref(),
+            params.memory_template.as_deref(),
+            params.tasks_template.as_deref(),
+            params.supplement_template.as_deref(),
         ).map_err(AppError::IoError)?;
 
         task.task_path = Some(task_path);

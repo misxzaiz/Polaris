@@ -450,6 +450,11 @@ export function TaskEditor({
       notifyOnComplete,
       timeoutMinutes: timeoutMinutes && timeoutMinutes > 0 ? timeoutMinutes : undefined,
       userSupplement: userSupplement.trim() || undefined,
+      // 传递模板组件字段
+      taskTemplate: selectedTemplate?.fullTemplate,
+      memoryTemplate: selectedTemplate?.memoryTemplate,
+      tasksTemplate: selectedTemplate?.tasksTemplate,
+      supplementTemplate: selectedTemplate?.supplementTemplate,
     });
   };
 

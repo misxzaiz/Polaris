@@ -43,6 +43,20 @@ impl ProtocolTaskService {
         task_id: &str,
         mission: &str,
     ) -> std::io::Result<String> {
+        // 调用带模板参数的版本，使用默认模板
+        Self::create_task_structure_with_templates(work_dir, task_id, mission, None, None, None, None)
+    }
+
+    /// 创建协议任务目录结构（支持自定义模板）
+    pub fn create_task_structure_with_templates(
+        work_dir: &str,
+        task_id: &str,
+        mission: &str,
+        task_template: Option<&str>,
+        memory_template: Option<&str>,
+        tasks_template: Option<&str>,
+        supplement_template: Option<&str>,
+    ) -> std::io::Result<String> {
         // 统一生成时间戳，确保所有地方使用相同的时间
         let timestamp = Self::generate_timestamp();
         let task_path = Self::generate_task_path_from_timestamp(&timestamp);
@@ -58,18 +72,63 @@ impl ProtocolTaskService {
         )?;
 
         // 生成并写入协议文档
-        let task_content = Self::generate_task_md(task_id, mission, work_dir, &timestamp);
+        let task_content = if let Some(template) = task_template {
+            Self::render_template(template, task_id, mission, work_dir, &timestamp)
+        } else {
+            Self::generate_task_md(task_id, mission, work_dir, &timestamp)
+        };
         fs::write(task_full_path.join("task.md"), task_content)?;
 
         // 生成并写入用户补充文档
-        let supplement_content = Self::generate_supplement_md(&timestamp);
+        let supplement_content = if let Some(template) = supplement_template {
+            Self::render_supplement_template(template, &timestamp)
+        } else {
+            Self::generate_supplement_md(&timestamp)
+        };
         fs::write(task_full_path.join("user-supplement.md"), supplement_content)?;
 
         // 生成并写入记忆文件
-        fs::write(task_full_path.join("memory/index.md"), Self::generate_memory_index())?;
-        fs::write(task_full_path.join("memory/tasks.md"), Self::generate_memory_tasks(mission))?;
+        let memory_content = if let Some(template) = memory_template {
+            Self::render_memory_template(template)
+        } else {
+            Self::generate_memory_index()
+        };
+        fs::write(task_full_path.join("memory/index.md"), memory_content)?;
+
+        let tasks_content = if let Some(template) = tasks_template {
+            Self::render_tasks_template(template, mission)
+        } else {
+            Self::generate_memory_tasks(mission)
+        };
+        fs::write(task_full_path.join("memory/tasks.md"), tasks_content)?;
 
         Ok(task_path)
+    }
+
+    /// 渲染模板（替换占位符）
+    fn render_template(template: &str, task_id: &str, mission: &str, work_dir: &str, timestamp: &str) -> String {
+        let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+        template
+            .replace("{taskId}", task_id)
+            .replace("{task}", mission)
+            .replace("{dateTime}", &now.to_string())
+            .replace("{workDir}", work_dir)
+            .replace("{timestamp}", timestamp)
+    }
+
+    /// 渲染用户补充模板
+    fn render_supplement_template(template: &str, timestamp: &str) -> String {
+        template.replace("{timestamp}", timestamp)
+    }
+
+    /// 渲染记忆模板
+    fn render_memory_template(template: &str) -> String {
+        template.to_string()
+    }
+
+    /// 渲染任务队列模板
+    fn render_tasks_template(template: &str, mission: &str) -> String {
+        template.replace("{task}", mission)
     }
 
     /// 生成协议文档

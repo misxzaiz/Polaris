@@ -46,6 +46,14 @@ pub struct CreateTaskParams {
     pub timeout_minutes: Option<u32>,
     /// 用户补充内容（一次性提示词，每次执行时可以修改）
     pub user_supplement: Option<String>,
+    /// 任务文档模板（task.md 内容，用于自定义协议文档）
+    pub task_template: Option<String>,
+    /// 记忆系统模板（memory/index.md 内容）
+    pub memory_template: Option<String>,
+    /// 任务队列模板（memory/tasks.md 内容）
+    pub tasks_template: Option<String>,
+    /// 用户补充模板（user-supplement.md 内容）
+    pub supplement_template: Option<String>,
 }
 
 fn default_notify_on_complete() -> bool {
@@ -136,6 +144,18 @@ pub struct ScheduledTask {
     /// 用户补充内容（一次性提示词，每次执行时可以修改）
     #[serde(default)]
     pub user_supplement: Option<String>,
+    /// 任务文档模板（task.md 内容）
+    #[serde(default)]
+    pub task_template: Option<String>,
+    /// 记忆系统模板（memory/index.md 内容）
+    #[serde(default)]
+    pub memory_template: Option<String>,
+    /// 任务队列模板（memory/tasks.md 内容）
+    #[serde(default)]
+    pub tasks_template: Option<String>,
+    /// 用户补充模板（user-supplement.md 内容）
+    #[serde(default)]
+    pub supplement_template: Option<String>,
 }
 
 impl From<CreateTaskParams> for ScheduledTask {
@@ -170,6 +190,10 @@ impl From<CreateTaskParams> for ScheduledTask {
             notify_on_complete: params.notify_on_complete,
             timeout_minutes: params.timeout_minutes,
             user_supplement: params.user_supplement,
+            task_template: params.task_template,
+            memory_template: params.memory_template,
+            tasks_template: params.tasks_template,
+            supplement_template: params.supplement_template,
         }
     }
 }
