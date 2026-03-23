@@ -130,7 +130,6 @@ export const useSchedulerStore = create<SchedulerState>((set, get) => ({
         engineId: params.engineId,
         prompt: params.prompt,
         workDir: params.workDir,
-        mode: params.mode,
         group: params.group,
         mission: params.mission,
         maxRuns: params.maxRuns,

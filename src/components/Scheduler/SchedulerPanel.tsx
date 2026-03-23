@@ -9,7 +9,7 @@ import { ConfirmDialog } from '../Common/ConfirmDialog';
 import { DropdownMenu } from '../Common/DropdownMenu';
 import type { DropdownMenuItem } from '../Common/DropdownMenu';
 import type { ScheduledTask } from '../../types/scheduler';
-import { TriggerTypeLabels, TaskModeLabels } from '../../types/scheduler';
+import { TriggerTypeLabels } from '../../types/scheduler';
 import * as tauri from '../../services/tauri';
 import type { ProtocolFileType, TaskExportItem } from '../../services/tauri';
 import { TaskEditor } from './TaskEditor';
@@ -107,8 +107,8 @@ function TaskCard({
   // 构建操作菜单项
   const actionMenuItems: DropdownMenuItem[] = [];
 
-  // 协议模式添加文档菜单项
-  if (task.mode === 'protocol' && onViewDocs) {
+  // 有任务路径时添加文档菜单项
+  if (task.taskPath && onViewDocs) {
     actionMenuItems.push({ key: 'docs', label: '文档', onClick: onViewDocs });
   }
 
@@ -226,14 +226,6 @@ function TaskCard({
                 {task.group}
               </span>
             )}
-            {/* 模式徽章 */}
-            <span className={`px-2 py-0.5 rounded text-xs ${
-              task.mode === 'protocol'
-                ? 'bg-purple-500/20 text-purple-400'
-                : 'bg-gray-500/20 text-gray-400'
-            }`}>
-              {TaskModeLabels[task.mode]}
-            </span>
           </div>
 
           <div className="mt-2 text-sm text-gray-400 space-y-1">
@@ -270,8 +262,8 @@ function TaskCard({
         </div>
 
         <div className="flex items-center gap-2">
-          {/* 协议模式显示查看文档按钮 */}
-          {task.mode === 'protocol' && onViewDocs && (
+          {/* 有任务路径时显示查看文档按钮 */}
+          {task.taskPath && onViewDocs && (
             <button
               onClick={onViewDocs}
               className="px-3 py-1 text-sm bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 rounded transition-colors"
@@ -828,7 +820,6 @@ function TaskGroup({
 interface TaskFilter {
   search: string;
   enabled: 'all' | 'enabled' | 'disabled';
-  mode: 'all' | 'simple' | 'protocol';
   engineId: string;
   triggerType: 'all' | 'once' | 'cron' | 'interval';
   lastRunStatus: 'all' | 'running' | 'success' | 'failed' | 'none';
@@ -838,7 +829,6 @@ interface TaskFilter {
 const defaultFilter: TaskFilter = {
   search: '',
   enabled: 'all',
-  mode: 'all',
   engineId: 'all',
   triggerType: 'all',
   lastRunStatus: 'all',
@@ -855,8 +845,6 @@ function filterTasks(tasks: ScheduledTask[], filter: TaskFilter): ScheduledTask[
     // 启用状态
     if (filter.enabled === 'enabled' && !task.enabled) return false;
     if (filter.enabled === 'disabled' && task.enabled) return false;
-    // 任务模式
-    if (filter.mode !== 'all' && task.mode !== filter.mode) return false;
     // 引擎
     if (filter.engineId !== 'all' && task.engineId !== filter.engineId) return false;
     // 触发类型
@@ -1413,7 +1401,6 @@ export function SchedulerPanel() {
     engineId: task.engineId,
     prompt: task.prompt,
     workDir: task.workDir,
-    mode: task.mode,
     group: task.group,
     maxRuns: task.maxRuns,
     runInTerminal: task.runInTerminal,
@@ -1468,7 +1455,6 @@ export function SchedulerPanel() {
             engineId: item.engineId,
             prompt: item.prompt,
             workDir: item.workDir,
-            mode: item.mode as 'simple' | 'protocol',
             group: item.group,
             maxRuns: item.maxRuns,
             runInTerminal: item.runInTerminal,
@@ -1633,16 +1619,6 @@ export function SchedulerPanel() {
             {/* 正常模式或紧凑模式下展开时显示所有筛选 */}
             {(!isCompact || showMoreFilters) && (
               <>
-                {/* 模式筛选 */}
-                <select
-                  value={filter.mode}
-                  onChange={(e) => setFilter({ ...filter, mode: e.target.value as TaskFilter['mode'] })}
-                  className="px-2 py-1.5 text-sm bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
-                >
-                  <option value="all">全部模式</option>
-                  <option value="simple">简单模式</option>
-                  <option value="protocol">协议模式</option>
-                </select>
                 {/* 引擎筛选 */}
                 <select
                   value={filter.engineId}

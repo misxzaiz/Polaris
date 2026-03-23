@@ -8,9 +8,6 @@ export type TriggerType = 'once' | 'cron' | 'interval';
 /** 任务状态 */
 export type TaskStatus = 'running' | 'success' | 'failed';
 
-/** 任务模式 */
-export type TaskMode = 'simple' | 'protocol';
-
 /** 定时任务 */
 export interface ScheduledTask {
   /** 任务 ID */
@@ -25,19 +22,17 @@ export interface ScheduledTask {
   triggerValue: string;
   /** 使用的引擎 ID */
   engineId: string;
-  /** 提示词 (simple 模式使用) */
+  /** 提示词（任务执行的核心指令） */
   prompt: string;
   /** 工作目录 */
   workDir?: string;
-  /** 任务模式 */
-  mode: TaskMode;
   /** 分组名称（可选，未分组则为 undefined） */
   group?: string;
   /** 任务描述/备注（可选，用于记录任务用途、注意事项等） */
   description?: string;
-  /** 任务路径 (protocol 模式使用，相对于 workDir) */
+  /** 任务路径（相对于 workDir，用于存储协议文档） */
   taskPath?: string;
-  /** 任务目标 (protocol 模式使用，用于保存协议文档中的任务目标) */
+  /** 任务目标（用于生成协议文档中的任务目标） */
   mission?: string;
   /** 上次执行时间 */
   lastRunAt?: number;
@@ -55,9 +50,9 @@ export interface ScheduledTask {
   currentRuns: number;
   /** 是否在终端中执行 (便于用户查看过程) */
   runInTerminal: boolean;
-  /** 使用的协议模板ID (protocol 模式使用，用于编辑时回显) */
+  /** 使用的协议模板ID（用于编辑时回显） */
   templateId?: string;
-  /** 模板参数值 (protocol 模式使用，用于编辑时回显) */
+  /** 模板参数值（用于编辑时回显） */
   templateParamValues?: Record<string, string>;
   /** 订阅的上下文 ID（持久化订阅状态，定时执行时会发送事件到该上下文） */
   subscribedContextId?: string;
@@ -118,21 +113,19 @@ export interface CreateTaskParams {
   engineId: string;
   prompt: string;
   workDir?: string;
-  /** 任务模式 */
-  mode?: TaskMode;
   /** 分组名称（可选） */
   group?: string;
   /** 任务描述/备注（可选，用于记录任务用途、注意事项等） */
   description?: string;
-  /** 任务目标 (protocol 模式使用，用于生成协议文档) */
+  /** 任务目标（用于生成协议文档） */
   mission?: string;
   /** 最大执行轮次 (可选，undefined 表示不限) */
   maxRuns?: number;
   /** 是否在终端中执行 (便于用户查看过程) */
   runInTerminal?: boolean;
-  /** 使用的协议模板ID (protocol 模式使用，用于编辑时回显) */
+  /** 使用的协议模板ID（用于编辑时回显） */
   templateId?: string;
-  /** 模板参数值 (protocol 模式使用，用于编辑时回显) */
+  /** 模板参数值（用于编辑时回显） */
   templateParamValues?: Record<string, string>;
   /** 最大重试次数（None 或 0 表示不重试） */
   maxRetries?: number;
@@ -161,12 +154,6 @@ export interface ProtocolTaskFiles {
   /** 记忆任务内容 */
   memoryTasksContent: string;
 }
-
-/** 任务模式显示名称 */
-export const TaskModeLabels: Record<TaskMode, string> = {
-  simple: '简单模式',
-  protocol: '协议模式',
-};
 
 /** 触发类型显示名称 */
 export const TriggerTypeLabels: Record<TriggerType, string> = {

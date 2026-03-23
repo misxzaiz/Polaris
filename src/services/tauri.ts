@@ -1044,7 +1044,6 @@ export interface TaskExportItem {
   engineId: string;
   prompt: string;
   workDir?: string;
-  mode: string;
   group?: string;
   maxRuns?: number;
   runInTerminal: boolean;
