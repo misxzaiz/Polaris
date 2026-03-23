@@ -20,9 +20,6 @@ pub struct CreateTaskParams {
     pub prompt: String,
     /// 工作目录（可选）
     pub work_dir: Option<String>,
-    /// 任务模式
-    #[serde(default)]
-    pub mode: TaskMode,
     /// 分组名称（可选）
     pub group: Option<String>,
     /// 任务描述/备注（可选，用于记录任务用途、注意事项等）
@@ -59,17 +56,6 @@ fn default_enabled() -> bool {
     true
 }
 
-/// 任务模式
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum TaskMode {
-    /// 简单模式：直接使用 prompt
-    #[default]
-    Simple,
-    /// 协议模式：读取 task.md + memory + supplement
-    Protocol,
-}
-
 /// 定时任务
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -93,9 +79,6 @@ pub struct ScheduledTask {
     pub prompt: String,
     /// 工作目录（可选）
     pub work_dir: Option<String>,
-    /// 任务模式
-    #[serde(default)]
-    pub mode: TaskMode,
     /// 分组名称（可选）
     #[serde(default)]
     pub group: Option<String>,
@@ -166,7 +149,6 @@ impl From<CreateTaskParams> for ScheduledTask {
             engine_id: params.engine_id,
             prompt: params.prompt,
             work_dir: params.work_dir,
-            mode: params.mode,
             group: params.group,
             description: params.description,
             task_path: None, // 将在创建任务目录后设置

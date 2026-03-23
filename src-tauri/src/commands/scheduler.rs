@@ -375,7 +375,6 @@ pub struct TaskExportItem {
     pub engine_id: String,
     pub prompt: String,
     pub work_dir: Option<String>,
-    pub mode: String,
     pub group: Option<String>,
     pub max_runs: Option<u32>,
     pub run_in_terminal: bool,

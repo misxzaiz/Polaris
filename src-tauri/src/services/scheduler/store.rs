@@ -1,5 +1,5 @@
 use crate::error::{AppError, Result};
-use crate::models::scheduler::{CreateTaskParams, ScheduledTask, TaskLog, TaskStore, LogStore, PaginatedLogs, TaskMode, LogRetentionConfig};
+use crate::models::scheduler::{CreateTaskParams, ScheduledTask, TaskLog, TaskStore, LogStore, PaginatedLogs, LogRetentionConfig};
 use crate::services::scheduler::ProtocolTaskService;
 use std::path::PathBuf;
 use uuid::Uuid;
@@ -101,7 +101,6 @@ impl TaskStoreService {
             engine_id: params.engine_id,
             prompt: params.prompt,
             work_dir: params.work_dir.clone(),
-            mode: params.mode.clone(),
             group: params.group,
             description: params.description,
             task_path: None,
@@ -125,19 +124,17 @@ impl TaskStoreService {
             user_supplement: params.user_supplement,
         };
 
-        // 如果是协议模式，创建任务目录结构
-        if params.mode == TaskMode::Protocol {
-            let work_dir = params.work_dir.clone().unwrap_or_else(|| ".".to_string());
-            let mission = task.mission.clone().unwrap_or_else(|| task.name.clone());
+        // 创建任务目录结构
+        let work_dir = params.work_dir.clone().unwrap_or_else(|| ".".to_string());
+        let mission = task.mission.clone().unwrap_or_else(|| task.name.clone());
 
-            let task_path = ProtocolTaskService::create_task_structure(
-                &work_dir,
-                &id,
-                &mission,
-            ).map_err(AppError::IoError)?;
+        let task_path = ProtocolTaskService::create_task_structure(
+            &work_dir,
+            &id,
+            &mission,
+        ).map_err(AppError::IoError)?;
 
-            task.task_path = Some(task_path);
-        }
+        task.task_path = Some(task_path);
 
         // 计算下次执行时间
         task.next_run_at = task.trigger_type.calculate_next_run(&task.trigger_value, now);
@@ -158,7 +155,6 @@ impl TaskStoreService {
             existing.engine_id = task.engine_id;
             existing.prompt = task.prompt;
             existing.work_dir = task.work_dir;
-            existing.mode = task.mode;
             existing.group = task.group;
             existing.description = task.description;
             existing.task_path = task.task_path;
@@ -186,11 +182,9 @@ impl TaskStoreService {
     pub fn delete(&mut self, id: &str) -> Result<()> {
         // 获取任务信息以删除目录
         if let Some(task) = self.store.tasks.iter().find(|t| t.id == id) {
-            // 如果是协议模式，删除任务目录
-            if task.mode == TaskMode::Protocol {
-                if let (Some(work_dir), Some(task_path)) = (&task.work_dir, &task.task_path) {
-                    let _ = ProtocolTaskService::delete_task_structure(work_dir, task_path);
-                }
+            // 删除任务目录
+            if let (Some(work_dir), Some(task_path)) = (&task.work_dir, &task.task_path) {
+                let _ = ProtocolTaskService::delete_task_structure(work_dir, task_path);
             }
         }
 

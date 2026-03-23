@@ -4,7 +4,7 @@
  */
 
 use crate::error::Result;
-use crate::models::scheduler::{ScheduledTask, TaskStatus, RunTaskResult, TaskMode};
+use crate::models::scheduler::{ScheduledTask, TaskStatus, RunTaskResult};
 use crate::ai::{EngineRegistry, EngineId, SessionOptions};
 use crate::models::AIEvent;
 use super::store::{TaskStoreService, LogStoreService, UpdateCompleteParams};
@@ -348,7 +348,6 @@ impl SchedulerDispatcher {
                 let running_tasks = running_tasks_for_complete.clone();
 
                 // 克隆协议任务相关字段（避免在 Fn 闭包中移动）
-                let task_mode_for_complete = task_for_complete.mode.clone();
                 let task_work_dir_for_complete = task_for_complete.work_dir.clone();
                 let task_task_path_for_complete = task_for_complete.task_path.clone();
                 // clone app_handle 以便在 async 块中使用
@@ -392,26 +391,24 @@ impl SchedulerDispatcher {
 
                             tracing::info!("[Scheduler] 任务执行成功: {}", task_name);
 
-                            // 协议模式：处理用户补充文档
-                            if task_mode_for_complete == TaskMode::Protocol {
-                                if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
-                                    // 读取用户补充
-                                    if let Ok(supplement) = ProtocolTaskService::read_supplement_md(work_dir, task_path) {
-                                        if ProtocolTaskService::has_supplement_content(&supplement) {
-                                            let content = ProtocolTaskService::extract_user_content(&supplement);
+                            // 处理用户补充文档
+                            if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
+                                // 读取用户补充
+                                if let Ok(supplement) = ProtocolTaskService::read_supplement_md(work_dir, task_path) {
+                                    if ProtocolTaskService::has_supplement_content(&supplement) {
+                                        let content = ProtocolTaskService::extract_user_content(&supplement);
 
-                                            // 备份内容
-                                            if let Err(e) = ProtocolTaskService::backup_supplement(work_dir, task_path, &content) {
-                                                tracing::error!("[Scheduler] 备份用户补充失败: {:?}", e);
-                                            }
-
-                                            // 清空原文档
-                                            if let Err(e) = ProtocolTaskService::clear_supplement_md(work_dir, task_path) {
-                                                tracing::error!("[Scheduler] 清空用户补充文档失败: {:?}", e);
-                                            }
-
-                                            tracing::info!("[Scheduler] 已处理用户补充文档");
+                                        // 备份内容
+                                        if let Err(e) = ProtocolTaskService::backup_supplement(work_dir, task_path, &content) {
+                                            tracing::error!("[Scheduler] 备份用户补充失败: {:?}", e);
                                         }
+
+                                        // 清空原文档
+                                        if let Err(e) = ProtocolTaskService::clear_supplement_md(work_dir, task_path) {
+                                            tracing::error!("[Scheduler] 清空用户补充文档失败: {:?}", e);
+                                        }
+
+                                        tracing::info!("[Scheduler] 已处理用户补充文档");
                                     }
                                 }
                             }
@@ -827,7 +824,6 @@ impl SchedulerDispatcher {
                 let ctx_id = ctx_id_for_complete.clone();
 
                 // 克隆协议任务相关字段
-                let task_mode_for_complete = task_for_complete.mode.clone();
                 let task_work_dir_for_complete = task_for_complete.work_dir.clone();
                 let task_task_path_for_complete = task_for_complete.task_path.clone();
 
@@ -869,25 +865,23 @@ impl SchedulerDispatcher {
 
                             tracing::info!("[Scheduler] 任务执行成功: {}", task_name);
 
-                            // 协议模式：处理用户补充文档
-                            if task_mode_for_complete == TaskMode::Protocol {
-                                if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
-                                    if let Ok(supplement) = ProtocolTaskService::read_supplement_md(work_dir, task_path) {
-                                        if ProtocolTaskService::has_supplement_content(&supplement) {
-                                            let content = ProtocolTaskService::extract_user_content(&supplement);
+                            // 处理用户补充文档
+                            if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
+                                if let Ok(supplement) = ProtocolTaskService::read_supplement_md(work_dir, task_path) {
+                                    if ProtocolTaskService::has_supplement_content(&supplement) {
+                                        let content = ProtocolTaskService::extract_user_content(&supplement);
 
-                                            if let Err(e) = ProtocolTaskService::backup_supplement(work_dir, task_path, &content) {
-                                                tracing::error!("[Scheduler] 备份用户补充失败: {:?}", e);
-                                            }
+                                        if let Err(e) = ProtocolTaskService::backup_supplement(work_dir, task_path, &content) {
+                                            tracing::error!("[Scheduler] 备份用户补充失败: {:?}", e);
+                                        }
 
-                                            if let Err(e) = ProtocolTaskService::clear_supplement_md(work_dir, task_path) {
-                                                tracing::error!("[Scheduler] 清空用户补充文档失败: {:?}", e);
-                                            }
+                                        if let Err(e) = ProtocolTaskService::clear_supplement_md(work_dir, task_path) {
+                                            tracing::error!("[Scheduler] 清空用户补充文档失败: {:?}", e);
                                         }
                                     }
                                 }
-                                                        }
-                                                    } else {
+                            }
+                        } else {
                                                         let error_msg = format!("进程退出码: {}", exit_code);
                                                         if let Err(e) = log_store.update_complete(
                                                             &log_id,
@@ -1095,24 +1089,14 @@ impl SchedulerDispatcher {
         Ok(log_id)
     }
 
-    /// 根据任务模式构建提示词
+    /// 构建提示词（协议模式：读取 task.md + memory + supplement）
     async fn build_prompt(&self, task: &ScheduledTask) -> Result<String> {
         tracing::info!(
-            "[Scheduler] 构建提示词: 模式={:?}, work_dir={:?}, task_path={:?}",
-            task.mode, task.work_dir, task.task_path
+            "[Scheduler] 构建提示词: work_dir={:?}, task_path={:?}",
+            task.work_dir, task.task_path
         );
 
-        match task.mode {
-            TaskMode::Simple => {
-                // 简单模式：直接使用 prompt
-                tracing::info!("[Scheduler] 简单模式提示词长度: {}", task.prompt.len());
-                Ok(task.prompt.clone())
-            }
-            TaskMode::Protocol => {
-                // 协议模式：读取 task.md + memory + supplement
-                self.build_protocol_prompt(task).await
-            }
-        }
+        self.build_protocol_prompt(task).await
     }
 
     /// 构建协议模式的提示词
@@ -1162,10 +1146,6 @@ impl SchedulerDispatcher {
     /// 处理用户补充文档（执行成功后调用）
     #[allow(dead_code)]
     async fn handle_supplement_post_execution(&self, task: &ScheduledTask) {
-        if task.mode != TaskMode::Protocol {
-            return;
-        }
-
         let work_dir = match &task.work_dir {
             Some(w) => w,
             None => return,
@@ -1204,10 +1184,6 @@ impl SchedulerDispatcher {
     /// 检查文档是否需要备份（超过 800 行）
     #[allow(dead_code)]
     async fn check_and_backup_documents(&self, task: &ScheduledTask) {
-        if task.mode != TaskMode::Protocol {
-            return;
-        }
-
         let work_dir = match &task.work_dir {
             Some(w) => w,
             None => return,
