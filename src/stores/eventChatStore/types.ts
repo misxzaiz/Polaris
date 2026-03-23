@@ -162,6 +162,8 @@ export interface MessageState {
   currentMessage: CurrentAssistantMessage | null
   /** 工具调用块映射 (toolUseId -> blockIndex) */
   toolBlockMap: Map<string, number>
+  /** 问题块映射 (questionId -> blockIndex) */
+  questionBlockMap: Map<string, number>
   /** 流式更新计数器 - 用于强制触发React重新渲染 */
   streamingUpdateCounter: number
 }
@@ -245,6 +247,11 @@ export interface MessageActions {
   updateToolCallBlockFullContent: (toolId: string, fullContent: string) => void
   /** 更新当前 Assistant 消息（内部方法） */
   updateCurrentAssistantMessage: (blocks: ContentBlock[]) => void
+
+  /** 添加问题块（AskUserQuestion 工具） */
+  appendQuestionBlock: (questionId: string, header: string, options: Array<{ value: string; label?: string }>, multiSelect?: boolean, allowCustomInput?: boolean) => void
+  /** 更新问题块答案 */
+  updateQuestionBlock: (questionId: string, answer: { selected: string[]; customInput?: string }) => void
 }
 
 /**

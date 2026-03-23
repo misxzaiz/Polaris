@@ -9,7 +9,7 @@
  */
 
 import type { MessageSlice, CurrentAssistantMessage } from './types'
-import type { ContentBlock, ToolCallBlock } from '../../types'
+import type { ContentBlock, ToolCallBlock, QuestionBlock } from '../../types'
 import { MESSAGE_ARCHIVE_THRESHOLD } from './types'
 import { isTextBlock } from '../../types'
 import { generateToolSummary, calculateDuration } from '../../utils/toolSummary'
@@ -24,6 +24,7 @@ export const createMessageSlice: MessageSlice = (set, get) => ({
   archivedMessages: [],
   currentMessage: null,
   toolBlockMap: new Map(),
+  questionBlockMap: new Map(),
   streamingUpdateCounter: 0,
 
   // ===== 方法 =====
@@ -86,6 +87,7 @@ export const createMessageSlice: MessageSlice = (set, get) => ({
       progressMessage: null,
       currentMessage: null,
       toolBlockMap: new Map(),
+      questionBlockMap: new Map(),
       providerSessionCache: null,
       // 不重置事件监听器状态，保持其在应用生命周期内活跃
     })
@@ -446,5 +448,93 @@ export const createMessageSlice: MessageSlice = (set, get) => ({
           : msg
       ),
     }))
+  },
+
+  /**
+   * 添加问题块（AskUserQuestion 工具）
+   */
+  appendQuestionBlock: (questionId, header, options, multiSelect, allowCustomInput) => {
+    const { currentMessage } = get()
+
+    const questionBlock: QuestionBlock = {
+      type: 'question',
+      id: questionId,
+      header,
+      options,
+      multiSelect,
+      allowCustomInput,
+      status: 'pending',
+    }
+
+    // 如果没有当前消息，创建一个新的
+    if (!currentMessage) {
+      const newMessage: CurrentAssistantMessage = {
+        id: crypto.randomUUID(),
+        blocks: [questionBlock],
+        isStreaming: true,
+      }
+      set({
+        currentMessage: newMessage,
+        isStreaming: true,
+        questionBlockMap: new Map([[questionId, 0]]),
+      })
+      return
+    }
+
+    // 添加问题块
+    const updatedBlocks: ContentBlock[] = [...currentMessage.blocks, questionBlock]
+    const blockIndex = updatedBlocks.length - 1
+
+    // 直接修改 questionBlockMap
+    const existingMap = get().questionBlockMap
+    existingMap.set(questionId, blockIndex)
+
+    set((state) => ({
+      currentMessage: state.currentMessage
+        ? { ...state.currentMessage, blocks: updatedBlocks }
+        : null,
+      questionBlockMap: existingMap,
+    }))
+
+    // 更新消息列表中的消息
+    get().updateCurrentAssistantMessage(updatedBlocks)
+  },
+
+  /**
+   * 更新问题块答案
+   */
+  updateQuestionBlock: (questionId, answer) => {
+    const { currentMessage, questionBlockMap } = get()
+    const blockIndex = questionBlockMap.get(questionId)
+
+    if (!currentMessage || blockIndex === undefined) {
+      console.warn('[EventChatStore] Question block not found:', questionId)
+      return
+    }
+
+    const block = currentMessage.blocks[blockIndex]
+    if (!block || block.type !== 'question') {
+      console.warn('[EventChatStore] Invalid question block at index:', blockIndex)
+      return
+    }
+
+    // 更新问题块
+    const updatedBlock: QuestionBlock = {
+      ...block,
+      status: 'answered',
+      answer,
+    }
+
+    const updatedBlocks = [...currentMessage.blocks]
+    updatedBlocks[blockIndex] = updatedBlock
+
+    set((state) => ({
+      currentMessage: state.currentMessage
+        ? { ...state.currentMessage, blocks: updatedBlocks }
+        : null,
+    }))
+
+    // 更新消息列表中的消息
+    get().updateCurrentAssistantMessage(updatedBlocks)
   },
 })
