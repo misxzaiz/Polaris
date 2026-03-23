@@ -133,22 +133,63 @@ export function handleAIEvent(
         // 优先使用 input 字段，如果为空则使用 args 字段
         const params = input && Object.keys(input).length > 0 ? input : args
 
-        const header = String(params.header || params.question || params.message || '请选择：')
-        const rawOptions = params.options as Array<{ value: string; label?: string }> | string[] | undefined
+        // 支持两种数据格式：
+        // 格式1：直接在 params 中（旧格式）- header/options/multiSelect 等
+        // 格式2：在 params.questions 数组中（新格式 IFlow CLI）
+        let questionData: Record<string, unknown> = params
+        let isNewFormat = false // 标记是否为新格式
+        if (Array.isArray(params.questions) && params.questions.length > 0) {
+          // 新格式：questions 数组，取第一个问题
+          questionData = params.questions[0] as Record<string, unknown>
+          isNewFormat = true
+        }
+
+        // 问题文本：优先使用 question 字段，其次是 header（作为问题文本），最后是 message
+        // 注意：在新格式中，header 是类别标签，question 才是真正的问题文本
+        const questionText = String(
+          questionData.question ||
+          questionData.header ||
+          params.header ||
+          params.question ||
+          params.message ||
+          '请选择：'
+        )
+        // 类别标签（可选）：只有在新格式中才设置，因为旧格式的 header 已经作为问题文本使用了
+        const categoryLabel = isNewFormat && questionData.header ? String(questionData.header) : undefined
+
+        // 解析选项：支持多种格式
+        const rawOptions = questionData.options as Array<Record<string, unknown>> | string[] | undefined
         const options = Array.isArray(rawOptions)
-          ? rawOptions.map(opt =>
-              typeof opt === 'string' ? { value: opt, label: opt } : opt
-            )
+          ? rawOptions.map(opt => {
+              if (typeof opt === 'string') {
+                return { value: opt, label: opt }
+              }
+              // 新格式：选项有 label、description、preview 字段
+              // 使用 label 作为 value（如果没有显式的 value）
+              return {
+                value: String(opt.value || opt.label || ''),
+                label: String(opt.label || opt.value || ''),
+                description: opt.description ? String(opt.description) : undefined,
+                preview: opt.preview ? String(opt.preview) : undefined,
+              }
+            })
           : []
-        const multiSelect = Boolean(params.multiSelect || params.multi_select)
-        const allowCustomInput = Boolean(params.allowCustomInput || params.allow_custom_input || params.allowInput)
+
+        const multiSelect = Boolean(questionData.multiSelect || questionData.multi_select || params.multiSelect)
+        const allowCustomInput = Boolean(
+          questionData.allowCustomInput ||
+          questionData.allow_custom_input ||
+          questionData.allowInput ||
+          params.allowCustomInput
+        )
 
         state.appendQuestionBlock(
           callId,
-          header,
+          questionText,
           options,
           multiSelect,
-          allowCustomInput
+          allowCustomInput,
+          categoryLabel
         )
 
         // 同步注册到后端（用于 CLI stdin 输入等场景）
@@ -157,7 +198,7 @@ export function handleAIEvent(
           invoke('register_pending_question', {
             sessionId: conversationId,
             callId,
-            header,
+            header: questionText,
             multiSelect,
             options,
             allowCustomInput,

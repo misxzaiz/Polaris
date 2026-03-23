@@ -111,6 +111,10 @@ export interface QuestionOption {
   value: string;
   /** 显示文本（可选，默认使用 value） */
   label?: string;
+  /** 选项描述（可选） */
+  description?: string;
+  /** 预览文本（可选，展示示例） */
+  preview?: string;
 }
 
 /** 问题回答状态 */
@@ -131,6 +135,8 @@ export interface QuestionBlock {
   id: string;
   /** 问题标题 */
   header: string;
+  /** 类别标签（可选，如 "类别"、"类型" 等） */
+  categoryLabel?: string;
   /** 是否多选 */
   multiSelect?: boolean;
   /** 选项列表 */

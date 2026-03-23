@@ -465,13 +465,14 @@ export const createMessageSlice: MessageSlice = (set, get) => ({
   /**
    * 添加问题块（AskUserQuestion 工具）
    */
-  appendQuestionBlock: (questionId, header, options, multiSelect, allowCustomInput) => {
+  appendQuestionBlock: (questionId, header, options, multiSelect, allowCustomInput, categoryLabel) => {
     const { currentMessage } = get()
 
     const questionBlock: QuestionBlock = {
       type: 'question',
       id: questionId,
       header,
+      categoryLabel,
       options,
       multiSelect,
       allowCustomInput,

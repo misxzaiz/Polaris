@@ -182,9 +182,16 @@ export const QuestionBlockRenderer = memo(function QuestionBlockRenderer({ block
         ) : (
           <HelpCircle className="w-4 h-4 text-accent" aria-hidden="true" />
         )}
-        <span className="text-sm font-medium text-text-primary">
-          {block.header}
-        </span>
+        <div className="flex-1 min-w-0">
+          {block.categoryLabel && (
+            <span className="text-xs text-text-tertiary block mb-0.5">
+              {block.categoryLabel}
+            </span>
+          )}
+          <span className="text-sm font-medium text-text-primary">
+            {block.header}
+          </span>
+        </div>
         {isAnswered && (
           <span className="ml-auto text-xs text-success">
             {t('question.answered')}
@@ -245,7 +252,19 @@ export const QuestionBlockRenderer = memo(function QuestionBlockRenderer({ block
                       <Check className="w-2.5 h-2.5 text-white" />
                     )}
                   </div>
-                  <span>{option.label || option.value}</span>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-medium">{option.label || option.value}</span>
+                    {option.description && (
+                      <span className="block text-xs text-text-tertiary mt-0.5">
+                        {option.description}
+                      </span>
+                    )}
+                    {option.preview && !isAnswered && (
+                      <span className="block text-xs text-text-quaternary mt-0.5 italic">
+                        {option.preview}
+                      </span>
+                    )}
+                  </div>
                 </button>
               );
             })}

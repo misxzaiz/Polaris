@@ -286,7 +286,7 @@ export interface MessageActions {
   updateCurrentAssistantMessage: (blocks: ContentBlock[]) => void
 
   /** 添加问题块（AskUserQuestion 工具） */
-  appendQuestionBlock: (questionId: string, header: string, options: Array<{ value: string; label?: string }>, multiSelect?: boolean, allowCustomInput?: boolean) => void
+  appendQuestionBlock: (questionId: string, header: string, options: Array<{ value: string; label?: string; description?: string; preview?: string }>, multiSelect?: boolean, allowCustomInput?: boolean, categoryLabel?: string) => void
   /** 更新问题块答案 */
   updateQuestionBlock: (questionId: string, answer: { selected: string[]; customInput?: string }) => void
 

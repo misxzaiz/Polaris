@@ -488,6 +488,8 @@ describe('handleAIEvent', () => {
     beforeEach(() => {
       mockStore.state.appendQuestionBlock = vi.fn()
       mockStore.state.conversationId = 'session-123'
+      // 设置 invoke mock 返回值，防止 .catch() 报错
+      mockInvoke.mockResolvedValue(undefined)
     })
 
     it('应检测 ask_user_question 工具并添加问题块', () => {
@@ -512,11 +514,12 @@ describe('handleAIEvent', () => {
         'q-1',
         '选择一个选项',
         [
-          { value: 'a', label: 'Option A' },
-          { value: 'b', label: 'Option B' },
+          { value: 'a', label: 'Option A', description: undefined, preview: undefined },
+          { value: 'b', label: 'Option B', description: undefined, preview: undefined },
         ],
         false,
-        true
+        true,
+        undefined
       )
     })
 
@@ -536,9 +539,13 @@ describe('handleAIEvent', () => {
       expect(mockStore.state.appendQuestionBlock).toHaveBeenCalledWith(
         'q-1',
         '确认操作？',
-        [{ value: 'yes', label: 'yes' }, { value: 'no', label: 'no' }],
+        [
+          { value: 'yes', label: 'yes', description: undefined, preview: undefined },
+          { value: 'no', label: 'no', description: undefined, preview: undefined },
+        ],
         false,
-        false
+        false,
+        undefined
       )
     })
 
@@ -561,7 +568,8 @@ describe('handleAIEvent', () => {
         '提示信息',
         [],
         true,
-        true
+        true,
+        undefined
       )
     })
 
@@ -611,9 +619,13 @@ describe('handleAIEvent', () => {
       expect(mockStore.state.appendQuestionBlock).toHaveBeenCalledWith(
         'q-iflow-1',
         'Answer questions?',
-        [{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }],
+        [
+          { value: 'Yes', label: 'Yes', description: undefined, preview: undefined },
+          { value: 'No', label: 'No', description: undefined, preview: undefined },
+        ],
         false,
-        false
+        false,
+        undefined
       )
     })
 
@@ -639,9 +651,102 @@ describe('handleAIEvent', () => {
       expect(mockStore.state.appendQuestionBlock).toHaveBeenCalledWith(
         'q-mixed-1',
         'Input Message',
-        [{ value: 'X', label: 'X' }, { value: 'Y', label: 'Y' }],
+        [
+          { value: 'X', label: 'X', description: undefined, preview: undefined },
+          { value: 'Y', label: 'Y', description: undefined, preview: undefined },
+        ],
         true,
-        false
+        false,
+        undefined
+      )
+    })
+
+    it('应支持 questions 数组格式（IFlow CLI 新格式）', () => {
+      const event: AIEvent = {
+        type: 'tool_call_start',
+        callId: 'call_vThhbSZy7vCoA2WWt53a9aUu',
+        tool: 'AskUserQuestion',
+        args: {
+          questions: [
+            {
+              header: '类别',
+              question: '你想测试哪种类型的问题？',
+              multiSelect: false,
+              options: [
+                {
+                  label: '单选题',
+                  description: '只有一个选项可选',
+                  preview: '示例：你最喜欢的颜色是什么？',
+                },
+                {
+                  label: '多选题',
+                  description: '可以选择多个选项',
+                  preview: '示例：你喜欢哪些水果？',
+                },
+              ],
+            },
+          ],
+        },
+      }
+
+      handleAIEvent(event, mockStore.set, mockStore.get)
+
+      // 验证调用参数
+      expect(mockStore.state.appendQuestionBlock).toHaveBeenCalledWith(
+        'call_vThhbSZy7vCoA2WWt53a9aUu',
+        '你想测试哪种类型的问题？', // 使用 question 字段作为问题文本
+        [
+          {
+            value: '单选题',
+            label: '单选题',
+            description: '只有一个选项可选',
+            preview: '示例：你最喜欢的颜色是什么？',
+          },
+          {
+            value: '多选题',
+            label: '多选题',
+            description: '可以选择多个选项',
+            preview: '示例：你喜欢哪些水果？',
+          },
+        ],
+        false,
+        false,
+        '类别' // categoryLabel
+      )
+    })
+
+    it('应支持 questions 数组格式中的 input 字段', () => {
+      const event = {
+        type: 'tool_call_start' as const,
+        callId: 'q-new-format',
+        tool: 'AskUserQuestion',
+        args: {},
+        input: {
+          questions: [
+            {
+              header: '操作类型',
+              question: '请选择要执行的操作',
+              options: [
+                { label: '创建', description: '创建新文件' },
+                { label: '删除', description: '删除文件' },
+              ],
+            },
+          ],
+        },
+      }
+
+      handleAIEvent(event, mockStore.set, mockStore.get)
+
+      expect(mockStore.state.appendQuestionBlock).toHaveBeenCalledWith(
+        'q-new-format',
+        '请选择要执行的操作',
+        [
+          { value: '创建', label: '创建', description: '创建新文件' },
+          { value: '删除', label: '删除', description: '删除文件' },
+        ],
+        false,
+        false,
+        '操作类型'
       )
     })
   })
