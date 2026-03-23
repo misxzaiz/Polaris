@@ -14,7 +14,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '../Common'
 import { IconSend, IconStop, IconPaperclip } from '../Common/Icons'
-import { useWorkspaceStore, useConfigStore } from '../../stores'
+import { useWorkspaceStore, useConfigStore, useEventChatStore } from '../../stores'
 import { FileSuggestion, WorkspaceSuggestion } from './FileSuggestion'
 import { GitSuggestion, getGitRootSuggestions, commitsToSuggestionItems, type GitSuggestionItem } from './GitSuggestion'
 import { AttachmentPreview } from './AttachmentPreview'
@@ -82,6 +82,18 @@ export function ChatInput({
   const { currentWorkspaceId, workspaces } = useWorkspaceStore()
   const { fileMatches, searchFiles, clearResults } = useFileSearch()
   const { config } = useConfigStore()
+
+  // 检查是否有待回答的问题
+  const hasPendingQuestion = useEventChatStore(state => {
+    if (!state.currentMessage || !state.questionBlockMap.size) return false
+    for (const blockIndex of state.questionBlockMap.values()) {
+      const block = state.currentMessage.blocks[blockIndex]
+      if (block?.type === 'question' && block.status === 'pending') {
+        return true
+      }
+    }
+    return false
+  })
 
   const [isTranslating, setIsTranslating] = useState(false)
 
@@ -674,7 +686,12 @@ export function ChatInput({
         {/* 状态栏 */}
         <div className="flex items-center justify-between mt-1.5 px-1">
           <div className="flex items-center gap-2 text-xs text-text-tertiary">
-            {isStreaming ? (
+            {hasPendingQuestion ? (
+              <span className="flex items-center gap-1 text-accent">
+                <span className="w-1 h-1 bg-accent rounded-full animate-pulse" />
+                {t('question.pendingAnswer')}
+              </span>
+            ) : isStreaming ? (
               <span className="flex items-center gap-2">
                 <span className="w-1 h-1 bg-warning rounded-full animate-pulse" />
                 {t('status.generating')}

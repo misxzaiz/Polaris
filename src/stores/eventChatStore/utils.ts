@@ -120,10 +120,36 @@ export function handleAIEvent(
       // 注意：工具调用会通过独立的 tool_call_start 事件处理，不在这里处理
       break
 
-    case 'tool_call_start':
+    case 'tool_call_start': {
+      const toolName = event.tool
+      const callId = event.callId || crypto.randomUUID()
+
+      // 检测是否为 AskUserQuestion 工具
+      if (toolName === 'ask_user_question' || toolName === 'AskUserQuestion') {
+        const args = event.args as Record<string, unknown>
+        const header = String(args.header || args.question || args.message || '请选择：')
+        const rawOptions = args.options as Array<{ value: string; label?: string }> | string[] | undefined
+        const options = Array.isArray(rawOptions)
+          ? rawOptions.map(opt =>
+              typeof opt === 'string' ? { value: opt, label: opt } : opt
+            )
+          : []
+        const multiSelect = Boolean(args.multiSelect || args.multi_select)
+        const allowCustomInput = Boolean(args.allowCustomInput || args.allow_custom_input || args.allowInput)
+
+        state.appendQuestionBlock(
+          callId,
+          header,
+          options,
+          multiSelect,
+          allowCustomInput
+        )
+        break
+      }
+
       state.appendToolCallBlock(
-        event.callId || crypto.randomUUID(),
-        event.tool,
+        callId,
+        toolName,
         event.args
       )
 
@@ -153,12 +179,37 @@ export function handleAIEvent(
         }
       }
       break
+    }
 
-    case 'tool_call_end':
+    case 'tool_call_end': {
       if (!event.callId) {
         console.warn('[EventChatStore] tool_call_end 事件缺少 callId，工具状态无法更新:', event.tool)
         break
       }
+
+      // 检查是否为 AskUserQuestion 工具
+      const questionBlockIndex = storeGet().questionBlockMap.get(event.callId)
+      if (questionBlockIndex !== undefined) {
+        // AskUserQuestion 工具结束，如果还没有答案则从 result 提取
+        const questionBlock = storeGet().currentMessage?.blocks[questionBlockIndex]
+        if (questionBlock?.type === 'question' && !questionBlock.answer) {
+          // 尝试从 result 提取答案（如果后端返回了）
+          const result = event.result as Record<string, unknown> | undefined
+          if (result) {
+            const selected = result.selected as string[] | undefined
+            const customInput = result.customInput as string | undefined
+            if (selected || customInput) {
+              state.updateQuestionBlock(event.callId, {
+                selected: selected || [],
+                customInput,
+              })
+            }
+          }
+        }
+        // AskUserQuestion 不需要走 tool_call 流程
+        break
+      }
+
       state.updateToolCallBlock(
         event.callId,
         event.success ? 'completed' : 'failed',
@@ -214,6 +265,7 @@ export function handleAIEvent(
         })
       }
       break
+    }
 
     case 'progress':
       storeSet({ progressMessage: event.message || null })

@@ -86,5 +86,15 @@
     "toolDetails": "工具详情",
     "moreMatches": "...还有 {{count}} 个匹配项",
     "viewInGitPanel": "在 Git 面板查看"
+  },
+  "question": {
+    "answered": "已回答",
+    "selected": "已选",
+    "input": "输入",
+    "submit": "提交",
+    "submitting": "提交中...",
+    "showMore": "显示更多 ({{count}})",
+    "customInputPlaceholder": "输入自定义答案...",
+    "pendingAnswer": "有待回答的问题"
   }
 }

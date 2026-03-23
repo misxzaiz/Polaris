@@ -17,7 +17,7 @@ import { useTranslation } from 'react-i18next';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { clsx } from 'clsx';
 import { invoke } from '@tauri-apps/api/core';
-import type { ChatMessage, UserChatMessage, AssistantChatMessage, ContentBlock, TextBlock, ThinkingBlock, ToolCallBlock } from '../../types';
+import type { ChatMessage, UserChatMessage, AssistantChatMessage, ContentBlock, TextBlock, ThinkingBlock, ToolCallBlock, QuestionBlock } from '../../types';
 import { useEventChatStore, useGitStore, useWorkspaceStore, useTabStore } from '../../stores';
 import { getToolConfig, extractToolKeyInfo } from '../../utils/toolConfig';
 import { markdownCache } from '../../utils/cache';
@@ -32,7 +32,7 @@ import {
   type GrepMatch,
   type GrepOutputData
 } from '../../utils/toolSummary';
-import { Check, XCircle, Loader2, AlertTriangle, Play, ChevronDown, ChevronRight, Circle, FileSearch, FolderOpen, Code, FileDiff, RotateCcw, Copy, GitPullRequest, Brain } from 'lucide-react';
+import { Check, XCircle, Loader2, AlertTriangle, Play, ChevronDown, ChevronRight, Circle, FileSearch, FolderOpen, Code, FileDiff, RotateCcw, Copy, GitPullRequest, Brain, HelpCircle, CheckCircle } from 'lucide-react';
 import { ChatNavigator } from './ChatNavigator';
 import { groupConversationRounds } from '../../utils/conversationRounds';
 import { splitMarkdownWithMermaid } from '../../utils/markdown';
@@ -1146,6 +1146,12 @@ function renderContentBlock(
         return <SimplifiedToolCallRenderer key={block.id} block={block} />;
       }
       return <ToolCallBlockRenderer key={block.id} block={block} />;
+    case 'question':
+      // 归档模式下使用简化问题渲染
+      if (renderMode === 'archive') {
+        return <SimplifiedQuestionRenderer key={block.id} block={block} />;
+      }
+      return <QuestionBlockRenderer key={block.id} block={block} />;
     default:
       return null;
   }
@@ -1167,6 +1173,216 @@ const SimplifiedToolCallRenderer = memo(function SimplifiedToolCallRenderer({ bl
       ) : block.status === 'failed' ? (
         <XCircle className="w-3 h-3 text-error" />
       ) : null}
+    </div>
+  );
+});
+
+// ========================================
+// 问题块渲染器
+// ========================================
+
+/** 问题块组件 - 用于 AskUserQuestion 工具 */
+const QuestionBlockRenderer = memo(function QuestionBlockRenderer({ block }: { block: QuestionBlock }) {
+  const { t } = useTranslation('chat');
+  const [selectedOptions, setSelectedOptions] = useState<string[]>(block.answer?.selected || []);
+  const [customInput, setCustomInput] = useState(block.answer?.customInput || '');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const conversationId = useEventChatStore(state => state.conversationId);
+
+  // 是否已回答
+  const isAnswered = block.status === 'answered';
+  const answer = block.answer;
+
+  // 处理选项选择
+  const handleOptionSelect = useCallback((value: string) => {
+    if (isAnswered || isSubmitting) return;
+
+    if (block.multiSelect) {
+      setSelectedOptions(prev =>
+        prev.includes(value)
+          ? prev.filter(v => v !== value)
+          : [...prev, value]
+      );
+    } else {
+      setSelectedOptions([value]);
+    }
+  }, [block.multiSelect, isAnswered, isSubmitting]);
+
+  // 提交答案
+  const handleSubmit = useCallback(async () => {
+    if (isAnswered || isSubmitting) return;
+    if (selectedOptions.length === 0 && !customInput.trim()) return;
+
+    setIsSubmitting(true);
+    try {
+      const answer = {
+        selected: selectedOptions,
+        customInput: customInput.trim() || undefined,
+      };
+
+      // 调用后端命令提交答案
+      await invoke('answer_question', {
+        sessionId: conversationId,
+        callId: block.id,
+        answer,
+      });
+
+      // 更新本地状态（由事件处理更新）
+    } catch (error) {
+      console.error('[QuestionBlock] 提交答案失败:', error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [isAnswered, isSubmitting, selectedOptions, customInput, conversationId, block.id]);
+
+  // 最多显示 5 个选项，超出折叠
+  const displayOptions = block.options.slice(0, 5);
+  const hasMoreOptions = block.options.length > 5;
+  const [showAllOptions, setShowAllOptions] = useState(false);
+
+  return (
+    <div className={clsx(
+      'my-2 rounded-lg border max-h-[300px] overflow-hidden flex flex-col',
+      isAnswered
+        ? 'bg-success-faint border-success/30'
+        : 'bg-accent-faint border-accent/30'
+    )}>
+      {/* 头部 */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-inherit bg-inherit/50 shrink-0">
+        {isAnswered ? (
+          <CheckCircle className="w-4 h-4 text-success" />
+        ) : (
+          <HelpCircle className="w-4 h-4 text-accent" />
+        )}
+        <span className="text-sm font-medium text-text-primary">
+          {block.header}
+        </span>
+        {isAnswered && (
+          <span className="ml-auto text-xs text-success">
+            {t('question.answered')}
+          </span>
+        )}
+      </div>
+
+      {/* 内容区 - 可滚动 */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+        {/* 选项列表 */}
+        {displayOptions.length > 0 && (
+          <div className="space-y-1.5">
+            {(showAllOptions ? block.options : displayOptions).map((option, index) => {
+              const isSelected = (answer?.selected || selectedOptions).includes(option.value);
+              return (
+                <button
+                  key={index}
+                  onClick={() => handleOptionSelect(option.value)}
+                  disabled={isAnswered || isSubmitting}
+                  className={clsx(
+                    'w-full text-left px-3 py-2 rounded-md text-sm transition-colors',
+                    'flex items-center gap-2',
+                    isAnswered
+                      ? isSelected
+                        ? 'bg-success/20 text-success border border-success/30'
+                        : 'bg-bg-secondary/50 text-text-tertiary'
+                      : isSelected
+                        ? 'bg-accent/20 text-accent border border-accent/30'
+                        : 'bg-bg-secondary hover:bg-bg-tertiary border border-transparent',
+                    !isAnswered && !isSubmitting && 'cursor-pointer'
+                  )}
+                >
+                  <div className={clsx(
+                    'w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0',
+                    isSelected
+                      ? isAnswered
+                        ? 'border-success bg-success'
+                        : 'border-accent bg-accent'
+                      : 'border-border'
+                  )}>
+                    {isSelected && (
+                      <Check className="w-2.5 h-2.5 text-white" />
+                    )}
+                  </div>
+                  <span>{option.label || option.value}</span>
+                </button>
+              );
+            })}
+
+            {/* 展开更多选项 */}
+            {hasMoreOptions && !showAllOptions && !isAnswered && (
+              <button
+                onClick={() => setShowAllOptions(true)}
+                className="w-full text-center text-xs text-accent hover:text-accent-dark py-1"
+              >
+                {t('question.showMore', { count: block.options.length - 5 })}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* 自定义输入 */}
+        {block.allowCustomInput && !isAnswered && (
+          <div className="mt-2">
+            <input
+              type="text"
+              value={customInput}
+              onChange={(e) => setCustomInput(e.target.value)}
+              placeholder={t('question.customInputPlaceholder')}
+              disabled={isSubmitting}
+              className="w-full px-3 py-2 rounded-md text-sm bg-bg-secondary border border-border
+                         focus:border-accent focus:ring-1 focus:ring-accent outline-none
+                         placeholder:text-text-tertiary disabled:opacity-50"
+            />
+          </div>
+        )}
+
+        {/* 已回答时显示答案 */}
+        {isAnswered && answer && (
+          <div className="mt-2 pt-2 border-t border-inherit">
+            <div className="text-xs text-text-secondary">
+              {answer.selected.length > 0 && (
+                <span>{t('question.selected')}: {answer.selected.join(', ')}</span>
+              )}
+              {answer.customInput && (
+                <span className="ml-2">{t('question.input')}: {answer.customInput}</span>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 操作按钮 - 固定底部 */}
+      {!isAnswered && (
+        <div className="shrink-0 px-3 py-2 border-t border-inherit bg-inherit/30">
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={handleSubmit}
+            disabled={(selectedOptions.length === 0 && !customInput.trim()) || isSubmitting}
+            className="w-full"
+          >
+            {isSubmitting ? t('question.submitting') : t('question.submit')}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+});
+
+/** 简化版问题渲染器 - 用于归档层 */
+const SimplifiedQuestionRenderer = memo(function SimplifiedQuestionRenderer({ block }: { block: QuestionBlock }) {
+  return (
+    <div className="my-1 flex items-center gap-2 text-xs text-text-tertiary">
+      {block.status === 'answered' ? (
+        <CheckCircle className="w-3 h-3 text-success" />
+      ) : (
+        <HelpCircle className="w-3 h-3 text-accent" />
+      )}
+      <span className="truncate">{block.header}</span>
+      {block.answer && (
+        <span className="text-text-secondary truncate max-w-[200px]">
+          {block.answer.selected.join(', ') || block.answer.customInput}
+        </span>
+      )}
     </div>
   );
 });

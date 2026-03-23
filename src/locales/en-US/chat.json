@@ -86,5 +86,15 @@
     "toolDetails": "Tool Details",
     "moreMatches": "...{{count}} more matches",
     "viewInGitPanel": "View in Git Panel"
+  },
+  "question": {
+    "answered": "Answered",
+    "selected": "Selected",
+    "input": "Input",
+    "submit": "Submit",
+    "submitting": "Submitting...",
+    "showMore": "Show more ({{count}})",
+    "customInputPlaceholder": "Enter custom answer...",
+    "pendingAnswer": "Pending question to answer"
   }
 }
