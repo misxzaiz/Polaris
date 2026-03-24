@@ -60,6 +60,114 @@ function StatusBadge({ status }: { status?: 'running' | 'success' | 'failed' }) 
   );
 }
 
+/** 阶段标签映射 */
+const PhaseLabels: Record<string, string> = {
+  analysis: '分析',
+  design: '设计',
+  development: '开发',
+  testing: '测试',
+  fix: '修复',
+  acceptance: '验收',
+  // 中文也支持
+  分析: '分析',
+  设计: '设计',
+  开发: '开发',
+  测试: '测试',
+  修复: '修复',
+  验收: '验收',
+};
+
+/** 阶段徽章 */
+function PhaseBadge({ phase }: { phase?: string }) {
+  if (!phase) return null;
+
+  const label = PhaseLabels[phase] || phase;
+
+  const styles: Record<string, string> = {
+    分析: 'bg-purple-500/20 text-purple-400',
+    设计: 'bg-indigo-500/20 text-indigo-400',
+    开发: 'bg-cyan-500/20 text-cyan-400',
+    测试: 'bg-yellow-500/20 text-yellow-400',
+    修复: 'bg-orange-500/20 text-orange-400',
+    验收: 'bg-green-500/20 text-green-400',
+  };
+
+  const style = styles[label] || 'bg-gray-500/20 text-gray-400';
+
+  return (
+    <span className={`px-2 py-0.5 rounded text-xs ${style}`}>
+      {label}
+    </span>
+  );
+}
+
+/** 阻塞徽章 */
+function BlockedBadge({ blocked, reason }: { blocked?: boolean; reason?: string }) {
+  if (!blocked) return null;
+
+  return (
+    <span
+      className="px-2 py-0.5 rounded text-xs bg-red-600/20 text-red-400 cursor-help"
+      title={reason || '任务已阻塞'}
+    >
+      ⚠ 阻塞
+    </span>
+  );
+}
+
+/** 会话指示器 */
+function SessionIndicator({
+  sessionId,
+  sessionLastUsedAt
+}: {
+  sessionId?: string;
+  sessionLastUsedAt?: number;
+}) {
+  if (!sessionId) return null;
+
+  const formatSessionTime = (timestamp: number | undefined): string => {
+    if (!timestamp) return '';
+    const now = Date.now() / 1000;
+    const diff = now - timestamp;
+
+    if (diff < 60) return '刚刚';
+    if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`;
+    return `${Math.floor(diff / 86400)} 天前`;
+  };
+
+  const lastUsed = formatSessionTime(sessionLastUsedAt);
+
+  return (
+    <span
+      className="px-2 py-0.5 rounded text-xs bg-teal-500/20 text-teal-400 cursor-help flex items-center gap-1"
+      title={`会话 ID: ${sessionId.slice(0, 16)}...${lastUsed ? `\n上次使用: ${lastUsed}` : ''}`}
+    >
+      💬 会话
+    </span>
+  );
+}
+
+/** 连续执行徽章 */
+function ContinuousRunBadge({
+  continueImmediately,
+  maxContinuousRuns,
+}: {
+  continueImmediately?: boolean;
+  maxContinuousRuns?: number;
+}) {
+  if (!continueImmediately) return null;
+
+  return (
+    <span
+      className="px-2 py-0.5 rounded text-xs bg-amber-500/20 text-amber-400 cursor-help"
+      title={maxContinuousRuns ? `连续执行上限: ${maxContinuousRuns} 次` : '连续执行模式'}
+    >
+      🔄 连续
+    </span>
+  );
+}
+
 /** 任务卡片 */
 function TaskCard({
   task,
@@ -157,6 +265,11 @@ function TaskCard({
             </div>
             <div className="mt-1 text-xs text-gray-400 flex items-center gap-2 flex-wrap">
               <StatusBadge status={task.lastRunStatus} />
+              {/* 运行态信息展示 */}
+              <BlockedBadge blocked={task.blocked} reason={task.blockedReason} />
+              <PhaseBadge phase={task.currentPhase} />
+              <SessionIndicator sessionId={task.conversationSessionId} sessionLastUsedAt={task.sessionLastUsedAt} />
+              <ContinuousRunBadge continueImmediately={task.continueImmediately} maxContinuousRuns={task.maxContinuousRuns} />
               {task.enabled && task.nextRunAt && (
                 <span>{formatRelativeTime(task.nextRunAt)}</span>
               )}
@@ -244,11 +357,16 @@ function TaskCard({
               <span className="text-gray-500">引擎: </span>
               {task.engineId}
             </p>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 flex-wrap">
               <span>
                 <span className="text-gray-500">状态: </span>
                 <StatusBadge status={task.lastRunStatus} />
               </span>
+              {/* 运行态信息展示 */}
+              <BlockedBadge blocked={task.blocked} reason={task.blockedReason} />
+              <PhaseBadge phase={task.currentPhase} />
+              <SessionIndicator sessionId={task.conversationSessionId} sessionLastUsedAt={task.sessionLastUsedAt} />
+              <ContinuousRunBadge continueImmediately={task.continueImmediately} maxContinuousRuns={task.maxContinuousRuns} />
               {task.enabled && task.nextRunAt && (
                 <span>
                   <span className="text-gray-500">下次: </span>
