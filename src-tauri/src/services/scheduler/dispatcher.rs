@@ -427,12 +427,14 @@ impl SchedulerDispatcher {
                             None
                         };
 
-                        // 判断是否应继续执行
+                        // 判断是否应继续执行（带无增量检测）
                         let should_continue = is_success
-                            && !ExecutionResultAnalyzer::should_stop_continuation(
+                            && !ExecutionResultAnalyzer::should_stop_continuation_with_increment_check(
                                 &execution_outcome,
                                 task_work_dir_for_complete.as_deref(),
                                 task_task_path_for_complete.as_deref(),
+                                Some(&run_summary),
+                                None, // 使用默认相似度阈值 0.7
                             )
                             && ContinuationDecider::should_continue(&task_for_complete, continuous_runs_for_complete);
 
@@ -1052,12 +1054,14 @@ impl SchedulerDispatcher {
                             None
                         };
 
-                        // 判断是否应继续执行
+                        // 判断是否应继续执行（带无增量检测）
                         let should_continue = is_success
-                            && !ExecutionResultAnalyzer::should_stop_continuation(
+                            && !ExecutionResultAnalyzer::should_stop_continuation_with_increment_check(
                                 &execution_outcome,
                                 task_work_dir_for_complete.as_deref(),
                                 task_task_path_for_complete.as_deref(),
+                                Some(&run_summary),
+                                None, // 使用默认相似度阈值 0.7
                             )
                             && ContinuationDecider::should_continue(&task_for_complete, continuous_runs_for_complete);
 
