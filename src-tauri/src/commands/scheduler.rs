@@ -273,6 +273,8 @@ pub enum ProtocolFileType {
     MemoryIndex,
     /// 记忆任务
     MemoryTasks,
+    /// 执行轮次记录
+    MemoryRuns,
 }
 
 /// 读取协议任务文档
@@ -287,6 +289,7 @@ pub fn scheduler_read_protocol_file(
         ProtocolFileType::Supplement => ProtocolTaskService::read_supplement_md(&work_dir, &task_path),
         ProtocolFileType::MemoryIndex => ProtocolTaskService::read_memory_index(&work_dir, &task_path),
         ProtocolFileType::MemoryTasks => ProtocolTaskService::read_memory_tasks(&work_dir, &task_path),
+        ProtocolFileType::MemoryRuns => ProtocolTaskService::read_memory_runs(&work_dir, &task_path),
     };
 
     content.map_err(crate::error::AppError::IoError)
@@ -311,6 +314,7 @@ pub fn scheduler_write_protocol_file(
         }
         ProtocolFileType::MemoryIndex => ProtocolTaskService::update_memory_index(&work_dir, &task_path, &content),
         ProtocolFileType::MemoryTasks => ProtocolTaskService::update_memory_tasks(&work_dir, &task_path, &content),
+        ProtocolFileType::MemoryRuns => ProtocolTaskService::update_memory_runs(&work_dir, &task_path, &content),
     };
 
     result.map_err(crate::error::AppError::IoError)
@@ -328,6 +332,7 @@ pub fn scheduler_get_protocol_file_path(
         ProtocolFileType::Supplement => "user-supplement.md",
         ProtocolFileType::MemoryIndex => "memory/index.md",
         ProtocolFileType::MemoryTasks => "memory/tasks.md",
+        ProtocolFileType::MemoryRuns => "memory/runs.md",
     };
 
     let full_path = std::path::PathBuf::from(&work_dir).join(&task_path).join(file_name);

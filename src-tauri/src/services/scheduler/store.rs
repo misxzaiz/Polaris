@@ -125,6 +125,7 @@ impl TaskStoreService {
             task_template: params.task_template.clone(),
             memory_template: params.memory_template.clone(),
             tasks_template: params.tasks_template.clone(),
+            runs_template: params.runs_template.clone(),
             supplement_template: params.supplement_template.clone(),
         };
 
@@ -139,6 +140,7 @@ impl TaskStoreService {
             params.task_template.as_deref(),
             params.memory_template.as_deref(),
             params.tasks_template.as_deref(),
+            params.runs_template.as_deref(),
             params.supplement_template.as_deref(),
         ).map_err(AppError::IoError)?;
 
@@ -175,6 +177,11 @@ impl TaskStoreService {
             existing.notify_on_complete = task.notify_on_complete;
             existing.timeout_minutes = task.timeout_minutes;
             existing.user_supplement = task.user_supplement;
+            existing.task_template = task.task_template;
+            existing.memory_template = task.memory_template;
+            existing.tasks_template = task.tasks_template;
+            existing.runs_template = task.runs_template;
+            existing.supplement_template = task.supplement_template;
             // 保留 current_runs、retry_count、subscribed_context_id，不更新
             existing.updated_at = now;
 

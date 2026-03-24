@@ -44,7 +44,7 @@ impl ProtocolTaskService {
         mission: &str,
     ) -> std::io::Result<String> {
         // 调用带模板参数的版本，使用默认模板
-        Self::create_task_structure_with_templates(work_dir, task_id, mission, None, None, None, None)
+        Self::create_task_structure_with_templates(work_dir, task_id, mission, None, None, None, None, None)
     }
 
     /// 创建协议任务目录结构（支持自定义模板）
@@ -55,6 +55,7 @@ impl ProtocolTaskService {
         task_template: Option<&str>,
         memory_template: Option<&str>,
         tasks_template: Option<&str>,
+        runs_template: Option<&str>,
         supplement_template: Option<&str>,
     ) -> std::io::Result<String> {
         // 统一生成时间戳，确保所有地方使用相同的时间
@@ -102,6 +103,13 @@ impl ProtocolTaskService {
         };
         fs::write(task_full_path.join("memory/tasks.md"), tasks_content)?;
 
+        let runs_content = if let Some(template) = runs_template {
+            Self::render_runs_template(template)
+        } else {
+            Self::generate_memory_runs()
+        };
+        fs::write(task_full_path.join("memory/runs.md"), runs_content)?;
+
         Ok(task_path)
     }
 
@@ -129,6 +137,11 @@ impl ProtocolTaskService {
     /// 渲染任务队列模板
     fn render_tasks_template(template: &str, mission: &str) -> String {
         template.replace("{task}", mission)
+    }
+
+    /// 渲染执行轮次模板
+    fn render_runs_template(template: &str) -> String {
+        template.to_string()
     }
 
     /// 生成协议文档
@@ -328,18 +341,31 @@ r#"# 用户补充
 
     /// 生成记忆索引
     fn generate_memory_index() -> String {
-        r#"# 成果索引
+        let now = Local::now().format("%Y-%m-%d %H:%M:%S");
+
+        format!(
+            r#"# 成果索引
 
 ## 当前状态
 状态: 初始化
+当前阶段: 分析
 进度: 0%
+最近更新: {}
+
+## 本轮结论
+- [暂无]
 
 ## 已完成
 - [暂无]
 
-## 进行中
+## 当前阻塞
 - [暂无]
-"#.to_string()
+
+## 下一步
+- 分析任务目标并拆解首个可执行小模块
+"#,
+            now
+        )
     }
 
     /// 生成记忆任务队列
@@ -350,13 +376,32 @@ r#"# 任务队列
 ## 待办
 1. 分析任务目标：{}
 2. 拆解为可执行步骤
-3. 逐步推进
+3. 选择首个小模块推进
+
+## 进行中
+- [暂无]
 
 ## 已完成
+- [暂无]
+
+## 暂缓
 - [暂无]
 "#,
             mission
         )
+    }
+
+    /// 生成执行轮次记录
+    fn generate_memory_runs() -> String {
+        r#"# 执行轮次记录
+
+## Run 0
+- 时间: [待首次执行]
+- 使用会话: [暂无]
+- 完成事项: 初始化任务文档结构
+- 遗留事项: 等待首轮推进
+- 是否触发连续执行: 否
+"#.to_string()
     }
 
     /// 读取协议文档
@@ -383,6 +428,12 @@ r#"# 任务队列
         fs::read_to_string(path)
     }
 
+    /// 读取执行轮次记录
+    pub fn read_memory_runs(work_dir: &str, task_path: &str) -> std::io::Result<String> {
+        let path = PathBuf::from(work_dir).join(task_path).join("memory/runs.md");
+        fs::read_to_string(path)
+    }
+
     /// 更新记忆索引
     pub fn update_memory_index(work_dir: &str, task_path: &str, content: &str) -> std::io::Result<()> {
         let path = PathBuf::from(work_dir).join(task_path).join("memory/index.md");
@@ -392,6 +443,12 @@ r#"# 任务队列
     /// 更新记忆任务
     pub fn update_memory_tasks(work_dir: &str, task_path: &str, content: &str) -> std::io::Result<()> {
         let path = PathBuf::from(work_dir).join(task_path).join("memory/tasks.md");
+        fs::write(path, content)
+    }
+
+    /// 更新执行轮次记录
+    pub fn update_memory_runs(work_dir: &str, task_path: &str, content: &str) -> std::io::Result<()> {
+        let path = PathBuf::from(work_dir).join(task_path).join("memory/runs.md");
         fs::write(path, content)
     }
 
@@ -597,5 +654,14 @@ mod tests {
 
         let long_content = "line\n".repeat(900);
         assert!(ProtocolTaskService::needs_backup(&long_content));
+    }
+
+    #[test]
+    fn test_generate_memory_runs_default_template() {
+        let content = ProtocolTaskService::generate_memory_runs();
+        assert!(content.contains("# 执行轮次记录"));
+        assert!(content.contains("## Run 0"));
+        assert!(content.contains("- 完成事项: 初始化任务文档结构"));
+        assert!(content.contains("- 是否触发连续执行: 否"));
     }
 }

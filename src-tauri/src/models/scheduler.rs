@@ -52,6 +52,8 @@ pub struct CreateTaskParams {
     pub memory_template: Option<String>,
     /// 任务队列模板（memory/tasks.md 内容）
     pub tasks_template: Option<String>,
+    /// 执行轮次模板（memory/runs.md 内容）
+    pub runs_template: Option<String>,
     /// 用户补充模板（user-supplement.md 内容）
     pub supplement_template: Option<String>,
 }
@@ -153,6 +155,9 @@ pub struct ScheduledTask {
     /// 任务队列模板（memory/tasks.md 内容）
     #[serde(default)]
     pub tasks_template: Option<String>,
+    /// 执行轮次模板（memory/runs.md 内容）
+    #[serde(default)]
+    pub runs_template: Option<String>,
     /// 用户补充模板（user-supplement.md 内容）
     #[serde(default)]
     pub supplement_template: Option<String>,
@@ -193,6 +198,7 @@ impl From<CreateTaskParams> for ScheduledTask {
             task_template: params.task_template,
             memory_template: params.memory_template,
             tasks_template: params.tasks_template,
+            runs_template: params.runs_template,
             supplement_template: params.supplement_template,
         }
     }
