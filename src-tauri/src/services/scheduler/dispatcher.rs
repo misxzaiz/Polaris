@@ -3,7 +3,7 @@
  * 负责检查待执行任务并调用 AI 引擎执行
  */
 
-use crate::error::{AppError, Result};
+use crate::error::Result;
 use crate::models::scheduler::{ScheduledTask, TaskStatus, RunTaskResult};
 use crate::ai::{EngineRegistry, EngineId, SessionOptions};
 use crate::models::AIEvent;
@@ -241,8 +241,8 @@ impl SchedulerDispatcher {
         // 获取超时配置（分钟转秒）
         let timeout_secs = task.timeout_minutes.map(|m| m as u64 * 60);
 
-        // 根据模式构建提示词
-        let prompt = self.build_prompt(&task).await?;
+        // 根据模式构建提示词（传递连续执行轮次）
+        let prompt = self.build_prompt(&task, continuous_runs).await?;
 
         let task_store = self.task_store.clone();
         let log_store = self.log_store.clone();
@@ -770,7 +770,8 @@ impl SchedulerDispatcher {
         let notify_on_complete = task.notify_on_complete;
         let timeout_secs = task.timeout_minutes.map(|m| m as u64 * 60);
 
-        let prompt = self.build_prompt(&task).await?;
+        // 根据模式构建提示词（传递连续执行轮次）
+        let prompt = self.build_prompt(&task, continuous_runs).await?;
 
         let task_store = self.task_store.clone();
         let log_store = self.log_store.clone();
@@ -1321,10 +1322,14 @@ impl SchedulerDispatcher {
     }
 
     /// 构建提示词（协议模式：读取 task.md + memory + supplement）
-    async fn build_prompt(&self, task: &ScheduledTask) -> Result<String> {
+    ///
+    /// # Arguments
+    /// * `task` - 任务定义
+    /// * `continuous_runs` - 当前连续执行轮次（1 表示首次执行，>1 表示续跑）
+    async fn build_prompt(&self, task: &ScheduledTask, continuous_runs: u32) -> Result<String> {
         tracing::info!(
-            "[Scheduler] 构建提示词: work_dir={:?}, task_path={:?}",
-            task.work_dir, task.task_path
+            "[Scheduler] 构建提示词: work_dir={:?}, task_path={:?}, continuous_runs={}",
+            task.work_dir, task.task_path, continuous_runs
         );
 
         let work_dir = task.work_dir.as_ref()
@@ -1332,8 +1337,21 @@ impl SchedulerDispatcher {
         let task_path = task.task_path.as_ref()
             .ok_or_else(|| crate::error::AppError::ValidationError("协议模式需要任务路径".to_string()))?;
 
-        // 使用 PromptBuilder 构建提示词（首次执行模式）
-        PromptBuilder::build(work_dir, task_path, PromptType::Initial, None)
+        // 判断是首次执行还是续跑
+        let (prompt_type, previous_summary) = if continuous_runs > 1 {
+            // 续跑模式：读取上轮摘要
+            let summary = ProtocolTaskService::get_latest_run_summary(work_dir, task_path);
+            tracing::info!(
+                "[Scheduler] 续跑模式，上轮摘要: {:?}",
+                summary.as_ref().map(|s| s.chars().take(100).collect::<String>())
+            );
+            (PromptType::Continuation, summary)
+        } else {
+            // 首次执行
+            (PromptType::Initial, None)
+        };
+
+        PromptBuilder::build(work_dir, task_path, prompt_type, previous_summary.as_deref())
     }
 
     /// 处理用户补充文档（执行成功后调用）

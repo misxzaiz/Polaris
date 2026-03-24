@@ -380,6 +380,48 @@ r#"# 任务队列
         fs::read_to_string(path)
     }
 
+    /// 获取最新一轮运行的摘要（用于续跑提示词）
+    ///
+    /// 返回格式：
+    /// - 完成事项: xxx
+    /// - 遗留事项: xxx
+    pub fn get_latest_run_summary(work_dir: &str, task_path: &str) -> Option<String> {
+        let content = Self::read_memory_runs(work_dir, task_path).ok()?;
+
+        // 解析最新的 Run 块
+        let mut latest_run: Option<String> = None;
+        let mut current_run_content = String::new();
+        let mut in_run_block = false;
+
+        for line in content.lines() {
+            if line.starts_with("## Run ") {
+                // 遇到新的 Run 块，保存之前的
+                if in_run_block && !current_run_content.is_empty() {
+                    latest_run = Some(current_run_content.clone());
+                }
+                current_run_content.clear();
+                in_run_block = true;
+            }
+
+            if in_run_block {
+                // 提取"完成事项"和"遗留事项"
+                if line.starts_with("- 完成事项:") || line.starts_with("- 遗留事项:") {
+                    if !current_run_content.is_empty() {
+                        current_run_content.push('\n');
+                    }
+                    current_run_content.push_str(line);
+                }
+            }
+        }
+
+        // 处理最后一个 Run 块
+        if in_run_block && !current_run_content.is_empty() {
+            latest_run = Some(current_run_content);
+        }
+
+        latest_run
+    }
+
     /// 更新记忆索引
     pub fn update_memory_index(work_dir: &str, task_path: &str, content: &str) -> std::io::Result<()> {
         let path = PathBuf::from(work_dir).join(task_path).join("memory/index.md");
@@ -706,5 +748,63 @@ mod tests {
         assert!(!content.contains("## AgentOS 工程决策协议"));
         assert!(!content.contains("文档超过 300 行时总结后备份"));
         assert!(content.contains("文档超过 800 行时先总结，再执行备份"));
+    }
+
+    #[test]
+    fn test_get_latest_run_summary() {
+        let runs_content = r#"# 执行轮次记录
+
+## Run 0
+- 时间: 2026-03-24 09:00:00
+- 使用会话: [暂无]
+- 完成事项: 初始化任务文档结构
+- 遗留事项: 等待首轮推进
+- 是否触发连续执行: 否
+
+## Run 1
+- 时间: 2026-03-24 10:00:00
+- 使用会话: session-abc
+- 完成事项: 完成 PromptBuilder 模块
+- 遗留事项: 测试验证新模块
+- 是否触发连续执行: 是
+"#;
+        let unique = format!("polaris-latest-run-{}", Local::now().timestamp_nanos_opt().unwrap_or_default());
+        let temp_dir = std::env::temp_dir().join(unique);
+        let task_path = ".polaris/tasks/20260324092458";
+        let task_memory_dir = temp_dir.join(task_path).join("memory");
+        fs::create_dir_all(&task_memory_dir).unwrap();
+        fs::write(task_memory_dir.join("runs.md"), runs_content).unwrap();
+
+        let summary = ProtocolTaskService::get_latest_run_summary(
+            temp_dir.to_str().unwrap(),
+            task_path,
+        );
+
+        assert!(summary.is_some());
+        let summary = summary.unwrap();
+        assert!(summary.contains("- 完成事项: 完成 PromptBuilder 模块"));
+        assert!(summary.contains("- 遗留事项: 测试验证新模块"));
+
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn test_get_latest_run_summary_empty_file() {
+        let unique = format!("polaris-empty-runs-{}", Local::now().timestamp_nanos_opt().unwrap_or_default());
+        let temp_dir = std::env::temp_dir().join(unique);
+        let task_path = ".polaris/tasks/20260324092458";
+        let task_memory_dir = temp_dir.join(task_path).join("memory");
+        fs::create_dir_all(&task_memory_dir).unwrap();
+        fs::write(task_memory_dir.join("runs.md"), "# 执行轮次记录\n").unwrap();
+
+        let summary = ProtocolTaskService::get_latest_run_summary(
+            temp_dir.to_str().unwrap(),
+            task_path,
+        );
+
+        // 空文件没有有效的 Run 块
+        assert!(summary.is_none());
+
+        let _ = fs::remove_dir_all(temp_dir);
     }
 }
