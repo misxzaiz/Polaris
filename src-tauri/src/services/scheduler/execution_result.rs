@@ -24,6 +24,21 @@ pub enum ExecutionOutcome {
     ConsecutiveNoProgress(u32),
 }
 
+impl std::fmt::Display for ExecutionOutcome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExecutionOutcome::SuccessWithProgress => write!(f, "SuccessWithProgress"),
+            ExecutionOutcome::SuccessNoProgress => write!(f, "SuccessNoProgress"),
+            ExecutionOutcome::PartialSuccess => write!(f, "PartialSuccess"),
+            ExecutionOutcome::Failed => write!(f, "Failed"),
+            ExecutionOutcome::Blocked(reason) => write!(f, "Blocked: {}", reason),
+            ExecutionOutcome::ConsecutiveNoProgress(count) => {
+                write!(f, "ConsecutiveNoProgress({})", count)
+            }
+        }
+    }
+}
+
 /// 默认最大连续无进展次数
 pub const DEFAULT_MAX_CONSECUTIVE_NO_PROGRESS: u32 = 3;
 

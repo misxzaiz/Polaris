@@ -4,7 +4,7 @@
  */
 
 use crate::error::Result;
-use crate::models::scheduler::{ScheduledTask, TaskStatus, RunTaskResult};
+use crate::models::scheduler::{ScheduledTask, TaskStatus, RunTaskResult, RunTriggerType, AttemptTriggerReason, RunStatus};
 use crate::ai::{EngineRegistry, EngineId, SessionOptions};
 use crate::models::AIEvent;
 use super::store::{TaskStoreService, LogStoreService, UpdateCompleteParams};
@@ -22,6 +22,13 @@ use std::collections::HashMap;
 use tokio_util::sync::CancellationToken;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Window, Emitter};
+
+/// 执行结果
+struct ExecutionResult {
+    log_id: String,
+    run_id: Option<String>,
+    attempt_id: Option<String>,
+}
 
 /// 调度执行器
 #[derive(Clone)]
@@ -244,11 +251,22 @@ impl SchedulerDispatcher {
     }
 
     /// 执行单个任务，返回日志 ID
-    async fn execute_task(&self, task: ScheduledTask) -> Result<String> {
-        self.execute_task_with_continuation_count(task, 1).await
+    async fn execute_task(&self, task: ScheduledTask) -> Result<ExecutionResult> {
+        self.execute_task_with_continuation_count(task, 1, None, RunTriggerType::Scheduled).await
     }
 
-    async fn execute_task_with_continuation_count(&self, task: ScheduledTask, continuous_runs: u32) -> Result<String> {
+    /// 执行单个任务（手动触发）
+    async fn execute_task_manual(&self, task: ScheduledTask) -> Result<ExecutionResult> {
+        self.execute_task_with_continuation_count(task, 1, None, RunTriggerType::Manual).await
+    }
+
+    async fn execute_task_with_continuation_count(
+        &self,
+        task: ScheduledTask,
+        continuous_runs: u32,
+        current_run_id: Option<String>,
+        trigger_type: RunTriggerType,
+    ) -> Result<ExecutionResult> {
         let task_id = task.id.clone();
         let task_id_for_map = task.id.clone();
         let task_name = task.name.clone();
@@ -280,6 +298,56 @@ impl SchedulerDispatcher {
         // 用于后续处理用户补充
         let task_for_post = task.clone();
 
+        // ==================== Run/Attempt 创建逻辑 ====================
+        // 创建或复用 Run，并创建新的 Attempt
+        let (run_id, attempt_id) = if has_unified {
+            let storage = unified_storage.as_ref().unwrap();
+            let storage = storage.lock().await;
+
+            // 判断是首次执行还是连续执行
+            let (run, attempt_reason) = if continuous_runs == 1 || current_run_id.is_none() {
+                // 首次执行：创建新的 Run
+                let run = storage.create_run(
+                    &task_id,
+                    trigger_type,
+                    None, // trigger_source
+                    existing_session_id.clone(),
+                    None, // parent_run_id
+                )?;
+                tracing::info!("[Scheduler] 创建 Run: {} for task: {}", run.id, task_name);
+                (run, AttemptTriggerReason::Initial)
+            } else {
+                // 连续执行：复用已有 Run
+                let run_id = current_run_id.unwrap();
+                let run = storage.get_run(&run_id)?
+                    .ok_or_else(|| crate::error::AppError::ValidationError(
+                        format!("Run 不存在: {}", run_id)
+                    ))?;
+
+                // 增加 Run 的连续执行计数
+                storage.increment_continuation_count(&run_id)?;
+                tracing::info!("[Scheduler] 复用 Run: {} (continuation #{})", run_id, continuous_runs);
+                (run, AttemptTriggerReason::Continuation)
+            };
+
+            // 创建 Attempt
+            let attempt = storage.create_attempt(
+                &run.id,
+                &task_id,
+                &task_name,
+                &engine_id,
+                &prompt,
+                attempt_reason,
+            )?;
+            tracing::info!("[Scheduler] 创建 Attempt: {} for Run: {}", attempt.id, run.id);
+
+            (Some(run.id), Some(attempt.id))
+        } else {
+            // JSON 存储不支持 Run/Attempt
+            (None, None)
+        };
+        // ==================== Run/Attempt 创建逻辑结束 ====================
+
         // 创建日志记录（状态为 Running）
         let log_id = if has_unified {
             let storage = unified_storage.as_ref().unwrap();
@@ -305,6 +373,9 @@ impl SchedulerDispatcher {
         }
 
         let log_id_clone = log_id.clone();
+        // 克隆 run_id 和 attempt_id 用于返回值（在 async move 之前）
+        let run_id_for_result = run_id.clone();
+        let attempt_id_for_result = attempt_id.clone();
         let handle = tokio::spawn(async move {
             tracing::info!("[Scheduler] 开始执行任务: {} ({})", task_name, task_id);
 
@@ -345,6 +416,9 @@ impl SchedulerDispatcher {
             let task_for_complete = task_for_post.clone();
             let dispatcher_for_complete = dispatcher_for_continue.clone();
             let continuous_runs_for_complete = continuous_runs;
+            // Run/Attempt ID
+            let run_id_for_complete = run_id.clone();
+            let attempt_id_for_complete = attempt_id.clone();
             // 克隆 app_handle 给完成回调和超时监控分别使用
             let app_handle_for_complete = app_handle_for_notify.clone();
             let app_handle_for_timeout_main = app_handle_for_notify.clone();
@@ -371,6 +445,9 @@ impl SchedulerDispatcher {
                 let task_for_complete = task_for_complete.clone();
                 let dispatcher_for_complete = dispatcher_for_complete.clone();
                 let app_handle_for_complete = app_handle_for_complete.clone();
+                // Run/Attempt ID
+                let run_id_for_complete = run_id_for_complete.clone();
+                let attempt_id_for_complete = attempt_id_for_complete.clone();
 
                 SessionOptions::new(move |event: AIEvent| {
                     match &event {
@@ -424,6 +501,9 @@ impl SchedulerDispatcher {
                     let session_id = session_id_for_complete.clone();
                     let tool_call_count = tool_call_count_for_complete.clone();
                     let running_tasks = running_tasks_for_complete.clone();
+                    // Run/Attempt ID
+                    let run_id = run_id_for_complete.clone();
+                    let attempt_id = attempt_id_for_complete.clone();
                     let task_for_complete = task_for_complete.clone();
                     let dispatcher_for_complete = dispatcher_for_complete.clone();
                     let app_handle_for_notify = app_handle_for_complete.clone();
@@ -496,6 +576,45 @@ impl SchedulerDispatcher {
                                     None,
                                 ) {
                                     tracing::error!("[Scheduler] 更新日志失败 (SQLite): {:?}", e);
+                                }
+
+                                // 更新 Attempt 完成状态
+                                if let Some(ref attempt_id) = attempt_id {
+                                    if let Err(e) = storage.update_attempt_complete(
+                                        attempt_id,
+                                        final_session_id.clone(),
+                                        TaskStatus::Success,
+                                        Some(final_output.clone()),
+                                        None,
+                                        if final_thinking.is_empty() { None } else { Some(final_thinking.clone()) },
+                                        final_tool_count,
+                                        None,
+                                        Some(execution_outcome.to_string()),
+                                    ) {
+                                        tracing::error!("[Scheduler] 更新 Attempt 失败 (SQLite): {:?}", e);
+                                    } else {
+                                        tracing::info!("[Scheduler] 更新 Attempt 完成: {}", attempt_id);
+                                    }
+                                }
+
+                                // 更新 Run 完成状态
+                                if let Some(ref run_id) = run_id {
+                                    let run_status = if should_continue {
+                                        RunStatus::Running // 继续执行中
+                                    } else {
+                                        RunStatus::Success
+                                    };
+                                    if let Err(e) = storage.update_run_complete(
+                                        run_id,
+                                        run_status,
+                                        Some(execution_outcome.to_string()),
+                                        Some(run_summary.clone()),
+                                        None,
+                                    ) {
+                                        tracing::error!("[Scheduler] 更新 Run 失败 (SQLite): {:?}", e);
+                                    } else {
+                                        tracing::info!("[Scheduler] 更新 Run 完成: {} (状态: {:?})", run_id, run_status);
+                                    }
                                 }
 
                                 if let Err(e) = storage.update_run_status(&task_id, TaskStatus::Success, false) {
@@ -632,6 +751,25 @@ impl SchedulerDispatcher {
                                     tracing::error!("[Scheduler] 更新日志失败 (SQLite): {:?}", e);
                                 }
 
+                                // 更新 Attempt 完成状态（失败）
+                                if let Some(ref attempt_id) = attempt_id {
+                                    if let Err(e) = storage.update_attempt_complete(
+                                        attempt_id,
+                                        final_session_id.clone(),
+                                        TaskStatus::Failed,
+                                        Some(final_output.clone()),
+                                        Some(error_msg.clone()),
+                                        if final_thinking.is_empty() { None } else { Some(final_thinking.clone()) },
+                                        final_tool_count,
+                                        None,
+                                        Some(execution_outcome.to_string()),
+                                    ) {
+                                        tracing::error!("[Scheduler] 更新 Attempt 失败 (SQLite): {:?}", e);
+                                    } else {
+                                        tracing::info!("[Scheduler] 更新 Attempt 失败: {}", attempt_id);
+                                    }
+                                }
+
                                 // UnifiedStorageService 暂不支持 update_retry_status 返回 bool，需要额外处理
                                 // 暂时使用 JSON 存储的 retry 逻辑
                                 let can_retry = {
@@ -642,6 +780,21 @@ impl SchedulerDispatcher {
                                 if can_retry {
                                     tracing::info!("[Scheduler] 任务 {} 失败，将自动重试", task_name);
                                 } else {
+                                    // 更新 Run 完成状态（失败）
+                                    if let Some(ref run_id) = run_id {
+                                        if let Err(e) = storage.update_run_complete(
+                                            run_id,
+                                            RunStatus::Failed,
+                                            Some(execution_outcome.to_string()),
+                                            Some(run_summary.clone()),
+                                            Some(error_msg.clone()),
+                                        ) {
+                                            tracing::error!("[Scheduler] 更新 Run 失败 (SQLite): {:?}", e);
+                                        } else {
+                                            tracing::info!("[Scheduler] 更新 Run 失败: {}", run_id);
+                                        }
+                                    }
+
                                     if let Err(e) = storage.update_run_status(&task_id, TaskStatus::Failed, false) {
                                         tracing::error!("[Scheduler] 更新任务状态失败 (SQLite): {:?}", e);
                                     }
@@ -743,10 +896,17 @@ impl SchedulerDispatcher {
                             let mut next_task = task_for_complete.clone();
                             next_task.conversation_session_id = final_session_id;
 
+                            // 传递 run_id 到下一轮连续执行（使用 async move 块外已克隆的 run_id）
+                            let next_run_id = run_id.clone();
                             tokio::task::spawn_blocking(move || {
                                 tauri::async_runtime::block_on(async move {
                                     if let Err(e) = dispatcher_for_complete
-                                        .execute_task_with_continuation_count(next_task, continuous_runs_for_complete + 1)
+                                        .execute_task_with_continuation_count(
+                                            next_task,
+                                            continuous_runs_for_complete + 1,
+                                            next_run_id,
+                                            RunTriggerType::Continuation,
+                                        )
                                         .await
                                     {
                                         tracing::error!("[Scheduler] 连续执行任务失败: {:?}", e);
@@ -935,6 +1095,40 @@ impl SchedulerDispatcher {
                             tracing::error!("[Scheduler] 更新日志失败 (SQLite): {:?}", update_err);
                         }
 
+                        // 更新 Attempt 完成状态（会话启动失败）
+                        if let Some(ref attempt_id) = attempt_id {
+                            if let Err(update_err) = storage.update_attempt_complete(
+                                attempt_id,
+                                None,
+                                TaskStatus::Failed,
+                                None,
+                                Some(e.to_string()),
+                                None,
+                                0,
+                                None,
+                                Some("SessionStartFailed".to_string()),
+                            ) {
+                                tracing::error!("[Scheduler] 更新 Attempt 失败 (SQLite, 会话启动失败): {:?}", update_err);
+                            } else {
+                                tracing::info!("[Scheduler] 更新 Attempt 失败 (会话启动失败): {}", attempt_id);
+                            }
+                        }
+
+                        // 更新 Run 完成状态（会话启动失败）
+                        if let Some(ref run_id) = run_id {
+                            if let Err(update_err) = storage.update_run_complete(
+                                run_id,
+                                RunStatus::Failed,
+                                Some("SessionStartFailed".to_string()),
+                                None,
+                                Some(e.to_string()),
+                            ) {
+                                tracing::error!("[Scheduler] 更新 Run 失败 (SQLite, 会话启动失败): {:?}", update_err);
+                            } else {
+                                tracing::info!("[Scheduler] 更新 Run 失败 (会话启动失败): {}", run_id);
+                            }
+                        }
+
                         if let Err(update_err) = storage.update_run_status(&task_id, TaskStatus::Failed, false) {
                             tracing::error!("[Scheduler] 更新任务状态失败 (SQLite): {:?}", update_err);
                         }
@@ -970,7 +1164,11 @@ impl SchedulerDispatcher {
             running.insert(task_id_for_map, handle);
         }
 
-        Ok(log_id)
+        Ok(ExecutionResult {
+            log_id,
+            run_id: run_id_for_result,
+            attempt_id: attempt_id_for_result,
+        })
     }
 
 
@@ -988,12 +1186,13 @@ impl SchedulerDispatcher {
                 .ok_or_else(|| crate::error::AppError::ValidationError(format!("任务不存在: {}", task_id)))?
         };
 
-        // execute_task 内部会创建日志并返回 log_id
-        let log_id = self.execute_task(task).await?;
+        // 使用手动触发执行
+        let ExecutionResult { log_id, run_id, attempt_id } = self.execute_task_manual(task).await?;
 
         Ok(RunTaskResult {
             log_id,
-            run_id: None, // TODO: 集成 Run 模型后填充
+            run_id,
+            attempt_id,
             message: "任务已启动".to_string(),
         })
     }
@@ -1020,11 +1219,12 @@ impl SchedulerDispatcher {
                 .ok_or_else(|| crate::error::AppError::ValidationError(format!("任务不存在: {}", task_id)))?
         };
 
-        let log_id = self.execute_task_with_window(task, window, context_id).await?;
+        let ExecutionResult { log_id, run_id, attempt_id } = self.execute_task_with_window_manual(task, window, context_id).await?;
 
         Ok(RunTaskResult {
             log_id,
-            run_id: None, // TODO: 集成 Run 模型后填充
+            run_id,
+            attempt_id,
             message: "任务已启动".to_string(),
         })
     }
@@ -1036,7 +1236,18 @@ impl SchedulerDispatcher {
         window: Window,
         context_id: Option<String>,
     ) -> Result<String> {
-        self.execute_task_with_window_and_continuation_count(task, window, context_id, 1).await
+        let result = self.execute_task_with_window_and_continuation_count(task, window, context_id, 1, None, RunTriggerType::Scheduled).await?;
+        Ok(result.log_id)
+    }
+
+    /// 执行任务并发送事件到窗口（手动触发）
+    async fn execute_task_with_window_manual(
+        &self,
+        task: ScheduledTask,
+        window: Window,
+        context_id: Option<String>,
+    ) -> Result<ExecutionResult> {
+        self.execute_task_with_window_and_continuation_count(task, window, context_id, 1, None, RunTriggerType::Manual).await
     }
 
     async fn execute_task_with_window_and_continuation_count(
@@ -1045,7 +1256,9 @@ impl SchedulerDispatcher {
         window: Window,
         context_id: Option<String>,
         continuous_runs: u32,
-    ) -> Result<String> {
+        current_run_id: Option<String>,
+        trigger_type: RunTriggerType,
+    ) -> Result<ExecutionResult> {
         let task_id = task.id.clone();
         let task_id_for_map = task.id.clone();
         let task_name = task.name.clone();
@@ -1072,6 +1285,56 @@ impl SchedulerDispatcher {
         let dispatcher_for_continue = self.clone();
 
         let task_for_post = task.clone();
+
+        // ==================== Run/Attempt 创建逻辑 ====================
+        // 创建或复用 Run，并创建新的 Attempt
+        let (run_id, attempt_id) = if has_unified {
+            let storage = unified_storage.as_ref().unwrap();
+            let storage = storage.lock().await;
+
+            // 判断是首次执行还是连续执行
+            let (run, attempt_reason) = if continuous_runs == 1 || current_run_id.is_none() {
+                // 首次执行：创建新的 Run
+                let run = storage.create_run(
+                    &task_id,
+                    trigger_type,
+                    None, // trigger_source
+                    existing_session_id.clone(),
+                    None, // parent_run_id
+                )?;
+                tracing::info!("[Scheduler] 创建 Run (订阅模式): {} for task: {}", run.id, task_name);
+                (run, AttemptTriggerReason::Initial)
+            } else {
+                // 连续执行：复用已有 Run
+                let run_id = current_run_id.unwrap();
+                let run = storage.get_run(&run_id)?
+                    .ok_or_else(|| crate::error::AppError::ValidationError(
+                        format!("Run 不存在: {}", run_id)
+                    ))?;
+
+                // 增加 Run 的连续执行计数
+                storage.increment_continuation_count(&run_id)?;
+                tracing::info!("[Scheduler] 复用 Run (订阅模式): {} (continuation #{})", run_id, continuous_runs);
+                (run, AttemptTriggerReason::Continuation)
+            };
+
+            // 创建 Attempt
+            let attempt = storage.create_attempt(
+                &run.id,
+                &task_id,
+                &task_name,
+                &engine_id,
+                &prompt,
+                attempt_reason,
+            )?;
+            tracing::info!("[Scheduler] 创建 Attempt (订阅模式): {} for Run: {}", attempt.id, run.id);
+
+            (Some(run.id), Some(attempt.id))
+        } else {
+            // JSON 存储不支持 Run/Attempt
+            (None, None)
+        };
+        // ==================== Run/Attempt 创建逻辑结束 ====================
 
         // 创建日志记录（状态为 Running）
         let log_id = if has_unified {
@@ -1125,6 +1388,9 @@ impl SchedulerDispatcher {
         let log_id_clone = log_id.clone();
         let window_clone = window.clone();
         let context_id_clone = context_id.clone();
+        // 克隆 run_id 和 attempt_id 用于返回值（在 async move 之前）
+        let run_id_for_result = run_id.clone();
+        let attempt_id_for_result = attempt_id.clone();
 
         let handle = tokio::spawn(async move {
             tracing::info!("[Scheduler] 开始执行任务（订阅模式）: {} ({})", task_name, task_id);
@@ -1165,6 +1431,12 @@ impl SchedulerDispatcher {
             let ctx_id_for_complete = context_id_clone.clone();
             let dispatcher_for_complete = dispatcher_for_continue.clone();
             let continuous_runs_for_complete = continuous_runs;
+            // Run/Attempt ID
+            let run_id_for_complete = run_id.clone();
+            let attempt_id_for_complete = attempt_id.clone();
+            // Run/Attempt ID for timeout (预先克隆，避免闭包 move 后无法访问)
+            let run_id_for_timeout_pre = run_id.clone();
+            let attempt_id_for_timeout_pre = attempt_id.clone();
 
             let build_options = || {
                 let output_clone = output_clone.clone();
@@ -1191,6 +1463,9 @@ impl SchedulerDispatcher {
                 let window_for_complete = window_for_complete.clone();
                 let ctx_id_for_complete = ctx_id_for_complete.clone();
                 let dispatcher_for_complete = dispatcher_for_complete.clone();
+                // Run/Attempt ID
+                let run_id_for_complete = run_id_for_complete.clone();
+                let attempt_id_for_complete = attempt_id_for_complete.clone();
 
                 SessionOptions::new(move |event: AIEvent| {
                     let event_json = if let Some(ref cid) = ctx_id_for_event {
@@ -1257,6 +1532,9 @@ impl SchedulerDispatcher {
                     let ctx_id = ctx_id_for_complete.clone();
                     let task_for_complete = task_for_complete.clone();
                     let dispatcher_for_complete = dispatcher_for_complete.clone();
+                    // Run/Attempt ID (在 async move 之前克隆，避免 Fn 闭包中 move)
+                    let run_id = run_id_for_complete.clone();
+                    let attempt_id = attempt_id_for_complete.clone();
 
                     let task_work_dir_for_complete = task_for_complete.work_dir.clone();
                     let task_task_path_for_complete = task_for_complete.task_path.clone();
@@ -1326,6 +1604,45 @@ impl SchedulerDispatcher {
                                     None,
                                 ) {
                                     tracing::error!("[Scheduler] 更新日志失败 (SQLite): {:?}", e);
+                                }
+
+                                // 更新 Attempt 完成状态
+                                if let Some(ref attempt_id) = attempt_id {
+                                    if let Err(e) = storage.update_attempt_complete(
+                                        attempt_id,
+                                        final_session_id.clone(),
+                                        TaskStatus::Success,
+                                        Some(final_output.clone()),
+                                        None,
+                                        if final_thinking.is_empty() { None } else { Some(final_thinking.clone()) },
+                                        final_tool_count,
+                                        None,
+                                        Some(execution_outcome.to_string()),
+                                    ) {
+                                        tracing::error!("[Scheduler] 更新 Attempt 失败 (SQLite): {:?}", e);
+                                    } else {
+                                        tracing::info!("[Scheduler] 更新 Attempt 完成 (订阅模式): {}", attempt_id);
+                                    }
+                                }
+
+                                // 更新 Run 完成状态
+                                if let Some(ref run_id) = run_id {
+                                    let run_status = if should_continue {
+                                        RunStatus::Running // 继续执行中
+                                    } else {
+                                        RunStatus::Success
+                                    };
+                                    if let Err(e) = storage.update_run_complete(
+                                        run_id,
+                                        run_status,
+                                        Some(execution_outcome.to_string()),
+                                        Some(run_summary.clone()),
+                                        None,
+                                    ) {
+                                        tracing::error!("[Scheduler] 更新 Run 失败 (SQLite): {:?}", e);
+                                    } else {
+                                        tracing::info!("[Scheduler] 更新 Run 完成 (订阅模式): {} (状态: {:?})", run_id, run_status);
+                                    }
                                 }
 
                                 if let Err(e) = storage.update_run_status(&task_id, TaskStatus::Success, false) {
@@ -1462,6 +1779,25 @@ impl SchedulerDispatcher {
                                     tracing::error!("[Scheduler] 更新日志失败 (SQLite): {:?}", e);
                                 }
 
+                                // 更新 Attempt 完成状态（失败）
+                                if let Some(ref attempt_id) = attempt_id {
+                                    if let Err(e) = storage.update_attempt_complete(
+                                        attempt_id,
+                                        final_session_id.clone(),
+                                        TaskStatus::Failed,
+                                        Some(final_output.clone()),
+                                        Some(error_msg.clone()),
+                                        if final_thinking.is_empty() { None } else { Some(final_thinking.clone()) },
+                                        final_tool_count,
+                                        None,
+                                        Some(execution_outcome.to_string()),
+                                    ) {
+                                        tracing::error!("[Scheduler] 更新 Attempt 失败 (SQLite): {:?}", e);
+                                    } else {
+                                        tracing::info!("[Scheduler] 更新 Attempt 失败 (订阅模式): {}", attempt_id);
+                                    }
+                                }
+
                                 // UnifiedStorageService 暂不支持 update_retry_status 返回 bool，需要额外处理
                                 // 暂时使用 JSON 存储的 retry 逻辑
                                 let can_retry = {
@@ -1472,6 +1808,21 @@ impl SchedulerDispatcher {
                                 if can_retry {
                                     tracing::info!("[Scheduler] 任务 {} 失败，将自动重试", task_name);
                                 } else {
+                                    // 更新 Run 完成状态（失败）
+                                    if let Some(ref run_id) = run_id {
+                                        if let Err(e) = storage.update_run_complete(
+                                            run_id,
+                                            RunStatus::Failed,
+                                            Some(execution_outcome.to_string()),
+                                            Some(run_summary.clone()),
+                                            Some(error_msg.clone()),
+                                        ) {
+                                            tracing::error!("[Scheduler] 更新 Run 失败 (SQLite): {:?}", e);
+                                        } else {
+                                            tracing::info!("[Scheduler] 更新 Run 失败 (订阅模式): {}", run_id);
+                                        }
+                                    }
+
                                     if let Err(e) = storage.update_run_status(&task_id, TaskStatus::Failed, false) {
                                         tracing::error!("[Scheduler] 更新任务状态失败 (SQLite): {:?}", e);
                                     }
@@ -1573,6 +1924,9 @@ impl SchedulerDispatcher {
                             let mut next_task = task_for_complete.clone();
                             next_task.conversation_session_id = final_session_id;
 
+                            // 传递 run_id 到下一轮连续执行（使用 async move 块外已克隆的 run_id）
+                            let next_run_id = run_id.clone();
+
                             tokio::task::spawn_blocking(move || {
                                 tauri::async_runtime::block_on(async move {
                                     if let Err(e) = dispatcher_for_complete
@@ -1581,6 +1935,8 @@ impl SchedulerDispatcher {
                                             window.clone(),
                                             ctx_id.clone(),
                                             continuous_runs_for_complete + 1,
+                                            next_run_id,
+                                            RunTriggerType::Continuation,
                                         )
                                         .await
                                     {
@@ -1682,6 +2038,9 @@ impl SchedulerDispatcher {
                         let window_for_timeout = window_clone.clone();
                         let ctx_id_for_timeout = context_id_clone.clone();
                         let notify_for_timeout = notify_on_complete;
+                        // Run/Attempt ID for timeout (使用预克隆的变量)
+                        let run_id_for_timeout = run_id_for_timeout_pre.clone();
+                        let attempt_id_for_timeout = attempt_id_for_timeout_pre.clone();
 
                         tokio::spawn(async move {
                             tokio::time::sleep(tokio::time::Duration::from_secs(timeout)).await;
@@ -1716,6 +2075,36 @@ impl SchedulerDispatcher {
                                     None,
                                 ) {
                                     tracing::error!("[Scheduler] 更新日志失败 (SQLite): {:?}", e);
+                                }
+
+                                // 更新 Attempt 完成状态（超时）
+                                if let Some(ref attempt_id) = attempt_id_for_timeout {
+                                    if let Err(e) = storage.update_attempt_complete(
+                                        attempt_id,
+                                        Some(session_id_for_timeout.clone()),
+                                        TaskStatus::Failed,
+                                        None,
+                                        Some(error_msg.clone()),
+                                        None,
+                                        0,
+                                        None,
+                                        Some("Timeout".to_string()),
+                                    ) {
+                                        tracing::error!("[Scheduler] 更新 Attempt 失败 (SQLite, 超时): {:?}", e);
+                                    }
+                                }
+
+                                // 更新 Run 完成状态（超时）
+                                if let Some(ref run_id) = run_id_for_timeout {
+                                    if let Err(e) = storage.update_run_complete(
+                                        run_id,
+                                        RunStatus::Failed,
+                                        Some("Timeout".to_string()),
+                                        None,
+                                        Some(error_msg.clone()),
+                                    ) {
+                                        tracing::error!("[Scheduler] 更新 Run 失败 (SQLite, 超时): {:?}", e);
+                                    }
                                 }
 
                                 if let Err(e) = storage.update_run_status(&task_id_for_timeout, TaskStatus::Failed, false) {
@@ -1788,6 +2177,40 @@ impl SchedulerDispatcher {
                             tracing::error!("[Scheduler] 更新日志失败 (SQLite): {:?}", update_err);
                         }
 
+                        // 更新 Attempt 完成状态（会话启动失败，订阅模式）
+                        if let Some(ref attempt_id) = attempt_id {
+                            if let Err(update_err) = storage.update_attempt_complete(
+                                attempt_id,
+                                None,
+                                TaskStatus::Failed,
+                                None,
+                                Some(e.to_string()),
+                                None,
+                                0,
+                                None,
+                                Some("SessionStartFailed".to_string()),
+                            ) {
+                                tracing::error!("[Scheduler] 更新 Attempt 失败 (SQLite, 会话启动失败, 订阅模式): {:?}", update_err);
+                            } else {
+                                tracing::info!("[Scheduler] 更新 Attempt 失败 (会话启动失败, 订阅模式): {}", attempt_id);
+                            }
+                        }
+
+                        // 更新 Run 完成状态（会话启动失败，订阅模式）
+                        if let Some(ref run_id) = run_id {
+                            if let Err(update_err) = storage.update_run_complete(
+                                run_id,
+                                RunStatus::Failed,
+                                Some("SessionStartFailed".to_string()),
+                                None,
+                                Some(e.to_string()),
+                            ) {
+                                tracing::error!("[Scheduler] 更新 Run 失败 (SQLite, 会话启动失败, 订阅模式): {:?}", update_err);
+                            } else {
+                                tracing::info!("[Scheduler] 更新 Run 失败 (会话启动失败, 订阅模式): {}", run_id);
+                            }
+                        }
+
                         if let Err(update_err) = storage.update_run_status(&task_id, TaskStatus::Failed, false) {
                             tracing::error!("[Scheduler] 更新任务状态失败 (SQLite): {:?}", update_err);
                         }
@@ -1823,7 +2246,11 @@ impl SchedulerDispatcher {
             running.insert(task_id_for_map, handle);
         }
 
-        Ok(log_id)
+        Ok(ExecutionResult {
+            log_id,
+            run_id: run_id_for_result,
+            attempt_id: attempt_id_for_result,
+        })
     }
 
     fn summarize_run_output(output: &str) -> String {

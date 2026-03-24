@@ -514,6 +514,8 @@ pub struct RunTaskResult {
     pub log_id: String,
     /// Run ID
     pub run_id: Option<String>,
+    /// Attempt ID
+    pub attempt_id: Option<String>,
     /// 提示信息
     pub message: String,
 }
