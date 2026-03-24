@@ -466,6 +466,10 @@ impl SchedulerDispatcher {
                                     }
                                 }
 
+                                if let Err(e) = task_store.update_last_run_outcome(&task_id, execution_outcome.clone()) {
+                                    tracing::error!("[Scheduler] 更新任务执行结果类型失败: {:?}", e);
+                                }
+
                                 if let Err(e) = task_store.reset_retry_count(&task_id) {
                                     tracing::error!("[Scheduler] 重置重试计数失败: {:?}", e);
                                 }
@@ -492,6 +496,7 @@ impl SchedulerDispatcher {
                                         &run_summary,
                                         &pending_summary,
                                         should_continue,
+                                        Some(&execution_outcome),
                                     ) {
                                         tracing::error!("[Scheduler] 追加执行轮次记录失败: {:?}", e);
                                     }
@@ -540,6 +545,11 @@ impl SchedulerDispatcher {
                                     if let Err(e) = task_store.update_run_status(&task_id, TaskStatus::Failed) {
                                         tracing::error!("[Scheduler] 更新任务状态失败: {:?}", e);
                                     }
+                                    // 更新任务执行结果类型
+                                    if let Err(e) = task_store.update_last_run_outcome(&task_id, execution_outcome.clone()) {
+                                        tracing::error!("[Scheduler] 更新任务执行结果类型失败: {:?}", e);
+                                    }
+
                                     tracing::error!("[Scheduler] 任务执行失败: {} - {}", task_name, error_msg);
                                 }
                             }
@@ -1093,6 +1103,10 @@ impl SchedulerDispatcher {
                                     }
                                 }
 
+                                if let Err(e) = task_store.update_last_run_outcome(&task_id, execution_outcome.clone()) {
+                                    tracing::error!("[Scheduler] 更新任务执行结果类型失败: {:?}", e);
+                                }
+
                                 if let Err(e) = task_store.reset_retry_count(&task_id) {
                                     tracing::error!("[Scheduler] 重置重试计数失败: {:?}", e);
                                 }
@@ -1119,6 +1133,7 @@ impl SchedulerDispatcher {
                                         &run_summary,
                                         &pending_summary,
                                         should_continue,
+                                        Some(&execution_outcome),
                                     ) {
                                         tracing::error!("[Scheduler] 追加执行轮次记录失败: {:?}", e);
                                     }
@@ -1167,6 +1182,11 @@ impl SchedulerDispatcher {
                                     if let Err(e) = task_store.update_run_status(&task_id, TaskStatus::Failed) {
                                         tracing::error!("[Scheduler] 更新任务状态失败: {:?}", e);
                                     }
+                                    // 更新任务执行结果类型
+                                    if let Err(e) = task_store.update_last_run_outcome(&task_id, execution_outcome.clone()) {
+                                        tracing::error!("[Scheduler] 更新任务执行结果类型失败: {:?}", e);
+                                    }
+
                                     tracing::error!("[Scheduler] 任务执行失败: {} - {}", task_name, error_msg);
                                 }
                             }

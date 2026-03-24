@@ -101,6 +101,30 @@ function PhaseBadge({ phase }: { phase?: string }) {
   );
 }
 
+/** 执行结果类型徽章 */
+function ExecutionOutcomeBadge({ outcome }: { outcome?: { type: string; data?: string | number } }) {
+  if (!outcome) return null;
+
+  const { type, data } = outcome;
+
+  const config: Record<string, { label: string; style: string; title?: string }> = {
+    SuccessWithProgress: { label: '有进展', style: 'bg-green-500/20 text-green-400', title: '执行成功且有实质进展' },
+    SuccessNoProgress: { label: '无进展', style: 'bg-yellow-500/20 text-yellow-400', title: '执行成功但无明显进展' },
+    PartialSuccess: { label: '部分成功', style: 'bg-orange-500/20 text-orange-400', title: '部分成功（有错误但有进展）' },
+    Failed: { label: '失败', style: 'bg-red-500/20 text-red-400', title: '执行失败' },
+    Blocked: { label: '阻塞', style: 'bg-red-600/20 text-red-400', title: data ? `阻塞原因: ${data}` : '任务被阻塞' },
+    ConsecutiveNoProgress: { label: `连续无进展(${data || 0}次)`, style: 'bg-red-500/20 text-red-400', title: '连续多次无进展，可能陷入循环' },
+  };
+
+  const { label, style, title } = config[type] || { label: type, style: 'bg-gray-500/20 text-gray-400' };
+
+  return (
+    <span className={`px-2 py-0.5 rounded text-xs ${style} cursor-help`} title={title}>
+      {label}
+    </span>
+  );
+}
+
 /** 阻塞徽章 */
 function BlockedBadge({ blocked, reason }: { blocked?: boolean; reason?: string }) {
   if (!blocked) return null;
@@ -265,6 +289,8 @@ function TaskCard({
             </div>
             <div className="mt-1 text-xs text-gray-400 flex items-center gap-2 flex-wrap">
               <StatusBadge status={task.lastRunStatus} />
+              {/* 执行结果类型展示 */}
+              <ExecutionOutcomeBadge outcome={task.lastRunOutcome} />
               {/* 运行态信息展示 */}
               <BlockedBadge blocked={task.blocked} reason={task.blockedReason} />
               <PhaseBadge phase={task.currentPhase} />
@@ -362,6 +388,8 @@ function TaskCard({
                 <span className="text-gray-500">状态: </span>
                 <StatusBadge status={task.lastRunStatus} />
               </span>
+              {/* 执行结果类型展示 */}
+              <ExecutionOutcomeBadge outcome={task.lastRunOutcome} />
               {/* 运行态信息展示 */}
               <BlockedBadge blocked={task.blocked} reason={task.blockedReason} />
               <PhaseBadge phase={task.currentPhase} />

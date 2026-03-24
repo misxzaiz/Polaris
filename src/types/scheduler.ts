@@ -8,6 +8,14 @@ export type TriggerType = 'once' | 'cron' | 'interval';
 /** 任务状态 */
 export type TaskStatus = 'running' | 'success' | 'failed';
 
+/** 执行结果类型（详细） */
+export interface ExecutionOutcome {
+  /** 结果类型 */
+  type: 'SuccessWithProgress' | 'SuccessNoProgress' | 'PartialSuccess' | 'Failed' | 'Blocked' | 'ConsecutiveNoProgress';
+  /** 附加数据（如阻塞原因、连续无进展次数） */
+  data?: string | number;
+}
+
 /** 定时任务 */
 export interface ScheduledTask {
   /** 任务 ID */
@@ -38,6 +46,8 @@ export interface ScheduledTask {
   lastRunAt?: number;
   /** 上次执行状态 */
   lastRunStatus?: TaskStatus;
+  /** 上次执行结果类型（详细） */
+  lastRunOutcome?: ExecutionOutcome;
   /** 下次执行时间 */
   nextRunAt?: number;
   /** 创建时间 */

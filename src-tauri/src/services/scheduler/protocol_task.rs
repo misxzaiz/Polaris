@@ -7,6 +7,8 @@ use std::path::PathBuf;
 use std::fs;
 use chrono::Local;
 
+use super::ExecutionOutcome;
+
 /// 任务目录名格式：年月日时分秒
 const TIMESTAMP_FORMAT: &str = "%Y%m%d%H%M%S";
 
@@ -313,6 +315,7 @@ r#"# 任务队列
         completed: &str,
         pending: &str,
         continued: bool,
+        outcome: Option<&ExecutionOutcome>,
     ) -> String {
         let session = session_id
             .map(|value| {
@@ -323,16 +326,32 @@ r#"# 任务队列
         let completed = Self::normalize_run_summary(completed, "本轮执行已完成，待补充成果摘要");
         let pending = Self::normalize_run_summary(pending, "待结合 memory/index.md 与 tasks.md 决定下一步");
         let continued = if continued { "是" } else { "否" };
+        let outcome_str = outcome
+            .map(|o| Self::format_outcome(o))
+            .unwrap_or_else(|| "[未记录]".to_string());
 
         format!(
-            "## Run {}\n- 时间: {}\n- 使用会话: {}\n- 完成事项: {}\n- 遗留事项: {}\n- 是否触发连续执行: {}",
+            "## Run {}\n- 时间: {}\n- 使用会话: {}\n- 执行结果: {}\n- 完成事项: {}\n- 遗留事项: {}\n- 是否触发连续执行: {}",
             run_number,
             time,
             session,
+            outcome_str,
             completed,
             pending,
             continued,
         )
+    }
+
+    /// 格式化执行结果类型
+    fn format_outcome(outcome: &ExecutionOutcome) -> String {
+        match outcome {
+            ExecutionOutcome::SuccessWithProgress => "有进展".to_string(),
+            ExecutionOutcome::SuccessNoProgress => "无进展".to_string(),
+            ExecutionOutcome::PartialSuccess => "部分成功".to_string(),
+            ExecutionOutcome::Failed => "失败".to_string(),
+            ExecutionOutcome::Blocked(reason) => format!("阻塞: {}", reason),
+            ExecutionOutcome::ConsecutiveNoProgress(count) => format!("连续无进展({}次)", count),
+        }
     }
 
     fn normalize_run_summary(value: &str, fallback: &str) -> String {
@@ -449,6 +468,7 @@ r#"# 任务队列
         completed: &str,
         pending: &str,
         continued: bool,
+        outcome: Option<&ExecutionOutcome>,
     ) -> std::io::Result<()> {
         let path = PathBuf::from(work_dir).join(task_path).join("memory/runs.md");
         let existing = fs::read_to_string(&path).unwrap_or_else(|_| Self::generate_memory_runs());
@@ -459,6 +479,7 @@ r#"# 任务队列
             completed,
             pending,
             continued,
+            outcome,
         );
 
         let mut content = existing.trim_end().to_string();

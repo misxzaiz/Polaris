@@ -107,6 +107,7 @@ impl TaskStoreService {
             mission: params.mission.clone(),
             last_run_at: None,
             last_run_status: None,
+            last_run_outcome: None,
             next_run_at: None,
             created_at: now,
             updated_at: now,
@@ -278,6 +279,15 @@ impl TaskStoreService {
                 task.next_run_at = task.trigger_type.calculate_next_run(&task.trigger_value, now);
             }
 
+            self.save()?;
+        }
+        Ok(())
+    }
+
+    /// 更新任务上次执行结果类型
+    pub fn update_last_run_outcome(&mut self, id: &str, outcome: super::ExecutionOutcome) -> Result<()> {
+        if let Some(task) = self.store.tasks.iter_mut().find(|t| t.id == id) {
+            task.last_run_outcome = Some(outcome);
             self.save()?;
         }
         Ok(())

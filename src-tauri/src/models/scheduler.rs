@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::services::scheduler::ExecutionOutcome;
+
 /// 创建任务参数
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -112,6 +114,9 @@ pub struct ScheduledTask {
     pub last_run_at: Option<i64>,
     /// 上次执行状态
     pub last_run_status: Option<TaskStatus>,
+    /// 上次执行结果类型（详细）
+    #[serde(default)]
+    pub last_run_outcome: Option<ExecutionOutcome>,
     /// 下次执行时间
     pub next_run_at: Option<i64>,
     /// 创建时间
@@ -221,6 +226,7 @@ impl From<CreateTaskParams> for ScheduledTask {
             mission: params.mission,
             last_run_at: None,
             last_run_status: None,
+            last_run_outcome: None,
             next_run_at: None,
             created_at: 0,
             updated_at: 0,

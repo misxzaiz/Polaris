@@ -4,9 +4,11 @@
  */
 
 use super::ProtocolTaskService;
+use serde::{Deserialize, Serialize};
 
 /// 执行结果类型
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum ExecutionOutcome {
     /// 成功且有实质进展
     SuccessWithProgress,
