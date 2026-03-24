@@ -154,6 +154,74 @@ pub trait StorageBackend: Send + Sync {
     fn update_retention_config(&self, config: &LogRetentionConfig) -> Result<()>;
 
     // ========================================================================
+    // Run / Attempt 操作（分层建模）
+    // ========================================================================
+
+    /// 创建 Run
+    fn create_run(
+        &self,
+        task_id: &str,
+        trigger_type: crate::models::scheduler::RunTriggerType,
+        trigger_source: Option<String>,
+        conversation_session_id: Option<String>,
+        parent_run_id: Option<String>,
+    ) -> Result<crate::models::scheduler::TaskRun>;
+
+    /// 获取 Run
+    fn get_run(&self, id: &str) -> Result<Option<crate::models::scheduler::TaskRun>>;
+
+    /// 更新 Run 完成
+    fn update_run_complete(
+        &self,
+        run_id: &str,
+        status: crate::models::scheduler::RunStatus,
+        final_outcome: Option<String>,
+        final_output: Option<String>,
+        final_error: Option<String>,
+    ) -> Result<()>;
+
+    /// 获取任务的 Run 列表
+    fn get_task_runs(
+        &self,
+        task_id: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<crate::models::scheduler::TaskRun>>;
+
+    /// 创建 Attempt
+    fn create_attempt(
+        &self,
+        run_id: &str,
+        task_id: &str,
+        task_name: &str,
+        engine_id: &str,
+        prompt: &str,
+        trigger_reason: crate::models::scheduler::AttemptTriggerReason,
+    ) -> Result<crate::models::scheduler::TaskAttempt>;
+
+    /// 获取 Attempt
+    fn get_attempt(&self, id: &str) -> Result<Option<crate::models::scheduler::TaskAttempt>>;
+
+    /// 更新 Attempt 完成
+    fn update_attempt_complete(
+        &self,
+        attempt_id: &str,
+        session_id: Option<String>,
+        status: TaskStatus,
+        output: Option<String>,
+        error: Option<String>,
+        thinking_summary: Option<String>,
+        tool_call_count: u32,
+        token_count: Option<u32>,
+        execution_outcome: Option<String>,
+    ) -> Result<()>;
+
+    /// 获取 Run 的所有 Attempt
+    fn get_run_attempts(&self, run_id: &str) -> Result<Vec<crate::models::scheduler::TaskAttempt>>;
+
+    /// 增加 Run 的连续执行计数
+    fn increment_continuation_count(&self, run_id: &str) -> Result<()>;
+
+    // ========================================================================
     // 统计与诊断
     // ========================================================================
 
@@ -162,4 +230,10 @@ pub trait StorageBackend: Send + Sync {
 
     /// 获取日志数量
     fn log_count(&self) -> Result<usize>;
+
+    /// 获取 Run 数量
+    fn run_count(&self) -> Result<usize>;
+
+    /// 获取 Attempt 数量
+    fn attempt_count(&self) -> Result<usize>;
 }

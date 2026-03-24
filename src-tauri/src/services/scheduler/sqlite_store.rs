@@ -188,6 +188,75 @@ impl SqliteStore {
             "#,
         )?;
 
+        // 创建执行会话表（Run）
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS runs (
+                id TEXT PRIMARY KEY,
+                task_id TEXT NOT NULL,
+                sequence_number INTEGER NOT NULL DEFAULT 0,
+                conversation_session_id TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                trigger_type TEXT NOT NULL DEFAULT 'scheduled',
+                trigger_source TEXT,
+                started_at INTEGER NOT NULL,
+                finished_at INTEGER,
+                duration_ms INTEGER,
+                total_attempts INTEGER NOT NULL DEFAULT 0,
+                successful_attempts INTEGER NOT NULL DEFAULT 0,
+                final_outcome TEXT,
+                final_output TEXT,
+                final_error TEXT,
+                continuation_count INTEGER NOT NULL DEFAULT 0,
+                is_continuous_run INTEGER NOT NULL DEFAULT 0,
+                parent_run_id TEXT,
+                metadata TEXT,
+                created_at INTEGER NOT NULL,
+                FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_runs_task_id ON runs(task_id);
+            CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
+            CREATE INDEX IF NOT EXISTS idx_runs_started_at ON runs(started_at);
+            CREATE INDEX IF NOT EXISTS idx_runs_conversation_session ON runs(conversation_session_id);
+            "#,
+        )?;
+
+        // 创建执行尝试表（Attempt）
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS attempts (
+                id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                task_id TEXT NOT NULL,
+                task_name TEXT NOT NULL,
+                engine_id TEXT NOT NULL,
+                attempt_number INTEGER NOT NULL DEFAULT 0,
+                session_id TEXT,
+                status TEXT NOT NULL DEFAULT 'running',
+                trigger_reason TEXT NOT NULL DEFAULT 'initial',
+                started_at INTEGER NOT NULL,
+                finished_at INTEGER,
+                duration_ms INTEGER,
+                prompt TEXT NOT NULL,
+                output TEXT,
+                error TEXT,
+                thinking_summary TEXT,
+                tool_call_count INTEGER NOT NULL DEFAULT 0,
+                token_count INTEGER,
+                execution_outcome TEXT,
+                metadata TEXT,
+                FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE CASCADE,
+                FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_attempts_run_id ON attempts(run_id);
+            CREATE INDEX IF NOT EXISTS idx_attempts_task_id ON attempts(task_id);
+            CREATE INDEX IF NOT EXISTS idx_attempts_started_at ON attempts(started_at);
+            CREATE INDEX IF NOT EXISTS idx_attempts_status ON attempts(status);
+            "#,
+        )?;
+
         // 创建日志保留配置表
         conn.execute_batch(
             r#"
@@ -212,9 +281,91 @@ impl SqliteStore {
                 version INTEGER PRIMARY KEY
             );
 
-            INSERT OR IGNORE INTO schema_version (version) VALUES (1);
+            INSERT OR IGNORE INTO schema_version (version) VALUES (2);
             "#,
         )?;
+
+        // 迁移：如果版本低于 2，升级到版本 2（添加 runs 和 attempts 表）
+        let current_version: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(version), 0) FROM schema_version",
+            [],
+            |row| row.get(0),
+        )?;
+
+        if current_version < 2 {
+            // 添加 runs 表（如果不存在）
+            conn.execute_batch(
+                r#"
+                CREATE TABLE IF NOT EXISTS runs (
+                    id TEXT PRIMARY KEY,
+                    task_id TEXT NOT NULL,
+                    sequence_number INTEGER NOT NULL DEFAULT 0,
+                    conversation_session_id TEXT,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    trigger_type TEXT NOT NULL DEFAULT 'scheduled',
+                    trigger_source TEXT,
+                    started_at INTEGER NOT NULL,
+                    finished_at INTEGER,
+                    duration_ms INTEGER,
+                    total_attempts INTEGER NOT NULL DEFAULT 0,
+                    successful_attempts INTEGER NOT NULL DEFAULT 0,
+                    final_outcome TEXT,
+                    final_output TEXT,
+                    final_error TEXT,
+                    continuation_count INTEGER NOT NULL DEFAULT 0,
+                    is_continuous_run INTEGER NOT NULL DEFAULT 0,
+                    parent_run_id TEXT,
+                    metadata TEXT,
+                    created_at INTEGER NOT NULL,
+                    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_runs_task_id ON runs(task_id);
+                CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
+                CREATE INDEX IF NOT EXISTS idx_runs_started_at ON runs(started_at);
+                CREATE INDEX IF NOT EXISTS idx_runs_conversation_session ON runs(conversation_session_id);
+                "#,
+            )?;
+
+            // 添加 attempts 表（如果不存在）
+            conn.execute_batch(
+                r#"
+                CREATE TABLE IF NOT EXISTS attempts (
+                    id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    task_id TEXT NOT NULL,
+                    task_name TEXT NOT NULL,
+                    engine_id TEXT NOT NULL,
+                    attempt_number INTEGER NOT NULL DEFAULT 0,
+                    session_id TEXT,
+                    status TEXT NOT NULL DEFAULT 'running',
+                    trigger_reason TEXT NOT NULL DEFAULT 'initial',
+                    started_at INTEGER NOT NULL,
+                    finished_at INTEGER,
+                    duration_ms INTEGER,
+                    prompt TEXT NOT NULL,
+                    output TEXT,
+                    error TEXT,
+                    thinking_summary TEXT,
+                    tool_call_count INTEGER NOT NULL DEFAULT 0,
+                    token_count INTEGER,
+                    execution_outcome TEXT,
+                    metadata TEXT,
+                    FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE CASCADE,
+                    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_attempts_run_id ON attempts(run_id);
+                CREATE INDEX IF NOT EXISTS idx_attempts_task_id ON attempts(task_id);
+                CREATE INDEX IF NOT EXISTS idx_attempts_started_at ON attempts(started_at);
+                CREATE INDEX IF NOT EXISTS idx_attempts_status ON attempts(status);
+                "#,
+            )?;
+
+            // 更新版本号
+            conn.execute("INSERT OR REPLACE INTO schema_version (version) VALUES (2)", [])?;
+            tracing::info!("[SqliteStore] 数据库 schema 升级到版本 2");
+        }
 
         tracing::info!("[SqliteStore] 数据库 schema 初始化完成: {:?}", self.db_path);
         Ok(())
@@ -1191,6 +1342,580 @@ impl SqliteStore {
 }
 
 // ============================================================================
+// Run / Attempt CRUD 操作
+// ============================================================================
+
+use crate::models::scheduler::{TaskRun, TaskAttempt, RunStatus, RunTriggerType, AttemptTriggerReason, PaginatedRuns};
+
+impl SqliteStore {
+    /// 创建 Run
+    pub fn create_run(
+        &self,
+        task_id: &str,
+        trigger_type: RunTriggerType,
+        trigger_source: Option<String>,
+        conversation_session_id: Option<String>,
+        parent_run_id: Option<String>,
+    ) -> Result<TaskRun> {
+        let conn = self.get_conn()?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = Utc::now().timestamp();
+
+        // 获取下一个 sequence_number
+        let sequence_number: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(sequence_number), 0) + 1 FROM runs WHERE task_id = ?1",
+            params![task_id],
+            |row| row.get(0),
+        ).unwrap_or(1);
+
+        // 判断是否是连续执行
+        let is_continuous = parent_run_id.is_some();
+
+        conn.execute(
+            r#"
+            INSERT INTO runs (
+                id, task_id, sequence_number, conversation_session_id, status,
+                trigger_type, trigger_source, started_at, is_continuous_run, parent_run_id, created_at
+            ) VALUES (?1, ?2, ?3, ?4, 'running', ?5, ?6, ?7, ?8, ?9, ?10)
+            "#,
+            params![
+                id,
+                task_id,
+                sequence_number,
+                conversation_session_id,
+                format!("{:?}", trigger_type).to_lowercase(),
+                trigger_source,
+                now,
+                is_continuous as i64,
+                parent_run_id,
+                now,
+            ],
+        )?;
+
+        Ok(TaskRun {
+            id,
+            task_id: task_id.to_string(),
+            sequence_number: sequence_number as u32,
+            conversation_session_id,
+            status: RunStatus::Running,
+            trigger_type,
+            trigger_source,
+            started_at: now,
+            finished_at: None,
+            duration_ms: None,
+            total_attempts: 0,
+            successful_attempts: 0,
+            final_outcome: None,
+            final_output: None,
+            final_error: None,
+            continuation_count: 0,
+            is_continuous_run: is_continuous,
+            parent_run_id,
+            metadata: None,
+            created_at: now,
+        })
+    }
+
+    /// 获取 Run
+    pub fn get_run(&self, id: &str) -> Result<Option<TaskRun>> {
+        let conn = self.get_conn()?;
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT id, task_id, sequence_number, conversation_session_id, status,
+                   trigger_type, trigger_source, started_at, finished_at, duration_ms,
+                   total_attempts, successful_attempts, final_outcome, final_output, final_error,
+                   continuation_count, is_continuous_run, parent_run_id, metadata, created_at
+            FROM runs WHERE id = ?1
+            "#,
+        )?;
+
+        let mut runs = stmt.query_map([id], |row| {
+            Ok(Self::row_to_run(row))
+        })?;
+
+        match runs.next() {
+            Some(run) => Ok(Some(run.map_err(|e| AppError::DatabaseError(format!("查询 Run 失败: {}", e)))?)),
+            None => Ok(None),
+        }
+    }
+
+    /// 将数据库行转换为 TaskRun
+    fn row_to_run(row: &rusqlite::Row) -> TaskRun {
+        TaskRun {
+            id: row.get(0).unwrap_or_default(),
+            task_id: row.get(1).unwrap_or_default(),
+            sequence_number: row.get::<_, i64>(2).unwrap_or_default() as u32,
+            conversation_session_id: row.get(3).ok(),
+            status: Self::parse_run_status(&row.get::<_, String>(4).unwrap_or_default()),
+            trigger_type: Self::parse_run_trigger_type(&row.get::<_, String>(5).unwrap_or_default()),
+            trigger_source: row.get(6).ok(),
+            started_at: row.get(7).unwrap_or_default(),
+            finished_at: row.get(8).ok(),
+            duration_ms: row.get(9).ok(),
+            total_attempts: row.get::<_, i64>(10).unwrap_or_default() as u32,
+            successful_attempts: row.get::<_, i64>(11).unwrap_or_default() as u32,
+            final_outcome: row.get(12).ok(),
+            final_output: row.get(13).ok(),
+            final_error: row.get(14).ok(),
+            continuation_count: row.get::<_, i64>(15).unwrap_or_default() as u32,
+            is_continuous_run: row.get::<_, i64>(16).unwrap_or_default() != 0,
+            parent_run_id: row.get(17).ok(),
+            metadata: row.get::<_, Option<String>>(18).ok().flatten()
+                .and_then(|s| serde_json::from_str(&s).ok()),
+            created_at: row.get(19).unwrap_or_default(),
+        }
+    }
+
+    /// 解析 Run 状态
+    fn parse_run_status(s: &str) -> RunStatus {
+        match s.to_lowercase().as_str() {
+            "pending" => RunStatus::Pending,
+            "running" => RunStatus::Running,
+            "success" => RunStatus::Success,
+            "failed" => RunStatus::Failed,
+            "cancelled" => RunStatus::Cancelled,
+            _ => RunStatus::Pending,
+        }
+    }
+
+    /// 解析 Run 触发类型
+    fn parse_run_trigger_type(s: &str) -> RunTriggerType {
+        match s.to_lowercase().as_str() {
+            "scheduled" => RunTriggerType::Scheduled,
+            "manual" => RunTriggerType::Manual,
+            "continuation" => RunTriggerType::Continuation,
+            "retry" => RunTriggerType::Retry,
+            _ => RunTriggerType::Scheduled,
+        }
+    }
+
+    /// 更新 Run 完成
+    pub fn update_run_complete(
+        &self,
+        run_id: &str,
+        status: RunStatus,
+        final_outcome: Option<String>,
+        final_output: Option<String>,
+        final_error: Option<String>,
+    ) -> Result<()> {
+        let conn = self.get_conn()?;
+        let finished_at = Utc::now().timestamp();
+
+        // 获取开始时间计算时长
+        let started_at: Option<i64> = conn.query_row(
+            "SELECT started_at FROM runs WHERE id = ?1",
+            params![run_id],
+            |row| row.get(0),
+        ).ok();
+
+        let duration_ms = started_at.map(|s| (finished_at - s) * 1000);
+
+        conn.execute(
+            r#"
+            UPDATE runs SET
+                finished_at = ?1, duration_ms = ?2, status = ?3,
+                final_outcome = ?4, final_output = ?5, final_error = ?6
+            WHERE id = ?7
+            "#,
+            params![
+                finished_at,
+                duration_ms,
+                format!("{:?}", status).to_lowercase(),
+                final_outcome,
+                final_output,
+                final_error,
+                run_id,
+            ],
+        )?;
+
+        Ok(())
+    }
+
+    /// 获取任务的 Run 列表
+    pub fn get_task_runs(&self, task_id: &str, limit: Option<usize>) -> Result<Vec<TaskRun>> {
+        let conn = self.get_conn()?;
+        let limit_clause = limit.map(|l| format!("LIMIT {}", l)).unwrap_or_default();
+
+        let sql = format!(
+            r#"
+            SELECT id, task_id, sequence_number, conversation_session_id, status,
+                   trigger_type, trigger_source, started_at, finished_at, duration_ms,
+                   total_attempts, successful_attempts, final_outcome, final_output, final_error,
+                   continuation_count, is_continuous_run, parent_run_id, metadata, created_at
+            FROM runs
+            WHERE task_id = ?1
+            ORDER BY sequence_number DESC
+            {}
+            "#,
+            limit_clause
+        );
+
+        let mut stmt = conn.prepare(&sql)?;
+
+        let runs = stmt.query_map([task_id], |row| {
+            Ok(Self::row_to_run(row))
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| AppError::DatabaseError(format!("查询 Run 列表失败: {}", e)))?;
+
+        Ok(runs)
+    }
+
+    /// 分页获取 Run 列表
+    pub fn get_runs_paginated(
+        &self,
+        task_id: Option<&str>,
+        page: u32,
+        page_size: u32,
+    ) -> Result<PaginatedRuns> {
+        let conn = self.get_conn()?;
+        let page = page.max(1);
+        let page_size = page_size.clamp(1, 100);
+        let offset = (page - 1) * page_size;
+
+        // 获取总数
+        let total: i64 = if let Some(tid) = task_id {
+            conn.query_row(
+                "SELECT COUNT(*) FROM runs WHERE task_id = ?1",
+                params![tid],
+                |row| row.get(0),
+            )?
+        } else {
+            conn.query_row("SELECT COUNT(*) FROM runs", [], |row| row.get(0))?
+        };
+
+        // 获取分页数据
+        let sql = if let Some(tid) = task_id {
+            format!(
+                r#"
+                SELECT id, task_id, sequence_number, conversation_session_id, status,
+                       trigger_type, trigger_source, started_at, finished_at, duration_ms,
+                       total_attempts, successful_attempts, final_outcome, final_output, final_error,
+                       continuation_count, is_continuous_run, parent_run_id, metadata, created_at
+                FROM runs
+                WHERE task_id = ?
+                ORDER BY started_at DESC
+                LIMIT {} OFFSET {}
+                "#,
+                page_size, offset
+            )
+        } else {
+            format!(
+                r#"
+                SELECT id, task_id, sequence_number, conversation_session_id, status,
+                       trigger_type, trigger_source, started_at, finished_at, duration_ms,
+                       total_attempts, successful_attempts, final_outcome, final_output, final_error,
+                       continuation_count, is_continuous_run, parent_run_id, metadata, created_at
+                FROM runs
+                ORDER BY started_at DESC
+                LIMIT {} OFFSET {}
+                "#,
+                page_size, offset
+            )
+        };
+
+        let mut stmt = conn.prepare(&sql)?;
+
+        let runs: Vec<TaskRun> = if let Some(tid) = task_id {
+            stmt.query_map(params![tid], |row| Ok(Self::row_to_run(row)))?
+                .collect::<std::result::Result<Vec<_>, _>>()?
+        } else {
+            stmt.query_map([], |row| Ok(Self::row_to_run(row)))?
+                .collect::<std::result::Result<Vec<_>, _>>()?
+        };
+
+        let total_pages = ((total as usize) + (page_size as usize) - 1) / (page_size as usize);
+
+        Ok(PaginatedRuns {
+            runs,
+            total: total as usize,
+            page,
+            page_size,
+            total_pages,
+        })
+    }
+
+    /// 增加运行尝试计数
+    pub fn increment_run_attempts(&self, run_id: &str, success: bool) -> Result<()> {
+        let conn = self.get_conn()?;
+        if success {
+            conn.execute(
+                "UPDATE runs SET total_attempts = total_attempts + 1, successful_attempts = successful_attempts + 1 WHERE id = ?1",
+                params![run_id],
+            )?;
+        } else {
+            conn.execute(
+                "UPDATE runs SET total_attempts = total_attempts + 1 WHERE id = ?1",
+                params![run_id],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// 增加连续执行计数
+    pub fn increment_continuation_count(&self, run_id: &str) -> Result<()> {
+        let conn = self.get_conn()?;
+        conn.execute(
+            "UPDATE runs SET continuation_count = continuation_count + 1 WHERE id = ?1",
+            params![run_id],
+        )?;
+        Ok(())
+    }
+
+    // ========================================================================
+    // Attempt 操作
+    // ========================================================================
+
+    /// 创建 Attempt
+    pub fn create_attempt(
+        &self,
+        run_id: &str,
+        task_id: &str,
+        task_name: &str,
+        engine_id: &str,
+        prompt: &str,
+        trigger_reason: AttemptTriggerReason,
+    ) -> Result<TaskAttempt> {
+        let conn = self.get_conn()?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = Utc::now().timestamp();
+
+        // 获取下一个 attempt_number
+        let attempt_number: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(attempt_number), 0) + 1 FROM attempts WHERE run_id = ?1",
+            params![run_id],
+            |row| row.get(0),
+        ).unwrap_or(1);
+
+        conn.execute(
+            r#"
+            INSERT INTO attempts (
+                id, run_id, task_id, task_name, engine_id, attempt_number,
+                status, trigger_reason, started_at, prompt
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'running', ?7, ?8, ?9)
+            "#,
+            params![
+                id,
+                run_id,
+                task_id,
+                task_name,
+                engine_id,
+                attempt_number,
+                format!("{:?}", trigger_reason).to_lowercase(),
+                now,
+                prompt,
+            ],
+        )?;
+
+        // 同时增加 run 的 total_attempts
+        self.increment_run_attempts(run_id, false)?;
+
+        Ok(TaskAttempt {
+            id,
+            run_id: run_id.to_string(),
+            task_id: task_id.to_string(),
+            task_name: task_name.to_string(),
+            engine_id: engine_id.to_string(),
+            attempt_number: attempt_number as u32,
+            session_id: None,
+            status: TaskStatus::Running,
+            trigger_reason,
+            started_at: now,
+            finished_at: None,
+            duration_ms: None,
+            prompt: prompt.to_string(),
+            output: None,
+            error: None,
+            thinking_summary: None,
+            tool_call_count: 0,
+            token_count: None,
+            execution_outcome: None,
+            metadata: None,
+        })
+    }
+
+    /// 获取 Attempt
+    pub fn get_attempt(&self, id: &str) -> Result<Option<TaskAttempt>> {
+        let conn = self.get_conn()?;
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT id, run_id, task_id, task_name, engine_id, attempt_number,
+                   session_id, status, trigger_reason, started_at, finished_at, duration_ms,
+                   prompt, output, error, thinking_summary, tool_call_count, token_count,
+                   execution_outcome, metadata
+            FROM attempts WHERE id = ?1
+            "#,
+        )?;
+
+        let mut attempts = stmt.query_map([id], |row| {
+            Ok(Self::row_to_attempt(row))
+        })?;
+
+        match attempts.next() {
+            Some(attempt) => Ok(Some(attempt.map_err(|e| AppError::DatabaseError(format!("查询 Attempt 失败: {}", e)))?)),
+            None => Ok(None),
+        }
+    }
+
+    /// 将数据库行转换为 TaskAttempt
+    fn row_to_attempt(row: &rusqlite::Row) -> TaskAttempt {
+        TaskAttempt {
+            id: row.get(0).unwrap_or_default(),
+            run_id: row.get(1).unwrap_or_default(),
+            task_id: row.get(2).unwrap_or_default(),
+            task_name: row.get(3).unwrap_or_default(),
+            engine_id: row.get(4).unwrap_or_default(),
+            attempt_number: row.get::<_, i64>(5).unwrap_or_default() as u32,
+            session_id: row.get(6).ok(),
+            status: Self::parse_task_status(&row.get::<_, String>(7).unwrap_or_default())
+                .unwrap_or(TaskStatus::Running),
+            trigger_reason: Self::parse_attempt_trigger_reason(&row.get::<_, String>(8).unwrap_or_default()),
+            started_at: row.get(9).unwrap_or_default(),
+            finished_at: row.get(10).ok(),
+            duration_ms: row.get(11).ok(),
+            prompt: row.get(12).unwrap_or_default(),
+            output: row.get(13).ok(),
+            error: row.get(14).ok(),
+            thinking_summary: row.get(15).ok(),
+            tool_call_count: row.get::<_, i64>(16).unwrap_or_default() as u32,
+            token_count: row.get::<_, Option<i64>>(17).ok().flatten().map(|v| v as u32),
+            execution_outcome: row.get(18).ok(),
+            metadata: row.get::<_, Option<String>>(19).ok().flatten()
+                .and_then(|s| serde_json::from_str(&s).ok()),
+        }
+    }
+
+    /// 解析 Attempt 触发原因
+    fn parse_attempt_trigger_reason(s: &str) -> AttemptTriggerReason {
+        match s.to_lowercase().as_str() {
+            "initial" => AttemptTriggerReason::Initial,
+            "retry" => AttemptTriggerReason::Retry,
+            "continuation" => AttemptTriggerReason::Continuation,
+            _ => AttemptTriggerReason::Initial,
+        }
+    }
+
+    /// 更新 Attempt 完成
+    pub fn update_attempt_complete(
+        &self,
+        attempt_id: &str,
+        session_id: Option<String>,
+        status: TaskStatus,
+        output: Option<String>,
+        error: Option<String>,
+        thinking_summary: Option<String>,
+        tool_call_count: u32,
+        token_count: Option<u32>,
+        execution_outcome: Option<String>,
+    ) -> Result<()> {
+        let conn = self.get_conn()?;
+        let finished_at = Utc::now().timestamp();
+
+        // 获取开始时间和 run_id
+        let (started_at, run_id): (Option<i64>, Option<String>) = conn.query_row(
+            "SELECT started_at, run_id FROM attempts WHERE id = ?1",
+            params![attempt_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        ).ok().unwrap_or((None, None));
+
+        let duration_ms = started_at.map(|s| (finished_at - s) * 1000);
+
+        // 截取输出
+        let truncated_output = output.as_ref().map(|o| {
+            if o.len() > 2000 {
+                format!("{}...\n[输出已截断，共 {} 字符]", 
+                    &o[..o.char_indices().take(2000).last().map(|(i, _)| i).unwrap_or(0)], 
+                    o.chars().count())
+            } else {
+                o.clone()
+            }
+        });
+
+        // 截取思考摘要
+        let truncated_thinking = thinking_summary.as_ref().map(|t| {
+            if t.len() > 500 {
+                format!("{}...", &t[..t.char_indices().take(500).last().map(|(i, _)| i).unwrap_or(0)])
+            } else {
+                t.clone()
+            }
+        });
+
+        conn.execute(
+            r#"
+            UPDATE attempts SET
+                session_id = ?1, finished_at = ?2, duration_ms = ?3, status = ?4,
+                output = ?5, error = ?6, thinking_summary = ?7,
+                tool_call_count = ?8, token_count = ?9, execution_outcome = ?10
+            WHERE id = ?11
+            "#,
+            params![
+                session_id,
+                finished_at,
+                duration_ms,
+                format!("{:?}", status).to_lowercase(),
+                truncated_output,
+                error,
+                truncated_thinking,
+                tool_call_count as i64,
+                token_count.map(|v| v as i64),
+                execution_outcome,
+                attempt_id,
+            ],
+        )?;
+
+        // 如果成功，更新 run 的 successful_attempts
+        if status == TaskStatus::Success {
+            if let Some(rid) = run_id {
+                conn.execute(
+                    "UPDATE runs SET successful_attempts = successful_attempts + 1 WHERE id = ?1",
+                    params![rid],
+                )?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 获取 Run 的所有 Attempt
+    pub fn get_run_attempts(&self, run_id: &str) -> Result<Vec<TaskAttempt>> {
+        let conn = self.get_conn()?;
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT id, run_id, task_id, task_name, engine_id, attempt_number,
+                   session_id, status, trigger_reason, started_at, finished_at, duration_ms,
+                   prompt, output, error, thinking_summary, tool_call_count, token_count,
+                   execution_outcome, metadata
+            FROM attempts
+            WHERE run_id = ?1
+            ORDER BY attempt_number ASC
+            "#,
+        )?;
+
+        let attempts = stmt.query_map([run_id], |row| {
+            Ok(Self::row_to_attempt(row))
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| AppError::DatabaseError(format!("查询 Attempt 列表失败: {}", e)))?;
+
+        Ok(attempts)
+    }
+
+    /// 获取 Run 数量
+    pub fn run_count(&self) -> Result<usize> {
+        let conn = self.get_conn()?;
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM runs", [], |row| row.get(0))?;
+        Ok(count as usize)
+    }
+
+    /// 获取 Attempt 数量
+    pub fn attempt_count(&self) -> Result<usize> {
+        let conn = self.get_conn()?;
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM attempts", [], |row| row.get(0))?;
+        Ok(count as usize)
+    }
+}
+
+// ============================================================================
 // JSON 迁移
 // ============================================================================
 
@@ -1580,6 +2305,102 @@ impl StorageBackend for SqliteStore {
 
     fn log_count(&self) -> Result<usize> {
         SqliteStore::log_count(self)
+    }
+
+    // ========================================================================
+    // Run / Attempt 操作
+    // ========================================================================
+
+    fn create_run(
+        &self,
+        task_id: &str,
+        trigger_type: crate::models::scheduler::RunTriggerType,
+        trigger_source: Option<String>,
+        conversation_session_id: Option<String>,
+        parent_run_id: Option<String>,
+    ) -> Result<crate::models::scheduler::TaskRun> {
+        SqliteStore::create_run(self, task_id, trigger_type, trigger_source, conversation_session_id, parent_run_id)
+    }
+
+    fn get_run(&self, id: &str) -> Result<Option<crate::models::scheduler::TaskRun>> {
+        SqliteStore::get_run(self, id)
+    }
+
+    fn update_run_complete(
+        &self,
+        run_id: &str,
+        status: crate::models::scheduler::RunStatus,
+        final_outcome: Option<String>,
+        final_output: Option<String>,
+        final_error: Option<String>,
+    ) -> Result<()> {
+        SqliteStore::update_run_complete(self, run_id, status, final_outcome, final_output, final_error)
+    }
+
+    fn get_task_runs(
+        &self,
+        task_id: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<crate::models::scheduler::TaskRun>> {
+        SqliteStore::get_task_runs(self, task_id, limit)
+    }
+
+    fn create_attempt(
+        &self,
+        run_id: &str,
+        task_id: &str,
+        task_name: &str,
+        engine_id: &str,
+        prompt: &str,
+        trigger_reason: crate::models::scheduler::AttemptTriggerReason,
+    ) -> Result<crate::models::scheduler::TaskAttempt> {
+        SqliteStore::create_attempt(self, run_id, task_id, task_name, engine_id, prompt, trigger_reason)
+    }
+
+    fn get_attempt(&self, id: &str) -> Result<Option<crate::models::scheduler::TaskAttempt>> {
+        SqliteStore::get_attempt(self, id)
+    }
+
+    fn update_attempt_complete(
+        &self,
+        attempt_id: &str,
+        session_id: Option<String>,
+        status: TaskStatus,
+        output: Option<String>,
+        error: Option<String>,
+        thinking_summary: Option<String>,
+        tool_call_count: u32,
+        token_count: Option<u32>,
+        execution_outcome: Option<String>,
+    ) -> Result<()> {
+        SqliteStore::update_attempt_complete(
+            self,
+            attempt_id,
+            session_id,
+            status,
+            output,
+            error,
+            thinking_summary,
+            tool_call_count,
+            token_count,
+            execution_outcome,
+        )
+    }
+
+    fn get_run_attempts(&self, run_id: &str) -> Result<Vec<crate::models::scheduler::TaskAttempt>> {
+        SqliteStore::get_run_attempts(self, run_id)
+    }
+
+    fn increment_continuation_count(&self, run_id: &str) -> Result<()> {
+        SqliteStore::increment_continuation_count(self, run_id)
+    }
+
+    fn run_count(&self) -> Result<usize> {
+        SqliteStore::run_count(self)
+    }
+
+    fn attempt_count(&self) -> Result<usize> {
+        SqliteStore::attempt_count(self)
     }
 }
 
@@ -2002,5 +2823,331 @@ mod tests {
         let task = store.get_task("task-1").unwrap().unwrap();
         assert_eq!(task.name, "Updated Name");
         assert_eq!(task.current_runs, 100);
+    }
+
+    // ========================================================================
+    // Run / Attempt 测试
+    // ========================================================================
+
+    #[test]
+    fn test_create_and_get_run() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        // 先创建任务
+        let task = create_test_task("task-1", "Test Task");
+        store.migrate_from_json(vec![task], vec![], &LogRetentionConfig::default()).unwrap();
+        
+        // 创建 Run
+        let run = store.create_run(
+            "task-1",
+            RunTriggerType::Scheduled,
+            None,
+            Some("session-123".to_string()),
+            None,
+        ).unwrap();
+        
+        assert!(!run.id.is_empty());
+        assert_eq!(run.task_id, "task-1");
+        assert_eq!(run.sequence_number, 1);
+        assert_eq!(run.status, RunStatus::Running);
+        assert_eq!(run.trigger_type, RunTriggerType::Scheduled);
+        assert_eq!(run.conversation_session_id, Some("session-123".to_string()));
+        assert!(!run.is_continuous_run);
+        
+        // 获取 Run
+        let retrieved = store.get_run(&run.id).unwrap().unwrap();
+        assert_eq!(retrieved.id, run.id);
+        assert_eq!(retrieved.task_id, "task-1");
+    }
+
+    #[test]
+    fn test_run_sequence_number() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        // 先创建任务
+        let task = create_test_task("task-1", "Test Task");
+        store.migrate_from_json(vec![task], vec![], &LogRetentionConfig::default()).unwrap();
+        
+        // 创建多个 Run
+        let run1 = store.create_run("task-1", RunTriggerType::Scheduled, None, None, None).unwrap();
+        let run2 = store.create_run("task-1", RunTriggerType::Manual, None, None, None).unwrap();
+        let run3 = store.create_run("task-1", RunTriggerType::Continuation, None, None, Some(run1.id.clone())).unwrap();
+        
+        assert_eq!(run1.sequence_number, 1);
+        assert_eq!(run2.sequence_number, 2);
+        assert_eq!(run3.sequence_number, 3);
+        assert!(run3.is_continuous_run);
+        assert_eq!(run3.parent_run_id, Some(run1.id));
+    }
+
+    #[test]
+    fn test_update_run_complete() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        // 先创建任务
+        let task = create_test_task("task-1", "Test Task");
+        store.migrate_from_json(vec![task], vec![], &LogRetentionConfig::default()).unwrap();
+        
+        // 创建 Run
+        let run = store.create_run("task-1", RunTriggerType::Scheduled, None, None, None).unwrap();
+        
+        // 更新 Run 完成
+        store.update_run_complete(
+            &run.id,
+            RunStatus::Success,
+            Some("success_with_progress".to_string()),
+            Some("Task completed successfully".to_string()),
+            None,
+        ).unwrap();
+        
+        // 验证更新
+        let updated = store.get_run(&run.id).unwrap().unwrap();
+        assert_eq!(updated.status, RunStatus::Success);
+        assert_eq!(updated.final_outcome, Some("success_with_progress".to_string()));
+        assert_eq!(updated.final_output, Some("Task completed successfully".to_string()));
+        assert!(updated.finished_at.is_some());
+        assert!(updated.duration_ms.is_some());
+    }
+
+    #[test]
+    fn test_get_task_runs() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        // 先创建任务
+        let task = create_test_task("task-1", "Test Task");
+        store.migrate_from_json(vec![task], vec![], &LogRetentionConfig::default()).unwrap();
+        
+        // 创建多个 Run
+        store.create_run("task-1", RunTriggerType::Scheduled, None, None, None).unwrap();
+        store.create_run("task-1", RunTriggerType::Manual, None, None, None).unwrap();
+        store.create_run("task-1", RunTriggerType::Retry, None, None, None).unwrap();
+        
+        // 获取 Run 列表
+        let runs = store.get_task_runs("task-1", None).unwrap();
+        assert_eq!(runs.len(), 3);
+        
+        // 验证按时间倒序排列
+        assert_eq!(runs[0].trigger_type, RunTriggerType::Retry);
+        assert_eq!(runs[1].trigger_type, RunTriggerType::Manual);
+        assert_eq!(runs[2].trigger_type, RunTriggerType::Scheduled);
+        
+        // 测试 limit
+        let limited_runs = store.get_task_runs("task-1", Some(2)).unwrap();
+        assert_eq!(limited_runs.len(), 2);
+    }
+
+    #[test]
+    fn test_create_and_get_attempt() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        // 先创建任务
+        let task = create_test_task("task-1", "Test Task");
+        store.migrate_from_json(vec![task], vec![], &LogRetentionConfig::default()).unwrap();
+        
+        // 创建 Run
+        let run = store.create_run("task-1", RunTriggerType::Scheduled, None, None, None).unwrap();
+        
+        // 创建 Attempt
+        let attempt = store.create_attempt(
+            &run.id,
+            "task-1",
+            "Test Task",
+            "claude",
+            "Test prompt",
+            AttemptTriggerReason::Initial,
+        ).unwrap();
+        
+        assert!(!attempt.id.is_empty());
+        assert_eq!(attempt.run_id, run.id);
+        assert_eq!(attempt.task_id, "task-1");
+        assert_eq!(attempt.attempt_number, 1);
+        assert_eq!(attempt.status, TaskStatus::Running);
+        assert_eq!(attempt.trigger_reason, AttemptTriggerReason::Initial);
+        assert_eq!(attempt.prompt, "Test prompt");
+        
+        // 获取 Attempt
+        let retrieved = store.get_attempt(&attempt.id).unwrap().unwrap();
+        assert_eq!(retrieved.id, attempt.id);
+        assert_eq!(retrieved.run_id, run.id);
+    }
+
+    #[test]
+    fn test_attempt_sequence_in_run() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        // 先创建任务
+        let task = create_test_task("task-1", "Test Task");
+        store.migrate_from_json(vec![task], vec![], &LogRetentionConfig::default()).unwrap();
+        
+        // 创建 Run
+        let run = store.create_run("task-1", RunTriggerType::Scheduled, None, None, None).unwrap();
+        
+        // 创建多个 Attempt
+        let a1 = store.create_attempt(&run.id, "task-1", "Test Task", "claude", "Prompt 1", AttemptTriggerReason::Initial).unwrap();
+        let a2 = store.create_attempt(&run.id, "task-1", "Test Task", "claude", "Prompt 2", AttemptTriggerReason::Retry).unwrap();
+        let a3 = store.create_attempt(&run.id, "task-1", "Test Task", "claude", "Prompt 3", AttemptTriggerReason::Continuation).unwrap();
+        
+        assert_eq!(a1.attempt_number, 1);
+        assert_eq!(a2.attempt_number, 2);
+        assert_eq!(a3.attempt_number, 3);
+        
+        // 验证 Run 的 total_attempts 更新
+        let updated_run = store.get_run(&run.id).unwrap().unwrap();
+        assert_eq!(updated_run.total_attempts, 3);
+    }
+
+    #[test]
+    fn test_update_attempt_complete() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        // 先创建任务
+        let task = create_test_task("task-1", "Test Task");
+        store.migrate_from_json(vec![task], vec![], &LogRetentionConfig::default()).unwrap();
+        
+        // 创建 Run 和 Attempt
+        let run = store.create_run("task-1", RunTriggerType::Scheduled, None, None, None).unwrap();
+        let attempt = store.create_attempt(&run.id, "task-1", "Test Task", "claude", "Test prompt", AttemptTriggerReason::Initial).unwrap();
+        
+        // 更新 Attempt 完成
+        store.update_attempt_complete(
+            &attempt.id,
+            Some("session-456".to_string()),
+            TaskStatus::Success,
+            Some("Output content".to_string()),
+            None,
+            Some("Thinking summary".to_string()),
+            5,
+            Some(1000),
+            Some("success_with_progress".to_string()),
+        ).unwrap();
+        
+        // 验证更新
+        let updated = store.get_attempt(&attempt.id).unwrap().unwrap();
+        assert_eq!(updated.status, TaskStatus::Success);
+        assert_eq!(updated.session_id, Some("session-456".to_string()));
+        assert!(updated.finished_at.is_some());
+        assert!(updated.duration_ms.is_some());
+        assert_eq!(updated.tool_call_count, 5);
+        assert_eq!(updated.token_count, Some(1000));
+        assert_eq!(updated.execution_outcome, Some("success_with_progress".to_string()));
+        
+        // 验证 Run 的 successful_attempts 更新
+        let updated_run = store.get_run(&run.id).unwrap().unwrap();
+        assert_eq!(updated_run.successful_attempts, 1);
+    }
+
+    #[test]
+    fn test_get_run_attempts() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        // 先创建任务
+        let task = create_test_task("task-1", "Test Task");
+        store.migrate_from_json(vec![task], vec![], &LogRetentionConfig::default()).unwrap();
+        
+        // 创建 Run 和多个 Attempt
+        let run = store.create_run("task-1", RunTriggerType::Scheduled, None, None, None).unwrap();
+        
+        store.create_attempt(&run.id, "task-1", "Test Task", "claude", "Prompt 1", AttemptTriggerReason::Initial).unwrap();
+        store.create_attempt(&run.id, "task-1", "Test Task", "claude", "Prompt 2", AttemptTriggerReason::Retry).unwrap();
+        store.create_attempt(&run.id, "task-1", "Test Task", "claude", "Prompt 3", AttemptTriggerReason::Continuation).unwrap();
+        
+        // 获取 Run 的所有 Attempt
+        let attempts = store.get_run_attempts(&run.id).unwrap();
+        assert_eq!(attempts.len(), 3);
+        
+        // 验证按 attempt_number 排序
+        assert_eq!(attempts[0].attempt_number, 1);
+        assert_eq!(attempts[1].attempt_number, 2);
+        assert_eq!(attempts[2].attempt_number, 3);
+    }
+
+    #[test]
+    fn test_increment_continuation_count() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        // 先创建任务
+        let task = create_test_task("task-1", "Test Task");
+        store.migrate_from_json(vec![task], vec![], &LogRetentionConfig::default()).unwrap();
+        
+        // 创建 Run
+        let run = store.create_run("task-1", RunTriggerType::Scheduled, None, None, None).unwrap();
+        
+        // 增加连续执行计数
+        store.increment_continuation_count(&run.id).unwrap();
+        store.increment_continuation_count(&run.id).unwrap();
+        store.increment_continuation_count(&run.id).unwrap();
+        
+        // 验证
+        let updated = store.get_run(&run.id).unwrap().unwrap();
+        assert_eq!(updated.continuation_count, 3);
+    }
+
+    #[test]
+    fn test_run_and_attempt_counts() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        // 初始计数应为 0
+        assert_eq!(store.run_count().unwrap(), 0);
+        assert_eq!(store.attempt_count().unwrap(), 0);
+        
+        // 先创建任务
+        let task = create_test_task("task-1", "Test Task");
+        store.migrate_from_json(vec![task], vec![], &LogRetentionConfig::default()).unwrap();
+        
+        // 创建 Run 和 Attempt
+        let run = store.create_run("task-1", RunTriggerType::Scheduled, None, None, None).unwrap();
+        assert_eq!(store.run_count().unwrap(), 1);
+        
+        store.create_attempt(&run.id, "task-1", "Test Task", "claude", "Prompt", AttemptTriggerReason::Initial).unwrap();
+        store.create_attempt(&run.id, "task-1", "Test Task", "claude", "Prompt", AttemptTriggerReason::Retry).unwrap();
+        assert_eq!(store.attempt_count().unwrap(), 2);
+        
+        // 创建另一个 Run
+        let run2 = store.create_run("task-1", RunTriggerType::Manual, None, None, None).unwrap();
+        store.create_attempt(&run2.id, "task-1", "Test Task", "claude", "Prompt", AttemptTriggerReason::Initial).unwrap();
+        
+        assert_eq!(store.run_count().unwrap(), 2);
+        assert_eq!(store.attempt_count().unwrap(), 3);
+    }
+
+    #[test]
+    fn test_attempt_to_task_log_conversion() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        // 先创建任务
+        let task = create_test_task("task-1", "Test Task");
+        store.migrate_from_json(vec![task], vec![], &LogRetentionConfig::default()).unwrap();
+        
+        // 创建 Run 和 Attempt
+        let run = store.create_run("task-1", RunTriggerType::Scheduled, None, None, None).unwrap();
+        let attempt = store.create_attempt(&run.id, "task-1", "Test Task", "claude", "Test prompt", AttemptTriggerReason::Initial).unwrap();
+        
+        // 更新 Attempt 完成
+        store.update_attempt_complete(
+            &attempt.id,
+            Some("session-789".to_string()),
+            TaskStatus::Success,
+            Some("Output".to_string()),
+            None,
+            Some("Thinking".to_string()),
+            3,
+            Some(500),
+            None,
+        ).unwrap();
+        
+        // 获取更新后的 Attempt
+        let updated_attempt = store.get_attempt(&attempt.id).unwrap().unwrap();
+        
+        // 转换为 TaskLog
+        let log: TaskLog = updated_attempt.into();
+        
+        assert_eq!(log.id, attempt.id);
+        assert_eq!(log.task_id, "task-1");
+        assert_eq!(log.task_name, "Test Task");
+        assert_eq!(log.engine_id, "claude");
+        assert_eq!(log.session_id, Some("session-789".to_string()));
+        assert_eq!(log.status, TaskStatus::Success);
+        assert_eq!(log.tool_call_count, 3);
+        assert_eq!(log.token_count, Some(500));
     }
 }

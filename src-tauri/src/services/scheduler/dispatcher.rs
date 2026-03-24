@@ -993,6 +993,7 @@ impl SchedulerDispatcher {
 
         Ok(RunTaskResult {
             log_id,
+            run_id: None, // TODO: 集成 Run 模型后填充
             message: "任务已启动".to_string(),
         })
     }
@@ -1023,6 +1024,7 @@ impl SchedulerDispatcher {
 
         Ok(RunTaskResult {
             log_id,
+            run_id: None, // TODO: 集成 Run 模型后填充
             message: "任务已启动".to_string(),
         })
     }

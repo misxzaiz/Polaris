@@ -362,6 +362,119 @@ impl UnifiedStorageService {
     }
 
     // ========================================================================
+    // Run / Attempt 操作
+    // ========================================================================
+
+    /// 创建 Run
+    pub fn create_run(
+        &self,
+        task_id: &str,
+        trigger_type: crate::models::scheduler::RunTriggerType,
+        trigger_source: Option<String>,
+        conversation_session_id: Option<String>,
+        parent_run_id: Option<String>,
+    ) -> Result<crate::models::scheduler::TaskRun> {
+        self.backend.create_run(
+            task_id,
+            trigger_type,
+            trigger_source,
+            conversation_session_id,
+            parent_run_id,
+        )
+    }
+
+    /// 获取 Run
+    pub fn get_run(&self, id: &str) -> Result<Option<crate::models::scheduler::TaskRun>> {
+        self.backend.get_run(id)
+    }
+
+    /// 更新 Run 完成
+    pub fn update_run_complete(
+        &self,
+        run_id: &str,
+        status: crate::models::scheduler::RunStatus,
+        final_outcome: Option<String>,
+        final_output: Option<String>,
+        final_error: Option<String>,
+    ) -> Result<()> {
+        self.backend.update_run_complete(run_id, status, final_outcome, final_output, final_error)
+    }
+
+    /// 获取任务的 Run 列表
+    pub fn get_task_runs(
+        &self,
+        task_id: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<crate::models::scheduler::TaskRun>> {
+        self.backend.get_task_runs(task_id, limit)
+    }
+
+    /// 创建 Attempt
+    pub fn create_attempt(
+        &self,
+        run_id: &str,
+        task_id: &str,
+        task_name: &str,
+        engine_id: &str,
+        prompt: &str,
+        trigger_reason: crate::models::scheduler::AttemptTriggerReason,
+    ) -> Result<crate::models::scheduler::TaskAttempt> {
+        self.backend.create_attempt(run_id, task_id, task_name, engine_id, prompt, trigger_reason)
+    }
+
+    /// 获取 Attempt
+    pub fn get_attempt(&self, id: &str) -> Result<Option<crate::models::scheduler::TaskAttempt>> {
+        self.backend.get_attempt(id)
+    }
+
+    /// 更新 Attempt 完成
+    #[allow(clippy::too_many_arguments)]
+    pub fn update_attempt_complete(
+        &self,
+        attempt_id: &str,
+        session_id: Option<String>,
+        status: TaskStatus,
+        output: Option<String>,
+        error: Option<String>,
+        thinking_summary: Option<String>,
+        tool_call_count: u32,
+        token_count: Option<u32>,
+        execution_outcome: Option<String>,
+    ) -> Result<()> {
+        self.backend.update_attempt_complete(
+            attempt_id,
+            session_id,
+            status,
+            output,
+            error,
+            thinking_summary,
+            tool_call_count,
+            token_count,
+            execution_outcome,
+        )
+    }
+
+    /// 获取 Run 的所有 Attempt
+    pub fn get_run_attempts(&self, run_id: &str) -> Result<Vec<crate::models::scheduler::TaskAttempt>> {
+        self.backend.get_run_attempts(run_id)
+    }
+
+    /// 增加 Run 的连续执行计数
+    pub fn increment_continuation_count(&self, run_id: &str) -> Result<()> {
+        self.backend.increment_continuation_count(run_id)
+    }
+
+    /// 获取 Run 数量
+    pub fn run_count(&self) -> Result<usize> {
+        self.backend.run_count()
+    }
+
+    /// 获取 Attempt 数量
+    pub fn attempt_count(&self) -> Result<usize> {
+        self.backend.attempt_count()
+    }
+
+    // ========================================================================
     // 迁移相关
     // ========================================================================
 

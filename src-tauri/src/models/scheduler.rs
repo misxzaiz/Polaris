@@ -319,12 +319,201 @@ pub struct TaskLog {
     pub token_count: Option<u32>,
 }
 
+// ============================================================================
+// Run / Attempt 分层模型
+// ============================================================================
+
+/// 执行会话状态
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum RunStatus {
+    /// 等待执行
+    Pending,
+    /// 执行中
+    Running,
+    /// 成功
+    Success,
+    /// 失败
+    Failed,
+    /// 已取消
+    Cancelled,
+}
+
+/// Run 触发类型
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum RunTriggerType {
+    /// 定时触发
+    Scheduled,
+    /// 手动触发
+    Manual,
+    /// 连续执行触发
+    Continuation,
+    /// 重试触发
+    Retry,
+}
+
+/// Attempt 触发原因
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum AttemptTriggerReason {
+    /// 首次执行
+    Initial,
+    /// 重试执行
+    Retry,
+    /// 连续执行
+    Continuation,
+}
+
+/// 执行会话（Run）
+///
+/// 代表一次"执行链"，可能包含多个 Attempt（连续执行或重试）。
+/// - 单次执行：1 Run = 1 Attempt
+/// - 连续执行：1 Run = N Attempt（每次 continuation 产生新 Attempt）
+/// - 重试场景：1 Run = N Attempt（每次 retry 产生新 Attempt）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskRun {
+    /// Run ID
+    pub id: String,
+    /// 任务 ID
+    pub task_id: String,
+    /// Run 序号（该任务的第几次 Run）
+    pub sequence_number: u32,
+    /// AI 会话 ID
+    pub conversation_session_id: Option<String>,
+    /// 状态
+    pub status: RunStatus,
+    /// 触发类型
+    pub trigger_type: RunTriggerType,
+    /// 触发来源（如 parent_run_id 或 manual trigger source）
+    pub trigger_source: Option<String>,
+    /// 开始时间
+    pub started_at: i64,
+    /// 结束时间
+    pub finished_at: Option<i64>,
+    /// 总时长（毫秒）
+    pub duration_ms: Option<i64>,
+    /// 尝试次数
+    pub total_attempts: u32,
+    /// 成功次数
+    pub successful_attempts: u32,
+    /// 最终结果类型
+    pub final_outcome: Option<String>,
+    /// 最终输出（截取）
+    pub final_output: Option<String>,
+    /// 最终错误
+    pub final_error: Option<String>,
+    /// 连续执行次数
+    pub continuation_count: u32,
+    /// 是否是连续执行链的一部分
+    pub is_continuous_run: bool,
+    /// 父 Run ID（连续执行场景，前一个 Run 的 ID）
+    pub parent_run_id: Option<String>,
+    /// 元数据
+    pub metadata: Option<HashMap<String, String>>,
+    /// 创建时间
+    pub created_at: i64,
+}
+
+/// 执行尝试（Attempt）
+///
+/// 代表单次执行尝试。重试和连续执行都会产生新的 Attempt。
+/// - 首次执行：trigger_reason = Initial
+/// - 重试执行：trigger_reason = Retry
+/// - 连续执行：trigger_reason = Continuation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskAttempt {
+    /// Attempt ID
+    pub id: String,
+    /// Run ID
+    pub run_id: String,
+    /// 任务 ID
+    pub task_id: String,
+    /// 任务名称（冗余，便于查询）
+    pub task_name: String,
+    /// 使用的引擎 ID
+    pub engine_id: String,
+    /// Run 内的尝试序号
+    pub attempt_number: u32,
+    /// AI 会话 ID（attempt 级别）
+    pub session_id: Option<String>,
+    /// 状态
+    pub status: TaskStatus,
+    /// 触发原因
+    pub trigger_reason: AttemptTriggerReason,
+    /// 开始时间
+    pub started_at: i64,
+    /// 结束时间
+    pub finished_at: Option<i64>,
+    /// 执行耗时（毫秒）
+    pub duration_ms: Option<i64>,
+    /// 使用的 prompt
+    pub prompt: String,
+    /// 输出（截取）
+    pub output: Option<String>,
+    /// 错误
+    pub error: Option<String>,
+    /// 思考摘要
+    pub thinking_summary: Option<String>,
+    /// 工具调用次数
+    pub tool_call_count: u32,
+    /// Token 消耗
+    pub token_count: Option<u32>,
+    /// 执行结果类型
+    pub execution_outcome: Option<String>,
+    /// 元数据
+    pub metadata: Option<HashMap<String, String>>,
+}
+
+impl From<TaskAttempt> for TaskLog {
+    /// 将 TaskAttempt 转换为 TaskLog（兼容层）
+    fn from(attempt: TaskAttempt) -> Self {
+        Self {
+            id: attempt.id,
+            task_id: attempt.task_id,
+            task_name: attempt.task_name,
+            engine_id: attempt.engine_id,
+            session_id: attempt.session_id,
+            started_at: attempt.started_at,
+            finished_at: attempt.finished_at,
+            duration_ms: attempt.duration_ms,
+            status: attempt.status,
+            prompt: attempt.prompt,
+            output: attempt.output,
+            error: attempt.error,
+            thinking_summary: attempt.thinking_summary,
+            tool_call_count: attempt.tool_call_count,
+            token_count: attempt.token_count,
+        }
+    }
+}
+
+/// 分页 Run 结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PaginatedRuns {
+    /// Run 列表
+    pub runs: Vec<TaskRun>,
+    /// 总数
+    pub total: usize,
+    /// 当前页（1-indexed）
+    pub page: u32,
+    /// 每页大小
+    pub page_size: u32,
+    /// 总页数
+    pub total_pages: usize,
+}
+
 /// 执行任务结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunTaskResult {
     /// 日志 ID
     pub log_id: String,
+    /// Run ID
+    pub run_id: Option<String>,
     /// 提示信息
     pub message: String,
 }
