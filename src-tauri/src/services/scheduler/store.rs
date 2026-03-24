@@ -112,6 +112,10 @@ impl TaskStoreService {
             updated_at: now,
             max_runs: params.max_runs,
             current_runs: 0,
+            reuse_session: params.reuse_session,
+            conversation_session_id: None,
+            continue_immediately: params.continue_immediately,
+            max_continuous_runs: params.max_continuous_runs,
             run_in_terminal: params.run_in_terminal,
             template_id: params.template_id,
             template_param_values: params.template_param_values,
@@ -169,6 +173,9 @@ impl TaskStoreService {
             existing.description = task.description;
             existing.task_path = task.task_path;
             existing.max_runs = task.max_runs;
+            existing.reuse_session = task.reuse_session;
+            existing.continue_immediately = task.continue_immediately;
+            existing.max_continuous_runs = task.max_continuous_runs;
             existing.run_in_terminal = task.run_in_terminal;
             existing.template_id = task.template_id;
             existing.template_param_values = task.template_param_values;
@@ -221,6 +228,16 @@ impl TaskStoreService {
                 task.next_run_at = None;
             }
 
+            self.save()?;
+        }
+        Ok(())
+    }
+
+    /// 更新任务会话 ID
+    pub fn update_conversation_session_id(&mut self, id: &str, session_id: Option<String>) -> Result<()> {
+        if let Some(task) = self.store.tasks.iter_mut().find(|t| t.id == id) {
+            task.conversation_session_id = session_id;
+            task.updated_at = Utc::now().timestamp();
             self.save()?;
         }
         Ok(())

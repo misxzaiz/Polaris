@@ -124,7 +124,7 @@ export const useSchedulerStore = create<SchedulerState>((set, get) => ({
     try {
       const task = await tauri.schedulerCreateTask({
         name: params.name,
-        enabled: params.enabled ?? true,
+        enabled: params.enabled ?? false,
         triggerType: params.triggerType,
         triggerValue: params.triggerValue,
         engineId: params.engineId,
@@ -133,6 +133,9 @@ export const useSchedulerStore = create<SchedulerState>((set, get) => ({
         group: params.group,
         mission: params.mission,
         maxRuns: params.maxRuns,
+        reuseSession: params.reuseSession,
+        continueImmediately: params.continueImmediately,
+        maxContinuousRuns: params.maxContinuousRuns,
         runInTerminal: params.runInTerminal,
         templateId: params.templateId,
         templateParamValues: params.templateParamValues,
@@ -189,14 +192,12 @@ export const useSchedulerStore = create<SchedulerState>((set, get) => ({
     try {
       await tauri.schedulerToggleTask(id, enabled);
 
-      // 更新本地状态
-      set((state) => ({
-        tasks: state.tasks.map((t) =>
-          t.id === id ? { ...t, enabled } : t
-        ),
-      }));
+      // 刷新任务列表获取最新状态
+      const tasks = await tauri.schedulerGetTasks();
+      set({ tasks });
     } catch (e) {
       console.error('切换任务状态失败:', e);
+      throw e;
     }
   },
 

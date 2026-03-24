@@ -202,6 +202,23 @@ export function SchedulerTab() {
     }
   };
 
+  const handleToggleTask = async (task: ScheduledTask) => {
+    try {
+      await toggleTask(task.id, !task.enabled);
+
+      if (task.enabled) {
+        toast.success(`任务「${task.name}」已禁用`);
+        return;
+      }
+
+      await runTask(task.id);
+      toast.success(`任务「${task.name}」已启用并开始执行`);
+      loadLogs(50);
+    } catch (e) {
+      toast.error(task.enabled ? '禁用失败' : '启用失败', e instanceof Error ? e.message : undefined);
+    }
+  };
+
   const handleDelete = (id: string) => {
     setConfirmDialog({
       show: true,
@@ -397,7 +414,7 @@ export function SchedulerTab() {
                       执行
                     </button>
                     <button
-                      onClick={() => toggleTask(task.id, !task.enabled)}
+                      onClick={() => handleToggleTask(task)}
                       className={`px-3 py-1 text-sm rounded transition-colors ${
                         task.enabled
                           ? 'bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30'

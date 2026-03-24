@@ -3,7 +3,7 @@
  * 负责检查待执行任务并调用 AI 引擎执行
  */
 
-use crate::error::Result;
+use crate::error::{AppError, Result};
 use crate::models::scheduler::{ScheduledTask, TaskStatus, RunTaskResult};
 use crate::ai::{EngineRegistry, EngineId, SessionOptions};
 use crate::models::AIEvent;
@@ -217,11 +217,21 @@ impl SchedulerDispatcher {
 
     /// 执行单个任务，返回日志 ID
     async fn execute_task(&self, task: ScheduledTask) -> Result<String> {
+        self.execute_task_with_continuation_count(task, 1).await
+    }
+
+    async fn execute_task_with_continuation_count(&self, task: ScheduledTask, continuous_runs: u32) -> Result<String> {
         let task_id = task.id.clone();
         let task_id_for_map = task.id.clone();
         let task_name = task.name.clone();
         let engine_id = task.engine_id.clone();
         let work_dir = task.work_dir.clone();
+        let reuse_session = task.reuse_session;
+        let existing_session_id = if reuse_session {
+            task.conversation_session_id.clone()
+        } else {
+            None
+        };
         // 克隆 app_handle 用于通知
         let app_handle_for_notify = self.app_handle.clone();
         let notify_on_complete = task.notify_on_complete;
@@ -235,6 +245,7 @@ impl SchedulerDispatcher {
         let log_store = self.log_store.clone();
         let engine_registry = self.engine_registry.clone();
         let running_tasks = self.running_tasks.clone();
+        let dispatcher_for_continue = self.clone();
 
         // 用于后续处理用户补充
         let task_for_post = task.clone();
@@ -264,7 +275,7 @@ impl SchedulerDispatcher {
             // 收集输出、思考过程、工具调用、session_id
             let output = Arc::new(AsyncMutex::new(String::new()));
             let thinking = Arc::new(AsyncMutex::new(String::new()));
-            let session_id = Arc::new(AsyncMutex::new(None::<String>));
+            let session_id = Arc::new(AsyncMutex::new(existing_session_id.clone()));
             let session_id_for_update = session_id.clone();
             let tool_call_count = Arc::new(AsyncMutex::new(0u32));
 
@@ -290,218 +301,289 @@ impl SchedulerDispatcher {
             let tool_call_count_for_complete = tool_call_count.clone();
             let running_tasks_for_complete = running_tasks.clone();
             let task_for_complete = task_for_post.clone();
+            let dispatcher_for_complete = dispatcher_for_continue.clone();
+            let continuous_runs_for_complete = continuous_runs;
             // 克隆 app_handle 给完成回调和超时监控分别使用
             let app_handle_for_complete = app_handle_for_notify.clone();
             let app_handle_for_timeout_main = app_handle_for_notify.clone();
 
-            // 创建会话选项
-            let options = SessionOptions::new(move |event: AIEvent| {
-                match &event {
-                    AIEvent::AssistantMessage(msg) => {
-                        if let Ok(mut o) = output_clone.try_lock() {
-                            o.push_str(&msg.content);
-                        }
-                    }
-                    AIEvent::Thinking(t) => {
-                        if let Ok(mut th) = thinking_clone.try_lock() {
-                            th.push_str(&t.content);
-                            th.push('\n');
-                        }
-                    }
-                    AIEvent::ToolCallStart(_) => {
-                        if let Ok(mut count) = tool_call_count_clone.try_lock() {
-                            *count += 1;
-                        }
-                    }
-                    AIEvent::SessionStart(s) => {
-                        if let Ok(mut sid) = session_id_clone.try_lock() {
-                            *sid = Some(s.session_id.clone());
-                        }
-                    }
-                    _ => {}
-                }
-            })
-            .with_work_dir(work_dir.unwrap_or_else(|| ".".to_string()))
-            .with_on_session_id_update(move |sid: String| {
-                if let Ok(mut s) = session_id_for_update.try_lock() {
-                    *s = Some(sid);
-                }
-            })
-            .with_on_complete(move |exit_code: i32| {
-                // 防止重复调用
-                if completed_clone.swap(true, Ordering::SeqCst) {
-                    return;
-                }
+            let build_options = || {
+                let output_clone = output_clone.clone();
+                let thinking_clone = thinking_clone.clone();
+                let session_id_clone = session_id_clone.clone();
+                let tool_call_count_clone = tool_call_count_clone.clone();
+                let session_id_for_update = session_id_for_update.clone();
+                let completed_clone = completed_clone.clone();
+                let log_id_for_complete = log_id_for_complete.clone();
+                let task_id_for_complete = task_id_for_complete.clone();
+                let task_name_for_complete = task_name_for_complete.clone();
+                let task_store_for_complete = task_store_for_complete.clone();
+                let log_store_for_complete = log_store_for_complete.clone();
+                let output_for_complete = output_for_complete.clone();
+                let thinking_for_complete = thinking_for_complete.clone();
+                let session_id_for_complete = session_id_for_complete.clone();
+                let tool_call_count_for_complete = tool_call_count_for_complete.clone();
+                let running_tasks_for_complete = running_tasks_for_complete.clone();
+                let task_for_complete = task_for_complete.clone();
+                let dispatcher_for_complete = dispatcher_for_complete.clone();
+                let app_handle_for_complete = app_handle_for_complete.clone();
 
-                tracing::info!("[Scheduler] 会话完成，exit_code: {}", exit_code);
-
-                // 在新的 tokio 任务中处理完成逻辑（因为回调在非异步上下文中）
-                let log_id = log_id_for_complete.clone();
-                let task_id = task_id_for_complete.clone();
-                let task_name = task_name_for_complete.clone();
-                let task_store = task_store_for_complete.clone();
-                let log_store = log_store_for_complete.clone();
-                let output = output_for_complete.clone();
-                let thinking = thinking_for_complete.clone();
-                let session_id = session_id_for_complete.clone();
-                let tool_call_count = tool_call_count_for_complete.clone();
-                let running_tasks = running_tasks_for_complete.clone();
-
-                // 克隆协议任务相关字段（避免在 Fn 闭包中移动）
-                let task_work_dir_for_complete = task_for_complete.work_dir.clone();
-                let task_task_path_for_complete = task_for_complete.task_path.clone();
-                // clone app_handle 以便在 async 块中使用
-                let app_handle_for_notify = app_handle_for_complete.clone();
-
-                tauri::async_runtime::spawn(async move {
-                    let final_output = output.lock().await.clone();
-                    let final_thinking = thinking.lock().await.clone();
-                    let final_session_id = session_id.lock().await.clone();
-                    let final_tool_count = *tool_call_count.lock().await;
-                    let run_summary = SchedulerDispatcher::summarize_run_output(&final_output);
-                    let pending_summary = if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
-                        SchedulerDispatcher::summarize_pending_tasks(work_dir, task_path)
-                    } else {
-                        "非协议任务，无待办摘要".to_string()
-                    };
-
-                    // 判断是否成功
-                    let is_success = exit_code == 0;
-
-                    {
-                        let mut log_store = log_store.lock().await;
-                        let mut task_store = task_store.lock().await;
-
-                        if is_success {
-                            if let Err(e) = log_store.update_complete(
-                                &log_id,
-                                UpdateCompleteParams {
-                                    session_id: final_session_id.clone(),
-                                    output: Some(final_output),
-                                    thinking_summary: if final_thinking.is_empty() { None } else { Some(final_thinking) },
-                                    tool_call_count: final_tool_count,
-                                    ..Default::default()
-                                },
-                            ) {
-                                tracing::error!("[Scheduler] 更新日志失败: {:?}", e);
+                SessionOptions::new(move |event: AIEvent| {
+                    match &event {
+                        AIEvent::AssistantMessage(msg) => {
+                            if let Ok(mut o) = output_clone.try_lock() {
+                                o.push_str(&msg.content);
                             }
-
-                            if let Err(e) = task_store.update_run_status(&task_id, TaskStatus::Success) {
-                                tracing::error!("[Scheduler] 更新任务状态失败: {:?}", e);
+                        }
+                        AIEvent::Thinking(t) => {
+                            if let Ok(mut th) = thinking_clone.try_lock() {
+                                th.push_str(&t.content);
+                                th.push('\n');
                             }
-
-                            // 成功后重置重试计数
-                            if let Err(e) = task_store.reset_retry_count(&task_id) {
-                                tracing::error!("[Scheduler] 重置重试计数失败: {:?}", e);
+                        }
+                        AIEvent::ToolCallStart(_) => {
+                            if let Ok(mut count) = tool_call_count_clone.try_lock() {
+                                *count += 1;
                             }
+                        }
+                        AIEvent::SessionStart(s) => {
+                            if let Ok(mut sid) = session_id_clone.try_lock() {
+                                *sid = Some(s.session_id.clone());
+                            }
+                        }
+                        _ => {}
+                    }
+                })
+                .with_work_dir(work_dir.clone().unwrap_or_else(|| ".".to_string()))
+                .with_on_session_id_update(move |sid: String| {
+                    if let Ok(mut s) = session_id_for_update.try_lock() {
+                        *s = Some(sid);
+                    }
+                })
+                .with_on_complete(move |exit_code: i32| {
+                    // 防止重复调用
+                    if completed_clone.swap(true, Ordering::SeqCst) {
+                        return;
+                    }
 
-                            tracing::info!("[Scheduler] 任务执行成功: {}", task_name);
+                    tracing::info!("[Scheduler] 会话完成，exit_code: {}", exit_code);
 
-                            if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
-                                let run_number = task_store.get(&task_id)
-                                    .map(|task| task.current_runs)
-                                    .unwrap_or(0);
+                    let log_id = log_id_for_complete.clone();
+                    let task_id = task_id_for_complete.clone();
+                    let task_name = task_name_for_complete.clone();
+                    let task_store = task_store_for_complete.clone();
+                    let log_store = log_store_for_complete.clone();
+                    let output = output_for_complete.clone();
+                    let thinking = thinking_for_complete.clone();
+                    let session_id = session_id_for_complete.clone();
+                    let tool_call_count = tool_call_count_for_complete.clone();
+                    let running_tasks = running_tasks_for_complete.clone();
+                    let task_for_complete = task_for_complete.clone();
+                    let dispatcher_for_complete = dispatcher_for_complete.clone();
+                    let app_handle_for_notify = app_handle_for_complete.clone();
 
-                                if let Err(e) = ProtocolTaskService::append_memory_run(
-                                    work_dir,
-                                    task_path,
-                                    run_number,
-                                    final_session_id.as_deref(),
-                                    &run_summary,
-                                    &pending_summary,
-                                    false,
+                    let task_work_dir_for_complete = task_for_complete.work_dir.clone();
+                    let task_task_path_for_complete = task_for_complete.task_path.clone();
+
+                    tauri::async_runtime::spawn(async move {
+                        let final_output = output.lock().await.clone();
+                        let final_thinking = thinking.lock().await.clone();
+                        let final_session_id = session_id.lock().await.clone();
+                        let final_tool_count = *tool_call_count.lock().await;
+                        let run_summary = SchedulerDispatcher::summarize_run_output(&final_output);
+                        let pending_summary = if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
+                            SchedulerDispatcher::summarize_pending_tasks(work_dir, task_path)
+                        } else {
+                            "非协议任务，无待办摘要".to_string()
+                        };
+
+                        let is_success = exit_code == 0;
+                        let should_continue = is_success
+                            && SchedulerDispatcher::should_continue_immediately(&task_for_complete, continuous_runs_for_complete);
+
+                        {
+                            let mut log_store = log_store.lock().await;
+                            let mut task_store = task_store.lock().await;
+
+                            if is_success {
+                                if let Err(e) = log_store.update_complete(
+                                    &log_id,
+                                    UpdateCompleteParams {
+                                        session_id: final_session_id.clone(),
+                                        output: Some(final_output),
+                                        thinking_summary: if final_thinking.is_empty() { None } else { Some(final_thinking) },
+                                        tool_call_count: final_tool_count,
+                                        ..Default::default()
+                                    },
                                 ) {
-                                    tracing::error!("[Scheduler] 追加执行轮次记录失败: {:?}", e);
+                                    tracing::error!("[Scheduler] 更新日志失败: {:?}", e);
                                 }
-                            }
 
-                            // 处理用户补充文档
-                            if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
-                                if let Ok(supplement) = ProtocolTaskService::read_supplement_md(work_dir, task_path) {
-                                    if ProtocolTaskService::has_supplement_content(&supplement) {
-                                        let content = ProtocolTaskService::extract_user_content(&supplement);
+                                if let Err(e) = task_store.update_run_status(&task_id, TaskStatus::Success) {
+                                    tracing::error!("[Scheduler] 更新任务状态失败: {:?}", e);
+                                }
 
-                                        if let Err(e) = ProtocolTaskService::backup_supplement(work_dir, task_path, &content) {
-                                            tracing::error!("[Scheduler] 备份用户补充失败: {:?}", e);
-                                        }
+                                if task_for_complete.reuse_session {
+                                    if let Err(e) = task_store.update_conversation_session_id(&task_id, final_session_id.clone()) {
+                                        tracing::error!("[Scheduler] 更新任务会话 ID 失败: {:?}", e);
+                                    }
+                                }
 
-                                        if let Err(e) = ProtocolTaskService::clear_supplement_md(work_dir, task_path) {
-                                            tracing::error!("[Scheduler] 清空用户补充文档失败: {:?}", e);
+                                if let Err(e) = task_store.reset_retry_count(&task_id) {
+                                    tracing::error!("[Scheduler] 重置重试计数失败: {:?}", e);
+                                }
+
+                                tracing::info!("[Scheduler] 任务执行成功: {}", task_name);
+
+                                if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
+                                    let run_number = task_store.get(&task_id)
+                                        .map(|task| task.current_runs)
+                                        .unwrap_or(0);
+
+                                    if let Err(e) = ProtocolTaskService::append_memory_run(
+                                        work_dir,
+                                        task_path,
+                                        run_number,
+                                        final_session_id.as_deref(),
+                                        &run_summary,
+                                        &pending_summary,
+                                        should_continue,
+                                    ) {
+                                        tracing::error!("[Scheduler] 追加执行轮次记录失败: {:?}", e);
+                                    }
+                                }
+
+                                if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
+                                    if let Ok(supplement) = ProtocolTaskService::read_supplement_md(work_dir, task_path) {
+                                        if ProtocolTaskService::has_supplement_content(&supplement) {
+                                            let content = ProtocolTaskService::extract_user_content(&supplement);
+
+                                            if let Err(e) = ProtocolTaskService::backup_supplement(work_dir, task_path, &content) {
+                                                tracing::error!("[Scheduler] 备份用户补充失败: {:?}", e);
+                                            }
+
+                                            if let Err(e) = ProtocolTaskService::clear_supplement_md(work_dir, task_path) {
+                                                tracing::error!("[Scheduler] 清空用户补充文档失败: {:?}", e);
+                                            }
                                         }
                                     }
                                 }
-                            }
-                        } else {
-                            let error_msg = format!("进程退出码: {}", exit_code);
-                            if let Err(e) = log_store.update_complete(
-                                &log_id,
-                                UpdateCompleteParams {
-                                    session_id: final_session_id,
-                                    output: Some(final_output),
-                                    error: Some(error_msg.clone()),
-                                    thinking_summary: if final_thinking.is_empty() { None } else { Some(final_thinking) },
-                                    tool_call_count: final_tool_count,
-                                    ..Default::default()
-                                },
-                            ) {
-                                tracing::error!("[Scheduler] 更新日志失败: {:?}", e);
-                            }
-
-                            // 检查是否可以重试
-                            let can_retry = task_store.update_retry_status(&task_id).unwrap_or(false);
-
-                            if can_retry {
-                                tracing::info!("[Scheduler] 任务 {} 失败，将自动重试", task_name);
-                                // 不更新状态为 Failed，保持 Running 以便下次执行
                             } else {
-                                // 不能重试，标记为失败
-                                if let Err(e) = task_store.update_run_status(&task_id, TaskStatus::Failed) {
-                                    tracing::error!("[Scheduler] 更新任务状态失败: {:?}", e);
+                                let error_msg = format!("进程退出码: {}", exit_code);
+                                if let Err(e) = log_store.update_complete(
+                                    &log_id,
+                                    UpdateCompleteParams {
+                                        session_id: final_session_id.clone(),
+                                        output: Some(final_output),
+                                        error: Some(error_msg.clone()),
+                                        thinking_summary: if final_thinking.is_empty() { None } else { Some(final_thinking) },
+                                        tool_call_count: final_tool_count,
+                                        ..Default::default()
+                                    },
+                                ) {
+                                    tracing::error!("[Scheduler] 更新日志失败: {:?}", e);
                                 }
-                                tracing::error!("[Scheduler] 任务执行失败: {} - {}", task_name, error_msg);
+
+                                let can_retry = task_store.update_retry_status(&task_id).unwrap_or(false);
+
+                                if can_retry {
+                                    tracing::info!("[Scheduler] 任务 {} 失败，将自动重试", task_name);
+                                } else {
+                                    if let Err(e) = task_store.update_run_status(&task_id, TaskStatus::Failed) {
+                                        tracing::error!("[Scheduler] 更新任务状态失败: {:?}", e);
+                                    }
+                                    tracing::error!("[Scheduler] 任务执行失败: {} - {}", task_name, error_msg);
+                                }
                             }
                         }
-                    }
 
-                    // 发送桌面通知
-                    if notify_on_complete {
-                        if let Some(ref app_handle) = app_handle_for_notify {
-                            let (title, body) = if is_success {
-                                ("任务执行成功".to_string(), format!("「{}」已完成", task_name))
-                            } else {
-                                ("任务执行失败".to_string(), format!("「{}」执行失败", task_name))
-                            };
+                        if should_continue {
+                            tracing::info!(
+                                "[Scheduler] 任务 {} 满足连续执行条件，立即进入第 {} 轮",
+                                task_name,
+                                continuous_runs_for_complete + 1
+                            );
 
-                            if let Err(e) = app_handle.notification()
-                                .builder()
-                                .title(&title)
-                                .body(&body)
-                                .show()
                             {
-                                tracing::warn!("[Scheduler] 发送桌面通知失败: {:?}", e);
+                                let mut running = running_tasks.lock().await;
+                                running.remove(&task_id);
+                            }
+
+                            let mut next_task = task_for_complete.clone();
+                            next_task.conversation_session_id = final_session_id;
+
+                            tokio::task::spawn_blocking(move || {
+                                tauri::async_runtime::block_on(async move {
+                                    if let Err(e) = dispatcher_for_complete
+                                        .execute_task_with_continuation_count(next_task, continuous_runs_for_complete + 1)
+                                        .await
+                                    {
+                                        tracing::error!("[Scheduler] 连续执行任务失败: {:?}", e);
+                                    }
+                                });
+                            });
+                            return;
+                        }
+
+                        if notify_on_complete {
+                            if let Some(ref app_handle) = app_handle_for_notify {
+                                let (title, body) = if is_success {
+                                    ("任务执行成功".to_string(), format!("「{}」已完成", task_name))
+                                } else {
+                                    ("任务执行失败".to_string(), format!("「{}」执行失败", task_name))
+                                };
+
+                                if let Err(e) = app_handle.notification()
+                                    .builder()
+                                    .title(&title)
+                                    .body(&body)
+                                    .show()
+                                {
+                                    tracing::warn!("[Scheduler] 发送桌面通知失败: {:?}", e);
+                                }
                             }
                         }
-                    }
 
-                    // 从运行列表中移除
-                    {
-                        let mut running = running_tasks.lock().await;
-                        running.remove(&task_id);
-                    }
-                });
-            });
+                        {
+                            let mut running = running_tasks.lock().await;
+                            running.remove(&task_id);
+                        }
+                    });
+                })
+            };
 
-            // 执行
             let result = {
                 let mut registry = engine_registry.lock().await;
-                registry.start_session(Some(engine_id_parsed), &prompt, options)
+
+                if let Some(existing_id) = existing_session_id.clone() {
+                    tracing::info!("[Scheduler] 尝试复用会话: {} ({})", task_name, existing_id);
+                    match registry.continue_session(engine_id_parsed.clone(), &existing_id, &prompt, build_options()) {
+                        Ok(()) => Ok(existing_id),
+                        Err(e) => {
+                            tracing::warn!(
+                                "[Scheduler] 会话复用失败，回退到新会话: {} - {}",
+                                task_name,
+                                SchedulerDispatcher::session_resume_error_message(&e)
+                            );
+                            registry.start_session(Some(engine_id_parsed.clone()), &prompt, build_options())
+                        }
+                    }
+                } else {
+                    registry.start_session(Some(engine_id_parsed.clone()), &prompt, build_options())
+                }
             };
 
             match result {
                 Ok(session_id) => {
                     tracing::info!("[Scheduler] 会话已启动: {} (session: {})", task_name, session_id);
-                    
-                    // 如果设置了超时，启动超时监控任务
+
+                    if reuse_session {
+                        let mut store = task_store.lock().await;
+                        if let Err(e) = store.update_conversation_session_id(&task_id, Some(session_id.clone())) {
+                            tracing::error!("[Scheduler] 写回任务会话 ID 失败: {:?}", e);
+                        }
+                    }
+
                     if let Some(timeout) = timeout_secs {
                         let session_id_for_timeout = session_id.clone();
                         let completed_for_timeout = completed.clone();
@@ -514,21 +596,18 @@ impl SchedulerDispatcher {
                         let running_tasks_for_timeout = running_tasks.clone();
                         let app_handle_for_timeout = app_handle_for_timeout_main.clone();
                         let notify_for_timeout = notify_on_complete;
-                        
+
                         tokio::spawn(async move {
                             tokio::time::sleep(tokio::time::Duration::from_secs(timeout)).await;
-                            
-                            // 检查是否已完成
+
                             if completed_for_timeout.load(Ordering::SeqCst) {
                                 return;
                             }
-                            
+
                             tracing::warn!("[Scheduler] 任务 {} 执行超时 ({}秒)，正在终止...", task_name_for_timeout, timeout);
-                            
-                            // 标记为已完成（防止 on_complete 回调再次处理）
+
                             completed_for_timeout.store(true, Ordering::SeqCst);
-                            
-                            // 终止会话进程
+
                             {
                                 let mut registry = registry_for_timeout.lock().await;
                                 if !registry.try_interrupt_all(&session_id_for_timeout) {
@@ -536,7 +615,6 @@ impl SchedulerDispatcher {
                                 }
                             }
 
-                            // 更新日志和任务状态
                             {
                                 let mut log_store = log_store_for_timeout.lock().await;
                                 let mut task_store = task_store_for_timeout.lock().await;
@@ -545,7 +623,7 @@ impl SchedulerDispatcher {
                                 if let Err(e) = log_store.update_complete(
                                     &log_id_for_timeout,
                                     UpdateCompleteParams {
-                                        session_id: Some(session_id_for_timeout),
+                                        session_id: Some(session_id_for_timeout.clone()),
                                         error: Some(error_msg.clone()),
                                         ..Default::default()
                                     },
@@ -558,7 +636,6 @@ impl SchedulerDispatcher {
                                 }
                             }
 
-                            // 发送桌面通知
                             if notify_for_timeout {
                                 if let Some(ref app_handle) = app_handle_for_timeout {
                                     if let Err(e) = app_handle.notification()
@@ -572,7 +649,6 @@ impl SchedulerDispatcher {
                                 }
                             }
 
-                            // 从运行列表中移除
                             {
                                 let mut running = running_tasks_for_timeout.lock().await;
                                 running.remove(&task_id_for_timeout);
@@ -583,7 +659,6 @@ impl SchedulerDispatcher {
                 Err(e) => {
                     tracing::error!("[Scheduler] 启动会话失败: {} - {:?}", task_name, e);
 
-                    // 启动失败，更新状态
                     let mut log_store = log_store.lock().await;
                     let mut task_store = task_store.lock().await;
 
@@ -601,7 +676,6 @@ impl SchedulerDispatcher {
                         tracing::error!("[Scheduler] 更新任务状态失败: {:?}", update_err);
                     }
 
-                    // 从运行列表中移除
                     {
                         let mut running = running_tasks.lock().await;
                         running.remove(&task_id);
@@ -610,7 +684,6 @@ impl SchedulerDispatcher {
             }
         });
 
-        // 添加到运行列表
         {
             let mut running = self.running_tasks.lock().await;
             running.insert(task_id_for_map, handle);
@@ -618,6 +691,7 @@ impl SchedulerDispatcher {
 
         Ok(log_id)
     }
+
 
     /// 手动执行任务（返回日志 ID）
     pub async fn run_now(&self, task_id: &str) -> Result<RunTaskResult> {
@@ -669,26 +743,40 @@ impl SchedulerDispatcher {
         window: Window,
         context_id: Option<String>,
     ) -> Result<String> {
+        self.execute_task_with_window_and_continuation_count(task, window, context_id, 1).await
+    }
+
+    async fn execute_task_with_window_and_continuation_count(
+        &self,
+        task: ScheduledTask,
+        window: Window,
+        context_id: Option<String>,
+        continuous_runs: u32,
+    ) -> Result<String> {
         let task_id = task.id.clone();
         let task_id_for_map = task.id.clone();
         let task_name = task.name.clone();
         let engine_id = task.engine_id.clone();
         let work_dir = task.work_dir.clone();
-        // 获取超时配置（分钟转秒）
+        let reuse_session = task.reuse_session;
+        let existing_session_id = if reuse_session {
+            task.conversation_session_id.clone()
+        } else {
+            None
+        };
+        let notify_on_complete = task.notify_on_complete;
         let timeout_secs = task.timeout_minutes.map(|m| m as u64 * 60);
 
-        // 根据模式构建提示词
         let prompt = self.build_prompt(&task).await?;
 
         let task_store = self.task_store.clone();
         let log_store = self.log_store.clone();
         let engine_registry = self.engine_registry.clone();
         let running_tasks = self.running_tasks.clone();
+        let dispatcher_for_continue = self.clone();
 
-        // 用于后续处理用户补充
         let task_for_post = task.clone();
 
-        // 创建日志记录（状态为 Running）
         let log_id = {
             let mut store = self.log_store.lock().await;
             let log = store.create(&task_id, &task_name, &prompt, &engine_id)?;
@@ -696,13 +784,11 @@ impl SchedulerDispatcher {
             log.id
         };
 
-        // 标记任务开始执行
         {
             let mut store = self.task_store.lock().await;
             store.update_run_status(&task_id, TaskStatus::Running)?;
         }
 
-        // 发送任务开始事件到前端
         let ctx_id = context_id.clone();
         if let Err(e) = window.emit("scheduler-event", serde_json::json!({
             "contextId": ctx_id,
@@ -716,7 +802,6 @@ impl SchedulerDispatcher {
             tracing::warn!("[Scheduler] 发送任务开始事件失败: {:?}", e);
         }
 
-        // 发送用户消息事件，显示任务执行提示（让用户在对话窗口看到任务开始）
         let ctx_id_for_user_msg = context_id.clone();
         let user_msg = format!("🔄 定时任务「{}」开始执行", task_name);
         if let Err(e) = window.emit("chat-event", serde_json::json!({
@@ -736,18 +821,15 @@ impl SchedulerDispatcher {
         let handle = tokio::spawn(async move {
             tracing::info!("[Scheduler] 开始执行任务（订阅模式）: {} ({})", task_name, task_id);
 
-            // 解析引擎 ID
             let engine_id_parsed = EngineId::from_str(&engine_id)
                 .unwrap_or(EngineId::ClaudeCode);
 
-            // 收集输出、思考过程、工具调用、session_id
             let output = Arc::new(AsyncMutex::new(String::new()));
             let thinking = Arc::new(AsyncMutex::new(String::new()));
-            let session_id = Arc::new(AsyncMutex::new(None::<String>));
+            let session_id = Arc::new(AsyncMutex::new(existing_session_id.clone()));
             let session_id_for_update = session_id.clone();
             let tool_call_count = Arc::new(AsyncMutex::new(0u32));
 
-            // 用于标记是否已更新完成状态
             let completed = Arc::new(AtomicBool::new(false));
             let completed_clone = completed.clone();
 
@@ -758,7 +840,6 @@ impl SchedulerDispatcher {
             let window_for_event = window_clone.clone();
             let ctx_id_for_event = context_id_clone.clone();
 
-            // 完成回调的闭包所需变量
             let log_id_for_complete = log_id_clone.clone();
             let task_id_for_complete = task_id.clone();
             let task_name_for_complete = task_name.clone();
@@ -772,239 +853,313 @@ impl SchedulerDispatcher {
             let task_for_complete = task_for_post.clone();
             let window_for_complete = window_clone.clone();
             let ctx_id_for_complete = context_id_clone.clone();
-            let notify_on_complete = task.notify_on_complete;
+            let dispatcher_for_complete = dispatcher_for_continue.clone();
+            let continuous_runs_for_complete = continuous_runs;
 
-            // 创建会话选项 - 实时发送事件到前端
-            let options = SessionOptions::new(move |event: AIEvent| {
-                // 发送事件到前端窗口
-                // 默认使用 'main' contextId，这样事件会自动在 AI 对话窗口显示
-                let event_json = if let Some(ref cid) = ctx_id_for_event {
-                    serde_json::json!({ "contextId": cid, "payload": event })
-                } else {
-                    serde_json::json!({ "contextId": "main", "payload": event })
-                };
+            let build_options = || {
+                let output_clone = output_clone.clone();
+                let thinking_clone = thinking_clone.clone();
+                let session_id_clone = session_id_clone.clone();
+                let tool_call_count_clone = tool_call_count_clone.clone();
+                let window_for_event = window_for_event.clone();
+                let ctx_id_for_event = ctx_id_for_event.clone();
+                let session_id_for_update = session_id_for_update.clone();
+                let completed_clone = completed_clone.clone();
+                let log_id_for_complete = log_id_for_complete.clone();
+                let task_id_for_complete = task_id_for_complete.clone();
+                let task_name_for_complete = task_name_for_complete.clone();
+                let task_store_for_complete = task_store_for_complete.clone();
+                let log_store_for_complete = log_store_for_complete.clone();
+                let output_for_complete = output_for_complete.clone();
+                let thinking_for_complete = thinking_for_complete.clone();
+                let session_id_for_complete = session_id_for_complete.clone();
+                let tool_call_count_for_complete = tool_call_count_for_complete.clone();
+                let running_tasks_for_complete = running_tasks_for_complete.clone();
+                let task_for_complete = task_for_complete.clone();
+                let window_for_complete = window_for_complete.clone();
+                let ctx_id_for_complete = ctx_id_for_complete.clone();
+                let dispatcher_for_complete = dispatcher_for_complete.clone();
 
-                if let Err(e) = window_for_event.emit("chat-event", &event_json) {
-                    tracing::debug!("[Scheduler] 发送事件失败: {:?}", e);
-                }
-
-                // 同时收集到内部变量
-                match &event {
-                    AIEvent::AssistantMessage(msg) => {
-                        if let Ok(mut o) = output_clone.try_lock() {
-                            o.push_str(&msg.content);
-                        }
-                    }
-                    AIEvent::Thinking(t) => {
-                        if let Ok(mut th) = thinking_clone.try_lock() {
-                            th.push_str(&t.content);
-                            th.push('\n');
-                        }
-                    }
-                    AIEvent::ToolCallStart(_) => {
-                        if let Ok(mut count) = tool_call_count_clone.try_lock() {
-                            *count += 1;
-                        }
-                    }
-                    AIEvent::SessionStart(s) => {
-                        if let Ok(mut sid) = session_id_clone.try_lock() {
-                            *sid = Some(s.session_id.clone());
-                        }
-                    }
-                    _ => {}
-                }
-            })
-            .with_work_dir(work_dir.unwrap_or_else(|| ".".to_string()))
-            .with_on_session_id_update(move |sid: String| {
-                if let Ok(mut s) = session_id_for_update.try_lock() {
-                    *s = Some(sid);
-                }
-            })
-            .with_on_complete(move |exit_code: i32| {
-                // 防止重复调用
-                if completed_clone.swap(true, Ordering::SeqCst) {
-                    return;
-                }
-
-                tracing::info!("[Scheduler] 会话完成，exit_code: {}", exit_code);
-
-                // 在新的 tokio 任务中处理完成逻辑
-                let log_id = log_id_for_complete.clone();
-                let task_id = task_id_for_complete.clone();
-                let task_name = task_name_for_complete.clone();
-                let task_store = task_store_for_complete.clone();
-                let log_store = log_store_for_complete.clone();
-                let output = output_for_complete.clone();
-                let thinking = thinking_for_complete.clone();
-                let session_id = session_id_for_complete.clone();
-                let tool_call_count = tool_call_count_for_complete.clone();
-                let running_tasks = running_tasks_for_complete.clone();
-                let window = window_for_complete.clone();
-                let ctx_id = ctx_id_for_complete.clone();
-
-                // 克隆协议任务相关字段
-                let task_work_dir_for_complete = task_for_complete.work_dir.clone();
-                let task_task_path_for_complete = task_for_complete.task_path.clone();
-
-                tauri::async_runtime::spawn(async move {
-                    let final_output = output.lock().await.clone();
-                    let final_thinking = thinking.lock().await.clone();
-                    let final_session_id = session_id.lock().await.clone();
-                    let final_tool_count = *tool_call_count.lock().await;
-                    let run_summary = SchedulerDispatcher::summarize_run_output(&final_output);
-                    let pending_summary = if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
-                        SchedulerDispatcher::summarize_pending_tasks(work_dir, task_path)
+                SessionOptions::new(move |event: AIEvent| {
+                    let event_json = if let Some(ref cid) = ctx_id_for_event {
+                        serde_json::json!({ "contextId": cid, "payload": event })
                     } else {
-                        "非协议任务，无待办摘要".to_string()
+                        serde_json::json!({ "contextId": "main", "payload": event })
                     };
 
-                    // 判断是否成功
-                    let is_success = exit_code == 0;
+                    if let Err(e) = window_for_event.emit("chat-event", &event_json) {
+                        tracing::debug!("[Scheduler] 发送事件失败: {:?}", e);
+                    }
 
-                    {
-                        let mut log_store = log_store.lock().await;
-                        let mut task_store = task_store.lock().await;
-
-                        if is_success {
-                            if let Err(e) = log_store.update_complete(
-                                &log_id,
-                                UpdateCompleteParams {
-                                    session_id: final_session_id.clone(),
-                                    output: Some(final_output),
-                                    thinking_summary: if final_thinking.is_empty() { None } else { Some(final_thinking) },
-                                    tool_call_count: final_tool_count,
-                                    ..Default::default()
-                                },
-                            ) {
-                                tracing::error!("[Scheduler] 更新日志失败: {:?}", e);
+                    match &event {
+                        AIEvent::AssistantMessage(msg) => {
+                            if let Ok(mut o) = output_clone.try_lock() {
+                                o.push_str(&msg.content);
                             }
-
-                            if let Err(e) = task_store.update_run_status(&task_id, TaskStatus::Success) {
-                                tracing::error!("[Scheduler] 更新任务状态失败: {:?}", e);
+                        }
+                        AIEvent::Thinking(t) => {
+                            if let Ok(mut th) = thinking_clone.try_lock() {
+                                th.push_str(&t.content);
+                                th.push('\n');
                             }
-
-                            // 成功后重置重试计数
-                            if let Err(e) = task_store.reset_retry_count(&task_id) {
-                                tracing::error!("[Scheduler] 重置重试计数失败: {:?}", e);
+                        }
+                        AIEvent::ToolCallStart(_) => {
+                            if let Ok(mut count) = tool_call_count_clone.try_lock() {
+                                *count += 1;
                             }
+                        }
+                        AIEvent::SessionStart(s) => {
+                            if let Ok(mut sid) = session_id_clone.try_lock() {
+                                *sid = Some(s.session_id.clone());
+                            }
+                        }
+                        _ => {}
+                    }
+                })
+                .with_work_dir(work_dir.clone().unwrap_or_else(|| ".".to_string()))
+                .with_on_session_id_update(move |sid: String| {
+                    if let Ok(mut s) = session_id_for_update.try_lock() {
+                        *s = Some(sid);
+                    }
+                })
+                .with_on_complete(move |exit_code: i32| {
+                    if completed_clone.swap(true, Ordering::SeqCst) {
+                        return;
+                    }
 
-                            tracing::info!("[Scheduler] 任务执行成功: {}", task_name);
+                    tracing::info!("[Scheduler] 会话完成，exit_code: {}", exit_code);
 
-                            if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
-                                let run_number = task_store.get(&task_id)
-                                    .map(|task| task.current_runs)
-                                    .unwrap_or(0);
+                    let log_id = log_id_for_complete.clone();
+                    let task_id = task_id_for_complete.clone();
+                    let task_name = task_name_for_complete.clone();
+                    let task_store = task_store_for_complete.clone();
+                    let log_store = log_store_for_complete.clone();
+                    let output = output_for_complete.clone();
+                    let thinking = thinking_for_complete.clone();
+                    let session_id = session_id_for_complete.clone();
+                    let tool_call_count = tool_call_count_for_complete.clone();
+                    let running_tasks = running_tasks_for_complete.clone();
+                    let window = window_for_complete.clone();
+                    let ctx_id = ctx_id_for_complete.clone();
+                    let task_for_complete = task_for_complete.clone();
+                    let dispatcher_for_complete = dispatcher_for_complete.clone();
 
-                                if let Err(e) = ProtocolTaskService::append_memory_run(
-                                    work_dir,
-                                    task_path,
-                                    run_number,
-                                    final_session_id.as_deref(),
-                                    &run_summary,
-                                    &pending_summary,
-                                    false,
+                    let task_work_dir_for_complete = task_for_complete.work_dir.clone();
+                    let task_task_path_for_complete = task_for_complete.task_path.clone();
+
+                    tauri::async_runtime::spawn(async move {
+                        let final_output = output.lock().await.clone();
+                        let final_thinking = thinking.lock().await.clone();
+                        let final_session_id = session_id.lock().await.clone();
+                        let final_tool_count = *tool_call_count.lock().await;
+                        let run_summary = SchedulerDispatcher::summarize_run_output(&final_output);
+                        let pending_summary = if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
+                            SchedulerDispatcher::summarize_pending_tasks(work_dir, task_path)
+                        } else {
+                            "非协议任务，无待办摘要".to_string()
+                        };
+
+                        let is_success = exit_code == 0;
+                        let should_continue = is_success
+                            && SchedulerDispatcher::should_continue_immediately(&task_for_complete, continuous_runs_for_complete);
+
+                        {
+                            let mut log_store = log_store.lock().await;
+                            let mut task_store = task_store.lock().await;
+
+                            if is_success {
+                                if let Err(e) = log_store.update_complete(
+                                    &log_id,
+                                    UpdateCompleteParams {
+                                        session_id: final_session_id.clone(),
+                                        output: Some(final_output),
+                                        thinking_summary: if final_thinking.is_empty() { None } else { Some(final_thinking) },
+                                        tool_call_count: final_tool_count,
+                                        ..Default::default()
+                                    },
                                 ) {
-                                    tracing::error!("[Scheduler] 追加执行轮次记录失败: {:?}", e);
+                                    tracing::error!("[Scheduler] 更新日志失败: {:?}", e);
                                 }
-                            }
 
-                            // 处理用户补充文档
-                            if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
-                                if let Ok(supplement) = ProtocolTaskService::read_supplement_md(work_dir, task_path) {
-                                    if ProtocolTaskService::has_supplement_content(&supplement) {
-                                        let content = ProtocolTaskService::extract_user_content(&supplement);
+                                if let Err(e) = task_store.update_run_status(&task_id, TaskStatus::Success) {
+                                    tracing::error!("[Scheduler] 更新任务状态失败: {:?}", e);
+                                }
 
-                                        if let Err(e) = ProtocolTaskService::backup_supplement(work_dir, task_path, &content) {
-                                            tracing::error!("[Scheduler] 备份用户补充失败: {:?}", e);
-                                        }
+                                if task_for_complete.reuse_session {
+                                    if let Err(e) = task_store.update_conversation_session_id(&task_id, final_session_id.clone()) {
+                                        tracing::error!("[Scheduler] 更新任务会话 ID 失败: {:?}", e);
+                                    }
+                                }
 
-                                        if let Err(e) = ProtocolTaskService::clear_supplement_md(work_dir, task_path) {
-                                            tracing::error!("[Scheduler] 清空用户补充文档失败: {:?}", e);
+                                if let Err(e) = task_store.reset_retry_count(&task_id) {
+                                    tracing::error!("[Scheduler] 重置重试计数失败: {:?}", e);
+                                }
+
+                                tracing::info!("[Scheduler] 任务执行成功: {}", task_name);
+
+                                if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
+                                    let run_number = task_store.get(&task_id)
+                                        .map(|task| task.current_runs)
+                                        .unwrap_or(0);
+
+                                    if let Err(e) = ProtocolTaskService::append_memory_run(
+                                        work_dir,
+                                        task_path,
+                                        run_number,
+                                        final_session_id.as_deref(),
+                                        &run_summary,
+                                        &pending_summary,
+                                        should_continue,
+                                    ) {
+                                        tracing::error!("[Scheduler] 追加执行轮次记录失败: {:?}", e);
+                                    }
+                                }
+
+                                if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
+                                    if let Ok(supplement) = ProtocolTaskService::read_supplement_md(work_dir, task_path) {
+                                        if ProtocolTaskService::has_supplement_content(&supplement) {
+                                            let content = ProtocolTaskService::extract_user_content(&supplement);
+
+                                            if let Err(e) = ProtocolTaskService::backup_supplement(work_dir, task_path, &content) {
+                                                tracing::error!("[Scheduler] 备份用户补充失败: {:?}", e);
+                                            }
+
+                                            if let Err(e) = ProtocolTaskService::clear_supplement_md(work_dir, task_path) {
+                                                tracing::error!("[Scheduler] 清空用户补充文档失败: {:?}", e);
+                                            }
                                         }
                                     }
                                 }
+                            } else {
+                                let error_msg = format!("进程退出码: {}", exit_code);
+                                if let Err(e) = log_store.update_complete(
+                                    &log_id,
+                                    UpdateCompleteParams {
+                                        session_id: final_session_id.clone(),
+                                        output: Some(final_output),
+                                        error: Some(error_msg.clone()),
+                                        thinking_summary: if final_thinking.is_empty() { None } else { Some(final_thinking) },
+                                        tool_call_count: final_tool_count,
+                                        ..Default::default()
+                                    },
+                                ) {
+                                    tracing::error!("[Scheduler] 更新日志失败: {:?}", e);
+                                }
+
+                                let can_retry = task_store.update_retry_status(&task_id).unwrap_or(false);
+
+                                if can_retry {
+                                    tracing::info!("[Scheduler] 任务 {} 失败，将自动重试", task_name);
+                                } else {
+                                    if let Err(e) = task_store.update_run_status(&task_id, TaskStatus::Failed) {
+                                        tracing::error!("[Scheduler] 更新任务状态失败: {:?}", e);
+                                    }
+                                    tracing::error!("[Scheduler] 任务执行失败: {} - {}", task_name, error_msg);
+                                }
                             }
-                        } else {
-                                                        let error_msg = format!("进程退出码: {}", exit_code);
-                                                        if let Err(e) = log_store.update_complete(
-                                                            &log_id,
-                                                            UpdateCompleteParams {
-                                                                session_id: final_session_id,
-                                                                output: Some(final_output),
-                                                                error: Some(error_msg.clone()),
-                                                                thinking_summary: if final_thinking.is_empty() { None } else { Some(final_thinking) },
-                                                                tool_call_count: final_tool_count,
-                                                                ..Default::default()
-                                                            },
-                                                        ) {
-                                                            tracing::error!("[Scheduler] 更新日志失败: {:?}", e);
-                                                        }
+                        }
 
-                                                        // 检查是否可以重试
-                                                        let can_retry = task_store.update_retry_status(&task_id).unwrap_or(false);
+                        if should_continue {
+                            tracing::info!(
+                                "[Scheduler] 任务 {} 满足连续执行条件（订阅模式），立即进入第 {} 轮",
+                                task_name,
+                                continuous_runs_for_complete + 1
+                            );
 
-                                                        if can_retry {
-                                                            tracing::info!("[Scheduler] 任务 {} 失败，将自动重试", task_name);
-                                                            // 不更新状态为 Failed
-                                                        } else {
-                                                            // 不能重试，标记为失败
-                                                            if let Err(e) = task_store.update_run_status(&task_id, TaskStatus::Failed) {
-                                                                tracing::error!("[Scheduler] 更新任务状态失败: {:?}", e);
-                                                            }
-                                                            tracing::error!("[Scheduler] 任务执行失败: {} - {}", task_name, error_msg);
-                                                        }
-                                                    }
-                                                }
+                            {
+                                let mut running = running_tasks.lock().await;
+                                running.remove(&task_id);
+                            }
 
-                    // 发送桌面通知
-                    if notify_on_complete {
-                        let (title, body) = if is_success {
-                            ("任务执行成功".to_string(), format!("「{}」已完成", task_name))
-                        } else {
-                            ("任务执行失败".to_string(), format!("「{}」执行失败", task_name))
-                        };
+                            let mut next_task = task_for_complete.clone();
+                            next_task.conversation_session_id = final_session_id;
 
-                        if let Err(e) = window.notification()
-                            .builder()
-                            .title(&title)
-                            .body(&body)
-                            .show()
+                            tokio::task::spawn_blocking(move || {
+                                tauri::async_runtime::block_on(async move {
+                                    if let Err(e) = dispatcher_for_complete
+                                        .execute_task_with_window_and_continuation_count(
+                                            next_task,
+                                            window.clone(),
+                                            ctx_id.clone(),
+                                            continuous_runs_for_complete + 1,
+                                        )
+                                        .await
+                                    {
+                                        tracing::error!("[Scheduler] 连续执行任务失败（订阅模式）: {:?}", e);
+                                    }
+                                });
+                            });
+                            return;
+                        }
+
+                        if notify_on_complete {
+                            let (title, body) = if is_success {
+                                ("任务执行成功".to_string(), format!("「{}」已完成", task_name))
+                            } else {
+                                ("任务执行失败".to_string(), format!("「{}」执行失败", task_name))
+                            };
+
+                            if let Err(e) = window.notification()
+                                .builder()
+                                .title(&title)
+                                .body(&body)
+                                .show()
+                            {
+                                tracing::warn!("[Scheduler] 发送桌面通知失败: {:?}", e);
+                            }
+                        }
+
+                        let _ = window.emit("scheduler-event", serde_json::json!({
+                            "contextId": ctx_id,
+                            "payload": {
+                                "type": "task_end",
+                                "taskId": task_id,
+                                "taskName": task_name,
+                                "logId": log_id,
+                                "success": is_success,
+                            }
+                        }));
+
                         {
-                            tracing::warn!("[Scheduler] 发送桌面通知失败: {:?}", e);
+                            let mut running = running_tasks.lock().await;
+                            running.remove(&task_id);
                         }
-                    }
+                    });
+                })
+            };
 
-                    // 发送任务完成事件到前端
-                    let _ = window.emit("scheduler-event", serde_json::json!({
-                        "contextId": ctx_id,
-                        "payload": {
-                            "type": "task_end",
-                            "taskId": task_id,
-                            "taskName": task_name,
-                            "logId": log_id,
-                            "success": is_success,
-                        }
-                    }));
-
-                    // 从运行列表中移除
-                    {
-                        let mut running = running_tasks.lock().await;
-                        running.remove(&task_id);
-                    }
-                });
-            });
-
-            // 执行
             let result = {
                 let mut registry = engine_registry.lock().await;
-                registry.start_session(Some(engine_id_parsed), &prompt, options)
+
+                if let Some(existing_id) = existing_session_id.clone() {
+                    tracing::info!("[Scheduler] 尝试复用会话（订阅模式）: {} ({})", task_name, existing_id);
+                    match registry.continue_session(engine_id_parsed.clone(), &existing_id, &prompt, build_options()) {
+                        Ok(()) => Ok(existing_id),
+                        Err(e) => {
+                            tracing::warn!(
+                                "[Scheduler] 会话复用失败（订阅模式），回退到新会话: {} - {}",
+                                task_name,
+                                SchedulerDispatcher::session_resume_error_message(&e)
+                            );
+                            registry.start_session(Some(engine_id_parsed.clone()), &prompt, build_options())
+                        }
+                    }
+                } else {
+                    registry.start_session(Some(engine_id_parsed.clone()), &prompt, build_options())
+                }
             };
 
             match result {
                 Ok(session_id) => {
                     tracing::info!("[Scheduler] 会话已启动（订阅模式）: {} (session: {})", task_name, session_id);
-                    
-                    // 如果设置了超时，启动超时监控任务
+
+                    if reuse_session {
+                        let mut store = task_store.lock().await;
+                        if let Err(e) = store.update_conversation_session_id(&task_id, Some(session_id.clone())) {
+                            tracing::error!("[Scheduler] 写回任务会话 ID 失败: {:?}", e);
+                        }
+                    }
+
                     if let Some(timeout) = timeout_secs {
                         let session_id_for_timeout = session_id.clone();
                         let completed_for_timeout = completed.clone();
@@ -1018,29 +1173,25 @@ impl SchedulerDispatcher {
                         let window_for_timeout = window_clone.clone();
                         let ctx_id_for_timeout = context_id_clone.clone();
                         let notify_for_timeout = notify_on_complete;
-                        
+
                         tokio::spawn(async move {
                             tokio::time::sleep(tokio::time::Duration::from_secs(timeout)).await;
-                            
-                            // 检查是否已完成
+
                             if completed_for_timeout.load(Ordering::SeqCst) {
                                 return;
                             }
-                            
+
                             tracing::warn!("[Scheduler] 任务 {} 执行超时 ({}秒)，正在终止...", task_name_for_timeout, timeout);
-                            
-                            // 标记为已完成（防止 on_complete 回调再次处理）
+
                             completed_for_timeout.store(true, Ordering::SeqCst);
-                            
-                            // 终止会话进程
+
                             {
                                 let mut registry = registry_for_timeout.lock().await;
                                 if !registry.try_interrupt_all(&session_id_for_timeout) {
                                     tracing::warn!("[Scheduler] 未能终止会话 {}", session_id_for_timeout);
                                 }
                             }
-                            
-                            // 更新日志和任务状态
+
                             {
                                 let mut log_store = log_store_for_timeout.lock().await;
                                 let mut task_store = task_store_for_timeout.lock().await;
@@ -1062,7 +1213,6 @@ impl SchedulerDispatcher {
                                 }
                             }
 
-                            // 发送超时事件到前端
                             let _ = window_for_timeout.emit("scheduler-event", serde_json::json!({
                                 "contextId": ctx_id_for_timeout,
                                 "payload": {
@@ -1072,8 +1222,7 @@ impl SchedulerDispatcher {
                                     "logId": log_id_for_timeout,
                                 }
                             }));
-                            
-                            // 发送桌面通知
+
                             if notify_for_timeout {
                                 if let Err(e) = window_for_timeout.notification()
                                     .builder()
@@ -1084,8 +1233,7 @@ impl SchedulerDispatcher {
                                     tracing::warn!("[Scheduler] 发送超时通知失败: {:?}", e);
                                 }
                             }
-                            
-                            // 从运行列表中移除
+
                             {
                                 let mut running = running_tasks_for_timeout.lock().await;
                                 running.remove(&task_id_for_timeout);
@@ -1096,7 +1244,6 @@ impl SchedulerDispatcher {
                 Err(e) => {
                     tracing::error!("[Scheduler] 启动会话失败: {} - {:?}", task_name, e);
 
-                    // 启动失败，更新状态
                     let mut log_store = log_store.lock().await;
                     let mut task_store = task_store.lock().await;
 
@@ -1114,7 +1261,6 @@ impl SchedulerDispatcher {
                         tracing::error!("[Scheduler] 更新任务状态失败: {:?}", update_err);
                     }
 
-                    // 从运行列表中移除
                     {
                         let mut running = running_tasks.lock().await;
                         running.remove(&task_id);
@@ -1123,7 +1269,6 @@ impl SchedulerDispatcher {
             }
         });
 
-        // 添加到运行列表
         {
             let mut running = self.running_tasks.lock().await;
             running.insert(task_id_for_map, handle);
@@ -1170,6 +1315,26 @@ impl SchedulerDispatcher {
         }
 
         "待结合 memory/index.md 与 tasks.md 决定下一步".to_string()
+    }
+
+    fn should_continue_immediately(task: &ScheduledTask, continuous_runs: u32) -> bool {
+        if !task.continue_immediately {
+            return false;
+        }
+
+        match task.max_continuous_runs {
+            Some(limit) => continuous_runs < limit,
+            None => true,
+        }
+    }
+
+    fn session_resume_error_message(error: &AppError) -> String {
+        let message = error.to_string();
+        if message.trim().is_empty() {
+            "未知错误".to_string()
+        } else {
+            message
+        }
     }
 
     /// 构建提示词（协议模式：读取 task.md + memory + supplement）

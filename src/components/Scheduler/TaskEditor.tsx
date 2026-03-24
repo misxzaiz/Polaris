@@ -259,6 +259,9 @@ export function TaskEditor({
   // 执行轮次
   const [maxRuns, setMaxRuns] = useState<number | undefined>(task?.maxRuns);
   const [currentRuns] = useState<number>(task?.currentRuns || 0);
+  const [reuseSession, setReuseSession] = useState<boolean>(task?.reuseSession || false);
+  const [continueImmediately, setContinueImmediately] = useState<boolean>(task?.continueImmediately || false);
+  const [maxContinuousRuns, setMaxContinuousRuns] = useState<number | undefined>(task?.maxContinuousRuns);
 
   // 重试配置
   const [maxRetries, setMaxRetries] = useState<number | undefined>(task?.maxRetries);
@@ -439,8 +442,11 @@ export function TaskEditor({
       group: group || undefined,
       mission: finalMission,
       maxRuns: maxRuns || undefined,
+      reuseSession,
+      continueImmediately,
+      maxContinuousRuns: continueImmediately ? (maxContinuousRuns || undefined) : undefined,
       runInTerminal,
-      enabled: task?.enabled ?? true,
+      enabled: task?.enabled ?? false,
       templateId: selectedTemplate?.id,
       templateParamValues: finalTemplateParamValues && Object.keys(finalTemplateParamValues).length > 0
         ? finalTemplateParamValues
@@ -808,6 +814,54 @@ export function TaskEditor({
               <p className="mt-1 text-xs text-gray-500">
                 留空表示不限制执行次数
               </p>
+            </div>
+          )}
+
+          {/* 会话复用与连续执行 */}
+          {fullMode && (
+            <div className="space-y-3 p-3 bg-[#1a1a2e] rounded border border-[#2a2a4a]">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={reuseSession}
+                  onChange={(e) => setReuseSession(e.target.checked)}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm text-gray-300">复用上次会话</span>
+                <span className="text-xs text-gray-500">（保留上下文继续执行）</span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={continueImmediately}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setContinueImmediately(checked);
+                    if (!checked) {
+                      setMaxContinuousRuns(undefined);
+                    }
+                  }}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm text-gray-300">成功后立即继续执行</span>
+                <span className="text-xs text-gray-500">（用于连续推进协议任务）</span>
+              </label>
+
+              {continueImmediately && (
+                <div className="flex items-center gap-2 pl-6">
+                  <label className="text-xs text-gray-400">最大连续执行次数</label>
+                  <input
+                    type="number"
+                    value={maxContinuousRuns || ''}
+                    onChange={(e) => setMaxContinuousRuns(e.target.value ? parseInt(e.target.value) : undefined)}
+                    min={1}
+                    placeholder="不限"
+                    className="w-24 px-2 py-1 bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500 text-sm"
+                  />
+                  <span className="text-xs text-gray-500">留空表示不限</span>
+                </div>
+              )}
             </div>
           )}
 

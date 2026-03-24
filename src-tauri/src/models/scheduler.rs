@@ -28,6 +28,14 @@ pub struct CreateTaskParams {
     pub mission: Option<String>,
     /// 最大执行轮次（可选，None 表示不限）
     pub max_runs: Option<u32>,
+    /// 是否复用上次会话
+    #[serde(default)]
+    pub reuse_session: bool,
+    /// 是否成功后立即继续执行
+    #[serde(default)]
+    pub continue_immediately: bool,
+    /// 最大连续执行次数（可选，None 表示不限）
+    pub max_continuous_runs: Option<u32>,
     /// 是否在终端中执行（便于用户查看过程）
     #[serde(default)]
     pub run_in_terminal: bool,
@@ -63,7 +71,7 @@ fn default_notify_on_complete() -> bool {
 }
 
 fn default_enabled() -> bool {
-    true
+    false
 }
 
 /// 定时任务
@@ -116,6 +124,18 @@ pub struct ScheduledTask {
     /// 当前已执行轮次
     #[serde(default)]
     pub current_runs: u32,
+    /// 是否复用上次会话
+    #[serde(default)]
+    pub reuse_session: bool,
+    /// 已保存的对话会话 ID
+    #[serde(default)]
+    pub conversation_session_id: Option<String>,
+    /// 是否成功后立即继续执行
+    #[serde(default)]
+    pub continue_immediately: bool,
+    /// 最大连续执行次数（可选，None 表示不限）
+    #[serde(default)]
+    pub max_continuous_runs: Option<u32>,
     /// 是否在终端中执行（便于用户查看过程）
     #[serde(default)]
     pub run_in_terminal: bool,
@@ -185,6 +205,10 @@ impl From<CreateTaskParams> for ScheduledTask {
             updated_at: 0,
             max_runs: params.max_runs,
             current_runs: 0,
+            reuse_session: params.reuse_session,
+            conversation_session_id: None,
+            continue_immediately: params.continue_immediately,
+            max_continuous_runs: params.max_continuous_runs,
             run_in_terminal: params.run_in_terminal,
             template_id: params.template_id,
             template_param_values: params.template_param_values,

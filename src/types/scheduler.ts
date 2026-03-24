@@ -48,6 +48,14 @@ export interface ScheduledTask {
   maxRuns?: number;
   /** 当前已执行轮次 */
   currentRuns: number;
+  /** 是否复用上次会话 */
+  reuseSession: boolean;
+  /** 已保存的对话会话 ID */
+  conversationSessionId?: string;
+  /** 是否成功后立即继续执行 */
+  continueImmediately: boolean;
+  /** 最大连续执行次数（可选，undefined 表示不限） */
+  maxContinuousRuns?: number;
   /** 是否在终端中执行 (便于用户查看过程) */
   runInTerminal: boolean;
   /** 使用的协议模板ID（用于编辑时回显） */
@@ -131,6 +139,12 @@ export interface CreateTaskParams {
   mission?: string;
   /** 最大执行轮次 (可选，undefined 表示不限) */
   maxRuns?: number;
+  /** 是否复用上次会话 */
+  reuseSession?: boolean;
+  /** 是否成功后立即继续执行 */
+  continueImmediately?: boolean;
+  /** 最大连续执行次数（可选，undefined 表示不限） */
+  maxContinuousRuns?: number;
   /** 是否在终端中执行 (便于用户查看过程) */
   runInTerminal?: boolean;
   /** 使用的协议模板ID（用于编辑时回显） */

@@ -978,7 +978,7 @@ export async function schedulerClearTaskLogs(taskId: string): Promise<number> {
 }
 
 /** 协议文档类型 */
-export type ProtocolFileType = 'task' | 'supplement' | 'memory_index' | 'memory_tasks';
+export type ProtocolFileType = 'task' | 'supplement' | 'memory_index' | 'memory_tasks' | 'memory_runs';
 
 /** 读取协议任务文档 */
 export async function schedulerReadProtocolFile(
@@ -1046,6 +1046,9 @@ export interface TaskExportItem {
   workDir?: string;
   group?: string;
   maxRuns?: number;
+  reuseSession?: boolean;
+  continueImmediately?: boolean;
+  maxContinuousRuns?: number;
   runInTerminal: boolean;
   templateId?: string;
   templateParamValues?: Record<string, string>;

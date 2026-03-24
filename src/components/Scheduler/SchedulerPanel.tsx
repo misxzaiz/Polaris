@@ -931,7 +931,7 @@ const defaultLogFilter: LogFilterState = {
 
 /** 主面板 */
 export function SchedulerPanel() {
-  const { tasks, logs, logPagination, loading, subscribingTaskId, loadTasks, loadLogsPaginated, createTask, updateTask, deleteTask, toggleTask, runTask, runTaskWithSubscription, clearSubscription, subscribeTask, unsubscribeTask, initSchedulerEventListener } =
+  const { tasks, logs, logPagination, loading, subscribingTaskId, loadTasks, loadLogs, loadLogsPaginated, createTask, updateTask, deleteTask, toggleTask, runTask, runTaskWithSubscription, clearSubscription, subscribeTask, unsubscribeTask, initSchedulerEventListener } =
     useSchedulerStore();
   const toast = useToastStore();
 
@@ -1264,9 +1264,11 @@ export function SchedulerPanel() {
     try {
       for (const task of selectedTasks) {
         await toggleTask(task.id, true);
+        await runTask(task.id);
       }
-      toast.success('批量启用成功', `已启用 ${selectedTasks.length} 个任务`);
+      toast.success('批量启用成功', `已启用并启动 ${selectedTasks.length} 个任务`);
       loadTasks();
+      loadLogs(50);
     } catch (e) {
       toast.error('批量启用失败', e instanceof Error ? e.message : '未知错误');
     }
@@ -1318,6 +1320,23 @@ export function SchedulerPanel() {
     });
   };
 
+  const handleToggleTask = async (task: ScheduledTask) => {
+    try {
+      await toggleTask(task.id, !task.enabled);
+
+      if (task.enabled) {
+        toast.success(`任务「${task.name}」已禁用`);
+        return;
+      }
+
+      await runTask(task.id);
+      toast.success(`任务「${task.name}」已启用并开始执行`);
+      loadLogs(50);
+    } catch (e) {
+      toast.error(task.enabled ? '禁用失败' : '启用失败', e instanceof Error ? e.message : '未知错误');
+    }
+  };
+
   const handleCreate = async (params: CreateTaskParams) => {
     try {
       await createTask(params);
@@ -1337,6 +1356,7 @@ export function SchedulerPanel() {
       ...task,
       name: `${task.name}（副本）`,
       // 清除运行时状态
+      conversationSessionId: undefined,
       subscribedContextId: undefined,
       retryCount: 0,
       currentRuns: 0,
@@ -1403,6 +1423,9 @@ export function SchedulerPanel() {
     workDir: task.workDir,
     group: task.group,
     maxRuns: task.maxRuns,
+    reuseSession: task.reuseSession,
+    continueImmediately: task.continueImmediately,
+    maxContinuousRuns: task.maxContinuousRuns,
     runInTerminal: task.runInTerminal,
     templateId: task.templateId,
     templateParamValues: task.templateParamValues,
@@ -1457,6 +1480,9 @@ export function SchedulerPanel() {
             workDir: item.workDir,
             group: item.group,
             maxRuns: item.maxRuns,
+            reuseSession: item.reuseSession,
+            continueImmediately: item.continueImmediately,
+            maxContinuousRuns: item.maxContinuousRuns,
             runInTerminal: item.runInTerminal,
             templateId: item.templateId,
             templateParamValues: item.templateParamValues,
@@ -1761,7 +1787,7 @@ export function SchedulerPanel() {
                       }}
                       onCopy={() => handleCopy(task)}
                       onDelete={() => handleDelete(task.id)}
-                      onToggle={() => toggleTask(task.id, !task.enabled)}
+                      onToggle={() => handleToggleTask(task)}
                       onRun={() => handleRunTask(task)}
                       onSubscribe={() => handleSubscribeAndRun(task)}
                       onCancelSubscription={handleCancelSubscription}
@@ -1886,18 +1912,27 @@ function ProtocolDocViewer({
   onClose: () => void;
 }) {
   const toast = useToastStore();
-  const [activeDoc, setActiveDoc] = useState<'task' | 'supplement' | 'memory'>('task');
+  const [activeDoc, setActiveDoc] = useState<'task' | 'supplement' | 'memory' | 'memory_tasks' | 'memory_runs'>('task');
   const [content, setContent] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [editedContent, setEditedContent] = useState('');
   const [loading, setLoading] = useState(true);
+
+  const fileType: ProtocolFileType = activeDoc === 'memory' ? 'memory_index' : activeDoc;
+  const docPath =
+    activeDoc === 'memory'
+      ? 'memory/index.md'
+      : activeDoc === 'memory_tasks'
+        ? 'memory/tasks.md'
+        : activeDoc === 'memory_runs'
+          ? 'memory/runs.md'
+          : `${activeDoc}.md`;
 
   // 读取文档内容
   useEffect(() => {
     if (!task.workDir || !task.taskPath) return;
 
     setLoading(true);
-    const fileType: ProtocolFileType = activeDoc === 'memory' ? 'memory_index' : activeDoc;
 
     tauri.schedulerReadProtocolFile(task.workDir, task.taskPath, fileType)
       .then((data) => {
@@ -1913,8 +1948,6 @@ function ProtocolDocViewer({
   const handleSave = async () => {
     if (!task.workDir || !task.taskPath) return;
 
-    const fileType: ProtocolFileType = activeDoc === 'memory' ? 'memory_index' : activeDoc;
-
     try {
       await tauri.schedulerWriteProtocolFile(task.workDir, task.taskPath, fileType, editedContent);
       setContent(editedContent);
@@ -1929,6 +1962,8 @@ function ProtocolDocViewer({
     { id: 'task' as const, label: '协议文档' },
     { id: 'supplement' as const, label: '用户补充' },
     { id: 'memory' as const, label: '记忆索引' },
+    { id: 'memory_tasks' as const, label: '任务队列' },
+    { id: 'memory_runs' as const, label: '执行记录' },
   ];
 
   return (
@@ -1986,7 +2021,7 @@ function ProtocolDocViewer({
         {/* 底部操作栏 */}
         <div className="p-4 border-t border-[#2a2a4a] flex justify-between items-center">
           <div className="text-xs text-gray-500">
-            路径: {task.taskPath}/{activeDoc === 'memory' ? 'memory/index.md' : `${activeDoc}.md`}
+            路径: {task.taskPath}/{docPath}
           </div>
           <div className="flex gap-2">
             {isEditing ? (
