@@ -80,27 +80,27 @@ function ProtocolTemplateSelector({
   }
 
   return (
-    <div className="bg-[#1a1a2e] rounded-lg border border-[#2a2a4a] overflow-hidden">
+    <div className="bg-background-elevated rounded-lg border border-border overflow-hidden">
       <button
         onClick={() => setShowTemplates(!showTemplates)}
-        className="w-full px-3 py-2 flex items-center justify-between text-sm text-gray-300 hover:text-white transition-colors"
+        className="w-full px-3 py-2 flex items-center justify-between text-sm text-text-primary hover:text-text-primary transition-colors"
       >
         <span>选择模板快速创建</span>
         <span className={`transform transition-transform ${showTemplates ? 'rotate-180' : ''}`}>▼</span>
       </button>
 
       {showTemplates && (
-        <div className="border-t border-[#2a2a4a]">
+        <div className="border-t border-border">
           {/* 类别筛选 */}
-          <div className="flex flex-wrap gap-1 p-2 bg-[#12122a]">
+          <div className="flex flex-wrap gap-1 p-2 bg-surface">
             {categories.map((cat) => (
               <button
                 key={cat}
                 onClick={() => setSelectedCategory(cat)}
                 className={`px-2 py-1 text-xs rounded transition-colors ${
                   selectedCategory === cat
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-[#2a2a4a] text-gray-400 hover:bg-[#3a3a5a]'
+                    ? 'bg-blue-600 text-text-primary'
+                    : 'bg-background-surface text-text-secondary hover:bg-background-hover'
                 }`}
               >
                 {cat === 'all' ? '全部' : ProtocolTemplateCategoryLabels[cat as keyof typeof ProtocolTemplateCategoryLabels]}
@@ -117,10 +117,10 @@ function ProtocolTemplateSelector({
                   onTemplateSelect(template);
                   setShowTemplates(false);
                 }}
-                className="w-full px-3 py-2 text-left hover:bg-[#2a2a4a] transition-colors border-b border-[#2a2a4a] last:border-b-0"
+                className="w-full px-3 py-2 text-left hover:bg-background-surface transition-colors border-b border-border last:border-b-0"
               >
                 <div className="flex items-center gap-2">
-                  <span className="text-white text-sm">{template.name}</span>
+                  <span className="text-text-primary text-sm">{template.name}</span>
                   {template.builtin ? (
                     <span className="text-xs px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded">内置</span>
                   ) : (
@@ -130,7 +130,7 @@ function ProtocolTemplateSelector({
                     <span className="text-xs px-1.5 py-0.5 bg-purple-500/20 text-purple-400 rounded">完整模板</span>
                   )}
                 </div>
-                <p className="text-xs text-gray-500 mt-0.5 truncate">{template.description}</p>
+                <p className="text-xs text-text-tertiary mt-0.5 truncate">{template.description}</p>
               </button>
             ))}
           </div>
@@ -153,7 +153,7 @@ function TemplateParamInput({
   disabled?: boolean;
 }) {
   const label = (
-    <label className="block text-sm text-gray-400 mb-1">
+    <label className="block text-sm text-text-secondary mb-1">
       {param.label}
       {param.required && <span className="text-red-400 ml-1">*</span>}
     </label>
@@ -169,7 +169,7 @@ function TemplateParamInput({
           rows={4}
           disabled={disabled}
           placeholder={param.placeholder}
-          className="w-full px-3 py-2 bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500 resize-none font-mono text-sm disabled:opacity-50"
+          className="w-full px-3 py-2 bg-surface border border-border rounded text-text-primary focus:outline-none focus:border-blue-500 resize-none font-mono text-sm disabled:opacity-50"
         />
       </div>
     );
@@ -183,7 +183,7 @@ function TemplateParamInput({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
-          className="w-full px-3 py-2 bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500 disabled:opacity-50"
+          className="w-full px-3 py-2 bg-surface border border-border rounded text-text-primary focus:outline-none focus:border-blue-500 disabled:opacity-50"
         >
           <option value="">请选择...</option>
           {param.options.map((opt) => (
@@ -206,7 +206,7 @@ function TemplateParamInput({
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
         placeholder={param.placeholder}
-        className="w-full px-3 py-2 bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500 disabled:opacity-50"
+        className="w-full px-3 py-2 bg-surface border border-border rounded text-text-primary focus:outline-none focus:border-blue-500 disabled:opacity-50"
       />
     </div>
   );
@@ -467,13 +467,13 @@ export function TaskEditor({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-[#16162a] rounded-lg w-[650px] max-h-[85vh] overflow-y-auto border border-[#2a2a4a]">
+      <div className="bg-background-elevated rounded-lg w-[650px] max-h-[85vh] overflow-y-auto border border-border">
         {/* 头部 */}
-        <div className="p-4 border-b border-[#2a2a4a] flex items-center justify-between sticky top-0 bg-[#16162a]">
-          <h2 className="text-lg font-medium text-white">
+        <div className="p-4 border-b border-border flex items-center justify-between sticky top-0 bg-background-elevated">
+          <h2 className="text-lg font-medium text-text-primary">
             {title || (task ? '编辑任务' : '新建任务')}
           </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white text-xl">
+          <button onClick={onClose} className="text-text-secondary hover:text-text-primary text-xl">
             ✕
           </button>
         </div>
@@ -481,14 +481,14 @@ export function TaskEditor({
         <div className="p-4 space-y-4">
           {/* 任务名称 */}
           <div>
-            <label className="block text-sm text-gray-400 mb-1">
+            <label className="block text-sm text-text-secondary mb-1">
               任务名称 <span className="text-red-400">*</span>
             </label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 bg-[#1a1a2e] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+              className="w-full px-3 py-2 bg-background-elevated border border-border rounded text-text-primary focus:outline-none focus:border-blue-500"
               placeholder="例如：每日日报生成"
             />
           </div>
@@ -496,17 +496,17 @@ export function TaskEditor({
           {/* 分组（可选） */}
           {fullMode && (
             <div>
-              <label className="block text-sm text-gray-400 mb-1">
-                分组 <span className="text-gray-600">(可选)</span>
+              <label className="block text-sm text-text-secondary mb-1">
+                分组 <span className="text-text-muted">(可选)</span>
               </label>
               <input
                 type="text"
                 value={group}
                 onChange={(e) => setGroup(e.target.value)}
-                className="w-full px-3 py-2 bg-[#1a1a2e] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+                className="w-full px-3 py-2 bg-background-elevated border border-border rounded text-text-primary focus:outline-none focus:border-blue-500"
                 placeholder="例如：项目A、代码审查、日常维护..."
               />
-              <p className="mt-1 text-xs text-gray-500">
+              <p className="mt-1 text-xs text-text-tertiary">
                 分组可以帮助你更好地管理任务，相同分组的任务会显示在一起
               </p>
             </div>
@@ -555,11 +555,11 @@ export function TaskEditor({
 
           {/* 动态模板参数输入 */}
           {selectedTemplate?.templateParams && selectedTemplate.templateParams.length > 0 && (
-            <div className="space-y-3 p-3 bg-[#1a1a2e] rounded-lg border border-[#2a2a4a]">
+            <div className="space-y-3 p-3 bg-background-elevated rounded-lg border border-border">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-400">模板参数</span>
+                <span className="text-sm text-text-secondary">模板参数</span>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500">{selectedTemplate.name}</span>
+                  <span className="text-xs text-text-tertiary">{selectedTemplate.name}</span>
                   {!task?.taskPath && (
                     <button
                       type="button"
@@ -596,19 +596,19 @@ export function TaskEditor({
           {/* 任务目标输入框：仅当没有使用 fullTemplate 模式时显示 */}
           {!(selectedTemplate?.fullTemplate && selectedTemplate?.templateParams?.length) && fullMode && (
             <div>
-              <label className="block text-sm text-gray-400 mb-1">
+              <label className="block text-sm text-text-secondary mb-1">
                 任务目标 <span className="text-red-400">*</span>
               </label>
               <textarea
                 value={mission}
                 onChange={(e) => setMission(e.target.value)}
                 rows={5}
-                className="w-full px-3 py-2 bg-[#1a1a2e] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500 resize-none font-mono text-sm"
+                className="w-full px-3 py-2 bg-background-elevated border border-border rounded text-text-primary focus:outline-none focus:border-blue-500 resize-none font-mono text-sm"
                 placeholder="描述任务目标，例如：帮我持续优化 ERP 查询性能&#10;&#10;支持占位符：{dateTime} - 当前时间"
                 disabled={!!task?.taskPath}
               />
               {task?.taskPath && (
-                <p className="mt-1 text-xs text-gray-500">
+                <p className="mt-1 text-xs text-text-tertiary">
                   已创建的任务目标不可修改，可在文档管理中查看
                 </p>
               )}
@@ -620,10 +620,10 @@ export function TaskEditor({
               <p className="text-sm text-purple-400">
                 创建后将自动生成协议文档，包含任务目标、执行规则、记忆系统等。
               </p>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-text-tertiary mt-1">
                 支持占位符：{'{dateTime}'} - 当前日期时间
               </p>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-text-tertiary">
                 路径: {workDir || '[工作目录]'}/.polaris/tasks/[时间戳]/
               </p>
             </div>
@@ -631,28 +631,28 @@ export function TaskEditor({
 
           {/* 用户补充内容 */}
           <div>
-            <label className="block text-sm text-gray-400 mb-1">
-              用户补充 <span className="text-gray-600">(可选，一次性提示词)</span>
+            <label className="block text-sm text-text-secondary mb-1">
+              用户补充 <span className="text-text-muted">(可选，一次性提示词)</span>
             </label>
             <textarea
               value={userSupplement}
               onChange={(e) => setUserSupplement(e.target.value)}
               rows={1}
-              className="w-full px-3 py-2 bg-[#1a1a2e] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500 resize-none text-sm"
+              className="w-full px-3 py-2 bg-background-elevated border border-border rounded text-text-primary focus:outline-none focus:border-blue-500 resize-none text-sm"
               placeholder="可选：补充说明、特殊要求或临时调整..."
             />
           </div>
 
           {/* 触发类型 */}
           <div>
-            <label className="block text-sm text-gray-400 mb-1">触发方式</label>
+            <label className="block text-sm text-text-secondary mb-1">触发方式</label>
             <div className="space-y-2">
               {/* 触发类型选择 */}
               <div className="flex gap-2">
                 <select
                   value={triggerType}
                   onChange={(e) => setTriggerType(e.target.value as TriggerType)}
-                  className="px-3 py-2 bg-[#1a1a2e] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+                  className="px-3 py-2 bg-background-elevated border border-border rounded text-text-primary focus:outline-none focus:border-blue-500"
                 >
                   {Object.entries(TriggerTypeLabels).map(([value, label]) => (
                     <option key={value} value={value}>
@@ -669,12 +669,12 @@ export function TaskEditor({
                       value={intervalNum}
                       onChange={(e) => handleIntervalChange(parseInt(e.target.value) || 1, intervalUnit)}
                       min={1}
-                      className="w-24 px-3 py-2 bg-[#1a1a2e] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+                      className="w-24 px-3 py-2 bg-background-elevated border border-border rounded text-text-primary focus:outline-none focus:border-blue-500"
                     />
                     <select
                       value={intervalUnit}
                       onChange={(e) => handleIntervalChange(intervalNum, e.target.value as 's' | 'm' | 'h' | 'd')}
-                      className="px-3 py-2 bg-[#1a1a2e] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+                      className="px-3 py-2 bg-background-elevated border border-border rounded text-text-primary focus:outline-none focus:border-blue-500"
                     >
                       {Object.entries(IntervalUnitLabels).map(([value, label]) => (
                         <option key={value} value={value}>
@@ -688,7 +688,7 @@ export function TaskEditor({
                     type="text"
                     value={triggerValue}
                     onChange={(e) => setTriggerValue(e.target.value)}
-                    className="flex-1 px-3 py-2 bg-[#1a1a2e] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500 font-mono"
+                    className="flex-1 px-3 py-2 bg-background-elevated border border-border rounded text-text-primary focus:outline-none focus:border-blue-500 font-mono"
                     placeholder="0 9 * * 1-5"
                   />
                 ) : (
@@ -696,7 +696,7 @@ export function TaskEditor({
                     type="datetime-local"
                     value={triggerValue}
                     onChange={(e) => setTriggerValue(e.target.value)}
-                    className="flex-1 px-3 py-2 bg-[#1a1a2e] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+                    className="flex-1 px-3 py-2 bg-background-elevated border border-border rounded text-text-primary focus:outline-none focus:border-blue-500"
                   />
                 )}
               </div>
@@ -717,8 +717,8 @@ export function TaskEditor({
                       }}
                       className={`px-2 py-1 text-xs rounded transition-colors ${
                         triggerValue === preset.value
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-[#2a2a4a] text-gray-400 hover:bg-[#3a3a5a]'
+                          ? 'bg-blue-600 text-text-primary'
+                          : 'bg-background-surface text-text-secondary hover:bg-background-hover'
                       }`}
                     >
                       {preset.label}
@@ -738,16 +738,16 @@ export function TaskEditor({
                   </button>
 
                   {showAdvancedTime && (
-                    <div className="p-3 bg-[#1a1a2e] rounded border border-[#2a2a4a] space-y-3">
+                    <div className="p-3 bg-background-elevated rounded border border-border space-y-3">
                       {/* 每日多个时间点 */}
                       <div>
-                        <p className="text-xs text-gray-400 mb-2">每日多个时间点:</p>
+                        <p className="text-xs text-text-secondary mb-2">每日多个时间点:</p>
                         <div className="flex flex-wrap gap-1">
                           {DAILY_TIME_PRESETS.map((preset) => (
                             <button
                               key={preset.label}
                               onClick={() => applyDailyPreset(preset.hours)}
-                              className="px-2 py-1 text-xs bg-[#2a2a4a] text-gray-300 hover:bg-[#3a3a5a] rounded"
+                              className="px-2 py-1 text-xs bg-background-surface text-text-primary hover:bg-background-hover rounded"
                             >
                               {preset.label}
                             </button>
@@ -757,13 +757,13 @@ export function TaskEditor({
 
                       {/* 每小时指定分钟 */}
                       <div>
-                        <p className="text-xs text-gray-400 mb-2">每小时指定分钟:</p>
+                        <p className="text-xs text-text-secondary mb-2">每小时指定分钟:</p>
                         <div className="flex flex-wrap gap-1">
                           {HOURLY_MINUTE_PRESETS.map((preset) => (
                             <button
                               key={preset.label}
                               onClick={() => applyHourlyPreset(preset.minute)}
-                              className="px-2 py-1 text-xs bg-[#2a2a4a] text-gray-300 hover:bg-[#3a3a5a] rounded"
+                              className="px-2 py-1 text-xs bg-background-surface text-text-primary hover:bg-background-hover rounded"
                             >
                               {preset.label}
                             </button>
@@ -772,7 +772,7 @@ export function TaskEditor({
                       </div>
 
                       {/* 当前表达式说明 */}
-                      <div className="text-xs text-gray-500">
+                      <div className="text-xs text-text-tertiary">
                         当前表达式: <code className="text-blue-400">{triggerValue}</code>
                       </div>
                     </div>
@@ -782,7 +782,7 @@ export function TaskEditor({
 
               {/* Cron 表达式说明 */}
               {triggerType === 'cron' && !showAdvancedTime && (
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-text-tertiary">
                   示例: "0 9 * * 1-5" 表示工作日早9点，格式为：分 时 日 月 周
                 </p>
               )}
@@ -792,8 +792,8 @@ export function TaskEditor({
           {/* 执行轮次（可选） */}
           {fullMode && (
             <div>
-              <label className="block text-sm text-gray-400 mb-1">
-                执行轮次限制 <span className="text-gray-600">(可选)</span>
+              <label className="block text-sm text-text-secondary mb-1">
+                执行轮次限制 <span className="text-text-muted">(可选)</span>
               </label>
               <div className="flex items-center gap-2">
                 <input
@@ -802,16 +802,16 @@ export function TaskEditor({
                   onChange={(e) => setMaxRuns(e.target.value ? parseInt(e.target.value) : undefined)}
                   min={1}
                   placeholder="不限"
-                  className="w-24 px-3 py-2 bg-[#1a1a2e] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+                  className="w-24 px-3 py-2 bg-background-elevated border border-border rounded text-text-primary focus:outline-none focus:border-blue-500"
                 />
-                <span className="text-gray-400 text-sm">次后自动禁用</span>
+                <span className="text-text-secondary text-sm">次后自动禁用</span>
                 {task && currentRuns > 0 && (
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-text-tertiary">
                     (已执行 {currentRuns} 次)
                   </span>
                 )}
               </div>
-              <p className="mt-1 text-xs text-gray-500">
+              <p className="mt-1 text-xs text-text-tertiary">
                 留空表示不限制执行次数
               </p>
             </div>
@@ -819,7 +819,7 @@ export function TaskEditor({
 
           {/* 会话复用与连续执行 */}
           {fullMode && (
-            <div className="space-y-3 p-3 bg-[#1a1a2e] rounded border border-[#2a2a4a]">
+            <div className="space-y-3 p-3 bg-background-elevated rounded border border-border">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
@@ -827,8 +827,8 @@ export function TaskEditor({
                   onChange={(e) => setReuseSession(e.target.checked)}
                   className="w-4 h-4"
                 />
-                <span className="text-sm text-gray-300">复用上次会话</span>
-                <span className="text-xs text-gray-500">（保留上下文继续执行）</span>
+                <span className="text-sm text-text-primary">复用上次会话</span>
+                <span className="text-xs text-text-tertiary">（保留上下文继续执行）</span>
               </label>
 
               <label className="flex items-center gap-2 cursor-pointer">
@@ -844,22 +844,22 @@ export function TaskEditor({
                   }}
                   className="w-4 h-4"
                 />
-                <span className="text-sm text-gray-300">成功后立即继续执行</span>
-                <span className="text-xs text-gray-500">（用于连续推进协议任务）</span>
+                <span className="text-sm text-text-primary">成功后立即继续执行</span>
+                <span className="text-xs text-text-tertiary">（用于连续推进协议任务）</span>
               </label>
 
               {continueImmediately && (
                 <div className="flex items-center gap-2 pl-6">
-                  <label className="text-xs text-gray-400">最大连续执行次数</label>
+                  <label className="text-xs text-text-secondary">最大连续执行次数</label>
                   <input
                     type="number"
                     value={maxContinuousRuns || ''}
                     onChange={(e) => setMaxContinuousRuns(e.target.value ? parseInt(e.target.value) : undefined)}
                     min={1}
                     placeholder="不限"
-                    className="w-24 px-2 py-1 bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500 text-sm"
+                    className="w-24 px-2 py-1 bg-surface border border-border rounded text-text-primary focus:outline-none focus:border-blue-500 text-sm"
                   />
-                  <span className="text-xs text-gray-500">留空表示不限</span>
+                  <span className="text-xs text-text-tertiary">留空表示不限</span>
                 </div>
               )}
             </div>
@@ -871,7 +871,7 @@ export function TaskEditor({
               <button
                 type="button"
                 onClick={() => setShowRetryConfig(!showRetryConfig)}
-                className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors"
+                className="flex items-center gap-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
               >
                 <span className={`transform transition-transform ${showRetryConfig ? 'rotate-90' : ''}`}>▶</span>
                 <span>失败重试配置</span>
@@ -883,7 +883,7 @@ export function TaskEditor({
               </button>
               
               {showRetryConfig && (
-                <div className="mt-2 p-3 bg-[#1a1a2e] rounded border border-[#2a2a4a] space-y-3">
+                <div className="mt-2 p-3 bg-background-elevated rounded border border-border space-y-3">
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
@@ -892,38 +892,38 @@ export function TaskEditor({
                         onChange={(e) => setMaxRetries(e.target.checked ? 3 : undefined)}
                         className="w-4 h-4"
                       />
-                      <span className="text-white text-sm">启用自动重试</span>
+                      <span className="text-text-primary text-sm">启用自动重试</span>
                     </label>
                   </div>
                   
                   {maxRetries && maxRetries > 0 && (
                     <>
                       <div className="flex items-center gap-2">
-                        <label className="text-xs text-gray-400 w-20">最大重试次数</label>
+                        <label className="text-xs text-text-secondary w-20">最大重试次数</label>
                         <input
                           type="number"
                           value={maxRetries}
                           onChange={(e) => setMaxRetries(Math.max(1, parseInt(e.target.value) || 1))}
                           min={1}
                           max={10}
-                          className="w-20 px-2 py-1 bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500 text-sm"
+                          className="w-20 px-2 py-1 bg-surface border border-border rounded text-text-primary focus:outline-none focus:border-blue-500 text-sm"
                         />
-                        <span className="text-gray-500 text-xs">次</span>
+                        <span className="text-text-tertiary text-xs">次</span>
                       </div>
                       
                       <div className="flex items-center gap-2">
-                        <label className="text-xs text-gray-400 w-20">重试间隔</label>
+                        <label className="text-xs text-text-secondary w-20">重试间隔</label>
                         <input
                           type="number"
                           value={retryIntervalNum}
                           onChange={(e) => setRetryIntervalNum(Math.max(1, parseInt(e.target.value) || 1))}
                           min={1}
-                          className="w-20 px-2 py-1 bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500 text-sm"
+                          className="w-20 px-2 py-1 bg-surface border border-border rounded text-text-primary focus:outline-none focus:border-blue-500 text-sm"
                         />
                         <select
                           value={retryIntervalUnit}
                           onChange={(e) => setRetryIntervalUnit(e.target.value as 's' | 'm' | 'h')}
-                          className="px-2 py-1 bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500 text-sm"
+                          className="px-2 py-1 bg-surface border border-border rounded text-text-primary focus:outline-none focus:border-blue-500 text-sm"
                         >
                           {Object.entries(IntervalUnitLabels).map(([value, label]) => (
                             <option key={value} value={value}>
@@ -933,7 +933,7 @@ export function TaskEditor({
                         </select>
                       </div>
                       
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-text-tertiary">
                         任务执行失败后，将等待指定时间后自动重试，最多重试 {maxRetries} 次
                       </p>
                       
@@ -955,7 +955,7 @@ export function TaskEditor({
               <button
                 type="button"
                 onClick={() => setShowTimeoutConfig(!showTimeoutConfig)}
-                className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors"
+                className="flex items-center gap-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
               >
                 <span className={`transform transition-transform ${showTimeoutConfig ? 'rotate-90' : ''}`}>▶</span>
                 <span>执行超时配置</span>
@@ -967,7 +967,7 @@ export function TaskEditor({
               </button>
               
               {showTimeoutConfig && (
-                <div className="mt-2 p-3 bg-[#1a1a2e] rounded border border-[#2a2a4a] space-y-3">
+                <div className="mt-2 p-3 bg-background-elevated rounded border border-border space-y-3">
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
@@ -976,26 +976,26 @@ export function TaskEditor({
                         onChange={(e) => setTimeoutMinutes(e.target.checked ? 30 : undefined)}
                         className="w-4 h-4"
                       />
-                      <span className="text-white text-sm">启用执行超时</span>
+                      <span className="text-text-primary text-sm">启用执行超时</span>
                     </label>
                   </div>
                   
                   {timeoutMinutes && timeoutMinutes > 0 && (
                     <>
                       <div className="flex items-center gap-2">
-                        <label className="text-xs text-gray-400 w-20">超时时间</label>
+                        <label className="text-xs text-text-secondary w-20">超时时间</label>
                         <input
                           type="number"
                           value={timeoutMinutes}
                           onChange={(e) => setTimeoutMinutes(Math.max(1, parseInt(e.target.value) || 1))}
                           min={1}
                           max={1440}
-                          className="w-20 px-2 py-1 bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500 text-sm"
+                          className="w-20 px-2 py-1 bg-surface border border-border rounded text-text-primary focus:outline-none focus:border-blue-500 text-sm"
                         />
-                        <span className="text-gray-500 text-xs">分钟</span>
+                        <span className="text-text-tertiary text-xs">分钟</span>
                       </div>
                       
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-text-tertiary">
                         任务执行超过设定时间后将自动终止，防止长时间占用资源
                       </p>
                       
@@ -1013,7 +1013,7 @@ export function TaskEditor({
 
           {/* 任务完成通知 */}
           {fullMode && (
-            <div className="flex items-center gap-3 p-3 bg-[#1a1a2e] rounded border border-[#2a2a4a]">
+            <div className="flex items-center gap-3 p-3 bg-background-elevated rounded border border-border">
               <input
                 type="checkbox"
                 id="notifyOnComplete"
@@ -1021,10 +1021,10 @@ export function TaskEditor({
                 onChange={(e) => setNotifyOnComplete(e.target.checked)}
                 className="w-4 h-4"
               />
-              <label htmlFor="notifyOnComplete" className="text-sm text-gray-300 cursor-pointer">
+              <label htmlFor="notifyOnComplete" className="text-sm text-text-primary cursor-pointer">
                 任务完成后发送桌面通知
               </label>
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-text-tertiary">
                 （无论成功或失败都会通知）
               </span>
             </div>
@@ -1032,7 +1032,7 @@ export function TaskEditor({
 
           {/* AI 引擎 */}
           <div>
-            <label className="block text-sm text-gray-400 mb-1">AI 引擎</label>
+            <label className="block text-sm text-text-secondary mb-1">AI 引擎</label>
             <div className="space-y-2">
               {/* 检测失效的 Provider */}
               {(() => {
@@ -1064,7 +1064,7 @@ export function TaskEditor({
                     setEngineId(baseEngine);
                   }
                 }}
-                className="w-full px-3 py-2 bg-[#1a1a2e] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+                className="w-full px-3 py-2 bg-background-elevated border border-border rounded text-text-primary focus:outline-none focus:border-blue-500"
               >
                 <option value="claude">Claude Code</option>
                 <option value="iflow">IFlow</option>
@@ -1076,14 +1076,14 @@ export function TaskEditor({
               
               {/* OpenAI Provider 二级选择 */}
               {parseEngineId(engineId).baseEngine === 'openai' && (
-                <div className="pl-2 border-l-2 border-[#2a2a4a]">
-                  <label className="block text-xs text-gray-500 mb-1">选择 Provider</label>
+                <div className="pl-2 border-l-2 border-border">
+                  <label className="block text-xs text-text-tertiary mb-1">选择 Provider</label>
                   {openaiProviders.filter(p => p.enabled).length > 0 ? (
                     <>
                       <select
                         value={parseEngineId(engineId).providerId || ''}
                         onChange={(e) => setEngineId(`provider-${e.target.value}`)}
-                        className="w-full px-3 py-2 bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500 text-sm"
+                        className="w-full px-3 py-2 bg-surface border border-border rounded text-text-primary focus:outline-none focus:border-blue-500 text-sm"
                       >
                         {openaiProviders.filter(p => p.enabled).map((provider) => (
                           <option key={provider.id} value={provider.id}>
@@ -1098,9 +1098,9 @@ export function TaskEditor({
                         );
                         if (selectedProvider) {
                           return (
-                            <div className="mt-2 p-2 bg-[#0a0a1a] rounded text-xs text-gray-400 space-y-1">
+                            <div className="mt-2 p-2 bg-background-base rounded text-xs text-text-secondary space-y-1">
                               <div>模型: <span className="text-blue-400">{selectedProvider.model}</span></div>
-                              <div>API: <span className="text-gray-500 truncate">{selectedProvider.apiBase}</span></div>
+                              <div>API: <span className="text-text-tertiary truncate">{selectedProvider.apiBase}</span></div>
                               {selectedProvider.supportsTools && (
                                 <span className="inline-block px-1 py-0.5 bg-green-500/20 text-green-400 rounded text-xs">
                                   支持工具调用
@@ -1126,7 +1126,7 @@ export function TaskEditor({
                           }));
                           onClose();
                         }}
-                        className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+                        className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-text-primary rounded transition-colors"
                       >
                         去配置 →
                       </button>
@@ -1139,7 +1139,7 @@ export function TaskEditor({
 
           {/* 工作目录 */}
           <div>
-            <label className="block text-sm text-gray-400 mb-1">
+            <label className="block text-sm text-text-secondary mb-1">
               工作目录
             </label>
             <div className="space-y-2">
@@ -1153,8 +1153,8 @@ export function TaskEditor({
                       onClick={() => setWorkDir(ws.path)}
                       className={`px-2 py-1 text-xs rounded transition-colors ${
                         workDir === ws.path
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-[#2a2a4a] text-gray-400 hover:bg-[#3a3a5a]'
+                          ? 'bg-blue-600 text-text-primary'
+                          : 'bg-background-surface text-text-secondary hover:bg-background-hover'
                       }`}
                     >
                       {ws.name}
@@ -1167,7 +1167,7 @@ export function TaskEditor({
                 type="text"
                 value={workDir}
                 onChange={(e) => setWorkDir(e.target.value)}
-                className="w-full px-3 py-2 bg-[#1a1a2e] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+                className="w-full px-3 py-2 bg-background-elevated border border-border rounded text-text-primary focus:outline-none focus:border-blue-500"
                 placeholder="留空使用默认目录"
               />
             </div>
@@ -1175,16 +1175,16 @@ export function TaskEditor({
         </div>
 
         {/* 底部按钮 */}
-        <div className="p-4 border-t border-[#2a2a4a] flex justify-end gap-2 sticky bottom-0 bg-[#16162a]">
+        <div className="p-4 border-t border-border flex justify-end gap-2 sticky bottom-0 bg-background-elevated">
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-gray-600/20 text-gray-300 hover:bg-gray-600/30 rounded transition-colors"
+            className="px-4 py-2 bg-gray-600/20 text-text-primary hover:bg-gray-600/30 rounded transition-colors"
           >
             取消
           </button>
           <button
             onClick={handleSave}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-text-primary rounded transition-colors"
           >
             保存
           </button>

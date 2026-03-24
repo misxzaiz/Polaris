@@ -39,7 +39,7 @@ function formatRelativeTime(timestamp: number | undefined): string {
 
 /** 状态徽章 */
 function StatusBadge({ status }: { status?: 'running' | 'success' | 'failed' }) {
-  if (!status) return <span className="text-gray-400">未执行</span>;
+  if (!status) return <span className="text-text-secondary">未执行</span>;
 
   const styles = {
     running: 'bg-blue-500/20 text-blue-400',
@@ -92,7 +92,7 @@ function PhaseBadge({ phase }: { phase?: string }) {
     验收: 'bg-green-500/20 text-green-400',
   };
 
-  const style = styles[label] || 'bg-gray-500/20 text-gray-400';
+  const style = styles[label] || 'bg-gray-500/20 text-text-secondary';
 
   return (
     <span className={`px-2 py-0.5 rounded text-xs ${style}`}>
@@ -116,7 +116,7 @@ function ExecutionOutcomeBadge({ outcome }: { outcome?: { type: string; data?: s
     ConsecutiveNoProgress: { label: `连续无进展(${data || 0}次)`, style: 'bg-red-500/20 text-red-400', title: '连续多次无进展，可能陷入循环' },
   };
 
-  const { label, style, title } = config[type] || { label: type, style: 'bg-gray-500/20 text-gray-400' };
+  const { label, style, title } = config[type] || { label: type, style: 'bg-gray-500/20 text-text-secondary' };
 
   return (
     <span className={`px-2 py-0.5 rounded text-xs ${style} cursor-help`} title={title}>
@@ -263,7 +263,7 @@ function TaskCard({
   // 紧凑模式：使用下拉菜单
   if (isCompact) {
     return (
-      <div className={`bg-[#1a1a2e] rounded-lg p-3 border ${isSelected ? 'border-blue-500' : 'border-[#2a2a4a]'}`}>
+      <div className={`bg-background-elevated rounded-lg p-3 border ${isSelected ? 'border-blue-500' : 'border-border'}`}>
         <div className="flex items-start justify-between gap-2">
           {/* 选择模式下显示复选框 */}
           {selectionMode && (
@@ -272,14 +272,14 @@ function TaskCard({
                 type="checkbox"
                 checked={isSelected}
                 onChange={onSelect}
-                className="w-5 h-5 rounded border-gray-500 bg-[#12122a] text-blue-500 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer"
+                className="w-5 h-5 rounded border-border bg-surface text-blue-500 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer"
               />
             </div>
           )}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className={`w-2 h-2 rounded-full shrink-0 ${task.enabled ? 'bg-green-500' : 'bg-gray-500'}`} />
-              <h3 className="text-white font-medium truncate">{task.name}</h3>
+              <h3 className="text-text-primary font-medium truncate">{task.name}</h3>
               {/* 分组标签 */}
               {showGroupTag && task.group && (
                 <span className="px-2 py-0.5 rounded text-xs bg-orange-500/20 text-orange-400">
@@ -287,7 +287,7 @@ function TaskCard({
                 </span>
               )}
             </div>
-            <div className="mt-1 text-xs text-gray-400 flex items-center gap-2 flex-wrap">
+            <div className="mt-1 text-xs text-text-secondary flex items-center gap-2 flex-wrap">
               <StatusBadge status={task.lastRunStatus} />
               {/* 执行结果类型展示 */}
               <ExecutionOutcomeBadge outcome={task.lastRunOutcome} />
@@ -307,7 +307,7 @@ function TaskCard({
             {isSubscribing ? (
               <button
                 onClick={onCancelSubscription}
-                className="p-1.5 bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
+                className="p-1.5 bg-red-600 hover:bg-red-700 text-text-primary rounded transition-colors"
                 title="停止"
               >
                 ⏹
@@ -326,7 +326,7 @@ function TaskCard({
             {/* 执行按钮 */}
             <button
               onClick={onRun}
-              className="p-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+              className="p-1.5 bg-blue-600 hover:bg-blue-700 text-text-primary rounded transition-colors"
               title="执行"
             >
               ▶
@@ -334,7 +334,7 @@ function TaskCard({
             {/* 更多操作下拉菜单 */}
             <DropdownMenu
               trigger={
-                <button className="p-1.5 bg-gray-600/20 text-gray-300 hover:bg-gray-600/30 rounded transition-colors">
+                <button className="p-1.5 bg-gray-600/20 text-text-primary hover:bg-gray-600/30 rounded transition-colors">
                   ⋯
                 </button>
               }
@@ -349,7 +349,7 @@ function TaskCard({
 
   // 正常模式
   return (
-    <div className={`bg-[#1a1a2e] rounded-lg p-4 border ${isSelected ? 'border-blue-500' : 'border-[#2a2a4a]'}`}>
+    <div className={`bg-background-elevated rounded-lg p-4 border ${isSelected ? 'border-blue-500' : 'border-border'}`}>
       <div className="flex items-start justify-between">
         {/* 选择模式下显示复选框 */}
         {selectionMode && (
@@ -358,14 +358,14 @@ function TaskCard({
               type="checkbox"
               checked={isSelected}
               onChange={onSelect}
-              className="w-5 h-5 rounded border-gray-500 bg-[#12122a] text-blue-500 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer"
+              className="w-5 h-5 rounded border-border bg-surface text-blue-500 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer"
             />
           </div>
         )}
         <div className="flex-1">
           <div className="flex items-center gap-2">
             <span className={`w-2 h-2 rounded-full ${task.enabled ? 'bg-green-500' : 'bg-gray-500'}`} />
-            <h3 className="text-white font-medium">{task.name}</h3>
+            <h3 className="text-text-primary font-medium">{task.name}</h3>
             {/* 分组标签 */}
             {showGroupTag && task.group && (
               <span className="px-2 py-0.5 rounded text-xs bg-orange-500/20 text-orange-400">
@@ -374,18 +374,18 @@ function TaskCard({
             )}
           </div>
 
-          <div className="mt-2 text-sm text-gray-400 space-y-1">
+          <div className="mt-2 text-sm text-text-secondary space-y-1">
             <p>
-              <span className="text-gray-500">触发: </span>
+              <span className="text-text-tertiary">触发: </span>
               {TriggerTypeLabels[task.triggerType]} - {task.triggerValue}
             </p>
             <p>
-              <span className="text-gray-500">引擎: </span>
+              <span className="text-text-tertiary">引擎: </span>
               {task.engineId}
             </p>
             <div className="flex items-center gap-4 flex-wrap">
               <span>
-                <span className="text-gray-500">状态: </span>
+                <span className="text-text-tertiary">状态: </span>
                 <StatusBadge status={task.lastRunStatus} />
               </span>
               {/* 执行结果类型展示 */}
@@ -397,15 +397,15 @@ function TaskCard({
               <ContinuousRunBadge continueImmediately={task.continueImmediately} maxContinuousRuns={task.maxContinuousRuns} />
               {task.enabled && task.nextRunAt && (
                 <span>
-                  <span className="text-gray-500">下次: </span>
+                  <span className="text-text-tertiary">下次: </span>
                   {formatRelativeTime(task.nextRunAt)}
                 </span>
               )}
               {/* 执行轮次显示 */}
               {task.maxRuns !== undefined && task.maxRuns !== null && (
                 <span>
-                  <span className="text-gray-500">轮次: </span>
-                  <span className={task.currentRuns >= task.maxRuns ? 'text-yellow-400' : 'text-gray-300'}>
+                  <span className="text-text-tertiary">轮次: </span>
+                  <span className={task.currentRuns >= task.maxRuns ? 'text-yellow-400' : 'text-text-primary'}>
                     {task.currentRuns}/{task.maxRuns}
                   </span>
                 </span>
@@ -430,7 +430,7 @@ function TaskCard({
             // 正在订阅执行中 - 显示停止按钮
             <button
               onClick={onCancelSubscription}
-              className="px-3 py-1 text-sm bg-red-600 hover:bg-red-700 text-white rounded transition-colors flex items-center gap-1"
+              className="px-3 py-1 text-sm bg-red-600 hover:bg-red-700 text-text-primary rounded transition-colors flex items-center gap-1"
               title="取消订阅并中断任务"
             >
               ⏹ 停止
@@ -443,7 +443,7 @@ function TaskCard({
               </span>
               <button
                 onClick={onUnsubscribe}
-                className="px-2 py-1 text-xs bg-gray-600/20 text-gray-400 hover:bg-gray-600/30 rounded transition-colors"
+                className="px-2 py-1 text-xs bg-gray-600/20 text-text-secondary hover:bg-gray-600/30 rounded transition-colors"
                 title="取消订阅"
               >
                 取消
@@ -461,7 +461,7 @@ function TaskCard({
           )}
           <button
             onClick={onRun}
-            className="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+            className="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-text-primary rounded transition-colors"
             title="立即执行（后台）"
           >
             执行
@@ -478,7 +478,7 @@ function TaskCard({
           </button>
           <button
             onClick={onEdit}
-            className="px-3 py-1 text-sm bg-gray-600/20 text-gray-300 hover:bg-gray-600/30 rounded transition-colors"
+            className="px-3 py-1 text-sm bg-gray-600/20 text-text-primary hover:bg-gray-600/30 rounded transition-colors"
           >
             编辑
           </button>
@@ -506,7 +506,7 @@ function CollapsibleContent({
   label,
   content,
   maxHeight = 100,
-  className = 'text-gray-300',
+  className = 'text-text-primary',
 }: {
   label: string;
   content: string;
@@ -519,7 +519,7 @@ function CollapsibleContent({
   return (
     <div>
       <div
-        className="flex items-center justify-between text-sm text-gray-400 mb-1 cursor-pointer hover:text-gray-300"
+        className="flex items-center justify-between text-sm text-text-secondary mb-1 cursor-pointer hover:text-text-primary"
         onClick={() => needsExpand && setExpanded(!expanded)}
       >
         <span>{label}</span>
@@ -530,7 +530,7 @@ function CollapsibleContent({
         )}
       </div>
       <pre
-        className={`text-xs ${className} bg-[#12122a] p-2 rounded overflow-x-auto whitespace-pre-wrap transition-all ${!expanded && needsExpand ? `max-h-[${maxHeight}px] overflow-hidden relative` : ''}`}
+        className={`text-xs ${className} bg-surface p-2 rounded overflow-x-auto whitespace-pre-wrap transition-all ${!expanded && needsExpand ? `max-h-[${maxHeight}px] overflow-hidden relative` : ''}`}
         style={!expanded && needsExpand ? { maxHeight: `${maxHeight}px`, overflow: 'hidden' } : {}}
       >
         {content}
@@ -566,20 +566,20 @@ function LogList({
   return (
     <div className="space-y-3">
       {/* 筛选栏 */}
-      <div className="flex flex-wrap items-center gap-2 p-3 bg-[#1a1a2e] border border-[#2a2a4a] rounded">
+      <div className="flex flex-wrap items-center gap-2 p-3 bg-background-elevated border border-border rounded">
         {/* 搜索框 */}
         <input
           type="text"
           placeholder="搜索任务名称..."
           value={filter.search}
           onChange={(e) => onFilterChange({ ...filter, search: e.target.value })}
-          className="px-3 py-1.5 text-sm bg-[#12122a] border border-[#2a2a4a] rounded text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 w-48"
+          className="px-3 py-1.5 text-sm bg-surface border border-border rounded text-text-primary placeholder-text-tertiary focus:outline-none focus:border-blue-500 w-48"
         />
         {/* 任务筛选 */}
         <select
           value={filter.taskId}
           onChange={(e) => onFilterChange({ ...filter, taskId: e.target.value })}
-          className="px-2 py-1.5 text-sm bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+          className="px-2 py-1.5 text-sm bg-surface border border-border rounded text-text-primary focus:outline-none focus:border-blue-500"
         >
           <option value="">全部任务</option>
           {taskOptions.map((t) => (
@@ -590,7 +590,7 @@ function LogList({
         <select
           value={filter.status}
           onChange={(e) => onFilterChange({ ...filter, status: e.target.value as LogFilterState['status'] })}
-          className="px-2 py-1.5 text-sm bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+          className="px-2 py-1.5 text-sm bg-surface border border-border rounded text-text-primary focus:outline-none focus:border-blue-500"
         >
           <option value="all">全部状态</option>
           <option value="running">执行中</option>
@@ -600,7 +600,7 @@ function LogList({
         {/* 清除筛选 */}
         <button
           onClick={() => onFilterChange(defaultLogFilter)}
-          className="px-3 py-1.5 text-sm bg-gray-600/20 text-gray-400 hover:bg-gray-600/30 rounded transition-colors"
+          className="px-3 py-1.5 text-sm bg-gray-600/20 text-text-secondary hover:bg-gray-600/30 rounded transition-colors"
         >
           清除筛选
         </button>
@@ -608,22 +608,22 @@ function LogList({
 
       {/* 日志列表 */}
       {logs.length === 0 ? (
-        <div className="text-center text-gray-500 py-8">
+        <div className="text-center text-text-tertiary py-8">
           暂无执行日志
         </div>
       ) : (
         <div className="space-y-2">
           {logs.map((log) => (
-            <div key={log.id} className="bg-[#1a1a2e] rounded-lg p-3 border border-[#2a2a4a]">
+            <div key={log.id} className="bg-background-elevated rounded-lg p-3 border border-border">
               <div
                 className="flex items-center justify-between cursor-pointer"
                 onClick={() => setExpandedId(expandedId === log.id ? null : log.id)}
               >
                 <div className="flex items-center gap-3">
                   <StatusBadge status={log.status} />
-                  <span className="text-white">{log.taskName}</span>
+                  <span className="text-text-primary">{log.taskName}</span>
                 </div>
-                <div className="text-sm text-gray-400">
+                <div className="text-sm text-text-secondary">
                   {formatTime(log.startedAt)}
                   {/* 使用 durationMs 显示耗时 */}
                   {log.durationMs != null && log.durationMs > 0 ? (
@@ -639,12 +639,12 @@ function LogList({
               </div>
 
               {expandedId === log.id && (
-                <div className="mt-3 pt-3 border-t border-[#2a2a4a] space-y-3">
+                <div className="mt-3 pt-3 border-t border-border space-y-3">
                   {/* 显示增强字段：Session ID、工具调用次数 */}
-                  <div className="flex flex-wrap gap-4 text-xs text-gray-500">
+                  <div className="flex flex-wrap gap-4 text-xs text-text-tertiary">
                     {log.sessionId && (
                       <span>
-                        Session: <code className="text-blue-400 bg-[#12122a] px-1 rounded">{log.sessionId.slice(0, 8)}...</code>
+                        Session: <code className="text-blue-400 bg-surface px-1 rounded">{log.sessionId.slice(0, 8)}...</code>
                       </span>
                     )}
                     {log.toolCallCount != null && log.toolCallCount > 0 && (
@@ -659,7 +659,7 @@ function LogList({
                     label="提示词"
                     content={log.prompt}
                     maxHeight={60}
-                    className="text-gray-300"
+                    className="text-text-primary"
                   />
 
                   {/* 显示思考过程摘要 */}
@@ -698,15 +698,15 @@ function LogList({
 
       {/* 分页控制 */}
       {pagination.totalPages > 1 && (
-        <div className="flex items-center justify-between px-3 py-2 bg-[#1a1a2e] border border-[#2a2a4a] rounded">
-          <div className="text-sm text-gray-400">
+        <div className="flex items-center justify-between px-3 py-2 bg-background-elevated border border-border rounded">
+          <div className="text-sm text-text-secondary">
             共 {pagination.total} 条日志，第 {pagination.page}/{pagination.totalPages} 页
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => onPageChange(pagination.page - 1)}
               disabled={pagination.page <= 1}
-              className="px-3 py-1 text-sm bg-[#2a2a4a] text-white rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#3a3a5a] transition-colors"
+              className="px-3 py-1 text-sm bg-background-surface text-text-primary rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-background-hover transition-colors"
             >
               上一页
             </button>
@@ -729,8 +729,8 @@ function LogList({
                     onClick={() => onPageChange(pageNum)}
                     className={`w-8 h-8 text-sm rounded ${
                       pageNum === pagination.page
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-[#2a2a4a] text-gray-400 hover:bg-[#3a3a5a]'
+                        ? 'bg-blue-500 text-text-primary'
+                        : 'bg-background-surface text-text-secondary hover:bg-background-hover'
                     }`}
                   >
                     {pageNum}
@@ -741,7 +741,7 @@ function LogList({
             <button
               onClick={() => onPageChange(pagination.page + 1)}
               disabled={pagination.page >= pagination.totalPages}
-              className="px-3 py-1 text-sm bg-[#2a2a4a] text-white rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#3a3a5a] transition-colors"
+              className="px-3 py-1 text-sm bg-background-surface text-text-primary rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-background-hover transition-colors"
             >
               下一页
             </button>
@@ -796,42 +796,42 @@ function LogSettings({
   return (
     <div className="space-y-4">
       {/* 日志统计 */}
-      <div className="bg-[#1a1a2e] rounded-lg p-4 border border-[#2a2a4a]">
-        <h3 className="text-white font-medium mb-3">日志统计</h3>
+      <div className="bg-background-elevated rounded-lg p-4 border border-border">
+        <h3 className="text-text-primary font-medium mb-3">日志统计</h3>
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div>
-            <span className="text-gray-400">总日志数：</span>
-            <span className="text-white ml-2">{stats?.totalLogs ?? 0}</span>
+            <span className="text-text-secondary">总日志数：</span>
+            <span className="text-text-primary ml-2">{stats?.totalLogs ?? 0}</span>
           </div>
           <div>
-            <span className="text-gray-400">有日志的任务：</span>
-            <span className="text-white ml-2">{stats?.totalTasks ?? 0}</span>
+            <span className="text-text-secondary">有日志的任务：</span>
+            <span className="text-text-primary ml-2">{stats?.totalTasks ?? 0}</span>
           </div>
           <div>
-            <span className="text-gray-400">存储大小：</span>
-            <span className="text-white ml-2">{formatBytes(stats?.totalSizeBytes ?? 0)}</span>
+            <span className="text-text-secondary">存储大小：</span>
+            <span className="text-text-primary ml-2">{formatBytes(stats?.totalSizeBytes ?? 0)}</span>
           </div>
           <div>
-            <span className="text-gray-400">上次清理：</span>
-            <span className="text-white ml-2">{formatTime(stats?.lastCleanupAt)}</span>
+            <span className="text-text-secondary">上次清理：</span>
+            <span className="text-text-primary ml-2">{formatTime(stats?.lastCleanupAt)}</span>
           </div>
         </div>
       </div>
 
       {/* 保留配置 */}
-      <div className="bg-[#1a1a2e] rounded-lg p-4 border border-[#2a2a4a]">
-        <h3 className="text-white font-medium mb-3">保留策略</h3>
+      <div className="bg-background-elevated rounded-lg p-4 border border-border">
+        <h3 className="text-text-primary font-medium mb-3">保留策略</h3>
         <div className="space-y-4">
           {/* 保留天数 */}
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-gray-300 text-sm">保留天数</label>
-              <p className="text-xs text-gray-500">超过此天数的日志将被自动清理（0 表示不限）</p>
+              <label className="text-text-primary text-sm">保留天数</label>
+              <p className="text-xs text-text-tertiary">超过此天数的日志将被自动清理（0 表示不限）</p>
             </div>
             <select
               value={config.retentionDays}
               onChange={(e) => onConfigChange({ ...config, retentionDays: parseInt(e.target.value) })}
-              className="px-3 py-1.5 text-sm bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+              className="px-3 py-1.5 text-sm bg-surface border border-border rounded text-text-primary focus:outline-none focus:border-blue-500"
             >
               <option value={0}>不限</option>
               <option value={7}>7 天</option>
@@ -845,13 +845,13 @@ function LogSettings({
           {/* 每任务最大日志数 */}
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-gray-300 text-sm">每任务最大日志数</label>
-              <p className="text-xs text-gray-500">每个任务最多保留的日志条数（0 表示不限）</p>
+              <label className="text-text-primary text-sm">每任务最大日志数</label>
+              <p className="text-xs text-text-tertiary">每个任务最多保留的日志条数（0 表示不限）</p>
             </div>
             <select
               value={config.maxLogsPerTask}
               onChange={(e) => onConfigChange({ ...config, maxLogsPerTask: parseInt(e.target.value) })}
-              className="px-3 py-1.5 text-sm bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+              className="px-3 py-1.5 text-sm bg-surface border border-border rounded text-text-primary focus:outline-none focus:border-blue-500"
             >
               <option value={0}>不限</option>
               <option value={10}>10 条</option>
@@ -865,14 +865,14 @@ function LogSettings({
       </div>
 
       {/* 自动清理 */}
-      <div className="bg-[#1a1a2e] rounded-lg p-4 border border-[#2a2a4a]">
-        <h3 className="text-white font-medium mb-3">自动清理</h3>
+      <div className="bg-background-elevated rounded-lg p-4 border border-border">
+        <h3 className="text-text-primary font-medium mb-3">自动清理</h3>
         <div className="space-y-4">
           {/* 启用自动清理 */}
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-gray-300 text-sm">启用自动清理</label>
-              <p className="text-xs text-gray-500">定时检查并清理过期日志</p>
+              <label className="text-text-primary text-sm">启用自动清理</label>
+              <p className="text-xs text-text-tertiary">定时检查并清理过期日志</p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
               <input
@@ -889,13 +889,13 @@ function LogSettings({
           {config.autoCleanupEnabled && (
             <div className="flex items-center justify-between">
               <div>
-                <label className="text-gray-300 text-sm">清理间隔</label>
-                <p className="text-xs text-gray-500">自动检查清理的时间间隔</p>
+                <label className="text-text-primary text-sm">清理间隔</label>
+                <p className="text-xs text-text-tertiary">自动检查清理的时间间隔</p>
               </div>
               <select
                 value={config.autoCleanupIntervalHours}
                 onChange={(e) => onConfigChange({ ...config, autoCleanupIntervalHours: parseInt(e.target.value) })}
-                className="px-3 py-1.5 text-sm bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+                className="px-3 py-1.5 text-sm bg-surface border border-border rounded text-text-primary focus:outline-none focus:border-blue-500"
               >
                 <option value={1}>每小时</option>
                 <option value={6}>每 6 小时</option>
@@ -909,9 +909,9 @@ function LogSettings({
       </div>
 
       {/* 手动清理 */}
-      <div className="bg-[#1a1a2e] rounded-lg p-4 border border-[#2a2a4a]">
-        <h3 className="text-white font-medium mb-3">手动清理</h3>
-        <p className="text-sm text-gray-400 mb-3">
+      <div className="bg-background-elevated rounded-lg p-4 border border-border">
+        <h3 className="text-text-primary font-medium mb-3">手动清理</h3>
+        <p className="text-sm text-text-secondary mb-3">
           立即清理所有超过保留天数的日志。此操作不可撤销。
         </p>
         <button
@@ -945,23 +945,23 @@ function TaskGroup({
       {/* 分组标题 */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-3 py-2 bg-[#1a1a2e] rounded-t border border-[#2a2a4a] hover:bg-[#22224a] transition-colors"
+        className="w-full flex items-center justify-between px-3 py-2 bg-background-elevated rounded-t border border-border hover:bg-background-hover transition-colors"
       >
         <div className="flex items-center gap-2">
           <span className={`transform transition-transform ${expanded ? 'rotate-90' : ''}`}>▶</span>
-          <span className="text-white font-medium">{name}</span>
-          <span className="text-xs px-2 py-0.5 bg-[#2a2a4a] text-gray-400 rounded-full">
+          <span className="text-text-primary font-medium">{name}</span>
+          <span className="text-xs px-2 py-0.5 bg-background-surface text-text-secondary rounded-full">
             {tasks.length}
           </span>
         </div>
-        <span className="text-xs text-gray-500">
+        <span className="text-xs text-text-tertiary">
           {expanded ? '点击收起' : '点击展开'}
         </span>
       </button>
 
       {/* 任务列表 */}
       {expanded && (
-        <div className="space-y-2 p-2 bg-[#16162a] border-x border-b border-[#2a2a4a] rounded-b">
+        <div className="space-y-2 p-2 bg-background-elevated border-x border-b border-border rounded-b">
           {tasks.map((task) => children(task))}
         </div>
       )}
@@ -1682,11 +1682,11 @@ export function SchedulerPanel() {
   };
 
   return (
-    <div ref={containerRef} className="h-full flex flex-col bg-[#12122a]">
+    <div ref={containerRef} className="h-full flex flex-col bg-surface">
       {/* 头部 */}
-      <div className="p-4 border-b border-[#2a2a4a] flex items-center justify-between">
+      <div className="p-4 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-medium text-white flex items-center gap-2">
+          <h1 className="text-xl font-medium text-text-primary flex items-center gap-2">
             定时任务
           </h1>
           {/* 调度器状态指示器 */}
@@ -1726,7 +1726,7 @@ export function SchedulerPanel() {
           )}
           <button
             onClick={handleImportTasks}
-            className="px-3 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded transition-colors text-sm"
+            className="px-3 py-2 bg-gray-600 hover:bg-gray-500 text-text-primary rounded transition-colors text-sm"
           >
             {isCompact ? '↓' : '导入'}
           </button>
@@ -1735,7 +1735,7 @@ export function SchedulerPanel() {
               setEditingTask(undefined);
               setShowEditor(true);
             }}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-text-primary rounded transition-colors"
           >
             + 新建
           </button>
@@ -1743,14 +1743,14 @@ export function SchedulerPanel() {
       </div>
 
       {/* 标签页 */}
-      <div className="border-b border-[#2a2a4a]">
+      <div className="border-b border-border">
         <div className="flex">
           <button
             onClick={() => setActiveTab('tasks')}
             className={`px-4 py-2 text-sm transition-colors ${
               activeTab === 'tasks'
                 ? 'text-blue-400 border-b-2 border-blue-400'
-                : 'text-gray-400 hover:text-white'
+                : 'text-text-secondary hover:text-text-primary'
             }`}
           >
             任务列表 ({tasks.length})
@@ -1760,7 +1760,7 @@ export function SchedulerPanel() {
             className={`px-4 py-2 text-sm transition-colors ${
               activeTab === 'logs'
                 ? 'text-blue-400 border-b-2 border-blue-400'
-                : 'text-gray-400 hover:text-white'
+                : 'text-text-secondary hover:text-text-primary'
             }`}
           >
             执行日志 ({logs.length})
@@ -1770,7 +1770,7 @@ export function SchedulerPanel() {
             className={`px-4 py-2 text-sm transition-colors ${
               activeTab === 'settings'
                 ? 'text-blue-400 border-b-2 border-blue-400'
-                : 'text-gray-400 hover:text-white'
+                : 'text-text-secondary hover:text-text-primary'
             }`}
           >
             设置
@@ -1780,7 +1780,7 @@ export function SchedulerPanel() {
 
       {/* 筛选栏 - 仅在任务列表标签页显示 */}
       {activeTab === 'tasks' && (
-        <div className="p-3 border-b border-[#2a2a4a] bg-[#1a1a2e]">
+        <div className="p-3 border-b border-border bg-background-elevated">
           <div className="flex flex-wrap items-center gap-2">
             {/* 搜索框 */}
             <input
@@ -1788,13 +1788,13 @@ export function SchedulerPanel() {
               placeholder="搜索..."
               value={filter.search}
               onChange={(e) => setFilter({ ...filter, search: e.target.value })}
-              className={`px-3 py-1.5 text-sm bg-[#12122a] border border-[#2a2a4a] rounded text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 ${isCompact ? 'w-24' : 'w-48'}`}
+              className={`px-3 py-1.5 text-sm bg-surface border border-border rounded text-text-primary placeholder-text-tertiary focus:outline-none focus:border-blue-500 ${isCompact ? 'w-24' : 'w-48'}`}
             />
             {/* 状态筛选 - 核心筛选，始终显示 */}
             <select
               value={filter.enabled}
               onChange={(e) => setFilter({ ...filter, enabled: e.target.value as TaskFilter['enabled'] })}
-              className="px-2 py-1.5 text-sm bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+              className="px-2 py-1.5 text-sm bg-surface border border-border rounded text-text-primary focus:outline-none focus:border-blue-500"
             >
               <option value="all">全部状态</option>
               <option value="enabled">已启用</option>
@@ -1807,8 +1807,8 @@ export function SchedulerPanel() {
                 onClick={() => setShowMoreFilters(!showMoreFilters)}
                 className={`px-2 py-1.5 text-sm rounded transition-colors ${
                   showMoreFilters
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-600/20 text-gray-400 hover:bg-gray-600/30'
+                    ? 'bg-blue-600 text-text-primary'
+                    : 'bg-gray-600/20 text-text-secondary hover:bg-gray-600/30'
                 }`}
               >
                 {showMoreFilters ? '收起' : '更多'}
@@ -1822,7 +1822,7 @@ export function SchedulerPanel() {
                 <select
                   value={filter.engineId}
                   onChange={(e) => setFilter({ ...filter, engineId: e.target.value })}
-                  className="px-2 py-1.5 text-sm bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+                  className="px-2 py-1.5 text-sm bg-surface border border-border rounded text-text-primary focus:outline-none focus:border-blue-500"
                 >
                   <option value="all">全部引擎</option>
                   {engineOptions.map((engine) => (
@@ -1833,7 +1833,7 @@ export function SchedulerPanel() {
                 <select
                   value={filter.triggerType}
                   onChange={(e) => setFilter({ ...filter, triggerType: e.target.value as TaskFilter['triggerType'] })}
-                  className="px-2 py-1.5 text-sm bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+                  className="px-2 py-1.5 text-sm bg-surface border border-border rounded text-text-primary focus:outline-none focus:border-blue-500"
                 >
                   <option value="all">全部触发</option>
                   <option value="once">一次性</option>
@@ -1844,7 +1844,7 @@ export function SchedulerPanel() {
                 <select
                   value={filter.lastRunStatus}
                   onChange={(e) => setFilter({ ...filter, lastRunStatus: e.target.value as TaskFilter['lastRunStatus'] })}
-                  className="px-2 py-1.5 text-sm bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+                  className="px-2 py-1.5 text-sm bg-surface border border-border rounded text-text-primary focus:outline-none focus:border-blue-500"
                 >
                   <option value="all">全部执行状态</option>
                   <option value="running">执行中</option>
@@ -1856,7 +1856,7 @@ export function SchedulerPanel() {
                 <select
                   value={filter.group}
                   onChange={(e) => setFilter({ ...filter, group: e.target.value })}
-                  className="px-2 py-1.5 text-sm bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+                  className="px-2 py-1.5 text-sm bg-surface border border-border rounded text-text-primary focus:outline-none focus:border-blue-500"
                 >
                   <option value="all">全部分组</option>
                   {groupOptions.map((group) => (
@@ -1870,7 +1870,7 @@ export function SchedulerPanel() {
                     const [sortBy, sortOrder] = e.target.value.split('-') as [TaskSortBy, SortOrder];
                     setSortState({ sortBy, sortOrder });
                   }}
-                  className="px-2 py-1.5 text-sm bg-[#12122a] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-blue-500"
+                  className="px-2 py-1.5 text-sm bg-surface border border-border rounded text-text-primary focus:outline-none focus:border-blue-500"
                 >
                   <option value="createdAt-desc">创建时间 ↓</option>
                   <option value="createdAt-asc">创建时间 ↑</option>
@@ -1889,13 +1889,13 @@ export function SchedulerPanel() {
             {/* 清除筛选 */}
             <button
               onClick={() => setFilter(defaultFilter)}
-              className="px-3 py-1.5 text-sm bg-gray-600/20 text-gray-400 hover:bg-gray-600/30 rounded transition-colors"
+              className="px-3 py-1.5 text-sm bg-gray-600/20 text-text-secondary hover:bg-gray-600/30 rounded transition-colors"
             >
               {isCompact ? '重置' : '清除筛选'}
             </button>
             {/* 筛选结果数量 */}
             {filteredTasks.length !== tasks.length && (
-              <span className="text-xs text-gray-500 ml-2">
+              <span className="text-xs text-text-tertiary ml-2">
                 {filteredTasks.length}/{tasks.length}
               </span>
             )}
@@ -1910,8 +1910,8 @@ export function SchedulerPanel() {
               }}
               className={`px-3 py-1.5 text-sm rounded transition-colors ${
                 selectionMode
-                  ? 'bg-blue-600 text-white hover:bg-blue-700'
-                  : 'bg-gray-600/20 text-gray-400 hover:bg-gray-600/30'
+                  ? 'bg-blue-600 text-text-primary hover:bg-blue-700'
+                  : 'bg-gray-600/20 text-text-secondary hover:bg-gray-600/30'
               }`}
             >
               {selectionMode ? '退出' : isCompact ? '多选' : '批量选择'}
@@ -1920,7 +1920,7 @@ export function SchedulerPanel() {
             {!isCompact && (
               <button
                 onClick={handleExportTasks}
-                className="px-3 py-1.5 text-sm bg-gray-600/20 text-gray-400 hover:bg-gray-600/30 rounded transition-colors"
+                className="px-3 py-1.5 text-sm bg-gray-600/20 text-text-secondary hover:bg-gray-600/30 rounded transition-colors"
               >
                 导出
               </button>
@@ -1932,10 +1932,10 @@ export function SchedulerPanel() {
       {/* 内容 */}
       <div className="flex-1 overflow-y-auto p-4">
         {loading ? (
-          <div className="text-center text-gray-500 py-8">加载中...</div>
+          <div className="text-center text-text-tertiary py-8">加载中...</div>
         ) : activeTab === 'tasks' ? (
           tasks.length === 0 ? (
-            <div className="text-center text-gray-500 py-8">
+            <div className="text-center text-text-tertiary py-8">
               暂无定时任务，点击右上角按钮创建
             </div>
           ) : (
@@ -2003,14 +2003,14 @@ export function SchedulerPanel() {
 
       {/* 批量操作工具栏 */}
       {selectionMode && activeTab === 'tasks' && (
-        <div className="p-3 border-t border-[#2a2a4a] bg-[#1a1a2e] flex items-center justify-between gap-2">
+        <div className="p-3 border-t border-border bg-background-elevated flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-400">
+            <span className="text-sm text-text-secondary">
               {isCompact ? `${selectedTaskIds.size}/${filteredTasks.length}` : `已选择 ${selectedTaskIds.size}/${filteredTasks.length} 个任务`}
             </span>
             <button
               onClick={handleSelectAll}
-              className="px-2 py-1 text-sm bg-gray-600/20 text-gray-300 hover:bg-gray-600/30 rounded transition-colors"
+              className="px-2 py-1 text-sm bg-gray-600/20 text-text-primary hover:bg-gray-600/30 rounded transition-colors"
             >
               {selectedTaskIds.size === filteredTasks.length ? '取消' : '全选'}
             </button>
@@ -2142,19 +2142,19 @@ function ProtocolDocViewer({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-[#16162a] rounded-lg w-[800px] h-[80vh] flex flex-col border border-[#2a2a4a]">
+      <div className="bg-background-elevated rounded-lg w-[800px] h-[80vh] flex flex-col border border-border">
         {/* 头部 */}
-        <div className="p-4 border-b border-[#2a2a4a] flex items-center justify-between">
-          <h2 className="text-lg font-medium text-white">
+        <div className="p-4 border-b border-border flex items-center justify-between">
+          <h2 className="text-lg font-medium text-text-primary">
             {task.name} - 文档管理
           </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
+          <button onClick={onClose} className="text-text-secondary hover:text-text-primary">
             ✕
           </button>
         </div>
 
         {/* 文档标签页 */}
-        <div className="border-b border-[#2a2a4a]">
+        <div className="border-b border-border">
           <div className="flex">
             {docTabs.map((tab) => (
               <button
@@ -2166,7 +2166,7 @@ function ProtocolDocViewer({
                 className={`px-4 py-2 text-sm transition-colors ${
                   activeDoc === tab.id
                     ? 'text-purple-400 border-b-2 border-purple-400'
-                    : 'text-gray-400 hover:text-white'
+                    : 'text-text-secondary hover:text-text-primary'
                 }`}
               >
                 {tab.label}
@@ -2178,23 +2178,23 @@ function ProtocolDocViewer({
         {/* 内容区域 */}
         <div className="flex-1 overflow-hidden p-4">
           {loading ? (
-            <div className="text-center text-gray-500 py-8">加载中...</div>
+            <div className="text-center text-text-tertiary py-8">加载中...</div>
           ) : isEditing ? (
             <textarea
               value={editedContent}
               onChange={(e) => setEditedContent(e.target.value)}
-              className="w-full h-full p-3 bg-[#1a1a2e] border border-[#2a2a4a] rounded text-white focus:outline-none focus:border-purple-500 resize-none font-mono text-sm"
+              className="w-full h-full p-3 bg-background-elevated border border-border rounded text-text-primary focus:outline-none focus:border-purple-500 resize-none font-mono text-sm"
             />
           ) : (
-            <pre className="w-full h-full p-3 bg-[#1a1a2e] border border-[#2a2a4a] rounded text-gray-300 overflow-auto text-sm whitespace-pre-wrap">
+            <pre className="w-full h-full p-3 bg-background-elevated border border-border rounded text-text-primary overflow-auto text-sm whitespace-pre-wrap">
               {content || '(空文档)'}
             </pre>
           )}
         </div>
 
         {/* 底部操作栏 */}
-        <div className="p-4 border-t border-[#2a2a4a] flex justify-between items-center">
-          <div className="text-xs text-gray-500">
+        <div className="p-4 border-t border-border flex justify-between items-center">
+          <div className="text-xs text-text-tertiary">
             路径: {task.taskPath}/{docPath}
           </div>
           <div className="flex gap-2">
@@ -2202,13 +2202,13 @@ function ProtocolDocViewer({
               <>
                 <button
                   onClick={() => setIsEditing(false)}
-                  className="px-4 py-2 bg-gray-600/20 text-gray-300 hover:bg-gray-600/30 rounded transition-colors"
+                  className="px-4 py-2 bg-gray-600/20 text-text-primary hover:bg-gray-600/30 rounded transition-colors"
                 >
                   取消
                 </button>
                 <button
                   onClick={handleSave}
-                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors"
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-text-primary rounded transition-colors"
                 >
                   保存
                 </button>
