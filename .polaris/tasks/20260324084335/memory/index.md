@@ -2,7 +2,7 @@
 
 ## 当前状态
 状态: 进行中
-进度: 50%
+进度: 60%
 
 ## 已完成
 - [x] 完成首轮现状调研，确认协议任务由 Rust `ProtocolTaskService` 生成目录与模板，执行时由 dispatcher 拼接 `task.md`、`memory/index.md`、`memory/tasks.md`、`user-supplement.md` 形成最终提示词。
@@ -21,6 +21,10 @@
 - [x] 明确执行闭环职责拆分：执行前由 scheduler 基于 `protocol_state` 生成本轮输入快照（含 selected todo、supplement 摘要、文档统计）；执行后解析/接收本轮结果，统一更新 `protocol_state`、回写 `memory/index.md` 与 `memory/tasks.md` 投影，并在成功时再归档 supplement，失败时保留补充内容与待办焦点供下轮继续。
 - [x] 给出协议执行元数据建议：新增 `ProtocolExecutionSnapshot`/`ProtocolExecutionResult` 一类结构，覆盖 `selected_todo`、`supplement_status`、`memory_updates`、`document_backups`、`progress_delta`、`warnings`；`TaskLog` 只保留摘要字段或引用，详细结果挂在运行结果/事件载荷中供 `schedulerStore` 和日志面板消费。
 - [x] 明确落地顺序：先抽出 dispatcher 的“执行前读取 + 执行后补充归档”散落逻辑为统一 protocol runtime service，再补结构化结果写回与日志扩展，最后让 UI 基于 `protocol_state`/执行元数据展示当前焦点、补充处理结果、备份告警和进度推进，避免继续依赖 Markdown 差异推断闭环状态。
+- [x] 完成 UI 改造点评估：`TaskEditor` 当前仍只负责 mission/template/userSupplement 等创建参数，编辑既有协议任务时依赖 `task.md` 回填任务目标且锁死模板字段，后续应补 `protocol_state` 只读摘要、结构化初始待办/进度配置入口，以及“协议运行时由结构化状态驱动、文档仅作投影”的边界提示，避免继续把文档当成唯一编辑面 (`src/components/Scheduler/TaskEditor.tsx:314`, `src/components/Scheduler/TaskEditor.tsx:432`, `src/components/Scheduler/TaskEditor.tsx:589`)。
+- [x] 明确 `SchedulerPanel` 反馈缺口：任务卡片当前只展示通用调度字段和运行状态，日志面板只消费 `TaskLog` 基础摘要，文档查看器也仅支持 `task/supplement/memory_index` 三页且未暴露 `memory/tasks.md`，后续需新增协议任务专属概览区，展示 progress/current_focus/pending_count/supplement_state/backup_warning/last_selected_todo，并在日志详情中呈现 protocol execution metadata，否则 UI 仍需人工打开 Markdown 推断执行闭环 (`src/components/Scheduler/SchedulerPanel.tsx:231`, `src/components/Scheduler/SchedulerPanel.tsx:488`, `src/components/Scheduler/SchedulerPanel.tsx:1889`)。
+- [x] 明确 `schedulerStore`/前端数据流改造点：store 当前仅拉取 `ScheduledTask[]` 与 `TaskLog[]`，create/update 时也没有传递或缓存协议结构化状态，runTask 后只做整表刷新；后续应在 `ScheduledTask` 与运行结果中引入 `protocol_state`、`protocol_execution` 等字段，并让 store 支持局部刷新协议状态、补充处理结果和日志元数据，减少 UI 依赖重新读文档与全量 reload (`src/stores/schedulerStore.ts:17`, `src/stores/schedulerStore.ts:122`, `src/stores/schedulerStore.ts:203`, `src/types/scheduler.ts:12`, `src/types/scheduler.ts:218`)。
+- [x] 完成 `runsTemplate`（执行轮次模板）功能：后端 Rust 添加 `runs_template` 字段支持，生成 `memory/runs.md` 文件；前端添加 `runsTemplate` 类型字段和渲染支持，内置模板包含默认执行轮次模板。Git 提交：`da54225 feat(scheduler): add protocol memory runs support` 和 `6cc36e9 feat(scheduler): 前端支持 runsTemplate 执行轮次模板`。
 
 ## 进行中
-- [ ] 评估 UI 改造点：梳理 `TaskEditor`、`SchedulerPanel`、`schedulerStore` 在协议模式下需要新增的配置项与反馈展示。
+- [ ] 细化 UI 分阶段落地方案：按“类型与 store 扩展 → 面板反馈 → 编辑器配置入口/文档查看器补齐”拆分实现步骤与兼容策略。
