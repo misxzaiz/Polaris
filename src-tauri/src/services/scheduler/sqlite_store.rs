@@ -1561,6 +1561,12 @@ impl SqliteStore {
         Ok(runs)
     }
 
+    /// 获取任务的最新 Run
+    pub fn get_latest_run(&self, task_id: &str) -> Result<Option<TaskRun>> {
+        let runs = self.get_task_runs(task_id, Some(1))?;
+        Ok(runs.into_iter().next())
+    }
+
     /// 分页获取 Run 列表
     pub fn get_runs_paginated(
         &self,
@@ -3149,5 +3155,261 @@ mod tests {
         assert_eq!(log.status, TaskStatus::Success);
         assert_eq!(log.tool_call_count, 3);
         assert_eq!(log.token_count, Some(500));
+    }
+
+    #[test]
+    fn test_get_latest_run() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        // 先创建任务
+        let task = create_test_task("task-1", "Test Task");
+        store.migrate_from_json(vec![task], vec![], &LogRetentionConfig::default()).unwrap();
+        
+        // 没有任务时返回空列表
+        let runs = store.get_task_runs("task-1", None).unwrap();
+        assert!(runs.is_empty());
+        
+        // 创建多个 Run
+        let run1 = store.create_run("task-1", RunTriggerType::Scheduled, None, None, None).unwrap();
+        // 稍微延迟以区分时间
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        let run2 = store.create_run("task-1", RunTriggerType::Manual, None, None, None).unwrap();
+        
+        // 获取最新 Run (get_task_returns 按时间倒序返回，第一个是最新的)
+        let runs = store.get_task_runs("task-1", None).unwrap();
+        let latest = &runs[0];
+        assert_eq!(latest.id, run2.id);
+        assert_eq!(latest.sequence_number, 2);
+        assert_eq!(runs.len(), 2);
+    }
+
+    #[test]
+    fn test_run_failed_status() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        // 先创建任务
+        let task = create_test_task("task-1", "Test Task");
+        store.migrate_from_json(vec![task], vec![], &LogRetentionConfig::default()).unwrap();
+        
+        // 创建 Run
+        let run = store.create_run("task-1", RunTriggerType::Scheduled, None, None, None).unwrap();
+        
+        // 更新 Run 为失败
+        store.update_run_complete(
+            &run.id,
+            RunStatus::Failed,
+            Some("SessionStartFailed".to_string()),
+            Some("Session failed to start".to_string()),
+            Some("Connection timeout".to_string()),
+        ).unwrap();
+        
+        // 验证失败状态
+        let updated = store.get_run(&run.id).unwrap().unwrap();
+        assert_eq!(updated.status, RunStatus::Failed);
+        assert_eq!(updated.final_outcome, Some("SessionStartFailed".to_string()));
+        assert_eq!(updated.final_error, Some("Connection timeout".to_string()));
+        assert!(updated.finished_at.is_some());
+    }
+
+    #[test]
+    fn test_attempt_failed_updates_run() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        // 先创建任务
+        let task = create_test_task("task-1", "Test Task");
+        store.migrate_from_json(vec![task], vec![], &LogRetentionConfig::default()).unwrap();
+        
+        // 创建 Run 和 Attempt
+        let run = store.create_run("task-1", RunTriggerType::Scheduled, None, None, None).unwrap();
+        let attempt = store.create_attempt(&run.id, "task-1", "Test Task", "claude", "Test prompt", AttemptTriggerReason::Initial).unwrap();
+        
+        // 更新 Attempt 为失败
+        store.update_attempt_complete(
+            &attempt.id,
+            None,
+            TaskStatus::Failed,
+            None,
+            Some("Execution error".to_string()),
+            None,
+            0,
+            None,
+            Some("Failed".to_string()),
+        ).unwrap();
+        
+        // 验证 Attempt 失败
+        let updated_attempt = store.get_attempt(&attempt.id).unwrap().unwrap();
+        assert_eq!(updated_attempt.status, TaskStatus::Failed);
+        assert_eq!(updated_attempt.error, Some("Execution error".to_string()));
+        
+        // 验证 Run 的 total_attempts 和 successful_attempts
+        let updated_run = store.get_run(&run.id).unwrap().unwrap();
+        assert_eq!(updated_run.total_attempts, 1);
+        assert_eq!(updated_run.successful_attempts, 0);
+    }
+
+    #[test]
+    fn test_continuation_scenario() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        // 先创建任务
+        let task = create_test_task("task-1", "Test Task");
+        store.migrate_from_json(vec![task], vec![], &LogRetentionConfig::default()).unwrap();
+        
+        // 首次执行：创建 Run 和第一个 Attempt
+        let run = store.create_run("task-1", RunTriggerType::Scheduled, None, Some("session-1".to_string()), None).unwrap();
+        let attempt1 = store.create_attempt(&run.id, "task-1", "Test Task", "claude", "Initial prompt", AttemptTriggerReason::Initial).unwrap();
+        
+        // 第一个 Attempt 成功完成
+        store.update_attempt_complete(
+            &attempt1.id,
+            Some("session-1".to_string()),
+            TaskStatus::Success,
+            Some("First output".to_string()),
+            None,
+            None,
+            3,
+            Some(500),
+            Some("success_with_progress".to_string()),
+        ).unwrap();
+        
+        // 连续执行：增加 continuation_count 并创建新 Attempt
+        store.increment_continuation_count(&run.id).unwrap();
+        let attempt2 = store.create_attempt(&run.id, "task-1", "Test Task", "claude", "Continue prompt", AttemptTriggerReason::Continuation).unwrap();
+        
+        // 验证 continuation 场景
+        assert_eq!(attempt2.attempt_number, 2);
+        assert_eq!(attempt2.trigger_reason, AttemptTriggerReason::Continuation);
+        
+        let updated_run = store.get_run(&run.id).unwrap().unwrap();
+        assert_eq!(updated_run.continuation_count, 1);
+        assert_eq!(updated_run.total_attempts, 2);
+    }
+
+    #[test]
+    fn test_session_reuse_in_run() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        // 先创建任务
+        let task = create_test_task("task-1", "Test Task");
+        store.migrate_from_json(vec![task], vec![], &LogRetentionConfig::default()).unwrap();
+        
+        // 创建带 session 的 Run
+        let run = store.create_run(
+            "task-1",
+            RunTriggerType::Scheduled,
+            None,
+            Some("session-reuse-123".to_string()),
+            None,
+        ).unwrap();
+        
+        // 验证 session_id 保存
+        let retrieved = store.get_run(&run.id).unwrap().unwrap();
+        assert_eq!(retrieved.conversation_session_id, Some("session-reuse-123".to_string()));
+        
+        // 创建 Attempt 并设置 session
+        let attempt = store.create_attempt(&run.id, "task-1", "Test Task", "claude", "Prompt", AttemptTriggerReason::Initial).unwrap();
+        store.update_attempt_complete(
+            &attempt.id,
+            Some("session-reuse-123".to_string()),
+            TaskStatus::Success,
+            Some("Output".to_string()),
+            None,
+            None,
+            2,
+            Some(300),
+            None,
+        ).unwrap();
+        
+        // 验证 session 贯穿整个 Run
+        let updated_attempt = store.get_attempt(&attempt.id).unwrap().unwrap();
+        assert_eq!(updated_attempt.session_id, Some("session-reuse-123".to_string()));
+    }
+
+    #[test]
+    fn test_multiple_runs_different_status() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        // 先创建任务
+        let task = create_test_task("task-1", "Test Task");
+        store.migrate_from_json(vec![task], vec![], &LogRetentionConfig::default()).unwrap();
+        
+        // 创建多个不同状态的 Run
+        let run1 = store.create_run("task-1", RunTriggerType::Scheduled, None, None, None).unwrap();
+        let _run2 = store.create_run("task-1", RunTriggerType::Manual, None, None, None).unwrap();
+        let run3 = store.create_run("task-1", RunTriggerType::Scheduled, None, None, None).unwrap();
+        
+        // 更新状态
+        store.update_run_complete(&run1.id, RunStatus::Success, Some("success".to_string()), None, None).unwrap();
+        // run2 保持 Running 状态
+        store.update_run_complete(&run3.id, RunStatus::Failed, Some("error".to_string()), None, Some("Error".to_string())).unwrap();
+        
+        // 验证不同状态
+        let runs = store.get_task_runs("task-1", None).unwrap();
+        assert_eq!(runs.len(), 3);
+        
+        // 验证状态分布
+        let success_count = runs.iter().filter(|r| r.status == RunStatus::Success).count();
+        let running_count = runs.iter().filter(|r| r.status == RunStatus::Running).count();
+        let failed_count = runs.iter().filter(|r| r.status == RunStatus::Failed).count();
+        
+        assert_eq!(success_count, 1);
+        assert_eq!(running_count, 1);
+        assert_eq!(failed_count, 1);
+    }
+
+    #[test]
+    fn test_attempt_outcome_types() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        // 先创建任务
+        let task = create_test_task("task-1", "Test Task");
+        store.migrate_from_json(vec![task], vec![], &LogRetentionConfig::default()).unwrap();
+        
+        // 创建 Run
+        let run = store.create_run("task-1", RunTriggerType::Scheduled, None, None, None).unwrap();
+        
+        // 测试不同的 execution_outcome
+        let outcomes = vec![
+            "success_with_progress",
+            "success_no_progress",
+            "Failed",
+            "Blocked",
+            "SessionStartFailed",
+        ];
+        
+        for (i, outcome) in outcomes.iter().enumerate() {
+            let attempt = store.create_attempt(
+                &run.id,
+                "task-1",
+                "Test Task",
+                "claude",
+                &format!("Prompt {}", i),
+                AttemptTriggerReason::Initial,
+            ).unwrap();
+            
+            let status = if *outcome == "success_with_progress" || *outcome == "success_no_progress" {
+                TaskStatus::Success
+            } else {
+                TaskStatus::Failed
+            };
+            
+            store.update_attempt_complete(
+                &attempt.id,
+                None,
+                status,
+                Some(format!("Output {}", i)),
+                None,
+                None,
+                i as u32,
+                Some(100 * (i + 1) as u32),
+                Some(outcome.to_string()),
+            ).unwrap();
+        }
+        
+        // 验证所有 outcome
+        let attempts = store.get_run_attempts(&run.id).unwrap();
+        for (i, attempt) in attempts.iter().enumerate() {
+            assert_eq!(attempt.execution_outcome, Some(outcomes[i].to_string()));
+        }
     }
 }
