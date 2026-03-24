@@ -39,6 +39,8 @@ export interface ProtocolTemplate {
   memoryTemplate?: string;
   /** 任务队列模板 - memory/tasks.md 内容模板 */
   tasksTemplate?: string;
+  /** 执行轮次模板 - memory/runs.md 内容模板 */
+  runsTemplate?: string;
   /** 用户补充模板 - user-supplement.md 内容模板 */
   supplementTemplate?: string;
   /** 默认触发类型 */
@@ -66,6 +68,8 @@ export interface CreateProtocolTemplateParams {
   memoryTemplate?: string;
   /** 任务队列模板 */
   tasksTemplate?: string;
+  /** 执行轮次模板 */
+  runsTemplate?: string;
   /** 用户补充模板 */
   supplementTemplate?: string;
   defaultTriggerType?: 'once' | 'cron' | 'interval';
@@ -168,6 +172,15 @@ export const BUILTIN_PROTOCOL_TEMPLATES: ProtocolTemplate[] = [
 
 ## 已完成
 - [暂无]
+`,
+    runsTemplate: `# 执行轮次记录
+
+## Run 1
+- 时间: [待记录]
+- 使用会话: [待记录]
+- 完成事项: [待记录]
+- 遗留事项: [待记录]
+- 是否触发连续执行: 否
 `,
     supplementTemplate: `# 用户补充
 
@@ -328,7 +341,7 @@ export function renderFullTemplate(
   return result;
 }
 
-/** 渲染模板集 - 返回 task.md、memory/index.md、memory/tasks.md、user-supplement.md 内容 */
+/** 渲染模板集 - 返回 task.md、memory/index.md、memory/tasks.md、memory/runs.md、user-supplement.md 内容 */
 export interface RenderedTemplateSet {
   /** task.md 内容 */
   taskContent: string;
@@ -336,6 +349,8 @@ export interface RenderedTemplateSet {
   memoryContent: string;
   /** memory/tasks.md 内容 */
   tasksContent: string;
+  /** memory/runs.md 内容 */
+  runsContent: string;
   /** user-supplement.md 内容 */
   supplementContent: string;
 }
@@ -361,6 +376,9 @@ export function renderTemplateSet(
     tasksContent: template.tasksTemplate
       ? renderFullTemplate(template.tasksTemplate, baseParams)
       : `# 任务队列\n\n## 待办\n1. 分析任务目标\n\n## 已完成\n- [暂无]\n`,
+    runsContent: template.runsTemplate
+      ? renderFullTemplate(template.runsTemplate, baseParams)
+      : `# 执行轮次记录\n\n## Run 1\n- 时间: [待记录]\n- 使用会话: [待记录]\n- 完成事项: [待记录]\n- 遗留事项: [待记录]\n- 是否触发连续执行: 否\n`,
     supplementContent: template.supplementTemplate
       ? renderFullTemplate(template.supplementTemplate, baseParams)
       : `# 用户补充\n\n<!-- 在下方添加补充内容 -->\n\n`,

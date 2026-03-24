@@ -454,6 +454,7 @@ export function TaskEditor({
       taskTemplate: selectedTemplate?.fullTemplate,
       memoryTemplate: selectedTemplate?.memoryTemplate,
       tasksTemplate: selectedTemplate?.tasksTemplate,
+      runsTemplate: selectedTemplate?.runsTemplate,
       supplementTemplate: selectedTemplate?.supplementTemplate,
     });
   };

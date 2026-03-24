@@ -74,6 +74,8 @@ export interface ScheduledTask {
   memoryTemplate?: string;
   /** 任务队列模板（memory/tasks.md 内容） */
   tasksTemplate?: string;
+  /** 执行轮次模板（memory/runs.md 内容） */
+  runsTemplate?: string;
   /** 用户补充模板（user-supplement.md 内容） */
   supplementTemplate?: string;
 }
@@ -151,6 +153,8 @@ export interface CreateTaskParams {
   memoryTemplate?: string;
   /** 任务队列模板（memory/tasks.md 内容） */
   tasksTemplate?: string;
+  /** 执行轮次模板（memory/runs.md 内容） */
+  runsTemplate?: string;
   /** 用户补充模板（user-supplement.md 内容） */
   supplementTemplate?: string;
 }
