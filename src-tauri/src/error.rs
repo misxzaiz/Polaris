@@ -18,6 +18,13 @@ impl From<tauri::Error> for AppError {
     }
 }
 
+/// 将 rusqlite::Error 转换为 AppError
+impl From<rusqlite::Error> for AppError {
+    fn from(error: rusqlite::Error) -> Self {
+        AppError::DatabaseError(error.to_string())
+    }
+}
+
 /// 应用错误类型
 #[derive(Error, Debug)]
 pub enum AppError {
@@ -81,6 +88,10 @@ pub enum AppError {
     #[error("State error: {0}")]
     StateError(String),
 
+    /// 数据库错误
+    #[error("Database error: {0}")]
+    DatabaseError(String),
+
     /// 其他错误
     #[error("Unknown error: {0}")]
     Unknown(String),
@@ -105,6 +116,7 @@ impl AppError {
             AppError::ApiError(e) => format!("API 错误: {}", e),
             AppError::ValidationError(e) => format!("验证错误: {}", e),
             AppError::StateError(e) => format!("状态错误: {}", e),
+            AppError::DatabaseError(e) => format!("数据库错误: {}", e),
             AppError::Unknown(e) => format!("未知错误: {}", e),
         }
     }

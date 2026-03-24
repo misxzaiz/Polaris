@@ -63,3 +63,8 @@ libloading = "0.8"
 # 终端 PTY 支持
 portable-pty = "0.8"
 crossbeam-channel = "0.5"
+
+# SQLite 存储
+rusqlite = { version = "0.31", features = ["bundled"] }
+r2d2 = "0.8"
+r2d2_sqlite = "0.24"
