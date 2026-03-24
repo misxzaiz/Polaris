@@ -8,6 +8,7 @@ mod execution_result;
 mod sqlite_store;
 mod storage_backend;
 mod migration_manager;
+mod unified_storage;
 
 pub use store::{TaskStoreService, LogStoreService, LogStats};
 pub use dispatcher::SchedulerDispatcher;
@@ -19,3 +20,4 @@ pub use execution_result::{ExecutionResultAnalyzer, ExecutionOutcome};
 pub use sqlite_store::{SqliteStore, MigrationResult};
 pub use storage_backend::{StorageBackend, StorageBackendType};
 pub use migration_manager::{MigrationManager, MigrationStatus};
+pub use unified_storage::{UnifiedStorageService, UnifiedStorageConfig, StorageInitResult};
