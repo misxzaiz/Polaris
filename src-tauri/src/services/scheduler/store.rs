@@ -131,6 +131,12 @@ impl TaskStoreService {
             tasks_template: params.tasks_template.clone(),
             runs_template: params.runs_template.clone(),
             supplement_template: params.supplement_template.clone(),
+            blocked: false,
+            blocked_reason: None,
+            current_phase: None,
+            last_effective_progress_at: None,
+            protocol_version: None,
+            session_last_used_at: None,
         };
 
         // 创建任务目录结构（使用自定义模板）

@@ -86,6 +86,18 @@ export interface ScheduledTask {
   runsTemplate?: string;
   /** 用户补充模板（user-supplement.md 内容） */
   supplementTemplate?: string;
+  /** 任务是否被阻塞 */
+  blocked: boolean;
+  /** 阻塞原因 */
+  blockedReason?: string;
+  /** 当前阶段（分析/设计/开发/测试/修复/验收） */
+  currentPhase?: string;
+  /** 最近一次有效进展的时间戳 */
+  lastEffectiveProgressAt?: number;
+  /** 协议版本号 */
+  protocolVersion?: number;
+  /** 会话最近使用时间 */
+  sessionLastUsedAt?: number;
 }
 
 /** 执行日志 */

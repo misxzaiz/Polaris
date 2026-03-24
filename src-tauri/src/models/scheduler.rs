@@ -181,6 +181,24 @@ pub struct ScheduledTask {
     /// 用户补充模板（user-supplement.md 内容）
     #[serde(default)]
     pub supplement_template: Option<String>,
+    /// 任务是否被阻塞
+    #[serde(default)]
+    pub blocked: bool,
+    /// 阻塞原因
+    #[serde(default)]
+    pub blocked_reason: Option<String>,
+    /// 当前阶段（分析/设计/开发/测试/修复/验收）
+    #[serde(default)]
+    pub current_phase: Option<String>,
+    /// 最近一次有效进展的时间戳
+    #[serde(default)]
+    pub last_effective_progress_at: Option<i64>,
+    /// 协议版本号
+    #[serde(default)]
+    pub protocol_version: Option<u32>,
+    /// 会话最近使用时间
+    #[serde(default)]
+    pub session_last_used_at: Option<i64>,
 }
 
 impl From<CreateTaskParams> for ScheduledTask {
@@ -224,6 +242,12 @@ impl From<CreateTaskParams> for ScheduledTask {
             tasks_template: params.tasks_template,
             runs_template: params.runs_template,
             supplement_template: params.supplement_template,
+            blocked: false,
+            blocked_reason: None,
+            current_phase: None,
+            last_effective_progress_at: None,
+            protocol_version: None,
+            session_last_used_at: None,
         }
     }
 }
