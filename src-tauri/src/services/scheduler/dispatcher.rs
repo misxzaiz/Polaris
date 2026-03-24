@@ -1053,20 +1053,34 @@ impl SchedulerDispatcher {
 
         let task_store = self.task_store.clone();
         let log_store = self.log_store.clone();
+        let unified_storage = self.unified_storage.clone();
+        let has_unified = self.has_unified_storage();
         let engine_registry = self.engine_registry.clone();
         let running_tasks = self.running_tasks.clone();
         let dispatcher_for_continue = self.clone();
 
         let task_for_post = task.clone();
 
-        let log_id = {
+        // 创建日志记录（状态为 Running）
+        let log_id = if has_unified {
+            let storage = unified_storage.as_ref().unwrap();
+            let storage = storage.lock().await;
+            let log = storage.create_log(&task_id, &task_name, &prompt, &engine_id)?;
+            tracing::info!("[Scheduler] 创建日志 (SQLite): {} for task: {}", log.id, task_name);
+            log.id
+        } else {
             let mut store = self.log_store.lock().await;
             let log = store.create(&task_id, &task_name, &prompt, &engine_id)?;
-            tracing::info!("[Scheduler] 创建日志: {} for task: {}", log.id, task_name);
+            tracing::info!("[Scheduler] 创建日志 (JSON): {} for task: {}", log.id, task_name);
             log.id
         };
 
-        {
+        // 标记任务开始执行
+        if has_unified {
+            let storage = unified_storage.as_ref().unwrap();
+            let storage = storage.lock().await;
+            storage.update_run_status(&task_id, TaskStatus::Running, true)?;
+        } else {
             let mut store = self.task_store.lock().await;
             store.update_run_status(&task_id, TaskStatus::Running)?;
         }
@@ -1127,6 +1141,8 @@ impl SchedulerDispatcher {
             let task_name_for_complete = task_name.clone();
             let task_store_for_complete = task_store.clone();
             let log_store_for_complete = log_store.clone();
+            let unified_storage_for_complete = unified_storage.clone();
+            let has_unified_for_complete = has_unified;
             let output_for_complete = output.clone();
             let thinking_for_complete = thinking.clone();
             let session_id_for_complete = session_id.clone();
@@ -1152,6 +1168,8 @@ impl SchedulerDispatcher {
                 let task_name_for_complete = task_name_for_complete.clone();
                 let task_store_for_complete = task_store_for_complete.clone();
                 let log_store_for_complete = log_store_for_complete.clone();
+                let unified_storage_for_complete = unified_storage_for_complete.clone();
+                let has_unified_for_complete = has_unified_for_complete;
                 let output_for_complete = output_for_complete.clone();
                 let thinking_for_complete = thinking_for_complete.clone();
                 let session_id_for_complete = session_id_for_complete.clone();
@@ -1216,6 +1234,8 @@ impl SchedulerDispatcher {
                     let task_name = task_name_for_complete.clone();
                     let task_store = task_store_for_complete.clone();
                     let log_store = log_store_for_complete.clone();
+                    let unified_storage_for_complete = unified_storage_for_complete.clone();
+                    let has_unified_for_complete = has_unified_for_complete;
                     let output = output_for_complete.clone();
                     let thinking = thinking_for_complete.clone();
                     let session_id = session_id_for_complete.clone();
@@ -1278,103 +1298,192 @@ impl SchedulerDispatcher {
                             )
                             && ContinuationDecider::should_continue(&task_for_complete, continuous_runs_for_complete);
 
-                        {
-                            let mut log_store = log_store.lock().await;
-                            let mut task_store = task_store.lock().await;
+                        // 执行存储操作（根据是否有统一存储选择后端）
+                        if is_success {
+                            if has_unified_for_complete {
+                                let storage = unified_storage_for_complete.as_ref().unwrap();
+                                let storage = storage.lock().await;
 
-                            if is_success {
+                                if let Err(e) = storage.update_log_complete(
+                                    &log_id,
+                                    final_session_id.clone(),
+                                    Some(final_output.clone()),
+                                    None,
+                                    if final_thinking.is_empty() { None } else { Some(final_thinking.clone()) },
+                                    final_tool_count,
+                                    None,
+                                ) {
+                                    tracing::error!("[Scheduler] 更新日志失败 (SQLite): {:?}", e);
+                                }
+
+                                if let Err(e) = storage.update_run_status(&task_id, TaskStatus::Success, false) {
+                                    tracing::error!("[Scheduler] 更新任务状态失败 (SQLite): {:?}", e);
+                                }
+
+                                if task_for_complete.reuse_session {
+                                    if let Err(e) = storage.update_conversation_session_id(&task_id, final_session_id.clone()) {
+                                        tracing::error!("[Scheduler] 更新任务会话 ID 失败 (SQLite): {:?}", e);
+                                    }
+                                }
+
+                                if let Err(e) = storage.update_last_run_outcome(&task_id, execution_outcome.clone()) {
+                                    tracing::error!("[Scheduler] 更新任务执行结果类型失败 (SQLite): {:?}", e);
+                                }
+
+                                if let Err(e) = storage.reset_retry_count(&task_id) {
+                                    tracing::error!("[Scheduler] 重置重试计数失败 (SQLite): {:?}", e);
+                                }
+
+                                if matches!(&execution_outcome, ExecutionOutcome::SuccessWithProgress) {
+                                    if let Err(e) = storage.update_last_effective_progress(&task_id) {
+                                        tracing::error!("[Scheduler] 更新有效进展时间失败 (SQLite): {:?}", e);
+                                    }
+                                }
+                            } else {
+                                let mut log_store = log_store.lock().await;
+                                let mut task_store = task_store.lock().await;
+
                                 if let Err(e) = log_store.update_complete(
                                     &log_id,
                                     UpdateCompleteParams {
                                         session_id: final_session_id.clone(),
-                                        output: Some(final_output),
-                                        thinking_summary: if final_thinking.is_empty() { None } else { Some(final_thinking) },
+                                        output: Some(final_output.clone()),
+                                        thinking_summary: if final_thinking.is_empty() { None } else { Some(final_thinking.clone()) },
                                         tool_call_count: final_tool_count,
                                         ..Default::default()
                                     },
                                 ) {
-                                    tracing::error!("[Scheduler] 更新日志失败: {:?}", e);
+                                    tracing::error!("[Scheduler] 更新日志失败 (JSON): {:?}", e);
                                 }
 
                                 if let Err(e) = task_store.update_run_status(&task_id, TaskStatus::Success) {
-                                    tracing::error!("[Scheduler] 更新任务状态失败: {:?}", e);
+                                    tracing::error!("[Scheduler] 更新任务状态失败 (JSON): {:?}", e);
                                 }
 
                                 if task_for_complete.reuse_session {
                                     if let Err(e) = task_store.update_conversation_session_id(&task_id, final_session_id.clone()) {
-                                        tracing::error!("[Scheduler] 更新任务会话 ID 失败: {:?}", e);
+                                        tracing::error!("[Scheduler] 更新任务会话 ID 失败 (JSON): {:?}", e);
                                     }
                                 }
 
                                 if let Err(e) = task_store.update_last_run_outcome(&task_id, execution_outcome.clone()) {
-                                    tracing::error!("[Scheduler] 更新任务执行结果类型失败: {:?}", e);
+                                    tracing::error!("[Scheduler] 更新任务执行结果类型失败 (JSON): {:?}", e);
                                 }
 
                                 if let Err(e) = task_store.reset_retry_count(&task_id) {
-                                    tracing::error!("[Scheduler] 重置重试计数失败: {:?}", e);
+                                    tracing::error!("[Scheduler] 重置重试计数失败 (JSON): {:?}", e);
                                 }
 
-                                // 更新最近有效进展时间
                                 if matches!(&execution_outcome, ExecutionOutcome::SuccessWithProgress) {
                                     if let Err(e) = task_store.update_last_effective_progress(&task_id) {
-                                        tracing::error!("[Scheduler] 更新有效进展时间失败: {:?}", e);
+                                        tracing::error!("[Scheduler] 更新有效进展时间失败 (JSON): {:?}", e);
                                     }
                                 }
+                            }
 
-                                tracing::info!("[Scheduler] 任务执行成功: {} (结果: {:?})", task_name, execution_outcome);
+                            tracing::info!("[Scheduler] 任务执行成功: {} (结果: {:?})", task_name, execution_outcome);
 
-                                if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
-                                    let run_number = task_store.get(&task_id)
-                                        .map(|task| task.current_runs)
-                                        .unwrap_or(0);
+                            // 获取 run_number 用于追加执行记录
+                            let run_number = if has_unified_for_complete {
+                                let storage = unified_storage_for_complete.as_ref().unwrap();
+                                let storage = storage.lock().await;
+                                storage.get_task(&task_id)
+                                    .map(|t| t.map(|t| t.current_runs).unwrap_or(0))
+                                    .unwrap_or(0)
+                            } else {
+                                let store = task_store.lock().await;
+                                store.get(&task_id)
+                                    .map(|task| task.current_runs)
+                                    .unwrap_or(0)
+                            };
 
-                                    if let Err(e) = ProtocolTaskService::append_memory_run(
-                                        work_dir,
-                                        task_path,
-                                        run_number,
-                                        final_session_id.as_deref(),
-                                        &run_summary,
-                                        &pending_summary,
-                                        should_continue,
-                                        Some(&execution_outcome),
-                                    ) {
-                                        tracing::error!("[Scheduler] 追加执行轮次记录失败: {:?}", e);
-                                    }
+                            if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
+                                if let Err(e) = ProtocolTaskService::append_memory_run(
+                                    work_dir,
+                                    task_path,
+                                    run_number,
+                                    final_session_id.as_deref(),
+                                    &run_summary,
+                                    &pending_summary,
+                                    should_continue,
+                                    Some(&execution_outcome),
+                                ) {
+                                    tracing::error!("[Scheduler] 追加执行轮次记录失败: {:?}", e);
                                 }
+                            }
 
-                                if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
-                                    if let Ok(supplement) = ProtocolTaskService::read_supplement_md(work_dir, task_path) {
-                                        if ProtocolTaskService::has_supplement_content(&supplement) {
-                                            let content = ProtocolTaskService::extract_user_content(&supplement);
+                            if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
+                                if let Ok(supplement) = ProtocolTaskService::read_supplement_md(work_dir, task_path) {
+                                    if ProtocolTaskService::has_supplement_content(&supplement) {
+                                        let content = ProtocolTaskService::extract_user_content(&supplement);
 
-                                            if let Err(e) = ProtocolTaskService::backup_supplement(work_dir, task_path, &content) {
-                                                tracing::error!("[Scheduler] 备份用户补充失败: {:?}", e);
-                                            }
+                                        if let Err(e) = ProtocolTaskService::backup_supplement(work_dir, task_path, &content) {
+                                            tracing::error!("[Scheduler] 备份用户补充失败: {:?}", e);
+                                        }
 
-                                            if let Err(e) = ProtocolTaskService::clear_supplement_md(work_dir, task_path) {
-                                                tracing::error!("[Scheduler] 清空用户补充文档失败: {:?}", e);
-                                            }
+                                        if let Err(e) = ProtocolTaskService::clear_supplement_md(work_dir, task_path) {
+                                            tracing::error!("[Scheduler] 清空用户补充文档失败: {:?}", e);
                                         }
                                     }
                                 }
-                            } else {
-                                let error_msg = match &execution_outcome {
-                                    ExecutionOutcome::Blocked(reason) => format!("任务被阻塞: {}", reason),
-                                    ExecutionOutcome::Failed => format!("进程退出码: {}", exit_code),
-                                    _ => format!("执行结果: {:?}", execution_outcome),
+                            }
+                        } else {
+                            let error_msg = match &execution_outcome {
+                                ExecutionOutcome::Blocked(reason) => format!("任务被阻塞: {}", reason),
+                                ExecutionOutcome::Failed => format!("进程退出码: {}", exit_code),
+                                _ => format!("执行结果: {:?}", execution_outcome),
+                            };
+
+                            if has_unified_for_complete {
+                                let storage = unified_storage_for_complete.as_ref().unwrap();
+                                let storage = storage.lock().await;
+
+                                if let Err(e) = storage.update_log_complete(
+                                    &log_id,
+                                    final_session_id.clone(),
+                                    Some(final_output.clone()),
+                                    Some(error_msg.clone()),
+                                    if final_thinking.is_empty() { None } else { Some(final_thinking.clone()) },
+                                    final_tool_count,
+                                    None,
+                                ) {
+                                    tracing::error!("[Scheduler] 更新日志失败 (SQLite): {:?}", e);
+                                }
+
+                                // UnifiedStorageService 暂不支持 update_retry_status 返回 bool，需要额外处理
+                                // 暂时使用 JSON 存储的 retry 逻辑
+                                let can_retry = {
+                                    let mut store = task_store.lock().await;
+                                    store.update_retry_status(&task_id).unwrap_or(false)
                                 };
+
+                                if can_retry {
+                                    tracing::info!("[Scheduler] 任务 {} 失败，将自动重试", task_name);
+                                } else {
+                                    if let Err(e) = storage.update_run_status(&task_id, TaskStatus::Failed, false) {
+                                        tracing::error!("[Scheduler] 更新任务状态失败 (SQLite): {:?}", e);
+                                    }
+                                    if let Err(e) = storage.update_last_run_outcome(&task_id, execution_outcome.clone()) {
+                                        tracing::error!("[Scheduler] 更新任务执行结果类型失败 (SQLite): {:?}", e);
+                                    }
+                                    tracing::error!("[Scheduler] 任务执行失败: {} - {}", task_name, error_msg);
+                                }
+                            } else {
+                                let mut log_store = log_store.lock().await;
+                                let mut task_store = task_store.lock().await;
+
                                 if let Err(e) = log_store.update_complete(
                                     &log_id,
                                     UpdateCompleteParams {
                                         session_id: final_session_id.clone(),
-                                        output: Some(final_output),
+                                        output: Some(final_output.clone()),
                                         error: Some(error_msg.clone()),
-                                        thinking_summary: if final_thinking.is_empty() { None } else { Some(final_thinking) },
+                                        thinking_summary: if final_thinking.is_empty() { None } else { Some(final_thinking.clone()) },
                                         tool_call_count: final_tool_count,
                                         ..Default::default()
                                     },
                                 ) {
-                                    tracing::error!("[Scheduler] 更新日志失败: {:?}", e);
+                                    tracing::error!("[Scheduler] 更新日志失败 (JSON): {:?}", e);
                                 }
 
                                 let can_retry = task_store.update_retry_status(&task_id).unwrap_or(false);
@@ -1383,13 +1492,11 @@ impl SchedulerDispatcher {
                                     tracing::info!("[Scheduler] 任务 {} 失败，将自动重试", task_name);
                                 } else {
                                     if let Err(e) = task_store.update_run_status(&task_id, TaskStatus::Failed) {
-                                        tracing::error!("[Scheduler] 更新任务状态失败: {:?}", e);
+                                        tracing::error!("[Scheduler] 更新任务状态失败 (JSON): {:?}", e);
                                     }
-                                    // 更新任务执行结果类型
                                     if let Err(e) = task_store.update_last_run_outcome(&task_id, execution_outcome.clone()) {
-                                        tracing::error!("[Scheduler] 更新任务执行结果类型失败: {:?}", e);
+                                        tracing::error!("[Scheduler] 更新任务执行结果类型失败 (JSON): {:?}", e);
                                     }
-
                                     tracing::error!("[Scheduler] 任务执行失败: {} - {}", task_name, error_msg);
                                 }
                             }
@@ -1397,21 +1504,45 @@ impl SchedulerDispatcher {
 
                         // 更新任务的阻塞状态和当前阶段
                         if let Some(ref phase) = detected_phase {
-                            let mut store = task_store.lock().await;
-                            if let Err(e) = store.update_current_phase(&task_id, phase) {
-                                tracing::error!("[Scheduler] 更新任务阶段失败: {:?}", e);
+                            if has_unified_for_complete {
+                                let storage = unified_storage_for_complete.as_ref().unwrap();
+                                let storage = storage.lock().await;
+                                if let Err(e) = storage.update_current_phase(&task_id, phase) {
+                                    tracing::error!("[Scheduler] 更新任务阶段失败 (SQLite): {:?}", e);
+                                }
+                            } else {
+                                let mut store = task_store.lock().await;
+                                if let Err(e) = store.update_current_phase(&task_id, phase) {
+                                    tracing::error!("[Scheduler] 更新任务阶段失败 (JSON): {:?}", e);
+                                }
                             }
                         }
                         if let Some(ref reason) = detected_blocked {
-                            let mut store = task_store.lock().await;
-                            if let Err(e) = store.update_blocked_status(&task_id, true, Some(reason.clone())) {
-                                tracing::error!("[Scheduler] 更新任务阻塞状态失败: {:?}", e);
+                            if has_unified_for_complete {
+                                let storage = unified_storage_for_complete.as_ref().unwrap();
+                                let storage = storage.lock().await;
+                                if let Err(e) = storage.update_blocked_status(&task_id, true, Some(reason.clone())) {
+                                    tracing::error!("[Scheduler] 更新任务阻塞状态失败 (SQLite): {:?}", e);
+                                }
+                            } else {
+                                let mut store = task_store.lock().await;
+                                if let Err(e) = store.update_blocked_status(&task_id, true, Some(reason.clone())) {
+                                    tracing::error!("[Scheduler] 更新任务阻塞状态失败 (JSON): {:?}", e);
+                                }
                             }
                             tracing::warn!("[Scheduler] 检测到任务 {} 被阻塞: {}", task_name, reason);
                         } else {
-                            let mut store = task_store.lock().await;
-                            if let Err(e) = store.update_blocked_status(&task_id, false, None) {
-                                tracing::error!("[Scheduler] 清除任务阻塞状态失败: {:?}", e);
+                            if has_unified_for_complete {
+                                let storage = unified_storage_for_complete.as_ref().unwrap();
+                                let storage = storage.lock().await;
+                                if let Err(e) = storage.update_blocked_status(&task_id, false, None) {
+                                    tracing::error!("[Scheduler] 清除任务阻塞状态失败 (SQLite): {:?}", e);
+                                }
+                            } else {
+                                let mut store = task_store.lock().await;
+                                if let Err(e) = store.update_blocked_status(&task_id, false, None) {
+                                    tracing::error!("[Scheduler] 清除任务阻塞状态失败 (JSON): {:?}", e);
+                                }
                             }
                         }
 
@@ -1510,9 +1641,17 @@ impl SchedulerDispatcher {
                     tracing::info!("[Scheduler] 会话已启动（订阅模式）: {} (session: {})", task_name, session_id);
 
                     if reuse_session {
-                        let mut store = task_store.lock().await;
-                        if let Err(e) = store.update_conversation_session_id(&task_id, Some(session_id.clone())) {
-                            tracing::error!("[Scheduler] 写回任务会话 ID 失败: {:?}", e);
+                        if has_unified {
+                            let storage = unified_storage.as_ref().unwrap();
+                            let storage = storage.lock().await;
+                            if let Err(e) = storage.update_conversation_session_id(&task_id, Some(session_id.clone())) {
+                                tracing::error!("[Scheduler] 写回任务会话 ID 失败 (SQLite): {:?}", e);
+                            }
+                        } else {
+                            let mut store = task_store.lock().await;
+                            if let Err(e) = store.update_conversation_session_id(&task_id, Some(session_id.clone())) {
+                                tracing::error!("[Scheduler] 写回任务会话 ID 失败 (JSON): {:?}", e);
+                            }
                         }
                     }
 
@@ -1521,6 +1660,8 @@ impl SchedulerDispatcher {
                         let completed_for_timeout = completed.clone();
                         let task_store_for_timeout = task_store.clone();
                         let log_store_for_timeout = log_store.clone();
+                        let unified_storage_for_timeout = unified_storage.clone();
+                        let has_unified_for_timeout = has_unified;
                         let log_id_for_timeout = log_id_clone.clone();
                         let task_id_for_timeout = task_id.clone();
                         let task_name_for_timeout = task_name.clone();
@@ -1548,24 +1689,43 @@ impl SchedulerDispatcher {
                                 }
                             }
 
-                            {
+                            let error_msg = format!("任务执行超时 ({}分钟)", timeout / 60);
+                            if has_unified_for_timeout {
+                                let storage = unified_storage_for_timeout.as_ref().unwrap();
+                                let storage = storage.lock().await;
+
+                                if let Err(e) = storage.update_log_complete(
+                                    &log_id_for_timeout,
+                                    Some(session_id_for_timeout.clone()),
+                                    None,
+                                    Some(error_msg.clone()),
+                                    None,
+                                    0,
+                                    None,
+                                ) {
+                                    tracing::error!("[Scheduler] 更新日志失败 (SQLite): {:?}", e);
+                                }
+
+                                if let Err(e) = storage.update_run_status(&task_id_for_timeout, TaskStatus::Failed, false) {
+                                    tracing::error!("[Scheduler] 更新任务状态失败 (SQLite): {:?}", e);
+                                }
+                            } else {
                                 let mut log_store = log_store_for_timeout.lock().await;
                                 let mut task_store = task_store_for_timeout.lock().await;
 
-                                let error_msg = format!("任务执行超时 ({}分钟)", timeout / 60);
                                 if let Err(e) = log_store.update_complete(
                                     &log_id_for_timeout,
                                     UpdateCompleteParams {
-                                        session_id: Some(session_id_for_timeout),
+                                        session_id: Some(session_id_for_timeout.clone()),
                                         error: Some(error_msg.clone()),
                                         ..Default::default()
                                     },
                                 ) {
-                                    tracing::error!("[Scheduler] 更新日志失败: {:?}", e);
+                                    tracing::error!("[Scheduler] 更新日志失败 (JSON): {:?}", e);
                                 }
 
                                 if let Err(e) = task_store.update_run_status(&task_id_for_timeout, TaskStatus::Failed) {
-                                    tracing::error!("[Scheduler] 更新任务状态失败: {:?}", e);
+                                    tracing::error!("[Scheduler] 更新任务状态失败 (JSON): {:?}", e);
                                 }
                             }
 
@@ -1600,21 +1760,42 @@ impl SchedulerDispatcher {
                 Err(e) => {
                     tracing::error!("[Scheduler] 启动会话失败: {} - {:?}", task_name, e);
 
-                    let mut log_store = log_store.lock().await;
-                    let mut task_store = task_store.lock().await;
+                    if has_unified {
+                        let storage = unified_storage.as_ref().unwrap();
+                        let storage = storage.lock().await;
 
-                    if let Err(update_err) = log_store.update_complete(
-                        &log_id_clone,
-                        UpdateCompleteParams {
-                            error: Some(e.to_string()),
-                            ..Default::default()
-                        },
-                    ) {
-                        tracing::error!("[Scheduler] 更新日志失败: {:?}", update_err);
-                    }
+                        if let Err(update_err) = storage.update_log_complete(
+                            &log_id_clone,
+                            None,
+                            None,
+                            Some(e.to_string()),
+                            None,
+                            0,
+                            None,
+                        ) {
+                            tracing::error!("[Scheduler] 更新日志失败 (SQLite): {:?}", update_err);
+                        }
 
-                    if let Err(update_err) = task_store.update_run_status(&task_id, TaskStatus::Failed) {
-                        tracing::error!("[Scheduler] 更新任务状态失败: {:?}", update_err);
+                        if let Err(update_err) = storage.update_run_status(&task_id, TaskStatus::Failed, false) {
+                            tracing::error!("[Scheduler] 更新任务状态失败 (SQLite): {:?}", update_err);
+                        }
+                    } else {
+                        let mut log_store = log_store.lock().await;
+                        let mut task_store = task_store.lock().await;
+
+                        if let Err(update_err) = log_store.update_complete(
+                            &log_id_clone,
+                            UpdateCompleteParams {
+                                error: Some(e.to_string()),
+                                ..Default::default()
+                            },
+                        ) {
+                            tracing::error!("[Scheduler] 更新日志失败 (JSON): {:?}", update_err);
+                        }
+
+                        if let Err(update_err) = task_store.update_run_status(&task_id, TaskStatus::Failed) {
+                            tracing::error!("[Scheduler] 更新任务状态失败 (JSON): {:?}", update_err);
+                        }
                     }
 
                     {
