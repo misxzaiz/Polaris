@@ -13,7 +13,7 @@ use crate::commands::context::ContextMemoryStore;
 use crate::commands::terminal::TerminalManager;
 use crate::integrations::IntegrationManager;
 use crate::services::config_store::ConfigStore;
-use crate::services::scheduler::{TaskStoreService, LogStoreService, SchedulerDispatcher};
+use crate::services::scheduler::{TaskStoreService, LogStoreService, SchedulerDispatcher, UnifiedStorageService};
 use crate::utils::SchedulerLock;
 
 /// 待回答问题信息
@@ -111,10 +111,13 @@ pub struct AppState {
     pub integration_manager: AsyncMutex<IntegrationManager>,
     /// AI 引擎注册表（使用 tokio::sync::Mutex 支持异步操作和共享）
     pub engine_registry: Arc<AsyncMutex<EngineRegistry>>,
-    /// 定时任务存储
+    /// 定时任务存储（旧版 JSON 存储，保留向后兼容）
     pub scheduler_task_store: Arc<AsyncMutex<TaskStoreService>>,
-    /// 定时任务日志存储
+    /// 定时任务日志存储（旧版 JSON 存储，保留向后兼容）
     pub scheduler_log_store: Arc<AsyncMutex<LogStoreService>>,
+    /// 统一存储服务（新版 SQLite 存储）
+    /// 支持自动迁移 JSON 数据到 SQLite
+    pub unified_storage: Arc<AsyncMutex<UnifiedStorageService>>,
     /// 定时任务调度器
     pub scheduler_dispatcher: Arc<AsyncMutex<SchedulerDispatcher>>,
     /// 调度器单例锁（持有表示当前实例负责调度）
@@ -133,7 +136,22 @@ pub fn create_app_state(
     engine_registry: Arc<AsyncMutex<EngineRegistry>>,
     integration_manager: IntegrationManager,
 ) -> AppState {
-    // 初始化定时任务服务
+    // 初始化统一存储服务（SQLite）
+    let unified_storage = match UnifiedStorageService::new() {
+        Ok(service) => {
+            tracing::info!(
+                "[AppState] 统一存储服务初始化成功，后端类型: {:?}",
+                service.backend_type()
+            );
+            Arc::new(AsyncMutex::new(service))
+        }
+        Err(e) => {
+            tracing::error!("[AppState] 统一存储服务初始化失败: {:?}", e);
+            panic!("无法初始化统一存储服务: {:?}", e);
+        }
+    };
+
+    // 初始化定时任务服务（保留向后兼容）
     let task_store = Arc::new(AsyncMutex::new(
         TaskStoreService::new().expect("无法初始化任务存储")
     ));
@@ -145,7 +163,7 @@ pub fn create_app_state(
         task_store.clone(),
         log_store.clone(),
         engine_registry.clone(),
-    );
+    ).with_unified_storage(unified_storage.clone());
 
     // 注意：调度器启动需要在 Tauri 运行时中进行，在 lib.rs 的 setup hook 中启动
 
@@ -158,6 +176,7 @@ pub fn create_app_state(
         engine_registry,
         scheduler_task_store: task_store,
         scheduler_log_store: log_store,
+        unified_storage,
         scheduler_dispatcher: Arc::new(AsyncMutex::new(dispatcher)),
         scheduler_lock: AsyncMutex::new(None),
         terminal_manager: Mutex::new(TerminalManager::new()),

@@ -13,6 +13,7 @@ use super::continuation::ContinuationDecider;
 use super::session_strategy::SessionStrategyResolver;
 use super::prompt_builder::{PromptBuilder, PromptType};
 use super::execution_result::{ExecutionResultAnalyzer, ExecutionOutcome};
+use super::UnifiedStorageService;
 
 use std::sync::Arc;
 use tauri_plugin_notification::NotificationExt;
@@ -25,8 +26,13 @@ use tauri::{AppHandle, Window, Emitter};
 /// 调度执行器
 #[derive(Clone)]
 pub struct SchedulerDispatcher {
+    /// 任务存储服务（旧版 JSON 存储）
     task_store: Arc<AsyncMutex<TaskStoreService>>,
+    /// 日志存储服务（旧版 JSON 存储）
     log_store: Arc<AsyncMutex<LogStoreService>>,
+    /// 统一存储服务（新版 SQLite 存储，优先使用）
+    unified_storage: Option<Arc<AsyncMutex<UnifiedStorageService>>>,
+    /// AI 引擎注册表
     engine_registry: Arc<AsyncMutex<EngineRegistry>>,
     /// 正在执行的任务
     running_tasks: Arc<AsyncMutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
@@ -46,11 +52,18 @@ impl SchedulerDispatcher {
         Self {
             task_store,
             log_store,
+            unified_storage: None,
             engine_registry,
             running_tasks: Arc::new(AsyncMutex::new(HashMap::new())),
             cancel_token: Arc::new(AsyncMutex::new(None)),
             app_handle: None,
         }
+    }
+
+    /// 设置统一存储服务
+    pub fn with_unified_storage(mut self, storage: Arc<AsyncMutex<UnifiedStorageService>>) -> Self {
+        self.unified_storage = Some(storage);
+        self
     }
 
     /// 设置 AppHandle
