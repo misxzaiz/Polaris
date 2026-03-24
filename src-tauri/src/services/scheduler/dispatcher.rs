@@ -358,6 +358,12 @@ impl SchedulerDispatcher {
                     let final_thinking = thinking.lock().await.clone();
                     let final_session_id = session_id.lock().await.clone();
                     let final_tool_count = *tool_call_count.lock().await;
+                    let run_summary = SchedulerDispatcher::summarize_run_output(&final_output);
+                    let pending_summary = if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
+                        SchedulerDispatcher::summarize_pending_tasks(work_dir, task_path)
+                    } else {
+                        "非协议任务，无待办摘要".to_string()
+                    };
 
                     // 判断是否成功
                     let is_success = exit_code == 0;
@@ -370,7 +376,7 @@ impl SchedulerDispatcher {
                             if let Err(e) = log_store.update_complete(
                                 &log_id,
                                 UpdateCompleteParams {
-                                    session_id: final_session_id,
+                                    session_id: final_session_id.clone(),
                                     output: Some(final_output),
                                     thinking_summary: if final_thinking.is_empty() { None } else { Some(final_thinking) },
                                     tool_call_count: final_tool_count,
@@ -391,24 +397,37 @@ impl SchedulerDispatcher {
 
                             tracing::info!("[Scheduler] 任务执行成功: {}", task_name);
 
+                            if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
+                                let run_number = task_store.get(&task_id)
+                                    .map(|task| task.current_runs)
+                                    .unwrap_or(0);
+
+                                if let Err(e) = ProtocolTaskService::append_memory_run(
+                                    work_dir,
+                                    task_path,
+                                    run_number,
+                                    final_session_id.as_deref(),
+                                    &run_summary,
+                                    &pending_summary,
+                                    false,
+                                ) {
+                                    tracing::error!("[Scheduler] 追加执行轮次记录失败: {:?}", e);
+                                }
+                            }
+
                             // 处理用户补充文档
                             if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
-                                // 读取用户补充
                                 if let Ok(supplement) = ProtocolTaskService::read_supplement_md(work_dir, task_path) {
                                     if ProtocolTaskService::has_supplement_content(&supplement) {
                                         let content = ProtocolTaskService::extract_user_content(&supplement);
 
-                                        // 备份内容
                                         if let Err(e) = ProtocolTaskService::backup_supplement(work_dir, task_path, &content) {
                                             tracing::error!("[Scheduler] 备份用户补充失败: {:?}", e);
                                         }
 
-                                        // 清空原文档
                                         if let Err(e) = ProtocolTaskService::clear_supplement_md(work_dir, task_path) {
                                             tracing::error!("[Scheduler] 清空用户补充文档失败: {:?}", e);
                                         }
-
-                                        tracing::info!("[Scheduler] 已处理用户补充文档");
                                     }
                                 }
                             }
@@ -832,6 +851,12 @@ impl SchedulerDispatcher {
                     let final_thinking = thinking.lock().await.clone();
                     let final_session_id = session_id.lock().await.clone();
                     let final_tool_count = *tool_call_count.lock().await;
+                    let run_summary = SchedulerDispatcher::summarize_run_output(&final_output);
+                    let pending_summary = if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
+                        SchedulerDispatcher::summarize_pending_tasks(work_dir, task_path)
+                    } else {
+                        "非协议任务，无待办摘要".to_string()
+                    };
 
                     // 判断是否成功
                     let is_success = exit_code == 0;
@@ -844,7 +869,7 @@ impl SchedulerDispatcher {
                             if let Err(e) = log_store.update_complete(
                                 &log_id,
                                 UpdateCompleteParams {
-                                    session_id: final_session_id,
+                                    session_id: final_session_id.clone(),
                                     output: Some(final_output),
                                     thinking_summary: if final_thinking.is_empty() { None } else { Some(final_thinking) },
                                     tool_call_count: final_tool_count,
@@ -864,6 +889,24 @@ impl SchedulerDispatcher {
                             }
 
                             tracing::info!("[Scheduler] 任务执行成功: {}", task_name);
+
+                            if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
+                                let run_number = task_store.get(&task_id)
+                                    .map(|task| task.current_runs)
+                                    .unwrap_or(0);
+
+                                if let Err(e) = ProtocolTaskService::append_memory_run(
+                                    work_dir,
+                                    task_path,
+                                    run_number,
+                                    final_session_id.as_deref(),
+                                    &run_summary,
+                                    &pending_summary,
+                                    false,
+                                ) {
+                                    tracing::error!("[Scheduler] 追加执行轮次记录失败: {:?}", e);
+                                }
+                            }
 
                             // 处理用户补充文档
                             if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
@@ -1087,6 +1130,46 @@ impl SchedulerDispatcher {
         }
 
         Ok(log_id)
+    }
+
+    fn summarize_run_output(output: &str) -> String {
+        let summary = output
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .find(|line| !line.starts_with('#') && !line.starts_with('>'))
+            .unwrap_or("本轮执行已完成，待补充成果摘要");
+
+        summary.chars().take(160).collect()
+    }
+
+    fn summarize_pending_tasks(work_dir: &str, task_path: &str) -> String {
+        let content = match ProtocolTaskService::read_memory_tasks(work_dir, task_path) {
+            Ok(content) => content,
+            Err(_) => return "待读取 memory/tasks.md 确认后续事项".to_string(),
+        };
+
+        let mut in_pending = false;
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("## ") {
+                in_pending = trimmed == "## 待办";
+                continue;
+            }
+
+            if !in_pending || trimmed.is_empty() {
+                continue;
+            }
+
+            let normalized = trimmed
+                .trim_start_matches(|c: char| c.is_ascii_digit() || c == '.' || c == '-' || c.is_whitespace())
+                .trim();
+            if !normalized.is_empty() {
+                return normalized.chars().take(160).collect();
+            }
+        }
+
+        "待结合 memory/index.md 与 tasks.md 决定下一步".to_string()
     }
 
     /// 构建提示词（协议模式：读取 task.md + memory + supplement）

@@ -153,7 +153,7 @@ r#"# 任务协议
 
 > 任务ID: {}
 > 创建时间: {}
-> 版本: 1.0.0
+> 版本: 2.0.0
 
 ---
 
@@ -171,37 +171,6 @@ r#"# 任务协议
 
 ---
 
-## 执行规则
-
-每次触发时按以下顺序执行：
-
-### 1. 检查用户补充
-- 读取 `.polaris/tasks/{}/user-supplement.md`
-- 如有新内容，优先处理并归档
-
-### 2. 推进主任务
-- 读取 `.polaris/tasks/{}/memory/index.md` 了解当前进度
-- 选择下一个待办事项执行
-- 完成后更新记忆
-
-### 3. 记忆更新
-- 新成果写入 `.polaris/tasks/{}/memory/index.md`
-- 待办任务写入 `.polaris/tasks/{}/memory/tasks.md`
-
-### 4. 文档备份
-- 用户补充处理完成后迁移到 `.oprcli/tasks/{}/supplement-history/`
-- 文档超过 300 行时总结后备份
-
----
-
-## 补充
-
-1. 分析后无需用户审查
-2. 修改内容后及时提交git
-3. 将任务拆分处理，每次完成一部分，当任务都完成后，就测试，审查，优化，改造
-
----
-
 ## 成果定义
 
 有价值的工作：
@@ -216,6 +185,27 @@ r#"# 任务协议
 
 ---
 
+## 执行边界
+
+- 优先处理 `.polaris/tasks/{}/user-supplement.md` 中的新增补充
+- 执行前先读取 `.polaris/tasks/{}/memory/index.md` 与 `memory/tasks.md`
+- 每轮只推进一个小闭环，完成后更新记忆与待办
+- 用户补充处理完成后归档到 `.oprcli/tasks/{}/supplement-history/`
+- 文档超过 800 行时先总结，再执行备份
+
+---
+
+## 连续执行策略
+
+- 默认按调度触发推进
+- 若任务仍未完成且启用连续执行，可在本轮完成后立即进入下一轮
+- 单次调度只应推进有限阶段，避免一次性完成全部流程
+
+## 会话策略
+
+- 记录最近一次有效 `session_id`
+- 后续执行优先复用该会话，无法复用时再创建新会话
+
 ## 协议更新
 
 可修改本协议，修改时记录：
@@ -226,96 +216,8 @@ r#"# 任务协议
 不可删除：
 - 任务目标
 - 工作区
-
-## AgentOS 工程决策协议
-
-当需要实现功能、优化模块或进行工程改动时，必须遵循以下决策与推进规则。
-
-### 一、工程评分（必须先执行）
-
-对任务进行 0~5 分评分：
-
-* 业务价值 ×3（是否真实解决问题或提升效率）
-* 长期收益 ×2（是否可复用或改善架构）
-* 实现成本 ×-2（改动范围与复杂度）
-* 技术风险 ×-2（性能 / 并发 / 一致性 / 外部依赖）
-* 架构债务 ×-3（耦合增加、状态复杂度、隐式依赖、未来维护成本）
-
-最终评分 = 加权总和
-
-决策：
-
-* ≥8 分：允许推进
-* 3~7 分：仅允许最小实现或继续调研
-* ≤2 分：应终止实现并记录原因
-
----
-
-### 二、工程推进阶段（不可跳过）
-
-0）分析
-明确目标与使用场景，判断是否已有能力可复用。
-
-1）调研
-可参考项目代码、历史记忆、开源实现、成熟系统设计或技术资料，对比实现路径。
-
-2）设计
-制定最小改动方案，说明涉及模块、数据或流程变化，并考虑异常路径与回滚方式。
-
-3）验证
-通过流程推演或示例数据验证方案可行性，评估性能、并发与一致性风险。
-
-4）开发
-按最小改动与一致性原则实现，必要处增加日志、幂等与异常保护。
-
-5）测试
-验证正常路径、边界情况、异常路径或并发场景。
-
-6）修复
-修复问题并进行必要优化，不进行无明确收益的重构。
-
-7）验收
-确认功能有效且无明显副作用，并更新任务记忆。
-
-允许在任意阶段终止实现并说明原因。
-
----
-
-### 三、工程节奏控制
-
-* 每次触发最多推进 1~2 个阶段
-* 禁止在一次任务中完成全部阶段
-* 优先完成小闭环而非大改动
-
----
-
-### 四、架构演进触发器
-
-* 若连续出现高架构债务评分，应创建架构优化任务
-* 若长期收益评分较高，应考虑抽象为可复用能力或组件
-* 若实现成本高但价值高，应优先寻找更小路径实现（MVP）
-
----
-
-### 五、工程行为约束
-
-禁止：
-
-* 为完成任务而增加复杂架构
-* 无设计直接编码
-* 修改无关模块
-* 引入隐式状态或不可观测流程
-* 制造未来技术债
-
-鼓励：
-
-* 小步推进
-* 能力沉淀
-* 可观测性增强
-* 长期可维护性优化
-
 "#,
-            task_id, now, mission, workspace_root, timestamp, timestamp, timestamp, timestamp, timestamp
+            task_id, now, mission, workspace_root, timestamp, timestamp, timestamp
         )
     }
 
@@ -404,6 +306,50 @@ r#"# 任务队列
 "#.to_string()
     }
 
+    fn format_memory_run_entry(
+        run_number: u32,
+        time: &str,
+        session_id: Option<&str>,
+        completed: &str,
+        pending: &str,
+        continued: bool,
+    ) -> String {
+        let session = session_id
+            .map(|value| {
+                let trimmed = value.trim();
+                if trimmed.is_empty() { "[暂无]" } else { trimmed }
+            })
+            .unwrap_or("[暂无]");
+        let completed = Self::normalize_run_summary(completed, "本轮执行已完成，待补充成果摘要");
+        let pending = Self::normalize_run_summary(pending, "待结合 memory/index.md 与 tasks.md 决定下一步");
+        let continued = if continued { "是" } else { "否" };
+
+        format!(
+            "## Run {}\n- 时间: {}\n- 使用会话: {}\n- 完成事项: {}\n- 遗留事项: {}\n- 是否触发连续执行: {}",
+            run_number,
+            time,
+            session,
+            completed,
+            pending,
+            continued,
+        )
+    }
+
+    fn normalize_run_summary(value: &str, fallback: &str) -> String {
+        let normalized = value
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>()
+            .join("；");
+
+        if normalized.is_empty() {
+            fallback.to_string()
+        } else {
+            normalized
+        }
+    }
+
     /// 读取协议文档
     pub fn read_task_md(work_dir: &str, task_path: &str) -> std::io::Result<String> {
         let path = PathBuf::from(work_dir).join(task_path).join("task.md");
@@ -449,6 +395,35 @@ r#"# 任务队列
     /// 更新执行轮次记录
     pub fn update_memory_runs(work_dir: &str, task_path: &str, content: &str) -> std::io::Result<()> {
         let path = PathBuf::from(work_dir).join(task_path).join("memory/runs.md");
+        fs::write(path, content)
+    }
+
+    /// 追加执行轮次记录
+    pub fn append_memory_run(
+        work_dir: &str,
+        task_path: &str,
+        run_number: u32,
+        session_id: Option<&str>,
+        completed: &str,
+        pending: &str,
+        continued: bool,
+    ) -> std::io::Result<()> {
+        let path = PathBuf::from(work_dir).join(task_path).join("memory/runs.md");
+        let existing = fs::read_to_string(&path).unwrap_or_else(|_| Self::generate_memory_runs());
+        let entry = Self::format_memory_run_entry(
+            run_number,
+            Local::now().format("%Y-%m-%d %H:%M:%S").to_string().as_str(),
+            session_id,
+            completed,
+            pending,
+            continued,
+        );
+
+        let mut content = existing.trim_end().to_string();
+        content.push_str("\n\n");
+        content.push_str(&entry);
+        content.push('\n');
+
         fs::write(path, content)
     }
 
@@ -663,5 +638,73 @@ mod tests {
         assert!(content.contains("## Run 0"));
         assert!(content.contains("- 完成事项: 初始化任务文档结构"));
         assert!(content.contains("- 是否触发连续执行: 否"));
+    }
+
+    #[test]
+    fn test_append_memory_run() {
+        let unique = format!("polaris-protocol-task-{}", Local::now().timestamp_nanos_opt().unwrap_or_default());
+        let temp_dir = std::env::temp_dir().join(unique);
+        let task_path = ".polaris/tasks/20260324092458";
+        let task_memory_dir = temp_dir.join(task_path).join("memory");
+        fs::create_dir_all(&task_memory_dir).unwrap();
+        fs::write(
+            task_memory_dir.join("runs.md"),
+            ProtocolTaskService::generate_memory_runs(),
+        ).unwrap();
+
+        ProtocolTaskService::append_memory_run(
+            temp_dir.to_str().unwrap(),
+            task_path,
+            1,
+            Some("session-123"),
+            "完成 runs 自动追加",
+            "继续评估会话字段改造",
+            false,
+        ).unwrap();
+
+        let content = fs::read_to_string(task_memory_dir.join("runs.md")).unwrap();
+        assert!(content.contains("## Run 1"));
+        assert!(content.contains("- 使用会话: session-123"));
+        assert!(content.contains("- 完成事项: 完成 runs 自动追加"));
+        assert!(content.contains("- 遗留事项: 继续评估会话字段改造"));
+        assert!(content.contains("- 是否触发连续执行: 否"));
+
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn test_format_memory_run_entry_normalizes_lines() {
+        let entry = ProtocolTaskService::format_memory_run_entry(
+            2,
+            "2026-03-24 10:30:00",
+            Some(""),
+            "\n完成 A\n完成 B\n",
+            "\n\n",
+            true,
+        );
+
+        assert!(entry.contains("## Run 2"));
+        assert!(entry.contains("- 使用会话: [暂无]"));
+        assert!(entry.contains("- 完成事项: 完成 A；完成 B"));
+        assert!(entry.contains("- 遗留事项: 待结合 memory/index.md 与 tasks.md 决定下一步"));
+        assert!(entry.contains("- 是否触发连续执行: 是"));
+    }
+
+    #[test]
+    fn test_generate_task_md_default_template_is_compact() {
+        let content = ProtocolTaskService::generate_task_md(
+            "task-123",
+            "实现协议调度重构",
+            "D:/space/base/Polaris",
+            "20260324092458",
+        );
+
+        assert!(content.contains("> 版本: 2.0.0"));
+        assert!(content.contains("## 执行边界"));
+        assert!(content.contains("## 连续执行策略"));
+        assert!(content.contains("## 会话策略"));
+        assert!(!content.contains("## AgentOS 工程决策协议"));
+        assert!(!content.contains("文档超过 300 行时总结后备份"));
+        assert!(content.contains("文档超过 800 行时先总结，再执行备份"));
     }
 }
