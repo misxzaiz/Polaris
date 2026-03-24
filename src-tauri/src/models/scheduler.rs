@@ -193,6 +193,9 @@ pub struct ScheduledTask {
     /// 最近一次有效进展的时间戳
     #[serde(default)]
     pub last_effective_progress_at: Option<i64>,
+    /// 连续无进展次数（用于检测陷入循环）
+    #[serde(default)]
+    pub consecutive_no_progress_count: u32,
     /// 协议版本号
     #[serde(default)]
     pub protocol_version: Option<u32>,
@@ -246,6 +249,7 @@ impl From<CreateTaskParams> for ScheduledTask {
             blocked_reason: None,
             current_phase: None,
             last_effective_progress_at: None,
+            consecutive_no_progress_count: 0,
             protocol_version: None,
             session_last_used_at: None,
         }

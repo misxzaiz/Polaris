@@ -137,6 +137,7 @@ impl TaskStoreService {
             last_effective_progress_at: None,
             protocol_version: None,
             session_last_used_at: None,
+            consecutive_no_progress_count: 0,
         };
 
         // 创建任务目录结构（使用自定义模板）
@@ -429,6 +430,140 @@ impl TaskStoreService {
             
             if had_session {
                 tracing::info!("[Scheduler] 任务 {} 会话已重置", task_name);
+            }
+        }
+        Ok(())
+    }
+
+    /// 更新任务当前阶段
+    /// 
+    /// 阶段值来自 memory/index.md 的 `当前阶段` 字段
+    /// 例如：分析、设计、开发、测试、修复、验收
+    pub fn update_current_phase(&mut self, id: &str, phase: &str) -> Result<()> {
+        let task_name = {
+            if let Some(task) = self.store.tasks.iter_mut().find(|t| t.id == id) {
+                task.current_phase = Some(phase.to_string());
+                task.updated_at = chrono::Utc::now().timestamp();
+                Some(task.name.clone())
+            } else {
+                None
+            }
+        };
+        
+        if task_name.is_some() {
+            self.save()?;
+            if let Some(name) = task_name {
+                tracing::debug!("[Scheduler] 任务 {} 阶段更新为: {}", name, phase);
+            }
+        }
+        Ok(())
+    }
+
+    /// 更新任务阻塞状态
+    /// 
+    /// 阻塞状态来自 memory/index.md 的 `## 当前阻塞` 部分
+    /// 当检测到阻塞原因时，设置 blocked=true 并记录原因
+    pub fn update_blocked_status(&mut self, id: &str, blocked: bool, reason: Option<String>) -> Result<()> {
+        let (should_save, task_name, was_blocked) = {
+            if let Some(task) = self.store.tasks.iter_mut().find(|t| t.id == id) {
+                let changed = task.blocked != blocked || task.blocked_reason != reason;
+                let name = task.name.clone();
+                let was = task.blocked;
+                
+                task.blocked = blocked;
+                task.blocked_reason = reason;
+                task.updated_at = chrono::Utc::now().timestamp();
+                
+                (changed, Some(name), was)
+            } else {
+                (false, None, false)
+            }
+        };
+        
+        if should_save {
+            self.save()?;
+            if let Some(name) = task_name {
+                if blocked && !was_blocked {
+                    tracing::info!("[Scheduler] 任务 {} 标记为阻塞", name);
+                } else if !blocked && was_blocked {
+                    tracing::info!("[Scheduler] 任务 {} 阻塞已解除", name);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// 更新最近有效进展时间
+    /// 
+    /// 当任务产生有效进展（SuccessWithProgress）时调用
+    /// 用于后续判断任务是否有实质性推进
+    pub fn update_last_effective_progress(&mut self, id: &str) -> Result<()> {
+        let task_name = {
+            if let Some(task) = self.store.tasks.iter_mut().find(|t| t.id == id) {
+                let now = chrono::Utc::now().timestamp();
+                task.last_effective_progress_at = Some(now);
+                task.updated_at = now;
+                Some(task.name.clone())
+            } else {
+                None
+            }
+        };
+        
+        if task_name.is_some() {
+            self.save()?;
+            if let Some(name) = task_name {
+                tracing::debug!("[Scheduler] 任务 {} 记录有效进展时间", name);
+            }
+        }
+        Ok(())
+    }
+
+    /// 更新连续无进展计数
+    /// 
+    /// 当任务执行但无实质进展时调用
+    /// 返回当前的连续无进展次数
+    pub fn update_consecutive_no_progress(&mut self, id: &str) -> Result<u32> {
+        let (count, task_name) = {
+            if let Some(task) = self.store.tasks.iter_mut().find(|t| t.id == id) {
+                task.consecutive_no_progress_count += 1;
+                task.updated_at = chrono::Utc::now().timestamp();
+                (task.consecutive_no_progress_count, Some(task.name.clone()))
+            } else {
+                (0, None)
+            }
+        };
+        
+        if task_name.is_some() {
+            self.save()?;
+            if let Some(name) = task_name {
+                tracing::debug!("[Scheduler] 任务 {} 连续无进展次数: {}", name, count);
+            }
+        }
+        Ok(count)
+    }
+
+    /// 重置连续无进展计数
+    /// 
+    /// 当任务产生有效进展时调用
+    pub fn reset_consecutive_no_progress(&mut self, id: &str) -> Result<()> {
+        let (should_save, task_name) = {
+            if let Some(task) = self.store.tasks.iter_mut().find(|t| t.id == id) {
+                if task.consecutive_no_progress_count > 0 {
+                    task.consecutive_no_progress_count = 0;
+                    task.updated_at = chrono::Utc::now().timestamp();
+                    (true, Some(task.name.clone()))
+                } else {
+                    (false, None)
+                }
+            } else {
+                (false, None)
+            }
+        };
+        
+        if should_save {
+            self.save()?;
+            if let Some(name) = task_name {
+                tracing::debug!("[Scheduler] 任务 {} 连续无进展计数已重置", name);
             }
         }
         Ok(())

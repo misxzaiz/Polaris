@@ -12,6 +12,7 @@ use super::ProtocolTaskService;
 use super::continuation::ContinuationDecider;
 use super::session_strategy::SessionStrategyResolver;
 use super::prompt_builder::{PromptBuilder, PromptType};
+use super::execution_result::{ExecutionResultAnalyzer, ExecutionOutcome};
 
 use std::sync::Arc;
 use tauri_plugin_notification::NotificationExt;
@@ -400,8 +401,39 @@ impl SchedulerDispatcher {
                             "非协议任务，无待办摘要".to_string()
                         };
 
-                        let is_success = exit_code == 0;
+                        // 使用结构化执行结果分析器
+                        let execution_outcome = ExecutionResultAnalyzer::analyze(
+                            exit_code,
+                            &final_output,
+                            final_tool_count,
+                            task_work_dir_for_complete.as_deref(),
+                            task_task_path_for_complete.as_deref(),
+                        );
+
+                        let is_success = matches!(
+                            &execution_outcome,
+                            ExecutionOutcome::SuccessWithProgress | ExecutionOutcome::SuccessNoProgress | ExecutionOutcome::PartialSuccess
+                        );
+
+                        // 检测阻塞状态和当前阶段（协议任务）
+                        let detected_blocked = if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
+                            ExecutionResultAnalyzer::detect_blocked(work_dir, task_path)
+                        } else {
+                            None
+                        };
+                        let detected_phase = if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
+                            ExecutionResultAnalyzer::extract_current_phase(work_dir, task_path)
+                        } else {
+                            None
+                        };
+
+                        // 判断是否应继续执行
                         let should_continue = is_success
+                            && !ExecutionResultAnalyzer::should_stop_continuation(
+                                &execution_outcome,
+                                task_work_dir_for_complete.as_deref(),
+                                task_task_path_for_complete.as_deref(),
+                            )
                             && ContinuationDecider::should_continue(&task_for_complete, continuous_runs_for_complete);
 
                         {
@@ -436,7 +468,14 @@ impl SchedulerDispatcher {
                                     tracing::error!("[Scheduler] 重置重试计数失败: {:?}", e);
                                 }
 
-                                tracing::info!("[Scheduler] 任务执行成功: {}", task_name);
+                                // 更新最近有效进展时间
+                                if matches!(&execution_outcome, ExecutionOutcome::SuccessWithProgress) {
+                                    if let Err(e) = task_store.update_last_effective_progress(&task_id) {
+                                        tracing::error!("[Scheduler] 更新有效进展时间失败: {:?}", e);
+                                    }
+                                }
+
+                                tracing::info!("[Scheduler] 任务执行成功: {} (结果: {:?})", task_name, execution_outcome);
 
                                 if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
                                     let run_number = task_store.get(&task_id)
@@ -472,7 +511,11 @@ impl SchedulerDispatcher {
                                     }
                                 }
                             } else {
-                                let error_msg = format!("进程退出码: {}", exit_code);
+                                let error_msg = match &execution_outcome {
+                                    ExecutionOutcome::Blocked(reason) => format!("任务被阻塞: {}", reason),
+                                    ExecutionOutcome::Failed => format!("进程退出码: {}", exit_code),
+                                    _ => format!("执行结果: {:?}", execution_outcome),
+                                };
                                 if let Err(e) = log_store.update_complete(
                                     &log_id,
                                     UpdateCompleteParams {
@@ -497,6 +540,26 @@ impl SchedulerDispatcher {
                                     }
                                     tracing::error!("[Scheduler] 任务执行失败: {} - {}", task_name, error_msg);
                                 }
+                            }
+                        }
+
+                        // 更新任务的阻塞状态和当前阶段
+                        if let Some(ref phase) = detected_phase {
+                            let mut store = task_store.lock().await;
+                            if let Err(e) = store.update_current_phase(&task_id, phase) {
+                                tracing::error!("[Scheduler] 更新任务阶段失败: {:?}", e);
+                            }
+                        }
+                        if let Some(ref reason) = detected_blocked {
+                            let mut store = task_store.lock().await;
+                            if let Err(e) = store.update_blocked_status(&task_id, true, Some(reason.clone())) {
+                                tracing::error!("[Scheduler] 更新任务阻塞状态失败: {:?}", e);
+                            }
+                            tracing::warn!("[Scheduler] 检测到任务 {} 被阻塞: {}", task_name, reason);
+                        } else {
+                            let mut store = task_store.lock().await;
+                            if let Err(e) = store.update_blocked_status(&task_id, false, None) {
+                                tracing::error!("[Scheduler] 清除任务阻塞状态失败: {:?}", e);
                             }
                         }
 
@@ -963,8 +1026,39 @@ impl SchedulerDispatcher {
                             "非协议任务，无待办摘要".to_string()
                         };
 
-                        let is_success = exit_code == 0;
+                        // 使用结构化执行结果分析器
+                        let execution_outcome = ExecutionResultAnalyzer::analyze(
+                            exit_code,
+                            &final_output,
+                            final_tool_count,
+                            task_work_dir_for_complete.as_deref(),
+                            task_task_path_for_complete.as_deref(),
+                        );
+
+                        let is_success = matches!(
+                            &execution_outcome,
+                            ExecutionOutcome::SuccessWithProgress | ExecutionOutcome::SuccessNoProgress | ExecutionOutcome::PartialSuccess
+                        );
+
+                        // 检测阻塞状态和当前阶段（协议任务）
+                        let detected_blocked = if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
+                            ExecutionResultAnalyzer::detect_blocked(work_dir, task_path)
+                        } else {
+                            None
+                        };
+                        let detected_phase = if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
+                            ExecutionResultAnalyzer::extract_current_phase(work_dir, task_path)
+                        } else {
+                            None
+                        };
+
+                        // 判断是否应继续执行
                         let should_continue = is_success
+                            && !ExecutionResultAnalyzer::should_stop_continuation(
+                                &execution_outcome,
+                                task_work_dir_for_complete.as_deref(),
+                                task_task_path_for_complete.as_deref(),
+                            )
                             && ContinuationDecider::should_continue(&task_for_complete, continuous_runs_for_complete);
 
                         {
@@ -999,7 +1093,14 @@ impl SchedulerDispatcher {
                                     tracing::error!("[Scheduler] 重置重试计数失败: {:?}", e);
                                 }
 
-                                tracing::info!("[Scheduler] 任务执行成功: {}", task_name);
+                                // 更新最近有效进展时间
+                                if matches!(&execution_outcome, ExecutionOutcome::SuccessWithProgress) {
+                                    if let Err(e) = task_store.update_last_effective_progress(&task_id) {
+                                        tracing::error!("[Scheduler] 更新有效进展时间失败: {:?}", e);
+                                    }
+                                }
+
+                                tracing::info!("[Scheduler] 任务执行成功: {} (结果: {:?})", task_name, execution_outcome);
 
                                 if let (Some(work_dir), Some(task_path)) = (&task_work_dir_for_complete, &task_task_path_for_complete) {
                                     let run_number = task_store.get(&task_id)
@@ -1035,7 +1136,11 @@ impl SchedulerDispatcher {
                                     }
                                 }
                             } else {
-                                let error_msg = format!("进程退出码: {}", exit_code);
+                                let error_msg = match &execution_outcome {
+                                    ExecutionOutcome::Blocked(reason) => format!("任务被阻塞: {}", reason),
+                                    ExecutionOutcome::Failed => format!("进程退出码: {}", exit_code),
+                                    _ => format!("执行结果: {:?}", execution_outcome),
+                                };
                                 if let Err(e) = log_store.update_complete(
                                     &log_id,
                                     UpdateCompleteParams {
@@ -1060,6 +1165,26 @@ impl SchedulerDispatcher {
                                     }
                                     tracing::error!("[Scheduler] 任务执行失败: {} - {}", task_name, error_msg);
                                 }
+                            }
+                        }
+
+                        // 更新任务的阻塞状态和当前阶段
+                        if let Some(ref phase) = detected_phase {
+                            let mut store = task_store.lock().await;
+                            if let Err(e) = store.update_current_phase(&task_id, phase) {
+                                tracing::error!("[Scheduler] 更新任务阶段失败: {:?}", e);
+                            }
+                        }
+                        if let Some(ref reason) = detected_blocked {
+                            let mut store = task_store.lock().await;
+                            if let Err(e) = store.update_blocked_status(&task_id, true, Some(reason.clone())) {
+                                tracing::error!("[Scheduler] 更新任务阻塞状态失败: {:?}", e);
+                            }
+                            tracing::warn!("[Scheduler] 检测到任务 {} 被阻塞: {}", task_name, reason);
+                        } else {
+                            let mut store = task_store.lock().await;
+                            if let Err(e) = store.update_blocked_status(&task_id, false, None) {
+                                tracing::error!("[Scheduler] 清除任务阻塞状态失败: {:?}", e);
                             }
                         }
 

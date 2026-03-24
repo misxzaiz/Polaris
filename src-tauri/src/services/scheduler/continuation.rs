@@ -103,6 +103,13 @@ mod tests {
             tasks_template: None,
             runs_template: None,
             supplement_template: None,
+            blocked: false,
+            blocked_reason: None,
+            current_phase: None,
+            last_effective_progress_at: None,
+            protocol_version: None,
+            session_last_used_at: None,
+            consecutive_no_progress_count: 0,
         }
     }
 
