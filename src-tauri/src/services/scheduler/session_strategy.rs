@@ -140,6 +140,7 @@ mod tests {
             mission: None,
             last_run_at: None,
             last_run_status: None,
+            last_run_outcome: None,
             next_run_at: None,
             created_at: 0,
             updated_at: 0,

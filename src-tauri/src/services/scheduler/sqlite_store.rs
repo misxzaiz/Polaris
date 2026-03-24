@@ -35,6 +35,17 @@ impl SqliteStore {
         std::fs::create_dir_all(&store_dir)?;
 
         let db_path = store_dir.join("scheduler.db");
+        Self::with_path(db_path)
+    }
+
+    /// 使用指定的数据库路径创建 SQLite 存储服务
+    ///
+    /// 主要用于测试场景
+    pub fn with_path(db_path: PathBuf) -> Result<Self> {
+        // 确保父目录存在
+        if let Some(parent) = db_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
         
         // 创建连接池
         let manager = SqliteConnectionManager::file(&db_path);
@@ -42,6 +53,24 @@ impl SqliteStore {
             .map_err(|e| AppError::ConfigError(format!("无法创建数据库连接池: {}", e)))?;
 
         let store = Self { pool, db_path };
+        
+        // 初始化数据库 schema
+        store.initialize_schema()?;
+
+        Ok(store)
+    }
+
+    /// 创建内存数据库（仅用于测试）
+    #[cfg(test)]
+    pub fn in_memory() -> Result<Self> {
+        let manager = SqliteConnectionManager::memory();
+        let pool = Pool::new(manager)
+            .map_err(|e| AppError::ConfigError(format!("无法创建内存数据库连接池: {}", e)))?;
+
+        let store = Self { 
+            pool, 
+            db_path: PathBuf::from(":memory:"),
+        };
         
         // 初始化数据库 schema
         store.initialize_schema()?;
@@ -101,7 +130,6 @@ impl SqliteStore {
             );
 
             CREATE INDEX IF NOT EXISTS idx_tasks_enabled ON tasks(enabled);
-            CREATE INDEX IF NOT EXISTS idx_tasks_next_run ON tasks(next_run_at) WHERE enabled = 1;
             CREATE INDEX IF NOT EXISTS idx_tasks_group ON tasks(group_name);
             "#,
         )?;
@@ -1558,14 +1586,421 @@ impl StorageBackend for SqliteStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::scheduler::{TaskStatus, TriggerType};
+
+    /// 创建测试任务数据
+    fn create_test_task(id: &str, name: &str) -> ScheduledTask {
+        use std::collections::HashMap;
+        
+        let mut template_params = HashMap::new();
+        template_params.insert("key".to_string(), "value".to_string());
+        
+        ScheduledTask {
+            id: id.to_string(),
+            name: name.to_string(),
+            enabled: true,
+            trigger_type: TriggerType::Interval,
+            trigger_value: "3600".to_string(),
+            engine_id: "claude".to_string(),
+            prompt: "Test prompt".to_string(),
+            work_dir: Some("/tmp".to_string()),
+            group: Some("test-group".to_string()),
+            description: Some("Test description".to_string()),
+            task_path: Some(".polaris/tasks/test".to_string()),
+            mission: Some("Test mission".to_string()),
+            max_runs: Some(100),
+            reuse_session: true,
+            continue_immediately: true,
+            max_continuous_runs: Some(10),
+            run_in_terminal: false,
+            template_id: Some("template-1".to_string()),
+            template_param_values: Some(template_params),
+            max_retries: Some(3),
+            retry_interval: Some("60".to_string()),
+            notify_on_complete: true,
+            timeout_minutes: Some(30),
+            user_supplement: Some("Test supplement".to_string()),
+            task_template: None,
+            memory_template: None,
+            tasks_template: None,
+            runs_template: None,
+            supplement_template: None,
+            protocol_version: Some(2),
+            created_at: 1700000000,
+            updated_at: 1700000000,
+            current_runs: 5,
+            conversation_session_id: Some("session-123".to_string()),
+            session_last_used_at: Some(1700000100),
+            last_run_at: Some(1700000050),
+            last_run_status: Some(TaskStatus::Success),
+            last_run_outcome: None,
+            next_run_at: Some(1700001000),
+            subscribed_context_id: Some("context-456".to_string()),
+            retry_count: 0,
+            blocked: false,
+            blocked_reason: None,
+            current_phase: Some("开发".to_string()),
+            last_effective_progress_at: Some(1700000030),
+            consecutive_no_progress_count: 0,
+        }
+    }
+
+    /// 创建测试日志数据
+    fn create_test_log(id: &str, task_id: &str, task_name: &str) -> TaskLog {
+        TaskLog {
+            id: id.to_string(),
+            task_id: task_id.to_string(),
+            task_name: task_name.to_string(),
+            engine_id: "claude".to_string(),
+            session_id: Some("session-123".to_string()),
+            started_at: 1700000000,
+            finished_at: Some(1700000060),
+            duration_ms: Some(60000),
+            status: TaskStatus::Success,
+            prompt: "Test prompt content".to_string(),
+            output: Some("Test output content".to_string()),
+            error: None,
+            thinking_summary: Some("Thinking summary".to_string()),
+            tool_call_count: 5,
+            token_count: Some(1000),
+        }
+    }
 
     #[test]
     fn test_sqlite_store_creation() {
         // 使用内存数据库测试
-        let manager = SqliteConnectionManager::memory();
-        let pool = Pool::new(manager).unwrap();
+        let store = SqliteStore::in_memory().unwrap();
         
-        // 验证连接池创建成功
-        assert!(pool.get().is_ok());
+        // 验证数据库创建成功
+        assert_eq!(store.task_count().unwrap(), 0);
+        assert_eq!(store.log_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn test_migrate_from_json_empty() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        // 迁移空数据
+        let result = store.migrate_from_json(
+            vec![],
+            vec![],
+            &LogRetentionConfig::default(),
+        ).unwrap();
+        
+        assert_eq!(result.tasks_migrated, 0);
+        assert_eq!(result.tasks_failed, 0);
+        assert_eq!(result.logs_migrated, 0);
+        assert_eq!(result.logs_failed, 0);
+    }
+
+    #[test]
+    fn test_migrate_from_json_tasks() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        let tasks = vec![
+            create_test_task("task-1", "Task One"),
+            create_test_task("task-2", "Task Two"),
+            create_test_task("task-3", "Task Three"),
+        ];
+        
+        let result = store.migrate_from_json(
+            tasks.clone(),
+            vec![],
+            &LogRetentionConfig::default(),
+        ).unwrap();
+        
+        assert_eq!(result.tasks_migrated, 3);
+        assert_eq!(result.tasks_failed, 0);
+        
+        // 验证任务数量
+        assert_eq!(store.task_count().unwrap(), 3);
+        
+        // 验证任务数据
+        let migrated_tasks = store.get_all_tasks().unwrap();
+        assert_eq!(migrated_tasks.len(), 3);
+        
+        // 验证任务字段正确迁移
+        let task1 = store.get_task("task-1").unwrap().unwrap();
+        assert_eq!(task1.name, "Task One");
+        assert_eq!(task1.group, Some("test-group".to_string()));
+        assert_eq!(task1.current_runs, 5);
+        assert_eq!(task1.conversation_session_id, Some("session-123".to_string()));
+    }
+
+    #[test]
+    fn test_migrate_from_json_logs() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        // 先创建任务（日志需要关联任务）
+        let tasks = vec![create_test_task("task-1", "Test Task")];
+        store.migrate_from_json(tasks, vec![], &LogRetentionConfig::default()).unwrap();
+        
+        // 迁移日志
+        let logs = vec![
+            create_test_log("log-1", "task-1", "Test Task"),
+            create_test_log("log-2", "task-1", "Test Task"),
+            create_test_log("log-3", "task-1", "Test Task"),
+        ];
+        
+        let result = store.migrate_from_json(
+            vec![],
+            logs,
+            &LogRetentionConfig::default(),
+        ).unwrap();
+        
+        assert_eq!(result.logs_migrated, 3);
+        assert_eq!(result.logs_failed, 0);
+        
+        // 验证日志数量
+        assert_eq!(store.log_count().unwrap(), 3);
+        
+        // 验证日志数据
+        let migrated_logs = store.get_task_logs("task-1").unwrap();
+        assert_eq!(migrated_logs.len(), 3);
+        
+        // 验证日志字段正确迁移
+        let log1 = migrated_logs.iter().find(|l| l.id == "log-1").unwrap();
+        assert_eq!(log1.task_id, "task-1");
+        assert_eq!(log1.session_id, Some("session-123".to_string()));
+        assert_eq!(log1.tool_call_count, 5);
+    }
+
+    #[test]
+    fn test_migrate_from_json_retention_config() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        let custom_config = LogRetentionConfig {
+            retention_days: 90,
+            max_logs_per_task: 500,
+            auto_cleanup_enabled: false,
+            auto_cleanup_interval_hours: 72,
+        };
+        
+        store.migrate_from_json(
+            vec![],
+            vec![],
+            &custom_config,
+        ).unwrap();
+        
+        // 验证保留配置已迁移
+        let config = store.get_retention_config().unwrap();
+        assert_eq!(config.retention_days, 90);
+        assert_eq!(config.max_logs_per_task, 500);
+        assert!(!config.auto_cleanup_enabled);
+        assert_eq!(config.auto_cleanup_interval_hours, 72);
+    }
+
+    #[test]
+    fn test_migrate_from_json_full() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        let tasks = vec![
+            create_test_task("task-1", "Task One"),
+            create_test_task("task-2", "Task Two"),
+        ];
+        
+        let logs = vec![
+            create_test_log("log-1", "task-1", "Task One"),
+            create_test_log("log-2", "task-1", "Task One"),
+            create_test_log("log-3", "task-2", "Task Two"),
+        ];
+        
+        let config = LogRetentionConfig {
+            retention_days: 60,
+            max_logs_per_task: 200,
+            auto_cleanup_enabled: true,
+            auto_cleanup_interval_hours: 24,
+        };
+        
+        let result = store.migrate_from_json(tasks, logs, &config).unwrap();
+        
+        // 验证迁移结果
+        assert_eq!(result.tasks_migrated, 2);
+        assert_eq!(result.logs_migrated, 3);
+        
+        // 验证任务数量和日志数量
+        assert_eq!(store.task_count().unwrap(), 2);
+        assert_eq!(store.log_count().unwrap(), 3);
+        
+        // 验证保留配置
+        let migrated_config = store.get_retention_config().unwrap();
+        assert_eq!(migrated_config.retention_days, 60);
+        
+        // 验证任务日志关联
+        let task1_logs = store.get_task_logs("task-1").unwrap();
+        assert_eq!(task1_logs.len(), 2);
+        
+        let task2_logs = store.get_task_logs("task-2").unwrap();
+        assert_eq!(task2_logs.len(), 1);
+    }
+
+    #[test]
+    fn test_task_crud_after_migration() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        // 迁移任务
+        let tasks = vec![create_test_task("task-1", "Original Name")];
+        store.migrate_from_json(tasks, vec![], &LogRetentionConfig::default()).unwrap();
+        
+        // 读取任务
+        let task = store.get_task("task-1").unwrap().unwrap();
+        assert_eq!(task.name, "Original Name");
+        
+        // 更新任务
+        let mut updated_task = task.clone();
+        updated_task.name = "Updated Name".to_string();
+        updated_task.enabled = false;
+        store.update_task(&updated_task).unwrap();
+        
+        // 验证更新
+        let updated = store.get_task("task-1").unwrap().unwrap();
+        assert_eq!(updated.name, "Updated Name");
+        assert!(!updated.enabled);
+        
+        // 删除任务
+        store.delete_task("task-1").unwrap();
+        assert!(store.get_task("task-1").unwrap().is_none());
+    }
+
+    #[test]
+    fn test_runtime_state_after_migration() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        // 创建带有运行态的任务
+        let mut task = create_test_task("task-1", "Test Task");
+        task.current_runs = 10;
+        task.conversation_session_id = Some("test-session-id".to_string());
+        task.blocked = true;
+        task.blocked_reason = Some("Test blocked reason".to_string());
+        task.current_phase = Some("测试".to_string());
+        
+        store.migrate_from_json(
+            vec![task],
+            vec![],
+            &LogRetentionConfig::default(),
+        ).unwrap();
+        
+        // 验证运行态字段
+        let migrated = store.get_task("task-1").unwrap().unwrap();
+        assert_eq!(migrated.current_runs, 10);
+        assert_eq!(migrated.conversation_session_id, Some("test-session-id".to_string()));
+        assert!(migrated.blocked);
+        assert_eq!(migrated.blocked_reason, Some("Test blocked reason".to_string()));
+        assert_eq!(migrated.current_phase, Some("测试".to_string()));
+        
+        // 测试更新运行态
+        store.update_blocked_status("task-1", false, None).unwrap();
+        let updated = store.get_task("task-1").unwrap().unwrap();
+        assert!(!updated.blocked);
+        assert!(updated.blocked_reason.is_none());
+    }
+
+    #[test]
+    fn test_migrate_from_json_with_trigger_types() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        // 创建不同触发类型的任务
+        let mut task_once = create_test_task("task-once", "Once Task");
+        task_once.trigger_type = TriggerType::Once;
+        
+        let mut task_cron = create_test_task("task-cron", "Cron Task");
+        task_cron.trigger_type = TriggerType::Cron;
+        task_cron.trigger_value = "0 0 * * *".to_string();
+        
+        let mut task_interval = create_test_task("task-interval", "Interval Task");
+        task_interval.trigger_type = TriggerType::Interval;
+        task_interval.trigger_value = "1800".to_string();
+        
+        store.migrate_from_json(
+            vec![task_once, task_cron, task_interval],
+            vec![],
+            &LogRetentionConfig::default(),
+        ).unwrap();
+        
+        // 验证触发类型正确迁移
+        let once = store.get_task("task-once").unwrap().unwrap();
+        assert_eq!(once.trigger_type, TriggerType::Once);
+        
+        let cron = store.get_task("task-cron").unwrap().unwrap();
+        assert_eq!(cron.trigger_type, TriggerType::Cron);
+        assert_eq!(cron.trigger_value, "0 0 * * *");
+        
+        let interval = store.get_task("task-interval").unwrap().unwrap();
+        assert_eq!(interval.trigger_type, TriggerType::Interval);
+        assert_eq!(interval.trigger_value, "1800");
+    }
+
+    #[test]
+    fn test_migrate_from_json_with_log_status() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        // 先创建任务
+        let tasks = vec![create_test_task("task-1", "Test Task")];
+        store.migrate_from_json(tasks, vec![], &LogRetentionConfig::default()).unwrap();
+        
+        // 创建不同状态的日志
+        let mut success_log = create_test_log("log-success", "task-1", "Test Task");
+        success_log.status = TaskStatus::Success;
+        
+        let mut failed_log = create_test_log("log-failed", "task-1", "Test Task");
+        failed_log.status = TaskStatus::Failed;
+        failed_log.error = Some("Test error".to_string());
+        
+        let mut running_log = create_test_log("log-running", "task-1", "Test Task");
+        running_log.status = TaskStatus::Running;
+        running_log.finished_at = None;
+        
+        store.migrate_from_json(
+            vec![],
+            vec![success_log, failed_log, running_log],
+            &LogRetentionConfig::default(),
+        ).unwrap();
+        
+        // 验证日志状态
+        let logs = store.get_task_logs("task-1").unwrap();
+        
+        let success = logs.iter().find(|l| l.id == "log-success").unwrap();
+        assert_eq!(success.status, TaskStatus::Success);
+        
+        let failed = logs.iter().find(|l| l.id == "log-failed").unwrap();
+        assert_eq!(failed.status, TaskStatus::Failed);
+        assert_eq!(failed.error, Some("Test error".to_string()));
+        
+        let running = logs.iter().find(|l| l.id == "log-running").unwrap();
+        assert_eq!(running.status, TaskStatus::Running);
+    }
+
+    #[test]
+    fn test_migrate_from_json_idempotent() {
+        let store = SqliteStore::in_memory().unwrap();
+        
+        let tasks = vec![create_test_task("task-1", "Original Name")];
+        
+        // 第一次迁移
+        store.migrate_from_json(
+            tasks.clone(),
+            vec![],
+            &LogRetentionConfig::default(),
+        ).unwrap();
+        
+        assert_eq!(store.task_count().unwrap(), 1);
+        
+        // 修改任务名称后再次迁移（应该替换）
+        let mut updated_task = create_test_task("task-1", "Updated Name");
+        updated_task.current_runs = 100;
+        
+        store.migrate_from_json(
+            vec![updated_task],
+            vec![],
+            &LogRetentionConfig::default(),
+        ).unwrap();
+        
+        // 验证仍然是 1 个任务（替换而非添加）
+        assert_eq!(store.task_count().unwrap(), 1);
+        
+        // 验证数据已更新
+        let task = store.get_task("task-1").unwrap().unwrap();
+        assert_eq!(task.name, "Updated Name");
+        assert_eq!(task.current_runs, 100);
     }
 }

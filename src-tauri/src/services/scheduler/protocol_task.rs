@@ -723,6 +723,7 @@ mod tests {
             "完成 runs 自动追加",
             "继续评估会话字段改造",
             false,
+            None::<&ExecutionOutcome>,
         ).unwrap();
 
         let content = fs::read_to_string(task_memory_dir.join("runs.md")).unwrap();
@@ -744,6 +745,7 @@ mod tests {
             "\n完成 A\n完成 B\n",
             "\n\n",
             true,
+            None::<&ExecutionOutcome>,
         );
 
         assert!(entry.contains("## Run 2"));

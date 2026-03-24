@@ -391,3 +391,605 @@ impl Default for UnifiedStorageService {
         Self::new().expect("Failed to create UnifiedStorageService")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::scheduler::{CreateTaskParams, LogRetentionConfig, TaskStatus, TriggerType};
+    use tempfile::TempDir;
+
+    /// 创建测试用的统一存储服务（使用临时目录）
+    fn create_test_storage() -> (UnifiedStorageService, TempDir) {
+        let temp_dir = TempDir::new().expect("无法创建临时目录");
+        let db_path = temp_dir.path().join("test_scheduler.db");
+
+        let sqlite_store = SqliteStore::with_path(db_path).expect("无法创建 SQLite 存储");
+
+        let service = UnifiedStorageService {
+            backend: Box::new(sqlite_store),
+            config: UnifiedStorageConfig::default(),
+        };
+
+        (service, temp_dir)
+    }
+
+    /// 创建测试任务参数
+    fn create_test_task_params(name: &str) -> CreateTaskParams {
+        CreateTaskParams {
+            name: name.to_string(),
+            enabled: true,
+            trigger_type: TriggerType::Interval,
+            trigger_value: "3600".to_string(),
+            engine_id: "claude".to_string(),
+            prompt: "Test prompt".to_string(),
+            work_dir: Some("/tmp".to_string()),
+            group: Some("test-group".to_string()),
+            description: None,
+            mission: None,
+            max_runs: None,
+            reuse_session: false,
+            continue_immediately: false,
+            max_continuous_runs: None,
+            run_in_terminal: false,
+            template_id: None,
+            template_param_values: None,
+            max_retries: None,
+            retry_interval: None,
+            notify_on_complete: true,
+            timeout_minutes: None,
+            user_supplement: None,
+            task_template: None,
+            memory_template: None,
+            tasks_template: None,
+            runs_template: None,
+            supplement_template: None,
+        }
+    }
+
+    #[test]
+    fn test_unified_storage_creation() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // 验证后端类型
+        assert_eq!(storage.backend_type(), StorageBackendType::Sqlite);
+
+        // 验证初始状态
+        assert_eq!(storage.task_count().unwrap(), 0);
+        assert_eq!(storage.log_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn test_unified_storage_config() {
+        let config = UnifiedStorageConfig {
+            backend_type: StorageBackendType::Sqlite,
+            auto_migrate: false,
+            cleanup_after_migration: true,
+        };
+
+        assert_eq!(config.backend_type, StorageBackendType::Sqlite);
+        assert!(!config.auto_migrate);
+        assert!(config.cleanup_after_migration);
+    }
+
+    #[test]
+    fn test_unified_storage_default_config() {
+        let config = UnifiedStorageConfig::default();
+
+        assert_eq!(config.backend_type, StorageBackendType::Sqlite);
+        assert!(config.auto_migrate);
+        assert!(!config.cleanup_after_migration);
+    }
+
+    #[test]
+    fn test_create_and_get_task() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // 创建任务
+        let params = create_test_task_params("Test Task");
+        let task = storage.create_task(params, None).unwrap();
+
+        // 验证任务已创建
+        assert!(!task.id.is_empty());
+        assert_eq!(task.name, "Test Task");
+        assert!(task.enabled);
+
+        // 获取任务
+        let retrieved = storage.get_task(&task.id).unwrap().unwrap();
+        assert_eq!(retrieved.name, "Test Task");
+    }
+
+    #[test]
+    fn test_get_all_tasks() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // 创建多个任务
+        for i in 0..3 {
+            let params = create_test_task_params(&format!("Task {}", i));
+            storage.create_task(params, None).unwrap();
+        }
+
+        // 获取所有任务
+        let tasks = storage.get_all_tasks().unwrap();
+        assert_eq!(tasks.len(), 3);
+    }
+
+    #[test]
+    fn test_update_task() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // 创建任务
+        let params = create_test_task_params("Original Name");
+        let task = storage.create_task(params, None).unwrap();
+
+        // 更新任务
+        let mut updated = task.clone();
+        updated.name = "Updated Name".to_string();
+        updated.enabled = false;
+        storage.update_task(&updated).unwrap();
+
+        // 验证更新
+        let retrieved = storage.get_task(&task.id).unwrap().unwrap();
+        assert_eq!(retrieved.name, "Updated Name");
+        assert!(!retrieved.enabled);
+    }
+
+    #[test]
+    fn test_delete_task() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // 创建任务
+        let params = create_test_task_params("Task to Delete");
+        let task = storage.create_task(params, None).unwrap();
+
+        // 验证任务存在
+        assert!(storage.get_task(&task.id).unwrap().is_some());
+
+        // 删除任务
+        storage.delete_task(&task.id).unwrap();
+
+        // 验证任务已删除
+        assert!(storage.get_task(&task.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_toggle_task() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // 创建任务
+        let params = create_test_task_params("Toggle Test");
+        let task = storage.create_task(params, None).unwrap();
+
+        // 禁用任务
+        storage.toggle_task(&task.id, false, None).unwrap();
+
+        let retrieved = storage.get_task(&task.id).unwrap().unwrap();
+        assert!(!retrieved.enabled);
+
+        // 启用任务
+        storage.toggle_task(&task.id, true, Some(1700000000)).unwrap();
+
+        let retrieved = storage.get_task(&task.id).unwrap().unwrap();
+        assert!(retrieved.enabled);
+        assert_eq!(retrieved.next_run_at, Some(1700000000));
+    }
+
+    #[test]
+    fn test_session_management() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // 创建任务
+        let params = create_test_task_params("Session Test");
+        let task = storage.create_task(params, None).unwrap();
+
+        // 更新会话 ID
+        storage
+            .update_conversation_session_id(&task.id, Some("session-123".to_string()))
+            .unwrap();
+
+        let retrieved = storage.get_task(&task.id).unwrap().unwrap();
+        assert_eq!(retrieved.conversation_session_id, Some("session-123".to_string()));
+
+        // 重置会话
+        storage.reset_session(&task.id).unwrap();
+
+        let retrieved = storage.get_task(&task.id).unwrap().unwrap();
+        assert!(retrieved.conversation_session_id.is_none());
+    }
+
+    #[test]
+    fn test_run_status_update() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // 创建任务
+        let params = create_test_task_params("Run Status Test");
+        let task = storage.create_task(params, None).unwrap();
+
+        // 更新运行状态
+        storage
+            .update_run_status(&task.id, TaskStatus::Success, true)
+            .unwrap();
+
+        let retrieved = storage.get_task(&task.id).unwrap().unwrap();
+        assert_eq!(retrieved.last_run_status, Some(TaskStatus::Success));
+        assert_eq!(retrieved.current_runs, 1);
+
+        // 再次更新
+        storage
+            .update_run_status(&task.id, TaskStatus::Failed, true)
+            .unwrap();
+
+        let retrieved = storage.get_task(&task.id).unwrap().unwrap();
+        assert_eq!(retrieved.last_run_status, Some(TaskStatus::Failed));
+        assert_eq!(retrieved.current_runs, 2);
+    }
+
+    #[test]
+    fn test_blocked_status() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // 创建任务
+        let params = create_test_task_params("Blocked Test");
+        let task = storage.create_task(params, None).unwrap();
+
+        // 设置阻塞状态
+        storage
+            .update_blocked_status(&task.id, true, Some("Test reason".to_string()))
+            .unwrap();
+
+        let retrieved = storage.get_task(&task.id).unwrap().unwrap();
+        assert!(retrieved.blocked);
+        assert_eq!(retrieved.blocked_reason, Some("Test reason".to_string()));
+
+        // 解除阻塞
+        storage.update_blocked_status(&task.id, false, None).unwrap();
+
+        let retrieved = storage.get_task(&task.id).unwrap().unwrap();
+        assert!(!retrieved.blocked);
+        assert!(retrieved.blocked_reason.is_none());
+    }
+
+    #[test]
+    fn test_phase_update() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // 创建任务
+        let params = create_test_task_params("Phase Test");
+        let task = storage.create_task(params, None).unwrap();
+
+        // 更新阶段
+        storage.update_current_phase(&task.id, "开发").unwrap();
+
+        let retrieved = storage.get_task(&task.id).unwrap().unwrap();
+        assert_eq!(retrieved.current_phase, Some("开发".to_string()));
+
+        // 更新到测试阶段
+        storage.update_current_phase(&task.id, "测试").unwrap();
+
+        let retrieved = storage.get_task(&task.id).unwrap().unwrap();
+        assert_eq!(retrieved.current_phase, Some("测试".to_string()));
+    }
+
+    #[test]
+    fn test_consecutive_no_progress() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // 创建任务
+        let params = create_test_task_params("Progress Test");
+        let task = storage.create_task(params, None).unwrap();
+
+        // 更新连续无进展计数
+        let count1 = storage.update_consecutive_no_progress(&task.id).unwrap();
+        assert_eq!(count1, 1);
+
+        let count2 = storage.update_consecutive_no_progress(&task.id).unwrap();
+        assert_eq!(count2, 2);
+
+        // 更新有效进展后重置
+        storage.update_last_effective_progress(&task.id).unwrap();
+
+        let retrieved = storage.get_task(&task.id).unwrap().unwrap();
+        assert_eq!(retrieved.consecutive_no_progress_count, 0);
+        assert!(retrieved.last_effective_progress_at.is_some());
+    }
+
+    #[test]
+    fn test_log_creation_and_retrieval() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // 创建任务
+        let params = create_test_task_params("Log Test");
+        let task = storage.create_task(params, None).unwrap();
+
+        // 创建日志
+        let log = storage
+            .create_log(&task.id, &task.name, "Test prompt", &task.engine_id)
+            .unwrap();
+
+        assert!(!log.id.is_empty());
+        assert_eq!(log.task_id, task.id);
+        assert_eq!(log.status, TaskStatus::Running);
+
+        // 完成日志
+        storage
+            .update_log_complete(
+                &log.id,
+                Some("session-456".to_string()),
+                Some("Test output".to_string()),
+                None,
+                Some("Thinking...".to_string()),
+                5,
+                Some(1000),
+            )
+            .unwrap();
+
+        // 获取日志
+        let logs = storage.get_task_logs(&task.id).unwrap();
+        assert_eq!(logs.len(), 1);
+
+        let retrieved_log = &logs[0];
+        assert_eq!(retrieved_log.session_id, Some("session-456".to_string()));
+        assert_eq!(retrieved_log.status, TaskStatus::Success);
+        assert_eq!(retrieved_log.tool_call_count, 5);
+    }
+
+    #[test]
+    fn test_log_pagination() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // 创建任务
+        let params = create_test_task_params("Pagination Test");
+        let task = storage.create_task(params, None).unwrap();
+
+        // 创建多条日志
+        for i in 0..15 {
+            let log = storage
+                .create_log(&task.id, &task.name, &format!("Prompt {}", i), &task.engine_id)
+                .unwrap();
+            storage
+                .update_log_complete(&log.id, None, Some(format!("Output {}", i)), None, None, 0, None)
+                .unwrap();
+        }
+
+        // 分页获取
+        let page1 = storage.get_logs_paginated(Some(&task.id), 1, 5).unwrap();
+        assert_eq!(page1.logs.len(), 5);
+        assert_eq!(page1.page, 1);
+        assert_eq!(page1.total, 15);
+        assert_eq!(page1.total_pages, 3);
+
+        let page2 = storage.get_logs_paginated(Some(&task.id), 2, 5).unwrap();
+        assert_eq!(page2.logs.len(), 5);
+        assert_eq!(page2.page, 2);
+    }
+
+    #[test]
+    fn test_log_cleanup() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // 创建任务
+        let params = create_test_task_params("Cleanup Test");
+        let task = storage.create_task(params, None).unwrap();
+
+        // 创建日志
+        let log = storage
+            .create_log(&task.id, &task.name, "Test", &task.engine_id)
+            .unwrap();
+        storage
+            .update_log_complete(&log.id, None, Some("Output".to_string()), None, None, 0, None)
+            .unwrap();
+
+        // 删除单条日志
+        let deleted = storage.delete_log(&log.id).unwrap();
+        assert!(deleted);
+
+        let logs = storage.get_task_logs(&task.id).unwrap();
+        assert_eq!(logs.len(), 0);
+
+        // 创建更多日志
+        for i in 0..3 {
+            let log = storage
+                .create_log(&task.id, &task.name, &format!("Test {}", i), &task.engine_id)
+                .unwrap();
+            storage
+                .update_log_complete(&log.id, None, None, None, None, 0, None)
+                .unwrap();
+        }
+
+        // 清理任务日志
+        let cleared = storage.clear_task_logs(&task.id).unwrap();
+        assert_eq!(cleared, 3);
+    }
+
+    #[test]
+    fn test_retention_config() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // 获取默认配置
+        let default_config = storage.get_retention_config().unwrap();
+        assert_eq!(default_config.retention_days, 30);
+
+        // 更新配置
+        let new_config = LogRetentionConfig {
+            retention_days: 60,
+            max_logs_per_task: 200,
+            auto_cleanup_enabled: true,
+            auto_cleanup_interval_hours: 48,
+        };
+        storage.update_retention_config(&new_config).unwrap();
+
+        // 验证更新
+        let updated = storage.get_retention_config().unwrap();
+        assert_eq!(updated.retention_days, 60);
+        assert_eq!(updated.max_logs_per_task, 200);
+    }
+
+    #[test]
+    fn test_subscription() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // 创建任务
+        let params = create_test_task_params("Subscription Test");
+        let task = storage.create_task(params, None).unwrap();
+
+        // 设置订阅
+        storage
+            .set_subscription(&task.id, Some("context-789"))
+            .unwrap();
+
+        let retrieved = storage.get_task(&task.id).unwrap().unwrap();
+        assert_eq!(retrieved.subscribed_context_id, Some("context-789".to_string()));
+
+        // 取消订阅
+        storage.set_subscription(&task.id, None).unwrap();
+
+        let retrieved = storage.get_task(&task.id).unwrap().unwrap();
+        assert!(retrieved.subscribed_context_id.is_none());
+    }
+
+    #[test]
+    fn test_retry_mechanism() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // 创建任务
+        let params = create_test_task_params("Retry Test");
+        let mut task = storage.create_task(params, None).unwrap();
+
+        // 设置最大重试次数
+        task.max_retries = Some(3);
+        storage.update_task(&task).unwrap();
+
+        // 第一次重试
+        let can_retry = storage.update_retry_status(&task.id, 3, 60).unwrap();
+        assert!(can_retry);
+
+        let retrieved = storage.get_task(&task.id).unwrap().unwrap();
+        assert_eq!(retrieved.retry_count, 1);
+
+        // 第二次重试
+        let can_retry = storage.update_retry_status(&task.id, 3, 60).unwrap();
+        assert!(can_retry);
+
+        // 第三次重试
+        let can_retry = storage.update_retry_status(&task.id, 3, 60).unwrap();
+        assert!(can_retry);
+
+        // 超过重试次数
+        let can_retry = storage.update_retry_status(&task.id, 3, 60).unwrap();
+        assert!(!can_retry);
+
+        // 重置重试计数
+        storage.reset_retry_count(&task.id).unwrap();
+
+        let retrieved = storage.get_task(&task.id).unwrap().unwrap();
+        assert_eq!(retrieved.retry_count, 0);
+    }
+
+    #[test]
+    fn test_task_count_and_log_count() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // 初始计数
+        assert_eq!(storage.task_count().unwrap(), 0);
+        assert_eq!(storage.log_count().unwrap(), 0);
+
+        // 创建任务
+        let params = create_test_task_params("Count Test");
+        let task = storage.create_task(params, None).unwrap();
+
+        assert_eq!(storage.task_count().unwrap(), 1);
+
+        // 创建日志
+        let log = storage
+            .create_log(&task.id, &task.name, "Test", &task.engine_id)
+            .unwrap();
+        storage
+            .update_log_complete(&log.id, None, None, None, None, 0, None)
+            .unwrap();
+
+        assert_eq!(storage.log_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_get_pending_tasks() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // 创建已启用任务
+        let params1 = create_test_task_params("Enabled Task");
+        let _task1 = storage.create_task(params1, None).unwrap();
+
+        // 创建已禁用任务
+        let params2 = create_test_task_params("Disabled Task");
+        let task2 = storage.create_task(params2, None).unwrap();
+        storage.toggle_task(&task2.id, false, None).unwrap();
+
+        // 注意：待执行任务需要 next_run_at 在过去时间
+        // 由于测试环境中 next_run_at 是自动计算的，这里主要测试查询逻辑
+        let pending = storage.get_pending_tasks().unwrap();
+        // 结果取决于 next_run_at 的计算，这里只验证方法可以正常调用
+        assert!(pending.is_empty() || pending.len() <= 1);
+    }
+
+    #[test]
+    fn test_check_migration_needed() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // 在测试环境中，没有 JSON 文件，所以不需要迁移
+        let needs_migration = storage.check_migration_needed();
+        assert!(!needs_migration);
+    }
+
+    #[test]
+    fn test_full_workflow() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // 1. 创建任务
+        let params = create_test_task_params("Full Workflow Test");
+        let task = storage.create_task(params, None).unwrap();
+
+        // 2. 启用任务并设置下次执行时间
+        storage.toggle_task(&task.id, true, Some(1700000000)).unwrap();
+
+        // 3. 创建执行日志
+        let log = storage
+            .create_log(&task.id, &task.name, "Initial prompt", &task.engine_id)
+            .unwrap();
+
+        // 4. 更新会话 ID
+        storage
+            .update_conversation_session_id(&task.id, Some("session-workflow".to_string()))
+            .unwrap();
+
+        // 5. 完成日志
+        storage
+            .update_log_complete(
+                &log.id,
+                Some("session-workflow".to_string()),
+                Some("Task output".to_string()),
+                None,
+                Some("Analysis complete".to_string()),
+                10,
+                Some(5000),
+            )
+            .unwrap();
+
+        // 6. 更新运行状态
+        storage
+            .update_run_status(&task.id, TaskStatus::Success, true)
+            .unwrap();
+
+        // 7. 验证最终状态
+        let final_task = storage.get_task(&task.id).unwrap().unwrap();
+        assert!(final_task.enabled);
+        assert_eq!(final_task.current_runs, 1);
+        assert_eq!(
+            final_task.conversation_session_id,
+            Some("session-workflow".to_string())
+        );
+        assert_eq!(final_task.last_run_status, Some(TaskStatus::Success));
+
+        // 8. 验证日志
+        let logs = storage.get_task_logs(&task.id).unwrap();
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].tool_call_count, 10);
+    }
+}

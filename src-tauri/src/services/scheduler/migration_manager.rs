@@ -42,6 +42,13 @@ impl MigrationManager {
             .ok_or_else(|| AppError::ConfigError("无法获取配置目录".to_string()))?
             .join("claude-code-pro");
 
+        Self::with_config_dir(config_dir)
+    }
+
+    /// 使用指定的配置目录创建迁移管理器
+    ///
+    /// 主要用于测试场景
+    pub fn with_config_dir(config_dir: PathBuf) -> Result<Self> {
         Ok(Self {
             tasks_json_path: config_dir.join("scheduler_tasks.json"),
             logs_json_path: config_dir.join("scheduler_logs.json"),
@@ -210,5 +217,439 @@ impl MigrationManager {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::scheduler::{TaskStatus, TriggerType};
+    use std::fs;
+    use tempfile::TempDir;
+
+    /// 创建临时测试环境
+    fn create_test_env() -> (TempDir, PathBuf) {
+        let temp_dir = TempDir::new().expect("无法创建临时目录");
+        let config_dir = temp_dir.path().to_path_buf();
+        (temp_dir, config_dir)
+    }
+
+    /// 创建测试任务数据
+    fn create_test_task(id: &str, name: &str) -> ScheduledTask {
+        ScheduledTask {
+            id: id.to_string(),
+            name: name.to_string(),
+            enabled: true,
+            trigger_type: TriggerType::Interval,
+            trigger_value: "3600".to_string(),
+            engine_id: "claude".to_string(),
+            prompt: "Test prompt".to_string(),
+            work_dir: Some("/tmp".to_string()),
+            group: None,
+            description: None,
+            task_path: None,
+            mission: None,
+            max_runs: None,
+            reuse_session: false,
+            continue_immediately: false,
+            max_continuous_runs: None,
+            run_in_terminal: false,
+            template_id: None,
+            template_param_values: None,
+            max_retries: None,
+            retry_interval: None,
+            notify_on_complete: true,
+            timeout_minutes: None,
+            user_supplement: None,
+            task_template: None,
+            memory_template: None,
+            tasks_template: None,
+            runs_template: None,
+            supplement_template: None,
+            protocol_version: None,
+            created_at: chrono::Utc::now().timestamp(),
+            updated_at: chrono::Utc::now().timestamp(),
+            current_runs: 0,
+            conversation_session_id: None,
+            session_last_used_at: None,
+            last_run_at: None,
+            last_run_status: None,
+            last_run_outcome: None,
+            next_run_at: None,
+            subscribed_context_id: None,
+            retry_count: 0,
+            blocked: false,
+            blocked_reason: None,
+            current_phase: None,
+            last_effective_progress_at: None,
+            consecutive_no_progress_count: 0,
+        }
+    }
+
+    /// 创建测试日志数据
+    fn create_test_log(id: &str, task_id: &str) -> TaskLog {
+        TaskLog {
+            id: id.to_string(),
+            task_id: task_id.to_string(),
+            task_name: "Test Task".to_string(),
+            engine_id: "claude".to_string(),
+            session_id: Some("session-123".to_string()),
+            started_at: chrono::Utc::now().timestamp(),
+            finished_at: Some(chrono::Utc::now().timestamp() + 60),
+            duration_ms: Some(60000),
+            status: TaskStatus::Success,
+            prompt: "Test prompt".to_string(),
+            output: Some("Test output".to_string()),
+            error: None,
+            thinking_summary: None,
+            tool_call_count: 5,
+            token_count: Some(1000),
+        }
+    }
+
+    #[test]
+    fn test_needs_migration_no_json_files() {
+        let (_temp_dir, config_dir) = create_test_env();
+        let manager = MigrationManager::with_config_dir(config_dir).unwrap();
+        
+        // 无 JSON 文件时不需要迁移
+        assert!(!manager.needs_migration());
+    }
+
+    #[test]
+    fn test_needs_migration_with_tasks_json() {
+        let (_temp_dir, config_dir) = create_test_env();
+        
+        // 创建任务 JSON 文件
+        let tasks_path = config_dir.join("scheduler_tasks.json");
+        let task_store = TaskStore {
+            tasks: vec![create_test_task("task-1", "Test Task")],
+        };
+        fs::write(&tasks_path, serde_json::to_string(&task_store).unwrap()).unwrap();
+        
+        let manager = MigrationManager::with_config_dir(config_dir).unwrap();
+        
+        // 存在任务 JSON 文件时需要迁移
+        assert!(manager.needs_migration());
+    }
+
+    #[test]
+    fn test_needs_migration_with_logs_json() {
+        let (_temp_dir, config_dir) = create_test_env();
+        
+        // 创建日志 JSON 文件
+        let logs_path = config_dir.join("scheduler_logs.json");
+        let log_store = LogStore {
+            all_logs: vec![create_test_log("log-1", "task-1")],
+            logs: std::collections::HashMap::new(),
+            retention_config: LogRetentionConfig::default(),
+            last_cleanup_at: None,
+        };
+        fs::write(&logs_path, serde_json::to_string(&log_store).unwrap()).unwrap();
+        
+        let manager = MigrationManager::with_config_dir(config_dir).unwrap();
+        
+        // 存在日志 JSON 文件时需要迁移
+        assert!(manager.needs_migration());
+    }
+
+    #[test]
+    fn test_needs_migration_already_migrated() {
+        let (_temp_dir, config_dir) = create_test_env();
+        
+        // 创建任务 JSON 文件
+        let tasks_path = config_dir.join("scheduler_tasks.json");
+        let task_store = TaskStore {
+            tasks: vec![create_test_task("task-1", "Test Task")],
+        };
+        fs::write(&tasks_path, serde_json::to_string(&task_store).unwrap()).unwrap();
+        
+        // 创建迁移状态文件
+        let status_path = config_dir.join("migration_status.json");
+        let status = MigrationStatus {
+            migrated: true,
+            migrated_at: Some(chrono::Utc::now().timestamp()),
+            tasks_count: 1,
+            logs_count: 0,
+            backup_path: None,
+        };
+        fs::write(&status_path, serde_json::to_string(&status).unwrap()).unwrap();
+        
+        let manager = MigrationManager::with_config_dir(config_dir).unwrap();
+        
+        // 已迁移后不再需要迁移
+        assert!(!manager.needs_migration());
+    }
+
+    #[test]
+    fn test_migrate_empty_data() {
+        let (_temp_dir, config_dir) = create_test_env();
+        
+        // 创建空的 JSON 文件
+        let tasks_path = config_dir.join("scheduler_tasks.json");
+        fs::write(&tasks_path, r#"{"tasks": []}"#).unwrap();
+        
+        let manager = MigrationManager::with_config_dir(config_dir).unwrap();
+        
+        // 创建内存数据库
+        let sqlite_store = SqliteStore::in_memory().unwrap();
+        
+        // 执行迁移
+        let result = manager.migrate(&sqlite_store).unwrap();
+        
+        assert_eq!(result.tasks_migrated, 0);
+        assert_eq!(result.logs_migrated, 0);
+        
+        // 验证迁移状态已记录
+        let status = manager.get_migration_status().unwrap();
+        assert!(status.migrated);
+        assert_eq!(status.tasks_count, 0);
+    }
+
+    #[test]
+    fn test_migrate_tasks() {
+        let (_temp_dir, config_dir) = create_test_env();
+        
+        // 创建任务 JSON 文件
+        let tasks_path = config_dir.join("scheduler_tasks.json");
+        let task_store = TaskStore {
+            tasks: vec![
+                create_test_task("task-1", "Task One"),
+                create_test_task("task-2", "Task Two"),
+            ],
+        };
+        fs::write(&tasks_path, serde_json::to_string(&task_store).unwrap()).unwrap();
+        
+        let manager = MigrationManager::with_config_dir(config_dir).unwrap();
+        let sqlite_store = SqliteStore::in_memory().unwrap();
+        
+        // 执行迁移
+        let result = manager.migrate(&sqlite_store).unwrap();
+        
+        assert_eq!(result.tasks_migrated, 2);
+        assert_eq!(result.tasks_failed, 0);
+        
+        // 验证迁移后的数据
+        let tasks = sqlite_store.get_all_tasks().unwrap();
+        assert_eq!(tasks.len(), 2);
+        
+        // 验证任务数据正确
+        let task1 = sqlite_store.get_task("task-1").unwrap().unwrap();
+        assert_eq!(task1.name, "Task One");
+        
+        let task2 = sqlite_store.get_task("task-2").unwrap().unwrap();
+        assert_eq!(task2.name, "Task Two");
+    }
+
+    #[test]
+    fn test_migrate_logs() {
+        let (_temp_dir, config_dir) = create_test_env();
+        
+        // 先创建任务（日志需要关联任务）
+        let tasks_path = config_dir.join("scheduler_tasks.json");
+        let task_store = TaskStore {
+            tasks: vec![create_test_task("task-1", "Test Task")],
+        };
+        fs::write(&tasks_path, serde_json::to_string(&task_store).unwrap()).unwrap();
+        
+        // 创建日志 JSON 文件
+        let logs_path = config_dir.join("scheduler_logs.json");
+        let log_store = LogStore {
+            all_logs: vec![
+                create_test_log("log-1", "task-1"),
+                create_test_log("log-2", "task-1"),
+            ],
+            logs: std::collections::HashMap::new(),
+            retention_config: LogRetentionConfig::default(),
+            last_cleanup_at: None,
+        };
+        fs::write(&logs_path, serde_json::to_string(&log_store).unwrap()).unwrap();
+        
+        let manager = MigrationManager::with_config_dir(config_dir).unwrap();
+        let sqlite_store = SqliteStore::in_memory().unwrap();
+        
+        // 执行迁移
+        let result = manager.migrate(&sqlite_store).unwrap();
+        
+        assert_eq!(result.tasks_migrated, 1);
+        assert_eq!(result.logs_migrated, 2);
+        assert_eq!(result.logs_failed, 0);
+        
+        // 验证迁移后的日志数据
+        let logs = sqlite_store.get_task_logs("task-1").unwrap();
+        assert_eq!(logs.len(), 2);
+    }
+
+    #[test]
+    fn test_migrate_retention_config() {
+        let (_temp_dir, config_dir) = create_test_env();
+        
+        // 创建日志 JSON 文件（包含保留配置）
+        let logs_path = config_dir.join("scheduler_logs.json");
+        let custom_config = LogRetentionConfig {
+            retention_days: 60,
+            max_logs_per_task: 200,
+            auto_cleanup_enabled: false,
+            auto_cleanup_interval_hours: 48,
+        };
+        let log_store = LogStore {
+            all_logs: vec![],
+            logs: std::collections::HashMap::new(),
+            retention_config: custom_config.clone(),
+            last_cleanup_at: None,
+        };
+        fs::write(&logs_path, serde_json::to_string(&log_store).unwrap()).unwrap();
+        
+        let manager = MigrationManager::with_config_dir(config_dir).unwrap();
+        let sqlite_store = SqliteStore::in_memory().unwrap();
+        
+        // 执行迁移
+        let _result = manager.migrate(&sqlite_store).unwrap();
+        
+        // 验证保留配置已迁移
+        let config = sqlite_store.get_retention_config().unwrap();
+        assert_eq!(config.retention_days, 60);
+        assert_eq!(config.max_logs_per_task, 200);
+        assert!(!config.auto_cleanup_enabled);
+        assert_eq!(config.auto_cleanup_interval_hours, 48);
+    }
+
+    #[test]
+    fn test_backup_json_files() {
+        let (_temp_dir, config_dir) = create_test_env();
+        
+        // 创建任务 JSON 文件
+        let tasks_path = config_dir.join("scheduler_tasks.json");
+        let task_store = TaskStore {
+            tasks: vec![create_test_task("task-1", "Test Task")],
+        };
+        fs::write(&tasks_path, serde_json::to_string(&task_store).unwrap()).unwrap();
+        
+        // 创建日志 JSON 文件
+        let logs_path = config_dir.join("scheduler_logs.json");
+        let log_store = LogStore {
+            all_logs: vec![create_test_log("log-1", "task-1")],
+            logs: std::collections::HashMap::new(),
+            retention_config: LogRetentionConfig::default(),
+            last_cleanup_at: None,
+        };
+        fs::write(&logs_path, serde_json::to_string(&log_store).unwrap()).unwrap();
+        
+        let manager = MigrationManager::with_config_dir(config_dir.clone()).unwrap();
+        let sqlite_store = SqliteStore::in_memory().unwrap();
+        
+        // 执行迁移
+        let result = manager.migrate(&sqlite_store).unwrap();
+        
+        // 验证迁移成功
+        assert_eq!(result.tasks_migrated, 1);
+        assert_eq!(result.logs_migrated, 1);
+        
+        // 验证备份文件存在
+        let status = manager.get_migration_status().unwrap();
+        assert!(status.backup_path.is_some());
+        
+        let backup_path = PathBuf::from(status.backup_path.unwrap());
+        assert!(backup_path.exists());
+        assert!(backup_path.join("scheduler_tasks.json").exists());
+        assert!(backup_path.join("scheduler_logs.json").exists());
+    }
+
+    #[test]
+    fn test_cleanup_json_files() {
+        let (_temp_dir, config_dir) = create_test_env();
+        
+        // 创建任务 JSON 文件
+        let tasks_path = config_dir.join("scheduler_tasks.json");
+        let task_store = TaskStore {
+            tasks: vec![create_test_task("task-1", "Test Task")],
+        };
+        fs::write(&tasks_path, serde_json::to_string(&task_store).unwrap()).unwrap();
+        
+        let manager = MigrationManager::with_config_dir(config_dir.clone()).unwrap();
+        
+        // 验证文件存在
+        assert!(tasks_path.exists());
+        
+        // 清理文件
+        manager.cleanup_json_files().unwrap();
+        
+        // 验证原文件不存在，重命名后的文件存在
+        assert!(!tasks_path.exists());
+        let renamed_path = config_dir.join("scheduler_tasks.json.migrated");
+        assert!(renamed_path.exists());
+    }
+
+    #[test]
+    fn test_get_migration_status_none() {
+        let (_temp_dir, config_dir) = create_test_env();
+        let manager = MigrationManager::with_config_dir(config_dir).unwrap();
+        
+        // 无迁移状态文件时返回 None
+        assert!(manager.get_migration_status().is_none());
+    }
+
+    #[test]
+    fn test_full_migration_workflow() {
+        // 完整迁移流程测试
+        let (_temp_dir, config_dir) = create_test_env();
+        
+        // 准备测试数据
+        let tasks_path = config_dir.join("scheduler_tasks.json");
+        let task_store = TaskStore {
+            tasks: vec![
+                create_test_task("task-1", "Task One"),
+                create_test_task("task-2", "Task Two"),
+            ],
+        };
+        fs::write(&tasks_path, serde_json::to_string(&task_store).unwrap()).unwrap();
+        
+        let logs_path = config_dir.join("scheduler_logs.json");
+        let log_store = LogStore {
+            all_logs: vec![
+                create_test_log("log-1", "task-1"),
+                create_test_log("log-2", "task-1"),
+            ],
+            logs: std::collections::HashMap::new(),
+            retention_config: LogRetentionConfig {
+                retention_days: 45,
+                max_logs_per_task: 150,
+                auto_cleanup_enabled: true,
+                auto_cleanup_interval_hours: 12,
+            },
+            last_cleanup_at: None,
+        };
+        fs::write(&logs_path, serde_json::to_string(&log_store).unwrap()).unwrap();
+        
+        // 1. 检查需要迁移
+        let manager = MigrationManager::with_config_dir(config_dir.clone()).unwrap();
+        assert!(manager.needs_migration());
+        
+        // 2. 执行迁移
+        let sqlite_store = SqliteStore::in_memory().unwrap();
+        let result = manager.migrate(&sqlite_store).unwrap();
+        
+        // 3. 验证迁移结果
+        assert_eq!(result.tasks_migrated, 2);
+        assert_eq!(result.logs_migrated, 2);
+        
+        // 4. 验证不再需要迁移
+        assert!(!manager.needs_migration());
+        
+        // 5. 验证数据完整性
+        let tasks = sqlite_store.get_all_tasks().unwrap();
+        assert_eq!(tasks.len(), 2);
+        
+        let logs = sqlite_store.get_task_logs("task-1").unwrap();
+        assert_eq!(logs.len(), 2);
+        
+        let config = sqlite_store.get_retention_config().unwrap();
+        assert_eq!(config.retention_days, 45);
+        
+        // 6. 验证迁移状态
+        let status = manager.get_migration_status().unwrap();
+        assert!(status.migrated);
+        assert_eq!(status.tasks_count, 2);
+        assert_eq!(status.logs_count, 2);
     }
 }
