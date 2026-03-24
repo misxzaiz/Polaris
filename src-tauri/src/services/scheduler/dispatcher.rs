@@ -9,6 +9,9 @@ use crate::ai::{EngineRegistry, EngineId, SessionOptions};
 use crate::models::AIEvent;
 use super::store::{TaskStoreService, LogStoreService, UpdateCompleteParams};
 use super::ProtocolTaskService;
+use super::continuation::ContinuationDecider;
+use super::session_strategy::SessionStrategyResolver;
+use super::prompt_builder::{PromptBuilder, PromptType};
 
 use std::sync::Arc;
 use tauri_plugin_notification::NotificationExt;
@@ -399,7 +402,7 @@ impl SchedulerDispatcher {
 
                         let is_success = exit_code == 0;
                         let should_continue = is_success
-                            && SchedulerDispatcher::should_continue_immediately(&task_for_complete, continuous_runs_for_complete);
+                            && ContinuationDecider::should_continue(&task_for_complete, continuous_runs_for_complete);
 
                         {
                             let mut log_store = log_store.lock().await;
@@ -563,7 +566,7 @@ impl SchedulerDispatcher {
                             tracing::warn!(
                                 "[Scheduler] 会话复用失败，回退到新会话: {} - {}",
                                 task_name,
-                                SchedulerDispatcher::session_resume_error_message(&e)
+                                SessionStrategyResolver::extract_resume_error_message(&e.to_string())
                             );
                             registry.start_session(Some(engine_id_parsed.clone()), &prompt, build_options())
                         }
@@ -961,7 +964,7 @@ impl SchedulerDispatcher {
 
                         let is_success = exit_code == 0;
                         let should_continue = is_success
-                            && SchedulerDispatcher::should_continue_immediately(&task_for_complete, continuous_runs_for_complete);
+                            && ContinuationDecider::should_continue(&task_for_complete, continuous_runs_for_complete);
 
                         {
                             let mut log_store = log_store.lock().await;
@@ -1139,7 +1142,7 @@ impl SchedulerDispatcher {
                             tracing::warn!(
                                 "[Scheduler] 会话复用失败（订阅模式），回退到新会话: {} - {}",
                                 task_name,
-                                SchedulerDispatcher::session_resume_error_message(&e)
+                                SessionStrategyResolver::extract_resume_error_message(&e.to_string())
                             );
                             registry.start_session(Some(engine_id_parsed.clone()), &prompt, build_options())
                         }
@@ -1317,26 +1320,6 @@ impl SchedulerDispatcher {
         "待结合 memory/index.md 与 tasks.md 决定下一步".to_string()
     }
 
-    fn should_continue_immediately(task: &ScheduledTask, continuous_runs: u32) -> bool {
-        if !task.continue_immediately {
-            return false;
-        }
-
-        match task.max_continuous_runs {
-            Some(limit) => continuous_runs < limit,
-            None => true,
-        }
-    }
-
-    fn session_resume_error_message(error: &AppError) -> String {
-        let message = error.to_string();
-        if message.trim().is_empty() {
-            "未知错误".to_string()
-        } else {
-            message
-        }
-    }
-
     /// 构建提示词（协议模式：读取 task.md + memory + supplement）
     async fn build_prompt(&self, task: &ScheduledTask) -> Result<String> {
         tracing::info!(
@@ -1344,51 +1327,13 @@ impl SchedulerDispatcher {
             task.work_dir, task.task_path
         );
 
-        self.build_protocol_prompt(task).await
-    }
-
-    /// 构建协议模式的提示词
-    async fn build_protocol_prompt(&self, task: &ScheduledTask) -> Result<String> {
         let work_dir = task.work_dir.as_ref()
             .ok_or_else(|| crate::error::AppError::ValidationError("协议模式需要指定工作目录".to_string()))?;
         let task_path = task.task_path.as_ref()
             .ok_or_else(|| crate::error::AppError::ValidationError("协议模式需要任务路径".to_string()))?;
 
-        // 读取协议文档
-        let protocol = ProtocolTaskService::read_task_md(work_dir, task_path)
-            .map_err(crate::error::AppError::IoError)?;
-
-        // 读取用户补充
-        let supplement = ProtocolTaskService::read_supplement_md(work_dir, task_path)
-            .unwrap_or_default();
-        let has_supplement = ProtocolTaskService::has_supplement_content(&supplement);
-        let supplement_content = if has_supplement {
-            ProtocolTaskService::extract_user_content(&supplement)
-        } else {
-            String::new()
-        };
-
-        // 读取记忆
-        let memory_index = ProtocolTaskService::read_memory_index(work_dir, task_path)
-            .unwrap_or_default();
-        let memory_tasks = ProtocolTaskService::read_memory_tasks(work_dir, task_path)
-            .unwrap_or_default();
-
-        // 构建提示词
-        let mut prompt = protocol;
-
-        prompt.push_str("\n\n---\n\n## 当前状态\n\n");
-        prompt.push_str(&memory_index);
-
-        prompt.push_str("\n\n---\n\n## 待办任务\n\n");
-        prompt.push_str(&memory_tasks);
-
-        if has_supplement {
-            prompt.push_str("\n\n---\n\n## 用户补充\n\n> 以下内容来自用户补充，请结合主任务适当参考：\n\n");
-            prompt.push_str(&supplement_content);
-        }
-
-        Ok(prompt)
+        // 使用 PromptBuilder 构建提示词（首次执行模式）
+        PromptBuilder::build(work_dir, task_path, PromptType::Initial, None)
     }
 
     /// 处理用户补充文档（执行成功后调用）

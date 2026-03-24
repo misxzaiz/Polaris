@@ -122,12 +122,48 @@ impl SessionStrategyResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::scheduler::TriggerType;
 
     fn create_test_task(reuse_session: bool, session_id: Option<&str>) -> ScheduledTask {
         ScheduledTask {
+            id: "test-task".to_string(),
+            name: "Test Task".to_string(),
+            enabled: true,
+            trigger_type: TriggerType::Interval,
+            trigger_value: "1h".to_string(),
+            engine_id: "claude-code".to_string(),
+            prompt: String::new(),
+            work_dir: None,
+            group: None,
+            description: None,
+            task_path: None,
+            mission: None,
+            last_run_at: None,
+            last_run_status: None,
+            next_run_at: None,
+            created_at: 0,
+            updated_at: 0,
+            max_runs: None,
+            current_runs: 0,
             reuse_session,
             conversation_session_id: session_id.map(|s| s.to_string()),
-            ..Default::default()
+            continue_immediately: false,
+            max_continuous_runs: None,
+            run_in_terminal: false,
+            template_id: None,
+            template_param_values: None,
+            subscribed_context_id: None,
+            max_retries: None,
+            retry_count: 0,
+            retry_interval: None,
+            notify_on_complete: true,
+            timeout_minutes: None,
+            user_supplement: None,
+            task_template: None,
+            memory_template: None,
+            tasks_template: None,
+            runs_template: None,
+            supplement_template: None,
         }
     }
 
