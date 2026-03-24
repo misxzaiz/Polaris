@@ -1021,6 +1021,20 @@ export async function schedulerUnsubscribeTask(id: string): Promise<void> {
   return invoke('scheduler_unsubscribe_task', { id });
 }
 
+/** 重置任务会话
+ * 
+ * 清除任务的 conversationSessionId 和 sessionLastUsedAt，
+ * 下次执行时将使用新会话而不是复用现有会话。
+ * 
+ * 适用场景：
+ * - 会话上下文过长，需要重新开始
+ * - 会话失效，无法恢复
+ * - 任务方向需要大幅调整
+ */
+export async function schedulerResetTaskSession(id: string): Promise<void> {
+  return invoke('scheduler_reset_task_session', { id });
+}
+
 // ============================================================================
 // 任务导出导入
 // ============================================================================

@@ -81,6 +81,7 @@ use commands::scheduler::{
     scheduler_read_protocol_file, scheduler_write_protocol_file,
     scheduler_get_protocol_file_path,
     scheduler_subscribe_task, scheduler_unsubscribe_task,
+    scheduler_reset_task_session,
     scheduler_export_tasks, scheduler_import_tasks,
     scheduler_get_log_stats, scheduler_get_log_retention_config, scheduler_update_log_retention_config,
 };
@@ -482,6 +483,8 @@ pub fn run() {
             // 订阅任务
             scheduler_subscribe_task,
             scheduler_unsubscribe_task,
+            // 会话重置
+            scheduler_reset_task_session,
             // 任务导出导入
             scheduler_export_tasks,
             scheduler_import_tasks,

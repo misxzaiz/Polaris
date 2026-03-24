@@ -72,6 +72,7 @@ function TaskCard({
   onCancelSubscription,
   onUnsubscribe,
   onViewDocs,
+  onResetSession,
   isSubscribing,
   isSubscribed,
   showGroupTag,
@@ -90,6 +91,7 @@ function TaskCard({
   onCancelSubscription?: () => void;
   onUnsubscribe?: () => void;
   onViewDocs?: () => void;
+  onResetSession?: () => void;
   isSubscribing?: boolean;
   /** 是否已订阅（有 subscribedContextId） */
   isSubscribed?: boolean;
@@ -110,6 +112,11 @@ function TaskCard({
   // 有任务路径时添加文档菜单项
   if (task.taskPath && onViewDocs) {
     actionMenuItems.push({ key: 'docs', label: '文档', onClick: onViewDocs });
+  }
+
+  // 有会话 ID 时添加重置会话菜单项
+  if (task.conversationSessionId && onResetSession) {
+    actionMenuItems.push({ key: 'reset_session', label: '重置会话', onClick: onResetSession });
   }
 
   // 通用操作菜单项
@@ -1412,6 +1419,26 @@ export function SchedulerPanel() {
     });
   };
 
+  /** 重置任务会话 */
+  const handleResetSession = async (id: string) => {
+    setConfirmDialog({
+      show: true,
+      title: '重置会话',
+      message: '确定要重置此任务的会话吗？下次执行将使用新会话，当前会话上下文将无法恢复。',
+      type: 'warning',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        try {
+          await tauri.schedulerResetTaskSession(id);
+          await loadTasks(); // 刷新任务列表
+          toast.success('会话已重置');
+        } catch (e) {
+          toast.error('重置失败', e instanceof Error ? e.message : '未知错误');
+        }
+      }
+    });
+  };
+
   /** 将任务转换为导出格式 */
   const taskToExportItem = (task: ScheduledTask): TaskExportItem => ({
     name: task.name,
@@ -1793,6 +1820,7 @@ export function SchedulerPanel() {
                       onCancelSubscription={handleCancelSubscription}
                       onUnsubscribe={() => handleUnsubscribe(task)}
                       onViewDocs={() => setViewingTask(task)}
+                      onResetSession={() => handleResetSession(task.id)}
                       isSubscribing={subscribingTaskId === task.id}
                       isSubscribed={!!task.subscribedContextId}
                       selectionMode={selectionMode}

@@ -409,6 +409,30 @@ impl TaskStoreService {
         }
         Ok(())
     }
+
+    /// 重置任务会话（清除 conversation_session_id 和 session_last_used_at）
+    /// 
+    /// 用于在以下场景重置会话：
+    /// - 会话上下文过长，需要重新开始
+    /// - 会话失效，无法恢复
+    /// - 任务方向需要大幅调整
+    pub fn reset_session(&mut self, id: &str) -> Result<()> {
+        if let Some(task) = self.store.tasks.iter_mut().find(|t| t.id == id) {
+            let task_name = task.name.clone();
+            let had_session = task.conversation_session_id.is_some();
+            
+            task.conversation_session_id = None;
+            task.session_last_used_at = None;
+            task.updated_at = chrono::Utc::now().timestamp();
+            
+            self.save()?;
+            
+            if had_session {
+                tracing::info!("[Scheduler] 任务 {} 会话已重置", task_name);
+            }
+        }
+        Ok(())
+    }
 }
 
 /// 日志存储服务

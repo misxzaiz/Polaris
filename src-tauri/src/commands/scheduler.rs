@@ -362,6 +362,19 @@ pub async fn scheduler_unsubscribe_task(
     store.set_subscription(&id, None)
 }
 
+/// 重置任务会话
+/// 
+/// 清除任务的 conversation_session_id 和 session_last_used_at，
+/// 下次执行时将使用新会话而不是复用现有会话。
+#[tauri::command]
+pub async fn scheduler_reset_task_session(
+    id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<()> {
+    let mut store = state.scheduler_task_store.lock().await;
+    store.reset_session(&id)
+}
+
 // ============================================================================
 // 任务导出导入
 // ============================================================================
