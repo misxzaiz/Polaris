@@ -6,6 +6,8 @@ mod continuation;
 mod session_strategy;
 mod execution_result;
 mod sqlite_store;
+mod storage_backend;
+mod migration_manager;
 
 pub use store::{TaskStoreService, LogStoreService, LogStats};
 pub use dispatcher::SchedulerDispatcher;
@@ -15,3 +17,5 @@ pub use continuation::ContinuationDecider;
 pub use session_strategy::{SessionStrategyResolver, SessionStrategy, SessionDecision};
 pub use execution_result::{ExecutionResultAnalyzer, ExecutionOutcome};
 pub use sqlite_store::{SqliteStore, MigrationResult};
+pub use storage_backend::{StorageBackend, StorageBackendType};
+pub use migration_manager::{MigrationManager, MigrationStatus};

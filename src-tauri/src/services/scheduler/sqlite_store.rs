@@ -1386,6 +1386,175 @@ pub struct MigrationResult {
     pub logs_failed: usize,
 }
 
+// ============================================================================
+// StorageBackend trait 实现
+// ============================================================================
+
+use super::storage_backend::{StorageBackend, StorageBackendType};
+
+impl StorageBackend for SqliteStore {
+    fn backend_type(&self) -> StorageBackendType {
+        StorageBackendType::Sqlite
+    }
+
+    fn get_all_tasks(&self) -> Result<Vec<ScheduledTask>> {
+        SqliteStore::get_all_tasks(self)
+    }
+
+    fn get_task(&self, id: &str) -> Result<Option<ScheduledTask>> {
+        SqliteStore::get_task(self, id)
+    }
+
+    fn create_task(
+        &self,
+        params: CreateTaskParams,
+        task_path: Option<String>,
+    ) -> Result<ScheduledTask> {
+        SqliteStore::create_task(self, params, task_path)
+    }
+
+    fn update_task(&self, task: &ScheduledTask) -> Result<()> {
+        SqliteStore::update_task(self, task)
+    }
+
+    fn delete_task(&self, id: &str) -> Result<()> {
+        SqliteStore::delete_task(self, id)
+    }
+
+    fn get_pending_tasks(&self) -> Result<Vec<ScheduledTask>> {
+        SqliteStore::get_pending_tasks(self)
+    }
+
+    fn toggle_task(&self, id: &str, enabled: bool, next_run_at: Option<i64>) -> Result<()> {
+        SqliteStore::toggle_task(self, id, enabled, next_run_at)
+    }
+
+    fn update_conversation_session_id(&self, id: &str, session_id: Option<String>) -> Result<()> {
+        SqliteStore::update_conversation_session_id(self, id, session_id)
+    }
+
+    fn update_run_status(&self, id: &str, status: TaskStatus, increment_runs: bool) -> Result<()> {
+        SqliteStore::update_run_status(self, id, status, increment_runs)
+    }
+
+    fn update_last_run_outcome(&self, id: &str, outcome: ExecutionOutcome) -> Result<()> {
+        SqliteStore::update_last_run_outcome(self, id, outcome)
+    }
+
+    fn update_next_run_at(&self, id: &str, next_run_at: Option<i64>) -> Result<()> {
+        SqliteStore::update_next_run_at(self, id, next_run_at)
+    }
+
+    fn set_subscription(&self, id: &str, context_id: Option<&str>) -> Result<()> {
+        SqliteStore::set_subscription(self, id, context_id)
+    }
+
+    fn update_retry_status(&self, id: &str, max_retries: u32, interval_secs: i64) -> Result<bool> {
+        SqliteStore::update_retry_status(self, id, max_retries, interval_secs)
+    }
+
+    fn reset_retry_count(&self, id: &str) -> Result<()> {
+        SqliteStore::reset_retry_count(self, id)
+    }
+
+    fn reset_session(&self, id: &str) -> Result<()> {
+        SqliteStore::reset_session(self, id)
+    }
+
+    fn update_blocked_status(&self, id: &str, blocked: bool, reason: Option<String>) -> Result<()> {
+        SqliteStore::update_blocked_status(self, id, blocked, reason)
+    }
+
+    fn update_current_phase(&self, id: &str, phase: &str) -> Result<()> {
+        SqliteStore::update_current_phase(self, id, phase)
+    }
+
+    fn update_last_effective_progress(&self, id: &str) -> Result<()> {
+        SqliteStore::update_last_effective_progress(self, id)
+    }
+
+    fn update_consecutive_no_progress(&self, id: &str) -> Result<u32> {
+        SqliteStore::update_consecutive_no_progress(self, id)
+    }
+
+    fn create_log(
+        &self,
+        task_id: &str,
+        task_name: &str,
+        prompt: &str,
+        engine_id: &str,
+    ) -> Result<TaskLog> {
+        SqliteStore::create_log(self, task_id, task_name, prompt, engine_id)
+    }
+
+    fn update_log_complete(
+        &self,
+        log_id: &str,
+        session_id: Option<String>,
+        output: Option<String>,
+        error: Option<String>,
+        thinking_summary: Option<String>,
+        tool_call_count: u32,
+        token_count: Option<u32>,
+    ) -> Result<()> {
+        SqliteStore::update_log_complete(
+            self,
+            log_id,
+            session_id,
+            output,
+            error,
+            thinking_summary,
+            tool_call_count,
+            token_count,
+        )
+    }
+
+    fn get_task_logs(&self, task_id: &str) -> Result<Vec<TaskLog>> {
+        SqliteStore::get_task_logs(self, task_id)
+    }
+
+    fn get_all_logs(&self, limit: Option<usize>) -> Result<Vec<TaskLog>> {
+        SqliteStore::get_all_logs(self, limit)
+    }
+
+    fn get_logs_paginated(
+        &self,
+        task_id: Option<&str>,
+        page: u32,
+        page_size: u32,
+    ) -> Result<PaginatedLogs> {
+        SqliteStore::get_logs_paginated(self, task_id, page, page_size)
+    }
+
+    fn delete_log(&self, log_id: &str) -> Result<bool> {
+        SqliteStore::delete_log(self, log_id)
+    }
+
+    fn clear_task_logs(&self, task_id: &str) -> Result<usize> {
+        SqliteStore::clear_task_logs(self, task_id)
+    }
+
+    fn cleanup_expired_logs(&self, retention_days: u32) -> Result<usize> {
+        SqliteStore::cleanup_expired_logs(self, retention_days)
+    }
+
+    fn get_retention_config(&self) -> Result<LogRetentionConfig> {
+        SqliteStore::get_retention_config(self)
+    }
+
+    fn update_retention_config(&self, config: &LogRetentionConfig) -> Result<()> {
+        SqliteStore::update_retention_config(self, config)
+    }
+
+    fn task_count(&self) -> Result<usize> {
+        SqliteStore::task_count(self)
+    }
+
+    fn log_count(&self) -> Result<usize> {
+        SqliteStore::log_count(self)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
