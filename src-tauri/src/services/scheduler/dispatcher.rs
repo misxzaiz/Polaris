@@ -230,10 +230,10 @@ impl SchedulerDispatcher {
         let engine_id = task.engine_id.clone();
         let work_dir = task.work_dir.clone();
         let reuse_session = task.reuse_session;
-        let existing_session_id = if reuse_session {
-            task.conversation_session_id.clone()
-        } else {
-            None
+        // 使用 SessionStrategyResolver 决定会话策略
+        let existing_session_id = match SessionStrategyResolver::decide(&task) {
+            super::session_strategy::SessionDecision::Continue { session_id } => Some(session_id),
+            super::session_strategy::SessionDecision::StartNew => None,
         };
         // 克隆 app_handle 用于通知
         let app_handle_for_notify = self.app_handle.clone();
@@ -762,10 +762,10 @@ impl SchedulerDispatcher {
         let engine_id = task.engine_id.clone();
         let work_dir = task.work_dir.clone();
         let reuse_session = task.reuse_session;
-        let existing_session_id = if reuse_session {
-            task.conversation_session_id.clone()
-        } else {
-            None
+        // 使用 SessionStrategyResolver 决定会话策略
+        let existing_session_id = match SessionStrategyResolver::decide(&task) {
+            super::session_strategy::SessionDecision::Continue { session_id } => Some(session_id),
+            super::session_strategy::SessionDecision::StartNew => None,
         };
         let notify_on_complete = task.notify_on_complete;
         let timeout_secs = task.timeout_minutes.map(|m| m as u64 * 60);
