@@ -976,7 +976,12 @@ impl SchedulerDispatcher {
 
     /// 手动执行任务（返回日志 ID）
     pub async fn run_now(&self, task_id: &str) -> Result<RunTaskResult> {
-        let task = {
+        let task = if self.has_unified_storage() {
+            let storage = self.unified_storage.as_ref().unwrap();
+            let storage = storage.lock().await;
+            storage.get_task(task_id)?
+                .ok_or_else(|| crate::error::AppError::ValidationError(format!("任务不存在: {}", task_id)))?
+        } else {
             let store = self.task_store.lock().await;
             store.get(task_id)
                 .cloned()
@@ -1002,7 +1007,12 @@ impl SchedulerDispatcher {
         window: Window,
         context_id: Option<String>,
     ) -> Result<RunTaskResult> {
-        let task = {
+        let task = if self.has_unified_storage() {
+            let storage = self.unified_storage.as_ref().unwrap();
+            let storage = storage.lock().await;
+            storage.get_task(task_id)?
+                .ok_or_else(|| crate::error::AppError::ValidationError(format!("任务不存在: {}", task_id)))?
+        } else {
             let store = self.task_store.lock().await;
             store.get(task_id)
                 .cloned()
