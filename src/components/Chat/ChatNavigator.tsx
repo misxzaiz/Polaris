@@ -9,6 +9,7 @@
  */
 
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { BookOpen, User, Bot, ArrowDown, Wrench } from 'lucide-react';
 import type { ConversationRound } from '../../utils/conversationRounds';
@@ -36,6 +37,7 @@ export function ChatNavigator({
   onScrollToBottom,
   onScrollToRound,
 }: ChatNavigatorProps) {
+  const { t } = useTranslation('chat');
   const [isPanelVisible, setIsPanelVisible] = useState(false);
 
   // 使用 ref 存储悬停状态，避免闭包陷阱
@@ -178,10 +180,10 @@ export function ChatNavigator({
           <div className="flex items-center justify-between px-3 py-2 border-b border-border-subtle bg-background-surface shrink-0">
             <span className="text-xs font-medium text-text-secondary flex items-center gap-1.5">
               <BookOpen className="w-3.5 h-3.5" />
-              对话导航
+              {t('navigator.title')}
             </span>
             <span className="text-xs text-text-tertiary">
-              {rounds.length} 轮
+              {rounds.length} {t('navigator.round')}
             </span>
           </div>
 
@@ -204,7 +206,7 @@ export function ChatNavigator({
                     'text-xs font-medium',
                     idx === currentRoundIndex ? 'text-primary' : 'text-text-tertiary'
                   )}>
-                    第 {round.roundIndex + 1} 轮
+                    {t('navigator.roundLabel', { round: round.roundIndex + 1 })}
                   </span>
                   {round.hasTools && (
                     <Wrench className="w-3 h-3 text-warning" />
@@ -230,14 +232,14 @@ export function ChatNavigator({
                       'text-xs line-clamp-1',
                       idx === currentRoundIndex ? 'text-text-primary' : 'text-text-tertiary'
                     )}>
-                      {round.assistantSummary || '[回复中...]'}
+                      {round.assistantSummary || t('navigator.replying')}
                     </p>
                   </div>
                 ) : (
                   <div className="flex items-start gap-1.5">
                     <Bot className="w-3 h-3 text-text-tertiary shrink-0 mt-0.5" />
                     <p className="text-xs text-text-tertiary italic">
-                      等待回复...
+                      {t('navigator.waitingReply')}
                     </p>
                   </div>
                 )}
@@ -252,7 +254,7 @@ export function ChatNavigator({
               onClick={handleScrollToBottom}
             >
               <ArrowDown className="w-4 h-4" />
-              回到底部
+              {t('navigator.scrollToBottom')}
             </button>
           </div>
         </div>

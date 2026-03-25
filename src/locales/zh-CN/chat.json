@@ -175,5 +175,13 @@
     "planModeBlock": "计划模式块",
     "agentRunBlock": "Agent 运行块",
     "toolGroupBlock": "工具组块"
+  },
+  "navigator": {
+    "title": "对话导航",
+    "round": "轮",
+    "roundLabel": "第 {{round}} 轮",
+    "replying": "[回复中...]",
+    "waitingReply": "等待回复...",
+    "scrollToBottom": "回到底部"
   }
 }

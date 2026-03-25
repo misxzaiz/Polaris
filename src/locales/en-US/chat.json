@@ -175,5 +175,13 @@
     "planModeBlock": "plan mode block",
     "agentRunBlock": "agent run block",
     "toolGroupBlock": "tool group block"
+  },
+  "navigator": {
+    "title": "Chat Navigator",
+    "round": "rounds",
+    "roundLabel": "Round {{round}}",
+    "replying": "[Replying...]",
+    "waitingReply": "Waiting for reply...",
+    "scrollToBottom": "Scroll to bottom"
   }
 }
