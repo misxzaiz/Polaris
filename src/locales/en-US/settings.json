@@ -86,5 +86,19 @@
     "executionFailed": "Execution failed",
     "validationError": "Error during validation",
     "invalidPath": "Invalid path"
+  },
+  "advanced": {
+    "gitConfig": "Git Configuration",
+    "gitBinPath": "Git Executable Path",
+    "gitBinPathPlaceholder": "Leave empty to use system default git",
+    "gitBinPathHint": "Specify the full path to Git executable. Leave empty to use git from system PATH",
+    "sessionConfig": "Session Configuration",
+    "sessionDir": "Session Storage Directory",
+    "sessionDirPlaceholder": "Leave empty to use default directory",
+    "sessionDirHint": "Storage location for AI conversation history. Leave empty to use system default directory",
+    "debugInfo": "Debug Information",
+    "configFile": "Config File",
+    "logDir": "Log Directory",
+    "currentEngine": "Current Engine"
   }
 }

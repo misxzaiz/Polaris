@@ -86,5 +86,19 @@
     "executionFailed": "执行失败",
     "validationError": "验证过程中发生错误",
     "invalidPath": "路径无效"
+  },
+  "advanced": {
+    "gitConfig": "Git 配置",
+    "gitBinPath": "Git 可执行文件路径",
+    "gitBinPathPlaceholder": "留空使用系统默认 git",
+    "gitBinPathHint": "指定 Git 可执行文件的完整路径，留空则使用系统 PATH 中的 git",
+    "sessionConfig": "会话配置",
+    "sessionDir": "会话存储目录",
+    "sessionDirPlaceholder": "留空使用默认目录",
+    "sessionDirHint": "AI 会话历史的存储位置，留空则使用系统默认目录",
+    "debugInfo": "调试信息",
+    "configFile": "配置文件",
+    "logDir": "日志目录",
+    "currentEngine": "当前引擎"
   }
 }
