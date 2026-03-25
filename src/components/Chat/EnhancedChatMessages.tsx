@@ -551,32 +551,101 @@ function getTodoStatusIcon(status: TodoItem['status']): React.ReactElement {
 // 思考过程块渲染器
 // ========================================
 
-/** 思考过程块组件 - 可折叠展示 */
-const ThinkingBlockRenderer = memo(function ThinkingBlockRenderer({ block }: { block: ThinkingBlock }) {
-  const [isCollapsed, setIsCollapsed] = useState(block.collapsed ?? true);
+/** 思考过程块组件 - 增强版可折叠展示 */
+const ThinkingBlockRenderer = memo(function ThinkingBlockRenderer({
+  block,
+  isStreaming = false
+}: {
+  block: ThinkingBlock;
+  isStreaming?: boolean;
+}) {
+  // 流式阶段默认展开，完成后默认折叠
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    // 如果有明确的 collapsed 属性，使用它
+    if (block.collapsed !== undefined) return block.collapsed;
+    // 否则：流式阶段展开，完成后折叠
+    return !isStreaming;
+  });
+
+  // 计算字数统计
+  const charCount = block.content.length;
+
+  // 生成预览文本（折叠时显示前80字）
+  const previewText = block.content.length > 80
+    ? block.content.slice(0, 80) + '...'
+    : block.content;
+
+  // 同步流式状态：当开始流式时展开，停止流式时折叠
+  const prevStreamingRef = useRef(isStreaming);
+  if (prevStreamingRef.current !== isStreaming) {
+    if (isStreaming && isCollapsed) {
+      // 开始流式时展开
+      setIsCollapsed(false);
+    } else if (!isStreaming && !isCollapsed && block.collapsed === undefined) {
+      // 停止流式时折叠（如果没有明确设置过 collapsed）
+      setIsCollapsed(true);
+    }
+    prevStreamingRef.current = isStreaming;
+  }
 
   return (
-    <div className="my-2 rounded-lg border border-border-subtle bg-surface-elevated overflow-hidden">
+    <div className="my-2 rounded-lg border border-primary/20 bg-gradient-to-r from-primary/5 to-transparent overflow-hidden">
       {/* 头部 - 可点击折叠 */}
       <button
         onClick={() => setIsCollapsed(!isCollapsed)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-surface-hover transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-primary/5 transition-colors"
       >
-        <Brain className="w-4 h-4 text-primary" />
-        <span className="text-sm font-medium text-text-secondary">思考过程</span>
-        {isCollapsed ? (
-          <ChevronRight className="w-4 h-4 text-text-muted ml-auto" />
-        ) : (
-          <ChevronDown className="w-4 h-4 text-text-muted ml-auto" />
+        <Brain className="w-4 h-4 text-primary shrink-0" />
+        <span className="text-sm font-medium text-primary">思考过程</span>
+
+        {/* 字数统计 */}
+        <span className="text-xs text-text-tertiary ml-2">
+          {charCount > 1000 ? `${(charCount / 1000).toFixed(1)}k` : charCount} 字
+        </span>
+
+        {/* 流式指示器 */}
+        {isStreaming && (
+          <span className="flex items-center gap-1 ml-2">
+            <span className="w-1.5 h-1.5 bg-primary rounded-full animate-pulse" />
+            <span className="text-xs text-primary">思考中...</span>
+          </span>
         )}
+
+        {/* 展开/折叠图标 */}
+        <span className="ml-auto flex items-center gap-1">
+          {isCollapsed ? (
+            <ChevronRight className="w-4 h-4 text-text-muted" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-text-muted" />
+          )}
+        </span>
       </button>
 
-      {/* 内容 - 折叠时隐藏 */}
+      {/* 折叠时显示预览 */}
+      {isCollapsed && previewText && (
+        <div className="px-3 py-1.5 border-t border-primary/10 bg-background-surface/50">
+          <p className="text-xs text-text-tertiary italic truncate">
+            {previewText}
+          </p>
+        </div>
+      )}
+
+      {/* 展开时显示完整内容 */}
       {!isCollapsed && (
-        <div className="px-3 py-2 border-t border-border-subtle">
+        <div className="px-3 py-2 border-t border-primary/10 bg-background-surface/30">
           <div className="text-sm text-text-secondary whitespace-pre-wrap leading-relaxed">
             {block.content}
           </div>
+          {/* 流式光标 */}
+          {isStreaming && (
+            <span className="inline-flex ml-1">
+              <span className="flex gap-0.5 items-end h-4">
+                <span className="w-1 h-1 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-1 h-1 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-1 h-1 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              </span>
+            </span>
+          )}
         </div>
       )}
     </div>
@@ -1156,7 +1225,7 @@ function renderContentBlock(
       // 归档模式下不渲染思考块
       if (renderMode === 'archive') return null;
       return wrapWithErrorBoundary(
-        <ThinkingBlockRenderer block={block} />,
+        <ThinkingBlockRenderer block={block} isStreaming={isStreaming} />,
         `thinking-${block.content.slice(0, 20)}`
       );
     case 'tool_call':

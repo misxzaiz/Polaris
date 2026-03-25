@@ -203,18 +203,18 @@ export const createMessageSlice: MessageSlice = (set, get) => ({
 
   /**
    * 添加思考过程块到当前消息
+   * 如果最后一个块是思考块，则追加内容而非创建新块
    */
   appendThinkingBlock: (content) => {
     const { currentMessage } = get()
 
-    const thinkingBlock: ContentBlock = {
-      type: 'thinking',
-      content,
-      collapsed: false,
-    }
-
     // 如果没有当前消息，创建一个新的
     if (!currentMessage) {
+      const thinkingBlock: ContentBlock = {
+        type: 'thinking',
+        content,
+        collapsed: false,
+      }
       const newMessage: CurrentAssistantMessage = {
         id: crypto.randomUUID(),
         blocks: [thinkingBlock],
@@ -227,11 +227,31 @@ export const createMessageSlice: MessageSlice = (set, get) => ({
       return
     }
 
-    // 追加思考块到现有消息
-    const updatedBlocks: ContentBlock[] = [...currentMessage.blocks, thinkingBlock]
-    set({
-      currentMessage: { ...currentMessage, blocks: updatedBlocks },
-    })
+    // 检查最后一个块是否为思考块
+    const lastBlock = currentMessage.blocks[currentMessage.blocks.length - 1]
+    if (lastBlock && lastBlock.type === 'thinking') {
+      // 追加内容到现有思考块
+      const updatedBlocks: ContentBlock[] = [...currentMessage.blocks]
+      updatedBlocks[updatedBlocks.length - 1] = {
+        type: 'thinking',
+        content: (lastBlock as { content: string }).content + content,
+        collapsed: false, // 流式阶段保持展开
+      }
+      set({
+        currentMessage: { ...currentMessage, blocks: updatedBlocks },
+      })
+    } else {
+      // 创建新的思考块
+      const thinkingBlock: ContentBlock = {
+        type: 'thinking',
+        content,
+        collapsed: false,
+      }
+      const updatedBlocks: ContentBlock[] = [...currentMessage.blocks, thinkingBlock]
+      set({
+        currentMessage: { ...currentMessage, blocks: updatedBlocks },
+      })
+    }
   },
 
   /**
