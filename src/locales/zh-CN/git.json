@@ -339,5 +339,15 @@
     "ruleAdded": "规则已添加",
     "templateAdded": "已添加 {{name}} 模板规则",
     "more": "条"
+  },
+  "diff": {
+    "fileTooLarge": "文件内容过大",
+    "contentOmittedHint": "为了性能考虑，已省略显示此文件的差异内容",
+    "note": "注意",
+    "info": "信息",
+    "diffSummary": "差异摘要",
+    "linesAdded": "行添加",
+    "linesRemoved": "行删除",
+    "noChanges": "无变化"
   }
 }

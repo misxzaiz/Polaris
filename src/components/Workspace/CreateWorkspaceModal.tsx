@@ -3,6 +3,7 @@
  */
 
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useWorkspaceStore } from '../../stores';
 import { Button } from '../Common';
 import { createLogger } from '../../utils/logger';
@@ -14,6 +15,7 @@ interface CreateWorkspaceModalProps {
 }
 
 export function CreateWorkspaceModal({ onClose }: CreateWorkspaceModalProps) {
+  const { t } = useTranslation('workspace');
   const { createWorkspace } = useWorkspaceStore();
   const [name, setName] = useState('');
   const [path, setPath] = useState('');
@@ -24,18 +26,18 @@ export function CreateWorkspaceModal({ onClose }: CreateWorkspaceModalProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !path.trim()) {
-      setError('请填写完整信息');
+      setError(t('createModal.fillRequired'));
       return;
     }
 
     setIsLoading(true);
     setError('');
-    
+
     try {
       await createWorkspace(name.trim(), path.trim(), switchAfterCreate);
       onClose();
     } catch (error) {
-      setError(error instanceof Error ? error.message : '创建工作区失败');
+      setError(error instanceof Error ? error.message : t('createModal.createFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -48,9 +50,9 @@ export function CreateWorkspaceModal({ onClose }: CreateWorkspaceModalProps) {
       const selected = await open({
         directory: true,
         multiple: false,
-        title: '选择工作区文件夹',
+        title: t('createModal.selectFolderTitle'),
       });
-      
+
       if (selected && !Array.isArray(selected)) {
         setPath(selected);
         // 如果名称为空，使用文件夹名称作为默认名称
@@ -61,7 +63,7 @@ export function CreateWorkspaceModal({ onClose }: CreateWorkspaceModalProps) {
       }
     } catch (error) {
       log.error('选择文件夹失败', error instanceof Error ? error : new Error(String(error)));
-      setError('选择文件夹失败，请手动输入路径');
+      setError(t('createModal.selectFolderFailed'));
     }
   };
 
@@ -69,7 +71,7 @@ export function CreateWorkspaceModal({ onClose }: CreateWorkspaceModalProps) {
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-background-elevated rounded-xl p-6 w-full max-w-md border border-border shadow-glow">
         <h2 className="text-lg font-semibold text-text-primary mb-4">
-          创建新工作区
+          {t('createModal.title')}
         </h2>
 
         {error && (
@@ -81,13 +83,13 @@ export function CreateWorkspaceModal({ onClose }: CreateWorkspaceModalProps) {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-text-secondary mb-1">
-              工作区名称
+              {t('createModal.nameLabel')}
             </label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="例如: 我的项目"
+              placeholder={t('createModal.namePlaceholder')}
               className="w-full px-3 py-2 bg-background-surface border border-border rounded-lg text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-primary"
               autoFocus
               disabled={isLoading}
@@ -96,14 +98,14 @@ export function CreateWorkspaceModal({ onClose }: CreateWorkspaceModalProps) {
 
           <div>
             <label className="block text-sm font-medium text-text-secondary mb-1">
-              工作区路径
+              {t('createModal.pathLabel')}
             </label>
             <div className="flex gap-2">
               <input
                 type="text"
                 value={path}
                 onChange={(e) => setPath(e.target.value)}
-                placeholder="选择项目文件夹"
+                placeholder={t('createModal.pathPlaceholder')}
                 className="flex-1 px-3 py-2 bg-background-surface border border-border rounded-lg text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-primary"
                 disabled={isLoading}
               />
@@ -113,7 +115,7 @@ export function CreateWorkspaceModal({ onClose }: CreateWorkspaceModalProps) {
                 onClick={handleSelectFolder}
                 disabled={isLoading}
               >
-                浏览
+                {t('createModal.browse')}
               </Button>
             </div>
           </div>
@@ -129,11 +131,11 @@ export function CreateWorkspaceModal({ onClose }: CreateWorkspaceModalProps) {
               disabled={isLoading}
             />
             <label htmlFor="switchAfterCreate" className="flex-1 text-sm text-text-secondary">
-              <div className="font-medium">切换到新工作区</div>
+              <div className="font-medium">{t('createModal.switchToNew')}</div>
               <div className="text-xs text-text-tertiary mt-1">
                 {switchAfterCreate
-                  ? '创建后立即切换到新工作区'
-                  : '创建后添加到关联工作区，不切换当前工作区'
+                  ? t('createModal.switchHint')
+                  : t('createModal.noSwitchHint')
                 }
               </div>
             </label>
@@ -146,13 +148,13 @@ export function CreateWorkspaceModal({ onClose }: CreateWorkspaceModalProps) {
               onClick={onClose}
               disabled={isLoading}
             >
-              取消
+              {t('common:buttons.cancel')}
             </Button>
             <Button
               type="submit"
               disabled={!name.trim() || !path.trim() || isLoading}
             >
-              {isLoading ? '创建中...' : '创建'}
+              {isLoading ? t('createModal.creating') : t('createModal.create')}
             </Button>
           </div>
         </form>

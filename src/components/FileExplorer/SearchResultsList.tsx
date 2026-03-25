@@ -1,5 +1,6 @@
 import { memo, useState, useCallback, useMemo } from 'react';
 import { Virtuoso } from 'react-virtuoso';
+import { useTranslation } from 'react-i18next';
 import { FileIcon } from './FileIcon';
 import { Folder } from 'lucide-react';
 import { ContextMenu, isHtmlFile, type ContextMenuItem } from './ContextMenu';
@@ -62,6 +63,7 @@ interface FileItemProps {
 }
 
 const FileItem = memo<FileItemProps>(({ file, currentPath, onClick, onKeyDown, onContextMenu }) => {
+  const { t } = useTranslation('fileExplorer');
   const relativePath = getRelativePath(file.path, currentPath);
   const pathOnly = getDirectoryPath(relativePath);
 
@@ -73,7 +75,7 @@ const FileItem = memo<FileItemProps>(({ file, currentPath, onClick, onKeyDown, o
       onContextMenu={(e) => onContextMenu(e, file)}
       role="button"
       tabIndex={0}
-      aria-label={`${file.is_dir ? '目录' : '文件'} ${file.name}`}
+      aria-label={`${file.is_dir ? t('ariaLabel.folder', { name: file.name }) : t('ariaLabel.file', { name: file.name })}`}
     >
       <div className="flex items-start gap-2">
         {file.is_dir ? (
@@ -123,6 +125,7 @@ const DirectorySeparator = memo(() => (
 DirectorySeparator.displayName = 'DirectorySeparator';
 
 export const SearchResultsList = memo<SearchResultsListProps>(({ results }) => {
+  const { t } = useTranslation('fileExplorer');
   const { select_file, current_path } = useFileExplorerStore();
   const { openFile } = useFileEditorStore();
 
@@ -177,7 +180,7 @@ export const SearchResultsList = memo<SearchResultsListProps>(({ results }) => {
     const items: ContextMenuItem[] = [
       {
         id: 'open',
-        label: file.is_dir ? '打开文件夹' : '打开文件',
+        label: file.is_dir ? t('searchResults.openFolder') : t('searchResults.openFile'),
         icon: '',
         action: async () => {
           if (!file.is_dir) {
@@ -191,7 +194,7 @@ export const SearchResultsList = memo<SearchResultsListProps>(({ results }) => {
     if (isHtmlFile(file)) {
       items.push({
         id: 'open-in-browser',
-        label: '在浏览器中打开',
+        label: t('searchResults.openInBrowser'),
         icon: '',
         action: async () => {
           await openInDefaultApp(file.path);
@@ -200,7 +203,7 @@ export const SearchResultsList = memo<SearchResultsListProps>(({ results }) => {
     }
 
     return items;
-  }, [contextMenu.file, openFile]);
+  }, [contextMenu.file, openFile, t]);
 
   if (results.length === 0) {
     return (
@@ -208,7 +211,7 @@ export const SearchResultsList = memo<SearchResultsListProps>(({ results }) => {
         <svg className="w-8 h-8 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
         </svg>
-        <div className="text-sm">没有找到匹配的文件</div>
+        <div className="text-sm">{t('searchResults.noMatch')}</div>
       </div>
     );
   }

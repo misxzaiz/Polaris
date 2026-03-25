@@ -64,5 +64,11 @@
     "cancel": "取消",
     "discard": "放弃更改",
     "saveAndClose": "保存并关闭"
+  },
+  "searchResults": {
+    "noMatch": "没有找到匹配的文件",
+    "openFolder": "打开文件夹",
+    "openFile": "打开文件",
+    "openInBrowser": "在浏览器中打开"
   }
 }

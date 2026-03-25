@@ -339,5 +339,15 @@
     "ruleAdded": "Rule added",
     "templateAdded": "Added {{name}} template rules",
     "more": "more"
+  },
+  "diff": {
+    "fileTooLarge": "File content too large",
+    "contentOmittedHint": "Diff content has been omitted for performance reasons",
+    "note": "Note",
+    "info": "Info",
+    "diffSummary": "Diff Summary",
+    "linesAdded": "lines added",
+    "linesRemoved": "lines removed",
+    "noChanges": "No changes"
   }
 }

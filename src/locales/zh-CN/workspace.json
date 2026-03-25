@@ -28,5 +28,22 @@
     "deleteWorkspaceTitle": "删除工作区",
     "confirmDelete": "确定要删除 \"{{name}}\" 吗？",
     "deleteHint": "此操作不可撤销。"
+  },
+  "createModal": {
+    "title": "创建新工作区",
+    "nameLabel": "工作区名称",
+    "namePlaceholder": "例如: 我的项目",
+    "pathLabel": "工作区路径",
+    "pathPlaceholder": "选择项目文件夹",
+    "browse": "浏览",
+    "switchToNew": "切换到新工作区",
+    "switchHint": "创建后立即切换到新工作区",
+    "noSwitchHint": "创建后添加到关联工作区，不切换当前工作区",
+    "fillRequired": "请填写完整信息",
+    "createFailed": "创建工作区失败",
+    "selectFolderFailed": "选择文件夹失败，请手动输入路径",
+    "selectFolderTitle": "选择工作区文件夹",
+    "creating": "创建中...",
+    "create": "创建"
   }
 }

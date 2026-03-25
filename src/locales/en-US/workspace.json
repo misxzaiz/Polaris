@@ -28,5 +28,22 @@
     "deleteWorkspaceTitle": "Delete Workspace",
     "confirmDelete": "Are you sure you want to delete \"{{name}}\"?",
     "deleteHint": "This action cannot be undone."
+  },
+  "createModal": {
+    "title": "Create New Workspace",
+    "nameLabel": "Workspace Name",
+    "namePlaceholder": "e.g., My Project",
+    "pathLabel": "Workspace Path",
+    "pathPlaceholder": "Select project folder",
+    "browse": "Browse",
+    "switchToNew": "Switch to new workspace",
+    "switchHint": "Switch to the new workspace immediately after creation",
+    "noSwitchHint": "Add to context workspaces without switching current workspace",
+    "fillRequired": "Please fill in all required fields",
+    "createFailed": "Failed to create workspace",
+    "selectFolderFailed": "Failed to select folder, please enter path manually",
+    "selectFolderTitle": "Select Workspace Folder",
+    "creating": "Creating...",
+    "create": "Create"
   }
 }
