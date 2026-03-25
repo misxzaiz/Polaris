@@ -8,11 +8,12 @@
  * - 自动高度调整
  */
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { IconSend, IconStop, IconPaperclip } from '../Common/Icons'
 import { AutoResizingTextarea } from '../Chat/AutoResizingTextarea'
 import { AttachmentPreview } from '../Chat/AttachmentPreview'
+import { useChatInputStore } from '../../stores'
 import {
   createAttachment,
   validateAttachment,
@@ -30,10 +31,21 @@ interface CompactChatInputProps {
 
 export function CompactChatInput({ onSend, onInterrupt, disabled, isStreaming }: CompactChatInputProps) {
   const { t } = useTranslation('chat')
+  const { setInputLength, setAttachmentCount } = useChatInputStore()
   const [value, setValue] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // 同步字数到 store
+  useEffect(() => {
+    setInputLength(value.length)
+  }, [value.length, setInputLength])
+
+  // 同步附件数量到 store
+  useEffect(() => {
+    setAttachmentCount(attachments.length)
+  }, [attachments.length, setAttachmentCount])
 
   // 添加附件
   const addAttachment = useCallback(async (file: File, source: 'paste' | 'drag' | 'select') => {
@@ -185,12 +197,6 @@ export function CompactChatInput({ onSend, onInterrupt, disabled, isStreaming }:
             <IconSend size={16} />
           </button>
         )}
-      </div>
-
-      {/* 提示 */}
-      <div className="px-2 pb-1.5 flex items-center justify-between text-xs text-text-tertiary">
-        <span>{t('input.hint')}</span>
-        {value.length > 0 && <span>{value.length}</span>}
       </div>
     </div>
   )

@@ -14,7 +14,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '../Common'
 import { IconSend, IconStop, IconPaperclip } from '../Common/Icons'
-import { useWorkspaceStore, useConfigStore, useEventChatStore } from '../../stores'
+import { useWorkspaceStore, useConfigStore, useEventChatStore, useChatInputStore } from '../../stores'
 import { FileSuggestion, WorkspaceSuggestion } from './FileSuggestion'
 import { GitSuggestion, getGitRootSuggestions, commitsToSuggestionItems, type GitSuggestionItem } from './GitSuggestion'
 import { AttachmentPreview } from './AttachmentPreview'
@@ -82,6 +82,7 @@ export function ChatInput({
   const { currentWorkspaceId, workspaces } = useWorkspaceStore()
   const { fileMatches, searchFiles, clearResults } = useFileSearch()
   const { config } = useConfigStore()
+  const { setInputLength, setAttachmentCount, setSuggestionMode, setHasPendingQuestion, setHasActivePlan } = useChatInputStore()
 
   // 检查是否有待回答的问题
   const hasPendingQuestion = useEventChatStore(state => {
@@ -106,6 +107,25 @@ export function ChatInput({
     }
     return false
   })
+
+  // 同步状态到 store
+  useEffect(() => {
+    setHasPendingQuestion(hasPendingQuestion)
+  }, [hasPendingQuestion, setHasPendingQuestion])
+
+  useEffect(() => {
+    setHasActivePlan(hasActivePlan)
+  }, [hasActivePlan, setHasActivePlan])
+
+  // 同步字数到 store
+  useEffect(() => {
+    setInputLength(value.length)
+  }, [value.length, setInputLength])
+
+  // 同步附件数量到 store
+  useEffect(() => {
+    setAttachmentCount(attachments.length)
+  }, [attachments.length, setAttachmentCount])
 
   const [isTranslating, setIsTranslating] = useState(false)
 
@@ -134,6 +154,11 @@ export function ChatInput({
     if (showGitSuggestions) return 'git'
     return null
   }, [showWorkspaceSuggestions, showFileSuggestions, showGitSuggestions])
+
+  // 同步建议模式到 store
+  useEffect(() => {
+    setSuggestionMode(suggestionMode)
+  }, [suggestionMode, setSuggestionMode])
 
   // 智能定位建议框
   const calculateSuggestionPosition = useCallback(() => {
@@ -607,7 +632,6 @@ export function ChatInput({
   }, [])
 
   const canSend = (value.trim() || attachments.length > 0) && !disabled && !isStreaming
-  const hasReadyAttachments = attachments.some(a => a.status === 'ready')
 
   return (
     <div className="border-t border-border bg-background-elevated" ref={containerRef}>
@@ -692,47 +716,6 @@ export function ChatInput({
                 {t('input.send')}
               </Button>
             </>
-          )}
-        </div>
-
-        {/* 状态栏 */}
-        <div className="flex items-center justify-between mt-1.5 px-1">
-          <div className="flex items-center gap-2 text-xs text-text-tertiary">
-            {hasPendingQuestion ? (
-              <span className="flex items-center gap-1 text-accent">
-                <span className="w-1 h-1 bg-accent rounded-full animate-pulse" />
-                {t('question.pendingAnswer')}
-              </span>
-            ) : hasActivePlan ? (
-              <span className="flex items-center gap-1 text-violet-500">
-                <span className="w-1 h-1 bg-violet-500 rounded-full animate-pulse" />
-                {t('plan.pendingApproval')}
-              </span>
-            ) : isStreaming ? (
-              <span className="flex items-center gap-2">
-                <span className="w-1 h-1 bg-warning rounded-full animate-pulse" />
-                {t('status.generating')}
-              </span>
-            ) : suggestionMode === 'workspace' ? (
-              <span>{t('input.selectWorkspace')}</span>
-            ) : suggestionMode === 'file' ? (
-              <span>{t('input.selectFile')}</span>
-            ) : suggestionMode === 'git' ? (
-              <span>{t('input.gitContext')}</span>
-            ) : attachments.length > 0 ? (
-              <span className="flex items-center gap-1">
-                <IconPaperclip size={10} />
-                {t('input.attachmentCount', { count: attachments.length })}
-                {hasReadyAttachments && ` · ${t('input.readyToSend')}`}
-              </span>
-            ) : value.length === 0 ? (
-              <span>{t('input.hint')}</span>
-            ) : null}
-          </div>
-          {value.length > 0 && (
-            <div className="text-xs text-text-tertiary">
-              {value.length}
-            </div>
           )}
         </div>
       </div>

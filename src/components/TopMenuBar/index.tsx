@@ -34,7 +34,7 @@ export function TopMenuBar({ onNewConversation, onCreateWorkspace, onToggleRight
   const [isExporting, setIsExporting] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
-  const { clearMessages, messages } = useEventChatStore();
+  const { clearMessages, messages, isStreaming } = useEventChatStore();
 
   const currentWorkspace = getCurrentWorkspace();
 
@@ -146,6 +146,29 @@ export function TopMenuBar({ onNewConversation, onCreateWorkspace, onToggleRight
         {/* 小屏模式：显示置顶按钮和窗口控制按钮 */}
         {isCompactMode ? (
           <>
+            {/* 新建对话按钮 */}
+            <button
+              onClick={handleNewConversation}
+              disabled={isStreaming}
+              className="p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors disabled:opacity-50"
+              title={t('menu.newChat')}
+              data-tauri-drag-region={false}
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+
+            {/* 会话历史按钮 */}
+            <button
+              onClick={toggleSessionHistory}
+              className="p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors"
+              title={t('menu.sessionHistory')}
+              data-tauri-drag-region={false}
+            >
+              <Clock className="w-4 h-4" />
+            </button>
+
             {/* 窗口置顶按钮 */}
             <button
               onClick={handleToggleAlwaysOnTop}

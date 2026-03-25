@@ -2,21 +2,17 @@
  * CompactMode - 小屏对话模式组件
  *
  * 当窗口宽度小于阈值时，切换到精简的对话界面：
- * - 极简顶部：仅引擎选择器
  * - 全屏对话消息区域
+ * - 右侧悬浮导航球
  * - 底部固定输入框
- * - 消息导航功能
  */
 
-import { useMemo, useRef } from 'react'
-import { useTranslation } from 'react-i18next'
-import { Plus, Clock } from 'lucide-react'
-import { useConfigStore, useEventChatStore, useWorkspaceStore, useViewStore } from '../../stores'
+import { useRef, useMemo, useState, useCallback } from 'react'
+import { useEventChatStore, useWorkspaceStore } from '../../stores'
 import { CompactMessageList, type CompactMessageListRef } from './CompactMessageList'
 import { CompactChatInput } from './CompactChatInput'
-import { CompactChatNavigator } from './CompactChatNavigator'
-import { ChatStatusBar } from '../Chat/ChatStatusBar'
-import type { EngineId } from '../../types'
+import { ChatNavigator } from '../Chat/ChatNavigator'
+import { groupConversationRounds } from '../../utils/conversationRounds'
 import type { Attachment } from '../../types/attachment'
 
 interface CompactModeProps {
@@ -27,119 +23,38 @@ interface CompactModeProps {
 }
 
 export function CompactMode({ onSend, onInterrupt, disabled, isStreaming }: CompactModeProps) {
-  const { t } = useTranslation('common')
-  const { config, updateConfig, healthStatus } = useConfigStore()
-  const { error, clearMessages, messages } = useEventChatStore()
+  const { error, messages } = useEventChatStore()
   const currentWorkspace = useWorkspaceStore(state => state.getCurrentWorkspace())
-  const { toggleSessionHistory } = useViewStore()
   const messageListRef = useRef<CompactMessageListRef>(null)
 
-  // 引擎选项列表
-  const engineOptions = useMemo(() => {
-    const options: { id: EngineId; name: string }[] = [
-      { id: 'claude-code', name: 'Claude Code' },
-      { id: 'iflow', name: 'IFlow' },
-      { id: 'codex', name: 'Codex' },
-    ]
+  // 当前可见的对话轮次索引（暂时未使用，保留供后续功能扩展）
+  const [currentRoundIndex] = useState(0)
 
-    if (config?.openaiProviders && config.openaiProviders.length > 0) {
-      for (const provider of config.openaiProviders) {
-        if (!provider.enabled) continue
-        options.push({
-          id: provider.id as EngineId,
-          name: provider.name || provider.id,
-        })
-      }
-    }
+  // 对话轮次分组
+  const conversationRounds = useMemo(() => {
+    return groupConversationRounds(messages)
+  }, [messages])
 
-    return options
-  }, [config?.openaiProviders])
+  // 滚动到指定轮次
+  const scrollToRound = useCallback((roundIndex: number) => {
+    const round = conversationRounds[roundIndex]
+    if (!round) return
 
-  // 引擎切换
-  const handleEngineChange = async (engineId: EngineId) => {
-    if (!config || engineId === config.defaultEngine) return
+    // 优先跳转到 AI 回复，如果没有则跳转到用户消息
+    const targetIndex = round.assistantMessage
+      ? round.messageIndices[1]  // AI 回复索引
+      : round.messageIndices[0] // 用户消息索引
 
-    const isProvider = engineId.startsWith('provider-')
-    const nextConfig = {
-      ...config,
-      defaultEngine: engineId,
-      activeProviderId: isProvider ? engineId : config.activeProviderId,
-    }
-    await updateConfig(nextConfig)
-  }
-
-  // 新对话
-  const handleNewChat = () => {
-    if (messages.length > 0) {
-      clearMessages()
-    }
-  }
-
-  // 滚动到指定消息
-  const handleScrollToMessage = (index: number) => {
-    messageListRef.current?.scrollToMessage(index)
-  }
+    messageListRef.current?.scrollToMessage(targetIndex)
+  }, [conversationRounds])
 
   // 滚动到底部
-  const handleScrollToBottom = () => {
+  const scrollToBottom = useCallback(() => {
     messageListRef.current?.scrollToBottom()
-  }
+  }, [])
 
   return (
     <div className="flex flex-col h-full bg-background compact-mode-transition">
-      {/* 极简顶部 - 引擎选择器 + 快捷操作 */}
-      <div className="flex items-center justify-between px-2 py-1.5 bg-background-elevated border-b border-border shrink-0">
-        {/* 左侧：引擎选择 */}
-        <div className="flex items-center gap-2">
-          <select
-            className="bg-background-surface border border-border text-text-primary text-xs px-2 py-1 rounded-md hover:border-primary/50 transition-colors cursor-pointer"
-            value={config?.defaultEngine || 'claude-code'}
-            onChange={(e) => handleEngineChange(e.target.value as EngineId)}
-            disabled={isStreaming}
-          >
-            {engineOptions.map((opt) => (
-              <option key={opt.id} value={opt.id} className="bg-background text-text-primary">{opt.name}</option>
-            ))}
-          </select>
-          {/* Claude Code 版本状态 - 仅在选择 claude-code 时显示 */}
-          {config?.defaultEngine === 'claude-code' && healthStatus?.claudeVersion && (
-            <span className="text-xs px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-500 border border-green-500/20">
-              v{healthStatus.claudeVersion}
-            </span>
-          )}
-        </div>
-
-        {/* 右侧：导航 + 快捷操作 */}
-        <div className="flex items-center gap-1">
-          {/* 消息导航 */}
-          {messages.length > 1 && (
-            <CompactChatNavigator
-              onScrollToMessage={handleScrollToMessage}
-              onScrollToBottom={handleScrollToBottom}
-            />
-          )}
-
-          {/* 新对话 */}
-          <button
-            onClick={handleNewChat}
-            disabled={isStreaming}
-            className="p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors disabled:opacity-50"
-            title={t('menu.newChat')}
-          >
-            <Plus className="w-4 h-4" />
-          </button>
-
-          {/* 会话历史 */}
-          <button
-            onClick={toggleSessionHistory}
-            className="p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors"
-            title={t('menu.sessionHistory')}
-          >
-            <Clock className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
       {/* 错误提示 */}
       {error && (
         <div className="mx-2 mt-2 p-2 bg-danger-faint border border-danger/30 rounded-lg text-danger text-xs shrink-0">
@@ -150,8 +65,15 @@ export function CompactMode({ onSend, onInterrupt, disabled, isStreaming }: Comp
       {/* 对话消息区域 - 占据剩余空间 */}
       <CompactMessageList ref={messageListRef} />
 
-      {/* 对话状态栏 - 紧凑模式 */}
-      <ChatStatusBar compact />
+      {/* 右侧悬浮导航球 */}
+      {conversationRounds.length > 0 && (
+        <ChatNavigator
+          rounds={conversationRounds}
+          currentRoundIndex={currentRoundIndex}
+          onScrollToBottom={scrollToBottom}
+          onScrollToRound={scrollToRound}
+        />
+      )}
 
       {/* 底部固定输入框 */}
       <CompactChatInput
