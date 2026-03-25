@@ -32,7 +32,7 @@ import {
   type GrepMatch,
   type GrepOutputData
 } from '../../utils/toolSummary';
-import { Check, XCircle, Loader2, AlertTriangle, Play, ChevronDown, ChevronRight, Circle, FileSearch, FolderOpen, Code, FileDiff, RotateCcw, Copy, GitPullRequest, Brain, ListOrdered, Trash2 } from 'lucide-react';
+import { Check, XCircle, Loader2, AlertTriangle, Play, ChevronDown, ChevronRight, Circle, FileSearch, FolderOpen, Code, FileDiff, RotateCcw, Copy, GitPullRequest, Brain, ListOrdered, Trash2, Pencil, X } from 'lucide-react';
 import { ChatNavigator } from './ChatNavigator';
 import { useMessageSearch, MessageSearchPanel } from './MessageSearchPanel';
 import { QuestionBlockRenderer, SimplifiedQuestionRenderer } from './QuestionBlockRenderer';
@@ -142,8 +142,13 @@ const UserBubble = memo(function UserBubble({
   const { t } = useTranslation('chat');
   const toast = useToastStore();
   const deleteMessage = useEventChatStore((state) => state.deleteMessage);
+  const editAndResend = useEventChatStore((state) => state.editAndResend);
+  const isStreaming = useEventChatStore((state) => state.isStreaming);
   const [contextMenu, setContextMenu] = useState<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 });
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // 处理右键菜单
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
@@ -173,6 +178,64 @@ const UserBubble = memo(function UserBubble({
     setShowDeleteConfirm(true);
   }, [closeContextMenu]);
 
+  // 编辑消息
+  const handleEdit = useCallback(() => {
+    closeContextMenu();
+    setEditContent(message.content);
+    setIsEditing(true);
+  }, [closeContextMenu, message.content]);
+
+  // 取消编辑
+  const cancelEdit = useCallback(() => {
+    setIsEditing(false);
+    setEditContent('');
+  }, []);
+
+  // 确认编辑并重新发送
+  const confirmEdit = useCallback(async () => {
+    if (!editContent.trim()) {
+      toast.error(t('message.emptyContent') || '消息内容不能为空');
+      return;
+    }
+
+    if (editContent.trim() === message.content.trim()) {
+      // 内容未变化，仅关闭编辑模式
+      setIsEditing(false);
+      setEditContent('');
+      return;
+    }
+
+    try {
+      await editAndResend(message.id, editContent.trim());
+      setIsEditing(false);
+      setEditContent('');
+      toast.success(t('message.editedAndSent') || '消息已编辑并发送');
+    } catch (error) {
+      console.error('[UserBubble] 编辑发送失败:', error);
+      toast.error(t('error.sendFailed'));
+    }
+  }, [editContent, message.id, message.content, editAndResend, toast, t]);
+
+  // 处理键盘事件
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      confirmEdit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelEdit();
+    }
+  }, [confirmEdit, cancelEdit]);
+
+  // 自动调整文本框高度
+  useEffect(() => {
+    if (isEditing && textareaRef.current) {
+      textareaRef.current.focus();
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px';
+    }
+  }, [isEditing, editContent]);
+
   // 确认删除
   const confirmDelete = useCallback(() => {
     deleteMessage(message.id);
@@ -194,12 +257,50 @@ const UserBubble = memo(function UserBubble({
       action: handleCopy,
     },
     {
+      id: 'edit',
+      label: t('message.edit'),
+      icon: <Pencil className="w-4 h-4" />,
+      action: handleEdit,
+      disabled: isStreaming,
+    },
+    {
       id: 'delete',
       label: t('message.delete'),
       icon: <Trash2 className="w-4 h-4" />,
       action: handleDelete,
     },
   ];
+
+  // 编辑模式
+  if (isEditing) {
+    return (
+      <div className="flex justify-end my-2">
+        <div className="max-w-[85%] w-full">
+          <div className="bg-background-surface border border-border rounded-lg p-3 shadow-lg">
+            <textarea
+              ref={textareaRef}
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              onKeyDown={handleKeyDown}
+              className="w-full min-h-[60px] max-h-[200px] p-2 bg-background border border-border rounded-md text-text-primary text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+              placeholder={t('message.editPlaceholder') || '编辑消息...'}
+              rows={3}
+            />
+            <div className="flex justify-end gap-2 mt-2">
+              <Button variant="ghost" size="sm" onClick={cancelEdit}>
+                <X className="w-4 h-4 mr-1" />
+                {t('message.cancel') || '取消'}
+              </Button>
+              <Button variant="primary" size="sm" onClick={confirmEdit} disabled={!editContent.trim() || isStreaming}>
+                <Check className="w-4 h-4 mr-1" />
+                {t('message.send') || '发送'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>

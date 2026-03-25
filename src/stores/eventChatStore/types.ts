@@ -271,6 +271,8 @@ export interface MessageActions {
   addMessage: (message: ChatMessage) => void
   /** 删除消息（根据消息 ID） */
   deleteMessage: (messageId: string) => void
+  /** 编辑用户消息内容 */
+  editMessage: (messageId: string, newContent: string) => void
   /** 清空消息 */
   clearMessages: () => void
   /** 完成当前消息 */
@@ -368,6 +370,8 @@ export interface EventHandlerActions {
   interruptChat: () => Promise<void>
   /** 重新生成助手回复 */
   regenerateResponse: (assistantMessageId: string) => Promise<void>
+  /** 编辑用户消息并重新发送 */
+  editAndResend: (userMessageId: string, newContent: string) => Promise<void>
 }
 
 /**

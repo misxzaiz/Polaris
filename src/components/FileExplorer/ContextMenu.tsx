@@ -11,6 +11,7 @@ export interface ContextMenuItem {
   label: string;
   icon?: string | ReactNode;
   action: () => void | Promise<void>;
+  disabled?: boolean;
 }
 
 interface ContextMenuProps {
@@ -116,8 +117,14 @@ export function ContextMenu({ visible, x, y, items, onClose }: ContextMenuProps)
           <button
             key={item.id}
             type="button"
-            className="w-full px-3 py-2 text-left text-sm text-text-secondary hover:bg-background-hover hover:text-text-primary flex items-center gap-2 transition-colors"
+            className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 transition-colors ${
+              item.disabled
+                ? 'text-text-muted cursor-not-allowed'
+                : 'text-text-secondary hover:bg-background-hover hover:text-text-primary'
+            }`}
+            disabled={item.disabled}
             onClick={async () => {
+              if (item.disabled) return;
               onClose();
               await item.action();
             }}

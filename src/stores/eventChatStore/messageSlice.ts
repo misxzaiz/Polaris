@@ -88,6 +88,35 @@ export const createMessageSlice: MessageSlice = (set, get) => ({
     })
   },
 
+  editMessage: (messageId, newContent) => {
+    set((state) => {
+      const messageIndex = state.messages.findIndex(m => m.id === messageId)
+
+      if (messageIndex === -1) {
+        console.warn('[EventChatStore] 消息不存在:', messageId)
+        return state
+      }
+
+      const message = state.messages[messageIndex]
+
+      // 只允许编辑用户消息
+      if (message.type !== 'user') {
+        console.warn('[EventChatStore] 只能编辑用户消息')
+        return state
+      }
+
+      // 更新消息内容
+      const updatedMessages = [...state.messages]
+      updatedMessages[messageIndex] = {
+        ...message,
+        content: newContent,
+        timestamp: new Date().toISOString(), // 更新时间戳
+      }
+
+      return { messages: updatedMessages }
+    })
+  },
+
   clearMessages: () => {
     // 清理 Provider Session
     const { providerSessionCache } = get()

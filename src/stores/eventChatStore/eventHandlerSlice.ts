@@ -665,4 +665,183 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
       })
     }
   },
+
+  /**
+   * 编辑用户消息并重新发送
+   * 更新用户消息内容，删除后续助手消息，重新发送
+   */
+  editAndResend: async (userMessageId: string, newContent: string) => {
+    const { messages } = get()
+
+    // 找到用户消息
+    const userMessage = messages.find(m => m.id === userMessageId)
+    if (!userMessage) {
+      log.warn('[EventChatStore] 未找到用户消息', { userMessageId })
+      return
+    }
+
+    if (userMessage.type !== 'user') {
+      log.warn('[EventChatStore] 只能编辑用户消息', { userMessageId })
+      return
+    }
+
+    // 检查是否正在流式响应
+    if (get().isStreaming) {
+      log.warn('[EventChatStore] 正在流式响应中，无法编辑')
+      return
+    }
+
+    // 检查新内容是否为空
+    if (!newContent.trim()) {
+      log.warn('[EventChatStore] 消息内容不能为空')
+      return
+    }
+
+    log.info('[EventChatStore] 编辑并重新发送消息', {
+      userId: userMessageId,
+      oldContent: (userMessage as UserChatMessage).content.substring(0, 50),
+      newContent: newContent.substring(0, 50)
+    })
+
+    // 找到用户消息的索引
+    const userIndex = messages.findIndex(m => m.id === userMessageId)
+
+    // 删除用户消息之后的所有消息（包括助手回复）
+    const messagesBeforeUser = messages.slice(0, userIndex + 1)
+
+    // 更新用户消息内容
+    const updatedUserMessage: UserChatMessage = {
+      ...(userMessage as UserChatMessage),
+      content: newContent,
+      timestamp: new Date().toISOString(),
+    }
+
+    // 设置新消息列表（只保留更新后的用户消息和之前的消息）
+    set({
+      messages: [...messagesBeforeUser.slice(0, userIndex), updatedUserMessage],
+      isStreaming: true,
+      error: null,
+      currentMessage: null,
+      toolBlockMap: new Map(),
+    })
+
+    // 清理工具面板
+    const toolPanelActions = get().getToolPanelActions()
+    toolPanelActions?.clearTools()
+
+    try {
+      const configActions = get().getConfigActions()
+      const config = configActions?.getConfig()
+      const currentEngine = config?.defaultEngine || 'claude-code'
+
+      const workspaceActions = get().getWorkspaceActions()
+      const currentWorkspace = workspaceActions?.getCurrentWorkspace()
+      const actualWorkspaceDir = currentWorkspace?.path
+
+      // 构建系统提示
+      const systemPrompt = buildSystemPrompt(
+        workspaceActions?.getWorkspaces() || [],
+        workspaceActions?.getContextWorkspaces() || [],
+        workspaceActions?.getCurrentWorkspaceId() || null
+      )
+
+      const normalizedSystemPrompt = systemPrompt
+        .replace(/\r\n/g, '\\n')
+        .replace(/\r/g, '\\n')
+        .replace(/\n/g, '\\n')
+        .trim()
+
+      // 获取附件信息
+      const userAttachments = (userMessage as UserChatMessage).attachments
+
+      // 处理附件
+      const attachmentsForBackend = userAttachments?.map((a: { type: string; fileName: string; mimeType?: string; content?: string }) => ({
+        type: a.type,
+        fileName: a.fileName,
+        mimeType: a.mimeType,
+        content: a.content,
+      }))
+
+      // 检查是否是 Provider 引擎
+      if (currentEngine.startsWith('provider-')) {
+        await get().sendMessageToFrontendEngine(
+          newContent,
+          actualWorkspaceDir,
+          systemPrompt,
+          userAttachments?.map((a: { id: string; type: string; fileName: string; fileSize: number; preview?: string }) => ({
+            id: a.id,
+            type: a.type,
+            fileName: a.fileName,
+            fileSize: a.fileSize,
+            preview: a.preview,
+          })) as import('../../types/attachment').Attachment[]
+        )
+      } else {
+        // CLI 引擎
+        let messageWithAttachments = newContent
+          .replace(/\r\n/g, '\\n')
+          .replace(/\r/g, '\\n')
+          .replace(/\n/g, '\\n')
+          .trim()
+
+        if (userAttachments && userAttachments.length > 0) {
+          const nonImageAttachments = userAttachments.filter((a: { type: string }) => a.type !== 'image')
+          if (nonImageAttachments.length > 0) {
+            const attachmentParts = nonImageAttachments.map((a: { type: string; fileName: string; mimeType?: string; content?: string }) => {
+              const isText = a.mimeType?.startsWith('text/') ||
+                             a.fileName.endsWith('.txt') ||
+                             a.fileName.endsWith('.md') ||
+                             a.fileName.endsWith('.json')
+              if (isText && a.content) {
+                try {
+                  const commaIndex = a.content.indexOf(',')
+                  const base64Content = commaIndex !== -1 ? a.content.slice(commaIndex + 1) : a.content
+                  const binaryString = atob(base64Content)
+                  const bytes = new Uint8Array(binaryString.length)
+                  for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i)
+                  }
+                  const decodedContent = new TextDecoder('utf-8').decode(bytes)
+                  return `\n--- 文件: ${a.fileName} ---\n${decodedContent}\n--- 文件结束 ---`
+                } catch {
+                  return `[文件: ${a.fileName}]`
+                }
+              } else {
+                return `[文件: ${a.fileName}]`
+              }
+            })
+            messageWithAttachments = `${attachmentParts.join('\n')}\n\n${messageWithAttachments}`
+          }
+        }
+
+        const { conversationId } = get()
+        if (conversationId) {
+          await invoke('continue_chat', {
+            sessionId: conversationId,
+            message: messageWithAttachments,
+            options: {
+              systemPrompt: normalizedSystemPrompt,
+              workDir: actualWorkspaceDir,
+              contextId: 'main',
+              engineId: currentEngine,
+              attachments: attachmentsForBackend,
+            },
+          })
+        }
+      }
+    } catch (e) {
+      const appError = toAppError(e, {
+        source: ErrorSource.AI,
+        context: { action: 'editAndResend' }
+      })
+      errorLogger.log(appError)
+
+      set({
+        error: appError.getUserMessage(),
+        isStreaming: false,
+        currentMessage: null,
+        progressMessage: null,
+      })
+    }
+  },
 })
