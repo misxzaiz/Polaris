@@ -7,7 +7,7 @@ import { ToolPanel } from './components/ToolPanel';
 import { TopMenuBar as TopMenuBarComponent } from './components/TopMenuBar';
 import { GitPanel } from './components/GitPanel';
 import { ActivityBar, LeftPanel, LeftPanelContent, CenterStage, RightPanel } from './components/Layout';
-import { EnhancedChatMessages, ChatInput, ChatStatusBar } from './components/Chat';
+import { EnhancedChatMessages, ChatInput, ChatStatusBar, SessionHistoryPanel } from './components/Chat';
 import { CompactMode } from './components/CompactMode';
 import type { SettingsTabId } from './components/Settings/SettingsSidebar';
 import { SimpleTodoPanel } from './components/TodoPanel/SimpleTodoPanel';
@@ -80,6 +80,9 @@ function App() {
     // 小屏模式
     compactMode,
     updateCompactMode,
+    // 会话历史面板
+    showSessionHistory,
+    toggleSessionHistory,
   } = useViewStore();
   const { openDiffTab, tabs } = useTabStore();
   const hasOpenTabs = tabs.length > 0;
@@ -565,6 +568,21 @@ function App() {
             }
           }}
         />
+      )}
+
+      {/* 会话历史面板 - 右侧悬浮 */}
+      {showSessionHistory && (
+        <div
+          className="fixed z-50 bg-background-elevated border border-border rounded-l-xl shadow-xl animate-in slide-in-from-right duration-200"
+          style={{
+            top: '10%',
+            right: '0',
+            height: '80%',
+            width: '400px'
+          }}
+        >
+          <SessionHistoryPanel onClose={toggleSessionHistory} />
+        </div>
       )}
 
       {/* 全局右键菜单 */}
