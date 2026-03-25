@@ -18,7 +18,7 @@ import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { clsx } from 'clsx';
 import { invoke } from '@tauri-apps/api/core';
 import type { ChatMessage, UserChatMessage, AssistantChatMessage, ContentBlock, TextBlock, ThinkingBlock, ToolCallBlock } from '../../types';
-import { useEventChatStore, useGitStore, useWorkspaceStore, useTabStore } from '../../stores';
+import { useEventChatStore, useGitStore, useWorkspaceStore, useTabStore, useToastStore } from '../../stores';
 import { getToolConfig, extractToolKeyInfo } from '../../utils/toolConfig';
 import { markdownCache } from '../../utils/cache';
 import { useThrottle } from '../../hooks/useThrottle';
@@ -47,6 +47,7 @@ import { DiffViewer } from '../Diff/DiffViewer';
 import { isEditTool } from '../../utils/diffExtractor';
 import { Button } from '../Common/Button';
 import { calculateRenderMode, type MessageRenderMode, DEFAULT_LAYER_CONFIG } from '../../utils/messageLayer';
+import { ContextMenu, type ContextMenuItem } from '../FileExplorer/ContextMenu';
 
 /** Markdown 渲染器（使用缓存优化） */
 function formatContent(content: string): string {
@@ -133,16 +134,64 @@ function extractThinkingSteps(content: string): ThinkingStep[] {
 
 /** 用户消息组件 */
 const UserBubble = memo(function UserBubble({ message }: { message: UserChatMessage }) {
+  const { t } = useTranslation('chat');
+  const toast = useToastStore();
+  const [contextMenu, setContextMenu] = useState<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 });
+
+  // 处理右键菜单
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setContextMenu({ visible: true, x: e.clientX, y: e.clientY });
+  }, []);
+
+  // 关闭菜单
+  const closeContextMenu = useCallback(() => {
+    setContextMenu({ ...contextMenu, visible: false });
+  }, [contextMenu]);
+
+  // 复制消息内容
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      toast.success(t('message.copied'));
+    } catch (error) {
+      console.error('[UserBubble] 复制失败:', error);
+      toast.error(t('error.sendFailed'));
+    }
+  }, [message.content, toast, t]);
+
+  // 菜单项
+  const contextMenuItems: ContextMenuItem[] = [
+    {
+      id: 'copy',
+      label: t('message.copy'),
+      icon: <Copy className="w-4 h-4" />,
+      action: handleCopy,
+    },
+  ];
+
   return (
-    <div className="flex justify-end my-2">
-      <div className="max-w-[85%] px-4 py-3 rounded-2xl
-                  bg-gradient-to-br from-primary to-primary-600
-                  text-white shadow-glow">
-        <div className="text-sm leading-relaxed whitespace-pre-wrap">
-          {message.content}
+    <>
+      <div
+        className="flex justify-end my-2"
+        onContextMenu={handleContextMenu}
+      >
+        <div className="max-w-[85%] px-4 py-3 rounded-2xl
+                    bg-gradient-to-br from-primary to-primary-600
+                    text-white shadow-glow cursor-default">
+          <div className="text-sm leading-relaxed whitespace-pre-wrap">
+            {message.content}
+          </div>
         </div>
       </div>
-    </div>
+      <ContextMenu
+        visible={contextMenu.visible}
+        x={contextMenu.x}
+        y={contextMenu.y}
+        items={contextMenuItems}
+        onClose={closeContextMenu}
+      />
+    </>
   );
 });
 
@@ -1448,51 +1497,119 @@ const AssistantBubble = memo(function AssistantBubble({
   message: AssistantChatMessage;
   renderMode?: MessageRenderMode;
 }) {
+  const { t } = useTranslation('chat');
+  const toast = useToastStore();
+  const [contextMenu, setContextMenu] = useState<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 });
+
   const hasBlocks = message.blocks && message.blocks.length > 0;
+  const isStreaming = message.isStreaming;
+
+  // 提取助手消息的纯文本内容
+  const getTextContent = useCallback((): string => {
+    if (message.content) {
+      return message.content;
+    }
+    if (message.blocks) {
+      return message.blocks
+        .filter((block): block is TextBlock => block.type === 'text')
+        .map(block => block.content)
+        .join('\n\n');
+    }
+    return '';
+  }, [message]);
+
+  // 处理右键菜单（流式响应时禁用）
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    if (isStreaming) return;
+    e.preventDefault();
+    setContextMenu({ visible: true, x: e.clientX, y: e.clientY });
+  }, [isStreaming]);
+
+  // 关闭菜单
+  const closeContextMenu = useCallback(() => {
+    setContextMenu({ ...contextMenu, visible: false });
+  }, [contextMenu]);
+
+  // 复制消息内容
+  const handleCopy = useCallback(async () => {
+    const text = getTextContent();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(t('message.copied'));
+    } catch (error) {
+      console.error('[AssistantBubble] 复制失败:', error);
+      toast.error(t('error.sendFailed'));
+    }
+  }, [getTextContent, toast, t]);
+
+  // 菜单项
+  const contextMenuItems: ContextMenuItem[] = [
+    {
+      id: 'copy',
+      label: t('message.copy'),
+      icon: <Copy className="w-4 h-4" />,
+      action: handleCopy,
+    },
+  ];
 
   return (
-    <div className="flex gap-3 my-2">
-      {/* Avatar */}
-      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-primary-600
-                      flex items-center justify-center shadow-glow shrink-0">
-        <span className="text-sm font-bold text-white">P</span>
-      </div>
-
-      {/* 内容 */}
-      <div className="flex-1 space-y-1 min-w-0">
-        {/* 头部信息 */}
-        <div className="flex items-baseline gap-2">
-          <span className="text-sm font-medium text-text-primary">Claude</span>
-          <span className="text-xs text-text-tertiary">
-            {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-          </span>
+    <>
+      <div
+        className="flex gap-3 my-2"
+        onContextMenu={handleContextMenu}
+      >
+        {/* Avatar */}
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-primary-600
+                        flex items-center justify-center shadow-glow shrink-0">
+          <span className="text-sm font-bold text-white">P</span>
         </div>
 
-        {/* 渲染内容块（支持工具聚合） */}
-        {hasBlocks ? (
-          <div className="space-y-1">
-            {renderBlocksWithGrouping(message.blocks, message.isStreaming, renderMode)}
-          </div>
-        ) : message.content ? (
-          // 兼容旧格式（content 字符串）
-          <div
-            className="prose prose-invert prose-sm max-w-none"
-            dangerouslySetInnerHTML={{ __html: formatContent(message.content) }}
-          />
-        ) : null}
-
-        {/* 流式光标 */}
-        {message.isStreaming && (
-          <span className="inline-flex ml-1">
-            <span className="flex gap-0.5 items-end h-4">
-              <span className="w-1 h-1 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="w-1 h-1 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-              <span className="w-1 h-1 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+        {/* 内容 */}
+        <div className="flex-1 space-y-1 min-w-0">
+          {/* 头部信息 */}
+          <div className="flex items-baseline gap-2">
+            <span className="text-sm font-medium text-text-primary">Claude</span>
+            <span className="text-xs text-text-tertiary">
+              {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
             </span>
-          </span>
-        )}
+          </div>
+
+          {/* 渲染内容块（支持工具聚合） */}
+          {hasBlocks ? (
+            <div className="space-y-1">
+              {renderBlocksWithGrouping(message.blocks, message.isStreaming, renderMode)}
+            </div>
+          ) : message.content ? (
+            // 兼容旧格式（content 字符串）
+            <div
+              className="prose prose-invert prose-sm max-w-none"
+              dangerouslySetInnerHTML={{ __html: formatContent(message.content) }}
+            />
+          ) : null}
+
+          {/* 流式光标 */}
+          {message.isStreaming && (
+            <span className="inline-flex ml-1">
+              <span className="flex gap-0.5 items-end h-4">
+                <span className="w-1 h-1 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-1 h-1 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-1 h-1 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              </span>
+            </span>
+          )}
+        </div>
       </div>
-    </div>
+      {!isStreaming && (
+        <ContextMenu
+          visible={contextMenu.visible}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextMenuItems}
+          onClose={closeContextMenu}
+        />
+      )}
+    </>
   );
 }, (prevProps, nextProps) => {
   // 优化重渲染：使用浅比较代替深度序列化
