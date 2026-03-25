@@ -207,5 +207,12 @@
     "minutes": "{{count}}分钟",
     "hoursMinutes": "{{hours}}小时{{minutes}}分钟",
     "responding": "响应中..."
+  },
+  "search": {
+    "placeholder": "搜索消息...",
+    "noMatch": "无匹配",
+    "previous": "上一个 (Shift+Enter)",
+    "next": "下一个 (Enter)",
+    "close": "关闭 (Esc)"
   }
 }

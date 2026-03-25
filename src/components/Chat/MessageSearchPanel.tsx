@@ -12,6 +12,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Search, X, ChevronUp, ChevronDown } from 'lucide-react';
 import { clsx } from 'clsx';
+import { useTranslation } from 'react-i18next';
 
 export interface SearchMatch {
   messageId: string;
@@ -47,6 +48,7 @@ export function MessageSearchPanel({
   onPrevious,
   onNext,
 }: MessageSearchPanelProps) {
+  const { t } = useTranslation('chat');
   const inputRef = useRef<HTMLInputElement>(null);
 
   // 显示时自动聚焦
@@ -99,13 +101,13 @@ export function MessageSearchPanel({
         value={searchQuery}
         onChange={(e) => onSearchQueryChange(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="搜索消息..."
+        placeholder={t('search.placeholder')}
         className="w-48 px-2 py-1 text-sm bg-transparent border-none outline-none text-text-primary placeholder:text-text-tertiary"
       />
 
       {/* 匹配计数 */}
       <span className="text-xs text-text-tertiary min-w-[40px] text-center">
-        {totalMatches > 0 ? `${currentMatchIndex + 1}/${totalMatches}` : '无匹配'}
+        {totalMatches > 0 ? `${currentMatchIndex + 1}/${totalMatches}` : t('search.noMatch')}
       </span>
 
       {/* 上一个 */}
@@ -118,7 +120,7 @@ export function MessageSearchPanel({
             ? 'hover:bg-background-hover text-text-secondary'
             : 'text-text-muted cursor-not-allowed'
         )}
-        title="上一个 (Shift+Enter)"
+        title={t('search.previous')}
       >
         <ChevronUp className="w-4 h-4" />
       </button>
@@ -133,7 +135,7 @@ export function MessageSearchPanel({
             ? 'hover:bg-background-hover text-text-secondary'
             : 'text-text-muted cursor-not-allowed'
         )}
-        title="下一个 (Enter)"
+        title={t('search.next')}
       >
         <ChevronDown className="w-4 h-4" />
       </button>
@@ -142,7 +144,7 @@ export function MessageSearchPanel({
       <button
         onClick={onClose}
         className="p-1 rounded hover:bg-background-hover text-text-tertiary hover:text-text-primary transition-colors"
-        title="关闭 (Esc)"
+        title={t('search.close')}
       >
         <X className="w-4 h-4" />
       </button>

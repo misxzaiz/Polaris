@@ -207,5 +207,12 @@
     "minutes": "{{count}} min",
     "hoursMinutes": "{{hours}}h {{minutes}}m",
     "responding": "Responding..."
+  },
+  "search": {
+    "placeholder": "Search messages...",
+    "noMatch": "No match",
+    "previous": "Previous (Shift+Enter)",
+    "next": "Next (Enter)",
+    "close": "Close (Esc)"
   }
 }
