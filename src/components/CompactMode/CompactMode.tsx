@@ -15,6 +15,7 @@ import { useConfigStore, useEventChatStore, useWorkspaceStore, useViewStore } fr
 import { CompactMessageList, type CompactMessageListRef } from './CompactMessageList'
 import { CompactChatInput } from './CompactChatInput'
 import { CompactChatNavigator } from './CompactChatNavigator'
+import { ChatStatusBar } from '../Chat/ChatStatusBar'
 import type { EngineId } from '../../types'
 import type { Attachment } from '../../types/attachment'
 
@@ -148,6 +149,9 @@ export function CompactMode({ onSend, onInterrupt, disabled, isStreaming }: Comp
 
       {/* 对话消息区域 - 占据剩余空间 */}
       <CompactMessageList ref={messageListRef} />
+
+      {/* 对话状态栏 - 紧凑模式 */}
+      <ChatStatusBar compact />
 
       {/* 底部固定输入框 */}
       <CompactChatInput

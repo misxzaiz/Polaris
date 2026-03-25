@@ -7,7 +7,7 @@ import { ToolPanel } from './components/ToolPanel';
 import { TopMenuBar as TopMenuBarComponent } from './components/TopMenuBar';
 import { GitPanel } from './components/GitPanel';
 import { ActivityBar, LeftPanel, LeftPanelContent, CenterStage, RightPanel } from './components/Layout';
-import { EnhancedChatMessages, ChatInput } from './components/Chat';
+import { EnhancedChatMessages, ChatInput, ChatStatusBar } from './components/Chat';
 import { CompactMode } from './components/CompactMode';
 import type { SettingsTabId } from './components/Settings/SettingsSidebar';
 import { SimpleTodoPanel } from './components/TodoPanel/SimpleTodoPanel';
@@ -567,6 +567,9 @@ function App() {
 
               {/* 消息区域 */}
               <EnhancedChatMessages />
+
+              {/* 对话状态栏 */}
+              <ChatStatusBar />
 
               {/* 输入区域 */}
               <ChatInput
