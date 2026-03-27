@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updatedAt": "2026-03-28T01:20:00.000Z",
+  "updatedAt": "2026-03-28T11:10:00.000Z",
   "requirements": [
     {
       "id": "req-unsaved-dialog-002",
@@ -22,27 +22,10 @@
       "completedAt": 1743095000000
     },
     {
-      "id": "req-logging-system-003",
-      "title": "统一日志系统迁移",
-      "description": "项目中存在大量 `console.log/warn/error` 调试语句分散在各个模块中（约 188 处），应统一迁移到 `src/utils/logger.ts` 日志工具。\n\n**主要位置**：\n- `src/App.tsx` - 17 处\n- `src/engines/openai-provider/` - 13+ 处\n- `src/ai-runtime/` - 15+ 处\n- `src-tauri/dingtalk-bridge.js` - 15 处\n- `src/components/Scheduler/SchedulerPanel.tsx` - 多处 console.error\n\n**改进目标**：\n1. 审计所有 console.log 使用点\n2. 迁移到统一的 logger 工具\n3. 支持日志级别控制 (debug/info/warn/error)\n4. 生产环境自动降级日志级别\n5. 支持日志持久化（可选）\n\n**预期效果**：\n- 更好的日志管理\n- 生产环境性能优化\n- 便于问题排查",
-      "status": "pending",
-      "priority": "normal",
-      "generatedBy": "ai",
-      "tags": [
-        "code-quality",
-        "logging",
-        "maintainability"
-      ],
-      "hasPrototype": false,
-      "createdAt": 1743092400000,
-      "updatedAt": 1743092400000,
-      "generatedAt": 1743092400000
-    },
-    {
       "id": "req-file-watch-004",
       "title": "文件系统自动监听刷新",
       "description": "当前文件浏览器仅支持手动刷新，计划实现自动监听文件系统变化并刷新的功能。\n\n**影响范围**：\n- `src/components/FileExplorer/FileExplorer.tsx:471`\n- 文件树状态管理\n\n**改进目标**：\n1. 使用 Tauri 的 fs watch API 监听工作区目录\n2. 文件变化时自动更新文件树\n3. 支持增量更新而非全量刷新\n4. 处理大量文件时的性能优化\n\n**预期效果**：\n- 文件变化实时同步\n- 提升用户体验",
-      "status": "pending",
+      "status": "approved",
       "priority": "normal",
       "generatedBy": "ai",
       "tags": [
@@ -52,76 +35,9 @@
       ],
       "hasPrototype": false,
       "createdAt": 1743092400000,
-      "updatedAt": 1743092400000,
-      "generatedAt": 1743092400000
-    },
-    {
-      "id": "req-rust-unwrap-005",
-      "title": "处理 Rust 端 unwrap() 潜在 Panic 风险",
-      "description": "Rust 后端存在多处 `unwrap()` 调用可能在运行时 panic，需要改为安全的错误处理。\n\n**主要风险点**：\n- `src-tauri/src/ai/engine/*.rs` - CLI 路径可能为空（codex.rs:57, iflow.rs:62, claude.rs:55）\n- `src-tauri/src/integrations/qqbot/adapter.rs:141,383` - access_token 可能为空\n- `src-tauri/src/services/openai_proxy.rs:1187` - 正则表达式编译\n- `src-tauri/src/commands/context.rs:20` - 上下文操作\n\n**改进目标**：\n1. 审计所有 unwrap() 使用点\n2. 替换为 expect() 并添加有意义的错误信息，或使用 ? 操作符传播错误\n3. 添加单元测试覆盖边界情况\n\n**预期效果**：\n- 提升应用稳定性\n- 更好的错误提示",
-      "status": "pending",
-      "priority": "normal",
-      "generatedBy": "ai",
-      "tags": [
-        "rust",
-        "stability",
-        "error-handling"
-      ],
-      "hasPrototype": false,
-      "createdAt": 1743092400000,
-      "updatedAt": 1743092400000,
-      "generatedAt": 1743092400000
-    },
-    {
-      "id": "req-scheduler-desc-009",
-      "title": "定时任务添加描述字段支持",
-      "description": "当前定时任务模型包含 `description` 字段，但前端 SchedulerPanel 未展示和编辑该字段，用户无法为任务添加描述说明。\n\n**影响范围**：\n- `src/components/Scheduler/SchedulerPanel.tsx`\n- `src/components/Scheduler/TaskEditor.tsx`\n- `src/types/scheduler.ts`\n\n**改进目标**：\n1. 在任务卡片上显示描述（可选展开）\n2. 在任务编辑器中添加描述输入框\n3. 支持在日志列表中显示任务描述\n\n**预期效果**：\n- 用户可以为任务添加说明\n- 更好的任务管理和辨识",
-      "status": "pending",
-      "priority": "low",
-      "generatedBy": "ai",
-      "tags": [
-        "scheduler",
-        "ux",
-        "enhancement"
-      ],
-      "hasPrototype": false,
-      "createdAt": 1743092400000,
-      "updatedAt": 1743092400000,
-      "generatedAt": 1743092400000
-    },
-    {
-      "id": "req-todo-progress-010",
-      "title": "Todo 面板添加进度追踪功能",
-      "description": "当前 Todo 面板仅支持基本的任务状态（pending/in_progress/completed），缺少进度百分比和子任务支持。\n\n**影响范围**：\n- `src/components/TodoPanel/SimpleTodoPanel.tsx`\n- `src/services/simpleTodoService.ts`\n- `src/types/todo.ts`\n\n**改进目标**：\n1. 支持子任务层级结构\n2. 添加进度百分比显示\n3. 父任务自动计算完成度\n4. 支持任务拖拽排序\n\n**预期效果**：\n- 更强大的任务管理能力\n- 直观的进度可视化",
-      "status": "pending",
-      "priority": "low",
-      "generatedBy": "ai",
-      "tags": [
-        "todo",
-        "ux",
-        "enhancement"
-      ],
-      "hasPrototype": false,
-      "createdAt": 1743092400000,
-      "updatedAt": 1743092400000,
-      "generatedAt": 1743092400000
-    },
-    {
-      "id": "req-cli-version-check-011",
-      "title": "CLI 工具版本检测与兼容性提示",
-      "description": "项目依赖多个外部 CLI 工具（claude-code、codex、iflow），当前缺少版本检测机制，可能导致兼容性问题。\n\n**影响范围**：\n- `src/ai-runtime/base/base-cli-engine.ts:443-452`\n- `src-tauri/src/ai/engine/*.rs`\n\n**改进目标**：\n1. 实现各 CLI 工具版本检测\n2. 定义最低版本要求\n3. 版本不兼容时显示友好提示\n4. 支持自动下载/更新提示（可选）\n\n**预期效果**：\n- 避免版本不兼容导致的运行时错误\n- 更好的用户引导",
-      "status": "pending",
-      "priority": "normal",
-      "generatedBy": "ai",
-      "tags": [
-        "cli",
-        "compatibility",
-        "ux"
-      ],
-      "hasPrototype": false,
-      "createdAt": 1743092400000,
-      "updatedAt": 1743092400000,
-      "generatedAt": 1743092400000
+      "updatedAt": 1774632766700,
+      "generatedAt": 1743092400000,
+      "reviewedAt": 1774632766700
     },
     {
       "id": "req-scheduler-requirement-exec-012",
@@ -144,114 +60,6 @@
       "executedAt": 1743200000000,
       "completedAt": 1743201000000,
       "executeLog": "## 执行记录\n\n### 2026-03-27 执行\n\n**分析结果**：\n\n1. **现有系统调研**\n   - 需求队列系统完善，支持完整的状态流转（pending → approved → executing → completed/failed）\n   - 定时任务系统支持 simple/protocol 两种模式\n   - 协议模板系统支持内置模板和自定义模板\n\n2. **实现方案**\n   - 选择扩展现有协议模板方案，而非新增任务类型\n   - 新增 `req-executor` 协议模板到 `BUILTIN_PROTOCOL_TEMPLATES`\n   - 模板包含完整的执行规则、文件操作规范、状态管理逻辑\n\n3. **已实现**\n   - ✅ 新增 `req-executor` 协议模板（`src/types/protocolTemplate.ts`）\n   - ✅ 模板支持配置执行范围和每次执行数量上限\n   - ✅ 模板包含完整的需求执行流程定义\n   - ✅ TypeScript 类型检查通过\n   - ✅ Git 提交完成\n\n4. **使用说明**\n   - 创建定时任务 → 选择协议模式\n   - 在模板选择器中选择\"需求执行器\"\n   - 配置执行范围和数量上限\n   - 设置触发周期（默认1小时）\n   - 启用任务\n\n**实现摘要**：\n- 文件修改：`src/types/protocolTemplate.ts` 新增 `req-executor` 模板\n- 模板参数：`executionScope`（执行范围）、`maxRequirements`（数量上限）\n- 执行流程：获取 approved 需求 → 排序 → 执行 → 更新状态 → 记录日志"
-    },
-    {
-      "id": "req-hotkey-system-013",
-      "title": "全局快捷键配置系统",
-      "description": "当前应用缺少全局快捷键配置系统，用户无法自定义或查看快捷键绑定，影响操作效率。\n\n**背景分析**：\n- 当前仅有 F12 切换 DevTools 的硬编码快捷键\n- 用户无法自定义常用操作的快捷键\n- 缺少快捷键冲突检测\n- 无快捷键帮助面板\n\n**改进目标**：\n1. 实现快捷键注册与管理模块\n2. 支持用户自定义快捷键绑定\n3. 快捷键冲突检测与提示\n4. 快捷键帮助面板（显示所有可用快捷键）\n5. 常用操作预设快捷键：\n   - 新建对话 (Ctrl/Cmd + N)\n   - 切换左侧面板 (Ctrl/Cmd + B)\n   - 切换右侧面板 (Ctrl/Cmd + J)\n   - 打开设置 (Ctrl/Cmd + ,)\n   - 搜索消息 (Ctrl/Cmd + F)\n   - 清空对话 (Ctrl/Cmd + Shift + K)\n\n**影响范围**：\n- 新增 `src/stores/hotkeyStore.ts`\n- 新增 `src/components/Settings/tabs/HotkeyTab.tsx`\n- 修改 `src/App.tsx` 注册全局快捷键\n- Tauri 全局快捷键 API 集成\n\n**预期效果**：\n- 用户可自定义操作快捷键\n- 提升操作效率\n- 更好的用户体验",
-      "status": "rejected",
-      "priority": "normal",
-      "generatedBy": "ai",
-      "tags": [
-        "shortcut",
-        "ux",
-        "enhancement"
-      ],
-      "hasPrototype": false,
-      "createdAt": 1743110400000,
-      "updatedAt": 1774626674120,
-      "generatedAt": 1743110400000,
-      "reviewedAt": 1774626674120,
-      "reviewNote": "快捷键我不怎么用"
-    },
-    {
-      "id": "req-chat-export-014",
-      "title": "聊天会话导出功能增强",
-      "description": "现有 `chatExport` 服务仅支持基础导出，需要增强导出格式和选项，方便用户备份和分享对话内容。\n\n**现有能力**：\n- `src/services/chatExport.ts` 存在基础导出逻辑\n- 缺少多格式支持\n- 无导出选项配置\n\n**改进目标**：\n1. 支持多种导出格式：\n   - Markdown (.md) - 默认格式，保留格式化\n   - JSON (.json) - 完整数据，可重新导入\n   - HTML (.html) - 独立可浏览文件\n   - PDF (.pdf) - 打印友好格式（可选）\n\n2. 导出选项：\n   - 时间范围筛选\n   - 消息类型筛选（用户消息/AI消息/工具调用）\n   - 是否包含元数据（时间戳、模型信息等）\n   - 是否包含附件/图片\n\n3. 导出入口：\n   - 单条消息导出\n   - 当前会话导出\n   - 批量导出多个会话\n\n**影响范围**：\n- `src/services/chatExport.ts` - 增强导出逻辑\n- `src/components/Chat/ChatInput.tsx` - 导出按钮\n- `src/components/Chat/SessionHistoryPanel.tsx` - 批量导出\n- 新增导出配置对话框组件\n\n**预期效果**：\n- 灵活的对话备份方案\n- 便于知识分享和存档",
-      "status": "rejected",
-      "priority": "normal",
-      "generatedBy": "ai",
-      "tags": [
-        "chat",
-        "export",
-        "enhancement"
-      ],
-      "hasPrototype": false,
-      "createdAt": 1743110400000,
-      "updatedAt": 1774626685391,
-      "generatedAt": 1743110400000,
-      "reviewedAt": 1774626685391,
-      "reviewNote": "不常用"
-    },
-    {
-      "id": "req-performance-metrics-015",
-      "title": "AI 响应性能指标统计",
-      "description": "当前缺少 AI 响应的性能统计功能，用户无法了解 AI 的响应效率和资源消耗。\n\n**背景分析**：\n- AI 响应过程已通过事件驱动架构实现\n- 缺少响应时间、Token 使用等统计数据\n- 用户无法评估不同模型的性能差异\n\n**改进目标**：\n1. 响应性能指标收集：\n   - 首字响应时间 (Time to First Token)\n   - 总响应时间\n   - Token 生成速度 (tokens/秒)\n   - 输入/输出 Token 数量\n\n2. 统计面板展示：\n   - 当前会话性能概览\n   - 历史性能趋势图表\n   - 按模型/引擎分类统计\n\n3. 性能指标显示位置：\n   - 消息气泡底部显示简要统计\n   - 状态栏显示实时指标\n   - 设置中查看详细统计\n\n**影响范围**：\n- `src/stores/eventChatStore/` - 收集性能数据\n- `src/components/Chat/ChatStatusBar.tsx` - 显示实时指标\n- `src/components/Chat/MessageBubble.tsx` - 消息级统计\n- 新增性能统计面板组件\n\n**预期效果**：\n- 用户可了解 AI 响应效率\n- 便于对比不同模型性能\n- 优化成本控制决策",
-      "status": "rejected",
-      "priority": "low",
-      "generatedBy": "ai",
-      "tags": [
-        "ai",
-        "performance",
-        "metrics"
-      ],
-      "hasPrototype": false,
-      "createdAt": 1743110400000,
-      "updatedAt": 1774626699922,
-      "generatedAt": 1743110400000,
-      "reviewedAt": 1774626699922,
-      "reviewNote": "不常用"
-    },
-    {
-      "id": "req-session-management-016",
-      "title": "会话历史增强 - 标题编辑与收藏功能",
-      "description": "当前会话历史面板功能基础，缺少会话标题编辑、收藏/置顶、标签分类等功能，影响会话管理效率。\n\n**背景分析**：\n- `SessionHistoryPanel` 仅支持查看、恢复、删除会话\n- 会话标题默认使用时间戳或首条消息，无法自定义\n- 重要会话无法置顶或收藏\n- 缺少会话标签/分类功能\n- 搜索功能仅按名称过滤，不支持内容搜索\n\n**改进目标**：\n1. **会话标题编辑**\n   - 双击或右键菜单编辑会话标题\n   - 标题持久化存储\n   - 自动生成标题（基于首条用户消息）\n\n2. **收藏/置顶功能**\n   - 星标收藏重要会话\n   - 收藏会话置顶显示\n   - 收藏会话单独分组\n\n3. **标签分类**\n   - 为会话添加自定义标签\n   - 按标签筛选会话\n   - 标签颜色管理\n\n4. **搜索增强**\n   - 支持搜索会话内容（非仅标题）\n   - 搜索结果高亮显示\n\n**影响范围**：\n- `src/components/Chat/SessionHistoryPanel.tsx`\n- `src/stores/eventChatStore/historySlice.ts`\n- `src/services/unifiedHistoryService.ts`\n- 新增会话元数据存储\n\n**预期效果**：\n- 更高效的会话管理\n- 快速定位重要会话\n- 更好的会话组织能力",
-      "status": "pending",
-      "priority": "normal",
-      "generatedBy": "ai",
-      "tags": [
-        "session",
-        "ux",
-        "enhancement"
-      ],
-      "hasPrototype": false,
-      "createdAt": 1743187200000,
-      "updatedAt": 1743187200000,
-      "generatedAt": 1743187200000
-    },
-    {
-      "id": "req-message-edit-resend-017",
-      "title": "用户消息编辑与重新发送",
-      "description": "当前消息编辑功能（`messageSlice.editMessage`）仅支持修改用户消息内容，但缺少 UI 入口和重新发送 AI 请求的能力，限制了对话灵活性。\n\n**背景分析**：\n- `messageSlice` 已实现 `editMessage` 方法\n- 无 UI 入口触发编辑\n- 编辑后无法重新请求 AI 回复\n- 缺少编辑历史追踪\n\n**改进目标**：\n1. **消息编辑 UI**\n   - 用户消息右上角添加编辑按钮\n   - 点击进入编辑模式（行内编辑）\n   - 支持 Shift+Enter 换行，Enter 确认，Esc 取消\n\n2. **重新发送机制**\n   - 编辑确认后显示\"重新发送\"选项\n   - 选择重新发送：删除该消息之后的 AI 回复，重新请求\n   - 选择仅保存：仅修改内容，不影响后续消息\n\n3. **编辑历史**\n   - 保存消息原始内容\n   - 显示\"已编辑\"标识\n   - 悬停显示编辑历史\n\n**影响范围**：\n- `src/components/Chat/MessageBubble.tsx`\n- `src/stores/eventChatStore/messageSlice.ts`\n- `src/components/Chat/EnhancedChatMessages.tsx`\n\n**预期效果**：\n- 用户可修正输入错误\n- 支持调整问题重新提问\n- 更灵活的对话流程控制",
-      "status": "pending",
-      "priority": "normal",
-      "generatedBy": "ai",
-      "tags": [
-        "chat",
-        "ux",
-        "editing"
-      ],
-      "hasPrototype": false,
-      "createdAt": 1743187200000,
-      "updatedAt": 1743187200000,
-      "generatedAt": 1743187200000
-    },
-    {
-      "id": "req-ai-retry-recovery-018",
-      "title": "AI 响应失败重试与恢复机制",
-      "description": "当前 AI 响应在网络中断或服务异常时缺少自动重试和恢复机制，用户体验受影响。\n\n**背景分析**：\n- 流式响应过程中断无法自动恢复\n- 失败后需手动重新发送完整请求\n- 缺少断点续传能力\n- 无错误恢复策略配置\n\n**改进目标**：\n1. **自动重试机制**\n   - 网络错误自动重试（可配置次数，默认 3 次）\n   - 重试间隔指数退避（1s, 2s, 4s）\n   - 显示重试进度提示\n   - 用户可取消重试\n\n2. **错误恢复策略**\n   - 临时错误：自动重试\n   - 配额超限：提示用户并暂停\n   - 服务不可用：切换备用引擎（如配置）\n   - 流式中断：尝试恢复或显示部分结果\n\n3. **失败处理 UI**\n   - 消息气泡显示失败状态\n   - 提供\"重试\"按钮\n   - 显示错误详情（可展开）\n   - 提供恢复建议\n\n4. **配置项**\n   - 最大重试次数\n   - 重试间隔策略\n   - 自动切换备用引擎开关\n\n**影响范围**：\n- `src/ai-runtime/base/base-cli-engine.ts`\n- `src/stores/eventChatStore/messageSlice.ts`\n- `src/components/Chat/MessageBubble.tsx`\n- `src/stores/configStore.ts`\n\n**预期效果**：\n- 减少因网络问题导致的对话中断\n- 更好的错误反馈和恢复能力\n- 提升用户体验和对话可靠性",
-      "status": "pending",
-      "priority": "high",
-      "generatedBy": "ai",
-      "tags": [
-        "ai",
-        "reliability",
-        "error-handling"
-      ],
-      "hasPrototype": false,
-      "createdAt": 1743187200000,
-      "updatedAt": 1743187200000,
-      "generatedAt": 1743187200000
     },
     {
       "id": "req-scheduler-subscription-panel-019",
@@ -298,45 +106,6 @@
       "executeLog": "三段式布局重构(ae60a31) + 紧凑模式修复(f2fce6e)"
     },
     {
-      "id": "req-scheduler-filter-collapse-021",
-      "title": "定时任务查询条件默认折叠",
-      "description": "当前定时任务面板的筛选条件全部展开显示，占用大量空间，导致任务列表需要滚动才能看到，影响使用效率。\n\n**背景分析**：\n- `SchedulerPanel` 筛选栏包含：搜索框、状态筛选、模式筛选、引擎筛选、触发类型筛选、执行状态筛选、分组筛选、排序选择器\n- 筛选条件占用 3 行以上空间\n- 用户需要滚动才能看到任务列表\n- 常用筛选（搜索、状态）被其他选项挤压\n\n**改进目标**：\n\n1. **默认折叠高级筛选**\n   - 默认只显示：搜索框 + 状态筛选 + 筛选按钮 + 清除按钮\n   - 点击\"筛选\"按钮展开高级选项\n   - 展开显示：模式、引擎、触发类型、执行状态、分组、排序\n\n2. **激活筛选状态指示**\n   - 有筛选条件激活时，显示徽章数字（如\"3 个筛选\"）\n   - 点击徽章可清除所有筛选\n   - 展开的筛选区域显示已激活的筛选标签，支持单独清除\n\n3. **状态持久化**\n   - 可选：在 localStorage 中记住展开/折叠状态\n   - 用户偏好保持一致性\n\n4. **紧凑模式适配**\n   - 面板宽度不足时，进一步简化显示\n   - 使用下拉菜单收纳更多筛选选项\n\n**影响范围**：\n- `src/components/Scheduler/SchedulerPanel.tsx` 筛选栏部分\n- 新增 `showMoreFilters` 状态管理\n- 样式和交互动画\n\n**预期效果**：\n- 页面加载时任务列表可见范围更大\n- 高级筛选按需展开，不干扰日常使用\n- 筛选状态一目了然\n- 操作更加便捷",
-      "status": "approved",
-      "priority": "normal",
-      "generatedBy": "ai",
-      "tags": [
-        "scheduler",
-        "ux",
-        "filter"
-      ],
-      "hasPrototype": true,
-      "prototypePath": ".polaris/requirements/prototypes/scheduler-filter-collapse.html",
-      "createdAt": 1743273600000,
-      "updatedAt": 1774627904476,
-      "generatedAt": 1743273600000,
-      "reviewedAt": 1774627904476
-    },
-    {
-      "id": "req-chat-empty-state-starters-022",
-      "title": "聊天空状态添加对话启动建议",
-      "description": "当前聊天空状态页面（EmptyState 组件）为纯静态展示，仅显示 Logo、标题、描述和三个功能卡片，缺少可交互的引导元素。用户每次新建对话都会面对空白输入框，不知道该问什么，存在\"空白页问题\"。\n\n**背景分析**：\n- `EnhancedChatMessages.tsx` 中的 EmptyState 组件（第 1986 行）是用户每次新对话首先看到的界面\n- 现代主流 AI 聊天应用（ChatGPT、Claude.ai、Cursor）都在空状态提供可点击的提示建议\n- 当前实现无任何可点击的引导，仅靠\"输入消息...\"占位符引导用户\n\n**改进目标**：\n1. 在功能卡片下方新增\"试试提问\"区域\n2. 展示 4-6 个可点击的提示建议芯片（每芯片含图标+标题+简短描述）\n3. 点击芯片将建议文本填入 ChatInput 输入框并聚焦\n4. 建议内容可根据是否有工作区上下文自适应：\n   - 有工作区：\"解释项目架构\"\"最近修改了什么\"\"帮我写测试\"\"找出潜在 Bug\"等\n   - 无工作区：通用对话建议\n5. 芯片采用 2 列网格布局，hover 时高亮边框\n\n**影响范围**：\n- `src/components/Chat/EnhancedChatMessages.tsx` - EmptyState 组件添加建议区域\n- `src/components/Chat/ChatInput.tsx` - 接受外部预填充值\n- `src/locales/zh-CN/chat.json` / `src/locales/en-US/chat.json` - 国际化文本\n\n**预期效果**：\n- 降低新用户的使用门槛\n- 减少空白页面对话的犹豫感\n- 引导用户探索 AI 能力边界",
-      "status": "rejected",
-      "priority": "normal",
-      "generatedBy": "ai",
-      "tags": [
-        "chat",
-        "ux",
-        "onboarding",
-        "enhancement"
-      ],
-      "hasPrototype": true,
-      "prototypePath": ".polaris/requirements/prototypes/chat-empty-state-starters.html",
-      "createdAt": 1743360000000,
-      "updatedAt": 1774630912719,
-      "generatedAt": 1743360000000,
-      "reviewedAt": 1774630912719
-    },
-    {
       "id": "req-editor-breadcrumb-023",
       "title": "编辑器面包屑路径导航",
       "description": "当前编辑器顶部栏（EditorHeader）仅显示文件名和操作按钮，缺少完整的文件路径上下文信息。用户在编辑文件时无法快速了解文件所在目录层级，也无法通过路径快速导航到同目录的其他文件。\n\n**背景分析**：\n- `EditorHeader`（`src/components/Editor/EditorHeader.tsx`）只显示 `currentFile.name`（文件名），不显示路径\n- VS Code、IntelliJ 等主流编辑器都在编辑器上方提供面包屑导航\n- 当项目文件较多时，仅靠文件名难以区分同名文件（如多个 `index.ts`）\n- 用户需要切换到文件树才能浏览同级文件，效率较低\n\n**改进目标**：\n\n1. **面包屑路径栏**\n   - 在 TabBar 和编辑器内容之间新增面包屑导航栏（高度约 28px）\n   - 显示完整文件路径：`src › components › Editor › EditorHeader.tsx`\n   - 每段显示对应图标（文件夹/文件）\n   - 路径过长时支持水平滚动\n\n2. **路径段交互**\n   - 点击路径段（如「components」）展开下拉菜单\n   - 下拉菜单显示该目录下的所有文件和子目录\n   - 选择文件直接在编辑器中打开\n   - 选择文件夹在文件树中定位并展开\n   - 当前文件名高亮且为最后一段\n\n3. **右侧附加信息**\n   - 显示文件语言类型（TypeScript、Markdown 等）\n   - 显示文件编码（UTF-8）\n   - 显示换行符类型（LF/CRLF）\n\n4. **与现有组件协同**\n   - EditorHeader 保留保存/关闭按钮\n   - 面包屑栏独立于 EditorHeader，位于其上方或替代其路径显示部分\n   - 复用 FileExplorer 的文件图标和目录读取逻辑\n\n**影响范围**：\n- `src/components/Editor/EditorHeader.tsx` - 调整布局，移除文件名显示（由面包屑替代）\n- `src/components/Layout/CenterStage.tsx` - 在 TabBar 和 TabContent 之间插入面包屑栏\n- 新增 `src/components/Editor/BreadcrumbBar.tsx` - 面包屑导航组件\n- 新增 `src/components/Editor/BreadcrumbDropdown.tsx` - 路径段下拉菜单\n- 复用 `src/components/FileExplorer/` 的文件图标和目录读取逻辑\n\n**预期效果**：\n- 用户直观了解当前编辑文件的位置\n- 快速浏览和打开同级/上级目录文件\n- 区分不同目录下的同名文件\n- 提升文件导航效率，减少对文件树的依赖",
@@ -361,8 +130,8 @@
     {
       "id": "req-openai-provider-test-024",
       "title": "OpenAI 提供商连接测试按钮",
-      "description": "当前 OpenAI 兼容提供商配置（OpenAIProvidersTab、AIEngineTab）允许用户填写 API Key、Base URL、模型等参数，但缺少连接验证能力。用户必须实际发送一条对话消息才能发现配置错误（如 API Key 错误、Base URL 不可达、模型不存在），导致"配置 → 对话 → 报错 → 重新配置 → 重试"的低效循环。\n\n**背景分析**：\n- `configStore` 的 `healthStatus` 仅检查本地 CLI 引擎（claude）可用性，不验证 OpenAI 提供商\n- `openai-provider/engine.ts` 有完整的请求构建逻辑，但没有暴露健康检查方法\n- 用户在配置多个提供商时（如 OpenAI + DeepSeek + 自定义），无法快速确认哪些可用\n- 配置错误的具体原因（认证失败 / 网络不通 / 模型不存在）只有在发送消息后才暴露\n\n**改进目标**：\n\n1. **测试连接按钮**\n   - 在每个提供商配置卡片右上角添加「测试连接」按钮\n   - 点击后向配置的 Base URL 发送轻量级验证请求（如 GET /models 或 chat completions with 1 token）\n   - 按钮状态：默认 → 测试中（加载动画）→ 成功（绿色）/ 失败（红色）\n\n2. **测试结果展示**\n   - 成功：显示绿色横幅「连接成功 · 模型 xxx 可用 · 响应延迟 xxxms」\n   - 失败：显示红色横幅，包含具体错误原因和建议\n     - 401 认证失败 → 提示检查 API Key\n     - 网络超时 → 提示检查 Base URL 和网络代理\n     - 404 模型不存在 → 提示检查模型名称\n   - 结果可关闭，不持久化（每次测试重新验证）\n\n3. **提供商卡片状态指示**\n   - 连接成功：卡片标题旁显示绿色圆点\n   - 连接失败：卡片标题旁显示红色圆点\n   - 未测试：无指示（灰色圆点）\n   - 测试中：黄色闪烁圆点\n\n4. **后端支持**\n   - 新增 Tauri command：`test_openai_provider_connection(base_url, api_key, model)`\n   - 发送最小化请求验证连接（1 token completion 或 list models）\n   - 返回：成功/失败状态、错误详情、响应延迟\n\n**影响范围**：\n- `src/components/Settings/OpenAIProvidersTab.tsx` - 添加测试按钮和结果展示\n- `src/components/Settings/tabs/AIEngineTab.tsx` - 同步添加测试能力\n- `src/stores/configStore.ts` - 新增 `testProviderConnection` action 和测试结果状态\n- `src-tauri/src/commands/` - 新增连接测试 Tauri command\n- `src/locales/zh-CN/settings.json` / `src/locales/en-US/settings.json` - 国际化\n\n**预期效果**：\n- 用户配置提供商后可立即验证是否可用\n- 配置错误在输入阶段就被发现和修正\n- 减少因配置问题导致的对话失败体验\n- 多提供商场景下快速确认各提供商状态",
-      "status": "pending",
+      "description": "当前 OpenAI 兼容提供商配置（OpenAIProvidersTab、AIEngineTab）允许用户填写 API Key、Base URL、模型等参数，但缺少连接验证能力。用户必须实际发送一条对话消息才能发现配置错误（如 API Key 错误、Base URL 不可达、模型不存在），导致「配置 → 对话 → 报错 → 重新配置 → 重试」的低效循环。\n\n**背景分析**：\n- `configStore` 的 `healthStatus` 仅检查本地 CLI 引擎（claude）可用性，不验证 OpenAI 提供商\n- `openai-provider/engine.ts` 有完整的请求构建逻辑，但没有暴露健康检查方法\n- 用户在配置多个提供商时（如 OpenAI + DeepSeek + 自定义），无法快速确认哪些可用\n- 配置错误的具体原因（认证失败 / 网络不通 / 模型不存在）只有在发送消息后才暴露\n\n**改进目标**：\n\n1. **测试连接按钮**\n   - 在每个提供商配置卡片右上角添加「测试连接」按钮\n   - 点击后向配置的 Base URL 发送轻量级验证请求（如 GET /models 或 chat completions with 1 token）\n   - 按钮状态：默认 → 测试中（加载动画）→ 成功（绿色）/ 失败（红色）\n\n2. **测试结果展示**\n   - 成功：显示绿色横幅「连接成功 · 模型 xxx 可用 · 响应延迟 xxxms」\n   - 失败：显示红色横幅，包含具体错误原因和建议\n     - 401 认证失败 → 提示检查 API Key\n     - 网络超时 → 提示检查 Base URL 和网络代理\n     - 404 模型不存在 → 提示检查模型名称\n   - 结果可关闭，不持久化（每次测试重新验证）\n\n3. **提供商卡片状态指示**\n   - 连接成功：卡片标题旁显示绿色圆点\n   - 连接失败：卡片标题旁显示红色圆点\n   - 未测试：无指示（灰色圆点）\n   - 测试中：黄色闪烁圆点\n\n4. **后端支持**\n   - 新增 Tauri command：`test_openai_provider_connection(base_url, api_key, model)`\n   - 发送最小化请求验证连接（1 token completion 或 list models）\n   - 返回：成功/失败状态、错误详情、响应延迟\n\n**影响范围**：\n- `src/components/Settings/OpenAIProvidersTab.tsx` - 添加测试按钮和结果展示\n- `src/components/Settings/tabs/AIEngineTab.tsx` - 同步添加测试能力\n- `src/stores/configStore.ts` - 新增 `testProviderConnection` action 和测试结果状态\n- `src-tauri/src/commands/` - 新增连接测试 Tauri command\n- `src/locales/zh-CN/settings.json` / `src/locales/en-US/settings.json` - 国际化\n\n**预期效果**：\n- 用户配置提供商后可立即验证是否可用\n- 配置错误在输入阶段就被发现和修正\n- 减少因配置问题导致的对话失败体验\n- 多提供商场景下快速确认各提供商状态",
+      "status": "completed",
       "priority": "normal",
       "generatedBy": "ai",
       "tags": [
@@ -374,8 +143,68 @@
       "hasPrototype": true,
       "prototypePath": ".polaris/requirements/prototypes/openai-provider-test-connection.html",
       "createdAt": 1743360000000,
-      "updatedAt": 1743360000000,
-      "generatedAt": 1743360000000
+      "updatedAt": "2026-03-28T11:10:00.000Z",
+      "generatedAt": 1743360000000,
+      "reviewedAt": 1774632725137,
+      "executedAt": 1743166800000,
+      "completedAt": 1743167400000,
+      "executeLog": "## 执行记录\n\n### 2026-03-28 执行\n\n**分析结果**：\n\n1. **现有系统调研**\n   - `OpenAIProvidersTab` 已有基础测试连接功能（GET /models）\n   - 测试结果仅存储 boolean（成功/失败），无详细错误信息\n   - UI 仅显示文字「连接成功/失败」，无状态指示器和详细横幅\n   - 所有文本硬编码中文，未使用 i18n\n\n2. **实现方案**（最小改动原则）\n   - 扩展测试结果类型为 `TestResult { success, latency, errorMessage, modelAvailable }`\n   - 增强 `testConnection` 函数：计算延迟、解析模型列表验证模型可用性、根据 HTTP 状态码提供具体错误提示\n   - ProviderCard 头部添加状态圆点（灰/绿/红/黄色闪烁）\n   - 测试结果横幅：成功显示模型可用性和延迟，失败显示具体错误建议\n   - 全部文本 i18n 化（中/英）\n\n3. **已实现**\n   - ✅ 增强 `testConnection` 函数（延迟计算、模型列表验证、错误分类）\n   - ✅ 状态圆点指示器（头部，4种状态）\n   - ✅ 测试结果横幅（成功/失败 + 详情 + 可关闭）\n   - ✅ 头部显示模型名称缩略信息\n   - ✅ 完整 i18n 支持（zh-CN/en-US）\n   - ✅ TypeScript 类型检查通过\n\n4. **核心改动**\n   - `src/components/Settings/OpenAIProvidersTab.tsx`: 重构测试连接和 ProviderCard\n   - `src/locales/zh-CN/settings.json`: 新增 openaiProviders 扩展文本（20个key）\n   - `src/locales/en-US/settings.json`: 同步英文文本\n\n**说明**：采用前端直接 fetch 验证方案，无需新增 Tauri command，减少了后端改动和实现成本。对某些不支持 /models 端点的提供商做了容错处理。"
+    },
+    {
+      "id": "req-requirement-format-standard-025",
+      "title": "AI 需求文档生成格式规范化",
+      "description": "当前 AI 生成的需求文档在描述结构、章节命名、内容深度等方面存在显著不一致，影响需求审核效率和执行质量。\n\n**背景分析**：\n\n经审查现有 20 条需求记录，发现以下格式问题：\n\n1. **章节结构不统一**\n   - 部分需求包含「背景分析 + 改进目标 + 影响范围 + 预期效果」四段式\n   - 部分需求缺少背景分析，直接进入改进目标\n   - 部分需求额外包含「实现摘要」章节\n   - 部分需求将影响范围嵌入描述段落而非独立章节\n\n2. **内容深度差异大**\n   - 短描述仅 2-3 句话 + 简单列表\n   - 长描述包含详细背景、代码引用、多级嵌套子项\n   - 同类需求（如两个 Scheduler 相关需求）的详细程度差异明显\n\n3. **代码引用格式不一致**\n   - 有的用行内代码 `file.ts:line`\n   - 有的仅写 `file.ts` 不带行号\n   - 有的在影响范围列表中引用，有的在背景分析中引用\n\n4. **列表层级使用混乱**\n   - 有的用数字编号（1. 2. 3.）作为顶层\n   - 有的用无序列表（-）作为顶层\n   - 子项层级缩进不一致\n\n5. **JSON 语法风险**\n   - 部分需求 description 中包含未转义的 ASCII 双引号，导致 JSON 解析失败（已修复 req-openai-provider-test-024）\n   - 长文本中的特殊字符（引号、反斜杠）缺少转义\n\n**改进目标**：\n\n1. **定义标准需求文档模板**\n   - 制定固定的章节结构：\n     a. **问题概述**（1-2 句话描述现状和痛点）\n     b. **背景分析**（引用相关代码和现有实现，说明为何需要改进）\n     c. **改进目标**（编号列表，每项有明确的子项描述）\n     d. **影响范围**（列出涉及的文件路径，使用行内代码格式）\n     e. **预期效果**（简洁描述改进后的效果）\n   - 可选章节：**技术方案**（如需特定技术选型说明）、**原型说明**（如生成了原型文件）\n\n2. **制定内容规范**\n   - 问题描述：控制在 2-3 句话内，聚焦「现状 + 痛点」\n   - 背景分析：必须引用至少一个相关文件路径，说明当前实现状态\n   - 改进目标：使用编号列表（1. 2. 3.），子项用无序列表（-），最多 2 层嵌套\n   - 影响范围：每行一个文件路径，格式为 `src/path/to/file.ts` + 简要说明\n   - 预期效果：3-5 条简洁要点\n\n3. **制定 JSON 安全规范**\n   - description 内禁止使用 ASCII 双引号（U+0022），一律使用中文引号「」或转义\n   - 禁止使用原始换行符，使用 \n 表示换行\n   - 文件路径使用正斜杠 / 而非反斜杠\n\n4. **创建需求模板文件**\n   - 在  中存放 Markdown 格式模板\n   - 供 AI 生成需求时参考，确保格式一致\n   - 模板包含所有必填和选填章节的示例\n\n5. **更新 CLAUDE.md 文档**\n   - 在 CLAUDE.md 的「需求队列系统 > AI 操作规范」章节中增加格式规范引用\n   - 明确 AI 生成需求时必须遵循模板格式\n\n**影响范围**：\n-  - 新建需求文档模板\n-  - 更新 AI 操作规范章节\n\n**预期效果**：\n- AI 生成的需求文档格式统一、结构清晰\n- 需求审核效率提升，减少格式相关的沟通成本\n- 避免 JSON 转义错误导致的需求文件损坏\n- 为后续需求面板 UI 渲染提供一致的解析基础",
+      "status": "pending",
+      "priority": "normal",
+      "generatedBy": "ai",
+      "tags": [
+        "requirements",
+        "standards",
+        "documentation",
+        "tooling"
+      ],
+      "hasPrototype": false,
+      "createdAt": 1774632952219,
+      "updatedAt": 1774632952219,
+      "generatedAt": 1774632952219
+    },
+    {
+      "id": "req-command-palette-026",
+      "title": "命令面板 - 快速命令搜索与执行",
+      "description": "当前 Polaris 作为开发者桌面工具，缺少命令面板（Command Palette）这一在 VS Code、Cursor 等现代开发工具中广泛使用的核心交互模式。用户需要通过侧边栏、右键菜单或记忆快捷键来触达功能，操作路径长且不直观。\n\n**背景分析**：\n- 项目中存在大量功能入口分散在不同面板和组件中（设置、文件浏览器、Git 操作、定时任务、需求队列、翻译等）\n- 没有任何全局搜索或快速命令机制\n- 用户需要熟悉界面布局才能找到目标功能\n- `commandStore`（`src/stores/commandStore.ts`）存在命令处理逻辑，但没有统一的命令发现入口\n- 主流开发者工具（VS Code Ctrl+Shift+P、Cursor Cmd+K、Raycast）都将命令面板作为核心交互\n\n**改进目标**：\n\n1. **命令面板弹窗**\n   - 全局快捷键触发（如 Ctrl+Shift+P 或 Ctrl+K）\n   - 居中弹出半透明模态面板（参考原型）\n   - 搜索框 + 实时过滤结果列表\n   - 键盘导航（上下箭头、Enter 执行、Esc 关闭）\n\n2. **命令注册机制**\n   - 定义统一命令接口：`{ id, label, category, icon, shortcut, handler }`\n   - 扩展 `commandStore` 添加命令注册表\n   - 各模块自行注册命令（如 chat.registerCommands()、scheduler.registerCommands()）\n   - 支持命令分组（文件操作、对话管理、视图切换、工具等）\n\n3. **多模式搜索**\n   - 默认模式：搜索并执行命令\n   - 文件模式（> 前缀）：搜索并打开工作区文件，复用 fileExplorerStore\n   - 设置模式（@ 前缀）：搜索并跳转设置项\n   - 最近使用命令优先显示\n\n4. **搜索能力**\n   - 支持拼音首字母搜索（如输入「hw」匹配「打开设置」的候选需观察用户习惯）\n   - 模糊匹配高亮显示匹配字符\n   - 按使用频率排序，最近使用的命令置顶\n\n**影响范围**：\n- 新增 `src/components/Common/CommandPalette.tsx` - 命令面板组件\n- `src/stores/commandStore.ts` - 扩展命令注册和搜索\n- `src/App.tsx` - 注册全局快捷键和面板挂载\n- `src/locales/zh-CN/common.json` / `src/locales/en-US/common.json` - 国际化\n- 各功能模块 - 注册各自命令\n\n**预期效果**：\n- 用户通过一个入口快速触达所有功能\n- 降低功能发现成本，新用户也能高效操作\n- 键盘友好，提升开发者操作效率\n- 为后续扩展（如 AI 命令、工作流编排）提供基础",
+      "status": "pending",
+      "priority": "high",
+      "generatedBy": "ai",
+      "tags": [
+        "ux",
+        "navigation",
+        "command-palette",
+        "enhancement"
+      ],
+      "hasPrototype": true,
+      "prototypePath": ".polaris/requirements/prototypes/command-palette.html",
+      "createdAt": 1774642200000,
+      "updatedAt": 1774642200000,
+      "generatedAt": 1774642200000
+    },
+    {
+      "id": "req-chat-draft-autosave-027",
+      "title": "聊天输入草稿按会话自动保存",
+      "description": "当前聊天输入框（ChatInput、CompactChatInput）使用 React useState 管理输入文本，未发送的内容在切换会话或组件卸载时会丢失。所有主流聊天应用（微信、Slack、Discord）都支持草稿自动保存，用户切走再切回时恢复之前输入的内容。\n\n**背景分析**：\n- `ChatInput.tsx:51` 使用 `useState('')` 管理输入文本，纯内存状态\n- `CompactChatInput.tsx:35` 同样使用 `useState('')`，无持久化\n- `chatInputStore.ts` 仅跟踪元数据（inputLength、attachmentCount），不保存实际文本\n- ChatInput 在 App.tsx 中作为单例挂载，切换会话不会 unmount，但文本残留为脏状态\n- 紧凑模式切换会导致组件 unmount，输入内容完全丢失\n- 无 localStorage/sessionStorage 调用与输入草稿相关\n\n**改进目标**：\n\n1. **按会话草稿存储**\n   - 在 chatInputStore 中新增 `drafts: Record<string, string>` 状态\n   - key 为 conversationId，value 为输入文本\n   - 使用 Zustand persist 中间件持久化到 localStorage\n   - 切换会话时自动保存当前输入到旧会话、从新会话恢复草稿\n\n2. **自动保存机制**\n   - 输入变化时 debounce 300ms 后自动保存（避免频繁写入）\n   - 发送消息后自动清除该会话草稿\n   - 会话删除时同步清理对应草稿\n\n3. **草稿恢复提示**\n   - 切换到有草稿的会话时，输入框自动填充草稿内容\n   - 输入框下方显示小字提示「草稿已自动保存」（带淡入动画）\n   - 会话列表中有草稿的会话标题旁显示橙色圆点指示\n\n4. **存储管理**\n   - 草稿总大小上限 512KB（约可存储数千条草稿）\n   - 超出时按 LRU 清理最旧的草稿\n   - 单条草稿长度限制 10000 字符\n\n**影响范围**：\n- `src/stores/chatInputStore.ts` - 新增 drafts 状态和 persist 中间件\n- `src/components/Chat/ChatInput.tsx` - 集成草稿保存/恢复逻辑\n- `src/components/CompactMode/CompactChatInput.tsx` - 同步集成\n- `src/stores/chatStore/sessionSlice.ts` - 会话切换时触发草稿保存/恢复\n- `src/locales/zh-CN/chat.json` / `src/locales/en-US/chat.json` - 草稿提示文本\n\n**预期效果**：\n- 用户切换会话再切回时，之前输入的内容自动恢复\n- 防止因意外操作（切换紧凑模式、刷新页面）丢失输入\n- 会话列表的草稿指示器提供直观的草稿状态反馈\n- 对性能几乎无影响（debounce + localStorage 轻量读写）",
+      "status": "pending",
+      "priority": "normal",
+      "generatedBy": "ai",
+      "tags": [
+        "chat",
+        "ux",
+        "data-safety",
+        "enhancement"
+      ],
+      "hasPrototype": true,
+      "prototypePath": ".polaris/requirements/prototypes/chat-input-draft-autosave.html",
+      "createdAt": 1743446400000,
+      "updatedAt": 1743446400000,
+      "generatedAt": 1743446400000
     }
   ]
 }

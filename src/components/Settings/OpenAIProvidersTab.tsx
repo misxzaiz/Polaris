@@ -8,8 +8,17 @@
  */
 
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { Config, OpenAIProvider, EngineId } from '../../types'
 import { clsx } from 'clsx'
+
+/** 测试连接结果 */
+interface TestResult {
+  success: boolean
+  latency?: number
+  errorMessage?: string
+  modelAvailable?: boolean
+}
 
 interface OpenAIProvidersTabProps {
   config: Config
@@ -18,8 +27,9 @@ interface OpenAIProvidersTabProps {
 }
 
 export function OpenAIProvidersTab({ config, onConfigChange, loading }: OpenAIProvidersTabProps) {
+  const { t } = useTranslation('settings')
   const [testingProviderId, setTestingProviderId] = useState<string | null>(null)
-  const [testResults, setTestResults] = useState<Map<string, boolean>>(new Map())
+  const [testResults, setTestResults] = useState<Map<string, TestResult>>(new Map())
 
   const providers = config.openaiProviders || []
   const activeProviderId = config.activeProviderId
@@ -73,23 +83,57 @@ export function OpenAIProvidersTab({ config, onConfigChange, loading }: OpenAIPr
   const testConnection = async (provider: OpenAIProvider) => {
     setTestingProviderId(provider.id)
 
+    const startTime = Date.now()
+    const baseUrl = provider.apiBase.replace(/\/$/, '')
+
     try {
-      const response = await fetch(`${provider.apiBase.replace(/\/$/, '')}/models`, {
+      const response = await fetch(`${baseUrl}/models`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${provider.apiKey}`,
         },
-        signal: AbortSignal.timeout(10000), // 10 秒超时
+        signal: AbortSignal.timeout(10000),
       })
 
-      const success = response.ok
-      setTestResults(prev => new Map(prev).set(provider.id, success))
+      const latency = Date.now() - startTime
 
-      return success
+      if (!response.ok) {
+        const errorMessage = getErrorMessage(response.status, t)
+        setTestResults(prev => new Map(prev).set(provider.id, {
+          success: false,
+          latency,
+          errorMessage,
+        }))
+        return
+      }
+
+      // 检查模型是否在列表中
+      let modelAvailable = false
+      try {
+        const data = await response.json()
+        const modelList: string[] = data?.data?.map((m: { id: string }) => m.id) ?? []
+        modelAvailable = modelList.includes(provider.model)
+      } catch {
+        // 无法解析模型列表，忽略（某些提供商可能不支持 /models）
+        modelAvailable = true
+      }
+
+      setTestResults(prev => new Map(prev).set(provider.id, {
+        success: true,
+        latency,
+        modelAvailable,
+      }))
     } catch (error) {
-      console.error(`Test connection failed for ${provider.name}:`, error)
-      setTestResults(prev => new Map(prev).set(provider.id, false))
-      return false
+      const latency = Date.now() - startTime
+      const errorMessage = error instanceof TypeError
+        ? t('openaiProviders.errorNetwork')
+        : t('openaiProviders.errorUnknown', { message: error instanceof Error ? error.message : String(error) })
+
+      setTestResults(prev => new Map(prev).set(provider.id, {
+        success: false,
+        latency,
+        errorMessage,
+      }))
     } finally {
       setTestingProviderId(null)
     }
@@ -101,7 +145,7 @@ export function OpenAIProvidersTab({ config, onConfigChange, loading }: OpenAIPr
       ...provider,
       id: `provider-${Date.now()}`,
       name: `${provider.name} (Copy)`,
-      enabled: false, // 默认禁用复制的 Provider
+      enabled: false,
     }
     onConfigChange({
       ...config,
@@ -122,7 +166,7 @@ export function OpenAIProvidersTab({ config, onConfigChange, loading }: OpenAIPr
     <div className="space-y-4">
       {/* 说明 */}
       <p className="text-sm text-text-secondary mb-4">
-        配置多个 OpenAI 协议兼容的 API 服务。支持 OpenAI 官方、DeepSeek、Ollama 本地等。
+        {t('openaiProviders.description')}
       </p>
 
       {/* Provider 列表 */}
@@ -140,6 +184,13 @@ export function OpenAIProvidersTab({ config, onConfigChange, loading }: OpenAIPr
             onDuplicate={() => duplicateProvider(provider)}
             onTest={() => testConnection(provider)}
             onSelectActive={() => setActiveProvider(provider.id)}
+            onDismissResult={() => {
+              setTestResults(prev => {
+                const next = new Map(prev)
+                next.delete(provider.id)
+                return next
+              })
+            }}
           />
         ))}
       </div>
@@ -153,10 +204,18 @@ export function OpenAIProvidersTab({ config, onConfigChange, loading }: OpenAIPr
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
         </svg>
-        <span className="text-sm">添加 OpenAI Provider</span>
+        <span className="text-sm">{t('openaiProviders.addProvider')}</span>
       </button>
     </div>
   )
+}
+
+/** 根据 HTTP 状态码返回错误提示 */
+function getErrorMessage(status: number, t: (key: string, options?: Record<string, unknown>) => string): string {
+  if (status === 401 || status === 403) return t('openaiProviders.errorAuth')
+  if (status === 404) return t('openaiProviders.errorModel')
+  if (status >= 500) return t('openaiProviders.errorNetwork')
+  return t('openaiProviders.errorUnknown', { message: `HTTP ${status}` })
 }
 
 /**
@@ -166,13 +225,14 @@ interface ProviderCardProps {
   provider: OpenAIProvider
   isActive: boolean
   isTesting: boolean
-  testResult?: boolean
+  testResult?: TestResult
   disabled: boolean
   onUpdate: (updates: Partial<OpenAIProvider>) => void
   onRemove: () => void
   onDuplicate: () => void
-  onTest: () => Promise<boolean>
+  onTest: () => Promise<void>
   onSelectActive: () => void
+  onDismissResult: () => void
 }
 
 function ProviderCard({
@@ -186,8 +246,19 @@ function ProviderCard({
   onDuplicate,
   onTest,
   onSelectActive,
+  onDismissResult,
 }: ProviderCardProps) {
+  const { t } = useTranslation('settings')
   const [isExpanded, setIsExpanded] = useState(false)
+
+  // 状态圆点样式
+  const statusDotClass = clsx(
+    "w-2 h-2 rounded-full flex-shrink-0",
+    isTesting && "bg-yellow-500 animate-pulse",
+    !isTesting && testResult?.success && "bg-green-500",
+    !isTesting && testResult && !testResult.success && "bg-red-500",
+    !isTesting && !testResult && "bg-gray-400"
+  )
 
   return (
     <div
@@ -198,9 +269,16 @@ function ProviderCard({
     >
       {/* 头部 */}
       <div className="flex items-center justify-between p-4 bg-surface">
-        <div className="flex items-center gap-3 flex-1">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          {/* 状态圆点 */}
+          <div className={statusDotClass} title={
+            isTesting ? t('openaiProviders.testing') :
+            testResult?.success ? t('openaiProviders.testSuccess', { model: provider.model, latency: testResult.latency }) :
+            testResult ? t('openaiProviders.testFailed') : ''
+          } />
+
           {/* 启用开关 */}
-          <label className="flex items-center gap-2">
+          <label className="flex items-center gap-2 flex-shrink-0">
             <input
               type="checkbox"
               checked={provider.enabled}
@@ -208,7 +286,7 @@ function ProviderCard({
               disabled={disabled}
               className="w-4 h-4"
             />
-            <span className="text-sm text-text-secondary">启用</span>
+            <span className="text-sm text-text-secondary">{t('openaiProviders.enable')}</span>
           </label>
 
           {/* Provider 名称 */}
@@ -217,24 +295,19 @@ function ProviderCard({
             value={provider.name}
             onChange={(e) => onUpdate({ name: e.target.value })}
             disabled={disabled}
-            placeholder="Provider 名称"
+            placeholder={t('openaiProviders.setName')}
             className={clsx(
-              "flex-1 px-3 py-1.5 rounded border bg-background text-sm",
+              "flex-1 min-w-0 px-3 py-1.5 rounded border bg-background text-sm",
               isActive ? "border-primary" : "border-border-subtle focus:border-primary"
             )}
           />
 
-          {/* 状态指示 */}
-          {testResult === true && (
-            <span className="text-success text-xs">✓ 连接成功</span>
-          )}
-          {testResult === false && (
-            <span className="text-error text-xs">✗ 连接失败</span>
-          )}
+          {/* 模型名 */}
+          <span className="text-xs text-text-tertiary flex-shrink-0">{provider.model}</span>
         </div>
 
         {/* 操作按钮 */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0 ml-2">
           {/* 设为当前 */}
           {!isActive && provider.enabled && (
             <button
@@ -242,13 +315,13 @@ function ProviderCard({
               disabled={disabled}
               className="px-3 py-1 text-xs rounded border border-primary text-primary hover:bg-primary/10"
             >
-              设为当前
+              {t('openaiProviders.setActive')}
             </button>
           )}
 
           {isActive && (
             <span className="px-3 py-1 text-xs rounded bg-primary text-white">
-              当前
+              {t('openaiProviders.current')}
             </span>
           )}
 
@@ -263,12 +336,43 @@ function ProviderCard({
         </div>
       </div>
 
+      {/* 测试结果横幅 */}
+      {testResult && !isTesting && (
+        <div className={clsx(
+          "px-4 py-2 text-xs flex items-center justify-between border-t",
+          testResult.success
+            ? "bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20"
+            : "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20"
+        )}>
+          <span>
+            {testResult.success ? (
+              testResult.modelAvailable
+                ? t('openaiProviders.testSuccess', { model: provider.model, latency: testResult.latency })
+                : t('openaiProviders.testSuccessModelNotFound', { model: provider.model, latency: testResult.latency })
+            ) : (
+              <>
+                {t('openaiProviders.testFailed')}
+                {testResult.errorMessage && ` · ${testResult.errorMessage}`}
+              </>
+            )}
+          </span>
+          <button
+            onClick={onDismissResult}
+            className="ml-2 opacity-60 hover:opacity-100 transition-opacity"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
+
       {/* 展开配置 */}
       {isExpanded && (
         <div className="p-4 space-y-3 border-t border-border-subtle">
           {/* API Key */}
           <div>
-            <label className="block text-xs text-text-secondary mb-1">API Key</label>
+            <label className="block text-xs text-text-secondary mb-1">{t('openaiProviders.apiKey')}</label>
             <input
               type="password"
               value={provider.apiKey}
@@ -281,7 +385,7 @@ function ProviderCard({
 
           {/* API Base URL */}
           <div>
-            <label className="block text-xs text-text-secondary mb-1">API Base URL</label>
+            <label className="block text-xs text-text-secondary mb-1">{t('openaiProviders.apiBase')}</label>
             <input
               type="text"
               value={provider.apiBase}
@@ -294,7 +398,7 @@ function ProviderCard({
 
           {/* 模型名称 */}
           <div>
-            <label className="block text-xs text-text-secondary mb-1">模型名称</label>
+            <label className="block text-xs text-text-secondary mb-1">{t('openaiProviders.modelName')}</label>
             <input
               type="text"
               value={provider.model}
@@ -304,14 +408,14 @@ function ProviderCard({
               className="w-full px-3 py-2 rounded border border-border bg-background text-sm"
             />
             <p className="text-xs text-text-tertiary mt-1">
-              完全由您决定，可以是任意模型名称
+              {t('openaiProviders.modelNameHint')}
             </p>
           </div>
 
           {/* 温度和 Token 数 */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-text-secondary mb-1">温度 (0-2)</label>
+              <label className="block text-xs text-text-secondary mb-1">{t('openaiProviders.temperature')}</label>
               <input
                 type="number"
                 min="0"
@@ -324,7 +428,7 @@ function ProviderCard({
               />
             </div>
             <div>
-              <label className="block text-xs text-text-secondary mb-1">最大 Token 数</label>
+              <label className="block text-xs text-text-secondary mb-1">{t('openaiProviders.maxTokens')}</label>
               <input
                 type="number"
                 min="1"
@@ -349,7 +453,7 @@ function ProviderCard({
                     : "border-primary text-primary hover:bg-primary/10"
                 )}
               >
-                {isTesting ? '测试中...' : '测试连接'}
+                {isTesting ? t('openaiProviders.testing') : t('openaiProviders.testConnection')}
               </button>
 
               <button
@@ -357,7 +461,7 @@ function ProviderCard({
                 disabled={disabled}
                 className="px-4 py-2 text-sm rounded border border-border hover:bg-background-hover"
               >
-                复制
+                {t('openaiProviders.duplicate')}
               </button>
             </div>
 
@@ -366,7 +470,7 @@ function ProviderCard({
               disabled={disabled}
               className="px-4 py-2 text-sm rounded border border-danger/30 text-danger hover:bg-danger/10"
             >
-              删除
+              {t('openaiProviders.remove')}
             </button>
           </div>
         </div>
