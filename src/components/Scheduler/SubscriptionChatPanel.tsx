@@ -123,12 +123,6 @@ export function SubscriptionChatPanel() {
     }
   }, [currentSession?.logs, isPanelCollapsed]);
 
-  // 如果没有订阅会话，不显示面板
-  const sessionIds = Object.keys(subscriptionSessions);
-  if (sessionIds.length === 0) {
-    return null;
-  }
-
   const handleStop = useCallback(async () => {
     if (!activeSubscriptionId) return;
     try {
@@ -142,6 +136,12 @@ export function SubscriptionChatPanel() {
     if (!activeSubscriptionId) return;
     clearSubscriptionSession(activeSubscriptionId);
   }, [activeSubscriptionId, clearSubscriptionSession]);
+
+  // 如果没有订阅会话，不显示面板
+  const sessionIds = Object.keys(subscriptionSessions);
+  if (sessionIds.length === 0) {
+    return null;
+  }
 
   return (
     <div className="border-t-2 border-cyan-500/50 bg-[#0a0a1a]/95">
