@@ -129,7 +129,9 @@
   },
 
   "empty": {
-    "noRequirements": "暂无需求，点击右上角按钮创建"
+    "noRequirements": "暂无需求，点击右上角按钮创建",
+    "noMatching": "没有符合筛选条件的需求",
+    "hint": "可通过定时任务自动生成需求，选择 req-generate 模板"
   },
 
   "newRequirement": "新建"

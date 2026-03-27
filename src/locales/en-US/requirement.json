@@ -129,7 +129,9 @@
   },
 
   "empty": {
-    "noRequirements": "No requirements. Click the button above to create one."
+    "noRequirements": "No requirements. Click the button above to create one.",
+    "noMatching": "No requirements match the current filter",
+    "hint": "You can set up scheduled tasks to auto-generate (req-generate template)"
   },
 
   "newRequirement": "New"

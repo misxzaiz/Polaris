@@ -139,10 +139,8 @@ export function RequirementPanel() {
   }
 
   const handleReject = async (req: Requirement, reason?: string) => {
-    const resolvedReason = reason ?? prompt(t('detail.actions.rejectPlaceholder'))
-    if (resolvedReason === null) return // 用户取消
     try {
-      await rejectRequirements([req.id], resolvedReason || undefined)
+      await rejectRequirements([req.id], reason || undefined)
     } catch (e) {
       log.error('拒绝需求失败', e instanceof Error ? e : new Error(String(e)))
       alert(t('toast.updateFailed'))
@@ -286,7 +284,7 @@ export function RequirementPanel() {
             key={req.id}
             requirement={req}
             onApproveClick={handleApprove}
-            onRejectClick={handleReject}
+            onRejectClick={req => setSelectedId(req.id)}
             onDeleteClick={handleDelete}
             onEditClick={req => setSelectedId(req.id)}
             onClick={req => setSelectedId(req.id)}
@@ -298,8 +296,15 @@ export function RequirementPanel() {
           <div className="flex flex-col items-center justify-center py-12 text-text-tertiary">
             <ClipboardList size={48} className="mb-3 opacity-50" />
             <p className="text-sm">
-              {t('empty.noRequirements')}
+              {statusFilter !== 'all' || filter.search
+                ? t('empty.noMatching')
+                : t('empty.noRequirements')}
             </p>
+            {statusFilter === 'all' && !filter.search && (
+              <p className="mt-2 text-xs opacity-70">
+                {t('empty.hint')}
+              </p>
+            )}
           </div>
         )}
       </div>
