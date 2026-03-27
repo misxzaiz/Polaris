@@ -133,6 +133,11 @@ export function RequirementPanel() {
       )
     }
 
+    // 状态筛选
+    if (statusFilter !== 'all') {
+      result = result.filter(r => r.status === statusFilter)
+    }
+
     // 排序
     result.sort((a, b) => {
       let cmp = 0
@@ -145,7 +150,7 @@ export function RequirementPanel() {
     })
 
     return result
-  }, [requirements, filter.search, sortBy, sortOrder])
+  }, [requirements, filter.search, statusFilter, sortBy, sortOrder])
 
   // --- 事件处理 ---
 

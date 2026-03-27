@@ -274,7 +274,6 @@ export function sanitizeRequirement(raw: unknown): Requirement | null {
   }
 
   return {
-    ...obj,
     id,
     title,
     description,
