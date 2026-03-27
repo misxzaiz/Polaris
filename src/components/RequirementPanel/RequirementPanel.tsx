@@ -138,11 +138,11 @@ export function RequirementPanel() {
     }
   }
 
-  const handleReject = async (req: Requirement) => {
-    const reason = prompt(t('detail.actions.rejectPlaceholder'))
-    if (reason === null) return // 用户取消
+  const handleReject = async (req: Requirement, reason?: string) => {
+    const resolvedReason = reason ?? prompt(t('detail.actions.rejectPlaceholder'))
+    if (resolvedReason === null) return // 用户取消
     try {
-      await rejectRequirements([req.id], reason || undefined)
+      await rejectRequirements([req.id], resolvedReason || undefined)
     } catch (e) {
       log.error('拒绝需求失败', e instanceof Error ? e : new Error(String(e)))
       alert(t('toast.updateFailed'))
@@ -229,29 +229,27 @@ export function RequirementPanel() {
         {/* 状态筛选按钮 */}
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-1 flex-wrap">
-            {(['all', 'pending', 'approved', 'executing', 'completed'] as StatusFilterType[]).map(s => (
-              <button
-                key={s}
-                onClick={() => setStatusFilter(s)}
-                className={`px-2 py-1 text-xs rounded flex items-center gap-1 whitespace-nowrap transition-all ${
-                  statusFilter === s
-                    ? 'bg-primary text-white'
-                    : 'hover:bg-background-hover text-text-secondary'
-                }`}
-              >
-                <StatusFilterIcon status={s} />
-                {s === 'all' ? t('filter.allStatus') : t(`status.${s}`)}
-                {s !== 'all' && stats && (
-                  <span className="ml-0.5 opacity-70">
-                    {s === 'pending' ? stats.pending
-                      : s === 'approved' ? stats.approved
-                      : s === 'executing' ? stats.executing
-                      : s === 'completed' ? stats.completed
-                      : 0}
-                  </span>
-                )}
-              </button>
-            ))}
+            {(['all', 'pending', 'approved', 'executing', 'completed', 'draft', 'rejected', 'failed'] as StatusFilterType[]).map(s => {
+              const count = s === 'all' ? null
+                : stats ? (stats as unknown as Record<string, number>)[s] ?? 0 : null
+              return count !== null && count === 0 && s !== 'all' ? null : (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  className={`px-2 py-1 text-xs rounded flex items-center gap-1 whitespace-nowrap transition-all ${
+                    statusFilter === s
+                      ? 'bg-primary text-white'
+                      : 'hover:bg-background-hover text-text-secondary'
+                  }`}
+                >
+                  <StatusFilterIcon status={s} />
+                  {s === 'all' ? t('filter.allStatus') : t(`status.${s}`)}
+                  {s !== 'all' && count !== null && (
+                    <span className="ml-0.5 opacity-70">{count}</span>
+                  )}
+                </button>
+              )
+            })}
           </div>
 
           {/* 排序 */}

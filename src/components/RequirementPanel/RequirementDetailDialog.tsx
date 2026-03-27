@@ -29,7 +29,7 @@ interface RequirementDetailDialogProps {
   onClose: () => void
   onDelete?: () => void
   onApprove?: (req: Requirement) => void
-  onReject?: (req: Requirement) => void
+  onReject?: (req: Requirement, reason?: string) => void
   /** 编辑提交回调 */
   onEditSubmit?: (data: {
     title: string
@@ -69,6 +69,8 @@ export function RequirementDetailDialog({
   const [prototypeHtml, setPrototypeHtml] = useState<string | null>(null)
   const [loadingPrototype, setLoadingPrototype] = useState(false)
   const [prototypeError, setPrototypeError] = useState<string | null>(null)
+  const [showRejectInput, setShowRejectInput] = useState(false)
+  const [rejectReason, setRejectReason] = useState('')
 
   if (!open) return null
 
@@ -314,14 +316,53 @@ export function RequirementDetailDialog({
                 {t('detail.actions.approve')}
               </button>
             )}
-            {canReview && onReject && (
+            {canReview && onReject && !showRejectInput && (
               <button
-                onClick={() => onReject(requirement)}
+                onClick={() => setShowRejectInput(true)}
                 className="px-3 py-1.5 text-sm bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500/20 transition-all flex items-center gap-1"
               >
                 <XCircle size={14} />
                 {t('detail.actions.reject')}
               </button>
+            )}
+            {showRejectInput && (
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="text"
+                  value={rejectReason}
+                  onChange={e => setRejectReason(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Escape') {
+                      setShowRejectInput(false)
+                      setRejectReason('')
+                    }
+                    if (e.key === 'Enter') {
+                      onReject!(requirement, rejectReason || undefined)
+                      setShowRejectInput(false)
+                      setRejectReason('')
+                    }
+                  }}
+                  placeholder={t('detail.actions.rejectPlaceholder')}
+                  className="w-40 px-2 py-1 text-xs bg-background-surface border border-border rounded focus:outline-none focus:ring-1 focus:ring-red-500/50 text-text-primary placeholder-text-tertiary"
+                  autoFocus
+                />
+                <button
+                  onClick={() => {
+                    onReject!(requirement, rejectReason || undefined)
+                    setShowRejectInput(false)
+                    setRejectReason('')
+                  }}
+                  className="px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-500/90 transition-all"
+                >
+                  {t('detail.actions.reject')}
+                </button>
+                <button
+                  onClick={() => { setShowRejectInput(false); setRejectReason('') }}
+                  className="p-1 text-text-tertiary hover:text-text-secondary transition-all"
+                >
+                  <X size={14} />
+                </button>
+              </div>
             )}
             <button
               onClick={() => setEditing(true)}
