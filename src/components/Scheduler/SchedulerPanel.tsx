@@ -14,7 +14,9 @@ import { TriggerTypeLabels, TaskModeLabels } from '../../types/scheduler';
 import * as tauri from '../../services/tauri';
 import type { ProtocolFileType, TaskExportItem } from '../../services/tauri';
 import { TaskEditor } from './TaskEditor';
+import { SubscriptionChatPanel } from './SubscriptionChatPanel';
 import { useContainerSize } from '../../hooks';
+import { useSubscriptionEventHandler } from '../../hooks/useSubscriptionEventHandler';
 import { createLogger } from '../../utils/logger';
 
 const log = createLogger('SchedulerPanel');
@@ -956,6 +958,9 @@ export function SchedulerPanel() {
     useSchedulerStore();
   const toast = useToastStore();
 
+  // 初始化订阅事件处理器（将订阅任务的 AI 事件路由到订阅面板）
+  useSubscriptionEventHandler();
+
   // 响应式布局检测
   const [containerRef, containerSize] = useContainerSize({ compactThreshold: 500, wideThreshold: 800 });
   const isCompact = containerSize.isCompact;
@@ -1206,7 +1211,7 @@ export function SchedulerPanel() {
     clearSubscription();
   };
 
-  /** 订阅并立即执行任务（在 AI 对话窗口实时显示） */
+  /** 订阅并立即执行任务（在独立订阅面板显示） */
   const handleSubscribeAndRun = async (task: ScheduledTask) => {
     // 防抖：如果已有任务在执行，不允许再次点击
     if (subscribingTaskId) {
@@ -1215,15 +1220,19 @@ export function SchedulerPanel() {
     }
 
     try {
-      // 获取当前会话 ID 作为上下文 ID
-      const conversationId = useEventChatStore.getState().conversationId;
-      
-      // 先持久化订阅状态
-      if (conversationId) {
-        await subscribeTask(task.id, conversationId);
-      }
-      
-      await runTaskWithSubscription(task.id, task.name, conversationId || undefined);
+      // 使用独立的订阅面板，不再依赖主对话的 contextId
+      // 订阅面板有自己的事件处理器
+      const subscriptionContextId = 'scheduler-subscription';
+
+      // 启动订阅会话（在订阅面板中显示）
+      const { startSubscriptionSession } = useSchedulerStore.getState();
+      startSubscriptionSession(task.id, task.name);
+
+      // 先持久化订阅状态（用于定时触发）
+      await subscribeTask(task.id, subscriptionContextId);
+
+      // 执行任务，使用独立的 contextId
+      await runTaskWithSubscription(task.id, task.name, subscriptionContextId);
       toast.info(t('toast.subscribed'), t('toast.subscribedDetail', { name: task.name }));
       // 刷新任务列表和日志
       loadTasks();
@@ -1874,6 +1883,9 @@ export function SchedulerPanel() {
           </div>
         </div>
       )}
+
+      {/* 订阅执行面板 */}
+      <SubscriptionChatPanel />
 
       {/* 编辑弹窗 */}
       {showEditor && (

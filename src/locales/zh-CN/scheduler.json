@@ -263,5 +263,16 @@
     "export": "导出"
   },
 
+  "subscription": {
+    "activeTask": "订阅任务",
+    "executing": "执行中...",
+    "completed": "已完成",
+    "failed": "失败",
+    "cancelled": "已取消",
+    "stop": "停止",
+    "clear": "清除",
+    "waitingForOutput": "等待任务输出..."
+  },
+
   "newTask": "新建"
 }

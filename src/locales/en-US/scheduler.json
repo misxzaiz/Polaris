@@ -263,5 +263,16 @@
     "export": "Export"
   },
 
+  "subscription": {
+    "activeTask": "Subscription Task",
+    "executing": "Executing...",
+    "completed": "Completed",
+    "failed": "Failed",
+    "cancelled": "Cancelled",
+    "stop": "Stop",
+    "clear": "Clear",
+    "waitingForOutput": "Waiting for task output..."
+  },
+
   "newTask": "New"
 }
