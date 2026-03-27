@@ -6,7 +6,7 @@
  * 包含：基本信息展示、审核操作、原型预览、删除
  */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   X,
   Trash2,
@@ -77,7 +77,7 @@ export function RequirementDetailDialog({
   const canReview = requirement.status === 'pending' || requirement.status === 'draft'
 
   // 加载原型
-  const loadPrototype = async () => {
+  const loadPrototype = useCallback(async () => {
     if (!requirement.hasPrototype || !requirement.prototypePath || !onReadPrototype) return
     setLoadingPrototype(true)
     setPrototypeError(null)
@@ -89,15 +89,14 @@ export function RequirementDetailDialog({
     } finally {
       setLoadingPrototype(false)
     }
-  }
+  }, [requirement.hasPrototype, requirement.prototypePath, onReadPrototype, t])
 
   useEffect(() => {
     if (open && requirement.hasPrototype) {
       setPrototypeHtml(null)
       loadPrototype()
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, requirement.id, requirement.prototypePath])
+  }, [open, requirement.hasPrototype, requirement.id, requirement.prototypePath, loadPrototype])
 
   // Escape 键关闭弹窗
   useEffect(() => {
