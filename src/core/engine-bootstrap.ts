@@ -69,11 +69,10 @@ export async function bootstrapOpenAIProviders(
 }
 
 /**
- * 按需初始化 AI Engine（兼容旧版本）
+ * 按需初始化 AI Engine
  *
  * @param defaultEngineId 默认引擎 ID
  * @param codexConfig Codex 引擎配置
- * @deprecated 建议使用 bootstrapEnginesFromConfig
  */
 export async function bootstrapEngines(
   defaultEngineId: EngineId = 'claude-code',

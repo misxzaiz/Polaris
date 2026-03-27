@@ -173,7 +173,6 @@ export function DiffViewer({
 /**
  * 简化版 Diff 查看器 - 不显示状态提示
  * 为了向后兼容保留的别名
- * @deprecated 使用 DiffViewer 并设置 showStatusHint={false} 代替
  */
 export function SimpleDiffViewer({ oldContent, newContent }: { oldContent: string; newContent: string }) {
   return (

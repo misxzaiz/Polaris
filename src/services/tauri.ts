@@ -115,41 +115,6 @@ export async function healthCheck(): Promise<HealthStatus> {
 }
 
 // ============================================================================
-// 聊天相关命令
-// ============================================================================
-
-/**
- * 启动聊天会话
- * @deprecated 使用 eventChatStore.sendMessage 代替
- */
-export async function startChat(message: string, workDir?: string): Promise<string> {
-  return invoke<string>('start_chat', {
-    message,
-    options: { workDir },
-  });
-}
-
-/**
- * 继续聊天会话
- * @deprecated 使用 eventChatStore.continueChat 代替
- */
-export async function continueChat(sessionId: string, message: string, workDir?: string): Promise<void> {
-  return invoke('continue_chat', {
-    sessionId,
-    message,
-    options: { workDir },
-  });
-}
-
-/**
- * 中断聊天
- * @deprecated 使用 eventChatStore.interruptChat 代替
- */
-export async function interruptChat(sessionId: string): Promise<void> {
-  return invoke('interrupt_chat', { sessionId });
-}
-
-// ============================================================================
 // AskUserQuestion 相关命令
 // ============================================================================
 
@@ -324,56 +289,6 @@ export async function sendInput(
   input: string
 ): Promise<boolean> {
   return invoke<boolean>('send_input', { sessionId, input });
-}
-
-// ============================================================================
-// IFlow 聊天相关命令（废弃，使用统一聊天接口）
-// ============================================================================
-
-/**
- * @deprecated 使用 eventChatStore.sendMessage 并设置 engineId: 'iflow'
- */
-export async function startIFlowChat(message: string): Promise<string> {
-  return invoke<string>('start_iflow_chat', { message });
-}
-
-/**
- * @deprecated 使用 eventChatStore.continueChat 并设置 engineId: 'iflow'
- */
-export async function continueIFlowChat(sessionId: string, message: string): Promise<void> {
-  return invoke('continue_iflow_chat', { sessionId, message });
-}
-
-/**
- * @deprecated 使用 eventChatStore.interruptChat 代替
- */
-export async function interruptIFlowChat(sessionId: string): Promise<void> {
-  return invoke('interrupt_iflow_chat', { sessionId });
-}
-
-// ============================================================================
-// Codex 聊天相关命令（废弃，使用统一聊天接口）
-// ============================================================================
-
-/**
- * @deprecated 使用 eventChatStore.sendMessage 并设置 engineId: 'codex'
- */
-export async function startCodexChat(message: string): Promise<string> {
-  return invoke<string>('start_codex_chat', { message });
-}
-
-/**
- * @deprecated 使用 eventChatStore.continueChat 并设置 engineId: 'codex'
- */
-export async function continueCodexChat(sessionId: string, message: string): Promise<void> {
-  return invoke('continue_codex_chat', { sessionId, message });
-}
-
-/**
- * @deprecated 使用 eventChatStore.interruptChat 代替
- */
-export async function interruptCodexChat(sessionId: string): Promise<void> {
-  return invoke('interrupt_codex_chat', { sessionId });
 }
 
 // ============================================================================

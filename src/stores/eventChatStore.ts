@@ -2,8 +2,6 @@
  * EventChatStore 重导出
  *
  * 保持向后兼容性，从新的 slice 结构导出
- *
- * @deprecated 请直接从 './eventChatStore/index' 导入
  */
 
 export {

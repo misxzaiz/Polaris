@@ -31,10 +31,9 @@ interface TranslateState {
 interface TranslateActions {
   setSourceText: (text: string) => void;
   setDirection: (direction: TranslateDirection) => void;
-  /** 
+  /**
    * 执行翻译
-   * @param config - 可选的百度翻译配置，如未提供将从 configStore 获取（向后兼容）
-   * @deprecated 建议传入 config 参数以实现更好的解耦和测试友好性
+   * @param config - 可选的百度翻译配置，如未提供将从 configStore 获取
    */
   translate: (config?: BaiduTranslateConfig) => Promise<void>;
   clearResult: () => void;

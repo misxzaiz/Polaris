@@ -89,16 +89,6 @@ import {
   testDingTalkConnection,
   // 翻译
   baiduTranslate,
-  // 废弃命令（向后兼容）
-  startChat,
-  continueChat,
-  interruptChat,
-  startIFlowChat,
-  continueIFlowChat,
-  interruptIFlowChat,
-  startCodexChat,
-  continueCodexChat,
-  interruptCodexChat,
   // 类型导出
   type PathValidationResult,
   type ContextEntry,
@@ -1058,106 +1048,6 @@ describe('上下文扩展命令', () => {
 });
 
 // ============================================================
-// 废弃命令测试（确保向后兼容）
-// ============================================================
-describe('废弃命令（向后兼容）', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  describe('Claude 聊天命令（废弃）', () => {
-    it('startChat 应正常调用', async () => {
-      mockInvoke.mockResolvedValueOnce('session-1');
-
-      const result = await startChat('hello', '/workspace');
-
-      expect(mockInvoke).toHaveBeenCalledWith('start_chat', { message: 'hello', options: { workDir: '/workspace' } });
-      expect(result).toBe('session-1');
-    });
-
-    it('continueChat 应正常调用', async () => {
-      mockInvoke.mockResolvedValueOnce(undefined);
-
-      await continueChat('session-1', 'continue');
-
-      expect(mockInvoke).toHaveBeenCalledWith('continue_chat', {
-        sessionId: 'session-1',
-        message: 'continue',
-        options: { workDir: undefined },
-      });
-    });
-
-    it('interruptChat 应正常调用', async () => {
-      mockInvoke.mockResolvedValueOnce(undefined);
-
-      await interruptChat('session-1');
-
-      expect(mockInvoke).toHaveBeenCalledWith('interrupt_chat', { sessionId: 'session-1' });
-    });
-  });
-
-  describe('IFlow 聊天命令（废弃）', () => {
-    it('startIFlowChat 应正常调用', async () => {
-      mockInvoke.mockResolvedValueOnce('session-1');
-
-      const result = await startIFlowChat('hello');
-
-      expect(mockInvoke).toHaveBeenCalledWith('start_iflow_chat', { message: 'hello' });
-      expect(result).toBe('session-1');
-    });
-
-    it('continueIFlowChat 应正常调用', async () => {
-      mockInvoke.mockResolvedValueOnce(undefined);
-
-      await continueIFlowChat('session-1', 'continue');
-
-      expect(mockInvoke).toHaveBeenCalledWith('continue_iflow_chat', {
-        sessionId: 'session-1',
-        message: 'continue',
-      });
-    });
-
-    it('interruptIFlowChat 应正常调用', async () => {
-      mockInvoke.mockResolvedValueOnce(undefined);
-
-      await interruptIFlowChat('session-1');
-
-      expect(mockInvoke).toHaveBeenCalledWith('interrupt_iflow_chat', { sessionId: 'session-1' });
-    });
-  });
-
-  describe('Codex 聊天命令（废弃）', () => {
-    it('startCodexChat 应正常调用', async () => {
-      mockInvoke.mockResolvedValueOnce('session-1');
-
-      const result = await startCodexChat('hello');
-
-      expect(mockInvoke).toHaveBeenCalledWith('start_codex_chat', { message: 'hello' });
-      expect(result).toBe('session-1');
-    });
-
-    it('continueCodexChat 应正常调用', async () => {
-      mockInvoke.mockResolvedValueOnce(undefined);
-
-      await continueCodexChat('session-1', 'continue');
-
-      expect(mockInvoke).toHaveBeenCalledWith('continue_codex_chat', {
-        sessionId: 'session-1',
-        message: 'continue',
-      });
-    });
-
-    it('interruptCodexChat 应正常调用', async () => {
-      mockInvoke.mockResolvedValueOnce(undefined);
-
-      await interruptCodexChat('session-1');
-
-      expect(mockInvoke).toHaveBeenCalledWith('interrupt_codex_chat', { sessionId: 'session-1' });
-    });
-  });
-});
-
-// ============================================================
 // 错误处理场景测试
 // ============================================================
 describe('错误处理场景', () => {
@@ -1477,43 +1367,6 @@ describe('错误处理场景', () => {
         file_path: '/file.ts',
         diagnostics: [],
       })).rejects.toThrow('Diagnostics report failed');
-    });
-  });
-
-  describe('废弃命令错误处理', () => {
-    it('startChat 应拒绝并传递错误', async () => {
-      const error = new Error('Start failed');
-      mockInvoke.mockRejectedValueOnce(error);
-
-      await expect(startChat('msg')).rejects.toThrow('Start failed');
-    });
-
-    it('continueChat 应拒绝并传递错误', async () => {
-      const error = new Error('Continue failed');
-      mockInvoke.mockRejectedValueOnce(error);
-
-      await expect(continueChat('sid', 'msg')).rejects.toThrow('Continue failed');
-    });
-
-    it('interruptChat 应拒绝并传递错误', async () => {
-      const error = new Error('Interrupt failed');
-      mockInvoke.mockRejectedValueOnce(error);
-
-      await expect(interruptChat('sid')).rejects.toThrow('Interrupt failed');
-    });
-
-    it('startIFlowChat 应拒绝并传递错误', async () => {
-      const error = new Error('IFlow start failed');
-      mockInvoke.mockRejectedValueOnce(error);
-
-      await expect(startIFlowChat('msg')).rejects.toThrow('IFlow start failed');
-    });
-
-    it('startCodexChat 应拒绝并传递错误', async () => {
-      const error = new Error('Codex start failed');
-      mockInvoke.mockRejectedValueOnce(error);
-
-      await expect(startCodexChat('msg')).rejects.toThrow('Codex start failed');
     });
   });
 });
