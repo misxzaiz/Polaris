@@ -65,7 +65,6 @@ export function RequirementPanel() {
     requirements,
     loading,
     error,
-    initialized,
     stats,
     filter,
     init,
@@ -87,19 +86,12 @@ export function RequirementPanel() {
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [selectedRequirement, setSelectedRequirement] = useState<Requirement | null>(null)
 
-  // 初始化：工作区驱动
+  // 初始化：工作区驱动，工作区变化时重新加载
   useEffect(() => {
-    if (currentWorkspace && !initialized) {
+    if (currentWorkspace?.path) {
       init(currentWorkspace.path)
     }
-  }, [currentWorkspace, initialized, init])
-
-  // 当工作区变化时重新初始化
-  useEffect(() => {
-    if (currentWorkspace) {
-      init(currentWorkspace.path)
-    }
-  }, [currentWorkspace?.path])
+  }, [currentWorkspace?.path, init])
 
   // 状态筛选变更同步到 store
   useEffect(() => {

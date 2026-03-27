@@ -139,6 +139,8 @@ export interface RequirementUpdateParams {
   executeLog?: string
   /** 执行失败错误信息 */
   executeError?: string
+  /** 来源 */
+  generatedBy?: RequirementSource
 }
 
 /** 需求统计信息 */
