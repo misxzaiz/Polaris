@@ -22,6 +22,8 @@ import { useTranslation } from 'react-i18next'
 import { useWorkspaceStore } from '@/stores'
 import { useRequirementStore } from '@/stores/requirementStore'
 import { RequirementCard } from './RequirementCard'
+import { RequirementDetailDialog } from './RequirementDetailDialog'
+import { RequirementForm } from './RequirementForm'
 import type { Requirement, RequirementStatus, RequirementPriority } from '@/types/requirement'
 import { createLogger } from '@/utils/logger'
 
@@ -71,12 +73,19 @@ export function RequirementPanel() {
     deleteRequirement,
     approveRequirements,
     rejectRequirements,
+    createRequirement,
+    updateRequirement,
+    readPrototype,
   } = useRequirementStore()
 
   // 本地 UI 状态
   const [statusFilter, setStatusFilter] = useState<StatusFilterType>('all')
   const [sortBy, setSortBy] = useState<SortField>('createdAt')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
+
+  // Dialog 状态
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [selectedRequirement, setSelectedRequirement] = useState<Requirement | null>(null)
 
   // 初始化：工作区驱动
   useEffect(() => {
@@ -193,10 +202,7 @@ export function RequirementPanel() {
             )}
           </h2>
           <button
-            onClick={() => {
-              // TODO: 步骤3 接入 RequirementForm
-              log.info('新建需求（待实现 Form 组件）')
-            }}
+            onClick={() => setShowCreateDialog(true)}
             className="p-1.5 rounded-lg bg-primary text-white hover:bg-primary/90 transition-all"
             title={t('newRequirement')}
           >
@@ -291,14 +297,8 @@ export function RequirementPanel() {
             onApproveClick={handleApprove}
             onRejectClick={handleReject}
             onDeleteClick={handleDelete}
-            onEditClick={req => {
-              // TODO: 步骤3 接入 RequirementDetailDialog
-              log.info(`编辑需求: ${req.id}`)
-            }}
-            onClick={req => {
-              // TODO: 步骤3 接入 RequirementDetailDialog
-              log.info(`查看需求详情: ${req.id}`)
-            }}
+            onEditClick={req => setSelectedRequirement(req)}
+            onClick={req => setSelectedRequirement(req)}
           />
         ))}
 
@@ -312,6 +312,54 @@ export function RequirementPanel() {
           </div>
         )}
       </div>
+
+      {/* 创建需求弹窗 */}
+      {showCreateDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <RequirementForm
+            mode="create"
+            onSubmit={async (data) => {
+              try {
+                await createRequirement(data)
+                setShowCreateDialog(false)
+              } catch (e) {
+                log.error('创建需求失败', e instanceof Error ? e : new Error(String(e)))
+                alert(t('toast.createFailed'))
+              }
+            }}
+            onCancel={() => setShowCreateDialog(false)}
+          />
+        </div>
+      )}
+
+      {/* 需求详情弹窗 */}
+      {selectedRequirement && (
+        <RequirementDetailDialog
+          requirement={selectedRequirement}
+          open={!!selectedRequirement}
+          onClose={() => setSelectedRequirement(null)}
+          onEditSubmit={async (data) => {
+            try {
+              await updateRequirement(selectedRequirement.id, data)
+            } catch (e) {
+              log.error('更新需求失败', e instanceof Error ? e : new Error(String(e)))
+              alert(t('toast.updateFailed'))
+            }
+          }}
+          onDelete={async () => {
+            try {
+              await deleteRequirement(selectedRequirement.id)
+              setSelectedRequirement(null)
+            } catch (e) {
+              log.error('删除需求失败', e instanceof Error ? e : new Error(String(e)))
+              alert(t('toast.deleteFailed'))
+            }
+          }}
+          onApprove={handleApprove}
+          onReject={handleReject}
+          onReadPrototype={readPrototype}
+        />
+      )}
     </div>
   )
 }

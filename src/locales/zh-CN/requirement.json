@@ -87,9 +87,25 @@
   "form": {
     "titlePlaceholder": "输入需求标题...",
     "descriptionPlaceholder": "描述需求内容...",
-    "tagsPlaceholder": "添加标签...",
+    "tagsPlaceholder": "添加标签后按回车...",
+    "addTag": "添加",
+    "clickRemove": "点击移除",
     "save": "保存",
-    "cancel": "取消"
+    "cancel": "取消",
+    "createButton": "创建",
+    "saveButton": "保存",
+    "closeTooltip": "关闭",
+    "titleLabel": "标题",
+    "descriptionLabel": "描述",
+    "priorityLabel": "优先级",
+    "tagsLabel": "标签",
+    "prototypeLabel": "生成原型",
+    "prototypeHelp": "创建时将同步生成 HTML 原型",
+    "advancedOptions": "高级选项",
+    "clickExpand": "展开",
+    "clickCollapse": "收起",
+    "sourceLabel": "来源",
+    "sourceHelp": "AI 生成将自动进入待审核状态"
   },
 
   "confirm": {

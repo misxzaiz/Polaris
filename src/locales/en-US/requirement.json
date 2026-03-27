@@ -87,9 +87,25 @@
   "form": {
     "titlePlaceholder": "Enter requirement title...",
     "descriptionPlaceholder": "Describe the requirement...",
-    "tagsPlaceholder": "Add tags...",
+    "tagsPlaceholder": "Add tag and press Enter...",
+    "addTag": "Add",
+    "clickRemove": "Click to remove",
     "save": "Save",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "createButton": "Create",
+    "saveButton": "Save",
+    "closeTooltip": "Close",
+    "titleLabel": "Title",
+    "descriptionLabel": "Description",
+    "priorityLabel": "Priority",
+    "tagsLabel": "Tags",
+    "prototypeLabel": "Generate Prototype",
+    "prototypeHelp": "Will generate an HTML prototype on creation",
+    "advancedOptions": "Advanced Options",
+    "clickExpand": "Expand",
+    "clickCollapse": "Collapse",
+    "sourceLabel": "Source",
+    "sourceHelp": "AI generated will auto enter pending review"
   },
 
   "confirm": {
