@@ -14,7 +14,7 @@ import type {
   RequirementFileData,
   RequirementStats,
 } from '@/types'
-import { createDefaultRequirement, computeRequirementStats } from '@/types/requirement'
+import { createDefaultRequirement, computeRequirementStats, sanitizeRequirement } from '@/types/requirement'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('RequirementService')
@@ -67,7 +67,7 @@ export class RequirementService {
       const data: RequirementFileData = JSON.parse(content)
 
       this.requirements = (data && typeof data === 'object' && Array.isArray(data.requirements))
-        ? data.requirements
+        ? data.requirements.map(sanitizeRequirement).filter((r): r is Requirement => r !== null)
         : []
     } catch (e) {
       if (e instanceof SyntaxError) {
