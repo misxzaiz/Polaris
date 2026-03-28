@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updatedAt": "2026-03-28T11:10:00.000Z",
+  "updatedAt": "2026-03-28T08:47:19.000Z",
   "requirements": [
     {
       "id": "req-unsaved-dialog-002",
@@ -25,7 +25,7 @@
       "id": "req-file-watch-004",
       "title": "文件系统自动监听刷新",
       "description": "当前文件浏览器仅支持手动刷新，计划实现自动监听文件系统变化并刷新的功能。\n\n**影响范围**：\n- `src/components/FileExplorer/FileExplorer.tsx:471`\n- 文件树状态管理\n\n**改进目标**：\n1. 使用 Tauri 的 fs watch API 监听工作区目录\n2. 文件变化时自动更新文件树\n3. 支持增量更新而非全量刷新\n4. 处理大量文件时的性能优化\n\n**预期效果**：\n- 文件变化实时同步\n- 提升用户体验",
-      "status": "approved",
+      "status": "completed",
       "priority": "normal",
       "generatedBy": "ai",
       "tags": [
@@ -35,9 +35,12 @@
       ],
       "hasPrototype": false,
       "createdAt": 1743092400000,
-      "updatedAt": 1774632766700,
+      "updatedAt": 1743201000000,
       "generatedAt": 1743092400000,
-      "reviewedAt": 1774632766700
+      "reviewedAt": 1774632766700,
+      "executedAt": 1743158400000,
+      "completedAt": 1743201000000,
+      "executeLog": "## 执行记录\n\n### 阶段 0-3：分析 + 调研 + 设计 + 验证\n\n**工程评分**：7分（允许最小实现）\n\n**设计方案**：notify Debouncer 300ms → app.emit(\"file-system-change\") → 前端监听 → 仅刷新已展开目录\n\n### 阶段 4：开发（已实现 c6f110c）\n\n**Rust 后端**：\n- 新增 `notify` crate 依赖\n- 新建 `services/file_watcher.rs`：FileWatcherManager + FileWatcherRunner\n- FileWatcherRunner 独立线程处理事件，300ms 防抖合并\n- 忽略 .git/node_modules/target/.polaris 等目录\n- 通过 `app.emit(\"file-system-change\", FsChangeEvent)` 推送受影响目录\n- AppState 新增 file_watcher_manager 字段\n\n**Rust 命令**：\n- 重写 `commands/file_watcher.rs`：fs_watch_start / fs_watch_stop / fs_watch_status\n- 注册到 lib.rs invoke_handler\n\n**前端**：\n- `tauri.ts`：新增 fsWatchStart / fsWatchStop / fsWatchStatus API\n- `fileExplorer.ts`：更新 FileSystemEvent → FsChangeEvent（affectedDirs 字段）\n- `fileExplorerStore.ts`：新增 initFileWatcherListener / startFileWatcher / stopFileWatcher\n- 监听事件后过滤已展开目录，100ms 前端防抖后 refresh_folder()\n- FileExplorer.tsx：mount 启动监听+监听器，unmount 停止；workspace 切换重启"
     },
     {
       "id": "req-scheduler-requirement-exec-012",
@@ -143,7 +146,7 @@
       "hasPrototype": true,
       "prototypePath": ".polaris/requirements/prototypes/openai-provider-test-connection.html",
       "createdAt": 1743360000000,
-      "updatedAt": "2026-03-28T11:10:00.000Z",
+      "updatedAt": 1774655612063,
       "generatedAt": 1743360000000,
       "reviewedAt": 1774632725137,
       "executedAt": 1743166800000,
@@ -154,7 +157,7 @@
       "id": "req-requirement-format-standard-025",
       "title": "AI 需求文档生成格式规范化",
       "description": "当前 AI 生成的需求文档在描述结构、章节命名、内容深度等方面存在显著不一致，影响需求审核效率和执行质量。\n\n**背景分析**：\n\n经审查现有 20 条需求记录，发现以下格式问题：\n\n1. **章节结构不统一**\n   - 部分需求包含「背景分析 + 改进目标 + 影响范围 + 预期效果」四段式\n   - 部分需求缺少背景分析，直接进入改进目标\n   - 部分需求额外包含「实现摘要」章节\n   - 部分需求将影响范围嵌入描述段落而非独立章节\n\n2. **内容深度差异大**\n   - 短描述仅 2-3 句话 + 简单列表\n   - 长描述包含详细背景、代码引用、多级嵌套子项\n   - 同类需求（如两个 Scheduler 相关需求）的详细程度差异明显\n\n3. **代码引用格式不一致**\n   - 有的用行内代码 `file.ts:line`\n   - 有的仅写 `file.ts` 不带行号\n   - 有的在影响范围列表中引用，有的在背景分析中引用\n\n4. **列表层级使用混乱**\n   - 有的用数字编号（1. 2. 3.）作为顶层\n   - 有的用无序列表（-）作为顶层\n   - 子项层级缩进不一致\n\n5. **JSON 语法风险**\n   - 部分需求 description 中包含未转义的 ASCII 双引号，导致 JSON 解析失败（已修复 req-openai-provider-test-024）\n   - 长文本中的特殊字符（引号、反斜杠）缺少转义\n\n**改进目标**：\n\n1. **定义标准需求文档模板**\n   - 制定固定的章节结构：\n     a. **问题概述**（1-2 句话描述现状和痛点）\n     b. **背景分析**（引用相关代码和现有实现，说明为何需要改进）\n     c. **改进目标**（编号列表，每项有明确的子项描述）\n     d. **影响范围**（列出涉及的文件路径，使用行内代码格式）\n     e. **预期效果**（简洁描述改进后的效果）\n   - 可选章节：**技术方案**（如需特定技术选型说明）、**原型说明**（如生成了原型文件）\n\n2. **制定内容规范**\n   - 问题描述：控制在 2-3 句话内，聚焦「现状 + 痛点」\n   - 背景分析：必须引用至少一个相关文件路径，说明当前实现状态\n   - 改进目标：使用编号列表（1. 2. 3.），子项用无序列表（-），最多 2 层嵌套\n   - 影响范围：每行一个文件路径，格式为 `src/path/to/file.ts` + 简要说明\n   - 预期效果：3-5 条简洁要点\n\n3. **制定 JSON 安全规范**\n   - description 内禁止使用 ASCII 双引号（U+0022），一律使用中文引号「」或转义\n   - 禁止使用原始换行符，使用 \n 表示换行\n   - 文件路径使用正斜杠 / 而非反斜杠\n\n4. **创建需求模板文件**\n   - 在  中存放 Markdown 格式模板\n   - 供 AI 生成需求时参考，确保格式一致\n   - 模板包含所有必填和选填章节的示例\n\n5. **更新 CLAUDE.md 文档**\n   - 在 CLAUDE.md 的「需求队列系统 > AI 操作规范」章节中增加格式规范引用\n   - 明确 AI 生成需求时必须遵循模板格式\n\n**影响范围**：\n-  - 新建需求文档模板\n-  - 更新 AI 操作规范章节\n\n**预期效果**：\n- AI 生成的需求文档格式统一、结构清晰\n- 需求审核效率提升，减少格式相关的沟通成本\n- 避免 JSON 转义错误导致的需求文件损坏\n- 为后续需求面板 UI 渲染提供一致的解析基础",
-      "status": "pending",
+      "status": "executing",
       "priority": "normal",
       "generatedBy": "ai",
       "tags": [
@@ -165,8 +168,11 @@
       ],
       "hasPrototype": false,
       "createdAt": 1774632952219,
-      "updatedAt": 1774632952219,
-      "generatedAt": 1774632952219
+      "updatedAt": 1774670839000,
+      "generatedAt": 1774632952219,
+      "reviewedAt": 1774655645588,
+      "executedAt": 1774670839000,
+      "executeLog": "## 执行记录\n\n### 阶段 0-1：分析 + 调研\n\n**工程评分**：15分（≥8，允许推进）\n- 业务价值 3×3=9 + 长期收益 4×2=8 - 实现成本 1×2=2\n\n**调研结论**：审查 10 条需求记录，发现格式不一致集中在早期需求（缺少背景分析、章节名称不统一），后期需求格式已趋统一。\n\n### 阶段 2-4：设计 + 验证 + 开发\n\n**已实现**：\n- ✅ 新建 `.polaris/requirements/template.md` — 需求文档标准模板（5 个必填章节 + 2 个选填章节 + JSON 安全规范 + 完整示例）\n- ✅ 更新 `CLAUDE.md` — 新增「需求文档格式规范」章节，引用模板文件\n- ✅ 更新 CLAUDE.md 项目结构，添加 template.md 条目\n\n**核心改动**：\n- `.polaris/requirements/template.md`：新建模板文件，定义必填章节（问题概述、背景分析、改进目标、影响范围、预期效果）、选填章节、JSON 安全规范和完整示例\n- `CLAUDE.md`：AI 操作规范后新增格式规范章节，项目结构中添加 template.md 引用"
     },
     {
       "id": "req-command-palette-026",

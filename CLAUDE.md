@@ -10,6 +10,7 @@
 ### `.polaris/` 工作区数据
 
 - `.polaris/requirements/requirements.json` - 需求队列数据
+- `.polaris/requirements/template.md` - 需求文档格式模板
 - `.polaris/requirements/prototypes/{id}.html` - 需求原型文件
 - `.polaris/todos.json` - 待办事项
 - `.polaris/protocols/{task-id}/` - 协议任务目录
@@ -58,6 +59,26 @@
 - 新增需求状态固定为 `"pending"`，由用户在面板中审核
 - 每次操作前检查已有需求，避免重复
 - JSON 缩进 2 空格，保持格式化
+
+### 需求文档格式规范
+
+AI 生成需求的 description 字段必须遵循 `.polaris/requirements/template.md` 中定义的标准格式。
+
+**必填章节**（按顺序）：
+
+1. **问题概述**：1-2 句话描述现状和痛点
+2. **背景分析**：引用相关代码文件路径（`src/path/to/file.ts:行号`），说明当前实现状态
+3. **改进目标**：数字编号列表，子项用无序列表，最多 2 层嵌套
+4. **影响范围**：每行一个文件路径 + 简要说明
+5. **预期效果**：3-5 条简洁要点
+
+**选填章节**：技术方案、原型说明（按需添加）
+
+**JSON 安全规范**：
+- description 内禁止 ASCII 双引号（U+0022），使用中文引号「」或 `\"` 转义
+- 禁止原始换行符，使用 `\n` 表示换行
+- 文件路径使用正斜杠 `/`
+- 特殊字符需正确转义
 
 ### 自动化协议模板
 
