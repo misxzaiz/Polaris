@@ -18,11 +18,12 @@ import { WindowTab } from './tabs/WindowTab';
 import { OpenAIProvidersTab } from './OpenAIProvidersTab';
 import { TranslateTab } from './tabs/TranslateTab';
 import { QQBotTab } from './tabs/QQBotTab';
+import { SpeechTab } from './tabs/SpeechTab';
+import { AdvancedTab } from './tabs/AdvancedTab';
 import { createLogger } from '../../utils/logger';
+import type { Config } from '../../types';
 
 const log = createLogger('SettingsModal');
-import { AdvancedTab } from './tabs/AdvancedTab';
-import type { Config } from '../../types';
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -38,6 +39,7 @@ const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'openai-providers': 'nav.openaiProviders',
   'translate': 'nav.translate',
   'qqbot': 'nav.qqbot',
+  'speech': 'nav.speech',
   'advanced': 'nav.advanced',
 };
 
@@ -194,6 +196,14 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
 
               {activeTab === 'qqbot' && (
                 <QQBotTab
+                  config={localConfig}
+                  onConfigChange={setLocalConfig}
+                  loading={loading}
+                />
+              )}
+
+              {activeTab === 'speech' && (
+                <SpeechTab
                   config={localConfig}
                   onConfigChange={setLocalConfig}
                   loading={loading}

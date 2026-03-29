@@ -12,17 +12,21 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { IconSend, IconStop, IconPaperclip } from '../Common/Icons'
-import { useWorkspaceStore, useChatInputStore, useEventChatStore } from '../../stores'
+import { IconSend, IconStop, IconPaperclip, IconMic } from '../Common/Icons'
+import { useWorkspaceStore, useChatInputStore, useEventChatStore, useConfigStore } from '../../stores'
 import { FileSuggestion, WorkspaceSuggestion } from './FileSuggestion'
 import { GitSuggestion, getGitRootSuggestions, commitsToSuggestionItems, type GitSuggestionItem } from './GitSuggestion'
 import { AttachmentPreview } from './AttachmentPreview'
 import { AutoResizingTextarea } from './AutoResizingTextarea'
+import { SpeechIndicator } from './SpeechIndicator'
 import { useFileSearch } from '../../hooks/useFileSearch'
+import { useSpeechRecognition } from '../../hooks/useSpeechRecognition'
 import { getGitCommits } from '../../services/gitContextService'
 import type { FileMatch } from '../../services/fileSearch'
 import type { Workspace } from '../../types'
 import type { Attachment } from '../../types/attachment'
+import type { SpeechConfig, VoiceCommand } from '../../types/speech'
+import { DEFAULT_SPEECH_CONFIG } from '../../types/speech'
 import {
   createAttachment,
   validateAttachment,
@@ -80,6 +84,67 @@ export function ChatInput({
   const { currentWorkspaceId, workspaces } = useWorkspaceStore()
   const { fileMatches, searchFiles, clearResults } = useFileSearch()
   const { setInputLength, setAttachmentCount, setSuggestionMode, setHasPendingQuestion, setHasActivePlan } = useChatInputStore()
+
+  // 语音识别配置
+  const config = useConfigStore(state => state.config)
+  const speechConfig = config?.speech as SpeechConfig | undefined
+  const speechEnabled = speechConfig?.enabled ?? DEFAULT_SPEECH_CONFIG.enabled
+
+  // 语音识别 Hook
+  const {
+    status: speechStatus,
+    interimTranscript,
+    isSupported: speechSupported,
+    error: speechError,
+    start: startSpeech,
+    stop: stopSpeech,
+    toggle: toggleSpeech,
+    isListening,
+  } = useSpeechRecognition({
+    config: speechConfig ? {
+      enabled: speechConfig.enabled,
+      shortcut: speechConfig.shortcut,
+      language: speechConfig.language,
+      continuous: speechConfig.continuous,
+      interimResults: speechConfig.interimResults,
+    } : DEFAULT_SPEECH_CONFIG,
+    onResult: (transcript) => {
+      // 将识别结果填入输入框
+      setValue(prev => prev + transcript)
+      // 聚焦到输入框
+      textareaRef.current?.focus()
+    },
+    onCommand: (command: VoiceCommand) => {
+      // 处理语音命令
+      switch (command) {
+        case 'send':
+          // 发送消息
+          if (!isStreaming) {
+            handleSend()
+          }
+          break
+        case 'clear':
+          // 清空输入框
+          setValue('')
+          break
+        case 'interrupt':
+          // 中断对话
+          if (isStreaming && onInterrupt) {
+            onInterrupt()
+          }
+          break
+      }
+    }
+  })
+
+  // 处理语音按钮点击
+  const handleSpeechClick = useCallback(() => {
+    if (isListening) {
+      stopSpeech()
+    } else {
+      startSpeech()
+    }
+  }, [isListening, startSpeech, stopSpeech])
 
   // 检查是否有待回答的问题
   const hasPendingQuestion = useEventChatStore(state => {
@@ -588,6 +653,50 @@ export function ChatInput({
     clearResults()
   }, [clearResults])
 
+  // 快捷键处理：Ctrl+Space
+  useEffect(() => {
+    if (!speechEnabled || !speechSupported) return
+
+    const shortcut = speechConfig?.shortcut || DEFAULT_SPEECH_CONFIG.shortcut
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // 解析快捷键 (支持 Ctrl+Space, Alt+R 等格式)
+      const parts = shortcut.toLowerCase().split('+')
+      const ctrl = parts.includes('ctrl')
+      const shift = parts.includes('shift')
+      const alt = parts.includes('alt')
+      const key = parts.find(p => !['ctrl', 'shift', 'alt'].includes(p))
+
+      // 特殊处理 Space 键（e.code 是 'Space' 而不是 'KeySpace'）
+      let keyMatch = false
+      if (key === 'space') {
+        keyMatch = e.code === 'Space'
+      } else {
+        keyMatch = e.code.toLowerCase() === `key${key}` || e.key.toLowerCase() === key
+      }
+
+      if (
+        e.ctrlKey === ctrl &&
+        e.shiftKey === shift &&
+        e.altKey === alt &&
+        keyMatch
+      ) {
+        e.preventDefault()
+        const trimmedValue = value.trim()
+        if (trimmedValue && !isStreaming) {
+          // 输入框有内容，发送消息
+          handleSend()
+        } else {
+          // 输入框为空，启动/停止语音识别
+          toggleSpeech()
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [speechEnabled, speechSupported, speechConfig?.shortcut, value, isStreaming, handleSend, toggleSpeech])
+
   // 点击外部关闭建议
   useEffect(() => {
     const handleClickOutside = () => {
@@ -610,6 +719,16 @@ export function ChatInput({
           attachments={attachments}
           onRemove={removeAttachment}
         />
+
+        {/* 语音状态指示器 */}
+        {isListening && (
+          <SpeechIndicator
+            status={speechStatus}
+            interimTranscript={interimTranscript}
+            error={speechError}
+            className="mb-2"
+          />
+        )}
 
         {/* 输入框容器 */}
         <div
@@ -643,6 +762,25 @@ export function ChatInput({
 
           {/* 右侧按钮组 - 垂直布局 */}
           <div className="flex flex-col gap-1 shrink-0">
+            {/* 语音按钮 */}
+            {speechEnabled && speechSupported && (
+              <button
+                onClick={handleSpeechClick}
+                disabled={disabled || isStreaming}
+                className={`
+                  shrink-0 p-1.5 rounded-lg transition-colors
+                  ${isListening
+                    ? 'bg-primary text-white'
+                    : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
+                  }
+                  disabled:opacity-50
+                `}
+                title={isListening ? t('input.stopSpeech', '停止语音识别') : t('input.startSpeech', '开始语音识别 (Ctrl+Space)')}
+              >
+                <IconMic size={18} />
+              </button>
+            )}
+
             {/* 附件按钮 */}
             <button
               onClick={openFileDialog}

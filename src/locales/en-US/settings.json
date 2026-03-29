@@ -12,6 +12,7 @@
     "translate": "Translate",
     "qqbot": "QQ Bot",
     "scheduler": "Scheduler",
+    "speech": "Speech Input",
     "advanced": "Advanced"
   },
   "messages": {
@@ -202,6 +203,36 @@
       "current": "Current",
       "notConfigured": "Not Configured",
       "activated": "Activated"
+    }
+  },
+  "speech": {
+    "enabled": {
+      "title": "Enable Speech Input",
+      "desc": "Use speech input for quick text entry"
+    },
+    "shortcut": {
+      "title": "Shortcut",
+      "hint": "Press shortcut: send if input has content, start speech if empty"
+    },
+    "language": {
+      "title": "Recognition Language"
+    },
+    "advanced": {
+      "title": "Advanced Options"
+    },
+    "continuous": {
+      "title": "Continuous Recognition",
+      "desc": "Keep listening and recognizing speech"
+    },
+    "interimResults": {
+      "title": "Show Interim Results",
+      "desc": "Display text while recognizing"
+    },
+    "tips": {
+      "title": "Instructions",
+      "shortcut": "Press Ctrl+Space to quickly start speech recognition",
+      "requirement": "Requires microphone permission and network connection",
+      "platform": "Best support on Windows, macOS/Linux needs testing"
     }
   }
 }

@@ -17,7 +17,9 @@
     "hint": "Enter 发送 · Shift+Enter 换行",
     "diffChip": "差异: {{status}}",
     "attachmentCount": "{{count}} 个附件",
-    "readyToSend": "可直接发送"
+    "readyToSend": "可直接发送",
+    "startSpeech": "开始语音识别 (Ctrl+Space)",
+    "stopSpeech": "停止语音识别"
   },
   "message": {
     "user": "用户",
@@ -292,5 +294,10 @@
     "chatNavigation": "对话导航",
     "rounds": "轮",
     "backToBottom": "回到底部"
+  },
+  "speech": {
+    "listening": "正在听...",
+    "processing": "处理中...",
+    "error": "识别失败"
   }
 }

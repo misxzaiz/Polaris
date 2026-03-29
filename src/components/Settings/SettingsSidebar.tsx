@@ -11,6 +11,7 @@ import {
   IconSettings,
   IconSearch,
   IconGeneral,
+  IconMic,
 } from '../Common/Icons';
 import type { ReactNode } from 'react';
 
@@ -20,6 +21,7 @@ export type SettingsTabId =
   | 'openai-providers'
   | 'translate'
   | 'qqbot'
+  | 'speech'
   | 'window'
   | 'advanced';
 
@@ -43,6 +45,7 @@ const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'openai-providers', icon: <IconAPI size={16} />, labelKey: 'nav.openaiProviders' },
   { id: 'translate', icon: <IconTranslate size={16} />, labelKey: 'nav.translate' },
   { id: 'qqbot', icon: <IconBot size={16} />, labelKey: 'nav.qqbot' },
+  { id: 'speech', icon: <IconMic size={16} />, labelKey: 'nav.speech' },
   { id: 'advanced', icon: <IconSettings size={16} />, labelKey: 'nav.advanced' },
 ];
 

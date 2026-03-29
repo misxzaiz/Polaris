@@ -903,6 +903,7 @@ impl OldConfig {
             floating_window: Default::default(),
             baidu_translate: None,
             window: Default::default(),
+            speech: Default::default(),
             claude_cmd: Some(claude_cmd_clone),
         }
     }

@@ -17,7 +17,9 @@
     "hint": "Enter to send · Shift+Enter for new line",
     "diffChip": "Diff: {{status}}",
     "attachmentCount": "{{count}} attachments",
-    "readyToSend": "ready to send"
+    "readyToSend": "ready to send",
+    "startSpeech": "Start speech recognition (Ctrl+Space)",
+    "stopSpeech": "Stop speech recognition"
   },
   "message": {
     "user": "User",
@@ -292,5 +294,10 @@
     "chatNavigation": "Chat Navigation",
     "rounds": "rounds",
     "backToBottom": "Back to bottom"
+  },
+  "speech": {
+    "listening": "Listening...",
+    "processing": "Processing...",
+    "error": "Recognition failed"
   }
 }

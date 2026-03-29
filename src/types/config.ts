@@ -2,6 +2,8 @@
  * 配置相关类型定义
  */
 
+import type { SpeechConfig } from './speech'
+
 /**  引擎 ID（扩展以支持动态 Provider） */
 export type EngineId = 'claude-code' | 'iflow' | 'codex' | `provider-${string}`
 
@@ -120,6 +122,8 @@ export interface Config {
   qqbot: QQBotConfig;
   /** 窗口设置 */
   window?: WindowSettings;
+  /** 语音输入配置 */
+  speech?: SpeechConfig;
 }
 
 /** 健康状态 */

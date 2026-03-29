@@ -12,6 +12,7 @@
     "translate": "翻译",
     "qqbot": "QQ Bot",
     "scheduler": "定时任务",
+    "speech": "语音输入",
     "advanced": "高级"
   },
   "messages": {
@@ -202,6 +203,36 @@
       "current": "当前",
       "notConfigured": "未配置",
       "activated": "已激活"
+    }
+  },
+  "speech": {
+    "enabled": {
+      "title": "启用语音输入",
+      "desc": "使用语音输入功能快速输入文本"
+    },
+    "shortcut": {
+      "title": "快捷键",
+      "hint": "按下快捷键：输入框有内容则发送，无内容则启动语音识别"
+    },
+    "language": {
+      "title": "识别语言"
+    },
+    "advanced": {
+      "title": "高级选项"
+    },
+    "continuous": {
+      "title": "连续识别",
+      "desc": "持续监听并识别语音"
+    },
+    "interimResults": {
+      "title": "显示临时结果",
+      "desc": "实时显示识别中的文本"
+    },
+    "tips": {
+      "title": "使用说明",
+      "shortcut": "按 Ctrl+Space 快速启动语音识别",
+      "requirement": "需要麦克风权限和网络连接",
+      "platform": "Windows 平台支持最佳，macOS/Linux 需要实际测试"
     }
   }
 }
