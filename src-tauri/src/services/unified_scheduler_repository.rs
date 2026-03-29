@@ -52,6 +52,7 @@ pub struct TaskUpdateParams {
     pub prompt: Option<String>,
     pub work_dir: Option<String>,
     pub description: Option<String>,
+    pub document_config: Option<crate::models::scheduler::DocumentConfig>,
 }
 
 impl UnifiedSchedulerRepository {
@@ -159,7 +160,7 @@ impl UnifiedSchedulerRepository {
             updated_at: now,
             workspace_path,
             workspace_name,
-            document_config: None,
+            document_config: params.document_config,
         };
 
         data.tasks.push(task.clone());
@@ -209,6 +210,10 @@ impl UnifiedSchedulerRepository {
 
         if updates.description.is_some() {
             task.description = sanitize_optional_string(updates.description);
+        }
+
+        if updates.document_config.is_some() {
+            task.document_config = updates.document_config;
         }
 
         task.updated_at = Utc::now().timestamp();

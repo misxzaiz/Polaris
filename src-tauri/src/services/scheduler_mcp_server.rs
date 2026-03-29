@@ -349,6 +349,7 @@ fn execute_create_task(arguments: Value, repository: &UnifiedSchedulerRepository
         prompt,
         work_dir: optional_trimmed_string(arguments.get("workDir")),
         description: optional_trimmed_string(arguments.get("description")),
+        document_config: None,
     };
 
     let task = repository.create_task(params)?;
@@ -391,6 +392,7 @@ fn execute_update_task(arguments: Value, repository: &UnifiedSchedulerRepository
         prompt: optional_trimmed_string(arguments.get("prompt")),
         work_dir: optional_trimmed_string(arguments.get("workDir")),
         description: optional_trimmed_string(arguments.get("description")),
+        document_config: None,
     };
 
     let task = repository.update_task(id, updates)?;

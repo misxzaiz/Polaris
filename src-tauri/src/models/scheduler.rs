@@ -137,6 +137,9 @@ pub struct CreateTaskParams {
     pub work_dir: Option<String>,
     /// 任务描述（可选）
     pub description: Option<String>,
+    /// 文档配置（可选）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub document_config: Option<DocumentConfig>,
 }
 
 fn default_enabled() -> bool {
