@@ -11,6 +11,7 @@ use crate::models::scheduler::{CreateTaskParams, ScheduledTask, TriggerType};
 use crate::services::unified_scheduler_repository::{
     TaskUpdateParams, UnifiedSchedulerRepository,
 };
+use crate::utils::LockStatus;
 
 // ============================================================================
 // Helper
@@ -137,4 +138,29 @@ pub async fn scheduler_get_workspace_breakdown(
 ) -> Result<std::collections::BTreeMap<String, usize>> {
     let repository = get_repository(&app, workspace_path)?;
     repository.get_workspace_breakdown()
+}
+
+// ============================================================================
+// Lock Commands
+// ============================================================================
+
+/// 获取调度器锁状态
+#[tauri::command]
+pub fn scheduler_get_lock_status() -> Result<LockStatus> {
+    Ok(crate::utils::get_lock_status())
+}
+
+/// 尝试获取调度器锁
+/// 返回是否成功获取
+#[tauri::command]
+pub fn scheduler_acquire_lock() -> Result<bool> {
+    crate::utils::acquire_and_hold_lock()
+        .map_err(|e| crate::error::AppError::ProcessError(format!("获取锁失败: {}", e)))
+}
+
+/// 释放调度器锁
+#[tauri::command]
+pub fn scheduler_release_lock() -> Result<()> {
+    crate::utils::release_held_lock()
+        .map_err(|e| crate::error::AppError::ProcessError(format!("释放锁失败: {}", e)))
 }

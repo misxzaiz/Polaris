@@ -843,3 +843,32 @@ export async function schedulerValidateTrigger(
 export async function schedulerParseInterval(value: string): Promise<number | null> {
   return invoke<number | null>('scheduler_parse_interval', { value });
 }
+
+// ============================================================================
+// 调度器锁相关命令
+// ============================================================================
+
+/** 锁状态 */
+export interface LockStatus {
+  /** 当前实例是否持有锁 */
+  isHolder: boolean;
+  /** 是否有其他实例持有锁 */
+  isLockedByOther: boolean;
+  /** 当前进程 PID */
+  pid: number;
+}
+
+/** 获取调度器锁状态 */
+export async function schedulerGetLockStatus(): Promise<LockStatus> {
+  return invoke<LockStatus>('scheduler_get_lock_status');
+}
+
+/** 尝试获取调度器锁 */
+export async function schedulerAcquireLock(): Promise<boolean> {
+  return invoke<boolean>('scheduler_acquire_lock');
+}
+
+/** 释放调度器锁 */
+export async function schedulerReleaseLock(): Promise<void> {
+  return invoke('scheduler_release_lock');
+}

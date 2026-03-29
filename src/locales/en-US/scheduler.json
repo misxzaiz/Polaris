@@ -276,5 +276,16 @@
     "waitingForOutput": "Waiting for task output..."
   },
 
+  "lock": {
+    "holder": "Lock Holder",
+    "noLock": "No Lock",
+    "lockedByOther": "Locked by Other Instance",
+    "acquire": "Acquire Lock",
+    "release": "Release Lock",
+    "acquireSuccess": "Lock acquired",
+    "acquireFailed": "Cannot acquire lock, another instance is still running",
+    "releaseSuccess": "Lock released"
+  },
+
   "newTask": "New"
 }

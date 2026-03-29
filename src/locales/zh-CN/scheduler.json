@@ -276,5 +276,16 @@
     "waitingForOutput": "等待任务输出..."
   },
 
+  "lock": {
+    "holder": "持有锁",
+    "noLock": "无锁",
+    "lockedByOther": "其他实例持有锁",
+    "acquire": "获取锁",
+    "release": "释放锁",
+    "acquireSuccess": "已获取锁",
+    "acquireFailed": "无法获取锁，其他实例仍在运行",
+    "releaseSuccess": "已释放锁"
+  },
+
   "newTask": "新建"
 }

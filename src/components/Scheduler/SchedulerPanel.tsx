@@ -206,7 +206,7 @@ function filterTasks(tasks: ScheduledTask[], filter: TaskFilter): ScheduledTask[
 /** 主面板 */
 export function SchedulerPanel() {
   const { t } = useTranslation('scheduler');
-  const { tasks, loading, loadTasks, createTask, updateTask, deleteTask, toggleTask } = useSchedulerStore();
+  const { tasks, loading, loadTasks, createTask, updateTask, deleteTask, toggleTask, lockStatus, lockLoading, loadLockStatus, acquireLock, releaseLock } = useSchedulerStore();
   const toast = useToastStore();
 
   // 响应式布局检测
@@ -231,6 +231,14 @@ export function SchedulerPanel() {
   useEffect(() => {
     loadTasks();
   }, [loadTasks]);
+
+  // 加载锁状态
+  useEffect(() => {
+    loadLockStatus();
+    // 每 5 秒刷新锁状态
+    const interval = setInterval(loadLockStatus, 5000);
+    return () => clearInterval(interval);
+  }, [loadLockStatus]);
 
   const handleCreate = async (params: CreateTaskParams) => {
     try {
@@ -300,16 +308,80 @@ export function SchedulerPanel() {
       {/* 头部 */}
       <div className="p-4 border-b border-border-subtle flex items-center justify-between">
         <h1 className="text-xl font-medium text-text-primary">{t('title')}</h1>
-        <button
-          onClick={() => {
-            setEditingTask(undefined);
-            setCopyingTask(undefined);
-            setShowEditor(true);
-          }}
-          className="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors"
-        >
-          + {t('newTask')}
-        </button>
+        <div className="flex items-center gap-3">
+          {/* 锁状态显示和操作 */}
+          <div className="flex items-center gap-2">
+            {lockStatus?.isHolder ? (
+              <>
+                <span className="flex items-center gap-1.5 px-2 py-1 bg-success-faint text-success rounded-lg text-sm">
+                  <span className="text-base">🔒</span>
+                  <span>{t('lock.holder', { defaultValue: '持有锁' })}</span>
+                </span>
+                <button
+                  onClick={async () => {
+                    await releaseLock();
+                    toast.success(t('lock.releaseSuccess', { defaultValue: '已释放锁' }));
+                  }}
+                  disabled={lockLoading}
+                  className="px-3 py-1.5 text-sm bg-warning-faint text-warning hover:bg-warning/30 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {t('lock.release', { defaultValue: '释放锁' })}
+                </button>
+              </>
+            ) : lockStatus?.isLockedByOther ? (
+              <>
+                <span className="flex items-center gap-1.5 px-2 py-1 bg-danger-faint text-danger rounded-lg text-sm">
+                  <span className="text-base">🔓</span>
+                  <span>{t('lock.lockedByOther', { defaultValue: '其他实例持有锁' })}</span>
+                </span>
+                <button
+                  onClick={async () => {
+                    const success = await acquireLock();
+                    if (success) {
+                      toast.success(t('lock.acquireSuccess', { defaultValue: '已获取锁' }));
+                    } else {
+                      toast.warning(t('lock.acquireFailed', { defaultValue: '无法获取锁，其他实例仍在运行' }));
+                    }
+                  }}
+                  disabled={lockLoading}
+                  className="px-3 py-1.5 text-sm bg-primary-faint text-primary hover:bg-primary/30 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {t('lock.acquire', { defaultValue: '获取锁' })}
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="flex items-center gap-1.5 px-2 py-1 bg-background-hover text-text-secondary rounded-lg text-sm">
+                  <span className="text-base">🔓</span>
+                  <span>{t('lock.noLock', { defaultValue: '无锁' })}</span>
+                </span>
+                <button
+                  onClick={async () => {
+                    const success = await acquireLock();
+                    if (success) {
+                      toast.success(t('lock.acquireSuccess', { defaultValue: '已获取锁' }));
+                    }
+                  }}
+                  disabled={lockLoading}
+                  className="px-3 py-1.5 text-sm bg-success-faint text-success hover:bg-success/30 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {t('lock.acquire', { defaultValue: '获取锁' })}
+                </button>
+              </>
+            )}
+          </div>
+          {/* 新建任务按钮 */}
+          <button
+            onClick={() => {
+              setEditingTask(undefined);
+              setCopyingTask(undefined);
+              setShowEditor(true);
+            }}
+            className="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors"
+          >
+            + {t('newTask')}
+          </button>
+        </div>
       </div>
 
       {/* 筛选栏 */}

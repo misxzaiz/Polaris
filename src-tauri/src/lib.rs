@@ -77,6 +77,7 @@ use commands::scheduler::{
     scheduler_list_tasks, scheduler_get_task, scheduler_create_task,
     scheduler_update_task, scheduler_delete_task, scheduler_toggle_task,
     scheduler_validate_trigger, scheduler_parse_interval, scheduler_get_workspace_breakdown,
+    scheduler_get_lock_status, scheduler_acquire_lock, scheduler_release_lock,
 };
 use commands::terminal::{
     terminal_create, terminal_write, terminal_resize,
@@ -445,6 +446,9 @@ pub fn run() {
             scheduler_validate_trigger,
             scheduler_parse_interval,
             scheduler_get_workspace_breakdown,
+            scheduler_get_lock_status,
+            scheduler_acquire_lock,
+            scheduler_release_lock,
             // 终端相关
             terminal_create,
             terminal_write,

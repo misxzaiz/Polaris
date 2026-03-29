@@ -5,6 +5,7 @@
 import { create } from 'zustand';
 import type { ScheduledTask, TriggerType, CreateTaskParams } from '../types/scheduler';
 import * as tauri from '../services/tauri';
+import type { LockStatus } from '../services/tauri';
 
 interface SchedulerState {
   /** 任务列表 */
@@ -13,6 +14,10 @@ interface SchedulerState {
   loading: boolean;
   /** 错误信息 */
   error: string | null;
+  /** 锁状态 */
+  lockStatus: LockStatus | null;
+  /** 锁操作加载中 */
+  lockLoading: boolean;
 
   /** 加载任务列表 */
   loadTasks: () => Promise<void>;
@@ -26,12 +31,20 @@ interface SchedulerState {
   toggleTask: (id: string, enabled: boolean) => Promise<void>;
   /** 验证触发表达式 */
   validateTrigger: (type: TriggerType, value: string) => Promise<number | null>;
+  /** 获取锁状态 */
+  loadLockStatus: () => Promise<void>;
+  /** 获取锁 */
+  acquireLock: () => Promise<boolean>;
+  /** 释放锁 */
+  releaseLock: () => Promise<void>;
 }
 
 export const useSchedulerStore = create<SchedulerState>((set) => ({
   tasks: [],
   loading: false,
   error: null,
+  lockStatus: null,
+  lockLoading: false,
 
   loadTasks: async () => {
     set({ loading: true, error: null });
@@ -114,6 +127,43 @@ export const useSchedulerStore = create<SchedulerState>((set) => ({
     } catch (e) {
       console.error('验证触发表达式失败:', e);
       return null;
+    }
+  },
+
+  loadLockStatus: async () => {
+    try {
+      const lockStatus = await tauri.schedulerGetLockStatus();
+      set({ lockStatus });
+    } catch (e) {
+      console.error('获取锁状态失败:', e);
+    }
+  },
+
+  acquireLock: async () => {
+    set({ lockLoading: true });
+    try {
+      const success = await tauri.schedulerAcquireLock();
+      // 刷新锁状态
+      const lockStatus = await tauri.schedulerGetLockStatus();
+      set({ lockStatus, lockLoading: false });
+      return success;
+    } catch (e) {
+      console.error('获取锁失败:', e);
+      set({ lockLoading: false });
+      return false;
+    }
+  },
+
+  releaseLock: async () => {
+    set({ lockLoading: true });
+    try {
+      await tauri.schedulerReleaseLock();
+      // 刷新锁状态
+      const lockStatus = await tauri.schedulerGetLockStatus();
+      set({ lockStatus, lockLoading: false });
+    } catch (e) {
+      console.error('释放锁失败:', e);
+      set({ lockLoading: false });
     }
   },
 }));
