@@ -79,6 +79,12 @@ pub struct TodoItem {
     pub last_error: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// 所属工作区路径（None 表示全局待办）
+    #[serde(default)]
+    pub workspace_path: Option<String>,
+    /// 所属工作区名称（用于显示）
+    #[serde(default)]
+    pub workspace_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -86,6 +92,17 @@ pub struct TodoFileData {
     pub version: String,
     pub updated_at: String,
     pub todos: Vec<TodoItem>,
+}
+
+/// 查询范围
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum QueryScope {
+    /// 仅当前工作区
+    #[default]
+    Workspace,
+    /// 全局 + 所有已注册工作区
+    All,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -105,6 +122,8 @@ pub struct TodoCreateParams {
     pub subtasks: Option<Vec<TodoCreateSubtask>>,
     pub due_date: Option<String>,
     pub estimated_hours: Option<f64>,
+    /// 是否创建为全局待办（默认 false，即工作区待办）
+    pub is_global: bool,
 }
 
 #[derive(Debug, Clone, Default)]

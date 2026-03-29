@@ -76,6 +76,8 @@ impl WorkspaceTodoRepository {
             last_error: None,
             created_at: now.clone(),
             updated_at: now,
+            workspace_path: None,
+            workspace_name: None,
         };
 
         data.todos.push(todo.clone());
@@ -306,6 +308,8 @@ fn normalize_todo_item(value: &serde_json::Value) -> Option<TodoItem> {
         last_error: optional_string_field(object.get("lastError")),
         created_at,
         updated_at,
+        workspace_path: optional_string_field(object.get("workspacePath")),
+        workspace_name: optional_string_field(object.get("workspaceName")),
     })
 }
 

@@ -39,10 +39,12 @@ struct ResolvedMcpBinary {
 
 pub struct WorkspaceMcpConfigService {
     binaries: Vec<ResolvedMcpBinary>,
+    config_dir: PathBuf,
 }
 
 impl WorkspaceMcpConfigService {
     pub fn new(
+        config_dir: PathBuf,
         todo_executable_path: PathBuf,
         requirements_executable_path: Option<PathBuf>,
         scheduler_executable_path: Option<PathBuf>,
@@ -66,14 +68,14 @@ impl WorkspaceMcpConfigService {
             });
         }
 
-        Self { binaries }
+        Self { binaries, config_dir }
     }
 
     pub fn executable_path(&self) -> &Path {
         &self.binaries[0].executable_path
     }
 
-    pub fn from_app_paths(resource_dir: Option<PathBuf>, app_root: PathBuf) -> Result<Self> {
+    pub fn from_app_paths(config_dir: PathBuf, resource_dir: Option<PathBuf>, app_root: PathBuf) -> Result<Self> {
         let todo_executable_path = resolve_mcp_executable_path(
             resource_dir.clone(),
             app_root.clone(),
@@ -105,6 +107,7 @@ impl WorkspaceMcpConfigService {
         );
 
         Ok(Self::new(
+            config_dir,
             todo_executable_path,
             requirements_executable_path,
             scheduler_executable_path,
@@ -136,11 +139,22 @@ impl WorkspaceMcpConfigService {
                 )));
             }
 
+            // Todo MCP needs both config_dir and workspace_path
+            // Other MCPs only need workspace_path
+            let args = if binary.server_name == TODO_MCP_SERVER_NAME {
+                vec![
+                    self.config_dir.to_string_lossy().to_string(),
+                    normalized_workspace.to_string(),
+                ]
+            } else {
+                vec![normalized_workspace.to_string()]
+            };
+
             servers.insert(
                 binary.server_name.to_string(),
                 ClaudeMcpServerConfig {
                     command: binary.executable_path.to_string_lossy().to_string(),
-                    args: vec![normalized_workspace.to_string()],
+                    args,
                 },
             );
         }
@@ -337,17 +351,20 @@ mod tests {
     fn prepares_workspace_scoped_mcp_config() {
         let temp_root = std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
         let workspace = temp_root.join("workspace-a");
+        let config_dir = temp_root.join("config");
         let todo_executable_path = temp_root.join("bin/polaris-todo-mcp.exe");
         let requirements_executable_path = temp_root.join("bin/polaris-requirements-mcp.exe");
         let scheduler_executable_path = temp_root.join("bin/polaris-scheduler-mcp.exe");
 
         std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&config_dir).unwrap();
         std::fs::create_dir_all(todo_executable_path.parent().unwrap()).unwrap();
         std::fs::write(&todo_executable_path, "todo bin").unwrap();
         std::fs::write(&requirements_executable_path, "requirements bin").unwrap();
         std::fs::write(&scheduler_executable_path, "scheduler bin").unwrap();
 
         let service = WorkspaceMcpConfigService::new(
+            config_dir.clone(),
             todo_executable_path.clone(),
             Some(requirements_executable_path.clone()),
             Some(scheduler_executable_path.clone()),
@@ -359,6 +376,7 @@ mod tests {
         let content = std::fs::read_to_string(&config_path).unwrap();
         let json: serde_json::Value = serde_json::from_str(&content).unwrap();
 
+        // Todo MCP should have two args: config_dir and workspace_path
         let todo_server = &json["mcpServers"][TODO_MCP_SERVER_NAME];
         assert_eq!(
             todo_server["command"],
@@ -366,9 +384,14 @@ mod tests {
         );
         assert_eq!(
             todo_server["args"][0],
+            serde_json::Value::String(config_dir.to_string_lossy().to_string())
+        );
+        assert_eq!(
+            todo_server["args"][1],
             serde_json::Value::String(workspace.to_string_lossy().to_string())
         );
 
+        // Requirements MCP should have one arg: workspace_path
         let requirements_server = &json["mcpServers"][REQUIREMENTS_MCP_SERVER_NAME];
         assert_eq!(
             requirements_server["command"],
@@ -379,6 +402,7 @@ mod tests {
             serde_json::Value::String(workspace.to_string_lossy().to_string())
         );
 
+        // Scheduler MCP should have one arg: workspace_path
         let scheduler_server = &json["mcpServers"][SCHEDULER_MCP_SERVER_NAME];
         assert_eq!(
             scheduler_server["command"],
@@ -396,13 +420,15 @@ mod tests {
     fn rewrites_existing_config_idempotently() {
         let temp_root = std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
         let workspace = temp_root.join("workspace-b");
+        let config_dir = temp_root.join("config");
         let executable_path = temp_root.join("bin/polaris-todo-mcp.exe");
 
         std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&config_dir).unwrap();
         std::fs::create_dir_all(executable_path.parent().unwrap()).unwrap();
         std::fs::write(&executable_path, "bin").unwrap();
 
-        let service = WorkspaceMcpConfigService::new(executable_path.clone(), None, None);
+        let service = WorkspaceMcpConfigService::new(config_dir.clone(), executable_path.clone(), None, None);
         let first = service.prepare_workspace_config(workspace.to_string_lossy().as_ref()).unwrap();
         let first_content = std::fs::read_to_string(&first).unwrap();
         let second = service.prepare_workspace_config(workspace.to_string_lossy().as_ref()).unwrap();

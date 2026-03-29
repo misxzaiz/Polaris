@@ -154,8 +154,10 @@ fn prepare_mcp_config_path(options: &ChatRequestOptions, engine: &EngineId, wind
         .ok_or_else(|| AppError::ProcessError("无法确定应用根目录".to_string()))?
         .to_path_buf();
     let resource_dir = window.path().resource_dir().ok();
+    let config_dir = window.path().app_config_dir()
+        .map_err(|e| AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
 
-    let service = WorkspaceMcpConfigService::from_app_paths(resource_dir, app_root)?;
+    let service = WorkspaceMcpConfigService::from_app_paths(config_dir, resource_dir, app_root)?;
     let config_path = service.prepare_workspace_config(work_dir)?;
     Ok(Some(config_path.to_string_lossy().to_string()))
 }
