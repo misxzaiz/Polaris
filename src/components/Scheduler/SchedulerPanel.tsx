@@ -2,7 +2,7 @@
  * 定时任务管理面板
  */
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
@@ -13,7 +13,6 @@ import { TaskCard } from './TaskCard';
 import { TaskEditor } from './TaskEditor';
 import { ExecutionLogDrawer } from './ExecutionLogDrawer';
 import { ConfirmDialog } from '../Common/ConfirmDialog';
-import { getEventRouter } from '../../services/eventRouter';
 
 /** 筛选条件 */
 interface TaskFilter {
@@ -44,63 +43,6 @@ function filterTasks(tasks: ScheduledTask[], filter: TaskFilter): ScheduledTask[
   });
 }
 
-/** 解析 AI 事件为日志 */
-function parseEventToLog(event: Record<string, unknown>): {
-  type: 'session_start' | 'message' | 'thinking' | 'tool_call_start' | 'tool_call_end' | 'error' | 'session_end';
-  content: string;
-  metadata?: Record<string, unknown>;
-} | null {
-  const type = event.type as string | undefined;
-
-  switch (type) {
-    case 'session_start':
-      return { type: 'session_start', content: '开始执行任务...' };
-
-    case 'progress':
-      return { type: 'message', content: (event.message as string) || '处理中...' };
-
-    case 'thinking':
-      return { type: 'thinking', content: (event.content as string) || '思考中...' };
-
-    case 'assistant_message':
-    case 'assistant':
-      return { type: 'message', content: (event.content as string) || '' };
-
-    case 'tool_call_start':
-      const toolName = (event.tool as string) || (event.toolName as string) || (event.name as string) || 'unknown';
-      return {
-        type: 'tool_call_start',
-        content: `调用工具: ${toolName}`,
-        metadata: { toolName, args: event.args },
-      };
-
-    case 'tool_call_end':
-      const endToolName = (event.tool as string) || (event.toolName as string) || (event.name as string) || 'unknown';
-      const success = event.success !== false;
-      return {
-        type: 'tool_call_end',
-        content: success ? `${endToolName} 完成` : `${endToolName} 失败`,
-        metadata: { toolName: endToolName, success },
-      };
-
-    case 'session_end':
-      const reason = event.reason as string | undefined;
-      if (reason === 'error' || reason === 'failed') {
-        return {
-          type: 'error',
-          content: (event.error as string) || '执行失败',
-        };
-      }
-      return { type: 'session_end', content: '任务执行完成', metadata: { success: true } };
-
-    case 'error':
-      return { type: 'error', content: (event.error as string) || (event.message as string) || '未知错误' };
-
-    default:
-      return null;
-  }
-}
-
 export function SchedulerPanel() {
   const { t } = useTranslation('scheduler');
   const toast = useToastStore();
@@ -114,9 +56,8 @@ export function SchedulerPanel() {
     deleteTask,
     toggleTask,
     runTask,
-    updateRunStatus,
-    addLog,
     isTaskRunning,
+    isTaskSubscribed,
     loadSchedulerStatus,
     handleTaskDue,
   } = useSchedulerStore();
@@ -136,9 +77,6 @@ export function SchedulerPanel() {
     message: string;
     onConfirm: () => void;
   } | null>(null);
-
-  // 事件订阅清理函数
-  const unsubscribesRef = useRef<Map<string, () => void>>(new Map());
 
   // 加载任务和调度器状态
   useEffect(() => {
@@ -178,56 +116,6 @@ export function SchedulerPanel() {
       if (unlisten) unlisten();
     };
   }, [handleTaskDue, toast, t]);
-
-  // 注册事件处理器
-  const registerEventHandler = async (taskId: string) => {
-    const router = getEventRouter();
-    await router.initialize();
-
-    const contextId = `scheduler-${taskId}`;
-
-    // 清理旧的订阅
-    const oldUnsubscribe = unsubscribesRef.current.get(taskId);
-    if (oldUnsubscribe) {
-      oldUnsubscribe();
-    }
-
-    // 注册新的处理器
-    const unsubscribe = router.register(contextId, (payload: unknown) => {
-      const event = payload as Record<string, unknown>;
-      const log = parseEventToLog(event);
-
-      if (log) {
-        addLog(taskId, log);
-      }
-
-      // 处理会话结束
-      if (event.type === 'session_end') {
-        const reason = event.reason as string | undefined;
-        if (reason === 'error' || reason === 'failed') {
-          updateRunStatus(taskId, 'failed');
-        } else {
-          updateRunStatus(taskId, 'success');
-        }
-
-        // 清理订阅
-        unsubscribesRef.current.delete(taskId);
-      } else if (event.type === 'error') {
-        updateRunStatus(taskId, 'failed');
-        unsubscribesRef.current.delete(taskId);
-      }
-    });
-
-    unsubscribesRef.current.set(taskId, unsubscribe);
-  };
-
-  // 清理所有订阅
-  useEffect(() => {
-    return () => {
-      unsubscribesRef.current.forEach((unsubscribe) => unsubscribe());
-      unsubscribesRef.current.clear();
-    };
-  }, []);
 
   // 创建任务
   const handleCreate = async (params: CreateTaskParams) => {
@@ -296,7 +184,7 @@ export function SchedulerPanel() {
     });
   };
 
-  // 执行任务
+  // 执行任务（不订阅日志）
   const handleRun = async (task: ScheduledTask) => {
     if (isTaskRunning(task.id)) {
       toast.warning(t('toast.pleaseWait'));
@@ -304,11 +192,8 @@ export function SchedulerPanel() {
     }
 
     try {
-      // 初始化执行状态
-      await runTask(task.id);
-
-      // 注册事件处理器
-      await registerEventHandler(task.id);
+      // 执行任务（不订阅）
+      await runTask(task.id, { subscribe: false });
 
       // 调用 AI 引擎
       const engineId = task.engineId || 'claude-code';
@@ -327,7 +212,37 @@ export function SchedulerPanel() {
     } catch (e) {
       console.error('[Scheduler] 任务执行失败:', e);
       toast.error(t('toast.runFailed'), e instanceof Error ? e.message : '');
-      await updateRunStatus(task.id, 'failed');
+    }
+  };
+
+  // 订阅执行（执行并显示日志）
+  const handleSubscribe = async (task: ScheduledTask) => {
+    if (isTaskRunning(task.id)) {
+      toast.warning(t('toast.pleaseWait'));
+      return;
+    }
+
+    try {
+      // 执行任务并订阅日志
+      await runTask(task.id, { subscribe: true });
+
+      // 调用 AI 引擎
+      const engineId = task.engineId || 'claude-code';
+      const sessionId = await invoke<string>('start_chat', {
+        message: task.prompt,
+        options: {
+          workDir: task.workDir,
+          contextId: `scheduler-${task.id}`,
+          engineId,
+          enableMcpTools: engineId === 'claude-code',
+        },
+      });
+
+      console.log('[Scheduler] 订阅执行会话 ID:', sessionId);
+      toast.success(t('toast.subscribeTriggered'));
+    } catch (e) {
+      console.error('[Scheduler] 订阅执行失败:', e);
+      toast.error(t('toast.runFailed'), e instanceof Error ? e.message : '');
     }
   };
 
@@ -430,6 +345,7 @@ export function SchedulerPanel() {
                 key={task.id}
                 task={task}
                 isRunning={isTaskRunning(task.id)}
+                isSubscribed={isTaskSubscribed(task.id)}
                 onEdit={() => {
                   setCopyingTask(undefined);
                   setEditingTask(task);
@@ -439,6 +355,7 @@ export function SchedulerPanel() {
                 onDelete={() => handleDelete(task.id)}
                 onToggle={() => toggleTask(task.id, !task.enabled)}
                 onRun={() => handleRun(task)}
+                onSubscribe={() => handleSubscribe(task)}
               />
             ))}
           </div>

@@ -46,6 +46,8 @@ export interface TaskCardProps {
   task: ScheduledTask;
   /** 是否正在执行 */
   isRunning?: boolean;
+  /** 是否已订阅日志 */
+  isSubscribed?: boolean;
   /** 点击编辑 */
   onEdit: () => void;
   /** 点击复制 */
@@ -54,18 +56,22 @@ export interface TaskCardProps {
   onDelete: () => void;
   /** 点击切换状态 */
   onToggle: () => void;
-  /** 点击执行 */
+  /** 点击执行（不订阅日志） */
   onRun: () => void;
+  /** 点击订阅执行（执行并显示日志） */
+  onSubscribe: () => void;
 }
 
 export function TaskCard({
   task,
   isRunning,
+  isSubscribed,
   onEdit,
   onCopy,
   onDelete,
   onToggle,
   onRun,
+  onSubscribe,
 }: TaskCardProps) {
   const { t } = useTranslation('scheduler');
 
@@ -125,7 +131,8 @@ export function TaskCard({
       </div>
 
       {/* 操作按钮 */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
+        {/* 执行按钮组 */}
         <button
           onClick={onRun}
           disabled={isRunning}
@@ -134,8 +141,24 @@ export function TaskCard({
               ? 'bg-info-faint text-info cursor-wait'
               : 'bg-primary-faint text-primary hover:bg-primary/20'
           }`}
+          title={t('card.runHint')}
         >
           {isRunning ? t('card.running') : t('card.run')}
+        </button>
+
+        <button
+          onClick={onSubscribe}
+          disabled={isRunning}
+          className={`px-3 py-1 text-sm rounded transition-colors ${
+            isSubscribed
+              ? 'bg-success text-white'
+              : isRunning
+                ? 'bg-info-faint text-info cursor-wait'
+                : 'bg-success-faint text-success hover:bg-success/20'
+          }`}
+          title={t('card.subscribeHint')}
+        >
+          {isSubscribed ? t('card.subscribed') : t('card.subscribe')}
         </button>
 
         <button
