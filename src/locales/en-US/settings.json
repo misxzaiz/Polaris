@@ -142,5 +142,66 @@
     "configFile": "Config File",
     "logDir": "Log Directory",
     "currentEngine": "Current Engine"
+  },
+  "qqbot": {
+    "title": "QQ Bot Integration",
+    "description": "Send and receive messages via QQ Bot",
+    "enable": "Enable QQ Bot Integration",
+    "instances": "Bot Instances",
+    "addInstance": "Add Instance",
+    "noInstances": "No instances yet, click above to add",
+    "instanceConfig": "Instance Configuration",
+    "instanceName": "Instance Name",
+    "instanceNamePlaceholder": "e.g., Production Bot",
+    "appId": "App ID",
+    "appIdPlaceholder": "App ID from QQ Open Platform",
+    "clientSecret": "Client Secret",
+    "clientSecretPlaceholder": "Client Secret from QQ Open Platform",
+    "sandbox": "Sandbox Environment",
+    "autoConnect": "Auto Connect",
+    "displayMode": "Display Mode",
+    "displayModeChat": "Chat Mode",
+    "displayModeSeparate": "Separate Mode",
+    "displayModeBoth": "Both",
+    "unsaved": "Unsaved",
+    "connected": "Connected",
+    "save": "Save",
+    "saving": "Saving...",
+    "connect": "Connect",
+    "connecting": "Connecting...",
+    "disconnect": "Disconnect",
+    "switch": "Switch",
+    "delete": "Delete",
+    "deleteConfirm": "Are you sure you want to delete this instance?",
+    "switchConfirm": "You have unsaved changes. Are you sure you want to switch?",
+    "connectionState": {
+      "disconnected": "Disconnected",
+      "connecting": "Connecting...",
+      "authenticating": "Authenticating...",
+      "ready": "Ready",
+      "failed": "Failed",
+      "reconnecting": "Reconnecting..."
+    },
+    "error": {
+      "title": "Connection Failed",
+      "getTokenFailed": "Failed to get Access Token",
+      "getGatewayFailed": "Failed to get Gateway URL",
+      "connectTimeout": "Connection timeout",
+      "authFailed": "Authentication failed",
+      "websocketError": "WebSocket error",
+      "connectionClosed": "Connection closed"
+    },
+    "hints": {
+      "title": "Instructions",
+      "saveFirst": "Click \"Save\" after filling in the configuration",
+      "connectWillSave": "Click \"Connect\" will auto-save and connect",
+      "singleInstance": "Only one QQ Bot instance can be connected at a time",
+      "sandboxForTest": "Sandbox is for testing, production requires review"
+    },
+    "status": {
+      "current": "Current",
+      "notConfigured": "Not Configured",
+      "activated": "Activated"
+    }
   }
 }

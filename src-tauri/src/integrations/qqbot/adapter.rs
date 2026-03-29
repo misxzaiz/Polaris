@@ -1,11 +1,14 @@
 /*! QQ Bot 适配器
  *
  * 实现 PlatformIntegration Trait，提供 QQ Bot 的连接、消息收发功能。
+ * 支持细化的连接状态管理和实时进度反馈。
  */
 
 use async_trait::async_trait;
 use futures_util::{SinkExt, StreamExt};
-use tokio::sync::mpsc::Sender;
+use std::sync::Arc;
+use tauri::Emitter;
+use tokio::sync::{mpsc::Sender, RwLock};
 use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
 
 use crate::error::{AppError, Result};
@@ -23,6 +26,25 @@ const INTENTS_DEFAULT: u32 =
     (1 << 25) |  // AT_MESSAGES - @消息
     (1 << 30);   // PUBLIC_GUILD_MESSAGES - 公域频道消息
 
+/// 连接超时时间（秒）
+const CONNECT_TIMEOUT_SECS: u64 = 15;
+
+/// 最大重试次数
+const MAX_RETRY_COUNT: u32 = 3;
+
+/// 内部共享状态
+#[derive(Debug, Default)]
+struct InnerState {
+    /// 当前连接状态
+    connection_state: ConnectionState,
+    /// 错误信息
+    error: Option<String>,
+    /// 错误详情
+    error_detail: Option<String>,
+    /// 重试次数
+    retry_count: u32,
+}
+
 /// QQ Bot 适配器
 pub struct QQBotAdapter {
     /// 配置
@@ -33,14 +55,16 @@ pub struct QQBotAdapter {
     token_expire_at: i64,
     /// 消息发送通道
     message_tx: Option<Sender<IntegrationMessage>>,
-    /// 状态
-    status: IntegrationStatus,
+    /// 内部状态（共享给 WebSocket 任务）
+    inner_state: Arc<RwLock<InnerState>>,
     /// 消息去重器
     dedup: MessageDedup,
     /// WebSocket 任务句柄
     ws_task: Option<tokio::task::JoinHandle<()>>,
     /// 关闭信号发送端
     shutdown_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    /// App Handle（用于发送状态变化事件）
+    app_handle: Option<tauri::AppHandle>,
 }
 
 impl QQBotAdapter {
@@ -51,10 +75,53 @@ impl QQBotAdapter {
             access_token: None,
             token_expire_at: 0,
             message_tx: None,
-            status: IntegrationStatus::new(Platform::QQBot),
+            inner_state: Arc::new(RwLock::new(InnerState::default())),
             dedup: MessageDedup::default(),
             ws_task: None,
             shutdown_tx: None,
+            app_handle: None,
+        }
+    }
+
+    /// 设置 App Handle（用于发送状态变化事件）
+    pub fn with_app_handle(mut self, app_handle: tauri::AppHandle) -> Self {
+        self.app_handle = Some(app_handle);
+        self
+    }
+
+    /// 更新内部状态并发送事件
+    async fn update_state(&self, new_state: ConnectionState) {
+        {
+            let mut state = self.inner_state.write().await;
+            state.connection_state = new_state;
+        }
+        // 发送状态变化事件到前端
+        if let Some(ref app_handle) = self.app_handle {
+            let status = self.status();
+            let _ = app_handle.emit("integration:state_change", &status);
+        }
+    }
+
+    /// 设置错误状态
+    async fn set_error(&self, error: String, detail: Option<String>) {
+        let mut state = self.inner_state.write().await;
+        state.connection_state = ConnectionState::Failed;
+        state.error = Some(error);
+        state.error_detail = detail;
+    }
+
+    /// 获取当前状态
+    async fn status_async(&self) -> IntegrationStatus {
+        let state = self.inner_state.read().await;
+        IntegrationStatus {
+            platform: Platform::QQBot,
+            connected: state.connection_state == ConnectionState::Ready,
+            connection_state: state.connection_state,
+            error: state.error.clone(),
+            error_detail: state.error_detail.clone(),
+            last_activity: None,
+            stats: IntegrationStats::default(),
+            retry_count: state.retry_count,
         }
     }
 
@@ -351,6 +418,26 @@ impl QQBotAdapter {
             .with_raw(event_data.clone()),
         )
     }
+
+    /// 解析关闭帧错误码
+    fn parse_close_error(code: u16, reason: &str) -> (String, String) {
+        match code {
+            4903 => {
+                ("连接被拒绝".to_string(),
+                 "可能是以下原因:\n\
+                  1. 同一个 Bot 只能有一个 WebSocket 连接\n\
+                  2. Token 无效或过期\n\
+                  3. 应用未开通所请求的 intents 权限\n\
+                  4. Shard 配置与 Gateway 返回的不匹配".to_string())
+            }
+            4004 => ("Token 无效".to_string(), "请检查 App ID 和 Client Secret 是否正确".to_string()),
+            4010 => ("无效的 Shard 配置".to_string(), "请检查 Shard 配置".to_string()),
+            4011 => ("Shard 数量超过限制".to_string(), "请减少 Shard 数量".to_string()),
+            4012 => ("无效的 Intents".to_string(), "请检查 Intents 配置".to_string()),
+            4013 => ("Intents 超出白名单范围".to_string(), "请申请相应的 intents 权限".to_string()),
+            _ => (format!("连接关闭: {}", code), reason.to_string()),
+        }
+    }
 }
 
 #[async_trait]
@@ -362,14 +449,33 @@ impl PlatformIntegration for QQBotAdapter {
     async fn connect(&mut self, message_tx: Sender<IntegrationMessage>) -> Result<()> {
         tracing::info!("[QQBot] 🔌 开始连接...");
 
+        // 重置状态
+        {
+            let mut state = self.inner_state.write().await;
+            state.connection_state = ConnectionState::Connecting;
+            state.error = None;
+            state.error_detail = None;
+        }
+
         // 1. 确保 Token 有效
         tracing::info!("[QQBot] 🔐 获取 Access Token...");
-        self.ensure_valid_token().await?;
+        self.update_state(ConnectionState::Connecting).await;
+
+        if let Err(e) = self.ensure_valid_token().await {
+            self.set_error("获取 Access Token 失败".to_string(), Some(e.to_string())).await;
+            return Err(e);
+        }
         tracing::info!("[QQBot] ✅ Access Token 有效");
 
         // 2. 获取 Gateway URL
         tracing::info!("[QQBot] 🌐 获取 WebSocket Gateway...");
-        let gateway_url = self.get_gateway_url().await?;
+        let gateway_url = match self.get_gateway_url().await {
+            Ok(url) => url,
+            Err(e) => {
+                self.set_error("获取 Gateway URL 失败".to_string(), Some(e.to_string())).await;
+                return Err(e);
+            }
+        };
         tracing::info!(
             "[QQBot] ✅ Gateway URL: {}",
             &gateway_url[..std::cmp::min(60, gateway_url.len())]
@@ -379,14 +485,25 @@ impl PlatformIntegration for QQBotAdapter {
         let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel();
         self.shutdown_tx = Some(shutdown_tx);
 
-        // 4. 克隆必要的数据
+        // 4. 创建 READY 通知通道（用于等待鉴权完成）
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<Result<()>>();
+        let ready_tx = Some(ready_tx); // 使用 Option 包装，确保只发送一次
+
+        // 5. 克隆必要的数据
         let access_token = self.access_token.clone().unwrap();
         let tx = message_tx.clone();
+        let inner_state = self.inner_state.clone();
+        let app_handle = self.app_handle.clone();
 
-        // 5. 启动 WebSocket 任务
+        // 6. 更新状态为鉴权中
+        self.update_state(ConnectionState::Authenticating).await;
+
+        // 7. 启动 WebSocket 任务
         tracing::info!("[QQBot] 🚀 启动 WebSocket 连接...");
         let task = tokio::spawn(async move {
             tracing::info!("[QQBot] 🔌 正在建立 WebSocket 连接...");
+            let mut ready_tx = ready_tx; // 移动到任务中
+
             match connect_async(&gateway_url).await {
                 Ok((ws_stream, _)) => {
                     tracing::info!("[QQBot] ✅ WebSocket 连接成功");
@@ -416,6 +533,9 @@ impl PlatformIntegration for QQBotAdapter {
                         .await
                     {
                         tracing::error!("[QQBot] Failed to send auth: {}", e);
+                        if let Some(tx) = ready_tx.take() {
+                            let _ = tx.send(Err(AppError::AuthError(format!("发送鉴权消息失败: {}", e))));
+                        }
                         return;
                     }
 
@@ -433,6 +553,25 @@ impl PlatformIntegration for QQBotAdapter {
                             _ = &mut shutdown_rx => {
                                 tracing::info!("[QQBot] Shutdown signal received");
                                 let _ = write.send(WsMessage::Close(None)).await;
+
+                                // 更新状态为断开
+                                {
+                                    let mut state = inner_state.write().await;
+                                    state.connection_state = ConnectionState::Disconnected;
+                                }
+                                if let Some(ref app_handle) = app_handle {
+                                    let status = IntegrationStatus {
+                                        platform: Platform::QQBot,
+                                        connected: false,
+                                        connection_state: ConnectionState::Disconnected,
+                                        error: None,
+                                        error_detail: None,
+                                        last_activity: None,
+                                        stats: IntegrationStats::default(),
+                                        retry_count: 0,
+                                    };
+                                    let _ = app_handle.emit("integration:state_change", &status);
+                                }
                                 break;
                             }
 
@@ -464,6 +603,34 @@ impl PlatformIntegration for QQBotAdapter {
                                                     if event_type == "READY" {
                                                         tracing::info!("[QQBot] ✅ Ready! Session: {:?}",
                                                             event_data.get("session_id"));
+
+                                                        // 更新状态为已就绪
+                                                        {
+                                                            let mut state = inner_state.write().await;
+                                                            state.connection_state = ConnectionState::Ready;
+                                                            state.error = None;
+                                                            state.error_detail = None;
+                                                        }
+
+                                                        // 发送状态变化事件
+                                                        if let Some(ref app_handle) = app_handle {
+                                                            let status = IntegrationStatus {
+                                                                platform: Platform::QQBot,
+                                                                connected: true,
+                                                                connection_state: ConnectionState::Ready,
+                                                                error: None,
+                                                                error_detail: None,
+                                                                last_activity: Some(chrono::Utc::now().timestamp_millis()),
+                                                                stats: IntegrationStats::default(),
+                                                                retry_count: 0,
+                                                            };
+                                                            let _ = app_handle.emit("integration:state_change", &status);
+                                                        }
+
+                                                        // 通知 connect 方法鉴权成功
+                                                        if let Some(tx) = ready_tx.take() {
+                                                            let _ = tx.send(Ok(()));
+                                                        }
                                                         continue;
                                                     }
 
@@ -505,6 +672,25 @@ impl PlatformIntegration for QQBotAdapter {
                                                 }
                                                 7 => { // RECONNECT
                                                     tracing::warn!("[QQBot] ⚠️ 服务器请求重连");
+
+                                                    // 更新状态为重连中
+                                                    {
+                                                        let mut state = inner_state.write().await;
+                                                        state.connection_state = ConnectionState::Reconnecting;
+                                                    }
+                                                    if let Some(ref app_handle) = app_handle {
+                                                        let status = IntegrationStatus {
+                                                            platform: Platform::QQBot,
+                                                            connected: false,
+                                                            connection_state: ConnectionState::Reconnecting,
+                                                            error: Some("服务器请求重连".to_string()),
+                                                            error_detail: None,
+                                                            last_activity: None,
+                                                            stats: IntegrationStats::default(),
+                                                            retry_count: 0,
+                                                        };
+                                                        let _ = app_handle.emit("integration:state_change", &status);
+                                                    }
                                                     break;
                                                 }
                                                 _ => {
@@ -519,42 +705,40 @@ impl PlatformIntegration for QQBotAdapter {
                                     Some(Ok(WsMessage::Close(frame))) => {
                                         tracing::warn!("[QQBot] Connection closed: {:?}", frame);
 
-                                        // 诊断常见错误码
-                                        if let Some(close_frame) = &frame {
-                                            let code = close_frame.code.into();
-                                            tracing::error!(
-                                                "[QQBot] ❌ 关闭码: {} ({})",
-                                                code,
-                                                close_frame.reason
-                                            );
+                                        // 解析错误信息
+                                        let (error, detail) = if let Some(close_frame) = &frame {
+                                            let code: u16 = close_frame.code.into();
+                                            Self::parse_close_error(code, &close_frame.reason)
+                                        } else {
+                                            ("连接关闭".to_string(), "未知原因".to_string())
+                                        };
 
-                                            match code {
-                                                4903 => {
-                                                    tracing::error!(
-                                                        "[QQBot] 诊断: 4903 错误通常是以下原因之一:\n\
-                                                        1. 并发连接限制 - 同一个 Bot 只能有一个 WebSocket 连接\n\
-                                                        2. Token 无效或过期\n\
-                                                        3. 应用未开通所请求的 intents 权限\n\
-                                                        4. Shard 配置与 Gateway 返回的不匹配"
-                                                    );
-                                                }
-                                                4004 => {
-                                                    tracing::error!("[QQBot] 诊断: Token 无效");
-                                                }
-                                                4010 => {
-                                                    tracing::error!("[QQBot] 诊断: 无效的 Shard 配置");
-                                                }
-                                                4011 => {
-                                                    tracing::error!("[QQBot] 诊断: Shard 数量超过限制");
-                                                }
-                                                4012 => {
-                                                    tracing::error!("[QQBot] 诊断: 无效的 Intents");
-                                                }
-                                                4013 => {
-                                                    tracing::error!("[QQBot] 诊断: Intents 超出白名单范围");
-                                                }
-                                                _ => {}
-                                            }
+                                        // 更新状态为失败
+                                        {
+                                            let mut state = inner_state.write().await;
+                                            state.connection_state = ConnectionState::Failed;
+                                            state.error = Some(error.clone());
+                                            state.error_detail = Some(detail.clone());
+                                        }
+
+                                        // 发送状态变化事件
+                                        if let Some(ref app_handle) = app_handle {
+                                            let status = IntegrationStatus {
+                                                platform: Platform::QQBot,
+                                                connected: false,
+                                                connection_state: ConnectionState::Failed,
+                                                error: Some(error),
+                                                error_detail: Some(detail),
+                                                last_activity: None,
+                                                stats: IntegrationStats::default(),
+                                                retry_count: 0,
+                                            };
+                                            let _ = app_handle.emit("integration:state_change", &status);
+                                        }
+
+                                        // 如果还没通知 connect 方法，通知失败
+                                        if let Some(tx) = ready_tx.take() {
+                                            let _ = tx.send(Err(AppError::AuthError("连接被关闭".to_string())));
                                         }
                                         break;
                                     }
@@ -563,10 +747,28 @@ impl PlatformIntegration for QQBotAdapter {
                                     }
                                     Some(Err(e)) => {
                                         tracing::error!("[QQBot] WebSocket error: {}", e);
+
+                                        // 更新状态为失败
+                                        {
+                                            let mut state = inner_state.write().await;
+                                            state.connection_state = ConnectionState::Failed;
+                                            state.error = Some("WebSocket 错误".to_string());
+                                            state.error_detail = Some(e.to_string());
+                                        }
+
+                                        if let Some(tx) = ready_tx.take() {
+                                            let _ = tx.send(Err(AppError::NetworkError(e.to_string())));
+                                        }
                                         break;
                                     }
                                     None => {
                                         tracing::warn!("[QQBot] WebSocket stream ended");
+
+                                        // 更新状态为断开
+                                        {
+                                            let mut state = inner_state.write().await;
+                                            state.connection_state = ConnectionState::Disconnected;
+                                        }
                                         break;
                                     }
                                     _ => {}
@@ -598,20 +800,58 @@ impl PlatformIntegration for QQBotAdapter {
                 }
                 Err(e) => {
                     tracing::error!("[QQBot] Failed to connect WebSocket: {}", e);
+
+                    // 更新状态为失败
+                    {
+                        let mut state = inner_state.write().await;
+                        state.connection_state = ConnectionState::Failed;
+                        state.error = Some("WebSocket 连接失败".to_string());
+                        state.error_detail = Some(e.to_string());
+                    }
+
+                    if let Some(tx) = ready_tx.take() {
+                        let _ = tx.send(Err(AppError::NetworkError(e.to_string())));
+                    }
                 }
             }
         });
 
         self.ws_task = Some(task);
         self.message_tx = Some(message_tx);
-        self.status = IntegrationStatus::new(Platform::QQBot).connected();
 
-        tracing::info!("[QQBot] Adapter connected");
-        Ok(())
+        // 等待 READY 事件或超时
+        tracing::info!("[QQBot] ⏳ 等待鉴权完成...");
+        let timeout_duration = tokio::time::Duration::from_secs(CONNECT_TIMEOUT_SECS);
+
+        match tokio::time::timeout(timeout_duration, ready_rx).await {
+            Ok(Ok(Ok(()))) => {
+                tracing::info!("[QQBot] ✅ 连接成功，已就绪");
+                // 状态已在 WebSocket 任务中更新为 Ready
+                Ok(())
+            }
+            Ok(Ok(Err(e))) => {
+                tracing::error!("[QQBot] ❌ 鉴权失败: {}", e);
+                // 状态已在 WebSocket 任务中更新为 Failed
+                Err(e)
+            }
+            Ok(Err(_)) => {
+                tracing::error!("[QQBot] ❌ READY 通道关闭");
+                self.set_error("鉴权超时".to_string(), Some("READY 通道意外关闭".to_string())).await;
+                Err(AppError::AuthError("鉴权过程中发生错误".to_string()))
+            }
+            Err(_) => {
+                tracing::error!("[QQBot] ❌ 等待鉴权超时（{}秒）", CONNECT_TIMEOUT_SECS);
+                self.set_error("连接超时".to_string(), Some(format!("等待 {} 秒后超时", CONNECT_TIMEOUT_SECS))).await;
+                Err(AppError::AuthError(format!("连接超时（{}秒）", CONNECT_TIMEOUT_SECS)))
+            }
+        }
     }
 
     async fn disconnect(&mut self) -> Result<()> {
         tracing::info!("[QQBot] 🔌 开始断开连接...");
+
+        // 更新状态为断开中
+        self.update_state(ConnectionState::Disconnected).await;
 
         // 1. 发送关闭信号
         if let Some(tx) = self.shutdown_tx.take() {
@@ -631,8 +871,8 @@ impl PlatformIntegration for QQBotAdapter {
                 Ok(Ok(())) => {
                     tracing::debug!("[QQBot] WebSocket 任务已正常结束");
                 }
-                Ok(Err(_)) => {
-                    tracing::debug!("[QQBot] WebSocket 任务已结束");
+                Ok(Err(e)) => {
+                    tracing::debug!("[QQBot] WebSocket 任务已结束: {:?}", e);
                 }
                 Err(_) => {
                     tracing::warn!("[QQBot] WebSocket 任务超时，已强制终止");
@@ -641,9 +881,23 @@ impl PlatformIntegration for QQBotAdapter {
         }
 
         // 3. 清理状态
-        self.status = self.status.clone().disconnected();
         self.message_tx = None;
         self.dedup.clear();
+
+        // 发送最终状态
+        if let Some(ref app_handle) = self.app_handle {
+            let status = IntegrationStatus {
+                platform: Platform::QQBot,
+                connected: false,
+                connection_state: ConnectionState::Disconnected,
+                error: None,
+                error_detail: None,
+                last_activity: None,
+                stats: IntegrationStats::default(),
+                retry_count: 0,
+            };
+            let _ = app_handle.emit("integration:state_change", &status);
+        }
 
         tracing::info!("[QQBot] ✅ 已断开连接");
         Ok(())
@@ -738,6 +992,28 @@ impl PlatformIntegration for QQBotAdapter {
     }
 
     fn status(&self) -> IntegrationStatus {
-        self.status.clone()
+        // 同步版本，使用 try_lock
+        match self.inner_state.try_read() {
+            Ok(state) => IntegrationStatus {
+                platform: Platform::QQBot,
+                connected: state.connection_state == ConnectionState::Ready,
+                connection_state: state.connection_state,
+                error: state.error.clone(),
+                error_detail: state.error_detail.clone(),
+                last_activity: None,
+                stats: IntegrationStats::default(),
+                retry_count: state.retry_count,
+            },
+            Err(_) => IntegrationStatus {
+                platform: Platform::QQBot,
+                connected: false,
+                connection_state: ConnectionState::Disconnected,
+                error: Some("无法读取状态".to_string()),
+                error_detail: None,
+                last_activity: None,
+                stats: IntegrationStats::default(),
+                retry_count: 0,
+            },
+        }
     }
 }

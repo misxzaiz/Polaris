@@ -16,6 +16,43 @@ pub enum Platform {
     // Telegram,
 }
 
+/// 连接状态（细化状态机）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ConnectionState {
+    /// 未连接
+    Disconnected,
+    /// 连接中（正在建立 WebSocket）
+    Connecting,
+    /// 鉴权中（WebSocket 已建立，等待 READY）
+    Authenticating,
+    /// 已就绪（收到 READY，可以收发消息）
+    Ready,
+    /// 连接失败
+    Failed,
+    /// 重连中
+    Reconnecting,
+}
+
+impl Default for ConnectionState {
+    fn default() -> Self {
+        Self::Disconnected
+    }
+}
+
+impl std::fmt::Display for ConnectionState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConnectionState::Disconnected => write!(f, "未连接"),
+            ConnectionState::Connecting => write!(f, "连接中"),
+            ConnectionState::Authenticating => write!(f, "鉴权中"),
+            ConnectionState::Ready => write!(f, "已就绪"),
+            ConnectionState::Failed => write!(f, "连接失败"),
+            ConnectionState::Reconnecting => write!(f, "重连中"),
+        }
+    }
+}
+
 impl std::fmt::Display for Platform {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -152,17 +189,26 @@ pub enum SendTarget {
 pub struct IntegrationStatus {
     /// 平台
     pub platform: Platform,
-    /// 是否已连接
+    /// 是否已连接（兼容旧字段）
     pub connected: bool,
+    /// 连接状态（细化状态）
+    #[serde(default)]
+    pub connection_state: ConnectionState,
     /// 错误信息
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// 错误详情（诊断信息）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_detail: Option<String>,
     /// 最后活动时间
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_activity: Option<i64>,
     /// 统计信息
     #[serde(default)]
     pub stats: IntegrationStats,
+    /// 重试次数
+    #[serde(default)]
+    pub retry_count: u32,
 }
 
 impl IntegrationStatus {
@@ -170,26 +216,59 @@ impl IntegrationStatus {
         Self {
             platform,
             connected: false,
+            connection_state: ConnectionState::Disconnected,
             error: None,
+            error_detail: None,
             last_activity: None,
             stats: IntegrationStats::default(),
+            retry_count: 0,
         }
     }
 
     pub fn connected(mut self) -> Self {
         self.connected = true;
+        self.connection_state = ConnectionState::Ready;
         self.error = None;
+        self.error_detail = None;
         self.last_activity = Some(chrono::Utc::now().timestamp_millis());
         self
     }
 
     pub fn disconnected(mut self) -> Self {
         self.connected = false;
+        self.connection_state = ConnectionState::Disconnected;
         self
     }
 
     pub fn with_error(mut self, error: impl Into<String>) -> Self {
         self.error = Some(error.into());
+        self.connection_state = ConnectionState::Failed;
+        self
+    }
+
+    pub fn with_error_detail(mut self, error: impl Into<String>, detail: impl Into<String>) -> Self {
+        self.error = Some(error.into());
+        self.error_detail = Some(detail.into());
+        self.connection_state = ConnectionState::Failed;
+        self
+    }
+
+    /// 设置连接状态
+    pub fn with_state(mut self, state: ConnectionState) -> Self {
+        self.connection_state = state;
+        self.connected = state == ConnectionState::Ready;
+        self
+    }
+
+    /// 增加重试次数
+    pub fn increment_retry(mut self) -> Self {
+        self.retry_count += 1;
+        self
+    }
+
+    /// 重置重试次数
+    pub fn reset_retry(mut self) -> Self {
+        self.retry_count = 0;
         self
     }
 }

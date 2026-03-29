@@ -89,13 +89,45 @@ export type SendTarget =
   | { type: 'user'; userId: string }
   | { type: 'webhook'; url: string };
 
+/** 连接状态（细化状态机） */
+export type ConnectionState =
+  | 'disconnected' // 未连接
+  | 'connecting' // 连接中（正在建立 WebSocket）
+  | 'authenticating' // 鉴权中（WebSocket 已建立，等待 READY）
+  | 'ready' // 已就绪（收到 READY，可以收发消息）
+  | 'failed' // 连接失败
+  | 'reconnecting'; // 重连中
+
+/** 连接状态显示文本 */
+export const ConnectionStateLabels: Record<ConnectionState, string> = {
+  disconnected: '未连接',
+  connecting: '连接中...',
+  authenticating: '鉴权中...',
+  ready: '已就绪',
+  failed: '连接失败',
+  reconnecting: '重连中...',
+};
+
+/** 连接状态颜色 */
+export const ConnectionStateColors: Record<ConnectionState, string> = {
+  disconnected: 'text-text-tertiary',
+  connecting: 'text-warning',
+  authenticating: 'text-warning',
+  ready: 'text-success',
+  failed: 'text-danger',
+  reconnecting: 'text-warning',
+};
+
 /** 集成状态 */
 export interface IntegrationStatus {
   platform: Platform;
   connected: boolean;
+  connectionState: ConnectionState;
   error?: string;
+  errorDetail?: string;
   lastActivity?: number;
   stats: IntegrationStats;
+  retryCount: number;
 }
 
 /** 统计信息 */

@@ -582,32 +582,69 @@ impl IntegrationManager {
             // 记录事件类型
             tracing::debug!("[IntegrationManager] 收到事件: {:?}", std::mem::discriminant(&event));
 
-            // 提取文本
-            if let Some(text) = event.extract_text() {
-                // 使用字符安全的截断方式，避免在多字节 UTF-8 字符中间切割
-                let preview: String = text.chars().take(100).collect();
-                let preview = if preview.len() < text.len() { format!("{}...", preview) } else { preview };
-                tracing::info!("[IntegrationManager] AI 文本 (len={}): {}", text.len(), preview);
-
-                // 累积文本
-                if let Ok(mut accumulated) = accumulated_text_clone.try_lock() {
-                    if matches!(event, crate::models::AIEvent::Progress(_)) {
-                        if !accumulated.is_empty() && !accumulated.ends_with('\n') {
-                            accumulated.push('\n');
-                        }
-                        accumulated.push_str(&text);
-                        accumulated.push('\n');
-                    } else {
-                        accumulated.push_str(&text);
-                    }
+            match &event {
+                // 处理思考事件
+                crate::models::AIEvent::Thinking(thinking) => {
+                    tracing::info!("[IntegrationManager] 💭 思考中...");
+                    // 发送思考状态到前端
+                    let _ = app_handle_for_callback.emit("integration:ai:thinking", serde_json::json!({
+                        "conversationId": conversation_id_for_callback,
+                        "content": thinking.content
+                    }));
                 }
 
-                // 发送增量更新到前端
-                let _ = app_handle_for_callback.emit("integration:ai:delta", serde_json::json!({
-                    "conversationId": conversation_id_for_callback,
-                    "text": text,
-                    "isDelta": true
-                }));
+                // 处理工具调用开始事件
+                crate::models::AIEvent::ToolCallStart(tool_start) => {
+                    tracing::info!("[IntegrationManager] 🔧 正在调用工具: {}", tool_start.tool);
+                    // 发送工具调用状态到前端
+                    let _ = app_handle_for_callback.emit("integration:ai:tool_start", serde_json::json!({
+                        "conversationId": conversation_id_for_callback,
+                        "tool": tool_start.tool,
+                        "args": tool_start.args
+                    }));
+                }
+
+                // 处理工具调用结束事件
+                crate::models::AIEvent::ToolCallEnd(tool_end) => {
+                    let status = if tool_end.success { "完成" } else { "失败" };
+                    tracing::info!("[IntegrationManager] ✅ 工具 {} {}", tool_end.tool, status);
+                    // 发送工具完成状态到前端
+                    let _ = app_handle_for_callback.emit("integration:ai:tool_end", serde_json::json!({
+                        "conversationId": conversation_id_for_callback,
+                        "tool": tool_end.tool,
+                        "success": tool_end.success
+                    }));
+                }
+
+                // 处理文本事件
+                _ => {
+                    if let Some(text) = event.extract_text() {
+                        // 使用字符安全的截断方式，避免在多字节 UTF-8 字符中间切割
+                        let preview: String = text.chars().take(100).collect();
+                        let preview = if preview.len() < text.len() { format!("{}...", preview) } else { preview };
+                        tracing::info!("[IntegrationManager] AI 文本 (len={}): {}", text.len(), preview);
+
+                        // 累积文本
+                        if let Ok(mut accumulated) = accumulated_text_clone.try_lock() {
+                            if matches!(event, crate::models::AIEvent::Progress(_)) {
+                                if !accumulated.is_empty() && !accumulated.ends_with('\n') {
+                                    accumulated.push('\n');
+                                }
+                                accumulated.push_str(&text);
+                                accumulated.push('\n');
+                            } else {
+                                accumulated.push_str(&text);
+                            }
+                        }
+
+                        // 发送增量更新到前端
+                        let _ = app_handle_for_callback.emit("integration:ai:delta", serde_json::json!({
+                            "conversationId": conversation_id_for_callback,
+                            "text": text,
+                            "isDelta": true
+                        }));
+                    }
+                }
             }
 
             if event.is_session_end() {

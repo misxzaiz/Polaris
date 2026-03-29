@@ -954,4 +954,43 @@ impl AIEvent {
     pub fn is_error(&self) -> bool {
         matches!(self, AIEvent::Error(_))
     }
+
+    /// 判断是否为思考事件
+    pub fn is_thinking(&self) -> bool {
+        matches!(self, AIEvent::Thinking(_))
+    }
+
+    /// 判断是否为工具调用事件
+    pub fn is_tool_call(&self) -> bool {
+        matches!(self, AIEvent::ToolCallStart(_) | AIEvent::ToolCallEnd(_))
+    }
+
+    /// 提取思考内容
+    pub fn extract_thinking(&self) -> Option<&str> {
+        match self {
+            AIEvent::Thinking(e) => Some(&e.content),
+            _ => None,
+        }
+    }
+
+    /// 提取工具调用信息
+    pub fn extract_tool_info(&self) -> Option<ToolCallInfo> {
+        match self {
+            AIEvent::ToolCallStart(e) => Some(ToolCallInfo {
+                id: e.call_id.clone().unwrap_or_default(),
+                name: e.tool.clone(),
+                args: e.args.clone(),
+                status: ToolCallStatus::Running,
+                result: None,
+            }),
+            AIEvent::ToolCallEnd(e) => Some(ToolCallInfo {
+                id: e.call_id.clone().unwrap_or_default(),
+                name: e.tool.clone(),
+                args: HashMap::new(),
+                status: if e.success { ToolCallStatus::Completed } else { ToolCallStatus::Failed },
+                result: e.result.clone(),
+            }),
+            _ => None,
+        }
+    }
 }

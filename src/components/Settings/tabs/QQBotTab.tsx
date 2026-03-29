@@ -15,6 +15,10 @@ import {
   useActiveIntegrationInstance,
 } from '../../../stores';
 import type { Config, IntegrationDisplayMode, PlatformInstance } from '../../../types';
+import {
+  ConnectionStateLabels,
+  type ConnectionState,
+} from '../../../types/integration';
 import { createLogger } from '../../../utils/logger';
 
 const log = createLogger('QQBotTab');
@@ -66,6 +70,30 @@ export function QQBotTab({ config, onConfigChange, loading }: QQBotTabProps) {
   } = useIntegrationStore();
 
   const isConnected = qqbotStatus?.connected ?? false;
+  const connectionState = qqbotStatus?.connectionState ?? 'disconnected';
+  const errorMessage = qqbotStatus?.error;
+  const errorDetail = qqbotStatus?.errorDetail;
+
+  // 获取连接状态显示文本
+  const getStateLabel = (state: ConnectionState): string => {
+    return ConnectionStateLabels[state] || state;
+  };
+
+  // 获取状态徽章样式
+  const getStateBadgeStyle = (state: ConnectionState): string => {
+    switch (state) {
+      case 'ready':
+        return 'bg-success/20 text-success';
+      case 'connecting':
+      case 'authenticating':
+      case 'reconnecting':
+        return 'bg-warning/20 text-warning animate-pulse';
+      case 'failed':
+        return 'bg-danger/20 text-danger';
+      default:
+        return 'bg-text-tertiary/20 text-text-tertiary';
+    }
+  };
 
   // 本地编辑状态
   const [editingInstance, setEditingInstance] = useState<PlatformInstance | null>(null);
@@ -290,17 +318,19 @@ export function QQBotTab({ config, onConfigChange, loading }: QQBotTabProps) {
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
+                          {/* 状态徽章 */}
                           <div
-                            className={`w-2 h-2 rounded-full ${
-                              activeInstance?.id === instance.id && isConnected
-                                ? 'bg-success'
-                                : 'bg-text-tertiary'
+                            className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                              activeInstance?.id === instance.id
+                                ? getStateBadgeStyle(connectionState)
+                                : 'bg-text-tertiary/20 text-text-tertiary'
                             }`}
-                          />
+                          >
+                            {activeInstance?.id === instance.id
+                              ? getStateLabel(connectionState)
+                              : '未激活'}
+                          </div>
                           <span className="text-sm text-text-primary">{instance.name}</span>
-                          {activeInstance?.id === instance.id && (
-                            <span className="text-xs text-primary">当前</span>
-                          )}
                         </div>
                         <div className="flex items-center gap-2">
                           {activeInstance?.id !== instance.id && !isConnected && (
@@ -342,11 +372,15 @@ export function QQBotTab({ config, onConfigChange, loading }: QQBotTabProps) {
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-text-secondary">实例配置</span>
                   <div className="flex items-center gap-2">
-                    {hasChanges && (
-                      <span className="text-xs text-warning">未保存</span>
-                    )}
-                    {isEditingActive && isConnected && (
-                      <span className="text-xs text-success">已连接</span>
+                    {hasChanges && <span className="text-xs text-warning">未保存</span>}
+                    {isEditingActive && (
+                      <div
+                        className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStateBadgeStyle(
+                          connectionState
+                        )}`}
+                      >
+                        {getStateLabel(connectionState)}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -435,14 +469,15 @@ export function QQBotTab({ config, onConfigChange, loading }: QQBotTabProps) {
 
                 {/* 操作按钮 */}
                 <div className="flex items-center gap-3 p-3 bg-surface rounded-lg">
+                  {/* 状态徽章 */}
                   <div
-                    className={`w-2 h-2 rounded-full ${
-                      isEditingActive && isConnected ? 'bg-success' : 'bg-text-tertiary'
-                    }`}
-                  />
-                  <span className="text-sm text-text-secondary">
-                    {isEditingActive && isConnected ? '已连接' : '未连接'}
-                  </span>
+                    className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStateBadgeStyle(
+                      isEditingActive ? connectionState : 'disconnected'
+                    )}`}
+                  >
+                    {getStateLabel(isEditingActive ? connectionState : 'disconnected')}
+                  </div>
+
                   <div className="flex-1" />
 
                   {/* 保存按钮 */}
@@ -469,15 +504,48 @@ export function QQBotTab({ config, onConfigChange, loading }: QQBotTabProps) {
                       disabled={
                         integrationLoading ||
                         saving ||
+                        connectionState === 'connecting' ||
+                        connectionState === 'authenticating' ||
                         !editingInstance.config.appId ||
                         !editingInstance.config.clientSecret
                       }
                       className="px-3 py-1.5 text-xs bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
-                      {saving ? '保存中...' : '连接'}
+                      {connectionState === 'connecting' || connectionState === 'authenticating'
+                        ? '连接中...'
+                        : saving
+                          ? '保存中...'
+                          : '连接'}
                     </button>
                   )}
                 </div>
+
+                {/* 错误信息显示 */}
+                {isEditingActive && connectionState === 'failed' && errorMessage && (
+                  <div className="p-3 bg-danger/10 border border-danger/20 rounded-lg">
+                    <div className="flex items-start gap-2">
+                      <svg
+                        className="w-4 h-4 text-danger mt-0.5 flex-shrink-0"
+                        fill="currentColor"
+                        viewBox="0 0 20 20"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                      <div className="flex-1">
+                        <p className="text-sm text-danger font-medium">{errorMessage}</p>
+                        {errorDetail && (
+                          <pre className="mt-2 text-xs text-text-tertiary whitespace-pre-wrap">
+                            {errorDetail}
+                          </pre>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

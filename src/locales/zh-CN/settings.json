@@ -142,5 +142,66 @@
     "configFile": "配置文件",
     "logDir": "日志目录",
     "currentEngine": "当前引擎"
+  },
+  "qqbot": {
+    "title": "QQ Bot 集成",
+    "description": "通过 QQ 机器人接收和发送消息",
+    "enable": "启用 QQ Bot 集成",
+    "instances": "机器人实例",
+    "addInstance": "添加实例",
+    "noInstances": "暂无实例，点击上方添加",
+    "instanceConfig": "实例配置",
+    "instanceName": "实例名称",
+    "instanceNamePlaceholder": "例如：生产机器人",
+    "appId": "App ID",
+    "appIdPlaceholder": "QQ 开放平台应用的 App ID",
+    "clientSecret": "Client Secret",
+    "clientSecretPlaceholder": "QQ 开放平台应用的 Client Secret",
+    "sandbox": "沙箱环境",
+    "autoConnect": "自动连接",
+    "displayMode": "显示模式",
+    "displayModeChat": "聊天模式",
+    "displayModeSeparate": "分离模式",
+    "displayModeBoth": "两者都有",
+    "unsaved": "未保存",
+    "connected": "已连接",
+    "save": "保存",
+    "saving": "保存中...",
+    "connect": "连接",
+    "connecting": "连接中...",
+    "disconnect": "断开",
+    "switch": "切换",
+    "delete": "删除",
+    "deleteConfirm": "确定要删除此实例吗？",
+    "switchConfirm": "有未保存的更改，确定要切换吗？",
+    "connectionState": {
+      "disconnected": "未连接",
+      "connecting": "连接中...",
+      "authenticating": "鉴权中...",
+      "ready": "已就绪",
+      "failed": "连接失败",
+      "reconnecting": "重连中..."
+    },
+    "error": {
+      "title": "连接失败",
+      "getTokenFailed": "获取 Access Token 失败",
+      "getGatewayFailed": "获取 Gateway URL 失败",
+      "connectTimeout": "连接超时",
+      "authFailed": "鉴权失败",
+      "websocketError": "WebSocket 错误",
+      "connectionClosed": "连接被关闭"
+    },
+    "hints": {
+      "title": "使用说明",
+      "saveFirst": "填写配置后点击「保存」保存实例",
+      "connectWillSave": "点击「连接」会自动保存并连接",
+      "singleInstance": "同一时间只能连接一个 QQ Bot 实例",
+      "sandboxForTest": "沙箱环境用于测试，生产环境需审核"
+    },
+    "status": {
+      "current": "当前",
+      "notConfigured": "未配置",
+      "activated": "已激活"
+    }
   }
 }
