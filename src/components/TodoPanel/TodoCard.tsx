@@ -4,7 +4,6 @@
 
 import { Circle, Clock, CheckCircle, Calendar, Timer, Edit, Globe, FolderOpen, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { useWorkspaceStore } from '@/stores'
 import { PriorityIcon } from './PriorityIcon'
 import type { TodoItem } from '@/types'
 
@@ -17,11 +16,10 @@ interface TodoCardProps {
 
 export function TodoCard({ todo, onEditClick, onToggleStatus, onDeleteClick }: TodoCardProps) {
   const { t } = useTranslation('todo')
-  const workspaces = useWorkspaceStore((state) => state.workspaces)
 
-  const todoWorkspace = todo.workspaceId
-    ? workspaces.find(w => w.id === todo.workspaceId)
-    : null
+  // Determine workspace info from new fields
+  const isGlobal = !todo.workspacePath
+  const workspaceDisplayName = todo.workspaceName || (isGlobal ? t('card.globalTodo') : null)
 
   const statusConfig = {
     pending: {
@@ -116,15 +114,15 @@ export function TodoCard({ todo, onEditClick, onToggleStatus, onDeleteClick }: T
             </div>
           )}
 
-          {!todoWorkspace ? (
+          {isGlobal ? (
             <div className="mt-1.5 flex items-center gap-1 text-xs text-blue-500">
               <Globe size={12} />
               <span>{t('card.globalTodo')}</span>
             </div>
-          ) : todoWorkspace && (
+          ) : workspaceDisplayName && (
             <div className="mt-1.5 flex items-center gap-1 text-xs text-purple-500">
               <FolderOpen size={12} />
-              <span>{todoWorkspace.name}</span>
+              <span>{workspaceDisplayName}</span>
             </div>
           )}
 

@@ -8,7 +8,7 @@
 
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, ChevronUp, Clock, Plus, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Clock, Plus, Trash2, Globe } from 'lucide-react'
 import type { TodoItem, TodoPriority, TodoSubtask } from '@/types'
 
 interface TodoFormProps {
@@ -22,6 +22,7 @@ interface TodoFormProps {
     dueDate?: string
     estimatedHours?: number
     subtasks?: TodoSubtask[]
+    isGlobal?: boolean
   }) => void
   // 取消回调
   onCancel: () => void
@@ -35,7 +36,7 @@ interface TodoFormProps {
 
 export function TodoForm({ todo, onSubmit, onCancel, mode, tags, onAddTag, onRemoveTag }: TodoFormProps) {
   const { t } = useTranslation('todo')
-  
+
   const [content, setContent] = useState(todo?.content || '')
   const [description, setDescription] = useState(todo?.description || '')
   const [priority, setPriority] = useState<TodoPriority>(todo?.priority || 'normal')
@@ -45,6 +46,7 @@ export function TodoForm({ todo, onSubmit, onCancel, mode, tags, onAddTag, onRem
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('')
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [tagInput, setTagInput] = useState('')
+  const [isGlobal, setIsGlobal] = useState(false)
 
   useEffect(() => {
     if (todo) {
@@ -54,6 +56,7 @@ export function TodoForm({ todo, onSubmit, onCancel, mode, tags, onAddTag, onRem
       setDueDate(todo.dueDate || '')
       setEstimatedHours(todo.estimatedHours || 0)
       setSubtasks(todo.subtasks || [])
+      setIsGlobal(!todo.workspacePath)
     }
   }, [todo])
 
@@ -117,6 +120,7 @@ export function TodoForm({ todo, onSubmit, onCancel, mode, tags, onAddTag, onRem
       dueDate: dueDate || undefined,
       estimatedHours: estimatedHours || undefined,
       subtasks: subtasks.length > 0 ? subtasks : undefined,
+      isGlobal,
     })
   }
 
@@ -174,6 +178,26 @@ export function TodoForm({ todo, onSubmit, onCancel, mode, tags, onAddTag, onRem
             className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-sm resize-none"
           />
         </div>
+
+        {/* 全局待办选项（仅创建模式） */}
+        {mode === 'create' && (
+          <div className="flex items-center gap-2 p-3 bg-blue-500/10 rounded-lg">
+            <input
+              type="checkbox"
+              id="isGlobal"
+              checked={isGlobal}
+              onChange={(e) => setIsGlobal(e.target.checked)}
+              className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
+            />
+            <Globe size={16} className="text-blue-500" />
+            <label htmlFor="isGlobal" className="text-sm text-text-primary cursor-pointer">
+              {t('form.isGlobalLabel', '创建为全局待办')}
+            </label>
+            <span className="text-xs text-text-tertiary ml-auto">
+              {isGlobal ? t('form.globalHint', '全局可见') : t('form.workspaceHint', '仅当前工作区')}
+            </span>
+          </div>
+        )}
 
         <button
           onClick={() => setShowAdvanced(!showAdvanced)}

@@ -11,6 +11,7 @@ pub mod scheduler;
 pub mod terminal;
 pub mod file_watcher;
 pub mod diagnostics;
+pub mod todo;
 
 // 重新导出命令函数，确保它们在模块级别可见
 pub use workspace::validate_workspace_path;

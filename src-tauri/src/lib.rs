@@ -506,6 +506,14 @@ pub fn run() {
             terminal_close,
             terminal_list,
             terminal_get,
+            // Todo 相关
+            commands::todo::list_todos,
+            commands::todo::create_todo,
+            commands::todo::update_todo,
+            commands::todo::delete_todo,
+            commands::todo::start_todo,
+            commands::todo::complete_todo,
+            commands::todo::get_todo_workspace_breakdown,
 
         ])
         .run(tauri::generate_context!())

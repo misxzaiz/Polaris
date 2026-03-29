@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect } from 'react'
-import { Plus, CheckCircle, Circle, Clock, Search, ArrowUpDown } from 'lucide-react'
+import { Plus, CheckCircle, Circle, Clock, Search, ArrowUpDown, Globe, FolderOpen } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useWorkspaceStore } from '@/stores'
 import { simpleTodoService } from '@/services/simpleTodoService'
@@ -22,6 +22,9 @@ export function SimpleTodoPanel() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'in_progress' | 'completed'>('all')
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [selectedTodo, setSelectedTodo] = useState<TodoItem | null>(null)
+
+  // 范围切换：工作区 / 全部
+  const [scope, setScope] = useState<'workspace' | 'all'>('workspace')
 
   // 搜索和排序相关
   const [searchQuery, setSearchQuery] = useState('')
@@ -43,6 +46,7 @@ export function SimpleTodoPanel() {
 
     // 设置工作区并加载待办
     simpleTodoService.setWorkspace(currentWorkspace.path).then(() => {
+      simpleTodoService.setScope(scope)
       refreshTodos()
     })
 
@@ -53,6 +57,11 @@ export function SimpleTodoPanel() {
       unsubscribe()
     }
   }, [currentWorkspace])
+
+  // 范围变化时刷新
+  useEffect(() => {
+    simpleTodoService.setScope(scope)
+  }, [scope])
 
   // 优先级权重（用于排序）
   const priorityWeight: Record<TodoPriority, number> = {
@@ -115,6 +124,7 @@ export function SimpleTodoPanel() {
     dueDate?: string
     estimatedHours?: number
     subtasks?: { title: string }[]
+    isGlobal?: boolean
   }) => {
     try {
       await simpleTodoService.createTodo({
@@ -125,6 +135,7 @@ export function SimpleTodoPanel() {
         estimatedHours: data.estimatedHours,
         subtasks: data.subtasks,
         tags: tags.length > 0 ? tags : undefined,
+        isGlobal: data.isGlobal,
       })
 
       setTags([])
@@ -205,6 +216,32 @@ export function SimpleTodoPanel() {
             title={t('createTodo')}
           >
             <Plus size={16} />
+          </button>
+        </div>
+
+        {/* 范围切换 */}
+        <div className="flex items-center gap-1 mb-3">
+          <button
+            onClick={() => setScope('workspace')}
+            className={`flex items-center gap-1 px-2 py-1 text-xs rounded transition-all ${
+              scope === 'workspace'
+                ? 'bg-primary/20 text-primary'
+                : 'hover:bg-background-hover text-text-secondary'
+            }`}
+          >
+            <FolderOpen size={12} />
+            {t('scope.workspace', '当前工作区')}
+          </button>
+          <button
+            onClick={() => setScope('all')}
+            className={`flex items-center gap-1 px-2 py-1 text-xs rounded transition-all ${
+              scope === 'all'
+                ? 'bg-primary/20 text-primary'
+                : 'hover:bg-background-hover text-text-secondary'
+            }`}
+          >
+            <Globe size={12} />
+            {t('scope.all', '全部')}
           </button>
         </div>
 

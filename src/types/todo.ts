@@ -47,6 +47,12 @@ export interface TodoItem {
   /** 工作区 ID（用于多工作区隔离，null 表示全局待办） */
   workspaceId?: string | null
 
+  /** 所属工作区路径（null 表示全局待办） */
+  workspacePath?: string | null
+
+  /** 所属工作区名称（用于显示） */
+  workspaceName?: string | null
+
   /** 子任务列表 */
   subtasks?: TodoSubtask[]
 
@@ -250,6 +256,9 @@ export interface TodoCreateParams {
 
   /** 子任务（创建时只需要提供标题） */
   subtasks?: TodoCreateSubtask[]
+
+  /** 是否创建为全局待办 */
+  isGlobal?: boolean
 }
 
 /**
