@@ -22,6 +22,8 @@ interface ChatInputState {
   hasActivePlan: boolean;
   /** 待追加的语音文字 */
   speechTranscript: string;
+  /** 上一次的语音文字（用于撤回） */
+  previousTranscript: string;
   /** 待执行的语音命令 */
   speechCommand: VoiceCommand | null;
 
@@ -41,6 +43,8 @@ interface ChatInputState {
   setSpeechCommand: (command: VoiceCommand | null) => void;
   /** 清空语音文字 */
   clearSpeechTranscript: () => void;
+  /** 撤回最后一次语音输入 */
+  undoSpeechTranscript: () => void;
 }
 
 export const useChatInputStore = create<ChatInputState>((set) => ({
@@ -50,6 +54,7 @@ export const useChatInputStore = create<ChatInputState>((set) => ({
   hasPendingQuestion: false,
   hasActivePlan: false,
   speechTranscript: '',
+  previousTranscript: '',
   speechCommand: null,
 
   setInputLength: (length) => set({ inputLength: length }),
@@ -58,8 +63,13 @@ export const useChatInputStore = create<ChatInputState>((set) => ({
   setHasPendingQuestion: (has) => set({ hasPendingQuestion: has }),
   setHasActivePlan: (has) => set({ hasActivePlan: has }),
   appendSpeechTranscript: (text) => set((state) => ({
+    previousTranscript: state.speechTranscript,
     speechTranscript: state.speechTranscript + text
   })),
   setSpeechCommand: (command) => set({ speechCommand: command }),
-  clearSpeechTranscript: () => set({ speechTranscript: '' }),
+  clearSpeechTranscript: () => set({ speechTranscript: '', previousTranscript: '' }),
+  undoSpeechTranscript: () => set((state) => ({
+    speechTranscript: state.previousTranscript,
+    previousTranscript: ''
+  })),
 }));

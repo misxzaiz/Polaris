@@ -64,6 +64,7 @@ export function ChatStatusBar({ compact = false }: ChatStatusBarProps) {
     appendSpeechTranscript,
     setSpeechCommand,
     speechCommand,
+    undoSpeechTranscript,
   } = useChatInputStore();
 
   // 语音识别配置
@@ -99,14 +100,17 @@ export function ChatStatusBar({ compact = false }: ChatStatusBarProps) {
           interruptChat();
         }
         break;
+      case 'undo':
+        undoSpeechTranscript();
+        break;
       // 'send' 和 'clear' 由 ChatInput 处理
     }
 
     // 清除命令（保留 send 和 clear 给 ChatInput 处理）
-    if (speechCommand === 'interrupt') {
+    if (speechCommand === 'interrupt' || speechCommand === 'undo') {
       setSpeechCommand(null);
     }
-  }, [speechCommand, isStreaming, interruptChat, setSpeechCommand]);
+  }, [speechCommand, isStreaming, interruptChat, setSpeechCommand, undoSpeechTranscript]);
 
   // 计算统计数据
   const stats = useMemo(() => {

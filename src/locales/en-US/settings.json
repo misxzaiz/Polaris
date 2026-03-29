@@ -217,7 +217,8 @@
       "title": "Voice Commands",
       "send": "Send message",
       "clear": "Clear input",
-      "interrupt": "Interrupt conversation"
+      "interrupt": "Interrupt conversation",
+      "undo": "Undo last input"
     },
     "tips": {
       "title": "Instructions",

@@ -89,6 +89,10 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
             <span>{t('speech.commands.clear', '清空输入框')}</span>
           </div>
           <div className="flex items-center gap-2">
+            <code className="px-2 py-1 bg-background rounded text-text-primary">撤回</code>
+            <span>{t('speech.commands.undo', '撤回最后输入')}</span>
+          </div>
+          <div className="flex items-center gap-2">
             <code className="px-2 py-1 bg-background rounded text-text-primary">中断</code>
             <span>{t('speech.commands.interrupt', '中断对话')}</span>
           </div>

@@ -60,7 +60,7 @@ export const DEFAULT_SPEECH_CONFIG: SpeechConfig = {
 };
 
 /** 语音命令类型 */
-export type VoiceCommand = 'send' | 'clear' | 'interrupt';
+export type VoiceCommand = 'send' | 'clear' | 'interrupt' | 'undo';
 
 /** 语音命令映射（全匹配） */
 export const VOICE_COMMANDS: Record<string, VoiceCommand> = {
@@ -73,6 +73,9 @@ export const VOICE_COMMANDS: Record<string, VoiceCommand> = {
   // 中断
   '中断': 'interrupt',
   '中断。': 'interrupt',
+  // 撤回
+  '撤回': 'undo',
+  '撤回。': 'undo',
 };
 
 /** 检查文本是否是语音命令 */

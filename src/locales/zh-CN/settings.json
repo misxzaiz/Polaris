@@ -217,7 +217,8 @@
       "title": "语音命令",
       "send": "发送消息",
       "clear": "清空输入框",
-      "interrupt": "中断对话"
+      "interrupt": "中断对话",
+      "undo": "撤回最后输入"
     },
     "tips": {
       "title": "使用说明",

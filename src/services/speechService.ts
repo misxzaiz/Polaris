@@ -74,6 +74,8 @@ export class SpeechService {
   };
   private retryCount = 0;
   private maxRetries = 1;
+  /** 是否需要保持监听（只能手动关闭） */
+  private shouldKeepListening = false;
 
   // 回调函数
   private onStatusChange: ((status: SpeechRecognitionStatus) => void) | null = null;
@@ -174,8 +176,22 @@ export class SpeechService {
     };
 
     this.recognition.onend = () => {
-      log.info('语音识别已结束');
-      this.onStatusChange?.('idle');
+      log.info('语音识别已结束', { shouldKeepListening: this.shouldKeepListening });
+
+      // 如果需要保持监听，自动重启
+      if (this.shouldKeepListening) {
+        log.info('自动重启语音识别');
+        setTimeout(() => {
+          try {
+            this.recognition?.start();
+          } catch (e) {
+            log.error('自动重启失败', e as Error);
+            this.onStatusChange?.('idle');
+          }
+        }, 100);
+      } else {
+        this.onStatusChange?.('idle');
+      }
     };
 
     this.recognition.onerror = (event: WebSpeechRecognitionErrorEvent) => {
@@ -245,6 +261,8 @@ export class SpeechService {
       return;
     }
 
+    // 标记需要保持监听
+    this.shouldKeepListening = true;
     // 重置重试计数
     this.retryCount = 0;
 
@@ -269,6 +287,8 @@ export class SpeechService {
    * 停止语音识别
    */
   stop(): void {
+    // 标记不再保持监听
+    this.shouldKeepListening = false;
     if (this.recognition) {
       this.recognition.stop();
     }
