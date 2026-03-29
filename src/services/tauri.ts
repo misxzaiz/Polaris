@@ -872,3 +872,13 @@ export async function schedulerAcquireLock(): Promise<boolean> {
 export async function schedulerReleaseLock(): Promise<void> {
   return invoke('scheduler_release_lock');
 }
+
+/** 手动触发任务执行 */
+export async function schedulerRunTask(id: string): Promise<ScheduledTask> {
+  return invoke<ScheduledTask>('scheduler_run_task', { id });
+}
+
+/** 更新任务执行结果 */
+export async function schedulerUpdateRunStatus(id: string, status: 'success' | 'failed'): Promise<ScheduledTask> {
+  return invoke<ScheduledTask>('scheduler_update_run_status', { id, status });
+}

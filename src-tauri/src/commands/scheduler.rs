@@ -164,3 +164,40 @@ pub fn scheduler_release_lock() -> Result<()> {
     crate::utils::release_held_lock()
         .map_err(|e| crate::error::AppError::ProcessError(format!("释放锁失败: {}", e)))
 }
+
+/// 手动触发任务执行
+/// 更新任务状态为 running，返回任务信息供前端执行
+#[tauri::command]
+pub async fn scheduler_run_task(
+    id: String,
+    workspace_path: Option<String>,
+    app: AppHandle,
+) -> Result<ScheduledTask> {
+    let repository = get_repository(&app, workspace_path)?;
+
+    // 更新任务状态为 running
+    let task = repository.update_task_status(&id, crate::models::scheduler::TaskStatus::Running)?;
+
+    Ok(task)
+}
+
+/// 更新任务执行结果
+#[tauri::command]
+pub async fn scheduler_update_run_status(
+    id: String,
+    status: String, // "success" | "failed"
+    workspace_path: Option<String>,
+    app: AppHandle,
+) -> Result<ScheduledTask> {
+    let repository = get_repository(&app, workspace_path)?;
+
+    let task_status = match status.as_str() {
+        "success" => crate::models::scheduler::TaskStatus::Success,
+        "failed" => crate::models::scheduler::TaskStatus::Failed,
+        _ => crate::models::scheduler::TaskStatus::Failed,
+    };
+
+    let task = repository.update_task_status(&id, task_status)?;
+
+    Ok(task)
+}

@@ -18,6 +18,8 @@ interface SchedulerState {
   lockStatus: LockStatus | null;
   /** 锁操作加载中 */
   lockLoading: boolean;
+  /** 正在执行的任务 ID 集合 */
+  runningTaskIds: Set<string>;
 
   /** 加载任务列表 */
   loadTasks: () => Promise<void>;
@@ -37,14 +39,21 @@ interface SchedulerState {
   acquireLock: () => Promise<boolean>;
   /** 释放锁 */
   releaseLock: () => Promise<void>;
+  /** 手动触发任务执行 */
+  runTask: (id: string) => Promise<ScheduledTask>;
+  /** 更新任务执行结果 */
+  updateRunStatus: (id: string, status: 'success' | 'failed') => Promise<void>;
+  /** 检查任务是否正在执行 */
+  isTaskRunning: (id: string) => boolean;
 }
 
-export const useSchedulerStore = create<SchedulerState>((set) => ({
+export const useSchedulerStore = create<SchedulerState>((set, get) => ({
   tasks: [],
   loading: false,
   error: null,
   lockStatus: null,
   lockLoading: false,
+  runningTaskIds: new Set<string>(),
 
   loadTasks: async () => {
     set({ loading: true, error: null });
@@ -165,5 +174,59 @@ export const useSchedulerStore = create<SchedulerState>((set) => ({
       console.error('释放锁失败:', e);
       set({ lockLoading: false });
     }
+  },
+
+  runTask: async (id) => {
+    // 标记任务为执行中
+    set((state) => {
+      const newRunningTaskIds = new Set(state.runningTaskIds);
+      newRunningTaskIds.add(id);
+      return { runningTaskIds: newRunningTaskIds };
+    });
+
+    try {
+      const task = await tauri.schedulerRunTask(id);
+
+      // 更新本地任务状态
+      set((state) => ({
+        tasks: state.tasks.map((t) =>
+          t.id === id ? { ...t, lastRunStatus: 'running' as const, lastRunAt: Date.now() / 1000 } : t
+        ),
+      }));
+
+      return task;
+    } catch (e) {
+      // 执行失败，移除执行中状态
+      set((state) => {
+        const newRunningTaskIds = new Set(state.runningTaskIds);
+        newRunningTaskIds.delete(id);
+        return { runningTaskIds: newRunningTaskIds };
+      });
+      throw e;
+    }
+  },
+
+  updateRunStatus: async (id, status) => {
+    try {
+      await tauri.schedulerUpdateRunStatus(id, status);
+
+      // 更新本地状态
+      set((state) => {
+        const newRunningTaskIds = new Set(state.runningTaskIds);
+        newRunningTaskIds.delete(id);
+        return {
+          runningTaskIds: newRunningTaskIds,
+          tasks: state.tasks.map((t) =>
+            t.id === id ? { ...t, lastRunStatus: status } : t
+          ),
+        };
+      });
+    } catch (e) {
+      console.error('更新任务执行状态失败:', e);
+    }
+  },
+
+  isTaskRunning: (id) => {
+    return get().runningTaskIds.has(id);
   },
 }));

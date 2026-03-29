@@ -58,6 +58,8 @@ function TaskCard({
   onCopy,
   onDelete,
   onToggle,
+  onRun,
+  isRunning,
   isCompact,
 }: {
   task: ScheduledTask;
@@ -65,11 +67,14 @@ function TaskCard({
   onCopy: () => void;
   onDelete: () => void;
   onToggle: () => void;
+  onRun: () => void;
+  isRunning?: boolean;
   isCompact?: boolean;
 }) {
   const { t } = useTranslation('scheduler');
 
   const menuItems: DropdownMenuItem[] = [
+    { key: 'run', label: t('task.run'), onClick: onRun },
     { key: 'toggle', label: task.enabled ? t('task.disabled') : t('task.enabled'), onClick: onToggle },
     { key: 'edit', label: t('task.edit'), onClick: onEdit },
     { key: 'copy', label: t('task.copy'), onClick: onCopy },
@@ -142,6 +147,17 @@ function TaskCard({
       {/* Footer */}
       <div className="flex items-center justify-end gap-2 pt-3 border-t border-border-subtle flex-wrap">
         <button
+          onClick={onRun}
+          disabled={isRunning}
+          className={`px-3 py-1 text-sm rounded transition-colors ${
+            isRunning
+              ? 'bg-info-faint text-info cursor-wait'
+              : 'bg-primary-faint text-primary hover:bg-primary/30'
+          }`}
+        >
+          {isRunning ? t('task.running') : t('task.run')}
+        </button>
+        <button
           onClick={onToggle}
           className={`px-3 py-1 text-sm rounded transition-colors ${
             task.enabled
@@ -206,7 +222,7 @@ function filterTasks(tasks: ScheduledTask[], filter: TaskFilter): ScheduledTask[
 /** 主面板 */
 export function SchedulerPanel() {
   const { t } = useTranslation('scheduler');
-  const { tasks, loading, loadTasks, createTask, updateTask, deleteTask, toggleTask, lockStatus, lockLoading, loadLockStatus, acquireLock, releaseLock } = useSchedulerStore();
+  const { tasks, loading, loadTasks, createTask, updateTask, deleteTask, toggleTask, runTask, isTaskRunning, lockStatus, lockLoading, loadLockStatus, acquireLock, releaseLock } = useSchedulerStore();
   const toast = useToastStore();
 
   // 响应式布局检测
@@ -301,6 +317,26 @@ export function SchedulerPanel() {
         }
       },
     });
+  };
+
+  const handleRun = async (task: ScheduledTask) => {
+    if (isTaskRunning(task.id)) {
+      toast.warning(t('toast.pleaseWait'), t('toast.pleaseWaitDetail'));
+      return;
+    }
+
+    try {
+      await runTask(task.id);
+      toast.success(t('toast.runTriggered'), t('toast.runTriggeredDetail', { name: task.name }));
+
+      // TODO: 这里可以触发实际的 AI 引擎执行
+      // 目前只是标记任务为执行中状态，实际执行需要调度器或用户手动触发
+
+      // 模拟执行完成（实际应该由 AI 引擎执行后更新）
+      // await updateRunStatus(task.id, 'success');
+    } catch (e) {
+      toast.error(t('toast.runTriggerFailed'), e instanceof Error ? e.message : t('toast.importFailedDetail'));
+    }
   };
 
   return (
@@ -458,6 +494,8 @@ export function SchedulerPanel() {
                 onCopy={() => handleCopy(task)}
                 onDelete={() => handleDelete(task.id)}
                 onToggle={() => toggleTask(task.id, !task.enabled)}
+                onRun={() => handleRun(task)}
+                isRunning={isTaskRunning(task.id)}
               />
             ))}
           </div>
