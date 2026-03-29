@@ -858,6 +858,20 @@ export interface LockStatus {
   pid: number;
 }
 
+/** 调度器完整状态 */
+export interface SchedulerStatus {
+  /** 调度器是否正在运行 */
+  isRunning: boolean;
+  /** 当前实例是否持有锁 */
+  isHolder: boolean;
+  /** 是否有其他实例持有锁 */
+  isLockedByOther: boolean;
+  /** 当前进程 PID */
+  pid: number;
+  /** 状态消息 */
+  message?: string;
+}
+
 /** 获取调度器锁状态 */
 export async function schedulerGetLockStatus(): Promise<LockStatus> {
   return invoke<LockStatus>('scheduler_get_lock_status');
@@ -871,6 +885,21 @@ export async function schedulerAcquireLock(): Promise<boolean> {
 /** 释放调度器锁 */
 export async function schedulerReleaseLock(): Promise<void> {
   return invoke('scheduler_release_lock');
+}
+
+/** 获取调度器完整状态（锁 + 运行状态） */
+export async function schedulerGetStatus(): Promise<SchedulerStatus> {
+  return invoke<SchedulerStatus>('scheduler_get_status');
+}
+
+/** 启动调度器（获取锁 + 启动守护进程） */
+export async function schedulerStart(): Promise<SchedulerStatus> {
+  return invoke<SchedulerStatus>('scheduler_start');
+}
+
+/** 停止调度器（停止守护进程 + 释放锁） */
+export async function schedulerStop(): Promise<SchedulerStatus> {
+  return invoke<SchedulerStatus>('scheduler_stop');
 }
 
 /** 手动触发任务执行 */

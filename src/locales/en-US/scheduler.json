@@ -1,202 +1,104 @@
 {
   "title": "Scheduled Tasks",
   "loading": "Loading...",
-  "notGitRepo": "Current directory is not a Git repository",
-  "workspacePath": "Workspace path",
-
-  "tabs": {
-    "tasks": "Tasks",
-    "logs": "Execution Logs",
-    "settings": "Settings"
-  },
+  "empty": "No scheduled tasks. Click the button above to create one.",
+  "noMatch": "No matching tasks",
+  "taskCount": "{{count}} tasks",
+  "newTask": "New Task",
 
   "status": {
+    "idle": "Idle",
     "running": "Running",
     "success": "Success",
     "failed": "Failed",
-    "notExecuted": "Not Executed",
-    "scheduling": "Scheduling",
-    "stopped": "Stopped"
+    "notExecuted": "Not Executed"
   },
 
   "triggerTypes": {
     "once": "Once",
-    "cron": "Cron",
+    "cron": "Cron Expression",
     "interval": "Interval"
   },
 
-  "taskModes": {
-    "simple": "Simple Mode",
-    "protocol": "Protocol Mode"
+  "control": {
+    "running": "Scheduler Running",
+    "stopped": "Scheduler Stopped",
+    "lockedByOther": "Another instance is running",
+    "start": "Start",
+    "stop": "Stop",
+    "tryAcquire": "Try Acquire",
+    "refresh": "Refresh Status",
+    "startSuccess": "Scheduler started",
+    "startFailed": "Failed to start, another instance is using it",
+    "stopSuccess": "Scheduler stopped",
+    "acquireSuccess": "Control acquired",
+    "acquireFailed": "Failed to acquire control",
+    "conflictWarning": "Another instance is running the scheduler. Tasks will not execute automatically."
   },
 
-  "task": {
+  "card": {
     "trigger": "Trigger",
     "engine": "Engine",
     "nextRun": "Next",
-    "rounds": "Rounds",
-    "enabled": "Enable",
-    "disabled": "Disable",
+    "run": "Run Now",
+    "running": "Running",
     "edit": "Edit",
     "copy": "Copy",
     "delete": "Delete",
-    "run": "Run Now",
-    "running": "Running",
-    "subscribe": "Subscribe",
-    "subscribed": "Subscribed",
-    "unsubscribe": "Unsubscribe",
-    "docs": "Docs",
-    "runInBackground": "Run now (background)",
-    "subscribeHint": "Subscribe - View execution in AI chat",
-    "stopSubscription": "Stop",
-    "viewDetail": "View Details"
-  },
-
-  "filter": {
-    "search": "Search...",
-    "allStatus": "All Status",
-    "enabled": "Enabled",
-    "disabled": "Disabled",
-    "allModes": "All Modes",
-    "simpleMode": "Simple Mode",
-    "protocolMode": "Protocol Mode",
-    "allEngines": "All Engines",
-    "allTriggers": "All Triggers",
-    "allExecutionStatus": "All Execution Status",
-    "allGroups": "All Groups",
-    "clearFilter": "Clear Filter",
-    "reset": "Reset",
-    "more": "More",
-    "collapse": "Collapse",
-    "batchSelect": "Batch Select",
-    "exit": "Exit",
-    "export": "Export",
-    "filterToggle": "Filter",
-    "activeFilters": "{{count}} filters"
-  },
-
-  "sort": {
-    "createdAtDesc": "Created ↓",
-    "createdAtAsc": "Created ↑",
-    "nameAsc": "Name A-Z",
-    "nameDesc": "Name Z-A",
-    "nextRunAsc": "Next Run ↑",
-    "nextRunDesc": "Next Run ↓",
-    "statusAsc": "Status ↑",
-    "statusDesc": "Status ↓",
-    "enabledAsc": "Enabled ↑",
-    "enabledDesc": "Enabled ↓"
-  },
-
-  "group": {
-    "default": "Default",
-    "clickToExpand": "Click to expand",
-    "clickToCollapse": "Click to collapse"
-  },
-
-  "batch": {
-    "selected": "Selected {{count}}/{{total}} tasks",
-    "selectAll": "Select All",
-    "deselectAll": "Deselect",
-    "batchEnable": "Batch Enable",
-    "batchDisable": "Batch Disable",
-    "batchDelete": "Batch Delete",
     "enable": "Enable",
     "disable": "Disable"
   },
 
-  "time": {
-    "expired": "Expired",
-    "secondsLater": "in {{count}}s",
-    "minutesLater": "in {{count}}m",
-    "hoursLater": "in {{count}}h",
-    "daysLater": "in {{count}}d",
-    "never": "Never"
+  "filter": {
+    "search": "Search tasks...",
+    "allStatus": "All Status",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "allTriggers": "All Triggers",
+    "allEngines": "All Engines",
+    "clear": "Clear Filter"
   },
 
-  "log": {
-    "searchPlaceholder": "Search task name...",
-    "allTasks": "All Tasks",
-    "allStatuses": "All Status",
-    "noLogs": "No execution logs",
-    "totalLogs": "{{total}} logs, page {{page}}/{{totalPages}}",
-    "previousPage": "Previous",
-    "nextPage": "Next",
-    "prompt": "Prompt",
-    "thinking": "Thinking",
-    "output": "Output",
-    "error": "Error",
-    "duration": "Duration {{duration}}",
-    "toolCalls": "Tool calls: {{count}}",
-    "expandAll": "Expand All",
-    "collapseAll": "Collapse"
-  },
-
-  "logSettings": {
-    "title": "Log Settings",
-    "stats": "Log Statistics",
-    "totalLogs": "Total logs:",
-    "tasksWithLogs": "Tasks with logs:",
-    "storageSize": "Storage size:",
-    "lastCleanup": "Last cleanup:",
-    "retentionPolicy": "Retention Policy",
-    "retentionDays": "Retention days",
-    "retentionDaysHint": "Logs older than this will be auto-cleaned (0 for unlimited)",
-    "maxLogsPerTask": "Max logs per task",
-    "maxLogsPerTaskHint": "Maximum log entries per task (0 for unlimited)",
-    "autoCleanup": "Auto Cleanup",
-    "autoCleanupEnabled": "Enable auto cleanup",
-    "autoCleanupEnabledHint": "Periodically check and clean expired logs",
-    "cleanupInterval": "Cleanup interval",
-    "cleanupIntervalHint": "Time interval for automatic cleanup",
-    "everyHour": "Every hour",
-    "every6Hours": "Every 6 hours",
-    "every12Hours": "Every 12 hours",
-    "everyDay": "Every day",
-    "every3Days": "Every 3 days",
-    "manualCleanup": "Manual Cleanup",
-    "manualCleanupHint": "Clean all expired logs now. This action cannot be undone.",
-    "cleanupButton": "Clean expired logs now",
-    "cleaning": "Cleaning...",
-    "unlimited": "Unlimited",
-    "days": "{{count}} days",
-    "items": "{{count}} items"
-  },
-
-  "scheduler": {
-    "start": "Start",
-    "stop": "Stop",
-    "startHint": "Start scheduler",
-    "stopHint": "Stop scheduler",
-    "stopConfirmTitle": "Stop Scheduler",
-    "stopConfirmMessage": "Are you sure you want to stop the scheduler?\nScheduled tasks will no longer run automatically."
+  "trigger": {
+    "cronHelp": "Example: \"0 9 * * 1-5\" means weekdays at 9am. Format: min hour day month weekday"
   },
 
   "editor": {
     "newTask": "New Task",
     "editTask": "Edit Task",
-    "copyTask": "Copy Task"
-  },
-
-  "docViewer": {
-    "title": "{{name}} - Document Manager",
-    "taskDoc": "Protocol Doc",
-    "supplement": "User Supplement",
-    "memoryIndex": "Memory Index",
-    "emptyDoc": "(Empty document)",
-    "path": "Path: {{path}}",
-    "edit": "Edit",
+    "copyTask": "Copy Task",
+    "copySuffix": "Copy",
+    "name": "Task Name",
+    "namePlaceholder": "e.g., Daily Report Generator",
+    "nameRequired": "Please enter task name",
+    "description": "Description",
+    "descriptionPlaceholder": "Task description (optional)",
+    "trigger": "Trigger Configuration",
+    "engine": "AI Engine",
+    "workDir": "Working Directory",
+    "workDirPlaceholder": "Leave empty for default directory",
+    "prompt": "Prompt",
+    "promptPlaceholder": "Enter the prompt for AI to execute...",
+    "promptRequired": "Please enter prompt",
+    "documentMode": "Document Mode",
+    "selectTemplate": "Select Template",
+    "noTemplate": "No Template",
+    "builtinTemplates": "Built-in Templates",
+    "customTemplates": "Custom Templates",
+    "documentModeHelp": "When enabled, AI will maintain context across multiple executions",
     "cancel": "Cancel",
-    "save": "Save"
+    "save": "Save",
+    "selectProvider": "Select Provider",
+    "model": "Model",
+    "noProvider": "Not Configured",
+    "noProviderConfigured": "No OpenAI Provider configured",
+    "providerInvalid": "Current provider is invalid or disabled, please select another engine",
+    "goConfig": "Configure"
   },
 
   "confirm": {
     "deleteTitle": "Confirm Delete",
-    "deleteMessage": "Are you sure you want to delete this task? This action cannot be undone.",
-    "batchDeleteTitle": "Confirm Batch Delete",
-    "batchDeleteMessage": "Are you sure you want to delete {{count}} selected tasks? This action cannot be undone.",
-    "cleanupTitle": "Confirm Cleanup",
-    "cleanupMessage": "Are you sure you want to clean expired logs? This action cannot be undone."
+    "deleteMessage": "Are you sure you want to delete this task? This action cannot be undone."
   },
 
   "toast": {
@@ -208,111 +110,32 @@
     "deleteFailed": "Failed to delete",
     "copySuccess": "Copied successfully",
     "copyFailed": "Failed to copy",
-    "taskSubmitted": "Task submitted",
-    "taskSubmittedDetail": "Task {{name}} started in background",
     "runTriggered": "Execution triggered",
-    "runTriggeredDetail": "Task \"{{name}}\" has started running",
-    "runTriggerFailed": "Failed to trigger execution",
-    "executionFailed": "Execution failed",
-    "subscribed": "Subscribed execution",
-    "subscribedDetail": "Task \"{{name}}\" is running, check progress in AI chat",
-    "subscriptionCancelled": "Interrupted",
-    "subscriptionCancelledDetail": "Task execution has been interrupted",
-    "unsubscribed": "Unsubscribed",
-    "unsubscribedDetail": "Task \"{{name}}\" unsubscribed",
-    "configSaved": "Configuration saved",
-    "configSavedDetail": "Log retention policy updated",
-    "saveFailed": "Failed to save",
-    "cleanupComplete": "Cleanup complete",
-    "cleanupCompleteDetail": "Cleaned {{count}} expired logs",
-    "cleanupFailed": "Cleanup failed",
-    "noEnableTargets": "Notice",
-    "noEnableTargetsDetail": "No tasks to enable",
-    "batchEnableSuccess": "Batch enable successful",
-    "batchEnableSuccessDetail": "Enabled {{count}} tasks",
-    "batchEnableFailed": "Batch enable failed",
-    "noDisableTargets": "Notice",
-    "noDisableTargetsDetail": "No tasks to disable",
-    "batchDisableSuccess": "Batch disable successful",
-    "batchDisableSuccessDetail": "Disabled {{count}} tasks",
-    "batchDisableFailed": "Batch disable failed",
-    "noDeleteTargets": "Notice",
-    "noDeleteTargetsDetail": "Please select tasks to delete",
-    "batchDeleteSuccess": "Batch delete successful",
-    "batchDeleteSuccessDetail": "Deleted {{count}} tasks",
-    "batchDeleteFailed": "Batch delete failed",
-    "exportSuccess": "Export successful",
-    "exportSuccessDetail": "Exported {{count}} tasks",
-    "exportFailed": "Export failed",
-    "noExportTargets": "No tasks to export",
-    "noExportTargetsDetail": "Please select tasks to export",
-    "importComplete": "Import complete",
-    "importCompleteDetail": "Successfully imported {{success}} tasks{{failed}}",
-    "importFailedCount": ", {{count}} failed",
-    "importFailed": "Import failed",
-    "importFailedDetail": "All tasks import failed",
-    "startFailed": "Failed to start",
-    "startFailedDetail": "Another instance is using the scheduler",
-    "stopFailed": "Failed to stop",
-    "readDocFailed": "Failed to read document",
-    "writeDocSuccess": "Saved successfully",
-    "writeDocFailed": "Failed to save",
+    "runFailed": "Execution failed",
     "pleaseWait": "Please wait",
-    "pleaseWaitDetail": "A task is already running, please wait for it to complete"
+    "taskDue": "Task Due",
+    "executing": "Executing: {{name}}",
+    "executeFailed": "Execution failed"
   },
 
-  "empty": {
-    "noTasks": "No scheduled tasks. Click the button above to create one."
+  "time": {
+    "expired": "Expired",
+    "secondsLater": "in {{count}}s",
+    "minutesLater": "in {{count}}m",
+    "hoursLater": "in {{count}}h",
+    "daysLater": "in {{count}}d"
   },
 
-  "importExport": {
-    "import": "Import",
-    "export": "Export"
-  },
-
-  "subscription": {
-    "activeTask": "Subscription Task",
-    "executing": "Executing...",
-    "completed": "Completed",
-    "failed": "Failed",
-    "cancelled": "Cancelled",
-    "stop": "Stop",
-    "clear": "Clear",
-    "waitingForOutput": "Waiting for task output..."
-  },
-
-  "lock": {
-    "holder": "Lock Holder",
-    "noLock": "No Lock",
-    "lockedByOther": "Locked by Other Instance",
-    "acquire": "Acquire Lock",
-    "release": "Release Lock",
-    "acquireSuccess": "Lock acquired",
-    "acquireFailed": "Cannot acquire lock, another instance is still running",
-    "releaseSuccess": "Lock released"
-  },
-
-  "execution": {
-    "status": {
-      "idle": "Idle",
-      "running": "Running",
-      "success": "Completed",
-      "failed": "Failed",
-      "cancelled": "Cancelled"
-    },
+  "drawer": {
+    "title": "Execution Logs",
+    "runningCount": "{{count}} running",
+    "collapse": "Collapse",
+    "expand": "Expand",
     "duration": "Duration",
-    "logs": "Execution Logs",
     "autoScroll": "Auto Scroll",
     "manualScroll": "Manual Scroll",
-    "clearLogs": "Clear Logs",
+    "clear": "Clear",
     "waitingOutput": "Waiting for task output...",
-    "noLogs": "No execution logs",
-    "toolCalls": "Tool Calls",
-    "error": "Error",
-    "stop": "Stop Task",
-    "back": "Back to List",
-    "cancelled": "Task cancelled"
-  },
-
-  "newTask": "New"
+    "noTaskSelected": "Select a task to view logs"
+  }
 }

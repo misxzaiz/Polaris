@@ -1,202 +1,104 @@
 {
   "title": "定时任务",
   "loading": "加载中...",
-  "notGitRepo": "当前目录不是 Git 仓库",
-  "workspacePath": "工作区路径",
-
-  "tabs": {
-    "tasks": "任务列表",
-    "logs": "执行日志",
-    "settings": "设置"
-  },
+  "empty": "暂无定时任务，点击右上角按钮创建",
+  "noMatch": "没有匹配的任务",
+  "taskCount": "{{count}} 个任务",
+  "newTask": "新建任务",
 
   "status": {
+    "idle": "等待中",
     "running": "执行中",
     "success": "成功",
     "failed": "失败",
-    "notExecuted": "未执行",
-    "scheduling": "调度中",
-    "stopped": "已停止"
+    "notExecuted": "未执行"
   },
 
   "triggerTypes": {
-    "once": "一次性",
-    "cron": "Cron",
-    "interval": "间隔"
+    "once": "单次执行",
+    "cron": "Cron 表达式",
+    "interval": "间隔执行"
   },
 
-  "taskModes": {
-    "simple": "简单模式",
-    "protocol": "协议模式"
+  "control": {
+    "running": "调度器运行中",
+    "stopped": "调度器已停止",
+    "lockedByOther": "其他实例正在运行",
+    "start": "启动",
+    "stop": "停止",
+    "tryAcquire": "尝试获取控制权",
+    "refresh": "刷新状态",
+    "startSuccess": "调度器已启动",
+    "startFailed": "启动失败，其他实例占用",
+    "stopSuccess": "调度器已停止",
+    "acquireSuccess": "已获取控制权",
+    "acquireFailed": "无法获取控制权",
+    "conflictWarning": "其他实例正在运行调度器，任务将不会自动执行"
   },
 
-  "task": {
+  "card": {
     "trigger": "触发",
     "engine": "引擎",
     "nextRun": "下次",
-    "rounds": "轮次",
-    "enabled": "启用",
-    "disabled": "禁用",
+    "run": "立即执行",
+    "running": "执行中",
     "edit": "编辑",
     "copy": "复制",
     "delete": "删除",
-    "run": "立即执行",
-    "running": "执行中",
-    "subscribe": "订阅",
-    "subscribed": "已订阅",
-    "unsubscribe": "取消订阅",
-    "docs": "文档",
-    "runInBackground": "立即执行（后台）",
-    "subscribeHint": "订阅执行 - 在 AI 对话窗口查看执行过程",
-    "stopSubscription": "停止",
-    "viewDetail": "查看详情"
-  },
-
-  "filter": {
-    "search": "搜索...",
-    "allStatus": "全部状态",
-    "enabled": "已启用",
-    "disabled": "已禁用",
-    "allModes": "全部模式",
-    "simpleMode": "简单模式",
-    "protocolMode": "协议模式",
-    "allEngines": "全部引擎",
-    "allTriggers": "全部触发",
-    "allExecutionStatus": "全部执行状态",
-    "allGroups": "全部分组",
-    "clearFilter": "清除筛选",
-    "reset": "重置",
-    "more": "更多",
-    "collapse": "收起",
-    "batchSelect": "批量选择",
-    "exit": "退出",
-    "export": "导出",
-    "filterToggle": "筛选",
-    "activeFilters": "{{count}} 个筛选"
-  },
-
-  "sort": {
-    "createdAtDesc": "创建时间 ↓",
-    "createdAtAsc": "创建时间 ↑",
-    "nameAsc": "名称 A-Z",
-    "nameDesc": "名称 Z-A",
-    "nextRunAsc": "下次执行 ↑",
-    "nextRunDesc": "下次执行 ↓",
-    "statusAsc": "执行状态 ↑",
-    "statusDesc": "执行状态 ↓",
-    "enabledAsc": "启用状态 ↑",
-    "enabledDesc": "启用状态 ↓"
-  },
-
-  "group": {
-    "default": "默认",
-    "clickToExpand": "点击展开",
-    "clickToCollapse": "点击收起"
-  },
-
-  "batch": {
-    "selected": "已选择 {{count}}/{{total}} 个任务",
-    "selectAll": "全选",
-    "deselectAll": "取消",
-    "batchEnable": "批量启用",
-    "batchDisable": "批量禁用",
-    "batchDelete": "批量删除",
     "enable": "启用",
     "disable": "禁用"
   },
 
-  "time": {
-    "expired": "已过期",
-    "secondsLater": "{{count}} 秒后",
-    "minutesLater": "{{count}} 分钟后",
-    "hoursLater": "{{count}} 小时后",
-    "daysLater": "{{count}} 天后",
-    "never": "从未"
+  "filter": {
+    "search": "搜索任务...",
+    "allStatus": "全部状态",
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "allTriggers": "全部触发",
+    "allEngines": "全部引擎",
+    "clear": "清除筛选"
   },
 
-  "log": {
-    "searchPlaceholder": "搜索任务名称...",
-    "allTasks": "全部任务",
-    "allStatuses": "全部状态",
-    "noLogs": "暂无执行日志",
-    "totalLogs": "共 {{total}} 条日志，第 {{page}}/{{totalPages}} 页",
-    "previousPage": "上一页",
-    "nextPage": "下一页",
-    "prompt": "提示词",
-    "thinking": "思考过程",
-    "output": "输出",
-    "error": "错误",
-    "duration": "耗时 {{duration}}",
-    "toolCalls": "工具调用: {{count}} 次",
-    "expandAll": "展开全部",
-    "collapseAll": "收起"
-  },
-
-  "logSettings": {
-    "title": "日志设置",
-    "stats": "日志统计",
-    "totalLogs": "总日志数：",
-    "tasksWithLogs": "有日志的任务：",
-    "storageSize": "存储大小：",
-    "lastCleanup": "上次清理：",
-    "retentionPolicy": "保留策略",
-    "retentionDays": "保留天数",
-    "retentionDaysHint": "超过此天数的日志将被自动清理（0 表示不限）",
-    "maxLogsPerTask": "每任务最大日志数",
-    "maxLogsPerTaskHint": "每个任务最多保留的日志条数（0 表示不限）",
-    "autoCleanup": "自动清理",
-    "autoCleanupEnabled": "启用自动清理",
-    "autoCleanupEnabledHint": "定时检查并清理过期日志",
-    "cleanupInterval": "清理间隔",
-    "cleanupIntervalHint": "自动检查清理的时间间隔",
-    "everyHour": "每小时",
-    "every6Hours": "每 6 小时",
-    "every12Hours": "每 12 小时",
-    "everyDay": "每天",
-    "every3Days": "每 3 天",
-    "manualCleanup": "手动清理",
-    "manualCleanupHint": "立即清理所有超过保留天数的日志。此操作不可撤销。",
-    "cleanupButton": "立即清理过期日志",
-    "cleaning": "清理中...",
-    "unlimited": "不限",
-    "days": "{{count}} 天",
-    "items": "{{count}} 条"
-  },
-
-  "scheduler": {
-    "start": "启动调度",
-    "stop": "停止调度",
-    "startHint": "启动调度器",
-    "stopHint": "停止调度器",
-    "stopConfirmTitle": "停止调度器",
-    "stopConfirmMessage": "确定要停止调度器吗？\n定时任务将不再自动执行。"
+  "trigger": {
+    "cronHelp": "示例: \"0 9 * * 1-5\" 表示工作日早9点，格式为：分 时 日 月 周"
   },
 
   "editor": {
     "newTask": "新建任务",
     "editTask": "编辑任务",
-    "copyTask": "复制任务"
-  },
-
-  "docViewer": {
-    "title": "{{name}} - 文档管理",
-    "taskDoc": "协议文档",
-    "supplement": "用户补充",
-    "memoryIndex": "记忆索引",
-    "emptyDoc": "(空文档)",
-    "path": "路径: {{path}}",
-    "edit": "编辑",
+    "copyTask": "复制任务",
+    "copySuffix": "副本",
+    "name": "任务名称",
+    "namePlaceholder": "例如：每日日报生成",
+    "nameRequired": "请填写任务名称",
+    "description": "描述",
+    "descriptionPlaceholder": "任务描述（可选）",
+    "trigger": "触发配置",
+    "engine": "AI 引擎",
+    "workDir": "工作目录",
+    "workDirPlaceholder": "留空使用默认目录",
+    "prompt": "提示词",
+    "promptPlaceholder": "输入 AI 要执行的提示词...",
+    "promptRequired": "请填写提示词",
+    "documentMode": "文档模式",
+    "selectTemplate": "选择模板",
+    "noTemplate": "不使用模板",
+    "builtinTemplates": "内置模板",
+    "customTemplates": "自定义模板",
+    "documentModeHelp": "启用后 AI 将在多次执行中保持上下文记忆",
     "cancel": "取消",
-    "save": "保存"
+    "save": "保存",
+    "selectProvider": "选择 Provider",
+    "model": "模型",
+    "noProvider": "未配置",
+    "noProviderConfigured": "未配置 OpenAI Provider",
+    "providerInvalid": "当前任务的 Provider 已失效或被禁用，请重新选择引擎",
+    "goConfig": "去配置"
   },
 
   "confirm": {
     "deleteTitle": "确认删除",
-    "deleteMessage": "确定要删除这个任务吗？此操作不可恢复。",
-    "batchDeleteTitle": "确认批量删除",
-    "batchDeleteMessage": "确定要删除选中的 {{count}} 个任务吗？此操作不可恢复。",
-    "cleanupTitle": "确认清理",
-    "cleanupMessage": "确定要清理过期日志吗？此操作不可撤销。"
+    "deleteMessage": "确定要删除这个任务吗？此操作不可恢复。"
   },
 
   "toast": {
@@ -208,111 +110,32 @@
     "deleteFailed": "删除失败",
     "copySuccess": "复制成功",
     "copyFailed": "复制失败",
-    "taskSubmitted": "任务已提交",
-    "taskSubmittedDetail": "任务 {{name}} 已在后台开始执行",
     "runTriggered": "已触发执行",
-    "runTriggeredDetail": "任务「{{name}}」已开始执行",
-    "runTriggerFailed": "触发执行失败",
-    "executionFailed": "执行失败",
-    "subscribed": "订阅执行",
-    "subscribedDetail": "任务「{{name}}」正在执行，请在 AI 对话窗口查看实时进度",
-    "subscriptionCancelled": "已中断",
-    "subscriptionCancelledDetail": "任务执行已被中断",
-    "unsubscribed": "已取消订阅",
-    "unsubscribedDetail": "任务「{{name}}」已取消订阅",
-    "configSaved": "配置已保存",
-    "configSavedDetail": "日志保留策略已更新",
-    "saveFailed": "保存失败",
-    "cleanupComplete": "清理完成",
-    "cleanupCompleteDetail": "已清理 {{count}} 条过期日志",
-    "cleanupFailed": "清理失败",
-    "noEnableTargets": "提示",
-    "noEnableTargetsDetail": "没有可启用的任务",
-    "batchEnableSuccess": "批量启用成功",
-    "batchEnableSuccessDetail": "已启用 {{count}} 个任务",
-    "batchEnableFailed": "批量启用失败",
-    "noDisableTargets": "提示",
-    "noDisableTargetsDetail": "没有可禁用的任务",
-    "batchDisableSuccess": "批量禁用成功",
-    "batchDisableSuccessDetail": "已禁用 {{count}} 个任务",
-    "batchDisableFailed": "批量禁用失败",
-    "noDeleteTargets": "提示",
-    "noDeleteTargetsDetail": "请先选择要删除的任务",
-    "batchDeleteSuccess": "批量删除成功",
-    "batchDeleteSuccessDetail": "已删除 {{count}} 个任务",
-    "batchDeleteFailed": "批量删除失败",
-    "exportSuccess": "导出成功",
-    "exportSuccessDetail": "已导出 {{count}} 个任务",
-    "exportFailed": "导出失败",
-    "noExportTargets": "无可导出任务",
-    "noExportTargetsDetail": "请选择要导出的任务",
-    "importComplete": "导入完成",
-    "importCompleteDetail": "成功导入 {{success}} 个任务{{failed}}",
-    "importFailedCount": "，失败 {{count}} 个",
-    "importFailed": "导入失败",
-    "importFailedDetail": "所有任务导入失败",
-    "startFailed": "启动失败",
-    "startFailedDetail": "其他实例占用任务",
-    "stopFailed": "停止失败",
-    "readDocFailed": "读取文档失败",
-    "writeDocSuccess": "保存成功",
-    "writeDocFailed": "保存失败",
+    "runFailed": "执行失败",
     "pleaseWait": "请等待",
-    "pleaseWaitDetail": "已有任务在执行中，请等待完成后再试"
+    "taskDue": "任务到期",
+    "executing": "正在执行: {{name}}",
+    "executeFailed": "执行失败"
   },
 
-  "empty": {
-    "noTasks": "暂无定时任务，点击右上角按钮创建"
+  "time": {
+    "expired": "已过期",
+    "secondsLater": "{{count}} 秒后",
+    "minutesLater": "{{count}} 分钟后",
+    "hoursLater": "{{count}} 小时后",
+    "daysLater": "{{count}} 天后"
   },
 
-  "importExport": {
-    "import": "导入",
-    "export": "导出"
-  },
-
-  "subscription": {
-    "activeTask": "订阅任务",
-    "executing": "执行中...",
-    "completed": "已完成",
-    "failed": "失败",
-    "cancelled": "已取消",
-    "stop": "停止",
-    "clear": "清除",
-    "waitingForOutput": "等待任务输出..."
-  },
-
-  "lock": {
-    "holder": "持有锁",
-    "noLock": "无锁",
-    "lockedByOther": "其他实例持有锁",
-    "acquire": "获取锁",
-    "release": "释放锁",
-    "acquireSuccess": "已获取锁",
-    "acquireFailed": "无法获取锁，其他实例仍在运行",
-    "releaseSuccess": "已释放锁"
-  },
-
-  "execution": {
-    "status": {
-      "idle": "等待中",
-      "running": "执行中",
-      "success": "已完成",
-      "failed": "失败",
-      "cancelled": "已取消"
-    },
+  "drawer": {
+    "title": "执行日志",
+    "runningCount": "{{count}} 个执行中",
+    "collapse": "收起",
+    "expand": "展开",
     "duration": "用时",
-    "logs": "执行日志",
     "autoScroll": "自动滚动",
     "manualScroll": "手动滚动",
-    "clearLogs": "清空日志",
+    "clear": "清空",
     "waitingOutput": "等待任务输出...",
-    "noLogs": "暂无执行日志",
-    "toolCalls": "工具调用",
-    "error": "错误",
-    "stop": "停止任务",
-    "back": "返回列表",
-    "cancelled": "任务已取消"
-  },
-
-  "newTask": "新建"
+    "noTaskSelected": "请选择任务查看日志"
+  }
 }

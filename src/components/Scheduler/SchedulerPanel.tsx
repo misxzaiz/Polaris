@@ -1,220 +1,31 @@
 /**
- * 定时任务管理面板（精简版）
+ * 定时任务管理面板
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { useSchedulerStore, useToastStore } from '../../stores';
-import { ConfirmDialog } from '../Common/ConfirmDialog';
-import { DropdownMenu } from '../Common/DropdownMenu';
-import type { DropdownMenuItem } from '../Common/DropdownMenu';
-import type { ScheduledTask } from '../../types/scheduler';
-import { TriggerTypeLabels } from '../../types/scheduler';
-import type { CreateTaskParams } from '../../types/scheduler';
+import type { ScheduledTask, CreateTaskParams, TaskDueEvent, TriggerType } from '../../types/scheduler';
+import { SchedulerControl } from './SchedulerControl';
+import { TaskCard } from './TaskCard';
 import { TaskEditor } from './TaskEditor';
-import { TaskExecutionView } from './TaskExecutionView';
-import { useContainerSize } from '../../hooks';
+import { ExecutionLogDrawer } from './ExecutionLogDrawer';
+import { ConfirmDialog } from '../Common/ConfirmDialog';
+import { getEventRouter } from '../../services/eventRouter';
 
-/** 格式化相对时间 */
-function formatRelativeTime(timestamp: number | undefined, t: (key: string, options?: Record<string, unknown>) => string): string {
-  if (!timestamp) return '--';
-  const now = Date.now() / 1000;
-  const diff = timestamp - now;
-
-  if (diff < 0) return t('time.expired');
-  if (diff < 60) return t('time.secondsLater', { count: Math.floor(diff) });
-  if (diff < 3600) return t('time.minutesLater', { count: Math.floor(diff / 60) });
-  if (diff < 86400) return t('time.hoursLater', { count: Math.floor(diff / 3600) });
-  return t('time.daysLater', { count: Math.floor(diff / 86400) });
-}
-
-/** 状态徽章 */
-function StatusBadge({ status, pulse }: { status?: 'running' | 'success' | 'failed'; pulse?: boolean }) {
-  const { t } = useTranslation('scheduler');
-  if (!status) return <span className="text-text-muted">{t('status.notExecuted')}</span>;
-
-  const styles = {
-    running: 'bg-info-faint text-info',
-    success: 'bg-success-faint text-success',
-    failed: 'bg-danger-faint text-danger',
-  };
-
-  const labels = {
-    running: t('status.running'),
-    success: t('status.success'),
-    failed: t('status.failed'),
-  };
-
-  return (
-    <span className={`px-2 py-0.5 rounded text-xs ${styles[status]} ${pulse && status === 'running' ? 'animate-pulse' : ''}`}>
-      {labels[status]}
-    </span>
-  );
-}
-
-/** 任务卡片 */
-function TaskCard({
-  task,
-  onEdit,
-  onCopy,
-  onDelete,
-  onToggle,
-  onRun,
-  onViewDetail,
-  isRunning,
-  isCompact,
-}: {
-  task: ScheduledTask;
-  onEdit: () => void;
-  onCopy: () => void;
-  onDelete: () => void;
-  onToggle: () => void;
-  onRun: () => void;
-  onViewDetail: () => void;
-  isRunning?: boolean;
-  isCompact?: boolean;
-}) {
-  const { t } = useTranslation('scheduler');
-
-  const menuItems: DropdownMenuItem[] = [
-    { key: 'view', label: t('task.viewDetail', { defaultValue: '查看详情' }), onClick: onViewDetail },
-    { key: 'run', label: t('task.run'), onClick: onRun },
-    { key: 'toggle', label: task.enabled ? t('task.disabled') : t('task.enabled'), onClick: onToggle },
-    { key: 'edit', label: t('task.edit'), onClick: onEdit },
-    { key: 'copy', label: t('task.copy'), onClick: onCopy },
-    { key: 'delete', label: t('task.delete'), variant: 'danger', onClick: onDelete },
-  ];
-
-  // 紧凑模式
-  if (isCompact) {
-    return (
-      <div
-        onClick={onViewDetail}
-        className={`bg-background-surface rounded-lg p-3 border border-border-subtle cursor-pointer hover:border-primary/30 transition-colors ${!task.enabled ? 'opacity-70' : ''}`}
-      >
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${task.enabled ? 'bg-success' : 'bg-text-muted'}`} />
-            <h3 className="text-text-primary text-sm font-medium truncate">{task.name}</h3>
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
-            <DropdownMenu
-              trigger={
-                <button
-                  onClick={(e) => e.stopPropagation()}
-                  className="w-7 h-7 flex items-center justify-center bg-background-hover text-text-secondary hover:bg-background-active rounded transition-colors text-xs"
-                >
-                  ⋯
-                </button>
-              }
-              items={menuItems}
-              align="right"
-            />
-          </div>
-        </div>
-        <div className="text-xs text-text-muted flex items-center gap-2">
-          <StatusBadge status={task.lastRunStatus} pulse={isRunning} />
-          {task.enabled && task.nextRunAt && (
-            <span>
-              {t('task.nextRun')}: <span className="text-primary">{formatRelativeTime(task.nextRunAt, t)}</span>
-            </span>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // 正常模式
-  return (
-    <div
-      onClick={onViewDetail}
-      className={`bg-background-surface rounded-lg p-4 border border-border-subtle cursor-pointer hover:border-primary/30 transition-colors ${!task.enabled ? 'opacity-70' : ''}`}
-    >
-      {/* Header */}
-      <div className="flex items-center gap-2 mb-3">
-        <span className={`w-2 h-2 rounded-full shrink-0 ${isRunning ? 'bg-info animate-pulse' : task.enabled ? 'bg-success' : 'bg-text-muted'}`} />
-        <h3 className="text-text-primary font-medium truncate">{task.name}</h3>
-        {task.description && (
-          <span className="text-xs text-text-muted truncate">{task.description}</span>
-        )}
-      </div>
-
-      {/* Body */}
-      <div className="mb-3">
-        <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-          <span className="text-text-muted">{t('task.trigger')}</span>
-          <span className="text-text-secondary">{TriggerTypeLabels[task.triggerType]} - {task.triggerValue}</span>
-          <span className="text-text-muted">{t('task.engine')}</span>
-          <span className="text-text-secondary">{task.engineId}</span>
-          {task.enabled && task.nextRunAt && (
-            <>
-              <span className="text-text-muted">{t('task.nextRun')}</span>
-              <span className="text-primary">{formatRelativeTime(task.nextRunAt, t)}</span>
-            </>
-          )}
-          <span className="text-text-muted">{t('log.stats', { defaultValue: '状态' })}</span>
-          <span><StatusBadge status={task.lastRunStatus} pulse={isRunning} /></span>
-        </div>
-      </div>
-
-      {/* Footer */}
-      <div className="flex items-center justify-end gap-2 pt-3 border-t border-border-subtle flex-wrap" onClick={(e) => e.stopPropagation()}>
-        <button
-          onClick={onRun}
-          disabled={isRunning}
-          className={`px-3 py-1 text-sm rounded transition-colors ${
-            isRunning
-              ? 'bg-info-faint text-info cursor-wait'
-              : 'bg-primary-faint text-primary hover:bg-primary/30'
-          }`}
-        >
-          {isRunning ? t('task.running') : t('task.run')}
-        </button>
-        <button
-          onClick={onToggle}
-          className={`px-3 py-1 text-sm rounded transition-colors ${
-            task.enabled
-              ? 'bg-warning-faint text-warning hover:bg-warning/30'
-              : 'bg-success-faint text-success hover:bg-success/30'
-          }`}
-        >
-          {task.enabled ? t('task.disabled') : t('task.enabled')}
-        </button>
-        <button
-          onClick={onEdit}
-          className="px-3 py-1 text-sm bg-background-hover text-text-secondary hover:bg-background-active rounded transition-colors"
-        >
-          {t('task.edit')}
-        </button>
-        <button
-          onClick={onCopy}
-          className="px-3 py-1 text-sm bg-info-faint text-info hover:bg-info/30 rounded transition-colors"
-        >
-          {t('task.copy')}
-        </button>
-        <button
-          onClick={onDelete}
-          className="px-3 py-1 text-sm bg-danger-faint text-danger hover:bg-danger/30 rounded transition-colors"
-        >
-          {t('task.delete')}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/** 任务筛选状态 */
+/** 筛选条件 */
 interface TaskFilter {
   search: string;
-  enabled: 'all' | 'enabled' | 'disabled';
+  status: 'all' | 'enabled' | 'disabled';
   engineId: string;
-  triggerType: 'all' | 'once' | 'cron' | 'interval';
+  triggerType: 'all' | TriggerType;
 }
 
-const defaultFilter: TaskFilter = {
+const DEFAULT_FILTER: TaskFilter = {
   search: '',
-  enabled: 'all',
+  status: 'all',
   engineId: 'all',
   triggerType: 'all',
 };
@@ -225,17 +36,75 @@ function filterTasks(tasks: ScheduledTask[], filter: TaskFilter): ScheduledTask[
     if (filter.search && !task.name.toLowerCase().includes(filter.search.toLowerCase())) {
       return false;
     }
-    if (filter.enabled === 'enabled' && !task.enabled) return false;
-    if (filter.enabled === 'disabled' && task.enabled) return false;
+    if (filter.status === 'enabled' && !task.enabled) return false;
+    if (filter.status === 'disabled' && task.enabled) return false;
     if (filter.engineId !== 'all' && task.engineId !== filter.engineId) return false;
     if (filter.triggerType !== 'all' && task.triggerType !== filter.triggerType) return false;
     return true;
   });
 }
 
-/** 主面板 */
+/** 解析 AI 事件为日志 */
+function parseEventToLog(event: Record<string, unknown>): {
+  type: 'session_start' | 'message' | 'thinking' | 'tool_call_start' | 'tool_call_end' | 'error' | 'session_end';
+  content: string;
+  metadata?: Record<string, unknown>;
+} | null {
+  const type = event.type as string | undefined;
+
+  switch (type) {
+    case 'session_start':
+      return { type: 'session_start', content: '开始执行任务...' };
+
+    case 'progress':
+      return { type: 'message', content: (event.message as string) || '处理中...' };
+
+    case 'thinking':
+      return { type: 'thinking', content: (event.content as string) || '思考中...' };
+
+    case 'assistant_message':
+    case 'assistant':
+      return { type: 'message', content: (event.content as string) || '' };
+
+    case 'tool_call_start':
+      const toolName = (event.tool as string) || (event.toolName as string) || (event.name as string) || 'unknown';
+      return {
+        type: 'tool_call_start',
+        content: `调用工具: ${toolName}`,
+        metadata: { toolName, args: event.args },
+      };
+
+    case 'tool_call_end':
+      const endToolName = (event.tool as string) || (event.toolName as string) || (event.name as string) || 'unknown';
+      const success = event.success !== false;
+      return {
+        type: 'tool_call_end',
+        content: success ? `${endToolName} 完成` : `${endToolName} 失败`,
+        metadata: { toolName: endToolName, success },
+      };
+
+    case 'session_end':
+      const reason = event.reason as string | undefined;
+      if (reason === 'error' || reason === 'failed') {
+        return {
+          type: 'error',
+          content: (event.error as string) || '执行失败',
+        };
+      }
+      return { type: 'session_end', content: '任务执行完成', metadata: { success: true } };
+
+    case 'error':
+      return { type: 'error', content: (event.error as string) || (event.message as string) || '未知错误' };
+
+    default:
+      return null;
+  }
+}
+
 export function SchedulerPanel() {
   const { t } = useTranslation('scheduler');
+  const toast = useToastStore();
+
   const {
     tasks,
     loading,
@@ -246,69 +115,142 @@ export function SchedulerPanel() {
     toggleTask,
     runTask,
     updateRunStatus,
+    addLog,
     isTaskRunning,
-    lockStatus,
-    lockLoading,
-    loadLockStatus,
-    acquireLock,
-    releaseLock,
-    showExecutionView,
-    openExecutionView,
-    currentExecution,
-    registerExecutionContext,
+    loadSchedulerStatus,
+    handleTaskDue,
   } = useSchedulerStore();
-  const toast = useToastStore();
 
-  // 响应式布局检测
-  const [containerRef, containerSize] = useContainerSize({ compactThreshold: 500 });
-  const isCompact = containerSize.isCompact;
-
+  // 编辑器状态
   const [showEditor, setShowEditor] = useState(false);
   const [editingTask, setEditingTask] = useState<ScheduledTask | undefined>();
   const [copyingTask, setCopyingTask] = useState<ScheduledTask | undefined>();
-  const [filter, setFilter] = useState<TaskFilter>(defaultFilter);
+
+  // 筛选状态
+  const [filter, setFilter] = useState<TaskFilter>(DEFAULT_FILTER);
+
+  // 确认对话框
   const [confirmDialog, setConfirmDialog] = useState<{
     show: boolean;
-    title?: string;
+    title: string;
     message: string;
-    type?: 'danger' | 'warning' | 'info';
     onConfirm: () => void;
   } | null>(null);
 
-  const engineOptions = [...new Set(tasks.map((t) => t.engineId))].sort();
-  const filteredTasks = filterTasks(tasks, filter);
+  // 事件订阅清理函数
+  const unsubscribesRef = useRef<Map<string, () => void>>(new Map());
 
+  // 加载任务和调度器状态
   useEffect(() => {
     loadTasks();
-  }, [loadTasks]);
+    loadSchedulerStatus();
+  }, [loadTasks, loadSchedulerStatus]);
 
-  // 加载锁状态
+  // 定时刷新调度器状态
   useEffect(() => {
-    loadLockStatus();
-    // 每 5 秒刷新锁状态
-    const interval = setInterval(loadLockStatus, 5000);
+    const interval = setInterval(loadSchedulerStatus, 5000);
     return () => clearInterval(interval);
-  }, [loadLockStatus]);
+  }, [loadSchedulerStatus]);
 
+  // 监听任务到期事件
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let mounted = true;
+
+    const setupListener = async () => {
+      unlisten = await listen<TaskDueEvent>('scheduler-task-due', async (event) => {
+        if (!mounted) return;
+
+        try {
+          toast.info(t('toast.taskDue'), t('toast.executing', { name: event.payload.taskName }));
+          await handleTaskDue(event.payload);
+        } catch (e) {
+          console.error('[Scheduler] 任务执行失败:', e);
+          toast.error(t('toast.executeFailed'), e instanceof Error ? e.message : String(e));
+        }
+      });
+    };
+
+    setupListener();
+
+    return () => {
+      mounted = false;
+      if (unlisten) unlisten();
+    };
+  }, [handleTaskDue, toast, t]);
+
+  // 注册事件处理器
+  const registerEventHandler = async (taskId: string) => {
+    const router = getEventRouter();
+    await router.initialize();
+
+    const contextId = `scheduler-${taskId}`;
+
+    // 清理旧的订阅
+    const oldUnsubscribe = unsubscribesRef.current.get(taskId);
+    if (oldUnsubscribe) {
+      oldUnsubscribe();
+    }
+
+    // 注册新的处理器
+    const unsubscribe = router.register(contextId, (payload: unknown) => {
+      const event = payload as Record<string, unknown>;
+      const log = parseEventToLog(event);
+
+      if (log) {
+        addLog(taskId, log);
+      }
+
+      // 处理会话结束
+      if (event.type === 'session_end') {
+        const reason = event.reason as string | undefined;
+        if (reason === 'error' || reason === 'failed') {
+          updateRunStatus(taskId, 'failed');
+        } else {
+          updateRunStatus(taskId, 'success');
+        }
+
+        // 清理订阅
+        unsubscribesRef.current.delete(taskId);
+      } else if (event.type === 'error') {
+        updateRunStatus(taskId, 'failed');
+        unsubscribesRef.current.delete(taskId);
+      }
+    });
+
+    unsubscribesRef.current.set(taskId, unsubscribe);
+  };
+
+  // 清理所有订阅
+  useEffect(() => {
+    return () => {
+      unsubscribesRef.current.forEach((unsubscribe) => unsubscribe());
+      unsubscribesRef.current.clear();
+    };
+  }, []);
+
+  // 创建任务
   const handleCreate = async (params: CreateTaskParams) => {
     try {
       await createTask(params);
       toast.success(t('toast.createSuccess'));
       setShowEditor(false);
     } catch (e) {
-      toast.error(t('toast.createFailed'), e instanceof Error ? e.message : t('toast.importFailedDetail'));
+      toast.error(t('toast.createFailed'), e instanceof Error ? e.message : '');
     }
   };
 
+  // 复制任务
   const handleCopy = (task: ScheduledTask) => {
     setEditingTask(undefined);
     setCopyingTask({
       ...task,
-      name: `${task.name}（副本）`,
+      name: `${task.name}（${t('editor.copySuffix')}）`,
     });
     setShowEditor(true);
   };
 
+  // 复制保存
   const handleCopySave = async (params: CreateTaskParams) => {
     try {
       await createTask(params);
@@ -316,10 +258,11 @@ export function SchedulerPanel() {
       setShowEditor(false);
       setCopyingTask(undefined);
     } catch (e) {
-      toast.error(t('toast.copyFailed'), e instanceof Error ? e.message : t('toast.importFailedDetail'));
+      toast.error(t('toast.copyFailed'), e instanceof Error ? e.message : '');
     }
   };
 
+  // 更新任务
   const handleUpdate = async (params: CreateTaskParams) => {
     if (!editingTask) return;
     try {
@@ -331,56 +274,48 @@ export function SchedulerPanel() {
       setShowEditor(false);
       setEditingTask(undefined);
     } catch (e) {
-      toast.error(t('toast.updateFailed'), e instanceof Error ? e.message : t('toast.importFailedDetail'));
+      toast.error(t('toast.updateFailed'), e instanceof Error ? e.message : '');
     }
   };
 
-  const handleDelete = async (id: string) => {
+  // 删除任务
+  const handleDelete = (id: string) => {
     setConfirmDialog({
       show: true,
       title: t('confirm.deleteTitle'),
       message: t('confirm.deleteMessage'),
-      type: 'danger',
       onConfirm: async () => {
         setConfirmDialog(null);
         try {
           await deleteTask(id);
           toast.success(t('toast.deleteSuccess'));
         } catch (e) {
-          toast.error(t('toast.deleteFailed'), e instanceof Error ? e.message : t('toast.importFailedDetail'));
+          toast.error(t('toast.deleteFailed'), e instanceof Error ? e.message : '');
         }
       },
     });
   };
 
+  // 执行任务
   const handleRun = async (task: ScheduledTask) => {
     if (isTaskRunning(task.id)) {
-      toast.warning(t('toast.pleaseWait'), t('toast.pleaseWaitDetail'));
+      toast.warning(t('toast.pleaseWait'));
       return;
     }
 
     try {
-      // 标记任务为执行中
+      // 初始化执行状态
       await runTask(task.id);
-      toast.success(t('toast.runTriggered'), t('toast.runTriggeredDetail', { name: task.name }));
-
-      // 先打开执行详情视图
-      openExecutionView(task.id, task.name);
 
       // 注册事件处理器
-      await registerExecutionContext(task.id);
+      await registerEventHandler(task.id);
 
-      // 调用 AI 引擎执行任务
+      // 调用 AI 引擎
       const engineId = task.engineId || 'claude-code';
-      const workDir = task.workDir || undefined;
-
-      console.log('[Scheduler] 执行任务:', task.name, '引擎:', engineId);
-
-      // 调用 start_chat 执行任务
       const sessionId = await invoke<string>('start_chat', {
         message: task.prompt,
         options: {
-          workDir,
+          workDir: task.workDir,
           contextId: `scheduler-${task.id}`,
           engineId,
           enableMcpTools: engineId === 'claude-code',
@@ -388,118 +323,56 @@ export function SchedulerPanel() {
       });
 
       console.log('[Scheduler] 任务执行会话 ID:', sessionId);
-
+      toast.success(t('toast.runTriggered'));
     } catch (e) {
       console.error('[Scheduler] 任务执行失败:', e);
-      toast.error(t('toast.runTriggerFailed'), e instanceof Error ? e.message : t('toast.importFailedDetail'));
-      // 执行失败，更新状态
+      toast.error(t('toast.runFailed'), e instanceof Error ? e.message : '');
       await updateRunStatus(task.id, 'failed');
     }
   };
 
-  const handleViewDetail = (task: ScheduledTask) => {
-    openExecutionView(task.id, task.name);
-  };
-
-  // Master-Detail 布局：显示详情视图或列表
-  if (showExecutionView && currentExecution) {
-    return <TaskExecutionView />;
-  }
+  // 筛选后的任务
+  const engineOptions = [...new Set(tasks.map((t) => t.engineId))].sort();
+  const filteredTasks = filterTasks(tasks, filter);
 
   return (
-    <div ref={containerRef} className="h-full flex flex-col bg-background-base">
+    <div className="h-full flex flex-col bg-background-base">
       {/* 头部 */}
-      <div className="p-4 border-b border-border-subtle flex items-center justify-between">
-        <h1 className="text-xl font-medium text-text-primary">{t('title')}</h1>
+      <div className="px-4 py-4 border-b border-border-subtle flex items-center justify-between">
         <div className="flex items-center gap-3">
-          {/* 锁状态显示和操作 */}
-          <div className="flex items-center gap-2">
-            {lockStatus?.isHolder ? (
-              <>
-                <span className="flex items-center gap-1.5 px-2 py-1 bg-success-faint text-success rounded-lg text-sm">
-                  <span className="text-base">🔒</span>
-                  <span>{t('lock.holder', { defaultValue: '持有锁' })}</span>
-                </span>
-                <button
-                  onClick={async () => {
-                    await releaseLock();
-                    toast.success(t('lock.releaseSuccess', { defaultValue: '已释放锁' }));
-                  }}
-                  disabled={lockLoading}
-                  className="px-3 py-1.5 text-sm bg-warning-faint text-warning hover:bg-warning/30 rounded-lg transition-colors disabled:opacity-50"
-                >
-                  {t('lock.release', { defaultValue: '释放锁' })}
-                </button>
-              </>
-            ) : lockStatus?.isLockedByOther ? (
-              <>
-                <span className="flex items-center gap-1.5 px-2 py-1 bg-danger-faint text-danger rounded-lg text-sm">
-                  <span className="text-base">🔓</span>
-                  <span>{t('lock.lockedByOther', { defaultValue: '其他实例持有锁' })}</span>
-                </span>
-                <button
-                  onClick={async () => {
-                    const success = await acquireLock();
-                    if (success) {
-                      toast.success(t('lock.acquireSuccess', { defaultValue: '已获取锁' }));
-                    } else {
-                      toast.warning(t('lock.acquireFailed', { defaultValue: '无法获取锁，其他实例仍在运行' }));
-                    }
-                  }}
-                  disabled={lockLoading}
-                  className="px-3 py-1.5 text-sm bg-primary-faint text-primary hover:bg-primary/30 rounded-lg transition-colors disabled:opacity-50"
-                >
-                  {t('lock.acquire', { defaultValue: '获取锁' })}
-                </button>
-              </>
-            ) : (
-              <>
-                <span className="flex items-center gap-1.5 px-2 py-1 bg-background-hover text-text-secondary rounded-lg text-sm">
-                  <span className="text-base">🔓</span>
-                  <span>{t('lock.noLock', { defaultValue: '无锁' })}</span>
-                </span>
-                <button
-                  onClick={async () => {
-                    const success = await acquireLock();
-                    if (success) {
-                      toast.success(t('lock.acquireSuccess', { defaultValue: '已获取锁' }));
-                    }
-                  }}
-                  disabled={lockLoading}
-                  className="px-3 py-1.5 text-sm bg-success-faint text-success hover:bg-success/30 rounded-lg transition-colors disabled:opacity-50"
-                >
-                  {t('lock.acquire', { defaultValue: '获取锁' })}
-                </button>
-              </>
-            )}
-          </div>
-          {/* 新建任务按钮 */}
-          <button
-            onClick={() => {
-              setEditingTask(undefined);
-              setCopyingTask(undefined);
-              setShowEditor(true);
-            }}
-            className="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors"
-          >
-            + {t('newTask')}
-          </button>
+          <h1 className="text-xl font-semibold text-text-primary">{t('title')}</h1>
+          <span className="text-xs text-text-muted bg-background-hover px-2 py-1 rounded">
+            {t('taskCount', { count: tasks.length })}
+          </span>
         </div>
+        <button
+          onClick={() => {
+            setEditingTask(undefined);
+            setCopyingTask(undefined);
+            setShowEditor(true);
+          }}
+          className="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors text-sm"
+        >
+          + {t('newTask')}
+        </button>
       </div>
 
+      {/* 调度器控制栏 */}
+      <SchedulerControl />
+
       {/* 筛选栏 */}
-      <div className="p-3 border-b border-border-subtle bg-background-surface">
+      <div className="px-4 py-3 border-b border-border-subtle bg-background-surface">
         <div className="flex flex-wrap items-center gap-2">
           <input
             type="text"
             placeholder={t('filter.search')}
             value={filter.search}
             onChange={(e) => setFilter({ ...filter, search: e.target.value })}
-            className={`px-3 py-1.5 text-sm bg-background-base border border-border-subtle rounded-lg text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary/50 ${isCompact ? 'w-24' : 'w-48'}`}
+            className="w-48 px-3 py-1.5 text-sm bg-background-base border border-border-subtle rounded-lg text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
           />
           <select
-            value={filter.enabled}
-            onChange={(e) => setFilter({ ...filter, enabled: e.target.value as TaskFilter['enabled'] })}
+            value={filter.status}
+            onChange={(e) => setFilter({ ...filter, status: e.target.value as TaskFilter['status'] })}
             className="px-2 py-1.5 text-sm bg-background-base border border-border-subtle rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
           >
             <option value="all">{t('filter.allStatus')}</option>
@@ -512,9 +385,9 @@ export function SchedulerPanel() {
             className="px-2 py-1.5 text-sm bg-background-base border border-border-subtle rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
           >
             <option value="all">{t('filter.allTriggers')}</option>
-            <option value="once">{t('triggerTypes.once')}</option>
-            <option value="cron">{t('triggerTypes.cron')}</option>
             <option value="interval">{t('triggerTypes.interval')}</option>
+            <option value="cron">{t('triggerTypes.cron')}</option>
+            <option value="once">{t('triggerTypes.once')}</option>
           </select>
           <select
             value={filter.engineId}
@@ -523,14 +396,16 @@ export function SchedulerPanel() {
           >
             <option value="all">{t('filter.allEngines')}</option>
             {engineOptions.map((engine) => (
-              <option key={engine} value={engine}>{engine}</option>
+              <option key={engine} value={engine}>
+                {engine}
+              </option>
             ))}
           </select>
           <button
-            onClick={() => setFilter(defaultFilter)}
+            onClick={() => setFilter(DEFAULT_FILTER)}
             className="px-3 py-1.5 text-sm bg-background-hover text-text-secondary hover:bg-background-active rounded-lg transition-colors"
           >
-            {t('filter.clearFilter')}
+            {t('filter.clear')}
           </button>
           {filteredTasks.length !== tasks.length && (
             <span className="text-xs text-text-muted">
@@ -540,19 +415,21 @@ export function SchedulerPanel() {
         </div>
       </div>
 
-      {/* 内容 */}
+      {/* 任务列表 */}
       <div className="flex-1 overflow-y-auto p-4">
         {loading ? (
           <div className="text-center text-text-muted py-8">{t('loading')}</div>
         ) : tasks.length === 0 ? (
-          <div className="text-center text-text-muted py-8">{t('empty.noTasks')}</div>
+          <div className="text-center text-text-muted py-8">{t('empty')}</div>
+        ) : filteredTasks.length === 0 ? (
+          <div className="text-center text-text-muted py-8">{t('noMatch')}</div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {filteredTasks.map((task) => (
               <TaskCard
                 key={task.id}
                 task={task}
-                isCompact={isCompact}
+                isRunning={isTaskRunning(task.id)}
                 onEdit={() => {
                   setCopyingTask(undefined);
                   setEditingTask(task);
@@ -562,20 +439,27 @@ export function SchedulerPanel() {
                 onDelete={() => handleDelete(task.id)}
                 onToggle={() => toggleTask(task.id, !task.enabled)}
                 onRun={() => handleRun(task)}
-                onViewDetail={() => handleViewDetail(task)}
-                isRunning={isTaskRunning(task.id)}
               />
             ))}
           </div>
         )}
       </div>
 
+      {/* 执行日志抽屉 */}
+      <ExecutionLogDrawer />
+
       {/* 编辑弹窗 */}
       {showEditor && (
         <TaskEditor
           task={editingTask || copyingTask}
-          onSave={editingTask ? handleUpdate : (copyingTask ? handleCopySave : handleCreate)}
-          title={editingTask ? t('editor.editTask') : (copyingTask ? t('editor.copyTask') : t('editor.newTask'))}
+          onSave={editingTask ? handleUpdate : copyingTask ? handleCopySave : handleCreate}
+          title={
+            editingTask
+              ? t('editor.editTask')
+              : copyingTask
+                ? t('editor.copyTask')
+                : t('editor.newTask')
+          }
           onClose={() => {
             setShowEditor(false);
             setEditingTask(undefined);
@@ -589,7 +473,7 @@ export function SchedulerPanel() {
         <ConfirmDialog
           title={confirmDialog.title}
           message={confirmDialog.message}
-          type={confirmDialog.type}
+          type="danger"
           onConfirm={confirmDialog.onConfirm}
           onCancel={() => setConfirmDialog(null)}
         />

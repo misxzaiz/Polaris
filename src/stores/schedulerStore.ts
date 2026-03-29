@@ -1,35 +1,54 @@
 /**
- * 定时任务状态管理（精简版）
+ * 定时任务状态管理
  */
 
 import { create } from 'zustand';
-import type { ScheduledTask, TriggerType, CreateTaskParams, TaskExecution, ExecutionLog, ToolCallRecord, ExecutionStatus } from '../types/scheduler';
+import type {
+  ScheduledTask,
+  CreateTaskParams,
+  TriggerType,
+  SchedulerStatus,
+  TaskDueEvent,
+  ExecutionLogEntry,
+  TaskExecutionInfo,
+  ExecutionState,
+} from '../types/scheduler';
 import * as tauri from '../services/tauri';
-import type { LockStatus } from '../services/tauri';
-import { getEventRouter } from '../services/eventRouter';
+
+/** 日志数量限制 */
+const MAX_LOG_ENTRIES = 20;
+
+/** 生成唯一 ID */
+function generateLogId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
 
 interface SchedulerState {
+  // === 任务列表 ===
   /** 任务列表 */
   tasks: ScheduledTask[];
   /** 加载中 */
   loading: boolean;
   /** 错误信息 */
   error: string | null;
-  /** 锁状态 */
-  lockStatus: LockStatus | null;
-  /** 锁操作加载中 */
-  lockLoading: boolean;
+
+  // === 调度器状态 ===
+  /** 调度器状态 */
+  schedulerStatus: SchedulerStatus | null;
+  /** 状态操作加载中 */
+  statusLoading: boolean;
+
+  // === 执行状态 ===
   /** 正在执行的任务 ID 集合 */
   runningTaskIds: Set<string>;
+  /** 任务执行信息 Map */
+  executions: Map<string, TaskExecutionInfo>;
+  /** 当前查看的任务 ID */
+  activeTaskId: string | null;
+  /** 抽屉是否展开 */
+  drawerOpen: boolean;
 
-  // === 执行详情相关 ===
-  /** 当前查看的执行详情 */
-  currentExecution: TaskExecution | null;
-  /** 执行详情视图是否显示 */
-  showExecutionView: boolean;
-  /** 执行事件监听清理函数 */
-  _executionCleanup: (() => void) | null;
-
+  // === 操作方法 ===
   /** 加载任务列表 */
   loadTasks: () => Promise<void>;
   /** 创建任务 */
@@ -42,48 +61,55 @@ interface SchedulerState {
   toggleTask: (id: string, enabled: boolean) => Promise<void>;
   /** 验证触发表达式 */
   validateTrigger: (type: TriggerType, value: string) => Promise<number | null>;
-  /** 获取锁状态 */
-  loadLockStatus: () => Promise<void>;
-  /** 获取锁 */
-  acquireLock: () => Promise<boolean>;
-  /** 释放锁 */
-  releaseLock: () => Promise<void>;
+
+  // === 调度器生命周期 ===
+  /** 加载调度器状态 */
+  loadSchedulerStatus: () => Promise<void>;
+  /** 启动调度器 */
+  startScheduler: () => Promise<boolean>;
+  /** 停止调度器 */
+  stopScheduler: () => Promise<boolean>;
+
+  // === 任务执行 ===
   /** 手动触发任务执行 */
   runTask: (id: string) => Promise<ScheduledTask>;
   /** 更新任务执行结果 */
   updateRunStatus: (id: string, status: 'success' | 'failed') => Promise<void>;
   /** 检查任务是否正在执行 */
   isTaskRunning: (id: string) => boolean;
+  /** 处理任务到期事件 */
+  handleTaskDue: (event: TaskDueEvent) => Promise<void>;
 
-  // === 执行详情相关方法 ===
-  /** 打开执行详情视图 */
-  openExecutionView: (taskId: string, taskName: string) => void;
-  /** 关闭执行详情视图 */
-  closeExecutionView: () => void;
-  /** 添加执行日志 */
-  addExecutionLog: (taskId: string, log: Omit<ExecutionLog, 'id' | 'timestamp'>) => void;
-  /** 添加工具调用记录 */
-  addToolCall: (taskId: string, toolCall: Omit<ToolCallRecord, 'startTime'>) => void;
-  /** 更新执行状态 */
-  setExecutionStatus: (taskId: string, status: ExecutionStatus, error?: string) => void;
-  /** 清空执行日志 */
-  clearExecutionLogs: (taskId: string) => void;
-  /** 获取任务执行详情 */
-  getTaskExecution: (taskId: string) => TaskExecution | null;
-  /** 注册执行事件监听 */
-  registerExecutionContext: (taskId: string) => Promise<() => void>;
+  // === 执行日志 ===
+  /** 添加日志条目 */
+  addLog: (taskId: string, entry: Omit<ExecutionLogEntry, 'id' | 'timestamp'>) => void;
+  /** 清空任务日志 */
+  clearLogs: (taskId: string) => void;
+  /** 关闭任务执行 Tab */
+  closeExecutionTab: (taskId: string) => void;
+  /** 设置当前查看的任务 */
+  setActiveTask: (taskId: string | null) => void;
+  /** 设置抽屉展开状态 */
+  setDrawerOpen: (open: boolean) => void;
+  /** 获取任务执行信息 */
+  getExecution: (taskId: string) => TaskExecutionInfo | undefined;
+  /** 获取所有执行中的任务 */
+  getExecutingTasks: () => TaskExecutionInfo[];
 }
 
 export const useSchedulerStore = create<SchedulerState>((set, get) => ({
+  // === 初始状态 ===
   tasks: [],
   loading: false,
   error: null,
-  lockStatus: null,
-  lockLoading: false,
+  schedulerStatus: null,
+  statusLoading: false,
   runningTaskIds: new Set<string>(),
-  currentExecution: null,
-  showExecutionView: false,
-  _executionCleanup: null,
+  executions: new Map<string, TaskExecutionInfo>(),
+  activeTaskId: null,
+  drawerOpen: false,
+
+  // === 任务列表操作 ===
 
   loadTasks: async () => {
     set({ loading: true, error: null });
@@ -102,11 +128,8 @@ export const useSchedulerStore = create<SchedulerState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const task = await tauri.schedulerCreateTask(params);
-
-      // 刷新列表
       const tasks = await tauri.schedulerGetTasks();
       set({ tasks, loading: false });
-
       return task;
     } catch (e) {
       const error = e instanceof Error ? e.message : '创建任务失败';
@@ -119,8 +142,6 @@ export const useSchedulerStore = create<SchedulerState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       await tauri.schedulerUpdateTask(task);
-
-      // 刷新列表
       const tasks = await tauri.schedulerGetTasks();
       set({ tasks, loading: false });
     } catch (e) {
@@ -134,8 +155,6 @@ export const useSchedulerStore = create<SchedulerState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       await tauri.schedulerDeleteTask(id);
-
-      // 刷新列表
       const tasks = await tauri.schedulerGetTasks();
       set({ tasks, loading: false });
     } catch (e) {
@@ -148,8 +167,6 @@ export const useSchedulerStore = create<SchedulerState>((set, get) => ({
   toggleTask: async (id, enabled) => {
     try {
       await tauri.schedulerToggleTask(id, enabled);
-
-      // 更新本地状态
       set((state) => ({
         tasks: state.tasks.map((t) =>
           t.id === id ? { ...t, enabled } : t
@@ -169,44 +186,48 @@ export const useSchedulerStore = create<SchedulerState>((set, get) => ({
     }
   },
 
-  loadLockStatus: async () => {
+  // === 调度器生命周期 ===
+
+  loadSchedulerStatus: async () => {
     try {
-      const lockStatus = await tauri.schedulerGetLockStatus();
-      set({ lockStatus });
+      const schedulerStatus = await tauri.schedulerGetStatus();
+      set({ schedulerStatus });
     } catch (e) {
-      console.error('获取锁状态失败:', e);
+      console.error('获取调度器状态失败:', e);
     }
   },
 
-  acquireLock: async () => {
-    set({ lockLoading: true });
+  startScheduler: async () => {
+    set({ statusLoading: true });
     try {
-      const success = await tauri.schedulerAcquireLock();
-      // 刷新锁状态
-      const lockStatus = await tauri.schedulerGetLockStatus();
-      set({ lockStatus, lockLoading: false });
-      return success;
+      const schedulerStatus = await tauri.schedulerStart();
+      set({ schedulerStatus, statusLoading: false });
+      return schedulerStatus.isRunning;
     } catch (e) {
-      console.error('获取锁失败:', e);
-      set({ lockLoading: false });
+      console.error('启动调度器失败:', e);
+      set({ statusLoading: false });
       return false;
     }
   },
 
-  releaseLock: async () => {
-    set({ lockLoading: true });
+  stopScheduler: async () => {
+    set({ statusLoading: true });
     try {
-      await tauri.schedulerReleaseLock();
-      // 刷新锁状态
-      const lockStatus = await tauri.schedulerGetLockStatus();
-      set({ lockStatus, lockLoading: false });
+      const schedulerStatus = await tauri.schedulerStop();
+      set({ schedulerStatus, statusLoading: false });
+      return true;
     } catch (e) {
-      console.error('释放锁失败:', e);
-      set({ lockLoading: false });
+      console.error('停止调度器失败:', e);
+      set({ statusLoading: false });
+      return false;
     }
   },
 
+  // === 任务执行 ===
+
   runTask: async (id) => {
+    const store = get();
+
     // 标记任务为执行中
     set((state) => {
       const newRunningTaskIds = new Set(state.runningTaskIds);
@@ -214,8 +235,36 @@ export const useSchedulerStore = create<SchedulerState>((set, get) => ({
       return { runningTaskIds: newRunningTaskIds };
     });
 
+    // 获取任务名称
+    const task = store.tasks.find((t) => t.id === id);
+
+    // 初始化执行信息
+    set((state) => {
+      const newExecutions = new Map(state.executions);
+      newExecutions.set(id, {
+        taskId: id,
+        taskName: task?.name || '未知任务',
+        state: 'running',
+        startTime: Date.now(),
+        logs: [],
+      });
+      return { executions: newExecutions };
+    });
+
+    // 如果是第一个执行的任务，自动打开抽屉并设置为活动任务
+    const isFirstTask = store.runningTaskIds.size === 0;
+    if (isFirstTask) {
+      set({ drawerOpen: true, activeTaskId: id });
+    }
+
+    // 添加开始日志
+    get().addLog(id, {
+      type: 'session_start',
+      content: '开始执行任务...',
+    });
+
     try {
-      const task = await tauri.schedulerRunTask(id);
+      const result = await tauri.schedulerRunTask(id);
 
       // 更新本地任务状态
       set((state) => ({
@@ -224,14 +273,20 @@ export const useSchedulerStore = create<SchedulerState>((set, get) => ({
         ),
       }));
 
-      return task;
+      return result;
     } catch (e) {
-      // 执行失败，移除执行中状态
+      // 执行失败
       set((state) => {
         const newRunningTaskIds = new Set(state.runningTaskIds);
         newRunningTaskIds.delete(id);
         return { runningTaskIds: newRunningTaskIds };
       });
+
+      get().addLog(id, {
+        type: 'error',
+        content: e instanceof Error ? e.message : '任务启动失败',
+      });
+
       throw e;
     }
   },
@@ -240,16 +295,32 @@ export const useSchedulerStore = create<SchedulerState>((set, get) => ({
     try {
       await tauri.schedulerUpdateRunStatus(id, status);
 
-      // 更新本地状态
       set((state) => {
         const newRunningTaskIds = new Set(state.runningTaskIds);
         newRunningTaskIds.delete(id);
+
+        // 更新执行状态
+        const newExecutions = new Map(state.executions);
+        const execution = newExecutions.get(id);
+        if (execution) {
+          execution.state = status as ExecutionState;
+          execution.endTime = Date.now();
+        }
+
         return {
           runningTaskIds: newRunningTaskIds,
+          executions: newExecutions,
           tasks: state.tasks.map((t) =>
             t.id === id ? { ...t, lastRunStatus: status } : t
           ),
         };
+      });
+
+      // 添加结束日志
+      get().addLog(id, {
+        type: 'session_end',
+        content: status === 'success' ? '任务执行完成' : '任务执行失败',
+        metadata: { success: status === 'success' },
       });
     } catch (e) {
       console.error('更新任务执行状态失败:', e);
@@ -260,215 +331,109 @@ export const useSchedulerStore = create<SchedulerState>((set, get) => ({
     return get().runningTaskIds.has(id);
   },
 
-  // === 执行详情相关方法 ===
-  openExecutionView: (taskId, taskName) => {
-    const existingExecution = get().currentExecution;
-    if (existingExecution && existingExecution.taskId === taskId) {
-      set({ showExecutionView: true });
+  handleTaskDue: async (event) => {
+    const { taskId, engineId, workDir, prompt } = event;
+    const store = get();
+
+    if (store.runningTaskIds.has(taskId)) {
+      console.log('[Scheduler] 任务已在执行中，跳过:', taskId);
       return;
     }
 
-    // 创建新的执行详情
-    const execution: TaskExecution = {
-      taskId,
-      taskName,
-      status: get().runningTaskIds.has(taskId) ? 'running' : 'idle',
-      startTime: Date.now(),
-      logs: [],
-      toolCalls: [],
-    };
-    set({ currentExecution: execution, showExecutionView: true });
+    try {
+      await store.runTask(taskId);
+
+      const { invoke } = await import('@tauri-apps/api/core');
+      const sessionId = await invoke<string>('start_chat', {
+        message: prompt,
+        options: {
+          workDir,
+          contextId: `scheduler-${taskId}`,
+          engineId,
+          enableMcpTools: engineId === 'claude-code',
+        },
+      });
+
+      console.log('[Scheduler] 任务执行会话 ID:', sessionId);
+    } catch (e) {
+      console.error('[Scheduler] 任务执行失败:', e);
+      await get().updateRunStatus(taskId, 'failed');
+    }
   },
 
-  closeExecutionView: () => {
-    set({ showExecutionView: false });
-  },
+  // === 执行日志 ===
 
-  addExecutionLog: (taskId, log) => {
+  addLog: (taskId, entry) => {
     set((state) => {
-      if (!state.currentExecution || state.currentExecution.taskId !== taskId) {
-        return state;
-      }
-      const newLog: ExecutionLog = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      const newExecutions = new Map(state.executions);
+      const execution = newExecutions.get(taskId);
+
+      if (!execution) return state;
+
+      const newLog: ExecutionLogEntry = {
+        id: generateLogId(),
         timestamp: Date.now(),
-        ...log,
+        ...entry,
       };
-      return {
-        currentExecution: {
-          ...state.currentExecution,
-          logs: [...state.currentExecution.logs, newLog],
-        },
-      };
-    });
-  },
 
-  addToolCall: (taskId, toolCall) => {
-    set((state) => {
-      if (!state.currentExecution || state.currentExecution.taskId !== taskId) {
-        return state;
+      // 限制日志数量
+      const logs = [...execution.logs, newLog];
+      if (logs.length > MAX_LOG_ENTRIES) {
+        logs.splice(0, logs.length - MAX_LOG_ENTRIES);
       }
-      const newToolCall: ToolCallRecord = {
-        ...toolCall,
-        startTime: Date.now(),
-      };
-      return {
-        currentExecution: {
-          ...state.currentExecution,
-          toolCalls: [...state.currentExecution.toolCalls, newToolCall],
-        },
-      };
+
+      execution.logs = logs;
+      return { executions: newExecutions };
     });
   },
 
-  setExecutionStatus: (taskId, status, error) => {
+  clearLogs: (taskId) => {
     set((state) => {
-      if (!state.currentExecution || state.currentExecution.taskId !== taskId) {
-        return state;
+      const newExecutions = new Map(state.executions);
+      const execution = newExecutions.get(taskId);
+
+      if (execution) {
+        execution.logs = [];
       }
-      return {
-        currentExecution: {
-          ...state.currentExecution,
-          status,
-          endTime: status === 'success' || status === 'failed' || status === 'cancelled' ? Date.now() : undefined,
-          error,
-        },
-      };
+
+      return { executions: newExecutions };
     });
   },
 
-  clearExecutionLogs: (taskId) => {
+  closeExecutionTab: (taskId) => {
     set((state) => {
-      if (!state.currentExecution || state.currentExecution.taskId !== taskId) {
-        return state;
+      const newExecutions = new Map(state.executions);
+      newExecutions.delete(taskId);
+
+      // 如果关闭的是当前活动任务，切换到其他任务
+      let newActiveTaskId = state.activeTaskId;
+      if (state.activeTaskId === taskId) {
+        const remainingTasks = Array.from(newExecutions.keys());
+        newActiveTaskId = remainingTasks.length > 0 ? remainingTasks[0] : null;
       }
+
       return {
-        currentExecution: {
-          ...state.currentExecution,
-          logs: [],
-        },
+        executions: newExecutions,
+        activeTaskId: newActiveTaskId,
+        drawerOpen: newExecutions.size > 0 ? state.drawerOpen : false,
       };
     });
   },
 
-  getTaskExecution: (taskId) => {
+  setActiveTask: (taskId) => {
+    set({ activeTaskId: taskId });
+  },
+
+  setDrawerOpen: (open) => {
+    set({ drawerOpen: open });
+  },
+
+  getExecution: (taskId) => {
+    return get().executions.get(taskId);
+  },
+
+  getExecutingTasks: () => {
     const state = get();
-    if (state.currentExecution && state.currentExecution.taskId === taskId) {
-      return state.currentExecution;
-    }
-    return null;
-  },
-
-  registerExecutionContext: async (taskId) => {
-    const router = getEventRouter();
-    await router.initialize();
-
-    const contextId = `scheduler-${taskId}`;
-
-    // 清理旧的监听器
-    const oldCleanup = get()._executionCleanup;
-    if (oldCleanup) {
-      oldCleanup();
-    }
-
-    // 注册事件处理器
-    const unregister = router.register(contextId, (payload: unknown) => {
-      const event = payload as Record<string, unknown>;
-      const type = event?.type as string | undefined;
-
-      console.log('[Scheduler] 收到事件:', type, event);
-
-      if (type === 'session_start') {
-        // 会话开始
-        get().addExecutionLog(taskId, {
-          level: 'info',
-          message: '开始执行任务...',
-        });
-      } else if (type === 'progress') {
-        // 进度消息
-        const message = (event?.message as string) || '处理中...';
-        get().addExecutionLog(taskId, {
-          level: 'info',
-          message,
-        });
-      } else if (type === 'thinking') {
-        // 思考过程
-        const content = event?.content as string | undefined;
-        if (content) {
-          get().addExecutionLog(taskId, {
-            level: 'debug',
-            message: `[思考] ${content}`,
-          });
-        }
-      } else if (type === 'assistant_message' || type === 'assistant') {
-        // AI 响应内容
-        const content = event?.content as string | undefined;
-        if (content) {
-          get().addExecutionLog(taskId, {
-            level: 'info',
-            message: content,
-          });
-        }
-        // toolCalls 通过单独的 tool_call_start 事件处理，这里不重复处理
-      } else if (type === 'tool_call_start') {
-        // 工具调用开始
-        // 支持多种字段名: tool, toolName, name
-        const toolName = (event?.tool as string) || (event?.toolName as string) || (event?.name as string) || 'unknown';
-        const args = event?.args as Record<string, unknown> | undefined;
-
-        get().addExecutionLog(taskId, {
-          level: 'info',
-          message: `🔧 调用工具: ${toolName}`,
-        });
-        get().addToolCall(taskId, {
-          name: toolName,
-          args,
-        });
-      } else if (type === 'tool_call_end') {
-        // 工具调用结束
-        const toolName = (event?.tool as string) || (event?.toolName as string) || (event?.name as string) || 'unknown';
-        const success = event?.success !== false;
-
-        get().addExecutionLog(taskId, {
-          level: success ? 'info' : 'error',
-          message: success ? `✅ ${toolName}` : `❌ ${toolName}`,
-        });
-      } else if (type === 'session_end') {
-        // 会话结束
-        const reason = event?.reason as string | undefined;
-        if (reason === 'success' || reason === 'complete') {
-          get().setExecutionStatus(taskId, 'success');
-          get().updateRunStatus(taskId, 'success');
-        } else if (reason === 'error' || reason === 'failed') {
-          get().setExecutionStatus(taskId, 'failed', event?.error as string);
-          get().updateRunStatus(taskId, 'failed');
-        } else {
-          // 默认成功
-          get().setExecutionStatus(taskId, 'success');
-          get().updateRunStatus(taskId, 'success');
-        }
-        get().addExecutionLog(taskId, {
-          level: reason === 'error' ? 'error' : 'info',
-          message: reason === 'error' ? `执行失败: ${event?.error}` : '执行完成',
-        });
-      } else if (type === 'error') {
-        // 错误
-        const errorMsg = (event?.error as string) || (event?.message as string) || '未知错误';
-        get().addExecutionLog(taskId, {
-          level: 'error',
-          message: errorMsg,
-        });
-        get().setExecutionStatus(taskId, 'failed', errorMsg);
-        get().updateRunStatus(taskId, 'failed');
-      }
-    });
-
-    const cleanup = () => {
-      unregister();
-    };
-
-    set({ _executionCleanup: cleanup });
-
-    return cleanup;
+    return Array.from(state.executions.values());
   },
 }));
