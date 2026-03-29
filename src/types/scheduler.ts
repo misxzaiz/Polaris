@@ -8,6 +8,20 @@ export type TriggerType = 'once' | 'cron' | 'interval';
 /** 任务状态 */
 export type TaskStatus = 'running' | 'success' | 'failed';
 
+/** 文档配置 */
+export interface DocumentConfig {
+  /** 是否启用文档模式 */
+  enabled: boolean;
+  /** 使用的模板 ID */
+  templateId?: string;
+  /** 主文档类型 */
+  primaryDocument: 'task' | 'user' | 'memory' | 'custom';
+  /** 自定义变量 */
+  customVariables: Record<string, string>;
+  /** 文档工作区路径 */
+  workspacePath?: string;
+}
+
 /** 定时任务（精简版） */
 export interface ScheduledTask {
   /** 任务 ID */
@@ -42,6 +56,8 @@ export interface ScheduledTask {
   workspacePath?: string;
   /** 所属工作区名称 */
   workspaceName?: string;
+  /** 文档配置 */
+  documentConfig?: DocumentConfig;
 }
 
 /** 创建任务参数（精简版） */
@@ -54,6 +70,7 @@ export interface CreateTaskParams {
   prompt: string;
   workDir?: string;
   description?: string;
+  documentConfig?: DocumentConfig;
 }
 
 /** 触发类型显示名称 */

@@ -3,6 +3,7 @@
 //! Simplified data models for scheduled task management.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 // ============================================================================
 // Core Types
@@ -28,6 +29,35 @@ pub enum TaskStatus {
     Running,
     Success,
     Failed,
+}
+
+// ============================================================================
+// Document Config
+// ============================================================================
+
+/// 文档配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentConfig {
+    /// 是否启用文档模式
+    #[serde(default)]
+    pub enabled: bool,
+    /// 使用的模板 ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub template_id: Option<String>,
+    /// 主文档类型
+    #[serde(default = "default_primary_document")]
+    pub primary_document: String,
+    /// 自定义变量
+    #[serde(default)]
+    pub custom_variables: HashMap<String, String>,
+    /// 文档工作区路径
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_path: Option<String>,
+}
+
+fn default_primary_document() -> String {
+    "task".to_string()
 }
 
 // ============================================================================
@@ -79,6 +109,11 @@ pub struct ScheduledTask {
     /// 所属工作区名称
     #[serde(default)]
     pub workspace_name: Option<String>,
+
+    // 文档配置
+    /// 文档模式配置
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub document_config: Option<DocumentConfig>,
 }
 
 /// 创建任务参数（精简版）

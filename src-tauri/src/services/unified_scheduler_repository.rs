@@ -159,6 +159,7 @@ impl UnifiedSchedulerRepository {
             updated_at: now,
             workspace_path,
             workspace_name,
+            document_config: None,
         };
 
         data.tasks.push(task.clone());
@@ -383,6 +384,7 @@ fn normalize_task_item(value: &serde_json::Value) -> Option<ScheduledTask> {
         updated_at: object.get("updatedAt").and_then(|v| v.as_i64()).unwrap_or(now),
         workspace_path: optional_string_field(object.get("workspacePath")),
         workspace_name: optional_string_field(object.get("workspaceName")),
+        document_config: None,
     })
 }
 

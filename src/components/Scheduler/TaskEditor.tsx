@@ -4,7 +4,8 @@
 
 import { useEffect, useState } from 'react';
 import { useToastStore, useWorkspaceStore, useConfigStore } from '../../stores';
-import type { ScheduledTask, TriggerType, CreateTaskParams } from '../../types/scheduler';
+import { useTemplateStore } from '../../stores/templateStore';
+import type { ScheduledTask, TriggerType, CreateTaskParams, DocumentConfig } from '../../types/scheduler';
 import { TriggerTypeLabels, IntervalUnitLabels, parseIntervalValue } from '../../types/scheduler';
 
 /** 解析引擎ID，返回基础引擎和可能的 provider ID */
@@ -90,6 +91,19 @@ export function TaskEditor({
   const [, setDailyHours] = useState<number[]>([]);
   const [, setHourlyMinute] = useState<number>(0);
 
+  // 文档配置
+  const [documentEnabled, setDocumentEnabled] = useState(task?.documentConfig?.enabled ?? false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | undefined>(task?.documentConfig?.templateId);
+  const [customVariables] = useState<Record<string, string>>(task?.documentConfig?.customVariables ?? {});
+
+  // 模板 store
+  const { templates, loadTemplates } = useTemplateStore();
+
+  // 加载模板列表
+  useEffect(() => {
+    loadTemplates();
+  }, [loadTemplates]);
+
   // 初始化间隔值
   useEffect(() => {
     if (triggerType === 'interval') {
@@ -147,6 +161,16 @@ export function TaskEditor({
       return;
     }
 
+    // 构建文档配置
+    const documentConfig: DocumentConfig | undefined = documentEnabled
+      ? {
+          enabled: true,
+          templateId: selectedTemplateId,
+          primaryDocument: 'task',
+          customVariables,
+        }
+      : undefined;
+
     onSave({
       name,
       triggerType,
@@ -156,6 +180,7 @@ export function TaskEditor({
       workDir: workDir || undefined,
       description: description || undefined,
       enabled: task?.enabled ?? true,
+      documentConfig,
     });
   };
 
@@ -498,6 +523,82 @@ export function TaskEditor({
                 placeholder="留空使用默认目录"
               />
             </div>
+          </div>
+
+          {/* 文档配置 */}
+          <div className="border-t border-border-subtle pt-4">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm text-text-secondary">
+                文档模式
+              </label>
+              <button
+                type="button"
+                onClick={() => setDocumentEnabled(!documentEnabled)}
+                className={`relative w-10 h-5 rounded-full transition-colors ${
+                  documentEnabled ? 'bg-primary' : 'bg-background-hover'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                    documentEnabled ? 'translate-x-5' : ''
+                  }`}
+                />
+              </button>
+            </div>
+
+            {documentEnabled && (
+              <div className="space-y-3 p-3 bg-background-surface rounded-lg border border-border-subtle">
+                <div>
+                  <label className="block text-xs text-text-muted mb-1">选择模板</label>
+                  <select
+                    value={selectedTemplateId || ''}
+                    onChange={(e) => setSelectedTemplateId(e.target.value || undefined)}
+                    className="w-full px-3 py-2 bg-background-base border border-border rounded-lg text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  >
+                    <option value="">不使用模板</option>
+                    <optgroup label="内置模板">
+                      {templates.filter(t => t.builtin).map(t => (
+                        <option key={t.id} value={t.id}>
+                          {t.icon ? `${t.icon} ` : ''}{t.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                    {templates.some(t => !t.builtin) && (
+                      <optgroup label="自定义模板">
+                        {templates.filter(t => !t.builtin).map(t => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                </div>
+
+                {/* 模板详情 */}
+                {selectedTemplateId && (
+                  <div className="text-xs text-text-muted">
+                    {(() => {
+                      const tpl = templates.find(t => t.id === selectedTemplateId);
+                      if (!tpl) return null;
+                      return (
+                        <div className="space-y-1">
+                          {tpl.description && <p>{tpl.description}</p>}
+                          <p>文档: {tpl.documents.map(d => d.filename).join(', ')}</p>
+                          {tpl.variables.length > 0 && (
+                            <p>变量: {tpl.variables.map(v => `{{${v.name}}}`).join(' ')}</p>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                <p className="text-xs text-text-muted">
+                  启用文档模式后，AI 将在多次执行中保持上下文记忆。
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
