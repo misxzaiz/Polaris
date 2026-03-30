@@ -1,5 +1,4 @@
 pub mod chat;
-pub mod document_commands;
 pub mod workspace;
 pub mod file_explorer;
 pub mod window;
@@ -9,7 +8,6 @@ pub mod translate;
 pub mod openai_proxy;
 pub mod integration;
 pub mod scheduler;
-pub mod template_commands;
 pub mod terminal;
 pub mod file_watcher;
 pub mod diagnostics;

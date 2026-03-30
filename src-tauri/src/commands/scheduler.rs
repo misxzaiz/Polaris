@@ -84,7 +84,6 @@ pub async fn scheduler_update_task(
         prompt: Some(task.prompt),
         work_dir: task.work_dir,
         description: task.description,
-        document_config: task.document_config,
         ..Default::default()
     })
 }

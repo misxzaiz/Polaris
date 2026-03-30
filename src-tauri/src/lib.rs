@@ -81,16 +81,6 @@ use commands::scheduler::{
     scheduler_run_task, scheduler_update_run_status,
     scheduler_get_status, scheduler_start, scheduler_stop,
 };
-use commands::template_commands::{
-    template_list, template_get, template_create, template_update,
-    template_delete, template_duplicate, template_export, template_import,
-};
-use commands::document_commands::{
-    document_get_workspace, document_create_workspace, document_update_workspace,
-    document_delete_workspace, document_render, document_update,
-    document_add_user_supplement, document_archive_user_supplement,
-    document_record_execution,
-};
 use commands::terminal::{
     terminal_create, terminal_write, terminal_resize,
     terminal_close, terminal_list, terminal_get,
@@ -489,25 +479,6 @@ pub fn run() {
             commands::requirement::save_requirement_prototype,
             commands::requirement::read_requirement_prototype,
             commands::requirement::get_requirement_workspace_breakdown,
-            // Template 相关
-            template_list,
-            template_get,
-            template_create,
-            template_update,
-            template_delete,
-            template_duplicate,
-            template_export,
-            template_import,
-            // Document Workspace 相关
-            document_get_workspace,
-            document_create_workspace,
-            document_update_workspace,
-            document_delete_workspace,
-            document_render,
-            document_update,
-            document_add_user_supplement,
-            document_archive_user_supplement,
-            document_record_execution,
 
         ])
         .run(tauri::generate_context!())

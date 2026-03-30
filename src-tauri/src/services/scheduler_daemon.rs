@@ -50,8 +50,6 @@ pub struct TaskDueEvent {
     pub work_dir: Option<String>,
     /// 提示词
     pub prompt: String,
-    /// 文档配置（序列化为 JSON Value）
-    pub document_config: Option<serde_json::Value>,
 }
 
 impl SchedulerDaemon {
@@ -173,16 +171,12 @@ async fn check_and_notify_due_tasks(
                 );
 
                 // 发送任务到期事件到前端
-                let document_config_json = task.document_config.as_ref()
-                    .and_then(|dc| serde_json::to_value(dc).ok());
-
                 let event = TaskDueEvent {
                     task_id: task.id.clone(),
                     task_name: task.name.clone(),
                     engine_id: task.engine_id.clone(),
                     work_dir: task.work_dir.clone(),
                     prompt: task.prompt.clone(),
-                    document_config: document_config_json,
                 };
 
                 // 发送全局事件

@@ -1,12 +1,10 @@
 pub mod ai_event;
 pub mod config;
-pub mod document_workspace;
 pub mod events;
 pub mod git;
 pub mod iflow_events;
 pub mod prompt;
 pub mod scheduler;
-pub mod task_template;
 pub mod todo;
 pub mod requirement;
 

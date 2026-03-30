@@ -52,7 +52,6 @@ pub struct TaskUpdateParams {
     pub prompt: Option<String>,
     pub work_dir: Option<String>,
     pub description: Option<String>,
-    pub document_config: Option<crate::models::scheduler::DocumentConfig>,
     /// 下次执行时间（Unix 时间戳，秒）
     pub next_run_at: Option<i64>,
     /// 上次执行时间（Unix 时间戳，秒）
@@ -164,7 +163,6 @@ impl UnifiedSchedulerRepository {
             updated_at: now,
             workspace_path,
             workspace_name,
-            document_config: params.document_config,
         };
 
         data.tasks.push(task.clone());
@@ -214,10 +212,6 @@ impl UnifiedSchedulerRepository {
 
         if updates.description.is_some() {
             task.description = sanitize_optional_string(updates.description);
-        }
-
-        if updates.document_config.is_some() {
-            task.document_config = updates.document_config;
         }
 
         // 更新执行时间字段
@@ -406,7 +400,6 @@ fn normalize_task_item(value: &serde_json::Value) -> Option<ScheduledTask> {
         updated_at: object.get("updatedAt").and_then(|v| v.as_i64()).unwrap_or(now),
         workspace_path: optional_string_field(object.get("workspacePath")),
         workspace_name: optional_string_field(object.get("workspaceName")),
-        document_config: None,
     })
 }
 

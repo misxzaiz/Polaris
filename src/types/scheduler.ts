@@ -13,22 +13,6 @@ export type TaskStatus = 'running' | 'success' | 'failed';
 /** 间隔单位 */
 export type IntervalUnit = 's' | 'm' | 'h' | 'd';
 
-// ============ 文档配置 ============
-
-/** 文档配置 */
-export interface DocumentConfig {
-  /** 是否启用文档模式 */
-  enabled: boolean;
-  /** 使用的模板 ID */
-  templateId?: string;
-  /** 主文档类型 */
-  primaryDocument: string;
-  /** 自定义变量 */
-  customVariables: Record<string, string>;
-  /** 文档工作区路径 */
-  workspacePath?: string;
-}
-
 // ============ 任务模型 ============
 
 /** 定时任务 */
@@ -65,8 +49,6 @@ export interface ScheduledTask {
   workspacePath?: string;
   /** 所属工作区名称 */
   workspaceName?: string;
-  /** 文档配置 */
-  documentConfig?: DocumentConfig;
 }
 
 /** 创建任务参数 */
@@ -87,8 +69,6 @@ export interface CreateTaskParams {
   workDir?: string;
   /** 任务描述 */
   description?: string;
-  /** 文档配置 */
-  documentConfig?: DocumentConfig;
 }
 
 // ============ 调度器状态 ============
@@ -172,8 +152,6 @@ export interface TaskDueEvent {
   workDir?: string;
   /** 提示词 */
   prompt: string;
-  /** 文档配置 */
-  documentConfig?: DocumentConfig;
 }
 
 // ============ 常量 ============
