@@ -19,6 +19,7 @@ use tokio::time::sleep;
 
 use crate::error::Result;
 use crate::models::scheduler::ScheduledTask;
+use crate::services::scheduler::TaskUpdateParams;
 use crate::services::unified_scheduler_repository::UnifiedSchedulerRepository;
 
 /// 守护进程检查间隔（秒）
@@ -212,7 +213,7 @@ fn update_next_run_time(
     let next_run_at = task.trigger_type.calculate_next_run(&task.trigger_value, now);
 
     // 更新任务
-    repository.update_task(&task.id, crate::services::unified_scheduler_repository::TaskUpdateParams {
+    repository.update_task(&task.id, TaskUpdateParams {
         next_run_at,
         last_run_at: Some(now),
         ..Default::default()

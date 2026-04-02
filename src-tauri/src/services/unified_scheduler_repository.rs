@@ -2,84 +2,35 @@
 //!
 //! Single storage for all scheduled tasks in config_dir/scheduler/tasks.json.
 //! Workspace filtering via workspacePath field.
+//!
+//! This module now delegates to TaskStorage trait implementations for
+//! actual storage operations, allowing for future extensibility.
 
 use crate::error::{AppError, Result};
 use crate::models::scheduler::{
     CreateTaskParams, CreateTemplateParams, PromptTemplate, ScheduledTask, TaskCategory, TaskMode,
-    TaskStatus, TaskStore, TemplateStore, TriggerType,
+    TaskStatus,
 };
-use chrono::Utc;
+use crate::services::scheduler::local_file_storage::LocalFileStorage;
+use crate::services::scheduler::storage::{TaskStorage, TaskUpdateParams, WorkspaceInfo};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use uuid::Uuid;
-
-const TASKS_FILE_NAME: &str = "tasks.json";
-const SCHEDULER_FILE_VERSION: &str = "1.1.0";
-const WORKSPACES_FILE_NAME: &str = "workspaces.json";
-const TEMPLATES_FILE_NAME: &str = "templates.json";
 
 /// Unified repository for managing scheduled tasks in a single global storage
+///
+/// This repository uses the TaskStorage trait for storage operations,
+/// allowing for different backend implementations (local files, database, etc.)
 pub struct UnifiedSchedulerRepository {
-    /// Global storage directory (config_dir/scheduler)
-    storage_dir: PathBuf,
+    /// Storage backend
+    storage: Box<dyn TaskStorage>,
     /// Current workspace path (optional, for filtering)
     current_workspace: Option<PathBuf>,
     /// Current workspace name (for display)
     current_workspace_name: Option<String>,
 }
 
-/// Workspace registration info
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspaceInfo {
-    pub path: String,
-    pub name: String,
-    pub last_accessed_at: String,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
-struct WorkspacesFile {
-    version: String,
-    workspaces: Vec<WorkspaceInfo>,
-}
-
-/// Parameters for updating a scheduled task
-#[derive(Debug, Clone, Default)]
-pub struct TaskUpdateParams {
-    pub name: Option<String>,
-    pub enabled: Option<bool>,
-    pub trigger_type: Option<TriggerType>,
-    pub trigger_value: Option<String>,
-    pub engine_id: Option<String>,
-    pub prompt: Option<String>,
-    pub work_dir: Option<String>,
-    pub description: Option<String>,
-    pub template_id: Option<String>,
-    /// 下次执行时间（Unix 时间戳，秒）
-    pub next_run_at: Option<i64>,
-    /// 上次执行时间（Unix 时间戳，秒）
-    pub last_run_at: Option<i64>,
-    // === 任务模式 ===
-    pub mode: Option<TaskMode>,
-    pub category: Option<TaskCategory>,
-    // === 协议模式属性 ===
-    pub task_path: Option<String>,
-    pub mission: Option<String>,
-    pub template_params: Option<std::collections::HashMap<String, String>>,
-    // === 执行控制 ===
-    pub max_runs: Option<u32>,
-    pub current_runs: Option<u32>,
-    pub max_retries: Option<u32>,
-    pub retry_count: Option<u32>,
-    pub retry_interval: Option<String>,
-    pub timeout_minutes: Option<u32>,
-    // === 其他 ===
-    pub group: Option<String>,
-    pub notify_on_complete: Option<bool>,
-}
-
 impl UnifiedSchedulerRepository {
-    /// Create a new unified scheduler repository
+    /// Create a new unified scheduler repository with local file storage
     pub fn new(config_dir: PathBuf, current_workspace: Option<PathBuf>) -> Self {
         let current_workspace_name = current_workspace
             .as_ref()
@@ -87,8 +38,28 @@ impl UnifiedSchedulerRepository {
             .and_then(|n| n.to_str())
             .map(|s| s.to_string());
 
+        let storage_dir = config_dir.join("scheduler");
+
         Self {
-            storage_dir: config_dir.join("scheduler"),
+            storage: Box::new(LocalFileStorage::new(storage_dir)),
+            current_workspace,
+            current_workspace_name,
+        }
+    }
+
+    /// Create a new unified scheduler repository with custom storage backend
+    pub fn with_storage(
+        storage: Box<dyn TaskStorage>,
+        current_workspace: Option<PathBuf>,
+    ) -> Self {
+        let current_workspace_name = current_workspace
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .map(|s| s.to_string());
+
+        Self {
+            storage,
             current_workspace,
             current_workspace_name,
         }
@@ -100,47 +71,21 @@ impl UnifiedSchedulerRepository {
             return Ok(());
         };
 
-        let workspaces_file = self.storage_dir.join(WORKSPACES_FILE_NAME);
-        let mut data = self.read_workspaces_file(&workspaces_file)?;
-
         let workspace_path = workspace.to_string_lossy().to_string();
-        let now = now_iso();
+        let workspace_name = self.current_workspace_name.clone().unwrap_or_default();
 
-        if let Some(existing) = data.workspaces.iter_mut().find(|w| w.path == workspace_path) {
-            existing.last_accessed_at = now;
-        } else {
-            data.workspaces.push(WorkspaceInfo {
-                path: workspace_path,
-                name: self.current_workspace_name.clone().unwrap_or_default(),
-                last_accessed_at: now,
-            });
-        }
-
-        self.write_workspaces_file(&workspaces_file, &data)?;
-        Ok(())
+        self.storage.register_workspace(&workspace_path, &workspace_name)
     }
 
     /// List all tasks (filtered by current workspace if set)
     pub fn list_tasks(&self) -> Result<Vec<ScheduledTask>> {
-        let all_tasks = self.read_file_data()?.tasks;
-
-        let filtered = if let Some(workspace) = &self.current_workspace {
-            let workspace_path = workspace.to_string_lossy().to_string();
-            all_tasks
-                .into_iter()
-                .filter(|task| task.workspace_path.as_deref() == Some(workspace_path.as_str()))
-                .collect()
-        } else {
-            all_tasks
-        };
-
-        Ok(filtered)
+        let workspace_path = self.current_workspace.as_ref().map(|p| p.to_string_lossy().to_string());
+        self.storage.list_tasks(workspace_path.as_deref())
     }
 
     /// Get a single task by ID
     pub fn get_task(&self, id: &str) -> Result<Option<ScheduledTask>> {
-        let data = self.read_file_data()?;
-        Ok(data.tasks.into_iter().find(|task| task.id == id))
+        self.storage.get_task(id)
     }
 
     /// Create a new task
@@ -150,240 +95,53 @@ impl UnifiedSchedulerRepository {
             return Err(AppError::ValidationError("任务名称不能为空".to_string()));
         }
 
-        let mut data = self.read_file_data()?;
-        let now = Utc::now().timestamp();
-        let id = Uuid::new_v4().to_string();
+        let workspace_path = self.current_workspace.as_ref().map(|p| p.to_string_lossy().to_string());
+        let workspace_name = self.current_workspace_name.clone();
 
-        let (workspace_path, workspace_name) = if let Some(workspace) = &self.current_workspace {
-            (
-                Some(workspace.to_string_lossy().to_string()),
-                self.current_workspace_name.clone(),
-            )
-        } else {
-            (None, None)
-        };
-
-        // Calculate next run time before moving values
-        let next_run_at = params.trigger_type.calculate_next_run(&params.trigger_value, now);
-
-        let task = ScheduledTask {
-            id: id.clone(),
-            name: name.to_string(),
-            enabled: params.enabled,
-            trigger_type: params.trigger_type,
-            trigger_value: params.trigger_value,
-            engine_id: params.engine_id,
-            prompt: params.prompt,
-            work_dir: sanitize_optional_string(params.work_dir),
-            description: sanitize_optional_string(params.description),
-            last_run_at: None,
-            last_run_status: None,
-            next_run_at,
-            created_at: now,
-            updated_at: now,
-            workspace_path,
-            workspace_name,
-            // === 任务模式 ===
-            mode: params.mode,
-            category: params.category,
-            // === 协议模式属性 ===
-            task_path: None, // 将在后续创建文档时设置
-            mission: sanitize_optional_string(params.mission),
-            template_id: sanitize_optional_string(params.template_id),
-            template_params: params.template_params,
-            // === 执行控制 ===
-            max_runs: params.max_runs,
-            current_runs: 0,
-            max_retries: params.max_retries,
-            retry_count: 0,
-            retry_interval: sanitize_optional_string(params.retry_interval),
-            timeout_minutes: params.timeout_minutes,
-            // === 其他 ===
-            group: sanitize_optional_string(params.group),
-            notify_on_complete: params.notify_on_complete,
-        };
-
-        data.tasks.push(task.clone());
-        self.write_file_data(&mut data)?;
-        Ok(task)
+        self.storage.create_task(params, workspace_path, workspace_name)
     }
 
     /// Update a task
     pub fn update_task(&self, id: &str, updates: TaskUpdateParams) -> Result<ScheduledTask> {
-        let mut data = self.read_file_data()?;
-        let task = data
-            .tasks
-            .iter_mut()
-            .find(|t| t.id == id)
-            .ok_or_else(|| AppError::ValidationError(format!("任务不存在: {}", id)))?;
-
-        if let Some(name) = updates.name.as_ref() {
-            let trimmed = name.trim();
-            if !trimmed.is_empty() {
-                task.name = trimmed.to_string();
-            }
-        }
-
-        if let Some(enabled) = updates.enabled {
-            task.enabled = enabled;
-        }
-
-        if let Some(trigger_type) = updates.trigger_type {
-            task.trigger_type = trigger_type;
-        }
-
-        if let Some(trigger_value) = updates.trigger_value.as_ref() {
-            task.trigger_value = trigger_value.clone();
-        }
-
-        if let Some(engine_id) = updates.engine_id.as_ref() {
-            task.engine_id = engine_id.clone();
-        }
-
-        if let Some(prompt) = updates.prompt.as_ref() {
-            task.prompt = prompt.clone();
-        }
-
-        if updates.work_dir.is_some() {
-            task.work_dir = sanitize_optional_string(updates.work_dir);
-        }
-
-        if updates.description.is_some() {
-            task.description = sanitize_optional_string(updates.description);
-        }
-
-        if updates.template_id.is_some() {
-            task.template_id = sanitize_optional_string(updates.template_id);
-        }
-
-        // 更新执行时间字段
-        if updates.next_run_at.is_some() {
-            task.next_run_at = updates.next_run_at;
-        }
-
-        if updates.last_run_at.is_some() {
-            task.last_run_at = updates.last_run_at;
-        }
-
-        // === 任务模式 ===
-        if let Some(mode) = updates.mode {
-            task.mode = mode;
-        }
-
-        if let Some(category) = updates.category {
-            task.category = category;
-        }
-
-        // === 协议模式属性 ===
-        if updates.task_path.is_some() {
-            task.task_path = sanitize_optional_string(updates.task_path);
-        }
-
-        if updates.mission.is_some() {
-            task.mission = sanitize_optional_string(updates.mission);
-        }
-
-        if updates.template_params.is_some() {
-            task.template_params = updates.template_params;
-        }
-
-        // === 执行控制 ===
-        if let Some(max_runs) = updates.max_runs {
-            task.max_runs = Some(max_runs);
-        }
-
-        if let Some(current_runs) = updates.current_runs {
-            task.current_runs = current_runs;
-        }
-
-        if let Some(max_retries) = updates.max_retries {
-            task.max_retries = Some(max_retries);
-        }
-
-        if let Some(retry_count) = updates.retry_count {
-            task.retry_count = retry_count;
-        }
-
-        if updates.retry_interval.is_some() {
-            task.retry_interval = sanitize_optional_string(updates.retry_interval);
-        }
-
-        if let Some(timeout_minutes) = updates.timeout_minutes {
-            task.timeout_minutes = Some(timeout_minutes);
-        }
-
-        // === 其他 ===
-        if updates.group.is_some() {
-            task.group = sanitize_optional_string(updates.group);
-        }
-
-        if let Some(notify_on_complete) = updates.notify_on_complete {
-            task.notify_on_complete = notify_on_complete;
-        }
-
-        task.updated_at = Utc::now().timestamp();
-
-        // 如果没有显式设置 next_run_at，则重新计算
-        if updates.next_run_at.is_none() {
-            task.next_run_at = task.trigger_type.calculate_next_run(&task.trigger_value, task.updated_at);
-        }
-
-        let result = task.clone();
-        self.write_file_data(&mut data)?;
-        Ok(result)
+        self.storage.update_task(id, updates)
     }
 
     /// Delete a task
     pub fn delete_task(&self, id: &str) -> Result<ScheduledTask> {
-        let mut data = self.read_file_data()?;
-        let index = data
-            .tasks
-            .iter()
-            .position(|t| t.id == id)
-            .ok_or_else(|| AppError::ValidationError(format!("任务不存在: {}", id)))?;
-        let removed = data.tasks.remove(index);
-        self.write_file_data(&mut data)?;
-        Ok(removed)
+        self.storage.delete_task(id)
     }
 
     /// Update task execution status
     pub fn update_task_status(&self, id: &str, status: TaskStatus) -> Result<ScheduledTask> {
-        let mut data = self.read_file_data()?;
-        let task = data
-            .tasks
-            .iter_mut()
-            .find(|t| t.id == id)
-            .ok_or_else(|| AppError::ValidationError(format!("任务不存在: {}", id)))?;
-
-        let now = Utc::now().timestamp();
-        task.last_run_at = Some(now);
-        task.last_run_status = Some(status);
-        task.next_run_at = task.trigger_type.calculate_next_run(&task.trigger_value, now);
-
-        let result = task.clone();
-        self.write_file_data(&mut data)?;
-        Ok(result)
+        self.storage.update_task_status(id, status)
     }
 
     /// Toggle task enabled state
     pub fn toggle_task(&self, id: &str, enabled: bool) -> Result<ScheduledTask> {
-        self.update_task(id, TaskUpdateParams {
-            enabled: Some(enabled),
-            ..Default::default()
-        })
+        self.storage.toggle_task(id, enabled)
     }
 
     /// Get workspace breakdown summary
     pub fn get_workspace_breakdown(&self) -> Result<BTreeMap<String, usize>> {
-        let tasks = self.read_file_data()?.tasks;
-        let mut breakdown = BTreeMap::new();
+        self.storage.get_workspace_breakdown()
+    }
 
-        for task in tasks {
-            let key = task.workspace_name.clone().unwrap_or_else(|| "全局".to_string());
-            *breakdown.entry(key).or_insert(0) += 1;
-        }
+    /// List tasks by category
+    pub fn list_tasks_by_category(&self, category: TaskCategory) -> Result<Vec<ScheduledTask>> {
+        let workspace_path = self.current_workspace.as_ref().map(|p| p.to_string_lossy().to_string());
+        self.storage.list_tasks_by_category(category, workspace_path.as_deref())
+    }
 
-        Ok(breakdown)
+    /// List tasks by mode
+    pub fn list_tasks_by_mode(&self, mode: TaskMode) -> Result<Vec<ScheduledTask>> {
+        let workspace_path = self.current_workspace.as_ref().map(|p| p.to_string_lossy().to_string());
+        self.storage.list_tasks_by_mode(mode, workspace_path.as_deref())
+    }
+
+    /// List tasks by group
+    pub fn list_tasks_by_group(&self, group: &str) -> Result<Vec<ScheduledTask>> {
+        let workspace_path = self.current_workspace.as_ref().map(|p| p.to_string_lossy().to_string());
+        self.storage.list_tasks_by_group(group, workspace_path.as_deref())
     }
 
     // =========================================================================
@@ -392,14 +150,12 @@ impl UnifiedSchedulerRepository {
 
     /// List all templates
     pub fn list_templates(&self) -> Result<Vec<PromptTemplate>> {
-        let templates_data = self.read_templates_file()?;
-        Ok(templates_data.templates)
+        self.storage.list_templates()
     }
 
     /// Get a single template by ID
     pub fn get_template(&self, id: &str) -> Result<Option<PromptTemplate>> {
-        let templates_data = self.read_templates_file()?;
-        Ok(templates_data.templates.into_iter().find(|t| t.id == id))
+        self.storage.get_template(id)
     }
 
     /// Create a new template
@@ -409,321 +165,49 @@ impl UnifiedSchedulerRepository {
             return Err(AppError::ValidationError("模板名称不能为空".to_string()));
         }
 
-        let mut templates_data = self.read_templates_file()?;
-        let now = Utc::now().timestamp();
-        let id = Uuid::new_v4().to_string();
-
-        let template = PromptTemplate {
-            id: id.clone(),
-            name: name.to_string(),
-            description: sanitize_optional_string(params.description),
-            content: params.content,
-            enabled: params.enabled,
-            created_at: now,
-            updated_at: now,
-        };
-
-        templates_data.templates.push(template.clone());
-        self.write_templates_file(&templates_data)?;
-        Ok(template)
+        self.storage.create_template(params)
     }
 
     /// Update a template
     pub fn update_template(&self, template: PromptTemplate) -> Result<PromptTemplate> {
-        let mut templates_data = self.read_templates_file()?;
-        let existing = templates_data
-            .templates
-            .iter_mut()
-            .find(|t| t.id == template.id)
-            .ok_or_else(|| AppError::ValidationError(format!("模板不存在: {}", template.id)))?;
-
-        existing.name = template.name;
-        existing.description = template.description;
-        existing.content = template.content;
-        existing.enabled = template.enabled;
-        existing.updated_at = Utc::now().timestamp();
-
-        let result = existing.clone();
-        self.write_templates_file(&templates_data)?;
-        Ok(result)
+        self.storage.update_template(template)
     }
 
     /// Delete a template
     pub fn delete_template(&self, id: &str) -> Result<()> {
-        let mut templates_data = self.read_templates_file()?;
-        let index = templates_data
-            .templates
-            .iter()
-            .position(|t| t.id == id)
-            .ok_or_else(|| AppError::ValidationError(format!("模板不存在: {}", id)))?;
-
-        templates_data.templates.remove(index);
-        self.write_templates_file(&templates_data)?;
-        Ok(())
+        self.storage.delete_template(id)
     }
 
     /// Toggle template enabled state
     pub fn toggle_template(&self, id: &str, enabled: bool) -> Result<PromptTemplate> {
-        let mut templates_data = self.read_templates_file()?;
-        let template = templates_data
-            .templates
-            .iter_mut()
-            .find(|t| t.id == id)
-            .ok_or_else(|| AppError::ValidationError(format!("模板不存在: {}", id)))?;
-
-        template.enabled = enabled;
-        template.updated_at = Utc::now().timestamp();
-
-        let result = template.clone();
-        self.write_templates_file(&templates_data)?;
-        Ok(result)
+        self.storage.toggle_template(id, enabled)
     }
 
     /// Get a template and apply it to build the final prompt
     pub fn build_prompt_with_template(&self, template_id: &str, task_name: &str, user_prompt: &str) -> Result<String> {
-        let template = self.get_template(template_id)?
-            .ok_or_else(|| AppError::ValidationError(format!("模板不存在: {}", template_id)))?;
-
-        Ok(crate::models::scheduler::apply_template(&template.content, task_name, user_prompt))
+        self.storage.build_prompt_with_template(template_id, task_name, user_prompt)
     }
 
     // =========================================================================
-    // Private helpers
+    // Workspace Management
     // =========================================================================
 
-    fn read_file_data(&self) -> Result<TaskStore> {
-        let file_path = self.storage_dir.join(TASKS_FILE_NAME);
-
-        if !file_path.exists() {
-            let mut empty = create_empty_task_store();
-            self.write_file_data(&mut empty)?;
-            return Ok(empty);
-        }
-
-        let content = std::fs::read_to_string(&file_path)?;
-        let raw_json: serde_json::Value = serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}));
-
-        Ok(normalize_file_data(raw_json))
+    /// List all registered workspaces
+    pub fn list_workspaces(&self) -> Result<Vec<WorkspaceInfo>> {
+        self.storage.list_workspaces()
     }
 
-    fn write_file_data(&self, data: &mut TaskStore) -> Result<()> {
-        if let Some(parent) = self.storage_dir.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::create_dir_all(&self.storage_dir)?;
-
-        let file_path = self.storage_dir.join(TASKS_FILE_NAME);
-        let content = serde_json::to_string_pretty(data)?;
-        std::fs::write(&file_path, format!("{}\n", content))?;
-        Ok(())
+    /// Unregister a workspace
+    pub fn unregister_workspace(&self, path: &str) -> Result<()> {
+        self.storage.unregister_workspace(path)
     }
-
-    fn read_templates_file(&self) -> Result<TemplateStore> {
-        let file_path = self.storage_dir.join(TEMPLATES_FILE_NAME);
-
-        if !file_path.exists() {
-            let empty = create_empty_template_store();
-            self.write_templates_file(&empty)?;
-            return Ok(empty);
-        }
-
-        let content = std::fs::read_to_string(&file_path)?;
-        let data: TemplateStore = serde_json::from_str(&content).unwrap_or_else(|_| create_empty_template_store());
-        Ok(data)
-    }
-
-    fn write_templates_file(&self, data: &TemplateStore) -> Result<()> {
-        if let Some(parent) = self.storage_dir.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::create_dir_all(&self.storage_dir)?;
-
-        let file_path = self.storage_dir.join(TEMPLATES_FILE_NAME);
-        let content = serde_json::to_string_pretty(data)?;
-        std::fs::write(&file_path, format!("{}\n", content))?;
-        Ok(())
-    }
-
-    fn read_workspaces_file(&self, path: &std::path::Path) -> Result<WorkspacesFile> {
-        if !path.exists() {
-            return Ok(WorkspacesFile {
-                version: SCHEDULER_FILE_VERSION.to_string(),
-                workspaces: Vec::new(),
-            });
-        }
-
-        let content = std::fs::read_to_string(path)?;
-        let data: WorkspacesFile = serde_json::from_str(&content).unwrap_or_default();
-        Ok(data)
-    }
-
-    fn write_workspaces_file(&self, path: &std::path::Path, data: &WorkspacesFile) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-
-        let content = serde_json::to_string_pretty(data)?;
-        std::fs::write(path, format!("{}\n", content))?;
-        Ok(())
-    }
-}
-
-// =========================================================================
-// Helper functions
-// =========================================================================
-
-fn create_empty_task_store() -> TaskStore {
-    TaskStore::default()
-}
-
-fn normalize_file_data(raw_json: serde_json::Value) -> TaskStore {
-    let tasks = raw_json
-        .get("tasks")
-        .and_then(|value| value.as_array())
-        .map(|items| items.iter().filter_map(normalize_task_item).collect::<Vec<_>>())
-        .unwrap_or_default();
-
-    TaskStore { tasks }
-}
-
-fn normalize_task_item(value: &serde_json::Value) -> Option<ScheduledTask> {
-    let object = value.as_object()?;
-    let id = object.get("id")?.as_str()?.trim();
-    if id.is_empty() {
-        return None;
-    }
-
-    let name = object.get("name").and_then(|v| v.as_str()).unwrap_or(id).trim().to_string();
-    let now = Utc::now().timestamp();
-
-    Some(ScheduledTask {
-        id: id.to_string(),
-        name,
-        enabled: object.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
-        trigger_type: parse_trigger_type(object.get("triggerType")).unwrap_or_default(),
-        trigger_value: object
-            .get("triggerValue")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
-        engine_id: object
-            .get("engineId")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
-        prompt: object
-            .get("prompt")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
-        work_dir: optional_string_field(object.get("workDir")),
-        description: optional_string_field(object.get("description")),
-        last_run_at: object.get("lastRunAt").and_then(|v| v.as_i64()),
-        last_run_status: parse_task_status(object.get("lastRunStatus")),
-        next_run_at: object.get("nextRunAt").and_then(|v| v.as_i64()),
-        created_at: object.get("createdAt").and_then(|v| v.as_i64()).unwrap_or(now),
-        updated_at: object.get("updatedAt").and_then(|v| v.as_i64()).unwrap_or(now),
-        workspace_path: optional_string_field(object.get("workspacePath")),
-        workspace_name: optional_string_field(object.get("workspaceName")),
-        // === 任务模式 ===
-        mode: parse_task_mode(object.get("mode")).unwrap_or_default(),
-        category: parse_task_category(object.get("category")).unwrap_or_default(),
-        // === 协议模式属性 ===
-        task_path: optional_string_field(object.get("taskPath")),
-        mission: optional_string_field(object.get("mission")),
-        template_id: optional_string_field(object.get("templateId")),
-        template_params: parse_template_params(object.get("templateParams")),
-        // === 执行控制 ===
-        max_runs: object.get("maxRuns").and_then(|v| v.as_u64()).map(|n| n as u32),
-        current_runs: object.get("currentRuns").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-        max_retries: object.get("maxRetries").and_then(|v| v.as_u64()).map(|n| n as u32),
-        retry_count: object.get("retryCount").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-        retry_interval: optional_string_field(object.get("retryInterval")),
-        timeout_minutes: object.get("timeoutMinutes").and_then(|v| v.as_u64()).map(|n| n as u32),
-        // === 其他 ===
-        group: optional_string_field(object.get("group")),
-        notify_on_complete: object.get("notifyOnComplete").and_then(|v| v.as_bool()).unwrap_or(true),
-    })
-}
-
-fn parse_trigger_type(value: Option<&serde_json::Value>) -> Option<TriggerType> {
-    match value.and_then(|v| v.as_str()) {
-        Some("once") => Some(TriggerType::Once),
-        Some("cron") => Some(TriggerType::Cron),
-        Some("interval") => Some(TriggerType::Interval),
-        _ => None,
-    }
-}
-
-fn parse_task_status(value: Option<&serde_json::Value>) -> Option<TaskStatus> {
-    match value.and_then(|v| v.as_str()) {
-        Some("running") => Some(TaskStatus::Running),
-        Some("success") => Some(TaskStatus::Success),
-        Some("failed") => Some(TaskStatus::Failed),
-        _ => None,
-    }
-}
-
-fn parse_task_mode(value: Option<&serde_json::Value>) -> Option<TaskMode> {
-    match value.and_then(|v| v.as_str()) {
-        Some("simple") => Some(TaskMode::Simple),
-        Some("protocol") => Some(TaskMode::Protocol),
-        _ => None,
-    }
-}
-
-fn parse_task_category(value: Option<&serde_json::Value>) -> Option<TaskCategory> {
-    match value.and_then(|v| v.as_str()) {
-        Some("development") => Some(TaskCategory::Development),
-        Some("review") => Some(TaskCategory::Review),
-        Some("news") => Some(TaskCategory::News),
-        Some("monitor") => Some(TaskCategory::Monitor),
-        Some("custom") => Some(TaskCategory::Custom),
-        _ => None,
-    }
-}
-
-fn parse_template_params(value: Option<&serde_json::Value>) -> Option<std::collections::HashMap<String, String>> {
-    value.and_then(|v| v.as_object()).map(|obj| {
-        obj.iter()
-            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-            .collect()
-    })
-}
-
-fn optional_string_field(value: Option<&serde_json::Value>) -> Option<String> {
-    value
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
-}
-
-fn sanitize_optional_string(value: Option<String>) -> Option<String> {
-    value.and_then(|v| {
-        let trimmed = v.trim();
-        if trimmed.is_empty() {
-            None
-        } else {
-            Some(trimmed.to_string())
-        }
-    })
-}
-
-fn create_empty_template_store() -> TemplateStore {
-    TemplateStore {
-        version: SCHEDULER_FILE_VERSION.to_string(),
-        templates: Vec::new(),
-    }
-}
-
-fn now_iso() -> String {
-    Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::scheduler::TriggerType;
+    use uuid::Uuid;
 
     fn temp_dir(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("polaris-scheduler-{}-{}", name, Uuid::new_v4()))
@@ -760,6 +244,53 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&config_dir);
         let _ = std::fs::remove_dir_all(&workspace);
+    }
+
+    #[test]
+    fn filters_by_category_and_mode() {
+        let config_dir = temp_dir("filter");
+        std::fs::create_dir_all(&config_dir).unwrap();
+
+        let repo = UnifiedSchedulerRepository::new(config_dir.clone(), None);
+
+        repo.create_task(CreateTaskParams {
+            name: "开发任务".to_string(),
+            enabled: true,
+            trigger_type: TriggerType::Interval,
+            trigger_value: "1h".to_string(),
+            engine_id: "test".to_string(),
+            prompt: "test".to_string(),
+            work_dir: None,
+            description: None,
+            mode: TaskMode::Protocol,
+            category: TaskCategory::Development,
+            ..Default::default()
+        })
+        .unwrap();
+
+        repo.create_task(CreateTaskParams {
+            name: "审查任务".to_string(),
+            enabled: true,
+            trigger_type: TriggerType::Interval,
+            trigger_value: "1h".to_string(),
+            engine_id: "test".to_string(),
+            prompt: "test".to_string(),
+            work_dir: None,
+            description: None,
+            mode: TaskMode::Simple,
+            category: TaskCategory::Review,
+            ..Default::default()
+        })
+        .unwrap();
+
+        let dev_tasks = repo.list_tasks_by_category(TaskCategory::Development).unwrap();
+        assert_eq!(dev_tasks.len(), 1);
+        assert_eq!(dev_tasks[0].name, "开发任务");
+
+        let protocol_tasks = repo.list_tasks_by_mode(TaskMode::Protocol).unwrap();
+        assert_eq!(protocol_tasks.len(), 1);
+
+        let _ = std::fs::remove_dir_all(&config_dir);
     }
 
     #[test]

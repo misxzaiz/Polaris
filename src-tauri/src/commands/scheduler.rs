@@ -8,11 +8,10 @@ use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
 use crate::error::Result;
-use crate::models::scheduler::{CreateTaskParams, ScheduledTask, TaskMode, TriggerType};
+use crate::models::scheduler::{CreateTaskParams, ScheduledTask, TaskCategory, TaskMode, TriggerType};
 use crate::services::scheduler::protocol_task::ProtocolTaskService;
-use crate::services::unified_scheduler_repository::{
-    TaskUpdateParams, UnifiedSchedulerRepository,
-};
+use crate::services::scheduler::TaskUpdateParams;
+use crate::services::unified_scheduler_repository::UnifiedSchedulerRepository;
 use crate::utils::LockStatus;
 
 // ============================================================================
@@ -194,6 +193,39 @@ pub async fn scheduler_get_workspace_breakdown(
 ) -> Result<std::collections::BTreeMap<String, usize>> {
     let repository = get_repository(&app, workspace_path)?;
     repository.get_workspace_breakdown()
+}
+
+/// 按分类列出任务
+#[tauri::command]
+pub async fn scheduler_list_tasks_by_category(
+    category: TaskCategory,
+    workspace_path: Option<String>,
+    app: AppHandle,
+) -> Result<Vec<ScheduledTask>> {
+    let repository = get_repository(&app, workspace_path)?;
+    repository.list_tasks_by_category(category)
+}
+
+/// 按模式列出任务
+#[tauri::command]
+pub async fn scheduler_list_tasks_by_mode(
+    mode: TaskMode,
+    workspace_path: Option<String>,
+    app: AppHandle,
+) -> Result<Vec<ScheduledTask>> {
+    let repository = get_repository(&app, workspace_path)?;
+    repository.list_tasks_by_mode(mode)
+}
+
+/// 按分组列出任务
+#[tauri::command]
+pub async fn scheduler_list_tasks_by_group(
+    group: String,
+    workspace_path: Option<String>,
+    app: AppHandle,
+) -> Result<Vec<ScheduledTask>> {
+    let repository = get_repository(&app, workspace_path)?;
+    repository.list_tasks_by_group(&group)
 }
 
 // ============================================================================

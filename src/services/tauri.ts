@@ -799,7 +799,7 @@ export async function updateIntegrationInstance(
 // 定时任务相关命令（精简版）
 // ============================================================================
 
-import type { ScheduledTask, TriggerType, CreateTaskParams } from '../types/scheduler';
+import type { ScheduledTask, TriggerType, CreateTaskParams, TaskCategory, TaskMode } from '../types/scheduler';
 
 /** 获取所有任务 */
 export async function schedulerGetTasks(): Promise<ScheduledTask[]> {
@@ -842,6 +842,21 @@ export async function schedulerValidateTrigger(
 /** 解析间隔表达式 */
 export async function schedulerParseInterval(value: string): Promise<number | null> {
   return invoke<number | null>('scheduler_parse_interval', { value });
+}
+
+/** 按分类列出任务 */
+export async function schedulerListTasksByCategory(category: TaskCategory): Promise<ScheduledTask[]> {
+  return invoke<ScheduledTask[]>('scheduler_list_tasks_by_category', { category });
+}
+
+/** 按模式列出任务 */
+export async function schedulerListTasksByMode(mode: TaskMode): Promise<ScheduledTask[]> {
+  return invoke<ScheduledTask[]>('scheduler_list_tasks_by_mode', { mode });
+}
+
+/** 按分组列出任务 */
+export async function schedulerListTasksByGroup(group: string): Promise<ScheduledTask[]> {
+  return invoke<ScheduledTask[]>('scheduler_list_tasks_by_group', { group });
 }
 
 // ============================================================================

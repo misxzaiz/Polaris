@@ -11,9 +11,8 @@ use serde_json::{json, Value};
 
 use crate::error::{AppError, Result};
 use crate::models::scheduler::{CreateTaskParams, TriggerType};
-use crate::services::unified_scheduler_repository::{
-    TaskUpdateParams, UnifiedSchedulerRepository,
-};
+use crate::services::scheduler::TaskUpdateParams;
+use crate::services::unified_scheduler_repository::UnifiedSchedulerRepository;
 
 const SERVER_NAME: &str = "polaris-scheduler-mcp";
 const SERVER_VERSION: &str = "0.2.0";
