@@ -264,6 +264,12 @@
     "textareaType": "多行文本",
     "selectType": "下拉选择",
     "numberType": "数字",
-    "dateType": "日期"
+    "dateType": "日期",
+    "missionTemplateRequired": "请填写任务目标模板",
+    "paramKeyRequired": "参数键不能为空",
+    "paramLabelRequired": "参数显示名称不能为空",
+    "cannotEditBuiltin": "内置模板不可编辑",
+    "cannotDeleteBuiltin": "内置模板不可删除",
+    "builtinReadOnly": "内置模板只读"
   }
 }

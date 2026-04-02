@@ -264,6 +264,12 @@
     "textareaType": "Textarea",
     "selectType": "Select",
     "numberType": "Number",
-    "dateType": "Date"
+    "dateType": "Date",
+    "missionTemplateRequired": "Mission template is required",
+    "paramKeyRequired": "Parameter key cannot be empty",
+    "paramLabelRequired": "Parameter display name cannot be empty",
+    "cannotEditBuiltin": "Built-in templates cannot be edited",
+    "cannotDeleteBuiltin": "Built-in templates cannot be deleted",
+    "builtinReadOnly": "Built-in templates are read-only"
   }
 }

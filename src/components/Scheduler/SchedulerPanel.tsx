@@ -13,6 +13,7 @@ import { TaskCard } from './TaskCard';
 import { TaskEditor } from './TaskEditor';
 import { ExecutionLogDrawer } from './ExecutionLogDrawer';
 import { TemplateManager } from './TemplateManager';
+import { ProtocolTemplateManager } from './ProtocolTemplateManager';
 import { ConfirmDialog } from '../Common/ConfirmDialog';
 
 /** 筛选条件 */
@@ -72,6 +73,9 @@ export function SchedulerPanel() {
 
   // 模板管理状态
   const [showTemplateManager, setShowTemplateManager] = useState(false);
+
+  // 协议模板管理状态
+  const [showProtocolTemplateManager, setShowProtocolTemplateManager] = useState(false);
 
   // 筛选状态
   const [filter, setFilter] = useState<TaskFilter>(DEFAULT_FILTER);
@@ -274,6 +278,12 @@ export function SchedulerPanel() {
             {t('template.title')}
           </button>
           <button
+            onClick={() => setShowProtocolTemplateManager(true)}
+            className="px-3 py-2 bg-background-hover text-text-secondary hover:bg-background-active rounded-lg transition-colors text-sm"
+          >
+            {t('protocolTemplate.title')}
+          </button>
+          <button
             onClick={() => {
               setEditingTask(undefined);
               setCopyingTask(undefined);
@@ -412,6 +422,11 @@ export function SchedulerPanel() {
 
       {/* 模板管理弹窗 */}
       {showTemplateManager && <TemplateManager onClose={() => setShowTemplateManager(false)} />}
+
+      {/* 协议模板管理弹窗 */}
+      {showProtocolTemplateManager && (
+        <ProtocolTemplateManager onClose={() => setShowProtocolTemplateManager(false)} />
+      )}
     </div>
   );
 }
