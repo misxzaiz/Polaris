@@ -1,5 +1,9 @@
 /**
- * 工作区引用服务 - 处理 @workspace:path 语法
+ * 工作区引用服务 - 处理 @workspace:path 和 @path 语法
+ *
+ * 支持两种引用格式:
+ * - @path - 引用当前工作区的文件（更简洁，常用场景）
+ * - @workspace:path - 引用指定工作区的文件（跨工作区）
  */
 
 import i18n from 'i18next';
@@ -7,20 +11,35 @@ import type { Workspace, WorkspaceReference, ParsedWorkspaceMessage } from '../t
 import { getSystemPromptConfigDirect } from './systemPromptStore';
 
 /**
- * 匹配 @workspace:path 格式
+ * 匹配 @workspace:path 和 @path 格式
+ * - @workspace:path: @ 后跟工作区名和冒号
+ * - @path: @ 后直接跟路径（包含 / \ 或 . 的字符串）
  */
 const WORKSPACE_REF_PATTERN = /@(?:([\w\u4e00-\u9fa5-]+):)?([^\s]+)/g;
+
+/**
+ * 检查字符串是否像文件路径
+ */
+function looksLikeFilePath(str: string): boolean {
+  // 包含路径分隔符或文件扩展名的点
+  return str.includes('/') || str.includes('\\') || str.includes('.');
+}
 
 /**
  * 解析消息中的工作区引用
  *
  * @example
- * // 引用其他工作区
- * parseWorkspaceReferences("参考 @utils/src/Button.tsx", ...)
+ * // 引用当前工作区（新语法，推荐）
+ * parseWorkspaceReferences("查看 @src/App.tsx", ...)
+ * // → processedMessage: "查看 @/current/path/src/App.tsx"
+ *
+ * @example
+ * // 引用其他工作区（跨工作区）
+ * parseWorkspaceReferences("参考 @utils:src/Button.tsx", ...)
  * // → processedMessage: "参考 @/abs/path/utils/src/Button.tsx"
  *
  * @example
- * // 引用当前工作区
+ * // 兼容旧语法 @/path
  * parseWorkspaceReferences("查看 @/src/App.tsx", ...)
  * // → processedMessage: "查看 @/current/path/src/App.tsx"
  */
@@ -60,19 +79,59 @@ export function parseWorkspaceReferences(
   let match: RegExpExecArray | null;
   while ((match = WORKSPACE_REF_PATTERN.exec(message)) !== null) {
     const fullMatch = match[0];
-    const workspaceName = match[1] || null;  // 未指定工作区名
-    const relativePath = match[2];
+    const capturedWorkspaceName = match[1];  // 可能为 undefined
+    const capturedPath = match[2];
 
-    // 过滤掉明显不是路径的匹配（如邮箱地址）
-    if (relativePath.includes('.') || relativePath.includes('/') || relativePath.includes('\\')) {
-      matches.push({
-        fullMatch,
-        workspaceName,
-        relativePath,
-        startIndex: match.index,
-        endIndex: match.index + fullMatch.length,
-      });
+    let workspaceName: string | null = null;
+    let relativePath: string;
+
+    if (capturedWorkspaceName) {
+      // 格式: @workspace:path
+      // 需要判断 workspaceName 是真正的工作区名还是路径的一部分
+
+      // 检查冒号后的部分是否像路径
+      const pathLooksLikeFile = looksLikeFilePath(capturedPath);
+
+      if (pathLooksLikeFile) {
+        // 冒号后是路径格式，检查冒号前是否是已知工作区
+        const isKnownWorkspace = workspaceByName.has(capturedWorkspaceName.toLowerCase());
+
+        if (isKnownWorkspace) {
+          // 是已知工作区名，作为跨工作区引用
+          workspaceName = capturedWorkspaceName;
+          relativePath = capturedPath;
+        } else {
+          // 不是已知工作区名，可能是当前工作区的路径（如 @src:App.tsx -> src/App.tsx）
+          // 但这种情况比较少见，更可能是打字错误，暂不处理
+          // 实际上这种情况我们跳过，让用户修正
+          continue;
+        }
+      } else {
+        // 冒号后不是路径格式，跳过（可能是邮箱等）
+        continue;
+      }
+    } else {
+      // 格式: @path（当前工作区）
+      relativePath = capturedPath;
+
+      // 如果是旧语法 @/path，去掉开头的 /
+      if (relativePath.startsWith('/')) {
+        relativePath = relativePath.slice(1);
+      }
+
+      // 过滤掉明显不是路径的匹配
+      if (!looksLikeFilePath(relativePath)) {
+        continue;
+      }
     }
+
+    matches.push({
+      fullMatch,
+      workspaceName,
+      relativePath,
+      startIndex: match.index,
+      endIndex: match.index + fullMatch.length,
+    });
   }
 
   // 从后往前替换，避免索引变化
@@ -145,7 +204,7 @@ function generateContextHeader(
   header += `当前工作区: ${currentWorkspace?.name || '未设置'}\n`;
   if (currentWorkspace) {
     header += `  路径: ${currentWorkspace.path}\n`;
-    header += `  引用语法: @/path\n`;
+    header += `  引用语法: @path 或 @/path\n`;
   }
 
   if (safeContextWorkspaces.length > 0) {

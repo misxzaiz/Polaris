@@ -285,7 +285,22 @@ export function ChatInput({
     const cursorPosition = textarea.selectionStart
     const textBeforeCursor = newValue.slice(0, cursorPosition)
 
-    // 1. 检测跨工作区引用 (@workspace:path)
+    // 1. 检测跨工作区引用 (@workspace:path 或 @/path)
+    // @/path 语法用于在其他工作区中搜索文件
+    const crossWorkspaceMatch = textBeforeCursor.match(/@\/([^\s]*)$/)
+    if (crossWorkspaceMatch) {
+      const pathPart = crossWorkspaceMatch[1] || ''
+      setShowWorkspaceSuggestions(true)
+      setShowFileSuggestions(false)
+      setWorkspaceQuery(pathPart)
+      setSelectedWorkspaceIndex(0)
+
+      const position = calculateSuggestionPosition()
+      setWorkspacePosition({ top: position.top, left: position.left })
+      return
+    }
+
+    // @workspace:path 语法用于指定工作区
     const workspaceMatch = textBeforeCursor.match(/@([\w\u4e00-\u9fa5-]+):([^\s]*)$/)
     if (workspaceMatch) {
       const workspaceName = workspaceMatch[1]
@@ -313,14 +328,29 @@ export function ChatInput({
       return
     }
 
-    // 2. 检测用户正在输入工作区名
-    const partialWorkspaceMatch = textBeforeCursor.match(/@([\w\u4e00-\u9fa5-]*)$/)
-    if (partialWorkspaceMatch) {
-      const workspaceName = partialWorkspaceMatch[1]
-      if (workspaceName.length > 0) {
+    // 2. 检测用户正在输入工作区名（无冒号，可能是工作区名或当前工作区文件）
+    const partialMatch = textBeforeCursor.match(/@([\w\u4e00-\u9fa5-\u4e00-\u9fa5/.\\_-]*)$/)
+    if (partialMatch) {
+      const query = partialMatch[1]
+
+      // 如果包含路径分隔符，说明是在输入当前工作区的文件路径
+      if (query.includes('/') || query.includes('\\') || query.includes('.')) {
+        setShowWorkspaceSuggestions(false)
+        setShowFileSuggestions(true)
+        setFileWorkspace(null)
+        setSelectedFileIndex(0)
+        searchFiles(query)
+
+        const position = calculateSuggestionPosition()
+        setFilePosition({ top: position.top, left: position.left })
+        return
+      }
+
+      // 否则显示工作区列表（用户可能想选择其他工作区）
+      if (query.length > 0) {
         setShowWorkspaceSuggestions(true)
         setShowFileSuggestions(false)
-        setWorkspaceQuery(workspaceName)
+        setWorkspaceQuery(query)
         setSelectedWorkspaceIndex(0)
 
         const position = calculateSuggestionPosition()
@@ -329,18 +359,19 @@ export function ChatInput({
       }
     }
 
-    // 3. 检测当前工作区文件引用 (@/path)
-    // 使用 [^\s]* 确保只匹配最后一个 @/ 开始的路径，避免匹配到前面已有路径的内容
-    const fileMatch = textBeforeCursor.match(/@\/([^\s]*)$/)
-    if (fileMatch) {
-      setShowWorkspaceSuggestions(false)
-      setShowFileSuggestions(true)
-      setFileWorkspace(null)
-      setSelectedFileIndex(0)
-      searchFiles(fileMatch[1])
+    // 3. 检测单独的 @ 符号（显示工作区列表和当前工作区文件提示）
+    const atOnlyMatch = textBeforeCursor.match(/@$/)
+    if (atOnlyMatch) {
+      // 显示工作区建议，用户可以：
+      // - 选择其他工作区 → 自动添加冒号
+      // - 直接输入文件路径 → 自动切换到文件建议
+      setShowWorkspaceSuggestions(true)
+      setShowFileSuggestions(false)
+      setWorkspaceQuery('')
+      setSelectedWorkspaceIndex(0)
 
       const position = calculateSuggestionPosition()
-      setFilePosition({ top: position.top, left: position.left })
+      setWorkspacePosition({ top: position.top, left: position.left })
       return
     }
 
@@ -383,9 +414,11 @@ export function ChatInput({
 
     let replacement: string
     if (fileWorkspace) {
+      // 跨工作区引用: @workspace:path
       replacement = textBeforeCursor.replace(/@[\w\u4e00-\u9fa5-]+:[^\s]*$/, `@${fileWorkspace.name}:${file.relativePath} `)
     } else {
-      replacement = textBeforeCursor.replace(/@\/[^\s]*$/, `@/${file.relativePath} `)
+      // 当前工作区引用: @path
+      replacement = textBeforeCursor.replace(/@[^\s]*$/, `@${file.relativePath} `)
     }
 
     const newText = replacement + textAfterCursor

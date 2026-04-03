@@ -61,7 +61,7 @@ describe('workspaceReference', () => {
       expect(result.references[0].absolutePath).toBe('D:/space/libs/utils/src/helper.ts');
     });
 
-    it('应解析当前工作区的引用（@/path 格式）', () => {
+    it('应解析当前工作区的引用（@/path 格式，旧语法兼容）', () => {
       const result = parseWorkspaceReferences(
         '参考 @/src/App.tsx',
         mockWorkspaces,
@@ -71,10 +71,24 @@ describe('workspaceReference', () => {
 
       expect(result.references).toHaveLength(1);
       expect(result.references[0].workspaceName).toBe('Polaris');
-      // 注意：@/path 格式的 relativePath 会包含前导斜杠
-      expect(result.references[0].relativePath).toBe('/src/App.tsx');
+      // 旧语法 @/path 的 relativePath 会去掉前导斜杠
+      expect(result.references[0].relativePath).toBe('src/App.tsx');
       // 绝对路径会正确拼接
-      expect(result.references[0].absolutePath).toBe('D:/space/base/Polaris//src/App.tsx');
+      expect(result.references[0].absolutePath).toBe('D:/space/base/Polaris/src/App.tsx');
+    });
+
+    it('应解析当前工作区的引用（@path 格式，新语法）', () => {
+      const result = parseWorkspaceReferences(
+        '参考 @src/App.tsx',
+        mockWorkspaces,
+        [],
+        'ws-1'
+      );
+
+      expect(result.references).toHaveLength(1);
+      expect(result.references[0].workspaceName).toBe('Polaris');
+      expect(result.references[0].relativePath).toBe('src/App.tsx');
+      expect(result.references[0].absolutePath).toBe('D:/space/base/Polaris/src/App.tsx');
     });
 
     it('应处理多个引用', () => {
@@ -162,13 +176,13 @@ describe('workspaceReference', () => {
 
     it('应处理无当前工作区的情况', () => {
       const result = parseWorkspaceReferences(
-        '参考 @/src/App.tsx',
+        '参考 @src/App.tsx',
         mockWorkspaces,
         [],
         null
       );
 
-      // 无当前工作区时，@/ 格式不应被处理
+      // 无当前工作区时，@path 格式不应被处理
       expect(result.references).toHaveLength(0);
     });
 
@@ -298,7 +312,8 @@ describe('workspaceReference', () => {
       expect(isValidWorkspaceReference('@my-project:src/a.ts')).toBe(true);
     });
 
-    it('应返回 false 对于 @/ 格式', () => {
+    it('应返回 false 对于 @/ 格式（旧语法，不再推荐）', () => {
+      // @/path 是旧语法，现在推荐使用 @path 引用当前工作区
       expect(isValidWorkspaceReference('@/src/a.ts')).toBe(false);
     });
 
@@ -1347,7 +1362,25 @@ describe('workspaceReference', () => {
       expect(result.references).toHaveLength(3);
     });
 
-    it('应处理混合格式的消息', () => {
+    it('应处理混合格式的消息（新语法）', () => {
+      const result = parseWorkspaceReferences(
+        '参考 @Utils:src/a.ts，对比 @src/b.ts 还有 @测试项目:docs/guide.md',
+        mockWorkspaces,
+        [],
+        'ws-1'
+      );
+
+      expect(result.references).toHaveLength(3);
+      // 第一个是跨工作区引用
+      expect(result.references[0].workspaceName).toBe('Utils');
+      // 第二个是当前工作区引用（新语法 @path）
+      expect(result.references[1].workspaceName).toBe('Polaris');
+      expect(result.references[1].relativePath).toBe('src/b.ts');
+      // 第三个是跨工作区引用
+      expect(result.references[2].workspaceName).toBe('测试项目');
+    });
+
+    it('应处理混合格式的消息（新旧语法混合）', () => {
       const result = parseWorkspaceReferences(
         '参考 @Utils:src/a.ts，对比 @/src/b.ts，还有 @测试项目:docs/guide.md',
         mockWorkspaces,
