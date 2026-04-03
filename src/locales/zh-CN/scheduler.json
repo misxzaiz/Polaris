@@ -298,6 +298,13 @@
     "clearFailed": "清空失败",
     "backup": "备份",
     "backupSuccess": "备份成功",
-    "backupFailed": "备份失败"
+    "backupFailed": "备份失败",
+    "supplementHint": "添加补充内容，AI 将按顺序逐条处理。每条补充独立生效，便于追踪进度。",
+    "noSupplements": "暂无补充内容，在下方输入框添加",
+    "newSupplementPlaceholder": "输入新的补充内容，按 Enter 添加...",
+    "addItem": "添加",
+    "moveUp": "上移",
+    "moveDown": "下移",
+    "removeItem": "删除"
   }
 }

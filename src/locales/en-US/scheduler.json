@@ -298,6 +298,13 @@
     "clearFailed": "Failed to clear",
     "backup": "Backup",
     "backupSuccess": "Backup created",
-    "backupFailed": "Failed to backup"
+    "backupFailed": "Failed to backup",
+    "supplementHint": "Add supplement items. AI will process them in order. Each item is tracked independently.",
+    "noSupplements": "No supplement items. Add one below.",
+    "newSupplementPlaceholder": "Enter new supplement item, press Enter to add...",
+    "addItem": "Add",
+    "moveUp": "Move Up",
+    "moveDown": "Move Down",
+    "removeItem": "Remove"
   }
 }
