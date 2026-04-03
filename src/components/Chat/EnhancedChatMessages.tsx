@@ -1878,8 +1878,21 @@ const AssistantBubble = memo(function AssistantBubble({
 // ========================================
 
 /**
+ * 判断文本块是否为空白内容（不打断工具分组）
+ * 空白内容：空字符串、只有空白字符、只有 "..." 或 ".."
+ */
+function isEmptyTextBlock(block: ContentBlock): boolean {
+  if (block.type !== 'text') return false;
+  const content = (block as TextBlock).content?.trim();
+  // 空内容、只有点号（如 "..."）、只有空白
+  if (!content) return true;
+  if (/^\.+$/.test(content)) return true;
+  return false;
+}
+
+/**
  * 识别连续的工具调用分组
- * 文本块、思考块等会打断分组
+ * 空文本块（空内容或只有"..."）不打断分组
  */
 function identifyToolCallGroups(blocks: ContentBlock[]): ToolCallGroup[] {
   const groups: ToolCallGroup[] = [];
@@ -1893,8 +1906,8 @@ function identifyToolCallGroups(blocks: ContentBlock[]): ToolCallGroup[] {
         groupStartIndex = index;
       }
       currentGroup.push(block as ToolCallBlock);
-    } else {
-      // 非工具块，保存之前的组
+    } else if (!isEmptyTextBlock(block)) {
+      // 非空白块，保存之前的组（空白块不打断分组）
       if (currentGroup.length > 0) {
         groups.push({
           startIndex: groupStartIndex,
@@ -1903,6 +1916,7 @@ function identifyToolCallGroups(blocks: ContentBlock[]): ToolCallGroup[] {
         currentGroup = [];
       }
     }
+    // 空白块：不做任何处理，不打断当前组
   });
 
   // 处理末尾的工具组
