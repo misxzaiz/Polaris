@@ -43,6 +43,7 @@
     "fileExplorer": "File Explorer",
     "gitPanel": "Git Panel",
     "todoPanel": "Todo Panel",
+    "sessionsPanel": "Sessions",
     "translatePanel": "Translate Panel",
     "schedulerPanel": "Scheduler",
     "requirementPanel": "Requirements",

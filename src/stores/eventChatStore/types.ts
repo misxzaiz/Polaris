@@ -137,6 +137,29 @@ export interface WorkspaceActions {
 }
 
 /**
+ * Session 操作接口
+ * 用于解耦 eventChatStore 对 sessionStore 的直接依赖
+ */
+export interface SessionSyncActions {
+  /** 获取当前活跃会话 ID */
+  getActiveSessionId: () => string | null
+  /** 获取会话消息状态 */
+  getSessionMessages: (sessionId: string) => {
+    messages: unknown[]
+    archivedMessages?: unknown[]
+    conversationId?: string | null
+  } | undefined
+  /** 设置会话消息状态 */
+  setSessionMessages: (sessionId: string, state: {
+    messages: unknown[]
+    archivedMessages?: unknown[]
+    conversationId?: string | null
+  }) => void
+  /** 更新会话状态 */
+  updateSessionStatus: (sessionId: string, status: 'idle' | 'running' | 'waiting' | 'error') => void
+}
+
+/**
  * 外部依赖集合
  */
 export interface ExternalDependencies {
@@ -144,6 +167,7 @@ export interface ExternalDependencies {
   gitActions?: GitActions
   configActions?: ConfigActions
   workspaceActions?: WorkspaceActions
+  sessionSyncActions?: SessionSyncActions
 }
 
 // ============================================================================
@@ -418,6 +442,8 @@ export interface DependencyActions {
   getConfigActions: () => ConfigActions | undefined
   /** 获取工作区操作 */
   getWorkspaceActions: () => WorkspaceActions | undefined
+  /** 获取会话同步操作 */
+  getSessionSyncActions: () => SessionSyncActions | undefined
 }
 
 // ============================================================================

@@ -15,19 +15,21 @@ import { TranslatePanel, SelectionContextMenu } from './components/Translate';
 import { SchedulerPanel } from './components/Scheduler/SchedulerPanel';
 import { RequirementPanel } from './components/RequirementPanel/RequirementPanel';
 import { TerminalPanel } from './components/Terminal/TerminalPanel';
+import { SessionsPanel } from './components/Session';
 
 // 懒加载大型组件，减少初始 bundle 大小
 // 这些组件使用命名导出，所以需要使用 then 提取
 const SettingsModal = lazy(() => import('./components/Settings/SettingsModal').then(m => ({ default: m.SettingsModal })));
 const DeveloperPanel = lazy(() => import('./components/Developer/DeveloperPanel').then(m => ({ default: m.DeveloperPanel })));
 const CreateWorkspaceModal = lazy(() => import('./components/Workspace/CreateWorkspaceModal').then(m => ({ default: m.CreateWorkspaceModal })));
-import { useConfigStore, useEventChatStore, useViewStore, useWorkspaceStore, useTabStore, useIntegrationStore, useToolPanelStore, useGitStore } from './stores';
+import { useConfigStore, useEventChatStore, useViewStore, useWorkspaceStore, useTabStore, useIntegrationStore, useToolPanelStore, useGitStore, useSessionStore } from './stores';
 import { useWindowSize } from './hooks';
 import * as tauri from './services/tauri';
 import { bootstrapEngines, bootstrapOpenAIProviders } from './core/engine-bootstrap';
 import { bootstrapAgents } from './core/agent-bootstrap';
 import { bootstrapTools } from './core/tool-bootstrap';
 import { clearOpenAIProviderEngines } from './engines/openai-provider';
+import { initializeSessionSync } from './stores/sessionSync';
 import { listen } from '@tauri-apps/api/event';
 import './index.css';
 import type { EngineId } from './types';
@@ -210,7 +212,27 @@ function App() {
             getContextWorkspaces: () => useWorkspaceStore.getState().getContextWorkspaces(),
             getCurrentWorkspaceId: () => useWorkspaceStore.getState().currentWorkspaceId,
           },
+          sessionSyncActions: {
+            getActiveSessionId: () => useSessionStore.getState().activeSessionId,
+            getSessionMessages: (sessionId: string) => {
+              const state = useSessionStore.getState().getSessionMessages(sessionId)
+              return state ? {
+                messages: state.messages,
+                archivedMessages: state.archivedMessages,
+                conversationId: state.conversationId,
+              } : undefined
+            },
+            setSessionMessages: (sessionId: string, state: { messages: unknown[]; archivedMessages?: unknown[]; conversationId?: string | null }) => {
+              useSessionStore.getState().setSessionMessages(sessionId, state)
+            },
+            updateSessionStatus: (sessionId: string, status: 'idle' | 'running' | 'waiting' | 'error') => {
+              useSessionStore.getState().updateSessionStatus(sessionId, status)
+            },
+          },
         });
+
+        // 初始化会话消息同步
+        initializeSessionSync();
 
         // 恢复窗口透明度（初始使用大窗透明度，后续根据窗口尺寸自动切换）
         if (config?.window) {
@@ -505,6 +527,7 @@ function App() {
                     <DeveloperPanel fillRemaining />
                   </Suspense>
                 }
+                sessionsContent={<SessionsPanel />}
               />
             </LeftPanel>
           )}

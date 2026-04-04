@@ -6,7 +6,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Files, GitPullRequest, CheckSquare, Settings, Languages, Clock, ClipboardList, Terminal, Code2, PanelRight } from 'lucide-react'
+import { Files, GitPullRequest, CheckSquare, Settings, Languages, Clock, ClipboardList, Terminal, Code2, PanelRight, MessageSquare } from 'lucide-react'
 import { useViewStore } from '@/stores/viewStore'
 import { ActivityBarIcon } from './ActivityBarIcon'
 import { RadialMenu, RadialMenuTrigger } from './RadialMenu'
@@ -86,6 +86,11 @@ export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rig
       id: 'todo' as const,
       icon: CheckSquare,
       label: t('labels.todoPanel'),
+    },
+    {
+      id: 'sessions' as const,
+      icon: MessageSquare,
+      label: t('labels.sessionsPanel'),
     },
     {
       id: 'translate' as const,

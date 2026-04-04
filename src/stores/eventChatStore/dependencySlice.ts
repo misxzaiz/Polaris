@@ -21,6 +21,7 @@ import type {
   GitActions,
   ConfigActions,
   WorkspaceActions,
+  SessionSyncActions,
 } from './types'
 
 /**
@@ -56,5 +57,9 @@ export const createDependencySlice: StateCreator<
 
   getWorkspaceActions: (): WorkspaceActions | undefined => {
     return get()._dependencies?.workspaceActions
+  },
+
+  getSessionSyncActions: (): SessionSyncActions | undefined => {
+    return get()._dependencies?.sessionSyncActions
   },
 })

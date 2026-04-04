@@ -5,6 +5,7 @@
 import { ReactNode } from 'react'
 import { useViewStore } from '@/stores/viewStore'
 import { ResizeHandle } from '../Common'
+import { SessionIsland } from '../Session'
 
 interface RightPanelProps {
   children: ReactNode
@@ -36,8 +37,13 @@ export function RightPanel({ children, fillRemaining = false }: RightPanelProps)
   // 填充模式：使用 flex-1 自动扩展，不显示拖拽手柄
   if (fillRemaining) {
     return (
-      <aside className="flex flex-col flex-1 bg-background-elevated border-l border-border min-w-[200px]">
-        {children}
+      <aside className="flex flex-col flex-1 bg-background-elevated border-l border-border min-w-[200px] relative">
+        {/* 悬浮岛 */}
+        <SessionIsland />
+        {/* 内容区域 - 添加 padding-top 为悬浮岛预留空间 */}
+        <div className="flex-1 flex flex-col pt-14">
+          {children}
+        </div>
       </aside>
     )
   }
@@ -49,11 +55,15 @@ export function RightPanel({ children, fillRemaining = false }: RightPanelProps)
 
       {/* 面板容器 - 使用固定宽度 */}
       <aside
-        className="flex flex-col bg-background-elevated border-l border-border shrink-0"
+        className="flex flex-col bg-background-elevated border-l border-border shrink-0 relative"
         style={{ width: `${width}px` }}
       >
-        {/* 内容区域 */}
-        {children}
+        {/* 悬浮岛 */}
+        <SessionIsland />
+        {/* 内容区域 - 添加 padding-top 为悬浮岛预留空间 */}
+        <div className="flex-1 flex flex-col pt-14">
+          {children}
+        </div>
       </aside>
     </>
   )

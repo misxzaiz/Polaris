@@ -81,6 +81,7 @@ export type {
   GitActions,
   ConfigActions,
   WorkspaceActions,
+  SessionSyncActions,
 } from './types'
 
 // 导出常量
