@@ -243,13 +243,6 @@ function App() {
           },
         });
 
-        // 如果没有活跃会话，创建一个默认会话
-        const { sessions, activeSessionId, createSession } = useSessionStore.getState()
-        if (sessions.size === 0 && !activeSessionId) {
-          createSession({ type: 'free' })
-          log.info('已创建默认会话')
-        }
-
         // 恢复窗口透明度（初始使用大窗透明度，后续根据窗口尺寸自动切换）
         if (config?.window) {
           const initialOpacity = (config.window.normalOpacity ?? 100) / 100;

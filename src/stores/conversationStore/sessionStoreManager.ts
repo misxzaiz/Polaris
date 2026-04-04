@@ -380,8 +380,17 @@ function createSessionManagerStore() {
     // ===== 初始化 =====
 
     initialize: async () => {
-      // 预留：从持久化存储恢复会话
-      // TODO: 实现会话持久化和恢复
+      const state = get()
+
+      // 如果没有会话，创建默认会话
+      if (state.stores.size === 0) {
+        get().createSession({
+          type: 'free',
+          title: '新对话',
+        })
+        console.log('[SessionStoreManager] 已创建默认会话')
+      }
+
       set({ isInitialized: true })
       console.log('[SessionStoreManager] 初始化完成')
     },
