@@ -1,0 +1,1205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>工作区选择器 UX 优化 - PRD 原型</title>
+  <style>
+    /* 基础样式 - 模拟 Polaris 深色主题 */
+    :root {
+      --primary: #3B82F6;
+      --primary-hover: #2563EB;
+      --primary-10: rgba(59, 130, 246, 0.1);
+      --primary-20: rgba(59, 130, 246, 0.2);
+      --success: #34D399;
+      --success-10: rgba(52, 211, 153, 0.1);
+      --success-20: rgba(52, 211, 153, 0.2);
+      --danger: #F87171;
+      --danger-10: rgba(248, 113, 113, 0.1);
+
+      --bg-base: #0F0F11;
+      --bg-elevated: #1A1A1F;
+      --bg-surface: #252528;
+      --bg-hover: #2D2D35;
+
+      --border: rgba(255, 255, 255, 0.15);
+      --border-subtle: rgba(255, 255, 255, 0.08);
+
+      --text-primary: #F8F8F8;
+      --text-secondary: #B4B4B8;
+      --text-tertiary: #8E8E93;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-base);
+      color: var(--text-primary);
+      min-height: 100vh;
+      padding: 40px;
+    }
+
+    /* 原型容器 */
+    .prototype-container {
+      display: flex;
+      flex-direction: column;
+      gap: 60px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .section {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .section-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-primary);
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .section-desc {
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    /* 演示区域 */
+    .demo-area {
+      display: flex;
+      gap: 40px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+
+    .demo-panel {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      min-width: 300px;
+    }
+
+    .demo-label {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      margin-bottom: 12px;
+    }
+
+    /* ===== 工作区下拉框 ===== */
+    .workspace-dropdown {
+      width: 280px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    }
+
+    /* 顶部搜索区 */
+    .dropdown-search-area {
+      padding: 12px;
+      background: var(--bg-elevated);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .search-input-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+    }
+
+    .search-icon {
+      width: 16px;
+      height: 16px;
+      color: var(--text-tertiary);
+    }
+
+    .search-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--text-primary);
+      font-size: 14px;
+      outline: none;
+    }
+
+    .search-input::placeholder {
+      color: var(--text-tertiary);
+    }
+
+    .quick-add-btn {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--primary);
+      border: none;
+      border-radius: 8px;
+      color: white;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .quick-add-btn:hover {
+      background: var(--primary-hover);
+    }
+
+    /* 中间列表区 */
+    .dropdown-list-area {
+      max-height: 240px;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    /* 自定义滚动条 */
+    .dropdown-list-area::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .dropdown-list-area::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .dropdown-list-area::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 3px;
+    }
+
+    .dropdown-list-area::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.25);
+    }
+
+    .workspace-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .workspace-item:hover {
+      background: var(--bg-hover);
+    }
+
+    .workspace-item.selected {
+      background: var(--primary-10);
+      border: 1px solid var(--primary-20);
+    }
+
+    .workspace-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--primary);
+      flex-shrink: 0;
+    }
+
+    .workspace-dot.secondary {
+      background: rgba(59, 130, 246, 0.5);
+    }
+
+    .workspace-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .workspace-name {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .workspace-name.selected {
+      color: var(--primary);
+    }
+
+    .workspace-path {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .workspace-check {
+      width: 16px;
+      height: 16px;
+      color: var(--primary);
+      flex-shrink: 0;
+    }
+
+    .no-results {
+      padding: 20px;
+      text-align: center;
+      color: var(--text-tertiary);
+      font-size: 14px;
+    }
+
+    /* 底部区域 */
+    .dropdown-footer {
+      padding: 8px;
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .context-manage-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.15s;
+      color: var(--text-secondary);
+      font-size: 14px;
+    }
+
+    .context-manage-btn:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .context-icon {
+      width: 16px;
+      height: 16px;
+      color: var(--text-tertiary);
+    }
+
+    /* ===== 关联工作区管理弹窗 ===== */
+    .context-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+
+    .context-modal {
+      width: 400px;
+      max-height: 480px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 0 24px rgba(59, 130, 246, 0.15);
+      overflow: hidden;
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .modal-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .modal-close-btn {
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+      color: var(--text-tertiary);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .modal-close-btn:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .modal-body {
+      padding: 16px 20px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .modal-section-title {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-tertiary);
+      margin-bottom: 12px;
+    }
+
+    .context-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    .context-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      background: var(--success-10);
+      border: 1px solid var(--success-20);
+      border-radius: 8px;
+    }
+
+    .context-item-check {
+      width: 14px;
+      height: 14px;
+      color: var(--success);
+    }
+
+    .context-item-name {
+      flex: 1;
+      font-size: 14px;
+      color: var(--text-primary);
+    }
+
+    .context-item-btn {
+      padding: 4px 10px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-secondary);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .context-item-btn:hover {
+      background: var(--danger-10);
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
+    .available-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .available-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+    }
+
+    .available-item-plus {
+      width: 14px;
+      height: 14px;
+      color: var(--text-tertiary);
+    }
+
+    .available-item-name {
+      flex: 1;
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+
+    .add-btn {
+      padding: 4px 10px;
+      background: transparent;
+      border: 1px solid var(--primary);
+      border-radius: 6px;
+      color: var(--primary);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .add-btn:hover {
+      background: var(--primary-10);
+    }
+
+    .empty-state {
+      padding: 16px;
+      text-align: center;
+      color: var(--text-tertiary);
+      font-size: 13px;
+    }
+
+    /* ===== 新增工作区弹窗 ===== */
+    .create-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+
+    .create-modal {
+      width: 420px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 0 24px rgba(59, 130, 246, 0.15);
+    }
+
+    .create-modal-content {
+      padding: 24px;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 10px 12px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text-primary);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .form-input:focus {
+      border-color: var(--primary);
+    }
+
+    .form-input::placeholder {
+      color: var(--text-tertiary);
+    }
+
+    .form-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .browse-btn {
+      padding: 10px 16px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text-secondary);
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .browse-btn:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .form-checkbox-group {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .form-checkbox {
+      width: 18px;
+      height: 18px;
+      margin-top: 2px;
+      accent-color: var(--primary);
+    }
+
+    .form-checkbox-label {
+      flex: 1;
+    }
+
+    .form-checkbox-title {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-secondary);
+    }
+
+    .form-checkbox-desc {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      margin-top: 4px;
+    }
+
+    .form-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      padding-top: 20px;
+    }
+
+    .btn-cancel {
+      padding: 8px 16px;
+      background: transparent;
+      border: none;
+      border-radius: 8px;
+      color: var(--text-secondary);
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .btn-cancel:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .btn-primary {
+      padding: 8px 16px;
+      background: var(--primary);
+      border: none;
+      border-radius: 8px;
+      color: white;
+      font-size: 14px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-hover);
+    }
+
+    /* ===== 对比展示 ===== */
+    .comparison {
+      display: flex;
+      gap: 40px;
+      align-items: flex-start;
+    }
+
+    .comparison-item {
+      flex: 1;
+      max-width: 300px;
+    }
+
+    .comparison-label {
+      display: inline-block;
+      padding: 4px 12px;
+      background: var(--bg-surface);
+      border-radius: 6px;
+      font-size: 12px;
+      color: var(--text-tertiary);
+      margin-bottom: 12px;
+    }
+
+    .comparison-label.old {
+      border: 1px solid var(--danger);
+      color: var(--danger);
+    }
+
+    .comparison-label.new {
+      border: 1px solid var(--success);
+      color: var(--success);
+    }
+
+    /* 旧版下拉框样式 */
+    .old-dropdown {
+      width: 280px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 8px;
+    }
+
+    .old-dropdown-section {
+      margin-bottom: 12px;
+    }
+
+    .old-section-title {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      margin-bottom: 6px;
+      padding-left: 4px;
+    }
+
+    .old-workspace-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .old-workspace-item:hover {
+      background: var(--bg-hover);
+    }
+
+    .old-footer {
+      border-top: 1px solid var(--border-subtle);
+      padding-top: 8px;
+      margin-top: 8px;
+    }
+
+    .old-footer-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      color: var(--text-secondary);
+      font-size: 13px;
+    }
+
+    .old-footer-btn:hover {
+      background: var(--bg-hover);
+    }
+
+    /* 交互提示 */
+    .interaction-tip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-top: 16px;
+    }
+
+    .tip-icon {
+      width: 18px;
+      height: 18px;
+      color: var(--primary);
+    }
+
+    .tip-text {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    /* SVG icons inline */
+    .icon-search {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%238E8E93' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.3-4.3'/%3E%3C/svg%3E");
+      background-size: contain;
+    }
+
+    .icon-plus {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='white' stroke-width='2'%3E%3Cpath d='M12 5v14m-7-7h14'/%3E%3C/svg%3E");
+      background-size: contain;
+    }
+
+    .icon-link {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%238E8E93' stroke-width='2'%3E%3Cpath d='M13.83 6.83a4 4 0 1 1 5.66 5.66l-2 2a4 4 0 0 1-5.66-5.66'/%3E%3Cpath d='M10.17 17.17a4 4 0 1 1-5.66-5.66l2-2a4 4 0 0 1 5.66 5.66'/%3E%3C/svg%3E");
+      background-size: contain;
+    }
+
+    .icon-check {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%233B82F6' stroke-width='2'%3E%3Cpath d='m5 13 4 4L19 7'/%3E%3C/svg%3E");
+      background-size: contain;
+    }
+
+    .icon-x {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%238E8E93' stroke-width='2'%3E%3Cpath d='M18 6 6 18M6 6l12 12'/%3E%3C/svg%3E");
+      background-size: contain;
+    }
+
+    .icon-folder-plus {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%238E8E93' stroke-width='2'%3E%3Cpath d='M2 7.5V6a2 2 0 0 1 2-2h5.5l2 2H20a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-2.5'/%3E%3Cpath d='M12 11v6m-3-3h6'/%3E%3C/svg%3E");
+      background-size: contain;
+    }
+
+    .icon-settings {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%238E8E93' stroke-width='2'%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3Cpath d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z'/%3E%3C/svg%3E");
+      background-size: contain;
+    }
+
+    .icon-info {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%233B82F6' stroke-width='2'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 16v-4M12 8h.01'/%3E%3C/svg%3E");
+      background-size: contain;
+    }
+
+    .icon-check-green {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2334D399' stroke-width='2'%3E%3Cpath d='m5 13 4 4L19 7'/%3E%3C/svg%3E");
+      background-size: contain;
+    }
+  </style>
+</head>
+<body>
+  <div class="prototype-container">
+
+    <!-- Section 1: 设计概述 -->
+    <section class="section">
+      <h2 class="section-title">1. 设计概述</h2>
+      <p class="section-desc">
+        采用「搜索+快速操作模式」重构工作区选择器下拉框，解决当前高度无限制、操作按钮位置不佳、点击外部不关闭等问题。
+        核心改动包括：顶部搜索框+新增按钮、中间可滚动列表、底部关联管理入口。
+      </p>
+    </section>
+
+    <!-- Section 2: 新旧对比 -->
+    <section class="section">
+      <h2 class="section-title">2. 新旧对比</h2>
+
+      <div class="comparison">
+        <!-- 旧版 -->
+        <div class="comparison-item">
+          <span class="comparison-label old">旧版 (当前问题)</span>
+          <div class="old-dropdown">
+            <div class="old-dropdown-section">
+              <div class="old-section-title">主工作区</div>
+              <div class="old-workspace-item">
+                <div class="workspace-dot"></div>
+                <div class="workspace-info">
+                  <div class="workspace-name">Polaris</div>
+                  <div class="workspace-path">D:\space\base\Polaris</div>
+                </div>
+              </div>
+              <div class="old-workspace-item">
+                <div class="workspace-dot secondary"></div>
+                <div class="workspace-info">
+                  <div class="workspace-name">PolarisDemo</div>
+                  <div class="workspace-path">D:\PolarisDemo</div>
+                </div>
+              </div>
+              <div class="old-workspace-item">
+                <div class="workspace-dot secondary"></div>
+                <div class="workspace-info">
+                  <div class="workspace-name">space</div>
+                  <div class="workspace-path">D:\space</div>
+                </div>
+              </div>
+              <!-- 更多工作区... -->
+              <div class="old-workspace-item">
+                <div class="workspace-dot secondary"></div>
+                <div class="workspace-info">
+                  <div class="workspace-name">partner</div>
+                  <div class="workspace-path">D:\space\partner</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="old-dropdown-section">
+              <div class="old-section-title">关联工作区</div>
+              <div class="old-workspace-item" style="background: var(--success-10);">
+                <div class="workspace-dot" style="background: var(--success);"></div>
+                <div class="workspace-info">
+                  <div class="workspace-name">PolarisDemo</div>
+                </div>
+                <span style="color: var(--text-tertiary); font-size: 12px;">✕</span>
+              </div>
+              <div class="old-workspace-item">
+                <div class="workspace-dot secondary"></div>
+                <div class="workspace-info">
+                  <div class="workspace-name" style="color: var(--text-secondary);">space</div>
+                </div>
+                <span style="color: var(--primary); font-size: 12px;">添加</span>
+              </div>
+            </div>
+
+            <div class="old-footer">
+              <div class="old-footer-btn">
+                <div class="icon-folder-plus" style="width: 16px; height: 16px;"></div>
+                <span>新增工作区</span>
+              </div>
+              <div class="old-footer-btn">
+                <div class="icon-settings" style="width: 16px; height: 16px;"></div>
+                <span>工作区管理 (无用)</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="interaction-tip" style="border-color: var(--danger);">
+            <div class="tip-icon" style="background-image: url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23F87171' stroke-width='2'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M15 9l-6 6M9 9l6 6'/%3E%3C/svg%3E&quot;); background-size: contain;"></div>
+            <span class="tip-text" style="color: var(--danger);">问题：无搜索、无高度限制、新增按钮在最底部、工作区管理无用、点击外部不关闭</span>
+          </div>
+        </div>
+
+        <!-- 新版 -->
+        <div class="comparison-item">
+          <span class="comparison-label new">新版 (优化方案)</span>
+          <div class="workspace-dropdown">
+            <!-- 搜索区 -->
+            <div class="dropdown-search-area">
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <div class="search-input-wrapper" style="flex: 1;">
+                  <div class="icon-search search-icon"></div>
+                  <input type="text" class="search-input" placeholder="搜索工作区..." id="searchInput">
+                </div>
+                <button class="quick-add-btn" title="新增工作区">
+                  <div class="icon-plus" style="width: 16px; height: 16px;"></div>
+                </button>
+              </div>
+            </div>
+
+            <!-- 列表区 -->
+            <div class="dropdown-list-area" id="workspaceList">
+              <div class="workspace-item selected">
+                <div class="workspace-dot"></div>
+                <div class="workspace-info">
+                  <div class="workspace-name selected">Polaris</div>
+                  <div class="workspace-path">D:\space\base\Polaris</div>
+                </div>
+                <div class="icon-check workspace-check"></div>
+              </div>
+
+              <div class="workspace-item">
+                <div class="workspace-dot secondary"></div>
+                <div class="workspace-info">
+                  <div class="workspace-name">PolarisDemo</div>
+                  <div class="workspace-path">D:\PolarisDemo</div>
+                </div>
+              </div>
+
+              <div class="workspace-item">
+                <div class="workspace-dot secondary"></div>
+                <div class="workspace-info">
+                  <div class="workspace-name">space</div>
+                  <div class="workspace-path">D:\space</div>
+                </div>
+              </div>
+
+              <div class="workspace-item">
+                <div class="workspace-dot secondary"></div>
+                <div class="workspace-info">
+                  <div class="workspace-name">partner</div>
+                  <div class="workspace-path">D:\space\partner</div>
+                </div>
+              </div>
+
+              <div class="workspace-item">
+                <div class="workspace-dot secondary"></div>
+                <div class="workspace-info">
+                  <div class="workspace-name">claude-config</div>
+                  <div class="workspace-path">C:\Users\...\.claude</div>
+                </div>
+              </div>
+
+              <div class="workspace-item">
+                <div class="workspace-dot secondary"></div>
+                <div class="workspace-info">
+                  <div class="workspace-name">another-project</div>
+                  <div class="workspace-path">D:\projects\another</div>
+                </div>
+              </div>
+
+              <div class="workspace-item">
+                <div class="workspace-dot secondary"></div>
+                <div class="workspace-info">
+                  <div class="workspace-name">test-workspace</div>
+                  <div class="workspace-path">D:\test</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 底部 -->
+            <div class="dropdown-footer">
+              <div class="context-manage-btn">
+                <div class="icon-link context-icon"></div>
+                <span>关联工作区管理</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="interaction-tip" style="border-color: var(--success);">
+            <div class="tip-icon" style="background-image: url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2334D399' stroke-width='2'%3E%3Cpath d='m5 13 4 4L19 7'/%3E%3C/svg%3E&quot;); background-size: contain;"></div>
+            <span class="tip-text" style="color: var(--success);">改进：搜索筛选、高度限制 240px 可滚动、新增按钮置顶、关联管理独立入口、点击外部关闭</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 3: 关联工作区管理弹窗 -->
+    <section class="section">
+      <h2 class="section-title">3. 关联工作区管理弹窗</h2>
+      <p class="section-desc">
+        从下拉框底部「关联工作区管理」按钮触发，打开独立弹窗。弹窗居中显示，分为「当前关联」和「可添加」两个区域。
+      </p>
+
+      <div class="demo-area">
+        <div class="demo-panel">
+          <div class="demo-label">点击底部按钮后打开此弹窗</div>
+
+          <div class="context-modal" style="position: relative;">
+            <div class="modal-header">
+              <span class="modal-title">关联工作区管理</span>
+              <button class="modal-close-btn">
+                <div class="icon-x" style="width: 14px; height: 14px;"></div>
+              </button>
+            </div>
+
+            <div class="modal-body">
+              <div class="modal-section-title">当前关联</div>
+              <div class="context-list">
+                <div class="context-item">
+                  <div class="icon-check-green context-item-check"></div>
+                  <span class="context-item-name">PolarisDemo</span>
+                  <button class="context-item-btn">移除</button>
+                </div>
+                <div class="context-item">
+                  <div class="icon-check-green context-item-check"></div>
+                  <span class="context-item-name">space</span>
+                  <button class="context-item-btn">移除</button>
+                </div>
+              </div>
+
+              <div class="modal-section-title">可添加</div>
+              <div class="available-list">
+                <div class="available-item">
+                  <div class="icon-plus available-item-plus"></div>
+                  <span class="available-item-name">partner</span>
+                  <button class="add-btn">添加</button>
+                </div>
+                <div class="available-item">
+                  <div class="icon-plus available-item-plus"></div>
+                  <span class="available-item-name">claude-config</span>
+                  <button class="add-btn">添加</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 4: 新增工作区弹窗 -->
+    <section class="section">
+      <h2 class="section-title">4. 新增工作区弹窗 (居中修复)</h2>
+      <p class="section-desc">
+        修复弹窗居中显示问题，确保使用 <code>position: fixed; inset: 0;</code> 覆盖整个屏幕，而非继承父容器定位。
+      </p>
+
+      <div class="demo-area">
+        <div class="demo-panel" style="min-height: 400px; position: relative;">
+          <div class="demo-label">点击 + 按钮后打开此弹窗 (正确居中)</div>
+
+          <!-- 模拟居中弹窗 -->
+          <div class="create-modal-overlay" style="position: absolute;">
+            <div class="create-modal">
+              <div class="create-modal-content">
+                <h2 class="modal-title" style="margin-bottom: 20px;">新增工作区</h2>
+
+                <div class="form-group">
+                  <label class="form-label">名称</label>
+                  <input type="text" class="form-input" placeholder="输入工作区名称">
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">路径</label>
+                  <div class="form-row">
+                    <input type="text" class="form-input" placeholder="选择或输入文件夹路径" style="flex: 1;">
+                    <button class="browse-btn">浏览</button>
+                  </div>
+                </div>
+
+                <div class="form-checkbox-group">
+                  <input type="checkbox" class="form-checkbox" id="switchAfter" checked>
+                  <div class="form-checkbox-label">
+                    <div class="form-checkbox-title">创建后切换到新工作区</div>
+                    <div class="form-checkbox-desc">启用后将自动切换到新创建的工作区</div>
+                  </div>
+                </div>
+
+                <div class="form-actions">
+                  <button class="btn-cancel">取消</button>
+                  <button class="btn-primary">创建</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 5: 交互流程 -->
+    <section class="section">
+      <h2 class="section-title">5. 交互流程</h2>
+
+      <div class="demo-area">
+        <div class="demo-panel">
+          <div class="demo-label">选择工作区流程</div>
+          <div style="display: flex; flex-direction: column; gap: 12px; font-size: 14px; color: var(--text-secondary);">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--primary);"></div>
+              <span>用户点击工作区选择器 → 下拉框展开</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--primary); opacity: 0.7;"></div>
+              <span>搜索框自动聚焦，用户可输入筛选</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--primary); opacity: 0.5;"></div>
+              <span>点击目标工作区 → 下拉框关闭</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="demo-panel">
+          <div class="demo-label">点击外部自动关闭</div>
+          <div style="display: flex; flex-direction: column; gap: 12px; font-size: 14px; color: var(--text-secondary);">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--success);"></div>
+              <span>下拉框打开时，点击外部任意位置</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--success); opacity: 0.7;"></div>
+              <span>自动触发 onClose() → 下拉框关闭</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="demo-panel">
+          <div class="demo-label">键盘支持</div>
+          <div style="display: flex; flex-direction: column; gap: 12px; font-size: 14px; color: var(--text-secondary);">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <kbd style="padding: 2px 6px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 4px; font-size: 12px;">Esc</kbd>
+              <span>关闭下拉框</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <kbd style="padding: 2px 6px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 4px; font-size: 12px;">↑↓</kbd>
+              <span>在工作区列表中导航</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <kbd style="padding: 2px 6px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 4px; font-size: 12px;">Enter</kbd>
+              <span>选择当前高亮的工作区</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 6: 技术要点 -->
+    <section class="section">
+      <h2 class="section-title">6. 技术要点</h2>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
+        <div style="padding: 16px; background: var(--bg-surface); border-radius: 8px;">
+          <div style="font-size: 14px; font-weight: 500; color: var(--text-primary); margin-bottom: 8px;">点击外部关闭</div>
+          <pre style="font-size: 12px; color: var(--text-tertiary); background: var(--bg-base); padding: 12px; border-radius: 6px; overflow-x: auto;"><code>useEffect(() => {
+  const handleClickOutside = (e) => {
+    if (!dropdownRef.current.contains(e.target)) {
+      onClose()
+    }
+  }
+  document.addEventListener('mousedown', handleClickOutside)
+  return () => document.removeEventListener(...)
+}, [isOpen])</code></pre>
+        </div>
+
+        <div style="padding: 16px; background: var(--bg-surface); border-radius: 8px;">
+          <div style="font-size: 14px; font-weight: 500; color: var(--text-primary); margin-bottom: 8px;">搜索筛选</div>
+          <pre style="font-size: 12px; color: var(--text-tertiary); background: var(--bg-base); padding: 12px; border-radius: 6px; overflow-x: auto;"><code>const filtered = workspaces.filter(w =>
+  w.name.toLowerCase().includes(query) ||
+  w.path.toLowerCase().includes(query)
+)</code></pre>
+        </div>
+
+        <div style="padding: 16px; background: var(--bg-surface); border-radius: 8px;">
+          <div style="font-size: 14px; font-weight: 500; color: var(--text-primary); margin-bottom: 8px;">高度限制</div>
+          <pre style="font-size: 12px; color: var(--text-tertiary); background: var(--bg-base); padding: 12px; border-radius: 6px; overflow-x: auto;"><code>.dropdown-list-area {
+  max-height: 240px; /* 约6个项目 */
+  overflow-y: auto;
+}</code></pre>
+        </div>
+
+        <div style="padding: 16px; background: var(--bg-surface); border-radius: 8px;">
+          <div style="font-size: 14px; font-weight: 500; color: var(--text-primary); margin-bottom: 8px;">弹窗居中</div>
+          <pre style="font-size: 12px; color: var(--text-tertiary); background: var(--bg-base); padding: 12px; border-radius: 6px; overflow-x: auto;"><code>.modal-overlay {
+  position: fixed; /* 关键 */
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}</code></pre>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <script>
+    // 搜索筛选演示
+    const searchInput = document.getElementById('searchInput');
+    const workspaceList = document.getElementById('workspaceList');
+    const items = workspaceList.querySelectorAll('.workspace-item');
+
+    searchInput.addEventListener('input', (e) => {
+      const query = e.target.value.toLowerCase();
+
+      let hasResults = false;
+      items.forEach(item => {
+        const name = item.querySelector('.workspace-name').textContent.toLowerCase();
+        const path = item.querySelector('.workspace-path').textContent.toLowerCase();
+
+        if (name.includes(query) || path.includes(query)) {
+          item.style.display = 'flex';
+          hasResults = true;
+        } else {
+          item.style.display = 'none';
+        }
+      });
+
+      // 显示无结果提示
+      let noResults = workspaceList.querySelector('.no-results');
+      if (!hasResults && query) {
+        if (!noResults) {
+          noResults = document.createElement('div');
+          noResults.className = 'no-results';
+          noResults.textContent = '未找到匹配的工作区';
+          workspaceList.appendChild(noResults);
+        }
+      } else if (noResults) {
+        noResults.remove();
+      }
+    });
+
+    // 点击工作区项演示
+    items.forEach(item => {
+      item.addEventListener('click', () => {
+        items.forEach(i => i.classList.remove('selected'));
+        item.classList.add('selected');
+
+        const check = item.querySelector('.workspace-check');
+        if (!check) {
+          const newCheck = document.createElement('div');
+          newCheck.className = 'icon-check workspace-check';
+          item.appendChild(newCheck);
+        }
+
+        // 更新名称颜色
+        item.querySelector('.workspace-name').classList.add('selected');
+        items.forEach(i => {
+          if (i !== item) {
+            i.querySelector('.workspace-name').classList.remove('selected');
+            const c = i.querySelector('.workspace-check');
+            if (c) c.remove();
+          }
+        });
+      });
+    });
+  </script>
+</body>
+</html>
