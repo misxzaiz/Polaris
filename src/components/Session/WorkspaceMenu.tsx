@@ -88,7 +88,7 @@ export function WorkspaceMenu({ sessionId, onClose }: WorkspaceMenuProps) {
   const contextWorkspaces = workspaces.filter(w => contextWorkspaceIds.includes(w.id))
 
   return (
-    <div ref={menuRef} className="absolute top-full left-0 mt-1 z-50 w-64 bg-background-elevated border border-border rounded-xl shadow-lg overflow-hidden">
+    <div ref={menuRef} className="w-64 bg-background-elevated border border-border rounded-xl shadow-lg overflow-hidden">
       {/* 顶部标题行 */}
       <div className="px-3 py-2 text-xs font-medium text-text-tertiary border-b border-border-subtle flex items-center justify-between">
         <span className="flex items-center gap-1">
@@ -130,7 +130,10 @@ export function WorkspaceMenu({ sessionId, onClose }: WorkspaceMenuProps) {
 
                 {/* 工作区名称和路径 */}
                 <button
-                  onClick={() => handleWorkspaceClick(workspace.id)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleWorkspaceClick(workspace.id)
+                  }}
                   disabled={isDisabled}
                   className={cn(
                     'flex-1 text-left px-3 py-2 text-sm transition-colors',
@@ -203,7 +206,10 @@ export function WorkspaceMenu({ sessionId, onClose }: WorkspaceMenuProps) {
                 <span className="w-2 h-2 rounded-full bg-primary/50 mr-2" />
                 <span className="flex-1 truncate">{workspace.name}</span>
                 <button
-                  onClick={() => handleToggleContext(workspace.id)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleToggleContext(workspace.id)
+                  }}
                   className="p-1 rounded text-text-tertiary hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity"
                   title="移除关联"
                 >

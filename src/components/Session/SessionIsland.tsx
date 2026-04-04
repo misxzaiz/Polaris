@@ -151,34 +151,24 @@ export function SessionIsland({ onCreateSession }: SessionIslandProps) {
 
         {/* 工作区指示 */}
         {effectiveWorkspace && (
-          <div className="relative shrink-0">
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                handleWorkspaceClick()
-              }}
-              className={cn(
-                'flex items-center gap-1 px-2 py-1 rounded-lg',
-                'text-xs text-text-tertiary',
-                'hover:bg-background-hover hover:text-text-secondary',
-                'transition-colors'
-              )}
-              title={`工作区: ${effectiveWorkspace.name}`}
-            >
-              <FolderOpen className="w-3.5 h-3.5" />
-              <span className="truncate max-w-[60px]">
-                {effectiveWorkspace.name}
-              </span>
-            </button>
-
-            {/* WorkspaceMenu - 在按钮的相对容器内定位 */}
-            {showWorkspaceMenu && activeSessionId && (
-              <WorkspaceMenu
-                sessionId={activeSessionId}
-                onClose={() => setShowWorkspaceMenu(false)}
-              />
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              handleWorkspaceClick()
+            }}
+            className={cn(
+              'flex items-center gap-1 px-2 py-1 rounded-lg',
+              'text-xs text-text-tertiary',
+              'hover:bg-background-hover hover:text-text-secondary',
+              'transition-colors shrink-0'
             )}
-          </div>
+            title={`工作区: ${effectiveWorkspace.name}`}
+          >
+            <FolderOpen className="w-3.5 h-3.5" />
+            <span className="truncate max-w-[60px]">
+              {effectiveWorkspace.name}
+            </span>
+          </button>
         )}
 
         {/* 其他会话数量 */}
@@ -216,6 +206,19 @@ export function SessionIsland({ onCreateSession }: SessionIslandProps) {
           onCreateSession={handleCreateSession}
         />
       </div>
+
+      {/* WorkspaceMenu - 居中定位 */}
+      {showWorkspaceMenu && activeSessionId && (
+        <div
+          className="absolute top-full left-1/2 -translate-x-1/2 pt-1 z-30"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <WorkspaceMenu
+            sessionId={activeSessionId}
+            onClose={() => setShowWorkspaceMenu(false)}
+          />
+        </div>
+      )}
     </div>
   )
 }
