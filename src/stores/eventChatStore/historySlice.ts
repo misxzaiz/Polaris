@@ -18,7 +18,7 @@ import type { HistorySlice, HistoryEntry, UnifiedHistoryItem } from './types'
 import type { ChatMessage, UserChatMessage, AssistantChatMessage, SystemChatMessage, EngineId } from '../../types'
 import { createLogger } from '../../utils/logger'
 import { useWorkspaceStore } from '../workspaceStore'
-import { createSessionFromHistory } from '../sessionSync'
+import { sessionStoreManager } from '../conversationStore/sessionStoreManager'
 
 const log = createLogger('EventChatStore')
 import { MAX_MESSAGES, SESSION_HISTORY_KEY, MAX_SESSION_HISTORY } from './types'
@@ -408,14 +408,11 @@ export const createHistorySlice: HistorySlice = (set, get) => ({
       }
 
       // ========== 4. 创建新会话并加载消息 ==========
-      const newSessionId = await createSessionFromHistory({
-        title,
-        workspaceId,
-        engineId: engineId as EngineId,
-        externalSessionId,
-        messages: chatMessages,
-        conversationId: externalSessionId || null,
-      })
+      const newSessionId = sessionStoreManager.getState().createSessionFromHistory(
+        chatMessages,
+        externalSessionId || null,
+        { title, workspaceId }
+      )
 
       log.info('从历史恢复成功，已创建新会话', {
         sessionId: newSessionId,

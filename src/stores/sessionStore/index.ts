@@ -36,10 +36,6 @@ export interface SessionState {
   islandExpandMode: IslandExpandMode
   /** 会话消息状态（按 sessionId 隔离） */
   sessionMessages: Map<string, SessionMessageState>
-  /** 后台运行的会话 ID 列表 */
-  backgroundSessionIds: string[]
-  /** 已完成但未查看的会话 ID 列表 */
-  completedNotifications: string[]
 }
 
 export interface SessionActions {
@@ -69,18 +65,6 @@ export interface SessionActions {
   getRecentSessions: (limit: number) => ChatSession[]
   getSessionMessages: (sessionId: string) => SessionMessageState | undefined
   setSessionMessages: (sessionId: string, state: SessionMessageState) => void
-
-  // 后台运行管理
-  /** 将会话加入后台运行列表 */
-  addToBackground: (sessionId: string) => void
-  /** 从后台运行列表移除 */
-  removeFromBackground: (sessionId: string) => void
-  /** 加入完成通知列表 */
-  addToNotifications: (sessionId: string) => void
-  /** 从完成通知列表移除 */
-  removeFromNotifications: (sessionId: string) => void
-  /** 清空指定会话的所有后台状态 */
-  clearBackgroundState: (sessionId: string) => void
 }
 
 export type SessionStore = SessionState & SessionActions
@@ -118,8 +102,6 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
   isIslandExpanded: false,
   islandExpandMode: null,
   sessionMessages: new Map(),
-  backgroundSessionIds: [],
-  completedNotifications: [],
 
   // ========== 会话操作 ==========
 
@@ -383,45 +365,6 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           newSessionMessages.set(sessionId, state)
           return { sessionMessages: newSessionMessages }
         })
-      },
-
-      // ========== 后台运行管理 ==========
-
-      addToBackground: (sessionId: string) => {
-        set((state) => {
-          if (state.backgroundSessionIds.includes(sessionId)) return state
-          return {
-            backgroundSessionIds: [...state.backgroundSessionIds, sessionId]
-          }
-        })
-      },
-
-      removeFromBackground: (sessionId: string) => {
-        set((state) => ({
-          backgroundSessionIds: state.backgroundSessionIds.filter(id => id !== sessionId)
-        }))
-      },
-
-      addToNotifications: (sessionId: string) => {
-        set((state) => {
-          if (state.completedNotifications.includes(sessionId)) return state
-          return {
-            completedNotifications: [...state.completedNotifications, sessionId]
-          }
-        })
-      },
-
-      removeFromNotifications: (sessionId: string) => {
-        set((state) => ({
-          completedNotifications: state.completedNotifications.filter(id => id !== sessionId)
-        }))
-      },
-
-      clearBackgroundState: (sessionId: string) => {
-        set((state) => ({
-          backgroundSessionIds: state.backgroundSessionIds.filter(id => id !== sessionId),
-          completedNotifications: state.completedNotifications.filter(id => id !== sessionId)
-        }))
       },
     })
 )

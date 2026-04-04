@@ -140,6 +140,10 @@ export interface ConversationActions {
   setError: (error: string | null) => void
   setProgressMessage: (message: string | null) => void
 
+  // ===== 历史恢复 =====
+  /** 设置初始消息（用于从历史恢复） */
+  setMessagesFromHistory: (messages: ChatMessage[], conversationId: string | null) => void
+
   // ===== 事件处理（核心） =====
   handleAIEvent: (event: AIEvent) => void
 
@@ -190,6 +194,18 @@ export interface CreateSessionOptions {
 }
 
 /**
+ * 从历史创建会话选项
+ */
+export interface CreateSessionFromHistoryOptions {
+  title: string
+  workspaceId?: string
+  engineId?: 'claude-code' | 'iflow' | 'codex' | `provider-${string}`
+  externalSessionId?: string
+  messages: ChatMessage[]
+  conversationId?: string | null
+}
+
+/**
  * SessionStoreManager 状态
  */
 export interface SessionManagerState {
@@ -218,6 +234,8 @@ export interface SessionManagerState {
 export interface SessionManagerActions {
   // ===== 会话生命周期 =====
   createSession: (options: CreateSessionOptions) => string
+  /** 从历史创建会话（恢复历史消息） */
+  createSessionFromHistory: (options: import('../../types').ChatMessage[], conversationId: string | null, metadata?: { title?: string; workspaceId?: string }) => string
   deleteSession: (sessionId: string) => void
   switchSession: (sessionId: string) => void
 

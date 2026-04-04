@@ -109,6 +109,39 @@ function createSessionManagerStore() {
       return sessionId
     },
 
+    createSessionFromHistory: (messages, conversationId, metadata) => {
+      // 创建新会话
+      const sessionId = get().createSession({
+        type: metadata?.workspaceId ? 'project' : 'free',
+        workspaceId: metadata?.workspaceId,
+        title: metadata?.title || `历史会话 ${get().stores.size + 1}`,
+      })
+
+      // 获取新创建的 Store 并设置历史消息
+      const store = get().stores.get(sessionId)
+      if (store) {
+        store.getState().setMessagesFromHistory(messages, conversationId)
+
+        // 同步到旧架构（EventChatStore）
+        const storeState = store.getState()
+        useEventChatStore.setState({
+          messages: storeState.messages,
+          archivedMessages: storeState.archivedMessages,
+          currentMessage: storeState.currentMessage,
+          isStreaming: storeState.isStreaming,
+          error: storeState.error,
+          conversationId: storeState.conversationId,
+        })
+
+        console.log('[SessionStoreManager] 从历史创建会话:', sessionId, {
+          messageCount: messages.length,
+          conversationId,
+        })
+      }
+
+      return sessionId
+    },
+
     deleteSession: (sessionId: string) => {
       const state = get()
       const store = state.stores.get(sessionId)

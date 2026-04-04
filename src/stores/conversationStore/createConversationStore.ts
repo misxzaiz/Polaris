@@ -587,6 +587,19 @@ export function createConversationStore(
       setError: (error) => set({ error }),
       setProgressMessage: (message) => set({ progressMessage: message }),
 
+      // ===== 历史恢复 =====
+      setMessagesFromHistory: (messages, conversationId) => {
+        set({
+          messages,
+          archivedMessages: [],
+          conversationId,
+          isStreaming: false,
+          error: null,
+          currentMessage: null,
+          progressMessage: null,
+        })
+      },
+
       // ===== 事件处理 =====
       handleAIEvent: (event) => handleAIEvent(event, set, get),
 

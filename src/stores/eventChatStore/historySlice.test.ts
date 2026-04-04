@@ -44,9 +44,13 @@ vi.mock('../workspaceStore', () => ({
   },
 }))
 
-// Mock sessionSync
-vi.mock('../sessionSync', () => ({
-  createSessionFromHistory: vi.fn(async () => 'test-new-session-id'),
+// Mock sessionStoreManager
+vi.mock('../conversationStore/sessionStoreManager', () => ({
+  sessionStoreManager: {
+    getState: vi.fn(() => ({
+      createSessionFromHistory: vi.fn(() => 'test-new-session-id'),
+    })),
+  },
 }))
 
 // Import after mocking
