@@ -96,7 +96,7 @@ export function WorkspaceMenu({ sessionId, onClose }: WorkspaceMenuProps) {
   }
 
   return (
-    <div ref={menuRef} className="w-[280px] bg-background-elevated border border-border rounded-xl shadow-lg">
+    <div ref={menuRef} className="absolute top-full right-0 mt-1 z-50 w-[280px] bg-background-elevated border border-border rounded-xl shadow-lg">
       {/* 搜索区 */}
       <div className="p-2 border-b border-border-subtle">
         <div className="flex items-center gap-2">
