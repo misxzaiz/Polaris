@@ -1,7 +1,4 @@
 export { StatusDot } from './StatusDot'
-export { SessionIsland } from './SessionIsland'
-export { SessionList } from './SessionList'
-export { SessionListItem } from './SessionListItem'
 export { SessionTab } from './SessionTab'
 export { SessionTabs } from './SessionTabs'
 export { WorkspaceMenu } from './WorkspaceMenu'
