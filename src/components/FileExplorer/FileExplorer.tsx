@@ -322,44 +322,46 @@ export function FileExplorer() {
                   onClick={() => setShowViewingMenu(false)}
                 />
                 <div className="absolute left-0 right-0 top-full mt-1 bg-background-elevated border border-border rounded-lg shadow-lg z-20 overflow-hidden">
-                  <button
-                    onClick={() => handleSwitchViewingWorkspace(null)}
-                    className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
-                      !viewingWorkspace || viewingWorkspace.id === currentWorkspaceId
-                        ? 'bg-primary/10 text-primary'
-                        : 'text-text-secondary hover:text-text-primary hover:bg-background-hover'
-                    }`}
-                  >
-                    <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
-                    <span className="flex-1 truncate">{currentWorkspace?.name || tc('labels.noWorkspaceSelected')}</span>
-                    {(!viewingWorkspace || viewingWorkspace.id === currentWorkspaceId) && (
-                      <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                  </button>
-                  {accessibleWorkspaces
-                    .filter(w => w.id !== currentWorkspaceId)
-                    .map(workspace => (
+                    <div className="max-h-[240px] overflow-y-auto">
                       <button
-                        key={workspace.id}
-                        onClick={() => handleSwitchViewingWorkspace(workspace.id)}
+                        onClick={() => handleSwitchViewingWorkspace(null)}
                         className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
-                          viewingWorkspace?.id === workspace.id
+                          !viewingWorkspace || viewingWorkspace.id === currentWorkspaceId
                             ? 'bg-primary/10 text-primary'
                             : 'text-text-secondary hover:text-text-primary hover:bg-background-hover'
                         }`}
                       >
-                        <span className="w-2 h-2 rounded-full bg-primary/50 shrink-0" />
-                        <span className="flex-1 truncate">{workspace.name}</span>
-                        {viewingWorkspace?.id === workspace.id && (
+                        <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                        <span className="flex-1 truncate">{currentWorkspace?.name || tc('labels.noWorkspaceSelected')}</span>
+                        {(!viewingWorkspace || viewingWorkspace.id === currentWorkspaceId) && (
                           <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                           </svg>
                         )}
                       </button>
-                    ))}
-                </div>
+                      {accessibleWorkspaces
+                        .filter(w => w.id !== currentWorkspaceId)
+                        .map(workspace => (
+                          <button
+                            key={workspace.id}
+                            onClick={() => handleSwitchViewingWorkspace(workspace.id)}
+                            className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
+                              viewingWorkspace?.id === workspace.id
+                                ? 'bg-primary/10 text-primary'
+                                : 'text-text-secondary hover:text-text-primary hover:bg-background-hover'
+                            }`}
+                          >
+                            <span className="w-2 h-2 rounded-full bg-primary/50 shrink-0" />
+                            <span className="flex-1 truncate">{workspace.name}</span>
+                            {viewingWorkspace?.id === workspace.id && (
+                              <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </button>
+                        ))}
+                    </div>
+                  </div>
               </>
             )}
           </div>

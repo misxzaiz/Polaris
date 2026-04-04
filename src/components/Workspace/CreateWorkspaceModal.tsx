@@ -2,7 +2,8 @@
  * 创建工作区弹窗组件
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useWorkspaceStore } from '../../stores';
 import { Button } from '../Common';
@@ -22,6 +23,33 @@ export function CreateWorkspaceModal({ onClose }: CreateWorkspaceModalProps) {
   const [switchAfterCreate, setSwitchAfterCreate] = useState(true); // 默认切换到新工作区
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // 点击外部关闭
+  const modalRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [onClose]);
+
+  // ESC 键关闭
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,9 +95,10 @@ export function CreateWorkspaceModal({ onClose }: CreateWorkspaceModalProps) {
     }
   };
 
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-background-elevated rounded-xl p-6 w-full max-w-md border border-border shadow-glow">
+  // 使用 Portal 渲染到 body，确保居中定位正确
+  return createPortal(
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]">
+      <div ref={modalRef} className="bg-background-elevated rounded-xl p-6 w-full max-w-md border border-border shadow-glow">
         <h2 className="text-lg font-semibold text-text-primary mb-4">
           {t('createModal.title')}
         </h2>
@@ -159,6 +188,7 @@ export function CreateWorkspaceModal({ onClose }: CreateWorkspaceModalProps) {
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
