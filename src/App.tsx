@@ -234,6 +234,11 @@ function App() {
         // 初始化会话消息同步
         initializeSessionSync();
 
+        // 初始化会话消息：从外部 sessionId 恢复消息
+        useSessionStore.getState().initializeSessionMessages().catch((e) => {
+          log.error('会话消息初始化失败', e);
+        });
+
         // 恢复窗口透明度（初始使用大窗透明度，后续根据窗口尺寸自动切换）
         if (config?.window) {
           const initialOpacity = (config.window.normalOpacity ?? 100) / 100;

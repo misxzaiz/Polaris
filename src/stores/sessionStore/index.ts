@@ -17,6 +17,11 @@ import type {
   IslandExpandMode,
   SessionMessageState
 } from '@/types/session'
+import { useWorkspaceStore } from '../workspaceStore'
+import { getClaudeCodeHistoryService } from '../../services/claudeCodeHistoryService'
+import { createLogger } from '../../utils/logger'
+
+const log = createLogger('SessionStore')
 
 // ============================================================================
 // 类型定义
@@ -46,6 +51,8 @@ export interface SessionActions {
   renameSession: (id: string, title: string) => void
   updateSessionStatus: (id: string, status: SessionStatus) => void
   incrementMessageCount: (id: string) => void
+  /** 更新会话的外部 ID 并锁定工作区 */
+  updateSessionExternalId: (sessionId: string, externalSessionId: string) => void
 
   // 工作区操作
   switchSessionWorkspace: (sessionId: string, workspaceId: string, mode: WorkspaceSwitchMode) => void
@@ -62,6 +69,12 @@ export interface SessionActions {
   getRecentSessions: (limit: number) => ChatSession[]
   getSessionMessages: (sessionId: string) => SessionMessageState | undefined
   setSessionMessages: (sessionId: string, state: SessionMessageState) => void
+
+  // 消息恢复
+  /** 从外部会话恢复消息 */
+  restoreSessionFromExternal: (sessionId: string) => Promise<boolean>
+  /** 初始化时恢复所有会话消息 */
+  initializeSessionMessages: () => Promise<void>
 }
 
 export type SessionStore = SessionState & SessionActions
@@ -117,6 +130,9 @@ export const useSessionStore = create<SessionStore>()(
           workspaceId: options.type === 'project' ? (options.workspaceId || null) : null,
           temporaryWorkspaceId: null,
           contextWorkspaceIds: [],
+          workspaceLocked: false,
+          externalSessionId: options.externalSessionId || null,
+          externalSource: options.externalSource || null,
           createdAt: now,
           updatedAt: now,
           lastMessageAt: null,
@@ -223,6 +239,23 @@ export const useSessionStore = create<SessionStore>()(
             ...session,
             messageCount: session.messageCount + 1,
             lastMessageAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          })
+          return { sessions: newSessions }
+        })
+      },
+
+      updateSessionExternalId: (sessionId: string, externalSessionId: string) => {
+        set((state) => {
+          const session = state.sessions.get(sessionId)
+          if (!session) return state
+
+          const newSessions = new Map(state.sessions)
+          newSessions.set(sessionId, {
+            ...session,
+            externalSessionId,
+            externalSource: 'claude-code-native',
+            workspaceLocked: true,
             updatedAt: new Date().toISOString(),
           })
           return { sessions: newSessions }
@@ -343,6 +376,86 @@ export const useSessionStore = create<SessionStore>()(
           const newSessionMessages = new Map(store.sessionMessages)
           newSessionMessages.set(sessionId, state)
           return { sessionMessages: newSessionMessages }
+        })
+      },
+
+      // ========== 消息恢复 ==========
+
+      restoreSessionFromExternal: async (sessionId: string) => {
+        const { sessions } = get()
+        const session = sessions.get(sessionId)
+
+        if (!session?.externalSessionId || !session?.workspaceId) {
+          log.debug('会话无外部 ID 或工作区，跳过恢复', { sessionId })
+          return false
+        }
+
+        try {
+          // 获取工作区路径
+          const workspaces = useWorkspaceStore.getState().workspaces
+          const workspace = workspaces.find(w => w.id === session.workspaceId)
+
+          if (!workspace?.path) {
+            log.warn('工作区路径不存在', { sessionId, workspaceId: session.workspaceId })
+            return false
+          }
+
+          log.debug('开始从外部恢复会话消息', {
+            sessionId,
+            externalSessionId: session.externalSessionId,
+            projectPath: workspace.path
+          })
+
+          // 调用 Claude Code API 获取历史
+          const claudeCodeService = getClaudeCodeHistoryService()
+          const messages = await claudeCodeService.getSessionHistory(
+            session.externalSessionId,
+            workspace.path
+          )
+
+          if (messages.length > 0) {
+            const chatMessages = claudeCodeService.convertToChatMessages(messages)
+
+            // 保存到 SessionStore.sessionMessages
+            get().setSessionMessages(sessionId, {
+              messages: chatMessages,
+              archivedMessages: [],
+              conversationId: session.externalSessionId,
+              restoredFromExternal: true,
+              restoredAt: new Date().toISOString(),
+            })
+
+            log.info('从外部会话恢复成功', {
+              sessionId,
+              messageCount: chatMessages.length
+            })
+            return true
+          }
+
+          log.debug('外部会话无消息', { sessionId })
+          return false
+        } catch (e) {
+          log.error('从外部会话恢复失败', e as Error)
+          return false
+        }
+      },
+
+      initializeSessionMessages: async () => {
+        const { sessions } = get()
+        const restorePromises: Promise<boolean>[] = []
+
+        for (const [id, session] of sessions) {
+          if (session.externalSessionId) {
+            restorePromises.push(get().restoreSessionFromExternal(id))
+          }
+        }
+
+        const results = await Promise.all(restorePromises)
+        const successCount = results.filter(r => r).length
+
+        log.info('会话消息初始化完成', {
+          totalSessions: sessions.size,
+          restoredCount: successCount
         })
       },
     }),

@@ -31,6 +31,14 @@ export interface ChatSession {
   temporaryWorkspaceId: string | null
   /** 关联工作区列表 */
   contextWorkspaceIds: string[]
+  /** 主工作区是否已锁定（开始对话后 true） */
+  workspaceLocked: boolean
+
+  // 外部会话关联
+  /** 外部会话 ID（Claude Code 的 sessionId） */
+  externalSessionId: string | null
+  /** 外部会话来源 */
+  externalSource: 'claude-code-native' | null
 
   // 时间戳
   /** 创建时间 */
@@ -51,6 +59,9 @@ export interface CreateSessionOptions {
   workspaceId?: string
   engineId?: EngineId
   title?: string
+  /** 从已有外部会话恢复 */
+  externalSessionId?: string
+  externalSource?: 'claude-code-native'
 }
 
 /** 工作区切换模式 */
@@ -73,4 +84,8 @@ export interface SessionMessageState {
   archivedMessages?: unknown[]
   /** 会话 ID（用于恢复 conversationId） */
   conversationId?: string | null
+  /** 是否已从外部恢复 */
+  restoredFromExternal?: boolean
+  /** 恢复时间 */
+  restoredAt?: string
 }

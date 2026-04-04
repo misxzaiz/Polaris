@@ -117,6 +117,12 @@ function createTestStore(deps = createMockDependencies()) {
     getGitActions: () => deps?.gitActions,
     getConfigActions: () => deps?.configActions,
     getWorkspaceActions: () => deps?.workspaceActions,
+    getSessionSyncActions: () => ({
+      getActiveSessionId: () => null,
+      getSessionMessages: vi.fn(),
+      setSessionMessages: vi.fn(),
+      updateSessionStatus: vi.fn(),
+    }),
 
     // 应用 eventHandlerSlice
     ...createEventHandlerSlice(...args),

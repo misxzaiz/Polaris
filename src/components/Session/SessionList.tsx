@@ -44,8 +44,8 @@ export function SessionList({ onClose, onCreateSession }: SessionListProps) {
   }
 
   // 切换会话（带消息同步）
-  const handleSwitchSession = (sessionId: string) => {
-    const success = switchSessionWithSync(sessionId)
+  const handleSwitchSession = async (sessionId: string) => {
+    const success = await switchSessionWithSync(sessionId)
     if (success) {
       onClose()
     }

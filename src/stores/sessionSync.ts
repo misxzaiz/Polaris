@@ -58,7 +58,7 @@ export function saveCurrentMessagesToSession(sessionId: string): void {
  * @param sessionId 要加载的会话 ID
  * @returns 是否成功加载
  */
-export function loadSessionMessagesToEventChat(sessionId: string): boolean {
+export async function loadSessionMessagesToEventChat(sessionId: string): Promise<boolean> {
   const eventChatState = useEventChatStore.getState()
   const sessionSyncActions = eventChatState.getSessionSyncActions()
 
@@ -67,10 +67,31 @@ export function loadSessionMessagesToEventChat(sessionId: string): boolean {
     return false
   }
 
-  // 从 SessionStore 获取消息状态
-  const sessionMessages = sessionSyncActions.getSessionMessages(sessionId)
+  // 检查是否正在流式传输
+  if (eventChatState.isStreaming) {
+    log.warn('当前正在流式传输，无法切换会话')
+    return false
+  }
 
-  if (!sessionMessages) {
+  // 从 SessionStore 获取消息状态
+  let sessionMessages = sessionSyncActions.getSessionMessages(sessionId)
+
+  // 如果没有消息但有 externalSessionId，尝试从外部恢复
+  if (!sessionMessages || sessionMessages.messages.length === 0) {
+    const session = useSessionStore.getState().sessions.get(sessionId)
+
+    if (session?.externalSessionId && session?.workspaceId) {
+      log.debug('会话消息为空，尝试从外部恢复', { sessionId })
+
+      // 调用恢复方法
+      await useSessionStore.getState().restoreSessionFromExternal(sessionId)
+
+      // 重新获取消息
+      sessionMessages = sessionSyncActions.getSessionMessages(sessionId)
+    }
+  }
+
+  if (!sessionMessages || sessionMessages.messages.length === 0) {
     // 没有保存的消息，初始化为空状态
     log.debug('会话无保存消息，初始化为空', { sessionId })
 
@@ -81,12 +102,6 @@ export function loadSessionMessagesToEventChat(sessionId: string): boolean {
     sessionSyncActions.updateSessionStatus(sessionId, 'idle')
 
     return true
-  }
-
-  // 检查是否正在流式传输
-  if (eventChatState.isStreaming) {
-    log.warn('当前正在流式传输，无法切换会话')
-    return false
   }
 
   // 清空当前状态（保留事件监听器）
@@ -127,7 +142,7 @@ export function loadSessionMessagesToEventChat(sessionId: string): boolean {
  * @param targetSessionId 目标会话 ID
  * @returns 是否成功切换
  */
-export function switchSessionWithSync(targetSessionId: string): boolean {
+export async function switchSessionWithSync(targetSessionId: string): Promise<boolean> {
   const { activeSessionId, sessions } = useSessionStore.getState()
 
   // 检查目标会话是否存在
@@ -159,7 +174,7 @@ export function switchSessionWithSync(targetSessionId: string): boolean {
   useSessionStore.getState().switchSession(targetSessionId)
 
   // 3. 加载目标会话消息
-  const success = loadSessionMessagesToEventChat(targetSessionId)
+  const success = await loadSessionMessagesToEventChat(targetSessionId)
 
   if (success) {
     log.info('会话切换成功', {
