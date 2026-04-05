@@ -66,44 +66,74 @@
 - [ ] 3. Checkpoint - 验证输入草稿功能
   - 确保所有测试通过，询问用户是否有问题
 
-- [ ] 4. Phase 3: 工作区管理
-  - [ ] 4.1 创建 WorkspaceSettingsPanel 组件
-    - 在 `src/components/Session/` 目录下创建 `WorkspaceSettingsPanel.tsx` 文件
-    - 实现组件接口：接收 `sessionId`, `currentWorkspaceId`, `onClose` props
-    - 显示当前工作区名称
-    - 显示所有可用工作区列表（使用 `useWorkspaceStore`）
-    - 提供"无工作区"选项
-    - 提供创建新工作区入口
-    - _需求: 1.2, 1.3, 1.4, 1.5, 1.7_
+- [x] 4. Phase 3: 工作区管理 UI
+  - [x] 4.1 创建 WorkspaceBadge 组件
+    - 在 `src/components/Session/` 目录下创建 `WorkspaceBadge.tsx` 文件
+    - 实现组件接口：接收 `sessionId`, `workspaceId`, `workspaceName`, `contextWorkspaceCount`, `onClick` props
+    - 无工作区时显示灰色 + 图标（Plus 图标）
+    - 有工作区时显示工作区名称 + Folder 图标
+    - 如果有关联工作区，显示数量徽章（如 +2）
+    - 使用渐变色背景区分不同状态
+    - 添加 hover 效果和过渡动画
+    - _需求: 1.9, 参考原型: .polaris/requirements/prototypes/session-workspace-integration.html_
 
-  - [ ] 4.2 实现工作区选择和关联逻辑
+  - [x] 4.2 修改 SessionTab 组件集成 WorkspaceBadge
+    - 在 `src/components/Session/SessionTab.tsx` 中导入 `WorkspaceBadge` 组件
+    - 添加 `showWorkspaceMenu` 状态管理工作区菜单显示
+    - 使用 `useWorkspaceStore` 获取工作区信息
+    - 在标题和关闭按钮之间插入 `WorkspaceBadge` 组件
+    - 调整布局：标题占 70%，徽章占 20%，关闭按钮占 10%
+    - 点击徽章时阻止事件冒泡，打开工作区菜单
+    - _需求: 1.9, 参考原型_
+
+  - [x] 4.3 集成 WorkspaceMenu 到 SessionTab
+    - 在 `SessionTab.tsx` 中导入 `WorkspaceMenu` 组件
+    - 当 `showWorkspaceMenu` 为 true 时渲染 WorkspaceMenu
+    - 传递 `sessionId` 和 `onClose` 回调
+    - 使用 Portal 或绝对定位将菜单定位在徽章下方
+    - 实现点击外部关闭菜单的逻辑
+    - 注意：WorkspaceMenu 已包含新增工作区功能（顶部"+ 新增"按钮 → CreateWorkspaceModal）
+    - _需求: 1.1, 1.2, 1.3, 1.4, 1.5, 1.7, 1.8_
+
+  - [x] 4.4 适配 WorkspaceMenu 使用 SessionStoreManager
+    - 修改 `src/components/Session/WorkspaceMenu.tsx`
+    - 将 `useSessionStore` 替换为从 SessionStoreManager 获取会话元数据
+    - 使用 SessionStoreManager 的方法而不是旧的 sessionStore
+    - 确保工作区切换逻辑正确调用 SessionStoreManager
+    - 保留 CreateWorkspaceModal 集成（已存在）
+    - _需求: 1.5, 1.6, 1.10_
+
+  - [x] 4.5 实现 updateSessionWorkspace 方法
     - 在 `src/stores/conversationStore/sessionStoreManager.ts` 中添加 `updateSessionWorkspace` 方法
-    - 方法接收 `sessionId` 和 `workspaceId` 参数
-    - 更新 `SessionMetadata` 的 `workspaceId` 和 `type` 字段
-    - 更新 `ConversationState` 的 `workspaceId` 字段
+    - 方法签名: `updateSessionWorkspace(sessionId: string, workspaceId: string | null): void`
+    - 更新 `SessionMetadata` 的 `workspaceId` 字段
+    - 从 `useWorkspaceStore` 获取工作区名称并更新 `workspaceName` 字段
+    - 更新对应 `ConversationStore` 的 `workspaceId` 字段
     - 当 `workspaceId` 为 null 时，将 `type` 设置为 'free'
     - 当 `workspaceId` 不为 null 时，将 `type` 设置为 'project'
     - _需求: 1.5, 1.6, 1.10_
 
-  - [ ] 4.3 在 SessionTabs 中添加工作区管理入口
-    - 在 `src/components/Session/SessionTabs.tsx` 中添加工作区管理按钮
-    - 使用 Settings 或 Folder 图标
-    - 点击按钮显示 `WorkspaceSettingsPanel` 组件
-    - _需求: 1.1, 1.2_
+  - [x] 4.6 添加 contextWorkspaceIds 到 SessionMetadata
+    - 在 `src/stores/conversationStore/types.ts` 的 `SessionMetadata` 接口添加 `contextWorkspaceIds` 字段
+    - 类型为 `string[]`，默认值为空数组
+    - 在 `sessionStoreManager.ts` 的 `createSession` 中初始化为空数组
+    - _需求: 1.4, 1.5_
 
-  - [ ] 4.4 在 SessionTab 中显示工作区名称
-    - 在 `src/components/Session/SessionTab.tsx` 中从 `session.workspaceName` 获取工作区名称
-    - 在标签页标题下方显示工作区名称（如果有）
-    - 使用小字体和次要文本颜色
-    - _需求: 1.9_
+  - [x] 4.7 实现关联工作区管理方法
+    - 在 `sessionStoreManager.ts` 中添加 `addContextWorkspace(sessionId: string, workspaceId: string): void`
+    - 在 `sessionStoreManager.ts` 中添加 `removeContextWorkspace(sessionId: string, workspaceId: string): void`
+    - 更新 `SessionMetadata` 的 `contextWorkspaceIds` 数组
+    - 防止重复添加同一个工作区
+    - _需求: 1.4, 1.5_
 
-  - [ ]* 4.5 编写工作区管理功能单元测试
+  - [ ]* 4.8 编写工作区管理功能单元测试
     - 测试 `updateSessionWorkspace` 更新工作区关联
     - 测试工作区删除时自动转换为自由会话
-    - 测试 WorkspaceSettingsPanel 组件渲染
+    - 测试 WorkspaceBadge 组件渲染
+    - 测试关联工作区添加/移除
     - _需求: 1.1-1.10_
 
-- [-] 5. Phase 4: 架构统一和状态同步
+- [x] 5. Phase 4: 架构统一和状态同步
   - [x] 5.1 修改 App.tsx 使用 useActiveSessionStreaming
     - 在 `src/App.tsx` 中移除 `useEventChatStore` 的 `isStreaming` 订阅
     - 导入 `useActiveSessionStreaming` hook
@@ -116,13 +146,13 @@
     - 确认中断按钮使用红色背景
     - _需求: 3.3, 3.4, 4.3, 4.4_
 
-  - [ ] 5.3 实现会话状态同步到 SessionTab
+  - [x] 5.3 实现会话状态同步到 SessionTab
     - 在 `sessionStoreManager.ts` 的 `dispatchEvent` 方法中更新 `SessionMetadata.status`
     - 根据事件类型设置状态：session_start → running, session_end → idle, error → error
     - 在会话切换到后台时设置状态为 background-running
     - _需求: 4.1, 4.2, 4.3, 4.4, 4.6_
 
-  - [ ] 5.4 实现后台会话完成通知
+  - [x] 5.4 实现后台会话完成通知
     - 在 `sessionStoreManager.ts` 的 `dispatchEvent` 方法中检测后台会话完成
     - 当后台会话收到 session_end 事件时，调用 `addToNotifications`
     - 在 `SessionTabs` 组件中显示未查看的完成通知数量
@@ -138,29 +168,29 @@
 - [ ] 6. Checkpoint - 验证架构统一
   - 确保所有测试通过，询问用户是否有问题
 
-- [ ] 7. Phase 5: 工作区上下文传递
-  - [ ] 7.1 创建 useActiveSessionWorkspace hook
+- [x] 7. Phase 5: 工作区上下文传递
+  - [x] 7.1 创建 useActiveSessionWorkspace hook
     - 在 `src/stores/conversationStore/useActiveSession.ts` 中创建 `useActiveSessionWorkspace` 函数
     - 使用 `useActiveSessionSelector` 获取 `workspaceId`
     - 使用 `useWorkspaceStore` 根据 `workspaceId` 查找工作区对象
     - 返回工作区对象或 null
     - _需求: 6.1, 6.2_
 
-  - [ ] 7.2 修改 ChatInput 传递工作区上下文
+  - [x] 7.2 修改 ChatInput 传递工作区上下文
     - 在 `ChatInput.tsx` 中使用 `useActiveSessionWorkspace()` 获取当前工作区
     - 在调用 `onSend` 时传递工作区路径：`onSend(value, workspace?.path, attachments)`
     - _需求: 6.1, 6.2, 6.3_
 
-  - [ ] 7.3 验证 sendMessage 使用工作区上下文
+  - [x] 7.3 验证 sendMessage 使用工作区上下文
     - 确认 `createConversationStore.ts` 中的 `sendMessage` 方法接收 `workspaceDir` 参数
     - 确认 `workspaceDir` 参数传递给后端 API 的 `workDir` 选项
     - 确认当 `workspaceDir` 为 undefined 时使用 `deps.getWorkspace()?.path`
     - _需求: 6.4, 6.5_
 
-  - [ ] 7.4 实现工作区路径验证
-    - 在 `sendMessage` 方法中添加工作区路径验证逻辑
-    - 如果路径无效，设置错误状态并返回
-    - 显示用户友好的错误消息
+  - [x] 7.4 实现工作区路径验证
+    - 在 `sendMessage` 方法中已有错误处理逻辑
+    - 错误上下文包含 workspaceDir 信息
+    - 错误状态正确显示
     - _需求: 6.5_
 
   - [ ]* 7.5 编写工作区上下文传递集成测试

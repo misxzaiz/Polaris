@@ -25,25 +25,6 @@
     "claudeCode": {
       "name": "Claude Code",
       "description": "Official Anthropic CLI tool"
-    },
-    "iflow": {
-      "name": "IFlow",
-      "description": "Smart coding assistant CLI tool"
-    },
-    "codex": {
-      "name": "Codex",
-      "description": "OpenAI Codex CLI tool",
-      "title": "Codex CLI",
-      "cliPath": "CLI Path",
-      "hint": "OpenAI Codex CLI path, leave empty to use codex from system PATH",
-      "sandboxMode": "Sandbox Mode",
-      "sandboxWorkspaceWrite": "workspace-write (create/modify, may not support delete)",
-      "sandboxDangerFullAccess": "danger-full-access (full permissions, including delete)",
-      "sandboxWorkspaceWriteHint": "Safer, but file deletion may fail",
-      "sandboxDangerHint": "Full permissions, but has security risks",
-      "dangerousBypass": "dangerously-bypass-approvals-and-sandbox",
-      "dangerousBypassHint": "Skip all approvals and sandbox restrictions, extremely dangerous, use only in secure environments",
-      "notAvailable": "Not installed"
     }
   },
   "openaiProviders": {
@@ -78,10 +59,6 @@
   "claudeCode": {
     "title": "Claude Code Configuration",
     "cliPath": "Claude CLI Path"
-  },
-  "iflow": {
-    "title": "IFlow Configuration",
-    "cliPath": "IFlow CLI Path (Optional)"
   },
   "language": {
     "title": "Language Settings",
@@ -118,11 +95,6 @@
       "name": "Claude Code",
       "placeholder": "Enter the full path to Claude CLI",
       "example": "e.g., C:\\Users\\[Username]\\AppData\\Roaming\\npm\\claude.cmd"
-    },
-    "iflow": {
-      "name": "IFlow",
-      "placeholder": "Enter the full path to IFlow CLI",
-      "example": "e.g., C:\\Users\\[Username]\\AppData\\Roaming\\npm\\iflow.cmd"
     }
   },
   "validation": {

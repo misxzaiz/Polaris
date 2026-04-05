@@ -7,14 +7,12 @@
 
 import { AgentRegistry } from './agents/AgentRunner'
 import { ClaudeCodeAgentRunner } from './adapters/ClaudeCodeAgentRunner'
-import { IFlowAgentRunner } from './adapters/IFlowAgentRunner'
 import { getClaudeEngine } from '../engines/claude-code'
-import { createIFlowEngine } from '../engines/iflow'
 
 /**
  * 已注册的 Agent ID 列表
  */
-export const REGISTERED_AGENT_IDS = ['claude-code', 'iflow'] as const
+export const REGISTERED_AGENT_IDS = ['claude-code'] as const
 
 /**
  * Agent 类型
@@ -29,14 +27,6 @@ export interface AgentConfig {
   claudePath?: string
   /** 默认工作区目录 */
   defaultWorkspaceDir?: string
-  /** IFlow CLI 可执行文件路径 */
-  iflowExecutablePath?: string
-  /** IFlow 默认模型 */
-  iflowDefaultModel?: string
-  /** IFlow API 密钥 */
-  iflowApiKey?: string
-  /** IFlow API 基础 URL */
-  iflowApiBase?: string
 }
 
 /**
@@ -77,23 +67,6 @@ export async function bootstrapAgents(config?: AgentConfig): Promise<void> {
     })
   )
   AgentRegistry.register(claudeAgent)
-
-  // 注册 IFlow Agent
-  const iflowAgent = new IFlowAgentRunner(
-    {
-      executablePath: defaultConfig.iflowExecutablePath,
-      defaultModel: defaultConfig.iflowDefaultModel,
-      apiKey: defaultConfig.iflowApiKey,
-      apiBase: defaultConfig.iflowApiBase,
-    },
-    () => createIFlowEngine({
-      executablePath: defaultConfig.iflowExecutablePath,
-      model: defaultConfig.iflowDefaultModel,
-      apiKey: defaultConfig.iflowApiKey,
-      apiBase: defaultConfig.iflowApiBase,
-    })
-  )
-  AgentRegistry.register(iflowAgent)
 
   // 初始化所有 Agent
   const agents = AgentRegistry.getAll()

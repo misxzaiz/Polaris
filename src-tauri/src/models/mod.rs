@@ -2,7 +2,6 @@ pub mod ai_event;
 pub mod config;
 pub mod events;
 pub mod git;
-pub mod iflow_events;
 pub mod prompt;
 pub mod scheduler;
 pub mod todo;

@@ -7,15 +7,13 @@
 
 import { getEngineRegistry, registerEngine } from '../ai-runtime'
 import { ClaudeCodeEngine } from '../engines/claude-code'
-import { IFlowEngine } from '../engines/iflow'
-import { CodexEngine, type CodexEngineConfig } from '../engines/codex'
 import { getOpenAIProviderEngine, clearOpenAIProviderEngines, type OpenAIProviderEngineConfig } from '../engines/openai-provider'
 import type { OpenAIProvider } from '../types/config'
 
 /**
  * 已注册的 Engine ID 列表（传统引擎）
  */
-export const REGISTERED_ENGINE_IDS = ['claude-code', 'iflow', 'codex'] as const
+export const REGISTERED_ENGINE_IDS = ['claude-code'] as const
 
 /**
  * Engine 类型
@@ -72,24 +70,16 @@ export async function bootstrapOpenAIProviders(
  * 按需初始化 AI Engine
  *
  * @param defaultEngineId 默认引擎 ID
- * @param codexConfig Codex 引擎配置
  */
 export async function bootstrapEngines(
-  defaultEngineId: EngineId = 'claude-code',
-  codexConfig?: CodexEngineConfig
+  defaultEngineId: EngineId = 'claude-code'
 ): Promise<void> {
   const registry = getEngineRegistry()
 
-  // 只注册默认引擎
+  // 注册默认引擎
   if (defaultEngineId === 'claude-code') {
     const claudeEngine = new ClaudeCodeEngine()
     registerEngine(claudeEngine, { asDefault: true })
-  } else if (defaultEngineId === 'iflow') {
-    const iflowEngine = new IFlowEngine()
-    registerEngine(iflowEngine, { asDefault: true })
-  } else if (defaultEngineId === 'codex') {
-    const codexEngine = new CodexEngine(codexConfig)
-    registerEngine(codexEngine, { asDefault: true })
   }
 
   // 初始化已注册的引擎
@@ -102,11 +92,9 @@ export async function bootstrapEngines(
  * 延迟注册引擎（用于切换引擎时）
  *
  * @param engineId 要注册的引擎 ID
- * @param codexConfig Codex 引擎配置
  */
 export async function registerEngineLazy(
-  engineId: EngineId,
-  codexConfig?: CodexEngineConfig
+  engineId: EngineId
 ): Promise<void> {
   const registry = getEngineRegistry()
 
@@ -119,14 +107,6 @@ export async function registerEngineLazy(
     const claudeEngine = new ClaudeCodeEngine()
     registerEngine(claudeEngine)
     await claudeEngine.initialize()
-  } else if (engineId === 'iflow') {
-    const iflowEngine = new IFlowEngine()
-    registerEngine(iflowEngine)
-    await iflowEngine.initialize()
-  } else if (engineId === 'codex') {
-    const codexEngine = new CodexEngine(codexConfig)
-    registerEngine(codexEngine)
-    await codexEngine.initialize()
   }
 
   console.log('[EngineBootstrap] Lazy registered engine:', engineId)

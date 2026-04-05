@@ -13,7 +13,7 @@ import { useTranslation } from 'react-i18next'
 import { IconSend, IconStop, IconPaperclip } from '../Common/Icons'
 import { useWorkspaceStore, useChatInputStore, useEventChatStore } from '../../stores'
 import { useActiveSessionId } from '../../stores/conversationStore'
-import { useActiveSessionInputDraft, useActiveSessionActions } from '../../stores/conversationStore/useActiveSession'
+import { useActiveSessionInputDraft, useActiveSessionActions, useActiveSessionWorkspace } from '../../stores/conversationStore/useActiveSession'
 import { useDebouncedCallback } from '../../hooks/useDebounce'
 import { UnifiedSuggestion, type SuggestionItem } from './FileSuggestion'
 import { AttachmentPreview } from './AttachmentPreview'
@@ -48,6 +48,9 @@ export function ChatInput({
 
   // 当前会话 ID（用于检测会话切换）
   const sessionId = useActiveSessionId()
+
+  // 获取当前会话的工作区
+  const currentWorkspace = useActiveSessionWorkspace()
 
   // 使用 Store 中的输入草稿（用于会话切换同步）
   const inputDraft = useActiveSessionInputDraft()
@@ -472,13 +475,14 @@ export function ChatInput({
 
     // 取消 pending 的防抖回调，防止旧值写回 Store
     cancelPersistDraft()
-    onSend(trimmed, undefined, attachments.length > 0 ? attachments : undefined)
+    // 传递当前会话的工作区路径
+    onSend(trimmed, currentWorkspace?.path, attachments.length > 0 ? attachments : undefined)
     // 清空本地 state
     setLocalText('')
     setLocalAttachments([])
     // 清空 Store 草稿
     updateInputDraft({ text: '', attachments: [] })
-  }, [value, disabled, isStreaming, attachments, onSend, updateInputDraft, cancelPersistDraft])
+  }, [value, disabled, isStreaming, attachments, onSend, updateInputDraft, cancelPersistDraft, currentWorkspace])
 
   // 处理语音命令（放在 handleSend 之后，避免变量声明顺序问题）
   useEffect(() => {
@@ -502,17 +506,6 @@ export function ChatInput({
 
     setSpeechCommand(null)
   }, [speechCommand, isStreaming, setSpeechCommand, clearInputDraft, handleSend])
-
-  const resetInput = useCallback(() => {
-    // 清除本地 state
-    setLocalText('')
-    setLocalAttachments([])
-    // 清除 Store 草稿
-    clearInputDraft()
-    setShowSuggestions(false)
-    setSuggestionItems([])
-    clearResults()
-  }, [clearResults, clearInputDraft])
 
   // 键盘事件处理
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {

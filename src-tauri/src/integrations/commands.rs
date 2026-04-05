@@ -1,7 +1,7 @@
 /*! IM 机器人命令解析和处理
  *
  * 支持的命令：
- * - 模型切换: /claude, /iflow, /codex, /openai, /agent
+ * - 模型切换: /claude, /openai, /agent
  * - 提示词预设: /preset <preset_id>, /preset list, /preset default
  * - 中断对话: /stop, /end, /停止
  * - 状态查询: /status, /状态
@@ -86,22 +86,6 @@ impl CommandParser {
                 let (custom_prompt, replace_mode) = Self::parse_switch_args(&parts[1..]);
                 Some(BotCommand::SwitchProvider {
                     provider: EngineId::ClaudeCode,
-                    custom_prompt,
-                    replace_mode,
-                })
-            }
-            "iflow" => {
-                let (custom_prompt, replace_mode) = Self::parse_switch_args(&parts[1..]);
-                Some(BotCommand::SwitchProvider {
-                    provider: EngineId::IFlow,
-                    custom_prompt,
-                    replace_mode,
-                })
-            }
-            "codex" => {
-                let (custom_prompt, replace_mode) = Self::parse_switch_args(&parts[1..]);
-                Some(BotCommand::SwitchProvider {
-                    provider: EngineId::Codex,
                     custom_prompt,
                     replace_mode,
                 })
@@ -394,8 +378,6 @@ pub fn get_help_text() -> String {
 
 **模型切换**
 `/claude [提示词]` - 切换到 Claude
-`/iflow [提示词]` - 切换到 IFlow
-`/codex [提示词]` - 切换到 Codex
 `/openai [provider_id] [提示词]` - 切换到 OpenAI
 `/agent [提示词]` - 切换到 Agent
 • OpenAI 支持 provider_id 参数指定具体模型
@@ -440,11 +422,11 @@ mod tests {
         ));
 
         // 带提示词
-        let cmd = CommandParser::parse("/iflow 你是助手");
+        let cmd = CommandParser::parse("/claude 你是助手");
         assert!(matches!(
             cmd,
             Some(BotCommand::SwitchProvider {
-                provider: EngineId::IFlow,
+                provider: EngineId::ClaudeCode,
                 custom_prompt: Some(_),
                 replace_mode: false
             })

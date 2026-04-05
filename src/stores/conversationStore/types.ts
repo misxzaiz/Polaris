@@ -204,6 +204,7 @@ export interface SessionMetadata {
   type: 'project' | 'free'
   workspaceId: string | null
   workspaceName?: string // 工作区名称（用于显示）
+  contextWorkspaceIds: string[] // 关联工作区 ID 列表
   status: 'idle' | 'running' | 'waiting' | 'error' | 'background-running'
   createdAt: string
   updatedAt: string
@@ -274,6 +275,11 @@ export interface SessionManagerActions {
 
   // ===== 事件分发 =====
   dispatchEvent: (event: AIEvent & { sessionId?: string; _routeSessionId?: string }) => void
+
+  // ===== 工作区管理 =====
+  updateSessionWorkspace: (sessionId: string, workspaceId: string | null) => void
+  addContextWorkspace: (sessionId: string, workspaceId: string) => void
+  removeContextWorkspace: (sessionId: string, workspaceId: string) => void
 
   // ===== 后台运行管理 =====
   addToBackground: (sessionId: string) => void

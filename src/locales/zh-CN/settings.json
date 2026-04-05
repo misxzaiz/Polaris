@@ -25,25 +25,6 @@
     "claudeCode": {
       "name": "Claude Code",
       "description": "Anthropic 官方 CLI 工具"
-    },
-    "iflow": {
-      "name": "IFlow",
-      "description": "智能编程助手 CLI 工具"
-    },
-    "codex": {
-      "name": "Codex",
-      "description": "OpenAI Codex CLI 工具",
-      "title": "Codex CLI",
-      "cliPath": "CLI 路径",
-      "hint": "OpenAI Codex CLI 路径，留空使用系统 PATH 中的 codex 命令",
-      "sandboxMode": "Sandbox 模式",
-      "sandboxWorkspaceWrite": "workspace-write (创建/修改，可能不支持删除)",
-      "sandboxDangerFullAccess": "danger-full-access (完整权限，包括删除)",
-      "sandboxWorkspaceWriteHint": "较安全，但删除文件可能失败",
-      "sandboxDangerHint": "完整权限，但有安全风险",
-      "dangerousBypass": "dangerously-bypass-approvals-and-sandbox",
-      "dangerousBypassHint": "跳过所有审批和沙箱限制，极危险，仅限安全环境使用",
-      "notAvailable": "未安装"
     }
   },
   "openaiProviders": {
@@ -78,10 +59,6 @@
   "claudeCode": {
     "title": "Claude Code 配置",
     "cliPath": "Claude CLI 命令路径"
-  },
-  "iflow": {
-    "title": "IFlow 配置",
-    "cliPath": "IFlow CLI 命令路径（可选）"
   },
   "language": {
     "title": "语言设置",
@@ -118,11 +95,6 @@
       "name": "Claude Code",
       "placeholder": "请输入 Claude CLI 的完整路径",
       "example": "例如: C:\\Users\\[用户名]\\AppData\\Roaming\\npm\\claude.cmd"
-    },
-    "iflow": {
-      "name": "IFlow",
-      "placeholder": "请输入 IFlow CLI 的完整路径",
-      "example": "例如: C:\\Users\\[用户名]\\AppData\\Roaming\\npm\\iflow.cmd"
     }
   },
   "validation": {

@@ -44,8 +44,6 @@ export function AIPopover({ isOpen, onClose }: AIPopoverProps) {
   const engineOptions = useMemo(() => {
     const options: { id: EngineId; name: string }[] = [
       { id: 'claude-code', name: 'Claude Code' },
-      { id: 'iflow', name: 'IFlow' },
-      { id: 'codex', name: 'Codex' },
     ]
 
     if (config?.openaiProviders && config.openaiProviders.length > 0) {

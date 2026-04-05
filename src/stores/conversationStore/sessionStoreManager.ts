@@ -67,6 +67,7 @@ function createSessionManagerStore() {
         title: options.title || `新对话 ${get().stores.size + 1}`,
         type: options.type,
         workspaceId: options.workspaceId || null,
+        contextWorkspaceIds: [], // 初始化为空数组
         status: 'idle',
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -414,6 +415,97 @@ function createSessionManagerStore() {
       }
     },
 
+    // ===== 工作区管理 =====
+
+    updateSessionWorkspace: (sessionId: string, workspaceId: string | null) => {
+      const metadata = get().sessionMetadata.get(sessionId)
+      if (!metadata) {
+        console.warn('[SessionStoreManager] 会话不存在:', sessionId)
+        return
+      }
+
+      // 获取工作区名称
+      let workspaceName: string | undefined
+      if (workspaceId) {
+        const workspace = useWorkspaceStore.getState().workspaces.find(w => w.id === workspaceId)
+        workspaceName = workspace?.name
+      }
+
+      // 更新 SessionMetadata
+      const updatedMetadata: SessionMetadata = {
+        ...metadata,
+        workspaceId,
+        workspaceName,
+        type: workspaceId ? 'project' : 'free',
+        updatedAt: new Date().toISOString(),
+      }
+
+      set((state) => {
+        const newMetadata = new Map(state.sessionMetadata)
+        newMetadata.set(sessionId, updatedMetadata)
+        return { sessionMetadata: newMetadata }
+      })
+
+      // 更新 ConversationStore
+      const store = get().stores.get(sessionId)
+      if (store) {
+        store.setState({ workspaceId })
+      }
+
+      console.log('[SessionStoreManager] 更新会话工作区:', sessionId, workspaceId)
+    },
+
+    addContextWorkspace: (sessionId: string, workspaceId: string) => {
+      const metadata = get().sessionMetadata.get(sessionId)
+      if (!metadata) {
+        console.warn('[SessionStoreManager] 会话不存在:', sessionId)
+        return
+      }
+
+      // 防止重复添加
+      if (metadata.contextWorkspaceIds.includes(workspaceId)) {
+        return
+      }
+
+      // 更新 SessionMetadata
+      const updatedMetadata: SessionMetadata = {
+        ...metadata,
+        contextWorkspaceIds: [...metadata.contextWorkspaceIds, workspaceId],
+        updatedAt: new Date().toISOString(),
+      }
+
+      set((state) => {
+        const newMetadata = new Map(state.sessionMetadata)
+        newMetadata.set(sessionId, updatedMetadata)
+        return { sessionMetadata: newMetadata }
+      })
+
+      console.log('[SessionStoreManager] 添加关联工作区:', sessionId, workspaceId)
+    },
+
+    removeContextWorkspace: (sessionId: string, workspaceId: string) => {
+      const metadata = get().sessionMetadata.get(sessionId)
+      if (!metadata) {
+        console.warn('[SessionStoreManager] 会话不存在:', sessionId)
+        return
+      }
+
+      // 更新 SessionMetadata
+      const updatedMetadata: SessionMetadata = {
+        ...metadata,
+        contextWorkspaceIds: metadata.contextWorkspaceIds.filter(id => id !== workspaceId),
+        updatedAt: new Date().toISOString(),
+      }
+
+      set((state) => {
+        const newMetadata = new Map(state.sessionMetadata)
+        newMetadata.set(sessionId, updatedMetadata)
+        return { sessionMetadata: newMetadata }
+      })
+
+      console.log('[SessionStoreManager] 移除关联工作区:', sessionId, workspaceId)
+    },
+
     // ===== 初始化 =====
 
     initialize: async () => {
@@ -456,6 +548,9 @@ const cachedActions = {
   get removeFromNotifications() { return sessionStoreManager.getState().removeFromNotifications },
   get interruptSession() { return sessionStoreManager.getState().interruptSession },
   get interruptAllBackground() { return sessionStoreManager.getState().interruptAllBackground },
+  get updateSessionWorkspace() { return sessionStoreManager.getState().updateSessionWorkspace },
+  get addContextWorkspace() { return sessionStoreManager.getState().addContextWorkspace },
+  get removeContextWorkspace() { return sessionStoreManager.getState().removeContextWorkspace },
 }
 
 // ============================================================================
@@ -495,7 +590,7 @@ export function useConversationStore(sessionId: string | null): ConversationStor
 
 /**
  * 获取所有会话元数据列表
- * 使用 useShallow 避免数组实例变化导致的无限更新
+ * 使用缓存避免数组实例变化导致的无限更新
  */
 export function useSessionMetadataList(): SessionMetadata[] {
   return useStore(
@@ -513,16 +608,6 @@ export function useSessionMetadataList(): SessionMetadata[] {
       cachedMetadataArray = newArray
       
       return newArray
-    },
-    // 自定义比较函数：只有当数组长度或元素内容变化时才更新
-    (prev, next) => {
-      if (prev.length !== next.length) return false
-      return prev.every((item, index) => {
-        const nextItem = next[index]
-        return item.id === nextItem.id &&
-          item.status === nextItem.status &&
-          item.updatedAt === nextItem.updatedAt
-      })
     }
   )
 }
@@ -536,7 +621,7 @@ export function useActiveSessionId(): string | null {
 
 /**
  * 获取后台运行会话列表
- * 使用 useShallow 避免数组实例变化导致的无限更新
+ * 使用缓存避免数组实例变化导致的无限更新
  */
 export function useBackgroundSessions(): SessionMetadata[] {
   return useStore(
@@ -544,18 +629,13 @@ export function useBackgroundSessions(): SessionMetadata[] {
     (state) =>
       state.backgroundSessionIds
         .map((id) => state.sessionMetadata.get(id))
-        .filter((m): m is SessionMetadata => m !== undefined),
-    // 自定义比较函数
-    (prev, next) => {
-      if (prev.length !== next.length) return false
-      return prev.every((item, index) => item.id === next[index]?.id)
-    }
+        .filter((m): m is SessionMetadata => m !== undefined)
   )
 }
 
 /**
  * 获取已完成通知列表
- * 使用 useShallow 避免数组实例变化导致的无限更新
+ * 使用缓存避免数组实例变化导致的无限更新
  */
 export function useCompletedNotifications(): SessionMetadata[] {
   return useStore(
@@ -563,12 +643,7 @@ export function useCompletedNotifications(): SessionMetadata[] {
     (state) =>
       state.completedNotifications
         .map((id) => state.sessionMetadata.get(id))
-        .filter((m): m is SessionMetadata => m !== undefined),
-    // 自定义比较函数
-    (prev, next) => {
-      if (prev.length !== next.length) return false
-      return prev.every((item, index) => item.id === next[index]?.id)
-    }
+        .filter((m): m is SessionMetadata => m !== undefined)
   )
 }
 

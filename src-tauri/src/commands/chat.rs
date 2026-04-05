@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
 use crate::ai::{EngineId, Pagination, PagedResult, SessionOptions};
-use crate::ai::{SessionMeta, HistoryMessage, ClaudeHistoryProvider, IFlowHistoryProvider, SessionHistoryProvider};
+use crate::ai::{SessionMeta, HistoryMessage, ClaudeHistoryProvider, SessionHistoryProvider};
 use crate::error::{AppError, Result};
 use crate::models::AIEvent;
 use crate::services::mcp_config_service::WorkspaceMcpConfigService;
@@ -448,10 +448,6 @@ pub async fn list_sessions(
             let provider = ClaudeHistoryProvider::new(config);
             provider.list_sessions(work_dir.as_deref(), pagination)
         }
-        "iflow" => {
-            let provider = IFlowHistoryProvider::new(config);
-            provider.list_sessions(work_dir.as_deref(), pagination)
-        }
         _ => Err(AppError::ValidationError(format!("不支持的引擎: {}", engine_id))),
     }
 }
@@ -478,10 +474,6 @@ pub async fn get_session_history(
             let provider = ClaudeHistoryProvider::new(config);
             provider.get_session_history(&session_id, pagination)
         }
-        "iflow" => {
-            let provider = IFlowHistoryProvider::new(config);
-            provider.get_session_history(&session_id, pagination)
-        }
         _ => Err(AppError::ValidationError(format!("不支持的引擎: {}", engine_id))),
     }
 }
@@ -504,79 +496,8 @@ pub async fn delete_session(
             let provider = ClaudeHistoryProvider::new(config);
             provider.delete_session(&session_id)
         }
-        "iflow" => {
-            let provider = IFlowHistoryProvider::new(config);
-            provider.delete_session(&session_id)
-        }
         _ => Err(AppError::ValidationError(format!("不支持的引擎: {}", engine_id))),
     }
-}
-
-// ============================================================================
-// IFlow 特有功能（保留向后兼容）
-// ============================================================================
-
-use crate::models::iflow_events::{
-    IFlowSessionMeta, IFlowHistoryMessage, IFlowFileContext, IFlowTokenStats,
-};
-
-/// 列出 IFlow 会话（旧接口，保留向后兼容）
-#[tauri::command]
-pub async fn list_iflow_sessions(
-    state: tauri::State<'_, crate::AppState>,
-) -> Result<Vec<IFlowSessionMeta>> {
-    tracing::info!("[list_iflow_sessions] 获取 IFlow 会话列表");
-
-    let config_store = state.config_store.lock()
-        .map_err(|e| AppError::Unknown(e.to_string()))?;
-
-    let config = config_store.get().clone();
-    crate::services::iflow_service::IFlowService::list_sessions(&config)
-}
-
-/// 获取 IFlow 会话历史（旧接口，保留向后兼容）
-#[tauri::command]
-pub async fn get_iflow_session_history(
-    session_id: String,
-    state: tauri::State<'_, crate::AppState>,
-) -> Result<Vec<IFlowHistoryMessage>> {
-    tracing::info!("[get_iflow_session_history] 获取会话历史: {}", session_id);
-
-    let config_store = state.config_store.lock()
-        .map_err(|e| AppError::Unknown(e.to_string()))?;
-
-    let config = config_store.get().clone();
-    crate::services::iflow_service::IFlowService::get_session_history(&config, &session_id)
-}
-
-/// 获取 IFlow 文件上下文
-#[tauri::command]
-pub async fn get_iflow_file_contexts(
-    session_id: String,
-    state: tauri::State<'_, crate::AppState>,
-) -> Result<Vec<IFlowFileContext>> {
-    tracing::info!("[get_iflow_file_contexts] 获取文件上下文: {}", session_id);
-
-    let config_store = state.config_store.lock()
-        .map_err(|e| AppError::Unknown(e.to_string()))?;
-
-    let config = config_store.get().clone();
-    crate::services::iflow_service::IFlowService::get_file_contexts(&config, &session_id)
-}
-
-/// 获取 IFlow Token 统计
-#[tauri::command]
-pub async fn get_iflow_token_stats(
-    session_id: String,
-    state: tauri::State<'_, crate::AppState>,
-) -> Result<IFlowTokenStats> {
-    tracing::info!("[get_iflow_token_stats] 获取 Token 统计: {}", session_id);
-
-    let config_store = state.config_store.lock()
-        .map_err(|e| AppError::Unknown(e.to_string()))?;
-
-    let config = config_store.get().clone();
-    crate::services::iflow_service::IFlowService::get_token_stats(&config, &session_id)
 }
 
 // ============================================================================
@@ -833,195 +754,6 @@ pub async fn get_claude_code_session_history(
                             }
                         }
                         _ => {}
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(messages)
-}
-
-// ============================================================================
-// Codex 会话历史
-// ============================================================================
-
-/// Codex 会话元数据
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CodexSessionMeta {
-    pub session_id: String,
-    pub project_path: String,
-    pub created_at: Option<String>,
-    pub message_count: Option<usize>,
-}
-
-/// Codex 历史消息
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CodexHistoryMessage {
-    pub role: String,
-    pub content: String,
-    pub timestamp: Option<String>,
-}
-
-/// Codex 路径验证结果
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CodexPathValidationResult {
-    pub valid: bool,
-    pub error: Option<String>,
-    pub version: Option<String>,
-}
-
-/// 查找 Codex 路径
-#[tauri::command]
-pub fn find_codex_paths() -> Vec<String> {
-    let mut paths = Vec::new();
-
-    if let Ok(path_env) = std::env::var("PATH") {
-        let separator = if cfg!(windows) { ";" } else { ":" };
-        for dir in path_env.split(separator) {
-            let codex_path = PathBuf::from(dir).join(if cfg!(windows) { "codex.cmd" } else { "codex" });
-            if codex_path.exists() {
-                paths.push(codex_path.to_string_lossy().to_string());
-            }
-        }
-    }
-
-    if cfg!(windows) {
-        if let Ok(username) = std::env::var("USERNAME") {
-            {
-                let template = r"C:\Users\{}\AppData\Roaming\npm\codex.cmd";
-                let path = template.replace("{}", &username);
-                if PathBuf::from(&path).exists() {
-                    paths.push(path);
-                }
-            }
-        }
-    } else {
-        for path in ["/usr/local/bin/codex", "/usr/bin/codex", "/opt/homebrew/bin/codex"] {
-            if PathBuf::from(path).exists() {
-                paths.push(path.to_string());
-            }
-        }
-    }
-
-    paths
-}
-
-/// 验证 Codex 路径
-#[tauri::command]
-pub fn validate_codex_path(path: String) -> CodexPathValidationResult {
-    let path = PathBuf::from(&path);
-
-    if !path.exists() {
-        return CodexPathValidationResult {
-            valid: false,
-            error: Some("路径不存在".to_string()),
-            version: None,
-        };
-    }
-
-    #[cfg(windows)]
-    let version = std::process::Command::new(&path)
-        .arg("--version")
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
-            } else {
-                None
-            }
-        });
-
-    #[cfg(not(windows))]
-    let version = std::process::Command::new(&path)
-        .arg("--version")
-        .output()
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
-            } else {
-                None
-            }
-        });
-
-    CodexPathValidationResult {
-        valid: true,
-        error: None,
-        version,
-    }
-}
-
-/// 列出 Codex 会话
-#[tauri::command]
-pub fn list_codex_sessions(work_dir: Option<String>) -> Result<Vec<CodexSessionMeta>> {
-    tracing::info!("[list_codex_sessions] 获取 Codex 会话列表");
-
-    let base_dir = work_dir
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var("USERPROFILE")
-                .or_else(|_| std::env::var("HOME"))
-                .map(PathBuf::from)
-                .ok()
-        })
-        .unwrap_or_else(|| PathBuf::from("."));
-
-    let codex_dir = base_dir.join(".codex").join("sessions");
-    let mut sessions = Vec::new();
-
-    if codex_dir.exists() {
-        if let Ok(entries) = std::fs::read_dir(&codex_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().map(|e| e == "jsonl").unwrap_or(false) {
-                    let session_id = path.file_stem()
-                        .map(|s| s.to_string_lossy().to_string())
-                        .unwrap_or_default();
-
-                    sessions.push(CodexSessionMeta {
-                        session_id,
-                        project_path: base_dir.to_string_lossy().to_string(),
-                        created_at: None,
-                        message_count: None,
-                    });
-                }
-            }
-        }
-    }
-
-    Ok(sessions)
-}
-
-/// 获取 Codex 会话历史
-#[tauri::command]
-pub fn get_codex_session_history(file_path: String) -> Result<Vec<CodexHistoryMessage>> {
-    tracing::info!("[get_codex_session_history] 获取会话历史: {}", file_path);
-
-    let path = PathBuf::from(&file_path);
-
-    if !path.exists() {
-        return Err(AppError::ValidationError(format!("会话文件不存在: {}", file_path)));
-    }
-
-    let mut messages = Vec::new();
-
-    if let Ok(file) = std::fs::File::open(&path) {
-        let reader = BufReader::new(file);
-        for line in reader.lines().map_while(|r| r.ok()) {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
-                if let Some(role) = json.get("role").and_then(|r| r.as_str()) {
-                    if let Some(content) = json.get("content").and_then(|c| c.as_str()) {
-                        messages.push(CodexHistoryMessage {
-                            role: role.to_string(),
-                            content: content.to_string(),
-                            timestamp: json.get("timestamp").and_then(|t| t.as_str()).map(|s| s.to_string()),
-                        });
                     }
                 }
             }

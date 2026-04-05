@@ -148,28 +148,90 @@ export interface SessionMetadata {
 }
 ```
 
-### 3. WorkspaceSettingsPanel 组件
+### 3. WorkspaceBadge 组件（新增）
 
-新建工作区设置面板组件：
+在 SessionTab 内显示的工作区徽章组件：
 
 ```typescript
-interface WorkspaceSettingsPanelProps {
+interface WorkspaceBadgeProps {
   sessionId: string
-  currentWorkspaceId: string | null
+  workspaceId: string | null
+  workspaceName?: string
+  contextWorkspaceCount?: number
+  onClick: () => void
+}
+
+export function WorkspaceBadge({
+  sessionId,
+  workspaceId,
+  workspaceName,
+  contextWorkspaceCount = 0,
+  onClick
+}: WorkspaceBadgeProps) {
+  // 无工作区：显示灰色 + 图标
+  if (!workspaceId) {
+    return (
+      <button onClick={onClick} className="workspace-badge-empty">
+        <PlusIcon />
+      </button>
+    )
+  }
+  
+  // 有工作区：显示名称 + 关联数量
+  return (
+    <button onClick={onClick} className="workspace-badge">
+      <FolderIcon />
+      <span>{workspaceName}</span>
+      {contextWorkspaceCount > 0 && (
+        <span className="badge-count">+{contextWorkspaceCount}</span>
+      )}
+    </button>
+  )
+}
+```
+
+### 4. WorkspaceMenu 组件（已存在，需集成）
+
+工作区选择下拉菜单组件（已实现，位于 `src/components/Session/WorkspaceMenu.tsx`）：
+
+```typescript
+interface WorkspaceMenuProps {
+  sessionId: string
   onClose: () => void
 }
 
-export function WorkspaceSettingsPanel({
-  sessionId,
-  currentWorkspaceId,
-  onClose
-}: WorkspaceSettingsPanelProps) {
-  // 显示当前工作区
-  // 显示所有可用工作区列表
-  // 提供选择工作区功能
-  // 提供"无工作区"选项
-  // 提供创建新工作区入口
+// 功能：
+// - 显示所有可用工作区列表
+// - 切换主工作区（如果未锁定）
+// - 添加/移除关联工作区
+// - 创建新工作区入口（顶部"+ 新增"按钮）
+// - 显示工作区锁定状态
+// - 显示关联工作区汇总
+```
+
+**新增工作区流程：**
+1. 点击菜单顶部的"+ 新增"按钮
+2. 打开 `CreateWorkspaceModal` 弹窗
+3. 输入工作区名称和路径（支持浏览选择）
+4. 可选择是否创建后切换到新工作区
+5. 创建成功后自动关联到当前会话（如果勾选了切换选项）
+
+### 5. CreateWorkspaceModal 组件（已存在）
+
+创建工作区弹窗组件（已实现，位于 `src/components/Workspace/CreateWorkspaceModal.tsx`）：
+
+```typescript
+interface CreateWorkspaceModalProps {
+  onClose: () => void
 }
+
+// 功能：
+// - 输入工作区名称
+// - 输入或浏览选择工作区路径
+// - 选择是否创建后切换到新工作区
+// - 表单验证和错误提示
+// - 使用 Portal 渲染到 body
+// - 支持 ESC 键和点击外部关闭
 ```
 
 ### 4. SessionTab 组件增强

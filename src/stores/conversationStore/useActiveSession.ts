@@ -16,6 +16,7 @@ import {
   sessionStoreManager,
   useActiveSessionId,
 } from './sessionStoreManager'
+import { useWorkspaceStore } from '../workspaceStore'
 import type { ConversationStore, ConversationState } from './types'
 
 /**
@@ -135,6 +136,26 @@ export function useActiveSessionInputDraft() {
     useCallback((state: ConversationState) => state.inputDraft, []),
     { text: '', attachments: [] }
   )
+}
+
+/**
+ * 获取活跃会话的工作区
+ */
+export function useActiveSessionWorkspace() {
+  const workspaceId = useActiveSessionSelector(
+    useCallback((state: ConversationState) => state.workspaceId, []),
+    null
+  )
+
+  // 使用 useWorkspaceStore 根据 workspaceId 查找工作区对象
+  const workspace = useWorkspaceStore(
+    useCallback((state) => {
+      if (!workspaceId) return null
+      return state.workspaces.find((w) => w.id === workspaceId) || null
+    }, [workspaceId])
+  )
+
+  return workspace
 }
 
 /**

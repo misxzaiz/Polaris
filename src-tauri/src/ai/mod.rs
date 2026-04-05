@@ -2,8 +2,6 @@
  *
  * 提供统一的 AI 引擎接口，支持多种 AI CLI 工具：
  * - Claude Code
- * - IFlow
- * - Codex
  * - OpenAI 兼容 API
  */
 
@@ -14,14 +12,12 @@ mod registry;
 mod engine;
 mod history;
 mod history_claude;
-mod history_iflow;
 mod event_parser;
 
 pub use traits::{EngineId, SessionOptions, HistoryEntry};
 pub use registry::EngineRegistry;
-pub use engine::{ClaudeEngine, IFlowEngine, CodexEngine, OpenAIEngine};
+pub use engine::{ClaudeEngine, OpenAIEngine};
 pub use history::{
     Pagination, PagedResult, SessionMeta, HistoryMessage, SessionHistoryProvider,
 };
 pub use history_claude::ClaudeHistoryProvider;
-pub use history_iflow::IFlowHistoryProvider;

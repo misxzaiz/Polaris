@@ -17,54 +17,6 @@ impl Default for ClaudeCodeConfig {
     }
 }
 
-/// IFlow 引擎配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[derive(Default)]
-pub struct IFlowConfig {
-    /// IFlow CLI 命令路径（可选，默认为 "iflow"）
-    pub cli_path: Option<String>,
-}
-
-
-/// Codex 引擎配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CodexConfig {
-    /// Codex CLI 命令路径（可选，默认为 "codex"）
-    pub cli_path: Option<String>,
-    /// Codex sandbox 模式（workspace-write/read-only/danger-full-access）
-    #[serde(default = "default_codex_sandbox_mode")]
-    pub sandbox_mode: String,
-    /// Codex 审批策略（never/on-request/on-failure/untrusted）
-    #[serde(default = "default_codex_approval_policy")]
-    pub approval_policy: String,
-    /// 是否启用危险全开放（跳过审批和沙箱）
-    #[serde(default)]
-    pub dangerous_bypass: bool,
-}
-
-fn default_codex_sandbox_mode() -> String {
-    // workspace-write: 允许创建/修改，但可能不支持删除
-    // danger-full-access: 完整权限，包括删除（有安全风险）
-    "workspace-write".to_string()
-}
-
-fn default_codex_approval_policy() -> String {
-    "never".to_string()
-}
-
-impl Default for CodexConfig {
-    fn default() -> Self {
-        Self {
-            cli_path: None,
-            sandbox_mode: default_codex_sandbox_mode(),
-            approval_policy: default_codex_approval_policy(),
-            dangerous_bypass: false,
-        }
-    }
-}
-
 /// OpenAI Provider 配置
 ///
 /// 支持任何 OpenAI 协议兼容的 API 服务
@@ -156,10 +108,6 @@ pub enum EngineId {
     /// Claude Code 引擎
     #[default]
     ClaudeCode,
-    /// IFlow 引擎
-    IFlow,
-    /// OpenAI Codex 引擎
-    Codex,
 }
 
 
@@ -168,8 +116,6 @@ impl EngineId {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::ClaudeCode => "claude-code",
-            Self::IFlow => "iflow",
-            Self::Codex => "codex",
         }
     }
 
@@ -177,8 +123,6 @@ impl EngineId {
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "claude-code" => Some(Self::ClaudeCode),
-            "iflow" => Some(Self::IFlow),
-            "codex" => Some(Self::Codex),
             _ => None,
         }
     }
@@ -534,14 +478,6 @@ pub struct Config {
     #[serde(default)]
     pub claude_code: ClaudeCodeConfig,
 
-    /// IFlow 引擎配置
-    #[serde(default)]
-    pub iflow: IFlowConfig,
-
-    /// Codex 引擎配置
-    #[serde(default)]
-    pub codex: CodexConfig,
-
     /// OpenAI Providers 列表
     #[serde(default)]
     pub openai_providers: Vec<OpenAIProvider>,
@@ -603,8 +539,6 @@ impl Default for Config {
             default_engine: default_default_engine(),
             language: None,
             claude_code: ClaudeCodeConfig::default(),
-            iflow: IFlowConfig::default(),
-            codex: CodexConfig::default(),
             openai_providers: Vec::new(),
             active_provider_id: None,
             work_dir: None,
@@ -663,18 +597,6 @@ pub struct HealthStatus {
 
     /// Claude 版本
     pub claude_version: Option<String>,
-
-    /// IFlow CLI 是否可用
-    pub iflow_available: Option<bool>,
-
-    /// IFlow 版本
-    pub iflow_version: Option<String>,
-
-    /// Codex CLI 是否可用
-    pub codex_available: Option<bool>,
-
-    /// Codex 版本
-    pub codex_version: Option<String>,
 
     /// OpenAI Providers 配置数量
     pub openai_providers_count: Option<usize>,

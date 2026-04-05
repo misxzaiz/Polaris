@@ -1,17 +1,12 @@
 /**
  * 统一会话历史服务
  *
- * 整合 Claude Code、IFlow、Codex 三个 Provider 的历史会话
+ * 整合 Claude Code Provider 的历史会话
  * 提供统一的接口访问所有历史会话
  */
 
 import { getClaudeCodeHistoryService } from './claudeCodeHistoryService'
-import { getIFlowHistoryService } from './iflowHistoryService'
-import { getCodexHistoryService } from './codexHistoryService'
 import type { Message } from '../types'
-import { createLogger } from '../utils/logger'
-
-const log = createLogger('UnifiedHistoryService')
 
 // ============================================================================
 // 类型定义
@@ -20,7 +15,7 @@ const log = createLogger('UnifiedHistoryService')
 /**
  * Provider 类型
  */
-export type ProviderType = 'claude-code' | 'iflow' | 'codex'
+export type ProviderType = 'claude-code'
 
 /**
  * 统一的会话元数据
@@ -40,9 +35,7 @@ export interface UnifiedSessionMeta {
   createdAt?: string
   /** 更新时间 */
   updatedAt?: string
-  /** 文件路径（仅 Codex 需要） */
-  filePath?: string
-  /** 项目路径（仅 Claude Code 需要） */
+  /** 项目路径 */
   projectPath?: string
 }
 
@@ -65,59 +58,24 @@ export interface ProviderStats {
  */
 export class UnifiedHistoryService {
   private claudeService = getClaudeCodeHistoryService()
-  private iflowService = getIFlowHistoryService()
-  private codexService = getCodexHistoryService()
 
   /**
    * 列出所有 Provider 的会话
    */
   async listAllSessions(options?: {
-    /** 工作目录（用于 Codex） */
-    workDir?: string
-    /** 项目路径（用于 Claude Code） */
+    /** 项目路径 */
     projectPath?: string
-    /** 要查询的 Provider 列表，不传则查询所有 */
-    providers?: ProviderType[]
   }): Promise<UnifiedSessionMeta[]> {
-    const providers = options?.providers || ['claude-code', 'iflow', 'codex']
-    const allSessions: UnifiedSessionMeta[] = []
-
-    // 并发查询所有 Provider
-    const results = await Promise.allSettled([
-      providers.includes('claude-code')
-        ? this.listClaudeCodeSessions(options?.projectPath)
-        : Promise.resolve([]),
-      providers.includes('iflow')
-        ? this.listIFlowSessions()
-        : Promise.resolve([]),
-      providers.includes('codex')
-        ? this.listCodexSessions(options?.workDir)
-        : Promise.resolve([]),
-    ])
-
-    // Claude Code
-    if (results[0].status === 'fulfilled') {
-      allSessions.push(...results[0].value)
-    }
-
-    // IFlow
-    if (results[1].status === 'fulfilled') {
-      allSessions.push(...results[1].value)
-    }
-
-    // Codex
-    if (results[2].status === 'fulfilled') {
-      allSessions.push(...results[2].value)
-    }
+    const sessions = await this.listClaudeCodeSessions(options?.projectPath)
 
     // 按更新时间排序
-    allSessions.sort((a, b) => {
+    sessions.sort((a, b) => {
       const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0
       const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0
       return timeB - timeA
     })
 
-    return allSessions
+    return sessions
   }
 
   /**
@@ -126,20 +84,13 @@ export class UnifiedHistoryService {
   async listSessionsByProvider(
     provider: ProviderType,
     options?: {
-      workDir?: string
       projectPath?: string
     }
   ): Promise<UnifiedSessionMeta[]> {
-    switch (provider) {
-      case 'claude-code':
-        return this.listClaudeCodeSessions(options?.projectPath)
-      case 'iflow':
-        return this.listIFlowSessions()
-      case 'codex':
-        return this.listCodexSessions(options?.workDir)
-      default:
-        return []
+    if (provider === 'claude-code') {
+      return this.listClaudeCodeSessions(options?.projectPath)
     }
+    return []
   }
 
   /**
@@ -160,81 +111,27 @@ export class UnifiedHistoryService {
   }
 
   /**
-   * 列出 IFlow 会话
-   */
-  private async listIFlowSessions(): Promise<UnifiedSessionMeta[]> {
-    const sessions = await this.iflowService.listSessions()
-    return sessions.map(s => ({
-      sessionId: s.sessionId,
-      provider: 'iflow' as const,
-      title: s.title || 'IFlow 对话',
-      messageCount: s.messageCount,
-      fileSize: s.fileSize,
-      createdAt: s.createdAt,
-      updatedAt: s.updatedAt,
-    }))
-  }
-
-  /**
-   * 列出 Codex 会话
-   */
-  private async listCodexSessions(workDir?: string): Promise<UnifiedSessionMeta[]> {
-    const sessions = await this.codexService.listSessions(workDir)
-    return sessions.map(s => ({
-      sessionId: s.sessionId,
-      provider: 'codex' as const,
-      title: s.title || 'Codex 对话',
-      messageCount: s.messageCount,
-      fileSize: s.fileSize,
-      createdAt: s.createdAt,
-      updatedAt: s.updatedAt,
-      filePath: s.filePath,
-    }))
-  }
-
-  /**
    * 获取会话详细历史
    */
   async getSessionHistory(
     provider: ProviderType,
     sessionId: string,
     options?: {
-      filePath?: string
       projectPath?: string
     }
   ): Promise<Message[]> {
-    switch (provider) {
-      case 'claude-code': {
-        const claudeMessages = await this.claudeService.getSessionHistory(sessionId, options?.projectPath)
-        return this.claudeService.convertMessagesToFormat(claudeMessages)
-      }
-
-      case 'iflow': {
-        const iflowMessages = await this.iflowService.getSessionHistory(sessionId)
-        return this.iflowService.convertMessagesToFormat(iflowMessages)
-      }
-
-      case 'codex': {
-        if (!options?.filePath) {
-          log.error('Codex 需要 filePath 参数')
-          return []
-        }
-        const codexMessages = await this.codexService.getSessionHistory(options.filePath)
-        return this.codexService.convertMessagesToFormat(codexMessages)
-      }
-
-      default:
-        return []
+    if (provider === 'claude-code') {
+      const claudeMessages = await this.claudeService.getSessionHistory(sessionId, options?.projectPath)
+      return this.claudeService.convertMessagesToFormat(claudeMessages)
     }
+    return []
   }
 
   /**
    * 搜索会话（按标题或内容）
    */
   async searchSessions(query: string, options?: {
-    workDir?: string
     projectPath?: string
-    providers?: ProviderType[]
   }): Promise<UnifiedSessionMeta[]> {
     const allSessions = await this.listAllSessions(options)
 
@@ -252,9 +149,7 @@ export class UnifiedHistoryService {
     startDate: Date,
     endDate: Date,
     options?: {
-      workDir?: string
       projectPath?: string
-      providers?: ProviderType[]
     }
   ): Promise<UnifiedSessionMeta[]> {
     const allSessions = await this.listAllSessions(options)
@@ -270,7 +165,6 @@ export class UnifiedHistoryService {
    * 获取 Provider 统计信息
    */
   async getStats(options?: {
-    workDir?: string
     projectPath?: string
   }): Promise<ProviderStats[]> {
     const allSessions = await this.listAllSessions(options)
@@ -334,33 +228,15 @@ export class UnifiedHistoryService {
   /**
    * 获取 Provider 显示名称
    */
-  getProviderName(provider: ProviderType): string {
-    switch (provider) {
-      case 'claude-code':
-        return 'Claude Code'
-      case 'iflow':
-        return 'IFlow'
-      case 'codex':
-        return 'Codex'
-      default:
-        return provider
-    }
+  getProviderName(_provider: ProviderType): string {
+    return 'Claude Code'
   }
 
   /**
    * 获取 Provider 图标
    */
-  getProviderIcon(provider: ProviderType): string {
-    switch (provider) {
-      case 'claude-code':
-        return 'Claude'
-      case 'iflow':
-        return 'IFlow'
-      case 'codex':
-        return 'Codex'
-      default:
-        return 'AI'
-    }
+  getProviderIcon(_provider: ProviderType): string {
+    return 'Claude'
   }
 }
 

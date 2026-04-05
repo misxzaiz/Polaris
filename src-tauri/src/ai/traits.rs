@@ -11,8 +11,6 @@ use std::sync::Arc;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum EngineId {
     ClaudeCode,
-    IFlow,
-    Codex,
     /// OpenAI 兼容引擎，可选指定具体的 provider_id
     OpenAI {
         /// Provider ID，None 表示使用激活的 provider
@@ -25,16 +23,12 @@ impl EngineId {
     ///
     /// 支持格式：
     /// - "claude", "claude-code", "claudecode" → ClaudeCode
-    /// - "iflow" → IFlow
-    /// - "codex" → Codex
     /// - "openai" → OpenAI { provider_id: None }
     /// - "provider-xxx" → OpenAI { provider_id: Some("xxx") }
     pub fn from_str(s: &str) -> Option<Self> {
         let lower = s.to_lowercase();
         match lower.as_str() {
             "claude" | "claude-code" | "claudecode" => Some(Self::ClaudeCode),
-            "iflow" => Some(Self::IFlow),
-            "codex" => Some(Self::Codex),
             "openai" => Some(Self::OpenAI { provider_id: None }),
             _ => {
                 // 尝试解析 provider-xxx 格式
@@ -54,8 +48,6 @@ impl EngineId {
     pub fn as_str(&self) -> String {
         match self {
             Self::ClaudeCode => "claude".to_string(),
-            Self::IFlow => "iflow".to_string(),
-            Self::Codex => "codex".to_string(),
             Self::OpenAI { provider_id: None } => "openai".to_string(),
             Self::OpenAI { provider_id: Some(id) } => format!("provider-{}", id),
         }
@@ -65,8 +57,6 @@ impl EngineId {
     pub fn display_name(&self) -> &'static str {
         match self {
             Self::ClaudeCode => "Claude Code",
-            Self::IFlow => "IFlow",
-            Self::Codex => "Codex",
             Self::OpenAI { .. } => "OpenAI",
         }
     }

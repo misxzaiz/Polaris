@@ -13,7 +13,7 @@
 
 import { useMemo, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useEventChatStore, useConfigStore, useChatInputStore } from '../../stores';
+import { useConfigStore, useChatInputStore } from '../../stores';
 import { useActiveSessionActions, useActiveSessionMessages, useActiveSessionStreaming } from '../../stores/conversationStore/useActiveSession';
 import { MessageSquare, Wrench, Clock, Paperclip, Loader2 } from 'lucide-react';
 import { clsx } from 'clsx';

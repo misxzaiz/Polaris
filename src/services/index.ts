@@ -12,26 +12,6 @@ export {
   type ClaudeCodeMessage,
 } from './claudeCodeHistoryService'
 
-// IFlow 历史服务
-export {
-  getIFlowHistoryService,
-  IFlowHistoryService,
-  type IFlowSessionMeta,
-  type IFlowHistoryMessage,
-  type IFlowToolCall,
-  type IFlowFileContext,
-  type IFlowTokenStats,
-} from './iflowHistoryService'
-
-// Codex 历史服务
-export {
-  getCodexHistoryService,
-  CodexHistoryService,
-  type CodexSessionMeta,
-  type CodexHistoryMessage,
-  type CodexToolCall,
-} from './codexHistoryService'
-
 // 统一历史服务
 export {
   getUnifiedHistoryService,

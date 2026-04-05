@@ -16,8 +16,6 @@ interface AIEngineTabProps {
 // 固定的传统引擎选项
 const FIXED_ENGINE_OPTIONS: { id: EngineId; nameKey: string; descKey: string }[] = [
   { id: 'claude-code', nameKey: 'engines.claudeCode.name', descKey: 'engines.claudeCode.description' },
-  { id: 'iflow', nameKey: 'engines.iflow.name', descKey: 'engines.iflow.description' },
-  { id: 'codex', nameKey: 'engines.codex.name', descKey: 'engines.codex.description' },
 ];
 
 export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProps) {
@@ -40,20 +38,6 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
     onConfigChange({
       ...config,
       claudeCode: { ...config.claudeCode, cliPath: cmd }
-    });
-  };
-
-  const handleIFlowCmdChange = (cmd: string) => {
-    onConfigChange({
-      ...config,
-      iflow: { ...config.iflow, cliPath: cmd }
-    });
-  };
-
-  const handleCodexCmdChange = (cmd: string) => {
-    onConfigChange({
-      ...config,
-      codex: { ...config.codex, cliPath: cmd }
     });
   };
 
@@ -95,7 +79,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
               </div>
             </button>
           ))}
-          
+
           {/* OpenAI Provider 选项 */}
           {enabledProviders.length > 0 ? (
             <div className="mt-4 pt-4 border-t border-border">
@@ -187,88 +171,6 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
               engineType="claude-code"
               disabled={loading}
             />
-          </div>
-        </div>
-      )}
-
-      {/* IFlow 配置 */}
-      {config.defaultEngine === 'iflow' && (
-        <div className="p-4 bg-surface rounded-lg border border-border">
-          <h3 className="text-sm font-medium text-text-primary mb-3">{t('iflow.title')}</h3>
-          <div>
-            <label className="block text-xs text-text-secondary mb-2">
-              {t('iflow.cliPath')}
-            </label>
-            <ClaudePathSelector
-              value={config.iflow.cliPath || 'iflow'}
-              onChange={handleIFlowCmdChange}
-              engineType="iflow"
-              disabled={loading}
-              placeholder="iflow"
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Codex 配置 */}
-      {config.defaultEngine === 'codex' && (
-        <div className="p-4 bg-surface rounded-lg border border-border">
-          <h3 className="text-sm font-medium text-text-primary mb-3">{t('codex.title', 'Codex CLI')}</h3>
-          <div>
-            <label className="block text-xs text-text-secondary mb-2">
-              {t('codex.cliPath', 'CLI 路径')}
-            </label>
-            <ClaudePathSelector
-              value={config.codex?.cliPath || 'codex'}
-              onChange={handleCodexCmdChange}
-              engineType="codex"
-              disabled={loading}
-              placeholder="codex"
-            />
-          </div>
-          <p className="mt-2 text-xs text-text-tertiary">
-            {t('codex.hint', 'OpenAI Codex CLI 路径，留空使用系统 PATH 中的 codex 命令')}
-          </p>
-
-          {/* Sandbox 模式配置 */}
-          <div className="mt-4">
-            <label className="block text-xs text-text-secondary mb-2">
-              {t('codex.sandboxMode', 'Sandbox 模式')}
-            </label>
-            <select
-              value={config.codex?.sandboxMode || 'workspace-write'}
-              onChange={(e) => onConfigChange({
-                ...config,
-                codex: { ...config.codex, sandboxMode: e.target.value }
-              })}
-              className="w-full px-3 py-2 rounded border border-border bg-background text-sm"
-            >
-              <option value="workspace-write">{t('codex.sandboxWorkspaceWrite')}</option>
-              <option value="danger-full-access">{t('codex.sandboxDangerFullAccess')}</option>
-            </select>
-            <p className="mt-1 text-xs text-text-tertiary">
-              {t('codex.sandboxWorkspaceWriteHint')}<br/>
-              {t('codex.sandboxDangerHint')}
-            </p>
-          </div>
-
-          {/* 危险模式开关 */}
-          <div className="mt-3">
-            <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer">
-              <input
-                type="checkbox"
-                checked={config.codex?.dangerousBypass || false}
-                onChange={(e) => onConfigChange({
-                  ...config,
-                  codex: { ...config.codex, dangerousBypass: e.target.checked }
-                })}
-                className="w-4 h-4"
-              />
-              <span className="text-red-500">{t('codex.dangerousBypass')}</span>
-            </label>
-            <p className="mt-1 text-xs text-text-tertiary ml-6">
-              ⚠️ {t('codex.dangerousBypassHint')}
-            </p>
           </div>
         </div>
       )}

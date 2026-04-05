@@ -56,18 +56,6 @@ impl EngineDescriptor {
                 description: "Anthropic 官方 Claude CLI".to_string(),
                 available: true, // 实际可用性需要运行时检查
             },
-            Self {
-                id: "iflow".to_string(),
-                name: "IFlow".to_string(),
-                description: "支持多种 AI 模型的智能编程助手".to_string(),
-                available: true,
-            },
-            Self {
-                id: "codex".to_string(),
-                name: "Codex".to_string(),
-                description: "OpenAI Codex CLI 代码生成助手".to_string(),
-                available: true,
-            },
         ]
     }
 }

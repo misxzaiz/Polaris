@@ -15,16 +15,14 @@
  */
 
 import type { HistorySlice, HistoryEntry, UnifiedHistoryItem } from './types'
-import type { ChatMessage, UserChatMessage, AssistantChatMessage, SystemChatMessage, EngineId } from '../../types'
+import type { ChatMessage, EngineId } from '../../types'
 import { createLogger } from '../../utils/logger'
 import { useWorkspaceStore } from '../workspaceStore'
 import { sessionStoreManager } from '../conversationStore/sessionStoreManager'
 
 const log = createLogger('EventChatStore')
 import { MAX_MESSAGES, SESSION_HISTORY_KEY, MAX_SESSION_HISTORY } from './types'
-import { getIFlowHistoryService } from '../../services/iflowHistoryService'
 import { getClaudeCodeHistoryService } from '../../services/claudeCodeHistoryService'
-import { listCodexSessions, getCodexSessionHistory } from '../../services/tauri'
 
 /**
  * 从路径中提取名称
@@ -171,7 +169,6 @@ export const createHistorySlice: HistorySlice = (set, get) => ({
   getUnifiedHistory: async () => {
     const items: UnifiedHistoryItem[] = []
 
-    const iflowService = getIFlowHistoryService()
     const claudeCodeService = getClaudeCodeHistoryService()
     // 使用依赖注入获取当前工作区
     const workspaceActions = get().getWorkspaceActions()
@@ -217,49 +214,7 @@ export const createHistorySlice: HistorySlice = (set, get) => ({
         console.warn('[EventChatStore] 获取 Claude Code 原生会话失败:', e)
       }
 
-      // 3. 获取 IFlow 会话列表
-      try {
-        const iflowSessions = await iflowService.listSessions()
-        for (const session of iflowSessions) {
-          if (!items.find(item => item.id === session.sessionId)) {
-            items.push({
-              id: session.sessionId,
-              title: session.title,
-              timestamp: session.updatedAt,
-              messageCount: session.messageCount,
-              engineId: 'iflow',
-              source: 'iflow',
-              fileSize: session.fileSize,
-              inputTokens: session.inputTokens,
-              outputTokens: session.outputTokens,
-            })
-          }
-        }
-      } catch (e) {
-        log.warn('获取 IFlow 会话失败', { error: String(e) })
-      }
-
-      // 4. 获取 Codex 会话列表
-      try {
-        const codexSessions = await listCodexSessions(currentWorkspace?.path || '')
-        for (const session of codexSessions) {
-          if (!items.find(item => item.id === session.sessionId)) {
-            items.push({
-              id: session.sessionId,
-              title: session.title,
-              timestamp: session.updatedAt,
-              messageCount: session.messageCount,
-              engineId: 'codex',
-              source: 'codex',
-              fileSize: session.fileSize,
-            })
-          }
-        }
-      } catch (e) {
-        console.warn('[EventChatStore] 获取 Codex 会话失败:', e)
-      }
-
-      // 5. 按时间戳排序
+      // 3. 按时间戳排序
       items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
 
       return items
@@ -336,70 +291,6 @@ export const createHistorySlice: HistorySlice = (set, get) => ({
           log.debug('从 Claude Code 历史加载消息', { messageCount: chatMessages.length })
         }
       }
-      // 2.3 尝试从 IFlow 恢复
-      else if (engineId === 'iflow') {
-        const iflowService = getIFlowHistoryService()
-        const messages = await iflowService.getSessionHistory(sessionId)
-
-        if (messages.length > 0) {
-          const convertedMessages = iflowService.convertMessagesToFormat(messages)
-          chatMessages = convertedMessages.map((msg) => {
-            if (msg.role === 'user') {
-              return {
-                id: msg.id,
-                type: 'user' as const,
-                content: msg.content,
-                timestamp: msg.timestamp,
-              } satisfies UserChatMessage
-            } else if (msg.role === 'assistant') {
-              return {
-                id: msg.id,
-                type: 'assistant' as const,
-                blocks: [{ type: 'text', content: msg.content }],
-                timestamp: msg.timestamp,
-                content: msg.content,
-                toolSummary: msg.toolSummary,
-              } satisfies AssistantChatMessage
-            } else {
-              return {
-                id: msg.id,
-                type: 'system' as const,
-                content: msg.content,
-                timestamp: msg.timestamp,
-              } satisfies SystemChatMessage
-            }
-          })
-          externalSessionId = sessionId
-          log.debug('从 IFlow 历史加载消息', { messageCount: chatMessages.length })
-        }
-      }
-      // 2.4 尝试从 Codex 恢复
-      else if (engineId === 'codex') {
-        const messages = await getCodexSessionHistory(sessionId)
-
-        if (messages && messages.length > 0) {
-          chatMessages = messages.map((msg) => {
-            if (msg.type === 'user') {
-              return {
-                id: msg.id,
-                type: 'user' as const,
-                content: msg.content,
-                timestamp: msg.timestamp,
-              } satisfies UserChatMessage
-            } else {
-              return {
-                id: msg.id,
-                type: 'assistant' as const,
-                blocks: [{ type: 'text', content: msg.content }],
-                timestamp: msg.timestamp,
-                content: msg.content,
-              } satisfies AssistantChatMessage
-            }
-          })
-          externalSessionId = sessionId
-          log.debug('从 Codex 历史加载消息', { messageCount: chatMessages.length })
-        }
-      }
 
       // ========== 3. 检查是否成功加载消息 ==========
       if (chatMessages.length === 0) {
@@ -431,17 +322,8 @@ export const createHistorySlice: HistorySlice = (set, get) => ({
     }
   },
 
-  deleteHistorySession: (sessionId, source) => {
+  deleteHistorySession: (sessionId, _source) => {
     try {
-      if (source === 'iflow' || (!source && sessionId.startsWith('session-'))) {
-        log.debug('IFlow 会话无法删除，仅作忽略', { sessionId })
-        return
-      }
-      if (source === 'codex') {
-        log.debug('Codex 会话无法删除，仅作忽略', { sessionId })
-        return
-      }
-
       const historyJson = localStorage.getItem(SESSION_HISTORY_KEY)
       const history = historyJson ? JSON.parse(historyJson) : []
 

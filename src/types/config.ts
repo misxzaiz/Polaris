@@ -5,7 +5,7 @@
 import type { SpeechConfig, TTSConfig } from './speech'
 
 /**  引擎 ID（扩展以支持动态 Provider） */
-export type EngineId = 'claude-code' | 'iflow' | 'codex' | `provider-${string}`
+export type EngineId = 'claude-code' | `provider-${string}`
 
 /** 支持的语言 */
 export type Language = 'zh-CN' | 'en-US'
@@ -108,22 +108,6 @@ export interface Config {
     /** Claude CLI 命令路径 */
     cliPath: string;
   };
-  /** IFlow 引擎配置 */
-  iflow: {
-    /** IFlow CLI 命令路径 */
-    cliPath?: string;
-  };
-  /** Codex 引擎配置 */
-  codex: {
-    /** Codex CLI 命令路径 */
-    cliPath?: string;
-    /** Sandbox 模式 */
-    sandboxMode?: string;
-    /** 审批策略 */
-    approvalPolicy?: string;
-    /** 危险全开放（跳过审批和沙箱） */
-    dangerousBypass?: boolean;
-  };
   /** OpenAI Providers 列表 */
   openaiProviders: OpenAIProvider[];
   /** 当前选中的 Provider ID */
@@ -152,14 +136,6 @@ export interface HealthStatus {
   claudeAvailable: boolean;
   /** Claude 版本 */
   claudeVersion?: string;
-  /** IFlow CLI 是否可用 */
-  iflowAvailable?: boolean;
-  /** IFlow 版本 */
-  iflowVersion?: string;
-  /** Codex CLI 是否可用 */
-  codexAvailable?: boolean;
-  /** Codex 版本 */
-  codexVersion?: string;
   /** 工作目录 */
   workDir?: string;
   /** 配置是否有效 */

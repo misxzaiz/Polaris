@@ -16,11 +16,7 @@ use services::logger::Logger;
 use commands::chat::{start_chat, continue_chat, interrupt_chat};
 use commands::chat::{
     list_sessions, get_session_history, delete_session,
-    list_iflow_sessions, get_iflow_session_history,
-    get_iflow_file_contexts, get_iflow_token_stats,
     list_claude_code_sessions, get_claude_code_session_history,
-    find_codex_paths, validate_codex_path,
-    list_codex_sessions, get_codex_session_history,
     register_pending_question, answer_question, get_pending_questions, clear_answered_questions,
     // PlanMode 相关
     register_pending_plan, approve_plan, reject_plan, get_pending_plans, clear_processed_plans,
@@ -180,29 +176,6 @@ fn validate_claude_path(path: String) -> PathValidationResult {
     }
 }
 
-/// 查找所有可用的 IFlow CLI 路径
-#[tauri::command]
-fn find_iflow_paths() -> Vec<String> {
-    ConfigStore::find_iflow_paths()
-}
-
-/// 验证 IFlow CLI 路径
-#[tauri::command]
-fn validate_iflow_path(path: String) -> PathValidationResult {
-    match ConfigStore::validate_iflow_path(path) {
-        Ok((valid, error, version)) => PathValidationResult {
-            valid,
-            error,
-            version,
-        },
-        Err(_) => PathValidationResult {
-            valid: false,
-            error: Some("验证过程中发生错误".to_string()),
-            version: None,
-        },
-    }
-}
-
 
 /// 健康检查
 #[tauri::command]
@@ -243,8 +216,6 @@ pub fn run() {
 
     // 注册引擎
     engine_registry.register(ai::ClaudeEngine::new(config.clone()));
-    engine_registry.register(ai::IFlowEngine::new(config.clone()));
-    engine_registry.register(ai::CodexEngine::new(config.clone()));
 
     // 注册 OpenAI 引擎（如果配置了 Provider）
     if !config.openai_providers.is_empty() {
@@ -303,8 +274,6 @@ pub fn run() {
             set_claude_cmd,
             find_claude_paths,
             validate_claude_path,
-            find_iflow_paths,
-            validate_iflow_path,
             // 健康检查
             health_check,
             detect_claude,
@@ -318,19 +287,9 @@ pub fn run() {
             list_sessions,
             get_session_history,
             delete_session,
-            // IFlow 会话历史相关（旧接口，保留兼容）
-            list_iflow_sessions,
-            get_iflow_session_history,
-            get_iflow_file_contexts,
-            get_iflow_token_stats,
             // Claude Code 原生会话历史相关（旧接口，保留兼容）
             list_claude_code_sessions,
             get_claude_code_session_history,
-            // Codex 相关
-            find_codex_paths,
-            validate_codex_path,
-            list_codex_sessions,
-            get_codex_session_history,
             // AskUserQuestion 相关
             register_pending_question,
             answer_question,

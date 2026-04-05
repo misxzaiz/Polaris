@@ -3,10 +3,6 @@
  *
  * 显示所有可用工作区，支持主工作区切换和关联工作区管理
  *
- * 工作区锁定规则：
- * - 主工作区在开始对话后锁定（workspaceLocked: true）
- * - 关联工作区可随时添加/移除
- *
  * UI 设计：
  * - 顶部标题行 + 新增按钮
  * - 工作区列表（点击切换主工作区，右侧按钮添加/移除关联）
@@ -14,30 +10,44 @@
  */
 
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { cn } from '@/utils/cn'
-import { Check, Plus, Lock, X, Link } from 'lucide-react'
+import { Check, Plus, X, Link } from 'lucide-react'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
-import { useSessionStore, getSessionEffectiveWorkspace } from '@/stores/sessionStore'
+import { useSessionMetadataList, useSessionManagerActions } from '@/stores/conversationStore/sessionStoreManager'
 import { CreateWorkspaceModal } from '@/components/Workspace/CreateWorkspaceModal'
 
 interface WorkspaceMenuProps {
   sessionId: string
+  anchorEl: HTMLElement | null
   onClose: () => void
 }
 
-export function WorkspaceMenu({ sessionId, onClose }: WorkspaceMenuProps) {
+export function WorkspaceMenu({ sessionId, anchorEl, onClose }: WorkspaceMenuProps) {
   const workspaces = useWorkspaceStore((state) => state.workspaces)
-  const currentWorkspaceId = useWorkspaceStore((state) => state.currentWorkspaceId)
-  const sessions = useSessionStore((state) => state.sessions)
-  const switchSessionWorkspace = useSessionStore((state) => state.switchSessionWorkspace)
-  const addContextWorkspace = useSessionStore((state) => state.addContextWorkspace)
-  const removeContextWorkspace = useSessionStore((state) => state.removeContextWorkspace)
+  const sessions = useSessionMetadataList()
+  const { updateSessionWorkspace, addContextWorkspace, removeContextWorkspace } = useSessionManagerActions()
 
   // 新增工作区弹窗状态
   const [showCreateModal, setShowCreateModal] = useState(false)
+  
+  // 菜单位置
+  const [position, setPosition] = useState({ top: 0, left: 0 })
 
   // 点击外部关闭
   const menuRef = useRef<HTMLDivElement>(null)
+  
+  useEffect(() => {
+    // 计算菜单位置
+    if (anchorEl) {
+      const rect = anchorEl.getBoundingClientRect()
+      setPosition({
+        top: rect.bottom + 4, // 徽章下方 4px
+        left: rect.left,
+      })
+    }
+  }, [anchorEl])
+  
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -51,28 +61,25 @@ export function WorkspaceMenu({ sessionId, onClose }: WorkspaceMenuProps) {
   }, [onClose])
 
   // 获取当前会话
-  const session = sessions.get(sessionId)
+  const session = sessions.find(s => s.id === sessionId)
+  
+  if (!session) {
+    return null
+  }
 
-  // 获取会话当前有效工作区
-  const effectiveWorkspaceId = session
-    ? getSessionEffectiveWorkspace(session, currentWorkspaceId)
-    : currentWorkspaceId
-
-  // 使用 workspaceLocked 判断工作区是否锁定
-  const isWorkspaceLocked = session?.workspaceLocked ?? (session?.type === 'project')
-  const contextWorkspaceIds = session?.contextWorkspaceIds || []
+  const effectiveWorkspaceId = session.workspaceId
+  const contextWorkspaceIds = session.contextWorkspaceIds || []
 
   // 点击主工作区项（不关闭面板）
   const handleWorkspaceClick = (workspaceId: string) => {
-    if (isWorkspaceLocked) {
-      return
-    }
-    switchSessionWorkspace(sessionId, workspaceId, 'temporary')
+    console.log('[WorkspaceMenu] 切换工作区:', sessionId, workspaceId)
+    updateSessionWorkspace(sessionId, workspaceId)
     // 不关闭面板，用户可能还要操作关联工作区
   }
 
   // 切换关联工作区
   const handleToggleContext = (workspaceId: string) => {
+    console.log('[WorkspaceMenu] 切换关联工作区:', sessionId, workspaceId)
     if (contextWorkspaceIds.includes(workspaceId)) {
       removeContextWorkspace(sessionId, workspaceId)
     } else {
@@ -87,14 +94,18 @@ export function WorkspaceMenu({ sessionId, onClose }: WorkspaceMenuProps) {
   // 获取关联工作区列表
   const contextWorkspaces = workspaces.filter(w => contextWorkspaceIds.includes(w.id))
 
-  return (
-    <div ref={menuRef} className="w-64 bg-background-elevated border border-border rounded-xl shadow-lg overflow-hidden">
+  const menuContent = (
+    <div 
+      ref={menuRef} 
+      className="fixed w-64 bg-background-elevated border border-border rounded-xl shadow-lg overflow-hidden z-50"
+      style={{
+        top: `${position.top}px`,
+        left: `${position.left}px`,
+      }}
+    >
       {/* 顶部标题行 */}
       <div className="px-3 py-2 text-xs font-medium text-text-tertiary border-b border-border-subtle flex items-center justify-between">
-        <span className="flex items-center gap-1">
-          {isWorkspaceLocked && <Lock className="w-3 h-3 text-amber-500" />}
-          会话工作区
-        </span>
+        <span>会话工作区</span>
         <button
           onClick={() => setShowCreateModal(true)}
           className="text-primary hover:text-primary-hover transition-colors"
@@ -113,7 +124,6 @@ export function WorkspaceMenu({ sessionId, onClose }: WorkspaceMenuProps) {
           workspaces.map((workspace) => {
             const isCurrent = workspace.id === effectiveWorkspaceId
             const isContext = contextWorkspaceIds.includes(workspace.id)
-            const isDisabled = isWorkspaceLocked && !isCurrent
 
             return (
               <div
@@ -134,13 +144,11 @@ export function WorkspaceMenu({ sessionId, onClose }: WorkspaceMenuProps) {
                     e.stopPropagation()
                     handleWorkspaceClick(workspace.id)
                   }}
-                  disabled={isDisabled}
                   className={cn(
                     'flex-1 text-left px-3 py-2 text-sm transition-colors',
                     isCurrent
                       ? 'text-primary'
-                      : 'text-text-secondary hover:text-text-primary hover:bg-background-hover',
-                    isDisabled && 'opacity-50 cursor-not-allowed'
+                      : 'text-text-secondary hover:text-text-primary hover:bg-background-hover'
                   )}
                 >
                   <div className="pr-16 font-medium truncate flex items-center gap-2">
@@ -184,7 +192,7 @@ export function WorkspaceMenu({ sessionId, onClose }: WorkspaceMenuProps) {
       <div className="border-t border-border-subtle">
         <div className="px-3 py-2 text-xs text-text-tertiary flex items-center gap-1">
           <Link className="w-3 h-3" />
-          关联工作区 ({contextWorkspaceIds.length + 1})
+          关联工作区 ({contextWorkspaceIds.length})
         </div>
 
         {contextWorkspaces.length > 0 ? (
@@ -238,4 +246,6 @@ export function WorkspaceMenu({ sessionId, onClose }: WorkspaceMenuProps) {
       )}
     </div>
   )
+
+  return createPortal(menuContent, document.body)
 }
