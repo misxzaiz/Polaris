@@ -9,6 +9,7 @@ import { ContextMenu } from './ContextMenu';
 import { InputDialog } from '../Common/InputDialog';
 import { IconPlus, IconFile, IconFolder } from '../Common/Icons';
 import type { ContextMenuItem } from './ContextMenu';
+import { joinPath } from '../../utils/path';
 
 export function FileExplorer() {
   const { t } = useTranslation('fileExplorer');
@@ -228,13 +229,13 @@ export function FileExplorer() {
 
     if (inputDialog.action === 'create-file') {
       if (isValidFileName(value)) {
-        const fullPath = `${current_path}/${value}`.replace(/\/+/g, '/');
+        const fullPath = joinPath(current_path, value);
         await create_file(fullPath, '');
         setInputDialog({ ...inputDialog, visible: false });
       }
     } else if (inputDialog.action === 'create-folder') {
       if (isValidFileName(value)) {
-        const fullPath = `${current_path}/${value}`.replace(/\/+/g, '/');
+        const fullPath = joinPath(current_path, value);
         await create_directory(fullPath);
         setInputDialog({ ...inputDialog, visible: false });
       }
