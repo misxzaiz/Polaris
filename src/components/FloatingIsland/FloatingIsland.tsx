@@ -103,8 +103,8 @@ export const FloatingIsland = memo(function FloatingIsland() {
         {/* 分隔线 */}
         <div className="w-px h-5 bg-border" />
 
-        {/* 更多工具按钮（预留） */}
-        <MoreToolsButton disabled />
+        {/* 更多工具按钮 */}
+        <MoreToolsButton />
 
         {/* 右导航按钮（预留） */}
         <NavigationButton direction="next" disabled />
