@@ -125,23 +125,24 @@ export const useFileExplorerStore = create<FileExplorerStore>((set, get) => ({
 
   // 加载文件夹内容（懒加载）
   load_folder_content: async (folderPath: string) => {
-    // 立即锁定，防止并发重复加载
-    // 注意：set 和 get 不是原子操作，必须在检查前就锁定
+    // 使用原子操作检查并锁定，防止并发重复加载
+    // Zustand 的 set 回调是同步执行的，可以保证原子性
+    let shouldLoad = false;
     set((state) => {
-      // 检查缓存和是否正在加载
+      // 如果已在缓存或正在加载，跳过
       if (state.folder_cache.has(folderPath) || state.loading_folders.has(folderPath)) {
         return state; // 不做任何修改
       }
-      // 添加到 loading_folders
+      // 标记为需要加载，并添加到 loading_folders
+      shouldLoad = true;
       return {
         loading_folders: new Set([...state.loading_folders, folderPath])
       };
     });
 
-    // 再次检查是否需要加载（可能在锁定过程中已被其他请求加载）
-    const { folder_cache, loading_folders } = get();
-    if (folder_cache.has(folderPath) && !loading_folders.has(folderPath)) {
-      return; // 已被其他请求加载完成
+    // 如果前面的检查发现不需要加载，直接返回
+    if (!shouldLoad) {
+      return;
     }
 
     try {
