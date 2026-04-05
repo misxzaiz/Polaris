@@ -65,6 +65,7 @@ export function TaskCard({
 }: TaskCardProps) {
   const { t } = useTranslation('scheduler');
   const [showActions, setShowActions] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
 
   const isEnabled = task.enabled;
   const triggerDisplay =
@@ -78,9 +79,14 @@ export function TaskCard({
     <div
       className={`relative bg-background-surface rounded-lg border border-border-subtle transition-colors ${
         isEnabled ? 'hover:border-primary/30' : 'opacity-60'
-      }`}
+      } ${showMoreMenu ? 'z-30' : ''}`}
       onMouseEnter={() => setShowActions(true)}
-      onMouseLeave={() => setShowActions(false)}
+      onMouseLeave={() => {
+        // 只有在菜单关闭时才关闭 actions
+        if (!showMoreMenu) {
+          setShowActions(false);
+        }
+      }}
     >
       {/* 主内容行 - h-12 (48px) */}
       <div className="h-12 px-3 flex items-center justify-between">
@@ -105,9 +111,13 @@ export function TaskCard({
       {/* Hover 显示的操作按钮 */}
       {showActions && (
         <div
-          className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 bg-background-surface px-1 py-0.5 rounded shadow-md border border-border-subtle z-10"
+          className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 bg-background-surface px-1 py-0.5 rounded shadow-md border border-border-subtle z-20"
           onMouseEnter={() => setShowActions(true)}
-          onMouseLeave={() => setShowActions(false)}
+          onMouseLeave={() => {
+            if (!showMoreMenu) {
+              setShowActions(false);
+            }
+          }}
         >
           {/* 执行/停止 */}
           {isRunning ? (
@@ -148,48 +158,72 @@ export function TaskCard({
           {/* 更多操作 */}
           <div className="relative">
             <button
+              onClick={() => setShowMoreMenu(!showMoreMenu)}
               className="p-1.5 text-text-secondary hover:bg-background-hover hover:text-text-primary rounded transition-colors"
             >
               <MoreHorizontal size={14} />
             </button>
-            {/* 下拉菜单 - 使用 hover 保持显示 */}
-            <div className="absolute right-0 top-full mt-1 w-28 bg-background-surface border border-border-subtle rounded-lg shadow-lg z-50 py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-opacity">
-              <button
-                onClick={onEdit}
-                className="w-full px-2 py-1.5 text-left text-xs hover:bg-background-hover text-text-secondary hover:text-text-primary"
-              >
-                {t('card.edit')}
-              </button>
-              <button
-                onClick={onCopy}
-                className="w-full px-2 py-1.5 text-left text-xs hover:bg-background-hover text-text-secondary hover:text-text-primary"
-              >
-                {t('card.copy')}
-              </button>
-              {task.mode === 'protocol' && onViewProtocol && (
-                <button
-                  onClick={onViewProtocol}
-                  className="w-full px-2 py-1.5 text-left text-xs hover:bg-background-hover text-text-secondary hover:text-text-primary"
+            {/* 下拉菜单 - 点击显示/隐藏，紧贴按钮无间隙 */}
+            {showMoreMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowMoreMenu(false)} />
+                <div
+                  className="absolute right-0 top-full w-28 bg-background-surface border border-border-subtle rounded-lg shadow-lg z-50 py-1"
+                  onMouseEnter={() => setShowActions(true)}
                 >
-                  {t('card.viewProtocol')}
-                </button>
-              )}
-              <div className="h-px bg-border-subtle my-1" />
-              <button
-                onClick={onToggle}
-                className={`w-full px-2 py-1.5 text-left text-xs hover:bg-background-hover ${
-                  isEnabled ? 'text-warning' : 'text-success'
-                }`}
-              >
-                {isEnabled ? t('card.disable') : t('card.enable')}
-              </button>
-              <button
-                onClick={onDelete}
-                className="w-full px-2 py-1.5 text-left text-xs hover:bg-background-hover text-danger"
-              >
-                {t('card.delete')}
-              </button>
-            </div>
+                  <button
+                    onClick={() => {
+                      onEdit();
+                      setShowMoreMenu(false);
+                    }}
+                    className="w-full px-2 py-1.5 text-left text-xs hover:bg-background-hover text-text-secondary hover:text-text-primary"
+                  >
+                    {t('card.edit')}
+                  </button>
+                  <button
+                    onClick={() => {
+                      onCopy();
+                      setShowMoreMenu(false);
+                    }}
+                    className="w-full px-2 py-1.5 text-left text-xs hover:bg-background-hover text-text-secondary hover:text-text-primary"
+                  >
+                    {t('card.copy')}
+                  </button>
+                  {task.mode === 'protocol' && onViewProtocol && (
+                    <button
+                      onClick={() => {
+                        onViewProtocol();
+                        setShowMoreMenu(false);
+                      }}
+                      className="w-full px-2 py-1.5 text-left text-xs hover:bg-background-hover text-text-secondary hover:text-text-primary"
+                    >
+                      {t('card.viewProtocol')}
+                    </button>
+                  )}
+                  <div className="h-px bg-border-subtle my-1" />
+                  <button
+                    onClick={() => {
+                      onToggle();
+                      setShowMoreMenu(false);
+                    }}
+                    className={`w-full px-2 py-1.5 text-left text-xs hover:bg-background-hover ${
+                      isEnabled ? 'text-warning' : 'text-success'
+                    }`}
+                  >
+                    {isEnabled ? t('card.disable') : t('card.enable')}
+                  </button>
+                  <button
+                    onClick={() => {
+                      onDelete();
+                      setShowMoreMenu(false);
+                    }}
+                    className="w-full px-2 py-1.5 text-left text-xs hover:bg-background-hover text-danger"
+                  >
+                    {t('card.delete')}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
