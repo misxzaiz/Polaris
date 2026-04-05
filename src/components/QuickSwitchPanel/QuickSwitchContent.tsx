@@ -39,8 +39,8 @@ interface QuickSwitchContentProps {
   isExporting?: boolean
   /** 打开历史会话回调 */
   onOpenHistory?: () => void
-  /** 工作区下拉状态变化回调 */
-  onDropdownStateChange?: (isOpen: boolean) => void
+  /** 工作区下拉是否打开的 ref（同步更新，避免面板关闭） */
+  workspaceDropdownOpenRef?: React.MutableRefObject<boolean>
   /** 悬停进入回调 */
   onMouseEnter: () => void
   /** 悬停离开回调 */
@@ -61,7 +61,7 @@ export const QuickSwitchContent = memo(function QuickSwitchContent({
   onExport,
   isExporting = false,
   onOpenHistory,
-  onDropdownStateChange,
+  workspaceDropdownOpenRef,
   onMouseEnter,
   onMouseLeave,
 }: QuickSwitchContentProps) {
@@ -76,10 +76,20 @@ export const QuickSwitchContent = memo(function QuickSwitchContent({
   // 工作区显示名称
   const workspaceDisplayName = workspace?.name || '工作区'
 
-  // 同步下拉状态给父组件
+  // 同步下拉状态到 ref（同步更新，无延迟）
   useEffect(() => {
-    onDropdownStateChange?.(isWorkspaceDropdownOpen)
-  }, [isWorkspaceDropdownOpen, onDropdownStateChange])
+    if (workspaceDropdownOpenRef) {
+      workspaceDropdownOpenRef.current = isWorkspaceDropdownOpen
+    }
+  }, [isWorkspaceDropdownOpen, workspaceDropdownOpenRef])
+
+  // 打开/关闭下拉时同步更新 ref
+  const handleToggleDropdown = (open: boolean) => {
+    if (workspaceDropdownOpenRef) {
+      workspaceDropdownOpenRef.current = open
+    }
+    setIsWorkspaceDropdownOpen(open)
+  }
 
   // 点击外部关闭下拉
   useEffect(() => {
@@ -92,7 +102,7 @@ export const QuickSwitchContent = memo(function QuickSwitchContent({
         !workspaceButtonRef.current.contains(target) &&
         !target.closest('[data-workspace-dropdown]')
       ) {
-        setIsWorkspaceDropdownOpen(false)
+        handleToggleDropdown(false)
       }
     }
 
@@ -161,7 +171,7 @@ export const QuickSwitchContent = memo(function QuickSwitchContent({
                 {/* 工作区按钮：点击展开下拉 */}
                 <button
                   ref={workspaceButtonRef}
-                  onClick={() => setIsWorkspaceDropdownOpen(!isWorkspaceDropdownOpen)}
+                  onClick={() => handleToggleDropdown(!isWorkspaceDropdownOpen)}
                   className={cn(
                     'flex items-center gap-1 mt-0.5 px-1 py-0.5 rounded',
                     'text-[10px] text-text-muted',
@@ -312,7 +322,7 @@ export const QuickSwitchContent = memo(function QuickSwitchContent({
           position={dropdownPosition}
           onSelect={onSwitchWorkspace}
           onToggleContext={onToggleContextWorkspace}
-          onClose={() => setIsWorkspaceDropdownOpen(false)}
+          onClose={() => handleToggleDropdown(false)}
         />,
         document.body
       )}
@@ -349,10 +359,15 @@ const WorkspaceDropdown = memo(function WorkspaceDropdown({
 }: WorkspaceDropdownProps) {
   // 新建工作区弹窗状态
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
 
   // 鼠标移开时关闭
-  const handleMouseLeave = () => {
-    onClose()
+  const handleMouseLeave = (e: React.MouseEvent) => {
+    // 只有真正离开下拉区域时才关闭
+    const relatedTarget = e.relatedTarget as Node
+    if (!dropdownRef.current?.contains(relatedTarget)) {
+      onClose()
+    }
   }
 
   // 切换主工作区（带验证）
@@ -369,8 +384,9 @@ const WorkspaceDropdown = memo(function WorkspaceDropdown({
 
   return (
     <>
-      {/* 下拉面板 - 移开时自动关闭 */}
+      {/* 下拉面板 */}
       <div
+        ref={dropdownRef}
         data-workspace-dropdown
         style={{
           position: 'fixed',
