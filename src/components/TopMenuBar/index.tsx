@@ -17,6 +17,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useViewStore } from '../../stores';
 import * as tauri from '../../services/tauri';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { WorkspaceQuickSwitch } from '../Workspace';
 import { createLogger } from '../../utils/logger';
 
 const log = createLogger('TopMenuBar');
@@ -91,11 +92,19 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
   return (
     <div className="flex items-center h-10 bg-background-elevated border-b border-border shrink-0">
       {/* 左侧:Logo/应用名称 - 小屏模式下更紧凑 */}
-      <div data-tauri-drag-region className={`flex items-center gap-2 ${isCompactMode ? 'px-2' : 'px-4'}`}>
+      <div data-tauri-drag-region className={`flex items-center ${isCompactMode ? 'px-2' : 'pl-4 pr-2'}`}>
         <div className="w-6 h-6 rounded bg-gradient-to-br from-primary to-primary-600 flex items-center justify-center shadow-glow" data-tauri-drag-region={false}>
           <span className="text-xs font-bold text-white">P</span>
         </div>
-        {!isCompactMode && <span className="text-sm font-medium text-text-primary">Polaris</span>}
+        {!isCompactMode && (
+          <>
+            <span className="text-sm font-medium text-text-primary ml-2" data-tauri-drag-region={false}>Polaris</span>
+            {/* 分隔线 */}
+            <div className="w-px h-4 bg-border-subtle mx-3" />
+            {/* 工作区快速切换 - 仅正常模式显示 */}
+            <WorkspaceQuickSwitch />
+          </>
+        )}
       </div>
 
       {/* 中间:可拖拽区域 (自动填充剩余空间) */}
