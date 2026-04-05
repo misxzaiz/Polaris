@@ -1405,8 +1405,21 @@ const AssistantBubble = memo(function AssistantBubble({
 // ========================================
 
 /**
+ * 判断文本块是否为空白内容（不打断分组）
+ * 空白内容：空字符串、只有空白字符、只有 "..." 或 ".."
+ */
+function isEmptyTextBlock(block: ContentBlock): boolean {
+  if (block.type !== 'text') return false;
+  const content = (block as TextBlock).content?.trim();
+  // 空内容、只有点号（如 "..."）、只有空白
+  if (!content) return true;
+  if (/^\.+$/.test(content)) return true;
+  return false;
+}
+
+/**
  * 识别连续的可折叠块分组（thinking + tool_call）
- * 文本块等其他类型会打断分组
+ * 空文本块（空内容或只有"..."）不打断分组
  */
 function identifyCollapsibleBlockGroups(blocks: ContentBlock[]): CollapsibleBlockGroup[] {
   const groups: CollapsibleBlockGroup[] = [];
@@ -1420,8 +1433,8 @@ function identifyCollapsibleBlockGroups(blocks: ContentBlock[]): CollapsibleBloc
         groupStartIndex = index;
       }
       currentBlocks.push(block as ThinkingBlock | ToolCallBlock);
-    } else {
-      // 其他块类型，保存之前的组
+    } else if (!isEmptyTextBlock(block)) {
+      // 非空白块，保存之前的组（空白块不打断分组）
       if (currentBlocks.length > 0) {
         groups.push({
           startIndex: groupStartIndex,
