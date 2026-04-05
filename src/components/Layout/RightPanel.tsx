@@ -5,7 +5,7 @@
 import { ReactNode } from 'react'
 import { useViewStore } from '@/stores/viewStore'
 import { ResizeHandle } from '../Common'
-import { SessionTabs } from '../Session'
+import { FloatingIsland } from '../FloatingIsland'
 
 interface RightPanelProps {
   children: ReactNode
@@ -38,10 +38,10 @@ export function RightPanel({ children, fillRemaining = false }: RightPanelProps)
   if (fillRemaining) {
     return (
       <aside className="flex flex-col flex-1 bg-background-elevated border-l border-border min-w-[200px] relative">
-        {/* 标签栏 */}
-        <SessionTabs />
-        {/* 内容区域 */}
-        <div className="flex-1 flex flex-col">
+        {/* 悬浮岛 */}
+        <FloatingIsland />
+        {/* 内容区域 - 增加 pt-14 避免遮挡 */}
+        <div className="flex-1 flex flex-col pt-14">
           {children}
         </div>
       </aside>
@@ -58,10 +58,10 @@ export function RightPanel({ children, fillRemaining = false }: RightPanelProps)
         className="flex flex-col bg-background-elevated border-l border-border shrink-0 relative"
         style={{ width: `${width}px` }}
       >
-        {/* 标签栏 */}
-        <SessionTabs />
-        {/* 内容区域 */}
-        <div className="flex-1 flex flex-col">
+        {/* 悬浮岛 */}
+        <FloatingIsland />
+        {/* 内容区域 - 增加 pt-14 避免遮挡 */}
+        <div className="flex-1 flex flex-col pt-14">
           {children}
         </div>
       </aside>

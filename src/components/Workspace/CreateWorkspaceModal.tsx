@@ -28,13 +28,17 @@ export function CreateWorkspaceModal({ onClose }: CreateWorkspaceModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
+      // 检查点击是否在 modal 内容区域内
       if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
+        // 阻止事件继续传播，避免触发父组件（如 WorkspaceDropdown）的点击外部处理
+        event.stopPropagation();
         onClose();
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
+    // 使用 capture 阶段，确保在父组件的处理之前执行
+    document.addEventListener('mousedown', handleClickOutside, true);
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('mousedown', handleClickOutside, true);
     };
   }, [onClose]);
 
@@ -97,7 +101,11 @@ export function CreateWorkspaceModal({ onClose }: CreateWorkspaceModalProps) {
 
   // 使用 Portal 渲染到 body，确保居中定位正确
   return createPortal(
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]">
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]"
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
       <div ref={modalRef} className="bg-background-elevated rounded-xl p-6 w-full max-w-md border border-border shadow-glow">
         <h2 className="text-lg font-semibold text-text-primary mb-4">
           {t('createModal.title')}

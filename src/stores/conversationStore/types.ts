@@ -205,8 +205,9 @@ export interface SessionMetadata {
   workspaceId: string | null
   workspaceName?: string // 工作区名称（用于显示）
   contextWorkspaceIds: string[] // 关联工作区 ID 列表
+  workspaceLocked?: boolean // 主工作区是否锁定（发送消息后锁定）
+  silentMode?: boolean // 静默模式（不显示在会话列表中）
   status: 'idle' | 'running' | 'waiting' | 'error' | 'background-running'
-  silentMode?: boolean // 静默模式标志 - 静默会话不显示在标签栏
   createdAt: string
   updatedAt: string
 }
@@ -221,7 +222,6 @@ export interface CreateSessionOptions {
   workspaceId?: string
   title?: string
   engineId?: string
-  silentMode?: boolean // 静默模式 - 静默会话不显示在标签栏
 }
 
 /**
@@ -269,8 +269,6 @@ export interface SessionManagerActions {
   createSessionFromHistory: (options: import('../../types').ChatMessage[], conversationId: string | null, metadata?: { title?: string; workspaceId?: string }) => string
   deleteSession: (sessionId: string) => void
   switchSession: (sessionId: string) => void
-  /** 将静默会话转换为可见会话 */
-  makeSessionVisible: (sessionId: string) => void
 
   // ===== Store 访问 =====
   getStore: (sessionId: string) => ConversationStore | undefined
