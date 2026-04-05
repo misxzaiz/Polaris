@@ -10,7 +10,7 @@
 
 1.1 WHEN 用户点击"执行任务"按钮或定时任务自动触发时 THEN 系统立即在标签栏自动创建一个新的会话标签页
 
-1.2 WHEN 定时任务执行完成后 THEN 系统仅将状态更新为 'idle'，但用户在定时任务列表中看不到明显的完成标识
+1.2 WHEN 用户点击"查询日志"创建会话标签页后，定时任务执行完成 THEN 会话标签页的状态仍然显示"响应中"（isStreaming = true），没有显示任务已完成
 
 ### Expected Behavior (Correct)
 
@@ -18,7 +18,7 @@
 
 2.2 WHEN 用户点击"查询日志"按钮时 THEN 系统SHALL创建会话标签页来显示执行日志
 
-2.3 WHEN 定时任务执行完成后 THEN 系统SHALL在定时任务列表中显示明确的完成状态标识（如完成图标、完成时间等）
+2.3 WHEN 定时任务执行完成后 THEN 系统SHALL在会话标签页中正确显示"已完成"状态，停止"响应中"的转圈动画，更新 isStreaming 状态为 false
 
 ### Unchanged Behavior (Regression Prevention)
 

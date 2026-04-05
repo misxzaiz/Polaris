@@ -31,7 +31,7 @@
 
 Bug 1 在以下情况下触发：当定时任务执行或用户点击"执行任务"按钮时，`sessionStoreManager.dispatchEvent()` 检测到会话不存在，自动调用 `createSession()` 创建新会话，导致标签栏立即显示新标签页。
 
-Bug 2 在以下情况下触发：当定时任务执行完成后，`schedulerStore` 仅更新 `lastRunStatus` 为 'success' 或 'failed'，但 UI 组件（TaskCard）没有显示明确的完成标识。
+Bug 2 在以下情况下触发：当用户点击"查询日志"创建会话标签页后，定时任务执行完成时，会话标签页的状态仍然显示"响应中"（isStreaming = true），没有正确接收到 `session_end` 事件或没有正确更新会话状态为完成。
 
 **Formal Specification:**
 ```
@@ -46,12 +46,13 @@ FUNCTION isBugCondition1(input)
 END FUNCTION
 
 FUNCTION isBugCondition2(input)
-  INPUT: input of type { taskId: string, event: AIEvent }
+  INPUT: input of type { sessionId: string, event: AIEvent }
   OUTPUT: boolean
   
   RETURN input.event.type == 'session_end'
          AND input.event.reason IN ['success', 'completed']
-         AND NOT hasCompletionIndicator(input.taskId)
+         AND sessionStore.isStreaming(input.sessionId) == true
+         AND sessionTabStillShowsResponding(input.sessionId) == true
 END FUNCTION
 ```
 
@@ -65,15 +66,17 @@ END FUNCTION
 - 预期：任务应该静默执行，不创建标签页
 
 **Bug 2 示例：**
-- 用户创建了一个每小时执行的定时任务
-- 任务在后台执行完成，状态更新为 'success'
-- 用户查看任务列表，只能看到状态徽章显示"成功"
-- 无法快速识别任务是否刚刚完成，或者是很久之前完成的
-- 预期：应该显示"完成于 2分钟前"或完成时间戳
+- 用户点击"查询日志"按钮，创建了会话标签页查看定时任务执行过程
+- AI执行完成，后端发送 `session_end` 事件
+- 但会话标签页的状态仍然显示"响应中"（转圈动画持续）
+- 用户无法确认任务是否真的完成了
+- 预期：会话标签页应该显示"已完成"状态，停止转圈动画
 
 **Edge Case：**
 - 用户点击"查询日志"订阅正在运行的任务 - 应该正常创建会话标签页（不是bug）
 - 多个定时任务同时执行 - 每个任务都应该静默执行，不创建标签页
+- 任务执行失败时 - 会话标签页应该显示"失败"状态，不是"响应中"
+- 用户在任务完成前关闭标签页 - 不影响任务继续执行
 
 ## Expected Behavior
 
@@ -112,9 +115,11 @@ END FUNCTION
 
 2. **缺少静默模式标志**: `createSession()` 方法和 `SessionMetadata` 类型没有"静默模式"或"隐藏"标志，无法标识某个会话不应该显示在标签栏。
 
-3. **UI 组件缺少完成时间显示（Bug 2）**: `TaskCard.tsx` 组件只显示 `lastRunStatus` 徽章，没有显示 `lastRunAt` 时间戳或相对时间。
+3. **会话状态未正确更新（Bug 2）**: 当定时任务完成时，`session_end` 事件可能没有正确路由到会话 Store，或者会话 Store 的 `isStreaming` 状态没有正确更新为 false。
 
-4. **schedulerStore 没有持久化完成时间**: 虽然 `ScheduledTask` 类型定义了 `lastRunAt` 字段，但在任务完成时可能没有正确更新这个字段。
+4. **事件路由问题**: `schedulerStore.subscribeToEvents()` 注册的事件处理器可能在处理 `session_end` 事件时，没有正确通知会话 Store 更新状态。
+
+5. **contextId 不匹配**: scheduler 使用的 contextId 格式为 `scheduler-{taskId}`，但会话 Store 期望的 sessionId 格式可能不同，导致事件路由失败。
 
 ## Correctness Properties
 
@@ -130,9 +135,9 @@ _For any_ 用户点击"查询日志"按钮的操作，修复后的 subscribeToEv
 
 **Validates: Requirements 2.2**
 
-Property 3: Bug Condition 3 - 显示完成状态标识
+Property 3: Bug Condition 3 - 会话状态正确更新
 
-_For any_ 定时任务执行完成事件（session_end），修复后的系统 SHALL 更新任务的 lastRunAt 时间戳和 lastRunStatus 状态，并在 TaskCard 组件中显示完成时间（如"完成于 2分钟前"）。
+_For any_ 定时任务执行完成事件（session_end），修复后的系统 SHALL 正确路由事件到会话 Store，更新 isStreaming 状态为 false，并在会话标签页中显示"已完成"状态。
 
 **Validates: Requirements 2.3**
 
@@ -332,138 +337,103 @@ _For any_ 用户切换活跃会话的操作，修复后的代码 SHALL 产生与
      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
    ```
 
-#### 修改 6: 更新任务完成时间
+#### 修改 6: 确保 session_end 事件正确路由到会话 Store
 
 **File**: `src/stores/schedulerStore.ts`
 
 **Function**: Event handler in `subscribeToEvents`
 
 **Specific Changes**:
-1. **更新 lastRunAt 字段**: 在处理 `session_end` 事件时，更新任务的 `lastRunAt` 时间戳
+1. **确保事件路由到会话 Store**: 在 schedulerStore 的事件处理器中，除了更新任务状态，还要确保事件被路由到会话 Store
    ```typescript
-   // 处理会话结束
+   // 注册新的处理器
+   const unsubscribe = router.register(contextId, (payload: unknown) => {
+     const event = payload as Record<string, unknown>;
+     const log = parseEventToLog(event);
+
+     if (log) {
+       get().addLog(taskId, log);
+     }
+
+     // 关键修改：将事件也路由到会话 Store
+     // 这确保会话标签页能正确更新状态
+     const sessionId = `scheduler-${taskId}`
+     sessionStoreManager.getState().dispatchEvent({
+       ...event,
+       _routeSessionId: sessionId,
+     } as AIEvent & { _routeSessionId: string })
+
+     // 处理会话结束
+     if (event.type === 'session_end') {
+       const reason = event.reason as string | undefined;
+       if (reason === 'error' || reason === 'failed') {
+         get().updateRunStatus(taskId, 'failed');
+       } else {
+         get().updateRunStatus(taskId, 'success');
+       }
+
+       // 清理订阅
+       eventSubscriptions.delete(taskId);
+       set((state) => {
+         const newSubscribedTaskIds = new Set(state.subscribedTaskIds);
+         newSubscribedTaskIds.delete(taskId);
+         return { subscribedTaskIds: newSubscribedTaskIds };
+       });
+     } else if (event.type === 'error') {
+       get().updateRunStatus(taskId, 'failed');
+       eventSubscriptions.delete(taskId);
+       set((state) => {
+         const newSubscribedTaskIds = new Set(state.subscribedTaskIds);
+         newSubscribedTaskIds.delete(taskId);
+         return { subscribedTaskIds: newSubscribedTaskIds };
+       });
+     }
+   });
+   ```
+
+2. **验证 contextId 格式**: 确保 scheduler 使用的 contextId 与会话 Store 期望的格式一致
+   ```typescript
+   // 在 runTask 和 handleTaskDue 中确保 contextId 格式正确
+   const sessionId = await invoke<string>('start_chat', {
+     message: finalPrompt,
+     options: {
+       workDir,
+       contextId: `session-scheduler-${taskId}`,  // 使用 session- 前缀
+       engineId,
+       enableMcpTools: engineId === 'claude-code',
+     },
+   });
+   ```
+
+#### 修改 7: 验证会话标签页状态显示
+
+**File**: `src/components/SessionTabs/SessionTab.tsx` (或相关的标签组件)
+
+**Specific Changes**:
+1. **确保标签页正确显示会话状态**: 验证标签页组件正确读取 `isStreaming` 状态
+   ```typescript
+   // 从会话 Store 读取状态
+   const sessionStore = useConversationStore(sessionId)
+   const isStreaming = sessionStore?.isStreaming ?? false
+   
+   // 显示状态指示器
+   {isStreaming && (
+     <span className="animate-spin">⟳</span>
+   )}
+   {!isStreaming && sessionStore?.messages.length > 0 && (
+     <span className="text-success">✓</span>
+   )}
+   ```
+
+2. **添加调试日志**: 在会话状态更新时添加日志，便于排查问题
+   ```typescript
+   // 在 ConversationStore 的 handleAIEvent 中
    if (event.type === 'session_end') {
-     const reason = event.reason as string | undefined;
-     const finalStatus = (reason === 'error' || reason === 'failed') ? 'failed' : 'success'
-     
-     await get().updateRunStatus(taskId, finalStatus);
-     
-     // 更新完成时间
-     set((state) => {
-       const tasks = state.tasks.map(task => 
-         task.id === taskId 
-           ? { ...task, lastRunAt: new Date().toISOString() }
-           : task
-       )
-       return { tasks }
+     console.log('[ConversationStore] 会话结束，更新 isStreaming 为 false', {
+       sessionId: this.sessionId,
+       reason: event.reason,
      })
-     
-     // 清理订阅
-     eventSubscriptions.delete(taskId);
-     // ...
-   }
-   ```
-
-2. **同步更新到持久化存储**: 确保 `lastRunAt` 字段被保存到 Tauri 后端
-   ```typescript
-   // 在 updateRunStatus 方法中添加
-   updateRunStatus: async (taskId, status) => {
-     set((state) => {
-       const tasks = state.tasks.map((task) =>
-         task.id === taskId
-           ? { 
-               ...task, 
-               lastRunStatus: status,
-               lastRunAt: new Date().toISOString()  // 同步更新
-             }
-           : task
-       );
-       return { tasks };
-     });
-
-     // 持久化到后端
-     const task = get().tasks.find((t) => t.id === taskId);
-     if (task) {
-       await tauri.schedulerUpdateTask(task);
-     }
-   }
-   ```
-
-#### 修改 7: 在 TaskCard 中显示完成时间
-
-**File**: `src/components/Scheduler/TaskCard.tsx`
-
-**Specific Changes**:
-1. **添加完成时间显示**: 在状态徽章旁边显示完成时间
-   ```typescript
-   {/* 右侧状态 */}
-   <div className="flex items-center gap-3">
-     <StatusBadge status={task.lastRunStatus} isRunning={isRunning} />
-     
-     {/* 显示完成时间 */}
-     {task.lastRunAt && task.lastRunStatus && !isRunning && (
-       <span className="text-xs text-text-muted">
-         {t('card.completedAt')}: {formatRelativeTime(task.lastRunAt)}
-       </span>
-     )}
-     
-     {showNextRun && (
-       <span className="text-xs text-text-muted">
-         {t('card.nextRun')}: {formatRelativeTime(task.nextRunAt)}
-       </span>
-     )}
-   </div>
-   ```
-
-2. **添加完成图标（可选）**: 在任务名称旁边添加完成图标
-   ```typescript
-   <div className="flex items-start gap-3">
-     {/* 状态指示点 */}
-     <span className={`w-2 h-2 rounded-full mt-2 ${
-       isRunning
-         ? 'bg-info animate-pulse'
-         : isEnabled
-           ? 'bg-success'
-           : 'bg-text-muted'
-     }`} />
-     
-     <div className="flex-1">
-       <div className="flex items-center gap-2">
-         <h3 className="font-medium text-text-primary">{task.name}</h3>
-         
-         {/* 完成图标 */}
-         {task.lastRunStatus === 'success' && !isRunning && (
-           <span className="text-success text-sm" title={t('card.lastRunSuccess')}>
-             ✓
-           </span>
-         )}
-         {task.lastRunStatus === 'failed' && !isRunning && (
-           <span className="text-danger text-sm" title={t('card.lastRunFailed')}>
-             ✗
-           </span>
-         )}
-       </div>
-       
-       {task.description && (
-         <p className="text-sm text-text-muted mt-0.5">{task.description}</p>
-       )}
-     </div>
-   </div>
-   ```
-
-#### 修改 8: 添加国际化文本
-
-**File**: `src/locales/zh-CN/scheduler.json` 和 `src/locales/en/scheduler.json`
-
-**Specific Changes**:
-1. **添加完成时间相关文本**:
-   ```json
-   {
-     "card": {
-       "completedAt": "完成于",
-       "lastRunSuccess": "上次执行成功",
-       "lastRunFailed": "上次执行失败"
-     }
+     set({ isStreaming: false })
    }
    ```
 
@@ -481,14 +451,14 @@ _For any_ 用户切换活跃会话的操作，修复后的代码 SHALL 产生与
 
 **Test Cases**:
 1. **自动创建会话测试（Bug 1）**: 模拟定时任务触发，发送 `scheduler-task-123` 的 `session_start` 事件，观察是否自动创建会话标签页（在未修复代码上会失败 - 会创建标签页）
-2. **缺少完成时间测试（Bug 2）**: 模拟任务执行完成，发送 `session_end` 事件，检查 TaskCard 是否显示完成时间（在未修复代码上会失败 - 不显示完成时间）
+2. **会话状态未更新测试（Bug 2）**: 模拟用户点击"查询日志"创建会话标签页，然后发送 `session_end` 事件，检查会话标签页的 `isStreaming` 状态是否更新为 false（在未修复代码上会失败 - 仍然显示"响应中"）
 3. **查询日志测试**: 模拟用户点击"查询日志"按钮，观察是否正确创建会话标签页（在未修复代码上应该通过）
 4. **多任务并行测试**: 模拟多个定时任务同时执行，观察会话隔离是否正确（在未修复代码上应该通过）
 
 **Expected Counterexamples**:
 - Bug 1: 定时任务执行时会自动创建会话标签页，显示在标签栏
-- Bug 2: 任务完成后只显示状态徽章，不显示完成时间
-- 可能的原因：dispatchEvent 自动创建逻辑过于激进，TaskCard 缺少完成时间显示
+- Bug 2: 任务完成后会话标签页仍然显示"响应中"，`isStreaming` 状态未更新为 false
+- 可能的原因：dispatchEvent 自动创建逻辑过于激进，`session_end` 事件没有正确路由到会话 Store
 
 ### Fix Checking
 
@@ -505,9 +475,9 @@ END FOR
 
 FOR ALL input WHERE isBugCondition2(input) DO
   result := handleSessionEnd_fixed(input)
-  ASSERT result.task.lastRunAt IS NOT NULL
-  ASSERT result.task.lastRunStatus IN ['success', 'failed']
-  ASSERT taskCardShowsCompletionTime(result.task) == true
+  ASSERT result.session.isStreaming == false
+  ASSERT result.sessionTab.showsCompletedStatus == true
+  ASSERT result.sessionTab.notShowingRespondingStatus == true
 END FOR
 ```
 
@@ -543,19 +513,20 @@ END FOR
 - 测试 `makeSessionVisible()` 将静默会话转换为可见会话
 - 测试 `subscribeToEvents()` 调用 `makeSessionVisible()`
 - 测试标签栏过滤静默会话
-- 测试 `updateRunStatus()` 更新 `lastRunAt` 字段
-- 测试 TaskCard 显示完成时间和图标
+- 测试 `session_end` 事件正确路由到会话 Store
+- 测试会话 Store 的 `isStreaming` 状态正确更新为 false
+- 测试会话标签页正确显示完成状态
 
 ### Property-Based Tests
 
 - 生成随机的 scheduler 事件，验证所有 scheduler 事件都创建静默会话
 - 生成随机的非 scheduler 事件，验证所有非 scheduler 事件都创建可见会话
-- 生成随机的任务完成事件，验证所有完成事件都更新 `lastRunAt` 字段
+- 生成随机的任务完成事件，验证所有完成事件都正确更新会话的 `isStreaming` 状态
 - 生成随机的会话切换操作，验证静默会话不影响会话切换逻辑
 
 ### Integration Tests
 
-- 测试完整的定时任务执行流程：触发 → 静默执行 → 完成 → 显示完成时间
-- 测试完整的查询日志流程：点击按钮 → 转换为可见会话 → 显示标签页 → 显示日志
-- 测试多任务并行执行：多个任务同时执行 → 各自静默运行 → 互不干扰
-- 测试任务失败场景：任务执行失败 → 更新失败状态 → 显示失败图标和时间
+- 测试完整的定时任务执行流程：触发 → 静默执行 → 完成 → 会话状态更新
+- 测试完整的查询日志流程：点击按钮 → 转换为可见会话 → 显示标签页 → 显示日志 → 任务完成后标签页显示完成状态
+- 测试多任务并行执行：多个任务同时执行 → 各自静默运行 → 互不干扰 → 各自完成后状态正确更新
+- 测试任务失败场景：任务执行失败 → 更新失败状态 → 会话标签页显示失败状态（不是"响应中"）

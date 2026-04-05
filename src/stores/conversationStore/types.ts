@@ -206,6 +206,7 @@ export interface SessionMetadata {
   workspaceName?: string // 工作区名称（用于显示）
   contextWorkspaceIds: string[] // 关联工作区 ID 列表
   status: 'idle' | 'running' | 'waiting' | 'error' | 'background-running'
+  silentMode?: boolean // 静默模式标志 - 静默会话不显示在标签栏
   createdAt: string
   updatedAt: string
 }
@@ -220,6 +221,7 @@ export interface CreateSessionOptions {
   workspaceId?: string
   title?: string
   engineId?: string
+  silentMode?: boolean // 静默模式 - 静默会话不显示在标签栏
 }
 
 /**

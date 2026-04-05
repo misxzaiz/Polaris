@@ -69,6 +69,7 @@ function createSessionManagerStore() {
         workspaceId: options.workspaceId || null,
         contextWorkspaceIds: [], // 初始化为空数组
         status: 'idle',
+        silentMode: options.silentMode || false, // 设置静默模式
         createdAt: timestamp,
         updatedAt: timestamp,
       }
@@ -272,11 +273,17 @@ function createSessionManagerStore() {
 
       // 如果会话不存在，自动创建
       if (!store) {
-        console.log('[SessionStoreManager] 事件路由时自动创建会话:', routeSessionId)
+        // 检测是否为 scheduler 任务（静默模式）
+        const isSchedulerTask = routeSessionId.startsWith('scheduler-')
+        
+        console.log('[SessionStoreManager] 事件路由时自动创建会话:', routeSessionId, 
+                    isSchedulerTask ? '(静默模式)' : '')
+        
         get().createSession({
           id: routeSessionId,
           type: 'free',
-          title: '新对话',
+          title: isSchedulerTask ? '定时任务' : '新对话',
+          silentMode: isSchedulerTask, // scheduler 任务使用静默模式
         })
         store = get().stores.get(routeSessionId)
 
