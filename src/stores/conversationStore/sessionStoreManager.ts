@@ -102,7 +102,8 @@ function createSessionManagerStore() {
         return {
           stores: newStores,
           sessionMetadata: newMetadata,
-          activeSessionId: sessionId, // 新创建的会话自动激活
+          // 静默会话不自动激活
+          activeSessionId: options.silentMode ? state.activeSessionId : sessionId,
         }
       })
 
@@ -241,6 +242,36 @@ function createSessionManagerStore() {
       }
 
       console.log('[SessionStoreManager] 切换会话:', sessionId)
+    },
+
+    makeSessionVisible: (sessionId: string) => {
+      const metadata = get().sessionMetadata.get(sessionId)
+      if (!metadata) {
+        console.warn('[SessionStoreManager] 会话不存在:', sessionId)
+        return
+      }
+
+      // 如果已经是可见会话，直接切换
+      if (!metadata.silentMode) {
+        get().switchSession(sessionId)
+        return
+      }
+
+      // 更新元数据，移除静默模式标志
+      set((state) => {
+        const newMetadata = new Map(state.sessionMetadata)
+        newMetadata.set(sessionId, {
+          ...metadata,
+          silentMode: false,
+          updatedAt: new Date().toISOString(),
+        })
+        return { sessionMetadata: newMetadata }
+      })
+
+      // 切换到该会话
+      get().switchSession(sessionId)
+
+      console.log('[SessionStoreManager] 会话已转为可见:', sessionId)
     },
 
     // ===== Store 访问 =====
@@ -549,6 +580,7 @@ const cachedActions = {
   get createSession() { return sessionStoreManager.getState().createSession },
   get deleteSession() { return sessionStoreManager.getState().deleteSession },
   get switchSession() { return sessionStoreManager.getState().switchSession },
+  get makeSessionVisible() { return sessionStoreManager.getState().makeSessionVisible },
   get addToBackground() { return sessionStoreManager.getState().addToBackground },
   get removeFromBackground() { return sessionStoreManager.getState().removeFromBackground },
   get addToNotifications() { return sessionStoreManager.getState().addToNotifications },

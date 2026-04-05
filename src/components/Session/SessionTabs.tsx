@@ -26,8 +26,11 @@ export const SessionTabs = memo(function SessionTabs() {
   const { createSession, deleteSession, switchSession } = useSessionManagerActions()
   const currentWorkspaceId = useWorkspaceStore((state) => state.currentWorkspaceId)
 
+  // 过滤静默会话
+  const visibleSessions = sessions.filter(session => !session.silentMode)
+
   // 是否可以关闭（至少保留一个会话）
-  const canClose = sessions.length > 1
+  const canClose = visibleSessions.length > 1
 
   // 新建会话
   const handleCreateSession = useCallback(() => {
@@ -37,8 +40,8 @@ export const SessionTabs = memo(function SessionTabs() {
     })
   }, [createSession, currentWorkspaceId])
 
-  // 如果没有会话，显示新建按钮
-  if (sessions.length === 0) {
+  // 如果没有可见会话，显示新建按钮
+  if (visibleSessions.length === 0) {
     return (
       <div className="flex items-center px-2 py-1 border-b border-border bg-background-surface">
         <button
@@ -62,7 +65,7 @@ export const SessionTabs = memo(function SessionTabs() {
       role="tablist"
     >
       {/* 会话标签 */}
-      {sessions.map((session) => (
+      {visibleSessions.map((session) => (
         <SessionTab
           key={session.id}
           session={session}

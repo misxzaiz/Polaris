@@ -137,7 +137,7 @@ describe('Bug Condition Exploration - Scheduler Auto-Creates Session Tabs', () =
     // Session should be visible (NOT silent)
     const metadata = freshState.sessionMetadata.get(gitSessionId)
     expect(metadata).toBeDefined()
-    expect(metadata?.silentMode).toBeUndefined() // Or false, but not true
+    expect(metadata?.silentMode).toBeFalsy() // Should be false or undefined (both mean visible)
     
     // Session should be activated
     expect(freshState.activeSessionId).toBe(gitSessionId)

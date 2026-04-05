@@ -33,7 +33,11 @@ export function handleAIEvent(
         isStreaming: false,
         progressMessage: null,
       })
-      console.log('[ConversationStore] Session ended:', event.reason)
+      console.log('[ConversationStore] Session ended:', {
+        sessionId: state.sessionId,
+        reason: event.reason,
+        isStreaming: false,
+      })
       break
 
     case 'token':

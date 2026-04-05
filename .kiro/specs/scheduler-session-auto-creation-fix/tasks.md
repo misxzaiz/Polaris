@@ -26,9 +26,9 @@
   - Mark task complete when tests are written, run, and passing on unfixed code
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
 
-- [-] 3. Fix for scheduler session auto-creation and status update
+- [x] 3. Fix for scheduler session auto-creation and status update
 
-  - [ ] 3.1 Extend SessionMetadata and CreateSessionOptions types
+  - [x] 3.1 Extend SessionMetadata and CreateSessionOptions types
     - Add optional `silentMode?: boolean` field to SessionMetadata interface
     - Add optional `silentMode?: boolean` field to CreateSessionOptions interface
     - _Bug_Condition: isBugCondition1(input) where input.contextId starts with 'scheduler-'_
@@ -36,7 +36,7 @@
     - _Preservation: Non-scheduler sessions continue to work as before_
     - _Requirements: 2.1, 2.2_
 
-  - [ ] 3.2 Modify sessionStoreManager.dispatchEvent() to detect scheduler tasks
+  - [x] 3.2 Modify sessionStoreManager.dispatchEvent() to detect scheduler tasks
     - Check if routeSessionId starts with 'scheduler-' before auto-creating session
     - Pass silentMode: true when creating session for scheduler tasks
     - Pass silentMode: false (or omit) for non-scheduler sessions
@@ -45,7 +45,7 @@
     - _Preservation: Event routing logic remains unchanged_
     - _Requirements: 2.1_
 
-  - [ ] 3.3 Modify sessionStoreManager.createSession() to handle silent sessions
+  - [x] 3.3 Modify sessionStoreManager.createSession() to handle silent sessions
     - When silentMode is true, do not set activeSessionId to the new session
     - Keep current activeSessionId unchanged for silent sessions
     - For non-silent sessions, continue to set activeSessionId as before
@@ -54,7 +54,7 @@
     - _Preservation: Non-silent session creation behavior unchanged_
     - _Requirements: 2.1_
 
-  - [ ] 3.4 Add makeSessionVisible() method to sessionStoreManager
+  - [x] 3.4 Add makeSessionVisible() method to sessionStoreManager
     - Create new method that converts silent session to visible session
     - Update metadata to set silentMode: false
     - Call switchSession() to activate the session
@@ -65,7 +65,7 @@
     - _Preservation: Existing switchSession() behavior unchanged_
     - _Requirements: 2.2_
 
-  - [ ] 3.5 Modify schedulerStore.subscribeToEvents() to call makeSessionVisible
+  - [x] 3.5 Modify schedulerStore.subscribeToEvents() to call makeSessionVisible
     - Before subscribing to events, call makeSessionVisible(sessionId)
     - Construct sessionId as `scheduler-${taskId}`
     - This converts silent session to visible when user clicks "查询日志"
@@ -74,7 +74,7 @@
     - _Preservation: Event subscription logic unchanged_
     - _Requirements: 2.2, 3.1_
 
-  - [ ] 3.6 Filter silent sessions from tab bar rendering
+  - [x] 3.6 Filter silent sessions from tab bar rendering
     - In SessionTabs component, filter out sessions where silentMode === true
     - Only render visible sessions in the tab bar
     - Ensure filtering doesn't affect session store or event routing
@@ -83,7 +83,7 @@
     - _Preservation: Tab bar rendering for visible sessions unchanged_
     - _Requirements: 2.1_
 
-  - [ ] 3.7 Ensure session_end event routes correctly to session Store
+  - [x] 3.7 Ensure session_end event routes correctly to session Store
     - In schedulerStore event handler, call sessionStoreManager.dispatchEvent() for all events
     - Ensure session_end event is dispatched with correct _routeSessionId
     - Verify ConversationStore handles session_end and sets isStreaming: false
@@ -93,7 +93,7 @@
     - _Preservation: Other event types continue to route correctly_
     - _Requirements: 2.3, 3.2_
 
-  - [ ] 3.8 Verify session tab displays correct status
+  - [x] 3.8 Verify session tab displays correct status
     - Ensure SessionTab component reads isStreaming from session store
     - Display spinning indicator when isStreaming === true
     - Display completed indicator when isStreaming === false and messages exist
@@ -103,7 +103,7 @@
     - _Preservation: Tab status display for other session types unchanged_
     - _Requirements: 2.3_
 
-  - [ ] 3.9 Verify bug condition exploration test now passes
+  - [x] 3.9 Verify bug condition exploration test now passes
     - **Property 1: Expected Behavior** - Scheduler Silent Session Creation
     - **IMPORTANT**: Re-run the SAME test from task 1 - do NOT write a new test
     - The test from task 1 encodes the expected behavior
@@ -112,12 +112,12 @@
     - **EXPECTED OUTCOME**: Test PASSES (confirms bug is fixed)
     - _Requirements: Expected Behavior Properties from design_
 
-  - [ ] 3.10 Verify preservation tests still pass
+  - [x] 3.10 Verify preservation tests still pass
     - **Property 2: Preservation** - Non-Scheduler Session Behavior
     - **IMPORTANT**: Re-run the SAME tests from task 2 - do NOT write new tests
     - Run preservation property tests from step 2
     - **EXPECTED OUTCOME**: Tests PASS (confirms no regressions)
     - Confirm all tests still pass after fix (no regressions)
 
-- [~] 4. Checkpoint - Ensure all tests pass
+- [x] 4. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.

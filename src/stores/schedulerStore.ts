@@ -554,6 +554,11 @@ export const useSchedulerStore = create<SchedulerState>((set, get) => ({
       return;
     }
 
+    // 将静默会话转换为可见会话（如果存在）
+    const sessionId = `scheduler-${taskId}`
+    const { sessionStoreManager } = await import('./conversationStore/sessionStoreManager')
+    sessionStoreManager.getState().makeSessionVisible(sessionId)
+
     const router = getEventRouter();
     await router.initialize();
 
@@ -573,6 +578,15 @@ export const useSchedulerStore = create<SchedulerState>((set, get) => ({
       if (log) {
         get().addLog(taskId, log);
       }
+
+      // 关键修改：将事件也路由到会话 Store
+      // 这确保会话标签页能正确更新状态
+      const sessionId = `scheduler-${taskId}`
+      const { sessionStoreManager } = require('./conversationStore/sessionStoreManager')
+      sessionStoreManager.getState().dispatchEvent({
+        ...event,
+        _routeSessionId: sessionId,
+      } as AIEvent & { _routeSessionId: string })
 
       // 处理会话结束
       if (event.type === 'session_end') {
