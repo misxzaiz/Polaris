@@ -72,6 +72,8 @@ interface CollapsibleBlockGroup {
   endIndex: number;
   /** 连续的可折叠块 */
   blocks: (ThinkingBlock | ToolCallBlock)[];
+  /** 每个块在原始 blocks 数组中的真实索引 */
+  indices: number[];
 }
 
 // ========================================
@@ -1424,6 +1426,7 @@ function isEmptyTextBlock(block: ContentBlock): boolean {
 function identifyCollapsibleBlockGroups(blocks: ContentBlock[]): CollapsibleBlockGroup[] {
   const groups: CollapsibleBlockGroup[] = [];
   let currentBlocks: (ThinkingBlock | ToolCallBlock)[] = [];
+  let currentIndices: number[] = [];
   let groupStartIndex = 0;
 
   blocks.forEach((block, index) => {
@@ -1433,15 +1436,18 @@ function identifyCollapsibleBlockGroups(blocks: ContentBlock[]): CollapsibleBloc
         groupStartIndex = index;
       }
       currentBlocks.push(block as ThinkingBlock | ToolCallBlock);
+      currentIndices.push(index);
     } else if (!isEmptyTextBlock(block)) {
       // 非空白块，保存之前的组（空白块不打断分组）
       if (currentBlocks.length > 0) {
         groups.push({
           startIndex: groupStartIndex,
-          endIndex: groupStartIndex + currentBlocks.length - 1,
+          endIndex: currentIndices[currentIndices.length - 1],
           blocks: currentBlocks,
+          indices: currentIndices,
         });
         currentBlocks = [];
+        currentIndices = [];
       }
     }
   });
@@ -1450,8 +1456,9 @@ function identifyCollapsibleBlockGroups(blocks: ContentBlock[]): CollapsibleBloc
   if (currentBlocks.length > 0) {
     groups.push({
       startIndex: groupStartIndex,
-      endIndex: groupStartIndex + currentBlocks.length - 1,
+      endIndex: currentIndices[currentIndices.length - 1],
       blocks: currentBlocks,
+      indices: currentIndices,
     });
   }
 
@@ -1681,12 +1688,12 @@ function renderBlocksWithGrouping(
     ));
   }
 
-  // 构建分组映射：block index -> CollapsibleBlockGroup
+  // 构建分组映射：block index -> CollapsibleBlockGroup（使用真实索引）
   const groupMap = new Map<number, CollapsibleBlockGroup>();
   groups.forEach(group => {
-    for (let i = 0; i < group.blocks.length; i++) {
-      groupMap.set(group.startIndex + i, group);
-    }
+    group.indices.forEach(idx => {
+      groupMap.set(idx, group);
+    });
   });
 
   const result: React.ReactNode[] = [];
@@ -1708,25 +1715,26 @@ function renderBlocksWithGrouping(
           renderMode={renderMode}
         />
       );
-      // 标记组内所有块已处理
-      group.blocks.forEach((_, i) => processedIndices.add(group.startIndex + i));
+      // 标记组内所有块已处理（使用真实索引）
+      group.indices.forEach(idx => processedIndices.add(idx));
     } else if (group) {
       // 不需要折叠的组，逐个渲染（thinking 使用工具样式）
       group.blocks.forEach((block, i) => {
+        const blockIndex = group.indices[i];
         if (block.type === 'thinking') {
           result.push(
-            <div key={`block-${group.startIndex + i}`}>
+            <div key={`block-${blockIndex}`}>
               <ThinkingAsToolRenderer block={block} isStreaming={isStreaming} />
             </div>
           );
         } else {
           result.push(
-            <div key={`block-${group.startIndex + i}`}>
+            <div key={`block-${blockIndex}`}>
               <ToolCallBlockRenderer block={block as ToolCallBlock} />
             </div>
           );
         }
-        processedIndices.add(group.startIndex + i);
+        processedIndices.add(blockIndex);
       });
     } else {
       // 非可折叠块（text, question 等）
