@@ -125,22 +125,24 @@ export const useFileExplorerStore = create<FileExplorerStore>((set, get) => ({
 
   // 加载文件夹内容（懒加载）
   load_folder_content: async (folderPath: string) => {
-    const { folder_cache } = get();
+    // 立即锁定，防止并发重复加载
+    // 注意：set 和 get 不是原子操作，必须在检查前就锁定
+    set((state) => {
+      // 检查缓存和是否正在加载
+      if (state.folder_cache.has(folderPath) || state.loading_folders.has(folderPath)) {
+        return state; // 不做任何修改
+      }
+      // 添加到 loading_folders
+      return {
+        loading_folders: new Set([...state.loading_folders, folderPath])
+      };
+    });
 
-    // 检查缓存
-    if (folder_cache.has(folderPath)) {
-      return;
+    // 再次检查是否需要加载（可能在锁定过程中已被其他请求加载）
+    const { folder_cache, loading_folders } = get();
+    if (folder_cache.has(folderPath) && !loading_folders.has(folderPath)) {
+      return; // 已被其他请求加载完成
     }
-
-    // 检查是否正在加载
-    const { loading_folders } = get();
-    if (loading_folders.has(folderPath)) {
-      return;
-    }
-
-    set((state) => ({
-      loading_folders: new Set([...state.loading_folders, folderPath])
-    }));
 
     try {
       const children = await tauri.readDirectory(folderPath) as FileInfo[];
