@@ -39,6 +39,8 @@ interface QuickSwitchContentProps {
   isExporting?: boolean
   /** 打开历史会话回调 */
   onOpenHistory?: () => void
+  /** 工作区下拉状态变化回调 */
+  onDropdownStateChange?: (isOpen: boolean) => void
   /** 悬停进入回调 */
   onMouseEnter: () => void
   /** 悬停离开回调 */
@@ -59,6 +61,7 @@ export const QuickSwitchContent = memo(function QuickSwitchContent({
   onExport,
   isExporting = false,
   onOpenHistory,
+  onDropdownStateChange,
   onMouseEnter,
   onMouseLeave,
 }: QuickSwitchContentProps) {
@@ -72,6 +75,11 @@ export const QuickSwitchContent = memo(function QuickSwitchContent({
 
   // 工作区显示名称
   const workspaceDisplayName = workspace?.name || '工作区'
+
+  // 同步下拉状态给父组件
+  useEffect(() => {
+    onDropdownStateChange?.(isWorkspaceDropdownOpen)
+  }, [isWorkspaceDropdownOpen, onDropdownStateChange])
 
   // 点击外部关闭下拉
   useEffect(() => {
@@ -134,9 +142,8 @@ export const QuickSwitchContent = memo(function QuickSwitchContent({
         // 内容布局
         'overflow-hidden'
       )}
-      // 下拉打开时不触发面板关闭
-      onMouseEnter={isWorkspaceDropdownOpen ? undefined : onMouseEnter}
-      onMouseLeave={isWorkspaceDropdownOpen ? undefined : onMouseLeave}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
     >
       {/* 顶部发光线 */}
       <div className="h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />

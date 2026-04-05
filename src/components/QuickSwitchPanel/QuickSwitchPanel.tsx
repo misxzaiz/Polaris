@@ -36,6 +36,9 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
   // 面板可见状态
   const [isPanelVisible, setIsPanelVisible] = useState(false)
 
+  // 工作区下拉是否打开（用于阻止面板关闭）
+  const [isWorkspaceDropdownOpen, setIsWorkspaceDropdownOpen] = useState(false)
+
   // 使用 ref 管理悬停状态，避免闭包陷阱
   const isHoveringTriggerRef = useRef(false)
   const isHoveringPanelRef = useRef(false)
@@ -79,11 +82,13 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
   const scheduleHide = useCallback(() => {
     clearTimers()
     hideTimerRef.current = setTimeout(() => {
+      // 下拉打开时不关闭面板
+      if (isWorkspaceDropdownOpen) return
       if (!isHoveringTriggerRef.current && !isHoveringPanelRef.current) {
         setIsPanelVisible(false)
       }
     }, HIDE_DELAY)
-  }, [clearTimers])
+  }, [clearTimers, isWorkspaceDropdownOpen])
 
   // 组件卸载时清理
   useEffect(() => {
@@ -235,6 +240,11 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
     toggleSessionHistory()
   }, [toggleSessionHistory])
 
+  // 工作区下拉状态变化
+  const handleDropdownStateChange = useCallback((isOpen: boolean) => {
+    setIsWorkspaceDropdownOpen(isOpen)
+  }, [])
+
   // 获取当前会话状态
   const currentStatus = useMemo<SessionStatus>(() => {
     const activeSession = sessions.find(s => s.id === activeSessionId)
@@ -274,6 +284,7 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
               onExport={messages.length > 0 ? handleExport : undefined}
               isExporting={isExporting}
               onOpenHistory={handleOpenHistory}
+              onDropdownStateChange={handleDropdownStateChange}
               onMouseEnter={handlePanelMouseEnter}
               onMouseLeave={handlePanelMouseLeave}
             />
