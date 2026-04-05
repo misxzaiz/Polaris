@@ -103,8 +103,11 @@ export const FileTreeNode = memo<FileTreeNodeProps>(({
   useEffect(() => {
     if (file.is_dir && isExpanded) {
       const cached = get_cached_folder_content(file.path);
-      
-      if (!cached && (!file.children || file.children.length === 0)) {
+
+      // 只有当缓存不存在且 children 尚未加载时才触发加载
+      // 注意：file.children 可能是 undefined（未加载）或数组（已加载）
+      // 空数组 [] 表示已加载且为空，不应再次触发加载
+      if (!cached && file.children === undefined) {
         load_folder_content(file.path);
       }
     }
@@ -119,7 +122,8 @@ export const FileTreeNode = memo<FileTreeNodeProps>(({
       if (!isExpanded) {
         const cached = get_cached_folder_content(file.path);
 
-        if (!cached && (!file.children || file.children.length === 0)) {
+        // 只有当缓存不存在且 children 尚未加载时才触发加载
+        if (!cached && file.children === undefined) {
           await load_folder_content(file.path);
         }
       }
