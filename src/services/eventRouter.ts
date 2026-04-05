@@ -99,9 +99,18 @@ export class EventRouter {
         }
 
         // 多会话路由策略：
-        // 1. 首先尝试从 contextId 提取前端 sessionId（最可靠）
-        // 2. 如果 contextId 不包含前端 sessionId，再尝试从 payload.sessionId 路由
-        // 3. 最后回退到旧架构的 contextId 路由
+        // 1. scheduler 任务：使用 contextId 路由到 scheduler 注册的 handler
+        // 2. session 会话：从 contextId 提取前端 sessionId 路由
+        // 3. 其他情况：使用 payload.sessionId 路由
+        // 4. 最后回退到旧架构的 contextId 路由
+
+        // Scheduler 任务：contextId 格式为 "scheduler-{taskId}"
+        // 必须使用 contextId 路由，让 scheduler handler 接收事件
+        if (routedEvent.contextId.startsWith('scheduler-')) {
+          log.debug('Scheduler 任务使用 contextId 路由', { contextId: routedEvent.contextId })
+          this.dispatch(routedEvent)
+          return
+        }
 
         const frontendSessionId = extractFrontendSessionId(routedEvent.contextId)
 
