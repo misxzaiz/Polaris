@@ -45,5 +45,19 @@
     "selectFolderTitle": "Select Workspace Folder",
     "creating": "Creating...",
     "create": "Create"
+  },
+  "createSessionModal": {
+    "title": "New Session",
+    "primaryWorkspaceLabel": "Primary Workspace",
+    "contextWorkspaceLabel": "Context Workspaces",
+    "optional": "optional",
+    "noWorkspace": "No workspace yet, please create one first",
+    "createWorkspaceFirst": "Create Workspace",
+    "addWorkspace": "Add Workspace",
+    "contextHint": "AI can access files in context workspaces",
+    "selectPrimary": "Please select a primary workspace",
+    "createFailed": "Failed to create session",
+    "creating": "Creating...",
+    "create": "Create"
   }
 }

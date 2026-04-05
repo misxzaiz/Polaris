@@ -67,7 +67,8 @@ function createSessionManagerStore() {
         title: options.title || `新对话 ${get().stores.size + 1}`,
         type: options.type,
         workspaceId: options.workspaceId || null,
-        contextWorkspaceIds: [], // 初始化为空数组
+        contextWorkspaceIds: options.contextWorkspaceIds || [],
+        workspaceLocked: options.workspaceLocked ?? (!!options.workspaceId),
         status: 'idle',
         silentMode: options.silentMode || false, // 设置静默模式
         createdAt: timestamp,

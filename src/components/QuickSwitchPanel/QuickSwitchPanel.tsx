@@ -9,6 +9,7 @@ import { memo, useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { cn } from '@/utils/cn'
 import { QuickSwitchTrigger } from './QuickSwitchTrigger'
 import { QuickSwitchContent } from './QuickSwitchContent'
+import { CreateSessionModal } from '@/components/Session/CreateSessionModal'
 import type { QuickSwitchPanelProps, QuickSessionInfo, QuickWorkspaceInfo } from './types'
 import type { SessionStatus } from '@/types/session'
 import {
@@ -36,6 +37,9 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
   // 面板可见状态
   const [isPanelVisible, setIsPanelVisible] = useState(false)
 
+  // 新建会话弹窗状态
+  const [showCreateModal, setShowCreateModal] = useState(false)
+
   // 工作区下拉是否打开的 ref（同步更新，避免面板关闭）
   const workspaceDropdownOpenRef = useRef(false)
 
@@ -48,12 +52,11 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
   // 会话数据
   const sessions = useSessionMetadataList()
   const activeSessionId = useActiveSessionId()
-  const { createSession, deleteSession, switchSession } = useSessionManagerActions()
+  const { deleteSession, switchSession } = useSessionManagerActions()
   const { messages } = useActiveSessionMessages()
 
   // 工作区数据
   const workspaces = useWorkspaceStore((state) => state.workspaces)
-  const currentWorkspaceId = useWorkspaceStore((state) => state.currentWorkspaceId)
 
   // 视图控制
   const { toggleSessionHistory } = useViewStore()
@@ -139,13 +142,10 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
     deleteSession(sessionId)
   }, [deleteSession])
 
-  // 新建会话
+  // 新建会话 - 打开弹窗
   const handleCreateSession = useCallback(() => {
-    createSession({
-      type: 'free',
-      workspaceId: currentWorkspaceId || undefined,
-    })
-  }, [createSession, currentWorkspaceId])
+    setShowCreateModal(true)
+  }, [])
 
   // 计算会话列表数据
   const sessionList = useMemo<QuickSessionInfo[]>(() => {
@@ -297,6 +297,10 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
           </div>
         )}
       </div>
+{/* 新建会话弹窗 */}
+      {showCreateModal && (
+        <CreateSessionModal onClose={() => setShowCreateModal(false)} />
+      )}
     </div>
   )
 })

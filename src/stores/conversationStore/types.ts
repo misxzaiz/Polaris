@@ -220,8 +220,14 @@ export interface CreateSessionOptions {
   id?: string
   type: 'project' | 'free'
   workspaceId?: string
+  /** 关联工作区 ID 列表（可选，多选） */
+  contextWorkspaceIds?: string[]
+  /** 创建时是否锁定主工作区（默认：有 workspaceId 时为 true） */
+  workspaceLocked?: boolean
   title?: string
   engineId?: string
+  /** 静默模式：不自动激活，不显示在 UI */
+  silentMode?: boolean
 }
 
 /**
@@ -290,6 +296,8 @@ export interface SessionManagerActions {
   removeFromBackground: (sessionId: string) => void
   addToNotifications: (sessionId: string) => void
   removeFromNotifications: (sessionId: string) => void
+  /** 将静默会话切换为可见 */
+  makeSessionVisible: (sessionId: string) => void
 
   // ===== 批量操作 =====
   getStreamingSessions: () => string[]

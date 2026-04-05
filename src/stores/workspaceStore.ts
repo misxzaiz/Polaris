@@ -239,6 +239,13 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         }
         return state.workspaces.find(w => w.id === state.viewingWorkspaceId) || null;
       },
+
+      // 获取按最近访问时间排序的工作区列表
+      getSortedWorkspaces: () => {
+        return [...get().workspaces].sort((a, b) =>
+          new Date(b.lastAccessed).getTime() - new Date(a.lastAccessed).getTime()
+        );
+      },
     }),
     {
       name: 'workspace-store',

@@ -45,5 +45,19 @@
     "selectFolderTitle": "选择工作区文件夹",
     "creating": "创建中...",
     "create": "创建"
+  },
+  "createSessionModal": {
+    "title": "新建会话",
+    "primaryWorkspaceLabel": "主工作区",
+    "contextWorkspaceLabel": "关联工作区",
+    "optional": "可选",
+    "noWorkspace": "还没有工作区，请先创建工作区",
+    "createWorkspaceFirst": "创建工作区",
+    "addWorkspace": "新增工作区",
+    "contextHint": "AI 可访问关联工作区中的文件",
+    "selectPrimary": "请选择主工作区",
+    "createFailed": "创建会话失败",
+    "creating": "创建中...",
+    "create": "创建"
   }
 }

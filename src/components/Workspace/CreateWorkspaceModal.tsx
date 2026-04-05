@@ -106,7 +106,7 @@ export function CreateWorkspaceModal({ onClose }: CreateWorkspaceModalProps) {
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
-      <div ref={modalRef} className="bg-background-elevated rounded-xl p-6 w-full max-w-md border border-border shadow-glow">
+      <div ref={modalRef} data-modal="create-workspace" className="bg-background-elevated rounded-xl p-6 w-full max-w-md border border-border shadow-glow">
         <h2 className="text-lg font-semibold text-text-primary mb-4">
           {t('createModal.title')}
         </h2>

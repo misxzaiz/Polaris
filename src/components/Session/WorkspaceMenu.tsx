@@ -126,7 +126,7 @@ export function WorkspaceMenu({ sessionId, anchorEl, onClose }: WorkspaceMenuPro
       {isLocked && (
         <div className="px-3 py-2 bg-warning/10 border-b border-border-subtle flex items-center gap-2 text-xs text-warning">
           <Lock className="w-3.5 h-3.5" />
-          <span>会话进行中，主工作区已锁定</span>
+          <span>创建时已指定主工作区，不可修改</span>
         </div>
       )}
 

@@ -374,7 +374,7 @@ const WorkspaceDropdown = memo(function WorkspaceDropdown({
   position,
   onSelect,
   onToggleContext,
-  onClose,
+  onClose: _onClose,
 }: WorkspaceDropdownProps) {
   // 新建工作区弹窗状态
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -417,7 +417,7 @@ const WorkspaceDropdown = memo(function WorkspaceDropdown({
         {isLocked && (
           <div className="px-2.5 py-1.5 bg-warning/10 border-b border-border-subtle flex items-center gap-1.5 text-[10px] text-warning">
             <Lock className="w-3 h-3" />
-            <span>会话进行中，主工作区已锁定</span>
+            <span>创建时已指定主工作区，不可修改</span>
           </div>
         )}
 
