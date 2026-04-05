@@ -233,12 +233,12 @@ export const MultiSessionRowsToggle = memo(function MultiSessionRowsToggle() {
   const setMultiSessionRows = useViewStore(state => state.setMultiSessionRows);
   const multiSessionMode = useViewStore(state => state.multiSessionMode);
 
-  // 非多窗口模式时不显示
-  if (!multiSessionMode) return null;
-
   const handleToggle = useCallback(() => {
     setMultiSessionRows(multiSessionRows === 1 ? 2 : 1);
   }, [multiSessionRows, setMultiSessionRows]);
+
+  // 非多窗口模式时不显示 - 必须在所有 hooks 之后返回
+  if (!multiSessionMode) return null;
 
   return (
     <button
@@ -269,9 +269,6 @@ export const MultiSessionWidthPopover = memo(function MultiSessionWidthPopover()
   const [isOpen, setIsOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // 非多窗口模式时不显示
-  if (!multiSessionMode) return null;
-
   // 点击外部关闭
   useEffect(() => {
     if (!isOpen) return;
@@ -297,6 +294,9 @@ export const MultiSessionWidthPopover = memo(function MultiSessionWidthPopover()
     setMultiSessionCellWidth(width);
     setIsOpen(false);
   }, [setMultiSessionCellWidth]);
+
+  // 非多窗口模式时不显示 - 必须在所有 hooks 之后返回
+  if (!multiSessionMode) return null;
 
   return (
     <div className="relative" ref={panelRef}>
