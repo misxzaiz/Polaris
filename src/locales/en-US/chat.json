@@ -94,6 +94,8 @@
     "duration": "Duration: {{duration}}",
     "moreTasks": "...{{count}} more tasks",
     "moreTools": "{{count}} more tool calls...",
+    "moreThinking": "{{count}} more thinking blocks...",
+    "moreMixed": "{{count}} more items...",
     "startTime": "Start: {{time}}",
     "endTime": "End: {{time}}",
     "fileDiff": "File Diff",
@@ -103,6 +105,9 @@
     "toolDetails": "Tool Details",
     "moreMatches": "...{{count}} more matches",
     "viewInGitPanel": "View in Git Panel"
+  },
+  "thinking": {
+    "title": "Thinking"
   },
   "question": {
     "answered": "Answered",

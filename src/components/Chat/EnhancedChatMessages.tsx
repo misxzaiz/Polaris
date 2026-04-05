@@ -32,7 +32,7 @@ import {
   type GrepMatch,
   type GrepOutputData
 } from '../../utils/toolSummary';
-import { Check, XCircle, Loader2, AlertTriangle, Play, ChevronDown, ChevronRight, Circle, FileSearch, FolderOpen, Code, FileDiff, Brain, ListOrdered } from 'lucide-react';
+import { Check, XCircle, Loader2, AlertTriangle, Play, ChevronDown, ChevronRight, ChevronUp, Circle, FileSearch, FolderOpen, Code, FileDiff, Brain, ListOrdered } from 'lucide-react';
 import { ChatNavigator } from './ChatNavigator';
 import { useMessageSearch, MessageSearchPanel } from './MessageSearchPanel';
 import { QuestionBlockRenderer, SimplifiedQuestionRenderer } from './QuestionBlockRenderer';
@@ -50,6 +50,28 @@ import { calculateRenderMode, type MessageRenderMode, DEFAULT_LAYER_CONFIG } fro
 /** Markdown 渲染器（使用缓存优化） */
 function formatContent(content: string): string {
   return markdownCache.render(content);
+}
+
+// ========================================
+// 工具调用折叠配置
+// ========================================
+
+/** 工具调用折叠配置 */
+const TOOL_COLLAPSE_CONFIG = {
+  /** 折叠前最多显示的可折叠块数 */
+  maxVisibleBlocks: 4,
+  /** 触发折叠的最小块数（超过此值才折叠） */
+  collapseThreshold: 5,
+};
+
+/** 可折叠块分组（支持 thinking + tool_call 混合） */
+interface CollapsibleBlockGroup {
+  /** 在 blocks 数组中的起始索引 */
+  startIndex: number;
+  /** 在 blocks 数组中的结束索引（包含） */
+  endIndex: number;
+  /** 连续的可折叠块 */
+  blocks: (ThinkingBlock | ToolCallBlock)[];
 }
 
 // ========================================
@@ -1310,14 +1332,10 @@ const AssistantBubble = memo(function AssistantBubble({
           </span>
         </div>
 
-        {/* 渲染内容块 */}
+        {/* 渲染内容块（支持工具和思考块折叠聚合） */}
         {hasBlocks ? (
           <div className="space-y-1">
-            {message.blocks.map((block, index) => (
-              <div key={`block-${index}`}>
-                {renderContentBlock(block, message.isStreaming, renderMode)}
-              </div>
-            ))}
+            {renderBlocksWithGrouping(message.blocks, message.isStreaming, renderMode)}
           </div>
         ) : message.content ? (
           // 兼容旧格式（content 字符串）
@@ -1383,8 +1401,332 @@ const AssistantBubble = memo(function AssistantBubble({
 });
 
 // ========================================
-// 工具调用分组识别
+// 可折叠块分组识别
 // ========================================
+
+/**
+ * 识别连续的可折叠块分组（thinking + tool_call）
+ * 文本块等其他类型会打断分组
+ */
+function identifyCollapsibleBlockGroups(blocks: ContentBlock[]): CollapsibleBlockGroup[] {
+  const groups: CollapsibleBlockGroup[] = [];
+  let currentBlocks: (ThinkingBlock | ToolCallBlock)[] = [];
+  let groupStartIndex = 0;
+
+  blocks.forEach((block, index) => {
+    // thinking 和 tool_call 都参与折叠
+    if (block.type === 'tool_call' || block.type === 'thinking') {
+      if (currentBlocks.length === 0) {
+        groupStartIndex = index;
+      }
+      currentBlocks.push(block as ThinkingBlock | ToolCallBlock);
+    } else {
+      // 其他块类型，保存之前的组
+      if (currentBlocks.length > 0) {
+        groups.push({
+          startIndex: groupStartIndex,
+          endIndex: groupStartIndex + currentBlocks.length - 1,
+          blocks: currentBlocks,
+        });
+        currentBlocks = [];
+      }
+    }
+  });
+
+  // 处理末尾的组
+  if (currentBlocks.length > 0) {
+    groups.push({
+      startIndex: groupStartIndex,
+      endIndex: groupStartIndex + currentBlocks.length - 1,
+      blocks: currentBlocks,
+    });
+  }
+
+  return groups;
+}
+
+// ========================================
+// 思考块工具样式渲染器
+// ========================================
+
+/** 思考块简化渲染器（使用工具调用样式） */
+const ThinkingAsToolRenderer = memo(function ThinkingAsToolRenderer({
+  block,
+  isStreaming = false,
+}: {
+  block: ThinkingBlock;
+  isStreaming?: boolean;
+}) {
+  const { t } = useTranslation('chat');
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  // 计算字数统计
+  const charCount = block.content.length;
+
+  // 生成预览文本（折叠时显示前50字）
+  const previewText = useMemo(() => {
+    return block.content.length > 50
+      ? block.content.slice(0, 50) + '...'
+      : block.content;
+  }, [block.content]);
+
+  // 状态配置
+  const statusIcon = isStreaming ? Loader2 : Check;
+  const statusClass = isStreaming ? 'animate-spin text-primary' : 'text-success';
+  const StatusIcon = statusIcon;
+
+  return (
+    <div className="my-1.5 rounded-lg overflow-hidden w-full transition-all duration-200 border border-border bg-background-elevated">
+      {/* 头部 - 类似工具调用样式 */}
+      <div
+        className="flex items-center gap-2 px-2.5 py-1.5 cursor-pointer hover:bg-background-hover transition-colors border-l-2 border-primary/30"
+        onClick={() => setIsExpanded(!isExpanded)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setIsExpanded(!isExpanded);
+          }
+        }}
+        tabIndex={0}
+        role="button"
+        aria-expanded={isExpanded}
+      >
+        {/* 图标 */}
+        <div className="w-5 h-5 rounded text-[10px] font-semibold flex items-center justify-center shrink-0 bg-primary/10 text-primary">
+          <Brain className="w-3.5 h-3.5" />
+        </div>
+
+        {/* 名称 */}
+        <span className="text-xs font-medium text-text-secondary shrink-0">
+          {t('thinking.title') || '思考'}
+        </span>
+
+        {/* 字数统计 */}
+        <span className="text-xs text-text-tertiary truncate flex-1 min-w-0">
+          {charCount > 1000 ? `${(charCount / 1000).toFixed(1)}k` : charCount} 字
+        </span>
+
+        {/* 流式指示器 */}
+        {isStreaming && (
+          <span className="text-xs text-primary">思考中...</span>
+        )}
+
+        {/* 状态图标 */}
+        <StatusIcon className={clsx('w-3.5 h-3.5 shrink-0', statusClass)} />
+
+        {/* 展开/收起箭头 */}
+        <ChevronDown
+          className={clsx(
+            'w-3 h-3 text-text-muted shrink-0 transition-transform duration-200',
+            isExpanded && 'rotate-180'
+          )}
+        />
+      </div>
+
+      {/* 展开时显示内容 */}
+      {isExpanded && (
+        <div className="px-3 py-2 border-t border-border bg-background-subtle">
+          <div className="text-sm text-text-secondary whitespace-pre-wrap leading-relaxed">
+            {block.content}
+          </div>
+          {isStreaming && (
+            <span className="inline-flex ml-1 mt-1">
+              <span className="flex gap-0.5 items-end h-4">
+                <span className="w-1 h-1 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-1 h-1 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-1 h-1 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              </span>
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* 折叠时显示预览 */}
+      {!isExpanded && previewText && (
+        <div className="px-3 py-1.5 border-t border-border bg-background-surface/50">
+          <p className="text-xs text-text-tertiary italic truncate">
+            {previewText}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+});
+
+// ========================================
+// 可折叠块组组件
+// ========================================
+
+/** 可折叠块组组件 - thinking + tool_call 混合折叠 */
+const CollapsibleBlockGroupRenderer = memo(function CollapsibleBlockGroupRenderer({
+  blocks,
+  maxVisible,
+  isStreaming,
+  renderMode: _renderMode,
+}: {
+  blocks: (ThinkingBlock | ToolCallBlock)[];
+  maxVisible: number;
+  isStreaming?: boolean;
+  renderMode: MessageRenderMode;
+}) {
+  // _renderMode 保留用于未来扩展（如 archive 模式下简化渲染）
+  const { t } = useTranslation('chat');
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const hiddenCount = blocks.length - maxVisible;
+  const visibleBlocks = isExpanded ? blocks : blocks.slice(0, maxVisible);
+
+  // 统计 thinking 和 tool_call 数量
+  const thinkingCount = blocks.filter(b => b.type === 'thinking').length;
+  const toolCount = blocks.filter(b => b.type === 'tool_call').length;
+
+  return (
+    <div className="collapsible-block-group">
+      {/* 渲染可见的块 */}
+      {visibleBlocks.map((block, index) => {
+        if (block.type === 'thinking') {
+          return (
+            <div key={`thinking-${index}`}>
+              <ThinkingAsToolRenderer block={block} isStreaming={isStreaming} />
+            </div>
+          );
+        } else {
+          return (
+            <div key={`tool-${index}`}>
+              <ToolCallBlockRenderer block={block as ToolCallBlock} />
+            </div>
+          );
+        }
+      })}
+
+      {/* 折叠/展开指示器 */}
+      {hiddenCount > 0 && (
+        <div
+          className={clsx(
+            'flex items-center gap-1.5 px-3 py-2 my-1',
+            'bg-background-surface border border-dashed border-border rounded-md',
+            'cursor-pointer text-xs text-text-secondary',
+            'hover:bg-background-hover hover:border-primary hover:text-primary',
+            'transition-all duration-150',
+            'focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background-base'
+          )}
+          onClick={() => setIsExpanded(!isExpanded)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setIsExpanded(!isExpanded);
+            }
+          }}
+          aria-expanded={isExpanded}
+        >
+          {isExpanded ? (
+            <>
+              <ChevronUp className="w-3.5 h-3.5" />
+              <span>{t('tool.collapse')}</span>
+            </>
+          ) : (
+            <>
+              <ChevronRight className="w-3.5 h-3.5" />
+              <span>
+                {thinkingCount > 0 && toolCount > 0
+                  ? t('tool.moreMixed', { count: hiddenCount })
+                  : thinkingCount > 0
+                    ? t('tool.moreThinking', { count: hiddenCount })
+                    : t('tool.moreTools', { count: hiddenCount })}
+              </span>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+});
+
+// ========================================
+// 分组渲染函数
+// ========================================
+
+/**
+ * 渲染内容块数组（支持思考块和工具块折叠聚合）
+ */
+function renderBlocksWithGrouping(
+  blocks: ContentBlock[],
+  isStreaming: boolean | undefined,
+  renderMode: MessageRenderMode
+): React.ReactNode[] {
+  // 识别可折叠块分组
+  const groups = identifyCollapsibleBlockGroups(blocks);
+
+  // 如果没有分组，直接渲染
+  if (groups.length === 0) {
+    return blocks.map((block, index) => (
+      <div key={`block-${index}`}>
+        {renderContentBlock(block, isStreaming, renderMode)}
+      </div>
+    ));
+  }
+
+  // 构建分组映射：block index -> CollapsibleBlockGroup
+  const groupMap = new Map<number, CollapsibleBlockGroup>();
+  groups.forEach(group => {
+    for (let i = 0; i < group.blocks.length; i++) {
+      groupMap.set(group.startIndex + i, group);
+    }
+  });
+
+  const result: React.ReactNode[] = [];
+  const processedIndices = new Set<number>();
+
+  blocks.forEach((block, index) => {
+    if (processedIndices.has(index)) return;
+
+    const group = groupMap.get(index);
+
+    if (group && group.blocks.length > TOOL_COLLAPSE_CONFIG.collapseThreshold) {
+      // 需要折叠的组
+      result.push(
+        <CollapsibleBlockGroupRenderer
+          key={`group-${group.startIndex}`}
+          blocks={group.blocks}
+          maxVisible={TOOL_COLLAPSE_CONFIG.maxVisibleBlocks}
+          isStreaming={isStreaming}
+          renderMode={renderMode}
+        />
+      );
+      // 标记组内所有块已处理
+      group.blocks.forEach((_, i) => processedIndices.add(group.startIndex + i));
+    } else if (group) {
+      // 不需要折叠的组，逐个渲染（thinking 使用工具样式）
+      group.blocks.forEach((block, i) => {
+        if (block.type === 'thinking') {
+          result.push(
+            <div key={`block-${group.startIndex + i}`}>
+              <ThinkingAsToolRenderer block={block} isStreaming={isStreaming} />
+            </div>
+          );
+        } else {
+          result.push(
+            <div key={`block-${group.startIndex + i}`}>
+              <ToolCallBlockRenderer block={block as ToolCallBlock} />
+            </div>
+          );
+        }
+        processedIndices.add(group.startIndex + i);
+      });
+    } else {
+      // 非可折叠块（text, question 等）
+      result.push(
+        <div key={`block-${index}`}>
+          {renderContentBlock(block, isStreaming, renderMode)}
+        </div>
+      );
+    }
+  });
+
+  return result;
+}
 
 /** 系统消息组件 */
 const SystemBubble = memo(function SystemBubble({ content }: { content: string }) {

@@ -94,6 +94,8 @@
     "duration": "耗时 {{duration}}",
     "moreTasks": "...还有 {{count}} 个任务",
     "moreTools": "还有 {{count}} 个工具调用...",
+    "moreThinking": "还有 {{count}} 个思考块...",
+    "moreMixed": "还有 {{count}} 个项...",
     "startTime": "开始: {{time}}",
     "endTime": "完成: {{time}}",
     "fileDiff": "文件差异",
@@ -103,6 +105,9 @@
     "toolDetails": "工具详情",
     "moreMatches": "...还有 {{count}} 个匹配项",
     "viewInGitPanel": "在 Git 面板查看"
+  },
+  "thinking": {
+    "title": "思考"
   },
   "question": {
     "answered": "已回答",
