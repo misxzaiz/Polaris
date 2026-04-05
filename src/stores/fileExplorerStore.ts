@@ -13,6 +13,21 @@ const log = createLogger('FileExplorer');
 // 搜索取消令牌（用于取消正在进行的搜索）
 let searchAbortController: AbortController | null = null;
 
+// 辅助函数：获取父目录路径（兼容 Windows 和 Unix 路径分隔符）
+function getParentPath(path: string): string | null {
+  // 找到最后一个路径分隔符（支持 / 和 \）
+  const lastSepIndex = Math.max(
+    path.lastIndexOf('/'),
+    path.lastIndexOf('\\')
+  );
+
+  if (lastSepIndex <= 0) {
+    return null;
+  }
+
+  return path.substring(0, lastSepIndex);
+}
+
 // 辅助函数：更新文件树中的子节点
 function updateFolderChildren(tree: FileInfo[], folderPath: string, children: FileInfo[]): FileInfo[] {
   return tree.map(file => {
@@ -435,7 +450,7 @@ export const useFileExplorerStore = create<FileExplorerStore>((set, get) => ({
     try {
       await tauri.createFile(path, content);
       // 获取父目录并精确刷新
-      const parentPath = path.substring(0, path.lastIndexOf('/'));
+      const parentPath = getParentPath(path);
       if (parentPath) {
         await get().refresh_folder(parentPath);
       }
@@ -449,7 +464,7 @@ export const useFileExplorerStore = create<FileExplorerStore>((set, get) => ({
     try {
       await tauri.createDirectory(path);
       // 获取父目录并精确刷新
-      const parentPath = path.substring(0, path.lastIndexOf('/'));
+      const parentPath = getParentPath(path);
       if (parentPath) {
         await get().refresh_folder(parentPath);
       }
@@ -463,7 +478,7 @@ export const useFileExplorerStore = create<FileExplorerStore>((set, get) => ({
     try {
       await tauri.deleteFile(path);
       // 获取父目录并精确刷新
-      const parentPath = path.substring(0, path.lastIndexOf('/'));
+      const parentPath = getParentPath(path);
       if (parentPath) {
         await get().refresh_folder(parentPath);
       }
@@ -477,7 +492,7 @@ export const useFileExplorerStore = create<FileExplorerStore>((set, get) => ({
     try {
       await tauri.renameFile(old_path, new_name);
       // 获取父目录并精确刷新
-      const parentPath = old_path.substring(0, old_path.lastIndexOf('/'));
+      const parentPath = getParentPath(old_path);
       if (parentPath) {
         await get().refresh_folder(parentPath);
       }
@@ -597,8 +612,8 @@ export function initFileWatcherListener(): () => void {
       }
 
       // 也检查父目录是否已展开（新文件可能在已展开的目录中）
-      const parentDir = absPath.substring(0, absPath.lastIndexOf('/'));
-      if (expanded_folders.has(parentDir) && !dirsToRefresh.includes(parentDir)) {
+      const parentDir = getParentPath(absPath);
+      if (parentDir && expanded_folders.has(parentDir) && !dirsToRefresh.includes(parentDir)) {
         dirsToRefresh.push(parentDir);
       }
     }
