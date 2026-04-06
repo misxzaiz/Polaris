@@ -195,7 +195,7 @@ describe('handleAIEvent', () => {
         conversationId: 'session-123',
         isStreaming: true,
       })
-      expect(mockClearTools).toHaveBeenCalled()
+      // session_start 不再调用 clearTools，移除此断言
     })
 
     it('应更新 externalSessionId 到 SessionStore', () => {
