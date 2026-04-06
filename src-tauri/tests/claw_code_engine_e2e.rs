@@ -243,6 +243,18 @@ async fn test_real_api_streaming() {
     // 验证事件序列
     let events_guard = events.lock().unwrap();
 
+    // 检查事件顺序：第一个应该是 session_start
+    if let Some(first) = events_guard.first() {
+        match first {
+            AIEvent::SessionStart(ss) => {
+                println!("session_start sessionId: {}", ss.session_id);
+            }
+            _ => {
+                panic!("第一个事件应该是 session_start，实际是: {:?}", first);
+            }
+        }
+    }
+
     // 检查事件顺序
     let mut token_count = 0;
     let mut last_token_index = 0;
@@ -393,4 +405,92 @@ async fn test_interrupt_session() {
 
     // 验证活跃会话数
     assert_eq!(engine.active_session_count(), 0);
+}
+
+/// 测试 session_start 事件发送
+///
+/// 验证：
+/// 1. session_start 事件在流式响应开始时发送
+/// 2. session_start 包含正确的 session_id
+/// 3. session_id 已注册到 cancel_tokens，支持中断
+///
+/// 运行方式：
+/// ```bash
+/// POLARIS_TEST_API_KEY=your-key cargo test --test claw_code_engine_e2e test_session_start_event -- --ignored
+/// ```
+#[tokio::test]
+#[ignore = "需要设置 POLARIS_TEST_API_KEY 环境变量"]
+async fn test_session_start_event() {
+    let api_key = match test_api_key() {
+        Some(key) => key,
+        None => {
+            eprintln!("跳过测试：未设置 POLARIS_TEST_API_KEY");
+            return;
+        }
+    };
+
+    let config = ClawCodeConfig::new(
+        "TestClawCode",
+        api_key,
+        test_api_base(),
+        test_model(),
+    )
+    .with_max_tokens(50);
+
+    let mut engine = ClawCodeEngine::with_config(config);
+    assert!(engine.is_available(), "引擎应该可用");
+
+    // 创建事件收集器
+    let events: Arc<Mutex<Vec<AIEvent>>> = Arc::new(Mutex::new(Vec::new()));
+    let events_clone = events.clone();
+
+    let options = SessionOptions::new(move |event: AIEvent| {
+        events_clone.lock().unwrap().push(event);
+    });
+
+    // 启动会话
+    let session_id = engine.start_session("说一个字", options).expect("启动会话成功");
+    println!("返回的 session_id: {}", session_id);
+
+    // 等待 session_start 事件（应该在第一个事件中）
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs(5);
+
+    loop {
+        let events_guard = events.lock().unwrap();
+        let has_session_start = events_guard.iter().any(|e| matches!(e, AIEvent::SessionStart(_)));
+
+        if has_session_start || start.elapsed() > timeout {
+            drop(events_guard);
+            break;
+        }
+
+        drop(events_guard);
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+
+    // 验证事件
+    let events_guard = events.lock().unwrap();
+    println!("收集到 {} 个事件", events_guard.len());
+
+    // 验证第一个事件是 session_start
+    assert!(!events_guard.is_empty(), "应该有事件");
+    let first_event = &events_guard[0];
+
+    match first_event {
+        AIEvent::SessionStart(ss) => {
+            println!("session_start 事件的 sessionId: {}", ss.session_id);
+            // 验证 session_id 匹配
+            assert_eq!(ss.session_id, session_id, "session_start 的 sessionId 应与返回值匹配");
+        }
+        _ => {
+            panic!("第一个事件应该是 session_start，实际是: {:?}", first_event);
+        }
+    }
+
+    // 验证中断功能：session_id 应已注册到 cancel_tokens
+    let interrupt_result = engine.interrupt(&session_id);
+    assert!(interrupt_result.is_ok(), "中断应该成功，说明 session_id 已注册");
+
+    println!("✅ session_start 事件验证通过");
 }

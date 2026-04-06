@@ -527,6 +527,16 @@ impl ClawCodeEngine {
 
         let event_callback = options.event_callback.clone();
 
+        // 发送 session_start 事件，让前端知道会话已开始
+        // 这是中断功能正常工作的关键：前端需要这个事件来更新 conversationId
+        event_callback(AIEvent::session_start(&session_id));
+        tracing::info!("[ClawCodeEngine] 已发送 session_start 事件: {}", session_id);
+
+        // 同时调用 on_session_id_update 回调（如果存在）
+        if let Some(ref cb) = options.on_session_id_update {
+            cb(session_id.clone());
+        }
+
         // 当前消息列表（会在循环中更新）
         let mut current_messages = messages;
 
