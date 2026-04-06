@@ -14,6 +14,7 @@ pub mod history;
 pub mod history_claude;
 pub mod event_parser;
 pub mod adapters;
+pub mod tools;
 
 pub use traits::{EngineId, SessionOptions, HistoryEntry};
 pub use registry::EngineRegistry;
