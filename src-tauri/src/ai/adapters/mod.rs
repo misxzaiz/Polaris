@@ -5,6 +5,7 @@
 
 pub mod claw_code_types;
 pub mod convert;
+pub mod openai_compat_client;
 
 pub use claw_code_types::{
     ContentBlockDelta, ContentBlockDeltaEvent, ContentBlockStartEvent, ContentBlockStopEvent,
@@ -16,4 +17,8 @@ pub use claw_code_types::{
 pub use convert::{
     history_entry_to_input_message, history_entries_to_input_messages,
     stream_event_to_ai_event, stream_events_to_ai_events,
+};
+
+pub use openai_compat_client::{
+    OpenAiCompatClient, OpenAiCompatConfig, MessageStream,
 };
