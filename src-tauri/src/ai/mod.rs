@@ -27,4 +27,6 @@ pub use adapters::{
     InputContentBlock, InputMessage, MessageDelta, MessageDeltaEvent, MessageRequest,
     MessageResponse, MessageStartEvent, MessageStopEvent, OutputContentBlock, StreamEvent,
     ToolChoice, ToolDefinition, ToolResultContentBlock, Usage,
+    history_entry_to_input_message, history_entries_to_input_messages,
+    stream_event_to_ai_event, stream_events_to_ai_events,
 };
