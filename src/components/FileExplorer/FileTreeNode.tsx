@@ -101,9 +101,9 @@ export const FileTreeNode = memo<FileTreeNodeProps>(({
       const cached = get_cached_folder_content(file.path);
 
       // 只有当缓存不存在且 children 尚未加载时才触发加载
-      // 注意：file.children 可能是 undefined（未加载）或数组（已加载）
+      // 注意：file.children 可能是 null/undefined（未加载）或数组（已加载）
       // 空数组 [] 表示已加载且为空，不应再次触发加载
-      if (!cached && file.children === undefined) {
+      if (!cached && file.children == null) {
         load_folder_content(file.path);
       }
     }
@@ -119,7 +119,7 @@ export const FileTreeNode = memo<FileTreeNodeProps>(({
         const cached = get_cached_folder_content(file.path);
 
         // 只有当缓存不存在且 children 尚未加载时才触发加载
-        if (!cached && file.children === undefined) {
+        if (!cached && file.children == null) {
           await load_folder_content(file.path);
         }
       }
@@ -140,11 +140,11 @@ export const FileTreeNode = memo<FileTreeNodeProps>(({
   const isLoading = file.is_dir && loadingFolders.has(normalizePath(file.path));
 
   // children 状态:
-  // - undefined: 尚未加载
+  // - null/undefined: 尚未加载
   // - []: 空数组，确实为空
   // - [items]: 有内容
-  const hasChildren = file.children !== undefined && file.children.length > 0;
-  const isChildrenLoaded = file.children !== undefined;
+  const hasChildren = file.children != null && file.children.length > 0;
+  const isChildrenLoaded = file.children != null;
 
   const closeContextMenu = useCallback(() => {
     setContextMenu({ visible: false, x: 0, y: 0 });
