@@ -101,6 +101,7 @@ impl ClaudeEngine {
         &self,
         message: &str,
         system_prompt: Option<&str>,
+        append_system_prompt: Option<&str>,
         session_id: Option<&str>,
         mcp_config_path: Option<&str>,
     ) -> Result<Command> {
@@ -118,6 +119,14 @@ impl ClaudeEngine {
                 cmd.arg("--resume").arg(sid);
             }
 
+            // 先追加工作区信息（始终追加）
+            if let Some(prompt) = append_system_prompt {
+                if !prompt.is_empty() {
+                    cmd.arg("--append-system-prompt").arg(prompt);
+                }
+            }
+
+            // 再处理用户自定义系统提示词（会覆盖默认部分）
             if let Some(prompt) = system_prompt {
                 if !prompt.is_empty() {
                     cmd.arg("--system-prompt").arg(prompt);
@@ -152,6 +161,14 @@ impl ClaudeEngine {
                 cmd.arg("--resume").arg(sid);
             }
 
+            // 先追加工作区信息（始终追加）
+            if let Some(prompt) = append_system_prompt {
+                if !prompt.is_empty() {
+                    cmd.arg("--append-system-prompt").arg(prompt);
+                }
+            }
+
+            // 再处理用户自定义系统提示词（会覆盖默认部分）
             if let Some(prompt) = system_prompt {
                 if !prompt.is_empty() {
                     cmd.arg("--system-prompt").arg(prompt);
@@ -364,6 +381,7 @@ impl AIEngine for ClaudeEngine {
     ) -> Result<String> {
         tracing::info!("[ClaudeEngine] 启动会话，消息长度: {}", message.len());
         tracing::info!("[ClaudeEngine] 系统提示词: {:?}", options.system_prompt);
+        tracing::info!("[ClaudeEngine] 拓展系统提示词: {:?}", options.append_system_prompt);
         tracing::info!("[ClaudeEngine] 工作目录: {:?}", options.work_dir);
         tracing::info!("[ClaudeEngine] MCP 配置路径: {:?}", options.mcp_config_path);
 
@@ -376,6 +394,7 @@ impl AIEngine for ClaudeEngine {
         let mut cmd = self.build_command(
             message,
             options.system_prompt.as_deref(),
+            options.append_system_prompt.as_deref(),
             None,
             options.mcp_config_path.as_deref(),
         )?;
@@ -407,6 +426,7 @@ impl AIEngine for ClaudeEngine {
     ) -> Result<()> {
         tracing::info!("[ClaudeEngine] 继续会话: {}, 消息长度: {}", session_id, message.len());
         tracing::info!("[ClaudeEngine] 系统提示词: {:?}", options.system_prompt);
+        tracing::info!("[ClaudeEngine] 拓展系统提示词: {:?}", options.append_system_prompt);
         tracing::info!("[ClaudeEngine] 工作目录: {:?}", options.work_dir);
         tracing::info!("[ClaudeEngine] MCP 配置路径: {:?}", options.mcp_config_path);
 
@@ -439,6 +459,7 @@ impl AIEngine for ClaudeEngine {
         let mut cmd = self.build_command(
             message,
             options.system_prompt.as_deref(),
+            options.append_system_prompt.as_deref(),
             Some(&real_session_id),
             options.mcp_config_path.as_deref(),
         )?;

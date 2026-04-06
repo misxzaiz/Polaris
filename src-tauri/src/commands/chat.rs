@@ -52,9 +52,12 @@ pub struct ChatRequestOptions {
     /// 引擎 ID
     #[serde(default)]
     pub engine_id: Option<String>,
-    /// 系统提示词
+    /// 系统提示词（用户自定义，会覆盖默认部分）
     #[serde(default)]
     pub system_prompt: Option<String>,
+    /// 追加到默认系统提示词的内容（工作区信息等，始终追加）
+    #[serde(default)]
+    pub append_system_prompt: Option<String>,
     /// 是否启用 MCP 工具
     #[serde(default)]
     pub enable_mcp_tools: Option<bool>,
@@ -260,6 +263,10 @@ pub async fn start_chat(
         session_opts = session_opts.with_system_prompt(prompt.clone());
     }
 
+    if let Some(ref prompt) = options.append_system_prompt {
+        session_opts = session_opts.with_append_system_prompt(prompt.clone());
+    }
+
     if let Some(ref mcp_config_path) = mcp_config_path {
         session_opts = session_opts.with_mcp_config_path(mcp_config_path.clone());
     }
@@ -361,6 +368,10 @@ pub async fn continue_chat(
 
     if let Some(ref prompt) = options.system_prompt {
         session_opts = session_opts.with_system_prompt(prompt.clone());
+    }
+
+    if let Some(ref prompt) = options.append_system_prompt {
+        session_opts = session_opts.with_append_system_prompt(prompt.clone());
     }
 
     if let Some(ref mcp_config_path) = mcp_config_path {

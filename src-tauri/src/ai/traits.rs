@@ -85,8 +85,10 @@ impl std::fmt::Display for EngineId {
 pub struct SessionOptions {
     /// 工作目录
     pub work_dir: Option<String>,
-    /// 系统提示词
+    /// 系统提示词（用户自定义，会覆盖默认部分）
     pub system_prompt: Option<String>,
+    /// 追加到默认系统提示词的内容（工作区信息等，始终追加）
+    pub append_system_prompt: Option<String>,
     /// Claude Code MCP 配置文件路径
     pub mcp_config_path: Option<String>,
     /// 事件回调（接收标准化的 AIEvent）
@@ -119,6 +121,7 @@ impl SessionOptions {
         Self {
             work_dir: None,
             system_prompt: None,
+            append_system_prompt: None,
             mcp_config_path: None,
             event_callback: Arc::new(event_callback),
             on_complete: None,
@@ -135,9 +138,15 @@ impl SessionOptions {
         self
     }
 
-    /// 设置系统提示词
+    /// 设置系统提示词（用户自定义，会覆盖默认部分）
     pub fn with_system_prompt(mut self, prompt: impl Into<String>) -> Self {
         self.system_prompt = Some(prompt.into());
+        self
+    }
+
+    /// 设置追加系统提示词（工作区信息等，始终追加到默认提示词后）
+    pub fn with_append_system_prompt(mut self, prompt: impl Into<String>) -> Self {
+        self.append_system_prompt = Some(prompt.into());
         self
     }
 

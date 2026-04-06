@@ -15,7 +15,6 @@ const AVAILABLE_VARIABLES = [
   { name: '{{contextWorkspaces}}', descKey: 'variables.contextWorkspaces' },
   { name: '{{date}}', descKey: 'variables.date' },
   { name: '{{time}}', descKey: 'variables.time' },
-  { name: '{{defaultPrompt}}', descKey: 'variables.defaultPrompt' },
 ];
 
 /**
@@ -69,7 +68,7 @@ function buildDefaultPromptWithValues(
 
 export function SystemPromptTab() {
   const { t } = useTranslation('settings');
-  const { config, setMode, setCustomPrompt, setEnabled, reset } = useSystemPromptStore();
+  const { config, setCustomPrompt, setEnabled, reset } = useSystemPromptStore();
   const { getCurrentWorkspace, getContextWorkspaces } = useWorkspaceStore();
   const [showVariables, setShowVariables] = useState(false);
 
@@ -111,7 +110,7 @@ export function SystemPromptTab() {
               {t('systemPrompt.enable', '启用自定义系统提示词')}
             </h3>
             <p className="text-xs text-text-secondary mt-1">
-              {t('systemPrompt.enableDesc', '启用后可自定义发送给 AI 的系统提示词')}
+              {t('systemPrompt.enableDesc', '启用后可自定义发送给 AI 的系统提示词（工作区信息始终保留）')}
             </p>
           </div>
           <label className="relative inline-flex items-center cursor-pointer">
@@ -124,39 +123,6 @@ export function SystemPromptTab() {
             <div className="w-9 h-5 bg-surface-hover rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
           </label>
         </div>
-      </div>
-
-      {/* 模式选择 */}
-      <div className="p-4 bg-surface rounded-lg border border-border">
-        <h3 className="text-sm font-medium text-text-primary mb-3">
-          {t('systemPrompt.mode', '模式')}
-        </h3>
-        <div className="grid grid-cols-3 gap-3">
-          {(['append', 'replace'] as const).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => setMode(mode)}
-              disabled={!config.enabled}
-              className={`p-3 rounded-lg border text-left transition-colors ${
-                config.mode === mode
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border-subtle hover:border-border text-text-secondary hover:text-text-primary'
-              } ${!config.enabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              <div className="text-sm font-medium">
-                {t(`systemPrompt.mode${mode.charAt(0).toUpperCase() + mode.slice(1)}`, mode)}
-              </div>
-              <div className="text-xs mt-1 opacity-70">
-                {t(`systemPrompt.mode${mode.charAt(0).toUpperCase() + mode.slice(1)}Desc`, '')}
-              </div>
-            </button>
-          ))}
-        </div>
-        <p className="text-xs text-text-secondary mt-2">
-          {config.mode === 'append' && t('systemPrompt.modeAppendHint', '将自定义内容追加到默认提示词后面（推荐）')}
-          {config.mode === 'replace' && t('systemPrompt.modeReplaceHint', '完全使用自定义内容替换默认提示词（将丢失工作区信息）')}
-        </p>
       </div>
 
       {/* 自定义提示词编辑器 */}
@@ -248,18 +214,11 @@ export function SystemPromptTab() {
             {t('systemPrompt.preview', '预览')}
           </h3>
           <div className="p-3 bg-background-faint rounded-lg text-xs font-mono whitespace-pre-wrap text-text-secondary max-h-48 overflow-y-auto">
-            {config.mode === 'append' ? (
-              <>
-                <span className="text-text-muted">
-                  {t('systemPrompt.previewDefaultLabel', '[默认提示词]')}
-                </span>
-                {'\n\n'}
-                {config.customPrompt}
-              </>
-            ) : (
-              config.customPrompt
-            )}
+            {config.customPrompt}
           </div>
+          <p className="text-xs text-text-muted mt-2">
+            {t('systemPrompt.previewNote', '此内容会作为系统提示词发送，工作区信息会自动追加')}
+          </p>
         </div>
       )}
     </div>

@@ -17,7 +17,7 @@ import { handleAIEvent } from './utils'
 import { getEventBus, isAIEvent } from '../../ai-runtime'
 import { getEventRouter } from '../../services/eventRouter'
 import { getEngine, listEngines } from '../../core/engine-bootstrap'
-import { parseWorkspaceReferences, buildSystemPrompt } from '../../services/workspaceReference'
+import { parseWorkspaceReferences, buildWorkspaceSystemPrompt, getUserSystemPrompt } from '../../services/workspaceReference'
 import { isTextFile } from '../../types/attachment'
 import {
   toAppError,
@@ -206,11 +206,13 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
       workspaceActions?.getCurrentWorkspaceId() || null
     )
 
-    const systemPrompt = buildSystemPrompt(
-      workspaceActions?.getWorkspaces() || [],
-      contextWorkspaces,
-      workspaceActions?.getCurrentWorkspaceId() || null
-    )
+    // 构建工作区系统提示词
+    let workspacePrompt = ''
+    let userPrompt: string | null = null
+    if (currentWorkspace) {
+      workspacePrompt = buildWorkspaceSystemPrompt(currentWorkspace, contextWorkspaces)
+      userPrompt = getUserSystemPrompt(currentWorkspace, contextWorkspaces)
+    }
 
     const normalizedMessage = processedMessage
       .replace(/\r\n/g, '\\n')
@@ -218,11 +220,19 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
       .replace(/\n/g, '\\n')
       .trim()
 
-    const normalizedSystemPrompt = systemPrompt
+    const normalizedWorkspacePrompt = workspacePrompt
       .replace(/\r\n/g, '\\n')
       .replace(/\r/g, '\\n')
       .replace(/\n/g, '\\n')
       .trim()
+
+    const normalizedUserPrompt = userPrompt
+      ? userPrompt
+          .replace(/\r\n/g, '\\n')
+          .replace(/\r/g, '\\n')
+          .replace(/\n/g, '\\n')
+          .trim()
+      : null
 
     // 构建用户消息
     const userMessage = {
@@ -266,10 +276,12 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
 
       // 检查是否是 Provider 引擎
       if (currentEngine.startsWith('provider-')) {
+        // Provider 引擎需要合并提示词
+        const combinedPrompt = workspacePrompt + (userPrompt ? '\n\n' + userPrompt : '')
         await get().sendMessageToFrontendEngine(
           content,
           actualWorkspaceDir,
-          systemPrompt,
+          combinedPrompt,
           attachments
         )
       } else {
@@ -315,7 +327,8 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
             sessionId: conversationId,
             message: messageWithAttachments,
             options: {
-              systemPrompt: normalizedSystemPrompt,
+              appendSystemPrompt: normalizedWorkspacePrompt,
+              systemPrompt: normalizedUserPrompt,
               workDir: actualWorkspaceDir,
               contextId: 'main',
               engineId: currentEngine,
@@ -327,7 +340,8 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
           const newSessionId = await invoke<string>('start_chat', {
             message: messageWithAttachments,
             options: {
-              systemPrompt: normalizedSystemPrompt,
+              appendSystemPrompt: normalizedWorkspacePrompt,
+              systemPrompt: normalizedUserPrompt,
               workDir: actualWorkspaceDir,
               contextId: 'main',
               engineId: currentEngine,
@@ -667,18 +681,30 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
       // 获取会话关联工作区
       const contextWorkspaces = getSessionContextWorkspaces(sessionSyncActions, workspaceActions)
 
-      // 构建系统提示
-      const systemPrompt = buildSystemPrompt(
-        workspaceActions?.getWorkspaces() || [],
-        contextWorkspaces,
-        workspaceActions?.getCurrentWorkspaceId() || null
+      // 构建工作区系统提示词
+      const currentWorkspaceForPrompt = workspaceActions?.getWorkspaces()?.find(
+        w => w.id === workspaceActions?.getCurrentWorkspaceId()
       )
+      let workspacePrompt = ''
+      let userPrompt: string | null = null
+      if (currentWorkspaceForPrompt) {
+        workspacePrompt = buildWorkspaceSystemPrompt(currentWorkspaceForPrompt, contextWorkspaces)
+        userPrompt = getUserSystemPrompt(currentWorkspaceForPrompt, contextWorkspaces)
+      }
 
-      const normalizedSystemPrompt = systemPrompt
+      const normalizedWorkspacePrompt = workspacePrompt
         .replace(/\r\n/g, '\\n')
         .replace(/\r/g, '\\n')
         .replace(/\n/g, '\\n')
         .trim()
+
+      const normalizedUserPrompt = userPrompt
+        ? userPrompt
+            .replace(/\r\n/g, '\\n')
+            .replace(/\r/g, '\\n')
+            .replace(/\n/g, '\\n')
+            .trim()
+        : null
 
       // 处理附件
       const attachmentsForBackend = userAttachments?.map((a: { type: string; fileName: string; mimeType?: string; content?: string }) => ({
@@ -690,6 +716,8 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
 
       // 检查是否是 Provider 引擎
       if (currentEngine.startsWith('provider-')) {
+        // Provider 引擎需要合并提示词
+        const systemPrompt = normalizedWorkspacePrompt + (normalizedUserPrompt ? '\n\n' + normalizedUserPrompt : '')
         await get().sendMessageToFrontendEngine(
           userContent,
           actualWorkspaceDir,
@@ -746,7 +774,8 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
             sessionId: conversationId,
             message: messageWithAttachments,
             options: {
-              systemPrompt: normalizedSystemPrompt,
+              appendSystemPrompt: normalizedWorkspacePrompt,
+              systemPrompt: normalizedUserPrompt,
               workDir: actualWorkspaceDir,
               contextId: 'main',
               engineId: currentEngine,
@@ -844,18 +873,19 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
       // 获取会话关联工作区
       const contextWorkspaces = getSessionContextWorkspaces(sessionSyncActions, workspaceActions)
 
-      // 构建系统提示
-      const systemPrompt = buildSystemPrompt(
-        workspaceActions?.getWorkspaces() || [],
-        contextWorkspaces,
-        workspaceActions?.getCurrentWorkspaceId() || null
-      )
+      // 构建系统提示词
+      const workspaces = workspaceActions?.getWorkspaces() || []
+      const currentWs = workspaces.find(w => w.id === workspaceActions?.getCurrentWorkspaceId())
+      const workspacePrompt = currentWs ? buildWorkspaceSystemPrompt(currentWs, contextWorkspaces) : ''
+      const userPrompt = currentWs ? getUserSystemPrompt(currentWs, contextWorkspaces) : null
 
-      const normalizedSystemPrompt = systemPrompt
+      // 规范化系统提示词
+      const normalizedWorkspacePrompt = workspacePrompt
         .replace(/\r\n/g, '\\n')
         .replace(/\r/g, '\\n')
         .replace(/\n/g, '\\n')
         .trim()
+      const normalizedUserPrompt = userPrompt?.replace(/\r\n/g, '\\n').replace(/\r/g, '\\n').replace(/\n/g, '\\n').trim() ?? null
 
       // 获取附件信息
       const userAttachments = (userMessage as UserChatMessage).attachments
@@ -870,10 +900,14 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
 
       // 检查是否是 Provider 引擎
       if (currentEngine.startsWith('provider-')) {
+        // Provider 引擎：合并工作区提示词和用户自定义提示词
+        const combinedPrompt = userPrompt
+          ? `${workspacePrompt}\n\n${userPrompt}`
+          : workspacePrompt
         await get().sendMessageToFrontendEngine(
           newContent,
           actualWorkspaceDir,
-          systemPrompt,
+          combinedPrompt,
           userAttachments?.map((a: { id: string; type: string; fileName: string; fileSize: number; preview?: string }) => ({
             id: a.id,
             type: a.type,
@@ -926,7 +960,8 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
             sessionId: conversationId,
             message: messageWithAttachments,
             options: {
-              systemPrompt: normalizedSystemPrompt,
+              appendSystemPrompt: normalizedWorkspacePrompt,
+              systemPrompt: normalizedUserPrompt,
               workDir: actualWorkspaceDir,
               contextId: 'main',
               engineId: currentEngine,
