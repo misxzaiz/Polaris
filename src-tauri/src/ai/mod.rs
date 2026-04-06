@@ -5,15 +5,15 @@
  * - OpenAI 兼容 API
  */
 
-mod traits;
-mod types;
-mod session;
-mod registry;
-mod engine;
-mod history;
-mod history_claude;
-mod event_parser;
-mod adapters;
+pub mod traits;
+pub mod types;
+pub mod session;
+pub mod registry;
+pub mod engine;
+pub mod history;
+pub mod history_claude;
+pub mod event_parser;
+pub mod adapters;
 
 pub use traits::{EngineId, SessionOptions, HistoryEntry};
 pub use registry::EngineRegistry;

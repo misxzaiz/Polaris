@@ -3,7 +3,7 @@ pub mod models;
 pub mod services;
 pub mod commands;
 mod integrations;
-mod ai;
+pub mod ai;  // 公开 ai 模块以支持适配层测试
 mod state;
 mod utils;
 
