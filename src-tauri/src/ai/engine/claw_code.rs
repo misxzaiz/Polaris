@@ -821,6 +821,15 @@ impl Default for ClawCodeEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai::adapters::{
+        ContentBlockDelta, ContentBlockDeltaEvent, ContentBlockStartEvent,
+        ContentBlockStopEvent, MessageStopEvent, OutputContentBlock, StreamEvent,
+        ToolDefinition,
+    };
+    use crate::ai::tools::executor::PolarisToolExecutor;
+    use crate::ai::tools::types::{ToolError, PermissionPolicy, PermissionMode, ToolSpec};
+    use async_trait::async_trait;
+    use std::sync::Arc;
 
     #[test]
     fn test_config_default() {
@@ -828,6 +837,8 @@ mod tests {
         assert_eq!(config.provider_name, "ClawCode");
         assert_eq!(config.max_tokens, 4096);
         assert_eq!(config.temperature, 0.7);
+        assert!(!config.enable_tools);
+        assert!(config.tool_executor.is_none());
     }
 
     #[test]
@@ -899,5 +910,501 @@ mod tests {
         assert_eq!(request.messages.len(), 1);
         assert_eq!(request.system, Some("Be helpful".to_string()));
         assert!(request.stream);
+        assert!(request.tools.is_none());
+    }
+
+    // === ToolCallState 状态测试 ===
+
+    #[test]
+    fn test_tool_call_state_idle() {
+        let state = ToolCallState::Idle;
+        assert!(matches!(state, ToolCallState::Idle));
+    }
+
+    #[test]
+    fn test_tool_call_state_collecting_input() {
+        let state = ToolCallState::CollectingInput {
+            tool_id: "call_123".to_string(),
+            tool_name: "read_file".to_string(),
+            input_json: "{\"path\": \"/test\"}".to_string(),
+        };
+
+        match state {
+            ToolCallState::CollectingInput { tool_id, tool_name, input_json } => {
+                assert_eq!(tool_id, "call_123");
+                assert_eq!(tool_name, "read_file");
+                assert_eq!(input_json, "{\"path\": \"/test\"}");
+            }
+            _ => panic!("Expected CollectingInput state"),
+        }
+    }
+
+    #[test]
+    fn test_tool_call_state_ready_to_execute() {
+        let input = serde_json::json!({"path": "/test"});
+        let state = ToolCallState::ReadyToExecute {
+            tool_id: "call_123".to_string(),
+            tool_name: "read_file".to_string(),
+            input,
+        };
+
+        match state {
+            ToolCallState::ReadyToExecute { tool_id, tool_name, input } => {
+                assert_eq!(tool_id, "call_123");
+                assert_eq!(tool_name, "read_file");
+                assert_eq!(input["path"], "/test");
+            }
+            _ => panic!("Expected ReadyToExecute state"),
+        }
+    }
+
+    #[test]
+    fn test_tool_call_state_executing() {
+        let state = ToolCallState::Executing {
+            tool_id: "call_123".to_string(),
+            tool_name: "read_file".to_string(),
+        };
+
+        match state {
+            ToolCallState::Executing { tool_id, tool_name } => {
+                assert_eq!(tool_id, "call_123");
+                assert_eq!(tool_name, "read_file");
+            }
+            _ => panic!("Expected Executing state"),
+        }
+    }
+
+    // === handle_stream_event 测试 ===
+
+    #[test]
+    fn test_handle_stream_event_tool_use_start() {
+        let engine = ClawCodeEngine::new();
+        let state = ToolCallState::Idle;
+
+        // 创建 ToolUse 开始事件
+        let event = StreamEvent::ContentBlockStart(ContentBlockStartEvent {
+            index: 0,
+            content_block: OutputContentBlock::ToolUse {
+                id: "call_123".to_string(),
+                name: "read_file".to_string(),
+                input: serde_json::json!({"path": "/test"}),
+            },
+        });
+
+        let (ai_event, new_state) = engine.handle_stream_event(&event, "session_1", &state);
+
+        // 验证返回了 ToolCallStart 事件
+        assert!(ai_event.is_some());
+        match ai_event.unwrap() {
+            AIEvent::ToolCallStart(evt) => {
+                assert_eq!(evt.session_id, "session_1");
+                assert_eq!(evt.tool, "read_file");
+                assert_eq!(evt.call_id, Some("call_123".to_string()));
+            }
+            _ => panic!("Expected ToolCallStart event"),
+        }
+
+        // 验证状态转换到 CollectingInput
+        assert!(new_state.is_some());
+        match new_state.unwrap() {
+            ToolCallState::CollectingInput { tool_id, tool_name, .. } => {
+                assert_eq!(tool_id, "call_123");
+                assert_eq!(tool_name, "read_file");
+            }
+            _ => panic!("Expected CollectingInput state"),
+        }
+    }
+
+    #[test]
+    fn test_handle_stream_event_text_delta() {
+        let engine = ClawCodeEngine::new();
+        let state = ToolCallState::Idle;
+
+        // 创建文本增量事件
+        let event = StreamEvent::ContentBlockDelta(ContentBlockDeltaEvent {
+            index: 0,
+            delta: ContentBlockDelta::TextDelta {
+                text: "Hello".to_string(),
+            },
+        });
+
+        let (ai_event, new_state) = engine.handle_stream_event(&event, "session_1", &state);
+
+        // 验证返回了 Token 事件
+        assert!(ai_event.is_some());
+        match ai_event.unwrap() {
+            AIEvent::Token(evt) => {
+                assert_eq!(evt.session_id, "session_1");
+                assert_eq!(evt.value, "Hello");
+            }
+            _ => panic!("Expected Token event"),
+        }
+
+        // 状态应保持不变
+        assert!(new_state.is_none());
+    }
+
+    #[test]
+    fn test_handle_stream_event_thinking_delta() {
+        let engine = ClawCodeEngine::new();
+        let state = ToolCallState::Idle;
+
+        // 创建思考增量事件
+        let event = StreamEvent::ContentBlockDelta(ContentBlockDeltaEvent {
+            index: 0,
+            delta: ContentBlockDelta::ThinkingDelta {
+                thinking: "Let me think...".to_string(),
+            },
+        });
+
+        let (ai_event, new_state) = engine.handle_stream_event(&event, "session_1", &state);
+
+        // 验证返回了 Thinking 事件
+        assert!(ai_event.is_some());
+        match ai_event.unwrap() {
+            AIEvent::Thinking(evt) => {
+                assert_eq!(evt.session_id, "session_1");
+                assert_eq!(evt.content, "Let me think...");
+            }
+            _ => panic!("Expected Thinking event"),
+        }
+
+        // 状态应保持不变
+        assert!(new_state.is_none());
+    }
+
+    #[test]
+    fn test_handle_stream_event_input_json_delta() {
+        let engine = ClawCodeEngine::new();
+
+        // 从 CollectingInput 状态开始
+        let state = ToolCallState::CollectingInput {
+            tool_id: "call_123".to_string(),
+            tool_name: "read_file".to_string(),
+            input_json: "{\"path\": \"/te".to_string(),
+        };
+
+        // 创建 JSON 增量事件
+        let event = StreamEvent::ContentBlockDelta(ContentBlockDeltaEvent {
+            index: 0,
+            delta: ContentBlockDelta::InputJsonDelta {
+                partial_json: "st\"}".to_string(),
+            },
+        });
+
+        let (ai_event, new_state) = engine.handle_stream_event(&event, "session_1", &state);
+
+        // 不应返回事件
+        assert!(ai_event.is_none());
+
+        // 状态应更新，input_json 应追加
+        assert!(new_state.is_some());
+        match new_state.unwrap() {
+            ToolCallState::CollectingInput { input_json, .. } => {
+                assert_eq!(input_json, "{\"path\": \"/test\"}");
+            }
+            _ => panic!("Expected CollectingInput state"),
+        }
+    }
+
+    #[test]
+    fn test_handle_stream_event_content_block_stop() {
+        let engine = ClawCodeEngine::new();
+
+        // 从 CollectingInput 状态开始（已收集完整 JSON）
+        let state = ToolCallState::CollectingInput {
+            tool_id: "call_123".to_string(),
+            tool_name: "read_file".to_string(),
+            input_json: "{\"path\": \"/test\"}".to_string(),
+        };
+
+        // 创建内容块结束事件
+        let event = StreamEvent::ContentBlockStop(ContentBlockStopEvent { index: 0 });
+
+        let (ai_event, new_state) = engine.handle_stream_event(&event, "session_1", &state);
+
+        // 不应返回事件
+        assert!(ai_event.is_none());
+
+        // 状态应转换到 ReadyToExecute
+        assert!(new_state.is_some());
+        match new_state.unwrap() {
+            ToolCallState::ReadyToExecute { tool_id, tool_name, input } => {
+                assert_eq!(tool_id, "call_123");
+                assert_eq!(tool_name, "read_file");
+                assert_eq!(input["path"], "/test");
+            }
+            _ => panic!("Expected ReadyToExecute state"),
+        }
+    }
+
+    #[test]
+    fn test_handle_stream_event_message_stop() {
+        let engine = ClawCodeEngine::new();
+        let state = ToolCallState::Idle;
+
+        // 创建消息结束事件
+        let event = StreamEvent::MessageStop(MessageStopEvent {});
+
+        let (ai_event, new_state) = engine.handle_stream_event(&event, "session_1", &state);
+
+        // 验证返回了 SessionEnd 事件
+        assert!(ai_event.is_some());
+        match ai_event.unwrap() {
+            AIEvent::SessionEnd(evt) => {
+                assert_eq!(evt.session_id, "session_1");
+            }
+            _ => panic!("Expected SessionEnd event"),
+        }
+
+        // 状态应重置为 Idle
+        assert!(new_state.is_some());
+        assert!(matches!(new_state.unwrap(), ToolCallState::Idle));
+    }
+
+    // === build_assistant_message 测试 ===
+
+    #[test]
+    fn test_build_assistant_message_text_only() {
+        let content = AssistantContent {
+            text: "Hello, I can help you.".to_string(),
+            tool_calls: vec![],
+            thinking: String::new(),
+        };
+
+        let message = ClawCodeEngine::build_assistant_message(&content);
+
+        assert_eq!(message.role, "assistant");
+        assert_eq!(message.content.len(), 1);
+        match &message.content[0] {
+            InputContentBlock::Text { text } => {
+                assert_eq!(text, "Hello, I can help you.");
+            }
+            _ => panic!("Expected Text block"),
+        }
+    }
+
+    #[test]
+    fn test_build_assistant_message_with_thinking() {
+        let content = AssistantContent {
+            text: "The answer is 42.".to_string(),
+            tool_calls: vec![],
+            thinking: "Let me calculate...".to_string(),
+        };
+
+        let message = ClawCodeEngine::build_assistant_message(&content);
+
+        assert_eq!(message.role, "assistant");
+        assert_eq!(message.content.len(), 2);
+
+        // 第一个块应该是思考（作为文本）
+        match &message.content[0] {
+            InputContentBlock::Text { text } => {
+                assert!(text.contains("[Thinking]"));
+                assert!(text.contains("Let me calculate..."));
+            }
+            _ => panic!("Expected Text block for thinking"),
+        }
+
+        // 第二个块应该是文本
+        match &message.content[1] {
+            InputContentBlock::Text { text } => {
+                assert_eq!(text, "The answer is 42.");
+            }
+            _ => panic!("Expected Text block"),
+        }
+    }
+
+    #[test]
+    fn test_build_assistant_message_with_tool_call() {
+        let content = AssistantContent {
+            text: "I'll read the file.".to_string(),
+            tool_calls: vec![ToolCallInfo {
+                id: "call_123".to_string(),
+                name: "read_file".to_string(),
+                input: serde_json::json!({"path": "/test"}),
+            }],
+            thinking: String::new(),
+        };
+
+        let message = ClawCodeEngine::build_assistant_message(&content);
+
+        assert_eq!(message.role, "assistant");
+        assert_eq!(message.content.len(), 2);
+
+        // 第一个块应该是文本
+        match &message.content[0] {
+            InputContentBlock::Text { text } => {
+                assert_eq!(text, "I'll read the file.");
+            }
+            _ => panic!("Expected Text block"),
+        }
+
+        // 第二个块应该是工具调用
+        match &message.content[1] {
+            InputContentBlock::ToolUse { id, name, input } => {
+                assert_eq!(id, "call_123");
+                assert_eq!(name, "read_file");
+                assert_eq!(input["path"], "/test");
+            }
+            _ => panic!("Expected ToolUse block"),
+        }
+    }
+
+    #[test]
+    fn test_build_assistant_message_full() {
+        let content = AssistantContent {
+            text: "Done!".to_string(),
+            tool_calls: vec![ToolCallInfo {
+                id: "call_123".to_string(),
+                name: "read_file".to_string(),
+                input: serde_json::json!({"path": "/test"}),
+            }],
+            thinking: "Processing...".to_string(),
+        };
+
+        let message = ClawCodeEngine::build_assistant_message(&content);
+
+        assert_eq!(message.role, "assistant");
+        assert_eq!(message.content.len(), 3);
+
+        // 验证顺序：thinking -> text -> tool_use
+        match &message.content[0] {
+            InputContentBlock::Text { text } => assert!(text.contains("Processing...")),
+            _ => panic!("Expected thinking text block"),
+        }
+        match &message.content[1] {
+            InputContentBlock::Text { text } => assert_eq!(text, "Done!"),
+            _ => panic!("Expected text block"),
+        }
+        match &message.content[2] {
+            InputContentBlock::ToolUse { name, .. } => assert_eq!(name, "read_file"),
+            _ => panic!("Expected ToolUse block"),
+        }
+    }
+
+    // === 工具配置测试 ===
+
+    /// Mock 工具执行器用于测试
+    struct MockToolExecutor {
+        policy: PermissionPolicy,
+        work_dir: std::path::PathBuf,
+    }
+
+    impl MockToolExecutor {
+        fn new() -> Self {
+            Self {
+                policy: PermissionPolicy::new(PermissionMode::DangerFullAccess),
+                work_dir: std::path::PathBuf::from("/"),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl PolarisToolExecutor for MockToolExecutor {
+        async fn execute(&self, _tool_name: &str, _input: &serde_json::Value) -> std::result::Result<String, ToolError> {
+            Ok("mock result".to_string())
+        }
+
+        fn available_tools(&self) -> Vec<ToolDefinition> {
+            vec![ToolDefinition {
+                name: "mock_tool".to_string(),
+                description: Some("A mock tool".to_string()),
+                input_schema: serde_json::json!({"type": "object"}),
+            }]
+        }
+
+        fn tool_specs(&self) -> Vec<ToolSpec> {
+            vec![]
+        }
+
+        fn has_tool(&self, name: &str) -> bool {
+            name == "mock_tool"
+        }
+
+        fn permission_policy(&self) -> &PermissionPolicy {
+            &self.policy
+        }
+
+        fn set_permission_policy(&mut self, policy: PermissionPolicy) {
+            self.policy = policy;
+        }
+
+        fn work_dir(&self) -> Option<&std::path::Path> {
+            Some(&self.work_dir)
+        }
+
+        fn set_work_dir(&mut self, work_dir: std::path::PathBuf) {
+            self.work_dir = work_dir;
+        }
+    }
+
+    #[test]
+    fn test_config_with_tool_executor() {
+        let executor = Arc::new(MockToolExecutor::new());
+        let config = ClawCodeConfig::new("Test", "key", "url", "model")
+            .with_tool_executor(executor);
+
+        // 设置 tool_executor 后应自动启用工具
+        assert!(config.enable_tools);
+        assert!(config.tool_executor.is_some());
+    }
+
+    #[test]
+    fn test_config_enable_tools() {
+        let config = ClawCodeConfig::new("Test", "key", "url", "model")
+            .enable_tools(true);
+
+        assert!(config.enable_tools);
+
+        // 未设置 tool_executor 时，工具列表为空
+        assert!(config.tool_executor.is_none());
+    }
+
+    #[test]
+    fn test_config_with_tool_choice() {
+        let config = ClawCodeConfig::new("Test", "key", "url", "model")
+            .with_tool_choice(ToolChoice::Auto);
+
+        assert_eq!(config.tool_choice, Some(ToolChoice::Auto));
+
+        // 工具调用未启用（需要显式启用或设置 tool_executor）
+        assert!(!config.enable_tools);
+    }
+
+    #[test]
+    fn test_build_request_with_tools() {
+        let executor = Arc::new(MockToolExecutor::new());
+        let config = ClawCodeConfig::new("Test", "key", "url", "gpt-4")
+            .with_tool_executor(executor);
+
+        let engine = ClawCodeEngine::with_config(config);
+        let messages = vec![InputMessage::user_text("Hello")];
+        let request = engine.build_request(messages, None);
+
+        // 应包含工具定义
+        assert!(request.tools.is_some());
+        let tools = request.tools.unwrap();
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0].name, "mock_tool");
+
+        // 应设置工具选择策略（默认 Auto）
+        assert!(request.tool_choice.is_some());
+        assert_eq!(request.tool_choice, Some(ToolChoice::Auto));
+    }
+
+    #[test]
+    fn test_build_request_with_explicit_tool_choice() {
+        let executor = Arc::new(MockToolExecutor::new());
+        let config = ClawCodeConfig::new("Test", "key", "url", "gpt-4")
+            .with_tool_executor(executor)
+            .with_tool_choice(ToolChoice::Any);
+
+        let engine = ClawCodeEngine::with_config(config);
+        let messages = vec![InputMessage::user_text("Hello")];
+        let request = engine.build_request(messages, None);
+
+        // 应使用配置的 tool_choice
+        assert_eq!(request.tool_choice, Some(ToolChoice::Any));
     }
 }
