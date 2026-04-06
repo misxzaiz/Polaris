@@ -12,12 +12,11 @@ use tokio_util::sync::CancellationToken;
 
 use crate::ai::adapters::{
     history_entries_to_input_messages, stream_event_to_ai_event,
-    InputContentBlock, InputMessage, MessageRequest, OpenAiCompatClient, OpenAiCompatConfig,
-    ToolChoice, ContentBlockDelta, StreamEvent,
+    InputMessage, MessageRequest, OpenAiCompatClient, OpenAiCompatConfig,
+    ToolChoice,
 };
 use crate::ai::session::SessionManager;
 use crate::ai::tools::executor::PolarisToolExecutor;
-use crate::ai::tools::types::ToolError;
 use crate::ai::traits::{AIEngine, EngineId, SessionOptions};
 use crate::error::{AppError, Result};
 use crate::models::AIEvent;
@@ -218,6 +217,67 @@ impl ClawCodeEngine {
         let compat_config = config.to_compat_config();
         self.client = Some(OpenAiCompatClient::new(compat_config));
         self.config = Some(config);
+    }
+
+    /// 执行工具调用
+    ///
+    /// 从 ReadyToExecute 状态获取工具信息，执行工具，返回结果。
+    /// 同时发送 ToolCallEnd 事件给用户。
+    ///
+    /// # 参数
+    /// - state: ReadyToExecute 状态（包含工具信息）
+    /// - session_id: 会话 ID（用于事件路由）
+    /// - event_callback: 事件回调函数
+    ///
+    /// # 返回值
+    /// - Some((tool_id, tool_name, result, is_error)): 执行成功，返回结果
+    /// - None: 无法执行（没有配置执行器）
+    async fn execute_tool(
+        &self,
+        state: &ToolCallState,
+        session_id: &str,
+        event_callback: &dyn Fn(AIEvent),
+    ) -> Option<(String, String, String, bool)> {
+        // 检查状态是否为 ReadyToExecute
+        let (tool_id, tool_name, input) = match state {
+            ToolCallState::ReadyToExecute { tool_id, tool_name, input } => {
+                (tool_id.clone(), tool_name.clone(), input.clone())
+            }
+            _ => return None,
+        };
+
+        // 获取工具执行器
+        let executor = self.config.as_ref()?.tool_executor.as_ref()?;
+
+        tracing::info!(
+            "[ClawCodeEngine] 执行工具: {} (id: {}, session: {})",
+            tool_name, tool_id, session_id
+        );
+
+        // 执行工具
+        let result = executor.execute(&tool_name, &input).await;
+
+        // 处理执行结果
+        let (result_str, is_error) = match result {
+            Ok(output) => {
+                tracing::info!("[ClawCodeEngine] 工具执行成功: {} -> {}", tool_name, output);
+                (output, false)
+            }
+            Err(e) => {
+                tracing::error!("[ClawCodeEngine] 工具执行失败: {} -> {}", tool_name, e);
+                (e.to_string(), true)
+            }
+        };
+
+        // 发送 ToolCallEnd 事件
+        let result_value = serde_json::Value::String(result_str.clone());
+        event_callback(AIEvent::ToolCallEnd(
+            crate::models::ToolCallEndEvent::new(session_id, tool_name.clone(), !is_error)
+                .with_result(result_value)
+                .with_call_id(tool_id.clone())
+        ));
+
+        Some((tool_id, tool_name, result_str, is_error))
     }
 
     /// 构建消息请求

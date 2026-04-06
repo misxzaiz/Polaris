@@ -64,6 +64,41 @@ impl InputMessage {
         }
     }
 
+    /// 创建助手消息（包含内容块）
+    #[must_use]
+    pub fn assistant_with_blocks(blocks: Vec<InputContentBlock>) -> Self {
+        Self {
+            role: "assistant".to_string(),
+            content: blocks,
+        }
+    }
+
+    /// 创建助手文本消息
+    #[must_use]
+    pub fn assistant_text(text: impl Into<String>) -> Self {
+        Self {
+            role: "assistant".to_string(),
+            content: vec![InputContentBlock::Text { text: text.into() }],
+        }
+    }
+
+    /// 创建工具调用消息（助手发起）
+    #[must_use]
+    pub fn assistant_tool_use(
+        tool_id: impl Into<String>,
+        tool_name: impl Into<String>,
+        input: Value,
+    ) -> Self {
+        Self {
+            role: "assistant".to_string(),
+            content: vec![InputContentBlock::ToolUse {
+                id: tool_id.into(),
+                name: tool_name.into(),
+                input,
+            }],
+        }
+    }
+
     /// 创建工具结果消息
     #[must_use]
     pub fn user_tool_result(
