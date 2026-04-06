@@ -46,6 +46,12 @@ import { MermaidDiagram } from './MermaidDiagram';
 import { DiffViewer } from '../Diff/DiffViewer';
 import { isEditTool } from '../../utils/diffExtractor';
 import { calculateRenderMode, type MessageRenderMode, DEFAULT_LAYER_CONFIG } from '../../utils/messageLayer';
+import {
+  LightweightMarkdown,
+  splitByCodeBlocks,
+  hasOpenCodeBlock,
+  StreamingCodeBlock,
+} from '../../utils/lightweightMarkdown';
 
 /** Markdown 渲染器（使用缓存优化） */
 function formatContent(content: string): string {
@@ -270,124 +276,82 @@ const PreviewTextContent = memo(function PreviewTextContent({ content }: { conte
 });
 
 /**
- * 流式文本内容渲染器 - 极简版，最大化性能
- * 
+ * 流式文本内容渲染器 - 实时 Markdown 渲染版
+ *
  * 优化策略：
- * 1. 单节点渲染：不按行分割，直接渲染整个文本
- * 2. 使用 CSS white-space: pre-wrap 保持换行格式
- * 3. 仅做最小化的代码块标识符高亮
- * 4. 避免所有不必要的 useMemo/map 操作
- * 
- * 性能关键（2026-03-09 更新）：
- * - 不使用正则表达式（正则在长文本上性能差）
- * - 使用 lastIndexOf 从末尾搜索代码块标记（O(n) 但从末尾开始，流式场景更高效）
- * - 限制处理范围：只处理最后 2000 字符中的代码块标记
- * - 避免对整个长文本进行多次遍历
+ * 1. 使用轻量级 Markdown 渲染（支持粗体、斜体、行内代码、链接）
+ * 2. 正确处理代码块（完整代码块渲染，未闭合的显示为纯文本）
+ * 3. 使用 CSS white-space: pre-wrap 保持换行格式
+ * 4. 性能优化：限制处理长度，避免超长文本卡顿
+ *
+ * 性能关键（2026-04-07 更新）：
+ * - 实时渲染行内 Markdown 格式
+ * - 代码块显示但不高亮（流式阶段）
+ * - 避免复杂正则和完整 Markdown 解析
  */
 const StreamingTextContent = memo(function StreamingTextContent({ content }: { content: string }) {
-  // 如果内容为空，不渲染任何内容（避免与底部流式光标重复显示）
-  if (!content) {
-    return null;
-  }
+  // 使用 useMemo 缓存解析结果
+  const renderResult = useMemo(() => {
+    // 如果内容为空，不渲染
+    if (!content) {
+      return null;
+    }
 
-  // 性能优化：对于长文本，只处理最后 2000 字符
-  // 因为流式输出中，代码块标记通常出现在最新内容中
-  const SEARCH_WINDOW = 2000;
-  const searchStart = Math.max(0, content.length - SEARCH_WINDOW);
-  const searchRegion = content.slice(searchStart);
-  
-  // 快速检测：从末尾搜索代码块标记
-  const lastCodeBlockInRegion = searchRegion.lastIndexOf('```');
-  
-  // 如果搜索区域内没有代码块标记，直接渲染纯文本（最快路径）
-  if (lastCodeBlockInRegion === -1) {
+    // 性能限制：最大处理长度
+    const MAX_LENGTH = 50000;
+    if (content.length > MAX_LENGTH) {
+      // 超长文本直接返回纯文本
+      return (
+        <span className="whitespace-pre-wrap break-words">
+          {content}
+        </span>
+      );
+    }
+
+    // 检测是否有代码块标记
+    const codeBlockCount = (content.match(/```/g) || []).length;
+
+    // 如果没有代码块，直接用轻量 Markdown 渲染
+    if (codeBlockCount === 0) {
+      return <LightweightMarkdown content={content} />;
+    }
+
+    // 有代码块，分割处理
+    const parts = splitByCodeBlocks(content);
+    const hasOpenBlock = hasOpenCodeBlock(content);
+
     return (
       <span className="whitespace-pre-wrap break-words">
-        {content}
+        {parts.map((part, index) => {
+          if (part.type === 'code-block') {
+            // 完整代码块：显示但不高亮
+            return (
+              <StreamingCodeBlock
+                key={`code-${index}`}
+                content={part.content}
+                language={part.language}
+              />
+            );
+          } else {
+            // 普通文本：使用轻量 Markdown 渲染
+            return <LightweightMarkdown key={`text-${index}`} content={part.content} />;
+          }
+        })}
+        {/* 流式光标 */}
+        {hasOpenBlock && (
+          <span className="inline-flex ml-1">
+            <span className="flex gap-0.5 items-end h-4">
+              <span className="w-1 h-1 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+              <span className="w-1 h-1 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+              <span className="w-1 h-1 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+            </span>
+          </span>
+        )}
       </span>
     );
-  }
+  }, [content]);
 
-  // 将区域内的相对位置转换为全局位置
-  const firstCodeBlock = searchStart + lastCodeBlockInRegion;
-
-  // 构建渲染结果
-  const parts: React.ReactNode[] = [];
-  let keyIndex = 0;
-  const MAX_PARTS = 10; // 减少最大片段数，避免创建过多节点
-
-  // 添加代码块标记之前的所有文本（作为一个整体）
-  if (firstCodeBlock > 0) {
-    parts.push(
-      <span key={`text-${keyIndex++}`}>
-        {content.slice(0, firstCodeBlock)}
-      </span>
-    );
-  }
-
-  // 处理代码块标记
-  let remaining = content.slice(firstCodeBlock);
-  
-  while (remaining.length > 0 && keyIndex < MAX_PARTS) {
-    const idx = remaining.indexOf('```');
-    
-    if (idx === -1) {
-      parts.push(
-        <span key={`text-${keyIndex++}`}>
-          {remaining}
-        </span>
-      );
-      break;
-    }
-
-    // 添加代码块标记之前的普通文本
-    if (idx > 0) {
-      parts.push(
-        <span key={`text-${keyIndex++}`}>
-          {remaining.slice(0, idx)}
-        </span>
-      );
-    }
-
-    // 找到代码块标记的结束位置（到下一个换行或行尾）
-    let endOfMarker = 3;
-    const afterMarker = remaining.slice(idx + 3);
-    
-    // 查找语言标识符结束位置
-    for (let i = 0; i < afterMarker.length && i < 30; i++) {
-      const char = afterMarker[i];
-      if (char === '\n' || char === '\r') {
-        endOfMarker = 3 + i + 1;
-        break;
-      }
-      if (!/[a-zA-Z0-9_+-]/.test(char)) {
-        endOfMarker = 3 + i;
-        break;
-      }
-      endOfMarker = 3 + i + 1;
-    }
-
-    // 添加代码块标记（带样式）
-    const marker = remaining.slice(idx, idx + endOfMarker);
-    parts.push(
-      <span key={`code-${keyIndex++}`} className="text-text-muted font-mono text-xs">
-        {marker}
-      </span>
-    );
-
-    remaining = remaining.slice(idx + endOfMarker);
-  }
-
-  // 添加剩余内容
-  if (remaining.length > 0) {
-    parts.push(
-      <span key={`text-remaining`}>
-        {remaining}
-      </span>
-    );
-  }
-
-  return <span className="whitespace-pre-wrap break-words">{parts}</span>;
+  return renderResult;
 });
 
 /**
