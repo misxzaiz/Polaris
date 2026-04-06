@@ -42,6 +42,8 @@
     "apiBase": "API Base URL",
     "modelName": "模型名称",
     "modelNameHint": "完全由您决定，可以是任意模型名称",
+    "providerId": "Provider ID（高级）",
+    "providerIdHint": "设置为 'claw-code' 可启用内置工具支持功能",
     "temperature": "温度 (0-2)",
     "maxTokens": "最大 Token 数",
     "testConnection": "测试连接",

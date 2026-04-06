@@ -42,6 +42,8 @@
     "apiBase": "API Base URL",
     "modelName": "Model Name",
     "modelNameHint": "Any model name of your choice",
+    "providerId": "Provider ID (Advanced)",
+    "providerIdHint": "Set to 'claw-code' to enable built-in tool support",
     "temperature": "Temperature (0-2)",
     "maxTokens": "Max Tokens",
     "testConnection": "Test Connection",

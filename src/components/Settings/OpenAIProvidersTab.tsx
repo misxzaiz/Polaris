@@ -412,6 +412,24 @@ function ProviderCard({
             </p>
           </div>
 
+          {/* Provider ID（高级配置） */}
+          <div>
+            <label className="block text-xs text-text-secondary mb-1">
+              {t('openaiProviders.providerId')}
+            </label>
+            <input
+              type="text"
+              value={provider.id}
+              onChange={(e) => onUpdate({ id: e.target.value })}
+              disabled={disabled}
+              placeholder="provider-xxx 或 claw-code"
+              className="w-full px-3 py-2 rounded border border-border bg-background text-sm font-mono"
+            />
+            <p className="text-xs text-text-tertiary mt-1">
+              {t('openaiProviders.providerIdHint')}
+            </p>
+          </div>
+
           {/* 温度和 Token 数 */}
           <div className="grid grid-cols-2 gap-3">
             <div>
