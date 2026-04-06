@@ -6,14 +6,13 @@
  */
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use tokio_util::sync::CancellationToken;
 
 use crate::ai::adapters::{
-    history_entries_to_input_messages, stream_event_to_ai_event,
-    InputMessage, MessageRequest, OpenAiCompatClient, OpenAiCompatConfig,
-    ToolChoice,
+    history_entries_to_input_messages, InputContentBlock, InputMessage, MessageRequest,
+    OpenAiCompatClient, OpenAiCompatConfig, OutputContentBlock, ToolChoice,
 };
 use crate::ai::session::SessionManager;
 use crate::ai::tools::executor::PolarisToolExecutor;
@@ -184,8 +183,45 @@ pub struct ClawCodeEngine {
     client: Option<OpenAiCompatClient>,
     /// 会话管理器
     sessions: SessionManager,
-    /// 取消令牌映射
-    cancel_tokens: HashMap<String, CancellationToken>,
+    /// 取消令牌映射（使用 Arc<Mutex> 实现跨异步任务共享）
+    cancel_tokens: Arc<Mutex<HashMap<String, CancellationToken>>>,
+}
+
+/// 收集的助手消息内容
+///
+/// 用于构建包含工具调用的 assistant 消息。
+#[derive(Debug, Clone, Default)]
+struct AssistantContent {
+    /// 文本内容
+    text: String,
+    /// 工具调用列表
+    tool_calls: Vec<ToolCallInfo>,
+    /// 思考内容
+    thinking: String,
+}
+
+/// 工具调用信息
+#[derive(Debug, Clone)]
+struct ToolCallInfo {
+    /// 工具调用 ID
+    id: String,
+    /// 工具名称
+    name: String,
+    /// 输入参数
+    input: serde_json::Value,
+}
+
+/// 工具执行结果
+#[derive(Debug, Clone)]
+struct ToolResult {
+    /// 工具调用 ID
+    tool_id: String,
+    /// 工具名称
+    tool_name: String,
+    /// 执行结果
+    result: String,
+    /// 是否错误
+    is_error: bool,
 }
 
 impl ClawCodeEngine {
@@ -195,7 +231,7 @@ impl ClawCodeEngine {
             config: None,
             client: None,
             sessions: SessionManager::new(),
-            cancel_tokens: HashMap::new(),
+            cancel_tokens: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -208,7 +244,7 @@ impl ClawCodeEngine {
             config: Some(config),
             client: Some(client),
             sessions: SessionManager::new(),
-            cancel_tokens: HashMap::new(),
+            cancel_tokens: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -329,20 +365,11 @@ impl ClawCodeEngine {
     ///
     /// 从 ReadyToExecute 状态获取工具信息，执行工具，返回结果。
     /// 同时发送 ToolCallEnd 事件给用户。
-    ///
-    /// # 参数
-    /// - state: ReadyToExecute 状态（包含工具信息）
-    /// - session_id: 会话 ID（用于事件路由）
-    /// - event_callback: 事件回调函数
-    ///
-    /// # 返回值
-    /// - Some((tool_id, tool_name, result, is_error)): 执行成功，返回结果
-    /// - None: 无法执行（没有配置执行器）
     async fn execute_tool(
-        &self,
+        config: &ClawCodeConfig,
         state: &ToolCallState,
         session_id: &str,
-        event_callback: &dyn Fn(AIEvent),
+        event_callback: Arc<dyn Fn(AIEvent) + Send + Sync>,
     ) -> Option<(String, String, String, bool)> {
         // 检查状态是否为 ReadyToExecute
         let (tool_id, tool_name, input) = match state {
@@ -353,7 +380,7 @@ impl ClawCodeEngine {
         };
 
         // 获取工具执行器
-        let executor = self.config.as_ref()?.tool_executor.as_ref()?;
+        let executor = config.tool_executor.as_ref()?;
 
         tracing::info!(
             "[ClawCodeEngine] 执行工具: {} (id: {}, session: {})",
@@ -435,6 +462,12 @@ impl ClawCodeEngine {
     }
 
     /// 执行流式聊天请求
+    ///
+    /// 支持工具调用循环：
+    /// 1. 接收流式响应
+    /// 2. 检测工具调用并执行
+    /// 3. 发送工具结果继续对话
+    /// 4. 循环直到没有更多工具调用
     async fn execute_stream_chat(
         &mut self,
         messages: Vec<InputMessage>,
@@ -445,51 +478,183 @@ impl ClawCodeEngine {
             .ok_or_else(|| AppError::ValidationError("ClawCode 配置未设置".to_string()))?;
 
         let cancel_token = CancellationToken::new();
-        self.cancel_tokens.insert(session_id.clone(), cancel_token.clone());
+        {
+            let mut tokens = self.cancel_tokens.lock()
+                .map_err(|e| AppError::Unknown(format!("锁获取失败: {}", e)))?;
+            tokens.insert(session_id.clone(), cancel_token.clone());
+        }
 
         let event_callback = options.event_callback.clone();
 
-        // 构建请求
-        let request = self.build_request(messages, options.system_prompt.as_deref());
+        // 当前消息列表（会在循环中更新）
+        let mut current_messages = messages;
 
-        tracing::info!("[ClawCodeEngine] 开始流式请求 (session: {})", session_id);
+        // 工具调用循环
+        loop {
+            if cancel_token.is_cancelled() {
+                tracing::info!("[ClawCodeEngine] 会话已取消: {}", session_id);
+                break;
+            }
 
-        // 发送流式请求
-        let mut stream = client.stream_message(&request).await?;
+            // 构建请求
+            let request = self.build_request(current_messages.clone(), options.system_prompt.as_deref());
 
-        // 处理流事件
-        while !cancel_token.is_cancelled() {
-            match stream.next_event().await {
-                Ok(Some(event)) => {
-                    // 转换事件并发送
-                    if let Some(ai_event) = stream_event_to_ai_event(&event, &session_id) {
-                        event_callback(ai_event);
+            tracing::info!("[ClawCodeEngine] 开始流式请求 (session: {}, msg_count: {})", session_id, current_messages.len());
+
+            // 发送流式请求
+            let mut stream = client.stream_message(&request).await?;
+
+            // 当前工具调用状态
+            let mut tool_state = ToolCallState::Idle;
+            // 收集的助手内容
+            let mut assistant_content = AssistantContent::default();
+            // 收集的工具执行结果
+            let mut tool_results: Vec<ToolResult> = Vec::new();
+
+            // 处理流事件
+            while !cancel_token.is_cancelled() {
+                match stream.next_event().await {
+                    Ok(Some(event)) => {
+                        // 处理事件并更新状态
+                        let (ai_event, new_state) = self.handle_stream_event(&event, &session_id, &tool_state);
+
+                        // 发送事件给用户
+                        if let Some(evt) = ai_event {
+                            // 收集文本内容
+                            if let AIEvent::Token(token) = &evt {
+                                assistant_content.text.push_str(&token.value);
+                            }
+                            // 收集思考内容
+                            if let AIEvent::Thinking(thinking) = &evt {
+                                assistant_content.thinking.push_str(&thinking.content);
+                            }
+                            event_callback(evt);
+                        }
+
+                        // 更新状态
+                        if let Some(state) = new_state {
+                            // 检测到工具调用参数收集完成
+                            if matches!(state, ToolCallState::ReadyToExecute { .. }) {
+                                // 收集工具调用信息
+                                if let ToolCallState::ReadyToExecute { tool_id, tool_name, input } = &state {
+                                    assistant_content.tool_calls.push(ToolCallInfo {
+                                        id: tool_id.clone(),
+                                        name: tool_name.clone(),
+                                        input: input.clone(),
+                                    });
+                                }
+
+                                // 执行工具
+                                let config = self.config.as_ref().unwrap();
+                                let result = Self::execute_tool(config, &state, &session_id, event_callback.clone()).await;
+
+                                if let Some((tool_id, tool_name, result_str, is_error)) = result {
+                                    tool_results.push(ToolResult {
+                                        tool_id,
+                                        tool_name,
+                                        result: result_str,
+                                        is_error,
+                                    });
+                                }
+
+                                // 执行完成后回到空闲状态
+                                tool_state = ToolCallState::Idle;
+                            } else {
+                                tool_state = state;
+                            }
+                        }
+                    }
+                    Ok(None) => {
+                        // 流结束
+                        tracing::info!("[ClawCodeEngine] 流结束 (session: {})", session_id);
+                        break;
+                    }
+                    Err(e) => {
+                        tracing::error!("[ClawCodeEngine] 流错误: {}", e);
+                        event_callback(AIEvent::Error(crate::models::ErrorEvent::new(
+                            &session_id,
+                            e.to_string(),
+                        )));
+                        // 清理
+                        {
+                            let mut tokens = self.cancel_tokens.lock()
+                                .map_err(|e| AppError::Unknown(format!("锁获取失败: {}", e)))?;
+                            tokens.remove(&session_id);
+                        }
+                        return Err(e);
                     }
                 }
-                Ok(None) => {
-                    // 流结束
-                    tracing::info!("[ClawCodeEngine] 流结束 (session: {})", session_id);
-                    break;
-                }
-                Err(e) => {
-                    tracing::error!("[ClawCodeEngine] 流错误: {}", e);
-                    event_callback(AIEvent::Error(crate::models::ErrorEvent::new(
-                        &session_id,
-                        e.to_string(),
-                    )));
-                    break;
-                }
             }
+
+            // 检查是否有工具调用结果需要处理
+            if tool_results.is_empty() || cancel_token.is_cancelled() {
+                // 没有工具调用或已取消，结束循环
+                break;
+            }
+
+            // 构建下一轮请求的消息
+            tracing::info!("[ClawCodeEngine] 工具调用完成，准备发送结果 (tool_count: {})", tool_results.len());
+
+            // 1. 添加助手消息（包含工具调用）
+            let assistant_msg = Self::build_assistant_message(&assistant_content);
+            current_messages.push(assistant_msg);
+
+            // 2. 添加工具结果消息
+            for result in &tool_results {
+                let tool_msg = InputMessage::tool_result(&result.tool_id, &result.result);
+                current_messages.push(tool_msg);
+            }
+
+            // 继续循环，发送新请求
         }
 
         // 清理
-        self.cancel_tokens.remove(&session_id);
+        {
+            let mut tokens = self.cancel_tokens.lock()
+                .map_err(|e| AppError::Unknown(format!("锁获取失败: {}", e)))?;
+            tokens.remove(&session_id);
+        }
 
         if cancel_token.is_cancelled() {
             tracing::info!("[ClawCodeEngine] 会话已取消: {}", session_id);
         }
 
         Ok(())
+    }
+
+    /// 构建助手消息
+    ///
+    /// 根据收集的内容构建包含文本和工具调用的 assistant 消息。
+    fn build_assistant_message(content: &AssistantContent) -> InputMessage {
+        use crate::ai::adapters::InputContentBlock;
+
+        // 构建内容块列表
+        let mut blocks: Vec<InputContentBlock> = Vec::new();
+
+        // 添加思考内容（如果有）- 作为文本块
+        if !content.thinking.is_empty() {
+            blocks.push(InputContentBlock::Text {
+                text: format!("[Thinking] {}", content.thinking),
+            });
+        }
+
+        // 添加文本内容（如果有）
+        if !content.text.is_empty() {
+            blocks.push(InputContentBlock::Text {
+                text: content.text.clone(),
+            });
+        }
+
+        // 添加工具调用
+        for tc in &content.tool_calls {
+            blocks.push(InputContentBlock::ToolUse {
+                id: tc.id.clone(),
+                name: tc.name.clone(),
+                input: tc.input.clone(),
+            });
+        }
+
+        InputMessage::assistant_with_blocks(blocks)
     }
 }
 
@@ -545,18 +710,23 @@ impl AIEngine for ClawCodeEngine {
         // 构建消息
         let messages = vec![InputMessage::user_text(message)];
 
-        // 克隆必要数据用于异步任务
-        let mut engine_clone = ClawCodeEngine {
-            config: self.config.clone(),
-            client: self.client.clone(),
-            sessions: SessionManager::new(),
-            cancel_tokens: HashMap::new(),
-        };
+        // 克隆 cancel_tokens 用于异步任务（Arc 共享）
+        let cancel_tokens_clone = self.cancel_tokens.clone();
+        // 克隆 client 用于异步任务
+        let client_clone = self.client.clone();
 
         let sid = session_id.clone();
 
         // 异步执行
         tokio::spawn(async move {
+            // 创建临时引擎实例，共享 cancel_tokens
+            let mut engine_clone = ClawCodeEngine {
+                config: None,
+                client: client_clone,
+                sessions: SessionManager::new(),
+                cancel_tokens: cancel_tokens_clone,
+            };
+
             if let Err(e) = engine_clone.execute_stream_chat(messages, options, sid.clone()).await {
                 tracing::error!("[ClawCodeEngine] 执行失败: {}", e);
             }
@@ -594,18 +764,23 @@ impl AIEngine for ClawCodeEngine {
         // 添加新消息
         messages.push(InputMessage::user_text(message));
 
-        // 克隆必要数据用于异步任务
-        let mut engine_clone = ClawCodeEngine {
-            config: self.config.clone(),
-            client: self.client.clone(),
-            sessions: SessionManager::new(),
-            cancel_tokens: HashMap::new(),
-        };
+        // 克隆 cancel_tokens 用于异步任务（Arc 共享）
+        let cancel_tokens_clone = self.cancel_tokens.clone();
+        // 克隆 client 用于异步任务
+        let client_clone = self.client.clone();
 
         let sid = session_id.clone();
 
         // 异步执行
         tokio::spawn(async move {
+            // 创建临时引擎实例，共享 cancel_tokens
+            let mut engine_clone = ClawCodeEngine {
+                config: None,
+                client: client_clone,
+                sessions: SessionManager::new(),
+                cancel_tokens: cancel_tokens_clone,
+            };
+
             if let Err(e) = engine_clone.execute_stream_chat(messages, options, sid.clone()).await {
                 tracing::error!("[ClawCodeEngine] 继续会话执行失败: {}", e);
             }
@@ -617,9 +792,13 @@ impl AIEngine for ClawCodeEngine {
     fn interrupt(&mut self, session_id: &str) -> Result<()> {
         tracing::info!("[ClawCodeEngine] 中断会话: {}", session_id);
 
-        if let Some(token) = self.cancel_tokens.remove(session_id) {
-            token.cancel();
-            tracing::info!("[ClawCodeEngine] 会话已取消: {}", session_id);
+        {
+            let mut tokens = self.cancel_tokens.lock()
+                .map_err(|e| AppError::Unknown(format!("锁获取失败: {}", e)))?;
+            if let Some(token) = tokens.remove(session_id) {
+                token.cancel();
+                tracing::info!("[ClawCodeEngine] 会话已取消: {}", session_id);
+            }
         }
 
         self.sessions.remove(session_id);
@@ -627,7 +806,9 @@ impl AIEngine for ClawCodeEngine {
     }
 
     fn active_session_count(&self) -> usize {
-        self.cancel_tokens.len()
+        self.cancel_tokens.lock()
+            .map(|tokens| tokens.len())
+            .unwrap_or(0)
     }
 }
 

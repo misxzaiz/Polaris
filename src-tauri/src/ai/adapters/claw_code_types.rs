@@ -117,6 +117,12 @@ impl InputMessage {
             }],
         }
     }
+
+    /// 创建工具结果消息（简化版本）
+    #[must_use]
+    pub fn tool_result(tool_use_id: impl Into<String>, content: impl Into<String>) -> Self {
+        Self::user_tool_result(tool_use_id, content, false)
+    }
 }
 
 /// 输入内容块
