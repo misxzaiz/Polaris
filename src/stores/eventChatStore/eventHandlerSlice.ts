@@ -565,7 +565,14 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
       ttsService.stop()
     }).catch(() => {})
 
-    const { conversationId, providerSessionCache } = get()
+    const { conversationId, providerSessionCache, isStreaming } = get()
+
+    console.log('[EventChatStore] interruptChat:', { conversationId, isStreaming })
+
+    if (!isStreaming) {
+      console.log('[EventChatStore] 当前非流式状态，跳过中断')
+      return
+    }
 
     // 使用依赖注入获取配置
     const configActions = get().getConfigActions()
@@ -575,6 +582,7 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
     if (currentEngine.startsWith('provider-')) {
       if (providerSessionCache?.session) {
         try {
+          console.log('[EventChatStore] 中断 Provider 会话')
           providerSessionCache.session.abort()
         } catch (e) {
           log.warn('Abort provider session failed', { error: String(e) })
@@ -585,14 +593,24 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
       return
     }
 
-    if (!conversationId) return
+    if (!conversationId) {
+      console.warn('[EventChatStore] interruptChat: conversationId 为空，无法中断')
+      set({ isStreaming: false })
+      get().finishMessage()
+      return
+    }
 
     try {
+      console.log('[EventChatStore] 调用后端 interrupt_chat:', { conversationId, engineId: currentEngine })
       await invoke('interrupt_chat', { sessionId: conversationId, engineId: currentEngine })
+      console.log('[EventChatStore] 中断成功:', conversationId)
       set({ isStreaming: false })
       get().finishMessage()
     } catch (e) {
       log.error('Interrupt failed', e as Error)
+      // 即使中断失败，也停止流式状态
+      set({ isStreaming: false })
+      get().finishMessage()
     }
   },
 

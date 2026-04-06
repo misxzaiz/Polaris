@@ -10,10 +10,11 @@
 
 import { memo, useCallback } from 'react';
 import { clsx } from 'clsx';
-import { Loader2, XCircle, X, Circle, Maximize2, Minimize2 } from 'lucide-react';
+import { Loader2, XCircle, X, Circle, Maximize2, Minimize2, Square } from 'lucide-react';
 import { SessionMessagesView } from './SessionMessagesView';
 import { useSessionMetadataList, useSessionManagerActions } from '../../stores/conversationStore/sessionStoreManager';
 import { useSessionStreaming } from '../../stores/conversationStore/useActiveSession';
+import { sessionStoreManager } from '../../stores/conversationStore/sessionStoreManager';
 
 /** 状态图标映射 */
 const SESSION_STATUS_CONFIG = {
@@ -69,6 +70,13 @@ export const SessionCell = memo(function SessionCell({
     deleteSession(sessionId);
   }, [sessionId, deleteSession]);
 
+  // 中断当前会话的 AI 回复
+  const handleInterrupt = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    // 直接调用对应会话的 interrupt 方法，而不是使用 activeSessionId
+    sessionStoreManager.getState().interruptSession(sessionId);
+  }, [sessionId]);
+
   // 展开/收起
   const handleExpand = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -103,6 +111,17 @@ export const SessionCell = memo(function SessionCell({
 
         {/* 状态图标 */}
         <StatusIcon className={clsx('w-3.5 h-3.5 shrink-0', statusConfig.className)} />
+
+        {/* 中断按钮 - 仅在流式状态时显示 */}
+        {isStreaming && (
+          <button
+            onClick={handleInterrupt}
+            className="shrink-0 p-0.5 rounded bg-danger/80 text-white hover:bg-danger transition-colors"
+            title="中断"
+          >
+            <Square className="w-3 h-3" />
+          </button>
+        )}
 
         {/* 展开/收起按钮 */}
         <button

@@ -538,10 +538,20 @@ function createSessionManagerStore() {
 
     interruptSession: async (sessionId: string) => {
       const store = get().stores.get(sessionId)
-      if (!store) return
+      if (!store) {
+        console.warn('[SessionStoreManager] interruptSession: 会话不存在:', sessionId)
+        return
+      }
+
+      const state = store.getState()
+      console.log('[SessionStoreManager] interruptSession:', {
+        frontendSessionId: sessionId,
+        backendConversationId: state.conversationId,
+        isStreaming: state.isStreaming
+      })
 
       try {
-        await store.getState().interrupt()
+        await state.interrupt()
       } catch (e) {
         console.error('[SessionStoreManager] 打断会话失败:', sessionId, e)
       }

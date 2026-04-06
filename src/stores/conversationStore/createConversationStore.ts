@@ -815,17 +815,21 @@ export function createConversationStore(
         const config = deps.getConfig()
         const engine = config?.defaultEngine || 'claude-code'
 
+        console.log('[ConversationStore] 尝试中断会话:', { conversationId, engine, isStreaming })
+
         try {
           await invoke('interrupt_chat', {
             sessionId: conversationId,
             engineId: engine,
           })
+          console.log('[ConversationStore] 中断成功:', conversationId)
           set({ isStreaming: false })
           get().finishMessage()
         } catch (e) {
           console.error('[ConversationStore] interrupt failed:', e)
           // 即使中断失败，也停止流式状态
           set({ isStreaming: false })
+          get().finishMessage()
         }
       },
 
