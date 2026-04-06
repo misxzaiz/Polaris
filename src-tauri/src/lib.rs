@@ -226,6 +226,24 @@ pub fn run() {
         );
         engine_registry.register(openai_engine);
         tracing::info!("[EngineRegistry] OpenAI 引擎已注册，共 {} 个 Provider", config.openai_providers.len());
+
+        // 注册 ClawCode 引擎（如果配置了 claw-code Provider）
+        for provider in &config.openai_providers {
+            if provider.id == "claw-code" || provider.id.to_lowercase().contains("claw-code") {
+                let claw_config = ai::ClawCodeConfig::new(
+                    &provider.name,
+                    &provider.api_key,
+                    &provider.api_base,
+                    &provider.model,
+                )
+                .with_max_tokens(provider.max_tokens as u32)
+                .with_temperature(provider.temperature as f32);
+
+                let claw_engine = ai::ClawCodeEngine::with_config(claw_config);
+                engine_registry.register(claw_engine);
+                tracing::info!("[EngineRegistry] ClawCode 引擎已注册 (provider: {})", provider.id);
+            }
+        }
     }
 
     // 设置默认引擎
