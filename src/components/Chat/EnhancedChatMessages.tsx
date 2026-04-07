@@ -40,8 +40,6 @@ import { AgentRunBlockRenderer, SimplifiedAgentRunRenderer } from './AgentRunBlo
 import { PermissionRequestRenderer, SimplifiedPermissionRequestRenderer } from './PermissionRequestRenderer';
 import { ContentBlockErrorBoundary } from './ContentBlockErrorBoundary';
 import { groupConversationRounds } from '../../utils/conversationRounds';
-import { splitMarkdownWithMermaid } from '../../utils/markdown';
-import { MermaidDiagram } from './MermaidDiagram';
 import { DiffViewer } from '../Diff/DiffViewer';
 import { isEditTool } from '../../utils/diffExtractor';
 import { calculateRenderMode, type MessageRenderMode, DEFAULT_LAYER_CONFIG } from '../../utils/messageLayer';
@@ -193,21 +191,8 @@ const TextBlockRenderer = memo(function TextBlockRenderer({
   isStreaming?: boolean;
   renderMode?: MessageRenderMode;
 }) {
-  // 注意：store 层已有 50ms 缓冲，React 层不再需要节流
-  // 移除 useThrottle + useDeferredValue 双层延迟（之前约 400ms+）
+  // Store 层已有 50ms 缓冲，React 层不再需要节流
   // 直接使用 block.content，响应延迟仅取决于 store 的 flush 间隔（50ms）
-
-  // 非流式阶段：完整渲染（useMemo 必须在条件判断之前调用，遵守 React Hooks 规则）
-  const parts = useMemo(() => splitMarkdownWithMermaid(block.content), [block.content]);
-
-  // 流式阶段：显示轻量版内容
-  if (isStreaming) {
-    return (
-      <div className="prose prose-invert prose-sm max-w-none">
-        <StreamingTextContent content={block.content} />
-      </div>
-    );
-  }
 
   // 归档模式：仅显示摘要（截取前 200 字符）
   if (renderMode === 'archive') {
@@ -230,22 +215,13 @@ const TextBlockRenderer = memo(function TextBlockRenderer({
     );
   }
 
-  // 完整模式：完整渲染
+  // 统一渲染路径：流式和非流式使用同一组件
+  // 流式时 completed=false（最后一段用轻量渲染）
+  // 非流式时 completed=true（所有段落用完整 Markdown 渲染）
+  // 优势：流式→非流式切换时无 DOM 结构变化，避免视觉跳变
   return (
     <div className="prose prose-invert prose-sm max-w-none">
-      {parts.map((part, partIndex) => {
-        if (part.type === 'text') {
-          return <TextPartRenderer key={`text-${partIndex}`} content={part.content} />;
-        } else {
-          return (
-            <MermaidDiagram
-              key={`mermaid-${partIndex}`}
-              code={part.content}
-              id={part.id || `mermaid-${partIndex}`}
-            />
-          );
-        }
-      })}
+      <ProgressiveStreamingMarkdown content={block.content} completed={!isStreaming} />
     </div>
   );
 });
@@ -254,44 +230,6 @@ const TextBlockRenderer = memo(function TextBlockRenderer({
  * 预览模式文本渲染器 - 简化版，避免 Mermaid 和复杂代码高亮
  */
 const PreviewTextContent = memo(function PreviewTextContent({ content }: { content: string }) {
-  const formattedHTML = useMemo(() => formatContent(content), [content]);
-
-  return (
-    <div
-      className="break-words"
-      dangerouslySetInnerHTML={{ __html: formattedHTML }}
-    />
-  );
-});
-
-/**
- * 流式文本内容渲染器 - 渐进式版本
- *
- * 优化策略（2026-04-07 v2 更新）：
- * 1. 已完成段落使用完整 Markdown 渲染（标题/列表/表格/引用等块级元素实时可见）
- * 2. 最后一段（可能未完成）使用轻量 Markdown 渲染
- * 3. 代码块检测与流式显示
- * 4. 性能优化：已完成段落 memoized，不会随新 token 到达重新渲染
- */
-const StreamingTextContent = memo(function StreamingTextContent({ content }: { content: string }) {
-  if (!content) return null;
-
-  // 性能限制：超长文本直接返回纯文本
-  if (content.length > 50000) {
-    return <span className="whitespace-pre-wrap break-words">{content}</span>;
-  }
-
-  return <ProgressiveStreamingMarkdown content={content} />;
-});
-
-/**
- * 文本部分渲染器（支持代码高亮）
- */
-const TextPartRenderer = memo(function TextPartRenderer({
-  content
-}: {
-  content: string;
-}) {
   const formattedHTML = useMemo(() => formatContent(content), [content]);
 
   return (

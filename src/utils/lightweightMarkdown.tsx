@@ -445,7 +445,7 @@ const CompletedTextBlock = memo(function CompletedTextBlock({
  * 核心思路：
  * 1. 按 \n\n（空行）分割段落
  * 2. 已完成的段落（非最后一段）：使用完整 Markdown 渲染（marked + DOMPurify）
- * 3. 最后一段（可能未完成）：使用轻量 Markdown 渲染
+ * 3. 最后一段：如果 completed=true 则用完整渲染，否则用轻量渲染
  * 4. 代码块场景：已关闭代码块之前的文本视为已完成，使用完整渲染
  *
  * 性能优势：
@@ -453,11 +453,15 @@ const CompletedTextBlock = memo(function CompletedTextBlock({
  * - 只有最后一段会随流式更新重新渲染
  * - 标题、列表、表格等块级元素在段落完成后立即可见
  * - 代码块场景不再降级为纯行内渲染
+ * - completed 模式实现流式→非流式无缝切换（同一组件，无 DOM 结构变化）
  */
 export const ProgressiveStreamingMarkdown = memo(function ProgressiveStreamingMarkdown({
   content,
+  completed = false,
 }: {
   content: string;
+  /** 当内容已全部到达时设为 true，最后一段也用完整 Markdown 渲染 */
+  completed?: boolean;
 }) {
   const result = useMemo(() => {
     if (!content) return null;
@@ -476,7 +480,21 @@ export const ProgressiveStreamingMarkdown = memo(function ProgressiveStreamingMa
       const paragraphs = content.split(/\n\n+/);
 
       if (paragraphs.length <= 1) {
-        // 只有一个段落，全部用轻量渲染
+        // 只有一个段落
+        if (completed) {
+          // 已完成，用完整 Markdown
+          const raw = marked.parse(content) as string;
+          const html = DOMPurify.sanitize(raw, {
+            ALLOWED_TAGS: [
+              'p', 'br', 'strong', 'em', 'code', 'pre', 'blockquote',
+              'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+              'a', 'span', 'div', 'mark', 'table', 'thead', 'tbody',
+              'tr', 'td', 'th', 'hr', 'dl', 'dt', 'dd',
+            ],
+            ALLOWED_ATTR: ['class', 'href', 'target', 'rel'],
+          });
+          return <div className="break-words" dangerouslySetInnerHTML={{ __html: html }} />;
+        }
         return <LightweightMarkdown content={content} />;
       }
 
@@ -484,7 +502,7 @@ export const ProgressiveStreamingMarkdown = memo(function ProgressiveStreamingMa
         <span className="whitespace-pre-wrap break-words">
           {paragraphs.map((para, i) => {
             const isLast = i === paragraphs.length - 1;
-            if (isLast) {
+            if (isLast && !completed) {
               return <LightweightMarkdown key={`last-${i}`} content={para} />;
             }
             return (
@@ -517,7 +535,6 @@ export const ProgressiveStreamingMarkdown = memo(function ProgressiveStreamingMa
 
           // 文本部分：根据 completed 标记决定渲染策略
           if (part.completed) {
-            // 已完成的文本（代码块之前），使用完整 Markdown
             return (
               <CompletedTextBlock
                 key={`ctext-${index}`}
@@ -527,7 +544,19 @@ export const ProgressiveStreamingMarkdown = memo(function ProgressiveStreamingMa
             );
           }
 
-          // 未完成的文本（最后一个已关闭代码块之后），使用段落级渐进渲染
+          // 未完成的文本（最后一个已关闭代码块之后）
+          // 如果 completed=true，整段都用完整 Markdown
+          if (completed) {
+            return (
+              <CompletedTextBlock
+                key={`ctext-${index}`}
+                content={part.content}
+                blockIndex={index}
+              />
+            );
+          }
+
+          // 流式中：使用段落级渐进渲染
           const paragraphs = part.content.split(/\n\n+/);
           if (paragraphs.length <= 1) {
             return <LightweightMarkdown key={`ltext-${index}`} content={part.content} />;
@@ -553,7 +582,7 @@ export const ProgressiveStreamingMarkdown = memo(function ProgressiveStreamingMa
         })}
       </span>
     );
-  }, [content]);
+  }, [content, completed]);
 
   return result;
 });
