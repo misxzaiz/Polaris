@@ -5,7 +5,7 @@ pub mod window;
 pub mod context;
 pub mod git;
 pub mod translate;
-pub mod openai_proxy;
+
 pub mod integration;
 pub mod scheduler;
 pub mod terminal;
@@ -25,7 +25,6 @@ pub use workspace::get_home_dir;
 
 // 翻译命令
 
-// OpenAI Proxy 命令
 
 // 集成命令
 

@@ -21,23 +21,12 @@ export interface TaskEditorProps {
   title?: string;
 }
 
-/** 解析引擎 ID */
-function parseEngineId(engineId: string): { baseEngine: string; providerId?: string } {
-  if (engineId.startsWith('provider-')) {
-    return { baseEngine: 'openai', providerId: engineId.replace('provider-', '') };
-  }
-  return { baseEngine: engineId };
-}
-
 export function TaskEditor({ task, onSave, onClose, title }: TaskEditorProps) {
   const { t } = useTranslation('scheduler');
   const toast = useToastStore();
   const { getCurrentWorkspace, workspaces } = useWorkspaceStore();
   const { config } = useConfigStore();
   const { templates, loadTemplates } = useSchedulerStore();
-
-  // OpenAI Providers
-  const openaiProviders = config?.openaiProviders || [];
 
   // 默认工作目录
   const currentWorkspace = getCurrentWorkspace();
@@ -156,26 +145,9 @@ export function TaskEditor({ task, onSave, onClose, title }: TaskEditorProps) {
   };
 
   // 基础引擎选择
-  const { baseEngine, providerId } = parseEngineId(engineId);
-
-  const handleBaseEngineChange = (newBaseEngine: string) => {
-    if (newBaseEngine === 'openai') {
-      const enabledProviders = openaiProviders.filter((p) => p.enabled);
-      if (enabledProviders.length > 0) {
-        setEngineId(`provider-${enabledProviders[0].id}`);
-      }
-    } else {
-      setEngineId(newBaseEngine);
-    }
+  const handleEngineChange = (newEngineId: string) => {
+    setEngineId(newEngineId);
   };
-
-  const handleProviderChange = (newProviderId: string) => {
-    setEngineId(`provider-${newProviderId}`);
-  };
-
-  // 检测失效的 Provider
-  const selectedProvider = openaiProviders.find((p) => p.id === providerId);
-  const providerInvalid = baseEngine === 'openai' && providerId && (!selectedProvider || !selectedProvider.enabled);
 
   // 启用的模板列表
   const enabledTemplates = templates.filter((t) => t.enabled);
@@ -410,79 +382,13 @@ export function TaskEditor({ task, onSave, onClose, title }: TaskEditorProps) {
             <label className="block text-sm text-text-secondary mb-1">
               {t('editor.engine')}
             </label>
-            <div className="space-y-2">
-              {/* Provider 失效警告 */}
-              {providerInvalid && (
-                <div className="p-2 bg-warning-faint border border-warning/30 rounded-lg text-xs text-warning">
-                  {t('editor.providerInvalid')}
-                </div>
-              )}
-
-              <select
-                value={baseEngine}
-                onChange={(e) => handleBaseEngineChange(e.target.value)}
-                className="w-full px-3 py-2 bg-background-surface border border-border-subtle rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
-              >
-                <option value="claude-code">Claude Code</option>
-                <option value="openai" disabled={openaiProviders.filter((p) => p.enabled).length === 0}>
-                  OpenAI Provider {openaiProviders.filter((p) => p.enabled).length === 0 ? `(${t('editor.noProvider')})` : ''}
-                </option>
-              </select>
-
-              {/* OpenAI Provider 二级选择 */}
-              {baseEngine === 'openai' && (
-                <div className="pl-3 border-l-2 border-border-subtle">
-                  <label className="block text-xs text-text-muted mb-1">
-                    {t('editor.selectProvider')}
-                  </label>
-                  {openaiProviders.filter((p) => p.enabled).length > 0 ? (
-                    <>
-                      <select
-                        value={providerId || ''}
-                        onChange={(e) => handleProviderChange(e.target.value)}
-                        className="w-full px-3 py-2 bg-background-base border border-border-subtle rounded-lg text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                      >
-                        {openaiProviders
-                          .filter((p) => p.enabled)
-                          .map((provider) => (
-                            <option key={provider.id} value={provider.id}>
-                              {provider.name} ({provider.model})
-                            </option>
-                          ))}
-                      </select>
-                      {selectedProvider && (
-                        <div className="mt-2 p-2 bg-background-base rounded-lg text-xs text-text-secondary space-y-1">
-                          <div>
-                            {t('editor.model')}: <span className="text-primary">{selectedProvider.model}</span>
-                          </div>
-                          <div>
-                            API: <span className="text-text-muted">{selectedProvider.apiBase}</span>
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="space-y-2">
-                      <p className="text-xs text-warning">{t('editor.noProviderConfigured')}</p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          window.dispatchEvent(
-                            new CustomEvent('navigate-to-settings', {
-                              detail: { tab: 'openai-providers' },
-                            })
-                          );
-                          onClose();
-                        }}
-                        className="px-3 py-1.5 text-xs bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors"
-                      >
-                        {t('editor.goConfig')} →
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+            <select
+              value={engineId}
+              onChange={(e) => handleEngineChange(e.target.value)}
+              className="w-full px-3 py-2 bg-background-surface border border-border-subtle rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
+              <option value="claude-code">Claude Code</option>
+            </select>
           </div>
 
           {/* 工作目录 */}

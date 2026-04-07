@@ -287,62 +287,6 @@ export const CLI_ENGINE_CONFIG_RULES: ObjectRules<import('./base').CLIEngineConf
 }
 
 /**
- * OpenAI Provider Engine 配置验证规则
- */
-export const OPENAI_PROVIDER_CONFIG_RULES: ObjectRules<import('../engines/openai-provider/engine').OpenAIProviderEngineConfig> = {
-  providerId: {
-    required: true,
-    type: 'string',
-    minLength: 1,
-    description: 'Provider ID',
-  },
-  providerName: {
-    type: 'string',
-    description: 'Provider display name',
-  },
-  apiKey: {
-    required: true,
-    type: 'string',
-    minLength: 1,
-    description: 'API key',
-  },
-  apiBase: {
-    required: true,
-    type: 'string',
-    pattern: /^https?:\/\/.+/,
-    description: 'API base URL',
-  },
-  model: {
-    required: true,
-    type: 'string',
-    minLength: 1,
-    description: 'Model name',
-  },
-  temperature: {
-    type: 'number',
-    min: 0,
-    max: 2,
-    description: 'Temperature parameter',
-  },
-  maxTokens: {
-    type: 'number',
-    min: 1,
-    max: 1000000,
-    description: 'Max tokens',
-  },
-  timeout: {
-    type: 'number',
-    min: 1000,
-    max: 600000,
-    description: 'Request timeout (ms)',
-  },
-  supportsTools: {
-    type: 'boolean',
-    description: 'Supports function calling',
-  },
-}
-
-/**
  * Claude Engine 配置验证规则
  */
 export const CLAUDE_ENGINE_CONFIG_RULES: ObjectRules<import('../engines/claude-code/engine').ClaudeEngineConfig> = {
@@ -418,15 +362,6 @@ export function validateCLIEngineConfig(
   config: Partial<import('./base').CLIEngineConfig>
 ): ValidationResult {
   return validateObject(config, CLI_ENGINE_CONFIG_RULES)
-}
-
-/**
- * 快捷验证函数 - OpenAI Provider 配置
- */
-export function validateOpenAIProviderConfig(
-  config: Partial<import('../engines/openai-provider/engine').OpenAIProviderEngineConfig>
-): ValidationResult {
-  return validateObject(config, OPENAI_PROVIDER_CONFIG_RULES)
 }
 
 /**

@@ -20,7 +20,6 @@
  * - **适用场景**: 与 Tauri 后端深度集成的原生 Engine
  *
  * ### 3. HTTP API 型 Engine (独立实现)
- * - **代表**: OpenAIProviderEngine
  * - **通信方式**: HTTP REST API (fetch) 调用远程服务
  * - **Session 管理**: Engine 层管理 sessions Map，监听 session 生命周期
  * - **事件机制**: Tauri 事件系统（后端代理 → 前端监听）

@@ -39,7 +39,6 @@ function createTestStore() {
       isStreaming: false,
       error: null,
       progressMessage: null,
-      providerSessionCache: null,
       _eventListenersInitialized: false,
       _eventListenersCleanup: null,
       _dependencies: null,

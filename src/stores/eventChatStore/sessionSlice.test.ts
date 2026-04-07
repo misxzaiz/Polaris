@@ -25,7 +25,6 @@ function createTestStore() {
     isStreaming: false,
     error: null,
     progressMessage: null,
-    providerSessionCache: null,
     _eventListenersInitialized: false,
     _eventListenersCleanup: null,
     isInitialized: true,
@@ -62,7 +61,6 @@ describe('sessionSlice', () => {
       expect(state.isStreaming).toBe(false)
       expect(state.error).toBeNull()
       expect(state.progressMessage).toBeNull()
-      expect(state.providerSessionCache).toBeNull()
     })
   })
 
@@ -84,50 +82,6 @@ describe('sessionSlice', () => {
       expect(store.getState().conversationId).toBeNull()
     })
 
-    it('切换不同会话时应清理 providerSessionCache', () => {
-      const store = createTestStore()
-
-      // 设置初始会话和 session cache
-      store.setState({
-        conversationId: 'conv-1',
-        providerSessionCache: {
-          session: { dispose: vi.fn() },
-          conversationId: 'conv-1',
-          conversationSeed: null,
-          lastUsed: Date.now(),
-        },
-      })
-
-      // 切换到不同会话
-      store.getState().setConversationId('conv-2')
-
-      expect(store.getState().conversationId).toBe('conv-2')
-      expect(store.getState().providerSessionCache).toBeNull()
-      expect(store.getState().currentConversationSeed).toBeNull()
-    })
-
-    it('设置相同会话 ID 时不应清理 session cache', () => {
-      const mockDispose = vi.fn()
-      const store = createTestStore()
-
-      const sessionCache = {
-        session: { dispose: mockDispose },
-        conversationId: 'conv-1',
-        conversationSeed: null,
-        lastUsed: Date.now(),
-      }
-
-      store.setState({
-        conversationId: 'conv-1',
-        providerSessionCache: sessionCache,
-      })
-
-      // 设置相同的会话 ID
-      store.getState().setConversationId('conv-1')
-
-      expect(store.getState().providerSessionCache).toBe(sessionCache)
-      expect(mockDispose).not.toHaveBeenCalled()
-    })
   })
 
   describe('setStreaming', () => {

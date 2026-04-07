@@ -4,35 +4,11 @@
 
 import type { SpeechConfig, TTSConfig } from './speech'
 
-/**  引擎 ID（扩展以支持动态 Provider） */
-export type EngineId = 'claude-code' | `provider-${string}`
+/**  引擎 ID */
+export type EngineId = 'claude-code'
 
 /** 支持的语言 */
 export type Language = 'zh-CN' | 'en-US'
-
-/** OpenAI Provider 配置 */
-export interface OpenAIProvider {
-  /** 内部唯一标识符（创建时生成，不可变，用于 React key） */
-  _uid: string;
-  /** 唯一标识符 */
-  id: string;
-  /** 显示名称 */
-  name: string;
-  /** API Key */
-  apiKey: string;
-  /** API Base URL */
-  apiBase: string;
-  /** 模型名称（任意值） */
-  model: string;
-  /** 温度参数 */
-  temperature: number;
-  /** 最大 Token 数 */
-  maxTokens: number;
-  /** 是否启用 */
-  enabled: boolean;
-  /** 是否支持工具调用（Function Calling） */
-  supportsTools: boolean;
-}
 
 /** AI 引擎配置 */
 export interface EngineConfig {
@@ -110,10 +86,6 @@ export interface Config {
     /** Claude CLI 命令路径 */
     cliPath: string;
   };
-  /** OpenAI Providers 列表 */
-  openaiProviders: OpenAIProvider[];
-  /** 当前选中的 Provider ID */
-  activeProviderId?: string;
   /** 工作目录 */
   workDir?: string;
   /** 会话保存路径 */

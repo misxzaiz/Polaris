@@ -29,7 +29,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
   const [displayCount, setDisplayCount] = useState(PAGE_SIZE)
   const [loading, setLoading] = useState(true)
   const [restoring, setRestoring] = useState<string | null>(null)
-  const [filter, setFilter] = useState<'all' | 'claude-code' | 'provider'>('all')
+  const [filter, setFilter] = useState<'all' | 'claude-code'>('all')
   const [searchQuery, setSearchQuery] = useState('')
 
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -125,20 +125,12 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
   }
 
   // 获取引擎信息
-  const getEngineInfo = (engineId: 'claude-code' | `provider-${string}`, source: string) => {
+  const getEngineInfo = (_engineId: 'claude-code', source: string) => {
     if (source === 'claude-code-native') {
       return {
         name: 'Claude Code',
         color: 'text-blue-500',
         bgColor: 'bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300',
-        icon: HardDrive,
-      }
-    }
-    if (engineId.startsWith('provider-')) {
-      return {
-        name: 'Provider',
-        color: 'text-emerald-500',
-        bgColor: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900 dark:text-emerald-300',
         icon: HardDrive,
       }
     }
@@ -152,9 +144,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
 
   // 过滤历史
   const filteredHistory = allHistory.filter(item => {
-    // 处理 provider 引擎的过滤
-    if (filter === 'provider' && !item.engineId.startsWith('provider-')) return false
-    if (filter !== 'all' && filter !== 'provider' && item.engineId !== filter) return false
+    if (filter !== 'all' && item.engineId !== filter) return false
     if (searchQuery && !item.title.toLowerCase().includes(searchQuery.toLowerCase())) {
       return false
     }
@@ -248,16 +238,6 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
           }`}
         >
           Claude Code
-        </button>
-        <button
-          onClick={() => { setFilter('provider'); setDisplayCount(PAGE_SIZE); }}
-          className={`px-2 py-1 rounded-md text-xs transition-colors ${
-            filter === 'provider'
-              ? 'bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-300'
-              : 'text-text-secondary hover:bg-background-hover'
-          }`}
-        >
-          Provider
         </button>
       </div>
 

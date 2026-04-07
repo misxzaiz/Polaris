@@ -41,23 +41,9 @@ export function AIPopover({ isOpen, onClose }: AIPopoverProps) {
   }, [isOpen, onClose])
 
   // 引擎选项
-  const engineOptions = useMemo(() => {
-    const options: { id: EngineId; name: string }[] = [
-      { id: 'claude-code', name: 'Claude Code' },
-    ]
-
-    if (config?.openaiProviders && config.openaiProviders.length > 0) {
-      for (const provider of config.openaiProviders) {
-        if (!provider.enabled) continue
-        options.push({
-          id: provider.id as EngineId,
-          name: provider.name || provider.id,
-        })
-      }
-    }
-
-    return options
-  }, [config?.openaiProviders])
+  const engineOptions = useMemo(() => [
+    { id: 'claude-code' as EngineId, name: 'Claude Code' },
+  ], [])
 
   const handleEngineSelect = useCallback(async (engineId: EngineId) => {
     if (!config) return
@@ -73,13 +59,10 @@ export function AIPopover({ isOpen, onClose }: AIPopoverProps) {
 
     clearMessages()
 
-    const isProvider = engineId.startsWith('provider-')
-    const nextConfig = {
+    await updateConfig({
       ...config,
       defaultEngine: engineId,
-      activeProviderId: isProvider ? engineId : config.activeProviderId,
-    }
-    await updateConfig(nextConfig)
+    })
   }, [config, isStreaming, interruptChat, clearMessages, updateConfig])
 
   if (!isOpen) return null

@@ -16,7 +16,6 @@ import { AIEngineTab } from './tabs/AIEngineTab';
 import { GeneralTab } from './tabs/GeneralTab';
 import { SystemPromptTab } from './tabs/SystemPromptTab';
 import { WindowTab } from './tabs/WindowTab';
-import { OpenAIProvidersTab } from './OpenAIProvidersTab';
 import { TranslateTab } from './tabs/TranslateTab';
 import { QQBotTab } from './tabs/QQBotTab';
 import { SpeechTab } from './tabs/SpeechTab';
@@ -38,7 +37,6 @@ const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'system-prompt': 'nav.systemPrompt',
   'window': 'nav.window',
   'ai-engine': 'nav.aiEngine',
-  'openai-providers': 'nav.openaiProviders',
   'translate': 'nav.translate',
   'qqbot': 'nav.qqbot',
   'speech': 'nav.speech',
@@ -178,14 +176,6 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
 
               {activeTab === 'window' && (
                 <WindowTab
-                  config={localConfig}
-                  onConfigChange={setLocalConfig}
-                  loading={loading}
-                />
-              )}
-
-              {activeTab === 'openai-providers' && (
-                <OpenAIProvidersTab
                   config={localConfig}
                   onConfigChange={setLocalConfig}
                   loading={loading}

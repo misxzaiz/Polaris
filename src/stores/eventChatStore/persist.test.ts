@@ -19,7 +19,6 @@ interface MockState {
   // 运行时字段（不持久化）
   isStreaming: boolean
   currentMessage: { id: string; content: string } | null
-  providerSessionCache: { session: any; lastUsed: number } | null
   toolBlockMap: Map<string, number>
   // 方法
   setConversationId: (id: string | null) => void
@@ -36,7 +35,6 @@ function createPersistStore() {
         currentConversationSeed: null,
         isStreaming: false,
         currentMessage: null,
-        providerSessionCache: null,
         toolBlockMap: new Map(),
 
         // 方法
@@ -85,7 +83,6 @@ describe('persist 中间件', () => {
       // 运行时状态不应存在
       expect(parsed.state.isStreaming).toBeUndefined()
       expect(parsed.state.currentMessage).toBeUndefined()
-      expect(parsed.state.providerSessionCache).toBeUndefined()
       expect(parsed.state.toolBlockMap).toBeUndefined()
     })
 
@@ -138,23 +135,6 @@ describe('persist 中间件', () => {
       const parsed = JSON.parse(stored!)
 
       expect(parsed.state.currentMessage).toBeUndefined()
-    })
-
-    it('providerSessionCache 不应持久化', () => {
-      const store = createPersistStore()
-
-      store.setState({
-        conversationId: 'conv-123',
-        providerSessionCache: {
-          session: { dispose: vi.fn() },
-          lastUsed: Date.now(),
-        },
-      })
-
-      const stored = localStorage.getItem('test-persist-store')
-      const parsed = JSON.parse(stored!)
-
-      expect(parsed.state.providerSessionCache).toBeUndefined()
     })
 
     it('toolBlockMap 不应持久化', () => {
@@ -235,7 +215,6 @@ describe('partialize 函数', () => {
       currentConversationSeed: 'seed-456',
       isStreaming: true,
       currentMessage: { id: 'msg-1', content: 'Hello' },
-      providerSessionCache: { session: {}, lastUsed: Date.now() },
       toolBlockMap: new Map([['tool-1', 0]]),
       setConversationId: vi.fn(),
       setStreaming: vi.fn(),
@@ -259,7 +238,6 @@ describe('partialize 函数', () => {
       currentConversationSeed: null,
       isStreaming: false,
       currentMessage: null,
-      providerSessionCache: null,
       toolBlockMap: new Map(),
       setConversationId: vi.fn(),
       setStreaming: vi.fn(),
@@ -282,7 +260,6 @@ describe('partialize 函数', () => {
       currentConversationSeed: '',
       isStreaming: false,
       currentMessage: null,
-      providerSessionCache: null,
       toolBlockMap: new Map(),
       setConversationId: vi.fn(),
       setStreaming: vi.fn(),

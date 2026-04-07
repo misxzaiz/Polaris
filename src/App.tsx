@@ -24,10 +24,9 @@ import { sessionStoreManager } from './stores/conversationStore';
 import { useActiveSessionActions, useActiveSessionStreaming, useActiveSessionError } from './stores/conversationStore/useActiveSession';
 import { useWindowSize } from './hooks';
 import * as tauri from './services/tauri';
-import { bootstrapEngines, bootstrapOpenAIProviders } from './core/engine-bootstrap';
+import { bootstrapEngines } from './core/engine-bootstrap';
 import { bootstrapAgents } from './core/agent-bootstrap';
 import { bootstrapTools } from './core/tool-bootstrap';
-import { clearOpenAIProviderEngines } from './engines/openai-provider';
 import { listen } from '@tauri-apps/api/event';
 import './index.css';
 import type { EngineId } from './types';
@@ -73,8 +72,6 @@ function App() {
   // 使用 ref 确保初始化只执行一次
   const isInitialized = useRef(false);
   const hasCheckedWorkspaces = useRef(false);
-  const lastOpenAIProvidersRef = useRef<string>(JSON.stringify([]));
-  const lastActiveProviderIdRef = useRef<string | undefined>(undefined);
   const {
     // 新布局状态
     leftPanelType,
@@ -136,13 +133,10 @@ function App() {
 
     clearMessages();
 
-    const isProvider = engineId.startsWith('provider-');
-    const nextConfig = {
+    await updateConfig({
       ...config,
       defaultEngine: engineId,
-      activeProviderId: isProvider ? engineId : config.activeProviderId,
-    };
-    await updateConfig(nextConfig);
+    });
   }, [config, isStreaming, interruptChat, clearMessages, updateConfig]);
 
   // 初始化配置（只执行一次）
@@ -161,26 +155,6 @@ function App() {
         const defaultEngine = config?.defaultEngine || 'claude-code';
 
         // 注册 OpenAI Providers（如果有）
-        console.log('[App] 检查 OpenAI Providers 配置:', {
-          hasProviders: !!config?.openaiProviders,
-          providerCount: config?.openaiProviders?.length || 0,
-          activeProviderId: config?.activeProviderId
-        })
-
-        if (config?.openaiProviders && config.openaiProviders.length > 0) {
-          console.log('[App] 开始注册 OpenAI Providers:', config.openaiProviders.map(p => ({ id: p.id, name: p.name, enabled: p.enabled })))
-          await bootstrapOpenAIProviders(config.openaiProviders, config.activeProviderId)
-          console.log('[App] OpenAI Providers 注册完成')
-
-          // 记录初始配置，用于后续变化检测
-          lastOpenAIProvidersRef.current = JSON.stringify(config.openaiProviders)
-          lastActiveProviderIdRef.current = config.activeProviderId
-        } else {
-          console.log('[App] 没有 OpenAI Providers 需要注册')
-          lastOpenAIProvidersRef.current = JSON.stringify([])
-          lastActiveProviderIdRef.current = undefined
-        }
-
         // 按需初始化传统 AI Engine
         await bootstrapEngines(defaultEngine as any);
 
@@ -301,37 +275,6 @@ function App() {
       hasCheckedWorkspaces.current = true;
     }
   }, [workspaces.length]);
-
-  // 监听 OpenAI Providers 配置变化，自动重新注册引擎
-  useEffect(() => {
-    // 跳过初始化阶段
-    if (!isInitialized.current) return;
-
-    const currentProvidersJson = JSON.stringify(config?.openaiProviders || []);
-    const currentActiveProviderId = config?.activeProviderId;
-
-    // 检查是否有变化
-    const providersChanged = lastOpenAIProvidersRef.current !== currentProvidersJson;
-    const activeProviderChanged = lastActiveProviderIdRef.current !== currentActiveProviderId;
-
-    if (providersChanged || activeProviderChanged) {
-      console.log('[App] 检测到 OpenAI Providers 配置变化，重新注册引擎');
-
-      // 更新 ref
-      lastOpenAIProvidersRef.current = currentProvidersJson;
-      lastActiveProviderIdRef.current = currentActiveProviderId;
-
-      // 重新注册 OpenAI Providers
-      if (config?.openaiProviders && config.openaiProviders.length > 0) {
-        bootstrapOpenAIProviders(config.openaiProviders, config.activeProviderId).catch(error => {
-          console.error('[App] 重新注册 OpenAI Providers 失败:', error);
-        });
-      } else {
-        // 如果没有 Providers 了，清理所有 provider 引擎
-        clearOpenAIProviderEngines().catch(console.error);
-      }
-    }
-  }, [config?.openaiProviders, config?.activeProviderId]);
 
   // 同步当前工作区路径到后端配置
   useEffect(() => {

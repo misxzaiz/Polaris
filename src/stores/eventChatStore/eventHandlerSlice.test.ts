@@ -94,8 +94,6 @@ function createMockDependencies() {
     configActions: {
       getConfig: vi.fn(() => ({
         defaultEngine: 'claude-code',
-        openaiProviders: [],
-        activeProviderId: null,
       })),
     },
     gitActions: {
@@ -118,7 +116,6 @@ function createTestStore(deps = createMockDependencies()) {
     isStreaming: false,
     error: null,
     progressMessage: null,
-    providerSessionCache: null,
     _eventListenersInitialized: false,
     _eventListenersCleanup: null,
     _dependencies: deps,
@@ -503,36 +500,4 @@ describe('eventHandlerSlice', () => {
     })
   })
 
-  // ============================================================
-  // Provider 引擎测试
-  // ============================================================
-  describe('sendMessageToFrontendEngine', () => {
-    it('未配置 Provider 应设置错误', async () => {
-      // Mock 无 Provider 配置
-      mockDeps.configActions.getConfig.mockReturnValue({
-        defaultEngine: 'provider-test',
-        openaiProviders: [],
-        activeProviderId: null,
-      })
-      const store = createTestStore(mockDeps)
-
-      await store.getState().sendMessageToFrontendEngine('Hello')
-
-      expect(store.getState().error).toBe('未配置 OpenAI Provider，请在设置中添加')
-    })
-
-    it('无启用 Provider 应设置错误', async () => {
-      // Mock 有配置但未启用
-      mockDeps.configActions.getConfig.mockReturnValue({
-        defaultEngine: 'provider-test',
-        openaiProviders: [{ id: 'test', enabled: false, name: 'Test' }],
-        activeProviderId: null,
-      })
-      const store = createTestStore(mockDeps)
-
-      await store.getState().sendMessageToFrontendEngine('Hello')
-
-      expect(store.getState().error).toBe('没有启用的 OpenAI Provider，请在设置中启用')
-    })
-  })
 })

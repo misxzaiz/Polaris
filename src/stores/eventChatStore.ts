@@ -13,7 +13,6 @@ export {
   type HistoryState,
   type CurrentAssistantMessage,
   type UnifiedHistoryItem,
-  type ProviderSessionCache,
   MAX_MESSAGES,
   MESSAGE_ARCHIVE_THRESHOLD,
   BATCH_LOAD_COUNT,

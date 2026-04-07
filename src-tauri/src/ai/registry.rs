@@ -141,11 +141,6 @@ impl EngineRegistry {
     ) -> Result<String> {
         let id = engine_id.unwrap_or_else(|| self.default_engine.clone());
 
-        // 对于 OpenAI 引擎，将 provider_id 传递给 SessionOptions
-        if let Some(ref provider_id) = id.provider_id() {
-            options.openai_provider_id = Some(provider_id.to_string());
-        }
-
         let engine = self.get_mut(&id)
             .ok_or_else(|| AppError::ValidationError(format!("引擎 {} 未注册", id)))?;
 
@@ -166,11 +161,6 @@ impl EngineRegistry {
         message: &str,
         mut options: SessionOptions,
     ) -> Result<()> {
-        // 对于 OpenAI 引擎，将 provider_id 传递给 SessionOptions
-        if let Some(ref provider_id) = engine_id.provider_id() {
-            options.openai_provider_id = Some(provider_id.to_string());
-        }
-
         let engine = self.get_mut(&engine_id)
             .ok_or_else(|| AppError::ValidationError(format!("引擎 {} 未注册", engine_id)))?;
 

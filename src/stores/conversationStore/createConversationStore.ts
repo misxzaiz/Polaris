@@ -62,7 +62,6 @@ function createInitialState(sessionId: string): ConversationState {
     isStreaming: false,
     error: null,
     progressMessage: null,
-    providerSessionCache: null,
 
     // 输入草稿
     inputDraft: {
@@ -97,11 +96,13 @@ export function createConversationStore(
   const initialState = createInitialState(sessionId)
 
   // ===== 流式文本缓冲区 =====
-  // 闭包级变量，避免每个 token 都触发 Zustand set()
-  // token 追加到 _textBuffer（O(1) 字符串操作），定时 flush 到 store
+  // 段落级缓冲策略：
+  // 1. 首段立即显示（快速响应）
+  // 2. 后续段落等待 \n\n（段落结束）才 flush
+  // 3. 超时保护：200ms 内没有段落结束也 flush
   let _textBuffer = ''
-  let _bufferTimer: ReturnType<typeof setTimeout> | null = null
-  const FLUSH_INTERVAL = 50 // ms，平衡实时性与性能
+  let _paragraphTimer: ReturnType<typeof setTimeout> | null = null
+  const PARAGRAPH_TIMEOUT = 200 // ms，超时保护
 
   const store = create<ConversationStore>()(
     subscribeWithSelector((set, get) => ({
@@ -146,7 +147,6 @@ export function createConversationStore(
           pendingToolGroup: null,
           permissionRequestBlockMap: new Map(),
           activePermissionRequestId: null,
-          providerSessionCache: null,
         })
       },
 
@@ -155,9 +155,9 @@ export function createConversationStore(
         if (_textBuffer) get()._flushTextBuffer()
 
         // 清除定时器
-        if (_bufferTimer) {
-          clearTimeout(_bufferTimer)
-          _bufferTimer = null
+        if (_paragraphTimer) {
+          clearTimeout(_paragraphTimer)
+          _paragraphTimer = null
         }
 
         const { currentMessage, messages } = get()
@@ -191,9 +191,11 @@ export function createConversationStore(
       },
 
       // ===== 流式构建 =====
-      // 优化：token 先追加到闭包级 buffer（O(1) 字符串拼接），定时 flush 到 Zustand
-      // 减少 set() 调用：从每个 token 一次 → 每 50ms 一次
-      // 对于典型 500 token 回复（~2s），从 ~500 次 set() 降至 ~40 次
+      // 段落级缓冲策略：
+      // 1. 首次创建消息时立即 flush（保证首 token 响应速度）
+      // 2. 后续更新等待 \n\n（段落结束）才 flush
+      // 3. 超时保护：200ms 内没有段落结束也 flush
+      // 效果：渲染更像"事件级"，一个段落一次渲染，减少视觉跳动
       appendTextBlock: (content) => {
         // 追加到闭包级 buffer（O(1)，不触发 Zustand）
         _textBuffer += content
@@ -206,29 +208,37 @@ export function createConversationStore(
           return
         }
 
-        // 如果没有定时器，启动缓冲 flush
-        if (!_bufferTimer) {
-          _bufferTimer = setTimeout(() => {
-            _bufferTimer = null
+        // 段落级模式：检测缓冲区中的段落结束
+        // 注意：需要检查 _textBuffer 而非 content，因为 \n\n 可能跨两个 token
+        if (_textBuffer.includes('\n\n')) {
+          // 段落结束，立即 flush
+          if (_paragraphTimer) {
+            clearTimeout(_paragraphTimer)
+            _paragraphTimer = null
+          }
+          get()._flushTextBuffer()
+        } else if (!_paragraphTimer) {
+          // 启动超时保护定时器
+          _paragraphTimer = setTimeout(() => {
+            _paragraphTimer = null
             get()._flushTextBuffer()
-          }, FLUSH_INTERVAL)
+          }, PARAGRAPH_TIMEOUT)
         }
       },
 
       /** 内部方法：将缓冲区文本 flush 到 Zustand store */
       _flushTextBuffer: () => {
-        const state = get()
-
-        // 清除定时器
-        if (_bufferTimer) {
-          clearTimeout(_bufferTimer)
-          _bufferTimer = null
+        // 清除超时定时器
+        if (_paragraphTimer) {
+          clearTimeout(_paragraphTimer)
+          _paragraphTimer = null
         }
 
         // 取出缓冲区内容并重置
         const bufferToFlush = _textBuffer
         _textBuffer = ''
 
+        const state = get()
         if (!bufferToFlush && state.currentMessage) return
 
         if (!state.currentMessage) {
@@ -258,13 +268,8 @@ export function createConversationStore(
           })
         }
 
-        // 如果仍在流式传输，调度下一次 flush
-        if (state.isStreaming) {
-          _bufferTimer = setTimeout(() => {
-            _bufferTimer = null
-            get()._flushTextBuffer()
-          }, FLUSH_INTERVAL)
-        }
+        // 段落级策略：不需要自动重新调度
+        // flush 时机由 appendTextBlock 中的段落检测 (\n\n) 或超时保护触发
       },
 
       appendThinkingBlock: (content) => {
@@ -1012,20 +1017,13 @@ export function createConversationStore(
       // ===== 资源清理 =====
       dispose: () => {
         // 清理缓冲定时器
-        if (_bufferTimer) {
-          clearTimeout(_bufferTimer)
-          _bufferTimer = null
+        if (_paragraphTimer) {
+          clearTimeout(_paragraphTimer)
+          _paragraphTimer = null
         }
         _textBuffer = ''
 
         const state = get()
-        if (state.providerSessionCache?.session) {
-          try {
-            state.providerSessionCache.session.dispose()
-          } catch (e) {
-            console.warn('[ConversationStore] 清理 Session 失败:', e)
-          }
-        }
         // 重置状态
         set(createInitialState(state.sessionId))
       },

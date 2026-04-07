@@ -7,9 +7,6 @@
 // 导出 Claude Code Engine
 export * from './claude-code'
 
-// 导出 OpenAI Provider Engine
-export * from './openai-provider'
-
 /**
  * 获取所有可用的 Engine IDs
  */

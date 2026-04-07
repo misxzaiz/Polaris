@@ -14,7 +14,6 @@ import type { Attachment } from '../../types/attachment'
 import type {
   CurrentAssistantMessage,
   PendingToolGroup,
-  ProviderSessionCache,
 } from '../eventChatStore/types'
 import type { AIEvent } from '../../ai-runtime'
 import type { StoreApi, UseBoundStore } from 'zustand'
@@ -96,7 +95,6 @@ export interface ConversationState {
   isStreaming: boolean
   error: string | null
   progressMessage: string | null
-  providerSessionCache: ProviderSessionCache | null
 
   // ===== 元数据 =====
   sessionId: string // 会话唯一标识，由后端返回或前端生成
@@ -242,7 +240,7 @@ export interface CreateSessionOptions {
 export interface CreateSessionFromHistoryOptions {
   title: string
   workspaceId?: string
-  engineId?: 'claude-code' | `provider-${string}`
+  engineId?: 'claude-code'
   externalSessionId?: string
   messages: ChatMessage[]
   conversationId?: string | null

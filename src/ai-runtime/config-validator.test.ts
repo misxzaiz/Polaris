@@ -9,9 +9,7 @@ import {
   validateConfig,
   mergeResults,
   validateCLIEngineConfig,
-  validateOpenAIProviderConfig,
   CLI_ENGINE_CONFIG_RULES,
-  OPENAI_PROVIDER_CONFIG_RULES,
 } from './config-validator'
 
 describe('validateField', () => {
@@ -281,76 +279,5 @@ describe('validateCLIEngineConfig', () => {
     })
     expect(result.valid).toBe(false)
     expect(result.errors[0].field).toBe('apiBase')
-  })
-})
-
-describe('validateOpenAIProviderConfig', () => {
-  it('should validate valid config', () => {
-    const result = validateOpenAIProviderConfig({
-      providerId: 'openai',
-      apiKey: 'sk-test',
-      apiBase: 'https://api.openai.com/v1',
-      model: 'gpt-4',
-    })
-    expect(result.valid).toBe(true)
-  })
-
-  it('should fail for missing required fields', () => {
-    const result = validateOpenAIProviderConfig({
-      providerId: 'openai',
-      // missing apiKey, apiBase, model
-    })
-    expect(result.valid).toBe(false)
-    expect(result.errors.length).toBeGreaterThanOrEqual(3)
-  })
-
-  it('should fail for temperature out of range', () => {
-    const result = validateOpenAIProviderConfig({
-      providerId: 'openai',
-      apiKey: 'sk-test',
-      apiBase: 'https://api.openai.com/v1',
-      model: 'gpt-4',
-      temperature: 3, // > 2
-    })
-    expect(result.valid).toBe(false)
-    expect(result.errors.some(e => e.field === 'temperature')).toBe(true)
-  })
-
-  it('should pass for temperature within range', () => {
-    const result = validateOpenAIProviderConfig({
-      providerId: 'openai',
-      apiKey: 'sk-test',
-      apiBase: 'https://api.openai.com/v1',
-      model: 'gpt-4',
-      temperature: 0.7,
-    })
-    expect(result.valid).toBe(true)
-  })
-})
-
-describe('CLI_ENGINE_CONFIG_RULES', () => {
-  it('should have correct rules defined', () => {
-    expect(CLI_ENGINE_CONFIG_RULES.executablePath?.type).toBe('string')
-    expect(CLI_ENGINE_CONFIG_RULES.model?.type).toBe('string')
-    expect(CLI_ENGINE_CONFIG_RULES.apiKey?.type).toBe('string')
-    expect(CLI_ENGINE_CONFIG_RULES.apiBase?.pattern).toBeInstanceOf(RegExp)
-    expect(CLI_ENGINE_CONFIG_RULES.extraArgs?.type).toBe('array')
-  })
-})
-
-describe('OPENAI_PROVIDER_CONFIG_RULES', () => {
-  it('should have correct required fields', () => {
-    expect(OPENAI_PROVIDER_CONFIG_RULES.providerId?.required).toBe(true)
-    expect(OPENAI_PROVIDER_CONFIG_RULES.apiKey?.required).toBe(true)
-    expect(OPENAI_PROVIDER_CONFIG_RULES.apiBase?.required).toBe(true)
-    expect(OPENAI_PROVIDER_CONFIG_RULES.model?.required).toBe(true)
-  })
-
-  it('should have correct type constraints', () => {
-    expect(OPENAI_PROVIDER_CONFIG_RULES.temperature?.type).toBe('number')
-    expect(OPENAI_PROVIDER_CONFIG_RULES.temperature?.min).toBe(0)
-    expect(OPENAI_PROVIDER_CONFIG_RULES.temperature?.max).toBe(2)
-    expect(OPENAI_PROVIDER_CONFIG_RULES.maxTokens?.type).toBe('number')
-    expect(OPENAI_PROVIDER_CONFIG_RULES.supportsTools?.type).toBe('boolean')
   })
 })

@@ -59,7 +59,6 @@ use commands::git::{
     test_param_serialization, write_file_absolute, read_file_absolute,
 };
 use commands::translate::baidu_translate;
-use commands::openai_proxy::start_openai_chat;
 use commands::integration::{
     start_integration, stop_integration, get_integration_status,
     get_all_integration_status, send_integration_message,
@@ -216,35 +215,6 @@ pub fn run() {
 
     // 注册 Claude CLI 引擎
     engine_registry.register(ai::ClaudeEngine::new(config.clone()));
-
-    // 注册所有 OpenAI Provider 为 ClawCode 引擎（统一使用工具支持）
-    if !config.openai_providers.is_empty() {
-        for provider in &config.openai_providers {
-            // 创建工具执行器
-            let work_dir = config.work_dir.clone()
-                .map(|p| p.into())
-                .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/")));
-
-            let mut tool_executor = ai::tools::BasicToolExecutor::new(work_dir)
-                .with_permission_mode(ai::tools::PermissionMode::WorkspaceWrite);
-            tool_executor.register_builtin_tools();
-
-            let claw_config = ai::ClawCodeConfig::new(
-                &provider.name,
-                &provider.api_key,
-                &provider.api_base,
-                &provider.model,
-            )
-            .with_max_tokens(provider.max_tokens as u32)
-            .with_temperature(provider.temperature as f32)
-            .with_tool_executor(std::sync::Arc::new(tool_executor))
-            .enable_tools(true);
-
-            let claw_engine = ai::ClawCodeEngine::with_config(claw_config);
-            engine_registry.register(claw_engine);
-            tracing::info!("[EngineRegistry] ClawCode 引擎已注册 (provider: {}, tools: enabled)", provider.id);
-        }
-    }
 
     // 设置默认引擎
     let default_engine = ai::EngineId::from_str(&config.default_engine)
@@ -411,8 +381,6 @@ pub fn run() {
             read_file_absolute,
             // 翻译相关
             baidu_translate,
-            // OpenAI Proxy 相关
-            start_openai_chat,
             // 集成相关
             start_integration,
             stop_integration,

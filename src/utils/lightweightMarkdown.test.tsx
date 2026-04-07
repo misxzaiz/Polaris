@@ -362,4 +362,33 @@ describe('splitByCodeBlocks', () => {
     expect(result[1]).toEqual({ type: 'text', content: '\nbetween\n', completed: true });
     expect(result[2]).toEqual({ type: 'text', content: '```py\ntwo', completed: false });
   });
+
+  // Mermaid 块测试
+  it('should detect mermaid block correctly', () => {
+    const result = splitByCodeBlocks('```mermaid\ngraph TD\n  A --> B\n```');
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({ type: 'mermaid-block', content: 'graph TD\n  A --> B', completed: true });
+  });
+
+  it('should split text and mermaid block', () => {
+    const result = splitByCodeBlocks('before\n```mermaid\ngraph TD\n  A --> B\n```after');
+    expect(result).toHaveLength(3);
+    expect(result[0]).toEqual({ type: 'text', content: 'before\n', completed: true });
+    expect(result[1]).toEqual({ type: 'mermaid-block', content: 'graph TD\n  A --> B', completed: true });
+    expect(result[2]).toEqual({ type: 'text', content: 'after', completed: false });
+  });
+
+  it('should handle mermaid block with code block', () => {
+    const result = splitByCodeBlocks('```mermaid\ngraph A\n```\n```js\ncode\n```');
+    expect(result).toHaveLength(3);
+    expect(result[0]).toEqual({ type: 'mermaid-block', content: 'graph A', completed: true });
+    expect(result[1]).toEqual({ type: 'text', content: '\n', completed: true });
+    expect(result[2]).toEqual({ type: 'code-block', content: 'code\n', language: 'js', completed: true });
+  });
+
+  it('should handle mermaid block with extra spaces', () => {
+    const result = splitByCodeBlocks('``` mermaid\ngraph TD\n```');
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({ type: 'mermaid-block', content: 'graph TD', completed: true });
+  });
 });

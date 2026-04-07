@@ -6,7 +6,6 @@
 
 import type { StateCreator } from 'zustand'
 import type { ChatMessage, ContentBlock, ToolStatus, Workspace } from '../../types'
-import type { AISession } from '../../ai-runtime'
 
 /** 最大保留消息数量 */
 export const MAX_MESSAGES = 500
@@ -38,7 +37,7 @@ export interface HistoryEntry {
   title: string
   timestamp: string
   messageCount: number
-  engineId: 'claude-code' | `provider-${string}`
+  engineId: 'claude-code'
   data: {
     messages: ChatMessage[]
     archivedMessages: ChatMessage[]
@@ -53,7 +52,7 @@ export interface UnifiedHistoryItem {
   title: string
   timestamp: string
   messageCount: number
-  engineId: 'claude-code' | `provider-${string}`
+  engineId: 'claude-code'
   source: 'local' | 'claude-code-native'
   fileSize?: number
   inputTokens?: number
@@ -62,16 +61,6 @@ export interface UnifiedHistoryItem {
   projectPath?: string
   /** Claude Code 目录名（用于定位 jsonl 文件） */
   claudeProjectName?: string
-}
-
-/**
- * OpenAI Provider Session 缓存
- */
-export interface ProviderSessionCache {
-  session: AISession | null
-  conversationId: string | null
-  conversationSeed: string | null
-  lastUsed: number
 }
 
 // ============================================================================
@@ -95,8 +84,6 @@ export interface ConfigActions {
   /** 获取当前配置 */
   getConfig: () => {
     defaultEngine?: string
-    openaiProviders?: Array<{ id: string; enabled: boolean; [key: string]: any }>
-    activeProviderId?: string
     [key: string]: any
   } | null
 }
@@ -234,8 +221,6 @@ export interface SessionState {
   error: string | null
   /** 当前进度消息 */
   progressMessage: string | null
-  /** OpenAI Provider Session 缓存 */
-  providerSessionCache: ProviderSessionCache | null
 }
 
 /**
@@ -373,8 +358,6 @@ export interface EventHandlerActions {
 
   /** 发送消息 */
   sendMessage: (content: string, workspaceDir?: string, attachments?: import('../../types/attachment').Attachment[]) => Promise<void>
-  /** 使用前端引擎发送消息（OpenAI Provider） */
-  sendMessageToFrontendEngine: (content: string, workspaceDir?: string, systemPrompt?: string, attachments?: import('../../types/attachment').Attachment[]) => Promise<void>
   /** 继续会话 */
   continueChat: (prompt?: string) => Promise<void>
   /** 中断会话 */
@@ -408,7 +391,7 @@ export interface HistoryActions {
   /** 获取统一会话历史（包含 localStorage 和 Claude Code 原生） */
   getUnifiedHistory: () => Promise<UnifiedHistoryItem[]>
   /** 从历史恢复会话 */
-  restoreFromHistory: (sessionId: string, engineId?: 'claude-code' | `provider-${string}`, projectPath?: string, claudeProjectName?: string) => Promise<boolean>
+  restoreFromHistory: (sessionId: string, engineId?: 'claude-code', projectPath?: string, claudeProjectName?: string) => Promise<boolean>
   /** 删除历史会话 */
   deleteHistorySession: (sessionId: string, source?: 'local' | 'claude-code-native') => void
   /** 清空历史 */

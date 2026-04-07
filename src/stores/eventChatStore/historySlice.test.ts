@@ -72,8 +72,6 @@ function createMockDependencies() {
     configActions: {
       getConfig: vi.fn(() => ({
         defaultEngine: 'claude-code',
-        openaiProviders: [],
-        activeProviderId: null,
       })),
     },
     gitActions: {
@@ -96,7 +94,6 @@ function createTestStore(deps = createMockDependencies()) {
     isStreaming: false,
     error: null,
     progressMessage: null,
-    providerSessionCache: null,
     _eventListenersInitialized: false,
     _eventListenersCleanup: null,
     _dependencies: deps,

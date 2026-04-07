@@ -268,15 +268,9 @@ impl ConfigStore {
         let claude_version = self.detect_claude();
         let claude_available = claude_version.is_some();
 
-        // 检查 OpenAI Providers
-        let openai_providers_count = self.config.openai_providers.len();
-        let openai_providers_configured = openai_providers_count > 0;
-
         HealthStatus {
             claude_available,
             claude_version,
-            openai_providers_count: Some(openai_providers_count),
-            openai_providers_configured: Some(openai_providers_configured),
             work_dir: self.config.work_dir.as_ref()
                 .and_then(|p| p.to_str().map(|s| s.to_string())),
             config_valid: true,
@@ -442,8 +436,6 @@ impl OldConfig {
             claude_code: crate::models::config::ClaudeCodeConfig {
                 cli_path: self.claude_cmd,
             },
-            openai_providers: Vec::new(),
-            active_provider_id: None,
             qqbot: Default::default(),
             active_qqbot_instance_id: None,
             work_dir: self.work_dir,

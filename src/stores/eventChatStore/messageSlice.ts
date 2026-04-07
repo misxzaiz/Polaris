@@ -118,16 +118,6 @@ export const createMessageSlice: MessageSlice = (set, get) => ({
   },
 
   clearMessages: () => {
-    // 清理 Provider Session
-    const { providerSessionCache } = get()
-    if (providerSessionCache?.session) {
-      try {
-        providerSessionCache.session.dispose()
-      } catch (e) {
-        console.warn('[EventChatStore] 清理 Session 失败:', e)
-      }
-    }
-
     // 注意：不清理事件监听器
     // 事件监听器应该在应用生命周期内保持活跃，而不是与单个对话绑定
     // 它们由 App.tsx 的 useEffect 管理，只在组件卸载时清理
@@ -153,7 +143,6 @@ export const createMessageSlice: MessageSlice = (set, get) => ({
       pendingToolGroup: null,
       permissionRequestBlockMap: new Map(),
       activePermissionRequestId: null,
-      providerSessionCache: null,
       // 不重置事件监听器状态，保持其在应用生命周期内活跃
     })
   },

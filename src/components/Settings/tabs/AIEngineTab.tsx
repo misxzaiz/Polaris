@@ -22,15 +22,10 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
   const { t } = useTranslation('settings');
   const { healthStatus } = useConfigStore();
 
-  // 获取启用的 OpenAI Providers
-  const enabledProviders = config.openaiProviders?.filter(p => p.enabled) || [];
-
   const handleEngineChange = (engineId: EngineId) => {
-    const isProvider = engineId.startsWith('provider-');
     onConfigChange({
       ...config,
       defaultEngine: engineId,
-      activeProviderId: isProvider ? engineId.replace('provider-', '') : config.activeProviderId,
     });
   };
 
@@ -79,68 +74,6 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
               </div>
             </button>
           ))}
-
-          {/* OpenAI Provider 选项 */}
-          {enabledProviders.length > 0 ? (
-            <div className="mt-4 pt-4 border-t border-border">
-              <div className="text-sm font-medium text-text-secondary mb-2">
-                OpenAI Provider
-              </div>
-              {enabledProviders.map((provider) => {
-                const providerEngineId = `provider-${provider.id}` as EngineId;
-                const isSelected = config.defaultEngine === providerEngineId;
-                return (
-                  <button
-                    key={provider.id}
-                    type="button"
-                    onClick={() => handleEngineChange(providerEngineId)}
-                    className={`w-full text-left p-4 rounded-lg border-2 transition-all mb-2 ${
-                      isSelected
-                        ? 'border-primary bg-primary/5'
-                        : 'border-border bg-surface hover:border-primary/30'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-text-primary">{provider.name}</span>
-                          {provider.supportsTools && (
-                            <span className="text-xs px-1.5 py-0.5 bg-green-500/20 text-green-400 rounded">
-                              {t('openaiProviders.toolSupport')}
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-sm text-text-secondary mt-1">
-                          {t('openaiProviders.model')}: <span className="text-blue-400">{provider.model}</span>
-                        </div>
-                        <div className="text-xs text-text-tertiary mt-0.5 truncate">
-                          {provider.apiBase}
-                        </div>
-                      </div>
-                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                        isSelected ? 'border-primary bg-primary' : 'border-border'
-                      }`}>
-                        {isSelected && (
-                          <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                          </svg>
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="mt-4 pt-4 border-t border-border">
-              <div className="text-sm font-medium text-text-secondary mb-2">
-                OpenAI Provider
-              </div>
-              <p className="text-sm text-yellow-500 p-3 bg-yellow-500/10 rounded-lg border border-yellow-500/20">
-                {t('openaiProviders.notConfigured')}
-              </p>
-            </div>
-          )}
         </div>
       </div>
 

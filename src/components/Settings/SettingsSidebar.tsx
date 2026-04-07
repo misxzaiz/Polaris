@@ -5,7 +5,6 @@
 import { useTranslation } from 'react-i18next';
 import {
   IconAIEngine,
-  IconAPI,
   IconTranslate,
   IconBot,
   IconSettings,
@@ -20,7 +19,6 @@ export type SettingsTabId =
   | 'general'
   | 'system-prompt'
   | 'ai-engine'
-  | 'openai-providers'
   | 'translate'
   | 'qqbot'
   | 'speech'
@@ -45,7 +43,6 @@ const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'system-prompt', icon: <IconMessageSquareText size={16} />, labelKey: 'nav.systemPrompt' },
   { id: 'window', icon: <IconSettings size={16} />, labelKey: 'nav.window' },
   { id: 'ai-engine', icon: <IconAIEngine size={16} />, labelKey: 'nav.aiEngine' },
-  { id: 'openai-providers', icon: <IconAPI size={16} />, labelKey: 'nav.openaiProviders' },
   { id: 'translate', icon: <IconTranslate size={16} />, labelKey: 'nav.translate' },
   { id: 'qqbot', icon: <IconBot size={16} />, labelKey: 'nav.qqbot' },
   { id: 'speech', icon: <IconMic size={16} />, labelKey: 'nav.speech' },

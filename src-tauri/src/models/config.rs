@@ -1,18 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::hash::{BuildHasher, Hasher};
 use std::path::PathBuf;
-
-/// 生成唯一标识符
-fn generate_uid() -> String {
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let hash = std::collections::hash_map::RandomState::new()
-        .build_hasher()
-        .finish();
-    format!("uid-{}-{:08x}", ts, hash)
-}
 
 /// Claude Code 引擎配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,94 +13,6 @@ impl Default for ClaudeCodeConfig {
     fn default() -> Self {
         Self {
             cli_path: "claude".to_string(),
-        }
-    }
-}
-
-/// OpenAI Provider 配置
-///
-/// 支持任何 OpenAI 协议兼容的 API 服务
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OpenAIProvider {
-    /// 内部唯一标识符（创建时生成，不可变，用于 React key）
-    #[serde(default = "generate_uid")]
-    pub _uid: String,
-
-    /// 唯一标识符（用于区分不同配置）
-    pub id: String,
-
-    /// 显示名称（用户可自定义）
-    pub name: String,
-
-    /// API Key
-    #[serde(default)]
-    pub api_key: String,
-
-    /// API Base URL
-    #[serde(default = "default_openai_api_base")]
-    pub api_base: String,
-
-    /// 模型名称（完全由用户决定）
-    #[serde(default = "default_openai_model")]
-    pub model: String,
-
-    /// 温度参数 (0-2)
-    #[serde(default = "default_openai_temperature")]
-    pub temperature: f64,
-
-    /// 最大 Token 数
-    #[serde(default = "default_openai_max_tokens")]
-    pub max_tokens: usize,
-
-    /// 是否启用
-    #[serde(default = "default_openai_enabled")]
-    pub enabled: bool,
-
-    /// 是否支持工具调用（Function Calling）
-    ///
-    /// 部分OpenAI兼容API不支持tools参数，需要禁用
-    #[serde(default = "default_openai_supports_tools")]
-    pub supports_tools: bool,
-}
-
-fn default_openai_api_base() -> String {
-    "https://api.openai.com/v1".to_string()
-}
-
-fn default_openai_model() -> String {
-    "gpt-4o-mini".to_string()
-}
-
-fn default_openai_temperature() -> f64 {
-    0.7
-}
-
-fn default_openai_max_tokens() -> usize {
-    8192
-}
-
-fn default_openai_enabled() -> bool {
-    true
-}
-
-fn default_openai_supports_tools() -> bool {
-    false // 默认不启用工具调用，因为很多 API 不支持
-}
-
-impl Default for OpenAIProvider {
-    fn default() -> Self {
-        Self {
-            _uid: generate_uid(),
-            id: String::new(),
-            name: "New Provider".to_string(),
-            api_key: String::new(),
-            api_base: default_openai_api_base(),
-            model: default_openai_model(),
-            temperature: default_openai_temperature(),
-            max_tokens: default_openai_max_tokens(),
-            enabled: default_openai_enabled(),
-            supports_tools: default_openai_supports_tools(),
         }
     }
 }
@@ -496,14 +395,6 @@ pub struct Config {
     #[serde(default)]
     pub claude_code: ClaudeCodeConfig,
 
-    /// OpenAI Providers 列表
-    #[serde(default)]
-    pub openai_providers: Vec<OpenAIProvider>,
-
-    /// 当前选中的 Provider ID
-    #[serde(default)]
-    pub active_provider_id: Option<String>,
-
     /// 工作目录
     pub work_dir: Option<PathBuf>,
 
@@ -557,8 +448,6 @@ impl Default for Config {
             default_engine: default_default_engine(),
             language: None,
             claude_code: ClaudeCodeConfig::default(),
-            openai_providers: Vec::new(),
-            active_provider_id: None,
             work_dir: None,
             session_dir: None,
             git_bin_path: None,
@@ -615,12 +504,6 @@ pub struct HealthStatus {
 
     /// Claude 版本
     pub claude_version: Option<String>,
-
-    /// OpenAI Providers 配置数量
-    pub openai_providers_count: Option<usize>,
-
-    /// 是否配置了 OpenAI Providers
-    pub openai_providers_configured: Option<bool>,
 
     /// 工作目录
     pub work_dir: Option<String>,

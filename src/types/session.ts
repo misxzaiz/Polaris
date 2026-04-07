@@ -9,7 +9,7 @@ export type SessionType = 'project' | 'free'
 export type SessionStatus = 'idle' | 'running' | 'waiting' | 'error' | 'background-running'
 
 /** AI 引擎 ID */
-export type EngineId = 'claude-code' | `provider-${string}`
+export type EngineId = 'claude-code'
 
 /** 会话元数据 */
 export interface ChatSession {

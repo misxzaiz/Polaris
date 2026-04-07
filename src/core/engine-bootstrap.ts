@@ -7,8 +7,6 @@
 
 import { getEngineRegistry, registerEngine } from '../ai-runtime'
 import { ClaudeCodeEngine } from '../engines/claude-code'
-import { getOpenAIProviderEngine, clearOpenAIProviderEngines, type OpenAIProviderEngineConfig } from '../engines/openai-provider'
-import type { OpenAIProvider } from '../types/config'
 
 /**
  * 已注册的 Engine ID 列表（传统引擎）
@@ -18,53 +16,7 @@ export const REGISTERED_ENGINE_IDS = ['claude-code'] as const
 /**
  * Engine 类型
  */
-export type EngineId = typeof REGISTERED_ENGINE_IDS[number] | `provider-${string}`
-
-/**
- * 从配置动态注册 OpenAI Provider 引擎
- *
- * @param providers Provider 配置列表
- * @param activeProviderId 当前选中的 Provider ID
- */
-export async function bootstrapOpenAIProviders(
-  providers: OpenAIProvider[],
-  activeProviderId?: string
-): Promise<void> {
-  // const registry = getEngineRegistry() // 未使用，保留以供未来扩展
-
-  // 清空旧的 Provider 引擎缓存（从全局注册表注销）
-  await clearOpenAIProviderEngines()
-
-  // 为每个启用的 Provider 创建引擎
-  for (const provider of providers) {
-    if (!provider.enabled) continue
-
-    try {
-      const engineConfig: OpenAIProviderEngineConfig = {
-        providerId: provider.id,
-        providerName: provider.name,
-        apiKey: provider.apiKey,
-        apiBase: provider.apiBase,
-        model: provider.model,
-        temperature: provider.temperature,
-        maxTokens: provider.maxTokens,
-        supportsTools: provider.supportsTools,
-      }
-
-      const engine = getOpenAIProviderEngine(engineConfig)
-
-      // 如果是当前选中的 Provider，设为默认引擎
-      const isDefault = provider.id === activeProviderId
-      registerEngine(engine, { asDefault: isDefault })
-
-      await engine.initialize()
-
-      console.log(`[EngineBootstrap] Registered provider: ${provider.name} (${engine.id})`)
-    } catch (error) {
-      console.error(`[EngineBootstrap] Failed to register provider ${provider.name}:`, error)
-    }
-  }
-}
+export type EngineId = typeof REGISTERED_ENGINE_IDS[number]
 
 /**
  * 按需初始化 AI Engine

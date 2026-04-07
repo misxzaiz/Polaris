@@ -75,7 +75,6 @@ export type {
   DependencyActions,
   CurrentAssistantMessage,
   UnifiedHistoryItem,
-  ProviderSessionCache,
   ExternalDependencies,
   GitActions,
   ConfigActions,

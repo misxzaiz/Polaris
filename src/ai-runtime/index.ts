@@ -171,7 +171,6 @@ export {
   validateObject,
   validateField,
   validateCLIEngineConfig,
-  validateOpenAIProviderConfig,
   validateClaudeEngineConfig,
   ConfigValidator,
   mergeResults,

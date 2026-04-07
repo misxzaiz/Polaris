@@ -10,13 +10,11 @@
 
 import { invoke } from '@tauri-apps/api/core'
 import type { EventHandlerSlice } from './types'
-import type { AISession } from '../../ai-runtime'
 import type { UserChatMessage } from '../../types/chat'
 import type { Workspace } from '../../types'
 import { handleAIEvent } from './utils'
 import { getEventBus, isAIEvent } from '../../ai-runtime'
 import { getEventRouter } from '../../services/eventRouter'
-import { getEngine, listEngines } from '../../core/engine-bootstrap'
 import { parseWorkspaceReferences, buildWorkspaceSystemPrompt, getUserSystemPrompt } from '../../services/workspaceReference'
 import { isTextFile } from '../../types/attachment'
 import {
@@ -275,20 +273,9 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
       const config = configActions?.getConfig()
       const currentEngine = config?.defaultEngine || 'claude-code'
 
-      // 检查是否是 Provider 引擎
-      if (currentEngine.startsWith('provider-')) {
-        // Provider 引擎需要合并提示词
-        const combinedPrompt = workspacePrompt + (userPrompt ? '\n\n' + userPrompt : '')
-        await get().sendMessageToFrontendEngine(
-          content,
-          actualWorkspaceDir,
-          combinedPrompt,
-          attachments
-        )
-      } else {
-        // CLI 引擎
-        let messageWithAttachments = normalizedMessage
-        if (attachments && attachments.length > 0) {
+      // CLI 引擎
+      let messageWithAttachments = normalizedMessage
+      if (attachments && attachments.length > 0) {
           const nonImageAttachments = attachments.filter(a => a.type !== 'image')
           if (nonImageAttachments.length > 0) {
             const attachmentParts = nonImageAttachments.map(a => {
@@ -354,7 +341,6 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
           // 注意：externalSessionId 的更新在 handleAIEvent 的 session_start 事件中处理
           // 因为 start_chat 返回的是临时 UUID，真实的 Claude Code sessionId 通过 session_start 事件传递
         }
-      }
     } catch (e) {
       const appError = toAppError(e, {
         source: ErrorSource.AI,
@@ -371,132 +357,8 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
     }
   },
 
-  sendMessageToFrontendEngine: async (content, workspaceDir, systemPrompt, attachments) => {
-    // 使用依赖注入获取配置
-    const configActions = get().getConfigActions()
-    const config = configActions?.getConfig()
-
-    if (!config?.openaiProviders || config.openaiProviders.length === 0) {
-      set({ error: '未配置 OpenAI Provider，请在设置中添加', isStreaming: false })
-      return
-    }
-
-    const activeProvider = config.activeProviderId
-      ? config.openaiProviders.find(p => p.id === config.activeProviderId && p.enabled)
-      : config.openaiProviders.find(p => p.enabled)
-
-    if (!activeProvider) {
-      set({ error: '没有启用的 OpenAI Provider，请在设置中启用', isStreaming: false })
-      return
-    }
-
-    try {
-      const engineId = `provider-${activeProvider.id}` as const
-
-      const allEngines = listEngines()
-      log.debug('当前注册的所有引擎', { engines: allEngines.map(e => e.id) })
-      log.debug('尝试获取引擎 ID', { engineId })
-
-      const engine = getEngine(engineId)
-
-      if (!engine) {
-        log.error('引擎未注册', new Error(`期望ID: ${engineId}, 实际注册的引擎: ${allEngines.map(e => e.id).join(', ')}`))
-        throw new Error(`OpenAI Provider 引擎未注册，请重启应用`)
-      }
-
-      const { conversationId, providerSessionCache, currentConversationSeed } = get()
-
-      let actualSeed = currentConversationSeed
-      if (!actualSeed) {
-        actualSeed = crypto.randomUUID()
-        console.log('[eventChatStore] 生成新对话种子:', actualSeed)
-        set({ currentConversationSeed: actualSeed })
-      }
-
-      const SESSION_TIMEOUT = 30 * 60 * 1000
-      const canReuseSession =
-        providerSessionCache?.session &&
-        providerSessionCache.conversationSeed === actualSeed &&
-        (Date.now() - providerSessionCache.lastUsed < SESSION_TIMEOUT)
-
-      let session: AISession
-
-      if (canReuseSession && providerSessionCache?.session) {
-        console.log('[eventChatStore] 复用现有 Provider session')
-        session = providerSessionCache.session
-
-        set({
-          providerSessionCache: {
-            ...providerSessionCache,
-            lastUsed: Date.now()
-          }
-        })
-      } else {
-        const sessionConfig = {
-          workspaceDir,
-          systemPrompt,
-          timeout: 300000,
-        }
-
-        log.debug('创建新 Provider session', {
-          workspaceDir,
-          systemPrompt: systemPrompt ? `${systemPrompt.slice(0, 50)}...` : undefined,
-          timeout: sessionConfig.timeout,
-          reason: canReuseSession ? 'timeout' : 'new conversation'
-        })
-
-        session = engine.createSession(sessionConfig)
-
-        set({
-          providerSessionCache: {
-            session,
-            conversationId,
-            conversationSeed: actualSeed,
-            lastUsed: Date.now()
-          }
-        })
-      }
-
-      const task = {
-        id: crypto.randomUUID(),
-        kind: 'chat' as const,
-        input: {
-          prompt: content,
-          attachments: attachments?.map(a => ({
-            type: a.type,
-            fileName: a.fileName,
-            mimeType: a.mimeType,
-            content: a.content,
-          })),
-        },
-        engineId: 'deepseek',
-      }
-
-      const eventStream = session.run(task)
-      const eventBus = getEventBus({ debug: false })
-
-      for await (const event of eventStream) {
-        eventBus.emit(event)
-        handleAIEvent(event, set, get, workspaceDir)
-
-        if (event.type === 'session_end' || event.type === 'error') {
-          break
-        }
-      }
-    } catch (e) {
-      const appError = toAppError(e, {
-        source: ErrorSource.AI,
-        context: { workspaceDir }
-      })
-      errorLogger.log(appError)
-
-      set({
-        error: appError.getUserMessage(),
-        isStreaming: false,
-        currentMessage: null,
-        progressMessage: null,
-      })
-    }
+  sendMessageToFrontendEngine: async () => {
+    // Removed: OpenAI Provider frontend engine
   },
 
   continueChat: async (prompt = '') => {
@@ -527,14 +389,6 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
     // 注意：isStreaming 不在这里设置，而是等待 session_start 事件设置
     // 这样确保 conversationId 在 isStreaming 之前就已有值，避免中断时的竞态条件
     set({ error: null })
-
-    if (currentEngine.startsWith('provider-')) {
-      await get().sendMessageToFrontendEngine(
-        normalizedPrompt,
-        actualWorkspaceDir
-      )
-      return
-    }
 
     try {
       await invoke('continue_chat', {
@@ -568,7 +422,7 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
       ttsService.stop()
     }).catch(() => {})
 
-    const { conversationId, providerSessionCache, isStreaming } = get()
+    const { conversationId, isStreaming } = get()
 
     console.log('[EventChatStore] interruptChat:', { conversationId, isStreaming })
 
@@ -581,20 +435,6 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
     const configActions = get().getConfigActions()
     const config = configActions?.getConfig()
     const currentEngine = config?.defaultEngine || 'claude-code'
-
-    if (currentEngine.startsWith('provider-')) {
-      if (providerSessionCache?.session) {
-        try {
-          console.log('[EventChatStore] 中断 Provider 会话')
-          providerSessionCache.session.abort()
-        } catch (e) {
-          log.warn('Abort provider session failed', { error: String(e) })
-        }
-      }
-      set({ isStreaming: false })
-      get().finishMessage()
-      return
-    }
 
     if (!conversationId) {
       console.warn('[EventChatStore] interruptChat: conversationId 为空，无法中断')
@@ -736,76 +576,58 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
         content: a.content,
       }))
 
-      // 检查是否是 Provider 引擎
-      if (currentEngine.startsWith('provider-')) {
-        // Provider 引擎需要合并提示词
-        const systemPrompt = normalizedWorkspacePrompt + (normalizedUserPrompt ? '\n\n' + normalizedUserPrompt : '')
-        await get().sendMessageToFrontendEngine(
-          userContent,
-          actualWorkspaceDir,
-          systemPrompt,
-          userAttachments?.map((a: { id: string; type: string; fileName: string; fileSize: number; preview?: string }) => ({
-            id: a.id,
-            type: a.type,
-            fileName: a.fileName,
-            fileSize: a.fileSize,
-            preview: a.preview,
-          })) as import('../../types/attachment').Attachment[]
-        )
-      } else {
-        // CLI 引擎
-        let messageWithAttachments = userContent
-          .replace(/\r\n/g, '\\n')
-          .replace(/\r/g, '\\n')
-          .replace(/\n/g, '\\n')
-          .trim()
+      // CLI 引擎
+      let messageWithAttachments = userContent
+        .replace(/\r\n/g, '\\n')
+        .replace(/\r/g, '\\n')
+        .replace(/\n/g, '\\n')
+        .trim()
 
-        if (userAttachments && userAttachments.length > 0) {
-          const nonImageAttachments = userAttachments.filter((a: { type: string }) => a.type !== 'image')
-          if (nonImageAttachments.length > 0) {
-            const attachmentParts = nonImageAttachments.map((a: { type: string; fileName: string; mimeType?: string; content?: string }) => {
-              const isText = a.mimeType?.startsWith('text/') ||
-                             a.fileName.endsWith('.txt') ||
-                             a.fileName.endsWith('.md') ||
-                             a.fileName.endsWith('.json')
-              if (isText && a.content) {
-                try {
-                  const commaIndex = a.content.indexOf(',')
-                  const base64Content = commaIndex !== -1 ? a.content.slice(commaIndex + 1) : a.content
-                  const binaryString = atob(base64Content)
-                  const bytes = new Uint8Array(binaryString.length)
-                  for (let i = 0; i < binaryString.length; i++) {
-                    bytes[i] = binaryString.charCodeAt(i)
-                  }
-                  const decodedContent = new TextDecoder('utf-8').decode(bytes)
-                  return `\n--- 文件: ${a.fileName} ---\n${decodedContent}\n--- 文件结束 ---`
-                } catch {
-                  return `[文件: ${a.fileName}]`
+      if (userAttachments && userAttachments.length > 0) {
+        const nonImageAttachments = userAttachments.filter((a: { type: string }) => a.type !== 'image')
+        if (nonImageAttachments.length > 0) {
+          const attachmentParts = nonImageAttachments.map((a: { type: string; fileName: string; mimeType?: string; content?: string }) => {
+            const isText = a.mimeType?.startsWith('text/') ||
+                           a.fileName.endsWith('.txt') ||
+                           a.fileName.endsWith('.md') ||
+                           a.fileName.endsWith('.json')
+            if (isText && a.content) {
+              try {
+                const commaIndex = a.content.indexOf(',')
+                const base64Content = commaIndex !== -1 ? a.content.slice(commaIndex + 1) : a.content
+                const binaryString = atob(base64Content)
+                const bytes = new Uint8Array(binaryString.length)
+                for (let i = 0; i < binaryString.length; i++) {
+                  bytes[i] = binaryString.charCodeAt(i)
                 }
-              } else {
+                const decodedContent = new TextDecoder('utf-8').decode(bytes)
+                return `\n--- 文件: ${a.fileName} ---\n${decodedContent}\n--- 文件结束 ---`
+              } catch {
                 return `[文件: ${a.fileName}]`
               }
-            })
-            messageWithAttachments = `${attachmentParts.join('\n')}\n\n${messageWithAttachments}`
-          }
-        }
-
-        const { conversationId } = get()
-        if (conversationId) {
-          await invoke('continue_chat', {
-            sessionId: conversationId,
-            message: messageWithAttachments,
-            options: {
-              appendSystemPrompt: normalizedWorkspacePrompt,
-              systemPrompt: normalizedUserPrompt,
-              workDir: actualWorkspaceDir,
-              contextId: 'main',
-              engineId: currentEngine,
-              enableMcpTools: currentEngine === 'claude-code',
-              attachments: attachmentsForBackend,
-            },
+            } else {
+              return `[文件: ${a.fileName}]`
+            }
           })
+          messageWithAttachments = `${attachmentParts.join('\n')}\n\n${messageWithAttachments}`
         }
+      }
+
+      const { conversationId } = get()
+      if (conversationId) {
+        await invoke('continue_chat', {
+          sessionId: conversationId,
+          message: messageWithAttachments,
+          options: {
+            appendSystemPrompt: normalizedWorkspacePrompt,
+            systemPrompt: normalizedUserPrompt,
+            workDir: actualWorkspaceDir,
+            contextId: 'main',
+            engineId: currentEngine,
+            enableMcpTools: currentEngine === 'claude-code',
+            attachments: attachmentsForBackend,
+          },
+        })
       }
     } catch (e) {
       const appError = toAppError(e, {
@@ -921,78 +743,58 @@ export const createEventHandlerSlice: EventHandlerSlice = (set, get) => ({
         content: a.content,
       }))
 
-      // 检查是否是 Provider 引擎
-      if (currentEngine.startsWith('provider-')) {
-        // Provider 引擎：合并工作区提示词和用户自定义提示词
-        const combinedPrompt = userPrompt
-          ? `${workspacePrompt}\n\n${userPrompt}`
-          : workspacePrompt
-        await get().sendMessageToFrontendEngine(
-          newContent,
-          actualWorkspaceDir,
-          combinedPrompt,
-          userAttachments?.map((a: { id: string; type: string; fileName: string; fileSize: number; preview?: string }) => ({
-            id: a.id,
-            type: a.type,
-            fileName: a.fileName,
-            fileSize: a.fileSize,
-            preview: a.preview,
-          })) as import('../../types/attachment').Attachment[]
-        )
-      } else {
-        // CLI 引擎
-        let messageWithAttachments = newContent
-          .replace(/\r\n/g, '\\n')
-          .replace(/\r/g, '\\n')
-          .replace(/\n/g, '\\n')
-          .trim()
+      // CLI 引擎
+      let messageWithAttachments = newContent
+        .replace(/\r\n/g, '\\n')
+        .replace(/\r/g, '\\n')
+        .replace(/\n/g, '\\n')
+        .trim()
 
-        if (userAttachments && userAttachments.length > 0) {
-          const nonImageAttachments = userAttachments.filter((a: { type: string }) => a.type !== 'image')
-          if (nonImageAttachments.length > 0) {
-            const attachmentParts = nonImageAttachments.map((a: { type: string; fileName: string; mimeType?: string; content?: string }) => {
-              const isText = a.mimeType?.startsWith('text/') ||
-                             a.fileName.endsWith('.txt') ||
-                             a.fileName.endsWith('.md') ||
-                             a.fileName.endsWith('.json')
-              if (isText && a.content) {
-                try {
-                  const commaIndex = a.content.indexOf(',')
-                  const base64Content = commaIndex !== -1 ? a.content.slice(commaIndex + 1) : a.content
-                  const binaryString = atob(base64Content)
-                  const bytes = new Uint8Array(binaryString.length)
-                  for (let i = 0; i < binaryString.length; i++) {
-                    bytes[i] = binaryString.charCodeAt(i)
-                  }
-                  const decodedContent = new TextDecoder('utf-8').decode(bytes)
-                  return `\n--- 文件: ${a.fileName} ---\n${decodedContent}\n--- 文件结束 ---`
-                } catch {
-                  return `[文件: ${a.fileName}]`
+      if (userAttachments && userAttachments.length > 0) {
+        const nonImageAttachments = userAttachments.filter((a: { type: string }) => a.type !== 'image')
+        if (nonImageAttachments.length > 0) {
+          const attachmentParts = nonImageAttachments.map((a: { type: string; fileName: string; mimeType?: string; content?: string }) => {
+            const isText = a.mimeType?.startsWith('text/') ||
+                           a.fileName.endsWith('.txt') ||
+                           a.fileName.endsWith('.md') ||
+                           a.fileName.endsWith('.json')
+            if (isText && a.content) {
+              try {
+                const commaIndex = a.content.indexOf(',')
+                const base64Content = commaIndex !== -1 ? a.content.slice(commaIndex + 1) : a.content
+                const binaryString = atob(base64Content)
+                const bytes = new Uint8Array(binaryString.length)
+                for (let i = 0; i < binaryString.length; i++) {
+                  bytes[i] = binaryString.charCodeAt(i)
                 }
-              } else {
+                const decodedContent = new TextDecoder('utf-8').decode(bytes)
+                return `\n--- 文件: ${a.fileName} ---\n${decodedContent}\n--- 文件结束 ---`
+              } catch {
                 return `[文件: ${a.fileName}]`
               }
-            })
-            messageWithAttachments = `${attachmentParts.join('\n')}\n\n${messageWithAttachments}`
-          }
-        }
-
-        const { conversationId } = get()
-        if (conversationId) {
-          await invoke('continue_chat', {
-            sessionId: conversationId,
-            message: messageWithAttachments,
-            options: {
-              appendSystemPrompt: normalizedWorkspacePrompt,
-              systemPrompt: normalizedUserPrompt,
-              workDir: actualWorkspaceDir,
-              contextId: 'main',
-              engineId: currentEngine,
-              enableMcpTools: currentEngine === 'claude-code',
-              attachments: attachmentsForBackend,
-            },
+            } else {
+              return `[文件: ${a.fileName}]`
+            }
           })
+          messageWithAttachments = `${attachmentParts.join('\n')}\n\n${messageWithAttachments}`
         }
+      }
+
+      const { conversationId } = get()
+      if (conversationId) {
+        await invoke('continue_chat', {
+          sessionId: conversationId,
+          message: messageWithAttachments,
+          options: {
+            appendSystemPrompt: normalizedWorkspacePrompt,
+            systemPrompt: normalizedUserPrompt,
+            workDir: actualWorkspaceDir,
+            contextId: 'main',
+            engineId: currentEngine,
+            enableMcpTools: currentEngine === 'claude-code',
+            attachments: attachmentsForBackend,
+          },
+        })
       }
     } catch (e) {
       const appError = toAppError(e, {
