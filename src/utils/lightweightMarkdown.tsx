@@ -10,6 +10,8 @@
  */
 
 import { memo, useMemo } from 'react';
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 
 /** 渲染片段类型 */
 interface RenderPart {
@@ -326,3 +328,136 @@ export const StreamingCodeBlock = memo(function StreamingCodeBlock({
 });
 
 export default LightweightMarkdown;
+
+// ============================================================================
+// 渐进式流式 Markdown 渲染器
+// ============================================================================
+
+/**
+ * 已完成段落渲染器（使用完整 Markdown 解析）
+ *
+ * 使用 React.memo 确保已完成的段落不会因为新内容到达而重新渲染
+ */
+const CompletedParagraph = memo(function CompletedParagraph({
+  content,
+  index,
+}: {
+  content: string;
+  index: number;
+}) {
+  const html = useMemo(() => {
+    const raw = marked.parse(content) as string;
+    return DOMPurify.sanitize(raw, {
+      ALLOWED_TAGS: [
+        'p', 'br', 'strong', 'em', 'code', 'pre', 'blockquote',
+        'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+        'a', 'span', 'div', 'mark', 'table', 'thead', 'tbody',
+        'tr', 'td', 'th', 'hr', 'dl', 'dt', 'dd',
+      ],
+      ALLOWED_ATTR: ['class', 'href', 'target', 'rel'],
+    });
+  }, [content]);
+
+  return (
+    <div
+      key={`para-${index}`}
+      className="break-words"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+});
+
+/**
+ * 渐进式流式 Markdown 渲染器
+ *
+ * 核心思路：
+ * 1. 按 \n\n（空行）分割段落
+ * 2. 已完成的段落（非最后一段）：使用完整 Markdown 渲染（marked + DOMPurify）
+ * 3. 最后一段（可能未完成）：使用轻量 Markdown 渲染
+ *
+ * 性能优势：
+ * - 已完成的段落只渲染一次（React.memo + content 稳定）
+ * - 只有最后一段会随流式更新重新渲染
+ * - 标题、列表、表格等块级元素在段落完成后立即可见
+ */
+export const ProgressiveStreamingMarkdown = memo(function ProgressiveStreamingMarkdown({
+  content,
+}: {
+  content: string;
+}) {
+  const result = useMemo(() => {
+    if (!content) return null;
+
+    // 性能限制
+    if (content.length > 50000) {
+      return <span className="whitespace-pre-wrap break-words">{content}</span>;
+    }
+
+    // 检测代码块
+    const codeBlockCount = (content.match(/```/g) || []).length;
+
+    // 如果没有代码块，按段落分割
+    if (codeBlockCount === 0) {
+      // 按空行分割段落
+      const paragraphs = content.split(/\n\n+/);
+
+      if (paragraphs.length <= 1) {
+        // 只有一个段落，全部用轻量渲染
+        return <LightweightMarkdown content={content} />;
+      }
+
+      return (
+        <span className="whitespace-pre-wrap break-words">
+          {paragraphs.map((para, i) => {
+            const isLast = i === paragraphs.length - 1;
+            if (isLast) {
+              // 最后一段：可能未完成，用轻量渲染
+              return <LightweightMarkdown key={`last-${i}`} content={para} />;
+            }
+            // 已完成段落：用完整 markdown 渲染
+            return (
+              <CompletedParagraph
+                key={`complete-${i}`}
+                content={para + '\n\n'}
+                index={i}
+              />
+            );
+          })}
+        </span>
+      );
+    }
+
+    // 有代码块，使用原有分割逻辑
+    const parts = splitByCodeBlocks(content);
+    const hasOpenBlock = hasOpenCodeBlock(content);
+
+    return (
+      <span className="whitespace-pre-wrap break-words">
+        {parts.map((part, index) => {
+          if (part.type === 'code-block') {
+            return (
+              <StreamingCodeBlock
+                key={`code-${index}`}
+                content={part.content}
+                language={part.language}
+              />
+            );
+          } else {
+            return <LightweightMarkdown key={`text-${index}`} content={part.content} />;
+          }
+        })}
+        {hasOpenBlock && (
+          <span className="inline-flex ml-1">
+            <span className="flex gap-0.5 items-end h-4">
+              <span className="w-1 h-1 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+              <span className="w-1 h-1 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+              <span className="w-1 h-1 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+            </span>
+          </span>
+        )}
+      </span>
+    );
+  }, [content]);
+
+  return result;
+});

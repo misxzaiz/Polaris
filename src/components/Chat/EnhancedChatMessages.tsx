@@ -11,7 +11,7 @@
  * - Edit 工具优化显示
  */
 
-import { useMemo, memo, useState, useRef, useDeferredValue, useEffect, useCallback } from 'react';
+import { useMemo, memo, useState, useRef, useEffect, useCallback } from 'react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
@@ -21,7 +21,6 @@ import { useEventChatStore } from '../../stores';
 import { useActiveSessionMessages, useActiveSessionStreaming, useSessionMessages, useSessionStreaming } from '../../stores/conversationStore/useActiveSession';
 import { getToolConfig, extractToolKeyInfo, getToolShortName } from '../../utils/toolConfig';
 import { markdownCache } from '../../utils/cache';
-import { useThrottle } from '../../hooks/useThrottle';
 import {
   formatDuration,
   calculateDuration,
@@ -47,10 +46,7 @@ import { DiffViewer } from '../Diff/DiffViewer';
 import { isEditTool } from '../../utils/diffExtractor';
 import { calculateRenderMode, type MessageRenderMode, DEFAULT_LAYER_CONFIG } from '../../utils/messageLayer';
 import {
-  LightweightMarkdown,
-  splitByCodeBlocks,
-  hasOpenCodeBlock,
-  StreamingCodeBlock,
+  ProgressiveStreamingMarkdown,
 } from '../../utils/lightweightMarkdown';
 
 /** Markdown 渲染器（使用缓存优化） */
@@ -197,25 +193,18 @@ const TextBlockRenderer = memo(function TextBlockRenderer({
   isStreaming?: boolean;
   renderMode?: MessageRenderMode;
 }) {
-  // 流式输出时使用节流（200ms 间隔），确保固定频率渲染
-  // 节流比防抖更适合流式场景：用户能看到内容持续更新，而不是等待结束后才显示
-  const throttledContent = useThrottle(block.content, isStreaming ? 200 : 0);
-
-  // 使用 useDeferredValue 延迟渲染复杂内容，保持 UI 响应
-  const deferredContent = useDeferredValue(throttledContent);
-
-  // 流式阶段使用节流内容，非流式使用原始内容
-  const contentToRender = isStreaming ? deferredContent : block.content;
+  // 注意：store 层已有 50ms 缓冲，React 层不再需要节流
+  // 移除 useThrottle + useDeferredValue 双层延迟（之前约 400ms+）
+  // 直接使用 block.content，响应延迟仅取决于 store 的 flush 间隔（50ms）
 
   // 非流式阶段：完整渲染（useMemo 必须在条件判断之前调用，遵守 React Hooks 规则）
   const parts = useMemo(() => splitMarkdownWithMermaid(block.content), [block.content]);
 
-  // 流式阶段：显示简化版内容（纯文本），避免复杂渲染
-  // 性能关键：直接返回，不执行任何 markdown 解析或正则处理
+  // 流式阶段：显示轻量版内容
   if (isStreaming) {
     return (
       <div className="prose prose-invert prose-sm max-w-none">
-        <StreamingTextContent content={contentToRender} />
+        <StreamingTextContent content={block.content} />
       </div>
     );
   }
@@ -276,82 +265,23 @@ const PreviewTextContent = memo(function PreviewTextContent({ content }: { conte
 });
 
 /**
- * 流式文本内容渲染器 - 实时 Markdown 渲染版
+ * 流式文本内容渲染器 - 渐进式版本
  *
- * 优化策略：
- * 1. 使用轻量级 Markdown 渲染（支持粗体、斜体、行内代码、链接）
- * 2. 正确处理代码块（完整代码块渲染，未闭合的显示为纯文本）
- * 3. 使用 CSS white-space: pre-wrap 保持换行格式
- * 4. 性能优化：限制处理长度，避免超长文本卡顿
- *
- * 性能关键（2026-04-07 更新）：
- * - 实时渲染行内 Markdown 格式
- * - 代码块显示但不高亮（流式阶段）
- * - 避免复杂正则和完整 Markdown 解析
+ * 优化策略（2026-04-07 v2 更新）：
+ * 1. 已完成段落使用完整 Markdown 渲染（标题/列表/表格/引用等块级元素实时可见）
+ * 2. 最后一段（可能未完成）使用轻量 Markdown 渲染
+ * 3. 代码块检测与流式显示
+ * 4. 性能优化：已完成段落 memoized，不会随新 token 到达重新渲染
  */
 const StreamingTextContent = memo(function StreamingTextContent({ content }: { content: string }) {
-  // 使用 useMemo 缓存解析结果
-  const renderResult = useMemo(() => {
-    // 如果内容为空，不渲染
-    if (!content) {
-      return null;
-    }
+  if (!content) return null;
 
-    // 性能限制：最大处理长度
-    const MAX_LENGTH = 50000;
-    if (content.length > MAX_LENGTH) {
-      // 超长文本直接返回纯文本
-      return (
-        <span className="whitespace-pre-wrap break-words">
-          {content}
-        </span>
-      );
-    }
+  // 性能限制：超长文本直接返回纯文本
+  if (content.length > 50000) {
+    return <span className="whitespace-pre-wrap break-words">{content}</span>;
+  }
 
-    // 检测是否有代码块标记
-    const codeBlockCount = (content.match(/```/g) || []).length;
-
-    // 如果没有代码块，直接用轻量 Markdown 渲染
-    if (codeBlockCount === 0) {
-      return <LightweightMarkdown content={content} />;
-    }
-
-    // 有代码块，分割处理
-    const parts = splitByCodeBlocks(content);
-    const hasOpenBlock = hasOpenCodeBlock(content);
-
-    return (
-      <span className="whitespace-pre-wrap break-words">
-        {parts.map((part, index) => {
-          if (part.type === 'code-block') {
-            // 完整代码块：显示但不高亮
-            return (
-              <StreamingCodeBlock
-                key={`code-${index}`}
-                content={part.content}
-                language={part.language}
-              />
-            );
-          } else {
-            // 普通文本：使用轻量 Markdown 渲染
-            return <LightweightMarkdown key={`text-${index}`} content={part.content} />;
-          }
-        })}
-        {/* 流式光标 */}
-        {hasOpenBlock && (
-          <span className="inline-flex ml-1">
-            <span className="flex gap-0.5 items-end h-4">
-              <span className="w-1 h-1 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="w-1 h-1 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-              <span className="w-1 h-1 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-            </span>
-          </span>
-        )}
-      </span>
-    );
-  }, [content]);
-
-  return renderResult;
+  return <ProgressiveStreamingMarkdown content={content} />;
 });
 
 /**

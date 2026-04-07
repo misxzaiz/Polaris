@@ -96,6 +96,13 @@ export function createConversationStore(
 ): ConversationStoreInstance {
   const initialState = createInitialState(sessionId)
 
+  // ===== 流式文本缓冲区 =====
+  // 闭包级变量，避免每个 token 都触发 Zustand set()
+  // token 追加到 _textBuffer（O(1) 字符串操作），定时 flush 到 store
+  let _textBuffer = ''
+  let _bufferTimer: ReturnType<typeof setTimeout> | null = null
+  const FLUSH_INTERVAL = 50 // ms，平衡实时性与性能
+
   const store = create<ConversationStore>()(
     subscribeWithSelector((set, get) => ({
       ...initialState,
@@ -144,6 +151,15 @@ export function createConversationStore(
       },
 
       finishMessage: () => {
+        // 先 flush 所有缓冲的文本
+        if (_textBuffer) get()._flushTextBuffer()
+
+        // 清除定时器
+        if (_bufferTimer) {
+          clearTimeout(_bufferTimer)
+          _bufferTimer = null
+        }
+
         const { currentMessage, messages } = get()
         if (currentMessage) {
           const completedMessage = {
@@ -175,33 +191,86 @@ export function createConversationStore(
       },
 
       // ===== 流式构建 =====
+      // 优化：token 先追加到闭包级 buffer（O(1) 字符串拼接），定时 flush 到 Zustand
+      // 减少 set() 调用：从每个 token 一次 → 每 50ms 一次
+      // 对于典型 500 token 回复（~2s），从 ~500 次 set() 降至 ~40 次
       appendTextBlock: (content) => {
-        const { currentMessage, streamingUpdateCounter } = get()
-        if (!currentMessage) {
-          set({
-            currentMessage: {
-              id: crypto.randomUUID(),
-              blocks: [{ type: 'text', content }],
-              isStreaming: true,
-            },
-            streamingUpdateCounter: streamingUpdateCounter + 1,
-          })
+        // 追加到闭包级 buffer（O(1)，不触发 Zustand）
+        _textBuffer += content
+
+        const state = get()
+
+        // 首次创建消息时立即 flush（保证首 token 响应速度）
+        if (!state.currentMessage) {
+          get()._flushTextBuffer()
+          return
+        }
+
+        // 如果没有定时器，启动缓冲 flush
+        if (!_bufferTimer) {
+          _bufferTimer = setTimeout(() => {
+            _bufferTimer = null
+            get()._flushTextBuffer()
+          }, FLUSH_INTERVAL)
+        }
+      },
+
+      /** 内部方法：将缓冲区文本 flush 到 Zustand store */
+      _flushTextBuffer: () => {
+        const state = get()
+
+        // 清除定时器
+        if (_bufferTimer) {
+          clearTimeout(_bufferTimer)
+          _bufferTimer = null
+        }
+
+        // 取出缓冲区内容并重置
+        const bufferToFlush = _textBuffer
+        _textBuffer = ''
+
+        if (!bufferToFlush && state.currentMessage) return
+
+        if (!state.currentMessage) {
+          // 首次创建消息
+          if (bufferToFlush) {
+            set({
+              currentMessage: {
+                id: crypto.randomUUID(),
+                blocks: [{ type: 'text', content: bufferToFlush }],
+                isStreaming: true,
+              },
+              streamingUpdateCounter: state.streamingUpdateCounter + 1,
+            })
+          }
         } else {
-          const blocks = [...currentMessage.blocks]
+          // 更新最后一个文本块
+          const blocks = [...state.currentMessage.blocks]
           const lastBlock = blocks[blocks.length - 1]
           if (lastBlock?.type === 'text') {
-            blocks[blocks.length - 1] = { ...lastBlock, content: lastBlock.content + content }
-          } else {
-            blocks.push({ type: 'text', content })
+            blocks[blocks.length - 1] = { ...lastBlock, content: lastBlock.content + bufferToFlush }
+          } else if (bufferToFlush) {
+            blocks.push({ type: 'text', content: bufferToFlush })
           }
           set({
-            currentMessage: { ...currentMessage, blocks },
-            streamingUpdateCounter: streamingUpdateCounter + 1,
+            currentMessage: { ...state.currentMessage, blocks },
+            streamingUpdateCounter: state.streamingUpdateCounter + 1,
           })
+        }
+
+        // 如果仍在流式传输，调度下一次 flush
+        if (state.isStreaming) {
+          _bufferTimer = setTimeout(() => {
+            _bufferTimer = null
+            get()._flushTextBuffer()
+          }, FLUSH_INTERVAL)
         }
       },
 
       appendThinkingBlock: (content) => {
+        // 先 flush 文本缓冲区，确保文本不丢失
+        if (_textBuffer) get()._flushTextBuffer()
+
         const { currentMessage, streamingUpdateCounter } = get()
         const block = { type: 'thinking' as const, content }
         if (!currentMessage) {
@@ -218,6 +287,9 @@ export function createConversationStore(
       },
 
       appendToolCallBlock: (toolId, toolName, input) => {
+        // 先 flush 文本缓冲区
+        if (_textBuffer) get()._flushTextBuffer()
+
         const { currentMessage, toolBlockMap, streamingUpdateCounter } = get()
         const block = {
           type: 'tool_call' as const,
@@ -939,6 +1011,13 @@ export function createConversationStore(
 
       // ===== 资源清理 =====
       dispose: () => {
+        // 清理缓冲定时器
+        if (_bufferTimer) {
+          clearTimeout(_bufferTimer)
+          _bufferTimer = null
+        }
+        _textBuffer = ''
+
         const state = get()
         if (state.providerSessionCache?.session) {
           try {

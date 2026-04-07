@@ -126,6 +126,8 @@ export interface ConversationActions {
 
   // ===== 流式构建 =====
   appendTextBlock: (content: string) => void
+  /** 内部方法：将缓冲区文本 flush 到 store（流式优化，减少 set() 频率） */
+  _flushTextBuffer: () => void
   appendThinkingBlock: (content: string) => void
   appendToolCallBlock: (toolId: string, toolName: string, input: Record<string, unknown>) => void
   updateToolCallBlock: (toolId: string, status: ToolStatus, output?: string, error?: string) => void

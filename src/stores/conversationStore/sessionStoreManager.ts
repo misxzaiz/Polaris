@@ -422,14 +422,38 @@ function createSessionManagerStore() {
       const currentActiveSessionId = get().activeSessionId
 
       // 仅当事件属于当前活跃会话时，同步到旧架构
-      // 这确保 UI 组件（依赖旧架构）能正确显示当前会话的消息
-      if (routeSessionId === currentActiveSessionId) {
+      // 优化：token/thinking/assistant_message 等高频流式事件不同步到旧 store
+      // 原因：UI 已全部从新 store 读取渲染数据，旧 store 仅用于历史管理和归档操作
+      // 这些操作只在 session_end 时需要最终状态，无需实时同步
+      // 效果：每个 token 减少一次 Zustand set() + 对象展开，显著降低 GC 压力
+      const isHighFrequencyStreamingEvent =
+        event.type === 'token' ||
+        event.type === 'thinking' ||
+        event.type === 'assistant_message'
+
+      if (routeSessionId === currentActiveSessionId && !isHighFrequencyStreamingEvent) {
         try {
           const oldStore = useEventChatStore
           const workspacePath = oldStore.getState().getWorkspaceActions?.()?.getCurrentWorkspace()?.path
           oldHandleAIEvent(event, oldStore.setState, oldStore.getState, workspacePath)
         } catch (e) {
           console.warn('[SessionStoreManager] 旧架构事件处理失败:', e)
+        }
+      }
+
+      // session_end 时同步最终消息状态到旧 store（确保历史管理可用）
+      if (event.type === 'session_end' && routeSessionId === currentActiveSessionId) {
+        try {
+          const finalState = store.getState()
+          useEventChatStore.setState({
+            messages: finalState.messages,
+            archivedMessages: finalState.archivedMessages,
+            currentMessage: finalState.currentMessage,
+            isStreaming: false,
+            progressMessage: null,
+          })
+        } catch (e) {
+          console.warn('[SessionStoreManager] session_end 状态同步失败:', e)
         }
       }
 
