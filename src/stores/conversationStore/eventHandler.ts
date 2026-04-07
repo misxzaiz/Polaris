@@ -187,7 +187,26 @@ export function handleAIEvent(
       })
       break
 
-    default:
-      console.warn('[ConversationStore] 未处理的事件类型:', (event as any).type)
+    // Task 事件 - 由 TaskStore 处理，不在 ConversationStore 范围内
+    case 'task_metadata':
+    case 'task_progress':
+    case 'task_completed':
+    case 'task_canceled':
+      break
+
+    // Todo 事件 - 由 TodoStore 处理，不在 ConversationStore 范围内
+    case 'todo_created':
+    case 'todo_updated':
+    case 'todo_deleted':
+    case 'todo_execution_started':
+    case 'todo_execution_progress':
+    case 'todo_execution_completed':
+      break
+
+    default: {
+      // 穷尽性检查：如果所有 AIEvent 类型都已处理，此处应为 never
+      const _exhaustive: never = event
+      console.warn('[ConversationStore] 未处理的事件类型:', (_exhaustive as { type: string }).type)
+    }
   }
 }
