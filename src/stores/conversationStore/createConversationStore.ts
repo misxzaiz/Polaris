@@ -8,11 +8,49 @@ import { create, StoreApi, UseBoundStore } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import { invoke } from '@tauri-apps/api/core'
 import type { ConversationStore, ConversationState, StoreDeps } from './types'
+import type { ChatMessage } from '../../types'
 import { handleAIEvent } from './eventHandler'
 import { toAppError, ErrorSource } from '../../types/errors'
 import { sessionStoreManager } from './sessionStoreManager'
 import { parseWorkspaceReferences, buildWorkspaceSystemPrompt, getUserSystemPrompt } from '../../services/workspaceReference'
 import { MessageCompactor, isCompacted } from '../../utils/messageCompactor'
+
+// ============================================================================
+// 历史消息降级恢复
+// ============================================================================
+
+/** localStorage 历史记录 key（与 historyService 保持一致） */
+const SESSION_HISTORY_KEY = 'event_chat_session_history'
+
+interface HistoryData {
+  messages: ChatMessage[]
+}
+
+interface HistoryEntry {
+  id: string
+  data: HistoryData
+}
+
+/**
+ * 从 localStorage 恢复指定消息的完整数据
+ * 用于 compactor 快照被 LRU 淘汰后的降级恢复
+ */
+function hydrateFromLocalStorage(
+  conversationId: string | null,
+  messageId: string
+): ChatMessage | null {
+  if (!conversationId) return null
+  try {
+    const raw = localStorage.getItem(SESSION_HISTORY_KEY)
+    if (!raw) return null
+    const entries: HistoryEntry[] = JSON.parse(raw)
+    const entry = entries.find(e => e.id === conversationId)
+    if (!entry?.data?.messages) return null
+    return entry.data.messages.find(m => m.id === messageId) ?? null
+  } catch {
+    return null
+  }
+}
 
 /**
  * 从用户消息生成标题
@@ -712,6 +750,8 @@ export function createConversationStore(
 
       // ===== 历史恢复 =====
       setMessagesFromHistory: (messages, conversationId) => {
+        // 清除旧会话的压缩快照，避免快照与消息不匹配
+        compactor.clearSnapshots()
         set({
           messages,
           archivedMessages: [],
@@ -720,6 +760,7 @@ export function createConversationStore(
           error: null,
           currentMessage: null,
           progressMessage: null,
+          visibleRange: null,
         })
       },
 
@@ -1034,7 +1075,7 @@ export function createConversationStore(
 
       // ===== 消息压缩 =====
       onVisibleRangeChange: (start, end) => {
-        const { messages } = get()
+        const { messages, conversationId } = get()
         if (messages.length === 0) return
 
         // 更新可见范围
@@ -1051,7 +1092,15 @@ export function createConversationStore(
           if (idx < 0 || idx >= newMessages.length) continue
           const msg = newMessages[idx]
           if (isCompacted(msg)) {
-            const hydrated = compactor.hydrateMessage(msg)
+            // 一级恢复：从 compactor 快照 Map 恢复
+            let hydrated = compactor.hydrateMessage(msg)
+            if (hydrated === msg) {
+              // 快照未命中，二级降级：从 localStorage 历史恢复
+              const fromHistory = hydrateFromLocalStorage(conversationId, msg.id)
+              if (fromHistory) {
+                hydrated = compactor.hydrateFromExternal(msg.id, fromHistory)
+              }
+            }
             if (hydrated !== msg) {
               newMessages[idx] = hydrated
               changed = true
