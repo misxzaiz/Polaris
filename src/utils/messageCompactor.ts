@@ -29,7 +29,7 @@ import type {
 const VISIBLE_BUFFER = 5
 
 /** 快照 Map 最大容量（LRU 淘汰） */
-const MAX_SNAPSHOTS = 50
+const MAX_SNAPSHOTS = 20
 
 // ============================================================================
 // 压缩截取阈值
