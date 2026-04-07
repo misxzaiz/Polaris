@@ -261,6 +261,9 @@ export function hasOpenCodeBlock(content: string): boolean {
   return inCodeBlock;
 }
 
+/** 段落分割正则（编译一次，避免每次渲染重新创建） */
+const PARAGRAPH_SPLIT_RE = /\n\n+/;
+
 /**
  * 分割内容：将代码块、Mermaid 图表和普通文本分开
  *
@@ -517,7 +520,7 @@ export const ProgressiveStreamingMarkdown = memo(function ProgressiveStreamingMa
       }
 
       // 流式：按段落分割
-      const paragraphs = content.split(/\n\n+/);
+      const paragraphs = content.split(PARAGRAPH_SPLIT_RE);
 
       if (paragraphs.length <= 1) {
         return <LightweightMarkdown content={content} />;
@@ -589,7 +592,7 @@ export const ProgressiveStreamingMarkdown = memo(function ProgressiveStreamingMa
           }
 
           // 未完成文本（流式中）：段落级渐进渲染
-          const paragraphs = part.content.split(/\n\n+/);
+          const paragraphs = part.content.split(PARAGRAPH_SPLIT_RE);
           if (paragraphs.length <= 1) {
             return <LightweightMarkdown key={`ltext-${index}`} content={part.content} />;
           }
