@@ -143,6 +143,8 @@ export function createConversationStore(
   // 3. 超时保护：200ms 内没有段落结束也 flush
   let _textBuffer = ''
   let _paragraphTimer: ReturnType<typeof setTimeout> | null = null
+  // 上一次压缩操作的可见范围，用于防止反馈循环（压缩→高度变化→新 range→再压缩）
+  let _lastCompactionRange: { start: number; end: number } | null = null
   const PARAGRAPH_TIMEOUT = 200 // ms，超时保护
 
   // ===== 消息压缩器 =====
@@ -1062,11 +1064,27 @@ export function createConversationStore(
 
       // ===== 消息压缩 =====
       onVisibleRangeChange: (start, end) => {
+        // 参数校验：防止无效范围
+        if (start < 0 || end < 0 || start > end) return
+
         const { messages, conversationId } = get()
         if (messages.length === 0) return
 
-        // 更新可见范围
+        // 更新可见范围（始终更新，保证 UI 状态正确）
         set({ visibleRange: { start, end } })
+
+        // 防抖：当新 range 与上次压缩 range 重叠 >80% 时，跳过压缩/恢复
+        // 避免压缩→Virtuoso 重算高度→新 range→振荡
+        if (_lastCompactionRange) {
+          const overlapStart = Math.max(start, _lastCompactionRange.start)
+          const overlapEnd = Math.min(end, _lastCompactionRange.end)
+          const overlapSize = Math.max(0, overlapEnd - overlapStart + 1)
+          const currentSize = end - start + 1
+          if (currentSize > 0 && overlapSize / currentSize > 0.8) {
+            return
+          }
+        }
+        _lastCompactionRange = { start, end }
 
         // 计算需要压缩和恢复的索引
         const { toCompact, toHydrate } = compactor.computeRangeActions(messages.length, start, end)
