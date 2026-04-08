@@ -169,6 +169,9 @@ body {
   padding-left: 24px;
 }
 
+.prose ol { list-style-type: decimal; }
+.prose ul { list-style-type: disc; }
+
 .prose li {
   margin: 0;
 }

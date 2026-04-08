@@ -553,7 +553,7 @@ export const ProgressiveStreamingMarkdown = memo(function ProgressiveStreamingMa
     const parts = splitByCodeBlocks(content);
 
     return (
-      <span className="whitespace-pre-wrap break-words">
+      <div className="break-words">
         {parts.map((part, index) => {
           // Mermaid 图表块
           if (part.type === 'mermaid-block') {
@@ -618,7 +618,7 @@ export const ProgressiveStreamingMarkdown = memo(function ProgressiveStreamingMa
             </span>
           );
         })}
-      </span>
+      </div>
     );
   }, [content, completed]);
 
