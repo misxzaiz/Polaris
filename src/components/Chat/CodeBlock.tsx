@@ -256,7 +256,7 @@ export const CodeBlock = memo(function CodeBlock({ children, className }: CodeBl
   }, [showLineNumbers, codeString]);
 
   return (
-    <div className="relative group my-4 rounded-lg overflow-hidden bg-background-base border border-border-subtle">
+    <div className="relative group rounded-lg overflow-hidden bg-background-base border border-border-subtle">
       {/* 顶部工具栏 */}
       <div className="flex items-center justify-between px-3 py-2 bg-background-elevated border-b border-border-subtle">
         {/* 语言标签 */}

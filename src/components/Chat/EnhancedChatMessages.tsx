@@ -1218,7 +1218,7 @@ const AssistantBubble = memo(function AssistantBubble({
 
           {/* 渲染内容块（支持工具和思考块折叠聚合） */}
           {hasBlocks ? (
-            <div className="space-y-1">
+            <div>
               {renderBlocksWithGrouping(message.blocks, message.isStreaming)}
             </div>
           ) : message.content ? (

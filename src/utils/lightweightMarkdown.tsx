@@ -421,7 +421,7 @@ export const StreamingCodeBlock = memo(function StreamingCodeBlock({
   }, [content]);
 
   return (
-    <div className="my-2 rounded-lg overflow-hidden bg-background-base border border-border-subtle group relative">
+    <div className="rounded-lg overflow-hidden bg-background-base border border-border-subtle group relative">
       <div className="flex items-center justify-between px-3 py-1.5 bg-background-elevated border-b border-border-subtle">
         <span className="text-xs text-text-tertiary font-mono">{language || ''}</span>
         <button
