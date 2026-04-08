@@ -32,6 +32,21 @@ interface HistoryEntry {
 }
 
 /**
+ * 校验 localStorage 恢复的消息是否具有完整结构
+ * 防止因数据污染或版本不兼容导致坏数据注入 store
+ */
+function isValidMessageStructure(msg: unknown): msg is ChatMessage {
+  if (!msg || typeof msg !== 'object') return false
+  const m = msg as Record<string, unknown>
+  if (typeof m.id !== 'string' || typeof m.type !== 'string' || typeof m.timestamp !== 'string') return false
+  // assistant 消息必须有 blocks 数组
+  if (m.type === 'assistant') return Array.isArray(m.blocks)
+  // user 消息必须有 content 字符串
+  if (m.type === 'user') return typeof m.content === 'string'
+  return true
+}
+
+/**
  * 从 localStorage 恢复指定消息的完整数据
  * 用于 compactor 快照被 LRU 淘汰后的降级恢复
  */
@@ -46,7 +61,9 @@ function hydrateFromLocalStorage(
     const entries: HistoryEntry[] = JSON.parse(raw)
     const entry = entries.find(e => e.id === conversationId)
     if (!entry?.data?.messages) return null
-    return entry.data.messages.find(m => m.id === messageId) ?? null
+    const found = entry.data.messages.find(m => m.id === messageId)
+    if (!found || !isValidMessageStructure(found)) return null
+    return found
   } catch {
     return null
   }
