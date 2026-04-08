@@ -15,6 +15,7 @@ import { memo, useState, useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Copy, Check, List, ListX, ChevronDown, ChevronUp } from 'lucide-react';
 import hljs from 'highlight.js';
+import { LRUCache } from '../../utils/lru-cache';
 
 // 导入常用语言
 import javascript from 'highlight.js/lib/languages/javascript';
@@ -47,8 +48,8 @@ hljs.registerLanguage('bash', bash);
 hljs.registerLanguage('markdown', markdown);
 hljs.registerLanguage('shell', bash);
 
-// 高亮结果缓存
-const highlightCache = new Map<string, string>();
+// 高亮结果缓存（LRU，上限 50 条）
+const highlightCache = new LRUCache<string, string>({ maxSize: 50 });
 
 /** 代码行数阈值：超过此行数默认折叠 */
 const FOLD_THRESHOLD = 15;
@@ -127,7 +128,7 @@ function scheduleHighlight(
   // 检查缓存
   const cacheKey = getCacheKey(code, language);
   const cached = highlightCache.get(cacheKey);
-  if (cached) {
+  if (cached !== undefined) {
     callback(cached);
     return () => {};
   }
@@ -140,11 +141,6 @@ function scheduleHighlight(
     try {
       const result = hljs.highlight(code, { language }).value;
       highlightCache.set(cacheKey, result);
-      // 限制缓存大小
-      if (highlightCache.size > 100) {
-        const firstKey = highlightCache.keys().next().value;
-        if (firstKey) highlightCache.delete(firstKey);
-      }
       if (!cancelled) callback(result);
     } catch {
       try {
