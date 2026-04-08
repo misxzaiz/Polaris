@@ -483,10 +483,10 @@ function createSessionManagerStore() {
         console.warn('[SessionStoreManager] EventBus emit 失败:', e)
       }
 
-      // 更新元数据状态
+      // 更新元数据状态（仅在 status 实际变化时创建新 Map，避免高频事件下无谓重建）
       const metadata = get().sessionMetadata.get(routeSessionId)
       if (metadata) {
-        let newStatus: SessionMetadata['status'] = 'idle'
+        let newStatus: SessionMetadata['status'] = metadata.status
 
         if (event.type === 'session_start') {
           newStatus = 'running'
@@ -515,11 +515,13 @@ function createSessionManagerStore() {
           newStatus = 'error'
         }
 
-        set((state) => {
-          const newMetadata = new Map(state.sessionMetadata)
-          newMetadata.set(routeSessionId, { ...metadata, status: newStatus, updatedAt: new Date().toISOString() })
-          return { sessionMetadata: newMetadata }
-        })
+        if (newStatus !== metadata.status) {
+          set((state) => {
+            const newMetadata = new Map(state.sessionMetadata)
+            newMetadata.set(routeSessionId, { ...metadata, status: newStatus, updatedAt: new Date().toISOString() })
+            return { sessionMetadata: newMetadata }
+          })
+        }
       }
     },
 
