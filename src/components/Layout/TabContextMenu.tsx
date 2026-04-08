@@ -13,6 +13,10 @@ interface TabContextMenuProps {
   onCloseTab: () => void
   onCloseOthers: (tabId: string) => void
   onCloseAll: () => void
+  onCloseRight?: (tabId: string) => void
+  onCloseSaved?: () => void
+  onCopyPath?: (tabId: string) => void
+  onCopyRelativePath?: (tabId: string) => void
   tabId: string
 }
 
@@ -24,6 +28,10 @@ export function TabContextMenu({
   onCloseTab,
   onCloseOthers,
   onCloseAll,
+  onCloseRight,
+  onCloseSaved,
+  onCopyPath,
+  onCopyRelativePath,
   tabId,
 }: TabContextMenuProps) {
   const { t } = useTranslation('common')
@@ -59,10 +67,11 @@ export function TabContextMenu({
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 min-w-[150px] bg-background-elevated border border-border rounded-md shadow-lg py-1"
+      className="fixed z-50 min-w-[180px] bg-background-elevated border border-border rounded-md shadow-lg py-1"
       style={{ left: `${x}px`, top: `${y}px` }}
       onContextMenu={(e) => e.preventDefault()}
     >
+      {/* 关闭操作 */}
       <button
         onClick={() => {
           onCloseTab()
@@ -81,6 +90,28 @@ export function TabContextMenu({
       >
         {t('tabs.closeOthers')}
       </button>
+      {onCloseRight && (
+        <button
+          onClick={() => {
+            onCloseRight(tabId)
+            onClose()
+          }}
+          className="w-full px-4 py-2 text-left text-sm text-text-primary hover:bg-background-hover transition-colors"
+        >
+          {t('tabs.closeRight', '关闭右侧标签页')}
+        </button>
+      )}
+      {onCloseSaved && (
+        <button
+          onClick={() => {
+            onCloseSaved()
+            onClose()
+          }}
+          className="w-full px-4 py-2 text-left text-sm text-text-primary hover:bg-background-hover transition-colors"
+        >
+          {t('tabs.closeSaved', '关闭已保存的标签页')}
+        </button>
+      )}
       <div className="my-1 border-t border-border-subtle" />
       <button
         onClick={() => {
@@ -91,6 +122,35 @@ export function TabContextMenu({
       >
         {t('tabs.closeAll')}
       </button>
+
+      {/* 路径操作（仅 editor tab 有 filePath 时显示） */}
+      {(onCopyPath || onCopyRelativePath) && (
+        <>
+          <div className="my-1 border-t border-border-subtle" />
+          {onCopyPath && (
+            <button
+              onClick={() => {
+                onCopyPath(tabId)
+                onClose()
+              }}
+              className="w-full px-4 py-2 text-left text-sm text-text-primary hover:bg-background-hover transition-colors"
+            >
+              {t('tabs.copyPath', '复制文件路径')}
+            </button>
+          )}
+          {onCopyRelativePath && (
+            <button
+              onClick={() => {
+                onCopyRelativePath(tabId)
+                onClose()
+              }}
+              className="w-full px-4 py-2 text-left text-sm text-text-primary hover:bg-background-hover transition-colors"
+            >
+              {t('tabs.copyRelativePath', '复制相对路径')}
+            </button>
+          )}
+        </>
+      )}
     </div>
   )
 }

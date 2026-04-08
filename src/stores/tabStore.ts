@@ -42,6 +42,8 @@ interface TabActions {
   switchTab: (tabId: string) => void
   closeAllTabs: () => void
   closeOtherTabs: (tabId: string) => void
+  closeRightTabs: (tabId: string) => void
+  closeSavedTabs: () => void
 
   // Dirty 状态管理
   setTabDirty: (tabId: string, isDirty: boolean) => void
@@ -209,6 +211,55 @@ export const useTabStore = create<TabStore>()(
           tabs: state.tabs.filter((tab) => tab.id === tabId),
           activeTabId: tabId,
         }))
+      },
+
+      // 关闭右侧 Tab
+      closeRightTabs: (tabId: string) => {
+        set((state) => {
+          const tabIndex = state.tabs.findIndex((tab) => tab.id === tabId)
+          if (tabIndex === -1) return state
+
+          const kept = state.tabs.slice(0, tabIndex + 1)
+          const removed = state.tabs.slice(tabIndex + 1)
+
+          // 清理被关闭 Tab 的缓冲区
+          removed.forEach((tab) => {
+            if (tab.filePath) {
+              useEditorBufferStore.getState().removeBuffer(tab.filePath)
+            }
+          })
+
+          // 如果当前激活 Tab 被关闭了，切换到最后一个保留的 Tab
+          const isActiveRemoved = !kept.some((t) => t.id === state.activeTabId)
+          const newActiveTabId = isActiveRemoved
+            ? kept[kept.length - 1]?.id || null
+            : state.activeTabId
+
+          return { tabs: kept, activeTabId: newActiveTabId }
+        })
+      },
+
+      // 关闭已保存的 Tab
+      closeSavedTabs: () => {
+        set((state) => {
+          const kept = state.tabs.filter((tab) => tab.isDirty)
+          const removed = state.tabs.filter((tab) => !tab.isDirty)
+
+          // 清理被关闭 Tab 的缓冲区
+          removed.forEach((tab) => {
+            if (tab.filePath) {
+              useEditorBufferStore.getState().removeBuffer(tab.filePath)
+            }
+          })
+
+          // 如果当前激活 Tab 被关闭了，切换到最后一个保留的 Tab
+          const isActiveRemoved = !kept.some((t) => t.id === state.activeTabId)
+          const newActiveTabId = isActiveRemoved
+            ? kept[kept.length - 1]?.id || null
+            : state.activeTabId
+
+          return { tabs: kept, activeTabId: newActiveTabId }
+        })
       },
 
       // 获取当前激活的 Tab

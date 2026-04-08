@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next'
 import { X, FileDiff, FileText, Image as ImageIcon } from 'lucide-react'
 import { useTabStore, Tab } from '@/stores/tabStore'
 import { useFileEditorStore } from '@/stores/fileEditorStore'
+import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { DiffViewer } from '@/components/Diff/DiffViewer'
 import { EditorPanel, BreadcrumbBar } from '@/components/Editor'
 import { TabContextMenu } from './TabContextMenu'
@@ -38,11 +39,19 @@ export function TabBar({ className = '' }: TabBarProps) {
   const setTabDirty = useTabStore((state) => state.setTabDirty)
   const closeOtherTabs = useTabStore((state) => state.closeOtherTabs)
   const closeAllTabs = useTabStore((state) => state.closeAllTabs)
+  const closeRightTabs = useTabStore((state) => state.closeRightTabs)
+  const closeSavedTabs = useTabStore((state) => state.closeSavedTabs)
   const switchTab = useTabStore((state) => state.switchTab)
 
   // 文件编辑器状态
   const currentFile = useFileEditorStore((state) => state.currentFile)
   const saveFile = useFileEditorStore((state) => state.saveFile)
+
+  // 工作区路径（计算相对路径用）
+  const currentWorkspace = useWorkspaceStore((state) => {
+    const ws = state.workspaces.find(w => w.id === state.currentWorkspaceId)
+    return ws || null
+  })
 
   // Toast 通知
   const toast = useToastStore()
@@ -259,14 +268,28 @@ export function TabBar({ className = '' }: TabBarProps) {
           }
         }}
         onCloseAll={() => {
-          // 检查所有 Tab 是否有 dirty 的
           const dirtyTabs = tabs.filter(t => checkTabDirty(t))
           if (dirtyTabs.length > 0) {
-            // 有未保存的 Tab，显示确认对话框
-            // 由于涉及多个 Tab，暂时直接关闭所有（后续可增强为批量处理）
             closeAllTabs()
           } else {
             closeAllTabs()
+          }
+        }}
+        onCloseRight={closeRightTabs}
+        onCloseSaved={closeSavedTabs}
+        onCopyPath={(tabId) => {
+          const tab = tabs.find(t => t.id === tabId)
+          if (tab?.filePath) {
+            navigator.clipboard.writeText(tab.filePath)
+            toast.addToast({ title: '复制成功', message: '已复制文件路径', type: 'success' })
+          }
+        }}
+        onCopyRelativePath={(tabId) => {
+          const tab = tabs.find(t => t.id === tabId)
+          if (tab?.filePath && currentWorkspace?.path) {
+            const relative = tab.filePath.replace(currentWorkspace.path, '').replace(/^[/\\]/, '')
+            navigator.clipboard.writeText(relative)
+            toast.addToast({ title: '复制成功', message: '已复制相对路径', type: 'success' })
           }
         }}
       />
