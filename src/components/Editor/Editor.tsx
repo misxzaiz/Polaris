@@ -23,6 +23,7 @@ import { lintGutter } from '@codemirror/lint';
 import { tags } from '@lezer/highlight';
 import { createLogger } from '../../utils/logger';
 import { useEditorBufferStore } from '../../stores/editorBufferStore';
+import { useEditorSettingsStore } from '../../stores/editorSettingsStore';
 
 const log = createLogger('Editor');
 
@@ -139,6 +140,32 @@ export function CodeMirrorEditor({
   const filePathRef = useRef(filePath);
   filePathRef.current = filePath;
 
+  // 编辑器设置
+  const { fontSize, fontFamily, increaseFontSize, decreaseFontSize, resetFontSize } =
+    useEditorSettingsStore()
+
+  // 动态字体主题
+  const fontTheme = useMemo(
+    () => EditorView.theme({
+      '&': {
+        fontSize: `${fontSize}px`,
+        fontFamily,
+      },
+    }),
+    [fontSize, fontFamily]
+  );
+
+  // 字体缩放快捷键
+  const zoomKeymap = useMemo(
+    () => keymap.of([
+      { key: 'Mod-=', run: () => { increaseFontSize(); return true; } },
+      { key: 'Mod-Plus', run: () => { increaseFontSize(); return true; } },
+      { key: 'Mod--', run: () => { decreaseFontSize(); return true; } },
+      { key: 'Mod-0', run: () => { resetFontSize(); return true; } },
+    ]),
+    [increaseFontSize, decreaseFontSize, resetFontSize]
+  );
+
   // 自定义保存快捷键
   const saveKeymap = useMemo(
     () => keymap.of(onSave ? [{ key: 'Mod-s', run: () => { onSave(); return true; } }] : []),
@@ -181,6 +208,7 @@ export function CodeMirrorEditor({
       // 基础扩展数组
       const extensions = [
         modernTheme,
+        fontTheme,
         syntaxHighlighting(customHighlightStyle, { fallback: true }),
         highlightSpecialChars(),
         drawSelection(),
@@ -205,6 +233,7 @@ export function CodeMirrorEditor({
         keymap.of(closeBracketsKeymap),
         keymap.of(searchKeymap),
         keymap.of([{ key: 'Mod-g', run: gotoLine }]),
+        zoomKeymap,
         lintGutter(),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
