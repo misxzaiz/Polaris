@@ -15,6 +15,14 @@
 import { memo, useEffect, useRef, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getMermaidConfig } from '../../utils/mermaid-config';
+import {
+  type ViewMode,
+  type DiagramState,
+  SCALE_CONFIG,
+  getDiagramState,
+  saveDiagramState,
+  removeDiagramState,
+} from './diagramState';
 
 interface MermaidDiagramProps {
   /** Mermaid 图表代码 */
@@ -36,63 +44,6 @@ const INTERSECTION_OPTIONS: IntersectionObserverInit = {
  * Mermaid 渲染状态
  */
 type RenderState = 'idle' | 'loading' | 'success' | 'error';
-
-/**
- * 视图模式
- */
-type ViewMode = 'chart' | 'source';
-
-/**
- * 图表状态
- */
-interface DiagramState {
-  viewMode: ViewMode;
-  scale: number;
-}
-
-/**
- * 缩放配置
- */
-const SCALE_CONFIG = {
-  min: 0.5,   // 最小 50%
-  max: 2.0,   // 最大 200%
-  step: 0.1,  // 每次调整 10%
-  default: 1.0, // 默认 100%
-};
-
-/**
- * 全局状态存储（每个图表独立）
- */
-const MAX_DIAGRAM_STATES = 100;
-const diagramStates = new Map<string, DiagramState>();
-
-/**
- * 获取图表状态
- */
-function getDiagramState(id: string): DiagramState {
-  if (!diagramStates.has(id)) {
-    if (diagramStates.size >= MAX_DIAGRAM_STATES) {
-      const firstKey = diagramStates.keys().next().value;
-      if (firstKey !== undefined) diagramStates.delete(firstKey);
-    }
-    diagramStates.set(id, {
-      viewMode: 'chart',
-      scale: SCALE_CONFIG.default,
-    });
-  }
-  return diagramStates.get(id)!;
-}
-
-/**
- * 保存图表状态
- */
-function saveDiagramState(id: string, state: DiagramState) {
-  diagramStates.set(id, state);
-}
-
-function removeDiagramState(id: string) {
-  diagramStates.delete(id);
-}
 
 /**
  * MermaidDiagram 组件

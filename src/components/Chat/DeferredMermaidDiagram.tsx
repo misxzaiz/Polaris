@@ -11,6 +11,14 @@
 import { memo, useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getMermaidConfig } from '../../utils/mermaid-config';
+import {
+  type ViewMode,
+  type DiagramState,
+  SCALE_CONFIG,
+  getDiagramState,
+  saveDiagramState,
+  removeDiagramState,
+} from './diagramState';
 
 interface DeferredMermaidDiagramProps {
   /** Mermaid 图表代码 */
@@ -25,55 +33,6 @@ interface DeferredMermaidDiagramProps {
  * 渲染状态
  */
 type RenderState = 'idle' | 'loading' | 'success' | 'error';
-
-/**
- * 视图模式
- */
-type ViewMode = 'chart' | 'source';
-
-/**
- * 缩放配置
- */
-const SCALE_CONFIG = {
-  min: 0.5,
-  max: 2.0,
-  step: 0.1,
-  default: 1.0,
-};
-
-/**
- * 全局图表状态存储
- */
-interface DiagramState {
-  viewMode: ViewMode;
-  scale: number;
-}
-
-const MAX_DIAGRAM_STATES = 100;
-const diagramStates = new Map<string, DiagramState>();
-
-function getDiagramState(id: string): DiagramState {
-  if (!diagramStates.has(id)) {
-    // 超过上限时清除最早的条目
-    if (diagramStates.size >= MAX_DIAGRAM_STATES) {
-      const firstKey = diagramStates.keys().next().value;
-      if (firstKey !== undefined) diagramStates.delete(firstKey);
-    }
-    diagramStates.set(id, {
-      viewMode: 'chart',
-      scale: SCALE_CONFIG.default,
-    });
-  }
-  return diagramStates.get(id)!;
-}
-
-function saveDiagramState(id: string, state: DiagramState) {
-  diagramStates.set(id, state);
-}
-
-function removeDiagramState(id: string) {
-  diagramStates.delete(id);
-}
 
 /**
  * 延迟渲染 Mermaid 图表组件
