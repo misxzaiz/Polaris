@@ -475,7 +475,7 @@ export function needsUserAction(error: unknown): boolean {
 export class ErrorLogger {
   private static instance: ErrorLogger;
   private errors: AppError[] = [];
-  private maxErrors = 100;
+  private maxErrors = 20;
 
   private constructor() {}
 
