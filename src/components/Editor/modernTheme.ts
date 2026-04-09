@@ -25,7 +25,7 @@ const bg = {
   primary: '#0d1117',      // 主背景 (GitHub Dark)
   secondary: '#161b22',    // 次级背景
   tertiary: '#21262d',     // 三级背景 (面板、浮层)
-  highlight: '#1f242c',    // 当前行高亮
+  highlight: '#1a3a5c',    // 当前行高亮 - 明显的蓝色背景
 };
 
 // 文本色系 - 柔和的白
@@ -58,10 +58,10 @@ const syntax = {
 // UI 强调色
 const accent = {
   primary: '#58a6ff',       // 主强调色 - 蓝色
-  selection: 'rgba(88, 166, 255, 0.30)',           // 选区（非聚焦）
-  selectionFocused: 'rgba(88, 166, 255, 0.50)',    // 聚焦时选区
-  match: 'rgba(88, 166, 255, 0.25)',               // 匹配高亮
-  matchSelected: 'rgba(255, 215, 0, 0.35)',        // 搜索匹配（当前选中）
+  selection: 'rgba(88, 166, 255, 0.35)',           // 选区（非聚焦）
+  selectionFocused: 'rgba(88, 166, 255, 0.55)',    // 聚焦时选区
+  match: 'rgba(88, 166, 255, 0.40)',               // 匹配高亮 - 更明显
+  matchSelected: 'rgba(88, 166, 255, 0.60)',       // 搜索匹配（当前选中）- 更明显
   bracketMatch: 'rgba(38, 139, 210, 0.25)',        // 括号匹配背景
   cursor: '#58a6ff',       // 光标
   gutterActive: '#e6edf3', // 活跃行号
@@ -181,8 +181,8 @@ export const modernDarkTheme = EditorView.theme({
     backgroundColor: accent.match,
   },
 
-  '.cm-selectionMatch-selected': {
-    backgroundColor: accent.selectionFocused,
+  '.cm-selectionMatch-main': {
+    backgroundColor: accent.matchSelected,
   },
 
   // ===== 括号匹配 =====
@@ -199,12 +199,12 @@ export const modernDarkTheme = EditorView.theme({
 
   // ===== 搜索高亮 =====
   '.cm-searchMatch': {
-    backgroundColor: 'rgba(255, 215, 0, 0.20)',
+    backgroundColor: 'rgba(88, 166, 255, 0.25) !important',
   },
 
   '.cm-searchMatch.cm-searchMatch-selected': {
-    backgroundColor: accent.matchSelected,
-    outline: '1px solid rgba(255, 215, 0, 0.5)',
+    backgroundColor: 'rgba(88, 166, 255, 0.45) !important',
+    outline: '1px solid rgba(88, 166, 255, 0.6) !important',
   },
 
   // ===== Lint Gutter (错误/警告标记) =====

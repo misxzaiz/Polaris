@@ -11,7 +11,6 @@ import {
   dropCursor,
   rectangularSelection,
   crosshairCursor,
-  highlightActiveLine,
   lineNumbers,
 } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, addCursorAbove, addCursorBelow } from '@codemirror/commands';
@@ -234,7 +233,6 @@ export function CodeMirrorEditor({
         dropCursor(),
         rectangularSelection(),
         crosshairCursor(),
-        highlightActiveLine(),
         showLineNumbers ? lineNumbers() : [],
         highlightSelectionMatches(),
         history(),
