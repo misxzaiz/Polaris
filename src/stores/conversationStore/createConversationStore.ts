@@ -806,6 +806,12 @@ export function createConversationStore(
         const config = deps.getConfig()
         const engine = config?.defaultEngine || 'claude-code'
 
+        // 如果存在未完成的流式消息（如 AI 提问等待回答），先归档到 messages
+        // 防止 currentMessage 被清空后丢失 AI 已生成的内容
+        if (get().currentMessage) {
+          get().finishMessage()
+        }
+
         // 获取工作区信息
         const currentWorkspace = deps.getWorkspace()
         const actualWorkspaceDir = workspaceDir || currentWorkspace?.path
