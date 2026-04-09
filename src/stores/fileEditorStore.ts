@@ -80,6 +80,7 @@ export const useFileEditorStore = create<FileEditorStore>((set, get) => ({
   status: 'idle',
   error: null,
   isConflicted: false,
+  pendingGotoLine: null,
 
   // 打开文件
   openFile: async (path: string, name: string) => {
@@ -134,6 +135,25 @@ export const useFileEditorStore = create<FileEditorStore>((set, get) => ({
       });
       throw error;
     }
+  },
+
+  // 打开文件并跳转到指定行
+  openFileAtLine: async (path: string, name: string, lineNumber: number) => {
+    const { currentFile } = get();
+
+    if (currentFile?.path === path) {
+      // 文件已打开，直接设置跳转行号
+      set({ pendingGotoLine: lineNumber });
+    } else {
+      // 设置跳转行号，然后打开文件
+      set({ pendingGotoLine: lineNumber });
+      await get().openFile(path, name);
+    }
+  },
+
+  // 设置待跳转行号
+  setPendingGotoLine: (line: number | null) => {
+    set({ pendingGotoLine: line });
   },
 
   // 关闭文件

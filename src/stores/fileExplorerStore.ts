@@ -425,7 +425,7 @@ export const useFileExplorerStore = create<FileExplorerStore>((set, get) => ({
       return matches.map((m: FileMatch): FileInfo => ({
         name: m.name,
         path: m.fullPath,
-        is_dir: m.is_dir,
+        is_dir: m.isDir,
         extension: m.extension,
       }));
     } catch (error) {

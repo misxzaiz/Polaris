@@ -133,7 +133,7 @@ export function UnifiedSuggestion({
                 onMouseEnter={() => onHover(globalIdx)}
               >
                 <span className="shrink-0">
-                  {file.is_dir ? (
+                  {file.isDir ? (
                     <svg className="w-4 h-4 text-warning" fill="currentColor" viewBox="0 0 20 20">
                       <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
                     </svg>
@@ -153,7 +153,7 @@ export function UnifiedSuggestion({
                     {name}
                   </span>
                 </div>
-                {file.extension && !file.is_dir && (
+                {file.extension && !file.isDir && (
                   <span className="text-xs text-text-tertiary bg-background-elevated px-1.5 py-0.5 rounded shrink-0">
                     {file.extension}
                   </span>

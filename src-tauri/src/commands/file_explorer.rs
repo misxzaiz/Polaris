@@ -2,6 +2,7 @@ use crate::error::{AppError, Result};
 use std::path::Path;
 use std::fs;
 use std::time::SystemTime;
+use std::collections::HashSet;
 
 /// 文件搜索结果（用于 @file 引用）
 #[derive(serde::Serialize)]
@@ -530,4 +531,265 @@ fn search_recursive(
     }
 
     Ok(())
+}
+
+// ============================================================================
+// 文件内容搜索
+// ============================================================================
+
+/// 内容搜索结果
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContentMatch {
+    /// 文件名
+    pub name: String,
+    /// 相对路径
+    pub relative_path: String,
+    /// 完整路径
+    pub full_path: String,
+    /// 匹配行号（1-based）
+    pub line_number: usize,
+    /// 匹配内容（去除首尾空白）
+    pub matched_line: String,
+    /// 匹配前的上下文行（最多 2 行）
+    pub context_before: Vec<String>,
+    /// 匹配后的上下文行（最多 2 行）
+    pub context_after: Vec<String>,
+    /// 匹配文本在行中的起始位置
+    pub match_start: usize,
+    /// 匹配文本在行中的结束位置
+    pub match_end: usize,
+}
+
+/// 搜索文件内容
+#[tauri::command]
+pub async fn search_file_contents(
+    work_dir: String,
+    query: String,
+    case_sensitive: Option<bool>,
+    whole_word: Option<bool>,
+    max_results: Option<usize>,
+) -> Result<Vec<ContentMatch>> {
+    let base_path = Path::new(&work_dir);
+    let max_results = max_results.unwrap_or(100);
+    let case_sensitive = case_sensitive.unwrap_or(false);
+    let whole_word = whole_word.unwrap_or(false);
+
+    if !base_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    if query.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // 构建正则表达式
+    let pattern = build_content_search_pattern(&query, case_sensitive, whole_word)?;
+
+    // 默认排除目录
+    let exclude_dirs: HashSet<&str> = [
+        "node_modules", ".git", "target", "dist", "build",
+        ".claude", "__pycache__", ".next", ".nuxt", "vendor"
+    ].iter().cloned().collect();
+
+    // 文本文件扩展名白名单
+    let text_extensions: HashSet<&str> = [
+        // Web 前端
+        "ts", "tsx", "js", "jsx", "vue", "svelte", "html", "css", "scss", "sass", "less",
+        // 配置文件
+        "json", "yaml", "yml", "toml", "xml", "ini", "env", "conf", "config",
+        // 后端语言
+        "rs", "go", "py", "java", "kt", "rb", "php", "cs", "swift", "c", "cpp", "h", "hpp",
+        // 脚本
+        "sh", "bash", "zsh", "ps1", "bat", "cmd",
+        // 文档
+        "md", "txt", "rst", "adoc", "org",
+        // 数据
+        "sql", "graphql", "proto",
+        // 其他
+        "zig", "lua", "vim", "ex", "exs", "erl", "hs", "ml", "clj", "lisp", "el"
+    ].iter().cloned().collect();
+
+    let mut results = Vec::new();
+    search_contents_recursive(
+        base_path,
+        base_path,
+        &pattern,
+        &exclude_dirs,
+        &text_extensions,
+        max_results,
+        &mut results,
+    )?;
+
+    Ok(results)
+}
+
+/// 构建内容搜索正则表达式
+fn build_content_search_pattern(
+    query: &str,
+    case_sensitive: bool,
+    whole_word: bool,
+) -> Result<regex::Regex> {
+    let pattern = if whole_word {
+        format!(r"\b{}\b", regex::escape(query))
+    } else {
+        regex::escape(query)
+    };
+
+    let full_pattern = if case_sensitive {
+        pattern
+    } else {
+        format!("(?i){}", pattern)
+    };
+
+    regex::Regex::new(&full_pattern)
+        .map_err(|e| AppError::InvalidPath(format!("无效的搜索模式: {}", e)))
+}
+
+/// 递归搜索文件内容
+fn search_contents_recursive(
+    base_path: &Path,
+    current_path: &Path,
+    pattern: &regex::Regex,
+    exclude_dirs: &HashSet<&str>,
+    text_extensions: &HashSet<&str>,
+    max_results: usize,
+    results: &mut Vec<ContentMatch>,
+) -> Result<()> {
+    if results.len() >= max_results {
+        return Ok(());
+    }
+
+    let entries = fs::read_dir(current_path)?;
+
+    for entry in entries {
+        if results.len() >= max_results {
+            break;
+        }
+
+        let entry = entry?;
+        let path = entry.path();
+        let name = path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+
+        // 跳过隐藏文件
+        if name.starts_with('.') {
+            continue;
+        }
+
+        if path.is_dir() {
+            // 跳过排除目录
+            if exclude_dirs.contains(name) {
+                continue;
+            }
+            // 递归搜索子目录
+            search_contents_recursive(
+                base_path,
+                &path,
+                pattern,
+                exclude_dirs,
+                text_extensions,
+                max_results,
+                results,
+            )?;
+        } else {
+            // 检查扩展名
+            let ext = path.extension()
+                .and_then(|e| e.to_str())
+                .map(|s| s.to_lowercase());
+
+            if let Some(ref e) = ext {
+                if !text_extensions.contains(e.as_str()) {
+                    continue;
+                }
+            } else {
+                // 无扩展名的文件跳过
+                continue;
+            }
+
+            // 检查文件大小（限制 1MB）
+            let metadata = fs::metadata(&path)?;
+            if metadata.len() > 1024 * 1024 {
+                continue;
+            }
+
+            // 读取并搜索文件内容
+            if let Ok(content) = fs::read_to_string(&path) {
+                search_in_file(
+                    base_path,
+                    &path,
+                    &content,
+                    pattern,
+                    max_results,
+                    results,
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// 在单个文件中搜索
+fn search_in_file(
+    base_path: &Path,
+    file_path: &Path,
+    content: &str,
+    pattern: &regex::Regex,
+    max_results: usize,
+    results: &mut Vec<ContentMatch>,
+) {
+    let lines: Vec<&str> = content.lines().collect();
+
+    let relative_path = pathdiff::diff_paths(file_path, base_path)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| file_path.to_string_lossy().to_string());
+
+    let name = file_path.file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let full_path = file_path.to_string_lossy().to_string();
+
+    for (line_idx, line) in lines.iter().enumerate() {
+        if results.len() >= max_results {
+            break;
+        }
+
+        for cap in pattern.find_iter(line) {
+            if results.len() >= max_results {
+                break;
+            }
+
+            let line_number = line_idx + 1; // 1-based
+            let match_start = cap.start();
+            let match_end = cap.end();
+
+            // 收集上下文（前后各 2 行）
+            let context_before: Vec<String> = (1..=2)
+                .rev()
+                .filter_map(|i| lines.get(line_idx.saturating_sub(i)))
+                .map(|s| s.to_string())
+                .collect();
+
+            let context_after: Vec<String> = (1..=2)
+                .filter_map(|i| lines.get(line_idx + i))
+                .map(|s| s.to_string())
+                .collect();
+
+            results.push(ContentMatch {
+                name: name.clone(),
+                relative_path: relative_path.clone(),
+                full_path: full_path.clone(),
+                line_number,
+                matched_line: line.trim_end().to_string(),
+                context_before,
+                context_after,
+                match_start,
+                match_end,
+            });
+        }
+    }
 }

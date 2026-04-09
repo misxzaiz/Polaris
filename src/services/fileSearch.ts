@@ -11,7 +11,7 @@ export interface FileMatch {
   name: string;
   relativePath: string;  // 相对路径，如 "src/components/App.tsx"
   fullPath: string;      // 完整路径
-  is_dir: boolean;
+  isDir: boolean;        // Rust 端使用 camelCase
   extension?: string;
   size?: number;         // 文件大小（字节）
 }
@@ -46,7 +46,7 @@ export async function searchFiles(
       name: r.name,
       relativePath: r.relativePath,
       fullPath: r.fullPath,
-      is_dir: r.is_dir,
+      isDir: r.isDir,
       extension: r.extension,
     }));
   } catch (error) {
@@ -64,7 +64,7 @@ export function filterByExtension(
 ): FileMatch[] {
   const extSet = new Set(extensions.map(e => e.toLowerCase()));
   return files.filter(f =>
-    !f.is_dir && (!f.extension || extSet.has(f.extension))
+    !f.isDir && (!f.extension || extSet.has(f.extension))
   );
 }
 
@@ -72,12 +72,12 @@ export function filterByExtension(
  * 只返回文件（不包括目录）
  */
 export function filesOnly(matches: FileMatch[]): FileMatch[] {
-  return matches.filter(m => !m.is_dir);
+  return matches.filter(m => !m.isDir);
 }
 
 /**
  * 只返回目录
  */
 export function directoriesOnly(matches: FileMatch[]): FileMatch[] {
-  return matches.filter(m => m.is_dir);
+  return matches.filter(m => m.isDir);
 }

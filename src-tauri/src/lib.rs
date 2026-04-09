@@ -32,6 +32,7 @@ use commands::window::{
 use commands::file_explorer::{
     read_directory, get_file_content, create_file, create_directory,
     delete_file, rename_file, path_exists, read_commands, search_files,
+    search_file_contents,
     copy_path, move_path,
 };
 use commands::file_watcher::{
@@ -305,6 +306,7 @@ pub fn run() {
             path_exists,
             read_commands,
             search_files,
+            search_file_contents,
             copy_path,
             move_path,
             // 文件监听相关

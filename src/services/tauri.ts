@@ -311,6 +311,61 @@ export async function movePath(source: string, destination: string) {
 }
 
 // ============================================================================
+// 文件内容搜索命令
+// ============================================================================
+
+/** 内容搜索结果 */
+export interface ContentMatch {
+  /** 文件名 */
+  name: string;
+  /** 相对路径 */
+  relativePath: string;
+  /** 完整路径 */
+  fullPath: string;
+  /** 匹配行号（1-based） */
+  lineNumber: number;
+  /** 匹配内容 */
+  matchedLine: string;
+  /** 匹配前的上下文行 */
+  contextBefore: string[];
+  /** 匹配后的上下文行 */
+  contextAfter: string[];
+  /** 匹配文本在行中的起始位置 */
+  matchStart: number;
+  /** 匹配文本在行中的结束位置 */
+  matchEnd: number;
+}
+
+/**
+ * 搜索文件内容
+ * @param query 搜索关键词
+ * @param workDir 工作目录
+ * @param options 搜索选项
+ * @param maxResults 最大结果数
+ */
+export async function searchFileContents(
+  query: string,
+  workDir: string | null,
+  options?: {
+    caseSensitive?: boolean;
+    wholeWord?: boolean;
+  },
+  maxResults: number = 100
+): Promise<ContentMatch[]> {
+  if (!workDir || !query.trim()) {
+    return [];
+  }
+
+  return invoke<ContentMatch[]>('search_file_contents', {
+    workDir,
+    query: query.trim(),
+    caseSensitive: options?.caseSensitive ?? false,
+    wholeWord: options?.wholeWord ?? false,
+    maxResults,
+  });
+}
+
+// ============================================================================
 // 文件监听命令
 // ============================================================================
 

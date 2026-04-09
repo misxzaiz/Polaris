@@ -23,6 +23,7 @@ import { tags } from '@lezer/highlight';
 import { createLogger } from '../../utils/logger';
 import { useEditorBufferStore } from '../../stores/editorBufferStore';
 import { useEditorSettingsStore } from '../../stores/editorSettingsStore';
+import { useFileEditorStore } from '../../stores/fileEditorStore';
 import { indentGuides, indentGuideTheme } from './indentGuides';
 import { trailingWhitespaceHighlight } from './trailingWhitespace';
 import { rainbowBrackets } from './rainbowBrackets';
@@ -195,6 +196,22 @@ export function CodeMirrorEditor({
           parent: containerRef.current,
         });
         viewRef.current = view;
+
+        // 检查是否有待跳转的行号
+        const pendingLine = useFileEditorStore.getState().pendingGotoLine;
+        if (pendingLine !== null) {
+          const doc = view.state.doc;
+          if (pendingLine >= 1 && pendingLine <= doc.lines) {
+            const line = doc.line(pendingLine);
+            view.dispatch({
+              selection: { anchor: line.from },
+              effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
+            });
+            view.focus();
+            log.debug('跳转到行（缓存恢复）', { lineNumber: pendingLine });
+          }
+          useFileEditorStore.getState().setPendingGotoLine(null);
+        }
         return;
       }
 
@@ -271,6 +288,22 @@ export function CodeMirrorEditor({
       viewRef.current = view;
 
       log.debug('Editor view created successfully');
+
+      // 检查是否有待跳转的行号
+      const pendingLine = useFileEditorStore.getState().pendingGotoLine;
+      if (pendingLine !== null) {
+        const doc = view.state.doc;
+        if (pendingLine >= 1 && pendingLine <= doc.lines) {
+          const line = doc.line(pendingLine);
+          view.dispatch({
+            selection: { anchor: line.from },
+            effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
+          });
+          view.focus();
+          log.debug('跳转到行（新建编辑器）', { lineNumber: pendingLine });
+        }
+        useFileEditorStore.getState().setPendingGotoLine(null);
+      }
     };
 
     createEditor();
