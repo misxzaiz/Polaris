@@ -5,6 +5,9 @@ use serde::Serialize;
 use crate::error::Result;
 use crate::services::mcp_config_service::WorkspaceMcpConfigService;
 
+/// Platform-aware executable suffix: ".exe" on Windows, "" on Linux/macOS.
+const EXE_SUFFIX: &str = std::env::consts::EXE_SUFFIX;
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TodoMcpDiagnostics {
@@ -48,12 +51,12 @@ impl TodoMcpDiagnosticsService {
             executable_exists: resolved_executable_path.exists(),
             expected_resource_bin_path: resource_dir
                 .as_ref()
-                .map(|dir| dir.join(Path::new("bin/polaris-todo-mcp.exe")).to_string_lossy().to_string()),
+                .map(|dir| dir.join(format!("bin/polaris-todo-mcp{}", EXE_SUFFIX)).to_string_lossy().to_string()),
             expected_resource_root_path: resource_dir
                 .as_ref()
-                .map(|dir| dir.join(Path::new("polaris-todo-mcp.exe")).to_string_lossy().to_string()),
+                .map(|dir| dir.join(format!("polaris-todo-mcp{}", EXE_SUFFIX)).to_string_lossy().to_string()),
             expected_dev_path: app_root
-                .join(Path::new("src-tauri/target/debug/polaris-todo-mcp.exe"))
+                .join(format!("src-tauri/target/debug/polaris-todo-mcp{}", EXE_SUFFIX))
                 .to_string_lossy()
                 .to_string(),
             workspace_config_path: workspace_config_path

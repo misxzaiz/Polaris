@@ -5,19 +5,28 @@ use crate::error::{AppError, Result};
 const MCP_CONFIG_RELATIVE_PATH: &str = ".polaris/claude/mcp.json";
 const TODO_MCP_SERVER_NAME: &str = "polaris-todo";
 const TODO_MCP_BIN_NAME: &str = "polaris-todo-mcp";
-const TODO_MCP_BUNDLE_RELATIVE_PATH: &str = "bin/polaris-todo-mcp.exe";
-const TODO_MCP_BUNDLE_FALLBACK_RELATIVE_PATH: &str = "polaris-todo-mcp.exe";
-const TODO_MCP_DEV_RELATIVE_PATH: &str = "src-tauri/target/debug/polaris-todo-mcp.exe";
 const REQUIREMENTS_MCP_SERVER_NAME: &str = "polaris-requirements";
 const REQUIREMENTS_MCP_BIN_NAME: &str = "polaris-requirements-mcp";
-const REQUIREMENTS_MCP_BUNDLE_RELATIVE_PATH: &str = "bin/polaris-requirements-mcp.exe";
-const REQUIREMENTS_MCP_BUNDLE_FALLBACK_RELATIVE_PATH: &str = "polaris-requirements-mcp.exe";
-const REQUIREMENTS_MCP_DEV_RELATIVE_PATH: &str = "src-tauri/target/debug/polaris-requirements-mcp.exe";
 const SCHEDULER_MCP_SERVER_NAME: &str = "polaris-scheduler";
 const SCHEDULER_MCP_BIN_NAME: &str = "polaris-scheduler-mcp";
-const SCHEDULER_MCP_BUNDLE_RELATIVE_PATH: &str = "bin/polaris-scheduler-mcp.exe";
-const SCHEDULER_MCP_BUNDLE_FALLBACK_RELATIVE_PATH: &str = "polaris-scheduler-mcp.exe";
-const SCHEDULER_MCP_DEV_RELATIVE_PATH: &str = "src-tauri/target/debug/polaris-scheduler-mcp.exe";
+
+/// Platform-aware executable suffix: ".exe" on Windows, "" on Linux/macOS.
+const EXE_SUFFIX: &str = std::env::consts::EXE_SUFFIX;
+
+/// Build a platform-correct relative path for an MCP binary.
+fn mcp_exe_path(prefix: &str) -> String {
+    format!("{}{}", prefix, EXE_SUFFIX)
+}
+
+fn todo_bundle_path() -> String { mcp_exe_path("bin/polaris-todo-mcp") }
+fn todo_fallback_path() -> String { mcp_exe_path("polaris-todo-mcp") }
+fn todo_dev_path() -> String { mcp_exe_path("src-tauri/target/debug/polaris-todo-mcp") }
+fn requirements_bundle_path() -> String { mcp_exe_path("bin/polaris-requirements-mcp") }
+fn requirements_fallback_path() -> String { mcp_exe_path("polaris-requirements-mcp") }
+fn requirements_dev_path() -> String { mcp_exe_path("src-tauri/target/debug/polaris-requirements-mcp") }
+fn scheduler_bundle_path() -> String { mcp_exe_path("bin/polaris-scheduler-mcp") }
+fn scheduler_fallback_path() -> String { mcp_exe_path("polaris-scheduler-mcp") }
+fn scheduler_dev_path() -> String { mcp_exe_path("src-tauri/target/debug/polaris-scheduler-mcp") }
 
 #[derive(Debug, Clone, serde::Serialize)]
 struct ClaudeMcpServerConfig {
@@ -80,9 +89,9 @@ impl WorkspaceMcpConfigService {
             resource_dir.clone(),
             app_root.clone(),
             TODO_MCP_BIN_NAME,
-            TODO_MCP_BUNDLE_RELATIVE_PATH,
-            TODO_MCP_BUNDLE_FALLBACK_RELATIVE_PATH,
-            TODO_MCP_DEV_RELATIVE_PATH,
+            &todo_bundle_path(),
+            &todo_fallback_path(),
+            &todo_dev_path(),
             "POLARIS_TODO_MCP_PATH",
         )?;
 
@@ -90,9 +99,9 @@ impl WorkspaceMcpConfigService {
             resource_dir.clone(),
             app_root.clone(),
             REQUIREMENTS_MCP_BIN_NAME,
-            REQUIREMENTS_MCP_BUNDLE_RELATIVE_PATH,
-            REQUIREMENTS_MCP_BUNDLE_FALLBACK_RELATIVE_PATH,
-            REQUIREMENTS_MCP_DEV_RELATIVE_PATH,
+            &requirements_bundle_path(),
+            &requirements_fallback_path(),
+            &requirements_dev_path(),
             "POLARIS_REQUIREMENTS_MCP_PATH",
         );
 
@@ -100,9 +109,9 @@ impl WorkspaceMcpConfigService {
             resource_dir,
             app_root,
             SCHEDULER_MCP_BIN_NAME,
-            SCHEDULER_MCP_BUNDLE_RELATIVE_PATH,
-            SCHEDULER_MCP_BUNDLE_FALLBACK_RELATIVE_PATH,
-            SCHEDULER_MCP_DEV_RELATIVE_PATH,
+            &scheduler_bundle_path(),
+            &scheduler_fallback_path(),
+            &scheduler_dev_path(),
             "POLARIS_SCHEDULER_MCP_PATH",
         );
 
@@ -276,6 +285,11 @@ fn write_json_atomically<T: serde::Serialize>(path: &Path, value: &T) -> Result<
 mod tests {
     use super::*;
 
+    /// Helper to create a platform-correct fixture file path.
+    fn fixture_exe(base: &str) -> String {
+        format!("{}{}", base, EXE_SUFFIX)
+    }
+
     #[test]
     fn prefers_bundled_resource_path_when_present() {
         let temp_root = std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
@@ -284,19 +298,19 @@ mod tests {
 
         std::fs::create_dir_all(app_root.join("src-tauri/target/debug")).unwrap();
         std::fs::create_dir_all(resource_dir.join("bin")).unwrap();
-        std::fs::write(app_root.join("src-tauri/target/debug/polaris-todo-mcp.exe"), "dev bin").unwrap();
-        std::fs::write(resource_dir.join("bin/polaris-todo-mcp.exe"), "bundled bin").unwrap();
+        std::fs::write(app_root.join(fixture_exe("src-tauri/target/debug/polaris-todo-mcp")), "dev bin").unwrap();
+        std::fs::write(resource_dir.join(fixture_exe("bin/polaris-todo-mcp")), "bundled bin").unwrap();
 
         let path = resolve_mcp_executable_path(
             Some(resource_dir.clone()),
             app_root.clone(),
             TODO_MCP_BIN_NAME,
-            TODO_MCP_BUNDLE_RELATIVE_PATH,
-            TODO_MCP_BUNDLE_FALLBACK_RELATIVE_PATH,
-            TODO_MCP_DEV_RELATIVE_PATH,
+            &todo_bundle_path(),
+            &todo_fallback_path(),
+            &todo_dev_path(),
             "POLARIS_TODO_MCP_PATH",
         ).unwrap();
-        assert_eq!(path, resource_dir.join("bin/polaris-todo-mcp.exe"));
+        assert_eq!(path, resource_dir.join(fixture_exe("bin/polaris-todo-mcp")));
 
         let _ = std::fs::remove_dir_all(&temp_root);
     }
@@ -309,19 +323,19 @@ mod tests {
 
         std::fs::create_dir_all(app_root.join("src-tauri/target/debug")).unwrap();
         std::fs::create_dir_all(&resource_dir).unwrap();
-        std::fs::write(app_root.join("src-tauri/target/debug/polaris-todo-mcp.exe"), "dev bin").unwrap();
-        std::fs::write(resource_dir.join("polaris-todo-mcp.exe"), "bundled root bin").unwrap();
+        std::fs::write(app_root.join(fixture_exe("src-tauri/target/debug/polaris-todo-mcp")), "dev bin").unwrap();
+        std::fs::write(resource_dir.join(fixture_exe("polaris-todo-mcp")), "bundled root bin").unwrap();
 
         let path = resolve_mcp_executable_path(
             Some(resource_dir.clone()),
             app_root.clone(),
             TODO_MCP_BIN_NAME,
-            TODO_MCP_BUNDLE_RELATIVE_PATH,
-            TODO_MCP_BUNDLE_FALLBACK_RELATIVE_PATH,
-            TODO_MCP_DEV_RELATIVE_PATH,
+            &todo_bundle_path(),
+            &todo_fallback_path(),
+            &todo_dev_path(),
             "POLARIS_TODO_MCP_PATH",
         ).unwrap();
-        assert_eq!(path, resource_dir.join("polaris-todo-mcp.exe"));
+        assert_eq!(path, resource_dir.join(fixture_exe("polaris-todo-mcp")));
 
         let _ = std::fs::remove_dir_all(&temp_root);
     }
@@ -334,18 +348,18 @@ mod tests {
 
         std::fs::create_dir_all(app_root.join("src-tauri/target/debug")).unwrap();
         std::fs::create_dir_all(&resource_dir).unwrap();
-        std::fs::write(app_root.join("src-tauri/target/debug/polaris-todo-mcp.exe"), "dev bin").unwrap();
+        std::fs::write(app_root.join(fixture_exe("src-tauri/target/debug/polaris-todo-mcp")), "dev bin").unwrap();
 
         let path = resolve_mcp_executable_path(
             Some(resource_dir),
             app_root.clone(),
             TODO_MCP_BIN_NAME,
-            TODO_MCP_BUNDLE_RELATIVE_PATH,
-            TODO_MCP_BUNDLE_FALLBACK_RELATIVE_PATH,
-            TODO_MCP_DEV_RELATIVE_PATH,
+            &todo_bundle_path(),
+            &todo_fallback_path(),
+            &todo_dev_path(),
             "POLARIS_TODO_MCP_PATH",
         ).unwrap();
-        assert_eq!(path, app_root.join("src-tauri/target/debug/polaris-todo-mcp.exe"));
+        assert_eq!(path, app_root.join(fixture_exe("src-tauri/target/debug/polaris-todo-mcp")));
 
         let _ = std::fs::remove_dir_all(&temp_root);
     }
@@ -355,9 +369,9 @@ mod tests {
         let temp_root = std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
         let workspace = temp_root.join("workspace-a");
         let config_dir = temp_root.join("config");
-        let todo_executable_path = temp_root.join("bin/polaris-todo-mcp.exe");
-        let requirements_executable_path = temp_root.join("bin/polaris-requirements-mcp.exe");
-        let scheduler_executable_path = temp_root.join("bin/polaris-scheduler-mcp.exe");
+        let todo_executable_path = temp_root.join(fixture_exe("bin/polaris-todo-mcp"));
+        let requirements_executable_path = temp_root.join(fixture_exe("bin/polaris-requirements-mcp"));
+        let scheduler_executable_path = temp_root.join(fixture_exe("bin/polaris-scheduler-mcp"));
 
         std::fs::create_dir_all(&workspace).unwrap();
         std::fs::create_dir_all(&config_dir).unwrap();
@@ -432,7 +446,7 @@ mod tests {
         let temp_root = std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
         let workspace = temp_root.join("workspace-b");
         let config_dir = temp_root.join("config");
-        let executable_path = temp_root.join("bin/polaris-todo-mcp.exe");
+        let executable_path = temp_root.join(fixture_exe("bin/polaris-todo-mcp"));
 
         std::fs::create_dir_all(&workspace).unwrap();
         std::fs::create_dir_all(&config_dir).unwrap();

@@ -30,9 +30,9 @@
     "active": true,
     "targets": "all",
     "resources": [
-      "target/release/polaris-todo-mcp.exe",
-      "target/release/polaris-requirements-mcp.exe",
-      "target/release/polaris-scheduler-mcp.exe"
+      "target/release/polaris-todo-mcp",
+      "target/release/polaris-requirements-mcp",
+      "target/release/polaris-scheduler-mcp"
     ],
     "icon": [
       "icons/32x32.png",
