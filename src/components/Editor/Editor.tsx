@@ -24,6 +24,7 @@ import { tags } from '@lezer/highlight';
 import { createLogger } from '../../utils/logger';
 import { useEditorBufferStore } from '../../stores/editorBufferStore';
 import { useEditorSettingsStore } from '../../stores/editorSettingsStore';
+import { indentGuides, indentGuideTheme } from './indentGuides';
 
 const log = createLogger('Editor');
 
@@ -227,6 +228,8 @@ export function CodeMirrorEditor({
         EditorView.editable.of(!readOnly),
         wrapEnabled ? EditorView.lineWrapping : [],
         indentUnit.of('  '),
+        indentGuides,
+        indentGuideTheme,
         saveKeymap,
         keymap.of(defaultKeymap),
         keymap.of(historyKeymap),
