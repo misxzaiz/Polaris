@@ -461,7 +461,7 @@ fn search_recursive(
     max_results: usize,
 ) -> Result<()> {
     // 达到最大结果数或深度限制
-    if results.len() >= max_results || depth > 10 {
+    if results.len() >= max_results || depth > 30 {
         return Ok(());
     }
 
