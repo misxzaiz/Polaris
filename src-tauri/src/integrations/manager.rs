@@ -97,15 +97,21 @@ impl IntegrationManager {
     pub async fn init(&mut self, qqbot_config: Option<QQBotConfig>, feishu_config: Option<FeishuConfig>, app_handle: AppHandle) {
         self.app_handle = Some(app_handle.clone());
 
-        // 创建消息通道
-        let (tx, rx) = mpsc::channel(100);
-        self.message_tx = Some(tx);
-        self.message_rx = Some(rx);
+        // 创建消息通道（仅在未创建时，避免重复 init 时覆盖）
+        if self.message_tx.is_none() {
+            let (tx, rx) = mpsc::channel(100);
+            self.message_tx = Some(tx);
+            self.message_rx = Some(rx);
+        }
 
         // 从传入的配置中加载 QQBot 实例
         if let Some(config) = qqbot_config {
             let mut registry = self.instance_registry.lock().await;
             for instance_config in &config.instances {
+                // 跳过已存在的实例（避免重复调用 init 时重复添加）
+                if registry.get(&instance_config.id).is_some() {
+                    continue;
+                }
                 let runtime_config = QQBotRuntimeConfig::from(instance_config);
                 let platform_instance = PlatformInstance {
                     id: instance_config.id.clone(),
@@ -146,6 +152,10 @@ impl IntegrationManager {
         if let Some(config) = feishu_config {
             let mut registry = self.instance_registry.lock().await;
             for instance_config in &config.instances {
+                // 跳过已存在的实例（避免重复调用 init 时重复添加）
+                if registry.get(&instance_config.id).is_some() {
+                    continue;
+                }
                 let runtime_config = FeishuRuntimeConfig::from(instance_config);
                 let platform_instance = PlatformInstance {
                     id: instance_config.id.clone(),

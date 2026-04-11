@@ -14,6 +14,7 @@ import type {
   SendTarget,
   MessageContent,
   QQBotConfig,
+  FeishuConfig,
   PlatformInstance,
   InstanceId,
 } from '../types';
@@ -46,6 +47,7 @@ interface IntegrationState {
   error: string | null;
   // 保存配置以便重新初始化
   _qqbotConfig: QQBotConfig | null;
+  _feishuConfig: FeishuConfig | null;
   // 存储 unlisten 函数以便清理
   _unlisten: (() => void) | null;
   // 存储初始化 Promise 防止并发初始化
@@ -56,8 +58,8 @@ interface IntegrationState {
   activeInstances: Record<Platform, InstanceId | null>;
 
   // Actions - 基础
-  initialize: (qqbotConfig: QQBotConfig | null) => Promise<void>;
-  startPlatform: (platform: Platform, qqbotConfig?: QQBotConfig) => Promise<void>;
+  initialize: (qqbotConfig: QQBotConfig | null, feishuConfig?: FeishuConfig | null) => Promise<void>;
+  startPlatform: (platform: Platform, qqbotConfig?: QQBotConfig, feishuConfig?: FeishuConfig) => Promise<void>;
   stopPlatform: (platform: Platform) => Promise<void>;
   sendMessage: (platform: Platform, target: SendTarget, content: MessageContent) => Promise<void>;
   refreshStatus: (platform: Platform) => Promise<void>;
@@ -89,6 +91,7 @@ export const useIntegrationStore = create<IntegrationState>((set, get) => ({
   loading: false,
   error: null,
   _qqbotConfig: null,
+  _feishuConfig: null,
   _unlisten: null,
   _initPromise: null,
   // 实例管理初始状态
@@ -96,9 +99,9 @@ export const useIntegrationStore = create<IntegrationState>((set, get) => ({
   activeInstances: {} as Record<Platform, InstanceId | null>,
 
   // 初始化
-  initialize: async (qqbotConfig) => {
+  initialize: async (qqbotConfig, feishuConfig) => {
     // 保存配置
-    set({ _qqbotConfig: qqbotConfig });
+    set({ _qqbotConfig: qqbotConfig, _feishuConfig: feishuConfig ?? null });
 
     // 如果已初始化，不需要重复初始化
     if (get().initialized) {
@@ -119,7 +122,7 @@ export const useIntegrationStore = create<IntegrationState>((set, get) => ({
 
       try {
         // 初始化集成管理器
-        await initIntegration(qqbotConfig);
+        await initIntegration(qqbotConfig, feishuConfig ?? null);
 
         // 监听消息事件
         const unlisten = await onIntegrationMessage((message) => {
@@ -157,7 +160,7 @@ export const useIntegrationStore = create<IntegrationState>((set, get) => ({
   },
 
   // 启动平台
-  startPlatform: async (platform, qqbotConfig) => {
+  startPlatform: async (platform, qqbotConfig, feishuConfig) => {
     set({ loading: true, error: null });
 
     try {
@@ -165,15 +168,17 @@ export const useIntegrationStore = create<IntegrationState>((set, get) => ({
       if (qqbotConfig) {
         set({ _qqbotConfig: qqbotConfig });
       }
+      if (feishuConfig) {
+        set({ _feishuConfig: feishuConfig });
+      }
 
-      // 如果未初始化，先初始化
+      const qConfig = qqbotConfig || get()._qqbotConfig;
+      const fConfig = feishuConfig || get()._feishuConfig;
+
       if (!get().initialized) {
+        // 首次初始化：注册适配器 + 设置消息监听
         console.log('[IntegrationStore] Not initialized, initializing first...');
-        const config = qqbotConfig || get()._qqbotConfig;
-        if (!config && platform === 'qqbot') {
-          throw new Error('QQ Bot 配置未提供');
-        }
-        await initIntegration(config);
+        await initIntegration(qConfig, fConfig);
         set({ initialized: true });
 
         // 监听消息事件
@@ -181,6 +186,10 @@ export const useIntegrationStore = create<IntegrationState>((set, get) => ({
           get()._addMessage(message);
         });
         set({ _unlisten: unlisten });
+      } else if (qqbotConfig || feishuConfig) {
+        // 已初始化但有新配置：重新注册适配器（不重复设置消息监听）
+        console.log('[IntegrationStore] Already initialized, re-registering adapters with new config...');
+        await initIntegration(qConfig, fConfig);
       }
 
       await startIntegration(platform);
