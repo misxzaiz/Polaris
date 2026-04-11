@@ -485,6 +485,175 @@ impl IntegrationManager {
         }
     }
 
+    /// 从工具参数中提取文件名（仅 basename）
+    fn extract_file_basename(args: &std::collections::HashMap<String, serde_json::Value>) -> Option<String> {
+        for key in &["path", "file_path", "filePath", "filename", "file"] {
+            if let Some(val) = args.get(*key).and_then(|v| v.as_str()) {
+                if !val.is_empty() {
+                    let name = val.rsplit(|c| c == '/' || c == '\\').next().unwrap_or(val);
+                    return Some(name.to_string());
+                }
+            }
+        }
+        None
+    }
+
+    /// 从工具参数中提取命令
+    fn extract_command(args: &std::collections::HashMap<String, serde_json::Value>, max_len: usize) -> Option<String> {
+        for key in &["command", "cmd", "command_string"] {
+            if let Some(val) = args.get(*key).and_then(|v| v.as_str()) {
+                if !val.is_empty() {
+                    return Some(Self::truncate_str(val, max_len));
+                }
+            }
+        }
+        None
+    }
+
+    /// 从工具参数中提取搜索词
+    fn extract_search_query(args: &std::collections::HashMap<String, serde_json::Value>, max_len: usize) -> Option<String> {
+        for key in &["query", "q", "search", "keyword", "pattern", "regex"] {
+            if let Some(val) = args.get(*key).and_then(|v| v.as_str()) {
+                if !val.is_empty() {
+                    return Some(Self::truncate_str(val, max_len));
+                }
+            }
+        }
+        None
+    }
+
+    /// 从工具参数中提取 URL 简称
+    fn extract_url_brief(args: &std::collections::HashMap<String, serde_json::Value>, max_len: usize) -> Option<String> {
+        for key in &["url", "uri", "href"] {
+            if let Some(val) = args.get(*key).and_then(|v| v.as_str()) {
+                if !val.is_empty() {
+                    // 简化显示：取 hostname + 路径前段
+                    let simplified = if val.starts_with("http://") || val.starts_with("https://") {
+                        let stripped = val.trim_start_matches("https://").trim_start_matches("http://");
+                        let path_end = stripped.find('?').unwrap_or(stripped.len());
+                        &stripped[..path_end]
+                    } else {
+                        val
+                    };
+                    return Some(Self::truncate_str(simplified, max_len));
+                }
+            }
+        }
+        None
+    }
+
+    /// 安全截断字符串（按字符边界）
+    fn truncate_str(s: &str, max_len: usize) -> String {
+        if s.chars().count() <= max_len {
+            s.to_string()
+        } else {
+            let truncated: String = s.chars().take(max_len - 3).collect();
+            format!("{}...", truncated)
+        }
+    }
+
+    /// 根据工具名和参数生成简短描述
+    ///
+    /// 等价于前端 `extractToolKeyInfo()`，根据工具类型从 args 中提取关键信息
+    fn format_tool_brief(tool_name: &str, args: &std::collections::HashMap<String, serde_json::Value>) -> String {
+        let name_lower = tool_name.to_lowercase();
+
+        // Skill 工具：提取 skill 参数
+        if name_lower == "skill" {
+            if let Some(val) = args.get("skill").and_then(|v| v.as_str()) {
+                let name = val.rsplit(':').next().unwrap_or(val);
+                return name.to_string();
+            }
+        }
+
+        // Task / Agent 工具：提取 prompt 或 description
+        if name_lower == "task" || name_lower == "agent" {
+            if let Some(val) = args.get("prompt").and_then(|v| v.as_str()) {
+                return Self::truncate_str(val, 50);
+            }
+            if let Some(val) = args.get("description").and_then(|v| v.as_str()) {
+                return Self::truncate_str(val, 50);
+            }
+        }
+
+        // AskUserQuestion：提取问题
+        if name_lower == "askuserquestion" {
+            if let Some(val) = args.get("header").and_then(|v| v.as_str()) {
+                return val.to_string();
+            }
+            if let Some(questions) = args.get("questions").and_then(|v| v.as_array()) {
+                if let Some(first) = questions.first() {
+                    if let Some(q) = first.get("question").and_then(|v| v.as_str()) {
+                        return Self::truncate_str(q, 50);
+                    }
+                }
+            }
+        }
+
+        // Glob 特殊：优先取 pattern
+        if tool_name == "Glob" {
+            if let Some(val) = args.get("pattern").and_then(|v| v.as_str()) {
+                return Self::truncate_str(val, 40);
+            }
+        }
+
+        // 文件类工具（Read / Write / Edit / Delete）
+        if matches!(name_lower.as_str(),
+            "read" | "readfile" | "read_file" |
+            "write" | "writefile" | "write_file" | "create_file" |
+            "edit" | "edit3" | "str_replace_editor" |
+            "delete" | "deletefile" | "remove"
+        ) {
+            if let Some(name) = Self::extract_file_basename(args) {
+                return name;
+            }
+        }
+
+        // Bash / 执行类
+        if matches!(name_lower.as_str(), "bash" | "bashcommand" | "run_command" | "execute") {
+            if let Some(cmd) = Self::extract_command(args, 40) {
+                return cmd;
+            }
+        }
+
+        // Grep / 搜索类
+        if matches!(name_lower.as_str(), "grep" | "search" | "searchfiles" | "websearch" | "web_search") {
+            if let Some(q) = Self::extract_search_query(args, 30) {
+                return q;
+            }
+        }
+
+        // 网络请求类
+        if matches!(name_lower.as_str(), "webfetch" | "web_fetch" | "httprequest" | "http_request") {
+            if let Some(url) = Self::extract_url_brief(args, 30) {
+                return url;
+            }
+        }
+
+        // TodoWrite：提取统计
+        if name_lower == "todowrite" {
+            if let Some(todos) = args.get("todos").and_then(|v| v.as_array()) {
+                let total = todos.len();
+                let completed = todos.iter()
+                    .filter(|t| t.get("status").and_then(|s| s.as_str()) == Some("completed"))
+                    .count();
+                return if completed == total && total > 0 {
+                    format!("{}个已完成", total)
+                } else if completed > 0 {
+                    format!("{}/{} ({}%)", completed, total, completed * 100 / total)
+                } else {
+                    format!("{}个任务", total)
+                };
+            }
+        }
+
+        // 兜底：尝试文件名 → 命令 → 搜索词
+        Self::extract_file_basename(args)
+            .or_else(|| Self::extract_command(args, 40))
+            .or_else(|| Self::extract_search_query(args, 30))
+            .unwrap_or_default()
+    }
+
     /// 处理 AI 消息
     async fn process_ai_message(ctx: ProcessAiMessageContext) {
         let ProcessAiMessageContext {
@@ -599,6 +768,11 @@ impl IntegrationManager {
         // 进度消息节流间隔（毫秒）
         const PROGRESS_THROTTLE_MS: u64 = 1500;
 
+        // 工具描述缓存：ToolCallStart 时存入，ToolCallEnd 时取出
+        let tool_brief_cache: Arc<std::sync::Mutex<std::collections::HashMap<String, String>>> =
+            Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+        let tool_brief_cache_clone = tool_brief_cache.clone();
+
         // 捕获当前 Tokio runtime handle，因为 callback 可能从非 Tokio 线程调用
         let rt_handle = tokio::runtime::Handle::current();
 
@@ -630,7 +804,18 @@ impl IntegrationManager {
 
                 // 工具调用开始：带节流
                 crate::models::AIEvent::ToolCallStart(tc) => {
-                    let msg = format!("[{}] 执行中...", tc.tool);
+                    let brief = Self::format_tool_brief(&tc.tool, &tc.args);
+                    // 缓存描述供 ToolCallEnd 使用
+                    if let Some(ref call_id) = tc.call_id {
+                        if let Ok(mut cache) = tool_brief_cache_clone.try_lock() {
+                            cache.insert(call_id.clone(), brief.clone());
+                        }
+                    }
+                    let msg = if brief.is_empty() {
+                        format!("[{}]", tc.tool)
+                    } else {
+                        format!("[{}] {}", tc.tool, brief)
+                    };
                     let should_send = {
                         if let Ok(mut last) = last_progress_time_clone.try_lock() {
                             let now = std::time::Instant::now();
@@ -656,7 +841,18 @@ impl IntegrationManager {
                 // 工具调用结束：不受节流限制
                 crate::models::AIEvent::ToolCallEnd(tc) => {
                     let status = if tc.success { "完成 ✅" } else { "失败 ❌" };
-                    let msg = format!("[{}] {}", tc.tool, status);
+                    // 从缓存取出描述
+                    let brief = tc.call_id.as_ref()
+                        .and_then(|id| {
+                            tool_brief_cache_clone.try_lock().ok()
+                                .and_then(|mut cache| cache.remove(id))
+                        })
+                        .unwrap_or_default();
+                    let msg = if brief.is_empty() {
+                        format!("[{}] {}", tc.tool, status)
+                    } else {
+                        format!("[{}] {} {}", tc.tool, brief, status)
+                    };
                     let adapters = adapters_for_callback.clone();
                     let conv_id = conversation_id_for_callback.clone();
                     rt_handle.spawn(async move {
