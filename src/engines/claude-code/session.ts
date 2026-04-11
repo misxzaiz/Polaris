@@ -186,30 +186,18 @@ export class ClaudeCodeSession extends BaseSession {
 
   /**
    * 格式化工作区上下文为提示词
+   *
+   * 关联工作区已通过 --add-dir 传递给 CLI，此处仅保留主工作区信息。
    */
   private formatWorkspaceContext(
     workspaceContext: { currentWorkspace: { name: string; path: string }; contextWorkspaces: Array<{ name: string; path: string }> }
   ): string {
     const lines: string[] = []
 
-    lines.push('═══════════════════════════════════════════════════════════')
-    lines.push('                        工作区信息')
-    lines.push('═══════════════════════════════════════════════════════════')
     lines.push(`当前工作区: ${workspaceContext.currentWorkspace.name}`)
     lines.push(`  路径: ${workspaceContext.currentWorkspace.path}`)
-    lines.push(`  引用语法: @/path`)
 
-    if (workspaceContext.contextWorkspaces.length > 0) {
-      lines.push('')
-      lines.push('关联工作区:')
-      for (const ws of workspaceContext.contextWorkspaces) {
-        lines.push(`  • ${ws.name}`)
-        lines.push(`    路径: ${ws.path}`)
-        lines.push(`    引用语法: @${ws.name}:path`)
-      }
-    }
-
-    lines.push('═══════════════════════════════════════════════════════════')
+    // 关联工作区路径已通过 --add-dir 传递，不再需要在 prompt 中描述
 
     return lines.join('\n')
   }

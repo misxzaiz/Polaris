@@ -281,11 +281,12 @@ export function buildWorkspaceContextExtra(
 /**
  * 构建默认系统提示词（工作区信息部分）
  *
- * 此部分始终传递，通过 --append-system-prompt 参数追加
+ * 关联工作区已改用 --add-dir 传递给 Claude CLI，此处仅保留主工作区信息。
+ * 原 --append-system-prompt 中的关联工作区描述已不再需要。
  */
 export function buildWorkspaceSystemPrompt(
   currentWorkspace: Workspace,
-  contextWorkspaces: Workspace[]
+  _contextWorkspaces: Workspace[]
 ): string {
   const t = i18n.t.bind(i18n);
   const lines: string[] = [];
@@ -294,17 +295,19 @@ export function buildWorkspaceSystemPrompt(
   lines.push(t('systemPrompt:projectPath', { path: currentWorkspace.path }));
   lines.push(t('systemPrompt:fileRefSyntax'));
 
-  if (contextWorkspaces.length > 0) {
-    lines.push(``);
-    lines.push(t('systemPrompt:contextWorkspaces'));
-    for (const ws of contextWorkspaces) {
-      lines.push(`- ${ws.name} (${ws.path})`);
-      lines.push(`  ${t('systemPrompt:refSyntax', { name: ws.name })}`);
-    }
-  }
+  // 关联工作区路径已通过 --add-dir 传递给 Claude CLI，不再需要在提示词中描述
+  // if (_contextWorkspaces.length > 0) {
+  //   lines.push(``);
+  //   lines.push(t('systemPrompt:contextWorkspaces'));
+  //   for (const ws of _contextWorkspaces) {
+  //     lines.push(`- ${ws.name} (${ws.path})`);
+  //     lines.push(`  ${t('systemPrompt:refSyntax', { name: ws.name })}`);
+  //   }
+  // }
 
-  lines.push(``);
-  lines.push(t('systemPrompt:workspaceToolGuidance'));
+  // workspaceToolGuidance 不再需要，--add-dir 让 Claude 原生感知目录
+  // lines.push(``);
+  // lines.push(t('systemPrompt:workspaceToolGuidance'));
 
   return lines.join('\n');
 }

@@ -935,6 +935,7 @@ export function createConversationStore(
                 engineId: engine,
                 enableMcpTools: engine === 'claude-code',
                 attachments: attachmentsForBackend,
+                additionalDirs: contextWorkspaces.map(w => w.path).filter(Boolean),
               },
             })
           } else {
@@ -949,6 +950,7 @@ export function createConversationStore(
                 engineId: engine,
                 enableMcpTools: engine === 'claude-code',
                 attachments: attachmentsForBackend,
+                additionalDirs: contextWorkspaces.map(w => w.path).filter(Boolean),
               },
             })
             // 注意：这里设置的是临时 sessionId，真实的会话 ID 通过 session_start 事件设置
@@ -1071,6 +1073,7 @@ export function createConversationStore(
               workDir: actualWorkspaceDir,
               contextId: deps.contextId,
               engineId: currentEngine,
+              additionalDirs: contextWorkspaces.map(w => w.path).filter(Boolean),
             },
           })
         } catch (e) {

@@ -103,6 +103,7 @@ impl ClaudeEngine {
         append_system_prompt: Option<&str>,
         session_id: Option<&str>,
         mcp_config_path: Option<&str>,
+        additional_dirs: &[String],
     ) -> Result<Command> {
         #[cfg(windows)]
         {
@@ -118,7 +119,14 @@ impl ClaudeEngine {
                 cmd.arg("--resume").arg(sid);
             }
 
-            // 先追加工作区信息（始终追加）
+            // 关联工作区目录（通过 --add-dir 赋予原生文件工具访问权限）
+            for dir in additional_dirs {
+                if !dir.is_empty() {
+                    cmd.arg("--add-dir").arg(dir);
+                }
+            }
+
+            // 追加工作区信息（已改用 --add-dir，此处保留用于向后兼容）
             if let Some(prompt) = append_system_prompt {
                 if !prompt.is_empty() {
                     cmd.arg("--append-system-prompt").arg(prompt);
@@ -160,7 +168,14 @@ impl ClaudeEngine {
                 cmd.arg("--resume").arg(sid);
             }
 
-            // 先追加工作区信息（始终追加）
+            // 关联工作区目录（通过 --add-dir 赋予原生文件工具访问权限）
+            for dir in additional_dirs {
+                if !dir.is_empty() {
+                    cmd.arg("--add-dir").arg(dir);
+                }
+            }
+
+            // 追加工作区信息（已改用 --add-dir，此处保留用于向后兼容）
             if let Some(prompt) = append_system_prompt {
                 if !prompt.is_empty() {
                     cmd.arg("--append-system-prompt").arg(prompt);
@@ -396,6 +411,7 @@ impl AIEngine for ClaudeEngine {
             options.append_system_prompt.as_deref(),
             None,
             options.mcp_config_path.as_deref(),
+            &options.additional_dirs,
         )?;
         self.configure_command(&mut cmd, options.work_dir.as_deref());
 
@@ -461,6 +477,7 @@ impl AIEngine for ClaudeEngine {
             options.append_system_prompt.as_deref(),
             Some(&real_session_id),
             options.mcp_config_path.as_deref(),
+            &options.additional_dirs,
         )?;
         self.configure_command(&mut cmd, work_dir.as_deref());
 

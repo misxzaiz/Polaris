@@ -61,6 +61,9 @@ pub struct ChatRequestOptions {
     /// 附件列表
     #[serde(default)]
     pub attachments: Option<Vec<Attachment>>,
+    /// 关联工作区路径列表（通过 --add-dir 传递给 Claude CLI）
+    #[serde(default)]
+    pub additional_dirs: Option<Vec<String>>,
 }
 
 // ============================================================================
@@ -265,6 +268,10 @@ pub async fn start_chat(
         session_opts = session_opts.with_mcp_config_path(mcp_config_path.clone());
     }
 
+    if let Some(ref dirs) = options.additional_dirs {
+        session_opts.additional_dirs = dirs.clone();
+    }
+
     let mut registry = state.engine_registry.lock().await;
     registry.start_session(Some(engine), &final_message, session_opts)
 }
@@ -370,6 +377,10 @@ pub async fn continue_chat(
 
     if let Some(ref mcp_config_path) = mcp_config_path {
         session_opts = session_opts.with_mcp_config_path(mcp_config_path.clone());
+    }
+
+    if let Some(ref dirs) = options.additional_dirs {
+        session_opts.additional_dirs = dirs.clone();
     }
 
     let mut registry = state.engine_registry.lock().await;

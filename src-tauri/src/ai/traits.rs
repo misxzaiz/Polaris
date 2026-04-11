@@ -67,6 +67,8 @@ pub struct SessionOptions {
     pub on_session_id_update: Option<Arc<dyn Fn(String) + Send + Sync>>,
     /// 消息历史（用于无状态引擎继续对话）
     pub message_history: Vec<HistoryEntry>,
+    /// 额外目录列表（通过 --add-dir 传递给 Claude CLI）
+    pub additional_dirs: Vec<String>,
 }
 
 /// 历史消息条目
@@ -92,6 +94,7 @@ impl SessionOptions {
             on_error: None,
             on_session_id_update: None,
             message_history: Vec::new(),
+            additional_dirs: Vec::new(),
         }
     }
 
