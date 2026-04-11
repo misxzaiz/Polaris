@@ -47,7 +47,7 @@
     "edge-tts-universal": "^1.4.0",
     "highlight.js": "^11.11.1",
     "i18next": "^24.2.3",
-    "lucide-react": "^0.562.0",
+    "lucide-react": "^1.8.0",
     "marked": "^17.0.1",
     "mermaid": "^11.12.2",
     "postcss": "^8.5.6",
