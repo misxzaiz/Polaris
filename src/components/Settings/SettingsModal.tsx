@@ -15,6 +15,7 @@ import { SettingsSidebar, type SettingsTabId } from './SettingsSidebar';
 import { AIEngineTab } from './tabs/AIEngineTab';
 import { GeneralTab } from './tabs/GeneralTab';
 import { SystemPromptTab } from './tabs/SystemPromptTab';
+import { PromptSnippetTab } from './tabs/PromptSnippetTab';
 import { WindowTab } from './tabs/WindowTab';
 import { TranslateTab } from './tabs/TranslateTab';
 import { QQBotTab } from './tabs/QQBotTab';
@@ -36,6 +37,7 @@ interface SettingsModalProps {
 const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'general': 'nav.general',
   'system-prompt': 'nav.systemPrompt',
+  'prompt-snippet': 'nav.promptSnippet',
   'window': 'nav.window',
   'ai-engine': 'nav.aiEngine',
   'translate': 'nav.translate',
@@ -174,6 +176,10 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
 
               {activeTab === 'system-prompt' && (
                 <SystemPromptTab />
+              )}
+
+              {activeTab === 'prompt-snippet' && (
+                <PromptSnippetTab />
               )}
 
               {activeTab === 'window' && (

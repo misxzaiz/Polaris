@@ -8,6 +8,7 @@ import { openPath } from '@tauri-apps/plugin-opener';
 import { save } from '@tauri-apps/plugin-dialog';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { Config, HealthStatus } from '../types';
+import type { PromptSnippet, CreateSnippetParams, UpdateSnippetParams } from '../types/promptSnippet';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('TauriService');
@@ -1137,5 +1138,32 @@ export async function schedulerRenderProtocolDocument(
   params: Record<string, string>
 ): Promise<string> {
   return invoke<string>('scheduler_render_protocol_document', { template, params });
+}
+
+// ===== Prompt Snippet 快捷片段 =====
+
+/** 列出所有快捷片段 */
+export async function snippetList(): Promise<PromptSnippet[]> {
+  return invoke<PromptSnippet[]>('snippet_list');
+}
+
+/** 获取单个快捷片段 */
+export async function snippetGet(id: string): Promise<PromptSnippet | null> {
+  return invoke<PromptSnippet | null>('snippet_get', { id });
+}
+
+/** 创建快捷片段 */
+export async function snippetCreate(params: CreateSnippetParams): Promise<PromptSnippet> {
+  return invoke<PromptSnippet>('snippet_create', { params });
+}
+
+/** 更新快捷片段 */
+export async function snippetUpdate(id: string, params: UpdateSnippetParams): Promise<PromptSnippet | null> {
+  return invoke<PromptSnippet | null>('snippet_update', { id, params });
+}
+
+/** 删除快捷片段 */
+export async function snippetDelete(id: string): Promise<boolean> {
+  return invoke<boolean>('snippet_delete', { id });
 }
 

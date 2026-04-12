@@ -7,6 +7,7 @@
   "nav": {
     "general": "通用",
     "systemPrompt": "系统提示词",
+    "promptSnippet": "快捷片段",
     "window": "窗口",
     "aiEngine": "AI 引擎",
     "translate": "翻译",

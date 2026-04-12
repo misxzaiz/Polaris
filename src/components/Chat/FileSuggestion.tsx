@@ -3,8 +3,10 @@
  */
 
 import { useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { FileMatch } from '../../services/fileSearch';
 import type { Workspace } from '../../types';
+import type { PromptSnippet } from '../../types/promptSnippet';
 
 // 分离文件名和目录路径
 function splitPath(relativePath: string): { dir: string; name: string } {
@@ -15,8 +17,8 @@ function splitPath(relativePath: string): { dir: string; name: string } {
 }
 
 export interface SuggestionItem {
-  type: 'workspace' | 'file';
-  data: Workspace | FileMatch;
+  type: 'workspace' | 'file' | 'snippet';
+  data: Workspace | FileMatch | PromptSnippet;
 }
 
 interface UnifiedSuggestionProps {
@@ -37,6 +39,7 @@ export function UnifiedSuggestion({
   currentWorkspaceId,
 }: UnifiedSuggestionProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const { t } = useTranslation('promptSnippet');
 
   // 滚动选中项到视图
   useEffect(() => {
@@ -55,6 +58,7 @@ export function UnifiedSuggestion({
   // 分组
   const workspaceItems = items.filter(i => i.type === 'workspace');
   const fileItems = items.filter(i => i.type === 'file');
+  const snippetItems = items.filter(i => i.type === 'snippet');
 
   return (
     <div
@@ -163,10 +167,40 @@ export function UnifiedSuggestion({
           })}
         </>
       )}
+      {/* 快捷片段分组 */}
+      {snippetItems.length > 0 && (
+        <>
+          <div className="px-3 py-1.5 text-xs text-text-tertiary border-b border-border bg-background-elevated/50 sticky top-0">
+            {t('chat.groupLabel')}
+          </div>
+          {snippetItems.map((item) => {
+            const globalIdx = items.findIndex(i => i === item);
+            const snippet = item.data as PromptSnippet;
+
+            return (
+              <div
+                key={snippet.id}
+                data-index={globalIdx}
+                className={`px-3 py-2 cursor-pointer flex items-center gap-2 text-sm ${
+                  globalIdx === selectedIndex
+                    ? 'bg-primary/20 text-text-primary'
+                    : 'text-text-secondary hover:bg-background-hover'
+                }`}
+                onClick={() => onSelect(item)}
+                onMouseEnter={() => onHover(globalIdx)}
+              >
+                <span className="font-mono text-sm text-text-primary shrink-0">/{snippet.name}</span>
+                {snippet.description && (
+                  <span className="text-xs text-text-tertiary truncate">{snippet.description}</span>
+                )}
+              </div>
+            );
+          })}
+        </>
+      )}
     </div>
   );
 }
 
 // 保留旧组件用于向后兼容（如有其他地方使用）
-export { FileSuggestion } from './FileSuggestionLegacy';
 export { WorkspaceSuggestion } from './WorkspaceSuggestionLegacy';

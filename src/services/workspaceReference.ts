@@ -322,7 +322,7 @@ export function buildWorkspaceSystemPrompt(
  * - {{date}} 当前日期
  * - {{time}} 当前时间
  */
-function resolveTemplateVariables(
+export function resolveTemplateVariables(
   template: string,
   context: {
     workspaceName: string;

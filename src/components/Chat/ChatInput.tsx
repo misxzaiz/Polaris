@@ -19,10 +19,14 @@ import { UnifiedSuggestion, type SuggestionItem } from './FileSuggestion'
 import { AttachmentPreview } from './AttachmentPreview'
 import { AutoResizingTextarea } from './AutoResizingTextarea'
 import { QuestionFloatingPanel } from './QuestionFloatingPanel'
+import { SnippetParamPanel } from './SnippetParamPanel'
 import { useFileSearch } from '../../hooks/useFileSearch'
+import { useSnippetStore } from '../../stores/snippetStore'
+import { resolveTemplateVariables } from '../../services/workspaceReference'
 import type { FileMatch } from '../../services/fileSearch'
 import type { Workspace } from '../../types'
 import type { Attachment } from '../../types/attachment'
+import type { PromptSnippet } from '../../types/promptSnippet'
 import {
   createAttachment,
   validateAttachment,
@@ -60,6 +64,7 @@ export function ChatInput({
   // 本地 state（即时响应）
   const [localText, setLocalText] = useState('')
   const [localAttachments, setLocalAttachments] = useState<Attachment[]>([])
+  const [activeSnippet, setActiveSnippet] = useState<PromptSnippet | null>(null)
 
   // 创建防抖的持久化函数（300ms 延迟）
   const { debounced: debouncedPersistDraft, cancel: cancelPersistDraft } = useDebouncedCallback(
@@ -309,6 +314,25 @@ export function ChatInput({
     const cursorPosition = textarea.selectionStart
     const textBeforeCursor = newValue.slice(0, cursorPosition)
 
+    // === 0. 片段触发检测（行首 / ，必须在所有 @ 检测之前） ===
+    // 仅在整个输入内容以 / 开头时触发（排除 @/path 中的 /）
+    if (newValue.startsWith('/') && !newValue.includes('@')) {
+      const query = newValue.slice(1).toLowerCase()
+      const snippets = useSnippetStore.getState().snippets
+      const matched: SuggestionItem[] = snippets
+        .filter(s => s.enabled && s.name.toLowerCase().startsWith(query))
+        .map(s => ({ type: 'snippet' as const, data: s }))
+
+      if (matched.length > 0) {
+        setSuggestionItems(matched)
+        setSelectedIndex(0)
+        setShowSuggestions(true)
+        const position = calculateSuggestionPosition()
+        setSuggestionPosition({ top: position.top, left: position.left })
+        return // 不继续走 @ 检测
+      }
+    }
+
     // 1. 检测跨工作区引用 (@/path)
     const crossWorkspaceMatch = textBeforeCursor.match(/@\/([^\s]*)$/)
     if (crossWorkspaceMatch) {
@@ -436,7 +460,22 @@ export function ChatInput({
 
     let newText: string
 
-    if (item.type === 'workspace') {
+    if (item.type === 'snippet') {
+      // 片段选中：清除 /xxx，弹出变量填写或直接展开
+      const snippet = item.data as PromptSnippet
+      const expanded = resolveSnippetAutoVars(snippet.content)
+      if (snippet.variables.length > 0) {
+        // 有用户变量，弹出填写面板
+        setActiveSnippet(snippet)
+      } else {
+        // 无变量，直接展开
+        setLocalText(expanded)
+        debouncedPersistDraft(expanded, attachments)
+      }
+      setShowSuggestions(false)
+      setSuggestionItems([])
+      return
+    } else if (item.type === 'workspace') {
       const workspace = item.data as Workspace
       newText = textBeforeCursor.replace(/@[\w\u4e00-\u9fa5-/]*$/, `@${workspace.name}:`) + textAfterCursor
     } else {
@@ -588,6 +627,15 @@ export function ChatInput({
 
   const canSend = (value.trim() || attachments.length > 0) && !disabled && !isStreaming
 
+  // 解析自动变量
+  const resolveSnippetAutoVars = useCallback((content: string): string => {
+    return resolveTemplateVariables(content, {
+      workspaceName: currentWorkspace?.name ?? '',
+      workspacePath: currentWorkspace?.path ?? '',
+      contextWorkspaces: [],
+    })
+  }, [currentWorkspace])
+
   return (
     <div className="border-t border-border bg-background-elevated relative" ref={containerRef}>
       {/* 问题浮窗 - 定位在输入框上方 */}
@@ -599,6 +647,20 @@ export function ChatInput({
             onDismiss={handleQuestionDismiss}
           />
         </div>
+      )}
+      {/* 片段变量填写浮窗 */}
+      {activeSnippet && (
+        <SnippetParamPanel
+          snippet={activeSnippet}
+          onExpand={(content) => {
+            const expanded = resolveSnippetAutoVars(content)
+            setLocalText(expanded)
+            setActiveSnippet(null)
+            debouncedPersistDraft(expanded, attachments)
+            setTimeout(() => textareaRef.current?.focus(), 0)
+          }}
+          onCancel={() => setActiveSnippet(null)}
+        />
       )}
       <div className="p-3">
         {/* 附件预览 */}

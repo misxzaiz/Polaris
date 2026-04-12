@@ -18,6 +18,7 @@ import type { ReactNode } from 'react';
 export type SettingsTabId =
   | 'general'
   | 'system-prompt'
+  | 'prompt-snippet'
   | 'ai-engine'
   | 'translate'
   | 'qqbot'
@@ -42,6 +43,7 @@ interface SettingsSidebarProps {
 const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'general', icon: <IconGeneral size={16} />, labelKey: 'nav.general' },
   { id: 'system-prompt', icon: <IconMessageSquareText size={16} />, labelKey: 'nav.systemPrompt' },
+  { id: 'prompt-snippet', icon: <IconMessageSquareText size={16} />, labelKey: 'nav.promptSnippet' },
   { id: 'window', icon: <IconSettings size={16} />, labelKey: 'nav.window' },
   { id: 'ai-engine', icon: <IconAIEngine size={16} />, labelKey: 'nav.aiEngine' },
   { id: 'translate', icon: <IconTranslate size={16} />, labelKey: 'nav.translate' },

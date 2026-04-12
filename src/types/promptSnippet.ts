@@ -66,6 +66,6 @@ export function extractVariables(content: string): string[] {
   const matches = content.match(/\{\{(\w+)\}\}/g);
   if (!matches) return [];
   const vars = [...new Set(matches.map(m => m.slice(2, -2)))];
-  const autoKeys = AUTO_VARIABLES.map(v => v.key);
+  const autoKeys: string[] = AUTO_VARIABLES.map(v => v.key);
   return vars.filter(v => !autoKeys.includes(v));
 }
