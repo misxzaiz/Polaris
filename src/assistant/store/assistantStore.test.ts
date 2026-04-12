@@ -192,4 +192,39 @@ describe('assistantStore - notifications', () => {
     expect(useAssistantStore.getState().completionNotifications).toHaveLength(0)
     expect(useAssistantStore.getState().hasUnreadNotifications).toBe(false)
   })
+
+  it('should mark notification as auto reported', () => {
+    const notification: CompletionNotification = {
+      id: 'notif-1',
+      sessionId: 'session-1',
+      toolCallId: 'tool-1',
+      prompt: 'Test prompt',
+      resultSummary: 'Test summary',
+      createdAt: Date.now(),
+      handled: false,
+    }
+    useAssistantStore.getState().addCompletionNotification(notification)
+    useAssistantStore.getState().markNotificationAutoReported('notif-1')
+    const notif = useAssistantStore.getState().completionNotifications.find(n => n.id === 'notif-1')
+    expect(notif?.autoReported).toBe(true)
+  })
+
+  it('should support autoReported field in notification', () => {
+    const notification: CompletionNotification = {
+      id: 'notif-1',
+      sessionId: 'session-1',
+      toolCallId: 'tool-1',
+      prompt: 'Test prompt',
+      resultSummary: 'Test summary',
+      createdAt: Date.now(),
+      handled: false,
+      autoReported: false,
+    }
+    expect(notification.autoReported).toBe(false)
+
+    useAssistantStore.getState().addCompletionNotification(notification)
+    useAssistantStore.getState().markNotificationAutoReported('notif-1')
+    const notif = useAssistantStore.getState().completionNotifications.find(n => n.id === 'notif-1')
+    expect(notif?.autoReported).toBe(true)
+  })
 })
