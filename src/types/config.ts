@@ -3,6 +3,7 @@
  */
 
 import type { SpeechConfig, TTSConfig } from './speech'
+import type { AssistantConfig } from '../assistant/types'
 
 /**  引擎 ID */
 export type EngineId = 'claude-code'
@@ -144,6 +145,8 @@ export interface Config {
   speech?: SpeechConfig;
   /** 语音输出配置 (TTS) */
   tts?: TTSConfig;
+  /** AI 助手配置 */
+  assistant?: AssistantConfig;
 }
 
 /** 健康状态 */
