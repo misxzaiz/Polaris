@@ -78,12 +78,12 @@
 
 | 变量 | 说明 |
 |------|------|
-| `{{prompt}}` | 用户实际输入的提示词 |
-| `{{taskName}}` | 任务名称 |
-| `{{date}}` | 当前日期 |
-| `{{time}}` | 当前时间 |
-| `{{datetime}}` | 当前日期时间 |
-| `{{weekday}}` | 当前星期几 |
+| <code v-pre>`{{prompt}}`</code> | 用户实际输入的提示词 |
+| <code v-pre>`{{taskName}}`</code> | 任务名称 |
+| <code v-pre>`{{date}}`</code> | 当前日期 |
+| <code v-pre>`{{time}}`</code> | 当前时间 |
+| <code v-pre>`{{datetime}}`</code> | 当前日期时间 |
+| <code v-pre>`{{weekday}}`</code> | 当前星期几 |
 
 ## 任务管理
 
