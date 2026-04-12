@@ -1,14 +1,11 @@
 import { OpenAIProtocolEngine } from '../../engines/openai-protocol'
-import type { OpenAIToolCall } from '../../engines/openai-protocol'
 import { getEventBus } from '../../ai-runtime'
 import type { AIEvent } from '../../ai-runtime'
 import { getSystemPrompt } from './SystemPrompt'
 import { ASSISTANT_TOOLS, parseToolCallArgs } from './ToolDefinitions'
-import { getClaudeCodeSessionManager } from './ClaudeCodeSessionManager'
 import { useAssistantStore } from '../store/assistantStore'
 import type {
   AssistantEvent,
-  InvokeClaudeCodeParams,
   ToolCallInfo,
 } from '../types'
 
@@ -169,7 +166,7 @@ export class AssistantEngine {
 
       // 非后台任务等待完成
       if (!params.background) {
-        yield* this.waitForSessionCompletion(sessionId)
+        await this.waitForSessionCompletion(sessionId)
       }
 
       yield { type: 'tool_call', toolCall: { ...toolCall, status: 'completed', claudeCodeSessionId: sessionId } }
@@ -181,22 +178,22 @@ export class AssistantEngine {
   /**
    * 等待会话完成
    */
-  private async *waitForSessionCompletion(sessionId: string): AsyncGenerator<AssistantEvent> {
-    yield new Promise<void>((resolve) => {
-      const unsubscribe = this.eventBus.subscribe((event: AIEvent) => {
+  private waitForSessionCompletion(sessionId: string): Promise<void> {
+    return new Promise((resolve) => {
+      const unsubscribe = this.eventBus.onAny((event: AIEvent) => {
         if (event.type === 'session_end' && event.sessionId === sessionId) {
           unsubscribe()
           resolve()
         }
       })
-    }) as unknown as AsyncGenerator<AssistantEvent>
+    })
   }
 
   /**
    * 订阅事件
    */
   private subscribeToEvents(): void {
-    this.eventUnsubscribe = this.eventBus.subscribe((event: AIEvent) => {
+    this.eventUnsubscribe = this.eventBus.onAny((event: AIEvent) => {
       // 同步会话状态
       if (event.type === 'session_start' || event.type === 'session_end') {
         const sessionId = event.sessionId

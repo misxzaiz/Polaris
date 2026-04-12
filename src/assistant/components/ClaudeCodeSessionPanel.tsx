@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { ChevronUp, ChevronDown, Loader2 } from 'lucide-react'
 import { useAssistantStore } from '../store/assistantStore'
 import { SessionTab } from './SessionTab'
@@ -23,13 +23,13 @@ export function ClaudeCodeSessionPanel() {
   return (
     <div
       className={cn(
-        'border-t border-border transition-all shrink-0',
+        'border-t border-border transition-all shrink-0 bg-background-elevated',
         isCollapsed ? 'h-10' : 'h-48'
       )}
     >
       {/* 折叠状态栏 */}
       <div
-        className="flex items-center justify-between px-4 h-10 cursor-pointer hover:bg-surface-elevated/50"
+        className="flex items-center justify-between px-4 h-10 cursor-pointer hover:bg-background-hover"
         onClick={() => setIsCollapsed(!isCollapsed)}
       >
         <div className="flex items-center gap-2">
@@ -100,10 +100,10 @@ function SessionContent({ sessionId }: { sessionId: string }) {
           key={idx}
           className="text-xs font-mono text-text-muted flex items-start gap-2"
         >
-          <span className="text-text-faint shrink-0">
+          <span className="text-text-tertiary shrink-0">
             {new Date(event.timestamp).toLocaleTimeString()}
           </span>
-          <span className="text-text">
+          <span className="text-text-primary">
             {event.data.message || event.data.content || event.data.tool}
           </span>
         </div>

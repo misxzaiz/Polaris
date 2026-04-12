@@ -1,4 +1,4 @@
-import React, { useState, useRef, KeyboardEvent } from 'react'
+import { useState, useRef, KeyboardEvent } from 'react'
 import { Send, Square } from 'lucide-react'
 import { useAssistantStore } from '../store/assistantStore'
 import { getAssistantEngine } from '../core/AssistantEngine'
@@ -47,7 +47,7 @@ export function AssistantInput() {
   const isRunning = runningSessions.length > 0 || isLoading
 
   return (
-    <div className="border-t border-border p-3 shrink-0">
+    <div className="border-t border-border p-3 shrink-0 bg-background-elevated">
       <div className="flex items-end gap-2">
         <div className="flex-1 relative">
           <textarea
@@ -57,7 +57,7 @@ export function AssistantInput() {
             onKeyDown={handleKeyDown}
             placeholder="输入消息..."
             rows={1}
-            className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-lg text-sm text-text placeholder-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className="w-full px-3 py-2 bg-background-surface border border-border rounded-lg text-sm text-text-primary placeholder-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
             style={{ minHeight: '40px', maxHeight: '120px' }}
           />
         </div>
@@ -65,7 +65,7 @@ export function AssistantInput() {
         {isRunning ? (
           <button
             onClick={handleAbort}
-            className="flex items-center justify-center w-10 h-10 bg-danger rounded-lg text-danger-foreground hover:bg-danger/90 transition-colors"
+            className="flex items-center justify-center w-10 h-10 bg-danger rounded-lg text-white hover:bg-danger/90 transition-colors"
           >
             <Square className="w-4 h-4" />
           </button>
@@ -73,7 +73,7 @@ export function AssistantInput() {
           <button
             onClick={handleSubmit}
             disabled={!input.trim()}
-            className="flex items-center justify-center w-10 h-10 bg-primary rounded-lg text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center justify-center w-10 h-10 bg-primary rounded-lg text-white hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Send className="w-4 h-4" />
           </button>

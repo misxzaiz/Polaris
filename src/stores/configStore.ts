@@ -5,7 +5,6 @@
 import { create } from 'zustand';
 import i18n from '../i18n';
 import type { Config, HealthStatus } from '../types';
-import { DEFAULT_ASSISTANT_CONFIG } from '../assistant/types';
 import * as tauri from '../services/tauri';
 import { createLogger } from '../utils/logger';
 

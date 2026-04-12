@@ -1,4 +1,3 @@
-import React from 'react'
 import { useTranslation } from 'react-i18next'
 import { useConfigStore } from '../../../stores/configStore'
 import { DEFAULT_ASSISTANT_CONFIG } from '../../../assistant/types'

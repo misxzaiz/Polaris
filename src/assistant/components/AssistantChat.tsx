@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react'
+import { useRef, useEffect } from 'react'
 import { useAssistantStore } from '../store/assistantStore'
 
 /**
@@ -18,7 +18,7 @@ export function AssistantChat() {
       <div className="flex items-center justify-center h-full text-text-muted text-sm">
         <div className="text-center">
           <p className="mb-2">👋 你好！我是 AI 助手</p>
-          <p className="text-xs text-text-faint">
+          <p className="text-xs text-text-tertiary">
             我可以帮你分析需求、调用 Claude Code 执行项目操作
           </p>
         </div>
@@ -38,8 +38,8 @@ export function AssistantChat() {
           <div
             className={`inline-block max-w-[80%] px-3 py-2 rounded-lg text-sm ${
               message.role === 'user'
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-surface-elevated text-text'
+                ? 'bg-primary text-white'
+                : 'bg-background-surface text-text-primary'
             }`}
           >
             {message.content}
@@ -51,7 +51,7 @@ export function AssistantChat() {
               {message.toolCalls.map((tc) => (
                 <div
                   key={tc.id}
-                  className="inline-flex items-center gap-1 px-2 py-1 bg-surface-elevated rounded text-xs text-text-muted"
+                  className="inline-flex items-center gap-1 px-2 py-1 bg-background-surface rounded text-xs text-text-muted"
                 >
                   {tc.status === 'running' && (
                     <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
@@ -73,7 +73,7 @@ export function AssistantChat() {
       {/* 加载指示器 */}
       {isLoading && (
         <div className="mb-4 text-left">
-          <div className="inline-flex items-center gap-2 px-3 py-2 bg-surface-elevated rounded-lg text-sm text-text-muted">
+          <div className="inline-flex items-center gap-2 px-3 py-2 bg-background-surface rounded-lg text-sm text-text-muted">
             <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
             思考中...
           </div>

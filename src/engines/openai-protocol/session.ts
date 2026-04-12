@@ -22,7 +22,6 @@ export class OpenAISession extends EventEmitter implements AISession {
   private messages: OpenAIMessage[] = []
   private tools: OpenAITool[] = []
   private abortController: AbortController | null = null
-  private _isDisposed = false
 
   constructor(id: string, config: OpenAISessionConfig) {
     super()
@@ -217,7 +216,6 @@ export class OpenAISession extends EventEmitter implements AISession {
    * 销毁会话
    */
   dispose(): void {
-    this._isDisposed = true
     this.abort()
     this.removeAllListeners()
     this.messages = []

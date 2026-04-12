@@ -1,4 +1,3 @@
-import React from 'react'
 import { Loader2, CheckCircle, XCircle } from 'lucide-react'
 import type { ClaudeCodeSessionState } from '../types'
 import { cn } from '../../utils'
@@ -19,7 +18,7 @@ export function SessionTab({ session, isActive, onClick }: SessionTabProps) {
         'flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors',
         isActive
           ? 'bg-primary/20 text-primary'
-          : 'text-text-muted hover:bg-surface-elevated'
+          : 'text-text-muted hover:bg-background-surface'
       )}
       onClick={onClick}
     >
@@ -39,10 +38,10 @@ export function SessionTab({ session, isActive, onClick }: SessionTabProps) {
 
       {/* 类型标记 */}
       {session.type === 'primary' && (
-        <span className="text-[10px] text-text-faint">主</span>
+        <span className="text-[10px] text-text-tertiary">主</span>
       )}
       {session.type === 'background' && (
-        <span className="text-[10px] text-text-faint">后台</span>
+        <span className="text-[10px] text-text-tertiary">后台</span>
       )}
     </button>
   )

@@ -19,7 +19,7 @@ vi.mock('../../engines/openai-protocol', () => ({
 
 vi.mock('../../ai-runtime', () => ({
   getEventBus: () => ({
-    subscribe: vi.fn(() => vi.fn()),
+    onAny: vi.fn(() => vi.fn()),
   }),
 }))
 

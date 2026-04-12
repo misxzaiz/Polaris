@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react'
-import { useAssistantStore, initializeAssistantStore } from '../store/assistantStore'
+import { useEffect } from 'react'
+import { useAssistantStore } from '../store/assistantStore'
 import { AssistantChat } from './AssistantChat'
 import { AssistantInput } from './AssistantInput'
 import { ClaudeCodeSessionPanel } from './ClaudeCodeSessionPanel'
@@ -21,10 +21,10 @@ export function AssistantPanel() {
   ).length
 
   return (
-    <div className="flex flex-col h-full bg-surface">
+    <div className="flex flex-col h-full bg-background-elevated">
       {/* 标题栏 */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-        <h2 className="text-sm font-medium text-text">AI 助手</h2>
+        <h2 className="text-sm font-medium text-text-primary">AI 助手</h2>
         <div className="flex items-center gap-2 text-xs text-text-muted">
           {sessionCount > 0 && (
             <span>
