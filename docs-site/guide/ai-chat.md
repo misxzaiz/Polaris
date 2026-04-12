@@ -1,107 +1,156 @@
 # AI 对话
 
-AI 对话是 Polaris 的核心功能，位于右侧面板。
-
-<div class="feature-grid">
-  <div class="feature-item">
-    <div class="feature-icon">💬</div>
-    <h4>流式对话</h4>
-    <p>实时流式输出，完整 Markdown 渲染</p>
-  </div>
-  <div class="feature-item">
-    <div class="feature-icon">📑</div>
-    <h4>多会话管理</h4>
-    <p>独立会话上下文，历史记录持久化</p>
-  </div>
-  <div class="feature-item">
-    <div class="feature-icon">🪟</div>
-    <h4>多开窗口</h4>
-    <p>最多 16 窗口分屏，支持 1~2 行布局</p>
-  </div>
-  <div class="feature-item">
-    <div class="feature-icon">⚡</div>
-    <h4>快捷片段</h4>
-    <p>输入 <span class="shortcut">/</span> 快速插入常用提示词</p>
-  </div>
-</div>
+AI 对话是 Polaris 的核心功能，位于右侧面板。基于 Claude CLI 连接，支持流式输出和丰富的交互功能。
 
 ## 基本使用
 
-<div class="step-card">
-  <div class="step-number">1</div>
-  <div class="step-content">
-    <h4>输入消息</h4>
-    <p>在右侧面板底部输入框中输入消息，按 <span class="shortcut">Enter</span> 发送，<span class="shortcut">Shift</span> + <span class="shortcut">Enter</span> 换行</p>
-  </div>
-</div>
+在右侧面板底部的输入框中输入消息：
 
-<div class="step-card">
-  <div class="step-number">2</div>
-  <div class="step-content">
-    <h4>查看回复</h4>
-    <p>AI 以流式方式返回回复，实时渲染为富文本格式</p>
-  </div>
-</div>
+| 操作 | 快捷键 |
+|------|--------|
+| 发送消息 | <span class="shortcut">Enter</span> |
+| 换行 | <span class="shortcut">Shift</span> + <span class="shortcut">Enter</span> |
+| 中断回复 | 点击「中断」按钮 |
 
-<div class="step-card">
-  <div class="step-number">3</div>
-  <div class="step-content">
-    <h4>继续对话</h4>
-    <p>在同一会话中持续对话，AI 会记住上下文</p>
-  </div>
-</div>
+发送后 AI 以流式方式返回回复，实时渲染为 Markdown 格式。
+
+## 欢迎页
+
+新会话初始状态会显示欢迎信息，包含「文件管理」「代码编辑」「智能分析」三个功能入口。底部提示「输入消息开始对话」。
+
+## 消息交互
+
+每条 AI 回复支持以下操作：
+
+| 操作 | 说明 |
+|------|------|
+| 复制 | 复制消息文本到剪贴板 |
+| 重新生成 | 让 AI 重新生成该条回复 |
+| 删除 | 删除该条消息（不可恢复） |
+| 编辑 | 编辑该条消息内容 |
+
+## 会话管理
+
+### 新建会话
+
+创建新会话时可以选择主工作区和关联工作区。AI 可以访问关联工作区中的文件。
+
+### 会话历史
+
+点击面板顶部的「会话历史」按钮打开历史面板：
+
+- 按时间分组显示：今天 / 昨天 / 本周 / 更早
+- 支持搜索历史会话
+- 可恢复或删除历史会话
+- 显示每条会话的消息数
+
+### 对话导航
+
+对话过程中右侧显示对话导航，按「轮」标记每轮交互。支持快速跳转到指定轮次，底部有「回到底部」按钮。
 
 ## 多会话窗口
 
-点击右上角的多窗口按钮进入多会话模式：
+支持同时展示多个会话：
 
-<table class="custom-table">
-  <thead>
-    <tr><th>配置项</th><th>说明</th></tr>
-  </thead>
-  <tbody>
-    <tr><td>最大窗口数</td><td>16 个 <span class="badge blue">最多</span></td></tr>
-    <tr><td>布局行数</td><td>1 行 或 2 行</td></tr>
-    <tr><td>窗口宽度</td><td>可自定义每个格子宽度</td></tr>
-    <tr><td>全屏展开</td><td>双击任意窗口可全屏查看</td></tr>
-  </tbody>
-</table>
+| 配置 | 说明 |
+|------|------|
+| 最大窗口数 | 16 个 |
+| 布局 | 1 行 或 2 行 |
+| 窗口宽度 | 可自定义每个格子宽度 |
+| 全屏展开 | 双击任意窗口可全屏查看 |
 
-## 支持的内容渲染
+## 工具调用可视化
 
-<div class="feature-grid">
-  <div class="feature-item">
-    <div class="feature-icon">📝</div>
-    <h4>Markdown</h4>
-    <p>标题、列表、表格、引用、链接</p>
-  </div>
-  <div class="feature-item">
-    <div class="feature-icon">🖥️</div>
-    <h4>代码块</h4>
-    <p>自动语法高亮，20+ 语言支持</p>
-  </div>
-  <div class="feature-item">
-    <div class="feature-icon">📊</div>
-    <h4>Mermaid 图表</h4>
-    <p>流程图、时序图、甘特图等</p>
-  </div>
-  <div class="feature-item">
-    <div class="feature-icon">🖼️</div>
-    <h4>图片</h4>
-    <p>支持内嵌图片显示</p>
-  </div>
+AI 在执行操作时会显示工具调用卡片：
+
+| 工具 | 显示 |
+|------|------|
+| 编辑文件 | 显示修改的文件路径、差异对比、可撤销 |
+| 读取文件 | 显示读取的文件内容 |
+| 执行命令 | 显示命令输出和退出码 |
+| 搜索文件/内容 | 显示匹配结果数量 |
+| 写入/创建文件 | 显示创建结果 |
+
+支持收起/展开全部工具调用详情，显示执行耗时。
+
+## 计划模式
+
+AI 可以创建执行计划，流程如下：
+
+<div class="lifecycle">
+  <div class="lifecycle-step">起草中</div>
+  <div class="lifecycle-arrow">→</div>
+  <div class="lifecycle-step">待审批</div>
+  <div class="lifecycle-arrow">→</div>
+  <div class="lifecycle-step active">已批准</div>
+  <div class="lifecycle-arrow">→</div>
+  <div class="lifecycle-step">执行中</div>
+  <div class="lifecycle-arrow">→</div>
+  <div class="lifecycle-step">已完成</div>
 </div>
+
+用户可批准或拒绝计划，拒绝时需填写原因。计划包含多个阶段，每阶段有独立状态。
+
+## 权限请求
+
+AI 执行某些操作前会请求用户授权：
+
+- 显示操作类型、目标和原因
+- 用户可批准或拒绝
+- 已处理的请求显示最终状态
+
+## 问答交互
+
+AI 回复中可包含交互式问答：
+
+- 单选 / 多选题目
+- 文本输入
+- 用户选择后提交答案继续对话
+
+## 内容渲染
+
+AI 回复支持以下内容类型：
+
+| 类型 | 说明 |
+|------|------|
+| Markdown | 标题、列表、表格、引用、链接 |
+| 代码块 | 自动语法高亮，支持 20+ 语言，可折叠，可复制 |
+| Mermaid 图表 | 流程图、时序图等，支持图表/源码双视图，可缩放 |
+| 思考过程 | 可折叠的思考块 |
+| 图片 | 内嵌图片显示 |
 
 ## System Prompt
 
-可在 **设置 → System Prompt** 中自定义 AI 的系统提示词，为每个工作区设定专属角色和行为风格。
+可在 **设置 → 系统提示词** 中自定义 AI 的系统提示词。支持三种模式：
 
-<div class="info-card tip">
-  <div class="card-title">💡 提示</div>
-  <p>对话过长时，较早的消息会被自动压缩以节省内存，关键信息会保留。</p>
-</div>
+| 模式 | 说明 |
+|------|------|
+| 默认 | 使用内置提示词 |
+| 追加 | 在默认提示词后追加自定义内容 |
+| 替换 | 完全替换为自定义内容 |
 
-<div class="info-card warning">
-  <div class="card-title">⚠️ 注意</div>
-  <p>对话会消耗 AI 模型的 API Token，请注意控制用量。可在 AI 引擎设置中查看用量统计。</p>
-</div>
+支持变量插值：`{{workspaceName}}`、`{{workspacePath}}`、`{{date}}`、`{{time}}`、`{{defaultPrompt}}` 等。
+
+## 快捷片段
+
+在输入框中输入 `/` 可触发快捷片段列表。片段支持变量占位符（`{{变量名}}`），可在 **设置 → 快捷片段** 中管理。
+
+可用自动变量：`{{date}}`、`{{time}}`、`{{workspaceName}}`、`{{workspacePath}}`。
+
+## 上下文管理
+
+- 可附加文件和图片到消息中
+- 支持清除对话上下文
+- 对话过长时较早消息自动压缩，关键信息保留
+- 支持 Git 上下文（差异、提交、日志等）
+
+## 语音输入/输出
+
+配置方式见 **设置 → 语音输入**：
+
+- **语音输入**：点击状态栏语音按钮开始/停止连续语音识别，支持语音命令（发送消息、清空输入、中断对话）
+- **语音输出（TTS）**：AI 回复完成后自动朗读，可选择语音角色、语速、音量，自动过滤代码块
+
+## 状态栏
+
+输入区域下方显示状态信息：当前对话数、工具调用数、响应时间。

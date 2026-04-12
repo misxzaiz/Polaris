@@ -1,344 +1,424 @@
-/* ===== Polaris 品牌色 & 基础变量 ===== */
+/* ===== Polaris 品牌色（与主应用 tailwind.config.js 一致） ===== */
 :root {
   --vp-c-brand-1: #3b82f6;
   --vp-c-brand-2: #2563eb;
   --vp-c-brand-3: #1d4ed8;
   --vp-c-brand-soft: rgba(59, 130, 246, 0.14);
 
-  --polaris-bg: #0f1117;
-  --polaris-bg-card: #1a1b26;
-  --polaris-bg-card-hover: #22243a;
-  --polaris-border: #2e303e;
-  --polaris-text: #e2e4f0;
-  --polaris-text-muted: #8b8fa3;
-  --polaris-accent: #3b82f6;
-  --polaris-accent-glow: rgba(59, 130, 246, 0.25);
-  --polaris-success: #22c55e;
-  --polaris-warning: #f59e0b;
-  --polaris-danger: #ef4444;
+  /* 主应用色值映射 */
+  --p-bg-base: rgba(15, 15, 17, 1);
+  --p-bg-elevated: rgba(26, 26, 31, 1);
+  --p-bg-surface: rgba(37, 37, 43, 1);
+  --p-bg-hover: rgba(45, 45, 53, 1);
+  --p-bg-active: rgba(53, 53, 61, 1);
+  --p-border: rgba(255, 255, 255, 0.15);
+  --p-border-subtle: rgba(255, 255, 255, 0.08);
+  --p-border-strong: rgba(255, 255, 255, 0.25);
+  --p-text-primary: #F8F8F8;
+  --p-text-secondary: #B4B4B8;
+  --p-text-tertiary: #8E8E93;
+  --p-text-muted: #6D6D70;
+  --p-primary: #3B82F6;
+  --p-primary-hover: #2563EB;
+  --p-primary-faint: rgba(59, 130, 246, 0.15);
+  --p-primary-glow: rgba(59, 130, 246, 0.3);
+  --p-success: #34D399;
+  --p-success-faint: rgba(52, 211, 153, 0.15);
+  --p-warning: #FBBF24;
+  --p-warning-faint: rgba(251, 191, 36, 0.15);
+  --p-danger: #F87171;
+  --p-danger-faint: rgba(248, 113, 113, 0.15);
+  --p-info: #60A5FA;
+  --p-info-faint: rgba(96, 165, 250, 0.15);
+  --p-code-bg: #25252B;
+  --p-code-inline-bg: rgba(255, 255, 255, 0.08);
+  --p-code-inline-border: rgba(255, 255, 255, 0.1);
+  --p-code-inline-color: #60A5FA;
+  --p-shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.15);
+  --p-shadow-glow: 0 0 24px rgba(59, 130, 246, 0.15);
+}
+
+/* ===== 亮色模式变量覆盖 ===== */
+:root:not(.dark) {
+  --p-bg-base: #ffffff;
+  --p-bg-elevated: #f6f7f9;
+  --p-bg-surface: #ebedf0;
+  --p-bg-hover: #e2e5e9;
+  --p-bg-active: #d9dce1;
+  --p-border: rgba(0, 0, 0, 0.12);
+  --p-border-subtle: rgba(0, 0, 0, 0.06);
+  --p-border-strong: rgba(0, 0, 0, 0.2);
+  --p-text-primary: #1a1a1a;
+  --p-text-secondary: #4a4a4a;
+  --p-text-tertiary: #6b6b6b;
+  --p-text-muted: #999999;
+  --p-primary-faint: rgba(59, 130, 246, 0.1);
+  --p-primary-glow: rgba(59, 130, 246, 0.15);
+  --p-success-faint: rgba(16, 185, 129, 0.1);
+  --p-warning-faint: rgba(245, 158, 11, 0.1);
+  --p-danger-faint: rgba(239, 68, 68, 0.1);
+  --p-info-faint: rgba(59, 130, 246, 0.1);
+  --p-code-inline-bg: rgba(0, 0, 0, 0.06);
+  --p-code-inline-border: rgba(0, 0, 0, 0.08);
+  --p-code-inline-color: #2563EB;
+  --p-code-bg: #f0f1f3;
+  --p-shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --p-shadow-glow: 0 0 24px rgba(59, 130, 246, 0.08);
 }
 
 /* ===== 深色主题覆盖 ===== */
 .dark {
-  --vp-c-bg: var(--polaris-bg);
-  --vp-c-bg-soft: var(--polaris-bg-card);
-  --vp-c-bg-mute: #141520;
-  --vp-c-border: var(--polaris-border);
-  --vp-c-text-1: var(--polaris-text);
-  --vp-c-text-2: var(--polaris-text-muted);
-  --vp-c-gutter: var(--polaris-bg);
+  --vp-c-bg: var(--p-bg-base);
+  --vp-c-bg-soft: var(--p-bg-elevated);
+  --vp-c-bg-mute: var(--p-bg-surface);
+  --vp-c-bg-alt: var(--p-bg-elevated);
+  --vp-c-border: var(--p-border);
+  --vp-c-text-1: var(--p-text-primary);
+  --vp-c-text-2: var(--p-text-secondary);
+  --vp-c-text-3: var(--p-text-tertiary);
+  --vp-c-gutter: var(--p-bg-base);
 }
 
 /* ===== 全局样式 ===== */
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
 }
 
-/* ===== Hero 区域增强 ===== */
+/* ===== Hero ===== */
 .VPHero .name {
-  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  background: linear-gradient(135deg, #3B82F6 0%, #8B5CF6 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }
+.VPHero .text { color: var(--p-text-primary) !important; }
+.VPHero .tagline { color: var(--p-text-secondary) !important; }
 
-.VPHero .text {
-  color: var(--polaris-text) !important;
-}
-
-.VPHero .tagline {
-  color: var(--polaris-text-muted) !important;
-}
-
-/* ===== Feature 卡片增强 ===== */
+/* ===== Feature 卡片 ===== */
 .VPFeature .box {
-  border: 1px solid var(--polaris-border);
+  border: 1px solid var(--p-border);
   border-radius: 12px;
-  transition: all 0.3s ease;
-  background: var(--polaris-bg-card);
+  background: var(--p-bg-elevated);
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
 }
-
 .VPFeature .box:hover {
-  border-color: var(--polaris-accent);
-  box-shadow: 0 0 20px var(--polaris-accent-glow);
+  border-color: var(--p-primary);
+  box-shadow: var(--p-shadow-glow);
   transform: translateY(-2px);
 }
 
-.VPFeature .icon {
-  color: var(--polaris-accent);
-}
+/* ===== 滚动条（匹配主应用） ===== */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 5px; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 5px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
 
-/* ===== 侧边栏增强 ===== */
-.VPSidebar .group-title {
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--polaris-text-muted);
-}
-
-/* ===== 自定义组件样式 ===== */
-
-/* StepCard 步骤卡片 */
-.step-card {
-  display: flex;
-  gap: 16px;
-  padding: 16px 20px;
-  margin: 12px 0;
-  border-radius: 10px;
-  border: 1px solid var(--polaris-border);
-  background: var(--polaris-bg-card);
-  transition: all 0.2s ease;
-}
-
-.step-card:hover {
-  border-color: var(--polaris-accent);
-  box-shadow: 0 0 12px var(--polaris-accent-glow);
-}
-
-.step-number {
-  flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 16px;
-}
-
-.step-content h4 {
-  margin: 0 0 4px 0;
-  color: var(--polaris-text);
-  font-size: 15px;
-}
-
-.step-content p {
-  margin: 0;
-  color: var(--polaris-text-muted);
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-/* FeatureGrid 特性网格 */
-.feature-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 16px;
-  margin: 20px 0;
-}
-
-.feature-item {
-  padding: 20px;
-  border-radius: 10px;
-  border: 1px solid var(--polaris-border);
-  background: var(--polaris-bg-card);
-  transition: all 0.25s ease;
-}
-
-.feature-item:hover {
-  border-color: var(--polaris-accent);
-  box-shadow: 0 0 16px var(--polaris-accent-glow);
-  transform: translateY(-2px);
-}
-
-.feature-icon {
-  font-size: 28px;
-  margin-bottom: 10px;
-}
-
-.feature-item h4 {
-  margin: 0 0 8px 0;
-  color: var(--polaris-text);
-  font-size: 15px;
-}
-
-.feature-item p {
-  margin: 0;
-  color: var(--polaris-text-muted);
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-/* ShortcutKey 快捷键 */
-.shortcut {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: var(--polaris-bg-card);
-  border: 1px solid var(--polaris-border);
-  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
-  font-size: 12px;
-  color: var(--polaris-text);
-  box-shadow: 0 2px 0 var(--polaris-border);
-}
-
-/* InfoCard 信息卡片 */
-.info-card {
-  padding: 16px 20px;
-  border-radius: 10px;
-  border-left: 4px solid;
-  margin: 16px 0;
-}
-
-.info-card.tip {
-  border-color: var(--polaris-accent);
-  background: rgba(59, 130, 246, 0.08);
-}
-
-.info-card.warning {
-  border-color: var(--polaris-warning);
-  background: rgba(245, 158, 11, 0.08);
-}
-
-.info-card.danger {
-  border-color: var(--polaris-danger);
-  background: rgba(239, 68, 68, 0.08);
-}
-
-.info-card.success {
-  border-color: var(--polaris-success);
-  background: rgba(34, 197, 94, 0.08);
-}
-
-.info-card .card-title {
-  font-weight: 600;
-  margin-bottom: 6px;
-  font-size: 14px;
-}
-
-.info-card.tip .card-title { color: var(--polaris-accent); }
-.info-card.warning .card-title { color: var(--polaris-warning); }
-.info-card.danger .card-title { color: var(--polaris-danger); }
-.info-card.success .card-title { color: var(--polaris-success); }
-
-.info-card p {
-  margin: 0;
-  color: var(--polaris-text-muted);
-  font-size: 13px;
-  line-height: 1.7;
-}
-
-/* UI 预览卡片 — 模拟应用界面 */
-.ui-preview {
-  border-radius: 10px;
-  border: 1px solid var(--polaris-border);
-  background: var(--polaris-bg-card);
-  overflow: hidden;
-  margin: 20px 0;
-}
-
-.ui-preview-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 14px;
-  background: #12131c;
-  border-bottom: 1px solid var(--polaris-border);
-}
-
-.ui-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-}
-
-.ui-dot.red { background: #ef4444; }
-.ui-dot.yellow { background: #f59e0b; }
-.ui-dot.green { background: #22c55e; }
-
-.ui-preview-body {
-  padding: 16px;
-  color: var(--polaris-text-muted);
-  font-size: 13px;
-}
-
-/* ParamTable 参数表格美化 */
-.custom-table {
+/* ===== Markdown 表格覆盖（解决默认表格丑的问题） ===== */
+.vp-doc table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  margin: 16px 0;
-  border-radius: 8px;
+  margin: 20px 0;
+  border-radius: 10px;
   overflow: hidden;
-  border: 1px solid var(--polaris-border);
+  border: 1px solid var(--p-border);
+  display: table;
 }
 
-.custom-table th {
-  background: #12131c;
-  padding: 10px 14px;
+.vp-doc table thead tr {
+  background: var(--p-bg-surface);
+}
+
+.vp-doc table th {
+  padding: 12px 16px;
   text-align: left;
   font-size: 12px;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--polaris-text-muted);
-  border-bottom: 1px solid var(--polaris-border);
+  color: var(--p-text-tertiary);
+  border-bottom: 1px solid var(--p-border);
+  background: transparent;
 }
 
-.custom-table td {
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--polaris-border);
-  font-size: 13px;
-  color: var(--polaris-text);
+.vp-doc table td {
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--p-border-subtle);
+  font-size: 14px;
+  color: var(--p-text-primary);
+  line-height: 1.6;
 }
 
-.custom-table tr:last-child td {
+.vp-doc table tbody tr:last-child td {
   border-bottom: none;
 }
 
-.custom-table tr:hover td {
+.vp-doc table tbody tr {
+  transition: background 0.15s;
+}
+
+.vp-doc table tbody tr:hover {
   background: rgba(59, 130, 246, 0.04);
 }
 
-/* Lifecycle 流程图 */
-.lifecycle {
+/* ===== 内联代码样式（匹配主应用） ===== */
+.vp-doc :not(pre) > code {
+  background: var(--p-code-inline-bg);
+  border: 1px solid var(--p-code-inline-border);
+  padding: 2px 8px;
+  border-radius: 6px;
+  color: var(--p-code-inline-color);
+  font-size: 0.9em;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Fira Code', monospace;
+}
+
+/* ===== 引用块 ===== */
+.vp-doc blockquote {
+  border-left: 4px solid var(--p-border);
+  padding-left: 16px;
+  color: var(--p-text-secondary);
+  font-style: italic;
+}
+
+/* =============================
+   自定义文档组件
+   ============================= */
+
+/* ---- 模拟应用界面 ---- */
+.ui-mock {
+  border-radius: 12px;
+  border: 1px solid var(--p-border);
+  background: var(--p-bg-elevated);
+  overflow: hidden;
+  margin: 24px 0;
+  box-shadow: var(--p-shadow-soft);
+}
+.ui-mock-label {
   display: flex;
   align-items: center;
-  gap: 0;
-  margin: 20px 0;
-  flex-wrap: wrap;
-  justify-content: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: var(--p-bg-surface);
+  border-bottom: 1px solid var(--p-border);
+  font-size: 12px;
+  color: var(--p-text-tertiary);
+}
+.ui-mock-label .dots { display: flex; gap: 6px; }
+.ui-mock-label .dot { width: 10px; height: 10px; border-radius: 50%; }
+.ui-mock-label .dot.r { background: #F87171; }
+.ui-mock-label .dot.y { background: #FBBF24; }
+.ui-mock-label .dot.g { background: #34D399; }
+.ui-mock-label .mock-hint {
+  font-style: italic;
+  opacity: 0.7;
+}
+.ui-mock-body {
+  padding: 16px;
+  color: var(--p-text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
 }
 
+/* ---- 模拟应用内各区域 ---- */
+.mock-activitybar {
+  width: 48px; flex-shrink: 0;
+  background: var(--p-bg-elevated);
+  border-radius: 8px;
+  display: flex; flex-direction: column;
+  align-items: center; padding: 8px 0; gap: 4px;
+}
+.mock-activitybar .ab-icon {
+  width: 32px; height: 32px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; color: var(--p-text-tertiary);
+  transition: background 0.15s;
+}
+.mock-activitybar .ab-icon.active {
+  background: var(--p-primary-faint);
+  color: var(--p-primary);
+  box-shadow: inset 2px 0 0 var(--p-primary);
+}
+.mock-leftpanel {
+  flex: 1; min-width: 0;
+  background: var(--p-bg-elevated);
+  border-radius: 8px;
+  padding: 12px;
+}
+.mock-center {
+  flex: 2; min-width: 0;
+  background: var(--p-bg-base);
+  border-radius: 8px;
+  padding: 12px;
+}
+.mock-rightpanel {
+  flex: 2; min-width: 0;
+  background: var(--p-bg-elevated);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+/* ---- 步骤卡片 ---- */
+.step-card {
+  display: flex; gap: 16px;
+  padding: 16px 20px; margin: 12px 0;
+  border-radius: 10px;
+  border: 1px solid var(--p-border);
+  background: var(--p-bg-elevated);
+  transition: border-color 0.2s;
+}
+.step-card:hover { border-color: var(--p-primary); }
+.step-number {
+  flex-shrink: 0; width: 36px; height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3B82F6, #2563EB);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 15px;
+}
+.step-content h4 { margin: 0 0 4px; color: var(--p-text-primary); font-size: 15px; }
+.step-content p { margin: 0; color: var(--p-text-secondary); font-size: 13px; line-height: 1.6; }
+
+/* ---- 特性网格 ---- */
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px; margin: 20px 0;
+}
+.feature-item {
+  padding: 16px; border-radius: 10px;
+  border: 1px solid var(--p-border);
+  background: var(--p-bg-elevated);
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+.feature-item:hover {
+  border-color: var(--p-primary);
+  box-shadow: var(--p-shadow-glow);
+  transform: translateY(-2px);
+}
+.feature-item .fi-icon {
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  background: var(--p-primary-faint);
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 10px;
+}
+.feature-item .fi-icon svg {
+  width: 18px; height: 18px;
+  color: var(--p-primary);
+}
+.feature-item h4 { margin: 0 0 6px; color: var(--p-text-primary); font-size: 14px; font-weight: 600; }
+.feature-item p { margin: 0; color: var(--p-text-secondary); font-size: 13px; line-height: 1.5; }
+
+/* ---- 快捷键 ---- */
+.shortcut {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 2px 8px; border-radius: 6px;
+  background: var(--p-bg-surface);
+  border: 1px solid var(--p-border);
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 12px; color: var(--p-text-primary);
+  box-shadow: 0 2px 0 rgba(255,255,255,0.08);
+  line-height: 1.6;
+}
+
+/* ---- 信息卡片 ---- */
+.info-card {
+  padding: 14px 18px; border-radius: 8px;
+  border-left: 3px solid; margin: 16px 0;
+}
+.info-card.tip     { border-color: var(--p-primary);  background: var(--p-primary-faint); }
+.info-card.warning { border-color: var(--p-warning);  background: var(--p-warning-faint); }
+.info-card.danger  { border-color: var(--p-danger);   background: var(--p-danger-faint); }
+.info-card.success { border-color: var(--p-success);  background: var(--p-success-faint); }
+.info-card .card-title { font-weight: 600; margin-bottom: 4px; font-size: 14px; }
+.info-card.tip .card-title     { color: var(--p-info); }
+.info-card.warning .card-title { color: var(--p-warning); }
+.info-card.danger .card-title  { color: var(--p-danger); }
+.info-card.success .card-title { color: var(--p-success); }
+.info-card p { margin: 0; color: var(--p-text-secondary); font-size: 13px; line-height: 1.7; }
+
+/* ---- 生命周期流程 ---- */
+.lifecycle {
+  display: flex; align-items: center;
+  gap: 0; margin: 20px 0;
+  flex-wrap: wrap; justify-content: flex-start;
+}
 .lifecycle-step {
-  padding: 8px 16px;
-  border-radius: 20px;
-  font-size: 13px;
-  font-weight: 500;
-  border: 1px solid var(--polaris-border);
-  background: var(--polaris-bg-card);
-  color: var(--polaris-text);
+  padding: 6px 14px; border-radius: 6px;
+  font-size: 13px; font-weight: 500;
+  border: 1px solid var(--p-border);
+  background: var(--p-bg-elevated);
+  color: var(--p-text-primary);
   white-space: nowrap;
 }
-
 .lifecycle-step.active {
-  border-color: var(--polaris-accent);
-  background: rgba(59, 130, 246, 0.15);
-  color: var(--polaris-accent);
+  border-color: var(--p-primary);
+  background: var(--p-primary-faint);
+  color: var(--p-primary);
 }
-
 .lifecycle-arrow {
-  color: var(--polaris-text-muted);
-  font-size: 18px;
-  margin: 0 4px;
+  color: var(--p-text-muted); font-size: 16px; margin: 0 6px;
 }
 
-/* Badge 标签 */
+/* ---- 标签 ---- */
 .badge {
-  display: inline-block;
-  padding: 2px 8px;
+  display: inline-block; padding: 2px 8px;
+  border-radius: 4px; font-size: 11px;
+  font-weight: 600; letter-spacing: 0.02em;
+  vertical-align: middle;
+}
+.badge.blue   { background: var(--p-primary-faint); color: #60A5FA; }
+.badge.green  { background: var(--p-success-faint); color: #34D399; }
+.badge.yellow { background: var(--p-warning-faint); color: #FBBF24; }
+.badge.red    { background: var(--p-danger-faint);  color: #F87171; }
+.badge.purple { background: rgba(139,92,246,0.15);  color: #A78BFA; }
+.badge.gray   { background: rgba(255,255,255,0.08); color: var(--p-text-tertiary); }
+
+/* ---- 模拟截图占位 ---- */
+.screenshot-placeholder {
   border-radius: 10px;
+  border: 1px dashed var(--p-border);
+  background: var(--p-bg-surface);
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--p-text-muted);
+  font-size: 13px;
+  margin: 20px 0;
+}
+.screenshot-placeholder .sp-label {
+  display: block;
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  margin-top: 8px;
+  opacity: 0.6;
+  font-style: italic;
 }
 
-.badge.blue { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
-.badge.green { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
-.badge.yellow { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
-.badge.red { background: rgba(239, 68, 68, 0.15); color: #f87171; }
-.badge.purple { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
+/* ---- 设置面板模拟 ---- */
+.mock-settings {
+  display: flex; border-radius: 10px;
+  border: 1px solid var(--p-border);
+  background: var(--p-bg-elevated);
+  overflow: hidden; margin: 20px 0;
+  min-height: 200px;
+}
+.mock-settings-sidebar {
+  width: 160px; flex-shrink: 0;
+  background: var(--p-bg-surface);
+  border-right: 1px solid var(--p-border-subtle);
+  padding: 12px 0;
+}
+.mock-settings-sidebar .ms-item {
+  padding: 8px 14px; font-size: 13px;
+  color: var(--p-text-secondary);
+  border-right: 2px solid transparent;
+  cursor: default;
+}
+.mock-settings-sidebar .ms-item.active {
+  color: var(--p-primary);
+  background: var(--p-primary-faint);
+  border-right-color: var(--p-primary);
+}
+.mock-settings-content {
+  flex: 1; padding: 16px 20px;
+  font-size: 13px; color: var(--p-text-secondary);
+}

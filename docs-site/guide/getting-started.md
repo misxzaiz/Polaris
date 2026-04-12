@@ -1,36 +1,13 @@
 # 安装与启动
 
-<div class="feature-grid">
-  <div class="feature-item">
-    <div class="feature-icon">⬇️</div>
-    <h4>下载安装</h4>
-    <p>从 GitHub Releases 获取最新安装包，一键安装</p>
-  </div>
-  <div class="feature-item">
-    <div class="feature-icon">🔑</div>
-    <h4>配置 AI</h4>
-    <p>填入 API Key 即可开始对话</p>
-  </div>
-  <div class="feature-item">
-    <div class="feature-icon">🚀</div>
-    <h4>开始使用</h4>
-    <p>完整功能立即可用，无需额外配置</p>
-  </div>
-</div>
-
 ## 系统要求
 
-<table class="custom-table">
-  <thead>
-    <tr><th>项目</th><th>要求</th></tr>
-  </thead>
-  <tbody>
-    <tr><td>操作系统</td><td>Windows 10 / 11（推荐） <span class="badge blue">推荐</span></td></tr>
-    <tr><td>macOS</td><td>12+ <span class="badge yellow">实验性</span></td></tr>
-    <tr><td>内存</td><td>至少 4GB 可用</td></tr>
-    <tr><td>网络</td><td>需要访问 AI API 服务</td></tr>
-  </tbody>
-</table>
+| 项目 | 要求 |
+|------|------|
+| 操作系统 | Windows 10 / 11（推荐） |
+| macOS | 12+（实验性支持） |
+| 内存 | 至少 4GB 可用 |
+| 网络 | 需要访问 AI API 服务 |
 
 ## 安装步骤
 
@@ -53,8 +30,8 @@
 <div class="step-card">
   <div class="step-number">3</div>
   <div class="step-content">
-    <h4>配置 AI 引擎</h4>
-    <p>进入 <strong>设置 → AI Engine</strong>，选择模型提供商并填入 API Key 和 Base URL</p>
+    <h4>连接 Claude CLI</h4>
+    <p>首次启动会检测 Claude CLI。如未检测到，需在连接页面手动指定 CLI 路径或在「设置 → AI 引擎」中配置</p>
   </div>
 </div>
 
@@ -62,11 +39,22 @@
   <div class="step-number">4</div>
   <div class="step-content">
     <h4>开始对话</h4>
-    <p>在右侧 AI 面板输入消息，即可开始使用</p>
+    <p>连接成功后，右侧 AI 面板即可使用。在输入框输入消息，按 <span class="shortcut">Enter</span> 发送，<span class="shortcut">Shift</span> + <span class="shortcut">Enter</span> 换行</p>
   </div>
 </div>
 
+## 首次连接问题排查
+
+应用启动后会自动检测 Claude CLI。如果检测失败，会显示连接页面，列出可能的诊断原因：
+
+| 问题 | 解决方式 |
+|------|----------|
+| CLI 未安装 | 通过 `npm install -g @anthropic-ai/claude-code` 安装 |
+| CLI 路径未配置 | 点击「设置 Claude 路径」手动输入完整路径 |
+| 系统PATH未包含CLI目录 | 将 CLI 所在目录添加到系统 PATH 环境变量 |
+| 权限不足 | 以管理员权限运行终端安装 CLI |
+
 <div class="info-card tip">
-  <div class="card-title">💡 提示</div>
-  <p>支持 OpenAI、Anthropic 等多种模型提供商，也可以配置自定义 API 地址接入兼容接口。</p>
+  <div class="card-title">提示</div>
+  <p>Windows 常见路径示例：<code>C:\Users\&lt;用户名&gt;\AppData\Roaming\npm\claude.cmd</code>。macOS/Linux：<code>/usr/local/bin/claude</code></p>
 </div>
