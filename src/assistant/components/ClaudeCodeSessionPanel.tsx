@@ -171,6 +171,11 @@ export function CompletionNotificationPanel() {
 
   if (pendingNotifications.length === 0) return null
 
+  const handleImmediate = (notificationId: string) => {
+    markNotificationHandled(notificationId, 'immediate')
+    // 立即处理会触发 useAssistant.handleNotification
+  }
+
   return (
     <div className="border-t border-border bg-background-surface">
       {/* 折叠状态栏 */}
@@ -179,7 +184,7 @@ export function CompletionNotificationPanel() {
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <div className="flex items-center gap-2">
-          <Bell className={cn('w-4 h-4', hasUnreadNotifications ? 'text-primary' : 'text-text-muted')} />
+          <Bell className={cn('w-4 h-4', hasUnreadNotifications ? 'text-primary animate-pulse' : 'text-text-muted')} />
           <span className="text-sm text-text-primary">
             {pendingNotifications.length} 个任务完成待处理
           </span>
@@ -202,27 +207,36 @@ export function CompletionNotificationPanel() {
               <div className="text-xs text-text-tertiary mb-1">
                 {new Date(notification.createdAt).toLocaleTimeString()}
               </div>
-              <div className="text-sm text-text-primary mb-1">
+              <div className="text-sm text-text-primary mb-1 truncate" title={notification.prompt}>
                 {notification.prompt.slice(0, 50)}...
               </div>
-              <div className="text-xs text-text-muted mb-2">
+              <div className="text-xs text-text-muted mb-2 line-clamp-2">
                 {notification.resultSummary}
               </div>
               <div className="flex gap-2">
                 <button
-                  onClick={() => markNotificationHandled(notification.id, 'immediate')}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleImmediate(notification.id)
+                  }}
                   className="px-2 py-1 text-xs bg-primary text-white rounded hover:bg-primary/80"
                 >
                   立即处理
                 </button>
                 <button
-                  onClick={() => markNotificationHandled(notification.id, 'delayed')}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    markNotificationHandled(notification.id, 'delayed')
+                  }}
                   className="px-2 py-1 text-xs bg-background-hover text-text-secondary rounded hover:bg-background-surface"
                 >
                   稍后处理
                 </button>
                 <button
-                  onClick={() => markNotificationHandled(notification.id, 'ignored')}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    markNotificationHandled(notification.id, 'ignored')
+                  }}
                   className="px-2 py-1 text-xs text-text-muted hover:text-text-secondary"
                 >
                   忽略
