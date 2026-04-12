@@ -514,120 +514,6 @@ impl FeishuAdapter {
         tracing::debug!("[Feishu] ✅ 消息已发送到 {}", receive_id);
         Ok(())
     }
-
-    /// 上传图片到飞书，返回 image_key
-    ///
-    /// API: POST /open-apis/im/v1/images (multipart/form-data)
-    async fn upload_image(&self, file_path: &std::path::Path) -> Result<String> {
-        let token = self.access_token.as_ref()
-            .ok_or_else(|| AppError::AuthError("未认证".to_string()))?;
-
-        let file_data = tokio::fs::read(file_path).await?;
-
-        let file_name = file_path.file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("image.png")
-            .to_string();
-
-        let url = format!("{}/open-apis/im/v1/images", FEISHU_API_BASE);
-
-        let part = reqwest::multipart::Part::bytes(file_data)
-            .file_name(file_name)
-            .mime_str("image/png")
-            .unwrap_or_else(|_| reqwest::multipart::Part::bytes(b"").file_name("image"));
-
-        let form = reqwest::multipart::Form::new()
-            .part("image", part)
-            .text("image_type", "message".to_string());
-
-        let client = reqwest::Client::new();
-        let response = client
-            .post(&url)
-            .header("Authorization", format!("Bearer {}", token))
-            .multipart(form)
-            .send()
-            .await
-            .map_err(|e| AppError::NetworkError(e.to_string()))?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(AppError::ApiError(format!(
-                "上传图片失败: HTTP {}, body={}", status, body
-            )));
-        }
-
-        let data: serde_json::Value = response.json().await
-            .map_err(|e| AppError::ParseError(e.to_string()))?;
-
-        let code = data.get("code").and_then(|v| v.as_i64()).unwrap_or(-1);
-        if code != 0 {
-            let msg = data.get("msg").and_then(|v| v.as_str()).unwrap_or("unknown");
-            return Err(AppError::ApiError(format!("上传图片失败: code={}, msg={}", code, msg)));
-        }
-
-        let image_key = data.get("data")
-            .and_then(|d: &serde_json::Value| d.get("image_key"))
-            .and_then(|v: &serde_json::Value| v.as_str())
-            .ok_or_else(|| AppError::ApiError("上传图片返回数据中缺少 image_key".to_string()))?;
-
-        tracing::info!("[Feishu] ✅ 图片上传成功: image_key={}", image_key);
-        Ok(image_key.to_string())
-    }
-
-    /// 上传文件到飞书，返回 file_key
-    ///
-    /// API: POST /open-apis/im/v1/files (multipart/form-data)
-    async fn upload_file(&self, file_path: &std::path::Path, file_name: &str) -> Result<String> {
-        let token = self.access_token.as_ref()
-            .ok_or_else(|| AppError::AuthError("未认证".to_string()))?;
-
-        let file_data = tokio::fs::read(file_path).await?;
-
-        let url = format!("{}/open-apis/im/v1/files", FEISHU_API_BASE);
-
-        let part = reqwest::multipart::Part::bytes(file_data)
-            .file_name(file_name.to_string());
-
-        let form = reqwest::multipart::Form::new()
-            .part("file", part)
-            .text("file_type", "stream".to_string())
-            .text("file_name", file_name.to_string());
-
-        let client = reqwest::Client::new();
-        let response = client
-            .post(&url)
-            .header("Authorization", format!("Bearer {}", token))
-            .multipart(form)
-            .send()
-            .await
-            .map_err(|e| AppError::NetworkError(e.to_string()))?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(AppError::ApiError(format!(
-                "上传文件失败: HTTP {}, body={}", status, body
-            )));
-        }
-
-        let data: serde_json::Value = response.json().await
-            .map_err(|e| AppError::ParseError(e.to_string()))?;
-
-        let code = data.get("code").and_then(|v| v.as_i64()).unwrap_or(-1);
-        if code != 0 {
-            let msg = data.get("msg").and_then(|v| v.as_str()).unwrap_or("unknown");
-            return Err(AppError::ApiError(format!("上传文件失败: code={}, msg={}", code, msg)));
-        }
-
-        let file_key = data.get("data")
-            .and_then(|d: &serde_json::Value| d.get("file_key"))
-            .and_then(|v: &serde_json::Value| v.as_str())
-            .ok_or_else(|| AppError::ApiError("上传文件返回数据中缺少 file_key".to_string()))?;
-
-        tracing::info!("[Feishu] ✅ 文件上传成功: file_key={}", file_key);
-        Ok(file_key.to_string())
-    }
 }
 
 #[async_trait]
@@ -1135,78 +1021,31 @@ impl PlatformIntegration for FeishuAdapter {
     async fn send(&mut self, target: SendTarget, content: MessageContent) -> Result<()> {
         self.ensure_valid_token().await?;
 
-        // 提取 chat_id（所有发送目标都统一解析出 chat_id）
-        let chat_id = match &target {
+        let text = content.as_text().ok_or_else(|| {
+            AppError::ValidationError("目前只支持发送文本消息".to_string())
+        })?;
+
+        match target {
             SendTarget::Conversation(ref conv_id) => {
-                if conv_id.starts_with("feishu_") {
-                    conv_id.strip_prefix("feishu_").unwrap().to_string()
+                // 从 conversation_id 提取 chat_id
+                let chat_id = if conv_id.starts_with("feishu_") {
+                    conv_id.strip_prefix("feishu_").unwrap()
                 } else {
-                    conv_id.clone()
-                }
+                    conv_id.as_str()
+                };
+
+                let content_json = serde_json::json!({"text": text}).to_string();
+                self.send_feishu_message(chat_id, "text", &content_json).await
             }
-            SendTarget::Channel(ref id) => id.clone(),
+            SendTarget::Channel(ref chat_id) => {
+                let content_json = serde_json::json!({"text": text}).to_string();
+                self.send_feishu_message(chat_id, "text", &content_json).await
+            }
             SendTarget::User(ref _user_id) => {
-                return Err(AppError::ValidationError("飞书暂不支持按用户 ID 直接发送，请使用 chat_id".to_string()));
+                Err(AppError::ValidationError("飞书暂不支持按用户 ID 直接发送，请使用 chat_id".to_string()))
             }
             SendTarget::Webhook(_) => {
-                return Err(AppError::ValidationError("飞书不支持 Webhook 发送".to_string()));
-            }
-        };
-
-        match &content {
-            MessageContent::Text { text } => {
-                let content_json = serde_json::json!({"text": text}).to_string();
-                self.send_feishu_message(&chat_id, "text", &content_json).await
-            }
-            MessageContent::Image { url, .. } => {
-                // url 可能是本地路径（来自 AI 生成的文件）或 image_key
-                let path = std::path::Path::new(url);
-                if path.exists() {
-                    // 本地文件：上传后发送
-                    let image_key = self.upload_image(path).await?;
-                    let content_json = serde_json::json!({"image_key": image_key}).to_string();
-                    self.send_feishu_message(&chat_id, "image", &content_json).await
-                } else {
-                    // 非本地文件，当作 image_key 直接发送
-                    let content_json = serde_json::json!({"image_key": url}).to_string();
-                    self.send_feishu_message(&chat_id, "image", &content_json).await
-                }
-            }
-            MessageContent::File { name, url, .. } => {
-                let path = std::path::Path::new(url);
-                if path.exists() {
-                    let file_key = self.upload_file(path, name).await?;
-                    let content_json = serde_json::json!({"file_key": file_key}).to_string();
-                    self.send_feishu_message(&chat_id, "file", &content_json).await
-                } else {
-                    // 无法发送非本地文件，降级为文本
-                    let text = format!("[文件] {}", name);
-                    let content_json = serde_json::json!({"text": text}).to_string();
-                    self.send_feishu_message(&chat_id, "text", &content_json).await
-                }
-            }
-            MessageContent::Audio { url, .. } => {
-                let path = std::path::Path::new(url);
-                if path.exists() {
-                    let file_name = path.file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("audio.ogg")
-                        .to_string();
-                    let file_key = self.upload_file(path, &file_name).await?;
-                    let content_json = serde_json::json!({"file_key": file_key}).to_string();
-                    self.send_feishu_message(&chat_id, "audio", &content_json).await
-                } else {
-                    let text = format!("[语音消息]");
-                    let content_json = serde_json::json!({"text": text}).to_string();
-                    self.send_feishu_message(&chat_id, "text", &content_json).await
-                }
-            }
-            MessageContent::Mixed { items } => {
-                // 混合内容：逐个发送
-                for item in items {
-                    self.send(SendTarget::Conversation(chat_id.clone()), item.clone()).await?;
-                }
-                Ok(())
+                Err(AppError::ValidationError("飞书不支持 Webhook 发送".to_string()))
             }
         }
     }

@@ -22,14 +22,6 @@ use crate::error::Result;
 use crate::models::config::{QQBotConfig, QQBotRuntimeConfig, FeishuConfig, FeishuRuntimeConfig};
 use crate::services::prompt_store::PromptStore;
 
-/// 媒体扩展名白名单
-const MEDIA_EXTENSIONS: &[&str] = &[
-    "png", "jpg", "jpeg", "gif", "bmp", "webp", "svg",       // 图片
-    "mp3", "wav", "ogg", "flac", "silk", "aac", "m4a",       // 音频
-    "mp4", "avi", "mov", "mkv", "webm",                       // 视频
-    "pdf",                                                       // 文档
-];
-
 /// 集成管理器
 pub struct IntegrationManager {
     /// 消息接收通道
@@ -745,156 +737,6 @@ impl IntegrationManager {
         }
     }
 
-    /// 判断文件扩展名是否为媒体类型
-    fn is_media_extension(path: &std::path::Path) -> bool {
-        path.extension()
-            .and_then(|ext| ext.to_str())
-            .map(|ext| MEDIA_EXTENSIONS.contains(&ext.to_lowercase().as_str()))
-            .unwrap_or(false)
-    }
-
-    /// 从 AI 回复文本中解析 Markdown 媒体引用
-    ///
-    /// 匹配 `![alt](path)` 和 `[name.ext](path)` 格式，
-    /// 验证文件存在且为媒体类型后返回解析结果。
-    fn parse_media_from_response<'a>(
-        text: &'a str,
-        work_dir: &Option<String>,
-    ) -> (String, Vec<std::path::PathBuf>) {
-        let mut media_files = Vec::new();
-        let mut clean_text = text.to_string();
-
-        // 匹配 Markdown 图片: ![alt](path)
-        let img_re = regex::Regex::new(r"!\[([^\]]*)\]\(([^)]+)\)").unwrap();
-        // 匹配 Markdown 链接: [name](path) — 仅当 name 含媒体扩展名时
-        let link_re = regex::Regex::new(r"\[([^\]!][^\]]*?\.(?:png|jpe?g|gif|bmp|webp|svg|mp3|wav|ogg|flac|aac|m4a|mp4|avi|mov|mkv|webm|pdf))\]\(([^)]+)\)").unwrap();
-
-        // 收集所有匹配的 span 和路径
-        let mut spans_to_remove: Vec<(usize, usize)> = Vec::new();
-
-        for cap in img_re.captures_iter(text) {
-            let m = cap.get(0).unwrap();
-            let raw_path = cap.get(2).unwrap().as_str();
-
-            if let Some(resolved) = Self::resolve_media_path(raw_path, work_dir) {
-                if resolved.exists() && Self::is_media_extension(&resolved) {
-                    spans_to_remove.push((m.start(), m.end()));
-                    media_files.push(resolved);
-                }
-            }
-        }
-
-        for cap in link_re.captures_iter(text) {
-            let m = cap.get(0).unwrap();
-            let raw_path = cap.get(2).unwrap().as_str();
-
-            if let Some(resolved) = Self::resolve_media_path(raw_path, work_dir) {
-                if resolved.exists() && Self::is_media_extension(&resolved) {
-                    // 避免与 img_re 重复（img_re 的链接以 ![ 开头，不会匹配 link_re）
-                    spans_to_remove.push((m.start(), m.end()));
-                    media_files.push(resolved);
-                }
-            }
-        }
-
-        // 从文本中移除已提取的媒体标记（倒序移除避免偏移）
-        if !spans_to_remove.is_empty() {
-            // 按位置倒序排序
-            let mut sorted = spans_to_remove;
-            sorted.sort_by(|a, b| b.0.cmp(&a.0));
-            for (start, end) in sorted {
-                clean_text.replace_range(start..end, "");
-            }
-            // 清理多余空行
-            let re_blank = regex::Regex::new(r"\n{3,}").unwrap();
-            clean_text = re_blank.replace_all(&clean_text, "\n\n").trim().to_string();
-        }
-
-        (clean_text, media_files)
-    }
-
-    /// 解析媒体路径（支持相对路径）
-    fn resolve_media_path(raw_path: &str, work_dir: &Option<String>) -> Option<std::path::PathBuf> {
-        let path = std::path::Path::new(raw_path);
-
-        if path.is_absolute() {
-            Some(path.to_path_buf())
-        } else if let Some(dir) = work_dir {
-            Some(std::path::PathBuf::from(dir).join(path))
-        } else {
-            None
-        }
-    }
-
-    /// 发送 AI 最终回复（含媒体解析）
-    ///
-    /// 解析 AI 回复中的 Markdown 媒体引用，拆分为文本+媒体分别发送。
-    async fn send_ai_reply(
-        adapters: &Arc<Mutex<HashMap<Platform, Box<dyn PlatformIntegration>>>>,
-        platform: Platform,
-        conversation_id: &str,
-        text: &str,
-        work_dir: &Option<String>,
-    ) {
-        let (clean_text, media_files) = Self::parse_media_from_response(text, work_dir);
-
-        // 1. 发送文本部分
-        if !clean_text.is_empty() {
-            Self::send_reply(adapters, platform, conversation_id, &clean_text).await;
-        }
-
-        // 2. 逐个发送媒体文件
-        if !media_files.is_empty() {
-            let mut adapters_guard = adapters.lock().await;
-            if let Some(adapter) = adapters_guard.get_mut(&platform) {
-                for file_path in &media_files {
-                    let ext = file_path.extension()
-                        .and_then(|e| e.to_str())
-                        .unwrap_or("");
-
-                    let content = if ["png", "jpg", "jpeg", "gif", "bmp", "webp", "svg"].contains(&ext) {
-                        let file_name = file_path.file_name()
-                            .and_then(|n| n.to_str())
-                            .map(|s| s.to_string());
-                        MessageContent::Image {
-                            url: file_path.to_string_lossy().to_string(),
-                            file_name,
-                            local_path: None,
-                        }
-                    } else if ["mp3", "wav", "ogg", "flac", "silk", "aac", "m4a"].contains(&ext) {
-                        let file_name = file_path.file_name()
-                            .and_then(|n| n.to_str())
-                            .map(|s| s.to_string());
-                        MessageContent::Audio {
-                            url: file_path.to_string_lossy().to_string(),
-                            file_name,
-                            transcript: None,
-                        }
-                    } else {
-                        // 文件/视频等
-                        let name = file_path.file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("file")
-                            .to_string();
-                        let size = std::fs::metadata(file_path)
-                            .map(|m| m.len())
-                            .unwrap_or(0);
-                        MessageContent::File {
-                            name,
-                            url: file_path.to_string_lossy().to_string(),
-                            size,
-                        }
-                    };
-
-                    let target = SendTarget::Conversation(conversation_id.to_string());
-                    if let Err(e) = adapter.send(target, content).await {
-                        tracing::error!("[IntegrationManager] ❌ 发送媒体失败: {:?}, error: {:?}", file_path, e);
-                    }
-                }
-            }
-        }
-    }
-
     /// 发送回复
     async fn send_reply(
         adapters: &Arc<Mutex<HashMap<Platform, Box<dyn PlatformIntegration>>>>,
@@ -1466,13 +1308,7 @@ impl IntegrationManager {
 
             // 发送最终回复到平台
             if !final_text.is_empty() {
-                // 获取 work_dir 用于媒体路径解析
-                let reply_work_dir = {
-                    let states = task_conversation_states.lock().await;
-                    states.get(&task_conversation_id)
-                        .and_then(|s| s.work_dir.clone())
-                };
-                Self::send_ai_reply(&task_adapters, platform, &task_conversation_id, &final_text, &reply_work_dir).await;
+                Self::send_reply(&task_adapters, platform, &task_conversation_id, &final_text).await;
                 tracing::info!("[IntegrationManager] ✅ 回复已发送");
 
                 // 发送完成消息
