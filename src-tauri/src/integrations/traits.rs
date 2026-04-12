@@ -4,9 +4,10 @@
  */
 
 use async_trait::async_trait;
+use std::path::Path;
 use tokio::sync::mpsc::Sender;
 
-use super::types::{IntegrationMessage, IntegrationStatus, MessageContent, Platform, SendTarget};
+use super::types::{IntegrationMessage, IntegrationStatus, MediaDownload, MessageContent, Platform, SendTarget};
 use crate::error::Result;
 
 /// 平台集成 Trait
@@ -40,6 +41,24 @@ pub trait PlatformIntegration: Send + Sync {
 
     /// 获取当前状态
     fn status(&self) -> IntegrationStatus;
+
+    /// 下载消息中的媒体文件到本地
+    ///
+    /// # Arguments
+    /// * `msg` - 原始消息（含 platform_message_id 和 MessageContent）
+    /// * `save_dir` - 保存目录（由 manager 创建，已存在）
+    ///
+    /// # Returns
+    /// 每个媒体项的下载结果列表
+    async fn download_media(
+        &mut self,
+        msg: &IntegrationMessage,
+        save_dir: &Path,
+    ) -> Vec<MediaDownload> {
+        // 默认空实现，子类可 override
+        let _ = (msg, save_dir);
+        vec![]
+    }
 
     /// 是否已连接
     fn is_connected(&self) -> bool {
