@@ -321,6 +321,26 @@ impl IntegrationManager {
                 Some(format!("✅ 已切换到 {} 模型{}", provider, prompt_info))
             }
 
+            BotCommand::EngineInfo => {
+                let mut lines = vec!["🤖 **引擎信息**\n".to_string()];
+
+                if let Some(registry) = engine_registry {
+                    let reg = registry.lock().await;
+                    for engine_id in reg.list_available() {
+                        let status = if reg.is_available(&engine_id) { "✅ 可用" } else { "❌ 不可用" };
+                        lines.push(format!("• {} — {} ({})", engine_id.display_name(), engine_id, status));
+                    }
+                    if reg.list_available().is_empty() {
+                        lines.push("⚠️ 没有已注册的引擎".to_string());
+                    }
+                } else {
+                    lines.push("⚠️ 引擎注册表未初始化".to_string());
+                }
+
+                lines.push("\n💡 使用 `/claude [提示词]` 切换引擎".to_string());
+                Some(lines.join("\n"))
+            }
+
             BotCommand::Interrupt => {
                 // 中断活跃的 AI 会话
                 let mut sessions = active_sessions.lock().await;
@@ -339,15 +359,35 @@ impl IntegrationManager {
                 if let Some(state) = states.get(conversation_id) {
                     lines.push(format!("🤖 模型: {}", state.engine_id));
                     lines.push(format!("📁 工作目录: {}", state.work_dir.as_deref().unwrap_or("默认")));
+
+                    // 工作区详情
+                    if let Some(ref work_dir) = state.work_dir {
+                        let path_buf = std::path::PathBuf::from(work_dir);
+                        if let Some(name) = path_buf.file_name().and_then(|n| n.to_str()) {
+                            lines.push(format!("📂 工作区名称: {}", name));
+                        }
+                        if path_buf.join(".git").exists() {
+                            lines.push("🔀 Git 仓库: 是".to_string());
+                        }
+                    }
+
                     lines.push(format!("💬 消息数: {}", state.message_count));
 
                     // 显示预设信息
                     if let Some(ref preset_id) = state.prompt_preset_id {
-                        lines.push(format!("🎯 预设: {}", preset_id));
+                        // 尝试解析预设名称
+                        let preset_display = Self::resolve_preset_display_name(preset_id, state.work_dir.as_deref());
+                        lines.push(format!("🎯 预设: {}", preset_display));
                     }
 
                     if let Some(ref prompt) = state.custom_prompt {
-                        lines.push(format!("📝 提示词: {}...", &prompt[..prompt.len().min(30)]));
+                        let preview: String = prompt.chars().take(30).collect();
+                        let truncated = if preview.len() < prompt.len() { format!("{}...", preview) } else { preview };
+                        lines.push(format!("📝 提示词: {}", truncated));
+                    }
+
+                    if state.pending_resume {
+                        lines.push("🔄 待恢复: 是（下一条消息将自动继续上次会话）".to_string());
                     }
                 } else {
                     lines.push("🤖 模型: claude (默认)".to_string());
@@ -359,7 +399,7 @@ impl IntegrationManager {
                     let registry = registry.lock().await;
                     for engine_id in registry.list_available() {
                         let status = if registry.is_available(&engine_id) { "✅" } else { "❌" };
-                        lines.push(format!("  {} {}", status, engine_id));
+                        lines.push(format!("  {} {} ({})", status, engine_id.display_name(), engine_id));
                     }
                 }
 
@@ -381,7 +421,10 @@ impl IntegrationManager {
 
                 let is_git = path_buf.join(".git").exists();
                 let git_hint = if is_git { " (Git 仓库)" } else { "" };
-                Some(format!("✅ 工作目录已设置为: {}{}", path, git_hint))
+                let name = path_buf.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("unknown");
+                Some(format!("✅ 工作目录已设置为: {}{}\n📂 工作区: {}", path, git_hint, name))
             }
 
             BotCommand::GetPath => {
@@ -396,17 +439,77 @@ impl IntegrationManager {
                 }
             }
 
-            BotCommand::Resume => {
+            BotCommand::Workspace => {
                 let states = conversation_states.lock().await;
+                let mut lines = vec!["📂 **工作区信息**\n".to_string()];
+
                 if let Some(state) = states.get(conversation_id) {
-                    if let Some(ref session_id) = state.ai_session_id {
-                        let short_id: String = session_id.chars().take(8).collect();
-                        Some(format!("✅ 会话 {} 可继续\n请直接发送消息", short_id))
-                    } else {
-                        Some("⚠️ 没有历史 AI 会话".to_string())
+                    match &state.work_dir {
+                        Some(path) => {
+                            let path_buf = std::path::PathBuf::from(path);
+                            lines.push(format!("📁 路径: {}", path));
+
+                            if let Some(name) = path_buf.file_name().and_then(|n| n.to_str()) {
+                                lines.push(format!("🏷️ 名称: {}", name));
+                            }
+
+                            // Git 信息
+                            if path_buf.join(".git").exists() {
+                                lines.push("🔀 Git 仓库: 是".to_string());
+                                // 尝试获取分支名
+                                let git_head = path_buf.join(".git/HEAD");
+                                if let Ok(head_content) = std::fs::read_to_string(&git_head) {
+                                    if let Some(branch) = head_content.strip_prefix("ref: refs/heads/") {
+                                        lines.push(format!("🌿 当前分支: {}", branch.trim()));
+                                    }
+                                }
+                            } else {
+                                lines.push("🔀 Git 仓库: 否".to_string());
+                            }
+
+                            // Polaris 工作区检测
+                            let polaris_dir = path_buf.join(".polaris");
+                            if polaris_dir.exists() {
+                                lines.push("⚙️ Polaris 工作区: 是".to_string());
+                                // 检测各配置文件
+                                let configs = [
+                                    ("prompt_config.json", "提示词配置"),
+                                    ("todos.json", "待办列表"),
+                                    ("requirements", "需求库"),
+                                    ("scheduler", "定时任务"),
+                                ];
+                                for (file, label) in &configs {
+                                    if polaris_dir.join(file).exists() {
+                                        lines.push(format!("  • {}", label));
+                                    }
+                                }
+                            } else {
+                                lines.push("⚙️ Polaris 工作区: 否（使用 /path 设置包含 .polaris 的目录）".to_string());
+                            }
+                        }
+                        None => {
+                            lines.push("⚠️ 未设置工作目录".to_string());
+                            lines.push("💡 使用 `/path <目录>` 设置工作目录".to_string());
+                        }
                     }
                 } else {
-                    Some("⚠️ 没有历史会话".to_string())
+                    lines.push("⚠️ 未设置工作目录".to_string());
+                    lines.push("💡 使用 `/path <目录>` 设置工作目录".to_string());
+                }
+
+                Some(lines.join("\n"))
+            }
+
+            BotCommand::Resume => {
+                let mut states = conversation_states.lock().await;
+                let state = states.get_or_create(conversation_id);
+
+                if let Some(ref session_id) = state.ai_session_id {
+                    let short_id: String = session_id.chars().take(8).collect();
+                    state.pending_resume = true;
+                    Some(format!("✅ 已标记恢复会话 {}\n💡 下一条消息将自动继续该会话", short_id))
+                } else {
+                    Some("⚠️ 没有历史 AI 会话可恢复".to_string())
                 }
             }
 
@@ -423,21 +526,66 @@ impl IntegrationManager {
                 let mut states = conversation_states.lock().await;
                 states.reset(conversation_id);
 
-                Some("✅ 会话已重置".to_string())
+                Some("✅ 会话已完全重置（工作目录、预设、提示词均已清除）".to_string())
+            }
+
+            BotCommand::Clear => {
+                // 中断活跃会话
+                {
+                    let mut sessions = active_sessions.lock().await;
+                    if let Some(handle) = sessions.remove(conversation_id) {
+                        handle.abort();
+                    }
+                }
+
+                // 仅清除 AI 上下文，保留工作目录和预设
+                let mut states = conversation_states.lock().await;
+                if let Some(state) = states.get_mut(conversation_id) {
+                    let work_dir = state.work_dir.clone();
+                    let preset_id = state.prompt_preset_id.clone();
+                    state.clear_context();
+                    // clear_context 已经保留了 work_dir 和 preset_id，无需再设置
+                    let _ = (work_dir, preset_id); // 显式表明这些值在 clear_context 中已被保留
+                }
+
+                Some("✅ AI 上下文已清除（工作目录和预设已保留）".to_string())
             }
 
             BotCommand::SwitchPreset { preset_id } => {
-                // 切换提示词预设
-                let mut states = conversation_states.lock().await;
-                let state = states.get_or_create(conversation_id);
-
                 match preset_id {
-                    Some(id) => {
-                        state.prompt_preset_id = Some(id.clone());
-                        Some(format!("✅ 已切换到预设: {}", id))
+                    Some(raw_id) => {
+                        // 解析预设 ID：尝试精确匹配，再尝试前缀匹配
+                        let resolved_id = Self::resolve_preset_id(&raw_id);
+
+                        // 验证预设是否存在
+                        let mut states = conversation_states.lock().await;
+                        let state = states.get_or_create(conversation_id);
+                        let work_dir = state.work_dir.clone();
+                        let work_dir_path = work_dir.as_deref().unwrap_or(".");
+
+                        let display_name = if Self::validate_preset_exists(&resolved_id, work_dir_path) {
+                            state.prompt_preset_id = Some(resolved_id.clone());
+                            Self::resolve_preset_display_name(&resolved_id, Some(work_dir_path))
+                        } else {
+                            // 预设不存在，列出可用的
+                            drop(states);
+                            let available = Self::get_available_presets(work_dir_path);
+                            return Some(format!(
+                                "❌ 预设 '{}' 不存在\n\n📋 **可用预设:**\n{}\n\n💡 使用 `/preset list` 查看详情",
+                                raw_id,
+                                available.iter()
+                                    .map(|(id, name)| format!("• `{}` — {}", id, name))
+                                    .collect::<Vec<_>>()
+                                    .join("\n")
+                            ));
+                        };
+
+                        Some(format!("✅ 已切换到预设: {}", display_name))
                     }
                     None => {
                         // 恢复默认预设
+                        let mut states = conversation_states.lock().await;
+                        let state = states.get_or_create(conversation_id);
                         state.prompt_preset_id = None;
                         Some("✅ 已恢复默认提示词".to_string())
                     }
@@ -445,16 +593,28 @@ impl IntegrationManager {
             }
 
             BotCommand::ListPresets => {
-                // 列出可用预设
-                Some(
-                    "📋 **可用提示词预设**\n\n\
-                    • `default` - 默认预设（完整功能）\n\
-                    • `minimal` - 精简预设（仅工作区信息）\n\
-                    • `full` - 完整预设（所有模块）\n\n\
-                    使用 `/preset <预设名>` 切换预设\n\
-                    使用 `/preset default` 恢复默认"
-                        .to_string(),
-                )
+                let work_dir = {
+                    let states = conversation_states.lock().await;
+                    states.get(conversation_id)
+                        .and_then(|s| s.work_dir.clone())
+                };
+                let work_dir_path = work_dir.as_deref().unwrap_or(".");
+                let presets = Self::get_available_presets(work_dir_path);
+
+                let mut lines = vec!["📋 **可用提示词预设**\n".to_string()];
+
+                if presets.is_empty() {
+                    lines.push("⚠️ 未找到可用预设".to_string());
+                } else {
+                    for (id, name) in &presets {
+                        lines.push(format!("• `{}` — {}", id, name));
+                    }
+                }
+
+                lines.push("\n💡 使用 `/preset <预设名>` 切换预设".to_string());
+                lines.push("💡 使用 `/preset default` 恢复默认".to_string());
+
+                Some(lines.join("\n"))
             }
 
             BotCommand::Help => {
@@ -669,9 +829,15 @@ impl IntegrationManager {
         tracing::info!("[IntegrationManager] 🤖 开始 AI 回复: conversation={}, message_len={}", conversation_id, message.len());
 
         // 获取会话状态（包括已有的 ai_session_id）
-        let (engine_id, work_dir, system_prompt, existing_session_id) = {
+        let (engine_id, work_dir, system_prompt, existing_session_id, is_resuming) = {
             let mut states = conversation_states.lock().await;
             let state = states.get_or_create(&conversation_id);
+
+            // 检查是否在 /resume 后自动恢复
+            let is_resuming = state.pending_resume && state.ai_session_id.is_some();
+            if is_resuming {
+                state.pending_resume = false;
+            }
 
             // 构建系统提示词（根据平台名称动态生成）
             let platform_name = match platform {
@@ -727,6 +893,7 @@ impl IntegrationManager {
                 state.work_dir.clone(),
                 system_prompt,
                 session_id,
+                is_resuming,
             )
         };
 
@@ -744,7 +911,16 @@ impl IntegrationManager {
         }
 
         // 发送即时确认消息
-        Self::send_reply(&adapters, platform, &conversation_id, "✅ 已接收到消息，正在处理中").await;
+        if is_resuming {
+            if let Some(ref sid) = existing_session_id {
+                let short_id: String = sid.chars().take(8).collect();
+                Self::send_reply(&adapters, platform, &conversation_id, &format!("🔄 正在恢复会话 {}...", short_id)).await;
+            } else {
+                Self::send_reply(&adapters, platform, &conversation_id, "✅ 已接收到消息，正在处理中").await;
+            }
+        } else {
+            Self::send_reply(&adapters, platform, &conversation_id, "✅ 已接收到消息，正在处理中").await;
+        }
 
         // 用于累积最终回复文本（仅 AssistantMessage / Token / Result）
         let accumulated_text = Arc::new(Mutex::new(String::new()));
@@ -1431,18 +1607,109 @@ impl IntegrationManager {
         Ok(())
     }
 
-    /// 从预设构建提示词
+    /// 解析用户输入的预设 ID
+    /// 支持 "minimal" → "preset-minimal" 的简写映射
+    fn resolve_preset_id(raw_id: &str) -> String {
+        let lower = raw_id.to_lowercase();
+
+        // 常见简写映射
+        let shorthand_map = [
+            ("default", "preset-default"),
+            ("minimal", "preset-minimal"),
+            ("full", "preset-full"),
+        ];
+        for (shorthand, full_id) in &shorthand_map {
+            if lower == *shorthand {
+                return full_id.to_string();
+            }
+        }
+
+        // 如果已经以 "preset-" 开头，直接使用
+        if lower.starts_with("preset-") {
+            return lower;
+        }
+
+        // 最后尝试加 "preset-" 前缀
+        format!("preset-{}", lower)
+    }
+
+    /// 验证预设是否存在
+    fn validate_preset_exists(preset_id: &str, work_dir: &str) -> bool {
+        use std::path::Path;
+        let work_path = Path::new(work_dir);
+
+        match PromptStore::from_work_dir(work_path) {
+            Ok(store) => store.get_preset(preset_id).is_some(),
+            Err(_) => {
+                // PromptStore 不可用时，接受系统预设
+                matches!(preset_id, "preset-default" | "preset-minimal" | "preset-full")
+            }
+        }
+    }
+
+    /// 获取可用的预设列表 (id, name)
+    fn get_available_presets(work_dir: &str) -> Vec<(String, String)> {
+        use std::path::Path;
+        let work_path = Path::new(work_dir);
+
+        match PromptStore::from_work_dir(work_path) {
+            Ok(store) => {
+                store.get_presets()
+                    .iter()
+                    .map(|p| (p.id.clone(), p.name.clone()))
+                    .collect()
+            }
+            Err(_) => {
+                // PromptStore 不可用时，返回默认预设列表
+                vec![
+                    ("preset-default".to_string(), "默认预设".to_string()),
+                    ("preset-minimal".to_string(), "精简预设".to_string()),
+                    ("preset-full".to_string(), "完整预设".to_string()),
+                ]
+            }
+        }
+    }
+
+    /// 获取预设的显示名称
+    fn resolve_preset_display_name(preset_id: &str, work_dir: Option<&str>) -> String {
+        let work_dir_str = work_dir.unwrap_or(".");
+        use std::path::Path;
+        let work_path = Path::new(work_dir_str);
+
+        if let Ok(store) = PromptStore::from_work_dir(work_path) {
+            if let Some(preset) = store.get_preset(preset_id) {
+                return format!("{} ({})", preset.name, preset_id);
+            }
+        }
+
+        // 降级：使用 ID 映射
+        match preset_id {
+            "preset-default" => "默认预设 (preset-default)".to_string(),
+            "preset-minimal" => "精简预设 (preset-minimal)".to_string(),
+            "preset-full" => "完整预设 (preset-full)".to_string(),
+            other => other.to_string(),
+        }
+    }
+
+    /// 从预设构建提示词（内部已做 ID 解析）
     fn build_prompt_from_preset(preset_id: &str, work_dir: &str) -> Option<String> {
         use std::path::Path;
+
+        // 先尝试解析 ID（兼容简写）
+        let resolved_id = Self::resolve_preset_id(preset_id);
 
         let work_path = Path::new(work_dir);
         match PromptStore::from_work_dir(work_path) {
             Ok(store) => {
-                // 检查预设是否存在
-                if store.get_preset(preset_id).is_none() {
-                    tracing::warn!("[IntegrationManager] 预设不存在: {}", preset_id);
+                // 用解析后的 ID 查找预设，降级用原始 ID
+                let lookup_id = if store.get_preset(&resolved_id).is_some() {
+                    &resolved_id
+                } else if store.get_preset(preset_id).is_some() {
+                    preset_id
+                } else {
+                    tracing::warn!("[IntegrationManager] 预设不存在: {} (尝试 {})", preset_id, resolved_id);
                     return None;
-                }
+                };
 
                 // 构建变量表
                 let mut variables = std::collections::HashMap::new();
@@ -1455,8 +1722,8 @@ impl IntegrationManager {
                 );
 
                 // 构建提示词
-                let prompt = store.build_prompt(preset_id, &variables);
-                tracing::info!("[IntegrationManager] 📝 从预设 '{}' 构建提示词, 长度: {}", preset_id, prompt.len());
+                let prompt = store.build_prompt(lookup_id, &variables);
+                tracing::info!("[IntegrationManager] 📝 从预设 '{}' 构建提示词, 长度: {}", lookup_id, prompt.len());
                 Some(prompt)
             }
             Err(e) => {

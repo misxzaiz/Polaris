@@ -1,13 +1,16 @@
 /*! IM 机器人命令解析和处理
  *
  * 支持的命令：
- * - 模型切换: /claude, /agent
+ * - 模型切换: /claude
+ * - 模型信息: /agent
  * - 提示词预设: /preset <preset_id>, /preset list, /preset default
  * - 中断对话: /stop, /end, /停止
  * - 状态查询: /status, /状态
  * - 工作目录: /path <目录>, /路径 <目录>
+ * - 工作区信息: /workspace, /工作区
  * - 会话恢复: /resume, /继续, /恢复
  * - 重启会话: /restart, /rs, /重启
+ * - 清除上下文: /clear, /清除
  * - 帮助: /help, /帮助
  */
 
@@ -28,12 +31,14 @@ pub enum PromptMode {
 /// IM 机器人命令类型
 #[derive(Debug, Clone)]
 pub enum BotCommand {
-    /// 切换模型
+    /// 切换模型（/claude）
     SwitchProvider {
         provider: EngineId,
         custom_prompt: Option<String>,
         replace_mode: bool,
     },
+    /// 显示当前模型信息（/agent）
+    EngineInfo,
     /// 切换提示词预设
     SwitchPreset {
         preset_id: Option<String>,
@@ -48,10 +53,14 @@ pub enum BotCommand {
     SetPath { path: String },
     /// 显示当前路径（无参数的 /path）
     GetPath,
+    /// 显示工作区详情
+    Workspace,
     /// 恢复最新会话
     Resume,
     /// 重启会话
     Restart,
+    /// 清除 AI 上下文（仅重置 session，保留工作目录和预设）
+    Clear,
     /// 帮助
     Help,
     /// 未知命令（作为普通消息处理）
@@ -90,14 +99,8 @@ impl CommandParser {
                     replace_mode,
                 })
             }
-            "agent" => {
-                let (custom_prompt, replace_mode) = Self::parse_switch_args(&parts[1..]);
-                Some(BotCommand::SwitchProvider {
-                    provider: EngineId::ClaudeCode, // agent 默认使用 claude
-                    custom_prompt,
-                    replace_mode,
-                })
-            }
+            // 模型信息（当前仅 Claude Code，不执行切换）
+            "agent" => Some(BotCommand::EngineInfo),
 
             // 中断
             "stop" | "end" | "停止" => Some(BotCommand::Interrupt),
@@ -116,11 +119,17 @@ impl CommandParser {
                 }
             }
 
+            // 工作区信息
+            "workspace" | "工作区" => Some(BotCommand::Workspace),
+
             // 恢复会话
             "resume" | "继续" | "恢复" => Some(BotCommand::Resume),
 
             // 重启
             "restart" | "rs" | "重启" => Some(BotCommand::Restart),
+
+            // 清除 AI 上下文
+            "clear" | "清除" => Some(BotCommand::Clear),
 
             // 帮助
             "help" | "帮助" => Some(BotCommand::Help),
@@ -200,6 +209,9 @@ pub struct ConversationState {
     pub last_activity: i64,
     /// 消息计数
     pub message_count: u32,
+    /// 是否等待恢复会话（/resume 设置，下一条消息时消费）
+    #[serde(default)]
+    pub pending_resume: bool,
 }
 
 #[allow(dead_code)]
@@ -218,6 +230,7 @@ impl ConversationState {
             prompt_mode: PromptMode::default(),
             last_activity: Utc::now().timestamp_millis(),
             message_count: 0,
+            pending_resume: false,
         }
     }
 
@@ -228,13 +241,26 @@ impl ConversationState {
         self.message_count += 1;
     }
 
-    /// 重置状态
+    /// 重置状态（/restart 使用 — 清除所有状态包括工作目录）
     pub fn reset(&mut self) {
         self.ai_session_id = None;
+        self.work_dir = None;
         self.prompt_preset_id = None;
         self.custom_prompt = None;
         self.prompt_mode = PromptMode::default();
         self.message_count = 0;
+        self.pending_resume = false;
+        use chrono::Utc;
+        self.last_activity = Utc::now().timestamp_millis();
+    }
+
+    /// 清除 AI 上下文（/clear 使用）— 仅重置 AI 会话，保留工作目录和预设
+    pub fn clear_context(&mut self) {
+        self.ai_session_id = None;
+        self.custom_prompt = None;
+        self.prompt_mode = PromptMode::default();
+        self.message_count = 0;
+        self.pending_resume = false;
         use chrono::Utc;
         self.last_activity = Utc::now().timestamp_millis();
     }
@@ -260,27 +286,29 @@ impl Default for ConversationState {
 pub fn get_help_text() -> String {
     r#"📖 **命令帮助**
 
-**模型切换**
-`/claude [提示词]` - 切换到 Claude
-`/agent [提示词]` - 切换到 Agent
+**模型**
+`/claude [提示词]` - 切换到 Claude，可附加自定义提示词
+`/agent` - 查看当前引擎信息
 • 添加 `-r` 参数替换默认提示词
-• 示例: `/claude 你是Python专家`
+• 示例: `/claude 你是Python专家 -r`
 
 **提示词预设**
 `/preset <预设名>` - 切换提示词预设
 `/preset list` - 列出可用预设
 `/preset default` - 恢复默认预设
-• 示例: `/preset minimal` 使用精简预设
-• 示例: `/preset full` 使用完整预设
 
 **会话控制**
 `/stop` - 中断当前对话
-`/restart` - 重置会话
-`/resume` - 恢复最新会话
+`/restart` - 完全重置会话
+`/resume` - 恢复上次 AI 会话（下一条消息自动继续）
+`/clear` - 清除 AI 上下文（保留工作目录和预设）
+
+**工作区**
+`/path <目录>` - 设置工作目录
+`/workspace` - 查看当前工作区详情
 
 **其他**
-`/status` - 查看状态
-`/path <目录>` - 设置工作目录
+`/status` - 查看会话状态
 `/help` - 显示帮助
 "#.to_string()
 }
@@ -312,6 +340,24 @@ mod tests {
                 replace_mode: false
             })
         ));
+
+        // 带替换模式
+        let cmd = CommandParser::parse("/claude -r 你是专家");
+        assert!(matches!(
+            cmd,
+            Some(BotCommand::SwitchProvider {
+                provider: EngineId::ClaudeCode,
+                custom_prompt: Some(_),
+                replace_mode: true
+            })
+        ));
+    }
+
+    #[test]
+    fn test_parse_agent_is_engine_info() {
+        // /agent 现在是 EngineInfo 而不是 SwitchProvider
+        let cmd = CommandParser::parse("/agent");
+        assert!(matches!(cmd, Some(BotCommand::EngineInfo)));
     }
 
     #[test]
@@ -368,6 +414,18 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_workspace() {
+        assert!(matches!(CommandParser::parse("/workspace"), Some(BotCommand::Workspace)));
+        assert!(matches!(CommandParser::parse("/工作区"), Some(BotCommand::Workspace)));
+    }
+
+    #[test]
+    fn test_parse_clear() {
+        assert!(matches!(CommandParser::parse("/clear"), Some(BotCommand::Clear)));
+        assert!(matches!(CommandParser::parse("/清除"), Some(BotCommand::Clear)));
+    }
+
+    #[test]
     fn test_parse_restart() {
         assert!(matches!(CommandParser::parse("/restart"), Some(BotCommand::Restart)));
         assert!(matches!(CommandParser::parse("/rs"), Some(BotCommand::Restart)));
@@ -406,5 +464,39 @@ mod tests {
 
         state.reset();
         assert!(state.prompt_preset_id.is_none());
+    }
+
+    #[test]
+    fn test_conversation_state_clear_context() {
+        let mut state = ConversationState::new("test");
+        state.work_dir = Some("/some/path".to_string());
+        state.prompt_preset_id = Some("preset-minimal".to_string());
+        state.ai_session_id = Some("session-123".to_string());
+        state.custom_prompt = Some("be expert".to_string());
+        state.message_count = 10;
+
+        state.clear_context();
+
+        // 工作目录和预设应保留
+        assert_eq!(state.work_dir, Some("/some/path".to_string()));
+        assert_eq!(state.prompt_preset_id, Some("preset-minimal".to_string()));
+        // AI 上下文应被清除
+        assert!(state.ai_session_id.is_none());
+        assert!(state.custom_prompt.is_none());
+        assert_eq!(state.message_count, 0);
+        assert!(!state.pending_resume);
+    }
+
+    #[test]
+    fn test_conversation_state_pending_resume() {
+        let mut state = ConversationState::new("test");
+        assert!(!state.pending_resume);
+
+        state.ai_session_id = Some("session-abc".to_string());
+        state.pending_resume = true;
+        assert!(state.pending_resume);
+
+        state.reset();
+        assert!(!state.pending_resume);
     }
 }
