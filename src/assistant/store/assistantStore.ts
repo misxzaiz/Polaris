@@ -14,6 +14,8 @@ export interface AssistantState {
   // 消息状态
   messages: AssistantMessage[]
   isLoading: boolean
+  /** 当前正在流式输出的消息 ID */
+  streamingMessageId: string | null
 
   // Claude Code 会话管理
   claudeCodeSessions: Map<string, ClaudeCodeSessionState>
@@ -34,9 +36,11 @@ export interface AssistantActions {
   // 消息操作
   addMessage: (message: AssistantMessage) => void
   updateLastAssistantMessage: (content: string) => void
+  appendToLastAssistantMessage: (content: string) => void
   clearMessages: () => void
   setLoading: (loading: boolean) => void
   setError: (error: string | null) => void
+  setStreamingMessageId: (id: string | null) => void
 
   // Claude Code 会话管理
   createClaudeCodeSession: (type: 'primary' | 'analysis' | 'background', label?: string) => string
@@ -68,6 +72,7 @@ export const useAssistantStore = create<AssistantStore>((set, get) => ({
   // 初始状态
   messages: [],
   isLoading: false,
+  streamingMessageId: null,
   claudeCodeSessions: new Map(),
   activeClaudeCodeSessionId: null,
   executionPanelExpanded: false,
@@ -95,6 +100,20 @@ export const useAssistantStore = create<AssistantStore>((set, get) => ({
     })
   },
 
+  appendToLastAssistantMessage: (delta) => {
+    set((state) => {
+      const messages = [...state.messages]
+      const lastIdx = messages.length - 1
+      if (lastIdx >= 0 && messages[lastIdx].role === 'assistant') {
+        messages[lastIdx] = {
+          ...messages[lastIdx],
+          content: messages[lastIdx].content + delta,
+        }
+      }
+      return { messages }
+    })
+  },
+
   clearMessages: () => {
     set({ messages: [] })
   },
@@ -105,6 +124,10 @@ export const useAssistantStore = create<AssistantStore>((set, get) => ({
 
   setError: (error) => {
     set({ error })
+  },
+
+  setStreamingMessageId: (id) => {
+    set({ streamingMessageId: id })
   },
 
   // Claude Code 会话管理

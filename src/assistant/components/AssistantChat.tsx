@@ -1,11 +1,12 @@
 import { useRef, useEffect } from 'react'
 import { useAssistantStore } from '../store/assistantStore'
+import { ProgressiveStreamingMarkdown } from '../../utils/lightweightMarkdown'
 
 /**
  * 助手对话消息流
  */
 export function AssistantChat() {
-  const { messages, isLoading } = useAssistantStore()
+  const { messages, streamingMessageId } = useAssistantStore()
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // 自动滚动到底部
@@ -42,7 +43,16 @@ export function AssistantChat() {
                 : 'bg-background-surface text-text-primary'
             }`}
           >
-            {message.content}
+            {message.role === 'user' ? (
+              <span className="whitespace-pre-wrap break-words">{message.content}</span>
+            ) : (
+              <div className="prose prose-sm max-w-none dark:prose-invert">
+                <ProgressiveStreamingMarkdown
+                  content={message.content}
+                  completed={streamingMessageId !== message.id}
+                />
+              </div>
+            )}
           </div>
 
           {/* 工具调用指示 */}
@@ -69,16 +79,6 @@ export function AssistantChat() {
           )}
         </div>
       ))}
-
-      {/* 加载指示器 */}
-      {isLoading && (
-        <div className="mb-4 text-left">
-          <div className="inline-flex items-center gap-2 px-3 py-2 bg-background-surface rounded-lg text-sm text-text-muted">
-            <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-            思考中...
-          </div>
-        </div>
-      )}
 
       <div ref={messagesEndRef} />
     </div>

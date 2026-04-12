@@ -9,7 +9,9 @@ import { getAssistantEngine } from '../core/AssistantEngine'
 export function AssistantInput() {
   const [input, setInput] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const { isLoading, setLoading, setError, abortAllSessions, getRunningSessions } = useAssistantStore()
+  const { streamingMessageId, setLoading, setError, abortAllSessions, getRunningSessions } = useAssistantStore()
+
+  const isLoading = streamingMessageId !== null
 
   const handleSubmit = async () => {
     const trimmedInput = input.trim()
@@ -55,7 +57,7 @@ export function AssistantInput() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="输入消息..."
+            placeholder={isRunning ? "Claude Code 执行中，可继续对话..." : "输入消息..."}
             rows={1}
             className="w-full px-3 py-2 bg-background-surface border border-border rounded-lg text-sm text-text-primary placeholder-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
             style={{ minHeight: '40px', maxHeight: '120px' }}
@@ -66,6 +68,7 @@ export function AssistantInput() {
           <button
             onClick={handleAbort}
             className="flex items-center justify-center w-10 h-10 bg-danger rounded-lg text-white hover:bg-danger/90 transition-colors"
+            title="停止执行"
           >
             <Square className="w-4 h-4" />
           </button>
