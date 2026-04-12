@@ -4,6 +4,7 @@ import type {
   ClaudeCodeSessionState,
   InvokeClaudeCodeParams,
   ClaudeCodeExecutionEvent,
+  CompletionNotification,
 } from '../types'
 import { getClaudeCodeSessionManager } from '../core/ClaudeCodeSessionManager'
 
@@ -27,6 +28,11 @@ export interface AssistantState {
 
   // 错误状态
   error: string | null
+
+  // 完成通知队列
+  completionNotifications: CompletionNotification[]
+  /** 是否有未处理的通知 */
+  hasUnreadNotifications: boolean
 }
 
 /**
@@ -59,6 +65,12 @@ export interface AssistantActions {
   toggleExecutionPanel: () => void
   setExecutionPanelSession: (sessionId: string | null) => void
 
+  // 完成通知管理
+  addCompletionNotification: (notification: CompletionNotification) => void
+  getPendingNotifications: () => CompletionNotification[]
+  markNotificationHandled: (id: string, handleType: 'immediate' | 'delayed' | 'ignored') => void
+  clearNotifications: () => void
+
   // 初始化
   initialize: () => void
 }
@@ -78,6 +90,8 @@ export const useAssistantStore = create<AssistantStore>((set, get) => ({
   executionPanelExpanded: false,
   executionPanelSessionId: null,
   error: null,
+  completionNotifications: [],
+  hasUnreadNotifications: false,
 
   // 消息操作
   addMessage: (message) => {
@@ -234,6 +248,32 @@ export const useAssistantStore = create<AssistantStore>((set, get) => ({
       executionPanelSessionId: sessionId,
       executionPanelExpanded: sessionId !== null,
     })
+  },
+
+  // 完成通知管理
+  addCompletionNotification: (notification) => {
+    set((state) => ({
+      completionNotifications: [...state.completionNotifications, notification],
+      hasUnreadNotifications: true,
+    }))
+  },
+
+  getPendingNotifications: () => {
+    return get().completionNotifications.filter((n) => !n.handled)
+  },
+
+  markNotificationHandled: (id, handleType) => {
+    set((state) => {
+      const notifications = state.completionNotifications.map((n) =>
+        n.id === id ? { ...n, handled: true, handleType } : n
+      )
+      const hasUnread = notifications.some((n) => !n.handled)
+      return { completionNotifications: notifications, hasUnreadNotifications: hasUnread }
+    })
+  },
+
+  clearNotifications: () => {
+    set({ completionNotifications: [], hasUnreadNotifications: false })
   },
 
   // 初始化

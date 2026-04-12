@@ -8,6 +8,7 @@ import type {
   AssistantEvent,
   ToolCallInfo,
   ClaudeCodeExecutionEvent,
+  CompletionNotification,
 } from '../types'
 
 /**
@@ -222,20 +223,91 @@ ${historyParts.join('\n\n')}
     // 更新工具调用状态
     yield { type: 'tool_call', toolCall: { ...toolCall, status: 'running', claudeCodeSessionId: sessionId } }
 
+    // 后台执行模式：不等待完成，直接返回
+    if (params.background) {
+      this.executeClaudeCodeBackground(sessionId, params, toolCall.id)
+      yield { type: 'tool_call', toolCall: { ...toolCall, status: 'running', claudeCodeSessionId: sessionId } }
+      return
+    }
+
+    // 同步执行模式
     try {
-      // 收集执行结果
       const result = await this.executeClaudeCode(sessionId, params)
-
-      // 非后台任务等待完成并反馈结果
-      if (!params.background) {
-        yield { type: 'tool_call', toolCall: { ...toolCall, status: 'completed', claudeCodeSessionId: sessionId } }
-
-        // 将执行结果反馈给 AI
-        yield* this.feedbackToAI(params.prompt, result, sessionId)
-      }
+      yield { type: 'tool_call', toolCall: { ...toolCall, status: 'completed', claudeCodeSessionId: sessionId } }
+      yield* this.feedbackToAI(params.prompt, result, sessionId)
     } catch (error) {
       yield { type: 'tool_call', toolCall: { ...toolCall, status: 'error', claudeCodeSessionId: sessionId } }
     }
+  }
+
+  /**
+   * 后台执行 Claude Code（不阻塞主流程）
+   */
+  private executeClaudeCodeBackground(
+    sessionId: string,
+    params: ToolCallInfo['arguments'],
+    toolCallId: string
+  ): void {
+    const events: ClaudeCodeExecutionEvent[] = []
+    let output = ''
+
+    // 订阅事件
+    const unsubscribe = this.eventBus.onAny((event: AIEvent) => {
+      const eventWithSession = event as { sessionId?: string }
+      if (eventWithSession.sessionId !== sessionId) return
+
+      const execEvent: ClaudeCodeExecutionEvent = {
+        type: event.type as any,
+        timestamp: Date.now(),
+        sessionId,
+        data: {
+          content: (event as any).content,
+          message: (event as any).message,
+          tool: (event as any).tool,
+          error: (event as any).error,
+          isDelta: (event as any).isDelta,
+        },
+      }
+      events.push(execEvent)
+      useAssistantStore.getState().addSessionEvent(sessionId, execEvent)
+
+      if (event.type === 'assistant_message' && (event as any).content) {
+        output += (event as any).content
+      }
+
+      // 会话结束，创建通知
+      if (event.type === 'session_end') {
+        unsubscribe()
+        const notification: CompletionNotification = {
+          id: `notification-${Date.now()}`,
+          sessionId,
+          toolCallId,
+          prompt: params.prompt,
+          resultSummary: output.slice(0, 200) + (output.length > 200 ? '...' : ''),
+          fullResult: output,
+          createdAt: Date.now(),
+          handled: false,
+        }
+        useAssistantStore.getState().addCompletionNotification(notification)
+      }
+
+      if (event.type === 'error') {
+        unsubscribe()
+        const notification: CompletionNotification = {
+          id: `notification-${Date.now()}`,
+          sessionId,
+          toolCallId,
+          prompt: params.prompt,
+          resultSummary: `执行失败: ${(event as any).error || '未知错误'}`,
+          createdAt: Date.now(),
+          handled: false,
+        }
+        useAssistantStore.getState().addCompletionNotification(notification)
+      }
+    })
+
+    // 开始执行
+    useAssistantStore.getState().executeInSession(sessionId, params)
   }
 
   /**

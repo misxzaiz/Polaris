@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { ChevronUp, ChevronDown, Loader2 } from 'lucide-react'
+import { ChevronUp, ChevronDown, Loader2, CheckCircle, XCircle, Bell, FileText, Code, Wrench } from 'lucide-react'
 import { useAssistantStore } from '../store/assistantStore'
 import { SessionTab } from './SessionTab'
 import { cn } from '../../utils'
+import type { ClaudeCodeExecutionEvent } from '../types'
 
 /**
  * Claude Code 多会话面板
@@ -96,18 +97,141 @@ function SessionContent({ sessionId }: { sessionId: string }) {
   return (
     <div className="space-y-1">
       {session.events.map((event, idx) => (
-        <div
-          key={idx}
-          className="text-xs font-mono text-text-muted flex items-start gap-2"
-        >
-          <span className="text-text-tertiary shrink-0">
-            {new Date(event.timestamp).toLocaleTimeString()}
-          </span>
-          <span className="text-text-primary">
-            {event.data.message || event.data.content || event.data.tool}
+        <EventItem key={idx} event={event} />
+      ))}
+    </div>
+  )
+}
+
+/**
+ * 单个事件项
+ */
+function EventItem({ event }: { event: ClaudeCodeExecutionEvent }) {
+  const time = new Date(event.timestamp).toLocaleTimeString()
+
+  const getIcon = () => {
+    switch (event.type) {
+      case 'tool_call':
+        return <Wrench className="w-3 h-3 text-primary" />
+      case 'assistant_message':
+        return <FileText className="w-3 h-3 text-text-secondary" />
+      case 'session_start':
+        return <Loader2 className="w-3 h-3 text-primary animate-spin" />
+      case 'session_end':
+        return <CheckCircle className="w-3 h-3 text-success" />
+      case 'error':
+        return <XCircle className="w-3 h-3 text-danger" />
+      default:
+        return <Code className="w-3 h-3 text-text-muted" />
+    }
+  }
+
+  const getContent = () => {
+    if (event.data.error) {
+      return <span className="text-danger">{event.data.error}</span>
+    }
+    if (event.data.tool) {
+      return (
+        <span>
+          <span className="text-primary">{event.data.tool}</span>
+          {event.data.message && (
+            <span className="text-text-muted ml-1">- {event.data.message}</span>
+          )}
+        </span>
+      )
+    }
+    if (event.data.content) {
+      const content = event.data.content
+      const truncated = content.length > 100 ? content.slice(0, 100) + '...' : content
+      return <span className="text-text-primary whitespace-pre-wrap">{truncated}</span>
+    }
+    if (event.data.message) {
+      return <span className="text-text-muted">{event.data.message}</span>
+    }
+    return null
+  }
+
+  return (
+    <div className="text-xs flex items-start gap-2 py-1 hover:bg-background-hover px-1 rounded">
+      <span className="text-text-tertiary shrink-0 w-16">{time}</span>
+      <span className="shrink-0 mt-0.5">{getIcon()}</span>
+      <span className="flex-1 min-w-0">{getContent()}</span>
+    </div>
+  )
+}
+
+/**
+ * 完成通知面板
+ */
+export function CompletionNotificationPanel() {
+  const { completionNotifications, hasUnreadNotifications, markNotificationHandled } = useAssistantStore()
+  const [isExpanded, setIsExpanded] = useState(false)
+
+  const pendingNotifications = completionNotifications.filter((n) => !n.handled)
+
+  if (pendingNotifications.length === 0) return null
+
+  return (
+    <div className="border-t border-border bg-background-surface">
+      {/* 折叠状态栏 */}
+      <div
+        className="flex items-center justify-between px-4 h-10 cursor-pointer hover:bg-background-hover"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div className="flex items-center gap-2">
+          <Bell className={cn('w-4 h-4', hasUnreadNotifications ? 'text-primary' : 'text-text-muted')} />
+          <span className="text-sm text-text-primary">
+            {pendingNotifications.length} 个任务完成待处理
           </span>
         </div>
-      ))}
+        {isExpanded ? (
+          <ChevronDown className="w-4 h-4 text-text-muted" />
+        ) : (
+          <ChevronUp className="w-4 h-4 text-text-muted" />
+        )}
+      </div>
+
+      {/* 展开内容 */}
+      {isExpanded && (
+        <div className="px-4 py-2 space-y-2 max-h-48 overflow-auto">
+          {pendingNotifications.map((notification) => (
+            <div
+              key={notification.id}
+              className="p-2 bg-background-elevated rounded border border-border"
+            >
+              <div className="text-xs text-text-tertiary mb-1">
+                {new Date(notification.createdAt).toLocaleTimeString()}
+              </div>
+              <div className="text-sm text-text-primary mb-1">
+                {notification.prompt.slice(0, 50)}...
+              </div>
+              <div className="text-xs text-text-muted mb-2">
+                {notification.resultSummary}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => markNotificationHandled(notification.id, 'immediate')}
+                  className="px-2 py-1 text-xs bg-primary text-white rounded hover:bg-primary/80"
+                >
+                  立即处理
+                </button>
+                <button
+                  onClick={() => markNotificationHandled(notification.id, 'delayed')}
+                  className="px-2 py-1 text-xs bg-background-hover text-text-secondary rounded hover:bg-background-surface"
+                >
+                  稍后处理
+                </button>
+                <button
+                  onClick={() => markNotificationHandled(notification.id, 'ignored')}
+                  className="px-2 py-1 text-xs text-text-muted hover:text-text-secondary"
+                >
+                  忽略
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

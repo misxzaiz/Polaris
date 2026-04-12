@@ -4,7 +4,7 @@ import { useConfigStore } from '../../stores/configStore'
 import { getAssistantEngine, resetAssistantEngine } from '../core/AssistantEngine'
 import { AssistantChat } from './AssistantChat'
 import { AssistantInput } from './AssistantInput'
-import { ClaudeCodeSessionPanel } from './ClaudeCodeSessionPanel'
+import { ClaudeCodeSessionPanel, CompletionNotificationPanel } from './ClaudeCodeSessionPanel'
 import { DEFAULT_ASSISTANT_CONFIG } from '../types'
 
 /**
@@ -84,6 +84,9 @@ export function AssistantPanel() {
           <AssistantChat />
         </div>
       )}
+
+      {/* 完成通知面板 */}
+      {isConfigured && <CompletionNotificationPanel />}
 
       {/* Claude Code 多会话面板 */}
       {isConfigured && <ClaudeCodeSessionPanel />}
