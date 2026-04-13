@@ -9,6 +9,8 @@ import type { OpenAIEngineConfig, OpenAIMessage, OpenAITool, OpenAIToolCall } fr
 export interface OpenAISessionConfig extends OpenAIEngineConfig {
   /** 系统提示词 */
   systemPrompt?: string
+  /** 初始消息历史（用于多轮对话） */
+  initialMessages?: OpenAIMessage[]
 }
 
 /**
@@ -35,6 +37,13 @@ export class OpenAISession extends EventEmitter implements AISession {
         content: config.systemPrompt,
       })
     }
+
+    // 初始化历史消息（用于多轮对话）
+    if (config.initialMessages && config.initialMessages.length > 0) {
+      // 过滤掉 system 消息，因为已经通过 systemPrompt 设置
+      const nonSystemMessages = config.initialMessages.filter(m => m.role !== 'system')
+      this.messages.push(...nonSystemMessages)
+    }
   }
 
   /**
@@ -52,10 +61,27 @@ export class OpenAISession extends EventEmitter implements AISession {
     this.abortController = new AbortController()
 
     // 添加用户消息
-    this.messages.push({
-      role: 'user',
-      content: task.input.prompt,
-    })
+    // 如果 prompt 是 JSON 格式的消息数组，则直接使用
+    // 否则作为普通字符串处理
+    if (task.input.prompt.startsWith('[')) {
+      try {
+        const parsedMessages = JSON.parse(task.input.prompt) as OpenAIMessage[]
+        // 过滤掉 system 消息（已通过 systemPrompt 设置）
+        const userMessages = parsedMessages.filter(m => m.role !== 'system')
+        this.messages.push(...userMessages)
+      } catch {
+        // 解析失败，作为普通字符串处理
+        this.messages.push({
+          role: 'user',
+          content: task.input.prompt,
+        })
+      }
+    } else {
+      this.messages.push({
+        role: 'user',
+        content: task.input.prompt,
+      })
+    }
 
     try {
       // 流式调用 API

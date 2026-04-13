@@ -2,6 +2,9 @@
  * AI 助手系统提示词
  */
 
+import { useConfigStore } from '../../stores'
+import { DEFAULT_ASSISTANT_CONFIG, DEFAULT_SYSTEM_PROMPT_CONFIG, type SystemPromptConfig } from '../types'
+
 export const ASSISTANT_SYSTEM_PROMPT = `# 角色定义
 
 你是用户的 AI 助手，负责帮助用户分析需求、规划方案、协调资源。
@@ -95,8 +98,49 @@ export const ASSISTANT_SYSTEM_PROMPT = `# 角色定义
 `
 
 /**
+ * 获取默认系统提示词
+ * 供设置面板"填入默认"功能使用
+ */
+export function getDefaultSystemPrompt(): string {
+  return ASSISTANT_SYSTEM_PROMPT
+}
+
+/**
+ * 获取系统提示词配置
+ * 从主配置中读取，提供默认值兜底
+ */
+function getSystemPromptConfig(): SystemPromptConfig {
+  try {
+    const config = useConfigStore.getState().config
+    const assistantConfig = config?.assistant || DEFAULT_ASSISTANT_CONFIG
+    return assistantConfig.systemPrompt || DEFAULT_SYSTEM_PROMPT_CONFIG
+  } catch {
+    // store 未初始化时使用默认值
+    return DEFAULT_SYSTEM_PROMPT_CONFIG
+  }
+}
+
+/**
  * 获取系统提示词
+ *
+ * 根据用户配置返回：
+ * - 未启用或无内容：返回默认提示词
+ * - append 模式：默认 + 用户内容
+ * - replace 模式：用户内容
  */
 export function getSystemPrompt(): string {
-  return ASSISTANT_SYSTEM_PROMPT
+  const config = getSystemPromptConfig()
+
+  // 未启用或无自定义内容，使用默认
+  if (!config?.enabled || !config.customPrompt?.trim()) {
+    return ASSISTANT_SYSTEM_PROMPT
+  }
+
+  // 根据模式处理
+  if (config.mode === 'replace') {
+    return config.customPrompt
+  }
+
+  // append 模式：默认 + 用户内容
+  return `${ASSISTANT_SYSTEM_PROMPT}\n\n${config.customPrompt}`
 }

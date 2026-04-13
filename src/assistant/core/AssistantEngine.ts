@@ -1,4 +1,5 @@
 import { OpenAIProtocolEngine } from '../../engines/openai-protocol'
+import type { OpenAIMessage } from '../../engines/openai-protocol'
 import { getEventBus } from '../../ai-runtime'
 import type { AIEvent } from '../../ai-runtime'
 import { getSystemPrompt } from './SystemPrompt'
@@ -181,22 +182,25 @@ export class AssistantEngine {
     // 添加到对话历史
     this.conversationHistory.push({ role: 'user', content: message })
 
-    // 创建 LLM 会话
+    // 构建 OpenAI 消息数组（包含历史）
+    const contextMessages = this.buildContextMessages()
+
+    // 创建 LLM 会话，传入历史消息
     const session = this.llmEngine.createSession({
-      options: { systemPrompt: getSystemPrompt() },
+      options: {
+        systemPrompt: getSystemPrompt(),
+        initialMessages: contextMessages,
+      },
     })
 
     yield { type: 'message_start' }
 
     try {
-      // 构建包含历史的提示
-      const promptWithHistory = this.buildPromptWithHistory(message)
-
-      // 执行任务
+      // 执行任务 - 只传当前用户消息
       const task = {
         id: `task-${Date.now()}`,
         kind: 'chat' as const,
-        input: { prompt: promptWithHistory },
+        input: { prompt: message },
       }
 
       // 预先创建助手消息用于流式更新
@@ -283,22 +287,17 @@ export class AssistantEngine {
   }
 
   /**
-   * 构建包含历史的提示
+   * 构建 OpenAI 格式的上下文消息数组
    */
-  private buildPromptWithHistory(currentMessage: string): string {
-    if (this.conversationHistory.length <= 1) {
-      return currentMessage
-    }
+  private buildContextMessages(): OpenAIMessage[] {
+    // conversationHistory 不包含当前消息，因为当前消息在 processMessage 中刚添加
+    // 这里需要排除最后一条（当前用户消息），因为会通过 task.input.prompt 传入
+    const historyMessages = this.conversationHistory.slice(0, -1).map((msg) => ({
+      role: msg.role as 'user' | 'assistant',
+      content: msg.content,
+    }))
 
-    // 构建历史上下文
-    const historyParts = this.conversationHistory.slice(0, -1).map((msg) => {
-      return `${msg.role === 'user' ? '用户' : '助手'}: ${msg.content}`
-    })
-
-    return `以下是之前的对话历史：
-${historyParts.join('\n\n')}
-
-用户最新消息: ${currentMessage}`
+    return historyMessages
   }
 
   /**
@@ -537,15 +536,21 @@ ${result}
     // 添加反馈到对话历史
     this.conversationHistory.push({ role: 'user', content: feedbackMessage })
 
+    // 构建 OpenAI 消息数组（包含历史）
+    const contextMessages = this.buildContextMessages()
+
     // 创建新的 LLM 会话处理反馈
     const session = this.llmEngine.createSession({
-      options: { systemPrompt: getSystemPrompt() },
+      options: {
+        systemPrompt: getSystemPrompt(),
+        initialMessages: contextMessages,
+      },
     })
 
     const task = {
       id: `task-feedback-${Date.now()}`,
       kind: 'chat' as const,
-      input: { prompt: this.buildPromptWithHistory(feedbackMessage) },
+      input: { prompt: feedbackMessage },
     }
 
     // 创建助手消息用于流式更新
@@ -625,15 +630,21 @@ ${result}
   private async processAutoReport(reportMessage: string, notificationId: string): Promise<void> {
     if (!this.llmEngine) return
 
+    // 构建 OpenAI 消息数组（包含历史）
+    const contextMessages = this.buildContextMessages()
+
     // 创建新的 LLM 会话处理汇报
     const session = this.llmEngine.createSession({
-      options: { systemPrompt: getSystemPrompt() },
+      options: {
+        systemPrompt: getSystemPrompt(),
+        initialMessages: contextMessages,
+      },
     })
 
     const task = {
       id: `task-auto-report-${Date.now()}`,
       kind: 'chat' as const,
-      input: { prompt: this.buildPromptWithHistory(reportMessage) },
+      input: { prompt: reportMessage },
     }
 
     // 创建助手消息用于流式更新

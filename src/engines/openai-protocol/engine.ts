@@ -1,6 +1,6 @@
 import type { AIEngine, AISession, AISessionConfig, EngineCapabilities } from '../../ai-runtime'
 import { createCapabilities } from '../../ai-runtime'
-import type { OpenAIEngineConfig, OpenAITool } from './types'
+import type { OpenAIEngineConfig, OpenAITool, OpenAIMessage } from './types'
 import { OpenAISession } from './session'
 import { validateConfig, mergeWithDefaults, isConfigComplete } from './config'
 
@@ -55,6 +55,7 @@ export class OpenAIProtocolEngine implements AIEngine {
     const session = new OpenAISession(sessionId, {
       ...this.config,
       systemPrompt: config?.options?.systemPrompt as string | undefined,
+      initialMessages: config?.options?.initialMessages as OpenAIMessage[] | undefined,
     })
 
     // 设置工具

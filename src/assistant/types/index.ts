@@ -149,6 +149,26 @@ export type AssistantEvent =
 // 配置类型
 // ============================================
 
+/** 系统提示词模式 */
+export type SystemPromptMode = 'append' | 'replace'
+
+/** 系统提示词配置 */
+export interface SystemPromptConfig {
+  /** 是否启用自定义系统提示词 */
+  enabled: boolean
+  /** 模式：append=追加到默认后, replace=完全替换 */
+  mode: SystemPromptMode
+  /** 用户自定义提示词内容 */
+  customPrompt: string
+}
+
+/** 默认系统提示词配置 */
+export const DEFAULT_SYSTEM_PROMPT_CONFIG: SystemPromptConfig = {
+  enabled: false,
+  mode: 'append',
+  customPrompt: '',
+}
+
 /** 助手配置 */
 export interface AssistantConfig {
   /** 是否启用助手模块 */
@@ -167,6 +187,9 @@ export interface AssistantConfig {
     /** 温度 */
     temperature?: number
   }
+
+  /** 系统提示词配置 */
+  systemPrompt: SystemPromptConfig
 
   /** Claude Code 调用配置 */
   claudeCode: {
@@ -187,6 +210,7 @@ export const DEFAULT_ASSISTANT_CONFIG: AssistantConfig = {
     maxTokens: 4096,
     temperature: 0.7,
   },
+  systemPrompt: DEFAULT_SYSTEM_PROMPT_CONFIG,
   claudeCode: {
     defaultMode: 'continue',
     timeout: 300000,

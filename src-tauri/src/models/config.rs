@@ -597,6 +597,45 @@ impl Default for AssistantClaudeCodeConfig {
     }
 }
 
+/// 系统提示词模式
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+#[derive(Default)]
+pub enum SystemPromptMode {
+    /// 追加模式
+    #[default]
+    Append,
+    /// 替换模式
+    Replace,
+}
+
+/// 系统提示词配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemPromptConfig {
+    /// 是否启用自定义系统提示词
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// 模式：append=追加到默认后, replace=完全替换
+    #[serde(default)]
+    pub mode: SystemPromptMode,
+
+    /// 用户自定义提示词内容
+    #[serde(default)]
+    pub custom_prompt: String,
+}
+
+impl Default for SystemPromptConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            mode: SystemPromptMode::default(),
+            custom_prompt: String::new(),
+        }
+    }
+}
+
 /// AI 助手配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -609,6 +648,10 @@ pub struct AssistantConfig {
     #[serde(default)]
     pub llm: AssistantLLMConfig,
 
+    /// 系统提示词配置
+    #[serde(default)]
+    pub system_prompt: SystemPromptConfig,
+
     /// Claude Code 调用配置
     #[serde(default)]
     pub claude_code: AssistantClaudeCodeConfig,
@@ -619,6 +662,7 @@ impl Default for AssistantConfig {
         Self {
             enabled: false,
             llm: AssistantLLMConfig::default(),
+            system_prompt: SystemPromptConfig::default(),
             claude_code: AssistantClaudeCodeConfig::default(),
         }
     }
