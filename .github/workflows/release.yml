@@ -29,11 +29,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf cmake pkg-config
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          cache: 'pnpm'
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -44,7 +49,30 @@ jobs:
           workspaces: './src-tauri -> target'
 
       - name: Install frontend dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend
+        run: pnpm run build
+
+      - name: Create placeholder MCP binaries
+        shell: bash
+        run: |
+          mkdir -p src-tauri/target/release
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            touch src-tauri/target/release/polaris-todo-mcp.exe
+            touch src-tauri/target/release/polaris-requirements-mcp.exe
+            touch src-tauri/target/release/polaris-scheduler-mcp.exe
+          else
+            touch src-tauri/target/release/polaris-todo-mcp
+            touch src-tauri/target/release/polaris-requirements-mcp
+            touch src-tauri/target/release/polaris-scheduler-mcp
+            chmod +x src-tauri/target/release/polaris-*
+          fi
+
+      - name: Build MCP binaries
+        shell: bash
+        run: |
+          cargo build --manifest-path src-tauri/Cargo.toml --release --bin polaris-todo-mcp --bin polaris-requirements-mcp --bin polaris-scheduler-mcp
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0

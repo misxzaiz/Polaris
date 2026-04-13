@@ -16,6 +16,16 @@ use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 use crate::utils::CREATE_NO_WINDOW;
 
+/// Claude Code CLI 安装类型
+#[cfg(windows)]
+#[derive(Debug, Clone)]
+enum CliType {
+    /// npm/pnpm 安装的包装脚本（需要 node.exe + cli.js）
+    NpmWrapper { node_exe: String, cli_js: String },
+    /// 独立可执行文件（直接执行）
+    Standalone { exe_path: String },
+}
+
 /// Claude Code 引擎
 pub struct ClaudeEngine {
     /// 配置
@@ -24,12 +34,9 @@ pub struct ClaudeEngine {
     sessions: SessionManager,
     /// CLI 路径缓存
     cli_path: Option<String>,
-    /// Node.js 路径 (Windows)
+    /// CLI 类型缓存 (Windows)
     #[cfg(windows)]
-    node_exe: Option<String>,
-    /// cli.js 路径 (Windows)
-    #[cfg(windows)]
-    cli_js: Option<String>,
+    cli_type: Option<CliType>,
 }
 
 impl ClaudeEngine {
@@ -40,9 +47,7 @@ impl ClaudeEngine {
             sessions: SessionManager::new(),
             cli_path: None,
             #[cfg(windows)]
-            node_exe: None,
-            #[cfg(windows)]
-            cli_js: None,
+            cli_type: None,
         }
     }
 
@@ -54,37 +59,160 @@ impl ClaudeEngine {
         Ok(self.cli_path.as_ref().unwrap())
     }
 
+    /// 检测 CLI 类型（npm/pnpm 安装 或 独立可执行文件）
+    #[cfg(windows)]
+    fn detect_cli_type(&self, cli_path: &str) -> Result<CliType> {
+        let path = Path::new(cli_path);
+
+        // 提前检查路径是否存在
+        if !path.exists() {
+            return Err(AppError::ProcessError(format!("CLI 路径不存在: {}", cli_path)));
+        }
+
+        // 情况 1: 如果是 .exe 文件且不在 node_modules 中，可能是独立可执行文件
+        if path.extension().map(|e| e == "exe").unwrap_or(false) {
+            // 检查是否是 npm/pnpm 的包装脚本
+            // npm/pnpm 的 .exe 通常很小，真正的逻辑在 cli.js 中
+            // 如果是较大的独立可执行文件，直接执行
+            let is_standalone = self.is_likely_standalone_exe(cli_path);
+
+            if is_standalone {
+                tracing::info!("[ClaudeEngine] 检测到独立可执行文件: {}", cli_path);
+                return Ok(CliType::Standalone {
+                    exe_path: cli_path.to_string(),
+                });
+            }
+        }
+
+        // 情况 2: npm/pnpm 安装 - 需要解析 node.exe 和 cli.js
+        tracing::info!("[ClaudeEngine] 尝试解析为 npm/pnpm 安装: {}", cli_path);
+        let (node_exe, cli_js) = resolve_node_and_cli(cli_path)?;
+        Ok(CliType::NpmWrapper { node_exe, cli_js })
+    }
+
+    /// 判断一个 exe 文件是否可能是独立的 Claude Code
+    #[cfg(windows)]
+    fn is_likely_standalone_exe(&self, exe_path: &str) -> bool {
+        // 策略 1: 检查文件名是否包含 "claude"
+        let path = Path::new(exe_path);
+        let file_name = path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+
+        if !file_name.to_lowercase().contains("claude") {
+            return false;
+        }
+
+        // 策略 2: 检查文件大小，独立可执行文件通常 > 10MB
+        // 而 npm/pnpm 的包装脚本通常 < 1MB
+        if let Ok(metadata) = std::fs::metadata(exe_path) {
+            let size_mb = metadata.len() as f64 / (1024.0 * 1024.0);
+            tracing::info!("[ClaudeEngine] {} 文件大小: {:.2} MB", exe_path, size_mb);
+
+            // 如果大于 5MB，认为是独立可执行文件
+            if size_mb > 5.0 {
+                return true;
+            }
+        }
+
+        // 策略 3: 检查同一目录下是否有 node_modules/@anthropic-ai/claude-code
+        if let Some(parent) = path.parent() {
+            let has_node_modules = parent.join("node_modules").join("@anthropic-ai").join("claude-code").exists();
+            if !has_node_modules {
+                // 没有 node_modules，可能是独立可执行文件
+                return true;
+            }
+        }
+
+        false
+    }
+
     /// 检查 CLI 是否可用
     fn check_cli_available(&mut self) -> bool {
         #[cfg(windows)]
         {
-            if self.node_exe.is_none() || self.cli_js.is_none() {
-                let cli_path = match self.get_cli_path() {
-                    Ok(p) => p,
-                    Err(_) => return false,
-                };
-
-                match resolve_node_and_cli(cli_path) {
-                    Ok((node, cli)) => {
-                        self.node_exe = Some(node);
-                        self.cli_js = Some(cli);
+            // 如果已经检测到 CLI 类型，直接验证
+            if let Some(ref cli_type) = self.cli_type {
+                return match cli_type {
+                    CliType::Standalone { exe_path } => {
+                        let exists = Path::new(exe_path).exists();
+                        if !exists {
+                            tracing::error!("[ClaudeEngine] 独立可执行文件不存在: {}", exe_path);
+                        }
+                        exists
                     }
-                    Err(_) => return false,
-                }
+                    CliType::NpmWrapper { node_exe, cli_js } => {
+                        let node_exists = Path::new(node_exe).exists();
+                        let cli_exists = Path::new(cli_js).exists();
+
+                        if !node_exists {
+                            tracing::error!("[ClaudeEngine] node.exe 不存在: {}", node_exe);
+                        }
+                        if !cli_exists {
+                            tracing::error!("[ClaudeEngine] cli.js 不存在: {}", cli_js);
+                        }
+
+                        node_exists && cli_exists
+                    }
+                };
             }
 
-            // 检查文件是否存在
-            self.node_exe.as_ref().map(|p| Path::new(p).exists()).unwrap_or(false)
-                && self.cli_js.as_ref().map(|p| Path::new(p).exists()).unwrap_or(false)
+            // 需要检测 CLI 类型
+            let cli_path = match self.cli_path {
+                Some(ref p) => p.clone(),
+                None => {
+                    match self.get_cli_path() {
+                        Ok(p) => p.to_string(),
+                        Err(e) => {
+                            tracing::error!("[ClaudeEngine] 获取 CLI 路径失败: {}", e);
+                            return false;
+                        }
+                    }
+                }
+            };
+
+            tracing::info!("[ClaudeEngine] 检测 CLI 类型: {}", cli_path);
+
+            match self.detect_cli_type(&cli_path) {
+                Ok(cli_type) => {
+                    tracing::info!("[ClaudeEngine] CLI 类型检测成功: {:?}", cli_type);
+
+                    // 验证具体类型
+                    let result = match &cli_type {
+                        CliType::Standalone { exe_path } => {
+                            let exists = Path::new(exe_path).exists();
+                            if !exists {
+                                tracing::error!("[ClaudeEngine] 独立可执行文件不存在: {}", exe_path);
+                            }
+                            exists
+                        }
+                        CliType::NpmWrapper { node_exe, cli_js } => {
+                            let node_exists = Path::new(node_exe).exists();
+                            let cli_exists = Path::new(cli_js).exists();
+
+                            if !node_exists {
+                                tracing::error!("[ClaudeEngine] node.exe 不存在: {}", node_exe);
+                            }
+                            if !cli_exists {
+                                tracing::error!("[ClaudeEngine] cli.js 不存在: {}", cli_js);
+                            }
+
+                            node_exists && cli_exists
+                        }
+                    };
+
+                    self.cli_type = Some(cli_type);
+                    result
+                }
+                Err(e) => {
+                    tracing::error!("[ClaudeEngine] CLI 类型检测失败: {}", e);
+                    false
+                }
+            }
         }
 
         #[cfg(not(windows))]
         {
-            let cli_path = match self.get_cli_path() {
-                Ok(p) => p,
-                Err(_) => return false,
-            };
-
             // Unix/Linux/Mac: 检查文件是否存在或使用 which 查找
             Path::new(cli_path).exists() ||
                 std::process::Command::new("which")
@@ -107,13 +235,21 @@ impl ClaudeEngine {
     ) -> Result<Command> {
         #[cfg(windows)]
         {
-            let node_exe = self.node_exe.as_ref()
-                .ok_or_else(|| AppError::ProcessError("Node.js 路径未初始化".to_string()))?;
-            let cli_js = self.cli_js.as_ref()
-                .ok_or_else(|| AppError::ProcessError("cli.js 路径未初始化".to_string()))?;
-
-            let mut cmd = Command::new(node_exe);
-            cmd.arg(cli_js);
+            let mut cmd = match self.cli_type {
+                Some(CliType::Standalone { ref exe_path }) => {
+                    // 独立可执行文件 - 直接执行
+                    Command::new(exe_path)
+                }
+                Some(CliType::NpmWrapper { ref node_exe, ref cli_js }) => {
+                    // npm/pnpm 安装 - 使用 node.exe 执行 cli.js
+                    let mut c = Command::new(node_exe);
+                    c.arg(cli_js);
+                    c
+                }
+                None => {
+                    return Err(AppError::ProcessError("CLI 类型未初始化".to_string()));
+                }
+            };
 
             if let Some(sid) = session_id {
                 cmd.arg("--resume").arg(sid);
@@ -399,9 +535,35 @@ impl AIEngine for ClaudeEngine {
         tracing::info!("[ClaudeEngine] 工作目录: {:?}", options.work_dir);
         tracing::info!("[ClaudeEngine] MCP 配置路径: {:?}", options.mcp_config_path);
 
+        let cli_path = self.get_cli_path()?.to_string();
+
         // 检查 CLI 可用性
         if !self.check_cli_available() {
-            return Err(AppError::ProcessError("Claude CLI 不可用".to_string()));
+            #[cfg(windows)]
+            {
+                let error_detail = match &self.cli_type {
+                    Some(CliType::Standalone { exe_path }) => {
+                        format!("独立可执行文件不存在: {}", exe_path)
+                    }
+                    Some(CliType::NpmWrapper { node_exe, cli_js }) => {
+                        format!("npm/pnpm 安装: node={}, cli.js={}", node_exe, cli_js)
+                    }
+                    None => {
+                        format!("无法识别 CLI 类型，请检查路径: {}", cli_path)
+                    }
+                };
+                return Err(AppError::ProcessError(format!(
+                    "Claude CLI 配置错误: {}。请确保路径正确，或通过 npm/pnpm 全局安装: npm install -g @anthropic-ai/claude-code",
+                    error_detail
+                )));
+            }
+            #[cfg(not(windows))]
+            {
+                return Err(AppError::ProcessError(format!(
+                    "Claude CLI 不可用，路径: {}。请检查 Claude Code 是否正确安装。",
+                    cli_path
+                )));
+            }
         }
 
         // 构建命令
@@ -445,7 +607,7 @@ impl AIEngine for ClaudeEngine {
         tracing::info!("[ClaudeEngine] 工作目录: {:?}", options.work_dir);
         tracing::info!("[ClaudeEngine] MCP 配置路径: {:?}", options.mcp_config_path);
 
-        // 检查 CLI 可用性（确保 node_exe 和 cli_js 已初始化）
+        // 检查 CLI 可用性（确保已初始化）
         if !self.check_cli_available() {
             return Err(AppError::ProcessError("Claude CLI 不可用".to_string()));
         }
@@ -529,24 +691,32 @@ impl AIEngine for ClaudeEngine {
 #[cfg(windows)]
 fn resolve_node_and_cli(claude_cmd_path: &str) -> Result<(String, String)> {
     let cmd_path = Path::new(claude_cmd_path);
-    let npm_dir = cmd_path.parent()
+    let cmd_parent = cmd_path.parent()
         .ok_or_else(|| AppError::ProcessError("无法获取 claude.cmd 的父目录".to_string()))?;
 
-    let node_exe = find_node_exe(npm_dir)?;
-    let cli_js = find_cli_js(npm_dir)?;
+    tracing::info!("[ClaudeEngine] 解析 node 和 cli.js，基础路径: {:?}", cmd_parent);
+
+    // 1. 尝试查找 node.exe
+    let node_exe = find_node_exe(cmd_parent)?;
+    tracing::info!("[ClaudeEngine] 找到 node.exe: {}", node_exe);
+
+    // 2. 尝试查找 cli.js（支持 npm 和 pnpm 的不同目录结构）
+    let cli_js = find_cli_js(cmd_parent, &node_exe)?;
+    tracing::info!("[ClaudeEngine] 找到 cli.js: {}", cli_js);
 
     Ok((node_exe, cli_js))
 }
 
 #[cfg(windows)]
-fn find_node_exe(npm_dir: &Path) -> Result<String> {
-    // 检查 npm 目录下是否有 node.exe
-    let local_node = npm_dir.join("node.exe");
+fn find_node_exe(base_dir: &Path) -> Result<String> {
+    // 策略 1: 检查同一目录下是否有 node.exe（npm 安装）
+    let local_node = base_dir.join("node.exe");
     if local_node.exists() {
+        tracing::info!("[ClaudeEngine] 在同一目录找到 node.exe: {:?}", local_node);
         return Ok(local_node.to_string_lossy().to_string());
     }
 
-    // 使用 where 命令查找
+    // 策略 2: 使用 where 命令查找
     let output = Command::new("where")
         .args(["node"])
         .creation_flags(CREATE_NO_WINDOW)
@@ -560,11 +730,12 @@ fn find_node_exe(npm_dir: &Path) -> Result<String> {
             .map(|s| s.trim().to_string());
 
         if let Some(path) = node_path {
+            tracing::info!("[ClaudeEngine] 通过 where 找到 node.exe: {}", path);
             return Ok(path);
         }
     }
 
-    // 尝试常见路径
+    // 策略 3: 尝试常见路径
     let common_paths = vec![
         r"C:\Program Files\nodejs\node.exe",
         r"C:\Program Files (x86)\nodejs\node.exe",
@@ -572,42 +743,158 @@ fn find_node_exe(npm_dir: &Path) -> Result<String> {
 
     for path in common_paths {
         if Path::new(path).exists() {
+            tracing::info!("[ClaudeEngine] 在常见路径找到 node.exe: {}", path);
             return Ok(path.to_string());
         }
     }
 
-    Err(AppError::ProcessError("无法找到 node.exe".to_string()))
+    Err(AppError::ProcessError("无法找到 node.exe，请确保 Node.js 已安装".to_string()))
 }
 
 #[cfg(windows)]
-fn find_cli_js(npm_dir: &Path) -> Result<String> {
-    let cli_js = npm_dir
+fn find_cli_js(base_dir: &Path, node_exe_path: &str) -> Result<String> {
+    // 策略 1: 检查同一目录下的 node_modules（npm 本地安装）
+    let local_cli_js = base_dir
         .join("node_modules")
         .join("@anthropic-ai")
         .join("claude-code")
         .join("cli.js");
-
-    if cli_js.exists() {
-        return Ok(cli_js.to_string_lossy().to_string());
+    if local_cli_js.exists() {
+        tracing::info!("[ClaudeEngine] 在同一目录 node_modules 找到 cli.js");
+        return Ok(local_cli_js.to_string_lossy().to_string());
     }
 
-    // 尝试全局 node_modules
+    // 策略 2: 检查全局 npm 安装路径 (%APPDATA%\npm\node_modules)
     if let Ok(appdata) = std::env::var("APPDATA") {
-        let global_cli = PathBuf::from(appdata)
+        let npm_global = PathBuf::from(&appdata)
             .join("npm")
             .join("node_modules")
             .join("@anthropic-ai")
             .join("claude-code")
             .join("cli.js");
+        if npm_global.exists() {
+            tracing::info!("[ClaudeEngine] 在 APPDATA\\npm\\node_modules 找到 cli.js");
+            return Ok(npm_global.to_string_lossy().to_string());
+        }
+    }
 
-        if global_cli.exists() {
-            return Ok(global_cli.to_string_lossy().to_string());
+    // 策略 3: 检查 pnpm 全局安装路径
+    // pnpm 全局安装通常位于 %PNPM_HOME% 或 %LOCALAPPDATA%\pnpm
+    if let Ok(pnpm_home) = std::env::var("PNPM_HOME") {
+        // pnpm 全局包的位置
+        let pnpm_global = PathBuf::from(&pnpm_home)
+            .join("global")
+            .join("node_modules")
+            .join("@anthropic-ai")
+            .join("claude-code")
+            .join("cli.js");
+        if pnpm_global.exists() {
+            tracing::info!("[ClaudeEngine] 在 PNPM_HOME\\global\\node_modules 找到 cli.js");
+            return Ok(pnpm_global.to_string_lossy().to_string());
+        }
+
+        // 另一种 pnpm 结构
+        let pnpm_global2 = PathBuf::from(&pnpm_home)
+            .join("node_modules")
+            .join("@anthropic-ai")
+            .join("claude-code")
+            .join("cli.js");
+        if pnpm_global2.exists() {
+            tracing::info!("[ClaudeEngine] 在 PNPM_HOME\\node_modules 找到 cli.js");
+            return Ok(pnpm_global2.to_string_lossy().to_string());
+        }
+    }
+
+    // 策略 4: 检查 LOCALAPPDATA\pnpm（pnpm 的默认安装位置）
+    if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
+        let pnpm_default = PathBuf::from(&localappdata)
+            .join("pnpm")
+            .join("global")
+            .join("node_modules")
+            .join("@anthropic-ai")
+            .join("claude-code")
+            .join("cli.js");
+        if pnpm_default.exists() {
+            tracing::info!("[ClaudeEngine] 在 LOCALAPPDATA\\pnpm\\global\\node_modules 找到 cli.js");
+            return Ok(pnpm_default.to_string_lossy().to_string());
+        }
+    }
+
+    // 策略 5: 从 node.exe 路径推断（pnpm 可能与 node 在同一目录）
+    if let Some(node_dir) = Path::new(node_exe_path).parent() {
+        // pnpm 可能将全局包放在与 node.exe 同级的 node_modules
+        let node_sibling = node_dir
+            .join("node_modules")
+            .join("@anthropic-ai")
+            .join("claude-code")
+            .join("cli.js");
+        if node_sibling.exists() {
+            tracing::info!("[ClaudeEngine] 在 node.exe 同级 node_modules 找到 cli.js");
+            return Ok(node_sibling.to_string_lossy().to_string());
+        }
+
+        // 检查上级目录的 node_modules（pnpm 的某些配置）
+        if let Some(parent) = node_dir.parent() {
+            let parent_global = parent
+                .join("global")
+                .join("node_modules")
+                .join("@anthropic-ai")
+                .join("claude-code")
+                .join("cli.js");
+            if parent_global.exists() {
+                tracing::info!("[ClaudeEngine] 在 node.exe 上级目录找到 cli.js");
+                return Ok(parent_global.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    // 策略 6: 使用 npm root -g 获取全局安装路径
+    if let Ok(output) = Command::new("npm")
+        .args(["root", "-g"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+    {
+        if output.status.success() {
+            let npm_root = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !npm_root.is_empty() {
+                let npm_cli = PathBuf::from(npm_root)
+                    .join("@anthropic-ai")
+                    .join("claude-code")
+                    .join("cli.js");
+                if npm_cli.exists() {
+                    tracing::info!("[ClaudeEngine] 通过 npm root -g 找到 cli.js");
+                    return Ok(npm_cli.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    // 策略 7: 使用 pnpm root -g 获取 pnpm 全局安装路径
+    if let Ok(output) = Command::new("pnpm")
+        .args(["root", "-g"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+    {
+        if output.status.success() {
+            let pnpm_root = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !pnpm_root.is_empty() {
+                let pnpm_cli = PathBuf::from(pnpm_root)
+                    .join("@anthropic-ai")
+                    .join("claude-code")
+                    .join("cli.js");
+                if pnpm_cli.exists() {
+                    tracing::info!("[ClaudeEngine] 通过 pnpm root -g 找到 cli.js");
+                    return Ok(pnpm_cli.to_string_lossy().to_string());
+                }
+            }
         }
     }
 
     Err(AppError::ProcessError(format!(
-        "无法找到 cli.js，预期位置: {}",
-        cli_js.display()
+        "无法找到 cli.js。请确保 Claude Code 已通过 npm 或 pnpm 全局安装:\n\
+        npm install -g @anthropic-ai/claude-code\n\
+        或\n\
+        pnpm add -g @anthropic-ai/claude-code",
     )))
 }
 

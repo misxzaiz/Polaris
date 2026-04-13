@@ -2,6 +2,7 @@
 node_modules/
 .pnp
 .pnp.js
+package-lock.json  # 项目使用 pnpm，忽略 npm 的 lock 文件
 
 # Build outputs
 dist/

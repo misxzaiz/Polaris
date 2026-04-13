@@ -50,32 +50,57 @@ Polaris 是一款基于 Tauri 2.x 构建的跨平台桌面应用，为 [Claude C
 ### 1. 安装依赖
 
 ```bash
-npm install
+pnpm install
 ```
 
 ### 2. 启动开发模式
 
 ```bash
-npm run tauri dev
+pnpm run tauri dev
 ```
+
+以上命令等同于 `cargo tauri dev`，使用默认配置启动开发服务器。
+
+如需**跳过 MCP 构建**（启动更快，适合前端开发），使用：
+
+```bash
+# Linux/Mac
+pnpm run tauri:dev
+
+# Windows
+pnpm run tauri:dev:win
+```
+
+**命令区别：**
+
+| 功能 | `pnpm run tauri dev` | `pnpm run tauri:dev` |
+|------|----------------------|----------------------|
+| AI 对话 | ✅ 正常 | ✅ 正常 |
+| 启动速度 | 慢（需编译 MCP） | 快（跳过 MCP） |
+| 待办管理 (Todo) | ✅ 可用 | ❌ 不可用 |
+| 需求管理 (Requirements) | ✅ 可用 | ❌ 不可用 |
+| 定时任务 (Scheduler) | ✅ 可用 | ❌ 不可用 |
+
+> **说明**：MCP（Model Context Protocol）是 Polaris 内置的三个独立服务（待办、需求、定时任务）。它们不影响核心 AI 对话功能，仅禁用相关面板。
 
 ### 3. 构建
 
 ```bash
 # 构建前端
-npm run build
+pnpm run build
 
-# 构建 Tauri 应用
-npm run tauri build
+# 构建 Tauri 应用（包含 MCP 功能）
+pnpm run tauri:build      # Linux/Mac
+pnpm run tauri:build:win  # Windows
 ```
 
 ### 4. 其他命令
 
 ```bash
-npm run dev          # 仅启动前端开发服务器
-npm run preview      # 预览生产构建
-npm run test         # 运行测试
-npm run lint         # 代码检查
+pnpm run dev          # 仅启动前端开发服务器
+pnpm run preview      # 预览生产构建
+pnpm run test         # 运行测试
+pnpm run lint         # 代码检查
 ```
 
 ## 项目结构
