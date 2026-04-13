@@ -672,10 +672,16 @@ ${result}
         // 优先使用 _routeSessionId（前端会话 ID）
         const sessionId = eventWithSession._routeSessionId || eventWithSession.sessionId
         if (sessionId) {
-          // 检查是否是 Claude Code 会话，如果是则跳过（由 executeClaudeCodeBackground 管理）
+          // 检查是否是 Claude Code 会话
           const claudeCodeSession = useAssistantStore.getState().getClaudeCodeSession(sessionId)
           if (claudeCodeSession) {
-            // Claude Code 会话由 executeClaudeCodeBackground 管理状态，这里不处理
+            // 如果会话已经是 completed 或 error 状态，说明 executeClaudeCodeBackground 已处理
+            // 这里作为兜底，确保状态同步（防止事件 ID 不匹配导致的状态卡住）
+            if (claudeCodeSession.status === 'running') {
+              const status = event.type === 'session_start' ? 'running' : 'completed'
+              console.log(`[AssistantEngine] 兜底状态同步: ${sessionId} -> ${status}`)
+              useAssistantStore.getState().updateSessionStatus(sessionId, status)
+            }
             return
           }
           const status = event.type === 'session_start' ? 'running' : 'idle'
