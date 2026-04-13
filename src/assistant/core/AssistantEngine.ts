@@ -11,17 +11,23 @@ import type {
   CompletionNotification,
 } from '../types'
 
-/** 流式更新节流间隔（毫秒） */
-const STREAM_THROTTLE_INTERVAL = 16 // ~60fps
+/** 段落级缓冲超时（毫秒） */
+const PARAGRAPH_TIMEOUT = 200
 
 /**
- * 流式更新节流器
- * 使用 requestAnimationFrame 实现平滑更新
+ * 段落级文本缓冲器
+ *
+ * 策略：
+ * 1. 首段立即显示（快速响应）
+ * 2. 后续段落等待 \n\n（段落结束）才 flush
+ * 3. 超时保护：200ms 内没有段落结束也 flush
+ *
+ * 效果：大幅减少 Zustand 状态更新次数，避免频繁重渲染
  */
-class StreamingThrottler {
-  private pendingContent: string = ''
-  private rafId: number | null = null
-  private lastUpdateTime: number = 0
+class ParagraphBuffer {
+  private buffer: string = ''
+  private timer: ReturnType<typeof setTimeout> | null = null
+  private isFirstChunk: boolean = true
   private flushCallback: ((content: string) => void) | null = null
 
   /**
@@ -32,54 +38,60 @@ class StreamingThrottler {
   }
 
   /**
-   * 添加内容（节流更新）
+   * 追加内容到缓冲区
    */
   append(content: string): void {
-    this.pendingContent += content
+    this.buffer += content
 
-    const now = performance.now()
-    const timeSinceLastUpdate = now - this.lastUpdateTime
+    // 首次立即 flush（保证首 token 响应速度）
+    if (this.isFirstChunk) {
+      this.flush()
+      this.isFirstChunk = false
+      return
+    }
 
-    // 如果距离上次更新超过阈值，立即刷新
-    if (timeSinceLastUpdate >= STREAM_THROTTLE_INTERVAL) {
+    // 段落结束检测：\n\n 表示段落结束
+    if (this.buffer.includes('\n\n')) {
+      this.cancelTimer()
       this.flush()
       return
     }
 
-    // 否则调度下一次刷新
-    if (!this.rafId) {
-      this.rafId = requestAnimationFrame(() => {
+    // 启动超时保护定时器
+    if (!this.timer) {
+      this.timer = setTimeout(() => {
+        this.timer = null
         this.flush()
-      })
+      }, PARAGRAPH_TIMEOUT)
     }
   }
 
   /**
-   * 立即刷新所有待处理内容
+   * 立即刷新缓冲区到回调
    */
   flush(): void {
-    if (this.rafId) {
-      cancelAnimationFrame(this.rafId)
-      this.rafId = null
-    }
+    this.cancelTimer()
 
-    if (this.pendingContent && this.flushCallback) {
-      this.flushCallback(this.pendingContent)
-      this.pendingContent = ''
-      this.lastUpdateTime = performance.now()
+    if (this.buffer && this.flushCallback) {
+      this.flushCallback(this.buffer)
+      this.buffer = ''
     }
   }
 
   /**
-   * 重置状态
+   * 重置缓冲器状态
    */
   reset(): void {
-    if (this.rafId) {
-      cancelAnimationFrame(this.rafId)
-      this.rafId = null
+    this.cancelTimer()
+    this.buffer = ''
+    this.isFirstChunk = true
+  }
+
+  private cancelTimer(): void {
+    if (this.timer) {
+      clearTimeout(this.timer)
+      this.timer = null
     }
-    this.pendingContent = ''
-    this.lastUpdateTime = 0
   }
 }
 
@@ -110,8 +122,8 @@ export class AssistantEngine {
   private conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = []
   /** 后台任务订阅清理函数映射 */
   private backgroundUnsubscribes: Map<string, () => void> = new Map()
-  /** 流式更新节流器 */
-  private streamingThrottler: StreamingThrottler = new StreamingThrottler()
+  /** 段落级文本缓冲器 */
+  private paragraphBuffer: ParagraphBuffer = new ParagraphBuffer()
 
   /**
    * 初始化引擎
@@ -138,8 +150,8 @@ export class AssistantEngine {
 
     this.llmEngine.setTools(ASSISTANT_TOOLS)
 
-    // 设置流式更新节流器的回调
-    this.streamingThrottler.setFlushCallback((content) => {
+    // 设置段落级缓冲器的回调
+    this.paragraphBuffer.setFlushCallback((content) => {
       useAssistantStore.getState().appendToLastAssistantMessage(content)
     })
 
@@ -198,18 +210,18 @@ export class AssistantEngine {
       useAssistantStore.getState().addMessage(assistantMessage)
       useAssistantStore.getState().setStreamingMessageId(assistantMessageId)
 
-      // 重置流式节流器
-      this.streamingThrottler.reset()
+      // 重置段落级缓冲器
+      this.paragraphBuffer.reset()
 
       let currentContent = ''
       const pendingToolCalls: ToolCallInfo[] = []
 
       for await (const event of session.run(task)) {
-        // 处理文本增量（使用节流器）
+        // 处理文本增量（使用段落级缓冲）
         if (event.type === 'assistant_message' && event.isDelta) {
           currentContent += event.content
-          // 使用节流器更新，减少渲染频率
-          this.streamingThrottler.append(event.content)
+          // 使用段落级缓冲，大幅减少状态更新次数
+          this.paragraphBuffer.append(event.content)
           yield { type: 'content_delta', content: event.content }
         }
 
@@ -226,7 +238,7 @@ export class AssistantEngine {
       }
 
       // 刷新剩余内容并清除流式状态
-      this.streamingThrottler.flush()
+      this.paragraphBuffer.flush()
       useAssistantStore.getState().setStreamingMessageId(null)
 
       // 更新工具调用信息到消息
@@ -546,22 +558,22 @@ ${result}
     })
     useAssistantStore.getState().setStreamingMessageId(assistantMessageId)
 
-    // 重置流式节流器
-    this.streamingThrottler.reset()
+    // 重置段落级缓冲器
+    this.paragraphBuffer.reset()
 
     let currentContent = ''
 
     for await (const event of session.run(task)) {
       if (event.type === 'assistant_message' && event.isDelta) {
         currentContent += event.content
-        // 使用节流器更新
-        this.streamingThrottler.append(event.content)
+        // 使用段落级缓冲
+        this.paragraphBuffer.append(event.content)
         yield { type: 'content_delta', content: event.content }
       }
     }
 
     // 刷新剩余内容
-    this.streamingThrottler.flush()
+    this.paragraphBuffer.flush()
     useAssistantStore.getState().setStreamingMessageId(null)
     this.conversationHistory.push({ role: 'assistant', content: currentContent })
 
@@ -634,21 +646,21 @@ ${result}
     })
     useAssistantStore.getState().setStreamingMessageId(assistantMessageId)
 
-    // 重置流式节流器
-    this.streamingThrottler.reset()
+    // 重置段落级缓冲器
+    this.paragraphBuffer.reset()
 
     let currentContent = ''
 
     for await (const event of session.run(task)) {
       if (event.type === 'assistant_message' && event.isDelta) {
         currentContent += event.content
-        // 使用节流器更新
-        this.streamingThrottler.append(event.content)
+        // 使用段落级缓冲
+        this.paragraphBuffer.append(event.content)
       }
     }
 
     // 刷新剩余内容
-    this.streamingThrottler.flush()
+    this.paragraphBuffer.flush()
     useAssistantStore.getState().setStreamingMessageId(null)
     this.conversationHistory.push({ role: 'assistant', content: currentContent })
 
