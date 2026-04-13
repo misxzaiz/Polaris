@@ -252,9 +252,12 @@ ${historyParts.join('\n\n')}
     let output = ''
 
     // 订阅事件
+    // 注意：使用 _routeSessionId 匹配前端会话 ID，而不是 event.sessionId（后端会话 ID）
     const unsubscribe = this.eventBus.onAny((event: AIEvent) => {
-      const eventWithSession = event as { sessionId?: string }
-      if (eventWithSession.sessionId !== sessionId) return
+      const eventWithRouteId = event as { sessionId?: string; _routeSessionId?: string }
+      // 优先使用 _routeSessionId（前端会话 ID），其次使用 sessionId
+      const eventSessionId = eventWithRouteId._routeSessionId || eventWithRouteId.sessionId
+      if (eventSessionId !== sessionId) return
 
       const execEvent: ClaudeCodeExecutionEvent = {
         type: event.type as any,
@@ -336,10 +339,12 @@ ${historyParts.join('\n\n')}
       let output = ''
 
       // 订阅事件
+      // 注意：使用 _routeSessionId 匹配前端会话 ID，而不是 event.sessionId（后端会话 ID）
       const unsubscribe = this.eventBus.onAny((event: AIEvent) => {
-        // 检查事件是否有 sessionId 属性
-        const eventWithSession = event as { sessionId?: string }
-        if (eventWithSession.sessionId !== sessionId) return
+        const eventWithRouteId = event as { sessionId?: string; _routeSessionId?: string }
+        // 优先使用 _routeSessionId（前端会话 ID），其次使用 sessionId
+        const eventSessionId = eventWithRouteId._routeSessionId || eventWithRouteId.sessionId
+        if (eventSessionId !== sessionId) return
 
         // 收集事件
         const execEvent: ClaudeCodeExecutionEvent = {
