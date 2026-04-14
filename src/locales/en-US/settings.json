@@ -17,7 +17,8 @@
     "scheduler": "Scheduler",
     "speech": "Speech Input",
     "assistant": "AI Assistant",
-    "advanced": "Advanced"
+    "advanced": "Advanced",
+    "autoMode": "Auto Mode"
   },
   "messages": {
     "saved": "Saved",
@@ -320,5 +321,15 @@
       "project": "Project Level",
       "local": "Local Level"
     }
+  },
+  "autoMode": {
+    "description": "Auto mode controls which actions Claude can perform without user confirmation",
+    "descriptionDetail": "Allow rules are executed automatically, deny rules require confirmation. These rules protect your system and data.",
+    "searchPlaceholder": "Search rules...",
+    "allow": "Allow",
+    "softDeny": "Require Confirmation",
+    "environment": "Environment Configuration",
+    "noResults": "No matching rules found",
+    "noRules": "No rules"
   }
 }

@@ -17,7 +17,8 @@
     "scheduler": "定时任务",
     "speech": "语音输入",
     "assistant": "AI 助手",
-    "advanced": "高级"
+    "advanced": "高级",
+    "autoMode": "自动模式"
   },
   "messages": {
     "saved": "已保存",
@@ -320,5 +321,15 @@
       "project": "项目级别",
       "local": "本地级别"
     }
+  },
+  "autoMode": {
+    "description": "自动模式控制 Claude 在没有用户确认的情况下可以执行哪些操作",
+    "descriptionDetail": "允许规则会自动执行，拒绝规则需要用户确认。这些规则用于保护您的系统和数据安全。",
+    "searchPlaceholder": "搜索规则...",
+    "allow": "允许",
+    "softDeny": "需确认",
+    "environment": "环境配置",
+    "noResults": "没有找到匹配的规则",
+    "noRules": "暂无规则"
   }
 }
