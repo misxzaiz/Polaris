@@ -330,6 +330,26 @@
     "softDeny": "Require Confirmation",
     "environment": "Environment Configuration",
     "noResults": "No matching rules found",
-    "noRules": "No rules"
+    "noRules": "No rules",
+    "tabRulesList": "Rules List",
+    "tabAdvancedEdit": "Advanced Edit",
+    "myRules": "My Rules",
+    "defaultRules": "Default Rules",
+    "defaultRulesHint": "Built-in rules, cannot be modified",
+    "addAllowRule": "Add Allow Rule",
+    "addSoftDenyRule": "Add Confirmation Rule",
+    "editJson": "Edit settings.json directly",
+    "save": "Save",
+    "reset": "Reset",
+    "ruleName": "Rule Name",
+    "ruleDescription": "Rule Description",
+    "confirmDelete": "Delete this rule?",
+    "settingsPath": "Settings File Path",
+    "expandDefault": "Expand default rules",
+    "collapseDefault": "Collapse default rules",
+    "saving": "Saving...",
+    "saved": "Saved",
+    "customRulesEmpty": "No custom rules yet, click above to add",
+    "defaultRulesInfo": "Allow {{allow}} | Require Confirmation {{deny}}"
   }
 }

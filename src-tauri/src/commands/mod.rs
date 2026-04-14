@@ -34,3 +34,6 @@ pub use workspace::get_home_dir;
 
 pub mod auto_mode;
 pub use auto_mode::{auto_mode_config, auto_mode_defaults};
+
+pub mod claude_settings;
+pub use claude_settings::{read_claude_settings, write_claude_settings, get_claude_settings_path};

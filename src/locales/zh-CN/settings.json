@@ -330,6 +330,26 @@
     "softDeny": "需确认",
     "environment": "环境配置",
     "noResults": "没有找到匹配的规则",
-    "noRules": "暂无规则"
+    "noRules": "暂无规则",
+    "tabRulesList": "规则列表",
+    "tabAdvancedEdit": "高级编辑",
+    "myRules": "我的规则",
+    "defaultRules": "默认规则",
+    "defaultRulesHint": "内置规则，不可修改",
+    "addAllowRule": "添加允许规则",
+    "addSoftDenyRule": "添加需确认规则",
+    "editJson": "直接编辑 settings.json",
+    "save": "保存",
+    "reset": "重置",
+    "ruleName": "规则名称",
+    "ruleDescription": "规则描述",
+    "confirmDelete": "确定删除此规则？",
+    "settingsPath": "配置文件路径",
+    "expandDefault": "展开默认规则",
+    "collapseDefault": "收起默认规则",
+    "saving": "保存中...",
+    "saved": "已保存",
+    "customRulesEmpty": "暂无自定义规则，点击上方按钮添加",
+    "defaultRulesInfo": "允许 {{allow}} 条 | 需确认 {{deny}} 条"
   }
 }

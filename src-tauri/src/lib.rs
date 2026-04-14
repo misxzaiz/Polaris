@@ -497,6 +497,10 @@ pub fn run() {
             // Auto-Mode 相关
             commands::auto_mode::auto_mode_config,
             commands::auto_mode::auto_mode_defaults,
+            // Claude Settings 相关
+            commands::claude_settings::read_claude_settings,
+            commands::claude_settings::write_claude_settings,
+            commands::claude_settings::get_claude_settings_path,
 
         ])
         .run(tauri::generate_context!())
