@@ -10,7 +10,59 @@ import { useTranslation } from 'react-i18next';
 import { Virtuoso } from 'react-virtuoso';
 import { usePluginStore, useToastStore } from '../../../stores';
 import { Button } from '../../Common';
-import type { InstalledPlugin, AvailablePlugin, PluginScope } from '../../../types/plugin';
+import type { InstalledPlugin, AvailablePlugin, PluginScope, McpServerConfig } from '../../../types/plugin';
+
+// 格式化 ISO 时间为本地时间
+const formatDateTime = (isoString?: string): string => {
+  if (!isoString) return '-';
+  try {
+    const date = new Date(isoString);
+    return date.toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return isoString;
+  }
+};
+
+// MCP 服务器配置渲染组件
+const McpServerCard = memo<{
+  name: string;
+  config: McpServerConfig;
+  mcpType: string;
+  mcpUrl: string;
+  mcpCommand: string;
+}>(({ name, config, mcpType, mcpUrl, mcpCommand }) => (
+  <div className="text-sm bg-surface p-3 rounded border border-border-subtle">
+    <div className="font-medium text-text-primary mb-2">{name}</div>
+    <div className="space-y-1 text-xs">
+      <div className="flex">
+        <span className="w-12 flex-shrink-0 text-text-secondary">{mcpType}:</span>
+        <span className="text-text-primary uppercase">{config.type || 'stdio'}</span>
+      </div>
+      {config.url && (
+        <div className="flex">
+          <span className="w-12 flex-shrink-0 text-text-secondary">{mcpUrl}:</span>
+          <span className="text-text-primary break-all">{config.url}</span>
+        </div>
+      )}
+      {config.command && (
+        <div className="flex">
+          <span className="w-12 flex-shrink-0 text-text-secondary">{mcpCommand}:</span>
+          <span className="text-text-primary font-mono">
+            {config.command} {config.args?.join(' ')}
+          </span>
+        </div>
+      )}
+    </div>
+  </div>
+));
+
+McpServerCard.displayName = 'McpServerCard';
 
 // 虚拟列表项类型
 type VirtualItem =
@@ -296,19 +348,67 @@ export function PluginTab() {
                 </div>
               )}
 
+              {/* 已安装插件的额外信息 */}
+              {selectedPlugin.installed && (
+                <>
+                  {selectedPlugin.scope && (
+                    <div>
+                      <h4 className="text-xs font-medium text-text-secondary uppercase mb-1">
+                        {t('plugins.installScope', '安装范围')}
+                      </h4>
+                      <p className="text-sm text-text-primary">
+                        {t(`plugins.scope.${selectedPlugin.scope}`, selectedPlugin.scope)}
+                      </p>
+                    </div>
+                  )}
+
+                  {selectedPlugin.installPath && (
+                    <div>
+                      <h4 className="text-xs font-medium text-text-secondary uppercase mb-1">
+                        {t('plugins.installPath', '安装路径')}
+                      </h4>
+                      <p className="text-sm text-text-primary font-mono break-all bg-surface p-2 rounded">
+                        {selectedPlugin.installPath}
+                      </p>
+                    </div>
+                  )}
+
+                  {selectedPlugin.installedAt && (
+                    <div>
+                      <h4 className="text-xs font-medium text-text-secondary uppercase mb-1">
+                        {t('plugins.installedAt', '安装时间')}
+                      </h4>
+                      <p className="text-sm text-text-primary">{formatDateTime(selectedPlugin.installedAt)}</p>
+                    </div>
+                  )}
+
+                  {selectedPlugin.lastUpdated && (
+                    <div>
+                      <h4 className="text-xs font-medium text-text-secondary uppercase mb-1">
+                        {t('plugins.lastUpdated', '更新时间')}
+                      </h4>
+                      <p className="text-sm text-text-primary">{formatDateTime(selectedPlugin.lastUpdated)}</p>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* MCP 服务器配置 */}
               {selectedPlugin.mcpServers && Object.keys(selectedPlugin.mcpServers).length > 0 && (
                 <div>
-                  <h4 className="text-xs font-medium text-text-secondary uppercase mb-1">
+                  <h4 className="text-xs font-medium text-text-secondary uppercase mb-2">
                     {t('plugins.mcpServers', 'MCP 服务')}
                   </h4>
-                  <div className="space-y-1">
+                  <div className="space-y-2">
                     {Object.entries(selectedPlugin.mcpServers).map(([name, config]) => (
-                      <div key={name} className="text-sm text-text-primary bg-surface p-2 rounded">
-                        <span className="font-medium">{name}</span>
-                        {config.type && (
-                          <span className="ml-2 text-xs text-text-muted">({config.type})</span>
-                        )}
-                      </div>
+                      <McpServerCard
+                        key={name}
+                        name={name}
+                        config={config}
+                        mcpType={t('plugins.mcpType', '类型')}
+                        mcpUrl={t('plugins.mcpUrl', '地址')}
+                        mcpCommand={t('plugins.mcpCommand', '命令')}
+                      />
                     ))}
                   </div>
                 </div>
