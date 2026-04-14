@@ -391,7 +391,7 @@ export function AutoModeTab() {
       {/* 添加规则对话框 */}
       {showAddDialog && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-surface border border-border rounded-lg p-4 w-96 max-w-[90vw]">
+          <div className="bg-background-elevated rounded-xl p-6 w-96 max-w-[90vw] border border-border shadow-lg">
             <h3 className="text-sm font-medium text-text-primary mb-4">
               {activeSection === 'allow'
                 ? t('autoMode.addAllowRule')
