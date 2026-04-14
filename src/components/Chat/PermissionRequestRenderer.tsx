@@ -28,8 +28,18 @@ export const PermissionRequestRenderer = memo(function PermissionRequestRenderer
   // 本地决策状态，用户操作后立即生效
   const [localStatus, setLocalStatus] = useState<'pending' | 'approved' | 'denied'>('pending');
 
-  // 通过 block 绑定的 sessionId 直接定位 store，避免多窗口时 activeSessionId 错乱
-  const targetSessionId = block.sessionId;
+  // 通过 block.sessionId（后端 conversationId）反查前端 store
+  // stores map key 是前端 UUID，block.sessionId 是后端 conversationId，需遍历匹配
+  const findStore = useCallback(() => {
+    const stores = sessionStoreManager.getState().stores
+    for (const [, store] of stores) {
+      const state = store.getState()
+      if (state.conversationId === block.sessionId) {
+        return state
+      }
+    }
+    return null
+  }, [block.sessionId])
 
   const isHandled = localStatus !== 'pending';
 
@@ -40,10 +50,8 @@ export const PermissionRequestRenderer = memo(function PermissionRequestRenderer
     setIsProcessing(true);
     setLocalStatus('approved');
     try {
-      // 提取被拒绝的工具名列表（去重），通过 --allowedTools 重试
       const deniedToolNames = [...new Set(block.denials.map(d => d.toolName))];
-
-      const store = sessionStoreManager.getState().stores.get(targetSessionId)?.getState();
+      const store = findStore();
       if (store) {
         await store.continueChat(`[已授权] ${deniedToolNames.join(', ')}`, deniedToolNames);
       }
@@ -52,7 +60,7 @@ export const PermissionRequestRenderer = memo(function PermissionRequestRenderer
     } finally {
       setIsProcessing(false);
     }
-  }, [isHandled, isProcessing, block.denials, targetSessionId]);
+  }, [isHandled, isProcessing, block.denials, findStore]);
 
   // 处理拒绝
   const handleDeny = useCallback(async () => {
@@ -62,8 +70,7 @@ export const PermissionRequestRenderer = memo(function PermissionRequestRenderer
     setLocalStatus('denied');
     try {
       const decisionPrompt = `[权限确认] 用户拒绝了操作\n工具: ${block.denials.map(d => d.toolName).join(', ')}`;
-
-      const store = sessionStoreManager.getState().stores.get(targetSessionId)?.getState();
+      const store = findStore();
       if (store) {
         await store.continueChat(decisionPrompt);
       }
@@ -72,7 +79,7 @@ export const PermissionRequestRenderer = memo(function PermissionRequestRenderer
     } finally {
       setIsProcessing(false);
     }
-  }, [isHandled, isProcessing, block.denials, targetSessionId]);
+  }, [isHandled, isProcessing, block.denials, findStore]);
 
   // 键盘导航处理
   const handleKeyDown = useCallback((event: React.KeyboardEvent) => {
