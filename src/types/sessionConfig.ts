@@ -188,6 +188,16 @@ export const PERMISSION_MODE_OPTIONS: Array<{ value: PermissionMode | ''; label:
     description: '跳过所有权限检查（默认）',
   },
   {
+    value: 'default',
+    label: '默认',
+    description: '敏感操作需要确认',
+  },
+  {
+    value: 'auto',
+    label: '自动',
+    description: '安全操作自动批准',
+  },
+  {
     value: 'acceptEdits',
     label: '接受编辑',
     description: '自动接受文件编辑',
@@ -196,5 +206,15 @@ export const PERMISSION_MODE_OPTIONS: Array<{ value: PermissionMode | ''; label:
     value: 'plan',
     label: '规划',
     description: '仅规划不执行',
+  },
+  {
+    value: 'dontAsk',
+    label: '拒绝危险',
+    description: '拒绝危险操作',
+  },
+  {
+    value: 'bypassPermissions',
+    label: '跳过权限',
+    description: '跳过所有权限检查',
   },
 ]
