@@ -32,6 +32,7 @@ import {
   validateAttachment,
   validateAttachments,
   isImageType,
+  ATTACHMENT_LIMITS,
 } from '../../types/attachment'
 
 interface ChatInputProps {
@@ -682,7 +683,7 @@ export function ChatInput({
             multiple
             className="hidden"
             onChange={handleFileSelect}
-            accept="image/*,.ts,.tsx,.js,.jsx,.json,.md,.txt,.py,.go,.rs,.java,.c,.cpp,.h"
+            accept={`image/*,${ATTACHMENT_LIMITS.codeExtensions.join(',')}`}
           />
 
           {/* 文本输入 */}

@@ -79,6 +79,17 @@ pub struct SessionOptions {
     pub permission_mode: Option<String>,
     /// 允许的工具列表（通过 --allowedTools 传递）
     pub allowed_tools: Vec<String>,
+    /// 图片附件列表（非空时切换到 stream-json 输入模式）
+    pub image_attachments: Vec<ImageAttachment>,
+}
+
+/// 图片附件（用于 stream-json 模式原生传递给模型）
+#[derive(Debug, Clone)]
+pub struct ImageAttachment {
+    /// MIME 类型（如 "image/png"）
+    pub media_type: String,
+    /// 纯 base64 数据（不含 data: 前缀）
+    pub data: String,
 }
 
 /// 历史消息条目
@@ -110,6 +121,7 @@ impl SessionOptions {
             effort: None,
             permission_mode: None,
             allowed_tools: Vec::new(),
+            image_attachments: Vec::new(),
         }
     }
 
@@ -197,6 +209,12 @@ impl SessionOptions {
     /// 设置允许的工具列表
     pub fn with_allowed_tools(mut self, tools: Vec<String>) -> Self {
         self.allowed_tools = tools;
+        self
+    }
+
+    /// 设置图片附件列表
+    pub fn with_image_attachments(mut self, images: Vec<ImageAttachment>) -> Self {
+        self.image_attachments = images;
         self
     }
 }

@@ -260,6 +260,7 @@ export class MessageCompactor {
         type: a.type,
         fileName: a.fileName,
         fileSize: a.fileSize,
+        mimeType: a.mimeType,
       })),
       [COMPACT_MARKER]: true as const,
     }

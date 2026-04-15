@@ -865,6 +865,7 @@ export function createConversationStore(
             type: a.type,
             fileName: a.fileName,
             fileSize: a.fileSize,
+            mimeType: a.mimeType,
           })),
         }
         get().addMessage(userMessage)
@@ -897,6 +898,7 @@ export function createConversationStore(
             fileName: a.fileName,
             mimeType: a.mimeType,
             content: a.content,
+            textContent: a.textContent,
           }))
 
           // 规范化工作区提示词（换行符处理）

@@ -30,8 +30,10 @@ export interface Attachment {
   fileSize: number
   /** MIME 类型 */
   mimeType: string
-  /** 内容 (base64 data URL 或文件路径) */
+  /** 二进制内容 (base64 data URL，用于图片) */
   content: string
+  /** 文本内容（用于文本/代码文件，避免 base64 膨胀） */
+  textContent?: string
   /** 图片预览 (缩略图) */
   preview?: string
   /** 状态 */
@@ -131,6 +133,7 @@ export async function createAttachment(
 ): Promise<Attachment> {
   const id = generateAttachmentId()
   const isImage = isImageType(file.type)
+  const isText = !isImage && isTextFile(file.type || '', file.name)
 
   const attachment: Attachment = {
     id,
@@ -144,13 +147,22 @@ export async function createAttachment(
   }
 
   try {
-    // 读取文件内容
-    const content = await readFileAsBase64(file)
-    attachment.content = content
-
-    // 如果是可预览图片，设置预览
-    if (isImage && isPreviewableImage(file.type)) {
-      attachment.preview = content
+    if (isImage) {
+      // 图片文件：使用 base64（用于预览和后端存盘）
+      const content = await readFileAsBase64(file)
+      attachment.content = content
+      if (isPreviewableImage(file.type)) {
+        attachment.preview = content
+      }
+    } else if (isText) {
+      // 文本/代码文件：直接读取文本内容（避免 base64 膨胀）
+      const text = await readFileAsText(file)
+      attachment.textContent = text
+      attachment.content = '' // 文本文件不需要 base64
+    } else {
+      // 其他二进制文件：使用 base64（后端会存盘）
+      const content = await readFileAsBase64(file)
+      attachment.content = content
     }
 
     attachment.status = 'ready'

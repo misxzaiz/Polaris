@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::path::PathBuf;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
-use crate::ai::{EngineId, Pagination, PagedResult, SessionOptions};
+use crate::ai::{EngineId, Pagination, PagedResult, SessionOptions, ImageAttachment};
 use crate::ai::{SessionMeta, HistoryMessage, ClaudeHistoryProvider, SessionHistoryProvider};
 use crate::error::{AppError, Result};
 use crate::models::AIEvent;
@@ -24,15 +24,19 @@ use tauri_plugin_notification::NotificationExt;
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Attachment {
-    /// 附件类型
+    /// 附件类型 ("image" | "file")
     #[serde(rename = "type")]
     pub attachment_type: String,
     /// 文件名
     pub file_name: String,
     /// MIME 类型
     pub mime_type: String,
-    /// 内容 (base64 data URL)
+    /// 二进制内容 (base64 data URL，用于图片和二进制文件)
+    #[serde(default)]
     pub content: String,
+    /// 文本内容（前端直接读取的文本，用于文本/代码文件，避免 base64 膨胀）
+    #[serde(default)]
+    pub text_content: Option<String>,
 }
 
 /// 聊天请求的可选参数
@@ -85,10 +89,39 @@ pub struct ChatRequestOptions {
 // 辅助函数
 // ============================================================================
 
-/// 保存附件到工作区，返回保存的图片路径列表
-fn save_attachments(work_dir: &str, attachments: &[Attachment]) -> Result<Vec<String>> {
+/// 附件处理结果
+struct ProcessedAttachment {
+    /// 需要嵌入到消息中的文本段落
+    embedded_sections: Vec<String>,
+    /// 需要用 Read 工具查看的文件路径（大文件、二进制文件）
+    file_references: Vec<String>,
+    /// 图片原始数据（用于 stream-json 模式原生传递给模型）
+    image_data: Vec<ImageData>,
+}
+
+/// 图片原始数据
+struct ImageData {
+    /// MIME 类型（如 "image/png"）
+    media_type: String,
+    /// 纯 base64 数据（不含 data: 前缀）
+    data: String,
+    /// 文件名（日志用）
+    file_name: String,
+}
+
+/// 处理附件：图片存盘 + 文本嵌入 + 大文件存盘引用
+///
+/// 策略：
+/// - 图片：保存到 .polaris/ → 模型通过 Read 工具查看
+/// - 文本/代码文件 (< 30KB)：直接嵌入消息文本
+/// - 文本/代码文件 (> 30KB) + 其他二进制：保存到 .polaris/ → 引用路径
+fn process_attachments(work_dir: &str, attachments: &[Attachment]) -> Result<ProcessedAttachment> {
     let polaris_dir = PathBuf::from(work_dir).join(".polaris");
-    let mut saved_image_paths = Vec::new();
+    let mut result = ProcessedAttachment {
+        embedded_sections: Vec::new(),
+        file_references: Vec::new(),
+        image_data: Vec::new(),
+    };
 
     // 创建 .polaris 目录（如果不存在）
     if !polaris_dir.exists() {
@@ -96,61 +129,168 @@ fn save_attachments(work_dir: &str, attachments: &[Attachment]) -> Result<Vec<St
             .map_err(|e| AppError::ProcessError(format!("创建 .polaris 目录失败: {}", e)))?;
     }
 
-    // 保存图片附件
-    let mut image_index = 0;
+    /// 文本文件嵌入阈值 (30KB)
+    const TEXT_EMBED_THRESHOLD: usize = 30 * 1024;
+
+    let mut file_index: usize = 0;
+
     for attachment in attachments {
-        if attachment.attachment_type == "image" {
-            // 从 data URL 中提取 base64 数据
-            let base64_data = if attachment.content.starts_with("data:") {
-                // 格式: data:image/png;base64,xxxxx
-                let parts: Vec<&str> = attachment.content.splitn(2, ",").collect();
-                if parts.len() == 2 {
-                    parts[1]
+        match attachment.attachment_type.as_str() {
+            "image" => {
+                // 图片：提取纯 base64 数据，用于 stream-json 原生传递
+                let (raw_base64, media_type) = if attachment.content.starts_with("data:") {
+                    // data URL 格式: "data:image/png;base64,<data>"
+                    let parts: Vec<&str> = attachment.content.splitn(2, ",").collect();
+                    if parts.len() != 2 {
+                        tracing::warn!("[process_attachments] 无法解析图片 data URL: {}", &attachment.content[..50.min(attachment.content.len())]);
+                        continue;
+                    }
+                    // 从 data URL 中提取 MIME 类型
+                    let mime = parts[0]
+                        .strip_prefix("data:")
+                        .and_then(|s| s.split(';').next())
+                        .unwrap_or(&attachment.mime_type)
+                        .to_string();
+                    (parts[1].to_string(), mime)
+                } else if !attachment.content.is_empty() {
+                    // 已经是纯 base64
+                    (attachment.content.clone(), attachment.mime_type.clone())
                 } else {
-                    tracing::warn!("[save_attachments] 无法解析 data URL: {}", &attachment.content[..50.min(attachment.content.len())]);
+                    tracing::warn!("[process_attachments] 图片附件无内容: {}", attachment.file_name);
                     continue;
+                };
+
+                tracing::info!(
+                    "[process_attachments] 收集图片: {} ({}), base64 长度: {}",
+                    attachment.file_name, media_type, raw_base64.len()
+                );
+                result.image_data.push(ImageData {
+                    media_type,
+                    data: raw_base64,
+                    file_name: attachment.file_name.clone(),
+                });
+            }
+            "file" => {
+                // 文本/代码文件：优先使用前端传递的 textContent
+                if let Some(ref text) = attachment.text_content {
+                    if text.len() <= TEXT_EMBED_THRESHOLD {
+                        // 小文件：直接嵌入消息
+                        let ext = attachment.file_name.rsplit('.').next().unwrap_or("txt");
+                        result.embedded_sections.push(format!(
+                            "📎 [文件: {}]\n```{}\n{}\n```",
+                            attachment.file_name, ext, text
+                        ));
+                        tracing::info!("[process_attachments] 嵌入文本文件: {} ({} bytes)", attachment.file_name, text.len());
+                    } else {
+                        // 大文件：保存到磁盘
+                        let ext = attachment.file_name.rsplit('.').next().unwrap_or("txt");
+                        let file_name = format!("file_{}.{}", file_index, ext);
+                        let file_path = polaris_dir.join(&file_name);
+
+                        std::fs::write(&file_path, text.as_bytes())
+                            .map_err(|e| AppError::ProcessError(format!("写入文件失败: {}", e)))?;
+
+                        tracing::info!("[process_attachments] 保存大文本文件: {:?} ({} bytes)", file_path, text.len());
+                        result.file_references.push(format!("文件 {} → .polaris/{}", attachment.file_name, file_name));
+                        file_index += 1;
+                    }
+                } else if !attachment.content.is_empty() {
+                    // 有 base64 内容但没有 textContent（二进制文件或旧前端）
+                    let base64_data = if attachment.content.starts_with("data:") {
+                        let parts: Vec<&str> = attachment.content.splitn(2, ",").collect();
+                        if parts.len() == 2 { parts[1] } else { continue; }
+                    } else {
+                        &attachment.content
+                    };
+
+                    let decoded = BASE64_STANDARD.decode(base64_data)
+                        .map_err(|e| AppError::ProcessError(format!("解码文件 base64 失败: {}", e)))?;
+
+                    // 尝试作为文本解码
+                    if let Ok(text) = String::from_utf8(decoded.clone()) {
+                        if text.len() <= TEXT_EMBED_THRESHOLD {
+                            let ext = attachment.file_name.rsplit('.').next().unwrap_or("txt");
+                            result.embedded_sections.push(format!(
+                                "📎 [文件: {}]\n```{}\n{}\n```",
+                                attachment.file_name, ext, text
+                            ));
+                            tracing::info!("[process_attachments] 嵌入 base64 文本文件: {} ({} bytes)", attachment.file_name, text.len());
+                        } else {
+                            let ext = attachment.file_name.rsplit('.').next().unwrap_or("bin");
+                            let file_name = format!("file_{}.{}", file_index, ext);
+                            let file_path = polaris_dir.join(&file_name);
+                            std::fs::write(&file_path, &decoded)
+                                .map_err(|e| AppError::ProcessError(format!("写入文件失败: {}", e)))?;
+                            result.file_references.push(format!("文件 {} → .polaris/{}", attachment.file_name, file_name));
+                            file_index += 1;
+                        }
+                    } else {
+                        // 纯二进制：保存到磁盘
+                        let ext = attachment.file_name.rsplit('.').next().unwrap_or("bin");
+                        let file_name = format!("file_{}.{}", file_index, ext);
+                        let file_path = polaris_dir.join(&file_name);
+                        std::fs::write(&file_path, &decoded)
+                            .map_err(|e| AppError::ProcessError(format!("写入文件失败: {}", e)))?;
+                        result.file_references.push(format!("二进制文件 {} → .polaris/{}", attachment.file_name, file_name));
+                        file_index += 1;
+                    }
+                } else {
+                    tracing::warn!("[process_attachments] 文件附件无内容: {}", attachment.file_name);
                 }
-            } else {
-                // 假设是纯 base64
-                &attachment.content
-            };
-
-            // 解码 base64
-            let decoded = BASE64_STANDARD.decode(base64_data)
-                .map_err(|e| AppError::ProcessError(format!("解码 base64 失败: {}", e)))?;
-
-            // 根据扩展名确定文件名
-            let ext = if attachment.mime_type == "image/png" {
-                "png"
-            } else if attachment.mime_type == "image/jpeg" || attachment.mime_type == "image/jpg" {
-                "jpg"
-            } else if attachment.mime_type == "image/gif" {
-                "gif"
-            } else if attachment.mime_type == "image/webp" {
-                "webp"
-            } else if attachment.mime_type == "image/bmp" {
-                "bmp"
-            } else {
-                // 从文件名提取扩展名
-                attachment.file_name.rsplit('.').next().unwrap_or("png")
-            };
-
-            let file_name = format!("image_{}.{}", image_index, ext);
-            let file_path = polaris_dir.join(&file_name);
-
-            // 写入文件
-            std::fs::write(&file_path, &decoded)
-                .map_err(|e| AppError::ProcessError(format!("写入图片文件失败: {}", e)))?;
-
-            tracing::info!("[save_attachments] 保存图片: {:?}", file_path);
-
-            // 返回相对路径，便于在消息中引用
-            saved_image_paths.push(format!(".polaris/{}", file_name));
-            image_index += 1;
+            }
+            _ => {
+                tracing::warn!("[process_attachments] 未知附件类型: {}", attachment.attachment_type);
+            }
         }
     }
 
-    Ok(saved_image_paths)
+    Ok(result)
+}
+
+/// 根据 MIME 类型和文件名猜测图片扩展名（保留用于未来图片导出需求）
+#[allow(dead_code)]
+fn guess_image_ext(mime_type: &str, file_name: &str) -> String {
+    match mime_type {
+        "image/png" => "png".to_string(),
+        "image/jpeg" | "image/jpg" => "jpg".to_string(),
+        "image/gif" => "gif".to_string(),
+        "image/webp" => "webp".to_string(),
+        "image/bmp" => "bmp".to_string(),
+        "image/svg+xml" => "svg".to_string(),
+        _ => file_name.rsplit('.').next().unwrap_or("png").to_string(),
+    }
+}
+
+/// 构建包含附件内容的最终消息
+fn build_message_with_attachments(message: &str, processed: &ProcessedAttachment) -> String {
+    if processed.embedded_sections.is_empty() && processed.file_references.is_empty() {
+        return message.to_string();
+    }
+
+    let mut parts = Vec::new();
+
+    // 嵌入的文本内容（直接可见）
+    if !processed.embedded_sections.is_empty() {
+        parts.extend(processed.embedded_sections.clone());
+    }
+
+    // 用户原始消息
+    if !message.is_empty() {
+        parts.push(message.to_string());
+    }
+
+    // 文件引用（需要模型用 Read 工具查看）
+    if !processed.file_references.is_empty() {
+        let refs: Vec<String> = processed.file_references.iter()
+            .map(|r| format!("- {}", r))
+            .collect();
+        parts.push(format!(
+            "用户上传了以下文件，请使用 Read 工具查看它们:\n{}",
+            refs.join("\n")
+        ));
+    }
+
+    parts.join("\n\n")
 }
 
 fn prepare_mcp_config_path(options: &ChatRequestOptions, engine: &EngineId, window: &Window) -> Result<Option<String>> {
@@ -191,26 +331,22 @@ pub async fn start_chat(
 ) -> Result<String> {
     tracing::info!("[start_chat] 收到消息，长度: {} 字符, 附件数: {:?}", message.len(), options.attachments.as_ref().map(|a| a.len()));
 
-    // 保存附件到工作区并获取图片路径
-    let saved_image_paths = if let (Some(ref dir), Some(ref atts)) = (&options.work_dir, &options.attachments) {
+    // 处理附件：图片收集 base64 + 文本嵌入 + 大文件存盘引用
+    let processed = if let (Some(ref dir), Some(ref atts)) = (&options.work_dir, &options.attachments) {
         if !atts.is_empty() {
-            save_attachments(dir, atts)?
+            process_attachments(dir, atts)?
         } else {
-            Vec::new()
+            ProcessedAttachment { embedded_sections: Vec::new(), file_references: Vec::new(), image_data: Vec::new() }
         }
     } else {
-        Vec::new()
+        ProcessedAttachment { embedded_sections: Vec::new(), file_references: Vec::new(), image_data: Vec::new() }
     };
 
-    // 构建包含图片引用的消息
-    let final_message = if !saved_image_paths.is_empty() {
-        let image_refs: Vec<String> = saved_image_paths.iter()
-            .map(|path| format!("[图片: {}]", path))
-            .collect();
-        format!("{}\n\n{}", image_refs.join("\n"), message)
-    } else {
-        message
-    };
+    // 构建包含附件内容的最终消息（文本部分）
+    let final_message = build_message_with_attachments(&message, &processed);
+
+    tracing::info!("[start_chat] 消息长度: {}, 图片数: {}, 文件引用数: {}",
+        final_message.len(), processed.image_data.len(), processed.file_references.len());
 
     let engine = options.engine_id
         .as_ref()
@@ -310,6 +446,18 @@ pub async fn start_chat(
         }
     }
 
+    // 传递图片附件（非空时引擎切换到 stream-json 模式）
+    if !processed.image_data.is_empty() {
+        let images: Vec<ImageAttachment> = processed.image_data.iter().map(|img| {
+            ImageAttachment {
+                media_type: img.media_type.clone(),
+                data: img.data.clone(),
+            }
+        }).collect();
+        tracing::info!("[start_chat] 传递 {} 张图片给引擎（stream-json 模式）", images.len());
+        session_opts = session_opts.with_image_attachments(images);
+    }
+
     let mut registry = state.engine_registry.lock().await;
     registry.start_session(Some(engine), &final_message, session_opts)
 }
@@ -325,26 +473,19 @@ pub async fn continue_chat(
 ) -> Result<()> {
     tracing::info!("[continue_chat] 继续会话: {}, 附件数: {:?}", session_id, options.attachments.as_ref().map(|a| a.len()));
 
-    // 保存附件到工作区并获取图片路径
-    let saved_image_paths = if let (Some(dir), Some(atts)) = (&options.work_dir, &options.attachments) {
+    // 处理附件：图片收集 base64 + 文本嵌入 + 大文件存盘引用
+    let processed = if let (Some(dir), Some(atts)) = (&options.work_dir, &options.attachments) {
         if !atts.is_empty() {
-            save_attachments(dir, atts)?
+            process_attachments(dir, atts)?
         } else {
-            Vec::new()
+            ProcessedAttachment { embedded_sections: Vec::new(), file_references: Vec::new(), image_data: Vec::new() }
         }
     } else {
-        Vec::new()
+        ProcessedAttachment { embedded_sections: Vec::new(), file_references: Vec::new(), image_data: Vec::new() }
     };
 
-    // 构建包含图片引用的消息
-    let final_message = if !saved_image_paths.is_empty() {
-        let image_refs: Vec<String> = saved_image_paths.iter()
-            .map(|path| format!("[图片: {}]", path))
-            .collect();
-        format!("{}\n\n{}", image_refs.join("\n"), message)
-    } else {
-        message
-    };
+    // 构建包含附件内容的最终消息（文本部分）
+    let final_message = build_message_with_attachments(&message, &processed);
 
     let engine = options.engine_id
         .as_ref()
@@ -442,6 +583,18 @@ pub async fn continue_chat(
         if !tools.is_empty() {
             session_opts = session_opts.with_allowed_tools(tools.clone());
         }
+    }
+
+    // 传递图片附件（非空时引擎切换到 stream-json 模式）
+    if !processed.image_data.is_empty() {
+        let images: Vec<ImageAttachment> = processed.image_data.iter().map(|img| {
+            ImageAttachment {
+                media_type: img.media_type.clone(),
+                data: img.data.clone(),
+            }
+        }).collect();
+        tracing::info!("[continue_chat] 传递 {} 张图片给引擎（stream-json 模式）", images.len());
+        session_opts = session_opts.with_image_attachments(images);
     }
 
     let mut registry = state.engine_registry.lock().await;

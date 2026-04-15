@@ -34,7 +34,7 @@ import {
   type GrepMatch,
   type GrepOutputData
 } from '../../utils/toolSummary';
-import { Check, XCircle, Loader2, AlertTriangle, ChevronDown, ChevronRight, ChevronUp, Circle, FileSearch, FolderOpen, Code, FileDiff, Brain, ListOrdered, ArrowUp, ChevronsUp, ChevronsDown, Copy } from 'lucide-react';
+import { Check, XCircle, Loader2, AlertTriangle, ChevronDown, ChevronRight, ChevronUp, Circle, FileSearch, FolderOpen, Code, FileDiff, Brain, ListOrdered, ArrowUp, ChevronsUp, ChevronsDown, Copy, Image, FileText, File } from 'lucide-react';
 import { ChatNavigator } from './ChatNavigator';
 import { useMessageSearch, MessageSearchPanel } from './MessageSearchPanel';
 import { QuestionBlockRenderer } from './QuestionBlockRenderer';
@@ -45,6 +45,7 @@ import { ContentBlockErrorBoundary } from './ContentBlockErrorBoundary';
 import { groupConversationRounds } from '../../utils/conversationRounds';
 import { DiffViewer } from '../Diff/DiffViewer';
 import { isEditTool } from '../../utils/diffExtractor';
+import { formatFileSize, getFileIcon } from '../../types/attachment';
 
 
 import {
@@ -215,6 +216,31 @@ const UserBubble = memo(function UserBubble({
         <div className="max-w-[85%] px-4 py-3 rounded-2xl
                     bg-gradient-to-br from-primary to-primary-600
                     text-white shadow-glow">
+          {/* 附件列表 */}
+          {message.attachments && message.attachments.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2 pb-2 border-b border-white/20">
+              {message.attachments.map((att) => {
+                const iconType = getFileIcon(
+                  att.type === 'image' ? 'image/png' : att.mimeType,
+                  att.fileName
+                )
+                const IconComp = iconType === 'image' ? Image
+                  : (iconType === 'code' || iconType === 'config') ? Code
+                  : iconType === 'document' ? FileText
+                  : File
+                return (
+                  <div
+                    key={att.id}
+                    className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/15 text-xs"
+                  >
+                    <IconComp size={12} className="shrink-0 opacity-80" />
+                    <span className="truncate max-w-[100px]">{att.fileName}</span>
+                    <span className="opacity-60">{formatFileSize(att.fileSize)}</span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
           <div className="text-sm leading-relaxed whitespace-pre-wrap">
             {message.content}
           </div>

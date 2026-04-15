@@ -13,7 +13,7 @@ pub mod history;
 pub mod history_claude;
 pub mod event_parser;
 
-pub use traits::{EngineId, SessionOptions, HistoryEntry};
+pub use traits::{EngineId, SessionOptions, HistoryEntry, ImageAttachment};
 pub use registry::EngineRegistry;
 pub use engine::ClaudeEngine;
 pub use history::{

@@ -4,7 +4,7 @@ use std::process::{Child, Command, Stdio};
 
 use crate::ai::event_parser::EventParser;
 use crate::ai::session::SessionManager;
-use crate::ai::traits::{AIEngine, EngineId, SessionOptions};
+use crate::ai::traits::{AIEngine, EngineId, SessionOptions, ImageAttachment};
 use crate::error::{AppError, Result};
 use crate::models::config::Config;
 use crate::models::events::StreamEvent;
@@ -237,7 +237,9 @@ impl ClaudeEngine {
         effort: Option<&str>,
         permission_mode: Option<&str>,
         allowed_tools: &[String],
+        image_attachments: &[ImageAttachment],
     ) -> Result<Command> {
+        let has_images = !image_attachments.is_empty();
         #[cfg(windows)]
         {
             let mut cmd = match self.cli_type {
@@ -323,11 +325,24 @@ impl ClaudeEngine {
                 cmd.arg("--allowedTools").arg(allowed_tools.join(","));
             }
 
-            cmd.arg("--print")
-                .arg("--verbose")
-                .arg("--output-format")
-                .arg("stream-json")
-                .arg(message);
+            if has_images {
+                // 有图片：使用 stream-json 模式通过 stdin 发送（支持原生图片内容块）
+                cmd.arg("--print")
+                    .arg("--verbose")
+                    .arg("--output-format")
+                    .arg("stream-json")
+                    .arg("--input-format")
+                    .arg("stream-json");
+                // 注意：不传 message 参数，消息通过 stdin 发送
+                tracing::info!("[ClaudeEngine] 使用 stream-json 模式（{} 张图片）", image_attachments.len());
+            } else {
+                // 无图片：使用文本参数模式（稳定可靠）
+                cmd.arg("--print")
+                    .arg("--verbose")
+                    .arg("--output-format")
+                    .arg("stream-json")
+                    .arg(message);
+            }
 
             Ok(cmd)
         }
@@ -406,11 +421,23 @@ impl ClaudeEngine {
                 cmd.arg("--allowedTools").arg(allowed_tools.join(","));
             }
 
-            cmd.arg("--print")
-                .arg("--verbose")
-                .arg("--output-format")
-                .arg("stream-json")
-                .arg(message);
+            if has_images {
+                // 有图片：使用 stream-json 模式通过 stdin 发送（支持原生图片内容块）
+                cmd.arg("--print")
+                    .arg("--verbose")
+                    .arg("--output-format")
+                    .arg("stream-json")
+                    .arg("--input-format")
+                    .arg("stream-json");
+                tracing::info!("[ClaudeEngine] 使用 stream-json 模式（{} 张图片）", image_attachments.len());
+            } else {
+                // 无图片：使用文本参数模式（稳定可靠）
+                cmd.arg("--print")
+                    .arg("--verbose")
+                    .arg("--output-format")
+                    .arg("stream-json")
+                    .arg(message);
+            }
 
             Ok(cmd)
         }
@@ -436,6 +463,58 @@ impl ClaudeEngine {
         if let Some(ref git_bash_path) = self.config.git_bin_path {
             cmd.env("CLAUDE_CODE_GIT_BASH_PATH", git_bash_path);
         }
+    }
+
+    /// 通过 stdin 发送 stream-json 格式的用户消息（支持原生图片内容块）
+    ///
+    /// 格式：`{"type":"user","message":{"role":"user","content":[text_block, image_blocks...]}}`
+    fn send_stream_json_message(
+        stdin: &mut impl std::io::Write,
+        message: &str,
+        image_attachments: &[ImageAttachment],
+    ) -> Result<()> {
+        let mut content_blocks: Vec<serde_json::Value> = Vec::new();
+
+        // 文本部分
+        if !message.is_empty() {
+            content_blocks.push(serde_json::json!({
+                "type": "text",
+                "text": message
+            }));
+        }
+
+        // 图片部分
+        for img in image_attachments {
+            content_blocks.push(serde_json::json!({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": img.media_type,
+                    "data": img.data
+                }
+            }));
+        }
+
+        let user_msg = serde_json::json!({
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": content_blocks
+            }
+        });
+
+        let json_line = serde_json::to_string(&user_msg)
+            .map_err(|e| AppError::ProcessError(format!("序列化 stream-json 失败: {}", e)))?;
+
+        tracing::info!("[ClaudeEngine] 发送 stream-json 消息，{} bytes，{} 张图片",
+            json_line.len(), image_attachments.len());
+
+        stdin.write_all(json_line.as_bytes())
+            .and_then(|_| stdin.write_all(b"\n"))
+            .and_then(|_| stdin.flush())
+            .map_err(|e| AppError::ProcessError(format!("写入 stdin 失败: {}", e)))?;
+
+        Ok(())
     }
 
     /// 格式化命令为可复制的字符串（用于日志输出）
@@ -475,12 +554,14 @@ impl ClaudeEngine {
     /// 启动后台线程读取事件
     ///
     /// 返回 input_sender，用于向进程 stdin 发送输入
+    /// `initial_stdin_data`: 启动后立即写入 stdin 的数据（用于 stream-json 图片消息）
     fn spawn_event_reader(
         &self,
         child: Child,
         temp_id: String,
         pid: u32,
         options: SessionOptions,
+        initial_stdin_data: Option<String>,
     ) -> std::sync::mpsc::Sender<String> {
         let sessions = self.sessions.shared();
         let event_callback = options.event_callback.clone();
@@ -520,6 +601,20 @@ impl ClaudeEngine {
             std::thread::spawn(move || {
                 use std::io::Write;
                 let mut stdin_writer = stdin;
+
+                // 如果有初始数据（如 stream-json 图片消息），立即发送
+                if let Some(initial) = initial_stdin_data {
+                    tracing::info!("[ClaudeEngine] 发送初始 stdin 数据: {} bytes", initial.len());
+                    if let Err(e) = stdin_writer.write_all(initial.as_bytes())
+                        .and_then(|_| stdin_writer.write_all(b"\n"))
+                        .and_then(|_| stdin_writer.flush())
+                    {
+                        tracing::error!("[ClaudeEngine] 发送初始 stdin 数据失败: {}", e);
+                        return;
+                    }
+                    tracing::info!("[ClaudeEngine] 初始 stdin 数据已发送");
+                }
+
                 while let Ok(input) = input_receiver.recv() {
                     match stdin_writer.write_all(input.as_bytes()) {
                         Ok(_) => {
@@ -673,6 +768,18 @@ impl AIEngine for ClaudeEngine {
             }
         }
 
+        // 构建初始 stdin 数据（如果有图片，构造 stream-json 消息）
+        let initial_stdin_data = if !options.image_attachments.is_empty() {
+            let mut json_bytes = Vec::new();
+            Self::send_stream_json_message(&mut json_bytes, message, &options.image_attachments)?;
+            // 加换行符
+            json_bytes.extend_from_slice(b"\n");
+            Some(String::from_utf8(json_bytes)
+                .map_err(|e| AppError::ProcessError(format!("stream-json 数据包含非 UTF-8: {}", e)))?)
+        } else {
+            None
+        };
+
         // 构建命令
         let mut cmd = self.build_command(
             message,
@@ -686,6 +793,7 @@ impl AIEngine for ClaudeEngine {
             options.effort.as_deref(),
             options.permission_mode.as_deref(),
             &options.allowed_tools,
+            &options.image_attachments,
         )?;
         self.configure_command(&mut cmd, options.work_dir.as_deref());
 
@@ -703,8 +811,8 @@ impl AIEngine for ClaudeEngine {
 
         tracing::info!("[ClaudeEngine] 进程启动，PID: {}, 临时 ID: {}", pid, temp_id);
 
-        // 启动事件读取，获取 input_sender
-        let input_sender = self.spawn_event_reader(child, temp_id.clone(), pid, options);
+        // 启动事件读取，获取 input_sender（传递初始 stdin 数据）
+        let input_sender = self.spawn_event_reader(child, temp_id.clone(), pid, options, initial_stdin_data);
 
         // 注册会话（带 stdin 发送器）
         self.sessions.register_with_sender(temp_id.clone(), pid, "claude".to_string(), Some(input_sender))?;
@@ -749,6 +857,17 @@ impl AIEngine for ClaudeEngine {
         tracing::info!("[ClaudeEngine] 工作目录: {:?}", work_dir);
         tracing::info!("[ClaudeEngine] 使用 --resume 参数，session_id: {}", real_session_id);
 
+        // 构建初始 stdin 数据（如果有图片，构造 stream-json 消息）
+        let initial_stdin_data = if !options.image_attachments.is_empty() {
+            let mut json_bytes = Vec::new();
+            Self::send_stream_json_message(&mut json_bytes, message, &options.image_attachments)?;
+            json_bytes.extend_from_slice(b"\n");
+            Some(String::from_utf8(json_bytes)
+                .map_err(|e| AppError::ProcessError(format!("stream-json 数据包含非 UTF-8: {}", e)))?)
+        } else {
+            None
+        };
+
         // 构建命令（带 --resume，使用真实 session_id）
         let mut cmd = self.build_command(
             message,
@@ -762,6 +881,7 @@ impl AIEngine for ClaudeEngine {
             options.effort.as_deref(),
             options.permission_mode.as_deref(),
             &options.allowed_tools,
+            &options.image_attachments,
         )?;
         self.configure_command(&mut cmd, work_dir.as_deref());
 
@@ -778,8 +898,8 @@ impl AIEngine for ClaudeEngine {
 
         tracing::info!("[ClaudeEngine] 进程启动，PID: {}", pid);
 
-        // 启动事件读取，获取 input_sender
-        let input_sender = self.spawn_event_reader(child, real_session_id.clone(), pid, options);
+        // 启动事件读取，获取 input_sender（传递初始 stdin 数据）
+        let input_sender = self.spawn_event_reader(child, real_session_id.clone(), pid, options, initial_stdin_data);
 
         // 更新会话 PID（使用真实 session_id，带 stdin 发送器）
         self.sessions.register_with_sender(real_session_id.clone(), pid, "claude".to_string(), Some(input_sender))?;

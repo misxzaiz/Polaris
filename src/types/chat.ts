@@ -371,7 +371,7 @@ export interface UserChatMessage extends BaseChatMessage {
     type: 'image' | 'file';
     fileName: string;
     fileSize: number;
-    preview?: string; // 图片预览（base64 data URL）
+    mimeType: string;
   }>;
 }
 
