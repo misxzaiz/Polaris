@@ -19,3 +19,6 @@ pub mod requirements_mcp_server;
 
 pub mod auto_mode_service;
 pub use auto_mode_service::AutoModeService;
+
+pub mod cli_info_service;
+pub use cli_info_service::CliInfoService;

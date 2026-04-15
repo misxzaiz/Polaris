@@ -59,6 +59,13 @@ export const useConfigStore = create<ConfigState>((set) => ({
         i18n.changeLanguage(config.language);
       }
       set({ config, healthStatus: health, loading: false, isConnecting: false, connectionState });
+
+      // CLI 可用时，异步获取动态信息（agents, auth status, version）
+      if (connectionState === 'success') {
+        import('./cliInfoStore').then(({ useCliInfoStore }) => {
+          useCliInfoStore.getState().fetchAll()
+        }).catch(() => {})
+      }
     } catch (e) {
       set({
         error: e instanceof Error ? e.message : i18n.t('errors:loadConfigFailed'),

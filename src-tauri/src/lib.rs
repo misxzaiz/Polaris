@@ -497,6 +497,10 @@ pub fn run() {
             // Auto-Mode 相关
             commands::auto_mode::auto_mode_config,
             commands::auto_mode::auto_mode_defaults,
+            // CLI 信息查询相关
+            commands::cli_info::cli_get_agents,
+            commands::cli_info::cli_get_auth_status,
+            commands::cli_info::cli_get_version,
             // Claude Settings 相关
             commands::claude_settings::read_claude_settings,
             commands::claude_settings::write_claude_settings,

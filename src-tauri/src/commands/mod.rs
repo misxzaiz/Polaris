@@ -35,5 +35,8 @@ pub use workspace::get_home_dir;
 pub mod auto_mode;
 pub use auto_mode::{auto_mode_config, auto_mode_defaults};
 
+pub mod cli_info;
+pub use cli_info::{cli_get_agents, cli_get_auth_status, cli_get_version};
+
 pub mod claude_settings;
 pub use claude_settings::{read_claude_settings, write_claude_settings, get_claude_settings_path};

@@ -45,7 +45,7 @@ export interface CLIModel {
  *
  * 控制模型在回答时投入的努力程度
  */
-export type EffortLevel = 'low' | 'medium' | 'high'
+export type EffortLevel = 'low' | 'medium' | 'high' | 'max'
 
 /**
  * 权限模式
@@ -92,40 +92,70 @@ export const DEFAULT_SESSION_CONFIG: Required<SessionRuntimeConfig> = {
   effort: 'medium',
   permissionMode: '',
 }
-
 /**
  * 预设 Agent 列表
  *
- * Claude CLI 内置的 Agent 类型
+ * Claude CLI 内置 + 插件的 Agent 类型
+ * 注意: 这只是降级默认值，运行时应通过 cliInfoStore 动态获取
  */
 export const PRESET_AGENTS: CLIAgent[] = [
+  // 内置 Agent
   {
-    id: '',
+    id: 'general-purpose',
     name: '通用',
     description: '默认通用助手',
-    defaultModel: 'sonnet',
-    tags: ['general'],
+    defaultModel: undefined, // inherit
+    tags: ['内置'],
   },
   {
     id: 'Explore',
     name: '探索',
     description: '快速探索代码库，查找文件和代码模式',
     defaultModel: 'haiku',
-    tags: ['explore', 'search'],
+    tags: ['内置'],
   },
   {
     id: 'Plan',
     name: '规划',
     description: '架构设计，规划实现方案',
-    defaultModel: 'sonnet',
-    tags: ['plan', 'architect'],
+    defaultModel: undefined, // inherit
+    tags: ['内置'],
   },
   {
-    id: 'code-reviewer',
+    id: 'statusline-setup',
+    name: '状态栏设置',
+    description: '配置状态栏设置',
+    defaultModel: 'sonnet',
+    tags: ['内置'],
+  },
+  // 插件 Agent
+  {
+    id: 'pua:cto-p10',
+    name: 'PUA:CTO',
+    description: 'P10 CTO / 架构委员会模式，定义战略方向',
+    defaultModel: 'opus',
+    tags: ['插件', 'pua'],
+  },
+  {
+    id: 'pua:tech-lead-p9',
+    name: 'PUA:Tech Lead',
+    description: 'P9 Tech Lead 模式，任务拆解与团队管理',
+    defaultModel: undefined, // inherit
+    tags: ['插件', 'pua'],
+  },
+  {
+    id: 'pua:senior-engineer-p7',
+    name: 'PUA:Senior',
+    description: 'P7 骨干模式，方案驱动执行',
+    defaultModel: undefined, // inherit
+    tags: ['插件', 'pua'],
+  },
+  {
+    id: 'superpowers:code-reviewer',
     name: '代码审查',
     description: '代码审查，检查代码质量和最佳实践',
-    defaultModel: 'sonnet',
-    tags: ['review', 'quality'],
+    defaultModel: undefined, // inherit
+    tags: ['插件', 'superpowers'],
   },
 ]
 
@@ -175,6 +205,11 @@ export const EFFORT_OPTIONS: Array<{ value: EffortLevel; label: string; descript
     value: 'high',
     label: '高',
     description: '深入思考，适合复杂问题',
+  },
+  {
+    value: 'max',
+    label: '最高',
+    description: '全力以赴，最高质量输出',
   },
 ]
 

@@ -3,9 +3,11 @@
  *
  * 用于选择 Agent/Model/Effort/PermissionMode
  * 位于 ChatStatusBar 中，影响下一次发送消息的行为
+ *
+ * Agent/Model 列表优先从 cliInfoStore 动态获取，降级使用 PRESET_AGENTS/PRESET_MODELS
  */
 
-import React, { useState, useCallback, useRef, useEffect } from 'react'
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDown, Bot, Cpu, Zap, Shield } from 'lucide-react'
 import { clsx } from 'clsx'
@@ -18,6 +20,7 @@ import {
   type EffortLevel,
   type PermissionMode,
 } from '../../types/sessionConfig'
+import { useCliInfoStore } from '../../stores/cliInfoStore'
 
 interface SessionConfigSelectorProps {
   /** 当前配置 */
@@ -56,12 +59,25 @@ export function SessionConfigSelector({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  // 动态 Agent 列表：优先 CLI 获取，降级 PRESET
+  const dynamicAgents = useCliInfoStore(s => s.agents)
+  const agentList = useMemo(() => {
+    if (dynamicAgents.length > 0) {
+      return dynamicAgents.map(a => ({
+        id: a.id,
+        name: a.name,
+        description: `${a.source === 'plugin' ? '插件' : '内置'}${a.defaultModel ? ` · ${a.defaultModel}` : ''}`,
+      }))
+    }
+    return PRESET_AGENTS
+  }, [dynamicAgents])
+
   // 获取当前选择的显示名称
   const getAgentLabel = useCallback((agentId?: string) => {
     if (!agentId) return t('sessionConfig.defaultAgent', '通用')
-    const agent = PRESET_AGENTS.find(a => a.id === agentId)
+    const agent = agentList.find(a => a.id === agentId)
     return agent?.name || agentId
-  }, [t])
+  }, [t, agentList])
 
   const getModelLabel = useCallback((modelId?: string) => {
     if (!modelId) return t('sessionConfig.defaultModel', 'Sonnet')
@@ -98,7 +114,7 @@ export function SessionConfigSelector({
 
     switch (type) {
       case 'agent':
-        items.push(...PRESET_AGENTS.map(a => ({
+        items.push(...agentList.map(a => ({
           value: a.id,
           label: a.name,
           description: a.description,
@@ -245,6 +261,15 @@ export function CompactSessionSelector({
   const [openDropdown, setOpenDropdown] = useState<SelectorType | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
+  // 动态 Agent 列表
+  const dynamicAgents = useCliInfoStore(s => s.agents)
+  const agentList = useMemo(() => {
+    if (dynamicAgents.length > 0) {
+      return dynamicAgents.map(a => ({ id: a.id, name: a.name }))
+    }
+    return PRESET_AGENTS
+  }, [dynamicAgents])
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
@@ -269,7 +294,7 @@ export function CompactSessionSelector({
 
   const getAgentLabel = (agentId?: string) => {
     if (!agentId) return '通用'
-    return PRESET_AGENTS.find(a => a.id === agentId)?.name || agentId
+    return agentList.find(a => a.id === agentId)?.name || agentId
   }
 
   const getModelLabel = (modelId?: string) => {
@@ -298,7 +323,7 @@ export function CompactSessionSelector({
         </button>
         {openDropdown === 'agent' && (
           <div className="absolute bottom-full left-0 mb-1 bg-background-elevated border border-border rounded-lg shadow-lg min-w-[140px] z-50">
-            {PRESET_AGENTS.map(agent => (
+            {agentList.map(agent => (
               <button
                 key={agent.id}
                 onClick={() => handleSelect('agent', agent.id)}

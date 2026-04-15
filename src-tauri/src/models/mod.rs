@@ -24,3 +24,6 @@ pub use ai_event::{
 };
 pub mod auto_mode;
 pub use auto_mode::{AutoModeConfig, AutoModeDefaults};
+
+pub mod cli_info;
+pub use cli_info::{CliAgentInfo, CliAuthStatus, CliDynamicInfo};
