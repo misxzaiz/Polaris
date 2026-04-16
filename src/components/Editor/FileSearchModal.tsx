@@ -114,6 +114,8 @@ export function FileSearchModal({ onClose }: FileSearchModalProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const searchAbort = useRef<AbortController | null>(null);
+  // 标记是否为键盘导航触发，区分鼠标悬停（鼠标悬停不触发 scrollIntoView）
+  const isKeyboardNavigationRef = useRef(false);
 
   const { file_tree, current_path, deep_search, revealPath } = useFileExplorerStore();
   const openFileAtLine = useFileEditorStore(s => s.openFileAtLine);
@@ -157,12 +159,18 @@ export function FileSearchModal({ onClose }: FileSearchModalProps) {
     });
   }, []);
 
-  // 滚动选中项到可见区域
+  // 滚动选中项到可见区域（仅键盘导航时触发，鼠标悬停不触发）
   useEffect(() => {
+    // 非键盘导航不触发，避免鼠标悬停或结果更新时产生抖动
+    if (!isKeyboardNavigationRef.current) return;
     if (!listRef.current) return;
     const items = listRef.current.querySelectorAll('[data-file-item]');
     const selected = items[selectedIndex] as HTMLElement;
-    selected?.scrollIntoView({ block: 'nearest' });
+    if (selected) {
+      selected.scrollIntoView({ block: 'nearest' });
+      // 重置标记
+      isKeyboardNavigationRef.current = false;
+    }
   }, [selectedIndex]);
 
   // 文件名深度搜索
@@ -275,10 +283,14 @@ export function FileSearchModal({ onClose }: FileSearchModalProps) {
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault();
+        // 标记为键盘导航，触发 scrollIntoView
+        isKeyboardNavigationRef.current = true;
         setSelectedIndex(i => Math.min(i + 1, results.length - 1));
         break;
       case 'ArrowUp':
         e.preventDefault();
+        // 标记为键盘导航，触发 scrollIntoView
+        isKeyboardNavigationRef.current = true;
         setSelectedIndex(i => Math.max(i - 1, 0));
         break;
       case 'Enter':
