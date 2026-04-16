@@ -1,4 +1,8 @@
 {
+  "search": {
+    "placeholder": "Search workspaces...",
+    "noResults": "No matching workspaces"
+  },
   "info": {
     "title": "Workspace Information",
     "currentWorkspace": "Current Workspace",

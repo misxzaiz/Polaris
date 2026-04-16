@@ -1,4 +1,8 @@
 {
+  "search": {
+    "placeholder": "搜索工作区...",
+    "noResults": "无匹配工作区"
+  },
   "info": {
     "title": "工作区信息",
     "currentWorkspace": "当前工作区",

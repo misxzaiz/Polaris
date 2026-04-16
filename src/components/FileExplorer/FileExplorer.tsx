@@ -8,14 +8,17 @@ import { GitStatusIndicator } from './GitStatusIndicator';
 import { ContextMenu } from './ContextMenu';
 import { InputDialog } from '../Common/InputDialog';
 import { IconPlus, IconFile, IconFolder } from '../Common/Icons';
+import { WorkspaceSearchInput, useWorkspaceFilter } from '../Workspace/WorkspaceSearchInput';
 import type { ContextMenuItem } from './ContextMenu';
 import { joinPath, isValidFileName } from '../../utils/path';
 
 export function FileExplorer() {
   const { t } = useTranslation('fileExplorer');
   const { t: tc } = useTranslation('common');
+  const { t: tw } = useTranslation('workspace');
   const [showViewingMenu, setShowViewingMenu] = useState(false);
   const [showNewMenu, setShowNewMenu] = useState(false);
+  const [workspaceSearchQuery, setWorkspaceSearchQuery] = useState('');
   const [inputDialog, setInputDialog] = useState<{
     visible: boolean;
     title: string;
@@ -234,10 +237,14 @@ export function FileExplorer() {
   const viewingWorkspace = getViewingWorkspace();
   const accessibleWorkspaces = getAllAccessibleWorkspaces();
 
+  // 工作区搜索过滤
+  const filteredWorkspaces = useWorkspaceFilter(accessibleWorkspaces, workspaceSearchQuery);
+
   // 切换浏览工作区
   const handleSwitchViewingWorkspace = useCallback(async (workspaceId: string | null) => {
     setViewingWorkspace(workspaceId);
     setShowViewingMenu(false);
+    setWorkspaceSearchQuery(''); // 切换后清空搜索
 
     // 加载新工作区的目录
     const targetWorkspace = workspaceId
@@ -296,55 +303,77 @@ export function FileExplorer() {
               <>
                 <div
                   className="fixed inset-0 z-10"
-                  onClick={() => setShowViewingMenu(false)}
+                  onClick={() => {
+                    setShowViewingMenu(false);
+                    setWorkspaceSearchQuery('');
+                  }}
                 />
                 <div className="absolute left-0 right-0 top-full mt-1 bg-background-elevated border border-border rounded-lg shadow-lg z-20 overflow-hidden">
+                    {/* 搜索框 - 工作区超过3个时显示 */}
+                    {accessibleWorkspaces.length > 3 && (
+                      <div className="p-2 border-b border-border-subtle">
+                        <WorkspaceSearchInput
+                          value={workspaceSearchQuery}
+                          onChange={setWorkspaceSearchQuery}
+                          autoFocus
+                        />
+                      </div>
+                    )}
+
                     <div className="max-h-[240px] overflow-y-auto">
-                      <button
-                        onClick={() => handleSwitchViewingWorkspace(null)}
-                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
-                          !viewingWorkspace || viewingWorkspace.id === currentWorkspaceId
-                            ? 'bg-primary/10 text-primary'
-                            : 'text-text-secondary hover:text-text-primary hover:bg-background-hover'
-                        }`}
-                      >
-                        <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium truncate">{currentWorkspace?.name || tc('labels.noWorkspaceSelected')}</div>
-                          {currentWorkspace?.path && (
-                            <div className="text-xs truncate text-text-tertiary">{currentWorkspace.path}</div>
-                          )}
+                      {filteredWorkspaces.length === 0 ? (
+                        <div className="py-3 text-center text-sm text-text-tertiary">
+                          {tw('search.noResults')}
                         </div>
-                        {(!viewingWorkspace || viewingWorkspace.id === currentWorkspaceId) && (
-                          <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
-                      </button>
-                      {accessibleWorkspaces
-                        .filter(w => w.id !== currentWorkspaceId)
-                        .map(workspace => (
+                      ) : (
+                        <>
                           <button
-                            key={workspace.id}
-                            onClick={() => handleSwitchViewingWorkspace(workspace.id)}
+                            onClick={() => handleSwitchViewingWorkspace(null)}
                             className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
-                              viewingWorkspace?.id === workspace.id
+                              !viewingWorkspace || viewingWorkspace.id === currentWorkspaceId
                                 ? 'bg-primary/10 text-primary'
                                 : 'text-text-secondary hover:text-text-primary hover:bg-background-hover'
                             }`}
                           >
-                            <span className="w-2 h-2 rounded-full bg-primary/50 shrink-0" />
+                            <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
                             <div className="flex-1 min-w-0">
-                              <div className="font-medium truncate">{workspace.name}</div>
-                              <div className="text-xs truncate text-text-tertiary">{workspace.path}</div>
+                              <div className="font-medium truncate">{currentWorkspace?.name || tc('labels.noWorkspaceSelected')}</div>
+                              {currentWorkspace?.path && (
+                                <div className="text-xs truncate text-text-tertiary">{currentWorkspace.path}</div>
+                              )}
                             </div>
-                            {viewingWorkspace?.id === workspace.id && (
+                            {(!viewingWorkspace || viewingWorkspace.id === currentWorkspaceId) && (
                               <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                               </svg>
                             )}
                           </button>
-                        ))}
+                          {filteredWorkspaces
+                            .filter(w => w.id !== currentWorkspaceId)
+                            .map(workspace => (
+                              <button
+                                key={workspace.id}
+                                onClick={() => handleSwitchViewingWorkspace(workspace.id)}
+                                className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
+                                  viewingWorkspace?.id === workspace.id
+                                    ? 'bg-primary/10 text-primary'
+                                    : 'text-text-secondary hover:text-text-primary hover:bg-background-hover'
+                                }`}
+                              >
+                                <span className="w-2 h-2 rounded-full bg-primary/50 shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-medium truncate">{workspace.name}</div>
+                                  <div className="text-xs truncate text-text-tertiary">{workspace.path}</div>
+                                </div>
+                                {viewingWorkspace?.id === workspace.id && (
+                                  <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                  </svg>
+                                )}
+                              </button>
+                            ))}
+                        </>
+                      )}
                     </div>
                   </div>
               </>

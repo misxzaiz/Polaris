@@ -12,11 +12,13 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
+import { useTranslation } from 'react-i18next'
 import { cn } from '@/utils/cn'
 import { Check, Plus, X, Link, Lock } from 'lucide-react'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useSessionMetadataList, useSessionManagerActions } from '@/stores/conversationStore/sessionStoreManager'
 import { CreateWorkspaceModal } from '@/components/Workspace/CreateWorkspaceModal'
+import { WorkspaceSearchInput, useWorkspaceFilter } from '@/components/Workspace/WorkspaceSearchInput'
 
 interface WorkspaceMenuProps {
   sessionId: string
@@ -25,6 +27,7 @@ interface WorkspaceMenuProps {
 }
 
 export function WorkspaceMenu({ sessionId, anchorEl, onClose }: WorkspaceMenuProps) {
+  const { t } = useTranslation('workspace')
   const workspacesRaw = useWorkspaceStore((state) => state.workspaces)
   const workspaces = useMemo(() =>
     workspacesRaw.slice().sort((a, b) =>
@@ -36,6 +39,11 @@ export function WorkspaceMenu({ sessionId, anchorEl, onClose }: WorkspaceMenuPro
 
   // 新增工作区弹窗状态
   const [showCreateModal, setShowCreateModal] = useState(false)
+  // 搜索状态
+  const [searchQuery, setSearchQuery] = useState('')
+
+  // 搜索过滤
+  const filteredWorkspaces = useWorkspaceFilter(workspaces, searchQuery)
 
   // 菜单位置
   const [position, setPosition] = useState({ top: 0, left: 0 })
@@ -130,14 +138,25 @@ export function WorkspaceMenu({ sessionId, anchorEl, onClose }: WorkspaceMenuPro
         </div>
       )}
 
+      {/* 搜索框 - 工作区超过3个时显示 */}
+      {workspaces.length > 3 && (
+        <div className="px-3 py-2 border-b border-border-subtle">
+          <WorkspaceSearchInput
+            value={searchQuery}
+            onChange={setSearchQuery}
+            autoFocus
+          />
+        </div>
+      )}
+
       {/* 工作区列表 */}
       <div className="max-h-48 overflow-y-auto">
-        {workspaces.length === 0 ? (
+        {filteredWorkspaces.length === 0 ? (
           <div className="py-4 text-center text-sm text-text-tertiary">
-            暂无工作区
+            {t('search.noResults')}
           </div>
         ) : (
-          workspaces.map((workspace) => {
+          filteredWorkspaces.map((workspace) => {
             const isCurrent = workspace.id === effectiveWorkspaceId
             const isContext = contextWorkspaceIds.includes(workspace.id)
 
@@ -193,7 +212,7 @@ export function WorkspaceMenu({ sessionId, anchorEl, onClose }: WorkspaceMenuPro
                 )}
 
                 {/* 关联按钮（所有工作区都显示，除了当前主工作区） */}
-                {workspaces.length > 1 && !isCurrent && (
+                {filteredWorkspaces.length > 1 && !isCurrent && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation()

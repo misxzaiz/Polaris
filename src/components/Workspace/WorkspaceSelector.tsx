@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { useWorkspaceStore } from '../../stores';
 import { Button } from '../Common';
 import { CreateWorkspaceModal } from './CreateWorkspaceModal';
+import { WorkspaceSearchInput, useWorkspaceFilter } from './WorkspaceSearchInput';
 import { createLogger } from '../../utils/logger';
 
 const log = createLogger('WorkspaceSelector');
@@ -30,6 +31,10 @@ export function WorkspaceSelector() {
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // 搜索过滤
+  const filteredWorkspaces = useWorkspaceFilter(workspaces, searchQuery);
 
   const handleSwitchWorkspace = async (id: string) => {
     if (id === currentWorkspaceId) return;
@@ -112,9 +117,24 @@ export function WorkspaceSelector() {
           </div>
         )}
 
-        {/* 当前工作区 */}
+        {/* 搜索框 - 工作区超过3个时显示 */}
+        {workspaces.length > 3 && (
+          <div className="mb-2">
+            <WorkspaceSearchInput
+              value={searchQuery}
+              onChange={setSearchQuery}
+            />
+          </div>
+        )}
+
+        {/* 工作区列表 */}
         <div className="space-y-1">
-          {workspaces.map((workspace) => (
+          {filteredWorkspaces.length === 0 ? (
+            <div className="py-3 text-center text-sm text-text-tertiary">
+              {t('search.noResults')}
+            </div>
+          ) : (
+            filteredWorkspaces.map((workspace) => (
               <div
                 key={workspace.id}
                 className={`group relative rounded-lg transition-colors ${
@@ -153,7 +173,7 @@ export function WorkspaceSelector() {
                 </button>
 
                 {/* 删除按钮（仅在非当前工作区显示） */}
-                {workspace.id !== currentWorkspaceId && workspaces.length > 1 && (
+                {workspace.id !== currentWorkspaceId && filteredWorkspaces.length > 1 && (
                   <button
                     onClick={() => setShowDeleteConfirm(workspace.id)}
                     className={`absolute right-1 top-1 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity ${
@@ -169,7 +189,8 @@ export function WorkspaceSelector() {
                   </button>
                 )}
               </div>
-            ))}
+            ))
+          )}
         </div>
       </div>
 

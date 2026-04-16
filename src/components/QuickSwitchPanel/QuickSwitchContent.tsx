@@ -6,10 +6,12 @@
 
 import { memo, useMemo, useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
+import { useTranslation } from 'react-i18next'
 import { cn } from '@/utils/cn'
 import { Plus, Loader2, X, FolderOpen, ChevronDown, Lock, Check, Download, Clock, FolderPlus, Pin, PinOff } from 'lucide-react'
 import { StatusSymbol } from './StatusSymbol'
 import { CreateWorkspaceModal } from '@/components/Workspace/CreateWorkspaceModal'
+import { WorkspaceSearchInput, useWorkspaceFilter } from '@/components/Workspace/WorkspaceSearchInput'
 import { createLogger } from '@/utils/logger'
 import type { QuickSessionInfo, QuickWorkspaceInfo } from './types'
 
@@ -411,9 +413,14 @@ const WorkspaceDropdown = memo(function WorkspaceDropdown({
   onToggleContext,
   onClose: _onClose,
 }: WorkspaceDropdownProps) {
+  const { t } = useTranslation('workspace')
   // 新建工作区弹窗状态
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
   const dropdownRef = useRef<HTMLDivElement>(null)
+
+  // 搜索过滤
+  const filteredWorkspaces = useWorkspaceFilter(workspaces, searchQuery)
 
   // 不使用 mouseLeave 关闭，因为 Portal 渲染的元素刚出现时会误触发 mouseLeave
   // 改用点击外部关闭 + 用户主动操作后关闭
@@ -456,14 +463,25 @@ const WorkspaceDropdown = memo(function WorkspaceDropdown({
           </div>
         )}
 
+        {/* 搜索框 - 工作区超过3个时显示 */}
+        {workspaces.length > 3 && (
+          <div className="p-2 border-b border-border-subtle">
+            <WorkspaceSearchInput
+              value={searchQuery}
+              onChange={setSearchQuery}
+              autoFocus
+            />
+          </div>
+        )}
+
         {/* 工作区列表 */}
         <div className="max-h-48 overflow-y-auto">
-          {workspaces.length === 0 ? (
+          {filteredWorkspaces.length === 0 ? (
             <div className="py-3 text-center text-xs text-text-tertiary">
-              暂无工作区
+              {t('search.noResults')}
             </div>
           ) : (
-            workspaces.map((ws) => {
+            filteredWorkspaces.map((ws) => {
               const isCurrent = ws.id === currentWorkspaceId
               const isContext = contextWorkspaceIds.includes(ws.id)
 
@@ -515,7 +533,7 @@ const WorkspaceDropdown = memo(function WorkspaceDropdown({
                   )}
 
                   {/* 关联按钮（非当前主工作区时显示） */}
-                  {!isCurrent && workspaces.length > 1 && (
+                  {!isCurrent && filteredWorkspaces.length > 1 && (
                     <button
                       onClick={() => handleToggleContext(ws.id)}
                       className={cn(

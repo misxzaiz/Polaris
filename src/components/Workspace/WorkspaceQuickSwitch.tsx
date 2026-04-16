@@ -11,6 +11,7 @@ import { cn } from '@/utils/cn'
 import { Check, Plus, Trash2, ChevronDown } from 'lucide-react'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { CreateWorkspaceModal } from './CreateWorkspaceModal'
+import { WorkspaceSearchInput, useWorkspaceFilter } from './WorkspaceSearchInput'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('WorkspaceQuickSwitch')
@@ -43,6 +44,10 @@ export function WorkspaceQuickSwitch() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+
+  // 搜索过滤
+  const filteredWorkspaces = useWorkspaceFilter(sortedWorkspaces, searchQuery)
 
   // 点击外部关闭
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -51,6 +56,7 @@ export function WorkspaceQuickSwitch() {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setShowDropdown(false)
         setShowDeleteConfirm(null)
+        setSearchQuery('') // 关闭时清空搜索
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -64,6 +70,7 @@ export function WorkspaceQuickSwitch() {
     try {
       await switchWorkspace(id)
       setShowDropdown(false)
+      setSearchQuery('') // 切换后清空搜索
     } catch (error) {
       log.error('切换工作区失败', error instanceof Error ? error : new Error(String(error)))
     }
@@ -119,65 +126,82 @@ export function WorkspaceQuickSwitch() {
           className="absolute left-0 top-full mt-1 bg-background-elevated border border-border rounded-xl shadow-xl z-50 overflow-hidden min-w-[200px] max-w-[280px]"
           data-tauri-drag-region={false}
         >
+          {/* 搜索框 */}
+          {sortedWorkspaces.length > 3 && (
+            <div className="p-2 border-b border-border-subtle">
+              <WorkspaceSearchInput
+                value={searchQuery}
+                onChange={setSearchQuery}
+                autoFocus
+              />
+            </div>
+          )}
+
           {/* 工作区列表 */}
           <div className="max-h-[240px] overflow-y-auto p-1">
-            {sortedWorkspaces.map((workspace) => (
-              <div
-                key={workspace.id}
-                className="group relative"
-              >
-                <button
-                  onClick={() => handleSwitchWorkspace(workspace.id)}
-                  disabled={isLoading || workspace.id === currentWorkspaceId}
-                  className={cn(
-                    'w-full flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors',
-                    workspace.id === currentWorkspaceId
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-text-secondary hover:text-text-primary hover:bg-background-hover'
-                  )}
-                >
-                  {/* 当前标记 */}
-                  <span
-                    className={cn(
-                      'w-1.5 h-1.5 rounded-full shrink-0 mt-0.5',
-                      workspace.id === currentWorkspaceId ? 'bg-primary' : 'bg-text-tertiary'
-                    )}
-                  />
-
-                  <div className="flex-1 min-w-0 text-left">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-medium truncate">{workspace.name}</span>
-                      {workspace.id === currentWorkspaceId && (
-                        <Check className="w-3.5 h-3.5 shrink-0" />
-                      )}
-                    </div>
-                    <div className="text-xs truncate text-text-tertiary mt-0.5 leading-tight">
-                      {workspace.path}
-                    </div>
-                  </div>
-                </button>
-
-                {/* 删除按钮（非当前工作区且超过1个工作区时显示） */}
-                {workspace.id !== currentWorkspaceId && sortedWorkspaces.length > 1 && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setShowDeleteConfirm(workspace.id)
-                    }}
-                    disabled={deletingId === workspace.id}
-                    className={cn(
-                      'absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md transition-all',
-                      'opacity-0 group-hover:opacity-100',
-                      'text-text-tertiary hover:text-danger hover:bg-danger/10',
-                      deletingId === workspace.id && 'opacity-50 cursor-not-allowed'
-                    )}
-                    title={t('selector.deleteWorkspace')}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                )}
+            {filteredWorkspaces.length === 0 ? (
+              <div className="py-3 text-center text-sm text-text-tertiary">
+                {t('search.noResults')}
               </div>
-            ))}
+            ) : (
+              filteredWorkspaces.map((workspace) => (
+                <div
+                  key={workspace.id}
+                  className="group relative"
+                >
+                  <button
+                    onClick={() => handleSwitchWorkspace(workspace.id)}
+                    disabled={isLoading || workspace.id === currentWorkspaceId}
+                    className={cn(
+                      'w-full flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors',
+                      workspace.id === currentWorkspaceId
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-text-secondary hover:text-text-primary hover:bg-background-hover'
+                    )}
+                  >
+                    {/* 当前标记 */}
+                    <span
+                      className={cn(
+                        'w-1.5 h-1.5 rounded-full shrink-0 mt-0.5',
+                        workspace.id === currentWorkspaceId ? 'bg-primary' : 'bg-text-tertiary'
+                      )}
+                    />
+
+                    <div className="flex-1 min-w-0 text-left">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-medium truncate">{workspace.name}</span>
+                        {workspace.id === currentWorkspaceId && (
+                          <Check className="w-3.5 h-3.5 shrink-0" />
+                        )}
+                      </div>
+                      <div className="text-xs truncate text-text-tertiary mt-0.5 leading-tight">
+                        {workspace.path}
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* 删除按钮（非当前工作区且超过1个工作区时显示） */}
+                  {workspace.id !== currentWorkspaceId && filteredWorkspaces.length > 1 && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setShowDeleteConfirm(workspace.id)
+                      }}
+                      disabled={deletingId === workspace.id}
+                      className={cn(
+                        'absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md transition-all',
+                        'opacity-0 group-hover:opacity-100',
+                        'text-text-tertiary hover:text-danger hover:bg-danger/10',
+                        deletingId === workspace.id && 'opacity-50 cursor-not-allowed'
+                      )}
+                      title={t('selector.deleteWorkspace')}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              ))
+            )}
           </div>
 
           {/* 分隔线 */}
