@@ -950,6 +950,10 @@ export function createConversationStore(
             })
           } else {
             // 新会话
+            // 检查是否有 forkFromId（Fork 分支会话）
+            const sessionMeta = sessionStoreManager.getState().sessionMetadata.get(sessionId)
+            const forkSessionId = sessionMeta?.forkFromId
+
             const newSessionId = await invoke<string>('start_chat', {
               message: normalizedMessage,
               options: {
@@ -965,6 +969,7 @@ export function createConversationStore(
                 model: sessionConfig.model || undefined,
                 effort: sessionConfig.effort || undefined,
                 permissionMode: sessionConfig.permissionMode || undefined,
+                forkSessionId: forkSessionId || undefined,
               },
             })
             // 注意：这里设置的是临时 sessionId，真实的会话 ID 通过 session_start 事件设置

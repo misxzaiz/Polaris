@@ -244,6 +244,8 @@ export interface SessionMetadata {
   lastAccessedAt: number // 最后访问时间戳（用于 LRU 驱逐）
   createdAt: string
   updatedAt: string
+  /** Fork 来源会话 ID（Fork 创建时记录，发送第一条消息时作为 --fork-session 参数传给 CLI） */
+  forkFromId?: string
 }
 
 /**
@@ -262,6 +264,8 @@ export interface CreateSessionOptions {
   engineId?: string
   /** 静默模式：不自动激活，不显示在 UI */
   silentMode?: boolean
+  /** Fork 来源会话 ID（Fork 场景下记录源会话，发消息时用于 --fork-session） */
+  forkFromId?: string
 }
 
 /**
@@ -306,7 +310,7 @@ export interface SessionManagerActions {
   // ===== 会话生命周期 =====
   createSession: (options: CreateSessionOptions) => string
   /** 从历史创建会话（恢复历史消息） */
-  createSessionFromHistory: (options: import('../../types').ChatMessage[], conversationId: string | null, metadata?: { title?: string; workspaceId?: string }) => string
+  createSessionFromHistory: (options: import('../../types').ChatMessage[], conversationId: string | null, metadata?: { title?: string; workspaceId?: string; forkFromId?: string }) => string
   deleteSession: (sessionId: string) => void
   switchSession: (sessionId: string) => void
   /** 更新会话标题 */

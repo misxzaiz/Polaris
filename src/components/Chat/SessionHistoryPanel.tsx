@@ -153,21 +153,29 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
       if (messages.length === 0) return
 
       // 2. 创建新会话并复制消息
+      //    不传 conversationId（第二个参数为 null），这样 sendMessage 走 start_chat 而非 continue_chat
+      //    只有 Claude Code 原生会话才能传 forkFromId（有 CLI session ID 可用于 --fork-session）
+      const isClaudeNative = item.source === 'claude-code-native'
       const title = branchName || `Fork: ${item.title}`
+      const prevActiveId = sessionStoreManager.getState().activeSessionId
       const newSessionId = sessionStoreManager.getState().createSessionFromHistory(
         messages,
-        item.id,
-        { title },
+        null, // 不传 conversationId，确保发消息走 start_chat
+        {
+          title,
+          forkFromId: isClaudeNative ? item.id : undefined,
+        },
       )
 
       console.log('[SessionHistoryPanel] Fork 创建成功:', newSessionId, {
         sourceId: item.id,
         branchName,
+        isClaudeNative,
       })
 
-      // 3. 多窗口模式时自动加入
-      if (useViewStore.getState().multiSessionMode) {
-        useViewStore.getState().addToMultiView(newSessionId)
+      // 3. 多窗口模式下，恢复 activeSessionId 到原来的会话，不抢焦点
+      if (useViewStore.getState().multiSessionMode && prevActiveId) {
+        sessionStoreManager.getState().switchSession(prevActiveId)
       }
 
       // 4. 关闭对话框

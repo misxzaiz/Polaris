@@ -83,6 +83,9 @@ pub struct ChatRequestOptions {
     /// 允许的工具列表（权限重试时使用）
     #[serde(default)]
     pub allowed_tools: Option<Vec<String>>,
+    /// Fork 来源会话 ID（配合 --fork-session 创建分支会话）
+    #[serde(default)]
+    pub fork_session_id: Option<String>,
 }
 
 // ============================================================================
@@ -444,6 +447,11 @@ pub async fn start_chat(
         if !tools.is_empty() {
             session_opts = session_opts.with_allowed_tools(tools.clone());
         }
+    }
+
+    // Fork 会话：传递源会话 ID，引擎将使用 --resume + --fork-session
+    if let Some(ref fork_sid) = options.fork_session_id {
+        session_opts.fork_session_id = Some(fork_sid.clone());
     }
 
     // 传递图片附件（非空时引擎切换到 stream-json 模式）

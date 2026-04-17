@@ -168,6 +168,7 @@ function createSessionManagerStore() {
         lastAccessedAt: Date.now(),
         createdAt: timestamp,
         updatedAt: timestamp,
+        forkFromId: options.forkFromId,
       }
 
       console.log('[SessionStoreManager] 创建会话元数据:', {
@@ -267,6 +268,7 @@ function createSessionManagerStore() {
         type: metadata?.workspaceId ? 'project' : 'free',
         workspaceId: metadata?.workspaceId,
         title: metadata?.title || `历史会话 ${get().stores.size + 1}`,
+        forkFromId: metadata?.forkFromId,
       })
 
       // 获取新创建的 Store 并设置历史消息
@@ -277,6 +279,7 @@ function createSessionManagerStore() {
         console.log('[SessionStoreManager] 从历史创建会话:', sessionId, {
           messageCount: messages.length,
           conversationId,
+          forkFromId: metadata?.forkFromId,
         })
       }
 

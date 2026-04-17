@@ -81,6 +81,8 @@ pub struct SessionOptions {
     pub allowed_tools: Vec<String>,
     /// 图片附件列表（非空时切换到 stream-json 输入模式）
     pub image_attachments: Vec<ImageAttachment>,
+    /// Fork 来源会话 ID（配合 --resume 使用 --fork-session 创建分支会话）
+    pub fork_session_id: Option<String>,
 }
 
 /// 图片附件（用于 stream-json 模式原生传递给模型）
@@ -122,6 +124,7 @@ impl SessionOptions {
             permission_mode: None,
             allowed_tools: Vec::new(),
             image_attachments: Vec::new(),
+            fork_session_id: None,
         }
     }
 

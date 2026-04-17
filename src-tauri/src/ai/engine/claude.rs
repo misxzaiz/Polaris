@@ -238,6 +238,7 @@ impl ClaudeEngine {
         permission_mode: Option<&str>,
         allowed_tools: &[String],
         image_attachments: &[ImageAttachment],
+        fork_session: bool,
     ) -> Result<Command> {
         let has_images = !image_attachments.is_empty();
         #[cfg(windows)]
@@ -260,6 +261,9 @@ impl ClaudeEngine {
 
             if let Some(sid) = session_id {
                 cmd.arg("--resume").arg(sid);
+                if fork_session {
+                    cmd.arg("--fork-session");
+                }
             }
 
             // 关联工作区目录（通过 --add-dir 赋予原生文件工具访问权限）
@@ -356,6 +360,9 @@ impl ClaudeEngine {
 
             if let Some(sid) = session_id {
                 cmd.arg("--resume").arg(sid);
+                if fork_session {
+                    cmd.arg("--fork-session");
+                }
             }
 
             // 关联工作区目录（通过 --add-dir 赋予原生文件工具访问权限）
@@ -671,17 +678,24 @@ impl ClaudeEngine {
 
                 if let Some(raw_event) = StreamEvent::parse_line(trimmed) {
                     // 更新 session_id 映射
-                    if let StreamEvent::System { extra, .. } = &raw_event {
-                        if let Some(serde_json::Value::String(real_id)) = extra.get("session_id") {
-                            parser.set_session_id(real_id);
-                            SessionManager::update_session_id_shared(
-                                &sessions, &temp_id, real_id, pid, "claude", Some(sender_for_update.clone())
-                            );
-                            tracing::info!("[ClaudeEngine] session_id 更新: {} -> {}", temp_id, real_id);
+                    // 注意：跳过 init 事件的 session_id 更新。
+                    // --resume 时 CLI 会先发带新 fork ID 的 system 事件，
+                    // 然后发 init 事件带原始 session_id（旧 ID），
+                    // 如果不跳过 init，会把已经更新的新 ID 覆盖回去。
+                    if let StreamEvent::System { subtype, extra } = &raw_event {
+                        let is_init = subtype.as_deref() == Some("init");
+                        if !is_init {
+                            if let Some(serde_json::Value::String(real_id)) = extra.get("session_id") {
+                                parser.set_session_id(real_id);
+                                SessionManager::update_session_id_shared(
+                                    &sessions, &temp_id, real_id, pid, "claude", Some(sender_for_update.clone())
+                                );
+                                tracing::info!("[ClaudeEngine] session_id 更新: {} -> {}", temp_id, real_id);
 
-                            // 通知外部 session_id 已更新
-                            if let Some(ref cb) = on_session_id_update {
-                                cb(real_id.clone());
+                                // 通知外部 session_id 已更新
+                                if let Some(ref cb) = on_session_id_update {
+                                    cb(real_id.clone());
+                                }
                             }
                         }
                     }
@@ -790,11 +804,17 @@ impl AIEngine for ClaudeEngine {
         };
 
         // 构建命令
+        // start_session 默认不 fork，除非 options.fork_session_id 有值
+        let (resume_sid, fork_flag) = if let Some(ref fork_sid) = options.fork_session_id {
+            (Some(fork_sid.as_str()), true)
+        } else {
+            (None, false)
+        };
         let mut cmd = self.build_command(
             message,
             options.system_prompt.as_deref(),
             options.append_system_prompt.as_deref(),
-            None,
+            resume_sid,
             options.mcp_config_path.as_deref(),
             &options.additional_dirs,
             options.agent.as_deref(),
@@ -803,6 +823,7 @@ impl AIEngine for ClaudeEngine {
             options.permission_mode.as_deref(),
             &options.allowed_tools,
             &options.image_attachments,
+            fork_flag,
         )?;
         self.configure_command(&mut cmd, options.work_dir.as_deref());
 
@@ -891,6 +912,7 @@ impl AIEngine for ClaudeEngine {
             options.permission_mode.as_deref(),
             &options.allowed_tools,
             &options.image_attachments,
+            false, // continue_session 不 fork
         )?;
         self.configure_command(&mut cmd, work_dir.as_deref());
 
