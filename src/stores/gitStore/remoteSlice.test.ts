@@ -206,6 +206,7 @@ describe('remoteSlice', () => {
         branchName: 'main',
         remoteName: 'origin',
         force: false,
+        remoteBranchName: null,
       })
       expect(result.success).toBe(true)
       expect(result.pushedCommits).toBe(3)
@@ -223,6 +224,7 @@ describe('remoteSlice', () => {
         workspacePath: '/workspace',
         branchName: 'feature',
         remoteName: 'origin',
+        remoteBranchName: null,
       })
     })
 
@@ -239,6 +241,7 @@ describe('remoteSlice', () => {
         branchName: 'main',
         remoteName: 'origin',
         force: true,
+        remoteBranchName: null,
       })
     })
 

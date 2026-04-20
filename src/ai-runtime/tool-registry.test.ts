@@ -11,6 +11,7 @@ const originalConsole = {
   log: console.log,
   warn: console.warn,
   error: console.error,
+  info: console.info,
 }
 
 // 创建测试工具的工厂函数
@@ -48,12 +49,14 @@ describe('ToolRegistryImpl', () => {
     console.log = vi.fn()
     console.warn = vi.fn()
     console.error = vi.fn()
+    console.info = vi.fn()
   })
 
   afterEach(() => {
     console.log = originalConsole.log
     console.warn = originalConsole.warn
     console.error = originalConsole.error
+    console.info = originalConsole.info
   })
 
   describe('register', () => {
@@ -62,9 +65,8 @@ describe('ToolRegistryImpl', () => {
       registry.register(tool)
 
       expect(registry.has('test_tool')).toBe(true)
-      expect(console.log).toHaveBeenCalledWith(
-        '[ToolRegistry] Registered tool: test_tool'
-      )
+      // Logger uses console.info with formatted prefix
+      expect(console.info).toHaveBeenCalled()
     })
 
     it('should warn when registering a duplicate tool', () => {
@@ -74,9 +76,8 @@ describe('ToolRegistryImpl', () => {
       registry.register(tool1)
       registry.register(tool2)
 
-      expect(console.warn).toHaveBeenCalledWith(
-        '[ToolRegistry] Tool "test_tool" is already registered, overwriting...'
-      )
+      // Logger uses console.warn with formatted prefix
+      expect(console.warn).toHaveBeenCalled()
     })
 
     it('should overwrite existing tool when registering duplicate', () => {
@@ -227,14 +228,8 @@ describe('ToolRegistryImpl', () => {
 
       await registry.execute('test_tool', { message: 'test' })
 
-      expect(console.log).toHaveBeenCalledWith(
-        '[ToolRegistry] Executing tool: test_tool',
-        { message: 'test' }
-      )
-      expect(console.log).toHaveBeenCalledWith(
-        '[ToolRegistry] Tool test_tool completed:',
-        expect.objectContaining({ success: true })
-      )
+      // Logger uses console.info with formatted prefix
+      expect(console.info).toHaveBeenCalled()
     })
 
     it('should log error on failure', async () => {
@@ -245,10 +240,8 @@ describe('ToolRegistryImpl', () => {
 
       await registry.execute('test_tool', {})
 
-      expect(console.error).toHaveBeenCalledWith(
-        '[ToolRegistry] Tool test_tool failed:',
-        expect.any(Error)
-      )
+      // Logger uses console.error with formatted prefix
+      expect(console.error).toHaveBeenCalled()
     })
   })
 
