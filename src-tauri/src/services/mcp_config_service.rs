@@ -9,6 +9,8 @@ const REQUIREMENTS_MCP_SERVER_NAME: &str = "polaris-requirements";
 const REQUIREMENTS_MCP_BIN_NAME: &str = "polaris-requirements-mcp";
 const SCHEDULER_MCP_SERVER_NAME: &str = "polaris-scheduler";
 const SCHEDULER_MCP_BIN_NAME: &str = "polaris-scheduler-mcp";
+const KNOWLEDGE_MCP_SERVER_NAME: &str = "polaris-knowledge";
+const KNOWLEDGE_MCP_BIN_NAME: &str = "polaris-knowledge-mcp";
 
 /// Platform-aware executable suffix: ".exe" on Windows, "" on Linux/macOS.
 const EXE_SUFFIX: &str = std::env::consts::EXE_SUFFIX;
@@ -27,6 +29,9 @@ fn requirements_dev_path() -> String { mcp_exe_path("src-tauri/target/debug/pola
 fn scheduler_bundle_path() -> String { mcp_exe_path("bin/polaris-scheduler-mcp") }
 fn scheduler_fallback_path() -> String { mcp_exe_path("polaris-scheduler-mcp") }
 fn scheduler_dev_path() -> String { mcp_exe_path("src-tauri/target/debug/polaris-scheduler-mcp") }
+fn knowledge_bundle_path() -> String { mcp_exe_path("bin/polaris-knowledge-mcp") }
+fn knowledge_fallback_path() -> String { mcp_exe_path("polaris-knowledge-mcp") }
+fn knowledge_dev_path() -> String { mcp_exe_path("src-tauri/target/debug/polaris-knowledge-mcp") }
 
 #[derive(Debug, Clone, serde::Serialize)]
 struct ClaudeMcpServerConfig {
@@ -57,6 +62,7 @@ impl WorkspaceMcpConfigService {
         todo_executable_path: PathBuf,
         requirements_executable_path: Option<PathBuf>,
         scheduler_executable_path: Option<PathBuf>,
+        knowledge_executable_path: Option<PathBuf>,
     ) -> Self {
         let mut binaries = vec![ResolvedMcpBinary {
             server_name: TODO_MCP_SERVER_NAME,
@@ -73,6 +79,13 @@ impl WorkspaceMcpConfigService {
         if let Some(path) = scheduler_executable_path {
             binaries.push(ResolvedMcpBinary {
                 server_name: SCHEDULER_MCP_SERVER_NAME,
+                executable_path: path,
+            });
+        }
+
+        if let Some(path) = knowledge_executable_path {
+            binaries.push(ResolvedMcpBinary {
+                server_name: KNOWLEDGE_MCP_SERVER_NAME,
                 executable_path: path,
             });
         }
@@ -106,8 +119,8 @@ impl WorkspaceMcpConfigService {
         );
 
         let scheduler_executable_path = resolve_optional_mcp_executable_path(
-            resource_dir,
-            app_root,
+            resource_dir.clone(),
+            app_root.clone(),
             SCHEDULER_MCP_BIN_NAME,
             &scheduler_bundle_path(),
             &scheduler_fallback_path(),
@@ -115,11 +128,22 @@ impl WorkspaceMcpConfigService {
             "POLARIS_SCHEDULER_MCP_PATH",
         );
 
+        let knowledge_executable_path = resolve_optional_mcp_executable_path(
+            resource_dir,
+            app_root,
+            KNOWLEDGE_MCP_BIN_NAME,
+            &knowledge_bundle_path(),
+            &knowledge_fallback_path(),
+            &knowledge_dev_path(),
+            "POLARIS_KNOWLEDGE_MCP_PATH",
+        );
+
         Ok(Self::new(
             config_dir,
             todo_executable_path,
             requirements_executable_path,
             scheduler_executable_path,
+            knowledge_executable_path,
         ))
     }
 
@@ -148,11 +172,12 @@ impl WorkspaceMcpConfigService {
                 )));
             }
 
-            // Todo MCP, Requirements MCP, and Scheduler MCP need both config_dir and workspace_path
+            // Todo MCP, Requirements MCP, Scheduler MCP, and Knowledge MCP need both config_dir and workspace_path
             // Other MCPs only need workspace_path
             let args = if binary.server_name == TODO_MCP_SERVER_NAME
                 || binary.server_name == REQUIREMENTS_MCP_SERVER_NAME
                 || binary.server_name == SCHEDULER_MCP_SERVER_NAME
+                || binary.server_name == KNOWLEDGE_MCP_SERVER_NAME
             {
                 vec![
                     self.config_dir.to_string_lossy().to_string(),
@@ -410,6 +435,7 @@ mod tests {
         let todo_executable_path = temp_root.join(fixture_exe("bin/polaris-todo-mcp"));
         let requirements_executable_path = temp_root.join(fixture_exe("bin/polaris-requirements-mcp"));
         let scheduler_executable_path = temp_root.join(fixture_exe("bin/polaris-scheduler-mcp"));
+        let knowledge_executable_path = temp_root.join(fixture_exe("bin/polaris-knowledge-mcp"));
 
         std::fs::create_dir_all(&workspace).unwrap();
         std::fs::create_dir_all(&config_dir).unwrap();
@@ -417,12 +443,14 @@ mod tests {
         std::fs::write(&todo_executable_path, "todo bin").unwrap();
         std::fs::write(&requirements_executable_path, "requirements bin").unwrap();
         std::fs::write(&scheduler_executable_path, "scheduler bin").unwrap();
+        std::fs::write(&knowledge_executable_path, "knowledge bin").unwrap();
 
         let service = WorkspaceMcpConfigService::new(
             config_dir.clone(),
             todo_executable_path.clone(),
             Some(requirements_executable_path.clone()),
             Some(scheduler_executable_path.clone()),
+            Some(knowledge_executable_path.clone()),
         );
         let config_path = service.prepare_workspace_config(workspace.to_string_lossy().as_ref()).unwrap();
 
@@ -491,7 +519,7 @@ mod tests {
         std::fs::create_dir_all(executable_path.parent().unwrap()).unwrap();
         std::fs::write(&executable_path, "bin").unwrap();
 
-        let service = WorkspaceMcpConfigService::new(config_dir.clone(), executable_path.clone(), None, None);
+        let service = WorkspaceMcpConfigService::new(config_dir.clone(), executable_path.clone(), None, None, None);
         let first = service.prepare_workspace_config(workspace.to_string_lossy().as_ref()).unwrap();
         let first_content = std::fs::read_to_string(&first).unwrap();
         let second = service.prepare_workspace_config(workspace.to_string_lossy().as_ref()).unwrap();
