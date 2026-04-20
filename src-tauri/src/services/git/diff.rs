@@ -179,9 +179,6 @@ fn convert_diff(repo: &Repository, diff: &Diff) -> Result<Vec<GitDiffEntry>, Git
             _ => DiffChangeType::Modified,
         };
 
-        // 计算行数变化
-        let (additions, deletions) = compute_line_stats(diff, &delta);
-
         // 检查是否为二进制文件
         let is_binary = delta.new_file().is_binary() || delta.old_file().is_binary();
 
@@ -194,6 +191,13 @@ fn convert_diff(repo: &Repository, diff: &Diff) -> Result<Vec<GitDiffEntry>, Git
             }
         } else {
             get_diff_content(repo, &delta, &change_type)?
+        };
+
+        // 计算行数变化
+        let (additions, deletions) = if is_binary {
+            (0, 0)
+        } else {
+            compute_line_stats_from_content(&file_diff)
         };
 
         // 添加状态提示
@@ -220,10 +224,14 @@ fn convert_diff(repo: &Repository, diff: &Diff) -> Result<Vec<GitDiffEntry>, Git
     Ok(entries)
 }
 
-/// 计算增删行数
-fn compute_line_stats(_diff: &Diff, _delta: &DiffDelta) -> (usize, usize) {
-    // TODO: 实现准确的行数统计
-    (0, 0)
+/// 从 FileDiffContent 计算增删行数
+fn compute_line_stats_from_content(file_diff: &FileDiffContent) -> (usize, usize) {
+    match (&file_diff.old_content, &file_diff.new_content) {
+        (Some(old), Some(new)) => compute_line_diff(old, new),
+        (Some(old), None) => (0, old.lines().count()),
+        (None, Some(new)) => (new.lines().count(), 0),
+        (None, None) => (0, 0),
+    }
 }
 
 /// 获取 Diff 的文件内容
