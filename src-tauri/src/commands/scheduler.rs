@@ -79,7 +79,7 @@ pub async fn scheduler_create_task(
             &task.id,
             &mission,
             None, // TODO: 支持模板内容
-        ).map_err(|e| crate::error::AppError::IoError(e))?;
+        ).map_err(crate::error::AppError::IoError)?;
 
         // 更新任务的 task_path
         task = repository.update_task(&task.id, TaskUpdateParams {
@@ -552,13 +552,13 @@ pub async fn scheduler_read_protocol_documents(
     work_dir: String,
 ) -> Result<ProtocolDocuments> {
     let protocol = ProtocolTaskService::read_protocol(&work_dir, &task_path)
-        .map_err(|e| crate::error::AppError::IoError(e))?;
+        .map_err(crate::error::AppError::IoError)?;
     let supplement = ProtocolTaskService::read_supplement(&work_dir, &task_path)
-        .map_err(|e| crate::error::AppError::IoError(e))?;
+        .map_err(crate::error::AppError::IoError)?;
     let memory_index = ProtocolTaskService::read_memory_index(&work_dir, &task_path)
-        .map_err(|e| crate::error::AppError::IoError(e))?;
+        .map_err(crate::error::AppError::IoError)?;
     let memory_tasks = ProtocolTaskService::read_memory_tasks(&work_dir, &task_path)
-        .map_err(|e| crate::error::AppError::IoError(e))?;
+        .map_err(crate::error::AppError::IoError)?;
 
     Ok(ProtocolDocuments {
         protocol,
@@ -576,7 +576,7 @@ pub async fn scheduler_update_protocol(
     content: String,
 ) -> Result<()> {
     ProtocolTaskService::update_protocol(&work_dir, &task_path, &content)
-        .map_err(|e| crate::error::AppError::IoError(e))
+        .map_err(crate::error::AppError::IoError)
 }
 
 /// 更新用户补充
@@ -587,7 +587,7 @@ pub async fn scheduler_update_supplement(
     content: String,
 ) -> Result<()> {
     ProtocolTaskService::update_supplement(&work_dir, &task_path, &content)
-        .map_err(|e| crate::error::AppError::IoError(e))
+        .map_err(crate::error::AppError::IoError)
 }
 
 /// 更新记忆索引
@@ -598,7 +598,7 @@ pub async fn scheduler_update_memory_index(
     content: String,
 ) -> Result<()> {
     ProtocolTaskService::update_memory_index(&work_dir, &task_path, &content)
-        .map_err(|e| crate::error::AppError::IoError(e))
+        .map_err(crate::error::AppError::IoError)
 }
 
 /// 更新记忆任务
@@ -609,7 +609,7 @@ pub async fn scheduler_update_memory_tasks(
     content: String,
 ) -> Result<()> {
     ProtocolTaskService::update_memory_tasks(&work_dir, &task_path, &content)
-        .map_err(|e| crate::error::AppError::IoError(e))
+        .map_err(crate::error::AppError::IoError)
 }
 
 /// 清空用户补充（处理完成后）
@@ -619,7 +619,7 @@ pub async fn scheduler_clear_supplement(
     work_dir: String,
 ) -> Result<()> {
     ProtocolTaskService::clear_supplement(&work_dir, &task_path)
-        .map_err(|e| crate::error::AppError::IoError(e))
+        .map_err(crate::error::AppError::IoError)
 }
 
 /// 备份用户补充内容
@@ -630,7 +630,7 @@ pub async fn scheduler_backup_supplement(
     content: String,
 ) -> Result<String> {
     ProtocolTaskService::backup_supplement(&work_dir, &task_path, &content)
-        .map_err(|e| crate::error::AppError::IoError(e))
+        .map_err(crate::error::AppError::IoError)
 }
 
 /// 备份协议文档
@@ -643,7 +643,7 @@ pub async fn scheduler_backup_document(
     summary: Option<String>,
 ) -> Result<String> {
     ProtocolTaskService::backup_document(&work_dir, &task_path, &doc_name, &content, summary.as_deref())
-        .map_err(|e| crate::error::AppError::IoError(e))
+        .map_err(crate::error::AppError::IoError)
 }
 
 /// 检查用户补充是否有内容
@@ -766,16 +766,16 @@ pub fn scheduler_build_protocol_prompt(
 ) -> Result<String> {
     // 读取所有协议文档
     let protocol = ProtocolTaskService::read_protocol(&work_dir, &task_path)
-        .map_err(|e| crate::error::AppError::IoError(e))?;
+        .map_err(crate::error::AppError::IoError)?;
 
     let supplement = ProtocolTaskService::read_supplement(&work_dir, &task_path)
-        .map_err(|e| crate::error::AppError::IoError(e))?;
+        .map_err(crate::error::AppError::IoError)?;
 
     let memory_index = ProtocolTaskService::read_memory_index(&work_dir, &task_path)
-        .map_err(|e| crate::error::AppError::IoError(e))?;
+        .map_err(crate::error::AppError::IoError)?;
 
     let memory_tasks = ProtocolTaskService::read_memory_tasks(&work_dir, &task_path)
-        .map_err(|e| crate::error::AppError::IoError(e))?;
+        .map_err(crate::error::AppError::IoError)?;
 
     // 提取用户补充内容
     let user_content = ProtocolTaskService::extract_user_content(&supplement);

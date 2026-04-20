@@ -103,6 +103,7 @@ struct ProcessedAttachment {
 }
 
 /// 图片原始数据
+#[allow(dead_code)]
 struct ImageData {
     /// MIME 类型（如 "image/png"）
     media_type: String,
@@ -353,7 +354,7 @@ pub async fn start_chat(
 
     let engine = options.engine_id
         .as_ref()
-        .and_then(|id| EngineId::from_str(id))
+        .and_then(|id| EngineId::parse(id))
         .unwrap_or(EngineId::ClaudeCode);
 
     tracing::info!("[start_chat] 使用引擎: {:?}", engine);
@@ -497,7 +498,7 @@ pub async fn continue_chat(
 
     let engine = options.engine_id
         .as_ref()
-        .and_then(|id| EngineId::from_str(id))
+        .and_then(|id| EngineId::parse(id))
         .ok_or_else(|| AppError::ValidationError("必须提供有效的 engine_id".to_string()))?;
 
     tracing::info!("[continue_chat] 使用引擎: {:?}", engine);
@@ -619,7 +620,7 @@ pub async fn interrupt_chat(
     tracing::info!("[interrupt_chat] 中断会话: {}", session_id);
 
     // 检查 EngineRegistry 中的引擎
-    let engine = engine_id.as_ref().and_then(|id| EngineId::from_str(id));
+    let engine = engine_id.as_ref().and_then(|id| EngineId::parse(id));
 
     let mut registry = state.engine_registry.lock().await;
 
@@ -996,6 +997,7 @@ pub async fn list_claude_code_sessions(
 
 /// 会话消息指纹（用于 fork 检测）
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct SessionFingerprint {
     session_id: String,
     /// 前 N 条消息的内容哈希

@@ -18,7 +18,7 @@ impl EngineId {
     ///
     /// 支持格式：
     /// - "claude", "claude-code", "claudecode" → ClaudeCode
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         let lower = s.to_lowercase();
         match lower.as_str() {
             "claude" | "claude-code" | "claudecode" => Some(Self::ClaudeCode),

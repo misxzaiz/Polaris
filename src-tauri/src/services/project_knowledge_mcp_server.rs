@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -69,7 +69,7 @@ struct ModuleEntry {
 // ─── Server Entry ───────────────────────────────────────────────
 
 pub fn run_knowledge_mcp_server(config_dir: &str, workspace_path: Option<&str>) -> Result<()> {
-    let config_dir = normalize_path(config_dir)?;
+    let _config_dir = normalize_path(config_dir)?;
     let workspace_path = workspace_path.and_then(|p| {
         let normalized = p.trim();
         if normalized.is_empty() {
@@ -336,7 +336,7 @@ fn handle_tools_call(
 }
 
 /// Load and parse the index.json
-fn load_index(index_path: &PathBuf) -> Result<KnowledgeIndex> {
+fn load_index(index_path: &Path) -> Result<KnowledgeIndex> {
     let content = fs::read_to_string(index_path).map_err(|e| {
         AppError::ProcessError(format!("无法读取知识索引: {}", e))
     })?;
@@ -346,7 +346,7 @@ fn load_index(index_path: &PathBuf) -> Result<KnowledgeIndex> {
 }
 
 /// Read a module document file
-fn read_module_doc(modules_dir: &PathBuf, filename: &str) -> Result<String> {
+fn read_module_doc(modules_dir: &Path, filename: &str) -> Result<String> {
     let path = modules_dir.join(filename);
     fs::read_to_string(&path).map_err(|e| {
         AppError::ProcessError(format!("无法读取模块文档 {}: {}", filename, e))
@@ -600,8 +600,8 @@ fn execute_search_modules(
 
 fn execute_update_module(
     arguments: Value,
-    index_path: &PathBuf,
-    modules_dir: &PathBuf,
+    index_path: &Path,
+    modules_dir: &Path,
 ) -> Result<Value> {
     let id = arguments
         .get("id")

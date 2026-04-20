@@ -5,7 +5,7 @@ use crate::models::prompt_snippet::{
     CreateSnippetParams, PromptSnippet, SnippetStore, UpdateSnippetParams,
 };
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 pub struct PromptSnippetService {
@@ -14,7 +14,7 @@ pub struct PromptSnippetService {
 }
 
 impl PromptSnippetService {
-    pub fn new(config_dir: &PathBuf) -> Self {
+    pub fn new(config_dir: &Path) -> Self {
         let store_path = config_dir.join("prompt-snippets.json");
         Self {
             store_path,

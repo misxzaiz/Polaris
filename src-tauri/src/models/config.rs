@@ -37,7 +37,7 @@ impl EngineId {
     }
 
     /// 从字符串解析
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "claude-code" => Some(Self::ClaudeCode),
             _ => None,
@@ -68,7 +68,7 @@ impl FloatingWindowMode {
     }
 
     /// 从字符串解析
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "auto" => Some(Self::Auto),
             "manual" => Some(Self::Manual),
@@ -226,7 +226,7 @@ impl From<&QQBotInstanceConfig> for QQBotRuntimeConfig {
 }
 
 /// QQ Bot 集成配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QQBotConfig {
     /// 是否启用 QQ Bot 集成（全局开关）
@@ -253,16 +253,6 @@ pub enum IntegrationDisplayMode {
     Separate,
     /// 两处都显示
     Both,
-}
-
-impl Default for QQBotConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            instances: Vec::new(),
-            active_instance_id: None,
-        }
-    }
 }
 
 /// Feishu (飞书) 实例配置
@@ -385,7 +375,7 @@ impl From<&FeishuInstanceConfig> for FeishuRuntimeConfig {
 }
 
 /// Feishu 集成配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FeishuConfig {
     /// 是否启用飞书集成（全局开关）
@@ -397,16 +387,6 @@ pub struct FeishuConfig {
     /// 当前激活的实例 ID
     #[serde(default)]
     pub active_instance_id: Option<String>,
-}
-
-impl Default for FeishuConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            instances: Vec::new(),
-            active_instance_id: None,
-        }
-    }
 }
 
 
@@ -477,7 +457,7 @@ pub struct SpeechConfig {
 }
 
 /// 唤醒词配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WakeWordConfig {
     /// 是否启用唤醒词模式
@@ -487,15 +467,6 @@ pub struct WakeWordConfig {
     /// 唤醒词列表
     #[serde(default)]
     pub words: Vec<String>,
-}
-
-impl Default for WakeWordConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            words: Vec::new(),
-        }
-    }
 }
 
 /// 语音提醒配置
@@ -716,7 +687,7 @@ pub enum SystemPromptMode {
 }
 
 /// 系统提示词配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemPromptConfig {
     /// 是否启用自定义系统提示词
@@ -732,18 +703,8 @@ pub struct SystemPromptConfig {
     pub custom_prompt: String,
 }
 
-impl Default for SystemPromptConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            mode: SystemPromptMode::default(),
-            custom_prompt: String::new(),
-        }
-    }
-}
-
 /// AI 助手配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AssistantConfig {
     /// 是否启用助手模块
@@ -761,17 +722,6 @@ pub struct AssistantConfig {
     /// Claude Code 调用配置
     #[serde(default)]
     pub claude_code: AssistantClaudeCodeConfig,
-}
-
-impl Default for AssistantConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            llm: AssistantLLMConfig::default(),
-            system_prompt: SystemPromptConfig::default(),
-            claude_code: AssistantClaudeCodeConfig::default(),
-        }
-    }
 }
 
 /// 应用配置（新版本）
@@ -895,14 +845,14 @@ impl Config {
 
     /// 确保 default_engine 有效
     pub fn validate(&mut self) {
-        if EngineId::from_str(&self.default_engine).is_none() {
+        if EngineId::parse(&self.default_engine).is_none() {
             self.default_engine = "claude-code".to_string();
         }
     }
 
     /// 获取当前引擎 ID
     pub fn get_engine_id(&self) -> EngineId {
-        EngineId::from_str(&self.default_engine)
+        EngineId::parse(&self.default_engine)
             .unwrap_or(EngineId::ClaudeCode)
     }
 

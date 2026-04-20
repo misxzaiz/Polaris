@@ -267,7 +267,7 @@ impl ConversationState {
 
     /// 获取引擎 ID
     pub fn get_engine_id(&self) -> EngineId {
-        EngineId::from_str(&self.engine_id).unwrap_or(EngineId::ClaudeCode)
+        EngineId::parse(&self.engine_id).unwrap_or(EngineId::ClaudeCode)
     }
 
     /// 设置引擎

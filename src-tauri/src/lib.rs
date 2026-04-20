@@ -221,7 +221,7 @@ pub fn run() {
     engine_registry.register(ai::ClaudeEngine::new(config.clone()));
 
     // 设置默认引擎
-    let default_engine = ai::EngineId::from_str(&config.default_engine)
+    let default_engine = ai::EngineId::parse(&config.default_engine)
         .unwrap_or(ai::EngineId::ClaudeCode);
     let _ = engine_registry.set_default(default_engine);
 

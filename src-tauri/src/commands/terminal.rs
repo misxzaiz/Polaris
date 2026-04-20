@@ -69,6 +69,12 @@ struct PtySession {
     info: TerminalSession,
 }
 
+impl Default for TerminalManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TerminalManager {
     /// 创建新的终端管理器
     pub fn new() -> Self {

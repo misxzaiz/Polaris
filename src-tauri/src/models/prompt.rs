@@ -34,7 +34,7 @@ impl SceneType {
 
     /// 从字符串解析
     #[allow(dead_code)]
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "chat" => Some(Self::Chat),
             "scheduler" => Some(Self::Scheduler),
@@ -74,7 +74,7 @@ impl PromptModuleType {
 
     /// 从字符串解析
     #[allow(dead_code)]
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "workspace-info" => Some(Self::WorkspaceInfo),
             "todo-management" => Some(Self::TodoManagement),

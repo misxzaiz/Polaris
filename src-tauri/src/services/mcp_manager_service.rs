@@ -600,7 +600,7 @@ impl McpManagerService {
     ///
     /// 对于需要认证的 HTTP 服务器，调用 `claude mcp add` 重新触发认证
     pub fn start_auth(&self, name: &str, url: &str, scope: &str) -> Result<()> {
-        let mut cmd_args = vec![
+        let cmd_args = vec![
             "mcp", "add",
             "--transport", "http",
             "--scope", scope,

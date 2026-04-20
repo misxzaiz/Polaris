@@ -11,10 +11,11 @@ pub enum QueryScope {
     All,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum RequirementStatus {
     Draft,
+    #[default]
     Pending,
     Approved,
     Rejected,
@@ -23,38 +24,22 @@ pub enum RequirementStatus {
     Failed,
 }
 
-impl Default for RequirementStatus {
-    fn default() -> Self {
-        Self::Pending
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum RequirementPriority {
     Low,
+    #[default]
     Normal,
     High,
     Urgent,
 }
 
-impl Default for RequirementPriority {
-    fn default() -> Self {
-        Self::Normal
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum RequirementSource {
+    #[default]
     Ai,
     User,
-}
-
-impl Default for RequirementSource {
-    fn default() -> Self {
-        Self::Ai
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -33,8 +33,10 @@ pub enum FrameMethod {
 
 /// 消息类型常量
 pub const MESSAGE_TYPE_EVENT: &str = "event";
+#[allow(dead_code)]
 pub const MESSAGE_TYPE_CARD: &str = "card"; // 保留供卡片消息使用
 pub const MESSAGE_TYPE_PING: &str = "ping";
+#[allow(dead_code)]
 pub const MESSAGE_TYPE_PONG: &str = "pong";
 
 /// 客户端配置（Pong 帧的 Payload）
@@ -42,10 +44,12 @@ pub const MESSAGE_TYPE_PONG: &str = "pong";
 #[allow(non_snake_case)]
 pub struct ClientConfig {
     #[serde(default)]
+    #[allow(dead_code)]
     pub ReconnectCount: i32,
     #[serde(default)]
     pub ReconnectInterval: u64,
     #[serde(default)]
+    #[allow(dead_code)]
     pub ReconnectNonce: u32,
     #[serde(default)]
     pub PingInterval: u64,

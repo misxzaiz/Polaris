@@ -5,7 +5,6 @@ use crate::models::prompt_snippet::{
     CreateSnippetParams, PromptSnippet, UpdateSnippetParams,
 };
 use crate::services::prompt_snippet_service::PromptSnippetService;
-use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
 fn get_snippet_service(app: &AppHandle) -> Result<PromptSnippetService> {
