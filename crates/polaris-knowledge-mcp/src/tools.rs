@@ -114,6 +114,31 @@ pub fn get_tools_list() -> Value {
                     },
                     "additionalProperties": false
                 }
+            },
+            {
+                "name": "list_stale_modules",
+                "description": "列出所有标记为过期（stale）的模块。返回模块 ID、过期时间、触发变更文件等信息。用于判断哪些模块需要重新分析。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                }
+            },
+            {
+                "name": "clear_stale_marker",
+                "description": "清除指定模块的过期标记。模块文档更新后自动调用，或手动清除。",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["id"],
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "模块 ID"
+                        }
+                    },
+                    "additionalProperties": false
+                }
             }
         ]
     })

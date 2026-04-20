@@ -320,6 +320,10 @@ pub fn execute_update_module(
         &timestamp,
     );
 
+    // Clear stale marker if exists (module is now up-to-date)
+    let stale_file = meta_dir.join(format!("{}.stale", id));
+    let _ = fs::remove_file(&stale_file);
+
     Ok(json!({
         "structuredContent": {
             "id": id,
@@ -450,6 +454,134 @@ pub fn handle_tools_call(
         "search_modules" => execute_search_modules(arguments, index_path, modules_dir),
         "update_module" => execute_update_module(arguments, index_path, modules_dir),
         "mark_modules_stale" => execute_mark_stale(arguments, index_path),
+        "list_stale_modules" => execute_list_stale_modules(index_path),
+        "clear_stale_marker" => execute_clear_stale_marker(arguments, index_path),
         _ => Err(KnowledgeError::Validation(format!("未知工具: {}", name))),
     }
+}
+
+/// Execute list_stale_modules tool.
+pub fn execute_list_stale_modules(index_path: &PathBuf) -> Result<Value> {
+    let knowledge_dir = index_path
+        .parent()
+        .ok_or_else(|| KnowledgeError::Io("无法确定知识目录".to_string()))?;
+    let meta_dir = knowledge_dir.join("meta");
+
+    if !meta_dir.exists() {
+        return Ok(json!({
+            "structuredContent": {
+                "staleModules": [],
+                "totalCount": 0
+            },
+            "content": [{
+                "type": "text",
+                "text": "没有过期模块"
+            }]
+        }));
+    }
+
+    let index = load_index(index_path)?;
+    let mut stale_modules = Vec::new();
+
+    // Read all .stale files
+    for entry in fs::read_dir(&meta_dir)
+        .map_err(|e| KnowledgeError::Io(format!("无法读取 meta 目录: {}", e)))?
+    {
+        let entry = entry.map_err(|e| KnowledgeError::Io(format!("读取目录条目失败: {}", e)))?;
+        let file_name = entry.file_name().to_string_lossy().to_string();
+
+        if file_name.ends_with(".stale") {
+            let module_id = file_name.trim_end_matches(".stale").to_string();
+
+            // Check if module still exists in index
+            let module_name = index
+                .modules
+                .iter()
+                .find(|m| m.id == module_id)
+                .map(|m| m.name.as_str())
+                .unwrap_or(&module_id);
+
+            // Read stale file content: timestamp|changed_files
+            let content = fs::read_to_string(entry.path()).unwrap_or_default();
+            let parts: Vec<&str> = content.splitn(2, '|').collect();
+            let timestamp = parts.first().unwrap_or(&"").to_string();
+            let changed_files: Vec<String> = parts
+                .get(1)
+                .map(|s| s.split(',').map(|s| s.to_string()).collect())
+                .unwrap_or_default();
+
+            stale_modules.push(json!({
+                "id": module_id,
+                "name": module_name,
+                "staleSince": timestamp,
+                "changedFiles": changed_files
+            }));
+        }
+    }
+
+    // Sort by module id for consistent output
+    stale_modules.sort_by(|a, b| {
+        a.get("id")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .cmp(b.get("id").and_then(Value::as_str).unwrap_or(""))
+    });
+
+    Ok(json!({
+        "structuredContent": {
+            "staleModules": stale_modules,
+            "totalCount": stale_modules.len()
+        },
+        "content": [{
+            "type": "text",
+            "text": format!("{} 个模块需要更新", stale_modules.len())
+        }]
+    }))
+}
+
+/// Execute clear_stale_marker tool.
+pub fn execute_clear_stale_marker(arguments: Value, index_path: &PathBuf) -> Result<Value> {
+    let id = arguments
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+
+    if id.is_empty() {
+        return Err(KnowledgeError::Validation("缺少模块 ID".to_string()));
+    }
+
+    let knowledge_dir = index_path
+        .parent()
+        .ok_or_else(|| KnowledgeError::Io("无法确定知识目录".to_string()))?;
+    let meta_dir = knowledge_dir.join("meta");
+    let stale_file = meta_dir.join(format!("{}.stale", id));
+
+    if !stale_file.exists() {
+        return Ok(json!({
+            "structuredContent": {
+                "id": id,
+                "cleared": false,
+                "reason": "模块未被标记为过期"
+            },
+            "content": [{
+                "type": "text",
+                "text": format!("模块 {} 未被标记为过期", id)
+            }]
+        }));
+    }
+
+    fs::remove_file(&stale_file)
+        .map_err(|e| KnowledgeError::Io(format!("无法删除过期标记: {}", e)))?;
+
+    Ok(json!({
+        "structuredContent": {
+            "id": id,
+            "cleared": true
+        },
+        "content": [{
+            "type": "text",
+            "text": format!("已清除模块 {} 的过期标记", id)
+        }]
+    }))
 }
