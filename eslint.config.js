@@ -15,6 +15,7 @@ export default tseslint.config(
       'src-tauri/**',
       '*.config.js',
       '*.config.ts',
+      'docs-site/**',
     ],
   },
   // 基础推荐规则
@@ -82,6 +83,20 @@ export default tseslint.config(
   // Logger 内部允许 console（Transport 层直接调用 console 是正确行为）
   {
     files: ['src/utils/logger.ts'],
+    rules: {
+      'no-console': 'off',
+    },
+  },
+  // errors.ts 错误日志输出需要 console
+  {
+    files: ['src/types/errors.ts'],
+    rules: {
+      'no-console': 'off',
+    },
+  },
+  // scripts 脚本文件允许 console
+  {
+    files: ['scripts/**'],
     rules: {
       'no-console': 'off',
     },

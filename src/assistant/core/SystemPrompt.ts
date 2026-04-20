@@ -195,7 +195,7 @@ export async function getSystemPromptWithKnowledge(): Promise<string> {
     }
 
     lines.push('')
-    lines.push('使用方式：用户可用 \`#module-id\` 语法引用模块，你可通过 \`get_module\` 工具获取完整文档。')
+    lines.push('使用方式：用户可用 `#module-id` 语法引用模块，你可通过 `get_module` 工具获取完整文档。')
     lines.push('')
 
     return lines.join('\n')
