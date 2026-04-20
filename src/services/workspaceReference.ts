@@ -1,17 +1,116 @@
 /**
  * 工作区引用服务 - 处理 @workspace:path 和 @path 语法
  *
- * 支持两种引用格式:
+ * 支持三种引用格式:
  * - @path - 引用当前工作区的文件（更简洁，常用场景）
  * - @workspace:path - 引用指定工作区的文件（跨工作区）
+ * - @module-name - 引用项目知识模块（如 @chat-rendering, @ai-engine）
  */
 
 import i18n from 'i18next';
 import type { Workspace, WorkspaceReference, ParsedWorkspaceMessage } from '../types';
 import { joinPath } from '../utils/path';
 import { getSystemPromptConfigDirect } from './systemPromptStore';
+import { readFile } from './tauri/fileService';
 import { createLogger } from '../utils/logger'
+
 const log = createLogger('WorkspaceReference')
+
+/** 知识模块引用匹配：@后面跟着 kebab-case 模块ID（不含路径分隔符和点号） */
+const MODULE_REF_PATTERN = /@([a-z][a-z0-9]*(?:-[a-z0-9]+)+)(?=\s|$|[,，。.!?！？])/g;
+
+/** 已知模块ID集合，从 index.json 加载 */
+let cachedModuleIds: Set<string> | null = null;
+
+/**
+ * 加载知识模块 ID 列表
+ */
+function loadModuleIds(_workspacePath: string): Set<string> {
+  if (cachedModuleIds) return cachedModuleIds;
+
+  try {
+    // 同步读取 index.json（在前端环境下通过 Tauri FS 或 fetch）
+    // 这里先用硬编码方式，后续接入 MCP 后可动态获取
+    const moduleIds = new Set<string>([
+      'ai-engine', 'chat-session', 'chat-render', 'scheduler',
+      'todo-requirement', 'git', 'integration', 'workspace',
+      'config-settings', 'mcp', 'assistant', 'speech-voice',
+      'ipc-bridge', 'terminal', 'ui-framework'
+    ]);
+    cachedModuleIds = moduleIds;
+    return moduleIds;
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * 模块 ID → 文件名映射（从 index.json 的 modules[].file 字段）
+ */
+const MODULE_FILE_MAP: Record<string, string> = {
+  'ai-engine': 'ai-engine.md',
+  'chat-session': 'chat-session.md',
+  'chat-render': 'chat-render.md',
+  'scheduler': 'scheduler.md',
+  'todo-requirement': 'todo-requirement.md',
+  'git': 'git.md',
+  'integration': 'integration.md',
+  'workspace': 'workspace.md',
+  'config-settings': 'config-settings.md',
+  'mcp': 'mcp.md',
+  'assistant': 'assistant.md',
+  'speech-voice': 'speech-voice.md',
+  'ipc-bridge': 'ipc-bridge.md',
+  'terminal': 'terminal.md',
+  'ui-framework': 'ui-framework.md',
+};
+
+/**
+ * 异步加载指定模块的知识文档
+ * 通过 Tauri IPC 读取 .polaris/knowledge/modules/ 下的 Markdown 文件
+ */
+export async function loadModuleDocumentsAsync(
+  workspacePath: string,
+  moduleIds: string[]
+): Promise<Map<string, string>> {
+  const docs = new Map<string, string>();
+
+  for (const moduleId of moduleIds) {
+    const filename = MODULE_FILE_MAP[moduleId];
+    if (!filename) continue;
+
+    try {
+      const filePath = `${workspacePath}/.polaris/knowledge/modules/${filename}`;
+      const content = await readFile(filePath);
+      if (content) {
+        docs.set(moduleId, content);
+      }
+    } catch (err) {
+      log.warn(`无法读取模块文档: ${moduleId}`, { error: String(err) });
+    }
+  }
+
+  return docs;
+}
+
+/**
+ * 提取消息中的模块引用
+ */
+export function extractModuleReferences(message: string, workspacePath?: string): string[] {
+  const moduleIds = workspacePath ? loadModuleIds(workspacePath) : cachedModuleIds;
+  if (!moduleIds || moduleIds.size === 0) return [];
+
+  const refs: string[] = [];
+  MODULE_REF_PATTERN.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = MODULE_REF_PATTERN.exec(message)) !== null) {
+    const candidate = match[1];
+    if (moduleIds.has(candidate)) {
+      refs.push(candidate);
+    }
+  }
+  return refs;
+}
 
 /**
  * 匹配 @workspace:path 和 @path 格式
@@ -288,7 +387,8 @@ export function buildWorkspaceContextExtra(
  */
 export function buildWorkspaceSystemPrompt(
   currentWorkspace: Workspace,
-  _contextWorkspaces: Workspace[]
+  _contextWorkspaces: Workspace[],
+  moduleDocs?: Map<string, string>
 ): string {
   const t = i18n.t.bind(i18n);
   const lines: string[] = [];
@@ -310,6 +410,17 @@ export function buildWorkspaceSystemPrompt(
   // workspaceToolGuidance 不再需要，--add-dir 让 Claude 原生感知目录
   // lines.push(``);
   // lines.push(t('systemPrompt:workspaceToolGuidance'));
+
+  // 注入模块知识文档
+  if (moduleDocs && moduleDocs.size > 0) {
+    lines.push('');
+    lines.push('## 项目模块知识');
+    lines.push('');
+    for (const [_moduleId, doc] of moduleDocs) {
+      lines.push(doc);
+      lines.push('');
+    }
+  }
 
   return lines.join('\n');
 }

@@ -31,6 +31,10 @@ path = "src/bin/polaris_requirements_mcp.rs"
 name = "polaris-scheduler-mcp"
 path = "src/bin/polaris_scheduler_mcp.rs"
 
+[[bin]]
+name = "polaris-knowledge-mcp"
+path = "src/bin/polaris_knowledge_mcp.rs"
+
 [build-dependencies]
 tauri-build = { version = "2.0", features = [] }
 
