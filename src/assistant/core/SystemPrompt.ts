@@ -152,7 +152,7 @@ export function getSystemPrompt(): string {
  *
  * 在原有系统提示词基础上，注入当前工作区的项目知识：
  * - 模块架构概览
- * - @module 引用解析
+ * - #module 引用解析（返回路径提示，AI 自行获取详情）
  *
  * 用于 Assistant Engine 等需要项目上下文的场景
  */
@@ -169,14 +169,33 @@ export async function getSystemPromptWithKnowledge(): Promise<string> {
     return basePrompt
   }
 
-  // 尝试加载知识索引并增强提示词
+  // 尝试加载知识索引
   try {
     const knowledgeService = getKnowledgeService()
     await knowledgeService.loadIndex(currentWorkspace.path)
 
-    // 使用空内容触发基础架构注入
-    const enrichedPrompt = await knowledgeService.enrichPrompt('', basePrompt)
-    return enrichedPrompt
+    const index = knowledgeService.getIndex()
+    if (!index || index.modules.length === 0) {
+      return basePrompt
+    }
+
+    // 注入模块索引摘要（不注入完整文档，AI 通过 MCP 工具按需获取）
+    const lines: string[] = [basePrompt]
+    lines.push('')
+    lines.push('## 项目模块知识')
+    lines.push('')
+    lines.push(`当前项目共 ${index.modules.length} 个模块，可通过 knowledge MCP 的 \`get_module\` 工具获取详情：`)
+    lines.push('')
+
+    for (const m of index.modules) {
+      lines.push(`- **${m.name}** (\`${m.id}\`) - 复杂度: ${m.complexity}`)
+    }
+
+    lines.push('')
+    lines.push('使用方式：用户可用 \`#module-id\` 语法引用模块，你可通过 \`get_module\` 工具获取完整文档。')
+    lines.push('')
+
+    return lines.join('\n')
   } catch (error) {
     // 知识加载失败不影响正常使用
     console.warn('[SystemPrompt] 知识增强失败:', error)

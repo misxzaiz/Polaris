@@ -1,12 +1,13 @@
 /**
  * 工作区引用服务 - 处理 @workspace:path 和 @path 语法
  *
- * 支持三种引用格式:
+ * 支持两种引用格式:
  * - @path - 引用当前工作区的文件（更简洁，常用场景）
  * - @workspace:path - 引用指定工作区的文件（跨工作区）
- * - @module-name - 引用项目知识模块（如 @chat-rendering, @ai-engine）
  *
- * 注意：模块知识相关功能已迁移到 knowledgeService.ts
+ * 注意：
+ * - 模块知识引用使用 #module-id 语法，见 knowledgeService.ts
+ * - # 开头的引用不会被此服务处理
  */
 
 import i18n from 'i18next';

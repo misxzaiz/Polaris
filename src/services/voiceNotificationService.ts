@@ -138,17 +138,17 @@ class VoiceNotificationService {
    * 高优先级播报：中断当前播放
    * 用于 AI 回复朗读
    * @param text 要朗读的文本
-   * @param force 是否强制播放（绕过 autoPlay 检查）
+   * @param force 是否强制播放（true=强制播放, false=不播放）
    */
-  private async speak(text: string, force = false): Promise<void> {
-    const ttsConfig = this.getTTSConfig();
-    // 总开关必须开启
-    if (!ttsConfig?.enabled) return;
-    // 非强制时检查 autoPlay
-    if (!force && !ttsConfig.autoPlay) return;
+  private async speak(text: string, force?: boolean): Promise<void> {
+    // force === true → 强制播放（语音输入触发）
+    // force === false → 不播放（键盘输入）
+    if (force === false) {
+      return;
+    }
 
     try {
-      await ttsService.speak(text);
+      await ttsService.speak(text, { force: force === true });
     } catch (error) {
       log.debug('AI 回复朗读失败', { error: String(error) });
     }

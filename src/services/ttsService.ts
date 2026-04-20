@@ -79,9 +79,10 @@ export class TTSService {
    * 合成并播放语音
    * @param text 要朗读的文本
    * @param options 可选配置
+   * @param options.force 是否强制播放（绕过 enabled 检查）
    */
-  async speak(text: string, options?: { voice?: TTSVoice; rate?: string }): Promise<void> {
-    if (!this.config.enabled) {
+  async speak(text: string, options?: { voice?: TTSVoice; rate?: string; force?: boolean }): Promise<void> {
+    if (!options?.force && !this.config.enabled) {
       log.debug('TTS 未启用，跳过播放');
       return;
     }

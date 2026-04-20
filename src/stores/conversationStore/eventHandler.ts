@@ -43,6 +43,7 @@ export function handleAIEvent(
       if (completedMessage) {
         // 检查是否为语音输入触发的对话
         const { inputWasVoice, setInputWasVoice } = useSessionStore.getState()
+        // force: true = 语音输入强制播放, false = 键盘输入不播放
         voiceNotificationService.speakAIResponse(completedMessage, { force: inputWasVoice })
         // 重置语音输入标记
         if (inputWasVoice) {

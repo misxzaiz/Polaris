@@ -2,9 +2,9 @@
  * 知识服务 - 统一的项目上下文增强接口
  *
  * 设计原则：
- * - 所有知识注入入口统一调用 enrichPrompt()
- * - 消除硬编码的模块 ID 和文件路径映射
- * - 支持多种数据源实现（本地文件 / MCP 协议）
+ * - 使用 #module-id 语法引用知识模块（避免与 @文件引用 冲突）
+ * - 不直接注入完整文档，改为注入"路径提示"
+ * - AI 通过 knowledge MCP 的 get_module 工具按需获取详情
  */
 
 import { createLogger } from '../utils/logger'
@@ -35,10 +35,8 @@ export interface ModuleIndex {
 export interface EnrichOptions {
   /** 是否自动注入全局架构概览（首次消息时） */
   includeOverview?: boolean
-  /** 模块文档粒度：L1(摘要) / L2(结构) / L3(完整) */
-  detailLevel?: 'L1' | 'L2' | 'L3'
-  /** 最大 token 预算（预留，暂未实现） */
-  maxTokens?: number
+  /** 是否注入完整文档（默认 false，仅注入路径提示） */
+  includeFullDocs?: boolean
 }
 
 /** 知识服务接口 */
@@ -46,7 +44,7 @@ export interface IKnowledgeService {
   /** 加载工作区的知识索引（应用启动时调用一次） */
   loadIndex(workspacePath: string): Promise<void>
 
-  /** 检测消息中的 @module 引用，返回增强后的 prompt */
+  /** 检测消息中的 #module 引用，返回增强后的 prompt */
   enrichPrompt(
     content: string,
     basePrompt: string,
@@ -56,11 +54,14 @@ export interface IKnowledgeService {
   /** 搜索模块（供 UI 补全等使用） */
   searchModules(query: string): ModuleIndexEntry[]
 
-  /** 获取所有模块 ID（供 @ 补全使用） */
+  /** 获取所有模块 ID（供 # 补全使用） */
   getModuleIds(): string[]
 
   /** 获取模块索引（完整数据） */
   getIndex(): ModuleIndex | null
+
+  /** 获取模块信息（用于路径提示） */
+  getModule(id: string): ModuleIndexEntry | undefined
 }
 
 // ─── Constants ─────────────────────────────────────────────────
@@ -70,8 +71,8 @@ export const KNOWLEDGE_DIR = '.polaris/knowledge'
 export const MODULES_SUBDIR = 'modules'
 export const INDEX_FILE = 'index.json'
 
-/** @module 引用匹配模式 */
-const MODULE_REF_PATTERN = /@([a-z][a-z0-9]*(?:-[a-z0-9]+)+)(?=\s|$|[,，。.!?！？])/g
+/** #module 引用匹配模式（使用 # 避免与 @文件引用 冲突） */
+const MODULE_REF_PATTERN = /#([a-z][a-z0-9]*(?:-[a-z0-9]+)+)(?=\s|$|[,，。.!?！？])/g
 
 // ─── LocalFileKnowledgeService ──────────────────────────────────
 
@@ -109,18 +110,36 @@ export class LocalFileKnowledgeService implements IKnowledgeService {
       return basePrompt
     }
 
-    const docs = await this.loadModuleDocuments(moduleRefs)
-    if (docs.size === 0) {
-      return basePrompt
-    }
-
     const lines: string[] = [basePrompt]
     lines.push('')
     lines.push('## 项目模块知识')
     lines.push('')
 
-    for (const [_moduleId, doc] of docs) {
-      lines.push(doc)
+    if (options?.includeFullDocs) {
+      // 完整文档模式（不推荐，token 消耗大）
+      const docs = await this.loadModuleDocuments(moduleRefs)
+      for (const [_moduleId, doc] of docs) {
+        lines.push(doc)
+        lines.push('')
+      }
+    } else {
+      // 路径提示模式（推荐，AI 自行决定是否获取详情）
+      lines.push('以下模块被引用，可通过 `get_module` 工具获取详情：')
+      lines.push('')
+
+      for (const moduleId of moduleRefs) {
+        const entry = this.index?.modules.find(m => m.id === moduleId)
+        if (entry) {
+          const docPath = `${KNOWLEDGE_DIR}/${MODULES_SUBDIR}/${entry.file}`
+          lines.push(`- **${entry.name}** (\`${moduleId}\`)`)
+          lines.push(`  文档: \`${docPath}\``)
+          lines.push(`  依赖: ${entry.dependencies.join(', ') || '无'}`)
+          lines.push(`  复杂度: ${entry.complexity}`)
+          lines.push('')
+        }
+      }
+
+      lines.push('使用方式：调用 knowledge MCP 的 `get_module` 工具，传入模块 ID 获取完整文档。')
       lines.push('')
     }
 
@@ -150,6 +169,10 @@ export class LocalFileKnowledgeService implements IKnowledgeService {
 
   getModuleIds(): string[] {
     return this.index?.modules.map(m => m.id) ?? []
+  }
+
+  getModule(id: string): ModuleIndexEntry | undefined {
+    return this.index?.modules.find(m => m.id === id)
   }
 
   getIndex(): ModuleIndex | null {
