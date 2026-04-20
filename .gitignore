@@ -61,4 +61,5 @@ Desktop.ini
 .polaris
 .oprcli
 .claude
-.kiro
+.kirocrates/polaris-knowledge-mcp/target/
+crates/*/target/
