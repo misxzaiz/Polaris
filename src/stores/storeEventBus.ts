@@ -100,6 +100,7 @@ class StoreEventBus {
       try {
         listener(payload)
       } catch (err) {
+        // eslint-disable-next-line no-console -- 事件总线错误需要直接输出，避免循环依赖
         console.error(`[StoreEventBus] Error in listener for "${event}":`, err)
       }
     }

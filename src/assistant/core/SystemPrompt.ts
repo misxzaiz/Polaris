@@ -6,6 +6,9 @@ import { useConfigStore } from '../../stores'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
 import { DEFAULT_ASSISTANT_CONFIG, DEFAULT_SYSTEM_PROMPT_CONFIG, type SystemPromptConfig } from '../types'
 import { getKnowledgeService } from '../../services/knowledgeService'
+import { createLogger } from '../../utils/logger'
+
+const logger = createLogger('SystemPrompt')
 
 export const ASSISTANT_SYSTEM_PROMPT = `# 角色定义
 
@@ -198,7 +201,7 @@ export async function getSystemPromptWithKnowledge(): Promise<string> {
     return lines.join('\n')
   } catch (error) {
     // 知识加载失败不影响正常使用
-    console.warn('[SystemPrompt] 知识增强失败:', error)
+    logger.warn('知识增强失败:', error)
     return basePrompt
   }
 }

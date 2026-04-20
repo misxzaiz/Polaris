@@ -5,6 +5,9 @@
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import type { FileMatch } from '../services/fileSearch';
+import { createLogger } from './logger';
+
+const logger = createLogger('cache');
 
 // 配置 marked
 marked.setOptions({
@@ -389,7 +392,7 @@ export class MarkdownRenderCache {
 
       return html;
     } catch (error) {
-      console.error('[MarkdownRenderCache] Render error:', error);
+      logger.error('Markdown 渲染错误:', error);
       // 降级处理：转义 HTML
       return content
         .replace(/&/g, '&amp;')
