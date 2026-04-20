@@ -1,8 +1,12 @@
 /**
- * Polaris 角色组件
+ * Polaris 角色组件（可爱版）
  *
- * 基于 polaris-commander.svg 的内联 SVG 组件，通过 expression prop 控制表情。
- * 各可动部件通过 className 标记，由外部 CSS 驱动动画。
+ * 基于 polaris-commander 的北极星机器人，可爱化改造：
+ * - 柔和渐变色彩（粉蓝系）
+ * - 圆润大头 + 大眼睛
+ * - 夸张腮红 + Q 版嘴巴
+ * - 去除 glitch/代码等赛博朋克元素
+ * - 增加萌系装饰（小星星、浮动爱心、柔光）
  */
 
 import { memo, useMemo } from 'react'
@@ -13,26 +17,15 @@ import {
   RIGHT_EYE_STYLES,
   BLUSH_OPACITY,
   ANTENNA_ANIMATION,
-  ENERGY_RING_DURATION,
 } from './expressions'
 
 export interface PolarisCharacterProps {
-  /** 当前表情 */
   expression: CharacterExpression
-  /** 整体尺寸（宽高相同，正方形 viewBox） */
   size?: number
-  /** 口型开合度 0~1，用于 TTS 驱动（覆盖 CSS 嘴部动画） */
   mouthOpen?: number
-  /** 额外 className */
   className?: string
 }
 
-/**
- * Polaris 角色组件（内联 SVG）
- *
- * 基于 polaris-commander.svg 转换，各部件通过语义化 className 标记。
- * 表情由 expressions.ts 中的参数驱动，动画由 character.css 驱动。
- */
 export const PolarisCharacter = memo(function PolarisCharacter({
   expression,
   size = 512,
@@ -43,15 +36,12 @@ export const PolarisCharacter = memo(function PolarisCharacter({
   const rightEye = RIGHT_EYE_STYLES[expression]
   const blushOpacity = BLUSH_OPACITY[expression]
   const antennaAnim = ANTENNA_ANIMATION[expression]
-  const ringDuration = ENERGY_RING_DURATION[expression]
 
-  // 嘴巴路径：如果有 mouthOpen 值，动态计算开口大小
   const mouthPath = useMemo(() => {
     if (mouthOpen !== undefined && mouthOpen > 0) {
-      // 基于 speaking 路径，根据 mouthOpen 调整弧度
       const openFactor = Math.max(0, Math.min(1, mouthOpen))
-      const y = Math.round(315 + openFactor * 35) // 315~350
-      return `M220,${y} Q256,${y + 30 * openFactor} 292,${y}`
+      const y = Math.round(318 + openFactor * 30)
+      return `M228,${y} Q256,${y + 25 * openFactor} 284,${y}`
     }
     return MOUTH_PATHS[expression]
   }, [expression, mouthOpen])
@@ -65,214 +55,258 @@ export const PolarisCharacter = memo(function PolarisCharacter({
       style={{ overflow: 'visible' }}
     >
       <defs>
-        {/* 渐变定义 */}
-        <linearGradient id="char-robotBody" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" style={{ stopColor: '#00d4ff' }} />
-          <stop offset="50%" style={{ stopColor: '#6366f1' }} />
-          <stop offset="100%" style={{ stopColor: '#8b5cf6' }} />
+        {/* 柔和的身体渐变：粉蓝系 */}
+        <linearGradient id="char-body" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style={{ stopColor: '#a5d8ff' }} />
+          <stop offset="50%" style={{ stopColor: '#b197fc' }} />
+          <stop offset="100%" style={{ stopColor: '#d0bfff' }} />
         </linearGradient>
 
-        <linearGradient id="char-starEye" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" style={{ stopColor: '#ffd700' }} />
-          <stop offset="50%" style={{ stopColor: '#ffec8b' }} />
-          <stop offset="100%" style={{ stopColor: '#ffd700' }} />
+        {/* 星星眼睛渐变：温暖金黄 */}
+        <linearGradient id="char-star" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style={{ stopColor: '#ffe066' }} />
+          <stop offset="50%" style={{ stopColor: '#fff3bf' }} />
+          <stop offset="100%" style={{ stopColor: '#ffd43b' }} />
         </linearGradient>
 
-        <linearGradient id="char-headphone" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" style={{ stopColor: '#ff00ff' }} />
-          <stop offset="50%" style={{ stopColor: '#ff69b4' }} />
-          <stop offset="100%" style={{ stopColor: '#ff00ff' }} />
+        {/* 耳机渐变：柔和粉紫 */}
+        <linearGradient id="char-hp" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" style={{ stopColor: '#da77f2' }} />
+          <stop offset="50%" style={{ stopColor: '#f783ac' }} />
+          <stop offset="100%" style={{ stopColor: '#da77f2' }} />
         </linearGradient>
 
-        {/* 发光滤镜 */}
-        <filter id="char-glow">
-          <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+        {/* 天线球渐变：柔蓝 */}
+        <radialGradient id="char-antenna" cx="40%" cy="40%">
+          <stop offset="0%" style={{ stopColor: '#a5d8ff' }} />
+          <stop offset="100%" style={{ stopColor: '#4dabf7' }} />
+        </radialGradient>
+
+        {/* 背景渐变：柔和深色但温暖 */}
+        <radialGradient id="char-bg" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" style={{ stopColor: '#2b2d42' }} />
+          <stop offset="60%" style={{ stopColor: '#1a1a2e' }} />
+          <stop offset="100%" style={{ stopColor: '#12121a' }} />
+        </radialGradient>
+
+        {/* 柔光滤镜 */}
+        <filter id="char-softGlow">
+          <feGaussianBlur stdDeviation="3" result="blur" />
           <feMerge>
-            <feMergeNode in="coloredBlur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-
-        <filter id="char-strongGlow">
-          <feGaussianBlur stdDeviation="6" result="coloredBlur" />
-          <feMerge>
-            <feMergeNode in="coloredBlur" />
+            <feMergeNode in="blur" />
             <feMergeNode in="SourceGraphic" />
           </feMerge>
         </filter>
 
         <filter id="char-starGlow">
-          <feGaussianBlur stdDeviation="4" result="coloredBlur" />
+          <feGaussianBlur stdDeviation="2.5" result="blur" />
           <feMerge>
-            <feMergeNode in="coloredBlur" />
+            <feMergeNode in="blur" />
             <feMergeNode in="SourceGraphic" />
           </feMerge>
         </filter>
 
-        {/* 背景渐变 */}
-        <radialGradient id="char-bg" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" style={{ stopColor: '#1a1a2e' }} />
-          <stop offset="70%" style={{ stopColor: '#0a0a0f' }} />
-          <stop offset="100%" style={{ stopColor: '#050508' }} />
-        </radialGradient>
+        {/* 腮红模糊 */}
+        <filter id="char-blushBlur">
+          <feGaussianBlur stdDeviation="4" />
+        </filter>
       </defs>
 
-      {/* 背景 */}
-      <circle cx="256" cy="256" r="250" fill="url(#char-bg)" stroke="#2d2d4a" strokeWidth="3" />
+      {/* ===== 背景 ===== */}
+      <circle cx="256" cy="256" r="250" fill="url(#char-bg)" stroke="#3d3d5c" strokeWidth="2.5" />
 
-      {/* 星星装饰 */}
-      <circle cx="80" cy="100" r="2" fill="#ffd700" opacity="0.6" />
-      <circle cx="420" cy="80" r="2" fill="#00d4ff" opacity="0.5" />
-      <circle cx="450" cy="180" r="1.5" fill="#ff00ff" opacity="0.4" />
-      <circle cx="60" cy="200" r="1.5" fill="#ffd700" opacity="0.4" />
-      <circle cx="100" cy="400" r="2" fill="#00ffff" opacity="0.5" />
-      <circle cx="400" cy="420" r="1.5" fill="#ffd700" opacity="0.4" />
-      <circle cx="150" cy="80" r="1" fill="#ffffff" opacity="0.3" />
-      <circle cx="350" cy="450" r="1" fill="#ffffff" opacity="0.3" />
+      {/* 背景小星星（可爱散布） */}
+      <circle cx="90" cy="95" r="3" fill="#ffe066" opacity="0.5">
+        <animate attributeName="opacity" values="0.5;0.2;0.5" dur="3s" repeatCount="indefinite" />
+      </circle>
+      <circle cx="415" cy="78" r="2.5" fill="#a5d8ff" opacity="0.45">
+        <animate attributeName="opacity" values="0.45;0.15;0.45" dur="4s" repeatCount="indefinite" />
+      </circle>
+      <circle cx="440" cy="190" r="2" fill="#da77f2" opacity="0.35">
+        <animate attributeName="opacity" values="0.35;0.1;0.35" dur="3.5s" repeatCount="indefinite" />
+      </circle>
+      <circle cx="72" cy="380" r="2.5" fill="#ffe066" opacity="0.4">
+        <animate attributeName="opacity" values="0.4;0.15;0.4" dur="2.8s" repeatCount="indefinite" />
+      </circle>
+      <circle cx="400" cy="420" r="2" fill="#a5d8ff" opacity="0.35">
+        <animate attributeName="opacity" values="0.35;0.1;0.35" dur="3.2s" repeatCount="indefinite" />
+      </circle>
+      {/* 四角小星星装饰 */}
+      <path d="M160,85 L162,80 L164,85 L169,83 L164,85 L166,90 L164,87 L162,90 L160,87 L155,83 Z" fill="#ffe066" opacity="0.3">
+        <animate attributeName="opacity" values="0.3;0.1;0.3" dur="4s" repeatCount="indefinite" />
+      </path>
+      <path d="M350,440 L352,435 L354,440 L359,438 L354,440 L356,445 L354,442 L352,445 L350,442 L345,438 Z" fill="#da77f2" opacity="0.25">
+        <animate attributeName="opacity" values="0.25;0.08;0.25" dur="3.5s" repeatCount="indefinite" />
+      </path>
 
-      {/* 耳机头带 */}
+      {/* ===== 耳机 ===== */}
+      {/* 头带 — 圆弧更柔和 */}
       <path
-        d="M130,180 Q130,100 256,80 Q382,100 382,180"
-        stroke="url(#char-headphone)"
-        strokeWidth="16"
+        d="M140,195 Q140,110 256,90 Q372,110 372,195"
+        stroke="url(#char-hp)"
+        strokeWidth="14"
         fill="none"
         strokeLinecap="round"
-        filter="url(#char-glow)"
+        filter="url(#char-softGlow)"
       />
 
-      {/* 左耳机 */}
-      <ellipse cx="120" cy="210" rx="45" ry="55" fill="#1a1a2e" stroke="url(#char-headphone)" strokeWidth="4" filter="url(#char-glow)" />
-      <ellipse cx="120" cy="210" rx="35" ry="45" fill="#2d2d4a" />
-      <ellipse cx="120" cy="210" rx="25" ry="32" fill="#1a1a2e" />
-      {/* 耳机信号波纹 */}
-      <path className="character-headphone-wave" d="M85,190 Q95,185 100,195" stroke="#ff00ff" strokeWidth="2" fill="none" opacity="0.6" />
-      <path className="character-headphone-wave" d="M80,200 Q92,193 100,205" stroke="#ff00ff" strokeWidth="2" fill="none" opacity="0.4" />
+      {/* 左耳机 — 更圆润 */}
+      <ellipse cx="128" cy="225" rx="40" ry="48" fill="#252540" stroke="url(#char-hp)" strokeWidth="3.5" filter="url(#char-softGlow)" />
+      <ellipse cx="128" cy="225" rx="30" ry="38" fill="#2f2f50" />
+      <ellipse cx="128" cy="225" rx="20" ry="26" fill="#252540" />
+      {/* 耳机内部柔光 */}
+      <ellipse cx="128" cy="225" rx="14" ry="18" fill="#da77f2" opacity="0.15" />
+      {/* 信号波纹 */}
+      <path className="character-headphone-wave" d="M92,208 Q102,202 108,212" stroke="#f783ac" strokeWidth="1.8" fill="none" opacity="0.5" />
+      <path className="character-headphone-wave" d="M86,218 Q100,210 108,222" stroke="#f783ac" strokeWidth="1.5" fill="none" opacity="0.3" />
 
       {/* 右耳机 */}
-      <ellipse cx="392" cy="210" rx="45" ry="55" fill="#1a1a2e" stroke="url(#char-headphone)" strokeWidth="4" filter="url(#char-glow)" />
-      <ellipse cx="392" cy="210" rx="35" ry="45" fill="#2d2d4a" />
-      <ellipse cx="392" cy="210" rx="25" ry="32" fill="#1a1a2e" />
-      {/* 耳机信号波纹 */}
-      <path className="character-headphone-wave" d="M427,190 Q417,185 412,195" stroke="#ff00ff" strokeWidth="2" fill="none" opacity="0.6" />
-      <path className="character-headphone-wave" d="M432,200 Q420,193 412,205" stroke="#ff00ff" strokeWidth="2" fill="none" opacity="0.4" />
+      <ellipse cx="384" cy="225" rx="40" ry="48" fill="#252540" stroke="url(#char-hp)" strokeWidth="3.5" filter="url(#char-softGlow)" />
+      <ellipse cx="384" cy="225" rx="30" ry="38" fill="#2f2f50" />
+      <ellipse cx="384" cy="225" rx="20" ry="26" fill="#252540" />
+      <ellipse cx="384" cy="225" rx="14" ry="18" fill="#da77f2" opacity="0.15" />
+      <path className="character-headphone-wave" d="M420,208 Q410,202 404,212" stroke="#f783ac" strokeWidth="1.8" fill="none" opacity="0.5" />
+      <path className="character-headphone-wave" d="M426,218 Q412,210 404,222" stroke="#f783ac" strokeWidth="1.5" fill="none" opacity="0.3" />
 
-      {/* 机器人头部主体 */}
-      <ellipse cx="256" cy="260" rx="100" ry="90" fill="url(#char-robotBody)" />
+      {/* ===== 头部主体 — 更圆更Q ===== */}
+      <ellipse cx="256" cy="265" rx="108" ry="98" fill="url(#char-body)" />
 
-      {/* 头部高光 */}
-      <ellipse cx="230" cy="210" rx="50" ry="30" fill="rgba(255,255,255,0.15)" />
+      {/* 头部大高光 — 玻璃质感 */}
+      <ellipse cx="228" cy="210" rx="55" ry="32" fill="rgba(255,255,255,0.2)" />
+      <ellipse cx="220" cy="208" rx="30" ry="15" fill="rgba(255,255,255,0.12)" />
 
-      {/* 面板分隔线 */}
-      <path d="M170,300 Q256,330 342,300" stroke="#1a1a2e" strokeWidth="3" fill="none" opacity="0.3" />
+      {/* 面板分隔线 — 柔和弧线 */}
+      <path d="M175,310 Q256,335 337,310" stroke="rgba(255,255,255,0.15)" strokeWidth="2" fill="none" />
 
-      {/* 左眼 - 北极星 */}
+      {/* ===== 左眼 — 北极星（放大，圆润化） ===== */}
       <g
         className="character-eye-left"
         filter="url(#char-starGlow)"
         style={{
           opacity: leftEye.opacity,
           transform: `translate(${leftEye.translateX}px, ${leftEye.translateY}px) scale(${leftEye.scale})`,
-          transformOrigin: '220px 260px',
+          transformOrigin: '218px 255px',
           animation: leftEye.animation,
         }}
       >
-        <polygon points="20,0 25,15 40,15 28,25 33,40 20,30 7,40 12,25 0,15 15,15" fill="url(#char-starEye)" />
-        <line x1="20" y1="-8" x2="20" y2="-15" stroke="#ffd700" strokeWidth="2" />
-        <line x1="20" y1="48" x2="20" y2="55" stroke="#ffd700" strokeWidth="2" />
-        <line x1="-8" y1="20" x2="-15" y2="20" stroke="#ffd700" strokeWidth="2" />
-        <line x1="48" y1="20" x2="55" y2="20" stroke="#ffd700" strokeWidth="2" />
-        <line x1="-5" y1="-5" x2="-12" y2="-12" stroke="#ffd700" strokeWidth="1.5" />
-        <line x1="45" y1="-5" x2="52" y2="-12" stroke="#ffd700" strokeWidth="1.5" />
-        <line x1="-5" y1="45" x2="-12" y2="52" stroke="#ffd700" strokeWidth="1.5" />
-        <line x1="45" y1="45" x2="52" y2="52" stroke="#ffd700" strokeWidth="1.5" />
+        {/* 星星本体（更大更圆润） */}
+        <polygon
+          points="22,0 27,14 42,14 30,24 35,40 22,30 9,40 14,24 2,14 17,14"
+          fill="url(#char-star)"
+        />
+        {/* 中心高光 */}
+        <circle cx="22" cy="20" r="5" fill="rgba(255,255,255,0.6)" />
+        {/* 星芒（短一些更可爱） */}
+        <line x1="22" y1="-6" x2="22" y2="-12" stroke="#ffe066" strokeWidth="2" strokeLinecap="round" />
+        <line x1="22" y1="46" x2="22" y2="52" stroke="#ffe066" strokeWidth="2" strokeLinecap="round" />
+        <line x1="-6" y1="20" x2="-12" y2="20" stroke="#ffe066" strokeWidth="2" strokeLinecap="round" />
+        <line x1="50" y1="20" x2="56" y2="20" stroke="#ffe066" strokeWidth="2" strokeLinecap="round" />
+        <line x1="-3" y1="-3" x2="-9" y2="-9" stroke="#ffe066" strokeWidth="1.5" strokeLinecap="round" />
+        <line x1="47" y1="-3" x2="53" y2="-9" stroke="#ffe066" strokeWidth="1.5" strokeLinecap="round" />
+        <line x1="-3" y1="43" x2="-9" y2="49" stroke="#ffe066" strokeWidth="1.5" strokeLinecap="round" />
+        <line x1="47" y1="43" x2="53" y2="49" stroke="#ffe066" strokeWidth="1.5" strokeLinecap="round" />
       </g>
 
-      {/* 右眼 - 北极星 */}
+      {/* ===== 右眼 — 北极星 ===== */}
       <g
         className="character-eye-right"
         filter="url(#char-starGlow)"
         style={{
           opacity: rightEye.opacity,
           transform: `translate(${rightEye.translateX}px, ${rightEye.translateY}px) scale(${rightEye.scale})`,
-          transformOrigin: '312px 260px',
+          transformOrigin: '312px 255px',
           animation: rightEye.animation,
         }}
       >
-        <polygon points="20,0 25,15 40,15 28,25 33,40 20,30 7,40 12,25 0,15 15,15" fill="url(#char-starEye)" />
-        <line x1="20" y1="-8" x2="20" y2="-15" stroke="#ffd700" strokeWidth="2" />
-        <line x1="20" y1="48" x2="20" y2="55" stroke="#ffd700" strokeWidth="2" />
-        <line x1="-8" y1="20" x2="-15" y2="20" stroke="#ffd700" strokeWidth="2" />
-        <line x1="48" y1="20" x2="55" y2="20" stroke="#ffd700" strokeWidth="2" />
-        <line x1="-5" y1="-5" x2="-12" y2="-12" stroke="#ffd700" strokeWidth="1.5" />
-        <line x1="45" y1="-5" x2="52" y2="-12" stroke="#ffd700" strokeWidth="1.5" />
-        <line x1="-5" y1="45" x2="-12" y2="52" stroke="#ffd700" strokeWidth="1.5" />
-        <line x1="45" y1="45" x2="52" y2="52" stroke="#ffd700" strokeWidth="1.5" />
+        <polygon
+          points="22,0 27,14 42,14 30,24 35,40 22,30 9,40 14,24 2,14 17,14"
+          fill="url(#char-star)"
+        />
+        <circle cx="22" cy="20" r="5" fill="rgba(255,255,255,0.6)" />
+        <line x1="22" y1="-6" x2="22" y2="-12" stroke="#ffe066" strokeWidth="2" strokeLinecap="round" />
+        <line x1="22" y1="46" x2="22" y2="52" stroke="#ffe066" strokeWidth="2" strokeLinecap="round" />
+        <line x1="-6" y1="20" x2="-12" y2="20" stroke="#ffe066" strokeWidth="2" strokeLinecap="round" />
+        <line x1="50" y1="20" x2="56" y2="20" stroke="#ffe066" strokeWidth="2" strokeLinecap="round" />
+        <line x1="-3" y1="-3" x2="-9" y2="-9" stroke="#ffe066" strokeWidth="1.5" strokeLinecap="round" />
+        <line x1="47" y1="-3" x2="53" y2="-9" stroke="#ffe066" strokeWidth="1.5" strokeLinecap="round" />
+        <line x1="-3" y1="43" x2="-9" y2="49" stroke="#ffe066" strokeWidth="1.5" strokeLinecap="round" />
+        <line x1="47" y1="43" x2="53" y2="49" stroke="#ffe066" strokeWidth="1.5" strokeLinecap="round" />
       </g>
 
-      {/* 嘴巴 */}
+      {/* ===== 嘴巴 — Q 版圆润 ===== */}
       <path
         className="character-mouth"
         d={mouthPath}
-        stroke="#1a1a2e"
-        strokeWidth="5"
+        stroke="#4a3f6b"
+        strokeWidth="4"
         fill="none"
         strokeLinecap="round"
       />
 
-      {/* 脸颊装饰（腮红） */}
-      <circle
+      {/* ===== 腮红 — 更大更柔和（模糊扩散） ===== */}
+      <ellipse
         className="character-blush-left"
-        cx="165"
-        cy="280"
-        r="8"
-        fill="#ff69b4"
+        cx="168"
+        cy="290"
+        rx="18"
+        ry="10"
+        fill="#f783ac"
         opacity={blushOpacity}
-        style={{ transition: 'opacity 0.3s ease' }}
+        filter="url(#char-blushBlur)"
+        style={{ transition: 'opacity 0.4s ease' }}
       />
-      <circle
+      <ellipse
         className="character-blush-right"
-        cx="347"
-        cy="280"
-        r="8"
-        fill="#ff69b4"
+        cx="344"
+        cy="290"
+        rx="18"
+        ry="10"
+        fill="#f783ac"
         opacity={blushOpacity}
-        style={{ transition: 'opacity 0.3s ease' }}
+        filter="url(#char-blushBlur)"
+        style={{ transition: 'opacity 0.4s ease' }}
       />
 
-      {/* 天线 */}
-      <line x1="256" y1="170" x2="256" y2="120" stroke="url(#char-robotBody)" strokeWidth="8" strokeLinecap="round" />
+      {/* ===== 天线 — 更细更萌 ===== */}
+      <line x1="256" y1="170" x2="256" y2="118" stroke="url(#char-body)" strokeWidth="6" strokeLinecap="round" />
+      {/* 天线球 — 更大，带径向渐变 */}
       <circle
         className="character-antenna-tip"
         cx="256"
-        cy="110"
-        r="15"
-        fill="#00d4ff"
-        filter="url(#char-strongGlow)"
+        cy="108"
+        r="18"
+        fill="url(#char-antenna)"
+        filter="url(#char-softGlow)"
         style={{ animation: antennaAnim }}
       />
-      <circle cx="256" cy="110" r="8" fill="#ffffff" />
+      {/* 天线球高光 */}
+      <circle cx="251" cy="103" r="6" fill="rgba(255,255,255,0.5)" />
+      <circle cx="249" cy="101" r="3" fill="rgba(255,255,255,0.3)" />
 
-      {/* Glitch 装饰 */}
-      <rect x="180" y="260" width="3" height="15" fill="#ff00ff" opacity="0.5" />
-      <rect x="329" y="250" width="3" height="20" fill="#00ffff" opacity="0.5" />
+      {/* ===== 可爱装饰：浮动小星星 ===== */}
+      <g opacity="0.5">
+        {/* 左侧小星星 */}
+        <path d="M145,155 L147,149 L149,155 L155,153 L149,155 L151,161 L149,158 L147,161 L145,158 L139,153 Z" fill="#ffe066">
+          <animateTransform attributeName="transform" type="rotate" values="0 147 155;15 147 155;0 147 155" dur="6s" repeatCount="indefinite" />
+        </path>
+        {/* 右侧小星星 */}
+        <path d="M365,140 L367,134 L369,140 L375,138 L369,140 L371,146 L369,143 L367,146 L365,143 L359,138 Z" fill="#a5d8ff">
+          <animateTransform attributeName="transform" type="rotate" values="0 367 140;-12 367 140;0 367 140" dur="5s" repeatCount="indefinite" />
+        </path>
+      </g>
 
-      {/* 数据流装饰 */}
-      <text x="140" y="380" fill="#00d4ff" fontSize="8" fontFamily="monospace" opacity="0.4">&gt;AI.exe</text>
-      <text x="320" y="390" fill="#ff00ff" fontSize="8" fontFamily="monospace" opacity="0.4">v2.0.26</text>
-
-      {/* 能量环 */}
+      {/* ===== 柔和能量环 — 虚线圆点，更萌 ===== */}
       <ellipse
         className="character-energy-ring"
         cx="256"
-        cy="260"
-        rx="115"
-        ry="105"
+        cy="265"
+        rx="120"
+        ry="110"
         fill="none"
-        stroke="#00d4ff"
-        strokeWidth="1"
-        opacity="0.2"
-        strokeDasharray="10,5"
-        style={{ animation: `energy-ring-rotate ${ringDuration} linear infinite`, transformOrigin: '256px 260px' }}
+        stroke="rgba(165,216,255,0.15)"
+        strokeWidth="1.5"
+        strokeDasharray="4,8"
+        style={{ animation: 'energy-ring-rotate 20s linear infinite', transformOrigin: '256px 265px' }}
       />
     </svg>
   )

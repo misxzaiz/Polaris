@@ -17,18 +17,18 @@ export type CharacterExpression =
   | 'listening'     // STT 激活 — 耳机波纹
   | 'sleeping'      // 长时间无交互 — 休眠
 
-/** 嘴巴 SVG path 的 d 属性，基于 polaris-commander 坐标系 */
+/** 嘴巴 SVG path 的 d 属性，适配可爱版坐标（头部中心 256,265） */
 export const MOUTH_PATHS: Record<CharacterExpression, string> = {
-  idle:          'M220,320 Q256,340 292,320',     // 微笑
-  thinking:      'M220,320 Q256,325 292,320',     // 微微抿嘴
-  deep_thought:  'M225,322 Q256,322 287,322',     // 一字型（平静）
-  speaking:      'M220,315 Q256,350 292,315',     // 大开口
-  working:       'M225,320 Q256,323 287,320',     // 专注紧抿
-  celebrating:   'M215,318 Q256,352 297,318',     // 大笑
-  error:         'M220,328 Q256,312 292,328',     // 不开心（倒弧）
-  curious:       'M230,320 Q256,318 282,320',     // 小 O 嘴
-  listening:     'M225,320 Q256,330 287,320',     // 微张（倾听）
-  sleeping:      'M230,322 Q256,322 282,322',     // 平直（安睡）
+  idle:          'M232,322 Q256,336 280,322',     // 柔和微笑
+  thinking:      'M234,323 Q256,326 278,323',     // 微微抿嘴
+  deep_thought:  'M236,324 Q256,324 276,324',     // 一字型（沉思）
+  speaking:      'M230,318 Q256,346 282,318',     // 开心开口
+  working:       'M234,323 Q256,325 278,323',     // 专注微抿
+  celebrating:   'M226,320 Q256,348 286,320',     // 大笑
+  error:         'M234,330 Q256,316 278,330',     // 委屈（倒弧）
+  curious:       'M240,322 Q256,319 272,322',     // 小 O 嘴（好奇）
+  listening:     'M236,322 Q256,330 276,322',     // 微张（倾听）
+  sleeping:      'M240,324 Q256,324 272,324',     // 平直（安睡）
 }
 
 /** 眼睛样式参数 */
@@ -99,20 +99,6 @@ export const ANTENNA_ANIMATION: Record<CharacterExpression, string> = {
   curious:       'antenna-pulse 1.5s ease-in-out infinite',
   listening:     'antenna-pulse 0.6s ease-in-out infinite',
   sleeping:      'antenna-pulse 4s ease-in-out infinite',
-}
-
-/** 能量环旋转速度 (秒/圈) */
-export const ENERGY_RING_DURATION: Record<CharacterExpression, string> = {
-  idle:          '20s',
-  thinking:      '8s',
-  deep_thought:  '15s',
-  speaking:      '6s',
-  working:       '4s',
-  celebrating:   '3s',
-  error:         '2s',
-  curious:       '12s',
-  listening:     '5s',
-  sleeping:      '30s',
 }
 
 /** AIEvent.type → CharacterExpression 映射 */
