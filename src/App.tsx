@@ -17,6 +17,7 @@ import { SchedulerPanel } from './components/Scheduler/SchedulerPanel';
 import { RequirementPanel } from './components/RequirementPanel/RequirementPanel';
 import { TerminalPanel } from './components/Terminal/TerminalPanel';
 import { AssistantPanel } from './assistant';
+import { KnowledgePanel } from './components/KnowledgePanel';
 
 // 懒加载大型组件，减少初始 bundle 大小
 const SettingsModal = lazy(() => import('./components/Settings/SettingsModal').then(m => ({ default: m.SettingsModal })));
@@ -163,6 +164,7 @@ function App() {
                 integrationContent={<Suspense fallback={loadingFallback}><IntegrationPanel /></Suspense>}
                 assistantContent={<AssistantPanel />}
                 mcpContent={<Suspense fallback={loadingFallback}><McpPanel /></Suspense>}
+                knowledgeContent={<KnowledgePanel />}
               />
             </LeftPanel>
           )}

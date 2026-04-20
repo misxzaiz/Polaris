@@ -1,0 +1,27 @@
+{
+  "title": "项目知识",
+  "refresh": "刷新",
+  "searchPlaceholder": "搜索模块...",
+  "showStaleOnly": "仅显示过期",
+  "loading": "加载中...",
+  "noResults": "未找到匹配模块",
+  "noModules": "暂无知识模块",
+  "stale": "过期",
+  "stats": "共 {{total}} 个模块，{{stale}} 个过期",
+  "complexity": "复杂度",
+  "changeFrequency": "变更频率",
+  "dependencies": "依赖",
+  "changedFiles": "变更文件",
+  "staleModuleTitle": "模块已过期",
+  "clearStale": "清除过期标记",
+  "complexityLevel": {
+    "low": "低",
+    "medium": "中",
+    "high": "高"
+  },
+  "frequencyLevel": {
+    "low": "低",
+    "medium": "中",
+    "high": "高"
+  }
+}

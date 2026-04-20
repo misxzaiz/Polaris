@@ -51,6 +51,8 @@
     "toolPanel": "Tool Panel",
     "developerPanel": "Developer Panel",
     "mcpPanel": "MCP Servers",
+    "assistantPanel": "AI Assistant",
+    "knowledgePanel": "Knowledge",
     "showAIPanel": "Show AI Panel",
     "hideAIPanel": "Hide AI Panel",
     "showActivityBar": "Show Activity Bar",

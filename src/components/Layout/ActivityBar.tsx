@@ -6,7 +6,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Files, GitPullRequest, CheckSquare, Settings, Languages, Clock, ClipboardList, Terminal, Code2, PanelRight, Bot, Sparkles, Cpu } from 'lucide-react'
+import { Files, GitPullRequest, CheckSquare, Settings, Languages, Clock, ClipboardList, Terminal, Code2, PanelRight, Bot, Sparkles, Cpu, BookOpen } from 'lucide-react'
 import { useViewStore } from '@/stores/viewStore'
 import { ActivityBarIcon } from './ActivityBarIcon'
 import { RadialMenu, RadialMenuTrigger } from './RadialMenu'
@@ -128,6 +128,11 @@ export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rig
       id: 'mcp' as const,
       icon: Cpu,
       label: t('labels.mcpPanel'),
+    },
+    {
+      id: 'knowledge' as const,
+      icon: BookOpen,
+      label: t('labels.knowledgePanel'),
     },
   ]
 

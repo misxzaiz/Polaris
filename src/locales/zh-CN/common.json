@@ -53,6 +53,7 @@
     "integrationPanel": "机器人管理",
     "mcpPanel": "MCP 服务器",
     "assistantPanel": "AI 助手",
+    "knowledgePanel": "项目知识",
     "showAIPanel": "显示 AI 面板",
     "hideAIPanel": "隐藏 AI 面板",
     "showActivityBar": "显示侧边栏",

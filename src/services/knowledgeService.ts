@@ -8,7 +8,7 @@
  */
 
 import { createLogger } from '../utils/logger'
-import { readFile } from './tauri/fileService'
+import { readFile, readDirectory, deleteFile } from './tauri/fileService'
 
 const log = createLogger('KnowledgeService')
 
@@ -23,6 +23,14 @@ export interface ModuleIndexEntry {
   dependents: string[]
   complexity: string
   changeFrequency: string
+}
+
+/** 过期模块信息 */
+export interface StaleModule {
+  id: string
+  name: string
+  staleSince: string
+  changedFiles: string[]
 }
 
 /** 模块索引 */
@@ -62,6 +70,12 @@ export interface IKnowledgeService {
 
   /** 获取模块信息（用于路径提示） */
   getModule(id: string): ModuleIndexEntry | undefined
+
+  /** 获取过期模块列表 */
+  getStaleModules(): Promise<StaleModule[]>
+
+  /** 清除模块过期标记 */
+  clearStaleMarker(id: string): Promise<boolean>
 }
 
 // ─── Constants ─────────────────────────────────────────────────
@@ -84,10 +98,12 @@ export class LocalFileKnowledgeService implements IKnowledgeService {
   private index: ModuleIndex | null = null
   private workspacePath: string | null = null
   private moduleDocsCache: Map<string, string> = new Map()
+  private staleModulesCache: StaleModule[] | null = null
 
   async loadIndex(workspacePath: string): Promise<void> {
     this.workspacePath = workspacePath
     this.moduleDocsCache.clear()
+    this.staleModulesCache = null
 
     const indexPath = `${workspacePath}/${KNOWLEDGE_DIR}/${INDEX_FILE}`
     try {
@@ -177,6 +193,58 @@ export class LocalFileKnowledgeService implements IKnowledgeService {
 
   getIndex(): ModuleIndex | null {
     return this.index
+  }
+
+  async getStaleModules(): Promise<StaleModule[]> {
+    if (this.staleModulesCache) return this.staleModulesCache
+    if (!this.workspacePath) return []
+
+    const metaDir = `${this.workspacePath}/${KNOWLEDGE_DIR}/meta`
+    const staleModules: StaleModule[] = []
+
+    try {
+      const entries = await readDirectory(metaDir) as string[]
+      for (const entry of entries) {
+        if (entry.endsWith('.stale')) {
+          const moduleId = entry.replace('.stale', '')
+          const moduleName = this.index?.modules.find(m => m.id === moduleId)?.name ?? moduleId
+
+          const content = await readFile(`${metaDir}/${entry}`)
+          const [timestamp, filesStr] = content.split('|')
+          const changedFiles = filesStr ? filesStr.split(',') : []
+
+          staleModules.push({
+            id: moduleId,
+            name: moduleName,
+            staleSince: timestamp || '',
+            changedFiles,
+          })
+        }
+      }
+      this.staleModulesCache = staleModules
+    } catch (err) {
+      log.warn('无法读取过期模块信息', { error: String(err) })
+    }
+
+    return staleModules
+  }
+
+  async clearStaleMarker(id: string): Promise<boolean> {
+    if (!this.workspacePath) return false
+
+    const staleFile = `${this.workspacePath}/${KNOWLEDGE_DIR}/meta/${id}.stale`
+    try {
+      await deleteFile(staleFile)
+      // 清除缓存
+      if (this.staleModulesCache) {
+        this.staleModulesCache = this.staleModulesCache.filter(m => m.id !== id)
+      }
+      log.info(`已清除模块 ${id} 的过期标记`)
+      return true
+    } catch (err) {
+      log.warn(`无法清除过期标记: ${id}`, { error: String(err) })
+      return false
+    }
   }
 
   // ─── Private ───────────────────────────────────────────────

@@ -1,0 +1,27 @@
+{
+  "title": "Knowledge",
+  "refresh": "Refresh",
+  "searchPlaceholder": "Search modules...",
+  "showStaleOnly": "Show stale only",
+  "loading": "Loading...",
+  "noResults": "No matching modules found",
+  "noModules": "No knowledge modules",
+  "stale": "stale",
+  "stats": "{{total}} modules, {{stale}} stale",
+  "complexity": "Complexity",
+  "changeFrequency": "Change Frequency",
+  "dependencies": "Dependencies",
+  "changedFiles": "Changed files",
+  "staleModuleTitle": "Module is stale",
+  "clearStale": "Clear stale marker",
+  "complexityLevel": {
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High"
+  },
+  "frequencyLevel": {
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High"
+  }
+}

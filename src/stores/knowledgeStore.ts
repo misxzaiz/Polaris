@@ -5,7 +5,7 @@
  */
 
 import { create } from 'zustand'
-import { getKnowledgeService, type ModuleIndex, type ModuleIndexEntry } from '../services/knowledgeService'
+import { getKnowledgeService, type ModuleIndex, type ModuleIndexEntry, type StaleModule } from '../services/knowledgeService'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('KnowledgeStore')
@@ -18,6 +18,9 @@ interface KnowledgeState {
 
   /** 模块索引 */
   index: ModuleIndex | null
+
+  /** 过期模块列表 */
+  staleModules: StaleModule[]
 
   /** 加载状态 */
   loading: boolean
@@ -32,6 +35,12 @@ interface KnowledgeState {
 interface KnowledgeActions {
   /** 加载指定工作区的知识索引 */
   loadIndex: (workspacePath: string) => Promise<void>
+
+  /** 加载过期模块列表 */
+  loadStaleModules: () => Promise<void>
+
+  /** 清除模块过期标记 */
+  clearStaleMarker: (id: string) => Promise<boolean>
 
   /** 清空状态（切换工作区时调用） */
   clear: () => void
@@ -53,6 +62,7 @@ export type KnowledgeStore = KnowledgeState & KnowledgeActions
 const initialState: KnowledgeState = {
   workspacePath: null,
   index: null,
+  staleModules: [],
   loading: false,
   error: null,
   initialized: false,
@@ -94,6 +104,33 @@ export const useKnowledgeStore = create<KnowledgeStore>((set, get) => ({
         initialized: false,
       })
       log.error('知识索引加载失败', err instanceof Error ? err : new Error(errorMsg))
+    }
+  },
+
+  loadStaleModules: async () => {
+    try {
+      const service = getKnowledgeService()
+      const staleModules = await service.getStaleModules()
+      set({ staleModules })
+      log.info(`过期模块加载完成: ${staleModules.length} 个`)
+    } catch (err) {
+      log.warn('加载过期模块失败', { error: err instanceof Error ? err.message : String(err) })
+    }
+  },
+
+  clearStaleMarker: async (id: string) => {
+    try {
+      const service = getKnowledgeService()
+      const success = await service.clearStaleMarker(id)
+      if (success) {
+        set(state => ({
+          staleModules: state.staleModules.filter(m => m.id !== id)
+        }))
+      }
+      return success
+    } catch (err) {
+      log.warn('清除过期标记失败', { error: err instanceof Error ? err.message : String(err) })
+      return false
     }
   },
 
