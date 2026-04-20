@@ -3,7 +3,9 @@
  */
 
 import { useConfigStore } from '../../stores'
+import { useWorkspaceStore } from '../../stores/workspaceStore'
 import { DEFAULT_ASSISTANT_CONFIG, DEFAULT_SYSTEM_PROMPT_CONFIG, type SystemPromptConfig } from '../types'
+import { getKnowledgeService } from '../../services/knowledgeService'
 
 export const ASSISTANT_SYSTEM_PROMPT = `# 角色定义
 
@@ -143,4 +145,41 @@ export function getSystemPrompt(): string {
 
   // append 模式：默认 + 用户内容
   return `${ASSISTANT_SYSTEM_PROMPT}\n\n${config.customPrompt}`
+}
+
+/**
+ * 获取带知识增强的系统提示词（异步版本）
+ *
+ * 在原有系统提示词基础上，注入当前工作区的项目知识：
+ * - 模块架构概览
+ * - @module 引用解析
+ *
+ * 用于 Assistant Engine 等需要项目上下文的场景
+ */
+export async function getSystemPromptWithKnowledge(): Promise<string> {
+  const basePrompt = getSystemPrompt()
+
+  // 获取当前工作区
+  const workspaceStore = useWorkspaceStore.getState()
+  const currentWorkspace = workspaceStore.workspaces.find(
+    w => w.id === workspaceStore.currentWorkspaceId
+  )
+
+  if (!currentWorkspace?.path) {
+    return basePrompt
+  }
+
+  // 尝试加载知识索引并增强提示词
+  try {
+    const knowledgeService = getKnowledgeService()
+    await knowledgeService.loadIndex(currentWorkspace.path)
+
+    // 使用空内容触发基础架构注入
+    const enrichedPrompt = await knowledgeService.enrichPrompt('', basePrompt)
+    return enrichedPrompt
+  } catch (error) {
+    // 知识加载失败不影响正常使用
+    console.warn('[SystemPrompt] 知识增强失败:', error)
+    return basePrompt
+  }
 }
