@@ -5,16 +5,15 @@
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FolderOpen, Code, FileSearch } from 'lucide-react';
+import { CharacterShowcase } from '../Character';
 
 export const EmptyState = memo(function EmptyState() {
   const { t } = useTranslation('chat');
 
   return (
     <div className="flex flex-col items-center justify-center h-full text-center px-4">
-      {/* Logo 图标 */}
-      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary to-primary-600 flex items-center justify-center shadow-glow mb-6 hover:shadow-glow-lg transition-all">
-        <span className="text-3xl font-bold text-white">P</span>
-      </div>
+      {/* 角色展示 */}
+      <CharacterShowcase />
 
       {/* 标题 */}
       <h1 className="text-2xl font-semibold text-text-primary mb-2">
