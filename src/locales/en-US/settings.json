@@ -173,7 +173,8 @@
       "send": "Send message",
       "clear": "Clear input",
       "interrupt": "Interrupt conversation",
-      "undo": "Undo last input"
+      "undo": "Undo last input",
+      "play": "Read response"
     },
     "tips": {
       "title": "Instructions",

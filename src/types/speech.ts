@@ -60,7 +60,7 @@ export const DEFAULT_SPEECH_CONFIG: SpeechConfig = {
 };
 
 /** 语音命令类型 */
-export type VoiceCommand = 'send' | 'clear' | 'interrupt' | 'undo';
+export type VoiceCommand = 'send' | 'clear' | 'interrupt' | 'undo' | 'play';
 
 /** 单个命令的配置 */
 export interface VoiceCommandEntry {
@@ -81,6 +81,7 @@ export const DEFAULT_VOICE_COMMAND_CONFIG: VoiceCommandConfig = [
   { type: 'clear',     label: '清空输入框',   keywords: ['清空'] },
   { type: 'undo',      label: '撤回最后输入', keywords: ['撤回'] },
   { type: 'interrupt', label: '中断对话',     keywords: ['中断'] },
+  { type: 'play',      label: '朗读回复',     keywords: ['播放', '朗读'] },
 ];
 
 /** 去除语音文本中的标点和空白（用于命令匹配） */
@@ -94,10 +95,27 @@ function cleanForCommandMatch(text: string): string {
  * 匹配规则：文本去标点后，与命令关键词（也去标点）精确匹配
  *
  * @param text 识别文本
- * @param config 命令配置（不传则使用默认配置，保持向后兼容）
+ * @param config 命令配置（不传则使用默认配置，传入时会与默认配置合并）
  */
 export function checkVoiceCommand(text: string, config?: VoiceCommandConfig): VoiceCommand | null {
-  const commands = config ?? DEFAULT_VOICE_COMMAND_CONFIG;
+  // 合并用户配置和默认配置（用户配置优先，但补充缺失的命令）
+  const defaultCommands = DEFAULT_VOICE_COMMAND_CONFIG;
+  let commands: VoiceCommandConfig;
+
+  if (config) {
+    // 构建类型到配置的映射
+    const configMap = new Map(config.map(entry => [entry.type, entry]));
+    // 补充默认配置中缺失的命令
+    for (const defaultEntry of defaultCommands) {
+      if (!configMap.has(defaultEntry.type)) {
+        configMap.set(defaultEntry.type, defaultEntry);
+      }
+    }
+    commands = [...configMap.values()];
+  } else {
+    commands = defaultCommands;
+  }
+
   const cleaned = cleanForCommandMatch(text);
   if (!cleaned) return null;
 
@@ -290,7 +308,7 @@ export const DEFAULT_TTS_CONFIG: TTSConfig = {
   voice: 'zh-CN-XiaoxiaoNeural',
   rate: '+0%',
   volume: 1.0,
-  autoPlay: true,
+  autoPlay: false,
 };
 
 /** TTS 语速选项 */

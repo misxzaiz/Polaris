@@ -14,7 +14,7 @@
 import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConfigStore, useSessionStore } from '../../stores';
-import { useActiveSessionActions, useActiveSessionStreaming, useHasPendingQuestion, useHasActivePlan } from '../../stores/conversationStore/useActiveSession';
+import { useActiveSessionActions, useActiveSessionStreaming, useHasPendingQuestion, useHasActivePlan, useActiveSessionMessages } from '../../stores/conversationStore/useActiveSession';
 import { useSessionConfig } from '../../stores/sessionConfigStore';
 import { Paperclip, Loader2, ChevronDown } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -25,6 +25,8 @@ import { useContainerWidth } from '../../hooks/useContainerWidth';
 import type { SpeechConfig, VoiceCommand, TTSConfig, WakeWordConfig } from '../../types/speech';
 import { DEFAULT_TTS_CONFIG } from '../../types/speech';
 import { SessionConfigSelector } from './SessionConfigSelector';
+import { voiceNotificationService } from '../../services/voiceNotificationService';
+import { isAssistantMessage } from '../../types/chat';
 
 /** 宽度分级阈值 */
 const BREAKPOINTS = {
@@ -71,6 +73,7 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
   const { config, healthStatus, updateConfig } = useConfigStore();
   const isStreaming = useActiveSessionStreaming();
   const { interrupt } = useActiveSessionActions();
+  const { messages, currentMessage } = useActiveSessionMessages();
   const {
     inputLength,
     attachmentCount,
@@ -175,12 +178,23 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
       case 'undo':
         undoSpeechTranscript();
         break;
+      case 'play': {
+        // 优先播放正在流式输出的，否则找最后一条 assistant 消息
+        // currentMessage 类型是 CurrentAssistantMessage，需要检查 blocks 存在
+        const lastAssistant = currentMessage?.blocks
+          ? { ...currentMessage, type: 'assistant' as const, timestamp: new Date().toISOString() }
+          : [...messages].reverse().find(m => isAssistantMessage(m));
+        if (lastAssistant) {
+          voiceNotificationService.speakAIResponse(lastAssistant as any, { force: true });
+        }
+        break;
+      }
     }
 
-    if (speechCommand === 'interrupt' || speechCommand === 'undo') {
+    if (speechCommand === 'interrupt' || speechCommand === 'undo' || speechCommand === 'play') {
       setSpeechCommand(null);
     }
-  }, [speechCommand, isStreaming, interrupt, setSpeechCommand, undoSpeechTranscript]);
+  }, [speechCommand, isStreaming, interrupt, setSpeechCommand, undoSpeechTranscript, messages, currentMessage]);
 
   // 获取输入状态提示文本
   const getInputHint = () => {

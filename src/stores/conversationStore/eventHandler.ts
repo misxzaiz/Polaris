@@ -8,6 +8,7 @@ import type { AIEvent } from '../../ai-runtime'
 import { isEditTool, extractEditDiff } from '../../utils/diffExtractor'
 import type { ConversationStore } from './types'
 import { voiceNotificationService } from '../../services/voiceNotificationService'
+import { useSessionStore } from '../index'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('EventHandler')
@@ -40,7 +41,13 @@ export function handleAIEvent(
       })
       // 语音提醒：AI 回复自动朗读
       if (completedMessage) {
-        voiceNotificationService.speakAIResponse(completedMessage)
+        // 检查是否为语音输入触发的对话
+        const { inputWasVoice, setInputWasVoice } = useSessionStore.getState()
+        voiceNotificationService.speakAIResponse(completedMessage, { force: inputWasVoice })
+        // 重置语音输入标记
+        if (inputWasVoice) {
+          setInputWasVoice(false)
+        }
       }
       log.info('Session ended', {
         sessionId: state.sessionId,

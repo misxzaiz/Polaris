@@ -35,7 +35,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
   const [newWakeWord, setNewWakeWord] = useState('');
   const [newWakeResponse, setNewWakeResponse] = useState('');
   const [newKeywordByCommand, setNewKeywordByCommand] = useState<Record<VoiceCommand, string>>({
-    send: '', clear: '', undo: '', interrupt: '',
+    send: '', clear: '', undo: '', interrupt: '', play: '',
   });
 
   // 获取语音配置（带默认值）
