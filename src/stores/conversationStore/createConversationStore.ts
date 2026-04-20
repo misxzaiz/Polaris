@@ -1134,14 +1134,109 @@ export function createConversationStore(
         }
       },
 
-      regenerateResponse: async (_assistantMessageId) => {
-        // TODO(Sprint4): 实现重新生成
-        log.info('regenerateResponse not implemented yet')
+      regenerateResponse: async (assistantMessageId) => {
+        const { messages, isStreaming } = get()
+
+        // 防止重复操作
+        if (isStreaming) {
+          log.warn('regenerateResponse: 当前正在流式传输，请稍后再试')
+          return
+        }
+
+        // 找到目标消息的索引
+        const messageIndex = messages.findIndex(m => m.id === assistantMessageId)
+        if (messageIndex === -1) {
+          log.warn('regenerateResponse: 未找到目标消息', { assistantMessageId })
+          return
+        }
+
+        // 找到该 assistant 消息之前的最近一条 user 消息
+        let userMessageIndex = -1
+        for (let i = messageIndex - 1; i >= 0; i--) {
+          if (messages[i].type === 'user') {
+            userMessageIndex = i
+            break
+          }
+        }
+
+        if (userMessageIndex === -1) {
+          log.warn('regenerateResponse: 未找到对应的用户消息')
+          return
+        }
+
+        const userMessage = messages[userMessageIndex]
+        const userContent = userMessage.type === 'user' ? userMessage.content : ''
+
+        // 删除从 user 消息之后的所有消息（包括要重新生成的 assistant 消息）
+        const newMessages = messages.slice(0, userMessageIndex)
+
+        // 更新状态：删除后续消息，清空当前消息
+        set({
+          messages: newMessages,
+          currentMessage: null,
+          isStreaming: false,
+          error: null,
+        })
+
+        log.info('regenerateResponse: 重新生成响应', {
+          userMessageId: userMessage.id,
+          removedCount: messages.length - userMessageIndex
+        })
+
+        // 重新发送用户消息
+        // 获取工作区信息
+        const workspace = deps.getWorkspace()
+        const workspaceDir = workspace?.path || undefined
+
+        // 调用 sendMessage（会自动处理重新生成）
+        const { sendMessage } = get()
+        await sendMessage(userContent, workspaceDir)
       },
 
-      editAndResend: async (_userMessageId, _newContent) => {
-        // TODO(Sprint4): 实现编辑重发
-        log.info('editAndResend not implemented yet')
+      editAndResend: async (userMessageId, newContent) => {
+        const { messages, isStreaming } = get()
+
+        // 防止重复操作
+        if (isStreaming) {
+          log.warn('editAndResend: 当前正在流式传输，请稍后再试')
+          return
+        }
+
+        // 找到目标消息的索引
+        const messageIndex = messages.findIndex(m => m.id === userMessageId)
+        if (messageIndex === -1) {
+          log.warn('editAndResend: 未找到目标消息', { userMessageId })
+          return
+        }
+
+        const targetMessage = messages[messageIndex]
+        if (targetMessage.type !== 'user') {
+          log.warn('editAndResend: 目标消息不是用户消息')
+          return
+        }
+
+        // 删除从该 user 消息之后的所有消息
+        const newMessages = messages.slice(0, messageIndex)
+
+        // 更新状态
+        set({
+          messages: newMessages,
+          currentMessage: null,
+          isStreaming: false,
+          error: null,
+        })
+
+        log.info('editAndResend: 编辑并重发消息', {
+          originalMessageId: userMessageId,
+          removedCount: messages.length - messageIndex
+        })
+
+        // 发送新内容的消息
+        const workspace = deps.getWorkspace()
+        const workspaceDir = workspace?.path || undefined
+
+        const { sendMessage } = get()
+        await sendMessage(newContent, workspaceDir)
       },
 
       loadMoreArchivedMessages: (count = 20) => {
