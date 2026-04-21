@@ -8,6 +8,7 @@ pub mod extractor;
 pub mod handler;
 pub mod migrate;
 pub mod models;
+pub mod parsing;
 pub mod protocol;
 pub mod seeder;
 pub mod server;

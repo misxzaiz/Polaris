@@ -372,10 +372,7 @@ fn value_literal(value: &serde_json::Value) -> String {
 
 // ─── Byte-level scanners (no regex dependency) ──────────────────────
 
-#[inline]
-fn is_ident_byte(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b == b'_'
-}
+use crate::parsing::is_ident_byte;
 
 /// Return true if `symbol` occurs as a word-bounded token in `content`.
 fn symbol_present(content: &str, symbol: &str) -> bool {
@@ -466,56 +463,7 @@ fn contains_binding(content: &str, symbol: &str, literal: &str) -> bool {
     false
 }
 
-/// Extract the first numeric literal that appears immediately after a binding
-/// of `symbol`. Returns `None` if no such pattern exists.
-fn extract_numeric_binding(content: &str, symbol: &str) -> Option<f64> {
-    let bytes = content.as_bytes();
-    for sym_start in find_symbol_positions(content, symbol) {
-        let mut i = sym_start + symbol.len();
-        // Move to '='.
-        while i < bytes.len() && bytes[i] != b'=' && bytes[i] != b'\n' && bytes[i] != b';' {
-            i += 1;
-        }
-        if i >= bytes.len() || bytes[i] != b'=' {
-            continue;
-        }
-        i += 1;
-        // Skip whitespace.
-        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
-            i += 1;
-        }
-        // Collect numeric literal.
-        if let Some(n) = parse_number_at(&content[i..]) {
-            return Some(n);
-        }
-    }
-    None
-}
-
-fn parse_number_at(s: &str) -> Option<f64> {
-    let bytes = s.as_bytes();
-    let mut end = 0usize;
-    let mut seen_digit = false;
-    let mut seen_dot = false;
-    while end < bytes.len() {
-        let b = bytes[end];
-        if b.is_ascii_digit() {
-            seen_digit = true;
-            end += 1;
-        } else if b == b'.' && !seen_dot {
-            seen_dot = true;
-            end += 1;
-        } else if (b == b'-' || b == b'+') && end == 0 {
-            end += 1;
-        } else {
-            break;
-        }
-    }
-    if !seen_digit {
-        return None;
-    }
-    s[..end].parse::<f64>().ok()
-}
+use crate::parsing::extract_numeric_binding;
 
 // ─── Confidence transitions ─────────────────────────────────────────
 
