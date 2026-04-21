@@ -338,11 +338,25 @@ fn kind_label(k: SymbolKind) -> &'static str {
 /// Convert a symbol name into a slug suitable for assertion ids
 /// (lowercase kebab-case, ASCII only, stripped of non-alnum).
 fn slugify(raw: &str) -> String {
+    let chars: Vec<char> = raw.chars().collect();
     let mut out = String::with_capacity(raw.len());
     let mut prev_dash = true;
-    for c in raw.chars() {
+    for i in 0..chars.len() {
+        let c = chars[i];
         if c.is_ascii_uppercase() {
-            if !prev_dash && !out.is_empty() {
+            // Insert dash only at true word boundaries:
+            //   - lowercase/digit → uppercase (camelCase: "fooBar")
+            //   - uppercase → uppercase+lowercase ("HTMLParser" → "html-parser")
+            let prev_lower_or_digit = i > 0
+                && (chars[i - 1].is_ascii_lowercase() || chars[i - 1].is_ascii_digit());
+            let boundary_inside_acronym = i > 0
+                && chars[i - 1].is_ascii_uppercase()
+                && i + 1 < chars.len()
+                && chars[i + 1].is_ascii_lowercase();
+            if (prev_lower_or_digit || boundary_inside_acronym)
+                && !prev_dash
+                && !out.is_empty()
+            {
                 out.push('-');
             }
             out.push(c.to_ascii_lowercase());
@@ -355,8 +369,6 @@ fn slugify(raw: &str) -> String {
                 out.push('-');
                 prev_dash = true;
             }
-        } else {
-            // drop other chars
         }
     }
     let trimmed = out.trim_matches('-').to_string();

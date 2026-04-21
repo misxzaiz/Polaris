@@ -329,12 +329,25 @@ fn check_expect(expect: &ExpectSpec, content: &str, symbol: Option<&str>) -> Exp
         );
     }
 
-    // regex: simplified to substring match. Upgrades to real regex in S3.
+    // regex: real regex match against file content.
     if let Some(pattern) = &expect.regex {
-        if content.contains(pattern.as_str()) {
-            return ExpectOutcome::Pass;
+        match regex::Regex::new(pattern) {
+            Ok(re) => {
+                if re.is_match(content) {
+                    return ExpectOutcome::Pass;
+                }
+                return ExpectOutcome::Fail(format!(
+                    "regex `/{}/` did not match file content",
+                    pattern
+                ));
+            }
+            Err(e) => {
+                return ExpectOutcome::Fail(format!(
+                    "invalid regex pattern `{}`: {}",
+                    pattern, e
+                ));
+            }
         }
-        return ExpectOutcome::Fail(format!("pattern `{}` not found (substring)", pattern));
     }
 
     // range: find numeric binding on the same logical line as the symbol.
@@ -816,5 +829,83 @@ mod tests {
         assert_eq!(degrade(Confidence::Yellow), Confidence::Red);
         assert_eq!(degrade(Confidence::Red), Confidence::Black);
         assert_eq!(degrade(Confidence::Black), Confidence::Black);
+    }
+
+    // ── regex expect ────────────────────────────────────────────────
+
+    #[test]
+    fn regex_match_passes() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("cache.ts");
+        fs::write(&file_path, "export const MAX_SNAPSHOTS = 20;\n").unwrap();
+
+        let a = basic_assertion(
+            "m/regex-pass",
+            "cache.ts",
+            None,
+            Some(ExpectSpec {
+                equals: None,
+                regex: Some("MAX.*=.*\\d+".into()),
+                range: None,
+            }),
+        );
+        let idx = index_with(a);
+        let report = validate_index(&idx, dir.path()).unwrap();
+        let r = report.results.get("m/regex-pass").unwrap();
+        assert_eq!(r.status, ValidationStatus::Passed);
+    }
+
+    #[test]
+    fn regex_no_match_fails() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("cache.ts");
+        fs::write(&file_path, "export const CACHE_SIZE = 20;\n").unwrap();
+
+        let a = basic_assertion(
+            "m/regex-fail",
+            "cache.ts",
+            None,
+            Some(ExpectSpec {
+                equals: None,
+                regex: Some("MAX_SNAPSHOTS.*=.*\\d+".into()),
+                range: None,
+            }),
+        );
+        let idx = index_with(a);
+        let report = validate_index(&idx, dir.path()).unwrap();
+        let r = report.results.get("m/regex-fail").unwrap();
+        assert_eq!(r.status, ValidationStatus::Failed);
+        assert!(
+            r.reason.as_ref().unwrap().contains("did not match"),
+            "unexpected reason: {:?}",
+            r.reason
+        );
+    }
+
+    #[test]
+    fn regex_invalid_pattern_fails() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("cache.ts");
+        fs::write(&file_path, "some content\n").unwrap();
+
+        let a = basic_assertion(
+            "m/regex-invalid",
+            "cache.ts",
+            None,
+            Some(ExpectSpec {
+                equals: None,
+                regex: Some("[invalid".into()),
+                range: None,
+            }),
+        );
+        let idx = index_with(a);
+        let report = validate_index(&idx, dir.path()).unwrap();
+        let r = report.results.get("m/regex-invalid").unwrap();
+        assert_eq!(r.status, ValidationStatus::Failed);
+        assert!(
+            r.reason.as_ref().unwrap().contains("invalid regex"),
+            "unexpected reason: {:?}",
+            r.reason
+        );
     }
 }
