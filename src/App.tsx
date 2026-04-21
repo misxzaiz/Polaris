@@ -105,10 +105,6 @@ function App() {
   const hasLeftPanel = !isCompact && leftPanelType !== 'none';
   const hasCenterStage = !isCompact && hasOpenTabs;
 
-  const leftPanelFillRemaining = hasLeftPanel && !hasCenterStage && !rightPanelCollapsed;
-  const centerStageFillRemaining = hasCenterStage && !rightPanelCollapsed;
-  const rightPanelFillRemaining = !hasCenterStage;
-
   // === 引擎切换 ===
   const applyEngineSwitch = useCallback(async (engineId: EngineId) => {
     if (!config) return;
@@ -151,7 +147,7 @@ function App() {
           />
 
           {!isCompact && hasLeftPanel && (
-            <LeftPanel fillRemaining={leftPanelFillRemaining}>
+            <LeftPanel>
               <LeftPanelContent
                 filesContent={<FileExplorer />}
                 gitContent={<GitPanel onOpenDiffInTab={(diff) => openDiffTab(diff)} />}
@@ -169,10 +165,10 @@ function App() {
             </LeftPanel>
           )}
 
-          {!isCompact && hasCenterStage && <CenterStage fillRemaining={centerStageFillRemaining} />}
+          {!isCompact && hasCenterStage && <CenterStage fillRemaining={!rightPanelCollapsed} />}
 
           {(isCompact || !rightPanelCollapsed) && (
-            <RightPanel fillRemaining={isCompact || rightPanelFillRemaining}>
+            <RightPanel>
               {error && (
                 <div className="mx-4 mt-4 p-3 bg-danger-faint border border-danger/30 rounded-xl text-danger text-sm shrink-0">
                   {error}
