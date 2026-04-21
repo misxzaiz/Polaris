@@ -38,7 +38,7 @@ export function BranchSelector() {
     if (isOpen && currentWorkspace) {
       loadBranches()
     }
-  }, [isOpen, currentWorkspace])
+  }, [isOpen, currentWorkspace, loadBranches])
 
   useEffect(() => {
     if (showNewBranch && inputRef.current) {
