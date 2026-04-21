@@ -277,7 +277,8 @@ export class LocalFileKnowledgeService implements IKnowledgeService {
     for (const moduleId of moduleIds) {
       // 先查缓存
       if (this.moduleDocsCache.has(moduleId)) {
-        docs.set(moduleId, this.moduleDocsCache.get(moduleId)!)
+        const cached = this.moduleDocsCache.get(moduleId)
+        if (cached) docs.set(moduleId, cached)
         continue
       }
 
