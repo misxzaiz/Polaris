@@ -390,7 +390,10 @@ export class AssistantEngine {
         params.background ? 'background' : 'analysis',
         purpose
       )
-      yield { type: 'session_created', session: useAssistantStore.getState().getClaudeCodeSession(sessionId)! }
+      const session = useAssistantStore.getState().getClaudeCodeSession(sessionId)
+      if (session) {
+        yield { type: 'session_created', session }
+      }
     }
 
     // 中断指定会话
@@ -414,7 +417,7 @@ export class AssistantEngine {
       const result = await this.executeClaudeCode(sessionId, params)
       yield { type: 'tool_call', toolCall: { ...toolCall, status: 'completed', claudeCodeSessionId: sessionId } }
       yield* this.feedbackToAI(params.prompt, result, sessionId)
-    } catch (error) {
+    } catch {
       yield { type: 'tool_call', toolCall: { ...toolCall, status: 'error', claudeCodeSessionId: sessionId } }
     }
   }

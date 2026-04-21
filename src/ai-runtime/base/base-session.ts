@@ -58,7 +58,8 @@ export function createEventIterable(
       try {
         while (!state.isComplete) {
           if (state.events.length > 0) {
-            yield state.events.shift()!
+            const event = state.events.shift()
+            if (event) yield event
           } else {
             // 等待新事件
             await new Promise<void>((r) => {
@@ -73,7 +74,8 @@ export function createEventIterable(
 
         // 返回剩余事件
         while (state.events.length > 0) {
-          yield state.events.shift()!
+          const event = state.events.shift()
+          if (event) yield event
         }
       } finally {
         unlisten()

@@ -167,16 +167,18 @@ export const useAssistantStore = create<AssistantStore>()(
         const sessionId = manager.createSession(type, label)
 
         // 同步状态到 store
-        const sessionState = manager.getSession(sessionId)!
-        set((state) => {
-          const newSessions = new Map(state.claudeCodeSessions)
-          newSessions.set(sessionId, sessionState)
-          return {
-            claudeCodeSessions: newSessions,
-            activeClaudeCodeSessionId: sessionId,
-            executionPanelSessionId: sessionId,
-          }
-        })
+        const sessionState = manager.getSession(sessionId)
+        if (sessionState) {
+          set((state) => {
+            const newSessions = new Map(state.claudeCodeSessions)
+            newSessions.set(sessionId, sessionState)
+            return {
+              claudeCodeSessions: newSessions,
+              activeClaudeCodeSessionId: sessionId,
+              executionPanelSessionId: sessionId,
+            }
+          })
+        }
 
         return sessionId
       },
