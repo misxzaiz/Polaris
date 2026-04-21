@@ -9,6 +9,7 @@ pub mod handler;
 pub mod migrate;
 pub mod models;
 pub mod protocol;
+pub mod seeder;
 pub mod server;
 pub mod tools;
 pub mod validator;
@@ -25,8 +26,9 @@ pub use models::{
     GlobalConvention, KnowledgeIndex, KnowledgeIndexV2, ModuleEntry, ModuleV2, ScopeSpec, Trap,
     TrapSeverity, WorkspaceInfo, V2_SCHEMA_VERSION,
 };
+pub use seeder::{apply_seed, seed_assertions, ModuleSeedDelta, SeedOptions, SeedReport};
 pub use server::{run_server, run_server_with_workspace};
 pub use validator::{
-    validate_index, write_health_report, AssertionResult, HealthReport, HealthTotals,
-    ValidationStatus,
+    validate_index, validate_index_with_structures, write_health_report, AssertionResult,
+    HealthReport, HealthTotals, ValidationStatus,
 };

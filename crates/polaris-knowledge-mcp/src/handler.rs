@@ -1,8 +1,11 @@
 //! Tool execution handlers.
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+use std::rc::Rc;
+use std::time::SystemTime;
 
 use serde_json::json;
 use serde_json::Value;
@@ -34,11 +37,93 @@ pub fn find_module<'a>(index: &'a KnowledgeIndex, id: &str) -> Result<&'a Module
         .ok_or_else(|| KnowledgeError::NotFound(format!("模块不存在: {}", id)))
 }
 
+// ─── Cache ─────────────────────────────────────────────────────
+
+/// In-memory cache for parsed knowledge indices with mtime-based invalidation.
+///
+/// Each variant stores the parsed index alongside the file's last-modified timestamp.
+/// When the file hasn't changed (same mtime), the cached data is returned directly,
+/// avoiding repeated disk I/O and JSON deserialization across tool calls.
+pub struct KnowledgeCache {
+    v1: Option<(KnowledgeIndex, SystemTime)>,
+    v2: Option<(crate::models::KnowledgeIndexV2, SystemTime)>,
+}
+
+impl KnowledgeCache {
+    pub fn new() -> Self {
+        Self { v1: None, v2: None }
+    }
+}
+
+/// Shared reference to the cache.
+///
+/// The server event loop is single-threaded. `RefCell` provides interior mutability
+/// without requiring `&mut` throughout the call chain.
+pub type SharedCache = Rc<RefCell<KnowledgeCache>>;
+
+/// Load v1 index with mtime-based caching.
+pub fn load_index_cached(index_path: &PathBuf, cache: &SharedCache) -> Result<KnowledgeIndex> {
+    let mtime = std::fs::metadata(index_path)
+        .and_then(|m| m.modified())
+        .ok();
+
+    {
+        let c = cache.borrow();
+        if let Some((ref idx, ref cached_mtime)) = c.v1 {
+            if Some(*cached_mtime) == mtime {
+                return Ok(idx.clone());
+            }
+        }
+    }
+
+    let index = load_index(index_path)?;
+    if let Some(mtime) = mtime {
+        cache.borrow_mut().v1 = Some((index.clone(), mtime));
+    }
+    Ok(index)
+}
+
+/// Load v2 index with mtime-based caching.
+pub fn load_v2_cached(index_path: &PathBuf, cache: &SharedCache) -> Result<crate::models::KnowledgeIndexV2> {
+    let knowledge_dir = index_path.parent().ok_or_else(|| {
+        KnowledgeError::Io("cannot resolve knowledge dir from index path".into())
+    })?;
+    let v2_path = knowledge_dir.join("index.v2.json");
+
+    if !v2_path.exists() {
+        return Err(KnowledgeError::Validation(format!(
+            "index.v2.json not found at {} — run migrate first",
+            v2_path.display()
+        )));
+    }
+
+    let mtime = std::fs::metadata(&v2_path)
+        .and_then(|m| m.modified())
+        .ok();
+
+    {
+        let c = cache.borrow();
+        if let Some((ref v2, ref cached_mtime)) = c.v2 {
+            if Some(*cached_mtime) == mtime {
+                return Ok(v2.clone());
+            }
+        }
+    }
+
+    let content = std::fs::read_to_string(&v2_path)
+        .map_err(|e| KnowledgeError::Io(format!("cannot read index.v2.json: {}", e)))?;
+    let v2: crate::models::KnowledgeIndexV2 = serde_json::from_str(&content)?;
+    if let Some(mtime) = mtime {
+        cache.borrow_mut().v2 = Some((v2.clone(), mtime));
+    }
+    Ok(v2)
+}
+
 // ─── Tool Execution ─────────────────────────────────────────────
 
 /// Execute list_modules tool.
-pub fn execute_list_modules(index_path: &PathBuf) -> Result<Value> {
-    let index = load_index(index_path)?;
+pub fn execute_list_modules(index_path: &PathBuf, cache: &SharedCache) -> Result<Value> {
+    let index = load_index_cached(index_path, cache)?;
 
     let modules: Vec<Value> = index
         .modules
@@ -72,6 +157,7 @@ pub fn execute_get_module(
     arguments: Value,
     index_path: &PathBuf,
     modules_dir: &PathBuf,
+    cache: &SharedCache,
 ) -> Result<Value> {
     let id = arguments
         .get("id")
@@ -83,7 +169,7 @@ pub fn execute_get_module(
         return Err(KnowledgeError::Validation("缺少模块 ID".to_string()));
     }
 
-    let index = load_index(index_path)?;
+    let index = load_index_cached(index_path, cache)?;
     let module = find_module(&index, &id)?;
 
     let doc_content = read_module_doc(modules_dir, &module.file)?;
@@ -105,7 +191,7 @@ pub fn execute_get_module(
 }
 
 /// Execute get_module_dependencies tool.
-pub fn execute_get_dependencies(arguments: Value, index_path: &PathBuf) -> Result<Value> {
+pub fn execute_get_dependencies(arguments: Value, index_path: &PathBuf, cache: &SharedCache) -> Result<Value> {
     let id = arguments
         .get("id")
         .and_then(Value::as_str)
@@ -116,7 +202,7 @@ pub fn execute_get_dependencies(arguments: Value, index_path: &PathBuf) -> Resul
         return Err(KnowledgeError::Validation("缺少模块 ID".to_string()));
     }
 
-    let index = load_index(index_path)?;
+    let index = load_index_cached(index_path, cache)?;
     let module = find_module(&index, &id)?;
 
     // Resolve dependency names
@@ -170,8 +256,9 @@ pub fn execute_get_dependencies(arguments: Value, index_path: &PathBuf) -> Resul
 pub fn execute_architecture_overview(
     index_path: &PathBuf,
     modules_dir: &PathBuf,
+    cache: &SharedCache,
 ) -> Result<Value> {
-    let index = load_index(index_path)?;
+    let index = load_index_cached(index_path, cache)?;
 
     // Build a concise overview: module id + name + one-line summary from doc
     let mut modules_overview = Vec::new();
@@ -225,6 +312,7 @@ pub fn execute_search_modules(
     arguments: Value,
     index_path: &PathBuf,
     modules_dir: &PathBuf,
+    cache: &SharedCache,
 ) -> Result<Value> {
     let query = arguments
         .get("query")
@@ -236,7 +324,7 @@ pub fn execute_search_modules(
         return Err(KnowledgeError::Validation("搜索关键词不能为空".to_string()));
     }
 
-    let index = load_index(index_path)?;
+    let index = load_index_cached(index_path, cache)?;
     let query_lower = query.to_lowercase();
 
     let mut results = Vec::new();
@@ -281,6 +369,7 @@ pub fn execute_update_module(
     arguments: Value,
     index_path: &PathBuf,
     modules_dir: &PathBuf,
+    cache: &SharedCache,
 ) -> Result<Value> {
     let id = arguments
         .get("id")
@@ -300,7 +389,7 @@ pub fn execute_update_module(
         return Err(KnowledgeError::Validation("文档内容不能为空".to_string()));
     }
 
-    let index = load_index(index_path)?;
+    let index = load_index_cached(index_path, cache)?;
     let module = find_module(&index, &id)?;
 
     // Write updated document
@@ -339,7 +428,7 @@ pub fn execute_update_module(
 }
 
 /// Execute mark_modules_stale tool.
-pub fn execute_mark_stale(arguments: Value, index_path: &PathBuf) -> Result<Value> {
+pub fn execute_mark_stale(arguments: Value, index_path: &PathBuf, cache: &SharedCache) -> Result<Value> {
     let changed_files = arguments
         .get("changedFiles")
         .and_then(Value::as_array)
@@ -354,7 +443,7 @@ pub fn execute_mark_stale(arguments: Value, index_path: &PathBuf) -> Result<Valu
         return Err(KnowledgeError::Validation("变更文件列表不能为空".to_string()));
     }
 
-    let index = load_index(index_path)?;
+    let index = load_index_cached(index_path, cache)?;
 
     // Normalize changed files: convert backslashes, remove leading ./
     let normalized_changes: Vec<String> = changed_files
@@ -427,6 +516,7 @@ pub fn execute_validate_assertions(
     arguments: Value,
     index_path: &PathBuf,
     workspace_root: Option<&std::path::Path>,
+    cache: &SharedCache,
 ) -> Result<Value> {
     let workspace_root = workspace_root.ok_or_else(|| {
         KnowledgeError::Validation(
@@ -439,23 +529,11 @@ pub fn execute_validate_assertions(
         .and_then(Value::as_bool)
         .unwrap_or(true);
 
+    let v2 = load_v2_cached(index_path, cache)?;
+
     let knowledge_dir = index_path.parent().ok_or_else(|| {
         KnowledgeError::Io("cannot resolve knowledge dir from index path".into())
     })?;
-    let v2_path = knowledge_dir.join("index.v2.json");
-
-    if !v2_path.exists() {
-        return Err(KnowledgeError::Validation(format!(
-            "index.v2.json not found at {} — run migrate first",
-            v2_path.display()
-        )));
-    }
-
-    let v2_content = std::fs::read_to_string(&v2_path).map_err(|e| {
-        KnowledgeError::Io(format!("cannot read index.v2.json: {}", e))
-    })?;
-    let v2: crate::models::KnowledgeIndexV2 = serde_json::from_str(&v2_content)?;
-
     let report = crate::validator::validate_index_with_structures(&v2, workspace_root, knowledge_dir)?;
 
     let persisted_path = if persist {
@@ -534,7 +612,7 @@ pub fn execute_get_assertions_health(index_path: &PathBuf) -> Result<Value> {
 }
 
 /// Execute compile_context tool. Loads v2 index and runs the context compiler.
-pub fn execute_compile_context(arguments: Value, index_path: &PathBuf) -> Result<Value> {
+pub fn execute_compile_context(arguments: Value, index_path: &PathBuf, cache: &SharedCache) -> Result<Value> {
     let request: crate::compiler::CompileRequest = serde_json::from_value(arguments.clone())
         .map_err(|e| {
             KnowledgeError::Validation(format!(
@@ -543,21 +621,7 @@ pub fn execute_compile_context(arguments: Value, index_path: &PathBuf) -> Result
             ))
         })?;
 
-    let knowledge_dir = index_path.parent().ok_or_else(|| {
-        KnowledgeError::Io("cannot resolve knowledge dir from index path".into())
-    })?;
-    let v2_path = knowledge_dir.join("index.v2.json");
-
-    if !v2_path.exists() {
-        return Err(KnowledgeError::Validation(format!(
-            "index.v2.json not found at {} — run migrate first",
-            v2_path.display()
-        )));
-    }
-
-    let v2_content = std::fs::read_to_string(&v2_path)
-        .map_err(|e| KnowledgeError::Io(format!("cannot read index.v2.json: {}", e)))?;
-    let v2: crate::models::KnowledgeIndexV2 = serde_json::from_str(&v2_content)?;
+    let v2 = load_v2_cached(index_path, cache)?;
 
     let pack = crate::compiler::compile_context(&request, &v2)?;
 
@@ -584,6 +648,7 @@ pub fn execute_extract_structure(
     arguments: Value,
     index_path: &PathBuf,
     workspace_root: Option<&std::path::Path>,
+    cache: &SharedCache,
 ) -> Result<Value> {
     let workspace_root = workspace_root.ok_or_else(|| {
         KnowledgeError::Validation(
@@ -596,21 +661,11 @@ pub fn execute_extract_structure(
         .and_then(Value::as_str)
         .map(|s| s.to_string());
 
+    let v2 = load_v2_cached(index_path, cache)?;
+
     let knowledge_dir = index_path.parent().ok_or_else(|| {
         KnowledgeError::Io("cannot resolve knowledge dir from index path".into())
     })?;
-    let v2_path = knowledge_dir.join("index.v2.json");
-
-    if !v2_path.exists() {
-        return Err(KnowledgeError::Validation(format!(
-            "index.v2.json not found at {} — run migrate first",
-            v2_path.display()
-        )));
-    }
-
-    let v2: crate::models::KnowledgeIndexV2 =
-        serde_json::from_str(&std::fs::read_to_string(&v2_path)?)?;
-
     let structures_dir = knowledge_dir.join("structures");
     std::fs::create_dir_all(&structures_dir)
         .map_err(|e| KnowledgeError::Io(format!("structures dir: {}", e)))?;
@@ -760,6 +815,7 @@ pub fn handle_tools_call(
     index_path: &PathBuf,
     modules_dir: &PathBuf,
     workspace_root: Option<&std::path::Path>,
+    cache: &SharedCache,
 ) -> Result<Value> {
     let name = params
         .get("name")
@@ -772,26 +828,25 @@ pub fn handle_tools_call(
         .unwrap_or_else(|| json!({}));
 
     match name.as_str() {
-        "list_modules" => execute_list_modules(index_path),
-        "get_module" => execute_get_module(arguments, index_path, modules_dir),
-        "get_module_dependencies" => execute_get_dependencies(arguments, index_path),
-        "get_architecture_overview" => execute_architecture_overview(index_path, modules_dir),
-        "search_modules" => execute_search_modules(arguments, index_path, modules_dir),
-        "update_module" => execute_update_module(arguments, index_path, modules_dir),
-        "mark_modules_stale" => execute_mark_stale(arguments, index_path),
-        "list_stale_modules" => execute_list_stale_modules(index_path),
+        "list_modules" => execute_list_modules(index_path, cache),
+        "get_module" => execute_get_module(arguments, index_path, modules_dir, cache),
+        "get_module_dependencies" => execute_get_dependencies(arguments, index_path, cache),
+        "get_architecture_overview" => execute_architecture_overview(index_path, modules_dir, cache),
+        "search_modules" => execute_search_modules(arguments, index_path, modules_dir, cache),
+        "update_module" => execute_update_module(arguments, index_path, modules_dir, cache),
+        "mark_modules_stale" => execute_mark_stale(arguments, index_path, cache),
+        "list_stale_modules" => execute_list_stale_modules(index_path, cache),
         "clear_stale_marker" => execute_clear_stale_marker(arguments, index_path),
-        "validate_assertions" => execute_validate_assertions(arguments, index_path, workspace_root),
+        "validate_assertions" => execute_validate_assertions(arguments, index_path, workspace_root, cache),
         "get_assertions_health" => execute_get_assertions_health(index_path),
-        "compile_context" => execute_compile_context(arguments, index_path),
-        "extract_structure" => execute_extract_structure(arguments, index_path, workspace_root),
+        "compile_context" => execute_compile_context(arguments, index_path, cache),
+        "extract_structure" => execute_extract_structure(arguments, index_path, workspace_root, cache),
         "get_structure" => execute_get_structure(arguments, index_path),
         _ => Err(KnowledgeError::Validation(format!("未知工具: {}", name))),
     }
 }
 
-/// Execute list_stale_modules tool.
-pub fn execute_list_stale_modules(index_path: &PathBuf) -> Result<Value> {
+pub fn execute_list_stale_modules(index_path: &PathBuf, cache: &SharedCache) -> Result<Value> {
     let knowledge_dir = index_path
         .parent()
         .ok_or_else(|| KnowledgeError::Io("无法确定知识目录".to_string()))?;
@@ -810,7 +865,7 @@ pub fn execute_list_stale_modules(index_path: &PathBuf) -> Result<Value> {
         }));
     }
 
-    let index = load_index(index_path)?;
+    let index = load_index_cached(index_path, cache)?;
     let mut stale_modules = Vec::new();
 
     // Read all .stale files

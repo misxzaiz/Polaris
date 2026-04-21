@@ -7,7 +7,7 @@ use serde_json::json;
 use serde_json::Value;
 
 use crate::error::{KnowledgeError, Result};
-use crate::handler::handle_tools_call;
+use crate::handler::{handle_tools_call, KnowledgeCache, SharedCache};
 use crate::protocol::{error_response, JsonRpcRequest, JsonRpcResponse};
 use crate::tools;
 
@@ -92,6 +92,8 @@ fn run_event_loop(
     let mut reader = BufReader::new(stdin.lock());
     let mut writer = stdout.lock();
 
+    let cache: SharedCache = std::rc::Rc::new(std::cell::RefCell::new(KnowledgeCache::new()));
+
     let mut line = String::new();
     loop {
         line.clear();
@@ -106,7 +108,7 @@ fn run_event_loop(
         }
 
         let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
-            Ok(request) => handle_request(request, index_path, modules_dir, workspace_root),
+            Ok(request) => handle_request(request, index_path, modules_dir, workspace_root, &cache),
             Err(error) => error_response(
                 Value::Null,
                 -32700,
@@ -128,6 +130,7 @@ fn handle_request(
     index_path: &PathBuf,
     modules_dir: &PathBuf,
     workspace_root: Option<&std::path::Path>,
+    cache: &SharedCache,
 ) -> JsonRpcResponse<'static> {
     let id = request.id.unwrap_or(Value::Null);
 
@@ -140,7 +143,7 @@ fn handle_request(
         "notifications/initialized" => Ok(json!({})),
         "ping" => Ok(json!({})),
         "tools/list" => Ok(tools::get_tools_list()),
-        "tools/call" => handle_tools_call(request.params, index_path, modules_dir, workspace_root),
+        "tools/call" => handle_tools_call(request.params, index_path, modules_dir, workspace_root, cache),
         _ => Err(KnowledgeError::Validation(format!(
             "Unsupported method: {}",
             request.method
