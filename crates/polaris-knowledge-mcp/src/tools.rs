@@ -202,6 +202,32 @@ pub fn get_tools_list() -> Value {
                         }
                     }
                 }
+            },
+            {
+                "name": "extract_structure",
+                "description": "扫描工作区代码，抽取每个模块的符号表（TS/TSX/JS/Rust），写入 structures/<moduleId>.structure.json。结果可被 validator/compiler 使用做精确符号定位。建议每次代码结构变化后调用。需要工作区模式。",
+                "inputSchema": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "moduleId": {
+                            "type": "string",
+                            "description": "可选：只抽取指定模块。省略则抽取所有模块。"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "get_structure",
+                "description": "读取指定模块最近一次 extract_structure 的结果（符号表 + 行号映射）。",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["moduleId"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "moduleId": { "type": "string", "minLength": 1 }
+                    }
+                }
             }
         ]
     })

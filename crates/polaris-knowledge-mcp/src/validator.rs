@@ -24,6 +24,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{KnowledgeError, Result};
+use crate::extractor::{load_structure, StructureReport, SymbolEntry};
 use crate::models::{Assertion, Confidence, ExpectSpec, KnowledgeIndexV2};
 
 // ─── Reports ────────────────────────────────────────────────────────
@@ -84,6 +85,35 @@ pub enum ValidationStatus {
 /// File reads are lenient — a missing file degrades the containing assertion
 /// but does not abort the whole run.
 pub fn validate_index(index: &KnowledgeIndexV2, workspace_root: &Path) -> Result<HealthReport> {
+    validate_index_inner(index, workspace_root, None)
+}
+
+/// Validate with pre-extracted structure reports for precise symbol lookup.
+///
+/// When a structure report is available for a module, symbol lookups fall back
+/// to the byte-scan path only if the symbol is *not* registered in any file
+/// whose path matches the assertion's anchor. This cuts false negatives when
+/// the byte-scan heuristic breaks (e.g. multi-line bindings).
+pub fn validate_index_with_structures(
+    index: &KnowledgeIndexV2,
+    workspace_root: &Path,
+    knowledge_dir: &Path,
+) -> Result<HealthReport> {
+    // Eagerly load whatever structure reports exist on disk.
+    let mut structures: BTreeMap<String, StructureReport> = BTreeMap::new();
+    for module in &index.modules {
+        if let Ok(Some(report)) = load_structure(&module.id, knowledge_dir) {
+            structures.insert(module.id.clone(), report);
+        }
+    }
+    validate_index_inner(index, workspace_root, Some(&structures))
+}
+
+fn validate_index_inner(
+    index: &KnowledgeIndexV2,
+    workspace_root: &Path,
+    structures: Option<&BTreeMap<String, StructureReport>>,
+) -> Result<HealthReport> {
     let mut results: BTreeMap<String, AssertionResult> = BTreeMap::new();
     let mut totals = HealthTotals::default();
     let mut weak_modules: Vec<String> = Vec::new();
@@ -91,10 +121,11 @@ pub fn validate_index(index: &KnowledgeIndexV2, workspace_root: &Path) -> Result
     for module in &index.modules {
         let mut module_passed = 0usize;
         let mut module_total = 0usize;
+        let module_structure = structures.and_then(|m| m.get(&module.id));
 
         for assertion in &module.assertions {
             module_total += 1;
-            let outcome = validate_assertion(assertion, workspace_root);
+            let outcome = validate_assertion(assertion, workspace_root, module_structure);
             totals.total += 1;
             match outcome.status {
                 ValidationStatus::Passed => {
@@ -160,7 +191,11 @@ struct Outcome {
     reason: Option<String>,
 }
 
-fn validate_assertion(assertion: &Assertion, workspace_root: &Path) -> Outcome {
+fn validate_assertion(
+    assertion: &Assertion,
+    workspace_root: &Path,
+    structure: Option<&StructureReport>,
+) -> Outcome {
     let original = assertion.confidence;
     let abs_path = workspace_root.join(&assertion.anchor.file);
 
@@ -184,9 +219,17 @@ fn validate_assertion(assertion: &Assertion, workspace_root: &Path) -> Outcome {
         }
     };
 
-    // Step 2: symbol existence (word-boundary byte scan, language-independent).
+    // Step 2: symbol existence.
+    // Try the structure index first (precise). Fall back to byte-scan.
     if let Some(symbol) = &assertion.anchor.symbol {
-        if !symbol_present(&content, symbol) {
+        let mut found = false;
+        if let Some(report) = structure {
+            found = structure_symbol_exists(report, &assertion.anchor.file, symbol);
+        }
+        if !found {
+            found = symbol_present(&content, symbol);
+        }
+        if !found {
             return Outcome {
                 status: ValidationStatus::Failed,
                 effective_confidence: degrade(original),
@@ -225,8 +268,18 @@ fn validate_assertion(assertion: &Assertion, workspace_root: &Path) -> Outcome {
         }
     }
 
-    // Machine-checkable signal required to promote to green.
-    let has_machine_signal = assertion.expect.is_some() || assertion.anchor.line_range.is_some();
+    // Structure-based anchor promotion: if we have a structure report that
+    // confirms the symbol's precise line, we treat that as a machine signal.
+    let structure_confirms = assertion.anchor.symbol.as_ref().is_some_and(|sym| {
+        structure
+            .map(|r| structure_symbol_exists(r, &assertion.anchor.file, sym))
+            .unwrap_or(false)
+    });
+
+    let has_machine_signal = assertion.expect.is_some()
+        || assertion.anchor.line_range.is_some()
+        || structure_confirms;
+
     if !has_machine_signal {
         return Outcome {
             status: ValidationStatus::Skipped,
@@ -240,6 +293,16 @@ fn validate_assertion(assertion: &Assertion, workspace_root: &Path) -> Outcome {
         effective_confidence: Confidence::Green,
         reason: None,
     }
+}
+
+fn structure_symbol_exists(report: &StructureReport, file: &str, symbol: &str) -> bool {
+    let normalized = file.replace('\\', "/");
+    report
+        .files
+        .iter()
+        .filter(|f| f.path == normalized || f.path.ends_with(&normalized))
+        .flat_map(|f| f.symbols.iter())
+        .any(|s: &SymbolEntry| s.name == symbol)
 }
 
 enum ExpectOutcome {

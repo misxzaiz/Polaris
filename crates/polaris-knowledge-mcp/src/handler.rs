@@ -456,7 +456,7 @@ pub fn execute_validate_assertions(
     })?;
     let v2: crate::models::KnowledgeIndexV2 = serde_json::from_str(&v2_content)?;
 
-    let report = crate::validator::validate_index(&v2, workspace_root)?;
+    let report = crate::validator::validate_index_with_structures(&v2, workspace_root, knowledge_dir)?;
 
     let persisted_path = if persist {
         Some(crate::validator::write_health_report(&report, knowledge_dir)?)
@@ -578,6 +578,132 @@ pub fn execute_compile_context(arguments: Value, index_path: &PathBuf) -> Result
     }))
 }
 
+/// Execute extract_structure tool. Walks the workspace once and writes one
+/// `<moduleId>.structure.json` per module under `meta/../structures/`.
+pub fn execute_extract_structure(
+    arguments: Value,
+    index_path: &PathBuf,
+    workspace_root: Option<&std::path::Path>,
+) -> Result<Value> {
+    let workspace_root = workspace_root.ok_or_else(|| {
+        KnowledgeError::Validation(
+            "extract_structure requires workspace mode — start server with --workspace".into(),
+        )
+    })?;
+
+    let only_module = arguments
+        .get("moduleId")
+        .and_then(Value::as_str)
+        .map(|s| s.to_string());
+
+    let knowledge_dir = index_path.parent().ok_or_else(|| {
+        KnowledgeError::Io("cannot resolve knowledge dir from index path".into())
+    })?;
+    let v2_path = knowledge_dir.join("index.v2.json");
+
+    if !v2_path.exists() {
+        return Err(KnowledgeError::Validation(format!(
+            "index.v2.json not found at {} — run migrate first",
+            v2_path.display()
+        )));
+    }
+
+    let v2: crate::models::KnowledgeIndexV2 =
+        serde_json::from_str(&std::fs::read_to_string(&v2_path)?)?;
+
+    let structures_dir = knowledge_dir.join("structures");
+    std::fs::create_dir_all(&structures_dir)
+        .map_err(|e| KnowledgeError::Io(format!("structures dir: {}", e)))?;
+
+    let mut written: Vec<serde_json::Value> = Vec::new();
+    let mut total_symbols = 0usize;
+    let mut total_files = 0usize;
+
+    for module in &v2.modules {
+        if let Some(id) = &only_module {
+            if &module.id != id {
+                continue;
+            }
+        }
+        let report = crate::extractor::extract_module(module, workspace_root)?;
+        let path = structures_dir.join(format!("{}.structure.json", module.id));
+        std::fs::write(&path, serde_json::to_vec_pretty(&report)?)
+            .map_err(|e| KnowledgeError::Io(format!("write structure: {}", e)))?;
+        total_files += report.file_count;
+        total_symbols += report.symbol_count;
+        written.push(json!({
+            "moduleId": report.module_id,
+            "files": report.file_count,
+            "symbols": report.symbol_count,
+            "path": path.to_string_lossy(),
+        }));
+    }
+
+    Ok(json!({
+        "structuredContent": {
+            "modulesProcessed": written.len(),
+            "totalFiles": total_files,
+            "totalSymbols": total_symbols,
+            "reports": written,
+        },
+        "content": [{
+            "type": "text",
+            "text": format!(
+                "抽取完成：{} 个模块 / {} 个文件 / {} 个符号",
+                written.len(),
+                total_files,
+                total_symbols
+            )
+        }]
+    }))
+}
+
+/// Execute get_structure tool. Loads a previously persisted structure report.
+pub fn execute_get_structure(arguments: Value, index_path: &PathBuf) -> Result<Value> {
+    let id = arguments
+        .get("moduleId")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    if id.is_empty() {
+        return Err(KnowledgeError::Validation("缺少 moduleId".into()));
+    }
+
+    let knowledge_dir = index_path.parent().ok_or_else(|| {
+        KnowledgeError::Io("cannot resolve knowledge dir from index path".into())
+    })?;
+
+    match crate::extractor::load_structure(&id, knowledge_dir)? {
+        Some(report) => {
+            let symbol_count = report.symbol_count;
+            let file_count = report.file_count;
+            Ok(json!({
+                "structuredContent": {
+                    "available": true,
+                    "report": report,
+                },
+                "content": [{
+                    "type": "text",
+                    "text": format!(
+                        "模块 {}: {} 文件 / {} 符号（生成于 {}）",
+                        id, file_count, symbol_count, report.generated_at
+                    )
+                }]
+            }))
+        }
+        None => Ok(json!({
+            "structuredContent": {
+                "available": false,
+                "reason": "no structure report yet — run extract_structure first"
+            },
+            "content": [{
+                "type": "text",
+                "text": format!("模块 {} 暂无结构报告。请先调用 extract_structure。", id)
+            }]
+        })),
+    }
+}
+
 // ─── Helpers ────────────────────────────────────────────────────
 
 /// Generate a timestamp string in strict ISO 8601 / RFC 3339 format.
@@ -658,6 +784,8 @@ pub fn handle_tools_call(
         "validate_assertions" => execute_validate_assertions(arguments, index_path, workspace_root),
         "get_assertions_health" => execute_get_assertions_health(index_path),
         "compile_context" => execute_compile_context(arguments, index_path),
+        "extract_structure" => execute_extract_structure(arguments, index_path, workspace_root),
+        "get_structure" => execute_get_structure(arguments, index_path),
         _ => Err(KnowledgeError::Validation(format!("未知工具: {}", name))),
     }
 }

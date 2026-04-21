@@ -4,6 +4,7 @@
 
 pub mod compiler;
 pub mod error;
+pub mod extractor;
 pub mod handler;
 pub mod migrate;
 pub mod models;
@@ -14,6 +15,10 @@ pub mod validator;
 
 pub use compiler::{compile_context, CompileRequest, ContextPack, Depth, Mode};
 pub use error::{KnowledgeError, Result};
+pub use extractor::{
+    build_symbol_index, extract_all, extract_module, load_structure, ExportLevel, FileStructure,
+    StructureReport, SymbolEntry, SymbolKind,
+};
 pub use migrate::{migrate_index, MigrationReport};
 pub use models::{
     Assertion, AnchorSpec, ChangeFrequency, Complexity, Confidence, Domain, ExpectSpec,
