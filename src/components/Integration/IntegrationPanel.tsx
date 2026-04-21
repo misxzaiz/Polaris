@@ -94,7 +94,7 @@ export function IntegrationPanel() {
     if (activeInstance && !editingInstance) {
       setEditingInstance(activeInstance)
     }
-  }, [activeInstance?.id, editingInstance?.id, platform])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- activeInstance/editingInstance objects compared by id above
 
   // 切换平台时重置编辑状态
   useEffect(() => {

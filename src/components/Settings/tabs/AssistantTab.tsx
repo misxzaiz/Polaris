@@ -61,7 +61,8 @@ export function AssistantTab({ config, onConfigChange, loading }: AssistantTabPr
   // 填入默认系统提示词
   const handleFillDefaultPrompt = useCallback(() => {
     handleSystemPromptChange('customPrompt', getDefaultSystemPrompt())
-  }, [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- handleSystemPromptChange is stable
+  }, []);
 
   // 重置系统提示词配置
   const handleResetSystemPrompt = useCallback(() => {

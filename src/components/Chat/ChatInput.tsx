@@ -83,10 +83,11 @@ export function ChatInput({
   )
 
   // 会话切换时同步 Store 草稿到本地 state（只在 sessionId 变化时执行）
+  // inputDraft 在 sessionId 变化时才会更新，无需添加依赖
   useEffect(() => {
     setLocalText(inputDraft.text)
     setLocalAttachments(inputDraft.attachments)
-  }, [sessionId])  // 依赖 sessionId 而非 inputDraft
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- inputDraft synced with sessionId only
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -489,7 +490,7 @@ export function ChatInput({
         setSelectedIndex(0)
       }
     }
-  }, [fileMatches])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- showSuggestions/suggestionItems toggles visibility only
 
   // 选择建议项
   const selectSuggestion = useCallback((item: SuggestionItem) => {
@@ -548,7 +549,7 @@ export function ChatInput({
       const newCursorPos = newText.length - textAfterCursor.length
       textarea.setSelectionRange(newCursorPos, newCursorPos)
     }, 0)
-  }, [value, fileWorkspace, attachments, debouncedPersistDraft])
+  }, [value, fileWorkspace, attachments, debouncedPersistDraft, resolveSnippetAutoVars])
 
   const handleSend = useCallback(() => {
     const trimmed = value.trim()

@@ -103,7 +103,7 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
     }
 
     return null;
-  }, [block.name, block.status, block.output, block.error]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- t is stable i18n function
 
   // 解析 TodoWrite 数据
   const todoData = useMemo(() => {

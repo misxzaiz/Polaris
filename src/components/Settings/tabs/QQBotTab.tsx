@@ -117,7 +117,8 @@ export function QQBotTab({ loading }: QQBotTabProps) {
       initializedRef.current = true;
       setEditingInstance(activeInstance);
     }
-  }, [activeInstance?.id, editingInstance?.id]); // 只比较 ID，避免对象引用变化
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- activeInstance/editingInstance compared by id
+  }, [activeInstance?.id, editingInstance?.id]);
 
   // 保存实例配置
   const handleSave = async () => {

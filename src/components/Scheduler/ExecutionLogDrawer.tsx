@@ -145,7 +145,7 @@ export function ExecutionLogDrawer() {
     if (autoScroll && logContainerRef.current && activeExecution) {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
-  }, [activeExecution?.logs, autoScroll]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- activeExecution object change triggers scroll
 
   // 检测用户滚动
   const handleScroll = () => {

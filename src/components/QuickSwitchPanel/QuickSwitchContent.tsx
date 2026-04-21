@@ -135,7 +135,7 @@ export const QuickSwitchContent = memo(function QuickSwitchContent({
 
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [isWorkspaceDropdownOpen])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- handleToggleDropdown is stable
 
   // 计算下拉位置（使用 useLayoutEffect 避免闪烁）
   useLayoutEffect(() => {

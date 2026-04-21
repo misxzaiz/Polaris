@@ -57,7 +57,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
   // 加载历史会话（首页或 scope 变化时）
   useEffect(() => {
     loadHistory(true)
-  }, [currentWorkspace, scope])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadHistory triggers on currentWorkspace/scope change
 
   const loadHistory = async (reset: boolean = true) => {
     if (reset) {

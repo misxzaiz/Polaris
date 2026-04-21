@@ -126,7 +126,7 @@ const CollapsibleBlockGroupRenderer = memo(function CollapsibleBlockGroupRendere
     if (!isStreaming && isExpanded) {
       setIsExpanded(false);
     }
-  }, [isStreaming]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- isExpanded check prevents infinite loop
 
   const hiddenCount = blocks.length - maxVisible;
   const visibleBlocks = isExpanded ? blocks : blocks.slice(0, maxVisible);

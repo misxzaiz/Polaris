@@ -329,10 +329,11 @@ export function TabContent({ className = '' }: TabContentProps) {
 
   // Tab 切换时确保 fileEditorStore 加载正确的文件
   useEffect(() => {
-    if (activeTab?.type === 'editor' && activeTab.filePath) {
+    if (activeTab?.type === 'editor' && activeTab?.filePath) {
       const name = activeTab.title || activeTab.filePath.split('/').pop() || ''
       switchToFile(activeTab.filePath, name)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- title derived from activeTab
   }, [activeTab?.id, activeTab?.type, activeTab?.filePath, switchToFile])
 
   if (!activeTab) {
