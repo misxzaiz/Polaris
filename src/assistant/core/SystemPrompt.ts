@@ -201,7 +201,7 @@ export async function getSystemPromptWithKnowledge(): Promise<string> {
     return lines.join('\n')
   } catch (error) {
     // 知识加载失败不影响正常使用
-    logger.warn('知识增强失败:', error)
+    logger.warn('知识增强失败:', error as Record<string, unknown>)
     return basePrompt
   }
 }

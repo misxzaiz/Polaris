@@ -392,7 +392,7 @@ export class MarkdownRenderCache {
 
       return html;
     } catch (error) {
-      logger.error('Markdown 渲染错误:', error);
+      logger.error('Markdown 渲染错误:', error as Error);
       // 降级处理：转义 HTML
       return content
         .replace(/&/g, '&amp;')
