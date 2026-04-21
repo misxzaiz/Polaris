@@ -108,7 +108,7 @@ fn decode_varint_i32(data: &[u8], offset: &mut usize) -> Option<i32> {
 }
 
 fn encode_field_varint(buf: &mut Vec<u8>, field_num: u32, value: u64) {
-    buf.push(((field_num << 3) | 0) as u8); // wire type 0
+    buf.push((field_num << 3) as u8); // wire type 0
     buf.extend(encode_varint(value));
 }
 

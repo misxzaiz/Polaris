@@ -143,13 +143,11 @@ impl IntegrationManager {
                     if qqbot_cfg.enabled && !qqbot_cfg.app_id.is_empty() && !qqbot_cfg.client_secret.is_empty() {
                         // 只在 adapters 中不存在时才创建，避免覆盖已有连接
                         let mut adapters = self.adapters.lock().await;
-                        if !adapters.contains_key(&Platform::QQBot) {
+                        adapters.entry(Platform::QQBot).or_insert_with(|| {
                             let adapter = QQBotAdapter::new(qqbot_cfg.clone());
-                            adapters.insert(Platform::QQBot, Box::new(adapter));
                             tracing::info!("[IntegrationManager] ✅ 创建 QQBot 适配器: {}", active_instance.name);
-                        } else {
-                            tracing::info!("[IntegrationManager] ✅ QQBot 适配器已存在，跳过重建");
-                        }
+                            Box::new(adapter)
+                        });
                     }
                 }
             }
@@ -192,13 +190,11 @@ impl IntegrationManager {
                     if feishu_cfg.enabled && !feishu_cfg.app_id.is_empty() && !feishu_cfg.app_secret.is_empty() {
                         // 只在 adapters 中不存在时才创建，避免覆盖已有连接
                         let mut adapters = self.adapters.lock().await;
-                        if !adapters.contains_key(&Platform::Feishu) {
+                        adapters.entry(Platform::Feishu).or_insert_with(|| {
                             let adapter = FeishuAdapter::new(feishu_cfg.clone());
-                            adapters.insert(Platform::Feishu, Box::new(adapter));
                             tracing::info!("[IntegrationManager] ✅ 创建 Feishu 适配器: {}", active_instance.name);
-                        } else {
-                            tracing::info!("[IntegrationManager] ✅ Feishu 适配器已存在，跳过重建");
-                        }
+                            Box::new(adapter)
+                        });
                     }
                 }
             }
@@ -759,7 +755,7 @@ impl IntegrationManager {
         for key in &["path", "file_path", "filePath", "filename", "file"] {
             if let Some(val) = args.get(*key).and_then(|v| v.as_str()) {
                 if !val.is_empty() {
-                    let name = val.rsplit(|c| c == '/' || c == '\\').next().unwrap_or(val);
+                    let name = val.rsplit(['/', '\\']).next().unwrap_or(val);
                     return Some(name.to_string());
                 }
             }

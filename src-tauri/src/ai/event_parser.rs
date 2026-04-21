@@ -513,7 +513,7 @@ impl EventParser {
             if let Some(denial_arr) = denials_val.as_array() {
                 if !denial_arr.is_empty() {
                     let parsed_denials: Vec<PermissionDenial> = denial_arr.iter()
-                        .filter_map(|d| {
+                        .map(|d| {
                             // 从 JSON 中提取 tool_name 和 reason
                             let tool_name = d.get("tool_name")
                                 .and_then(|v| v.as_str())
@@ -537,7 +537,7 @@ impl EventParser {
                                     denial = denial.with_extra(extra_map);
                                 }
                             }
-                            Some(denial)
+                            denial
                         })
                         .collect();
 

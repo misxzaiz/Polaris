@@ -224,10 +224,8 @@ fn format_agent_display_name(id: &str) -> String {
     // general-purpose → "General Purpose"
     // Explore → "Explore"
 
-    let display = id
-        .split(':')
-        .last()
-        .unwrap_or(id);
+    let mut parts = id.split(':');
+    let display = parts.next_back().unwrap_or(id);
 
     display
         .split('-')

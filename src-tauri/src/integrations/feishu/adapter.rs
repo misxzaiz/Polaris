@@ -608,7 +608,7 @@ impl PlatformIntegration for FeishuAdapter {
 
                     // 发送初始 Ping 帧
                     let ping = Frame::new_ping(current_service_id);
-                    if let Err(e) = write.send(WsMessage::Binary(ping.encode().into())).await {
+                    if let Err(e) = write.send(WsMessage::Binary(ping.encode())).await {
                         tracing::error!("[Feishu] ❌ 初始 Ping 发送失败: {}", e);
                     } else {
                         tracing::debug!("[Feishu] Initial Ping sent (service_id={})", current_service_id);
@@ -750,7 +750,7 @@ impl PlatformIntegration for FeishuAdapter {
 
                                                         // 发送 ACK 响应帧
                                                         let ack = Frame::new_ack(&frame);
-                                                        if let Err(e) = write.send(WsMessage::Binary(ack.encode().into())).await {
+                                                        if let Err(e) = write.send(WsMessage::Binary(ack.encode())).await {
                                                             tracing::warn!("[Feishu] ACK 发送失败: {}", e);
                                                         }
                                                     }
@@ -836,7 +836,7 @@ impl PlatformIntegration for FeishuAdapter {
                                 let now = std::time::Instant::now();
                                 if now.duration_since(last_ping) >= ping_duration {
                                     let ping = Frame::new_ping(current_service_id);
-                                    if let Err(e) = write.send(WsMessage::Binary(ping.encode().into())).await {
+                                    if let Err(e) = write.send(WsMessage::Binary(ping.encode())).await {
                                         tracing::error!("[Feishu] Ping 发送失败: {}", e);
                                         break;
                                     }

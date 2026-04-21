@@ -146,8 +146,8 @@ pub fn run_knowledge_mcp_server(config_dir: &str, workspace_path: Option<&str>) 
 
 fn handle_request(
     request: JsonRpcRequest,
-    index_path: &PathBuf,
-    modules_dir: &PathBuf,
+    index_path: &Path,
+    modules_dir: &Path,
 ) -> JsonRpcResponse<'static> {
     let id = request.id.unwrap_or(Value::Null);
 
@@ -307,8 +307,8 @@ fn handle_tools_list() -> Value {
 
 fn handle_tools_call(
     params: Value,
-    index_path: &PathBuf,
-    modules_dir: &PathBuf,
+    index_path: &Path,
+    modules_dir: &Path,
 ) -> Result<Value> {
     let name = params
         .get("name")
@@ -353,7 +353,7 @@ fn read_module_doc(modules_dir: &Path, filename: &str) -> Result<String> {
     })
 }
 
-fn execute_list_modules(index_path: &PathBuf) -> Result<Value> {
+fn execute_list_modules(index_path: &Path) -> Result<Value> {
     let index = load_index(index_path)?;
 
     let modules: Vec<Value> = index
@@ -385,8 +385,8 @@ fn execute_list_modules(index_path: &PathBuf) -> Result<Value> {
 
 fn execute_get_module(
     arguments: Value,
-    index_path: &PathBuf,
-    modules_dir: &PathBuf,
+    index_path: &Path,
+    modules_dir: &Path,
 ) -> Result<Value> {
     let id = arguments
         .get("id")
@@ -423,7 +423,7 @@ fn execute_get_module(
     }))
 }
 
-fn execute_get_dependencies(arguments: Value, index_path: &PathBuf) -> Result<Value> {
+fn execute_get_dependencies(arguments: Value, index_path: &Path) -> Result<Value> {
     let id = arguments
         .get("id")
         .and_then(Value::as_str)
@@ -489,8 +489,8 @@ fn execute_get_dependencies(arguments: Value, index_path: &PathBuf) -> Result<Va
 }
 
 fn execute_architecture_overview(
-    index_path: &PathBuf,
-    modules_dir: &PathBuf,
+    index_path: &Path,
+    modules_dir: &Path,
 ) -> Result<Value> {
     let index = load_index(index_path)?;
 
@@ -543,8 +543,8 @@ fn execute_architecture_overview(
 
 fn execute_search_modules(
     arguments: Value,
-    index_path: &PathBuf,
-    modules_dir: &PathBuf,
+    index_path: &Path,
+    modules_dir: &Path,
 ) -> Result<Value> {
     let query = arguments
         .get("query")
@@ -661,7 +661,7 @@ fn execute_update_module(
 
 fn execute_mark_stale(
     arguments: Value,
-    index_path: &PathBuf,
+    index_path: &Path,
 ) -> Result<Value> {
     let changed_files = arguments
         .get("changedFiles")
