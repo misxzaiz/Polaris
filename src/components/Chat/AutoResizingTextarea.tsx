@@ -31,6 +31,7 @@ export const AutoResizingTextarea = forwardRef<HTMLTextAreaElement, AutoResizing
       const newHeight = Math.min(Math.max(textarea.scrollHeight, minHeight), maxHeight);
       textarea.style.height = `${newHeight}px`;
       // eslint-disable-next-line react-hooks/exhaustive-deps -- textareaRef is a stable ref object
+    }, [minHeight, maxHeight, textareaRef]);
 
     return (
       <textarea

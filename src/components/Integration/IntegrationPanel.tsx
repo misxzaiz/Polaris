@@ -95,6 +95,7 @@ export function IntegrationPanel() {
       setEditingInstance(activeInstance)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- activeInstance/editingInstance objects compared by id above
+  }, [activeInstance, editingInstance])
 
   // 切换平台时重置编辑状态
   useEffect(() => {

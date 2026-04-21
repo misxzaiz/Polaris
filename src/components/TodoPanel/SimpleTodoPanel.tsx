@@ -57,6 +57,7 @@ export function SimpleTodoPanel() {
       unsubscribe()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshTodos triggers on workspace change
+  }, [currentWorkspace?.path])
 
   // 范围变化时刷新
   useEffect(() => {
@@ -115,6 +116,7 @@ export function SimpleTodoPanel() {
   useEffect(() => {
     refreshTodos()
   // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshTodos triggers on filter/search/sort change
+  }, [statusFilter, searchQuery, sortBy, sortOrder])
 
   // 创建待办
   const handleCreateTodo = async (data: {

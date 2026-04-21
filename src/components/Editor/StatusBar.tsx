@@ -72,6 +72,7 @@ export function StatusBar({ className = '' }: StatusBarProps) {
       view.dom.removeEventListener('keyup', updateCursor)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- currentFile?.path change only
+  }, [currentFile?.path])
 
   if (!currentFile) return null
 

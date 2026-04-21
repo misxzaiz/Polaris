@@ -58,6 +58,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
   useEffect(() => {
     loadHistory(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- loadHistory triggers on currentWorkspace/scope change
+  }, [currentWorkspace?.path, scope])
 
   const loadHistory = async (reset: boolean = true) => {
     if (reset) {

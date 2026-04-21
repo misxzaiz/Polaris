@@ -13,7 +13,6 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { IconSend, IconStop, IconPaperclip } from '../Common/Icons'
 import { useWorkspaceStore, useSessionStore } from '../../stores'
-import { useActiveSessionId } from '../../stores/conversationStore'
 import { voiceNotificationService } from '../../services/voiceNotificationService'
 import { useActiveSessionInputDraft, useActiveSessionActions, useActiveSessionWorkspace, usePendingQuestions } from '../../stores/conversationStore/useActiveSession'
 import { useDebouncedCallback } from '../../hooks/useDebounce'
@@ -59,9 +58,6 @@ export function ChatInput({
 }: ChatInputProps) {
   const { t } = useTranslation('chat')
 
-  // 当前会话 ID（用于检测会话切换）
-  const sessionId = useActiveSessionId()
-
   // 获取当前会话的工作区
   const currentWorkspace = useActiveSessionWorkspace()
 
@@ -88,6 +84,7 @@ export function ChatInput({
     setLocalText(inputDraft.text)
     setLocalAttachments(inputDraft.attachments)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- inputDraft synced with sessionId only
+  }, [inputDraft])
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -491,6 +488,16 @@ export function ChatInput({
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- showSuggestions/suggestionItems toggles visibility only
+  }, [fileMatches])
+
+  // 解析自动变量（提前定义，供 selectSuggestion 使用）
+  const resolveSnippetAutoVars = useCallback((content: string): string => {
+    return resolveTemplateVariables(content, {
+      workspaceName: currentWorkspace?.name ?? '',
+      workspacePath: currentWorkspace?.path ?? '',
+      contextWorkspaces: [],
+    })
+  }, [currentWorkspace])
 
   // 选择建议项
   const selectSuggestion = useCallback((item: SuggestionItem) => {
@@ -677,15 +684,6 @@ export function ChatInput({
   }, [])
 
   const canSend = (value.trim() || attachments.length > 0) && !disabled && !isStreaming
-
-  // 解析自动变量
-  const resolveSnippetAutoVars = useCallback((content: string): string => {
-    return resolveTemplateVariables(content, {
-      workspaceName: currentWorkspace?.name ?? '',
-      workspacePath: currentWorkspace?.path ?? '',
-      contextWorkspaces: [],
-    })
-  }, [currentWorkspace])
 
   return (
     <div className="border-t border-border bg-background-elevated relative" ref={containerRef}>

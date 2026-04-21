@@ -34,6 +34,16 @@ export function BranchSelector() {
     return workspaces.find(w => w.id === currentWorkspaceId) || null
   })
 
+  const loadBranches = useCallback(async () => {
+    if (!currentWorkspace) return
+    setIsLoading(true)
+    try {
+      await getBranches(currentWorkspace.path)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [currentWorkspace, getBranches])
+
   useEffect(() => {
     if (isOpen && currentWorkspace) {
       loadBranches()
@@ -56,16 +66,6 @@ export function BranchSelector() {
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
-
-  const loadBranches = useCallback(async () => {
-    if (!currentWorkspace) return
-    setIsLoading(true)
-    try {
-      await getBranches(currentWorkspace.path)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [currentWorkspace, getBranches])
 
   const hasUncommittedChanges = useCallback(() => {
     if (!status) return false
