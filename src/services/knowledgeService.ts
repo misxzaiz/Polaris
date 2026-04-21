@@ -86,7 +86,8 @@ export const MODULES_SUBDIR = 'modules'
 export const INDEX_FILE = 'index.json'
 
 /** #module 引用匹配模式（使用 # 避免与 @文件引用 冲突） */
-const MODULE_REF_PATTERN = /#([a-z][a-z0-9]*(?:-[a-z0-9]+)+)(?=\s|$|[,，。.!?！？])/g
+/** 匹配 #module-id 格式，支持无连字符的单单词 ID（如 terminal、mcp） */
+const MODULE_REF_PATTERN = /#([a-z][a-z0-9-]+)(?=\s|$|[,，。.!?！？])/g
 
 // ─── LocalFileKnowledgeService ──────────────────────────────────
 
@@ -140,22 +141,19 @@ export class LocalFileKnowledgeService implements IKnowledgeService {
       }
     } else {
       // 路径提示模式（推荐，AI 自行决定是否获取详情）
-      lines.push('以下模块被引用，可通过 `get_module` 工具获取详情：')
+      lines.push('以下模块被引用，**请立即使用 `mcp__polaris-knowledge__get_module` 工具获取完整文档**：')
       lines.push('')
 
       for (const moduleId of moduleRefs) {
         const entry = this.index?.modules.find(m => m.id === moduleId)
         if (entry) {
-          const docPath = `${KNOWLEDGE_DIR}/${MODULES_SUBDIR}/${entry.file}`
           lines.push(`- **${entry.name}** (\`${moduleId}\`)`)
-          lines.push(`  文档: \`${docPath}\``)
-          lines.push(`  依赖: ${entry.dependencies.join(', ') || '无'}`)
-          lines.push(`  复杂度: ${entry.complexity}`)
           lines.push('')
         }
       }
 
-      lines.push('使用方式：调用 knowledge MCP 的 `get_module` 工具，传入模块 ID 获取完整文档。')
+      lines.push('**重要**：上述模块已被用户引用，请使用 MCP 工具获取详情后再回答问题。')
+      lines.push('调用示例：`mcp__polaris-knowledge__get_module({ id: "module-id" })`')
       lines.push('')
     }
 
