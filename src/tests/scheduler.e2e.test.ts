@@ -12,7 +12,7 @@
  * 下面的测试用例是 E2E 测试的示例模板。
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 /**
  * Tauri E2E 测试说明

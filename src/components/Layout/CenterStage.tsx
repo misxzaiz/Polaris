@@ -143,7 +143,7 @@ export function TabBar({ className = '' }: TabBarProps) {
       setTabDirty(unsavedDialog.tabId, false)
       setUnsavedDialog({ visible: false, tabId: '', fileName: '' })
       toast.success(t('messages.fileSaved', { ns: 'common' }) || '文件已保存')
-    } catch (error) {
+    } catch {
       toast.error(t('messages.saveFailed', { ns: 'common' }) || '保存失败')
       // 保存失败时保持对话框打开
     } finally {

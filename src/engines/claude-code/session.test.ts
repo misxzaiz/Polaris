@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { ClaudeCodeSession, createClaudeSession, type ClaudeSessionConfig } from './session'
+import { ClaudeCodeSession, createClaudeSession } from './session'
 import type { AITask, AIEvent } from '../../ai-runtime'
 
 // Mock Tauri API

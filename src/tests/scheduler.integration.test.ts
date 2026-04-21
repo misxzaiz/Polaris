@@ -2,12 +2,11 @@
  * 集成测试 - 调度器状态管理和协议模板
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import type {
   ScheduledTask,
   CreateTaskParams,
   ProtocolTemplate,
-  CreateProtocolTemplateParams,
   TaskCategory,
   TriggerType,
 } from '../types/scheduler';

@@ -13,7 +13,6 @@ import {
   ClaudeCodeEngine,
   getClaudeEngine,
   resetClaudeEngine,
-  type ClaudeEngineConfig,
 } from './engine'
 
 // Mock Tauri API

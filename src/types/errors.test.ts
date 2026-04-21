@@ -2,7 +2,7 @@
  * 统一错误类型系统测试
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   AppError,
   NetworkError,

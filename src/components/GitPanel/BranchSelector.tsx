@@ -110,7 +110,7 @@ export function BranchSelector() {
     try {
       await stashSave(currentWorkspace.path, `WIP: switching to ${targetBranch}`, true)
       await doSwitchBranch(targetBranch)
-    } catch (err) {
+    } catch {
       // 忽略错误，doSwitchBranch 已经处理
     } finally {
       setIsSwitching(false)
@@ -137,7 +137,7 @@ export function BranchSelector() {
       setNewBranchName('')
       setShowNewBranch(false)
       setIsOpen(false)
-    } catch (err) {
+    } catch {
       // 忽略错误
     } finally {
       setIsSwitching(false)

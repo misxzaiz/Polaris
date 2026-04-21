@@ -118,7 +118,7 @@ describe('Preservation Property Tests - Reactivity to Data Changes', () => {
   it('should detect when a session is deleted', () => {
     const state = sessionStoreManager.getState()
     const sessionId1 = state.createSession({ type: 'free', title: 'Session 1' })
-    const sessionId2 = state.createSession({ type: 'free', title: 'Session 2' })
+    state.createSession({ type: 'free', title: 'Session 2' })
 
     // Get fresh state after creation
     const freshState = sessionStoreManager.getState()

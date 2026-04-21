@@ -210,7 +210,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code, id }: Mermaid
       await navigator.clipboard.writeText(code);
       setCopySuccess(true);
       setTimeout(() => setCopySuccess(false), 2000);
-    } catch (err) {
+    } catch {
       // 降级方案
       const textArea = document.createElement('textarea');
       textArea.value = code;

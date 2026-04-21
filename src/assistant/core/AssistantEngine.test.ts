@@ -125,15 +125,11 @@ describe('AssistantEngine - tool calls', () => {
 })
 
 describe('AssistantEngine - auto report', () => {
-  let engine: AssistantEngine
-
   beforeEach(() => {
     resetAssistantEngine()
     mockStore.addMessage.mockClear()
     mockStore.setStreamingMessageId.mockClear()
     mockStore.appendToLastAssistantMessage.mockClear()
-
-    engine = new AssistantEngine()
   })
 
   it('should have autoReport field in params type', () => {

@@ -3,9 +3,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ProtocolTemplateManager } from './ProtocolTemplateManager';
-import type { ProtocolTemplate, TaskCategory } from '../../types/scheduler';
+import type { ProtocolTemplate } from '../../types/scheduler';
 
 // Mock useSchedulerStore
 const mockLoadProtocolTemplates = vi.fn();

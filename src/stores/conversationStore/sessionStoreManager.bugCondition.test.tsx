@@ -10,12 +10,11 @@
  * **Validates: Requirements 1.1, 1.2, 1.3, 1.4**
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, beforeEach } from 'vitest'
+import { render } from '@testing-library/react'
 import { SessionTabs } from '@/components/Session/SessionTabs'
 import { sessionStoreManager } from './sessionStoreManager'
 import * as fc from 'fast-check'
-import type { SessionMetadata } from './types'
 
 describe('Bug Condition Exploration - SessionTabs Infinite Loop', () => {
   beforeEach(() => {
@@ -137,7 +136,7 @@ describe('Bug Condition Exploration - SessionTabs Infinite Loop', () => {
   it('should handle rapid re-renders without data changes (EXPECTED TO FAIL)', () => {
     let renderCount = 0
     
-    function TestWrapper({ trigger }: { trigger: number }) {
+    function TestWrapper({ trigger: _trigger }: { trigger: number }) {
       renderCount++
       if (renderCount > 50) {
         throw new Error('Infinite loop detected: render count > 50')

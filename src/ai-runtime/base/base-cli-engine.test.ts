@@ -8,7 +8,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   BaseCLIEngine,
   BaseCLISession,
-  type CLIEngineConfig,
   type CLISessionConfig,
   type CLIEngineDescriptor,
 } from './base-cli-engine'
@@ -32,7 +31,7 @@ class TestCLISession extends BaseCLISession {
     this.mockEvents = events
   }
 
-  protected override async executeTask(task: AITask): Promise<AsyncIterable<AIEvent>> {
+  protected override async executeTask(_task: AITask): Promise<AsyncIterable<AIEvent>> {
     // 返回模拟的事件流
     return {
       [Symbol.asyncIterator]: async function* (this: TestCLISession) {

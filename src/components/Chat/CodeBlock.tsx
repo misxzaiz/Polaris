@@ -215,7 +215,7 @@ export const CodeBlock = memo(function CodeBlock({ children, className }: CodeBl
       await navigator.clipboard.writeText(codeString);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
+    } catch {
       // 降级方案
       const textArea = document.createElement('textarea');
       textArea.value = codeString;

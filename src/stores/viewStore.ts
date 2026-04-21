@@ -267,7 +267,7 @@ export const useViewStore = create<ViewStore>()(
     {
       name: 'view-store',
       partialize: (state) => {
-        const { pendingScrollToId, ...rest } = state;
+        const { pendingScrollToId: _pendingScrollToId, ...rest } = state;
         return rest;
       },
     }

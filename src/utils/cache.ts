@@ -447,7 +447,7 @@ export class MarkdownRenderCache {
       // 合并 HTML
       // 注意：这里简化处理，直接拼接。对于块级元素可能需要额外处理
       return oldHtml + newHtml;
-    } catch (error) {
+    } catch {
       // 增量渲染失败，返回 null 表示需要完整渲染
       return null;
     }

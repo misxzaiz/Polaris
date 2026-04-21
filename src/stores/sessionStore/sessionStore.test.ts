@@ -381,7 +381,7 @@ describe('SessionStore 多会话隔离性', () => {
   describe('悬浮岛状态管理', () => {
     it('悬浮岛展开状态独立管理，切换会话时会自动收起', () => {
       const id1 = useSessionStore.getState().createSession({ type: 'free' })
-      const id2 = useSessionStore.getState().createSession({ type: 'free' })
+      useSessionStore.getState().createSession({ type: 'free' })
 
       // 展开悬浮岛
       useSessionStore.getState().toggleIsland()
@@ -527,8 +527,8 @@ describe('SessionStore 多会话隔离性', () => {
     })
 
     it('getRecentSessions 应正确处理 limit 参数', () => {
-      const id1 = useSessionStore.getState().createSession({ type: 'free' })
-      const id2 = useSessionStore.getState().createSession({ type: 'free' })
+      useSessionStore.getState().createSession({ type: 'free' })
+      useSessionStore.getState().createSession({ type: 'free' })
       const id3 = useSessionStore.getState().createSession({ type: 'free' })
       const id4 = useSessionStore.getState().createSession({ type: 'free' })
 
@@ -544,9 +544,9 @@ describe('SessionStore 多会话隔离性', () => {
     })
 
     it('删除会话后 getRecentSessions 应正确返回', () => {
-      const id1 = useSessionStore.getState().createSession({ type: 'free' })
+      useSessionStore.getState().createSession({ type: 'free' })
       const id2 = useSessionStore.getState().createSession({ type: 'free' })
-      const id3 = useSessionStore.getState().createSession({ type: 'free' })
+      useSessionStore.getState().createSession({ type: 'free' })
 
       // 删除中间的会话
       useSessionStore.getState().deleteSession(id2)
