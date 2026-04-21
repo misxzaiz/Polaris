@@ -81,7 +81,7 @@ export function RemoteTab() {
     } finally {
       setIsLoading(false)
     }
-  }, [currentWorkspace, getRemotes, toast])
+  }, [currentWorkspace, getRemotes, t, toast])
 
   useEffect(() => {
     loadRemotes()
