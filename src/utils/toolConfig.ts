@@ -333,7 +333,7 @@ const TOOL_LABEL_KEYS: Record<string, string> = {
 export function getToolConfig(toolName: string): ToolConfig {
   const category = TOOL_CATEGORY[toolName] || 'other';
   const categoryStyle = CATEGORY_CONFIG[category];
-  const IconComponent = TOOL_ICONS[toolName] || TOOL_ICONS['default']!;
+  const IconComponent = TOOL_ICONS[toolName] ?? TOOL_ICONS['default'] ?? Wrench;
   const labelKey = TOOL_LABEL_KEYS[toolName];
   const label = labelKey ? t(labelKey) : toolName;
 

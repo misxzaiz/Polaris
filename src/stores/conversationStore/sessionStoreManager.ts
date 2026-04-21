@@ -340,8 +340,8 @@ function createSessionManagerStore() {
         ? state.stores.get(state.activeSessionId)
         : null
 
-      if (currentStore && currentStore.getState().isStreaming) {
-        get().addToBackground(state.activeSessionId!)
+      if (currentStore && currentStore.getState().isStreaming && state.activeSessionId) {
+        get().addToBackground(state.activeSessionId)
       }
 
       // 切换到新会话

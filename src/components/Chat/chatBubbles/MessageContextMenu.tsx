@@ -124,7 +124,7 @@ export const MessageContextMenu = memo(function MessageContextMenu({
         <button
           type="button"
           className="w-full px-3 py-2 text-left text-sm text-text-secondary hover:bg-background-hover hover:text-text-primary flex items-center gap-2 transition-colors"
-          onClick={() => { onScrollToMessage!(messageIndex!); onClose(); }}
+          onClick={() => { if (onScrollToMessage && messageIndex !== undefined) { onScrollToMessage(messageIndex); onClose(); } }}
         >
           <ArrowUp size={14} />
           <span>{t('contextMenu.scrollToStart')}</span>

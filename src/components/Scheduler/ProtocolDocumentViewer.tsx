@@ -42,8 +42,10 @@ export function ProtocolDocumentViewer({ task, onClose }: ProtocolDocumentViewer
     const loadDocuments = async () => {
       setLoading(true);
       try {
+        const path = task.taskPath
+        if (!path) return
         const docs = await tauri.schedulerReadProtocolDocuments(
-          task.taskPath!,
+          path,
           task.workDir || ''
         );
         setDocuments(docs);

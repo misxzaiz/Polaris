@@ -37,7 +37,8 @@ export function getDiagramState(id: string): DiagramState {
       scale: SCALE_CONFIG.default,
     });
   }
-  return diagramStates.get(id)!;
+  // 此时 diagramStates.get(id) 一定存在
+  return diagramStates.get(id) ?? { viewMode: 'chart', scale: SCALE_CONFIG.default };
 }
 
 /** 保存图表状态 */

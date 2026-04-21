@@ -55,12 +55,16 @@ function buildSessionTree(sessions: UnifiedHistoryItem[]): SessionTreeNode[] {
   const roots: SessionTreeNode[] = []
 
   sessions.forEach(s => {
-    const node = nodeMap.get(s.id)!
+    const node = nodeMap.get(s.id)
+    if (!node) return
+
     if (s.parentSessionId && nodeMap.has(s.parentSessionId)) {
       // 有父节点，添加到父节点的 children
-      const parent = nodeMap.get(s.parentSessionId)!
-      parent.children.push(node)
-      node.level = parent.level + 1
+      const parent = nodeMap.get(s.parentSessionId)
+      if (parent) {
+        parent.children.push(node)
+        node.level = parent.level + 1
+      }
     } else {
       // 无父节点，作为根节点
       roots.push(node)
