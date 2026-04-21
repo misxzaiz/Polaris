@@ -143,13 +143,31 @@ polaris/
 │   │   └── bin/                  # 独立 MCP Server 二进制入口
 │   │       ├── polaris_todo_mcp.rs
 │   │       ├── polaris_requirements_mcp.rs
-│   │       └── polaris_scheduler_mcp.rs
+│   │       ├── polaris_scheduler_mcp.rs
+│   │       └── polaris_knowledge_mcp.rs    # thin wrapper → crates/polaris-knowledge-mcp
 │   │
 │   └── Cargo.toml                # 4 个二进制目标: polaris + 3 个 MCP Server
+│
+├── crates/                       # 独立 Rust crate
+│   └── polaris-knowledge-mcp/    # 项目知识 v2 MCP Server 生产实现
+│       ├── src/
+│       │   ├── models.rs         #   v1 + v2 schema (Assertion/Trap/Domain)
+│       │   ├── migrate.rs        #   v1 → v2 非破坏性迁移
+│       │   ├── validator.rs      #   Assertion 校验器 (file/symbol/expect)
+│       │   ├── compiler.rs       #   compile_context — 意图识别 + 多路召回
+│       │   ├── handler.rs        #   MCP 工具调用分发 (12 工具)
+│       │   └── server.rs         #   JSON-RPC stdio event loop
+│       └── tests/                #   v2 索引反序列化端到端测试
 │
 ├── docs/                         # 项目文档
 ├── docs-site/                    # VitePress 文档站
 ├── .polaris/                     # 应用运行数据 (MCP 配置、任务历史、todos)
+│   └── knowledge/                #   项目知识系统 v2 数据
+│       ├── index.json            #     v1 索引 (向后兼容)
+│       ├── index.v2.json         #     v2 索引 (assertion-based, 生产使用)
+│       ├── schema/               #     v2 JSON Schema (4 个文件)
+│       ├── modules/              #     每个模块的 Markdown 文档
+│       └── meta/                 #     运行时元数据 (stale/health/last-updated)
 └── .claude/                      # Claude Code 配置 (仅 settings)
 ```
 
@@ -189,11 +207,12 @@ polaris/
 ## 关键架构决策
 
 1. **双引擎架构**: `engines/claude-code/` (CLI 模式) 和 `engines/openai-protocol/` (API 模式)，通过 `engine-registry.ts` 统一管理
-2. **MCP Server 独立二进制**: Todo/Requirement/Scheduler 各自编译为独立 exe，通过 stdio JSON-RPC 与 Claude Code 通信
+2. **MCP Server 独立二进制**: Todo/Requirement/Scheduler/**Knowledge** 各自编译为独立 exe，通过 stdio JSON-RPC 与 Claude Code 通信
 3. **上下文注入三通道**: `--append-system-prompt` (工作区信息) + `--system-prompt` (用户自定义) + `--add-dir` (额外目录)
 4. **虚拟滚动 + 消息压缩**: Virtuoso 管理可见区域，离屏消息文本替换为占位符 (messageCompactor)
 5. **LRU 缓存体系**: MarkdownRenderCache(20), streamingMdCache(30), highlightCache(50), diagramStates(30)
 6. **集成管理器**: QQ Bot / 飞书 / 钉钉桥接统一在 integrations/manager.rs (84KB)
+7. **项目知识 v2 (assertion-based)**: `crates/polaris-knowledge-mcp/` 独立 crate，暴露 12 个 MCP 工具。核心抓手 `compile_context` — 基于意图识别的 token-budgeted 上下文编译器。知识按 `domains → modules → assertions + traps` 三层组织，每条 assertion 带代码锚点 + expect 期望值，每次 commit 由 post-commit hook 自动校验。置信度五档演化：🟢 green (代码可验证) → 🟡 yellow (人审) → 🟠 orange (AI 生成) → 🔴 red (陈旧) → ⚫ black (失效)。详见 `.polaris/knowledge/index.v2.json` 和 `.polaris/knowledge/schema/`
 
 ## 已知陷阱
 
@@ -204,6 +223,8 @@ polaris/
 - **integrations/manager.rs 84KB**: 项目最大文件，修改需格外谨慎
 - **prompt_config.json**: 已定义模块/预设系统但前端代码未消费，修改时注意不要假设它已被使用
 - **ContextMemoryStore**: Rust+TS 侧已实现 CRUD + token 预算管理，但 sendMessage 流程未接入
+- **Knowledge v1/v2 并存**: `index.json` 是 v1（兼容保留），`index.v2.json` 是 v2 主数据源。修改 v2 结构必须**三处同步**：`.polaris/knowledge/schema/*.json` → `crates/polaris-knowledge-mcp/src/models.rs` → 数据文件。任一处偏离会导致反序列化失败
+- **Assertion 置信度只降不升**: validator 只有在提供 machine-checkable expect (`equals` / `regex` / `range`) 时才会把 🟡 升 🟢。写新 assertion 务必带 expect，否则永远停在人声明级
 
 ## CI 流水线
 

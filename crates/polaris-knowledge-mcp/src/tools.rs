@@ -139,6 +139,69 @@ pub fn get_tools_list() -> Value {
                     },
                     "additionalProperties": false
                 }
+            },
+            {
+                "name": "validate_assertions",
+                "description": "运行 v2 断言校验器：检查每条断言的代码锚点是否仍然有效（文件存在、符号存在、expect 通过）。不通过的断言会被降级。结果写入 meta/assertions-health.json。需要工作区模式。",
+                "inputSchema": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "persist": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "是否将报告持久化到 meta/assertions-health.json"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "get_assertions_health",
+                "description": "读取最近一次 validate_assertions 的健康报告。不会触发重新校验。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                }
+            },
+            {
+                "name": "compile_context",
+                "description": "北极星工具：基于 v2 index.v2.json，针对用户意图编译一个 token-budgeted 上下文包。包含事实、断言、陷阱、相似模式，每条都带代码引用。意图识别 + 多路召回（直接实体/scope glob/关键词）+ 图扩展 + 预算编排。AI 接入新项目时应优先使用此工具而不是逐个 get_module。",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["intent"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "intent": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "自然语言意图，例如「想给 chat-render 再做一轮内存优化」"
+                        },
+                        "scope": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "可选：显式限定模块 ID 列表"
+                        },
+                        "budget": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 8000,
+                            "description": "软 token 预算。0 表示不限。"
+                        },
+                        "depth": {
+                            "type": "string",
+                            "enum": ["shallow", "deep"],
+                            "default": "deep",
+                            "description": "shallow 跳过图扩展；deep 向依赖/被依赖各走一跳"
+                        },
+                        "mode": {
+                            "type": "string",
+                            "enum": ["read", "modify", "plan"],
+                            "default": "plan",
+                            "description": "意图模式。modify 会优先投放陷阱，read 会降低陷阱权重"
+                        }
+                    }
+                }
             }
         ]
     })

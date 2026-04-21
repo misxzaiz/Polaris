@@ -15,7 +15,6 @@ pub mod unified_todo_repository;
 pub mod unified_requirement_repository;
 pub mod unified_scheduler_repository;
 pub mod requirements_mcp_server;
-pub mod project_knowledge_mcp_server;
 
 
 pub mod auto_mode_service;

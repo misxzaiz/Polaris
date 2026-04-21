@@ -30,40 +30,9 @@ pub fn run_server(knowledge_dir: &str) -> Result<()> {
 
     let index_path = knowledge_dir.join("index.json");
     let modules_dir = knowledge_dir.join("modules");
-
-    let stdin = io::stdin();
-    let stdout = io::stdout();
-    let mut reader = BufReader::new(stdin.lock());
-    let mut writer = stdout.lock();
-
-    let mut line = String::new();
-    loop {
-        line.clear();
-        let bytes_read = reader.read_line(&mut line)?;
-        if bytes_read == 0 {
-            break;
-        }
-
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
-            Ok(request) => handle_request(request, &index_path, &modules_dir),
-            Err(error) => error_response(
-                Value::Null,
-                -32700,
-                format!("Parse error: {}", error),
-            ),
-        };
-
-        serde_json::to_writer(&mut writer, &response)?;
-        writer.write_all(b"\n")?;
-        writer.flush()?;
-    }
-
-    Ok(())
+    // When invoked without --workspace we cannot know the workspace root.
+    // v2 tools (validate_assertions) will refuse to run in this mode.
+    run_event_loop(&index_path, &modules_dir, None)
 }
 
 /// Run the knowledge MCP server with workspace path.
@@ -75,7 +44,11 @@ pub fn run_server(knowledge_dir: &str) -> Result<()> {
 /// # Returns
 /// Result indicating success or error.
 pub fn run_server_with_workspace(config_dir: &str, workspace_path: Option<&str>) -> Result<()> {
-    let _config_dir = normalize_path(config_dir)?;
+    // Empty config_dir is legal in standalone --workspace mode; only validate
+    // when a non-empty path was supplied.
+    if !config_dir.trim().is_empty() {
+        let _ = normalize_path(config_dir)?;
+    }
     let workspace_path = workspace_path.and_then(|p| {
         let normalized = p.trim();
         if normalized.is_empty() {
@@ -95,7 +68,58 @@ pub fn run_server_with_workspace(config_dir: &str, workspace_path: Option<&str>)
         }
     };
 
-    run_server(knowledge_dir.to_str().unwrap_or(""))
+    if !knowledge_dir.exists() {
+        return Err(KnowledgeError::Validation(format!(
+            "知识目录不存在: {}",
+            knowledge_dir.display()
+        )));
+    }
+
+    let index_path = knowledge_dir.join("index.json");
+    let modules_dir = knowledge_dir.join("modules");
+    run_event_loop(&index_path, &modules_dir, workspace_path.as_deref())
+}
+
+/// Shared JSON-RPC event loop. `workspace_root`, when provided, unlocks v2
+/// tools that need filesystem access beyond the knowledge directory.
+fn run_event_loop(
+    index_path: &PathBuf,
+    modules_dir: &PathBuf,
+    workspace_root: Option<&std::path::Path>,
+) -> Result<()> {
+    let stdin = io::stdin();
+    let stdout = io::stdout();
+    let mut reader = BufReader::new(stdin.lock());
+    let mut writer = stdout.lock();
+
+    let mut line = String::new();
+    loop {
+        line.clear();
+        let bytes_read = reader.read_line(&mut line)?;
+        if bytes_read == 0 {
+            break;
+        }
+
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
+            Ok(request) => handle_request(request, index_path, modules_dir, workspace_root),
+            Err(error) => error_response(
+                Value::Null,
+                -32700,
+                format!("Parse error: {}", error),
+            ),
+        };
+
+        serde_json::to_writer(&mut writer, &response)?;
+        writer.write_all(b"\n")?;
+        writer.flush()?;
+    }
+
+    Ok(())
 }
 
 /// Handle a JSON-RPC request.
@@ -103,6 +127,7 @@ fn handle_request(
     request: JsonRpcRequest,
     index_path: &PathBuf,
     modules_dir: &PathBuf,
+    workspace_root: Option<&std::path::Path>,
 ) -> JsonRpcResponse<'static> {
     let id = request.id.unwrap_or(Value::Null);
 
@@ -115,7 +140,7 @@ fn handle_request(
         "notifications/initialized" => Ok(json!({})),
         "ping" => Ok(json!({})),
         "tools/list" => Ok(tools::get_tools_list()),
-        "tools/call" => handle_tools_call(request.params, index_path, modules_dir),
+        "tools/call" => handle_tools_call(request.params, index_path, modules_dir, workspace_root),
         _ => Err(KnowledgeError::Validation(format!(
             "Unsupported method: {}",
             request.method

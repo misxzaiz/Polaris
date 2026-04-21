@@ -2,13 +2,26 @@
 //!
 //! Provides MCP server functionality for project knowledge management.
 
+pub mod compiler;
 pub mod error;
 pub mod handler;
+pub mod migrate;
 pub mod models;
 pub mod protocol;
 pub mod server;
 pub mod tools;
+pub mod validator;
 
+pub use compiler::{compile_context, CompileRequest, ContextPack, Depth, Mode};
 pub use error::{KnowledgeError, Result};
-pub use models::{KnowledgeIndex, ModuleEntry};
+pub use migrate::{migrate_index, MigrationReport};
+pub use models::{
+    Assertion, AnchorSpec, ChangeFrequency, Complexity, Confidence, Domain, ExpectSpec,
+    GlobalConvention, KnowledgeIndex, KnowledgeIndexV2, ModuleEntry, ModuleV2, ScopeSpec, Trap,
+    TrapSeverity, WorkspaceInfo, V2_SCHEMA_VERSION,
+};
 pub use server::{run_server, run_server_with_workspace};
+pub use validator::{
+    validate_index, write_health_report, AssertionResult, HealthReport, HealthTotals,
+    ValidationStatus,
+};

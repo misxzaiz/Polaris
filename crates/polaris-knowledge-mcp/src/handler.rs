@@ -416,18 +416,216 @@ pub fn execute_mark_stale(arguments: Value, index_path: &PathBuf) -> Result<Valu
     }))
 }
 
+// ─── Assertion validator tools (v2) ─────────────────────────────
+
+/// Execute validate_assertions tool.
+///
+/// Reads `index.v2.json` next to the v1 index, runs the validator over all
+/// assertions, and (unless `persist=false`) writes the health report to
+/// `meta/assertions-health.json`. Requires workspace_root to locate files.
+pub fn execute_validate_assertions(
+    arguments: Value,
+    index_path: &PathBuf,
+    workspace_root: Option<&std::path::Path>,
+) -> Result<Value> {
+    let workspace_root = workspace_root.ok_or_else(|| {
+        KnowledgeError::Validation(
+            "validate_assertions requires workspace mode — start server with --workspace".into(),
+        )
+    })?;
+
+    let persist = arguments
+        .get("persist")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+
+    let knowledge_dir = index_path.parent().ok_or_else(|| {
+        KnowledgeError::Io("cannot resolve knowledge dir from index path".into())
+    })?;
+    let v2_path = knowledge_dir.join("index.v2.json");
+
+    if !v2_path.exists() {
+        return Err(KnowledgeError::Validation(format!(
+            "index.v2.json not found at {} — run migrate first",
+            v2_path.display()
+        )));
+    }
+
+    let v2_content = std::fs::read_to_string(&v2_path).map_err(|e| {
+        KnowledgeError::Io(format!("cannot read index.v2.json: {}", e))
+    })?;
+    let v2: crate::models::KnowledgeIndexV2 = serde_json::from_str(&v2_content)?;
+
+    let report = crate::validator::validate_index(&v2, workspace_root)?;
+
+    let persisted_path = if persist {
+        Some(crate::validator::write_health_report(&report, knowledge_dir)?)
+    } else {
+        None
+    };
+
+    Ok(json!({
+        "structuredContent": {
+            "totals": &report.totals,
+            "weakModules": &report.weak_modules,
+            "generatedAt": &report.generated_at,
+            "persistedTo": persisted_path
+                .as_ref()
+                .map(|p| p.to_string_lossy().to_string()),
+        },
+        "content": [{
+            "type": "text",
+            "text": format!(
+                "校验完成：{} 条断言，通过 {}，失败 {}，跳过 {}。薄弱模块: {}",
+                report.totals.total,
+                report.totals.passed,
+                report.totals.failed,
+                report.totals.skipped,
+                if report.weak_modules.is_empty() {
+                    "无".to_string()
+                } else {
+                    report.weak_modules.join(", ")
+                }
+            )
+        }]
+    }))
+}
+
+/// Execute get_assertions_health tool.
+///
+/// Returns the most recent health report from disk. Does NOT re-run validation
+/// — callers who need freshness should invoke `validate_assertions` first.
+pub fn execute_get_assertions_health(index_path: &PathBuf) -> Result<Value> {
+    let knowledge_dir = index_path.parent().ok_or_else(|| {
+        KnowledgeError::Io("cannot resolve knowledge dir from index path".into())
+    })?;
+    let health_path = knowledge_dir.join("meta").join("assertions-health.json");
+
+    if !health_path.exists() {
+        return Ok(json!({
+            "structuredContent": {
+                "available": false,
+                "reason": "no validation report yet — run validate_assertions first"
+            },
+            "content": [{
+                "type": "text",
+                "text": "暂无校验报告。请先调用 validate_assertions。"
+            }]
+        }));
+    }
+
+    let body = std::fs::read_to_string(&health_path)
+        .map_err(|e| KnowledgeError::Io(format!("read health: {}", e)))?;
+    let report: crate::validator::HealthReport = serde_json::from_str(&body)?;
+
+    Ok(json!({
+        "structuredContent": {
+            "available": true,
+            "report": report,
+        },
+        "content": [{
+            "type": "text",
+            "text": format!(
+                "最近校验：{} 条，通过 {}（生成于 {}）",
+                report.totals.total, report.totals.passed, report.generated_at
+            )
+        }]
+    }))
+}
+
+/// Execute compile_context tool. Loads v2 index and runs the context compiler.
+pub fn execute_compile_context(arguments: Value, index_path: &PathBuf) -> Result<Value> {
+    let request: crate::compiler::CompileRequest = serde_json::from_value(arguments.clone())
+        .map_err(|e| {
+            KnowledgeError::Validation(format!(
+                "invalid compile_context arguments: {} (got {})",
+                e, arguments
+            ))
+        })?;
+
+    let knowledge_dir = index_path.parent().ok_or_else(|| {
+        KnowledgeError::Io("cannot resolve knowledge dir from index path".into())
+    })?;
+    let v2_path = knowledge_dir.join("index.v2.json");
+
+    if !v2_path.exists() {
+        return Err(KnowledgeError::Validation(format!(
+            "index.v2.json not found at {} — run migrate first",
+            v2_path.display()
+        )));
+    }
+
+    let v2_content = std::fs::read_to_string(&v2_path)
+        .map_err(|e| KnowledgeError::Io(format!("cannot read index.v2.json: {}", e)))?;
+    let v2: crate::models::KnowledgeIndexV2 = serde_json::from_str(&v2_content)?;
+
+    let pack = crate::compiler::compile_context(&request, &v2)?;
+
+    Ok(json!({
+        "structuredContent": &pack,
+        "content": [{
+            "type": "text",
+            "text": format!(
+                "编译完成：{} facts / {} assertions / {} traps / {} patterns (预算 {}/{})",
+                pack.facts.len(),
+                pack.assertions.len(),
+                pack.traps.len(),
+                pack.patterns.len(),
+                pack.budget_used,
+                pack.budget_total
+            )
+        }]
+    }))
+}
+
 // ─── Helpers ────────────────────────────────────────────────────
 
-/// Generate a timestamp string (ISO 8601 format).
+/// Generate a timestamp string in strict ISO 8601 / RFC 3339 format.
+///
+/// Returns a UTC timestamp like `2026-04-21T10:30:45.123+00:00`.
+/// The frontend (`knowledgeService.ts`) consumes this via `StaleModule.staleSince`
+/// and `JavaScript Date` / `new Date(staleSince)` — must be a real ISO string.
 fn chrono_timestamp() -> String {
-    // Use std::time for timestamp to avoid chrono dependency
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    // Simple ISO-like format without chrono
-    let secs = now.as_secs();
-    // This is a simplified timestamp - for production use chrono
-    format!("{}Z", secs)
+    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Guard rail: timestamp MUST be ISO 8601 parseable.
+    /// Previous implementation produced strings like "1776776576Z" which broke
+    /// `new Date(...)` on the frontend. This test prevents regression.
+    #[test]
+    fn test_chrono_timestamp_is_rfc3339() {
+        let ts = chrono_timestamp();
+
+        // 1. Must be parseable as RFC 3339.
+        let parsed = chrono::DateTime::parse_from_rfc3339(&ts);
+        assert!(
+            parsed.is_ok(),
+            "timestamp `{}` is not valid RFC 3339: {:?}",
+            ts,
+            parsed.err()
+        );
+
+        // 2. Must contain ISO 8601 separator characters.
+        assert!(ts.contains('T'), "missing 'T' separator in `{}`", ts);
+        assert!(
+            ts.ends_with("+00:00") || ts.ends_with('Z'),
+            "timestamp `{}` must end with UTC marker",
+            ts
+        );
+
+        // 3. Must NOT be the old "<unix_secs>Z" format.
+        //    That format would be all-digits before 'Z'.
+        let before_z = ts.trim_end_matches('Z').trim_end_matches("+00:00");
+        assert!(
+            before_z.chars().any(|c| !c.is_ascii_digit()),
+            "timestamp `{}` looks like a raw unix epoch (regression)",
+            ts
+        );
+    }
 }
 
 /// Handle a tool call request.
@@ -435,6 +633,7 @@ pub fn handle_tools_call(
     params: Value,
     index_path: &PathBuf,
     modules_dir: &PathBuf,
+    workspace_root: Option<&std::path::Path>,
 ) -> Result<Value> {
     let name = params
         .get("name")
@@ -456,6 +655,9 @@ pub fn handle_tools_call(
         "mark_modules_stale" => execute_mark_stale(arguments, index_path),
         "list_stale_modules" => execute_list_stale_modules(index_path),
         "clear_stale_marker" => execute_clear_stale_marker(arguments, index_path),
+        "validate_assertions" => execute_validate_assertions(arguments, index_path, workspace_root),
+        "get_assertions_health" => execute_get_assertions_health(index_path),
+        "compile_context" => execute_compile_context(arguments, index_path),
         _ => Err(KnowledgeError::Validation(format!("未知工具: {}", name))),
     }
 }
