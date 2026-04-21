@@ -84,7 +84,7 @@ fn default_domain_name(id: &str) -> &'static str {
 pub fn migrate_index(v1: &KnowledgeIndex, workspace_root: &str) -> Result<(KnowledgeIndexV2, MigrationReport)> {
     if v1.modules.is_empty() {
         return Err(KnowledgeError::Validation(
-            "Cannot migrate empty v1 index".into(),
+            "无法迁移空的 v1 索引".into(),
         ));
     }
 

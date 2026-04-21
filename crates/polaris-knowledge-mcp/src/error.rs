@@ -23,10 +23,10 @@ pub enum KnowledgeError {
 impl fmt::Display for KnowledgeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            KnowledgeError::Io(msg) => write!(f, "IO error: {}", msg),
-            KnowledgeError::Json(msg) => write!(f, "JSON error: {}", msg),
-            KnowledgeError::Validation(msg) => write!(f, "Validation error: {}", msg),
-            KnowledgeError::NotFound(msg) => write!(f, "Not found: {}", msg),
+            KnowledgeError::Io(msg) => write!(f, "IO 错误: {}", msg),
+            KnowledgeError::Json(msg) => write!(f, "JSON 错误: {}", msg),
+            KnowledgeError::Validation(msg) => write!(f, "校验错误: {}", msg),
+            KnowledgeError::NotFound(msg) => write!(f, "未找到: {}", msg),
         }
     }
 }

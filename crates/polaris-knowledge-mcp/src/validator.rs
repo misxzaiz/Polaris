@@ -175,10 +175,10 @@ fn validate_index_inner(
 pub fn write_health_report(report: &HealthReport, knowledge_dir: &Path) -> Result<PathBuf> {
     let meta_dir = knowledge_dir.join("meta");
     fs::create_dir_all(&meta_dir)
-        .map_err(|e| KnowledgeError::Io(format!("meta dir: {}", e)))?;
+        .map_err(|e| KnowledgeError::Io(format!("无法创建 meta 目录: {}", e)))?;
     let out = meta_dir.join("assertions-health.json");
     let bytes = serde_json::to_vec_pretty(report)?;
-    fs::write(&out, bytes).map_err(|e| KnowledgeError::Io(format!("write health: {}", e)))?;
+    fs::write(&out, bytes).map_err(|e| KnowledgeError::Io(format!("无法写入健康报告: {}", e)))?;
     Ok(out)
 }
 
@@ -214,7 +214,7 @@ fn validate_assertion(
             return Outcome {
                 status: ValidationStatus::Failed,
                 effective_confidence: degrade(original),
-                reason: Some(format!("read error: {}", e)),
+                reason: Some(format!("读取错误: {}", e)),
             };
         }
     };

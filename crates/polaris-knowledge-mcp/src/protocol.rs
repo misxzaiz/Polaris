@@ -273,7 +273,7 @@ mod tests {
         let resp = error_response(
             req.id.unwrap_or(Value::Null),
             -32000,
-            format!("Unsupported method: {}", req.method),
+            format!("不支持的方法: {}", req.method),
         );
 
         let serialized = serde_json::to_string(&resp).unwrap();

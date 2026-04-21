@@ -145,7 +145,7 @@ fn handle_request(
         "tools/list" => Ok(tools::get_tools_list()),
         "tools/call" => handle_tools_call(request.params, index_path, modules_dir, workspace_root, cache),
         _ => Err(KnowledgeError::Validation(format!(
-            "Unsupported method: {}",
+            "不支持的方法: {}",
             request.method
         ))),
     };
@@ -335,7 +335,7 @@ mod tests {
         assert!(resp.error.is_some());
         let err = resp.error.unwrap();
         assert_eq!(err.code, -32000);
-        assert!(err.message.contains("Unsupported method"));
+        assert!(err.message.contains("不支持的方法"));
     }
 
     #[test]

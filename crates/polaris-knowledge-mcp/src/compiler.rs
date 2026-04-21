@@ -155,7 +155,7 @@ pub struct Pattern {
 pub fn compile_context(request: &CompileRequest, index: &KnowledgeIndexV2) -> Result<ContextPack> {
     if request.intent.trim().is_empty() {
         return Err(KnowledgeError::Validation(
-            "compile_context: intent must not be empty".into(),
+            "compile_context: 意图不能为空".into(),
         ));
     }
 

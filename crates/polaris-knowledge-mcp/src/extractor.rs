@@ -99,14 +99,14 @@ pub fn extract_all(
 ) -> Result<Vec<StructureReport>> {
     let out_dir = knowledge_dir.join("structures");
     fs::create_dir_all(&out_dir)
-        .map_err(|e| KnowledgeError::Io(format!("structures dir: {}", e)))?;
+        .map_err(|e| KnowledgeError::Io(format!("无法创建 structures 目录: {}", e)))?;
 
     let mut reports = Vec::with_capacity(index.modules.len());
     for module in &index.modules {
         let report = extract_module(module, workspace_root)?;
         let path = out_dir.join(format!("{}.structure.json", module.id));
         fs::write(&path, serde_json::to_vec_pretty(&report)?)
-            .map_err(|e| KnowledgeError::Io(format!("write structure: {}", e)))?;
+            .map_err(|e| KnowledgeError::Io(format!("无法写入结构文件: {}", e)))?;
         reports.push(report);
     }
     Ok(reports)
@@ -162,7 +162,7 @@ pub fn load_structure(module_id: &str, knowledge_dir: &Path) -> Result<Option<St
         return Ok(None);
     }
     let body = fs::read_to_string(&path)
-        .map_err(|e| KnowledgeError::Io(format!("read structure: {}", e)))?;
+        .map_err(|e| KnowledgeError::Io(format!("无法读取结构文件: {}", e)))?;
     let report: StructureReport = serde_json::from_str(&body)?;
     Ok(Some(report))
 }

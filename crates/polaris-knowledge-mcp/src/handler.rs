@@ -87,13 +87,13 @@ pub fn load_index_cached(index_path: &PathBuf, cache: &SharedCache) -> Result<Kn
 /// Load v2 index with mtime-based caching.
 pub fn load_v2_cached(index_path: &PathBuf, cache: &SharedCache) -> Result<crate::models::KnowledgeIndexV2> {
     let knowledge_dir = index_path.parent().ok_or_else(|| {
-        KnowledgeError::Io("cannot resolve knowledge dir from index path".into())
+        KnowledgeError::Io("无法从索引路径解析知识目录".into())
     })?;
     let v2_path = knowledge_dir.join("index.v2.json");
 
     if !v2_path.exists() {
         return Err(KnowledgeError::Validation(format!(
-            "index.v2.json not found at {} — run migrate first",
+            "在 {} 未找到 index.v2.json — 请先运行迁移",
             v2_path.display()
         )));
     }
@@ -112,7 +112,7 @@ pub fn load_v2_cached(index_path: &PathBuf, cache: &SharedCache) -> Result<crate
     }
 
     let content = std::fs::read_to_string(&v2_path)
-        .map_err(|e| KnowledgeError::Io(format!("cannot read index.v2.json: {}", e)))?;
+        .map_err(|e| KnowledgeError::Io(format!("无法读取 index.v2.json: {}", e)))?;
     let v2: crate::models::KnowledgeIndexV2 = serde_json::from_str(&content)?;
     if let Some(mtime) = mtime {
         cache.borrow_mut().v2 = Some((v2.clone(), mtime));
@@ -525,7 +525,7 @@ pub fn execute_validate_assertions(
 ) -> Result<Value> {
     let workspace_root = workspace_root.ok_or_else(|| {
         KnowledgeError::Validation(
-            "validate_assertions requires workspace mode — start server with --workspace".into(),
+            "validate_assertions 需要工作区模式 — 请使用 --workspace 启动服务".into(),
         )
     })?;
 
@@ -537,7 +537,7 @@ pub fn execute_validate_assertions(
     let v2 = load_v2_cached(index_path, cache)?;
 
     let knowledge_dir = index_path.parent().ok_or_else(|| {
-        KnowledgeError::Io("cannot resolve knowledge dir from index path".into())
+        KnowledgeError::Io("无法从索引路径解析知识目录".into())
     })?;
     let report = crate::validator::validate_index_with_structures(&v2, workspace_root, knowledge_dir)?;
 
@@ -580,7 +580,7 @@ pub fn execute_validate_assertions(
 /// — callers who need freshness should invoke `validate_assertions` first.
 pub fn execute_get_assertions_health(index_path: &PathBuf) -> Result<Value> {
     let knowledge_dir = index_path.parent().ok_or_else(|| {
-        KnowledgeError::Io("cannot resolve knowledge dir from index path".into())
+        KnowledgeError::Io("无法从索引路径解析知识目录".into())
     })?;
     let health_path = knowledge_dir.join("meta").join("assertions-health.json");
 
@@ -598,7 +598,7 @@ pub fn execute_get_assertions_health(index_path: &PathBuf) -> Result<Value> {
     }
 
     let body = std::fs::read_to_string(&health_path)
-        .map_err(|e| KnowledgeError::Io(format!("read health: {}", e)))?;
+        .map_err(|e| KnowledgeError::Io(format!("无法读取健康报告: {}", e)))?;
     let report: crate::validator::HealthReport = serde_json::from_str(&body)?;
 
     Ok(json!({
@@ -621,7 +621,7 @@ pub fn execute_compile_context(arguments: Value, index_path: &PathBuf, cache: &S
     let request: crate::compiler::CompileRequest = serde_json::from_value(arguments.clone())
         .map_err(|e| {
             KnowledgeError::Validation(format!(
-                "invalid compile_context arguments: {} (got {})",
+                "compile_context 参数无效: {} (收到 {})",
                 e, arguments
             ))
         })?;
@@ -657,7 +657,7 @@ pub fn execute_extract_structure(
 ) -> Result<Value> {
     let workspace_root = workspace_root.ok_or_else(|| {
         KnowledgeError::Validation(
-            "extract_structure requires workspace mode — start server with --workspace".into(),
+            "extract_structure 需要工作区模式 — 请使用 --workspace 启动服务".into(),
         )
     })?;
 
@@ -669,11 +669,11 @@ pub fn execute_extract_structure(
     let v2 = load_v2_cached(index_path, cache)?;
 
     let knowledge_dir = index_path.parent().ok_or_else(|| {
-        KnowledgeError::Io("cannot resolve knowledge dir from index path".into())
+        KnowledgeError::Io("无法从索引路径解析知识目录".into())
     })?;
     let structures_dir = knowledge_dir.join("structures");
     std::fs::create_dir_all(&structures_dir)
-        .map_err(|e| KnowledgeError::Io(format!("structures dir: {}", e)))?;
+        .map_err(|e| KnowledgeError::Io(format!("无法创建 structures 目录: {}", e)))?;
 
     let mut written: Vec<serde_json::Value> = Vec::new();
     let mut total_symbols = 0usize;
@@ -688,7 +688,7 @@ pub fn execute_extract_structure(
         let report = crate::extractor::extract_module(module, workspace_root)?;
         let path = structures_dir.join(format!("{}.structure.json", module.id));
         std::fs::write(&path, serde_json::to_vec_pretty(&report)?)
-            .map_err(|e| KnowledgeError::Io(format!("write structure: {}", e)))?;
+            .map_err(|e| KnowledgeError::Io(format!("无法写入结构文件: {}", e)))?;
         total_files += report.file_count;
         total_symbols += report.symbol_count;
         written.push(json!({
@@ -730,7 +730,7 @@ pub fn execute_get_structure(arguments: Value, index_path: &PathBuf) -> Result<V
     }
 
     let knowledge_dir = index_path.parent().ok_or_else(|| {
-        KnowledgeError::Io("cannot resolve knowledge dir from index path".into())
+        KnowledgeError::Io("无法从索引路径解析知识目录".into())
     })?;
 
     match crate::extractor::load_structure(&id, knowledge_dir)? {

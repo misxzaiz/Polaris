@@ -202,7 +202,7 @@ pub fn apply_seed(
         );
         let bytes = serde_json::to_vec_pretty(index)?;
         fs::write(v2_index_path, bytes)
-            .map_err(|e| KnowledgeError::Io(format!("write index.v2.json: {}", e)))?;
+            .map_err(|e| KnowledgeError::Io(format!("无法写入 index.v2.json: {}", e)))?;
     }
 
     Ok(merged)
