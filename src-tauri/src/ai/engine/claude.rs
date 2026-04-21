@@ -1172,12 +1172,12 @@ fn find_cli_js(base_dir: &Path, node_exe_path: &str) -> Result<String> {
         }
     }
 
-    Err(AppError::ProcessError(format!(
+    Err(AppError::ProcessError(
         "无法找到 cli.js。请确保 Claude Code 已通过 npm 或 pnpm 全局安装:\n\
         npm install -g @anthropic-ai/claude-code\n\
         或\n\
-        pnpm add -g @anthropic-ai/claude-code",
-    )))
+        pnpm add -g @anthropic-ai/claude-code".to_string(),
+    ))
 }
 
 #[cfg(windows)]

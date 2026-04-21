@@ -54,10 +54,7 @@ impl ClaudeHistoryProvider {
     /// 将工作区路径转换为 Claude 目录名
     /// 例: "D:\space\base\Polaris" -> "D--space-base-Polaris"
     fn work_dir_to_claude_dir_name(work_dir: &str) -> String {
-        work_dir
-            .replace(':', "-")
-            .replace('\\', "-")
-            .replace('/', "-")
+        work_dir.replace([':', '\\', '/'], "-")
     }
 
     /// 查找会话文件
