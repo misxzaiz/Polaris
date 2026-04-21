@@ -167,12 +167,254 @@ fn normalize_path(path: &str) -> Result<PathBuf> {
     if path.is_empty() {
         return Err(KnowledgeError::Validation("路径不能为空".to_string()));
     }
-    let mut buf = PathBuf::from(path);
-    // Remove trailing separator for consistency
-    if buf.as_os_str().to_string_lossy().ends_with('\\')
-        || buf.as_os_str().to_string_lossy().ends_with('/')
-    {
-        buf.pop();
+    let trimmed = path.trim_end_matches(|c| c == '\\' || c == '/');
+    Ok(PathBuf::from(trimmed))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::JsonRpcRequest;
+    use serde_json::json;
+    use std::fs;
+
+    // ── normalize_path ──────────────────────────────────────────────
+
+    #[test]
+    fn normalize_path_trims_whitespace() {
+        let result = normalize_path("  /foo/bar  ").unwrap();
+        assert_eq!(result, PathBuf::from("/foo/bar"));
     }
-    Ok(buf)
+
+    #[test]
+    fn normalize_path_rejects_empty() {
+        assert!(normalize_path("").is_err());
+        assert!(normalize_path("   ").is_err());
+    }
+
+    #[test]
+    fn normalize_path_strips_trailing_slash() {
+        let result = normalize_path("/foo/bar/").unwrap();
+        assert_eq!(result, PathBuf::from("/foo/bar"));
+    }
+
+    #[test]
+    fn normalize_path_strips_trailing_backslash() {
+        let result = normalize_path(r"C:\foo\bar\").unwrap();
+        assert_eq!(result, PathBuf::from(r"C:\foo\bar"));
+    }
+
+    #[test]
+    fn normalize_path_preserves_normal_path() {
+        let result = normalize_path("/foo/bar").unwrap();
+        assert_eq!(result, PathBuf::from("/foo/bar"));
+    }
+
+    // ── handle_request routing ──────────────────────────────────────
+
+    /// Helper: build a minimal temp knowledge dir with empty index.json.
+    fn setup_temp_knowledge_dir() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let knowledge = dir.path().join(".polaris").join("knowledge");
+        fs::create_dir_all(knowledge.join("modules")).unwrap();
+        fs::write(knowledge.join("index.json"), r#"{"version":1,"modules":[]}"#).unwrap();
+        dir
+    }
+
+    /// Helper to get knowledge dir path from tempdir.
+    fn knowledge_path(dir: &tempfile::TempDir) -> PathBuf {
+        dir.path().join(".polaris").join("knowledge")
+    }
+
+    fn make_request(method: &str, id: Value) -> JsonRpcRequest {
+        serde_json::from_value(json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": method,
+            "params": {}
+        }))
+        .unwrap()
+    }
+
+    fn default_cache() -> SharedCache {
+        std::rc::Rc::new(std::cell::RefCell::new(KnowledgeCache::new()))
+    }
+
+    #[test]
+    fn handle_request_initialize() {
+        let req = make_request("initialize", json!(1));
+        let dir = setup_temp_knowledge_dir();
+        let index_path = knowledge_path(&dir).join("index.json");
+        let modules_dir = knowledge_path(&dir).join("modules");
+        let cache = default_cache();
+
+        let resp = handle_request(req, &index_path, &modules_dir, None, &cache);
+
+        assert_eq!(resp.jsonrpc, "2.0");
+        assert_eq!(resp.id, json!(1));
+        assert!(resp.result.is_some());
+        assert!(resp.error.is_none());
+
+        let result = resp.result.unwrap();
+        assert_eq!(result["serverInfo"]["name"], "polaris-knowledge-mcp");
+        assert_eq!(result["protocolVersion"], "2024-11-05");
+    }
+
+    #[test]
+    fn handle_request_ping() {
+        let req = make_request("ping", json!("test-id"));
+        let dir = setup_temp_knowledge_dir();
+        let index_path = knowledge_path(&dir).join("index.json");
+        let modules_dir = knowledge_path(&dir).join("modules");
+        let cache = default_cache();
+
+        let resp = handle_request(req, &index_path, &modules_dir, None, &cache);
+
+        assert_eq!(resp.id, json!("test-id"));
+        assert_eq!(resp.result, Some(json!({})));
+    }
+
+    #[test]
+    fn handle_request_tools_list_returns_array() {
+        let req = make_request("tools/list", json!(2));
+        let dir = setup_temp_knowledge_dir();
+        let index_path = knowledge_path(&dir).join("index.json");
+        let modules_dir = knowledge_path(&dir).join("modules");
+        let cache = default_cache();
+
+        let resp = handle_request(req, &index_path, &modules_dir, None, &cache);
+
+        let result = resp.result.unwrap();
+        let tools = result["tools"].as_array().unwrap();
+        assert!(!tools.is_empty());
+    }
+
+    #[test]
+    fn handle_request_notifications_initialized() {
+        let req = make_request("notifications/initialized", json!(3));
+        let dir = setup_temp_knowledge_dir();
+        let index_path = knowledge_path(&dir).join("index.json");
+        let modules_dir = knowledge_path(&dir).join("modules");
+        let cache = default_cache();
+
+        let resp = handle_request(req, &index_path, &modules_dir, None, &cache);
+
+        assert_eq!(resp.result, Some(json!({})));
+        assert!(resp.error.is_none());
+    }
+
+    #[test]
+    fn handle_request_invalid_jsonrpc_version() {
+        let req = JsonRpcRequest {
+            jsonrpc: "1.0".to_string(),
+            id: Some(json!(42)),
+            method: "ping".to_string(),
+            params: json!({}),
+        };
+        let dir = setup_temp_knowledge_dir();
+        let index_path = knowledge_path(&dir).join("index.json");
+        let modules_dir = knowledge_path(&dir).join("modules");
+        let cache = default_cache();
+
+        let resp = handle_request(req, &index_path, &modules_dir, None, &cache);
+
+        assert!(resp.error.is_some());
+        assert_eq!(resp.error.unwrap().code, -32600);
+    }
+
+    #[test]
+    fn handle_request_unknown_method() {
+        let req = make_request("nonexistent/method", json!(99));
+        let dir = setup_temp_knowledge_dir();
+        let index_path = knowledge_path(&dir).join("index.json");
+        let modules_dir = knowledge_path(&dir).join("modules");
+        let cache = default_cache();
+
+        let resp = handle_request(req, &index_path, &modules_dir, None, &cache);
+
+        assert!(resp.error.is_some());
+        let err = resp.error.unwrap();
+        assert_eq!(err.code, -32000);
+        assert!(err.message.contains("Unsupported method"));
+    }
+
+    #[test]
+    fn handle_request_null_id_defaults_to_null() {
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: None,
+            method: "ping".to_string(),
+            params: json!({}),
+        };
+        let dir = setup_temp_knowledge_dir();
+        let index_path = knowledge_path(&dir).join("index.json");
+        let modules_dir = knowledge_path(&dir).join("modules");
+        let cache = default_cache();
+
+        let resp = handle_request(req, &index_path, &modules_dir, None, &cache);
+
+        assert_eq!(resp.id, Value::Null);
+        assert!(resp.result.is_some());
+    }
+
+    // ── entry point validation ──────────────────────────────────────
+
+    #[test]
+    fn run_server_rejects_nonexistent_dir() {
+        let result = run_server("/nonexistent/path/knowledge");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_message();
+        assert!(msg.contains("知识目录不存在"));
+    }
+
+    #[test]
+    fn run_server_with_workspace_rejects_no_workspace() {
+        let result = run_server_with_workspace("", None::<&str>);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_message();
+        assert!(msg.contains("工作区路径"));
+    }
+
+    #[test]
+    fn run_server_with_workspace_rejects_nonexistent_workspace() {
+        let result = run_server_with_workspace("", Some("/nonexistent/workspace"));
+        assert!(result.is_err());
+    }
+
+    // ── JSON-RPC parse error ────────────────────────────────────────
+
+    #[test]
+    fn parse_error_on_invalid_json() {
+        let resp = serde_json::from_str::<JsonRpcRequest>("not valid json");
+        assert!(resp.is_err());
+
+        // Verify the error response we'd build
+        let err_resp = error_response(Value::Null, -32700, "Parse error".to_string());
+        assert_eq!(err_resp.error.unwrap().code, -32700);
+    }
+
+    // ── protocol serialization round-trip ───────────────────────────
+
+    #[test]
+    fn response_serializes_without_null_fields() {
+        let resp = JsonRpcResponse {
+            jsonrpc: "2.0",
+            id: json!(1),
+            result: Some(json!({"ok": true})),
+            error: None,
+        };
+        let serialized = serde_json::to_string(&resp).unwrap();
+        assert!(!serialized.contains("error"));
+        assert!(serialized.contains("result"));
+    }
+
+    #[test]
+    fn error_response_serializes_correctly() {
+        let resp = error_response(json!(5), -32600, "bad request".to_string());
+        let serialized = serde_json::to_string(&resp).unwrap();
+        let parsed: Value = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(parsed["error"]["code"], -32600);
+        assert_eq!(parsed["error"]["message"], "bad request");
+        assert!(parsed.get("result").is_none());
+    }
 }
