@@ -105,6 +105,9 @@ function App() {
   const hasLeftPanel = !isCompact && leftPanelType !== 'none';
   const hasCenterStage = !isCompact && hasOpenTabs;
 
+  // 右侧面板填充模式：无编辑器时自适应填充，有编辑器时固定宽度
+  const rightPanelFillRemaining = !hasCenterStage;
+
   // === 引擎切换 ===
   const applyEngineSwitch = useCallback(async (engineId: EngineId) => {
     if (!config) return;
@@ -168,7 +171,7 @@ function App() {
           {!isCompact && hasCenterStage && <CenterStage fillRemaining={!rightPanelCollapsed} />}
 
           {(isCompact || !rightPanelCollapsed) && (
-            <RightPanel>
+            <RightPanel fillRemaining={rightPanelFillRemaining}>
               {error && (
                 <div className="mx-4 mt-4 p-3 bg-danger-faint border border-danger/30 rounded-xl text-danger text-sm shrink-0">
                   {error}

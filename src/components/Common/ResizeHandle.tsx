@@ -111,8 +111,8 @@ export function ResizeHandle({ direction, position, onDrag, onDragEnd, disabled 
   }, [disabled, direction, position, onDrag, onDragEnd]);
 
   const baseClasses = direction === 'horizontal'
-    ? 'w-1.5 hover:w-2.5 cursor-col-resize'
-    : 'h-1.5 hover:h-2.5 cursor-row-resize';
+    ? 'w-1 hover:w-1.5 cursor-col-resize'
+    : 'h-1 hover:h-1.5 cursor-row-resize';
 
   const colorClasses = disabled
     ? 'bg-transparent'
