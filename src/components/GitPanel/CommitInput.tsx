@@ -101,8 +101,8 @@ export function CommitInput({ hasChanges: _hasChanges, selectedFiles }: CommitIn
   const canCommit = message.trim() && (hasStagedFiles || hasSelectedFiles)
 
   const getCommitHint = () => {
-    if (hasSelectedFiles) {
-      return t('commit.selectedFiles', { count: selectedFiles!.size })
+    if (hasSelectedFiles && selectedFiles) {
+      return t('commit.selectedFiles', { count: selectedFiles.size })
     }
     if (hasStagedFiles) {
       return t('commit.stagedFiles', { count: status?.staged.length ?? 0 })

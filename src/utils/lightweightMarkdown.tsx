@@ -318,22 +318,23 @@ export function splitByCodeBlocks(content: string): Array<{
   let codeMatch: RegExpExecArray | null;
   codeBlockRegex.lastIndex = 0;
   while ((codeMatch = codeBlockRegex.exec(content)) !== null) {
+    const currentMatch = codeMatch; // 捕获当前匹配结果
     // 检查是否是 mermaid（已在上面处理）
-    if (codeMatch[1].toLowerCase() === 'mermaid') continue;
+    if (currentMatch[1].toLowerCase() === 'mermaid') continue;
 
     // 检查是否与其他块重叠
     const overlaps = allBlocks.some(
-      b => (codeMatch!.index >= b.index && codeMatch!.index < b.endIndex) ||
-           (codeMatch!.index + codeMatch![0].length > b.index && codeMatch!.index + codeMatch![0].length <= b.endIndex)
+      b => (currentMatch.index >= b.index && currentMatch.index < b.endIndex) ||
+           (currentMatch.index + currentMatch[0].length > b.index && currentMatch.index + currentMatch[0].length <= b.endIndex)
     );
     if (overlaps) continue;
 
     allBlocks.push({
-      index: codeMatch.index,
-      endIndex: codeMatch.index + codeMatch[0].length,
+      index: currentMatch.index,
+      endIndex: currentMatch.index + currentMatch[0].length,
       type: 'code-block',
-      content: codeMatch[2],
-      language: codeMatch[1] || undefined,
+      content: currentMatch[2],
+      language: currentMatch[1] || undefined,
     });
   }
 

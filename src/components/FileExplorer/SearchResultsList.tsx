@@ -239,10 +239,11 @@ export const SearchResultsList = memo<SearchResultsListProps>(({ results }) => {
           if (item.type === 'separator') {
             return <DirectorySeparator key={`sep-${index}`} />;
           }
+          if (!item.data) return null;
           return (
             <FileItem
-              key={item.data!.path}
-              file={item.data!}
+              key={item.data.path}
+              file={item.data}
               currentPath={current_path}
               onClick={handleClick}
               onKeyDown={handleKeyDown}
@@ -273,9 +274,10 @@ export const SearchResultsList = memo<SearchResultsListProps>(({ results }) => {
           if (item.type === 'separator') {
             return <DirectorySeparator />;
           }
+          if (!item.data) return null;
           return (
             <FileItem
-              file={item.data!}
+              file={item.data}
               currentPath={current_path}
               onClick={handleClick}
               onKeyDown={handleKeyDown}
