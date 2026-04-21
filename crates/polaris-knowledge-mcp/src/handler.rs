@@ -403,16 +403,21 @@ pub fn execute_update_module(
         .parent()
         .ok_or_else(|| KnowledgeError::Io("无法确定知识目录".to_string()))?;
     let meta_dir = knowledge_dir.join("meta");
-    let _ = fs::create_dir_all(&meta_dir);
+    fs::create_dir_all(&meta_dir)
+        .map_err(|e| KnowledgeError::Io(format!("无法创建 meta 目录: {}", e)))?;
     let timestamp = chrono_timestamp();
-    let _ = fs::write(
+    fs::write(
         meta_dir.join(format!("{}.last-updated", id)),
         &timestamp,
-    );
+    )
+    .map_err(|e| KnowledgeError::Io(format!("无法写入更新时间戳: {}", e)))?;
 
     // Clear stale marker if exists (module is now up-to-date)
     let stale_file = meta_dir.join(format!("{}.stale", id));
-    let _ = fs::remove_file(&stale_file);
+    if stale_file.exists() {
+        fs::remove_file(&stale_file)
+            .map_err(|e| KnowledgeError::Io(format!("无法删除过期标记: {}", e)))?;
+    }
 
     Ok(json!({
         "structuredContent": {
@@ -472,14 +477,18 @@ pub fn execute_mark_stale(arguments: Value, index_path: &PathBuf, cache: &Shared
         .parent()
         .ok_or_else(|| KnowledgeError::Io("无法确定知识目录".to_string()))?;
     let meta_dir = knowledge_dir.join("meta");
-    let _ = fs::create_dir_all(&meta_dir);
+    fs::create_dir_all(&meta_dir)
+        .map_err(|e| KnowledgeError::Io(format!("无法创建 meta 目录: {}", e)))?;
     let timestamp = chrono_timestamp();
 
     for module_id in &affected {
-        let _ = fs::write(
+        fs::write(
             meta_dir.join(format!("{}.stale", module_id)),
             format!("{}|{}", timestamp, normalized_changes.join(",")),
-        );
+        )
+        .map_err(|e| {
+            KnowledgeError::Io(format!("无法写入 {} 过期标记: {}", module_id, e))
+        })?;
     }
 
     Ok(json!({
