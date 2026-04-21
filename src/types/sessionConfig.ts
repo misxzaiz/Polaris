@@ -44,8 +44,9 @@ export interface CLIModel {
  * 努力级别
  *
  * 控制模型在回答时投入的努力程度
+ * 空字符串表示不传参数，使用 CLI 默认
  */
-export type EffortLevel = 'low' | 'medium' | 'high' | 'max'
+export type EffortLevel = '' | 'low' | 'medium' | 'high' | 'max'
 
 /**
  * 权限模式
@@ -87,10 +88,10 @@ export interface SessionRuntimeConfig {
  * 会话配置默认值
  */
 export const DEFAULT_SESSION_CONFIG: Required<SessionRuntimeConfig> = {
-  agent: '',
-  model: 'sonnet',
-  effort: 'medium',
-  permissionMode: '',
+  agent: 'general-purpose',
+  model: 'opus',
+  effort: 'max',
+  permissionMode: 'bypassPermissions',
 }
 /**
  * 预设 Agent 列表
@@ -99,6 +100,14 @@ export const DEFAULT_SESSION_CONFIG: Required<SessionRuntimeConfig> = {
  * 注意: 这只是降级默认值，运行时应通过 cliInfoStore 动态获取
  */
 export const PRESET_AGENTS: CLIAgent[] = [
+  // 空值选项：不传 agent 参数
+  {
+    id: '',
+    name: '不设置',
+    description: '不传 Agent 参数，使用 CLI 默认模式',
+    defaultModel: undefined,
+    tags: ['内置'],
+  },
   // 内置 Agent
   {
     id: 'general-purpose',
@@ -164,17 +173,24 @@ export const PRESET_AGENTS: CLIAgent[] = [
  */
 export const PRESET_MODELS: CLIModel[] = [
   {
-    id: 'sonnet',
-    name: 'Sonnet',
-    description: '平衡性能和速度，适合大多数任务',
-    isDefault: true,
+    id: '',
+    name: '不设置',
+    description: '不传模型参数，使用 Agent 默认或 CLI 默认模型',
+    isDefault: false,
     supportsStreaming: true,
-    contextWindow: 200000,
   },
   {
     id: 'opus',
     name: 'Opus',
     description: '最强性能，适合复杂推理任务',
+    supportsStreaming: true,
+    contextWindow: 200000,
+  },
+  {
+    id: 'sonnet',
+    name: 'Sonnet',
+    description: '平衡性能和速度，适合大多数任务',
+    isDefault: true,
     supportsStreaming: true,
     contextWindow: 200000,
   },
@@ -192,14 +208,14 @@ export const PRESET_MODELS: CLIModel[] = [
  */
 export const EFFORT_OPTIONS: Array<{ value: EffortLevel; label: string; description: string }> = [
   {
-    value: 'low',
-    label: '低',
-    description: '快速响应，适合简单问题',
+    value: '',
+    label: '不设置',
+    description: '不传努力参数，使用 CLI 默认级别',
   },
   {
-    value: 'medium',
-    label: '中',
-    description: '平衡速度和质量',
+    value: 'max',
+    label: '最高',
+    description: '全力以赴，最高质量输出',
   },
   {
     value: 'high',
@@ -207,9 +223,14 @@ export const EFFORT_OPTIONS: Array<{ value: EffortLevel; label: string; descript
     description: '深入思考，适合复杂问题',
   },
   {
-    value: 'max',
-    label: '最高',
-    description: '全力以赴，最高质量输出',
+    value: 'medium',
+    label: '中',
+    description: '平衡速度和质量',
+  },
+  {
+    value: 'low',
+    label: '低',
+    description: '快速响应，适合简单问题',
   },
 ]
 
@@ -217,6 +238,11 @@ export const EFFORT_OPTIONS: Array<{ value: EffortLevel; label: string; descript
  * 权限模式选项
  */
 export const PERMISSION_MODE_OPTIONS: Array<{ value: PermissionMode | ''; label: string; description: string }> = [
+  {
+    value: 'bypassPermissions',
+    label: '不设置',
+    description: '跳过所有权限检查',
+  },
   {
     value: 'default',
     label: '默认',
@@ -241,10 +267,5 @@ export const PERMISSION_MODE_OPTIONS: Array<{ value: PermissionMode | ''; label:
     value: 'dontAsk',
     label: '拒绝危险',
     description: '拒绝危险操作',
-  },
-  {
-    value: 'bypassPermissions',
-    label: '跳过权限',
-    description: '跳过所有权限检查',
   },
 ]
