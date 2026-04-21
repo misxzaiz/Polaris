@@ -141,7 +141,7 @@ export class LocalFileKnowledgeService implements IKnowledgeService {
       }
     } else {
       // 路径提示模式（推荐，AI 自行决定是否获取详情）
-      lines.push('以下模块被引用，**请立即使用 `mcp__polaris-knowledge__get_module` 工具获取完整文档**：')
+      lines.push('以下模块被引用，**必须立即调用 MCP 工具获取完整文档**：')
       lines.push('')
 
       for (const moduleId of moduleRefs) {
@@ -152,8 +152,14 @@ export class LocalFileKnowledgeService implements IKnowledgeService {
         }
       }
 
-      lines.push('**重要**：上述模块已被用户引用，请使用 MCP 工具获取详情后再回答问题。')
-      lines.push('调用示例：`mcp__polaris-knowledge__get_module({ id: "module-id" })`')
+      lines.push('## 立即执行')
+      lines.push('请在回答问题前，**先调用以下 MCP 工具**获取模块详情：')
+      lines.push('')
+      lines.push('```json')
+      lines.push('{ "tool": "mcp__polaris-knowledge__get_module", "args": { "id": "module-id" } }')
+      lines.push('```')
+      lines.push('')
+      lines.push('**不要基于猜测回答**，必须先获取完整文档后再回答。')
       lines.push('')
     }
 

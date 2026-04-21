@@ -187,7 +187,7 @@ export async function getSystemPromptWithKnowledge(): Promise<string> {
     lines.push('')
     lines.push('## 项目模块知识')
     lines.push('')
-    lines.push(`当前项目共 ${index.modules.length} 个模块，可通过 knowledge MCP 的 \`get_module\` 工具获取详情：`)
+    lines.push(`当前项目共 ${index.modules.length} 个模块：`)
     lines.push('')
 
     for (const m of index.modules) {
@@ -195,7 +195,10 @@ export async function getSystemPromptWithKnowledge(): Promise<string> {
     }
 
     lines.push('')
-    lines.push('使用方式：用户可用 `#module-id` 语法引用模块，你可通过 `get_module` 工具获取完整文档。')
+    lines.push('### 模块引用语法')
+    lines.push('- 用户使用 `#module-id` 引用模块时，**必须先调用 MCP 工具获取详情**')
+    lines.push('- 工具：`mcp__polaris-knowledge__get_module({ id: "module-id" })`')
+    lines.push('- **不要基于猜测回答**，必须先获取完整文档后再回答')
     lines.push('')
 
     return lines.join('\n')
