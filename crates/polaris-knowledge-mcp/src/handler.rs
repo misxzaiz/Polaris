@@ -11,6 +11,7 @@ use serde_json::json;
 use serde_json::Value;
 
 use crate::error::{KnowledgeError, Result};
+use crate::extractor::matches_any;
 use crate::models::{KnowledgeIndex, ModuleEntry};
 
 /// Load and parse the index.json.
@@ -443,7 +444,7 @@ pub fn execute_mark_stale(arguments: Value, index_path: &PathBuf, cache: &Shared
         return Err(KnowledgeError::Validation("变更文件列表不能为空".to_string()));
     }
 
-    let index = load_index_cached(index_path, cache)?;
+    let v2 = load_v2_cached(index_path, cache)?;
 
     // Normalize changed files: convert backslashes, remove leading ./
     let normalized_changes: Vec<String> = changed_files
@@ -451,21 +452,16 @@ pub fn execute_mark_stale(arguments: Value, index_path: &PathBuf, cache: &Shared
         .map(|f| f.replace('\\', "/").trim_start_matches("./").to_string())
         .collect();
 
-    // Find which modules are affected by the changed files
+    // Find which modules are affected by the changed files using glob matching
     let mut affected = Vec::new();
-    for m in &index.modules {
-        let mut is_affected = false;
-        for scope_pattern in &m.scope {
-            // Simple prefix/blob matching: check if any changed file starts with scope
-            let scope_normalized = scope_pattern.replace('\\', "/").trim_end_matches('/').to_string();
-            for changed in &normalized_changes {
-                if changed.starts_with(&scope_normalized) || changed.contains(&scope_normalized) {
-                    is_affected = true;
-                    break;
-                }
-            }
-            if is_affected { break; }
-        }
+    for m in &v2.modules {
+        let include: Vec<&str> = m.scope.include.iter().map(|s| s.as_str()).collect();
+        let exclude: Vec<&str> = m.scope.exclude.iter().map(|s| s.as_str()).collect();
+
+        let is_affected = normalized_changes.iter().any(|changed| {
+            matches_any(changed, &include) && !matches_any(changed, &exclude)
+        });
+
         if is_affected {
             affected.push(m.id.clone());
         }
