@@ -140,7 +140,7 @@ pub fn migrate_index(v1: &KnowledgeIndex, workspace_root: &str) -> Result<(Knowl
     report.domain_count = domains.len();
 
     let v2 = KnowledgeIndexV2 {
-        version: bump_minor(&v1.version),
+        version: bump_major(&v1.version),
         schema_version: V2_SCHEMA_VERSION.to_string(),
         generated_at: Some(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
         workspace: WorkspaceInfo {
@@ -233,9 +233,9 @@ fn parse_change_frequency(raw: &str) -> Option<ChangeFrequency> {
     }
 }
 
-/// Bump the minor version component of a semver string; if it cannot be
+/// Bump the major version component of a semver string; if it cannot be
 /// parsed, we fall back to appending `-v2`.
-fn bump_minor(v1_version: &str) -> String {
+fn bump_major(v1_version: &str) -> String {
     let parts: Vec<&str> = v1_version.split('.').collect();
     if parts.len() == 3 {
         if let (Ok(major), Ok(minor), Ok(patch)) = (
@@ -365,8 +365,8 @@ mod tests {
 
     #[test]
     fn version_bump_major() {
-        assert_eq!(bump_minor("1.0.0"), "2.0.0");
-        assert_eq!(bump_minor("not-semver"), "not-semver-v2");
+        assert_eq!(bump_major("1.0.0"), "2.0.0");
+        assert_eq!(bump_major("not-semver"), "not-semver-v2");
     }
 
     #[test]
