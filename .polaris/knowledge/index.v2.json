@@ -1,0 +1,686 @@
+{
+  "$schema": "./schema/index.v2.schema.json",
+  "version": "2.0.0",
+  "schemaVersion": "assertion-based",
+  "generatedAt": "2026-04-22T00:00:00.000Z",
+  "workspace": {
+    "rootPath": "D:/space/base/Polaris",
+    "language": ["typescript", "rust"],
+    "framework": ["react", "tauri", "zustand", "vite"]
+  },
+  "domains": [
+    {
+      "id": "ai-conversation",
+      "name": "AI 对话",
+      "description": "产生并呈现 AI 对话的端到端模块群：会话生命周期、消息渲染、内置助手编排。",
+      "modules": ["ai-engine", "assistant", "chat-render", "chat-session"]
+    },
+    {
+      "id": "data-management",
+      "name": "数据与持久化",
+      "description": "项目内部的有状态数据存取与调度：待办、需求、定时任务、配置。",
+      "modules": ["config-settings", "scheduler", "todo-requirement"]
+    },
+    {
+      "id": "developer-tools",
+      "name": "开发者工具",
+      "description": "IDE 风格的工作区能力：文件、终端、Git、MCP 管理。",
+      "modules": ["git", "mcp", "terminal", "workspace"]
+    },
+    {
+      "id": "platform-integration",
+      "name": "平台集成",
+      "description": "跨平台桥接、UI 框架、外部平台适配与语音等能力。",
+      "modules": ["integration", "ipc-bridge", "speech-voice", "ui-framework"]
+    }
+  ],
+  "modules": [
+    {
+      "id": "ai-engine",
+      "name": "AI 引擎",
+      "domain": "ai-conversation",
+      "scope": {
+        "include": [
+          "src-tauri/src/ai/**",
+          "src/ai-runtime/**",
+          "src/engines/**",
+          "src/core/**"
+        ]
+      },
+      "dependencies": ["ipc-bridge"],
+      "dependents": ["chat-session", "scheduler", "todo-requirement", "integration", "assistant"],
+      "documentFile": "ai-engine.md",
+      "complexity": "high",
+      "changeFrequency": "medium",
+      "assertions": [],
+      "traps": []
+    },
+    {
+      "id": "assistant",
+      "name": "内置 AI 助手",
+      "domain": "ai-conversation",
+      "scope": {
+        "include": ["src/assistant/**"]
+      },
+      "dependencies": ["ai-engine", "chat-session", "ui-framework"],
+      "dependents": [],
+      "documentFile": "assistant.md",
+      "complexity": "medium",
+      "changeFrequency": "medium",
+      "assertions": [],
+      "traps": []
+    },
+    {
+      "id": "chat-render",
+      "name": "聊天渲染与内容展示",
+      "domain": "ai-conversation",
+      "scope": {
+        "include": [
+          "src/components/Chat/**",
+          "src/utils/markdown*.ts",
+          "src/utils/messageCompactor.ts",
+          "src/utils/cache.ts",
+          "src/utils/lru-cache.ts"
+        ],
+        "exclude": [
+          "**/*.test.ts",
+          "**/*.test.tsx",
+          "**/*.stories.tsx"
+        ]
+      },
+      "dependencies": ["chat-session", "ui-framework"],
+      "dependents": ["assistant"],
+      "documentFile": "chat-render.md",
+      "complexity": "high",
+      "changeFrequency": "high",
+      "assertions": [
+        {
+          "id": "chat-render/virtuoso-entry",
+          "claim": "EnhancedChatMessages 是聊天渲染的主入口，基于 react-virtuoso 虚拟滚动",
+          "anchor": {
+            "file": "src/components/Chat/EnhancedChatMessages.tsx",
+            "symbol": "EnhancedChatMessages"
+          },
+          "confidence": "yellow",
+          "source": "human:MEMORY.md#2026-04-08"
+        },
+        {
+          "id": "chat-render/lru-capacity-20",
+          "claim": "消息压缩快照上限为 20（MAX_SNAPSHOTS）",
+          "anchor": {
+            "file": "src/utils/messageCompactor.ts",
+            "symbol": "MAX_SNAPSHOTS"
+          },
+          "expect": { "equals": 20 },
+          "confidence": "yellow",
+          "source": "human:MEMORY.md#2026-04-08"
+        },
+        {
+          "id": "chat-render/markdown-cache-20",
+          "claim": "markdownCache 实例容量为 20（Q1 2026-04 内存优化后）",
+          "anchor": {
+            "file": "src/utils/cache.ts",
+            "symbol": "markdownCache"
+          },
+          "expect": { "equals": 20 },
+          "confidence": "green",
+          "source": "human:MEMORY.md#2026-04-08"
+        },
+        {
+          "id": "chat-render/debounce-80pct",
+          "claim": "onVisibleRangeChange 使用 80% overlap debounce 防止 compact/hydrate 振荡",
+          "anchor": {
+            "file": "src/components/Chat/EnhancedChatMessages.tsx",
+            "symbol": "onVisibleRangeChange"
+          },
+          "confidence": "yellow",
+          "trap": true,
+          "source": "human:MEMORY.md#2026-04-08"
+        }
+      ],
+      "traps": [
+        {
+          "id": "chat-render/trap-cache-merge",
+          "description": "不要合并 cache.ts（带 TTL）和 lru-cache.ts（不带 TTL）两个 LRU — 它们的设计意图不同",
+          "source": "memory:MEMORY.md:L32",
+          "severity": "high"
+        },
+        {
+          "id": "chat-render/trap-compaction-reset",
+          "description": "setMessagesFromHistory 加载新会话时必须重置 _lastCompactionRange，否则压缩/还原会错位",
+          "source": "memory:MEMORY.md:L30",
+          "severity": "high"
+        },
+        {
+          "id": "chat-render/trap-codemirror-darktheme",
+          "description": "CodeMirror 暗色模式必须显式加载主题 CSS，否则代码块在暗主题下不可读",
+          "source": "CLAUDE.md#已知陷阱",
+          "severity": "medium"
+        }
+      ]
+    },
+    {
+      "id": "chat-session",
+      "name": "对话与多会话管理",
+      "domain": "ai-conversation",
+      "scope": {
+        "include": [
+          "src-tauri/src/commands/chat.rs",
+          "src-tauri/src/ai/session.rs",
+          "src/stores/conversationStore/**",
+          "src/services/eventRouter.ts"
+        ]
+      },
+      "dependencies": ["ai-engine", "ipc-bridge", "ui-framework"],
+      "dependents": ["chat-render", "assistant", "speech-voice"],
+      "documentFile": "chat-session.md",
+      "complexity": "high",
+      "changeFrequency": "high",
+      "assertions": [],
+      "traps": []
+    },
+    {
+      "id": "config-settings",
+      "name": "配置与设置",
+      "domain": "data-management",
+      "scope": {
+        "include": [
+          "src-tauri/src/services/config_store.rs",
+          "src-tauri/src/models/config.rs",
+          "src-tauri/src/commands/claude_settings.rs",
+          "src-tauri/src/services/mcp_config_service.rs",
+          "src/components/Settings/**",
+          "src/stores/configStore.ts",
+          "src/services/tauri/configService.ts",
+          "src/types/config.ts"
+        ]
+      },
+      "dependencies": ["ipc-bridge"],
+      "dependents": ["mcp", "speech-voice", "ai-engine", "chat-session", "integration"],
+      "documentFile": "config-settings.md",
+      "complexity": "medium",
+      "changeFrequency": "medium",
+      "assertions": [
+        {
+          "id": "config-settings/struct-count",
+          "claim": "models/config.rs 定义 25 个公开结构体/枚举",
+          "anchor": {
+            "file": "src-tauri/src/models/config.rs",
+            "symbol": "Config"
+          },
+          "expect": { "regex": "pub struct|pub enum" },
+          "confidence": "yellow",
+          "source": "ai:analysis-2026-04-22"
+        },
+        {
+          "id": "config-settings/tabs-count",
+          "claim": "SettingsSidebar 定义 14 个设置 Tab",
+          "anchor": {
+            "file": "src/components/Settings/SettingsSidebar.tsx",
+            "symbol": "SettingsTabId"
+          },
+          "expect": { "equals": 14 },
+          "confidence": "green",
+          "source": "ai:analysis-2026-04-22"
+        },
+        {
+          "id": "config-settings/atomic-write",
+          "claim": "ConfigStore::save 使用 .json.tmp + rename 原子写入模式",
+          "anchor": {
+            "file": "src-tauri/src/services/config_store.rs",
+            "symbol": "save"
+          },
+          "expect": { "regex": "with_extension.*json\\.tmp.*rename" },
+          "confidence": "green",
+          "source": "ai:analysis-2026-04-22"
+        },
+        {
+          "id": "config-settings/dual-config",
+          "claim": "Polaris 配置存储于 ~/.config/claude-code-pro/config.json，Claude CLI 设置存储于 ~/.claude/settings.json",
+          "anchor": {
+            "file": "src-tauri/src/services/config_store.rs",
+            "symbol": "new"
+          },
+          "confidence": "green",
+          "source": "ai:analysis-2026-04-22"
+        }
+      ],
+      "traps": [
+        {
+          "id": "config-settings/trap-dual-config-system",
+          "description": "双配置系统：PluginTab 和 AutoModeTab 写入 ~/.claude/settings.json（Claude CLI 设置），其余 Tab 写入 Polaris config。新增 Tab 时必须明确配置归属",
+          "source": "ai:analysis-2026-04-22",
+          "severity": "high"
+        },
+        {
+          "id": "config-settings/trap-eprintln-debug",
+          "description": "config_store.rs 中约 15 处 eprintln! 调试日志残留，生产环境应替换为结构化日志（log::info!/log::debug!）",
+          "source": "ai:analysis-2026-04-22",
+          "severity": "medium"
+        },
+        {
+          "id": "config-settings/trap-backup-silent-fail",
+          "description": "write_claude_settings 中 let _ = fs::copy() 静默忽略备份失败，可能导致 settings.json 损坏时无法恢复",
+          "source": "ai:analysis-2026-04-22",
+          "severity": "medium"
+        },
+        {
+          "id": "config-settings/trap-migration-field-loss",
+          "description": "OldConfig::migrate_to_new() 手动映射字段，Config 新增字段时必须同步更新迁移代码，否则丢失",
+          "source": "ai:analysis-2026-04-22",
+          "severity": "medium"
+        },
+        {
+          "id": "config-settings/trap-default-panic",
+          "description": "ConfigStore::default() 调用 Self::new().expect()，如果配置目录不可访问会 panic",
+          "source": "ai:analysis-2026-04-22",
+          "severity": "medium"
+        },
+        {
+          "id": "config-settings/trap-child-process-per-validate",
+          "description": "validate_claude_path 和 find_claude_paths 每次调用都启动子进程执行 --version，批量调用时有性能开销",
+          "source": "ai:analysis-2026-04-22",
+          "severity": "low"
+        }
+      ]
+    },
+    {
+      "id": "git",
+      "name": "Git 版本控制",
+      "domain": "developer-tools",
+      "scope": {
+        "include": [
+          "src-tauri/src/services/git/**",
+          "src/components/GitPanel/**",
+          "src/stores/gitStore/**"
+        ]
+      },
+      "dependencies": ["workspace", "ipc-bridge", "ai-engine"],
+      "dependents": [],
+      "documentFile": "git.md",
+      "complexity": "high",
+      "changeFrequency": "medium",
+      "assertions": [],
+      "traps": []
+    },
+    {
+      "id": "integration",
+      "name": "外部平台集成",
+      "domain": "platform-integration",
+      "scope": {
+        "include": [
+          "src-tauri/src/integrations/**",
+          "src/components/Integration/**",
+          "src/stores/integrationStore.ts"
+        ]
+      },
+      "dependencies": ["ai-engine", "ipc-bridge"],
+      "dependents": [],
+      "documentFile": "integration.md",
+      "complexity": "high",
+      "changeFrequency": "low",
+      "assertions": [],
+      "traps": [
+        {
+          "id": "integration/trap-manager-size",
+          "description": "integrations/manager.rs 约 84KB，项目最大文件，修改需格外谨慎，优先拆分再改动",
+          "source": "CLAUDE.md#已知陷阱",
+          "severity": "high"
+        }
+      ]
+    },
+    {
+      "id": "ipc-bridge",
+      "name": "IPC 桥接与后端基础",
+      "domain": "platform-integration",
+      "scope": {
+        "include": [
+          "src-tauri/src/lib.rs",
+          "src-tauri/src/state.rs",
+          "src-tauri/src/error.rs",
+          "src-tauri/src/commands/**",
+          "src-tauri/src/models/**",
+          "src/services/tauri/**"
+        ]
+      },
+      "dependencies": [],
+      "dependents": ["ai-engine", "chat-session", "scheduler", "todo-requirement", "git", "integration", "workspace", "config-settings", "mcp", "terminal"],
+      "documentFile": "ipc-bridge.md",
+      "complexity": "medium",
+      "changeFrequency": "low",
+      "assertions": [
+        {
+          "id": "ipc-bridge/error-variants",
+          "claim": "AppError 枚举定义 18 个变体",
+          "anchor": {
+            "file": "src-tauri/src/error.rs",
+            "symbol": "AppError"
+          },
+          "expect": { "regex": "enum AppError \\{[^}]*(Io|Config|Chat|Git|Terminal|Integration|Scheduler|Todo|Requirement|FileExplorer|Mcp|Plugin|Context|PromptSnippet|Logging|Workspace|Translation|Window)[^}]*\\}" },
+          "confidence": "yellow",
+          "source": "ai:analysis-2026-04-22"
+        },
+        {
+          "id": "ipc-bridge/command-files-count",
+          "claim": "commands 目录包含 22 个领域命令文件",
+          "anchor": {
+            "file": "src-tauri/src/commands/",
+            "symbol": "mod.rs"
+          },
+          "expect": { "equals": 22 },
+          "confidence": "yellow",
+          "source": "ai:analysis-2026-04-22"
+        },
+        {
+          "id": "ipc-bridge/frontend-services-count",
+          "claim": "前端 services/tauri 目录包含 8 个服务文件（含 index.ts）",
+          "anchor": {
+            "file": "src/services/tauri/",
+            "symbol": "index.ts"
+          },
+          "expect": { "equals": 8 },
+          "confidence": "yellow",
+          "source": "ai:analysis-2026-04-22"
+        }
+      ],
+      "traps": [
+        {
+          "id": "ipc-bridge/trap-chat-rs-size",
+          "description": "chat.rs 约 1545 行，包含 fork 检测、附件处理等复杂逻辑，修改时极易引入回归",
+          "source": "ai:analysis-2026-04-22",
+          "severity": "high"
+        },
+        {
+          "id": "ipc-bridge/trap-context-error-type",
+          "description": "context.rs 返回 Result<T, String> 而非 Result<T>（AppError），破坏统一错误模式",
+          "source": "ai:analysis-2026-04-22",
+          "severity": "medium"
+        },
+        {
+          "id": "ipc-bridge/trap-duplicate-get-claude-path",
+          "description": "get_claude_path() 在 auto_mode.rs/cli_info.rs/mcp_manager.rs/plugin.rs 各有一份相同实现，修改时需同步四处",
+          "source": "ai:analysis-2026-04-22",
+          "severity": "medium"
+        },
+        {
+          "id": "ipc-bridge/trap-logging-dead-code",
+          "description": "logging.rs 定义 6 个命令但未在 generate_handler![] 注册，可能是死代码",
+          "source": "ai:analysis-2026-04-22",
+          "severity": "low"
+        },
+        {
+          "id": "ipc-bridge/trap-mutex-poison-recovery",
+          "description": "部分命令用 unwrap_or_else(|e| e.into_inner()) 静默恢复 Mutex 中毒，与 map_err() 模式不一致",
+          "source": "ai:analysis-2026-04-22",
+          "severity": "medium"
+        },
+        {
+          "id": "ipc-bridge/trap-sessions-vestigial",
+          "description": "AppState.sessions 字段（session_id→PID）可能是遗留代码，实际会话管理已迁移到 EngineRegistry",
+          "source": "ai:analysis-2026-04-22",
+          "severity": "low"
+        }
+      ]
+    },
+    {
+      "id": "mcp",
+      "name": "MCP 与插件",
+      "domain": "developer-tools",
+      "scope": {
+        "include": [
+          "src-tauri/src/services/mcp_manager_service.rs",
+          "src-tauri/src/services/mcp_config_service.rs",
+          "src-tauri/src/commands/mcp_manager.rs",
+          "crates/polaris-knowledge-mcp/**",
+          "src/components/Mcp/**",
+          "src/stores/mcpStore.ts",
+          "src/services/mcpService.ts",
+          "src/types/mcp.ts",
+          "src/services/knowledgeService.ts",
+          "src/stores/knowledgeStore.ts"
+        ]
+      },
+      "dependencies": ["ipc-bridge", "config-settings"],
+      "dependents": ["chat-session"],
+      "documentFile": "mcp.md",
+      "complexity": "medium",
+      "changeFrequency": "medium",
+      "assertions": [
+        {
+          "id": "mcp/knowledge-tools-count",
+          "claim": "polaris-knowledge-mcp 暴露 14 个工具",
+          "anchor": {
+            "file": "crates/polaris-knowledge-mcp/src/tools.rs",
+            "symbol": "get_tools_list"
+          },
+          "expect": { "equals": 14 },
+          "confidence": "yellow",
+          "source": "human:PR#3"
+        },
+        {
+          "id": "mcp/config-binary-resolution",
+          "claim": "resolve_mcp_executable_path 按三级回退查找二进制：bundle → env var → dev/release",
+          "anchor": {
+            "file": "src-tauri/src/services/mcp_config_service.rs",
+            "symbol": "resolve_mcp_executable_path"
+          },
+          "expect": { "regex": "fn resolve_mcp_executable_path.*resource_dir.*env_var_name" },
+          "confidence": "orange",
+          "source": "ai:analysis"
+        },
+        {
+          "id": "mcp/atomic-json-write",
+          "claim": "配置写入使用原子模式：先写 .json.tmp 再 rename",
+          "anchor": {
+            "file": "src-tauri/src/services/mcp_config_service.rs",
+            "symbol": "write_json_atomically"
+          },
+          "expect": { "regex": "with_extension.*json\\.tmp.*rename" },
+          "confidence": "orange",
+          "source": "ai:analysis"
+        },
+        {
+          "id": "mcp/four-config-sources",
+          "claim": "McpManagerService 从 4 个配置源读取 MCP 服务器：全局 settings、项目 .mcp.json、项目 .claude/settings.json、项目 .claude/settings.local.json",
+          "anchor": {
+            "file": "src-tauri/src/services/mcp_manager_service.rs",
+            "symbol": "list_config_paths"
+          },
+          "expect": { "equals": 4 },
+          "confidence": "orange",
+          "source": "ai:analysis"
+        }
+      ],
+      "traps": [
+        {
+          "id": "mcp/config-read-write-gap",
+          "description": "mcp_config_service 只写 .polaris/claude/mcp.json，但 mcp_manager_service 从 4 个不同源读取配置，两边管理范围不重叠",
+          "severity": "high",
+          "files": ["src-tauri/src/services/mcp_config_service.rs", "src-tauri/src/services/mcp_manager_service.rs"]
+        },
+        {
+          "id": "mcp/cli-output-fragile",
+          "description": "parse_mcp_list_output 依赖 Claude CLI 输出格式（✓/!/✗ 前缀），CLI 版本升级可能导致解析失败",
+          "severity": "high",
+          "files": ["src-tauri/src/services/mcp_manager_service.rs"]
+        },
+        {
+          "id": "mcp/no-cached-health-check",
+          "description": "McpManagerService 每次请求都新建实例并执行 CLI 子进程，list_servers 每次刷新至少 1 次 CLI 调用",
+          "severity": "medium",
+          "files": ["src-tauri/src/commands/mcp_manager.rs", "src-tauri/src/services/mcp_manager_service.rs"]
+        },
+        {
+          "id": "mcp/scope-string-mismatch",
+          "description": "add_server 中 scope='local' 判断与 McpScope 枚举（User/Project/Global）不一致，传递时需注意映射",
+          "severity": "medium",
+          "files": ["src-tauri/src/services/mcp_manager_service.rs"]
+        },
+        {
+          "id": "mcp/operating-server-stuck",
+          "description": "operatingServer 阻止并发操作但组件卸载时不重置，面板关闭可能卡住",
+          "severity": "low",
+          "files": ["src/stores/mcpStore.ts"]
+        },
+        {
+          "id": "mcp/auth-url-regex",
+          "description": "handleAuth 用正则从 health.status 文本提取 URL，状态文本格式变化会提取不到",
+          "severity": "low",
+          "files": ["src/components/Mcp/McpPanel.tsx"]
+        }
+      ]
+    },
+    {
+      "id": "scheduler",
+      "name": "定时任务调度",
+      "domain": "data-management",
+      "scope": {
+        "include": [
+          "src-tauri/src/services/scheduler/**",
+          "src-tauri/src/services/scheduler_mcp_server.rs",
+          "src-tauri/src/services/scheduler_daemon.rs",
+          "src/components/Scheduler/**",
+          "src/stores/schedulerStore.ts"
+        ]
+      },
+      "dependencies": ["ai-engine", "ipc-bridge", "workspace"],
+      "dependents": [],
+      "documentFile": "scheduler.md",
+      "complexity": "high",
+      "changeFrequency": "medium",
+      "assertions": [],
+      "traps": []
+    },
+    {
+      "id": "speech-voice",
+      "name": "语音与通知",
+      "domain": "platform-integration",
+      "scope": {
+        "include": [
+          "src/services/speechService.ts",
+          "src/services/ttsService.ts",
+          "src/components/Character/**",
+          "src/hooks/useSpeechRecognition.ts"
+        ]
+      },
+      "dependencies": ["chat-session", "config-settings", "ui-framework"],
+      "dependents": [],
+      "documentFile": "speech-voice.md",
+      "complexity": "medium",
+      "changeFrequency": "low",
+      "assertions": [],
+      "traps": []
+    },
+    {
+      "id": "terminal",
+      "name": "终端",
+      "domain": "developer-tools",
+      "scope": {
+        "include": [
+          "src-tauri/src/commands/terminal.rs",
+          "src/components/Terminal/**",
+          "src/stores/terminalStore.ts"
+        ]
+      },
+      "dependencies": ["workspace", "ipc-bridge"],
+      "dependents": [],
+      "documentFile": "terminal.md",
+      "complexity": "low",
+      "changeFrequency": "low",
+      "assertions": [],
+      "traps": []
+    },
+    {
+      "id": "todo-requirement",
+      "name": "待办与需求管理",
+      "domain": "data-management",
+      "scope": {
+        "include": [
+          "src-tauri/src/services/todo_mcp_server.rs",
+          "src-tauri/src/services/requirements_mcp_server.rs",
+          "src-tauri/src/services/unified_todo_repository.rs",
+          "src-tauri/src/services/unified_requirement_repository.rs",
+          "src/components/TodoPanel/**",
+          "src/components/RequirementPanel/**"
+        ]
+      },
+      "dependencies": ["ai-engine", "ipc-bridge"],
+      "dependents": [],
+      "documentFile": "todo-requirement.md",
+      "complexity": "medium",
+      "changeFrequency": "low",
+      "assertions": [],
+      "traps": []
+    },
+    {
+      "id": "ui-framework",
+      "name": "UI 框架与通用组件",
+      "domain": "platform-integration",
+      "scope": {
+        "include": [
+          "src/components/Layout/**",
+          "src/components/Common/**",
+          "src/components/TopMenuBar/**",
+          "src/hooks/**",
+          "src/i18n/**",
+          "src/locales/**"
+        ]
+      },
+      "dependencies": [],
+      "dependents": ["chat-session", "chat-render", "workspace", "assistant", "speech-voice"],
+      "documentFile": "ui-framework.md",
+      "complexity": "medium",
+      "changeFrequency": "low",
+      "assertions": [],
+      "traps": []
+    },
+    {
+      "id": "workspace",
+      "name": "工作区与文件管理",
+      "domain": "developer-tools",
+      "scope": {
+        "include": [
+          "src/components/FileExplorer/**",
+          "src/components/Editor/**",
+          "src/stores/fileExplorerStore.ts",
+          "src/stores/workspaceStore.ts"
+        ]
+      },
+      "dependencies": ["ipc-bridge", "ui-framework"],
+      "dependents": ["git", "scheduler", "terminal"],
+      "documentFile": "workspace.md",
+      "complexity": "medium",
+      "changeFrequency": "medium",
+      "assertions": [],
+      "traps": []
+    }
+  ],
+  "globalConventions": [
+    {
+      "id": "no-console",
+      "rule": "禁止直接使用 console.log（仅允许 console.warn / console.error，logger.ts 自身例外）",
+      "use": "createLogger('模块名')",
+      "anchor": "CLAUDE.md#typescript-前端"
+    },
+    {
+      "id": "named-exports-only",
+      "rule": "TypeScript 侧全部使用命名导出，不使用 default export",
+      "anchor": "CLAUDE.md#typescript-前端"
+    },
+    {
+      "id": "rust-camel-case-serde",
+      "rule": "Rust struct 使用 #[serde(rename_all = \"camelCase\")] 匹配前端命名",
+      "anchor": "CLAUDE.md#rust-后端"
+    },
+    {
+      "id": "zustand-store-naming",
+      "rule": "Zustand store 命名为 use<Domain>Store，状态接口与 store 同文件",
+      "anchor": "CLAUDE.md#typescript-前端"
+    },
+    {
+      "id": "conventional-commits",
+      "rule": "提交规范使用 Conventional Commits (type(scope): subject)，header 最长 100 字符",
+      "anchor": "CLAUDE.md#通用约定"
+    }
+  ]
+}
