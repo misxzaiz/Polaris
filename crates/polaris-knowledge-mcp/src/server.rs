@@ -1,6 +1,7 @@
 //! MCP Server main loop and request handling.
 
 use std::io::{self, BufRead, BufReader, Write};
+use std::sync::{Arc, RwLock};
 use std::path::PathBuf;
 
 use serde_json::json;
@@ -101,7 +102,7 @@ fn run_event_loop(
     let mut reader = BufReader::new(stdin.lock());
     let mut writer = stdout.lock();
 
-    let cache: SharedCache = std::rc::Rc::new(std::cell::RefCell::new(KnowledgeCache::new()));
+    let cache: SharedCache = Arc::new(RwLock::new(KnowledgeCache::new()));
 
     let mut line = String::new();
     loop {
@@ -264,7 +265,7 @@ mod tests {
     }
 
     fn default_cache() -> SharedCache {
-        std::rc::Rc::new(std::cell::RefCell::new(KnowledgeCache::new()))
+        Arc::new(RwLock::new(KnowledgeCache::new()))
     }
 
     #[test]

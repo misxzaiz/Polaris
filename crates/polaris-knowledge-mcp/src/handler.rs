@@ -1,10 +1,11 @@
 //! Tool execution handlers.
 
-use std::cell::RefCell;
+use std::sync::{Arc, Mutex, RwLock};
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
-use std::rc::Rc;
+
 use std::time::SystemTime;
 
 use serde_json::json;
@@ -103,9 +104,15 @@ impl KnowledgeCache {
 
 /// Shared reference to the cache.
 ///
-/// The server event loop is single-threaded. `RefCell` provides interior mutability
-/// without requiring `&mut` throughout the call chain.
-pub type SharedCache = Rc<RefCell<KnowledgeCache>>;
+/// Uses `Arc<RwLock<>>` for thread-safe shared access.
+/// Multiple read operations can proceed in parallel;
+/// cache updates acquire a write lock exclusively.
+pub type SharedCache = Arc<RwLock<KnowledgeCache>>;
+
+/// Global write serialization lock.
+/// Only one write operation (update_module, seed_assertions, etc.) may execute at a time.
+/// Read-only tools do not acquire this lock.
+pub type WriteLock = Arc<Mutex<()>>;
 
 /// Load v1 index with mtime-based caching.
 pub fn load_index_cached(index_path: &PathBuf, cache: &SharedCache) -> Result<KnowledgeIndex> {
@@ -114,7 +121,7 @@ pub fn load_index_cached(index_path: &PathBuf, cache: &SharedCache) -> Result<Kn
         .ok();
 
     {
-        let c = cache.borrow();
+        let c = cache.read().unwrap();
         if let Some((ref idx, ref cached_mtime)) = c.v1 {
             if Some(*cached_mtime) == mtime {
                 return Ok(idx.clone());
@@ -124,7 +131,7 @@ pub fn load_index_cached(index_path: &PathBuf, cache: &SharedCache) -> Result<Kn
 
     let index = load_index(index_path)?;
     if let Some(mtime) = mtime {
-        cache.borrow_mut().v1 = Some((index.clone(), mtime));
+        cache.write().unwrap().v1 = Some((index.clone(), mtime));
     }
     Ok(index)
 }
@@ -148,7 +155,7 @@ pub fn load_v2_cached(index_path: &PathBuf, cache: &SharedCache) -> Result<crate
         .ok();
 
     {
-        let c = cache.borrow();
+        let c = cache.read().unwrap();
         if let Some((ref v2, ref cached_mtime)) = c.v2 {
             if Some(*cached_mtime) == mtime {
                 return Ok(v2.clone());
@@ -160,7 +167,7 @@ pub fn load_v2_cached(index_path: &PathBuf, cache: &SharedCache) -> Result<crate
         .map_err(|e| KnowledgeError::Io(format!("无法读取 index.v2.json: {}", e)))?;
     let v2: crate::models::KnowledgeIndexV2 = serde_json::from_str(&content)?;
     if let Some(mtime) = mtime {
-        cache.borrow_mut().v2 = Some((v2.clone(), mtime));
+        cache.write().unwrap().v2 = Some((v2.clone(), mtime));
     }
     Ok(v2)
 }
@@ -701,8 +708,8 @@ pub fn execute_create_module(
     }
 
     // ── Invalidate cache (indexes changed on disk) ───────────────
-    cache.borrow_mut().v1 = None;
-    cache.borrow_mut().v2 = None;
+    cache.write().unwrap().v1 = None;
+    cache.write().unwrap().v2 = None;
 
     // ── Build response ───────────────────────────────────────────
     let timestamp = chrono_timestamp();
