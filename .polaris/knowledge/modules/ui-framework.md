@@ -32,6 +32,10 @@
 | Icons | `src/components/Common/Icons.tsx` | 30+ 自定义 SVG 图标组件 |
 | viewStore | `src/stores/viewStore.ts` | 布局状态：面板类型/宽度/折叠/紧凑模式/多会话网格 |
 | tabStore | `src/stores/tabStore.ts` | 标签管理：打开/关闭/切换/脏标记 |
+| KnowledgePanel | `src/components/KnowledgePanel/KnowledgePanel.tsx` | 知识面板主入口：三视图切换(列表/依赖图/健康度) + 搜索 + 过期筛选 |
+| ModuleCard | `src/components/KnowledgePanel/ModuleCard.tsx` | 模块卡片：复杂度/变更频率/依赖数/过期状态，展开详情 |
+| KnowledgeDependencyGraph | `src/components/KnowledgePanel/KnowledgeDependencyGraph.tsx` | Mermaid 依赖拓扑图：按 Domain 分组、复杂度着色、上下游过滤 |
+| KnowledgeHealthDashboard | `src/components/KnowledgePanel/KnowledgeHealthDashboard.tsx` | 断言健康度仪表盘：置信度分布/陷阱统计/模块覆盖率/健康分数 |
 | useWindowManager | `src/hooks/useWindowManager.ts` | 编排紧凑模式同步、窗口透明度、快捷键 |
 | useWindowSize | `src/hooks/useWindowSize.ts` | 跟踪窗口尺寸，计算 isCompact（阈值 500px） |
 
@@ -108,7 +112,25 @@ items 沿 180° 弧形分布（CSS 坐标 -90° 到 +90°）
 
 ActivityBar 折叠时显示半圆触发器（RadialMenuTrigger），hover/click 展开扇形菜单。
 
-### 6. 标签生命周期跨 Store 协调
+### 6. KnowledgePanel 三视图架构
+
+```
+KnowledgePanel (leftPanelType='knowledge')
+  ├─ ViewMode: 'list' | 'graph' | 'health'
+  ├─ 列表视图: ModuleCard[] → 搜索/过期筛选/统计
+  ├─ 图视图: KnowledgeDependencyGraph → Mermaid flowchart TD
+  │   ├─ 按Domain分组(4色) + 复杂度着色(green/yellow/red)
+  │   ├─ 选中模块高亮上下游 (direction: all/upstream/downstream)
+  │   └─ 点击回调: window.__knowledgeGraphClick 全局桥接
+  └─ 健康视图: KnowledgeHealthDashboard
+      ├─ 健康分数 = Σ(green×1.0 + yellow×0.7 + orange×0.3) / totalAssertions × 100
+      ├─ 置信度分布条形图 (green/yellow/orange/red/black)
+      └─ 模块覆盖率: 断言覆盖 + 陷阱覆盖
+```
+
+数据源：`knowledgeStore`（Zustand），通过 `knowledgeService` 调用 MCP 工具获取索引和过期状态。
+
+### 7. 标签生命周期跨 Store 协调
 
 ```
 tabStore (tabs 管理) ←→ fileEditorStore (文件缓冲区)
@@ -206,7 +228,12 @@ window resize event
 
 15. **ErrorBoundary 心跳检测**：使用定时器检测白屏，如果 ErrorBoundary 自身渲染失败，定时器也会丢失，导致无法自愈
 
+16. **KnowledgeDependencyGraph 全局回调**：使用 `window.__knowledgeGraphClick` 全局变量桥接 Mermaid 点击事件和 React 回调。组件卸载时清理，但如果多个实例同时挂载会互相覆盖
+
+17. **KnowledgePanel 视图切换无状态保持**：`viewMode` 是组件内 `useState`，面板关闭再打开后重置为 `'list'`。搜索和过期筛选状态同理丢失
+
 ## 最近变更
 
 - 初始创建于 2026-04-20
 - 文档升级至 A 级（2026-04-22）：补充 6 架构模式、3 数据流、10 设计决策、15 陷阱
+- 2026-04-22：补充 KnowledgePanel 四组件、三视图架构、3 新陷阱

@@ -158,8 +158,9 @@ function generateMermaidCode(
         const isSelected = mod.id === selectedModuleId;
 
         // 节点标签：名称 + ID
-        const label = `${mod.name}<br/><small>#${mod.id}</small>`;
-        lines.push(`    ${safeId} ["${label}"]`);
+        // NOTE: Mermaid 11.x 要求节点 ID 和 ["label"] 之间不能有空格
+        const label = `${mod.name}<br/>${mod.id}`;
+        lines.push(`    ${safeId}["${label}"]`);
 
         // 样式：复杂度着色，选中/高亮增强
         const borderWidth = isSelected ? 3 : isHighlighted ? 2 : 1;
@@ -177,8 +178,8 @@ function generateMermaidCode(
       const isHighlighted = highlightNodes.has(mod.id);
       const isSelected = mod.id === selectedModuleId;
 
-      const label = `${mod.name}<br/><small>#${mod.id}</small>`;
-      lines.push(`  ${safeId} ["${label}"]`);
+      const label = `${mod.name}<br/>${mod.id}`;
+      lines.push(`  ${safeId}["${label}"]`);
 
       const borderWidth = isSelected ? 3 : isHighlighted ? 2 : 1;
       const opacity = selectedModuleId && !isHighlighted ? 0.4 : 1;
@@ -187,15 +188,16 @@ function generateMermaidCode(
   }
 
   // 渲染依赖边
+  // NOTE: Mermaid 不支持边上的内联 style="" 属性
+  // 非高亮边使用虚线 -.-> 视觉区分
   visibleModules.forEach(mod => {
     const safeId = safeIdMap.get(mod.id)!;
     mod.dependencies.forEach(depId => {
       const depSafeId = safeIdMap.get(depId);
       if (depSafeId && visibleModules.some(m => m.id === depId)) {
-        // depId -> mod (mod 依赖 depId)
         const isHighlighted = highlightNodes.has(mod.id) && highlightNodes.has(depId);
-        const edgeStyle = isHighlighted ? '' : ' style="opacity:0.4"';
-        lines.push(`  ${depSafeId} -->${edgeStyle} ${safeId}`);
+        const arrow = isHighlighted ? '-->' : '-.->';
+        lines.push(`  ${depSafeId} ${arrow} ${safeId}`);
       }
     });
   });

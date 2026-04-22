@@ -908,35 +908,13 @@ fn generate_mermaid_graph(index: &crate::models::KnowledgeIndex) -> String {
     let mut lines: Vec<String> = Vec::new();
     lines.push("graph TD".to_string());
 
-    // Group modules by domain
-    let mut domain_modules: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    // v1 index has no domain grouping — emit a flat dependency graph.
+    lines.push("  %% Modules".to_string());
     for m in &index.modules {
-        domain_modules
-            .entry(m.domain.clone())
-            .or_default()
-            .push(m.id.clone());
-    }
-
-    // Find domain names
-    let domain_names: BTreeMap<String, String> = index
-        .domains
-        .iter()
-        .map(|d| (d.id.clone(), d.name.clone()))
-        .collect();
-
-    // Emit subgraphs for each domain
-    for (domain_id, module_ids) in &domain_modules {
-        let domain_name = domain_names.get(domain_id).unwrap_or(domain_id);
-        lines.push(format!("  subgraph {}[\"{}\"]", domain_id, domain_name));
-        for mid in module_ids {
-            lines.push(format!("    {}", mid));
-        }
-        lines.push("  end".to_string());
+        lines.push(format!("  {}[\"{}\"]", m.id, m.name));
     }
 
     lines.push(String::new());
-
-    // Emit dependencies
     lines.push("  %% Dependencies".to_string());
     for m in &index.modules {
         for dep in &m.dependencies {

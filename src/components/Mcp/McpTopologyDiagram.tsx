@@ -31,7 +31,7 @@ function generateMermaidCode(servers: McpServerAggregate[]): string {
     const color = getStatusColor(server);
     const transport = server.health?.transport ?? server.configs[0]?.transport ?? 'stdio';
     const scopes = [...new Set(server.configs.map((c) => c.scope))].join(',');
-    const label = `${server.name}<br/><small>${transport} · ${scopes}</small>`;
+    const label = `${server.name}<br/>${transport} · ${scopes}`;
 
     lines.push(`  ${nodeId}["${label}"]`);
     lines.push(`  style ${nodeId} fill:${color}33,stroke:${color},color:#F8F8F8`);
