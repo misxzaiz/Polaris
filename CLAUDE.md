@@ -155,7 +155,7 @@ polaris/
 │       │   ├── migrate.rs        #   v1 → v2 非破坏性迁移
 │       │   ├── validator.rs      #   Assertion 校验器 (file/symbol/expect)
 │       │   ├── compiler.rs       #   compile_context — 意图识别 + 多路召回
-│       │   ├── handler.rs        #   MCP 工具调用分发 (12 工具)
+│       │   ├── handler.rs        #   MCP 工具调用分发 (16 工具)
 │       │   └── server.rs         #   JSON-RPC stdio event loop
 │       └── tests/                #   v2 索引反序列化端到端测试
 │
@@ -212,7 +212,7 @@ polaris/
 4. **虚拟滚动 + 消息压缩**: Virtuoso 管理可见区域，离屏消息文本替换为占位符 (messageCompactor)
 5. **LRU 缓存体系**: MarkdownRenderCache(20), streamingMdCache(30), highlightCache(50), diagramStates(30)
 6. **集成管理器**: QQ Bot / 飞书 / 钉钉桥接统一在 integrations/manager.rs (84KB)
-7. **项目知识 v2 (assertion-based)**: `crates/polaris-knowledge-mcp/` 独立 crate，暴露 12 个 MCP 工具。核心抓手 `compile_context` — 基于意图识别的 token-budgeted 上下文编译器。知识按 `domains → modules → assertions + traps` 三层组织，每条 assertion 带代码锚点 + expect 期望值，每次 commit 由 post-commit hook 自动校验。置信度五档演化：🟢 green (代码可验证) → 🟡 yellow (人审) → 🟠 orange (AI 生成) → 🔴 red (陈旧) → ⚫ black (失效)。详见 `.polaris/knowledge/index.v2.json` 和 `.polaris/knowledge/schema/`
+7. **项目知识 v2 (assertion-based)**: `crates/polaris-knowledge-mcp/` 独立 crate，暴露 16 个 MCP 工具（含 `create_module` 创建工具）。核心抓手 `compile_context` — 基于意图识别的 token-budgeted 上下文编译器。知识按 `domains → modules → assertions + traps` 三层组织，每条 assertion 带代码锚点 + expect 期望值，每次 commit 由 post-commit hook 自动校验。置信度五档演化：🟢 green (代码可验证) → 🟡 yellow (人审) → 🟠 orange (AI 生成) → 🔴 red (陈旧) → ⚫ black (失效)。详见 `.polaris/knowledge/index.v2.json` 和 `.polaris/knowledge/schema/`
 
 ## 已知陷阱
 

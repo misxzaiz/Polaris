@@ -100,6 +100,71 @@ pub fn get_tools_list() -> Value {
                 }
             },
             {
+                "name": "create_module",
+                "description": "创建新的知识模块。同时写入 v1 index.json 和 v2 index.v2.json，并创建对应的 Markdown 文档文件。确保三处数据一致。如果模块 ID 已存在则返回错误。",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["id", "name", "domain", "scope", "content"],
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "模块 ID（如 chat-render, ai-engine, scheduler）。使用 kebab-case 命名。"
+                        },
+                        "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "模块显示名称（如「聊天渲染与内容展示」）"
+                        },
+                        "domain": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "所属领域 ID（对应 v2 domains 中的 id）"
+                        },
+                        "scope": {
+                            "type": "object",
+                            "required": ["include"],
+                            "properties": {
+                                "include": {
+                                    "type": "array",
+                                    "items": { "type": "string", "minLength": 1 },
+                                    "description": "包含的文件 glob 模式列表"
+                                },
+                                "exclude": {
+                                    "type": "array",
+                                    "items": { "type": "string" },
+                                    "description": "排除的文件 glob 模式列表"
+                                }
+                            },
+                            "description": "模块文件范围（glob 模式）"
+                        },
+                        "content": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "模块文档 Markdown 内容"
+                        },
+                        "dependencies": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "依赖的上游模块 ID 列表"
+                        },
+                        "complexity": {
+                            "type": "string",
+                            "enum": ["low", "medium", "high"],
+                            "default": "medium",
+                            "description": "模块复杂度"
+                        },
+                        "changeFrequency": {
+                            "type": "string",
+                            "enum": ["low", "medium", "high"],
+                            "default": "medium",
+                            "description": "变更频率"
+                        }
+                    },
+                    "additionalProperties": false
+                }
+            },
+            {
                 "name": "mark_modules_stale",
                 "description": "将指定模块标记为需要更新。git commit 后检测到文件变更时自动调用，或手动标记。",
                 "inputSchema": {

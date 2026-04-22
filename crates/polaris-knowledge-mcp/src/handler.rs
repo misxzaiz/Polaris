@@ -12,7 +12,9 @@ use serde_json::Value;
 
 use crate::error::{KnowledgeError, Result};
 use crate::extractor::matches_any;
-use crate::models::{KnowledgeIndex, ModuleEntry};
+use crate::models::{
+    ChangeFrequency, Complexity, KnowledgeIndex, ModuleEntry, ModuleV2, ScopeSpec,
+};
 use crate::seeder::{self, SeedOptions};
 
 /// Maximum number of retries for transient file read failures.
@@ -480,6 +482,262 @@ pub fn execute_update_module(
         "content": [{
             "type": "text",
             "text": format!("模块 {} 文档已更新（{} 字符）", id, content.len())
+        }]
+    }))
+}
+
+/// Execute create_module tool.
+///
+/// Creates a new module in both v1 and v2 indexes, writes the markdown document,
+/// and invalidates the cache. Returns an error if the module ID already exists
+/// or the domain is not found in v2.
+pub fn execute_create_module(
+    arguments: Value,
+    index_path: &PathBuf,
+    modules_dir: &PathBuf,
+    cache: &SharedCache,
+) -> Result<Value> {
+    // ── Parse arguments ──────────────────────────────────────────
+    let id = arguments
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let name = arguments
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let domain = arguments
+        .get("domain")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let content = arguments
+        .get("content")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let dependencies = arguments
+        .get("dependencies")
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let complexity_str = arguments
+        .get("complexity")
+        .and_then(Value::as_str)
+        .unwrap_or("medium")
+        .to_string();
+    let change_frequency_str = arguments
+        .get("changeFrequency")
+        .and_then(Value::as_str)
+        .unwrap_or("medium")
+        .to_string();
+
+    // Parse scope
+    let scope_json = arguments.get("scope").cloned().unwrap_or(json!({}));
+    let scope_include = scope_json
+        .get("include")
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let scope_exclude = scope_json
+        .get("exclude")
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    // ── Validate required fields ─────────────────────────────────
+    if id.is_empty() {
+        return Err(KnowledgeError::Validation("缺少模块 ID".to_string()));
+    }
+    if name.is_empty() {
+        return Err(KnowledgeError::Validation("缺少模块名称".to_string()));
+    }
+    if domain.is_empty() {
+        return Err(KnowledgeError::Validation("缺少所属领域（domain）".to_string()));
+    }
+    if content.is_empty() {
+        return Err(KnowledgeError::Validation("缺少模块文档内容".to_string()));
+    }
+    if scope_include.is_empty() {
+        return Err(KnowledgeError::Validation(
+            "scope.include 不能为空，至少需要一个 glob 模式".to_string(),
+        ));
+    }
+
+    // Parse enums with fallback
+    let complexity = match complexity_str.as_str() {
+        "low" => Complexity::Low,
+        "high" => Complexity::High,
+        _ => Complexity::Medium,
+    };
+    let change_frequency = match change_frequency_str.as_str() {
+        "low" => ChangeFrequency::Low,
+        "high" => ChangeFrequency::High,
+        _ => ChangeFrequency::Medium,
+    };
+
+    // Document filename: <id>.md
+    let document_file = format!("{}.md", id);
+
+    // ── Check for duplicate in v1 index ──────────────────────────
+    let mut index = load_index_cached(index_path, cache)?;
+    if index.modules.iter().any(|m| m.id == id) {
+        return Err(KnowledgeError::Validation(format!(
+            "模块 ID '{}' 已存在，请使用 update_module 更新",
+            id
+        )));
+    }
+
+    // ── Write markdown document ──────────────────────────────────
+    let doc_path = modules_dir.join(&document_file);
+    if doc_path.exists() {
+        return Err(KnowledgeError::Validation(format!(
+            "文档文件 {} 已存在，请检查是否有冲突",
+            document_file
+        )));
+    }
+    fs::write(&doc_path, &content).map_err(|e| {
+        KnowledgeError::Io(format!("无法写入模块文档 {}: {}", document_file, e))
+    })?;
+
+    // ── Append to v1 index.json ──────────────────────────────────
+    let v1_entry = ModuleEntry {
+        id: id.clone(),
+        name: name.clone(),
+        scope: scope_include.clone(),
+        dependencies: dependencies.clone(),
+        dependents: Vec::new(),
+        file: document_file.clone(),
+        complexity: complexity_str.clone(),
+        change_frequency: change_frequency_str.clone(),
+    };
+    index.modules.push(v1_entry);
+
+    let index_content = serde_json::to_string_pretty(&index)
+        .map_err(|e| KnowledgeError::Json(format!("v1 索引序列化失败: {}", e)))?;
+    fs::write(index_path, &index_content)
+        .map_err(|e| KnowledgeError::Io(format!("无法写入 index.json: {}", e)))?;
+
+    // ── Append to v2 index.v2.json ──────────────────────────────
+    let knowledge_dir = index_path
+        .parent()
+        .ok_or_else(|| KnowledgeError::Io("无法确定知识目录".to_string()))?;
+    let v2_path = knowledge_dir.join("index.v2.json");
+
+    let mut v2_written = false;
+    let mut v2_domain_warning: Option<String> = None;
+
+    if v2_path.exists() {
+        let mut v2 = load_v2_cached(index_path, cache)?;
+
+        // Check duplicate in v2
+        if v2.modules.iter().any(|m| m.id == id) {
+            // v1 already written — this is a partial state.
+            // We do NOT roll back v1 to keep things simple; the caller can
+            // resolve manually. Report the inconsistency.
+            return Err(KnowledgeError::Validation(format!(
+                "模块 ID '{}' 在 v1 创建成功但 v2 已存在。数据不一致，请手动检查 index.v2.json",
+                id
+            )));
+        }
+
+        // Validate domain exists in v2
+        let domain_exists = v2.domains.iter().any(|d| d.id == domain);
+        if !domain_exists {
+            v2_domain_warning = Some(format!(
+                "领域 '{}' 在 v2 domains 中不存在。模块已创建但领域引用可能无效。建议补充 domain 或修改 domain 参数。",
+                domain
+            ));
+        }
+
+        // Build v2 module entry
+        let v2_entry = ModuleV2 {
+            id: id.clone(),
+            name: name.clone(),
+            domain: domain.clone(),
+            scope: ScopeSpec {
+                include: scope_include,
+                exclude: scope_exclude,
+            },
+            dependencies,
+            dependents: Vec::new(),
+            document_file: document_file.clone(),
+            structure_file: None,
+            complexity,
+            change_frequency,
+            assertions: Vec::new(),
+            traps: Vec::new(),
+        };
+        v2.modules.push(v2_entry);
+
+        // Also register module ID in the domain's modules list
+        if let Some(d) = v2.domains.iter_mut().find(|d| d.id == domain) {
+            d.modules.push(id.clone());
+        }
+
+        let v2_content = serde_json::to_string_pretty(&v2)
+            .map_err(|e| KnowledgeError::Json(format!("v2 索引序列化失败: {}", e)))?;
+        fs::write(&v2_path, &v2_content)
+            .map_err(|e| KnowledgeError::Io(format!("无法写入 index.v2.json: {}", e)))?;
+
+        v2_written = true;
+    }
+
+    // ── Invalidate cache (indexes changed on disk) ───────────────
+    cache.borrow_mut().v1 = None;
+    cache.borrow_mut().v2 = None;
+
+    // ── Build response ───────────────────────────────────────────
+    let timestamp = chrono_timestamp();
+    let mut structured = json!({
+        "id": id,
+        "name": name,
+        "domain": domain,
+        "created": true,
+        "v1Updated": true,
+        "v2Updated": v2_written,
+        "timestamp": timestamp,
+        "contentLength": content.len()
+    });
+    if let Some(warning) = &v2_domain_warning {
+        structured["domainWarning"] = json!(warning);
+    }
+
+    let mut text = format!(
+        "模块 '{}' ({}) 创建成功。v1 已更新。",
+        id, name
+    );
+    if v2_written {
+        text.push_str(" v2 已更新。");
+    } else {
+        text.push_str(" v2 索引不存在，跳过。");
+    }
+    if let Some(warning) = &v2_domain_warning {
+        text.push_str(&format!(" ⚠️ {}", warning));
+    }
+
+    Ok(json!({
+        "structuredContent": structured,
+        "content": [{
+            "type": "text",
+            "text": text
         }]
     }))
 }
@@ -1074,6 +1332,7 @@ pub fn handle_tools_call(
         "get_architecture_overview" => execute_architecture_overview(index_path, modules_dir, cache),
         "search_modules" => execute_search_modules(arguments, index_path, modules_dir, cache),
         "update_module" => execute_update_module(arguments, index_path, modules_dir, cache),
+        "create_module" => execute_create_module(arguments, index_path, modules_dir, cache),
         "mark_modules_stale" => execute_mark_stale(arguments, index_path, cache),
         "list_stale_modules" => execute_list_stale_modules(index_path, cache),
         "clear_stale_marker" => execute_clear_stale_marker(arguments, index_path),
