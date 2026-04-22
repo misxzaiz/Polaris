@@ -2,20 +2,27 @@
  * KnowledgePanel - 项目知识面板
  *
  * 展示知识模块索引列表，支持过期状态提示和文档浏览
+ * 支持列表视图和依赖关系图视图切换
  */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import {
   BookOpen,
   RefreshCw,
   FileText,
   Search,
   X,
+  LayoutGrid,
+  GitBranch,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useWorkspaceStore } from '@/stores'
 import { useKnowledgeStore } from '@/stores/knowledgeStore'
 import { ModuleCard } from './ModuleCard'
+import { KnowledgeDependencyGraph } from './KnowledgeDependencyGraph'
+import type { ModuleNode } from './KnowledgeDependencyGraph'
+
+type ViewMode = 'list' | 'graph'
 
 export function KnowledgePanel() {
   const { t } = useTranslation('knowledge')
@@ -31,6 +38,8 @@ export function KnowledgePanel() {
 
   const [searchQuery, setSearchQuery] = useState('')
   const [showStaleOnly, setShowStaleOnly] = useState(false)
+  const [viewMode, setViewMode] = useState<ViewMode>('list')
+  const [selectedModuleId, setSelectedModuleId] = useState<string | undefined>()
 
   // 加载知识索引
   useEffect(() => {
@@ -58,6 +67,24 @@ export function KnowledgePanel() {
 
   const staleModuleIds = new Set(staleModules.map(s => s.id))
 
+  // 转换为图节点数据
+  const graphModules = useMemo((): ModuleNode[] => {
+    if (!index) return []
+    return index.modules.map(m => ({
+      id: m.id,
+      name: m.name,
+      domain: m.id.split('-')[0] ?? 'unknown', // 简单推断，实际从 v2 索引获取
+      complexity: m.complexity as 'low' | 'medium' | 'high',
+      dependencies: m.dependencies,
+      dependents: m.dependents,
+    }))
+  }, [index])
+
+  // 处理图节点点击
+  const handleNodeClick = useCallback((moduleId: string) => {
+    setSelectedModuleId(prev => prev === moduleId ? undefined : moduleId)
+  }, [])
+
   return (
     <div className="flex flex-col h-full">
       {/* 头部 */}
@@ -74,18 +101,37 @@ export function KnowledgePanel() {
               </span>
             )}
           </div>
-          <button
-            onClick={() => {
-              if (currentWorkspace) {
-                loadIndex(currentWorkspace.path)
-              }
-            }}
-            disabled={loading}
-            className="p-1 rounded hover:bg-background-tertiary disabled:opacity-50"
-            title={t('refresh')}
-          >
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          </button>
+          <div className="flex items-center gap-1">
+            {/* 视图切换 */}
+            <div className="flex items-center border border-border-subtle rounded overflow-hidden">
+              <button
+                onClick={() => setViewMode('list')}
+                className={`p-1 ${viewMode === 'list' ? 'bg-primary text-white' : 'bg-transparent text-text-secondary hover:bg-background-tertiary'}`}
+                title={t('viewList', '列表视图')}
+              >
+                <LayoutGrid size={12} />
+              </button>
+              <button
+                onClick={() => setViewMode('graph')}
+                className={`p-1 ${viewMode === 'graph' ? 'bg-primary text-white' : 'bg-transparent text-text-secondary hover:bg-background-tertiary'}`}
+                title={t('viewGraph', '依赖关系图')}
+              >
+                <GitBranch size={12} />
+              </button>
+            </div>
+            <button
+              onClick={() => {
+                if (currentWorkspace) {
+                  loadIndex(currentWorkspace.path)
+                }
+              }}
+              disabled={loading}
+              className="p-1 rounded hover:bg-background-tertiary disabled:opacity-50"
+              title={t('refresh')}
+            >
+              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            </button>
+          </div>
         </div>
 
         {/* 搜索框 */}
@@ -126,37 +172,63 @@ export function KnowledgePanel() {
         )}
       </div>
 
-      {/* 模块列表 */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-1">
-        {loading && !index ? (
-          <div className="flex items-center justify-center py-8 text-text-tertiary">
-            <RefreshCw size={16} className="animate-spin mr-2" />
-            <span className="text-xs">{t('loading')}</span>
-          </div>
-        ) : filteredModules.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-8 text-text-tertiary">
-            <FileText size={24} className="mb-2 opacity-50" />
-            <span className="text-xs">
-              {searchQuery ? t('noResults') : t('noModules')}
-            </span>
-          </div>
-        ) : (
-          filteredModules.map(module => (
-            <ModuleCard
-              key={module.id}
-              module={module}
-              isStale={staleModuleIds.has(module.id)}
-              staleInfo={staleModules.find(s => s.id === module.id)}
-            />
-          ))
-        )}
-      </div>
-
-      {/* 底部统计 */}
-      {index && (
-        <div className="flex-shrink-0 p-2 border-t border-border-subtle text-xs text-text-tertiary text-center">
-          {t('stats', { total: index.modules.length, stale: staleModules.length })}
+      {/* 内容区域 */}
+      {viewMode === 'graph' ? (
+        <div className="flex-1 overflow-auto p-2">
+          <KnowledgeDependencyGraph
+            modules={graphModules}
+            selectedModuleId={selectedModuleId}
+            onNodeClick={handleNodeClick}
+            groupByDomain={true}
+            minHeight={300}
+          />
+          {selectedModuleId && (
+            <div className="mt-2 p-2 bg-background-surface border border-border-subtle rounded text-xs">
+              <div className="font-medium text-text-primary mb-1">
+                {index?.modules.find(m => m.id === selectedModuleId)?.name}
+                <span className="text-text-tertiary ml-1">#{selectedModuleId}</span>
+              </div>
+              <div className="text-text-secondary">
+                {t('clickToDeselect', '点击节点取消选中')}
+              </div>
+            </div>
+          )}
         </div>
+      ) : (
+        <>
+          {/* 模块列表 */}
+          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+            {loading && !index ? (
+              <div className="flex items-center justify-center py-8 text-text-tertiary">
+                <RefreshCw size={16} className="animate-spin mr-2" />
+                <span className="text-xs">{t('loading')}</span>
+              </div>
+            ) : filteredModules.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-text-tertiary">
+                <FileText size={24} className="mb-2 opacity-50" />
+                <span className="text-xs">
+                  {searchQuery ? t('noResults') : t('noModules')}
+                </span>
+              </div>
+            ) : (
+              filteredModules.map(module => (
+                <ModuleCard
+                  key={module.id}
+                  module={module}
+                  isStale={staleModuleIds.has(module.id)}
+                  staleInfo={staleModules.find(s => s.id === module.id)}
+                />
+              ))
+            )}
+          </div>
+
+          {/* 底部统计 */}
+          {index && (
+            <div className="flex-shrink-0 p-2 border-t border-border-subtle text-xs text-text-tertiary text-center">
+              {t('stats', { total: index.modules.length, stale: staleModules.length })}
+            </div>
+          )}
+        </>
       )}
     </div>
   )

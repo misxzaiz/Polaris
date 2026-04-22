@@ -4,3 +4,5 @@
 
 export { KnowledgePanel } from './KnowledgePanel'
 export { ModuleCard } from './ModuleCard'
+export { KnowledgeDependencyGraph } from './KnowledgeDependencyGraph'
+export type { KnowledgeDependencyGraphProps, ModuleNode, Domain } from './KnowledgeDependencyGraph'
