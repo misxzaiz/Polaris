@@ -8,6 +8,7 @@
 import { useEffect, useRef, memo, useState, useMemo } from 'react';
 import { getMermaidConfig } from '../../utils/mermaid-config';
 import { createLogger } from '../../utils/logger';
+import { ZoomableDiagramContainer } from '../Common/ZoomableDiagramContainer';
 
 const log = createLogger('KnowledgeDependencyGraph');
 
@@ -292,23 +293,13 @@ export const KnowledgeDependencyGraph = memo(function KnowledgeDependencyGraph({
   }
 
   return (
-    <div className="relative">
-      <div
-        ref={containerRef}
-        className="w-full overflow-x-auto"
-        style={{ minHeight: rendered ? undefined : minHeight }}
-      />
-      {!rendered && !error && (
-        <div className="flex justify-center py-4">
-          <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-        </div>
-      )}
-      {error && (
-        <div className="p-2 bg-red-500/10 border border-red-500/30 rounded text-xs text-red-400">
-          渲染失败: {error}
-        </div>
-      )}
-    </div>
+    <ZoomableDiagramContainer
+      minHeight={minHeight}
+      loading={!rendered && !error}
+      error={error}
+    >
+      <div ref={containerRef} />
+    </ZoomableDiagramContainer>
   );
 });
 
