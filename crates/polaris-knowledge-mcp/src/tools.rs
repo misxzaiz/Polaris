@@ -19,6 +19,9 @@ pub fn get_tools_list() -> Value {
                     "type": "object",
                     "properties": {},
                     "additionalProperties": false
+                },
+                "annotations": {
+                    "readOnlyHint": true
                 }
             },
             {
@@ -35,6 +38,9 @@ pub fn get_tools_list() -> Value {
                         }
                     },
                     "additionalProperties": false
+                },
+                "annotations": {
+                    "readOnlyHint": true
                 }
             },
             {
@@ -51,6 +57,9 @@ pub fn get_tools_list() -> Value {
                         }
                     },
                     "additionalProperties": false
+                },
+                "annotations": {
+                    "readOnlyHint": true
                 }
             },
             {
@@ -60,6 +69,9 @@ pub fn get_tools_list() -> Value {
                     "type": "object",
                     "properties": {},
                     "additionalProperties": false
+                },
+                "annotations": {
+                    "readOnlyHint": true
                 }
             },
             {
@@ -76,6 +88,9 @@ pub fn get_tools_list() -> Value {
                         }
                     },
                     "additionalProperties": false
+                },
+                "annotations": {
+                    "readOnlyHint": true
                 }
             },
             {
@@ -187,6 +202,9 @@ pub fn get_tools_list() -> Value {
                     "type": "object",
                     "properties": {},
                     "additionalProperties": false
+                },
+                "annotations": {
+                    "readOnlyHint": true
                 }
             },
             {
@@ -227,6 +245,9 @@ pub fn get_tools_list() -> Value {
                     "type": "object",
                     "properties": {},
                     "additionalProperties": false
+                },
+                "annotations": {
+                    "readOnlyHint": true
                 }
             },
             {
@@ -266,6 +287,9 @@ pub fn get_tools_list() -> Value {
                             "description": "意图模式。modify 会优先投放陷阱，read 会降低陷阱权重"
                         }
                     }
+                },
+                "annotations": {
+                    "readOnlyHint": true
                 }
             },
             {
@@ -292,6 +316,9 @@ pub fn get_tools_list() -> Value {
                     "properties": {
                         "moduleId": { "type": "string", "minLength": 1 }
                     }
+                },
+                "annotations": {
+                    "readOnlyHint": true
                 }
             },
             {
