@@ -12,6 +12,7 @@ import {
   GitBranch,
   Activity,
   X,
+  ShieldCheck,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { ModuleIndexEntry, StaleModule } from '@/services/knowledgeService'
@@ -21,6 +22,8 @@ interface ModuleCardProps {
   module: ModuleIndexEntry
   isStale: boolean
   staleInfo?: StaleModule
+  /** 点击查看详情回调 */
+  onDetailClick?: (moduleId: string) => void
 }
 
 /** 复杂度颜色映射 */
@@ -37,7 +40,7 @@ const FREQUENCY_COLORS: Record<string, string> = {
   high: 'text-red-500',
 }
 
-export function ModuleCard({ module, isStale, staleInfo }: ModuleCardProps) {
+export function ModuleCard({ module, isStale, staleInfo, onDetailClick }: ModuleCardProps) {
   const { t } = useTranslation('knowledge')
   const [expanded, setExpanded] = useState(false)
   const [clearing, setClearing] = useState(false)
@@ -63,7 +66,13 @@ export function ModuleCard({ module, isStale, staleInfo }: ModuleCardProps) {
           : 'bg-background-surface border-border-subtle hover:border-border'
         }
       `}
-      onClick={() => setExpanded(!expanded)}
+      onClick={() => {
+        if (onDetailClick) {
+          onDetailClick(module.id)
+        } else {
+          setExpanded(!expanded)
+        }
+      }}
     >
       <div className="flex items-center gap-2">
         {/* 展开/折叠箭头 */}
@@ -87,6 +96,11 @@ export function ModuleCard({ module, isStale, staleInfo }: ModuleCardProps) {
           <span className="text-xs text-text-tertiary">
             #{module.id}
           </span>
+          {module.domain && (
+            <span className="px-1 py-0.5 text-[10px] bg-background-tertiary rounded ml-1">
+              {module.domain}
+            </span>
+          )}
         </div>
 
         {/* 依赖数量 */}
@@ -94,6 +108,22 @@ export function ModuleCard({ module, isStale, staleInfo }: ModuleCardProps) {
           <Layers size={10} />
           <span>{module.dependencies.length}</span>
         </div>
+
+        {/* 断言数量 */}
+        {(module.assertions?.length ?? 0) > 0 && (
+          <div className="flex items-center gap-0.5 text-xs text-text-tertiary">
+            <ShieldCheck size={10} className="text-green-500" />
+            <span>{module.assertions!.length}</span>
+          </div>
+        )}
+
+        {/* 陷阱数量 */}
+        {(module.traps?.length ?? 0) > 0 && (
+          <div className="flex items-center gap-0.5 text-xs text-text-tertiary">
+            <AlertTriangle size={10} className="text-amber-500" />
+            <span>{module.traps!.length}</span>
+          </div>
+        )}
       </div>
 
       {/* 展开详情 */}

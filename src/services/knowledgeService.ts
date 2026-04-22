@@ -44,11 +44,37 @@ export interface Trap {
   location?: string
 }
 
+/** 模块文件范围 (v2) */
+export interface ModuleScope {
+  include: string[]
+  exclude?: string[]
+}
+
+/** 领域定义 (v2) */
+export interface DomainDefinition {
+  id: string
+  name: string
+  description?: string
+  modules: string[]
+}
+
+/** 工作区元信息 (v2) */
+export interface WorkspaceMeta {
+  rootPath: string
+  language: string[]
+  framework: string[]
+}
+
 /** 模块索引项 */
 export interface ModuleIndexEntry {
   id: string
   name: string
+  /** Markdown 文档文件名 (如 "ai-engine.md") */
   file: string
+  /** 所属领域 ID (v2, 如 "ai-conversation") */
+  domain?: string
+  /** 文件范围模式 (v2) */
+  scope?: ModuleScope
   dependencies: string[]
   dependents: string[]
   complexity: string
@@ -69,6 +95,12 @@ export interface StaleModule {
 export interface ModuleIndex {
   version: string
   modules: ModuleIndexEntry[]
+  /** 领域定义 (v2) */
+  domains?: DomainDefinition[]
+  /** 工作区元信息 (v2) */
+  workspace?: WorkspaceMeta
+  /** 全局约定 (v2) */
+  globalConventions?: string[]
 }
 
 /** 知识增强选项 */
@@ -102,6 +134,9 @@ export interface IKnowledgeService {
 
   /** 获取模块信息（用于路径提示） */
   getModule(id: string): ModuleIndexEntry | undefined
+
+  /** 加载模块 Markdown 文档内容 */
+  getModuleDocument(moduleId: string): Promise<string | null>
 
   /** 获取过期模块列表 */
   getStaleModules(): Promise<StaleModule[]>
@@ -151,6 +186,9 @@ export class LocalFileKnowledgeService implements IKnowledgeService {
         this.index = {
           version: v2Data.version,
           modules: v2Data.modules ?? [],
+          domains: v2Data.domains,
+          workspace: v2Data.workspace,
+          globalConventions: v2Data.globalConventions,
         }
         log.info(`知识索引(v2)已加载: ${this.index?.modules.length ?? 0} 个模块`)
         return
@@ -249,6 +287,29 @@ export class LocalFileKnowledgeService implements IKnowledgeService {
 
   getIndex(): ModuleIndex | null {
     return this.index
+  }
+
+  async getModuleDocument(moduleId: string): Promise<string | null> {
+    if (!this.workspacePath || !this.index) return null
+
+    if (this.moduleDocsCache.has(moduleId)) {
+      return this.moduleDocsCache.get(moduleId) ?? null
+    }
+
+    const entry = this.index.modules.find(m => m.id === moduleId)
+    if (!entry) return null
+
+    try {
+      const filePath = `${this.workspacePath}/${KNOWLEDGE_DIR}/${MODULES_SUBDIR}/${entry.file}`
+      const content = await readFile(filePath)
+      if (content) {
+        this.moduleDocsCache.set(moduleId, content)
+      }
+      return content ?? null
+    } catch (err) {
+      log.warn(`无法读取模块文档: ${moduleId}`, { error: String(err) })
+      return null
+    }
   }
 
   async getStaleModules(): Promise<StaleModule[]> {

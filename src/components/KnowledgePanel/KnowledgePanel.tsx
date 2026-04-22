@@ -22,7 +22,9 @@ import { useKnowledgeStore } from '@/stores/knowledgeStore'
 import { ModuleCard } from './ModuleCard'
 import { KnowledgeDependencyGraph } from './KnowledgeDependencyGraph'
 import { KnowledgeHealthDashboard } from './KnowledgeHealthDashboard'
+import { ModuleDetailDialog } from './ModuleDetailDialog'
 import type { ModuleNode } from './KnowledgeDependencyGraph'
+import type { ConfidenceLevel } from './constants'
 
 type ViewMode = 'list' | 'graph' | 'health'
 
@@ -36,12 +38,18 @@ export function KnowledgePanel() {
     initialized,
     loadIndex,
     loadStaleModules,
+    selectedModuleId,
+    selectModule,
   } = useKnowledgeStore()
 
   const [searchQuery, setSearchQuery] = useState('')
   const [showStaleOnly, setShowStaleOnly] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('list')
-  const [selectedModuleId, setSelectedModuleId] = useState<string | undefined>()
+
+  // 选中的模块数据
+  const selectedModule = selectedModuleId
+    ? index?.modules.find(m => m.id === selectedModuleId)
+    : undefined
 
   // 加载知识索引
   useEffect(() => {
@@ -75,7 +83,7 @@ export function KnowledgePanel() {
     return index.modules.map(m => ({
       id: m.id,
       name: m.name,
-      domain: m.id.split('-')[0] ?? 'unknown', // 简单推断，实际从 v2 索引获取
+      domain: m.domain ?? m.id.split('-')[0] ?? 'unknown',
       complexity: m.complexity as 'low' | 'medium' | 'high',
       dependencies: m.dependencies,
       dependents: m.dependents,
@@ -84,8 +92,8 @@ export function KnowledgePanel() {
 
   // 处理图节点点击
   const handleNodeClick = useCallback((moduleId: string) => {
-    setSelectedModuleId(prev => prev === moduleId ? undefined : moduleId)
-  }, [])
+    selectModule(selectedModuleId === moduleId ? null : moduleId)
+  }, [selectedModuleId, selectModule])
 
   return (
     <div className="flex flex-col h-full">
@@ -184,20 +192,32 @@ export function KnowledgePanel() {
       {/* 内容区域 */}
       {viewMode === 'health' ? (
         <div className="flex-1 overflow-auto">
-          <KnowledgeHealthDashboard />
+          <KnowledgeHealthDashboard
+            onConfidenceFilter={(level: ConfidenceLevel) => {
+              const moduleWithAssertion = index?.modules.find(m =>
+                m.assertions?.some(a => a.confidence === level)
+              )
+              if (moduleWithAssertion) {
+                selectModule(moduleWithAssertion.id)
+              }
+            }}
+          />
         </div>
       ) : viewMode === 'graph' ? (
         <div className="flex-1 overflow-auto p-2">
           <KnowledgeDependencyGraph
             modules={graphModules}
-            selectedModuleId={selectedModuleId}
+            selectedModuleId={selectedModuleId ?? undefined}
             onNodeClick={handleNodeClick}
             groupByDomain={true}
             minHeight={300}
           />
           {selectedModuleId && (
             <div className="mt-2 p-2 bg-background-surface border border-border-subtle rounded text-xs">
-              <div className="font-medium text-text-primary mb-1">
+              <div
+                className="font-medium text-text-primary mb-1 cursor-pointer hover:text-primary"
+                onClick={() => selectModule(selectedModuleId)}
+              >
                 {index?.modules.find(m => m.id === selectedModuleId)?.name}
                 <span className="text-text-tertiary ml-1">#{selectedModuleId}</span>
               </div>
@@ -230,6 +250,7 @@ export function KnowledgePanel() {
                   module={module}
                   isStale={staleModuleIds.has(module.id)}
                   staleInfo={staleModules.find(s => s.id === module.id)}
+                  onDetailClick={(id) => selectModule(id)}
                 />
               ))
             )}
@@ -242,6 +263,15 @@ export function KnowledgePanel() {
             </div>
           )}
         </>
+      )}
+
+      {/* 模块详情弹窗 */}
+      {selectedModuleId && selectedModule && (
+        <ModuleDetailDialog
+          module={selectedModule}
+          open={!!selectedModuleId}
+          onClose={() => selectModule(null)}
+        />
       )}
     </div>
   )

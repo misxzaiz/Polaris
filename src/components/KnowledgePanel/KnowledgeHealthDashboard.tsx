@@ -19,47 +19,15 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useKnowledgeStore } from '@/stores/knowledgeStore'
+import { type ConfidenceLevel, CONFIDENCE_CONFIG } from './constants'
 
-/** 置信度等级 */
-type ConfidenceLevel = 'green' | 'yellow' | 'orange' | 'red' | 'black'
-
-/** 置信度配置 */
-const CONFIDENCE_CONFIG: Record<ConfidenceLevel, {
-  label: string
-  color: string
-  bgColor: string
-  icon: typeof CheckCircle
-}> = {
-  green: {
-    label: '代码可验证',
-    color: 'text-green-500',
-    bgColor: 'bg-green-500',
-    icon: CheckCircle,
-  },
-  yellow: {
-    label: '人审',
-    color: 'text-yellow-500',
-    bgColor: 'bg-yellow-500',
-    icon: HelpCircle,
-  },
-  orange: {
-    label: 'AI 生成',
-    color: 'text-orange-500',
-    bgColor: 'bg-orange-500',
-    icon: AlertTriangle,
-  },
-  red: {
-    label: '陈旧',
-    color: 'text-red-500',
-    bgColor: 'bg-red-500',
-    icon: ShieldAlert,
-  },
-  black: {
-    label: '失效',
-    color: 'text-gray-500',
-    bgColor: 'bg-gray-500',
-    icon: XCircle,
-  },
+/** 置信度图标映射 */
+const CONFIDENCE_ICONS: Record<ConfidenceLevel, typeof CheckCircle> = {
+  green: CheckCircle,
+  yellow: HelpCircle,
+  orange: AlertTriangle,
+  red: ShieldAlert,
+  black: XCircle,
 }
 
 interface HealthStats {
@@ -136,7 +104,12 @@ function calculateHealthStats(
   }
 }
 
-export function KnowledgeHealthDashboard() {
+interface KnowledgeHealthDashboardProps {
+  /** 点击置信度条形筛选回调 */
+  onConfidenceFilter?: (level: ConfidenceLevel) => void
+}
+
+export function KnowledgeHealthDashboard({ onConfidenceFilter }: KnowledgeHealthDashboardProps) {
   const { t } = useTranslation('knowledge')
   const { index, staleModules } = useKnowledgeStore()
 
@@ -228,13 +201,18 @@ export function KnowledgeHealthDashboard() {
               const percentage = stats.totalAssertions > 0
                 ? Math.round((count / stats.totalAssertions) * 100)
                 : 0
-              const Icon = config.icon
+              const Icon = CONFIDENCE_ICONS[level]
 
               return (
-                <div key={level} className="flex items-center gap-2">
+                <div
+                  key={level}
+                  className={`flex items-center gap-2 ${onConfidenceFilter ? 'cursor-pointer hover:bg-background-surface rounded p-1 -m-1 transition-colors' : ''}`}
+                  onClick={() => onConfidenceFilter?.(level)}
+                  title={onConfidenceFilter ? t('detail.filterByConfidence') : undefined}
+                >
                   <Icon size={12} className={config.color} />
                   <span className="text-xs text-text-secondary w-16">
-                    {config.label}
+                    {t(config.labelKey)}
                   </span>
                   <div className="flex-1 h-2 bg-background-tertiary rounded overflow-hidden">
                     <div

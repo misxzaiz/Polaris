@@ -5,7 +5,7 @@
  */
 
 import { create } from 'zustand'
-import { getKnowledgeService, type ModuleIndex, type ModuleIndexEntry, type StaleModule } from '../services/knowledgeService'
+import { getKnowledgeService, type ModuleIndex, type ModuleIndexEntry, type StaleModule, type DomainDefinition } from '../services/knowledgeService'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('KnowledgeStore')
@@ -30,6 +30,15 @@ interface KnowledgeState {
 
   /** 是否已初始化 */
   initialized: boolean
+
+  /** 当前选中的模块 ID（用于详情弹窗） */
+  selectedModuleId: string | null
+
+  /** 已加载的模块文档缓存 */
+  moduleDocuments: Map<string, string>
+
+  /** 文档加载中 */
+  docLoading: boolean
 }
 
 interface KnowledgeActions {
@@ -53,6 +62,15 @@ interface KnowledgeActions {
 
   /** 根据模块 ID 获取模块信息 */
   getModule: (id: string) => ModuleIndexEntry | undefined
+
+  /** 选中模块以打开详情弹窗（null 关闭） */
+  selectModule: (id: string | null) => void
+
+  /** 加载模块 Markdown 文档 */
+  loadModuleDocument: (moduleId: string) => Promise<string | null>
+
+  /** 获取领域定义 */
+  getDomains: () => DomainDefinition[]
 }
 
 export type KnowledgeStore = KnowledgeState & KnowledgeActions
@@ -66,6 +84,9 @@ const initialState: KnowledgeState = {
   loading: false,
   error: null,
   initialized: false,
+  selectedModuleId: null,
+  moduleDocuments: new Map(),
+  docLoading: false,
 }
 
 // ─── Store Factory ──────────────────────────────────────────────
@@ -151,5 +172,40 @@ export const useKnowledgeStore = create<KnowledgeStore>((set, get) => ({
   getModule: (id: string) => {
     const { index } = get()
     return index?.modules.find(m => m.id === id)
+  },
+
+  selectModule: (id: string | null) => {
+    set({ selectedModuleId: id })
+  },
+
+  loadModuleDocument: async (moduleId: string) => {
+    const { moduleDocuments } = get()
+    if (moduleDocuments.has(moduleId)) {
+      return moduleDocuments.get(moduleId) ?? null
+    }
+
+    set({ docLoading: true })
+    try {
+      const service = getKnowledgeService()
+      const content = await service.getModuleDocument(moduleId)
+      if (content) {
+        set(state => {
+          const docs = new Map(state.moduleDocuments)
+          docs.set(moduleId, content)
+          return { moduleDocuments: docs, docLoading: false }
+        })
+      } else {
+        set({ docLoading: false })
+      }
+      return content
+    } catch {
+      set({ docLoading: false })
+      return null
+    }
+  },
+
+  getDomains: () => {
+    const { index } = get()
+    return index?.domains ?? []
   },
 }))
