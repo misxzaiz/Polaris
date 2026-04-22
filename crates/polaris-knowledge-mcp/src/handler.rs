@@ -13,6 +13,7 @@ use serde_json::Value;
 use crate::error::{KnowledgeError, Result};
 use crate::extractor::matches_any;
 use crate::models::{KnowledgeIndex, ModuleEntry};
+use crate::seeder::{self, SeedOptions};
 
 /// Load and parse the index.json.
 pub fn load_index(index_path: &PathBuf) -> Result<KnowledgeIndex> {
@@ -295,15 +296,23 @@ pub fn execute_architecture_overview(
         .map(|m| (m.id.clone(), m.dependencies.clone()))
         .collect();
 
+    // Generate Mermaid graph
+    let mermaid = generate_mermaid_graph(&index);
+
+    // Calculate statistics
+    let stats = calculate_graph_stats(&index);
+
     Ok(json!({
         "structuredContent": {
             "totalModules": modules_overview.len(),
             "modules": modules_overview,
-            "dependencyGraph": graph
+            "dependencyGraph": graph,
+            "mermaidGraph": mermaid,
+            "statistics": stats
         },
         "content": [{
             "type": "text",
-            "text": format!("项目架构：{} 个模块", index.modules.len())
+            "text": format!("项目架构：{} 个模块，{} 条依赖边", index.modules.len(), stats["totalEdges"].as_u64().unwrap_or(0))
         }]
     }))
 }
@@ -764,6 +773,123 @@ pub fn execute_get_structure(arguments: Value, index_path: &PathBuf) -> Result<V
     }
 }
 
+/// Execute seed_assertions tool. Auto-generates assertions from structure reports.
+///
+/// Workflow:
+/// 1. Load all structure reports from `structures/` directory
+/// 2. Call `seeder::seed_assertions` with user-provided options
+/// 3. If `apply=true`, persist to index.v2.json
+pub fn execute_seed_assertions(
+    arguments: Value,
+    index_path: &PathBuf,
+    workspace_root: Option<&std::path::Path>,
+    cache: &SharedCache,
+) -> Result<Value> {
+    let workspace_root = workspace_root.ok_or_else(|| {
+        KnowledgeError::Validation(
+            "seed_assertions 需要工作区模式 — 请使用 --workspace 启动服务".into(),
+        )
+    })?;
+
+    let apply = arguments
+        .get("apply")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let max_per_module = arguments
+        .get("maxPerModule")
+        .and_then(Value::as_u64)
+        .map(|n| n as usize)
+        .unwrap_or(5);
+    let skip_if_has = arguments
+        .get("skipIfHas")
+        .and_then(Value::as_u64)
+        .map(|n| n as usize)
+        .unwrap_or(3);
+    let only_module = arguments
+        .get("onlyModule")
+        .and_then(Value::as_str)
+        .map(|s| s.to_string());
+
+    let opts = SeedOptions {
+        max_per_module,
+        skip_if_has,
+        only_module,
+        ..Default::default()
+    };
+
+    let v2 = load_v2_cached(index_path, cache)?;
+    let knowledge_dir = index_path.parent().ok_or_else(|| {
+        KnowledgeError::Io("无法从索引路径解析知识目录".into())
+    })?;
+
+    // Load all available structure reports
+    let mut structures: BTreeMap<String, crate::extractor::StructureReport> = BTreeMap::new();
+    let structures_dir = knowledge_dir.join("structures");
+    if structures_dir.exists() {
+        for entry in fs::read_dir(&structures_dir)
+            .map_err(|e| KnowledgeError::Io(format!("无法读取 structures 目录: {}", e)))?
+        {
+            let entry = entry.map_err(|e| KnowledgeError::Io(format!("读取目录条目失败: {}", e)))?;
+            let path = entry.path();
+            if path.extension().map(|e| e == "json").unwrap_or(false) {
+                if let Ok(content) = fs::read_to_string(&path) {
+                    if let Ok(report) = serde_json::from_str::<crate::extractor::StructureReport>(&content) {
+                        structures.insert(report.module_id.clone(), report);
+                    }
+                }
+            }
+        }
+    }
+
+    if structures.is_empty() {
+        return Ok(json!({
+            "structuredContent": {
+                "generated": false,
+                "reason": "no structure reports found — run extract_structure first"
+            },
+            "content": [{
+                "type": "text",
+                "text": "未找到结构报告。请先调用 extract_structure 抽取模块符号表。"
+            }]
+        }));
+    }
+
+    // Run the seeder
+    let report = seeder::seed_assertions(&v2, &structures, workspace_root, &opts)?;
+
+    // Optionally apply
+    let applied_count = if apply && report.total_added > 0 {
+        let v2_path = knowledge_dir.join("index.v2.json");
+        let mut v2_mut = v2.clone();
+        seeder::apply_seed(&mut v2_mut, &report, &v2_path)?
+    } else {
+        0
+    };
+
+    Ok(json!({
+        "structuredContent": {
+            "generated": true,
+            "dryRun": !apply,
+            "report": &report,
+            "appliedCount": applied_count,
+        },
+        "content": [{
+            "type": "text",
+            "text": if apply {
+                format!(
+                    "已生成并写入 {} 条断言（{} 个模块）",
+                    applied_count, report.modules_touched
+                )
+            } else {
+                format!(
+                    "预览：将生成 {} 条断言（{} 个模块）。使用 apply=true 写入。",
+                    report.total_added, report.modules_touched
+                )
+            }
+        }]
+    }))
+}
+
 // ─── Helpers ────────────────────────────────────────────────────
 
 /// Generate a timestamp string in strict ISO 8601 / RFC 3339 format.
@@ -773,6 +899,95 @@ pub fn execute_get_structure(arguments: Value, index_path: &PathBuf) -> Result<V
 /// and `JavaScript Date` / `new Date(staleSince)` — must be a real ISO string.
 fn chrono_timestamp() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
+// ─── Visualization helpers ────────────────────────────────────────────
+
+/// Generate a Mermaid graph from the knowledge index.
+fn generate_mermaid_graph(index: &crate::models::KnowledgeIndex) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    lines.push("graph TD".to_string());
+
+    // Group modules by domain
+    let mut domain_modules: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for m in &index.modules {
+        domain_modules
+            .entry(m.domain.clone())
+            .or_default()
+            .push(m.id.clone());
+    }
+
+    // Find domain names
+    let domain_names: BTreeMap<String, String> = index
+        .domains
+        .iter()
+        .map(|d| (d.id.clone(), d.name.clone()))
+        .collect();
+
+    // Emit subgraphs for each domain
+    for (domain_id, module_ids) in &domain_modules {
+        let domain_name = domain_names.get(domain_id).unwrap_or(domain_id);
+        lines.push(format!("  subgraph {}[\"{}\"]", domain_id, domain_name));
+        for mid in module_ids {
+            lines.push(format!("    {}", mid));
+        }
+        lines.push("  end".to_string());
+    }
+
+    lines.push(String::new());
+
+    // Emit dependencies
+    lines.push("  %% Dependencies".to_string());
+    for m in &index.modules {
+        for dep in &m.dependencies {
+            lines.push(format!("  {} --> {}", m.id, dep));
+        }
+    }
+
+    lines.join("\n")
+}
+
+/// Calculate graph statistics.
+fn calculate_graph_stats(index: &crate::models::KnowledgeIndex) -> Value {
+    let total_modules = index.modules.len();
+    let total_edges: usize = index.modules.iter().map(|m| m.dependencies.len()).sum();
+    let avg_deps = if total_modules > 0 {
+        total_edges as f64 / total_modules as f64
+    } else {
+        0.0
+    };
+
+    // Count in-degrees (how many modules depend on this one)
+    let mut in_degrees: BTreeMap<String, usize> = BTreeMap::new();
+    for m in &index.modules {
+        *in_degrees.entry(m.id.clone()).or_default() += 0;
+        for dep in &m.dependencies {
+            *in_degrees.entry(dep.clone()).or_default() += 1;
+        }
+    }
+
+    // Find most depended on (max in-degree)
+    let most_depended = in_degrees
+        .iter()
+        .max_by_key(|(_, &count)| count)
+        .map(|(id, _)| id.clone())
+        .unwrap_or_default();
+
+    // Find leaf modules (no dependents)
+    let leaf_modules: Vec<String> = index
+        .modules
+        .iter()
+        .filter(|m| m.dependents.is_empty())
+        .map(|m| m.id.clone())
+        .collect();
+
+    json!({
+        "totalModules": total_modules,
+        "totalEdges": total_edges,
+        "avgDependencies": (avg_deps * 10.0).round() / 10.0,
+        "mostDependedOn": most_depended,
+        "leafModules": leaf_modules
+    })
 }
 
 #[cfg(test)]

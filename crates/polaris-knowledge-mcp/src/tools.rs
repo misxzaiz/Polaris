@@ -228,6 +228,38 @@ pub fn get_tools_list() -> Value {
                         "moduleId": { "type": "string", "minLength": 1 }
                     }
                 }
+            },
+            {
+                "name": "seed_assertions",
+                "description": "自动为缺少断言的模块生成初始 assertions。基于 extract_structure 的符号表，优先选取公共符号（const > class > struct > fn > enum）。数值常量会自动附加 expect.equals。默认跳过已有 ≥3 条断言的模块。需要工作区模式。",
+                "inputSchema": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "apply": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "true = 直接写入 index.v2.json；false = 仅返回预览（dry-run）"
+                        },
+                        "maxPerModule": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 20,
+                            "default": 5,
+                            "description": "每个模块最多生成断言数"
+                        },
+                        "skipIfHas": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 3,
+                            "description": "已有断言数 ≥ 此值则跳过该模块"
+                        },
+                        "onlyModule": {
+                            "type": "string",
+                            "description": "可选：只处理指定模块 ID"
+                        }
+                    }
+                }
             }
         ]
     })
