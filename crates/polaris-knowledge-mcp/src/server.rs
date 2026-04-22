@@ -1,8 +1,12 @@
 //! MCP Server main loop and request handling.
 
 use std::io::{self, BufRead, BufReader, Write};
+use std::sync::mpsc;
 use std::sync::{Arc, RwLock};
 use std::path::PathBuf;
+use std::thread;
+
+use crate::handler::WriteLock;
 
 use serde_json::json;
 use serde_json::Value;
@@ -81,15 +85,18 @@ pub fn run_server_with_workspace(config_dir: &str, workspace_path: Option<&str>)
     run_event_loop(&index_path, &modules_dir, workspace_path.as_deref())
 }
 
-/// Shared JSON-RPC event loop. `workspace_root`, when provided, unlocks v2
-/// tools that need filesystem access beyond the knowledge directory.
+/// Worker pool size for concurrent request processing.
+const WORKER_POOL_SIZE: usize = 4;
+
+/// Shared JSON-RPC event loop with thread pool for concurrent request processing.
+/// Main thread reads requests from stdin, dispatches to worker threads,
+/// collects responses via channel, and writes to stdout.
 fn run_event_loop(
     index_path: &PathBuf,
     modules_dir: &PathBuf,
     workspace_root: Option<&std::path::Path>,
 ) -> Result<()> {
     // Pre-flight: verify index.json exists before entering the event loop.
-    // This produces a clear startup error instead of failing on the first tool call.
     if !index_path.exists() {
         return Err(KnowledgeError::Validation(format!(
             "知识索引文件不存在: {}。请确保 .polaris/knowledge/index.json 存在",
@@ -97,21 +104,87 @@ fn run_event_loop(
         )));
     }
 
+    let cache: SharedCache = Arc::new(RwLock::new(KnowledgeCache::new()));
+    let write_lock: WriteLock = Arc::new(std::sync::Mutex::new(()));
+
+    // Channel: workers -> main thread (serialized JSON responses)
+    let (response_tx, response_rx) = mpsc::channel::<String>();
+
+    // Channel: main thread -> workers (raw JSON-RPC lines)
+    let (work_tx, work_rx) = mpsc::channel::<String>();
+    let work_rx = Arc::new(std::sync::Mutex::new(work_rx));
+
+    // Spawn worker threads
+    let mut workers = Vec::with_capacity(WORKER_POOL_SIZE);
+    for _ in 0..WORKER_POOL_SIZE {
+        let work_rx = Arc::clone(&work_rx);
+        let response_tx = response_tx.clone();
+        let cache = Arc::clone(&cache);
+        let write_lock = Arc::clone(&write_lock);
+        let index_path = index_path.clone();
+        let modules_dir = modules_dir.clone();
+        let workspace_root = workspace_root.map(|p| p.to_path_buf());
+
+        let handle = thread::spawn(move || {
+            loop {
+                let line = match work_rx.lock().unwrap().recv() {
+                    Ok(l) => l,
+                    Err(_) => break,
+                };
+
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+
+                let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
+                    Ok(request) => handle_request(
+                        request,
+                        &index_path,
+                        &modules_dir,
+                        workspace_root.as_deref(),
+                        &cache,
+                        &write_lock,
+                    ),
+                    Err(error) => error_response(
+                        Value::Null,
+                        -32700,
+                        format!("Parse error: {}", error),
+                    ),
+                };
+
+                let response_str = serde_json::to_string(&response).unwrap_or_else(|e| {
+                    format!(
+                        "{{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{{\"code\":-32603,\"message\":\"{}\"}}}}",
+                        e
+                    )
+                });
+
+                if response_tx.send(response_str).is_err() {
+                    break;
+                }
+            }
+        });
+        workers.push(handle);
+    }
+    // Drop extra sender so response_rx sees EOF when all workers exit
+    drop(response_tx);
+
+    // Main thread: read stdin, dispatch to pool, collect responses
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut reader = BufReader::new(stdin.lock());
     let mut writer = stdout.lock();
 
-    let cache: SharedCache = Arc::new(RwLock::new(KnowledgeCache::new()));
-
     let mut line = String::new();
+    let mut pending_count: usize = 0;
+
     loop {
         line.clear();
+
         let bytes_read = match reader.read_line(&mut line) {
             Ok(n) => n,
             Err(e) => {
-                // stdin I/O error — log to stderr and exit gracefully.
-                // This typically means the parent process closed the pipe.
                 eprintln!("[knowledge-mcp] stdin read error: {}", e);
                 break;
             }
@@ -125,32 +198,56 @@ fn run_event_loop(
             continue;
         }
 
-        let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
-            Ok(request) => handle_request(request, index_path, modules_dir, workspace_root, &cache),
-            Err(error) => error_response(
-                Value::Null,
-                -32700,
-                format!("Parse error: {}", error),
-            ),
-        };
-
-        // Write response with broken-pipe protection.
-        // If stdout is closed (parent disconnected), exit gracefully instead of crashing.
-        let write_result: std::io::Result<()> = (|| {
-            serde_json::to_writer(&mut writer, &response)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-            writer.write_all(b"\n")?;
-            writer.flush()?;
-            Ok(())
-        })();
-        if let Err(e) = write_result {
-            eprintln!("[knowledge-mcp] stdout write error: {}", e);
+        // Dispatch request to worker pool
+        if work_tx.send(trimmed.to_string()).is_err() {
+            eprintln!("[knowledge-mcp] worker pool shut down");
             break;
         }
+        pending_count += 1;
+
+        // Drain available responses (non-blocking)
+        while pending_count > 0 {
+            match response_rx.try_recv() {
+                Ok(response_str) => {
+                    pending_count -= 1;
+                    if let Err(e) = writer.write_all(response_str.as_bytes())
+                        .and_then(|_| writer.write_all(b"\n"))
+                        .and_then(|_| writer.flush())
+                    {
+                        eprintln!("[knowledge-mcp] stdout write error: {}", e);
+                        break;
+                    }
+                }
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    eprintln!("[knowledge-mcp] workers disconnected");
+                    break;
+                }
+            }
+        }
+    }
+
+    // Drain remaining responses before exit
+    drop(work_tx);
+    while pending_count > 0 {
+        match response_rx.recv() {
+            Ok(response_str) => {
+                pending_count -= 1;
+                let _ = writer.write_all(response_str.as_bytes());
+                let _ = writer.write_all(b"\n");
+                let _ = writer.flush();
+            }
+            Err(_) => break,
+        }
+    }
+
+    for handle in workers {
+        let _ = handle.join();
     }
 
     Ok(())
 }
+
 
 /// Handle a JSON-RPC request.
 fn handle_request(
@@ -159,6 +256,7 @@ fn handle_request(
     modules_dir: &PathBuf,
     workspace_root: Option<&std::path::Path>,
     cache: &SharedCache,
+    write_lock: &WriteLock,
 ) -> JsonRpcResponse<'static> {
     let id = request.id.unwrap_or(Value::Null);
 
@@ -171,7 +269,7 @@ fn handle_request(
         "notifications/initialized" => Ok(json!({})),
         "ping" => Ok(json!({})),
         "tools/list" => Ok(tools::get_tools_list()),
-        "tools/call" => handle_tools_call(request.params, index_path, modules_dir, workspace_root, cache),
+        "tools/call" => handle_tools_call(request.params, index_path, modules_dir, workspace_root, cache, write_lock),
         _ => Err(KnowledgeError::Validation(format!(
             "不支持的方法: {}",
             request.method
@@ -268,6 +366,10 @@ mod tests {
         Arc::new(RwLock::new(KnowledgeCache::new()))
     }
 
+    fn default_write_lock() -> WriteLock {
+        Arc::new(std::sync::Mutex::new(()))
+    }
+
     #[test]
     fn handle_request_initialize() {
         let req = make_request("initialize", json!(1));
@@ -276,7 +378,7 @@ mod tests {
         let modules_dir = knowledge_path(&dir).join("modules");
         let cache = default_cache();
 
-        let resp = handle_request(req, &index_path, &modules_dir, None, &cache);
+        let resp = handle_request(req, &index_path, &modules_dir, None, &cache, &default_write_lock());
 
         assert_eq!(resp.jsonrpc, "2.0");
         assert_eq!(resp.id, json!(1));
@@ -296,7 +398,7 @@ mod tests {
         let modules_dir = knowledge_path(&dir).join("modules");
         let cache = default_cache();
 
-        let resp = handle_request(req, &index_path, &modules_dir, None, &cache);
+        let resp = handle_request(req, &index_path, &modules_dir, None, &cache, &default_write_lock());
 
         assert_eq!(resp.id, json!("test-id"));
         assert_eq!(resp.result, Some(json!({})));
@@ -310,7 +412,7 @@ mod tests {
         let modules_dir = knowledge_path(&dir).join("modules");
         let cache = default_cache();
 
-        let resp = handle_request(req, &index_path, &modules_dir, None, &cache);
+        let resp = handle_request(req, &index_path, &modules_dir, None, &cache, &default_write_lock());
 
         let result = resp.result.unwrap();
         let tools = result["tools"].as_array().unwrap();
@@ -325,7 +427,7 @@ mod tests {
         let modules_dir = knowledge_path(&dir).join("modules");
         let cache = default_cache();
 
-        let resp = handle_request(req, &index_path, &modules_dir, None, &cache);
+        let resp = handle_request(req, &index_path, &modules_dir, None, &cache, &default_write_lock());
 
         assert_eq!(resp.result, Some(json!({})));
         assert!(resp.error.is_none());
@@ -344,7 +446,7 @@ mod tests {
         let modules_dir = knowledge_path(&dir).join("modules");
         let cache = default_cache();
 
-        let resp = handle_request(req, &index_path, &modules_dir, None, &cache);
+        let resp = handle_request(req, &index_path, &modules_dir, None, &cache, &default_write_lock());
 
         assert!(resp.error.is_some());
         assert_eq!(resp.error.unwrap().code, -32600);
@@ -358,7 +460,7 @@ mod tests {
         let modules_dir = knowledge_path(&dir).join("modules");
         let cache = default_cache();
 
-        let resp = handle_request(req, &index_path, &modules_dir, None, &cache);
+        let resp = handle_request(req, &index_path, &modules_dir, None, &cache, &default_write_lock());
 
         assert!(resp.error.is_some());
         let err = resp.error.unwrap();
@@ -379,7 +481,7 @@ mod tests {
         let modules_dir = knowledge_path(&dir).join("modules");
         let cache = default_cache();
 
-        let resp = handle_request(req, &index_path, &modules_dir, None, &cache);
+        let resp = handle_request(req, &index_path, &modules_dir, None, &cache, &default_write_lock());
 
         assert_eq!(resp.id, Value::Null);
         assert!(resp.result.is_some());

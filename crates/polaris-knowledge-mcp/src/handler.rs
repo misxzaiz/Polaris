@@ -211,6 +211,7 @@ pub fn execute_get_module(
     index_path: &PathBuf,
     modules_dir: &PathBuf,
     cache: &SharedCache,
+    write_lock: &WriteLock,
 ) -> Result<Value> {
     let id = arguments
         .get("id")
@@ -310,6 +311,7 @@ pub fn execute_architecture_overview(
     index_path: &PathBuf,
     modules_dir: &PathBuf,
     cache: &SharedCache,
+    write_lock: &WriteLock,
 ) -> Result<Value> {
     let index = load_index_cached(index_path, cache)?;
 
@@ -374,6 +376,7 @@ pub fn execute_search_modules(
     index_path: &PathBuf,
     modules_dir: &PathBuf,
     cache: &SharedCache,
+    write_lock: &WriteLock,
 ) -> Result<Value> {
     let query = arguments
         .get("query")
@@ -431,6 +434,7 @@ pub fn execute_update_module(
     index_path: &PathBuf,
     modules_dir: &PathBuf,
     cache: &SharedCache,
+    write_lock: &WriteLock,
 ) -> Result<Value> {
     let id = arguments
         .get("id")
@@ -503,6 +507,7 @@ pub fn execute_create_module(
     index_path: &PathBuf,
     modules_dir: &PathBuf,
     cache: &SharedCache,
+    write_lock: &WriteLock,
 ) -> Result<Value> {
     // ── Parse arguments ──────────────────────────────────────────
     let id = arguments
@@ -838,6 +843,7 @@ pub fn execute_validate_assertions(
     index_path: &PathBuf,
     workspace_root: Option<&std::path::Path>,
     cache: &SharedCache,
+    write_lock: &WriteLock,
 ) -> Result<Value> {
     let workspace_root = workspace_root.ok_or_else(|| {
         KnowledgeError::Validation(
@@ -970,6 +976,7 @@ pub fn execute_extract_structure(
     index_path: &PathBuf,
     workspace_root: Option<&std::path::Path>,
     cache: &SharedCache,
+    write_lock: &WriteLock,
 ) -> Result<Value> {
     let workspace_root = workspace_root.ok_or_else(|| {
         KnowledgeError::Validation(
@@ -1091,6 +1098,7 @@ pub fn execute_seed_assertions(
     index_path: &PathBuf,
     workspace_root: Option<&std::path::Path>,
     cache: &SharedCache,
+    write_lock: &WriteLock,
 ) -> Result<Value> {
     let workspace_root = workspace_root.ok_or_else(|| {
         KnowledgeError::Validation(
@@ -1321,6 +1329,7 @@ pub fn handle_tools_call(
     modules_dir: &PathBuf,
     workspace_root: Option<&std::path::Path>,
     cache: &SharedCache,
+    write_lock: &WriteLock,
 ) -> Result<Value> {
     let name = params
         .get("name")
@@ -1333,21 +1342,41 @@ pub fn handle_tools_call(
         .unwrap_or_else(|| json!({}));
 
     match name.as_str() {
+        // Read-only tools (no write lock needed)
         "list_modules" => execute_list_modules(index_path, cache),
-        "get_module" => execute_get_module(arguments, index_path, modules_dir, cache),
+        "get_module" => execute_get_module(arguments, index_path, modules_dir, cache, write_lock),
         "get_module_dependencies" => execute_get_dependencies(arguments, index_path, cache),
-        "get_architecture_overview" => execute_architecture_overview(index_path, modules_dir, cache),
-        "search_modules" => execute_search_modules(arguments, index_path, modules_dir, cache),
-        "update_module" => execute_update_module(arguments, index_path, modules_dir, cache),
-        "create_module" => execute_create_module(arguments, index_path, modules_dir, cache),
-        "mark_modules_stale" => execute_mark_stale(arguments, index_path, cache),
+        "get_architecture_overview" => execute_architecture_overview(index_path, modules_dir, cache, write_lock),
+        "search_modules" => execute_search_modules(arguments, index_path, modules_dir, cache, write_lock),
         "list_stale_modules" => execute_list_stale_modules(index_path, cache),
-        "clear_stale_marker" => execute_clear_stale_marker(arguments, index_path),
-        "validate_assertions" => execute_validate_assertions(arguments, index_path, workspace_root, cache),
         "get_assertions_health" => execute_get_assertions_health(index_path),
         "compile_context" => execute_compile_context(arguments, index_path, cache),
-        "extract_structure" => execute_extract_structure(arguments, index_path, workspace_root, cache),
         "get_structure" => execute_get_structure(arguments, index_path),
+        // Write tools (acquire write lock for serialization)
+        "update_module" => {
+            let _guard = write_lock.lock().unwrap();
+            execute_update_module(arguments, index_path, modules_dir, cache, write_lock)
+        }
+        "create_module" => {
+            let _guard = write_lock.lock().unwrap();
+            execute_create_module(arguments, index_path, modules_dir, cache, write_lock)
+        }
+        "mark_modules_stale" => {
+            let _guard = write_lock.lock().unwrap();
+            execute_mark_stale(arguments, index_path, cache)
+        }
+        "clear_stale_marker" => {
+            let _guard = write_lock.lock().unwrap();
+            execute_clear_stale_marker(arguments, index_path)
+        }
+        "validate_assertions" => {
+            let _guard = write_lock.lock().unwrap();
+            execute_validate_assertions(arguments, index_path, workspace_root, cache, write_lock)
+        }
+        "extract_structure" => {
+            let _guard = write_lock.lock().unwrap();
+            execute_extract_structure(arguments, index_path, workspace_root, cache, write_lock)
+        }
         _ => Err(KnowledgeError::Validation(format!("未知工具: {}", name))),
     }
 }
