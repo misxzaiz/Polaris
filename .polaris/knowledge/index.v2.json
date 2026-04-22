@@ -579,7 +579,9 @@
         "include": [
           "src-tauri/src/commands/terminal.rs",
           "src/components/Terminal/**",
-          "src/stores/terminalStore.ts"
+          "src/stores/terminalStore.ts",
+          "src/types/terminal.ts",
+          "src-tauri/src/state.rs"
         ]
       },
       "dependencies": ["workspace", "ipc-bridge"],
@@ -587,8 +589,61 @@
       "documentFile": "terminal.md",
       "complexity": "low",
       "changeFrequency": "low",
-      "assertions": [],
-      "traps": []
+      "assertions": [
+        {
+          "id": "terminal/pty-session-data-structure",
+          "claim": "TerminalSession 有 id/name/cwd/closed 四个字段，serde camelCase",
+          "anchor": { "file": "src-tauri/src/commands/terminal.rs", "symbol": "TerminalSession" },
+          "confidence": "green",
+          "expect": { "type": "regex", "value": "pub (id|name|cwd|closed)" }
+        },
+        {
+          "id": "terminal/base64-encode-output",
+          "claim": "终端输出通过 base64::Engine::encode 编码后 emit",
+          "anchor": { "file": "src-tauri/src/commands/terminal.rs", "symbol": "base64::Engine::encode" },
+          "confidence": "green",
+          "expect": { "type": "equals", "value": "&base64::engine::general_purpose::STANDARD" }
+        },
+        {
+          "id": "terminal/xterm-decode-output",
+          "claim": "前端通过 atob 解码 base64 后写入 xterm",
+          "anchor": { "file": "src/components/Terminal/TerminalPanel.tsx", "symbol": "atob" },
+          "confidence": "green",
+          "expect": { "type": "regex", "value": "atob\\(" }
+        }
+      ],
+      "traps": [
+        {
+          "id": "terminal/trap-zero-size-container",
+          "description": "TerminalInstance 在容器 offsetWidth/offsetHeight 为 0 时必须延迟初始化，否则 xterm RenderService 报错",
+          "severity": "high"
+        },
+        {
+          "id": "terminal/trap-close-ctrl-c-unreliable",
+          "description": "close_session 发送 Ctrl+C + drop handle 不保证子进程退出，可能产生僵尸进程",
+          "severity": "medium"
+        },
+        {
+          "id": "terminal/trap-resize-no-debounce",
+          "description": "ResizeObserver 高频触发 fit() + invoke('terminal_resize')，无 debounce 导致大量 IPC 调用",
+          "severity": "medium"
+        },
+        {
+          "id": "terminal/trap-all-sessions-rendered",
+          "description": "所有会话 xterm 实例始终存在 DOM 中（display:none 隐藏非活跃），大量会话时有内存开销",
+          "severity": "low"
+        },
+        {
+          "id": "terminal/trap-event-listener-cleanup",
+          "description": "initEventListeners 返回的 cleanup 函数必须在组件卸载时调用，否则 listener 累积导致输出重复",
+          "severity": "high"
+        },
+        {
+          "id": "terminal/trap-session-name-race",
+          "description": "session_name 的 sessions.len()+1 在并发创建时可能重复编号",
+          "severity": "low"
+        }
+      ]
     },
     {
       "id": "todo-requirement",
