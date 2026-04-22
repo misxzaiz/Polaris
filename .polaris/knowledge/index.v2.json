@@ -559,8 +559,13 @@
         "include": [
           "src/services/speechService.ts",
           "src/services/ttsService.ts",
-          "src/components/Character/**",
-          "src/hooks/useSpeechRecognition.ts"
+          "src/services/ttsTextFilter.ts",
+          "src/services/voiceNotificationService.ts",
+          "src/services/voicePackageService.ts",
+          "src/hooks/useSpeechRecognition.ts",
+          "src/hooks/useTTS.ts",
+          "src/types/speech.ts",
+          "src/components/Settings/tabs/SpeechTab.tsx"
         ]
       },
       "dependencies": ["chat-session", "config-settings", "ui-framework"],
@@ -568,8 +573,67 @@
       "documentFile": "speech-voice.md",
       "complexity": "medium",
       "changeFrequency": "low",
-      "assertions": [],
-      "traps": []
+      "assertions": [
+        {
+          "id": "speech-voice/tts-singleton-export",
+          "claim": "TTSService 以单例 ttsService 导出，状态机管理 idle/synthesizing/playing/paused/error",
+          "anchor": { "file": "src/services/ttsService.ts", "symbol": "ttsService" },
+          "confidence": "green",
+          "expect": { "type": "regex", "value": "export const ttsService" }
+        },
+        {
+          "id": "speech-voice/speech-singleton-export",
+          "claim": "SpeechService 以单例 speechService 导出，封装 Web Speech API",
+          "anchor": { "file": "src/services/speechService.ts", "symbol": "speechService" },
+          "confidence": "green",
+          "expect": { "type": "regex", "value": "export const speechService" }
+        },
+        {
+          "id": "speech-voice/tts-base64-chunk-size",
+          "claim": "TTSService base64 编码使用 0x8000 (32KB) 分块避免栈溢出",
+          "anchor": { "file": "src/services/ttsService.ts", "symbol": "0x8000" },
+          "confidence": "green",
+          "expect": { "type": "equals", "value": "0x8000" }
+        }
+      ],
+      "traps": [
+        {
+          "id": "speech-voice/tts-destroy-dead-code",
+          "description": "ttsService.destroy() 关闭从未初始化的 audioContext，是死代码",
+          "severity": "low",
+          "location": "src/services/ttsService.ts"
+        },
+        {
+          "id": "speech-voice/tts-stt-voice-type-mismatch",
+          "description": "TTS 仅支持 19 种中文 Neural 音色，STT 支持多语言。可设 STT 为日语但 TTS 只能说中文",
+          "severity": "medium",
+          "location": "src/types/speech.ts"
+        },
+        {
+          "id": "speech-voice/voice-package-cache-no-eviction",
+          "description": "VoicePackageService Map 无淘汰策略，频繁更换通知文本会导致缓存增长",
+          "severity": "medium",
+          "location": "src/services/voicePackageService.ts"
+        },
+        {
+          "id": "speech-voice/no-speech-retry-silent",
+          "description": "no-speech 错误自动重试但不触发 onStatusChange，UI 不反映重试状态",
+          "severity": "low",
+          "location": "src/services/speechService.ts"
+        },
+        {
+          "id": "speech-voice/edge-tts-requires-network",
+          "description": "edge-tts-universal 与微软服务器通信，离线不可用，无降级方案",
+          "severity": "medium",
+          "location": "src/services/ttsService.ts"
+        },
+        {
+          "id": "speech-voice/wake-active-no-timeout",
+          "description": "speechWakeActive 发送后重置，但唤醒后不发送则永久保持激活",
+          "severity": "medium",
+          "location": "src/stores/sessionStore/index.ts"
+        }
+      ]
     },
     {
       "id": "terminal",
@@ -755,18 +819,80 @@
           "src/components/Layout/**",
           "src/components/Common/**",
           "src/components/TopMenuBar/**",
-          "src/hooks/**",
-          "src/i18n/**",
-          "src/locales/**"
+          "src/components/QuickSwitchPanel/**",
+          "src/stores/viewStore.ts",
+          "src/stores/tabStore.ts",
+          "src/hooks/useWindowManager.ts",
+          "src/hooks/useWindowSize.ts",
+          "src/App.tsx"
         ]
       },
       "dependencies": [],
       "dependents": ["chat-session", "chat-render", "workspace", "assistant", "speech-voice"],
       "documentFile": "ui-framework.md",
       "complexity": "medium",
-      "changeFrequency": "low",
-      "assertions": [],
-      "traps": []
+      "changeFrequency": "medium",
+      "assertions": [
+        {
+          "id": "ui-framework/viewstore-persist-key",
+          "claim": "viewStore 使用 zustand persist 中间件，localStorage key 为 'view-store'",
+          "anchor": { "file": "src/stores/viewStore.ts", "symbol": "persist" },
+          "confidence": "green",
+          "expect": { "type": "regex", "value": "name:\\s*['\"]view-store['\"]" }
+        },
+        {
+          "id": "ui-framework/left-panel-type-values",
+          "claim": "leftPanelType 有 14 种值：files/git/todo/translate/scheduler/requirement/terminal/tools/developer/integration/assistant/mcp/knowledge/none",
+          "anchor": { "file": "src/stores/viewStore.ts", "symbol": "leftPanelType" },
+          "confidence": "green",
+          "expect": { "type": "regex", "value": "leftPanelType.*=.*['\"]" }
+        },
+        {
+          "id": "ui-framework/compact-threshold-500",
+          "claim": "紧凑模式阈值为 500px，useWindowSize 计算 isCompact",
+          "anchor": { "file": "src/hooks/useWindowSize.ts", "symbol": "500" },
+          "confidence": "green",
+          "expect": { "type": "equals", "value": "500" }
+        }
+      ],
+      "traps": [
+        {
+          "id": "ui-framework/panel-buttons-duplication",
+          "description": "12 个面板按钮列表在 ActivityBar.tsx 和 RadialMenu.tsx 独立定义，新增面板必须同步两处",
+          "severity": "high",
+          "location": "src/components/Layout/ActivityBar.tsx"
+        },
+        {
+          "id": "ui-framework/resize-handle-global-side-effect",
+          "description": "拖拽期间设置 document.body.style.userSelect/cursor，组件卸载时不清理导致光标卡住",
+          "severity": "medium",
+          "location": "src/components/Common/ResizeHandle.tsx"
+        },
+        {
+          "id": "ui-framework/z50-layer-conflict",
+          "description": "7+ 组件共享 z-50 层（RadialMenu/TabContextMenu/ConfirmDialog/InputDialog/UnsavedDialog/ErrorBoundary/ConnectingOverlay），多个同时打开时遮挡",
+          "severity": "medium",
+          "location": "src/components/Layout/RadialMenu.tsx"
+        },
+        {
+          "id": "ui-framework/tab-context-menu-no-boundary",
+          "description": "TabContextMenu 使用 fixed + clientX/clientY 定位，无视口边界检测，可能渲染到屏幕外",
+          "severity": "low",
+          "location": "src/components/Layout/TabContextMenu.tsx"
+        },
+        {
+          "id": "ui-framework/viewstore-legacy-fields",
+          "description": "viewStore 仍包含 showSidebar/showEditor/showDeveloperPanel 等旧字段，增加存储体积",
+          "severity": "low",
+          "location": "src/stores/viewStore.ts"
+        },
+        {
+          "id": "ui-framework/close-others-no-dirty-check",
+          "description": "closeOtherTabs 不检查脏状态，直接关闭所有其他标签",
+          "severity": "medium",
+          "location": "src/stores/tabStore.ts"
+        }
+      ]
     },
     {
       "id": "workspace",
