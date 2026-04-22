@@ -183,9 +183,16 @@ export class LocalFileKnowledgeService implements IKnowledgeService {
       if (content) {
         const v2Data = JSON.parse(content)
         // 从 v2 格式提取模块信息（含 assertions 和 traps）
+        // v2 JSON uses `documentFile` but ModuleIndexEntry expects `file` — normalize
+        const modules: ModuleIndexEntry[] = (v2Data.modules ?? []).map(
+          (m: Record<string, unknown>) => ({
+            ...m,
+            file: (m.file as string) || (m.documentFile as string) || `${m.id}.md`,
+          })
+        )
         this.index = {
           version: v2Data.version,
-          modules: v2Data.modules ?? [],
+          modules,
           domains: v2Data.domains,
           workspace: v2Data.workspace,
           globalConventions: v2Data.globalConventions,
