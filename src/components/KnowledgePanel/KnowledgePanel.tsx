@@ -14,15 +14,17 @@ import {
   X,
   LayoutGrid,
   GitBranch,
+  Activity,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useWorkspaceStore } from '@/stores'
 import { useKnowledgeStore } from '@/stores/knowledgeStore'
 import { ModuleCard } from './ModuleCard'
 import { KnowledgeDependencyGraph } from './KnowledgeDependencyGraph'
+import { KnowledgeHealthDashboard } from './KnowledgeHealthDashboard'
 import type { ModuleNode } from './KnowledgeDependencyGraph'
 
-type ViewMode = 'list' | 'graph'
+type ViewMode = 'list' | 'graph' | 'health'
 
 export function KnowledgePanel() {
   const { t } = useTranslation('knowledge')
@@ -118,6 +120,13 @@ export function KnowledgePanel() {
               >
                 <GitBranch size={12} />
               </button>
+              <button
+                onClick={() => setViewMode('health')}
+                className={`p-1 ${viewMode === 'health' ? 'bg-primary text-white' : 'bg-transparent text-text-secondary hover:bg-background-tertiary'}`}
+                title={t('viewHealth', '健康度仪表盘')}
+              >
+                <Activity size={12} />
+              </button>
             </div>
             <button
               onClick={() => {
@@ -173,7 +182,11 @@ export function KnowledgePanel() {
       </div>
 
       {/* 内容区域 */}
-      {viewMode === 'graph' ? (
+      {viewMode === 'health' ? (
+        <div className="flex-1 overflow-auto">
+          <KnowledgeHealthDashboard />
+        </div>
+      ) : viewMode === 'graph' ? (
         <div className="flex-1 overflow-auto p-2">
           <KnowledgeDependencyGraph
             modules={graphModules}

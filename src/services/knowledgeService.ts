@@ -14,6 +14,36 @@ const log = createLogger('KnowledgeService')
 
 // ─── Types ─────────────────────────────────────────────────────
 
+/** 断言定义 */
+export interface Assertion {
+  id: string
+  claim: string
+  anchor?: {
+    file: string
+    symbol?: string
+    line?: number
+  }
+  expect?: {
+    equals?: number | string
+    regex?: string
+    type?: string
+    value?: string
+  }
+  confidence: 'green' | 'yellow' | 'orange' | 'red' | 'black'
+  trap?: boolean
+  source: string
+}
+
+/** 陷阱定义 */
+export interface Trap {
+  id: string
+  description: string
+  severity?: 'low' | 'medium' | 'high'
+  source?: string
+  files?: string[]
+  location?: string
+}
+
 /** 模块索引项 */
 export interface ModuleIndexEntry {
   id: string
@@ -23,6 +53,8 @@ export interface ModuleIndexEntry {
   dependents: string[]
   complexity: string
   changeFrequency: string
+  assertions?: Assertion[]
+  traps?: Trap[]
 }
 
 /** 过期模块信息 */
@@ -84,6 +116,7 @@ export interface IKnowledgeService {
 export const KNOWLEDGE_DIR = '.polaris/knowledge'
 export const MODULES_SUBDIR = 'modules'
 export const INDEX_FILE = 'index.json'
+export const INDEX_V2_FILE = 'index.v2.json'
 
 /** #module 引用匹配模式（使用 # 避免与 @文件引用 冲突） */
 /** 匹配 #module-id 格式，支持无连字符的单单词 ID（如 terminal、mcp） */
@@ -106,13 +139,32 @@ export class LocalFileKnowledgeService implements IKnowledgeService {
     this.moduleDocsCache.clear()
     this.staleModulesCache = null
 
-    const indexPath = `${workspacePath}/${KNOWLEDGE_DIR}/${INDEX_FILE}`
+    // 优先加载 v2 索引，回退到 v1
+    const indexV2Path = `${workspacePath}/${KNOWLEDGE_DIR}/${INDEX_V2_FILE}`
+    const indexV1Path = `${workspacePath}/${KNOWLEDGE_DIR}/${INDEX_FILE}`
+
     try {
-      const content = await readFile(indexPath)
+      let content = await readFile(indexV2Path)
+      if (content) {
+        const v2Data = JSON.parse(content)
+        // 从 v2 格式提取模块信息（含 assertions 和 traps）
+        this.index = {
+          version: v2Data.version,
+          modules: v2Data.modules ?? [],
+        }
+        log.info(`知识索引(v2)已加载: ${this.index?.modules.length ?? 0} 个模块`)
+        return
+      }
+    } catch {
+      // v2 不存在，尝试 v1
+    }
+
+    try {
+      const content = await readFile(indexV1Path)
       this.index = JSON.parse(content) as ModuleIndex
-      log.info(`知识索引已加载: ${this.index?.modules.length ?? 0} 个模块`)
+      log.info(`知识索引(v1)已加载: ${this.index?.modules.length ?? 0} 个模块`)
     } catch (err) {
-      log.warn('无法加载知识索引', { path: indexPath, error: String(err) })
+      log.warn('无法加载知识索引', { error: String(err) })
       this.index = null
     }
   }
