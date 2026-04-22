@@ -180,7 +180,7 @@ impl WorkspaceMcpConfigService {
                 || binary.server_name == KNOWLEDGE_MCP_SERVER_NAME
             {
                 vec![
-                    self.config_dir.to_string_lossy().to_string(),
+                    strip_unc_prefix(&self.config_dir.to_string_lossy()),
                     normalized_workspace.to_string(),
                 ]
             } else {
@@ -190,7 +190,7 @@ impl WorkspaceMcpConfigService {
             servers.insert(
                 binary.server_name.to_string(),
                 ClaudeMcpServerConfig {
-                    command: binary.executable_path.to_string_lossy().to_string(),
+                    command: strip_unc_prefix(&binary.executable_path.to_string_lossy()),
                     args,
                 },
             );
@@ -202,6 +202,20 @@ impl WorkspaceMcpConfigService {
 
         write_json_atomically(&config_path, &config)?;
         Ok(config_path)
+    }
+}
+
+/// Strip the Windows UNC extended-length path prefix (`\\?\`) from a path string.
+///
+/// On Windows, `std::fs::canonicalize()` and some Tauri path APIs return paths
+/// with the `\\?\` prefix. While valid for Win32 APIs, this prefix can cause
+/// issues with Node.js `child_process.spawn()` and some CLI tools. For paths
+/// under MAX_PATH (260 chars), the prefix is unnecessary.
+fn strip_unc_prefix(s: &str) -> String {
+    if s.starts_with(r"\\?\") {
+        s[4..].to_string()
+    } else {
+        s.to_string()
     }
 }
 

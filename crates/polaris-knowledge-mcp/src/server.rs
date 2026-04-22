@@ -87,6 +87,15 @@ fn run_event_loop(
     modules_dir: &PathBuf,
     workspace_root: Option<&std::path::Path>,
 ) -> Result<()> {
+    // Pre-flight: verify index.json exists before entering the event loop.
+    // This produces a clear startup error instead of failing on the first tool call.
+    if !index_path.exists() {
+        return Err(KnowledgeError::Validation(format!(
+            "知识索引文件不存在: {}。请确保 .polaris/knowledge/index.json 存在",
+            index_path.display()
+        )));
+    }
+
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut reader = BufReader::new(stdin.lock());
@@ -97,7 +106,15 @@ fn run_event_loop(
     let mut line = String::new();
     loop {
         line.clear();
-        let bytes_read = reader.read_line(&mut line)?;
+        let bytes_read = match reader.read_line(&mut line) {
+            Ok(n) => n,
+            Err(e) => {
+                // stdin I/O error — log to stderr and exit gracefully.
+                // This typically means the parent process closed the pipe.
+                eprintln!("[knowledge-mcp] stdin read error: {}", e);
+                break;
+            }
+        };
         if bytes_read == 0 {
             break;
         }
@@ -116,9 +133,19 @@ fn run_event_loop(
             ),
         };
 
-        serde_json::to_writer(&mut writer, &response)?;
-        writer.write_all(b"\n")?;
-        writer.flush()?;
+        // Write response with broken-pipe protection.
+        // If stdout is closed (parent disconnected), exit gracefully instead of crashing.
+        let write_result: std::io::Result<()> = (|| {
+            serde_json::to_writer(&mut writer, &response)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            writer.write_all(b"\n")?;
+            writer.flush()?;
+            Ok(())
+        })();
+        if let Err(e) = write_result {
+            eprintln!("[knowledge-mcp] stdout write error: {}", e);
+            break;
+        }
     }
 
     Ok(())

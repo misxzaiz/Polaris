@@ -15,12 +15,54 @@ use crate::extractor::matches_any;
 use crate::models::{KnowledgeIndex, ModuleEntry};
 use crate::seeder::{self, SeedOptions};
 
+/// Maximum number of retries for transient file read failures.
+const INDEX_READ_RETRIES: u32 = 3;
+
+/// Delay between retries in milliseconds.
+const INDEX_READ_RETRY_DELAY_MS: u64 = 100;
+
 /// Load and parse the index.json.
+///
+/// Includes retry logic for transient read failures on Windows (antivirus file locks,
+/// file-system replication delays, etc.). After all retries are exhausted, returns
+/// the last IO error.
 pub fn load_index(index_path: &PathBuf) -> Result<KnowledgeIndex> {
-    let content = fs::read_to_string(index_path)
-        .map_err(|e| KnowledgeError::Io(format!("无法读取知识索引: {}", e)))?;
-    serde_json::from_str(&content)
-        .map_err(|e| KnowledgeError::Json(format!("知识索引格式错误: {}", e)))
+    let mut last_err = None;
+    for attempt in 0..=INDEX_READ_RETRIES {
+        match fs::read_to_string(index_path) {
+            Ok(content) => {
+                return serde_json::from_str(&content)
+                    .map_err(|e| KnowledgeError::Json(format!("知识索引格式错误: {}", e)));
+            }
+            Err(e) => {
+                let kind = e.kind();
+                // Only retry on transient errors (NotFound on Windows can be caused by
+                // antivirus scanning, file-system replication delays, or oplocks).
+                // Do NOT retry on permission denied — that's a real configuration error.
+                if attempt < INDEX_READ_RETRIES
+                    && (kind == std::io::ErrorKind::NotFound
+                        || kind == std::io::ErrorKind::TimedOut
+                        || kind == std::io::ErrorKind::Interrupted)
+                {
+                    eprintln!(
+                        "[knowledge-mcp] index.json 读取失败 (尝试 {}/{}): {} — 重试中",
+                        attempt + 1,
+                        INDEX_READ_RETRIES,
+                        e
+                    );
+                    std::thread::sleep(std::time::Duration::from_millis(INDEX_READ_RETRY_DELAY_MS));
+                    last_err = Some(e);
+                    continue;
+                }
+                return Err(KnowledgeError::Io(format!("无法读取知识索引: {}", e)));
+            }
+        }
+    }
+    // Should be unreachable, but satisfy the compiler
+    Err(KnowledgeError::Io(format!(
+        "无法读取知识索引 (重试耗尽): {}",
+        last_err.unwrap_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "unknown"))
+    )))
 }
 
 /// Read a module document file.
