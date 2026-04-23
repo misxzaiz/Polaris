@@ -7,9 +7,24 @@ use std::sync::Arc;
 use crate::AppState;
 use super::super::error::WebError;
 
-pub async fn handle_verify_token() -> Result<impl IntoResponse, WebError> {
-    // If auth middleware passed, token is valid
-    Ok(Json(serde_json::json!({ "valid": true })))
+pub async fn handle_verify_token(
+    State(state): State<Arc<AppState>>,
+    axum::extract::OriginalUri(_uri): axum::extract::OriginalUri,
+    headers: axum::http::HeaderMap,
+) -> Result<impl IntoResponse, WebError> {
+    let expected = {
+        let store = state.config_store.lock()
+            .map_err(|e| WebError::Internal(e.to_string()))?;
+        store.get().web.token.clone().unwrap_or_default()
+    };
+
+    let provided = headers
+        .get("Authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .unwrap_or("");
+
+    Ok(Json(serde_json::json!({ "valid": provided == expected })))
 }
 
 #[derive(Debug, Deserialize)]
