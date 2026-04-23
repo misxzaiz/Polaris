@@ -294,7 +294,8 @@ pub fn run() {
                     let _ = store.update(cfg);
                 }
 
-                let addr = format!("{}:{}", config.web.host, config.web.port);
+                let port = web::server::WebServer::resolve_port(config.web.port);
+                let addr = format!("{}:{}", config.web.host, port);
                 let web_state = Arc::new(state.clone_for_web());
                 let web_server = web::server::WebServer::new(web_state);
 
