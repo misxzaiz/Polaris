@@ -269,9 +269,9 @@ export function PromptSnippetTab() {
             </div>
 
             {form.variables.map((v, idx) => (
-              <div key={idx} className="flex items-start gap-2 p-2 bg-surface border border-border-subtle rounded-lg">
+              <div key={idx} className="flex flex-col sm:flex-row sm:items-start gap-2 p-2 bg-surface border border-border-subtle rounded-lg">
                 {/* 变量名 */}
-                <div className="w-28 shrink-0">
+                <div className="sm:w-28 sm:shrink-0">
                   <input
                     type="text"
                     value={v.key}
@@ -281,7 +281,7 @@ export function PromptSnippetTab() {
                   />
                 </div>
                 {/* 标签 */}
-                <div className="w-28 shrink-0">
+                <div className="sm:w-28 sm:shrink-0">
                   <input
                     type="text"
                     value={v.label}
@@ -290,39 +290,39 @@ export function PromptSnippetTab() {
                     className="w-full bg-background-surface border border-border rounded px-2 py-1 text-xs text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-primary"
                   />
                 </div>
-                {/* 类型 */}
-                <select
-                  value={v.type}
-                  onChange={e => updateVariable(idx, 'type', e.target.value)}
-                  className="bg-background-surface border border-border rounded px-2 py-1 text-xs text-text-primary focus:outline-none focus:border-primary"
-                >
-                  <option value="text">{t('variables.typeText')}</option>
-                  <option value="textarea">{t('variables.typeTextarea')}</option>
-                </select>
-                {/* 必填 */}
-                <label className="flex items-center gap-1 shrink-0 py-1">
-                  <input
-                    type="checkbox"
-                    checked={v.required}
-                    onChange={e => updateVariable(idx, 'required', e.target.checked)}
-                    className="rounded border-border text-primary"
-                  />
-                  <span className="text-xs text-text-tertiary">{t('variables.required')}</span>
-                </label>
-                {/* 删除 */}
-                <button
-                  onClick={() => removeVariable(idx)}
-                  className="p-1 text-text-tertiary hover:text-danger transition-colors shrink-0"
-                >
-                  <IconTrash size={12} />
-                </button>
+                {/* 类型 + 必填 + 删除 */}
+                <div className="flex items-center gap-2">
+                  <select
+                    value={v.type}
+                    onChange={e => updateVariable(idx, 'type', e.target.value)}
+                    className="bg-background-surface border border-border rounded px-2 py-1 text-xs text-text-primary focus:outline-none focus:border-primary"
+                  >
+                    <option value="text">{t('variables.typeText')}</option>
+                    <option value="textarea">{t('variables.typeTextarea')}</option>
+                  </select>
+                  <label className="flex items-center gap-1 shrink-0 py-1">
+                    <input
+                      type="checkbox"
+                      checked={v.required}
+                      onChange={e => updateVariable(idx, 'required', e.target.checked)}
+                      className="rounded border-border text-primary"
+                    />
+                    <span className="text-xs text-text-tertiary">{t('variables.required')}</span>
+                  </label>
+                  <button
+                    onClick={() => removeVariable(idx)}
+                    className="p-1 text-text-tertiary hover:text-danger transition-colors shrink-0"
+                  >
+                    <IconTrash size={12} />
+                  </button>
+                </div>
               </div>
             ))}
 
             {/* 自动变量说明 */}
             <div className="mt-2 p-2 bg-background-hover rounded-lg">
               <p className="text-xs text-text-tertiary mb-1">{t('variables.autoVars')}</p>
-              <div className="grid grid-cols-2 gap-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
                 {AUTO_VARIABLES.map(v => (
                   <span key={v.key} className="text-xs text-text-tertiary font-mono">
                     {`{{${v.key}}}`} — {v.label}
