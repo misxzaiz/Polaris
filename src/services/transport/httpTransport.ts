@@ -14,6 +14,9 @@ const log = createLogger('HttpTransport');
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 30000;
 const RECONNECT_JITTER = 0.3;
+const MAX_RECONNECT_ATTEMPTS = 50;
+/** Client sends application-level ping every this interval (ms). */
+const CLIENT_HEARTBEAT_MS = 25_000;
 
 /** Tauri 命令名 → HTTP 路由映射 */
 function commandToPath(command: string): string {
@@ -80,6 +83,8 @@ export function createHttpTransport(
   let wsConnecting: Promise<void> | null = null;
   let reconnectAttempt = 0;
   let intentionalClose = false;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   const listeners = new Map<string, Set<(payload: unknown) => void>>();
 
   /** Send a JSON message to the WebSocket if connected */
@@ -102,10 +107,20 @@ export function createHttpTransport(
   /** Schedule an automatic reconnect with exponential backoff */
   function scheduleReconnect(): void {
     if (intentionalClose) return;
+    // Cancel any pending reconnect timer to avoid stacking
+    if (reconnectTimer !== null) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
+      log.error(`Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached. Giving up.`);
+      return;
+    }
     const delay = backoffDelay(reconnectAttempt);
     reconnectAttempt++;
     log.warn(`WebSocket disconnected, reconnecting in ${Math.round(delay)}ms (attempt ${reconnectAttempt})`);
-    setTimeout(() => {
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
       if (!intentionalClose) {
         connectWs().catch(() => { /* scheduleReconnect called on close */ });
       }
@@ -127,6 +142,11 @@ export function createHttpTransport(
         ws = socket;
         wsConnecting = null;
         reconnectAttempt = 0;
+        // Start client-side heartbeat
+        stopHeartbeat();
+        heartbeatTimer = setInterval(() => {
+          sendWsMsg({ type: 'ping' });
+        }, CLIENT_HEARTBEAT_MS);
         // Re-sync subscriptions after (re)connect
         syncSubscriptions();
         resolve();
@@ -155,11 +175,20 @@ export function createHttpTransport(
       socket.addEventListener('close', () => {
         ws = null;
         wsConnecting = null;
+        stopHeartbeat();
         scheduleReconnect();
       });
     });
 
     return wsConnecting;
+  }
+
+  /** Stop the client-side heartbeat timer */
+  function stopHeartbeat(): void {
+    if (heartbeatTimer !== null) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
   }
 
   return {

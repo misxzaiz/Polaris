@@ -9,6 +9,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use crate::AppState;
 use super::auth;
 use super::api;
+use super::error::WebError;
 use super::middleware::request_trace;
 
 /// Resolve the frontend dist directory for static file serving.
@@ -53,7 +54,9 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         // Health
         .route("/health", get(api::health::handle_health))
         // WebSocket
-        .route("/ws", get(api::ws::ws_handler));
+        .route("/ws", get(api::ws::ws_handler))
+        // Catch-all: return JSON 404 for unmatched /api/* routes
+        .fallback(|| async { Err::<(), WebError>(WebError::NotFound("API route not found".into())) });
 
     let index_html = dist_dir.join("index.html");
 
