@@ -34,7 +34,7 @@ pub fn get_tools_list() -> Value {
                         "id": {
                             "type": "string",
                             "minLength": 1,
-                            "description": "模块 ID（如 chat-render, ai-engine, scheduler）"
+                            "description": "模块 ID（如 chat-render, engine-adapter, scheduler）"
                         }
                     },
                     "additionalProperties": false

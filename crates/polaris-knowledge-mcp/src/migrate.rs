@@ -41,7 +41,9 @@ pub struct MigrationReport {
 pub fn default_domain_map() -> BTreeMap<&'static str, &'static str> {
     let mut map = BTreeMap::new();
     // ai-conversation — everything that produces/shows the AI dialog
-    map.insert("ai-engine", "ai-conversation");
+    map.insert("engine-adapter", "ai-conversation");
+    map.insert("ai-runtime", "ai-conversation");
+    map.insert("rust-ai", "ai-conversation");
     map.insert("chat-session", "ai-conversation");
     map.insert("chat-render", "ai-conversation");
     map.insert("assistant", "ai-conversation");

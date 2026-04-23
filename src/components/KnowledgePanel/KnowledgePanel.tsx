@@ -37,6 +37,7 @@ export function KnowledgePanel() {
     loading,
     initialized,
     loadIndex,
+    refreshIndex,
     loadStaleModules,
     selectedModuleId,
     selectModule,
@@ -139,7 +140,7 @@ export function KnowledgePanel() {
             <button
               onClick={() => {
                 if (currentWorkspace) {
-                  loadIndex(currentWorkspace.path)
+                  refreshIndex(currentWorkspace.path)
                 }
               }}
               disabled={loading}

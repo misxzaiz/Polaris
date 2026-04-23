@@ -22,7 +22,9 @@
       "name": "AI 对话",
       "description": "产生并呈现 AI 对话的端到端模块群：会话生命周期、消息渲染、内置助手编排。",
       "modules": [
-        "ai-engine",
+        "engine-adapter",
+        "ai-runtime",
+        "rust-ai",
         "assistant",
         "chat-render",
         "chat-session"
@@ -63,14 +65,59 @@
   ],
   "modules": [
     {
-      "id": "ai-engine",
-      "name": "AI 引擎",
+      "id": "engine-adapter",
+      "name": "引擎适配器",
       "domain": "ai-conversation",
       "scope": {
         "include": [
-          "src-tauri/src/ai/**",
+          "src/engines/**"
+        ]
+      },
+      "dependencies": [
+        "ai-runtime",
+        "ipc-bridge"
+      ],
+      "dependents": [
+        "chat-session"
+      ],
+      "documentFile": "engine-adapter.md",
+      "complexity": "high",
+      "changeFrequency": "medium",
+      "assertions": [],
+      "traps": [
+        {
+          "id": "engine-adapter/trap-stream-json-stdin-close",
+          "description": "stream-json 模式发送图片后必须关闭 stdin，否则 CLI 挂起",
+          "source": "CLAUDE.md#ai-engine",
+          "severity": "high"
+        },
+        {
+          "id": "engine-adapter/trap-fork-session-id",
+          "description": "fork 模式下 init 事件报告源会话 ID，非 init 事件才报告新 fork ID",
+          "source": "CLAUDE.md#ai-engine",
+          "severity": "high"
+        },
+        {
+          "id": "engine-adapter/trab-event-listener-leak",
+          "description": "ClaudeCodeSession dispose 时必须移除 Tauri 事件监听器，否则内存泄漏",
+          "source": "CLAUDE.md#ai-engine",
+          "severity": "medium"
+        },
+        {
+          "id": "engine-adapter/trap-tool-use-ordering",
+          "description": "tool_use 和 tool_result 通过 tool_use_id 关联，解析顺序错误会导致状态不一致",
+          "source": "CLAUDE.md#ai-engine",
+          "severity": "medium"
+        }
+      ]
+    },
+    {
+      "id": "ai-runtime",
+      "name": "AI 运行时（TS）",
+      "domain": "ai-conversation",
+      "scope": {
+        "include": [
           "src/ai-runtime/**",
-          "src/engines/**",
           "src/core/**"
         ]
       },
@@ -78,18 +125,18 @@
         "ipc-bridge"
       ],
       "dependents": [
+        "engine-adapter",
         "chat-session",
         "scheduler",
         "todo-requirement",
-        "integration",
         "assistant"
       ],
-      "documentFile": "ai-engine.md",
-      "complexity": "high",
+      "documentFile": "ai-runtime.md",
+      "complexity": "medium",
       "changeFrequency": "medium",
       "assertions": [
         {
-          "id": "ai-engine/claude-engine-config-rules",
+          "id": "ai-runtime/claude-engine-config-rules",
           "claim": "常量 `CLAUDE_ENGINE_CONFIG_RULES` 定义于 src/ai-runtime/config-validator.ts:292",
           "anchor": {
             "file": "src/ai-runtime/config-validator.ts",
@@ -100,7 +147,7 @@
           "source": "auto:seeder-v1"
         },
         {
-          "id": "ai-engine/cli-engine-config-rules",
+          "id": "ai-runtime/cli-engine-config-rules",
           "claim": "常量 `CLI_ENGINE_CONFIG_RULES` 定义于 src/ai-runtime/config-validator.ts:263",
           "anchor": {
             "file": "src/ai-runtime/config-validator.ts",
@@ -111,7 +158,7 @@
           "source": "auto:seeder-v1"
         },
         {
-          "id": "ai-engine/default-engine-id",
+          "id": "ai-runtime/default-engine-id",
           "claim": "常量 `DEFAULT_ENGINE_ID` 定义于 src/ai-runtime/index.ts:159",
           "anchor": {
             "file": "src/ai-runtime/index.ts",
@@ -122,7 +169,7 @@
           "source": "auto:seeder-v1"
         },
         {
-          "id": "ai-engine/version",
+          "id": "ai-runtime/version",
           "claim": "常量 `VERSION` 定义于 src/ai-runtime/index.ts:154",
           "anchor": {
             "file": "src/ai-runtime/index.ts",
@@ -133,7 +180,7 @@
           "source": "auto:seeder-v1"
         },
         {
-          "id": "ai-engine/global-tool-registry",
+          "id": "ai-runtime/global-tool-registry",
           "claim": "常量 `globalToolRegistry` 定义于 src/ai-runtime/tool-registry.ts:211",
           "anchor": {
             "file": "src/ai-runtime/tool-registry.ts",
@@ -147,6 +194,40 @@
       "traps": []
     },
     {
+      "id": "rust-ai",
+      "name": "Rust AI 后端",
+      "domain": "ai-conversation",
+      "scope": {
+        "include": [
+          "src-tauri/src/ai/**"
+        ]
+      },
+      "dependencies": [
+        "ipc-bridge"
+      ],
+      "dependents": [
+        "ai-runtime"
+      ],
+      "documentFile": "rust-ai.md",
+      "complexity": "high",
+      "changeFrequency": "medium",
+      "assertions": [],
+      "traps": [
+        {
+          "id": "rust-ai/trap-session-id-mapping",
+          "description": "前后端需保持 session_id 映射一致，后端 SessionManager 支持临时 ID 到真实 ID 的别名映射",
+          "source": "CLAUDE.md#ai-engine",
+          "severity": "high"
+        },
+        {
+          "id": "rust-ai/trap-windows-cli-types",
+          "description": "Windows 下 CLI 类型检测支持 npm/pnpm 安装和独立可执行文件两种，路径解析逻辑复杂",
+          "source": "CLAUDE.md#ai-engine",
+          "severity": "medium"
+        }
+      ]
+    },
+    {
       "id": "assistant",
       "name": "内置 AI 助手",
       "domain": "ai-conversation",
@@ -156,7 +237,7 @@
         ]
       },
       "dependencies": [
-        "ai-engine",
+        "ai-runtime",
         "chat-session",
         "ui-framework"
       ],
@@ -334,7 +415,7 @@
         ]
       },
       "dependencies": [
-        "ai-engine",
+        "engine-adapter",
         "ipc-bridge",
         "ui-framework"
       ],
@@ -427,7 +508,9 @@
       "dependents": [
         "mcp",
         "speech-voice",
-        "ai-engine",
+        "ai-runtime",
+        "engine-adapter",
+        "rust-ai",
         "chat-session",
         "integration"
       ],
@@ -538,7 +621,7 @@
       "dependencies": [
         "workspace",
         "ipc-bridge",
-        "ai-engine"
+        "engine-adapter"
       ],
       "dependents": [],
       "documentFile": "git.md",
@@ -615,11 +698,10 @@
         ]
       },
       "dependencies": [
-        "ai-engine",
+        "engine-adapter",
+        "ai-runtime",
         "ipc-bridge"
       ],
-      "dependents": [],
-      "documentFile": "integration.md",
       "complexity": "high",
       "changeFrequency": "low",
       "assertions": [
@@ -704,7 +786,9 @@
       },
       "dependencies": [],
       "dependents": [
-        "ai-engine",
+        "rust-ai",
+        "ai-runtime",
+        "engine-adapter",
         "chat-session",
         "scheduler",
         "todo-requirement",
@@ -947,7 +1031,7 @@
         ]
       },
       "dependencies": [
-        "ai-engine",
+        "ai-runtime",
         "ipc-bridge",
         "workspace"
       ],
@@ -1241,7 +1325,7 @@
         ]
       },
       "dependencies": [
-        "ai-engine",
+        "ai-runtime",
         "ipc-bridge",
         "scheduler"
       ],

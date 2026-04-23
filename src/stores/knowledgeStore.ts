@@ -42,8 +42,11 @@ interface KnowledgeState {
 }
 
 interface KnowledgeActions {
-  /** 加载指定工作区的知识索引 */
+  /** 加载指定工作区的知识索引（首次加载，防重复） */
   loadIndex: (workspacePath: string) => Promise<void>
+
+  /** 强制刷新知识索引（忽略缓存，用于手动刷新） */
+  refreshIndex: (workspacePath: string) => Promise<void>
 
   /** 加载过期模块列表 */
   loadStaleModules: () => Promise<void>
@@ -125,6 +128,40 @@ export const useKnowledgeStore = create<KnowledgeStore>((set, get) => ({
         initialized: false,
       })
       log.error('知识索引加载失败', err instanceof Error ? err : new Error(errorMsg))
+    }
+  },
+
+  refreshIndex: async (workspacePath: string) => {
+    // 重置初始化状态，绕过防重复守卫
+    set({ initialized: false, loading: true, error: null })
+    // 清空文档缓存
+    set({ moduleDocuments: new Map() })
+
+    try {
+      const service = getKnowledgeService()
+      await service.loadIndex(workspacePath)
+      const index = service.getIndex()
+
+      set({
+        workspacePath,
+        index,
+        loading: false,
+        error: null,
+        initialized: true,
+      })
+
+      // 同步刷新过期模块
+      await get().loadStaleModules()
+
+      log.info(`知识索引刷新完成: ${index?.modules.length ?? 0} 个模块`)
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      set({
+        loading: false,
+        error: errorMsg,
+        initialized: false,
+      })
+      log.error('知识索引刷新失败', err instanceof Error ? err : new Error(errorMsg))
     }
   },
 
