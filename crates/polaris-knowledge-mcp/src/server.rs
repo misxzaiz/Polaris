@@ -198,30 +198,75 @@ fn run_event_loop(
             continue;
         }
 
-        // Dispatch request to worker pool
-        if work_tx.send(trimmed.to_string()).is_err() {
-            eprintln!("[knowledge-mcp] worker pool shut down");
-            break;
-        }
-        pending_count += 1;
+        // Peek at method name to decide synchronous vs. pooled dispatch.
+        // MCP handshake (initialize / notifications/initialized) MUST be
+        // handled synchronously to guarantee response ordering — the
+        // thread-pool can reorder responses which breaks the client handshake.
+        let method = serde_json::from_str::<serde_json::Value>(trimmed)
+            .ok()
+            .and_then(|v| v.get("method").and_then(|m| m.as_str()).map(String::from));
 
-        // Drain available responses (non-blocking)
-        while pending_count > 0 {
-            match response_rx.try_recv() {
-                Ok(response_str) => {
-                    pending_count -= 1;
-                    if let Err(e) = writer.write_all(response_str.as_bytes())
-                        .and_then(|_| writer.write_all(b"\n"))
-                        .and_then(|_| writer.flush())
-                    {
-                        eprintln!("[knowledge-mcp] stdout write error: {}", e);
-                        break;
-                    }
-                }
-                Err(mpsc::TryRecvError::Empty) => break,
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    eprintln!("[knowledge-mcp] workers disconnected");
+        match method.as_deref() {
+            Some("initialize") | Some("notifications/initialized") | Some("ping") => {
+                // Synchronous path — parse, handle, write response immediately
+                let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
+                    Ok(request) => handle_request(
+                        request,
+                        &index_path,
+                        &modules_dir,
+                        workspace_root.as_deref(),
+                        &cache,
+                        &write_lock,
+                    ),
+                    Err(error) => error_response(
+                        Value::Null,
+                        -32700,
+                        format!("Parse error: {}", error),
+                    ),
+                };
+
+                let response_str = serde_json::to_string(&response).unwrap_or_else(|e| {
+                    format!(
+                        "{{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{{\"code\":-32603,\"message\":\"{}\"}}}}",
+                        e
+                    )
+                });
+
+                if let Err(e) = writer.write_all(response_str.as_bytes())
+                    .and_then(|_| writer.write_all(b"\n"))
+                    .and_then(|_| writer.flush())
+                {
+                    eprintln!("[knowledge-mcp] stdout write error: {}", e);
                     break;
+                }
+            }
+            _ => {
+                // Async path — dispatch to worker pool
+                if work_tx.send(trimmed.to_string()).is_err() {
+                    eprintln!("[knowledge-mcp] worker pool shut down");
+                    break;
+                }
+                pending_count += 1;
+
+                // Drain available responses (non-blocking)
+                while pending_count > 0 {
+                    match response_rx.try_recv() {
+                        Ok(response_str) => {
+                            pending_count -= 1;
+                            if let Err(e) = writer.write_all(response_str.as_bytes())
+                                .and_then(|_| writer.write_all(b"\n"))
+                                .and_then(|_| writer.flush())
+                            {
+                                eprintln!("[knowledge-mcp] stdout write error: {}", e);
+                                break;
+                            }
+                        }
+                        Err(mpsc::TryRecvError::Empty) => break,
+                        Err(mpsc::TryRecvError::Disconnected) => {
+                            eprintln!("[knowledge-mcp] workers disconnected");
+                            break;
+                        }
+                    }
                 }
             }
         }
