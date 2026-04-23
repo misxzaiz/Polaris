@@ -49,11 +49,10 @@ impl LspManager {
         args: &[String],
         app_handle: AppHandle,
     ) -> Result<()> {
+        // 幂等：如果 session 已存在且进程仍活着，直接返回成功
+        // 前端 HMR 或组件重挂载可能导致 clients Map 被清空后重新调用
         if self.sessions.contains_key(&id) {
-            return Err(AppError::StateError(format!(
-                "LSP session '{}' already exists",
-                id
-            )));
+            return Ok(());
         }
 
         // Windows 上 std::process::Command 只搜索 .exe，不搜索 .cmd/.bat
