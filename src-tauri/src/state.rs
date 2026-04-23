@@ -46,7 +46,7 @@ pub struct QuestionOption {
 }
 
 /// 问题状态
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum QuestionStatus {
     Pending,

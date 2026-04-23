@@ -466,3 +466,10 @@ impl Default for ConfigStore {
         Self::new().expect("无法创建配置存储")
     }
 }
+
+#[cfg(test)]
+impl ConfigStore {
+    pub(crate) fn new_test(config: Config, path: PathBuf) -> Self {
+        Self { config, config_path: path }
+    }
+}

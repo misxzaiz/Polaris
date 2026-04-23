@@ -5,3 +5,6 @@ pub mod error;
 pub mod extractors;
 pub mod router;
 pub mod server;
+
+#[cfg(test)]
+mod integration_tests;
