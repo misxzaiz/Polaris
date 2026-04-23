@@ -76,7 +76,14 @@
     "noDependencies": "No upstream dependencies",
     "noDependents": "No downstream dependents",
     "filterByConfidence": "Filter by this confidence level",
-    "close": "Close"
+    "close": "Close",
+    "editDoc": "Edit Document",
+    "editingDoc": "Editing Mode",
+    "cancelEdit": "Cancel",
+    "saveDoc": "Save",
+    "saving": "Saving...",
+    "docSaveSuccess": "Document saved",
+    "docSaveFailed": "Failed to save document"
   },
   "confidence": {
     "green": "Code Verifiable",

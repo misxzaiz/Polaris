@@ -6,12 +6,14 @@
  * - 4 Tab 切换：概览 / 断言 / 陷阱 / 依赖
  */
 
-import { useState, useEffect } from 'react'
-import { X, BookOpen, AlertTriangle, Link2, Pencil, Trash2 } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { X, BookOpen, AlertTriangle, Link2, Pencil, Trash2, Save, RotateCcw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { ModuleIndexEntry as KnowledgeModule } from '@/services/knowledgeService'
 import { useKnowledgeStore } from '@/stores/knowledgeStore'
 import { ProgressiveStreamingMarkdown } from '@/utils/lightweightMarkdown'
+import { CodeMirrorEditor } from '@/components/Editor'
+import { useToastStore } from '@/stores/toastStore'
 import {
   type ConfidenceLevel,
   CONFIDENCE_CONFIG,
@@ -38,33 +40,71 @@ const SEVERITY_COLORS: Record<string, string> = {
 
 export function ModuleDetailDialog({ module, open, onClose, onEdit, onDelete }: ModuleDetailDialogProps) {
   const { t } = useTranslation('knowledge')
+  const toast = useToastStore()
   const [activeTab, setActiveTab] = useState<DetailTab>('overview')
+  const [editingDoc, setEditingDoc] = useState(false)
+  const [editContent, setEditContent] = useState('')
+  const [saving, setSaving] = useState(false)
 
-  const { index, moduleDocuments, docLoading, loadModuleDocument } = useKnowledgeStore()
+  const { index, moduleDocuments, docLoading, loadModuleDocument, saveModuleDocument } = useKnowledgeStore()
 
   // 打开弹窗时加载文档
   useEffect(() => {
     if (open) {
       setActiveTab('overview')
+      setEditingDoc(false)
+      setEditContent('')
       loadModuleDocument(module.id)
     }
   }, [open, module.id, loadModuleDocument])
 
-  // Escape 关闭
+  // Escape 键处理：编辑中退出编辑模式，否则关闭弹窗
   useEffect(() => {
     if (!open) return
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') {
+        if (editingDoc) {
+          e.preventDefault()
+          setEditingDoc(false)
+        } else {
+          onClose()
+        }
+      }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [open, onClose])
+  }, [open, onClose, editingDoc])
 
   if (!open) return null
 
   const docContent = moduleDocuments.get(module.id)
   const domains = index?.domains ?? []
   const moduleDomain = domains.find(d => d.id === module.domain)
+
+  // 进入编辑模式
+  const handleStartEditDoc = () => {
+    setEditContent(docContent ?? '')
+    setEditingDoc(true)
+  }
+
+  // 保存文档
+  const handleSaveDoc = async () => {
+    setSaving(true)
+    try {
+      await saveModuleDocument(module.id, editContent)
+      setEditingDoc(false)
+      toast.success(t('detail.docSaveSuccess'))
+    } catch {
+      toast.error(t('detail.docSaveFailed'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Ctrl/Cmd+S 保存
+  const handleEditorSave = useCallback(() => {
+    handleSaveDoc()
+  }, [editContent, module.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const tabs: { key: DetailTab; label: string }[] = [
     { key: 'overview', label: t('detail.tabOverview') },
@@ -208,10 +248,59 @@ export function ModuleDetailDialog({ module, open, onClose, onEdit, onDelete }: 
 
         {/* 模块文档 */}
         <div>
-          <div className="text-xs font-medium text-text-secondary mb-2">
-            {t('detail.document')}
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium text-text-secondary">
+              {t('detail.document')}
+            </span>
+            {!editingDoc && docContent !== undefined && (
+              <button
+                onClick={handleStartEditDoc}
+                className="flex items-center gap-1 px-2 py-0.5 text-xs text-primary hover:bg-primary/10 rounded transition-colors"
+              >
+                <Pencil size={10} />
+                {t('detail.editDoc')}
+              </button>
+            )}
           </div>
-          {docLoading ? (
+
+          {editingDoc ? (
+            <div className="border border-border-subtle rounded overflow-hidden">
+              {/* 编辑器工具栏 */}
+              <div className="flex items-center justify-between px-2 py-1 bg-background-surface border-b border-border-subtle">
+                <span className="text-xs text-text-tertiary">{t('detail.editingDoc')}</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setEditingDoc(false)}
+                    className="flex items-center gap-1 px-2 py-0.5 text-xs text-text-secondary hover:text-text-primary rounded hover:bg-background-hover"
+                  >
+                    <RotateCcw size={10} />
+                    {t('detail.cancelEdit')}
+                  </button>
+                  <button
+                    onClick={handleSaveDoc}
+                    disabled={saving}
+                    className="flex items-center gap-1 px-2 py-0.5 text-xs bg-primary text-white rounded hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    <Save size={10} />
+                    {saving ? t('detail.saving') : t('detail.saveDoc')}
+                  </button>
+                </div>
+              </div>
+              {/* CodeMirror 编辑器 */}
+              <div style={{ height: '400px' }}>
+                <CodeMirrorEditor
+                  value={editContent}
+                  language="markdown"
+                  onChange={(v) => setEditContent(v)}
+                  onSave={handleEditorSave}
+                  readOnly={false}
+                  lineNumbers={false}
+                  wrapEnabled={true}
+                  filePath={`knowledge://${module.id}/doc.md`}
+                />
+              </div>
+            </div>
+          ) : docLoading ? (
             <div className="text-xs text-text-tertiary">{t('detail.documentLoading')}</div>
           ) : docContent ? (
             <div className="prose prose-sm prose-invert max-w-none text-sm text-text-secondary">

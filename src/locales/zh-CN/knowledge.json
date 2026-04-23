@@ -76,7 +76,14 @@
     "noDependencies": "无上游依赖",
     "noDependents": "无下游被依赖",
     "filterByConfidence": "按此置信度筛选",
-    "close": "关闭"
+    "close": "关闭",
+    "editDoc": "编辑文档",
+    "editingDoc": "编辑模式",
+    "cancelEdit": "取消",
+    "saveDoc": "保存",
+    "saving": "保存中...",
+    "docSaveSuccess": "文档保存成功",
+    "docSaveFailed": "文档保存失败"
   },
   "confidence": {
     "green": "代码可验证",
