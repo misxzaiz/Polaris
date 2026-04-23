@@ -84,7 +84,8 @@ pub async fn auth_middleware(
     let provided = extract_token(&req)?;
 
     let expected = {
-        let store = state.config_store.lock().unwrap_or_else(|e| e.into_inner());
+        let store = state.config_store.lock()
+            .map_err(|e| WebError::Internal(e.to_string()))?;
         store.get().web.token.clone().unwrap_or_default()
     };
 

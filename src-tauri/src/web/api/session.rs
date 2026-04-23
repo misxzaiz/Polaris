@@ -22,6 +22,7 @@ fn default_engine() -> String {
     "claude-code".to_string()
 }
 
+/// List all sessions with optional pagination and engine filter.
 pub async fn handle_list_sessions(
     State(state): State<Arc<AppState>>,
     Query(query): Query<ListSessionsQuery>,
@@ -55,12 +56,11 @@ pub struct CreateSessionResponse {
     pub session_id: String,
 }
 
+/// Sessions are created implicitly via POST /api/chat/send — this endpoint returns guidance.
 pub async fn handle_create_session(
     State(_state): State<Arc<AppState>>,
     Json(_req): Json<CreateSessionRequest>,
 ) -> Result<impl IntoResponse, WebError> {
-    // Sessions are created implicitly via start_chat. This endpoint is a no-op placeholder
-    // for API completeness — web clients use POST /api/chat/send without sessionId.
     Err::<Json<serde_json::Value>, WebError>(WebError::BadRequest("会话通过发送消息自动创建，无需手动创建".to_string()))
 }
 
@@ -70,6 +70,7 @@ pub struct DeleteSessionQuery {
     pub engine_id: Option<String>,
 }
 
+/// Delete a session by ID.
 pub async fn handle_delete_session(
     State(state): State<Arc<AppState>>,
     Path(session_id): Path<String>,
@@ -99,11 +100,11 @@ pub struct PatchSessionRequest {
     pub active: Option<bool>,
 }
 
+/// Session rename/switch — placeholder for future extension.
 pub async fn handle_patch_session(
     State(_state): State<Arc<AppState>>,
     Path(_session_id): Path<String>,
     Json(_req): Json<PatchSessionRequest>,
 ) -> Result<impl IntoResponse, WebError> {
-    // Session rename/switch is not a core MVP feature — placeholder for future extension
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }

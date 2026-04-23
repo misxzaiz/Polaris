@@ -5,6 +5,7 @@ use tokio_util::sync::CancellationToken;
 use crate::AppState;
 use super::router::create_router;
 
+/// Web server managing the HTTP/WS lifecycle for LAN browser access.
 pub struct WebServer {
     state: Arc<AppState>,
     shutdown: CancellationToken,
@@ -22,6 +23,7 @@ impl WebServer {
         self.shutdown.clone()
     }
 
+    /// Bind to `addr` and serve until cancelled or fatal error.
     pub async fn start(self, addr: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let shutdown = self.shutdown.clone();
         let app = create_router(self.state);
@@ -37,6 +39,7 @@ impl WebServer {
         Ok(())
     }
 
+    /// Signal the server to shut down gracefully.
     pub fn cancel(&self) {
         self.shutdown.cancel();
     }

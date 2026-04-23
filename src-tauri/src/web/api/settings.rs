@@ -7,6 +7,7 @@ use crate::models::config::Config;
 use crate::AppState;
 use super::super::error::WebError;
 
+/// Get current application configuration.
 pub async fn handle_get_settings(
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, WebError> {
@@ -16,6 +17,7 @@ pub async fn handle_get_settings(
     Ok(Json(config))
 }
 
+/// Update application configuration (partial merge).
 pub async fn handle_update_settings(
     State(state): State<Arc<AppState>>,
     Json(new_config): Json<Config>,

@@ -19,6 +19,7 @@ enum ClientMessage {
     Unsubscribe { events: Vec<String> },
 }
 
+/// WebSocket upgrade handler — initiates the bidirectional event stream.
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<Arc<AppState>>,

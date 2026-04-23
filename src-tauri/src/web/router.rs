@@ -3,18 +3,21 @@ use std::sync::Arc;
 use axum::middleware;
 use axum::routing::{delete, get, post};
 use axum::Router;
-use tower_http::cors::{Any, CorsLayer};
+use axum::http::Method;
+use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
 
 use crate::AppState;
 use super::auth;
 use super::api;
 
+/// Build the complete axum Router with API routes, auth middleware, CORS, and SPA fallback.
 pub fn create_router(state: Arc<AppState>) -> Router {
+    // LAN access: allow any origin but restrict methods/headers to what we use
     let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+        .allow_origin(tower_http::cors::Any)
+        .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE, Method::OPTIONS])
+        .allow_headers(tower_http::cors::Any);
 
     let api_routes = Router::new()
         // Chat

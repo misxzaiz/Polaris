@@ -8,6 +8,7 @@ use crate::AppState;
 use super::super::auth;
 use super::super::error::WebError;
 
+/// Verify if the provided Bearer token is valid.
 pub async fn handle_verify_token(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
@@ -32,6 +33,7 @@ pub struct TokenRequest {
     pub token: Option<String>,
 }
 
+/// Exchange an existing token for confirmation (no-auth endpoint).
 pub async fn handle_token_exchange(
     State(state): State<Arc<AppState>>,
     axum::Json(req): axum::Json<TokenRequest>,
@@ -54,12 +56,11 @@ pub async fn handle_token_exchange(
     }
 }
 
-/// Generate a new token and persist it. Requires current valid token.
+/// Regenerate the web access token. Requires current valid token.
 pub async fn handle_regenerate_token(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
 ) -> Result<impl IntoResponse, WebError> {
-    // Validate current token first
     let expected = {
         let store = state.config_store.lock()
             .map_err(|e| WebError::Internal(e.to_string()))?;
@@ -75,7 +76,6 @@ pub async fn handle_regenerate_token(
         return Err(WebError::Unauthorized);
     }
 
-    // Generate new token and persist
     let new_token = auth::generate_token();
     {
         let mut store = state.config_store.lock()

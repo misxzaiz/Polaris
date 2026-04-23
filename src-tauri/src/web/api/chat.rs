@@ -31,6 +31,7 @@ pub struct SendMessageRequest {
     pub options: Option<ChatRequestOptions>,
 }
 
+/// Send a chat message — creates a new session or continues an existing one.
 pub async fn handle_send_message(
     State(state): State<Arc<AppState>>,
     Json(req): Json<SendMessageRequest>,
@@ -53,7 +54,6 @@ pub async fn handle_send_message(
         notify_complete,
     };
 
-    // Default AppPaths — web mode has no Tauri window, use standard config dir
     let config_dir = dirs::config_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("claude-code-pro");
@@ -83,6 +83,7 @@ pub struct InterruptRequest {
     pub engine_id: Option<String>,
 }
 
+/// Interrupt an in-progress chat response.
 pub async fn handle_interrupt(
     State(state): State<Arc<AppState>>,
     Json(req): Json<InterruptRequest>,
@@ -91,6 +92,7 @@ pub async fn handle_interrupt(
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
 
+/// Get message history for a specific session.
 pub async fn handle_get_history(
     State(state): State<Arc<AppState>>,
     Path(session_id): Path<String>,
@@ -117,6 +119,7 @@ pub struct AnswerQuestionRequest {
     pub custom_input: Option<String>,
 }
 
+/// Answer a pending AI question (tool-use confirmation, choice selection).
 pub async fn handle_answer_question(
     State(state): State<Arc<AppState>>,
     Json(req): Json<AnswerQuestionRequest>,
@@ -155,6 +158,7 @@ pub struct ApprovePlanRequest {
     pub feedback: Option<String>,
 }
 
+/// Approve a pending plan for execution.
 pub async fn handle_approve_plan(
     State(state): State<Arc<AppState>>,
     Json(req): Json<ApprovePlanRequest>,
@@ -167,10 +171,14 @@ pub async fn handle_approve_plan(
             .map_err(|e| WebError::Internal(e.to_string()))?;
         if let Some(plan) = pending.get_mut(&req.plan_id) {
             plan.status = PlanApprovalStatus::Approved;
+            plan.feedback = req.feedback.clone();
         }
     }
 
-    let event = PlanApprovalResultEvent::new(&req.session_id, &req.plan_id, true);
+    let mut event = PlanApprovalResultEvent::new(&req.session_id, &req.plan_id, true);
+    if let Some(fb) = req.feedback {
+        event = event.with_feedback(fb);
+    }
     let payload = serde_json::json!({
         "contextId": "main",
         "payload": event
@@ -189,6 +197,7 @@ pub struct RejectPlanRequest {
     pub feedback: Option<String>,
 }
 
+/// Reject a pending plan, optionally with feedback.
 pub async fn handle_reject_plan(
     State(state): State<Arc<AppState>>,
     Json(req): Json<RejectPlanRequest>,
