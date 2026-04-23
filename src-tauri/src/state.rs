@@ -100,7 +100,7 @@ pub struct PendingPlan {
 /// 全局配置状态
 pub struct AppState {
     /// 配置存储
-    pub config_store: Mutex<ConfigStore>,
+    pub config_store: Arc<Mutex<ConfigStore>>,
     /// 保存会话 ID 到进程 PID 的映射（保留向后兼容）
     /// 使用 PID 而不是 Child，因为 Child 会在读取输出时被消费
     pub sessions: Arc<Mutex<HashMap<String, u32>>>,
@@ -139,7 +139,7 @@ pub fn create_app_state(
         .join("claude-code-pro");
 
     AppState {
-        config_store: Mutex::new(config_store),
+        config_store: Arc::new(Mutex::new(config_store)),
         sessions: Arc::new(Mutex::new(HashMap::new())),
         context_store: Arc::new(Mutex::new(ContextMemoryStore::new())),
         integration_manager: AsyncMutex::new(integration_manager),
@@ -152,5 +152,33 @@ pub fn create_app_state(
         lsp_manager: Mutex::new(LspManager::new()),
         lsp_config: Mutex::new(LspConfigRepository::new(&config_dir)),
         event_broadcast: broadcast::channel(256).0,
+    }
+}
+
+impl AppState {
+    /// Clone shared Arc fields for the web server.
+    ///
+    /// Non-shared fields (integration_manager, terminal_manager, etc.) get fresh
+    /// empty instances — the web server never accesses them.
+    pub fn clone_for_web(&self) -> AppState {
+        let config_dir = dirs::config_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("claude-code-pro");
+
+        AppState {
+            config_store: self.config_store.clone(),
+            sessions: self.sessions.clone(),
+            context_store: self.context_store.clone(),
+            integration_manager: AsyncMutex::new(IntegrationManager::new()),
+            engine_registry: self.engine_registry.clone(),
+            terminal_manager: Mutex::new(TerminalManager::new()),
+            file_watcher_manager: Mutex::new(FileWatcherManager::new()),
+            pending_questions: self.pending_questions.clone(),
+            pending_plans: self.pending_plans.clone(),
+            scheduler_daemon: AsyncMutex::new(None),
+            lsp_manager: Mutex::new(LspManager::new()),
+            lsp_config: Mutex::new(LspConfigRepository::new(&config_dir)),
+            event_broadcast: self.event_broadcast.clone(),
+        }
     }
 }

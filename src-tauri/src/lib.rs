@@ -107,6 +107,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex as AsyncMutex;
 use ai::EngineRegistry;
 use integrations::IntegrationManager;
+use tauri::Manager;
 
 // ============================================================================
 // Tauri Commands
@@ -242,7 +243,40 @@ pub fn run() {
             engine_registry_arc,
             integration_manager,
         ))
-        .setup(|_app| {
+        .setup(|app| {
+            // Conditionally start the web server based on WebConfig.enabled
+            let state = app.state::<AppState>();
+            let config = {
+                let store = state.config_store.lock()
+                    .unwrap_or_else(|e: std::sync::PoisonError<std::sync::MutexGuard<'_, ConfigStore>>| e.into_inner());
+                store.get().clone()
+            };
+
+            if config.web.enabled {
+                // Resolve token: use configured value or auto-generate
+                let token = web::auth::resolve_token(config.web.token.as_deref());
+
+                // Persist auto-generated token so it survives restarts
+                if config.web.token.as_deref() != Some(&token) {
+                    let mut cfg = config.clone();
+                    cfg.web.token = Some(token.clone());
+                    let mut store = state.config_store.lock()
+                        .unwrap_or_else(|e: std::sync::PoisonError<std::sync::MutexGuard<'_, ConfigStore>>| e.into_inner());
+                    let _ = store.update(cfg);
+                }
+
+                let addr = format!("{}:{}", config.web.host, config.web.port);
+                let web_state = Arc::new(state.clone_for_web());
+                let web_server = web::server::WebServer::new(web_state);
+
+                tauri::async_runtime::spawn(async move {
+                    tracing::info!("[Web] Starting web server on {}", addr);
+                    if let Err(e) = web_server.start(&addr).await {
+                        tracing::error!("[Web] Server error: {}", e);
+                    }
+                });
+            }
+
             Ok(())
         })
         .on_window_event(|window, event| {
