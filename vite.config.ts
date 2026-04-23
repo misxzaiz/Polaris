@@ -12,6 +12,21 @@ export default defineConfig(async () => ({
     alias: [
       { find: /^@\//, replacement: `${path.resolve(__dirname, './src')}/` },
     ],
+    // 强制所有 @codemirror 包解析到项目根 node_modules 中的同一实例
+    // 避免 @codemirror/lsp-client 内部依赖链导致 @codemirror/state 被加载为不同实例
+    // CodeMirror 使用 instanceof 检查 extension 类型，多实例会触发
+    // "Unrecognized extension value" 错误
+    dedupe: [
+      '@codemirror/state',
+      '@codemirror/view',
+      '@codemirror/language',
+      '@codemirror/autocomplete',
+      '@codemirror/lint',
+      '@codemirror/search',
+      '@codemirror/commands',
+      '@lezer/highlight',
+      '@lezer/common',
+    ],
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
