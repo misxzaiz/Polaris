@@ -112,6 +112,9 @@ export default defineConfig(async () => ({
       'react-dom',
       '@tauri-apps/api/core',
       '@tauri-apps/api/event',
+      // CodeMirror LSP client — 必须与其他 CM6 包在同一预构建上下文中，
+      // 否则 @codemirror/state 会被加载为两个不同实例，导致 instanceof 检查失败
+      '@codemirror/lsp-client',
     ],
   },
 }));
