@@ -9,6 +9,7 @@ import { create } from 'zustand';
 import { LSPClient, languageServerExtensions } from '@codemirror/lsp-client';
 import type { Extension } from '@codemirror/state';
 import { TauriIpcTransport } from '../services/lsp/TauriIpcTransport';
+import { lspConfigList } from '../services/tauri/lspService';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('LspStore');
@@ -78,6 +79,9 @@ interface LspActions {
 
   /** 获取指定服务器对应语言的 CM6 extensions */
   getExtensionsForFile(filePath: string, language: string): Extension[];
+
+  /** 从后端加载配置（初始化时调用一次） */
+  loadFromBackend(): Promise<void>;
 }
 
 export type LspStore = LspState & LspActions;
@@ -293,6 +297,26 @@ export const useLspStore = create<LspStore>()((set, get) => ({
     if (!active) return [];
 
     return getExtensionsForClient(active.client, filePath);
+  },
+
+  loadFromBackend: async () => {
+    try {
+      const config = await lspConfigList();
+      if (config.length > 0) {
+        // 后端有配置，以后端为准（保留运行时连接状态不变）
+        set({ servers: config });
+        log.debug('Loaded LSP config from backend', { count: config.length });
+      } else {
+        // 首次使用：DEFAULT_SERVERS 作为种子写入后端
+        const defaults = [...DEFAULT_SERVERS];
+        set({ servers: defaults });
+        log.debug('Initialized LSP config with defaults');
+      }
+    } catch (err) {
+      log.error('Failed to load LSP config from backend, using defaults', { error: String(err) });
+      // 降级：使用默认配置
+      set({ servers: [...DEFAULT_SERVERS] });
+    }
   },
 }));
 

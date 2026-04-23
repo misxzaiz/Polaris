@@ -7,7 +7,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLspStore, type LspServerConfig, type LspConnectionStatus } from '../../../stores/lspStore';
-import { lspConfigList, lspConfigUpsert, lspConfigRemove, lspConfigToggle } from '../../../services/tauri/lspService';
+import { lspConfigUpsert, lspConfigRemove, lspConfigToggle } from '../../../services/tauri/lspService';
 import { createLogger } from '../../../utils/logger';
 import { Power, Trash2, Plus, RefreshCw, Terminal } from 'lucide-react';
 
@@ -49,24 +49,17 @@ export function LspTab() {
     enabled: true,
   });
 
-  // 从后端加载配置
+  // 从后端加载配置（通过 store action 统一处理）
   const loadConfig = useCallback(async () => {
     try {
       setLoading(true);
-      const config = await lspConfigList();
-      // 同步到 store（保留内存中的运行时状态）
-      const currentIds = new Set(useLspStore.getState().servers.map((s) => s.id));
-      for (const server of config) {
-        if (!currentIds.has(server.id)) {
-          addServer(server);
-        }
-      }
+      await useLspStore.getState().loadFromBackend();
     } catch (err) {
       log.error('Failed to load LSP config', { error: String(err) });
     } finally {
       setLoading(false);
     }
-  }, [addServer]);
+  }, []);
 
   useEffect(() => {
     loadConfig();
