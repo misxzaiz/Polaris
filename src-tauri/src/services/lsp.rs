@@ -22,13 +22,23 @@ use crate::utils::CREATE_NO_WINDOW;
 /// LSP 会话：持有子进程和 stdin 句柄
 struct LspSession {
     child: Child,
-    stdin: ChildStdin,
+    stdin: Option<ChildStdin>,
 }
 
 impl LspSession {
     /// 检查子进程是否仍在运行
     fn is_alive(&mut self) -> bool {
         matches!(self.child.try_wait(), Ok(None))
+    }
+}
+
+impl Drop for LspSession {
+    fn drop(&mut self) {
+        // 先关闭 stdin 管道，通知 LSP 服务器退出
+        self.stdin.take();
+        // 强制终止 + 回收资源
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
@@ -60,7 +70,7 @@ impl LspManager {
             if session.is_alive() {
                 return Ok(());
             }
-            // 进程已退出，清理僵尸条目
+            // 进程已退出，清理僵尸条目（Drop 会自动 kill+wait）
             let _ = self.sessions.remove(&id);
         }
 
@@ -189,7 +199,7 @@ impl LspManager {
             }
         });
 
-        self.sessions.insert(id, LspSession { child, stdin });
+        self.sessions.insert(id, LspSession { child, stdin: Some(stdin) });
         Ok(())
     }
 
@@ -202,13 +212,15 @@ impl LspManager {
             .get_mut(id)
             .ok_or_else(|| AppError::SessionNotFound(id.to_string()))?;
 
+        let stdin = session.stdin.as_mut().ok_or_else(|| {
+            AppError::ProcessError("LSP stdin closed".to_string())
+        })?;
+
         let frame = format!("Content-Length: {}\r\n\r\n{}", json.len(), json);
-        session
-            .stdin
+        stdin
             .write_all(frame.as_bytes())
             .map_err(|e| AppError::ProcessError(format!("LSP stdin write failed: {}", e)))?;
-        session
-            .stdin
+        stdin
             .flush()
             .map_err(|e| AppError::ProcessError(format!("LSP stdin flush failed: {}", e)))?;
         Ok(())
@@ -216,10 +228,8 @@ impl LspManager {
 
     /// 停止语言服务器进程
     pub fn stop(&mut self, id: &str) -> Result<()> {
-        if let Some(mut session) = self.sessions.remove(id) {
-            // 尝试优雅终止，失败则强杀
-            let _ = session.child.kill();
-            let _ = session.child.wait(); // 回收资源
+        if let Some(_session) = self.sessions.remove(id) {
+            // Drop impl handles kill + wait
         }
         Ok(())
     }

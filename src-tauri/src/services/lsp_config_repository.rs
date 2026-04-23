@@ -94,11 +94,14 @@ impl LspConfigRepository {
 
     /// 更新 enabled 状态
     pub fn set_enabled(&mut self, id: &str, enabled: bool) -> Result<()> {
-        if let Some(s) = self.cache.servers.iter_mut().find(|s| s.id == id) {
+        let server = self.cache.servers.iter_mut().find(|s| s.id == id);
+        if let Some(s) = server {
             s.enabled = enabled;
             self.save()?;
+            Ok(())
+        } else {
+            Err(crate::error::AppError::SessionNotFound(id.to_string()))
         }
-        Ok(())
     }
 
     fn load_from_disk(path: &Path) -> std::result::Result<LspConfigFile, std::io::Error> {
