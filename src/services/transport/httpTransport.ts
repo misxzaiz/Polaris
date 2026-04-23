@@ -85,7 +85,7 @@ export function createHttpTransport(
         resolve();
       };
 
-      const errorHandler = (ev: Event) => {
+      const errorHandler = (_ev: Event) => {
         socket.removeEventListener('open', openHandler);
         socket.removeEventListener('error', errorHandler);
         ws = null;

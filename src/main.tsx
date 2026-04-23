@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { TokenAuthPage } from "./components/WebAccess/TokenAuthPage";
-import { detectTransport, initWebAuth, getStoredToken, getServerUrl, storeToken, storeServerUrl } from "./services/transport";
+import { detectTransport, initWebAuth, getServerUrl, storeToken, storeServerUrl } from "./services/transport";
 import "./i18n";
 
 const root = document.getElementById("root") as HTMLElement;

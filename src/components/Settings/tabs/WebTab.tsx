@@ -4,7 +4,7 @@
 
 import { useTranslation } from 'react-i18next';
 import { useState } from 'react';
-import type { Config } from '../../../types';
+import type { Config, WebConfig } from '../../../types';
 
 interface WebTabProps {
   config: Config;
@@ -12,7 +12,7 @@ interface WebTabProps {
   loading: boolean;
 }
 
-const DEFAULT_WEB_CONFIG = { enabled: false, host: '0.0.0.0', port: 9800 };
+const DEFAULT_WEB_CONFIG: WebConfig = { enabled: false, host: '0.0.0.0', port: 9800 };
 
 export function WebTab({ config, onConfigChange, loading }: WebTabProps) {
   const { t } = useTranslation('settings');
