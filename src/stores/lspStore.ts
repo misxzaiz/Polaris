@@ -25,6 +25,8 @@ export interface LspServerConfig {
   command: string;
   /** 命令参数 */
   args: string[];
+  /** 是否启用 */
+  enabled: boolean;
 }
 
 /** 活跃的 LSP 客户端实例 */
@@ -41,9 +43,11 @@ interface LspState {
   clients: Map<string, ActiveClient>;
   /** 连接状态（key = serverId） */
   status: Map<string, LspConnectionStatus>;
+  /** 进行中的连接 Promise（防止并发重复创建） */
+  pendingConnections: Map<string, Promise<{ client: LSPClient; extensions: Extension[] } | null>>;
 }
 
-type LspConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+export type LspConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
 /** LSP Store 操作 */
 interface LspActions {
@@ -66,18 +70,24 @@ interface LspActions {
   /** 移除语言服务器配置 */
   removeServer(id: string): void;
 
+  /** 切换服务器启用/禁用 */
+  toggleServer(id: string): void;
+
+  /** 更新服务器配置 */
+  updateServer(id: string, patch: Partial<Omit<LspServerConfig, 'id'>>): void;
+
   /** 获取指定服务器对应语言的 CM6 extensions */
   getExtensionsForFile(filePath: string, language: string): Extension[];
 }
 
 export type LspStore = LspState & LspActions;
 
-/** 查找支持指定语言的服务器配置 */
+/** 查找支持指定语言的已启用服务器配置 */
 function findServerForLanguage(
   servers: LspServerConfig[],
   language: string,
 ): LspServerConfig | null {
-  return servers.find((s) => s.languages.includes(language)) ?? null;
+  return servers.find((s) => s.enabled && s.languages.includes(language)) ?? null;
 }
 
 /** 将文件路径转为 LSP URI 格式 */
@@ -98,6 +108,7 @@ const DEFAULT_SERVERS: LspServerConfig[] = [
     languages: ['typescript', 'javascript', 'typescriptreact', 'javascriptreact'],
     command: 'typescript-language-server',
     args: ['--stdio'],
+    enabled: true,
   },
 ];
 
@@ -106,11 +117,12 @@ export const useLspStore = create<LspStore>()((set, get) => ({
   servers: [...DEFAULT_SERVERS],
   clients: new Map(),
   status: new Map(),
+  pendingConnections: new Map(),
 
   // --- 操作 ---
 
   activateForFile: async (filePath, language, rootUri) => {
-    const { servers, clients } = get();
+    const { servers, clients, pendingConnections } = get();
     const serverConfig = findServerForLanguage(servers, language);
     if (!serverConfig) return null;
 
@@ -122,53 +134,82 @@ export const useLspStore = create<LspStore>()((set, get) => ({
       return { client: existing.client, extensions };
     }
 
-    // 创建新 client
-    set((state) => {
-      const newStatus = new Map(state.status);
-      newStatus.set(serverConfig.id, 'connecting');
-      return { status: newStatus };
-    });
-
-    try {
-      const serverId = serverConfig.id;
-      const transport = new TauriIpcTransport(serverId);
-      await transport.connect(serverConfig.command, serverConfig.args);
-
-      const client = new LSPClient({
-        rootUri,
-        timeout: 5000,
-      }).connect(transport);
-
-      // 等待初始化完成（LSPClient 自动处理 initialize handshake）
-      await client.initializing;
-
-      const newClients = new Map(get().clients);
-      newClients.set(serverId, { client, transport });
-
-      const newStatus = new Map(get().status);
-      newStatus.set(serverId, 'connected');
-
-      set({ clients: newClients, status: newStatus });
-
-      log.debug('LSP client connected', {
-        serverId,
-        language,
-        capabilities: !!client.serverCapabilities,
-      });
-
-      const extensions = getExtensionsForClient(client, filePath);
-      return { client, extensions };
-    } catch (err) {
-      log.error('Failed to activate LSP', {
-        serverId: serverConfig.id,
-        error: String(err),
-      });
-
-      const newStatus = new Map(get().status);
-      newStatus.set(serverConfig.id, 'error');
-      set({ status: newStatus });
+    // 复用进行中的连接 Promise（防止竞态重复创建）
+    const pending = pendingConnections.get(serverConfig.id);
+    if (pending) {
+      log.debug('Waiting for pending LSP connection', { serverId: serverConfig.id });
+      const result = await pending;
+      if (result) {
+        const extensions = getExtensionsForClient(result.client, filePath);
+        return { client: result.client, extensions };
+      }
       return null;
     }
+
+    // 创建新 client（用 Promise 包裹防止竞态）
+    const connectionPromise = (async () => {
+      set((state) => {
+        const newStatus = new Map(state.status);
+        newStatus.set(serverConfig.id, 'connecting');
+        return { status: newStatus };
+      });
+
+      try {
+        const serverId = serverConfig.id;
+        const transport = new TauriIpcTransport(serverId);
+        await transport.connect(serverConfig.command, serverConfig.args);
+
+        const client = new LSPClient({
+          rootUri,
+          timeout: 5000,
+        }).connect(transport);
+
+        // 等待初始化完成（LSPClient 自动处理 initialize handshake）
+        await client.initializing;
+
+        const newClients = new Map(get().clients);
+        newClients.set(serverId, { client, transport });
+
+        const newStatus = new Map(get().status);
+        newStatus.set(serverId, 'connected');
+
+        // 清除 pending 标记
+        const newPending = new Map(get().pendingConnections);
+        newPending.delete(serverId);
+
+        set({ clients: newClients, status: newStatus, pendingConnections: newPending });
+
+        log.debug('LSP client connected', {
+          serverId,
+          language,
+          capabilities: !!client.serverCapabilities,
+        });
+
+        const extensions = getExtensionsForClient(client, filePath);
+        return { client, extensions };
+      } catch (err) {
+        log.error('Failed to activate LSP', {
+          serverId: serverConfig.id,
+          error: String(err),
+        });
+
+        const newStatus = new Map(get().status);
+        newStatus.set(serverConfig.id, 'error');
+        const newPending = new Map(get().pendingConnections);
+        newPending.delete(serverConfig.id);
+        set({ status: newStatus, pendingConnections: newPending });
+        return null;
+      }
+    })();
+
+    // 注册 pending Promise 供并发调用复用
+    set((state) => {
+      const newPending = new Map(state.pendingConnections);
+      newPending.set(serverConfig.id, connectionPromise);
+      return { pendingConnections: newPending };
+    });
+
+    return connectionPromise;
   },
 
   deactivateServer: async (serverId) => {
@@ -215,6 +256,32 @@ export const useLspStore = create<LspStore>()((set, get) => ({
     }));
     // 同时断开连接
     get().deactivateServer(id);
+  },
+
+  toggleServer: (id) => {
+    const { servers } = get();
+    const server = servers.find((s) => s.id === id);
+    if (!server) return;
+
+    const newEnabled = !server.enabled;
+    set((state) => ({
+      servers: state.servers.map((s) =>
+        s.id === id ? { ...s, enabled: newEnabled } : s,
+      ),
+    }));
+
+    // 禁用时断开连接
+    if (!newEnabled) {
+      get().deactivateServer(id);
+    }
+  },
+
+  updateServer: (id, patch) => {
+    set((state) => ({
+      servers: state.servers.map((s) =>
+        s.id === id ? { ...s, ...patch } : s,
+      ),
+    }));
   },
 
   getExtensionsForFile: (filePath, language) => {

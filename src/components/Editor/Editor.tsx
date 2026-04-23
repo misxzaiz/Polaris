@@ -23,6 +23,7 @@ import { createLogger } from '../../utils/logger';
 import { useFileEditorStore } from '../../stores/fileEditorStore';
 import { useEditorSettingsStore } from '../../stores/editorSettingsStore';
 import { useLspStore } from '../../stores/lspStore';
+import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { indentGuides, indentGuideTheme } from './indentGuides';
 import { trailingWhitespaceHighlight } from './trailingWhitespace';
 import { rainbowBrackets } from './rainbowBrackets';
@@ -275,12 +276,14 @@ export function CodeMirrorEditor({
       // 加载 LSP 扩展（如果已配置该语言的 LSP 服务器）
       if (filePath && language) {
         try {
-          // 推断 rootUri：使用文件所在目录作为工作区根
-          const pathParts = filePath.replace(/\\/g, '/').split('/');
-          const rootPath = pathParts.slice(0, -1).join('/') || '/';
-          const rootUri = rootPath.startsWith('/')
-            ? `file://${rootPath}`
-            : `file:///${rootPath}`;
+          // rootUri 优先使用当前工作区路径，回退到文件父目录
+          const workspace = useWorkspaceStore.getState().currentWorkspace;
+          const rootPath = workspace?.path
+            ?? filePath.replace(/\\/g, '/').split('/').slice(0, -1).join('/') || '/';
+          const normalized = rootPath.replace(/\\/g, '/');
+          const rootUri = normalized.startsWith('/')
+            ? `file://${normalized}`
+            : `file:///${normalized}`;
 
           const lspResult = await useLspStore.getState().activateForFile(
             filePath,

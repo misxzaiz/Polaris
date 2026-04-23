@@ -8,7 +8,7 @@
  */
 
 use std::collections::HashMap;
-use std::io::{BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 
 #[cfg(windows)]
@@ -21,9 +21,15 @@ use crate::utils::CREATE_NO_WINDOW;
 
 /// LSP 会话：持有子进程和 stdin 句柄
 struct LspSession {
-    #[allow(dead_code)]
     child: Child,
     stdin: ChildStdin,
+}
+
+impl LspSession {
+    /// 检查子进程是否仍在运行
+    fn is_alive(&mut self) -> bool {
+        matches!(self.child.try_wait(), Ok(None))
+    }
 }
 
 /// LSP 进程管理器
@@ -50,9 +56,12 @@ impl LspManager {
         app_handle: AppHandle,
     ) -> Result<()> {
         // 幂等：如果 session 已存在且进程仍活着，直接返回成功
-        // 前端 HMR 或组件重挂载可能导致 clients Map 被清空后重新调用
-        if self.sessions.contains_key(&id) {
-            return Ok(());
+        if let Some(session) = self.sessions.get_mut(&id) {
+            if session.is_alive() {
+                return Ok(());
+            }
+            // 进程已退出，清理僵尸条目
+            let _ = self.sessions.remove(&id);
         }
 
         // Windows 上 std::process::Command 只搜索 .exe，不搜索 .cmd/.bat
@@ -95,9 +104,33 @@ impl LspManager {
         let stdout = child.stdout.take().ok_or_else(|| {
             AppError::ProcessError("Failed to get stdout handle".to_string())
         })?;
+        let stderr = child.stderr.take();
 
         let session_id = id.clone();
         let exit_app = app_handle.clone();
+
+        // stderr 读线程：转发 LS 诊断日志到前端
+        if let Some(stderr) = stderr {
+            let sid = id.clone();
+            let ea = app_handle.clone();
+            std::thread::spawn(move || {
+                let mut reader = BufReader::new(stderr);
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    match reader.read_line(&mut line) {
+                        Ok(0) => break,
+                        Ok(_) => {
+                            let _ = ea.emit(
+                                &format!("lsp-stderr-{}", sid),
+                                line.trim_end(),
+                            );
+                        }
+                        Err(_) => break,
+                    }
+                }
+            });
+        }
 
         // 读线程：Content-Length 帧边界识别 → emit 完整 JSON
         std::thread::spawn(move || {
