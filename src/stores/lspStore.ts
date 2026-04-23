@@ -90,9 +90,20 @@ function pathToUri(filePath: string): string {
   return `file:///${normalized}`;
 }
 
+/** 内置语言服务器配置 */
+const DEFAULT_SERVERS: LspServerConfig[] = [
+  {
+    id: 'typescript-language-server',
+    name: 'TypeScript Language Server',
+    languages: ['typescript', 'javascript', 'typescriptreact', 'javascriptreact'],
+    command: 'typescript-language-server',
+    args: ['--stdio'],
+  },
+];
+
 export const useLspStore = create<LspStore>()((set, get) => ({
   // --- 状态 ---
-  servers: [],
+  servers: [...DEFAULT_SERVERS],
   clients: new Map(),
   status: new Map(),
 
