@@ -400,6 +400,19 @@
     "accessInfo": "访问信息",
     "accessUrl": "访问地址",
     "accessHint": "使用说明",
-    "accessHintDesc": "保存并重启应用后生效。在浏览器中打开访问地址，输入 Token 完成认证。"
+    "accessHintDesc": "保存并重启应用后生效。在浏览器中打开访问地址，输入 Token 完成认证。",
+    "auth": {
+      "title": "Polaris",
+      "subtitle": "输入访问令牌以连接",
+      "serverUrl": "服务器地址",
+      "serverUrlPlaceholder": "http://192.168.1.100:9800",
+      "token": "令牌",
+      "tokenPlaceholder": "粘贴你的访问令牌",
+      "connect": "连接",
+      "connecting": "连接中...",
+      "invalidToken": "令牌无效",
+      "connectionFailed": "连接失败",
+      "serverError": "服务器错误：{{status}}"
+    }
   }
 }

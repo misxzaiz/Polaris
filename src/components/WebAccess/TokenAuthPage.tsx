@@ -6,6 +6,7 @@
  */
 
 import { useState, type FormEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface TokenAuthPageProps {
   defaultServerUrl: string;
@@ -13,6 +14,7 @@ interface TokenAuthPageProps {
 }
 
 export function TokenAuthPage({ defaultServerUrl, onAuthSuccess }: TokenAuthPageProps) {
+  const { t } = useTranslation('settings');
   const [serverUrl, setServerUrl] = useState(defaultServerUrl);
   const [token, setToken] = useState('');
   const [error, setError] = useState('');
@@ -32,19 +34,19 @@ export function TokenAuthPage({ defaultServerUrl, onAuthSuccess }: TokenAuthPage
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({ message: res.statusText }));
-        setError((err as { message?: string }).message || `Server error: ${res.status}`);
+        setError((err as { message?: string }).message || t('web.auth.serverError', { status: res.status }));
         return;
       }
 
       const data = await res.json() as { valid?: boolean; token?: string };
       if (data.valid === false) {
-        setError('Invalid token');
+        setError(t('web.auth.invalidToken'));
         return;
       }
 
       onAuthSuccess(serverUrl, token);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Connection failed');
+      setError(err instanceof Error ? err.message : t('web.auth.connectionFailed'));
     } finally {
       setLoading(false);
     }
@@ -70,22 +72,22 @@ export function TokenAuthPage({ defaultServerUrl, onAuthSuccess }: TokenAuthPage
       >
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <h1 style={{ fontSize: 28, fontWeight: 600, color: '#7aa2f7', margin: '0 0 8px' }}>
-            Polaris
+            {t('web.auth.title')}
           </h1>
           <p style={{ fontSize: 14, color: '#565f89', margin: 0 }}>
-            Enter your access token to connect
+            {t('web.auth.subtitle')}
           </p>
         </div>
 
         <label style={{ display: 'block', marginBottom: 16 }}>
           <span style={{ display: 'block', fontSize: 13, color: '#a9b1d6', marginBottom: 6 }}>
-            Server URL
+            {t('web.auth.serverUrl')}
           </span>
           <input
             type="url"
             value={serverUrl}
             onChange={(e) => setServerUrl(e.target.value)}
-            placeholder="http://192.168.1.100:9800"
+            placeholder={t('web.auth.serverUrlPlaceholder')}
             required
             style={{
               width: '100%',
@@ -103,13 +105,13 @@ export function TokenAuthPage({ defaultServerUrl, onAuthSuccess }: TokenAuthPage
 
         <label style={{ display: 'block', marginBottom: 24 }}>
           <span style={{ display: 'block', fontSize: 13, color: '#a9b1d6', marginBottom: 6 }}>
-            Token
+            {t('web.auth.token')}
           </span>
           <input
             type="password"
             value={token}
             onChange={(e) => setToken(e.target.value)}
-            placeholder="Paste your access token"
+            placeholder={t('web.auth.tokenPlaceholder')}
             required
             style={{
               width: '100%',
@@ -154,7 +156,7 @@ export function TokenAuthPage({ defaultServerUrl, onAuthSuccess }: TokenAuthPage
             transition: 'background-color 0.2s',
           }}
         >
-          {loading ? 'Connecting...' : 'Connect'}
+          {loading ? t('web.auth.connecting') : t('web.auth.connect')}
         </button>
       </form>
     </div>

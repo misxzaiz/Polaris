@@ -400,6 +400,19 @@
     "accessInfo": "Access Information",
     "accessUrl": "Access URL",
     "accessHint": "Instructions",
-    "accessHintDesc": "Save and restart the app to apply. Open the access URL in a browser and enter the Token to authenticate."
+    "accessHintDesc": "Save and restart the app to apply. Open the access URL in a browser and enter the Token to authenticate.",
+    "auth": {
+      "title": "Polaris",
+      "subtitle": "Enter your access token to connect",
+      "serverUrl": "Server URL",
+      "serverUrlPlaceholder": "http://192.168.1.100:9800",
+      "token": "Token",
+      "tokenPlaceholder": "Paste your access token",
+      "connect": "Connect",
+      "connecting": "Connecting...",
+      "invalidToken": "Invalid token",
+      "connectionFailed": "Connection failed",
+      "serverError": "Server error: {{status}}"
+    }
   }
 }
