@@ -10,6 +10,18 @@ use crate::state::QuestionAnswer;
 use crate::AppState;
 use super::super::error::WebError;
 
+/// Dual-emit: broadcast event to both WebSocket clients and Tauri webview.
+fn dual_emit(state: &AppState, event: &serde_json::Value) {
+    if let Err(e) = state.event_broadcast.send(event.to_string()) {
+        tracing::warn!("WebSocket broadcast send failed (no active receivers): {}", e);
+    }
+    if let Some(handle) = state.app_handle.get() {
+        if let Err(e) = handle.emit("chat-event", event) {
+            tracing::warn!("Tauri webview emit failed: {}", e);
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SendMessageRequest {
@@ -29,15 +41,9 @@ pub async fn handle_send_message(
     }
 
     let emit_event = {
-        let tx = state.event_broadcast.clone();
-        let app_handle = state.app_handle.get().cloned();
+        let state = state.clone();
         Arc::new(move |json: serde_json::Value| {
-            // WebSocket broadcast
-            let _ = tx.send(json.to_string());
-            // Tauri webview emission (dual emission)
-            if let Some(ref handle) = app_handle {
-                let _ = handle.emit("chat-event", &json);
-            }
+            dual_emit(&state, &json);
         })
     };
     let notify_complete = Arc::new(|| {});
@@ -136,11 +142,7 @@ pub async fn handle_answer_question(
         "answer": answer,
     });
 
-    // Dual emission: broadcast to WS clients + emit to Tauri webview
-    let _ = state.event_broadcast.send(event.to_string());
-    if let Some(handle) = state.app_handle.get() {
-        let _ = handle.emit("chat-event", &event);
-    }
+    dual_emit(&state, &event);
 
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
@@ -174,11 +176,7 @@ pub async fn handle_approve_plan(
         "payload": event
     });
 
-    // Dual emission: broadcast to WS clients + emit to Tauri webview
-    let _ = state.event_broadcast.send(payload.to_string());
-    if let Some(handle) = state.app_handle.get() {
-        let _ = handle.emit("chat-event", &payload);
-    }
+    dual_emit(&state, &payload);
 
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
@@ -214,11 +212,7 @@ pub async fn handle_reject_plan(
         "payload": event
     });
 
-    // Dual emission: broadcast to WS clients + emit to Tauri webview
-    let _ = state.event_broadcast.send(payload.to_string());
-    if let Some(handle) = state.app_handle.get() {
-        let _ = handle.emit("chat-event", &payload);
-    }
+    dual_emit(&state, &payload);
 
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }

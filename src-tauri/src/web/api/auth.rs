@@ -10,7 +10,6 @@ use super::super::error::WebError;
 
 pub async fn handle_verify_token(
     State(state): State<Arc<AppState>>,
-    axum::extract::OriginalUri(_uri): axum::extract::OriginalUri,
     headers: axum::http::HeaderMap,
 ) -> Result<impl IntoResponse, WebError> {
     let expected = {
