@@ -129,6 +129,11 @@ pub struct AppState {
     /// Tauri AppHandle — set once during setup, used by Web API handlers
     /// to emit events back to the desktop webview (dual emission).
     pub app_handle: OnceLock<tauri::AppHandle>,
+    /// Application config directory — set once during setup from window.path().
+    /// Shared by both Tauri commands and Web API handlers for consistent path resolution.
+    pub app_config_dir: OnceLock<std::path::PathBuf>,
+    /// Application resource directory — set once during setup from window.path().
+    pub resource_dir: OnceLock<Option<std::path::PathBuf>>,
     /// Application start instant — used by health check to report uptime.
     pub start_time: Option<std::time::Instant>,
 }
@@ -158,6 +163,8 @@ pub fn create_app_state(
         lsp_config: Mutex::new(LspConfigRepository::new(&config_dir)),
         event_broadcast: broadcast::channel(256).0,
         app_handle: OnceLock::new(),
+        app_config_dir: OnceLock::new(),
+        resource_dir: OnceLock::new(),
         start_time: Some(std::time::Instant::now()),
     }
 }
@@ -168,14 +175,25 @@ impl AppState {
     /// Non-shared fields (integration_manager, terminal_manager, etc.) get fresh
     /// empty instances — the web server never accesses them.
     pub fn clone_for_web(&self) -> AppState {
-        let config_dir = dirs::config_dir()
-            .unwrap_or_else(|| std::path::PathBuf::from("."))
-            .join("claude-code-pro");
+        // Carry over app_config_dir if set, fallback to heuristic
+        let config_dir = self.app_config_dir.get()
+            .cloned()
+            .unwrap_or_else(|| {
+                dirs::config_dir()
+                    .unwrap_or_else(|| std::path::PathBuf::from("."))
+                    .join("claude-code-pro")
+            });
 
-        // Carry over app_handle if already set, so Web API → Tauri webview emission works
+        // Carry over app_handle if already set
         let app_handle = OnceLock::new();
         if let Some(handle) = self.app_handle.get() {
             let _ = app_handle.set(handle.clone());
+        }
+
+        // Carry over resource_dir if set
+        let resource_dir = OnceLock::new();
+        if let Some(rd) = self.resource_dir.get() {
+            let _ = resource_dir.set(rd.clone());
         }
 
         AppState {
@@ -193,6 +211,12 @@ impl AppState {
             lsp_config: Mutex::new(LspConfigRepository::new(&config_dir)),
             event_broadcast: self.event_broadcast.clone(),
             app_handle,
+            app_config_dir: {
+                let lock = OnceLock::new();
+                let _ = lock.set(config_dir);
+                lock
+            },
+            resource_dir,
             start_time: self.start_time,
         }
     }

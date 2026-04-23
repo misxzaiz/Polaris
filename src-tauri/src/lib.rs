@@ -274,6 +274,12 @@ pub fn run() {
             let state = app.state::<AppState>();
             let _ = state.app_handle.set(app.handle().clone());
 
+            // Store application paths for consistent path resolution across Tauri & Web API
+            if let Ok(config_dir) = app.path().app_config_dir() {
+                let _ = state.app_config_dir.set(config_dir);
+            }
+            let _ = state.resource_dir.set(app.path().resource_dir().ok());
+
             // Conditionally start the web server based on WebConfig.enabled
             let config = {
                 let store = state.config_store.lock()

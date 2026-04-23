@@ -54,12 +54,18 @@ pub async fn handle_send_message(
         notify_complete,
     };
 
-    let config_dir = dirs::config_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("claude-code-pro");
+    let config_dir = state.app_config_dir.get()
+        .cloned()
+        .unwrap_or_else(|| {
+            dirs::config_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join("claude-code-pro")
+        });
+    let resource_dir = state.resource_dir.get()
+        .and_then(|opt| opt.clone());
     let app_paths = AppPaths {
         config_dir,
-        resource_dir: None,
+        resource_dir,
     };
 
     match req.session_id {

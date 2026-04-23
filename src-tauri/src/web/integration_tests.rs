@@ -47,6 +47,8 @@ fn create_test_state() -> Arc<AppState> {
         lsp_config: Mutex::new(LspConfigRepository::new(&std::path::PathBuf::from("/tmp"))),
         event_broadcast: tx,
         app_handle: OnceLock::new(),
+        app_config_dir: OnceLock::new(),
+        resource_dir: OnceLock::new(),
         start_time: Some(std::time::Instant::now()),
     })
 }
