@@ -157,7 +157,15 @@ impl ConfigStore {
         // 原子写入：先写临时文件，再重命名
         let temp_path = self.config_path.with_extension("json.tmp");
         let content = serde_json::to_string_pretty(&self.config)?;
-        std::fs::write(&temp_path, content)?;
+        std::fs::write(&temp_path, &content)?;
+
+        // Restrict file permissions to owner-only (0600) on Unix to protect the web token
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&temp_path, std::fs::Permissions::from_mode(0o600))?;
+        }
+
         std::fs::rename(&temp_path, &self.config_path)?;
         Ok(())
     }

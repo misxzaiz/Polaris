@@ -3,10 +3,15 @@ use axum::response::IntoResponse;
 use axum::Json;
 use serde::Deserialize;
 use std::sync::Arc;
+use subtle::ConstantTimeEq;
 
 use crate::AppState;
 use super::super::auth;
 use super::super::error::WebError;
+
+fn token_eq(a: &str, b: &str) -> bool {
+    a.as_bytes().ct_eq(b.as_bytes()).unwrap_u8() == 1
+}
 
 /// Verify if the provided Bearer token is valid.
 pub async fn handle_verify_token(
@@ -25,7 +30,7 @@ pub async fn handle_verify_token(
         .and_then(|v| v.strip_prefix("Bearer "))
         .unwrap_or("");
 
-    Ok(Json(serde_json::json!({ "valid": provided == expected })))
+    Ok(Json(serde_json::json!({ "valid": token_eq(provided, &expected) })))
 }
 
 #[derive(Debug, Deserialize)]
@@ -45,8 +50,7 @@ pub async fn handle_token_exchange(
     };
 
     if let Some(provided) = req.token {
-        let valid = provided == expected;
-        if valid {
+        if token_eq(&provided, &expected) {
             Ok(Json(serde_json::json!({ "token": expected, "valid": true })))
         } else {
             Err(WebError::Unauthorized)
@@ -72,7 +76,7 @@ pub async fn handle_regenerate_token(
         .and_then(|v| v.strip_prefix("Bearer "))
         .unwrap_or("");
 
-    if provided != expected {
+    if !token_eq(provided, &expected) {
         return Err(WebError::Unauthorized);
     }
 
