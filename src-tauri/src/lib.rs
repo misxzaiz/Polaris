@@ -6,6 +6,7 @@ mod integrations;
 pub mod ai;  // 公开 ai 模块以支持适配层测试
 mod state;
 mod utils;
+pub mod web;
 
 pub use state::AppState;
 pub use error::{AppError, Result};

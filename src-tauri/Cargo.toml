@@ -75,6 +75,11 @@ tauri-plugin-notification = "2.3.3"
 tokio-tungstenite = { version = "0.21", features = ["rustls-tls-native-roots"] }
 async-trait = "0.1"
 
+# Web Access Layer — LAN HTTP/WS server
+axum = { version = "0.8", features = ["ws"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "fs"] }
+
 # 定时任务依赖
 cron = "0.12"
 
