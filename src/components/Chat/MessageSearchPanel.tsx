@@ -13,6 +13,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Search, X, ChevronUp, ChevronDown } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
+import { useWindowSize } from '@/hooks/useWindowSize';
 
 export interface SearchMatch {
   messageId: string;
@@ -49,6 +50,7 @@ export function MessageSearchPanel({
   onNext,
 }: MessageSearchPanelProps) {
   const { t } = useTranslation('chat');
+  const { isCompact } = useWindowSize({ compactThreshold: 500 });
   const inputRef = useRef<HTMLInputElement>(null);
 
   // 显示时自动聚焦
@@ -84,9 +86,12 @@ export function MessageSearchPanel({
   return (
     <div
       className={clsx(
-        'absolute top-2 right-4 z-50',
+        isCompact
+          ? 'fixed top-0 right-0 left-0 z-50 rounded-none'
+          : 'absolute top-2 right-4 z-50',
         'bg-background-elevated/95 backdrop-blur-sm',
-        'border border-border rounded-lg shadow-lg',
+        'border border-border shadow-lg',
+        isCompact ? undefined : 'rounded-lg',
         'flex items-center gap-2 p-2',
         'animate-in fade-in zoom-in-95 duration-150'
       )}
@@ -102,7 +107,10 @@ export function MessageSearchPanel({
         onChange={(e) => onSearchQueryChange(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder={t('search.placeholder')}
-        className="w-48 px-2 py-1 text-sm bg-transparent border-none outline-none text-text-primary placeholder:text-text-tertiary"
+        className={clsx(
+          isCompact ? 'flex-1 min-w-0' : 'w-48',
+          'px-2 py-1 text-sm bg-transparent border-none outline-none text-text-primary placeholder:text-text-tertiary'
+        )}
       />
 
       {/* 匹配计数 */}
