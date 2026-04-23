@@ -13,17 +13,23 @@ import {
   Activity,
   X,
   ShieldCheck,
+  Pencil,
+  Trash2,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { ModuleIndexEntry, StaleModule } from '@/services/knowledgeService'
+import type { ModuleIndexEntry as KnowledgeModule, StaleModule } from '@/services/knowledgeService'
 import { useKnowledgeStore } from '@/stores/knowledgeStore'
 
 interface ModuleCardProps {
-  module: ModuleIndexEntry
+  module: KnowledgeModule
   isStale: boolean
   staleInfo?: StaleModule
   /** 点击查看详情回调 */
   onDetailClick?: (moduleId: string) => void
+  /** 点击编辑回调 */
+  onEditClick?: (moduleId: string) => void
+  /** 点击删除回调 */
+  onDeleteClick?: (moduleId: string) => void
 }
 
 /** 复杂度颜色映射 */
@@ -40,7 +46,7 @@ const FREQUENCY_COLORS: Record<string, string> = {
   high: 'text-red-500',
 }
 
-export function ModuleCard({ module, isStale, staleInfo, onDetailClick }: ModuleCardProps) {
+export function ModuleCard({ module, isStale, staleInfo, onDetailClick, onEditClick, onDeleteClick }: ModuleCardProps) {
   const { t } = useTranslation('knowledge')
   const [expanded, setExpanded] = useState(false)
   const [clearing, setClearing] = useState(false)
@@ -60,7 +66,7 @@ export function ModuleCard({ module, isStale, staleInfo, onDetailClick }: Module
   return (
     <div
       className={`
-        p-2 rounded border transition-all cursor-pointer
+        p-2 rounded border transition-all cursor-pointer group
         ${isStale
           ? 'bg-amber-500/5 border-amber-500/30 hover:border-amber-500/50'
           : 'bg-background-surface border-border-subtle hover:border-border'
@@ -124,6 +130,28 @@ export function ModuleCard({ module, isStale, staleInfo, onDetailClick }: Module
             <span>{module.traps!.length}</span>
           </div>
         )}
+
+        {/* 操作按钮 */}
+        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 hover:!opacity-100 transition-opacity">
+          {onEditClick && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onEditClick(module.id) }}
+              className="p-0.5 rounded hover:bg-background-tertiary text-text-tertiary hover:text-primary"
+              title={t('form.editTitle')}
+            >
+              <Pencil size={12} />
+            </button>
+          )}
+          {onDeleteClick && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onDeleteClick(module.id) }}
+              className="p-0.5 rounded hover:bg-background-tertiary text-text-tertiary hover:text-red-400"
+              title={t('confirm.deleteTitle')}
+            >
+              <Trash2 size={12} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 展开详情 */}

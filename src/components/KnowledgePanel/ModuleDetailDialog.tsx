@@ -7,9 +7,9 @@
  */
 
 import { useState, useEffect } from 'react'
-import { X, BookOpen, AlertTriangle, Link2 } from 'lucide-react'
+import { X, BookOpen, AlertTriangle, Link2, Pencil, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { ModuleIndexEntry } from '@/services/knowledgeService'
+import type { ModuleIndexEntry as KnowledgeModule } from '@/services/knowledgeService'
 import { useKnowledgeStore } from '@/stores/knowledgeStore'
 import { ProgressiveStreamingMarkdown } from '@/utils/lightweightMarkdown'
 import {
@@ -22,9 +22,11 @@ import {
 type DetailTab = 'overview' | 'assertions' | 'traps' | 'dependencies'
 
 interface ModuleDetailDialogProps {
-  module: ModuleIndexEntry
+  module: KnowledgeModule
   open: boolean
   onClose: () => void
+  onEdit?: () => void
+  onDelete?: () => void
 }
 
 /** 陷阱严重度颜色映射 */
@@ -34,7 +36,7 @@ const SEVERITY_COLORS: Record<string, string> = {
   high: 'text-red-500 bg-red-500/20',
 }
 
-export function ModuleDetailDialog({ module, open, onClose }: ModuleDetailDialogProps) {
+export function ModuleDetailDialog({ module, open, onClose, onEdit, onDelete }: ModuleDetailDialogProps) {
   const { t } = useTranslation('knowledge')
   const [activeTab, setActiveTab] = useState<DetailTab>('overview')
 
@@ -97,13 +99,33 @@ export function ModuleDetailDialog({ module, open, onClose }: ModuleDetailDialog
               </span>
             )}
           </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded hover:bg-background-hover text-text-secondary hover:text-text-primary transition-all flex-shrink-0"
-            aria-label={t('detail.close')}
-          >
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {onEdit && (
+              <button
+                onClick={onEdit}
+                className="p-1 rounded hover:bg-background-hover text-text-secondary hover:text-primary transition-all"
+                title={t('form.editTitle')}
+              >
+                <Pencil size={16} />
+              </button>
+            )}
+            {onDelete && (
+              <button
+                onClick={onDelete}
+                className="p-1 rounded hover:bg-background-hover text-text-secondary hover:text-red-400 transition-all"
+                title={t('confirm.deleteTitle')}
+              >
+                <Trash2 size={16} />
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-1 rounded hover:bg-background-hover text-text-secondary hover:text-text-primary transition-all"
+              aria-label={t('detail.close')}
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Tab bar */}

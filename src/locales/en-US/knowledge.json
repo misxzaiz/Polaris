@@ -89,5 +89,36 @@
     "low": "Low",
     "medium": "Medium",
     "high": "High"
+  },
+  "form": {
+    "createTitle": "Create Knowledge Module",
+    "editTitle": "Edit Knowledge Module",
+    "idLabel": "Module ID",
+    "idPlaceholder": "e.g. my-module",
+    "idHint": "Lowercase letters, digits, and hyphens only",
+    "nameLabel": "Module Name",
+    "namePlaceholder": "e.g. User Authentication Module",
+    "domainLabel": "Domain",
+    "noDomain": "Unassigned",
+    "complexityLabel": "Complexity",
+    "frequencyLabel": "Change Frequency",
+    "dependenciesLabel": "Dependencies",
+    "addDependency": "Select dependency...",
+    "cancel": "Cancel",
+    "create": "Create",
+    "update": "Save",
+    "saving": "Saving..."
+  },
+  "confirm": {
+    "deleteTitle": "Delete Module",
+    "deleteMessage": "Are you sure you want to delete module \"{{name}}\"? This action cannot be undone."
+  },
+  "toast": {
+    "createSuccess": "Module created",
+    "createFailed": "Failed to create module",
+    "updateSuccess": "Module updated",
+    "updateFailed": "Failed to update module",
+    "deleteSuccess": "Module deleted",
+    "deleteFailed": "Failed to delete module"
   }
 }

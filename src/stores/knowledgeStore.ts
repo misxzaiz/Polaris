@@ -6,6 +6,8 @@
 
 import { create } from 'zustand'
 import { getKnowledgeService, type ModuleIndex, type ModuleIndexEntry, type StaleModule, type DomainDefinition } from '../services/knowledgeService'
+import type { Assertion, Trap, AssertionAnchor, AssertionExpect } from '@/types/knowledge'
+import * as knowledgeIpc from '@/services/tauri/knowledgeIpcService'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('KnowledgeStore')
@@ -80,6 +82,46 @@ interface KnowledgeActions {
 
   /** 获取领域定义 */
   getDomains: () => DomainDefinition[]
+
+  // ─── Mutation Actions (via IPC) ──────────────────────────────
+
+  /** 创建模块 */
+  createModule: (data: knowledgeIpc.CreateModuleData) => Promise<void>
+
+  /** 更新模块元数据 */
+  updateModule: (data: knowledgeIpc.UpdateModuleData) => Promise<void>
+
+  /** 删除模块 */
+  deleteModule: (id: string) => Promise<void>
+
+  /** 保存模块文档 */
+  saveModuleDocument: (moduleId: string, content: string) => Promise<void>
+
+  /** 创建断言 */
+  createAssertion: (moduleId: string, assertion: Assertion) => Promise<Assertion>
+
+  /** 更新断言 */
+  updateAssertion: (moduleId: string, assertionId: string, updates: {
+    claim?: string
+    anchor?: AssertionAnchor
+    expect?: AssertionExpect
+    confidence?: string
+  }) => Promise<Assertion>
+
+  /** 删除断言 */
+  deleteAssertion: (moduleId: string, assertionId: string) => Promise<void>
+
+  /** 创建陷阱 */
+  createTrap: (moduleId: string, trap: Trap) => Promise<Trap>
+
+  /** 更新陷阱 */
+  updateTrap: (moduleId: string, trapId: string, updates: {
+    description?: string
+    severity?: string
+  }) => Promise<Trap>
+
+  /** 删除陷阱 */
+  deleteTrap: (moduleId: string, trapId: string) => Promise<void>
 }
 
 export type KnowledgeStore = KnowledgeState & KnowledgeActions
@@ -330,5 +372,96 @@ export const useKnowledgeStore = create<KnowledgeStore>((set, get) => ({
   getDomains: () => {
     const { index } = get()
     return index?.domains ?? []
+  },
+
+  // ─── Mutation Actions ────────────────────────────────────────
+
+  createModule: async (data) => {
+    const ws = get().workspacePath
+    if (!ws) throw new Error('工作区未设置')
+    await knowledgeIpc.knowledgeCreateModule(ws, data)
+    await get().refreshIndex(ws)
+    log.info('模块创建成功')
+  },
+
+  updateModule: async (data) => {
+    const ws = get().workspacePath
+    if (!ws) throw new Error('工作区未设置')
+    await knowledgeIpc.knowledgeUpdateModule(ws, data)
+    await get().refreshIndex(ws)
+    log.info('模块更新成功')
+  },
+
+  deleteModule: async (id) => {
+    const ws = get().workspacePath
+    if (!ws) throw new Error('工作区未设置')
+    await knowledgeIpc.knowledgeDeleteModule(ws, id)
+    // 清除文档缓存
+    set(state => {
+      const docs = new Map(state.moduleDocuments)
+      docs.delete(id)
+      return { moduleDocuments: docs }
+    })
+    await get().refreshIndex(ws)
+    log.info(`模块删除成功: ${id}`)
+  },
+
+  saveModuleDocument: async (moduleId, content) => {
+    const ws = get().workspacePath
+    if (!ws) throw new Error('工作区未设置')
+    await knowledgeIpc.knowledgeUpdateModuleDocument(ws, moduleId, content)
+    // 更新缓存
+    set(state => {
+      const docs = new Map(state.moduleDocuments)
+      docs.set(moduleId, content)
+      return { moduleDocuments: docs }
+    })
+    log.info(`模块文档保存成功: ${moduleId}`)
+  },
+
+  createAssertion: async (moduleId, assertion) => {
+    const ws = get().workspacePath
+    if (!ws) throw new Error('工作区未设置')
+    const result = await knowledgeIpc.knowledgeCreateAssertion(ws, moduleId, assertion)
+    await get().refreshIndex(ws)
+    return result
+  },
+
+  updateAssertion: async (moduleId, assertionId, updates) => {
+    const ws = get().workspacePath
+    if (!ws) throw new Error('工作区未设置')
+    const result = await knowledgeIpc.knowledgeUpdateAssertion(ws, moduleId, assertionId, updates)
+    await get().refreshIndex(ws)
+    return result
+  },
+
+  deleteAssertion: async (moduleId, assertionId) => {
+    const ws = get().workspacePath
+    if (!ws) throw new Error('工作区未设置')
+    await knowledgeIpc.knowledgeDeleteAssertion(ws, moduleId, assertionId)
+    await get().refreshIndex(ws)
+  },
+
+  createTrap: async (moduleId, trap) => {
+    const ws = get().workspacePath
+    if (!ws) throw new Error('工作区未设置')
+    const result = await knowledgeIpc.knowledgeCreateTrap(ws, moduleId, trap)
+    await get().refreshIndex(ws)
+    return result
+  },
+
+  updateTrap: async (moduleId, trapId, updates) => {
+    const ws = get().workspacePath
+    if (!ws) throw new Error('工作区未设置')
+    const result = await knowledgeIpc.knowledgeUpdateTrap(ws, moduleId, trapId, updates)
+    await get().refreshIndex(ws)
+    return result
+  },
+
+  deleteTrap: async (moduleId, trapId) => {
+    const ws = get().workspacePath
+    if (!ws) throw new Error('工作区未设置')
+    await knowledgeIpc.knowledgeDeleteTrap(ws, moduleId, trapId)
+    await get().refreshIndex(ws)
   },
 }))

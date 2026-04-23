@@ -8,6 +8,7 @@ pub mod prompt_snippet;
 pub mod scheduler;
 pub mod todo;
 pub mod requirement;
+pub mod knowledge;
 
 pub use ai_event::{
     AIEvent, ToolCallInfo, ToolCallStatus,

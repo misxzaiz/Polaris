@@ -16,16 +16,21 @@ import {
   GitBranch,
   Activity,
   Database,
+  Plus,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useWorkspaceStore } from '@/stores'
 import { useKnowledgeStore } from '@/stores/knowledgeStore'
+import { useToastStore } from '@/stores/toastStore'
+import { ConfirmDialog } from '@/components/Common/ConfirmDialog'
 import { ModuleCard } from './ModuleCard'
 import { KnowledgeDependencyGraph } from './KnowledgeDependencyGraph'
 import { KnowledgeHealthDashboard } from './KnowledgeHealthDashboard'
 import { ModuleDetailDialog } from './ModuleDetailDialog'
+import { ModuleForm } from './ModuleForm'
 import type { ModuleNode } from './KnowledgeDependencyGraph'
 import type { ConfidenceLevel } from './constants'
+import type { CreateModuleData, UpdateModuleData } from '@/services/tauri/knowledgeIpcService'
 
 type ViewMode = 'list' | 'graph' | 'health'
 
@@ -44,15 +49,31 @@ export function KnowledgePanel() {
     loadStaleModules,
     selectedModuleId,
     selectModule,
+    createModule,
+    deleteModule,
   } = useKnowledgeStore()
+  const toast = useToastStore()
 
   const [searchQuery, setSearchQuery] = useState('')
   const [showStaleOnly, setShowStaleOnly] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('list')
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [editingModuleId, setEditingModuleId] = useState<string | null>(null)
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title: string
+    message: string
+    onConfirm: () => void
+    type: 'danger' | 'warning' | 'info'
+  } | null>(null)
 
   // 选中的模块数据
   const selectedModule = selectedModuleId
     ? index?.modules.find(m => m.id === selectedModuleId)
+    : undefined
+
+  // 编辑中的模块数据
+  const editingModule = editingModuleId
+    ? index?.modules.find(m => m.id === editingModuleId)
     : undefined
 
   // 加载知识索引
@@ -98,6 +119,16 @@ export function KnowledgePanel() {
   const handleNodeClick = useCallback((moduleId: string) => {
     selectModule(selectedModuleId === moduleId ? null : moduleId)
   }, [selectedModuleId, selectModule])
+
+  // 删除模块
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteModule(id)
+      toast.success(t('toast.deleteSuccess'))
+    } catch {
+      toast.error(t('toast.deleteFailed'))
+    }
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -151,6 +182,13 @@ export function KnowledgePanel() {
               title={t('refresh')}
             >
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            </button>
+            <button
+              onClick={() => setShowCreateDialog(true)}
+              className="p-1.5 rounded-lg bg-primary text-white hover:bg-primary/90 transition-all"
+              title={t('form.createTitle')}
+            >
+              <Plus size={14} />
             </button>
           </div>
         </div>
@@ -290,6 +328,16 @@ export function KnowledgePanel() {
                   isStale={staleModuleIds.has(module.id)}
                   staleInfo={staleModules.find(s => s.id === module.id)}
                   onDetailClick={(id) => selectModule(id)}
+                  onEditClick={(id) => setEditingModuleId(id)}
+                  onDeleteClick={(id) => {
+                    const mod = index?.modules.find(m => m.id === id)
+                    setConfirmDialog({
+                      title: t('confirm.deleteTitle'),
+                      message: t('confirm.deleteMessage', { name: mod?.name ?? id }),
+                      type: 'danger',
+                      onConfirm: () => handleDelete(id),
+                    })
+                  }}
                 />
               ))
             )}
@@ -310,6 +358,68 @@ export function KnowledgePanel() {
           module={selectedModule}
           open={!!selectedModuleId}
           onClose={() => selectModule(null)}
+          onEdit={() => {
+            setEditingModuleId(selectedModule.id)
+            selectModule(null)
+          }}
+          onDelete={() => {
+            setConfirmDialog({
+              title: t('confirm.deleteTitle'),
+              message: t('confirm.deleteMessage', { name: selectedModule.name }),
+              type: 'danger',
+              onConfirm: () => handleDelete(selectedModule.id),
+            })
+          }}
+        />
+      )}
+
+      {/* 创建模块弹窗 */}
+      {showCreateDialog && (
+        <ModuleForm
+          mode="create"
+          onSubmit={async (data) => {
+            try {
+              await createModule(data as CreateModuleData)
+              setShowCreateDialog(false)
+              toast.success(t('toast.createSuccess'))
+            } catch {
+              toast.error(t('toast.createFailed'))
+            }
+          }}
+          onCancel={() => setShowCreateDialog(false)}
+        />
+      )}
+
+      {/* 编辑模块弹窗 */}
+      {editingModule && (
+        <ModuleForm
+          module={editingModule}
+          mode="edit"
+          onSubmit={async (data) => {
+            try {
+              const { updateModule } = useKnowledgeStore.getState()
+              await updateModule(data as UpdateModuleData)
+              setEditingModuleId(null)
+              toast.success(t('toast.updateSuccess'))
+            } catch {
+              toast.error(t('toast.updateFailed'))
+            }
+          }}
+          onCancel={() => setEditingModuleId(null)}
+        />
+      )}
+
+      {/* 确认对话框 */}
+      {confirmDialog && (
+        <ConfirmDialog
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          type={confirmDialog.type}
+          onConfirm={() => {
+            confirmDialog.onConfirm()
+            setConfirmDialog(null)
+          }}
+          onCancel={() => setConfirmDialog(null)}
         />
       )}
     </div>
