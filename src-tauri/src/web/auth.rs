@@ -7,6 +7,7 @@ use axum::extract::State;
 use axum::http::{Method, Request};
 use axum::middleware::Next;
 use axum::response::Response;
+use subtle::ConstantTimeEq;
 
 use crate::AppState;
 use super::error::WebError;
@@ -93,11 +94,11 @@ pub async fn auth_middleware(
         store.get().web.token.clone().unwrap_or_default()
     };
 
-    if provided != expected {
-        return Err(WebError::Unauthorized);
+    if provided.as_bytes().ct_eq(expected.as_bytes()).unwrap_u8() == 1 {
+        Ok(next.run(req).await)
+    } else {
+        Err(WebError::Unauthorized)
     }
-
-    Ok(next.run(req).await)
 }
 
 #[cfg(test)]

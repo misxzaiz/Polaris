@@ -18,6 +18,9 @@ const MAX_RECONNECT_ATTEMPTS = 50;
 /** Client sends application-level ping every this interval (ms). */
 const CLIENT_HEARTBEAT_MS = 25_000;
 
+/** HTTP request timeout in milliseconds. */
+const HTTP_TIMEOUT_MS = 30_000;
+
 /** Tauri 命令名 → HTTP 路由映射 */
 function commandToPath(command: string): string {
   // Tauri command 使用 snake_case，HTTP 路由使用 kebab-case
@@ -218,12 +221,24 @@ export function createHttpTransport(
         method = 'PATCH';
       }
 
-      const fetchOpts: RequestInit = { method, headers };
+      const fetchOpts: RequestInit = {
+        method,
+        headers,
+        signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+      };
       if (method !== 'GET' && method !== 'DELETE') {
         fetchOpts.body = JSON.stringify(args ?? {});
       }
 
-      const res = await fetch(url, fetchOpts);
+      let res: Response;
+      try {
+        res = await fetch(url, fetchOpts);
+      } catch (e) {
+        if (e instanceof DOMException && e.name === 'TimeoutError') {
+          throw new Error(`Request timed out after ${HTTP_TIMEOUT_MS / 1000}s: ${method} ${path}`);
+        }
+        throw e;
+      }
       if (!res.ok) {
         const err = await res.json().catch(() => ({ message: res.statusText }));
         throw new Error((err as { message?: string }).message || `API error: ${res.status}`);
