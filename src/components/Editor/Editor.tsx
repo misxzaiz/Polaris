@@ -22,6 +22,7 @@ import { tags } from '@lezer/highlight';
 import { createLogger } from '../../utils/logger';
 import { useFileEditorStore } from '../../stores/fileEditorStore';
 import { useEditorSettingsStore } from '../../stores/editorSettingsStore';
+import { useLspStore } from '../../stores/lspStore';
 import { indentGuides, indentGuideTheme } from './indentGuides';
 import { trailingWhitespaceHighlight } from './trailingWhitespace';
 import { rainbowBrackets } from './rainbowBrackets';
@@ -269,6 +270,32 @@ export function CodeMirrorEditor({
       // 如果语言扩展加载成功，添加到扩展数组中
       if (langExtension) {
         extensions.push(langExtension);
+      }
+
+      // 加载 LSP 扩展（如果已配置该语言的 LSP 服务器）
+      if (filePath && language) {
+        try {
+          // 推断 rootUri：使用文件所在目录作为工作区根
+          const pathParts = filePath.replace(/\\/g, '/').split('/');
+          const rootPath = pathParts.slice(0, -1).join('/') || '/';
+          const rootUri = rootPath.startsWith('/')
+            ? `file://${rootPath}`
+            : `file:///${rootPath}`;
+
+          const lspResult = await useLspStore.getState().activateForFile(
+            filePath,
+            language,
+            rootUri,
+          );
+
+          if (lspResult && !cancelled) {
+            extensions.push(...lspResult.extensions);
+            log.debug('LSP extensions loaded', { filePath, language });
+          }
+        } catch (err) {
+          // LSP 激活失败不影响编辑器基础功能
+          log.warn('LSP activation skipped', { filePath, error: String(err) });
+        }
       }
 
       // 创建编辑器状态

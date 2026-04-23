@@ -530,6 +530,11 @@ pub fn run() {
             commands::claude_settings::read_claude_settings,
             commands::claude_settings::write_claude_settings,
             commands::claude_settings::get_claude_settings_path,
+            // LSP 语言服务器相关
+            commands::lsp::lsp_start,
+            commands::lsp::lsp_send,
+            commands::lsp::lsp_stop,
+            commands::lsp::lsp_list_sessions,
 
         ])
         .run(tauri::generate_context!())

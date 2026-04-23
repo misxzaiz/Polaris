@@ -56,6 +56,9 @@ importers:
       '@codemirror/lint':
         specifier: ^6.9.2
         version: 6.9.5
+      '@codemirror/lsp-client':
+        specifier: ^6.2.3
+        version: 6.2.3
       '@codemirror/search':
         specifier: ^6.5.11
         version: 6.6.0
@@ -412,6 +415,9 @@ packages:
 
   '@codemirror/lint@6.9.5':
     resolution: {integrity: sha512-GElsbU9G7QT9xXhpUg1zWGmftA/7jamh+7+ydKRuT0ORpWS3wOSP0yT1FOlIZa7mIJjpVPipErsyvVqB9cfTFA==}
+
+  '@codemirror/lsp-client@6.2.3':
+    resolution: {integrity: sha512-tDGoLzOU8npz5TadVFtZEU0oRbJXEEM+HpRBfW4w/lWvIjQDkDAmqUtAlP04io1HMmWcGnTBoSwXVOTH+80otw==}
 
   '@codemirror/search@6.6.0':
     resolution: {integrity: sha512-koFuNXcDvyyotWcgOnZGmY7LZqEOXZaaxD/j6n18TCLx2/9HieZJ5H6hs1g8FiRxBD0DNfs0nXn17g872RmYdw==}
@@ -2756,6 +2762,11 @@ packages:
   markdown-table@3.0.4:
     resolution: {integrity: sha512-wiYz4+JrLyb/DqW2hkFJxP7Vd7JuTDm77fvbM8VfEQdmSMqcImWeeRbHwZjBjIFki/VaMK2BhFi7oUUZeM5bqw==}
 
+  marked@15.0.12:
+    resolution: {integrity: sha512-8dD6FusOQSrpv9Z1rdNMdlSgQOIP880DHqnohobOmYLElGEqAL/JvxvuxZO16r4HtjTlfPRDC1hbvxC9dPN2nA==}
+    engines: {node: '>= 18'}
+    hasBin: true
+
   marked@16.4.2:
     resolution: {integrity: sha512-TI3V8YYWvkVf3KJe1dRkpnjs68JUPyEa5vjKrp1XEEJUAOaQc+Qj+L1qWbPd0SJuAdQkFU0h73sXXqwDYxsiDA==}
     engines: {node: '>= 20'}
@@ -4240,6 +4251,17 @@ snapshots:
       '@codemirror/state': 6.6.0
       '@codemirror/view': 6.41.0
       crelt: 1.0.6
+
+  '@codemirror/lsp-client@6.2.3':
+    dependencies:
+      '@codemirror/autocomplete': 6.20.1
+      '@codemirror/language': 6.12.3
+      '@codemirror/lint': 6.9.5
+      '@codemirror/state': 6.6.0
+      '@codemirror/view': 6.41.0
+      '@lezer/highlight': 1.2.3
+      marked: 15.0.12
+      vscode-languageserver-protocol: 3.17.5
 
   '@codemirror/search@6.6.0':
     dependencies:
@@ -6762,6 +6784,8 @@ snapshots:
   map-stream@0.0.7: {}
 
   markdown-table@3.0.4: {}
+
+  marked@15.0.12: {}
 
   marked@16.4.2: {}
 
