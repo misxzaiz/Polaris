@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use axum::extract::{State, ws::{WebSocket, WebSocketUpgrade, Message}};
 use axum::response::IntoResponse;
-use futures_util::StreamExt;
 use tokio::sync::broadcast;
 
 use crate::AppState;

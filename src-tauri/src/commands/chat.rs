@@ -344,16 +344,6 @@ fn prepare_mcp_config_path_with_paths(
     Ok(Some(config_path.to_string_lossy().to_string()))
 }
 
-fn prepare_mcp_config_path(options: &ChatRequestOptions, engine: &EngineId, window: &Window) -> Result<Option<String>> {
-    let config_dir = window.path().app_config_dir()
-        .map_err(|e| AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
-    let paths = AppPaths {
-        config_dir,
-        resource_dir: window.path().resource_dir().ok(),
-    };
-    prepare_mcp_config_path_with_paths(options, engine, &paths)
-}
-
 // ============================================================================
 // Inner functions (shared business logic)
 // ============================================================================
