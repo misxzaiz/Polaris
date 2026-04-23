@@ -3,7 +3,7 @@
  * 包含：上下文查询、IDE 上报、上下文 CRUD
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/services/transport';
 
 // ============================================================================
 // 类型定义

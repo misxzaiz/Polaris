@@ -5,7 +5,7 @@
  * Stateless function pattern — one function per Tauri command.
  */
 
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '@/services/transport'
 import type {
   KnowledgeModule,
   ModuleDetail,

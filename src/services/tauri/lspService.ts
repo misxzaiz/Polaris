@@ -5,7 +5,7 @@
  * 后端命令定义在 src-tauri/src/commands/lsp.rs
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/services/transport';
 
 import type { LspServerConfig } from '../../stores/lspStore';
 

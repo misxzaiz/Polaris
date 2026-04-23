@@ -2,7 +2,7 @@
  * 窗口控制、翻译、系统相关 Tauri 命令
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/services/transport';
 import { openPath } from '@tauri-apps/plugin-opener';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 

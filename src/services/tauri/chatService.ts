@@ -3,7 +3,7 @@
  * 包含：AskUserQuestion、PlanMode、stdin 输入、对话导出
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/services/transport';
 import { save } from '@tauri-apps/plugin-dialog';
 import { createLogger } from '../../utils/logger';
 

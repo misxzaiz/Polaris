@@ -3,7 +3,7 @@
  * 包含：钉钉、集成平台（QQ/飞书等）、实例管理
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/services/transport';
 import type {
   Platform,
   IntegrationStatus,
@@ -102,9 +102,9 @@ export async function initIntegration(qqbotConfig: QQBotConfig | null, feishuCon
 export async function onIntegrationMessage(
   callback: (message: IntegrationMessage) => void
 ): Promise<() => void> {
-  const { listen: listenFn } = await import('@tauri-apps/api/event');
-  return listenFn<IntegrationMessage>('integration:message', (event) => {
-    callback(event.payload);
+  const { listen: listenFn } = await import('@/services/transport');
+  return listenFn<IntegrationMessage>('integration:message', (payload) => {
+    callback(payload);
   });
 }
 

@@ -2,7 +2,7 @@
  * 配置相关 Tauri 命令
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/services/transport';
 import type { Config, HealthStatus } from '../../types';
 
 /** 获取配置 */

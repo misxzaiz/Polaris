@@ -5,9 +5,9 @@
  * 消费端无需修改任何 import 路径。
  */
 
-// 导出 invoke 和 listen 供其他模块使用
-export { invoke } from '@tauri-apps/api/core';
-export { listen } from '@tauri-apps/api/event';
+// 导出 invoke 和 listen — 通过 transport 抽象层路由
+// Tauri 模式: 直接 IPC，HTTP 模式: fetch + WebSocket
+export { invoke, listen } from '@/services/transport';
 
 // 配置 + 健康检查
 export * from './configService';

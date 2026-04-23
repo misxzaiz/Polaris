@@ -3,7 +3,7 @@
  * 包含：工作区操作、文件浏览器、内容搜索、文件监听
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/services/transport';
 
 // ============================================================================
 // 工作区相关命令
