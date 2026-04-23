@@ -56,8 +56,28 @@ impl LspManager {
             )));
         }
 
-        let mut cmd = Command::new(command);
-        cmd.args(args)
+        // Windows 上 std::process::Command 只搜索 .exe，不搜索 .cmd/.bat
+        // npm 全局安装的可执行文件是 .cmd 脚本，需要通过 cmd.exe /C 包装执行
+        let (actual_command, actual_args) = {
+            #[cfg(windows)]
+            {
+                let full_args: Vec<String> = std::iter::once(command.to_string())
+                    .chain(args.iter().cloned())
+                    .collect();
+                ("cmd".to_string(), {
+                    let mut v = vec!["/C".to_string()];
+                    v.extend(full_args);
+                    v
+                })
+            }
+            #[cfg(not(windows))]
+            {
+                (command.to_string(), args.to_vec())
+            }
+        };
+
+        let mut cmd = Command::new(&actual_command);
+        cmd.args(&actual_args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
