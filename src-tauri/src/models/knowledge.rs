@@ -67,7 +67,8 @@ pub struct AssertionAnchor {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AssertionExpect {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Flexible equals: accepts both string and numeric values in JSON
+    #[serde(skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flex_string")]
     pub equals: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub regex: Option<String>,
@@ -76,6 +77,56 @@ pub struct AssertionExpect {
     pub expect_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub range: Option<ExpectRange>,
+}
+
+/// Custom deserializer: accepts both `"value"` (string) and `20` (number) → String
+fn deserialize_flex_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{self, Visitor};
+    use std::fmt;
+
+    struct FlexStringVisitor;
+
+    impl<'de> Visitor<'de> for FlexStringVisitor {
+        type Value = Option<String>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a string or a number")
+        }
+
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+            let s = v.trim().to_string();
+            Ok(if s.is_empty() { None } else { Some(s) })
+        }
+
+        fn visit_string<E: de::Error>(self, v: String) -> Result<Self::Value, E> {
+            Ok(Some(v))
+        }
+
+        fn visit_u64<E: de::Error>(self, v: u64) -> Result<Self::Value, E> {
+            Ok(Some(v.to_string()))
+        }
+
+        fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
+            Ok(Some(v.to_string()))
+        }
+
+        fn visit_f64<E: de::Error>(self, v: f64) -> Result<Self::Value, E> {
+            Ok(Some(v.to_string()))
+        }
+
+        fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+    }
+
+    deserializer.deserialize_option(FlexStringVisitor)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
