@@ -115,6 +115,7 @@ impl UnifiedKnowledgeRepository {
         std::fs::create_dir_all(self.knowledge_dir.join(META_DIR))?;
 
         let index = KnowledgeIndex {
+            schema_ref: None,
             version: "2.0.0".to_string(),
             schema_version: Some("assertion-based".to_string()),
             generated_at: Some(now_iso()),
@@ -569,6 +570,7 @@ fn migrate_v1_to_v2(v1: &serde_json::Value) -> KnowledgeIndex {
         .unwrap_or_default();
 
     KnowledgeIndex {
+        schema_ref: None,
         version: "2.0.0".to_string(),
         schema_version: Some("assertion-based".to_string()),
         generated_at: Some(now_iso()),
@@ -699,6 +701,10 @@ mod tests {
             description: "Test trap".to_string(),
             severity: Severity::High,
             source: "test".to_string(),
+            files: None,
+            location: None,
+            file: None,
+            line: None,
         };
         repo.create_trap("mod-a", trap).unwrap();
 
@@ -788,5 +794,37 @@ mod tests {
         assert_eq!(detail.document, Some(content.to_string()));
 
         let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    #[test]
+    fn deserializes_real_index_v2() {
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or(".".to_string());
+        let index_path = PathBuf::from(&manifest_dir)
+            .parent()
+            .unwrap()
+            .join(".polaris/knowledge/index.v2.json");
+
+        if !index_path.exists() {
+            eprintln!("Skipping: index.v2.json not found at {:?}", index_path);
+            return;
+        }
+
+        let content = std::fs::read_to_string(&index_path)
+            .expect("Failed to read index.v2.json");
+
+        let index: crate::models::knowledge::KnowledgeIndex = serde_json::from_str(&content)
+            .expect("Failed to deserialize index.v2.json");
+
+        assert!(!index.modules.is_empty(), "Should have modules");
+        assert_eq!(index.modules.len(), 17, "Should have 17 modules");
+        assert_eq!(index.domains.len(), 4, "Should have 4 domains");
+
+        // Verify all modules deserialized correctly
+        for m in &index.modules {
+            assert!(!m.id.is_empty(), "Module ID should not be empty");
+            assert!(!m.name.is_empty(), "Module name should not be empty");
+        }
+
+        println!("✅ Deserialized {} modules, {} domains successfully", index.modules.len(), index.domains.len());
     }
 }

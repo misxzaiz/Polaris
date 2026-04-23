@@ -67,8 +67,9 @@ pub struct AssertionAnchor {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AssertionExpect {
-    /// Flexible equals: accepts both string and numeric values in JSON
-    #[serde(skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_flex_string")]
+    /// Flexible equals: accepts both string and numeric values in JSON.
+    /// Serialized as the original type (string or number).
+    #[serde(skip_serializing_if = "Option::is_none", default, deserialize_with = "deserialize_flex_equals")]
     pub equals: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub regex: Option<String>,
@@ -79,54 +80,17 @@ pub struct AssertionExpect {
     pub range: Option<ExpectRange>,
 }
 
-/// Custom deserializer: accepts both `"value"` (string) and `20` (number) → String
-fn deserialize_flex_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+/// Deserialize equals field: accept string ("foo"), number (20), or null
+fn deserialize_flex_equals<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    use serde::de::{self, Visitor};
-    use std::fmt;
-
-    struct FlexStringVisitor;
-
-    impl<'de> Visitor<'de> for FlexStringVisitor {
-        type Value = Option<String>;
-
-        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            formatter.write_str("a string or a number")
-        }
-
-        fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
-            let s = v.trim().to_string();
-            Ok(if s.is_empty() { None } else { Some(s) })
-        }
-
-        fn visit_string<E: de::Error>(self, v: String) -> Result<Self::Value, E> {
-            Ok(Some(v))
-        }
-
-        fn visit_u64<E: de::Error>(self, v: u64) -> Result<Self::Value, E> {
-            Ok(Some(v.to_string()))
-        }
-
-        fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
-            Ok(Some(v.to_string()))
-        }
-
-        fn visit_f64<E: de::Error>(self, v: f64) -> Result<Self::Value, E> {
-            Ok(Some(v.to_string()))
-        }
-
-        fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
-            Ok(None)
-        }
-
-        fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
-            Ok(None)
-        }
-    }
-
-    deserializer.deserialize_option(FlexStringVisitor)
+    let val: Option<serde_json::Value> = Option::deserialize(deserializer)?;
+    Ok(val.and_then(|v| match v {
+        serde_json::Value::String(s) => Some(s),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    }))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -168,6 +132,18 @@ pub struct KnowledgeTrap {
     pub severity: Severity,
     #[serde(default)]
     pub source: String,
+    /// Related files (optional, used by some traps)
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub files: Option<Vec<String>>,
+    /// Location hint (optional, e.g. "src/foo.rs:42")
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub location: Option<String>,
+    /// Source file (optional, some traps use this instead of location)
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub file: Option<String>,
+    /// Line number (optional)
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub line: Option<u32>,
 }
 
 // =============================================================================
@@ -251,6 +227,9 @@ pub struct KnowledgeModule {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct KnowledgeIndex {
+    /// $schema field from JSON (ignored on deserialization)
+    #[serde(rename = "$schema", skip_serializing)]
+    pub schema_ref: Option<String>,
     #[serde(default)]
     pub version: String,
     #[serde(skip_serializing_if = "Option::is_none", default)]
