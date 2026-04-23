@@ -27,6 +27,7 @@ import { AssistantTab } from './tabs/AssistantTab';
 import { AutoModeTab } from './tabs/AutoModeTab';
 import { McpSettingsTab } from '../Mcp/McpSettingsTab';
 import { LspTab } from './tabs/LspTab';
+import { WebTab } from './tabs/WebTab';
 import { createLogger } from '../../utils/logger';
 import type { Config } from '../../types';
 
@@ -55,6 +56,7 @@ const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'mcp': 'nav.mcp',
   'lsp': 'nav.lsp',
   'advanced': 'nav.advanced',
+  'web': 'nav.web',
 };
 
 export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
@@ -258,6 +260,14 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
 
               {activeTab === 'lsp' && (
                 <LspTab />
+              )}
+
+              {activeTab === 'web' && (
+                <WebTab
+                  config={localConfig}
+                  onConfigChange={setLocalConfig}
+                  loading={loading}
+                />
               )}
             </div>
 

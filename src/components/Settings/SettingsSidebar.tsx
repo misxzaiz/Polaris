@@ -13,7 +13,7 @@ import {
   IconMic,
   IconMessageSquareText,
 } from '../Common/Icons';
-import { Sparkles, Shield, Cpu, Code2 } from 'lucide-react';
+import { Sparkles, Shield, Cpu, Code2, Globe } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 export type SettingsTabId =
@@ -31,7 +31,8 @@ export type SettingsTabId =
   | 'mcp'
   | 'lsp'
   | 'auto-mode'
-  | 'advanced';
+  | 'advanced'
+  | 'web';
 
 export interface SettingsNavItem {
   id: SettingsTabId;
@@ -61,6 +62,7 @@ const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'mcp', icon: <Cpu size={16} />, labelKey: 'nav.mcp' },
   { id: 'lsp', icon: <Code2 size={16} />, labelKey: 'nav.lsp' },
   { id: 'auto-mode', icon: <Shield size={16} />, labelKey: 'nav.autoMode' },
+  { id: 'web', icon: <Globe size={16} />, labelKey: 'nav.web' },
   // { id: 'advanced', icon: <IconSettings size={16} />, labelKey: 'nav.advanced' },
 ];
 

@@ -20,7 +20,8 @@
     "advanced": "高级",
     "autoMode": "自动模式",
     "mcp": "MCP 服务器",
-    "lsp": "语言服务器"
+    "lsp": "语言服务器",
+    "web": "Web 服务"
   },
   "messages": {
     "saved": "已保存",
@@ -354,5 +355,23 @@
     "saved": "已保存",
     "customRulesEmpty": "暂无自定义规则，点击上方按钮添加",
     "defaultRulesInfo": "允许 {{allow}} 条 | 需确认 {{deny}} 条"
+  },
+  "web": {
+    "enableTitle": "启用 Web 服务",
+    "enableDesc": "允许通过浏览器在局域网内访问 Polaris",
+    "portConfig": "端口配置",
+    "host": "监听地址",
+    "hostHint": "0.0.0.0 监听所有网卡，127.0.0.1 仅本机访问",
+    "port": "监听端口",
+    "portHint": "建议使用 1024-65535 范围内的端口",
+    "tokenTitle": "认证 Token",
+    "tokenShow": "显示",
+    "tokenHide": "隐藏",
+    "tokenHint": "首次启动 Web 服务时自动生成，用于浏览器访问认证",
+    "tokenAutoGenerate": "首次启动 Web 服务时将自动生成认证 Token",
+    "accessInfo": "访问信息",
+    "accessUrl": "访问地址",
+    "accessHint": "使用说明",
+    "accessHintDesc": "保存并重启应用后生效。在浏览器中打开访问地址，输入 Token 完成认证。"
   }
 }

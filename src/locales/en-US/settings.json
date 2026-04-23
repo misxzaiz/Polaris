@@ -20,7 +20,8 @@
     "advanced": "Advanced",
     "autoMode": "Auto Mode",
     "mcp": "MCP Servers",
-    "lsp": "Language Servers"
+    "lsp": "Language Servers",
+    "web": "Web Service"
   },
   "messages": {
     "saved": "Saved",
@@ -354,5 +355,23 @@
     "saved": "Saved",
     "customRulesEmpty": "No custom rules yet, click above to add",
     "defaultRulesInfo": "Allow {{allow}} | Require Confirmation {{deny}}"
+  },
+  "web": {
+    "enableTitle": "Enable Web Service",
+    "enableDesc": "Allow browser access to Polaris over LAN",
+    "portConfig": "Port Configuration",
+    "host": "Listen Address",
+    "hostHint": "0.0.0.0 for all interfaces, 127.0.0.1 for localhost only",
+    "port": "Listen Port",
+    "portHint": "Use a port in the range 1024-65535",
+    "tokenTitle": "Authentication Token",
+    "tokenShow": "Show",
+    "tokenHide": "Hide",
+    "tokenHint": "Auto-generated on first web server start, used for browser authentication",
+    "tokenAutoGenerate": "Token will be auto-generated when web service starts for the first time",
+    "accessInfo": "Access Information",
+    "accessUrl": "Access URL",
+    "accessHint": "Instructions",
+    "accessHintDesc": "Save and restart the app to apply. Open the access URL in a browser and enter the Token to authenticate."
   }
 }

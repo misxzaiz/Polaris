@@ -116,6 +116,18 @@ export interface WindowSettings {
   compactOpacity: number;
 }
 
+/** Web 服务配置 */
+export interface WebConfig {
+  /** 是否启用 Web 服务 */
+  enabled: boolean;
+  /** 监听地址 */
+  host: string;
+  /** 监听端口 */
+  port: number;
+  /** 认证 token（自动生成） */
+  token?: string;
+}
+
 /** 应用配置 */
 export interface Config {
   /** 当前选择的引擎 */
@@ -153,6 +165,8 @@ export interface Config {
   voiceCommands?: VoiceCommandEntry[];
   /** AI 助手配置 */
   assistant?: AssistantConfig;
+  /** Web 服务配置 */
+  web?: WebConfig;
 }
 
 /** 健康状态 */
