@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::{Mutex as AsyncMutex, broadcast};
 
 use crate::ai::EngineRegistry;
 use crate::commands::context::ContextMemoryStore;
@@ -121,6 +121,8 @@ pub struct AppState {
     pub scheduler_daemon: AsyncMutex<Option<SchedulerDaemon>>,
     /// LSP 语言服务器管理器
     pub lsp_manager: Mutex<LspManager>,
+    /// WebSocket 事件广播通道（Web Access Layer）
+    pub event_broadcast: broadcast::Sender<String>,
 }
 
 /// 创建应用状态
@@ -141,5 +143,6 @@ pub fn create_app_state(
         pending_plans: Arc::new(Mutex::new(HashMap::new())),
         scheduler_daemon: AsyncMutex::new(None),
         lsp_manager: Mutex::new(LspManager::new()),
+        event_broadcast: broadcast::channel(256).0,
     }
 }

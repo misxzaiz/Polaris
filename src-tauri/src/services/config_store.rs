@@ -455,6 +455,7 @@ impl OldConfig {
             voice_notification: None,
             voice_commands: None,
             assistant: Default::default(),
+            web: Default::default(),
             claude_cmd: Some(claude_cmd_clone),
         }
     }

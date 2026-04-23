@@ -674,6 +674,41 @@ impl Default for AssistantClaudeCodeConfig {
     }
 }
 
+/// Web 访问层配置（LAN HTTP/WS 服务）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebConfig {
+    /// 是否启用 Web 服务（默认不启动）
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// 监听地址
+    #[serde(default = "default_web_host")]
+    pub host: String,
+
+    /// 监听端口
+    #[serde(default = "default_web_port")]
+    pub port: u16,
+
+    /// 认证 Token（None → 首次启动自动生成）
+    #[serde(default)]
+    pub token: Option<String>,
+}
+
+fn default_web_host() -> String { "0.0.0.0".to_string() }
+fn default_web_port() -> u16 { 9800 }
+
+impl Default for WebConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            host: default_web_host(),
+            port: default_web_port(),
+            token: None,
+        }
+    }
+}
+
 /// 系统提示词模式
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -795,6 +830,10 @@ pub struct Config {
     #[serde(default)]
     pub assistant: AssistantConfig,
 
+    /// Web 访问层配置
+    #[serde(default)]
+    pub web: WebConfig,
+
     // === 旧字段，保持向后兼容 ===
     /// @deprecated 请使用 claude_code.cli_path
     #[serde(default)]
@@ -825,6 +864,7 @@ impl Default for Config {
             voice_notification: None,
             voice_commands: None,
             assistant: AssistantConfig::default(),
+            web: WebConfig::default(),
             claude_cmd: None,
         }
     }
