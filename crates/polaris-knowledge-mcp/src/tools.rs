@@ -13,6 +13,15 @@ pub fn get_tools_list() -> Value {
     json!({
         "tools": [
             {
+                "name": "init_knowledge",
+                "description": "初始化项目知识库。创建 .polaris/knowledge/ 目录结构（modules/、meta/）和空索引文件（index.json、index.v2.json）。幂等操作——已初始化时返回成功但不覆盖现有数据。新项目首次使用知识库时应调用此工具。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                }
+            },
+            {
                 "name": "list_modules",
                 "description": "列出项目所有知识模块（ID、名称、复杂度、变更频率）。返回项目架构的全局视图。",
                 "inputSchema": {

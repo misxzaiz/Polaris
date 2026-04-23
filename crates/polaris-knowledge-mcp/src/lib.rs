@@ -28,7 +28,7 @@ pub use models::{
     TrapSeverity, WorkspaceInfo, V2_SCHEMA_VERSION,
 };
 pub use seeder::{apply_seed, seed_assertions, ModuleSeedDelta, SeedOptions, SeedReport};
-pub use server::{run_server, run_server_with_workspace};
+pub use server::{run_server, run_server_with_workspace, ServerContext, SharedContext};
 pub use validator::{
     validate_index, validate_index_with_structures, write_health_report, AssertionResult,
     HealthReport, HealthTotals, ValidationStatus,

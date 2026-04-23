@@ -15,6 +15,7 @@ import {
   LayoutGrid,
   GitBranch,
   Activity,
+  Database,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useWorkspaceStore } from '@/stores'
@@ -36,8 +37,10 @@ export function KnowledgePanel() {
     staleModules,
     loading,
     initialized,
+    notInitialized,
     loadIndex,
     refreshIndex,
+    initKnowledge,
     loadStaleModules,
     selectedModuleId,
     selectModule,
@@ -232,10 +235,45 @@ export function KnowledgePanel() {
         <>
           {/* 模块列表 */}
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
-            {loading && !index ? (
+            {loading && !index && !notInitialized ? (
               <div className="flex items-center justify-center py-8 text-text-tertiary">
                 <RefreshCw size={16} className="animate-spin mr-2" />
                 <span className="text-xs">{t('loading')}</span>
+              </div>
+            ) : notInitialized && !index ? (
+              <div className="flex flex-col items-center justify-center py-8 text-text-tertiary">
+                <Database size={32} className="mb-3 opacity-40" />
+                <p className="text-sm font-medium text-text-secondary mb-2">
+                  {t('notInitialized')}
+                </p>
+                <p className="text-xs mb-4 text-text-tertiary">
+                  {t('initDescription')}
+                </p>
+                <ul className="text-xs text-text-tertiary mb-4 space-y-1">
+                  <li className="flex items-center gap-1.5">
+                    <span className="w-1 h-1 rounded-full bg-primary/60" />
+                    {t('initFeatureModuleIndex')}
+                  </li>
+                  <li className="flex items-center gap-1.5">
+                    <span className="w-1 h-1 rounded-full bg-primary/60" />
+                    {t('initFeatureAssertion')}
+                  </li>
+                  <li className="flex items-center gap-1.5">
+                    <span className="w-1 h-1 rounded-full bg-primary/60" />
+                    {t('initFeatureContext')}
+                  </li>
+                </ul>
+                <button
+                  onClick={() => {
+                    if (currentWorkspace) {
+                      initKnowledge(currentWorkspace.path)
+                    }
+                  }}
+                  disabled={loading}
+                  className="px-4 py-1.5 text-xs bg-primary text-white rounded hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                >
+                  {loading ? t('initializing') : t('initKnowledge')}
+                </button>
               </div>
             ) : filteredModules.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-text-tertiary">

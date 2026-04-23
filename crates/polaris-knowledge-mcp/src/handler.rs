@@ -1323,14 +1323,12 @@ mod tests {
 }
 
 /// Handle a tool call request.
-pub fn handle_tools_call(
-    params: Value,
-    index_path: &PathBuf,
-    modules_dir: &PathBuf,
-    workspace_root: Option<&std::path::Path>,
-    cache: &SharedCache,
-    write_lock: &WriteLock,
-) -> Result<Value> {
+///
+/// Uses `SharedContext` (from server.rs) which bundles all shared state.
+/// Tools that require an initialized knowledge base (i.e., index.json must
+/// exist) are guarded — they return a friendly error directing the caller to
+/// run `init_knowledge` first. The `init_knowledge` tool itself is exempt.
+pub fn handle_tools_call(params: Value, ctx: &crate::server::SharedContext) -> Result<Value> {
     let name = params
         .get("name")
         .and_then(Value::as_str)
@@ -1342,43 +1340,165 @@ pub fn handle_tools_call(
         .unwrap_or_else(|| json!({}));
 
     match name.as_str() {
+        // ── Initialization tool (always available, no guard) ──────
+        "init_knowledge" => {
+            let _guard = ctx.write_lock.lock().unwrap();
+            execute_init_knowledge(ctx)
+        }
+
+        // ── Guard: all remaining tools require initialized state ─
+        _ if !ctx.is_initialized() => {
+            Err(KnowledgeError::Validation(
+                "知识库未初始化，请先调用 init_knowledge 工具".to_string(),
+            ))
+        }
+
         // Read-only tools (no write lock needed)
-        "list_modules" => execute_list_modules(index_path, cache),
-        "get_module" => execute_get_module(arguments, index_path, modules_dir, cache, write_lock),
-        "get_module_dependencies" => execute_get_dependencies(arguments, index_path, cache),
-        "get_architecture_overview" => execute_architecture_overview(index_path, modules_dir, cache, write_lock),
-        "search_modules" => execute_search_modules(arguments, index_path, modules_dir, cache, write_lock),
-        "list_stale_modules" => execute_list_stale_modules(index_path, cache),
-        "get_assertions_health" => execute_get_assertions_health(index_path),
-        "compile_context" => execute_compile_context(arguments, index_path, cache),
-        "get_structure" => execute_get_structure(arguments, index_path),
+        "list_modules" => execute_list_modules(&ctx.index_path, &ctx.cache),
+        "get_module" => execute_get_module(arguments, &ctx.index_path, &ctx.modules_dir, &ctx.cache, &ctx.write_lock),
+        "get_module_dependencies" => execute_get_dependencies(arguments, &ctx.index_path, &ctx.cache),
+        "get_architecture_overview" => execute_architecture_overview(&ctx.index_path, &ctx.modules_dir, &ctx.cache, &ctx.write_lock),
+        "search_modules" => execute_search_modules(arguments, &ctx.index_path, &ctx.modules_dir, &ctx.cache, &ctx.write_lock),
+        "list_stale_modules" => execute_list_stale_modules(&ctx.index_path, &ctx.cache),
+        "get_assertions_health" => execute_get_assertions_health(&ctx.index_path),
+        "compile_context" => execute_compile_context(arguments, &ctx.index_path, &ctx.cache),
+        "get_structure" => execute_get_structure(arguments, &ctx.index_path),
         // Write tools (acquire write lock for serialization)
         "update_module" => {
-            let _guard = write_lock.lock().unwrap();
-            execute_update_module(arguments, index_path, modules_dir, cache, write_lock)
+            let _guard = ctx.write_lock.lock().unwrap();
+            execute_update_module(arguments, &ctx.index_path, &ctx.modules_dir, &ctx.cache, &ctx.write_lock)
         }
         "create_module" => {
-            let _guard = write_lock.lock().unwrap();
-            execute_create_module(arguments, index_path, modules_dir, cache, write_lock)
+            let _guard = ctx.write_lock.lock().unwrap();
+            execute_create_module(arguments, &ctx.index_path, &ctx.modules_dir, &ctx.cache, &ctx.write_lock)
         }
         "mark_modules_stale" => {
-            let _guard = write_lock.lock().unwrap();
-            execute_mark_stale(arguments, index_path, cache)
+            let _guard = ctx.write_lock.lock().unwrap();
+            execute_mark_stale(arguments, &ctx.index_path, &ctx.cache)
         }
         "clear_stale_marker" => {
-            let _guard = write_lock.lock().unwrap();
-            execute_clear_stale_marker(arguments, index_path)
+            let _guard = ctx.write_lock.lock().unwrap();
+            execute_clear_stale_marker(arguments, &ctx.index_path)
         }
         "validate_assertions" => {
-            let _guard = write_lock.lock().unwrap();
-            execute_validate_assertions(arguments, index_path, workspace_root, cache, write_lock)
+            let _guard = ctx.write_lock.lock().unwrap();
+            execute_validate_assertions(arguments, &ctx.index_path, ctx.workspace_root.as_deref(), &ctx.cache, &ctx.write_lock)
         }
         "extract_structure" => {
-            let _guard = write_lock.lock().unwrap();
-            execute_extract_structure(arguments, index_path, workspace_root, cache, write_lock)
+            let _guard = ctx.write_lock.lock().unwrap();
+            execute_extract_structure(arguments, &ctx.index_path, ctx.workspace_root.as_deref(), &ctx.cache, &ctx.write_lock)
+        }
+        "seed_assertions" => {
+            let _guard = ctx.write_lock.lock().unwrap();
+            execute_seed_assertions(arguments, &ctx.index_path, ctx.workspace_root.as_deref(), &ctx.cache, &ctx.write_lock)
         }
         _ => Err(KnowledgeError::Validation(format!("未知工具: {}", name))),
     }
+}
+
+// ─── init_knowledge ─────────────────────────────────────────────
+
+/// Execute the `init_knowledge` tool.
+///
+/// Creates the knowledge base directory structure and empty index files.
+/// Idempotent — if index.json already exists and is valid, returns success
+/// without overwriting.
+fn execute_init_knowledge(ctx: &crate::server::SharedContext) -> Result<Value> {
+    let knowledge_dir = ctx.knowledge_dir().ok_or_else(|| {
+        KnowledgeError::Io("无法确定知识目录路径".to_string())
+    })?;
+
+    let mut created: Vec<String> = Vec::new();
+    let mut skipped: Vec<String> = Vec::new();
+
+    // 1. Ensure knowledge directory exists
+    if !knowledge_dir.exists() {
+        fs::create_dir_all(knowledge_dir).map_err(|e| {
+            KnowledgeError::Io(format!("无法创建知识目录: {}", e))
+        })?;
+        created.push(format!("目录: {}", knowledge_dir.display()));
+    }
+
+    // 2. Ensure modules/ subdirectory exists
+    if !ctx.modules_dir.exists() {
+        fs::create_dir_all(&*ctx.modules_dir).map_err(|e| {
+            KnowledgeError::Io(format!("无法创建模块目录: {}", e))
+        })?;
+        created.push(format!("目录: {}", ctx.modules_dir.display()));
+    }
+
+    // 3. Ensure meta/ subdirectory exists
+    let meta_dir = knowledge_dir.join("meta");
+    if !meta_dir.exists() {
+        fs::create_dir_all(&meta_dir).map_err(|e| {
+            KnowledgeError::Io(format!("无法创建元数据目录: {}", e))
+        })?;
+        created.push(format!("目录: {}", meta_dir.display()));
+    }
+
+    // 4. Create index.json if missing (v1)
+    if !ctx.index_path.exists() {
+        let v1_content = serde_json::json!({
+            "version": "1.0",
+            "modules": []
+        });
+        let content = serde_json::to_string_pretty(&v1_content)
+            .map_err(|e| KnowledgeError::Json(format!("序列化 v1 索引失败: {}", e)))?;
+        fs::write(&*ctx.index_path, &content).map_err(|e| {
+            KnowledgeError::Io(format!("无法写入 index.json: {}", e))
+        })?;
+        created.push(format!("文件: {}", ctx.index_path.display()));
+    } else {
+        skipped.push("index.json (已存在)".to_string());
+    }
+
+    // 5. Create index.v2.json if missing
+    let v2_path = knowledge_dir.join("index.v2.json");
+    if !v2_path.exists() {
+        let v2_content = serde_json::json!({
+            "version": "2.0",
+            "domains": [],
+            "modules": [],
+            "workspace": {
+                "rootPath": "",
+                "language": [],
+                "framework": []
+            }
+        });
+        let content = serde_json::to_string_pretty(&v2_content)
+            .map_err(|e| KnowledgeError::Json(format!("序列化 v2 索引失败: {}", e)))?;
+        fs::write(&v2_path, &content).map_err(|e| {
+            KnowledgeError::Io(format!("无法写入 index.v2.json: {}", e))
+        })?;
+        created.push(format!("文件: {}", v2_path.display()));
+    } else {
+        skipped.push("index.v2.json (已存在)".to_string());
+    }
+
+    // 6. Invalidate caches so subsequent tool calls read the new files
+    {
+        let mut cache = ctx.cache.write().unwrap();
+        cache.v1 = None;
+        cache.v2 = None;
+    }
+
+    let summary = if created.is_empty() {
+        "知识库已就绪，无需创建新文件".to_string()
+    } else {
+        format!("知识库初始化完成，创建了 {} 个项目", created.len())
+    };
+
+    Ok(json!({
+        "structuredContent": {
+            "initialized": true,
+            "created": created,
+            "skipped": skipped
+        },
+        "content": [{
+            "type": "text",
+            "text": summary
+        }]
+    }))
 }
 
 pub fn execute_list_stale_modules(index_path: &PathBuf, cache: &SharedCache) -> Result<Value> {

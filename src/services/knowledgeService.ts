@@ -8,7 +8,7 @@
  */
 
 import { createLogger } from '../utils/logger'
-import { readFile, readDirectory, deleteFile } from './tauri/fileService'
+import { readFile, readDirectory, deleteFile, createDirectory, createFile, pathExists } from './tauri/fileService'
 
 const log = createLogger('KnowledgeService')
 
@@ -111,10 +111,22 @@ export interface EnrichOptions {
   includeFullDocs?: boolean
 }
 
+/** 知识加载状态 */
+export type KnowledgeStatus = 'loaded' | 'not_initialized' | 'error'
+
+/** 知识加载结果 */
+export interface KnowledgeLoadResult {
+  status: KnowledgeStatus
+  error?: string
+}
+
 /** 知识服务接口 */
 export interface IKnowledgeService {
-  /** 加载工作区的知识索引（应用启动时调用一次） */
-  loadIndex(workspacePath: string): Promise<void>
+  /** 加载工作区的知识索引。返回加载状态，区分「未初始化」和「加载失败」 */
+  loadIndex(workspacePath: string): Promise<KnowledgeLoadResult>
+
+  /** 初始化知识库（创建目录结构和空索引文件）。不依赖 MCP，直接操作文件系统 */
+  initKnowledge(workspacePath: string): Promise<void>
 
   /** 检测消息中的 #module 引用，返回增强后的 prompt */
   enrichPrompt(
@@ -169,7 +181,7 @@ export class LocalFileKnowledgeService implements IKnowledgeService {
   private moduleDocsCache: Map<string, string> = new Map()
   private staleModulesCache: StaleModule[] | null = null
 
-  async loadIndex(workspacePath: string): Promise<void> {
+  async loadIndex(workspacePath: string): Promise<KnowledgeLoadResult> {
     this.workspacePath = workspacePath
     this.moduleDocsCache.clear()
     this.staleModulesCache = null
@@ -177,6 +189,16 @@ export class LocalFileKnowledgeService implements IKnowledgeService {
     // 优先加载 v2 索引，回退到 v1
     const indexV2Path = `${workspacePath}/${KNOWLEDGE_DIR}/${INDEX_V2_FILE}`
     const indexV1Path = `${workspacePath}/${KNOWLEDGE_DIR}/${INDEX_FILE}`
+
+    // 检查两个索引文件是否都不存在
+    const v1Exists = await pathExists(indexV1Path).catch(() => false)
+    const v2Exists = await pathExists(indexV2Path).catch(() => false)
+
+    if (!v1Exists && !v2Exists) {
+      this.index = null
+      log.info('知识索引文件不存在，知识库可能未初始化')
+      return { status: 'not_initialized' }
+    }
 
     try {
       let content = await readFile(indexV2Path)
@@ -198,20 +220,69 @@ export class LocalFileKnowledgeService implements IKnowledgeService {
           globalConventions: v2Data.globalConventions,
         }
         log.info(`知识索引(v2)已加载: ${this.index?.modules.length ?? 0} 个模块`)
-        return
+        return { status: 'loaded' }
       }
-    } catch {
-      // v2 不存在，尝试 v1
+    } catch (err) {
+      // v2 文件存在但解析失败，记录警告后回退到 v1
+      log.warn('v2 索引加载失败，回退到 v1', { error: String(err) })
     }
 
     try {
       const content = await readFile(indexV1Path)
-      this.index = JSON.parse(content) as ModuleIndex
+      const parsed = JSON.parse(content)
+      // 基本校验：modules 字段必须存在且为数组
+      if (!parsed || !Array.isArray(parsed.modules)) {
+        this.index = null
+        const msg = '知识索引格式错误：缺少 modules 字段'
+        log.error(msg)
+        return { status: 'error', error: msg }
+      }
+      this.index = parsed as ModuleIndex
       log.info(`知识索引(v1)已加载: ${this.index?.modules.length ?? 0} 个模块`)
+      return { status: 'loaded' }
     } catch (err) {
-      log.warn('无法加载知识索引', { error: String(err) })
+      const errorMsg = err instanceof Error ? err.message : String(err)
       this.index = null
+      log.error('知识索引加载失败', err instanceof Error ? err : new Error(errorMsg))
+      return { status: 'error', error: errorMsg }
     }
+  }
+
+  async initKnowledge(workspacePath: string): Promise<void> {
+    const knowledgeDir = `${workspacePath}/${KNOWLEDGE_DIR}`
+    const modulesDir = `${knowledgeDir}/${MODULES_SUBDIR}`
+    const metaDir = `${knowledgeDir}/meta`
+
+    // 1. 创建目录结构
+    await createDirectory(modulesDir)
+    await createDirectory(metaDir)
+
+    // 2. 创建空 v1 索引（幂等：不覆盖已有文件）
+    const indexPath = `${knowledgeDir}/${INDEX_FILE}`
+    const indexExists = await pathExists(indexPath).catch(() => false)
+    if (!indexExists) {
+      const v1Content = JSON.stringify({ version: '1.0', modules: [] }, null, 2)
+      await createFile(indexPath, v1Content)
+      log.info('已创建空 v1 知识索引')
+    }
+
+    // 3. 创建空 v2 索引（幂等）
+    const v2Path = `${knowledgeDir}/${INDEX_V2_FILE}`
+    const v2Exists = await pathExists(v2Path).catch(() => false)
+    if (!v2Exists) {
+      const v2Content = JSON.stringify({
+        version: '2.0',
+        domains: [],
+        modules: [],
+        workspace: { rootPath: '', language: [], framework: [] },
+      }, null, 2)
+      await createFile(v2Path, v2Content)
+      log.info('已创建空 v2 知识索引')
+    }
+
+    // 4. 重新加载索引
+    await this.loadIndex(workspacePath)
+    log.info('知识库初始化完成')
   }
 
   async enrichPrompt(

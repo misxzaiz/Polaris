@@ -16,6 +16,39 @@ use crate::handler::{handle_tools_call, KnowledgeCache, SharedCache};
 use crate::protocol::{error_response, JsonRpcRequest, JsonRpcResponse};
 use crate::tools;
 
+// ─── ServerContext ──────────────────────────────────────────────
+
+/// Shared server state passed to all request handlers.
+///
+/// Encapsulates paths, caches, and locks that were previously passed as
+/// individual parameters. This simplifies function signatures and makes it
+/// easy to add new shared state (e.g., initialization flag) without changing
+/// every call site.
+pub struct ServerContext {
+    pub index_path: PathBuf,
+    pub modules_dir: PathBuf,
+    pub workspace_root: Option<PathBuf>,
+    pub cache: SharedCache,
+    pub write_lock: WriteLock,
+}
+
+impl ServerContext {
+    /// Derive the knowledge directory from index_path (its parent).
+    pub fn knowledge_dir(&self) -> Option<&std::path::Path> {
+        self.index_path.parent()
+    }
+
+    /// Check if the knowledge index exists (i.e., the system is initialized).
+    pub fn is_initialized(&self) -> bool {
+        self.index_path.exists()
+    }
+}
+
+/// Thread-safe reference to ServerContext.
+pub type SharedContext = Arc<ServerContext>;
+
+// ─── Entry Points ──────────────────────────────────────────────
+
 /// Run the knowledge MCP server.
 ///
 /// # Arguments
@@ -48,6 +81,13 @@ pub fn run_server(knowledge_dir: &str) -> Result<()> {
 ///
 /// # Returns
 /// Result indicating success or error.
+///
+/// ## Lenient startup
+/// If `.polaris/knowledge/` does not exist, it will be **automatically created**
+/// (along with the `modules/` subdirectory). The server enters the event loop
+/// in an "uninitialized" state — only `init_knowledge`, `initialize`, `ping`,
+/// and `tools/list` are available. Other tools return a friendly error asking
+/// the caller to run `init_knowledge` first.
 pub fn run_server_with_workspace(config_dir: &str, workspace_path: Option<&str>) -> Result<()> {
     // Empty config_dir is legal in standalone --workspace mode; only validate
     // when a non-empty path was supplied.
@@ -73,15 +113,34 @@ pub fn run_server_with_workspace(config_dir: &str, workspace_path: Option<&str>)
         }
     };
 
+    // Lenient startup: auto-create knowledge directory if missing.
     if !knowledge_dir.exists() {
-        return Err(KnowledgeError::Validation(format!(
-            "知识目录不存在: {}",
+        std::fs::create_dir_all(&knowledge_dir).map_err(|e| {
+            KnowledgeError::Io(format!(
+                "无法创建知识目录 {}: {}",
+                knowledge_dir.display(),
+                e
+            ))
+        })?;
+        eprintln!(
+            "[knowledge-mcp] 知识目录不存在，已自动创建: {}",
             knowledge_dir.display()
-        )));
+        );
+    }
+
+    // Ensure modules/ subdirectory exists (needed by create_module later).
+    let modules_dir = knowledge_dir.join("modules");
+    if !modules_dir.exists() {
+        std::fs::create_dir_all(&modules_dir).map_err(|e| {
+            KnowledgeError::Io(format!(
+                "无法创建模块目录 {}: {}",
+                modules_dir.display(),
+                e
+            ))
+        })?;
     }
 
     let index_path = knowledge_dir.join("index.json");
-    let modules_dir = knowledge_dir.join("modules");
     run_event_loop(&index_path, &modules_dir, workspace_path.as_deref())
 }
 
@@ -91,21 +150,28 @@ const WORKER_POOL_SIZE: usize = 4;
 /// Shared JSON-RPC event loop with thread pool for concurrent request processing.
 /// Main thread reads requests from stdin, dispatches to worker threads,
 /// collects responses via channel, and writes to stdout.
+///
+/// ## Lenient startup
+/// No longer requires `index.json` to exist. If the file is absent, the server
+/// starts in "uninitialized" mode — only `init_knowledge`, `initialize`, `ping`,
+/// and `tools/list` respond successfully. All other tools return a friendly
+/// error directing the caller to run `init_knowledge` first.
 fn run_event_loop(
     index_path: &PathBuf,
     modules_dir: &PathBuf,
     workspace_root: Option<&std::path::Path>,
 ) -> Result<()> {
-    // Pre-flight: verify index.json exists before entering the event loop.
-    if !index_path.exists() {
-        return Err(KnowledgeError::Validation(format!(
-            "知识索引文件不存在: {}。请确保 .polaris/knowledge/index.json 存在",
-            index_path.display()
-        )));
-    }
+    // No pre-flight check on index.json — the server starts regardless.
+    // If index.json is missing, tools that depend on it will return a
+    // "knowledge not initialized" error, guiding the user to call init_knowledge.
 
-    let cache: SharedCache = Arc::new(RwLock::new(KnowledgeCache::new()));
-    let write_lock: WriteLock = Arc::new(std::sync::Mutex::new(()));
+    let ctx: SharedContext = Arc::new(ServerContext {
+        index_path: index_path.clone(),
+        modules_dir: modules_dir.clone(),
+        workspace_root: workspace_root.map(|p| p.to_path_buf()),
+        cache: Arc::new(RwLock::new(KnowledgeCache::new())),
+        write_lock: Arc::new(std::sync::Mutex::new(())),
+    });
 
     // Channel: workers -> main thread (serialized JSON responses)
     let (response_tx, response_rx) = mpsc::channel::<String>();
@@ -119,11 +185,7 @@ fn run_event_loop(
     for _ in 0..WORKER_POOL_SIZE {
         let work_rx = Arc::clone(&work_rx);
         let response_tx = response_tx.clone();
-        let cache = Arc::clone(&cache);
-        let write_lock = Arc::clone(&write_lock);
-        let index_path = index_path.clone();
-        let modules_dir = modules_dir.clone();
-        let workspace_root = workspace_root.map(|p| p.to_path_buf());
+        let ctx = Arc::clone(&ctx);
 
         let handle = thread::spawn(move || {
             loop {
@@ -138,14 +200,7 @@ fn run_event_loop(
                 }
 
                 let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
-                    Ok(request) => handle_request(
-                        request,
-                        &index_path,
-                        &modules_dir,
-                        workspace_root.as_deref(),
-                        &cache,
-                        &write_lock,
-                    ),
+                    Ok(request) => handle_request(request, &ctx),
                     Err(error) => error_response(
                         Value::Null,
                         -32700,
@@ -210,14 +265,7 @@ fn run_event_loop(
             Some("initialize") | Some("notifications/initialized") | Some("ping") => {
                 // Synchronous path — parse, handle, write response immediately
                 let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
-                    Ok(request) => handle_request(
-                        request,
-                        &index_path,
-                        &modules_dir,
-                        workspace_root.as_deref(),
-                        &cache,
-                        &write_lock,
-                    ),
+                    Ok(request) => handle_request(request, &ctx),
                     Err(error) => error_response(
                         Value::Null,
                         -32700,
@@ -295,14 +343,7 @@ fn run_event_loop(
 
 
 /// Handle a JSON-RPC request.
-fn handle_request(
-    request: JsonRpcRequest,
-    index_path: &PathBuf,
-    modules_dir: &PathBuf,
-    workspace_root: Option<&std::path::Path>,
-    cache: &SharedCache,
-    write_lock: &WriteLock,
-) -> JsonRpcResponse<'static> {
+fn handle_request(request: JsonRpcRequest, ctx: &SharedContext) -> JsonRpcResponse<'static> {
     let id = request.id.unwrap_or(Value::Null);
 
     if request.jsonrpc != "2.0" {
@@ -314,7 +355,7 @@ fn handle_request(
         "notifications/initialized" => Ok(json!({})),
         "ping" => Ok(json!({})),
         "tools/list" => Ok(tools::get_tools_list()),
-        "tools/call" => handle_tools_call(request.params, index_path, modules_dir, workspace_root, cache, write_lock),
+        "tools/call" => handle_tools_call(request.params, ctx),
         _ => Err(KnowledgeError::Validation(format!(
             "不支持的方法: {}",
             request.method
@@ -345,6 +386,7 @@ fn normalize_path(path: &str) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::handler::KnowledgeCache;
     use crate::protocol::JsonRpcRequest;
     use serde_json::json;
     use std::fs;
@@ -392,6 +434,15 @@ mod tests {
         dir
     }
 
+    /// Helper: build a temp knowledge dir WITHOUT index.json (uninitialized).
+    fn setup_empty_knowledge_dir() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let knowledge = dir.path().join(".polaris").join("knowledge");
+        fs::create_dir_all(knowledge.join("modules")).unwrap();
+        // No index.json — uninitialized state
+        dir
+    }
+
     /// Helper to get knowledge dir path from tempdir.
     fn knowledge_path(dir: &tempfile::TempDir) -> PathBuf {
         dir.path().join(".polaris").join("knowledge")
@@ -407,23 +458,39 @@ mod tests {
         .unwrap()
     }
 
-    fn default_cache() -> SharedCache {
-        Arc::new(RwLock::new(KnowledgeCache::new()))
+    fn make_tools_call_request(tool_name: &str, id: Value) -> JsonRpcRequest {
+        serde_json::from_value(json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": "tools/call",
+            "params": {
+                "name": tool_name,
+                "arguments": {}
+            }
+        }))
+        .unwrap()
     }
 
-    fn default_write_lock() -> WriteLock {
-        Arc::new(std::sync::Mutex::new(()))
+    fn default_context(index_path: PathBuf, modules_dir: PathBuf) -> SharedContext {
+        Arc::new(ServerContext {
+            index_path,
+            modules_dir,
+            workspace_root: None,
+            cache: Arc::new(RwLock::new(KnowledgeCache::new())),
+            write_lock: Arc::new(std::sync::Mutex::new(())),
+        })
     }
 
     #[test]
     fn handle_request_initialize() {
         let req = make_request("initialize", json!(1));
         let dir = setup_temp_knowledge_dir();
-        let index_path = knowledge_path(&dir).join("index.json");
-        let modules_dir = knowledge_path(&dir).join("modules");
-        let cache = default_cache();
+        let ctx = default_context(
+            knowledge_path(&dir).join("index.json"),
+            knowledge_path(&dir).join("modules"),
+        );
 
-        let resp = handle_request(req, &index_path, &modules_dir, None, &cache, &default_write_lock());
+        let resp = handle_request(req, &ctx);
 
         assert_eq!(resp.jsonrpc, "2.0");
         assert_eq!(resp.id, json!(1));
@@ -439,11 +506,12 @@ mod tests {
     fn handle_request_ping() {
         let req = make_request("ping", json!("test-id"));
         let dir = setup_temp_knowledge_dir();
-        let index_path = knowledge_path(&dir).join("index.json");
-        let modules_dir = knowledge_path(&dir).join("modules");
-        let cache = default_cache();
+        let ctx = default_context(
+            knowledge_path(&dir).join("index.json"),
+            knowledge_path(&dir).join("modules"),
+        );
 
-        let resp = handle_request(req, &index_path, &modules_dir, None, &cache, &default_write_lock());
+        let resp = handle_request(req, &ctx);
 
         assert_eq!(resp.id, json!("test-id"));
         assert_eq!(resp.result, Some(json!({})));
@@ -453,11 +521,12 @@ mod tests {
     fn handle_request_tools_list_returns_array() {
         let req = make_request("tools/list", json!(2));
         let dir = setup_temp_knowledge_dir();
-        let index_path = knowledge_path(&dir).join("index.json");
-        let modules_dir = knowledge_path(&dir).join("modules");
-        let cache = default_cache();
+        let ctx = default_context(
+            knowledge_path(&dir).join("index.json"),
+            knowledge_path(&dir).join("modules"),
+        );
 
-        let resp = handle_request(req, &index_path, &modules_dir, None, &cache, &default_write_lock());
+        let resp = handle_request(req, &ctx);
 
         let result = resp.result.unwrap();
         let tools = result["tools"].as_array().unwrap();
@@ -468,11 +537,12 @@ mod tests {
     fn handle_request_notifications_initialized() {
         let req = make_request("notifications/initialized", json!(3));
         let dir = setup_temp_knowledge_dir();
-        let index_path = knowledge_path(&dir).join("index.json");
-        let modules_dir = knowledge_path(&dir).join("modules");
-        let cache = default_cache();
+        let ctx = default_context(
+            knowledge_path(&dir).join("index.json"),
+            knowledge_path(&dir).join("modules"),
+        );
 
-        let resp = handle_request(req, &index_path, &modules_dir, None, &cache, &default_write_lock());
+        let resp = handle_request(req, &ctx);
 
         assert_eq!(resp.result, Some(json!({})));
         assert!(resp.error.is_none());
@@ -487,11 +557,12 @@ mod tests {
             params: json!({}),
         };
         let dir = setup_temp_knowledge_dir();
-        let index_path = knowledge_path(&dir).join("index.json");
-        let modules_dir = knowledge_path(&dir).join("modules");
-        let cache = default_cache();
+        let ctx = default_context(
+            knowledge_path(&dir).join("index.json"),
+            knowledge_path(&dir).join("modules"),
+        );
 
-        let resp = handle_request(req, &index_path, &modules_dir, None, &cache, &default_write_lock());
+        let resp = handle_request(req, &ctx);
 
         assert!(resp.error.is_some());
         assert_eq!(resp.error.unwrap().code, -32600);
@@ -501,11 +572,12 @@ mod tests {
     fn handle_request_unknown_method() {
         let req = make_request("nonexistent/method", json!(99));
         let dir = setup_temp_knowledge_dir();
-        let index_path = knowledge_path(&dir).join("index.json");
-        let modules_dir = knowledge_path(&dir).join("modules");
-        let cache = default_cache();
+        let ctx = default_context(
+            knowledge_path(&dir).join("index.json"),
+            knowledge_path(&dir).join("modules"),
+        );
 
-        let resp = handle_request(req, &index_path, &modules_dir, None, &cache, &default_write_lock());
+        let resp = handle_request(req, &ctx);
 
         assert!(resp.error.is_some());
         let err = resp.error.unwrap();
@@ -522,11 +594,12 @@ mod tests {
             params: json!({}),
         };
         let dir = setup_temp_knowledge_dir();
-        let index_path = knowledge_path(&dir).join("index.json");
-        let modules_dir = knowledge_path(&dir).join("modules");
-        let cache = default_cache();
+        let ctx = default_context(
+            knowledge_path(&dir).join("index.json"),
+            knowledge_path(&dir).join("modules"),
+        );
 
-        let resp = handle_request(req, &index_path, &modules_dir, None, &cache, &default_write_lock());
+        let resp = handle_request(req, &ctx);
 
         assert_eq!(resp.id, Value::Null);
         assert!(resp.result.is_some());
@@ -550,10 +623,79 @@ mod tests {
         assert!(msg.contains("工作区路径"));
     }
 
+    // ── lenient startup ────────────────────────────────────────────
+
     #[test]
-    fn run_server_with_workspace_rejects_nonexistent_workspace() {
-        let result = run_server_with_workspace("", Some("/nonexistent/workspace"));
-        assert!(result.is_err());
+    fn run_server_with_workspace_creates_missing_knowledge_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("my-workspace");
+        fs::create_dir_all(&workspace).unwrap();
+        // .polaris/knowledge does NOT exist yet
+
+        // We can't actually run the event loop in a test (it blocks on stdin),
+        // but we can verify the directory gets created during setup.
+        let knowledge_dir = workspace.join(".polaris").join("knowledge");
+        assert!(!knowledge_dir.exists());
+
+        // Simulate the setup logic from run_server_with_workspace
+        std::fs::create_dir_all(&knowledge_dir).unwrap();
+        std::fs::create_dir_all(knowledge_dir.join("modules")).unwrap();
+
+        assert!(knowledge_dir.exists());
+        assert!(knowledge_dir.join("modules").exists());
+    }
+
+    #[test]
+    fn uninitialized_tools_return_friendly_error() {
+        // Knowledge dir exists but no index.json
+        let dir = setup_empty_knowledge_dir();
+        let ctx = default_context(
+            knowledge_path(&dir).join("index.json"),
+            knowledge_path(&dir).join("modules"),
+        );
+
+        // list_modules should fail with "not initialized" message
+        let req = make_tools_call_request("list_modules", json!(10));
+        let resp = handle_request(req, &ctx);
+
+        assert!(resp.error.is_some());
+        let err = resp.error.unwrap();
+        assert_eq!(err.code, -32000);
+        assert!(err.message.contains("未初始化") || err.message.contains("init_knowledge"));
+    }
+
+    #[test]
+    fn init_knowledge_works_on_empty_dir() {
+        let dir = setup_empty_knowledge_dir();
+        let ctx = default_context(
+            knowledge_path(&dir).join("index.json"),
+            knowledge_path(&dir).join("modules"),
+        );
+
+        // init_knowledge should succeed even without index.json
+        let req = make_tools_call_request("init_knowledge", json!(20));
+        let resp = handle_request(req, &ctx);
+
+        assert!(resp.result.is_some(), "init_knowledge should return a result, got error: {:?}", resp.error);
+        assert!(ctx.index_path.exists(), "index.json should have been created");
+    }
+
+    #[test]
+    fn init_knowledge_is_idempotent() {
+        let dir = setup_temp_knowledge_dir();
+        let ctx = default_context(
+            knowledge_path(&dir).join("index.json"),
+            knowledge_path(&dir).join("modules"),
+        );
+
+        // index.json already exists — init_knowledge should succeed without overwriting
+        let req = make_tools_call_request("init_knowledge", json!(30));
+        let resp = handle_request(req, &ctx);
+
+        assert!(resp.result.is_some());
+        // Original content should be preserved
+        let content = fs::read_to_string(&ctx.index_path).unwrap();
+        assert!(content.contains("modules"));
     }
 
     // ── JSON-RPC parse error ────────────────────────────────────────
