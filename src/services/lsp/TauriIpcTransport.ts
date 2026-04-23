@@ -53,7 +53,7 @@ export class TauriIpcTransport {
   /** Transport.send — LSPClient 调用此方法发送 JSON-RPC 消息 */
   send(message: string): void {
     lspSend(this.serverId, message).catch((err) => {
-      log.error('Failed to send LSP message', { serverId: this.serverId, error: String(err) });
+      log.error('Failed to send LSP message', undefined, { serverId: this.serverId, error: String(err) });
     });
   }
 
@@ -82,7 +82,7 @@ export class TauriIpcTransport {
       await lspStop(this.serverId);
       log.debug('LSP server stopped', { serverId: this.serverId });
     } catch (err) {
-      log.error('Failed to stop LSP server', { serverId: this.serverId, error: String(err) });
+      log.error('Failed to stop LSP server', undefined, { serverId: this.serverId, error: String(err) });
     }
   }
 }

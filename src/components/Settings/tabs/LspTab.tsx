@@ -55,7 +55,7 @@ export function LspTab() {
       setLoading(true);
       await useLspStore.getState().loadFromBackend();
     } catch (err) {
-      log.error('Failed to load LSP config', { error: String(err) });
+      log.error('Failed to load LSP config', undefined, { error: String(err) });
     } finally {
       setLoading(false);
     }
@@ -74,19 +74,20 @@ export function LspTab() {
     try {
       await lspConfigToggle(id, newEnabled);
     } catch (err) {
-      log.error('Failed to toggle LSP server', { id, error: String(err) });
+      log.error('Failed to toggle LSP server', undefined, { id, error: String(err) });
       toggleServer(id); // 回滚
     }
   };
 
-  // 删除
+  // 删除（先调后端，成功再从 store 移除）
   const handleRemove = async (id: string) => {
     try {
+      await lspConfigRemove(id);
       await deactivateServer(id);
       removeServer(id);
-      await lspConfigRemove(id);
     } catch (err) {
-      log.error('Failed to remove LSP server', { id, error: String(err) });
+      log.error('Failed to remove LSP server', undefined, { id, error: String(err) });
+      // 后端删除失败时 store 不动，避免状态不一致
     }
   };
 
@@ -107,7 +108,7 @@ export function LspTab() {
       setShowAdd(false);
       setAddForm({ languages: [], args: [], enabled: true });
     } catch (err) {
-      log.error('Failed to add LSP server', { error: String(err) });
+      log.error('Failed to add LSP server', undefined, { error: String(err) });
     }
   };
 

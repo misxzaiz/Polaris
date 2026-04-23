@@ -171,17 +171,17 @@ export const useLspStore = create<LspStore>()((set, get) => ({
         // 等待初始化完成（LSPClient 自动处理 initialize handshake）
         await client.initializing;
 
-        const newClients = new Map(get().clients);
-        newClients.set(serverId, { client, transport });
-
-        const newStatus = new Map(get().status);
-        newStatus.set(serverId, 'connected');
-
-        // 清除 pending 标记
-        const newPending = new Map(get().pendingConnections);
-        newPending.delete(serverId);
-
-        set({ clients: newClients, status: newStatus, pendingConnections: newPending });
+        set((state) => {
+          // 检查是否在连接过程中被 deactivate
+          if (!state.pendingConnections.has(serverId)) return {};
+          const newClients = new Map(state.clients);
+          newClients.set(serverId, { client, transport });
+          const newStatus = new Map(state.status);
+          newStatus.set(serverId, 'connected');
+          const newPending = new Map(state.pendingConnections);
+          newPending.delete(serverId);
+          return { clients: newClients, status: newStatus, pendingConnections: newPending };
+        });
 
         log.debug('LSP client connected', {
           serverId,
@@ -189,19 +189,24 @@ export const useLspStore = create<LspStore>()((set, get) => ({
           capabilities: !!client.serverCapabilities,
         });
 
+        // 连接过程中被 deactivate 时返回 null
+        if (!get().clients.has(serverId)) return null;
+
         const extensions = getExtensionsForClient(client, filePath);
         return { client, extensions };
       } catch (err) {
-        log.error('Failed to activate LSP', {
+        log.error('Failed to activate LSP', undefined, {
           serverId: serverConfig.id,
           error: String(err),
         });
 
-        const newStatus = new Map(get().status);
-        newStatus.set(serverConfig.id, 'error');
-        const newPending = new Map(get().pendingConnections);
-        newPending.delete(serverConfig.id);
-        set({ status: newStatus, pendingConnections: newPending });
+        set((state) => {
+          const newStatus = new Map(state.status);
+          newStatus.set(serverConfig.id, 'error');
+          const newPending = new Map(state.pendingConnections);
+          newPending.delete(serverConfig.id);
+          return { status: newStatus, pendingConnections: newPending };
+        });
         return null;
       }
     })();
@@ -219,17 +224,20 @@ export const useLspStore = create<LspStore>()((set, get) => ({
   deactivateServer: async (serverId) => {
     const { clients } = get();
     const active = clients.get(serverId);
-    if (!active) return;
+    if (active) {
+      active.client.disconnect();
+      await active.transport.disconnect();
+    }
 
-    active.client.disconnect();
-    await active.transport.disconnect();
-
-    const newClients = new Map(clients);
-    newClients.delete(serverId);
-    const newStatus = new Map(get().status);
-    newStatus.set(serverId, 'disconnected');
-
-    set({ clients: newClients, status: newStatus });
+    set((state) => {
+      const newClients = new Map(state.clients);
+      newClients.delete(serverId);
+      const newStatus = new Map(state.status);
+      newStatus.set(serverId, 'disconnected');
+      const newPending = new Map(state.pendingConnections);
+      newPending.delete(serverId);
+      return { clients: newClients, status: newStatus, pendingConnections: newPending };
+    });
     log.debug('LSP server deactivated', { serverId });
   },
 
@@ -240,11 +248,13 @@ export const useLspStore = create<LspStore>()((set, get) => ({
       await active.transport.disconnect();
       log.debug('LSP server deactivated', { serverId: id });
     }
-    const newStatus = new Map(get().status);
-    for (const id of clients.keys()) {
-      newStatus.set(id, 'disconnected');
-    }
-    set({ clients: new Map(), status: newStatus });
+    set((state) => {
+      const newStatus = new Map(state.status);
+      for (const id of clients.keys()) {
+        newStatus.set(id, 'disconnected');
+      }
+      return { clients: new Map(), status: newStatus, pendingConnections: new Map() };
+    });
   },
 
   addServer: (config) => {
@@ -313,7 +323,7 @@ export const useLspStore = create<LspStore>()((set, get) => ({
         log.debug('Initialized LSP config with defaults');
       }
     } catch (err) {
-      log.error('Failed to load LSP config from backend, using defaults', { error: String(err) });
+      log.error('Failed to load LSP config from backend, using defaults', undefined, { error: String(err) });
       // 降级：使用默认配置
       set({ servers: [...DEFAULT_SERVERS] });
     }
