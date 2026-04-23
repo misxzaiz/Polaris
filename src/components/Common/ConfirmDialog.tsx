@@ -63,7 +63,7 @@ export function ConfirmDialog({
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
       onKeyDown={handleKeyDown}
     >
-      <div className="bg-background-elevated rounded-xl p-6 w-full max-w-md border border-border shadow-glow">
+      <div className="bg-background-elevated rounded-xl p-4 sm:p-6 w-full max-w-md border border-border shadow-glow">
         {title && (
           <h2 className="text-lg font-semibold text-text-primary mb-2">
             {title}
