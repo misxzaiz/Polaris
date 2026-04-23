@@ -25,6 +25,7 @@ pub mod cli_info_service;
 pub use cli_info_service::CliInfoService;
 
 pub mod lsp;
+pub mod lsp_config_repository;
 
 pub mod mcp_manager_service;
 pub use mcp_manager_service::McpManagerService;

@@ -1,15 +1,16 @@
 /*! LSP 语言服务器 Tauri 命令
  *
- * 三个命令覆盖完整生命周期：
- * - lsp_start:  启动语言服务器进程
- * - lsp_send:   发送 JSON-RPC 消息
- * - lsp_stop:   停止语言服务器
+ * 进程管理命令：start/send/stop/list_sessions
+ * 配置管理命令：config_list/config_upsert/config_remove/config_toggle
  */
 
 use tauri::{AppHandle, State};
 
 use crate::error::Result;
+use crate::services::lsp_config_repository::LspServerEntry;
 use crate::AppState;
+
+// ── 进程管理 ──────────────────────────────────────
 
 /// 启动语言服务器进程
 #[tauri::command]
@@ -55,4 +56,46 @@ pub fn lsp_list_sessions(state: State<'_, AppState>) -> Result<Vec<String>> {
         .lock()
         .map_err(|e| crate::error::AppError::StateError(e.to_string()))?;
     Ok(manager.list_sessions())
+}
+
+// ── 配置管理 ──────────────────────────────────────
+
+/// 读取所有 LSP 服务器配置
+#[tauri::command]
+pub fn lsp_config_list(state: State<'_, AppState>) -> Result<Vec<LspServerEntry>> {
+    let repo = state
+        .lsp_config
+        .lock()
+        .map_err(|e| crate::error::AppError::StateError(e.to_string()))?;
+    Ok(repo.list().to_vec())
+}
+
+/// 添加或更新 LSP 服务器配置
+#[tauri::command]
+pub fn lsp_config_upsert(state: State<'_, AppState>, entry: LspServerEntry) -> Result<()> {
+    let mut repo = state
+        .lsp_config
+        .lock()
+        .map_err(|e| crate::error::AppError::StateError(e.to_string()))?;
+    repo.upsert(entry)
+}
+
+/// 删除 LSP 服务器配置
+#[tauri::command]
+pub fn lsp_config_remove(state: State<'_, AppState>, id: String) -> Result<()> {
+    let mut repo = state
+        .lsp_config
+        .lock()
+        .map_err(|e| crate::error::AppError::StateError(e.to_string()))?;
+    repo.remove(&id)
+}
+
+/// 切换 LSP 服务器启用/禁用
+#[tauri::command]
+pub fn lsp_config_toggle(state: State<'_, AppState>, id: String, enabled: bool) -> Result<()> {
+    let mut repo = state
+        .lsp_config
+        .lock()
+        .map_err(|e| crate::error::AppError::StateError(e.to_string()))?;
+    repo.set_enabled(&id, enabled)
 }

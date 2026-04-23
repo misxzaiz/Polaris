@@ -14,6 +14,7 @@ use crate::integrations::IntegrationManager;
 use crate::services::config_store::ConfigStore;
 use crate::services::file_watcher::FileWatcherManager;
 use crate::services::lsp::LspManager;
+use crate::services::lsp_config_repository::LspConfigRepository;
 use crate::services::scheduler_daemon::SchedulerDaemon;
 
 /// 待回答问题信息
@@ -121,6 +122,8 @@ pub struct AppState {
     pub scheduler_daemon: AsyncMutex<Option<SchedulerDaemon>>,
     /// LSP 语言服务器管理器
     pub lsp_manager: Mutex<LspManager>,
+    /// LSP 配置持久化
+    pub lsp_config: Mutex<LspConfigRepository>,
     /// WebSocket 事件广播通道（Web Access Layer）
     pub event_broadcast: broadcast::Sender<String>,
 }
@@ -131,6 +134,10 @@ pub fn create_app_state(
     engine_registry: Arc<AsyncMutex<EngineRegistry>>,
     integration_manager: IntegrationManager,
 ) -> AppState {
+    let config_dir = dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("claude-code-pro");
+
     AppState {
         config_store: Mutex::new(config_store),
         sessions: Arc::new(Mutex::new(HashMap::new())),
@@ -143,6 +150,7 @@ pub fn create_app_state(
         pending_plans: Arc::new(Mutex::new(HashMap::new())),
         scheduler_daemon: AsyncMutex::new(None),
         lsp_manager: Mutex::new(LspManager::new()),
+        lsp_config: Mutex::new(LspConfigRepository::new(&config_dir)),
         event_broadcast: broadcast::channel(256).0,
     }
 }

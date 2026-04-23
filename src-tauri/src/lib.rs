@@ -536,6 +536,10 @@ pub fn run() {
             commands::lsp::lsp_send,
             commands::lsp::lsp_stop,
             commands::lsp::lsp_list_sessions,
+            commands::lsp::lsp_config_list,
+            commands::lsp::lsp_config_upsert,
+            commands::lsp::lsp_config_remove,
+            commands::lsp::lsp_config_toggle,
 
         ])
         .run(tauri::generate_context!())
