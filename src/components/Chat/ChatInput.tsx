@@ -169,9 +169,11 @@ export function ChatInput({
     const suggestionHeight = 320
     const shouldShowAbove = spaceBelow < suggestionHeight
 
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - 300))
+
     return {
       top: shouldShowAbove ? rect.top - suggestionHeight - 8 : rect.bottom + 8,
-      left: rect.left,
+      left,
     }
   }, [])
 
@@ -689,7 +691,7 @@ export function ChatInput({
     <div className="border-t border-border bg-background-elevated relative" ref={containerRef}>
       {/* 问题浮窗 - 定位在输入框上方 */}
       {pendingQuestions.length > 0 && !questionPanelHidden && (
-        <div className="absolute bottom-full left-0 right-0 mb-1 px-3 z-10">
+        <div className="absolute bottom-full left-0 right-0 mb-1 px-2 sm:px-3 z-10">
           <QuestionFloatingPanel
             questions={pendingQuestions}
             onFillAndSend={handleQuestionFillAndSend}
@@ -711,7 +713,7 @@ export function ChatInput({
           onCancel={() => setActiveSnippet(null)}
         />
       )}
-      <div className="p-3">
+      <div className="p-2 sm:p-3">
         {/* 附件预览 */}
         <AttachmentPreview
           attachments={attachments}
@@ -720,7 +722,7 @@ export function ChatInput({
 
         {/* 输入框容器 */}
         <div
-          className="relative flex items-end gap-2 bg-background-surface border border-border rounded-xl p-2 focus-within:ring-2 focus-within:ring-border focus-within:border-primary transition-all shadow-soft hover:shadow-medium"
+          className="relative flex items-end gap-1.5 sm:gap-2 bg-background-surface border border-border rounded-lg sm:rounded-xl p-1.5 sm:p-2 focus-within:ring-2 focus-within:ring-border focus-within:border-primary transition-all shadow-soft hover:shadow-medium"
           onDrop={handleDrop}
           onDragOver={handleDragOver}
         >
@@ -742,10 +744,10 @@ export function ChatInput({
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder={attachments.length > 0 ? t('input.placeholderWithAttachment') : t('input.placeholder')}
-            className="flex-1 px-2 py-1.5 bg-transparent text-text-primary placeholder:text-text-tertiary resize-none outline-none text-sm leading-relaxed"
+            className="flex-1 px-1.5 sm:px-2 py-1 sm:py-1.5 bg-transparent text-text-primary placeholder:text-text-tertiary resize-none outline-none text-sm leading-relaxed"
             disabled={disabled}
-            maxHeight={180}
-            minHeight={36}
+            maxHeight={160}
+            minHeight={40}
           />
 
           {/* 右侧按钮组 - 垂直布局 */}
@@ -754,7 +756,7 @@ export function ChatInput({
             <button
               onClick={openFileDialog}
               disabled={disabled || isStreaming}
-              className="shrink-0 p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors disabled:opacity-50"
+              className="shrink-0 p-2 sm:p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors disabled:opacity-50"
               title={t('input.addAttachment')}
             >
               <IconPaperclip size={18} />
@@ -764,7 +766,7 @@ export function ChatInput({
             {isStreaming && onInterrupt ? (
               <button
                 onClick={onInterrupt}
-                className="shrink-0 p-1.5 rounded-lg bg-danger text-white hover:bg-danger-hover transition-colors"
+                className="shrink-0 p-2 sm:p-1.5 rounded-lg bg-danger text-white hover:bg-danger-hover transition-colors"
                 title={t('input.interrupt')}
               >
                 <IconStop size={18} />
@@ -773,7 +775,7 @@ export function ChatInput({
               <button
                 onClick={handleSend}
                 disabled={!canSend}
-                className="shrink-0 p-1.5 rounded-lg bg-primary text-white hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="shrink-0 p-2 sm:p-1.5 rounded-lg bg-primary text-white hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 title={t('input.send')}
               >
                 <IconSend size={18} />
