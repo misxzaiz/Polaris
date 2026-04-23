@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 // =============================================================================
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "lowercase")]
 pub enum Complexity {
     #[default]
     Medium,
@@ -19,7 +19,7 @@ pub enum Complexity {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "lowercase")]
 pub enum ChangeFrequency {
     #[default]
     Medium,
@@ -28,6 +28,7 @@ pub enum ChangeFrequency {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
 pub enum Confidence {
     Green,
     Yellow,
@@ -38,6 +39,7 @@ pub enum Confidence {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
 pub enum Severity {
     Low,
     #[default]
