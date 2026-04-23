@@ -26,6 +26,7 @@ import { AdvancedTab } from './tabs/AdvancedTab';
 import { AssistantTab } from './tabs/AssistantTab';
 import { AutoModeTab } from './tabs/AutoModeTab';
 import { McpSettingsTab } from '../Mcp/McpSettingsTab';
+import { LspTab } from './tabs/LspTab';
 import { createLogger } from '../../utils/logger';
 import type { Config } from '../../types';
 
@@ -52,6 +53,7 @@ const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'speech': 'nav.speech',
   'assistant': 'nav.assistant',
   'mcp': 'nav.mcp',
+  'lsp': 'nav.lsp',
   'advanced': 'nav.advanced',
 };
 
@@ -252,6 +254,10 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
 
               {activeTab === 'mcp' && (
                 <McpSettingsTab />
+              )}
+
+              {activeTab === 'lsp' && (
+                <LspTab />
               )}
             </div>
 

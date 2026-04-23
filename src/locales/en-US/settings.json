@@ -19,7 +19,8 @@
     "assistant": "AI Assistant",
     "advanced": "Advanced",
     "autoMode": "Auto Mode",
-    "mcp": "MCP Servers"
+    "mcp": "MCP Servers",
+    "lsp": "Language Servers"
   },
   "messages": {
     "saved": "Saved",

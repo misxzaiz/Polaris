@@ -13,11 +13,10 @@ import {
   IconMic,
   IconMessageSquareText,
 } from '../Common/Icons';
-import { Sparkles, Shield, Cpu } from 'lucide-react';
+import { Sparkles, Shield, Cpu, Code2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 export type SettingsTabId =
-  | 'auto-mode'
   | 'general'
   | 'system-prompt'
   | 'prompt-snippet'
@@ -30,6 +29,8 @@ export type SettingsTabId =
   | 'speech'
   | 'assistant'
   | 'mcp'
+  | 'lsp'
+  | 'auto-mode'
   | 'advanced';
 
 export interface SettingsNavItem {
@@ -46,7 +47,6 @@ interface SettingsSidebarProps {
 }
 
 const NAV_ITEMS: SettingsNavItem[] = [
-  { id: 'auto-mode', icon: <Shield size={16} />, labelKey: 'nav.autoMode' },
   { id: 'general', icon: <IconGeneral size={16} />, labelKey: 'nav.general' },
   { id: 'system-prompt', icon: <IconMessageSquareText size={16} />, labelKey: 'nav.systemPrompt' },
   { id: 'prompt-snippet', icon: <IconMessageSquareText size={16} />, labelKey: 'nav.promptSnippet' },
@@ -58,7 +58,9 @@ const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'feishu', icon: <IconBot size={16} />, labelKey: 'nav.feishu' },
   { id: 'speech', icon: <IconMic size={16} />, labelKey: 'nav.speech' },
   { id: 'assistant', icon: <Sparkles size={16} />, labelKey: 'nav.assistant' },
-  { id: 'mcp' as const, icon: <Cpu size={16} />, labelKey: 'nav.mcp' },
+  { id: 'mcp', icon: <Cpu size={16} />, labelKey: 'nav.mcp' },
+  { id: 'lsp', icon: <Code2 size={16} />, labelKey: 'nav.lsp' },
+  { id: 'auto-mode', icon: <Shield size={16} />, labelKey: 'nav.autoMode' },
   // { id: 'advanced', icon: <IconSettings size={16} />, labelKey: 'nav.advanced' },
 ];
 

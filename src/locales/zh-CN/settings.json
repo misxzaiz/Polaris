@@ -19,7 +19,8 @@
     "assistant": "AI 助手",
     "advanced": "高级",
     "autoMode": "自动模式",
-    "mcp": "MCP 服务器"
+    "mcp": "MCP 服务器",
+    "lsp": "语言服务器"
   },
   "messages": {
     "saved": "已保存",
