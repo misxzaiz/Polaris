@@ -3,20 +3,25 @@ use axum::response::IntoResponse;
 use axum::Json;
 use std::sync::Arc;
 
+use crate::models::config::Config;
 use crate::AppState;
 use super::super::error::WebError;
 
 pub async fn handle_get_settings(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, WebError> {
-    // TODO: route to get_config
-    Ok(Json(serde_json::json!({})))
+    let config_store = state.config_store.lock()
+        .map_err(|e| WebError::Internal(e.to_string()))?;
+    let config = config_store.get().clone();
+    Ok(Json(config))
 }
 
 pub async fn handle_update_settings(
-    State(_state): State<Arc<AppState>>,
-    Json(_req): Json<serde_json::Value>,
+    State(state): State<Arc<AppState>>,
+    Json(new_config): Json<Config>,
 ) -> Result<impl IntoResponse, WebError> {
-    // TODO: route to update_config
+    let mut config_store = state.config_store.lock()
+        .map_err(|e| WebError::Internal(e.to_string()))?;
+    config_store.update(new_config)?;
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
