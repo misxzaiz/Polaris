@@ -553,6 +553,200 @@ async fn cors_options_ok() {
 }
 
 // ============================================================================
+// Extended Coverage Tests
+// ============================================================================
+
+#[tokio::test]
+async fn reject_plan_broadcasts_event() {
+    let state = create_test_state();
+    let mut rx = state.event_broadcast.subscribe();
+
+    use crate::state::{PendingPlan, PlanApprovalStatus};
+    state.pending_plans.lock().unwrap().insert(
+        "plan-rej-bc".to_string(),
+        PendingPlan {
+            plan_id: "plan-rej-bc".to_string(),
+            session_id: "s-rej-bc".to_string(),
+            title: None,
+            description: None,
+            status: PlanApprovalStatus::Pending,
+            feedback: None,
+        },
+    );
+
+    let app = create_router(state.clone());
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/api/chat/reject-plan")
+        .header(AUTHORIZATION, format!("Bearer {}", TEST_TOKEN))
+        .header(CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            r#"{"sessionId":"s-rej-bc","planId":"plan-rej-bc","feedback":"bad plan"}"#,
+        ))
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let event = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv()).await;
+    assert!(event.is_ok());
+    let msg = event.unwrap().unwrap();
+    let json: serde_json::Value = serde_json::from_str(&msg).unwrap();
+    assert_eq!(json["contextId"], "main");
+    assert_eq!(json["payload"]["planId"], "plan-rej-bc");
+}
+
+#[tokio::test]
+async fn session_list_requires_auth() {
+    let app = test_app();
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/api/sessions")
+        .body(Body::empty())
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn session_list_with_valid_token() {
+    let app = test_app();
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/api/sessions")
+        .header(AUTHORIZATION, format!("Bearer {}", TEST_TOKEN))
+        .body(Body::empty())
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    // 200 or 500 depending on whether claude config dir exists, but NOT 401
+    assert_ne!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn chat_interrupt_requires_auth() {
+    let app = test_app();
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/api/chat/interrupt")
+        .header(CONTENT_TYPE, "application/json")
+        .body(Body::from(r#"{"sessionId":"s1"}"#))
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn chat_history_requires_auth() {
+    let app = test_app();
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/api/chat/history/test-session-id")
+        .body(Body::empty())
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn error_response_json_format() {
+    let app = test_app();
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/api/chat/send")
+        .body(Body::empty())
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+
+    let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(json.get("error").is_some());
+    assert_eq!(json["error"], "Unauthorized");
+}
+
+#[tokio::test]
+async fn static_files_skip_auth() {
+    let app = test_app();
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/index.html")
+        .body(Body::empty())
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    // Static file serving should skip auth middleware entirely
+    // May be 200 (file exists) or 404 (SPA fallback missing in test), but NOT 401
+    assert_ne!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn query_param_token_auth() {
+    let app = test_app();
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri(format!("/api/settings?token={}", TEST_TOKEN))
+        .body(Body::empty())
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    // Should pass auth via query param
+    assert_ne!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn query_param_wrong_token_rejected() {
+    let app = test_app();
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/api/settings?token=wrong-token")
+        .body(Body::empty())
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn session_delete_requires_auth() {
+    let app = test_app();
+    let req = Request::builder()
+        .method(Method::DELETE)
+        .uri("/api/sessions/test-id")
+        .body(Body::empty())
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn answer_question_without_pending_returns_ok() {
+    let app = test_app();
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/api/chat/answer-question")
+        .header(AUTHORIZATION, format!("Bearer {}", TEST_TOKEN))
+        .header(CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            r#"{"sessionId":"s1","callId":"nonexistent","selected":["a"]}"#,
+        ))
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn approve_plan_without_pending_returns_ok() {
+    let app = test_app();
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/api/chat/approve-plan")
+        .header(AUTHORIZATION, format!("Bearer {}", TEST_TOKEN))
+        .header(CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            r#"{"sessionId":"s1","planId":"nonexistent"}"#,
+        ))
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
+// ============================================================================
 // Dual Emission Structural Verification
 // ============================================================================
 
