@@ -61,6 +61,7 @@ pub fn is_auth_required(path: &str, method: &Method) -> bool {
     if path == "/api/auth/token" && method == Method::POST {
         return false;
     }
+    // Token regeneration requires auth (not bypassed)
     true
 }
 

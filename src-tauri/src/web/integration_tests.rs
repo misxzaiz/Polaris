@@ -218,6 +218,39 @@ async fn auth_token_exchange_missing_field() {
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
 }
 
+#[tokio::test]
+async fn auth_regenerate_requires_valid_token() {
+    let app = test_app();
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/regenerate")
+        .header(AUTHORIZATION, "Bearer wrong-token")
+        .body(Body::empty())
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn auth_regenerate_generates_new_token() {
+    let app = test_app();
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/regenerate")
+        .header(AUTHORIZATION, format!("Bearer {}", TEST_TOKEN))
+        .body(Body::empty())
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(json["token"].is_string());
+    let new_token = json["token"].as_str().unwrap();
+    assert_ne!(new_token, TEST_TOKEN);
+    assert_eq!(new_token.len(), 32);
+}
+
 // ============================================================================
 // Settings API Tests
 // ============================================================================

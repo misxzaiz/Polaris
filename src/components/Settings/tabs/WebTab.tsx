@@ -4,6 +4,7 @@
 
 import { useTranslation } from 'react-i18next';
 import { useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import type { Config, WebConfig } from '../../../types';
 
 interface WebTabProps {
@@ -18,9 +19,23 @@ export function WebTab({ config, onConfigChange, loading }: WebTabProps) {
   const { t } = useTranslation('settings');
   const web = config.web ?? DEFAULT_WEB_CONFIG;
   const [tokenVisible, setTokenVisible] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   const updateWeb = (patch: Partial<typeof web>) => {
     onConfigChange({ ...config, web: { ...web, ...patch } });
+  };
+
+  const handleRegenerate = async () => {
+    if (!confirm(t('web.tokenRegenerateConfirm'))) return;
+    setRegenerating(true);
+    try {
+      const result = await invoke<{ token: string }>('regenerate_web_token');
+      updateWeb({ token: result.token });
+    } catch {
+      // fallback: ignore
+    } finally {
+      setRegenerating(false);
+    }
   };
 
   return (
@@ -113,6 +128,14 @@ export function WebTab({ config, onConfigChange, loading }: WebTabProps) {
                 className="px-3 py-2 text-xs text-text-secondary hover:text-text-primary border border-border rounded-lg"
               >
                 {tokenVisible ? t('web.tokenHide') : t('web.tokenShow')}
+              </button>
+              <button
+                type="button"
+                onClick={handleRegenerate}
+                disabled={regenerating || loading || !web.enabled}
+                className="px-3 py-2 text-xs text-text-secondary hover:text-red-400 border border-border rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {regenerating ? '...' : t('web.tokenRegenerate')}
               </button>
             </div>
             <p className="mt-2 text-xs text-text-tertiary">

@@ -32,6 +32,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         // Auth
         .route("/auth/verify", get(api::auth::handle_verify_token))
         .route("/auth/token", post(api::auth::handle_token_exchange))
+        .route("/auth/regenerate", post(api::auth::handle_regenerate_token))
         // WebSocket
         .route("/ws", get(api::ws::ws_handler));
 

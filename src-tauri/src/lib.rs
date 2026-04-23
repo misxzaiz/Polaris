@@ -129,6 +129,19 @@ fn update_config(config: Config, state: tauri::State<AppState>) -> Result<()> {
     store.update(config)
 }
 
+/// 重新生成 Web 访问 Token
+#[tauri::command]
+fn regenerate_web_token(state: tauri::State<AppState>) -> std::result::Result<String, error::AppError> {
+    let new_token = crate::web::auth::generate_token();
+    let mut store = state.config_store.lock()
+        .map_err(|e| error::AppError::Unknown(e.to_string()))?;
+    let mut config = store.get().clone();
+    config.web.token = Some(new_token.clone());
+    store.update(config)
+        .map_err(|e| error::AppError::Unknown(e.to_string()))?;
+    Ok(new_token)
+}
+
 /// 设置工作目录
 #[tauri::command]
 fn set_work_dir(path: Option<String>, state: tauri::State<AppState>) -> Result<()> {
@@ -297,6 +310,7 @@ pub fn run() {
             // 配置相关
             get_config,
             update_config,
+            regenerate_web_token,
             set_work_dir,
             set_claude_cmd,
             find_claude_paths,
