@@ -10,6 +10,11 @@ import { createLogger } from '../../utils/logger';
 
 const log = createLogger('HttpTransport');
 
+/** Reconnection config */
+const RECONNECT_BASE_MS = 1000;
+const RECONNECT_MAX_MS = 30000;
+const RECONNECT_JITTER = 0.3;
+
 /** Tauri 命令名 → HTTP 路由映射 */
 function commandToPath(command: string): string {
   // Tauri command 使用 snake_case，HTTP 路由使用 kebab-case
@@ -53,6 +58,13 @@ function isDeleteCommand(command: string, args?: Record<string, unknown>): boole
   return command === 'delete_session' && !!args?.sessionId;
 }
 
+/** Compute backoff delay with exponential increase and jitter */
+function backoffDelay(attempt: number): number {
+  const base = Math.min(RECONNECT_BASE_MS * Math.pow(2, attempt), RECONNECT_MAX_MS);
+  const jitter = base * RECONNECT_JITTER * Math.random();
+  return base + jitter;
+}
+
 /**
  * 创建 HTTP 传输适配器
  *
@@ -66,6 +78,8 @@ export function createHttpTransport(
   const wsUrl = baseUrl.replace(/^http/, 'ws');
   let ws: WebSocket | null = null;
   let wsConnecting: Promise<void> | null = null;
+  let reconnectAttempt = 0;
+  let intentionalClose = false;
   const listeners = new Map<string, Set<(payload: unknown) => void>>();
 
   /** Send a JSON message to the WebSocket if connected */
@@ -85,8 +99,21 @@ export function createHttpTransport(
     }
   }
 
-  /** 懒初始化 WebSocket 连接 */
-  function ensureWs(): Promise<void> {
+  /** Schedule an automatic reconnect with exponential backoff */
+  function scheduleReconnect(): void {
+    if (intentionalClose) return;
+    const delay = backoffDelay(reconnectAttempt);
+    reconnectAttempt++;
+    log.warn(`WebSocket disconnected, reconnecting in ${Math.round(delay)}ms (attempt ${reconnectAttempt})`);
+    setTimeout(() => {
+      if (!intentionalClose) {
+        connectWs().catch(() => { /* scheduleReconnect called on close */ });
+      }
+    }, delay);
+  }
+
+  /** Establish WebSocket connection and wire up event handlers */
+  function connectWs(): Promise<void> {
     if (ws && ws.readyState === WebSocket.OPEN) return Promise.resolve();
     if (wsConnecting) return wsConnecting;
 
@@ -99,6 +126,7 @@ export function createHttpTransport(
         socket.removeEventListener('error', errorHandler);
         ws = socket;
         wsConnecting = null;
+        reconnectAttempt = 0;
         // Re-sync subscriptions after (re)connect
         syncSubscriptions();
         resolve();
@@ -127,6 +155,7 @@ export function createHttpTransport(
       socket.addEventListener('close', () => {
         ws = null;
         wsConnecting = null;
+        scheduleReconnect();
       });
     });
 
@@ -178,7 +207,7 @@ export function createHttpTransport(
     },
 
     async listen<T>(event: string, handler: (payload: T) => void): Promise<() => void> {
-      await ensureWs();
+      await connectWs();
 
       const wasEmpty = !listeners.has(event) || listeners.get(event)!.size === 0;
       if (!listeners.has(event)) listeners.set(event, new Set());

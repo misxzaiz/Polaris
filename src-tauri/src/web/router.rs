@@ -11,8 +11,22 @@ use super::auth;
 use super::api;
 use super::middleware::request_trace;
 
+/// Resolve the frontend dist directory for static file serving.
+///
+/// Priority:
+/// 1. `resource_dir` set by Tauri during setup (production: points to bundled assets)
+/// 2. `../dist` relative to CWD (development: works when run from project root)
+fn resolve_dist_dir(state: &AppState) -> std::path::PathBuf {
+    state.resource_dir.get()
+        .and_then(|opt| opt.as_ref())
+        .map(|p| p.join("dist"))
+        .unwrap_or_else(|| std::path::PathBuf::from("../dist"))
+}
+
 /// Build the complete axum Router with API routes, auth middleware, CORS, and SPA fallback.
 pub fn create_router(state: Arc<AppState>) -> Router {
+    let dist_dir = resolve_dist_dir(&state);
+
     // LAN access: allow any origin but restrict methods/headers to what we use
     let cors = CorsLayer::new()
         .allow_origin(tower_http::cors::Any)
@@ -41,12 +55,14 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         // WebSocket
         .route("/ws", get(api::ws::ws_handler));
 
+    let index_html = dist_dir.join("index.html");
+
     Router::new()
         .nest("/api", api_routes)
         // SPA fallback: serve static files for non-/api paths
         .fallback_service(
-            ServeDir::new("../dist")
-                .not_found_service(ServeFile::new("../dist/index.html"))
+            ServeDir::new(&dist_dir)
+                .not_found_service(ServeFile::new(&index_html))
         )
         .layer(axum::middleware::from_fn_with_state(state.clone(), auth::auth_middleware))
         .layer(axum::middleware::from_fn(request_trace))
