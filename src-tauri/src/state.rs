@@ -129,6 +129,8 @@ pub struct AppState {
     /// Tauri AppHandle — set once during setup, used by Web API handlers
     /// to emit events back to the desktop webview (dual emission).
     pub app_handle: OnceLock<tauri::AppHandle>,
+    /// Application start instant — used by health check to report uptime.
+    pub start_time: Option<std::time::Instant>,
 }
 
 /// 创建应用状态
@@ -156,6 +158,7 @@ pub fn create_app_state(
         lsp_config: Mutex::new(LspConfigRepository::new(&config_dir)),
         event_broadcast: broadcast::channel(256).0,
         app_handle: OnceLock::new(),
+        start_time: Some(std::time::Instant::now()),
     }
 }
 
@@ -190,6 +193,7 @@ impl AppState {
             lsp_config: Mutex::new(LspConfigRepository::new(&config_dir)),
             event_broadcast: self.event_broadcast.clone(),
             app_handle,
+            start_time: self.start_time,
         }
     }
 }

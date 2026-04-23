@@ -57,6 +57,10 @@ pub fn is_auth_required(path: &str, method: &Method) -> bool {
     if path == "/api/auth/verify" {
         return false;
     }
+    // Health check endpoint
+    if path == "/api/health" {
+        return false;
+    }
     // Token exchange endpoint
     if path == "/api/auth/token" && method == Method::POST {
         return false;
@@ -142,6 +146,11 @@ mod tests {
     #[test]
     fn auth_not_required_for_verify_endpoint() {
         assert!(!is_auth_required("/api/auth/verify", &Method::GET));
+    }
+
+    #[test]
+    fn auth_not_required_for_health() {
+        assert!(!is_auth_required("/api/health", &Method::GET));
     }
 
     #[test]

@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use axum::middleware;
 use axum::routing::{delete, get, post};
 use axum::Router;
 use axum::http::Method;
@@ -10,6 +9,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use crate::AppState;
 use super::auth;
 use super::api;
+use super::middleware::request_trace;
 
 /// Build the complete axum Router with API routes, auth middleware, CORS, and SPA fallback.
 pub fn create_router(state: Arc<AppState>) -> Router {
@@ -36,6 +36,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/auth/verify", get(api::auth::handle_verify_token))
         .route("/auth/token", post(api::auth::handle_token_exchange))
         .route("/auth/regenerate", post(api::auth::handle_regenerate_token))
+        // Health
+        .route("/health", get(api::health::handle_health))
         // WebSocket
         .route("/ws", get(api::ws::ws_handler));
 
@@ -46,7 +48,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             ServeDir::new("../dist")
                 .not_found_service(ServeFile::new("../dist/index.html"))
         )
-        .layer(middleware::from_fn_with_state(state.clone(), auth::auth_middleware))
+        .layer(axum::middleware::from_fn_with_state(state.clone(), auth::auth_middleware))
+        .layer(axum::middleware::from_fn(request_trace))
         .layer(cors)
         .with_state(state)
 }

@@ -47,6 +47,7 @@ fn create_test_state() -> Arc<AppState> {
         lsp_config: Mutex::new(LspConfigRepository::new(&std::path::PathBuf::from("/tmp"))),
         event_broadcast: tx,
         app_handle: OnceLock::new(),
+        start_time: Some(std::time::Instant::now()),
     })
 }
 
@@ -1414,4 +1415,40 @@ async fn broadcast_event_contains_correct_fields() {
     assert_eq!(json["callId"], "call-fields");
     assert!(json["answer"]["selected"].is_array());
     assert_eq!(json["answer"]["selected"].as_array().unwrap().len(), 2);
+}
+
+// ============================================================================
+// Health Check Tests
+// ============================================================================
+
+#[tokio::test]
+async fn health_check_returns_ok_without_auth() {
+    let app = test_app();
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/api/health")
+        .body(Body::empty())
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["status"], "ok");
+    assert!(json["version"].is_string());
+    assert!(json["uptime_seconds"].is_number());
+}
+
+#[tokio::test]
+async fn health_check_version_matches_crate() {
+    let app = test_app();
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/api/health")
+        .body(Body::empty())
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["version"], env!("CARGO_PKG_VERSION"));
 }
