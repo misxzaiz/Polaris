@@ -26,7 +26,7 @@ export const EmptyState = memo(function EmptyState() {
       </p>
 
       {/* 功能列表 */}
-      <div className="grid grid-cols-3 gap-4 max-w-lg">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-lg w-full">
         <div className="flex flex-col items-center gap-2 p-4 rounded-xl bg-background-surface border border-border shadow-soft hover:shadow-medium hover:border-border-strong transition-all">
           <div className="w-8 h-8 rounded-lg bg-success-faint flex items-center justify-center">
             <FolderOpen className="w-4 h-4 text-success" />

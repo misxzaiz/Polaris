@@ -239,7 +239,7 @@ function App() {
         {showSessionHistory && (
           <div
             className="fixed z-50 bg-[#1A1A1F] border border-border rounded-l-xl shadow-xl animate-in slide-in-from-right duration-200"
-            style={{ top: '10%', right: '0', height: '80%', width: '400px' }}
+            style={{ top: '10%', right: '0', height: '80%', width: 'min(400px, 90vw)' }}
           >
             <SessionHistoryPanel onClose={toggleSessionHistory} />
           </div>
