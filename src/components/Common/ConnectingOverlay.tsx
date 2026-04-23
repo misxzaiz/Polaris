@@ -64,14 +64,14 @@ export function ConnectingOverlay() {
             {t('connection.detectedVersion', { version: healthStatus.claudeVersion })}
           </p>
         ) : isFailed ? (
-          <div className="text-xs text-text-tertiary space-y-3 max-w-md">
+          <div className="text-xs text-text-tertiary space-y-3 max-w-md px-4">
             <p className="text-danger font-medium">{error || t('connection.cliNotFound')}</p>
             {config?.claudeCode?.cliPath && (
-              <p>{t('connection.currentPath')} <code className="bg-background-surface px-1 py-0.5 rounded">{config.claudeCode.cliPath}</code></p>
+              <p>{t('connection.currentPath')} <code className="bg-background-surface px-1 py-0.5 rounded break-all">{config.claudeCode.cliPath}</code></p>
             )}
 
             {/* 详细诊断信息 */}
-            <div className="bg-background-surface p-3 rounded-lg space-y-2">
+            <div className="bg-background-surface p-3 rounded-lg space-y-2 overflow-x-auto">
               <p className="font-medium text-text-secondary">{t('connection.diagnosis')}</p>
               <ul className="space-y-1 list-disc list-inside">
                 <li>{t('connection.diagnosis1')}</li>
@@ -82,12 +82,12 @@ export function ConnectingOverlay() {
             </div>
 
             {/* 引导式帮助 */}
-            <div className="bg-background-surface p-3 rounded-lg space-y-2">
+            <div className="bg-background-surface p-3 rounded-lg space-y-2 overflow-x-auto">
               <p className="font-medium text-text-secondary">{t('connection.solutions')}</p>
               <ol className="space-y-1 list-decimal list-inside">
                 <li>{t('connection.solution1')} <code className="px-1 py-0.5 rounded">claude --version</code></li>
                 <li>{t('connection.solution2')} <code className="px-1 py-0.5 rounded">{isWindows ? 'where claude' : 'which claude'}</code></li>
-                <li>{t('connection.solution4')} <code className="px-1 py-0.5 rounded">npm install -g @anthropic-ai/claude-3-dev</code></li>
+                <li>{t('connection.solution4')} <code className="px-1 py-0.5 rounded break-all">npm install -g @anthropic-ai/claude-3-dev</code></li>
               </ol>
             </div>
           </div>
