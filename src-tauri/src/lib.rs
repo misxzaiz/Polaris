@@ -270,8 +270,11 @@ pub fn run() {
             integration_manager,
         ))
         .setup(|app| {
-            // Conditionally start the web server based on WebConfig.enabled
+            // Store AppHandle in AppState for dual emission (Web API → Tauri webview)
             let state = app.state::<AppState>();
+            let _ = state.app_handle.set(app.handle().clone());
+
+            // Conditionally start the web server based on WebConfig.enabled
             let config = {
                 let store = state.config_store.lock()
                     .unwrap_or_else(|e: std::sync::PoisonError<std::sync::MutexGuard<'_, ConfigStore>>| e.into_inner());

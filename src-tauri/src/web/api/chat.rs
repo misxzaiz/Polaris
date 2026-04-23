@@ -3,6 +3,7 @@ use axum::response::IntoResponse;
 use axum::Json;
 use serde::Deserialize;
 use std::sync::Arc;
+use tauri::Emitter;
 
 use crate::commands::chat::{ChatCallbacks, ChatRequestOptions, AppPaths, start_chat_inner, continue_chat_inner, interrupt_chat_inner};
 use crate::state::QuestionAnswer;
@@ -29,8 +30,14 @@ pub async fn handle_send_message(
 
     let emit_event = {
         let tx = state.event_broadcast.clone();
+        let app_handle = state.app_handle.get().cloned();
         Arc::new(move |json: serde_json::Value| {
+            // WebSocket broadcast
             let _ = tx.send(json.to_string());
+            // Tauri webview emission (dual emission)
+            if let Some(ref handle) = app_handle {
+                let _ = handle.emit("chat-event", &json);
+            }
         })
     };
     let notify_complete = Arc::new(|| {});
@@ -128,7 +135,12 @@ pub async fn handle_answer_question(
         "callId": req.call_id,
         "answer": answer,
     });
+
+    // Dual emission: broadcast to WS clients + emit to Tauri webview
     let _ = state.event_broadcast.send(event.to_string());
+    if let Some(handle) = state.app_handle.get() {
+        let _ = handle.emit("chat-event", &event);
+    }
 
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
@@ -161,7 +173,12 @@ pub async fn handle_approve_plan(
         "contextId": "main",
         "payload": event
     });
+
+    // Dual emission: broadcast to WS clients + emit to Tauri webview
     let _ = state.event_broadcast.send(payload.to_string());
+    if let Some(handle) = state.app_handle.get() {
+        let _ = handle.emit("chat-event", &payload);
+    }
 
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
@@ -196,7 +213,12 @@ pub async fn handle_reject_plan(
         "contextId": "main",
         "payload": event
     });
+
+    // Dual emission: broadcast to WS clients + emit to Tauri webview
     let _ = state.event_broadcast.send(payload.to_string());
+    if let Some(handle) = state.app_handle.get() {
+        let _ = handle.emit("chat-event", &payload);
+    }
 
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }

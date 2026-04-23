@@ -599,9 +599,11 @@ pub async fn start_chat(
         resource_dir: window.path().resource_dir().ok(),
     };
     let window_clone = window.clone();
+    let broadcast_tx = state.event_broadcast.clone();
     let callbacks = ChatCallbacks {
         emit_event: Arc::new(move |json: serde_json::Value| {
             let _ = window_clone.emit("chat-event", &json);
+            let _ = broadcast_tx.send(json.to_string());
         }),
         notify_complete: Arc::new(move || {
             notify_ai_reply_complete(&window);
@@ -626,9 +628,11 @@ pub async fn continue_chat(
         resource_dir: window.path().resource_dir().ok(),
     };
     let window_clone = window.clone();
+    let broadcast_tx = state.event_broadcast.clone();
     let callbacks = ChatCallbacks {
         emit_event: Arc::new(move |json: serde_json::Value| {
             let _ = window_clone.emit("chat-event", &json);
+            let _ = broadcast_tx.send(json.to_string());
         }),
         notify_complete: Arc::new(move || {
             notify_ai_reply_complete(&window);
@@ -1322,6 +1326,9 @@ pub async fn answer_question(
     window.emit("chat-event", &event)
         .map_err(|e| AppError::ProcessError(format!("发送事件失败: {}", e)))?;
 
+    // Dual emission: also broadcast to WebSocket clients
+    let _ = state.event_broadcast.send(event.to_string());
+
     tracing::info!("[answer_question] 答案已提交，事件已发送");
 
     Ok(())
@@ -1438,11 +1445,15 @@ pub async fn approve_plan(
     // 发送事件通知前端计划已批准
     let event = PlanApprovalResultEvent::new(&session_id, &plan_id, true);
 
-    window.emit("chat-event", &serde_json::json!({
+    let payload = serde_json::json!({
         "contextId": "main",
         "payload": event
-    }))
-    .map_err(|e| AppError::ProcessError(format!("发送事件失败: {}", e)))?;
+    });
+    window.emit("chat-event", &payload)
+        .map_err(|e| AppError::ProcessError(format!("发送事件失败: {}", e)))?;
+
+    // Dual emission: also broadcast to WebSocket clients
+    let _ = state.event_broadcast.send(payload.to_string());
 
     tracing::info!("[approve_plan] 计划已批准，事件已发送");
 
@@ -1482,11 +1493,15 @@ pub async fn reject_plan(
     let event = PlanApprovalResultEvent::new(&session_id, &plan_id, false)
         .with_feedback(feedback.unwrap_or_default());
 
-    window.emit("chat-event", &serde_json::json!({
+    let payload = serde_json::json!({
         "contextId": "main",
         "payload": event
-    }))
-    .map_err(|e| AppError::ProcessError(format!("发送事件失败: {}", e)))?;
+    });
+    window.emit("chat-event", &payload)
+        .map_err(|e| AppError::ProcessError(format!("发送事件失败: {}", e)))?;
+
+    // Dual emission: also broadcast to WebSocket clients
+    let _ = state.event_broadcast.send(payload.to_string());
 
     tracing::info!("[reject_plan] 计划已拒绝，事件已发送");
 
