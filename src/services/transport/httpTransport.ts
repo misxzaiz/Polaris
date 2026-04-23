@@ -68,6 +68,23 @@ export function createHttpTransport(
   let wsConnecting: Promise<void> | null = null;
   const listeners = new Map<string, Set<(payload: unknown) => void>>();
 
+  /** Send a JSON message to the WebSocket if connected */
+  function sendWsMsg(obj: Record<string, unknown>): void {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(obj));
+    }
+  }
+
+  /** Track which event types have been subscribed on the server */
+  function syncSubscriptions(): void {
+    const events = Array.from(listeners.keys()).filter(
+      (key) => (listeners.get(key)?.size ?? 0) > 0
+    );
+    if (events.length > 0) {
+      sendWsMsg({ type: 'subscribe', events });
+    }
+  }
+
   /** 懒初始化 WebSocket 连接 */
   function ensureWs(): Promise<void> {
     if (ws && ws.readyState === WebSocket.OPEN) return Promise.resolve();
@@ -82,6 +99,8 @@ export function createHttpTransport(
         socket.removeEventListener('error', errorHandler);
         ws = socket;
         wsConnecting = null;
+        // Re-sync subscriptions after (re)connect
+        syncSubscriptions();
         resolve();
       };
 
@@ -161,11 +180,24 @@ export function createHttpTransport(
     async listen<T>(event: string, handler: (payload: T) => void): Promise<() => void> {
       await ensureWs();
 
+      const wasEmpty = !listeners.has(event) || listeners.get(event)!.size === 0;
       if (!listeners.has(event)) listeners.set(event, new Set());
       listeners.get(event)!.add(handler as (p: unknown) => void);
 
+      // Subscribe on server when first handler for this event type is registered
+      if (wasEmpty) {
+        sendWsMsg({ type: 'subscribe', events: [event] });
+      }
+
       return () => {
-        listeners.get(event)?.delete(handler as (p: unknown) => void);
+        const set = listeners.get(event);
+        if (set) {
+          set.delete(handler as (p: unknown) => void);
+          // Optionally unsubscribe when no more handlers for this event type
+          if (set.size === 0) {
+            sendWsMsg({ type: 'unsubscribe', events: [event] });
+          }
+        }
       };
     },
   };
