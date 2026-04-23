@@ -718,7 +718,7 @@ async fn session_delete_requires_auth() {
 }
 
 #[tokio::test]
-async fn answer_question_without_pending_returns_ok() {
+async fn answer_question_without_pending_returns_not_found() {
     let app = test_app();
     let req = Request::builder()
         .method(Method::POST)
@@ -730,11 +730,11 @@ async fn answer_question_without_pending_returns_ok() {
         ))
         .unwrap();
     let res = app.oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
-async fn approve_plan_without_pending_returns_ok() {
+async fn approve_plan_without_pending_returns_not_found() {
     let app = test_app();
     let req = Request::builder()
         .method(Method::POST)
@@ -746,7 +746,23 @@ async fn approve_plan_without_pending_returns_ok() {
         ))
         .unwrap();
     let res = app.oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn reject_plan_without_pending_returns_not_found() {
+    let app = test_app();
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/api/chat/reject-plan")
+        .header(AUTHORIZATION, format!("Bearer {}", TEST_TOKEN))
+        .header(CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            r#"{"sessionId":"s1","planId":"nonexistent"}"#,
+        ))
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
 }
 
 // ============================================================================

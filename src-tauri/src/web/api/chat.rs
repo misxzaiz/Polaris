@@ -126,6 +126,7 @@ pub struct AnswerQuestionRequest {
 }
 
 /// Answer a pending AI question (tool-use confirmation, choice selection).
+/// Returns 404 if the call_id does not exist in pending questions.
 pub async fn handle_answer_question(
     State(state): State<Arc<AppState>>,
     Json(req): Json<AnswerQuestionRequest>,
@@ -138,10 +139,11 @@ pub async fn handle_answer_question(
     {
         let mut pending = state.pending_questions.lock()
             .map_err(|e| WebError::Internal(e.to_string()))?;
-        if let Some(question) = pending.get_mut(&req.call_id) {
-            use crate::state::QuestionStatus;
-            question.status = QuestionStatus::Answered;
-        }
+        let Some(question) = pending.get_mut(&req.call_id) else {
+            return Err(WebError::NotFound(format!("No pending question found for callId: {}", req.call_id)));
+        };
+        use crate::state::QuestionStatus;
+        question.status = QuestionStatus::Answered;
     }
 
     let event = serde_json::json!({
@@ -165,6 +167,7 @@ pub struct ApprovePlanRequest {
 }
 
 /// Approve a pending plan for execution.
+/// Returns 404 if the plan_id does not exist in pending plans.
 pub async fn handle_approve_plan(
     State(state): State<Arc<AppState>>,
     Json(req): Json<ApprovePlanRequest>,
@@ -175,10 +178,11 @@ pub async fn handle_approve_plan(
     {
         let mut pending = state.pending_plans.lock()
             .map_err(|e| WebError::Internal(e.to_string()))?;
-        if let Some(plan) = pending.get_mut(&req.plan_id) {
-            plan.status = PlanApprovalStatus::Approved;
-            plan.feedback = req.feedback.clone();
-        }
+        let Some(plan) = pending.get_mut(&req.plan_id) else {
+            return Err(WebError::NotFound(format!("No pending plan found for planId: {}", req.plan_id)));
+        };
+        plan.status = PlanApprovalStatus::Approved;
+        plan.feedback = req.feedback.clone();
     }
 
     let mut event = PlanApprovalResultEvent::new(&req.session_id, &req.plan_id, true);
@@ -204,6 +208,7 @@ pub struct RejectPlanRequest {
 }
 
 /// Reject a pending plan, optionally with feedback.
+/// Returns 404 if the plan_id does not exist in pending plans.
 pub async fn handle_reject_plan(
     State(state): State<Arc<AppState>>,
     Json(req): Json<RejectPlanRequest>,
@@ -214,10 +219,11 @@ pub async fn handle_reject_plan(
     {
         let mut pending = state.pending_plans.lock()
             .map_err(|e| WebError::Internal(e.to_string()))?;
-        if let Some(plan) = pending.get_mut(&req.plan_id) {
-            plan.status = PlanApprovalStatus::Rejected;
-            plan.feedback = req.feedback.clone();
-        }
+        let Some(plan) = pending.get_mut(&req.plan_id) else {
+            return Err(WebError::NotFound(format!("No pending plan found for planId: {}", req.plan_id)));
+        };
+        plan.status = PlanApprovalStatus::Rejected;
+        plan.feedback = req.feedback.clone();
     }
 
     let event = PlanApprovalResultEvent::new(&req.session_id, &req.plan_id, false)
