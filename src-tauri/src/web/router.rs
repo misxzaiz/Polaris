@@ -24,15 +24,24 @@ fn resolve_dist_dir(state: &AppState) -> std::path::PathBuf {
         .unwrap_or_else(|| std::path::PathBuf::from("../dist"))
 }
 
+/// Build CORS layer: permissive in dev (Vite dev server on different port),
+/// restrictive in production (SPA served from same origin, no CORS needed).
+fn build_cors_layer() -> CorsLayer {
+    if cfg!(debug_assertions) {
+        CorsLayer::new()
+            .allow_origin(tower_http::cors::Any)
+            .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE, Method::OPTIONS])
+            .allow_headers(tower_http::cors::Any)
+    } else {
+        // Production: empty CORS — same-origin requests pass, cross-origin blocked
+        CorsLayer::new()
+    }
+}
+
 /// Build the complete axum Router with API routes, auth middleware, CORS, and SPA fallback.
 pub fn create_router(state: Arc<AppState>) -> Router {
     let dist_dir = resolve_dist_dir(&state);
-
-    // LAN access: allow any origin but restrict methods/headers to what we use
-    let cors = CorsLayer::new()
-        .allow_origin(tower_http::cors::Any)
-        .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE, Method::OPTIONS])
-        .allow_headers(tower_http::cors::Any);
+    let cors = build_cors_layer();
 
     let api_routes = Router::new()
         // Chat
