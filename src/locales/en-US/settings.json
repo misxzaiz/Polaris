@@ -356,6 +356,30 @@
     "customRulesEmpty": "No custom rules yet, click above to add",
     "defaultRulesInfo": "Allow {{allow}} | Require Confirmation {{deny}}"
   },
+  "lsp": {
+    "description": "Manage language servers (LSP) for code completion, diagnostics, go-to-definition, and more.",
+    "refresh": "Refresh",
+    "addServer": "Add Server",
+    "addTitle": "Add Custom Language Server",
+    "idPlaceholder": "ID (e.g. rust-analyzer)",
+    "namePlaceholder": "Name (e.g. Rust Analyzer)",
+    "commandPlaceholder": "Command (e.g. rust-analyzer)",
+    "argsPlaceholder": "Args (space-separated, e.g. --stdio)",
+    "languagesPlaceholder": "Languages (comma-separated, e.g. rust)",
+    "cancel": "Cancel",
+    "add": "Add",
+    "disable": "Disable",
+    "enable": "Enable",
+    "delete": "Delete",
+    "noServers": "No language servers configured",
+    "noServersHint": "Click \"Add Server\" to configure",
+    "status": {
+      "connected": "Connected",
+      "connecting": "Connecting...",
+      "error": "Error",
+      "disconnected": "Disconnected"
+    }
+  },
   "web": {
     "enableTitle": "Enable Web Service",
     "enableDesc": "Allow browser access to Polaris over LAN",

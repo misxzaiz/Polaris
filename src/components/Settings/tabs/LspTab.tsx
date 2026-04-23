@@ -23,12 +23,12 @@ function statusDot(status?: LspConnectionStatus): string {
   }
 }
 
-function statusLabel(status?: LspConnectionStatus): string {
+function statusLabel(status: LspConnectionStatus | undefined, t: (key: string) => string): string {
   switch (status) {
-    case 'connected': return '已连接';
-    case 'connecting': return '连接中...';
-    case 'error': return '错误';
-    default: return '未连接';
+    case 'connected': return t('lsp.status.connected');
+    case 'connecting': return t('lsp.status.connecting');
+    case 'error': return t('lsp.status.error');
+    default: return t('lsp.status.disconnected');
   }
 }
 
@@ -117,14 +117,14 @@ export function LspTab() {
       {/* 标题和操作 */}
       <div className="flex items-center justify-between">
         <p className="text-sm text-text-secondary">
-          管理编辑器中的语言服务器（LSP），提供代码补全、诊断、跳转定义等功能。
+          {t('lsp.description')}
         </p>
         <div className="flex gap-2">
           <button
             onClick={loadConfig}
             disabled={loading}
             className="p-1.5 rounded-md hover:bg-surface text-text-muted hover:text-text-primary transition-colors"
-            title="刷新"
+            title={t('lsp.refresh')}
           >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
@@ -133,7 +133,7 @@ export function LspTab() {
             className="flex items-center gap-1 px-3 py-1.5 text-xs rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
           >
             <Plus size={12} />
-            添加服务器
+            {t('lsp.addServer')}
           </button>
         </div>
       </div>
@@ -141,38 +141,48 @@ export function LspTab() {
       {/* 添加表单 */}
       {showAdd && (
         <div className="p-4 bg-surface rounded-lg border border-border-subtle space-y-3">
-          <h4 className="text-sm font-medium text-text-primary">添加自定义语言服务器</h4>
+          <h4 className="text-sm font-medium text-text-primary">{t('lsp.addTitle')}</h4>
           <div className="grid grid-cols-2 gap-3">
             <input
               type="text"
-              placeholder="ID（如: rust-analyzer）"
+              placeholder={t('lsp.idPlaceholder')}
               value={addForm.id ?? ''}
               onChange={(e) => setAddForm((f) => ({ ...f, id: e.target.value }))}
               className="bg-background-elevated border border-border-subtle rounded-md px-3 py-1.5 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-primary"
             />
             <input
               type="text"
-              placeholder="名称（如: Rust Analyzer）"
+              placeholder={t('lsp.namePlaceholder')}
               value={addForm.name ?? ''}
               onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))}
               className="bg-background-elevated border border-border-subtle rounded-md px-3 py-1.5 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-primary"
             />
             <input
               type="text"
-              placeholder="命令（如: rust-analyzer）"
+              placeholder={t('lsp.commandPlaceholder')}
               value={addForm.command ?? ''}
               onChange={(e) => setAddForm((f) => ({ ...f, command: e.target.value }))}
               className="bg-background-elevated border border-border-subtle rounded-md px-3 py-1.5 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-primary"
             />
             <input
               type="text"
-              placeholder="语言（逗号分隔，如: rust）"
+              placeholder={t('lsp.argsPlaceholder')}
+              value={addForm.args?.join(' ') ?? ''}
+              onChange={(e) => setAddForm((f) => ({
+                ...f,
+                args: e.target.value.split(/\s+/).filter(Boolean),
+              }))}
+              className="bg-background-elevated border border-border-subtle rounded-md px-3 py-1.5 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-primary"
+            />
+            <input
+              type="text"
+              placeholder={t('lsp.languagesPlaceholder')}
               value={addForm.languages?.join(', ') ?? ''}
               onChange={(e) => setAddForm((f) => ({
                 ...f,
                 languages: e.target.value.split(',').map((s) => s.trim()).filter(Boolean),
               }))}
-              className="bg-background-elevated border border-border-subtle rounded-md px-3 py-1.5 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-primary"
+              className="bg-background-elevated border border-border-subtle rounded-md px-3 py-1.5 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-primary col-span-2"
             />
           </div>
           <div className="flex gap-2 justify-end">
@@ -180,14 +190,14 @@ export function LspTab() {
               onClick={() => setShowAdd(false)}
               className="px-3 py-1.5 text-xs rounded-md text-text-secondary hover:bg-surface transition-colors"
             >
-              取消
+              {t('lsp.cancel')}
             </button>
             <button
               onClick={handleAdd}
               disabled={!addForm.id || !addForm.name || !addForm.command}
               className="px-3 py-1.5 text-xs rounded-md bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
-              添加
+              {t('lsp.add')}
             </button>
           </div>
         </div>
@@ -216,7 +226,7 @@ export function LspTab() {
                         ? 'text-primary bg-primary/10 hover:bg-primary/20'
                         : 'text-text-muted hover:bg-surface'
                     }`}
-                    title={server.enabled ? '禁用' : '启用'}
+                    title={server.enabled ? t('lsp.disable') : t('lsp.enable')}
                   >
                     <Power size={14} />
                   </button>
@@ -228,7 +238,7 @@ export function LspTab() {
                       </span>
                       <span className="inline-flex items-center gap-1 text-[10px] text-text-muted">
                         <span className={`w-1.5 h-1.5 rounded-full ${statusDot(connStatus)}`} />
-                        {statusLabel(connStatus)}
+                        {statusLabel(connStatus, t)}
                       </span>
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
@@ -247,7 +257,7 @@ export function LspTab() {
                   <button
                     onClick={() => handleRemove(server.id)}
                     className="p-1.5 rounded-md text-text-muted hover:text-danger hover:bg-danger/10 transition-colors"
-                    title="删除"
+                    title={t('lsp.delete')}
                   >
                     <Trash2 size={13} />
                   </button>
@@ -260,8 +270,8 @@ export function LspTab() {
         {servers.length === 0 && (
           <div className="text-center py-8 text-text-muted text-sm">
             <Terminal size={24} className="mx-auto mb-2 opacity-50" />
-            <p>暂无语言服务器配置</p>
-            <p className="text-xs mt-1">点击"添加服务器"来配置</p>
+            <p>{t('lsp.noServers')}</p>
+            <p className="text-xs mt-1">{t('lsp.noServersHint')}</p>
           </div>
         )}
       </div>

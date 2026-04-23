@@ -356,6 +356,30 @@
     "customRulesEmpty": "暂无自定义规则，点击上方按钮添加",
     "defaultRulesInfo": "允许 {{allow}} 条 | 需确认 {{deny}} 条"
   },
+  "lsp": {
+    "description": "管理编辑器中的语言服务器（LSP），提供代码补全、诊断、跳转定义等功能。",
+    "refresh": "刷新",
+    "addServer": "添加服务器",
+    "addTitle": "添加自定义语言服务器",
+    "idPlaceholder": "ID（如: rust-analyzer）",
+    "namePlaceholder": "名称（如: Rust Analyzer）",
+    "commandPlaceholder": "命令（如: rust-analyzer）",
+    "argsPlaceholder": "参数（空格分隔，如: --stdio）",
+    "languagesPlaceholder": "语言（逗号分隔，如: rust）",
+    "cancel": "取消",
+    "add": "添加",
+    "disable": "禁用",
+    "enable": "启用",
+    "delete": "删除",
+    "noServers": "暂无语言服务器配置",
+    "noServersHint": "点击「添加服务器」来配置",
+    "status": {
+      "connected": "已连接",
+      "connecting": "连接中...",
+      "error": "错误",
+      "disconnected": "未连接"
+    }
+  },
   "web": {
     "enableTitle": "启用 Web 服务",
     "enableDesc": "允许通过浏览器在局域网内访问 Polaris",
