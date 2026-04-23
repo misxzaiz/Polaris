@@ -169,6 +169,12 @@ impl AppState {
             .unwrap_or_else(|| std::path::PathBuf::from("."))
             .join("claude-code-pro");
 
+        // Carry over app_handle if already set, so Web API → Tauri webview emission works
+        let app_handle = OnceLock::new();
+        if let Some(handle) = self.app_handle.get() {
+            let _ = app_handle.set(handle.clone());
+        }
+
         AppState {
             config_store: self.config_store.clone(),
             sessions: self.sessions.clone(),
@@ -183,7 +189,7 @@ impl AppState {
             lsp_manager: Mutex::new(LspManager::new()),
             lsp_config: Mutex::new(LspConfigRepository::new(&config_dir)),
             event_broadcast: self.event_broadcast.clone(),
-            app_handle: OnceLock::new(),
+            app_handle,
         }
     }
 }

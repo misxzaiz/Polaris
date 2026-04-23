@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
@@ -46,6 +46,7 @@ fn create_test_state() -> Arc<AppState> {
         lsp_manager: Mutex::new(LspManager::new()),
         lsp_config: Mutex::new(LspConfigRepository::new(&std::path::PathBuf::from("/tmp"))),
         event_broadcast: tx,
+        app_handle: OnceLock::new(),
     })
 }
 
@@ -549,4 +550,30 @@ async fn cors_options_ok() {
         .unwrap();
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
+}
+
+// ============================================================================
+// Dual Emission Structural Verification
+// ============================================================================
+
+#[test]
+fn test_state_has_app_handle_field() {
+    let state = create_test_state();
+    // app_handle is initialized as empty OnceLock in test state
+    assert!(state.app_handle.get().is_none());
+}
+
+#[test]
+fn clone_for_web_preserves_shared_state() {
+    let state = create_test_state();
+    let cloned = state.clone_for_web();
+
+    // Shared Arc fields should point to the same allocation
+    assert!(Arc::ptr_eq(&state.sessions, &cloned.sessions));
+    assert!(Arc::ptr_eq(&state.pending_questions, &cloned.pending_questions));
+    assert!(Arc::ptr_eq(&state.pending_plans, &cloned.pending_plans));
+    assert!(Arc::ptr_eq(&state.config_store, &cloned.config_store));
+
+    // app_handle should also be None in the clone (no handle set in test)
+    assert!(cloned.app_handle.get().is_none());
 }
