@@ -401,6 +401,10 @@
     "accessUrl": "Access URL",
     "accessHint": "Instructions",
     "accessHintDesc": "Save and restart the app to apply. Open the access URL in a browser and enter the Token to authenticate.",
+    "qrTitle": "Scan to Access",
+    "qrHint": "Scan the QR code with your phone to access the Polaris web interface",
+    "qrNoIp": "No LAN IP detected. Please check your network connection.",
+    "qrDisabled": "QR code will appear after enabling Web service and generating a Token",
     "auth": {
       "title": "Polaris",
       "subtitle": "Enter your access token to connect",

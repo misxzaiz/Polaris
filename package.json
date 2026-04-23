@@ -60,6 +60,7 @@
     "react-dom": "^19.1.0",
     "react-i18next": "^15.4.1",
     "react-markdown": "^10.1.0",
+    "react-qr-code": "^2.0.18",
     "react-virtuoso": "^4.18.1",
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1",

@@ -142,6 +142,19 @@ fn regenerate_web_token(state: tauri::State<AppState>) -> std::result::Result<St
     Ok(new_token)
 }
 
+/// 获取本机局域网 IP 地址列表
+#[tauri::command]
+fn get_local_ips() -> std::result::Result<Vec<String>, error::AppError> {
+    let interfaces = if_addrs::get_if_addrs()
+        .map_err(|e| error::AppError::Unknown(e.to_string()))?;
+    let ips = interfaces
+        .into_iter()
+        .filter(|iface| !iface.is_loopback() && iface.addr.ip().is_ipv4())
+        .map(|iface| iface.addr.ip().to_string())
+        .collect();
+    Ok(ips)
+}
+
 /// 设置工作目录
 #[tauri::command]
 fn set_work_dir(path: Option<String>, state: tauri::State<AppState>) -> Result<()> {
@@ -311,6 +324,7 @@ pub fn run() {
             get_config,
             update_config,
             regenerate_web_token,
+            get_local_ips,
             set_work_dir,
             set_claude_cmd,
             find_claude_paths,

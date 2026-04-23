@@ -401,6 +401,10 @@
     "accessUrl": "访问地址",
     "accessHint": "使用说明",
     "accessHintDesc": "保存并重启应用后生效。在浏览器中打开访问地址，输入 Token 完成认证。",
+    "qrTitle": "扫码访问",
+    "qrHint": "使用手机扫描二维码，即可直接访问 Polaris Web 界面",
+    "qrNoIp": "未检测到局域网 IP，请检查网络连接",
+    "qrDisabled": "启用 Web 服务并生成 Token 后显示二维码",
     "auth": {
       "title": "Polaris",
       "subtitle": "输入访问令牌以连接",

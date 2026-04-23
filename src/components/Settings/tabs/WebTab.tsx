@@ -3,8 +3,9 @@
  */
 
 import { useTranslation } from 'react-i18next';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import QRCode from 'react-qr-code';
 import type { Config, WebConfig } from '../../../types';
 
 interface WebTabProps {
@@ -20,6 +21,14 @@ export function WebTab({ config, onConfigChange, loading }: WebTabProps) {
   const web = config.web ?? DEFAULT_WEB_CONFIG;
   const [tokenVisible, setTokenVisible] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [localIps, setLocalIps] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!web.enabled) return;
+    invoke<string[]>('get_local_ips')
+      .then(setLocalIps)
+      .catch(() => setLocalIps([]));
+  }, [web.enabled]);
 
   const updateWeb = (patch: Partial<typeof web>) => {
     onConfigChange({ ...config, web: { ...web, ...patch } });
@@ -37,6 +46,10 @@ export function WebTab({ config, onConfigChange, loading }: WebTabProps) {
       setRegenerating(false);
     }
   };
+
+  const qrUrl = web.token && localIps.length > 0
+    ? `http://${localIps[0]}:${web.port}?token=${encodeURIComponent(web.token)}`
+    : null;
 
   return (
     <div className="space-y-6">
@@ -163,6 +176,40 @@ export function WebTab({ config, onConfigChange, loading }: WebTabProps) {
           </p>
         </div>
       </div>
+
+      {/* 二维码 */}
+      {web.enabled && (
+        <div className="p-4 bg-surface rounded-lg border border-border">
+          <h3 className="text-sm font-medium text-text-primary mb-3">{t('web.qrTitle')}</h3>
+          {qrUrl ? (
+            <div className="flex flex-col items-center gap-3">
+              <div className="p-3 bg-white rounded-lg">
+                <QRCode
+                  value={qrUrl}
+                  size={160}
+                  level="M"
+                />
+              </div>
+              <p className="text-xs text-text-tertiary text-center max-w-[240px]">
+                {t('web.qrHint')}
+              </p>
+              {localIps.length > 1 && (
+                <div className="text-xs text-text-tertiary text-center">
+                  {localIps.map((ip) => (
+                    <span key={ip} className="inline-block mr-2">
+                      <code className="text-text-primary">{ip}:{web.port}</code>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : web.token ? (
+            <p className="text-xs text-text-tertiary">{t('web.qrNoIp')}</p>
+          ) : (
+            <p className="text-xs text-text-tertiary">{t('web.qrDisabled')}</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

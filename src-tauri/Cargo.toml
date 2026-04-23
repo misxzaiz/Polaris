@@ -79,6 +79,7 @@ async-trait = "0.1"
 axum = { version = "0.8", features = ["ws"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "fs"] }
+if-addrs = "0.13"
 
 # 定时任务依赖
 cron = "0.12"
