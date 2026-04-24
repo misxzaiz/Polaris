@@ -21,32 +21,33 @@ const CLIENT_HEARTBEAT_MS = 25_000;
 /** HTTP request timeout in milliseconds. */
 const HTTP_TIMEOUT_MS = 30_000;
 
-/** Tauri 命令名 → HTTP 路由映射 */
-function commandToPath(command: string): string {
-  // Tauri command 使用 snake_case，HTTP 路由使用 kebab-case
-  // 例: get_config → /api/settings, start_chat → /api/chat/send
-  const mapping: Record<string, string> = {
-    // Chat
-    start_chat: '/api/chat/send',
-    continue_chat: '/api/chat/send',
-    interrupt_chat: '/api/chat/interrupt',
-    get_session_history: '/api/chat/history',
-    answer_question: '/api/chat/answer-question',
-    approve_plan: '/api/chat/approve-plan',
-    reject_plan: '/api/chat/reject-plan',
-    // Sessions
-    list_sessions: '/api/sessions',
-    create_session: '/api/sessions',
-    delete_session: '/api/sessions',
-    // Settings
-    get_config: '/api/settings',
-    update_config: '/api/settings',
-    // Auth
-    health_check: '/api/auth/verify',
-  };
+/** Tauri 命令名 → HTTP 路由映射 (module-level constant, avoids repeated allocation) */
+const COMMAND_ROUTE_MAP: Record<string, string> = {
+  // Chat
+  start_chat: '/api/chat/send',
+  continue_chat: '/api/chat/send',
+  interrupt_chat: '/api/chat/interrupt',
+  get_session_history: '/api/chat/history',
+  answer_question: '/api/chat/answer-question',
+  approve_plan: '/api/chat/approve-plan',
+  reject_plan: '/api/chat/reject-plan',
+  // Sessions
+  list_sessions: '/api/sessions',
+  create_session: '/api/sessions',
+  delete_session: '/api/sessions',
+  // Settings
+  get_config: '/api/settings',
+  update_config: '/api/settings',
+  // Auth
+  health_check: '/api/auth/verify',
+};
 
-  if (command in mapping) {
-    return mapping[command];
+/** GET-only commands (read-only operations) */
+const GET_COMMANDS: ReadonlySet<string> = new Set(['get_config', 'list_sessions', 'health_check']);
+
+function commandToPath(command: string): string {
+  if (command in COMMAND_ROUTE_MAP) {
+    return COMMAND_ROUTE_MAP[command];
   }
 
   // Unmapped command — log warning to surface integration bugs during development
@@ -57,7 +58,7 @@ function commandToPath(command: string): string {
 
 /** 判断命令是否使用 GET（只读操作，无 URL 参数） */
 function isGetCommand(command: string): boolean {
-  return ['get_config', 'list_sessions', 'health_check'].includes(command);
+  return GET_COMMANDS.has(command);
 }
 
 /** 判断命令是否使用 DELETE */
@@ -99,7 +100,6 @@ export function createHttpTransport(
   let intentionalClose = false;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-  let hadFailure = false;
   const listeners = new Map<string, Set<(payload: unknown) => void>>();
 
   /** Send a JSON message to the WebSocket if connected */
@@ -158,10 +158,7 @@ export function createHttpTransport(
         ws = socket;
         wsConnecting = null;
         reconnectAttempt = 0;
-        if (hadFailure) {
-          hadFailure = false;
-          options?.onStatusChange?.('connected');
-        }
+        options?.onStatusChange?.('connected');
         // Start client-side heartbeat
         stopHeartbeat();
         heartbeatTimer = setInterval(() => {
@@ -177,7 +174,6 @@ export function createHttpTransport(
         socket.removeEventListener('error', errorHandler);
         ws = null;
         wsConnecting = null;
-        hadFailure = true;
         options?.onStatusChange?.('disconnected');
         // Prevent close handler from also scheduling a reconnect
         socket.onclose = null;
@@ -201,7 +197,6 @@ export function createHttpTransport(
         ws = null;
         wsConnecting = null;
         stopHeartbeat();
-        hadFailure = true;
         options?.onStatusChange?.('disconnected');
         scheduleReconnect();
       });

@@ -13,6 +13,9 @@ pub enum WebError {
     #[error("Not found: {0}")]
     NotFound(String),
 
+    #[error("Forbidden: {0}")]
+    Forbidden(String),
+
     #[error("Internal error: {0}")]
     Internal(String),
 }
@@ -28,6 +31,7 @@ impl IntoResponse for WebError {
             WebError::Unauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
             WebError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
             WebError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
+            WebError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg.clone()),
             WebError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.clone()),
         };
 
@@ -41,7 +45,7 @@ impl From<crate::error::AppError> for WebError {
         match &err {
             crate::error::AppError::ValidationError(_) => WebError::BadRequest(err.to_string()),
             crate::error::AppError::SessionNotFound(id) => WebError::NotFound(format!("Session not found: {}", id)),
-            crate::error::AppError::PermissionDenied(msg) => WebError::BadRequest(format!("Permission denied: {}", msg)),
+            crate::error::AppError::PermissionDenied(msg) => WebError::Forbidden(format!("Permission denied: {}", msg)),
             crate::error::AppError::InvalidPath(path) => WebError::BadRequest(format!("Invalid path: {}", path)),
             _ => WebError::Internal(err.to_string()),
         }

@@ -140,7 +140,7 @@ pub async fn handle_get_history(
     State(state): State<Arc<AppState>>,
     Path(session_id): Path<String>,
     Query(params): Query<PaginationQuery>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<impl IntoResponse, WebError> {
     use crate::ai::SessionHistoryProvider;
 
     validate_session_id(&session_id)?;
@@ -151,7 +151,7 @@ pub async fn handle_get_history(
         provider.get_session_history(&session_id, pagination)
     }).await?;
 
-    Ok(Json(serde_json::json!(result)))
+    Ok(Json(result))
 }
 
 #[derive(Debug, Deserialize)]
