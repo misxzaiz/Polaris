@@ -22,6 +22,33 @@ use super::router::create_router;
 
 const TEST_TOKEN: &str = "test-token-1234567890abcdef";
 
+/// Create a PendingQuestion with sensible test defaults.
+fn make_pending_question(call_id: &str, session_id: &str) -> crate::state::PendingQuestion {
+    use crate::state::QuestionStatus;
+    crate::state::PendingQuestion {
+        call_id: call_id.to_string(),
+        session_id: session_id.to_string(),
+        header: "Test".to_string(),
+        multi_select: false,
+        options: vec![],
+        allow_custom_input: false,
+        status: QuestionStatus::Pending,
+    }
+}
+
+/// Create a PendingPlan with sensible test defaults.
+fn make_pending_plan(plan_id: &str, session_id: &str) -> crate::state::PendingPlan {
+    use crate::state::PlanApprovalStatus;
+    crate::state::PendingPlan {
+        plan_id: plan_id.to_string(),
+        session_id: session_id.to_string(),
+        title: None,
+        description: None,
+        status: PlanApprovalStatus::Pending,
+        feedback: None,
+    }
+}
+
 fn create_test_state() -> Arc<AppState> {
     let mut config = Config::default();
     config.web = WebConfig {
@@ -352,19 +379,9 @@ async fn session_patch_placeholder() {
 #[tokio::test]
 async fn answer_question_updates_state() {
     let state = create_test_state();
-
-    use crate::state::{PendingQuestion, QuestionStatus};
     state.pending_questions.lock().unwrap().insert(
         "call-1".to_string(),
-        PendingQuestion {
-            call_id: "call-1".to_string(),
-            session_id: "s1".to_string(),
-            header: "Test".to_string(),
-            multi_select: false,
-            options: vec![],
-            allow_custom_input: false,
-            status: QuestionStatus::Pending,
-        },
+        make_pending_question("call-1", "s1"),
     );
 
     let app = create_router(state.clone());
@@ -380,25 +397,18 @@ async fn answer_question_updates_state() {
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
+    // Entry is removed after answering to prevent memory leaks
     let pending = state.pending_questions.lock().unwrap();
-    assert_eq!(pending.get("call-1").unwrap().status, QuestionStatus::Answered);
+    assert!(pending.get("call-1").is_none());
 }
 
 #[tokio::test]
 async fn approve_plan_updates_state() {
     let state = create_test_state();
 
-    use crate::state::{PendingPlan, PlanApprovalStatus};
     state.pending_plans.lock().unwrap().insert(
         "plan-1".to_string(),
-        PendingPlan {
-            plan_id: "plan-1".to_string(),
-            session_id: "s1".to_string(),
-            title: None,
-            description: None,
-            status: PlanApprovalStatus::Pending,
-            feedback: None,
-        },
+        make_pending_plan("plan-1", "s1"),
     );
 
     let app = create_router(state.clone());
@@ -414,25 +424,18 @@ async fn approve_plan_updates_state() {
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
+    // Entry is removed after approval to prevent memory leaks
     let pending = state.pending_plans.lock().unwrap();
-    assert_eq!(pending.get("plan-1").unwrap().status, PlanApprovalStatus::Approved);
+    assert!(pending.get("plan-1").is_none());
 }
 
 #[tokio::test]
 async fn reject_plan_updates_state() {
     let state = create_test_state();
 
-    use crate::state::{PendingPlan, PlanApprovalStatus};
     state.pending_plans.lock().unwrap().insert(
         "plan-2".to_string(),
-        PendingPlan {
-            plan_id: "plan-2".to_string(),
-            session_id: "s1".to_string(),
-            title: None,
-            description: None,
-            status: PlanApprovalStatus::Pending,
-            feedback: None,
-        },
+        make_pending_plan("plan-2", "s1"),
     );
 
     let app = create_router(state.clone());
@@ -448,10 +451,9 @@ async fn reject_plan_updates_state() {
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
+    // Entry is removed after rejection to prevent memory leaks
     let pending = state.pending_plans.lock().unwrap();
-    let p = pending.get("plan-2").unwrap();
-    assert_eq!(p.status, PlanApprovalStatus::Rejected);
-    assert_eq!(p.feedback, Some("no".to_string()));
+    assert!(pending.get("plan-2").is_none());
 }
 
 // ============================================================================
@@ -463,18 +465,9 @@ async fn answer_question_broadcasts_event() {
     let state = create_test_state();
     let mut rx = state.event_broadcast.subscribe();
 
-    use crate::state::{PendingQuestion, QuestionStatus};
     state.pending_questions.lock().unwrap().insert(
         "call-bc".to_string(),
-        PendingQuestion {
-            call_id: "call-bc".to_string(),
-            session_id: "s-bc".to_string(),
-            header: "Test".to_string(),
-            multi_select: false,
-            options: vec![],
-            allow_custom_input: false,
-            status: QuestionStatus::Pending,
-        },
+        make_pending_question("call-bc", "s-bc"),
     );
 
     let app = create_router(state.clone());
@@ -503,17 +496,9 @@ async fn approve_plan_broadcasts_event() {
     let state = create_test_state();
     let mut rx = state.event_broadcast.subscribe();
 
-    use crate::state::{PendingPlan, PlanApprovalStatus};
     state.pending_plans.lock().unwrap().insert(
         "plan-bc".to_string(),
-        PendingPlan {
-            plan_id: "plan-bc".to_string(),
-            session_id: "s-bc".to_string(),
-            title: None,
-            description: None,
-            status: PlanApprovalStatus::Pending,
-            feedback: None,
-        },
+        make_pending_plan("plan-bc", "s-bc"),
     );
 
     let app = create_router(state.clone());
@@ -564,17 +549,9 @@ async fn reject_plan_broadcasts_event() {
     let state = create_test_state();
     let mut rx = state.event_broadcast.subscribe();
 
-    use crate::state::{PendingPlan, PlanApprovalStatus};
     state.pending_plans.lock().unwrap().insert(
         "plan-rej-bc".to_string(),
-        PendingPlan {
-            plan_id: "plan-rej-bc".to_string(),
-            session_id: "s-rej-bc".to_string(),
-            title: None,
-            description: None,
-            status: PlanApprovalStatus::Pending,
-            feedback: None,
-        },
+        make_pending_plan("plan-rej-bc", "s-rej-bc"),
     );
 
     let app = create_router(state.clone());
@@ -891,26 +868,17 @@ async fn query_param_token_with_other_params() {
 // ============================================================================
 
 #[tokio::test]
-async fn answer_question_idempotent_on_duplicate() {
+async fn answer_question_second_call_after_removal_returns_404() {
     let state = create_test_state();
 
-    use crate::state::{PendingQuestion, QuestionStatus};
     state.pending_questions.lock().unwrap().insert(
         "call-dup".to_string(),
-        PendingQuestion {
-            call_id: "call-dup".to_string(),
-            session_id: "s-dup".to_string(),
-            header: "Test".to_string(),
-            multi_select: false,
-            options: vec![],
-            allow_custom_input: false,
-            status: QuestionStatus::Pending,
-        },
+        make_pending_question("call-dup", "s-dup"),
     );
 
     let app = create_router(state.clone());
 
-    // First answer
+    // First answer — succeeds, entry is removed
     let req = Request::builder()
         .method(Method::POST)
         .uri("/api/chat/answer-question")
@@ -923,7 +891,7 @@ async fn answer_question_idempotent_on_duplicate() {
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    // Second answer (idempotent)
+    // Second answer — entry already removed, returns 404
     let req = Request::builder()
         .method(Method::POST)
         .uri("/api/chat/answer-question")
@@ -934,7 +902,7 @@ async fn answer_question_idempotent_on_duplicate() {
         ))
         .unwrap();
     let res = app.oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
@@ -942,18 +910,11 @@ async fn answer_question_with_custom_input() {
     let state = create_test_state();
     let mut rx = state.event_broadcast.subscribe();
 
-    use crate::state::{PendingQuestion, QuestionStatus};
+    let mut q = make_pending_question("call-custom", "s-custom");
+    q.allow_custom_input = true;
     state.pending_questions.lock().unwrap().insert(
         "call-custom".to_string(),
-        PendingQuestion {
-            call_id: "call-custom".to_string(),
-            session_id: "s-custom".to_string(),
-            header: "Custom".to_string(),
-            multi_select: false,
-            options: vec![],
-            allow_custom_input: true,
-            status: QuestionStatus::Pending,
-        },
+        q,
     );
 
     let app = create_router(state.clone());
@@ -980,17 +941,9 @@ async fn answer_question_with_custom_input() {
 async fn approve_plan_with_feedback() {
     let state = create_test_state();
 
-    use crate::state::{PendingPlan, PlanApprovalStatus};
     state.pending_plans.lock().unwrap().insert(
         "plan-fb".to_string(),
-        PendingPlan {
-            plan_id: "plan-fb".to_string(),
-            session_id: "s-fb".to_string(),
-            title: None,
-            description: None,
-            status: PlanApprovalStatus::Pending,
-            feedback: None,
-        },
+        make_pending_plan("plan-fb", "s-fb"),
     );
 
     let app = create_router(state.clone());
@@ -1006,27 +959,18 @@ async fn approve_plan_with_feedback() {
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
+    // Entry is removed after approval
     let pending = state.pending_plans.lock().unwrap();
-    let p = pending.get("plan-fb").unwrap();
-    assert_eq!(p.status, PlanApprovalStatus::Approved);
-    assert_eq!(p.feedback, Some("looks good".to_string()));
+    assert!(pending.get("plan-fb").is_none());
 }
 
 #[tokio::test]
 async fn reject_plan_without_feedback() {
     let state = create_test_state();
 
-    use crate::state::{PendingPlan, PlanApprovalStatus};
     state.pending_plans.lock().unwrap().insert(
         "plan-no-fb".to_string(),
-        PendingPlan {
-            plan_id: "plan-no-fb".to_string(),
-            session_id: "s-no-fb".to_string(),
-            title: None,
-            description: None,
-            status: PlanApprovalStatus::Pending,
-            feedback: None,
-        },
+        make_pending_plan("plan-no-fb", "s-no-fb"),
     );
 
     let app = create_router(state.clone());
@@ -1042,31 +986,23 @@ async fn reject_plan_without_feedback() {
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
+    // Entry is removed after rejection
     let pending = state.pending_plans.lock().unwrap();
-    let p = pending.get("plan-no-fb").unwrap();
-    assert_eq!(p.status, PlanApprovalStatus::Rejected);
+    assert!(pending.get("plan-no-fb").is_none());
 }
 
 #[tokio::test]
-async fn approve_plan_idempotent_on_duplicate() {
+async fn approve_plan_second_call_after_removal_returns_404() {
     let state = create_test_state();
 
-    use crate::state::{PendingPlan, PlanApprovalStatus};
     state.pending_plans.lock().unwrap().insert(
         "plan-idem".to_string(),
-        PendingPlan {
-            plan_id: "plan-idem".to_string(),
-            session_id: "s-idem".to_string(),
-            title: None,
-            description: None,
-            status: PlanApprovalStatus::Pending,
-            feedback: None,
-        },
+        make_pending_plan("plan-idem", "s-idem"),
     );
 
     let app = create_router(state.clone());
 
-    // First approve
+    // First approve — succeeds, entry is removed
     let req = Request::builder()
         .method(Method::POST)
         .uri("/api/chat/approve-plan")
@@ -1077,7 +1013,7 @@ async fn approve_plan_idempotent_on_duplicate() {
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    // Second approve (idempotent)
+    // Second approve — entry already removed, returns 404
     let req = Request::builder()
         .method(Method::POST)
         .uri("/api/chat/approve-plan")
@@ -1086,7 +1022,7 @@ async fn approve_plan_idempotent_on_duplicate() {
         .body(Body::from(r#"{"sessionId":"s-idem","planId":"plan-idem"}"#))
         .unwrap();
     let res = app.oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
 }
 
 // ============================================================================
@@ -1191,20 +1127,10 @@ async fn wrong_http_method_on_endpoint() {
 
 #[tokio::test]
 async fn concurrent_answer_question_same_call() {
-    use crate::state::{PendingQuestion, QuestionStatus};
-
     let state = create_test_state();
     state.pending_questions.lock().unwrap().insert(
         "call-conc".to_string(),
-        PendingQuestion {
-            call_id: "call-conc".to_string(),
-            session_id: "s-conc".to_string(),
-            header: "Concurrent".to_string(),
-            multi_select: false,
-            options: vec![],
-            allow_custom_input: false,
-            status: QuestionStatus::Pending,
-        },
+        make_pending_question("call-conc", "s-conc"),
     );
 
     let app = create_router(state.clone());
@@ -1227,31 +1153,31 @@ async fn concurrent_answer_question_same_call() {
         }));
     }
 
+    let mut ok_count = 0;
+    let mut not_found_count = 0;
     for handle in handles {
         let res = handle.await.unwrap();
-        assert_eq!(res.status(), StatusCode::OK);
+        match res.status() {
+            StatusCode::OK => ok_count += 1,
+            StatusCode::NOT_FOUND => not_found_count += 1,
+            other => panic!("Unexpected status: {}", other),
+        }
     }
+    // Exactly one request wins the race and removes the entry; the rest get 404
+    assert_eq!(ok_count, 1);
+    assert_eq!(not_found_count, 4);
 
-    // All succeeded without panic or deadlock
+    // Entry is removed after the winning answer
     let pending = state.pending_questions.lock().unwrap();
-    assert_eq!(pending.get("call-conc").unwrap().status, QuestionStatus::Answered);
+    assert!(pending.get("call-conc").is_none());
 }
 
 #[tokio::test]
 async fn concurrent_plan_approve_reject() {
-    use crate::state::{PendingPlan, PlanApprovalStatus};
-
     let state = create_test_state();
     state.pending_plans.lock().unwrap().insert(
         "plan-race".to_string(),
-        PendingPlan {
-            plan_id: "plan-race".to_string(),
-            session_id: "s-race".to_string(),
-            title: None,
-            description: None,
-            status: PlanApprovalStatus::Pending,
-            feedback: None,
-        },
+        make_pending_plan("plan-race", "s-race"),
     );
 
     let app = create_router(state.clone());
@@ -1289,15 +1215,23 @@ async fn concurrent_plan_approve_reject() {
         }));
     }
 
+    let mut ok_count = 0;
+    let mut not_found_count = 0;
     for handle in handles {
         let res = handle.await.unwrap();
-        assert_eq!(res.status(), StatusCode::OK);
+        match res.status() {
+            StatusCode::OK => ok_count += 1,
+            StatusCode::NOT_FOUND => not_found_count += 1,
+            other => panic!("Unexpected status: {}", other),
+        }
     }
+    // Exactly one request wins; the rest get 404
+    assert_eq!(ok_count, 1);
+    assert_eq!(not_found_count, 4);
 
-    // Final state is one of the two — no deadlock or panic
+    // Entry is removed — no deadlock or panic
     let pending = state.pending_plans.lock().unwrap();
-    let status = &pending.get("plan-race").unwrap().status;
-    assert!(*status == PlanApprovalStatus::Approved || *status == PlanApprovalStatus::Rejected);
+    assert!(pending.get("plan-race").is_none());
 }
 
 #[tokio::test]
@@ -1357,18 +1291,9 @@ async fn concurrent_settings_read_write() {
 async fn broadcast_reaches_multiple_subscribers() {
     let state = create_test_state();
 
-    use crate::state::{PendingQuestion, QuestionStatus};
     state.pending_questions.lock().unwrap().insert(
         "call-multi".to_string(),
-        PendingQuestion {
-            call_id: "call-multi".to_string(),
-            session_id: "s-multi".to_string(),
-            header: "Multi".to_string(),
-            multi_select: false,
-            options: vec![],
-            allow_custom_input: false,
-            status: QuestionStatus::Pending,
-        },
+        make_pending_question("call-multi", "s-multi"),
     );
 
     let mut rx1 = state.event_broadcast.subscribe();
@@ -1399,18 +1324,11 @@ async fn broadcast_event_contains_correct_fields() {
     let state = create_test_state();
     let mut rx = state.event_broadcast.subscribe();
 
-    use crate::state::{PendingQuestion, QuestionStatus};
+    let mut q = make_pending_question("call-fields", "s-fields");
+    q.multi_select = true;
     state.pending_questions.lock().unwrap().insert(
         "call-fields".to_string(),
-        PendingQuestion {
-            call_id: "call-fields".to_string(),
-            session_id: "s-fields".to_string(),
-            header: "Fields".to_string(),
-            multi_select: true,
-            options: vec![],
-            allow_custom_input: false,
-            status: QuestionStatus::Pending,
-        },
+        q,
     );
 
     let app = create_router(state.clone());
