@@ -6,7 +6,7 @@
 
 import { create, StoreApi, UseBoundStore } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '@/services/tauri'
 import type { ConversationStore, ConversationState, StoreDeps } from './types'
 import type { ChatMessage } from '../../types'
 import { handleAIEvent } from './eventHandler'
