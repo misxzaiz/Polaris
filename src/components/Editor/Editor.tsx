@@ -277,9 +277,9 @@ export function CodeMirrorEditor({
       if (filePath && language) {
         try {
           // rootUri 优先使用当前工作区路径，回退到文件父目录
-          const workspace = useWorkspaceStore.getState().currentWorkspace;
-          const rootPath = workspace?.path
-            ?? filePath.replace(/\\/g, '/').split('/').slice(0, -1).join('/') || '/';
+          const workspace = useWorkspaceStore.getState().getCurrentWorkspace();
+          const rootPath = (workspace?.path
+            ?? filePath.replace(/\\/g, '/').split('/').slice(0, -1).join('/')) || '/';
           const normalized = rootPath.replace(/\\/g, '/');
           const rootUri = normalized.startsWith('/')
             ? `file://${normalized}`

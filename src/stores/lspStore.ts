@@ -334,7 +334,7 @@ export const useLspStore = create<LspStore>()((set, get) => ({
 function getExtensionsForClient(client: LSPClient, filePath: string): Extension[] {
   const uri = pathToUri(filePath);
   return [
-    ...languageServerExtensions(),
-    client.plugin(uri),
+    ...languageServerExtensions() as Extension[],
+    client.plugin(uri) as Extension,
   ];
 }
