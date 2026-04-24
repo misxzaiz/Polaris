@@ -5,7 +5,7 @@
  * 即 ~/.claude/projects/{项目名}/sessions-index.json
  */
 
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '../services/tauri'
 import type { Message, ChatMessage, ContentBlock, UserChatMessage, AssistantChatMessage, SystemChatMessage, ToolCallBlock } from '../types'
 import { createLogger } from '../utils/logger'
 

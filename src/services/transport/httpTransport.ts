@@ -31,6 +31,9 @@ const COMMAND_ROUTE_MAP: Record<string, string> = {
   answer_question: '/api/chat/answer-question',
   approve_plan: '/api/chat/approve-plan',
   reject_plan: '/api/chat/reject-plan',
+  // Legacy Claude Code session history commands (used by claudeCodeHistoryService)
+  get_claude_code_session_history: '/api/chat/history',
+  list_claude_code_sessions: '/api/sessions',
   // Sessions
   list_sessions: '/api/sessions',
   create_session: '/api/sessions',
@@ -43,7 +46,7 @@ const COMMAND_ROUTE_MAP: Record<string, string> = {
 };
 
 /** GET-only commands (read-only operations) */
-const GET_COMMANDS: ReadonlySet<string> = new Set(['get_config', 'list_sessions', 'health_check']);
+const GET_COMMANDS: ReadonlySet<string> = new Set(['get_config', 'list_sessions', 'health_check', 'get_claude_code_session_history', 'list_claude_code_sessions']);
 
 function commandToPath(command: string): string {
   if (command in COMMAND_ROUTE_MAP) {
@@ -239,7 +242,7 @@ export function createHttpTransport(
         const engineId = (args as { engineId?: string })?.engineId;
         const queryStr = engineId ? `?engineId=${encodeURIComponent(engineId)}` : '';
         url = `${baseUrl}/api/sessions/${sessionId}${queryStr}`;
-      } else if (command === 'get_session_history' && args?.sessionId) {
+      } else if ((command === 'get_session_history' || command === 'get_claude_code_session_history') && args?.sessionId) {
         method = 'GET';
         url = `${baseUrl}/api/chat/history/${encodeURIComponent(args.sessionId as string)}`;
       } else if (command === 'update_config') {
