@@ -371,10 +371,13 @@ pub async fn start_chat_inner(
     tracing::info!("[start_chat_inner] 消息长度: {}, 图片数: {}, 文件引用数: {}",
         final_message.len(), processed.image_data.len(), processed.file_references.len());
 
-    let engine = options.engine_id
-        .as_ref()
-        .and_then(|id| EngineId::parse(id))
-        .unwrap_or(EngineId::ClaudeCode);
+    let engine = match &options.engine_id {
+        Some(id) => EngineId::parse(id).unwrap_or_else(|| {
+            tracing::warn!("[start_chat_inner] Unrecognized engine_id '{}', defaulting to ClaudeCode", id);
+            EngineId::ClaudeCode
+        }),
+        None => EngineId::ClaudeCode,
+    };
 
     tracing::info!("[start_chat_inner] 使用引擎: {:?}", engine);
     let mcp_config_path = prepare_mcp_config_path_with_paths(&options, &engine, app_paths)?;

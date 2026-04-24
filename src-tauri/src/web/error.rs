@@ -33,6 +33,12 @@ impl IntoResponse for WebError {
 
 impl From<crate::error::AppError> for WebError {
     fn from(err: crate::error::AppError) -> Self {
-        WebError::Internal(err.to_string())
+        match &err {
+            crate::error::AppError::ValidationError(_) => WebError::BadRequest(err.to_string()),
+            crate::error::AppError::SessionNotFound(id) => WebError::NotFound(format!("Session not found: {}", id)),
+            crate::error::AppError::PermissionDenied(msg) => WebError::BadRequest(format!("Permission denied: {}", msg)),
+            crate::error::AppError::InvalidPath(path) => WebError::BadRequest(format!("Invalid path: {}", path)),
+            _ => WebError::Internal(err.to_string()),
+        }
     }
 }
