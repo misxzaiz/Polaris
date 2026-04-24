@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::models::config::Config;
 use crate::AppState;
-use super::super::error::WebError;
+use super::WebError;
 
 /// Get current application configuration.
 pub async fn handle_get_settings(

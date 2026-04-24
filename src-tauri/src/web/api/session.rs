@@ -8,8 +8,16 @@ use crate::ai::{Pagination, SessionHistoryProvider};
 use crate::commands::chat::{ChatRequestOptions, start_chat_inner};
 use crate::web::api::chat::{run_claude_blocking, build_web_callbacks};
 use crate::AppState;
-use super::super::error::WebError;
+use super::WebError;
 use super::chat::validate_session_id;
+
+/// Validate that the engine_id is supported. Returns the normalized engine string.
+fn validate_engine(engine_id: &str) -> Result<&'static str, WebError> {
+    match engine_id {
+        "claude" | "claude-code" => Ok("claude-code"),
+        _ => Err(WebError::BadRequest(format!("Unsupported engine: {}", engine_id))),
+    }
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,17 +39,15 @@ pub async fn handle_list_sessions(
     State(state): State<Arc<AppState>>,
     Query(query): Query<ListSessionsQuery>,
 ) -> Result<impl IntoResponse, WebError> {
-    match query.engine_id.as_str() {
-        "claude" | "claude-code" => {
-            let pagination = Pagination::new(query.page.unwrap_or(1), query.page_size.unwrap_or(50));
-            let work_dir = query.work_dir;
-            let result = run_claude_blocking(&state, move |provider| {
-                provider.list_sessions(work_dir.as_deref(), pagination)
-            }).await?;
-            Ok(Json(result))
-        }
-        _ => Err(WebError::BadRequest(format!("Unsupported engine: {}", query.engine_id))),
-    }
+    validate_engine(&query.engine_id)?;
+    let page = query.page.unwrap_or(1).max(1);
+    let page_size = query.page_size.unwrap_or(50).clamp(1, 200);
+    let pagination = Pagination::new(page, page_size);
+    let work_dir = query.work_dir;
+    let result = run_claude_blocking(&state, move |provider| {
+        provider.list_sessions(work_dir.as_deref(), pagination)
+    }).await?;
+    Ok(Json(result))
 }
 
 #[derive(Debug, Deserialize)]
@@ -93,15 +99,11 @@ pub async fn handle_delete_session(
 
     let engine_id = query.engine_id.unwrap_or_else(default_engine);
 
-    match engine_id.as_str() {
-        "claude" | "claude-code" => {
-            run_claude_blocking(&state, move |provider| {
-                provider.delete_session(&session_id)
-            }).await?;
-            Ok(Json(serde_json::json!({ "status": "ok" })))
-        }
-        _ => Err(WebError::BadRequest(format!("Unsupported engine: {}", engine_id))),
-    }
+    validate_engine(&engine_id)?;
+    run_claude_blocking(&state, move |provider| {
+        provider.delete_session(&session_id)
+    }).await?;
+    Ok(Json(serde_json::json!({ "status": "ok" })))
 }
 
 #[derive(Debug, Deserialize)]
@@ -118,6 +120,6 @@ pub async fn handle_patch_session(
     State(_state): State<Arc<AppState>>,
     Path(_session_id): Path<String>,
     Json(_req): Json<PatchSessionRequest>,
-) -> Result<axum::Json<serde_json::Value>, WebError> {
+) -> Result<Json<serde_json::Value>, WebError> {
     Err(WebError::NotFound("Session patch not implemented".to_string()))
 }

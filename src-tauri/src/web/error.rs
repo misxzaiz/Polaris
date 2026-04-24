@@ -17,6 +17,11 @@ pub enum WebError {
     Internal(String),
 }
 
+/// Convenience helper for the common `{ "status": "ok" }` JSON response.
+pub fn ok_response() -> axum::Json<serde_json::Value> {
+    axum::Json(json!({ "status": "ok" }))
+}
+
 impl IntoResponse for WebError {
     fn into_response(self) -> Response {
         let (status, message) = match &self {

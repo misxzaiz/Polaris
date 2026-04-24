@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::AppState;
 use super::super::auth;
-use super::super::error::WebError;
+use super::WebError;
 
 /// Verify if the provided Bearer token is valid.
 pub async fn handle_verify_token(
@@ -50,8 +50,7 @@ pub async fn handle_regenerate_token(
         let mut store = state.lock_config()?;
         let mut config = store.get().clone();
         config.web.token = Some(new_token.clone());
-        store.update(config)
-            .map_err(|e| WebError::Internal(e.to_string()))?;
+        store.update(config)?;
     }
 
     Ok(Json(serde_json::json!({ "token": new_token })))

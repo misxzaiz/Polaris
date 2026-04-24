@@ -7,8 +7,9 @@ use tauri::Emitter;
 
 use crate::commands::chat::{ChatCallbacks, ChatRequestOptions, AppPaths, start_chat_inner, continue_chat_inner, interrupt_chat_inner};
 use crate::state::QuestionAnswer;
+use crate::web::error::ok_response;
 use crate::AppState;
-use super::super::error::WebError;
+use super::WebError;
 
 /// Validate that a session ID is safe to use (no path traversal, no special chars).
 /// Session IDs should be alphanumeric with hyphens/underscores only (UUIDs, slugs).
@@ -124,7 +125,7 @@ pub async fn handle_send_message(
             validate_session_id(&session_id)?;
             continue_chat_inner(session_id, message, options, &state, callbacks, &app_paths)
                 .await?;
-            Ok(Json(serde_json::json!({ "status": "ok" })))
+            Ok(ok_response())
         }
         None => {
             let sid = start_chat_inner(message, options, &state, callbacks, &app_paths)
@@ -148,7 +149,7 @@ pub async fn handle_interrupt(
 ) -> Result<impl IntoResponse, WebError> {
     validate_session_id(&req.session_id)?;
     interrupt_chat_inner(req.session_id, req.engine_id, &state).await?;
-    Ok(Json(serde_json::json!({ "status": "ok" })))
+    Ok(ok_response())
 }
 
 /// Get message history for a specific session.
@@ -224,7 +225,7 @@ pub async fn handle_answer_question(
 
     dual_emit(&state, &event);
 
-    Ok(Json(serde_json::json!({ "status": "ok" })))
+    Ok(ok_response())
 }
 
 #[derive(Debug, Deserialize)]
@@ -267,7 +268,7 @@ async fn handle_plan_decision(
 
     dual_emit(state, &payload);
 
-    Ok(Json(serde_json::json!({ "status": "ok" })))
+    Ok(ok_response())
 }
 
 /// Approve a pending plan for execution.
