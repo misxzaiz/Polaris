@@ -8,28 +8,9 @@ use tauri::Emitter;
 use crate::commands::chat::{ChatCallbacks, ChatRequestOptions, AppPaths, start_chat_inner, continue_chat_inner, interrupt_chat_inner};
 use crate::state::QuestionAnswer;
 use crate::web::error::ok_response;
+use crate::web::{validate_session_id, validate_entity_id, PaginationQuery, parse_pagination};
 use crate::AppState;
 use super::WebError;
-
-/// Validate that a session ID is safe to use (no path traversal, no special chars).
-/// Session IDs should be alphanumeric with hyphens/underscores only (UUIDs, slugs).
-pub fn validate_session_id(id: &str) -> Result<(), WebError> {
-    validate_entity_id(id, "sessionId")
-}
-
-/// Validate a call/plan ID (alphanumeric + hyphens/underscores, max 128 chars).
-fn validate_entity_id(id: &str, field: &str) -> Result<(), WebError> {
-    if id.is_empty() {
-        return Err(WebError::BadRequest(format!("{} must not be empty", field)));
-    }
-    if id.len() > 128 {
-        return Err(WebError::BadRequest(format!("{} too long (max 128 chars)", field)));
-    }
-    if !id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
-        return Err(WebError::BadRequest(format!("{} contains invalid characters", field)));
-    }
-    Ok(())
-}
 
 /// Resolve AppPaths (config_dir + resource_dir) from AppState.
 /// Falls back to `dirs::config_dir()/claude-code-pro` if not set by Tauri setup.
@@ -158,28 +139,19 @@ pub async fn handle_interrupt(
 pub async fn handle_get_history(
     State(state): State<Arc<AppState>>,
     Path(session_id): Path<String>,
-    Query(params): Query<HistoryQueryParams>,
+    Query(params): Query<PaginationQuery>,
 ) -> Result<Json<serde_json::Value>, WebError> {
-    use crate::ai::{Pagination, SessionHistoryProvider};
+    use crate::ai::SessionHistoryProvider;
 
     validate_session_id(&session_id)?;
 
-    let page = params.page.unwrap_or(1).max(1);
-    let page_size = params.page_size.unwrap_or(50).clamp(1, 200);
-    let pagination = Pagination::new(page, page_size);
+    let pagination = parse_pagination(&params);
 
     let result = run_claude_blocking(&state, move |provider| {
         provider.get_session_history(&session_id, pagination)
     }).await?;
 
     Ok(Json(serde_json::json!(result)))
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HistoryQueryParams {
-    page: Option<usize>,
-    page_size: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]

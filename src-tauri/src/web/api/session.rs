@@ -4,13 +4,13 @@ use axum::Json;
 use serde::Deserialize;
 use std::sync::Arc;
 
-use crate::ai::{Pagination, SessionHistoryProvider};
+use crate::ai::SessionHistoryProvider;
 use crate::commands::chat::{ChatRequestOptions, start_chat_inner};
 use crate::web::api::chat::{run_claude_blocking, build_web_callbacks};
 use crate::web::error::ok_response;
+use crate::web::{validate_session_id, PaginationQuery, parse_pagination};
 use crate::AppState;
 use super::WebError;
-use super::chat::validate_session_id;
 
 /// Validate that the engine_id is supported. Returns the normalized engine string.
 fn validate_engine(engine_id: &str) -> Result<&'static str, WebError> {
@@ -25,8 +25,8 @@ fn validate_engine(engine_id: &str) -> Result<&'static str, WebError> {
 pub struct ListSessionsQuery {
     #[serde(default = "default_engine")]
     pub engine_id: String,
-    pub page: Option<usize>,
-    pub page_size: Option<usize>,
+    #[serde(flatten)]
+    pub pagination: PaginationQuery,
     pub work_dir: Option<String>,
 }
 
@@ -41,9 +41,7 @@ pub async fn handle_list_sessions(
     Query(query): Query<ListSessionsQuery>,
 ) -> Result<impl IntoResponse, WebError> {
     validate_engine(&query.engine_id)?;
-    let page = query.page.unwrap_or(1).max(1);
-    let page_size = query.page_size.unwrap_or(50).clamp(1, 200);
-    let pagination = Pagination::new(page, page_size);
+    let pagination = parse_pagination(&query.pagination);
     let work_dir = query.work_dir;
     let result = run_claude_blocking(&state, move |provider| {
         provider.list_sessions(work_dir.as_deref(), pagination)

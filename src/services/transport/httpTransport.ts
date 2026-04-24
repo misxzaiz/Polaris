@@ -49,7 +49,8 @@ function commandToPath(command: string): string {
     return mapping[command];
   }
 
-  // 兜底：snake_case → kebab-case，挂在 /api/ 下
+  // Unmapped command — log warning to surface integration bugs during development
+  log.warn(`Unmapped command "${command}", falling back to /api/${command.replace(/_/g, '-')}`);
   const kebab = command.replace(/_/g, '-');
   return `/api/${kebab}`;
 }

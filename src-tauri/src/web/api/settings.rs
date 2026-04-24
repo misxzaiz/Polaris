@@ -12,8 +12,7 @@ use crate::web::error::ok_response;
 pub async fn handle_get_settings(
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, WebError> {
-    let config_store = state.lock_config()?;
-    let config = config_store.get().clone();
+    let config = state.clone_config_web()?;
     Ok(Json(config))
 }
 
