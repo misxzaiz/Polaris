@@ -9,6 +9,7 @@ export type { TransportAdapter, TransportMode } from './types';
 export { detectTransport } from './detector';
 export { tauriTransport } from './tauriTransport';
 export { createHttpTransport } from './httpTransport';
+export type { ConnectionStatus, HttpTransportOptions } from './httpTransport';
 export {
   getTokenFromUrl,
   getStoredToken,
@@ -22,7 +23,31 @@ export {
 import { detectTransport } from './detector';
 import { tauriTransport } from './tauriTransport';
 import { createHttpTransport } from './httpTransport';
+import type { ConnectionStatus } from './httpTransport';
 import { getStoredToken, getServerUrl } from './auth';
+import { useToastStore } from '../../stores/toastStore';
+
+/** Track the "connection lost" toast so it can be dismissed on reconnect */
+let connectionLostToastId: string | null = null;
+
+function handleConnectionStatusChange(status: ConnectionStatus): void {
+  const store = useToastStore.getState();
+
+  if (status === 'failed') {
+    if (!connectionLostToastId) {
+      connectionLostToastId = store.error(
+        'Web 服务连接已断开',
+        '实时更新不可用，请检查桌面端是否正在运行',
+      );
+    }
+  } else if (status === 'connected') {
+    if (connectionLostToastId) {
+      store.removeToast(connectionLostToastId);
+      connectionLostToastId = null;
+      store.success('连接已恢复');
+    }
+  }
+}
 
 /** 当前传输模式 */
 export const currentMode = detectTransport();
@@ -33,6 +58,7 @@ const transport = currentMode === 'tauri'
   : createHttpTransport(
       getServerUrl(),
       () => getStoredToken() || '',
+      { onStatusChange: handleConnectionStatusChange },
     );
 
 /**

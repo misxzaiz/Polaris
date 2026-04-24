@@ -71,15 +71,25 @@ function backoffDelay(attempt: number): number {
   return base + jitter;
 }
 
+/** Connection status reported by the transport layer */
+export type ConnectionStatus = 'connected' | 'disconnected' | 'failed';
+
+export interface HttpTransportOptions {
+  /** Called when WebSocket connection status changes */
+  onStatusChange?: (status: ConnectionStatus) => void;
+}
+
 /**
  * 创建 HTTP 传输适配器
  *
  * @param baseUrl 服务器地址（如 http://192.168.1.100:9800）
  * @param getToken 获取 auth token 的函数（支持动态刷新）
+ * @param options 可选配置（连接状态回调等）
  */
 export function createHttpTransport(
   baseUrl: string,
-  getToken: () => string
+  getToken: () => string,
+  options?: HttpTransportOptions,
 ): TransportAdapter {
   const wsUrl = baseUrl.replace(/^http/, 'ws');
   let ws: WebSocket | null = null;
@@ -88,6 +98,7 @@ export function createHttpTransport(
   let intentionalClose = false;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  let hadFailure = false;
   const listeners = new Map<string, Set<(payload: unknown) => void>>();
 
   /** Send a JSON message to the WebSocket if connected */
@@ -117,6 +128,7 @@ export function createHttpTransport(
     }
     if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
       log.error(`Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached. Giving up.`);
+      options?.onStatusChange?.('failed');
       return;
     }
     const delay = backoffDelay(reconnectAttempt);
@@ -145,6 +157,10 @@ export function createHttpTransport(
         ws = socket;
         wsConnecting = null;
         reconnectAttempt = 0;
+        if (hadFailure) {
+          hadFailure = false;
+          options?.onStatusChange?.('connected');
+        }
         // Start client-side heartbeat
         stopHeartbeat();
         heartbeatTimer = setInterval(() => {
@@ -160,6 +176,8 @@ export function createHttpTransport(
         socket.removeEventListener('error', errorHandler);
         ws = null;
         wsConnecting = null;
+        hadFailure = true;
+        options?.onStatusChange?.('disconnected');
         // Prevent close handler from also scheduling a reconnect
         socket.onclose = null;
         reject(new Error('WebSocket connection failed'));
@@ -181,6 +199,8 @@ export function createHttpTransport(
         ws = null;
         wsConnecting = null;
         stopHeartbeat();
+        hadFailure = true;
+        options?.onStatusChange?.('disconnected');
         scheduleReconnect();
       });
     });
