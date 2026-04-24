@@ -1107,7 +1107,7 @@ async fn session_list_unsupported_engine() {
 
     let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert!(json["error"].as_str().unwrap().contains("不支持"));
+    assert!(json["error"].as_str().unwrap().contains("Unsupported engine"));
 }
 
 #[tokio::test]

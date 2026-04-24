@@ -48,7 +48,7 @@ pub async fn handle_token_exchange(
             Err(WebError::Unauthorized)
         }
     } else {
-        Err(WebError::BadRequest("缺少 token 字段".to_string()))
+        Err(WebError::BadRequest("Missing token field".to_string()))
     }
 }
 

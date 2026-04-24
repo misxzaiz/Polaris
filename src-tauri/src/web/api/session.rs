@@ -49,7 +49,7 @@ pub async fn handle_list_sessions(
                 .map_err(WebError::from)?;
             Ok(Json(result))
         }
-        _ => Err(WebError::BadRequest(format!("不支持的引擎: {}", query.engine_id))),
+        _ => Err(WebError::BadRequest(format!("Unsupported engine: {}", query.engine_id))),
     }
 }
 
@@ -70,7 +70,7 @@ pub async fn handle_create_session(
     State(_state): State<Arc<AppState>>,
     Json(_req): Json<CreateSessionRequest>,
 ) -> Result<impl IntoResponse, WebError> {
-    Err::<Json<serde_json::Value>, WebError>(WebError::BadRequest("会话通过发送消息自动创建，无需手动创建".to_string()))
+    Err::<Json<serde_json::Value>, WebError>(WebError::BadRequest("Sessions are auto-created by sending messages".to_string()))
 }
 
 #[derive(Debug, Deserialize)]
@@ -106,7 +106,7 @@ pub async fn handle_delete_session(
                 .map_err(WebError::from)?;
             Ok(Json(serde_json::json!({ "status": "ok" })))
         }
-        _ => Err(WebError::BadRequest(format!("不支持的引擎: {}", engine_id))),
+        _ => Err(WebError::BadRequest(format!("Unsupported engine: {}", engine_id))),
     }
 }
 
