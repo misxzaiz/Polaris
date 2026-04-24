@@ -13,23 +13,19 @@ fn token_eq(a: &str, b: &str) -> bool {
     a.as_bytes().ct_eq(b.as_bytes()).unwrap_u8() == 1
 }
 
+fn get_expected_token(state: &Arc<AppState>) -> Result<String, WebError> {
+    let store = state.config_store.lock()
+        .map_err(|e| WebError::Internal(e.to_string()))?;
+    Ok(store.get().web.token.clone().unwrap_or_default())
+}
+
 /// Verify if the provided Bearer token is valid.
 pub async fn handle_verify_token(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
 ) -> Result<impl IntoResponse, WebError> {
-    let expected = {
-        let store = state.config_store.lock()
-            .map_err(|e| WebError::Internal(e.to_string()))?;
-        store.get().web.token.clone().unwrap_or_default()
-    };
-
-    let provided = headers
-        .get("Authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .unwrap_or("");
-
+    let expected = get_expected_token(&state)?;
+    let provided = auth::extract_bearer_from_headers(&headers);
     Ok(Json(serde_json::json!({ "valid": token_eq(provided, &expected) })))
 }
 
@@ -43,11 +39,7 @@ pub async fn handle_token_exchange(
     State(state): State<Arc<AppState>>,
     axum::Json(req): axum::Json<TokenRequest>,
 ) -> Result<impl IntoResponse, WebError> {
-    let expected = {
-        let store = state.config_store.lock()
-            .map_err(|e| WebError::Internal(e.to_string()))?;
-        store.get().web.token.clone().unwrap_or_default()
-    };
+    let expected = get_expected_token(&state)?;
 
     if let Some(provided) = req.token {
         if token_eq(&provided, &expected) {
@@ -60,26 +52,10 @@ pub async fn handle_token_exchange(
     }
 }
 
-/// Regenerate the web access token. Requires current valid token.
+/// Regenerate the web access token. Requires current valid token (enforced by middleware).
 pub async fn handle_regenerate_token(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
 ) -> Result<impl IntoResponse, WebError> {
-    let expected = {
-        let store = state.config_store.lock()
-            .map_err(|e| WebError::Internal(e.to_string()))?;
-        store.get().web.token.clone().unwrap_or_default()
-    };
-    let provided = headers
-        .get("Authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .unwrap_or("");
-
-    if !token_eq(provided, &expected) {
-        return Err(WebError::Unauthorized);
-    }
-
     let new_token = auth::generate_token();
     {
         let mut store = state.config_store.lock()

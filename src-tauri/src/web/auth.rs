@@ -25,15 +25,20 @@ pub fn resolve_token(configured_token: Option<&str>) -> String {
     }
 }
 
+/// Extract bearer token from `Authorization: Bearer {token}` header.
+pub fn extract_bearer_from_headers(headers: &axum::http::HeaderMap) -> &str {
+    headers
+        .get("Authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .unwrap_or("")
+}
+
 /// Extract token from `Authorization: Bearer {token}` header or `?token=` query param.
 fn extract_token<B>(req: &Request<B>) -> Result<String, WebError> {
-    // Authorization header takes precedence
-    if let Some(auth) = req.headers().get("Authorization") {
-        if let Ok(val) = auth.to_str() {
-            if let Some(token) = val.strip_prefix("Bearer ") {
-                return Ok(token.to_string());
-            }
-        }
+    let bearer = extract_bearer_from_headers(req.headers());
+    if !bearer.is_empty() {
+        return Ok(bearer.to_string());
     }
 
     // Fallback to query parameter (used by WebSocket upgrade and initial browser access)
