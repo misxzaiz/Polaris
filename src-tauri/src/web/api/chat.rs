@@ -65,6 +65,38 @@ pub fn create_emit_callback(state: Arc<AppState>) -> Arc<dyn Fn(serde_json::Valu
     })
 }
 
+/// Build ChatCallbacks and AppPaths for a web-initiated chat operation.
+/// Sets context_id to "web" if not already specified.
+pub fn build_web_callbacks(state: &Arc<AppState>, options: &mut ChatRequestOptions) -> (ChatCallbacks, AppPaths) {
+    if options.context_id.is_none() {
+        options.context_id = Some("web".to_string());
+    }
+    let emit_event = create_emit_callback(state.clone());
+    let notify_complete = Arc::new(|| {});
+    let app_paths = resolve_app_paths(state);
+    (ChatCallbacks { emit_event, notify_complete }, app_paths)
+}
+
+/// Run a blocking Claude history provider operation on the blocking thread pool.
+/// Handles config cloning, spawn_blocking, and error mapping boilerplate.
+pub async fn run_claude_blocking<F, T>(
+    state: &AppState,
+    f: F,
+) -> Result<T, WebError>
+where
+    F: FnOnce(crate::ai::ClaudeHistoryProvider) -> crate::error::Result<T> + Send + 'static,
+    T: Send + 'static,
+{
+    let config = state.clone_config_web()?;
+    tokio::task::spawn_blocking(move || {
+        let provider = crate::ai::ClaudeHistoryProvider::new(config);
+        f(provider)
+    })
+    .await
+    .map_err(|e| WebError::Internal(e.to_string()))?
+    .map_err(WebError::from)
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SendMessageRequest {
@@ -85,19 +117,7 @@ pub async fn handle_send_message(
     }
 
     let mut options = req.options.unwrap_or_default();
-    if options.context_id.is_none() {
-        options.context_id = Some("web".to_string());
-    }
-
-    let emit_event = create_emit_callback(state.clone());
-    let notify_complete = Arc::new(|| {});
-
-    let callbacks = ChatCallbacks {
-        emit_event,
-        notify_complete,
-    };
-
-    let app_paths = resolve_app_paths(&state);
+    let (callbacks, app_paths) = build_web_callbacks(&state, &mut options);
 
     match req.session_id {
         Some(session_id) => {
@@ -139,26 +159,17 @@ pub async fn handle_get_history(
     Path(session_id): Path<String>,
     Query(params): Query<HistoryQueryParams>,
 ) -> Result<Json<serde_json::Value>, WebError> {
-    use crate::ai::{ClaudeHistoryProvider, SessionHistoryProvider, Pagination};
+    use crate::ai::{Pagination, SessionHistoryProvider};
 
     validate_session_id(&session_id)?;
 
     let page = params.page.unwrap_or(1).max(1);
     let page_size = params.page_size.unwrap_or(50).clamp(1, 200);
+    let pagination = Pagination::new(page, page_size);
 
-    let blocking_task = {
-        let config = state.clone_config_web()?;
-
-        let pagination = Pagination::new(page, page_size);
-        tokio::task::spawn_blocking(move || {
-            let provider = ClaudeHistoryProvider::new(config);
-            provider.get_session_history(&session_id, pagination)
-        })
-    };
-
-    let result = blocking_task.await
-        .map_err(|e| WebError::Internal(e.to_string()))?
-        .map_err(WebError::from)?;
+    let result = run_claude_blocking(&state, move |provider| {
+        provider.get_session_history(&session_id, pagination)
+    }).await?;
 
     Ok(Json(serde_json::json!(result)))
 }

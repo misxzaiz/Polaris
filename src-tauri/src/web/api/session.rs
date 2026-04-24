@@ -4,9 +4,9 @@ use axum::Json;
 use serde::Deserialize;
 use std::sync::Arc;
 
-use crate::ai::{ClaudeHistoryProvider, SessionHistoryProvider, Pagination};
-use crate::commands::chat::{ChatCallbacks, ChatRequestOptions, start_chat_inner};
-use crate::web::api::chat::{create_emit_callback, resolve_app_paths};
+use crate::ai::{Pagination, SessionHistoryProvider};
+use crate::commands::chat::{ChatRequestOptions, start_chat_inner};
+use crate::web::api::chat::{run_claude_blocking, build_web_callbacks};
 use crate::AppState;
 use super::super::error::WebError;
 use super::chat::validate_session_id;
@@ -31,22 +31,13 @@ pub async fn handle_list_sessions(
     State(state): State<Arc<AppState>>,
     Query(query): Query<ListSessionsQuery>,
 ) -> Result<impl IntoResponse, WebError> {
-    let pagination = Pagination::new(query.page.unwrap_or(1), query.page_size.unwrap_or(50));
-
     match query.engine_id.as_str() {
         "claude" | "claude-code" => {
-            let blocking_task = {
-                let config = state.clone_config_web()?;
-
-                let work_dir = query.work_dir;
-                tokio::task::spawn_blocking(move || {
-                    let provider = ClaudeHistoryProvider::new(config);
-                    provider.list_sessions(work_dir.as_deref(), pagination)
-                })
-            };
-            let result = blocking_task.await
-                .map_err(|e| WebError::Internal(e.to_string()))?
-                .map_err(WebError::from)?;
+            let pagination = Pagination::new(query.page.unwrap_or(1), query.page_size.unwrap_or(50));
+            let work_dir = query.work_dir;
+            let result = run_claude_blocking(&state, move |provider| {
+                provider.list_sessions(work_dir.as_deref(), pagination)
+            }).await?;
             Ok(Json(result))
         }
         _ => Err(WebError::BadRequest(format!("Unsupported engine: {}", query.engine_id))),
@@ -79,15 +70,7 @@ pub async fn handle_create_session(
         .to_string();
 
     let mut options = req.options.unwrap_or_default();
-    if options.context_id.is_none() {
-        options.context_id = Some("web".to_string());
-    }
-
-    let emit_event = create_emit_callback(state.clone());
-    let notify_complete = Arc::new(|| {});
-    let callbacks = ChatCallbacks { emit_event, notify_complete };
-
-    let app_paths = resolve_app_paths(&state);
+    let (callbacks, app_paths) = build_web_callbacks(&state, &mut options);
 
     let sid = start_chat_inner(message, options, &state, callbacks, &app_paths).await?;
     Ok(Json(serde_json::json!({ "sessionId": sid })))
@@ -112,17 +95,9 @@ pub async fn handle_delete_session(
 
     match engine_id.as_str() {
         "claude" | "claude-code" => {
-            let blocking_task = {
-                let config = state.clone_config_web()?;
-
-                tokio::task::spawn_blocking(move || {
-                    let provider = ClaudeHistoryProvider::new(config);
-                    provider.delete_session(&session_id)
-                })
-            };
-            blocking_task.await
-                .map_err(|e| WebError::Internal(e.to_string()))?
-                .map_err(WebError::from)?;
+            run_claude_blocking(&state, move |provider| {
+                provider.delete_session(&session_id)
+            }).await?;
             Ok(Json(serde_json::json!({ "status": "ok" })))
         }
         _ => Err(WebError::BadRequest(format!("Unsupported engine: {}", engine_id))),
