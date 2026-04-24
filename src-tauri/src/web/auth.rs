@@ -45,7 +45,9 @@ fn extract_token<B>(req: &Request<B>) -> Result<String, WebError> {
     if let Some(query) = req.uri().query() {
         for pair in query.split('&') {
             if let Some(token) = pair.strip_prefix("token=") {
-                return Ok(token.to_string());
+                return Ok(urlencoding::decode(token)
+                    .map_err(|e| WebError::Internal(format!("Invalid token encoding: {}", e)))?
+                    .into_owned());
             }
         }
     }
@@ -179,5 +181,30 @@ mod tests {
     fn auth_required_for_token_get() {
         // GET /api/auth/token still requires auth (only POST is whitelisted)
         assert!(is_auth_required("/api/auth/token", &Method::GET));
+    }
+
+    #[test]
+    fn extract_token_url_decodes_query_param() {
+        use axum::http::Request;
+
+        // Simulate a URL-encoded token with a + character
+        let req = Request::builder()
+            .uri("/api/ws?token=my%2Bcustom%3Dtoken")
+            .body(())
+            .unwrap();
+        let token = extract_token(&req).unwrap();
+        assert_eq!(token, "my+custom=token");
+    }
+
+    #[test]
+    fn extract_token_hex_token_unchanged() {
+        use axum::http::Request;
+
+        let req = Request::builder()
+            .uri("/api/ws?token=abc123def456")
+            .body(())
+            .unwrap();
+        let token = extract_token(&req).unwrap();
+        assert_eq!(token, "abc123def456");
     }
 }
