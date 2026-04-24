@@ -5,8 +5,8 @@ use serde::Deserialize;
 use std::sync::Arc;
 
 use crate::ai::{ClaudeHistoryProvider, SessionHistoryProvider, Pagination};
-use crate::commands::chat::{ChatCallbacks, ChatRequestOptions, AppPaths, start_chat_inner};
-use crate::web::api::chat::create_emit_callback;
+use crate::commands::chat::{ChatCallbacks, ChatRequestOptions, start_chat_inner};
+use crate::web::api::chat::{create_emit_callback, resolve_app_paths};
 use crate::AppState;
 use super::super::error::WebError;
 use super::chat::validate_session_id;
@@ -90,15 +90,7 @@ pub async fn handle_create_session(
     let notify_complete = Arc::new(|| {});
     let callbacks = ChatCallbacks { emit_event, notify_complete };
 
-    let config_dir = state.app_config_dir.get()
-        .cloned()
-        .unwrap_or_else(|| {
-            dirs::config_dir()
-                .unwrap_or_else(|| std::path::PathBuf::from("."))
-                .join("claude-code-pro")
-        });
-    let resource_dir = state.resource_dir.get().and_then(|opt| opt.clone());
-    let app_paths = AppPaths { config_dir, resource_dir };
+    let app_paths = resolve_app_paths(&state);
 
     let sid = start_chat_inner(message, options, &state, callbacks, &app_paths).await?;
     Ok(Json(serde_json::json!({ "sessionId": sid })))

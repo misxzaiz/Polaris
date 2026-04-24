@@ -39,6 +39,21 @@ fn validate_entity_id(id: &str, field: &str) -> Result<(), WebError> {
     Ok(())
 }
 
+/// Resolve AppPaths (config_dir + resource_dir) from AppState.
+/// Falls back to `dirs::config_dir()/claude-code-pro` if not set by Tauri setup.
+pub fn resolve_app_paths(state: &AppState) -> AppPaths {
+    let config_dir = state.app_config_dir.get()
+        .cloned()
+        .unwrap_or_else(|| {
+            dirs::config_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join("claude-code-pro")
+        });
+    let resource_dir = state.resource_dir.get()
+        .and_then(|opt| opt.clone());
+    AppPaths { config_dir, resource_dir }
+}
+
 /// Dual-emit: broadcast event to both WebSocket clients and Tauri webview.
 pub fn dual_emit(state: &AppState, event: &serde_json::Value) {
     if let Err(e) = state.event_broadcast.send(event.to_string()) {
@@ -91,19 +106,7 @@ pub async fn handle_send_message(
         notify_complete,
     };
 
-    let config_dir = state.app_config_dir.get()
-        .cloned()
-        .unwrap_or_else(|| {
-            dirs::config_dir()
-                .unwrap_or_else(|| std::path::PathBuf::from("."))
-                .join("claude-code-pro")
-        });
-    let resource_dir = state.resource_dir.get()
-        .and_then(|opt| opt.clone());
-    let app_paths = AppPaths {
-        config_dir,
-        resource_dir,
-    };
+    let app_paths = resolve_app_paths(&state);
 
     match req.session_id {
         Some(session_id) => {
