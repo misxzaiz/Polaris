@@ -13,16 +13,7 @@ use super::super::error::WebError;
 /// Validate that a session ID is safe to use (no path traversal, no special chars).
 /// Session IDs should be alphanumeric with hyphens/underscores only (UUIDs, slugs).
 pub fn validate_session_id(id: &str) -> Result<(), WebError> {
-    if id.is_empty() {
-        return Err(WebError::BadRequest("sessionId must not be empty".to_string()));
-    }
-    if id.len() > 128 {
-        return Err(WebError::BadRequest("sessionId too long (max 128 chars)".to_string()));
-    }
-    if !id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
-        return Err(WebError::BadRequest("sessionId contains invalid characters".to_string()));
-    }
-    Ok(())
+    validate_entity_id(id, "sessionId")
 }
 
 /// Validate a call/plan ID (alphanumeric + hyphens/underscores, max 128 chars).
@@ -156,10 +147,8 @@ pub async fn handle_get_history(
     let page_size = params.page_size.unwrap_or(50).clamp(1, 200);
 
     let blocking_task = {
-        let config_store = state.config_store.lock()
-            .map_err(|e| WebError::Internal(e.to_string()))?;
-        let config = config_store.get().clone();
-        drop(config_store);
+        let config = state.clone_config()
+            .map_err(WebError::Internal)?;
 
         let pagination = Pagination::new(page, page_size);
         tokio::task::spawn_blocking(move || {
@@ -231,92 +220,66 @@ pub async fn handle_answer_question(
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ApprovePlanRequest {
+pub struct PlanDecisionRequest {
     pub session_id: String,
     pub plan_id: String,
     pub feedback: Option<String>,
+}
+
+/// Shared handler for plan approve/reject — differs only in status and boolean flag.
+async fn handle_plan_decision(
+    state: &AppState,
+    session_id: String,
+    plan_id: String,
+    feedback: Option<String>,
+    approved: bool,
+) -> Result<impl IntoResponse, WebError> {
+    use crate::state::PlanApprovalStatus;
+    use crate::models::PlanApprovalResultEvent;
+
+    {
+        let mut pending = state.pending_plans.lock()
+            .map_err(|e| WebError::Internal(e.to_string()))?;
+        let Some(plan) = pending.get_mut(&plan_id) else {
+            return Err(WebError::NotFound(format!("No pending plan found for planId: {}", plan_id)));
+        };
+        plan.status = if approved { PlanApprovalStatus::Approved } else { PlanApprovalStatus::Rejected };
+        plan.feedback = feedback.clone();
+        pending.remove(&plan_id);
+    }
+
+    let mut event = PlanApprovalResultEvent::new(&session_id, &plan_id, approved);
+    if let Some(fb) = feedback {
+        event = event.with_feedback(fb);
+    }
+    let payload = serde_json::json!({
+        "contextId": "main",
+        "payload": event
+    });
+
+    dual_emit(state, &payload);
+
+    Ok(Json(serde_json::json!({ "status": "ok" })))
 }
 
 /// Approve a pending plan for execution.
 /// Returns 404 if the plan_id does not exist in pending plans.
 pub async fn handle_approve_plan(
     State(state): State<Arc<AppState>>,
-    Json(req): Json<ApprovePlanRequest>,
+    Json(req): Json<PlanDecisionRequest>,
 ) -> Result<impl IntoResponse, WebError> {
     validate_session_id(&req.session_id)?;
     validate_entity_id(&req.plan_id, "planId")?;
-    use crate::state::PlanApprovalStatus;
-    use crate::models::PlanApprovalResultEvent;
-
-    let (plan_id, session_id, feedback) = (req.plan_id, req.session_id, req.feedback);
-
-    {
-        let mut pending = state.pending_plans.lock()
-            .map_err(|e| WebError::Internal(e.to_string()))?;
-        let Some(plan) = pending.get_mut(&plan_id) else {
-            return Err(WebError::NotFound(format!("No pending plan found for planId: {}", plan_id)));
-        };
-        plan.status = PlanApprovalStatus::Approved;
-        plan.feedback = feedback.clone();
-        pending.remove(&plan_id);
-    }
-
-    let mut event = PlanApprovalResultEvent::new(&session_id, &plan_id, true);
-    if let Some(fb) = feedback {
-        event = event.with_feedback(fb);
-    }
-    let payload = serde_json::json!({
-        "contextId": "main",
-        "payload": event
-    });
-
-    dual_emit(&state, &payload);
-
-    Ok(Json(serde_json::json!({ "status": "ok" })))
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RejectPlanRequest {
-    pub session_id: String,
-    pub plan_id: String,
-    pub feedback: Option<String>,
+    handle_plan_decision(&state, req.session_id, req.plan_id, req.feedback, true).await
 }
 
 /// Reject a pending plan, optionally with feedback.
 /// Returns 404 if the plan_id does not exist in pending plans.
 pub async fn handle_reject_plan(
     State(state): State<Arc<AppState>>,
-    Json(req): Json<RejectPlanRequest>,
+    Json(req): Json<PlanDecisionRequest>,
 ) -> Result<impl IntoResponse, WebError> {
     validate_session_id(&req.session_id)?;
     validate_entity_id(&req.plan_id, "planId")?;
-    use crate::state::PlanApprovalStatus;
-    use crate::models::PlanApprovalResultEvent;
-
-    let (plan_id, session_id, feedback) = (req.plan_id, req.session_id, req.feedback);
-
-    {
-        let mut pending = state.pending_plans.lock()
-            .map_err(|e| WebError::Internal(e.to_string()))?;
-        let Some(plan) = pending.get_mut(&plan_id) else {
-            return Err(WebError::NotFound(format!("No pending plan found for planId: {}", plan_id)));
-        };
-        plan.status = PlanApprovalStatus::Rejected;
-        plan.feedback = feedback.clone();
-        pending.remove(&plan_id);
-    }
-
-    let mut event = PlanApprovalResultEvent::new(&session_id, &plan_id, false);
-    if let Some(fb) = feedback {
-        event = event.with_feedback(fb);
-    }
-    let payload = serde_json::json!({
-        "contextId": "main",
-        "payload": event
-    });
-
-    dual_emit(&state, &payload);
-
-    Ok(Json(serde_json::json!({ "status": "ok" })))
+    handle_plan_decision(&state, req.session_id, req.plan_id, req.feedback, false).await
 }

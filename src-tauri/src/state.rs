@@ -170,6 +170,14 @@ pub fn create_app_state(
 }
 
 impl AppState {
+    /// Clone the current config by briefly acquiring the config_store lock.
+    /// Consolidates the lock-clone-drop pattern used in multiple web handlers.
+    pub fn clone_config(&self) -> Result<crate::models::config::Config, String> {
+        let store = self.config_store.lock()
+            .map_err(|e| e.to_string())?;
+        Ok(store.get().clone())
+    }
+
     /// Clone shared Arc fields for the web server.
     ///
     /// Non-shared fields (integration_manager, terminal_manager, etc.) get fresh

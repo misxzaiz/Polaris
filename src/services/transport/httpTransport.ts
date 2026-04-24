@@ -191,7 +191,8 @@ export function createHttpTransport(
           const data = JSON.parse(msg.data as string) as { event: string; payload: unknown };
           listeners.get(data.event)?.forEach((cb) => cb(data.payload));
         } catch {
-          log.warn('Failed to parse WS message');
+          const preview = typeof msg.data === 'string' ? msg.data.slice(0, 200) : '(non-string)';
+          log.warn(`Failed to parse WS message: ${preview}`);
         }
       });
 
