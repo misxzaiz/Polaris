@@ -71,15 +71,23 @@ return [
 
 ## 正确做法
 
-- 把 `languageServerExtensions()` 传给 `LSPClient` 构造函数的 `extensions` 选项（每个 client 一次）。
-- 编辑器侧用 `languageServerSupport(client, uri, languageID)` 拿单个 `Extension`，它已经打包好了 plugin、诊断、补全、hover、keymap 等全部编辑器扩展。
+`@codemirror/lsp-client` 提供两个"全家桶" helper，它们**大面积重叠**，是**二选一**的关系，不能同时使用：
+
+| helper | 位置 | 内容 |
+|---|---|---|
+| `languageServerExtensions()` | 传给 `new LSPClient({ extensions })` | `serverCompletion()` + `hoverTooltips()` + `signatureHelp()` + 相关 keymap + `serverDiagnostics()` |
+| `languageServerSupport(client, uri, languageID)` | 传给 `EditorState.create({ extensions })` | `LSPPlugin.create(...)` + `serverCompletion()` + `hoverTooltips()` + `signatureHelp()` + 相关 keymap（**不含 `serverDiagnostics`**） |
+
+**两个同时挂会导致 hover / 补全 / 签名帮助重复显示**（悬浮提示看起来连着出现两份）。
+
+本项目选"方案 B"——诊断在 client 层注册，其它编辑器扩展走 `languageServerSupport`：
 
 ```ts
-// 构造 client 时
+// 构造 client 时：只放 LSPClientExtension 配置对象
 const client = new LSPClient({
   rootUri,
   timeout: 5000,
-  extensions: languageServerExtensions(), // ✅ 配置级扩展放这里
+  extensions: [serverDiagnostics()], // ✅ 只加诊断，必须在 client 级
 }).connect(transport);
 
 // 给 EditorState 提供扩展时
@@ -89,9 +97,11 @@ function getExtensionsForClient(
   languageID?: string,
 ): Extension[] {
   const uri = pathToUri(filePath);
-  return [languageServerSupport(client, uri, languageID)]; // ✅ 只用这个
+  return [languageServerSupport(client, uri, languageID)]; // ✅ 编辑器侧
 }
 ```
+
+等价的"方案 A"：`new LSPClient({ extensions: languageServerExtensions() })`，编辑器侧只加 `client.plugin(uri, languageID)`。两种都可以，但**不能混用**。
 
 ## 诊断小抄
 

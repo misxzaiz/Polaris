@@ -6,8 +6,14 @@
  */
 
 import { create } from 'zustand';
-import { LSPClient, languageServerExtensions, languageServerSupport } from '@codemirror/lsp-client';
+import {
+  LSPClient,
+  jumpToDefinition,
+  languageServerSupport,
+  serverDiagnostics,
+} from '@codemirror/lsp-client';
 import type { Extension } from '@codemirror/state';
+import { EditorView } from '@codemirror/view';
 import { TauriIpcTransport } from '../services/lsp/TauriIpcTransport';
 import { lspConfigList } from '../services/tauri/lspService';
 import { createLogger } from '../utils/logger';
@@ -163,13 +169,16 @@ export const useLspStore = create<LspStore>()((set, get) => ({
         const transport = new TauriIpcTransport(serverId);
         await transport.connect(serverConfig.command, serverConfig.args);
 
-        // 注意：languageServerExtensions() 返回的条目包含 LSPClientExtension
-        // 配置对象（非 CodeMirror Extension），必须传给 LSPClient 的 extensions
-        // 选项，而不是塞进 EditorState.create({extensions})。
+        // 只把 LSPClientExtension 配置对象放在 client 层级：
+        // - serverDiagnostics() 负责接收 textDocument/publishDiagnostics 推送，
+        //   必须在 client 级注册。
+        // 不要在这里再加 serverCompletion / hoverTooltips / signatureHelp 等
+        // 编辑器侧扩展——languageServerSupport(...) 已经包含它们，重复注册
+        // 会导致悬浮提示、补全、签名帮助等出现重复显示。
         const client = new LSPClient({
           rootUri,
           timeout: 5000,
-          extensions: languageServerExtensions(),
+          extensions: [serverDiagnostics()],
         }).connect(transport);
 
         // 等待初始化完成（LSPClient 自动处理 initialize handshake）
@@ -349,5 +358,39 @@ function getExtensionsForClient(
   languageID?: string,
 ): Extension[] {
   const uri = pathToUri(filePath);
-  return [languageServerSupport(client, uri, languageID)];
+  return [
+    languageServerSupport(client, uri, languageID),
+    ctrlClickJumpToDefinition,
+    ctrlHoverTheme,
+  ];
 }
+
+/**
+ * Ctrl/Cmd + 左键 跳转到定义。
+ *
+ * CodeMirror LSP 客户端默认只给了 F12 键位；这里加一个鼠标事件处理器：
+ * 按住 Ctrl（macOS 下 Cmd）点击某个符号，先把光标移到点击位置，再触发
+ * `jumpToDefinition` 命令（内部会走 LSP 的 textDocument/definition）。
+ */
+const ctrlClickJumpToDefinition = EditorView.domEventHandlers({
+  mousedown(event, view) {
+    if (event.button !== 0) return false;
+    if (!(event.ctrlKey || event.metaKey)) return false;
+    const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+    if (pos == null) return false;
+    event.preventDefault();
+    view.dispatch({ selection: { anchor: pos } });
+    // jumpToDefinition 返回 true 表示有定义可跳；失败（未连接/无定义）静默忽略
+    jumpToDefinition(view);
+    return true;
+  },
+});
+
+/**
+ * 按住 Ctrl/Cmd 时给编辑器内容加一个可点击的视觉样式（手型指针 + 下划线提示）。
+ */
+const ctrlHoverTheme = EditorView.theme({
+  '.cm-content.cm-ctrl-hover': {
+    cursor: 'pointer',
+  },
+});
