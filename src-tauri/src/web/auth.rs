@@ -12,6 +12,18 @@ use subtle::ConstantTimeEq;
 use crate::AppState;
 use super::error::WebError;
 
+/// Constant-time comparison of two token strings to prevent timing attacks.
+pub fn token_eq(a: &str, b: &str) -> bool {
+    a.as_bytes().ct_eq(b.as_bytes()).unwrap_u8() == 1
+}
+
+/// Read the expected web token from config store.
+pub fn get_expected_token(state: &Arc<AppState>) -> Result<String, WebError> {
+    let store = state.config_store.lock()
+        .map_err(|e| WebError::Internal(e.to_string()))?;
+    Ok(store.get().web.token.clone().unwrap_or_default())
+}
+
 /// Generate a random 32-char hex token (UUID v4, hyphens removed).
 pub fn generate_token() -> String {
     uuid::Uuid::new_v4().to_string().replace('-', "")
@@ -95,17 +107,13 @@ pub async fn auth_middleware(
 
     let provided = extract_token(&req)?;
 
-    let expected = {
-        let store = state.config_store.lock()
-            .map_err(|e| WebError::Internal(e.to_string()))?;
-        store.get().web.token.clone().unwrap_or_default()
-    };
+    let expected = get_expected_token(&state)?;
 
     if expected.is_empty() {
         return Err(WebError::Internal("Web server token not configured".to_string()));
     }
 
-    if provided.as_bytes().ct_eq(expected.as_bytes()).unwrap_u8() == 1 {
+    if token_eq(&provided, &expected) {
         Ok(next.run(req).await)
     } else {
         Err(WebError::Unauthorized)
