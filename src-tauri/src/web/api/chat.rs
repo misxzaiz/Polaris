@@ -22,8 +22,7 @@ pub fn resolve_app_paths(state: &AppState) -> AppPaths {
                 .unwrap_or_else(|| std::path::PathBuf::from("."))
                 .join("claude-code-pro")
         });
-    let resource_dir = state.resource_dir.get()
-        .and_then(|opt| opt.clone());
+    let resource_dir = state.resource_dir.get().and_then(|p| p.clone());
     AppPaths { config_dir, resource_dir }
 }
 
@@ -180,11 +179,15 @@ pub async fn handle_answer_question(
 
     {
         let mut pending = state.lock_pending_questions()?;
-        let Some(question) = pending.get_mut(&call_id) else {
+        let Some(question) = pending.get(&call_id) else {
             return Err(WebError::NotFound(format!("No pending question found for callId: {}", call_id)));
         };
-        use crate::state::QuestionStatus;
-        question.status = QuestionStatus::Answered;
+        if question.session_id != session_id {
+            return Err(WebError::BadRequest(format!(
+                "session_id mismatch: expected {}, got {}",
+                question.session_id, session_id
+            )));
+        }
         pending.remove(&call_id);
     }
 
@@ -216,16 +219,19 @@ async fn handle_plan_decision(
     feedback: Option<String>,
     approved: bool,
 ) -> Result<impl IntoResponse, WebError> {
-    use crate::state::PlanApprovalStatus;
     use crate::models::PlanApprovalResultEvent;
 
     {
         let mut pending = state.lock_pending_plans()?;
-        let Some(plan) = pending.get_mut(&plan_id) else {
+        let Some(plan) = pending.get(&plan_id) else {
             return Err(WebError::NotFound(format!("No pending plan found for planId: {}", plan_id)));
         };
-        plan.status = if approved { PlanApprovalStatus::Approved } else { PlanApprovalStatus::Rejected };
-        plan.feedback = feedback.clone();
+        if plan.session_id != session_id {
+            return Err(WebError::BadRequest(format!(
+                "session_id mismatch: expected {}, got {}",
+                plan.session_id, session_id
+            )));
+        }
         pending.remove(&plan_id);
     }
 

@@ -1388,3 +1388,85 @@ async fn health_check_version_matches_crate() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["version"], env!("CARGO_PKG_VERSION"));
 }
+
+// ============================================================================
+// Session ID Verification Tests
+// ============================================================================
+
+#[tokio::test]
+async fn answer_question_rejects_session_id_mismatch() {
+    let state = create_test_state();
+    state.pending_questions.lock().unwrap().insert(
+        "call-mismatch".to_string(),
+        make_pending_question("call-mismatch", "correct-session"),
+    );
+
+    let app = create_router(state.clone());
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/api/chat/answer-question")
+        .header(AUTHORIZATION, format!("Bearer {}", TEST_TOKEN))
+        .header(CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            r#"{"sessionId":"wrong-session","callId":"call-mismatch","selected":["a"]}"#,
+        ))
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+    // Entry should NOT be removed on mismatch
+    let pending = state.pending_questions.lock().unwrap();
+    assert!(pending.get("call-mismatch").is_some());
+}
+
+#[tokio::test]
+async fn approve_plan_rejects_session_id_mismatch() {
+    let state = create_test_state();
+    state.pending_plans.lock().unwrap().insert(
+        "plan-mismatch".to_string(),
+        make_pending_plan("plan-mismatch", "correct-session"),
+    );
+
+    let app = create_router(state.clone());
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/api/chat/approve-plan")
+        .header(AUTHORIZATION, format!("Bearer {}", TEST_TOKEN))
+        .header(CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            r#"{"sessionId":"wrong-session","planId":"plan-mismatch"}"#,
+        ))
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+    // Entry should NOT be removed on mismatch
+    let pending = state.pending_plans.lock().unwrap();
+    assert!(pending.get("plan-mismatch").is_some());
+}
+
+#[tokio::test]
+async fn reject_plan_rejects_session_id_mismatch() {
+    let state = create_test_state();
+    state.pending_plans.lock().unwrap().insert(
+        "plan-rej-mismatch".to_string(),
+        make_pending_plan("plan-rej-mismatch", "correct-session"),
+    );
+
+    let app = create_router(state.clone());
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/api/chat/reject-plan")
+        .header(AUTHORIZATION, format!("Bearer {}", TEST_TOKEN))
+        .header(CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            r#"{"sessionId":"wrong-session","planId":"plan-rej-mismatch","feedback":"nope"}"#,
+        ))
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+    // Entry should NOT be removed on mismatch
+    let pending = state.pending_plans.lock().unwrap();
+    assert!(pending.get("plan-rej-mismatch").is_some());
+}

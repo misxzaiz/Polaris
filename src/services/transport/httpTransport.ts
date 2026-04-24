@@ -185,7 +185,10 @@ export function createHttpTransport(
 
       socket.addEventListener('message', (msg) => {
         try {
-          const data = JSON.parse(msg.data as string) as { event: string; payload: unknown };
+          const raw = typeof msg.data === 'string' ? msg.data : '';
+          const data = JSON.parse(raw) as { event?: string; type?: string; payload: unknown };
+          // Skip server pong/control messages — they have no 'event' field
+          if (!data.event) return;
           listeners.get(data.event)?.forEach((cb) => cb(data.payload));
         } catch {
           const preview = typeof msg.data === 'string' ? msg.data.slice(0, 200) : '(non-string)';
