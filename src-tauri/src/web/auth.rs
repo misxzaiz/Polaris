@@ -94,6 +94,10 @@ pub async fn auth_middleware(
         store.get().web.token.clone().unwrap_or_default()
     };
 
+    if expected.is_empty() {
+        return Err(WebError::Internal("Web server token not configured".to_string()));
+    }
+
     if provided.as_bytes().ct_eq(expected.as_bytes()).unwrap_u8() == 1 {
         Ok(next.run(req).await)
     } else {

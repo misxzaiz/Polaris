@@ -240,8 +240,8 @@ export function createHttpTransport(
         throw e;
       }
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ message: res.statusText }));
-        throw new Error((err as { message?: string }).message || `API error: ${res.status}`);
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error((err as { error?: string }).error || `API error: ${res.status}`);
       }
 
       // 204 No Content

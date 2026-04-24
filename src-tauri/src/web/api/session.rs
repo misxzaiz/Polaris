@@ -117,11 +117,11 @@ pub struct PatchSessionRequest {
     pub active: Option<bool>,
 }
 
-/// Session rename/switch — placeholder for future extension.
+/// Session rename/switch — not yet implemented.
 pub async fn handle_patch_session(
     State(_state): State<Arc<AppState>>,
     Path(_session_id): Path<String>,
     Json(_req): Json<PatchSessionRequest>,
-) -> Result<impl IntoResponse, WebError> {
-    Ok(Json(serde_json::json!({ "status": "ok" })))
+) -> Result<axum::Json<serde_json::Value>, WebError> {
+    Err(WebError::NotFound("Session patch not implemented".to_string()))
 }

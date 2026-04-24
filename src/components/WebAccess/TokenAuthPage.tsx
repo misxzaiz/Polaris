@@ -33,8 +33,8 @@ export function TokenAuthPage({ defaultServerUrl, onAuthSuccess }: TokenAuthPage
       });
 
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ message: res.statusText }));
-        setError((err as { message?: string }).message || t('web.auth.serverError', { status: res.status }));
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        setError((err as { error?: string }).error || t('web.auth.serverError', { status: res.status }));
         return;
       }
 
