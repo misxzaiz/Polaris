@@ -128,14 +128,24 @@ fn should_send(event_json: &str, subscriptions: &HashSet<String>) -> bool {
     if subscriptions.is_empty() {
         return true;
     }
-    // Fast path: extract "event" field without full parse
-    if let Ok(val) = serde_json::from_str::<serde_json::Value>(event_json) {
-        if let Some(event_type) = val.get("event").and_then(|v| v.as_str()) {
-            return subscriptions.contains(event_type);
-        }
+    // Fast path: extract "event" field via string scan, avoiding full JSON parse.
+    match extract_event_type(event_json) {
+        Some(event_type) => subscriptions.contains(event_type),
+        None => true, // Unparseable → send anyway to avoid dropping messages
     }
-    // If we can't parse, send it anyway to avoid dropping messages
-    true
+}
+
+/// Extract the value of the top-level `"event"` field without full JSON deserialization.
+/// Event names are simple ASCII identifiers (e.g. "chat-event") so escaped quotes
+/// are not a concern.
+fn extract_event_type(json: &str) -> Option<&str> {
+    let marker = r#""event":"#;
+    let pos = json.find(marker)?;
+    let rest = json[pos + marker.len()..].trim_start();
+    if !rest.starts_with('"') { return None; }
+    let value = &rest[1..];
+    let end = value.find('"')?;
+    Some(&value[..end])
 }
 
 #[cfg(test)]
@@ -167,6 +177,26 @@ mod tests {
         let mut subs = HashSet::new();
         subs.insert("chat-event".to_string());
         assert!(should_send("not json", &subs));
+    }
+
+    #[test]
+    fn test_extract_event_type_basic() {
+        assert_eq!(extract_event_type(r#"{"event":"chat-event","payload":{}}"#), Some("chat-event"));
+    }
+
+    #[test]
+    fn test_extract_event_type_with_spaces() {
+        assert_eq!(extract_event_type(r#"{"event" : "session-event" ,"payload":{}}"#), Some("session-event"));
+    }
+
+    #[test]
+    fn test_extract_event_type_missing() {
+        assert_eq!(extract_event_type(r#"{"payload":{}}"#), None);
+    }
+
+    #[test]
+    fn test_extract_event_type_non_string_value() {
+        assert_eq!(extract_event_type(r#"{"event":123}"#), None);
     }
 
     #[test]
