@@ -23,21 +23,30 @@ fn default_engine() -> String {
 }
 
 /// List all sessions with optional pagination and engine filter.
+/// Uses spawn_blocking to offload filesystem I/O from the async runtime.
 pub async fn handle_list_sessions(
     State(state): State<Arc<AppState>>,
     Query(query): Query<ListSessionsQuery>,
 ) -> Result<impl IntoResponse, WebError> {
     let pagination = Pagination::new(query.page.unwrap_or(1), query.page_size.unwrap_or(50));
 
-    let config_store = state.config_store.lock()
-        .map_err(|e| WebError::Internal(e.to_string()))?;
-    let config = config_store.get().clone();
-    drop(config_store);
-
     match query.engine_id.as_str() {
         "claude" | "claude-code" => {
-            let provider = ClaudeHistoryProvider::new(config);
-            let result = provider.list_sessions(query.work_dir.as_deref(), pagination)?;
+            let blocking_task = {
+                let config_store = state.config_store.lock()
+                    .map_err(|e| WebError::Internal(e.to_string()))?;
+                let config = config_store.get().clone();
+                drop(config_store);
+
+                let work_dir = query.work_dir;
+                tokio::task::spawn_blocking(move || {
+                    let provider = ClaudeHistoryProvider::new(config);
+                    provider.list_sessions(work_dir.as_deref(), pagination)
+                })
+            };
+            let result = blocking_task.await
+                .map_err(|e| WebError::Internal(e.to_string()))?
+                .map_err(WebError::from)?;
             Ok(Json(result))
         }
         _ => Err(WebError::BadRequest(format!("不支持的引擎: {}", query.engine_id))),
@@ -71,6 +80,7 @@ pub struct DeleteSessionQuery {
 }
 
 /// Delete a session by ID.
+/// Uses spawn_blocking to offload filesystem I/O from the async runtime.
 pub async fn handle_delete_session(
     State(state): State<Arc<AppState>>,
     Path(session_id): Path<String>,
@@ -78,15 +88,22 @@ pub async fn handle_delete_session(
 ) -> Result<impl IntoResponse, WebError> {
     let engine_id = query.engine_id.unwrap_or_else(default_engine);
 
-    let config_store = state.config_store.lock()
-        .map_err(|e| WebError::Internal(e.to_string()))?;
-    let config = config_store.get().clone();
-    drop(config_store);
-
     match engine_id.as_str() {
         "claude" | "claude-code" => {
-            let provider = ClaudeHistoryProvider::new(config);
-            provider.delete_session(&session_id)?;
+            let blocking_task = {
+                let config_store = state.config_store.lock()
+                    .map_err(|e| WebError::Internal(e.to_string()))?;
+                let config = config_store.get().clone();
+                drop(config_store);
+
+                tokio::task::spawn_blocking(move || {
+                    let provider = ClaudeHistoryProvider::new(config);
+                    provider.delete_session(&session_id)
+                })
+            };
+            blocking_task.await
+                .map_err(|e| WebError::Internal(e.to_string()))?
+                .map_err(WebError::from)?;
             Ok(Json(serde_json::json!({ "status": "ok" })))
         }
         _ => Err(WebError::BadRequest(format!("不支持的引擎: {}", engine_id))),

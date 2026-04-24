@@ -99,20 +99,30 @@ pub async fn handle_interrupt(
 }
 
 /// Get message history for a specific session.
+/// Uses spawn_blocking to offload filesystem I/O from the async runtime.
 pub async fn handle_get_history(
     State(state): State<Arc<AppState>>,
     Path(session_id): Path<String>,
-) -> Result<impl IntoResponse, WebError> {
+) -> Result<Json<serde_json::Value>, WebError> {
     use crate::ai::{ClaudeHistoryProvider, SessionHistoryProvider, Pagination};
 
-    let config_store = state.config_store.lock()
-        .map_err(|e| WebError::Internal(e.to_string()))?;
-    let config = config_store.get().clone();
-    drop(config_store);
+    let blocking_task = {
+        let config_store = state.config_store.lock()
+            .map_err(|e| WebError::Internal(e.to_string()))?;
+        let config = config_store.get().clone();
+        drop(config_store);
 
-    let pagination = Pagination::new(1, 50);
-    let provider = ClaudeHistoryProvider::new(config);
-    let result = provider.get_session_history(&session_id, pagination)?;
+        let pagination = Pagination::new(1, 50);
+        tokio::task::spawn_blocking(move || {
+            let provider = ClaudeHistoryProvider::new(config);
+            provider.get_session_history(&session_id, pagination)
+        })
+    };
+
+    let result = blocking_task.await
+        .map_err(|e| WebError::Internal(e.to_string()))?
+        .map_err(WebError::from)?;
+
     Ok(Json(serde_json::json!(result)))
 }
 
