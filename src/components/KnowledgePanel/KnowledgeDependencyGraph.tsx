@@ -86,7 +86,7 @@ function generateMermaidCode(
 
   // 确定要渲染的模块
   let visibleModules = modules;
-  let highlightNodes = new Set<string>();
+  const highlightNodes = new Set<string>();
 
   if (selectedModuleId) {
     const selected = modules.find(m => m.id === selectedModuleId);

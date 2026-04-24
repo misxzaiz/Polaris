@@ -213,7 +213,7 @@ export function createHttpTransport(
       } else if (isDeleteCommand(command, args)) {
         method = 'DELETE';
         // delete_session 需要在 URL 中带 id
-        url = `${baseUrl}/api/sessions/${encodeURIComponent(args!.sessionId as string)}`;
+        url = `${baseUrl}/api/sessions/${encodeURIComponent((args as { sessionId: string }).sessionId)}`;
       } else if (command === 'get_session_history' && args?.sessionId) {
         method = 'GET';
         url = `${baseUrl}/api/chat/history/${encodeURIComponent(args.sessionId as string)}`;
@@ -253,9 +253,10 @@ export function createHttpTransport(
     async listen<T>(event: string, handler: (payload: T) => void): Promise<() => void> {
       await connectWs();
 
-      const wasEmpty = !listeners.has(event) || listeners.get(event)!.size === 0;
+      const eventListeners = listeners.get(event);
+      const wasEmpty = !eventListeners || eventListeners.size === 0;
       if (!listeners.has(event)) listeners.set(event, new Set());
-      listeners.get(event)!.add(handler as (p: unknown) => void);
+      listeners.get(event)?.add(handler as (p: unknown) => void);
 
       // Subscribe on server when first handler for this event type is registered
       if (wasEmpty) {
