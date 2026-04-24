@@ -10,6 +10,35 @@ use crate::state::QuestionAnswer;
 use crate::AppState;
 use super::super::error::WebError;
 
+/// Validate that a session ID is safe to use (no path traversal, no special chars).
+/// Session IDs should be alphanumeric with hyphens/underscores only (UUIDs, slugs).
+pub fn validate_session_id(id: &str) -> Result<(), WebError> {
+    if id.is_empty() {
+        return Err(WebError::BadRequest("sessionId must not be empty".to_string()));
+    }
+    if id.len() > 128 {
+        return Err(WebError::BadRequest("sessionId too long (max 128 chars)".to_string()));
+    }
+    if !id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+        return Err(WebError::BadRequest("sessionId contains invalid characters".to_string()));
+    }
+    Ok(())
+}
+
+/// Validate a call/plan ID (alphanumeric + hyphens/underscores, max 128 chars).
+fn validate_entity_id(id: &str, field: &str) -> Result<(), WebError> {
+    if id.is_empty() {
+        return Err(WebError::BadRequest(format!("{} must not be empty", field)));
+    }
+    if id.len() > 128 {
+        return Err(WebError::BadRequest(format!("{} too long (max 128 chars)", field)));
+    }
+    if !id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+        return Err(WebError::BadRequest(format!("{} contains invalid characters", field)));
+    }
+    Ok(())
+}
+
 /// Dual-emit: broadcast event to both WebSocket clients and Tauri webview.
 pub fn dual_emit(state: &AppState, event: &serde_json::Value) {
     if let Err(e) = state.event_broadcast.send(event.to_string()) {
@@ -77,8 +106,9 @@ pub async fn handle_send_message(
     };
 
     match req.session_id {
-        Some(session_id) => {
-            continue_chat_inner(session_id, message, options, &state, callbacks, &app_paths)
+        Some(ref session_id) => {
+            validate_session_id(session_id)?;
+            continue_chat_inner(req.session_id.unwrap(), message, options, &state, callbacks, &app_paths)
                 .await?;
             Ok(Json(serde_json::json!({ "status": "ok" })))
         }
@@ -102,6 +132,7 @@ pub async fn handle_interrupt(
     State(state): State<Arc<AppState>>,
     Json(req): Json<InterruptRequest>,
 ) -> Result<impl IntoResponse, WebError> {
+    validate_session_id(&req.session_id)?;
     interrupt_chat_inner(req.session_id, req.engine_id, &state).await?;
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
@@ -115,6 +146,8 @@ pub async fn handle_get_history(
     Query(params): Query<HistoryQueryParams>,
 ) -> Result<Json<serde_json::Value>, WebError> {
     use crate::ai::{ClaudeHistoryProvider, SessionHistoryProvider, Pagination};
+
+    validate_session_id(&session_id)?;
 
     let page = params.page.unwrap_or(1).max(1);
     let page_size = params.page_size.unwrap_or(50).clamp(1, 200);
@@ -161,6 +194,9 @@ pub async fn handle_answer_question(
     State(state): State<Arc<AppState>>,
     Json(req): Json<AnswerQuestionRequest>,
 ) -> Result<impl IntoResponse, WebError> {
+    validate_session_id(&req.session_id)?;
+    validate_entity_id(&req.call_id, "callId")?;
+
     let answer = QuestionAnswer {
         selected: req.selected,
         custom_input: req.custom_input,
@@ -202,6 +238,8 @@ pub async fn handle_approve_plan(
     State(state): State<Arc<AppState>>,
     Json(req): Json<ApprovePlanRequest>,
 ) -> Result<impl IntoResponse, WebError> {
+    validate_session_id(&req.session_id)?;
+    validate_entity_id(&req.plan_id, "planId")?;
     use crate::state::PlanApprovalStatus;
     use crate::models::PlanApprovalResultEvent;
 
@@ -243,6 +281,8 @@ pub async fn handle_reject_plan(
     State(state): State<Arc<AppState>>,
     Json(req): Json<RejectPlanRequest>,
 ) -> Result<impl IntoResponse, WebError> {
+    validate_session_id(&req.session_id)?;
+    validate_entity_id(&req.plan_id, "planId")?;
     use crate::state::PlanApprovalStatus;
     use crate::models::PlanApprovalResultEvent;
 

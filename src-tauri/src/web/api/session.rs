@@ -9,6 +9,7 @@ use crate::commands::chat::{ChatCallbacks, ChatRequestOptions, AppPaths, start_c
 use crate::web::api::chat::create_emit_callback;
 use crate::AppState;
 use super::super::error::WebError;
+use super::chat::validate_session_id;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -116,6 +117,8 @@ pub async fn handle_delete_session(
     Path(session_id): Path<String>,
     Query(query): Query<DeleteSessionQuery>,
 ) -> Result<impl IntoResponse, WebError> {
+    validate_session_id(&session_id)?;
+
     let engine_id = query.engine_id.unwrap_or_else(default_engine);
 
     match engine_id.as_str() {
