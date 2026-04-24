@@ -15,13 +15,31 @@ pub async fn request_trace(req: Request<Body>, next: Next) -> Response {
     let status = response.status().as_u16();
 
     if path.starts_with("/api/") {
-        tracing::debug!(
-            method = %method,
-            path = %path,
-            status = status,
-            elapsed_ms = elapsed.as_millis() as u64,
-            "HTTP request"
-        );
+        if status >= 500 {
+            tracing::error!(
+                method = %method,
+                path = %path,
+                status = status,
+                elapsed_ms = elapsed.as_millis() as u64,
+                "HTTP request"
+            );
+        } else if status >= 400 {
+            tracing::warn!(
+                method = %method,
+                path = %path,
+                status = status,
+                elapsed_ms = elapsed.as_millis() as u64,
+                "HTTP request"
+            );
+        } else {
+            tracing::debug!(
+                method = %method,
+                path = %path,
+                status = status,
+                elapsed_ms = elapsed.as_millis() as u64,
+                "HTTP request"
+            );
+        }
     }
 
     response
