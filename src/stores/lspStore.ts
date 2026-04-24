@@ -6,7 +6,7 @@
  */
 
 import { create } from 'zustand';
-import { LSPClient, languageServerExtensions } from '@codemirror/lsp-client';
+import { LSPClient, languageServerExtensions, languageServerSupport } from '@codemirror/lsp-client';
 import type { Extension } from '@codemirror/state';
 import { TauriIpcTransport } from '../services/lsp/TauriIpcTransport';
 import { lspConfigList } from '../services/tauri/lspService';
@@ -134,7 +134,7 @@ export const useLspStore = create<LspStore>()((set, get) => ({
     const existing = clients.get(serverConfig.id);
     if (existing) {
       log.debug('Reusing existing LSP client', { serverId: serverConfig.id });
-      const extensions = getExtensionsForClient(existing.client, filePath);
+      const extensions = getExtensionsForClient(existing.client, filePath, language);
       return { client: existing.client, extensions };
     }
 
@@ -144,7 +144,7 @@ export const useLspStore = create<LspStore>()((set, get) => ({
       log.debug('Waiting for pending LSP connection', { serverId: serverConfig.id });
       const result = await pending;
       if (result) {
-        const extensions = getExtensionsForClient(result.client, filePath);
+        const extensions = getExtensionsForClient(result.client, filePath, language);
         return { client: result.client, extensions };
       }
       return null;
@@ -163,9 +163,13 @@ export const useLspStore = create<LspStore>()((set, get) => ({
         const transport = new TauriIpcTransport(serverId);
         await transport.connect(serverConfig.command, serverConfig.args);
 
+        // 注意：languageServerExtensions() 返回的条目包含 LSPClientExtension
+        // 配置对象（非 CodeMirror Extension），必须传给 LSPClient 的 extensions
+        // 选项，而不是塞进 EditorState.create({extensions})。
         const client = new LSPClient({
           rootUri,
           timeout: 5000,
+          extensions: languageServerExtensions(),
         }).connect(transport);
 
         // 等待初始化完成（LSPClient 自动处理 initialize handshake）
@@ -192,7 +196,7 @@ export const useLspStore = create<LspStore>()((set, get) => ({
         // 连接过程中被 deactivate 时返回 null
         if (!get().clients.has(serverId)) return null;
 
-        const extensions = getExtensionsForClient(client, filePath);
+        const extensions = getExtensionsForClient(client, filePath, language);
         return { client, extensions };
       } catch (err) {
         log.error('Failed to activate LSP', undefined, {
@@ -306,7 +310,7 @@ export const useLspStore = create<LspStore>()((set, get) => ({
     const active = clients.get(serverConfig.id);
     if (!active) return [];
 
-    return getExtensionsForClient(active.client, filePath);
+    return getExtensionsForClient(active.client, filePath, language);
   },
 
   loadFromBackend: async () => {
@@ -330,11 +334,20 @@ export const useLspStore = create<LspStore>()((set, get) => ({
   },
 }));
 
-/** 从 LSPClient 构建完整的 CM6 extensions */
-function getExtensionsForClient(client: LSPClient, filePath: string): Extension[] {
+/**
+ * 从 LSPClient 构建给编辑器用的 CM6 extensions。
+ *
+ * 关键：`languageServerExtensions()` 返回的数组里混有 LSPClientExtension 配置
+ * 对象（如 `{ clientCapabilities }`），它们不是 CodeMirror Extension，塞进
+ * EditorState 会抛 "Unrecognized extension value"。应把它们传给 LSPClient
+ * 构造函数；这里只用 `languageServerSupport` 来获取真正的编辑器扩展（包含
+ * plugin、诊断、补全、hover、keymap 等）。
+ */
+function getExtensionsForClient(
+  client: LSPClient,
+  filePath: string,
+  languageID?: string,
+): Extension[] {
   const uri = pathToUri(filePath);
-  return [
-    ...languageServerExtensions() as Extension[],
-    client.plugin(uri) as Extension,
-  ];
+  return [languageServerSupport(client, uri, languageID)];
 }
