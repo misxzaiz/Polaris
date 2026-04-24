@@ -160,6 +160,8 @@ export function createHttpTransport(
         socket.removeEventListener('error', errorHandler);
         ws = null;
         wsConnecting = null;
+        // Prevent close handler from also scheduling a reconnect
+        socket.onclose = null;
         reject(new Error('WebSocket connection failed'));
       };
 
@@ -212,8 +214,11 @@ export function createHttpTransport(
         method = 'GET';
       } else if (isDeleteCommand(command, args)) {
         method = 'DELETE';
-        // delete_session 需要在 URL 中带 id
-        url = `${baseUrl}/api/sessions/${encodeURIComponent((args as { sessionId: string }).sessionId)}`;
+        // delete_session 需要在 URL 中带 id，可选 engine_id
+        const sessionId = encodeURIComponent((args as { sessionId: string }).sessionId);
+        const engineId = (args as { engineId?: string })?.engineId;
+        const queryStr = engineId ? `?engineId=${encodeURIComponent(engineId)}` : '';
+        url = `${baseUrl}/api/sessions/${sessionId}${queryStr}`;
       } else if (command === 'get_session_history' && args?.sessionId) {
         method = 'GET';
         url = `${baseUrl}/api/chat/history/${encodeURIComponent(args.sessionId as string)}`;

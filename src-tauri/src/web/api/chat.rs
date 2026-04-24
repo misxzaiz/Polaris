@@ -36,6 +36,11 @@ pub async fn handle_send_message(
     State(state): State<Arc<AppState>>,
     Json(req): Json<SendMessageRequest>,
 ) -> Result<impl IntoResponse, WebError> {
+    let message = req.message.trim().to_string();
+    if message.is_empty() {
+        return Err(WebError::BadRequest("message must not be empty".to_string()));
+    }
+
     let mut options = req.options.unwrap_or_default();
     if options.context_id.is_none() {
         options.context_id = Some("web".to_string());
@@ -70,12 +75,12 @@ pub async fn handle_send_message(
 
     match req.session_id {
         Some(session_id) => {
-            continue_chat_inner(session_id, req.message, options, &state, callbacks, &app_paths)
+            continue_chat_inner(session_id, message, options, &state, callbacks, &app_paths)
                 .await?;
             Ok(Json(serde_json::json!({ "status": "ok" })))
         }
         None => {
-            let sid = start_chat_inner(req.message, options, &state, callbacks, &app_paths)
+            let sid = start_chat_inner(message, options, &state, callbacks, &app_paths)
                 .await?;
             Ok(Json(serde_json::json!({ "sessionId": sid })))
         }
@@ -248,8 +253,10 @@ pub async fn handle_reject_plan(
         plan.feedback = req.feedback.clone();
     }
 
-    let event = PlanApprovalResultEvent::new(&req.session_id, &req.plan_id, false)
-        .with_feedback(req.feedback.unwrap_or_default());
+    let mut event = PlanApprovalResultEvent::new(&req.session_id, &req.plan_id, false);
+    if let Some(fb) = req.feedback {
+        event = event.with_feedback(fb);
+    }
     let payload = serde_json::json!({
         "contextId": "main",
         "payload": event
