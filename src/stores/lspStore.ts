@@ -8,15 +8,18 @@
 import { create } from 'zustand';
 import {
   LSPClient,
-  jumpToDefinition,
   languageServerSupport,
   serverDiagnostics,
 } from '@codemirror/lsp-client';
 import type { Extension } from '@codemirror/state';
-import { EditorView } from '@codemirror/view';
+import { EditorView, keymap } from '@codemirror/view';
 import { TauriIpcTransport } from '../services/lsp/TauriIpcTransport';
 import { lspConfigList } from '../services/tauri/lspService';
 import { createLogger } from '../utils/logger';
+import { ctrlHoverLink } from '../components/Editor/ctrlHoverLink';
+import { jumpToDefinitionCrossFile } from '../services/lsp/lspNavigation';
+import { useLspUiStore } from './lspUiStore';
+import { useDiagnosticsStore, type DiagnosticItem } from './diagnosticsStore';
 
 const log = createLogger('LspStore');
 
@@ -170,15 +173,17 @@ export const useLspStore = create<LspStore>()((set, get) => ({
         await transport.connect(serverConfig.command, serverConfig.args);
 
         // 只把 LSPClientExtension 配置对象放在 client 层级：
-        // - serverDiagnostics() 负责接收 textDocument/publishDiagnostics 推送，
-        //   必须在 client 级注册。
+        // - serverDiagnostics() 负责把诊断喂给每个编辑器的 linter gutter；
+        // - diagnosticsAggregator 另外把同一份诊断写入全局 diagnosticsStore，
+        //   供 Problems 面板 / 状态栏使用。两个 handler 都返回 false，
+        //   notification 会按顺序继续传播。
         // 不要在这里再加 serverCompletion / hoverTooltips / signatureHelp 等
         // 编辑器侧扩展——languageServerSupport(...) 已经包含它们，重复注册
         // 会导致悬浮提示、补全、签名帮助等出现重复显示。
         const client = new LSPClient({
           rootUri,
           timeout: 5000,
-          extensions: [serverDiagnostics()],
+          extensions: [serverDiagnostics(), diagnosticsAggregator],
         }).connect(transport);
 
         // 等待初始化完成（LSPClient 自动处理 initialize handshake）
@@ -268,6 +273,8 @@ export const useLspStore = create<LspStore>()((set, get) => ({
       }
       return { clients: new Map(), status: newStatus, pendingConnections: new Map() };
     });
+    // 所有 LSP 都断开后，清掉旧的诊断避免过期信息残留在 Problems 面板
+    useDiagnosticsStore.getState().clearAll();
   },
 
   addServer: (config) => {
@@ -360,37 +367,74 @@ function getExtensionsForClient(
   const uri = pathToUri(filePath);
   return [
     languageServerSupport(client, uri, languageID),
-    ctrlClickJumpToDefinition,
-    ctrlHoverTheme,
+    makeCtrlClickJump(client, uri),
+    makeSymbolPaletteKeymap(client, uri),
+    ctrlHoverLink,
   ];
 }
 
 /**
- * Ctrl/Cmd + 左键 跳转到定义。
+ * 把 LSP 推送的诊断写入全局 diagnosticsStore。
  *
- * CodeMirror LSP 客户端默认只给了 F12 键位；这里加一个鼠标事件处理器：
- * 按住 Ctrl（macOS 下 Cmd）点击某个符号，先把光标移到点击位置，再触发
- * `jumpToDefinition` 命令（内部会走 LSP 的 textDocument/definition）。
+ * 返回 `false` 让通知继续传播给其它 handler（例如 `serverDiagnostics()`
+ * 的内置处理器，它会把诊断灌给每个绑定文件的 linter gutter）。
  */
-const ctrlClickJumpToDefinition = EditorView.domEventHandlers({
-  mousedown(event, view) {
-    if (event.button !== 0) return false;
-    if (!(event.ctrlKey || event.metaKey)) return false;
-    const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
-    if (pos == null) return false;
-    event.preventDefault();
-    view.dispatch({ selection: { anchor: pos } });
-    // jumpToDefinition 返回 true 表示有定义可跳；失败（未连接/无定义）静默忽略
-    jumpToDefinition(view);
-    return true;
+const diagnosticsAggregator = {
+  notificationHandlers: {
+    'textDocument/publishDiagnostics': (
+      _client: LSPClient,
+      params: { uri: string; diagnostics: DiagnosticItem[] },
+    ) => {
+      try {
+        useDiagnosticsStore.getState().set(params.uri, params.diagnostics ?? []);
+      } catch (err) {
+        log.warn('diagnosticsAggregator write failed', { error: String(err) });
+      }
+      return false;
+    },
   },
-});
+};
 
 /**
- * 按住 Ctrl/Cmd 时给编辑器内容加一个可点击的视觉样式（手型指针 + 下划线提示）。
+ * Mod+Shift+O：打开"文档符号面板"（SymbolPalette）。
+ *
+ * 仅在有 LSPClient 的编辑器上生效——键位通过 `getExtensionsForClient`
+ * 下发，纯文本 / 无 LSP 的文件不会抢走此快捷键。
  */
-const ctrlHoverTheme = EditorView.theme({
-  '.cm-content.cm-ctrl-hover': {
-    cursor: 'pointer',
-  },
-});
+function makeSymbolPaletteKeymap(client: LSPClient, uri: string): Extension {
+  return keymap.of([
+    {
+      key: 'Mod-Shift-o',
+      run: (view) => {
+        useLspUiStore.getState().openSymbolPalette({ view, client, uri });
+        return true;
+      },
+    },
+  ]);
+}
+
+/**
+ * Ctrl/Cmd + 左键 跳转到定义（跨文件感知）。
+ *
+ * `@codemirror/lsp-client` 默认的 `jumpToDefinition` Command 只在目标文件
+ * 已经打开（通过其 `Workspace.requestFile`）时可用；这里绕过那层，自己
+ * 发 `textDocument/definition` 请求，然后：
+ * - 同文件：本地 `dispatch` 滚动到目标位置；
+ * - 跨文件：走 `fileEditorStore.openFileAtPosition`，复用项目"打开文件"流程。
+ */
+function makeCtrlClickJump(client: LSPClient, currentUri: string): Extension {
+  return EditorView.domEventHandlers({
+    mousedown(event, view) {
+      if (event.button !== 0) return false;
+      if (!(event.ctrlKey || event.metaKey)) return false;
+      const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+      if (pos == null) return false;
+      event.preventDefault();
+      view.dispatch({ selection: { anchor: pos } });
+      // 异步跳转；失败（未连接/无定义/跨文件打开失败）静默忽略
+      void jumpToDefinitionCrossFile(view, client, currentUri);
+      return true;
+    },
+  });
+}
+

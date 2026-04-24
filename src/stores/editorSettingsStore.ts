@@ -15,6 +15,8 @@ export interface EditorSettingsState {
   fontSize: number
   /** 字体族 */
   fontFamily: string
+  /** 保存时自动格式化（需要当前文件有可用的 LSP） */
+  formatOnSave: boolean
 }
 
 interface EditorSettingsActions {
@@ -26,6 +28,8 @@ interface EditorSettingsActions {
   resetFontSize: () => void
   /** 设置字体族 */
   setFontFamily: (family: string) => void
+  /** 切换保存时格式化 */
+  setFormatOnSave: (enabled: boolean) => void
 }
 
 const DEFAULT_FONT_SIZE = 14
@@ -38,6 +42,7 @@ export const useEditorSettingsStore = create<EditorSettingsState & EditorSetting
     (set) => ({
       fontSize: DEFAULT_FONT_SIZE,
       fontFamily: DEFAULT_FONT_FAMILY,
+      formatOnSave: false,
 
       increaseFontSize: () => {
         set((state) => {
@@ -66,6 +71,11 @@ export const useEditorSettingsStore = create<EditorSettingsState & EditorSetting
 
       setFontFamily: (family: string) => {
         set({ fontFamily: family })
+      },
+
+      setFormatOnSave: (enabled: boolean) => {
+        set({ formatOnSave: enabled })
+        log.debug('formatOnSave 设置更新', { enabled })
       },
     }),
     {

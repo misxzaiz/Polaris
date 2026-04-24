@@ -18,6 +18,7 @@ import { RequirementPanel } from './components/RequirementPanel/RequirementPanel
 import { TerminalPanel } from './components/Terminal/TerminalPanel';
 import { AssistantPanel } from './assistant';
 import { KnowledgePanel } from './components/KnowledgePanel';
+import { ProblemsPanel } from './components/Problems/ProblemsPanel';
 
 // 懒加载大型组件，减少初始 bundle 大小
 const SettingsModal = lazy(() => import('./components/Settings/SettingsModal').then(m => ({ default: m.SettingsModal })));
@@ -26,6 +27,7 @@ const IntegrationPanel = lazy(() => import('./components/Integration/Integration
 const McpPanel = lazy(() => import('./components/Mcp/McpPanel').then(m => ({ default: m.McpPanel })));
 const CreateWorkspaceModal = lazy(() => import('./components/Workspace/CreateWorkspaceModal').then(m => ({ default: m.CreateWorkspaceModal })));
 const FileSearchModal = lazy(() => import('./components/Editor/FileSearchModal').then(m => ({ default: m.FileSearchModal })));
+const SymbolPalette = lazy(() => import('./components/Editor/SymbolPalette').then(m => ({ default: m.SymbolPalette })));
 
 import { useConfigStore, useViewStore, useWorkspaceStore, useTabStore } from './stores';
 import { useActiveSessionActions, useActiveSessionStreaming, useActiveSessionError } from './stores/conversationStore/useActiveSession';
@@ -164,6 +166,7 @@ function App() {
                 assistantContent={<AssistantPanel />}
                 mcpContent={<Suspense fallback={loadingFallback}><McpPanel /></Suspense>}
                 knowledgeContent={<KnowledgePanel />}
+                problemsContent={<ProblemsPanel />}
               />
             </LeftPanel>
           )}
@@ -246,6 +249,11 @@ function App() {
         )}
 
         <SelectionContextMenu />
+
+        {/* LSP 符号面板（Mod+Shift+O），只有在 LSP keymap 触发后才有内容挂载 */}
+        <Suspense fallback={null}>
+          <SymbolPalette />
+        </Suspense>
       </Layout>
     </ErrorBoundary>
   );

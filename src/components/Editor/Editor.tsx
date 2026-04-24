@@ -24,6 +24,7 @@ import { useFileEditorStore } from '../../stores/fileEditorStore';
 import { useEditorSettingsStore } from '../../stores/editorSettingsStore';
 import { useLspStore } from '../../stores/lspStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
+import { formatDocumentForFile } from '../../services/lsp/lspFormatting';
 import { indentGuides, indentGuideTheme } from './indentGuides';
 import { trailingWhitespaceHighlight } from './trailingWhitespace';
 import { rainbowBrackets } from './rainbowBrackets';
@@ -169,10 +170,29 @@ export function CodeMirrorEditor({
     [increaseFontSize, decreaseFontSize, resetFontSize]
   );
 
-  // 自定义保存快捷键
+  // 自定义保存快捷键：若开启 formatOnSave 且当前语言有可用 LSP，则先异步
+  // 请求格式化并应用 edits，完成后再调用 onSave。格式化失败不会阻塞保存。
   const saveKeymap = useMemo(
-    () => keymap.of(onSave ? [{ key: 'Mod-s', run: () => { onSave(); return true; } }] : []),
-    [onSave]
+    () => keymap.of(
+      onSave
+        ? [
+            {
+              key: 'Mod-s',
+              run: (view) => {
+                const fp = filePathRef.current;
+                const { formatOnSave } = useEditorSettingsStore.getState();
+                if (formatOnSave && fp) {
+                  void formatDocumentForFile(fp, language, view).finally(() => onSave());
+                } else {
+                  onSave();
+                }
+                return true;
+              },
+            },
+          ]
+        : [],
+    ),
+    [onSave, language]
   );
 
   // 初始化编辑器（组件通过 key 属性强制重新挂载，所以只需在挂载时执行一次）
@@ -198,20 +218,7 @@ export function CodeMirrorEditor({
         viewRef.current = view;
 
         // 检查是否有待跳转的行号
-        const pendingLine = useFileEditorStore.getState().pendingGotoLine;
-        if (pendingLine !== null) {
-          const doc = view.state.doc;
-          if (pendingLine >= 1 && pendingLine <= doc.lines) {
-            const line = doc.line(pendingLine);
-            view.dispatch({
-              selection: { anchor: line.from },
-              effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
-            });
-            view.focus();
-            log.debug('跳转到行（缓存恢复）', { lineNumber: pendingLine });
-          }
-          useFileEditorStore.getState().setPendingGotoLine(null);
-        }
+        applyPendingGoto(view);
         return;
       }
 
@@ -317,21 +324,32 @@ export function CodeMirrorEditor({
       log.debug('Editor view created successfully');
 
       // 检查是否有待跳转的行号
-      const pendingLine = useFileEditorStore.getState().pendingGotoLine;
-      if (pendingLine !== null) {
-        const doc = view.state.doc;
-        if (pendingLine >= 1 && pendingLine <= doc.lines) {
-          const line = doc.line(pendingLine);
-          view.dispatch({
-            selection: { anchor: line.from },
-            effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
-          });
-          view.focus();
-          log.debug('跳转到行（新建编辑器）', { lineNumber: pendingLine });
-        }
-        useFileEditorStore.getState().setPendingGotoLine(null);
-      }
+      applyPendingGoto(view);
     };
+
+    /**
+     * 应用待跳转的行/列。支持 LSP 跨文件跳转的精确定位：
+     * pendingGotoLine 是 1-indexed 行号，pendingGotoColumn 是 0-indexed 列。
+     */
+    function applyPendingGoto(view: EditorView) {
+      const store = useFileEditorStore.getState();
+      const pendingLine = store.pendingGotoLine;
+      if (pendingLine === null) return;
+
+      const doc = view.state.doc;
+      if (pendingLine >= 1 && pendingLine <= doc.lines) {
+        const line = doc.line(pendingLine);
+        const col = store.pendingGotoColumn ?? 0;
+        const anchor = Math.min(line.from + col, line.to);
+        view.dispatch({
+          selection: { anchor },
+          effects: EditorView.scrollIntoView(anchor, { y: 'center' }),
+        });
+        view.focus();
+        log.debug('跳转到行', { lineNumber: pendingLine, column: col });
+      }
+      store.setPendingGotoLine(null);
+    }
 
     createEditor();
 

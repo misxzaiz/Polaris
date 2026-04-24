@@ -7,6 +7,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLspStore, type LspServerConfig, type LspConnectionStatus } from '../../../stores/lspStore';
+import { useEditorSettingsStore } from '../../../stores/editorSettingsStore';
 import { lspConfigUpsert, lspConfigRemove, lspConfigToggle } from '../../../services/tauri/lspService';
 import { createLogger } from '../../../utils/logger';
 import { Power, Trash2, Plus, RefreshCw, Terminal } from 'lucide-react';
@@ -112,8 +113,40 @@ export function LspTab() {
     }
   };
 
+  // format on save 开关（持久化在 editorSettingsStore）
+  const formatOnSave = useEditorSettingsStore((s) => s.formatOnSave);
+  const setFormatOnSave = useEditorSettingsStore((s) => s.setFormatOnSave);
+
   return (
     <div className="space-y-4">
+      {/* 编辑器 LSP 偏好 */}
+      <div className="p-3 bg-surface rounded-lg border border-border-subtle flex items-center justify-between">
+        <div>
+          <div className="text-sm font-medium text-text-primary">
+            {t('lsp.formatOnSave', { defaultValue: '保存时自动格式化' })}
+          </div>
+          <div className="text-xs text-text-muted mt-0.5">
+            {t('lsp.formatOnSaveHint', {
+              defaultValue: '按 Ctrl/Cmd+S 保存前调用 LSP 的 textDocument/formatting；无 LSP 时静默跳过。',
+            })}
+          </div>
+        </div>
+        <button
+          onClick={() => setFormatOnSave(!formatOnSave)}
+          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+            formatOnSave ? 'bg-primary' : 'bg-border'
+          }`}
+          role="switch"
+          aria-checked={formatOnSave}
+        >
+          <span
+            className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+              formatOnSave ? 'translate-x-5' : 'translate-x-1'
+            }`}
+          />
+        </button>
+      </div>
+
       {/* 标题和操作 */}
       <div className="flex items-center justify-between">
         <p className="text-sm text-text-secondary">

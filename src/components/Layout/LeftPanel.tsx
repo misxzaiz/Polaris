@@ -62,6 +62,7 @@ export function LeftPanelContent({
   assistantContent,
   mcpContent,
   knowledgeContent,
+  problemsContent,
   currentType,
 }: {
   filesContent: ReactNode
@@ -77,6 +78,7 @@ export function LeftPanelContent({
   assistantContent?: ReactNode
   mcpContent?: ReactNode
   knowledgeContent?: ReactNode
+  problemsContent?: ReactNode
   currentType?: LeftPanelType
 }) {
   // Hook 必须在条件之外调用
@@ -109,6 +111,8 @@ export function LeftPanelContent({
     return <>{mcpContent}</>
   } else if (type === 'knowledge') {
     return <>{knowledgeContent}</>
+  } else if (type === 'problems') {
+    return <>{problemsContent}</>
   }
 
   return null

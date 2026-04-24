@@ -72,6 +72,7 @@ export const useFileEditorStore = create<FileEditorStore>((set, get) => ({
   error: null,
   isConflicted: false,
   pendingGotoLine: null,
+  pendingGotoColumn: null,
 
   // ── 缓冲区初始状态 ──
   buffers: new Map(),
@@ -135,18 +136,30 @@ export const useFileEditorStore = create<FileEditorStore>((set, get) => ({
   },
 
   openFileAtLine: async (path: string, name: string, lineNumber: number) => {
+    await get().openFileAtPosition(path, name, lineNumber);
+  },
+
+  openFileAtPosition: async (
+    path: string,
+    name: string,
+    lineNumber: number,
+    column?: number,
+  ) => {
     const { currentFile } = get();
 
-    if (currentFile?.path === path) {
-      set({ pendingGotoLine: lineNumber });
-    } else {
-      set({ pendingGotoLine: lineNumber });
+    set({ pendingGotoLine: lineNumber, pendingGotoColumn: column ?? null });
+    if (currentFile?.path !== path) {
       await get().openFile(path, name);
     }
   },
 
   setPendingGotoLine: (line: number | null) => {
-    set({ pendingGotoLine: line });
+    // line=null 同时清掉 column，避免上一次跳转的残留列号影响下一次
+    if (line === null) {
+      set({ pendingGotoLine: null, pendingGotoColumn: null });
+    } else {
+      set({ pendingGotoLine: line });
+    }
   },
 
   closeFile: async () => {
