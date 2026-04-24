@@ -419,6 +419,7 @@
       "connecting": "连接中...",
       "invalidToken": "令牌无效",
       "connectionFailed": "连接失败",
+      "timeout": "连接超时，请检查服务器地址",
       "serverError": "服务器错误：{{status}}"
     }
   }

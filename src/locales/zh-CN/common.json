@@ -101,7 +101,9 @@
     "deleteFailed": "删除工作区失败"
   },
   "toast": {
-    "close": "关闭通知"
+    "close": "关闭通知",
+    "sessionComplete": "会话「{{title}}」已完成",
+    "switch": "切换"
   },
   "tabs": {
     "openFileOrDiff": "打开文件或查看差异",

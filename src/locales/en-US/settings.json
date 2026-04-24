@@ -419,6 +419,7 @@
       "connecting": "Connecting...",
       "invalidToken": "Invalid token",
       "connectionFailed": "Connection failed",
+      "timeout": "Connection timed out, please check the server address",
       "serverError": "Server error: {{status}}"
     }
   }

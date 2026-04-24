@@ -6,7 +6,10 @@ import { useTranslation } from 'react-i18next';
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import QRCode from 'react-qr-code';
+import { createLogger } from '../../../utils/logger';
 import type { Config, WebConfig } from '../../../types';
+
+const log = createLogger('WebTab');
 
 interface WebTabProps {
   config: Config;
@@ -42,9 +45,9 @@ export function WebTab({ config, onConfigChange, loading }: WebTabProps) {
     try {
       const result = await invoke<{ token: string }>('regenerate_web_token');
       updateWeb({ token: result.token });
-    } catch (e) {
+    } catch (e: unknown) {
       setRegenerateError(t('web.tokenRegenerateFailed'));
-      console.error('Token regeneration failed:', e);
+      log.warn('Token regeneration failed', { error: String(e) });
     } finally {
       setRegenerating(false);
     }

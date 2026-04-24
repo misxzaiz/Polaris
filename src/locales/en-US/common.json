@@ -101,7 +101,9 @@
     "deleteFailed": "Failed to delete workspace"
   },
   "toast": {
-    "close": "Close notification"
+    "close": "Close notification",
+    "sessionComplete": "Session \"{{title}}\" completed",
+    "switch": "Switch"
   },
   "tabs": {
     "openFileOrDiff": "Open file or view diff",

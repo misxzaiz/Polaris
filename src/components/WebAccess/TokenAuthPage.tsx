@@ -7,6 +7,10 @@
 
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { createLogger } from '../../utils/logger';
+
+const log = createLogger('TokenAuthPage');
+const AUTH_TIMEOUT_MS = 30_000;
 
 interface TokenAuthPageProps {
   defaultServerUrl: string;
@@ -30,6 +34,7 @@ export function TokenAuthPage({ defaultServerUrl, onAuthSuccess }: TokenAuthPage
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token }),
+        signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
       });
 
       if (!res.ok) {
@@ -46,7 +51,11 @@ export function TokenAuthPage({ defaultServerUrl, onAuthSuccess }: TokenAuthPage
 
       onAuthSuccess(serverUrl, token);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('web.auth.connectionFailed'));
+      const msg = err instanceof DOMException && err.name === 'TimeoutError'
+        ? t('web.auth.timeout')
+        : err instanceof Error ? err.message : t('web.auth.connectionFailed');
+      log.warn('Auth failed', { error: String(err) });
+      setError(msg);
     } finally {
       setLoading(false);
     }
