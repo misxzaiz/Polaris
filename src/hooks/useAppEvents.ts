@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { listen } from '@tauri-apps/api/event';
+import { listen } from '../services/transport';
 import { useTabStore } from '../stores/tabStore';
 import { useViewStore } from '../stores/viewStore';
 import { initEditorFileChangeListener } from '../stores/fileEditorStore';
@@ -52,8 +52,8 @@ export function useAppEvents() {
 
   // file:opened → 创建 Editor Tab
   useEffect(() => {
-    const unlistenPromise = listen<{ path: string; name: string }>('file:opened', (event) => {
-      const { path, name } = event.payload;
+    const unlistenPromise = listen<{ path: string; name: string }>('file:opened', (payload) => {
+      const { path, name } = payload;
       log.info('file:opened event', { path, name });
       useTabStore.getState().openEditorTab(path, name);
     });
@@ -65,8 +65,8 @@ export function useAppEvents() {
 
   // file:preview → 创建 Preview Tab
   useEffect(() => {
-    const unlistenPromise = listen<{ path: string; name: string; kind?: string }>('file:preview', (event) => {
-      const { path, name, kind } = event.payload;
+    const unlistenPromise = listen<{ path: string; name: string; kind?: string }>('file:preview', (payload) => {
+      const { path, name, kind } = payload;
       log.info('file:preview event', { path, name, kind });
       useTabStore.getState().openPreviewTab(path, name, { kind });
     });
