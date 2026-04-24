@@ -53,7 +53,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/chat/reject-plan", post(api::chat::handle_reject_plan))
         // Sessions
         .route("/sessions", get(api::session::handle_list_sessions).post(api::session::handle_create_session))
-        .route("/sessions/{id}", delete(api::session::handle_delete_session).patch(api::session::handle_patch_session))
+        .route("/sessions/{id}", delete(api::session::handle_delete_session))
         // Settings
         .route("/settings", get(api::settings::handle_get_settings).patch(api::settings::handle_update_settings))
         // Auth

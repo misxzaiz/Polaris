@@ -359,7 +359,8 @@ async fn session_create_no_message_returns_400() {
 }
 
 #[tokio::test]
-async fn session_patch_placeholder() {
+async fn session_patch_returns_404() {
+    // PATCH /sessions/{id} is intentionally not implemented — JSONL storage is append-only
     let app = test_app();
     let req = Request::builder()
         .method(Method::PATCH)

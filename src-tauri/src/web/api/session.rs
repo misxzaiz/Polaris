@@ -105,20 +105,3 @@ pub async fn handle_delete_session(
     Ok(ok_response())
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PatchSessionRequest {
-    pub name: Option<String>,
-    pub active: Option<bool>,
-}
-
-/// Session metadata update (rename/activate).
-/// Returns 404 because `SessionHistoryProvider` has no update method and
-/// `SessionMeta` lacks mutable `name`/`active` fields — JSONL storage is append-only.
-pub async fn handle_patch_session(
-    State(_state): State<Arc<AppState>>,
-    Path(_session_id): Path<String>,
-    Json(_req): Json<PatchSessionRequest>,
-) -> Result<Json<serde_json::Value>, WebError> {
-    Err(WebError::NotFound("Session patch not implemented".to_string()))
-}

@@ -27,12 +27,12 @@ pub fn ok_response() -> axum::Json<serde_json::Value> {
 
 impl IntoResponse for WebError {
     fn into_response(self) -> Response {
-        let (status, message) = match &self {
-            WebError::Unauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
-            WebError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
-            WebError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
-            WebError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg.clone()),
-            WebError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.clone()),
+        let (status, message) = match self {
+            WebError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized".to_owned()),
+            WebError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
+            WebError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
+            WebError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
+            WebError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
         };
 
         let body = json!({ "error": message });

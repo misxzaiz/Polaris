@@ -87,8 +87,8 @@ async fn handle_ws_connection(mut socket: WebSocket, state: Arc<AppState>) {
                                 }
                                 tracing::info!(count, total = subscriptions.len(), "WS client unsubscribed from events");
                             }
-                            Err(_) => {
-                                // Ignore malformed messages
+                            Err(e) => {
+                                tracing::debug!("Ignoring malformed WS message: {}", e);
                             }
                         }
                     }
