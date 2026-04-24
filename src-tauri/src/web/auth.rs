@@ -19,8 +19,7 @@ pub fn token_eq(a: &str, b: &str) -> bool {
 
 /// Read the expected web token from config store.
 pub fn get_expected_token(state: &Arc<AppState>) -> Result<String, WebError> {
-    let store = state.config_store.lock()
-        .map_err(|e| WebError::Internal(e.to_string()))?;
+    let store = state.lock_config()?;
     Ok(store.get().web.token.clone().unwrap_or_default())
 }
 

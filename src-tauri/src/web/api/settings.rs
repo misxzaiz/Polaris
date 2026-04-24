@@ -11,8 +11,7 @@ use super::super::error::WebError;
 pub async fn handle_get_settings(
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, WebError> {
-    let config_store = state.config_store.lock()
-        .map_err(|e| WebError::Internal(e.to_string()))?;
+    let config_store = state.lock_config()?;
     let config = config_store.get().clone();
     Ok(Json(config))
 }
@@ -22,8 +21,7 @@ pub async fn handle_update_settings(
     State(state): State<Arc<AppState>>,
     Json(new_config): Json<Config>,
 ) -> Result<impl IntoResponse, WebError> {
-    let mut config_store = state.config_store.lock()
-        .map_err(|e| WebError::Internal(e.to_string()))?;
+    let mut config_store = state.lock_config()?;
     config_store.update(new_config)?;
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }

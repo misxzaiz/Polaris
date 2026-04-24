@@ -47,8 +47,7 @@ pub async fn handle_regenerate_token(
 ) -> Result<impl IntoResponse, WebError> {
     let new_token = auth::generate_token();
     {
-        let mut store = state.config_store.lock()
-            .map_err(|e| WebError::Internal(e.to_string()))?;
+        let mut store = state.lock_config()?;
         let mut config = store.get().clone();
         config.web.token = Some(new_token.clone());
         store.update(config)

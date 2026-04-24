@@ -196,8 +196,7 @@ pub async fn handle_answer_question(
     let (call_id, session_id) = (req.call_id, req.session_id);
 
     {
-        let mut pending = state.pending_questions.lock()
-            .map_err(|e| WebError::Internal(e.to_string()))?;
+        let mut pending = state.lock_pending_questions()?;
         let Some(question) = pending.get_mut(&call_id) else {
             return Err(WebError::NotFound(format!("No pending question found for callId: {}", call_id)));
         };
@@ -238,8 +237,7 @@ async fn handle_plan_decision(
     use crate::models::PlanApprovalResultEvent;
 
     {
-        let mut pending = state.pending_plans.lock()
-            .map_err(|e| WebError::Internal(e.to_string()))?;
+        let mut pending = state.lock_pending_plans()?;
         let Some(plan) = pending.get_mut(&plan_id) else {
             return Err(WebError::NotFound(format!("No pending plan found for planId: {}", plan_id)));
         };
