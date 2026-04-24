@@ -405,6 +405,9 @@
     "qrHint": "使用手机扫描二维码，即可直接访问 Polaris Web 界面",
     "qrNoIp": "未检测到局域网 IP，请检查网络连接",
     "qrDisabled": "启用 Web 服务并生成 Token 后显示二维码",
+    "connectionLost": "Web 服务连接已断开",
+    "connectionLostDesc": "实时更新不可用，请检查桌面端是否正在运行",
+    "connectionRestored": "连接已恢复",
     "auth": {
       "title": "Polaris",
       "subtitle": "输入访问令牌以连接",

@@ -405,6 +405,9 @@
     "qrHint": "Scan the QR code with your phone to access the Polaris web interface",
     "qrNoIp": "No LAN IP detected. Please check your network connection.",
     "qrDisabled": "QR code will appear after enabling Web service and generating a Token",
+    "connectionLost": "Web Service Connection Lost",
+    "connectionLostDesc": "Real-time updates unavailable. Please check if the desktop app is running.",
+    "connectionRestored": "Connection Restored",
     "auth": {
       "title": "Polaris",
       "subtitle": "Enter your access token to connect",

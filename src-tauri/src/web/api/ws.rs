@@ -49,6 +49,8 @@ async fn handle_ws_connection(mut socket: WebSocket, state: Arc<AppState>) {
     // First tick completes immediately; skip it.
     heartbeat_interval.tick().await;
 
+    tracing::debug!("WS client connected");
+
     loop {
         tokio::select! {
             msg = socket.recv() => {
@@ -103,6 +105,7 @@ async fn handle_ws_connection(mut socket: WebSocket, state: Arc<AppState>) {
                         tracing::warn!("WS client lagged behind by {} messages, continuing", n);
                     }
                     Err(broadcast::error::RecvError::Closed) => {
+                        tracing::debug!("WS client disconnected: broadcast channel closed");
                         break;
                     }
                 }
@@ -110,7 +113,7 @@ async fn handle_ws_connection(mut socket: WebSocket, state: Arc<AppState>) {
             _ = heartbeat_interval.tick() => {
                 // Check idle timeout first
                 if last_activity.elapsed() > IDLE_TIMEOUT {
-                    tracing::info!("WS client idle timeout, closing connection");
+                    tracing::debug!("WS client disconnected: idle timeout");
                     break;
                 }
                 // Send WebSocket ping frame as keep-alive

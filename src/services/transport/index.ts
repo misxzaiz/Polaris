@@ -26,6 +26,7 @@ import { createHttpTransport } from './httpTransport';
 import type { ConnectionStatus } from './httpTransport';
 import { getStoredToken, getServerUrl } from './auth';
 import { useToastStore } from '../../stores/toastStore';
+import i18n from 'i18next';
 
 /** Track the "connection lost" toast so it can be dismissed on reconnect */
 let connectionLostToastId: string | null = null;
@@ -36,15 +37,15 @@ function handleConnectionStatusChange(status: ConnectionStatus): void {
   if (status === 'failed') {
     if (!connectionLostToastId) {
       connectionLostToastId = store.error(
-        'Web 服务连接已断开',
-        '实时更新不可用，请检查桌面端是否正在运行',
+        i18n.t('settings:web.connectionLost'),
+        i18n.t('settings:web.connectionLostDesc'),
       );
     }
   } else if (status === 'connected') {
     if (connectionLostToastId) {
       store.removeToast(connectionLostToastId);
       connectionLostToastId = null;
-      store.success('连接已恢复');
+      store.success(i18n.t('settings:web.connectionRestored'));
     }
   }
 }

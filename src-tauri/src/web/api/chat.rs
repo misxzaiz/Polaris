@@ -6,6 +6,7 @@ use std::sync::Arc;
 use tauri::Emitter;
 
 use crate::commands::chat::{ChatCallbacks, ChatRequestOptions, AppPaths, start_chat_inner, continue_chat_inner, interrupt_chat_inner};
+use crate::ai::SessionHistoryProvider;
 use crate::state::QuestionAnswer;
 use crate::web::error::ok_response;
 use crate::web::{validate_session_id, validate_entity_id, PaginationQuery, parse_pagination};
@@ -18,9 +19,14 @@ pub fn resolve_app_paths(state: &AppState) -> AppPaths {
     let config_dir = state.app_config_dir.get()
         .cloned()
         .unwrap_or_else(|| {
-            dirs::config_dir()
-                .unwrap_or_else(|| std::path::PathBuf::from("."))
-                .join("claude-code-pro")
+            let fallback = dirs::config_dir()
+                .unwrap_or_else(|| {
+                    tracing::warn!("app_config_dir not set and dirs::config_dir() unavailable, falling back to '.'");
+                    std::path::PathBuf::from(".")
+                })
+                .join("claude-code-pro");
+            tracing::debug!("app_config_dir not set, using fallback: {:?}", fallback);
+            fallback
         });
     let resource_dir = state.resource_dir.get().and_then(|p| p.clone());
     AppPaths { config_dir, resource_dir }
@@ -140,8 +146,6 @@ pub async fn handle_get_history(
     Path(session_id): Path<String>,
     Query(params): Query<PaginationQuery>,
 ) -> Result<impl IntoResponse, WebError> {
-    use crate::ai::SessionHistoryProvider;
-
     validate_session_id(&session_id)?;
 
     let pagination = parse_pagination(&params);
