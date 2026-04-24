@@ -7,6 +7,7 @@ use std::sync::Arc;
 use crate::ai::{Pagination, SessionHistoryProvider};
 use crate::commands::chat::{ChatRequestOptions, start_chat_inner};
 use crate::web::api::chat::{run_claude_blocking, build_web_callbacks};
+use crate::web::error::ok_response;
 use crate::AppState;
 use super::WebError;
 use super::chat::validate_session_id;
@@ -103,7 +104,7 @@ pub async fn handle_delete_session(
     run_claude_blocking(&state, move |provider| {
         provider.delete_session(&session_id)
     }).await?;
-    Ok(Json(serde_json::json!({ "status": "ok" })))
+    Ok(ok_response())
 }
 
 #[derive(Debug, Deserialize)]

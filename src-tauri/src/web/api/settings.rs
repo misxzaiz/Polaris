@@ -6,6 +6,7 @@ use std::sync::Arc;
 use crate::models::config::Config;
 use crate::AppState;
 use super::WebError;
+use crate::web::error::ok_response;
 
 /// Get current application configuration.
 pub async fn handle_get_settings(
@@ -23,5 +24,5 @@ pub async fn handle_update_settings(
 ) -> Result<impl IntoResponse, WebError> {
     let mut config_store = state.lock_config()?;
     config_store.update(new_config)?;
-    Ok(Json(serde_json::json!({ "status": "ok" })))
+    Ok(ok_response())
 }
