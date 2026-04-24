@@ -85,7 +85,7 @@ export function createHttpTransport(
   let ws: WebSocket | null = null;
   let wsConnecting: Promise<void> | null = null;
   let reconnectAttempt = 0;
-  let intentionalClose = false;
+  const intentionalClose = false;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   const listeners = new Map<string, Set<(payload: unknown) => void>>();

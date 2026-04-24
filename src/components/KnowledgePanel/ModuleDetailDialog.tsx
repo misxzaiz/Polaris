@@ -75,6 +75,21 @@ export function ModuleDetailDialog({ module, open, onClose, onEdit, onDelete }: 
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [open, onClose, editingDoc])
 
+  // Ctrl/Cmd+S 保存 — 必须在 early return 之前定义（hooks 顺序规则）
+  const handleEditorSave = useCallback(async () => {
+    if (!open) return
+    setSaving(true)
+    try {
+      await saveModuleDocument(module.id, editContent)
+      setEditingDoc(false)
+      toast.success(t('detail.docSaveSuccess'))
+    } catch {
+      toast.error(t('detail.docSaveFailed'))
+    } finally {
+      setSaving(false)
+    }
+  }, [open, module.id, editContent, saveModuleDocument, toast, t]) // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!open) return null
 
   const docContent = moduleDocuments.get(module.id)
@@ -100,11 +115,6 @@ export function ModuleDetailDialog({ module, open, onClose, onEdit, onDelete }: 
       setSaving(false)
     }
   }
-
-  // Ctrl/Cmd+S 保存
-  const handleEditorSave = useCallback(() => {
-    handleSaveDoc()
-  }, [editContent, module.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const tabs: { key: DetailTab; label: string }[] = [
     { key: 'overview', label: t('detail.tabOverview') },

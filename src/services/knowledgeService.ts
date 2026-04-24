@@ -201,7 +201,7 @@ export class LocalFileKnowledgeService implements IKnowledgeService {
     }
 
     try {
-      let content = await readFile(indexV2Path)
+      const content = await readFile(indexV2Path)
       if (content) {
         const v2Data = JSON.parse(content)
         // 从 v2 格式提取模块信息（含 assertions 和 traps）
