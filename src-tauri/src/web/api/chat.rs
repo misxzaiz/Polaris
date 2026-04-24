@@ -106,9 +106,9 @@ pub async fn handle_send_message(
     };
 
     match req.session_id {
-        Some(ref session_id) => {
-            validate_session_id(session_id)?;
-            continue_chat_inner(req.session_id.unwrap(), message, options, &state, callbacks, &app_paths)
+        Some(session_id) => {
+            validate_session_id(&session_id)?;
+            continue_chat_inner(session_id, message, options, &state, callbacks, &app_paths)
                 .await?;
             Ok(Json(serde_json::json!({ "status": "ok" })))
         }
@@ -201,21 +201,23 @@ pub async fn handle_answer_question(
         selected: req.selected,
         custom_input: req.custom_input,
     };
+    let (call_id, session_id) = (req.call_id, req.session_id);
 
     {
         let mut pending = state.pending_questions.lock()
             .map_err(|e| WebError::Internal(e.to_string()))?;
-        let Some(question) = pending.get_mut(&req.call_id) else {
-            return Err(WebError::NotFound(format!("No pending question found for callId: {}", req.call_id)));
+        let Some(question) = pending.get_mut(&call_id) else {
+            return Err(WebError::NotFound(format!("No pending question found for callId: {}", call_id)));
         };
         use crate::state::QuestionStatus;
         question.status = QuestionStatus::Answered;
+        pending.remove(&call_id);
     }
 
     let event = serde_json::json!({
         "type": "question_answered",
-        "sessionId": req.session_id,
-        "callId": req.call_id,
+        "sessionId": session_id,
+        "callId": call_id,
         "answer": answer,
     });
 
@@ -243,18 +245,21 @@ pub async fn handle_approve_plan(
     use crate::state::PlanApprovalStatus;
     use crate::models::PlanApprovalResultEvent;
 
+    let (plan_id, session_id, feedback) = (req.plan_id, req.session_id, req.feedback);
+
     {
         let mut pending = state.pending_plans.lock()
             .map_err(|e| WebError::Internal(e.to_string()))?;
-        let Some(plan) = pending.get_mut(&req.plan_id) else {
-            return Err(WebError::NotFound(format!("No pending plan found for planId: {}", req.plan_id)));
+        let Some(plan) = pending.get_mut(&plan_id) else {
+            return Err(WebError::NotFound(format!("No pending plan found for planId: {}", plan_id)));
         };
         plan.status = PlanApprovalStatus::Approved;
-        plan.feedback = req.feedback.clone();
+        plan.feedback = feedback.clone();
+        pending.remove(&plan_id);
     }
 
-    let mut event = PlanApprovalResultEvent::new(&req.session_id, &req.plan_id, true);
-    if let Some(fb) = req.feedback {
+    let mut event = PlanApprovalResultEvent::new(&session_id, &plan_id, true);
+    if let Some(fb) = feedback {
         event = event.with_feedback(fb);
     }
     let payload = serde_json::json!({
@@ -286,18 +291,21 @@ pub async fn handle_reject_plan(
     use crate::state::PlanApprovalStatus;
     use crate::models::PlanApprovalResultEvent;
 
+    let (plan_id, session_id, feedback) = (req.plan_id, req.session_id, req.feedback);
+
     {
         let mut pending = state.pending_plans.lock()
             .map_err(|e| WebError::Internal(e.to_string()))?;
-        let Some(plan) = pending.get_mut(&req.plan_id) else {
-            return Err(WebError::NotFound(format!("No pending plan found for planId: {}", req.plan_id)));
+        let Some(plan) = pending.get_mut(&plan_id) else {
+            return Err(WebError::NotFound(format!("No pending plan found for planId: {}", plan_id)));
         };
         plan.status = PlanApprovalStatus::Rejected;
-        plan.feedback = req.feedback.clone();
+        plan.feedback = feedback.clone();
+        pending.remove(&plan_id);
     }
 
-    let mut event = PlanApprovalResultEvent::new(&req.session_id, &req.plan_id, false);
-    if let Some(fb) = req.feedback {
+    let mut event = PlanApprovalResultEvent::new(&session_id, &plan_id, false);
+    if let Some(fb) = feedback {
         event = event.with_feedback(fb);
     }
     let payload = serde_json::json!({

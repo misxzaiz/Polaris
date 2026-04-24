@@ -6,7 +6,7 @@ use axum::response::Response;
 /// Lightweight request tracing: logs method, path, status code, and duration.
 pub async fn request_trace(req: Request<Body>, next: Next) -> Response {
     let method = req.method().clone();
-    let path = req.uri().path().to_owned();
+    let path = req.uri().path().to_string();
     let start = std::time::Instant::now();
 
     let response = next.run(req).await;

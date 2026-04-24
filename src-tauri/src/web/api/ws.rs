@@ -25,12 +25,19 @@ enum ClientMessage {
     Unsubscribe { events: Vec<String> },
 }
 
+/// Maximum allowed WebSocket frame size (1 MB).
+const MAX_FRAME_SIZE: usize = 1024 * 1024;
+/// Maximum allowed total WebSocket message size (4 MB).
+const MAX_MESSAGE_SIZE: usize = 4 * 1024 * 1024;
+
 /// WebSocket upgrade handler — initiates the bidirectional event stream.
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_ws_connection(socket, state))
+    ws.max_frame_size(MAX_FRAME_SIZE)
+        .max_message_size(MAX_MESSAGE_SIZE)
+        .on_upgrade(move |socket| handle_ws_connection(socket, state))
 }
 
 async fn handle_ws_connection(mut socket: WebSocket, state: Arc<AppState>) {

@@ -24,9 +24,9 @@ pub fn get_expected_token(state: &Arc<AppState>) -> Result<String, WebError> {
     Ok(store.get().web.token.clone().unwrap_or_default())
 }
 
-/// Generate a random 32-char hex token (UUID v4, hyphens removed).
+/// Generate a random 32-char hex token (UUID v4, simple format without hyphens).
 pub fn generate_token() -> String {
-    uuid::Uuid::new_v4().to_string().replace('-', "")
+    uuid::Uuid::new_v4().simple().to_string()
 }
 
 /// Resolve the effective token: use configured value if present, otherwise generate.
