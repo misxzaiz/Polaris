@@ -12,21 +12,6 @@ export default defineConfig(async () => ({
     alias: [
       { find: /^@\//, replacement: `${path.resolve(__dirname, './src')}/` },
     ],
-    // 强制所有 @codemirror 包解析到项目根 node_modules 中的同一实例
-    // 避免 @codemirror/lsp-client 内部依赖链导致 @codemirror/state 被加载为不同实例
-    // CodeMirror 使用 instanceof 检查 extension 类型，多实例会触发
-    // "Unrecognized extension value" 错误
-    dedupe: [
-      '@codemirror/state',
-      '@codemirror/view',
-      '@codemirror/language',
-      '@codemirror/autocomplete',
-      '@codemirror/lint',
-      '@codemirror/search',
-      '@codemirror/commands',
-      '@lezer/highlight',
-      '@lezer/common',
-    ],
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
@@ -127,9 +112,13 @@ export default defineConfig(async () => ({
       'react-dom',
       '@tauri-apps/api/core',
       '@tauri-apps/api/event',
-      // CodeMirror LSP client — 必须与其他 CM6 包在同一预构建上下文中，
-      // 否则 @codemirror/state 会被加载为两个不同实例，导致 instanceof 检查失败
-      '@codemirror/lsp-client',
     ],
+    // @codemirror/lsp-client 必须排除在预构建之外
+    // Vite 预构建会用 esbuild 把包的依赖内联，导致 @codemirror/state 被打包为
+    // 一个独立的实例，与编辑器使用的主实例不同。CodeMirror 的 Facet/StateField 等
+    // 使用 instanceof 做类型检查，两个实例会导致 "Unrecognized extension value" 错误。
+    // 排除后，lsp-client 的 import from '@codemirror/state' 会走 Vite 的原生 ESM
+    // 解析，与编辑器其他 CM6 包共享同一个模块实例。
+    exclude: ['@codemirror/lsp-client'],
   },
 }));
