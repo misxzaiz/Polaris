@@ -10,7 +10,7 @@
 import { memo, useState, useCallback, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/services/tauri';
 import { createLogger } from '../../utils/logger';
 import {
   Check,
