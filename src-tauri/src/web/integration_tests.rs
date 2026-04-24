@@ -318,14 +318,14 @@ async fn settings_update_saves() {
 // ============================================================================
 
 #[tokio::test]
-async fn session_create_returns_error() {
+async fn session_create_no_message_returns_400() {
     let app = test_app();
     let req = Request::builder()
         .method(Method::POST)
         .uri("/api/sessions")
         .header(AUTHORIZATION, format!("Bearer {}", TEST_TOKEN))
         .header(CONTENT_TYPE, "application/json")
-        .body(Body::from(r#"{"name":"test"}"#))
+        .body(Body::from(r#"{}"#))
         .unwrap();
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);

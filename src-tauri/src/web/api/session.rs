@@ -1,10 +1,11 @@
 use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
 use axum::Json;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::sync::Arc;
 
 use crate::ai::{ClaudeHistoryProvider, SessionHistoryProvider, Pagination};
+use crate::commands::chat::{ChatCallbacks, ChatRequestOptions, AppPaths, start_chat_inner};
 use crate::AppState;
 use super::super::error::WebError;
 
@@ -56,21 +57,63 @@ pub async fn handle_list_sessions(
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateSessionRequest {
-    pub name: Option<String>,
+    /// Initial message to start the session with. If empty, returns guidance.
+    pub message: Option<String>,
+    #[serde(default)]
+    pub options: Option<ChatRequestOptions>,
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateSessionResponse {
-    pub session_id: String,
-}
-
-/// Sessions are created implicitly via POST /api/chat/send — this endpoint returns guidance.
+/// Create a new chat session by sending an initial message.
+/// Returns `{ "sessionId": "<uuid>" }` on success.
+/// If no message is provided, returns 400 with guidance to use this endpoint.
 pub async fn handle_create_session(
-    State(_state): State<Arc<AppState>>,
-    Json(_req): Json<CreateSessionRequest>,
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<CreateSessionRequest>,
 ) -> Result<impl IntoResponse, WebError> {
-    Err::<Json<serde_json::Value>, WebError>(WebError::BadRequest("Sessions are auto-created by sending messages".to_string()))
+    use tauri::Emitter;
+
+    let message = req.message
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| WebError::BadRequest(
+            "Provide a message to start a new session, or use POST /api/chat/send".to_string()
+        ))?
+        .to_string();
+
+    let mut options = req.options.unwrap_or_default();
+    if options.context_id.is_none() {
+        options.context_id = Some("web".to_string());
+    }
+
+    let emit_event = {
+        let state = state.clone();
+        Arc::new(move |json: serde_json::Value| {
+            if let Err(e) = state.event_broadcast.send(json.to_string()) {
+                tracing::warn!("WebSocket broadcast send failed: {}", e);
+            }
+            if let Some(handle) = state.app_handle.get() {
+                if let Err(e) = handle.emit("chat-event", json) {
+                    tracing::warn!("Tauri webview emit failed: {}", e);
+                }
+            }
+        })
+    };
+    let notify_complete = Arc::new(|| {});
+    let callbacks = ChatCallbacks { emit_event, notify_complete };
+
+    let config_dir = state.app_config_dir.get()
+        .cloned()
+        .unwrap_or_else(|| {
+            dirs::config_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join("claude-code-pro")
+        });
+    let resource_dir = state.resource_dir.get().and_then(|opt| opt.clone());
+    let app_paths = AppPaths { config_dir, resource_dir };
+
+    let sid = start_chat_inner(message, options, &state, callbacks, &app_paths).await?;
+    Ok(Json(serde_json::json!({ "sessionId": sid })))
 }
 
 #[derive(Debug, Deserialize)]
@@ -117,7 +160,9 @@ pub struct PatchSessionRequest {
     pub active: Option<bool>,
 }
 
-/// Session rename/switch — not yet implemented.
+/// Session metadata update (rename/activate).
+/// Returns 404 because `SessionHistoryProvider` has no update method and
+/// `SessionMeta` lacks mutable `name`/`active` fields — JSONL storage is append-only.
 pub async fn handle_patch_session(
     State(_state): State<Arc<AppState>>,
     Path(_session_id): Path<String>,
