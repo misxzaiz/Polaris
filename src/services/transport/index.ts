@@ -62,6 +62,12 @@ const transport = currentMode === 'tauri'
     );
 
 /**
+ * 断开传输层连接（清理 WebSocket 等资源）。
+ * 仅在 HTTP 模式下有效；Tauri 模式为空操作。
+ */
+export const disconnect = (): void => { transport.disconnect?.(); };
+
+/**
  * 统一 invoke — 调用后端命令
  *
  * Tauri 模式：直接 IPC invoke

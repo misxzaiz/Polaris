@@ -36,8 +36,7 @@ pub async fn handle_list_sessions(
     match query.engine_id.as_str() {
         "claude" | "claude-code" => {
             let blocking_task = {
-                let config = state.clone_config()
-                    .map_err(WebError::Internal)?;
+                let config = state.clone_config_web()?;
 
                 let work_dir = query.work_dir;
                 tokio::task::spawn_blocking(move || {
@@ -114,8 +113,7 @@ pub async fn handle_delete_session(
     match engine_id.as_str() {
         "claude" | "claude-code" => {
             let blocking_task = {
-                let config = state.clone_config()
-                    .map_err(WebError::Internal)?;
+                let config = state.clone_config_web()?;
 
                 tokio::task::spawn_blocking(move || {
                     let provider = ClaudeHistoryProvider::new(config);

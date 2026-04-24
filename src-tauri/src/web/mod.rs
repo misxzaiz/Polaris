@@ -26,6 +26,12 @@ impl AppState {
     pub fn lock_pending_plans(&self) -> Result<MutexGuard<'_, HashMap<String, PendingPlan>>, WebError> {
         self.pending_plans.lock().map_err(|e| WebError::Internal(e.to_string()))
     }
+
+    /// Clone the current config, returning a WebError directly.
+    /// Eliminates the `.map_err(WebError::Internal)` at every call site.
+    pub fn clone_config_web(&self) -> Result<crate::models::config::Config, WebError> {
+        self.clone_config().map_err(WebError::Internal)
+    }
 }
 
 #[cfg(test)]

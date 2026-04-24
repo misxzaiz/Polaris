@@ -20,6 +20,7 @@ import { useCliInfoStore } from '../stores/cliInfoStore';
 import { bootstrapEngines, type EngineId } from '../core/engine-bootstrap';
 import { bootstrapTools } from '../core/tool-bootstrap';
 import { voiceNotificationService } from '../services/voiceNotificationService';
+import { disconnect as disconnectTransport } from '../services/transport';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('AppInit');
@@ -128,6 +129,7 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
       const { cleanup } = useIntegrationStore.getState();
       cleanup();
       cleanupCliListeners();
+      disconnectTransport();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

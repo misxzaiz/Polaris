@@ -147,8 +147,7 @@ pub async fn handle_get_history(
     let page_size = params.page_size.unwrap_or(50).clamp(1, 200);
 
     let blocking_task = {
-        let config = state.clone_config()
-            .map_err(WebError::Internal)?;
+        let config = state.clone_config_web()?;
 
         let pagination = Pagination::new(page, page_size);
         tokio::task::spawn_blocking(move || {
