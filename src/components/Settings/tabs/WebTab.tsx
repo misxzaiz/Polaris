@@ -4,7 +4,7 @@
 
 import { useTranslation } from 'react-i18next';
 import { useState, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/services/transport';
 import QRCode from 'react-qr-code';
 import { createLogger } from '../../../utils/logger';
 import type { Config, WebConfig } from '../../../types';

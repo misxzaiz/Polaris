@@ -131,7 +131,7 @@ fn update_config(config: Config, state: tauri::State<AppState>) -> Result<()> {
 
 /// 重新生成 Web 访问 Token
 #[tauri::command]
-fn regenerate_web_token(state: tauri::State<AppState>) -> std::result::Result<String, error::AppError> {
+fn regenerate_web_token(state: tauri::State<AppState>) -> std::result::Result<serde_json::Value, error::AppError> {
     let new_token = crate::web::auth::generate_token();
     let mut store = state.config_store.lock()
         .map_err(|e| error::AppError::Unknown(e.to_string()))?;
@@ -139,7 +139,7 @@ fn regenerate_web_token(state: tauri::State<AppState>) -> std::result::Result<St
     config.web.token = Some(new_token.clone());
     store.update(config)
         .map_err(|e| error::AppError::Unknown(e.to_string()))?;
-    Ok(new_token)
+    Ok(serde_json::json!({ "token": new_token }))
 }
 
 /// 获取本机局域网 IP 地址列表

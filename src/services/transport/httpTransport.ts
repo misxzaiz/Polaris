@@ -43,6 +43,7 @@ const COMMAND_ROUTE_MAP: Record<string, string> = {
   update_config: '/api/settings',
   // Auth
   health_check: '/api/auth/verify',
+  regenerate_web_token: '/api/auth/regenerate',
 };
 
 /** GET-only commands (read-only operations) */
