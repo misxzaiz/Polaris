@@ -1,4 +1,4 @@
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
 use axum::Json;
 use serde::Deserialize;
@@ -99,12 +99,17 @@ pub async fn handle_interrupt(
 }
 
 /// Get message history for a specific session.
+/// Accepts optional `?page=1&page_size=50` query parameters.
 /// Uses spawn_blocking to offload filesystem I/O from the async runtime.
 pub async fn handle_get_history(
     State(state): State<Arc<AppState>>,
     Path(session_id): Path<String>,
+    Query(params): Query<HistoryQueryParams>,
 ) -> Result<Json<serde_json::Value>, WebError> {
     use crate::ai::{ClaudeHistoryProvider, SessionHistoryProvider, Pagination};
+
+    let page = params.page.unwrap_or(1).max(1);
+    let page_size = params.page_size.unwrap_or(50).clamp(1, 200);
 
     let blocking_task = {
         let config_store = state.config_store.lock()
@@ -112,7 +117,7 @@ pub async fn handle_get_history(
         let config = config_store.get().clone();
         drop(config_store);
 
-        let pagination = Pagination::new(1, 50);
+        let pagination = Pagination::new(page, page_size);
         tokio::task::spawn_blocking(move || {
             let provider = ClaudeHistoryProvider::new(config);
             provider.get_session_history(&session_id, pagination)
@@ -124,6 +129,13 @@ pub async fn handle_get_history(
         .map_err(WebError::from)?;
 
     Ok(Json(serde_json::json!(result)))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryQueryParams {
+    page: Option<usize>,
+    page_size: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
