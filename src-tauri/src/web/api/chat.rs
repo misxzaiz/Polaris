@@ -11,7 +11,7 @@ use crate::AppState;
 use super::super::error::WebError;
 
 /// Dual-emit: broadcast event to both WebSocket clients and Tauri webview.
-fn dual_emit(state: &AppState, event: &serde_json::Value) {
+pub fn dual_emit(state: &AppState, event: &serde_json::Value) {
     if let Err(e) = state.event_broadcast.send(event.to_string()) {
         tracing::warn!("WebSocket broadcast send failed (no active receivers): {}", e);
     }
@@ -20,6 +20,14 @@ fn dual_emit(state: &AppState, event: &serde_json::Value) {
             tracing::warn!("Tauri webview emit failed: {}", e);
         }
     }
+}
+
+/// Create a shared emit callback that captures an `Arc<AppState>` for use in
+/// `ChatCallbacks`. This avoids duplicating the dual-emit logic at every call site.
+pub fn create_emit_callback(state: Arc<AppState>) -> Arc<dyn Fn(serde_json::Value) + Send + Sync> {
+    Arc::new(move |json: serde_json::Value| {
+        dual_emit(&state, &json);
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,12 +54,7 @@ pub async fn handle_send_message(
         options.context_id = Some("web".to_string());
     }
 
-    let emit_event = {
-        let state = state.clone();
-        Arc::new(move |json: serde_json::Value| {
-            dual_emit(&state, &json);
-        })
-    };
+    let emit_event = create_emit_callback(state.clone());
     let notify_complete = Arc::new(|| {});
 
     let callbacks = ChatCallbacks {

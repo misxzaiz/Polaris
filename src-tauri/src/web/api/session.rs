@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use crate::ai::{ClaudeHistoryProvider, SessionHistoryProvider, Pagination};
 use crate::commands::chat::{ChatCallbacks, ChatRequestOptions, AppPaths, start_chat_inner};
+use crate::web::api::chat::create_emit_callback;
 use crate::AppState;
 use super::super::error::WebError;
 
@@ -70,8 +71,6 @@ pub async fn handle_create_session(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateSessionRequest>,
 ) -> Result<impl IntoResponse, WebError> {
-    use tauri::Emitter;
-
     let message = req.message
         .as_deref()
         .map(str::trim)
@@ -86,19 +85,7 @@ pub async fn handle_create_session(
         options.context_id = Some("web".to_string());
     }
 
-    let emit_event = {
-        let state = state.clone();
-        Arc::new(move |json: serde_json::Value| {
-            if let Err(e) = state.event_broadcast.send(json.to_string()) {
-                tracing::warn!("WebSocket broadcast send failed: {}", e);
-            }
-            if let Some(handle) = state.app_handle.get() {
-                if let Err(e) = handle.emit("chat-event", json) {
-                    tracing::warn!("Tauri webview emit failed: {}", e);
-                }
-            }
-        })
-    };
+    let emit_event = create_emit_callback(state.clone());
     let notify_complete = Arc::new(|| {});
     let callbacks = ChatCallbacks { emit_event, notify_complete };
 
