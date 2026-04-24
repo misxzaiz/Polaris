@@ -1306,13 +1306,13 @@ pub async fn answer_question(
         session_id, call_id, answer.selected, answer.custom_input
     );
 
-    // 更新问题状态
+    // 更新问题状态并移除已处理的条目（避免内存泄漏）
     {
         let mut pending = state.pending_questions.lock()
             .map_err(|e| AppError::Unknown(e.to_string()))?;
 
-        if let Some(question) = pending.get_mut(&call_id) {
-            question.status = QuestionStatus::Answered;
+        if pending.remove(&call_id).is_some() {
+            tracing::info!("[answer_question] 已移除待处理问题: {}", call_id);
         } else {
             tracing::warn!("[answer_question] 问题不存在: {}", call_id);
         }
@@ -1433,13 +1433,13 @@ pub async fn approve_plan(
         session_id, plan_id
     );
 
-    // 更新计划状态
+    // 更新计划状态并移除已处理的条目（避免内存泄漏）
     {
         let mut pending = state.pending_plans.lock()
             .map_err(|e| AppError::Unknown(e.to_string()))?;
 
-        if let Some(plan) = pending.get_mut(&plan_id) {
-            plan.status = PlanApprovalStatus::Approved;
+        if pending.remove(&plan_id).is_some() {
+            tracing::info!("[approve_plan] 已移除待处理计划: {}", plan_id);
         } else {
             tracing::warn!("[approve_plan] 计划不存在: {}", plan_id);
         }
@@ -1479,14 +1479,13 @@ pub async fn reject_plan(
         session_id, plan_id, feedback
     );
 
-    // 更新计划状态
+    // 更新计划状态并移除已处理的条目（避免内存泄漏）
     {
         let mut pending = state.pending_plans.lock()
             .map_err(|e| AppError::Unknown(e.to_string()))?;
 
-        if let Some(plan) = pending.get_mut(&plan_id) {
-            plan.status = PlanApprovalStatus::Rejected;
-            plan.feedback = feedback.clone();
+        if pending.remove(&plan_id).is_some() {
+            tracing::info!("[reject_plan] 已移除待处理计划: {}", plan_id);
         } else {
             tracing::warn!("[reject_plan] 计划不存在: {}", plan_id);
         }
