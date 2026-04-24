@@ -85,7 +85,7 @@ export function createHttpTransport(
   let ws: WebSocket | null = null;
   let wsConnecting: Promise<void> | null = null;
   let reconnectAttempt = 0;
-  const intentionalClose = false;
+  let intentionalClose = false;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   const listeners = new Map<string, Set<(payload: unknown) => void>>();
@@ -273,6 +273,19 @@ export function createHttpTransport(
           }
         }
       };
+    },
+
+    disconnect() {
+      intentionalClose = true;
+      stopHeartbeat();
+      if (reconnectTimer !== null) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
     },
   };
 }

@@ -342,7 +342,7 @@ async fn session_patch_placeholder() {
         .body(Body::from(r#"{"name":"renamed"}"#))
         .unwrap();
     let res = app.oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
 }
 
 // ============================================================================

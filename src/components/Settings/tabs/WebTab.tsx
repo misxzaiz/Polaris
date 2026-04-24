@@ -22,6 +22,7 @@ export function WebTab({ config, onConfigChange, loading }: WebTabProps) {
   const [tokenVisible, setTokenVisible] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [localIps, setLocalIps] = useState<string[]>([]);
+  const [regenerateError, setRegenerateError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!web.enabled) return;
@@ -37,11 +38,13 @@ export function WebTab({ config, onConfigChange, loading }: WebTabProps) {
   const handleRegenerate = async () => {
     if (!confirm(t('web.tokenRegenerateConfirm'))) return;
     setRegenerating(true);
+    setRegenerateError(null);
     try {
       const result = await invoke<{ token: string }>('regenerate_web_token');
       updateWeb({ token: result.token });
-    } catch {
-      // fallback: ignore
+    } catch (e) {
+      setRegenerateError(t('web.tokenRegenerateFailed'));
+      console.error('Token regeneration failed:', e);
     } finally {
       setRegenerating(false);
     }
@@ -151,6 +154,9 @@ export function WebTab({ config, onConfigChange, loading }: WebTabProps) {
                 {regenerating ? '...' : t('web.tokenRegenerate')}
               </button>
             </div>
+            {regenerateError && (
+              <p className="mt-2 text-xs text-red-400">{regenerateError}</p>
+            )}
             <p className="mt-2 text-xs text-text-tertiary">
               {t('web.tokenHint')}
             </p>
