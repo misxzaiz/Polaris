@@ -77,7 +77,7 @@ function backoffDelay(attempt: number): number {
 }
 
 /** Connection status reported by the transport layer */
-export type ConnectionStatus = 'connected' | 'disconnected' | 'failed';
+export type ConnectionStatus = 'connected' | 'disconnected' | 'failed' | 'unauthorized';
 
 export interface HttpTransportOptions {
   /** Called when WebSocket connection status changes */
@@ -268,6 +268,10 @@ export function createHttpTransport(
         throw e;
       }
       if (!res.ok) {
+        // 401 means the token is invalid/expired — notify the app layer
+        if (res.status === 401) {
+          options?.onStatusChange?.('unauthorized');
+        }
         const err = await res.json().catch(() => ({ error: res.statusText }));
         throw new Error((err as { error?: string }).error || `API error: ${res.status}`);
       }

@@ -24,7 +24,7 @@ import { detectTransport } from './detector';
 import { tauriTransport } from './tauriTransport';
 import { createHttpTransport } from './httpTransport';
 import type { ConnectionStatus } from './httpTransport';
-import { getStoredToken, getServerUrl } from './auth';
+import { getStoredToken, getServerUrl, clearStoredToken } from './auth';
 import { useToastStore } from '../../stores/toastStore';
 import i18n from 'i18next';
 
@@ -41,6 +41,11 @@ function handleConnectionStatusChange(status: ConnectionStatus): void {
         i18n.t('settings:web.connectionLostDesc'),
       );
     }
+  } else if (status === 'unauthorized') {
+    // Token invalidated (e.g., regenerated from desktop) — clear and reload to show auth page
+    clearStoredToken();
+    window.location.reload();
+    return;
   } else if (status === 'connected') {
     if (connectionLostToastId) {
       store.removeToast(connectionLostToastId);
