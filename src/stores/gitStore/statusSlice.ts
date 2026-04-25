@@ -4,7 +4,7 @@
  * 负责状态管理、Diff 操作和 UI 状态
  */
 
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '@/services/transport'
 import type { StatusSlice } from './types'
 import { parseGitError } from './types'
 import type { GitDiffEntry } from '@/types/git'

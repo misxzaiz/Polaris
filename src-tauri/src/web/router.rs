@@ -9,19 +9,35 @@ use tower_http::services::{ServeDir, ServeFile};
 use crate::AppState;
 use super::auth;
 use super::api;
-use super::error::WebError;
 use super::middleware::request_trace;
 
 /// Resolve the frontend dist directory for static file serving.
 ///
 /// Priority:
-/// 1. `resource_dir` set by Tauri during setup (production: points to bundled assets)
-/// 2. `../dist` relative to CWD (development: works when run from project root)
+/// 1. `resource_dir/dist` — only if the directory actually exists (production bundle)
+/// 2. `../dist` relative to CWD (development fallback when running from src-tauri/)
+/// 3. `./dist` relative to CWD (development fallback when running from project root)
 fn resolve_dist_dir(state: &AppState) -> std::path::PathBuf {
-    state.resource_dir.get()
-        .and_then(|opt| opt.as_ref())
-        .map(|p| p.join("dist"))
-        .unwrap_or_else(|| std::path::PathBuf::from("../dist"))
+    // Try resource_dir first, but verify the dist subdirectory exists
+    if let Some(Some(resource_dir)) = state.resource_dir.get().as_ref() {
+        let dist = resource_dir.join("dist");
+        if dist.is_dir() {
+            return dist;
+        }
+        tracing::debug!("[Web] resource_dir/dist not found at {:?}, trying fallbacks", dist);
+    }
+
+    // Development fallbacks
+    for candidate in ["../dist", "./dist"] {
+        let path = std::path::PathBuf::from(candidate);
+        if path.is_dir() {
+            return path;
+        }
+    }
+
+    // Last resort: return ../dist (will 404 but at least it's a sensible default)
+    tracing::warn!("[Web] No dist directory found, SPA serving will fail");
+    std::path::PathBuf::from("../dist")
 }
 
 /// Build CORS layer: permissive in dev (Vite dev server on different port),
@@ -41,6 +57,7 @@ fn build_cors_layer() -> CorsLayer {
 /// Build the complete axum Router with API routes, auth middleware, CORS, and SPA fallback.
 pub fn create_router(state: Arc<AppState>) -> Router {
     let dist_dir = resolve_dist_dir(&state);
+    tracing::info!("[Web] SPA dist directory resolved to: {:?}", dist_dir);
     let cors = build_cors_layer();
 
     let api_routes = Router::new()
@@ -64,8 +81,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/health", get(api::health::handle_health))
         // WebSocket
         .route("/ws", get(api::ws::ws_handler))
-        // Catch-all: return JSON 404 for unmatched /api/* routes
-        .fallback(|| async { Err::<(), WebError>(WebError::NotFound("API route not found".into())) });
+        // Catch-all IPC bridge: dispatches unmatched /api/* paths to Tauri command handlers
+        .fallback(api::ipc::handle_ipc_bridge);
 
     let index_html = dist_dir.join("index.html");
 

@@ -4,7 +4,7 @@
  * 负责 Cherry-pick 和 Revert 等高级 Git 操作
  */
 
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '@/services/transport'
 import type { AdvancedSlice } from './types'
 import { parseGitError } from './types'
 import type { GitCherryPickResult, GitRevertResult } from '@/types/git'

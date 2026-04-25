@@ -1,5 +1,4 @@
 import { useMemo } from 'react'
-import { convertFileSrc } from '@tauri-apps/api/core'
 
 interface ImagePreviewProps {
   filePath?: string
@@ -9,7 +8,18 @@ interface ImagePreviewProps {
 export function ImagePreview({ filePath, title }: ImagePreviewProps) {
   const src = useMemo(() => {
     if (!filePath) return ''
-    return convertFileSrc(filePath)
+    // In Tauri mode, use the native asset protocol; in web mode, fall back to empty
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      // Dynamic import to avoid bundling Tauri API in web mode
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { convertFileSrc } = require('@tauri-apps/api/core')
+        return convertFileSrc(filePath)
+      } catch {
+        return ''
+      }
+    }
+    return ''
   }, [filePath])
 
   if (!filePath) {

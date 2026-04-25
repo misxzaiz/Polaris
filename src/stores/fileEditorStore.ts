@@ -8,7 +8,7 @@
 import { create } from 'zustand';
 import type { FileEditorStore, BufferEntry } from '../types';
 import * as tauri from '../services/tauri';
-import { emit, listen } from '@tauri-apps/api/event';
+import { emit, listen } from '@/services/transport';
 import { createLogger } from '../utils/logger';
 import type { FsChangeEvent } from '../types/fileExplorer';
 
@@ -415,7 +415,7 @@ export function initEditorFileChangeListener(): () => void {
       ? filePath.substring(0, filePath.lastIndexOf('/'))
       : '';
 
-    const affectedDirs = event.payload.affectedDirs;
+    const affectedDirs = event.affectedDirs;
     const isAffected = affectedDirs.some(dir => {
       const normalizedDir = dir.replace(/\\/g, '/');
       return fileDir === normalizedDir || fileDir.startsWith(normalizedDir + '/');

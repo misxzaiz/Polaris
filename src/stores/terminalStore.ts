@@ -3,8 +3,7 @@
  */
 
 import { create } from 'zustand';
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { invoke, listen } from '@/services/transport';
 import type { TerminalSession, TerminalOutputEvent, TerminalExitEvent } from '@/types/terminal';
 import { createLogger } from '../utils/logger';
 
@@ -116,7 +115,7 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
   initEventListeners: () => {
     // 监听终端输出
     const unlistenOutput = listen<TerminalOutputEvent>('terminal:output', (event) => {
-      const { sessionId, data } = event.payload;
+      const { sessionId, data } = event;
       // 触发自定义事件，由终端组件处理
       window.dispatchEvent(new CustomEvent('terminal-output', {
         detail: { sessionId, data },
@@ -125,7 +124,7 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
 
     // 监听终端退出
     const unlistenExit = listen<TerminalExitEvent>('terminal:exit', (event) => {
-      const { sessionId } = event.payload;
+      const { sessionId } = event;
       set((state) => ({
         sessions: state.sessions.filter((s) => s.id !== sessionId),
         activeSessionId: state.activeSessionId === sessionId ? null : state.activeSessionId,

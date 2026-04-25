@@ -6,17 +6,16 @@ use axum::Json;
 
 use crate::AppState;
 
-/// `GET /api/health` — lightweight liveness probe (no auth required).
+/// `GET /api/health` — returns full `HealthStatus` including Claude CLI availability.
+/// No auth required — this is a liveness + readiness probe.
 pub async fn handle_health(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    let uptime = state.start_time
-        .map(|t| t.elapsed().as_secs())
-        .unwrap_or(0);
+    let health = {
+        let store = state.config_store.lock()
+            .unwrap_or_else(|e| e.into_inner());
+        store.health_status()
+    };
 
-    Json(serde_json::json!({
-        "status": "ok",
-        "version": env!("CARGO_PKG_VERSION"),
-        "uptime_seconds": uptime,
-    }))
+    Json(health)
 }

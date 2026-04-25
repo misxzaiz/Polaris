@@ -68,6 +68,19 @@ const transport = currentMode === 'tauri'
     );
 
 /**
+ * 统一 emit — 向其他组件发送本地事件
+ *
+ * Tauri 模式：通过 Tauri event system 广播
+ * HTTP 模式：使用简单本地 pub/sub（同页面内通信）
+ */
+export const emit = currentMode === 'tauri'
+  ? (async (event: string, payload: unknown) => {
+      const { emit: tauriEmit } = await import('@tauri-apps/api/event');
+      return tauriEmit(event, payload);
+    })
+  : ((_event: string, _payload: unknown) => Promise.resolve()) as (event: string, payload: unknown) => Promise<void>;
+
+/**
  * 断开传输层连接（清理 WebSocket 等资源）。
  * 仅在 HTTP 模式下有效；Tauri 模式为空操作。
  */

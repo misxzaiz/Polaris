@@ -3,7 +3,7 @@
  */
 
 import { create } from 'zustand';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/services/transport';
 import type { Command } from '../types/command';
 import { builtinCommands } from '../types/command';
 import { createLogger } from '../utils/logger';

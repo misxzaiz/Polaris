@@ -3,7 +3,7 @@
  */
 
 import { create } from 'zustand';
-import { listen } from '@tauri-apps/api/event';
+import { listen } from '@/services/transport';
 import type { FileExplorerStore, FileInfo, FsChangeEvent } from '../types';
 import * as tauri from '../services/tauri';
 import { searchFiles } from '../services/fileSearch';
@@ -650,7 +650,7 @@ let fsWatcherDebounceTimer: ReturnType<typeof setTimeout> | null = null;
  */
 export function initFileWatcherListener(): () => void {
   const unlisten = listen<FsChangeEvent>('file-system-change', (event) => {
-    const { affectedDirs } = event.payload;
+    const { affectedDirs } = event;
     const store = useFileExplorerStore.getState();
     const { expanded_folders, current_path } = store;
 

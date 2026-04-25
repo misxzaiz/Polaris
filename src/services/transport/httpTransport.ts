@@ -42,7 +42,7 @@ const COMMAND_ROUTE_MAP: Record<string, string> = {
   get_config: '/api/settings',
   update_config: '/api/settings',
   // Auth
-  health_check: '/api/auth/verify',
+  health_check: '/api/health',
   regenerate_web_token: '/api/auth/regenerate',
 };
 
@@ -236,6 +236,17 @@ export function createHttpTransport(
 
       if (isGetCommand(command)) {
         method = 'GET';
+        // Append args as URL query parameters for GET requests
+        if (args && typeof args === 'object' && Object.keys(args).length > 0) {
+          const params = new URLSearchParams();
+          for (const [key, val] of Object.entries(args)) {
+            if (val != null && val !== '') {
+              params.set(key, String(val));
+            }
+          }
+          const qs = params.toString();
+          if (qs) url = `${url}?${qs}`;
+        }
       } else if (isDeleteCommand(command, args)) {
         method = 'DELETE';
         // delete_session 需要在 URL 中带 id，可选 engine_id

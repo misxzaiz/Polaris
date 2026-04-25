@@ -10,7 +10,7 @@ import { Upload, Download, RefreshCw, AlertTriangle, ArrowUp, ArrowDown } from '
 import { Button } from '@/components/Common/Button'
 import { useGitStore } from '@/stores/gitStore/index'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '@/services/transport'
 import { PushDialog } from './PushDialog'
 
 interface QuickActionsProps {

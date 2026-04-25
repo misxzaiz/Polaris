@@ -4,7 +4,7 @@
  * 负责提交和暂存操作：提交、暂存、取消暂存、丢弃变更
  */
 
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '@/services/transport'
 import type { CommitSlice } from './types'
 import { parseGitError } from './types'
 import type { GitCommit, BatchStageResult } from '@/types/git'

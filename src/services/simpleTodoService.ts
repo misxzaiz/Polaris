@@ -4,7 +4,7 @@
  * 调用后端 Tauri 命令，支持全局和工作区双模式
  */
 
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '@/services/transport'
 import type { TodoItem, TodoPriority, TodoStatus } from '@/types'
 import { createLogger } from '../utils/logger'
 

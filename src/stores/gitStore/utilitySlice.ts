@@ -4,7 +4,7 @@
  * 负责 Git 工具方法：检查仓库、初始化、Blame 等
  */
 
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '@/services/transport'
 import type { UtilitySlice } from './types'
 import { parseGitError } from './types'
 import type { GitBlameResult } from '@/types/git'
