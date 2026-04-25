@@ -769,14 +769,14 @@ async fn dispatch_move_path(args: &Value) -> Result<Json<Value>, WebError> {
 }
 
 async fn dispatch_search_files(args: &Value) -> Result<Json<Value>, WebError> {
-    let path = require_string(args, "path")?;
+    let path = require_string(args, "path").or_else(|_| require_string(args, "workDir"))?;
     let query = require_string(args, "query")?;
     let max_results = args.get("maxDepth").or_else(|| args.get("maxResults")).and_then(|v| v.as_u64()).map(|n| n as usize);
     json_result!(crate::commands::file_explorer::search_files(path, query, max_results).await)
 }
 
 async fn dispatch_search_file_contents(args: &Value) -> Result<Json<Value>, WebError> {
-    let path = require_string(args, "path")?;
+    let path = require_string(args, "path").or_else(|_| require_string(args, "workDir"))?;
     let query = require_string(args, "query")?;
     let case_sensitive = args.get("caseSensitive").and_then(|v| v.as_bool());
     let whole_word = args.get("wholeWord").and_then(|v| v.as_bool());
@@ -1289,6 +1289,9 @@ async fn dispatch_write_claude_settings(args: &Value) -> Result<Json<Value>, Web
         args.get("settings").cloned().unwrap_or(Value::Null),
     )
     .map_err(|e| WebError::BadRequest(format!("Invalid settings: {}", e)))?;
+    crate::commands::claude_settings::write_claude_settings(settings)
+        .await
+        .map_err(|e| WebError::Internal(format!("Write settings failed: {}", e)))?;
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
 

@@ -14,7 +14,6 @@ import { useTranslation } from 'react-i18next';
 import { useTranslateStore, useConfigStore, useViewStore, useWorkspaceStore } from '../../stores';
 import { useActiveSessionActions } from '../../stores/conversationStore/useActiveSession';
 import { baiduTranslate } from '../../services/tauri';
-import { openUrl } from '@tauri-apps/plugin-opener';
 import { Copy, Search, Languages, Quote, MessageSquare, Check, X, Send, Loader2 } from 'lucide-react';
 
 interface Position {
@@ -142,7 +141,16 @@ export function SelectionContextMenu() {
     if (!selection) return;
     const query = encodeURIComponent(selection.text);
     const searchUrl = `https://www.bing.com/search?q=${query}`;
-    await openUrl(searchUrl);
+    if ('__TAURI_INTERNALS__' in window) {
+      try {
+        const { openUrl } = await import('@tauri-apps/plugin-opener');
+        await openUrl(searchUrl);
+      } catch {
+        window.open(searchUrl, '_blank');
+      }
+    } else {
+      window.open(searchUrl, '_blank');
+    }
     setSelection(null);
   };
 

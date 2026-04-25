@@ -33,8 +33,17 @@ pub fn resolve_app_paths(state: &AppState) -> AppPaths {
 }
 
 /// Dual-emit: broadcast event to both WebSocket clients and Tauri webview.
+///
+/// For WebSocket: wraps in `{"event":"chat-event","payload":...}` envelope
+/// so the frontend WS handler can route by event name.
+/// For Tauri webview: emits raw event via `app_handle.emit("chat-event", ...)`.
 pub fn dual_emit(state: &AppState, event: &serde_json::Value) {
-    if let Err(e) = state.event_broadcast.send(event.to_string()) {
+    // WebSocket broadcast — wrap in envelope for event routing
+    let ws_msg = serde_json::json!({
+        "event": "chat-event",
+        "payload": event,
+    });
+    if let Err(e) = state.event_broadcast.send(ws_msg.to_string()) {
         tracing::warn!("WebSocket broadcast send failed (no active receivers): {}", e);
     }
     if let Some(handle) = state.app_handle.get() {

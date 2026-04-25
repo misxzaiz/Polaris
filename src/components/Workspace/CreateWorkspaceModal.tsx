@@ -77,7 +77,32 @@ export function CreateWorkspaceModal({ onClose }: CreateWorkspaceModalProps) {
 
   const handleSelectFolder = async () => {
     try {
-      // 使用正确的 Tauri 2.0 dialog 插件 API
+      // Web 模式：使用浏览器原生 input
+      if (typeof window !== 'undefined' && !('__TAURI_INTERNALS__' in window)) {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.webkitdirectory = true;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (input as any).directory = true;
+        input.onchange = () => {
+          const file = input.files?.[0];
+          if (file) {
+            // webkitRelativePath gives "folderName/..." — extract folder path
+            const relativePath = file.webkitRelativePath;
+            const folderName = relativePath.split('/')[0];
+            // In web mode we can only get the folder name, not full path
+            // Use a reasonable default
+            setPath(folderName);
+            if (!name.trim()) {
+              setName(folderName);
+            }
+          }
+        };
+        input.click();
+        return;
+      }
+
+      // Tauri 桌面端：使用 dialog 插件
       const { open } = await import('@tauri-apps/plugin-dialog');
       const selected = await open({
         directory: true,
@@ -87,7 +112,6 @@ export function CreateWorkspaceModal({ onClose }: CreateWorkspaceModalProps) {
 
       if (selected && !Array.isArray(selected)) {
         setPath(selected);
-        // 如果名称为空，使用文件夹名称作为默认名称
         if (!name.trim()) {
           const folderName = selected.split(/[/\\]/).pop() || '';
           setName(folderName);
