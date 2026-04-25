@@ -59,17 +59,17 @@ function App() {
 
   // Store 状态
   const workspaces = useWorkspaceStore(state => state.workspaces);
-  const currentWorkspace = useWorkspaceStore(state => state.getCurrentWorkspace());
-  const {
-    leftPanelType,
-    rightPanelCollapsed,
-    toggleRightPanel,
-    showSessionHistory,
-    toggleSessionHistory,
-    multiSessionMode,
-  } = useViewStore();
-  const { openDiffTab, tabs } = useTabStore();
-  const hasOpenTabs = tabs.length > 0;
+  const currentWorkspace = useWorkspaceStore(
+    state => state.workspaces.find(w => w.id === state.currentWorkspaceId) || null
+  );
+  const leftPanelType = useViewStore(state => state.leftPanelType);
+  const rightPanelCollapsed = useViewStore(state => state.rightPanelCollapsed);
+  const toggleRightPanel = useViewStore(state => state.toggleRightPanel);
+  const showSessionHistory = useViewStore(state => state.showSessionHistory);
+  const toggleSessionHistory = useViewStore(state => state.toggleSessionHistory);
+  const multiSessionMode = useViewStore(state => state.multiSessionMode);
+  const openDiffTab = useTabStore(state => state.openDiffTab);
+  const hasOpenTabs = useTabStore(state => state.tabs.length > 0);
 
   // === 拆分后的 Hooks ===
   useAppInit({

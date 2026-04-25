@@ -297,7 +297,9 @@ pub fn run() {
                     cfg.web.token = Some(token.clone());
                     let mut store = state.config_store.lock()
                         .unwrap_or_else(|e: std::sync::PoisonError<std::sync::MutexGuard<'_, ConfigStore>>| e.into_inner());
-                    let _ = store.update(cfg);
+                    if let Err(e) = store.update(cfg) {
+                        tracing::error!("[Web] Failed to persist auto-generated token: {}", e);
+                    }
                 }
 
                 let port = web::server::WebServer::resolve_port(config.web.port);

@@ -12,7 +12,12 @@ import { createLogger } from '../utils/logger';
 const log = createLogger('WorkspaceSync');
 
 export function useWorkspaceSync(isAppInitialized: boolean) {
-  const currentWorkspacePath = useWorkspaceStore(state => state.getCurrentWorkspace()?.path);
+  const currentWorkspacePath = useWorkspaceStore(
+    state => {
+      const ws = state.workspaces.find(w => w.id === state.currentWorkspaceId);
+      return ws?.path ?? null;
+    }
+  );
 
   useEffect(() => {
     if (!currentWorkspacePath || !isAppInitialized) return;
