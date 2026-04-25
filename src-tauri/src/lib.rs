@@ -205,17 +205,59 @@ fn apply_web_server(state: tauri::State<AppState>) -> std::result::Result<serde_
     Ok(serde_json::json!({ "running": true, "token": final_token }))
 }
 
-/// 获取本机局域网 IP 地址列表
+/// 获取本机局域网 IP 地址列表（智能排序：真实 LAN IP 优先，虚拟网卡靠后）
 #[tauri::command]
 fn get_local_ips() -> std::result::Result<Vec<String>, error::AppError> {
     let interfaces = if_addrs::get_if_addrs()
         .map_err(|e| error::AppError::Unknown(e.to_string()))?;
-    let ips = interfaces
+    let mut ips: Vec<(String, u32)> = interfaces
         .into_iter()
         .filter(|iface| !iface.is_loopback() && iface.addr.ip().is_ipv4())
-        .map(|iface| iface.addr.ip().to_string())
+        .map(|iface| {
+            let ip = iface.addr.ip().to_string();
+            let priority = ip_interface_priority(&ip, &iface.name);
+            (ip, priority)
+        })
         .collect();
-    Ok(ips)
+    // 数值越小优先级越高，真实 LAN IP 排在最前
+    ips.sort_by_key(|(_, p)| *p);
+    Ok(ips.into_iter().map(|(ip, _)| ip).collect())
+}
+
+/// 根据网卡名称和 IP 子网判断优先级。数值越小越优先。
+fn ip_interface_priority(ip: &str, iface_name: &str) -> u32 {
+    let name_lower = iface_name.to_lowercase();
+
+    // 1. 虚拟网卡名称匹配
+    const VIRTUAL_KEYWORDS: &[&str] = &[
+        "virtualbox", "vmware", "hyper-v", "wsl", "docker",
+        "vethernet", "virbr", "bluestacks", "nox", "memu", "ldplayer",
+    ];
+    if VIRTUAL_KEYWORDS.iter().any(|k| name_lower.contains(k)) {
+        return 100;
+    }
+
+    // 2. 已知虚拟网段子网匹配
+    //    192.168.56.x  → VirtualBox Host-Only（默认网段）
+    //    192.168.153.x → VMware NAT（常见默认）
+    //    169.254.x.x   → Link-Local（APIPA，不可路由）
+    if ip.starts_with("192.168.56.")
+        || ip.starts_with("192.168.153.")
+        || ip.starts_with("169.254.")
+    {
+        return 90;
+    }
+
+    // 3. Docker 默认 bridge 网段
+    if ip.starts_with("172.17.")
+        || ip.starts_with("172.18.")
+        || ip.starts_with("172.19.")
+    {
+        return 80;
+    }
+
+    // 4. 常规 LAN/WiFi IP — 最高优先级
+    10
 }
 
 /// 设置工作目录
