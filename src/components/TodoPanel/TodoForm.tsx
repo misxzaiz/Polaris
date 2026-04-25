@@ -1,3 +1,4 @@
+import { generateUUID } from '@/utils/uuid';
 /**
  * TodoForm - 待办表单组件
  *
@@ -65,7 +66,7 @@ export function TodoForm({ todo, onSubmit, onCancel, mode, tags, onAddTag, onRem
     if (!newSubtaskTitle.trim()) return
 
     const newSubtask: TodoSubtask = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       title: newSubtaskTitle.trim(),
       completed: false,
       createdAt: new Date().toISOString(),

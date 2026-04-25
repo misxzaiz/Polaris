@@ -1,3 +1,4 @@
+import { generateUUID } from '@/utils/uuid';
 /**
  * AI 事件处理器
  *
@@ -72,7 +73,7 @@ export function handleAIEvent(
 
     case 'tool_call_start': {
       const toolName = event.tool
-      const callId = event.callId || crypto.randomUUID()
+      const callId = event.callId || generateUUID()
       state.appendToolCallBlock(callId, toolName, event.args)
       break
     }

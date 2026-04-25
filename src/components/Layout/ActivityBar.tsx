@@ -30,7 +30,7 @@ function ProblemsBadge() {
   // 订阅 version 以在诊断变化时重渲染
   useDiagnosticsStore((s) => s.version)
   // Use getState() to avoid creating new object in selector (causes infinite re-render)
-  const { errors, warnings } = useDiagnosticsStore.getState().summary()
+  const { errors, warnings } = useDiagnosticsStore.getState().summary
   const total = errors + warnings
   if (total === 0) return null
   return (

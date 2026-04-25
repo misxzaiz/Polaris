@@ -1,11 +1,20 @@
 use std::sync::Arc;
 
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::AppState;
 use super::router::create_router;
 
 const ENV_WEB_PORT: &str = "POLARIS_WEB_PORT";
+
+/// Handle to a running web server, allowing graceful shutdown.
+pub struct WebServerHandle {
+    /// Token to signal graceful shutdown.
+    pub shutdown: CancellationToken,
+    /// Join handle for the spawned server task.
+    pub task: JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>>,
+}
 
 /// Web server managing the HTTP/WS lifecycle for LAN browser access.
 pub struct WebServer {
@@ -34,19 +43,41 @@ impl WebServer {
     }
 
     /// Bind to `addr` and serve until cancelled or fatal error.
-    pub async fn start(self, addr: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    /// Returns a `WebServerHandle` for lifecycle management (graceful shutdown).
+    pub fn start(self, addr: &str) -> WebServerHandle {
         let shutdown = self.shutdown.clone();
-        let app = create_router(self.state);
-        let listener = tokio::net::TcpListener::bind(addr).await?;
-        let local_addr = listener.local_addr()?;
-        tracing::info!("Web server listening on {}", local_addr);
+        let state = self.state.clone();
+        let addr = addr.to_string();
 
-        axum::serve(listener, app)
-            .with_graceful_shutdown(async move { shutdown.cancelled().await })
-            .await?;
+        let task = tokio::spawn(async move {
+            let app = create_router(state);
+            let listener = match tokio::net::TcpListener::bind(&addr).await {
+                Ok(l) => l,
+                Err(e) => {
+                    tracing::error!("[Web] Failed to bind to {}: {}", addr, e);
+                    return Err(e.into());
+                }
+            };
+            let local_addr = listener.local_addr()?;
+            tracing::info!("[Web] Server listening on {}", local_addr);
 
-        tracing::info!("Web server shut down gracefully");
-        Ok(())
+            let result = axum::serve(listener, app)
+                .with_graceful_shutdown(async move { shutdown.cancelled().await })
+                .await;
+
+            if let Err(e) = &result {
+                tracing::error!("[Web] Server error: {}", e);
+            } else {
+                tracing::info!("[Web] Server shut down gracefully");
+            }
+
+            result.map_err(|e| e.into())
+        });
+
+        WebServerHandle {
+            shutdown: self.shutdown,
+            task,
+        }
     }
 
     /// Signal the server to shut down gracefully.

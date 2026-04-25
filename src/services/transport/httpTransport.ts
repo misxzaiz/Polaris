@@ -54,8 +54,7 @@ function commandToPath(command: string): string {
     return COMMAND_ROUTE_MAP[command];
   }
 
-  // Unmapped command — log warning to surface integration bugs during development
-  log.warn(`Unmapped command "${command}", falling back to /api/${command.replace(/_/g, '-')}`);
+  log.debug(`Routing command "${command}" through IPC bridge: /api/${command.replace(/_/g, '-')}`);
   const kebab = command.replace(/_/g, '-');
   return `/api/${kebab}`;
 }

@@ -7,3 +7,4 @@
 
 export { LRUCache, type LRUCacheConfig } from './lru-cache'
 export { cn } from './cn'
+export { generateUUID } from './uuid'

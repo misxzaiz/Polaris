@@ -8,7 +8,7 @@ import { createLogger } from '../../utils/logger';
 const log = createLogger('WindowService');
 
 // Detect Tauri environment
-const isTauriEnv = typeof window !== 'undefined' && '__TAURI__' in window;
+const isTauriEnv = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 /** Lazy-loaded Tauri APIs */
 let _openPath: ((path: string) => Promise<void>) | null = null;

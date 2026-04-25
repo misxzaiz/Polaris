@@ -142,6 +142,69 @@ fn regenerate_web_token(state: tauri::State<AppState>) -> std::result::Result<se
     Ok(serde_json::json!({ "token": new_token }))
 }
 
+/// 动态应用 Web 服务器配置：根据当前 config.web 启动或停止服务器。
+///
+/// 保存 Web 配置后，前端应调用此命令以即时生效，无需重启应用。
+#[tauri::command]
+fn apply_web_server(state: tauri::State<AppState>) -> std::result::Result<serde_json::Value, error::AppError> {
+    let config = {
+        let store = state.config_store.lock()
+            .map_err(|e| error::AppError::Unknown(e.to_string()))?;
+        store.get().clone()
+    };
+
+    // Case: user disabled the web service — stop running server
+    if !config.web.enabled {
+        let handle_arc = state.web_server_handle.clone();
+        tauri::async_runtime::spawn(async move {
+            let mut guard = handle_arc.lock().await;
+            if let Some(old_handle) = guard.take() {
+                old_handle.shutdown.cancel();
+                tracing::info!("[Web] Server stopped by user");
+            }
+        });
+        return Ok(serde_json::json!({ "running": false, "token": config.web.token }));
+    }
+
+    // Case: user enabled the web service — resolve token first
+    let token = web::auth::resolve_token(config.web.token.as_deref());
+
+    // Persist auto-generated token so frontend can display it
+    let final_token = if config.web.token.as_deref() != Some(&token) {
+        let mut cfg = config.clone();
+        cfg.web.token = Some(token.clone());
+        let mut store = state.config_store.lock()
+            .map_err(|e| error::AppError::Unknown(e.to_string()))?;
+        store.update(cfg)
+            .map_err(|e| error::AppError::Unknown(e.to_string()))?;
+        token
+    } else {
+        config.web.token.clone().unwrap_or_default()
+    };
+
+    let port = web::server::WebServer::resolve_port(config.web.port);
+    let addr = format!("{}:{}", config.web.host, port);
+    let web_state = Arc::new(state.clone_for_web());
+    let web_server = web::server::WebServer::new(web_state);
+    let handle_arc = state.web_server_handle.clone();
+    let addr_log = addr.clone();
+
+    tauri::async_runtime::spawn(async move {
+        // Stop existing server if any (port/host change)
+        let mut guard = handle_arc.lock().await;
+        if let Some(old_handle) = guard.take() {
+            old_handle.shutdown.cancel();
+            let _ = old_handle.task.await;
+        }
+
+        tracing::info!("[Web] Starting web server on {}", addr_log);
+        let handle = web_server.start(&addr);
+        *guard = Some(handle);
+    });
+
+    Ok(serde_json::json!({ "running": true, "token": final_token }))
+}
+
 /// 获取本机局域网 IP 地址列表
 #[tauri::command]
 fn get_local_ips() -> std::result::Result<Vec<String>, error::AppError> {
@@ -306,12 +369,14 @@ pub fn run() {
                 let addr = format!("{}:{}", config.web.host, port);
                 let web_state = Arc::new(state.clone_for_web());
                 let web_server = web::server::WebServer::new(web_state);
+                let handle_arc = state.web_server_handle.clone();
+                let addr_log = addr.clone();
 
                 tauri::async_runtime::spawn(async move {
-                    tracing::info!("[Web] Starting web server on {}", addr);
-                    if let Err(e) = web_server.start(&addr).await {
-                        tracing::error!("[Web] Server error: {}", e);
-                    }
+                    tracing::info!("[Web] Starting web server on {}", addr_log);
+                    let handle = web_server.start(&addr);
+                    let mut guard = handle_arc.lock().await;
+                    *guard = Some(handle);
                 });
             }
 
@@ -336,6 +401,7 @@ pub fn run() {
             get_config,
             update_config,
             regenerate_web_token,
+            apply_web_server,
             get_local_ips,
             set_work_dir,
             set_claude_cmd,

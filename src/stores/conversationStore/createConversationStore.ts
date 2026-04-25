@@ -1,3 +1,4 @@
+import { generateUUID } from '@/utils/uuid';
 /**
  * ConversationStore 工厂函数
  *
@@ -319,7 +320,7 @@ export function createConversationStore(
           if (bufferToFlush) {
             set({
               currentMessage: {
-                id: crypto.randomUUID(),
+                id: generateUUID(),
                 blocks: [{ type: 'text', content: bufferToFlush }],
                 isStreaming: true,
               },
@@ -353,7 +354,7 @@ export function createConversationStore(
         const block = { type: 'thinking' as const, content }
         if (!currentMessage) {
           set({
-            currentMessage: { id: crypto.randomUUID(), blocks: [block], isStreaming: true },
+            currentMessage: { id: generateUUID(), blocks: [block], isStreaming: true },
             streamingUpdateCounter: streamingUpdateCounter + 1,
           })
         } else {
@@ -381,7 +382,7 @@ export function createConversationStore(
         if (!currentMessage) {
           newMap.set(toolId, 0)
           set({
-            currentMessage: { id: crypto.randomUUID(), blocks: [block], isStreaming: true },
+            currentMessage: { id: generateUUID(), blocks: [block], isStreaming: true },
             toolBlockMap: newMap,
             streamingUpdateCounter: streamingUpdateCounter + 1,
           })
@@ -451,7 +452,7 @@ export function createConversationStore(
         if (!currentMessage) {
           newMap.set(questionId, 0)
           set({
-            currentMessage: { id: crypto.randomUUID(), blocks: [block], isStreaming: true },
+            currentMessage: { id: generateUUID(), blocks: [block], isStreaming: true },
             questionBlockMap: newMap,
             streamingUpdateCounter: streamingUpdateCounter + 1,
           })
@@ -494,7 +495,7 @@ export function createConversationStore(
         if (!currentMessage) {
           newMap.set(planId, 0)
           set({
-            currentMessage: { id: crypto.randomUUID(), blocks: [block], isStreaming: true },
+            currentMessage: { id: generateUUID(), blocks: [block], isStreaming: true },
             planBlockMap: newMap,
             activePlanId: planId,
             streamingUpdateCounter: streamingUpdateCounter + 1,
@@ -554,7 +555,7 @@ export function createConversationStore(
         if (!currentMessage) {
           newMap.set(taskId, 0)
           set({
-            currentMessage: { id: crypto.randomUUID(), blocks: [block], isStreaming: true },
+            currentMessage: { id: generateUUID(), blocks: [block], isStreaming: true },
             agentRunBlockMap: newMap,
             activeTaskId: taskId,
             streamingUpdateCounter: streamingUpdateCounter + 1,
@@ -634,7 +635,7 @@ export function createConversationStore(
         if (!currentMessage) {
           newMap.set(groupId, 0)
           set({
-            currentMessage: { id: crypto.randomUUID(), blocks: [block], isStreaming: true },
+            currentMessage: { id: generateUUID(), blocks: [block], isStreaming: true },
             toolGroupBlockMap: newMap,
             streamingUpdateCounter: streamingUpdateCounter + 1,
           })
@@ -726,7 +727,7 @@ export function createConversationStore(
         if (!currentMessage) {
           newMap.set(requestId, 0)
           set({
-            currentMessage: { id: crypto.randomUUID(), blocks: [block], isStreaming: true },
+            currentMessage: { id: generateUUID(), blocks: [block], isStreaming: true },
             permissionRequestBlockMap: newMap,
             activePermissionRequestId: requestId,
             streamingUpdateCounter: streamingUpdateCounter + 1,
@@ -867,7 +868,7 @@ export function createConversationStore(
 
         // 构建用户消息
         const userMessage = {
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           type: 'user' as const,
           content,
           timestamp: new Date().toISOString(),

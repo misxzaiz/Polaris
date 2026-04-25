@@ -40,7 +40,7 @@ export function ProblemsPanel() {
   // 订阅 version 以便诊断变化时重渲染（Map 本身是同引用，直接订阅 byUri 不会触发）
   useDiagnosticsStore((s) => s.version);
   const byUri = useDiagnosticsStore((s) => s.byUri);
-  const summary = useDiagnosticsStore((s) => s.summary());
+  const summary = useDiagnosticsStore((s) => s.summary);
 
   // 默认展开所有文件
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());

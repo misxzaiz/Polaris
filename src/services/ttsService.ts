@@ -1,3 +1,4 @@
+import { generateUUID } from '@/utils/uuid';
 /**
  * TTS 语音合成服务
  *
@@ -96,7 +97,7 @@ export class TTSService {
     this.stop();
 
     this.isStopped = false;
-    this.currentTaskId = crypto.randomUUID();
+    this.currentTaskId = generateUUID();
     const taskId = this.currentTaskId;
 
     this.setStatus('synthesizing');

@@ -19,6 +19,7 @@ import type {
   SessionMessageState
 } from '@/types/session'
 import type { VoiceCommand } from '@/types/speech'
+import { generateUUID } from '@/utils/uuid'
 
 // ============================================================================
 // 类型定义
@@ -114,7 +115,7 @@ export type SessionStore = SessionState & SessionActions
 
 /** 生成会话 ID */
 const generateSessionId = (): string => {
-  return `session-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+  return `session-${generateUUID()}`
 }
 
 /** 生成默认标题 */

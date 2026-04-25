@@ -1,3 +1,4 @@
+import { generateUUID } from '@/utils/uuid';
 /**
  * Base CLI Engine - CLI 类型引擎的通用基类
  *
@@ -120,7 +121,7 @@ export abstract class BaseCLISession extends BaseSession {
     sessionConfig?: AISessionConfig,
     cliConfig?: CLISessionConfig
   ) {
-    const sessionId = crypto.randomUUID()
+    const sessionId = generateUUID()
     super({ id: sessionId, config: sessionConfig })
     this.cliConfig = cliConfig || {}
   }

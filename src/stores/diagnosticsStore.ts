@@ -27,19 +27,38 @@ interface DiagnosticsState {
   byUri: Map<string, DiagnosticItem[]>;
   /** 全量集合变更版本号，方便 memo 判断 */
   version: number;
+  /** 缓存的汇总计数，byUri 变更时自动重算 */
+  summary: { errors: number; warnings: number; infos: number; hints: number };
 
   set: (uri: string, diagnostics: DiagnosticItem[]) => void;
   clear: (uri: string) => void;
   clearAll: () => void;
-  /** 汇总计数 {errors, warnings, infos, hints} */
-  summary: () => { errors: number; warnings: number; infos: number; hints: number };
   /** 所有诊断拍平为 (uri, item) 对 */
   flat: () => Array<{ uri: string; item: DiagnosticItem }>;
+}
+
+const EMPTY_SUMMARY = { errors: 0, warnings: 0, infos: 0, hints: 0 };
+
+function computeSummary(byUri: Map<string, DiagnosticItem[]>): { errors: number; warnings: number; infos: number; hints: number } {
+  let errors = 0, warnings = 0, infos = 0, hints = 0;
+  for (const items of byUri.values()) {
+    for (const d of items) {
+      switch (d.severity) {
+        case 1: errors++; break;
+        case 2: warnings++; break;
+        case 3: infos++; break;
+        case 4: hints++; break;
+        default: errors++; break;
+      }
+    }
+  }
+  return { errors, warnings, infos, hints };
 }
 
 export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
   byUri: new Map(),
   version: 0,
+  summary: EMPTY_SUMMARY,
 
   set: (uri, diagnostics) => {
     set((state) => {
@@ -49,7 +68,8 @@ export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
       } else {
         next.set(uri, diagnostics);
       }
-      return { byUri: next, version: state.version + 1 };
+      const summary = computeSummary(next);
+      return { byUri: next, version: state.version + 1, summary };
     });
   },
 
@@ -58,31 +78,13 @@ export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
       if (!state.byUri.has(uri)) return {};
       const next = new Map(state.byUri);
       next.delete(uri);
-      return { byUri: next, version: state.version + 1 };
+      const summary = computeSummary(next);
+      return { byUri: next, version: state.version + 1, summary };
     });
   },
 
   clearAll: () => {
-    set({ byUri: new Map(), version: get().version + 1 });
-  },
-
-  summary: () => {
-    let errors = 0;
-    let warnings = 0;
-    let infos = 0;
-    let hints = 0;
-    for (const items of get().byUri.values()) {
-      for (const d of items) {
-        switch (d.severity) {
-          case 1: errors++; break;
-          case 2: warnings++; break;
-          case 3: infos++; break;
-          case 4: hints++; break;
-          default: errors++; break; // 不带 severity 的保守归到 error
-        }
-      }
-    }
-    return { errors, warnings, infos, hints };
+    set({ byUri: new Map(), version: get().version + 1, summary: EMPTY_SUMMARY });
   },
 
   flat: () => {

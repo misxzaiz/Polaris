@@ -159,7 +159,7 @@ pub async fn handle_ipc_bridge(
         "git_get_branches" => dispatch_git_simple1("git_get_branches", &args, crate::commands::git::git_get_branches),
         "git_get_tags" => dispatch_git_simple1("git_get_tags", &args, crate::commands::git::git_get_tags),
         "git_get_remotes" => dispatch_git_simple1("git_get_remotes", &args, crate::commands::git::git_get_remotes),
-        "git_get_stash_list" => dispatch_git_simple1("git_get_stash_list", &args, crate::commands::git::git_stash_list),
+        "git_get_stash_list" | "git_stash_list" => dispatch_git_simple1("git_stash_list", &args, crate::commands::git::git_stash_list),
         "git_get_worktree_diff" => dispatch_git_simple1("git_get_worktree_diff", &args, crate::commands::git::git_get_worktree_diff),
         "git_get_index_diff" => dispatch_git_simple1("git_get_index_diff", &args, crate::commands::git::git_get_index_diff),
         "git_get_gitignore" => dispatch_git_simple1("git_get_gitignore", &args, crate::commands::git::git_get_gitignore),
@@ -249,6 +249,8 @@ pub async fn handle_ipc_bridge(
 
         // ── Integration ────────────────────────────────────────────────────
         "init_integration" => Ok(Json(Value::Null)), // no-op in web mode (no AppHandle)
+        "get_all_integration_status" => dispatch_get_all_integration_status(&state).await,
+        "send_integration_message" => Err(WebError::BadRequest("send_integration_message requires local runtime".into())),
 
         // ── Plugin ─────────────────────────────────────────────────────────
         "plugin_list" => dispatch_plugin_list(&state, &args),
@@ -688,6 +690,19 @@ async fn dispatch_get_active_integration_instance(
     })?))
 }
 
+async fn dispatch_get_all_integration_status(state: &AppState) -> Result<Json<Value>, WebError> {
+    let manager = state.integration_manager.lock().await;
+    let statuses: std::collections::HashMap<String, _> = manager
+        .all_status()
+        .await
+        .into_iter()
+        .map(|(p, s)| (p.to_string(), s))
+        .collect();
+    Ok(Json(serde_json::to_value(statuses).map_err(|e| {
+        WebError::Internal(format!("Serialization error: {}", e))
+    })?))
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Context Memory
 // ═══════════════════════════════════════════════════════════════════════════
@@ -703,10 +718,12 @@ fn dispatch_context_get_all(_state: &AppState, _args: &Value) -> Result<Json<Val
 // ═══════════════════════════════════════════════════════════════════════════
 
 fn dispatch_set_work_dir(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let path = require_string(args, "path")?;
+    let path: Option<String> = args.get("path")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     let mut store = state.lock_config()?;
     let mut config = store.get().clone();
-    config.work_dir = Some(std::path::PathBuf::from(path));
+    config.work_dir = path.map(std::path::PathBuf::from);
     store.update(config).map_err(|e| WebError::Internal(e.to_string()))?;
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
@@ -970,6 +987,19 @@ fn get_todo_repo(state: &AppState, args: &Value) -> Result<crate::services::unif
     Ok(repo)
 }
 
+/// Extract a required string field from args, checking both top-level and nested `params`.
+fn todo_string(args: &Value, key: &str) -> Result<String, WebError> {
+    args.get(key).and_then(|v| v.as_str()).map(String::from)
+        .or_else(|| args.get("params").and_then(|p| p.get(key)).and_then(|v| v.as_str()).map(String::from))
+        .ok_or_else(|| WebError::BadRequest(format!("Missing required field: {}", key)))
+}
+
+/// Extract an optional string field from args, checking both top-level and nested `params`.
+fn todo_opt_string(args: &Value, key: &str) -> Option<String> {
+    args.get(key).and_then(|v| v.as_str()).map(String::from)
+        .or_else(|| args.get("params").and_then(|p| p.get(key)).and_then(|v| v.as_str()).map(String::from))
+}
+
 fn dispatch_list_todos(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
     let repo = get_todo_repo(state, args)?;
     let scope = match args.get("scope").and_then(|v| v.as_str()).unwrap_or("workspace") {
@@ -1030,12 +1060,12 @@ fn dispatch_update_todo(state: &AppState, args: &Value) -> Result<Json<Value>, W
 }
 
 fn dispatch_delete_todo(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let id = require_string(args, "id")?;
+    let id = todo_string(args, "id")?;
     json_result!(get_todo_repo(state, args)?.delete_todo(&id))
 }
 fn dispatch_start_todo(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let id = require_string(args, "id")?;
-    let p = args.get("lastProgress").and_then(|v| v.as_str()).map(String::from);
+    let id = todo_string(args, "id")?;
+    let p = todo_opt_string(args, "lastProgress");
     json_result!(get_todo_repo(state, args)?.update_todo(&id, crate::models::todo::TodoUpdateParams {
         status: Some(crate::models::todo::TodoStatus::InProgress),
         last_progress: p,
@@ -1043,8 +1073,8 @@ fn dispatch_start_todo(state: &AppState, args: &Value) -> Result<Json<Value>, We
     }))
 }
 fn dispatch_complete_todo(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let id = require_string(args, "id")?;
-    let p = args.get("lastProgress").and_then(|v| v.as_str()).map(String::from);
+    let id = todo_string(args, "id")?;
+    let p = todo_opt_string(args, "lastProgress");
     json_result!(get_todo_repo(state, args)?.update_todo(&id, crate::models::todo::TodoUpdateParams {
         status: Some(crate::models::todo::TodoStatus::Completed),
         last_progress: p,
@@ -1061,10 +1091,20 @@ fn dispatch_todo_workspace_breakdown(state: &AppState, args: &Value) -> Result<J
 
 fn get_req_repo(state: &AppState, args: &Value) -> Result<crate::services::unified_requirement_repository::UnifiedRequirementRepository, WebError> {
     let config_dir = get_config_dir(state)?;
-    let wp = args.get("workspacePath").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()).map(std::path::PathBuf::from);
+    // Frontend wraps args in { params: { workspacePath, ... } }
+    let wp = args.get("workspacePath")
+        .or_else(|| args.get("params").and_then(|p| p.get("workspacePath")))
+        .and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()).map(std::path::PathBuf::from);
     let repo = crate::services::unified_requirement_repository::UnifiedRequirementRepository::new(config_dir, wp);
     repo.register_workspace().ok();
     Ok(repo)
+}
+
+/// Extract a string field from args, checking both top-level and nested `params`.
+fn req_string(args: &Value, key: &str) -> Result<String, WebError> {
+    args.get(key).and_then(|v| v.as_str()).map(String::from)
+        .or_else(|| args.get("params").and_then(|p| p.get(key)).and_then(|v| v.as_str()).map(String::from))
+        .ok_or_else(|| WebError::BadRequest(format!("Missing required field: {}", key)))
 }
 
 fn dispatch_list_requirements(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
@@ -1091,32 +1131,35 @@ fn dispatch_create_requirement(state: &AppState, args: &Value) -> Result<Json<Va
     json_result!(repo.create_requirement(cp))
 }
 fn dispatch_update_requirement(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let id = require_string(args, "id")?;
+    let id = req_string(args, "id")?;
     let repo = get_req_repo(state, args)?;
     let mut u = crate::models::requirement::RequirementUpdateParams::default();
-    if let Some(v) = args.get("title").and_then(|v| v.as_str()) { u.title = Some(v.to_string()); }
-    if let Some(v) = args.get("description").and_then(|v| v.as_str()) { u.description = Some(v.to_string()); }
-    if let Some(v) = args.get("status").and_then(|v| v.as_str()) {
+    // Check both top-level and nested params for all fields
+    if let Some(v) = req_string(args, "title").ok() { u.title = Some(v); }
+    if let Some(v) = req_string(args, "description").ok() { u.description = Some(v); }
+    if let Some(v) = args.get("status").or_else(|| args.get("params").and_then(|p| p.get("status"))).and_then(|v| v.as_str()) {
         u.status = serde_json::from_value(serde_json::Value::String(v.to_string())).ok();
     }
-    if let Some(v) = args.get("priority").and_then(|v| v.as_str()) {
+    if let Some(v) = args.get("priority").or_else(|| args.get("params").and_then(|p| p.get("priority"))).and_then(|v| v.as_str()) {
         u.priority = serde_json::from_value(serde_json::Value::String(v.to_string())).ok();
     }
-    if let Some(v) = args.get("tags") { u.tags = Some(serde_json::from_value(v.clone()).unwrap_or_default()); }
+    if let Some(v) = args.get("tags").or_else(|| args.get("params").and_then(|p| p.get("tags"))) { u.tags = Some(serde_json::from_value(v.clone()).unwrap_or_default()); }
     json_result!(repo.update_requirement(&id, u))
 }
 fn dispatch_delete_requirement(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let id = require_string(args, "id")?;
+    let id = req_string(args, "id")?;
     json_result!(get_req_repo(state, args)?.delete_requirement(&id))
 }
 fn dispatch_save_requirement_prototype(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let id = require_string(args, "id")?;
-    let html = require_string(args, "html")?;
+    let id = req_string(args, "id")?;
+    let html = req_string(args, "html")?;
     json_result!(get_req_repo(state, args)?.save_prototype(&id, &html))
 }
 fn dispatch_read_requirement_prototype(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let id = require_string(args, "id")?;
-    json_result!(get_req_repo(state, args)?.read_prototype(&id))
+    // Frontend sends "prototypePath" for the path to read
+    let prototype_path = req_string(args, "prototypePath")?;
+    let repo = get_req_repo(state, args)?;
+    json_result!(repo.read_prototype(&prototype_path))
 }
 fn dispatch_requirement_workspace_breakdown(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
     json_result!(get_req_repo(state, args)?.get_workspace_breakdown())
@@ -1128,8 +1171,18 @@ fn dispatch_requirement_workspace_breakdown(state: &AppState, args: &Value) -> R
 
 fn get_knowledge_service(state: &AppState, args: &Value) -> Result<crate::services::unified_knowledge_repository::UnifiedKnowledgeRepository, WebError> {
     let config_dir = get_config_dir(state)?;
-    let wp = args.get("workspacePath").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()).map(std::path::PathBuf::from);
+    // Frontend wraps args in { params: { workspacePath, ... } }
+    let wp = args.get("workspacePath")
+        .or_else(|| args.get("params").and_then(|p| p.get("workspacePath")))
+        .and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()).map(std::path::PathBuf::from);
     Ok(crate::services::unified_knowledge_repository::UnifiedKnowledgeRepository::new(config_dir, wp))
+}
+
+/// Extract a required string field for knowledge commands, checking both top-level and nested `params`.
+fn knowledge_string(args: &Value, key: &str) -> Result<String, WebError> {
+    args.get(key).and_then(|v| v.as_str()).map(String::from)
+        .or_else(|| args.get("params").and_then(|p| p.get(key)).and_then(|v| v.as_str()).map(String::from))
+        .ok_or_else(|| WebError::BadRequest(format!("Missing required field: {}", key)))
 }
 
 fn dispatch_knowledge_init(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
@@ -1142,7 +1195,7 @@ fn dispatch_knowledge_list_modules(state: &AppState, args: &Value) -> Result<Jso
 }
 fn dispatch_knowledge_get_module(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
     let repo = get_knowledge_service(state, args)?;
-    let id = require_string(args, "id")?;
+    let id = knowledge_string(args, "id")?;
     json_result!(repo.get_module(&id))
 }
 fn dispatch_knowledge_list_domains(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {

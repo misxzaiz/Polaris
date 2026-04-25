@@ -1,3 +1,4 @@
+import { generateUUID } from '@/utils/uuid';
 /**
  * AI Task - 通用任务模型
  *
@@ -82,7 +83,7 @@ export function createTask(
   options?: CreateTaskOptions
 ): AITask {
   return {
-    id: options?.id || crypto.randomUUID(),
+    id: options?.id || generateUUID(),
     kind,
     input,
     engineId: options?.engineId,

@@ -762,6 +762,27 @@ pub struct AssistantConfig {
 /// 应用配置（新版本）
 ///
 /// 使用嵌套结构，支持多个 AI 引擎
+/// 工作区条目（持久化到配置文件，跨桌面/Web 共享）
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceEntry {
+    /// 唯一 ID
+    pub id: String,
+    /// 工作区名称
+    pub name: String,
+    /// 绝对路径
+    pub path: String,
+    /// 创建时间 ISO 8601
+    #[serde(default)]
+    pub created_at: Option<String>,
+    /// 最后访问时间 ISO 8601
+    #[serde(default)]
+    pub last_accessed: Option<String>,
+}
+
+/// 应用配置（新版本）
+///
+/// 使用嵌套结构，支持多个 AI 引擎
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
@@ -834,6 +855,14 @@ pub struct Config {
     #[serde(default)]
     pub web: WebConfig,
 
+    /// 工作区列表（跨桌面/Web 共享，持久化到配置文件）
+    #[serde(default)]
+    pub workspaces: Vec<WorkspaceEntry>,
+
+    /// 当前激活的工作区 ID
+    #[serde(default)]
+    pub current_workspace_id: Option<String>,
+
     // === 旧字段，保持向后兼容 ===
     /// @deprecated 请使用 claude_code.cli_path
     #[serde(default)]
@@ -865,6 +894,8 @@ impl Default for Config {
             voice_commands: None,
             assistant: AssistantConfig::default(),
             web: WebConfig::default(),
+            workspaces: Vec::new(),
+            current_workspace_id: None,
             claude_cmd: None,
         }
     }

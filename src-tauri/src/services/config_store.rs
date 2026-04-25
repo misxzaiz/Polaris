@@ -464,6 +464,8 @@ impl OldConfig {
             voice_commands: None,
             assistant: Default::default(),
             web: Default::default(),
+            workspaces: Vec::new(),
+            current_workspace_id: None,
             claude_cmd: Some(claude_cmd_clone),
         }
     }

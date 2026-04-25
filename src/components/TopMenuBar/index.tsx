@@ -22,7 +22,7 @@ import { createLogger } from '../../utils/logger';
 const log = createLogger('TopMenuBar');
 
 // 检测是否在 Tauri 环境中运行
-const isTauriEnv = typeof window !== 'undefined' && '__TAURI__' in window;
+const isTauriEnv = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 interface TopMenuBarProps {
   onToggleRightPanel?: () => void;

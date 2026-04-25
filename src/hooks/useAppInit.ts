@@ -47,7 +47,14 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
         // 先加载配置
         await loadConfig();
 
-        // Web 模式：自动创建默认工作区（必须在 isInitialized 设为 true 之前完成）
+        // 从服务端 Config 同步工作区列表（桌面端和 Web 端共享）
+        try {
+          await useWorkspaceStore.getState().syncFromServer();
+        } catch (err) {
+          log.warn('Workspace sync failed, using local cache', { error: String(err) });
+        }
+
+        // Web 模式兜底：如果同步后仍无工作区，用 workDir 自动创建
         if (currentMode === 'http') {
           const config = useConfigStore.getState().config;
           const workDir = config?.workDir;

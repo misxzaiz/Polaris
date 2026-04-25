@@ -16,6 +16,7 @@ use crate::services::file_watcher::FileWatcherManager;
 use crate::services::lsp::LspManager;
 use crate::services::lsp_config_repository::LspConfigRepository;
 use crate::services::scheduler_daemon::SchedulerDaemon;
+use crate::web::server::WebServerHandle;
 
 /// 待回答问题信息
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -136,6 +137,8 @@ pub struct AppState {
     pub resource_dir: OnceLock<Option<std::path::PathBuf>>,
     /// Application start instant — used by health check to report uptime.
     pub start_time: Option<std::time::Instant>,
+    /// Running web server handle — allows dynamic start/stop without app restart.
+    pub web_server_handle: Arc<AsyncMutex<Option<WebServerHandle>>>,
 }
 
 /// 创建应用状态
@@ -166,6 +169,7 @@ pub fn create_app_state(
         app_config_dir: OnceLock::new(),
         resource_dir: OnceLock::new(),
         start_time: Some(std::time::Instant::now()),
+        web_server_handle: Arc::new(AsyncMutex::new(None)),
     }
 }
 
@@ -226,6 +230,7 @@ impl AppState {
             },
             resource_dir,
             start_time: self.start_time,
+            web_server_handle: self.web_server_handle.clone(),
         }
     }
 }

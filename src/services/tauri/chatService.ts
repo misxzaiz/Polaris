@@ -9,7 +9,7 @@ import { createLogger } from '../../utils/logger';
 const log = createLogger('ChatService');
 
 // Lazy-load Tauri dialog plugin
-const isTauriEnv = typeof window !== 'undefined' && '__TAURI__' in window;
+const isTauriEnv = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 // ============================================================================
 // AskUserQuestion 相关命令

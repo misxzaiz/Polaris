@@ -1,3 +1,4 @@
+import { generateUUID } from '@/utils/uuid';
 /**
  * Developer 面板 - 调试 AIEvent 原始流
  *
@@ -67,7 +68,7 @@ export function DeveloperPanel({ className = '', width, fillRemaining = false }:
 
     const unsubscribe = eventBus.onAny((event: AIEvent) => {
       const record: EventRecord = {
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         timestamp: Date.now(),
         event,
       }

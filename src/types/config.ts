@@ -128,6 +128,15 @@ export interface WebConfig {
   token?: string;
 }
 
+/** 工作区条目（持久化到服务端配置，跨桌面/Web 共享） */
+export interface WorkspaceEntry {
+  id: string;
+  name: string;
+  path: string;
+  createdAt?: string;
+  lastAccessed?: string;
+}
+
 /** 应用配置 */
 export interface Config {
   /** 当前选择的引擎 */
@@ -167,6 +176,10 @@ export interface Config {
   assistant?: AssistantConfig;
   /** Web 服务配置 */
   web?: WebConfig;
+  /** 工作区列表（跨桌面/Web 共享） */
+  workspaces?: WorkspaceEntry[];
+  /** 当前激活的工作区 ID */
+  currentWorkspaceId?: string;
 }
 
 /** 健康状态 */
