@@ -3,8 +3,44 @@
  */
 
 import { invoke } from '@/services/transport';
-import { openPath } from '@tauri-apps/plugin-opener';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { createLogger } from '../../utils/logger';
+
+const log = createLogger('WindowService');
+
+// Detect Tauri environment
+const isTauriEnv = typeof window !== 'undefined' && '__TAURI__' in window;
+
+/** Lazy-loaded Tauri APIs */
+let _openPath: ((path: string) => Promise<void>) | null = null;
+let _getCurrentWindow: (() => { minimize: () => Promise<void>; maximize: () => Promise<void>; unmaximize: () => Promise<void>; isMaximized: () => Promise<boolean>; close: () => Promise<void> }) | null = null;
+
+async function getOpenPath() {
+  if (!isTauriEnv) return null;
+  if (!_openPath) {
+    try {
+      const mod = await import('@tauri-apps/plugin-opener');
+      _openPath = mod.openPath;
+    } catch {
+      log.warn('Failed to load @tauri-apps/plugin-opener');
+      return null;
+    }
+  }
+  return _openPath;
+}
+
+async function getGetCurrentWindow() {
+  if (!isTauriEnv) return null;
+  if (!_getCurrentWindow) {
+    try {
+      const mod = await import('@tauri-apps/api/window');
+      _getCurrentWindow = mod.getCurrentWindow;
+    } catch {
+      log.warn('Failed to load @tauri-apps/api/window');
+      return null;
+    }
+  }
+  return _getCurrentWindow;
+}
 
 // ============================================================================
 // 系统相关命令
@@ -12,7 +48,13 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 
 /** 在默认应用中打开文件（HTML 文件可在浏览器中打开） */
 export async function openInDefaultApp(path: string): Promise<void> {
-  await openPath(path);
+  const openPathFn = await getOpenPath();
+  if (openPathFn) {
+    await openPathFn(path);
+  } else {
+    // Web fallback: open in new tab
+    window.open(path, '_blank');
+  }
 }
 
 // ============================================================================
@@ -42,22 +84,31 @@ export async function baiduTranslate(
 
 /** 最小化窗口 */
 export async function minimizeWindow(): Promise<void> {
-  const window = getCurrentWindow();
-  await window.minimize();
+  const getWindow = await getGetCurrentWindow();
+  if (getWindow) {
+    const window = getWindow();
+    await window.minimize();
+  }
 }
 
 /** 最大化/还原窗口 */
 export async function toggleMaximizeWindow(): Promise<void> {
-  const window = getCurrentWindow();
-  if (await window.isMaximized()) {
-    await window.unmaximize();
-  } else {
-    await window.maximize();
+  const getWindow = await getGetCurrentWindow();
+  if (getWindow) {
+    const window = getWindow();
+    if (await window.isMaximized()) {
+      await window.unmaximize();
+    } else {
+      await window.maximize();
+    }
   }
 }
 
 /** 关闭窗口 */
 export async function closeWindow(): Promise<void> {
-  const window = getCurrentWindow();
-  await window.close();
+  const getWindow = await getGetCurrentWindow();
+  if (getWindow) {
+    const window = getWindow();
+    await window.close();
+  }
 }

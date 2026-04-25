@@ -9,11 +9,13 @@
  * Rust 层只做 Content-Length 帧拆装的纯管道转发。
  */
 
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { listen as transportListen } from '@/services/transport';
 import { lspStart, lspSend, lspStop } from '../tauri/lspService';
 import { createLogger } from '../../utils/logger';
 
 const log = createLogger('LspTransport');
+
+type UnlistenFn = () => void;
 
 export class TauriIpcTransport {
   private handlers: ((value: string) => void)[] = [];
@@ -32,17 +34,17 @@ export class TauriIpcTransport {
     log.debug('LSP server started', { serverId: this.serverId, command });
 
     // 2. 监听 Rust 转发的 stdout 数据（完整 JSON-RPC 消息）
-    this.unlistenData = await listen<string>(
+    this.unlistenData = await transportListen<string>(
       `lsp-data-${this.serverId}`,
-      (event) => {
+      (data) => {
         for (const handler of this.handlers) {
-          handler(event.payload);
+          handler(data);
         }
       },
     );
 
     // 3. 监听进程退出事件
-    this.unlistenExit = await listen<string>(
+    this.unlistenExit = await transportListen<string>(
       `lsp-exit-${this.serverId}`,
       () => {
         log.warn('LSP server process exited', { serverId: this.serverId });

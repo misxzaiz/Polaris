@@ -433,7 +433,7 @@ export abstract class BaseCLIEngine implements AIEngine {
    */
   protected async checkCLIInstalled(): Promise<boolean> {
     try {
-      const { invoke } = await import('@tauri-apps/api/core')
+      const { invoke } = await import('@/services/transport')
       return await invoke<boolean>('cli_check_installed', {
         cliName: this.descriptor.defaultExecutable
       })
@@ -450,7 +450,7 @@ export abstract class BaseCLIEngine implements AIEngine {
    */
   async getVersion(): Promise<string | null> {
     try {
-      const { invoke } = await import('@tauri-apps/api/core')
+      const { invoke } = await import('@/services/transport')
       return await invoke<string>('cli_get_version_for', {
         cliName: this.descriptor.defaultExecutable
       })

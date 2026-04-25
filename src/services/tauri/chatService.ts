@@ -4,10 +4,12 @@
  */
 
 import { invoke } from '@/services/transport';
-import { save } from '@tauri-apps/plugin-dialog';
 import { createLogger } from '../../utils/logger';
 
 const log = createLogger('ChatService');
+
+// Lazy-load Tauri dialog plugin
+const isTauriEnv = typeof window !== 'undefined' && '__TAURI__' in window;
 
 // ============================================================================
 // AskUserQuestion 相关命令
@@ -176,6 +178,18 @@ export async function sendInput(
 /** 保存对话到文件 */
 export async function saveChatToFile(content: string, defaultFileName: string): Promise<string | null> {
   try {
+    if (!isTauriEnv) {
+      // Web fallback: use browser download
+      const blob = new Blob([content], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = defaultFileName;
+      a.click();
+      URL.revokeObjectURL(url);
+      return defaultFileName;
+    }
+    const { save } = await import('@tauri-apps/plugin-dialog');
     const filePath = await save({
       defaultPath: defaultFileName,
       filters: [
