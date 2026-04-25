@@ -24,20 +24,48 @@ pub struct TokenRequest {
 }
 
 /// Exchange an existing token for confirmation (no-auth endpoint).
+///
+/// Special case: if the server has no token configured yet (e.g. auto-started
+/// without the Tauri setup flow), this endpoint accepts the provided token as
+/// the new expected token and persists it. This allows the TokenAuthPage to
+/// bootstrap authentication on first access.
 pub async fn handle_token_exchange(
     State(state): State<Arc<AppState>>,
     axum::Json(req): axum::Json<TokenRequest>,
 ) -> Result<impl IntoResponse, WebError> {
-    let expected = auth::get_expected_token(&state)?;
+    // Use get_raw_token to check if server has a token WITHOUT triggering auto-generation.
+    // This allows the bootstrap flow (first access with no token) to work correctly.
+    let expected = auth::get_raw_token(&state)?;
 
-    if let Some(provided) = req.token {
-        if auth::token_eq(&provided, &expected) {
-            Ok(Json(serde_json::json!({ "token": expected, "valid": true })))
+    // Normal case: server already has a configured token — verify the provided one
+    if !expected.is_empty() {
+        if let Some(provided) = req.token {
+            if auth::token_eq(&provided, &expected) {
+                Ok(Json(serde_json::json!({ "token": expected, "valid": true })))
+            } else {
+                Err(WebError::Unauthorized)
+            }
         } else {
-            Err(WebError::Unauthorized)
+            Err(WebError::BadRequest("Missing token field".to_string()))
         }
     } else {
-        Err(WebError::BadRequest("Missing token field".to_string()))
+        // Bootstrap case: no token on server — accept the provided token as the new one
+        if let Some(provided) = req.token {
+            if !provided.is_empty() {
+                {
+                    let mut store = state.lock_config()?;
+                    let mut config = store.get().clone();
+                    config.web.token = Some(provided.clone());
+                    store.update(config)?;
+                }
+                tracing::info!("[Web] Bootstrapped web token from client");
+                Ok(Json(serde_json::json!({ "token": provided, "valid": true })))
+            } else {
+                Err(WebError::BadRequest("Token must not be empty for initial setup".to_string()))
+            }
+        } else {
+            Err(WebError::BadRequest("Missing token field".to_string()))
+        }
     }
 }
 

@@ -2,15 +2,25 @@
  * Web 模式 Token 认证页面
  *
  * 当检测到 HTTP 模式且无有效 token 时渲染此页面。
- * 用户输入 token（和可选的服务器地址）后验证并进入主应用。
+ * 支持三种场景：
+ * 1. 用户输入已知 token（桌面端 QR 码提供的场景）
+ * 2. 服务端已有 token，用户输入验证
+ * 3. 服务端无 token（首次配置），自动生成并 bootstrap
  */
 
-import { useState, type FormEvent } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { createLogger } from '../../utils/logger';
 
 const log = createLogger('TokenAuthPage');
 const AUTH_TIMEOUT_MS = 30_000;
+
+/** Generate a 32-char hex token (matches Rust generate_token logic) */
+function generateLocalToken(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
 
 interface TokenAuthPageProps {
   defaultServerUrl: string;
@@ -23,6 +33,41 @@ export function TokenAuthPage({ defaultServerUrl, onAuthSuccess }: TokenAuthPage
   const [token, setToken] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  /** Auto-bootstrap: try to set up a new token when server has none configured */
+  useEffect(() => {
+    let cancelled = false;
+    async function tryBootstrap() {
+      try {
+        const newToken = generateLocalToken();
+        const res = await fetch(`${serverUrl}/api/auth/token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: newToken }),
+          signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
+        });
+
+        if (cancelled) return;
+
+        if (res.ok) {
+          const data = await res.json() as { valid?: boolean; token?: string };
+          if (data.valid && data.token) {
+            // Bootstrap succeeded — server accepted our token
+            log.info('Bootstrap succeeded, token configured');
+            onAuthSuccess(serverUrl, data.token);
+            return;
+          }
+        }
+        // Bootstrap failed — server already has a token, user must input it manually
+        log.debug('Server has existing token, manual input required');
+      } catch {
+        // Server unreachable or other error — show manual input form
+        log.debug('Bootstrap request failed, showing manual form');
+      }
+    }
+    tryBootstrap();
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();

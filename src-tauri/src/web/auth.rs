@@ -17,10 +17,33 @@ pub fn token_eq(a: &str, b: &str) -> bool {
     a.as_bytes().ct_eq(b.as_bytes()).unwrap_u8() == 1
 }
 
-/// Read the expected web token from config store.
-pub fn get_expected_token(state: &Arc<AppState>) -> Result<String, WebError> {
+/// Ensure the web token exists in config. If missing, auto-generate and persist.
+/// Returns the effective token string (never empty).
+fn ensure_token(state: &Arc<AppState>) -> Result<String, WebError> {
+    let mut store = state.lock_config()?;
+    let current = store.get().web.token.clone().unwrap_or_default();
+    if !current.is_empty() {
+        return Ok(current);
+    }
+    // Auto-generate and persist so the server self-heals on next request
+    let new_token = generate_token();
+    let mut config = store.get().clone();
+    config.web.token = Some(new_token.clone());
+    store.update(config)?;
+    tracing::info!("[Web] Auto-generated missing web token");
+    Ok(new_token)
+}
+
+/// Read the raw token from config without auto-generating.
+/// Returns empty string if not configured.
+pub fn get_raw_token(state: &Arc<AppState>) -> Result<String, WebError> {
     let store = state.lock_config()?;
     Ok(store.get().web.token.clone().unwrap_or_default())
+}
+
+/// Read the expected web token from config store, auto-generating if absent.
+pub fn get_expected_token(state: &Arc<AppState>) -> Result<String, WebError> {
+    ensure_token(state)
 }
 
 /// Generate a random 32-char hex token (UUID v4, simple format without hyphens).
@@ -108,8 +131,9 @@ pub async fn auth_middleware(
 
     let expected = get_expected_token(&state)?;
 
+    // get_expected_token auto-generates if missing; empty means a config store failure
     if expected.is_empty() {
-        return Err(WebError::Internal("Web server token not configured".to_string()));
+        return Err(WebError::Internal("Web server token not configured after auto-generation attempt".to_string()));
     }
 
     if token_eq(&provided, &expected) {

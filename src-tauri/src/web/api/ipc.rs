@@ -245,7 +245,33 @@ pub async fn handle_ipc_bridge(
         "read_file_absolute" => dispatch_read_file_absolute(&args),
 
         // ── File Watcher ──────────────────────────────────────────────────
+        "fs_watch_start" => {
+            // File watcher requires Tauri AppHandle for event emission;
+            // not functional in pure web mode. Return OK to avoid 404 errors.
+            tracing::debug!("[Web:IPC] fs_watch_start: no-op in web mode (no AppHandle)");
+            Ok(Json(serde_json::json!({ "status": "ok" })))
+        }
         "fs_watch_stop" => dispatch_fs_watch_stop(&state),
+
+        // ── MCP Manager ────────────────────────────────────────────────────
+        "mcp_list_servers" => dispatch_mcp_list_servers(&state, &args),
+        "mcp_health_check" => dispatch_mcp_health_check(&state),
+        "mcp_health_check_one" => dispatch_mcp_health_check_one(&state, &args),
+        "mcp_add_server" => dispatch_mcp_add_server(&state, &args),
+        "mcp_remove_server" => dispatch_mcp_remove_server(&state, &args),
+
+        // ── Terminal (not available in web mode) ───────────────────────────
+        "terminal_create" | "terminal_write" | "terminal_resize" | "terminal_close"
+        | "terminal_list" | "terminal_get" => {
+            tracing::debug!("[Web:IPC] {}: not available in web mode (requires local PTY)", command);
+            Err(WebError::BadRequest(format!(
+                "Terminal commands require local runtime: {}",
+                command
+            )))
+        }
+
+        // ── Network ──────────────────────────────────────────────────────
+        "get_local_ips" => dispatch_get_local_ips(),
 
         // ── Integration ────────────────────────────────────────────────────
         "init_integration" => Ok(Json(Value::Null)), // no-op in web mode (no AppHandle)
@@ -1376,4 +1402,65 @@ fn dispatch_plugin_list(state: &AppState, args: &Value) -> Result<Json<Value>, W
     }
     let service = crate::services::plugin_service::PluginService::new(claude_path);
     json_result!(service.list_plugins(available))
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MCP Manager
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn get_mcp_service(state: &AppState) -> Result<crate::services::mcp_manager_service::McpManagerService, WebError> {
+    let claude_path = {
+        let store = state.lock_config()?;
+        store.get().claude_cmd.clone().unwrap_or_else(|| "claude".to_string())
+    };
+    Ok(crate::services::mcp_manager_service::McpManagerService::new(claude_path))
+}
+
+fn dispatch_mcp_list_servers(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+    let service = get_mcp_service(state)?;
+    let workspace_path = require_string(args, "workspacePath").unwrap_or_default();
+    json_result!(service.list_servers(&workspace_path))
+}
+
+fn dispatch_mcp_health_check(state: &AppState) -> Result<Json<Value>, WebError> {
+    let service = get_mcp_service(state)?;
+    json_result!(service.health_check())
+}
+
+fn dispatch_mcp_health_check_one(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+    let name = require_string(args, "name")?;
+    let service = get_mcp_service(state)?;
+    json_result!(service.health_check_one(&name))
+}
+
+fn dispatch_mcp_add_server(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+    let _ = (state, args);
+    // MCP add/remove server requires local filesystem access to config files
+    Err(WebError::BadRequest("MCP server management requires local runtime".into()))
+}
+
+fn dispatch_mcp_remove_server(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+    let _ = (state, args);
+    Err(WebError::BadRequest("MCP server management requires local runtime".into()))
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Network
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn dispatch_get_local_ips() -> Result<Json<Value>, WebError> {
+    let interfaces = if_addrs::get_if_addrs()
+        .map_err(|e| WebError::Internal(format!("Failed to get network interfaces: {}", e)))?;
+    let mut ips: Vec<(String, u32)> = interfaces
+        .into_iter()
+        .filter(|iface| !iface.is_loopback() && iface.addr.ip().is_ipv4())
+        .map(|iface| {
+            let ip = iface.addr.ip().to_string();
+            let priority = crate::ip_interface_priority(&ip, &iface.name);
+            (ip, priority)
+        })
+        .collect();
+    ips.sort_by_key(|(_, p)| *p);
+    let result: Vec<String> = ips.into_iter().map(|(ip, _)| ip).collect();
+    Ok(Json(serde_json::to_value(result).unwrap_or_default()))
 }

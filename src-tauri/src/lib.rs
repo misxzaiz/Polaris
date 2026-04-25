@@ -225,7 +225,7 @@ fn get_local_ips() -> std::result::Result<Vec<String>, error::AppError> {
 }
 
 /// 根据网卡名称和 IP 子网判断优先级。数值越小越优先。
-fn ip_interface_priority(ip: &str, iface_name: &str) -> u32 {
+pub(crate) fn ip_interface_priority(ip: &str, iface_name: &str) -> u32 {
     let name_lower = iface_name.to_lowercase();
 
     // 1. 虚拟网卡名称匹配
