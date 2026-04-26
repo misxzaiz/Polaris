@@ -11,7 +11,8 @@
 
 import { useTranslation } from 'react-i18next';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { invoke } from '@/services/transport';
+import { currentMode, invoke, storeToken } from '@/services/transport';
+import { useConfigStore } from '../../../stores';
 import QRCode from 'react-qr-code';
 import { createLogger } from '../../../utils/logger';
 import { generateUUID } from '../../../utils/uuid';
@@ -21,6 +22,7 @@ const log = createLogger('WebTab');
 
 interface WebTabProps {
   loading: boolean;
+  onWebConfigChange?: (webConfig: WebConfig) => void;
 }
 
 interface WebServerStatus {
@@ -47,7 +49,7 @@ function generateRandomToken(): string {
   return generateUUID().replace(/-/g, '');
 }
 
-export function WebTab({ loading }: WebTabProps) {
+export function WebTab({ loading, onWebConfigChange }: WebTabProps) {
   const { t } = useTranslation('settings');
   const [webConfig, setWebConfig] = useState<WebConfig>(DEFAULT_WEB_CONFIG);
   const [status, setStatus] = useState<WebServerStatus | null>(null);
@@ -57,6 +59,14 @@ export function WebTab({ loading }: WebTabProps) {
   const [error, setError] = useState<string | null>(null);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const appliedConfigRef = useRef<WebConfig>(DEFAULT_WEB_CONFIG);
+
+  const syncWebConfig = useCallback((nextWebConfig: WebConfig) => {
+    onWebConfigChange?.(nextWebConfig);
+    useConfigStore.setState((state) => ({
+      config: state.config ? { ...state.config, web: nextWebConfig } : state.config,
+    }));
+  }, [onWebConfigChange]);
 
   // 加载当前状态
   useEffect(() => {
@@ -70,11 +80,19 @@ export function WebTab({ loading }: WebTabProps) {
           token: s.token,
           authEnabled: s.authEnabled,
         });
+        appliedConfigRef.current = {
+          enabled: s.enabled,
+          host: s.host,
+          port: s.configuredPort,
+          token: s.token,
+          authEnabled: s.authEnabled,
+        };
+        syncWebConfig(appliedConfigRef.current);
       })
       .catch((e) => {
         log.warn('Failed to load web server status', { error: String(e) });
       });
-  }, []);
+  }, [syncWebConfig]);
 
   // 获取局域网 IP（服务运行时）
   useEffect(() => {
@@ -87,23 +105,40 @@ export function WebTab({ loading }: WebTabProps) {
 
   /** 即时保存并应用 Web 配置（失败时自动回滚本地状态） */
   const applyConfig = useCallback(async (newConfig: WebConfig) => {
-    const prevConfig = { ...webConfig };
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    const prevConfig = { ...appliedConfigRef.current };
+    setWebConfig(newConfig);
+    syncWebConfig(newConfig);
     setApplying(true);
     setError(null);
     try {
       const result = await invoke<ApplyResult>('update_and_apply_web', { webConfig: newConfig });
+      const effectiveConfig = {
+        ...newConfig,
+        token: result.token || newConfig.token,
+      };
+      if (currentMode === 'http') {
+        if (effectiveConfig.authEnabled && effectiveConfig.token) {
+          storeToken(effectiveConfig.token);
+        } else if (!effectiveConfig.authEnabled) {
+          storeToken('__no_auth__');
+        }
+      }
+      appliedConfigRef.current = effectiveConfig;
       setStatus({
         running: result.running,
         actualPort: result.actualPort,
         configuredPort: newConfig.port,
         host: newConfig.host,
-        token: result.token ?? newConfig.token,
+        token: effectiveConfig.token,
         enabled: newConfig.enabled,
         authEnabled: newConfig.authEnabled,
       });
-      if (result.token) {
-        setWebConfig((prev) => ({ ...prev, token: result.token }));
-      }
+      setWebConfig(effectiveConfig);
+      syncWebConfig(effectiveConfig);
       // 刷新 IP 列表
       if (result.running) {
         invoke<string[]>('get_local_ips')
@@ -112,17 +147,19 @@ export function WebTab({ loading }: WebTabProps) {
       }
     } catch (e: unknown) {
       setWebConfig(prevConfig);  // 回滚到变更前的状态
+      syncWebConfig(prevConfig);
       setError(t('web.applyFailed'));
       log.warn('Apply web config failed', { error: String(e) });
     } finally {
       setApplying(false);
     }
-  }, [t, webConfig]);
+  }, [syncWebConfig, t]);
 
   /** 防抖保存（用于端口、Host、Token 变更） */
   const debouncedApply = useCallback((newConfig: WebConfig) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => applyConfig(newConfig), 500);
+    debounceRef.current = null;
+    applyConfig(newConfig);
   }, [applyConfig]);
 
   // 清理 debounce
@@ -135,14 +172,13 @@ export function WebTab({ loading }: WebTabProps) {
   /** Toggle 开关 — 即时生效 */
   const handleToggle = () => {
     const newConfig = { ...webConfig, enabled: !webConfig.enabled };
-    setWebConfig(newConfig);
     applyConfig(newConfig);
   };
 
   /** 端口变更 — 失焦/Enter 时生效 */
   const handlePortBlur = (raw: string) => {
     const val = parseInt(raw, 10);
-    if (!isNaN(val) && val >= 1024 && val <= 65535 && val !== webConfig.port) {
+    if (!isNaN(val) && val >= 1024 && val <= 65535 && val !== appliedConfigRef.current.port) {
       const newConfig = { ...webConfig, port: val };
       setWebConfig(newConfig);
       debouncedApply(newConfig);
@@ -151,7 +187,7 @@ export function WebTab({ loading }: WebTabProps) {
 
   /** Host 变更 — 失焦/Enter 时生效 */
   const handleHostBlur = (val: string) => {
-    if (val && val !== webConfig.host) {
+    if (val && val !== appliedConfigRef.current.host) {
       const newConfig = { ...webConfig, host: val };
       setWebConfig(newConfig);
       debouncedApply(newConfig);
@@ -161,7 +197,7 @@ export function WebTab({ loading }: WebTabProps) {
   /** Token 变更 — 失焦/Enter 时生效 */
   const handleTokenBlur = (val: string | undefined) => {
     const newToken = val || undefined;
-    if (newToken !== webConfig.token) {
+    if (newToken !== appliedConfigRef.current.token) {
       const newConfig = { ...webConfig, token: newToken };
       setWebConfig(newConfig);
       debouncedApply(newConfig);
@@ -172,14 +208,12 @@ export function WebTab({ loading }: WebTabProps) {
   const handleRandomToken = () => {
     const newToken = generateRandomToken();
     const newConfig = { ...webConfig, token: newToken };
-    setWebConfig(newConfig);
     applyConfig(newConfig);
   };
 
   /** 认证开关 — 即时生效 */
   const handleAuthToggle = () => {
     const newConfig = { ...webConfig, authEnabled: !webConfig.authEnabled };
-    setWebConfig(newConfig);
     applyConfig(newConfig);
   };
 

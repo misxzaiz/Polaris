@@ -15,6 +15,7 @@ use axum::Json;
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::models::config::WebConfig;
 use crate::models::prompt_snippet::{CreateSnippetParams, UpdateSnippetParams};
 use crate::models::scheduler::{
     CreateTaskParams, PromptTemplate, ScheduledTask, TaskCategory, TaskMode,
@@ -120,6 +121,8 @@ pub async fn handle_ipc_bridge(
         // ── Config helpers ─────────────────────────────────────────────────
         "set_work_dir" => dispatch_set_work_dir(&state, &args),
         "set_claude_cmd" => dispatch_set_claude_cmd(&state, &args),
+        "get_web_server_status" => dispatch_get_web_server_status(&state).await,
+        "update_and_apply_web" => dispatch_update_and_apply_web(&state, &args).await,
 
         // ── File Explorer ──────────────────────────────────────────────────
         "read_directory" => dispatch_read_directory(&args).await,
@@ -763,6 +766,134 @@ fn dispatch_set_claude_cmd(state: &AppState, args: &Value) -> Result<Json<Value>
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
 
+async fn dispatch_get_web_server_status(state: &Arc<AppState>) -> Result<Json<Value>, WebError> {
+    let config = {
+        let store = state.lock_config()?;
+        store.get().clone()
+    };
+
+    let guard = state.web_server_handle.lock().await;
+    let (running, actual_port) = match guard.as_ref() {
+        Some(handle) => {
+            let is_running = !handle.shutdown.is_cancelled() && !handle.task.is_finished();
+            (is_running, if is_running { Some(handle.actual_port) } else { None })
+        }
+        None => (false, None),
+    };
+
+    Ok(Json(serde_json::json!({
+        "running": running,
+        "actualPort": actual_port,
+        "configuredPort": config.web.port,
+        "host": config.web.host,
+        "token": config.web.token,
+        "enabled": config.web.enabled,
+        "authEnabled": config.web.auth_enabled,
+    })))
+}
+
+async fn dispatch_update_and_apply_web(state: &Arc<AppState>, args: &Value) -> Result<Json<Value>, WebError> {
+    let web_config: WebConfig = serde_json::from_value(
+        args.get("webConfig")
+            .cloned()
+            .ok_or_else(|| WebError::BadRequest("Missing webConfig".to_string()))?,
+    )
+    .map_err(|e| WebError::BadRequest(format!("Invalid webConfig: {}", e)))?;
+
+    let (old_web, mut config) = {
+        let mut store = state.lock_config()?;
+        let mut full_config = store.get().clone();
+        let old_web = full_config.web.clone();
+        full_config.web = web_config;
+        store.update(full_config.clone())?;
+        (old_web, full_config)
+    };
+
+    let final_token = if config.web.auth_enabled {
+        let token = crate::web::auth::resolve_token(config.web.token.as_deref());
+        if config.web.token.as_deref() != Some(&token) {
+            let mut store = state.lock_config()?;
+            let mut full_config = store.get().clone();
+            full_config.web.token = Some(token.clone());
+            store.update(full_config.clone())?;
+            config = full_config;
+        }
+        token
+    } else {
+        String::new()
+    };
+
+    let restart_required = old_web.enabled != config.web.enabled
+        || old_web.host != config.web.host
+        || old_web.port != config.web.port;
+
+    let (current_running, current_actual_port) = {
+        let guard = state.web_server_handle.lock().await;
+        match guard.as_ref() {
+            Some(handle) => {
+                let is_running = !handle.shutdown.is_cancelled() && !handle.task.is_finished();
+                (is_running, if is_running { Some(handle.actual_port) } else { None })
+            }
+            None => (false, None),
+        }
+    };
+
+    if restart_required {
+        let config_store = state.config_store.clone();
+        let handle_arc = state.web_server_handle.clone();
+        let web_state_base = state.clone_for_web();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            {
+                let mut guard = handle_arc.lock().await;
+                if let Some(old_handle) = guard.take() {
+                    old_handle.shutdown.cancel();
+                    let _ = old_handle.task.await;
+                }
+            }
+
+            let config = match config_store.lock() {
+                Ok(store) => store.get().clone(),
+                Err(e) => {
+                    tracing::error!("[Web:IPC] Failed to lock config for web restart: {}", e);
+                    return;
+                }
+            };
+
+            if !config.web.enabled {
+                return;
+            }
+
+            let port = crate::web::server::WebServer::resolve_port(config.web.port);
+            let web_server = crate::web::server::WebServer::new(Arc::new(web_state_base));
+            match web_server.start_with_fallback(&config.web.host, port).await {
+                Ok((handle, _actual_port)) => {
+                    let mut guard = handle_arc.lock().await;
+                    *guard = Some(handle);
+                }
+                Err(e) => {
+                    tracing::error!("[Web:IPC] Failed to restart web server: {}", e);
+                }
+            }
+        });
+    }
+
+    let resolved_port = crate::web::server::WebServer::resolve_port(config.web.port);
+    let reported_actual_port = if !config.web.enabled {
+        None
+    } else if restart_required {
+        Some(resolved_port)
+    } else {
+        current_actual_port
+    };
+
+    Ok(Json(serde_json::json!({
+        "running": if restart_required { config.web.enabled } else { current_running },
+        "actualPort": reported_actual_port,
+        "portRedirected": reported_actual_port.map(|p| p != resolved_port).unwrap_or(false),
+        "token": final_token,
+    })))
+}
 // ═══════════════════════════════════════════════════════════════════════════
 // File Explorer — delegate to command functions directly
 // ═══════════════════════════════════════════════════════════════════════════

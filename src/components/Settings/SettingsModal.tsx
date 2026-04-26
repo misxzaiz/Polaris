@@ -7,7 +7,7 @@
  * - Toast 提示
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConfigStore, useToastStore } from '../../stores';
 import { Button } from '../Common';
@@ -29,7 +29,7 @@ import { McpSettingsTab } from '../Mcp/McpSettingsTab';
 import { LspTab } from './tabs/LspTab';
 import { WebTab } from './tabs/WebTab';
 import { createLogger } from '../../utils/logger';
-import type { Config } from '../../types';
+import type { Config, WebConfig } from '../../types';
 
 const log = createLogger('SettingsModal');
 
@@ -77,6 +77,10 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
       setLocalConfig(config);
     }
   }, [config]);
+
+  const handleWebConfigChange = useCallback((webConfig: WebConfig) => {
+    setLocalConfig((prev) => prev ? { ...prev, web: webConfig } : prev);
+  }, []);
 
   // 保存当前分组配置
   const handleSaveCurrentTab = async () => {
@@ -263,7 +267,7 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
               )}
 
               {activeTab === 'web' && (
-                <WebTab loading={loading} />
+                <WebTab loading={loading} onWebConfigChange={handleWebConfigChange} />
               )}
             </div>
 
