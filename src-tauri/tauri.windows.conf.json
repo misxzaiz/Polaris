@@ -1,6 +1,7 @@
 {
   "bundle": {
     "resources": [
+      "../dist",
       "target/release/polaris-todo-mcp.exe",
       "target/release/polaris-requirements-mcp.exe",
       "target/release/polaris-scheduler-mcp.exe"
