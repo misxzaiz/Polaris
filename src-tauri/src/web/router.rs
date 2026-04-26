@@ -18,13 +18,20 @@ use super::middleware::request_trace;
 /// 2. `../dist` relative to CWD (development fallback when running from src-tauri/)
 /// 3. `./dist` relative to CWD (development fallback when running from project root)
 fn resolve_dist_dir(state: &AppState) -> std::path::PathBuf {
-    // Try resource_dir first, but verify the dist subdirectory exists
+    // Try resource_dir first — check both "dist" (dev/non-MSI) and "dist-web" (MSI bundle)
     if let Some(Some(resource_dir)) = state.resource_dir.get().as_ref() {
         let dist = resource_dir.join("dist");
         if dist.is_dir() {
             return dist;
         }
-        tracing::debug!("[Web] resource_dir/dist not found at {:?}, trying fallbacks", dist);
+        let dist_web = resource_dir.join("dist-web");
+        if dist_web.is_dir() {
+            return dist_web;
+        }
+        tracing::debug!(
+            "[Web] resource_dir has neither dist/ nor dist-web/ at {:?}, trying fallbacks",
+            resource_dir
+        );
     }
 
     // Development fallbacks
