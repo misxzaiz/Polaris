@@ -9,10 +9,10 @@ importers:
   .:
     dependencies:
       '@codemirror/autocomplete':
-        specifier: ^6.20.0
+        specifier: ^6.20.1
         version: 6.20.1
       '@codemirror/commands':
-        specifier: ^6.10.1
+        specifier: ^6.10.3
         version: 6.10.3
       '@codemirror/lang-cpp':
         specifier: ^6.0.3
@@ -30,7 +30,7 @@ importers:
         specifier: ^6.0.2
         version: 6.0.2
       '@codemirror/lang-javascript':
-        specifier: ^6.2.4
+        specifier: ^6.2.5
         version: 6.2.5
       '@codemirror/lang-json':
         specifier: ^6.0.2
@@ -51,22 +51,22 @@ importers:
         specifier: ^6.1.0
         version: 6.1.0
       '@codemirror/language':
-        specifier: ^6.12.1
+        specifier: ^6.12.3
         version: 6.12.3
       '@codemirror/lint':
-        specifier: ^6.9.2
+        specifier: ^6.9.5
         version: 6.9.5
       '@codemirror/lsp-client':
         specifier: ^6.2.3
         version: 6.2.3
       '@codemirror/search':
-        specifier: ^6.5.11
+        specifier: ^6.7.0
         version: 6.7.0
       '@codemirror/state':
         specifier: ^6.5.3
         version: 6.6.0
       '@codemirror/view':
-        specifier: ^6.39.8
+        specifier: ^6.41.1
         version: 6.41.1
       '@lezer/highlight':
         specifier: ^1.2.3
@@ -81,7 +81,7 @@ importers:
         specifier: ^2
         version: 2.5.3
       autoprefixer:
-        specifier: ^10.4.23
+        specifier: ^10.5.0
         version: 10.5.0(postcss@8.5.10)
       clsx:
         specifier: ^2.1.1
@@ -90,7 +90,7 @@ importers:
         specifier: ^8.0.2
         version: 8.0.4
       dompurify:
-        specifier: ^3.3.1
+        specifier: ^3.4.1
         version: 3.4.1
       edge-tts-universal:
         specifier: ^1.4.0
@@ -108,16 +108,16 @@ importers:
         specifier: ^17.0.1
         version: 17.0.6
       mermaid:
-        specifier: ^11.12.2
+        specifier: ^11.14.0
         version: 11.14.0
       postcss:
-        specifier: ^8.5.6
+        specifier: ^8.5.10
         version: 8.5.10
       react:
-        specifier: ^19.1.0
+        specifier: ^19.2.5
         version: 19.2.5
       react-dom:
-        specifier: ^19.1.0
+        specifier: ^19.2.5
         version: 19.2.5(react@19.2.5)
       react-i18next:
         specifier: ^15.4.1
@@ -129,8 +129,8 @@ importers:
         specifier: ^2.0.18
         version: 2.0.18(react@19.2.5)
       react-virtuoso:
-        specifier: ^4.18.1
-        version: 4.18.5(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
+        specifier: ^4.18.6
+        version: 4.18.6(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       rehype-highlight:
         specifier: ^7.0.2
         version: 7.0.2
@@ -150,7 +150,7 @@ importers:
         specifier: ^0.9.0
         version: 0.9.0(xterm@5.3.0)
       zustand:
-        specifier: ^5.0.9
+        specifier: ^5.0.12
         version: 5.0.12(@types/react@19.2.14)(react@19.2.5)
     devDependencies:
       '@commitlint/cli':
@@ -172,7 +172,7 @@ importers:
         specifier: ^16.3.2
         version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       '@types/dompurify':
-        specifier: ^3.0.5
+        specifier: ^3.2.0
         version: 3.2.0
       '@types/mermaid':
         specifier: ^9.1.0
@@ -181,7 +181,7 @@ importers:
         specifier: ^25.1.0
         version: 25.6.0
       '@types/react':
-        specifier: ^19.1.8
+        specifier: ^19.2.14
         version: 19.2.14
       '@types/react-dom':
         specifier: ^19.1.6
@@ -781,8 +781,8 @@ packages:
   '@iconify/types@2.0.0':
     resolution: {integrity: sha512-+wluvCrRhXrhyOmRDJ3q8mux9JkKy5SJ/v8ol2tu4FVjyYvtEzkc/3pK15ET6RKg4b4w4BmTk1+gsCUhf21Ykg==}
 
-  '@iconify/utils@3.1.0':
-    resolution: {integrity: sha512-Zlzem1ZXhI1iHeeERabLNzBHdOa4VhQbqAcOQaMKuTuyZCpwKbC2R4Dd0Zo3g9EAc+Y4fiarO8HIHRAth7+skw==}
+  '@iconify/utils@3.1.1':
+    resolution: {integrity: sha512-MwzoDtw9rO1x+qfgLTV/IVXsHDBqeYZoMIQC8SfxfYSlaSUG+oWiAcoiB1yajAda6mqblm4/1/w2E8tRu7a7Tw==}
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -900,79 +900,66 @@ packages:
     resolution: {integrity: sha512-2QxQrM+KQ7DAW4o22j+XZ6RKdxjLD7BOWTP0Bv0tmjdyhXSsr2Ul1oJDQqh9Zf5qOwTuTc7Ek83mOFaKnodPjg==}
     cpu: [arm]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-arm-musleabihf@4.60.2':
     resolution: {integrity: sha512-TbziEu2DVsTEOPif2mKWkMeDMLoYjx95oESa9fkQQK7r/Orta0gnkcDpzwufEcAO2BLBsD7mZkXGFqEdMRRwfw==}
     cpu: [arm]
     os: [linux]
-    libc: [musl]
 
   '@rollup/rollup-linux-arm64-gnu@4.60.2':
     resolution: {integrity: sha512-bO/rVDiDUuM2YfuCUwZ1t1cP+/yqjqz+Xf2VtkdppefuOFS2OSeAfgafaHNkFn0t02hEyXngZkxtGqXcXwO8Rg==}
     cpu: [arm64]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-arm64-musl@4.60.2':
     resolution: {integrity: sha512-hr26p7e93Rl0Za+JwW7EAnwAvKkehh12BU1Llm9Ykiibg4uIr2rbpxG9WCf56GuvidlTG9KiiQT/TXT1yAWxTA==}
     cpu: [arm64]
     os: [linux]
-    libc: [musl]
 
   '@rollup/rollup-linux-loong64-gnu@4.60.2':
     resolution: {integrity: sha512-pOjB/uSIyDt+ow3k/RcLvUAOGpysT2phDn7TTUB3n75SlIgZzM6NKAqlErPhoFU+npgY3/n+2HYIQVbF70P9/A==}
     cpu: [loong64]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-loong64-musl@4.60.2':
     resolution: {integrity: sha512-2/w+q8jszv9Ww1c+6uJT3OwqhdmGP2/4T17cu8WuwyUuuaCDDJ2ojdyYwZzCxx0GcsZBhzi3HmH+J5pZNXnd+Q==}
     cpu: [loong64]
     os: [linux]
-    libc: [musl]
 
   '@rollup/rollup-linux-ppc64-gnu@4.60.2':
     resolution: {integrity: sha512-11+aL5vKheYgczxtPVVRhdptAM2H7fcDR5Gw4/bTcteuZBlH4oP9f5s9zYO9aGZvoGeBpqXI/9TZZihZ609wKw==}
     cpu: [ppc64]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-ppc64-musl@4.60.2':
     resolution: {integrity: sha512-i16fokAGK46IVZuV8LIIwMdtqhin9hfYkCh8pf8iC3QU3LpwL+1FSFGej+O7l3E/AoknL6Dclh2oTdnRMpTzFQ==}
     cpu: [ppc64]
     os: [linux]
-    libc: [musl]
 
   '@rollup/rollup-linux-riscv64-gnu@4.60.2':
     resolution: {integrity: sha512-49FkKS6RGQoriDSK/6E2GkAsAuU5kETFCh7pG4yD/ylj9rKhTmO3elsnmBvRD4PgJPds5W2PkhC82aVwmUcJ7A==}
     cpu: [riscv64]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-riscv64-musl@4.60.2':
     resolution: {integrity: sha512-mjYNkHPfGpUR00DuM1ZZIgs64Hpf4bWcz9Z41+4Q+pgDx73UwWdAYyf6EG/lRFldmdHHzgrYyge5akFUW0D3mQ==}
     cpu: [riscv64]
     os: [linux]
-    libc: [musl]
 
   '@rollup/rollup-linux-s390x-gnu@4.60.2':
     resolution: {integrity: sha512-ALyvJz965BQk8E9Al/JDKKDLH2kfKFLTGMlgkAbbYtZuJt9LU8DW3ZoDMCtQpXAltZxwBHevXz5u+gf0yA0YoA==}
     cpu: [s390x]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-x64-gnu@4.60.2':
     resolution: {integrity: sha512-UQjrkIdWrKI626Du8lCQ6MJp/6V1LAo2bOK9OTu4mSn8GGXIkPXk/Vsp4bLHCd9Z9Iz2OTEaokUE90VweJgIYQ==}
     cpu: [x64]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-x64-musl@4.60.2':
     resolution: {integrity: sha512-bTsRGj6VlSdn/XD4CGyzMnzaBs9bsRxy79eTqTCBsA8TMIEky7qg48aPkvJvFe1HyzQ5oMZdg7AnVlWQSKLTnw==}
     cpu: [x64]
     os: [linux]
-    libc: [musl]
 
   '@rollup/rollup-openbsd-x64@4.60.2':
     resolution: {integrity: sha512-6d4Z3534xitaA1FcMWP7mQPq5zGwBmGbhphh2DwaA1aNIXUu3KTOfwrWpbwI4/Gr0uANo7NTtaykFyO2hPuFLg==}
@@ -1041,35 +1028,30 @@ packages:
     engines: {node: '>= 10'}
     cpu: [arm64]
     os: [linux]
-    libc: [glibc]
 
   '@tauri-apps/cli-linux-arm64-musl@2.10.1':
     resolution: {integrity: sha512-MIj78PDDGjkg3NqGptDOGgfXks7SYJwhiMh8SBoZS+vfdz7yP5jN18bNaLnDhsVIPARcAhE1TlsZe/8Yxo2zqg==}
     engines: {node: '>= 10'}
     cpu: [arm64]
     os: [linux]
-    libc: [musl]
 
   '@tauri-apps/cli-linux-riscv64-gnu@2.10.1':
     resolution: {integrity: sha512-X0lvOVUg8PCVaoEtEAnpxmnkwlE1gcMDTqfhbefICKDnOTJ5Est3qL0SrWxizDackIOKBcvtpejrSiVpuJI1kw==}
     engines: {node: '>= 10'}
     cpu: [riscv64]
     os: [linux]
-    libc: [glibc]
 
   '@tauri-apps/cli-linux-x64-gnu@2.10.1':
     resolution: {integrity: sha512-2/12bEzsJS9fAKybxgicCDFxYD1WEI9kO+tlDwX5znWG2GwMBaiWcmhGlZ8fi+DMe9CXlcVarMTYc0L3REIRxw==}
     engines: {node: '>= 10'}
     cpu: [x64]
     os: [linux]
-    libc: [glibc]
 
   '@tauri-apps/cli-linux-x64-musl@2.10.1':
     resolution: {integrity: sha512-Y8J0ZzswPz50UcGOFuXGEMrxbjwKSPgXftx5qnkuMs2rmwQB5ssvLb6tn54wDSYxe7S6vlLob9vt0VKuNOaCIQ==}
     engines: {node: '>= 10'}
     cpu: [x64]
     os: [linux]
-    libc: [musl]
 
   '@tauri-apps/cli-win32-arm64-msvc@2.10.1':
     resolution: {integrity: sha512-iSt5B86jHYAPJa/IlYw++SXtFPGnWtFJriHn7X0NFBVunF6zu9+/zOn8OgqIWSl8RgzhLGXQEEtGBdR4wzpVgg==}
@@ -1537,8 +1519,8 @@ packages:
     resolution: {integrity: sha512-BLrgEcRTwX2o6gGxGOCNyMvGSp35YofuYzw9h1IMTRmKqttAZZVU67bdb9Pr2vUHA8+j3i2tJfjO6C6+4myGTA==}
     engines: {node: 18 || 20 || >=22}
 
-  baseline-browser-mapping@2.10.21:
-    resolution: {integrity: sha512-Q+rUQ7Uz8AHM7DEaNdwvfFCTq7a43lNTzuS94eiWqwyxfV/wJv+oUivef51T91mmRY4d4A1u9rcSvkeufCVXlA==}
+  baseline-browser-mapping@2.10.22:
+    resolution: {integrity: sha512-6qruVrb5rse6WylFkU0FhBKKGuecWseqdpQfhkawn6ztyk2QlfwSRjsDxMCLJrkfmfN21qvhl9ABgaMeRkuwww==}
     engines: {node: '>=6.0.0'}
     hasBin: true
 
@@ -3268,8 +3250,8 @@ packages:
     resolution: {integrity: sha512-z6F7K9bV85EfseRCp2bzrpyQ0Gkw1uLoCel9XBVWPg/TjRj94SkJzUTGfOa4bs7iJvBWtQG0Wq7wnI0syw3EBQ==}
     engines: {node: '>=0.10.0'}
 
-  react-virtuoso@4.18.5:
-    resolution: {integrity: sha512-QDyNjyNEuurZG67SOmzYyxEkQYSyGmAMixOI6M15L/Q4CF39EgG+88y6DgZRo0q7rmy0HPx3Fj90I8/tPdnRCQ==}
+  react-virtuoso@4.18.6:
+    resolution: {integrity: sha512-CrT3P6HyjJMHZVWSste2bG2q5aWGlHfW2QuySZjiFwB2Qok/xsvgy+k8Z2jeDP8PP5KsBip7zNrl/F0QoxeyKw==}
     peerDependencies:
       react: '>=16 || >=17 || >= 18 || >= 19'
       react-dom: '>=16 || >=17 || >= 18 || >=19'
@@ -4611,7 +4593,7 @@ snapshots:
 
   '@iconify/types@2.0.0': {}
 
-  '@iconify/utils@3.1.0':
+  '@iconify/utils@3.1.1':
     dependencies:
       '@antfu/install-pkg': 1.1.0
       '@iconify/types': 2.0.0
@@ -5438,7 +5420,7 @@ snapshots:
 
   balanced-match@4.0.4: {}
 
-  baseline-browser-mapping@2.10.21: {}
+  baseline-browser-mapping@2.10.22: {}
 
   bidi-js@1.0.3:
     dependencies:
@@ -5461,7 +5443,7 @@ snapshots:
 
   browserslist@4.28.2:
     dependencies:
-      baseline-browser-mapping: 2.10.21
+      baseline-browser-mapping: 2.10.22
       caniuse-lite: 1.0.30001790
       electron-to-chromium: 1.5.344
       node-releases: 2.0.38
@@ -7004,7 +6986,7 @@ snapshots:
   mermaid@11.14.0:
     dependencies:
       '@braintree/sanitize-url': 7.1.2
-      '@iconify/utils': 3.1.0
+      '@iconify/utils': 3.1.1
       '@mermaid-js/parser': 1.1.0
       '@types/d3': 7.4.3
       '@upsetjs/venn.js': 2.0.0
@@ -7531,7 +7513,7 @@ snapshots:
 
   react-refresh@0.17.0: {}
 
-  react-virtuoso@4.18.5(react-dom@19.2.5(react@19.2.5))(react@19.2.5):
+  react-virtuoso@4.18.6(react-dom@19.2.5(react@19.2.5))(react@19.2.5):
     dependencies:
       react: 19.2.5
       react-dom: 19.2.5(react@19.2.5)
