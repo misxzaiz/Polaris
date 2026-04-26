@@ -53,9 +53,9 @@ export function TokenAuthPage({ defaultServerUrl, onAuthSuccess }: TokenAuthPage
           const data = await res.json() as { valid?: boolean; token?: string; authEnabled?: boolean };
           if (data.valid) {
             if (!data.authEnabled) {
-              // Auth disabled on server — no token needed, enter directly
+              // Auth disabled on server — clear any stale token, enter directly
               log.info('Server auth disabled, entering without token');
-              onAuthSuccess(serverUrl, '__no_auth__');
+              onAuthSuccess(serverUrl, '');
               return;
             }
             if (data.token) {

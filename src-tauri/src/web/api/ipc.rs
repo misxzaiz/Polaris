@@ -827,7 +827,7 @@ async fn dispatch_update_and_apply_web(state: &Arc<AppState>, args: &Value) -> R
         || old_web.host != config.web.host
         || old_web.port != config.web.port;
 
-    let (current_running, current_actual_port) = {
+    let (mut current_running, mut current_actual_port) = {
         let guard = state.web_server_handle.lock().await;
         match guard.as_ref() {
             Some(handle) => {
@@ -839,56 +839,51 @@ async fn dispatch_update_and_apply_web(state: &Arc<AppState>, args: &Value) -> R
     };
 
     if restart_required {
-        let config_store = state.config_store.clone();
         let handle_arc = state.web_server_handle.clone();
         let web_state_base = state.clone_for_web();
-        tokio::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-            {
-                let mut guard = handle_arc.lock().await;
-                if let Some(old_handle) = guard.take() {
-                    old_handle.shutdown.cancel();
-                    let _ = old_handle.task.await;
-                }
+
+        // Stop existing server synchronously (await, not spawn)
+        {
+            let mut guard = handle_arc.lock().await;
+            if let Some(old_handle) = guard.take() {
+                old_handle.shutdown.cancel();
+                let _ = old_handle.task.await;
             }
+        }
 
-            let config = match config_store.lock() {
-                Ok(store) => store.get().clone(),
-                Err(e) => {
-                    tracing::error!("[Web:IPC] Failed to lock config for web restart: {}", e);
-                    return;
-                }
-            };
-
-            if !config.web.enabled {
-                return;
-            }
-
+        if config.web.enabled {
+            // Start new server synchronously — await actual port binding
             let port = crate::web::server::WebServer::resolve_port(config.web.port);
-            let web_server = crate::web::server::WebServer::new(Arc::new(web_state_base));
+            let web_state = Arc::new(web_state_base);
+            let web_server = crate::web::server::WebServer::new(web_state);
             match web_server.start_with_fallback(&config.web.host, port).await {
-                Ok((handle, _actual_port)) => {
+                Ok((handle, bound_port)) => {
                     let mut guard = handle_arc.lock().await;
                     *guard = Some(handle);
+                    current_running = true;
+                    current_actual_port = Some(bound_port);
                 }
                 Err(e) => {
                     tracing::error!("[Web:IPC] Failed to restart web server: {}", e);
+                    current_running = false;
+                    current_actual_port = None;
                 }
             }
-        });
+        } else {
+            current_running = false;
+            current_actual_port = None;
+        }
     }
 
     let resolved_port = crate::web::server::WebServer::resolve_port(config.web.port);
     let reported_actual_port = if !config.web.enabled {
         None
-    } else if restart_required {
-        Some(resolved_port)
     } else {
         current_actual_port
     };
 
     Ok(Json(serde_json::json!({
-        "running": if restart_required { config.web.enabled } else { current_running },
+        "running": if !config.web.enabled { false } else { current_running },
         "actualPort": reported_actual_port,
         "portRedirected": reported_actual_port.map(|p| p != resolved_port).unwrap_or(false),
         "token": final_token,

@@ -11,7 +11,7 @@
 
 import { useTranslation } from 'react-i18next';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { currentMode, invoke, storeToken } from '@/services/transport';
+import { currentMode, invoke, storeToken, clearStoredToken } from '@/services/transport';
 import { useConfigStore } from '../../../stores';
 import QRCode from 'react-qr-code';
 import { createLogger } from '../../../utils/logger';
@@ -124,7 +124,8 @@ export function WebTab({ loading, onWebConfigChange }: WebTabProps) {
         if (effectiveConfig.authEnabled && effectiveConfig.token) {
           storeToken(effectiveConfig.token);
         } else if (!effectiveConfig.authEnabled) {
-          storeToken('__no_auth__');
+          // Auth disabled — clear stored token so stale magic values don't cause 401 on re-enable
+          clearStoredToken();
         }
       }
       appliedConfigRef.current = effectiveConfig;

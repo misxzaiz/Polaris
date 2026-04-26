@@ -50,23 +50,26 @@ impl WebServer {
 
     /// Bind to `addr` and serve until cancelled or fatal error.
     /// Returns a `WebServerHandle` for lifecycle management (graceful shutdown).
-    pub fn start(self, addr: &str) -> WebServerHandle {
+    ///
+    /// Uses two-phase binding: bind the listener first, then spawn the server task,
+    /// so the actual port is known immediately.
+    pub async fn start(self, addr: &str) -> Result<WebServerHandle, Box<dyn std::error::Error + Send + Sync>> {
         let shutdown = self.shutdown.clone();
         let state = self.state.clone();
-        let addr = addr.to_string();
+
+        let listener = match tokio::net::TcpListener::bind(addr).await {
+            Ok(l) => l,
+            Err(e) => {
+                tracing::error!("[Web] Failed to bind to {}: {}", addr, e);
+                return Err(e.into());
+            }
+        };
+        let local_addr = listener.local_addr()?;
+        let actual_port = local_addr.port();
+        tracing::info!("[Web] Server listening on {}", local_addr);
 
         let task = tokio::spawn(async move {
             let app = create_router(state);
-            let listener = match tokio::net::TcpListener::bind(&addr).await {
-                Ok(l) => l,
-                Err(e) => {
-                    tracing::error!("[Web] Failed to bind to {}: {}", addr, e);
-                    return Err(e.into());
-                }
-            };
-            let local_addr = listener.local_addr()?;
-            tracing::info!("[Web] Server listening on {}", local_addr);
-
             let result = axum::serve(listener, app)
                 .with_graceful_shutdown(async move { shutdown.cancelled().await })
                 .await;
@@ -80,11 +83,11 @@ impl WebServer {
             result.map_err(|e| e.into())
         });
 
-        WebServerHandle {
+        Ok(WebServerHandle {
             shutdown: self.shutdown,
             task,
-            actual_port: 0,
-        }
+            actual_port,
+        })
     }
 
     /// Bind with automatic port fallback.

@@ -10,8 +10,8 @@ const root = document.getElementById("root") as HTMLElement;
 if (detectTransport() === 'http') {
   const token = initWebAuth();
 
-  if (!token) {
-    // 无 token → 渲染认证页面
+  if (token === null) {
+    // 从未认证过 → 渲染认证页面
     const rootEl = ReactDOM.createRoot(root);
     rootEl.render(
       <React.StrictMode>
@@ -26,7 +26,7 @@ if (detectTransport() === 'http') {
       </React.StrictMode>,
     );
   } else {
-    // 有 token → 正常渲染主应用
+    // '' = auth disabled (no token needed) 或有实际 token → 正常渲染主应用
     ReactDOM.createRoot(root).render(
       <React.StrictMode>
         <App />
