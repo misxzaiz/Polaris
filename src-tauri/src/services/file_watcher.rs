@@ -4,7 +4,7 @@
  */
 
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
@@ -38,6 +38,12 @@ pub struct FileWatcherManager {
     runner_handle: Option<std::thread::JoinHandle<()>>,
     /// 当前监听的根路径
     watch_root: Option<PathBuf>,
+}
+
+impl Default for FileWatcherManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl FileWatcherManager {
@@ -222,7 +228,7 @@ impl FileWatcherRunner {
 }
 
 /// 检查路径是否应该被忽略
-fn should_ignore(path: &PathBuf, root: &PathBuf) -> bool {
+fn should_ignore(path: &Path, root: &Path) -> bool {
     if let Ok(relative) = path.strip_prefix(root) {
         for component in relative.components() {
             if let std::path::Component::Normal(name) = component {

@@ -97,7 +97,7 @@ function ToastItem({ toast, onClose }: ToastItemProps) {
       {toast.action && (
         <button
           onClick={() => {
-            toast.action!.onClick()
+            toast.action?.onClick()
             onClose()
           }}
           className="shrink-0 px-2 py-1 text-xs font-medium rounded bg-primary/20 text-primary hover:bg-primary/30 transition-colors"

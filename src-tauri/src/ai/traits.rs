@@ -18,7 +18,7 @@ impl EngineId {
     ///
     /// 支持格式：
     /// - "claude", "claude-code", "claudecode" → ClaudeCode
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         let lower = s.to_lowercase();
         match lower.as_str() {
             "claude" | "claude-code" | "claudecode" => Some(Self::ClaudeCode),
@@ -275,5 +275,12 @@ pub trait AIEngine: Send + Sync {
     /// 获取活动会话数量
     fn active_session_count(&self) -> usize {
         0
+    }
+
+    /// 从 ConfigStore 刷新引擎配置
+    ///
+    /// 默认无操作。ClaudeEngine 重写此方法以在用户更新 CLI 路径后清除缓存。
+    fn refresh_config(&mut self, _config: &crate::models::config::Config) {
+        // default: no-op
     }
 }

@@ -9,7 +9,7 @@ use crate::models::scheduler::{
     TaskCategory, get_builtin_protocol_templates,
 };
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 /// Protocol template storage service
@@ -22,7 +22,7 @@ pub struct ProtocolTemplateService {
 
 impl ProtocolTemplateService {
     /// Create a new template service
-    pub fn new(config_dir: &PathBuf) -> Self {
+    pub fn new(config_dir: &Path) -> Self {
         let store_path = config_dir.join("protocol-templates.json");
         Self {
             store_path,

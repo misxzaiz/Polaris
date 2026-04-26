@@ -57,10 +57,10 @@ export function ForkIndicator({
   if (compact) {
     return (
       <div className="flex items-center gap-1.5 text-xs">
-        {hasPr && (
+        {hasPr && linkedPr && (
           <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-violet-100 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400">
             <GitPullRequest className="w-3 h-3" />
-            <span>#{linkedPr!.number}</span>
+            <span>#{linkedPr.number}</span>
           </span>
         )}
         {hasGitBranch && (
@@ -89,33 +89,33 @@ export function ForkIndicator({
   return (
     <div className="space-y-1.5 text-xs">
       {/* PR 关联 */}
-      {hasPr && (
+      {hasPr && linkedPr && (
         <div className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800">
           <GitPullRequest className="w-3.5 h-3.5 text-violet-500" />
           <div className="flex-1 min-w-0">
             <span className="font-medium text-violet-600 dark:text-violet-400">
-              PR #{linkedPr!.number}
+              PR #{linkedPr.number}
             </span>
-            {linkedPr!.title && (
+            {linkedPr.title && (
               <span className="ml-1 text-violet-500 dark:text-violet-400 truncate">
-                {linkedPr!.title}
+                {linkedPr.title}
               </span>
             )}
           </div>
-          {linkedPr!.state && (
+          {linkedPr.state && (
             <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-              linkedPr!.state === 'open'
+              linkedPr.state === 'open'
                 ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400'
-                : linkedPr!.state === 'merged'
+                : linkedPr.state === 'merged'
                   ? 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400'
                   : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
             }`}>
-              {linkedPr!.state}
+              {linkedPr.state}
             </span>
           )}
           {onViewPR && (
             <button
-              onClick={() => onViewPR(linkedPr!)}
+              onClick={() => onViewPR(linkedPr)}
               className="p-0.5 rounded hover:bg-violet-200 dark:hover:bg-violet-800 text-violet-500"
               title={t('history.viewPr')}
             >

@@ -3,7 +3,7 @@
  * 提供 Git 相关的上下文信息获取功能
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/services/transport'
 import type { CommitContextChip, DiffContextChip } from '../types/context';
 import { createLogger } from '../utils/logger';
 
@@ -64,18 +64,39 @@ export async function getGitCommits(
   } = {}
 ): Promise<GitCommit[]> {
   try {
-    const result = await invoke<GitCommit[]>('plugin:git|get_commits', {
-      dir: workDir,
-      limit: options.limit ?? 20,
-      offset: options.offset ?? 0,
-      branch: options.branch,
-      author: options.author,
-      since: options.since,
+    // Use the IPC bridge command (git_get_log) instead of plugin:git
+    const result = await invoke<unknown[]>('git_get_log', {
+      workspacePath: workDir,
     });
-    return result;
+    // Map the result to GitCommit format
+    const commits: GitCommit[] = (Array.isArray(result) ? result : []).map((c: unknown) => {
+      const obj = c as Record<string, unknown>;
+      return {
+        hash: String(obj.hash || obj.id || ''),
+        shortHash: String(obj.shortHash || obj.hash?.toString().slice(0, 7) || ''),
+        message: String(obj.message || obj.subject || ''),
+        author: String(obj.author || obj.authorName || ''),
+        timestamp: Number(obj.timestamp || obj.date || 0),
+      };
+    });
+    // Apply filters
+    let filtered = commits;
+    if (options.branch) {
+      filtered = filtered.filter(c => c.message.includes(options.branch!));
+    }
+    if (options.author) {
+      const author = options.author.toLowerCase();
+      filtered = filtered.filter(c => c.author.toLowerCase().includes(author));
+    }
+    if (options.since) {
+      const since = new Date(options.since).getTime();
+      filtered = filtered.filter(c => c.timestamp >= since);
+    }
+    const offset = options.offset ?? 0;
+    const limit = options.limit ?? 20;
+    return filtered.slice(offset, offset + limit);
   } catch (error) {
     log.error('Failed to get git commits', error instanceof Error ? error : new Error(String(error)));
-    // 返回空数组而不是抛出错误，让 UI 可以优雅降级
     return [];
   }
 }
@@ -104,13 +125,19 @@ export async function getGitDiffStats(
   } = {}
 ): Promise<GitDiffStats | null> {
   try {
-    const result = await invoke<GitDiffStats>('plugin:git|get_diff_stats', {
-      dir: workDir,
-      staged: options.staged ?? false,
-      targetHash: options.targetHash,
-      sourceHash: options.sourceHash,
+    const cmd = options.staged ? 'git_get_index_diff' : 'git_get_worktree_diff';
+    const result = await invoke<unknown>(cmd, {
+      workspacePath: workDir,
     });
-    return result;
+    // Map to GitDiffStats format
+    const obj = result as Record<string, unknown>;
+    const files = Array.isArray(obj.files) ? obj.files.map(String) : [];
+    return {
+      additions: Number(obj.additions ?? obj.insertions ?? 0),
+      deletions: Number(obj.deletions ?? 0),
+      modifications: files.length,
+      files,
+    };
   } catch (error) {
     log.error('Failed to get git diff stats', error instanceof Error ? error : new Error(String(error)));
     return null;
@@ -122,10 +149,15 @@ export async function getGitDiffStats(
  */
 export async function getGitStatus(workDir: string): Promise<GitStatus | null> {
   try {
-    const result = await invoke<GitStatus>('plugin:git|get_status', {
-      dir: workDir,
+    const result = await invoke<Record<string, unknown>>('git_get_status', {
+      workspacePath: workDir,
     });
-    return result;
+    return {
+      branch: String(result.branch || ''),
+      staged: Array.isArray(result.staged) ? result.staged.map(String) : [],
+      unstaged: Array.isArray(result.unstaged) ? result.unstaged.map(String) : [],
+      untracked: Array.isArray(result.untracked) ? result.untracked.map(String) : [],
+    };
   } catch (error) {
     log.error('Failed to get git status:', error instanceof Error ? error : new Error(String(error)));
     return null;

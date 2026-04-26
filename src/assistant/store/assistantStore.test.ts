@@ -5,7 +5,7 @@ import type { AssistantMessage, ClaudeCodeExecutionEvent } from '../types'
 // Mock ClaudeCodeSessionManager
 vi.mock('../core/ClaudeCodeSessionManager', () => ({
   getClaudeCodeSessionManager: () => ({
-    createSession: (type: string, label?: string) => {
+    createSession: (type: string, _label?: string) => {
       const id = type === 'primary' ? 'primary' : `${type}-${Date.now()}`
       return id
     },

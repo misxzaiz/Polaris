@@ -20,6 +20,7 @@ export const AutoResizingTextarea = forwardRef<HTMLTextAreaElement, AutoResizing
 
     // 使用 useLayoutEffect 确保在 DOM 更新后同步计算高度
     // 避免视觉闪烁
+    // textareaRef 是稳定引用（ref 对象），ESLint 误报依赖
     useLayoutEffect(() => {
       const textarea = textareaRef.current;
       if (!textarea) return;
@@ -29,7 +30,8 @@ export const AutoResizingTextarea = forwardRef<HTMLTextAreaElement, AutoResizing
       // 计算新高度：在 minHeight 和 maxHeight 之间
       const newHeight = Math.min(Math.max(textarea.scrollHeight, minHeight), maxHeight);
       textarea.style.height = `${newHeight}px`;
-    }, [value, maxHeight, minHeight]); // 注意：不依赖 textareaRef，ref 对象是稳定的
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- textareaRef is a stable ref object
+    }, [minHeight, maxHeight, textareaRef]);
 
     return (
       <textarea

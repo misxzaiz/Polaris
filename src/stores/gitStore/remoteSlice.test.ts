@@ -17,7 +17,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 import { createRemoteSlice } from './remoteSlice'
 import { createStatusSlice } from './statusSlice'
 import type { GitState, RemoteState, RemoteActions, StatusState, StatusActions } from './types'
-import type { GitRemote, GitPullResult, GitPushResult, GitRepositoryStatus } from '@/types/git'
+import type { GitRemote, GitPullResult, GitRepositoryStatus } from '@/types/git'
 
 // 创建测试用的最小状态
 type TestState = RemoteState &
@@ -206,6 +206,7 @@ describe('remoteSlice', () => {
         branchName: 'main',
         remoteName: 'origin',
         force: false,
+        remoteBranchName: null,
       })
       expect(result.success).toBe(true)
       expect(result.pushedCommits).toBe(3)
@@ -223,6 +224,7 @@ describe('remoteSlice', () => {
         workspacePath: '/workspace',
         branchName: 'feature',
         remoteName: 'origin',
+        remoteBranchName: null,
       })
     })
 
@@ -239,6 +241,7 @@ describe('remoteSlice', () => {
         branchName: 'main',
         remoteName: 'origin',
         force: true,
+        remoteBranchName: null,
       })
     })
 

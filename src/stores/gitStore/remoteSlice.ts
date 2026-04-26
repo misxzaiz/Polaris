@@ -4,7 +4,7 @@
  * 负责远程仓库管理：添加、删除、推送、拉取等操作
  */
 
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '@/services/transport'
 import type { RemoteSlice } from './types'
 import { parseGitError } from './types'
 import type { GitRemote, GitHostType, GitPullResult, GitPushResult } from '@/types/git'

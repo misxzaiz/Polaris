@@ -34,11 +34,21 @@ export function BranchSelector() {
     return workspaces.find(w => w.id === currentWorkspaceId) || null
   })
 
+  const loadBranches = useCallback(async () => {
+    if (!currentWorkspace) return
+    setIsLoading(true)
+    try {
+      await getBranches(currentWorkspace.path)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [currentWorkspace, getBranches])
+
   useEffect(() => {
     if (isOpen && currentWorkspace) {
       loadBranches()
     }
-  }, [isOpen, currentWorkspace])
+  }, [isOpen, currentWorkspace, loadBranches])
 
   useEffect(() => {
     if (showNewBranch && inputRef.current) {
@@ -56,16 +66,6 @@ export function BranchSelector() {
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
-
-  const loadBranches = useCallback(async () => {
-    if (!currentWorkspace) return
-    setIsLoading(true)
-    try {
-      await getBranches(currentWorkspace.path)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [currentWorkspace, getBranches])
 
   const hasUncommittedChanges = useCallback(() => {
     if (!status) return false
@@ -110,7 +110,7 @@ export function BranchSelector() {
     try {
       await stashSave(currentWorkspace.path, `WIP: switching to ${targetBranch}`, true)
       await doSwitchBranch(targetBranch)
-    } catch (err) {
+    } catch {
       // 忽略错误，doSwitchBranch 已经处理
     } finally {
       setIsSwitching(false)
@@ -137,7 +137,7 @@ export function BranchSelector() {
       setNewBranchName('')
       setShowNewBranch(false)
       setIsOpen(false)
-    } catch (err) {
+    } catch {
       // 忽略错误
     } finally {
       setIsSwitching(false)

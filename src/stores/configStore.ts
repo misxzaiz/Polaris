@@ -39,7 +39,7 @@ interface ConfigState {
   retryConnection: (claudeCmd?: string) => Promise<void>;
 }
 
-export const useConfigStore = create<ConfigState>((set) => ({
+export const useConfigStore = create<ConfigState>((set, get) => ({
   config: null,
   healthStatus: null,
   loading: false,
@@ -79,7 +79,9 @@ export const useConfigStore = create<ConfigState>((set) => ({
   updateConfig: async (config) => {
     set({ loading: true, error: null });
     try {
-      await tauri.updateConfig(config);
+      const currentConfig = await tauri.getConfig();
+      const latestWebConfig = get().config?.web ?? currentConfig.web ?? config.web;
+      await tauri.updateConfig({ ...config, web: latestWebConfig });
       // 关键：保存后重新从后端加载，确保同步
       const savedConfig = await tauri.getConfig();
       if (savedConfig?.language) {

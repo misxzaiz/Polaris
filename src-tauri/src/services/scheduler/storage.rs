@@ -181,7 +181,7 @@ mod tests {
 
         // Test debug and clone
         let backend = StorageBackend::LocalFile;
-        let cloned = backend.clone();
+        let cloned = backend; // Copy trait, no clone needed
         assert_eq!(backend, cloned);
 
         // Test debug output

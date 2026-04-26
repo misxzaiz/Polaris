@@ -4,7 +4,7 @@
  * 负责分支管理：创建、删除、切换、合并、变基等操作
  */
 
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '@/services/transport'
 import type { BranchSlice } from './types'
 import { parseGitError } from './types'
 import type { GitMergeResult, GitRebaseResult } from '@/types/git'

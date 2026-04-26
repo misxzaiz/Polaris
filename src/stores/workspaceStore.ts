@@ -1,14 +1,59 @@
 /**
  * 工作区状态管理
+ *
+ * 工作区列表同时存储在：
+ * 1. 服务端 Config（source of truth，跨桌面/Web 共享）
+ * 2. 客户端 localStorage（离线缓存、快速加载）
+ *
+ * 初始化时从服务端同步，变更时双向写入。
  */
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Workspace, WorkspaceStore } from '../types';
+import type { WorkspaceEntry } from '../types/config';
 import * as tauri from '../services/tauri';
 import { createLogger } from '../utils/logger';
+import { generateUUID } from '../utils/uuid';
 
 const log = createLogger('WorkspaceStore');
+
+/** 将本地 Workspace 映射为服务端 WorkspaceEntry */
+function toEntry(w: Workspace): WorkspaceEntry {
+  return {
+    id: w.id,
+    name: w.name,
+    path: w.path,
+    createdAt: w.createdAt,
+    lastAccessed: w.lastAccessed,
+  };
+}
+
+/** 将服务端 WorkspaceEntry 映射为本地 Workspace */
+function fromEntry(e: WorkspaceEntry): Workspace {
+  return {
+    id: e.id,
+    name: e.name,
+    path: e.path,
+    createdAt: e.createdAt ?? new Date().toISOString(),
+    lastAccessed: e.lastAccessed ?? new Date().toISOString(),
+  };
+}
+
+/** 将当前工作区列表持久化到服务端 Config */
+async function persistToServer(
+  workspaces: Workspace[],
+  currentWorkspaceId: string | null,
+): Promise<void> {
+  try {
+    const config = await tauri.getConfig();
+    config.workspaces = workspaces.map(toEntry);
+    config.currentWorkspaceId = currentWorkspaceId ?? undefined;
+    await tauri.updateConfig(config);
+  } catch (e) {
+    log.warn('Failed to persist workspaces to server config', { error: String(e) });
+  }
+}
 
 export const useWorkspaceStore = create<WorkspaceStore>()(
   persist(
@@ -17,14 +62,52 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       workspaces: [],
       currentWorkspaceId: null,
       contextWorkspaceIds: [],
-      viewingWorkspaceId: null,  // 不持久化
+      viewingWorkspaceId: null,
       isLoading: false,
       error: null,
 
-      // 创建工作区 - 添加 switchAfterCreate 参数，允许选择是否切换到新工作区
+      /** 从服务端 Config 同步工作区列表（应用初始化时调用） */
+      syncFromServer: async () => {
+        try {
+          const config = await tauri.getConfig();
+          const serverWorkspaces = config?.workspaces;
+          if (serverWorkspaces && serverWorkspaces.length > 0) {
+            const local = get().workspaces;
+            // 合并策略：服务端为主，补充本地独有的工作区
+            const serverIds = new Set(serverWorkspaces.map((w) => w.id));
+            const localOnly = local.filter((w) => !serverIds.has(w.id));
+            const merged = [...serverWorkspaces.map(fromEntry), ...localOnly];
+
+            const serverCurrentId = config.currentWorkspaceId ?? null;
+            set({
+              workspaces: merged,
+              currentWorkspaceId: serverCurrentId ?? get().currentWorkspaceId,
+            });
+
+            // 如果本地有独有的工作区，回写服务端
+            if (localOnly.length > 0) {
+              await persistToServer(merged, get().currentWorkspaceId);
+            }
+
+            log.info('Synced workspaces from server', {
+              server: serverWorkspaces.length,
+              localOnly: localOnly.length,
+              total: merged.length,
+            });
+          } else if (get().workspaces.length > 0) {
+            // 服务端没有但本地有 → 推送到服务端
+            await persistToServer(get().workspaces, get().currentWorkspaceId);
+            log.info('Pushed local workspaces to server');
+          }
+        } catch (e) {
+          log.warn('Failed to sync workspaces from server', { error: String(e) });
+        }
+      },
+
+      // 创建工作区
       createWorkspace: async (name: string, path: string, switchAfterCreate: boolean = true) => {
         set({ isLoading: true, error: null });
-        
+
         try {
           // 验证路径
           const isValid = await get().validateWorkspacePath(path);
@@ -38,28 +121,28 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
             throw new Error('该路径已被其他工作区使用');
           }
 
-          // 创建工作区
           const workspace: Workspace = {
-            id: crypto.randomUUID(),
+            id: generateUUID(),
             name,
             path,
             createdAt: new Date().toISOString(),
             lastAccessed: new Date().toISOString(),
           };
 
-          // 更新状态
+          const newCurrentId = switchAfterCreate ? workspace.id : get().currentWorkspaceId;
+
           set((state) => ({
             workspaces: [...state.workspaces, workspace],
-            currentWorkspaceId: switchAfterCreate ? workspace.id : state.currentWorkspaceId,
+            currentWorkspaceId: newCurrentId,
             isLoading: false,
           }));
 
-          // 根据参数决定是否切换工作区
+          // 持久化到服务端
+          await persistToServer(get().workspaces, newCurrentId);
+
           if (switchAfterCreate) {
-            // 切换到新工作区
             await get().switchWorkspace(workspace.id);
           } else {
-            // 添加到关联工作区但不切换
             get().addContextWorkspace(workspace.id);
           }
         } catch (error) {
@@ -78,8 +161,6 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
           throw new Error('工作区不存在');
         }
 
-        // 先更新全局配置的工作目录，成功后才更新前端状态
-        // 这样确保前端显示的工作区与后端配置始终一致
         try {
           await tauri.setWorkDir(workspace.path);
         } catch (error) {
@@ -87,7 +168,6 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
           throw new Error(`切换工作区失败: ${error instanceof Error ? error.message : '未知错误'}`);
         }
 
-        // 后端配置更新成功后，更新前端状态
         set((state) => ({
           workspaces: state.workspaces.map(w =>
             w.id === id
@@ -97,12 +177,12 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
           currentWorkspaceId: id,
         }));
 
-        // 通知其他组件工作区已切换
+        // 同步 currentWorkspaceId 到服务端
+        await persistToServer(get().workspaces, id);
+
         window.dispatchEvent(new CustomEvent('workspace-changed', {
           detail: { workspaceId: id, path: workspace.path }
         }));
-
-        // 清除聊天错误提示
         window.dispatchEvent(new CustomEvent('workspace-switched'));
       },
 
@@ -123,23 +203,19 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         const newCurrentId = currentWorkspaceId === id
           ? newWorkspaces[0]?.id || null
           : currentWorkspaceId;
-
-        // 同时从上下文中移除被删除的工作区
         const newContextIds = contextWorkspaceIds.filter(contextId => contextId !== id);
 
-        // 先更新工作区列表（移除要删除的）
         set({
           workspaces: newWorkspaces,
           contextWorkspaceIds: newContextIds,
         });
 
-        // 如果删除的是当前工作区，需要切换到剩余的工作区
+        // 持久化到服务端
+        await persistToServer(newWorkspaces, newCurrentId);
+
         if (currentWorkspaceId === id && newCurrentId) {
-          // 使用 switchWorkspace 确保后端配置同步更新
-          // switchWorkspace 会更新 currentWorkspaceId 并同步到后端
           await get().switchWorkspace(newCurrentId);
         } else {
-          // 删除的不是当前工作区，只需更新 currentWorkspaceId
           set({ currentWorkspaceId: newCurrentId });
         }
       },
@@ -151,6 +227,8 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
             w.id === id ? { ...w, ...updates } : w
           ),
         }));
+        // 同步到服务端
+        await persistToServer(get().workspaces, get().currentWorkspaceId);
       },
 
       // 获取当前工作区
@@ -175,31 +253,25 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
 
       // ========== 关联工作区操作 ==========
 
-      // 设置关联工作区列表
       setContextWorkspaces: (ids: string[]) => {
         set({ contextWorkspaceIds: ids });
       },
 
-      // 添加到关联
       addContextWorkspace: (id: string) => {
         set(state => {
-          // 不能重复添加
           if (state.contextWorkspaceIds.includes(id)) return state;
           return { contextWorkspaceIds: [...state.contextWorkspaceIds, id] };
         });
       },
 
-      // 从关联移除
       removeContextWorkspace: (id: string) => {
         set(state => ({
           contextWorkspaceIds: state.contextWorkspaceIds.filter(x => x !== id)
         }));
       },
 
-      // 切换关联状态
       toggleContextWorkspace: (id: string) => {
         const state = get();
-
         if (state.contextWorkspaceIds.includes(id)) {
           get().removeContextWorkspace(id);
         } else {
@@ -207,40 +279,33 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         }
       },
 
-      // 清空关联
       clearContextWorkspaces: () => {
         set({ contextWorkspaceIds: [] });
       },
 
-      // 获取关联工作区列表
       getContextWorkspaces: () => {
         const state = get();
         return state.workspaces.filter(w => state.contextWorkspaceIds.includes(w.id));
       },
 
-      // 获取所有已保存的工作区（用于文件浏览器切换）
       getAllAccessibleWorkspaces: () => {
         return get().workspaces;
       },
 
       // ========== FileExplorer 浏览工作区操作 ==========
 
-      // 设置 FileExplorer 当前浏览的工作区
       setViewingWorkspace: (id: string | null) => {
         set({ viewingWorkspaceId: id });
       },
 
-      // 获取 FileExplorer 当前浏览的工作区
       getViewingWorkspace: () => {
         const state = get();
-        // 如果没有设置浏览工作区，返回当前工作区
         if (!state.viewingWorkspaceId) {
           return state.workspaces.find(w => w.id === state.currentWorkspaceId) || null;
         }
         return state.workspaces.find(w => w.id === state.viewingWorkspaceId) || null;
       },
 
-      // 获取按最近访问时间排序的工作区列表
       getSortedWorkspaces: () => {
         return [...get().workspaces].sort((a, b) =>
           new Date(b.lastAccessed).getTime() - new Date(a.lastAccessed).getTime()

@@ -2,7 +2,7 @@ import { OpenAIProtocolEngine } from '../../engines/openai-protocol'
 import type { OpenAIMessage } from '../../engines/openai-protocol'
 import { getEventBus } from '../../ai-runtime'
 import type { AIEvent } from '../../ai-runtime'
-import { getSystemPrompt } from './SystemPrompt'
+import { getSystemPromptWithKnowledge } from './SystemPrompt'
 import { ASSISTANT_TOOLS, parseToolCallArgs } from './ToolDefinitions'
 import { useAssistantStore } from '../store/assistantStore'
 import type {
@@ -254,10 +254,13 @@ export class AssistantEngine {
     // 构建 OpenAI 消息数组（包含历史）
     const contextMessages = this.buildContextMessages()
 
+    // 获取带知识增强的系统提示词
+    const systemPrompt = await getSystemPromptWithKnowledge()
+
     // 创建 LLM 会话，传入历史消息
     const session = this.llmEngine.createSession({
       options: {
-        systemPrompt: getSystemPrompt(),
+        systemPrompt,
         initialMessages: contextMessages,
       },
     })
@@ -387,7 +390,10 @@ export class AssistantEngine {
         params.background ? 'background' : 'analysis',
         purpose
       )
-      yield { type: 'session_created', session: useAssistantStore.getState().getClaudeCodeSession(sessionId)! }
+      const session = useAssistantStore.getState().getClaudeCodeSession(sessionId)
+      if (session) {
+        yield { type: 'session_created', session }
+      }
     }
 
     // 中断指定会话
@@ -411,7 +417,7 @@ export class AssistantEngine {
       const result = await this.executeClaudeCode(sessionId, params)
       yield { type: 'tool_call', toolCall: { ...toolCall, status: 'completed', claudeCodeSessionId: sessionId } }
       yield* this.feedbackToAI(params.prompt, result, sessionId)
-    } catch (error) {
+    } catch {
       yield { type: 'tool_call', toolCall: { ...toolCall, status: 'error', claudeCodeSessionId: sessionId } }
     }
   }
@@ -567,10 +573,13 @@ ${result}
     // 构建 OpenAI 消息数组（包含历史）
     const contextMessages = this.buildContextMessages()
 
+    // 获取带知识增强的系统提示词
+    const systemPrompt = await getSystemPromptWithKnowledge()
+
     // 创建新的 LLM 会话处理反馈
     const session = this.llmEngine.createSession({
       options: {
-        systemPrompt: getSystemPrompt(),
+        systemPrompt,
         initialMessages: contextMessages,
       },
     })
@@ -649,10 +658,13 @@ ${result}
     // 构建 OpenAI 消息数组（包含历史）
     const contextMessages = this.buildContextMessages()
 
+    // 获取带知识增强的系统提示词
+    const systemPrompt = await getSystemPromptWithKnowledge()
+
     // 创建新的 LLM 会话处理汇报
     const session = this.llmEngine.createSession({
       options: {
-        systemPrompt: getSystemPrompt(),
+        systemPrompt,
         initialMessages: contextMessages,
       },
     })

@@ -10,7 +10,7 @@
  * **Validates: Requirements 1.1, 1.2**
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { sessionStoreManager } from './sessionStoreManager'
 import * as fc from 'fast-check'
 import type { AIEvent } from '../../ai-runtime'

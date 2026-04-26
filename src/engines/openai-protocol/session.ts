@@ -130,7 +130,7 @@ export class OpenAISession extends EventEmitter implements AISession {
 
     const decoder = new TextDecoder()
     let buffer = ''
-    let currentToolCalls: Map<number, OpenAIToolCall> = new Map()
+    const currentToolCalls: Map<number, OpenAIToolCall> = new Map()
     let assistantContent = ''
 
     try {

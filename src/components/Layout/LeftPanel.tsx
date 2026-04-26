@@ -12,15 +12,13 @@ import { ResizeHandle } from '../Common'
 interface LeftPanelProps {
   children?: ReactNode
   className?: string
-  /** 是否填充剩余空间（当右侧没有其他面板时） */
-  fillRemaining?: boolean
 }
 
 /**
  * 左侧面板组件
- * 当 fillRemaining 为 true 时，自动扩展填充剩余空间
+ * 始终使用固定宽度 + 拖拽手柄，支持用户调整宽度
  */
-export function LeftPanel({ children, className = '', fillRemaining = false }: LeftPanelProps) {
+export function LeftPanel({ children, className = '' }: LeftPanelProps) {
   const width = useViewStore((state) => state.leftPanelWidth)
   const setWidth = useViewStore((state) => state.setLeftPanelWidth)
 
@@ -28,16 +26,6 @@ export function LeftPanel({ children, className = '', fillRemaining = false }: L
   const handleResize = (delta: number) => {
     const newWidth = Math.max(200, Math.min(600, width + delta))
     setWidth(newWidth)
-  }
-
-  // 填充模式：使用 flex-1 自动扩展，不显示拖拽手柄
-  if (fillRemaining) {
-    return (
-      <aside className={`flex min-h-0 flex-1 flex-col overflow-hidden bg-background-elevated border-r border-border min-w-[200px] ${className}`}>
-        {/* 面板内容 */}
-        <div className="flex-1 min-h-0 overflow-hidden">{children}</div>
-      </aside>
-    )
   }
 
   return (
@@ -73,6 +61,8 @@ export function LeftPanelContent({
   integrationContent,
   assistantContent,
   mcpContent,
+  knowledgeContent,
+  problemsContent,
   currentType,
 }: {
   filesContent: ReactNode
@@ -87,6 +77,8 @@ export function LeftPanelContent({
   integrationContent?: ReactNode
   assistantContent?: ReactNode
   mcpContent?: ReactNode
+  knowledgeContent?: ReactNode
+  problemsContent?: ReactNode
   currentType?: LeftPanelType
 }) {
   // Hook 必须在条件之外调用
@@ -117,6 +109,10 @@ export function LeftPanelContent({
     return <>{assistantContent}</>
   } else if (type === 'mcp') {
     return <>{mcpContent}</>
+  } else if (type === 'knowledge') {
+    return <>{knowledgeContent}</>
+  } else if (type === 'problems') {
+    return <>{problemsContent}</>
   }
 
   return null

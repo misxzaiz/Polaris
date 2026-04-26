@@ -47,6 +47,8 @@
     "createFailed": "Failed to create workspace",
     "selectFolderFailed": "Failed to select folder, please enter path manually",
     "selectFolderTitle": "Select Workspace Folder",
+    "selectCurrent": "Select This Folder",
+    "noSubdirectories": "No subdirectories in this folder",
     "creating": "Creating...",
     "create": "Create"
   },

@@ -9,7 +9,6 @@ import {
   validateConfig,
   mergeResults,
   validateCLIEngineConfig,
-  CLI_ENGINE_CONFIG_RULES,
 } from './config-validator'
 
 describe('validateField', () => {

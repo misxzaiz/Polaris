@@ -5,7 +5,7 @@
  * 支持多会话并行运行，每个会话独立接收事件
  */
 
-import { listen, UnlistenFn } from '@tauri-apps/api/event'
+import { listen } from '@/services/transport'
 import { createLogger } from '../utils/logger'
 import { sessionStoreManager } from '../stores/conversationStore'
 import type { AIEvent } from '../ai-runtime'
@@ -49,7 +49,7 @@ function extractFrontendSessionId(contextId: ContextId): string | null {
 
 export class EventRouter {
   private handlers: Map<ContextId, Set<EventHandler>> = new Map()
-  private unlisten: UnlistenFn | null = null
+  private unlisten: (() => void) | null = null
   private initialized = false
   private initPromise: Promise<void> | null = null
   private destroyed = false
@@ -65,9 +65,8 @@ export class EventRouter {
   }
 
   private async doInitialize(): Promise<void> {
-    this.unlisten = await listen<string>('chat-event', (event) => {
+    this.unlisten = await listen<string>('chat-event', (rawPayload) => {
       try {
-        const rawPayload = event.payload
         log.info('收到原始事件', { type: typeof rawPayload, preview: typeof rawPayload === 'string' ? rawPayload.slice(0, 200) : JSON.stringify(rawPayload).slice(0, 200) })
 
         // 处理不同类型的 payload
@@ -165,8 +164,8 @@ export class EventRouter {
   register(contextId: ContextId, handler: EventHandler): () => void {
     // 强制单例模式：每个 contextId 只保留一个 handler
     // 这是防止 React StrictMode 导致重复注册的最可靠方式
-    if (this.handlers.has(contextId)) {
-      const existingHandlers = this.handlers.get(contextId)!
+    const existingHandlers = this.handlers.get(contextId)
+    if (existingHandlers) {
       if (existingHandlers.size > 0) {
         log.info('contextId 已存在 handler，清除旧 handler', { contextId })
         existingHandlers.clear()
@@ -175,8 +174,11 @@ export class EventRouter {
       this.handlers.set(contextId, new Set())
     }
 
-    this.handlers.get(contextId)!.add(handler)
-    log.info('注册 handler', { contextId })
+    const handlers = this.handlers.get(contextId)
+    if (handlers) {
+      handlers.add(handler)
+      log.info('注册 handler', { contextId })
+    }
 
     return () => {
       this.handlers.get(contextId)?.delete(handler)

@@ -1,33 +1,23 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum TodoPriority {
     Low,
+    #[default]
     Normal,
     High,
     Urgent,
 }
 
-impl Default for TodoPriority {
-    fn default() -> Self {
-        Self::Normal
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum TodoStatus {
+    #[default]
     Pending,
     InProgress,
     Completed,
     Cancelled,
-}
-
-impl Default for TodoStatus {
-    fn default() -> Self {
-        Self::Pending
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

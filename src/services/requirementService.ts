@@ -4,7 +4,7 @@
  * 调用后端 Tauri 命令，支持全局单存储架构
  */
 
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '@/services/transport'
 import type {
   Requirement,
   RequirementCreateParams,

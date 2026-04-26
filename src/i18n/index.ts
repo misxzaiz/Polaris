@@ -20,6 +20,7 @@ import zhCNCommands from '../locales/zh-CN/commands.json';
 import zhCNPromptSnippet from '../locales/zh-CN/promptSnippet.json';
 import zhCNAssistant from '../locales/zh-CN/assistant.json';
 import zhCNMcp from '../locales/zh-CN/mcp.json';
+import zhCNKnowledge from '../locales/zh-CN/knowledge.json';
 
 import enUSCommon from '../locales/en-US/common.json';
 import enUSSettings from '../locales/en-US/settings.json';
@@ -40,6 +41,7 @@ import enUSCommands from '../locales/en-US/commands.json';
 import enUSPromptSnippet from '../locales/en-US/promptSnippet.json';
 import enUSAssistant from '../locales/en-US/assistant.json';
 import enUSMcp from '../locales/en-US/mcp.json';
+import enUSKnowledge from '../locales/en-US/knowledge.json';
 
 export const resources = {
   'zh-CN': {
@@ -62,6 +64,7 @@ export const resources = {
     promptSnippet: zhCNPromptSnippet,
     assistant: zhCNAssistant,
     mcp: zhCNMcp,
+    knowledge: zhCNKnowledge,
   },
   'en-US': {
     common: enUSCommon,
@@ -83,6 +86,7 @@ export const resources = {
     promptSnippet: enUSPromptSnippet,
     assistant: enUSAssistant,
     mcp: enUSMcp,
+    knowledge: enUSKnowledge,
   },
 };
 

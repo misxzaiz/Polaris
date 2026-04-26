@@ -186,7 +186,8 @@ export function GitPanel({ className = '', onOpenDiffInTab }: GitPanelProps) {
       setIsBatchOperating(false)
       setBatchProgress(null)
     }
-  }, [currentWorkspace, selectedFiles, status, stageFile, refreshStatus, toast])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- t is stable i18n function
+  }, [currentWorkspace, selectedFiles, stageFile, refreshStatus, toast, t])
 
   const handleBatchUnstage = useCallback(async () => {
     if (!currentWorkspace || selectedFiles.size === 0) return
@@ -216,7 +217,8 @@ export function GitPanel({ className = '', onOpenDiffInTab }: GitPanelProps) {
       setIsBatchOperating(false)
       setBatchProgress(null)
     }
-  }, [currentWorkspace, selectedFiles, status, unstageFile, refreshStatus, toast])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- t is stable i18n function
+  }, [currentWorkspace, selectedFiles, status, unstageFile, refreshStatus, toast, t])
 
   const handleBatchDiscard = useCallback(() => {
     if (!currentWorkspace || selectedFiles.size === 0) return
@@ -272,7 +274,8 @@ export function GitPanel({ className = '', onOpenDiffInTab }: GitPanelProps) {
     } finally {
       setIsInitializing(false)
     }
-  }, [currentWorkspace, initBranchName, initRepository, toast])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- t is stable i18n function
+  }, [currentWorkspace, initBranchName, initRepository, toast, t])
 
   const useInternalDiff = !onOpenDiffInTab
 
@@ -280,6 +283,7 @@ export function GitPanel({ className = '', onOpenDiffInTab }: GitPanelProps) {
     if (currentWorkspace) {
       refreshStatus(currentWorkspace.path)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshStatus triggers on workspace change
   }, [currentWorkspace?.path])
 
   const hasChanges =

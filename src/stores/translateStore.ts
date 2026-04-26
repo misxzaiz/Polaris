@@ -1,3 +1,4 @@
+import { generateUUID } from '@/utils/uuid';
 import { create } from 'zustand';
 import i18n from '../i18n';
 import { baiduTranslate } from '../services/tauri';
@@ -118,7 +119,7 @@ export const useTranslateStore = create<TranslateStore>((set, get) => ({
     const { history, maxHistory } = get();
     const newItem: TranslateHistoryItem = {
       ...item,
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       timestamp: Date.now(),
     };
 

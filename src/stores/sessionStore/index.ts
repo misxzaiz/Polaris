@@ -19,6 +19,7 @@ import type {
   SessionMessageState
 } from '@/types/session'
 import type { VoiceCommand } from '@/types/speech'
+import { generateUUID } from '@/utils/uuid'
 
 // ============================================================================
 // 类型定义
@@ -53,6 +54,8 @@ export interface SessionState {
   speechCommand: VoiceCommand | null
   /** 语音唤醒状态（唤醒词模式激活后为 true） */
   speechWakeActive: boolean
+  /** 上次输入是否来自语音（用于自动朗读决策） */
+  inputWasVoice: boolean
 }
 
 export interface SessionActions {
@@ -100,6 +103,8 @@ export interface SessionActions {
   undoSpeechTranscript: () => void
   /** 设置语音唤醒状态 */
   setSpeechWakeActive: (active: boolean) => void
+  /** 设置输入是否来自语音 */
+  setInputWasVoice: (value: boolean) => void
 }
 
 export type SessionStore = SessionState & SessionActions
@@ -110,7 +115,7 @@ export type SessionStore = SessionState & SessionActions
 
 /** 生成会话 ID */
 const generateSessionId = (): string => {
-  return `session-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+  return `session-${generateUUID()}`
 }
 
 /** 生成默认标题 */
@@ -146,6 +151,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
   previousTranscript: '',
   speechCommand: null,
   speechWakeActive: false,
+  inputWasVoice: false,
 
   // ========== 会话操作 ==========
 
@@ -427,6 +433,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         previousTranscript: ''
       })),
       setSpeechWakeActive: (active: boolean) => set({ speechWakeActive: active }),
+      setInputWasVoice: (value: boolean) => set({ inputWasVoice: value }),
     })
 )
 

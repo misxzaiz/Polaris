@@ -57,7 +57,8 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
   // 加载历史会话（首页或 scope 变化时）
   useEffect(() => {
     loadHistory(true)
-  }, [currentWorkspace, scope])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadHistory triggers on currentWorkspace/scope change
+  }, [currentWorkspace?.path, scope])
 
   const loadHistory = async (reset: boolean = true) => {
     if (reset) {
@@ -339,7 +340,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
   return (
     <div className="flex flex-col h-full">
       {/* 头部 */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+      <div className="flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 border-b border-border shrink-0">
         <h2 className="text-base font-semibold text-text-primary">会话历史</h2>
         <button
           onClick={onClose}
@@ -350,7 +351,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
       </div>
 
       {/* 范围 + 引擎筛选 + 视图切换 */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-border-subtle shrink-0">
+      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 border-b border-border-subtle shrink-0">
         {/* 范围切换 */}
         <button
           onClick={() => handleScopeChange('workspace')}
@@ -376,7 +377,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
         </button>
 
         {/* 分隔符 */}
-        <span className="border-l border-border h-4" />
+        <span className="hidden sm:block border-l border-border h-4" />
 
         {/* 引擎筛选 */}
         <button
@@ -401,12 +402,12 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
         </button>
 
         {/* 分隔符 */}
-        <span className="border-l border-border h-4" />
+        <span className="hidden sm:block border-l border-border h-4" />
 
         {/* 视图模式切换 */}
         <button
           onClick={() => setViewMode('list')}
-          className={`p-1 rounded-md transition-colors ${
+          className={`p-1.5 sm:p-1 rounded-md transition-colors ${
             viewMode === 'list'
               ? 'bg-primary/20 text-primary'
               : 'text-text-tertiary hover:bg-background-hover hover:text-text-primary'
@@ -417,7 +418,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
         </button>
         <button
           onClick={() => setViewMode('tree')}
-          className={`p-1 rounded-md transition-colors ${
+          className={`p-1.5 sm:p-1 rounded-md transition-colors ${
             viewMode === 'tree'
               ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'
               : 'text-text-tertiary hover:bg-background-hover hover:text-text-primary'
@@ -429,7 +430,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
       </div>
 
       {/* 搜索框 */}
-      <div className="px-4 py-2 border-b border-border-subtle shrink-0">
+      <div className="px-3 sm:px-4 py-1.5 sm:py-2 border-b border-border-subtle shrink-0">
         <input
           type="text"
           placeholder={t('history.searchPlaceholder')}
@@ -473,7 +474,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
               return (
                 <div key={group} className="mb-2">
                   {/* 分组标题 */}
-                  <div className="sticky top-0 z-10 px-4 py-2 bg-background-elevated border-b border-border-subtle">
+                  <div className="sticky top-0 z-10 px-3 sm:px-4 py-1.5 sm:py-2 bg-background-elevated border-b border-border-subtle">
                     <span className="text-xs font-medium text-text-tertiary">
                       {groupLabels[group]}
                       <span className="ml-2 text-text-muted">({items.length})</span>
@@ -491,7 +492,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
                       return (
                         <li
                           key={item.id}
-                          className={`flex items-start gap-3 px-4 py-3 hover:bg-background-hover transition-colors ${index > 0 ? 'border-t border-border-subtle' : ''}`}
+                          className={`flex items-start gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 hover:bg-background-hover transition-colors ${index > 0 ? 'border-t border-border-subtle' : ''}`}
                         >
                           {/* 引擎标识 */}
                           <div className={`mt-0.5 ${engineInfo.color}`}>
@@ -507,7 +508,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
                               </span>
                             </div>
 
-                            <div className="flex items-center gap-4 text-xs text-text-tertiary mb-1.5">
+                            <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs text-text-tertiary mb-1.5">
                               <span className="flex items-center gap-1">
                                 <MessageSquare className="w-3 h-3" />
                                 {t('history.messages', { count: item.messageCount })}
@@ -598,7 +599,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
       </div>
 
       {/* 底部提示 */}
-      <div className="px-4 py-2 border-t border-border-subtle text-xs text-text-tertiary shrink-0">
+      <div className="px-3 sm:px-4 py-1.5 sm:py-2 border-t border-border-subtle text-xs text-text-tertiary shrink-0">
         <div className="flex items-center justify-between">
           <div>
             <p>{t('history.claudeCodeHint')}</p>

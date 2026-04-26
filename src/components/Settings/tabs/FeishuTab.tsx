@@ -109,6 +109,7 @@ export function FeishuTab({ loading }: FeishuTabProps) {
       initializedRef.current = true;
       setEditingInstance(activeInstance);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- activeInstance/editingInstance compared by id
   }, [activeInstance?.id, editingInstance?.id]);
 
   const handleSave = async () => {

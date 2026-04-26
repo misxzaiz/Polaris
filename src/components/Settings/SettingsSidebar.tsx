@@ -13,11 +13,10 @@ import {
   IconMic,
   IconMessageSquareText,
 } from '../Common/Icons';
-import { Sparkles, Shield, Cpu } from 'lucide-react';
+import { Sparkles, Shield, Cpu, Code2, Globe } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 export type SettingsTabId =
-  | 'auto-mode'
   | 'general'
   | 'system-prompt'
   | 'prompt-snippet'
@@ -30,7 +29,10 @@ export type SettingsTabId =
   | 'speech'
   | 'assistant'
   | 'mcp'
-  | 'advanced';
+  | 'lsp'
+  | 'auto-mode'
+  | 'advanced'
+  | 'web';
 
 export interface SettingsNavItem {
   id: SettingsTabId;
@@ -46,7 +48,6 @@ interface SettingsSidebarProps {
 }
 
 const NAV_ITEMS: SettingsNavItem[] = [
-  { id: 'auto-mode', icon: <Shield size={16} />, labelKey: 'nav.autoMode' },
   { id: 'general', icon: <IconGeneral size={16} />, labelKey: 'nav.general' },
   { id: 'system-prompt', icon: <IconMessageSquareText size={16} />, labelKey: 'nav.systemPrompt' },
   { id: 'prompt-snippet', icon: <IconMessageSquareText size={16} />, labelKey: 'nav.promptSnippet' },
@@ -58,7 +59,10 @@ const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'feishu', icon: <IconBot size={16} />, labelKey: 'nav.feishu' },
   { id: 'speech', icon: <IconMic size={16} />, labelKey: 'nav.speech' },
   { id: 'assistant', icon: <Sparkles size={16} />, labelKey: 'nav.assistant' },
-  { id: 'mcp' as const, icon: <Cpu size={16} />, labelKey: 'nav.mcp' },
+  { id: 'mcp', icon: <Cpu size={16} />, labelKey: 'nav.mcp' },
+  { id: 'lsp', icon: <Code2 size={16} />, labelKey: 'nav.lsp' },
+  { id: 'auto-mode', icon: <Shield size={16} />, labelKey: 'nav.autoMode' },
+  { id: 'web', icon: <Globe size={16} />, labelKey: 'nav.web' },
   // { id: 'advanced', icon: <IconSettings size={16} />, labelKey: 'nav.advanced' },
 ];
 
@@ -66,9 +70,9 @@ export function SettingsSidebar({ activeTab, onTabChange, searchQuery, onSearchC
   const { t } = useTranslation('settings');
 
   return (
-    <div className="w-48 flex-shrink-0 border-r border-border-subtle bg-background-elevated flex flex-col">
-      {/* 搜索框 */}
-      <div className="p-3 border-b border-border-subtle">
+    <div className="sm:w-48 sm:flex-shrink-0 sm:border-r sm:border-b-0 border-b border-border-subtle bg-background-elevated flex sm:flex-col">
+      {/* 搜索框 — 小屏隐藏，大屏显示 */}
+      <div className="hidden sm:block p-3 border-b border-border-subtle">
         <div className="relative">
           <input
             type="text"
@@ -83,20 +87,20 @@ export function SettingsSidebar({ activeTab, onTabChange, searchQuery, onSearchC
         </div>
       </div>
 
-      {/* 导航列表 */}
-      <nav className="flex-1 overflow-y-auto py-2">
+      {/* 导航列表 — 小屏水平滚动，大屏垂直列表 */}
+      <nav className="flex sm:flex-col overflow-x-auto sm:overflow-y-auto sm:flex-1 py-0 sm:py-2">
         {NAV_ITEMS.map((item) => (
           <button
             key={item.id}
             onClick={() => onTabChange(item.id)}
-            className={`w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm transition-colors ${
+            className={`flex-shrink-0 flex items-center gap-2 px-4 py-2.5 text-left text-sm transition-colors sm:w-full ${
               activeTab === item.id
-                ? 'bg-primary/10 text-primary border-r-2 border-primary'
+                ? 'bg-primary/10 text-primary border-b-2 sm:border-b-0 sm:border-r-2 border-primary'
                 : 'text-text-secondary hover:bg-surface hover:text-text-primary'
             }`}
           >
             <span className="flex-shrink-0">{item.icon}</span>
-            <span>{t(item.labelKey)}</span>
+            <span className="whitespace-nowrap">{t(item.labelKey)}</span>
           </button>
         ))}
       </nav>

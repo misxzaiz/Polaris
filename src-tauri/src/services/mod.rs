@@ -13,6 +13,7 @@ pub mod scheduler_mcp_server;
 pub mod todo_mcp_server;
 pub mod unified_todo_repository;
 pub mod unified_requirement_repository;
+pub mod unified_knowledge_repository;
 pub mod unified_scheduler_repository;
 pub mod requirements_mcp_server;
 
@@ -22,6 +23,11 @@ pub use auto_mode_service::AutoModeService;
 
 pub mod cli_info_service;
 pub use cli_info_service::CliInfoService;
+
+pub mod cli_resolver;
+
+pub mod lsp;
+pub mod lsp_config_repository;
 
 pub mod mcp_manager_service;
 pub use mcp_manager_service::McpManagerService;

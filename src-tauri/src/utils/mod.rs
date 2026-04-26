@@ -46,6 +46,7 @@ impl SchedulerLock {
     }
 
     /// 强制释放锁（用于重置/接管）
+    #[allow(dead_code)]
     pub fn force_release() -> io::Result<()> {
         #[cfg(target_os = "windows")]
         {
@@ -59,6 +60,7 @@ impl SchedulerLock {
     }
 
     /// 检查是否有其他实例持有锁
+    #[allow(dead_code)]
     pub fn is_locked() -> bool {
         Self::try_acquire().map(|g| g.is_none()).unwrap_or(false)
     }

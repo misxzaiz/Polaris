@@ -1,3 +1,4 @@
+import { generateUUID } from '@/utils/uuid';
 /**
  * SessionStoreManager 实现
  *
@@ -143,7 +144,7 @@ function createSessionManagerStore() {
 
     createSession: (options: CreateSessionOptions) => {
       // 使用指定的 ID 或生成新的 UUID
-      const sessionId = options.id || crypto.randomUUID()
+      const sessionId = options.id || generateUUID()
       const timestamp = new Date().toISOString()
 
       log.info('createSession 调用', { sessionId, optionsWorkspaceId: options.workspaceId, optionsType: options.type, optionsTitle: options.title })
@@ -340,8 +341,8 @@ function createSessionManagerStore() {
         ? state.stores.get(state.activeSessionId)
         : null
 
-      if (currentStore && currentStore.getState().isStreaming) {
-        get().addToBackground(state.activeSessionId!)
+      if (currentStore && currentStore.getState().isStreaming && state.activeSessionId) {
+        get().addToBackground(state.activeSessionId)
       }
 
       // 切换到新会话

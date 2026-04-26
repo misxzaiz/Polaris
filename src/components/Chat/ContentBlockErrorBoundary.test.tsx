@@ -160,7 +160,7 @@ describe('ContentBlockErrorBoundary', () => {
         return <div>恢复后的内容</div>;
       }
 
-      const { rerender } = render(
+      render(
         <ContentBlockErrorBoundary>
           <ConditionalThrow />
         </ContentBlockErrorBoundary>

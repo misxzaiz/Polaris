@@ -5,7 +5,7 @@
  * 使用独立的 contextId 避免与主聊天会话冲突
  */
 
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '@/services/transport'
 import { getEventRouter, createContextId } from './eventRouter'
 import type { GitDiffEntry } from '@/types/git'
 import { createLogger } from '../utils/logger'

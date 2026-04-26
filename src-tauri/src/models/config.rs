@@ -37,7 +37,7 @@ impl EngineId {
     }
 
     /// 从字符串解析
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "claude-code" => Some(Self::ClaudeCode),
             _ => None,
@@ -68,7 +68,7 @@ impl FloatingWindowMode {
     }
 
     /// 从字符串解析
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "auto" => Some(Self::Auto),
             "manual" => Some(Self::Manual),
@@ -226,7 +226,7 @@ impl From<&QQBotInstanceConfig> for QQBotRuntimeConfig {
 }
 
 /// QQ Bot 集成配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QQBotConfig {
     /// 是否启用 QQ Bot 集成（全局开关）
@@ -253,16 +253,6 @@ pub enum IntegrationDisplayMode {
     Separate,
     /// 两处都显示
     Both,
-}
-
-impl Default for QQBotConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            instances: Vec::new(),
-            active_instance_id: None,
-        }
-    }
 }
 
 /// Feishu (飞书) 实例配置
@@ -385,7 +375,7 @@ impl From<&FeishuInstanceConfig> for FeishuRuntimeConfig {
 }
 
 /// Feishu 集成配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FeishuConfig {
     /// 是否启用飞书集成（全局开关）
@@ -397,16 +387,6 @@ pub struct FeishuConfig {
     /// 当前激活的实例 ID
     #[serde(default)]
     pub active_instance_id: Option<String>,
-}
-
-impl Default for FeishuConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            instances: Vec::new(),
-            active_instance_id: None,
-        }
-    }
 }
 
 
@@ -477,7 +457,7 @@ pub struct SpeechConfig {
 }
 
 /// 唤醒词配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WakeWordConfig {
     /// 是否启用唤醒词模式
@@ -487,15 +467,6 @@ pub struct WakeWordConfig {
     /// 唤醒词列表
     #[serde(default)]
     pub words: Vec<String>,
-}
-
-impl Default for WakeWordConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            words: Vec::new(),
-        }
-    }
 }
 
 /// 语音提醒配置
@@ -703,6 +674,47 @@ impl Default for AssistantClaudeCodeConfig {
     }
 }
 
+/// Web 访问层配置（LAN HTTP/WS 服务）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebConfig {
+    /// 是否启用 Web 服务（默认不启动）
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// 监听地址
+    #[serde(default = "default_web_host")]
+    pub host: String,
+
+    /// 监听端口
+    #[serde(default = "default_web_port")]
+    pub port: u16,
+
+    /// 认证 Token（None → 首次启动自动生成）
+    #[serde(default)]
+    pub token: Option<String>,
+
+    /// 是否启用 Token 认证（false → 允许无认证访问，适用于安全内网）
+    #[serde(default = "default_true")]
+    pub auth_enabled: bool,
+}
+
+fn default_web_host() -> String { "0.0.0.0".to_string() }
+fn default_web_port() -> u16 { 9800 }
+fn default_true() -> bool { true }
+
+impl Default for WebConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            host: default_web_host(),
+            port: default_web_port(),
+            token: None,
+            auth_enabled: true,
+        }
+    }
+}
+
 /// 系统提示词模式
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -716,7 +728,7 @@ pub enum SystemPromptMode {
 }
 
 /// 系统提示词配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemPromptConfig {
     /// 是否启用自定义系统提示词
@@ -732,18 +744,8 @@ pub struct SystemPromptConfig {
     pub custom_prompt: String,
 }
 
-impl Default for SystemPromptConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            mode: SystemPromptMode::default(),
-            custom_prompt: String::new(),
-        }
-    }
-}
-
 /// AI 助手配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AssistantConfig {
     /// 是否启用助手模块
@@ -763,15 +765,25 @@ pub struct AssistantConfig {
     pub claude_code: AssistantClaudeCodeConfig,
 }
 
-impl Default for AssistantConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            llm: AssistantLLMConfig::default(),
-            system_prompt: SystemPromptConfig::default(),
-            claude_code: AssistantClaudeCodeConfig::default(),
-        }
-    }
+/// 应用配置（新版本）
+///
+/// 使用嵌套结构，支持多个 AI 引擎
+/// 工作区条目（持久化到配置文件，跨桌面/Web 共享）
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceEntry {
+    /// 唯一 ID
+    pub id: String,
+    /// 工作区名称
+    pub name: String,
+    /// 绝对路径
+    pub path: String,
+    /// 创建时间 ISO 8601
+    #[serde(default)]
+    pub created_at: Option<String>,
+    /// 最后访问时间 ISO 8601
+    #[serde(default)]
+    pub last_accessed: Option<String>,
 }
 
 /// 应用配置（新版本）
@@ -845,6 +857,18 @@ pub struct Config {
     #[serde(default)]
     pub assistant: AssistantConfig,
 
+    /// Web 访问层配置
+    #[serde(default)]
+    pub web: WebConfig,
+
+    /// 工作区列表（跨桌面/Web 共享，持久化到配置文件）
+    #[serde(default)]
+    pub workspaces: Vec<WorkspaceEntry>,
+
+    /// 当前激活的工作区 ID
+    #[serde(default)]
+    pub current_workspace_id: Option<String>,
+
     // === 旧字段，保持向后兼容 ===
     /// @deprecated 请使用 claude_code.cli_path
     #[serde(default)]
@@ -875,6 +899,9 @@ impl Default for Config {
             voice_notification: None,
             voice_commands: None,
             assistant: AssistantConfig::default(),
+            web: WebConfig::default(),
+            workspaces: Vec::new(),
+            current_workspace_id: None,
             claude_cmd: None,
         }
     }
@@ -895,14 +922,14 @@ impl Config {
 
     /// 确保 default_engine 有效
     pub fn validate(&mut self) {
-        if EngineId::from_str(&self.default_engine).is_none() {
+        if EngineId::parse(&self.default_engine).is_none() {
             self.default_engine = "claude-code".to_string();
         }
     }
 
     /// 获取当前引擎 ID
     pub fn get_engine_id(&self) -> EngineId {
-        EngineId::from_str(&self.default_engine)
+        EngineId::parse(&self.default_engine)
             .unwrap_or(EngineId::ClaudeCode)
     }
 

@@ -100,6 +100,7 @@ export function ClaudePathSelector({
     if (mode === 'auto') {
       detectPaths();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- detectPaths is stable function
   }, [mode, engineType]);
 
   // Claude Code 使用 CLI 路径选择

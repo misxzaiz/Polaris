@@ -25,7 +25,7 @@ async function ensureWorkspace(): Promise<string> {
   }
 
   // 验证工作区路径是否存在并可访问
-  const { invoke } = await import('@tauri-apps/api/core')
+  const { invoke } = await import('@/services/transport')
 
   try {
     const exists = await invoke<boolean>('path_exists', {

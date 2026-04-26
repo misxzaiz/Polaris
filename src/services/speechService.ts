@@ -213,7 +213,7 @@ export class SpeechService {
         setTimeout(() => {
           try {
             this.recognition?.start();
-          } catch (e) {
+          } catch {
             // 忽略重复启动错误
           }
         }, 100);

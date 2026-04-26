@@ -350,9 +350,7 @@ impl TaskStorage for LocalFileStorage {
         }
 
         // Validate trigger value format
-        if let Err(e) = validate_trigger_value(&params.trigger_type, &params.trigger_value) {
-            return Err(e);
-        }
+        validate_trigger_value(&params.trigger_type, &params.trigger_value)?;
 
         let mut data = self.read_tasks_file()?;
         let now = Utc::now().timestamp();

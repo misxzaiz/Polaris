@@ -18,10 +18,11 @@ pub enum Platform {
 }
 
 /// 连接状态（细化状态机）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ConnectionState {
     /// 未连接
+    #[default]
     Disconnected,
     /// 连接中（正在建立 WebSocket）
     Connecting,
@@ -33,12 +34,6 @@ pub enum ConnectionState {
     Failed,
     /// 重连中
     Reconnecting,
-}
-
-impl Default for ConnectionState {
-    fn default() -> Self {
-        Self::Disconnected
-    }
 }
 
 impl std::fmt::Display for ConnectionState {

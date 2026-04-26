@@ -1,0 +1,245 @@
+/**
+ * Polaris 角色动画样式
+ *
+ * 定义角色各部件的 CSS 关键帧动画和表情驱动的样式规则。
+ * 通过 .expression-{name} 父级 class 驱动子元素动画。
+ */
+
+/* ============================================
+   关键帧定义
+   ============================================ */
+
+/* 天线脉冲 */
+@keyframes antenna-pulse {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
+}
+
+/* 能量环旋转 */
+@keyframes energy-ring-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* 角色呼吸（整体轻微缩放） */
+@keyframes character-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.015); }
+}
+
+/* 眨眼 */
+@keyframes character-blink {
+  0%, 42%, 58%, 100% { opacity: 1; }
+  50% { opacity: 0.08; }
+}
+
+/* 耳机信号波纹 */
+@keyframes headphone-wave {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 0.15; }
+}
+
+/* 思考时眼睛漫游 */
+@keyframes eye-wander {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(2px, -2px); }
+  50% { transform: translate(-1px, 1px); }
+  75% { transform: translate(1px, -1px); }
+}
+
+/* 星形闪烁 */
+@keyframes star-twinkle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.08); }
+}
+
+/* 嘴部说话动画（CSS fallback，JS mouthOpen 优先） */
+@keyframes mouth-speak {
+  0%, 100% { transform: scaleY(1); }
+  25% { transform: scaleY(1.15); }
+  50% { transform: scaleY(0.9); }
+  75% { transform: scaleY(1.1); }
+}
+
+/* 整体进入动画 */
+@keyframes character-appear {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* 错误时抖动 */
+@keyframes character-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-2px); }
+  40% { transform: translateX(2px); }
+  60% { transform: translateX(-1px); }
+  80% { transform: translateX(1px); }
+}
+
+/* 休眠时缓慢上下浮动 */
+@keyframes character-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+/* ============================================
+   角色容器基础样式
+   ============================================ */
+
+.polaris-character {
+  display: inline-block;
+  animation: character-breathe 3s ease-in-out infinite;
+  transition: transform 0.3s ease;
+}
+
+/* 进入动画 */
+.polaris-character-enter {
+  animation: character-appear 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* ============================================
+   表情驱动样式
+   ============================================ */
+
+/* --- idle --- */
+.expression-idle .character-antenna-tip {
+  animation: antenna-pulse 2s ease-in-out infinite;
+}
+
+.expression-idle .character-energy-ring {
+  animation: energy-ring-rotate 20s linear infinite;
+}
+
+/* --- thinking --- */
+.expression-thinking {
+  animation: character-breathe 1.5s ease-in-out infinite;
+}
+
+.expression-thinking .character-antenna-tip {
+  animation: antenna-pulse 1s ease-in-out infinite;
+}
+
+.expression-thinking .character-energy-ring {
+  animation: energy-ring-rotate 8s linear infinite;
+}
+
+/* --- deep_thought --- */
+.expression-deep_thought {
+  animation: character-breathe 4s ease-in-out infinite;
+}
+
+.expression-deep_thought .character-antenna-tip {
+  animation: antenna-pulse 3s ease-in-out infinite;
+}
+
+.expression-deep_thought .character-energy-ring {
+  animation: energy-ring-rotate 15s linear infinite;
+}
+
+/* --- speaking --- */
+.expression-speaking .character-mouth {
+  animation: mouth-speak 0.4s ease-in-out infinite;
+}
+
+.expression-speaking .character-antenna-tip {
+  animation: antenna-pulse 0.8s ease-in-out infinite;
+}
+
+.expression-speaking .character-energy-ring {
+  animation: energy-ring-rotate 6s linear infinite;
+}
+
+/* --- working --- */
+.expression-working .character-antenna-tip {
+  animation: antenna-pulse 0.5s ease-in-out infinite;
+}
+
+.expression-working .character-energy-ring {
+  animation: energy-ring-rotate 4s linear infinite;
+}
+
+/* --- celebrating --- */
+.expression-celebrating {
+  animation: character-breathe 0.8s ease-in-out infinite;
+}
+
+.expression-celebrating .character-antenna-tip {
+  animation: antenna-pulse 0.4s ease-in-out infinite;
+}
+
+.expression-celebrating .character-energy-ring {
+  animation: energy-ring-rotate 3s linear infinite;
+}
+
+/* --- error --- */
+.expression-error {
+  animation: character-shake 0.5s ease-in-out;
+}
+
+.expression-error .character-antenna-tip {
+  animation: antenna-pulse 0.3s ease-in-out infinite;
+}
+
+.expression-error .character-energy-ring {
+  animation: energy-ring-rotate 2s linear infinite;
+}
+
+/* --- curious --- */
+.expression-curious .character-antenna-tip {
+  animation: antenna-pulse 1.5s ease-in-out infinite;
+}
+
+.expression-curious .character-energy-ring {
+  animation: energy-ring-rotate 12s linear infinite;
+}
+
+/* --- listening --- */
+.expression-listening .character-headphone-wave {
+  animation: headphone-wave 0.8s ease-in-out infinite;
+}
+
+.expression-listening .character-antenna-tip {
+  animation: antenna-pulse 0.6s ease-in-out infinite;
+}
+
+.expression-listening .character-energy-ring {
+  animation: energy-ring-rotate 5s linear infinite;
+}
+
+/* --- sleeping --- */
+.expression-sleeping {
+  animation: character-float 4s ease-in-out infinite;
+}
+
+.expression-sleeping .character-antenna-tip {
+  animation: antenna-pulse 4s ease-in-out infinite;
+}
+
+.expression-sleeping .character-energy-ring {
+  animation: energy-ring-rotate 30s linear infinite;
+}
+
+/* ============================================
+   尺寸变体
+   ============================================ */
+
+/* 头像尺寸（聊天气泡用） */
+.polaris-character-avatar {
+  filter: drop-shadow(0 0 2px rgba(59, 130, 246, 0.3));
+}
+
+/* 展示尺寸（EmptyState 用） */
+.polaris-character-showcase {
+  filter: drop-shadow(0 0 12px rgba(0, 212, 255, 0.2));
+}
+
+.polaris-character-showcase:hover {
+  filter: drop-shadow(0 0 16px rgba(0, 212, 255, 0.4));
+  transition: filter 0.3s ease;
+}

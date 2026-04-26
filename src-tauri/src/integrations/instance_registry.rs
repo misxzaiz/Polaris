@@ -236,7 +236,7 @@ impl InstanceRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::config::{QQBotRuntimeConfig, FeishuRuntimeConfig};
+    use crate::models::config::QQBotRuntimeConfig;
 
     #[test]
     fn test_instance_registry() {
@@ -250,6 +250,7 @@ mod tests {
             sandbox: true,
             display_mode: Default::default(),
             auto_connect: false,
+            work_dir: None,
         };
 
         let id = registry.add(PlatformInstance::new_qqbot("测试机器人", config));
@@ -281,6 +282,7 @@ mod tests {
             sandbox: false,
             display_mode: Default::default(),
             auto_connect: false,
+            work_dir: None,
         };
         registry.add(PlatformInstance::new_qqbot("正式机器人", config));
 

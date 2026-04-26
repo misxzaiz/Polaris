@@ -51,8 +51,10 @@ export interface FileEditorState {
   error: string | null;
   /** 文件是否被外部修改（与磁盘版本冲突） */
   isConflicted: boolean;
-  /** 待跳转的行号（编辑器加载后使用） */
+  /** 待跳转的行号（编辑器加载后使用，1-indexed） */
   pendingGotoLine: number | null;
+  /** 待跳转的列号（可选；0-indexed，与 LSP 约定一致） */
+  pendingGotoColumn: number | null;
 
   // ── 缓冲区状态（从 editorBufferStore 合并） ──
   /** 缓冲区 Map */
@@ -69,6 +71,13 @@ export interface FileEditorActions {
   openFile: (path: string, name: string) => Promise<void>;
   /** 打开文件并跳转到指定行 */
   openFileAtLine: (path: string, name: string, lineNumber: number) => Promise<void>;
+  /** 打开文件并跳转到指定位置（LSP 语义：line 1-indexed, column 0-indexed） */
+  openFileAtPosition: (
+    path: string,
+    name: string,
+    lineNumber: number,
+    column?: number,
+  ) => Promise<void>;
   /** 关闭文件（发送 editor:closed 事件） */
   closeFile: () => Promise<void>;
   /** 更新内容 */

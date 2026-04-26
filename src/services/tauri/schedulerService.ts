@@ -3,7 +3,7 @@
  * 包含：任务 CRUD、锁管理、模板、协议任务、协议模板、快捷片段
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/services/transport';
 import type { ScheduledTask, TriggerType, CreateTaskParams, TaskCategory, TaskMode, ProtocolTemplate, CreateProtocolTemplateParams } from '../../types/scheduler';
 import type { PromptTemplate, CreateTemplateParams } from '../../types/scheduler';
 import type { ProtocolDocuments } from '../../types/scheduler';

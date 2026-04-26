@@ -86,7 +86,7 @@ export function BranchTab() {
     } finally {
       setIsLoading(false)
     }
-  }, [currentWorkspace, getBranches, toast])
+  }, [currentWorkspace, getBranches, t, toast])
 
   useEffect(() => {
     loadBranches()
@@ -121,7 +121,7 @@ export function BranchTab() {
         setIsSwitching(false)
       }
     },
-    [currentWorkspace, checkoutBranch, refreshStatus, loadBranches, toast]
+    [currentWorkspace, checkoutBranch, refreshStatus, loadBranches, t, toast]
   )
 
   const handleSwitchBranch = useCallback(
@@ -149,7 +149,7 @@ export function BranchTab() {
     try {
       await stashSave(currentWorkspace.path, `WIP: switching to ${targetBranch}`, true)
       await doSwitchBranch(targetBranch)
-    } catch (err) {
+    } catch {
       // 忽略错误，doSwitchBranch 已经处理
     } finally {
       setIsSwitching(false)
@@ -200,7 +200,7 @@ export function BranchTab() {
     } finally {
       setIsCreating(false)
     }
-  }, [currentWorkspace, newBranchName, checkoutNewBranch, branches, createBranch, loadBranches, refreshStatus, toast])
+  }, [currentWorkspace, newBranchName, checkoutNewBranch, branches, createBranch, loadBranches, refreshStatus, t, toast])
 
   // 删除分支状态
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
@@ -233,7 +233,7 @@ export function BranchTab() {
     } finally {
       setIsDeleting(false)
     }
-  }, [currentWorkspace, branchToDelete, forceDelete, deleteBranch, loadBranches, toast])
+  }, [currentWorkspace, branchToDelete, forceDelete, deleteBranch, loadBranches, t, toast])
 
   const openDeleteDialog = useCallback((branchName: string) => {
     setBranchToDelete(branchName)
@@ -287,7 +287,7 @@ export function BranchTab() {
     } finally {
       setIsRenaming(false)
     }
-  }, [currentWorkspace, branchToRename, renamedBranchName, branches, renameBranch, loadBranches, refreshStatus, toast])
+  }, [currentWorkspace, branchToRename, renamedBranchName, branches, renameBranch, loadBranches, refreshStatus, t, toast])
 
   const openRenameDialog = useCallback((branchName: string) => {
     setBranchToRename(branchName)
@@ -334,7 +334,7 @@ export function BranchTab() {
     } finally {
       setIsMerging(false)
     }
-  }, [currentWorkspace, branchToMerge, noFF, mergeBranch, loadBranches, toast, status?.branch])
+  }, [currentWorkspace, branchToMerge, noFF, mergeBranch, loadBranches, t, toast, status?.branch])
 
   const openMergeDialog = useCallback((branchName: string) => {
     setBranchToMerge(branchName)
@@ -384,7 +384,7 @@ export function BranchTab() {
     } finally {
       setIsRebasing(false)
     }
-  }, [currentWorkspace, branchToRebase, rebaseBranch, loadBranches, toast])
+  }, [currentWorkspace, branchToRebase, rebaseBranch, loadBranches, t, toast])
 
   const handleRebaseAbort = useCallback(async () => {
     if (!currentWorkspace) return
@@ -403,7 +403,7 @@ export function BranchTab() {
     } finally {
       setIsRebasing(false)
     }
-  }, [currentWorkspace, rebaseAbort, loadBranches, toast])
+  }, [currentWorkspace, rebaseAbort, loadBranches, t, toast])
 
   const handleRebaseContinue = useCallback(async () => {
     if (!currentWorkspace) return
@@ -431,7 +431,7 @@ export function BranchTab() {
     } finally {
       setIsRebasing(false)
     }
-  }, [currentWorkspace, rebaseContinue, loadBranches, toast, branchToRebase])
+  }, [currentWorkspace, rebaseContinue, loadBranches, t, toast, branchToRebase])
 
   const openRebaseDialog = useCallback((branchName: string) => {
     setBranchToRebase(branchName)

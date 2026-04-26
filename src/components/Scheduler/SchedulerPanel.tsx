@@ -4,8 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { listen } from '@tauri-apps/api/event';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, listen } from '@/services/transport';
 import { Clock, MoreVertical, Search, Plus, FileText, ScrollText, Activity } from 'lucide-react';
 import { useSchedulerStore, useToastStore } from '../../stores';
 import type { ScheduledTask, CreateTaskParams, TaskDueEvent, TriggerType } from '../../types/scheduler';
@@ -239,8 +238,8 @@ export function SchedulerPanel() {
         if (!mounted) return;
 
         try {
-          toast.info(t('toast.taskDue'), t('toast.executing', { name: event.payload.taskName }));
-          await handleTaskDue(event.payload);
+          toast.info(t('toast.taskDue'), t('toast.executing', { name: event.taskName }));
+          await handleTaskDue(event);
         } catch (e) {
           log.error('任务执行失败', e instanceof Error ? e : new Error(String(e)));
           toast.error(t('toast.executeFailed'), e instanceof Error ? e.message : String(e));

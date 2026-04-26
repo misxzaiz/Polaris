@@ -6,7 +6,6 @@ import { FileIcon } from './FileIcon';
 import { ContextMenu, isHtmlFile, type ContextMenuItem } from './ContextMenu';
 import { useFileExplorerStore, useFileEditorStore } from '../../stores';
 import { openInDefaultApp } from '../../services/tauri';
-import { openPath } from '@tauri-apps/plugin-opener';
 import { InputDialog } from '../Common/InputDialog';
 import { ConfirmDialog } from '../Common/ConfirmDialog';
 import { IconFile, IconFolder, IconEdit, IconTrash, IconExternalLink, IconOpen } from '../Common/Icons';
@@ -212,13 +211,22 @@ export const FileTreeNode = memo<FileTreeNodeProps>(({
       label: file.is_dir ? t('contextMenu.openInExplorer') : t('contextMenu.openFolderInExplorer'),
       icon: <FolderOpen size={14} />,
       action: async () => {
+        const openInSystem = async (p: string) => {
+          if ('__TAURI_INTERNALS__' in window) {
+            try {
+              const { openPath } = await import('@tauri-apps/plugin-opener');
+              await openPath(p);
+            } catch {
+              // fallback: no-op in web mode
+            }
+          }
+        };
         if (file.is_dir) {
-          await openPath(file.path);
+          await openInSystem(file.path);
         } else {
-          // 对于文件，打开其所在目录
           const parentPath = getParentPath(file.path);
           if (parentPath) {
-            await openPath(parentPath);
+            await openInSystem(parentPath);
           }
         }
       },

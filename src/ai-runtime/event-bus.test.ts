@@ -13,7 +13,6 @@ import {
   EventChannel,
   getEventBus,
   resetEventBus,
-  type EventListener,
   type AIEvent,
 } from './event-bus'
 import { createTokenEvent, createErrorEvent } from './event'

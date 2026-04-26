@@ -4,7 +4,7 @@
  * 负责 Pull Request 相关操作
  */
 
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '@/services/transport'
 import type { PRSlice } from './types'
 import { parseGitError } from './types'
 import type { PullRequest, CreatePROptions } from '@/types/git'

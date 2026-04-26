@@ -3,7 +3,12 @@
  */
 
 import { useConfigStore } from '../../stores'
+import { useWorkspaceStore } from '../../stores/workspaceStore'
 import { DEFAULT_ASSISTANT_CONFIG, DEFAULT_SYSTEM_PROMPT_CONFIG, type SystemPromptConfig } from '../types'
+import { getKnowledgeService } from '../../services/knowledgeService'
+import { createLogger } from '../../utils/logger'
+
+const logger = createLogger('SystemPrompt')
 
 export const ASSISTANT_SYSTEM_PROMPT = `# 角色定义
 
@@ -143,4 +148,63 @@ export function getSystemPrompt(): string {
 
   // append 模式：默认 + 用户内容
   return `${ASSISTANT_SYSTEM_PROMPT}\n\n${config.customPrompt}`
+}
+
+/**
+ * 获取带知识增强的系统提示词（异步版本）
+ *
+ * 在原有系统提示词基础上，注入当前工作区的项目知识：
+ * - 模块架构概览
+ * - #module 引用解析（返回路径提示，AI 自行获取详情）
+ *
+ * 用于 Assistant Engine 等需要项目上下文的场景
+ */
+export async function getSystemPromptWithKnowledge(): Promise<string> {
+  const basePrompt = getSystemPrompt()
+
+  // 获取当前工作区
+  const workspaceStore = useWorkspaceStore.getState()
+  const currentWorkspace = workspaceStore.workspaces.find(
+    w => w.id === workspaceStore.currentWorkspaceId
+  )
+
+  if (!currentWorkspace?.path) {
+    return basePrompt
+  }
+
+  // 尝试加载知识索引
+  try {
+    const knowledgeService = getKnowledgeService()
+    await knowledgeService.loadIndex(currentWorkspace.path)
+
+    const index = knowledgeService.getIndex()
+    if (!index || index.modules.length === 0) {
+      return basePrompt
+    }
+
+    // 注入模块索引摘要（不注入完整文档，AI 通过 MCP 工具按需获取）
+    const lines: string[] = [basePrompt]
+    lines.push('')
+    lines.push('## 项目模块知识')
+    lines.push('')
+    lines.push(`当前项目共 ${index.modules.length} 个模块：`)
+    lines.push('')
+
+    for (const m of index.modules) {
+      lines.push(`- **${m.name}** (\`${m.id}\`) - 复杂度: ${m.complexity}`)
+    }
+
+    lines.push('')
+    lines.push('### 模块引用语法')
+    lines.push('- 用户使用 `#module-id` 引用模块时，**必须先调用 MCP 工具获取详情**')
+    lines.push('- 工具：`mcp__polaris-knowledge__get_module({ id: "module-id" })`')
+    lines.push('- **不要基于猜测回答**，必须先获取完整文档后再回答')
+    lines.push('')
+
+    return lines.join('\n')
+  } catch (error) {
+    // 知识加载失败不影响正常使用
+    logger.warn('知识增强失败:', error as Record<string, unknown>)
+    return basePrompt
+  }
 }

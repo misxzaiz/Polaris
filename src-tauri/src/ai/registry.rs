@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 use crate::error::{AppError, Result};
+use crate::models::config::Config;
 use super::traits::{AIEngine, EngineId, SessionOptions};
 use super::types::EngineStatus;
 
@@ -166,6 +167,16 @@ impl EngineRegistry {
         }
         tracing::warn!("[EngineRegistry] 未找到会话 {}", session_id);
         Ok(false)
+    }
+
+    /// 从 ConfigStore 刷新指定引擎的配置
+    ///
+    /// 在 start_session 前调用，确保用户通过设置/ConnectingOverlay 更新的
+    /// CLI 路径能及时生效。如果引擎不存在则静默跳过。
+    pub fn refresh_engine_config(&mut self, engine_id: &EngineId, config: &Config) {
+        if let Some(engine) = self.engines.get_mut(engine_id) {
+            engine.refresh_config(config);
+        }
     }
 }
 

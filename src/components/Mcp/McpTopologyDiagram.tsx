@@ -8,6 +8,7 @@
 import { useEffect, useRef, memo, useState } from 'react';
 import type { McpServerAggregate } from '../../types/mcp';
 import { getMermaidConfig } from '../../utils/mermaid-config';
+import { ZoomableDiagramContainer } from '../Common/ZoomableDiagramContainer';
 
 /** 从服务器推断状态颜色 */
 function getStatusColor(server: McpServerAggregate): string {
@@ -31,7 +32,7 @@ function generateMermaidCode(servers: McpServerAggregate[]): string {
     const color = getStatusColor(server);
     const transport = server.health?.transport ?? server.configs[0]?.transport ?? 'stdio';
     const scopes = [...new Set(server.configs.map((c) => c.scope))].join(',');
-    const label = `${server.name}<br/><small>${transport} · ${scopes}</small>`;
+    const label = `${server.name}<br/>${transport} · ${scopes}`;
 
     lines.push(`  ${nodeId}["${label}"]`);
     lines.push(`  style ${nodeId} fill:${color}33,stroke:${color},color:#F8F8F8`);
@@ -96,23 +97,18 @@ export const McpTopologyDiagram = memo(function McpTopologyDiagram({
   }
 
   return (
-    <div className="relative">
-      <div
-        ref={containerRef}
-        className="w-full overflow-x-auto"
-        style={{ minHeight: rendered ? undefined : '100px' }}
-      />
-      {!rendered && !error && (
-        <div className="flex justify-center py-4">
-          <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-        </div>
-      )}
-      {error && (
+    <ZoomableDiagramContainer
+      minHeight={100}
+      loading={!rendered && !error}
+      error={error}
+      errorRenderer={(_err) => (
         <pre className="mermaid text-xs text-text-muted p-2 bg-background-base rounded overflow-x-auto">
           {code}
         </pre>
       )}
-    </div>
+    >
+      <div ref={containerRef} />
+    </ZoomableDiagramContainer>
   );
 });
 

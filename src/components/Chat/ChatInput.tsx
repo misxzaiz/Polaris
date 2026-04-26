@@ -6,13 +6,13 @@
  * - 文件/图片附件 (粘贴、拖放、选择)
  * - 工作区引用 (@workspace)
  * - 文件引用 (@/path)
+ * - 知识模块引用 (#module-id)
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { IconSend, IconStop, IconPaperclip } from '../Common/Icons'
 import { useWorkspaceStore, useSessionStore } from '../../stores'
-import { useActiveSessionId } from '../../stores/conversationStore'
 import { voiceNotificationService } from '../../services/voiceNotificationService'
 import { useActiveSessionInputDraft, useActiveSessionActions, useActiveSessionWorkspace, usePendingQuestions } from '../../stores/conversationStore/useActiveSession'
 import { useDebouncedCallback } from '../../hooks/useDebounce'
@@ -24,11 +24,13 @@ import { SnippetParamPanel } from './SnippetParamPanel'
 import { useFileSearch } from '../../hooks/useFileSearch'
 import { useSnippetStore } from '../../stores/snippetStore'
 import { resolveTemplateVariables } from '../../services/workspaceReference'
+import { getKnowledgeService } from '../../services/knowledgeService'
 import type { FileMatch } from '../../services/fileSearch'
 import type { Workspace } from '../../types'
 import type { Attachment } from '../../types/attachment'
 import { createLogger } from '../../utils/logger'
 import type { PromptSnippet } from '../../types/promptSnippet'
+import type { ModuleIndexEntry } from '../../services/knowledgeService'
 import {
   createAttachment,
   validateAttachment,
@@ -56,9 +58,6 @@ export function ChatInput({
 }: ChatInputProps) {
   const { t } = useTranslation('chat')
 
-  // 当前会话 ID（用于检测会话切换）
-  const sessionId = useActiveSessionId()
-
   // 获取当前会话的工作区
   const currentWorkspace = useActiveSessionWorkspace()
 
@@ -80,10 +79,12 @@ export function ChatInput({
   )
 
   // 会话切换时同步 Store 草稿到本地 state（只在 sessionId 变化时执行）
+  // inputDraft 在 sessionId 变化时才会更新，无需添加依赖
   useEffect(() => {
     setLocalText(inputDraft.text)
     setLocalAttachments(inputDraft.attachments)
-  }, [sessionId])  // 依赖 sessionId 而非 inputDraft
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- inputDraft synced with sessionId only
+  }, [inputDraft])
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -111,6 +112,7 @@ export function ChatInput({
     clearSpeechTranscript,
     setSpeechCommand,
     setSpeechWakeActive,
+    setInputWasVoice,
   } = useSessionStore()
 
   // 处理语音识别文字
@@ -121,10 +123,12 @@ export function ChatInput({
       setLocalText(newText)
       // 持久化到 Store（立即，不防抖，因为是一次性追加）
       updateInputDraft({ text: newText, attachments })
+      // 标记输入来源为语音
+      setInputWasVoice(true)
       clearSpeechTranscript()
       textareaRef.current?.focus()
     }
-  }, [speechTranscript, clearSpeechTranscript, localText, attachments, updateInputDraft])
+  }, [speechTranscript, clearSpeechTranscript, localText, attachments, updateInputDraft, setInputWasVoice])
 
   // 获取待回答问题列表 & 管理浮窗可见性
   const pendingQuestions = usePendingQuestions()
@@ -165,9 +169,11 @@ export function ChatInput({
     const suggestionHeight = 320
     const shouldShowAbove = spaceBelow < suggestionHeight
 
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - 300))
+
     return {
       top: shouldShowAbove ? rect.top - suggestionHeight - 8 : rect.bottom + 8,
-      left: rect.left,
+      left,
     }
   }, [])
 
@@ -415,6 +421,53 @@ export function ChatInput({
       return
     }
 
+    // 5. 检测 #module 知识模块引用
+    const moduleMatch = textBeforeCursor.match(/#([a-z][a-z0-9-]*)$/)
+    if (moduleMatch) {
+      const query = moduleMatch[1].toLowerCase()
+      const knowledgeService = getKnowledgeService()
+      const modules = knowledgeService.searchModules(query)
+
+      const moduleItems: SuggestionItem[] = modules
+        .slice(0, 10)
+        .map((m: ModuleIndexEntry) => ({ type: 'module' as const, data: m }))
+
+      if (moduleItems.length > 0) {
+        setSuggestionItems(moduleItems)
+        setSelectedIndex(0)
+        setShowSuggestions(true)
+        setFileWorkspace(null)
+
+        const position = calculateSuggestionPosition()
+        setSuggestionPosition({ top: position.top, left: position.left })
+        return
+      }
+    }
+
+    // 6. 检测单独的 # 符号（显示所有知识模块）
+    const hashOnlyMatch = textBeforeCursor.match(/#$/)
+    if (hashOnlyMatch) {
+      const knowledgeService = getKnowledgeService()
+      const modules = knowledgeService.getModuleIds()
+
+      const moduleItems: SuggestionItem[] = modules
+        .slice(0, 15)
+        .map((id: string) => knowledgeService.getModule(id))
+        .filter((entry): entry is ModuleIndexEntry => entry != null)
+        .map((entry: ModuleIndexEntry) => ({ type: 'module' as const, data: entry }))
+
+      if (moduleItems.length > 0) {
+        setSuggestionItems(moduleItems)
+        setSelectedIndex(0)
+        setShowSuggestions(true)
+        setFileWorkspace(null)
+
+        const position = calculateSuggestionPosition()
+        setSuggestionPosition({ top: position.top, left: position.left })
+        return
+      }
+    }
+
     // 隐藏所有建议
     setShowSuggestions(false)
     setSuggestionItems([])
@@ -436,7 +489,17 @@ export function ChatInput({
         setSelectedIndex(0)
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- showSuggestions/suggestionItems toggles visibility only
   }, [fileMatches])
+
+  // 解析自动变量（提前定义，供 selectSuggestion 使用）
+  const resolveSnippetAutoVars = useCallback((content: string): string => {
+    return resolveTemplateVariables(content, {
+      workspaceName: currentWorkspace?.name ?? '',
+      workspacePath: currentWorkspace?.path ?? '',
+      contextWorkspaces: [],
+    })
+  }, [currentWorkspace])
 
   // 选择建议项
   const selectSuggestion = useCallback((item: SuggestionItem) => {
@@ -467,6 +530,10 @@ export function ChatInput({
     } else if (item.type === 'workspace') {
       const workspace = item.data as Workspace
       newText = textBeforeCursor.replace(/@[\w\u4e00-\u9fa5-/]*$/, `@${workspace.name}:`) + textAfterCursor
+    } else if (item.type === 'module') {
+      // 知识模块引用: #module-id
+      const module = item.data as { id: string }
+      newText = textBeforeCursor.replace(/#[a-z0-9-]*$/, `#${module.id} `) + textAfterCursor
     } else {
       const file = item.data as FileMatch
       if (fileWorkspace) {
@@ -491,7 +558,7 @@ export function ChatInput({
       const newCursorPos = newText.length - textAfterCursor.length
       textarea.setSelectionRange(newCursorPos, newCursorPos)
     }, 0)
-  }, [value, fileWorkspace, attachments, debouncedPersistDraft])
+  }, [value, fileWorkspace, attachments, debouncedPersistDraft, resolveSnippetAutoVars])
 
   const handleSend = useCallback(() => {
     const trimmed = value.trim()
@@ -620,20 +687,11 @@ export function ChatInput({
 
   const canSend = (value.trim() || attachments.length > 0) && !disabled && !isStreaming
 
-  // 解析自动变量
-  const resolveSnippetAutoVars = useCallback((content: string): string => {
-    return resolveTemplateVariables(content, {
-      workspaceName: currentWorkspace?.name ?? '',
-      workspacePath: currentWorkspace?.path ?? '',
-      contextWorkspaces: [],
-    })
-  }, [currentWorkspace])
-
   return (
     <div className="border-t border-border bg-background-elevated relative" ref={containerRef}>
       {/* 问题浮窗 - 定位在输入框上方 */}
       {pendingQuestions.length > 0 && !questionPanelHidden && (
-        <div className="absolute bottom-full left-0 right-0 mb-1 px-3 z-10">
+        <div className="absolute bottom-full left-0 right-0 mb-1 px-2 sm:px-3 z-10">
           <QuestionFloatingPanel
             questions={pendingQuestions}
             onFillAndSend={handleQuestionFillAndSend}
@@ -655,7 +713,7 @@ export function ChatInput({
           onCancel={() => setActiveSnippet(null)}
         />
       )}
-      <div className="p-3">
+      <div className="p-2 sm:p-3">
         {/* 附件预览 */}
         <AttachmentPreview
           attachments={attachments}
@@ -664,7 +722,7 @@ export function ChatInput({
 
         {/* 输入框容器 */}
         <div
-          className="relative flex items-end gap-2 bg-background-surface border border-border rounded-xl p-2 focus-within:ring-2 focus-within:ring-border focus-within:border-primary transition-all shadow-soft hover:shadow-medium"
+          className="relative flex items-end gap-1.5 sm:gap-2 bg-background-surface border border-border rounded-lg sm:rounded-xl p-1.5 sm:p-2 focus-within:ring-2 focus-within:ring-border focus-within:border-primary transition-all shadow-soft hover:shadow-medium"
           onDrop={handleDrop}
           onDragOver={handleDragOver}
         >
@@ -686,10 +744,10 @@ export function ChatInput({
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder={attachments.length > 0 ? t('input.placeholderWithAttachment') : t('input.placeholder')}
-            className="flex-1 px-2 py-1.5 bg-transparent text-text-primary placeholder:text-text-tertiary resize-none outline-none text-sm leading-relaxed"
+            className="flex-1 px-1.5 sm:px-2 py-1 sm:py-1.5 bg-transparent text-text-primary placeholder:text-text-tertiary resize-none outline-none text-sm leading-relaxed"
             disabled={disabled}
-            maxHeight={180}
-            minHeight={36}
+            maxHeight={160}
+            minHeight={40}
           />
 
           {/* 右侧按钮组 - 垂直布局 */}
@@ -698,7 +756,7 @@ export function ChatInput({
             <button
               onClick={openFileDialog}
               disabled={disabled || isStreaming}
-              className="shrink-0 p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors disabled:opacity-50"
+              className="shrink-0 p-2 sm:p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors disabled:opacity-50"
               title={t('input.addAttachment')}
             >
               <IconPaperclip size={18} />
@@ -708,7 +766,7 @@ export function ChatInput({
             {isStreaming && onInterrupt ? (
               <button
                 onClick={onInterrupt}
-                className="shrink-0 p-1.5 rounded-lg bg-danger text-white hover:bg-danger-hover transition-colors"
+                className="shrink-0 p-2 sm:p-1.5 rounded-lg bg-danger text-white hover:bg-danger-hover transition-colors"
                 title={t('input.interrupt')}
               >
                 <IconStop size={18} />
@@ -717,7 +775,7 @@ export function ChatInput({
               <button
                 onClick={handleSend}
                 disabled={!canSend}
-                className="shrink-0 p-1.5 rounded-lg bg-primary text-white hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="shrink-0 p-2 sm:p-1.5 rounded-lg bg-primary text-white hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 title={t('input.send')}
               >
                 <IconSend size={18} />

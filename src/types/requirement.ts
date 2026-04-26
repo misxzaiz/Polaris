@@ -1,3 +1,4 @@
+import { generateUUID } from '@/utils/uuid';
 /**
  * 需求队列类型定义
  *
@@ -184,7 +185,7 @@ export interface RequirementFileData {
 export function createDefaultRequirement(params: RequirementCreateParams): Requirement {
   const now = Date.now()
   return {
-    id: crypto.randomUUID(),
+    id: generateUUID(),
     title: params.title,
     description: params.description,
     status: params.generatedBy === 'ai' ? 'pending' : 'draft',

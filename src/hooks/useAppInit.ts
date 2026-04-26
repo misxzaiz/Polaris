@@ -20,7 +20,9 @@ import { useCliInfoStore } from '../stores/cliInfoStore';
 import { bootstrapEngines, type EngineId } from '../core/engine-bootstrap';
 import { bootstrapTools } from '../core/tool-bootstrap';
 import { voiceNotificationService } from '../services/voiceNotificationService';
+import { disconnect as disconnectTransport } from '../services/transport';
 import { createLogger } from '../utils/logger';
+import { currentMode } from '../services/transport';
 
 const log = createLogger('AppInit');
 
@@ -37,13 +39,42 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
 
   // 初始化配置（只执行一次）
   useEffect(() => {
+    let cancelled = false;
     const initializeApp = async () => {
       if (isInitialized.current) return;
-      isInitialized.current = true;
 
       try {
         // 先加载配置
         await loadConfig();
+
+        // 从服务端 Config 同步工作区列表（桌面端和 Web 端共享）
+        try {
+          await useWorkspaceStore.getState().syncFromServer();
+        } catch (err) {
+          log.warn('Workspace sync failed, using local cache', { error: String(err) });
+        }
+
+        // Web 模式兜底：如果同步后仍无工作区，用 workDir 自动创建
+        if (currentMode === 'http') {
+          const config = useConfigStore.getState().config;
+          const workDir = config?.workDir;
+          const workspaceStore = useWorkspaceStore.getState();
+          if (workDir && workspaceStore.workspaces.length === 0) {
+            log.info('Web mode: auto-creating default workspace', { workDir });
+            try {
+              await workspaceStore.createWorkspace(
+                workDir.split(/[/\\]/).pop() || 'Workspace',
+                workDir,
+                true,
+              );
+            } catch (err) {
+              log.error('Auto-create workspace failed', err as Error);
+            }
+          }
+        }
+
+        if (cancelled) return;
+        isInitialized.current = true;
 
         // 绑定语音提醒服务的配置获取
         voiceNotificationService.initialize(() => useConfigStore.getState().config);
@@ -125,9 +156,11 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
     const cleanupCliListeners = useCliInfoStore.getState().initEventListeners();
 
     return () => {
+      cancelled = true;
       const { cleanup } = useIntegrationStore.getState();
       cleanup();
       cleanupCliListeners();
+      disconnectTransport();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

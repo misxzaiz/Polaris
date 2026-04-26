@@ -5,6 +5,9 @@
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import type { FileMatch } from '../services/fileSearch';
+import { createLogger } from './logger';
+
+const logger = createLogger('cache');
 
 // 配置 marked
 marked.setOptions({
@@ -389,7 +392,7 @@ export class MarkdownRenderCache {
 
       return html;
     } catch (error) {
-      console.error('[MarkdownRenderCache] Render error:', error);
+      logger.error('Markdown 渲染错误:', error as Error);
       // 降级处理：转义 HTML
       return content
         .replace(/&/g, '&amp;')
@@ -444,7 +447,7 @@ export class MarkdownRenderCache {
       // 合并 HTML
       // 注意：这里简化处理，直接拼接。对于块级元素可能需要额外处理
       return oldHtml + newHtml;
-    } catch (error) {
+    } catch {
       // 增量渲染失败，返回 null 表示需要完整渲染
       return null;
     }

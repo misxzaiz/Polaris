@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { BookOpen, User, Bot, ArrowDown, Wrench } from 'lucide-react';
 import type { ConversationRound } from '../../utils/conversationRounds';
+import { useWindowSize } from '@/hooks/useWindowSize';
 
 interface ChatNavigatorProps {
   /** 对话轮次列表 */
@@ -38,6 +39,7 @@ export function ChatNavigator({
   onScrollToRound,
 }: ChatNavigatorProps) {
   const { t } = useTranslation('chat');
+  const { isCompact } = useWindowSize({ compactThreshold: 500 });
   const [isPanelVisible, setIsPanelVisible] = useState(false);
 
   // 使用 ref 存储悬停状态，避免闭包陷阱
@@ -107,13 +109,24 @@ export function ChatNavigator({
     return () => clearTimers();
   }, [clearTimers]);
 
-  // 面板定位 - 固定在右侧边缘，垂直居中
-  const panelStyle = useMemo(() => ({
-    right: '24px',
-    top: '50%',
-    transform: 'translateY(-50%)',
-    maxHeight: '70vh',
-  }), []);
+  // 面板定位
+  const panelStyle = useMemo(() => {
+    if (isCompact) {
+      return {
+        right: '8px',
+        left: '8px',
+        top: 'auto',
+        bottom: '60px',
+        maxHeight: '50vh',
+      };
+    }
+    return {
+      right: '24px',
+      top: '50%',
+      transform: 'translateY(-50%)',
+      maxHeight: '70vh',
+    };
+  }, [isCompact]);
 
   // 当面板显示或当前项变化时，滚动到当前项
   useEffect(() => {
@@ -137,6 +150,28 @@ export function ChatNavigator({
     setIsPanelVisible(false);
   }, [onScrollToBottom]);
 
+  // 触摸/点击切换面板
+  const handleFloatingBallClick = useCallback(() => {
+    setIsPanelVisible(prev => !prev);
+  }, []);
+
+  // 点击面板外部关闭（触摸模式）
+  const containerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!isPanelVisible || !isCompact) return;
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsPanelVisible(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [isPanelVisible, isCompact]);
+
   if (rounds.length === 0) {
     return null;
   }
@@ -145,12 +180,12 @@ export function ChatNavigator({
     <>
       {/* 贴边悬浮球 - 固定在右边缘垂直居中 */}
       <div
+        ref={containerRef}
         className={clsx(
           'fixed right-0 top-1/2 -translate-y-1/2',
-          // 尺寸：28x48px，贴边设计
-          'w-7 h-12 -mr-3',
+          // 尺寸：紧凑模式更大方便触摸
+          isCompact ? 'w-9 h-9 -mr-0 rounded-l-xl' : 'w-7 h-12 -mr-3 rounded-l-xl',
           // 实心背景
-          'rounded-l-xl',
           'bg-[#1A1A1F]',
           'border border-border/50 border-r-0',
           'shadow-lg shadow-black/5',
@@ -166,6 +201,7 @@ export function ChatNavigator({
         )}
         onMouseEnter={handleFloatingBallMouseEnter}
         onMouseLeave={handleFloatingBallMouseLeave}
+        onClick={handleFloatingBallClick}
         title={t('navigator.title')}
       >
         {/* 列表图标 - 表示对话轮次 */}
@@ -194,7 +230,9 @@ export function ChatNavigator({
       {isPanelVisible && (
         <div
           className={clsx(
-            'absolute w-56 bg-[#1A1A1F]',
+            isCompact
+              ? 'w-auto bg-[#1A1A1F]'
+              : 'w-56 bg-[#1A1A1F]',
             'border border-border rounded-lg shadow-lg shadow-primary/10',
             'overflow-hidden animate-in fade-in zoom-in-95 duration-150',
             'pointer-events-auto flex flex-col',

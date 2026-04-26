@@ -93,6 +93,7 @@ describe('useAssistant', () => {
 
     it('should handle errors', async () => {
       mockEngine.processMessage.mockImplementationOnce(async function* () {
+        yield 'error'
         throw new Error('Test error')
       })
 

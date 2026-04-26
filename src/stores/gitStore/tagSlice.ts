@@ -4,7 +4,7 @@
  * 负责标签管理：创建、删除、获取列表
  */
 
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '@/services/transport'
 import type { TagSlice } from './types'
 import { parseGitError } from './types'
 import type { GitTag } from '@/types/git'

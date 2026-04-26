@@ -137,13 +137,18 @@ class VoiceNotificationService {
   /**
    * 高优先级播报：中断当前播放
    * 用于 AI 回复朗读
+   * @param text 要朗读的文本
+   * @param force 是否强制播放（true=强制播放, false=不播放）
    */
-  private async speak(text: string): Promise<void> {
-    const ttsConfig = this.getTTSConfig();
-    if (!ttsConfig?.enabled || !ttsConfig?.autoPlay) return;
+  private async speak(text: string, force?: boolean): Promise<void> {
+    // force === true → 强制播放（语音输入触发）
+    // force === false → 不播放（键盘输入）
+    if (force === false) {
+      return;
+    }
 
     try {
-      await ttsService.speak(text);
+      await ttsService.speak(text, { force: force === true });
     } catch (error) {
       log.debug('AI 回复朗读失败', { error: String(error) });
     }
@@ -221,8 +226,10 @@ class VoiceNotificationService {
   /**
    * AI 回复自动朗读
    * 接收 ChatMessage 联合类型，仅处理 assistant 消息
+   * @param message AI 消息对象
+   * @param options.force 是否强制播放（绕过 autoPlay 检查）
    */
-  speakAIResponse(message: ChatMessage): void {
+  speakAIResponse(message: ChatMessage, options?: { force?: boolean }): void {
     const config = this.getNotificationConfig();
     if (!config.enabled) return;
 
@@ -236,8 +243,8 @@ class VoiceNotificationService {
     }
 
     const text = cleanTextForSpeech(rawText);
-    log.info('开始朗读 AI 回复', { textLength: text.length });
-    this.speak(text);
+    log.info('开始朗读 AI 回复', { textLength: text.length, force: options?.force });
+    this.speak(text, options?.force);
   }
 }
 

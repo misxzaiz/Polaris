@@ -1,3 +1,4 @@
+import { generateUUID } from '@/utils/uuid';
 /**
  * Base CLI Engine - CLI 类型引擎的通用基类
  *
@@ -120,7 +121,7 @@ export abstract class BaseCLISession extends BaseSession {
     sessionConfig?: AISessionConfig,
     cliConfig?: CLISessionConfig
   ) {
-    const sessionId = crypto.randomUUID()
+    const sessionId = generateUUID()
     super({ id: sessionId, config: sessionConfig })
     this.cliConfig = cliConfig || {}
   }
@@ -429,19 +430,34 @@ export abstract class BaseCLIEngine implements AIEngine {
   /**
    * 检查 CLI 是否已安装
    *
-   * 子类可覆盖此方法实现特定的检查逻辑
+   * 通过 Tauri 后端检查 CLI 可执行文件是否存在
    */
   protected async checkCLIInstalled(): Promise<boolean> {
-    // TODO(Sprint4): 调用 Tauri 后端检查 CLI 是否安装
-    // invoke('check_cli_installed', { cliName: this.descriptor.defaultExecutable })
-    return true
+    try {
+      const { invoke } = await import('@/services/transport')
+      return await invoke<boolean>('cli_check_installed', {
+        cliName: this.descriptor.defaultExecutable
+      })
+    } catch (e) {
+      log.warn(`检查 CLI 安装状态失败: ${this.descriptor.defaultExecutable}`, { error: e })
+      return false
+    }
   }
 
   /**
    * 获取 CLI 版本
+   *
+   * 调用 `${this.descriptor.defaultExecutable} --version` 获取版本
    */
   async getVersion(): Promise<string | null> {
-    // TODO(Sprint4): 调用 `${this.descriptor.defaultExecutable} --version` 获取版本
-    return null
+    try {
+      const { invoke } = await import('@/services/transport')
+      return await invoke<string>('cli_get_version_for', {
+        cliName: this.descriptor.defaultExecutable
+      })
+    } catch (e) {
+      log.warn(`获取 CLI 版本失败: ${this.descriptor.defaultExecutable}`, { error: e })
+      return null
+    }
   }
 }

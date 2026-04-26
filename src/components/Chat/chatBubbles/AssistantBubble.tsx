@@ -7,6 +7,7 @@ import type { AssistantChatMessage, TextBlock } from '../../../types';
 import { formatContent, extractAssistantText } from '../chatUtils/helpers';
 import { renderBlocksWithGrouping } from '../blockGrouping';
 import { MessageContextMenu } from './MessageContextMenu';
+import { CharacterAvatar } from '../../Character';
 
 export const AssistantBubble = memo(function AssistantBubble({
   message,
@@ -58,10 +59,7 @@ export const AssistantBubble = memo(function AssistantBubble({
     <>
       <div className="flex gap-2 my-2" onContextMenu={handleContextMenu}>
         {/* Avatar */}
-        <div className="w-5 h-5 rounded-full bg-gradient-to-br from-primary to-primary-600
-                        flex items-center justify-center shrink-0 mt-0.5">
-          <span className="text-[10px] font-bold text-white">P</span>
-        </div>
+        <CharacterAvatar />
 
         {/* 内容 */}
         <div className="flex-1 space-y-1 min-w-0">

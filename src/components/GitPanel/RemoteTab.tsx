@@ -81,7 +81,7 @@ export function RemoteTab() {
     } finally {
       setIsLoading(false)
     }
-  }, [currentWorkspace, getRemotes, toast])
+  }, [currentWorkspace, getRemotes, t, toast])
 
   useEffect(() => {
     loadRemotes()
@@ -299,7 +299,7 @@ export function RemoteTab() {
                     )}
                   </button>
                   <button
-                    onClick={() => copyToClipboard(remote.fetchUrl!)}
+                    onClick={() => remote.fetchUrl && copyToClipboard(remote.fetchUrl)}
                     className="p-0.5 text-text-tertiary hover:text-text-primary hover:bg-background-surface rounded transition-colors"
                     title={t('remote.copyUrl')}
                   >

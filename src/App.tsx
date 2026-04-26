@@ -17,6 +17,8 @@ import { SchedulerPanel } from './components/Scheduler/SchedulerPanel';
 import { RequirementPanel } from './components/RequirementPanel/RequirementPanel';
 import { TerminalPanel } from './components/Terminal/TerminalPanel';
 import { AssistantPanel } from './assistant';
+import { KnowledgePanel } from './components/KnowledgePanel';
+import { ProblemsPanel } from './components/Problems/ProblemsPanel';
 
 // 懒加载大型组件，减少初始 bundle 大小
 const SettingsModal = lazy(() => import('./components/Settings/SettingsModal').then(m => ({ default: m.SettingsModal })));
@@ -25,6 +27,7 @@ const IntegrationPanel = lazy(() => import('./components/Integration/Integration
 const McpPanel = lazy(() => import('./components/Mcp/McpPanel').then(m => ({ default: m.McpPanel })));
 const CreateWorkspaceModal = lazy(() => import('./components/Workspace/CreateWorkspaceModal').then(m => ({ default: m.CreateWorkspaceModal })));
 const FileSearchModal = lazy(() => import('./components/Editor/FileSearchModal').then(m => ({ default: m.FileSearchModal })));
+const SymbolPalette = lazy(() => import('./components/Editor/SymbolPalette').then(m => ({ default: m.SymbolPalette })));
 
 import { useConfigStore, useViewStore, useWorkspaceStore, useTabStore } from './stores';
 import { useActiveSessionActions, useActiveSessionStreaming, useActiveSessionError } from './stores/conversationStore/useActiveSession';
@@ -56,17 +59,17 @@ function App() {
 
   // Store 状态
   const workspaces = useWorkspaceStore(state => state.workspaces);
-  const currentWorkspace = useWorkspaceStore(state => state.getCurrentWorkspace());
-  const {
-    leftPanelType,
-    rightPanelCollapsed,
-    toggleRightPanel,
-    showSessionHistory,
-    toggleSessionHistory,
-    multiSessionMode,
-  } = useViewStore();
-  const { openDiffTab, tabs } = useTabStore();
-  const hasOpenTabs = tabs.length > 0;
+  const currentWorkspace = useWorkspaceStore(
+    state => state.workspaces.find(w => w.id === state.currentWorkspaceId) || null
+  );
+  const leftPanelType = useViewStore(state => state.leftPanelType);
+  const rightPanelCollapsed = useViewStore(state => state.rightPanelCollapsed);
+  const toggleRightPanel = useViewStore(state => state.toggleRightPanel);
+  const showSessionHistory = useViewStore(state => state.showSessionHistory);
+  const toggleSessionHistory = useViewStore(state => state.toggleSessionHistory);
+  const multiSessionMode = useViewStore(state => state.multiSessionMode);
+  const openDiffTab = useTabStore(state => state.openDiffTab);
+  const hasOpenTabs = useTabStore(state => state.tabs.length > 0);
 
   // === 拆分后的 Hooks ===
   useAppInit({
@@ -104,8 +107,7 @@ function App() {
   const hasLeftPanel = !isCompact && leftPanelType !== 'none';
   const hasCenterStage = !isCompact && hasOpenTabs;
 
-  const leftPanelFillRemaining = hasLeftPanel && !hasCenterStage && !rightPanelCollapsed;
-  const centerStageFillRemaining = hasCenterStage && !rightPanelCollapsed;
+  // 右侧面板填充模式：无编辑器时自适应填充，有编辑器时固定宽度
   const rightPanelFillRemaining = !hasCenterStage;
 
   // === 引擎切换 ===
@@ -150,7 +152,7 @@ function App() {
           />
 
           {!isCompact && hasLeftPanel && (
-            <LeftPanel fillRemaining={leftPanelFillRemaining}>
+            <LeftPanel>
               <LeftPanelContent
                 filesContent={<FileExplorer />}
                 gitContent={<GitPanel onOpenDiffInTab={(diff) => openDiffTab(diff)} />}
@@ -163,14 +165,16 @@ function App() {
                 integrationContent={<Suspense fallback={loadingFallback}><IntegrationPanel /></Suspense>}
                 assistantContent={<AssistantPanel />}
                 mcpContent={<Suspense fallback={loadingFallback}><McpPanel /></Suspense>}
+                knowledgeContent={<KnowledgePanel />}
+                problemsContent={<ProblemsPanel />}
               />
             </LeftPanel>
           )}
 
-          {!isCompact && hasCenterStage && <CenterStage fillRemaining={centerStageFillRemaining} />}
+          {!isCompact && hasCenterStage && <CenterStage fillRemaining={!rightPanelCollapsed} />}
 
           {(isCompact || !rightPanelCollapsed) && (
-            <RightPanel fillRemaining={isCompact || rightPanelFillRemaining}>
+            <RightPanel fillRemaining={rightPanelFillRemaining}>
               {error && (
                 <div className="mx-4 mt-4 p-3 bg-danger-faint border border-danger/30 rounded-xl text-danger text-sm shrink-0">
                   {error}
@@ -238,13 +242,18 @@ function App() {
         {showSessionHistory && (
           <div
             className="fixed z-50 bg-[#1A1A1F] border border-border rounded-l-xl shadow-xl animate-in slide-in-from-right duration-200"
-            style={{ top: '10%', right: '0', height: '80%', width: '400px' }}
+            style={{ top: '10%', right: '0', height: '80%', width: 'min(400px, 90vw)' }}
           >
             <SessionHistoryPanel onClose={toggleSessionHistory} />
           </div>
         )}
 
         <SelectionContextMenu />
+
+        {/* LSP 符号面板（Mod+Shift+O），只有在 LSP keymap 触发后才有内容挂载 */}
+        <Suspense fallback={null}>
+          <SymbolPalette />
+        </Suspense>
       </Layout>
     </ErrorBoundary>
   );

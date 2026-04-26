@@ -4,7 +4,7 @@
  * 负责 Git Stash 管理：保存、应用、删除
  */
 
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '@/services/transport'
 import type { StashSlice } from './types'
 import { parseGitError } from './types'
 import type { GitStashEntry } from '@/types/git'

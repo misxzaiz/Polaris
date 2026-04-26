@@ -8,7 +8,7 @@
 import { create } from 'zustand';
 import type { FileEditorStore, BufferEntry } from '../types';
 import * as tauri from '../services/tauri';
-import { emit, listen } from '@tauri-apps/api/event';
+import { emit, listen } from '@/services/transport';
 import { createLogger } from '../utils/logger';
 import type { FsChangeEvent } from '../types/fileExplorer';
 
@@ -72,6 +72,7 @@ export const useFileEditorStore = create<FileEditorStore>((set, get) => ({
   error: null,
   isConflicted: false,
   pendingGotoLine: null,
+  pendingGotoColumn: null,
 
   // ── 缓冲区初始状态 ──
   buffers: new Map(),
@@ -135,18 +136,30 @@ export const useFileEditorStore = create<FileEditorStore>((set, get) => ({
   },
 
   openFileAtLine: async (path: string, name: string, lineNumber: number) => {
+    await get().openFileAtPosition(path, name, lineNumber);
+  },
+
+  openFileAtPosition: async (
+    path: string,
+    name: string,
+    lineNumber: number,
+    column?: number,
+  ) => {
     const { currentFile } = get();
 
-    if (currentFile?.path === path) {
-      set({ pendingGotoLine: lineNumber });
-    } else {
-      set({ pendingGotoLine: lineNumber });
+    set({ pendingGotoLine: lineNumber, pendingGotoColumn: column ?? null });
+    if (currentFile?.path !== path) {
       await get().openFile(path, name);
     }
   },
 
   setPendingGotoLine: (line: number | null) => {
-    set({ pendingGotoLine: line });
+    // line=null 同时清掉 column，避免上一次跳转的残留列号影响下一次
+    if (line === null) {
+      set({ pendingGotoLine: null, pendingGotoColumn: null });
+    } else {
+      set({ pendingGotoLine: line });
+    }
   },
 
   closeFile: async () => {
@@ -402,7 +415,7 @@ export function initEditorFileChangeListener(): () => void {
       ? filePath.substring(0, filePath.lastIndexOf('/'))
       : '';
 
-    const affectedDirs = event.payload.affectedDirs;
+    const affectedDirs = event.affectedDirs;
     const isAffected = affectedDirs.some(dir => {
       const normalizedDir = dir.replace(/\\/g, '/');
       return fileDir === normalizedDir || fileDir.startsWith(normalizedDir + '/');

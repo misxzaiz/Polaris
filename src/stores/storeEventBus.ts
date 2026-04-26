@@ -81,13 +81,18 @@ class StoreEventBus {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, new Set())
     }
-    const set = this.listeners.get(event)!
-    set.add(listener as Listener)
+    const set = this.listeners.get(event)
+    if (set) {
+      set.add(listener as Listener)
+    }
 
     return () => {
-      set.delete(listener as Listener)
-      if (set.size === 0) {
-        this.listeners.delete(event)
+      const s = this.listeners.get(event)
+      if (s) {
+        s.delete(listener as Listener)
+        if (s.size === 0) {
+          this.listeners.delete(event)
+        }
       }
     }
   }

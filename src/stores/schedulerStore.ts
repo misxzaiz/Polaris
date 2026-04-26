@@ -21,6 +21,7 @@ import type {
 } from '../types/scheduler';
 import type { AIEvent } from '../ai-runtime';
 import * as tauri from '../services/tauri';
+import { invoke as transportInvoke } from '@/services/transport';
 import { getEventRouter } from '../services/eventRouter';
 import { extractErrorMessage } from '../utils/errorMapping';
 import { createLogger } from '../utils/logger'
@@ -553,8 +554,7 @@ export const useSchedulerStore = create<SchedulerState>((set, get) => ({
       }
 
       // 调用 AI 引擎
-      const { invoke } = await import('@tauri-apps/api/core');
-      const sessionId = await invoke<string>('start_chat', {
+      const sessionId = await transportInvoke<string>('start_chat', {
         message: finalPrompt,
         options: {
           workDir,

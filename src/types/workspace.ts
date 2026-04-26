@@ -47,6 +47,10 @@ export interface WorkspaceActions {
   deleteWorkspace: (id: string) => Promise<void>;
   updateWorkspace: (id: string, updates: Partial<Workspace>) => Promise<void>;
 
+  // 服务端同步
+  /** 从服务端 Config 同步工作区列表（应用初始化时调用） */
+  syncFromServer: () => Promise<void>;
+
   // 工具方法
   getCurrentWorkspace: () => Workspace | null;
   validateWorkspacePath: (path: string) => Promise<boolean>;

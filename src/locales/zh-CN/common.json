@@ -53,6 +53,7 @@
     "integrationPanel": "机器人管理",
     "mcpPanel": "MCP 服务器",
     "assistantPanel": "AI 助手",
+    "knowledgePanel": "项目知识",
     "showAIPanel": "显示 AI 面板",
     "hideAIPanel": "隐藏 AI 面板",
     "showActivityBar": "显示侧边栏",
@@ -100,7 +101,9 @@
     "deleteFailed": "删除工作区失败"
   },
   "toast": {
-    "close": "关闭通知"
+    "close": "关闭通知",
+    "sessionComplete": "会话「{{title}}」已完成",
+    "switch": "切换"
   },
   "tabs": {
     "openFileOrDiff": "打开文件或查看差异",

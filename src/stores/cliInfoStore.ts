@@ -8,7 +8,9 @@
 
 import { create } from 'zustand'
 import { createLogger } from '../utils/logger'
-import { listen, UnlistenFn } from '@tauri-apps/api/event'
+import { listen } from '@/services/transport'
+
+type UnlistenFn = () => void
 
 const log = createLogger('CliInfoStore')
 
@@ -107,24 +109,7 @@ interface CliInfoState {
   initEventListeners: () => () => void
 }
 
-// ============================================================
-// Tauri invoke 封装
-// ============================================================
-
-async function invokeCliGetAgents(): Promise<CliAgentInfo[]> {
-  const { invoke } = await import('@tauri-apps/api/core')
-  return invoke('cli_get_agents')
-}
-
-async function invokeCliGetAuthStatus(): Promise<CliAuthStatus> {
-  const { invoke } = await import('@tauri-apps/api/core')
-  return invoke('cli_get_auth_status')
-}
-
-async function invokeCliGetVersion(): Promise<string> {
-  const { invoke } = await import('@tauri-apps/api/core')
-  return invoke('cli_get_version')
-}
+import { invoke } from '@/services/transport'
 
 // ============================================================
 // Store 创建
@@ -145,7 +130,7 @@ export const useCliInfoStore = create<CliInfoState>((set, get) => ({
   fetchAgents: async () => {
     try {
       log.debug('获取 CLI Agent 列表...')
-      const agents = await invokeCliGetAgents()
+      const agents = await invoke<CliAgentInfo[]>('cli_get_agents')
       log.debug(`获取到 ${agents.length} 个 Agent`)
       set({ agents, error: null })
     } catch (err) {
@@ -158,7 +143,7 @@ export const useCliInfoStore = create<CliInfoState>((set, get) => ({
   fetchAuthStatus: async () => {
     try {
       log.debug('获取认证状态...')
-      const authStatus = await invokeCliGetAuthStatus()
+      const authStatus = await invoke<CliAuthStatus>('cli_get_auth_status')
       log.debug(`认证状态: loggedIn=${authStatus.loggedIn}, method=${authStatus.authMethod}`)
       set({ authStatus, error: null })
     } catch (err) {
@@ -170,7 +155,7 @@ export const useCliInfoStore = create<CliInfoState>((set, get) => ({
 
   fetchVersion: async () => {
     try {
-      const version = await invokeCliGetVersion()
+      const version = await invoke<string>('cli_get_version')
       set({ version })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -271,8 +256,8 @@ export const useCliInfoStore = create<CliInfoState>((set, get) => ({
 
     // 监听 cli_init 事件
     listen<CliInitEventData>('cli_init', (event) => {
-      log.debug('收到 cli_init 事件', { agents: event.payload.agents?.length })
-      get().updateFromInit(event.payload)
+      log.debug('收到 cli_init 事件', { agents: event.agents?.length })
+      get().updateFromInit(event)
     }).then((fn) => {
       unlisten = fn
     })

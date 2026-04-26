@@ -46,7 +46,9 @@ export function SessionConfigSelector({
 }: SessionConfigSelectorProps) {
   const { t } = useTranslation('chat')
   const [openDropdown, setOpenDropdown] = useState<SelectorType | null>(null)
+  const [customInput, setCustomInput] = useState<{ type: SelectorType; value: string } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   // 点击外部关闭下拉
   useEffect(() => {
@@ -74,25 +76,27 @@ export function SessionConfigSelector({
 
   // 获取当前选择的显示名称
   const getAgentLabel = useCallback((agentId?: string) => {
-    if (!agentId) return t('sessionConfig.defaultAgent', '通用')
+    if (!agentId) return t('sessionConfig.noAgent', '不设置')
     const agent = agentList.find(a => a.id === agentId)
     return agent?.name || agentId
   }, [t, agentList])
 
   const getModelLabel = useCallback((modelId?: string) => {
-    if (!modelId) return t('sessionConfig.defaultModel', 'Sonnet')
+    if (!modelId) return t('sessionConfig.noModel', '不设置')
     const model = PRESET_MODELS.find(m => m.id === modelId)
     return model?.name || modelId
   }, [t])
 
-  const getEffortLabel = useCallback((effort?: EffortLevel) => {
-    const opt = EFFORT_OPTIONS.find(o => o.value === (effort || 'medium'))
-    return opt?.label || effort || '中'
+  const getEffortLabel = useCallback((effort?: EffortLevel | '') => {
+    if (!effort) return t('sessionConfig.noEffort', '不设置')
+    const opt = EFFORT_OPTIONS.find(o => o.value === effort)
+    return opt?.label || effort
   }, [])
 
-  const getPermissionLabel = useCallback((mode?: PermissionMode) => {
-    const opt = PERMISSION_MODE_OPTIONS.find(o => o.value === (mode || 'default'))
-    return opt?.label || mode || '默认'
+  const getPermissionLabel = useCallback((mode?: PermissionMode | '') => {
+    if (!mode) return t('sessionConfig.noPermission', '不设置')
+    const opt = PERMISSION_MODE_OPTIONS.find(o => o.value === mode)
+    return opt?.label || mode
   }, [])
 
   // 通用选择处理
@@ -105,6 +109,24 @@ export function SessionConfigSelector({
     })
     setOpenDropdown(null)
   }, [config, onChange])
+
+  // 处理自定义输入确认
+  const handleCustomInputConfirm = useCallback((type: SelectorType) => {
+    if (!customInput || customInput.type !== type) return
+    const value = customInput.value.trim()
+    if (value) {
+      handleSelect(type, value)
+    }
+    setCustomInput(null)
+  }, [customInput, handleSelect])
+
+  // 打开自定义输入模式
+  const openCustomInput = useCallback((type: SelectorType) => {
+    setCustomInput({ type, value: '' })
+    setOpenDropdown(null)
+    // 延迟聚焦输入框
+    setTimeout(() => inputRef.current?.focus(), 0)
+  }, [])
 
   // 渲染下拉选项
   const renderDropdown = (type: SelectorType) => {
@@ -179,6 +201,19 @@ export function SessionConfigSelector({
             )}
           </button>
         ))}
+        {/* 分隔线 */}
+        <div className="border-t border-border my-1" />
+        {/* 自定义输入选项 */}
+        <button
+          onClick={() => openCustomInput(type)}
+          className={clsx(
+            'w-full px-3 py-2 text-left text-xs',
+            'hover:bg-background-hover transition-colors',
+            'text-text-tertiary italic'
+          )}
+        >
+          ✏️ 自定义...
+        </button>
       </div>
     )
   }
@@ -244,6 +279,42 @@ export function SessionConfigSelector({
         const { icon, label, getValue } = selectorMeta[type]
         return <React.Fragment key={type}>{renderSelector(type, icon, label, getValue())}</React.Fragment>
       })}
+      {/* 自定义输入浮层 */}
+      {customInput && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="bg-background-elevated border border-border rounded-lg p-4 min-w-[280px] shadow-xl">
+            <div className="text-xs text-text-secondary mb-2">
+              输入自定义 {selectorMeta[customInput.type].label} 值：
+            </div>
+            <input
+              ref={inputRef}
+              type="text"
+              value={customInput.value}
+              onChange={(e) => setCustomInput({ ...customInput, value: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleCustomInputConfirm(customInput.type)
+                if (e.key === 'Escape') setCustomInput(null)
+              }}
+              className="w-full px-3 py-2 text-sm bg-background-surface border border-border rounded-lg outline-none focus:border-primary"
+              placeholder={`输入 ${customInput.type} 值...`}
+            />
+            <div className="flex justify-end gap-2 mt-3">
+              <button
+                onClick={() => setCustomInput(null)}
+                className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => handleCustomInputConfirm(customInput.type)}
+                className="px-3 py-1.5 text-xs bg-primary text-white rounded hover:bg-primary-hover"
+              >
+                确认
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -259,7 +330,9 @@ export function CompactSessionSelector({
   disabled = false,
 }: SessionConfigSelectorProps) {
   const [openDropdown, setOpenDropdown] = useState<SelectorType | null>(null)
+  const [customInput, setCustomInput] = useState<{ type: SelectorType; value: string } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   // 动态 Agent 列表
   const dynamicAgents = useCliInfoStore(s => s.agents)
@@ -292,14 +365,38 @@ export function CompactSessionSelector({
     setOpenDropdown(null)
   }, [config, onChange])
 
+  // 处理自定义输入确认
+  const handleCustomInputConfirm = useCallback((type: SelectorType) => {
+    if (!customInput || customInput.type !== type) return
+    const value = customInput.value.trim()
+    if (value) {
+      handleSelect(type, value)
+    }
+    setCustomInput(null)
+  }, [customInput, handleSelect])
+
+  // 打开自定义输入模式
+  const openCustomInput = useCallback((type: SelectorType) => {
+    setCustomInput({ type, value: '' })
+    setOpenDropdown(null)
+    setTimeout(() => inputRef.current?.focus(), 0)
+  }, [])
+
   const getAgentLabel = (agentId?: string) => {
-    if (!agentId) return '通用'
+    if (!agentId) return '不设置'
     return agentList.find(a => a.id === agentId)?.name || agentId
   }
 
   const getModelLabel = (modelId?: string) => {
-    if (!modelId) return 'Sonnet'
+    if (!modelId) return '不设置'
     return PRESET_MODELS.find(m => m.id === modelId)?.name || modelId
+  }
+
+  const selectorLabels: Record<SelectorType, string> = {
+    agent: 'Agent',
+    model: '模型',
+    effort: '努力',
+    permission: '权限',
   }
 
   return (
@@ -335,6 +432,13 @@ export function CompactSessionSelector({
                 {agent.name}
               </button>
             ))}
+            <div className="border-t border-border my-1" />
+            <button
+              onClick={() => openCustomInput('agent')}
+              className="w-full px-2 py-1.5 text-left text-xs hover:bg-background-hover text-text-tertiary italic"
+            >
+              ✏️ 自定义...
+            </button>
           </div>
         )}
       </div>
@@ -370,9 +474,53 @@ export function CompactSessionSelector({
                 {model.name}
               </button>
             ))}
+            <div className="border-t border-border my-1" />
+            <button
+              onClick={() => openCustomInput('model')}
+              className="w-full px-2 py-1.5 text-left text-xs hover:bg-background-hover text-text-tertiary italic"
+            >
+              ✏️ 自定义...
+            </button>
           </div>
         )}
       </div>
+
+      {/* 自定义输入浮层 */}
+      {customInput && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="bg-background-elevated border border-border rounded-lg p-4 min-w-[280px] shadow-xl">
+            <div className="text-xs text-text-secondary mb-2">
+              输入自定义 {selectorLabels[customInput.type]} 值：
+            </div>
+            <input
+              ref={inputRef}
+              type="text"
+              value={customInput.value}
+              onChange={(e) => setCustomInput({ ...customInput, value: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleCustomInputConfirm(customInput.type)
+                if (e.key === 'Escape') setCustomInput(null)
+              }}
+              className="w-full px-3 py-2 text-sm bg-background-surface border border-border rounded-lg outline-none focus:border-primary"
+              placeholder={`输入 ${customInput.type} 值...`}
+            />
+            <div className="flex justify-end gap-2 mt-3">
+              <button
+                onClick={() => setCustomInput(null)}
+                className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => handleCustomInputConfirm(customInput.type)}
+                className="px-3 py-1.5 text-xs bg-primary text-white rounded hover:bg-primary-hover"
+              >
+                确认
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

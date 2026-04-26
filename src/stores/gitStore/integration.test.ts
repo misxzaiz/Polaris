@@ -19,7 +19,7 @@ import { createBranchSlice } from './branchSlice'
 import { createRemoteSlice } from './remoteSlice'
 import { createCommitSlice } from './commitSlice'
 import type { GitState, StatusState, StatusActions, BranchState, BranchActions, RemoteState, RemoteActions, CommitState, CommitActions } from './types'
-import type { GitRepositoryStatus, GitBranch, GitCommit } from '@/types/git'
+import type { GitRepositoryStatus, GitBranch } from '@/types/git'
 
 // 创建完整的测试 store
 type TestState = StatusState &
@@ -129,9 +129,6 @@ describe('GitStore Integration', () => {
         isCherryPicking: false,
         isReverting: false,
       }
-      const mockCommits: GitCommit[] = [
-        { sha: 'abc123', message: 'New commit', author: 'Test', date: '2024-01-01' },
-      ]
 
       mockInvoke
         .mockResolvedValueOnce('abc123') // git_commit

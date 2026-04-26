@@ -2,7 +2,7 @@
  * 文件搜索服务 - 用于 @file 引用
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/services/transport'
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('FileSearch');

@@ -35,7 +35,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
   const [newWakeWord, setNewWakeWord] = useState('');
   const [newWakeResponse, setNewWakeResponse] = useState('');
   const [newKeywordByCommand, setNewKeywordByCommand] = useState<Record<VoiceCommand, string>>({
-    send: '', clear: '', undo: '', interrupt: '',
+    send: '', clear: '', undo: '', interrupt: '', play: '',
   });
 
   // 获取语音配置（带默认值）
@@ -55,7 +55,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
     });
   };
 
-  const updateWakeWordConfig = (updates: Partial<WakeWordConfig>) => {
+  const updateWakeWordConfig = useCallback((updates: Partial<WakeWordConfig>) => {
     onConfigChange({
       ...config,
       wakeWord: {
@@ -63,7 +63,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
         ...updates,
       },
     });
-  };
+  }, [config, wakeWordConfig, onConfigChange]);
 
   const addWakeWord = useCallback(() => {
     const word = newWakeWord.trim();
@@ -83,7 +83,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
     }
   }, [addWakeWord]);
 
-  const updateNotifConfig = (updates: Partial<VoiceNotificationConfig>) => {
+  const updateNotifConfig = useCallback((updates: Partial<VoiceNotificationConfig>) => {
     const newNotifConfig = { ...notifConfig, ...updates };
     onConfigChange({
       ...config,
@@ -91,18 +91,18 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
     });
     // 配置变更时触发语音包重新生成
     voiceNotificationService.preGenerateVoicePackage();
-  };
+  }, [config, notifConfig, onConfigChange]);
 
   const addWakeResponseText = useCallback(() => {
     const text = newWakeResponse.trim();
     if (!text || notifConfig.wakeResponseTexts.includes(text)) return;
     updateNotifConfig({ wakeResponseTexts: [...notifConfig.wakeResponseTexts, text] });
     setNewWakeResponse('');
-  }, [newWakeResponse, notifConfig.wakeResponseTexts]);
+  }, [newWakeResponse, notifConfig.wakeResponseTexts, updateNotifConfig]);
 
   const removeWakeResponseText = useCallback((text: string) => {
     updateNotifConfig({ wakeResponseTexts: notifConfig.wakeResponseTexts.filter(t => t !== text) });
-  }, [notifConfig.wakeResponseTexts]);
+  }, [notifConfig.wakeResponseTexts, updateNotifConfig]);
 
   const handleWakeResponseKeyDown = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
@@ -113,9 +113,9 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
 
   // ===== 语音命令关键词管理 =====
 
-  const updateVoiceCommands = (newCommands: VoiceCommandEntry[]) => {
+  const updateVoiceCommands = useCallback((newCommands: VoiceCommandEntry[]) => {
     onConfigChange({ ...config, voiceCommands: newCommands });
-  };
+  }, [config, onConfigChange]);
 
   const addCommandKeyword = useCallback((commandType: VoiceCommand) => {
     const keyword = newKeywordByCommand[commandType]?.trim();
@@ -129,7 +129,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
       )
     );
     setNewKeywordByCommand(prev => ({ ...prev, [commandType]: '' }));
-  }, [newKeywordByCommand, voiceCommands]);
+  }, [newKeywordByCommand, voiceCommands, updateVoiceCommands]);
 
   const removeCommandKeyword = useCallback((commandType: VoiceCommand, keyword: string) => {
     updateVoiceCommands(
@@ -137,7 +137,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
         e.type === commandType ? { ...e, keywords: e.keywords.filter(k => k !== keyword) } : e
       )
     );
-  }, [voiceCommands]);
+  }, [voiceCommands, updateVoiceCommands]);
 
   const handleCommandKeywordKeyDown = useCallback((e: KeyboardEvent<HTMLInputElement>, commandType: VoiceCommand) => {
     if (e.key === 'Enter') {
@@ -148,7 +148,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
 
   const resetCommandsToDefault = useCallback(() => {
     updateVoiceCommands([...DEFAULT_VOICE_COMMAND_CONFIG]);
-  }, []);
+  }, [updateVoiceCommands]);
 
   const updateTTSConfig = (updates: Partial<typeof ttsConfig>) => {
     const newConfig = {

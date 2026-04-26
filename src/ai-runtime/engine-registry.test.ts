@@ -18,7 +18,6 @@ import {
   getEngine,
   listEngines,
   getDefaultEngine,
-  type EngineRegistryEvent,
 } from './engine-registry'
 import type { AIEngine, EngineCapabilities, AISession } from './engine'
 import { createCapabilities } from './engine'

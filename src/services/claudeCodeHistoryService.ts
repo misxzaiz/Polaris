@@ -1,3 +1,4 @@
+import { generateUUID } from '@/utils/uuid';
 /**
  * Claude Code 原生历史服务
  *
@@ -5,7 +6,7 @@
  * 即 ~/.claude/projects/{项目名}/sessions-index.json
  */
 
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '../services/tauri'
 import type { Message, ChatMessage, ContentBlock, UserChatMessage, AssistantChatMessage, SystemChatMessage, ToolCallBlock } from '../types'
 import { createLogger } from '../utils/logger'
 
@@ -223,7 +224,7 @@ export class ClaudeCodeHistoryService {
           if (item && typeof item === 'object') {
             if ('type' in item && item.type === 'tool_use') {
               toolCalls.push({
-                id: String(item.id || crypto.randomUUID()),
+                id: String(item.id || generateUUID()),
                 name: String(item.name || 'unknown'),
                 status: 'completed' as const,
                 input: item.input as Record<string, unknown> || {},
@@ -278,7 +279,7 @@ export class ClaudeCodeHistoryService {
         // 真正的用户消息 - 先输出累积的 assistant
         if (hasAssistant) {
           chatMessages.push({
-            id: crypto.randomUUID(),
+            id: generateUUID(),
             type: 'assistant',
             blocks: accumulatedBlocks,
             timestamp: accumulatedTimestamp,
@@ -291,7 +292,7 @@ export class ClaudeCodeHistoryService {
         // 提取用户消息内容
         const content = this.extractUserContent(msg.content)
         chatMessages.push({
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           type: 'user',
           content,
           timestamp,
@@ -310,7 +311,7 @@ export class ClaudeCodeHistoryService {
         // 系统消息 - 先输出累积的 assistant，再输出系统消息
         if (hasAssistant) {
           chatMessages.push({
-            id: crypto.randomUUID(),
+            id: generateUUID(),
             type: 'assistant',
             blocks: accumulatedBlocks,
             timestamp: accumulatedTimestamp,
@@ -321,7 +322,7 @@ export class ClaudeCodeHistoryService {
         }
 
         chatMessages.push({
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           type: 'system',
           content: String(msg.content || ''),
           timestamp,
@@ -332,7 +333,7 @@ export class ClaudeCodeHistoryService {
     // 处理最后剩余的 assistant 消息
     if (hasAssistant) {
       chatMessages.push({
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         type: 'assistant',
         blocks: accumulatedBlocks,
         timestamp: accumulatedTimestamp,
@@ -467,7 +468,7 @@ export class ClaudeCodeHistoryService {
             // 工具调用块
             const block: ToolCallBlock = {
               type: 'tool_call',
-              id: String(item.id || crypto.randomUUID()),
+              id: String(item.id || generateUUID()),
               name: String(item.name || 'unknown'),
               input: (item.input as Record<string, unknown>) || {},
               status: 'completed',

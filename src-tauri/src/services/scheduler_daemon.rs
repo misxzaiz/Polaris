@@ -9,7 +9,7 @@
  * 因为 AI 引擎执行需要复杂的事件处理。
  */
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -154,10 +154,10 @@ impl SchedulerDaemon {
 /// 检查到期任务并发送通知
 async fn check_and_notify_due_tasks(
     app_handle: &AppHandle,
-    config_dir: &PathBuf,
+    config_dir: &Path,
     workspace_path: &Option<PathBuf>,
 ) -> Result<()> {
-    let repository = UnifiedSchedulerRepository::new(config_dir.clone(), workspace_path.clone());
+    let repository = UnifiedSchedulerRepository::new(config_dir.to_path_buf(), workspace_path.clone());
 
     // 获取所有启用的任务
     let tasks = repository.list_tasks()?;

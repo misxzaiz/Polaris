@@ -116,6 +116,29 @@ export interface WindowSettings {
   compactOpacity: number;
 }
 
+/** Web 服务配置 */
+export interface WebConfig {
+  /** 是否启用 Web 服务 */
+  enabled: boolean;
+  /** 监听地址 */
+  host: string;
+  /** 监听端口 */
+  port: number;
+  /** 认证 token（自动生成） */
+  token?: string;
+  /** 是否启用 Token 认证（false = 无认证访问） */
+  authEnabled: boolean;
+}
+
+/** 工作区条目（持久化到服务端配置，跨桌面/Web 共享） */
+export interface WorkspaceEntry {
+  id: string;
+  name: string;
+  path: string;
+  createdAt?: string;
+  lastAccessed?: string;
+}
+
 /** 应用配置 */
 export interface Config {
   /** 当前选择的引擎 */
@@ -153,6 +176,12 @@ export interface Config {
   voiceCommands?: VoiceCommandEntry[];
   /** AI 助手配置 */
   assistant?: AssistantConfig;
+  /** Web 服务配置 */
+  web?: WebConfig;
+  /** 工作区列表（跨桌面/Web 共享） */
+  workspaces?: WorkspaceEntry[];
+  /** 当前激活的工作区 ID */
+  currentWorkspaceId?: string;
 }
 
 /** 健康状态 */

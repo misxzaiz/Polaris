@@ -7,7 +7,7 @@
  * - Toast 提示
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConfigStore, useToastStore } from '../../stores';
 import { Button } from '../Common';
@@ -26,8 +26,10 @@ import { AdvancedTab } from './tabs/AdvancedTab';
 import { AssistantTab } from './tabs/AssistantTab';
 import { AutoModeTab } from './tabs/AutoModeTab';
 import { McpSettingsTab } from '../Mcp/McpSettingsTab';
+import { LspTab } from './tabs/LspTab';
+import { WebTab } from './tabs/WebTab';
 import { createLogger } from '../../utils/logger';
-import type { Config } from '../../types';
+import type { Config, WebConfig } from '../../types';
 
 const log = createLogger('SettingsModal');
 
@@ -52,7 +54,9 @@ const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'speech': 'nav.speech',
   'assistant': 'nav.assistant',
   'mcp': 'nav.mcp',
+  'lsp': 'nav.lsp',
   'advanced': 'nav.advanced',
+  'web': 'nav.web',
 };
 
 export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
@@ -73,6 +77,10 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
       setLocalConfig(config);
     }
   }, [config]);
+
+  const handleWebConfigChange = useCallback((webConfig: WebConfig) => {
+    setLocalConfig((prev) => prev ? { ...prev, web: webConfig } : prev);
+  }, []);
 
   // 保存当前分组配置
   const handleSaveCurrentTab = async () => {
@@ -118,10 +126,10 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-background-elevated rounded-xl w-full max-w-4xl h-[85vh] flex flex-col shadow-soft overflow-hidden">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
+      <div className="bg-background-elevated rounded-xl w-full max-w-4xl h-[95vh] sm:h-[85vh] flex flex-col shadow-soft overflow-hidden">
         {/* 顶部标题栏 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border-subtle">
+        <div className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4 border-b border-border-subtle">
           <h2 className="text-lg font-semibold text-text-primary">{t('title')}</h2>
           <div className="flex items-center gap-3">
             <Button
@@ -142,7 +150,7 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
         </div>
 
         {/* 主体内容 */}
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-col sm:flex-row flex-1 overflow-hidden">
           {/* 左侧导航 */}
           <SettingsSidebar
             activeTab={activeTab}
@@ -161,7 +169,7 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
             )}
 
             {/* Tab 内容 */}
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-y-auto p-3 sm:p-6">
               <h3 className="text-base font-medium text-text-primary mb-4">
                 {t(TAB_TITLE_KEYS[activeTab])}
               </h3>
@@ -253,10 +261,18 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
               {activeTab === 'mcp' && (
                 <McpSettingsTab />
               )}
+
+              {activeTab === 'lsp' && (
+                <LspTab />
+              )}
+
+              {activeTab === 'web' && (
+                <WebTab loading={loading} onWebConfigChange={handleWebConfigChange} />
+              )}
             </div>
 
             {/* 底部保存按钮 - 支持分组保存 */}
-            <div className="px-6 py-4 border-t border-border-subtle bg-background-elevated">
+            <div className="px-3 sm:px-6 py-3 sm:py-4 border-t border-border-subtle bg-background-elevated">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-text-tertiary">
                   {t('currentGroup', '当前分组：{{name}}', { name: t(TAB_TITLE_KEYS[activeTab]) })}

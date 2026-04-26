@@ -133,7 +133,7 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
       <div
         ref={modalRef}
         data-modal="create-session"
-        className="bg-background-elevated rounded-xl p-6 w-full max-w-lg border border-border shadow-glow"
+        className="bg-background-elevated rounded-xl p-4 sm:p-6 w-full max-w-lg border border-border shadow-glow"
       >
         {/* 标题 */}
         <h2 className="text-lg font-semibold text-text-primary mb-4">

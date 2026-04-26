@@ -1,3 +1,4 @@
+import { generateUUID } from '@/utils/uuid';
 /**
  * ConversationStore 工厂函数
  *
@@ -6,13 +7,14 @@
 
 import { create, StoreApi, UseBoundStore } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '@/services/tauri'
 import type { ConversationStore, ConversationState, StoreDeps } from './types'
 import type { ChatMessage } from '../../types'
 import { handleAIEvent } from './eventHandler'
 import { toAppError, ErrorSource } from '../../types/errors'
 import { sessionStoreManager } from './sessionStoreManager'
-import { parseWorkspaceReferences, buildWorkspaceSystemPrompt, getUserSystemPrompt } from '../../services/workspaceReference'
+import { parseWorkspaceReferences, getUserSystemPrompt, getKnowledgeService } from '../../services/workspaceReference'
+import i18n from 'i18next'
 import { MessageCompactor, isCompacted } from '../../utils/messageCompactor'
 import { isEditTool, extractEditDiff } from '../../utils/diffExtractor'
 import { getSessionConfig } from '../sessionConfigStore'
@@ -318,7 +320,7 @@ export function createConversationStore(
           if (bufferToFlush) {
             set({
               currentMessage: {
-                id: crypto.randomUUID(),
+                id: generateUUID(),
                 blocks: [{ type: 'text', content: bufferToFlush }],
                 isStreaming: true,
               },
@@ -352,7 +354,7 @@ export function createConversationStore(
         const block = { type: 'thinking' as const, content }
         if (!currentMessage) {
           set({
-            currentMessage: { id: crypto.randomUUID(), blocks: [block], isStreaming: true },
+            currentMessage: { id: generateUUID(), blocks: [block], isStreaming: true },
             streamingUpdateCounter: streamingUpdateCounter + 1,
           })
         } else {
@@ -380,7 +382,7 @@ export function createConversationStore(
         if (!currentMessage) {
           newMap.set(toolId, 0)
           set({
-            currentMessage: { id: crypto.randomUUID(), blocks: [block], isStreaming: true },
+            currentMessage: { id: generateUUID(), blocks: [block], isStreaming: true },
             toolBlockMap: newMap,
             streamingUpdateCounter: streamingUpdateCounter + 1,
           })
@@ -450,7 +452,7 @@ export function createConversationStore(
         if (!currentMessage) {
           newMap.set(questionId, 0)
           set({
-            currentMessage: { id: crypto.randomUUID(), blocks: [block], isStreaming: true },
+            currentMessage: { id: generateUUID(), blocks: [block], isStreaming: true },
             questionBlockMap: newMap,
             streamingUpdateCounter: streamingUpdateCounter + 1,
           })
@@ -493,7 +495,7 @@ export function createConversationStore(
         if (!currentMessage) {
           newMap.set(planId, 0)
           set({
-            currentMessage: { id: crypto.randomUUID(), blocks: [block], isStreaming: true },
+            currentMessage: { id: generateUUID(), blocks: [block], isStreaming: true },
             planBlockMap: newMap,
             activePlanId: planId,
             streamingUpdateCounter: streamingUpdateCounter + 1,
@@ -553,7 +555,7 @@ export function createConversationStore(
         if (!currentMessage) {
           newMap.set(taskId, 0)
           set({
-            currentMessage: { id: crypto.randomUUID(), blocks: [block], isStreaming: true },
+            currentMessage: { id: generateUUID(), blocks: [block], isStreaming: true },
             agentRunBlockMap: newMap,
             activeTaskId: taskId,
             streamingUpdateCounter: streamingUpdateCounter + 1,
@@ -633,7 +635,7 @@ export function createConversationStore(
         if (!currentMessage) {
           newMap.set(groupId, 0)
           set({
-            currentMessage: { id: crypto.randomUUID(), blocks: [block], isStreaming: true },
+            currentMessage: { id: generateUUID(), blocks: [block], isStreaming: true },
             toolGroupBlockMap: newMap,
             streamingUpdateCounter: streamingUpdateCounter + 1,
           })
@@ -725,7 +727,7 @@ export function createConversationStore(
         if (!currentMessage) {
           newMap.set(requestId, 0)
           set({
-            currentMessage: { id: crypto.randomUUID(), blocks: [block], isStreaming: true },
+            currentMessage: { id: generateUUID(), blocks: [block], isStreaming: true },
             permissionRequestBlockMap: newMap,
             activePermissionRequestId: requestId,
             streamingUpdateCounter: streamingUpdateCounter + 1,
@@ -838,7 +840,12 @@ export function createConversationStore(
         // 构建工作区系统提示词（始终传递，通过 --append-system-prompt）
         let workspacePrompt = ''
         if (currentWorkspace) {
-          workspacePrompt = buildWorkspaceSystemPrompt(currentWorkspace, contextWorkspaces)
+          // 使用 KnowledgeService 统一注入模块知识
+          const knowledgeService = getKnowledgeService()
+          const basePrompt = i18n.t('systemPrompt:workingIn', { name: currentWorkspace.name }) + '\n' +
+            i18n.t('systemPrompt:projectPath', { path: currentWorkspace.path }) + '\n' +
+            i18n.t('systemPrompt:fileRefSyntax')
+          workspacePrompt = await knowledgeService.enrichPrompt(content, basePrompt)
         }
 
         // 构建用户自定义系统提示词（开启时传递，通过 --system-prompt）
@@ -861,7 +868,7 @@ export function createConversationStore(
 
         // 构建用户消息
         const userMessage = {
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           type: 'user' as const,
           content,
           timestamp: new Date().toISOString(),
@@ -1044,7 +1051,12 @@ export function createConversationStore(
         // 构建工作区系统提示词（始终传递，通过 --append-system-prompt）
         let workspacePrompt = ''
         if (currentWorkspace) {
-          workspacePrompt = buildWorkspaceSystemPrompt(currentWorkspace, contextWorkspaces)
+          // 使用 KnowledgeService 统一注入模块知识
+          const knowledgeService = getKnowledgeService()
+          const basePrompt = i18n.t('systemPrompt:workingIn', { name: currentWorkspace.name }) + '\n' +
+            i18n.t('systemPrompt:projectPath', { path: currentWorkspace.path }) + '\n' +
+            i18n.t('systemPrompt:fileRefSyntax')
+          workspacePrompt = await knowledgeService.enrichPrompt(prompt, basePrompt)
         }
 
         // 构建用户自定义系统提示词（开启时传递，通过 --system-prompt）
@@ -1123,14 +1135,109 @@ export function createConversationStore(
         }
       },
 
-      regenerateResponse: async (_assistantMessageId) => {
-        // TODO(Sprint4): 实现重新生成
-        log.info('regenerateResponse not implemented yet')
+      regenerateResponse: async (assistantMessageId) => {
+        const { messages, isStreaming } = get()
+
+        // 防止重复操作
+        if (isStreaming) {
+          log.warn('regenerateResponse: 当前正在流式传输，请稍后再试')
+          return
+        }
+
+        // 找到目标消息的索引
+        const messageIndex = messages.findIndex(m => m.id === assistantMessageId)
+        if (messageIndex === -1) {
+          log.warn('regenerateResponse: 未找到目标消息', { assistantMessageId })
+          return
+        }
+
+        // 找到该 assistant 消息之前的最近一条 user 消息
+        let userMessageIndex = -1
+        for (let i = messageIndex - 1; i >= 0; i--) {
+          if (messages[i].type === 'user') {
+            userMessageIndex = i
+            break
+          }
+        }
+
+        if (userMessageIndex === -1) {
+          log.warn('regenerateResponse: 未找到对应的用户消息')
+          return
+        }
+
+        const userMessage = messages[userMessageIndex]
+        const userContent = userMessage.type === 'user' ? userMessage.content : ''
+
+        // 删除从 user 消息之后的所有消息（包括要重新生成的 assistant 消息）
+        const newMessages = messages.slice(0, userMessageIndex)
+
+        // 更新状态：删除后续消息，清空当前消息
+        set({
+          messages: newMessages,
+          currentMessage: null,
+          isStreaming: false,
+          error: null,
+        })
+
+        log.info('regenerateResponse: 重新生成响应', {
+          userMessageId: userMessage.id,
+          removedCount: messages.length - userMessageIndex
+        })
+
+        // 重新发送用户消息
+        // 获取工作区信息
+        const workspace = deps.getWorkspace()
+        const workspaceDir = workspace?.path || undefined
+
+        // 调用 sendMessage（会自动处理重新生成）
+        const { sendMessage } = get()
+        await sendMessage(userContent, workspaceDir)
       },
 
-      editAndResend: async (_userMessageId, _newContent) => {
-        // TODO(Sprint4): 实现编辑重发
-        log.info('editAndResend not implemented yet')
+      editAndResend: async (userMessageId, newContent) => {
+        const { messages, isStreaming } = get()
+
+        // 防止重复操作
+        if (isStreaming) {
+          log.warn('editAndResend: 当前正在流式传输，请稍后再试')
+          return
+        }
+
+        // 找到目标消息的索引
+        const messageIndex = messages.findIndex(m => m.id === userMessageId)
+        if (messageIndex === -1) {
+          log.warn('editAndResend: 未找到目标消息', { userMessageId })
+          return
+        }
+
+        const targetMessage = messages[messageIndex]
+        if (targetMessage.type !== 'user') {
+          log.warn('editAndResend: 目标消息不是用户消息')
+          return
+        }
+
+        // 删除从该 user 消息之后的所有消息
+        const newMessages = messages.slice(0, messageIndex)
+
+        // 更新状态
+        set({
+          messages: newMessages,
+          currentMessage: null,
+          isStreaming: false,
+          error: null,
+        })
+
+        log.info('editAndResend: 编辑并重发消息', {
+          originalMessageId: userMessageId,
+          removedCount: messages.length - messageIndex
+        })
+
+        // 发送新内容的消息
+        const workspace = deps.getWorkspace()
+        const workspaceDir = workspace?.path || undefined
+
+        const { sendMessage } = get()
+        await sendMessage(newContent, workspaceDir)
       },
 
       loadMoreArchivedMessages: (count = 20) => {

@@ -9,8 +9,7 @@ import type { AISessionConfig } from '../../ai-runtime'
 import type { AITask, AIEvent } from '../../ai-runtime'
 import { BaseSession } from '../../ai-runtime/base'
 import { createEventIterable } from '../../ai-runtime/base'
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
+import { invoke, listen } from '@/services/tauri'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('ClaudeCodeSession')

@@ -103,6 +103,7 @@ struct ProcessedAttachment {
 }
 
 /// 图片原始数据
+#[allow(dead_code)]
 struct ImageData {
     /// MIME 类型（如 "image/png"）
     media_type: String,
@@ -296,7 +297,29 @@ fn build_message_with_attachments(message: &str, processed: &ProcessedAttachment
     parts.join("\n\n")
 }
 
-fn prepare_mcp_config_path(options: &ChatRequestOptions, engine: &EngineId, window: &Window) -> Result<Option<String>> {
+// ============================================================================
+// Transport-agnostic callback types (shared by Tauri commands & HTTP handlers)
+// ============================================================================
+
+/// Application paths needed for MCP config resolution, decoupled from Window.
+pub struct AppPaths {
+    pub config_dir: PathBuf,
+    pub resource_dir: Option<PathBuf>,
+}
+
+/// Callbacks for chat event emission, abstracting over transport (Tauri Window vs HTTP/WS).
+pub struct ChatCallbacks {
+    /// Emit a chat-event JSON payload to all connected clients.
+    pub emit_event: Arc<dyn Fn(serde_json::Value) + Send + Sync>,
+    /// Show a desktop notification when AI reply completes (no-op for web-only clients).
+    pub notify_complete: Arc<dyn Fn() + Send + Sync>,
+}
+
+fn prepare_mcp_config_path_with_paths(
+    options: &ChatRequestOptions,
+    engine: &EngineId,
+    paths: &AppPaths,
+) -> Result<Option<String>> {
     let enable_mcp_tools = options.enable_mcp_tools.unwrap_or(false);
     if !enable_mcp_tools || !matches!(engine, EngineId::ClaudeCode) {
         return Ok(None);
@@ -311,13 +334,273 @@ fn prepare_mcp_config_path(options: &ChatRequestOptions, engine: &EngineId, wind
         .parent()
         .ok_or_else(|| AppError::ProcessError("无法确定应用根目录".to_string()))?
         .to_path_buf();
-    let resource_dir = window.path().resource_dir().ok();
-    let config_dir = window.path().app_config_dir()
-        .map_err(|e| AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
 
-    let service = WorkspaceMcpConfigService::from_app_paths(config_dir, resource_dir, app_root)?;
+    let service = WorkspaceMcpConfigService::from_app_paths(
+        paths.config_dir.clone(),
+        paths.resource_dir.clone(),
+        app_root,
+    )?;
     let config_path = service.prepare_workspace_config(work_dir)?;
     Ok(Some(config_path.to_string_lossy().to_string()))
+}
+
+// ============================================================================
+// Inner functions (shared business logic)
+// ============================================================================
+
+pub async fn start_chat_inner(
+    message: String,
+    options: ChatRequestOptions,
+    state: &crate::AppState,
+    callbacks: ChatCallbacks,
+    app_paths: &AppPaths,
+) -> Result<String> {
+    tracing::info!("[start_chat_inner] 消息长度: {} 字符, 附件数: {:?}", message.len(), options.attachments.as_ref().map(|a| a.len()));
+
+    let processed = if let (Some(ref dir), Some(ref atts)) = (&options.work_dir, &options.attachments) {
+        if !atts.is_empty() {
+            process_attachments(dir, atts)?
+        } else {
+            ProcessedAttachment { embedded_sections: Vec::new(), file_references: Vec::new(), image_data: Vec::new() }
+        }
+    } else {
+        ProcessedAttachment { embedded_sections: Vec::new(), file_references: Vec::new(), image_data: Vec::new() }
+    };
+
+    let final_message = build_message_with_attachments(&message, &processed);
+    tracing::info!("[start_chat_inner] 消息长度: {}, 图片数: {}, 文件引用数: {}",
+        final_message.len(), processed.image_data.len(), processed.file_references.len());
+
+    let engine = match &options.engine_id {
+        Some(id) => EngineId::parse(id).unwrap_or_else(|| {
+            tracing::warn!("[start_chat_inner] Unrecognized engine_id '{}', defaulting to ClaudeCode", id);
+            EngineId::ClaudeCode
+        }),
+        None => EngineId::ClaudeCode,
+    };
+
+    tracing::info!("[start_chat_inner] 使用引擎: {:?}", engine);
+    let mcp_config_path = prepare_mcp_config_path_with_paths(&options, &engine, app_paths)?;
+
+    let ctx_id = options.context_id.clone();
+    let emit_ref = callbacks.emit_event.clone();
+    let notify_ref = callbacks.notify_complete.clone();
+    let event_callback = move |event: AIEvent| {
+        let event_json = if let Some(ref cid) = ctx_id {
+            serde_json::json!({ "contextId": cid, "payload": event })
+        } else {
+            serde_json::json!({ "contextId": "main", "payload": event })
+        };
+        tracing::debug!("[start_chat_inner] 发送事件: {}", event_json.to_string().chars().take(200).collect::<String>());
+        emit_ref(event_json);
+        if matches!(event, AIEvent::SessionEnd(_)) {
+            notify_ref();
+        }
+    };
+
+    let ctx_id_for_session = options.context_id.clone();
+    let emit_ref2 = callbacks.emit_event.clone();
+    let session_id_update_callback = move |new_session_id: String| {
+        tracing::info!("[start_chat_inner] session_id 更新: {}", new_session_id);
+        let event_json = if let Some(ref cid) = ctx_id_for_session {
+            serde_json::json!({ "contextId": cid, "payload": { "type": "session_start", "sessionId": new_session_id } })
+        } else {
+            serde_json::json!({ "contextId": "main", "payload": { "type": "session_start", "sessionId": new_session_id } })
+        };
+        emit_ref2(event_json);
+    };
+
+    let mut session_opts = SessionOptions::new(event_callback);
+    session_opts.on_session_id_update = Some(Arc::new(session_id_update_callback));
+
+    if let Some(ref dir) = options.work_dir {
+        session_opts = session_opts.with_work_dir(dir.clone());
+    }
+    if let Some(ref prompt) = options.system_prompt {
+        session_opts = session_opts.with_system_prompt(prompt.clone());
+    }
+    if let Some(ref prompt) = options.append_system_prompt {
+        session_opts = session_opts.with_append_system_prompt(prompt.clone());
+    }
+    if let Some(ref mcp_config_path) = mcp_config_path {
+        session_opts = session_opts.with_mcp_config_path(mcp_config_path.clone());
+    }
+    if let Some(ref dirs) = options.additional_dirs {
+        session_opts.additional_dirs = dirs.clone();
+    }
+    if let Some(ref agent) = options.agent {
+        session_opts = session_opts.with_agent(agent.clone());
+    }
+    if let Some(ref model) = options.model {
+        session_opts = session_opts.with_model(model.clone());
+    }
+    if let Some(ref effort) = options.effort {
+        session_opts = session_opts.with_effort(effort.clone());
+    }
+    if let Some(ref permission_mode) = options.permission_mode {
+        session_opts = session_opts.with_permission_mode(permission_mode.clone());
+    }
+    if let Some(ref tools) = options.allowed_tools {
+        if !tools.is_empty() {
+            session_opts = session_opts.with_allowed_tools(tools.clone());
+        }
+    }
+    if let Some(ref fork_sid) = options.fork_session_id {
+        session_opts.fork_session_id = Some(fork_sid.clone());
+    }
+    if !processed.image_data.is_empty() {
+        let images: Vec<ImageAttachment> = processed.image_data.iter().map(|img| {
+            ImageAttachment { media_type: img.media_type.clone(), data: img.data.clone() }
+        }).collect();
+        tracing::info!("[start_chat_inner] 传递 {} 张图片给引擎（stream-json 模式）", images.len());
+        session_opts = session_opts.with_image_attachments(images);
+    }
+
+    let mut registry = state.engine_registry.lock().await;
+
+    // 在启动会话前，从 ConfigStore 刷新引擎配置
+    // 确保用户通过设置/ConnectingOverlay 更新的 CLI 路径能及时生效
+    {
+        if let Ok(store) = state.config_store.lock() {
+            let current_config = store.get();
+            registry.refresh_engine_config(&engine, current_config);
+        }
+    }
+
+    registry.start_session(Some(engine), &final_message, session_opts)
+}
+
+pub async fn continue_chat_inner(
+    session_id: String,
+    message: String,
+    options: ChatRequestOptions,
+    state: &crate::AppState,
+    callbacks: ChatCallbacks,
+    app_paths: &AppPaths,
+) -> Result<()> {
+    tracing::info!("[continue_chat_inner] 继续会话: {}, 附件数: {:?}", session_id, options.attachments.as_ref().map(|a| a.len()));
+
+    let processed = if let (Some(dir), Some(atts)) = (&options.work_dir, &options.attachments) {
+        if !atts.is_empty() {
+            process_attachments(dir, atts)?
+        } else {
+            ProcessedAttachment { embedded_sections: Vec::new(), file_references: Vec::new(), image_data: Vec::new() }
+        }
+    } else {
+        ProcessedAttachment { embedded_sections: Vec::new(), file_references: Vec::new(), image_data: Vec::new() }
+    };
+
+    let final_message = build_message_with_attachments(&message, &processed);
+
+    let engine = options.engine_id
+        .as_ref()
+        .and_then(|id| EngineId::parse(id))
+        .ok_or_else(|| AppError::ValidationError("必须提供有效的 engine_id".to_string()))?;
+
+    tracing::info!("[continue_chat_inner] 使用引擎: {:?}", engine);
+    let mcp_config_path = prepare_mcp_config_path_with_paths(&options, &engine, app_paths)?;
+
+    let ctx_id = options.context_id.clone();
+    let emit_ref = callbacks.emit_event.clone();
+    let notify_ref = callbacks.notify_complete.clone();
+    let event_callback = move |event: AIEvent| {
+        let event_json = if let Some(ref cid) = ctx_id {
+            serde_json::json!({ "contextId": cid, "payload": event })
+        } else {
+            serde_json::json!({ "contextId": "main", "payload": event })
+        };
+        tracing::debug!("[continue_chat_inner] 发送事件: {}", event_json.to_string().chars().take(200).collect::<String>());
+        emit_ref(event_json);
+        if matches!(event, AIEvent::SessionEnd(_)) {
+            notify_ref();
+        }
+    };
+
+    let ctx_id_for_session = options.context_id.clone();
+    let emit_ref2 = callbacks.emit_event.clone();
+    let session_id_update_callback = move |new_session_id: String| {
+        tracing::info!("[continue_chat_inner] session_id 更新: {}", new_session_id);
+        let event_json = if let Some(ref cid) = ctx_id_for_session {
+            serde_json::json!({ "contextId": cid, "payload": { "type": "session_start", "sessionId": new_session_id } })
+        } else {
+            serde_json::json!({ "contextId": "main", "payload": { "type": "session_start", "sessionId": new_session_id } })
+        };
+        emit_ref2(event_json);
+    };
+
+    let mut session_opts = SessionOptions::new(event_callback);
+    session_opts.on_session_id_update = Some(Arc::new(session_id_update_callback));
+
+    if let Some(ref dir) = options.work_dir {
+        session_opts = session_opts.with_work_dir(dir.clone());
+    }
+    if let Some(ref prompt) = options.system_prompt {
+        session_opts = session_opts.with_system_prompt(prompt.clone());
+    }
+    if let Some(ref prompt) = options.append_system_prompt {
+        session_opts = session_opts.with_append_system_prompt(prompt.clone());
+    }
+    if let Some(ref mcp_config_path) = mcp_config_path {
+        session_opts = session_opts.with_mcp_config_path(mcp_config_path.clone());
+    }
+    if let Some(ref dirs) = options.additional_dirs {
+        session_opts.additional_dirs = dirs.clone();
+    }
+    if let Some(ref agent) = options.agent {
+        session_opts = session_opts.with_agent(agent.clone());
+    }
+    if let Some(ref model) = options.model {
+        session_opts = session_opts.with_model(model.clone());
+    }
+    if let Some(ref effort) = options.effort {
+        session_opts = session_opts.with_effort(effort.clone());
+    }
+    if let Some(ref permission_mode) = options.permission_mode {
+        session_opts = session_opts.with_permission_mode(permission_mode.clone());
+    }
+    if let Some(ref tools) = options.allowed_tools {
+        if !tools.is_empty() {
+            session_opts = session_opts.with_allowed_tools(tools.clone());
+        }
+    }
+    if !processed.image_data.is_empty() {
+        let images: Vec<ImageAttachment> = processed.image_data.iter().map(|img| {
+            ImageAttachment { media_type: img.media_type.clone(), data: img.data.clone() }
+        }).collect();
+        tracing::info!("[continue_chat_inner] 传递 {} 张图片给引擎（stream-json 模式）", images.len());
+        session_opts = session_opts.with_image_attachments(images);
+    }
+
+    let mut registry = state.engine_registry.lock().await;
+
+    // 在继续会话前，从 ConfigStore 刷新引擎配置
+    {
+        if let Ok(store) = state.config_store.lock() {
+            let current_config = store.get();
+            registry.refresh_engine_config(&engine, current_config);
+        }
+    }
+
+    registry.continue_session(engine, &session_id, &final_message, session_opts)
+}
+
+pub async fn interrupt_chat_inner(
+    session_id: String,
+    engine_id: Option<String>,
+    state: &crate::AppState,
+) -> Result<()> {
+    tracing::info!("[interrupt_chat_inner] 中断会话: {}", session_id);
+    let engine = engine_id.as_ref().and_then(|id| EngineId::parse(id));
+    let mut registry = state.engine_registry.lock().await;
+    if let Some(engine) = engine {
+        registry.interrupt(&engine, &session_id)?;
+    } else {
+        if !registry.try_interrupt_all(&session_id) {
+            return Err(AppError::ProcessError(format!("未找到会话: {}", session_id)));
+        }
+    }
+    tracing::info!("[interrupt_chat_inner] 会话已中断: {}", session_id);
+    Ok(())
 }
 
 // ============================================================================
@@ -332,142 +615,24 @@ pub async fn start_chat(
     state: State<'_, crate::AppState>,
     options: ChatRequestOptions,
 ) -> Result<String> {
-    tracing::info!("[start_chat] 收到消息，长度: {} 字符, 附件数: {:?}", message.len(), options.attachments.as_ref().map(|a| a.len()));
-
-    // 处理附件：图片收集 base64 + 文本嵌入 + 大文件存盘引用
-    let processed = if let (Some(ref dir), Some(ref atts)) = (&options.work_dir, &options.attachments) {
-        if !atts.is_empty() {
-            process_attachments(dir, atts)?
-        } else {
-            ProcessedAttachment { embedded_sections: Vec::new(), file_references: Vec::new(), image_data: Vec::new() }
-        }
-    } else {
-        ProcessedAttachment { embedded_sections: Vec::new(), file_references: Vec::new(), image_data: Vec::new() }
+    let app_paths = AppPaths {
+        config_dir: window.path().app_config_dir()
+            .map_err(|e| AppError::ProcessError(format!("获取配置目录失败: {}", e)))?,
+        resource_dir: window.path().resource_dir().ok(),
     };
-
-    // 构建包含附件内容的最终消息（文本部分）
-    let final_message = build_message_with_attachments(&message, &processed);
-
-    tracing::info!("[start_chat] 消息长度: {}, 图片数: {}, 文件引用数: {}",
-        final_message.len(), processed.image_data.len(), processed.file_references.len());
-
-    let engine = options.engine_id
-        .as_ref()
-        .and_then(|id| EngineId::from_str(id))
-        .unwrap_or(EngineId::ClaudeCode);
-
-    tracing::info!("[start_chat] 使用引擎: {:?}", engine);
-    let mcp_config_path = prepare_mcp_config_path(&options, &engine, &window)?;
-
     let window_clone = window.clone();
-    let ctx_id = options.context_id.clone();
-    let event_callback = move |event: AIEvent| {
-        let event_json = if let Some(ref cid) = ctx_id {
-            serde_json::json!({ "contextId": cid, "payload": event })
-        } else {
-            serde_json::json!({ "contextId": "main", "payload": event })
-        };
-
-        tracing::debug!("[start_chat] 发送事件: {}", event_json.to_string().chars().take(200).collect::<String>());
-        let _ = window_clone.emit("chat-event", &event_json);
-
-        if matches!(event, AIEvent::SessionEnd(_)) {
-            notify_ai_reply_complete(&window_clone);
-        }
+    let broadcast_tx = state.event_broadcast.clone();
+    let callbacks = ChatCallbacks {
+        emit_event: Arc::new(move |json: serde_json::Value| {
+            let _ = window_clone.emit("chat-event", &json);
+            let _ = broadcast_tx.send(json.to_string());
+        }),
+        notify_complete: Arc::new(move || {
+            notify_ai_reply_complete(&window);
+        }),
     };
 
-    // session_id 更新回调 - 发送 session_start 事件给前端
-    let window_for_session = window.clone();
-    let ctx_id_for_session = options.context_id.clone();
-    let session_id_update_callback = move |new_session_id: String| {
-        tracing::info!("[start_chat] session_id 更新，发送 session_start 事件: {}", new_session_id);
-
-        let event_json = if let Some(ref cid) = ctx_id_for_session {
-            serde_json::json!({
-                "contextId": cid,
-                "payload": {
-                    "type": "session_start",
-                    "sessionId": new_session_id
-                }
-            })
-        } else {
-            serde_json::json!({
-                "contextId": "main",
-                "payload": {
-                    "type": "session_start",
-                    "sessionId": new_session_id
-                }
-            })
-        };
-
-        let _ = window_for_session.emit("chat-event", &event_json);
-    };
-
-    let mut session_opts = SessionOptions::new(event_callback);
-    session_opts.on_session_id_update = Some(Arc::new(session_id_update_callback));
-
-    if let Some(ref dir) = options.work_dir {
-        session_opts = session_opts.with_work_dir(dir.clone());
-    }
-
-    if let Some(ref prompt) = options.system_prompt {
-        session_opts = session_opts.with_system_prompt(prompt.clone());
-    }
-
-    if let Some(ref prompt) = options.append_system_prompt {
-        session_opts = session_opts.with_append_system_prompt(prompt.clone());
-    }
-
-    if let Some(ref mcp_config_path) = mcp_config_path {
-        session_opts = session_opts.with_mcp_config_path(mcp_config_path.clone());
-    }
-
-    if let Some(ref dirs) = options.additional_dirs {
-        session_opts.additional_dirs = dirs.clone();
-    }
-
-    // 添加会话配置参数
-    if let Some(ref agent) = options.agent {
-        session_opts = session_opts.with_agent(agent.clone());
-    }
-
-    if let Some(ref model) = options.model {
-        session_opts = session_opts.with_model(model.clone());
-    }
-
-    if let Some(ref effort) = options.effort {
-        session_opts = session_opts.with_effort(effort.clone());
-    }
-
-    if let Some(ref permission_mode) = options.permission_mode {
-        session_opts = session_opts.with_permission_mode(permission_mode.clone());
-    }
-
-    if let Some(ref tools) = options.allowed_tools {
-        if !tools.is_empty() {
-            session_opts = session_opts.with_allowed_tools(tools.clone());
-        }
-    }
-
-    // Fork 会话：传递源会话 ID，引擎将使用 --resume + --fork-session
-    if let Some(ref fork_sid) = options.fork_session_id {
-        session_opts.fork_session_id = Some(fork_sid.clone());
-    }
-
-    // 传递图片附件（非空时引擎切换到 stream-json 模式）
-    if !processed.image_data.is_empty() {
-        let images: Vec<ImageAttachment> = processed.image_data.iter().map(|img| {
-            ImageAttachment {
-                media_type: img.media_type.clone(),
-                data: img.data.clone(),
-            }
-        }).collect();
-        tracing::info!("[start_chat] 传递 {} 张图片给引擎（stream-json 模式）", images.len());
-        session_opts = session_opts.with_image_attachments(images);
-    }
-
-    let mut registry = state.engine_registry.lock().await;
-    registry.start_session(Some(engine), &final_message, session_opts)
+    start_chat_inner(message, options, &state, callbacks, &app_paths).await
 }
 
 /// 继续聊天会话
@@ -479,134 +644,24 @@ pub async fn continue_chat(
     state: State<'_, crate::AppState>,
     options: ChatRequestOptions,
 ) -> Result<()> {
-    tracing::info!("[continue_chat] 继续会话: {}, 附件数: {:?}", session_id, options.attachments.as_ref().map(|a| a.len()));
-
-    // 处理附件：图片收集 base64 + 文本嵌入 + 大文件存盘引用
-    let processed = if let (Some(dir), Some(atts)) = (&options.work_dir, &options.attachments) {
-        if !atts.is_empty() {
-            process_attachments(dir, atts)?
-        } else {
-            ProcessedAttachment { embedded_sections: Vec::new(), file_references: Vec::new(), image_data: Vec::new() }
-        }
-    } else {
-        ProcessedAttachment { embedded_sections: Vec::new(), file_references: Vec::new(), image_data: Vec::new() }
+    let app_paths = AppPaths {
+        config_dir: window.path().app_config_dir()
+            .map_err(|e| AppError::ProcessError(format!("获取配置目录失败: {}", e)))?,
+        resource_dir: window.path().resource_dir().ok(),
     };
-
-    // 构建包含附件内容的最终消息（文本部分）
-    let final_message = build_message_with_attachments(&message, &processed);
-
-    let engine = options.engine_id
-        .as_ref()
-        .and_then(|id| EngineId::from_str(id))
-        .ok_or_else(|| AppError::ValidationError("必须提供有效的 engine_id".to_string()))?;
-
-    tracing::info!("[continue_chat] 使用引擎: {:?}", engine);
-    let mcp_config_path = prepare_mcp_config_path(&options, &engine, &window)?;
-
     let window_clone = window.clone();
-    let ctx_id = options.context_id.clone();
-    let event_callback = move |event: AIEvent| {
-        let event_json = if let Some(ref cid) = ctx_id {
-            serde_json::json!({ "contextId": cid, "payload": event })
-        } else {
-            serde_json::json!({ "contextId": "main", "payload": event })
-        };
-
-        tracing::debug!("[continue_chat] 发送事件: {}", event_json.to_string().chars().take(200).collect::<String>());
-        let _ = window_clone.emit("chat-event", &event_json);
-
-        if matches!(event, AIEvent::SessionEnd(_)) {
-            notify_ai_reply_complete(&window_clone);
-        }
+    let broadcast_tx = state.event_broadcast.clone();
+    let callbacks = ChatCallbacks {
+        emit_event: Arc::new(move |json: serde_json::Value| {
+            let _ = window_clone.emit("chat-event", &json);
+            let _ = broadcast_tx.send(json.to_string());
+        }),
+        notify_complete: Arc::new(move || {
+            notify_ai_reply_complete(&window);
+        }),
     };
 
-    // session_id 更新回调
-    let window_for_session = window.clone();
-    let ctx_id_for_session = options.context_id.clone();
-    let session_id_update_callback = move |new_session_id: String| {
-        tracing::info!("[continue_chat] session_id 更新: {}", new_session_id);
-
-        let event_json = if let Some(ref cid) = ctx_id_for_session {
-            serde_json::json!({
-                "contextId": cid,
-                "payload": {
-                    "type": "session_start",
-                    "sessionId": new_session_id
-                }
-            })
-        } else {
-            serde_json::json!({
-                "contextId": "main",
-                "payload": {
-                    "type": "session_start",
-                    "sessionId": new_session_id
-                }
-            })
-        };
-
-        let _ = window_for_session.emit("chat-event", &event_json);
-    };
-
-    let mut session_opts = SessionOptions::new(event_callback);
-    session_opts.on_session_id_update = Some(Arc::new(session_id_update_callback));
-
-    if let Some(ref dir) = options.work_dir {
-        session_opts = session_opts.with_work_dir(dir.clone());
-    }
-
-    if let Some(ref prompt) = options.system_prompt {
-        session_opts = session_opts.with_system_prompt(prompt.clone());
-    }
-
-    if let Some(ref prompt) = options.append_system_prompt {
-        session_opts = session_opts.with_append_system_prompt(prompt.clone());
-    }
-
-    if let Some(ref mcp_config_path) = mcp_config_path {
-        session_opts = session_opts.with_mcp_config_path(mcp_config_path.clone());
-    }
-
-    if let Some(ref dirs) = options.additional_dirs {
-        session_opts.additional_dirs = dirs.clone();
-    }
-
-    // 添加会话配置参数
-    if let Some(ref agent) = options.agent {
-        session_opts = session_opts.with_agent(agent.clone());
-    }
-
-    if let Some(ref model) = options.model {
-        session_opts = session_opts.with_model(model.clone());
-    }
-
-    if let Some(ref effort) = options.effort {
-        session_opts = session_opts.with_effort(effort.clone());
-    }
-
-    if let Some(ref permission_mode) = options.permission_mode {
-        session_opts = session_opts.with_permission_mode(permission_mode.clone());
-    }
-
-    if let Some(ref tools) = options.allowed_tools {
-        if !tools.is_empty() {
-            session_opts = session_opts.with_allowed_tools(tools.clone());
-        }
-    }
-
-    // 传递图片附件（非空时引擎切换到 stream-json 模式）
-    if !processed.image_data.is_empty() {
-        let images: Vec<ImageAttachment> = processed.image_data.iter().map(|img| {
-            ImageAttachment {
-                media_type: img.media_type.clone(),
-                data: img.data.clone(),
-            }
-        }).collect();
-        tracing::info!("[continue_chat] 传递 {} 张图片给引擎（stream-json 模式）", images.len());
-        session_opts = session_opts.with_image_attachments(images);
-    }
-
-    let mut registry = state.engine_registry.lock().await;
-    registry.continue_session(engine, &session_id, &final_message, session_opts)
+    continue_chat_inner(session_id, message, options, &state, callbacks, &app_paths).await
 }
 
 /// 中断聊天会话
@@ -616,24 +671,7 @@ pub async fn interrupt_chat(
     engine_id: Option<String>,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<()> {
-    tracing::info!("[interrupt_chat] 中断会话: {}", session_id);
-
-    // 检查 EngineRegistry 中的引擎
-    let engine = engine_id.as_ref().and_then(|id| EngineId::from_str(id));
-
-    let mut registry = state.engine_registry.lock().await;
-
-    if let Some(engine) = engine {
-        registry.interrupt(&engine, &session_id)?;
-    } else {
-        // 遍历所有已注册的引擎尝试中断
-        if !registry.try_interrupt_all(&session_id) {
-            return Err(AppError::ProcessError(format!("未找到会话: {}", session_id)));
-        }
-    }
-
-    tracing::info!("[interrupt_chat] 会话已中断: {}", session_id);
-    Ok(())
+    interrupt_chat_inner(session_id, engine_id, &state).await
 }
 
 // ============================================================================
@@ -996,6 +1034,7 @@ pub async fn list_claude_code_sessions(
 
 /// 会话消息指纹（用于 fork 检测）
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct SessionFingerprint {
     session_id: String,
     /// 前 N 条消息的内容哈希
@@ -1286,13 +1325,13 @@ pub async fn answer_question(
         session_id, call_id, answer.selected, answer.custom_input
     );
 
-    // 更新问题状态
+    // 更新问题状态并移除已处理的条目（避免内存泄漏）
     {
         let mut pending = state.pending_questions.lock()
             .map_err(|e| AppError::Unknown(e.to_string()))?;
 
-        if let Some(question) = pending.get_mut(&call_id) {
-            question.status = QuestionStatus::Answered;
+        if pending.remove(&call_id).is_some() {
+            tracing::info!("[answer_question] 已移除待处理问题: {}", call_id);
         } else {
             tracing::warn!("[answer_question] 问题不存在: {}", call_id);
         }
@@ -1308,6 +1347,9 @@ pub async fn answer_question(
 
     window.emit("chat-event", &event)
         .map_err(|e| AppError::ProcessError(format!("发送事件失败: {}", e)))?;
+
+    // Dual emission: also broadcast to WebSocket clients
+    let _ = state.event_broadcast.send(event.to_string());
 
     tracing::info!("[answer_question] 答案已提交，事件已发送");
 
@@ -1410,13 +1452,13 @@ pub async fn approve_plan(
         session_id, plan_id
     );
 
-    // 更新计划状态
+    // 更新计划状态并移除已处理的条目（避免内存泄漏）
     {
         let mut pending = state.pending_plans.lock()
             .map_err(|e| AppError::Unknown(e.to_string()))?;
 
-        if let Some(plan) = pending.get_mut(&plan_id) {
-            plan.status = PlanApprovalStatus::Approved;
+        if pending.remove(&plan_id).is_some() {
+            tracing::info!("[approve_plan] 已移除待处理计划: {}", plan_id);
         } else {
             tracing::warn!("[approve_plan] 计划不存在: {}", plan_id);
         }
@@ -1425,11 +1467,15 @@ pub async fn approve_plan(
     // 发送事件通知前端计划已批准
     let event = PlanApprovalResultEvent::new(&session_id, &plan_id, true);
 
-    window.emit("chat-event", &serde_json::json!({
+    let payload = serde_json::json!({
         "contextId": "main",
         "payload": event
-    }))
-    .map_err(|e| AppError::ProcessError(format!("发送事件失败: {}", e)))?;
+    });
+    window.emit("chat-event", &payload)
+        .map_err(|e| AppError::ProcessError(format!("发送事件失败: {}", e)))?;
+
+    // Dual emission: also broadcast to WebSocket clients
+    let _ = state.event_broadcast.send(payload.to_string());
 
     tracing::info!("[approve_plan] 计划已批准，事件已发送");
 
@@ -1452,14 +1498,13 @@ pub async fn reject_plan(
         session_id, plan_id, feedback
     );
 
-    // 更新计划状态
+    // 更新计划状态并移除已处理的条目（避免内存泄漏）
     {
         let mut pending = state.pending_plans.lock()
             .map_err(|e| AppError::Unknown(e.to_string()))?;
 
-        if let Some(plan) = pending.get_mut(&plan_id) {
-            plan.status = PlanApprovalStatus::Rejected;
-            plan.feedback = feedback.clone();
+        if pending.remove(&plan_id).is_some() {
+            tracing::info!("[reject_plan] 已移除待处理计划: {}", plan_id);
         } else {
             tracing::warn!("[reject_plan] 计划不存在: {}", plan_id);
         }
@@ -1469,11 +1514,15 @@ pub async fn reject_plan(
     let event = PlanApprovalResultEvent::new(&session_id, &plan_id, false)
         .with_feedback(feedback.unwrap_or_default());
 
-    window.emit("chat-event", &serde_json::json!({
+    let payload = serde_json::json!({
         "contextId": "main",
         "payload": event
-    }))
-    .map_err(|e| AppError::ProcessError(format!("发送事件失败: {}", e)))?;
+    });
+    window.emit("chat-event", &payload)
+        .map_err(|e| AppError::ProcessError(format!("发送事件失败: {}", e)))?;
+
+    // Dual emission: also broadcast to WebSocket clients
+    let _ = state.event_broadcast.send(payload.to_string());
 
     tracing::info!("[reject_plan] 计划已拒绝，事件已发送");
 

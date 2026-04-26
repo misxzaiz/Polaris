@@ -47,6 +47,8 @@
     "createFailed": "创建工作区失败",
     "selectFolderFailed": "选择文件夹失败，请手动输入路径",
     "selectFolderTitle": "选择工作区文件夹",
+    "selectCurrent": "选择此目录",
+    "noSubdirectories": "此目录下没有子目录",
     "creating": "创建中...",
     "create": "创建"
   },

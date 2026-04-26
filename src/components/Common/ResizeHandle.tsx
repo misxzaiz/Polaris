@@ -115,10 +115,10 @@ export function ResizeHandle({ direction, position, onDrag, onDragEnd, disabled 
     : 'h-1 hover:h-1.5 cursor-row-resize';
 
   const colorClasses = disabled
-    ? 'bg-border-transparent'
+    ? 'bg-transparent'
     : isDragging
     ? 'bg-primary'
-    : 'bg-border hover:bg-primary/60';
+    : 'bg-white/20 hover:bg-primary/70';
 
   return (
     <div

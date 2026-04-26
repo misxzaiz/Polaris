@@ -13,17 +13,16 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Minus, Square, X, PanelRight, Pin, PanelLeftClose, PanelLeft } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/services/transport';
 import { useViewStore } from '../../stores';
 import * as tauri from '../../services/tauri';
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import { WorkspaceQuickSwitch } from '../Workspace';
 import { createLogger } from '../../utils/logger';
 
 const log = createLogger('TopMenuBar');
 
 // 检测是否在 Tauri 环境中运行
-const isTauriEnv = typeof window !== 'undefined' && '__TAURI__' in window;
+const isTauriEnv = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 interface TopMenuBarProps {
   onToggleRightPanel?: () => void;
@@ -42,6 +41,7 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
 
     const checkMaximized = async () => {
       try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
         const window = getCurrentWindow();
         const maximized = await window.isMaximized();
         setIsMaximized(maximized);
@@ -52,14 +52,15 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
 
     checkMaximized();
 
-    const window = getCurrentWindow();
-    const unlisten = window.onResized(() => {
-      checkMaximized();
-    });
+    import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+      const window = getCurrentWindow();
+      const unlisten = window.onResized(() => {
+        checkMaximized();
+      });
+      return unlisten;
+    }).catch(() => {});
 
-    return () => {
-      unlisten.then(fn => fn());
-    };
+    return () => {};
   }, []);
 
   // 同步置顶状态
@@ -115,50 +116,54 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
         {/* 小屏模式：显示置顶按钮和窗口控制按钮 */}
         {isCompactMode ? (
           <>
-            {/* 窗口置顶按钮 */}
-            <button
-              onClick={handleToggleAlwaysOnTop}
-              className={`p-1.5 rounded-md transition-colors ${
-                isAlwaysOnTop
-                  ? 'text-primary bg-primary/10 hover:bg-primary/20'
-                  : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
-              }`}
-              title={isAlwaysOnTop ? t('window.alwaysOnTop') : t('window.alwaysOnTopHint')}
-              data-tauri-drag-region={false}
-            >
-              <Pin className="w-4 h-4" />
-            </button>
+            {isTauriEnv && (
+              <>
+                {/* 窗口置顶按钮 */}
+                <button
+                  onClick={handleToggleAlwaysOnTop}
+                  className={`p-1.5 rounded-md transition-colors ${
+                    isAlwaysOnTop
+                      ? 'text-primary bg-primary/10 hover:bg-primary/20'
+                      : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
+                  }`}
+                  title={isAlwaysOnTop ? t('window.alwaysOnTop') : t('window.alwaysOnTopHint')}
+                  data-tauri-drag-region={false}
+                >
+                  <Pin className="w-4 h-4" />
+                </button>
 
-            {/* 分隔线 */}
-            <div data-tauri-drag-region className="w-px h-4 bg-border-subtle mx-1" />
+                {/* 分隔线 */}
+                <div data-tauri-drag-region className="w-px h-4 bg-border-subtle mx-1" />
 
-            {/* 窗口控制 */}
-            <div className="flex items-center">
-              <button
-                onClick={() => tauri.minimizeWindow()}
-                className="px-2 py-2 hover:bg-background-hover transition-colors text-text-secondary hover:text-text-primary"
-                title={t('window.minimize')}
-                data-tauri-drag-region={false}
-              >
-                <Minus className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => tauri.toggleMaximizeWindow()}
-                className="px-2 py-2 hover:bg-background-hover transition-colors text-text-secondary hover:text-text-primary"
-                title={isMaximized ? t('window.restore') : t('window.maximize')}
-                data-tauri-drag-region={false}
-              >
-                <Square className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => tauri.closeWindow()}
-                className="px-2 py-2 hover:bg-red-500 hover:text-white transition-colors text-text-secondary"
-                title={t('window.close')}
-                data-tauri-drag-region={false}
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+                {/* 窗口控制 */}
+                <div className="flex items-center">
+                  <button
+                    onClick={() => tauri.minimizeWindow()}
+                    className="px-2 py-2 hover:bg-background-hover transition-colors text-text-secondary hover:text-text-primary"
+                    title={t('window.minimize')}
+                    data-tauri-drag-region={false}
+                  >
+                    <Minus className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => tauri.toggleMaximizeWindow()}
+                    className="px-2 py-2 hover:bg-background-hover transition-colors text-text-secondary hover:text-text-primary"
+                    title={isMaximized ? t('window.restore') : t('window.maximize')}
+                    data-tauri-drag-region={false}
+                  >
+                    <Square className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => tauri.closeWindow()}
+                    className="px-2 py-2 hover:bg-red-500 hover:text-white transition-colors text-text-secondary"
+                    title={t('window.close')}
+                    data-tauri-drag-region={false}
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </>
+            )}
           </>
         ) : (
           <>
@@ -192,49 +197,53 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
               <PanelRight className="w-4 h-4" />
             </button>
 
-            {/* 窗口置顶按钮 */}
-            <button
-              onClick={handleToggleAlwaysOnTop}
-              className={`p-1.5 rounded-md transition-colors ${
-                isAlwaysOnTop
-                  ? 'text-primary bg-primary/10 hover:bg-primary/20'
-                  : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
-              }`}
-              title={isAlwaysOnTop ? t('window.alwaysOnTop') : t('window.alwaysOnTopHint')}
-              data-tauri-drag-region={false}
-            >
-              <Pin className="w-4 h-4" />
-            </button>
+            {isTauriEnv && (
+              <>
+                {/* 窗口置顶按钮 */}
+                <button
+                  onClick={handleToggleAlwaysOnTop}
+                  className={`p-1.5 rounded-md transition-colors ${
+                    isAlwaysOnTop
+                      ? 'text-primary bg-primary/10 hover:bg-primary/20'
+                      : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
+                  }`}
+                  title={isAlwaysOnTop ? t('window.alwaysOnTop') : t('window.alwaysOnTopHint')}
+                  data-tauri-drag-region={false}
+                >
+                  <Pin className="w-4 h-4" />
+                </button>
 
-            {/* 分隔线 */}
-            <div data-tauri-drag-region className="w-px h-4 bg-border-subtle mx-1" />
+                {/* 分隔线 */}
+                <div data-tauri-drag-region className="w-px h-4 bg-border-subtle mx-1" />
 
-            <div className="flex items-center">
-              <button
-                onClick={() => tauri.minimizeWindow()}
-                className="px-3 py-2 hover:bg-background-hover transition-colors text-text-secondary hover:text-text-primary"
-                title={t('window.minimize')}
-                data-tauri-drag-region={false}
-              >
-                <Minus className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => tauri.toggleMaximizeWindow()}
-                className="px-3 py-2 hover:bg-background-hover transition-colors text-text-secondary hover:text-text-primary"
-                title={isMaximized ? t('window.restore') : t('window.maximize')}
-                data-tauri-drag-region={false}
-              >
-                <Square className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => tauri.closeWindow()}
-                className="px-3 py-2 hover:bg-red-500 hover:text-white transition-colors text-text-secondary"
-                title={t('window.close')}
-                data-tauri-drag-region={false}
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+                <div className="flex items-center">
+                  <button
+                    onClick={() => tauri.minimizeWindow()}
+                    className="px-3 py-2 hover:bg-background-hover transition-colors text-text-secondary hover:text-text-primary"
+                    title={t('window.minimize')}
+                    data-tauri-drag-region={false}
+                  >
+                    <Minus className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => tauri.toggleMaximizeWindow()}
+                    className="px-3 py-2 hover:bg-background-hover transition-colors text-text-secondary hover:text-text-primary"
+                    title={isMaximized ? t('window.restore') : t('window.maximize')}
+                    data-tauri-drag-region={false}
+                  >
+                    <Square className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => tauri.closeWindow()}
+                    className="px-3 py-2 hover:bg-red-500 hover:text-white transition-colors text-text-secondary"
+                    title={t('window.close')}
+                    data-tauri-drag-region={false}
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </>
+            )}
           </>
         )}
       </div>

@@ -145,7 +145,7 @@ export function ExecutionLogDrawer() {
     if (autoScroll && logContainerRef.current && activeExecution) {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
-  }, [activeExecution?.logs, autoScroll]);
+  }, [autoScroll, activeExecution]);
 
   // 检测用户滚动
   const handleScroll = () => {

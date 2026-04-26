@@ -430,9 +430,9 @@ const loggerCache = new Map<string, ModuleLogger>();
  */
 export function createLogger(module: string, options?: Partial<LoggerConfig>): ModuleLogger {
   const cacheKey = module;
-  
+
   if (loggerCache.has(cacheKey) && !options) {
-    return loggerCache.get(cacheKey)!;
+    return loggerCache.get(cacheKey) ?? new ModuleLogger({ module });
   }
 
   const logger = new ModuleLogger({

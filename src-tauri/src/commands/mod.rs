@@ -14,6 +14,7 @@ pub mod file_watcher;
 pub mod diagnostics;
 pub mod todo;
 pub mod requirement;
+pub mod knowledge;
 pub mod prompt_snippet;
 
 // 重新导出命令函数，确保它们在模块级别可见
@@ -31,6 +32,8 @@ pub use workspace::get_home_dir;
 // 集成命令
 
 // 终端命令
+
+pub mod lsp;
 
 pub mod auto_mode;
 pub use auto_mode::{auto_mode_config, auto_mode_defaults};

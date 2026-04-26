@@ -11,12 +11,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, Result};
 
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
-
-#[cfg(windows)]
-use crate::utils::CREATE_NO_WINDOW;
-
 // ============================================================================
 // 类型定义
 // ============================================================================
@@ -130,7 +124,7 @@ impl McpManagerService {
 
     /// 执行 Claude CLI 命令并获取标准输出
     fn execute_claude(&self, args: &[&str]) -> Result<String> {
-        let mut cmd = self.build_command();
+        let mut cmd = crate::services::cli_resolver::build_cli_command(&self.claude_path)?;
         cmd.args(args);
 
         let output = cmd.output().map_err(|e| {
@@ -146,20 +140,6 @@ impl McpManagerService {
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    }
-
-    /// 构建命令 (Windows)
-    #[cfg(windows)]
-    fn build_command(&self) -> std::process::Command {
-        let mut cmd = std::process::Command::new(&self.claude_path);
-        cmd.creation_flags(CREATE_NO_WINDOW);
-        cmd
-    }
-
-    /// 构建命令 (非 Windows)
-    #[cfg(not(windows))]
-    fn build_command(&self) -> std::process::Command {
-        std::process::Command::new(&self.claude_path)
     }
 
     // ----------------------------------------------------------------
@@ -600,7 +580,7 @@ impl McpManagerService {
     ///
     /// 对于需要认证的 HTTP 服务器，调用 `claude mcp add` 重新触发认证
     pub fn start_auth(&self, name: &str, url: &str, scope: &str) -> Result<()> {
-        let mut cmd_args = vec![
+        let cmd_args = vec![
             "mcp", "add",
             "--transport", "http",
             "--scope", scope,

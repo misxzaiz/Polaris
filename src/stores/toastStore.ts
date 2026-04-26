@@ -3,6 +3,7 @@
  */
 
 import { create } from 'zustand'
+import i18n from 'i18next'
 import { storeEventBus } from './storeEventBus'
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info' | 'session_complete'
@@ -101,11 +102,11 @@ export const useToastStore = create<ToastState>((set, get) => ({
   sessionComplete: (title, sessionId, onSwitch) => {
     return get().addToast({
       type: 'session_complete',
-      title: `会话「${title}」已完成`,
+      title: i18n.t('common:toast.sessionComplete', { title }),
       sessionId,
       duration: 120000, // 2 分钟
       action: {
-        label: '切换',
+        label: i18n.t('common:toast.switch'),
         onClick: onSwitch,
       },
     })

@@ -4,7 +4,7 @@
  * 负责 .gitignore 文件管理
  */
 
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '@/services/transport'
 import type { GitignoreSlice } from './types'
 import { parseGitError } from './types'
 import type { GitIgnoreResult, GitIgnoreTemplate } from '@/types/git'

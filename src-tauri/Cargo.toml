@@ -31,10 +31,17 @@ path = "src/bin/polaris_requirements_mcp.rs"
 name = "polaris-scheduler-mcp"
 path = "src/bin/polaris_scheduler_mcp.rs"
 
+[[bin]]
+name = "polaris-knowledge-mcp"
+path = "src/bin/polaris_knowledge_mcp.rs"
+
 [build-dependencies]
 tauri-build = { version = "2.0", features = [] }
 
 [dependencies]
+# Internal crates
+polaris-knowledge-mcp = { path = "../crates/polaris-knowledge-mcp" }
+
 tauri = { version = "2.0", features = ["devtools"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2.7"
@@ -67,6 +74,13 @@ tauri-plugin-notification = "2.3.3"
 # 集成模块依赖（rustls：纯 Rust TLS，不依赖系统 OpenSSL）
 tokio-tungstenite = { version = "0.21", features = ["rustls-tls-native-roots"] }
 async-trait = "0.1"
+
+# Web Access Layer — LAN HTTP/WS server
+axum = { version = "0.8", features = ["ws"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "fs"] }
+if-addrs = "0.13"
+subtle = "2"
 
 # 定时任务依赖
 cron = "0.12"

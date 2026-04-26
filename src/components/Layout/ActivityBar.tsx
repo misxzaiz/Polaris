@@ -6,8 +6,9 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Files, GitPullRequest, CheckSquare, Settings, Languages, Clock, ClipboardList, Terminal, Code2, PanelRight, Bot, Sparkles, Cpu } from 'lucide-react'
+import { Files, GitPullRequest, CheckSquare, Settings, Languages, Clock, ClipboardList, Terminal, Code2, PanelRight, Bot, Sparkles, Cpu, BookOpen, AlertCircle } from 'lucide-react'
 import { useViewStore } from '@/stores/viewStore'
+import { useDiagnosticsStore } from '@/stores/diagnosticsStore'
 import { ActivityBarIcon } from './ActivityBarIcon'
 import { RadialMenu, RadialMenuTrigger } from './RadialMenu'
 import { useTranslation } from 'react-i18next'
@@ -22,6 +23,25 @@ interface ActivityBarProps {
   rightPanelCollapsed?: boolean
   /** 强制折叠模式（如小屏模式），忽略 activityBarCollapsed 状态，始终显示半球触发器 */
   forceCollapsed?: boolean
+}
+
+/** Problems 按钮右下角的错误计数徽章 */
+function ProblemsBadge() {
+  // 订阅 version 以在诊断变化时重渲染
+  useDiagnosticsStore((s) => s.version)
+  // Use getState() to avoid creating new object in selector (causes infinite re-render)
+  const { errors, warnings } = useDiagnosticsStore.getState().summary
+  const total = errors + warnings
+  if (total === 0) return null
+  return (
+    <span
+      className={`absolute -right-0.5 -bottom-0.5 min-w-[14px] h-[14px] px-1 rounded-full text-[9px] font-bold flex items-center justify-center text-white ${
+        errors > 0 ? 'bg-red-500' : 'bg-yellow-500'
+      }`}
+    >
+      {total > 99 ? '99+' : total}
+    </span>
+  )
 }
 
 export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rightPanelCollapsed, forceCollapsed }: ActivityBarProps) {
@@ -129,6 +149,16 @@ export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rig
       icon: Cpu,
       label: t('labels.mcpPanel'),
     },
+    {
+      id: 'knowledge' as const,
+      icon: BookOpen,
+      label: t('labels.knowledgePanel'),
+    },
+    {
+      id: 'problems' as const,
+      icon: AlertCircle,
+      label: t('labels.problemsPanel', { defaultValue: 'Problems' }),
+    },
   ]
 
   // 折叠状态下的渲染（或强制折叠模式）：显示贴边半圆悬浮球 + 扇形菜单
@@ -176,7 +206,9 @@ export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rig
           label={btn.label}
           active={leftPanelType === btn.id}
           onClick={() => toggleLeftPanel(btn.id)}
-        />
+        >
+          {btn.id === 'problems' && <ProblemsBadge />}
+        </ActivityBarIcon>
       ))}
 
       <div className="flex-1" />

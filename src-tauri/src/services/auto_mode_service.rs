@@ -2,16 +2,9 @@
 //!
 //! 封装 Claude CLI 的 auto-mode 命令调用
 
-use std::process::Command;
-
 use crate::error::{AppError, Result};
 use crate::models::auto_mode::{AutoModeConfig, AutoModeDefaults};
-
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
-
-#[cfg(windows)]
-use crate::utils::CREATE_NO_WINDOW;
+use crate::services::cli_resolver;
 
 /// Auto-Mode 服务
 pub struct AutoModeService {
@@ -27,7 +20,7 @@ impl AutoModeService {
 
     /// 执行 Claude CLI 命令并获取输出
     fn execute_claude(&self, args: &[&str]) -> Result<String> {
-        let mut cmd = self.build_command();
+        let mut cmd = cli_resolver::build_cli_command(&self.claude_path)?;
         cmd.args(args);
 
         let output = cmd.output().map_err(|e| {
@@ -43,20 +36,6 @@ impl AutoModeService {
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    }
-
-    /// 构建命令
-    #[cfg(windows)]
-    fn build_command(&self) -> Command {
-        let mut cmd = Command::new(&self.claude_path);
-        cmd.creation_flags(CREATE_NO_WINDOW);
-        cmd
-    }
-
-    /// 构建命令 (非 Windows)
-    #[cfg(not(windows))]
-    fn build_command(&self) -> Command {
-        Command::new(&self.claude_path)
     }
 
     /// 获取当前配置

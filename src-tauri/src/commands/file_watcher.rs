@@ -19,7 +19,7 @@ pub fn fs_watch_start(
         .map_err(|e| AppError::Unknown(e.to_string()))?;
     manager
         .start(root_path, app_handle)
-        .map_err(|e| AppError::Unknown(e))
+        .map_err(AppError::Unknown)
 }
 
 /// 停止文件系统监听

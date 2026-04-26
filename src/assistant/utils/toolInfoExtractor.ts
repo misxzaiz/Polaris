@@ -255,7 +255,7 @@ export function parseToolArgsFromEvent(eventData: {
   // 如果 args 为空，尝试从 content 中提取信息
   if (Object.keys(args).length === 0 && content) {
     // 尝试从 content 中匹配文件路径
-    const pathMatch = content.match(/([\/\\]?[\w\-./]+\.[\w]+)(?:\s|$|:)/)
+    const pathMatch = content.match(/([/\\]?[\w\-./]+\.[\w]+)(?:\s|$|:)/)
     if (pathMatch) {
       return { toolName: tool, brief: extractBasename(pathMatch[1]) }
     }

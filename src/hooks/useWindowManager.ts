@@ -25,7 +25,8 @@ interface UseWindowManagerOptions {
 
 export function useWindowManager({ onOpenSettings, onToggleFileSearch }: UseWindowManagerOptions) {
   const config = useConfigStore(state => state.config);
-  const { compactMode, updateCompactMode } = useViewStore();
+  const compactMode = useViewStore(state => state.compactMode);
+  const updateCompactMode = useViewStore(state => state.updateCompactMode);
 
   const { width: windowWidth, height: windowHeight, isCompact } = useWindowSize({ compactThreshold: 500 });
 

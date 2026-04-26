@@ -6,7 +6,7 @@
  */
 
 import { useRef, useEffect } from 'react'
-import { Files, GitPullRequest, CheckSquare, Settings, Languages, Clock, ClipboardList, Terminal, Code2, PanelRight, Bot, Cpu } from 'lucide-react'
+import { Files, GitPullRequest, CheckSquare, Settings, Languages, Clock, ClipboardList, Terminal, Code2, PanelRight, Bot, Sparkles, Cpu, BookOpen } from 'lucide-react'
 import { useViewStore, LeftPanelType } from '@/stores/viewStore'
 import { useTranslation } from 'react-i18next'
 
@@ -129,11 +129,29 @@ export function RadialMenu({
       }
     },
     {
+      id: 'assistant',
+      icon: Sparkles,
+      label: t('labels.assistantPanel'),
+      onClick: () => {
+        toggleLeftPanel('assistant')
+        onClose()
+      }
+    },
+    {
       id: 'mcp' as LeftPanelType,
       icon: Cpu,
       label: t('labels.mcpPanel'),
       onClick: () => {
         toggleLeftPanel('mcp')
+        onClose()
+      }
+    },
+    {
+      id: 'knowledge',
+      icon: BookOpen,
+      label: t('labels.knowledgePanel'),
+      onClick: () => {
+        toggleLeftPanel('knowledge')
         onClose()
       }
     },
@@ -208,7 +226,7 @@ export function RadialMenu({
   const startAngle = -90 // 从正上方开始（CSS 坐标系）
   const endAngle = 90 // 展开到正下方
   const angleRange = endAngle - startAngle
-  const radius = 100 // 半径（像素）
+  const radius = 120 // 半径（像素），14 项需要更大半径避免拥挤
 
   // 计算菜单项位置
   const getMenuPosition = (index: number) => {

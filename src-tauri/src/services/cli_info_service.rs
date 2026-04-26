@@ -1,11 +1,13 @@
 //! CLI 信息服务
 //!
-//! 封装 Claude CLI 的信息查询命令 (agents, auth status, version)
+//! 封装 Claude CLI 的信息查询命令 (agents, auth status, version, check installed)
 
+use std::path::Path;
 use std::process::Command;
 
 use crate::error::{AppError, Result};
 use crate::models::cli_info::{CliAgentInfo, CliAuthStatus};
+use crate::services::cli_resolver;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -27,7 +29,7 @@ impl CliInfoService {
 
     /// 执行 Claude CLI 命令并获取输出
     fn execute_claude(&self, args: &[&str]) -> Result<String> {
-        let mut cmd = self.build_command();
+        let mut cmd = cli_resolver::build_cli_command(&self.claude_path)?;
         cmd.args(args);
 
         let output = cmd.output().map_err(|e| {
@@ -43,20 +45,6 @@ impl CliInfoService {
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    }
-
-    /// 构建命令
-    #[cfg(windows)]
-    fn build_command(&self) -> Command {
-        let mut cmd = Command::new(&self.claude_path);
-        cmd.creation_flags(CREATE_NO_WINDOW);
-        cmd
-    }
-
-    /// 构建命令 (非 Windows)
-    #[cfg(not(windows))]
-    fn build_command(&self) -> Command {
-        Command::new(&self.claude_path)
     }
 
     /// 获取 Agent 列表
@@ -85,6 +73,73 @@ impl CliInfoService {
         let output = self.execute_claude(&["--version"])?;
         Ok(output.trim().to_string())
     }
+}
+
+/// 检查指定 CLI 是否已安装
+///
+/// 使用 which/where 命令查找可执行文件路径
+pub fn check_cli_installed(cli_name: &str) -> bool {
+    // 首先检查是否为绝对路径
+    if Path::new(cli_name).is_absolute() {
+        return Path::new(cli_name).exists();
+    }
+
+    // 使用 which 查找可执行文件
+    #[cfg(windows)]
+    {
+        // Windows 使用 where 命令
+        let output = Command::new("where")
+            .arg(cli_name)
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+
+        match output {
+            Ok(o) => o.status.success(),
+            Err(_) => false,
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        // Unix 使用 which 命令
+        let output = Command::new("which")
+            .arg(cli_name)
+            .output();
+
+        match output {
+            Ok(o) => o.status.success(),
+            Err(_) => false,
+        }
+    }
+}
+
+/// 获取指定 CLI 的版本
+///
+/// 通用版本获取函数，执行 `<cli_name> --version`
+pub fn get_cli_version(cli_name: &str) -> Result<String> {
+    #[cfg(windows)]
+    let output = Command::new(cli_name)
+        .arg("--version")
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| AppError::ProcessError(format!("执行 {} --version 失败: {}", cli_name, e)))?;
+
+    #[cfg(not(windows))]
+    let output = Command::new(cli_name)
+        .arg("--version")
+        .output()
+        .map_err(|e| AppError::ProcessError(format!("执行 {} --version 失败: {}", cli_name, e)))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(AppError::ProcessError(format!(
+            "{} --version 执行失败: {}",
+            cli_name,
+            stderr.trim()
+        )));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 /// 解析 `claude agents` 的文本输出
@@ -156,10 +211,8 @@ fn format_agent_display_name(id: &str) -> String {
     // general-purpose → "General Purpose"
     // Explore → "Explore"
 
-    let display = id
-        .split(':')
-        .last()
-        .unwrap_or(id);
+    let mut parts = id.split(':');
+    let display = parts.next_back().unwrap_or(id);
 
     display
         .split('-')

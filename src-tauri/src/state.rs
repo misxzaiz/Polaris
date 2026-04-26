@@ -4,8 +4,8 @@
  */
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use tokio::sync::Mutex as AsyncMutex;
+use std::sync::{Arc, Mutex, OnceLock};
+use tokio::sync::{Mutex as AsyncMutex, broadcast};
 
 use crate::ai::EngineRegistry;
 use crate::commands::context::ContextMemoryStore;
@@ -13,7 +13,10 @@ use crate::commands::terminal::TerminalManager;
 use crate::integrations::IntegrationManager;
 use crate::services::config_store::ConfigStore;
 use crate::services::file_watcher::FileWatcherManager;
+use crate::services::lsp::LspManager;
+use crate::services::lsp_config_repository::LspConfigRepository;
 use crate::services::scheduler_daemon::SchedulerDaemon;
+use crate::web::server::WebServerHandle;
 
 /// 待回答问题信息
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -44,7 +47,7 @@ pub struct QuestionOption {
 }
 
 /// 问题状态
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum QuestionStatus {
     Pending,
@@ -98,7 +101,7 @@ pub struct PendingPlan {
 /// 全局配置状态
 pub struct AppState {
     /// 配置存储
-    pub config_store: Mutex<ConfigStore>,
+    pub config_store: Arc<Mutex<ConfigStore>>,
     /// 保存会话 ID 到进程 PID 的映射（保留向后兼容）
     /// 使用 PID 而不是 Child，因为 Child 会在读取输出时被消费
     pub sessions: Arc<Mutex<HashMap<String, u32>>>,
@@ -118,6 +121,24 @@ pub struct AppState {
     pub pending_plans: Arc<Mutex<HashMap<String, PendingPlan>>>,
     /// 调度器守护进程
     pub scheduler_daemon: AsyncMutex<Option<SchedulerDaemon>>,
+    /// LSP 语言服务器管理器
+    pub lsp_manager: Mutex<LspManager>,
+    /// LSP 配置持久化
+    pub lsp_config: Mutex<LspConfigRepository>,
+    /// WebSocket 事件广播通道（Web Access Layer）
+    pub event_broadcast: broadcast::Sender<String>,
+    /// Tauri AppHandle — set once during setup, used by Web API handlers
+    /// to emit events back to the desktop webview (dual emission).
+    pub app_handle: OnceLock<tauri::AppHandle>,
+    /// Application config directory — set once during setup from window.path().
+    /// Shared by both Tauri commands and Web API handlers for consistent path resolution.
+    pub app_config_dir: OnceLock<std::path::PathBuf>,
+    /// Application resource directory — set once during setup from window.path().
+    pub resource_dir: OnceLock<Option<std::path::PathBuf>>,
+    /// Application start instant — used by health check to report uptime.
+    pub start_time: Option<std::time::Instant>,
+    /// Running web server handle — allows dynamic start/stop without app restart.
+    pub web_server_handle: Arc<AsyncMutex<Option<WebServerHandle>>>,
 }
 
 /// 创建应用状态
@@ -126,8 +147,12 @@ pub fn create_app_state(
     engine_registry: Arc<AsyncMutex<EngineRegistry>>,
     integration_manager: IntegrationManager,
 ) -> AppState {
+    let config_dir = dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("claude-code-pro");
+
     AppState {
-        config_store: Mutex::new(config_store),
+        config_store: Arc::new(Mutex::new(config_store)),
         sessions: Arc::new(Mutex::new(HashMap::new())),
         context_store: Arc::new(Mutex::new(ContextMemoryStore::new())),
         integration_manager: AsyncMutex::new(integration_manager),
@@ -137,5 +162,75 @@ pub fn create_app_state(
         pending_questions: Arc::new(Mutex::new(HashMap::new())),
         pending_plans: Arc::new(Mutex::new(HashMap::new())),
         scheduler_daemon: AsyncMutex::new(None),
+        lsp_manager: Mutex::new(LspManager::new()),
+        lsp_config: Mutex::new(LspConfigRepository::new(&config_dir)),
+        event_broadcast: broadcast::channel(256).0,
+        app_handle: OnceLock::new(),
+        app_config_dir: OnceLock::new(),
+        resource_dir: OnceLock::new(),
+        start_time: Some(std::time::Instant::now()),
+        web_server_handle: Arc::new(AsyncMutex::new(None)),
+    }
+}
+
+impl AppState {
+    /// Clone the current config by briefly acquiring the config_store lock.
+    /// Consolidates the lock-clone-drop pattern used in multiple web handlers.
+    pub fn clone_config(&self) -> Result<crate::models::config::Config, String> {
+        let store = self.config_store.lock()
+            .map_err(|e| e.to_string())?;
+        Ok(store.get().clone())
+    }
+
+    /// Clone shared Arc fields for the web server.
+    ///
+    /// Non-shared fields (integration_manager, terminal_manager, etc.) get fresh
+    /// empty instances — the web server never accesses them.
+    pub fn clone_for_web(&self) -> AppState {
+        // Carry over app_config_dir if set, fallback to heuristic
+        let config_dir = self.app_config_dir.get()
+            .cloned()
+            .unwrap_or_else(|| {
+                dirs::config_dir()
+                    .unwrap_or_else(|| std::path::PathBuf::from("."))
+                    .join("claude-code-pro")
+            });
+
+        // Carry over app_handle if already set
+        let app_handle = OnceLock::new();
+        if let Some(handle) = self.app_handle.get() {
+            let _ = app_handle.set(handle.clone());
+        }
+
+        // Carry over resource_dir if set
+        let resource_dir = OnceLock::new();
+        if let Some(rd) = self.resource_dir.get() {
+            let _ = resource_dir.set(rd.clone());
+        }
+
+        AppState {
+            config_store: self.config_store.clone(),
+            sessions: self.sessions.clone(),
+            context_store: self.context_store.clone(),
+            integration_manager: AsyncMutex::new(IntegrationManager::new()),
+            engine_registry: self.engine_registry.clone(),
+            terminal_manager: Mutex::new(TerminalManager::new()),
+            file_watcher_manager: Mutex::new(FileWatcherManager::new()),
+            pending_questions: self.pending_questions.clone(),
+            pending_plans: self.pending_plans.clone(),
+            scheduler_daemon: AsyncMutex::new(None),
+            lsp_manager: Mutex::new(LspManager::new()),
+            lsp_config: Mutex::new(LspConfigRepository::new(&config_dir)),
+            event_broadcast: self.event_broadcast.clone(),
+            app_handle,
+            app_config_dir: {
+                let lock = OnceLock::new();
+                let _ = lock.set(config_dir);
+                lock
+            },
+            resource_dir,
+            start_time: self.start_time,
+            web_server_handle: self.web_server_handle.clone(),
+        }
     }
 }
