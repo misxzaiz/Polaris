@@ -59,7 +59,13 @@
         "integration",
         "ipc-bridge",
         "speech-voice",
-        "ui-framework"
+        "ui-framework",
+        "frontend-services",
+        "frontend-stores",
+        "frontend-hooks",
+        "frontend-utils",
+        "i18n",
+        "docs-site"
       ]
     }
   ],
@@ -1608,6 +1614,205 @@
         }
       ],
       "traps": []
+    },
+    {
+      "id": "frontend-services",
+      "name": "前端服务层",
+      "domain": "platform-integration",
+      "scope": {
+        "include": [
+          "src/services/**"
+        ]
+      },
+      "dependencies": [
+        "ipc-bridge",
+        "ai-runtime"
+      ],
+      "dependents": [
+        "frontend-stores",
+        "frontend-hooks"
+      ],
+      "documentFile": "frontend-services.md",
+      "complexity": "high",
+      "changeFrequency": "medium",
+      "assertions": [],
+      "traps": [
+        {
+          "id": "frontend-services/trap-event-router-session-id",
+          "description": "eventRouter 中不同引擎的 sessionId 路径不同（Claude 用 contextId，OpenAI 用 sessionId），路由逻辑需兼容两种",
+          "severity": "high"
+        },
+        {
+          "id": "frontend-services/trap-http-transport-reconnect",
+          "description": "WebSocket 断开后重连需重新订阅所有 session，否则丢失事件",
+          "severity": "high"
+        },
+        {
+          "id": "frontend-services/trap-workspace-reference-path",
+          "description": "workspaceReference 中 @path 和 @workspace:path 在不同 OS 下路径分隔符行为不同",
+          "severity": "medium"
+        }
+      ]
+    },
+    {
+      "id": "frontend-stores",
+      "name": "前端状态管理",
+      "domain": "platform-integration",
+      "scope": {
+        "include": [
+          "src/stores/**"
+        ]
+      },
+      "dependencies": [
+        "frontend-services",
+        "ai-runtime"
+      ],
+      "dependents": [
+        "frontend-hooks"
+      ],
+      "documentFile": "frontend-stores.md",
+      "complexity": "high",
+      "changeFrequency": "medium",
+      "assertions": [],
+      "traps": [
+        {
+          "id": "frontend-stores/trap-session-store-lru",
+          "description": "sessionStoreManager 的 LRU 淘汰 (MAX_IDLE_STORES=5) 需确保不淘汰活跃会话",
+          "severity": "high"
+        },
+        {
+          "id": "frontend-stores/trap-git-slice-dependency",
+          "description": "gitStore 的 branchSlice 和 statusSlice 存在隐式依赖，切换分支需刷新 status",
+          "severity": "medium"
+        },
+        {
+          "id": "frontend-stores/trap-view-store-persist",
+          "description": "viewStore 持久化后窗口尺寸变化可能导致存储的面板宽度不适配",
+          "severity": "medium"
+        }
+      ]
+    },
+    {
+      "id": "frontend-hooks",
+      "name": "前端 Hooks 层",
+      "domain": "platform-integration",
+      "scope": {
+        "include": [
+          "src/hooks/**"
+        ]
+      },
+      "dependencies": [
+        "frontend-stores",
+        "frontend-services"
+      ],
+      "dependents": [],
+      "documentFile": "frontend-hooks.md",
+      "complexity": "medium",
+      "changeFrequency": "medium",
+      "assertions": [],
+      "traps": [
+        {
+          "id": "frontend-hooks/trap-app-init-duplicate",
+          "description": "useAppInit 必须用 useEffect + ref guard 确保只执行一次，否则重复初始化导致引擎冲突",
+          "severity": "high"
+        },
+        {
+          "id": "frontend-hooks/trap-use-chat-leak",
+          "description": "useChat 组件卸载时必须取消 EventRouter 订阅，否则内存泄漏",
+          "severity": "medium"
+        }
+      ]
+    },
+    {
+      "id": "frontend-utils",
+      "name": "前端工具函数",
+      "domain": "platform-integration",
+      "scope": {
+        "include": [
+          "src/utils/**"
+        ]
+      },
+      "dependencies": [
+        "ui-framework"
+      ],
+      "dependents": [
+        "chat-render",
+        "frontend-stores"
+      ],
+      "documentFile": "frontend-utils.md",
+      "complexity": "medium",
+      "changeFrequency": "medium",
+      "assertions": [],
+      "traps": [
+        {
+          "id": "frontend-utils/trap-dual-lru",
+          "description": "cache.ts（带 TTL）和 lru-cache.ts（不带 TTL）设计意图不同，不要合并",
+          "severity": "high"
+        },
+        {
+          "id": "frontend-utils/trap-compactor-debounce",
+          "description": "messageCompactor 的 80% overlap debounce 不能删除，否则 compact/hydrate 会振荡",
+          "severity": "high"
+        },
+        {
+          "id": "frontend-utils/trap-compaction-range-reset",
+          "description": "setMessagesFromHistory 加载新会话时必须重置 _lastCompactionRange",
+          "severity": "medium"
+        }
+      ]
+    },
+    {
+      "id": "i18n",
+      "name": "国际化",
+      "domain": "platform-integration",
+      "scope": {
+        "include": [
+          "src/i18n/**",
+          "src/locales/**"
+        ]
+      },
+      "dependencies": [],
+      "dependents": [
+        "ui-framework",
+        "frontend-services"
+      ],
+      "documentFile": "i18n.md",
+      "complexity": "medium",
+      "changeFrequency": "low",
+      "assertions": [],
+      "traps": [
+        {
+          "id": "i18n/trap-namespace-sync",
+          "description": "新增翻译 key 需同时更新 zh-CN 和 en-US 共 40 个 JSON 文件，遗漏会导致 fallback 到 key",
+          "severity": "medium"
+        }
+      ]
+    },
+    {
+      "id": "docs-site",
+      "name": "VitePress 文档站",
+      "domain": "platform-integration",
+      "scope": {
+        "include": [
+          "docs-site/**"
+        ],
+        "exclude": [
+          "docs-site/node_modules/**"
+        ]
+      },
+      "dependencies": [],
+      "dependents": [],
+      "documentFile": "docs-site.md",
+      "complexity": "medium",
+      "changeFrequency": "low",
+      "assertions": [],
+      "traps": [
+        {
+          "id": "docs-site/trap-sidebar-config",
+          "description": "VitePress sidebar 在 config.ts 中手动维护，新增页面需同步更新配置",
+          "severity": "low"
+        }
+      ]
     }
   ],
   "globalConventions": [

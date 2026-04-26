@@ -263,11 +263,7 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
               )}
 
               {activeTab === 'web' && (
-                <WebTab
-                  config={localConfig}
-                  onConfigChange={setLocalConfig}
-                  loading={loading}
-                />
+                <WebTab loading={loading} />
               )}
             </div>
 

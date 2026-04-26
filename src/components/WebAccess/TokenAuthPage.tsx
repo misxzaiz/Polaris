@@ -50,12 +50,20 @@ export function TokenAuthPage({ defaultServerUrl, onAuthSuccess }: TokenAuthPage
         if (cancelled) return;
 
         if (res.ok) {
-          const data = await res.json() as { valid?: boolean; token?: string };
-          if (data.valid && data.token) {
-            // Bootstrap succeeded — server accepted our token
-            log.info('Bootstrap succeeded, token configured');
-            onAuthSuccess(serverUrl, data.token);
-            return;
+          const data = await res.json() as { valid?: boolean; token?: string; authEnabled?: boolean };
+          if (data.valid) {
+            if (!data.authEnabled) {
+              // Auth disabled on server — no token needed, enter directly
+              log.info('Server auth disabled, entering without token');
+              onAuthSuccess(serverUrl, '__no_auth__');
+              return;
+            }
+            if (data.token) {
+              // Bootstrap succeeded — server accepted our token
+              log.info('Bootstrap succeeded, token configured');
+              onAuthSuccess(serverUrl, data.token);
+              return;
+            }
           }
         }
         // Bootstrap failed — server already has a token, user must input it manually

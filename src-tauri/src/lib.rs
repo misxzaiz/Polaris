@@ -11,7 +11,7 @@ pub mod web;
 pub use state::AppState;
 pub use error::{AppError, Result};
 
-use models::config::{Config, HealthStatus};
+use models::config::{Config, HealthStatus, WebConfig};
 use services::config_store::ConfigStore;
 use services::logger::Logger;
 use commands::chat::{start_chat, continue_chat, interrupt_chat};
@@ -142,67 +142,128 @@ fn regenerate_web_token(state: tauri::State<AppState>) -> std::result::Result<se
     Ok(serde_json::json!({ "token": new_token }))
 }
 
-/// 动态应用 Web 服务器配置：根据当前 config.web 启动或停止服务器。
-///
-/// 保存 Web 配置后，前端应调用此命令以即时生效，无需重启应用。
+/// 查询 Web 服务器当前运行状态（实际端口、是否运行等）。
 #[tauri::command]
-fn apply_web_server(state: tauri::State<AppState>) -> std::result::Result<serde_json::Value, error::AppError> {
+async fn get_web_server_status(
+    state: tauri::State<'_, AppState>,
+) -> std::result::Result<serde_json::Value, error::AppError> {
+    let config_store = state.config_store.clone();
+    let handle_arc = state.web_server_handle.clone();
+    drop(state); // Release Tauri State borrow before any .await
+
     let config = {
-        let store = state.config_store.lock()
+        let store = config_store.lock()
             .map_err(|e| error::AppError::Unknown(e.to_string()))?;
         store.get().clone()
     };
 
-    // Case: user disabled the web service — stop running server
-    if !config.web.enabled {
-        let handle_arc = state.web_server_handle.clone();
-        tauri::async_runtime::spawn(async move {
-            let mut guard = handle_arc.lock().await;
-            if let Some(old_handle) = guard.take() {
-                old_handle.shutdown.cancel();
-                tracing::info!("[Web] Server stopped by user");
-            }
-        });
-        return Ok(serde_json::json!({ "running": false, "token": config.web.token }));
-    }
-
-    // Case: user enabled the web service — resolve token first
-    let token = web::auth::resolve_token(config.web.token.as_deref());
-
-    // Persist auto-generated token so frontend can display it
-    let final_token = if config.web.token.as_deref() != Some(&token) {
-        let mut cfg = config.clone();
-        cfg.web.token = Some(token.clone());
-        let mut store = state.config_store.lock()
-            .map_err(|e| error::AppError::Unknown(e.to_string()))?;
-        store.update(cfg)
-            .map_err(|e| error::AppError::Unknown(e.to_string()))?;
-        token
-    } else {
-        config.web.token.clone().unwrap_or_default()
+    let guard = handle_arc.lock().await;
+    let (running, actual_port) = match guard.as_ref() {
+        Some(handle) => {
+            let is_running = !handle.shutdown.is_cancelled() && !handle.task.is_finished();
+            (is_running, if is_running { Some(handle.actual_port) } else { None })
+        }
+        None => (false, None),
     };
 
-    let port = web::server::WebServer::resolve_port(config.web.port);
-    let addr = format!("{}:{}", config.web.host, port);
-    let web_state = Arc::new(state.clone_for_web());
-    let web_server = web::server::WebServer::new(web_state);
-    let handle_arc = state.web_server_handle.clone();
-    let addr_log = addr.clone();
+    Ok(serde_json::json!({
+        "running": running,
+        "actualPort": actual_port,
+        "configuredPort": config.web.port,
+        "host": config.web.host,
+        "token": config.web.token,
+        "enabled": config.web.enabled,
+        "authEnabled": config.web.auth_enabled,
+    }))
+}
 
-    tauri::async_runtime::spawn(async move {
-        // Stop existing server if any (port/host change)
+/// 原子更新 Web 配置并即时启停服务。
+///
+/// 接收前端传入的 `WebConfig`，保存到配置文件，然后根据 `enabled` 启动或停止服务器。
+/// 启动时自动尝试端口递增（最多 10 个端口），返回实际使用的端口。
+#[tauri::command]
+async fn update_and_apply_web(
+    web_config: WebConfig,
+    state: tauri::State<'_, AppState>,
+) -> std::result::Result<serde_json::Value, error::AppError> {
+    // Clone Arc fields while state borrow is held, then release
+    let config_store = state.config_store.clone();
+    let handle_arc = state.web_server_handle.clone();
+    let web_state_base = state.clone_for_web();
+    drop(state); // Release Tauri State borrow before any .await
+
+    // 1. Save web config into existing config (merge, not overwrite other fields)
+    let config = {
+        let mut store = config_store.lock()
+            .map_err(|e| error::AppError::Unknown(e.to_string()))?;
+        let mut full_config = store.get().clone();
+        full_config.web = web_config;
+        store.update(full_config.clone())
+            .map_err(|e| error::AppError::Unknown(e.to_string()))?;
+        full_config
+    };
+
+    // 2. Stop existing server if any
+    {
         let mut guard = handle_arc.lock().await;
         if let Some(old_handle) = guard.take() {
             old_handle.shutdown.cancel();
             let _ = old_handle.task.await;
         }
+    }
 
-        tracing::info!("[Web] Starting web server on {}", addr_log);
-        let handle = web_server.start(&addr);
+    // 3. If disabled, return stopped status
+    if !config.web.enabled {
+        return Ok(serde_json::json!({
+            "running": false,
+            "actualPort": null,
+            "portRedirected": false,
+            "token": config.web.token,
+        }));
+    }
+
+    // 4. Resolve token (only when auth is enabled)
+    let final_token = if config.web.auth_enabled {
+        let token = web::auth::resolve_token(config.web.token.as_deref());
+        if config.web.token.as_deref() != Some(&token) {
+            let mut store = config_store.lock()
+                .map_err(|e| error::AppError::Unknown(e.to_string()))?;
+            let mut full_config = store.get().clone();
+            full_config.web.token = Some(token.clone());
+            store.update(full_config)
+                .map_err(|e| error::AppError::Unknown(e.to_string()))?;
+            token
+        } else {
+            config.web.token.clone().unwrap_or_default()
+        }
+    } else {
+        // Auth disabled — no token needed
+        String::new()
+    };
+
+    // 5. Start server with port fallback (auto-increment if occupied)
+    let port = web::server::WebServer::resolve_port(config.web.port);
+    let web_state = Arc::new(web_state_base);
+    let web_server = web::server::WebServer::new(web_state);
+
+    let (handle, actual_port) = web_server
+        .start_with_fallback(&config.web.host, port)
+        .await
+        .map_err(|e| error::AppError::Unknown(format!("Failed to start web server: {}", e)))?;
+
+    {
+        let mut guard = handle_arc.lock().await;
         *guard = Some(handle);
-    });
+    }
 
-    Ok(serde_json::json!({ "running": true, "token": final_token }))
+    let port_redirected = actual_port != port;
+
+    Ok(serde_json::json!({
+        "running": true,
+        "actualPort": actual_port,
+        "portRedirected": port_redirected,
+        "token": final_token,
+    }))
 }
 
 /// 获取本机局域网 IP 地址列表（智能排序：真实 LAN IP 优先，虚拟网卡靠后）
@@ -393,32 +454,51 @@ pub fn run() {
             };
 
             if config.web.enabled {
-                // Resolve token: use configured value or auto-generate
-                let token = web::auth::resolve_token(config.web.token.as_deref());
+                // Resolve token: only auto-generate when auth is enabled
+                if config.web.auth_enabled {
+                    let token = web::auth::resolve_token(config.web.token.as_deref());
 
-                // Persist auto-generated token so it survives restarts
-                if config.web.token.as_deref() != Some(&token) {
-                    let mut cfg = config.clone();
-                    cfg.web.token = Some(token.clone());
-                    let mut store = state.config_store.lock()
-                        .unwrap_or_else(|e: std::sync::PoisonError<std::sync::MutexGuard<'_, ConfigStore>>| e.into_inner());
-                    if let Err(e) = store.update(cfg) {
-                        tracing::error!("[Web] Failed to persist auto-generated token: {}", e);
+                    // Persist auto-generated token so it survives restarts
+                    if config.web.token.as_deref() != Some(&token) {
+                        let mut cfg = config.clone();
+                        cfg.web.token = Some(token.clone());
+                        let mut store = state.config_store.lock()
+                            .unwrap_or_else(|e: std::sync::PoisonError<std::sync::MutexGuard<'_, ConfigStore>>| e.into_inner());
+                        if let Err(e) = store.update(cfg) {
+                            tracing::error!("[Web] Failed to persist auto-generated token: {}", e);
+                        }
                     }
+                } else {
+                    tracing::info!("[Web] Authentication disabled — LAN access does not require token");
                 }
 
                 let port = web::server::WebServer::resolve_port(config.web.port);
-                let addr = format!("{}:{}", config.web.host, port);
                 let web_state = Arc::new(state.clone_for_web());
                 let web_server = web::server::WebServer::new(web_state);
                 let handle_arc = state.web_server_handle.clone();
-                let addr_log = addr.clone();
+                let host = config.web.host.clone();
 
                 tauri::async_runtime::spawn(async move {
-                    tracing::info!("[Web] Starting web server on {}", addr_log);
-                    let handle = web_server.start(&addr);
-                    let mut guard = handle_arc.lock().await;
-                    *guard = Some(handle);
+                    tracing::info!("[Web] Auto-starting web server on {}:{}", host, port);
+                    match web_server.start_with_fallback(&host, port).await {
+                        Ok((handle, actual_port)) => {
+                            if actual_port != port {
+                                tracing::warn!(
+                                    "[Web] Port {} occupied, auto-switched to {}",
+                                    port, actual_port
+                                );
+                            }
+                            let mut guard = handle_arc.lock().await;
+                            *guard = Some(handle);
+                        }
+                        Err(e) => {
+                            // Non-fatal: desktop app still works without web server
+                            tracing::error!(
+                                "[Web] Auto-start failed (non-fatal, desktop app continues): {}",
+                                e
+                            );
+                        }
+                    }
                 });
             }
 
@@ -443,7 +523,8 @@ pub fn run() {
             get_config,
             update_config,
             regenerate_web_token,
-            apply_web_server,
+            get_web_server_status,
+            update_and_apply_web,
             get_local_ips,
             set_work_dir,
             set_claude_cmd,

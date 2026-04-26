@@ -83,34 +83,77 @@ pub fn is_cli_available(cli_path: &str) -> bool {
 // 检测
 // ---------------------------------------------------------------------------
 
+/// 将裸命令名（如 "claude"）解析为完整路径（仅 Windows）
+///
+/// 使用 `where` 命令查找，与 `ConfigStore::resolve_claude_path` 策略对齐。
+#[cfg(windows)]
+fn resolve_bare_command(cmd: &str) -> Option<String> {
+    let output = Command::new("cmd")
+        .args(["/C", "where", cmd])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok();
+
+    if let Some(out) = output {
+        if out.status.success() {
+            return String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .next()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+        }
+    }
+    None
+}
+
 /// 检测 CLI 安装类型（仅 Windows）
 #[cfg(windows)]
 pub fn detect_cli_type(cli_path: &str) -> Result<CliType> {
-    let path = Path::new(cli_path);
+    // 如果是裸命令名（不含路径分隔符），先用 where 解析为完整路径
+    let resolved = if !cli_path.contains(std::path::MAIN_SEPARATOR)
+        && !cli_path.contains('/')
+        && !cli_path.contains('\\')
+    {
+        match resolve_bare_command(cli_path) {
+            Some(full_path) => {
+                tracing::info!("[CliResolver] 裸命令 '{}' 解析为: {}", cli_path, full_path);
+                full_path
+            }
+            None => {
+                return Err(AppError::ProcessError(format!(
+                    "CLI 路径不存在且无法通过 where 命令解析: {}", cli_path
+                )));
+            }
+        }
+    } else {
+        cli_path.to_string()
+    };
+
+    let resolved_path = Path::new(&resolved);
 
     // 提前检查路径是否存在
-    if !path.exists() {
-        return Err(AppError::ProcessError(format!("CLI 路径不存在: {}", cli_path)));
+    if !resolved_path.exists() {
+        return Err(AppError::ProcessError(format!("CLI 路径不存在: {}", resolved)));
     }
 
     // 情况 1: 如果是 .exe 文件且不在 node_modules 中，可能是独立可执行文件
-    if path.extension().map(|e| e == "exe").unwrap_or(false) {
+    if resolved_path.extension().map(|e| e == "exe").unwrap_or(false) {
         // 检查是否是 npm/pnpm 的包装脚本
         // npm/pnpm 的 .exe 通常很小，真正的逻辑在 cli.js 中
         // 如果是较大的独立可执行文件，直接执行
-        let is_standalone = is_likely_standalone_exe(cli_path);
+        let is_standalone = is_likely_standalone_exe(&resolved);
 
         if is_standalone {
-            tracing::info!("[CliResolver] 检测到独立可执行文件: {}", cli_path);
+            tracing::info!("[CliResolver] 检测到独立可执行文件: {}", resolved);
             return Ok(CliType::Standalone {
-                exe_path: cli_path.to_string(),
+                exe_path: resolved,
             });
         }
     }
 
     // 情况 2: npm/pnpm 安装 - 需要解析 node.exe 和 cli.js
-    tracing::info!("[CliResolver] 尝试解析为 npm/pnpm 安装: {}", cli_path);
-    let (node_exe, cli_js) = resolve_node_and_cli(cli_path)?;
+    tracing::info!("[CliResolver] 尝试解析为 npm/pnpm 安装: {}", resolved);
+    let (node_exe, cli_js) = resolve_node_and_cli(&resolved)?;
     Ok(CliType::NpmWrapper { node_exe, cli_js })
 }
 

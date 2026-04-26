@@ -2,11 +2,12 @@
 //!
 //! 封装 Claude CLI 的信息查询命令 (agents, auth status, version, check installed)
 
-use std::process::Command;
 use std::path::Path;
+use std::process::Command;
 
 use crate::error::{AppError, Result};
 use crate::models::cli_info::{CliAgentInfo, CliAuthStatus};
+use crate::services::cli_resolver;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -28,7 +29,7 @@ impl CliInfoService {
 
     /// 执行 Claude CLI 命令并获取输出
     fn execute_claude(&self, args: &[&str]) -> Result<String> {
-        let mut cmd = self.build_command();
+        let mut cmd = cli_resolver::build_cli_command(&self.claude_path)?;
         cmd.args(args);
 
         let output = cmd.output().map_err(|e| {
@@ -44,20 +45,6 @@ impl CliInfoService {
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    }
-
-    /// 构建命令
-    #[cfg(windows)]
-    fn build_command(&self) -> Command {
-        let mut cmd = Command::new(&self.claude_path);
-        cmd.creation_flags(CREATE_NO_WINDOW);
-        cmd
-    }
-
-    /// 构建命令 (非 Windows)
-    #[cfg(not(windows))]
-    fn build_command(&self) -> Command {
-        Command::new(&self.claude_path)
     }
 
     /// 获取 Agent 列表

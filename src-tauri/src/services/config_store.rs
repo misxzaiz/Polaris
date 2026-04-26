@@ -44,7 +44,15 @@ impl ConfigStore {
         // 如果 claude_code.cli_path 是默认值，尝试解析完整路径
         if config.claude_code.cli_path == "claude" {
             eprintln!("尝试解析 Claude 路径...");
-            if let Some(full_path) = Self::resolve_claude_path() {
+            let resolved = Self::resolve_claude_path().or_else(|| {
+                // Fallback: resolve_claude_path 失败时（如首次安装 PATH 未刷新），
+                // 使用 find_claude_paths 的全面路径扫描策略
+                eprintln!("[ConfigStore] resolve_claude_path 失败，尝试全面路径扫描...");
+                let found = Self::find_claude_paths();
+                found.into_iter().next()
+            });
+
+            if let Some(full_path) = resolved {
                 config.claude_code.cli_path = full_path.clone();
                 eprintln!("找到 Claude 路径: {}", full_path);
                 // 立即保存配置
@@ -54,7 +62,7 @@ impl ConfigStore {
                     eprintln!("Claude 路径已解析并保存: {}", full_path);
                 }
             } else {
-                eprintln!("无法解析 Claude 路径");
+                eprintln!("无法解析 Claude 路径（已尝试 which/where + 全面路径扫描）");
             }
         }
 

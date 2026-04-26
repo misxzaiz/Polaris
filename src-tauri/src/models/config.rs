@@ -693,10 +693,15 @@ pub struct WebConfig {
     /// 认证 Token（None → 首次启动自动生成）
     #[serde(default)]
     pub token: Option<String>,
+
+    /// 是否启用 Token 认证（false → 允许无认证访问，适用于安全内网）
+    #[serde(default = "default_true")]
+    pub auth_enabled: bool,
 }
 
 fn default_web_host() -> String { "0.0.0.0".to_string() }
 fn default_web_port() -> u16 { 9800 }
+fn default_true() -> bool { true }
 
 impl Default for WebConfig {
     fn default() -> Self {
@@ -705,6 +710,7 @@ impl Default for WebConfig {
             host: default_web_host(),
             port: default_web_port(),
             token: None,
+            auth_enabled: true,
         }
     }
 }

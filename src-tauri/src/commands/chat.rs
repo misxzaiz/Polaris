@@ -457,6 +457,16 @@ pub async fn start_chat_inner(
     }
 
     let mut registry = state.engine_registry.lock().await;
+
+    // 在启动会话前，从 ConfigStore 刷新引擎配置
+    // 确保用户通过设置/ConnectingOverlay 更新的 CLI 路径能及时生效
+    {
+        if let Ok(store) = state.config_store.lock() {
+            let current_config = store.get();
+            registry.refresh_engine_config(&engine, current_config);
+        }
+    }
+
     registry.start_session(Some(engine), &final_message, session_opts)
 }
 
@@ -562,6 +572,15 @@ pub async fn continue_chat_inner(
     }
 
     let mut registry = state.engine_registry.lock().await;
+
+    // 在继续会话前，从 ConfigStore 刷新引擎配置
+    {
+        if let Ok(store) = state.config_store.lock() {
+            let current_config = store.get();
+            registry.refresh_engine_config(&engine, current_config);
+        }
+    }
+
     registry.continue_session(engine, &session_id, &final_message, session_opts)
 }
 

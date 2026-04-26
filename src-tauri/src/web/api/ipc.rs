@@ -1246,26 +1246,52 @@ fn dispatch_auto_mode_defaults(state: &AppState) -> Result<Json<Value>, WebError
 }
 fn dispatch_cli_get_agents(state: &AppState) -> Result<Json<Value>, WebError> {
     let p = state.lock_config()?.get().claude_cmd.clone().unwrap_or_else(|| "claude".to_string());
+
+    // 防护: CLI 不可用时返回空列表而非 500
+    if !crate::services::cli_resolver::is_cli_available(&p) {
+        tracing::debug!("[IPC] CLI not available: {}, returning empty agents", p);
+        return Ok(Json(Value::Array(Vec::new())));
+    }
+
     let svc = crate::services::cli_info_service::CliInfoService::new(p);
     json_result!(svc.get_agents())
 }
 fn dispatch_cli_get_auth_status(state: &AppState) -> Result<Json<Value>, WebError> {
     let p = state.lock_config()?.get().claude_cmd.clone().unwrap_or_else(|| "claude".to_string());
+
+    if !crate::services::cli_resolver::is_cli_available(&p) {
+        return Ok(Json(serde_json::json!({
+            "authenticated": false,
+            "error": "Claude CLI not installed"
+        })));
+    }
+
     let svc = crate::services::cli_info_service::CliInfoService::new(p);
     json_result!(svc.get_auth_status())
 }
 fn dispatch_cli_get_version(state: &AppState) -> Result<Json<Value>, WebError> {
     let p = state.lock_config()?.get().claude_cmd.clone().unwrap_or_else(|| "claude".to_string());
+
+    if !crate::services::cli_resolver::is_cli_available(&p) {
+        return Ok(Json(Value::Null));
+    }
+
     let svc = crate::services::cli_info_service::CliInfoService::new(p);
     json_result!(svc.get_version())
 }
 fn dispatch_cli_check_installed(args: &Value) -> Result<Json<Value>, WebError> {
-    let _ = args;
-    Ok(Json(Value::Bool(false)))
+    let cli_name = args.get("cliName")
+        .and_then(|v| v.as_str())
+        .unwrap_or("claude");
+    let installed = crate::services::cli_info_service::check_cli_installed(cli_name);
+    Ok(Json(Value::Bool(installed)))
 }
 fn dispatch_cli_get_version_for(args: &Value) -> Result<Json<Value>, WebError> {
-    let _ = args;
-    Ok(Json(Value::Null))
+    let cli_name = require_string(args, "cliName")?;
+    match crate::services::cli_info_service::get_cli_version(&cli_name) {
+        Ok(version) => Ok(Json(Value::String(version))),
+        Err(_) => Ok(Json(Value::Null)),
+    }
 }
 async fn dispatch_baidu_translate(args: &Value) -> Result<Json<Value>, WebError> {
     let text = require_string(args, "text")?;

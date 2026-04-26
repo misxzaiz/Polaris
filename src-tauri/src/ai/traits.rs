@@ -276,4 +276,11 @@ pub trait AIEngine: Send + Sync {
     fn active_session_count(&self) -> usize {
         0
     }
+
+    /// 从 ConfigStore 刷新引擎配置
+    ///
+    /// 默认无操作。ClaudeEngine 重写此方法以在用户更新 CLI 路径后清除缓存。
+    fn refresh_config(&mut self, _config: &crate::models::config::Config) {
+        // default: no-op
+    }
 }

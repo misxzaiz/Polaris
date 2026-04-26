@@ -126,6 +126,8 @@ export interface WebConfig {
   port: number;
   /** 认证 token（自动生成） */
   token?: string;
+  /** 是否启用 Token 认证（false = 无认证访问） */
+  authEnabled: boolean;
 }
 
 /** 工作区条目（持久化到服务端配置，跨桌面/Web 共享） */
