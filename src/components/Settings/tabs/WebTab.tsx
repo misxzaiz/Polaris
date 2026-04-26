@@ -85,8 +85,9 @@ export function WebTab({ loading }: WebTabProps) {
     }
   }, [webConfig.enabled, status?.running]);
 
-  /** 即时保存并应用 Web 配置 */
+  /** 即时保存并应用 Web 配置（失败时自动回滚本地状态） */
   const applyConfig = useCallback(async (newConfig: WebConfig) => {
+    const prevConfig = { ...webConfig };
     setApplying(true);
     setError(null);
     try {
@@ -110,12 +111,13 @@ export function WebTab({ loading }: WebTabProps) {
           .catch(() => setLocalIps([]));
       }
     } catch (e: unknown) {
+      setWebConfig(prevConfig);  // 回滚到变更前的状态
       setError(t('web.applyFailed'));
       log.warn('Apply web config failed', { error: String(e) });
     } finally {
       setApplying(false);
     }
-  }, [t]);
+  }, [t, webConfig]);
 
   /** 防抖保存（用于端口、Host、Token 变更） */
   const debouncedApply = useCallback((newConfig: WebConfig) => {

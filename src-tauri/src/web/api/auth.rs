@@ -9,11 +9,18 @@ use super::super::auth;
 use super::WebError;
 
 /// Verify if the provided Bearer token is valid.
+///
+/// Uses `get_raw_token` (no auto-generation) so that a server with no configured
+/// token correctly returns `valid: false` instead of spuriously generating one.
 pub async fn handle_verify_token(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
 ) -> Result<impl IntoResponse, WebError> {
-    let expected = auth::get_expected_token(&state)?;
+    let expected = auth::get_raw_token(&state)?;
+    if expected.is_empty() {
+        // No token configured — nothing to verify against
+        return Ok(Json(serde_json::json!({ "valid": false })));
+    }
     let provided = auth::extract_bearer_from_headers(&headers);
     Ok(Json(serde_json::json!({ "valid": auth::token_eq(provided, &expected) })))
 }

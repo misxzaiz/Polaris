@@ -56,6 +56,7 @@ fn create_test_state() -> Arc<AppState> {
         host: "0.0.0.0".to_string(),
         port: 9800,
         token: Some(TEST_TOKEN.to_string()),
+        auth_enabled: true,
     };
     let config_store = ConfigStore::new_test(config, std::path::PathBuf::from("/tmp/polaris_test"));
     let (tx, _) = broadcast::channel(256);

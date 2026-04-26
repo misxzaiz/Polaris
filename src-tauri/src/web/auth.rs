@@ -41,6 +41,12 @@ pub fn get_raw_token(state: &Arc<AppState>) -> Result<String, WebError> {
     Ok(store.get().web.token.clone().unwrap_or_default())
 }
 
+/// Check if token authentication is enabled in the web config.
+pub fn is_auth_enabled(state: &Arc<AppState>) -> Result<bool, WebError> {
+    let store = state.lock_config()?;
+    Ok(store.get().web.auth_enabled)
+}
+
 /// Read the expected web token from config store, auto-generating if absent.
 pub fn get_expected_token(state: &Arc<AppState>) -> Result<String, WebError> {
     ensure_token(state)
@@ -115,6 +121,9 @@ pub fn is_auth_required(path: &str, method: &Method) -> bool {
 ///
 /// Reads the expected token from `AppState.config_store → Config.web.token`.
 /// The mutex lock is brief (clone a String), acceptable for LAN MVP throughput.
+///
+/// When `auth_enabled` is false, all requests are passed through without token
+/// validation — useful for trusted LAN environments.
 pub async fn auth_middleware(
     State(state): State<Arc<AppState>>,
     req: Request<Body>,
@@ -124,6 +133,11 @@ pub async fn auth_middleware(
     let method = req.method().clone();
 
     if !is_auth_required(path, &method) {
+        return Ok(next.run(req).await);
+    }
+
+    // Short-circuit: if auth is disabled globally, pass through all API requests.
+    if !is_auth_enabled(&state)? {
         return Ok(next.run(req).await);
     }
 
