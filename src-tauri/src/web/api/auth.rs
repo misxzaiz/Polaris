@@ -10,19 +10,29 @@ use super::WebError;
 
 /// Verify if the provided Bearer token is valid.
 ///
+/// When `auth_enabled` is false, returns `{ valid: true, authEnabled: false }`
+/// immediately — the SPA uses `authEnabled` to skip the token input page.
 /// Uses `get_raw_token` (no auto-generation) so that a server with no configured
 /// token correctly returns `valid: false` instead of spuriously generating one.
 pub async fn handle_verify_token(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
 ) -> Result<impl IntoResponse, WebError> {
+    // Short-circuit: auth disabled → always valid
+    if !auth::is_auth_enabled(&state)? {
+        return Ok(Json(serde_json::json!({ "valid": true, "authEnabled": false })));
+    }
+
     let expected = auth::get_raw_token(&state)?;
     if expected.is_empty() {
         // No token configured — nothing to verify against
-        return Ok(Json(serde_json::json!({ "valid": false })));
+        return Ok(Json(serde_json::json!({ "valid": false, "authEnabled": true })));
     }
     let provided = auth::extract_bearer_from_headers(&headers);
-    Ok(Json(serde_json::json!({ "valid": auth::token_eq(provided, &expected) })))
+    Ok(Json(serde_json::json!({
+        "valid": auth::token_eq(provided, &expected),
+        "authEnabled": true,
+    })))
 }
 
 #[derive(Debug, Deserialize)]
@@ -32,14 +42,24 @@ pub struct TokenRequest {
 
 /// Exchange an existing token for confirmation (no-auth endpoint).
 ///
-/// Special case: if the server has no token configured yet (e.g. auto-started
-/// without the Tauri setup flow), this endpoint accepts the provided token as
-/// the new expected token and persists it. This allows the TokenAuthPage to
-/// bootstrap authentication on first access.
+/// Three modes:
+/// 1. `auth_enabled: false` → return `{ valid: true, authEnabled: false }` so the SPA
+///    can skip the token page entirely.
+/// 2. Server has a token → verify the provided one against it.
+/// 3. Server has NO token (first access / bootstrap) → accept the client-provided
+///    token as the new expected token and persist it.
 pub async fn handle_token_exchange(
     State(state): State<Arc<AppState>>,
     axum::Json(req): axum::Json<TokenRequest>,
 ) -> Result<impl IntoResponse, WebError> {
+    // Short-circuit: auth disabled → always succeed, tell SPA auth is off
+    if !auth::is_auth_enabled(&state)? {
+        return Ok(Json(serde_json::json!({
+            "valid": true,
+            "authEnabled": false,
+        })));
+    }
+
     // Use get_raw_token to check if server has a token WITHOUT triggering auto-generation.
     // This allows the bootstrap flow (first access with no token) to work correctly.
     let expected = auth::get_raw_token(&state)?;
@@ -48,7 +68,7 @@ pub async fn handle_token_exchange(
     if !expected.is_empty() {
         if let Some(provided) = req.token {
             if auth::token_eq(&provided, &expected) {
-                Ok(Json(serde_json::json!({ "token": expected, "valid": true })))
+                Ok(Json(serde_json::json!({ "token": expected, "valid": true, "authEnabled": true })))
             } else {
                 Err(WebError::Unauthorized)
             }
@@ -66,7 +86,7 @@ pub async fn handle_token_exchange(
                     store.update(config)?;
                 }
                 tracing::info!("[Web] Bootstrapped web token from client");
-                Ok(Json(serde_json::json!({ "token": provided, "valid": true })))
+                Ok(Json(serde_json::json!({ "token": provided, "valid": true, "authEnabled": true })))
             } else {
                 Err(WebError::BadRequest("Token must not be empty for initial setup".to_string()))
             }
