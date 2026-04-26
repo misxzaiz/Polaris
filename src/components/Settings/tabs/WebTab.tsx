@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { useState, useEffect } from 'react';
 import { invoke } from '@/services/transport';
 import QRCode from 'react-qr-code';
+import { copyToClipboard } from '@/utils/clipboard';
 import { createLogger } from '../../../utils/logger';
 import { generateUUID } from '../../../utils/uuid';
 import type { Config, WebConfig } from '../../../types';
@@ -29,9 +30,8 @@ function generateRandomToken(): string {
 }
 
 export function WebTab({ config, onConfigChange, loading }: WebTabProps) {
-  const { t } = useTranslation('settings');
+  const { t } = useTranslation(['settings', 'common']);
   const web = config.web ?? DEFAULT_WEB_CONFIG;
-  const [tokenVisible, setTokenVisible] = useState(false);
   const [localIps, setLocalIps] = useState<string[]>([]);
   const [applying, setApplying] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
@@ -78,6 +78,15 @@ export function WebTab({ config, onConfigChange, loading }: WebTabProps) {
   const handleRandomToken = () => {
     const newToken = generateRandomToken();
     updateWeb({ token: newToken });
+  };
+
+  const handleCopyToken = async () => {
+    if (!web.token) return;
+    try {
+      await copyToClipboard(web.token);
+    } catch (e: unknown) {
+      log.warn('Copy web token failed', { error: String(e) });
+    }
   };
 
   const qrUrl = web.token && localIps.length > 0
@@ -163,33 +172,24 @@ export function WebTab({ config, onConfigChange, loading }: WebTabProps) {
         <h3 className="text-sm font-medium text-text-primary mb-3">{t('web.tokenTitle')}</h3>
 
         <div className="flex items-center gap-2">
-          <div className="relative flex-1">
+          <div className="flex-1">
             <input
-              type={tokenVisible ? 'text' : 'password'}
+              type="text"
               value={web.token ?? ''}
-              onChange={(e) => updateWeb({ token: e.target.value || undefined })}
-              placeholder={t('web.tokenPlaceholder')}
-              className="w-full px-3 py-2 pr-10 bg-background border border-border rounded-lg text-sm text-text-primary font-mono focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-              disabled={loading || !web.enabled}
+              readOnly
+              placeholder={t('web.tokenAutoGenerate')}
+              className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-text-primary font-mono focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
             />
-            <button
-              type="button"
-              onClick={() => setTokenVisible(!tokenVisible)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text-primary"
-              title={tokenVisible ? t('web.tokenHide') : t('web.tokenShow')}
-            >
-              {tokenVisible ? (
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                </svg>
-              ) : (
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                </svg>
-              )}
-            </button>
           </div>
+          <button
+            type="button"
+            onClick={handleCopyToken}
+            disabled={!web.token}
+            className="px-3 py-2 text-xs text-text-secondary hover:text-primary border border-border rounded-lg disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+            title={t('buttons.copy', { ns: 'common' })}
+          >
+            {t('buttons.copy', { ns: 'common' })}
+          </button>
           <button
             type="button"
             onClick={handleRandomToken}
