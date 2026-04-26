@@ -6,7 +6,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 /** 左侧面板类型 */
-export type LeftPanelType = 'files' | 'git' | 'todo' | 'translate' | 'scheduler' | 'requirement' | 'terminal' | 'tools' | 'developer' | 'integration' | 'assistant' | 'mcp' | 'knowledge' | 'problems' | 'none';
+export type LeftPanelType = 'files' | 'git' | 'todo' | 'translate' | 'scheduler' | 'requirement' | 'terminal' | 'tools' | 'developer' | 'integration' | 'knowledge' | 'problems' | 'none';
 
 /** 小屏模式状态 */
 export interface CompactModeState {

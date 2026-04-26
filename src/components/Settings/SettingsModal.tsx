@@ -16,16 +16,13 @@ import { AIEngineTab } from './tabs/AIEngineTab';
 import { GeneralTab } from './tabs/GeneralTab';
 import { SystemPromptTab } from './tabs/SystemPromptTab';
 import { PromptSnippetTab } from './tabs/PromptSnippetTab';
-import { PluginTab } from './tabs/PluginTab';
 import { WindowTab } from './tabs/WindowTab';
 import { TranslateTab } from './tabs/TranslateTab';
 import { QQBotTab } from './tabs/QQBotTab';
 import { FeishuTab } from './tabs/FeishuTab';
 import { SpeechTab } from './tabs/SpeechTab';
 import { AdvancedTab } from './tabs/AdvancedTab';
-import { AssistantTab } from './tabs/AssistantTab';
 import { AutoModeTab } from './tabs/AutoModeTab';
-import { McpSettingsTab } from '../Mcp/McpSettingsTab';
 import { LspTab } from './tabs/LspTab';
 import { WebTab } from './tabs/WebTab';
 import { createLogger } from '../../utils/logger';
@@ -47,13 +44,10 @@ const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'prompt-snippet': 'nav.promptSnippet',
   'window': 'nav.window',
   'ai-engine': 'nav.aiEngine',
-  'plugins': 'nav.plugins',
   'translate': 'nav.translate',
   'qqbot': 'nav.qqbot',
   'feishu': 'nav.feishu',
   'speech': 'nav.speech',
-  'assistant': 'nav.assistant',
-  'mcp': 'nav.mcp',
   'lsp': 'nav.lsp',
   'advanced': 'nav.advanced',
   'web': 'nav.web',
@@ -182,10 +176,6 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
                 />
               )}
 
-              {activeTab === 'plugins' && (
-                <PluginTab />
-              )}
-
               {activeTab === 'general' && (
                 <GeneralTab
                   config={localConfig}
@@ -238,24 +228,12 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
                 />
               )}
 
-              {activeTab === 'assistant' && (
-                <AssistantTab
-                  config={localConfig}
-                  onConfigChange={setLocalConfig}
-                  loading={loading}
-                />
-              )}
-
               {activeTab === 'advanced' && (
                 <AdvancedTab
                   config={localConfig}
                   onConfigChange={setLocalConfig}
                   loading={loading}
                 />
-              )}
-
-              {activeTab === 'mcp' && (
-                <McpSettingsTab />
               )}
 
               {activeTab === 'lsp' && (

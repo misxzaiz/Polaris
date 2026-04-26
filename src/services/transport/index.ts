@@ -11,20 +11,15 @@ export { tauriTransport } from './tauriTransport';
 export { createHttpTransport } from './httpTransport';
 export type { ConnectionStatus, HttpTransportOptions } from './httpTransport';
 export {
-  getTokenFromUrl,
-  getStoredToken,
-  storeToken,
-  clearStoredToken,
   getServerUrl,
   storeServerUrl,
-  initWebAuth,
 } from './auth';
 
 import { detectTransport } from './detector';
 import { tauriTransport } from './tauriTransport';
 import { createHttpTransport } from './httpTransport';
 import type { ConnectionStatus } from './httpTransport';
-import { getStoredToken, getServerUrl, clearStoredToken } from './auth';
+import { getServerUrl } from './auth';
 import { useToastStore } from '../../stores/toastStore';
 import i18n from 'i18next';
 
@@ -41,11 +36,6 @@ function handleConnectionStatusChange(status: ConnectionStatus): void {
         i18n.t('settings:web.connectionLostDesc'),
       );
     }
-  } else if (status === 'unauthorized') {
-    // Token invalidated (e.g., regenerated from desktop) — clear and reload to show auth page
-    clearStoredToken();
-    window.location.reload();
-    return;
   } else if (status === 'connected') {
     if (connectionLostToastId) {
       store.removeToast(connectionLostToastId);
@@ -63,7 +53,6 @@ const transport = currentMode === 'tauri'
   ? tauriTransport
   : createHttpTransport(
       getServerUrl(),
-      () => getStoredToken() || '',
       { onStatusChange: handleConnectionStatusChange },
     );
 

@@ -560,7 +560,6 @@ export const useSchedulerStore = create<SchedulerState>((set, get) => ({
           workDir,
           contextId: `scheduler-${taskId}`,
           engineId,
-          enableMcpTools: engineId === 'claude-code',
         },
       });
 

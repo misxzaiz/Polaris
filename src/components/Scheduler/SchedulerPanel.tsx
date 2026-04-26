@@ -388,7 +388,6 @@ export function SchedulerPanel() {
           workDir: task.workDir,
           contextId: `scheduler-${task.id}`,
           engineId,
-          enableMcpTools: engineId === 'claude-code',
         },
       });
 

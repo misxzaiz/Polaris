@@ -51,7 +51,6 @@
     "toolPanel": "Tool Panel",
     "developerPanel": "Developer Panel",
     "mcpPanel": "MCP Servers",
-    "assistantPanel": "AI Assistant",
     "knowledgePanel": "Knowledge",
     "showAIPanel": "Show AI Panel",
     "hideAIPanel": "Hide AI Panel",
@@ -77,7 +76,6 @@
     "toolPanel": "Tool Panel",
     "developerPanel": "Developer",
     "integrationPanel": "Bots",
-    "assistantPanel": "AI Assistant",
     "newChat": "New Chat",
     "exportChat": "Export Chat",
     "sessionHistory": "Session History"

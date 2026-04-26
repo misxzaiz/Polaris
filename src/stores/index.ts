@@ -30,6 +30,3 @@ export { useSchedulerStore } from './schedulerStore';
 export { useTerminalStore } from './terminalStore';
 export { useRequirementStore } from './requirementStore';
 export { useSessionStore, getSessionEffectiveWorkspace } from './sessionStore';
-export { usePluginStore } from './pluginStore';
-export { useMcpStore } from './mcpStore';
-export { useCharacterStore } from './characterStore';

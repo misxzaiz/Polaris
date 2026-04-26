@@ -20,6 +20,3 @@ export {
   type UnifiedSessionMeta,
   type ProviderStats,
 } from './unifiedHistoryService'
-
-// Plugin 服务
-export * from './pluginService'

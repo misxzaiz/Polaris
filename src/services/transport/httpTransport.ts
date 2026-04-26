@@ -1,7 +1,7 @@
 /**
  * HTTP + WebSocket 传输适配器 — Web 端通过 HTTP API + WS 事件流通信
  *
- * invoke → HTTP POST（带 Bearer token）
+ * invoke → HTTP POST
  * listen → WebSocket 消息分发（按 event type 路由到 handler）
  */
 
@@ -43,7 +43,6 @@ const COMMAND_ROUTE_MAP: Record<string, string> = {
   update_config: '/api/settings',
   // Auth
   health_check: '/api/health',
-  regenerate_web_token: '/api/auth/regenerate',
 };
 
 /** GET-only commands (read-only operations) */
@@ -77,7 +76,7 @@ function backoffDelay(attempt: number): number {
 }
 
 /** Connection status reported by the transport layer */
-export type ConnectionStatus = 'connected' | 'disconnected' | 'failed' | 'unauthorized';
+export type ConnectionStatus = 'connected' | 'disconnected' | 'failed';
 
 export interface HttpTransportOptions {
   /** Called when WebSocket connection status changes */
@@ -88,12 +87,10 @@ export interface HttpTransportOptions {
  * 创建 HTTP 传输适配器
  *
  * @param baseUrl 服务器地址（如 http://192.168.1.100:9800）
- * @param getToken 获取 auth token 的函数（支持动态刷新）
  * @param options 可选配置（连接状态回调等）
  */
 export function createHttpTransport(
   baseUrl: string,
-  getToken: () => string,
   options?: HttpTransportOptions,
 ): TransportAdapter {
   const wsUrl = baseUrl.replace(/^http/, 'ws');
@@ -152,8 +149,7 @@ export function createHttpTransport(
     if (wsConnecting) return wsConnecting;
 
     wsConnecting = new Promise<void>((resolve, reject) => {
-      const token = getToken();
-      const socket = new WebSocket(`${wsUrl}/api/ws?token=${encodeURIComponent(token)}`);
+      const socket = new WebSocket(`${wsUrl}/api/ws`);
 
       const openHandler = () => {
         socket.removeEventListener('open', openHandler);
@@ -222,13 +218,9 @@ export function createHttpTransport(
   return {
     async invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
       const path = commandToPath(command);
-      const token = getToken();
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
 
       let method = 'POST';
       let url = `${baseUrl}${path}`;
@@ -279,10 +271,6 @@ export function createHttpTransport(
         throw e;
       }
       if (!res.ok) {
-        // 401 means the token is invalid/expired — notify the app layer
-        if (res.status === 401) {
-          options?.onStatusChange?.('unauthorized');
-        }
         const err = await res.json().catch(() => ({ error: res.statusText }));
         throw new Error((err as { error?: string }).error || `API error: ${res.status}`);
       }

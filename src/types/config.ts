@@ -3,7 +3,6 @@
  */
 
 import type { SpeechConfig, TTSConfig, WakeWordConfig, VoiceNotificationConfig, VoiceCommandEntry } from './speech'
-import type { AssistantConfig } from '../assistant/types'
 
 /**  引擎 ID */
 export type EngineId = 'claude-code'
@@ -172,8 +171,6 @@ export interface Config {
   voiceNotification?: VoiceNotificationConfig;
   /** 语音命令配置（自定义关键词） */
   voiceCommands?: VoiceCommandEntry[];
-  /** AI 助手配置 */
-  assistant?: AssistantConfig;
   /** Web 服务配置 */
   web?: WebConfig;
   /** 工作区列表（跨桌面/Web 共享） */

@@ -2,8 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 角色动画样式 */
-@import './styles/character.css';
 
 /* 全局样式 */
 :root {

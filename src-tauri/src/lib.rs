@@ -129,19 +129,6 @@ fn update_config(config: Config, state: tauri::State<AppState>) -> Result<()> {
     store.update(config)
 }
 
-/// 重新生成 Web 访问 Token
-#[tauri::command]
-fn regenerate_web_token(state: tauri::State<AppState>) -> std::result::Result<serde_json::Value, error::AppError> {
-    let new_token = crate::web::auth::generate_token();
-    let mut store = state.config_store.lock()
-        .map_err(|e| error::AppError::Unknown(e.to_string()))?;
-    let mut config = store.get().clone();
-    config.web.token = Some(new_token.clone());
-    store.update(config)
-        .map_err(|e| error::AppError::Unknown(e.to_string()))?;
-    Ok(serde_json::json!({ "token": new_token }))
-}
-
 /// 动态应用 Web 服务器配置：根据当前 config.web 启动或停止服务器。
 ///
 /// 保存 Web 配置后，前端应调用此命令以即时生效，无需重启应用。
@@ -163,24 +150,8 @@ fn apply_web_server(state: tauri::State<AppState>) -> std::result::Result<serde_
                 tracing::info!("[Web] Server stopped by user");
             }
         });
-        return Ok(serde_json::json!({ "running": false, "token": config.web.token }));
+        return Ok(serde_json::json!({ "running": false }));
     }
-
-    // Case: user enabled the web service — resolve token first
-    let token = web::auth::resolve_token(config.web.token.as_deref());
-
-    // Persist auto-generated token so frontend can display it
-    let final_token = if config.web.token.as_deref() != Some(&token) {
-        let mut cfg = config.clone();
-        cfg.web.token = Some(token.clone());
-        let mut store = state.config_store.lock()
-            .map_err(|e| error::AppError::Unknown(e.to_string()))?;
-        store.update(cfg)
-            .map_err(|e| error::AppError::Unknown(e.to_string()))?;
-        token
-    } else {
-        config.web.token.clone().unwrap_or_default()
-    };
 
     let port = web::server::WebServer::resolve_port(config.web.port);
     let addr = format!("{}:{}", config.web.host, port);
@@ -202,7 +173,7 @@ fn apply_web_server(state: tauri::State<AppState>) -> std::result::Result<serde_
         *guard = Some(handle);
     });
 
-    Ok(serde_json::json!({ "running": true, "token": final_token }))
+    Ok(serde_json::json!({ "running": true }))
 }
 
 /// 获取本机局域网 IP 地址列表（智能排序：真实 LAN IP 优先，虚拟网卡靠后）
@@ -393,20 +364,6 @@ pub fn run() {
             };
 
             if config.web.enabled {
-                // Resolve token: use configured value or auto-generate
-                let token = web::auth::resolve_token(config.web.token.as_deref());
-
-                // Persist auto-generated token so it survives restarts
-                if config.web.token.as_deref() != Some(&token) {
-                    let mut cfg = config.clone();
-                    cfg.web.token = Some(token.clone());
-                    let mut store = state.config_store.lock()
-                        .unwrap_or_else(|e: std::sync::PoisonError<std::sync::MutexGuard<'_, ConfigStore>>| e.into_inner());
-                    if let Err(e) = store.update(cfg) {
-                        tracing::error!("[Web] Failed to persist auto-generated token: {}", e);
-                    }
-                }
-
                 let port = web::server::WebServer::resolve_port(config.web.port);
                 let addr = format!("{}:{}", config.web.host, port);
                 let web_state = Arc::new(state.clone_for_web());
@@ -442,7 +399,6 @@ pub fn run() {
             // 配置相关
             get_config,
             update_config,
-            regenerate_web_token,
             apply_web_server,
             get_local_ips,
             set_work_dir,

@@ -7,7 +7,6 @@ use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
 
 use crate::AppState;
-use super::auth;
 use super::api;
 use super::middleware::request_trace;
 
@@ -75,8 +74,6 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/settings", get(api::settings::handle_get_settings).patch(api::settings::handle_update_settings))
         // Auth
         .route("/auth/verify", get(api::auth::handle_verify_token))
-        .route("/auth/token", post(api::auth::handle_token_exchange))
-        .route("/auth/regenerate", post(api::auth::handle_regenerate_token))
         // Health
         .route("/health", get(api::health::handle_health))
         // WebSocket
@@ -93,7 +90,6 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             ServeDir::new(&dist_dir)
                 .not_found_service(ServeFile::new(&index_html))
         )
-        .layer(axum::middleware::from_fn_with_state(state.clone(), auth::auth_middleware))
         .layer(axum::middleware::from_fn(request_trace))
         .layer(cors)
         .with_state(state)

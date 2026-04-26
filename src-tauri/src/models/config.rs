@@ -607,73 +607,6 @@ impl Default for TTSConfig {
     }
 }
 
-/// 助手 LLM 配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AssistantLLMConfig {
-    /// API Base URL
-    #[serde(default = "default_llm_base_url")]
-    pub base_url: String,
-
-    /// API Key
-    #[serde(default)]
-    pub api_key: String,
-
-    /// 模型 ID
-    #[serde(default = "default_llm_model")]
-    pub model: String,
-
-    /// 最大 Token
-    #[serde(default = "default_llm_max_tokens")]
-    pub max_tokens: u32,
-
-    /// 温度
-    #[serde(default = "default_llm_temperature")]
-    pub temperature: f32,
-}
-
-fn default_llm_base_url() -> String { "https://api.openai.com/v1".to_string() }
-fn default_llm_model() -> String { "gpt-4o".to_string() }
-fn default_llm_max_tokens() -> u32 { 4096 }
-fn default_llm_temperature() -> f32 { 0.7 }
-
-impl Default for AssistantLLMConfig {
-    fn default() -> Self {
-        Self {
-            base_url: default_llm_base_url(),
-            api_key: String::new(),
-            model: default_llm_model(),
-            max_tokens: default_llm_max_tokens(),
-            temperature: default_llm_temperature(),
-        }
-    }
-}
-
-/// Claude Code 调用配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AssistantClaudeCodeConfig {
-    /// 默认执行模式
-    #[serde(default = "default_claude_code_mode")]
-    pub default_mode: String,
-
-    /// 超时时间（毫秒）
-    #[serde(default = "default_claude_code_timeout")]
-    pub timeout: u64,
-}
-
-fn default_claude_code_mode() -> String { "continue".to_string() }
-fn default_claude_code_timeout() -> u64 { 300000 }
-
-impl Default for AssistantClaudeCodeConfig {
-    fn default() -> Self {
-        Self {
-            default_mode: default_claude_code_mode(),
-            timeout: default_claude_code_timeout(),
-        }
-    }
-}
-
 /// Web 访问层配置（LAN HTTP/WS 服务）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -707,56 +640,6 @@ impl Default for WebConfig {
             token: None,
         }
     }
-}
-
-/// 系统提示词模式
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-#[derive(Default)]
-pub enum SystemPromptMode {
-    /// 追加模式
-    #[default]
-    Append,
-    /// 替换模式
-    Replace,
-}
-
-/// 系统提示词配置
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SystemPromptConfig {
-    /// 是否启用自定义系统提示词
-    #[serde(default)]
-    pub enabled: bool,
-
-    /// 模式：append=追加到默认后, replace=完全替换
-    #[serde(default)]
-    pub mode: SystemPromptMode,
-
-    /// 用户自定义提示词内容
-    #[serde(default)]
-    pub custom_prompt: String,
-}
-
-/// AI 助手配置
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AssistantConfig {
-    /// 是否启用助手模块
-    #[serde(default)]
-    pub enabled: bool,
-
-    /// LLM 配置
-    #[serde(default)]
-    pub llm: AssistantLLMConfig,
-
-    /// 系统提示词配置
-    #[serde(default)]
-    pub system_prompt: SystemPromptConfig,
-
-    /// Claude Code 调用配置
-    #[serde(default)]
-    pub claude_code: AssistantClaudeCodeConfig,
 }
 
 /// 应用配置（新版本）
@@ -847,10 +730,6 @@ pub struct Config {
     #[serde(default)]
     pub voice_commands: Option<Vec<VoiceCommandEntry>>,
 
-    /// AI 助手配置
-    #[serde(default)]
-    pub assistant: AssistantConfig,
-
     /// Web 访问层配置
     #[serde(default)]
     pub web: WebConfig,
@@ -892,7 +771,6 @@ impl Default for Config {
             wake_word: None,
             voice_notification: None,
             voice_commands: None,
-            assistant: AssistantConfig::default(),
             web: WebConfig::default(),
             workspaces: Vec::new(),
             current_workspace_id: None,

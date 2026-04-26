@@ -6,7 +6,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Files, GitPullRequest, CheckSquare, Settings, Languages, Clock, ClipboardList, Terminal, Code2, PanelRight, Bot, Sparkles, Cpu, BookOpen, AlertCircle } from 'lucide-react'
+import { Files, GitPullRequest, CheckSquare, Settings, Languages, Clock, ClipboardList, Terminal, Code2, PanelRight, Bot, BookOpen, AlertCircle } from 'lucide-react'
 import { useViewStore } from '@/stores/viewStore'
 import { useDiagnosticsStore } from '@/stores/diagnosticsStore'
 import { ActivityBarIcon } from './ActivityBarIcon'
@@ -138,16 +138,6 @@ export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rig
       id: 'integration' as const,
       icon: Bot,
       label: t('labels.integrationPanel'),
-    },
-    {
-      id: 'assistant' as const,
-      icon: Sparkles,
-      label: t('labels.assistantPanel'),
-    },
-    {
-      id: 'mcp' as const,
-      icon: Cpu,
-      label: t('labels.mcpPanel'),
     },
     {
       id: 'knowledge' as const,

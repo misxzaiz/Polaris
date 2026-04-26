@@ -13,7 +13,6 @@ import { useEffect, useRef } from 'react';
 import { useConfigStore } from '../stores';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useIntegrationStore } from '../stores/integrationStore';
-import { usePluginStore } from '../stores/pluginStore';
 import { useAutoModeStore } from '../stores/autoModeStore';
 import { useSnippetStore } from '../stores/snippetStore';
 import { useCliInfoStore } from '../stores/cliInfoStore';
@@ -138,7 +137,6 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
           await Promise.all([
             useSnippetStore.getState().loadSnippets(),
             useIntegrationStore.getState().loadInstances(),
-            usePluginStore.getState().fetchInstalled(),
             useAutoModeStore.getState().fetchConfig(),
           ]);
         } catch (error) {

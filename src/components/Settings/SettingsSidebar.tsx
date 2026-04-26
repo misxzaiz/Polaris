@@ -13,7 +13,7 @@ import {
   IconMic,
   IconMessageSquareText,
 } from '../Common/Icons';
-import { Sparkles, Shield, Cpu, Code2, Globe } from 'lucide-react';
+import { Shield, Code2, Globe } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 export type SettingsTabId =
@@ -22,13 +22,10 @@ export type SettingsTabId =
   | 'prompt-snippet'
   | 'window'
   | 'ai-engine'
-  | 'plugins'
   | 'translate'
   | 'qqbot'
   | 'feishu'
   | 'speech'
-  | 'assistant'
-  | 'mcp'
   | 'lsp'
   | 'auto-mode'
   | 'advanced'
@@ -53,13 +50,10 @@ const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'prompt-snippet', icon: <IconMessageSquareText size={16} />, labelKey: 'nav.promptSnippet' },
   { id: 'window', icon: <IconSettings size={16} />, labelKey: 'nav.window' },
   { id: 'ai-engine', icon: <IconAIEngine size={16} />, labelKey: 'nav.aiEngine' },
-  { id: 'plugins', icon: <Sparkles size={16} />, labelKey: 'nav.plugins' },
   { id: 'translate', icon: <IconTranslate size={16} />, labelKey: 'nav.translate' },
   { id: 'qqbot', icon: <IconBot size={16} />, labelKey: 'nav.qqbot' },
   { id: 'feishu', icon: <IconBot size={16} />, labelKey: 'nav.feishu' },
   { id: 'speech', icon: <IconMic size={16} />, labelKey: 'nav.speech' },
-  { id: 'assistant', icon: <Sparkles size={16} />, labelKey: 'nav.assistant' },
-  { id: 'mcp', icon: <Cpu size={16} />, labelKey: 'nav.mcp' },
   { id: 'lsp', icon: <Code2 size={16} />, labelKey: 'nav.lsp' },
   { id: 'auto-mode', icon: <Shield size={16} />, labelKey: 'nav.autoMode' },
   { id: 'web', icon: <Globe size={16} />, labelKey: 'nav.web' },

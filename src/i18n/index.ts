@@ -18,8 +18,6 @@ import zhCNScheduler from '../locales/zh-CN/scheduler.json';
 import zhCNRequirement from '../locales/zh-CN/requirement.json';
 import zhCNCommands from '../locales/zh-CN/commands.json';
 import zhCNPromptSnippet from '../locales/zh-CN/promptSnippet.json';
-import zhCNAssistant from '../locales/zh-CN/assistant.json';
-import zhCNMcp from '../locales/zh-CN/mcp.json';
 import zhCNKnowledge from '../locales/zh-CN/knowledge.json';
 
 import enUSCommon from '../locales/en-US/common.json';
@@ -39,8 +37,6 @@ import enUSScheduler from '../locales/en-US/scheduler.json';
 import enUSRequirement from '../locales/en-US/requirement.json';
 import enUSCommands from '../locales/en-US/commands.json';
 import enUSPromptSnippet from '../locales/en-US/promptSnippet.json';
-import enUSAssistant from '../locales/en-US/assistant.json';
-import enUSMcp from '../locales/en-US/mcp.json';
 import enUSKnowledge from '../locales/en-US/knowledge.json';
 
 export const resources = {
@@ -62,8 +58,6 @@ export const resources = {
     requirement: zhCNRequirement,
     commands: zhCNCommands,
     promptSnippet: zhCNPromptSnippet,
-    assistant: zhCNAssistant,
-    mcp: zhCNMcp,
     knowledge: zhCNKnowledge,
   },
   'en-US': {
@@ -84,8 +78,6 @@ export const resources = {
     requirement: enUSRequirement,
     commands: enUSCommands,
     promptSnippet: enUSPromptSnippet,
-    assistant: enUSAssistant,
-    mcp: enUSMcp,
     knowledge: enUSKnowledge,
   },
 };

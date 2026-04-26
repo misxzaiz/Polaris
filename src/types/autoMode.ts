@@ -54,8 +54,6 @@ export type EditMode = 'list' | 'advanced';
 export interface ClaudeSettings {
   env?: Record<string, string>;
   model?: string;
-  enabledPlugins?: Record<string, boolean>;
-  extraKnownMarketplaces?: unknown;
   autoMode?: AutoModeCustomRules;
   [key: string]: unknown;
 }

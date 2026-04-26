@@ -7,7 +7,7 @@ import type { AssistantChatMessage, TextBlock } from '../../../types';
 import { formatContent, extractAssistantText } from '../chatUtils/helpers';
 import { renderBlocksWithGrouping } from '../blockGrouping';
 import { MessageContextMenu } from './MessageContextMenu';
-import { CharacterAvatar } from '../../Character';
+import { Bot } from 'lucide-react';
 
 export const AssistantBubble = memo(function AssistantBubble({
   message,
@@ -59,7 +59,11 @@ export const AssistantBubble = memo(function AssistantBubble({
     <>
       <div className="flex gap-2 my-2" onContextMenu={handleContextMenu}>
         {/* Avatar */}
-        <CharacterAvatar />
+        <div className="shrink-0 mt-0.5">
+          <div className="w-5 h-5 rounded-full bg-primary-faint flex items-center justify-center">
+            <Bot className="w-3.5 h-3.5 text-primary" />
+          </div>
+        </div>
 
         {/* 内容 */}
         <div className="flex-1 space-y-1 min-w-0">

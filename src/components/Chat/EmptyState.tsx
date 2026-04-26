@@ -4,16 +4,17 @@
 
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FolderOpen, Code, FileSearch } from 'lucide-react';
-import { CharacterShowcase } from '../Character';
+import { FolderOpen, Code, FileSearch, Bot } from 'lucide-react';
 
 export const EmptyState = memo(function EmptyState() {
   const { t } = useTranslation('chat');
 
   return (
     <div className="flex flex-col items-center justify-center h-full text-center px-4">
-      {/* 角色展示 */}
-      <CharacterShowcase />
+      {/* 图标 */}
+      <div className="w-16 h-16 rounded-2xl bg-primary-faint flex items-center justify-center mb-4">
+        <Bot className="w-8 h-8 text-primary" />
+      </div>
 
       {/* 标题 */}
       <h1 className="text-2xl font-semibold text-text-primary mb-2">

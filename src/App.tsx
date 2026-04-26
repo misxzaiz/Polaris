@@ -16,7 +16,6 @@ import { TranslatePanel, SelectionContextMenu } from './components/Translate';
 import { SchedulerPanel } from './components/Scheduler/SchedulerPanel';
 import { RequirementPanel } from './components/RequirementPanel/RequirementPanel';
 import { TerminalPanel } from './components/Terminal/TerminalPanel';
-import { AssistantPanel } from './assistant';
 import { KnowledgePanel } from './components/KnowledgePanel';
 import { ProblemsPanel } from './components/Problems/ProblemsPanel';
 
@@ -24,7 +23,6 @@ import { ProblemsPanel } from './components/Problems/ProblemsPanel';
 const SettingsModal = lazy(() => import('./components/Settings/SettingsModal').then(m => ({ default: m.SettingsModal })));
 const DeveloperPanel = lazy(() => import('./components/Developer/DeveloperPanel').then(m => ({ default: m.DeveloperPanel })));
 const IntegrationPanel = lazy(() => import('./components/Integration/IntegrationPanel').then(m => ({ default: m.IntegrationPanel })));
-const McpPanel = lazy(() => import('./components/Mcp/McpPanel').then(m => ({ default: m.McpPanel })));
 const CreateWorkspaceModal = lazy(() => import('./components/Workspace/CreateWorkspaceModal').then(m => ({ default: m.CreateWorkspaceModal })));
 const FileSearchModal = lazy(() => import('./components/Editor/FileSearchModal').then(m => ({ default: m.FileSearchModal })));
 const SymbolPalette = lazy(() => import('./components/Editor/SymbolPalette').then(m => ({ default: m.SymbolPalette })));
@@ -163,8 +161,6 @@ function App() {
                 terminalContent={<TerminalPanel />}
                 developerContent={<Suspense fallback={loadingFallback}><DeveloperPanel fillRemaining /></Suspense>}
                 integrationContent={<Suspense fallback={loadingFallback}><IntegrationPanel /></Suspense>}
-                assistantContent={<AssistantPanel />}
-                mcpContent={<Suspense fallback={loadingFallback}><McpPanel /></Suspense>}
                 knowledgeContent={<KnowledgePanel />}
                 problemsContent={<ProblemsPanel />}
               />

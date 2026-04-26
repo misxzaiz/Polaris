@@ -462,7 +462,6 @@ impl OldConfig {
             wake_word: None,
             voice_notification: None,
             voice_commands: None,
-            assistant: Default::default(),
             web: Default::default(),
             workspaces: Vec::new(),
             current_workspace_id: None,

@@ -69,7 +69,6 @@ export default defineConfig({
             { text: '会话配置', link: '/guide/advanced/session-config' },
             { text: '自动模式', link: '/guide/advanced/auto-mode' },
             { text: '插件系统', link: '/guide/advanced/plugins' },
-            { text: '独立助手', link: '/guide/advanced/assistant' },
             { text: '快捷键参考', link: '/guide/advanced/keyboard' },
           ],
         },

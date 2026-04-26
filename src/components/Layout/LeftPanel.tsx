@@ -59,8 +59,6 @@ export function LeftPanelContent({
   toolsContent,
   developerContent,
   integrationContent,
-  assistantContent,
-  mcpContent,
   knowledgeContent,
   problemsContent,
   currentType,
@@ -75,8 +73,6 @@ export function LeftPanelContent({
   toolsContent?: ReactNode
   developerContent?: ReactNode
   integrationContent?: ReactNode
-  assistantContent?: ReactNode
-  mcpContent?: ReactNode
   knowledgeContent?: ReactNode
   problemsContent?: ReactNode
   currentType?: LeftPanelType
@@ -105,10 +101,6 @@ export function LeftPanelContent({
     return <>{developerContent}</>
   } else if (type === 'integration') {
     return <>{integrationContent}</>
-  } else if (type === 'assistant') {
-    return <>{assistantContent}</>
-  } else if (type === 'mcp') {
-    return <>{mcpContent}</>
   } else if (type === 'knowledge') {
     return <>{knowledgeContent}</>
   } else if (type === 'problems') {
