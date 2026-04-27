@@ -6,6 +6,8 @@
 
 import { useTranslation } from 'react-i18next';
 import { useState, useEffect } from 'react';
+import * as tauri from '@/services/tauri';
+import { useConfigStore } from '../../../stores';
 import { invoke } from '@/services/transport';
 import { createLogger } from '../../../utils/logger';
 import type { Config, WebConfig } from '../../../types';
@@ -45,6 +47,12 @@ export function WebTab({ config, onConfigChange, loading }: WebTabProps) {
     setApplyError(null);
     setApplySuccess(null);
     try {
+      const persistedConfig = await tauri.getConfig();
+      const nextConfig = { ...persistedConfig, web };
+      await tauri.updateConfig(nextConfig);
+      const savedConfig = await tauri.getConfig();
+      onConfigChange(savedConfig);
+      useConfigStore.setState({ config: savedConfig });
       const result = await invoke<{ running: boolean }>('apply_web_server');
       setApplySuccess(result.running ? t('web.serverStarted') : t('web.serverStopped'));
       // 成功后刷新 IP 列表
