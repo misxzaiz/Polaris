@@ -68,6 +68,17 @@ function isDeleteCommand(command: string, args?: Record<string, unknown>): boole
   return command === 'delete_session' && !!args?.sessionId;
 }
 
+function serializeRequestBody(command: string, args?: Record<string, unknown>): string {
+  const payload = command === 'update_config'
+    && args
+    && Object.prototype.hasOwnProperty.call(args, 'config')
+    && args.config !== undefined
+    ? args.config
+    : (args ?? {});
+
+  return JSON.stringify(payload);
+}
+
 /** Compute backoff delay with exponential increase and jitter */
 function backoffDelay(attempt: number): number {
   const base = Math.min(RECONNECT_BASE_MS * Math.pow(2, attempt), RECONNECT_MAX_MS);
@@ -258,7 +269,7 @@ export function createHttpTransport(
         signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
       };
       if (method !== 'GET' && method !== 'DELETE') {
-        fetchOpts.body = JSON.stringify(args ?? {});
+        fetchOpts.body = serializeRequestBody(command, args);
       }
 
       let res: Response;
