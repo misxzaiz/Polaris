@@ -92,3 +92,16 @@ export const invoke = <T>(cmd: string, args?: Record<string, unknown>): Promise<
  */
 export const listen = <T>(event: string, handler: (p: T) => void): Promise<() => void> =>
   transport.listen<T>(event, handler);
+
+/**
+ * 手动重连 — 重置重连计数器并立即尝试重新建立连接
+ *
+ * 仅在 HTTP 模式下有效；Tauri 模式会抛出错误。
+ * 用于 Web 端在达到最大重连次数后，用户手动触发重连。
+ */
+export const manualReconnect = (): Promise<void> => {
+  if (transport.manualReconnect) {
+    return transport.manualReconnect();
+  }
+  return Promise.reject(new Error('Manual reconnect not supported in this mode'));
+};

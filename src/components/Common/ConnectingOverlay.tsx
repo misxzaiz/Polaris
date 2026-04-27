@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { useConfigStore } from '../../stores';
 import { Button, ClaudePathSelector } from './index';
 import { isWindows } from '../../utils/path';
+import { currentMode, manualReconnect } from '../../services/transport';
 
 export function ConnectingOverlay() {
   const { t } = useTranslation('common');
@@ -15,7 +16,18 @@ export function ConnectingOverlay() {
   const [tempPath, setTempPath] = useState(config?.claudeCode?.cliPath || '');
 
   const handleRetry = async () => {
-    await retryConnection();
+    try {
+      if (currentMode === 'http') {
+        // Web端: use httpTransport manual reconnect
+        await manualReconnect();
+      } else {
+        // Tauri: use existing configStore logic
+        await retryConnection();
+      }
+    } catch (error) {
+      // Display user-friendly error message
+      console.error('Manual reconnect failed:', error);
+    }
   };
 
   const handlePathSubmit = async () => {

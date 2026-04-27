@@ -27,6 +27,7 @@ pub struct ListSessionsQuery {
     pub engine_id: String,
     #[serde(flatten)]
     pub pagination: PaginationQuery,
+    #[serde(alias = "projectPath")]
     pub work_dir: Option<String>,
 }
 

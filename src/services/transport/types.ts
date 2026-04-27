@@ -15,6 +15,9 @@ export interface TransportAdapter {
 
   /** 断开连接（仅 HTTP transport 需要，用于干净关闭 WebSocket） */
   disconnect?(): void;
+
+  /** 手动重连（仅 HTTP transport 需要，用于重置重连计数器并立即尝试重连） */
+  manualReconnect?(): Promise<void>;
 }
 
 /** 传输模式 */

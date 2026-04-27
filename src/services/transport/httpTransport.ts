@@ -318,5 +318,20 @@ export function createHttpTransport(
         ws = null;
       }
     },
+
+    manualReconnect(): Promise<void> {
+      log.info('Manual reconnect triggered');
+      // Reset reconnect attempt counter
+      reconnectAttempt = 0;
+      // Ensure intentionalClose is false to allow reconnection
+      intentionalClose = false;
+      // Cancel any pending reconnect timer
+      if (reconnectTimer !== null) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      // Immediately attempt to reconnect
+      return connectWs();
+    },
   };
 }
