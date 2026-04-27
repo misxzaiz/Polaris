@@ -12,30 +12,90 @@ use super::middleware::request_trace;
 
 /// Resolve the frontend dist directory for static file serving.
 ///
-/// Priority:
-/// 1. `resource_dir/dist` — only if the directory actually exists (production bundle)
-/// 2. `../dist` relative to CWD (development fallback when running from src-tauri/)
-/// 3. `./dist` relative to CWD (development fallback when running from project root)
+/// Priority (first match wins):
+/// 1. `resource_dir/dist/` — Tauri bundles directory resources as subdirectories
+/// 2. `resource_dir/` — Tauri may copy dist *contents* flat into resource_dir
+/// 3. Exe-relative paths — production fallback when CWD ≠ install dir
+///    a. `<exe_dir>/dist/`
+///    b. `<exe_dir>/resources/dist/`
+///    c. `<exe_dir>/../dist/`
+/// 4. CWD-relative paths — development fallback
+///    a. `../dist` (running from src-tauri/)
+///    b. `./dist` (running from project root)
 fn resolve_dist_dir(state: &AppState) -> std::path::PathBuf {
-    // Try resource_dir first, but verify the dist subdirectory exists
+    // Layer 1: resource_dir (production bundle via Tauri path resolver)
     if let Some(Some(resource_dir)) = state.resource_dir.get().as_ref() {
+        // Tauri bundles directory resources as subdirectories: resources/dist/
         let dist = resource_dir.join("dist");
         if dist.is_dir() {
+            tracing::info!("[Web] SPA dist resolved via resource_dir/dist: {:?}", dist);
             return dist;
         }
-        tracing::debug!("[Web] resource_dir/dist not found at {:?}, trying fallbacks", dist);
+        // Tauri may copy dist *contents* flat into resource_dir (version-dependent behavior)
+        let index_html = resource_dir.join("index.html");
+        if index_html.exists() {
+            tracing::info!("[Web] SPA dist resolved via resource_dir (flat): {:?}", resource_dir);
+            return resource_dir.clone();
+        }
+        tracing::debug!(
+            "[Web] resource_dir exists but no dist found. resource_dir={:?}, checked={:?} and {:?}",
+            resource_dir, dist, index_html
+        );
+    } else {
+        tracing::debug!("[Web] resource_dir not available (None or unset), trying exe-relative paths");
     }
 
-    // Development fallbacks
+    // Layer 2: Exe-relative paths (production fallback — CWD may not be install dir)
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            // Check standard locations first
+            for candidate in &["dist", "resources/dist"] {
+                let path = exe_dir.join(candidate);
+                if path.is_dir() {
+                    tracing::info!("[Web] SPA dist resolved via exe-relative: {:?}", path);
+                    return path;
+                }
+            }
+            
+            // CRITICAL: Check Tauri's _up_ directory (MSI bundle format for ../dist)
+            // In MSI installations, Tauri bundles "../dist" as "_up_/dist"
+            // Example: D:\app\polaris\_up_\dist
+            let up_dist = exe_dir.join("_up_/dist");
+            if up_dist.is_dir() {
+                tracing::info!("[Web] SPA dist resolved via Tauri _up_ path: {:?}", up_dist);
+                return up_dist;
+            }
+            
+            // Also try one level up (for Cargo-style layouts)
+            if let Some(parent) = exe_dir.parent() {
+                let candidate = parent.join("dist");
+                if candidate.is_dir() {
+                    tracing::info!("[Web] SPA dist resolved via exe-parent-relative: {:?}", candidate);
+                    return candidate;
+                }
+            }
+        }
+    }
+
+    // Layer 3: CWD-relative paths (development fallback)
     for candidate in ["../dist", "./dist"] {
         let path = std::path::PathBuf::from(candidate);
         if path.is_dir() {
+            tracing::info!("[Web] SPA dist resolved via CWD-relative: {:?}", path);
             return path;
         }
     }
 
-    // Last resort: return ../dist (will 404 but at least it's a sensible default)
-    tracing::warn!("[Web] No dist directory found, SPA serving will fail");
+    // Last resort: log a detailed error and return a path that will cause ServeDir to 404.
+    // This path is intentionally non-existent so the SPA fallback (ServeFile) also 404s,
+    // making the failure immediately visible.
+    tracing::error!(
+        "[Web] CRITICAL: No SPA dist directory found. Web UI will return 404 for all requests. \
+         Check that the application is properly installed and the dist/ directory exists. \
+         CWD={:?}, exe={:?}",
+        std::env::current_dir().ok(),
+        std::env::current_exe().ok()
+    );
     std::path::PathBuf::from("../dist")
 }
 
