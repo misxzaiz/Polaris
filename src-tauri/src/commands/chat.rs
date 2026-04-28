@@ -461,7 +461,8 @@ pub async fn start_chat_inner(
 
     // 处理模型 Profile：查找 Profile 并生成 settings overlay + 环境变量
     if let Some(ref profile_id) = options.model_profile_id {
-        let profiles = &state.config.read().await.model_profiles;
+        let config = state.clone_config().map_err(|e| AppError::ProcessError(e))?;
+        let profiles = &config.model_profiles;
         if let Some(profile) = profiles.iter().find(|p| p.id == *profile_id) {
             tracing::info!("[start_chat_inner] 使用模型 Profile: {} ({})", profile.name, profile.model);
 
@@ -593,7 +594,8 @@ pub async fn continue_chat_inner(
 
     // 处理模型 Profile：查找 Profile 并生成 settings overlay + 环境变量
     if let Some(ref profile_id) = options.model_profile_id {
-        let profiles = &state.config.read().await.model_profiles;
+        let config = state.clone_config().map_err(|e| AppError::ProcessError(e))?;
+        let profiles = &config.model_profiles;
         if let Some(profile) = profiles.iter().find(|p| p.id == *profile_id) {
             tracing::info!("[continue_chat_inner] 使用模型 Profile: {} ({})", profile.name, profile.model);
 
