@@ -22,6 +22,7 @@ interface SessionConfigState {
   setModel: (model: string) => void
   setEffort: (effort: EffortLevel) => void
   setPermissionMode: (mode: PermissionMode) => void
+  setModelProfileId: (profileId: string) => void
   setConfig: (config: Partial<SessionRuntimeConfig>) => void
   resetConfig: () => void
 }
@@ -56,6 +57,11 @@ export const useSessionConfig = create<SessionConfigState>()(
           config: { ...state.config, permissionMode },
         })),
 
+      setModelProfileId: (modelProfileId) =>
+        set((state) => ({
+          config: { ...state.config, modelProfileId },
+        })),
+
       setConfig: (newConfig) =>
         set((state) => ({
           config: { ...state.config, ...newConfig },
@@ -87,6 +93,7 @@ export function hasCustomConfig(): boolean {
     config.agent !== DEFAULT_SESSION_CONFIG.agent ||
     config.model !== DEFAULT_SESSION_CONFIG.model ||
     config.effort !== DEFAULT_SESSION_CONFIG.effort ||
-    config.permissionMode !== DEFAULT_SESSION_CONFIG.permissionMode
+    config.permissionMode !== DEFAULT_SESSION_CONFIG.permissionMode ||
+    (config.modelProfileId && config.modelProfileId !== DEFAULT_SESSION_CONFIG.modelProfileId)
   )
 }

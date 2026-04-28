@@ -30,3 +30,4 @@ export { useSchedulerStore } from './schedulerStore';
 export { useTerminalStore } from './terminalStore';
 export { useRequirementStore } from './requirementStore';
 export { useSessionStore, getSessionEffectiveWorkspace } from './sessionStore';
+export { useModelProfileStore, getActiveModelProfile } from './modelProfileStore';

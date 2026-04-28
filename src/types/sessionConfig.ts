@@ -82,6 +82,8 @@ export interface SessionRuntimeConfig {
   effort?: EffortLevel
   /** 权限模式 */
   permissionMode?: PermissionMode
+  /** 模型 Profile ID（第三方端点配置） */
+  modelProfileId?: string
 }
 
 /**
@@ -92,6 +94,7 @@ export const DEFAULT_SESSION_CONFIG: Required<SessionRuntimeConfig> = {
   model: 'opus',
   effort: 'max',
   permissionMode: 'bypassPermissions',
+  modelProfileId: '',
 }
 /**
  * 预设 Agent 列表

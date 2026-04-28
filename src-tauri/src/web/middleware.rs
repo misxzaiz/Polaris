@@ -51,8 +51,12 @@ pub async fn request_trace(req: Request<Body>, next: Next) -> Response {
 
 /// Paths that skip auth validation (health, auth endpoints).
 /// WebSocket auth is handled separately via query parameter in ws_handler.
+///
+/// Note: In Axum nested routers (.nest("/api", ...)), the prefix is stripped before
+/// the inner router processes the request. So /api/ws becomes /ws inside the
+/// nested handler. We must match BOTH forms to cover all cases.
 fn is_auth_skipped_path(path: &str) -> bool {
-    matches!(path, "/api/health" | "/api/ws" | "/api/auth/verify" | "/api/auth/token")
+    matches!(path, "/api/health" | "/health" | "/api/ws" | "/ws" | "/api/auth/verify" | "/auth/verify" | "/api/auth/token" | "/auth/token")
 }
 
 /// Extract the token value from an `Authorization: Bearer <value>` header.

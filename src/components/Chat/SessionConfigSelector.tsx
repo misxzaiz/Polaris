@@ -21,6 +21,7 @@ import {
   type PermissionMode,
 } from '../../types/sessionConfig'
 import { useCliInfoStore } from '../../stores/cliInfoStore'
+import { useModelProfileStore } from '../../stores/modelProfileStore'
 
 interface SessionConfigSelectorProps {
   /** 当前配置 */
@@ -33,7 +34,7 @@ interface SessionConfigSelectorProps {
   visibleTypes?: SelectorType[]
 }
 
-type SelectorType = 'agent' | 'model' | 'effort' | 'permission'
+type SelectorType = 'agent' | 'model' | 'effort' | 'permission' | 'profile'
 
 /**
  * 会话配置选择器组件
@@ -74,6 +75,21 @@ export function SessionConfigSelector({
     return PRESET_AGENTS
   }, [dynamicAgents])
 
+  // 模型 Profile 列表
+  const profiles = useModelProfileStore(s => s.profiles)
+  const activeProfileId = useModelProfileStore(s => s.activeProfileId)
+
+  // 合并后的模型列表：官方模型 + Profile
+  const modelList = useMemo(() => {
+    const officialModels = PRESET_MODELS
+    const profileModels = profiles.map(p => ({
+      id: `profile:${p.id}`,
+      name: `🔄 ${p.name}`,
+      description: p.description || `${p.model} @ ${new URL(p.baseUrl).hostname}`,
+    }))
+    return [...officialModels, ...profileModels]
+  }, [profiles])
+
   // 获取当前选择的显示名称
   const getAgentLabel = useCallback((agentId?: string) => {
     if (!agentId) return t('sessionConfig.noAgent', '不设置')
@@ -83,9 +99,16 @@ export function SessionConfigSelector({
 
   const getModelLabel = useCallback((modelId?: string) => {
     if (!modelId) return t('sessionConfig.noModel', '不设置')
+    // Profile 模型
+    if (modelId.startsWith('profile:')) {
+      const profileId = modelId.slice('profile:'.length)
+      const profile = profiles.find(p => p.id === profileId)
+      return profile ? `🔄 ${profile.name}` : modelId
+    }
+    // 官方模型
     const model = PRESET_MODELS.find(m => m.id === modelId)
     return model?.name || modelId
-  }, [t])
+  }, [t, profiles])
 
   const getEffortLabel = useCallback((effort?: EffortLevel | '') => {
     if (!effort) return t('sessionConfig.noEffort', '不设置')
@@ -102,7 +125,7 @@ export function SessionConfigSelector({
   // 通用选择处理
   const handleSelect = useCallback((type: SelectorType, value: string) => {
     // 处理字段名映射
-    const configKey = type === 'permission' ? 'permissionMode' : type
+    const configKey = type === 'permission' ? 'permissionMode' : type === 'profile' ? 'modelProfileId' : type
     onChange({
       ...config,
       [configKey]: value,
@@ -143,7 +166,7 @@ export function SessionConfigSelector({
         })))
         break
       case 'model':
-        items.push(...PRESET_MODELS.map(m => ({
+        items.push(...modelList.map(m => ({
           value: m.id,
           label: m.name,
           description: m.description,
@@ -163,6 +186,20 @@ export function SessionConfigSelector({
           description: o.description,
         })))
         break
+      case 'profile':
+        // 官方 API（空 = 不使用 Profile）
+        items.push({
+          value: '',
+          label: t('sessionConfig.officialApi', '官方 API'),
+          description: t('sessionConfig.officialApiDesc', '使用 Anthropic 官方端点'),
+        })
+        // Profile 列表
+        items.push(...profiles.map(p => ({
+          value: p.id,
+          label: `🔄 ${p.name}`,
+          description: p.description || `${p.model} @ ${p.baseUrl}`,
+        })))
+        break
     }
 
     const getCurrentValue = (): string | undefined => {
@@ -171,6 +208,7 @@ export function SessionConfigSelector({
         case 'model': return config.model
         case 'effort': return config.effort
         case 'permission': return config.permissionMode
+        case 'profile': return config.modelProfileId
         default: return undefined
       }
     }
@@ -268,9 +306,18 @@ export function SessionConfigSelector({
       label: t('sessionConfig.permission', '权限'),
       getValue: () => getPermissionLabel(config.permissionMode),
     },
+    profile: {
+      icon: <Cpu size={12} />,
+      label: t('sessionConfig.profile', '端点'),
+      getValue: () => {
+        if (!config.modelProfileId) return t('sessionConfig.noProfile', '官方')
+        const profile = profiles.find(p => p.id === config.modelProfileId)
+        return profile ? `🔄 ${profile.name}` : t('sessionConfig.noProfile', '官方')
+      },
+    },
   }
 
-  const ALL_TYPES: SelectorType[] = ['agent', 'model', 'effort', 'permission']
+  const ALL_TYPES: SelectorType[] = ['agent', 'model', 'effort', 'permission', 'profile']
   const typesToShow = visibleTypes ?? ALL_TYPES
 
   return (

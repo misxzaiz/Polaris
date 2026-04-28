@@ -5,6 +5,7 @@
 
 use crate::error::Result;
 use crate::models::AIEvent;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 /// 引擎 ID
@@ -83,6 +84,12 @@ pub struct SessionOptions {
     pub image_attachments: Vec<ImageAttachment>,
     /// Fork 来源会话 ID（配合 --resume 使用 --fork-session 创建分支会话）
     pub fork_session_id: Option<String>,
+    /// Settings overlay 文件路径（--settings 参数值）
+    /// 由 model_profile_service 根据当前激活的 Profile 生成
+    pub settings_overlay_path: Option<String>,
+    /// 环境变量覆盖（ANTHROPIC_BASE_URL / AUTH_TOKEN / MODEL 等）
+    /// 用于将请求路由到第三方 Anthropic 兼容端点
+    pub env_overrides: HashMap<String, String>,
 }
 
 /// 图片附件（用于 stream-json 模式原生传递给模型）
@@ -125,6 +132,8 @@ impl SessionOptions {
             allowed_tools: Vec::new(),
             image_attachments: Vec::new(),
             fork_session_id: None,
+            settings_overlay_path: None,
+            env_overrides: HashMap::new(),
         }
     }
 
@@ -218,6 +227,18 @@ impl SessionOptions {
     /// 设置图片附件列表
     pub fn with_image_attachments(mut self, images: Vec<ImageAttachment>) -> Self {
         self.image_attachments = images;
+        self
+    }
+
+    /// 设置 settings overlay 文件路径
+    pub fn with_settings_overlay_path(mut self, path: impl Into<String>) -> Self {
+        self.settings_overlay_path = Some(path.into());
+        self
+    }
+
+    /// 设置环境变量覆盖
+    pub fn with_env_overrides(mut self, overrides: HashMap<String, String>) -> Self {
+        self.env_overrides = overrides;
         self
     }
 }

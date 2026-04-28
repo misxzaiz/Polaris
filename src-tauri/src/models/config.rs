@@ -112,6 +112,38 @@ pub struct BaiduTranslateConfig {
     pub secret_key: String,
 }
 
+/// 模型 Profile — 描述一个第三方 Anthropic 兼容端点配置
+///
+/// 通过 --settings 临时文件 + 环境变量覆盖，让 Claude Code CLI
+/// 将请求路由到用户配置的第三方 Anthropic 协议兼容代理端点，
+/// 从而使用非官方模型。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelProfile {
+    /// 唯一 ID
+    pub id: String,
+    /// 人可读名称，如 "DeepSeek V4 Pro"
+    pub name: String,
+    /// Anthropic 协议兼容的 API 端点 URL
+    pub base_url: String,
+    /// API 密钥
+    pub api_key: String,
+    /// 目标模型名称（发给代理端点的模型标识）
+    pub model: String,
+    /// 是否为当前激活 Profile
+    #[serde(default)]
+    pub active: bool,
+    /// 可选：Profile 描述
+    #[serde(default)]
+    pub description: Option<String>,
+    /// 创建时间 (ISO 8601)
+    #[serde(default)]
+    pub created_at: Option<String>,
+    /// 最后更新时间 (ISO 8601)
+    #[serde(default)]
+    pub updated_at: Option<String>,
+}
+
 /// QQ Bot 实例配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -742,6 +774,14 @@ pub struct Config {
     #[serde(default)]
     pub current_workspace_id: Option<String>,
 
+    /// 模型 Profile 列表（配置第三方 Anthropic 兼容端点）
+    #[serde(default)]
+    pub model_profiles: Vec<ModelProfile>,
+
+    /// 当前激活的模型 Profile ID（为空时使用官方模型）
+    #[serde(default)]
+    pub active_model_profile_id: Option<String>,
+
     // === 旧字段，保持向后兼容 ===
     /// @deprecated 请使用 claude_code.cli_path
     #[serde(default)]
@@ -774,6 +814,8 @@ impl Default for Config {
             web: WebConfig::default(),
             workspaces: Vec::new(),
             current_workspace_id: None,
+            model_profiles: Vec::new(),
+            active_model_profile_id: None,
             claude_cmd: None,
         }
     }

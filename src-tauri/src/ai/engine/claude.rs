@@ -239,6 +239,7 @@ impl ClaudeEngine {
         allowed_tools: &[String],
         image_attachments: &[ImageAttachment],
         fork_session: bool,
+        settings_overlay_path: Option<&str>,
     ) -> Result<Command> {
         let has_images = !image_attachments.is_empty();
         #[cfg(windows)]
@@ -307,7 +308,14 @@ impl ClaudeEngine {
                 }
             }
 
-            // 添加努力级别参数
+            // 添加 settings overlay 参数（模型 Profile 端点覆盖）
+            if let Some(settings_path) = settings_overlay_path {
+                if !settings_path.is_empty() {
+                    cmd.arg("--settings").arg(settings_path);
+                }
+            }
+
+            // 添加努力级别参数（Windows 分支）
             if let Some(e) = effort {
                 if !e.is_empty() {
                     cmd.arg("--effort").arg(e);
@@ -406,7 +414,14 @@ impl ClaudeEngine {
                 }
             }
 
-            // 添加努力级别参数
+            // 添加 settings overlay 参数（模型 Profile 端点覆盖）
+            if let Some(settings_path) = settings_overlay_path {
+                if !settings_path.is_empty() {
+                    cmd.arg("--settings").arg(settings_path);
+                }
+            }
+
+            // 添加努力级别参数（非 Windows 分支）
             if let Some(e) = effort {
                 if !e.is_empty() {
                     cmd.arg("--effort").arg(e);
@@ -451,7 +466,7 @@ impl ClaudeEngine {
     }
 
     /// 配置命令（设置工作目录、环境变量等）
-    fn configure_command(&self, cmd: &mut Command, work_dir: Option<&str>) {
+    fn configure_command(&self, cmd: &mut Command, work_dir: Option<&str>, env_overrides: &std::collections::HashMap<String, String>) {
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -469,6 +484,11 @@ impl ClaudeEngine {
         // 设置 Git Bash 环境变量 (Windows)
         if let Some(ref git_bash_path) = self.config.git_bin_path {
             cmd.env("CLAUDE_CODE_GIT_BASH_PATH", git_bash_path);
+        }
+
+        // 注入模型 Profile 环境变量覆盖（ANTHROPIC_BASE_URL / AUTH_TOKEN / MODEL 等）
+        for (key, value) in env_overrides {
+            cmd.env(key, value);
         }
     }
 
@@ -830,8 +850,9 @@ impl AIEngine for ClaudeEngine {
             &options.allowed_tools,
             &options.image_attachments,
             fork_flag,
+            options.settings_overlay_path.as_deref(),
         )?;
-        self.configure_command(&mut cmd, options.work_dir.as_deref());
+        self.configure_command(&mut cmd, options.work_dir.as_deref(), &options.env_overrides);
 
         // 打印可复制的命令（方便调试）
         let cmd_str = Self::format_command_for_log(&cmd);
@@ -919,8 +940,9 @@ impl AIEngine for ClaudeEngine {
             &options.allowed_tools,
             &options.image_attachments,
             false, // continue_session 不 fork
+            options.settings_overlay_path.as_deref(),
         )?;
-        self.configure_command(&mut cmd, work_dir.as_deref());
+        self.configure_command(&mut cmd, work_dir.as_deref(), &options.env_overrides);
 
         // 打印可复制的命令（方便调试）
         let cmd_str = Self::format_command_for_log(&cmd);

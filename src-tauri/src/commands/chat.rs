@@ -86,6 +86,9 @@ pub struct ChatRequestOptions {
     /// Fork 来源会话 ID（配合 --fork-session 创建分支会话）
     #[serde(default)]
     pub fork_session_id: Option<String>,
+    /// 模型 Profile ID（用于查找第三方端点配置）
+    #[serde(default)]
+    pub model_profile_id: Option<String>,
 }
 
 // ============================================================================
@@ -456,6 +459,33 @@ pub async fn start_chat_inner(
         session_opts = session_opts.with_image_attachments(images);
     }
 
+    // 处理模型 Profile：查找 Profile 并生成 settings overlay + 环境变量
+    if let Some(ref profile_id) = options.model_profile_id {
+        let profiles = &state.config.read().await.model_profiles;
+        if let Some(profile) = profiles.iter().find(|p| p.id == *profile_id) {
+            tracing::info!("[start_chat_inner] 使用模型 Profile: {} ({})", profile.name, profile.model);
+
+            // 生成 settings overlay 文件
+            match crate::services::ModelProfileService::write_settings_overlay(profile) {
+                Ok(path) => {
+                    session_opts = session_opts.with_settings_overlay_path(path.to_string_lossy().to_string());
+                }
+                Err(e) => {
+                    tracing::warn!("[start_chat_inner] 生成 settings overlay 失败: {}", e);
+                }
+            }
+
+            // 注入环境变量覆盖
+            let env_overrides = crate::services::ModelProfileService::generate_env_overrides(profile);
+            session_opts = session_opts.with_env_overrides(env_overrides);
+
+            // 覆盖模型参数为 Profile 指定的模型
+            session_opts = session_opts.with_model(profile.model.clone());
+        } else {
+            tracing::warn!("[start_chat_inner] 未找到模型 Profile: {}", profile_id);
+        }
+    }
+
     let mut registry = state.engine_registry.lock().await;
     registry.start_session(Some(engine), &final_message, session_opts)
 }
@@ -559,6 +589,33 @@ pub async fn continue_chat_inner(
         }).collect();
         tracing::info!("[continue_chat_inner] 传递 {} 张图片给引擎（stream-json 模式）", images.len());
         session_opts = session_opts.with_image_attachments(images);
+    }
+
+    // 处理模型 Profile：查找 Profile 并生成 settings overlay + 环境变量
+    if let Some(ref profile_id) = options.model_profile_id {
+        let profiles = &state.config.read().await.model_profiles;
+        if let Some(profile) = profiles.iter().find(|p| p.id == *profile_id) {
+            tracing::info!("[continue_chat_inner] 使用模型 Profile: {} ({})", profile.name, profile.model);
+
+            // 生成 settings overlay 文件
+            match crate::services::ModelProfileService::write_settings_overlay(profile) {
+                Ok(path) => {
+                    session_opts = session_opts.with_settings_overlay_path(path.to_string_lossy().to_string());
+                }
+                Err(e) => {
+                    tracing::warn!("[continue_chat_inner] 生成 settings overlay 失败: {}", e);
+                }
+            }
+
+            // 注入环境变量覆盖
+            let env_overrides = crate::services::ModelProfileService::generate_env_overrides(profile);
+            session_opts = session_opts.with_env_overrides(env_overrides);
+
+            // 覆盖模型参数为 Profile 指定的模型
+            session_opts = session_opts.with_model(profile.model.clone());
+        } else {
+            tracing::warn!("[continue_chat_inner] 未找到模型 Profile: {}", profile_id);
+        }
     }
 
     let mut registry = state.engine_registry.lock().await;

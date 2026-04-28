@@ -18,6 +18,7 @@ import i18n from 'i18next'
 import { MessageCompactor, isCompacted } from '../../utils/messageCompactor'
 import { isEditTool, extractEditDiff } from '../../utils/diffExtractor'
 import { getSessionConfig } from '../sessionConfigStore'
+import { getActiveModelProfile } from '../modelProfileStore'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('ConversationStore')
@@ -939,6 +940,9 @@ export function createConversationStore(
           // 调用后端 API
           // 获取会话配置
           const sessionConfig = getSessionConfig()
+          // 获取当前激活的模型 Profile ID
+          const activeProfile = getActiveModelProfile()
+          const modelProfileId = activeProfile?.id
 
           if (conversationId) {
             // 继续会话
@@ -957,6 +961,7 @@ export function createConversationStore(
                 model: sessionConfig.model || undefined,
                 effort: sessionConfig.effort || undefined,
                 permissionMode: sessionConfig.permissionMode || undefined,
+                modelProfileId: modelProfileId || undefined,
               },
             })
           } else {
@@ -980,6 +985,7 @@ export function createConversationStore(
                 effort: sessionConfig.effort || undefined,
                 permissionMode: sessionConfig.permissionMode || undefined,
                 forkSessionId: forkSessionId || undefined,
+                modelProfileId: modelProfileId || undefined,
               },
             })
             // 注意：这里设置的是临时 sessionId，真实的会话 ID 通过 session_start 事件设置
@@ -1099,6 +1105,9 @@ export function createConversationStore(
 
         // 获取会话配置
         const sessionConfig = getSessionConfig()
+        // 获取当前激活的模型 Profile ID
+        const activeProfile = getActiveModelProfile()
+        const modelProfileId = activeProfile?.id
 
         try {
           await invoke('continue_chat', {
@@ -1116,6 +1125,7 @@ export function createConversationStore(
               effort: sessionConfig.effort || undefined,
               permissionMode: sessionConfig.permissionMode || undefined,
               allowedTools: allowedTools && allowedTools.length > 0 ? allowedTools : undefined,
+              modelProfileId: modelProfileId || undefined,
             },
           })
         } catch (e) {
