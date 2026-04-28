@@ -5,6 +5,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+#[cfg(feature = "tauri-app")]
 use tauri::{AppHandle, Manager};
 
 use crate::error::Result;
@@ -31,6 +32,7 @@ pub struct ListTodosParams {
     pub limit: Option<u32>,
 }
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn list_todos(
     params: ListTodosParams,
@@ -108,6 +110,7 @@ pub struct TodoCreateSubtask {
     pub title: String,
 }
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn create_todo(
     params: CreateTodoParams,
@@ -185,6 +188,7 @@ pub struct UpdateTodoParams {
     pub workspace_path: Option<String>,
 }
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn update_todo(
     params: UpdateTodoParams,
@@ -233,6 +237,7 @@ pub struct DeleteTodoParams {
     pub workspace_path: Option<String>,
 }
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn delete_todo(
     params: DeleteTodoParams,
@@ -262,6 +267,7 @@ pub struct StartTodoParams {
     pub workspace_path: Option<String>,
 }
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn start_todo(
     params: StartTodoParams,
@@ -291,6 +297,7 @@ pub struct CompleteTodoParams {
     pub workspace_path: Option<String>,
 }
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn complete_todo(
     params: CompleteTodoParams,
@@ -322,6 +329,7 @@ pub struct GetBreakdownParams {
     pub workspace_path: Option<String>,
 }
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn get_todo_workspace_breakdown(
     params: GetBreakdownParams,

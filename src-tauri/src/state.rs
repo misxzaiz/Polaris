@@ -129,6 +129,7 @@ pub struct AppState {
     pub event_broadcast: broadcast::Sender<String>,
     /// Tauri AppHandle — set once during setup, used by Web API handlers
     /// to emit events back to the desktop webview (dual emission).
+    #[cfg(feature = "tauri-app")]
     pub app_handle: OnceLock<tauri::AppHandle>,
     /// Application config directory — set once during setup from window.path().
     /// Shared by both Tauri commands and Web API handlers for consistent path resolution.
@@ -165,6 +166,7 @@ pub fn create_app_state(
         lsp_manager: Mutex::new(LspManager::new()),
         lsp_config: Mutex::new(LspConfigRepository::new(&config_dir)),
         event_broadcast: broadcast::channel(256).0,
+        #[cfg(feature = "tauri-app")]
         app_handle: OnceLock::new(),
         app_config_dir: OnceLock::new(),
         resource_dir: OnceLock::new(),
@@ -197,10 +199,14 @@ impl AppState {
             });
 
         // Carry over app_handle if already set
-        let app_handle = OnceLock::new();
-        if let Some(handle) = self.app_handle.get() {
-            let _ = app_handle.set(handle.clone());
-        }
+        #[cfg(feature = "tauri-app")]
+        let app_handle = {
+            let lock = OnceLock::new();
+            if let Some(handle) = self.app_handle.get() {
+                let _ = lock.set(handle.clone());
+            }
+            lock
+        };
 
         // Carry over resource_dir if set
         let resource_dir = OnceLock::new();
@@ -222,6 +228,7 @@ impl AppState {
             lsp_manager: Mutex::new(LspManager::new()),
             lsp_config: Mutex::new(LspConfigRepository::new(&config_dir)),
             event_broadcast: self.event_broadcast.clone(),
+            #[cfg(feature = "tauri-app")]
             app_handle,
             app_config_dir: {
                 let lock = OnceLock::new();

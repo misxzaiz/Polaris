@@ -2,7 +2,7 @@ use crate::error::{AppError, Result};
 use std::path::Path;
 
 /// 获取用户主目录
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub fn get_home_dir() -> Result<String> {
     dirs::home_dir()
         .and_then(|p| p.to_str().map(|s| s.to_string()))
@@ -10,7 +10,7 @@ pub fn get_home_dir() -> Result<String> {
 }
 
 /// 验证工作区路径
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub fn validate_workspace_path(path: String) -> Result<bool> {
     let path_obj = Path::new(&path);
     
@@ -33,7 +33,7 @@ pub fn validate_workspace_path(path: String) -> Result<bool> {
 }
 
 /// 获取目录信息
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub fn get_directory_info(path: String) -> Result<DirectoryInfo> {
     let path_obj = Path::new(&path);
     

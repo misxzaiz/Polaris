@@ -6,6 +6,16 @@ authors = ["you"]
 edition = "2021"
 default-run = "polaris"
 
+[features]
+default = ["tauri-app"]
+tauri-app = [
+    "dep:tauri",
+    "dep:tauri-build",
+    "dep:tauri-plugin-opener",
+    "dep:tauri-plugin-dialog",
+    "dep:tauri-plugin-notification",
+]
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
@@ -35,16 +45,20 @@ path = "src/bin/polaris_scheduler_mcp.rs"
 name = "polaris-knowledge-mcp"
 path = "src/bin/polaris_knowledge_mcp.rs"
 
+[[bin]]
+name = "polaris-web"
+path = "src/bin/polaris_web.rs"
+
 [build-dependencies]
-tauri-build = { version = "2.0", features = [] }
+tauri-build = { version = "2.0", features = [], optional = true }
 
 [dependencies]
 # Internal crates
 polaris-knowledge-mcp = { path = "../crates/polaris-knowledge-mcp" }
 
-tauri = { version = "2.0", features = ["devtools"] }
-tauri-plugin-opener = "2"
-tauri-plugin-dialog = "2.7"
+tauri = { version = "2.0", features = ["devtools"], optional = true }
+tauri-plugin-opener = { version = "2", optional = true }
+tauri-plugin-dialog = { version = "2.7", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
@@ -69,7 +83,7 @@ walkdir = "2"
 reqwest = { version = "0.11", default-features = false, features = ["json", "stream", "rustls-tls"] }
 futures-util = "0.3"
 md5 = "0.7"
-tauri-plugin-notification = "2.3.3"
+tauri-plugin-notification = { version = "2.3.3", optional = true }
 
 # 集成模块依赖（rustls：纯 Rust TLS，不依赖系统 OpenSSL）
 tokio-tungstenite = { version = "0.21", features = ["rustls-tls-native-roots"] }

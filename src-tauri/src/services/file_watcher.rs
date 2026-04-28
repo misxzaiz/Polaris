@@ -7,6 +7,7 @@ use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::Duration;
+#[cfg(feature = "tauri-app")]
 use tauri::{AppHandle, Emitter};
 
 /// 需要忽略的目录名称
@@ -56,6 +57,7 @@ impl FileWatcherManager {
     }
 
     /// 启动文件监听
+    #[cfg(feature = "tauri-app")]
     pub fn start(&mut self, root_path: String, app_handle: AppHandle) -> Result<(), String> {
         let root = PathBuf::from(&root_path);
         if !root.exists() {
@@ -138,12 +140,14 @@ impl Drop for FileWatcherManager {
 }
 
 /// 文件监听事件处理运行时
+#[cfg(feature = "tauri-app")]
 struct FileWatcherRunner {
     rx: mpsc::Receiver<Result<Event, notify::Error>>,
     app_handle: AppHandle,
     watch_root: PathBuf,
 }
 
+#[cfg(feature = "tauri-app")]
 impl FileWatcherRunner {
     fn new(
         rx: mpsc::Receiver<Result<Event, notify::Error>>,

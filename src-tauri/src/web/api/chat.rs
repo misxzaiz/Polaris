@@ -3,6 +3,7 @@ use axum::response::IntoResponse;
 use axum::Json;
 use serde::Deserialize;
 use std::sync::Arc;
+#[cfg(feature = "tauri-app")]
 use tauri::Emitter;
 
 use crate::commands::chat::{ChatCallbacks, ChatRequestOptions, AppPaths, start_chat_inner, continue_chat_inner, interrupt_chat_inner};
@@ -46,6 +47,7 @@ pub fn dual_emit(state: &AppState, event: &serde_json::Value) {
     if let Err(e) = state.event_broadcast.send(ws_msg.to_string()) {
         tracing::warn!("WebSocket broadcast send failed (no active receivers): {}", e);
     }
+    #[cfg(feature = "tauri-app")]
     if let Some(handle) = state.app_handle.get() {
         if let Err(e) = handle.emit("chat-event", event) {
             tracing::warn!("Tauri webview emit failed: {}", e);

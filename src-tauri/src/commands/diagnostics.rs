@@ -1,10 +1,12 @@
 use std::path::PathBuf;
 
+#[cfg(feature = "tauri-app")]
 use tauri::{Manager, Window};
 
 use crate::error::{AppError, Result};
 use crate::services::mcp_diagnostics_service::{TodoMcpDiagnostics, TodoMcpDiagnosticsService};
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn get_todo_mcp_diagnostics(window: Window, workspace_path: Option<String>) -> Result<TodoMcpDiagnostics> {
     let app_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

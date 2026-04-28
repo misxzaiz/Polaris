@@ -5,6 +5,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+#[cfg(feature = "tauri-app")]
 use tauri::{AppHandle, Manager};
 
 use crate::error::Result;
@@ -34,6 +35,7 @@ pub struct ListRequirementsParams {
     pub limit: Option<u32>,
 }
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn list_requirements(
     params: ListRequirementsParams,
@@ -105,6 +107,7 @@ pub struct CreateRequirementParams {
     pub workspace_path: Option<String>,
 }
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn create_requirement(
     params: CreateRequirementParams,
@@ -196,6 +199,7 @@ pub struct ExecuteConfigParam {
     pub work_dir: Option<String>,
 }
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn update_requirement(
     params: UpdateRequirementParams,
@@ -251,6 +255,7 @@ pub struct DeleteRequirementParams {
     pub workspace_path: Option<String>,
 }
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn delete_requirement(
     params: DeleteRequirementParams,
@@ -283,6 +288,7 @@ pub struct SavePrototypeParams {
     pub workspace_path: Option<String>,
 }
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn save_requirement_prototype(
     params: SavePrototypeParams,
@@ -310,6 +316,7 @@ pub struct ReadPrototypeParams {
     pub workspace_path: Option<String>,
 }
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn read_requirement_prototype(
     params: ReadPrototypeParams,
@@ -340,6 +347,7 @@ pub struct GetBreakdownParams {
     pub workspace_path: Option<String>,
 }
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn get_requirement_workspace_breakdown(
     params: GetBreakdownParams,

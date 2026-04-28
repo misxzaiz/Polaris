@@ -11,10 +11,13 @@ pub mod web;
 pub use state::AppState;
 pub use error::{AppError, Result};
 
+#[cfg(feature = "tauri-app")]
 use models::config::{Config, HealthStatus};
 use services::config_store::ConfigStore;
 use services::logger::Logger;
+#[cfg(feature = "tauri-app")]
 use commands::chat::{start_chat, continue_chat, interrupt_chat};
+#[cfg(feature = "tauri-app")]
 use commands::chat::{
     list_sessions, get_session_history, delete_session,
     list_claude_code_sessions, get_claude_code_session_history,
@@ -24,26 +27,32 @@ use commands::chat::{
     // stdin 输入
     send_input,
 };
+#[cfg(feature = "tauri-app")]
 use commands::{validate_workspace_path, get_directory_info, get_home_dir};
+#[cfg(feature = "tauri-app")]
 use commands::window::{
     toggle_devtools,
     set_always_on_top,
     is_always_on_top,
 };
+#[cfg(feature = "tauri-app")]
 use commands::file_explorer::{
     read_directory, get_file_content, create_file, create_directory,
     delete_file, rename_file, path_exists, read_commands, search_files,
     search_file_contents,
     copy_path, move_path,
 };
+#[cfg(feature = "tauri-app")]
 use commands::file_watcher::{
     fs_watch_start, fs_watch_stop, fs_watch_status,
 };
+#[cfg(feature = "tauri-app")]
 use commands::context::{
     context_upsert, context_upsert_many, context_query, context_get_all,
     context_remove, context_clear,
     ide_report_current_file, ide_report_file_structure, ide_report_diagnostics,
 };
+#[cfg(feature = "tauri-app")]
 use commands::git::{
     git_is_repository, git_init_repository, git_get_status, git_get_diffs,
     git_get_worktree_diff, git_get_index_diff, git_get_worktree_file_diff, git_get_index_file_diff,
@@ -60,7 +69,9 @@ use commands::git::{
     git_get_gitignore, git_save_gitignore, git_add_to_gitignore, git_get_gitignore_templates,
     test_param_serialization, write_file_absolute, read_file_absolute,
 };
+#[cfg(feature = "tauri-app")]
 use commands::translate::baidu_translate;
+#[cfg(feature = "tauri-app")]
 use commands::integration::{
     start_integration, stop_integration, get_integration_status,
     get_all_integration_status, send_integration_message,
@@ -70,6 +81,7 @@ use commands::integration::{
     get_active_integration_instance, switch_integration_instance,
     disconnect_integration_instance, update_integration_instance,
 };
+#[cfg(feature = "tauri-app")]
 use commands::scheduler::{
     scheduler_list_tasks, scheduler_get_task, scheduler_create_task,
     scheduler_update_task, scheduler_delete_task, scheduler_toggle_task,
@@ -94,11 +106,14 @@ use commands::scheduler::{
     scheduler_toggle_protocol_template, scheduler_render_protocol_document,
     scheduler_build_protocol_prompt,
 };
+#[cfg(feature = "tauri-app")]
 use commands::terminal::{
     terminal_create, terminal_write, terminal_resize,
     terminal_close, terminal_list, terminal_get,
 };
+#[cfg(feature = "tauri-app")]
 use commands::diagnostics::get_todo_mcp_diagnostics;
+#[cfg(feature = "tauri-app")]
 use commands::prompt_snippet::{
     snippet_list, snippet_get, snippet_create, snippet_update, snippet_delete,
 };
@@ -107,6 +122,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex as AsyncMutex;
 use ai::EngineRegistry;
 use integrations::IntegrationManager;
+#[cfg(feature = "tauri-app")]
 use tauri::Manager;
 
 // ============================================================================
@@ -114,6 +130,7 @@ use tauri::Manager;
 // ============================================================================
 
 /// 获取配置
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 fn get_config(state: tauri::State<AppState>) -> Result<Config> {
     let store = state.config_store.lock()
@@ -122,6 +139,7 @@ fn get_config(state: tauri::State<AppState>) -> Result<Config> {
 }
 
 /// 更新配置
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 fn update_config(config: Config, state: tauri::State<AppState>) -> Result<()> {
     let mut store = state.config_store.lock()
@@ -132,6 +150,7 @@ fn update_config(config: Config, state: tauri::State<AppState>) -> Result<()> {
 /// 动态应用 Web 服务器配置：根据当前 config.web 启动或停止服务器。
 ///
 /// 保存 Web 配置后，前端应调用此命令以即时生效，无需重启应用。
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 fn apply_web_server(state: tauri::State<AppState>) -> std::result::Result<serde_json::Value, error::AppError> {
     let config = {
@@ -177,6 +196,7 @@ fn apply_web_server(state: tauri::State<AppState>) -> std::result::Result<serde_
 }
 
 /// 获取本机局域网 IP 地址列表（智能排序：真实 LAN IP 优先，虚拟网卡靠后）
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 fn get_local_ips() -> std::result::Result<Vec<String>, error::AppError> {
     let interfaces = if_addrs::get_if_addrs()
@@ -232,6 +252,7 @@ pub(crate) fn ip_interface_priority(ip: &str, iface_name: &str) -> u32 {
 }
 
 /// 设置工作目录
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 fn set_work_dir(path: Option<String>, state: tauri::State<AppState>) -> Result<()> {
     let mut store = state.config_store.lock()
@@ -241,6 +262,7 @@ fn set_work_dir(path: Option<String>, state: tauri::State<AppState>) -> Result<(
 }
 
 /// 设置 Claude 命令路径
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 fn set_claude_cmd(cmd: String, state: tauri::State<AppState>) -> Result<()> {
     let mut store = state.config_store.lock()
@@ -249,6 +271,7 @@ fn set_claude_cmd(cmd: String, state: tauri::State<AppState>) -> Result<()> {
 }
 
 /// 查找所有可用的 Claude CLI 路径
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 fn find_claude_paths() -> Vec<String> {
     ConfigStore::find_claude_paths()
@@ -267,6 +290,7 @@ pub struct PathValidationResult {
 }
 
 /// 验证 Claude CLI 路径
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 fn validate_claude_path(path: String) -> PathValidationResult {
     match ConfigStore::validate_claude_path(path) {
@@ -285,6 +309,7 @@ fn validate_claude_path(path: String) -> PathValidationResult {
 
 
 /// 健康检查
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 fn health_check(state: tauri::State<AppState>) -> HealthStatus {
     let store = state.config_store.lock()
@@ -295,6 +320,7 @@ fn health_check(state: tauri::State<AppState>) -> HealthStatus {
 }
 
 /// 检测 Claude CLI
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 fn detect_claude(state: tauri::State<AppState>) -> Option<String> {
     let store = state.config_store.lock()
@@ -307,6 +333,7 @@ fn detect_claude(state: tauri::State<AppState>) -> Option<String> {
 // ============================================================================
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[cfg(feature = "tauri-app")]
 pub fn run() {
     // 初始化配置存储
     let config_store = ConfigStore::new()
@@ -682,4 +709,66 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+// ============================================================================
+// Standalone Web Server Entry Point (no Tauri desktop dependency)
+// ============================================================================
+
+/// 启动独立 Web 服务器（无 Tauri 桌面依赖）
+///
+/// 用于 WSL/Linux 服务器部署，仅启动 HTTP/WebSocket 服务。
+/// Token 默认不检查（WebConfig.token = None），可通过 Web UI Settings 页面配置。
+pub fn run_web_server() {
+    // 初始化配置存储
+    let config_store = ConfigStore::new()
+        .expect("无法初始化配置存储");
+
+    // 启用日志系统
+    let _logger_guard = Logger::init(true);
+
+    // 初始化 AI 引擎注册表
+    let config = config_store.get().clone();
+    let mut engine_registry = EngineRegistry::new();
+    engine_registry.register(ai::ClaudeEngine::new(config.clone()));
+    let default_engine = ai::EngineId::parse(&config.default_engine)
+        .unwrap_or(ai::EngineId::ClaudeCode);
+    let _ = engine_registry.set_default(default_engine);
+    let engine_registry_arc = Arc::new(AsyncMutex::new(engine_registry));
+
+    // 初始化 IntegrationManager
+    let integration_manager = IntegrationManager::new()
+        .with_engine_registry(engine_registry_arc.clone());
+
+    // 创建应用状态
+    let app_state = state::create_app_state(
+        config_store,
+        engine_registry_arc,
+        integration_manager,
+    );
+
+    // 设置 config_dir（替代 Tauri path resolver）
+    let config_dir = dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("claude-code-pro");
+    let _ = app_state.app_config_dir.set(config_dir);
+
+    // 启动 Web 服务器
+    let port = web::server::WebServer::resolve_port(config.web.port);
+    let addr = format!("{}:{}", config.web.host, port);
+    let state = Arc::new(app_state);
+    let web_server = web::server::WebServer::new(state);
+
+    tracing::info!("[Polaris-Web] Starting standalone web server on {}", addr);
+
+    let rt = tokio::runtime::Runtime::new()
+        .expect("Failed to create tokio runtime");
+    rt.block_on(async move {
+        let handle = web_server.start(&addr);
+        // 等待 Ctrl+C 信号以优雅关停
+        tokio::signal::ctrl_c().await.ok();
+        tracing::info!("[Polaris-Web] Received shutdown signal, stopping...");
+        handle.shutdown.cancel();
+        let _ = handle.task.await;
+    });
 }

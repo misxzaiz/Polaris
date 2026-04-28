@@ -5,6 +5,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+#[cfg(feature = "tauri-app")]
 use tauri::State;
 
 // ========================================
@@ -380,6 +381,7 @@ impl Default for ContextMemoryStore {
 // ========================================
 
 /// 添加或更新上下文条目
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn context_upsert(
     entry: ContextEntry,
@@ -391,6 +393,7 @@ pub async fn context_upsert(
 }
 
 /// 批量添加或更新上下文条目
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn context_upsert_many(
     entries: Vec<ContextEntry>,
@@ -404,6 +407,7 @@ pub async fn context_upsert_many(
 }
 
 /// 查询上下文
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn context_query(
     request: ContextQueryRequest,
@@ -414,6 +418,7 @@ pub async fn context_query(
 }
 
 /// 获取所有上下文条目
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn context_get_all(
     store: State<'_, Arc<Mutex<ContextMemoryStore>>>,
@@ -423,6 +428,7 @@ pub async fn context_get_all(
 }
 
 /// 移除指定的上下文条目
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn context_remove(
     id: String,
@@ -434,6 +440,7 @@ pub async fn context_remove(
 }
 
 /// 清空所有上下文
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn context_clear(
     store: State<'_, Arc<Mutex<ContextMemoryStore>>>,
@@ -444,6 +451,7 @@ pub async fn context_clear(
 }
 
 /// IDE 插件上报当前文件上下文
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn ide_report_current_file(
     context: IdeFileContext,
@@ -473,6 +481,7 @@ pub async fn ide_report_current_file(
 }
 
 /// IDE 插件上报文件结构
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn ide_report_file_structure(
     structure: IdeFileStructure,
@@ -501,6 +510,7 @@ pub async fn ide_report_file_structure(
 }
 
 /// IDE 插件上报诊断信息
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn ide_report_diagnostics(
     diagnostics: IdeDiagnostics,

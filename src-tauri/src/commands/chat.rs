@@ -12,7 +12,9 @@ use crate::ai::{SessionMeta, HistoryMessage, ClaudeHistoryProvider, SessionHisto
 use crate::error::{AppError, Result};
 use crate::models::AIEvent;
 use crate::services::mcp_config_service::WorkspaceMcpConfigService;
+#[cfg(feature = "tauri-app")]
 use tauri::{Emitter, Manager, State, Window};
+#[cfg(feature = "tauri-app")]
 use tauri_plugin_notification::NotificationExt;
 
 
@@ -648,6 +650,7 @@ pub async fn interrupt_chat_inner(
 // ============================================================================
 
 /// 启动聊天会话
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn start_chat(
     message: String,
@@ -676,6 +679,7 @@ pub async fn start_chat(
 }
 
 /// 继续聊天会话
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn continue_chat(
     session_id: String,
@@ -705,6 +709,7 @@ pub async fn continue_chat(
 }
 
 /// 中断聊天会话
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn interrupt_chat(
     session_id: String,
@@ -718,6 +723,7 @@ pub async fn interrupt_chat(
 // 辅助函数
 // ============================================================================
 
+#[cfg(feature = "tauri-app")]
 fn notify_ai_reply_complete(window: &Window) {
     let _ = window
         .notification()
@@ -732,6 +738,7 @@ fn notify_ai_reply_complete(window: &Window) {
 // ============================================================================
 
 /// 列出会话（统一接口，支持分页）
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn list_sessions(
     engine_id: String,
@@ -758,6 +765,7 @@ pub async fn list_sessions(
 }
 
 /// 获取会话历史（统一接口，支持分页）
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn get_session_history(
     session_id: String,
@@ -784,6 +792,7 @@ pub async fn get_session_history(
 }
 
 /// 删除会话
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn delete_session(
     session_id: String,
@@ -979,6 +988,7 @@ fn parse_session_metadata(file_path: &PathBuf) -> (Option<String>, usize, Option
 }
 
 /// 列出 Claude Code 会话（旧接口）
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn list_claude_code_sessions(
     _state: tauri::State<'_, crate::AppState>,
@@ -1226,6 +1236,7 @@ fn has_common_prefix(hashes1: &[String], hashes2: &[String]) -> bool {
 }
 
 /// 获取 Claude Code 会话历史（旧接口）
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn get_claude_code_session_history(
     session_id: String,
@@ -1317,6 +1328,7 @@ use crate::state::{PendingQuestion, QuestionOption, QuestionStatus, QuestionAnsw
 /// 注册待回答问题
 ///
 /// 当收到 ask_user_question 工具调用时调用此函数
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn register_pending_question(
     session_id: String,
@@ -1352,6 +1364,7 @@ pub fn register_pending_question(
 /// 回答问题
 ///
 /// 用户提交答案后调用此函数
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn answer_question(
     session_id: String,
@@ -1397,6 +1410,7 @@ pub async fn answer_question(
 }
 
 /// 获取待回答问题列表
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn get_pending_questions(
     session_id: Option<String>,
@@ -1422,6 +1436,7 @@ pub fn get_pending_questions(
 }
 
 /// 清除已回答的问题
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn clear_answered_questions(
     state: tauri::State<'_, crate::AppState>,
@@ -1448,6 +1463,7 @@ use crate::models::PlanApprovalResultEvent;
 /// 注册待审批计划
 ///
 /// 当收到 plan_approval_request 事件时调用此函数
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn register_pending_plan(
     session_id: String,
@@ -1480,6 +1496,7 @@ pub fn register_pending_plan(
 /// 批准计划
 ///
 /// 用户批准计划后调用此函数
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn approve_plan(
     session_id: String,
@@ -1525,6 +1542,7 @@ pub async fn approve_plan(
 /// 拒绝计划
 ///
 /// 用户拒绝计划后调用此函数
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn reject_plan(
     session_id: String,
@@ -1570,6 +1588,7 @@ pub async fn reject_plan(
 }
 
 /// 获取待审批计划列表
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn get_pending_plans(
     session_id: Option<String>,
@@ -1595,6 +1614,7 @@ pub fn get_pending_plans(
 }
 
 /// 清除已处理的计划
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn clear_processed_plans(
     state: tauri::State<'_, crate::AppState>,
@@ -1618,6 +1638,7 @@ pub fn clear_processed_plans(
 /// 向会话发送输入
 ///
 /// 通过 stdin 向运行中的会话发送输入数据
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn send_input(
     session_id: String,

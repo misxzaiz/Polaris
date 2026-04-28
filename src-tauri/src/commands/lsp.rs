@@ -4,6 +4,7 @@
  * 配置管理命令：config_list/config_upsert/config_remove/config_toggle
  */
 
+#[cfg(feature = "tauri-app")]
 use tauri::{AppHandle, State};
 
 use crate::error::Result;
@@ -13,6 +14,7 @@ use crate::AppState;
 // ── 进程管理 ──────────────────────────────────────
 
 /// 启动语言服务器进程
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn lsp_start(
     app_handle: AppHandle,
@@ -29,6 +31,7 @@ pub fn lsp_start(
 }
 
 /// 发送 JSON-RPC 消息到语言服务器
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn lsp_send(state: State<'_, AppState>, id: String, data: String) -> Result<()> {
     let mut manager = state
@@ -39,6 +42,7 @@ pub fn lsp_send(state: State<'_, AppState>, id: String, data: String) -> Result<
 }
 
 /// 停止语言服务器
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn lsp_stop(state: State<'_, AppState>, id: String) -> Result<()> {
     let mut manager = state
@@ -49,6 +53,7 @@ pub fn lsp_stop(state: State<'_, AppState>, id: String) -> Result<()> {
 }
 
 /// 列出所有活跃的 LSP 会话
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn lsp_list_sessions(state: State<'_, AppState>) -> Result<Vec<String>> {
     let manager = state
@@ -61,6 +66,7 @@ pub fn lsp_list_sessions(state: State<'_, AppState>) -> Result<Vec<String>> {
 // ── 配置管理 ──────────────────────────────────────
 
 /// 读取所有 LSP 服务器配置
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn lsp_config_list(state: State<'_, AppState>) -> Result<Vec<LspServerEntry>> {
     let repo = state
@@ -71,6 +77,7 @@ pub fn lsp_config_list(state: State<'_, AppState>) -> Result<Vec<LspServerEntry>
 }
 
 /// 添加或更新 LSP 服务器配置
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn lsp_config_upsert(state: State<'_, AppState>, entry: LspServerEntry) -> Result<()> {
     let mut repo = state
@@ -81,6 +88,7 @@ pub fn lsp_config_upsert(state: State<'_, AppState>, entry: LspServerEntry) -> R
 }
 
 /// 删除 LSP 服务器配置
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn lsp_config_remove(state: State<'_, AppState>, id: String) -> Result<()> {
     let mut repo = state
@@ -91,6 +99,7 @@ pub fn lsp_config_remove(state: State<'_, AppState>, id: String) -> Result<()> {
 }
 
 /// 切换 LSP 服务器启用/禁用
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn lsp_config_toggle(state: State<'_, AppState>, id: String, enabled: bool) -> Result<()> {
     let mut repo = state

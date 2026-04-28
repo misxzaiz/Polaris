@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::io;
+#[cfg(feature = "tauri-app")]
 use tauri::State;
 
 use crate::error::{AppError, Result};
@@ -14,12 +15,14 @@ use std::os::windows::process::CommandExt;
 use crate::utils::CREATE_NO_WINDOW;
 
 /// 获取日志目录
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn get_log_dir() -> PathBuf {
     logger::Logger::log_dir()
 }
 
 /// 读取日志内容
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn read_logs(max_lines: usize) -> Result<String> {
     logger::Logger::read_logs(max_lines)
@@ -27,6 +30,7 @@ pub fn read_logs(max_lines: usize) -> Result<String> {
 }
 
 /// 清空日志文件
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn clear_logs() -> Result<()> {
     logger::Logger::clear_logs()
@@ -34,6 +38,7 @@ pub fn clear_logs() -> Result<()> {
 }
 
 /// 打开日志目录
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn open_log_dir() -> Result<()> {
     let log_dir = logger::Logger::log_dir();
@@ -60,6 +65,7 @@ pub fn open_log_dir() -> Result<()> {
 }
 
 /// 设置日志开关
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn set_logging_enabled(enabled: bool, state: State<AppState>) -> Result<()> {
     let store = state.config_store.lock()
@@ -74,6 +80,7 @@ pub fn set_logging_enabled(enabled: bool, state: State<AppState>) -> Result<()> 
 }
 
 /// 获取日志开关状态
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn is_logging_enabled(state: State<AppState>) -> bool {
     state.config_store.lock()

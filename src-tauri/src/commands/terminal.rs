@@ -10,6 +10,7 @@ use std::thread;
 
 use portable_pty::{native_pty_system, CommandBuilder, PtyPair, PtySize};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "tauri-app")]
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
@@ -84,6 +85,7 @@ impl TerminalManager {
     }
 
     /// 创建新的终端会话
+    #[cfg(feature = "tauri-app")]
     pub fn create_session(
         &self,
         app_handle: AppHandle,
@@ -307,6 +309,7 @@ impl TerminalManager {
 // ============================================================================
 
 /// 创建终端会话
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn terminal_create(
     app_handle: AppHandle,
@@ -329,6 +332,7 @@ pub fn terminal_create(
 }
 
 /// 写入终端
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn terminal_write(
     state: tauri::State<AppState>,
@@ -342,6 +346,7 @@ pub fn terminal_write(
 }
 
 /// 调整终端大小
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn terminal_resize(
     state: tauri::State<AppState>,
@@ -356,6 +361,7 @@ pub fn terminal_resize(
 }
 
 /// 关闭终端会话
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn terminal_close(
     state: tauri::State<AppState>,
@@ -368,6 +374,7 @@ pub fn terminal_close(
 }
 
 /// 获取所有终端会话
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn terminal_list(
     state: tauri::State<AppState>,
@@ -379,6 +386,7 @@ pub fn terminal_list(
 }
 
 /// 获取单个终端会话
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn terminal_get(
     state: tauri::State<AppState>,

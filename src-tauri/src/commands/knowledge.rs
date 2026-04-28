@@ -5,12 +5,14 @@
 
 use std::path::PathBuf;
 
+#[cfg(feature = "tauri-app")]
 use tauri::{AppHandle, Manager};
 
 use crate::error::Result;
 use crate::models::knowledge::*;
 use crate::services::unified_knowledge_repository::UnifiedKnowledgeRepository;
 
+#[cfg(feature = "tauri-app")]
 // Helper: create repository from params
 fn make_repo(workspace_path: Option<&String>, app: &AppHandle) -> Result<UnifiedKnowledgeRepository> {
     let config_dir = app
@@ -79,6 +81,7 @@ fn parse_severity(value: &str) -> Result<Severity> {
 // Init
 // ============================================================================
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn knowledge_init(
     params: KnowledgeInitParams,
@@ -92,6 +95,7 @@ pub async fn knowledge_init(
 // List modules
 // ============================================================================
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn knowledge_list_modules(
     params: KnowledgeListModulesParams,
@@ -120,6 +124,7 @@ pub async fn knowledge_list_modules(
 // Get module detail
 // ============================================================================
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn knowledge_get_module(
     params: KnowledgeGetModuleParams,
@@ -133,6 +138,7 @@ pub async fn knowledge_get_module(
 // Create module
 // ============================================================================
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn knowledge_create_module(
     params: KnowledgeCreateModuleParams,
@@ -164,6 +170,7 @@ pub async fn knowledge_create_module(
 // Update module
 // ============================================================================
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn knowledge_update_module(
     params: KnowledgeUpdateModuleParams,
@@ -195,6 +202,7 @@ pub async fn knowledge_update_module(
 // Delete module
 // ============================================================================
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn knowledge_delete_module(
     params: KnowledgeDeleteModuleParams,
@@ -208,6 +216,7 @@ pub async fn knowledge_delete_module(
 // Update module document
 // ============================================================================
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn knowledge_update_module_document(
     params: KnowledgeUpdateDocumentParams,
@@ -221,6 +230,7 @@ pub async fn knowledge_update_module_document(
 // Assertion CRUD
 // ============================================================================
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn knowledge_create_assertion(
     params: KnowledgeCreateAssertionParams,
@@ -230,6 +240,7 @@ pub async fn knowledge_create_assertion(
     repo.create_assertion(&params.module_id, params.assertion)
 }
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn knowledge_update_assertion(
     params: KnowledgeUpdateAssertionParams,
@@ -252,6 +263,7 @@ pub async fn knowledge_update_assertion(
     )
 }
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn knowledge_delete_assertion(
     params: KnowledgeDeleteAssertionParams,
@@ -265,6 +277,7 @@ pub async fn knowledge_delete_assertion(
 // Trap CRUD
 // ============================================================================
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn knowledge_create_trap(
     params: KnowledgeCreateTrapParams,
@@ -274,6 +287,7 @@ pub async fn knowledge_create_trap(
     repo.create_trap(&params.module_id, params.trap)
 }
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn knowledge_update_trap(
     params: KnowledgeUpdateTrapParams,
@@ -289,6 +303,7 @@ pub async fn knowledge_update_trap(
     repo.update_trap(&params.module_id, &params.trap_id, params.description, severity)
 }
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn knowledge_delete_trap(
     params: KnowledgeDeleteTrapParams,
@@ -302,6 +317,7 @@ pub async fn knowledge_delete_trap(
 // List domains
 // ============================================================================
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn knowledge_list_domains(
     params: KnowledgeListDomainsParams,

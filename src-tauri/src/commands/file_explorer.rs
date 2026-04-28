@@ -45,7 +45,7 @@ pub struct FileInfo {
 }
 
 /// 读取目录内容（只读取直接子项，不递归）
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn read_directory(path: String) -> Result<Vec<FileInfo>> {
     let path_obj = Path::new(&path);
     
@@ -115,7 +115,7 @@ pub async fn read_directory(path: String) -> Result<Vec<FileInfo>> {
 }
 
 /// 获取文件内容（限制大小）
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn get_file_content(path: String) -> Result<String> {
     let path_obj = Path::new(&path);
     
@@ -140,7 +140,7 @@ pub async fn get_file_content(path: String) -> Result<String> {
 }
 
 /// 创建文件
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn create_file(path: String, content: Option<String>) -> Result<()> {
     let path_obj = Path::new(&path);
     
@@ -162,7 +162,7 @@ pub async fn create_file(path: String, content: Option<String>) -> Result<()> {
 }
 
 /// 创建目录
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn create_directory(path: String) -> Result<()> {
     fs::create_dir_all(&path)?;
     
@@ -170,7 +170,7 @@ pub async fn create_directory(path: String) -> Result<()> {
 }
 
 /// 删除文件或目录
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn delete_file(path: String) -> Result<()> {
     let path_obj = Path::new(&path);
     
@@ -188,7 +188,7 @@ pub async fn delete_file(path: String) -> Result<()> {
 }
 
 /// 重命名文件或目录
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn rename_file(old_path: String, new_name: String) -> Result<()> {
     let old_path_obj = Path::new(&old_path);
     
@@ -209,7 +209,7 @@ pub async fn rename_file(old_path: String, new_name: String) -> Result<()> {
 }
 
 /// 复制文件或目录
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn copy_path(source: String, destination: String) -> Result<()> {
     let source_path = Path::new(&source);
     let dest_path = Path::new(&destination);
@@ -236,7 +236,7 @@ pub async fn copy_path(source: String, destination: String) -> Result<()> {
 }
 
 /// 移动文件或目录
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn move_path(source: String, destination: String) -> Result<()> {
     let source_path = Path::new(&source);
     let dest_path = Path::new(&destination);
@@ -277,14 +277,14 @@ fn copy_dir_all(source: &Path, destination: &Path) -> Result<()> {
 }
 
 /// 检查路径是否存在
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn path_exists(path: String) -> Result<bool> {
     Ok(Path::new(&path).exists())
 }
 
 /// 读取工作区中的自定义命令
 /// 从 .claude/commands/ 目录读取 .md 文件
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn read_commands(work_dir: Option<String>) -> Result<Vec<CommandFile>> {
     let mut commands = Vec::new();
 
@@ -412,7 +412,7 @@ fn parse_simple_params(params_str: &str) -> Vec<CommandParam> {
 
 /// 搜索文件（用于 @file 引用）
 /// 支持模糊匹配文件名，并返回相对路径
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn search_files(
     work_dir: String,
     query: String,
@@ -562,7 +562,7 @@ pub struct ContentMatch {
 }
 
 /// 搜索文件内容
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn search_file_contents(
     work_dir: String,
     query: String,

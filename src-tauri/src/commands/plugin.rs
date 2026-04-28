@@ -2,6 +2,7 @@
 //!
 //! 提供插件管理的 API 接口
 
+#[cfg(feature = "tauri-app")]
 use tauri::State;
 
 use crate::error::Result;
@@ -12,6 +13,7 @@ use crate::services::plugin_service::PluginService;
 use crate::state::AppState;
 
 /// 获取 Claude CLI 路径
+#[cfg(feature = "tauri-app")]
 fn get_claude_path(state: &State<'_, AppState>) -> Result<String> {
     let store = state.config_store.lock()
         .map_err(|e| crate::error::AppError::Unknown(e.to_string()))?;
@@ -21,6 +23,7 @@ fn get_claude_path(state: &State<'_, AppState>) -> Result<String> {
 /// 列出插件
 ///
 /// 获取已安装和可选的可用的插件列表
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn plugin_list(
     state: State<'_, AppState>,
@@ -33,6 +36,7 @@ pub async fn plugin_list(
 }
 
 /// 安装插件
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn plugin_install(
     state: State<'_, AppState>,
@@ -53,6 +57,7 @@ pub async fn plugin_install(
 }
 
 /// 启用插件
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn plugin_enable(
     state: State<'_, AppState>,
@@ -73,6 +78,7 @@ pub async fn plugin_enable(
 }
 
 /// 禁用插件
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn plugin_disable(
     state: State<'_, AppState>,
@@ -93,6 +99,7 @@ pub async fn plugin_disable(
 }
 
 /// 更新插件
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn plugin_update(
     state: State<'_, AppState>,
@@ -113,6 +120,7 @@ pub async fn plugin_update(
 }
 
 /// 卸载插件
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn plugin_uninstall(
     state: State<'_, AppState>,
@@ -134,6 +142,7 @@ pub async fn plugin_uninstall(
 }
 
 /// 列出市场
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn marketplace_list(state: State<'_, AppState>) -> Result<Vec<Marketplace>> {
     let claude_path = get_claude_path(&state)?;
@@ -143,6 +152,7 @@ pub async fn marketplace_list(state: State<'_, AppState>) -> Result<Vec<Marketpl
 }
 
 /// 添加市场
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn marketplace_add(
     state: State<'_, AppState>,
@@ -155,6 +165,7 @@ pub async fn marketplace_add(
 }
 
 /// 移除市场
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn marketplace_remove(
     state: State<'_, AppState>,
@@ -167,6 +178,7 @@ pub async fn marketplace_remove(
 }
 
 /// 更新市场
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn marketplace_update(
     state: State<'_, AppState>,

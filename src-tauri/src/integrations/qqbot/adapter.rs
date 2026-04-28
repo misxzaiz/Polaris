@@ -9,6 +9,7 @@
 use async_trait::async_trait;
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
+#[cfg(feature = "tauri-app")]
 use tauri::Emitter;
 use tokio::sync::{mpsc::Sender, RwLock};
 use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
@@ -66,6 +67,7 @@ pub struct QQBotAdapter {
     /// 关闭信号发送端
     shutdown_tx: Option<tokio::sync::oneshot::Sender<()>>,
     /// App Handle（用于发送状态变化事件）
+    #[cfg(feature = "tauri-app")]
     app_handle: Option<tauri::AppHandle>,
 }
 
@@ -81,6 +83,7 @@ impl QQBotAdapter {
             dedup: MessageDedup::default(),
             ws_task: None,
             shutdown_tx: None,
+            #[cfg(feature = "tauri-app")]
             app_handle: None,
         }
     }
@@ -91,6 +94,7 @@ impl QQBotAdapter {
     }
 
     /// 设置 App Handle（用于发送状态变化事件）
+    #[cfg(feature = "tauri-app")]
     pub fn with_app_handle(mut self, app_handle: tauri::AppHandle) -> Self {
         self.app_handle = Some(app_handle);
         self
@@ -103,6 +107,7 @@ impl QQBotAdapter {
             state.connection_state = new_state;
         }
         // 发送状态变化事件到前端
+        #[cfg(feature = "tauri-app")]
         if let Some(ref app_handle) = self.app_handle {
             let status = self.status();
             let _ = app_handle.emit("integration:state_change", &status);
@@ -553,6 +558,7 @@ impl PlatformIntegration for QQBotAdapter {
         let access_token = self.access_token.clone().unwrap();
         let tx = message_tx.clone();
         let inner_state = self.inner_state.clone();
+        #[cfg(feature = "tauri-app")]
         let app_handle = self.app_handle.clone();
 
         // 6. 更新状态为鉴权中
@@ -626,6 +632,7 @@ impl PlatformIntegration for QQBotAdapter {
                                     let mut state = inner_state.write().await;
                                     state.connection_state = ConnectionState::Disconnected;
                                 }
+                                #[cfg(feature = "tauri-app")]
                                 if let Some(ref app_handle) = app_handle {
                                     let status = IntegrationStatus {
                                         platform: Platform::QQBot,
@@ -680,6 +687,7 @@ impl PlatformIntegration for QQBotAdapter {
                                                         }
 
                                                         // 发送状态变化事件
+                                                        #[cfg(feature = "tauri-app")]
                                                         if let Some(ref app_handle) = app_handle {
                                                             let status = IntegrationStatus {
                                                                 platform: Platform::QQBot,
@@ -745,6 +753,7 @@ impl PlatformIntegration for QQBotAdapter {
                                                         let mut state = inner_state.write().await;
                                                         state.connection_state = ConnectionState::Reconnecting;
                                                     }
+                                                    #[cfg(feature = "tauri-app")]
                                                     if let Some(ref app_handle) = app_handle {
                                                         let status = IntegrationStatus {
                                                             platform: Platform::QQBot,
@@ -789,6 +798,7 @@ impl PlatformIntegration for QQBotAdapter {
                                         }
 
                                         // 发送状态变化事件
+                                        #[cfg(feature = "tauri-app")]
                                         if let Some(ref app_handle) = app_handle {
                                             let status = IntegrationStatus {
                                                 platform: Platform::QQBot,
@@ -952,6 +962,7 @@ impl PlatformIntegration for QQBotAdapter {
         self.dedup.clear();
 
         // 发送最终状态
+        #[cfg(feature = "tauri-app")]
         if let Some(ref app_handle) = self.app_handle {
             let status = IntegrationStatus {
                 platform: Platform::QQBot,

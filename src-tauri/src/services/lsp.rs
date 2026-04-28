@@ -14,6 +14,7 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
+#[cfg(feature = "tauri-app")]
 use tauri::{AppHandle, Emitter};
 
 use crate::error::{AppError, Result};
@@ -58,6 +59,7 @@ impl LspManager {
     ///
     /// spawn 后启动独立读线程，将 stdout 中的完整 JSON-RPC 消息
     /// 通过 Tauri event 转发到前端
+    #[cfg(feature = "tauri-app")]
     pub fn start(
         &mut self,
         id: String,

@@ -1,17 +1,18 @@
 use thiserror::Error;
-use tauri::ipc::InvokeError;
 
 /// 应用结果类型别名
 pub type Result<T> = std::result::Result<T, AppError>;
 
 /// 将 AppError 转换为 Tauri InvokeError
-impl From<AppError> for InvokeError {
+#[cfg(feature = "tauri-app")]
+impl From<AppError> for tauri::ipc::InvokeError {
     fn from(error: AppError) -> Self {
-        InvokeError::from(error.to_message())
+        tauri::ipc::InvokeError::from(error.to_message())
     }
 }
 
 /// 将 Tauri Error 转换为 AppError
+#[cfg(feature = "tauri-app")]
 impl From<tauri::Error> for AppError {
     fn from(error: tauri::Error) -> Self {
         AppError::Unknown(error.to_string())

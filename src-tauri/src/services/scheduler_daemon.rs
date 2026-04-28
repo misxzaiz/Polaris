@@ -14,6 +14,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+#[cfg(feature = "tauri-app")]
 use tauri::{AppHandle, Emitter};
 use tokio::time::sleep;
 
@@ -73,6 +74,7 @@ impl SchedulerDaemon {
     }
 
     /// 启动守护进程
+    #[cfg(feature = "tauri-app")]
     pub fn start(&mut self, app_handle: AppHandle) -> Result<()> {
         // 检查是否已经在运行
         if self.running.load(Ordering::SeqCst) {
@@ -152,6 +154,7 @@ impl SchedulerDaemon {
 }
 
 /// 检查到期任务并发送通知
+#[cfg(feature = "tauri-app")]
 async fn check_and_notify_due_tasks(
     app_handle: &AppHandle,
     config_dir: &Path,

@@ -8,7 +8,7 @@ pub struct TranslateResult {
     pub error: Option<String>,
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn baidu_translate(
     text: String,
     app_id: String,

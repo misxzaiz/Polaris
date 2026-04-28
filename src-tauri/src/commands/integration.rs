@@ -4,6 +4,7 @@
  */
 
 use std::collections::HashMap;
+#[cfg(feature = "tauri-app")]
 use tauri::State;
 
 use crate::error::{Result, AppError};
@@ -14,6 +15,7 @@ use crate::models::config::{
 };
 
 /// 启动集成平台
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn start_integration(
     platform: String,
@@ -28,6 +30,7 @@ pub async fn start_integration(
 }
 
 /// 停止集成平台
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn stop_integration(
     platform: String,
@@ -42,6 +45,7 @@ pub async fn stop_integration(
 }
 
 /// 获取集成状态
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn get_integration_status(
     platform: String,
@@ -56,6 +60,7 @@ pub async fn get_integration_status(
 }
 
 /// 获取所有集成状态
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn get_all_integration_status(
     state: State<'_, crate::AppState>,
@@ -70,6 +75,7 @@ pub async fn get_all_integration_status(
 }
 
 /// 发送集成消息
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn send_integration_message(
     platform: String,
@@ -86,6 +92,7 @@ pub async fn send_integration_message(
 }
 
 /// 获取集成会话列表
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn get_integration_sessions(
     state: State<'_, crate::AppState>,
@@ -95,6 +102,7 @@ pub async fn get_integration_sessions(
 }
 
 /// 初始化集成管理器
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn init_integration(
     qqbot_config: Option<QQBotConfig>,
@@ -110,6 +118,7 @@ pub async fn init_integration(
 // ==================== 实例管理命令 ====================
 
 /// 添加实例
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn add_integration_instance(
     instance: PlatformInstance,
@@ -124,6 +133,7 @@ pub async fn add_integration_instance(
 }
 
 /// 移除实例
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn remove_integration_instance(
     instance_id: String,
@@ -138,6 +148,7 @@ pub async fn remove_integration_instance(
 }
 
 /// 获取所有实例
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn list_integration_instances(
     state: State<'_, crate::AppState>,
@@ -147,6 +158,7 @@ pub async fn list_integration_instances(
 }
 
 /// 按平台获取实例列表
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn list_integration_instances_by_platform(
     platform: String,
@@ -161,6 +173,7 @@ pub async fn list_integration_instances_by_platform(
 }
 
 /// 获取当前激活的实例
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn get_active_integration_instance(
     platform: String,
@@ -175,6 +188,7 @@ pub async fn get_active_integration_instance(
 }
 
 /// 切换实例
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn switch_integration_instance(
     instance_id: String,
@@ -189,6 +203,7 @@ pub async fn switch_integration_instance(
 }
 
 /// 断开当前实例
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn disconnect_integration_instance(
     platform: String,
@@ -207,6 +222,7 @@ pub async fn disconnect_integration_instance(
 }
 
 /// 更新实例配置
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn update_integration_instance(
     instance: PlatformInstance,
@@ -226,6 +242,7 @@ pub async fn update_integration_instance(
 ///
 /// 每次 add/update/remove/switch/disconnect 操作后调用，
 /// 确保实例配置在应用重启后不丢失。
+#[cfg(feature = "tauri-app")]
 async fn sync_instances_to_config(state: &State<'_, crate::AppState>) -> Result<()> {
     // Step 1: 从 InstanceRegistry 读取数据（async lock，用完立即释放）
     let (qqbot_instances, feishu_instances, qqbot_active_id, feishu_active_id) = {

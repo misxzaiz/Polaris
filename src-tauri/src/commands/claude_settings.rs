@@ -38,7 +38,7 @@ fn get_settings_path() -> PathBuf {
     home.join(".claude").join("settings.json")
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn read_claude_settings() -> Result<ClaudeSettings> {
     let path = get_settings_path();
     if !path.exists() {
@@ -51,7 +51,7 @@ pub async fn read_claude_settings() -> Result<ClaudeSettings> {
     Ok(settings)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn write_claude_settings(settings: ClaudeSettings) -> Result<()> {
     let path = get_settings_path();
     if let Some(parent) = path.parent() {
@@ -71,7 +71,7 @@ pub async fn write_claude_settings(settings: ClaudeSettings) -> Result<()> {
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn get_claude_settings_path() -> Result<String> {
     Ok(get_settings_path().to_string_lossy().to_string())
 }

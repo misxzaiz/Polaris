@@ -5,8 +5,10 @@ use crate::models::prompt_snippet::{
     CreateSnippetParams, PromptSnippet, UpdateSnippetParams,
 };
 use crate::services::prompt_snippet_service::PromptSnippetService;
+#[cfg(feature = "tauri-app")]
 use tauri::{AppHandle, Manager};
 
+#[cfg(feature = "tauri-app")]
 fn get_snippet_service(app: &AppHandle) -> Result<PromptSnippetService> {
     let config_dir = app
         .path()
@@ -15,24 +17,28 @@ fn get_snippet_service(app: &AppHandle) -> Result<PromptSnippetService> {
     Ok(PromptSnippetService::new(&config_dir))
 }
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn snippet_list(app: AppHandle) -> Result<Vec<PromptSnippet>> {
     let service = get_snippet_service(&app)?;
     service.list_all_snippets()
 }
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn snippet_get(app: AppHandle, id: String) -> Result<Option<PromptSnippet>> {
     let service = get_snippet_service(&app)?;
     service.get_snippet(&id)
 }
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn snippet_create(app: AppHandle, params: CreateSnippetParams) -> Result<PromptSnippet> {
     let service = get_snippet_service(&app)?;
     service.create_snippet(params)
 }
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn snippet_update(
     app: AppHandle,
@@ -43,6 +49,7 @@ pub async fn snippet_update(
     service.update_snippet(&id, params)
 }
 
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn snippet_delete(app: AppHandle, id: String) -> Result<bool> {
     let service = get_snippet_service(&app)?;

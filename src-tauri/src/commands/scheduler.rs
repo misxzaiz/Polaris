@@ -5,6 +5,7 @@
 
 use std::path::PathBuf;
 
+#[cfg(feature = "tauri-app")]
 use tauri::{AppHandle, Manager};
 
 use crate::error::Result;
@@ -18,12 +19,14 @@ use crate::utils::LockStatus;
 // Helper
 // ============================================================================
 
+#[cfg(feature = "tauri-app")]
 fn get_config_dir(app: &AppHandle) -> Result<PathBuf> {
     app.path()
         .app_config_dir()
         .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))
 }
 
+#[cfg(feature = "tauri-app")]
 fn get_repository(app: &AppHandle, workspace_path: Option<String>) -> Result<UnifiedSchedulerRepository> {
     let config_dir = get_config_dir(app)?;
     let workspace_path = workspace_path
@@ -37,6 +40,7 @@ fn get_repository(app: &AppHandle, workspace_path: Option<String>) -> Result<Uni
 // ============================================================================
 
 /// 列出定时任务
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_list_tasks(
     workspace_path: Option<String>,
@@ -47,6 +51,7 @@ pub async fn scheduler_list_tasks(
 }
 
 /// 获取单个任务
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_get_task(
     id: String,
@@ -58,6 +63,7 @@ pub async fn scheduler_get_task(
 }
 
 /// 创建任务
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_create_task(
     params: CreateTaskParams,
@@ -92,6 +98,7 @@ pub async fn scheduler_create_task(
 }
 
 /// 更新任务
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_update_task(
     task: ScheduledTask,
@@ -130,6 +137,7 @@ pub async fn scheduler_update_task(
 }
 
 /// 删除任务
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_delete_task(
     id: String,
@@ -154,6 +162,7 @@ pub async fn scheduler_delete_task(
 }
 
 /// 切换任务启用状态
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_toggle_task(
     id: String,
@@ -170,7 +179,7 @@ pub async fn scheduler_toggle_task(
 // ============================================================================
 
 /// 验证触发表达式
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub fn scheduler_validate_trigger(
     trigger_type: TriggerType,
     trigger_value: String,
@@ -180,12 +189,13 @@ pub fn scheduler_validate_trigger(
 }
 
 /// 解析间隔表达式
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub fn scheduler_parse_interval(value: String) -> Option<i64> {
     crate::models::scheduler::parse_interval(&value)
 }
 
 /// 获取工作区分布统计
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_get_workspace_breakdown(
     workspace_path: Option<String>,
@@ -196,6 +206,7 @@ pub async fn scheduler_get_workspace_breakdown(
 }
 
 /// 按分类列出任务
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_list_tasks_by_category(
     category: TaskCategory,
@@ -207,6 +218,7 @@ pub async fn scheduler_list_tasks_by_category(
 }
 
 /// 按模式列出任务
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_list_tasks_by_mode(
     mode: TaskMode,
@@ -218,6 +230,7 @@ pub async fn scheduler_list_tasks_by_mode(
 }
 
 /// 按分组列出任务
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_list_tasks_by_group(
     group: String,
@@ -233,21 +246,21 @@ pub async fn scheduler_list_tasks_by_group(
 // ============================================================================
 
 /// 获取调度器锁状态
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub fn scheduler_get_lock_status() -> Result<LockStatus> {
     Ok(crate::utils::get_lock_status())
 }
 
 /// 尝试获取调度器锁
 /// 返回是否成功获取
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub fn scheduler_acquire_lock() -> Result<bool> {
     crate::utils::acquire_and_hold_lock()
         .map_err(|e| crate::error::AppError::ProcessError(format!("获取锁失败: {}", e)))
 }
 
 /// 释放调度器锁
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub fn scheduler_release_lock() -> Result<()> {
     crate::utils::release_held_lock()
         .map_err(|e| crate::error::AppError::ProcessError(format!("释放锁失败: {}", e)))
@@ -274,7 +287,7 @@ pub struct SchedulerStatus {
 }
 
 /// 获取调度器完整状态（锁 + 运行状态）
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub fn scheduler_get_status() -> Result<SchedulerStatus> {
     let lock_status = crate::utils::get_lock_status();
     let pid = std::process::id();
@@ -298,6 +311,7 @@ pub fn scheduler_get_status() -> Result<SchedulerStatus> {
 /// 1. 尝试获取锁
 /// 2. 如果成功，启动后台守护进程
 /// 返回启动结果
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_start(app: AppHandle) -> Result<SchedulerStatus> {
     let pid = std::process::id();
@@ -365,6 +379,7 @@ pub async fn scheduler_start(app: AppHandle) -> Result<SchedulerStatus> {
 /// 停止调度器
 /// 1. 停止后台守护进程
 /// 2. 释放锁
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_stop(app: AppHandle) -> Result<SchedulerStatus> {
     let pid = std::process::id();
@@ -411,6 +426,7 @@ pub async fn scheduler_stop(app: AppHandle) -> Result<SchedulerStatus> {
 
 /// 手动触发任务执行
 /// 更新任务状态为 running，返回任务信息供前端执行
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_run_task(
     id: String,
@@ -426,6 +442,7 @@ pub async fn scheduler_run_task(
 }
 
 /// 更新任务执行结果
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_update_run_status(
     id: String,
@@ -453,6 +470,7 @@ pub async fn scheduler_update_run_status(
 use crate::models::scheduler::{CreateTemplateParams, PromptTemplate};
 
 /// 列出所有模板
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_list_templates(
     workspace_path: Option<String>,
@@ -463,6 +481,7 @@ pub async fn scheduler_list_templates(
 }
 
 /// 获取单个模板
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_get_template(
     id: String,
@@ -474,6 +493,7 @@ pub async fn scheduler_get_template(
 }
 
 /// 创建模板
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_create_template(
     params: CreateTemplateParams,
@@ -485,6 +505,7 @@ pub async fn scheduler_create_template(
 }
 
 /// 更新模板
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_update_template(
     template: PromptTemplate,
@@ -496,6 +517,7 @@ pub async fn scheduler_update_template(
 }
 
 /// 删除模板
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_delete_template(
     id: String,
@@ -507,6 +529,7 @@ pub async fn scheduler_delete_template(
 }
 
 /// 切换模板启用状态
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_toggle_template(
     id: String,
@@ -519,6 +542,7 @@ pub async fn scheduler_toggle_template(
 }
 
 /// 构建提示词（应用模板）
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_build_prompt(
     template_id: String,
@@ -546,7 +570,7 @@ pub struct ProtocolDocuments {
 }
 
 /// 读取协议任务文档
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn scheduler_read_protocol_documents(
     task_path: String,
     work_dir: String,
@@ -569,7 +593,7 @@ pub async fn scheduler_read_protocol_documents(
 }
 
 /// 更新协议文档
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn scheduler_update_protocol(
     task_path: String,
     work_dir: String,
@@ -580,7 +604,7 @@ pub async fn scheduler_update_protocol(
 }
 
 /// 更新用户补充
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn scheduler_update_supplement(
     task_path: String,
     work_dir: String,
@@ -591,7 +615,7 @@ pub async fn scheduler_update_supplement(
 }
 
 /// 更新记忆索引
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn scheduler_update_memory_index(
     task_path: String,
     work_dir: String,
@@ -602,7 +626,7 @@ pub async fn scheduler_update_memory_index(
 }
 
 /// 更新记忆任务
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn scheduler_update_memory_tasks(
     task_path: String,
     work_dir: String,
@@ -613,7 +637,7 @@ pub async fn scheduler_update_memory_tasks(
 }
 
 /// 清空用户补充（处理完成后）
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn scheduler_clear_supplement(
     task_path: String,
     work_dir: String,
@@ -623,7 +647,7 @@ pub async fn scheduler_clear_supplement(
 }
 
 /// 备份用户补充内容
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn scheduler_backup_supplement(
     task_path: String,
     work_dir: String,
@@ -634,7 +658,7 @@ pub async fn scheduler_backup_supplement(
 }
 
 /// 备份协议文档
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn scheduler_backup_document(
     task_path: String,
     work_dir: String,
@@ -647,19 +671,19 @@ pub async fn scheduler_backup_document(
 }
 
 /// 检查用户补充是否有内容
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub fn scheduler_has_supplement_content(content: String) -> bool {
     ProtocolTaskService::has_supplement_content(&content)
 }
 
 /// 检查文档是否需要备份
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub fn scheduler_needs_backup(content: String) -> bool {
     ProtocolTaskService::needs_backup(&content)
 }
 
 /// 提取用户补充内容
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub fn scheduler_extract_user_content(content: String) -> String {
     ProtocolTaskService::extract_user_content(&content)
 }
@@ -671,12 +695,14 @@ pub fn scheduler_extract_user_content(content: String) -> String {
 use crate::models::scheduler::{CreateProtocolTemplateParams, ProtocolTemplate};
 use crate::services::scheduler::ProtocolTemplateService;
 
+#[cfg(feature = "tauri-app")]
 fn get_template_service(app: &AppHandle) -> Result<ProtocolTemplateService> {
     let config_dir = get_config_dir(app)?;
     Ok(ProtocolTemplateService::new(&config_dir))
 }
 
 /// 列出所有协议模板（内置 + 自定义）
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_list_protocol_templates(
     app: AppHandle,
@@ -686,6 +712,7 @@ pub async fn scheduler_list_protocol_templates(
 }
 
 /// 按分类列出协议模板
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_list_protocol_templates_by_category(
     category: TaskCategory,
@@ -696,6 +723,7 @@ pub async fn scheduler_list_protocol_templates_by_category(
 }
 
 /// 获取单个协议模板
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_get_protocol_template(
     id: String,
@@ -706,6 +734,7 @@ pub async fn scheduler_get_protocol_template(
 }
 
 /// 创建自定义协议模板
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_create_protocol_template(
     params: CreateProtocolTemplateParams,
@@ -716,6 +745,7 @@ pub async fn scheduler_create_protocol_template(
 }
 
 /// 更新自定义协议模板
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_update_protocol_template(
     id: String,
@@ -727,6 +757,7 @@ pub async fn scheduler_update_protocol_template(
 }
 
 /// 删除自定义协议模板
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_delete_protocol_template(
     id: String,
@@ -737,6 +768,7 @@ pub async fn scheduler_delete_protocol_template(
 }
 
 /// 切换协议模板启用状态
+#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_toggle_protocol_template(
     id: String,
@@ -748,7 +780,7 @@ pub async fn scheduler_toggle_protocol_template(
 }
 
 /// 使用模板生成协议文档
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub fn scheduler_render_protocol_document(
     template: ProtocolTemplate,
     params: std::collections::HashMap<String, String>,
@@ -759,7 +791,7 @@ pub fn scheduler_render_protocol_document(
 /// 构建协议模式任务的 prompt
 ///
 /// 读取协议文档、用户补充、记忆文件，组合成完整的 prompt
-#[tauri::command]
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub fn scheduler_build_protocol_prompt(
     task_path: String,
     work_dir: String,

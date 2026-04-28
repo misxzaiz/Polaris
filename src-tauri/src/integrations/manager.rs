@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex, oneshot};
+#[cfg(feature = "tauri-app")]
 use tauri::{AppHandle, Emitter, Manager};
 
 use super::common::{SessionManager, ConversationStore};
@@ -37,6 +38,7 @@ pub struct IntegrationManager {
     /// 会话状态存储
     conversation_states: Arc<Mutex<ConversationStore>>,
     /// App Handle (用于发送事件到前端)
+    #[cfg(feature = "tauri-app")]
     app_handle: Option<AppHandle>,
     /// 运行状态
     running: bool,
@@ -58,6 +60,7 @@ struct ProcessAiMessageContext {
     engine_registry: Arc<Mutex<EngineRegistry>>,
     conversation_id: String,
     message: String,
+    #[cfg(feature = "tauri-app")]
     app_handle: AppHandle,
     platform: Platform,
     adapters: Arc<Mutex<HashMap<Platform, Box<dyn PlatformIntegration>>>>,
@@ -74,6 +77,7 @@ impl IntegrationManager {
             adapters: Arc::new(Mutex::new(HashMap::new())),
             sessions: SessionManager::new(),
             conversation_states: Arc::new(Mutex::new(ConversationStore::new())),
+            #[cfg(feature = "tauri-app")]
             app_handle: None,
             running: false,
             message_task: None,
@@ -96,6 +100,7 @@ impl IntegrationManager {
     }
 
     /// 初始化
+    #[cfg(feature = "tauri-app")]
     pub async fn init(&mut self, qqbot_config: Option<QQBotConfig>, feishu_config: Option<FeishuConfig>, app_handle: AppHandle) {
         self.app_handle = Some(app_handle.clone());
 
@@ -238,6 +243,7 @@ impl IntegrationManager {
     /// 处理消息（统一入口）
     async fn handle_message(
         msg: IntegrationMessage,
+        #[cfg(feature = "tauri-app")]
         app_handle: AppHandle,
         platform: Platform,
         adapters: Arc<Mutex<HashMap<Platform, Box<dyn PlatformIntegration>>>>,
@@ -304,6 +310,7 @@ impl IntegrationManager {
                 engine_registry: registry.clone(),
                 conversation_id,
                 message: text,
+                #[cfg(feature = "tauri-app")]
                 app_handle,
                 platform,
                 adapters,
@@ -925,6 +932,7 @@ impl IntegrationManager {
             engine_registry,
             conversation_id,
             message,
+            #[cfg(feature = "tauri-app")]
             app_handle,
             platform,
             adapters,
@@ -1018,12 +1026,18 @@ impl IntegrationManager {
         // 准备 MCP 配置（需求库、定时任务、待办工具）
         let mcp_config_path: Option<String> = match &work_dir {
             Some(dir) if !dir.trim().is_empty() => {
+                #[cfg(feature = "tauri-app")]
                 let config_dir = app_handle.path().app_config_dir().ok();
+                #[cfg(feature = "tauri-app")]
                 let resource_dir = app_handle.path().resource_dir().ok();
                 let app_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                     .parent()
                     .map(|p| p.to_path_buf());
 
+                #[cfg(not(feature = "tauri-app"))]
+                let config_dir: Option<std::path::PathBuf> = None;
+                #[cfg(not(feature = "tauri-app"))]
+                let resource_dir: Option<std::path::PathBuf> = None;
                 match (config_dir, app_root) {
                     (Some(cdir), Some(aroot)) => {
                         match WorkspaceMcpConfigService::from_app_paths(cdir, resource_dir, aroot) {
@@ -1080,6 +1094,7 @@ impl IntegrationManager {
         let complete_tx = Arc::new(std::sync::Mutex::new(Some(complete_tx)));
 
         let conversation_id_for_callback = conversation_id.clone();
+        #[cfg(feature = "tauri-app")]
         let app_handle_for_callback = app_handle.clone();
 
         // 进度消息节流间隔（毫秒）
@@ -1202,6 +1217,7 @@ impl IntegrationManager {
                             }
 
                             // 发送增量更新到前端
+                            #[cfg(feature = "tauri-app")]
                             let _ = app_handle_for_callback.emit("integration:ai:delta", serde_json::json!({
                                 "conversationId": conversation_id_for_callback,
                                 "text": text,
@@ -1235,6 +1251,7 @@ impl IntegrationManager {
         // 启动 AI 会话任务
         let task_conversation_id = conversation_id.clone();
         let task_adapters = adapters.clone();
+        #[cfg(feature = "tauri-app")]
         let task_app_handle = app_handle.clone();
         let task_engine_registry = engine_registry.clone();
         let task_conversation_states = conversation_states.clone();
@@ -1284,6 +1301,7 @@ impl IntegrationManager {
                     }
                     Err(e) => {
                         tracing::error!("[IntegrationManager] 继续会话失败: {:?}", e);
+                        #[cfg(feature = "tauri-app")]
                         let _ = task_app_handle.emit("integration:ai:error", serde_json::json!({
                             "conversationId": task_conversation_id,
                             "error": e.to_string()
@@ -1327,6 +1345,7 @@ impl IntegrationManager {
                     }
                     Err(e) => {
                         tracing::error!("[IntegrationManager] 创建会话失败: {:?}", e);
+                        #[cfg(feature = "tauri-app")]
                         let _ = task_app_handle.emit("integration:ai:error", serde_json::json!({
                             "conversationId": task_conversation_id,
                             "error": e.to_string()
@@ -1349,6 +1368,7 @@ impl IntegrationManager {
             tracing::info!("[IntegrationManager] 📝 回复文本长度: {}", final_text.len());
 
             // 发送完整回复事件到前端
+            #[cfg(feature = "tauri-app")]
             let _ = task_app_handle.emit("integration:ai:complete", serde_json::json!({
                 "conversationId": task_conversation_id,
                 "sessionId": session_id_for_response,
@@ -1469,6 +1489,7 @@ impl IntegrationManager {
                 self.sessions.update(&msg.conversation_id);
 
                 // 发送到前端
+                #[cfg(feature = "tauri-app")]
                 if let Some(ref app_handle) = self.app_handle {
                     if let Err(e) = app_handle.emit("integration:message", &msg) {
                         tracing::error!("[IntegrationManager] Failed to emit message: {}", e);
@@ -1653,6 +1674,7 @@ impl IntegrationManager {
         }
 
         let rx = self.message_rx.take();
+        #[cfg(feature = "tauri-app")]
         let app_handle = self.app_handle.clone();
         let engine_registry = self.engine_registry.clone();
         let adapters = self.adapters.clone();
@@ -1660,7 +1682,12 @@ impl IntegrationManager {
         let active_sessions = self.active_sessions.clone();
         let instance_registry = self.instance_registry.clone();
 
-        if let (Some(rx), Some(app_handle)) = (rx, app_handle) {
+        #[cfg(feature = "tauri-app")]
+        let has_handle = app_handle.is_some();
+        #[cfg(not(feature = "tauri-app"))]
+        let has_handle = true;
+
+        if let (Some(rx), true) = (rx, has_handle) {
             tracing::info!("[IntegrationManager] 🚀 启动消息处理任务");
 
             let task = tokio::spawn(async move {
@@ -1680,13 +1707,17 @@ impl IntegrationManager {
                     );
 
                     // 发送到前端（同步 emit，不阻塞）
-                    if let Err(e) = app_handle.emit("integration:message", &msg) {
-                        tracing::error!("[IntegrationManager] ❌ 发送消息到前端失败: {}", e);
-                    } else {
-                        tracing::info!("[IntegrationManager] ✅ 消息已发送到前端");
+                    #[cfg(feature = "tauri-app")]
+                    if let Some(ref ah) = app_handle {
+                        if let Err(e) = ah.emit("integration:message", &msg) {
+                            tracing::error!("[IntegrationManager] ❌ 发送消息到前端失败: {}", e);
+                        } else {
+                            tracing::info!("[IntegrationManager] ✅ 消息已发送到前端");
+                        }
                     }
 
                     // clone 所有 Arc 引用给 spawned 任务使用
+                    #[cfg(feature = "tauri-app")]
                     let task_app_handle = app_handle.clone();
                     let task_adapters = adapters.clone();
                     let task_engine_registry = engine_registry.clone();
@@ -1708,7 +1739,8 @@ impl IntegrationManager {
                         // 2. 处理新消息
                         Self::handle_message(
                             msg,
-                            task_app_handle,
+                            #[cfg(feature = "tauri-app")]
+                            task_app_handle.expect("app_handle guaranteed Some by has_handle check"),
                             msg_platform,
                             task_adapters,
                             task_engine_registry,

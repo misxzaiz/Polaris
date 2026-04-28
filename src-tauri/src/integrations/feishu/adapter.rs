@@ -10,6 +10,7 @@
 use async_trait::async_trait;
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
+#[cfg(feature = "tauri-app")]
 use tauri::Emitter;
 use tokio::sync::{mpsc::Sender, RwLock};
 use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
@@ -62,6 +63,7 @@ pub struct FeishuAdapter {
     /// 关闭信号发送端
     shutdown_tx: Option<tokio::sync::oneshot::Sender<()>>,
     /// App Handle（用于发送状态变化事件）
+    #[cfg(feature = "tauri-app")]
     app_handle: Option<tauri::AppHandle>,
 }
 
@@ -77,11 +79,13 @@ impl FeishuAdapter {
             dedup: MessageDedup::default(),
             ws_task: None,
             shutdown_tx: None,
+            #[cfg(feature = "tauri-app")]
             app_handle: None,
         }
     }
 
     /// 设置 App Handle
+    #[cfg(feature = "tauri-app")]
     pub fn with_app_handle(mut self, app_handle: tauri::AppHandle) -> Self {
         self.app_handle = Some(app_handle);
         self
@@ -93,6 +97,7 @@ impl FeishuAdapter {
             let mut state = self.inner_state.write().await;
             state.connection_state = new_state;
         }
+        #[cfg(feature = "tauri-app")]
         if let Some(ref app_handle) = self.app_handle {
             let status = self.status();
             let _ = app_handle.emit("integration:state_change", &status);
@@ -586,6 +591,7 @@ impl PlatformIntegration for FeishuAdapter {
         // 7. 克隆必要的数据
         let tx = message_tx.clone();
         let inner_state = self.inner_state.clone();
+        #[cfg(feature = "tauri-app")]
         let app_handle = self.app_handle.clone();
 
         // 8. 更新状态为鉴权中
@@ -622,6 +628,7 @@ impl PlatformIntegration for FeishuAdapter {
                         state.error_detail = None;
                     }
 
+                        #[cfg(feature = "tauri-app")]
                     if let Some(ref app_handle) = app_handle {
                         let status = IntegrationStatus {
                             platform: Platform::Feishu,
@@ -659,6 +666,7 @@ impl PlatformIntegration for FeishuAdapter {
                                     let mut state = inner_state.write().await;
                                     state.connection_state = ConnectionState::Disconnected;
                                 }
+                        #[cfg(feature = "tauri-app")]
                                 if let Some(ref app_handle) = app_handle {
                                     let status = IntegrationStatus {
                                         platform: Platform::Feishu,
@@ -789,6 +797,7 @@ impl PlatformIntegration for FeishuAdapter {
                                             state.error_detail = Some(close_reason);
                                         }
 
+                        #[cfg(feature = "tauri-app")]
                                         if let Some(ref app_handle) = app_handle {
                                             let status = IntegrationStatus {
                                                 platform: Platform::Feishu,
@@ -931,6 +940,7 @@ impl PlatformIntegration for FeishuAdapter {
         self.dedup.clear();
 
         // 发送最终状态
+        #[cfg(feature = "tauri-app")]
         if let Some(ref app_handle) = self.app_handle {
             let status = IntegrationStatus {
                 platform: Platform::Feishu,
