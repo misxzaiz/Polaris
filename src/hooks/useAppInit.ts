@@ -46,6 +46,11 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
         // 先加载配置
         await loadConfig();
 
+        // Web 模式鉴权未通过时，停止后续初始化，优先让用户输入 Token
+        if (useConfigStore.getState().connectionState === 'needsToken') {
+          return;
+        }
+
         // 从服务端 Config 同步工作区列表（桌面端和 Web 端共享）
         try {
           await useWorkspaceStore.getState().syncFromServer();

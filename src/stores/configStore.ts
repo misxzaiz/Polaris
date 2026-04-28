@@ -72,13 +72,10 @@ export const useConfigStore = create<ConfigState>((set) => ({
       }
     } catch (e: unknown) {
       // In web mode, detect 401 auth error → show token input instead of CLI error
-      if (currentMode === 'http' && isAuthError(e)) {
-        set({
-          error: null,
-          loading: false,
-          isConnecting: false,
-          connectionState: 'needsToken',
-        });
+      log.error('loadConfig failed', e instanceof Error ? e : new Error(String(e)), { currentMode, isWebAuth: isWebAuthError(e) });
+      if (isWebAuthError(e)) {
+        log.info('loadConfig → needsToken (web auth error detected)');
+        set(setNeedsToken());
         return;
       }
       set({
@@ -144,6 +141,12 @@ export const useConfigStore = create<ConfigState>((set) => ({
       const connectionState = health.claudeAvailable ? 'success' : 'failed';
       set({ healthStatus: health, connectionState });
     } catch (e) {
+      log.error('refreshHealth failed', e instanceof Error ? e : new Error(String(e)), { isWebAuth: isWebAuthError(e) });
+      if (isWebAuthError(e)) {
+        log.info('refreshHealth → needsToken');
+        set(setNeedsToken());
+        return;
+      }
       log.error(i18n.t('errors:refreshHealthFailed'), e instanceof Error ? e : new Error(String(e)));
       set({ connectionState: 'failed' });
     }
@@ -177,12 +180,10 @@ export const useConfigStore = create<ConfigState>((set) => ({
       }
     } catch (e: unknown) {
       // In web mode, detect 401 auth error → show token input
-      if (currentMode === 'http' && isAuthError(e)) {
-        set({
-          error: null,
-          loading: false,
-          connectionState: 'needsToken',
-        });
+      log.error('retryConnection failed', e instanceof Error ? e : new Error(String(e)), { isWebAuth: isWebAuthError(e) });
+      if (isWebAuthError(e)) {
+        log.info('retryConnection → needsToken');
+        set(setNeedsToken());
         return;
       }
       set({
@@ -231,4 +232,19 @@ function isAuthError(e: unknown): boolean {
     return (e as unknown as { isAuthError?: boolean }).isAuthError === true;
   }
   return false;
+}
+
+/** Check if an error is a web-mode auth error (401/403 in HTTP transport) */
+function isWebAuthError(e: unknown): boolean {
+  return currentMode === 'http' && isAuthError(e);
+}
+
+/** Set state to needsToken (auth required in web mode) */
+function setNeedsToken(): Partial<ConfigState> {
+  return {
+    error: null,
+    loading: false,
+    isConnecting: false,
+    connectionState: 'needsToken' as const,
+  };
 }

@@ -7,7 +7,10 @@ import { useTranslation } from 'react-i18next';
 import { useConfigStore } from '../../stores';
 import { Button, ClaudePathSelector } from './index';
 import { isWindows } from '../../utils/path';
-import { currentMode, manualReconnect } from '../../services/transport';
+import { currentMode } from '../../services/transport';
+import { createLogger } from '../../utils/logger';
+
+const log = createLogger('ConnectingOverlay');
 
 export function ConnectingOverlay() {
   const { t } = useTranslation('common');
@@ -16,19 +19,33 @@ export function ConnectingOverlay() {
   const [tempPath, setTempPath] = useState(config?.claudeCode?.cliPath || '');
   const [tokenInput, setTokenInput] = useState('');
 
+  const isConnecting = connectionState === 'connecting';
+  const isFailed = connectionState === 'failed';
+  const needsToken = connectionState === 'needsToken';
+
+  // Defense-in-depth: even if connectionState is 'failed', detect auth errors from the error message
+  const isUnauthorizedError =
+    currentMode === 'http' &&
+    typeof error === 'string' &&
+    /unauthorized|forbidden|401|403/i.test(error);
+  const shouldShowTokenInput = needsToken || isUnauthorizedError;
+  const shouldShowCliFailure = isFailed && !shouldShowTokenInput;
+
+  log.info('Overlay state', {
+    currentMode,
+    connectionState,
+    isConnecting,
+    isFailed,
+    needsToken,
+    isUnauthorizedError,
+    shouldShowTokenInput,
+    shouldShowCliFailure,
+    error: typeof error === 'string' ? error : error ? String(error) : null,
+  });
+
   const handleRetry = async () => {
-    try {
-      if (currentMode === 'http') {
-        // Web端: use httpTransport manual reconnect
-        await manualReconnect();
-      } else {
-        // Tauri: use existing configStore logic
-        await retryConnection();
-      }
-    } catch (error) {
-      // Display user-friendly error message
-      console.error('Manual reconnect failed:', error);
-    }
+    // Always go through retryConnection — it handles both auth detection and CLI health check
+    await retryConnection();
   };
 
   const handlePathSubmit = async () => {
@@ -42,10 +59,6 @@ export function ConnectingOverlay() {
     await submitToken(tokenInput.trim());
   };
 
-  const isConnecting = connectionState === 'connecting';
-  const isFailed = connectionState === 'failed';
-  const needsToken = connectionState === 'needsToken';
-
   return (
     <div className="fixed inset-0 bg-background-base flex items-center justify-center z-50">
       <div className="text-center space-y-6">
@@ -58,7 +71,7 @@ export function ConnectingOverlay() {
               {/* 内圈 - 旋转动画 */}
               <div className="absolute inset-0 w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin" />
             </div>
-          ) : isFailed || needsToken ? (
+          ) : shouldShowTokenInput || shouldShowCliFailure ? (
             <div className="w-16 h-16 rounded-full bg-danger-faint flex items-center justify-center">
               <svg className="w-8 h-8 text-danger" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
@@ -70,15 +83,15 @@ export function ConnectingOverlay() {
         {/* 文字提示 */}
         <div className="space-y-2">
           <h2 className="text-xl font-semibold text-text-primary">
-            {isConnecting ? t('connection.connecting') : isFailed ? t('connection.connectFailed') : needsToken ? t('connection.tokenRequired') : ''}
+            {isConnecting ? t('connection.connecting') : shouldShowTokenInput ? t('connection.tokenRequired') : shouldShowCliFailure ? t('connection.connectFailed') : ''}
           </h2>
           <p className="text-sm text-text-secondary">
-            {isConnecting ? t('connection.connectingHint') : isFailed ? t('connection.connectFailedHint') : needsToken ? t('connection.tokenRequiredHint') : ''}
+            {isConnecting ? t('connection.connectingHint') : shouldShowTokenInput ? t('connection.tokenRequiredHint') : shouldShowCliFailure ? t('connection.connectFailedHint') : ''}
           </p>
         </div>
 
         {/* Token 输入界面 (Web 模式鉴权) */}
-        {needsToken && currentMode === 'http' && (
+        {shouldShowTokenInput && currentMode === 'http' && (
           <div className="space-y-3 w-full max-w-sm px-4">
             <div className="bg-background-surface p-4 rounded-lg space-y-3">
               <p className="text-sm text-text-secondary">{t('connection.tokenPrompt')}</p>
@@ -103,12 +116,12 @@ export function ConnectingOverlay() {
           </div>
         )}
 
-        {/* 连接状态详情 */}
-        {healthStatus?.claudeVersion ? (
+        {/* 连接状态详情 — CLI 诊断仅在桌面端显示，Web 端无法操作服务器 CLI */}
+        {currentMode !== 'http' && healthStatus?.claudeVersion ? (
           <p className="text-xs text-text-tertiary">
             {t('connection.detectedVersion', { version: healthStatus.claudeVersion })}
           </p>
-        ) : isFailed ? (
+        ) : currentMode !== 'http' && shouldShowCliFailure ? (
           <div className="text-xs text-text-tertiary space-y-3 max-w-md px-4">
             <p className="text-danger font-medium">{error || t('connection.cliNotFound')}</p>
             {config?.claudeCode?.cliPath && (
@@ -136,16 +149,14 @@ export function ConnectingOverlay() {
               </ol>
             </div>
           </div>
-        ) : (
-          !needsToken && (
-            <p className="text-xs text-text-tertiary">
-              {t('connection.detecting')}
-            </p>
-          )
-        )}
+        ) : currentMode !== 'http' && !shouldShowTokenInput ? (
+          <p className="text-xs text-text-tertiary">
+            {t('connection.detecting')}
+          </p>
+        ) : null}
 
-        {/* 连接失败时的操作按钮 */}
-        {isFailed && (
+        {/* 连接失败时的操作按钮 — 仅桌面端显示 CLI 路径设置 */}
+        {currentMode !== 'http' && shouldShowCliFailure && (
           <div className="space-y-3">
             {!showPathInput ? (
               <div className="space-y-2">
