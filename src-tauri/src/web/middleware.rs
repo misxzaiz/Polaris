@@ -49,7 +49,8 @@ pub async fn request_trace(req: Request<Body>, next: Next) -> Response {
     response
 }
 
-/// Paths that skip auth validation (health, websocket, auth endpoints).
+/// Paths that skip auth validation (health, auth endpoints).
+/// WebSocket auth is handled separately via query parameter in ws_handler.
 fn is_auth_skipped_path(path: &str) -> bool {
     matches!(path, "/api/health" | "/api/ws" | "/api/auth/verify" | "/api/auth/token")
 }

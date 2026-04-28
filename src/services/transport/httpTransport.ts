@@ -159,13 +159,23 @@ export function createHttpTransport(
     }, delay);
   }
 
+  /** Build the WebSocket URL, including token as query param for auth */
+  function buildWsUrl(): string {
+    const tokenMd5 = getTokenMd5();
+    if (tokenMd5) {
+      const sep = wsUrl.includes('?') ? '&' : '?';
+      return `${wsUrl}/api/ws${sep}token=${encodeURIComponent(tokenMd5)}`;
+    }
+    return `${wsUrl}/api/ws`;
+  }
+
   /** Establish WebSocket connection and wire up event handlers */
   function connectWs(): Promise<void> {
     if (ws && ws.readyState === WebSocket.OPEN) return Promise.resolve();
     if (wsConnecting) return wsConnecting;
 
     wsConnecting = new Promise<void>((resolve, reject) => {
-      const socket = new WebSocket(`${wsUrl}/api/ws`);
+      const socket = new WebSocket(buildWsUrl());
 
       const openHandler = () => {
         socket.removeEventListener('open', openHandler);

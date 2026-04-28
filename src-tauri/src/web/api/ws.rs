@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use axum::extract::{State, ws::{WebSocket, WebSocketUpgrade, Message}};
+use axum::extract::{State, Query, ws::{WebSocket, WebSocketUpgrade, Message}};
 use axum::response::IntoResponse;
 use serde::Deserialize;
 use tokio::sync::broadcast;
@@ -13,6 +13,13 @@ use crate::AppState;
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 /// Close the connection if no frame (pong or otherwise) received within this window.
 const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+
+#[derive(Deserialize, Debug)]
+pub(crate) struct WsAuthParams {
+    /// Optional Bearer token (MD5) passed as query parameter for WebSocket auth.
+    /// Browser WebSocket API doesn't support custom headers, so token is passed via URL.
+    token: Option<String>,
+}
 
 #[derive(Deserialize)]
 #[serde(tag = "type")]
@@ -30,11 +37,53 @@ const MAX_FRAME_SIZE: usize = 1024 * 1024;
 /// Maximum allowed total WebSocket message size (4 MB).
 const MAX_MESSAGE_SIZE: usize = 4 * 1024 * 1024;
 
-/// WebSocket upgrade handler — initiates the bidirectional event stream.
+/// Compute the lowercase hex MD5 of a string (reused from middleware).
+fn md5_hex(input: &str) -> String {
+    format!("{:x}", md5::compute(input.as_bytes()))
+}
+
+/// Validate WebSocket token from query parameter against config.web.token.
+/// Returns Ok(()) if no token is configured (open mode) or if the token matches.
+/// Returns Err(status) if authentication fails.
+fn validate_ws_token(query: &WsAuthParams, state: &AppState) -> Result<(), u16> {
+    let required = match state.clone_config_web().map(|c| c.web.token) {
+        Ok(token_opt) => token_opt,
+        Err(_) => return Err(500),
+    };
+
+    // No token configured — open mode
+    let Some(raw_token) = required else {
+        return Ok(());
+    };
+
+    // Token is configured — validate
+    let expected_md5 = md5_hex(&raw_token);
+
+    let provided = match &query.token {
+        Some(t) if !t.is_empty() => t,
+        _ => return Err(401),
+    };
+
+    // Constant-time comparison
+    if subtle::ConstantTimeEq::ct_eq(provided.as_bytes(), expected_md5.as_bytes()).into() {
+        Ok(())
+    } else {
+        Err(401)
+    }
+}
+
+/// WebSocket upgrade handler — validates token from query parameter, then initiates the connection.
+/// Browser WebSocket API doesn't support custom headers, so auth token is passed as `?token=<md5>`.
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
+    Query(query): Query<WsAuthParams>,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
+    // Validate token before upgrading
+    if let Err(_status) = validate_ws_token(&query, &state) {
+        return (axum::http::StatusCode::UNAUTHORIZED, axum::Json(serde_json::json!({"error": "Unauthorized"}))).into_response();
+    }
+
     ws.max_frame_size(MAX_FRAME_SIZE)
         .max_message_size(MAX_MESSAGE_SIZE)
         .on_upgrade(move |socket| handle_ws_connection(socket, state))
