@@ -4,14 +4,14 @@
  * 包含：认证状态、引擎选择、CLI 路径、模型 Profile 管理、可用 Agent 列表
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ClaudePathSelector } from '../../Common';
 import { useConfigStore } from '../../../stores';
 import { useCliInfoStore } from '../../../stores/cliInfoStore';
 import { useModelProfileStore } from '../../../stores/modelProfileStore';
 import type { Config, EngineId, ModelProfile } from '../../../types';
-import { Shield, ShieldCheck, ShieldX, RefreshCw, Bot, Plus, Trash2, Edit2, Globe, Check } from 'lucide-react';
+import { Shield, ShieldCheck, ShieldX, RefreshCw, Bot, Plus, Trash2, Globe, Check } from 'lucide-react';
 
 interface AIEngineTabProps {
   config: Config;
@@ -28,10 +28,25 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
   const { t } = useTranslation('settings');
   const { healthStatus } = useConfigStore();
   const { authStatus, agents, loading: cliLoading, fetchAll } = useCliInfoStore();
-  const { profiles, activeProfileId, addProfile, updateProfile, removeProfile, activateProfile } = useModelProfileStore();
-  const [editingProfile, setEditingProfile] = useState<ModelProfile | null>(null);
+  const { profiles, activeProfileId, addProfile, removeProfile, activateProfile, setProfiles, setActiveProfileId } = useModelProfileStore();
   const [showAddForm, setShowAddForm] = useState(false);
   const [newProfile, setNewProfile] = useState({ name: '', baseUrl: '', apiKey: '', model: '', description: '' });
+
+  // 初始化同步：确保 modelProfileStore 和 localConfig 双向一致
+  useEffect(() => {
+    const configProfiles = config.modelProfiles || []
+    if (profiles.length > 0 && configProfiles.length === 0) {
+      // localStorage 有数据但后端没有 → 同步到 localConfig
+      syncProfilesToConfig(profiles, activeProfileId)
+    } else if (configProfiles.length > 0 && profiles.length === 0) {
+      // 后端有数据但 localStorage 没有 → 同步到 modelProfileStore
+      setProfiles(configProfiles)
+      if (config.activeModelProfileId) {
+        setActiveProfileId(config.activeModelProfileId)
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleEngineChange = (engineId: EngineId) => {
     onConfigChange({
@@ -52,10 +67,16 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
     addProfile(newProfile);
     setNewProfile({ name: '', baseUrl: '', apiKey: '', model: '', description: '' });
     setShowAddForm(false);
+    // 同步到 localConfig，确保保存时写入后端配置文件
+    const updated = useModelProfileStore.getState()
+    syncProfilesToConfig(updated.profiles, updated.activeProfileId)
   };
 
   const handleDeleteProfile = (id: string) => {
     removeProfile(id);
+    // 同步到 localConfig
+    const updated = useModelProfileStore.getState()
+    syncProfilesToConfig(updated.profiles, updated.activeProfileId)
   };
 
   // 保存 profiles 到 config（通过 onConfigChange 同步）
@@ -255,6 +276,8 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
                   onClick={() => {
                     const newActiveId = activeProfileId === profile.id ? null : profile.id
                     activateProfile(newActiveId)
+                    // 同步到 localConfig
+                    syncProfilesToConfig(useModelProfileStore.getState().profiles, newActiveId)
                   }}
                 >
                   <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
