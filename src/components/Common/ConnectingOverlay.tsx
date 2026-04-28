@@ -11,9 +11,10 @@ import { currentMode, manualReconnect } from '../../services/transport';
 
 export function ConnectingOverlay() {
   const { t } = useTranslation('common');
-  const { config, healthStatus, connectionState, error, retryConnection } = useConfigStore();
+  const { config, healthStatus, connectionState, error, retryConnection, submitToken } = useConfigStore();
   const [showPathInput, setShowPathInput] = useState(false);
   const [tempPath, setTempPath] = useState(config?.claudeCode?.cliPath || '');
+  const [tokenInput, setTokenInput] = useState('');
 
   const handleRetry = async () => {
     try {
@@ -36,8 +37,14 @@ export function ConnectingOverlay() {
     setShowPathInput(false);
   };
 
+  const handleTokenSubmit = async () => {
+    if (!tokenInput.trim()) return;
+    await submitToken(tokenInput.trim());
+  };
+
   const isConnecting = connectionState === 'connecting';
   const isFailed = connectionState === 'failed';
+  const needsToken = connectionState === 'needsToken';
 
   return (
     <div className="fixed inset-0 bg-background-base flex items-center justify-center z-50">
@@ -51,7 +58,7 @@ export function ConnectingOverlay() {
               {/* 内圈 - 旋转动画 */}
               <div className="absolute inset-0 w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin" />
             </div>
-          ) : isFailed ? (
+          ) : isFailed || needsToken ? (
             <div className="w-16 h-16 rounded-full bg-danger-faint flex items-center justify-center">
               <svg className="w-8 h-8 text-danger" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
@@ -63,12 +70,38 @@ export function ConnectingOverlay() {
         {/* 文字提示 */}
         <div className="space-y-2">
           <h2 className="text-xl font-semibold text-text-primary">
-            {isConnecting ? t('connection.connecting') : isFailed ? t('connection.connectFailed') : ''}
+            {isConnecting ? t('connection.connecting') : isFailed ? t('connection.connectFailed') : needsToken ? t('connection.tokenRequired') : ''}
           </h2>
           <p className="text-sm text-text-secondary">
-            {isConnecting ? t('connection.connectingHint') : isFailed ? t('connection.connectFailedHint') : ''}
+            {isConnecting ? t('connection.connectingHint') : isFailed ? t('connection.connectFailedHint') : needsToken ? t('connection.tokenRequiredHint') : ''}
           </p>
         </div>
+
+        {/* Token 输入界面 (Web 模式鉴权) */}
+        {needsToken && currentMode === 'http' && (
+          <div className="space-y-3 w-full max-w-sm px-4">
+            <div className="bg-background-surface p-4 rounded-lg space-y-3">
+              <p className="text-sm text-text-secondary">{t('connection.tokenPrompt')}</p>
+              <input
+                type="password"
+                value={tokenInput}
+                onChange={(e) => setTokenInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleTokenSubmit(); }}
+                placeholder={t('connection.tokenPlaceholder')}
+                className="w-full px-3 py-2 bg-background-base border border-border-subtle rounded-lg text-sm text-text-primary focus:outline-none focus:border-primary"
+                autoFocus
+              />
+            </div>
+            <Button
+              onClick={handleTokenSubmit}
+              variant="primary"
+              className="w-full"
+              disabled={!tokenInput.trim()}
+            >
+              {t('connection.tokenSubmit')}
+            </Button>
+          </div>
+        )}
 
         {/* 连接状态详情 */}
         {healthStatus?.claudeVersion ? (
@@ -104,9 +137,11 @@ export function ConnectingOverlay() {
             </div>
           </div>
         ) : (
-          <p className="text-xs text-text-tertiary">
-            {t('connection.detecting')}
-          </p>
+          !needsToken && (
+            <p className="text-xs text-text-tertiary">
+              {t('connection.detecting')}
+            </p>
+          )
         )}
 
         {/* 连接失败时的操作按钮 */}

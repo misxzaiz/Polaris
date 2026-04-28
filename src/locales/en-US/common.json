@@ -138,7 +138,12 @@
     "retryDetection": "Retry Detection",
     "setClaudePath": "Set Claude Path",
     "pathSelectorHint": "Select or enter Claude CLI path",
-    "saveAndRetry": "Save & Retry"
+    "saveAndRetry": "Save & Retry",
+    "tokenRequired": "Authentication Required",
+    "tokenRequiredHint": "This server requires a token to access",
+    "tokenPrompt": "Please enter the token configured on the server",
+    "tokenPlaceholder": "Enter token",
+    "tokenSubmit": "Verify & Connect"
   },
   "errorBoundary": {
     "title": "Application Error",

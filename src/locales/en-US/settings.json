@@ -327,6 +327,9 @@
     "qrDisabled": "QR code will appear after enabling Web service",
     "connectionLost": "Web Service Connection Lost",
     "connectionLostDesc": "Real-time updates unavailable. Please check if the desktop app is running.",
-    "connectionRestored": "Connection Restored"
+    "connectionRestored": "Connection Restored",
+    "token": "Access Token",
+    "tokenPlaceholder": "Leave empty to disable auth",
+    "tokenHint": "Empty = no check. When set, every Web API request will include this token (MD5 on frontend before sending)."
   }
 }

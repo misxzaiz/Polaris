@@ -8,7 +8,7 @@ use tower_http::services::{ServeDir, ServeFile};
 
 use crate::AppState;
 use super::api;
-use super::middleware::request_trace;
+use super::middleware::{api_auth, request_trace};
 
 /// Resolve the frontend dist directory for static file serving.
 ///
@@ -134,6 +134,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/settings", get(api::settings::handle_get_settings).patch(api::settings::handle_update_settings))
         // Auth
         .route("/auth/verify", get(api::auth::handle_verify_token))
+        .route("/auth/token", post(api::auth::handle_token_exchange))
         // Health
         .route("/health", get(api::health::handle_health))
         // WebSocket
@@ -144,8 +145,9 @@ pub fn create_router(state: Arc<AppState>) -> Router {
     let index_html = dist_dir.join("index.html");
 
     Router::new()
-        .nest("/api", api_routes)
-        // SPA fallback: serve static files for non-/api paths
+        // Auth middleware only applies to /api/* routes (SPA static files are public)
+        .nest("/api", api_routes.layer(axum::middleware::from_fn_with_state(state.clone(), api_auth)))
+        // SPA fallback: serve static files for non-/api paths — no auth needed
         .fallback_service(
             ServeDir::new(&dist_dir)
                 .not_found_service(ServeFile::new(&index_html))

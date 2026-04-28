@@ -141,6 +141,23 @@ export function WebTab({ config, onConfigChange, loading }: WebTabProps) {
             {t('web.portHint')}
           </p>
         </div>
+
+        <div className="mt-4">
+          <label className="block text-xs text-text-secondary mb-2">
+            {t('web.token')}
+          </label>
+          <input
+            type="password"
+            value={web.token ?? ''}
+            onChange={(e) => updateWeb({ token: e.target.value })}
+            placeholder={t('web.tokenPlaceholder')}
+            className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            disabled={loading || !web.enabled}
+          />
+          <p className="mt-1 text-xs text-text-tertiary">
+            {t('web.tokenHint')}
+          </p>
+        </div>
       </div>
 
       {/* 应用按钮 — 即时启停 */}
@@ -174,18 +191,17 @@ export function WebTab({ config, onConfigChange, loading }: WebTabProps) {
           <p>
             <span className="text-text-secondary">{t('web.accessUrl')}：</span>
             <code className="text-text-primary">http://{web.host === '0.0.0.0' ? 'localhost' : web.host}:{web.port}</code>
-            <code className="text-text-primary">
-              {localIps.length > 1 && (
-                  <div className="text-xs text-text-tertiary">
-                    {localIps.map((ip) => (
-                        <span key={ip} className="inline-block mr-2">
-                      <code className="text-text-primary">{ip}:{web.port}</code>
-                    </span>
-                    ))}
-                  </div>
-              )}
-            </code>
           </p>
+
+          {localIps.length > 1 && (
+            <div className="text-xs text-text-tertiary">
+              {localIps.map((ip) => (
+                <span key={ip} className="inline-block mr-2">
+                  <code className="text-text-primary">{ip}:{web.port}</code>
+                </span>
+              ))}
+            </div>
+          )}
           <p>
             <span className="text-text-secondary">{t('web.accessHint')}：</span>
             {t('web.accessHintDesc')}

@@ -7,6 +7,8 @@ import i18n from '../i18n';
 import type { Config, HealthStatus } from '../types';
 import * as tauri from '../services/tauri';
 import { createLogger } from '../utils/logger';
+import { currentMode } from '../services/transport';
+import { storeTokenMd5, md5Hex } from '../services/transport/auth';
 
 const log = createLogger('ConfigStore');
 
@@ -20,7 +22,7 @@ interface ConfigState {
   /** 连接中（首次启动） */
   isConnecting: boolean;
   /** 连接状态 */
-  connectionState: 'connecting' | 'success' | 'failed';
+  connectionState: 'connecting' | 'success' | 'failed' | 'needsToken';
   /** 错误 */
   error: string | null;
 
@@ -32,11 +34,13 @@ interface ConfigState {
   setWorkDir: (path: string | null) => Promise<void>;
   /** 设置 Claude 命令 */
   setClaudeCmd: (cmd: string) => Promise<void>;
-  
+
   /** 刷新健康状态 */
   refreshHealth: () => Promise<void>;
   /** 重新连接并更新路径 */
   retryConnection: (claudeCmd?: string) => Promise<void>;
+  /** Submit token in web mode (MD5-then-store, then retry loadConfig) */
+  submitToken: (rawToken: string) => Promise<void>;
 }
 
 export const useConfigStore = create<ConfigState>((set) => ({
@@ -66,7 +70,17 @@ export const useConfigStore = create<ConfigState>((set) => ({
           useCliInfoStore.getState().fetchAll()
         }).catch(() => {})
       }
-    } catch (e) {
+    } catch (e: unknown) {
+      // In web mode, detect 401 auth error → show token input instead of CLI error
+      if (currentMode === 'http' && isAuthError(e)) {
+        set({
+          error: null,
+          loading: false,
+          isConnecting: false,
+          connectionState: 'needsToken',
+        });
+        return;
+      }
       set({
         error: e instanceof Error ? e.message : i18n.t('errors:loadConfigFailed'),
         loading: false,
@@ -143,10 +157,10 @@ export const useConfigStore = create<ConfigState>((set) => ({
         const config = await tauri.getConfig();
         set({ config });
       }
-      
+
       const health = await tauri.healthCheck();
       const connectionState = health.claudeAvailable ? 'success' : 'failed';
-      
+
       if (connectionState === 'failed') {
         set({
           error: i18n.t('errors:claudeNotFound', { path: claudeCmd || i18n.t('errors:notSet') }),
@@ -161,7 +175,16 @@ export const useConfigStore = create<ConfigState>((set) => ({
           error: null
         });
       }
-    } catch (e) {
+    } catch (e: unknown) {
+      // In web mode, detect 401 auth error → show token input
+      if (currentMode === 'http' && isAuthError(e)) {
+        set({
+          error: null,
+          loading: false,
+          connectionState: 'needsToken',
+        });
+        return;
+      }
       set({
         error: e instanceof Error ? e.message : i18n.t('errors:connectionFailed'),
         loading: false,
@@ -169,4 +192,43 @@ export const useConfigStore = create<ConfigState>((set) => ({
       });
     }
   },
+
+  submitToken: async (rawToken: string) => {
+    const tokenMd5 = await md5Hex(rawToken);
+    storeTokenMd5(tokenMd5);
+    // Re-attempt connection with the new token
+    set({ connectionState: 'connecting', error: null, loading: true });
+    try {
+      const [config, health] = await Promise.all([
+        tauri.getConfig(),
+        tauri.healthCheck(),
+      ]);
+      const connectionState = health.claudeAvailable ? 'success' : 'failed';
+      if (config?.language) {
+        i18n.changeLanguage(config.language);
+      }
+      set({ config, healthStatus: health, loading: false, isConnecting: false, connectionState });
+    } catch (e: unknown) {
+      // Token still wrong → stay in needsToken state
+      if (isAuthError(e)) {
+        storeTokenMd5('');
+        set({ connectionState: 'needsToken', error: null, loading: false, isConnecting: false });
+        return;
+      }
+      set({
+        error: e instanceof Error ? e.message : i18n.t('errors:loadConfigFailed'),
+        loading: false,
+        isConnecting: false,
+        connectionState: 'failed'
+      });
+    }
+  },
 }));
+
+/** Check if an error is an auth error (401/403) thrown by the HTTP transport */
+function isAuthError(e: unknown): boolean {
+  if (e instanceof Error) {
+    return (e as unknown as { isAuthError?: boolean }).isAuthError === true;
+  }
+  return false;
+}

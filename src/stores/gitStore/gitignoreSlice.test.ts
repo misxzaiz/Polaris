@@ -240,7 +240,7 @@ describe('gitignoreSlice', () => {
       const store = createTestStore()
       const result = await store.getState().getGitignoreTemplates()
 
-      expect(mockInvoke).toHaveBeenCalledWith('git_get_gitignore_templates')
+      expect(mockInvoke).toHaveBeenCalledWith('git_get_gitignore_templates', undefined)
       expect(result).toHaveLength(3)
       expect(result[0].name).toBe('Node')
     })

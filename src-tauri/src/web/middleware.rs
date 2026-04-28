@@ -1,7 +1,11 @@
 use axum::body::Body;
-use axum::http::Request;
+use axum::http::{Request, StatusCode};
 use axum::middleware::Next;
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
+use axum::extract::State;
+use std::sync::Arc;
+
+use crate::AppState;
 
 /// Lightweight request tracing: logs method, path, status code, and duration.
 pub async fn request_trace(req: Request<Body>, next: Next) -> Response {
@@ -43,4 +47,66 @@ pub async fn request_trace(req: Request<Body>, next: Next) -> Response {
     }
 
     response
+}
+
+/// Paths that skip auth validation (health, websocket, auth endpoints).
+fn is_auth_skipped_path(path: &str) -> bool {
+    matches!(path, "/api/health" | "/api/ws" | "/api/auth/verify" | "/api/auth/token")
+}
+
+/// Extract the token value from an `Authorization: Bearer <value>` header.
+fn parse_bearer_token(header: &str) -> Option<&str> {
+    let header = header.trim();
+    header.strip_prefix("Bearer ")
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+}
+
+/// Compute the lowercase hex MD5 of a string.
+fn md5_hex(input: &str) -> String {
+    format!("{:x}", md5::compute(input.as_bytes()))
+}
+
+/// API auth middleware — validates `Authorization: Bearer <md5_of_token>` against config.web.token.
+///
+/// Flow:
+/// 1. If `config.web.token` is None → API is open (no auth required).
+/// 2. If token is set, compute `md5(config.web.token)` and compare against
+///    the Bearer value using constant-time comparison.
+/// 3. Skip auth for `/api/health`, `/api/ws`, `/api/auth/verify`, `/api/auth/token`.
+pub async fn api_auth(
+    State(state): State<Arc<AppState>>,
+    req: Request<Body>,
+    next: Next,
+) -> Response {
+    let path = req.uri().path();
+    if is_auth_skipped_path(path) {
+        return next.run(req).await;
+    }
+
+    let required = match state.clone_config_web().map(|c| c.web.token) {
+        Ok(token_opt) => token_opt,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "{\"error\":\"Internal error\"}").into_response(),
+    };
+
+    let Some(raw_token) = required else {
+        return next.run(req).await;
+    };
+
+    // Frontend sends MD5 of the raw token; compute the expected MD5 server-side.
+    let expected_md5 = md5_hex(&raw_token);
+
+    let header = req.headers().get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(parse_bearer_token);
+
+    let ok = header.is_some_and(|t| {
+        subtle::ConstantTimeEq::ct_eq(t.as_bytes(), expected_md5.as_bytes()).into()
+    });
+
+    if !ok {
+        return (StatusCode::UNAUTHORIZED, axum::Json(serde_json::json!({"error": "Unauthorized"}))).into_response();
+    }
+
+    next.run(req).await
 }

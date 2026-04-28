@@ -7,6 +7,7 @@
 
 import type { TransportAdapter } from './types';
 import { createLogger } from '../../utils/logger';
+import { getTokenMd5, storeTokenMd5 } from './auth';
 
 const log = createLogger('HttpTransport');
 
@@ -56,6 +57,10 @@ function commandToPath(command: string): string {
   log.debug(`Routing command "${command}" through IPC bridge: /api/${command.replace(/_/g, '-')}`);
   const kebab = command.replace(/_/g, '-');
   return `/api/${kebab}`;
+}
+
+function bearerTokenFromMd5(tokenMd5: string): string {
+  return `Bearer ${tokenMd5}`;
 }
 
 /** 判断命令是否使用 GET（只读操作，无 URL 参数） */
@@ -229,9 +234,15 @@ export function createHttpTransport(
   return {
     async invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
       const path = commandToPath(command);
+
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       };
+
+      const tokenMd5 = getTokenMd5();
+      if (tokenMd5) {
+        headers.Authorization = bearerTokenFromMd5(tokenMd5);
+      }
 
       let method = 'POST';
       let url = `${baseUrl}${path}`;
@@ -281,6 +292,23 @@ export function createHttpTransport(
         }
         throw e;
       }
+
+      if (!res.ok) {
+        const status = res.status;
+        if ((status === 401 || status === 403)) {
+          // Clear stale token so next attempt won't reuse it
+          if (getTokenMd5()) {
+            storeTokenMd5('');
+          }
+          // Throw a structured error that the app layer can identify and handle
+          const errBody = await res.json().catch(() => ({ error: res.statusText }));
+          const authError = new Error((errBody as { error?: string }).error || `HTTP ${status}`);
+          (authError as unknown as { status: number }).status = status;
+          (authError as unknown as { isAuthError: boolean }).isAuthError = true;
+          throw authError;
+        }
+      }
+
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }));
         throw new Error((err as { error?: string }).error || `API error: ${res.status}`);

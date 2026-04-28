@@ -327,6 +327,9 @@
     "qrDisabled": "启用 Web 服务后显示二维码",
     "connectionLost": "Web 服务连接已断开",
     "connectionLostDesc": "实时更新不可用，请检查桌面端是否正在运行",
-    "connectionRestored": "连接已恢复"
+    "connectionRestored": "连接已恢复",
+    "token": "访问 Token",
+    "tokenPlaceholder": "留空表示不启用鉴权",
+    "tokenHint": "留空不检查；填写后，Web 端每个接口请求都会携带此 Token（前端会做 MD5 后再发送）"
   }
 }
