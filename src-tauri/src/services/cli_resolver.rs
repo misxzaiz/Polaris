@@ -112,10 +112,19 @@ pub fn detect_cli_type(cli_path: &str) -> Result<CliType> {
         }
     }
 
-    // 情况 2: npm/pnpm 安装 - 需要解析 node.exe 和 cli.js
+    // 情况 2: npm/pnpm 安装 - 需要解析 node.exe 和 cli.js/claude.exe
     tracing::info!("[CliResolver] 尝试解析为 npm/pnpm 安装: {}", cli_path);
-    let (node_exe, cli_js) = resolve_node_and_cli(cli_path)?;
-    Ok(CliType::NpmWrapper { node_exe, cli_js })
+    let (_node_exe, cli_target) = resolve_node_and_cli(cli_path)?;
+
+    // v2.1.122+ 的包内 bin/claude.exe 是原生二进制，不经过 node.exe
+    if cli_target.ends_with(".exe") {
+        tracing::info!("[CliResolver] 解析到原生二进制: {}", cli_target);
+        return Ok(CliType::Standalone {
+            exe_path: cli_target,
+        });
+    }
+
+    Ok(CliType::NpmWrapper { node_exe: _node_exe, cli_js: cli_target })
 }
 
 /// 判断一个 exe 文件是否可能是独立的 Claude Code
@@ -421,6 +430,7 @@ fn find_cli_binary(base_dir: &Path, node_exe_path: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     #[cfg(windows)]
@@ -438,5 +448,97 @@ mod tests {
     fn test_build_cli_command_non_windows() {
         let cmd = build_cli_command("claude");
         assert!(cmd.is_ok());
+    }
+
+    /// v2.1.122+: find_cli_binary 找到 bin/claude.exe 后，detect_cli_type 应返回 Standalone
+    #[test]
+    #[cfg(windows)]
+    fn test_detect_cli_type_binary_only_returns_standalone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        // 模拟新版安装结构：只有 bin/claude.exe，没有 cli.js
+        let pkg = root.join("node_modules\\@anthropic-ai\\claude-code");
+        fs::create_dir_all(pkg.join("bin")).unwrap();
+        // 写入 >0 字节的假 exe（is_likely_standalone_exe 需要文件名含 claude）
+        fs::write(pkg.join("bin\\claude.exe"), b"MZfake-binary").unwrap();
+        // 模拟 node.exe（find_node_exe 需要）
+        fs::write(root.join("node.exe"), b"fake-node").unwrap();
+        // 入口 .cmd 文件
+        let entry = root.join("claude.cmd");
+        fs::write(&entry, b"@echo off").unwrap();
+
+        let result = detect_cli_type(entry.to_str().unwrap());
+        assert!(result.is_ok(), "detect_cli_type 应成功: {:?}", result.err());
+
+        match result.unwrap() {
+            CliType::Standalone { exe_path } => {
+                assert!(
+                    exe_path.ends_with("claude.exe"),
+                    "应指向 claude.exe，实际: {}",
+                    exe_path
+                );
+            }
+            CliType::NpmWrapper { .. } => {
+                panic!("bin/claude.exe 应被识别为 Standalone，不应是 NpmWrapper");
+            }
+        }
+    }
+
+    /// 旧版安装：有 cli.js 无 bin/claude.exe，应返回 NpmWrapper
+    #[test]
+    #[cfg(windows)]
+    fn test_detect_cli_type_legacy_cli_js_returns_npm_wrapper() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        let pkg = root.join("node_modules\\@anthropic-ai\\claude-code");
+        fs::create_dir_all(&pkg).unwrap();
+        // 只有 cli.js，没有 bin/claude.exe
+        fs::write(pkg.join("cli.js"), b"// legacy cli").unwrap();
+        fs::write(root.join("node.exe"), b"fake-node").unwrap();
+        let entry = root.join("claude.cmd");
+        fs::write(&entry, b"@echo off").unwrap();
+
+        let result = detect_cli_type(entry.to_str().unwrap());
+        assert!(result.is_ok(), "detect_cli_type 应成功: {:?}", result.err());
+
+        match result.unwrap() {
+            CliType::NpmWrapper { node_exe, cli_js } => {
+                assert!(node_exe.ends_with("node.exe"), "node_exe 应指向 node.exe");
+                assert!(cli_js.ends_with("cli.js"), "cli_js 应指向 cli.js，实际: {}", cli_js);
+            }
+            CliType::Standalone { .. } => {
+                panic!("仅有 cli.js 应被识别为 NpmWrapper，不应是 Standalone");
+            }
+        }
+    }
+
+    /// 两者共存时：bin/claude.exe 优先于 cli.js，返回 Standalone
+    #[test]
+    #[cfg(windows)]
+    fn test_detect_cli_type_both_exist_prefers_binary() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        let pkg = root.join("node_modules\\@anthropic-ai\\claude-code");
+        fs::create_dir_all(pkg.join("bin")).unwrap();
+        fs::write(pkg.join("bin\\claude.exe"), b"MZfake-binary").unwrap();
+        fs::write(pkg.join("cli.js"), b"// legacy cli").unwrap();
+        fs::write(root.join("node.exe"), b"fake-node").unwrap();
+        let entry = root.join("claude.cmd");
+        fs::write(&entry, b"@echo off").unwrap();
+
+        let result = detect_cli_type(entry.to_str().unwrap());
+        assert!(result.is_ok());
+
+        match result.unwrap() {
+            CliType::Standalone { exe_path } => {
+                assert!(exe_path.ends_with("claude.exe"));
+            }
+            CliType::NpmWrapper { .. } => {
+                panic!("两者共存时应优先选择 bin/claude.exe (Standalone)");
+            }
+        }
     }
 }

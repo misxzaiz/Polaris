@@ -84,10 +84,19 @@ impl ClaudeEngine {
             }
         }
 
-        // 情况 2: npm/pnpm 安装 - 需要解析 node.exe 和 cli.js
+        // 情况 2: npm/pnpm 安装 - 需要解析 node.exe 和 cli.js/claude.exe
         tracing::info!("[ClaudeEngine] 尝试解析为 npm/pnpm 安装: {}", cli_path);
-        let (node_exe, cli_js) = resolve_node_and_cli(cli_path)?;
-        Ok(CliType::NpmWrapper { node_exe, cli_js })
+        let (_node_exe, cli_target) = resolve_node_and_cli(cli_path)?;
+
+        // v2.1.122+ 的包内 bin/claude.exe 是原生二进制，不经过 node.exe
+        if cli_target.ends_with(".exe") {
+            tracing::info!("[ClaudeEngine] 解析到原生二进制: {}", cli_target);
+            return Ok(CliType::Standalone {
+                exe_path: cli_target,
+            });
+        }
+
+        Ok(CliType::NpmWrapper { node_exe: _node_exe, cli_js: cli_target })
     }
 
     /// 判断一个 exe 文件是否可能是独立的 Claude Code
