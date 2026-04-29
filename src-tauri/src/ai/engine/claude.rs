@@ -1004,9 +1004,9 @@ fn resolve_node_and_cli(claude_cmd_path: &str) -> Result<(String, String)> {
     let node_exe = find_node_exe(cmd_parent)?;
     tracing::info!("[ClaudeEngine] 找到 node.exe: {}", node_exe);
 
-    // 2. 尝试查找 cli.js（支持 npm 和 pnpm 的不同目录结构）
-    let cli_js = find_cli_js(cmd_parent, &node_exe)?;
-    tracing::info!("[ClaudeEngine] 找到 cli.js: {}", cli_js);
+    // 2. 尝试查找 Claude Code 二进制（支持 npm 和 pnpm 的不同目录结构）
+    let cli_js = find_cli_binary(cmd_parent, &node_exe)?;
+    tracing::info!("[ClaudeEngine] 找到 Claude Code: {}", cli_js);
 
     Ok((node_exe, cli_js))
 }
@@ -1056,13 +1056,18 @@ fn find_node_exe(base_dir: &Path) -> Result<String> {
 }
 
 #[cfg(windows)]
-fn find_cli_js(base_dir: &Path, node_exe_path: &str) -> Result<String> {
+fn find_cli_binary(base_dir: &Path, node_exe_path: &str) -> Result<String> {
     // 策略 1: 检查同一目录下的 node_modules（npm 本地安装）
-    let local_cli_js = base_dir
+    let local_pkg = base_dir
         .join("node_modules")
         .join("@anthropic-ai")
-        .join("claude-code")
-        .join("cli.js");
+        .join("claude-code");
+    let local_binary = local_pkg.join("bin").join("claude.exe");
+    if local_binary.exists() {
+        tracing::info!("[ClaudeEngine] 在同一目录 node_modules 找到 bin/claude.exe");
+        return Ok(local_binary.to_string_lossy().to_string());
+    }
+    let local_cli_js = local_pkg.join("cli.js");
     if local_cli_js.exists() {
         tracing::info!("[ClaudeEngine] 在同一目录 node_modules 找到 cli.js");
         return Ok(local_cli_js.to_string_lossy().to_string());
@@ -1070,12 +1075,17 @@ fn find_cli_js(base_dir: &Path, node_exe_path: &str) -> Result<String> {
 
     // 策略 2: 检查全局 npm 安装路径 (%APPDATA%\npm\node_modules)
     if let Ok(appdata) = std::env::var("APPDATA") {
-        let npm_global = PathBuf::from(&appdata)
+        let npm_pkg = PathBuf::from(&appdata)
             .join("npm")
             .join("node_modules")
             .join("@anthropic-ai")
-            .join("claude-code")
-            .join("cli.js");
+            .join("claude-code");
+        let npm_binary = npm_pkg.join("bin").join("claude.exe");
+        if npm_binary.exists() {
+            tracing::info!("[ClaudeEngine] 在 APPDATA\\npm\\node_modules 找到 bin/claude.exe");
+            return Ok(npm_binary.to_string_lossy().to_string());
+        }
+        let npm_global = npm_pkg.join("cli.js");
         if npm_global.exists() {
             tracing::info!("[ClaudeEngine] 在 APPDATA\\npm\\node_modules 找到 cli.js");
             return Ok(npm_global.to_string_lossy().to_string());
@@ -1086,23 +1096,33 @@ fn find_cli_js(base_dir: &Path, node_exe_path: &str) -> Result<String> {
     // pnpm 全局安装通常位于 %PNPM_HOME% 或 %LOCALAPPDATA%\pnpm
     if let Ok(pnpm_home) = std::env::var("PNPM_HOME") {
         // pnpm 全局包的位置
-        let pnpm_global = PathBuf::from(&pnpm_home)
+        let pnpm_pkg = PathBuf::from(&pnpm_home)
             .join("global")
             .join("node_modules")
             .join("@anthropic-ai")
-            .join("claude-code")
-            .join("cli.js");
+            .join("claude-code");
+        let pnpm_binary = pnpm_pkg.join("bin").join("claude.exe");
+        if pnpm_binary.exists() {
+            tracing::info!("[ClaudeEngine] 在 PNPM_HOME\\global\\node_modules 找到 bin/claude.exe");
+            return Ok(pnpm_binary.to_string_lossy().to_string());
+        }
+        let pnpm_global = pnpm_pkg.join("cli.js");
         if pnpm_global.exists() {
             tracing::info!("[ClaudeEngine] 在 PNPM_HOME\\global\\node_modules 找到 cli.js");
             return Ok(pnpm_global.to_string_lossy().to_string());
         }
 
         // 另一种 pnpm 结构
-        let pnpm_global2 = PathBuf::from(&pnpm_home)
+        let pnpm_pkg2 = PathBuf::from(&pnpm_home)
             .join("node_modules")
             .join("@anthropic-ai")
-            .join("claude-code")
-            .join("cli.js");
+            .join("claude-code");
+        let pnpm_binary2 = pnpm_pkg2.join("bin").join("claude.exe");
+        if pnpm_binary2.exists() {
+            tracing::info!("[ClaudeEngine] 在 PNPM_HOME\\node_modules 找到 bin/claude.exe");
+            return Ok(pnpm_binary2.to_string_lossy().to_string());
+        }
+        let pnpm_global2 = pnpm_pkg2.join("cli.js");
         if pnpm_global2.exists() {
             tracing::info!("[ClaudeEngine] 在 PNPM_HOME\\node_modules 找到 cli.js");
             return Ok(pnpm_global2.to_string_lossy().to_string());
@@ -1111,13 +1131,18 @@ fn find_cli_js(base_dir: &Path, node_exe_path: &str) -> Result<String> {
 
     // 策略 4: 检查 LOCALAPPDATA\pnpm（pnpm 的默认安装位置）
     if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
-        let pnpm_default = PathBuf::from(&localappdata)
+        let pnpm_pkg = PathBuf::from(&localappdata)
             .join("pnpm")
             .join("global")
             .join("node_modules")
             .join("@anthropic-ai")
-            .join("claude-code")
-            .join("cli.js");
+            .join("claude-code");
+        let pnpm_binary = pnpm_pkg.join("bin").join("claude.exe");
+        if pnpm_binary.exists() {
+            tracing::info!("[ClaudeEngine] 在 LOCALAPPDATA\\pnpm\\global\\node_modules 找到 bin/claude.exe");
+            return Ok(pnpm_binary.to_string_lossy().to_string());
+        }
+        let pnpm_default = pnpm_pkg.join("cli.js");
         if pnpm_default.exists() {
             tracing::info!("[ClaudeEngine] 在 LOCALAPPDATA\\pnpm\\global\\node_modules 找到 cli.js");
             return Ok(pnpm_default.to_string_lossy().to_string());
@@ -1127,11 +1152,16 @@ fn find_cli_js(base_dir: &Path, node_exe_path: &str) -> Result<String> {
     // 策略 5: 从 node.exe 路径推断（pnpm 可能与 node 在同一目录）
     if let Some(node_dir) = Path::new(node_exe_path).parent() {
         // pnpm 可能将全局包放在与 node.exe 同级的 node_modules
-        let node_sibling = node_dir
+        let node_pkg = node_dir
             .join("node_modules")
             .join("@anthropic-ai")
-            .join("claude-code")
-            .join("cli.js");
+            .join("claude-code");
+        let node_binary = node_pkg.join("bin").join("claude.exe");
+        if node_binary.exists() {
+            tracing::info!("[ClaudeEngine] 在 node.exe 同级 node_modules 找到 bin/claude.exe");
+            return Ok(node_binary.to_string_lossy().to_string());
+        }
+        let node_sibling = node_pkg.join("cli.js");
         if node_sibling.exists() {
             tracing::info!("[ClaudeEngine] 在 node.exe 同级 node_modules 找到 cli.js");
             return Ok(node_sibling.to_string_lossy().to_string());
@@ -1139,12 +1169,17 @@ fn find_cli_js(base_dir: &Path, node_exe_path: &str) -> Result<String> {
 
         // 检查上级目录的 node_modules（pnpm 的某些配置）
         if let Some(parent) = node_dir.parent() {
-            let parent_global = parent
+            let parent_pkg = parent
                 .join("global")
                 .join("node_modules")
                 .join("@anthropic-ai")
-                .join("claude-code")
-                .join("cli.js");
+                .join("claude-code");
+            let parent_binary = parent_pkg.join("bin").join("claude.exe");
+            if parent_binary.exists() {
+                tracing::info!("[ClaudeEngine] 在 node.exe 上级目录找到 bin/claude.exe");
+                return Ok(parent_binary.to_string_lossy().to_string());
+            }
+            let parent_global = parent_pkg.join("cli.js");
             if parent_global.exists() {
                 tracing::info!("[ClaudeEngine] 在 node.exe 上级目录找到 cli.js");
                 return Ok(parent_global.to_string_lossy().to_string());
@@ -1161,10 +1196,15 @@ fn find_cli_js(base_dir: &Path, node_exe_path: &str) -> Result<String> {
         if output.status.success() {
             let npm_root = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !npm_root.is_empty() {
-                let npm_cli = PathBuf::from(npm_root)
+                let npm_pkg = PathBuf::from(npm_root)
                     .join("@anthropic-ai")
-                    .join("claude-code")
-                    .join("cli.js");
+                    .join("claude-code");
+                let npm_binary = npm_pkg.join("bin").join("claude.exe");
+                if npm_binary.exists() {
+                    tracing::info!("[ClaudeEngine] 通过 npm root -g 找到 bin/claude.exe");
+                    return Ok(npm_binary.to_string_lossy().to_string());
+                }
+                let npm_cli = npm_pkg.join("cli.js");
                 if npm_cli.exists() {
                     tracing::info!("[ClaudeEngine] 通过 npm root -g 找到 cli.js");
                     return Ok(npm_cli.to_string_lossy().to_string());
@@ -1182,10 +1222,15 @@ fn find_cli_js(base_dir: &Path, node_exe_path: &str) -> Result<String> {
         if output.status.success() {
             let pnpm_root = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !pnpm_root.is_empty() {
-                let pnpm_cli = PathBuf::from(pnpm_root)
+                let pnpm_pkg = PathBuf::from(pnpm_root)
                     .join("@anthropic-ai")
-                    .join("claude-code")
-                    .join("cli.js");
+                    .join("claude-code");
+                let pnpm_binary = pnpm_pkg.join("bin").join("claude.exe");
+                if pnpm_binary.exists() {
+                    tracing::info!("[ClaudeEngine] 通过 pnpm root -g 找到 bin/claude.exe");
+                    return Ok(pnpm_binary.to_string_lossy().to_string());
+                }
+                let pnpm_cli = pnpm_pkg.join("cli.js");
                 if pnpm_cli.exists() {
                     tracing::info!("[ClaudeEngine] 通过 pnpm root -g 找到 cli.js");
                     return Ok(pnpm_cli.to_string_lossy().to_string());
@@ -1195,7 +1240,7 @@ fn find_cli_js(base_dir: &Path, node_exe_path: &str) -> Result<String> {
     }
 
     Err(AppError::ProcessError(
-        "无法找到 cli.js。请确保 Claude Code 已通过 npm 或 pnpm 全局安装:\n\
+        "无法找到 Claude Code。请确保已安装:\n\
         npm install -g @anthropic-ai/claude-code\n\
         或\n\
         pnpm add -g @anthropic-ai/claude-code".to_string(),
