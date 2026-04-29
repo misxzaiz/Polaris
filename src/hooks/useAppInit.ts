@@ -35,10 +35,112 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
 
   const { loadConfig } = useConfigStore();
   const workspaces = useWorkspaceStore(state => state.workspaces);
+  const connectionState = useConfigStore(state => state.connectionState);
+
+  // Token 鉴权通过后的初始化逻辑（工作区同步、引擎引导、集成初始化等）
+  const runPostAuthInit = useRef(async (signal?: AbortSignal) => {
+    // 从服务端 Config 同步工作区列表（桌面端和 Web 端共享）
+    try {
+      await useWorkspaceStore.getState().syncFromServer();
+    } catch (err) {
+      log.warn('Workspace sync failed, using local cache', { error: String(err) });
+    }
+
+    // Web 模式兜底：如果同步后仍无工作区，用 workDir 自动创建
+    if (currentMode === 'http') {
+      const config = useConfigStore.getState().config;
+      const workDir = config?.workDir;
+      const workspaceStore = useWorkspaceStore.getState();
+      if (workDir && workspaceStore.workspaces.length === 0) {
+        log.info('Web mode: auto-creating default workspace', { workDir });
+        try {
+          await workspaceStore.createWorkspace(
+            workDir.split(/[/\\]/).pop() || 'Workspace',
+            workDir,
+            true,
+          );
+        } catch (err) {
+          log.error('Auto-create workspace failed', err as Error);
+        }
+      }
+    }
+
+    if (signal?.aborted) return;
+    isInitialized.current = true;
+
+    // 绑定语音提醒服务的配置获取
+    voiceNotificationService.initialize(() => useConfigStore.getState().config);
+
+    // 获取配置
+    const config = useConfigStore.getState().config;
+    const defaultEngine = config?.defaultEngine || 'claude-code';
+
+    // 按需初始化传统 AI Engine
+    await bootstrapEngines(defaultEngine as EngineId);
+
+    // 注册 AI 工具
+    bootstrapTools();
+
+    // 恢复窗口透明度
+    if (config?.window) {
+      const initialOpacity = (config.window.normalOpacity ?? 100) / 100;
+      if (initialOpacity < 1.0) {
+        document.documentElement.style.setProperty('--window-opacity', String(initialOpacity));
+        log.info(`窗口透明度已恢复: ${initialOpacity}`);
+      }
+    }
+
+    // 初始化集成管理器
+    const qqbotConfig = config?.qqbot ?? null;
+    const feishuConfig = config?.feishu ?? null;
+
+    if (qqbotConfig || feishuConfig) {
+      try {
+        const { initialize, startPlatform } = useIntegrationStore.getState();
+        await initialize(qqbotConfig, feishuConfig);
+
+        if (qqbotConfig && qqbotConfig.instances.length > 0) {
+          const activeInstance = qqbotConfig.activeInstanceId
+            ? qqbotConfig.instances.find(i => i.id === qqbotConfig.activeInstanceId)
+            : qqbotConfig.instances.find(i => i.enabled);
+
+          if (activeInstance && activeInstance.autoConnect !== false) {
+            log.info('自动连接 QQ Bot...');
+            await startPlatform('qqbot');
+          }
+        }
+
+        if (feishuConfig && feishuConfig.instances.length > 0) {
+          const activeInstance = feishuConfig.activeInstanceId
+            ? feishuConfig.instances.find(i => i.id === feishuConfig.activeInstanceId)
+            : feishuConfig.instances.find(i => i.enabled);
+
+          if (activeInstance && activeInstance.autoConnect !== false) {
+            log.info('自动连接 Feishu...');
+            await startPlatform('feishu');
+          }
+        }
+      } catch (error) {
+        log.error('集成管理器初始化失败', error as Error);
+      }
+    }
+
+    // 预加载设置相关数据
+    try {
+      await Promise.all([
+        useSnippetStore.getState().loadSnippets(),
+        useIntegrationStore.getState().loadInstances(),
+        useAutoModeStore.getState().fetchConfig(),
+      ]);
+    } catch (error) {
+      log.warn('设置数据预加载部分失败', { error: String(error) });
+    }
+  });
 
   // 初始化配置（只执行一次）
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     const initializeApp = async () => {
       if (isInitialized.current) return;
 
@@ -51,102 +153,8 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
           return;
         }
 
-        // 从服务端 Config 同步工作区列表（桌面端和 Web 端共享）
-        try {
-          await useWorkspaceStore.getState().syncFromServer();
-        } catch (err) {
-          log.warn('Workspace sync failed, using local cache', { error: String(err) });
-        }
-
-        // Web 模式兜底：如果同步后仍无工作区，用 workDir 自动创建
-        if (currentMode === 'http') {
-          const config = useConfigStore.getState().config;
-          const workDir = config?.workDir;
-          const workspaceStore = useWorkspaceStore.getState();
-          if (workDir && workspaceStore.workspaces.length === 0) {
-            log.info('Web mode: auto-creating default workspace', { workDir });
-            try {
-              await workspaceStore.createWorkspace(
-                workDir.split(/[/\\]/).pop() || 'Workspace',
-                workDir,
-                true,
-              );
-            } catch (err) {
-              log.error('Auto-create workspace failed', err as Error);
-            }
-          }
-        }
-
         if (cancelled) return;
-        isInitialized.current = true;
-
-        // 绑定语音提醒服务的配置获取
-        voiceNotificationService.initialize(() => useConfigStore.getState().config);
-
-        // 获取配置
-        const config = useConfigStore.getState().config;
-        const defaultEngine = config?.defaultEngine || 'claude-code';
-
-        // 按需初始化传统 AI Engine
-        await bootstrapEngines(defaultEngine as EngineId);
-
-        // 注册 AI 工具
-        bootstrapTools();
-
-        // 恢复窗口透明度
-        if (config?.window) {
-          const initialOpacity = (config.window.normalOpacity ?? 100) / 100;
-          if (initialOpacity < 1.0) {
-            document.documentElement.style.setProperty('--window-opacity', String(initialOpacity));
-            log.info(`窗口透明度已恢复: ${initialOpacity}`);
-          }
-        }
-
-        // 初始化集成管理器
-        const qqbotConfig = config?.qqbot ?? null;
-        const feishuConfig = config?.feishu ?? null;
-
-        if (qqbotConfig || feishuConfig) {
-          try {
-            const { initialize, startPlatform } = useIntegrationStore.getState();
-            await initialize(qqbotConfig, feishuConfig);
-
-            if (qqbotConfig && qqbotConfig.instances.length > 0) {
-              const activeInstance = qqbotConfig.activeInstanceId
-                ? qqbotConfig.instances.find(i => i.id === qqbotConfig.activeInstanceId)
-                : qqbotConfig.instances.find(i => i.enabled);
-
-              if (activeInstance && activeInstance.autoConnect !== false) {
-                log.info('自动连接 QQ Bot...');
-                await startPlatform('qqbot');
-              }
-            }
-
-            if (feishuConfig && feishuConfig.instances.length > 0) {
-              const activeInstance = feishuConfig.activeInstanceId
-                ? feishuConfig.instances.find(i => i.id === feishuConfig.activeInstanceId)
-                : feishuConfig.instances.find(i => i.enabled);
-
-              if (activeInstance && activeInstance.autoConnect !== false) {
-                log.info('自动连接 Feishu...');
-                await startPlatform('feishu');
-              }
-            }
-          } catch (error) {
-            log.error('集成管理器初始化失败', error as Error);
-          }
-        }
-
-        // 预加载设置相关数据
-        try {
-          await Promise.all([
-            useSnippetStore.getState().loadSnippets(),
-            useIntegrationStore.getState().loadInstances(),
-            useAutoModeStore.getState().fetchConfig(),
-          ]);
-        } catch (error) {
-          log.warn('设置数据预加载部分失败', { error: String(error) });
-        }
+        await runPostAuthInit.current(controller.signal);
       } catch (error) {
         log.error('初始化失败', error as Error);
         isInitialized.current = false;
@@ -160,6 +168,7 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
 
     return () => {
       cancelled = true;
+      controller.abort();
       const { cleanup } = useIntegrationStore.getState();
       cleanup();
       cleanupCliListeners();
@@ -167,6 +176,16 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Web 模式：Token 提交成功后触发后续初始化（首次进入时 needsToken → submitToken → success）
+  useEffect(() => {
+    if (connectionState === 'success' && !isInitialized.current) {
+      log.info('Token auth succeeded, running post-auth initialization');
+      runPostAuthInit.current().catch(err => {
+        log.error('Post-auth initialization failed', err as Error);
+      });
+    }
+  }, [connectionState]);
 
   // 检查工作区状态
   useEffect(() => {
