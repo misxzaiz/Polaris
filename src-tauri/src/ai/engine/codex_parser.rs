@@ -33,6 +33,20 @@ pub enum CodexEvent {
 
     #[serde(rename = "turn.completed")]
     TurnCompleted { usage: Option<CodexUsage> },
+
+    #[serde(rename = "turn.failed")]
+    TurnFailed { error: Option<CodexTurnError> },
+
+    #[serde(rename = "item.updated")]
+    ItemUpdated { item: CodexItem },
+
+    /// Top-level stream error (distinct from item.type = "error")
+    #[serde(rename = "error")]
+    StreamError { message: Option<String> },
+
+    /// Unknown event type (forward compat + debug)
+    #[serde(other)]
+    Unknown,
 }
 
 /// Codex 项目（工具调用或消息）
@@ -66,6 +80,24 @@ pub struct CodexUsage {
     pub output_tokens: u64,
     #[serde(default)]
     pub reasoning_output_tokens: u64,
+}
+
+/// Codex turn error (from turn.failed event)
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct CodexTurnError {
+    #[serde(default)]
+    pub message: Option<String>,
+}
+
+/// Extract top-level "type" field value from JSON string (without full deserialization).
+pub fn extract_event_type(json: &str) -> Option<&str> {
+    let marker = r#""type":"#;
+    let pos = json.find(marker)?;
+    let rest = json[pos + marker.len()..].trim_start();
+    if !rest.starts_with('"') { return None; }
+    let value = &rest[1..];
+    let end = value.find('"')?;
+    Some(&value[..end])
 }
 
 /// 解析一行 Codex JSONL 输出
@@ -168,6 +200,49 @@ pub fn codex_event_to_ai_events(event: CodexEvent, session_id: &str) -> Vec<AIEv
             }
             vec![AIEvent::session_end(session_id)]
         }
+
+        CodexEvent::TurnFailed { error } => {
+            let msg = error
+                .and_then(|e| e.message)
+                .unwrap_or_else(|| "Turn failed".to_string());
+            tracing::warn!("[CodexParser] turn.failed: {}", msg);
+            // Generate error + session_end so frontend exits streaming state
+            vec![
+                AIEvent::error(session_id, msg),
+                AIEvent::session_end(session_id),
+            ]
+        }
+
+        CodexEvent::ItemUpdated { item } => {
+            // item.updated is used for todo_list, mcp_tool_call progress, etc.
+            // For now, treat like ItemStarted — generate progress for known types.
+            match item.item_type.as_str() {
+                "command_execution" => {
+                    let mut args = HashMap::new();
+                    if let Some(cmd) = item.command {
+                        args.insert("command".to_string(), serde_json::Value::String(cmd));
+                    }
+                    vec![AIEvent::tool_call_start(session_id, "shell", args)]
+                }
+                _ => vec![],
+            }
+        }
+
+        CodexEvent::StreamError { message } => {
+            let msg = message.unwrap_or_else(|| "Stream error".to_string());
+            tracing::warn!("[CodexParser] stream error: {}", msg);
+            // Non-fatal reconnect notices should not generate error events
+            if msg.contains("Reconnecting") {
+                vec![AIEvent::progress(session_id, &msg)]
+            } else {
+                vec![AIEvent::error(session_id, msg)]
+            }
+        }
+
+        CodexEvent::Unknown => {
+            // Unknown event type — raw line logged in spawn_event_reader
+            vec![]
+        }
     }
 }
 
@@ -228,5 +303,41 @@ mod tests {
         let event = parse_codex_line(json).unwrap();
         let ai_events = codex_event_to_ai_events(event, "test-session");
         assert!(ai_events.is_empty());
+    }
+
+    #[test]
+    fn parse_unknown_event_type() {
+        // Unknown event type should parse as Unknown, not None
+        let json = r#"{"type":"some_future_event","data":"test"}"#;
+        let event = parse_codex_line(json);
+        assert!(event.is_some());
+        assert!(matches!(event.unwrap(), CodexEvent::Unknown));
+    }
+
+    #[test]
+    fn unknown_event_produces_no_ai_events() {
+        let ai_events = codex_event_to_ai_events(CodexEvent::Unknown, "test-session");
+        assert!(ai_events.is_empty());
+    }
+
+    #[test]
+    fn extract_event_type_basic() {
+        assert_eq!(
+            extract_event_type(r#"{"type":"thread.started","thread_id":"abc"}"#),
+            Some("thread.started")
+        );
+    }
+
+    #[test]
+    fn extract_event_type_unknown() {
+        assert_eq!(
+            extract_event_type(r#"{"type":"agent_message_delta","delta":"x"}"#),
+            Some("agent_message_delta")
+        );
+    }
+
+    #[test]
+    fn extract_event_type_missing() {
+        assert_eq!(extract_event_type(r#"{"foo":"bar"}"#), None);
     }
 }

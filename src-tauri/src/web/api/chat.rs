@@ -127,7 +127,7 @@ pub async fn handle_send_message(
         None => {
             let sid = start_chat_inner(message, options, &state, callbacks, &app_paths)
                 .await?;
-            Ok(Json(serde_json::json!({ "sessionId": sid })))
+            Ok(Json(serde_json::json!(sid)))
         }
     }
 }

@@ -4,7 +4,7 @@ use axum::Json;
 use serde::Deserialize;
 use std::sync::Arc;
 
-use crate::ai::SessionHistoryProvider;
+use crate::ai::{SessionHistoryProvider, history::PagedResult};
 use crate::commands::chat::{ChatRequestOptions, start_chat_inner};
 use crate::web::api::chat::{run_claude_blocking, build_web_callbacks};
 use crate::web::error::ok_response;
@@ -16,6 +16,7 @@ use super::WebError;
 fn validate_engine(engine_id: &str) -> Result<&'static str, WebError> {
     match engine_id {
         "claude" | "claude-code" => Ok("claude-code"),
+        "codex" | "openai-codex" => Ok("codex"),
         _ => Err(WebError::BadRequest(format!("Unsupported engine: {}", engine_id))),
     }
 }
@@ -41,8 +42,16 @@ pub async fn handle_list_sessions(
     State(state): State<Arc<AppState>>,
     Query(query): Query<ListSessionsQuery>,
 ) -> Result<impl IntoResponse, WebError> {
-    validate_engine(&query.engine_id)?;
+    let engine = validate_engine(&query.engine_id)?;
     let pagination = parse_pagination(&query.pagination);
+
+    // Codex 会话历史暂未实现，返回空列表（与 Tauri 命令行为一致）
+    if engine == "codex" {
+        let empty: PagedResult<crate::ai::history::SessionMeta> =
+            PagedResult::empty(pagination.page, pagination.page_size);
+        return Ok(Json(empty));
+    }
+
     let work_dir = query.work_dir;
     let result = run_claude_blocking(&state, move |provider| {
         provider.list_sessions(work_dir.as_deref(), pagination)
@@ -60,7 +69,7 @@ pub struct CreateSessionRequest {
 }
 
 /// Create a new chat session by sending an initial message.
-/// Returns `{ "sessionId": "<uuid>" }` on success.
+/// Returns the session ID as a plain string on success (matches Tauri command behavior).
 /// If no message is provided, returns 400 with guidance to use this endpoint.
 pub async fn handle_create_session(
     State(state): State<Arc<AppState>>,
@@ -79,7 +88,7 @@ pub async fn handle_create_session(
     let (callbacks, app_paths) = build_web_callbacks(&state, &mut options);
 
     let sid = start_chat_inner(message, options, &state, callbacks, &app_paths).await?;
-    Ok(Json(serde_json::json!({ "sessionId": sid })))
+    Ok(Json(sid))
 }
 
 #[derive(Debug, Deserialize)]
@@ -98,8 +107,13 @@ pub async fn handle_delete_session(
     validate_session_id(&session_id)?;
 
     let engine_id = query.engine_id.unwrap_or_else(default_engine);
+    let engine = validate_engine(&engine_id)?;
 
-    validate_engine(&engine_id)?;
+    // Codex 会话删除暂未实现（与 Tauri 命令行为一致）
+    if engine == "codex" {
+        return Ok(ok_response());
+    }
+
     run_claude_blocking(&state, move |provider| {
         provider.delete_session(&session_id)
     }).await?;
@@ -158,4 +172,3 @@ pub async fn handle_get_claude_session_history(
     // Return only the items array, not the PagedResult wrapper
     Ok(Json(result.items))
 }
-

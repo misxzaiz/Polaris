@@ -2,7 +2,7 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
-use super::codex_parser::{codex_event_to_ai_events, parse_codex_line, CodexEvent};
+use super::codex_parser::{codex_event_to_ai_events, extract_event_type, parse_codex_line, CodexEvent};
 use crate::ai::session::SessionManager;
 use crate::ai::traits::{AIEngine, EngineId, SessionOptions};
 use crate::error::{AppError, Result};
@@ -382,11 +382,18 @@ impl CodexEngine {
             let reader = BufReader::new(stdout);
             let mut received_session_end = false;
             let mut real_session_id = current_session_id.clone();
+            let mut line_count: u32 = 0;
+            let mut known_event_count: u32 = 0;
+            let mut unknown_event_count: u32 = 0;
+            let mut parse_fail_count: u32 = 0;
 
             for line in reader.lines() {
                 let line = match line {
                     Ok(l) => l,
-                    Err(_) => break,
+                    Err(e) => {
+                        tracing::warn!("[CodexEngine] stdout 读取错误: {}", e);
+                        break;
+                    }
                 };
 
                 let trimmed = line.trim();
@@ -394,8 +401,28 @@ impl CodexEngine {
                     continue;
                 }
 
+                line_count += 1;
+                let preview: String = trimmed.chars().take(500).collect();
+                tracing::info!("[CodexEngine] stdout[{}]: {}", line_count, preview);
+
                 // 解析 Codex JSONL 事件
                 if let Some(codex_event) = parse_codex_line(trimmed) {
+                    // 检查是否为未知事件类型
+                    if matches!(codex_event, CodexEvent::Unknown) {
+                        unknown_event_count += 1;
+                        if let Some(evt_type) = extract_event_type(trimmed) {
+                            tracing::warn!(
+                                "[CodexEngine] 未知事件类型 [{}]: {}",
+                                evt_type, preview
+                            );
+                        } else {
+                            tracing::warn!("[CodexEngine] 无法提取事件类型: {}", preview);
+                        }
+                        continue;
+                    }
+
+                    known_event_count += 1;
+
                     // 处理 thread.started — 更新 session ID 映射
                     if let CodexEvent::ThreadStarted { ref thread_id } = codex_event {
                         real_session_id = thread_id.clone();
@@ -423,7 +450,7 @@ impl CodexEngine {
                     }
 
                     // 检查会话结束
-                    if matches!(codex_event, CodexEvent::TurnCompleted { .. }) {
+                    if matches!(codex_event, CodexEvent::TurnCompleted { .. } | CodexEvent::TurnFailed { .. }) {
                         received_session_end = true;
                     }
 
@@ -436,11 +463,44 @@ impl CodexEngine {
                     for ai_event in codex_event_to_ai_events(codex_event, sid) {
                         event_callback(ai_event);
                     }
+                } else {
+                    parse_fail_count += 1;
+                    tracing::warn!(
+                        "[CodexEngine] JSON 解析失败 [{}/{}]: {}",
+                        parse_fail_count, line_count, preview
+                    );
                 }
             }
 
-            // 如果没有收到 session_end，发送一个
+            tracing::info!(
+                "[CodexEngine] stdout 读取完成: {} 行, {} 已知事件, {} 未知事件, {} 解析失败",
+                line_count, known_event_count, unknown_event_count, parse_fail_count
+            );
+
+            // 如果没有收到 turn 结束事件，发送 fallback
             if !received_session_end {
+                if line_count == 0 {
+                    // CLI 未产生任何 stdout 输出 — 可能启动失败或立即退出
+                    tracing::warn!("[CodexEngine] CLI 未产生任何 stdout 输出");
+                    event_callback(AIEvent::error(
+                        &current_session_id,
+                        "Codex CLI 未产生任何输出，请检查 CLI 是否正确安装 (npm install -g @openai/codex)".to_string(),
+                    ));
+                } else if known_event_count == 0 {
+                    // 有 stdout 输出但无已知事件 — 格式不兼容或解析错误
+                    tracing::warn!(
+                        "[CodexEngine] CLI 产生了 {} 行输出但无已知事件 ({} 解析失败, {} 未知类型)",
+                        line_count, parse_fail_count, unknown_event_count
+                    );
+                    event_callback(AIEvent::error(
+                        &current_session_id,
+                        format!(
+                            "Codex CLI 输出无法解析 ({} 行, {} 解析失败, {} 未知事件类型)。请检查 Codex CLI 版本兼容性",
+                            line_count, parse_fail_count, unknown_event_count
+                        ),
+                    ));
+                }
+                tracing::info!("[CodexEngine] 发送 fallback session_end");
                 event_callback(AIEvent::session_end(&current_session_id));
             }
 

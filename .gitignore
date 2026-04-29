@@ -64,3 +64,4 @@ Desktop.ini
 .kiro
 .kirocrates/polaris-knowledge-mcp/target/
 crates/*/target/
+ngrok
