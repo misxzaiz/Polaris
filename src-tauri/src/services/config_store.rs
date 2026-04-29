@@ -449,6 +449,7 @@ impl OldConfig {
             claude_code: crate::models::config::ClaudeCodeConfig {
                 cli_path: self.claude_cmd,
             },
+            codex_code: Default::default(),
             qqbot: Default::default(),
             feishu: Default::default(),
             work_dir: self.work_dir,

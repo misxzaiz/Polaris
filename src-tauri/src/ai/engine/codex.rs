@@ -1,5 +1,5 @@
 use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
 use super::codex_parser::{codex_event_to_ai_events, parse_codex_line, CodexEvent};
@@ -36,27 +36,96 @@ impl CodexEngine {
     }
 
     /// 获取 Codex CLI 路径
+    ///
+    /// 查找顺序：
+    /// 1. 配置文件中的 codex_code.cli_path
+    /// 2. CODEX_PATH 环境变量
+    /// 3. Windows: %APPDATA%\npm\codex.cmd（npm 全局安装）
+    /// 4. Windows: where codex（PATH 查找）
+    /// 5. 默认 "codex"
     fn get_cli_path(&mut self) -> Result<String> {
         if let Some(ref path) = self.cli_path {
             return Ok(path.clone());
         }
 
-        // 尝试从环境变量获取
+        // 1. 配置文件中的路径（用户可自定义）
+        let config_path = self.config.get_codex_cmd();
+        if config_path != "codex" && !config_path.is_empty() {
+            // 用户自定义了路径，直接使用
+            tracing::info!("[CodexEngine] 使用配置路径: {}", config_path);
+            self.cli_path = Some(config_path.clone());
+            return Ok(config_path);
+        }
+
+        // 2. 环境变量
         if let Ok(path) = std::env::var("CODEX_PATH") {
             if !path.is_empty() {
+                tracing::info!("[CodexEngine] 使用 CODEX_PATH 环境变量: {}", path);
                 self.cli_path = Some(path.clone());
                 return Ok(path);
             }
         }
 
-        // 尝试从 ~/.codex/config.toml 读取
-        if let Some(config_path) = dirs::home_dir().map(|h| h.join(".codex").join("config.toml")) {
-            if config_path.exists() {
-                tracing::info!("[CodexEngine] 检测到 codex config: {:?}", config_path);
+        // 3. Windows: 探测 npm 全局安装路径
+        #[cfg(windows)]
+        {
+            // %APPDATA%\npm\codex.cmd
+            if let Ok(appdata) = std::env::var("APPDATA") {
+                let npm_codex = PathBuf::from(&appdata).join("npm").join("codex.cmd");
+                if npm_codex.exists() {
+                    let path_str = npm_codex.to_string_lossy().to_string();
+                    tracing::info!("[CodexEngine] 在 APPDATA\\npm 找到: {}", path_str);
+                    self.cli_path = Some(path_str.clone());
+                    return Ok(path_str);
+                }
+            }
+
+            // %PNPM_HOME%\codex.cmd
+            if let Ok(pnpm_home) = std::env::var("PNPM_HOME") {
+                let pnpm_codex = PathBuf::from(&pnpm_home).join("codex.cmd");
+                if pnpm_codex.exists() {
+                    let path_str = pnpm_codex.to_string_lossy().to_string();
+                    tracing::info!("[CodexEngine] 在 PNPM_HOME 找到: {}", path_str);
+                    self.cli_path = Some(path_str.clone());
+                    return Ok(path_str);
+                }
+            }
+
+            // %LOCALAPPDATA%\pnpm\codex.cmd
+            if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
+                let pnpm_codex = PathBuf::from(&localappdata).join("pnpm").join("codex.cmd");
+                if pnpm_codex.exists() {
+                    let path_str = pnpm_codex.to_string_lossy().to_string();
+                    tracing::info!("[CodexEngine] 在 LOCALAPPDATA\\pnpm 找到: {}", path_str);
+                    self.cli_path = Some(path_str.clone());
+                    return Ok(path_str);
+                }
+            }
+
+            // 4. where codex（PATH 查找）
+            if let Ok(output) = Command::new("where")
+                .arg("codex")
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .creation_flags(CREATE_NO_WINDOW)
+                .output()
+            {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    if let Some(first_line) = stdout.lines().next() {
+                        let path_str = first_line.trim().to_string();
+                        if !path_str.is_empty() && Path::new(&path_str).exists() {
+                            tracing::info!("[CodexEngine] 通过 where 找到: {}", path_str);
+                            self.cli_path = Some(path_str.clone());
+                            return Ok(path_str);
+                        }
+                    }
+                }
             }
         }
 
-        // 默认使用 PATH 中的 codex
+        // 5. 默认使用 PATH 中的 codex
+        tracing::warn!("[CodexEngine] 未找到 codex CLI，将使用默认 'codex'（依赖 PATH）");
         let default_path = "codex".to_string();
         self.cli_path = Some(default_path.clone());
         Ok(default_path)
@@ -74,17 +143,36 @@ impl CodexEngine {
 
         // 检查路径是否存在（如果是绝对路径）
         if Path::new(&cli_path).exists() {
+            tracing::info!("[CodexEngine] CLI 路径存在: {}", cli_path);
             return true;
         }
 
         // 尝试运行 codex --version
-        match Command::new(&cli_path)
-            .arg("--version")
+        #[cfg(windows)]
+        let mut cmd = {
+            if cli_path.ends_with(".cmd") || cli_path.ends_with(".bat") {
+                let mut c = Command::new("cmd");
+                c.arg("/c").arg(&cli_path);
+                c
+            } else {
+                Command::new(&cli_path)
+            }
+        };
+        #[cfg(not(windows))]
+        let mut cmd = Command::new(&cli_path);
+
+        cmd.arg("--version")
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-        {
-            Ok(status) => status.success(),
+            .stderr(Stdio::null());
+
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+
+        match cmd.status() {
+            Ok(status) => {
+                tracing::info!("[CodexEngine] codex --version 状态: {}", status);
+                status.success()
+            }
             Err(e) => {
                 tracing::error!("[CodexEngine] 检查 codex 可用性失败: {}", e);
                 false
@@ -148,10 +236,11 @@ impl CodexEngine {
             cmd.arg("-C").arg(work_dir);
         }
 
-        // 模型选择
+        // 模型选择（清理 ANSI 转义码，防止终端格式化字符混入）
         if let Some(m) = model {
-            if !m.is_empty() {
-                cmd.arg("--model").arg(m);
+            let cleaned = strip_ansi_codes(m);
+            if !cleaned.is_empty() {
+                cmd.arg("--model").arg(&cleaned);
             }
         }
 
@@ -220,7 +309,9 @@ impl CodexEngine {
         let current_session_id = temp_id.clone();
 
         std::thread::spawn(move || {
-            let stdout = match child.stdout {
+            // 解构 child，显式关闭 stdin 以避免 codex 等待输入
+            let mut child = child;
+            let stdout = match child.stdout.take() {
                 Some(s) => s,
                 None => {
                     if let Some(ref cb) = on_error {
@@ -230,7 +321,7 @@ impl CodexEngine {
                 }
             };
 
-            let stderr = match child.stderr {
+            let stderr = match child.stderr.take() {
                 Some(s) => s,
                 None => {
                     if let Some(ref cb) = on_error {
@@ -239,6 +330,10 @@ impl CodexEngine {
                     return;
                 }
             };
+
+            // 关闭 stdin，让 codex 知道没有更多输入
+            child.stdin.take();
+            drop(child);
 
             // 读取 stderr（用于错误诊断和 session ID 发现）
             let stderr_sessions = sessions.clone();
@@ -350,6 +445,13 @@ fn extract_session_id_from_stderr(line: &str) -> Option<String> {
     re.captures(line)
         .and_then(|c| c.get(1))
         .map(|m| m.as_str().to_string())
+}
+
+/// 清理字符串中的 ANSI 转义序列
+fn strip_ansi_codes(s: &str) -> String {
+    // 匹配 ANSI CSI 序列: ESC[ ... final_byte
+    let re = regex::Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap();
+    re.replace_all(s, "").to_string()
 }
 
 impl AIEngine for CodexEngine {

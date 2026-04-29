@@ -17,6 +17,22 @@ impl Default for ClaudeCodeConfig {
     }
 }
 
+/// OpenAI Codex 引擎配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexCodeConfig {
+    /// Codex CLI 命令路径
+    pub cli_path: String,
+}
+
+impl Default for CodexCodeConfig {
+    fn default() -> Self {
+        Self {
+            cli_path: "codex".to_string(),
+        }
+    }
+}
+
 /// 引擎 ID 类型
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -713,6 +729,10 @@ pub struct Config {
     #[serde(default)]
     pub claude_code: ClaudeCodeConfig,
 
+    /// OpenAI Codex 引擎配置
+    #[serde(default)]
+    pub codex_code: CodexCodeConfig,
+
     /// 工作目录
     pub work_dir: Option<PathBuf>,
 
@@ -798,6 +818,7 @@ impl Default for Config {
             default_engine: default_default_engine(),
             language: None,
             claude_code: ClaudeCodeConfig::default(),
+            codex_code: CodexCodeConfig::default(),
             work_dir: None,
             session_dir: None,
             git_bin_path: None,
@@ -832,6 +853,11 @@ impl Config {
         }
         // 使用新字段
         self.claude_code.cli_path.clone()
+    }
+
+    /// 获取 Codex CLI 命令路径
+    pub fn get_codex_cmd(&self) -> String {
+        self.codex_code.cli_path.clone()
     }
 
     /// 确保 default_engine 有效
