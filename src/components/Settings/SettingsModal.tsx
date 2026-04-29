@@ -26,6 +26,7 @@ import { AutoModeTab } from './tabs/AutoModeTab';
 import { LspTab } from './tabs/LspTab';
 import { WebTab } from './tabs/WebTab';
 import { createLogger } from '../../utils/logger';
+import { getConfig } from '../../services/tauri/configService';
 import type { Config } from '../../types';
 
 const log = createLogger('SettingsModal');
@@ -72,13 +73,29 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
     }
   }, [config]);
 
+  /**
+   * 合并 localConfig 与后端最新配置。
+   * QQBot/Feishu 集成配置由各自 Tab 独立保存（路径 A），此处必须保留后端最新值，
+   * 避免 SettingsModal 的 stale 快照覆盖集成配置。
+   */
+  const mergeWithLatest = async (local: Config): Promise<Config> => {
+    const latest = await getConfig();
+    return {
+      ...local,
+      qqbot: latest.qqbot,
+      feishu: latest.feishu,
+    };
+  };
+
   // 保存当前分组配置
   const handleSaveCurrentTab = async () => {
     if (!localConfig) return;
 
     try {
       setSaving(true);
-      await updateConfig(localConfig);
+      const merged = await mergeWithLatest(localConfig);
+      await updateConfig(merged);
+      setLocalConfig(merged);
       success(t('messages.saved'), t('messages.configSavedDesc'));
     } catch (err) {
       log.error('Failed to save config:', err instanceof Error ? err : new Error(String(err)));
@@ -94,7 +111,8 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
 
     try {
       setSaving(true);
-      await updateConfig(localConfig);
+      const merged = await mergeWithLatest(localConfig);
+      await updateConfig(merged);
       success(t('messages.saved'), t('messages.configSavedDesc'));
       onClose();
     } catch (err) {
