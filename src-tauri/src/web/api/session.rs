@@ -106,3 +106,56 @@ pub async fn handle_delete_session(
     Ok(ok_response())
 }
 
+// ============================================================================
+// Legacy handlers — return flat arrays matching Tauri command output format.
+//
+// The newer `handle_list_sessions` / `handle_get_history` return `PagedResult<T>`,
+// but the legacy frontend commands (`list_claude_code_sessions`,
+// `get_claude_code_session_history`) expect plain arrays (matching Tauri `Vec<T>`
+// return type). These dedicated handlers bridge the gap.
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacyListSessionsQuery {
+    #[serde(alias = "projectPath")]
+    pub work_dir: Option<String>,
+}
+
+/// List Claude Code sessions as a flat array (legacy format).
+///
+/// Matches the Tauri `list_claude_code_sessions` command output: `Vec<SessionMeta>`.
+/// Returns all sessions without pagination, sorted by most recently modified.
+pub async fn handle_list_claude_sessions(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<LegacyListSessionsQuery>,
+) -> Result<impl IntoResponse, WebError> {
+    let work_dir = query.work_dir;
+    let result = run_claude_blocking(&state, move |provider| {
+        // Use a large page size to effectively return all sessions
+        let pagination = crate::ai::history::Pagination { page: 1, page_size: 10_000 };
+        provider.list_sessions(work_dir.as_deref(), pagination)
+    }).await?;
+    // Return only the items array, not the PagedResult wrapper
+    Ok(Json(result.items))
+}
+
+/// Get session history messages as a flat array (legacy format).
+///
+/// Matches the Tauri `get_claude_code_session_history` command output: `Vec<HistoryMessage>`.
+/// Returns all messages without pagination.
+pub async fn handle_get_claude_session_history(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<String>,
+) -> Result<impl IntoResponse, WebError> {
+    validate_session_id(&session_id)?;
+
+    let result = run_claude_blocking(&state, move |provider| {
+        // Use a large page size to effectively return all messages
+        let pagination = crate::ai::history::Pagination { page: 1, page_size: 100_000 };
+        provider.get_session_history(&session_id, pagination)
+    }).await?;
+    // Return only the items array, not the PagedResult wrapper
+    Ok(Json(result.items))
+}
+

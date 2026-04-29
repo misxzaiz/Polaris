@@ -12,7 +12,7 @@ import { historyService } from '../../services/historyService'
 import type { UnifiedHistoryItem, HistoryScope } from '../../services/historyService'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
 import { sessionStoreManager } from '../../stores/conversationStore/sessionStoreManager'
-import { useViewStore } from '../../stores/index'
+import { useViewStore, useToastStore } from '../../stores/index'
 import { createLogger } from '../../utils/logger'
 import { Clock, MessageSquare, Trash2, RotateCcw, HardDrive, Loader2, X, ChevronDown, Globe, FolderOpen, List, GitBranch } from 'lucide-react'
 import { ForkIndicator } from './ForkIndicator'
@@ -134,9 +134,19 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
         onClose?.()
       } else {
         log.error('Failed to restore session')
+        useToastStore.getState().addToast({
+          type: 'error',
+          title: t('history.restoreFailed', '恢复会话失败'),
+          message: t('history.restoreFailedMessage', '无法加载会话消息，会话数据可能已过期'),
+        })
       }
     } catch (e) {
       log.error('Failed to restore session', e instanceof Error ? e : new Error(String(e)))
+      useToastStore.getState().addToast({
+        type: 'error',
+        title: t('history.restoreFailed', '恢复会话失败'),
+        message: e instanceof Error ? e.message : String(e),
+      })
     } finally {
       setRestoring(null)
     }
@@ -154,7 +164,14 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
     try {
       // 1. 先恢复源会话的消息
       const messages = await loadSessionMessages(item)
-      if (messages.length === 0) return
+      if (messages.length === 0) {
+        useToastStore.getState().addToast({
+          type: 'error',
+          title: t('history.forkFailed', '创建分支失败'),
+          message: t('history.forkFailedMessage', '无法加载会话消息，会话数据可能已过期'),
+        })
+        return
+      }
 
       // 2. 创建新会话并复制消息
       //    不传 conversationId（第二个参数为 null），这样 sendMessage 走 start_chat 而非 continue_chat
@@ -187,6 +204,11 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
       setForkTarget(null)
     } catch (e) {
       log.error('Fork failed', e instanceof Error ? e : new Error(String(e)))
+      useToastStore.getState().addToast({
+        type: 'error',
+        title: t('history.forkFailed', '创建分支失败'),
+        message: e instanceof Error ? e.message : String(e),
+      })
     }
   }
 
