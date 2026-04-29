@@ -181,6 +181,11 @@ impl CodexEngine {
     }
 
     /// 构建命令
+    ///
+    /// codex exec（新会话）和 codex exec resume（续接）的参数不同：
+    /// - exec 支持 -C 指定工作目录
+    /// - exec resume 不支持 -C，工作目录通过 cmd.current_dir() 设置
+    /// - exec resume 参数顺序: exec resume [OPTIONS] SESSION_ID PROMPT
     fn build_command(
         &self,
         message: &str,
@@ -191,6 +196,8 @@ impl CodexEngine {
         let cli_path = self.cli_path.as_ref()
             .ok_or_else(|| AppError::ProcessError("CLI 路径未初始化".to_string()))?;
 
+        let is_resume = session_id.is_some();
+
         // Windows .cmd 需要用 cmd /c 执行
         #[cfg(windows)]
         let mut cmd = {
@@ -199,7 +206,6 @@ impl CodexEngine {
                 c.arg("/c").arg(cli_path);
                 c
             } else if cli_path.ends_with(".js") {
-                // .js 文件用 node 执行
                 let mut c = Command::new("node");
                 c.arg(cli_path);
                 c
@@ -211,11 +217,12 @@ impl CodexEngine {
         #[cfg(not(windows))]
         let mut cmd = Command::new(cli_path);
 
-        // 如果是续接会话，使用 resume 子命令
-        if let Some(sid) = session_id {
-            cmd.arg("exec").arg("resume").arg(sid);
-        } else {
-            cmd.arg("exec");
+        // === 子命令 + 选项 ===
+        // 注意: exec resume 不支持 -C，选项必须在 SESSION_ID 之前
+        cmd.arg("exec");
+
+        if is_resume {
+            cmd.arg("resume");
         }
 
         // JSON 输出模式
@@ -227,21 +234,28 @@ impl CodexEngine {
         // 全部操作权限：绕过沙箱和审批
         cmd.arg("--dangerously-bypass-approvals-and-sandbox");
 
-        // 工作目录
-        if let Some(dir) = work_dir {
-            if !dir.is_empty() {
-                cmd.arg("-C").arg(dir);
+        // 工作目录（仅 exec 支持 -C；resume 通过 cmd.current_dir() 设置）
+        if !is_resume {
+            if let Some(dir) = work_dir {
+                if !dir.is_empty() {
+                    cmd.arg("-C").arg(dir);
+                }
+            } else if let Some(ref work_dir) = self.config.work_dir {
+                cmd.arg("-C").arg(work_dir);
             }
-        } else if let Some(ref work_dir) = self.config.work_dir {
-            cmd.arg("-C").arg(work_dir);
         }
 
-        // 模型选择（清理 ANSI 转义码，防止终端格式化字符混入）
+        // 模型选择（清理 ANSI 转义码）
         if let Some(m) = model {
             let cleaned = strip_ansi_codes(m);
             if !cleaned.is_empty() {
                 cmd.arg("--model").arg(&cleaned);
             }
+        }
+
+        // === 位置参数（必须在选项之后）===
+        if let Some(sid) = session_id {
+            cmd.arg(sid);
         }
 
         // 消息作为最后一个参数
