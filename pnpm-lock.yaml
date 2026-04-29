@@ -165,6 +165,9 @@ importers:
       '@tauri-apps/cli':
         specifier: ^2
         version: 2.10.1
+      '@tauri-apps/cli-win32-x64-msvc':
+        specifier: 2.10.1
+        version: 2.10.1
       '@testing-library/jest-dom':
         specifier: ^6.9.1
         version: 6.9.1
@@ -4848,8 +4851,7 @@ snapshots:
   '@tauri-apps/cli-win32-ia32-msvc@2.10.1':
     optional: true
 
-  '@tauri-apps/cli-win32-x64-msvc@2.10.1':
-    optional: true
+  '@tauri-apps/cli-win32-x64-msvc@2.10.1': {}
 
   '@tauri-apps/cli@2.10.1':
     optionalDependencies:
