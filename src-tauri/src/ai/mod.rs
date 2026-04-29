@@ -16,6 +16,7 @@ pub mod event_parser;
 pub use traits::{EngineId, SessionOptions, HistoryEntry, ImageAttachment};
 pub use registry::EngineRegistry;
 pub use engine::ClaudeEngine;
+pub use engine::CodexEngine;
 pub use history::{
     Pagination, PagedResult, SessionMeta, HistoryMessage, SessionHistoryProvider,
 };

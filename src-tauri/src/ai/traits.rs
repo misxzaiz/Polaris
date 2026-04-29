@@ -12,6 +12,7 @@ use std::sync::Arc;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum EngineId {
     ClaudeCode,
+    Codex,
 }
 
 impl EngineId {
@@ -23,6 +24,7 @@ impl EngineId {
         let lower = s.to_lowercase();
         match lower.as_str() {
             "claude" | "claude-code" | "claudecode" => Some(Self::ClaudeCode),
+            "codex" | "openai-codex" | "openai_codex" => Some(Self::Codex),
             _ => None,
         }
     }
@@ -31,6 +33,7 @@ impl EngineId {
     pub fn as_str(&self) -> String {
         match self {
             Self::ClaudeCode => "claude".to_string(),
+            Self::Codex => "codex".to_string(),
         }
     }
 
@@ -38,6 +41,7 @@ impl EngineId {
     pub fn display_name(&self) -> &'static str {
         match self {
             Self::ClaudeCode => "Claude Code",
+            Self::Codex => "OpenAI Codex",
         }
     }
 }

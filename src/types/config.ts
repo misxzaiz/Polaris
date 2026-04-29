@@ -6,7 +6,7 @@ import type { SpeechConfig, TTSConfig, WakeWordConfig, VoiceNotificationConfig, 
 import type { ModelProfile } from './modelProfile'
 
 /**  引擎 ID */
-export type EngineId = 'claude-code'
+export type EngineId = 'claude-code' | 'codex'
 
 /** 支持的语言 */
 export type Language = 'zh-CN' | 'en-US'

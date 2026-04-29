@@ -7,11 +7,14 @@
 // 导出 Claude Code Engine
 export * from './claude-code'
 
+// 导出 Codex Engine
+export * from './codex'
+
 /**
  * 获取所有可用的 Engine IDs
  */
 export function getAvailableEngineIds(): string[] {
-  return ['claude-code']
+  return ['claude-code', 'codex']
 }
 
 /**
@@ -40,6 +43,12 @@ export function getEngineDescriptors(): EngineDescriptor[] {
       id: 'claude-code',
       name: 'Claude Code',
       description: 'Anthropic 官方 Claude CLI',
+      available: true,
+    },
+    {
+      id: 'codex',
+      name: 'OpenAI Codex',
+      description: 'OpenAI Codex CLI - 全部操作权限',
       available: true,
     },
   ]

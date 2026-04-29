@@ -25,7 +25,7 @@ export interface HistoryEntry {
   title: string
   timestamp: string
   messageCount: number
-  engineId: 'claude-code'
+  engineId: EngineId
   data: {
     messages: ChatMessage[]
     archivedMessages: ChatMessage[]
@@ -38,7 +38,7 @@ export interface UnifiedHistoryItem {
   title: string
   timestamp: string
   messageCount: number
-  engineId: 'claude-code'
+  engineId: EngineId
   source: 'local' | 'claude-code-native'
   fileSize?: number
   inputTokens?: number

@@ -42,6 +42,7 @@ export function AIPopover({ isOpen, onClose }: AIPopoverProps) {
   // 引擎选项
   const engineOptions = useMemo(() => [
     { id: 'claude-code' as EngineId, name: 'Claude Code' },
+    { id: 'codex' as EngineId, name: 'OpenAI Codex' },
   ], [])
 
   const handleEngineSelect = useCallback(async (engineId: EngineId) => {

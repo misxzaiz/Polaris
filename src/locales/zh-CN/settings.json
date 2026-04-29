@@ -31,6 +31,10 @@
     "claudeCode": {
       "name": "Claude Code",
       "description": "Anthropic 官方 CLI 工具"
+    },
+    "codex": {
+      "name": "OpenAI Codex",
+      "description": "OpenAI Codex CLI — 全部操作权限"
     }
   },
   "claudeCode": {

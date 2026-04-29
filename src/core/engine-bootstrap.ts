@@ -7,6 +7,7 @@
 
 import { getEngineRegistry, registerEngine } from '../ai-runtime'
 import { ClaudeCodeEngine } from '../engines/claude-code'
+import { CodexEngine } from '../engines/codex'
 import { createLogger } from '../utils/logger'
 
 const log = createLogger('EngineBootstrap')
@@ -14,7 +15,7 @@ const log = createLogger('EngineBootstrap')
 /**
  * 已注册的 Engine ID 列表（传统引擎）
  */
-export const REGISTERED_ENGINE_IDS = ['claude-code'] as const
+export const REGISTERED_ENGINE_IDS = ['claude-code', 'codex'] as const
 
 /**
  * Engine 类型
@@ -31,16 +32,18 @@ export async function bootstrapEngines(
 ): Promise<void> {
   const registry = getEngineRegistry()
 
-  // 注册默认引擎
-  if (defaultEngineId === 'claude-code') {
-    const claudeEngine = new ClaudeCodeEngine()
-    registerEngine(claudeEngine, { asDefault: true })
-  }
+  // 注册 Claude Code 引擎
+  const claudeEngine = new ClaudeCodeEngine()
+  registerEngine(claudeEngine, { asDefault: defaultEngineId === 'claude-code' })
+
+  // 注册 Codex 引擎
+  const codexEngine = new CodexEngine()
+  registerEngine(codexEngine, { asDefault: defaultEngineId === 'codex' })
 
   // 初始化已注册的引擎
   await registry.initializeAll()
 
-  log.info('Initialized default engine', { engineId: defaultEngineId })
+  log.info('Initialized engines', { defaultEngineId })
 }
 
 /**
@@ -62,6 +65,10 @@ export async function registerEngineLazy(
     const claudeEngine = new ClaudeCodeEngine()
     registerEngine(claudeEngine)
     await claudeEngine.initialize()
+  } else if (engineId === 'codex') {
+    const codexEngine = new CodexEngine()
+    registerEngine(codexEngine)
+    await codexEngine.initialize()
   }
 
   log.info('Lazy registered engine', { engineId })

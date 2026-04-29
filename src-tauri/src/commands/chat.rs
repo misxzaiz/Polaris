@@ -760,6 +760,10 @@ pub async fn list_sessions(
             let provider = ClaudeHistoryProvider::new(config);
             provider.list_sessions(work_dir.as_deref(), pagination)
         }
+        "codex" | "openai-codex" => {
+            // Codex 会话历史暂未实现，返回空列表
+            Ok(PagedResult::empty(pagination.page, pagination.page_size))
+        }
         _ => Err(AppError::ValidationError(format!("不支持的引擎: {}", engine_id))),
     }
 }
@@ -787,6 +791,9 @@ pub async fn get_session_history(
             let provider = ClaudeHistoryProvider::new(config);
             provider.get_session_history(&session_id, pagination)
         }
+        "codex" | "openai-codex" => {
+            Ok(PagedResult::empty(pagination.page, pagination.page_size))
+        }
         _ => Err(AppError::ValidationError(format!("不支持的引擎: {}", engine_id))),
     }
 }
@@ -809,6 +816,10 @@ pub async fn delete_session(
         "claude" | "claude-code" => {
             let provider = ClaudeHistoryProvider::new(config);
             provider.delete_session(&session_id)
+        }
+        "codex" | "openai-codex" => {
+            // Codex 会话删除暂未实现
+            Ok(())
         }
         _ => Err(AppError::ValidationError(format!("不支持的引擎: {}", engine_id))),
     }

@@ -22,6 +22,7 @@ interface AIEngineTabProps {
 // 固定的传统引擎选项
 const FIXED_ENGINE_OPTIONS: { id: EngineId; nameKey: string; descKey: string }[] = [
   { id: 'claude-code', nameKey: 'engines.claudeCode.name', descKey: 'engines.claudeCode.description' },
+  { id: 'codex', nameKey: 'engines.codex.name', descKey: 'engines.codex.description' },
 ];
 
 export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProps) {

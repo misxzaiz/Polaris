@@ -10,6 +10,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { historyService } from '../../services/historyService'
 import type { UnifiedHistoryItem, HistoryScope } from '../../services/historyService'
+import type { EngineId } from '../../types'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
 import { sessionStoreManager } from '../../stores/conversationStore/sessionStoreManager'
 import { useViewStore, useToastStore } from '../../stores/index'
@@ -46,7 +47,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [restoring, setRestoring] = useState<string | null>(null)
-  const [filter, setFilter] = useState<'all' | 'claude-code'>('all')
+  const [filter, setFilter] = useState<'all' | EngineId>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [forkTarget, setForkTarget] = useState<UnifiedHistoryItem | null>(null)
@@ -273,7 +274,15 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
   }
 
   // 获取引擎信息
-  const getEngineInfo = (_engineId: 'claude-code', source: string) => {
+  const getEngineInfo = (engineId: EngineId, source: string) => {
+    if (engineId === 'codex') {
+      return {
+        name: 'OpenAI Codex',
+        color: 'text-green-500',
+        bgColor: 'bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-300',
+        icon: HardDrive,
+      }
+    }
     if (source === 'claude-code-native') {
       return {
         name: 'Claude Code',

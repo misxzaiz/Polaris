@@ -31,6 +31,10 @@
     "claudeCode": {
       "name": "Claude Code",
       "description": "Official Anthropic CLI tool"
+    },
+    "codex": {
+      "name": "OpenAI Codex",
+      "description": "OpenAI Codex CLI — full permissions"
     }
   },
   "claudeCode": {

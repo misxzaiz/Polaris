@@ -1,0 +1,518 @@
+use std::io::{BufRead, BufReader};
+use std::path::Path;
+use std::process::{Child, Command, Stdio};
+
+use super::codex_parser::{codex_event_to_ai_events, parse_codex_line, CodexEvent};
+use crate::ai::session::SessionManager;
+use crate::ai::traits::{AIEngine, EngineId, SessionOptions};
+use crate::error::{AppError, Result};
+use crate::models::config::Config;
+use crate::models::AIEvent;
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+use crate::utils::CREATE_NO_WINDOW;
+
+/// OpenAI Codex CLI 引擎
+pub struct CodexEngine {
+    /// 配置
+    config: Config,
+    /// 会话管理器
+    sessions: SessionManager,
+    /// CLI 路径缓存
+    cli_path: Option<String>,
+}
+
+impl CodexEngine {
+    /// 创建新的 Codex 引擎
+    pub fn new(config: Config) -> Self {
+        Self {
+            config,
+            sessions: SessionManager::new(),
+            cli_path: None,
+        }
+    }
+
+    /// 获取 Codex CLI 路径
+    fn get_cli_path(&mut self) -> Result<String> {
+        if let Some(ref path) = self.cli_path {
+            return Ok(path.clone());
+        }
+
+        // 尝试从环境变量获取
+        if let Ok(path) = std::env::var("CODEX_PATH") {
+            if !path.is_empty() {
+                self.cli_path = Some(path.clone());
+                return Ok(path);
+            }
+        }
+
+        // 尝试从 ~/.codex/config.toml 读取
+        if let Some(config_path) = dirs::home_dir().map(|h| h.join(".codex").join("config.toml")) {
+            if config_path.exists() {
+                tracing::info!("[CodexEngine] 检测到 codex config: {:?}", config_path);
+            }
+        }
+
+        // 默认使用 PATH 中的 codex
+        let default_path = "codex".to_string();
+        self.cli_path = Some(default_path.clone());
+        Ok(default_path)
+    }
+
+    /// 检查 Codex CLI 是否可用
+    fn check_available(&mut self) -> bool {
+        let cli_path = match self.get_cli_path() {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::error!("[CodexEngine] 获取 CLI 路径失败: {}", e);
+                return false;
+            }
+        };
+
+        // 检查路径是否存在（如果是绝对路径）
+        if Path::new(&cli_path).exists() {
+            return true;
+        }
+
+        // 尝试运行 codex --version
+        match Command::new(&cli_path)
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+        {
+            Ok(status) => status.success(),
+            Err(e) => {
+                tracing::error!("[CodexEngine] 检查 codex 可用性失败: {}", e);
+                false
+            }
+        }
+    }
+
+    /// 构建命令
+    fn build_command(
+        &self,
+        message: &str,
+        session_id: Option<&str>,
+        work_dir: Option<&str>,
+        model: Option<&str>,
+    ) -> Result<Command> {
+        let cli_path = self.cli_path.as_ref()
+            .ok_or_else(|| AppError::ProcessError("CLI 路径未初始化".to_string()))?;
+
+        // Windows .cmd 需要用 cmd /c 执行
+        #[cfg(windows)]
+        let mut cmd = {
+            if cli_path.ends_with(".cmd") || cli_path.ends_with(".bat") {
+                let mut c = Command::new("cmd");
+                c.arg("/c").arg(cli_path);
+                c
+            } else if cli_path.ends_with(".js") {
+                // .js 文件用 node 执行
+                let mut c = Command::new("node");
+                c.arg(cli_path);
+                c
+            } else {
+                Command::new(cli_path)
+            }
+        };
+
+        #[cfg(not(windows))]
+        let mut cmd = Command::new(cli_path);
+
+        // 如果是续接会话，使用 resume 子命令
+        if let Some(sid) = session_id {
+            cmd.arg("exec").arg("resume").arg(sid);
+        } else {
+            cmd.arg("exec");
+        }
+
+        // JSON 输出模式
+        cmd.arg("--json");
+
+        // 跳过 git 仓库检查（允许在非 git 目录中使用）
+        cmd.arg("--skip-git-repo-check");
+
+        // 全部操作权限：绕过沙箱和审批
+        cmd.arg("--dangerously-bypass-approvals-and-sandbox");
+
+        // 工作目录
+        if let Some(dir) = work_dir {
+            if !dir.is_empty() {
+                cmd.arg("-C").arg(dir);
+            }
+        } else if let Some(ref work_dir) = self.config.work_dir {
+            cmd.arg("-C").arg(work_dir);
+        }
+
+        // 模型选择
+        if let Some(m) = model {
+            if !m.is_empty() {
+                cmd.arg("--model").arg(m);
+            }
+        }
+
+        // 消息作为最后一个参数
+        cmd.arg(message);
+
+        Ok(cmd)
+    }
+
+    /// 配置命令的通用选项
+    fn configure_command(&self, cmd: &mut Command, work_dir: Option<&str>) {
+        cmd.stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+
+        // 设置工作目录（current_dir 用于进程 cwd，-C 用于 codex 内部）
+        if let Some(dir) = work_dir {
+            cmd.current_dir(dir);
+        } else if let Some(ref work_dir) = self.config.work_dir {
+            cmd.current_dir(work_dir);
+        }
+
+        // 设置 UTF-8 环境
+        cmd.env("LANG", "zh_CN.UTF-8");
+        cmd.env("LC_ALL", "zh_CN.UTF-8");
+
+        #[cfg(windows)]
+        {
+            cmd.env("CHCP", "65001");
+        }
+    }
+
+    /// 格式化命令为可复制的字符串（用于日志输出）
+    fn format_command_for_log(cmd: &Command) -> String {
+        let program = cmd.get_program().to_string_lossy().to_string();
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| {
+                let s = a.to_string_lossy();
+                if s.contains(' ') || s.contains('"') || s.contains('\\') {
+                    format!("\"{}\"", s.replace('\\', "\\\\"))
+                } else {
+                    s.to_string()
+                }
+            })
+            .collect();
+        format!("{} {}", program, args.join(" "))
+    }
+
+    /// 启动后台线程读取 Codex JSONL 事件
+    fn spawn_event_reader(
+        &self,
+        child: Child,
+        temp_id: String,
+        pid: u32,
+        options: SessionOptions,
+    ) {
+        let sessions = self.sessions.shared();
+        let event_callback = options.event_callback.clone();
+        let on_complete = options.on_complete.clone();
+        let on_error = options.on_error.clone();
+        let on_session_id_update = options.on_session_id_update.clone();
+        let current_session_id = temp_id.clone();
+
+        std::thread::spawn(move || {
+            let stdout = match child.stdout {
+                Some(s) => s,
+                None => {
+                    if let Some(ref cb) = on_error {
+                        cb("无法获取进程输出流".to_string());
+                    }
+                    return;
+                }
+            };
+
+            let stderr = match child.stderr {
+                Some(s) => s,
+                None => {
+                    if let Some(ref cb) = on_error {
+                        cb("无法获取进程错误流".to_string());
+                    }
+                    return;
+                }
+            };
+
+            // 读取 stderr（用于错误诊断和 session ID 发现）
+            let stderr_sessions = sessions.clone();
+            let stderr_temp_id = temp_id.clone();
+            let stderr_pid = pid;
+            let _stderr_on_error = on_error.clone();
+            let stderr_on_session_id_update = on_session_id_update.clone();
+            std::thread::spawn(move || {
+                let reader = BufReader::new(stderr);
+                for line in reader.lines().map_while(|r| r.ok()) {
+                    tracing::warn!("[CodexEngine] stderr: {}", line);
+
+                    // 尝试从 stderr 中提取 session ID（某些版本的 codex 会在 stderr 输出）
+                    if let Some(captures) = extract_session_id_from_stderr(&line) {
+                        tracing::info!("[CodexEngine] 从 stderr 发现 session_id: {}", captures);
+                        SessionManager::update_session_id_shared(
+                            &stderr_sessions,
+                            &stderr_temp_id,
+                            &captures,
+                            stderr_pid,
+                            "codex",
+                            None,
+                        );
+                        if let Some(ref cb) = stderr_on_session_id_update {
+                            cb(captures);
+                        }
+                    }
+                }
+            });
+
+            // 读取 stdout JSONL
+            let reader = BufReader::new(stdout);
+            let mut received_session_end = false;
+            let mut real_session_id = current_session_id.clone();
+
+            for line in reader.lines() {
+                let line = match line {
+                    Ok(l) => l,
+                    Err(_) => break,
+                };
+
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+
+                // 解析 Codex JSONL 事件
+                if let Some(codex_event) = parse_codex_line(trimmed) {
+                    // 处理 thread.started — 更新 session ID 映射
+                    if let CodexEvent::ThreadStarted { ref thread_id } = codex_event {
+                        real_session_id = thread_id.clone();
+                        SessionManager::update_session_id_shared(
+                            &sessions,
+                            &temp_id,
+                            thread_id,
+                            pid,
+                            "codex",
+                            None,
+                        );
+                        tracing::info!(
+                            "[CodexEngine] session_id 更新: {} -> {}",
+                            temp_id,
+                            thread_id
+                        );
+
+                        // 通知外部 session_id 已更新
+                        if let Some(ref cb) = on_session_id_update {
+                            cb(thread_id.clone());
+                        }
+
+                        // 发送 session_start 事件（携带真实 session ID）
+                        event_callback(AIEvent::session_start(thread_id));
+                    }
+
+                    // 检查会话结束
+                    if matches!(codex_event, CodexEvent::TurnCompleted { .. }) {
+                        received_session_end = true;
+                    }
+
+                    // 转换为 AIEvent 并回调
+                    let sid = if real_session_id != current_session_id {
+                        &real_session_id
+                    } else {
+                        &current_session_id
+                    };
+                    for ai_event in codex_event_to_ai_events(codex_event, sid) {
+                        event_callback(ai_event);
+                    }
+                }
+            }
+
+            // 如果没有收到 session_end，发送一个
+            if !received_session_end {
+                event_callback(AIEvent::session_end(&current_session_id));
+            }
+
+            // 完成回调
+            if let Some(cb) = on_complete {
+                cb(0);
+            }
+        });
+    }
+}
+
+/// 从 stderr 中提取 session ID
+fn extract_session_id_from_stderr(line: &str) -> Option<String> {
+    // 匹配格式: "session[-_]id[:\s]+<uuid>"
+    let re = regex::Regex::new(r"(?i)session[-_]?id[:\s]+([a-zA-Z0-9-]+)").ok()?;
+    re.captures(line)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str().to_string())
+}
+
+impl AIEngine for CodexEngine {
+    fn id(&self) -> EngineId {
+        EngineId::Codex
+    }
+
+    fn name(&self) -> &'static str {
+        "OpenAI Codex"
+    }
+
+    fn description(&self) -> &'static str {
+        "OpenAI Codex CLI - 全部操作权限"
+    }
+
+    fn is_available(&self) -> bool {
+        true // 实际检查在 start_session 时进行
+    }
+
+    fn start_session(
+        &mut self,
+        message: &str,
+        options: SessionOptions,
+    ) -> Result<String> {
+        tracing::info!("[CodexEngine] 启动会话，消息长度: {}", message.len());
+        tracing::info!("[CodexEngine] 工作目录: {:?}", options.work_dir);
+
+        // 检查 CLI 可用性
+        if !self.check_available() {
+            return Err(AppError::ProcessError(
+                "Codex CLI 不可用。请确保已安装: npm install -g @openai/codex".to_string(),
+            ));
+        }
+
+        let work_dir = options
+            .work_dir
+            .clone()
+            .or_else(|| {
+                self.config
+                    .work_dir
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().to_string())
+            });
+
+        // 构建命令
+        let mut cmd = self.build_command(
+            message,
+            None, // 新会话无 session_id
+            work_dir.as_deref(),
+            options.model.as_deref(),
+        )?;
+        self.configure_command(&mut cmd, work_dir.as_deref());
+
+        // 打印命令（调试用）
+        let cmd_str = Self::format_command_for_log(&cmd);
+        tracing::info!("[CodexEngine] 执行命令: {}", cmd_str);
+        eprintln!("\n[CodexEngine] 执行命令:\n{}\n", cmd_str);
+
+        // 启动进程
+        let child = cmd
+            .spawn()
+            .map_err(|e| AppError::ProcessError(format!("启动 Codex 进程失败: {}", e)))?;
+
+        let pid = child.id();
+        let temp_id = uuid::Uuid::new_v4().to_string();
+
+        tracing::info!("[CodexEngine] 进程启动，PID: {}, 临时 ID: {}", pid, temp_id);
+
+        // 启动事件读取
+        self.spawn_event_reader(child, temp_id.clone(), pid, options);
+
+        // 注册会话
+        self.sessions.register(temp_id.clone(), pid, "codex".to_string())?;
+
+        Ok(temp_id)
+    }
+
+    fn continue_session(
+        &mut self,
+        session_id: &str,
+        message: &str,
+        options: SessionOptions,
+    ) -> Result<()> {
+        tracing::info!(
+            "[CodexEngine] 继续会话: {}, 消息长度: {}",
+            session_id,
+            message.len()
+        );
+
+        // 检查 CLI 可用性
+        if !self.check_available() {
+            return Err(AppError::ProcessError("Codex CLI 不可用".to_string()));
+        }
+
+        // 获取会话信息，找到真实的 session_id
+        let real_session_id = if let Some(info) = self.sessions.get(session_id) {
+            tracing::info!(
+                "[CodexEngine] 找到会话，真实 ID: {}, PID: {}",
+                info.id,
+                info.pid
+            );
+            // 终止旧进程
+            let _ = self.sessions.kill_process(session_id);
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            info.id.clone()
+        } else {
+            tracing::warn!("[CodexEngine] 未找到会话信息，使用传入的 session_id");
+            session_id.to_string()
+        };
+
+        let work_dir = options.work_dir.clone().or_else(|| {
+            self.config
+                .work_dir
+                .as_ref()
+                .map(|p| p.to_string_lossy().to_string())
+        });
+
+        // 构建命令（带 resume）
+        let mut cmd = self.build_command(
+            message,
+            Some(&real_session_id),
+            work_dir.as_deref(),
+            options.model.as_deref(),
+        )?;
+        self.configure_command(&mut cmd, work_dir.as_deref());
+
+        let cmd_str = Self::format_command_for_log(&cmd);
+        tracing::info!("[CodexEngine] 执行命令: {}", cmd_str);
+        eprintln!("\n[CodexEngine] 执行命令:\n{}\n", cmd_str);
+
+        // 启动进程
+        let child = cmd
+            .spawn()
+            .map_err(|e| AppError::ProcessError(format!("继续 Codex 会话失败: {}", e)))?;
+
+        let pid = child.id();
+        tracing::info!("[CodexEngine] 进程启动，PID: {}", pid);
+
+        // 启动事件读取
+        self.spawn_event_reader(child, real_session_id.clone(), pid, options);
+
+        // 更新会话
+        self.sessions
+            .register(real_session_id, pid, "codex".to_string())?;
+
+        Ok(())
+    }
+
+    fn interrupt(&mut self, session_id: &str) -> Result<()> {
+        tracing::info!("[CodexEngine] 中断会话: {}", session_id);
+
+        if self.sessions.kill_process(session_id)? {
+            tracing::info!("[CodexEngine] 会话已中断: {}", session_id);
+            Ok(())
+        } else {
+            Err(AppError::ProcessError(format!(
+                "会话不存在: {}",
+                session_id
+            )))
+        }
+    }
+
+    fn active_session_count(&self) -> usize {
+        self.sessions.count()
+    }
+}
