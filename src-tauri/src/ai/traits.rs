@@ -91,6 +91,8 @@ pub struct SessionOptions {
     /// Settings overlay 文件路径（--settings 参数值）
     /// 由 model_profile_service 根据当前激活的 Profile 生成
     pub settings_overlay_path: Option<String>,
+    /// Codex CLI 配置参数（-c key=value），用于动态注入 MCP 等配置
+    pub codex_config_args: Vec<String>,
     /// 环境变量覆盖（ANTHROPIC_BASE_URL / AUTH_TOKEN / MODEL 等）
     /// 用于将请求路由到第三方 Anthropic 兼容端点
     pub env_overrides: HashMap<String, String>,
@@ -137,6 +139,7 @@ impl SessionOptions {
             image_attachments: Vec::new(),
             fork_session_id: None,
             settings_overlay_path: None,
+            codex_config_args: Vec::new(),
             env_overrides: HashMap::new(),
         }
     }
@@ -240,6 +243,12 @@ impl SessionOptions {
         self
     }
 
+    /// 设置 Codex CLI 配置参数
+    pub fn with_codex_config_args(mut self, args: Vec<String>) -> Self {
+        self.codex_config_args = args;
+        self
+    }
+
     /// 设置环境变量覆盖
     pub fn with_env_overrides(mut self, overrides: HashMap<String, String>) -> Self {
         self.env_overrides = overrides;
@@ -271,11 +280,7 @@ pub trait AIEngine: Send + Sync {
     /// 启动新会话
     ///
     /// 返回临时会话 ID，引擎可能会在后续事件中提供真实的会话 ID
-    fn start_session(
-        &mut self,
-        message: &str,
-        options: SessionOptions,
-    ) -> Result<String>;
+    fn start_session(&mut self, message: &str, options: SessionOptions) -> Result<String>;
 
     /// 继续已有会话
     fn continue_session(

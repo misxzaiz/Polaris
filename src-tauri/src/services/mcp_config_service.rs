@@ -20,18 +20,42 @@ fn mcp_exe_path(prefix: &str) -> String {
     format!("{}{}", prefix, EXE_SUFFIX)
 }
 
-fn todo_bundle_path() -> String { mcp_exe_path("bin/polaris-todo-mcp") }
-fn todo_fallback_path() -> String { mcp_exe_path("polaris-todo-mcp") }
-fn todo_dev_path() -> String { mcp_exe_path("src-tauri/target/debug/polaris-todo-mcp") }
-fn requirements_bundle_path() -> String { mcp_exe_path("bin/polaris-requirements-mcp") }
-fn requirements_fallback_path() -> String { mcp_exe_path("polaris-requirements-mcp") }
-fn requirements_dev_path() -> String { mcp_exe_path("src-tauri/target/debug/polaris-requirements-mcp") }
-fn scheduler_bundle_path() -> String { mcp_exe_path("bin/polaris-scheduler-mcp") }
-fn scheduler_fallback_path() -> String { mcp_exe_path("polaris-scheduler-mcp") }
-fn scheduler_dev_path() -> String { mcp_exe_path("src-tauri/target/debug/polaris-scheduler-mcp") }
-fn knowledge_bundle_path() -> String { mcp_exe_path("bin/polaris-knowledge-mcp") }
-fn knowledge_fallback_path() -> String { mcp_exe_path("polaris-knowledge-mcp") }
-fn knowledge_dev_path() -> String { mcp_exe_path("src-tauri/target/debug/polaris-knowledge-mcp") }
+fn todo_bundle_path() -> String {
+    mcp_exe_path("bin/polaris-todo-mcp")
+}
+fn todo_fallback_path() -> String {
+    mcp_exe_path("polaris-todo-mcp")
+}
+fn todo_dev_path() -> String {
+    mcp_exe_path("src-tauri/target/debug/polaris-todo-mcp")
+}
+fn requirements_bundle_path() -> String {
+    mcp_exe_path("bin/polaris-requirements-mcp")
+}
+fn requirements_fallback_path() -> String {
+    mcp_exe_path("polaris-requirements-mcp")
+}
+fn requirements_dev_path() -> String {
+    mcp_exe_path("src-tauri/target/debug/polaris-requirements-mcp")
+}
+fn scheduler_bundle_path() -> String {
+    mcp_exe_path("bin/polaris-scheduler-mcp")
+}
+fn scheduler_fallback_path() -> String {
+    mcp_exe_path("polaris-scheduler-mcp")
+}
+fn scheduler_dev_path() -> String {
+    mcp_exe_path("src-tauri/target/debug/polaris-scheduler-mcp")
+}
+fn knowledge_bundle_path() -> String {
+    mcp_exe_path("bin/polaris-knowledge-mcp")
+}
+fn knowledge_fallback_path() -> String {
+    mcp_exe_path("polaris-knowledge-mcp")
+}
+fn knowledge_dev_path() -> String {
+    mcp_exe_path("src-tauri/target/debug/polaris-knowledge-mcp")
+}
 
 #[derive(Debug, Clone, serde::Serialize)]
 struct ClaudeMcpServerConfig {
@@ -90,14 +114,21 @@ impl WorkspaceMcpConfigService {
             });
         }
 
-        Self { binaries, config_dir }
+        Self {
+            binaries,
+            config_dir,
+        }
     }
 
     pub fn executable_path(&self) -> &Path {
         &self.binaries[0].executable_path
     }
 
-    pub fn from_app_paths(config_dir: PathBuf, resource_dir: Option<PathBuf>, app_root: PathBuf) -> Result<Self> {
+    pub fn from_app_paths(
+        config_dir: PathBuf,
+        resource_dir: Option<PathBuf>,
+        app_root: PathBuf,
+    ) -> Result<Self> {
         let todo_executable_path = resolve_mcp_executable_path(
             resource_dir.clone(),
             app_root.clone(),
@@ -150,16 +181,17 @@ impl WorkspaceMcpConfigService {
     pub fn prepare_workspace_config(&self, workspace_path: &str) -> Result<PathBuf> {
         let normalized_workspace = workspace_path.trim();
         if normalized_workspace.is_empty() {
-            return Err(AppError::ValidationError("workspace_path 不能为空".to_string()));
+            return Err(AppError::ValidationError(
+                "workspace_path 不能为空".to_string(),
+            ));
         }
 
         let workspace_dir = PathBuf::from(normalized_workspace);
         let config_path = workspace_dir.join(Path::new(MCP_CONFIG_RELATIVE_PATH));
 
         if let Some(parent) = config_path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                AppError::ProcessError(format!("创建 MCP 配置目录失败: {}", e))
-            })?;
+            std::fs::create_dir_all(parent)
+                .map_err(|e| AppError::ProcessError(format!("创建 MCP 配置目录失败: {}", e)))?;
         }
 
         let mut servers = std::collections::BTreeMap::new();
@@ -203,6 +235,54 @@ impl WorkspaceMcpConfigService {
         write_json_atomically(&config_path, &config)?;
         Ok(config_path)
     }
+
+    pub fn prepare_workspace_codex_config_args(&self, workspace_path: &str) -> Result<Vec<String>> {
+        let normalized_workspace = workspace_path.trim();
+        if normalized_workspace.is_empty() {
+            return Err(AppError::ValidationError(
+                "workspace_path 不能为空".to_string(),
+            ));
+        }
+
+        let mut args = Vec::new();
+        for binary in &self.binaries {
+            if !binary.executable_path.exists() {
+                return Err(AppError::ProcessError(format!(
+                    "{} 可执行文件不存在: {}",
+                    binary.server_name,
+                    binary.executable_path.display()
+                )));
+            }
+
+            let server_args = if binary.server_name == TODO_MCP_SERVER_NAME
+                || binary.server_name == REQUIREMENTS_MCP_SERVER_NAME
+                || binary.server_name == SCHEDULER_MCP_SERVER_NAME
+                || binary.server_name == KNOWLEDGE_MCP_SERVER_NAME
+            {
+                vec![
+                    strip_unc_prefix(&self.config_dir.to_string_lossy()),
+                    normalized_workspace.to_string(),
+                ]
+            } else {
+                vec![normalized_workspace.to_string()]
+            };
+
+            args.push("-c".to_string());
+            args.push(format!(
+                "mcp_servers.{}.command={}",
+                binary.server_name,
+                toml_string(&strip_unc_prefix(&binary.executable_path.to_string_lossy()))?
+            ));
+            args.push("-c".to_string());
+            args.push(format!(
+                "mcp_servers.{}.args={}",
+                binary.server_name,
+                toml_string_array(&server_args)?
+            ));
+        }
+
+        Ok(args)
+    }
 }
 
 /// Strip the Windows UNC extended-length path prefix (`\\?\`) from a path string.
@@ -239,7 +319,11 @@ fn resolve_optional_mcp_executable_path(
     ) {
         Ok(path) => Some(path),
         Err(error) => {
-            tracing::warn!("[MCP] 跳过可选 MCP server {}: {}", bin_name, error.to_message());
+            tracing::warn!(
+                "[MCP] 跳过可选 MCP server {}: {}",
+                bin_name,
+                error.to_message()
+            );
             None
         }
     }
@@ -269,7 +353,9 @@ fn resolve_mcp_executable_path(
         tracing::warn!(
             "[MCP] 未在资源目录找到 {} 可执行文件，已检查: '{}' 和 '{}'，回退到开发目录",
             bin_name,
-            resource_dir.join(Path::new(bundled_relative_path)).display(),
+            resource_dir
+                .join(Path::new(bundled_relative_path))
+                .display(),
             resource_dir
                 .join(Path::new(bundled_fallback_relative_path))
                 .display()
@@ -314,11 +400,17 @@ fn resolve_mcp_executable_path(
         bin_name,
         resource_dir
             .as_ref()
-            .map(|dir| dir.join(Path::new(bundled_relative_path)).display().to_string())
+            .map(|dir| dir
+                .join(Path::new(bundled_relative_path))
+                .display()
+                .to_string())
             .unwrap_or_else(|| "<无资源目录>".to_string()),
         resource_dir
             .as_ref()
-            .map(|dir| dir.join(Path::new(bundled_fallback_relative_path)).display().to_string())
+            .map(|dir| dir
+                .join(Path::new(bundled_fallback_relative_path))
+                .display()
+                .to_string())
             .unwrap_or_else(|| "<无资源目录>".to_string()),
         dev_path.display(),
         release_path.display()
@@ -333,6 +425,14 @@ fn write_json_atomically<T: serde::Serialize>(path: &Path, value: &T) -> Result<
     Ok(())
 }
 
+fn toml_string(value: &str) -> Result<String> {
+    serde_json::to_string(value).map_err(AppError::from)
+}
+
+fn toml_string_array(values: &[String]) -> Result<String> {
+    serde_json::to_string(values).map_err(AppError::from)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -344,14 +444,23 @@ mod tests {
 
     #[test]
     fn prefers_bundled_resource_path_when_present() {
-        let temp_root = std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
+        let temp_root =
+            std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
         let app_root = temp_root.join("app-root");
         let resource_dir = temp_root.join("resources");
 
         std::fs::create_dir_all(app_root.join("src-tauri/target/debug")).unwrap();
         std::fs::create_dir_all(resource_dir.join("bin")).unwrap();
-        std::fs::write(app_root.join(fixture_exe("src-tauri/target/debug/polaris-todo-mcp")), "dev bin").unwrap();
-        std::fs::write(resource_dir.join(fixture_exe("bin/polaris-todo-mcp")), "bundled bin").unwrap();
+        std::fs::write(
+            app_root.join(fixture_exe("src-tauri/target/debug/polaris-todo-mcp")),
+            "dev bin",
+        )
+        .unwrap();
+        std::fs::write(
+            resource_dir.join(fixture_exe("bin/polaris-todo-mcp")),
+            "bundled bin",
+        )
+        .unwrap();
 
         let path = resolve_mcp_executable_path(
             Some(resource_dir.clone()),
@@ -361,7 +470,8 @@ mod tests {
             &todo_fallback_path(),
             &todo_dev_path(),
             "POLARIS_TODO_MCP_PATH",
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(path, resource_dir.join(fixture_exe("bin/polaris-todo-mcp")));
 
         let _ = std::fs::remove_dir_all(&temp_root);
@@ -369,14 +479,23 @@ mod tests {
 
     #[test]
     fn prefers_root_level_bundled_path_when_present() {
-        let temp_root = std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
+        let temp_root =
+            std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
         let app_root = temp_root.join("app-root");
         let resource_dir = temp_root.join("resources");
 
         std::fs::create_dir_all(app_root.join("src-tauri/target/debug")).unwrap();
         std::fs::create_dir_all(&resource_dir).unwrap();
-        std::fs::write(app_root.join(fixture_exe("src-tauri/target/debug/polaris-todo-mcp")), "dev bin").unwrap();
-        std::fs::write(resource_dir.join(fixture_exe("polaris-todo-mcp")), "bundled root bin").unwrap();
+        std::fs::write(
+            app_root.join(fixture_exe("src-tauri/target/debug/polaris-todo-mcp")),
+            "dev bin",
+        )
+        .unwrap();
+        std::fs::write(
+            resource_dir.join(fixture_exe("polaris-todo-mcp")),
+            "bundled root bin",
+        )
+        .unwrap();
 
         let path = resolve_mcp_executable_path(
             Some(resource_dir.clone()),
@@ -386,7 +505,8 @@ mod tests {
             &todo_fallback_path(),
             &todo_dev_path(),
             "POLARIS_TODO_MCP_PATH",
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(path, resource_dir.join(fixture_exe("polaris-todo-mcp")));
 
         let _ = std::fs::remove_dir_all(&temp_root);
@@ -394,13 +514,18 @@ mod tests {
 
     #[test]
     fn falls_back_to_dev_path_when_resource_missing() {
-        let temp_root = std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
+        let temp_root =
+            std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
         let app_root = temp_root.join("app-root");
         let resource_dir = temp_root.join("resources");
 
         std::fs::create_dir_all(app_root.join("src-tauri/target/debug")).unwrap();
         std::fs::create_dir_all(&resource_dir).unwrap();
-        std::fs::write(app_root.join(fixture_exe("src-tauri/target/debug/polaris-todo-mcp")), "dev bin").unwrap();
+        std::fs::write(
+            app_root.join(fixture_exe("src-tauri/target/debug/polaris-todo-mcp")),
+            "dev bin",
+        )
+        .unwrap();
 
         let path = resolve_mcp_executable_path(
             Some(resource_dir),
@@ -410,22 +535,31 @@ mod tests {
             &todo_fallback_path(),
             &todo_dev_path(),
             "POLARIS_TODO_MCP_PATH",
-        ).unwrap();
-        assert_eq!(path, app_root.join(fixture_exe("src-tauri/target/debug/polaris-todo-mcp")));
+        )
+        .unwrap();
+        assert_eq!(
+            path,
+            app_root.join(fixture_exe("src-tauri/target/debug/polaris-todo-mcp"))
+        );
 
         let _ = std::fs::remove_dir_all(&temp_root);
     }
 
     #[test]
     fn falls_back_to_release_path_when_debug_missing() {
-        let temp_root = std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
+        let temp_root =
+            std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
         let app_root = temp_root.join("app-root");
         let resource_dir = temp_root.join("resources");
 
         // Only create release binary, no debug binary
         std::fs::create_dir_all(app_root.join("src-tauri/target/release")).unwrap();
         std::fs::create_dir_all(&resource_dir).unwrap();
-        std::fs::write(app_root.join(fixture_exe("src-tauri/target/release/polaris-todo-mcp")), "release bin").unwrap();
+        std::fs::write(
+            app_root.join(fixture_exe("src-tauri/target/release/polaris-todo-mcp")),
+            "release bin",
+        )
+        .unwrap();
 
         let path = resolve_mcp_executable_path(
             Some(resource_dir),
@@ -435,19 +569,25 @@ mod tests {
             &todo_fallback_path(),
             &todo_dev_path(),
             "POLARIS_TODO_MCP_PATH",
-        ).unwrap();
-        assert_eq!(path, app_root.join(fixture_exe("src-tauri/target/release/polaris-todo-mcp")));
+        )
+        .unwrap();
+        assert_eq!(
+            path,
+            app_root.join(fixture_exe("src-tauri/target/release/polaris-todo-mcp"))
+        );
 
         let _ = std::fs::remove_dir_all(&temp_root);
     }
 
     #[test]
     fn prepares_workspace_scoped_mcp_config() {
-        let temp_root = std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
+        let temp_root =
+            std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
         let workspace = temp_root.join("workspace-a");
         let config_dir = temp_root.join("config");
         let todo_executable_path = temp_root.join(fixture_exe("bin/polaris-todo-mcp"));
-        let requirements_executable_path = temp_root.join(fixture_exe("bin/polaris-requirements-mcp"));
+        let requirements_executable_path =
+            temp_root.join(fixture_exe("bin/polaris-requirements-mcp"));
         let scheduler_executable_path = temp_root.join(fixture_exe("bin/polaris-scheduler-mcp"));
         let knowledge_executable_path = temp_root.join(fixture_exe("bin/polaris-knowledge-mcp"));
 
@@ -466,7 +606,9 @@ mod tests {
             Some(scheduler_executable_path.clone()),
             Some(knowledge_executable_path.clone()),
         );
-        let config_path = service.prepare_workspace_config(workspace.to_string_lossy().as_ref()).unwrap();
+        let config_path = service
+            .prepare_workspace_config(workspace.to_string_lossy().as_ref())
+            .unwrap();
 
         assert_eq!(config_path, workspace.join(".polaris/claude/mcp.json"));
 
@@ -522,8 +664,60 @@ mod tests {
     }
 
     #[test]
+    fn prepares_workspace_codex_config_args() {
+        let temp_root =
+            std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
+        let workspace = temp_root.join("workspace-c");
+        let config_dir = temp_root.join("config");
+        let todo_executable_path = temp_root.join(fixture_exe("bin/polaris-todo-mcp"));
+        let requirements_executable_path =
+            temp_root.join(fixture_exe("bin/polaris-requirements-mcp"));
+        let scheduler_executable_path = temp_root.join(fixture_exe("bin/polaris-scheduler-mcp"));
+        let knowledge_executable_path = temp_root.join(fixture_exe("bin/polaris-knowledge-mcp"));
+
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::create_dir_all(todo_executable_path.parent().unwrap()).unwrap();
+        std::fs::write(&todo_executable_path, "todo bin").unwrap();
+        std::fs::write(&requirements_executable_path, "requirements bin").unwrap();
+        std::fs::write(&scheduler_executable_path, "scheduler bin").unwrap();
+        std::fs::write(&knowledge_executable_path, "knowledge bin").unwrap();
+
+        let service = WorkspaceMcpConfigService::new(
+            config_dir.clone(),
+            todo_executable_path.clone(),
+            Some(requirements_executable_path.clone()),
+            Some(scheduler_executable_path.clone()),
+            Some(knowledge_executable_path.clone()),
+        );
+
+        let args = service
+            .prepare_workspace_codex_config_args(workspace.to_string_lossy().as_ref())
+            .unwrap();
+
+        assert_eq!(args.len(), 16);
+        assert_eq!(args.iter().filter(|arg| arg.as_str() == "-c").count(), 8);
+
+        let joined = args.join("\n");
+        assert!(joined.contains("mcp_servers.polaris-todo.command="));
+        assert!(joined.contains("mcp_servers.polaris-requirements.command="));
+        assert!(joined.contains("mcp_servers.polaris-scheduler.command="));
+        assert!(joined.contains("mcp_servers.polaris-knowledge.command="));
+        assert!(joined.contains("mcp_servers.polaris-todo.args=["));
+        assert!(
+            joined.contains(&serde_json::to_string(config_dir.to_string_lossy().as_ref()).unwrap())
+        );
+        assert!(
+            joined.contains(&serde_json::to_string(workspace.to_string_lossy().as_ref()).unwrap())
+        );
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
     fn rewrites_existing_config_idempotently() {
-        let temp_root = std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
+        let temp_root =
+            std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
         let workspace = temp_root.join("workspace-b");
         let config_dir = temp_root.join("config");
         let executable_path = temp_root.join(fixture_exe("bin/polaris-todo-mcp"));
@@ -533,10 +727,20 @@ mod tests {
         std::fs::create_dir_all(executable_path.parent().unwrap()).unwrap();
         std::fs::write(&executable_path, "bin").unwrap();
 
-        let service = WorkspaceMcpConfigService::new(config_dir.clone(), executable_path.clone(), None, None, None);
-        let first = service.prepare_workspace_config(workspace.to_string_lossy().as_ref()).unwrap();
+        let service = WorkspaceMcpConfigService::new(
+            config_dir.clone(),
+            executable_path.clone(),
+            None,
+            None,
+            None,
+        );
+        let first = service
+            .prepare_workspace_config(workspace.to_string_lossy().as_ref())
+            .unwrap();
         let first_content = std::fs::read_to_string(&first).unwrap();
-        let second = service.prepare_workspace_config(workspace.to_string_lossy().as_ref()).unwrap();
+        let second = service
+            .prepare_workspace_config(workspace.to_string_lossy().as_ref())
+            .unwrap();
         let second_content = std::fs::read_to_string(&second).unwrap();
 
         assert_eq!(first, second);

@@ -3,12 +3,12 @@
  * 提供统一的 AI 聊天接口，使用 EngineRegistry 管理多种 AI 引擎。
  */
 
-use std::sync::Arc;
-use std::path::PathBuf;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use std::path::PathBuf;
+use std::sync::Arc;
 
-use crate::ai::{EngineId, Pagination, PagedResult, SessionOptions, ImageAttachment};
-use crate::ai::{SessionMeta, HistoryMessage, ClaudeHistoryProvider, SessionHistoryProvider};
+use crate::ai::{ClaudeHistoryProvider, HistoryMessage, SessionHistoryProvider, SessionMeta};
+use crate::ai::{EngineId, ImageAttachment, PagedResult, Pagination, SessionOptions};
 use crate::error::{AppError, Result};
 use crate::models::AIEvent;
 use crate::services::mcp_config_service::WorkspaceMcpConfigService;
@@ -16,7 +16,6 @@ use crate::services::mcp_config_service::WorkspaceMcpConfigService;
 use tauri::{Emitter, Manager, State, Window};
 #[cfg(feature = "tauri-app")]
 use tauri_plugin_notification::NotificationExt;
-
 
 // ============================================================================
 // 附件相关结构体
@@ -151,7 +150,10 @@ fn process_attachments(work_dir: &str, attachments: &[Attachment]) -> Result<Pro
                     // data URL 格式: "data:image/png;base64,<data>"
                     let parts: Vec<&str> = attachment.content.splitn(2, ",").collect();
                     if parts.len() != 2 {
-                        tracing::warn!("[process_attachments] 无法解析图片 data URL: {}", &attachment.content[..50.min(attachment.content.len())]);
+                        tracing::warn!(
+                            "[process_attachments] 无法解析图片 data URL: {}",
+                            &attachment.content[..50.min(attachment.content.len())]
+                        );
                         continue;
                     }
                     // 从 data URL 中提取 MIME 类型
@@ -165,13 +167,18 @@ fn process_attachments(work_dir: &str, attachments: &[Attachment]) -> Result<Pro
                     // 已经是纯 base64
                     (attachment.content.clone(), attachment.mime_type.clone())
                 } else {
-                    tracing::warn!("[process_attachments] 图片附件无内容: {}", attachment.file_name);
+                    tracing::warn!(
+                        "[process_attachments] 图片附件无内容: {}",
+                        attachment.file_name
+                    );
                     continue;
                 };
 
                 tracing::info!(
                     "[process_attachments] 收集图片: {} ({}), base64 长度: {}",
-                    attachment.file_name, media_type, raw_base64.len()
+                    attachment.file_name,
+                    media_type,
+                    raw_base64.len()
                 );
                 result.image_data.push(ImageData {
                     media_type,
@@ -189,7 +196,11 @@ fn process_attachments(work_dir: &str, attachments: &[Attachment]) -> Result<Pro
                             "📎 [文件: {}]\n```{}\n{}\n```",
                             attachment.file_name, ext, text
                         ));
-                        tracing::info!("[process_attachments] 嵌入文本文件: {} ({} bytes)", attachment.file_name, text.len());
+                        tracing::info!(
+                            "[process_attachments] 嵌入文本文件: {} ({} bytes)",
+                            attachment.file_name,
+                            text.len()
+                        );
                     } else {
                         // 大文件：保存到磁盘
                         let ext = attachment.file_name.rsplit('.').next().unwrap_or("txt");
@@ -199,21 +210,33 @@ fn process_attachments(work_dir: &str, attachments: &[Attachment]) -> Result<Pro
                         std::fs::write(&file_path, text.as_bytes())
                             .map_err(|e| AppError::ProcessError(format!("写入文件失败: {}", e)))?;
 
-                        tracing::info!("[process_attachments] 保存大文本文件: {:?} ({} bytes)", file_path, text.len());
-                        result.file_references.push(format!("文件 {} → .polaris/{}", attachment.file_name, file_name));
+                        tracing::info!(
+                            "[process_attachments] 保存大文本文件: {:?} ({} bytes)",
+                            file_path,
+                            text.len()
+                        );
+                        result.file_references.push(format!(
+                            "文件 {} → .polaris/{}",
+                            attachment.file_name, file_name
+                        ));
                         file_index += 1;
                     }
                 } else if !attachment.content.is_empty() {
                     // 有 base64 内容但没有 textContent（二进制文件或旧前端）
                     let base64_data = if attachment.content.starts_with("data:") {
                         let parts: Vec<&str> = attachment.content.splitn(2, ",").collect();
-                        if parts.len() == 2 { parts[1] } else { continue; }
+                        if parts.len() == 2 {
+                            parts[1]
+                        } else {
+                            continue;
+                        }
                     } else {
                         &attachment.content
                     };
 
-                    let decoded = BASE64_STANDARD.decode(base64_data)
-                        .map_err(|e| AppError::ProcessError(format!("解码文件 base64 失败: {}", e)))?;
+                    let decoded = BASE64_STANDARD.decode(base64_data).map_err(|e| {
+                        AppError::ProcessError(format!("解码文件 base64 失败: {}", e))
+                    })?;
 
                     // 尝试作为文本解码
                     if let Ok(text) = String::from_utf8(decoded.clone()) {
@@ -223,14 +246,22 @@ fn process_attachments(work_dir: &str, attachments: &[Attachment]) -> Result<Pro
                                 "📎 [文件: {}]\n```{}\n{}\n```",
                                 attachment.file_name, ext, text
                             ));
-                            tracing::info!("[process_attachments] 嵌入 base64 文本文件: {} ({} bytes)", attachment.file_name, text.len());
+                            tracing::info!(
+                                "[process_attachments] 嵌入 base64 文本文件: {} ({} bytes)",
+                                attachment.file_name,
+                                text.len()
+                            );
                         } else {
                             let ext = attachment.file_name.rsplit('.').next().unwrap_or("bin");
                             let file_name = format!("file_{}.{}", file_index, ext);
                             let file_path = polaris_dir.join(&file_name);
-                            std::fs::write(&file_path, &decoded)
-                                .map_err(|e| AppError::ProcessError(format!("写入文件失败: {}", e)))?;
-                            result.file_references.push(format!("文件 {} → .polaris/{}", attachment.file_name, file_name));
+                            std::fs::write(&file_path, &decoded).map_err(|e| {
+                                AppError::ProcessError(format!("写入文件失败: {}", e))
+                            })?;
+                            result.file_references.push(format!(
+                                "文件 {} → .polaris/{}",
+                                attachment.file_name, file_name
+                            ));
                             file_index += 1;
                         }
                     } else {
@@ -240,15 +271,24 @@ fn process_attachments(work_dir: &str, attachments: &[Attachment]) -> Result<Pro
                         let file_path = polaris_dir.join(&file_name);
                         std::fs::write(&file_path, &decoded)
                             .map_err(|e| AppError::ProcessError(format!("写入文件失败: {}", e)))?;
-                        result.file_references.push(format!("二进制文件 {} → .polaris/{}", attachment.file_name, file_name));
+                        result.file_references.push(format!(
+                            "二进制文件 {} → .polaris/{}",
+                            attachment.file_name, file_name
+                        ));
                         file_index += 1;
                     }
                 } else {
-                    tracing::warn!("[process_attachments] 文件附件无内容: {}", attachment.file_name);
+                    tracing::warn!(
+                        "[process_attachments] 文件附件无内容: {}",
+                        attachment.file_name
+                    );
                 }
             }
             _ => {
-                tracing::warn!("[process_attachments] 未知附件类型: {}", attachment.attachment_type);
+                tracing::warn!(
+                    "[process_attachments] 未知附件类型: {}",
+                    attachment.attachment_type
+                );
             }
         }
     }
@@ -290,7 +330,9 @@ fn build_message_with_attachments(message: &str, processed: &ProcessedAttachment
 
     // 文件引用（需要模型用 Read 工具查看）
     if !processed.file_references.is_empty() {
-        let refs: Vec<String> = processed.file_references.iter()
+        let refs: Vec<String> = processed
+            .file_references
+            .iter()
             .map(|r| format!("- {}", r))
             .collect();
         parts.push(format!(
@@ -320,19 +362,25 @@ pub struct ChatCallbacks {
     pub notify_complete: Arc<dyn Fn() + Send + Sync>,
 }
 
-fn prepare_mcp_config_path_with_paths(
+#[derive(Default)]
+struct PreparedMcpConfig {
+    claude_config_path: Option<String>,
+    codex_config_args: Vec<String>,
+}
+
+fn prepare_mcp_config_with_paths(
     options: &ChatRequestOptions,
     engine: &EngineId,
     paths: &AppPaths,
-) -> Result<Option<String>> {
+) -> Result<PreparedMcpConfig> {
     let enable_mcp_tools = options.enable_mcp_tools.unwrap_or(false);
-    if !enable_mcp_tools || !matches!(engine, EngineId::ClaudeCode) {
-        return Ok(None);
+    if !enable_mcp_tools {
+        return Ok(PreparedMcpConfig::default());
     }
 
     let work_dir = match options.work_dir.as_deref() {
         Some(dir) if !dir.trim().is_empty() => dir,
-        _ => return Ok(None),
+        _ => return Ok(PreparedMcpConfig::default()),
     };
 
     let app_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -345,8 +393,23 @@ fn prepare_mcp_config_path_with_paths(
         paths.resource_dir.clone(),
         app_root,
     )?;
-    let config_path = service.prepare_workspace_config(work_dir)?;
-    Ok(Some(config_path.to_string_lossy().to_string()))
+
+    match engine {
+        EngineId::ClaudeCode => {
+            let config_path = service.prepare_workspace_config(work_dir)?;
+            Ok(PreparedMcpConfig {
+                claude_config_path: Some(config_path.to_string_lossy().to_string()),
+                codex_config_args: Vec::new(),
+            })
+        }
+        EngineId::Codex => {
+            let codex_config_args = service.prepare_workspace_codex_config_args(work_dir)?;
+            Ok(PreparedMcpConfig {
+                claude_config_path: None,
+                codex_config_args,
+            })
+        }
+    }
 }
 
 // ============================================================================
@@ -360,32 +423,52 @@ pub async fn start_chat_inner(
     callbacks: ChatCallbacks,
     app_paths: &AppPaths,
 ) -> Result<String> {
-    tracing::info!("[start_chat_inner] 消息长度: {} 字符, 附件数: {:?}", message.len(), options.attachments.as_ref().map(|a| a.len()));
+    tracing::info!(
+        "[start_chat_inner] 消息长度: {} 字符, 附件数: {:?}",
+        message.len(),
+        options.attachments.as_ref().map(|a| a.len())
+    );
 
-    let processed = if let (Some(ref dir), Some(ref atts)) = (&options.work_dir, &options.attachments) {
-        if !atts.is_empty() {
-            process_attachments(dir, atts)?
+    let processed =
+        if let (Some(ref dir), Some(ref atts)) = (&options.work_dir, &options.attachments) {
+            if !atts.is_empty() {
+                process_attachments(dir, atts)?
+            } else {
+                ProcessedAttachment {
+                    embedded_sections: Vec::new(),
+                    file_references: Vec::new(),
+                    image_data: Vec::new(),
+                }
+            }
         } else {
-            ProcessedAttachment { embedded_sections: Vec::new(), file_references: Vec::new(), image_data: Vec::new() }
-        }
-    } else {
-        ProcessedAttachment { embedded_sections: Vec::new(), file_references: Vec::new(), image_data: Vec::new() }
-    };
+            ProcessedAttachment {
+                embedded_sections: Vec::new(),
+                file_references: Vec::new(),
+                image_data: Vec::new(),
+            }
+        };
 
     let final_message = build_message_with_attachments(&message, &processed);
-    tracing::info!("[start_chat_inner] 消息长度: {}, 图片数: {}, 文件引用数: {}",
-        final_message.len(), processed.image_data.len(), processed.file_references.len());
+    tracing::info!(
+        "[start_chat_inner] 消息长度: {}, 图片数: {}, 文件引用数: {}",
+        final_message.len(),
+        processed.image_data.len(),
+        processed.file_references.len()
+    );
 
     let engine = match &options.engine_id {
         Some(id) => EngineId::parse(id).unwrap_or_else(|| {
-            tracing::warn!("[start_chat_inner] Unrecognized engine_id '{}', defaulting to ClaudeCode", id);
+            tracing::warn!(
+                "[start_chat_inner] Unrecognized engine_id '{}', defaulting to ClaudeCode",
+                id
+            );
             EngineId::ClaudeCode
         }),
         None => EngineId::ClaudeCode,
     };
 
     tracing::info!("[start_chat_inner] 使用引擎: {:?}", engine);
-    let mcp_config_path = prepare_mcp_config_path_with_paths(&options, &engine, app_paths)?;
+    let mcp_config = prepare_mcp_config_with_paths(&options, &engine, app_paths)?;
 
     let ctx_id = options.context_id.clone();
     let emit_ref = callbacks.emit_event.clone();
@@ -396,7 +479,10 @@ pub async fn start_chat_inner(
         } else {
             serde_json::json!({ "contextId": "main", "payload": event })
         };
-        tracing::debug!("[start_chat_inner] 发送事件: {}", event_json.to_string().chars().take(200).collect::<String>());
+        tracing::debug!(
+            "[start_chat_inner] 发送事件: {}",
+            event_json.to_string().chars().take(200).collect::<String>()
+        );
         emit_ref(event_json);
         if matches!(event, AIEvent::SessionEnd(_)) {
             notify_ref();
@@ -427,8 +513,11 @@ pub async fn start_chat_inner(
     if let Some(ref prompt) = options.append_system_prompt {
         session_opts = session_opts.with_append_system_prompt(prompt.clone());
     }
-    if let Some(ref mcp_config_path) = mcp_config_path {
+    if let Some(ref mcp_config_path) = mcp_config.claude_config_path {
         session_opts = session_opts.with_mcp_config_path(mcp_config_path.clone());
+    }
+    if !mcp_config.codex_config_args.is_empty() {
+        session_opts = session_opts.with_codex_config_args(mcp_config.codex_config_args);
     }
     if let Some(ref dirs) = options.additional_dirs {
         session_opts.additional_dirs = dirs.clone();
@@ -454,24 +543,39 @@ pub async fn start_chat_inner(
         session_opts.fork_session_id = Some(fork_sid.clone());
     }
     if !processed.image_data.is_empty() {
-        let images: Vec<ImageAttachment> = processed.image_data.iter().map(|img| {
-            ImageAttachment { media_type: img.media_type.clone(), data: img.data.clone() }
-        }).collect();
-        tracing::info!("[start_chat_inner] 传递 {} 张图片给引擎（stream-json 模式）", images.len());
+        let images: Vec<ImageAttachment> = processed
+            .image_data
+            .iter()
+            .map(|img| ImageAttachment {
+                media_type: img.media_type.clone(),
+                data: img.data.clone(),
+            })
+            .collect();
+        tracing::info!(
+            "[start_chat_inner] 传递 {} 张图片给引擎（stream-json 模式）",
+            images.len()
+        );
         session_opts = session_opts.with_image_attachments(images);
     }
 
     // 处理模型 Profile：查找 Profile 并生成 settings overlay + 环境变量
     if let Some(ref profile_id) = options.model_profile_id {
-        let config = state.clone_config().map_err(|e| AppError::ProcessError(e))?;
+        let config = state
+            .clone_config()
+            .map_err(|e| AppError::ProcessError(e))?;
         let profiles = &config.model_profiles;
         if let Some(profile) = profiles.iter().find(|p| p.id == *profile_id) {
-            tracing::info!("[start_chat_inner] 使用模型 Profile: {} ({})", profile.name, profile.model);
+            tracing::info!(
+                "[start_chat_inner] 使用模型 Profile: {} ({})",
+                profile.name,
+                profile.model
+            );
 
             // 生成 settings overlay 文件
             match crate::services::ModelProfileService::write_settings_overlay(profile) {
                 Ok(path) => {
-                    session_opts = session_opts.with_settings_overlay_path(path.to_string_lossy().to_string());
+                    session_opts =
+                        session_opts.with_settings_overlay_path(path.to_string_lossy().to_string());
                 }
                 Err(e) => {
                     tracing::warn!("[start_chat_inner] 生成 settings overlay 失败: {}", e);
@@ -479,7 +583,8 @@ pub async fn start_chat_inner(
             }
 
             // 注入环境变量覆盖
-            let env_overrides = crate::services::ModelProfileService::generate_env_overrides(profile);
+            let env_overrides =
+                crate::services::ModelProfileService::generate_env_overrides(profile);
             session_opts = session_opts.with_env_overrides(env_overrides);
 
             // 覆盖模型参数为 Profile 指定的模型
@@ -501,27 +606,40 @@ pub async fn continue_chat_inner(
     callbacks: ChatCallbacks,
     app_paths: &AppPaths,
 ) -> Result<()> {
-    tracing::info!("[continue_chat_inner] 继续会话: {}, 附件数: {:?}", session_id, options.attachments.as_ref().map(|a| a.len()));
+    tracing::info!(
+        "[continue_chat_inner] 继续会话: {}, 附件数: {:?}",
+        session_id,
+        options.attachments.as_ref().map(|a| a.len())
+    );
 
     let processed = if let (Some(dir), Some(atts)) = (&options.work_dir, &options.attachments) {
         if !atts.is_empty() {
             process_attachments(dir, atts)?
         } else {
-            ProcessedAttachment { embedded_sections: Vec::new(), file_references: Vec::new(), image_data: Vec::new() }
+            ProcessedAttachment {
+                embedded_sections: Vec::new(),
+                file_references: Vec::new(),
+                image_data: Vec::new(),
+            }
         }
     } else {
-        ProcessedAttachment { embedded_sections: Vec::new(), file_references: Vec::new(), image_data: Vec::new() }
+        ProcessedAttachment {
+            embedded_sections: Vec::new(),
+            file_references: Vec::new(),
+            image_data: Vec::new(),
+        }
     };
 
     let final_message = build_message_with_attachments(&message, &processed);
 
-    let engine = options.engine_id
+    let engine = options
+        .engine_id
         .as_ref()
         .and_then(|id| EngineId::parse(id))
         .ok_or_else(|| AppError::ValidationError("必须提供有效的 engine_id".to_string()))?;
 
     tracing::info!("[continue_chat_inner] 使用引擎: {:?}", engine);
-    let mcp_config_path = prepare_mcp_config_path_with_paths(&options, &engine, app_paths)?;
+    let mcp_config = prepare_mcp_config_with_paths(&options, &engine, app_paths)?;
 
     let ctx_id = options.context_id.clone();
     let emit_ref = callbacks.emit_event.clone();
@@ -532,7 +650,10 @@ pub async fn continue_chat_inner(
         } else {
             serde_json::json!({ "contextId": "main", "payload": event })
         };
-        tracing::debug!("[continue_chat_inner] 发送事件: {}", event_json.to_string().chars().take(200).collect::<String>());
+        tracing::debug!(
+            "[continue_chat_inner] 发送事件: {}",
+            event_json.to_string().chars().take(200).collect::<String>()
+        );
         emit_ref(event_json);
         if matches!(event, AIEvent::SessionEnd(_)) {
             notify_ref();
@@ -563,8 +684,11 @@ pub async fn continue_chat_inner(
     if let Some(ref prompt) = options.append_system_prompt {
         session_opts = session_opts.with_append_system_prompt(prompt.clone());
     }
-    if let Some(ref mcp_config_path) = mcp_config_path {
+    if let Some(ref mcp_config_path) = mcp_config.claude_config_path {
         session_opts = session_opts.with_mcp_config_path(mcp_config_path.clone());
+    }
+    if !mcp_config.codex_config_args.is_empty() {
+        session_opts = session_opts.with_codex_config_args(mcp_config.codex_config_args);
     }
     if let Some(ref dirs) = options.additional_dirs {
         session_opts.additional_dirs = dirs.clone();
@@ -587,24 +711,39 @@ pub async fn continue_chat_inner(
         }
     }
     if !processed.image_data.is_empty() {
-        let images: Vec<ImageAttachment> = processed.image_data.iter().map(|img| {
-            ImageAttachment { media_type: img.media_type.clone(), data: img.data.clone() }
-        }).collect();
-        tracing::info!("[continue_chat_inner] 传递 {} 张图片给引擎（stream-json 模式）", images.len());
+        let images: Vec<ImageAttachment> = processed
+            .image_data
+            .iter()
+            .map(|img| ImageAttachment {
+                media_type: img.media_type.clone(),
+                data: img.data.clone(),
+            })
+            .collect();
+        tracing::info!(
+            "[continue_chat_inner] 传递 {} 张图片给引擎（stream-json 模式）",
+            images.len()
+        );
         session_opts = session_opts.with_image_attachments(images);
     }
 
     // 处理模型 Profile：查找 Profile 并生成 settings overlay + 环境变量
     if let Some(ref profile_id) = options.model_profile_id {
-        let config = state.clone_config().map_err(|e| AppError::ProcessError(e))?;
+        let config = state
+            .clone_config()
+            .map_err(|e| AppError::ProcessError(e))?;
         let profiles = &config.model_profiles;
         if let Some(profile) = profiles.iter().find(|p| p.id == *profile_id) {
-            tracing::info!("[continue_chat_inner] 使用模型 Profile: {} ({})", profile.name, profile.model);
+            tracing::info!(
+                "[continue_chat_inner] 使用模型 Profile: {} ({})",
+                profile.name,
+                profile.model
+            );
 
             // 生成 settings overlay 文件
             match crate::services::ModelProfileService::write_settings_overlay(profile) {
                 Ok(path) => {
-                    session_opts = session_opts.with_settings_overlay_path(path.to_string_lossy().to_string());
+                    session_opts =
+                        session_opts.with_settings_overlay_path(path.to_string_lossy().to_string());
                 }
                 Err(e) => {
                     tracing::warn!("[continue_chat_inner] 生成 settings overlay 失败: {}", e);
@@ -612,7 +751,8 @@ pub async fn continue_chat_inner(
             }
 
             // 注入环境变量覆盖
-            let env_overrides = crate::services::ModelProfileService::generate_env_overrides(profile);
+            let env_overrides =
+                crate::services::ModelProfileService::generate_env_overrides(profile);
             session_opts = session_opts.with_env_overrides(env_overrides);
 
             // 覆盖模型参数为 Profile 指定的模型
@@ -638,7 +778,10 @@ pub async fn interrupt_chat_inner(
         registry.interrupt(&engine, &session_id)?;
     } else {
         if !registry.try_interrupt_all(&session_id) {
-            return Err(AppError::ProcessError(format!("未找到会话: {}", session_id)));
+            return Err(AppError::ProcessError(format!(
+                "未找到会话: {}",
+                session_id
+            )));
         }
     }
     tracing::info!("[interrupt_chat_inner] 会话已中断: {}", session_id);
@@ -659,7 +802,9 @@ pub async fn start_chat(
     options: ChatRequestOptions,
 ) -> Result<String> {
     let app_paths = AppPaths {
-        config_dir: window.path().app_config_dir()
+        config_dir: window
+            .path()
+            .app_config_dir()
             .map_err(|e| AppError::ProcessError(format!("获取配置目录失败: {}", e)))?,
         resource_dir: window.path().resource_dir().ok(),
     };
@@ -689,7 +834,9 @@ pub async fn continue_chat(
     options: ChatRequestOptions,
 ) -> Result<()> {
     let app_paths = AppPaths {
-        config_dir: window.path().app_config_dir()
+        config_dir: window
+            .path()
+            .app_config_dir()
             .map_err(|e| AppError::ProcessError(format!("获取配置目录失败: {}", e)))?,
         resource_dir: window.path().resource_dir().ok(),
     };
@@ -751,7 +898,9 @@ pub async fn list_sessions(
 
     let pagination = Pagination::new(page.unwrap_or(1), page_size.unwrap_or(50));
 
-    let config_store = state.config_store.lock()
+    let config_store = state
+        .config_store
+        .lock()
         .map_err(|e| AppError::Unknown(e.to_string()))?;
     let config = config_store.get().clone();
 
@@ -764,7 +913,10 @@ pub async fn list_sessions(
             // Codex 会话历史暂未实现，返回空列表
             Ok(PagedResult::empty(pagination.page, pagination.page_size))
         }
-        _ => Err(AppError::ValidationError(format!("不支持的引擎: {}", engine_id))),
+        _ => Err(AppError::ValidationError(format!(
+            "不支持的引擎: {}",
+            engine_id
+        ))),
     }
 }
 
@@ -778,11 +930,17 @@ pub async fn get_session_history(
     page_size: Option<usize>,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<PagedResult<HistoryMessage>> {
-    tracing::info!("[get_session_history] 会话: {}, 页码: {:?}", session_id, page);
+    tracing::info!(
+        "[get_session_history] 会话: {}, 页码: {:?}",
+        session_id,
+        page
+    );
 
     let pagination = Pagination::new(page.unwrap_or(1), page_size.unwrap_or(50));
 
-    let config_store = state.config_store.lock()
+    let config_store = state
+        .config_store
+        .lock()
         .map_err(|e| AppError::Unknown(e.to_string()))?;
     let config = config_store.get().clone();
 
@@ -791,10 +949,11 @@ pub async fn get_session_history(
             let provider = ClaudeHistoryProvider::new(config);
             provider.get_session_history(&session_id, pagination)
         }
-        "codex" | "openai-codex" => {
-            Ok(PagedResult::empty(pagination.page, pagination.page_size))
-        }
-        _ => Err(AppError::ValidationError(format!("不支持的引擎: {}", engine_id))),
+        "codex" | "openai-codex" => Ok(PagedResult::empty(pagination.page, pagination.page_size)),
+        _ => Err(AppError::ValidationError(format!(
+            "不支持的引擎: {}",
+            engine_id
+        ))),
     }
 }
 
@@ -808,7 +967,9 @@ pub async fn delete_session(
 ) -> Result<()> {
     tracing::info!("[delete_session] 删除会话: {}", session_id);
 
-    let config_store = state.config_store.lock()
+    let config_store = state
+        .config_store
+        .lock()
         .map_err(|e| AppError::Unknown(e.to_string()))?;
     let config = config_store.get().clone();
 
@@ -821,7 +982,10 @@ pub async fn delete_session(
             // Codex 会话删除暂未实现
             Ok(())
         }
-        _ => Err(AppError::ValidationError(format!("不支持的引擎: {}", engine_id))),
+        _ => Err(AppError::ValidationError(format!(
+            "不支持的引擎: {}",
+            engine_id
+        ))),
     }
 }
 
@@ -924,7 +1088,15 @@ pub struct ClaudeHistoryMessage {
 }
 
 /// 解析会话文件获取元数据（包括真实工作区路径 cwd 和 gitBranch）
-fn parse_session_metadata(file_path: &PathBuf) -> (Option<String>, usize, Option<String>, Option<String>, Option<String>) {
+fn parse_session_metadata(
+    file_path: &PathBuf,
+) -> (
+    Option<String>,
+    usize,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
     let mut first_prompt: Option<String> = None;
     let mut message_count = 0usize;
     let mut created: Option<String> = None;
@@ -940,7 +1112,9 @@ fn parse_session_metadata(file_path: &PathBuf) -> (Option<String>, usize, Option
                         message_count += 1;
                         // 获取第一条用户消息作为标题
                         if first_prompt.is_none() {
-                            if let Some(content) = json.get("message").and_then(|m| m.get("content")) {
+                            if let Some(content) =
+                                json.get("message").and_then(|m| m.get("content"))
+                            {
                                 let prompt_text = if let Some(text) = content.as_str() {
                                     // 字符串格式
                                     Some(text.to_string())
@@ -948,8 +1122,11 @@ fn parse_session_metadata(file_path: &PathBuf) -> (Option<String>, usize, Option
                                     // 数组格式，提取第一个 text 类型
                                     let mut found = None;
                                     for item in arr {
-                                        if item.get("type").and_then(|t| t.as_str()) == Some("text") {
-                                            if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
+                                        if item.get("type").and_then(|t| t.as_str()) == Some("text")
+                                        {
+                                            if let Some(text) =
+                                                item.get("text").and_then(|t| t.as_str())
+                                            {
                                                 found = Some(text.to_string());
                                                 break;
                                             }
@@ -973,21 +1150,33 @@ fn parse_session_metadata(file_path: &PathBuf) -> (Option<String>, usize, Option
                         }
                         // 获取创建时间（第一条消息的时间戳）
                         if created.is_none() {
-                            created = json.get("timestamp").and_then(|t| t.as_str()).map(|s| s.to_string());
+                            created = json
+                                .get("timestamp")
+                                .and_then(|t| t.as_str())
+                                .map(|s| s.to_string());
                         }
                         // 获取真实工作区路径（cwd）
                         if cwd.is_none() {
-                            cwd = json.get("cwd").and_then(|c| c.as_str()).map(|s| s.to_string());
+                            cwd = json
+                                .get("cwd")
+                                .and_then(|c| c.as_str())
+                                .map(|s| s.to_string());
                         }
                         // 获取 git 分支（gitBranch）
                         if git_branch.is_none() {
-                            git_branch = json.get("gitBranch").and_then(|b| b.as_str()).map(|s| s.to_string());
+                            git_branch = json
+                                .get("gitBranch")
+                                .and_then(|b| b.as_str())
+                                .map(|s| s.to_string());
                         }
                     } else if msg_type == "assistant" {
                         message_count += 1;
                         // assistant 消息也可能有 gitBranch
                         if git_branch.is_none() {
-                            git_branch = json.get("gitBranch").and_then(|b| b.as_str()).map(|s| s.to_string());
+                            git_branch = json
+                                .get("gitBranch")
+                                .and_then(|b| b.as_str())
+                                .map(|s| s.to_string());
                         }
                     }
                 }
@@ -1027,14 +1216,13 @@ pub async fn list_claude_code_sessions(
                     for session_entry in session_entries.flatten() {
                         let path = session_entry.path();
                         if path.extension().map(|e| e == "jsonl").unwrap_or(false) {
-                            let session_id = path.file_stem()
+                            let session_id = path
+                                .file_stem()
                                 .map(|s| s.to_string_lossy().to_string())
                                 .unwrap_or_default();
 
                             // 获取文件元数据
-                            let file_size = std::fs::metadata(&path)
-                                .map(|m| m.len())
-                                .unwrap_or(0);
+                            let file_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
 
                             let modified = std::fs::metadata(&path)
                                 .ok()
@@ -1045,7 +1233,8 @@ pub async fn list_claude_code_sessions(
                                 });
 
                             // 解析会话内容获取详细信息
-                            let (first_prompt, message_count, created, real_cwd, git_branch) = parse_session_metadata(&path);
+                            let (first_prompt, message_count, created, real_cwd, git_branch) =
+                                parse_session_metadata(&path);
 
                             // claude_project_name: Claude Code 目录名（用于定位 jsonl 文件）
                             let claude_project_name = project_name.clone();
@@ -1053,9 +1242,9 @@ pub async fn list_claude_code_sessions(
                             let project_path = real_cwd.unwrap_or_else(|| project_name.clone());
 
                             // 从 git_branch 推断 PR 关联
-                            let linked_pr = git_branch.as_ref().and_then(|branch| {
-                                extract_pr_from_branch(branch)
-                            });
+                            let linked_pr = git_branch
+                                .as_ref()
+                                .and_then(|branch| extract_pr_from_branch(branch));
 
                             sessions.push(ClaudeSessionMeta {
                                 session_id,
@@ -1081,8 +1270,14 @@ pub async fn list_claude_code_sessions(
 
     // 按修改时间排序（最新的在前）
     sessions.sort_by(|a, b| {
-        let time_a = a.modified.as_ref().and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok());
-        let time_b = b.modified.as_ref().and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok());
+        let time_a = a
+            .modified
+            .as_ref()
+            .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok());
+        let time_b = b
+            .modified
+            .as_ref()
+            .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok());
         time_b.cmp(&time_a)
     });
 
@@ -1109,12 +1304,19 @@ fn simple_hash(content: &str) -> String {
     // 使用简单的哈希算法：取前 200 字符的字节和
     let bytes = content.as_bytes();
     let sample = &bytes[..bytes.len().min(200)];
-    let hash: u64 = sample.iter().enumerate().map(|(i, &b)| (i as u64 + 1) * b as u64).sum();
+    let hash: u64 = sample
+        .iter()
+        .enumerate()
+        .map(|(i, &b)| (i as u64 + 1) * b as u64)
+        .sum();
     format!("{:016x}", hash)
 }
 
 /// 从会话文件中提取消息指纹
-fn compute_session_fingerprint(file_path: &PathBuf, session_id: &str) -> Option<SessionFingerprint> {
+fn compute_session_fingerprint(
+    file_path: &PathBuf,
+    session_id: &str,
+) -> Option<SessionFingerprint> {
     let mut message_hashes = Vec::new();
     let mut created_at: i64 = 0;
 
@@ -1190,9 +1392,7 @@ fn infer_fork_relationships(sessions: &mut [ClaudeSessionMeta]) {
 
     // 按创建时间排序的会话 ID 列表
     let mut sorted_ids: Vec<String> = sessions.iter().map(|s| s.session_id.clone()).collect();
-    sorted_ids.sort_by_key(|id| {
-        fingerprints.get(id).map(|fp| fp.created_at).unwrap_or(0)
-    });
+    sorted_ids.sort_by_key(|id| fingerprints.get(id).map(|fp| fp.created_at).unwrap_or(0));
 
     // 构建父子关系映射
     let mut parent_map: HashMap<String, String> = HashMap::new();
@@ -1223,7 +1423,10 @@ fn infer_fork_relationships(sessions: &mut [ClaudeSessionMeta]) {
     // 构建子会话列表
     let mut child_map: HashMap<String, Vec<String>> = HashMap::new();
     for (child_id, parent_id) in &parent_map {
-        child_map.entry(parent_id.clone()).or_default().push(child_id.clone());
+        child_map
+            .entry(parent_id.clone())
+            .or_default()
+            .push(child_id.clone());
     }
 
     for session in sessions.iter_mut() {
@@ -1240,7 +1443,12 @@ fn has_common_prefix(hashes1: &[String], hashes2: &[String]) -> bool {
         return false;
     }
 
-    let match_count = hashes1.iter().zip(hashes2.iter()).take(min_len).filter(|(a, b)| a == b).count();
+    let match_count = hashes1
+        .iter()
+        .zip(hashes2.iter())
+        .take(min_len)
+        .filter(|(a, b)| a == b)
+        .count();
 
     // 至少 80% 的前缀匹配
     match_count as f64 / min_len as f64 >= 0.8
@@ -1254,7 +1462,10 @@ pub async fn get_claude_code_session_history(
     project_path: Option<String>,
     _state: tauri::State<'_, crate::AppState>,
 ) -> Result<Vec<ClaudeHistoryMessage>> {
-    tracing::info!("[get_claude_code_session_history] 获取会话历史: {}", session_id);
+    tracing::info!(
+        "[get_claude_code_session_history] 获取会话历史: {}",
+        session_id
+    );
 
     let claude_dir = if cfg!(windows) {
         std::env::var("USERPROFILE")
@@ -1267,7 +1478,9 @@ pub async fn get_claude_code_session_history(
     };
 
     let session_file = if let Some(project) = &project_path {
-        claude_dir.join(project).join(format!("{}.jsonl", session_id))
+        claude_dir
+            .join(project)
+            .join(format!("{}.jsonl", session_id))
     } else {
         let mut found = None;
         if let Ok(entries) = std::fs::read_dir(&claude_dir) {
@@ -1285,7 +1498,10 @@ pub async fn get_claude_code_session_history(
     };
 
     if !session_file.exists() {
-        return Err(AppError::ValidationError(format!("会话文件不存在: {:?}", session_file)));
+        return Err(AppError::ValidationError(format!(
+            "会话文件不存在: {:?}",
+            session_file
+        )));
     }
 
     let mut messages = Vec::new();
@@ -1303,7 +1519,10 @@ pub async fn get_claude_code_session_history(
                                     messages.push(ClaudeHistoryMessage {
                                         role: "user".to_string(),
                                         content: content.clone(),
-                                        timestamp: json.get("timestamp").and_then(|t| t.as_str()).map(|s| s.to_string()),
+                                        timestamp: json
+                                            .get("timestamp")
+                                            .and_then(|t| t.as_str())
+                                            .map(|s| s.to_string()),
                                     });
                                 }
                             }
@@ -1315,7 +1534,10 @@ pub async fn get_claude_code_session_history(
                                     messages.push(ClaudeHistoryMessage {
                                         role: "assistant".to_string(),
                                         content: content.clone(),
-                                        timestamp: json.get("timestamp").and_then(|t| t.as_str()).map(|s| s.to_string()),
+                                        timestamp: json
+                                            .get("timestamp")
+                                            .and_then(|t| t.as_str())
+                                            .map(|s| s.to_string()),
                                     });
                                 }
                             }
@@ -1334,7 +1556,7 @@ pub async fn get_claude_code_session_history(
 // AskUserQuestion 相关命令
 // ============================================================================
 
-use crate::state::{PendingQuestion, QuestionOption, QuestionStatus, QuestionAnswer};
+use crate::state::{PendingQuestion, QuestionAnswer, QuestionOption, QuestionStatus};
 
 /// 注册待回答问题
 ///
@@ -1352,7 +1574,9 @@ pub fn register_pending_question(
 ) -> Result<()> {
     tracing::info!(
         "[register_pending_question] 注册问题: session={}, call={}, header={}",
-        session_id, call_id, header
+        session_id,
+        call_id,
+        header
     );
 
     let question = PendingQuestion {
@@ -1365,7 +1589,9 @@ pub fn register_pending_question(
         status: QuestionStatus::Pending,
     };
 
-    let mut pending = state.pending_questions.lock()
+    let mut pending = state
+        .pending_questions
+        .lock()
         .map_err(|e| AppError::Unknown(e.to_string()))?;
     pending.insert(call_id, question);
 
@@ -1386,12 +1612,17 @@ pub async fn answer_question(
 ) -> Result<()> {
     tracing::info!(
         "[answer_question] 回答问题: session={}, call={}, selected={:?}, custom={:?}",
-        session_id, call_id, answer.selected, answer.custom_input
+        session_id,
+        call_id,
+        answer.selected,
+        answer.custom_input
     );
 
     // 更新问题状态并移除已处理的条目（避免内存泄漏）
     {
-        let mut pending = state.pending_questions.lock()
+        let mut pending = state
+            .pending_questions
+            .lock()
             .map_err(|e| AppError::Unknown(e.to_string()))?;
 
         if pending.remove(&call_id).is_some() {
@@ -1409,7 +1640,8 @@ pub async fn answer_question(
         "answer": answer,
     });
 
-    window.emit("chat-event", &event)
+    window
+        .emit("chat-event", &event)
         .map_err(|e| AppError::ProcessError(format!("发送事件失败: {}", e)))?;
 
     // Dual emission: also broadcast to WebSocket clients
@@ -1427,7 +1659,9 @@ pub fn get_pending_questions(
     session_id: Option<String>,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<Vec<PendingQuestion>> {
-    let pending = state.pending_questions.lock()
+    let pending = state
+        .pending_questions
+        .lock()
         .map_err(|e| AppError::Unknown(e.to_string()))?;
 
     let questions: Vec<PendingQuestion> = pending
@@ -1449,10 +1683,10 @@ pub fn get_pending_questions(
 /// 清除已回答的问题
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub fn clear_answered_questions(
-    state: tauri::State<'_, crate::AppState>,
-) -> Result<usize> {
-    let mut pending = state.pending_questions.lock()
+pub fn clear_answered_questions(state: tauri::State<'_, crate::AppState>) -> Result<usize> {
+    let mut pending = state
+        .pending_questions
+        .lock()
         .map_err(|e| AppError::Unknown(e.to_string()))?;
 
     let initial_count = pending.len();
@@ -1468,8 +1702,8 @@ pub fn clear_answered_questions(
 // PlanMode 相关命令
 // ============================================================================
 
-use crate::state::{PendingPlan, PlanApprovalStatus};
 use crate::models::PlanApprovalResultEvent;
+use crate::state::{PendingPlan, PlanApprovalStatus};
 
 /// 注册待审批计划
 ///
@@ -1485,7 +1719,9 @@ pub fn register_pending_plan(
 ) -> Result<()> {
     tracing::info!(
         "[register_pending_plan] 注册计划: session={}, plan={}, title={:?}",
-        session_id, plan_id, title
+        session_id,
+        plan_id,
+        title
     );
 
     let plan = PendingPlan {
@@ -1497,7 +1733,9 @@ pub fn register_pending_plan(
         feedback: None,
     };
 
-    let mut pending = state.pending_plans.lock()
+    let mut pending = state
+        .pending_plans
+        .lock()
         .map_err(|e| AppError::Unknown(e.to_string()))?;
     pending.insert(plan_id, plan);
 
@@ -1517,12 +1755,15 @@ pub async fn approve_plan(
 ) -> Result<()> {
     tracing::info!(
         "[approve_plan] 批准计划: session={}, plan={}",
-        session_id, plan_id
+        session_id,
+        plan_id
     );
 
     // 更新计划状态并移除已处理的条目（避免内存泄漏）
     {
-        let mut pending = state.pending_plans.lock()
+        let mut pending = state
+            .pending_plans
+            .lock()
             .map_err(|e| AppError::Unknown(e.to_string()))?;
 
         if pending.remove(&plan_id).is_some() {
@@ -1539,7 +1780,8 @@ pub async fn approve_plan(
         "contextId": "main",
         "payload": event
     });
-    window.emit("chat-event", &payload)
+    window
+        .emit("chat-event", &payload)
         .map_err(|e| AppError::ProcessError(format!("发送事件失败: {}", e)))?;
 
     // Dual emission: also broadcast to WebSocket clients
@@ -1564,12 +1806,16 @@ pub async fn reject_plan(
 ) -> Result<()> {
     tracing::info!(
         "[reject_plan] 拒绝计划: session={}, plan={}, feedback={:?}",
-        session_id, plan_id, feedback
+        session_id,
+        plan_id,
+        feedback
     );
 
     // 更新计划状态并移除已处理的条目（避免内存泄漏）
     {
-        let mut pending = state.pending_plans.lock()
+        let mut pending = state
+            .pending_plans
+            .lock()
             .map_err(|e| AppError::Unknown(e.to_string()))?;
 
         if pending.remove(&plan_id).is_some() {
@@ -1587,7 +1833,8 @@ pub async fn reject_plan(
         "contextId": "main",
         "payload": event
     });
-    window.emit("chat-event", &payload)
+    window
+        .emit("chat-event", &payload)
         .map_err(|e| AppError::ProcessError(format!("发送事件失败: {}", e)))?;
 
     // Dual emission: also broadcast to WebSocket clients
@@ -1605,7 +1852,9 @@ pub fn get_pending_plans(
     session_id: Option<String>,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<Vec<PendingPlan>> {
-    let pending = state.pending_plans.lock()
+    let pending = state
+        .pending_plans
+        .lock()
         .map_err(|e| AppError::Unknown(e.to_string()))?;
 
     let plans: Vec<PendingPlan> = pending
@@ -1627,10 +1876,10 @@ pub fn get_pending_plans(
 /// 清除已处理的计划
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub fn clear_processed_plans(
-    state: tauri::State<'_, crate::AppState>,
-) -> Result<usize> {
-    let mut pending = state.pending_plans.lock()
+pub fn clear_processed_plans(state: tauri::State<'_, crate::AppState>) -> Result<usize> {
+    let mut pending = state
+        .pending_plans
+        .lock()
         .map_err(|e| AppError::Unknown(e.to_string()))?;
 
     let initial_count = pending.len();
@@ -1656,7 +1905,11 @@ pub async fn send_input(
     input: String,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<bool> {
-    tracing::info!("[send_input] 向会话 {} 发送输入: {} bytes", session_id, input.len());
+    tracing::info!(
+        "[send_input] 向会话 {} 发送输入: {} bytes",
+        session_id,
+        input.len()
+    );
 
     let mut registry = state.engine_registry.lock().await;
     registry.send_input(&session_id, &input)

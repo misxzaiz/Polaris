@@ -4,13 +4,13 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
 use super::codex_parser::{
-    codex_event_to_ai_events, extract_event_type, parse_codex_line, CodexEvent,
+    CodexEvent, codex_event_to_ai_events, extract_event_type, parse_codex_line,
 };
 use crate::ai::session::SessionManager;
 use crate::ai::traits::{AIEngine, EngineId, SessionOptions};
 use crate::error::{AppError, Result};
-use crate::models::config::Config;
 use crate::models::AIEvent;
+use crate::models::config::Config;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -281,6 +281,7 @@ impl CodexEngine {
         model: Option<&str>,
         additional_dirs: &[String],
         permission_mode: Option<&str>,
+        codex_config_args: &[String],
     ) -> Result<Command> {
         let cli_path = self
             .cli_path
@@ -324,6 +325,12 @@ impl CodexEngine {
 
         // 权限模式。Codex CLI 的 resume 子命令目前不支持 --sandbox，仅支持 --full-auto / bypass。
         add_codex_permission_args(&mut cmd, permission_mode, is_resume);
+
+        for arg in codex_config_args {
+            if !arg.is_empty() {
+                cmd.arg(arg);
+            }
+        }
 
         // 工作目录（仅 exec 支持 -C；resume 通过 cmd.current_dir() 设置）
         if !is_resume {
@@ -709,6 +716,7 @@ impl AIEngine for CodexEngine {
             options.model.as_deref(),
             &options.additional_dirs,
             options.permission_mode.as_deref(),
+            &options.codex_config_args,
         )?;
         self.configure_command(&mut cmd, work_dir.as_deref(), &options.env_overrides);
 
@@ -785,6 +793,7 @@ impl AIEngine for CodexEngine {
             options.model.as_deref(),
             &options.additional_dirs,
             options.permission_mode.as_deref(),
+            &options.codex_config_args,
         )?;
         self.configure_command(&mut cmd, work_dir.as_deref(), &options.env_overrides);
 
@@ -858,6 +867,47 @@ mod tests {
         assert_eq!(
             markdown,
             "![Codex 生成图片](/api/artifacts/codex-images/thread-1/ig_new.png)"
+        );
+    }
+
+    #[test]
+    fn build_command_includes_codex_config_args_before_positionals() {
+        let mut engine = CodexEngine::new(Config::default());
+        engine.cli_path = Some("codex".to_string());
+
+        let config_args = vec![
+            "-c".to_string(),
+            "mcp_servers.polaris-todo.command=\"todo\"".to_string(),
+            "-c".to_string(),
+            "mcp_servers.polaris-todo.args=[\"config\",\"workspace\"]".to_string(),
+        ];
+
+        let cmd = engine
+            .build_command(
+                "hello",
+                Some("session-1"),
+                Some("D:\\workspace"),
+                None,
+                &[],
+                None,
+                &config_args,
+            )
+            .unwrap();
+
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|arg| arg.to_string_lossy().to_string())
+            .collect();
+
+        let first_config_index = args.iter().position(|arg| arg == "-c").unwrap();
+        let session_index = args.iter().position(|arg| arg == "session-1").unwrap();
+        let message_index = args.iter().position(|arg| arg == "hello").unwrap();
+
+        assert!(first_config_index < session_index);
+        assert!(session_index < message_index);
+        assert!(args.contains(&"mcp_servers.polaris-todo.command=\"todo\"".to_string()));
+        assert!(
+            args.contains(&"mcp_servers.polaris-todo.args=[\"config\",\"workspace\"]".to_string())
         );
     }
 }
