@@ -1,9 +1,9 @@
 use crate::error::{AppError, Result};
-use crate::models::config::{Config, HealthStatus, EngineId};
-use std::path::{Path, PathBuf};
-use std::env;
-use std::process::Command;
+use crate::models::config::{Config, EngineId, HealthStatus};
 use serde::{Deserialize, Serialize};
+use std::env;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -58,7 +58,10 @@ impl ConfigStore {
             }
         }
 
-        Ok(Self { config, config_path })
+        Ok(Self {
+            config,
+            config_path,
+        })
     }
 
     /// 查找 claude 命令的完整路径
@@ -249,8 +252,16 @@ impl ConfigStore {
         match output {
             Ok(output) => {
                 eprintln!("[{}] 进程退出码: {:?}", log_prefix, output.status.code());
-                eprintln!("[{}] stdout: {}", log_prefix, String::from_utf8_lossy(&output.stdout));
-                eprintln!("[{}] stderr: {}", log_prefix, String::from_utf8_lossy(&output.stderr));
+                eprintln!(
+                    "[{}] stdout: {}",
+                    log_prefix,
+                    String::from_utf8_lossy(&output.stdout)
+                );
+                eprintln!(
+                    "[{}] stderr: {}",
+                    log_prefix,
+                    String::from_utf8_lossy(&output.stderr)
+                );
 
                 if output.status.success() {
                     let version = String::from_utf8_lossy(&output.stdout)
@@ -275,25 +286,80 @@ impl ConfigStore {
     fn run_cli_version_command(cmd: &str) -> std::io::Result<std::process::Output> {
         let lower = cmd.to_ascii_lowercase();
         if lower.ends_with(".cmd") || lower.ends_with(".bat") {
-            return Command::new("cmd")
-                .arg("/c")
-                .arg(cmd)
-                .arg("--version")
-                .creation_flags(CREATE_NO_WINDOW)
-                .output();
+            return Self::run_windows_cmd_script(cmd);
         }
 
-        Command::new(cmd)
+        match Command::new(cmd)
+            .arg("--version")
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+        {
+            Ok(output) => Ok(output),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                if let Some(shim_path) = Self::resolve_windows_cmd_shim(cmd) {
+                    return Self::run_windows_cmd_script(&shim_path);
+                }
+                Err(err)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    #[cfg(windows)]
+    fn run_windows_cmd_script(cmd: &str) -> std::io::Result<std::process::Output> {
+        Command::new("cmd")
+            .arg("/c")
+            .arg(cmd)
             .arg("--version")
             .creation_flags(CREATE_NO_WINDOW)
             .output()
     }
 
+    #[cfg(windows)]
+    fn resolve_windows_cmd_shim(cmd: &str) -> Option<String> {
+        if cmd.contains('\\') || cmd.contains('/') || Path::new(cmd).extension().is_some() {
+            return None;
+        }
+
+        let shim_name = format!("{}.cmd", cmd);
+        let mut candidates = Vec::new();
+
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            candidates.push(PathBuf::from(appdata).join("npm").join(&shim_name));
+        }
+        if let Ok(pnpm_home) = std::env::var("PNPM_HOME") {
+            candidates.push(PathBuf::from(pnpm_home).join(&shim_name));
+        }
+        if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
+            candidates.push(PathBuf::from(localappdata).join("pnpm").join(&shim_name));
+        }
+
+        for candidate in candidates {
+            if candidate.exists() {
+                return Some(candidate.to_string_lossy().to_string());
+            }
+        }
+
+        let output = Command::new("where")
+            .arg(&shim_name)
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .ok()?;
+
+        if !output.status.success() {
+            return None;
+        }
+
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty() && Path::new(line).exists())
+            .map(str::to_string)
+    }
+
     #[cfg(not(windows))]
     fn run_cli_version_command(cmd: &str) -> std::io::Result<std::process::Output> {
-        Command::new(cmd)
-            .arg("--version")
-            .output()
+        Command::new(cmd).arg("--version").output()
     }
 
     /// 获取健康状态
@@ -308,7 +374,10 @@ impl ConfigStore {
             claude_version,
             codex_available,
             codex_version,
-            work_dir: self.config.work_dir.as_ref()
+            work_dir: self
+                .config
+                .work_dir
+                .as_ref()
                 .and_then(|p| p.to_str().map(|s| s.to_string())),
             config_valid: true,
         }
@@ -316,7 +385,9 @@ impl ConfigStore {
 
     /// 获取当前工作目录
     pub fn current_work_dir(&self) -> PathBuf {
-        self.config.work_dir.clone()
+        self.config
+            .work_dir
+            .clone()
             .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
     }
 
@@ -353,14 +424,19 @@ impl ConfigStore {
                     r"C:\Program Files (x86)\claude\claude.exe".to_string(),
                     r"C:\Program Files (x86)\claude\claude.cmd".to_string(),
                     // Scoop 安装路径
-                    format!(r"{}\scoop\shims\claude.cmd", env::var("USERPROFILE").unwrap_or_default()),
+                    format!(
+                        r"{}\scoop\shims\claude.cmd",
+                        env::var("USERPROFILE").unwrap_or_default()
+                    ),
                 ];
 
                 for path in common_paths {
-                    if Path::new(&path).exists() && Self::validate_path(&path)
-                        && !paths.contains(&path) {
-                            paths.push(path);
-                        }
+                    if Path::new(&path).exists()
+                        && Self::validate_path(&path)
+                        && !paths.contains(&path)
+                    {
+                        paths.push(path);
+                    }
                 }
             }
         }
@@ -435,9 +511,7 @@ impl ConfigStore {
             .output();
 
         #[cfg(not(windows))]
-        let output = Command::new(&path)
-            .arg("--version")
-            .output();
+        let output = Command::new(&path).arg("--version").output();
 
         match output {
             Ok(output) => {
@@ -452,9 +526,7 @@ impl ConfigStore {
                     Ok((false, Some(format!("执行失败: {}", stderr)), None))
                 }
             }
-            Err(e) => {
-                Ok((false, Some(format!("无法执行: {}", e)), None))
-            }
+            Err(e) => Ok((false, Some(format!("无法执行: {}", e)), None)),
         }
     }
 }
@@ -512,6 +584,45 @@ impl Default for ConfigStore {
 #[cfg(test)]
 impl ConfigStore {
     pub(crate) fn new_test(config: Config, path: PathBuf) -> Self {
-        Self { config, config_path: path }
+        Self {
+            config,
+            config_path: path,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(windows)]
+    fn resolves_windows_cmd_shim_from_appdata_npm() {
+        let temp_root = tempfile::tempdir().unwrap();
+        let appdata = temp_root.path().join("Roaming");
+        let npm_dir = appdata.join("npm");
+        std::fs::create_dir_all(&npm_dir).unwrap();
+        let shim = npm_dir.join("codex.cmd");
+        std::fs::write(&shim, "@echo off").unwrap();
+
+        let previous = std::env::var("APPDATA").ok();
+        std::env::set_var("APPDATA", &appdata);
+
+        let resolved = ConfigStore::resolve_windows_cmd_shim("codex");
+
+        if let Some(value) = previous {
+            std::env::set_var("APPDATA", value);
+        } else {
+            std::env::remove_var("APPDATA");
+        }
+
+        assert_eq!(resolved, Some(shim.to_string_lossy().to_string()));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn does_not_resolve_windows_cmd_shim_for_explicit_paths() {
+        assert!(ConfigStore::resolve_windows_cmd_shim("C:\\tools\\codex").is_none());
+        assert!(ConfigStore::resolve_windows_cmd_shim("codex.exe").is_none());
     }
 }
