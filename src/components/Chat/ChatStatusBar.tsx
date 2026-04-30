@@ -27,6 +27,7 @@ import { DEFAULT_TTS_CONFIG } from '../../types/speech';
 import { SessionConfigSelector } from './SessionConfigSelector';
 import { voiceNotificationService } from '../../services/voiceNotificationService';
 import { isAssistantMessage } from '../../types/chat';
+import { getSelectedEngineHealth } from '../../utils/engineHealth';
 
 /** 宽度分级阈值 */
 const BREAKPOINTS = {
@@ -222,9 +223,10 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
   const inputHint = getInputHint();
 
   // 版本徽章
-  const versionBadge = config?.defaultEngine === 'claude-code' && healthStatus?.claudeVersion ? (
+  const selectedEngineHealth = getSelectedEngineHealth(config, healthStatus);
+  const versionBadge = selectedEngineHealth.version ? (
     <span className="px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-500 border border-green-500/20 shrink-0">
-      v{healthStatus.claudeVersion}
+      {selectedEngineHealth.version}
     </span>
   ) : null;
 

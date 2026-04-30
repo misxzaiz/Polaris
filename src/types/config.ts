@@ -195,6 +195,10 @@ export interface HealthStatus {
   claudeAvailable: boolean;
   /** Claude 版本 */
   claudeVersion?: string;
+  /** Codex CLI 是否可用 */
+  codexAvailable?: boolean;
+  /** Codex 版本 */
+  codexVersion?: string;
   /** 工作目录 */
   workDir?: string;
   /** 配置是否有效 */

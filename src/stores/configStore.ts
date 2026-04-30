@@ -9,6 +9,8 @@ import * as tauri from '../services/tauri';
 import { createLogger } from '../utils/logger';
 import { currentMode } from '../services/transport';
 import { storeTokenMd5, md5Hex } from '../services/transport/auth';
+import { getSelectedEngineHealth } from '../utils/engineHealth';
+import { normalizeEngineId } from '../utils/engineDisplay';
 
 const log = createLogger('ConfigStore');
 
@@ -38,12 +40,12 @@ interface ConfigState {
   /** 刷新健康状态 */
   refreshHealth: () => Promise<void>;
   /** 重新连接并更新路径 */
-  retryConnection: (claudeCmd?: string) => Promise<void>;
+  retryConnection: (cliPath?: string) => Promise<void>;
   /** Submit token in web mode (MD5-then-store, then retry loadConfig) */
   submitToken: (rawToken: string) => Promise<void>;
 }
 
-export const useConfigStore = create<ConfigState>((set) => ({
+export const useConfigStore = create<ConfigState>((set, get) => ({
   config: null,
   healthStatus: null,
   loading: false,
@@ -58,7 +60,7 @@ export const useConfigStore = create<ConfigState>((set) => ({
         tauri.getConfig(),
         tauri.healthCheck(),
       ]);
-      const connectionState = health.claudeAvailable ? 'success' : 'failed';
+      const connectionState = getSelectedEngineHealth(config, health).available ? 'success' : 'failed';
       if (config?.language) {
         i18n.changeLanguage(config.language);
       }
@@ -138,7 +140,11 @@ export const useConfigStore = create<ConfigState>((set) => ({
   refreshHealth: async () => {
     try {
       const health = await tauri.healthCheck();
-      const connectionState = health.claudeAvailable ? 'success' : 'failed';
+      let config = get().config;
+      if (!config) {
+        config = await tauri.getConfig();
+      }
+      const connectionState = getSelectedEngineHealth(config, health).available ? 'success' : 'failed';
       set({ healthStatus: health, connectionState });
     } catch (e) {
       log.error('refreshHealth failed', e instanceof Error ? e : new Error(String(e)), { isWebAuth: isWebAuthError(e) });
@@ -152,21 +158,34 @@ export const useConfigStore = create<ConfigState>((set) => ({
     }
   },
 
-  retryConnection: async (claudeCmd?: string) => {
+  retryConnection: async (cliPath?: string) => {
     set({ loading: true, error: null, connectionState: 'connecting' });
     try {
-      if (claudeCmd) {
-        await tauri.setClaudeCmd(claudeCmd);
-        const config = await tauri.getConfig();
+      let config = get().config || await tauri.getConfig();
+      if (cliPath) {
+        const engineId = normalizeEngineId(config.defaultEngine);
+        if (engineId === 'codex') {
+          await tauri.updateConfig({
+            ...config,
+            codexCode: { ...(config.codexCode || { cliPath: 'codex' }), cliPath },
+          });
+        } else {
+          await tauri.setClaudeCmd(cliPath);
+        }
+        config = await tauri.getConfig();
         set({ config });
       }
 
       const health = await tauri.healthCheck();
-      const connectionState = health.claudeAvailable ? 'success' : 'failed';
+      const selectedHealth = getSelectedEngineHealth(config, health);
+      const connectionState = selectedHealth.available ? 'success' : 'failed';
 
       if (connectionState === 'failed') {
         set({
-          error: i18n.t('errors:claudeNotFound', { path: claudeCmd || i18n.t('errors:notSet') }),
+          error: i18n.t('errors:cliNotFound', {
+            name: selectedHealth.name,
+            path: cliPath || selectedHealth.cliPath || i18n.t('errors:notSet'),
+          }),
           loading: false,
           connectionState: 'failed'
         });
@@ -204,7 +223,7 @@ export const useConfigStore = create<ConfigState>((set) => ({
         tauri.getConfig(),
         tauri.healthCheck(),
       ]);
-      const connectionState = health.claudeAvailable ? 'success' : 'failed';
+      const connectionState = getSelectedEngineHealth(config, health).available ? 'success' : 'failed';
       if (config?.language) {
         i18n.changeLanguage(config.language);
       }

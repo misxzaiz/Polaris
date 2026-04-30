@@ -893,6 +893,14 @@ pub struct HealthStatus {
     /// Claude 版本
     pub claude_version: Option<String>,
 
+    /// Codex CLI 是否可用
+    #[serde(default)]
+    pub codex_available: bool,
+
+    /// Codex 版本
+    #[serde(default)]
+    pub codex_version: Option<String>,
+
     /// 工作目录
     pub work_dir: Option<String>,
 

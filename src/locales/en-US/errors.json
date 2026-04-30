@@ -6,6 +6,7 @@
   "setClaudeCmdFailed": "Failed to set Claude command",
   "refreshHealthFailed": "Failed to refresh health status",
   "claudeNotFound": "Claude CLI not found. Current path: {{path}}",
+  "cliNotFound": "{{name}} CLI not found. Current path: {{path}}",
   "notSet": "Not set",
   "connectionFailed": "Connection failed",
   "configLoadFailed": "Failed to load config",

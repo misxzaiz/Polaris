@@ -6,6 +6,7 @@
   "setClaudeCmdFailed": "设置 Claude 命令失败",
   "refreshHealthFailed": "刷新健康状态失败",
   "claudeNotFound": "Claude CLI 未找到。当前路径: {{path}}",
+  "cliNotFound": "{{name}} CLI 未找到。当前路径: {{path}}",
   "notSet": "未设置",
   "connectionFailed": "连接失败",
   "configLoadFailed": "加载配置失败",

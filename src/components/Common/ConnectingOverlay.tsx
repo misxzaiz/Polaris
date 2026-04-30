@@ -2,22 +2,29 @@
  * 连接中蒙板组件
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConfigStore } from '../../stores';
 import { Button, ClaudePathSelector } from './index';
 import { isWindows } from '../../utils/path';
 import { currentMode } from '../../services/transport';
 import { createLogger } from '../../utils/logger';
+import { getSelectedEngineHealth } from '../../utils/engineHealth';
 
 const log = createLogger('ConnectingOverlay');
 
 export function ConnectingOverlay() {
   const { t } = useTranslation('common');
   const { config, healthStatus, connectionState, error, retryConnection, submitToken } = useConfigStore();
+  const selectedEngine = getSelectedEngineHealth(config, healthStatus);
+  const engineType = selectedEngine.engineId;
   const [showPathInput, setShowPathInput] = useState(false);
-  const [tempPath, setTempPath] = useState(config?.claudeCode?.cliPath || '');
+  const [tempPath, setTempPath] = useState(selectedEngine.cliPath);
   const [tokenInput, setTokenInput] = useState('');
+
+  useEffect(() => {
+    setTempPath(selectedEngine.cliPath);
+  }, [selectedEngine.cliPath]);
 
   const isConnecting = connectionState === 'connecting';
   const isFailed = connectionState === 'failed';
@@ -83,10 +90,10 @@ export function ConnectingOverlay() {
         {/* 文字提示 */}
         <div className="space-y-2">
           <h2 className="text-xl font-semibold text-text-primary">
-            {isConnecting ? t('connection.connecting') : shouldShowTokenInput ? t('connection.tokenRequired') : shouldShowCliFailure ? t('connection.connectFailed') : ''}
+            {isConnecting ? t('connection.connectingEngine', { name: selectedEngine.name }) : shouldShowTokenInput ? t('connection.tokenRequired') : shouldShowCliFailure ? t('connection.connectFailed') : ''}
           </h2>
           <p className="text-sm text-text-secondary">
-            {isConnecting ? t('connection.connectingHint') : shouldShowTokenInput ? t('connection.tokenRequiredHint') : shouldShowCliFailure ? t('connection.connectFailedHint') : ''}
+            {isConnecting ? t('connection.connectingHint') : shouldShowTokenInput ? t('connection.tokenRequiredHint') : shouldShowCliFailure ? t('connection.connectFailedHintEngine', { name: selectedEngine.name }) : ''}
           </p>
         </div>
 
@@ -117,24 +124,24 @@ export function ConnectingOverlay() {
         )}
 
         {/* 连接状态详情 — CLI 诊断仅在桌面端显示，Web 端无法操作服务器 CLI */}
-        {currentMode !== 'http' && healthStatus?.claudeVersion ? (
+        {currentMode !== 'http' && selectedEngine.version ? (
           <p className="text-xs text-text-tertiary">
-            {t('connection.detectedVersion', { version: healthStatus.claudeVersion })}
+            {t('connection.detectedVersion', { version: selectedEngine.version })}
           </p>
         ) : currentMode !== 'http' && shouldShowCliFailure ? (
           <div className="text-xs text-text-tertiary space-y-3 max-w-md px-4">
-            <p className="text-danger font-medium">{error || t('connection.cliNotFound')}</p>
-            {config?.claudeCode?.cliPath && (
-              <p>{t('connection.currentPath')} <code className="bg-background-surface px-1 py-0.5 rounded break-all">{config.claudeCode.cliPath}</code></p>
+            <p className="text-danger font-medium">{error || t('connection.cliNotFoundEngine', { name: selectedEngine.name })}</p>
+            {selectedEngine.cliPath && (
+              <p>{t('connection.currentPath')} <code className="bg-background-surface px-1 py-0.5 rounded break-all">{selectedEngine.cliPath}</code></p>
             )}
 
             {/* 详细诊断信息 */}
             <div className="bg-background-surface p-3 rounded-lg space-y-2 overflow-x-auto">
               <p className="font-medium text-text-secondary">{t('connection.diagnosis')}</p>
               <ul className="space-y-1 list-disc list-inside">
-                <li>{t('connection.diagnosis1')}</li>
+                <li>{t('connection.diagnosis1Engine', { name: selectedEngine.name })}</li>
                 <li>{t('connection.diagnosis2')}</li>
-                <li>{t('connection.diagnosis3')}</li>
+                <li>{t('connection.diagnosis3', { command: selectedEngine.command })}</li>
                 <li>{t('connection.diagnosis4')}</li>
               </ul>
             </div>
@@ -143,15 +150,15 @@ export function ConnectingOverlay() {
             <div className="bg-background-surface p-3 rounded-lg space-y-2 overflow-x-auto">
               <p className="font-medium text-text-secondary">{t('connection.solutions')}</p>
               <ol className="space-y-1 list-decimal list-inside">
-                <li>{t('connection.solution1')} <code className="px-1 py-0.5 rounded">claude --version</code></li>
-                <li>{t('connection.solution2')} <code className="px-1 py-0.5 rounded">{isWindows ? 'where claude' : 'which claude'}</code></li>
-                <li>{t('connection.solution4')} <code className="px-1 py-0.5 rounded break-all">npm install -g @anthropic-ai/claude-3-dev</code></li>
+                <li>{t('connection.solution1Engine', { name: selectedEngine.name })} <code className="px-1 py-0.5 rounded">{selectedEngine.command} --version</code></li>
+                <li>{t('connection.solution2')} <code className="px-1 py-0.5 rounded">{isWindows ? `where ${selectedEngine.command}` : `which ${selectedEngine.command}`}</code></li>
+                <li>{t('connection.solution4')} <code className="px-1 py-0.5 rounded break-all">{engineType === 'codex' ? 'npm install -g @openai/codex' : 'npm install -g @anthropic-ai/claude-code'}</code></li>
               </ol>
             </div>
           </div>
         ) : currentMode !== 'http' && !shouldShowTokenInput ? (
           <p className="text-xs text-text-tertiary">
-            {t('connection.detecting')}
+            {t('connection.detectingEngine', { name: selectedEngine.name })}
           </p>
         ) : null}
 
@@ -172,18 +179,19 @@ export function ConnectingOverlay() {
                   variant="ghost"
                   className="w-full"
                 >
-                  {t('connection.setClaudePath')}
+                  {t('connection.setCliPath', { name: selectedEngine.name })}
                 </Button>
               </div>
             ) : (
               <div className="space-y-4 w-full max-w-md">
                 <div className="bg-background-surface p-4 rounded-lg">
                   <p className="text-sm text-text-secondary mb-3">
-                    {t('connection.pathSelectorHint')}
+                    {t('connection.pathSelectorHintEngine', { name: selectedEngine.name })}
                   </p>
                   <ClaudePathSelector
                     value={tempPath}
                     onChange={setTempPath}
+                    engineType={engineType}
                     compact
                   />
                 </div>
@@ -199,7 +207,7 @@ export function ConnectingOverlay() {
                   <Button
                     onClick={() => {
                       setShowPathInput(false);
-                      setTempPath(config?.claudeCode?.cliPath || '');
+                      setTempPath(selectedEngine.cliPath);
                     }}
                     variant="ghost"
                     className="flex-1"

@@ -232,52 +232,82 @@ impl ConfigStore {
     /// 检测 Claude CLI 是否可用
     pub fn detect_claude(&self) -> Option<String> {
         let cmd = self.config.get_claude_cmd();
-        eprintln!("[detect_claude] 尝试执行: {} --version", cmd);
+        Self::detect_cli_version(&cmd, "detect_claude")
+    }
 
-        #[cfg(windows)]
-        let output = Command::new(&cmd)
-            .arg("--version")
-            .creation_flags(CREATE_NO_WINDOW)
-            .output();
+    /// 检测 Codex CLI 是否可用
+    pub fn detect_codex(&self) -> Option<String> {
+        let cmd = self.config.get_codex_cmd();
+        Self::detect_cli_version(&cmd, "detect_codex")
+    }
 
-        #[cfg(not(windows))]
-        let output = Command::new(&cmd)
-            .arg("--version")
-            .output();
+    fn detect_cli_version(cmd: &str, log_prefix: &str) -> Option<String> {
+        eprintln!("[{}] 尝试执行: {} --version", log_prefix, cmd);
+
+        let output = Self::run_cli_version_command(cmd);
 
         match output {
             Ok(output) => {
-                eprintln!("[detect_claude] 进程退出码: {:?}", output.status.code());
-                eprintln!("[detect_claude] stdout: {}", String::from_utf8_lossy(&output.stdout));
-                eprintln!("[detect_claude] stderr: {}", String::from_utf8_lossy(&output.stderr));
+                eprintln!("[{}] 进程退出码: {:?}", log_prefix, output.status.code());
+                eprintln!("[{}] stdout: {}", log_prefix, String::from_utf8_lossy(&output.stdout));
+                eprintln!("[{}] stderr: {}", log_prefix, String::from_utf8_lossy(&output.stderr));
 
                 if output.status.success() {
                     let version = String::from_utf8_lossy(&output.stdout)
                         .lines()
                         .next()
                         .map(|s| s.to_string());
-                    eprintln!("[detect_claude] 解析成功: {:?}", version);
+                    eprintln!("[{}] 解析成功: {:?}", log_prefix, version);
                     version
                 } else {
-                    eprintln!("[detect_claude] 命令执行失败");
+                    eprintln!("[{}] 命令执行失败", log_prefix);
                     None
                 }
             }
             Err(e) => {
-                eprintln!("[detect_claude] 启动进程失败: {:?}", e);
+                eprintln!("[{}] 启动进程失败: {:?}", log_prefix, e);
                 None
             }
         }
+    }
+
+    #[cfg(windows)]
+    fn run_cli_version_command(cmd: &str) -> std::io::Result<std::process::Output> {
+        let lower = cmd.to_ascii_lowercase();
+        if lower.ends_with(".cmd") || lower.ends_with(".bat") {
+            return Command::new("cmd")
+                .arg("/c")
+                .arg(cmd)
+                .arg("--version")
+                .creation_flags(CREATE_NO_WINDOW)
+                .output();
+        }
+
+        Command::new(cmd)
+            .arg("--version")
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+    }
+
+    #[cfg(not(windows))]
+    fn run_cli_version_command(cmd: &str) -> std::io::Result<std::process::Output> {
+        Command::new(cmd)
+            .arg("--version")
+            .output()
     }
 
     /// 获取健康状态
     pub fn health_status(&self) -> HealthStatus {
         let claude_version = self.detect_claude();
         let claude_available = claude_version.is_some();
+        let codex_version = self.detect_codex();
+        let codex_available = codex_version.is_some();
 
         HealthStatus {
             claude_available,
             claude_version,
+            codex_available,
+            codex_version,
             work_dir: self.config.work_dir.as_ref()
                 .and_then(|p| p.to_str().map(|s| s.to_string())),
             config_valid: true,

@@ -352,6 +352,16 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
         <div className="p-4 bg-surface rounded-lg border border-border">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-medium text-text-primary">{t('codex.title', 'OpenAI Codex 配置')}</h3>
+            {healthStatus?.codexVersion && (
+              <span className="text-xs px-2 py-1 rounded-full bg-green-500/10 text-green-500 border border-green-500/20">
+                {healthStatus.codexVersion}
+              </span>
+            )}
+            {healthStatus && !healthStatus.codexAvailable && (
+              <span className="text-xs px-2 py-1 rounded-full bg-red-500/10 text-red-500 border border-red-500/20">
+                {t('codex.notAvailable', '未安装')}
+              </span>
+            )}
           </div>
           <div>
             <label className="block text-xs text-text-secondary mb-2">
