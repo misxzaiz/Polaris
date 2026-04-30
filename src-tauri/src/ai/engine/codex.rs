@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -16,6 +17,90 @@ use std::os::windows::process::CommandExt;
 
 #[cfg(windows)]
 use crate::utils::CREATE_NO_WINDOW;
+
+const CODEX_IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif"];
+
+fn codex_generated_images_dir(thread_id: &str) -> Option<PathBuf> {
+    dirs::home_dir().map(|home| home.join(".codex").join("generated_images").join(thread_id))
+}
+
+fn is_safe_codex_artifact_segment(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+        && !value.contains("..")
+}
+
+fn list_codex_generated_image_names(thread_id: &str) -> BTreeSet<String> {
+    if !is_safe_codex_artifact_segment(thread_id) {
+        return BTreeSet::new();
+    }
+
+    let Some(dir) = codex_generated_images_dir(thread_id) else {
+        return BTreeSet::new();
+    };
+
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return BTreeSet::new();
+    };
+
+    entries
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| {
+            let path = entry.path();
+            if !path.is_file() {
+                return None;
+            }
+
+            let ext = path
+                .extension()
+                .and_then(|v| v.to_str())
+                .map(|v| v.to_ascii_lowercase())?;
+
+            if !CODEX_IMAGE_EXTENSIONS.contains(&ext.as_str()) {
+                return None;
+            }
+
+            path.file_name()
+                .and_then(|v| v.to_str())
+                .filter(|name| is_safe_codex_artifact_segment(name))
+                .map(|v| v.to_string())
+        })
+        .collect()
+}
+
+fn build_codex_generated_images_markdown(
+    thread_id: &str,
+    initial_images: &BTreeSet<String>,
+) -> Option<String> {
+    let current_images = list_codex_generated_image_names(thread_id);
+    build_codex_generated_images_markdown_for_names(thread_id, initial_images, current_images)
+}
+
+fn build_codex_generated_images_markdown_for_names(
+    thread_id: &str,
+    initial_images: &BTreeSet<String>,
+    current_images: BTreeSet<String>,
+) -> Option<String> {
+    let new_images: Vec<&String> = current_images.difference(initial_images).collect();
+
+    if new_images.is_empty() {
+        return None;
+    }
+
+    let lines = new_images
+        .into_iter()
+        .map(|file_name| {
+            format!(
+                "![Codex 生成图片](/api/artifacts/codex-images/{}/{})",
+                thread_id, file_name
+            )
+        })
+        .collect::<Vec<_>>();
+
+    Some(lines.join("\n\n"))
+}
 
 /// OpenAI Codex CLI 引擎
 pub struct CodexEngine {
@@ -397,6 +482,7 @@ impl CodexEngine {
             let reader = BufReader::new(stdout);
             let mut received_session_end = false;
             let mut real_session_id = current_session_id.clone();
+            let mut initial_codex_images = list_codex_generated_image_names(&current_session_id);
             let mut line_count: u32 = 0;
             let mut known_event_count: u32 = 0;
             let mut unknown_event_count: u32 = 0;
@@ -442,6 +528,7 @@ impl CodexEngine {
                     // 处理 thread.started — 更新 session ID 映射
                     if let CodexEvent::ThreadStarted { ref thread_id } = codex_event {
                         real_session_id = thread_id.clone();
+                        initial_codex_images = list_codex_generated_image_names(thread_id);
                         SessionManager::update_session_id_shared(
                             &sessions, &temp_id, thread_id, pid, "codex", None,
                         );
@@ -474,6 +561,18 @@ impl CodexEngine {
                     } else {
                         &current_session_id
                     };
+
+                    // Codex image_generation events are persisted in Codex session files but are
+                    // not currently emitted on `codex exec --json` stdout. Detect images written
+                    // for this thread and surface them as markdown before session_end.
+                    if matches!(codex_event, CodexEvent::TurnCompleted { .. }) {
+                        if let Some(markdown) =
+                            build_codex_generated_images_markdown(sid, &initial_codex_images)
+                        {
+                            event_callback(AIEvent::assistant_message(sid, markdown, false));
+                        }
+                    }
+
                     for ai_event in codex_event_to_ai_events(codex_event, sid) {
                         event_callback(ai_event);
                     }
@@ -727,5 +826,38 @@ impl AIEngine for CodexEngine {
 
     fn active_session_count(&self) -> usize {
         self.sessions.count()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn safe_codex_artifact_segments_reject_path_traversal() {
+        assert!(is_safe_codex_artifact_segment(
+            "019ddbda-c6e1-7d33-83cf-15140b579b4e"
+        ));
+        assert!(is_safe_codex_artifact_segment("ig_abc123.png"));
+        assert!(!is_safe_codex_artifact_segment(""));
+        assert!(!is_safe_codex_artifact_segment("../secret.png"));
+        assert!(!is_safe_codex_artifact_segment("a/b.png"));
+        assert!(!is_safe_codex_artifact_segment("a\\b.png"));
+    }
+
+    #[test]
+    fn builds_markdown_for_new_codex_images() {
+        let initial = BTreeSet::from(["old.png".to_string()]);
+        let markdown = build_codex_generated_images_markdown_for_names(
+            "thread-1",
+            &initial,
+            BTreeSet::from(["old.png".to_string(), "ig_new.png".to_string()]),
+        )
+        .unwrap();
+
+        assert_eq!(
+            markdown,
+            "![Codex 生成图片](/api/artifacts/codex-images/thread-1/ig_new.png)"
+        );
     }
 }

@@ -4,7 +4,7 @@
 //! Designed for WSL/Linux headless server deployment.
 //!
 //! Usage:
-//!   polaris-web                                    # default: 0.0.0.0:9800
+//!   polaris-web                                    # default: 0.0.0.0:9830
 //!   POLARIS_WEB_PORT=8080 polaris-web              # custom port
 //!
 //! Token authentication is disabled by default. Configure via Web UI Settings

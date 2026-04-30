@@ -663,7 +663,7 @@ impl Default for TTSConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WebConfig {
-    /// 是否启用 Web 服务（默认不启动）
+    /// 是否启用 Web 服务（发布版默认不启动，调试版运行时默认启动）
     #[serde(default)]
     pub enabled: bool,
 
@@ -681,7 +681,7 @@ pub struct WebConfig {
 }
 
 fn default_web_host() -> String { "0.0.0.0".to_string() }
-fn default_web_port() -> u16 { 9800 }
+fn default_web_port() -> u16 { 9830 }
 
 impl Default for WebConfig {
     fn default() -> Self {

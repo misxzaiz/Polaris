@@ -56,7 +56,18 @@ pub async fn request_trace(req: Request<Body>, next: Next) -> Response {
 /// the inner router processes the request. So /api/ws becomes /ws inside the
 /// nested handler. We must match BOTH forms to cover all cases.
 fn is_auth_skipped_path(path: &str) -> bool {
-    matches!(path, "/api/health" | "/health" | "/api/ws" | "/ws" | "/api/auth/verify" | "/auth/verify" | "/api/auth/token" | "/auth/token")
+    matches!(
+        path,
+        "/api/health"
+            | "/health"
+            | "/api/ws"
+            | "/ws"
+            | "/api/auth/verify"
+            | "/auth/verify"
+            | "/api/auth/token"
+            | "/auth/token"
+    ) || path.starts_with("/api/artifacts/codex-images/")
+        || path.starts_with("/artifacts/codex-images/")
 }
 
 /// Extract the token value from an `Authorization: Bearer <value>` header.

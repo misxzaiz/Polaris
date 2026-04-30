@@ -127,6 +127,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/chat/answer-question", post(api::chat::handle_answer_question))
         .route("/chat/approve-plan", post(api::chat::handle_approve_plan))
         .route("/chat/reject-plan", post(api::chat::handle_reject_plan))
+        // Artifacts
+        .route("/artifacts/codex-images/{thread_id}/{file_name}", get(api::artifacts::handle_codex_image_artifact))
         // Sessions
         .route("/sessions", get(api::session::handle_list_sessions).post(api::session::handle_create_session))
         .route("/sessions/{id}", delete(api::session::handle_delete_session))

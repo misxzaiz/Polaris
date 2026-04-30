@@ -147,6 +147,23 @@ fn update_config(config: Config, state: tauri::State<AppState>) -> Result<()> {
     store.update(config)
 }
 
+const LEGACY_WEB_PORT: u16 = 9800;
+const DEV_WEB_PORT: u16 = 9830;
+
+#[cfg(feature = "tauri-app")]
+fn web_enabled_for_runtime(config_enabled: bool) -> bool {
+    config_enabled || cfg!(debug_assertions)
+}
+
+fn web_port_for_runtime(config_port: u16) -> u16 {
+    let port = if cfg!(debug_assertions) && config_port == LEGACY_WEB_PORT {
+        DEV_WEB_PORT
+    } else {
+        config_port
+    };
+    web::server::WebServer::resolve_port(port)
+}
+
 /// 动态应用 Web 服务器配置：根据当前 config.web 启动或停止服务器。
 ///
 /// 保存 Web 配置后，前端应调用此命令以即时生效，无需重启应用。
@@ -159,8 +176,9 @@ fn apply_web_server(state: tauri::State<AppState>) -> std::result::Result<serde_
         store.get().clone()
     };
 
-    // Case: user disabled the web service — stop running server
-    if !config.web.enabled {
+    // Case: user disabled the web service: stop running server.
+    // In debug builds the Web backend is kept on by default for browser-mode testing.
+    if !web_enabled_for_runtime(config.web.enabled) {
         let handle_arc = state.web_server_handle.clone();
         tauri::async_runtime::spawn(async move {
             let mut guard = handle_arc.lock().await;
@@ -172,7 +190,7 @@ fn apply_web_server(state: tauri::State<AppState>) -> std::result::Result<serde_
         return Ok(serde_json::json!({ "running": false }));
     }
 
-    let port = web::server::WebServer::resolve_port(config.web.port);
+    let port = web_port_for_runtime(config.web.port);
     let addr = format!("{}:{}", config.web.host, port);
     let web_state = Arc::new(state.clone_for_web());
     let web_server = web::server::WebServer::new(web_state);
@@ -393,8 +411,8 @@ pub fn run() {
                 store.get().clone()
             };
 
-            if config.web.enabled {
-                let port = web::server::WebServer::resolve_port(config.web.port);
+            if web_enabled_for_runtime(config.web.enabled) {
+                let port = web_port_for_runtime(config.web.port);
                 let addr = format!("{}:{}", config.web.host, port);
                 let web_state = Arc::new(state.clone_for_web());
                 let web_server = web::server::WebServer::new(web_state);
@@ -758,7 +776,7 @@ pub fn run_web_server() {
     let _ = app_state.app_config_dir.set(config_dir);
 
     // 启动 Web 服务器
-    let port = web::server::WebServer::resolve_port(config.web.port);
+    let port = web_port_for_runtime(config.web.port);
     let addr = format!("{}:{}", config.web.host, port);
     let state = Arc::new(app_state);
     let web_server = web::server::WebServer::new(state);

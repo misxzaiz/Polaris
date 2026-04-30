@@ -59,7 +59,7 @@ fn create_test_state() -> Arc<AppState> {
     config.web = WebConfig {
         enabled: true,
         host: "0.0.0.0".to_string(),
-        port: 9800,
+        port: 9830,
         token: Some(TEST_TOKEN.to_string()),
     };
     let config_store = ConfigStore::new_test(config, std::path::PathBuf::from("/tmp/polaris_test"));
@@ -315,7 +315,7 @@ async fn settings_get_returns_config() {
     let body = axum::body::to_bytes(res.into_body(), 4096).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["web"]["enabled"], true);
-    assert_eq!(json["web"]["port"], 9800);
+    assert_eq!(json["web"]["port"], 9830);
 }
 
 #[tokio::test]
