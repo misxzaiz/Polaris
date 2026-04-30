@@ -148,6 +148,11 @@ export interface Config {
     /** Claude CLI 命令路径 */
     cliPath: string;
   };
+  /** OpenAI Codex 引擎配置 */
+  codexCode: {
+    /** Codex CLI 命令路径 */
+    cliPath: string;
+  };
   /** 工作目录 */
   workDir?: string;
   /** 会话保存路径 */

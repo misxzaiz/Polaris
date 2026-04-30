@@ -41,6 +41,10 @@
     "title": "Claude Code Configuration",
     "cliPath": "Claude CLI Path"
   },
+  "codex": {
+    "title": "OpenAI Codex Configuration",
+    "cliPath": "Codex CLI Path"
+  },
   "language": {
     "title": "Language Settings",
     "current": "Current Language",
@@ -76,6 +80,11 @@
       "name": "Claude Code",
       "placeholder": "Enter the full path to Claude CLI",
       "example": "e.g., C:\\Users\\...\\claude.cmd (Windows) or /usr/local/bin/claude (macOS/Linux)"
+    },
+    "codex": {
+      "name": "OpenAI Codex",
+      "placeholder": "Enter the full path or command name for Codex CLI",
+      "example": "e.g., codex, C:\\Users\\...\\codex.cmd (Windows), or /usr/local/bin/codex (macOS/Linux)"
     }
   },
   "validation": {

@@ -9,7 +9,7 @@ export type SessionType = 'project' | 'free'
 export type SessionStatus = 'idle' | 'running' | 'waiting' | 'error' | 'background-running'
 
 /** AI 引擎 ID */
-export type EngineId = 'claude-code'
+export type EngineId = 'claude-code' | 'codex'
 
 /** 会话元数据 */
 export interface ChatSession {
@@ -38,7 +38,7 @@ export interface ChatSession {
   /** 外部会话 ID（Claude Code 的 sessionId） */
   externalSessionId: string | null
   /** 外部会话来源 */
-  externalSource: 'claude-code-native' | null
+  externalSource: 'claude-code-native' | 'codex-native' | null
 
   // 时间戳
   /** 创建时间 */
@@ -61,7 +61,7 @@ export interface CreateSessionOptions {
   title?: string
   /** 从已有外部会话恢复 */
   externalSessionId?: string
-  externalSource?: 'claude-code-native'
+  externalSource?: 'claude-code-native' | 'codex-native'
 }
 
 /** 工作区切换模式 */

@@ -1,7 +1,7 @@
 /**
  * CLI 路径选择器组件
  * 支持自动检测和手动输入两种模式
- * 支持 Claude Code 引擎
+ * 支持 Claude Code / Codex 引擎
  */
 
 import { useState, useEffect } from 'react';
@@ -12,7 +12,7 @@ import { createLogger } from '../../utils/logger';
 
 const log = createLogger('ClaudePathSelector');
 
-type EngineType = 'claude-code';
+type EngineType = 'claude-code' | 'codex';
 
 interface ClaudePathSelectorProps {
   /** 当前路径值 */
@@ -48,6 +48,7 @@ export function ClaudePathSelector({
     name: t(`pathSelector.${type}.name`),
     placeholder: t(`pathSelector.${type}.placeholder`),
     example: t(`pathSelector.${type}.example`),
+    command: type === 'codex' ? 'codex' : 'claude',
   });
   
   const config = getConfig(engineType);
@@ -62,7 +63,9 @@ export function ClaudePathSelector({
   const detectPaths = async () => {
     setDetecting(true);
     try {
-      const paths = await tauri.findClaudePaths();
+      const paths = engineType === 'claude-code'
+        ? await tauri.findClaudePaths()
+        : (await tauri.checkCliInstalled(config.command) ? [config.command] : []);
       setDetectedPaths(paths);
 
       if (paths.length > 0 && !value) {
@@ -85,9 +88,15 @@ export function ClaudePathSelector({
 
     setValidating(true);
     try {
-      const result = await tauri.validateClaudePath(path);
-      setIsValid(result.valid);
-      setValidationError(mapErrorMessage(result.error));
+      if (engineType === 'claude-code') {
+        const result = await tauri.validateClaudePath(path);
+        setIsValid(result.valid);
+        setValidationError(mapErrorMessage(result.error));
+      } else {
+        await tauri.getCliVersionFor(path);
+        setIsValid(true);
+        setValidationError(null);
+      }
     } catch (e) {
       setIsValid(false);
       setValidationError(e instanceof Error ? mapErrorMessage(e.message) : t('validation.validationError'));
@@ -103,7 +112,7 @@ export function ClaudePathSelector({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- detectPaths is stable function
   }, [mode, engineType]);
 
-  // Claude Code 使用 CLI 路径选择
+  // CLI 路径选择
 
   return (
     <div className="space-y-3">

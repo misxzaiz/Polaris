@@ -2,7 +2,9 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
-use super::codex_parser::{codex_event_to_ai_events, extract_event_type, parse_codex_line, CodexEvent};
+use super::codex_parser::{
+    codex_event_to_ai_events, extract_event_type, parse_codex_line, CodexEvent,
+};
 use crate::ai::session::SessionManager;
 use crate::ai::traits::{AIEngine, EngineId, SessionOptions};
 use crate::error::{AppError, Result};
@@ -192,8 +194,12 @@ impl CodexEngine {
         session_id: Option<&str>,
         work_dir: Option<&str>,
         model: Option<&str>,
+        additional_dirs: &[String],
+        permission_mode: Option<&str>,
     ) -> Result<Command> {
-        let cli_path = self.cli_path.as_ref()
+        let cli_path = self
+            .cli_path
+            .as_ref()
             .ok_or_else(|| AppError::ProcessError("CLI 路径未初始化".to_string()))?;
 
         let is_resume = session_id.is_some();
@@ -231,8 +237,8 @@ impl CodexEngine {
         // 跳过 git 仓库检查（允许在非 git 目录中使用）
         cmd.arg("--skip-git-repo-check");
 
-        // 全部操作权限：绕过沙箱和审批
-        cmd.arg("--dangerously-bypass-approvals-and-sandbox");
+        // 权限模式。Codex CLI 的 resume 子命令目前不支持 --sandbox，仅支持 --full-auto / bypass。
+        add_codex_permission_args(&mut cmd, permission_mode, is_resume);
 
         // 工作目录（仅 exec 支持 -C；resume 通过 cmd.current_dir() 设置）
         if !is_resume {
@@ -242,6 +248,12 @@ impl CodexEngine {
                 }
             } else if let Some(ref work_dir) = self.config.work_dir {
                 cmd.arg("-C").arg(work_dir);
+            }
+
+            for dir in additional_dirs {
+                if !dir.is_empty() {
+                    cmd.arg("--add-dir").arg(dir);
+                }
             }
         }
 
@@ -265,7 +277,12 @@ impl CodexEngine {
     }
 
     /// 配置命令的通用选项
-    fn configure_command(&self, cmd: &mut Command, work_dir: Option<&str>) {
+    fn configure_command(
+        &self,
+        cmd: &mut Command,
+        work_dir: Option<&str>,
+        env_overrides: &std::collections::HashMap<String, String>,
+    ) {
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -288,6 +305,10 @@ impl CodexEngine {
         {
             cmd.env("CHCP", "65001");
         }
+
+        for (key, value) in env_overrides {
+            cmd.env(key, value);
+        }
     }
 
     /// 格式化命令为可复制的字符串（用于日志输出）
@@ -308,13 +329,7 @@ impl CodexEngine {
     }
 
     /// 启动后台线程读取 Codex JSONL 事件
-    fn spawn_event_reader(
-        &self,
-        child: Child,
-        temp_id: String,
-        pid: u32,
-        options: SessionOptions,
-    ) {
+    fn spawn_event_reader(&self, child: Child, temp_id: String, pid: u32, options: SessionOptions) {
         let sessions = self.sessions.shared();
         let event_callback = options.event_callback.clone();
         let on_complete = options.on_complete.clone();
@@ -413,7 +428,8 @@ impl CodexEngine {
                         if let Some(evt_type) = extract_event_type(trimmed) {
                             tracing::warn!(
                                 "[CodexEngine] 未知事件类型 [{}]: {}",
-                                evt_type, preview
+                                evt_type,
+                                preview
                             );
                         } else {
                             tracing::warn!("[CodexEngine] 无法提取事件类型: {}", preview);
@@ -427,12 +443,7 @@ impl CodexEngine {
                     if let CodexEvent::ThreadStarted { ref thread_id } = codex_event {
                         real_session_id = thread_id.clone();
                         SessionManager::update_session_id_shared(
-                            &sessions,
-                            &temp_id,
-                            thread_id,
-                            pid,
-                            "codex",
-                            None,
+                            &sessions, &temp_id, thread_id, pid, "codex", None,
                         );
                         tracing::info!(
                             "[CodexEngine] session_id 更新: {} -> {}",
@@ -450,7 +461,10 @@ impl CodexEngine {
                     }
 
                     // 检查会话结束
-                    if matches!(codex_event, CodexEvent::TurnCompleted { .. } | CodexEvent::TurnFailed { .. }) {
+                    if matches!(
+                        codex_event,
+                        CodexEvent::TurnCompleted { .. } | CodexEvent::TurnFailed { .. }
+                    ) {
                         received_session_end = true;
                     }
 
@@ -467,14 +481,19 @@ impl CodexEngine {
                     parse_fail_count += 1;
                     tracing::warn!(
                         "[CodexEngine] JSON 解析失败 [{}/{}]: {}",
-                        parse_fail_count, line_count, preview
+                        parse_fail_count,
+                        line_count,
+                        preview
                     );
                 }
             }
 
             tracing::info!(
                 "[CodexEngine] stdout 读取完成: {} 行, {} 已知事件, {} 未知事件, {} 解析失败",
-                line_count, known_event_count, unknown_event_count, parse_fail_count
+                line_count,
+                known_event_count,
+                unknown_event_count,
+                parse_fail_count
             );
 
             // 如果没有收到 turn 结束事件，发送 fallback
@@ -490,7 +509,9 @@ impl CodexEngine {
                     // 有 stdout 输出但无已知事件 — 格式不兼容或解析错误
                     tracing::warn!(
                         "[CodexEngine] CLI 产生了 {} 行输出但无已知事件 ({} 解析失败, {} 未知类型)",
-                        line_count, parse_fail_count, unknown_event_count
+                        line_count,
+                        parse_fail_count,
+                        unknown_event_count
                     );
                     event_callback(AIEvent::error(
                         &current_session_id,
@@ -528,6 +549,24 @@ fn strip_ansi_codes(s: &str) -> String {
     re.replace_all(s, "").to_string()
 }
 
+fn add_codex_permission_args(cmd: &mut Command, permission_mode: Option<&str>, is_resume: bool) {
+    match permission_mode.unwrap_or("").trim() {
+        "bypassPermissions" => {
+            cmd.arg("--dangerously-bypass-approvals-and-sandbox");
+        }
+        "auto" | "acceptEdits" => {
+            cmd.arg("--full-auto");
+        }
+        "dontAsk" | "plan" => {
+            if !is_resume {
+                cmd.arg("--sandbox").arg("read-only");
+            }
+        }
+        // Default Codex behavior: preserve configured user approval/sandbox settings.
+        _ => {}
+    }
+}
+
 impl AIEngine for CodexEngine {
     fn id(&self) -> EngineId {
         EngineId::Codex
@@ -545,11 +584,7 @@ impl AIEngine for CodexEngine {
         true // 实际检查在 start_session 时进行
     }
 
-    fn start_session(
-        &mut self,
-        message: &str,
-        options: SessionOptions,
-    ) -> Result<String> {
+    fn start_session(&mut self, message: &str, options: SessionOptions) -> Result<String> {
         tracing::info!("[CodexEngine] 启动会话，消息长度: {}", message.len());
         tracing::info!("[CodexEngine] 工作目录: {:?}", options.work_dir);
 
@@ -560,15 +595,12 @@ impl AIEngine for CodexEngine {
             ));
         }
 
-        let work_dir = options
-            .work_dir
-            .clone()
-            .or_else(|| {
-                self.config
-                    .work_dir
-                    .as_ref()
-                    .map(|p| p.to_string_lossy().to_string())
-            });
+        let work_dir = options.work_dir.clone().or_else(|| {
+            self.config
+                .work_dir
+                .as_ref()
+                .map(|p| p.to_string_lossy().to_string())
+        });
 
         // 构建命令
         let mut cmd = self.build_command(
@@ -576,8 +608,10 @@ impl AIEngine for CodexEngine {
             None, // 新会话无 session_id
             work_dir.as_deref(),
             options.model.as_deref(),
+            &options.additional_dirs,
+            options.permission_mode.as_deref(),
         )?;
-        self.configure_command(&mut cmd, work_dir.as_deref());
+        self.configure_command(&mut cmd, work_dir.as_deref(), &options.env_overrides);
 
         // 打印命令（调试用）
         let cmd_str = Self::format_command_for_log(&cmd);
@@ -598,7 +632,8 @@ impl AIEngine for CodexEngine {
         self.spawn_event_reader(child, temp_id.clone(), pid, options);
 
         // 注册会话
-        self.sessions.register(temp_id.clone(), pid, "codex".to_string())?;
+        self.sessions
+            .register(temp_id.clone(), pid, "codex".to_string())?;
 
         Ok(temp_id)
     }
@@ -649,8 +684,10 @@ impl AIEngine for CodexEngine {
             Some(&real_session_id),
             work_dir.as_deref(),
             options.model.as_deref(),
+            &options.additional_dirs,
+            options.permission_mode.as_deref(),
         )?;
-        self.configure_command(&mut cmd, work_dir.as_deref());
+        self.configure_command(&mut cmd, work_dir.as_deref(), &options.env_overrides);
 
         let cmd_str = Self::format_command_for_log(&cmd);
         tracing::info!("[CodexEngine] 执行命令: {}", cmd_str);

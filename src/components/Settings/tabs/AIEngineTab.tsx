@@ -63,6 +63,13 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
     });
   };
 
+  const handleCodexCmdChange = (cmd: string) => {
+    onConfigChange({
+      ...config,
+      codexCode: { ...(config.codexCode || { cliPath: 'codex' }), cliPath: cmd }
+    });
+  };
+
   const handleAddProfile = () => {
     if (!newProfile.name || !newProfile.baseUrl || !newProfile.apiKey || !newProfile.model) return;
     addProfile(newProfile);
@@ -334,6 +341,26 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
               value={config.claudeCode.cliPath}
               onChange={handleClaudeCmdChange}
               engineType="claude-code"
+              disabled={loading}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Codex 配置 */}
+      {config.defaultEngine === 'codex' && (
+        <div className="p-4 bg-surface rounded-lg border border-border">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-medium text-text-primary">{t('codex.title', 'OpenAI Codex 配置')}</h3>
+          </div>
+          <div>
+            <label className="block text-xs text-text-secondary mb-2">
+              {t('codex.cliPath', 'Codex CLI 命令路径')}
+            </label>
+            <ClaudePathSelector
+              value={config.codexCode?.cliPath || 'codex'}
+              onChange={handleCodexCmdChange}
+              engineType="codex"
               disabled={loading}
             />
           </div>

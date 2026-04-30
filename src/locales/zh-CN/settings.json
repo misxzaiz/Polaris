@@ -41,6 +41,10 @@
     "title": "Claude Code 配置",
     "cliPath": "Claude CLI 命令路径"
   },
+  "codex": {
+    "title": "OpenAI Codex 配置",
+    "cliPath": "Codex CLI 命令路径"
+  },
   "language": {
     "title": "语言设置",
     "current": "当前语言",
@@ -76,6 +80,11 @@
       "name": "Claude Code",
       "placeholder": "请输入 Claude CLI 的完整路径",
       "example": "例如: C:\\Users\\...\\claude.cmd (Windows) 或 /usr/local/bin/claude (macOS/Linux)"
+    },
+    "codex": {
+      "name": "OpenAI Codex",
+      "placeholder": "请输入 Codex CLI 的完整路径或命令名",
+      "example": "例如: codex、C:\\Users\\...\\codex.cmd (Windows) 或 /usr/local/bin/codex (macOS/Linux)"
     }
   },
   "validation": {

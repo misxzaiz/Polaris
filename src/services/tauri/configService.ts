@@ -42,6 +42,16 @@ export async function validateClaudePath(path: string): Promise<PathValidationRe
   return invoke<PathValidationResult>('validate_claude_path', { path });
 }
 
+/** 检查指定 CLI 是否可用 */
+export async function checkCliInstalled(cliName: string): Promise<boolean> {
+  return invoke<boolean>('cli_check_installed', { cliName });
+}
+
+/** 获取指定 CLI 版本 */
+export async function getCliVersionFor(cliName: string): Promise<string> {
+  return invoke<string>('cli_get_version_for', { cliName });
+}
+
 /** 健康检查 */
 export async function healthCheck(): Promise<HealthStatus> {
   return invoke<HealthStatus>('health_check');

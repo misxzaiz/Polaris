@@ -2,6 +2,7 @@
  * 通用缓存工具
  */
 
+import { convertFileSrc } from '@tauri-apps/api/core';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import type { FileMatch } from '../services/fileSearch';
@@ -16,11 +17,41 @@ marked.setOptions({
 });
 
 // 自定义链接渲染：所有链接在新标签页打开，防止 SPA 页面跳转导致状态丢失
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function isTauriRuntime(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+function isLocalFileReference(href: string): boolean {
+  return /^[a-zA-Z]:[\\/]/.test(href) || href.startsWith('/') || href.startsWith('file://');
+}
+
+function normalizeMarkdownImageSrc(href: string): string {
+  if (!href) return '';
+  if (!isTauriRuntime() || !isLocalFileReference(href)) return href;
+
+  const path = href.startsWith('file://') ? href.replace(/^file:\/\/\/?/, '') : href;
+  return convertFileSrc(decodeURIComponent(path));
+}
+
 const linkRenderer = {
   link({ href, text }: { href: string; text: string }) {
-    const safeHref = href.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const safeHref = escapeHtmlAttribute(href);
     const safeText = text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
     return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${safeText}</a>`;
+  },
+  image({ href, title, text }: { href: string; title: string | null; text: string }) {
+    const safeSrc = escapeHtmlAttribute(normalizeMarkdownImageSrc(href));
+    const safeAlt = escapeHtmlAttribute(text || '');
+    const safeTitle = title ? ` title="${escapeHtmlAttribute(title)}"` : '';
+    return `<img src="${safeSrc}" alt="${safeAlt}"${safeTitle} loading="lazy" />`;
   },
 };
 marked.use({ renderer: linkRenderer });
@@ -298,11 +329,23 @@ export const MARKDOWN_ALLOWED_TAGS = [
   'p', 'br', 'strong', 'em', 'code', 'pre', 'blockquote',
   'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
   'a', 'span', 'div', 'mark', 'table', 'thead', 'tbody',
-  'tr', 'td', 'th', 'hr', 'dl', 'dt', 'dd', 'input',
+  'tr', 'td', 'th', 'hr', 'dl', 'dt', 'dd', 'input', 'img',
 ];
 
 /** 聊天消息 Markdown 渲染允许的 HTML 属性 */
-export const MARKDOWN_ALLOWED_ATTR = ['class', 'href', 'target', 'rel', 'type', 'checked', 'disabled'];
+export const MARKDOWN_ALLOWED_ATTR = [
+  'class',
+  'href',
+  'target',
+  'rel',
+  'type',
+  'checked',
+  'disabled',
+  'src',
+  'alt',
+  'title',
+  'loading',
+];
 
 export class MarkdownRenderCache {
   private cache: LRUCache<MarkdownCacheEntry>;

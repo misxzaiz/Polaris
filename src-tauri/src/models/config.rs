@@ -41,6 +41,8 @@ pub enum EngineId {
     /// Claude Code 引擎
     #[default]
     ClaudeCode,
+    /// OpenAI Codex 引擎
+    Codex,
 }
 
 
@@ -49,6 +51,7 @@ impl EngineId {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::ClaudeCode => "claude-code",
+            Self::Codex => "codex",
         }
     }
 
@@ -56,6 +59,7 @@ impl EngineId {
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "claude-code" => Some(Self::ClaudeCode),
+            "codex" | "openai-codex" | "openai_codex" => Some(Self::Codex),
             _ => None,
         }
     }
