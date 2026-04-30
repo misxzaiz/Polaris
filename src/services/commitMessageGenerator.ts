@@ -9,6 +9,8 @@ import { invoke } from '@/services/transport'
 import { getEventRouter, createContextId } from './eventRouter'
 import type { GitDiffEntry } from '@/types/git'
 import { createLogger } from '../utils/logger'
+import { useConfigStore } from '../stores/configStore'
+import { normalizeEngineId } from '../utils/engineDisplay'
 import {
   isAIEvent,
   isTokenEvent,
@@ -203,11 +205,15 @@ async function callAIForCommitMessage(
 
         const fullPrompt = `${systemPrompt}\n\n${userPrompt}`
         
+        const engineId = normalizeEngineId(useConfigStore.getState().config?.defaultEngine)
+
         await invoke<string>('start_chat', {
           message: fullPrompt.replace(/\n/g, '\\n'),
-          workDir,
-          engineId: 'claude-code',
-          contextId,
+          options: {
+            workDir,
+            engineId,
+            contextId,
+          },
         })
       } catch (err) {
         cleanup()

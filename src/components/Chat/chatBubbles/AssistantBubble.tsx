@@ -8,6 +8,7 @@ import { formatContent, extractAssistantText } from '../chatUtils/helpers';
 import { renderBlocksWithGrouping } from '../blockGrouping';
 import { MessageContextMenu } from './MessageContextMenu';
 import { Bot } from 'lucide-react';
+import { getEngineDisplayName } from '../../../utils/engineDisplay';
 
 export const AssistantBubble = memo(function AssistantBubble({
   message,
@@ -69,7 +70,7 @@ export const AssistantBubble = memo(function AssistantBubble({
         <div className="flex-1 space-y-1 min-w-0">
           {/* 头部信息 */}
           <div className="flex items-baseline gap-2">
-            <span className="text-sm font-medium text-text-primary">Claude</span>
+            <span className="text-sm font-medium text-text-primary">{getEngineDisplayName(message.engineId)}</span>
             <span className="text-xs text-text-tertiary">
               {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
             </span>

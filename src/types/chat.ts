@@ -2,6 +2,8 @@
  * 聊天相关类型定义
  */
 
+import type { EngineId } from './config';
+
 /** 消息角色 */
 export type MessageRole = 'user' | 'assistant' | 'system';
 
@@ -378,6 +380,8 @@ export interface UserChatMessage extends BaseChatMessage {
 /** 助手消息 - 使用内容块数组 */
 export interface AssistantChatMessage extends BaseChatMessage {
   type: 'assistant';
+  /** 生成此回复的 AI 引擎 */
+  engineId?: EngineId;
   /** 内容块数组 - 实现工具穿插在文本中间 */
   blocks: ContentBlock[];
   /** 是否正在流式输出 */

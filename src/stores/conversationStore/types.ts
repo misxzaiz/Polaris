@@ -7,6 +7,7 @@
 import type {
   ChatMessage,
   ContentBlock,
+  EngineId,
   ToolStatus,
   Workspace,
 } from '../../types'
@@ -18,6 +19,7 @@ import type { EventRouter } from '../../services/eventRouter'
 /** 当前正在构建的 Assistant 消息 */
 export interface CurrentAssistantMessage {
   id: string
+  engineId?: EngineId
   blocks: ContentBlock[]
   isStreaming: true
 }
@@ -235,6 +237,7 @@ export interface SessionMetadata {
   id: string
   title: string
   type: 'project' | 'free'
+  engineId?: EngineId
   workspaceId: string | null
   workspaceName?: string // 工作区名称（用于显示）
   contextWorkspaceIds: string[] // 关联工作区 ID 列表
@@ -274,7 +277,7 @@ export interface CreateSessionOptions {
 export interface CreateSessionFromHistoryOptions {
   title: string
   workspaceId?: string
-  engineId?: 'claude-code'
+  engineId?: EngineId
   externalSessionId?: string
   messages: ChatMessage[]
   conversationId?: string | null
@@ -310,7 +313,7 @@ export interface SessionManagerActions {
   // ===== 会话生命周期 =====
   createSession: (options: CreateSessionOptions) => string
   /** 从历史创建会话（恢复历史消息） */
-  createSessionFromHistory: (options: import('../../types').ChatMessage[], conversationId: string | null, metadata?: { title?: string; workspaceId?: string; forkFromId?: string }) => string
+  createSessionFromHistory: (options: import('../../types').ChatMessage[], conversationId: string | null, metadata?: { title?: string; workspaceId?: string; forkFromId?: string; engineId?: EngineId }) => string
   deleteSession: (sessionId: string) => void
   switchSession: (sessionId: string) => void
   /** 更新会话标题 */

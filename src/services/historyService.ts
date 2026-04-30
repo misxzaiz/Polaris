@@ -13,6 +13,7 @@ import { useViewStore } from '../stores/index'
 import { sessionStoreManager } from '../stores/conversationStore/sessionStoreManager'
 import { useConfigStore } from '../stores/configStore'
 import { getClaudeCodeHistoryService } from './claudeCodeHistoryService'
+import { normalizeEngineId } from '../utils/engineDisplay'
 
 const log = createLogger('HistoryService')
 
@@ -82,6 +83,13 @@ function getPathBasename(pathStr: string): string {
   const normalized = pathStr.replace(/\\/g, '/')
   const parts = normalized.split('/')
   return parts[parts.length - 1] || pathStr
+}
+
+function withAssistantEngineId(messages: ChatMessage[], engineId: EngineId): ChatMessage[] {
+  return messages.map(message => {
+    if (message.type !== 'assistant' || message.engineId) return message
+    return { ...message, engineId }
+  })
 }
 
 export const historyService = {
@@ -237,6 +245,7 @@ export const historyService = {
       let chatMessages: ChatMessage[] = []
       let title = '恢复的会话'
       let externalSessionId: string | undefined
+      let restoredEngineId: EngineId = normalizeEngineId(engineId)
 
       // 2.1 尝试从 localStorage 恢复
       const historyJson = localStorage.getItem(SESSION_HISTORY_KEY)
@@ -244,7 +253,8 @@ export const historyService = {
       const localSession = localHistory.find((h: HistoryEntry) => h.id === sessionId)
 
       if (localSession) {
-        chatMessages = localSession.data.messages || []
+        restoredEngineId = normalizeEngineId(localSession.engineId || engineId)
+        chatMessages = withAssistantEngineId(localSession.data.messages || [], restoredEngineId)
         title = localSession.title
         externalSessionId = localSession.id
       }
@@ -254,7 +264,8 @@ export const historyService = {
         const messages = await claudeCodeService.getSessionHistory(sessionId, claudeProjectName)
 
         if (messages.length > 0) {
-          chatMessages = claudeCodeService.convertToChatMessages(messages)
+          restoredEngineId = 'claude-code'
+          chatMessages = withAssistantEngineId(claudeCodeService.convertToChatMessages(messages), restoredEngineId)
           title = '恢复的会话'
           externalSessionId = sessionId
         }
@@ -269,7 +280,7 @@ export const historyService = {
       const newSessionId = sessionStoreManager.getState().createSessionFromHistory(
         chatMessages,
         externalSessionId || null,
-        { title, workspaceId },
+        { title, workspaceId, engineId: restoredEngineId },
       )
 
       log.info('从历史恢复成功', { sessionId: newSessionId, title, messageCount: chatMessages.length })

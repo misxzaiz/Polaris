@@ -9,7 +9,7 @@ import { create, StoreApi, UseBoundStore } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import { invoke } from '@/services/tauri'
 import type { ConversationStore, ConversationState, StoreDeps } from './types'
-import type { ChatMessage } from '../../types'
+import type { ChatMessage, ContentBlock, EngineId } from '../../types'
 import { handleAIEvent } from './eventHandler'
 import { toAppError, ErrorSource } from '../../types/errors'
 import { sessionStoreManager } from './sessionStoreManager'
@@ -161,6 +161,17 @@ export function createConversationStore(
 ): ConversationStoreInstance {
   const initialState = createInitialState(sessionId)
 
+  const getCurrentEngineId = (): EngineId => {
+    return deps.getConfig()?.defaultEngine === 'codex' ? 'codex' : 'claude-code'
+  }
+
+  const createCurrentAssistantMessage = (blocks: ContentBlock[]) => ({
+    id: generateUUID(),
+    engineId: getCurrentEngineId(),
+    blocks,
+    isStreaming: true as const,
+  })
+
   // ===== 流式文本缓冲区 =====
   // 段落级缓冲策略：
   // 1. 首段立即显示（快速响应）
@@ -238,6 +249,7 @@ export function createConversationStore(
           const completedMessage = {
             id: currentMessage.id,
             type: 'assistant' as const,
+            engineId: currentMessage.engineId,
             blocks: currentMessage.blocks,
             timestamp: new Date().toISOString(),
             isStreaming: false,
@@ -320,11 +332,7 @@ export function createConversationStore(
           // 首次创建消息
           if (bufferToFlush) {
             set({
-              currentMessage: {
-                id: generateUUID(),
-                blocks: [{ type: 'text', content: bufferToFlush }],
-                isStreaming: true,
-              },
+              currentMessage: createCurrentAssistantMessage([{ type: 'text', content: bufferToFlush }]),
               streamingUpdateCounter: state.streamingUpdateCounter + 1,
             })
           }
@@ -355,7 +363,7 @@ export function createConversationStore(
         const block = { type: 'thinking' as const, content }
         if (!currentMessage) {
           set({
-            currentMessage: { id: generateUUID(), blocks: [block], isStreaming: true },
+            currentMessage: createCurrentAssistantMessage([block]),
             streamingUpdateCounter: streamingUpdateCounter + 1,
           })
         } else {
@@ -383,7 +391,7 @@ export function createConversationStore(
         if (!currentMessage) {
           newMap.set(toolId, 0)
           set({
-            currentMessage: { id: generateUUID(), blocks: [block], isStreaming: true },
+            currentMessage: createCurrentAssistantMessage([block]),
             toolBlockMap: newMap,
             streamingUpdateCounter: streamingUpdateCounter + 1,
           })
@@ -453,7 +461,7 @@ export function createConversationStore(
         if (!currentMessage) {
           newMap.set(questionId, 0)
           set({
-            currentMessage: { id: generateUUID(), blocks: [block], isStreaming: true },
+            currentMessage: createCurrentAssistantMessage([block]),
             questionBlockMap: newMap,
             streamingUpdateCounter: streamingUpdateCounter + 1,
           })
@@ -496,7 +504,7 @@ export function createConversationStore(
         if (!currentMessage) {
           newMap.set(planId, 0)
           set({
-            currentMessage: { id: generateUUID(), blocks: [block], isStreaming: true },
+            currentMessage: createCurrentAssistantMessage([block]),
             planBlockMap: newMap,
             activePlanId: planId,
             streamingUpdateCounter: streamingUpdateCounter + 1,
@@ -556,7 +564,7 @@ export function createConversationStore(
         if (!currentMessage) {
           newMap.set(taskId, 0)
           set({
-            currentMessage: { id: generateUUID(), blocks: [block], isStreaming: true },
+            currentMessage: createCurrentAssistantMessage([block]),
             agentRunBlockMap: newMap,
             activeTaskId: taskId,
             streamingUpdateCounter: streamingUpdateCounter + 1,
@@ -636,7 +644,7 @@ export function createConversationStore(
         if (!currentMessage) {
           newMap.set(groupId, 0)
           set({
-            currentMessage: { id: generateUUID(), blocks: [block], isStreaming: true },
+            currentMessage: createCurrentAssistantMessage([block]),
             toolGroupBlockMap: newMap,
             streamingUpdateCounter: streamingUpdateCounter + 1,
           })
@@ -728,7 +736,7 @@ export function createConversationStore(
         if (!currentMessage) {
           newMap.set(requestId, 0)
           set({
-            currentMessage: { id: generateUUID(), blocks: [block], isStreaming: true },
+            currentMessage: createCurrentAssistantMessage([block]),
             permissionRequestBlockMap: newMap,
             activePermissionRequestId: requestId,
             streamingUpdateCounter: streamingUpdateCounter + 1,

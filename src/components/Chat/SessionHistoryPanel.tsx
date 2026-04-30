@@ -10,7 +10,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { historyService } from '../../services/historyService'
 import type { UnifiedHistoryItem, HistoryScope } from '../../services/historyService'
-import type { EngineId } from '../../types'
+import type { ChatMessage, EngineId } from '../../types'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
 import { sessionStoreManager } from '../../stores/conversationStore/sessionStoreManager'
 import { useViewStore, useToastStore } from '../../stores/index'
@@ -19,10 +19,18 @@ import { Clock, MessageSquare, Trash2, RotateCcw, HardDrive, Loader2, X, Chevron
 import { ForkIndicator } from './ForkIndicator'
 import { SessionTree } from './SessionTree'
 import { ForkSessionDialog } from './ForkSessionDialog'
+import { getEngineFullName } from '../../utils/engineDisplay'
 
 const log = createLogger('SessionHistoryPanel')
 
 const PAGE_SIZE = 20
+
+function withAssistantEngineId(messages: ChatMessage[], engineId: EngineId): ChatMessage[] {
+  return messages.map(message => {
+    if (message.type !== 'assistant' || message.engineId) return message
+    return { ...message, engineId }
+  })
+}
 
 /** 日期分组类型 */
 type DateGroup = 'today' | 'yesterday' | 'thisWeek' | 'earlier'
@@ -186,6 +194,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
         {
           title,
           forkFromId: isClaudeNative ? item.id : undefined,
+          engineId: item.engineId,
         },
       )
 
@@ -214,13 +223,13 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
   }
 
   // 加载会话消息（用于 Fork）
-  const loadSessionMessages = async (item: UnifiedHistoryItem) => {
+  const loadSessionMessages = async (item: UnifiedHistoryItem): Promise<ChatMessage[]> => {
     // 从 localStorage 尝试
     const historyJson = localStorage.getItem('event_chat_session_history')
     const localHistory = historyJson ? JSON.parse(historyJson) : []
     const localSession = localHistory.find((h: { id: string }) => h.id === item.id)
     if (localSession?.data?.messages?.length > 0) {
-      return localSession.data.messages
+      return withAssistantEngineId(localSession.data.messages, item.engineId)
     }
 
     // 从 Claude Code 原生历史尝试
@@ -229,7 +238,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
       const claudeCodeService = getClaudeCodeHistoryService()
       const messages = await claudeCodeService.getSessionHistory(item.id, item.claudeProjectName)
       if (messages.length > 0) {
-        return claudeCodeService.convertToChatMessages(messages)
+        return withAssistantEngineId(claudeCodeService.convertToChatMessages(messages), 'claude-code')
       }
     }
 
@@ -277,7 +286,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
   const getEngineInfo = (engineId: EngineId, source: string) => {
     if (engineId === 'codex') {
       return {
-        name: 'OpenAI Codex',
+        name: getEngineFullName(engineId),
         color: 'text-green-500',
         bgColor: 'bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-300',
         icon: HardDrive,
@@ -285,14 +294,14 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
     }
     if (source === 'claude-code-native') {
       return {
-        name: 'Claude Code',
+        name: getEngineFullName(engineId),
         color: 'text-blue-500',
         bgColor: 'bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300',
         icon: HardDrive,
       }
     }
     return {
-      name: 'Claude Code',
+      name: getEngineFullName(engineId),
       color: 'text-blue-500',
       bgColor: 'bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300',
       icon: HardDrive,
@@ -430,6 +439,16 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
           }`}
         >
           Claude Code
+        </button>
+        <button
+          onClick={() => setFilter('codex')}
+          className={`px-2 py-1 rounded-md text-xs transition-colors ${
+            filter === 'codex'
+              ? 'bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-300'
+              : 'text-text-secondary hover:bg-background-hover'
+          }`}
+        >
+          OpenAI Codex
         </button>
 
         {/* 分隔符 */}

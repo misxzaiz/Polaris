@@ -27,6 +27,7 @@ import { voiceNotificationService } from '../../services/voiceNotificationServic
 import { useWorkspaceStore } from '../workspaceStore'
 import { useViewStore } from '../index'
 import { createLogger } from '../../utils/logger'
+import { normalizeEngineId } from '../../utils/engineDisplay'
 
 const log = createLogger('SessionStoreManager')
 
@@ -156,10 +157,12 @@ function createSessionManagerStore() {
       }
 
       // 创建元数据
+      const configEngineId = useConfigStore.getState().config?.defaultEngine
       const metadata: SessionMetadata = {
         id: sessionId,
         title: options.title || `新对话 ${get().stores.size + 1}`,
         type: options.type,
+        engineId: normalizeEngineId(options.engineId || configEngineId),
         workspaceId: options.workspaceId || null,
         contextWorkspaceIds: options.contextWorkspaceIds || [],
         workspaceLocked: options.workspaceLocked ?? (!!options.workspaceId),
@@ -265,6 +268,7 @@ function createSessionManagerStore() {
         workspaceId: metadata?.workspaceId,
         title: metadata?.title || `历史会话 ${get().stores.size + 1}`,
         forkFromId: metadata?.forkFromId,
+        engineId: metadata?.engineId,
       })
 
       // 获取新创建的 Store 并设置历史消息
