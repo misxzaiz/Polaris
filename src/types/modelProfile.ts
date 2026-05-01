@@ -1,12 +1,11 @@
 /**
  * 模型 Profile 类型定义
  *
- * Model Profile 允许将 Claude Code CLI 的请求路由到
- * Anthropic 协议兼容的第三方代理端点，从而使用非官方模型。
+ * Model Profile 允许将 Claude Code CLI 或 Codex CLI 的请求路由到
+ * 第三方代理端点，从而使用非官方模型。
  *
- * 核心原理：通过 --settings 临时文件 + 环境变量覆盖，
- * 让 Claude Code CLI 认为自己在连接官方 API，实际请求
- * 被路由到用户配置的第三方 Anthropic 兼容端点。
+ * Claude 使用 --settings 临时文件 + 环境变量覆盖。
+ * Codex 使用 model_provider 配置，要求端点兼容 Responses API。
  */
 
 /** 模型 Profile — 描述一个第三方模型端点配置 */
@@ -15,7 +14,7 @@ export interface ModelProfile {
   id: string
   /** 人可读名称，如 "DeepSeek V4 Pro" */
   name: string
-  /** Anthropic 协议兼容的 API 端点 URL */
+  /** API 端点 URL */
   baseUrl: string
   /** API 密钥 */
   apiKey: string

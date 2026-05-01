@@ -32,6 +32,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
   const { profiles, activeProfileId, addProfile, removeProfile, activateProfile, setProfiles, setActiveProfileId } = useModelProfileStore();
   const [showAddForm, setShowAddForm] = useState(false);
   const [newProfile, setNewProfile] = useState({ name: '', baseUrl: '', apiKey: '', model: '', description: '' });
+  const isCodex = config.defaultEngine === 'codex';
 
   // 初始化同步：确保 modelProfileStore 和 localConfig 双向一致
   useEffect(() => {
@@ -195,126 +196,132 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
       </div>
 
       {/* 模型 Profile 管理 */}
-      {config.defaultEngine === 'claude-code' && (
-        <div className="p-4 bg-surface rounded-lg border border-border">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-medium text-text-primary">
-              {t('modelProfile.title', '模型 Profile')}
-            </h3>
-            <button
-              onClick={() => setShowAddForm(!showAddForm)}
-              className="flex items-center gap-1 text-xs text-primary hover:text-primary-hover transition-colors"
-            >
-              <Plus size={14} />
-              {t('modelProfile.add', '添加')}
-            </button>
-          </div>
+      <div className="p-4 bg-surface rounded-lg border border-border">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-medium text-text-primary">
+            {t('modelProfile.title', '模型 Profile')}
+          </h3>
+          <button
+            onClick={() => setShowAddForm(!showAddForm)}
+            className="flex items-center gap-1 text-xs text-primary hover:text-primary-hover transition-colors"
+          >
+            <Plus size={14} />
+            {t('modelProfile.add', '添加')}
+          </button>
+        </div>
 
-          {/* 添加 Profile 表单 */}
-          {showAddForm && (
-            <div className="mb-4 p-3 bg-background-default rounded-lg border border-border space-y-3">
-              <input
-                type="text"
-                placeholder={t('modelProfile.profileName', 'Profile 名称')}
-                value={newProfile.name}
-                onChange={(e) => setNewProfile({ ...newProfile, name: e.target.value })}
-                className="w-full px-3 py-2 text-sm bg-background-surface border border-border rounded-lg outline-none focus:border-primary"
-              />
-              <input
-                type="text"
-                placeholder={t('modelProfile.baseUrl', 'API 端点 URL (如 https://api.deepseek.com/anthropic)')}
-                value={newProfile.baseUrl}
-                onChange={(e) => setNewProfile({ ...newProfile, baseUrl: e.target.value })}
-                className="w-full px-3 py-2 text-sm bg-background-surface border border-border rounded-lg outline-none focus:border-primary"
-              />
-              <input
-                type="password"
-                placeholder={t('modelProfile.apiKey', 'API Key')}
-                value={newProfile.apiKey}
-                onChange={(e) => setNewProfile({ ...newProfile, apiKey: e.target.value })}
-                className="w-full px-3 py-2 text-sm bg-background-surface border border-border rounded-lg outline-none focus:border-primary"
-              />
-              <input
-                type="text"
-                placeholder={t('modelProfile.modelName', '模型名称 (如 deepseek-chat)')}
-                value={newProfile.model}
-                onChange={(e) => setNewProfile({ ...newProfile, model: e.target.value })}
-                className="w-full px-3 py-2 text-sm bg-background-surface border border-border rounded-lg outline-none focus:border-primary"
-              />
-              <input
-                type="text"
-                placeholder={t('modelProfile.description', '描述 (可选)')}
-                value={newProfile.description}
-                onChange={(e) => setNewProfile({ ...newProfile, description: e.target.value })}
-                className="w-full px-3 py-2 text-sm bg-background-surface border border-border rounded-lg outline-none focus:border-primary"
-              />
-              <div className="flex justify-end gap-2">
+        {/* 添加 Profile 表单 */}
+        {showAddForm && (
+          <div className="mb-4 p-3 bg-background-default rounded-lg border border-border space-y-3">
+            <input
+              type="text"
+              placeholder={t('modelProfile.profileName', 'Profile 名称')}
+              value={newProfile.name}
+              onChange={(e) => setNewProfile({ ...newProfile, name: e.target.value })}
+              className="w-full px-3 py-2 text-sm bg-background-surface border border-border rounded-lg outline-none focus:border-primary"
+            />
+            <input
+              type="text"
+              placeholder={
+                isCodex
+                  ? t('modelProfile.codexBaseUrl', 'API 端点 URL (如 https://api.openai.com/v1)')
+                  : t('modelProfile.baseUrl', 'API 端点 URL (如 https://api.deepseek.com/anthropic)')
+              }
+              value={newProfile.baseUrl}
+              onChange={(e) => setNewProfile({ ...newProfile, baseUrl: e.target.value })}
+              className="w-full px-3 py-2 text-sm bg-background-surface border border-border rounded-lg outline-none focus:border-primary"
+            />
+            <input
+              type="password"
+              placeholder={t('modelProfile.apiKey', 'API Key')}
+              value={newProfile.apiKey}
+              onChange={(e) => setNewProfile({ ...newProfile, apiKey: e.target.value })}
+              className="w-full px-3 py-2 text-sm bg-background-surface border border-border rounded-lg outline-none focus:border-primary"
+            />
+            <input
+              type="text"
+              placeholder={
+                isCodex
+                  ? t('modelProfile.codexModelName', '模型名称 (如 gpt-5.1)')
+                  : t('modelProfile.modelName', '模型名称 (如 deepseek-chat)')
+              }
+              value={newProfile.model}
+              onChange={(e) => setNewProfile({ ...newProfile, model: e.target.value })}
+              className="w-full px-3 py-2 text-sm bg-background-surface border border-border rounded-lg outline-none focus:border-primary"
+            />
+            <input
+              type="text"
+              placeholder={t('modelProfile.description', '描述 (可选)')}
+              value={newProfile.description}
+              onChange={(e) => setNewProfile({ ...newProfile, description: e.target.value })}
+              className="w-full px-3 py-2 text-sm bg-background-surface border border-border rounded-lg outline-none focus:border-primary"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => { setShowAddForm(false); setNewProfile({ name: '', baseUrl: '', apiKey: '', model: '', description: '' }); }}
+                className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary"
+              >
+                {t('common.cancel', '取消')}
+              </button>
+              <button
+                onClick={handleAddProfile}
+                disabled={!newProfile.name || !newProfile.baseUrl || !newProfile.apiKey || !newProfile.model}
+                className="px-3 py-1.5 text-xs bg-primary text-white rounded hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {t('common.add', '添加')}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Profile 列表 */}
+        {profiles.length === 0 ? (
+          <div className="text-center py-4 text-xs text-text-tertiary">
+            {t('modelProfile.noProfiles', '暂无模型 Profile，点击添加配置第三方模型端点')}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {profiles.map((profile) => (
+              <div
+                key={profile.id}
+                className={`flex items-center gap-3 p-3 rounded-lg border transition-all cursor-pointer ${
+                  activeProfileId === profile.id
+                    ? 'border-primary bg-primary/5'
+                    : 'border-border bg-background-default hover:border-primary/30'
+                }`}
+                onClick={() => {
+                  const newActiveId = activeProfileId === profile.id ? null : profile.id
+                  activateProfile(newActiveId)
+                  // 同步到 localConfig
+                  syncProfilesToConfig(useModelProfileStore.getState().profiles, newActiveId)
+                }}
+              >
+                <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                  activeProfileId === profile.id ? 'border-primary bg-primary' : 'border-border'
+                }`}>
+                  {activeProfileId === profile.id && <Check size={10} className="text-white" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Globe size={12} className="text-text-tertiary shrink-0" />
+                    <span className="text-sm font-medium text-text-primary truncate">{profile.name}</span>
+                  </div>
+                  <div className="text-xs text-text-tertiary truncate mt-0.5">
+                    {profile.model} · {profile.baseUrl}
+                  </div>
+                </div>
                 <button
-                  onClick={() => { setShowAddForm(false); setNewProfile({ name: '', baseUrl: '', apiKey: '', model: '', description: '' }); }}
-                  className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary"
+                  onClick={(e) => { e.stopPropagation(); handleDeleteProfile(profile.id); }}
+                  className="text-text-tertiary hover:text-red-500 transition-colors shrink-0"
+                  title={t('common.delete', '删除')}
                 >
-                  {t('common.cancel', '取消')}
-                </button>
-                <button
-                  onClick={handleAddProfile}
-                  disabled={!newProfile.name || !newProfile.baseUrl || !newProfile.apiKey || !newProfile.model}
-                  className="px-3 py-1.5 text-xs bg-primary text-white rounded hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {t('common.add', '添加')}
+                  <Trash2 size={14} />
                 </button>
               </div>
-            </div>
-          )}
-
-          {/* Profile 列表 */}
-          {profiles.length === 0 ? (
-            <div className="text-center py-4 text-xs text-text-tertiary">
-              {t('modelProfile.noProfiles', '暂无模型 Profile，点击添加配置第三方模型端点')}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {profiles.map((profile) => (
-                <div
-                  key={profile.id}
-                  className={`flex items-center gap-3 p-3 rounded-lg border transition-all cursor-pointer ${
-                    activeProfileId === profile.id
-                      ? 'border-primary bg-primary/5'
-                      : 'border-border bg-background-default hover:border-primary/30'
-                  }`}
-                  onClick={() => {
-                    const newActiveId = activeProfileId === profile.id ? null : profile.id
-                    activateProfile(newActiveId)
-                    // 同步到 localConfig
-                    syncProfilesToConfig(useModelProfileStore.getState().profiles, newActiveId)
-                  }}
-                >
-                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                    activeProfileId === profile.id ? 'border-primary bg-primary' : 'border-border'
-                  }`}>
-                    {activeProfileId === profile.id && <Check size={10} className="text-white" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <Globe size={12} className="text-text-tertiary shrink-0" />
-                      <span className="text-sm font-medium text-text-primary truncate">{profile.name}</span>
-                    </div>
-                    <div className="text-xs text-text-tertiary truncate mt-0.5">
-                      {profile.model} · {profile.baseUrl}
-                    </div>
-                  </div>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleDeleteProfile(profile.id); }}
-                    className="text-text-tertiary hover:text-red-500 transition-colors shrink-0"
-                    title={t('common.delete', '删除')}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Claude Code 配置 */}
       {config.defaultEngine === 'claude-code' && (

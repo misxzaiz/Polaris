@@ -1,11 +1,12 @@
 /**
  * 统一会话历史服务
  *
- * 整合 Claude Code Provider 的历史会话
+ * 整合 Claude Code / Codex Provider 的历史会话
  * 提供统一的接口访问所有历史会话
  */
 
 import { getClaudeCodeHistoryService } from './claudeCodeHistoryService'
+import { getCodexHistoryService } from './codexHistoryService'
 import type { Message } from '../types'
 
 // ============================================================================
@@ -15,7 +16,7 @@ import type { Message } from '../types'
 /**
  * Provider 类型
  */
-export type ProviderType = 'claude-code'
+export type ProviderType = 'claude-code' | 'codex'
 
 /**
  * 统一的会话元数据
@@ -58,6 +59,7 @@ export interface ProviderStats {
  */
 export class UnifiedHistoryService {
   private claudeService = getClaudeCodeHistoryService()
+  private codexService = getCodexHistoryService()
 
   /**
    * 列出所有 Provider 的会话
@@ -66,7 +68,11 @@ export class UnifiedHistoryService {
     /** 项目路径 */
     projectPath?: string
   }): Promise<UnifiedSessionMeta[]> {
-    const sessions = await this.listClaudeCodeSessions(options?.projectPath)
+    const [claudeSessions, codexSessions] = await Promise.all([
+      this.listClaudeCodeSessions(options?.projectPath),
+      this.listCodexSessions(options?.projectPath),
+    ])
+    const sessions = [...claudeSessions, ...codexSessions]
 
     // 按更新时间排序
     sessions.sort((a, b) => {
@@ -90,6 +96,9 @@ export class UnifiedHistoryService {
     if (provider === 'claude-code') {
       return this.listClaudeCodeSessions(options?.projectPath)
     }
+    if (provider === 'codex') {
+      return this.listCodexSessions(options?.projectPath)
+    }
     return []
   }
 
@@ -111,6 +120,28 @@ export class UnifiedHistoryService {
   }
 
   /**
+   * 列出 Codex 会话
+   */
+  private async listCodexSessions(projectPath?: string): Promise<UnifiedSessionMeta[]> {
+    const result = await this.codexService.listSessionsPaged({
+      page: 1,
+      pageSize: 10000,
+      workDir: projectPath ?? null,
+    })
+
+    return result.items.map(s => ({
+      sessionId: s.sessionId,
+      provider: 'codex' as const,
+      title: s.summary || 'Codex 对话',
+      messageCount: s.messageCount ?? 0,
+      fileSize: s.fileSize ?? 0,
+      createdAt: s.createdAt,
+      updatedAt: s.updatedAt,
+      projectPath: s.projectPath,
+    }))
+  }
+
+  /**
    * 获取会话详细历史
    */
   async getSessionHistory(
@@ -123,6 +154,15 @@ export class UnifiedHistoryService {
     if (provider === 'claude-code') {
       const claudeMessages = await this.claudeService.getSessionHistory(sessionId, options?.projectPath)
       return this.claudeService.convertMessagesToFormat(claudeMessages)
+    }
+    if (provider === 'codex') {
+      const codexMessages = await this.codexService.getSessionHistory(sessionId)
+      return codexMessages.map((message, idx) => ({
+        id: message.messageId || `${message.role}-${idx}`,
+        role: message.role as 'user' | 'assistant',
+        content: message.content,
+        timestamp: message.timestamp || new Date().toISOString(),
+      }))
     }
     return []
   }

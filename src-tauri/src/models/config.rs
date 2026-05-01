@@ -132,11 +132,10 @@ pub struct BaiduTranslateConfig {
     pub secret_key: String,
 }
 
-/// 模型 Profile — 描述一个第三方 Anthropic 兼容端点配置
+/// 模型 Profile — 描述一个第三方模型端点配置
 ///
-/// 通过 --settings 临时文件 + 环境变量覆盖，让 Claude Code CLI
-/// 将请求路由到用户配置的第三方 Anthropic 协议兼容代理端点，
-/// 从而使用非官方模型。
+/// Claude Code 通过 --settings 临时文件 + 环境变量覆盖路由到 Anthropic 兼容端点。
+/// Codex CLI 通过 model_provider 配置路由到 Responses API 兼容端点。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelProfile {
@@ -144,7 +143,7 @@ pub struct ModelProfile {
     pub id: String,
     /// 人可读名称，如 "DeepSeek V4 Pro"
     pub name: String,
-    /// Anthropic 协议兼容的 API 端点 URL
+    /// API 端点 URL
     pub base_url: String,
     /// API 密钥
     pub api_key: String,
@@ -798,7 +797,7 @@ pub struct Config {
     #[serde(default)]
     pub current_workspace_id: Option<String>,
 
-    /// 模型 Profile 列表（配置第三方 Anthropic 兼容端点）
+    /// 模型 Profile 列表（配置第三方模型端点）
     #[serde(default)]
     pub model_profiles: Vec<ModelProfile>,
 

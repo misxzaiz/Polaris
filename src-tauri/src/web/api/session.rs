@@ -4,7 +4,7 @@ use axum::Json;
 use serde::Deserialize;
 use std::sync::Arc;
 
-use crate::ai::{SessionHistoryProvider, history::PagedResult};
+use crate::ai::{CodexHistoryProvider, SessionHistoryProvider};
 use crate::commands::chat::{ChatRequestOptions, start_chat_inner};
 use crate::web::api::chat::{run_claude_blocking, build_web_callbacks};
 use crate::web::error::ok_response;
@@ -45,17 +45,22 @@ pub async fn handle_list_sessions(
     let engine = validate_engine(&query.engine_id)?;
     let pagination = parse_pagination(&query.pagination);
 
-    // Codex 会话历史暂未实现，返回空列表（与 Tauri 命令行为一致）
-    if engine == "codex" {
-        let empty: PagedResult<crate::ai::history::SessionMeta> =
-            PagedResult::empty(pagination.page, pagination.page_size);
-        return Ok(Json(empty));
-    }
-
     let work_dir = query.work_dir;
-    let result = run_claude_blocking(&state, move |provider| {
-        provider.list_sessions(work_dir.as_deref(), pagination)
-    }).await?;
+    let config = state.clone_config().map_err(WebError::Internal)?;
+    let result = match engine {
+        "claude-code" => run_claude_blocking(&state, move |provider| {
+            provider.list_sessions(work_dir.as_deref(), pagination)
+        }).await?,
+        "codex" => {
+            tokio::task::spawn_blocking(move || {
+                let provider = CodexHistoryProvider::new(config);
+                provider.list_sessions(work_dir.as_deref(), pagination)
+            })
+            .await
+            .map_err(|e| WebError::Internal(e.to_string()))??
+        }
+        _ => unreachable!(),
+    };
     Ok(Json(result))
 }
 
@@ -109,14 +114,23 @@ pub async fn handle_delete_session(
     let engine_id = query.engine_id.unwrap_or_else(default_engine);
     let engine = validate_engine(&engine_id)?;
 
-    // Codex 会话删除暂未实现（与 Tauri 命令行为一致）
-    if engine == "codex" {
-        return Ok(ok_response());
+    let config = state.clone_config().map_err(WebError::Internal)?;
+    match engine {
+        "claude-code" => {
+            run_claude_blocking(&state, move |provider| {
+                provider.delete_session(&session_id)
+            }).await?;
+        }
+        "codex" => {
+            tokio::task::spawn_blocking(move || {
+                let provider = CodexHistoryProvider::new(config);
+                provider.delete_session(&session_id)
+            })
+            .await
+            .map_err(|e| WebError::Internal(e.to_string()))??;
+        }
+        _ => unreachable!(),
     }
-
-    run_claude_blocking(&state, move |provider| {
-        provider.delete_session(&session_id)
-    }).await?;
     Ok(ok_response())
 }
 

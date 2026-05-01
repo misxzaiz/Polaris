@@ -23,6 +23,11 @@ import { createLogger } from '../../utils/logger'
 
 const log = createLogger('ConversationStore')
 
+function resolveSessionEngine(sessionId: string, configEngineId?: string): EngineId {
+  const metadataEngineId = sessionStoreManager.getState().sessionMetadata.get(sessionId)?.engineId
+  return (metadataEngineId || configEngineId || 'claude-code') as EngineId
+}
+
 // ============================================================================
 // 历史消息降级恢复
 // ============================================================================
@@ -821,7 +826,7 @@ export function createConversationStore(
       sendMessage: async (content, workspaceDir?, attachments?) => {
         const { conversationId, sessionId, messages } = get()
         const config = deps.getConfig()
-        const engine = config?.defaultEngine || 'claude-code'
+        const engine = resolveSessionEngine(sessionId, config?.defaultEngine)
 
         // 如果存在未完成的流式消息（如 AI 提问等待回答），先归档到 messages
         // 防止 currentMessage 被清空后丢失 AI 已生成的内容
@@ -1053,7 +1058,7 @@ export function createConversationStore(
         const currentWorkspace = deps.getWorkspace()
         const actualWorkspaceDir = currentWorkspace?.path
         const config = deps.getConfig()
-        const currentEngine = config?.defaultEngine || 'claude-code'
+        const currentEngine = resolveSessionEngine(get().sessionId, config?.defaultEngine)
 
         // 获取关联工作区
         const contextWorkspaceIds = deps.getContextWorkspaceIds()

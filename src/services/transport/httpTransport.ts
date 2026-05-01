@@ -283,7 +283,14 @@ export function createHttpTransport(
         url = `${baseUrl}/api/claude-sessions/${encodeURIComponent(args.sessionId as string)}/history`;
       } else if (command === 'get_session_history' && args?.sessionId) {
         method = 'GET';
-        url = `${baseUrl}/api/chat/history/${encodeURIComponent(args.sessionId as string)}`;
+        const params = new URLSearchParams();
+        for (const [key, val] of Object.entries(args)) {
+          if (key !== 'sessionId' && val != null && val !== '') {
+            params.set(key, String(val));
+          }
+        }
+        const qs = params.toString();
+        url = `${baseUrl}/api/chat/history/${encodeURIComponent(args.sessionId as string)}${qs ? `?${qs}` : ''}`;
       } else if (command === 'update_config') {
         method = 'PATCH';
       }

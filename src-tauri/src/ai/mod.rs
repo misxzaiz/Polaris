@@ -11,6 +11,7 @@ pub mod registry;
 pub mod engine;
 pub mod history;
 pub mod history_claude;
+pub mod history_codex;
 pub mod event_parser;
 
 pub use traits::{EngineId, SessionOptions, HistoryEntry, ImageAttachment};
@@ -21,3 +22,4 @@ pub use history::{
     Pagination, PagedResult, SessionMeta, HistoryMessage, SessionHistoryProvider,
 };
 pub use history_claude::ClaudeHistoryProvider;
+pub use history_codex::CodexHistoryProvider;

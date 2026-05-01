@@ -183,7 +183,7 @@ export interface Config {
   workspaces?: WorkspaceEntry[];
   /** 当前激活的工作区 ID */
   currentWorkspaceId?: string;
-  /** 模型 Profile 列表（配置第三方 Anthropic 兼容端点） */
+  /** 模型 Profile 列表（配置第三方模型端点） */
   modelProfiles?: ModelProfile[];
   /** 当前激活的模型 Profile ID（为空时使用官方模型） */
   activeModelProfileId?: string;

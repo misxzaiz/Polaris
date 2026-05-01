@@ -3,11 +3,11 @@
  * 提供统一的 AI 聊天接口，使用 EngineRegistry 管理多种 AI 引擎。
  */
 
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::ai::{ClaudeHistoryProvider, HistoryMessage, SessionHistoryProvider, SessionMeta};
+use crate::ai::{ClaudeHistoryProvider, CodexHistoryProvider, HistoryMessage, SessionHistoryProvider, SessionMeta};
 use crate::ai::{EngineId, ImageAttachment, PagedResult, Pagination, SessionOptions};
 use crate::error::{AppError, Result};
 use crate::models::AIEvent;
@@ -412,6 +412,63 @@ fn prepare_mcp_config_with_paths(
     }
 }
 
+fn apply_model_profile_options(
+    mut session_opts: SessionOptions,
+    profile_id: Option<&String>,
+    engine: &EngineId,
+    state: &crate::AppState,
+    log_scope: &str,
+) -> Result<SessionOptions> {
+    let Some(profile_id) = profile_id else {
+        return Ok(session_opts);
+    };
+
+    let config = state
+        .clone_config()
+        .map_err(|e| AppError::ProcessError(e))?;
+    let profiles = &config.model_profiles;
+    let Some(profile) = profiles.iter().find(|p| p.id == *profile_id) else {
+        tracing::warn!("[{}] 未找到模型 Profile: {}", log_scope, profile_id);
+        return Ok(session_opts);
+    };
+
+    tracing::info!(
+        "[{}] 使用模型 Profile: {} ({})",
+        log_scope,
+        profile.name,
+        profile.model
+    );
+
+    match engine {
+        EngineId::ClaudeCode => {
+            match crate::services::ModelProfileService::write_settings_overlay(profile) {
+                Ok(path) => {
+                    session_opts =
+                        session_opts.with_settings_overlay_path(path.to_string_lossy().to_string());
+                }
+                Err(e) => {
+                    tracing::warn!("[{}] 生成 settings overlay 失败: {}", log_scope, e);
+                }
+            }
+
+            let env_overrides =
+                crate::services::ModelProfileService::generate_env_overrides(profile);
+            session_opts = session_opts.with_env_overrides(env_overrides);
+        }
+        EngineId::Codex => {
+            let codex_args =
+                crate::services::ModelProfileService::generate_codex_config_args(profile);
+            session_opts.codex_config_args.extend(codex_args);
+
+            let env_overrides =
+                crate::services::ModelProfileService::generate_codex_env_overrides(profile);
+            session_opts.env_overrides.extend(env_overrides);
+        }
+    }
+
+    Ok(session_opts.with_model(profile.model.clone()))
+}
+
 // ============================================================================
 // Inner functions (shared business logic)
 // ============================================================================
@@ -558,41 +615,13 @@ pub async fn start_chat_inner(
         session_opts = session_opts.with_image_attachments(images);
     }
 
-    // 处理模型 Profile：查找 Profile 并生成 settings overlay + 环境变量
-    if let Some(ref profile_id) = options.model_profile_id {
-        let config = state
-            .clone_config()
-            .map_err(|e| AppError::ProcessError(e))?;
-        let profiles = &config.model_profiles;
-        if let Some(profile) = profiles.iter().find(|p| p.id == *profile_id) {
-            tracing::info!(
-                "[start_chat_inner] 使用模型 Profile: {} ({})",
-                profile.name,
-                profile.model
-            );
-
-            // 生成 settings overlay 文件
-            match crate::services::ModelProfileService::write_settings_overlay(profile) {
-                Ok(path) => {
-                    session_opts =
-                        session_opts.with_settings_overlay_path(path.to_string_lossy().to_string());
-                }
-                Err(e) => {
-                    tracing::warn!("[start_chat_inner] 生成 settings overlay 失败: {}", e);
-                }
-            }
-
-            // 注入环境变量覆盖
-            let env_overrides =
-                crate::services::ModelProfileService::generate_env_overrides(profile);
-            session_opts = session_opts.with_env_overrides(env_overrides);
-
-            // 覆盖模型参数为 Profile 指定的模型
-            session_opts = session_opts.with_model(profile.model.clone());
-        } else {
-            tracing::warn!("[start_chat_inner] 未找到模型 Profile: {}", profile_id);
-        }
-    }
+    session_opts = apply_model_profile_options(
+        session_opts,
+        options.model_profile_id.as_ref(),
+        &engine,
+        state,
+        "start_chat_inner",
+    )?;
 
     let mut registry = state.engine_registry.lock().await;
     registry.start_session(Some(engine), &final_message, session_opts)
@@ -726,41 +755,13 @@ pub async fn continue_chat_inner(
         session_opts = session_opts.with_image_attachments(images);
     }
 
-    // 处理模型 Profile：查找 Profile 并生成 settings overlay + 环境变量
-    if let Some(ref profile_id) = options.model_profile_id {
-        let config = state
-            .clone_config()
-            .map_err(|e| AppError::ProcessError(e))?;
-        let profiles = &config.model_profiles;
-        if let Some(profile) = profiles.iter().find(|p| p.id == *profile_id) {
-            tracing::info!(
-                "[continue_chat_inner] 使用模型 Profile: {} ({})",
-                profile.name,
-                profile.model
-            );
-
-            // 生成 settings overlay 文件
-            match crate::services::ModelProfileService::write_settings_overlay(profile) {
-                Ok(path) => {
-                    session_opts =
-                        session_opts.with_settings_overlay_path(path.to_string_lossy().to_string());
-                }
-                Err(e) => {
-                    tracing::warn!("[continue_chat_inner] 生成 settings overlay 失败: {}", e);
-                }
-            }
-
-            // 注入环境变量覆盖
-            let env_overrides =
-                crate::services::ModelProfileService::generate_env_overrides(profile);
-            session_opts = session_opts.with_env_overrides(env_overrides);
-
-            // 覆盖模型参数为 Profile 指定的模型
-            session_opts = session_opts.with_model(profile.model.clone());
-        } else {
-            tracing::warn!("[continue_chat_inner] 未找到模型 Profile: {}", profile_id);
-        }
-    }
+    session_opts = apply_model_profile_options(
+        session_opts,
+        options.model_profile_id.as_ref(),
+        &engine,
+        state,
+        "continue_chat_inner",
+    )?;
 
     let mut registry = state.engine_registry.lock().await;
     registry.continue_session(engine, &session_id, &final_message, session_opts)
@@ -910,8 +911,8 @@ pub async fn list_sessions(
             provider.list_sessions(work_dir.as_deref(), pagination)
         }
         "codex" | "openai-codex" => {
-            // Codex 会话历史暂未实现，返回空列表
-            Ok(PagedResult::empty(pagination.page, pagination.page_size))
+            let provider = CodexHistoryProvider::new(config);
+            provider.list_sessions(work_dir.as_deref(), pagination)
         }
         _ => Err(AppError::ValidationError(format!(
             "不支持的引擎: {}",
@@ -949,7 +950,10 @@ pub async fn get_session_history(
             let provider = ClaudeHistoryProvider::new(config);
             provider.get_session_history(&session_id, pagination)
         }
-        "codex" | "openai-codex" => Ok(PagedResult::empty(pagination.page, pagination.page_size)),
+        "codex" | "openai-codex" => {
+            let provider = CodexHistoryProvider::new(config);
+            provider.get_session_history(&session_id, pagination)
+        }
         _ => Err(AppError::ValidationError(format!(
             "不支持的引擎: {}",
             engine_id
@@ -979,8 +983,8 @@ pub async fn delete_session(
             provider.delete_session(&session_id)
         }
         "codex" | "openai-codex" => {
-            // Codex 会话删除暂未实现
-            Ok(())
+            let provider = CodexHistoryProvider::new(config);
+            provider.delete_session(&session_id)
         }
         _ => Err(AppError::ValidationError(format!(
             "不支持的引擎: {}",

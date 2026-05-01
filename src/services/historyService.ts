@@ -13,6 +13,7 @@ import { useViewStore } from '../stores/index'
 import { sessionStoreManager } from '../stores/conversationStore/sessionStoreManager'
 import { useConfigStore } from '../stores/configStore'
 import { getClaudeCodeHistoryService } from './claudeCodeHistoryService'
+import { getCodexHistoryService } from './codexHistoryService'
 import { normalizeEngineId } from '../utils/engineDisplay'
 
 const log = createLogger('HistoryService')
@@ -40,7 +41,7 @@ export interface UnifiedHistoryItem {
   timestamp: string
   messageCount: number
   engineId: EngineId
-  source: 'local' | 'claude-code-native'
+  source: 'local' | 'claude-code-native' | 'codex-native'
   fileSize?: number
   inputTokens?: number
   outputTokens?: number
@@ -77,6 +78,7 @@ export interface PagedHistoryResult {
 
 /** 历史查询范围 */
 export type HistoryScope = 'workspace' | 'global'
+export type HistoryEngineFilter = Extract<EngineId, 'claude-code' | 'codex'>
 
 /** 从路径中提取名称 */
 function getPathBasename(pathStr: string): string {
@@ -141,33 +143,41 @@ export const historyService = {
     scope: HistoryScope = 'workspace',
     page: number = 1,
     pageSize: number = 20,
+    engines: HistoryEngineFilter[] = ['claude-code'],
   ): Promise<PagedHistoryResult> {
-    const claudeCodeService = getClaudeCodeHistoryService()
     const currentWorkspace = useWorkspaceStore.getState().getCurrentWorkspace()
+    const includeClaudeCode = engines.includes('claude-code')
+    const includeCodex = engines.includes('codex')
 
     try {
       // 1. 读取 localStorage 条目（轻量，最多 50 条）
       const historyJson = localStorage.getItem(SESSION_HISTORY_KEY)
       const localHistory: HistoryEntry[] = historyJson ? JSON.parse(historyJson) : []
 
-      const localItems: UnifiedHistoryItem[] = localHistory.map(h => ({
-        id: h.id,
-        title: h.title,
-        timestamp: h.timestamp,
-        messageCount: h.messageCount,
-        engineId: h.engineId || 'claude-code',
-        source: 'local' as const,
-      }))
+      const localItems: UnifiedHistoryItem[] = localHistory
+        .filter(h => engines.includes(normalizeEngineId(h.engineId || 'claude-code') as HistoryEngineFilter))
+        .map(h => ({
+          id: h.id,
+          title: h.title,
+          timestamp: h.timestamp,
+          messageCount: h.messageCount,
+          engineId: h.engineId || 'claude-code',
+          source: 'local' as const,
+        }))
 
-      // 2. 调用后端分页 API 获取 Claude Code 原生会话
+      // 2. 调用后端分页 API 获取原生会话
       const workDir = scope === 'workspace' ? (currentWorkspace?.path ?? null) : null
-      const pagedResult = await claudeCodeService.listSessionsPaged({
-        page,
-        pageSize,
-        workDir,
-      })
+      const emptyPagedResult = { items: [], total: 0, page, pageSize, totalPages: 0 }
+      const [claudePagedResult, codexPagedResult] = await Promise.all([
+        includeClaudeCode
+          ? getClaudeCodeHistoryService().listSessionsPaged({ page, pageSize, workDir })
+          : Promise.resolve(emptyPagedResult),
+        includeCodex
+          ? getCodexHistoryService().listSessionsPaged({ page, pageSize, workDir })
+          : Promise.resolve(emptyPagedResult),
+      ])
 
-      const nativeItems: UnifiedHistoryItem[] = pagedResult.items.map(s => ({
+      const claudeNativeItems: UnifiedHistoryItem[] = claudePagedResult.items.map(s => ({
         id: s.sessionId,
         title: s.summary || '无标题会话',
         timestamp: s.updatedAt || s.createdAt || new Date().toISOString(),
@@ -183,6 +193,18 @@ export const historyService = {
         gitBranch: s.gitBranch,
         linkedPr: s.linkedPr,
       }))
+      const codexNativeItems: UnifiedHistoryItem[] = codexPagedResult.items.map(s => ({
+        id: s.sessionId,
+        title: s.summary || 'Codex 对话',
+        timestamp: s.updatedAt || s.createdAt || new Date().toISOString(),
+        messageCount: s.messageCount ?? 0,
+        engineId: 'codex' as const,
+        source: 'codex-native' as const,
+        fileSize: s.fileSize,
+        projectPath: s.projectPath,
+      }))
+
+      const nativeItems = [...claudeNativeItems, ...codexNativeItems]
 
       // 3. 合并去重（localStorage 条目优先）
       const nativeIdSet = new Set(nativeItems.map(n => n.id))
@@ -195,7 +217,7 @@ export const historyService = {
       // 5. 计算总数
       // localStorage 条目可能和后端条目重叠，实际 uniqueLocalItems 数量可能少于 total localItems
       // total 应为：后端 total + 去重后的 local 增量
-      const total = pagedResult.total + uniqueLocalItems.length
+      const total = claudePagedResult.total + codexPagedResult.total + uniqueLocalItems.length
       const totalPages = Math.ceil(total / pageSize)
 
       return {
@@ -218,6 +240,7 @@ export const historyService = {
     engineId?: string,
     projectPath?: string,
     claudeProjectName?: string,
+    titleHint?: string,
   ): Promise<boolean> {
     try {
       // 1. 准备工作区
@@ -252,7 +275,12 @@ export const historyService = {
       const localHistory = historyJson ? JSON.parse(historyJson) : []
       const localSession = localHistory.find((h: HistoryEntry) => h.id === sessionId)
 
-      if (localSession) {
+      if (engineId === 'codex') {
+        restoredEngineId = 'codex'
+        title = localSession?.title || titleHint || '恢复的 Codex 会话'
+        externalSessionId = sessionId
+      }
+      else if (localSession) {
         restoredEngineId = normalizeEngineId(localSession.engineId || engineId)
         chatMessages = withAssistantEngineId(localSession.data.messages || [], restoredEngineId)
         title = localSession.title
@@ -271,7 +299,7 @@ export const historyService = {
         }
       }
 
-      if (chatMessages.length === 0) {
+      if (chatMessages.length === 0 && restoredEngineId !== 'codex') {
         log.warn('无法从历史加载消息', { sessionId, engineId })
         return false
       }
@@ -298,8 +326,21 @@ export const historyService = {
   },
 
   /** 删除历史会话 */
-  deleteHistorySession(sessionId: string): void {
+  async deleteHistorySession(
+    sessionId: string,
+    source: UnifiedHistoryItem['source'] = 'local',
+    engineId?: EngineId,
+  ): Promise<void> {
     try {
+      if (source !== 'local') {
+        const { invoke } = await import('../services/tauri')
+        await invoke('delete_session', {
+          sessionId,
+          engineId: engineId || (source === 'codex-native' ? 'codex' : 'claude-code'),
+        })
+        return
+      }
+
       const historyJson = localStorage.getItem(SESSION_HISTORY_KEY)
       const history: HistoryEntry[] = historyJson ? JSON.parse(historyJson) : []
       const filteredHistory = history.filter(h => h.id !== sessionId)

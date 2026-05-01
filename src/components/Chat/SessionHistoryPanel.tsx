@@ -9,7 +9,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { historyService } from '../../services/historyService'
-import type { UnifiedHistoryItem, HistoryScope } from '../../services/historyService'
+import type { UnifiedHistoryItem, HistoryScope, HistoryEngineFilter } from '../../services/historyService'
 import type { ChatMessage, EngineId } from '../../types'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
 import { sessionStoreManager } from '../../stores/conversationStore/sessionStoreManager'
@@ -24,6 +24,10 @@ import { getEngineFullName } from '../../utils/engineDisplay'
 const log = createLogger('SessionHistoryPanel')
 
 const PAGE_SIZE = 20
+
+function getHistoryEngines(filter: 'all' | EngineId): HistoryEngineFilter[] {
+  return filter === 'codex' ? ['codex'] : ['claude-code']
+}
 
 function withAssistantEngineId(messages: ChatMessage[], engineId: EngineId): ChatMessage[] {
   return messages.map(message => {
@@ -67,7 +71,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
   useEffect(() => {
     loadHistory(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- loadHistory triggers on currentWorkspace/scope change
-  }, [currentWorkspace?.path, scope])
+  }, [currentWorkspace?.path, scope, filter])
 
   const loadHistory = async (reset: boolean = true) => {
     if (reset) {
@@ -79,7 +83,12 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
 
     try {
       const currentPage = reset ? 1 : page
-      const result = await historyService.getUnifiedHistory(scope, currentPage, PAGE_SIZE)
+      const result = await historyService.getUnifiedHistory(
+        scope,
+        currentPage,
+        PAGE_SIZE,
+        getHistoryEngines(filter),
+      )
 
       if (reset) {
         setAllHistory(result.items)
@@ -107,7 +116,12 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
 
     setLoadingMore(true)
     try {
-      const result = await historyService.getUnifiedHistory(scope, nextPage, PAGE_SIZE)
+      const result = await historyService.getUnifiedHistory(
+        scope,
+        nextPage,
+        PAGE_SIZE,
+        getHistoryEngines(filter),
+      )
       const existingIds = new Set(allHistory.map(h => h.id))
       const newItems = result.items.filter(item => !existingIds.has(item.id))
       setAllHistory(prev => [...prev, ...newItems])
@@ -118,7 +132,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
     } finally {
       setLoadingMore(false)
     }
-  }, [page, scope, allHistory])
+  }, [page, scope, filter, allHistory])
 
   // 切换 scope
   const handleScopeChange = (newScope: HistoryScope) => {
@@ -136,7 +150,8 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
         item.id,
         item.engineId,
         item.projectPath,
-        item.claudeProjectName
+        item.claudeProjectName,
+        item.title,
       )
       if (success) {
         log.info('Session restored', { itemId: item.id })
@@ -162,10 +177,19 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
   }
 
   // 删除会话
-  const handleDelete = (sessionId: string, _source: 'local' | 'claude-code-native') => {
-    historyService.deleteHistorySession(sessionId)
-    setAllHistory(prev => prev.filter(h => h.id !== sessionId))
-    setTotalCount(prev => prev - 1)
+  const handleDelete = async (item: UnifiedHistoryItem) => {
+    try {
+      await historyService.deleteHistorySession(item.id, item.source, item.engineId)
+      setAllHistory(prev => prev.filter(h => h.id !== item.id))
+      setTotalCount(prev => prev - 1)
+    } catch (e) {
+      log.error('Failed to delete session', e instanceof Error ? e : new Error(String(e)))
+      useToastStore.getState().addToast({
+        type: 'error',
+        title: t('history.deleteFailed', '删除会话失败'),
+        message: e instanceof Error ? e.message : String(e),
+      })
+    }
   }
 
   // Fork 会话
@@ -239,6 +263,14 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
       const messages = await claudeCodeService.getSessionHistory(item.id, item.claudeProjectName)
       if (messages.length > 0) {
         return withAssistantEngineId(claudeCodeService.convertToChatMessages(messages), 'claude-code')
+      }
+    }
+    if (item.engineId === 'codex') {
+      const { getCodexHistoryService } = await import('../../services/codexHistoryService')
+      const codexService = getCodexHistoryService()
+      const messages = await codexService.getSessionHistory(item.id)
+      if (messages.length > 0) {
+        return withAssistantEngineId(codexService.convertToChatMessages(messages), 'codex')
       }
     }
 
@@ -535,7 +567,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
                   <ul>
                     {items.map((item, index) => {
                       const isRestoring = restoring === item.id
-                      const canDelete = item.source === 'local'
+                      const canDelete = item.source === 'local' || item.source === 'codex-native'
                       const engineInfo = getEngineInfo(item.engineId, item.source)
                       const EngineIcon = engineInfo.icon
 
@@ -611,7 +643,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
                             </button>
                             {canDelete && (
                               <button
-                                onClick={() => handleDelete(item.id, item.source)}
+                                onClick={() => handleDelete(item)}
                                 className="p-1.5 rounded-md hover:bg-danger/10 text-text-tertiary hover:text-danger transition-colors"
                                 title={t('history.deleteSession')}
                               >

@@ -152,18 +152,44 @@ pub async fn handle_interrupt(
 /// Get message history for a specific session.
 /// Accepts optional `?page=1&page_size=50` query parameters.
 /// Uses spawn_blocking to offload filesystem I/O from the async runtime.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryQuery {
+    #[serde(default)]
+    pub engine_id: Option<String>,
+    #[serde(flatten)]
+    pub pagination: PaginationQuery,
+}
+
 pub async fn handle_get_history(
     State(state): State<Arc<AppState>>,
     Path(session_id): Path<String>,
-    Query(params): Query<PaginationQuery>,
+    Query(params): Query<HistoryQuery>,
 ) -> Result<impl IntoResponse, WebError> {
     validate_session_id(&session_id)?;
 
-    let pagination = parse_pagination(&params);
+    let pagination = parse_pagination(&params.pagination);
+    let engine = match params.engine_id.as_deref().unwrap_or("claude-code") {
+        "claude" | "claude-code" => "claude-code",
+        "codex" | "openai-codex" => "codex",
+        other => return Err(WebError::BadRequest(format!("Unsupported engine: {}", other))),
+    };
 
-    let result = run_claude_blocking(&state, move |provider| {
-        provider.get_session_history(&session_id, pagination)
-    }).await?;
+    let result = match engine {
+        "claude-code" => run_claude_blocking(&state, move |provider| {
+            provider.get_session_history(&session_id, pagination)
+        }).await?,
+        "codex" => {
+            let config = state.clone_config_web()?;
+            tokio::task::spawn_blocking(move || {
+                let provider = crate::ai::CodexHistoryProvider::new(config);
+                provider.get_session_history(&session_id, pagination)
+            })
+            .await
+            .map_err(|e| WebError::Internal(e.to_string()))??
+        }
+        _ => unreachable!(),
+    };
 
     Ok(Json(result))
 }
