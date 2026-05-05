@@ -1,8 +1,8 @@
 /*! IM 机器人命令解析和处理
  *
  * 支持的命令：
- * - 模型切换: /claude
- * - 模型信息: /agent
+ * - 模型切换: /claude, /codex
+ * - 引擎信息: /agent, /engines
  * - 提示词预设: /preset <preset_id>, /preset list, /preset default
  * - 中断对话: /stop, /end, /停止
  * - 状态查询: /status, /状态
@@ -31,13 +31,13 @@ pub enum PromptMode {
 /// IM 机器人命令类型
 #[derive(Debug, Clone)]
 pub enum BotCommand {
-    /// 切换模型（/claude）
+    /// 切换模型（/claude, /codex）
     SwitchProvider {
         provider: EngineId,
         custom_prompt: Option<String>,
         replace_mode: bool,
     },
-    /// 显示当前模型信息（/agent）
+    /// 显示当前引擎信息（/agent, /engines）
     EngineInfo,
     /// 切换提示词预设
     SwitchPreset {
@@ -99,8 +99,16 @@ impl CommandParser {
                     replace_mode,
                 })
             }
-            // 模型信息（当前仅 Claude Code，不执行切换）
-            "agent" => Some(BotCommand::EngineInfo),
+            "codex" | "openai-codex" | "openai_codex" => {
+                let (custom_prompt, replace_mode) = Self::parse_switch_args(&parts[1..]);
+                Some(BotCommand::SwitchProvider {
+                    provider: EngineId::Codex,
+                    custom_prompt,
+                    replace_mode,
+                })
+            }
+            // 引擎信息（不执行切换）
+            "agent" | "engines" | "engine" | "模型" => Some(BotCommand::EngineInfo),
 
             // 中断
             "stop" | "end" | "停止" => Some(BotCommand::Interrupt),
@@ -274,6 +282,15 @@ impl ConversationState {
     pub fn set_engine(&mut self, engine_id: &EngineId) {
         self.engine_id = engine_id.as_str();
     }
+
+    /// 切换引擎。跨引擎切换时清除旧 AI 会话，避免用 Claude session 续接 Codex 或反向续接。
+    pub fn switch_engine(&mut self, engine_id: &EngineId) {
+        if self.get_engine_id() != *engine_id {
+            self.ai_session_id = None;
+            self.pending_resume = false;
+        }
+        self.set_engine(engine_id);
+    }
 }
 
 impl Default for ConversationState {
@@ -288,9 +305,10 @@ pub fn get_help_text() -> String {
 
 **模型**
 `/claude [提示词]` - 切换到 Claude，可附加自定义提示词
-`/agent` - 查看当前引擎信息
+`/codex [提示词]` - 切换到 Codex，可附加自定义提示词
 • 添加 `-r` 参数替换默认提示词
 • 示例: `/claude 你是Python专家 -r`
+• 示例: `/codex 你是Rust专家 -r`
 
 **提示词预设**
 `/preset <预设名>` - 切换提示词预设
@@ -309,6 +327,7 @@ pub fn get_help_text() -> String {
 
 **其他**
 `/status` - 查看会话状态
+`/agent` - 查看当前引擎信息
 `/help` - 显示帮助
 "#.to_string()
 }
@@ -351,12 +370,25 @@ mod tests {
                 replace_mode: true
             })
         ));
+
+        let cmd = CommandParser::parse("/codex -r 你是Rust专家");
+        assert!(matches!(
+            cmd,
+            Some(BotCommand::SwitchProvider {
+                provider: EngineId::Codex,
+                custom_prompt: Some(_),
+                replace_mode: true
+            })
+        ));
     }
 
     #[test]
     fn test_parse_agent_is_engine_info() {
         // /agent 现在是 EngineInfo 而不是 SwitchProvider
         let cmd = CommandParser::parse("/agent");
+        assert!(matches!(cmd, Some(BotCommand::EngineInfo)));
+
+        let cmd = CommandParser::parse("/engines");
         assert!(matches!(cmd, Some(BotCommand::EngineInfo)));
     }
 
@@ -497,6 +529,19 @@ mod tests {
         assert!(state.pending_resume);
 
         state.reset();
+        assert!(!state.pending_resume);
+    }
+
+    #[test]
+    fn test_switching_engine_should_clear_ai_session() {
+        let mut state = ConversationState::new("test");
+        state.ai_session_id = Some("claude-session".to_string());
+        state.pending_resume = true;
+
+        state.switch_engine(&EngineId::Codex);
+
+        assert_eq!(state.engine_id, "codex");
+        assert!(state.ai_session_id.is_none());
         assert!(!state.pending_resume);
     }
 }

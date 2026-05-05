@@ -68,6 +68,12 @@ struct ProcessAiMessageContext {
     active_sessions: Arc<Mutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
 }
 
+#[derive(Default)]
+struct IntegrationMcpConfig {
+    claude_config_path: Option<String>,
+    codex_config_args: Vec<String>,
+}
+
 impl IntegrationManager {
     /// 创建新的集成管理器
     pub fn new() -> Self {
@@ -418,7 +424,7 @@ impl IntegrationManager {
                 // 更新会话状态
                 let mut states = conversation_states.lock().await;
                 let state = states.get_or_create(conversation_id);
-                state.set_engine(&provider);
+                state.switch_engine(&provider);
                 state.custom_prompt = custom_prompt.clone();
                 state.prompt_mode = if replace_mode { PromptMode::Replace } else { PromptMode::Append };
 
@@ -449,7 +455,7 @@ impl IntegrationManager {
                     lines.push("⚠️ 引擎注册表未初始化".to_string());
                 }
 
-                lines.push("\n💡 使用 `/claude [提示词]` 切换引擎".to_string());
+                lines.push("\n💡 使用 `/claude [提示词]` 或 `/codex [提示词]` 切换引擎".to_string());
                 Some(lines.join("\n"))
             }
 
@@ -775,7 +781,7 @@ impl IntegrationManager {
         for key in &["command", "cmd", "command_string"] {
             if let Some(val) = args.get(*key).and_then(|v| v.as_str()) {
                 if !val.is_empty() {
-                    return Some(Self::truncate_str(val, max_len));
+                    return Some(Self::truncate_str(&Self::sanitize_command_for_display(val), max_len));
                 }
             }
         }
@@ -821,6 +827,112 @@ impl IntegrationManager {
         } else {
             let truncated: String = s.chars().take(max_len - 3).collect();
             format!("{}...", truncated)
+        }
+    }
+
+    fn strip_paired_quotes(value: &str) -> String {
+        let mut result = value.trim().to_string();
+        loop {
+            let Some(first) = result.chars().next() else {
+                break;
+            };
+            let Some(last) = result.chars().last() else {
+                break;
+            };
+            let paired = matches!(
+                (first, last),
+                ('"', '"') | ('\'', '\'') | ('`', '`')
+            );
+            if !paired || result.chars().count() < 2 {
+                break;
+            }
+            let start = first.len_utf8();
+            let end = result.len() - last.len_utf8();
+            let inner = &result[start..end];
+            if first != '`' && inner.contains(first) {
+                break;
+            }
+            result = inner.trim().to_string();
+        }
+        result
+    }
+
+    /// 清理展示用命令，剥离 PowerShell/cmd 启动器等内部包装。
+    fn sanitize_command_for_display(command: &str) -> String {
+        let mut result = Self::strip_paired_quotes(command);
+
+        if let Some(idx) = result.to_lowercase().find(" rejected: ") {
+            result = Self::strip_paired_quotes(&result[..idx]);
+        }
+
+        let lower = result.to_lowercase();
+        let is_powershell = lower.contains("powershell.exe")
+            || lower.contains("pwsh.exe")
+            || lower.starts_with("powershell ")
+            || lower.starts_with("pwsh ");
+        if is_powershell {
+            if let Some(idx) = lower.find(" -command ") {
+                let after = result[idx + " -command ".len()..].trim();
+                if !after.is_empty() {
+                    return Self::strip_paired_quotes(after);
+                }
+            }
+            if let Some(idx) = lower.find("-c ") {
+                let after = result[idx + "-c".len()..].trim();
+                if !after.is_empty() {
+                    return Self::strip_paired_quotes(after);
+                }
+            }
+        }
+
+        let lower = result.to_lowercase();
+        let is_cmd = lower.contains("cmd.exe") || lower.starts_with("cmd ");
+        if is_cmd {
+            if let Some(idx) = lower.find("/c") {
+                let after = result[idx + "/c".len()..].trim();
+                if !after.is_empty() {
+                    return Self::strip_paired_quotes(after);
+                }
+            }
+        }
+
+        result
+    }
+
+    fn tool_display_label(tool_name: &str) -> &'static str {
+        match tool_name.to_lowercase().as_str() {
+            "bash" | "bashcommand" | "run_command" | "execute" | "shell" | "shell_command" | "command_execution" => "执行命令",
+            "read" | "readfile" | "read_file" => "读取文件",
+            "write" | "writefile" | "write_file" => "写入文件",
+            "createfile" | "create_file" => "创建文件",
+            "edit" | "edit3" | "str_replace_editor" => "编辑文件",
+            "delete" | "deletefile" | "remove" => "删除文件",
+            "glob" => "搜索文件",
+            "grep" | "search" | "searchfiles" => "搜索内容",
+            "websearch" | "web_search" => "网络搜索",
+            "webfetch" | "web_fetch" | "httprequest" | "http_request" => "网络请求",
+            "todowrite" => "更新任务列表",
+            "task" | "agent" => "运行代理",
+            "skill" => "使用技能",
+            _ => "执行工具",
+        }
+    }
+
+    fn format_tool_progress_message(tool_name: &str, brief: &str, running: bool, success: Option<bool>) -> String {
+        let label = Self::tool_display_label(tool_name);
+        if running {
+            if brief.is_empty() {
+                format!("正在{}", label)
+            } else {
+                format!("正在{}: {}", label, brief)
+            }
+        } else {
+            let status = if success.unwrap_or(false) { "完成 ✅" } else { "失败 ❌" };
+            if brief.is_empty() {
+                format!("{}{}", label, status)
+            } else {
+                format!("{}: {} {}", label, brief, status)
+            }
         }
     }
 
@@ -1024,7 +1136,7 @@ impl IntegrationManager {
         }
 
         // 准备 MCP 配置（需求库、定时任务、待办工具）
-        let mcp_config_path: Option<String> = match &work_dir {
+        let mcp_config = match &work_dir {
             Some(dir) if !dir.trim().is_empty() => {
                 #[cfg(feature = "tauri-app")]
                 let config_dir = app_handle.path().app_config_dir().ok();
@@ -1042,27 +1154,45 @@ impl IntegrationManager {
                     (Some(cdir), Some(aroot)) => {
                         match WorkspaceMcpConfigService::from_app_paths(cdir, resource_dir, aroot) {
                             Ok(service) => {
-                                match service.prepare_workspace_config(dir) {
+                                match &engine_id {
+                                    crate::ai::EngineId::ClaudeCode => match service.prepare_workspace_config(dir) {
                                     Ok(path) => {
-                                        tracing::info!("[IntegrationManager] ✅ MCP 配置已准备: {}", path.display());
-                                        Some(path.to_string_lossy().to_string())
+                                        tracing::info!("[IntegrationManager] ✅ Claude MCP 配置已准备: {}", path.display());
+                                        IntegrationMcpConfig {
+                                            claude_config_path: Some(path.to_string_lossy().to_string()),
+                                            codex_config_args: Vec::new(),
+                                        }
                                     }
                                     Err(e) => {
-                                        tracing::warn!("[IntegrationManager] ⚠️ MCP 配置生成失败: {}，继续无 MCP 模式", e.to_message());
-                                        None
+                                        tracing::warn!("[IntegrationManager] ⚠️ Claude MCP 配置生成失败: {}，继续无 MCP 模式", e.to_message());
+                                        IntegrationMcpConfig::default()
                                     }
+                                    },
+                                    crate::ai::EngineId::Codex => match service.prepare_workspace_codex_config_args(dir) {
+                                        Ok(args) => {
+                                            tracing::info!("[IntegrationManager] ✅ Codex MCP 配置已准备: {} 个参数", args.len());
+                                            IntegrationMcpConfig {
+                                                claude_config_path: None,
+                                                codex_config_args: args,
+                                            }
+                                        }
+                                        Err(e) => {
+                                            tracing::warn!("[IntegrationManager] ⚠️ Codex MCP 配置生成失败: {}，继续无 MCP 模式", e.to_message());
+                                            IntegrationMcpConfig::default()
+                                        }
+                                    },
                                 }
                             }
                             Err(e) => {
                                 tracing::warn!("[IntegrationManager] ⚠️ MCP 服务初始化失败: {}，继续无 MCP 模式", e.to_message());
-                                None
+                                IntegrationMcpConfig::default()
                             }
                         }
                     }
-                    _ => None,
+                    _ => IntegrationMcpConfig::default(),
                 }
             }
-            _ => None,
+            _ => IntegrationMcpConfig::default(),
         };
 
         // 发送即时确认消息
@@ -1143,11 +1273,7 @@ impl IntegrationManager {
                             cache.insert(call_id.clone(), brief.clone());
                         }
                     }
-                    let msg = if brief.is_empty() {
-                        format!("[{}]", tc.tool)
-                    } else {
-                        format!("[{}] {}", tc.tool, brief)
-                    };
+                    let msg = Self::format_tool_progress_message(&tc.tool, &brief, true, None);
                     let should_send = {
                         if let Ok(mut last) = last_progress_time_clone.try_lock() {
                             let now = std::time::Instant::now();
@@ -1172,7 +1298,6 @@ impl IntegrationManager {
 
                 // 工具调用结束：不受节流限制
                 crate::models::AIEvent::ToolCallEnd(tc) => {
-                    let status = if tc.success { "完成 ✅" } else { "失败 ❌" };
                     // 从缓存取出描述
                     let brief = tc.call_id.as_ref()
                         .and_then(|id| {
@@ -1180,11 +1305,7 @@ impl IntegrationManager {
                                 .and_then(|mut cache| cache.remove(id))
                         })
                         .unwrap_or_default();
-                    let msg = if brief.is_empty() {
-                        format!("[{}] {}", tc.tool, status)
-                    } else {
-                        format!("[{}] {} {}", tc.tool, brief, status)
-                    };
+                    let msg = Self::format_tool_progress_message(&tc.tool, &brief, false, Some(tc.success));
                     let adapters = adapters_for_callback.clone();
                     let conv_id = conversation_id_for_callback.clone();
                     rt_handle.spawn(async move {
@@ -1270,7 +1391,7 @@ impl IntegrationManager {
         // 创建内部任务完成信号，确保 per-conversation 锁覆盖完整 AI 处理周期
         let (inner_done_tx, inner_done_rx) = tokio::sync::oneshot::channel();
 
-        let task_mcp_config_path = mcp_config_path;
+        let task_mcp_config = mcp_config;
         let task = tokio::spawn(async move {
             // 调用 AI 引擎（根据是否已有会话决定创建新会话还是继续会话）
             let session_id_for_response: String;
@@ -1288,8 +1409,11 @@ impl IntegrationManager {
                     if let Some(ref dir) = work_dir {
                         options = options.with_work_dir(dir);
                     }
-                    if let Some(ref mcp_path) = task_mcp_config_path {
+                    if let Some(ref mcp_path) = task_mcp_config.claude_config_path {
                         options = options.with_mcp_config_path(mcp_path);
+                    }
+                    if !task_mcp_config.codex_config_args.is_empty() {
+                        options = options.with_codex_config_args(task_mcp_config.codex_config_args.clone());
                     }
 
                     registry.continue_session(engine_id, existing_id, &message, options)
@@ -1326,8 +1450,11 @@ impl IntegrationManager {
                     if let Some(ref dir) = work_dir {
                         options = options.with_work_dir(dir);
                     }
-                    if let Some(ref mcp_path) = task_mcp_config_path {
+                    if let Some(ref mcp_path) = task_mcp_config.claude_config_path {
                         options = options.with_mcp_config_path(mcp_path);
+                    }
+                    if !task_mcp_config.codex_config_args.is_empty() {
+                        options = options.with_codex_config_args(task_mcp_config.codex_config_args.clone());
                     }
 
                     registry.start_session(Some(engine_id), &message, options)

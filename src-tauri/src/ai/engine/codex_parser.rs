@@ -10,9 +10,7 @@
  * - `turn.completed`    → { usage: { input_tokens, output_tokens, ... } }
  */
 
-use crate::models::{
-    AIEvent, ToolCallEndEvent,
-};
+use crate::models::{AIEvent, ToolCallEndEvent, ToolCallStartEvent};
 use std::collections::HashMap;
 
 /// Codex JSONL 事件
@@ -94,7 +92,9 @@ pub fn extract_event_type(json: &str) -> Option<&str> {
     let marker = r#""type":"#;
     let pos = json.find(marker)?;
     let rest = json[pos + marker.len()..].trim_start();
-    if !rest.starts_with('"') { return None; }
+    if !rest.starts_with('"') {
+        return None;
+    }
     let value = &rest[1..];
     let end = value.find('"')?;
     Some(&value[..end])
@@ -128,18 +128,19 @@ pub fn codex_event_to_ai_events(event: CodexEvent, session_id: &str) -> Vec<AIEv
             vec![AIEvent::progress(session_id, "处理中...")]
         }
 
-        CodexEvent::ItemStarted { item } => {
-            match item.item_type.as_str() {
-                "command_execution" => {
-                    let mut args = HashMap::new();
-                    if let Some(cmd) = item.command {
-                        args.insert("command".to_string(), serde_json::Value::String(cmd));
-                    }
-                    vec![AIEvent::tool_call_start(session_id, "shell", args)]
+        CodexEvent::ItemStarted { item } => match item.item_type.as_str() {
+            "command_execution" => {
+                let mut args = HashMap::new();
+                if let Some(cmd) = item.command {
+                    args.insert("command".to_string(), serde_json::Value::String(cmd));
                 }
-                _ => vec![],
+                vec![AIEvent::ToolCallStart(
+                    ToolCallStartEvent::new(session_id, "shell".to_string(), args)
+                        .with_call_id(item.id),
+                )]
             }
-        }
+            _ => vec![],
+        },
 
         CodexEvent::ItemCompleted { item } => {
             match item.item_type.as_str() {
@@ -158,10 +159,8 @@ pub fn codex_event_to_ai_events(event: CodexEvent, session_id: &str) -> Vec<AIEv
 
                     let mut result_map = serde_json::Map::new();
                     if let Some(ref out) = item.aggregated_output {
-                        result_map.insert(
-                            "output".to_string(),
-                            serde_json::Value::String(out.clone()),
-                        );
+                        result_map
+                            .insert("output".to_string(), serde_json::Value::String(out.clone()));
                     }
                     if let Some(code) = item.exit_code {
                         result_map.insert(
@@ -171,6 +170,7 @@ pub fn codex_event_to_ai_events(event: CodexEvent, session_id: &str) -> Vec<AIEv
                     }
 
                     let end_event = ToolCallEndEvent::new(session_id, "shell".to_string(), success)
+                        .with_call_id(item.id)
                         .with_result(serde_json::Value::Object(result_map));
 
                     vec![AIEvent::ToolCallEnd(end_event)]
@@ -195,7 +195,10 @@ pub fn codex_event_to_ai_events(event: CodexEvent, session_id: &str) -> Vec<AIEv
             if let Some(u) = usage {
                 tracing::info!(
                     "[CodexParser] 用量: input={}, cached={}, output={}, reasoning={}",
-                    u.input_tokens, u.cached_input_tokens, u.output_tokens, u.reasoning_output_tokens
+                    u.input_tokens,
+                    u.cached_input_tokens,
+                    u.output_tokens,
+                    u.reasoning_output_tokens
                 );
             }
             vec![AIEvent::session_end(session_id)]
@@ -215,15 +218,10 @@ pub fn codex_event_to_ai_events(event: CodexEvent, session_id: &str) -> Vec<AIEv
 
         CodexEvent::ItemUpdated { item } => {
             // item.updated is used for todo_list, mcp_tool_call progress, etc.
-            // For now, treat like ItemStarted — generate progress for known types.
+            // Do not treat command_execution updates as starts: Codex can emit multiple updates
+            // for one item, and start/end pairing is driven by item.started/item.completed.
             match item.item_type.as_str() {
-                "command_execution" => {
-                    let mut args = HashMap::new();
-                    if let Some(cmd) = item.command {
-                        args.insert("command".to_string(), serde_json::Value::String(cmd));
-                    }
-                    vec![AIEvent::tool_call_start(session_id, "shell", args)]
-                }
+                "command_execution" => vec![],
                 _ => vec![],
             }
         }
@@ -252,7 +250,8 @@ mod tests {
 
     #[test]
     fn parse_thread_started() {
-        let json = r#"{"type":"thread.started","thread_id":"019dda7a-5ea9-7120-859c-a0f16a24aae7"}"#;
+        let json =
+            r#"{"type":"thread.started","thread_id":"019dda7a-5ea9-7120-859c-a0f16a24aae7"}"#;
         let event = parse_codex_line(json).unwrap();
         match event {
             CodexEvent::ThreadStarted { thread_id } => {
@@ -279,6 +278,75 @@ mod tests {
         let json = r#"{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"ls","ag_output":"file1\nfile2","exit_code":0,"status":"completed"}}"#;
         let event = parse_codex_line(json);
         assert!(event.is_some());
+    }
+
+    #[test]
+    fn command_execution_start_and_end_use_item_id_as_call_id() {
+        let start_json = r#"{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"git status","status":"running"}}"#;
+        let start_event = parse_codex_line(start_json).unwrap();
+        let start_ai_events = codex_event_to_ai_events(start_event, "test-session");
+        assert_eq!(start_ai_events.len(), 1);
+        match &start_ai_events[0] {
+            AIEvent::ToolCallStart(e) => {
+                assert_eq!(e.tool, "shell");
+                assert_eq!(e.call_id.as_deref(), Some("item_1"));
+            }
+            _ => panic!("Expected ToolCallStart"),
+        }
+
+        let end_json = r#"{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"git status","aggregated_output":"clean","exit_code":0,"status":"completed"}}"#;
+        let end_event = parse_codex_line(end_json).unwrap();
+        let end_ai_events = codex_event_to_ai_events(end_event, "test-session");
+        assert_eq!(end_ai_events.len(), 1);
+        match &end_ai_events[0] {
+            AIEvent::ToolCallEnd(e) => {
+                assert_eq!(e.tool, "shell");
+                assert_eq!(e.call_id.as_deref(), Some("item_1"));
+                assert!(e.success);
+            }
+            _ => panic!("Expected ToolCallEnd"),
+        }
+    }
+
+    #[test]
+    fn concurrent_command_executions_keep_distinct_call_ids() {
+        let events = [
+            r#"{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"git status","status":"running"}}"#,
+            r#"{"type":"item.started","item":{"id":"item_2","type":"command_execution","command":"git log --oneline -5","status":"running"}}"#,
+            r#"{"type":"item.completed","item":{"id":"item_2","type":"command_execution","command":"git log --oneline -5","aggregated_output":"log","exit_code":0,"status":"completed"}}"#,
+            r#"{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"git status","aggregated_output":"status","exit_code":0,"status":"completed"}}"#,
+        ];
+
+        let call_ids: Vec<(String, String)> = events
+            .iter()
+            .flat_map(|json| {
+                let event = parse_codex_line(json).unwrap();
+                codex_event_to_ai_events(event, "test-session")
+            })
+            .map(|event| match event {
+                AIEvent::ToolCallStart(e) => ("start".to_string(), e.call_id.unwrap()),
+                AIEvent::ToolCallEnd(e) => ("end".to_string(), e.call_id.unwrap()),
+                _ => panic!("Expected tool call event"),
+            })
+            .collect();
+
+        assert_eq!(
+            call_ids,
+            vec![
+                ("start".to_string(), "item_1".to_string()),
+                ("start".to_string(), "item_2".to_string()),
+                ("end".to_string(), "item_2".to_string()),
+                ("end".to_string(), "item_1".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn command_execution_update_does_not_create_duplicate_start() {
+        let json = r#"{"type":"item.updated","item":{"id":"item_1","type":"command_execution","command":"git status","status":"running"}}"#;
+        let event = parse_codex_line(json).unwrap();
+        let ai_events = codex_event_to_ai_events(event, "test-session");
+        assert!(ai_events.is_empty());
     }
 
     #[test]

@@ -25,6 +25,71 @@ const QUERY_KEYS = ['query', 'q', 'search', 'keyword', 'pattern', 'regex'] as co
  */
 const URL_KEYS = ['url', 'uri', 'href', 'link'] as const;
 
+function stripPairedQuotes(value: string): string {
+  let result = value.trim();
+  let changed = true;
+
+  while (changed && result.length >= 2) {
+    changed = false;
+    const first = result[0];
+    const last = result[result.length - 1];
+    const inner = result.slice(1, -1);
+    if (
+      (first === '"' && last === '"' && !inner.includes('"')) ||
+      (first === "'" && last === "'" && !inner.includes("'")) ||
+      (first === '`' && last === '`')
+    ) {
+      result = inner.trim();
+      changed = true;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * 清理展示用命令，剥离 Windows shell 启动器等内部包装。
+ *
+ * 原始命令仍由 extractFullCommand 返回，用于复制和详情调试。
+ */
+export function normalizeCommandForDisplay(command: string): string {
+  let result = stripPairedQuotes(command);
+
+  const rejectedIndex = result.search(/\s+rejected:\s+/i);
+  if (rejectedIndex > 0) {
+    result = result.slice(0, rejectedIndex).trim();
+    result = stripPairedQuotes(result);
+  }
+
+  const lower = result.toLowerCase();
+  const isPowerShell =
+    lower.includes('powershell.exe') ||
+    lower.includes('pwsh.exe') ||
+    lower.startsWith('powershell ') ||
+    lower.startsWith('pwsh ');
+  if (isPowerShell) {
+    const commandMatch = result.match(/\s-(?:Command|c)\s+/i);
+    if (commandMatch?.index !== undefined) {
+      result = stripPairedQuotes(result.slice(commandMatch.index + commandMatch[0].length));
+    }
+  }
+
+  const cmdLower = result.toLowerCase();
+  const isCmd = cmdLower.includes('cmd.exe') || cmdLower.startsWith('cmd ');
+  if (isCmd) {
+    const cmdMatch = result.match(/\s\/c\s+/i);
+    if (cmdMatch?.index !== undefined) {
+      result = stripPairedQuotes(result.slice(cmdMatch.index + cmdMatch[0].length));
+    }
+  }
+
+  return result;
+}
+
+function truncateForDisplay(value: string, maxLength: number): string {
+  return value.length > maxLength ? value.slice(0, maxLength - 3) + '...' : value;
+}
+
 /**
  * 从工具输入中提取文件路径（只返回文件名）
  *
@@ -97,12 +162,12 @@ export function extractCommand(
   for (const key of COMMAND_KEYS) {
     const value = input[key];
     if (typeof value === 'string') {
-      // 截断过长的命令
-      return value.length > maxLength ? value.slice(0, maxLength - 3) + '...' : value;
+      const command = normalizeCommandForDisplay(value);
+      return truncateForDisplay(command, maxLength);
     }
     if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'string') {
-      const cmd = value[0];
-      return cmd.length > maxLength ? cmd.slice(0, maxLength - 3) + '...' : cmd;
+      const command = normalizeCommandForDisplay(value[0]);
+      return truncateForDisplay(command, maxLength);
     }
   }
   return '';
