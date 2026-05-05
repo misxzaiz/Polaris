@@ -16,6 +16,7 @@ import { useIntegrationStore } from '../stores/integrationStore';
 import { useAutoModeStore } from '../stores/autoModeStore';
 import { useSnippetStore } from '../stores/snippetStore';
 import { useCliInfoStore } from '../stores/cliInfoStore';
+import { sessionStoreManager } from '../stores/conversationStore';
 import { bootstrapEngines, type EngineId } from '../core/engine-bootstrap';
 import { bootstrapTools } from '../core/tool-bootstrap';
 import { voiceNotificationService } from '../services/voiceNotificationService';
@@ -74,6 +75,9 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
     // 获取配置
     const config = useConfigStore.getState().config;
     const defaultEngine = config?.defaultEngine || 'claude-code';
+
+    await sessionStoreManager.getState().initialize();
+    log.info('SessionStoreManager initialized', { defaultEngine });
 
     // 按需初始化传统 AI Engine
     await bootstrapEngines(defaultEngine as EngineId);

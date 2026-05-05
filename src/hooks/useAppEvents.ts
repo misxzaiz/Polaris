@@ -27,12 +27,6 @@ export function useAppEvents() {
   useEffect(() => {
     let mounted = true;
 
-    sessionStoreManager.getState().initialize().then(() => {
-      if (mounted) {
-        log.info('SessionStoreManager initialized');
-      }
-    });
-
     const router = getEventRouter();
     router.initialize().then(() => {
       if (!mounted) return;
