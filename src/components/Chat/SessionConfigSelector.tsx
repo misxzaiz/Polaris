@@ -65,12 +65,16 @@ export function SessionConfigSelector({
   // 动态 Agent 列表：优先 CLI 获取，降级 PRESET
   const dynamicAgents = useCliInfoStore(s => s.agents)
   const agentList = useMemo(() => {
+    const emptyOption = { id: '', name: '不设置', description: '不传 Agent 参数，使用 CLI 默认模式' }
     if (dynamicAgents.length > 0) {
-      return dynamicAgents.map(a => ({
-        id: a.id,
-        name: a.name,
-        description: `${a.source === 'plugin' ? '插件' : '内置'}${a.defaultModel ? ` · ${a.defaultModel}` : ''}`,
-      }))
+      return [
+        emptyOption,
+        ...dynamicAgents.map(a => ({
+          id: a.id,
+          name: a.name,
+          description: `${a.source === 'plugin' ? '插件' : '内置'}${a.defaultModel ? ` · ${a.defaultModel}` : ''}`,
+        }))
+      ]
     }
     return PRESET_AGENTS
   }, [dynamicAgents])
@@ -384,8 +388,9 @@ export function CompactSessionSelector({
   // 动态 Agent 列表
   const dynamicAgents = useCliInfoStore(s => s.agents)
   const agentList = useMemo(() => {
+    const emptyOption = { id: '', name: '不设置' }
     if (dynamicAgents.length > 0) {
-      return dynamicAgents.map(a => ({ id: a.id, name: a.name }))
+      return [emptyOption, ...dynamicAgents.map(a => ({ id: a.id, name: a.name }))]
     }
     return PRESET_AGENTS
   }, [dynamicAgents])

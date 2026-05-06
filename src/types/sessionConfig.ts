@@ -90,7 +90,7 @@ export interface SessionRuntimeConfig {
  * 会话配置默认值
  */
 export const DEFAULT_SESSION_CONFIG: Required<SessionRuntimeConfig> = {
-  agent: 'general-purpose',
+  agent: '',
   model: 'opus',
   effort: 'max',
   permissionMode: 'bypassPermissions',
