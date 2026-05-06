@@ -23,6 +23,8 @@
     "core:window:allow-start-dragging",
     "core:webview:allow-internal-toggle-devtools",
     "opener:default",
+    "updater:default",
+    "process:allow-restart",
     {
       "identifier": "opener:allow-open-path",
       "allow": [{ "path": "**" }]

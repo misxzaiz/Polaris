@@ -18,6 +18,7 @@
     "lsp": "LSP",
     "advanced": "Advanced",
     "autoMode": "Auto Mode",
+    "appUpdate": "App Update",
     "mcp": "MCP Servers",
     "lsp": "Language Servers",
     "web": "Web Service"
@@ -344,5 +345,34 @@
     "token": "Access Token",
     "tokenPlaceholder": "Leave empty to disable auth",
     "tokenHint": "Empty = no check. When set, every Web API request will include this token (MD5 on frontend before sending)."
+  },
+  "appUpdate": {
+    "title": "App Update",
+    "description": "Check GitHub Releases for MSI updates and view historical versions.",
+    "desktopAvailable": "Desktop app",
+    "desktopOnly": "Desktop only",
+    "currentVersion": "Current version",
+    "latestRelease": "Latest release",
+    "source": "Source",
+    "check": "Check for updates",
+    "installAndRestart": "Install and restart",
+    "updateAvailable": "Update available",
+    "updateAvailableDesc": "Version {{version}} is ready to install.",
+    "upToDate": "Up to date",
+    "upToDateDesc": "You are already using the latest version.",
+    "checkFailed": "Failed to check for updates",
+    "installFailed": "Failed to install update",
+    "availableVersion": "Available version: {{version}}",
+    "downloading": "Downloading update",
+    "historyTitle": "Release history",
+    "historyDesc": "View published GitHub Releases and download MSI installers.",
+    "refreshReleases": "Refresh releases",
+    "noReleases": "No releases found",
+    "current": "Current",
+    "prerelease": "Prerelease",
+    "download": "Download",
+    "downloadMsi": "Download MSI",
+    "openRelease": "Open release",
+    "rollbackWarning": "Rollback installs an older MSI and may require uninstalling the current version first. Back up user configuration before downgrading."
   }
 }

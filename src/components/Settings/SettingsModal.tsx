@@ -23,6 +23,7 @@ import { FeishuTab } from './tabs/FeishuTab';
 import { SpeechTab } from './tabs/SpeechTab';
 import { AdvancedTab } from './tabs/AdvancedTab';
 import { AutoModeTab } from './tabs/AutoModeTab';
+import { AppUpdateTab } from './tabs/AppUpdateTab';
 import { LspTab } from './tabs/LspTab';
 import { WebTab } from './tabs/WebTab';
 import { createLogger } from '../../utils/logger';
@@ -50,6 +51,7 @@ const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'feishu': 'nav.feishu',
   'speech': 'nav.speech',
   'lsp': 'nav.lsp',
+  'app-update': 'nav.appUpdate',
   'advanced': 'nav.advanced',
   'web': 'nav.web',
 };
@@ -295,6 +297,10 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
 
               {activeTab === 'lsp' && (
                 <LspTab />
+              )}
+
+              {activeTab === 'app-update' && (
+                <AppUpdateTab />
               )}
 
               {activeTab === 'web' && (

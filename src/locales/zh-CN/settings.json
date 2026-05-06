@@ -15,12 +15,12 @@
     "feishu": "飞书",
     "scheduler": "定时任务",
     "speech": "语音输入",
-    "lsp": "LSP",
+    "lsp": "语言服务器",
     "advanced": "高级",
     "autoMode": "自动模式",
     "mcp": "MCP 服务器",
-    "lsp": "语言服务器",
-    "web": "Web 服务"
+    "web": "Web 服务",
+    "appUpdate": "应用更新"
   },
   "messages": {
     "saved": "已保存",
@@ -344,5 +344,34 @@
     "token": "访问 Token",
     "tokenPlaceholder": "留空表示不启用鉴权",
     "tokenHint": "留空不检查；填写后，Web 端每个接口请求都会携带此 Token（前端会做 MD5 后再发送）"
+  },
+  "appUpdate": {
+    "title": "应用更新",
+    "description": "从 GitHub Releases 检查 MSI 更新，并查看历史版本。",
+    "desktopAvailable": "桌面端可用",
+    "desktopOnly": "仅桌面端",
+    "currentVersion": "当前版本",
+    "latestRelease": "最新发布",
+    "source": "更新源",
+    "check": "检查更新",
+    "installAndRestart": "安装并重启",
+    "updateAvailable": "发现新版本",
+    "updateAvailableDesc": "版本 {{version}} 已可安装。",
+    "upToDate": "已是最新版本",
+    "upToDateDesc": "当前已经是最新版本。",
+    "checkFailed": "检查更新失败",
+    "installFailed": "安装更新失败",
+    "availableVersion": "可用版本：{{version}}",
+    "downloading": "正在下载更新",
+    "historyTitle": "历史版本",
+    "historyDesc": "查看已发布的 GitHub Releases，并下载 MSI 安装包。",
+    "refreshReleases": "刷新版本列表",
+    "noReleases": "暂无发布版本",
+    "current": "当前",
+    "prerelease": "预发布",
+    "download": "下载",
+    "downloadMsi": "下载 MSI",
+    "openRelease": "打开发布页",
+    "rollbackWarning": "回退会安装更旧的 MSI，可能需要先卸载当前版本。降级前请备份用户配置。"
   }
 }

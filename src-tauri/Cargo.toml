@@ -14,7 +14,11 @@ tauri-app = [
     "dep:tauri-plugin-opener",
     "dep:tauri-plugin-dialog",
     "dep:tauri-plugin-notification",
+    "dep:tauri-plugin-updater",
+    "dep:tauri-plugin-process",
 ]
+tauri-plugin-updater = ["dep:tauri-plugin-updater"]
+tauri-plugin-process = ["dep:tauri-plugin-process"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -105,6 +109,8 @@ crossbeam-channel = "0.5"
 
 # 文件系统监听
 notify = { version = "6", features = ["macos_kqueue"] }
+tauri-plugin-updater = { version = "2.10.1", optional = true }
+tauri-plugin-process = { version = "2.3.1", optional = true }
 
 [dev-dependencies]
 tempfile = "3"
