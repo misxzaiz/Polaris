@@ -5,6 +5,13 @@
 import { invoke } from '@/services/transport';
 import type { Config, ConfigPatch, HealthStatus } from '../../types';
 
+export interface WebServerStatus {
+  running: boolean;
+  host?: string | null;
+  port?: number | null;
+  url?: string | null;
+}
+
 /** 获取配置 */
 export async function getConfig(): Promise<Config> {
   return invoke<Config>('get_config');
@@ -18,6 +25,14 @@ export async function updateConfig(config: Config): Promise<void> {
 /** 按字段合并更新配置 */
 export async function updateConfigPatch(patch: ConfigPatch): Promise<Config> {
   return invoke<Config>('update_config_patch', { patch });
+}
+
+export async function applyWebServer(): Promise<WebServerStatus> {
+  return invoke<WebServerStatus>('apply_web_server');
+}
+
+export async function getWebServerStatus(): Promise<WebServerStatus> {
+  return invoke<WebServerStatus>('get_web_server_status');
 }
 
 /** 设置工作目录 */

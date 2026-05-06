@@ -272,6 +272,7 @@ pub async fn handle_ipc_bridge(
 
         // ── Network ──────────────────────────────────────────────────────
         "get_local_ips" => dispatch_get_local_ips(),
+        "get_web_server_status" => dispatch_get_web_server_status(&state).await,
 
         // ── Integration ────────────────────────────────────────────────────
         "init_integration" => Ok(Json(Value::Null)), // no-op in web mode (no AppHandle)
@@ -1463,4 +1464,8 @@ fn dispatch_get_local_ips() -> Result<Json<Value>, WebError> {
     ips.sort_by_key(|(_, p)| *p);
     let result: Vec<String> = ips.into_iter().map(|(ip, _)| ip).collect();
     Ok(Json(serde_json::to_value(result).unwrap_or_default()))
+}
+
+async fn dispatch_get_web_server_status(state: &AppState) -> Result<Json<Value>, WebError> {
+    Ok(Json(serde_json::to_value(crate::current_web_server_status(state).await).unwrap_or_default()))
 }

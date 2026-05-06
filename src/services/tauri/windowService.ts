@@ -12,6 +12,7 @@ const isTauriEnv = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in win
 
 /** Lazy-loaded Tauri APIs */
 let _openPath: ((path: string) => Promise<void>) | null = null;
+let _openUrl: ((url: string) => Promise<void>) | null = null;
 let _getCurrentWindow: (() => { minimize: () => Promise<void>; maximize: () => Promise<void>; unmaximize: () => Promise<void>; isMaximized: () => Promise<boolean>; close: () => Promise<void> }) | null = null;
 
 async function getOpenPath() {
@@ -26,6 +27,20 @@ async function getOpenPath() {
     }
   }
   return _openPath;
+}
+
+async function getOpenUrl() {
+  if (!isTauriEnv) return null;
+  if (!_openUrl) {
+    try {
+      const mod = await import('@tauri-apps/plugin-opener');
+      _openUrl = mod.openUrl;
+    } catch {
+      log.warn('Failed to load @tauri-apps/plugin-opener');
+      return null;
+    }
+  }
+  return _openUrl;
 }
 
 async function getGetCurrentWindow() {
@@ -54,6 +69,15 @@ export async function openInDefaultApp(path: string): Promise<void> {
   } else {
     // Web fallback: open in new tab
     window.open(path, '_blank');
+  }
+}
+
+export async function openInBrowser(url: string): Promise<void> {
+  const openUrlFn = await getOpenUrl();
+  if (openUrlFn) {
+    await openUrlFn(url);
+  } else {
+    window.open(url, '_blank');
   }
 }
 

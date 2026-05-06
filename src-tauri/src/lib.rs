@@ -175,12 +175,56 @@ fn web_port_for_runtime(config_port: u16) -> u16 {
     web::server::WebServer::resolve_port(port)
 }
 
+pub(crate) async fn current_web_server_status(state: &AppState) -> web::server::WebServerStatus {
+    let guard = state.web_server_handle.lock().await;
+    if let Some(handle) = guard.as_ref() {
+        web::server::WebServerStatus::running(handle.host.clone(), handle.port)
+    } else {
+        web::server::WebServerStatus::stopped()
+    }
+}
+
+async fn stop_web_server(state: &AppState) -> web::server::WebServerStatus {
+    let mut guard = state.web_server_handle.lock().await;
+    if let Some(old_handle) = guard.take() {
+        old_handle.shutdown.cancel();
+        let _ = old_handle.task.await;
+        tracing::info!("[Web] Server stopped");
+    }
+    web::server::WebServerStatus::stopped()
+}
+
+async fn start_configured_web_server(
+    state: &AppState,
+    config: &crate::models::config::Config,
+) -> std::result::Result<web::server::WebServerStatus, error::AppError> {
+    let port = web_port_for_runtime(config.web.port);
+    let web_state = Arc::new(state.clone_for_web());
+    let web_server = web::server::WebServer::new(web_state);
+    let mut guard = state.web_server_handle.lock().await;
+
+    if let Some(old_handle) = guard.take() {
+        old_handle.shutdown.cancel();
+        let _ = old_handle.task.await;
+    }
+
+    tracing::info!("[Web] Starting web server on {}:{}", config.web.host, port);
+    let handle = web_server
+        .start_on_available_port(&config.web.host, port)
+        .await
+        .map_err(|e| error::AppError::NetworkError(e.to_string()))?;
+    let status = web::server::WebServerStatus::running(handle.host.clone(), handle.port);
+    *guard = Some(handle);
+
+    Ok(status)
+}
+
 /// 动态应用 Web 服务器配置：根据当前 config.web 启动或停止服务器。
 ///
 /// 保存 Web 配置后，前端应调用此命令以即时生效，无需重启应用。
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-fn apply_web_server(state: tauri::State<AppState>) -> std::result::Result<serde_json::Value, error::AppError> {
+async fn apply_web_server(state: tauri::State<'_, AppState>) -> std::result::Result<web::server::WebServerStatus, error::AppError> {
     let config = {
         let store = state.config_store.lock()
             .map_err(|e| error::AppError::Unknown(e.to_string()))?;
@@ -190,38 +234,16 @@ fn apply_web_server(state: tauri::State<AppState>) -> std::result::Result<serde_
     // Case: user disabled the web service: stop running server.
     // In debug builds the Web backend is kept on by default for browser-mode testing.
     if !web_enabled_for_runtime(config.web.enabled) {
-        let handle_arc = state.web_server_handle.clone();
-        tauri::async_runtime::spawn(async move {
-            let mut guard = handle_arc.lock().await;
-            if let Some(old_handle) = guard.take() {
-                old_handle.shutdown.cancel();
-                tracing::info!("[Web] Server stopped by user");
-            }
-        });
-        return Ok(serde_json::json!({ "running": false }));
+        return Ok(stop_web_server(&state).await);
     }
 
-    let port = web_port_for_runtime(config.web.port);
-    let addr = format!("{}:{}", config.web.host, port);
-    let web_state = Arc::new(state.clone_for_web());
-    let web_server = web::server::WebServer::new(web_state);
-    let handle_arc = state.web_server_handle.clone();
-    let addr_log = addr.clone();
+    start_configured_web_server(&state, &config).await
+}
 
-    tauri::async_runtime::spawn(async move {
-        // Stop existing server if any (port/host change)
-        let mut guard = handle_arc.lock().await;
-        if let Some(old_handle) = guard.take() {
-            old_handle.shutdown.cancel();
-            let _ = old_handle.task.await;
-        }
-
-        tracing::info!("[Web] Starting web server on {}", addr_log);
-        let handle = web_server.start(&addr);
-        *guard = Some(handle);
-    });
-
-    Ok(serde_json::json!({ "running": true }))
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+async fn get_web_server_status(state: tauri::State<'_, AppState>) -> std::result::Result<web::server::WebServerStatus, error::AppError> {
+    Ok(current_web_server_status(&state).await)
 }
 
 /// 获取本机局域网 IP 地址列表（智能排序：真实 LAN IP 优先，虚拟网卡靠后）
@@ -426,17 +448,22 @@ pub fn run() {
 
             if web_enabled_for_runtime(config.web.enabled) {
                 let port = web_port_for_runtime(config.web.port);
-                let addr = format!("{}:{}", config.web.host, port);
+                let host = config.web.host.clone();
                 let web_state = Arc::new(state.clone_for_web());
                 let web_server = web::server::WebServer::new(web_state);
                 let handle_arc = state.web_server_handle.clone();
-                let addr_log = addr.clone();
 
                 tauri::async_runtime::spawn(async move {
-                    tracing::info!("[Web] Starting web server on {}", addr_log);
-                    let handle = web_server.start(&addr);
-                    let mut guard = handle_arc.lock().await;
-                    *guard = Some(handle);
+                    tracing::info!("[Web] Starting web server on {}:{}", host, port);
+                    match web_server.start_on_available_port(&host, port).await {
+                        Ok(handle) => {
+                            let mut guard = handle_arc.lock().await;
+                            *guard = Some(handle);
+                        }
+                        Err(e) => {
+                            tracing::error!("[Web] Failed to start web server: {}", e);
+                        }
+                    }
                 });
             }
 
@@ -462,6 +489,7 @@ pub fn run() {
             update_config,
             update_config_patch,
             apply_web_server,
+            get_web_server_status,
             get_local_ips,
             set_work_dir,
             set_claude_cmd,
@@ -792,16 +820,19 @@ pub fn run_web_server() {
 
     // 启动 Web 服务器
     let port = web_port_for_runtime(config.web.port);
-    let addr = format!("{}:{}", config.web.host, port);
+    let host = config.web.host.clone();
     let state = Arc::new(app_state);
     let web_server = web::server::WebServer::new(state);
 
-    tracing::info!("[Polaris-Web] Starting standalone web server on {}", addr);
+    tracing::info!("[Polaris-Web] Starting standalone web server on {}:{}", host, port);
 
     let rt = tokio::runtime::Runtime::new()
         .expect("Failed to create tokio runtime");
     rt.block_on(async move {
-        let handle = web_server.start(&addr);
+        let handle = web_server
+            .start_on_available_port(&host, port)
+            .await
+            .expect("Failed to start standalone web server");
         // 等待 Ctrl+C 信号以优雅关停
         tokio::signal::ctrl_c().await.ok();
         tracing::info!("[Polaris-Web] Received shutdown signal, stopping...");

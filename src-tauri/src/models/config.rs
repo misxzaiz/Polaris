@@ -663,8 +663,8 @@ impl Default for TTSConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WebConfig {
-    /// 是否启用 Web 服务（发布版默认不启动，调试版运行时默认启动）
-    #[serde(default)]
+    /// 是否启用 Web 服务（默认启动，可在设置中关闭）
+    #[serde(default = "default_web_enabled")]
     pub enabled: bool,
 
     /// 监听地址
@@ -682,11 +682,12 @@ pub struct WebConfig {
 
 fn default_web_host() -> String { "0.0.0.0".to_string() }
 fn default_web_port() -> u16 { 9830 }
+fn default_web_enabled() -> bool { true }
 
 impl Default for WebConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: default_web_enabled(),
             host: default_web_host(),
             port: default_web_port(),
             token: None,

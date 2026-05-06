@@ -27,7 +27,8 @@ import { AppUpdateTab } from './tabs/AppUpdateTab';
 import { LspTab } from './tabs/LspTab';
 import { WebTab } from './tabs/WebTab';
 import { createLogger } from '../../utils/logger';
-import { getConfig } from '../../services/tauri/configService';
+import { applyWebServer, getConfig } from '../../services/tauri/configService';
+import { currentMode } from '../../services/transport';
 import type { Config, ConfigPatch } from '../../types';
 
 const log = createLogger('SettingsModal');
@@ -68,6 +69,7 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<SettingsTabId>(initialTab || 'general');
   const [searchQuery, setSearchQuery] = useState('');
+  const [webStatusRefreshKey, setWebStatusRefreshKey] = useState(0);
 
   // 同步远程配置到本地
   useEffect(() => {
@@ -119,6 +121,12 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
     }, savedConfig);
   };
 
+  const applyWebServerIfNeeded = async (shouldApply: boolean) => {
+    if (!shouldApply || currentMode !== 'tauri') return;
+    await applyWebServer();
+    setWebStatusRefreshKey((key) => key + 1);
+  };
+
   // 保存当前分组配置
   const handleSaveCurrentTab = async () => {
     if (!localConfig) return;
@@ -130,6 +138,7 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
       const savedConfig = Object.keys(patch).length > 0
         ? await updateConfigPatch(patch)
         : await getConfig();
+      await applyWebServerIfNeeded(activeTab === 'web');
       if (savedConfig) {
         const nextLocal = preserveUnsavedLocalChanges(savedConfig, localConfig, keys);
         baseConfigRef.current = savedConfig;
@@ -154,6 +163,7 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
       if (Object.keys(patch).length > 0) {
         await updateConfigPatch(patch);
       }
+      await applyWebServerIfNeeded(Object.prototype.hasOwnProperty.call(patch, 'web'));
       success(t('messages.saved'), t('messages.configSavedDesc'));
       onClose();
     } catch (err) {
@@ -308,6 +318,7 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
                   config={localConfig}
                   onConfigChange={setLocalConfig}
                   loading={loading}
+                  statusRefreshKey={webStatusRefreshKey}
                 />
               )}
             </div>

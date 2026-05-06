@@ -1,16 +1,16 @@
 /**
  * Web 服务配置 Tab
  *
- * - 开关、端口配置：即时通过 apply_web_server 生效，无需重启
+ * - 开关、端口配置：保存 Web 设置后即时生效，无需重启
  */
 
 import { useTranslation } from 'react-i18next';
 import { useState, useEffect } from 'react';
 import * as tauri from '@/services/tauri';
-import { useConfigStore } from '../../../stores';
 import { invoke } from '@/services/transport';
 import { createLogger } from '../../../utils/logger';
 import type { Config, WebConfig } from '../../../types';
+import type { WebServerStatus } from '@/services/tauri';
 
 const log = createLogger('WebTab');
 
@@ -18,17 +18,17 @@ interface WebTabProps {
   config: Config;
   onConfigChange: (config: Config) => void;
   loading: boolean;
+  statusRefreshKey?: number;
 }
 
-const DEFAULT_WEB_CONFIG: WebConfig = { enabled: false, host: '0.0.0.0', port: 9800 };
+const DEFAULT_WEB_CONFIG: WebConfig = { enabled: true, host: '0.0.0.0', port: 9830 };
 
-export function WebTab({ config, onConfigChange, loading }: WebTabProps) {
+export function WebTab({ config, onConfigChange, loading, statusRefreshKey = 0 }: WebTabProps) {
   const { t } = useTranslation(['settings', 'common']);
   const web = config.web ?? DEFAULT_WEB_CONFIG;
   const [localIps, setLocalIps] = useState<string[]>([]);
-  const [applying, setApplying] = useState(false);
-  const [applyError, setApplyError] = useState<string | null>(null);
-  const [applySuccess, setApplySuccess] = useState<string | null>(null);
+  const [webServerStatus, setWebServerStatus] = useState<WebServerStatus | null>(null);
+  const [openingBrowser, setOpeningBrowser] = useState(false);
 
   useEffect(() => {
     if (!web.enabled) return;
@@ -37,32 +37,44 @@ export function WebTab({ config, onConfigChange, loading }: WebTabProps) {
       .catch(() => setLocalIps([]));
   }, [web.enabled]);
 
+  useEffect(() => {
+    let cancelled = false;
+    tauri.getWebServerStatus()
+      .then((status) => {
+        if (!cancelled) setWebServerStatus(status);
+      })
+      .catch(() => {
+        if (!cancelled) setWebServerStatus(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [statusRefreshKey]);
+
   const updateWeb = (patch: Partial<typeof web>) => {
     onConfigChange({ ...config, web: { ...web, ...patch } });
   };
 
-  /** 调用后端 apply_web_server 命令，即时启停 Web 服务 */
-  const applyWebServer = async () => {
-    setApplying(true);
-    setApplyError(null);
-    setApplySuccess(null);
+  const effectivePort = webServerStatus?.running && webServerStatus.port
+    ? webServerStatus.port
+    : web.port;
+  const accessUrl = webServerStatus?.running && webServerStatus.url
+    ? webServerStatus.url
+    : `http://${web.host === '0.0.0.0' ? 'localhost' : web.host}:${effectivePort}`;
+  const isUsingFallbackPort = Boolean(
+    webServerStatus?.running
+      && webServerStatus.port
+      && webServerStatus.port !== web.port,
+  );
+
+  const handleOpenInBrowser = async () => {
+    setOpeningBrowser(true);
     try {
-      const savedConfig = await tauri.updateConfigPatch({ web });
-      onConfigChange(savedConfig);
-      useConfigStore.setState({ config: savedConfig });
-      const result = await invoke<{ running: boolean }>('apply_web_server');
-      setApplySuccess(result.running ? t('web.serverStarted') : t('web.serverStopped'));
-      // 成功后刷新 IP 列表
-      if (result.running) {
-        invoke<string[]>('get_local_ips')
-          .then(setLocalIps)
-          .catch(() => setLocalIps([]));
-      }
+      await tauri.openInBrowser(accessUrl);
     } catch (e: unknown) {
-      setApplyError(t('web.applyFailed'));
-      log.warn('Apply web server failed', { error: String(e) });
+      log.warn('Open web URL failed', { error: String(e), url: accessUrl });
     } finally {
-      setApplying(false);
+      setOpeningBrowser(false);
     }
   };
 
@@ -91,6 +103,50 @@ export function WebTab({ config, onConfigChange, loading }: WebTabProps) {
               }`}
             />
           </button>
+        </div>
+      </div>
+
+      {/* 访问信息 */}
+      <div className="p-4 bg-surface rounded-lg border border-border">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <h3 className="text-sm font-medium text-text-primary">{t('web.accessInfo')}</h3>
+          <button
+              type="button"
+              onClick={handleOpenInBrowser}
+              disabled={!web.enabled || openingBrowser || loading}
+              className="px-3 py-1.5 text-xs font-medium text-white bg-primary rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {openingBrowser ? '...' : t('web.openInBrowser')}
+          </button>
+        </div>
+        <div className="text-xs text-text-tertiary space-y-1">
+          <p>
+            <span className="text-text-secondary">{t('web.accessUrl')}：</span>
+            <code className="text-text-primary">{accessUrl}</code>
+          </p>
+          {isUsingFallbackPort && (
+              <p>
+                <span className="text-text-secondary">{t('web.actualPort')}：</span>
+                {t('web.actualPortHint', { port: effectivePort })}
+              </p>
+          )}
+
+          <p>
+            <code className="text-text-secondary">{t('web.otherAccessUrl')}：</code>
+          </p>
+          {localIps.length > 1 && (
+              <div className="text-xs text-text-tertiary">
+                {localIps.map((ip) => (
+                    <span key={ip} className="inline-block mr-2">
+                  <code className="text-text-primary">{ip}:{effectivePort}</code>
+                </span>
+                ))}
+              </div>
+          )}
+          <p>
+            <span className="text-text-secondary">{t('web.accessHint')}：</span>
+            {t('web.accessHintDesc')}
+          </p>
         </div>
       </div>
 
@@ -130,7 +186,7 @@ export function WebTab({ config, onConfigChange, loading }: WebTabProps) {
                 updateWeb({ port: val });
               }
             }}
-            placeholder="9800"
+            placeholder="9830"
             className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
             disabled={loading || !web.enabled}
           />
@@ -153,55 +209,6 @@ export function WebTab({ config, onConfigChange, loading }: WebTabProps) {
           />
           <p className="mt-1 text-xs text-text-tertiary">
             {t('web.tokenHint')}
-          </p>
-        </div>
-      </div>
-
-      {/* 应用按钮 — 即时启停 */}
-      <div className="p-4 bg-surface rounded-lg border border-border">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-medium text-text-primary">{t('web.applyTitle')}</h3>
-            <p className="mt-1 text-xs text-text-tertiary">{t('web.applyDesc')}</p>
-          </div>
-          <button
-            type="button"
-            onClick={applyWebServer}
-            disabled={applying || loading}
-            className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {applying ? '...' : t('web.applyButton')}
-          </button>
-        </div>
-        {applyError && (
-          <p className="mt-2 text-xs text-red-400">{applyError}</p>
-        )}
-        {applySuccess && (
-          <p className="mt-2 text-xs text-green-400">{applySuccess}</p>
-        )}
-      </div>
-
-      {/* 访问信息 */}
-      <div className="p-4 bg-surface rounded-lg border border-border">
-        <h3 className="text-sm font-medium text-text-primary mb-3">{t('web.accessInfo')}</h3>
-        <div className="text-xs text-text-tertiary space-y-1">
-          <p>
-            <span className="text-text-secondary">{t('web.accessUrl')}：</span>
-            <code className="text-text-primary">http://{web.host === '0.0.0.0' ? 'localhost' : web.host}:{web.port}</code>
-          </p>
-
-          {localIps.length > 1 && (
-            <div className="text-xs text-text-tertiary">
-              {localIps.map((ip) => (
-                <span key={ip} className="inline-block mr-2">
-                  <code className="text-text-primary">{ip}:{web.port}</code>
-                </span>
-              ))}
-            </div>
-          )}
-          <p>
-            <span className="text-text-secondary">{t('web.accessHint')}：</span>
-            {t('web.accessHintDesc')}
           </p>
         </div>
       </div>
