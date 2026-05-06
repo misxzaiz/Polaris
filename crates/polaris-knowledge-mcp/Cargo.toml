@@ -1,6 +1,6 @@
 [package]
 name = "polaris-knowledge-mcp"
-version = "9.0.3"
+version = "9.0.4"
 edition = "2021"
 description = "Standalone MCP server for AI-native project knowledge management"
 authors = ["Polaris Team"]
