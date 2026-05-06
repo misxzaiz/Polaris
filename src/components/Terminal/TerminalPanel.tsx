@@ -10,9 +10,14 @@ import { FitAddon } from 'xterm-addon-fit';
 import { WebLinksAddon } from 'xterm-addon-web-links';
 import { useTerminalStore } from '@/stores/terminalStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useViewStore } from '@/stores/viewStore';
+import { useTerminalScriptStore } from '@/stores/terminalScriptStore';
 import { Plus, X, Terminal as TerminalIcon } from 'lucide-react';
 import { createLogger } from '@/utils/logger';
 import { TerminalScriptPanel } from './TerminalScriptPanel';
+import { TerminalQuickRunBar } from './TerminalQuickRunBar';
+import { TerminalRunCommandModal } from './TerminalRunCommandModal';
+import { TerminalTabContextMenu } from './TerminalTabContextMenu';
 import 'xterm/css/xterm.css';
 
 const log = createLogger('TerminalPanel');
@@ -195,16 +200,38 @@ export function TerminalPanel() {
   const initEventListeners = useTerminalStore((state) => state.initEventListeners);
   const getCurrentWorkspace = useWorkspaceStore((state) => state.getCurrentWorkspace);
   const [initialized, setInitialized] = useState(false);
+  const [showRunner, setShowRunner] = useState(false);
+  const [tabContextMenu, setTabContextMenu] = useState<{ visible: boolean; x: number; y: number; sessionId: string | null }>({
+    visible: false,
+    x: 0,
+    y: 0,
+    sessionId: null,
+  });
+  const terminalScriptPanelCollapsed = useViewStore((state) => state.terminalScriptPanelCollapsed);
+  const toggleTerminalScriptPanelCollapsed = useViewStore((state) => state.toggleTerminalScriptPanelCollapsed);
+  const scripts = useTerminalScriptStore((state) => state.scripts);
+  const runScript = useTerminalScriptStore((state) => state.runScript);
+  const stopScript = useTerminalScriptStore((state) => state.stopScript);
 
   // 获取当前工作区路径
   const currentWorkspace = getCurrentWorkspace();
   const cwd = currentWorkspace?.path;
+  const contextSession = sessions.find((session) => session.id === tabContextMenu.sessionId) ?? null;
+  const contextScript = contextSession?.scriptId
+    ? scripts.find((script) => script.id === contextSession.scriptId)
+    : null;
 
   // 初始化事件监听
   useEffect(() => {
     const cleanup = initEventListeners();
     return cleanup;
   }, [initEventListeners]);
+
+  useEffect(() => {
+    const handleOpenRunner = () => setShowRunner(true);
+    window.addEventListener('terminal:open-runner', handleOpenRunner);
+    return () => window.removeEventListener('terminal:open-runner', handleOpenRunner);
+  }, []);
 
   // 自动创建第一个会话
   useEffect(() => {
@@ -225,9 +252,19 @@ export function TerminalPanel() {
     closeSession(sessionId).catch((e) => log.error('Failed to close session', e instanceof Error ? e : new Error(String(e))));
   }, [closeSession]);
 
+  const handleCloseContextSession = useCallback(() => {
+    if (!contextSession) return;
+    closeSession(contextSession.id).catch((e) => log.error('Failed to close session', e instanceof Error ? e : new Error(String(e))));
+  }, [closeSession, contextSession]);
+
   return (
     <div className="flex flex-col h-full bg-[#1e1e1e]">
-      <TerminalScriptPanel workspacePath={cwd || null} />
+      <TerminalQuickRunBar
+        collapsed={terminalScriptPanelCollapsed}
+        onToggleCollapsed={toggleTerminalScriptPanelCollapsed}
+        onOpenRunner={() => setShowRunner(true)}
+      />
+      {!terminalScriptPanelCollapsed && <TerminalScriptPanel workspacePath={cwd || null} />}
 
       {/* 标签栏 */}
       <div className="flex items-center h-9 bg-[#252526] border-b border-[#3c3c3c] shrink-0">
@@ -237,6 +274,11 @@ export function TerminalPanel() {
             <div
               key={session.id}
               onClick={() => setActiveSession(session.id)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setActiveSession(session.id);
+                setTabContextMenu({ visible: true, x: e.clientX, y: e.clientY, sessionId: session.id });
+              }}
               className={`
                 flex items-center gap-1.5 px-3 h-full min-w-[100px] max-w-[200px]
                 cursor-pointer border-r border-[#3c3c3c]
@@ -268,6 +310,18 @@ export function TerminalPanel() {
         </button>
       </div>
 
+      <TerminalTabContextMenu
+        visible={tabContextMenu.visible}
+        x={tabContextMenu.x}
+        y={tabContextMenu.y}
+        session={contextSession}
+        command={contextScript?.command}
+        onClose={() => setTabContextMenu((state) => ({ ...state, visible: false }))}
+        onCloseSession={handleCloseContextSession}
+        onStopScript={contextScript ? () => stopScript(contextScript.id) : undefined}
+        onRerunScript={contextScript ? () => runScript(contextScript.id) : undefined}
+      />
+
       {/* 终端内容区 */}
       <div className="flex-1 relative overflow-hidden">
         {sessions.length === 0 ? (
@@ -287,6 +341,13 @@ export function TerminalPanel() {
           ))
         )}
       </div>
+
+      {showRunner && (
+        <TerminalRunCommandModal
+          workspacePath={cwd || null}
+          onClose={() => setShowRunner(false)}
+        />
+      )}
     </div>
   );
 }

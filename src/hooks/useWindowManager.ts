@@ -5,7 +5,7 @@
  * - 窗口尺寸监听 + compact 模式同步
  * - 窗口透明度应用
  * - F12 DevTools 快捷键
- * - Shift+Ctrl+R 文件搜索快捷键
+ * - Shift+Ctrl+R 文件搜索/终端快速运行快捷键
  * - navigate-to-settings 事件监听
  */
 
@@ -68,7 +68,11 @@ export function useWindowManager({ onOpenSettings, onToggleFileSearch }: UseWind
       }
       if (e.key === 'R' && e.shiftKey && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        onToggleFileSearch();
+        if (useViewStore.getState().leftPanelType === 'terminal') {
+          window.dispatchEvent(new CustomEvent('terminal:open-runner'));
+        } else {
+          onToggleFileSearch();
+        }
       }
     };
 

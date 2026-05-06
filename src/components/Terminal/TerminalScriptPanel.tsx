@@ -3,6 +3,7 @@ import { EyeOff, Play, Plus, RefreshCw, RotateCcw, Save, Square, Trash2 } from '
 import { useTerminalScriptStore } from '@/stores/terminalScriptStore';
 import type { TerminalScript, TerminalScriptAutoRunTrigger } from '@/types/terminalScript';
 import { createLogger } from '@/utils/logger';
+import { TerminalScriptContextMenu } from './TerminalScriptContextMenu';
 
 const log = createLogger('TerminalScriptPanel');
 
@@ -71,6 +72,12 @@ export function TerminalScriptPanel({ workspacePath }: TerminalScriptPanelProps)
   const [selectedScriptId, setSelectedScriptId] = useState('');
   const [draft, setDraft] = useState<TerminalScript | null>(null);
   const [draftEnv, setDraftEnv] = useState('');
+  const [contextMenu, setContextMenu] = useState<{ visible: boolean; x: number; y: number; scriptId: string | null }>({
+    visible: false,
+    x: 0,
+    y: 0,
+    scriptId: null,
+  });
 
   useEffect(() => {
     setWorkspace(workspacePath).catch((e) => log.error('Failed to load terminal scripts', e instanceof Error ? e : new Error(String(e))));
@@ -119,6 +126,8 @@ export function TerminalScriptPanel({ workspacePath }: TerminalScriptPanelProps)
 
   const selectedRuntime = selectedScript ? runtimes[selectedScript.id] : undefined;
   const selectedIsCustom = selectedScript ? isCustomScript(selectedScript) : false;
+  const contextScript = scripts.find((script) => script.id === contextMenu.scriptId) ?? null;
+  const contextRuntime = contextScript ? runtimes[contextScript.id] : undefined;
 
   const handleRun = useCallback(() => {
     if (!selectedScript) return;
@@ -160,6 +169,18 @@ export function TerminalScriptPanel({ workspacePath }: TerminalScriptPanelProps)
     if (!window.confirm(message)) return;
     deleteScript(selectedScript.id).catch((e) => log.error('Failed to delete script', e instanceof Error ? e : new Error(String(e))));
   }, [deleteScript, selectedIsCustom, selectedScript]);
+
+  const handleDuplicate = useCallback((script: TerminalScript) => {
+    createCustomScript({
+      name: `${script.name} copy`,
+      command: script.command,
+      cwd: script.cwd || workspacePath || undefined,
+      env: script.env,
+      tags: [...(script.tags ?? []), 'custom'],
+    })
+      .then(() => setTab('custom'))
+      .catch((e) => log.error('Failed to duplicate script', e instanceof Error ? e : new Error(String(e))));
+  }, [createCustomScript, workspacePath]);
 
   return (
     <div className="h-64 shrink-0 border-b border-[#3c3c3c] bg-[#202020] flex flex-col">
@@ -205,6 +226,11 @@ export function TerminalScriptPanel({ workspacePath }: TerminalScriptPanelProps)
               <button
                 key={script.id}
                 onClick={() => setSelectedScriptId(script.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setSelectedScriptId(script.id);
+                  setContextMenu({ visible: true, x: e.clientX, y: e.clientY, scriptId: script.id });
+                }}
                 className={`w-full text-left px-3 py-2 border-b border-[#303030] ${active ? 'bg-[#263347]' : 'hover:bg-[#2d2d2d]'}`}
               >
                 <div className="flex items-center justify-between gap-2">
@@ -338,6 +364,29 @@ export function TerminalScriptPanel({ workspacePath }: TerminalScriptPanelProps)
           <button className="h-6 px-2 hover:bg-red-900/40 rounded" onClick={clearError}>关闭</button>
         </div>
       )}
+
+      <TerminalScriptContextMenu
+        visible={contextMenu.visible}
+        x={contextMenu.x}
+        y={contextMenu.y}
+        script={contextScript}
+        isCustom={contextScript ? isCustomScript(contextScript) : false}
+        isRunning={contextRuntime?.status === 'running'}
+        onClose={() => setContextMenu((state) => ({ ...state, visible: false }))}
+        onRun={() => contextScript && runScript(contextScript.id)}
+        onStop={() => contextScript && stopScript(contextScript.id)}
+        onEdit={() => contextScript && setSelectedScriptId(contextScript.id)}
+        onDuplicate={() => contextScript && handleDuplicate(contextScript)}
+        onDeleteOrHide={() => {
+          if (!contextScript) return;
+          const custom = isCustomScript(contextScript);
+          const message = custom
+            ? `删除自定义命令：${contextScript.name}?`
+            : `项目脚本来自 ${contextScript.source}，不会修改源文件。是否从脚本库隐藏：${contextScript.name}?`;
+          if (!window.confirm(message)) return;
+          deleteScript(contextScript.id);
+        }}
+      />
     </div>
   );
 }

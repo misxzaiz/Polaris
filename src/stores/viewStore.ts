@@ -32,6 +32,7 @@ interface ViewState {
   rightPanelWidth: number;       // 右侧 AI 面板宽度
   rightPanelCollapsed: boolean;  // 右侧面板是否折叠
   activityBarCollapsed: boolean; // ActivityBar 是否折叠（隐藏图标栏）
+  terminalScriptPanelCollapsed: boolean; // 终端脚本面板是否折叠
   // 小屏模式状态
   compactMode: CompactModeState; // 小屏模式
   schedulerLogDrawerHeight: number; // 日志抽屉高度
@@ -67,6 +68,8 @@ interface ViewActions {
   setRightPanelWidth: (width: number) => void;
   toggleRightPanel: () => void;
   toggleActivityBar: () => void; // 切换 ActivityBar 折叠状态
+  toggleTerminalScriptPanelCollapsed: () => void;
+  setTerminalScriptPanelCollapsed: (collapsed: boolean) => void;
   // 小屏模式操作
   updateCompactMode: (state: Partial<CompactModeState>) => void;
   // 日志抽屉高度
@@ -108,6 +111,7 @@ export const useViewStore = create<ViewStore>()(
       rightPanelWidth: 400,       // 右侧 AI 面板默认宽度
       rightPanelCollapsed: false, // 右侧面板默认不折叠
       activityBarCollapsed: false, // ActivityBar 默认不折叠
+      terminalScriptPanelCollapsed: true, // 终端脚本默认紧凑显示
       // 小屏模式初始状态
       compactMode: {
         isCompactMode: false,
@@ -206,6 +210,15 @@ export const useViewStore = create<ViewStore>()(
 
       // 切换 ActivityBar 折叠状态
       toggleActivityBar: () => set((state) => ({ activityBarCollapsed: !state.activityBarCollapsed })),
+
+      // 切换终端脚本面板折叠状态
+      toggleTerminalScriptPanelCollapsed: () => set((state) => ({
+        terminalScriptPanelCollapsed: !state.terminalScriptPanelCollapsed,
+      })),
+
+      setTerminalScriptPanelCollapsed: (collapsed: boolean) => set({
+        terminalScriptPanelCollapsed: collapsed,
+      }),
 
       // 更新小屏模式状态
       updateCompactMode: (newState: Partial<CompactModeState>) => set((state) => ({
