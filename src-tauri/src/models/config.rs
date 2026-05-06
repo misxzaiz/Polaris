@@ -765,6 +765,9 @@ pub struct WorkspaceTerminalScripts {
     /// 用户保存或覆盖的脚本
     #[serde(default)]
     pub scripts: Vec<TerminalScriptItem>,
+    /// 已隐藏的项目发现脚本 ID
+    #[serde(default)]
+    pub hidden_discovered_script_ids: Vec<String>,
 }
 
 /// 应用配置（新版本）

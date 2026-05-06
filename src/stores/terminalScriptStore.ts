@@ -22,6 +22,7 @@ const log = createLogger('TerminalScriptStore');
 interface TerminalScriptState {
   workspacePath: string | null;
   scripts: TerminalScript[];
+  hiddenDiscoveredScriptIds: string[];
   runtimes: Record<string, TerminalScriptRuntime>;
   loading: boolean;
   error: string | null;
@@ -33,6 +34,8 @@ interface TerminalScriptState {
   saveScript: (script: TerminalScript) => Promise<void>;
   createCustomScript: (params: Pick<TerminalScript, 'name' | 'command'> & Partial<TerminalScript>) => Promise<void>;
   deleteScript: (scriptId: string) => Promise<void>;
+  hideProjectScript: (scriptId: string) => Promise<void>;
+  restoreHiddenProjectScripts: () => Promise<void>;
   runScript: (scriptId: string) => Promise<string>;
   stopScript: (scriptId: string) => Promise<void>;
   runAutoScripts: (trigger: TerminalScriptAutoRunTrigger, workspacePath?: string | null) => Promise<void>;
@@ -44,6 +47,22 @@ function getWorkspaceScriptsConfig(workspacePath: string | null): WorkspaceTermi
   if (!workspacePath) return { scripts: [] };
   const config = useConfigStore.getState().config;
   return config?.terminalScripts?.[workspacePath] ?? { scripts: [] };
+}
+
+function isCustomScript(script: TerminalScript): boolean {
+  return script.source === 'user' || script.id.startsWith('user:');
+}
+
+function isDangerousCommand(command: string): boolean {
+  const normalized = command.toLowerCase();
+  return [
+    'rm -rf',
+    'del /s',
+    'rmdir /s',
+    'git clean -fd',
+    'git clean -fdx',
+    'format ',
+  ].some((pattern) => normalized.includes(pattern));
 }
 
 function toScriptFromDiscovery(item: DiscoveredTerminalScript): TerminalScript {
@@ -63,14 +82,21 @@ function toScriptFromDiscovery(item: DiscoveredTerminalScript): TerminalScript {
   };
 }
 
-function mergeScripts(discovered: DiscoveredTerminalScript[], saved: TerminalScript[]): TerminalScript[] {
+function mergeScripts(
+  discovered: DiscoveredTerminalScript[],
+  saved: TerminalScript[],
+  hiddenDiscoveredScriptIds: string[],
+): TerminalScript[] {
   const byId = new Map<string, TerminalScript>();
+  const hidden = new Set(hiddenDiscoveredScriptIds);
 
   for (const item of discovered) {
+    if (hidden.has(item.id)) continue;
     byId.set(item.id, toScriptFromDiscovery(item));
   }
 
   for (const item of saved) {
+    if (!isCustomScript(item) && hidden.has(item.id)) continue;
     byId.set(item.id, {
       ...byId.get(item.id),
       ...item,
@@ -85,11 +111,15 @@ function mergeScripts(discovered: DiscoveredTerminalScript[], saved: TerminalScr
   return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-async function persistWorkspaceScripts(workspacePath: string, scripts: TerminalScript[]) {
+async function persistWorkspaceScripts(
+  workspacePath: string,
+  scripts: TerminalScript[],
+  hiddenDiscoveredScriptIds: string[],
+) {
   const config = useConfigStore.getState().config;
   const terminalScripts = {
     ...(config?.terminalScripts ?? {}),
-    [workspacePath]: { scripts },
+    [workspacePath]: { scripts, hiddenDiscoveredScriptIds },
   };
 
   await useConfigStore.getState().updateConfigPatch({ terminalScripts });
@@ -98,6 +128,7 @@ async function persistWorkspaceScripts(workspacePath: string, scripts: TerminalS
 export const useTerminalScriptStore = create<TerminalScriptState>((set, get) => ({
   workspacePath: null,
   scripts: [],
+  hiddenDiscoveredScriptIds: [],
   runtimes: {},
   loading: false,
   error: null,
@@ -126,25 +157,33 @@ export const useTerminalScriptStore = create<TerminalScriptState>((set, get) => 
         get().discoverScripts(workspacePath),
         useConfigStore.getState().config ? Promise.resolve() : useConfigStore.getState().loadConfig(),
       ]);
-      const saved = getWorkspaceScriptsConfig(workspacePath).scripts ?? [];
-      set({ scripts: mergeScripts(discovered, saved), loading: false });
+      const workspaceConfig = getWorkspaceScriptsConfig(workspacePath);
+      const saved = workspaceConfig.scripts ?? [];
+      const hiddenDiscoveredScriptIds = workspaceConfig.hiddenDiscoveredScriptIds ?? [];
+      set({
+        scripts: mergeScripts(discovered, saved, hiddenDiscoveredScriptIds),
+        hiddenDiscoveredScriptIds,
+        loading: false,
+      });
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);
       log.error('加载终端脚本失败', e instanceof Error ? e : new Error(error));
-      const saved = getWorkspaceScriptsConfig(workspacePath).scripts ?? [];
-      set({ scripts: saved, loading: false, error });
+      const workspaceConfig = getWorkspaceScriptsConfig(workspacePath);
+      const saved = workspaceConfig.scripts ?? [];
+      const hiddenDiscoveredScriptIds = workspaceConfig.hiddenDiscoveredScriptIds ?? [];
+      set({ scripts: saved, hiddenDiscoveredScriptIds, loading: false, error });
     }
   },
 
   saveScript: async (script) => {
-    const { workspacePath, scripts } = get();
+    const { workspacePath, scripts, hiddenDiscoveredScriptIds } = get();
     if (!workspacePath) throw new Error('未选择工作区');
 
     const nextScripts = scripts.some((item) => item.id === script.id)
       ? scripts.map((item) => item.id === script.id ? { ...item, ...script } : item)
       : [...scripts, script];
 
-    await persistWorkspaceScripts(workspacePath, nextScripts);
+    await persistWorkspaceScripts(workspacePath, nextScripts, hiddenDiscoveredScriptIds);
     set({ scripts: nextScripts.sort((a, b) => a.name.localeCompare(b.name)) });
   },
 
@@ -172,11 +211,35 @@ export const useTerminalScriptStore = create<TerminalScriptState>((set, get) => 
   },
 
   deleteScript: async (scriptId) => {
+    const { workspacePath, scripts, hiddenDiscoveredScriptIds } = get();
+    if (!workspacePath) throw new Error('未选择工作区');
+
+    const script = scripts.find((item) => item.id === scriptId);
+    if (script && !isCustomScript(script)) {
+      await get().hideProjectScript(scriptId);
+      return;
+    }
+
+    const nextScripts = scripts.filter((item) => item.id !== scriptId);
+    await persistWorkspaceScripts(workspacePath, nextScripts, hiddenDiscoveredScriptIds);
+    set({ scripts: nextScripts });
+  },
+
+  hideProjectScript: async (scriptId) => {
+    const { workspacePath, scripts, hiddenDiscoveredScriptIds } = get();
+    if (!workspacePath) throw new Error('未选择工作区');
+    const nextHidden = Array.from(new Set([...hiddenDiscoveredScriptIds, scriptId]));
+    const nextScripts = scripts.filter((item) => item.id !== scriptId);
+    await persistWorkspaceScripts(workspacePath, nextScripts, nextHidden);
+    set({ scripts: nextScripts, hiddenDiscoveredScriptIds: nextHidden });
+  },
+
+  restoreHiddenProjectScripts: async () => {
     const { workspacePath, scripts } = get();
     if (!workspacePath) throw new Error('未选择工作区');
-    const nextScripts = scripts.filter((item) => item.id !== scriptId);
-    await persistWorkspaceScripts(workspacePath, nextScripts);
-    set({ scripts: nextScripts });
+    await persistWorkspaceScripts(workspacePath, scripts, []);
+    set({ hiddenDiscoveredScriptIds: [] });
+    await get().refresh();
   },
 
   runScript: async (scriptId) => {
@@ -184,6 +247,9 @@ export const useTerminalScriptStore = create<TerminalScriptState>((set, get) => 
     if (!script) throw new Error('脚本不存在');
     if (!script.enabled) throw new Error('脚本已禁用');
     if (!script.command.trim()) throw new Error('脚本命令不能为空');
+    if (isDangerousCommand(script.command) && !window.confirm(`命令可能具有破坏性，确认执行：${script.command}?`)) {
+      throw new Error('用户取消执行');
+    }
 
     set((state) => ({
       runtimes: {
@@ -216,6 +282,7 @@ export const useTerminalScriptStore = create<TerminalScriptState>((set, get) => 
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);
       set((state) => ({
+        error,
         runtimes: {
           ...state.runtimes,
           [scriptId]: { status: 'failed', error, lastRunAt: Date.now() },
@@ -249,7 +316,7 @@ export const useTerminalScriptStore = create<TerminalScriptState>((set, get) => 
       if (!script.enabled || !script.autoRun || script.autoRunTrigger !== trigger) continue;
       const key = `${workspacePath}:${trigger}:${script.id}`;
       if (get().autoRunKeys.includes(key)) continue;
-      if (script.confirmBeforeAutoRun && !window.confirm(`是否自动执行脚本：${script.name}?`)) {
+      if (script.confirmBeforeAutoRun && !window.confirm(`是否自动执行脚本：${script.name}?\n${script.command}`)) {
         continue;
       }
       set((state) => ({ autoRunKeys: [...state.autoRunKeys, key] }));

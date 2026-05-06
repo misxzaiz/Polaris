@@ -25,6 +25,7 @@ export interface TerminalScript {
 
 export interface WorkspaceTerminalScripts {
   scripts: TerminalScript[];
+  hiddenDiscoveredScriptIds?: string[];
 }
 
 export interface DiscoveredTerminalScript {

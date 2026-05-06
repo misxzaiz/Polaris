@@ -9,11 +9,10 @@ import { Terminal as XTerm } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import { WebLinksAddon } from 'xterm-addon-web-links';
 import { useTerminalStore } from '@/stores/terminalStore';
-import { useTerminalScriptStore } from '@/stores/terminalScriptStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { Play, Plus, RefreshCw, Square, X, Terminal as TerminalIcon } from 'lucide-react';
+import { Plus, X, Terminal as TerminalIcon } from 'lucide-react';
 import { createLogger } from '@/utils/logger';
-import type { TerminalScriptAutoRunTrigger } from '@/types/terminalScript';
+import { TerminalScriptPanel } from './TerminalScriptPanel';
 import 'xterm/css/xterm.css';
 
 const log = createLogger('TerminalPanel');
@@ -196,50 +195,16 @@ export function TerminalPanel() {
   const initEventListeners = useTerminalStore((state) => state.initEventListeners);
   const getCurrentWorkspace = useWorkspaceStore((state) => state.getCurrentWorkspace);
   const [initialized, setInitialized] = useState(false);
-  const [selectedScriptId, setSelectedScriptId] = useState('');
-  const scripts = useTerminalScriptStore((state) => state.scripts);
-  const runtimes = useTerminalScriptStore((state) => state.runtimes);
-  const scriptsLoading = useTerminalScriptStore((state) => state.loading);
-  const setScriptWorkspace = useTerminalScriptStore((state) => state.setWorkspace);
-  const refreshScripts = useTerminalScriptStore((state) => state.refresh);
-  const runScript = useTerminalScriptStore((state) => state.runScript);
-  const stopScript = useTerminalScriptStore((state) => state.stopScript);
-  const saveScript = useTerminalScriptStore((state) => state.saveScript);
-  const createCustomScript = useTerminalScriptStore((state) => state.createCustomScript);
-  const runAutoScripts = useTerminalScriptStore((state) => state.runAutoScripts);
 
   // 获取当前工作区路径
   const currentWorkspace = getCurrentWorkspace();
   const cwd = currentWorkspace?.path;
-  const selectedScript = scripts.find((script) => script.id === selectedScriptId) ?? scripts[0];
-  const selectedRuntime = selectedScript ? runtimes[selectedScript.id] : undefined;
 
   // 初始化事件监听
   useEffect(() => {
     const cleanup = initEventListeners();
     return cleanup;
   }, [initEventListeners]);
-
-  // 加载当前工作区脚本
-  useEffect(() => {
-    setScriptWorkspace(cwd || null).catch((e) => log.error('Failed to load terminal scripts', e instanceof Error ? e : new Error(String(e))));
-  }, [cwd, setScriptWorkspace]);
-
-  // 默认选中第一条脚本
-  useEffect(() => {
-    if (!selectedScriptId && scripts.length > 0) {
-      setSelectedScriptId(scripts[0].id);
-    }
-    if (selectedScriptId && scripts.length > 0 && !scripts.some((script) => script.id === selectedScriptId)) {
-      setSelectedScriptId(scripts[0].id);
-    }
-  }, [scripts, selectedScriptId]);
-
-  // 首次打开终端面板时执行配置为 terminal_open 的脚本
-  useEffect(() => {
-    if (!cwd) return;
-    runAutoScripts('terminal_open', cwd).catch((e) => log.error('Failed to run terminal auto scripts', e instanceof Error ? e : new Error(String(e))));
-  }, [cwd, runAutoScripts]);
 
   // 自动创建第一个会话
   useEffect(() => {
@@ -260,130 +225,9 @@ export function TerminalPanel() {
     closeSession(sessionId).catch((e) => log.error('Failed to close session', e instanceof Error ? e : new Error(String(e))));
   }, [closeSession]);
 
-  const handleRunSelectedScript = useCallback(() => {
-    if (!selectedScript) return;
-    runScript(selectedScript.id).catch((e) => log.error('Failed to run script', e instanceof Error ? e : new Error(String(e))));
-  }, [runScript, selectedScript]);
-
-  const handleStopSelectedScript = useCallback(() => {
-    if (!selectedScript) return;
-    stopScript(selectedScript.id).catch((e) => log.error('Failed to stop script', e instanceof Error ? e : new Error(String(e))));
-  }, [selectedScript, stopScript]);
-
-  const handleCreateCustomScript = useCallback(() => {
-    const name = window.prompt('脚本名称');
-    if (!name) return;
-    const command = window.prompt('执行命令');
-    if (!command) return;
-    createCustomScript({ name, command, cwd: cwd || undefined })
-      .catch((e) => log.error('Failed to create custom script', e instanceof Error ? e : new Error(String(e))));
-  }, [createCustomScript, cwd]);
-
-  const handleToggleAutoRun = useCallback((autoRun: boolean) => {
-    if (!selectedScript) return;
-    saveScript({
-      ...selectedScript,
-      autoRun,
-      autoRunTrigger: selectedScript.autoRunTrigger || 'workspace_open',
-    }).catch((e) => log.error('Failed to update script auto run', e instanceof Error ? e : new Error(String(e))));
-  }, [saveScript, selectedScript]);
-
-  const handleAutoRunTriggerChange = useCallback((trigger: TerminalScriptAutoRunTrigger) => {
-    if (!selectedScript) return;
-    saveScript({
-      ...selectedScript,
-      autoRunTrigger: trigger,
-    }).catch((e) => log.error('Failed to update script trigger', e instanceof Error ? e : new Error(String(e))));
-  }, [saveScript, selectedScript]);
-
-  const getRuntimeLabel = () => {
-    if (!selectedScript) return '无脚本';
-    switch (selectedRuntime?.status) {
-      case 'running':
-        return '运行中';
-      case 'success':
-        return '成功';
-      case 'failed':
-        return '失败';
-      case 'stopped':
-        return '已停止';
-      default:
-        return selectedScript.enabled ? '未运行' : '已禁用';
-    }
-  };
-
   return (
     <div className="flex flex-col h-full bg-[#1e1e1e]">
-      {/* 脚本工具栏 */}
-      <div className="flex items-center gap-2 h-10 px-2 bg-[#252526] border-b border-[#3c3c3c] shrink-0">
-        <select
-          className="h-7 flex-1 min-w-0 bg-[#1f1f1f] border border-[#3c3c3c] rounded px-2 text-xs text-text-primary"
-          value={selectedScript?.id || ''}
-          onChange={(e) => setSelectedScriptId(e.target.value)}
-          disabled={scripts.length === 0}
-          title={selectedScript?.command}
-        >
-          {scripts.length === 0 ? (
-            <option value="">{scriptsLoading ? '发现脚本中...' : '未发现脚本'}</option>
-          ) : scripts.map((script) => (
-            <option key={script.id} value={script.id}>{script.name} - {script.command}</option>
-          ))}
-        </select>
-        <button
-          onClick={handleRunSelectedScript}
-          disabled={!selectedScript || selectedRuntime?.status === 'running'}
-          className="flex items-center gap-1 h-7 px-2 text-xs text-text-secondary hover:text-text-primary hover:bg-[#3c3c3c] disabled:opacity-50 disabled:cursor-not-allowed rounded"
-          title="运行脚本"
-        >
-          <Play size={13} />运行
-        </button>
-        <button
-          onClick={handleStopSelectedScript}
-          disabled={!selectedScript || selectedRuntime?.status !== 'running'}
-          className="flex items-center gap-1 h-7 px-2 text-xs text-text-secondary hover:text-text-primary hover:bg-[#3c3c3c] disabled:opacity-50 disabled:cursor-not-allowed rounded"
-          title="停止脚本"
-        >
-          <Square size={13} />停止
-        </button>
-        <button
-          onClick={() => refreshScripts().catch((e) => log.error('Failed to refresh scripts', e instanceof Error ? e : new Error(String(e))))}
-          className="flex items-center justify-center h-7 w-7 text-text-secondary hover:text-text-primary hover:bg-[#3c3c3c] rounded"
-          title="重新发现脚本"
-        >
-          <RefreshCw size={13} />
-        </button>
-        <button
-          onClick={handleCreateCustomScript}
-          className="flex items-center justify-center h-7 w-7 text-text-secondary hover:text-text-primary hover:bg-[#3c3c3c] rounded"
-          title="新增自定义命令"
-        >
-          <Plus size={14} />
-        </button>
-        {selectedScript && (
-          <>
-            <label className="flex items-center gap-1 text-xs text-text-secondary whitespace-nowrap">
-              <input
-                type="checkbox"
-                checked={selectedScript.autoRun}
-                onChange={(e) => handleToggleAutoRun(e.target.checked)}
-              />
-              自动
-            </label>
-            <select
-              className="h-7 bg-[#1f1f1f] border border-[#3c3c3c] rounded px-1 text-xs text-text-secondary"
-              value={selectedScript.autoRunTrigger || 'workspace_open'}
-              onChange={(e) => handleAutoRunTriggerChange(e.target.value as TerminalScriptAutoRunTrigger)}
-              disabled={!selectedScript.autoRun}
-              title="自动执行时机"
-            >
-              <option value="app_start">应用启动</option>
-              <option value="workspace_open">打开工作区</option>
-              <option value="terminal_open">打开终端</option>
-            </select>
-            <span className="w-12 text-xs text-text-tertiary text-right">{getRuntimeLabel()}</span>
-          </>
-        )}
-      </div>
+      <TerminalScriptPanel workspacePath={cwd || null} />
 
       {/* 标签栏 */}
       <div className="flex items-center h-9 bg-[#252526] border-b border-[#3c3c3c] shrink-0">
