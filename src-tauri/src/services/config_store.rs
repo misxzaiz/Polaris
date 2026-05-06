@@ -606,6 +606,7 @@ impl OldConfig {
             web: Default::default(),
             workspaces: Vec::new(),
             current_workspace_id: None,
+            terminal_scripts: Default::default(),
             model_profiles: Vec::new(),
             active_model_profile_id: None,
             claude_cmd: Some(claude_cmd_clone),

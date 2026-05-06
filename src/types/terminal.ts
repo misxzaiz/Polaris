@@ -12,6 +12,10 @@ export interface TerminalSession {
   cwd?: string;
   /** 是否已关闭 */
   closed: boolean;
+  /** 会话用途 */
+  purpose?: string;
+  /** 关联脚本 ID */
+  scriptId?: string;
 }
 
 /** 终端输出事件 */
@@ -34,4 +38,14 @@ export interface TerminalExitEvent {
 export interface TerminalSize {
   cols: number;
   rows: number;
+}
+
+/** 创建终端会话参数 */
+export interface CreateTerminalSessionOptions {
+  name?: string;
+  cwd?: string;
+  initialCommand?: string;
+  env?: Record<string, string>;
+  purpose?: 'shell' | 'script';
+  scriptId?: string;
 }

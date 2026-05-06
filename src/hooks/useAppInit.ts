@@ -16,6 +16,7 @@ import { useIntegrationStore } from '../stores/integrationStore';
 import { useAutoModeStore } from '../stores/autoModeStore';
 import { useSnippetStore } from '../stores/snippetStore';
 import { useCliInfoStore } from '../stores/cliInfoStore';
+import { useTerminalScriptStore } from '../stores/terminalScriptStore';
 import { sessionStoreManager } from '../stores/conversationStore';
 import { bootstrapEngines, type EngineId } from '../core/engine-bootstrap';
 import { bootstrapTools } from '../core/tool-bootstrap';
@@ -138,6 +139,15 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
       ]);
     } catch (error) {
       log.warn('设置数据预加载部分失败', { error: String(error) });
+    }
+
+    const currentWorkspace = useWorkspaceStore.getState().getCurrentWorkspace();
+    if (currentWorkspace?.path) {
+      try {
+        await useTerminalScriptStore.getState().runAutoScripts('app_start', currentWorkspace.path);
+      } catch (error) {
+        log.warn('终端脚本自动执行失败', { error: String(error) });
+      }
     }
   });
 

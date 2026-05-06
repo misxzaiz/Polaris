@@ -3,9 +3,9 @@
  * 使用 portable-pty 提供终端仿真支持
  */
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{Read as _, Write as _};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use portable_pty::{native_pty_system, CommandBuilder, PtyPair, PtySize};
@@ -29,6 +29,12 @@ pub struct TerminalSession {
     pub cwd: Option<String>,
     /// 是否已关闭
     pub closed: bool,
+    /// 会话用途
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<String>,
+    /// 关联脚本 ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub script_id: Option<String>,
 }
 
 /// 终端输出事件
@@ -55,6 +61,8 @@ pub struct TerminalExitEvent {
 pub struct TerminalManager {
     /// PTY 会话映射
     sessions: Mutex<HashMap<String, PtySession>>,
+    /// 已退出但尚未被显式关闭的会话
+    closed_sessions: Arc<Mutex<HashSet<String>>>,
 }
 
 /// PTY 会话内部结构
@@ -81,6 +89,7 @@ impl TerminalManager {
     pub fn new() -> Self {
         Self {
             sessions: Mutex::new(HashMap::new()),
+            closed_sessions: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -93,6 +102,10 @@ impl TerminalManager {
         cwd: Option<String>,
         cols: u16,
         rows: u16,
+        initial_command: Option<String>,
+        env: Option<HashMap<String, String>>,
+        purpose: Option<String>,
+        script_id: Option<String>,
     ) -> Result<TerminalSession> {
         let pty_system = native_pty_system();
 
@@ -115,19 +128,35 @@ impl TerminalManager {
         });
 
         // 构建命令 - 使用系统默认 shell
+        let initial_command = initial_command.map(|command| command.trim().to_string()).filter(|command| !command.is_empty());
+
         let mut cmd = if cfg!(windows) {
             // Windows: 使用 cmd 并设置 UTF-8 编码解决中文乱码
             let mut c = CommandBuilder::new("cmd");
             c.arg("/K");
-            c.arg("chcp 65001 >nul");
+            if let Some(command) = &initial_command {
+                c.arg(format!("chcp 65001 >nul && {}", command));
+            } else {
+                c.arg("chcp 65001 >nul");
+            }
             c
         } else {
             // Unix (Linux/macOS): 使用用户登录 shell
             let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
-            CommandBuilder::new(shell)
+            let mut c = CommandBuilder::new(&shell);
+            if let Some(command) = &initial_command {
+                c.arg("-lc");
+                c.arg(format!("{}; exec {}", command, shell));
+            }
+            c
         };
         if let Some(ref dir) = cwd {
             cmd.cwd(dir);
+        }
+        if let Some(env) = env {
+            for (key, value) in env {
+                cmd.env(key, value);
+            }
         }
 
         // 启动子进程
@@ -153,11 +182,14 @@ impl TerminalManager {
             name: session_name,
             cwd: cwd.clone(),
             closed: false,
+            purpose,
+            script_id,
         };
 
         // 启动读取线程
         let session_id_clone = session_id.clone();
         let app_handle_clone = app_handle.clone();
+        let closed_sessions = Arc::clone(&self.closed_sessions);
         let thread_handle = thread::spawn(move || {
             let mut buffer = [0u8; 4096];
             loop {
@@ -167,6 +199,9 @@ impl TerminalManager {
                         tracing::debug!("[Terminal] 会话 {} 读取到 EOF", session_id_clone);
                         // 发送退出事件
                         let exit_code = child.wait().ok().map(|s| s.exit_code() as i32);
+                        if let Ok(mut closed) = closed_sessions.lock() {
+                            closed.insert(session_id_clone.clone());
+                        }
                         let _ = app_handle_clone.emit("terminal:exit", TerminalExitEvent {
                             session_id: session_id_clone.clone(),
                             exit_code,
@@ -265,6 +300,9 @@ impl TerminalManager {
             .map_err(|e| AppError::StateError(format!("无法获取锁: {}", e)))?;
 
         if let Some(mut session) = sessions.remove(session_id) {
+            if let Ok(mut closed) = self.closed_sessions.lock() {
+                closed.remove(session_id);
+            }
             // 关闭写入器
             let _ = session.writer.write_all(&[3]); // 发送 Ctrl+C
 
@@ -288,7 +326,15 @@ impl TerminalManager {
             .lock()
             .map_err(|e| AppError::StateError(format!("无法获取锁: {}", e)))?;
 
-        Ok(sessions.values().map(|s| s.info.clone()).collect())
+        let closed = self.closed_sessions
+            .lock()
+            .map_err(|e| AppError::StateError(format!("无法获取锁: {}", e)))?;
+
+        Ok(sessions
+            .values()
+            .filter(|s| !closed.contains(&s.info.id))
+            .map(|s| s.info.clone())
+            .collect())
     }
 
     /// 获取单个会话
@@ -297,9 +343,17 @@ impl TerminalManager {
             .lock()
             .map_err(|e| AppError::StateError(format!("无法获取锁: {}", e)))?;
 
+        let closed = self.closed_sessions
+            .lock()
+            .map_err(|e| AppError::StateError(format!("无法获取锁: {}", e)))?;
+
         sessions
             .get(session_id)
-            .map(|s| s.info.clone())
+            .map(|s| {
+                let mut info = s.info.clone();
+                info.closed = closed.contains(session_id);
+                info
+            })
             .ok_or_else(|| AppError::SessionNotFound(session_id.to_string()))
     }
 }
@@ -318,6 +372,10 @@ pub fn terminal_create(
     cwd: Option<String>,
     cols: Option<u16>,
     rows: Option<u16>,
+    initial_command: Option<String>,
+    env: Option<HashMap<String, String>>,
+    purpose: Option<String>,
+    script_id: Option<String>,
 ) -> Result<TerminalSession> {
     let manager = state.terminal_manager.lock()
         .map_err(|e| AppError::StateError(e.to_string()))?;
@@ -328,6 +386,10 @@ pub fn terminal_create(
         cwd,
         cols.unwrap_or(80),
         rows.unwrap_or(24),
+        initial_command,
+        env,
+        purpose,
+        script_id,
     )
 }
 

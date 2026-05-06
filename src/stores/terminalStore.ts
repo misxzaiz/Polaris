@@ -4,7 +4,7 @@
 
 import { create } from 'zustand';
 import { invoke, listen } from '@/services/transport';
-import type { TerminalSession, TerminalOutputEvent, TerminalExitEvent } from '@/types/terminal';
+import type { CreateTerminalSessionOptions, TerminalSession, TerminalOutputEvent, TerminalExitEvent } from '@/types/terminal';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('Terminal');
@@ -22,7 +22,7 @@ interface TerminalState {
 
 interface TerminalActions {
   /** 创建新会话 */
-  createSession: (name?: string, cwd?: string) => Promise<TerminalSession>;
+  createSession: (nameOrOptions?: string | CreateTerminalSessionOptions, cwd?: string) => Promise<TerminalSession>;
   /** 关闭会话 */
   closeSession: (sessionId: string) => Promise<void>;
   /** 写入数据 */
@@ -47,14 +47,21 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
   loading: false,
   error: null,
 
-  createSession: async (name?: string, cwd?: string) => {
+  createSession: async (nameOrOptions?: string | CreateTerminalSessionOptions, cwd?: string) => {
     try {
+      const options: CreateTerminalSessionOptions = typeof nameOrOptions === 'object'
+        ? nameOrOptions
+        : { name: nameOrOptions, cwd };
       set({ loading: true, error: null });
       const session = await invoke<TerminalSession>('terminal_create', {
-        name,
-        cwd,
+        name: options.name,
+        cwd: options.cwd,
         cols: 80,
         rows: 24,
+        initialCommand: options.initialCommand,
+        env: options.env,
+        purpose: options.purpose,
+        scriptId: options.scriptId,
       });
       set((state) => ({
         sessions: [...state.sessions, session],

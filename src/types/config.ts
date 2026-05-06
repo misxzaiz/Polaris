@@ -4,6 +4,7 @@
 
 import type { SpeechConfig, TTSConfig, WakeWordConfig, VoiceNotificationConfig, VoiceCommandEntry } from './speech'
 import type { ModelProfile } from './modelProfile'
+import type { WorkspaceTerminalScripts } from './terminalScript'
 
 /**  引擎 ID */
 export type EngineId = 'claude-code' | 'codex'
@@ -183,6 +184,8 @@ export interface Config {
   workspaces?: WorkspaceEntry[];
   /** 当前激活的工作区 ID */
   currentWorkspaceId?: string;
+  /** 工作区终端脚本配置，key 为工作区绝对路径 */
+  terminalScripts?: Record<string, WorkspaceTerminalScripts>;
   /** 模型 Profile 列表（配置第三方模型端点） */
   modelProfiles?: ModelProfile[];
   /** 当前激活的模型 Profile ID（为空时使用官方模型） */

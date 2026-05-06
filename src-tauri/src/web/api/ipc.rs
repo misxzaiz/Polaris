@@ -262,7 +262,7 @@ pub async fn handle_ipc_bridge(
 
         // ── Terminal (not available in web mode) ───────────────────────────
         "terminal_create" | "terminal_write" | "terminal_resize" | "terminal_close"
-        | "terminal_list" | "terminal_get" => {
+        | "terminal_list" | "terminal_get" | "terminal_discover_scripts" => {
             tracing::debug!("[Web:IPC] {}: not available in web mode (requires local PTY)", command);
             Err(WebError::BadRequest(format!(
                 "Terminal commands require local runtime: {}",

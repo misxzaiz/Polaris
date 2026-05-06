@@ -28,6 +28,7 @@ export {
 export { useToastStore, type Toast, type ToastType } from './toastStore';
 export { useSchedulerStore } from './schedulerStore';
 export { useTerminalStore } from './terminalStore';
+export { useTerminalScriptStore } from './terminalScriptStore';
 export { useRequirementStore } from './requirementStore';
 export { useSessionStore, getSessionEffectiveWorkspace } from './sessionStore';
 export { useModelProfileStore, getActiveModelProfile } from './modelProfileStore';

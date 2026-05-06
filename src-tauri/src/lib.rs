@@ -112,6 +112,8 @@ use commands::terminal::{
     terminal_close, terminal_list, terminal_get,
 };
 #[cfg(feature = "tauri-app")]
+use commands::terminal_script::terminal_discover_scripts;
+#[cfg(feature = "tauri-app")]
 use commands::diagnostics::get_todo_mcp_diagnostics;
 #[cfg(feature = "tauri-app")]
 use commands::prompt_snippet::{
@@ -664,6 +666,7 @@ pub fn run() {
             terminal_close,
             terminal_list,
             terminal_get,
+            terminal_discover_scripts,
             // Todo 相关
             commands::todo::list_todos,
             commands::todo::create_todo,

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 /// Claude Code 引擎配置
@@ -714,6 +715,58 @@ pub struct WorkspaceEntry {
     pub last_accessed: Option<String>,
 }
 
+/// 终端脚本配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalScriptItem {
+    /// 唯一 ID
+    pub id: String,
+    /// 显示名称
+    pub name: String,
+    /// 实际执行命令
+    pub command: String,
+    /// 工作目录
+    #[serde(default)]
+    pub cwd: Option<String>,
+    /// 环境变量
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
+    /// 标签
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// 来源，如 package.json 或 user
+    #[serde(default)]
+    pub source: String,
+    /// 来源文件
+    #[serde(default)]
+    pub source_path: Option<String>,
+    /// 是否启用
+    #[serde(default = "default_terminal_script_enabled")]
+    pub enabled: bool,
+    /// 是否自动执行
+    #[serde(default)]
+    pub auto_run: bool,
+    /// 自动执行时机：app_start / workspace_open / terminal_open
+    #[serde(default)]
+    pub auto_run_trigger: Option<String>,
+    /// 自动执行前是否需要确认
+    #[serde(default)]
+    pub confirm_before_auto_run: bool,
+}
+
+fn default_terminal_script_enabled() -> bool {
+    true
+}
+
+/// 工作区终端脚本配置
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceTerminalScripts {
+    /// 用户保存或覆盖的脚本
+    #[serde(default)]
+    pub scripts: Vec<TerminalScriptItem>,
+}
+
 /// 应用配置（新版本）
 ///
 /// 使用嵌套结构，支持多个 AI 引擎
@@ -797,6 +850,10 @@ pub struct Config {
     #[serde(default)]
     pub current_workspace_id: Option<String>,
 
+    /// 工作区终端脚本配置，key 为工作区绝对路径
+    #[serde(default)]
+    pub terminal_scripts: BTreeMap<String, WorkspaceTerminalScripts>,
+
     /// 模型 Profile 列表（配置第三方模型端点）
     #[serde(default)]
     pub model_profiles: Vec<ModelProfile>,
@@ -838,6 +895,7 @@ impl Default for Config {
             web: WebConfig::default(),
             workspaces: Vec::new(),
             current_workspace_id: None,
+            terminal_scripts: BTreeMap::new(),
             model_profiles: Vec::new(),
             active_model_profile_id: None,
             claude_cmd: None,

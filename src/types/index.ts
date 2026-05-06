@@ -13,6 +13,7 @@ export * from './todo';
 export * from './integration';
 export * from './scheduler';
 export * from './terminal';
+export * from './terminalScript';
 export * from './attachment';
 export * from './errors';
 export * from './requirement';

@@ -13,6 +13,7 @@ import { listen } from '../services/transport';
 import { useTabStore } from '../stores/tabStore';
 import { useViewStore } from '../stores/viewStore';
 import { initEditorFileChangeListener } from '../stores/fileEditorStore';
+import { useTerminalScriptStore } from '../stores/terminalScriptStore';
 import { sessionStoreManager } from '../stores/conversationStore';
 import { getEventRouter } from '../services/eventRouter';
 import { isAIEvent } from '../ai-runtime';
@@ -88,6 +89,12 @@ export function useAppEvents() {
     return cleanup;
   }, []);
 
+  // 终端脚本运行状态监听
+  useEffect(() => {
+    const cleanup = useTerminalScriptStore.getState().initEventListeners();
+    return cleanup;
+  }, []);
+
   // 工作区切换时清除聊天错误
   useEffect(() => {
     const handleWorkspaceSwitched = () => {
@@ -100,7 +107,18 @@ export function useAppEvents() {
       }
     };
 
+    const handleWorkspaceChanged = (event: Event) => {
+      const workspacePath = (event as CustomEvent<{ path?: string }>).detail?.path;
+      if (!workspacePath) return;
+      useTerminalScriptStore.getState().runAutoScripts('workspace_open', workspacePath)
+        .catch((error) => log.warn('Workspace auto scripts failed', { error: String(error) }));
+    };
+
     window.addEventListener('workspace-switched', handleWorkspaceSwitched);
-    return () => window.removeEventListener('workspace-switched', handleWorkspaceSwitched);
+    window.addEventListener('workspace-changed', handleWorkspaceChanged);
+    return () => {
+      window.removeEventListener('workspace-switched', handleWorkspaceSwitched);
+      window.removeEventListener('workspace-changed', handleWorkspaceChanged);
+    };
   }, []);
 }

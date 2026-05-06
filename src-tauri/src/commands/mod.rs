@@ -10,6 +10,7 @@ pub mod plugin;
 pub mod integration;
 pub mod scheduler;
 pub mod terminal;
+pub mod terminal_script;
 pub mod file_watcher;
 pub mod diagnostics;
 pub mod todo;
