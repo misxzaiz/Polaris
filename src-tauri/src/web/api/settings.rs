@@ -3,10 +3,8 @@ use axum::response::IntoResponse;
 use axum::Json;
 use std::sync::Arc;
 
-use crate::models::config::Config;
 use crate::AppState;
 use super::WebError;
-use crate::web::error::ok_response;
 
 /// Get current application configuration.
 pub async fn handle_get_settings(
@@ -16,12 +14,12 @@ pub async fn handle_get_settings(
     Ok(Json(config))
 }
 
-/// Update application configuration (full replace).
+/// Patch application configuration by top-level keys.
 pub async fn handle_update_settings(
     State(state): State<Arc<AppState>>,
-    Json(new_config): Json<Config>,
+    Json(patch): Json<serde_json::Value>,
 ) -> Result<impl IntoResponse, WebError> {
     let mut config_store = state.lock_config()?;
-    config_store.update(new_config)?;
-    Ok(ok_response())
+    let config = config_store.patch(patch)?;
+    Ok(Json(config))
 }

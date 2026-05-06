@@ -46,10 +46,10 @@ async function persistToServer(
   currentWorkspaceId: string | null,
 ): Promise<void> {
   try {
-    const config = await tauri.getConfig();
-    config.workspaces = workspaces.map(toEntry);
-    config.currentWorkspaceId = currentWorkspaceId ?? undefined;
-    await tauri.updateConfig(config);
+    await tauri.updateConfigPatch({
+      workspaces: workspaces.map(toEntry),
+      currentWorkspaceId: currentWorkspaceId ?? null,
+    });
   } catch (e) {
     log.warn('Failed to persist workspaces to server config', { error: String(e) });
   }

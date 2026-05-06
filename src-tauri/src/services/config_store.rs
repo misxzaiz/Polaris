@@ -198,6 +198,36 @@ impl ConfigStore {
         }
     }
 
+    /// 按顶层字段合并更新配置（带回滚机制）
+    pub fn patch(&mut self, patch: serde_json::Value) -> Result<Config> {
+        let patch_object = patch
+            .as_object()
+            .ok_or_else(|| AppError::ConfigError("配置 patch 必须是对象".to_string()))?;
+
+        if patch_object.is_empty() {
+            return Ok(self.config.clone());
+        }
+
+        let old_config = self.config.clone();
+        let mut merged = serde_json::to_value(&self.config)?;
+        merge_json_object(&mut merged, &patch);
+        let mut next_config: Config = serde_json::from_value(merged)?;
+        next_config.validate();
+        self.config = next_config;
+
+        match self.save() {
+            Ok(()) => {
+                eprintln!("[ConfigStore] 配置 patch 保存成功");
+                Ok(self.config.clone())
+            }
+            Err(e) => {
+                eprintln!("[ConfigStore] 配置 patch 保存失败，回滚: {:?}", e);
+                self.config = old_config;
+                Err(e)
+            }
+        }
+    }
+
     /// 设置工作目录
     pub fn set_work_dir(&mut self, path: Option<PathBuf>) -> Result<()> {
         self.config.work_dir = path;
@@ -531,6 +561,14 @@ impl ConfigStore {
     }
 }
 
+fn merge_json_object(target: &mut serde_json::Value, patch: &serde_json::Value) {
+    if let (Some(target_object), Some(patch_object)) = (target.as_object_mut(), patch.as_object()) {
+        for (key, value) in patch_object {
+            target_object.insert(key.clone(), value.clone());
+        }
+    }
+}
+
 /// 旧版配置格式（用于迁移）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -624,5 +662,45 @@ mod tests {
     fn does_not_resolve_windows_cmd_shim_for_explicit_paths() {
         assert!(ConfigStore::resolve_windows_cmd_shim("C:\\tools\\codex").is_none());
         assert!(ConfigStore::resolve_windows_cmd_shim("codex.exe").is_none());
+    }
+
+    #[test]
+    fn patch_preserves_unrelated_config_fields() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config_path = temp_dir.path().join("config.json");
+        let mut config = Config::default();
+        config.default_engine = "claude-code".to_string();
+        config.codex_code.cli_path = "custom-codex".to_string();
+        config.window.normal_opacity = 70;
+
+        let mut store = ConfigStore::new_test(config, config_path);
+
+        let saved = store
+            .patch(serde_json::json!({
+                "defaultEngine": "codex"
+            }))
+            .unwrap();
+
+        assert_eq!(saved.default_engine, "codex");
+        assert_eq!(saved.codex_code.cli_path, "custom-codex");
+        assert_eq!(saved.window.normal_opacity, 70);
+    }
+
+    #[test]
+    fn patch_can_clear_optional_fields_with_null() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config_path = temp_dir.path().join("config.json");
+        let mut config = Config::default();
+        config.git_bin_path = Some("D:\\Git\\bin".to_string());
+
+        let mut store = ConfigStore::new_test(config, config_path);
+
+        let saved = store
+            .patch(serde_json::json!({
+                "gitBinPath": null
+            }))
+            .unwrap();
+
+        assert_eq!(saved.git_bin_path, None);
     }
 }

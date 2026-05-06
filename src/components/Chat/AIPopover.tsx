@@ -22,7 +22,7 @@ interface AIPopoverProps {
 
 export function AIPopover({ isOpen, onClose }: AIPopoverProps) {
   const { t } = useTranslation('common')
-  const { config, updateConfig } = useConfigStore()
+  const { config, updateConfigPatch } = useConfigStore()
   const isStreaming = useActiveSessionStreaming()
   const error = useActiveSessionError()
   const { sendMessage, interrupt: interruptChat, clearMessages } = useActiveSessionActions()
@@ -59,11 +59,8 @@ export function AIPopover({ isOpen, onClose }: AIPopoverProps) {
 
     clearMessages()
 
-    await updateConfig({
-      ...config,
-      defaultEngine: engineId,
-    })
-  }, [config, isStreaming, interruptChat, clearMessages, updateConfig])
+    await updateConfigPatch({ defaultEngine: engineId })
+  }, [config, isStreaming, interruptChat, clearMessages, updateConfigPatch])
 
   if (!isOpen) return null
 

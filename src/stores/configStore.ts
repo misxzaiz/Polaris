@@ -4,7 +4,7 @@
 
 import { create } from 'zustand';
 import i18n from '../i18n';
-import type { Config, HealthStatus } from '../types';
+import type { Config, ConfigPatch, HealthStatus } from '../types';
 import * as tauri from '../services/tauri';
 import { createLogger } from '../utils/logger';
 import { currentMode } from '../services/transport';
@@ -32,6 +32,8 @@ interface ConfigState {
   loadConfig: () => Promise<void>;
   /** 更新配置 */
   updateConfig: (config: Config) => Promise<void>;
+  /** 按字段合并更新配置 */
+  updateConfigPatch: (patch: ConfigPatch) => Promise<Config>;
   /** 设置工作目录 */
   setWorkDir: (path: string | null) => Promise<void>;
   /** 设置 Claude 命令 */
@@ -107,6 +109,25 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     }
   },
 
+  updateConfigPatch: async (patch) => {
+    set({ loading: true, error: null });
+    try {
+      const savedConfig = await tauri.updateConfigPatch(patch);
+      if (savedConfig?.language) {
+        i18n.changeLanguage(savedConfig.language);
+      }
+      set({ config: savedConfig, loading: false });
+      return savedConfig;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : i18n.t('errors:updateConfigFailed');
+      set({
+        error: message,
+        loading: false
+      });
+      throw e instanceof Error ? e : new Error(message);
+    }
+  },
+
   setWorkDir: async (path) => {
     set({ loading: true, error: null });
     try {
@@ -165,8 +186,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       if (cliPath) {
         const engineId = normalizeEngineId(config.defaultEngine);
         if (engineId === 'codex') {
-          await tauri.updateConfig({
-            ...config,
+          await tauri.updateConfigPatch({
             codexCode: { ...(config.codexCode || { cliPath: 'codex' }), cliPath },
           });
         } else {

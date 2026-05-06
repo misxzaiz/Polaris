@@ -189,6 +189,11 @@ export interface Config {
   activeModelProfileId?: string;
 }
 
+/** 配置 patch：只包含要更新的顶层字段，null 用于清空可选字段 */
+export type ConfigPatch = Partial<{
+  [K in keyof Config]: Config[K] | null;
+}>;
+
 /** 健康状态 */
 export interface HealthStatus {
   /** Claude CLI 是否可用 */

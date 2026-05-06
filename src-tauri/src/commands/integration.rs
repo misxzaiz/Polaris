@@ -277,14 +277,21 @@ async fn sync_instances_to_config(state: &State<'_, crate::AppState>) -> Result<
     // Step 2: 更新 ConfigStore（sync lock）
     let mut config_store = state.config_store.lock()
         .map_err(|_| AppError::StateError("ConfigStore lock poisoned".to_string()))?;
-    let mut config = config_store.get().clone();
+    let qqbot_enabled = config_store.get().qqbot.enabled;
+    let feishu_enabled = config_store.get().feishu.enabled;
 
-    config.qqbot.instances = qqbot_instances;
-    config.qqbot.active_instance_id = qqbot_active_id;
-    config.feishu.instances = feishu_instances;
-    config.feishu.active_instance_id = feishu_active_id;
-
-    config_store.update(config)?;
+    config_store.patch(serde_json::json!({
+        "qqbot": {
+            "enabled": qqbot_enabled,
+            "instances": qqbot_instances,
+            "activeInstanceId": qqbot_active_id,
+        },
+        "feishu": {
+            "enabled": feishu_enabled,
+            "instances": feishu_instances,
+            "activeInstanceId": feishu_active_id,
+        },
+    }))?;
     Ok(())
 }
 

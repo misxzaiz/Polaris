@@ -71,7 +71,7 @@ interface ChatStatusBarProps {
  */
 export function ChatStatusBar({ children }: ChatStatusBarProps) {
   const { t } = useTranslation('chat');
-  const { config, healthStatus, updateConfig } = useConfigStore();
+  const { config, healthStatus, updateConfigPatch } = useConfigStore();
   const isStreaming = useActiveSessionStreaming();
   const { interrupt } = useActiveSessionActions();
   const { messages, currentMessage } = useActiveSessionMessages();
@@ -126,19 +126,17 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
       stopTTS();
     } else if (ttsStatus === 'paused') {
       stopTTS();
-      updateConfig({
-        ...config,
+      updateConfigPatch({
         tts: { ...(ttsConfig || DEFAULT_TTS_CONFIG), enabled: false },
       });
     } else if (ttsStatus === 'idle' || ttsStatus === 'error') {
       if (!ttsEnabled) {
-        updateConfig({
-          ...config,
+        updateConfigPatch({
           tts: { ...(ttsConfig || DEFAULT_TTS_CONFIG), enabled: true },
         });
       }
     }
-  }, [ttsStatus, stopTTS, ttsEnabled, ttsConfig, config, updateConfig]);
+  }, [ttsStatus, stopTTS, ttsEnabled, ttsConfig, config, updateConfigPatch]);
 
   // 唤醒词配置
   const wakeWordConfig = config?.wakeWord as WakeWordConfig | undefined;

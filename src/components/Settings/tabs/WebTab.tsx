@@ -47,10 +47,7 @@ export function WebTab({ config, onConfigChange, loading }: WebTabProps) {
     setApplyError(null);
     setApplySuccess(null);
     try {
-      const persistedConfig = await tauri.getConfig();
-      const nextConfig = { ...persistedConfig, web };
-      await tauri.updateConfig(nextConfig);
-      const savedConfig = await tauri.getConfig();
+      const savedConfig = await tauri.updateConfigPatch({ web });
       onConfigChange(savedConfig);
       useConfigStore.setState({ config: savedConfig });
       const result = await invoke<{ running: boolean }>('apply_web_server');

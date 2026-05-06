@@ -3,7 +3,7 @@
  */
 
 import { invoke } from '@/services/transport';
-import type { Config, HealthStatus } from '../../types';
+import type { Config, ConfigPatch, HealthStatus } from '../../types';
 
 /** 获取配置 */
 export async function getConfig(): Promise<Config> {
@@ -13,6 +13,11 @@ export async function getConfig(): Promise<Config> {
 /** 更新配置 */
 export async function updateConfig(config: Config): Promise<void> {
   return invoke('update_config', { config });
+}
+
+/** 按字段合并更新配置 */
+export async function updateConfigPatch(patch: ConfigPatch): Promise<Config> {
+  return invoke<Config>('update_config_patch', { patch });
 }
 
 /** 设置工作目录 */

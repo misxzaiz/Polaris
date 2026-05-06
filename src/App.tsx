@@ -40,7 +40,7 @@ import { useWorkspaceSync } from './hooks/useWorkspaceSync';
 
 function App() {
   const { t } = useTranslation('common');
-  const { isConnecting, connectionState, config, updateConfig } = useConfigStore();
+  const { isConnecting, connectionState, config, updateConfigPatch } = useConfigStore();
 
   // Chat 状态
   const isStreaming = useActiveSessionStreaming();
@@ -122,8 +122,8 @@ function App() {
     }
 
     clearMessages();
-    await updateConfig({ ...config, defaultEngine: engineId });
-  }, [config, isStreaming, interruptChat, clearMessages, updateConfig]);
+    await updateConfigPatch({ defaultEngine: engineId });
+  }, [config, isStreaming, interruptChat, clearMessages, updateConfigPatch]);
 
   // === 渲染 ===
   const loadingFallback = (

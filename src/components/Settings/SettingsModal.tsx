@@ -7,7 +7,7 @@
  * - Toast 提示
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConfigStore, useToastStore } from '../../stores';
 import { Button } from '../Common';
@@ -27,7 +27,7 @@ import { LspTab } from './tabs/LspTab';
 import { WebTab } from './tabs/WebTab';
 import { createLogger } from '../../utils/logger';
 import { getConfig } from '../../services/tauri/configService';
-import type { Config } from '../../types';
+import type { Config, ConfigPatch } from '../../types';
 
 const log = createLogger('SettingsModal');
 
@@ -58,10 +58,11 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
   const { t } = useTranslation('settings');
   const { t: tCommon } = useTranslation('common');
 
-  const { config, loading, error, updateConfig } = useConfigStore();
+  const { config, loading, error, updateConfigPatch } = useConfigStore();
   const { success, error: toastError } = useToastStore();
 
   const [localConfig, setLocalConfig] = useState<Config | null>(config);
+  const baseConfigRef = useRef<Config | null>(config);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<SettingsTabId>(initialTab || 'general');
   const [searchQuery, setSearchQuery] = useState('');
@@ -70,21 +71,50 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
   useEffect(() => {
     if (config) {
       setLocalConfig(config);
+      baseConfigRef.current = config;
     }
   }, [config]);
 
-  /**
-   * 合并 localConfig 与后端最新配置。
-   * QQBot/Feishu 集成配置由各自 Tab 独立保存（路径 A），此处必须保留后端最新值，
-   * 避免 SettingsModal 的 stale 快照覆盖集成配置。
-   */
-  const mergeWithLatest = async (local: Config): Promise<Config> => {
-    const latest = await getConfig();
-    return {
-      ...local,
-      qqbot: latest.qqbot,
-      feishu: latest.feishu,
-    };
+  const topLevelKeysByTab: Partial<Record<SettingsTabId, (keyof Config)[]>> = {
+    general: ['language'],
+    window: ['window'],
+    translate: ['baiduTranslate'],
+    speech: ['speech', 'tts', 'wakeWord', 'voiceNotification', 'voiceCommands'],
+    advanced: ['gitBinPath', 'sessionDir'],
+    web: ['web'],
+    'ai-engine': ['defaultEngine', 'claudeCode', 'codexCode', 'modelProfiles', 'activeModelProfileId'],
+  };
+
+  const hasChanged = (a: unknown, b: unknown) => JSON.stringify(a ?? null) !== JSON.stringify(b ?? null);
+
+  const buildPatch = (local: Config, keys?: (keyof Config)[]): ConfigPatch => {
+    const base = baseConfigRef.current;
+    if (!base) return local;
+
+    const targetKeys = keys ?? (Object.keys(local) as (keyof Config)[]);
+    return targetKeys.reduce((patch, key) => {
+      if (hasChanged(local[key], base[key])) {
+        return { ...patch, [key]: local[key] === undefined ? null : local[key] };
+      }
+      return patch;
+    }, {} as ConfigPatch);
+  };
+
+  const preserveUnsavedLocalChanges = (
+    savedConfig: Config,
+    local: Config,
+    savedKeys: (keyof Config)[],
+  ): Config => {
+    const base = baseConfigRef.current;
+    if (!base) return savedConfig;
+
+    const savedKeySet = new Set(savedKeys);
+    return (Object.keys(local) as (keyof Config)[]).reduce((next, key) => {
+      if (!savedKeySet.has(key) && hasChanged(local[key], base[key])) {
+        return { ...next, [key]: local[key] };
+      }
+      return next;
+    }, savedConfig);
   };
 
   // 保存当前分组配置
@@ -93,9 +123,16 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
 
     try {
       setSaving(true);
-      const merged = await mergeWithLatest(localConfig);
-      await updateConfig(merged);
-      setLocalConfig(merged);
+      const keys = topLevelKeysByTab[activeTab] ?? [];
+      const patch = buildPatch(localConfig, keys);
+      const savedConfig = Object.keys(patch).length > 0
+        ? await updateConfigPatch(patch)
+        : await getConfig();
+      if (savedConfig) {
+        const nextLocal = preserveUnsavedLocalChanges(savedConfig, localConfig, keys);
+        baseConfigRef.current = savedConfig;
+        setLocalConfig(nextLocal);
+      }
       success(t('messages.saved'), t('messages.configSavedDesc'));
     } catch (err) {
       log.error('Failed to save config:', err instanceof Error ? err : new Error(String(err)));
@@ -111,8 +148,10 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
 
     try {
       setSaving(true);
-      const merged = await mergeWithLatest(localConfig);
-      await updateConfig(merged);
+      const patch = buildPatch(localConfig);
+      if (Object.keys(patch).length > 0) {
+        await updateConfigPatch(patch);
+      }
       success(t('messages.saved'), t('messages.configSavedDesc'));
       onClose();
     } catch (err) {

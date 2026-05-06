@@ -147,6 +147,15 @@ fn update_config(config: Config, state: tauri::State<AppState>) -> Result<()> {
     store.update(config)
 }
 
+/// 按字段合并更新配置
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+fn update_config_patch(patch: serde_json::Value, state: tauri::State<AppState>) -> Result<Config> {
+    let mut store = state.config_store.lock()
+        .map_err(|e| error::AppError::Unknown(e.to_string()))?;
+    store.patch(patch)
+}
+
 const LEGACY_WEB_PORT: u16 = 9800;
 const DEV_WEB_PORT: u16 = 9830;
 
@@ -447,6 +456,7 @@ pub fn run() {
             // 配置相关
             get_config,
             update_config,
+            update_config_patch,
             apply_web_server,
             get_local_ips,
             set_work_dir,

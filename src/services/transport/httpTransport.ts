@@ -42,6 +42,7 @@ const COMMAND_ROUTE_MAP: Record<string, string> = {
   // Settings
   get_config: '/api/settings',
   update_config: '/api/settings',
+  update_config_patch: '/api/settings',
   // Auth
   health_check: '/api/health',
 };
@@ -79,6 +80,11 @@ function serializeRequestBody(command: string, args?: Record<string, unknown>): 
     && Object.prototype.hasOwnProperty.call(args, 'config')
     && args.config !== undefined
     ? args.config
+    : command === 'update_config_patch'
+      && args
+      && Object.prototype.hasOwnProperty.call(args, 'patch')
+      && args.patch !== undefined
+      ? args.patch
     : (args ?? {});
 
   return JSON.stringify(payload);
@@ -291,7 +297,7 @@ export function createHttpTransport(
         }
         const qs = params.toString();
         url = `${baseUrl}/api/chat/history/${encodeURIComponent(args.sessionId as string)}${qs ? `?${qs}` : ''}`;
-      } else if (command === 'update_config') {
+      } else if (command === 'update_config' || command === 'update_config_patch') {
         method = 'PATCH';
       }
 

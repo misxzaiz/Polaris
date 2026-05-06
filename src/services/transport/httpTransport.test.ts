@@ -45,6 +45,24 @@ describe('createHttpTransport', () => {
     );
   });
 
+  it('sends the raw patch object for update_config_patch in HTTP mode', async () => {
+    const transport = createHttpTransport('http://127.0.0.1:9800');
+    const patch = {
+      defaultEngine: 'codex',
+      gitBinPath: null,
+    };
+
+    await transport.invoke('update_config_patch', { patch });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://127.0.0.1:9800/api/settings',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      })
+    );
+  });
+
   it('keeps non-config commands wrapped as their original argument objects', async () => {
     const transport = createHttpTransport('http://127.0.0.1:9800');
 
