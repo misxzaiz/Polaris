@@ -313,9 +313,8 @@ export function buildWorkspaceSystemPrompt(
   //   }
   // }
 
-  // workspaceToolGuidance 不再需要，--add-dir 让 Claude 原生感知目录
-  // lines.push(``);
-  // lines.push(t('systemPrompt:workspaceToolGuidance'));
+  lines.push(``);
+  lines.push(t('systemPrompt:workspaceToolGuidance'));
 
   // 注入模块知识文档
   if (moduleDocs && moduleDocs.size > 0) {

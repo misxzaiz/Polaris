@@ -114,6 +114,7 @@ export class CodexSession extends BaseSession {
         options: {
           engineId: 'codex',
           workDir: this.config.workspaceDir,
+          enableMcpTools: true,
         },
       })
     } catch (error) {
@@ -145,6 +146,8 @@ export class CodexSession extends BaseSession {
         message: prompt,
         options: {
           engineId: 'codex',
+          workDir: this.config.workspaceDir,
+          enableMcpTools: true,
         },
       })
       this._status = 'running'

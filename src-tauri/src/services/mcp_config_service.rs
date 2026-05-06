@@ -426,11 +426,39 @@ fn write_json_atomically<T: serde::Serialize>(path: &Path, value: &T) -> Result<
 }
 
 fn toml_string(value: &str) -> Result<String> {
-    serde_json::to_string(value).map_err(AppError::from)
+    Ok(toml_string_literal(value))
 }
 
 fn toml_string_array(values: &[String]) -> Result<String> {
-    serde_json::to_string(values).map_err(AppError::from)
+    Ok(format!(
+        "[{}]",
+        values
+            .iter()
+            .map(|value| toml_string_literal(value))
+            .collect::<Vec<_>>()
+            .join(",")
+    ))
+}
+
+fn toml_string_literal(value: &str) -> String {
+    if !value.contains('\'') && !value.contains('\n') && !value.contains('\r') {
+        return format!("'{}'", value);
+    }
+
+    let mut escaped = String::with_capacity(value.len() + 2);
+    escaped.push('"');
+    for ch in value.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            '"' => escaped.push_str("\\\""),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped.push('"');
+    escaped
 }
 
 #[cfg(test)]
@@ -704,14 +732,44 @@ mod tests {
         assert!(joined.contains("mcp_servers.polaris-scheduler.command="));
         assert!(joined.contains("mcp_servers.polaris-knowledge.command="));
         assert!(joined.contains("mcp_servers.polaris-todo.args=["));
+
+        let expected_config_dir = toml_string_literal(config_dir.to_string_lossy().as_ref());
+        let expected_workspace = toml_string_literal(workspace.to_string_lossy().as_ref());
+        let expected_todo_command =
+            toml_string_literal(todo_executable_path.to_string_lossy().as_ref());
+        let expected_args = format!("[{},{}]", expected_config_dir, expected_workspace);
+
+        assert!(joined.contains(&format!(
+            "mcp_servers.polaris-todo.command={}",
+            expected_todo_command
+        )));
+        assert!(joined.contains(&format!("mcp_servers.polaris-todo.args={}", expected_args)));
         assert!(
-            joined.contains(&serde_json::to_string(config_dir.to_string_lossy().as_ref()).unwrap())
-        );
-        assert!(
-            joined.contains(&serde_json::to_string(workspace.to_string_lossy().as_ref()).unwrap())
+            !joined.contains("\\\""),
+            "Codex -c values must be TOML, not JSON-escaped strings"
         );
 
         let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn codex_toml_literals_handle_windows_paths_and_quotes() {
+        assert_eq!(
+            toml_string_literal(r"D:\app\polaris\polaris-todo-mcp.exe"),
+            r"'D:\app\polaris\polaris-todo-mcp.exe'"
+        );
+        assert_eq!(
+            toml_string_array(&[
+                r"C:\Users\28409\AppData\Roaming\com.polaris.app".to_string(),
+                r"D:\space\base\Polaris".to_string(),
+            ])
+            .unwrap(),
+            r"['C:\Users\28409\AppData\Roaming\com.polaris.app','D:\space\base\Polaris']"
+        );
+        assert_eq!(
+            toml_string_literal(r"D:\space\team's project"),
+            r#""D:\\space\\team's project""#
+        );
     }
 
     #[test]
