@@ -94,6 +94,6 @@ export function hasCustomConfig(): boolean {
     config.model !== DEFAULT_SESSION_CONFIG.model ||
     config.effort !== DEFAULT_SESSION_CONFIG.effort ||
     config.permissionMode !== DEFAULT_SESSION_CONFIG.permissionMode ||
-    (config.modelProfileId && config.modelProfileId !== DEFAULT_SESSION_CONFIG.modelProfileId)
+    Boolean(config.modelProfileId && config.modelProfileId !== DEFAULT_SESSION_CONFIG.modelProfileId)
   )
 }

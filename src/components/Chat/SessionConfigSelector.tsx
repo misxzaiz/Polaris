@@ -81,7 +81,6 @@ export function SessionConfigSelector({
 
   // 模型 Profile 列表
   const profiles = useModelProfileStore(s => s.profiles)
-  const activeProfileId = useModelProfileStore(s => s.activeProfileId)
 
   // 合并后的模型列表：官方模型 + Profile
   const modelList = useMemo(() => {
@@ -118,13 +117,13 @@ export function SessionConfigSelector({
     if (!effort) return t('sessionConfig.noEffort', '不设置')
     const opt = EFFORT_OPTIONS.find(o => o.value === effort)
     return opt?.label || effort
-  }, [])
+  }, [t])
 
   const getPermissionLabel = useCallback((mode?: PermissionMode | '') => {
     if (!mode) return t('sessionConfig.noPermission', '不设置')
     const opt = PERMISSION_MODE_OPTIONS.find(o => o.value === mode)
     return opt?.label || mode
-  }, [])
+  }, [t])
 
   // 通用选择处理
   const handleSelect = useCallback((type: SelectorType, value: string) => {
@@ -449,6 +448,7 @@ export function CompactSessionSelector({
     model: '模型',
     effort: '努力',
     permission: '权限',
+    profile: '端点',
   }
 
   return (
