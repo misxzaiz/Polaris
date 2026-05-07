@@ -6,6 +6,7 @@ pub mod context;
 pub mod git;
 pub mod translate;
 pub mod plugin;
+pub mod plugin_state;
 
 pub mod integration;
 pub mod scheduler;

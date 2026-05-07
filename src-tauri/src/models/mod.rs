@@ -3,6 +3,7 @@ pub mod config;
 pub mod events;
 pub mod git;
 pub mod plugin;
+pub mod plugin_state;
 pub mod prompt;
 pub mod prompt_snippet;
 pub mod scheduler;

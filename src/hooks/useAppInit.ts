@@ -17,6 +17,7 @@ import { useAutoModeStore } from '../stores/autoModeStore';
 import { useSnippetStore } from '../stores/snippetStore';
 import { useCliInfoStore } from '../stores/cliInfoStore';
 import { useTerminalScriptStore } from '../stores/terminalScriptStore';
+import { usePluginStore } from '../stores/pluginStore';
 import { sessionStoreManager } from '../stores/conversationStore';
 import { bootstrapEngines, type EngineId } from '../core/engine-bootstrap';
 import { bootstrapTools } from '../core/tool-bootstrap';
@@ -41,6 +42,8 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
 
   // Token 鉴权通过后的初始化逻辑（工作区同步、引擎引导、集成初始化等）
   const runPostAuthInit = useRef(async (signal?: AbortSignal) => {
+    await usePluginStore.getState().loadPluginStates();
+
     // 从服务端 Config 同步工作区列表（桌面端和 Web 端共享）
     try {
       await useWorkspaceStore.getState().syncFromServer();

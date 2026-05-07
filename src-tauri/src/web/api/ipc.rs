@@ -281,6 +281,8 @@ pub async fn handle_ipc_bridge(
 
         // ── Plugin ─────────────────────────────────────────────────────────
         "plugin_list" => dispatch_plugin_list(&state, &args),
+        "plugin_state_load" => dispatch_plugin_state_load(&state),
+        "plugin_state_save" => dispatch_plugin_state_save(&state, &args),
 
         // ── Unsupported ────────────────────────────────────────────────────
         _ => {
@@ -1408,6 +1410,21 @@ fn dispatch_plugin_list(state: &AppState, args: &Value) -> Result<Json<Value>, W
 // ═══════════════════════════════════════════════════════════════════════════
 // MCP Manager
 // ═══════════════════════════════════════════════════════════════════════════
+
+fn dispatch_plugin_state_load(state: &AppState) -> Result<Json<Value>, WebError> {
+    let service =
+        crate::services::plugin_state_service::PluginStateService::new(get_config_dir(state)?);
+    json_result!(service.load())
+}
+
+fn dispatch_plugin_state_save(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+    let states: crate::models::plugin_state::PluginStateMap =
+        serde_json::from_value(args.get("states").cloned().unwrap_or(Value::Null))
+            .map_err(|e| WebError::BadRequest(format!("Invalid plugin states: {}", e)))?;
+    let service =
+        crate::services::plugin_state_service::PluginStateService::new(get_config_dir(state)?);
+    json_result!(service.save(&states))
+}
 
 fn get_mcp_service(state: &AppState) -> Result<crate::services::mcp_manager_service::McpManagerService, WebError> {
     let claude_path = {

@@ -739,6 +739,8 @@ pub fn run() {
             commands::plugin::marketplace_add,
             commands::plugin::marketplace_remove,
             commands::plugin::marketplace_update,
+            commands::plugin_state::plugin_state_load,
+            commands::plugin_state::plugin_state_save,
             // Auto-Mode 相关
             commands::auto_mode::auto_mode_config,
             commands::auto_mode::auto_mode_defaults,
