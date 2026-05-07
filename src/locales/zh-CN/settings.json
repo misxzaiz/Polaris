@@ -32,6 +32,7 @@
     "description": "管理 Polaris 内置插件的界面入口和 MCP 能力。当前状态会立即保存到本地。",
     "builtin": "内置",
     "enablePlugin": "启用插件",
+    "disabled": "已禁用",
     "coreLocked": "核心插件承载基础面板入口，当前版本不可禁用。",
     "uiSurface": "可视化模块",
     "mcpSurface": "MCP 服务",

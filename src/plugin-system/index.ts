@@ -1,5 +1,10 @@
 export { pluginRegistry } from './registry'
 export { pluginIconMap } from './icons'
+export {
+  listEnabledPluginMcpServers,
+  listPluginMcpServerStatuses,
+  type PluginMcpServerStatus,
+} from './mcp'
 export type {
   PluginIconId,
   PluginId,
@@ -12,4 +17,3 @@ export type {
 } from './types'
 
 import './builtinPlugins'
-

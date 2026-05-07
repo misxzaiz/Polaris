@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { pluginIconMap, pluginRegistry } from '@/plugin-system'
+import { listPluginMcpServerStatuses, pluginIconMap, pluginRegistry } from '@/plugin-system'
 import { usePluginStore } from '@/stores/pluginStore'
 
 function formatPermissionLabel(key: string, t: (key: string, options?: { defaultValue?: string }) => string): string {
@@ -16,6 +16,7 @@ export function PluginTab() {
   const resetPluginState = usePluginStore((state) => state.resetPluginState)
 
   const plugins = pluginRegistry.listPlugins()
+  const mcpServerStatuses = listPluginMcpServerStatuses(pluginStates)
 
   return (
     <div className="space-y-4">
@@ -27,7 +28,7 @@ export function PluginTab() {
         {plugins.map((plugin) => {
           const state = getPluginState(plugin.id)
           const views = plugin.contributes.views ?? []
-          const mcpServers = plugin.contributes.mcpServers ?? []
+          const mcpServers = mcpServerStatuses.filter((server) => server.pluginId === plugin.id)
           const permissionEntries = Object.entries(plugin.permissions).filter(([, enabled]) => enabled)
           const isCorePlugin = plugin.id === 'polaris.core'
 
@@ -127,8 +128,12 @@ export function PluginTab() {
                   {mcpServers.length > 0 && (
                     <div className="mt-3 space-y-1">
                       {mcpServers.map((server) => (
-                        <div key={server.id} className="text-xs text-text-secondary">
+                        <div
+                          key={server.id}
+                          className={server.enabled ? 'text-xs text-text-secondary' : 'text-xs text-text-tertiary line-through'}
+                        >
                           {server.id} · {server.transport}
+                          {!server.enabled && ` · ${t('plugins.disabled')}`}
                         </div>
                       ))}
                     </div>
@@ -171,4 +176,3 @@ export function PluginTab() {
     </div>
   )
 }
-

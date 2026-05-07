@@ -32,6 +32,7 @@
     "description": "Manage Polaris built-in plugin UI entries and MCP capabilities. Changes are saved locally immediately.",
     "builtin": "Built-in",
     "enablePlugin": "Enable plugin",
+    "disabled": "Disabled",
     "coreLocked": "The core plugin owns base panel entries and cannot be disabled in this version.",
     "uiSurface": "Visual module",
     "mcpSurface": "MCP services",
