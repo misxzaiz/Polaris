@@ -33,6 +33,11 @@
   - 后端内置 MCP server 改为声明式定义表。
   - 为后续插件式 MCP server 扩展打基础。
 
+- `feat: add backend mcp contribution registry`
+  - 新增 Rust 侧 `PluginMcpServerContribution`、`McpServerContributionRegistry`、`McpServerArgsMode`。
+  - 当前 Todo、Requirements、Scheduler、Knowledge MCP server 已迁移为 registry 初始化内容。
+  - `WorkspaceMcpConfigService` 支持从外部 contribution registry 构造，默认入口保持内置行为不变。
+
 ## 当前关键文件
 
 - 前端插件系统：
@@ -57,9 +62,9 @@
 
 ## 当前架构边界
 
-前端插件 manifest 已经可以声明 UI 和 MCP contribution，但后端 MCP 配置生成仍主要依赖 Rust 内置定义表。当前两端通过 server id/name 对齐，例如 Todo 使用 `polaris-todo`。
+前端插件 manifest 已经可以声明 UI 和 MCP contribution，后端 MCP 配置生成已经抽象为 Rust contribution registry。当前两端仍通过 server id/name 约定对齐，例如 Todo 使用 `polaris-todo`。
 
-聊天链路已经支持禁用插件 MCP server，但还没有支持“任意插件新增 MCP server 后自动进入后端配置生成”的完整闭环。
+聊天链路已经支持禁用插件 MCP server，后端也具备接收 MCP contribution registry 的入口。还没有完成的是前后端 manifest/schema 对齐和插件安装发现后的自动注册闭环。
 
 ## 当前验证状态
 
@@ -67,4 +72,3 @@
 - 插件相关 Vitest：已通过。
 - `cargo check --lib`：已通过。
 - Rust 单测在本机运行阶段有既有 `STATUS_ENTRYPOINT_NOT_FOUND`，当前只能确认编译通过，不能依赖本机 Rust test binary 运行结果。
-

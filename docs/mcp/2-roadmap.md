@@ -2,6 +2,8 @@
 
 ## 阶段 4：后端插件 MCP contribution registry
 
+状态：已完成。后端已有 `PluginMcpServerContribution`、`McpServerContributionRegistry` 和 `McpServerArgsMode`，当前内置 MCP server 已迁移为 registry 初始化内容。
+
 目标：把 `mcp_config_service.rs` 中的内置 MCP server 定义表继续抽象为 registry，使后端能接收“插件贡献的 MCP server 定义”。
 
 建议实现：
@@ -100,4 +102,3 @@
   - manifest schema check
   - MCP binary resolution check
   - permissions check
-

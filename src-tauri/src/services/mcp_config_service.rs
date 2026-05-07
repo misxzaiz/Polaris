@@ -33,60 +33,133 @@ fn todo_dev_path() -> String {
     mcp_exe_path("src-tauri/target/debug/polaris-todo-mcp")
 }
 
-#[derive(Debug, Clone, Copy)]
-struct BuiltinMcpServerDefinition {
-    server_name: &'static str,
-    bin_name: &'static str,
-    bundled_path_prefix: &'static str,
-    fallback_path_prefix: &'static str,
-    dev_path_prefix: &'static str,
-    env_var_name: &'static str,
-    requires_config_dir: bool,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpServerTransport {
+    Stdio,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpServerArgsMode {
+    ConfigDirAndWorkspace,
+    WorkspaceOnly,
+}
+
+#[derive(Debug, Clone)]
+pub struct PluginMcpServerContribution {
+    pub plugin_id: Option<String>,
+    pub server_name: String,
+    pub transport: McpServerTransport,
+    pub bin_name: String,
+    pub bundled_path_prefix: String,
+    pub fallback_path_prefix: String,
+    pub dev_path_prefix: String,
+    pub env_var_name: String,
+    pub args_mode: McpServerArgsMode,
     required: bool,
 }
 
-const BUILTIN_MCP_SERVER_DEFINITIONS: &[BuiltinMcpServerDefinition] = &[
-    BuiltinMcpServerDefinition {
-        server_name: TODO_MCP_SERVER_NAME,
-        bin_name: TODO_MCP_BIN_NAME,
-        bundled_path_prefix: "bin/polaris-todo-mcp",
-        fallback_path_prefix: "polaris-todo-mcp",
-        dev_path_prefix: "src-tauri/target/debug/polaris-todo-mcp",
-        env_var_name: "POLARIS_TODO_MCP_PATH",
-        requires_config_dir: true,
-        required: true,
-    },
-    BuiltinMcpServerDefinition {
-        server_name: REQUIREMENTS_MCP_SERVER_NAME,
-        bin_name: REQUIREMENTS_MCP_BIN_NAME,
-        bundled_path_prefix: "bin/polaris-requirements-mcp",
-        fallback_path_prefix: "polaris-requirements-mcp",
-        dev_path_prefix: "src-tauri/target/debug/polaris-requirements-mcp",
-        env_var_name: "POLARIS_REQUIREMENTS_MCP_PATH",
-        requires_config_dir: true,
-        required: false,
-    },
-    BuiltinMcpServerDefinition {
-        server_name: SCHEDULER_MCP_SERVER_NAME,
-        bin_name: SCHEDULER_MCP_BIN_NAME,
-        bundled_path_prefix: "bin/polaris-scheduler-mcp",
-        fallback_path_prefix: "polaris-scheduler-mcp",
-        dev_path_prefix: "src-tauri/target/debug/polaris-scheduler-mcp",
-        env_var_name: "POLARIS_SCHEDULER_MCP_PATH",
-        requires_config_dir: true,
-        required: false,
-    },
-    BuiltinMcpServerDefinition {
-        server_name: KNOWLEDGE_MCP_SERVER_NAME,
-        bin_name: KNOWLEDGE_MCP_BIN_NAME,
-        bundled_path_prefix: "bin/polaris-knowledge-mcp",
-        fallback_path_prefix: "polaris-knowledge-mcp",
-        dev_path_prefix: "src-tauri/target/debug/polaris-knowledge-mcp",
-        env_var_name: "POLARIS_KNOWLEDGE_MCP_PATH",
-        requires_config_dir: true,
-        required: false,
-    },
-];
+impl PluginMcpServerContribution {
+    pub fn builtin(
+        server_name: impl Into<String>,
+        bin_name: impl Into<String>,
+        bundled_path_prefix: impl Into<String>,
+        fallback_path_prefix: impl Into<String>,
+        dev_path_prefix: impl Into<String>,
+        env_var_name: impl Into<String>,
+        args_mode: McpServerArgsMode,
+        required: bool,
+    ) -> Self {
+        Self {
+            plugin_id: None,
+            server_name: server_name.into(),
+            transport: McpServerTransport::Stdio,
+            bin_name: bin_name.into(),
+            bundled_path_prefix: bundled_path_prefix.into(),
+            fallback_path_prefix: fallback_path_prefix.into(),
+            dev_path_prefix: dev_path_prefix.into(),
+            env_var_name: env_var_name.into(),
+            args_mode,
+            required,
+        }
+    }
+
+    pub fn required(&self) -> bool {
+        self.required
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct McpServerContributionRegistry {
+    contributions: Vec<PluginMcpServerContribution>,
+}
+
+impl McpServerContributionRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn register(&mut self, contribution: PluginMcpServerContribution) {
+        self.contributions.push(contribution);
+    }
+
+    pub fn register_plugin_server(
+        &mut self,
+        plugin_id: impl Into<String>,
+        mut contribution: PluginMcpServerContribution,
+    ) {
+        contribution.plugin_id = Some(plugin_id.into());
+        self.register(contribution);
+    }
+
+    fn contributions(&self) -> &[PluginMcpServerContribution] {
+        &self.contributions
+    }
+}
+
+fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
+    let mut registry = McpServerContributionRegistry::new();
+    registry.register(PluginMcpServerContribution::builtin(
+        TODO_MCP_SERVER_NAME,
+        TODO_MCP_BIN_NAME,
+        "bin/polaris-todo-mcp",
+        "polaris-todo-mcp",
+        "src-tauri/target/debug/polaris-todo-mcp",
+        "POLARIS_TODO_MCP_PATH",
+        McpServerArgsMode::ConfigDirAndWorkspace,
+        true,
+    ));
+    registry.register(PluginMcpServerContribution::builtin(
+        REQUIREMENTS_MCP_SERVER_NAME,
+        REQUIREMENTS_MCP_BIN_NAME,
+        "bin/polaris-requirements-mcp",
+        "polaris-requirements-mcp",
+        "src-tauri/target/debug/polaris-requirements-mcp",
+        "POLARIS_REQUIREMENTS_MCP_PATH",
+        McpServerArgsMode::ConfigDirAndWorkspace,
+        false,
+    ));
+    registry.register(PluginMcpServerContribution::builtin(
+        SCHEDULER_MCP_SERVER_NAME,
+        SCHEDULER_MCP_BIN_NAME,
+        "bin/polaris-scheduler-mcp",
+        "polaris-scheduler-mcp",
+        "src-tauri/target/debug/polaris-scheduler-mcp",
+        "POLARIS_SCHEDULER_MCP_PATH",
+        McpServerArgsMode::ConfigDirAndWorkspace,
+        false,
+    ));
+    registry.register(PluginMcpServerContribution::builtin(
+        KNOWLEDGE_MCP_SERVER_NAME,
+        KNOWLEDGE_MCP_BIN_NAME,
+        "bin/polaris-knowledge-mcp",
+        "polaris-knowledge-mcp",
+        "src-tauri/target/debug/polaris-knowledge-mcp",
+        "POLARIS_KNOWLEDGE_MCP_PATH",
+        McpServerArgsMode::ConfigDirAndWorkspace,
+        false,
+    ));
+    registry
+}
 
 #[derive(Debug, Clone, serde::Serialize)]
 struct ClaudeMcpServerConfig {
@@ -102,9 +175,9 @@ struct ClaudeMcpConfig {
 
 #[derive(Debug, Clone)]
 struct ResolvedMcpBinary {
-    server_name: &'static str,
+    server_name: String,
     executable_path: PathBuf,
-    requires_config_dir: bool,
+    args_mode: McpServerArgsMode,
 }
 
 pub struct WorkspaceMcpConfigService {
@@ -121,32 +194,32 @@ impl WorkspaceMcpConfigService {
         knowledge_executable_path: Option<PathBuf>,
     ) -> Self {
         let mut binaries = vec![ResolvedMcpBinary {
-            server_name: TODO_MCP_SERVER_NAME,
+            server_name: TODO_MCP_SERVER_NAME.to_string(),
             executable_path: todo_executable_path,
-            requires_config_dir: true,
+            args_mode: McpServerArgsMode::ConfigDirAndWorkspace,
         }];
 
         if let Some(path) = requirements_executable_path {
             binaries.push(ResolvedMcpBinary {
-                server_name: REQUIREMENTS_MCP_SERVER_NAME,
+                server_name: REQUIREMENTS_MCP_SERVER_NAME.to_string(),
                 executable_path: path,
-                requires_config_dir: true,
+                args_mode: McpServerArgsMode::ConfigDirAndWorkspace,
             });
         }
 
         if let Some(path) = scheduler_executable_path {
             binaries.push(ResolvedMcpBinary {
-                server_name: SCHEDULER_MCP_SERVER_NAME,
+                server_name: SCHEDULER_MCP_SERVER_NAME.to_string(),
                 executable_path: path,
-                requires_config_dir: true,
+                args_mode: McpServerArgsMode::ConfigDirAndWorkspace,
             });
         }
 
         if let Some(path) = knowledge_executable_path {
             binaries.push(ResolvedMcpBinary {
-                server_name: KNOWLEDGE_MCP_SERVER_NAME,
+                server_name: KNOWLEDGE_MCP_SERVER_NAME.to_string(),
                 executable_path: path,
-                requires_config_dir: true,
+                args_mode: McpServerArgsMode::ConfigDirAndWorkspace,
             });
         }
 
@@ -165,16 +238,34 @@ impl WorkspaceMcpConfigService {
         resource_dir: Option<PathBuf>,
         app_root: PathBuf,
     ) -> Result<Self> {
+        Self::from_contribution_registry_app_paths(
+            config_dir,
+            resource_dir,
+            app_root,
+            builtin_mcp_contribution_registry(),
+        )
+    }
+
+    pub fn from_contribution_registry_app_paths(
+        config_dir: PathBuf,
+        resource_dir: Option<PathBuf>,
+        app_root: PathBuf,
+        registry: McpServerContributionRegistry,
+    ) -> Result<Self> {
         let mut binaries = Vec::new();
 
-        for definition in BUILTIN_MCP_SERVER_DEFINITIONS {
-            match resolve_builtin_mcp_binary(*definition, resource_dir.clone(), app_root.clone()) {
+        for contribution in registry.contributions() {
+            match resolve_mcp_contribution_binary(
+                contribution,
+                resource_dir.clone(),
+                app_root.clone(),
+            ) {
                 Ok(binary) => binaries.push(binary),
-                Err(error) if definition.required => return Err(error),
+                Err(error) if contribution.required() => return Err(error),
                 Err(error) => {
                     tracing::warn!(
-                        "[MCP] 璺宠繃鍙€?MCP server {}: {}",
-                        definition.bin_name,
+                        "[MCP] 跳过可选 MCP server {}: {}",
+                        contribution.bin_name,
                         error.to_message()
                     );
                 }
@@ -213,7 +304,7 @@ impl WorkspaceMcpConfigService {
 
         let mut servers = std::collections::BTreeMap::new();
         for binary in &self.binaries {
-            if is_server_disabled(disabled_server_names, binary.server_name) {
+            if is_server_disabled(disabled_server_names, &binary.server_name) {
                 tracing::info!("[MCP] 跳过已禁用 MCP server: {}", binary.server_name);
                 continue;
             }
@@ -226,14 +317,8 @@ impl WorkspaceMcpConfigService {
                 )));
             }
 
-            let args = if binary.requires_config_dir {
-                vec![
-                    strip_unc_prefix(&self.config_dir.to_string_lossy()),
-                    normalized_workspace.to_string(),
-                ]
-            } else {
-                vec![normalized_workspace.to_string()]
-            };
+            let args =
+                build_mcp_server_args(binary.args_mode, &self.config_dir, normalized_workspace);
 
             servers.insert(
                 binary.server_name.to_string(),
@@ -270,7 +355,7 @@ impl WorkspaceMcpConfigService {
 
         let mut args = Vec::new();
         for binary in &self.binaries {
-            if is_server_disabled(disabled_server_names, binary.server_name) {
+            if is_server_disabled(disabled_server_names, &binary.server_name) {
                 tracing::info!("[MCP] 跳过已禁用 Codex MCP server: {}", binary.server_name);
                 continue;
             }
@@ -283,14 +368,8 @@ impl WorkspaceMcpConfigService {
                 )));
             }
 
-            let server_args = if binary.requires_config_dir {
-                vec![
-                    strip_unc_prefix(&self.config_dir.to_string_lossy()),
-                    normalized_workspace.to_string(),
-                ]
-            } else {
-                vec![normalized_workspace.to_string()]
-            };
+            let server_args =
+                build_mcp_server_args(binary.args_mode, &self.config_dir, normalized_workspace);
 
             args.push("-c".to_string());
             args.push(format!(
@@ -314,6 +393,20 @@ fn is_server_disabled(disabled_server_names: &[String], server_name: &str) -> bo
     disabled_server_names.iter().any(|name| name == server_name)
 }
 
+fn build_mcp_server_args(
+    args_mode: McpServerArgsMode,
+    config_dir: &Path,
+    workspace_path: &str,
+) -> Vec<String> {
+    match args_mode {
+        McpServerArgsMode::ConfigDirAndWorkspace => vec![
+            strip_unc_prefix(&config_dir.to_string_lossy()),
+            workspace_path.to_string(),
+        ],
+        McpServerArgsMode::WorkspaceOnly => vec![workspace_path.to_string()],
+    }
+}
+
 /// Strip the Windows UNC extended-length path prefix (`\\?\`) from a path string.
 ///
 /// On Windows, `std::fs::canonicalize()` and some Tauri path APIs return paths
@@ -328,25 +421,25 @@ fn strip_unc_prefix(s: &str) -> String {
     }
 }
 
-fn resolve_builtin_mcp_binary(
-    definition: BuiltinMcpServerDefinition,
+fn resolve_mcp_contribution_binary(
+    contribution: &PluginMcpServerContribution,
     resource_dir: Option<PathBuf>,
     app_root: PathBuf,
 ) -> Result<ResolvedMcpBinary> {
     let executable_path = resolve_mcp_executable_path(
         resource_dir,
         app_root,
-        definition.bin_name,
-        &mcp_exe_path(definition.bundled_path_prefix),
-        &mcp_exe_path(definition.fallback_path_prefix),
-        &mcp_exe_path(definition.dev_path_prefix),
-        definition.env_var_name,
+        &contribution.bin_name,
+        &mcp_exe_path(&contribution.bundled_path_prefix),
+        &mcp_exe_path(&contribution.fallback_path_prefix),
+        &mcp_exe_path(&contribution.dev_path_prefix),
+        &contribution.env_var_name,
     )?;
 
     Ok(ResolvedMcpBinary {
-        server_name: definition.server_name,
+        server_name: contribution.server_name.clone(),
         executable_path,
-        requires_config_dir: definition.requires_config_dir,
+        args_mode: contribution.args_mode,
     })
 }
 
@@ -654,6 +747,119 @@ mod tests {
         assert_eq!(
             path,
             app_root.join(fixture_exe("src-tauri/target/release/polaris-todo-mcp"))
+        );
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn registry_required_server_missing_returns_error() {
+        let temp_root =
+            std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
+        let app_root = temp_root.join("app-root");
+        let config_dir = temp_root.join("config");
+        let mut registry = McpServerContributionRegistry::new();
+        registry.register(PluginMcpServerContribution::builtin(
+            "polaris-required-test",
+            "polaris-required-test-mcp",
+            "bin/polaris-required-test-mcp",
+            "polaris-required-test-mcp",
+            "missing/polaris-required-test-mcp",
+            "POLARIS_REQUIRED_TEST_MCP_PATH",
+            McpServerArgsMode::ConfigDirAndWorkspace,
+            true,
+        ));
+
+        let result = WorkspaceMcpConfigService::from_contribution_registry_app_paths(
+            config_dir, None, app_root, registry,
+        );
+
+        assert!(result.is_err());
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn registry_optional_server_missing_is_skipped() {
+        let temp_root =
+            std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
+        let workspace = temp_root.join("workspace-optional");
+        let app_root = temp_root.join("app-root");
+        let config_dir = temp_root.join("config");
+        let mut registry = McpServerContributionRegistry::new();
+        registry.register(PluginMcpServerContribution::builtin(
+            "polaris-optional-test",
+            "polaris-optional-test-mcp",
+            "bin/polaris-optional-test-mcp",
+            "polaris-optional-test-mcp",
+            "missing/polaris-optional-test-mcp",
+            "POLARIS_OPTIONAL_TEST_MCP_PATH",
+            McpServerArgsMode::ConfigDirAndWorkspace,
+            false,
+        ));
+
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&config_dir).unwrap();
+
+        let service = WorkspaceMcpConfigService::from_contribution_registry_app_paths(
+            config_dir, None, app_root, registry,
+        )
+        .unwrap();
+        let config_path = service
+            .prepare_workspace_config(workspace.to_string_lossy().as_ref())
+            .unwrap();
+        let content = std::fs::read_to_string(&config_path).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+        assert_eq!(json["mcpServers"].as_object().unwrap().len(), 0);
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn registry_workspace_only_args_mode_uses_workspace_path_only() {
+        let temp_root =
+            std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
+        let workspace = temp_root.join("workspace-args");
+        let app_root = temp_root.join("app-root");
+        let config_dir = temp_root.join("config");
+        let plugin_executable_path = app_root.join(fixture_exe("plugins/sample/plugin-mcp"));
+        let mut registry = McpServerContributionRegistry::new();
+        registry.register_plugin_server(
+            "polaris.sample",
+            PluginMcpServerContribution::builtin(
+                "polaris-sample",
+                "polaris-sample-mcp",
+                "bin/polaris-sample-mcp",
+                "polaris-sample-mcp",
+                "plugins/sample/plugin-mcp",
+                "POLARIS_SAMPLE_MCP_PATH",
+                McpServerArgsMode::WorkspaceOnly,
+                true,
+            ),
+        );
+
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::create_dir_all(plugin_executable_path.parent().unwrap()).unwrap();
+        std::fs::write(&plugin_executable_path, "sample bin").unwrap();
+
+        let service = WorkspaceMcpConfigService::from_contribution_registry_app_paths(
+            config_dir, None, app_root, registry,
+        )
+        .unwrap();
+        let config_path = service
+            .prepare_workspace_config(workspace.to_string_lossy().as_ref())
+            .unwrap();
+        let content = std::fs::read_to_string(&config_path).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let sample_server = &json["mcpServers"]["polaris-sample"];
+
+        assert_eq!(
+            sample_server["args"].as_array().unwrap(),
+            &[serde_json::Value::String(
+                workspace.to_string_lossy().to_string()
+            )]
         );
 
         let _ = std::fs::remove_dir_all(&temp_root);
