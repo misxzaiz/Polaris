@@ -59,6 +59,7 @@ export interface PluginOriginMetadata {
   repository?: string
   homepage?: string
   updateUrl?: string
+  downloadUrl?: string
 }
 
 export interface PolarisPluginManifest {

@@ -2,7 +2,10 @@
 //!
 //! 封装 Claude CLI 的 plugin 命令调用
 
+use std::fs::File;
+use std::io::{Cursor, Read, Seek};
 use std::path::{Path, PathBuf};
+
 use std::process::Command;
 
 use crate::error::{AppError, Result};
@@ -46,6 +49,11 @@ const VALID_PLUGIN_ICONS: &[&str] = &[
     "AlertCircle",
 ];
 const VALID_TRANSPORTS: &[&str] = &["stdio", "http"];
+
+struct PreparedPluginSource {
+    path: PathBuf,
+    _temp_dir: Option<tempfile::TempDir>,
+}
 
 /// Plugin 服务
 pub struct PluginService {
@@ -404,7 +412,7 @@ impl PluginService {
         source_path: &Path,
         scope: PluginManifestSourceKind,
     ) -> Result<PluginOperationResult> {
-        let source_dir = source_path.canonicalize().map_err(|error| {
+        let path = source_path.canonicalize().map_err(|error| {
             AppError::InvalidPath(format!(
                 "无法读取插件目录 {}: {}",
                 source_path.display(),
@@ -412,19 +420,119 @@ impl PluginService {
             ))
         })?;
 
-        if !source_dir.is_dir() {
+        if !path.is_dir() {
             return Err(AppError::InvalidPath(format!(
                 "插件来源不是目录: {}",
-                source_dir.display()
+                path.display()
             )));
         }
 
-        let manifest_path = Self::find_manifest_path(&source_dir).ok_or_else(|| {
-            AppError::ConfigError(
-                "插件目录必须包含 plugin.json 或 .codex-plugin/plugin.json".to_string(),
-            )
+        let source = PreparedPluginSource {
+            path,
+            _temp_dir: None,
+        };
+        Self::install_prepared_plugin_source(app_config_dir, workspace_path, &source, scope, false)
+    }
+
+    pub fn install_plugin_package(
+        app_config_dir: &Path,
+        workspace_path: Option<&Path>,
+        package_path: &Path,
+        scope: PluginManifestSourceKind,
+    ) -> Result<PluginOperationResult> {
+        let source = Self::prepare_package_source(package_path)?;
+        Self::install_prepared_plugin_source(app_config_dir, workspace_path, &source, scope, false)
+    }
+
+    pub async fn install_remote_plugin(
+        app_config_dir: &Path,
+        workspace_path: Option<&Path>,
+        source_url: &str,
+        scope: PluginManifestSourceKind,
+    ) -> Result<PluginOperationResult> {
+        let source = Self::download_plugin_source(source_url).await?;
+        Self::install_prepared_plugin_source(app_config_dir, workspace_path, &source, scope, false)
+    }
+
+    pub async fn apply_local_plugin_update(
+        app_config_dir: &Path,
+        workspace_path: Option<&Path>,
+        install_path: &Path,
+    ) -> Result<PluginOperationResult> {
+        let target = Self::canonicalize_allowed_plugin_dir(
+            app_config_dir,
+            workspace_path,
+            install_path,
+        )?;
+        let installed_manifest_path = Self::find_manifest_path(&target).ok_or_else(|| {
+            AppError::ConfigError("插件目录缺少 plugin.json / .codex-plugin/plugin.json".to_string())
         })?;
-        let validation = Self::validate_manifest_file_path(&manifest_path);
+        let installed_manifest = Self::read_manifest(&installed_manifest_path)?;
+        let update_url = installed_manifest.origin.update_url.clone().ok_or_else(|| {
+            AppError::ConfigError("插件 manifest 未声明 origin.updateUrl，无法应用更新".to_string())
+        })?;
+        let latest_manifest = Self::read_update_manifest(&update_url).await?;
+        if latest_manifest.id != installed_manifest.id {
+            return Ok(PluginOperationResult {
+                success: false,
+                message: None,
+                error: Some(format!(
+                    "更新 manifest 插件 ID 不匹配: 当前 {}，远端 {}",
+                    installed_manifest.id,
+                    latest_manifest.id
+                )),
+            });
+        }
+        if !Self::is_version_newer(&latest_manifest.version, &installed_manifest.version) {
+            return Ok(PluginOperationResult {
+                success: false,
+                message: None,
+                error: Some(format!(
+                    "未发现可应用的新版本: 当前 {}，远端 {}",
+                    installed_manifest.version,
+                    latest_manifest.version
+                )),
+            });
+        }
+
+        let download_url = latest_manifest.origin.download_url.clone().ok_or_else(|| {
+            AppError::ConfigError("更新 manifest 未声明 origin.downloadUrl，无法下载安装包".to_string())
+        })?;
+        let download_url = Self::resolve_source_url(&update_url, &download_url);
+        let source = Self::download_plugin_source(&download_url).await?;
+        let temp_parent = target.parent().ok_or_else(|| {
+            AppError::InvalidPath(format!("插件安装目录缺少父目录: {}", target.display()))
+        })?;
+        let staging = tempfile::Builder::new()
+            .prefix(".polaris-plugin-update-")
+            .tempdir_in(temp_parent)?;
+        let validation = Self::copy_prepared_plugin_source(&source, staging.path())?;
+        let candidate_manifest_path = Self::find_manifest_path(staging.path()).ok_or_else(|| {
+            AppError::ConfigError("更新包缺少 plugin.json / .codex-plugin/plugin.json".to_string())
+        })?;
+        let candidate_manifest = Self::read_manifest(&candidate_manifest_path)?;
+        if candidate_manifest.id != installed_manifest.id {
+            return Ok(PluginOperationResult {
+                success: false,
+                message: None,
+                error: Some(format!(
+                    "更新包插件 ID 不匹配: 当前 {}，安装包 {}",
+                    installed_manifest.id,
+                    candidate_manifest.id
+                )),
+            });
+        }
+        if !Self::is_version_newer(&candidate_manifest.version, &installed_manifest.version) {
+            return Ok(PluginOperationResult {
+                success: false,
+                message: None,
+                error: Some(format!(
+                    "更新包版本未高于当前版本: 当前 {}，安装包 {}",
+                    installed_manifest.version,
+                    candidate_manifest.version
+                )),
+            });
+        }
         if !validation.valid {
             return Ok(PluginOperationResult {
                 success: false,
@@ -432,42 +540,57 @@ impl PluginService {
                 error: Some(Self::format_validation_errors(&validation)),
             });
         }
-        let manifest = Self::read_manifest(&manifest_path)?;
 
-        let install_root = match scope {
-            PluginManifestSourceKind::User => app_config_dir.join("plugins"),
-            PluginManifestSourceKind::Project => workspace_path
-                .map(|path| path.join(".polaris").join("plugins"))
-                .ok_or_else(|| AppError::ConfigError("项目插件安装需要当前工作区".to_string()))?,
+        let staging_path = staging.path().to_path_buf();
+        let backup = tempfile::Builder::new()
+            .prefix(".polaris-plugin-backup-")
+            .tempdir_in(temp_parent)?;
+        let backup_path = backup.keep();
+        std::fs::remove_dir(&backup_path)?;
+        std::fs::rename(&target, &backup_path)?;
+
+        let install_result: Result<()> = match std::fs::rename(&staging_path, &target) {
+            Ok(()) => Ok(()),
+            Err(_) => {
+                Self::copy_dir_recursive(&staging_path, &target)
+                    .and_then(|()| Ok(std::fs::remove_dir_all(&staging_path)?))
+            }
         };
-        std::fs::create_dir_all(&install_root)?;
 
-        let target_dir = install_root.join(Self::safe_plugin_dir_name(&manifest.id));
-        if target_dir.exists() {
-            return Ok(PluginOperationResult {
-                success: false,
-                message: None,
-                error: Some(format!("插件已存在: {}", target_dir.display())),
-            });
+        if let Err(error) = install_result {
+            if target.exists() {
+                let _ = std::fs::remove_dir_all(&target);
+            }
+            if let Err(restore_error) = std::fs::rename(&backup_path, &target) {
+                return Err(AppError::ConfigError(format!(
+                    "插件更新失败且无法恢复旧版本: {}; 恢复错误: {}",
+                    error, restore_error
+                )));
+            }
+            return Err(error);
         }
 
-        let canonical_root = install_root.canonicalize()?;
-        if source_dir.starts_with(&canonical_root) {
+        if let Err(cleanup_error) = std::fs::remove_dir_all(&backup_path) {
             return Ok(PluginOperationResult {
-                success: false,
-                message: None,
-                error: Some("来源目录已经位于插件安装目录中，请直接刷新已安装插件".to_string()),
+                success: true,
+                message: Some(format!(
+                    "已更新插件 {}: {} -> {}，但清理备份目录失败: {}",
+                    installed_manifest.id,
+                    installed_manifest.version,
+                    candidate_manifest.version,
+                    cleanup_error
+                )),
+                error: None,
             });
         }
-
-        Self::copy_dir_recursive(&source_dir, &target_dir)?;
 
         Ok(PluginOperationResult {
             success: true,
             message: Some(format!(
-                "已安装插件 {} 到 {}",
-                manifest.id,
-                target_dir.display()
+                "已更新插件 {}: {} -> {}",
+                installed_manifest.id,
+                installed_manifest.version,
+                candidate_manifest.version
             )),
             error: None,
         })
@@ -478,32 +601,11 @@ impl PluginService {
         workspace_path: Option<&Path>,
         install_path: &Path,
     ) -> Result<PluginOperationResult> {
-        let target = install_path.canonicalize().map_err(|error| {
-            AppError::InvalidPath(format!(
-                "无法读取插件安装目录 {}: {}",
-                install_path.display(),
-                error
-            ))
-        })?;
-
-        let mut allowed_roots = vec![app_config_dir.join("plugins")];
-        if let Some(workspace_path) = workspace_path {
-            allowed_roots.push(workspace_path.join(".polaris").join("plugins"));
-            allowed_roots.push(workspace_path.join(".codex").join("plugins"));
-        }
-
-        let is_allowed = allowed_roots.iter().any(|root| {
-            root.canonicalize()
-                .map(|canonical| target.starts_with(&canonical) && target != canonical)
-                .unwrap_or(false)
-        });
-
-        if !is_allowed {
-            return Err(AppError::PermissionDenied(format!(
-                "只能卸载已发现插件目录下的插件: {}",
-                target.display()
-            )));
-        }
+        let target = Self::canonicalize_allowed_plugin_dir(
+            app_config_dir,
+            workspace_path,
+            install_path,
+        )?;
 
         std::fs::remove_dir_all(&target)?;
 
@@ -525,6 +627,7 @@ impl PluginService {
                     update_available: false,
                     checked: false,
                     source_url: None,
+                    download_url: None,
                     error: Some("插件目录缺少 plugin.json / .codex-plugin/plugin.json".to_string()),
                 };
             }
@@ -540,6 +643,7 @@ impl PluginService {
                     update_available: false,
                     checked: false,
                     source_url: None,
+                    download_url: None,
                     error: Some(error.to_string()),
                 };
             }
@@ -553,6 +657,7 @@ impl PluginService {
                 update_available: false,
                 checked: false,
                 source_url: None,
+                download_url: None,
                 error: Some("插件 manifest 未声明 origin.updateUrl，无法检查更新".to_string()),
             };
         };
@@ -567,6 +672,7 @@ impl PluginService {
                     update_available: false,
                     checked: false,
                     source_url: Some(update_url),
+                    download_url: None,
                     error: Some(error.to_string()),
                 };
             }
@@ -574,6 +680,11 @@ impl PluginService {
 
         let latest_version = latest_manifest.version;
         let update_available = Self::is_version_newer(&latest_version, &manifest.version);
+        let download_url = latest_manifest
+            .origin
+            .download_url
+            .as_deref()
+            .map(|url| Self::resolve_source_url(&update_url, url));
 
         PluginUpdateCheckResult {
             plugin_id: manifest.id,
@@ -582,6 +693,7 @@ impl PluginService {
             update_available,
             checked: true,
             source_url: Some(update_url),
+            download_url,
             error: None,
         }
     }
@@ -672,6 +784,333 @@ impl PluginService {
         } else {
             Self::read_manifest(Path::new(update_url))
         }
+    }
+
+    fn install_prepared_plugin_source(
+        app_config_dir: &Path,
+        workspace_path: Option<&Path>,
+        source: &PreparedPluginSource,
+        scope: PluginManifestSourceKind,
+        replace_existing: bool,
+    ) -> Result<PluginOperationResult> {
+        let manifest_path = Self::find_manifest_path(&source.path).ok_or_else(|| {
+            AppError::ConfigError(
+                "插件目录必须包含 plugin.json 或 .codex-plugin/plugin.json".to_string(),
+            )
+        })?;
+        let validation = Self::validate_manifest_file_path(&manifest_path);
+        if !validation.valid {
+            return Ok(PluginOperationResult {
+                success: false,
+                message: None,
+                error: Some(Self::format_validation_errors(&validation)),
+            });
+        }
+        let manifest = Self::read_manifest(&manifest_path)?;
+
+        let install_root = match scope {
+            PluginManifestSourceKind::User => app_config_dir.join("plugins"),
+            PluginManifestSourceKind::Project => workspace_path
+                .map(|path| path.join(".polaris").join("plugins"))
+                .ok_or_else(|| AppError::ConfigError("项目插件安装需要当前工作区".to_string()))?,
+        };
+        std::fs::create_dir_all(&install_root)?;
+
+        let target_dir = install_root.join(Self::safe_plugin_dir_name(&manifest.id));
+        if target_dir.exists() {
+            if !replace_existing {
+                return Ok(PluginOperationResult {
+                    success: false,
+                    message: None,
+                    error: Some(format!("插件已存在: {}", target_dir.display())),
+                });
+            }
+            std::fs::remove_dir_all(&target_dir)?;
+        }
+
+        let canonical_root = install_root.canonicalize()?;
+        if source
+            .path
+            .canonicalize()
+            .map(|path| path.starts_with(&canonical_root))
+            .unwrap_or(false)
+        {
+            return Ok(PluginOperationResult {
+                success: false,
+                message: None,
+                error: Some("来源目录已经位于插件安装目录中，请直接刷新已安装插件".to_string()),
+            });
+        }
+
+        let validation = Self::copy_prepared_plugin_source(source, &target_dir)?;
+        if !validation.valid {
+            return Ok(PluginOperationResult {
+                success: false,
+                message: None,
+                error: Some(Self::format_validation_errors(&validation)),
+            });
+        }
+
+        Ok(PluginOperationResult {
+            success: true,
+            message: Some(format!(
+                "已安装插件 {} 到 {}",
+                manifest.id,
+                target_dir.display()
+            )),
+            error: None,
+        })
+    }
+
+    fn canonicalize_allowed_plugin_dir(
+        app_config_dir: &Path,
+        workspace_path: Option<&Path>,
+        install_path: &Path,
+    ) -> Result<PathBuf> {
+        let target = install_path.canonicalize().map_err(|error| {
+            AppError::InvalidPath(format!(
+                "无法读取插件安装目录 {}: {}",
+                install_path.display(),
+                error
+            ))
+        })?;
+
+        let mut allowed_roots = vec![app_config_dir.join("plugins")];
+        if let Some(workspace_path) = workspace_path {
+            allowed_roots.push(workspace_path.join(".polaris").join("plugins"));
+            allowed_roots.push(workspace_path.join(".codex").join("plugins"));
+        }
+
+        let is_allowed = allowed_roots.iter().any(|root| {
+            root.canonicalize()
+                .map(|canonical| target.starts_with(&canonical) && target != canonical)
+                .unwrap_or(false)
+        });
+
+        if !is_allowed {
+            return Err(AppError::PermissionDenied(format!(
+                "只能操作已发现插件目录下的插件: {}",
+                target.display()
+            )));
+        }
+
+        Ok(target)
+    }
+
+    fn prepare_package_source(package_path: &Path) -> Result<PreparedPluginSource> {
+        let path = package_path.canonicalize().map_err(|error| {
+            AppError::InvalidPath(format!(
+                "无法读取插件安装包 {}: {}",
+                package_path.display(),
+                error
+            ))
+        })?;
+
+        if path.is_dir() {
+            return Ok(PreparedPluginSource {
+                path,
+                _temp_dir: None,
+            });
+        }
+
+        if !path.is_file() {
+            return Err(AppError::InvalidPath(format!(
+                "插件安装包不存在: {}",
+                path.display()
+            )));
+        }
+
+        if Self::looks_like_zip_path(&path) {
+            let temp_dir = tempfile::Builder::new()
+                .prefix("polaris-plugin-package-")
+                .tempdir()?;
+            let file = File::open(&path)?;
+            Self::extract_zip_reader(file, temp_dir.path())?;
+            let source_path = Self::plugin_package_root(temp_dir.path())?;
+            return Ok(PreparedPluginSource {
+                path: source_path,
+                _temp_dir: Some(temp_dir),
+            });
+        }
+
+        if path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
+        {
+            let temp_dir = tempfile::Builder::new()
+                .prefix("polaris-plugin-manifest-")
+                .tempdir()?;
+            std::fs::copy(&path, temp_dir.path().join("plugin.json"))?;
+            return Ok(PreparedPluginSource {
+                path: temp_dir.path().to_path_buf(),
+                _temp_dir: Some(temp_dir),
+            });
+        }
+
+        Err(AppError::InvalidPath(format!(
+            "不支持的插件安装包格式: {}",
+            path.display()
+        )))
+    }
+
+    async fn download_plugin_source(source_url: &str) -> Result<PreparedPluginSource> {
+        if source_url.starts_with("http://") || source_url.starts_with("https://") {
+            let response = reqwest::Client::new()
+                .get(source_url)
+                .send()
+                .await
+                .map_err(|error| AppError::NetworkError(format!("下载插件失败: {}", error)))?
+                .error_for_status()
+                .map_err(|error| AppError::NetworkError(format!("下载插件失败: {}", error)))?;
+            let content_type = response
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_string);
+            let bytes = response
+                .bytes()
+                .await
+                .map_err(|error| AppError::NetworkError(format!("读取插件下载内容失败: {}", error)))?;
+            return Self::prepare_downloaded_plugin_source(source_url, content_type.as_deref(), bytes.as_ref()).await;
+        }
+
+        Self::prepare_package_source(Path::new(source_url))
+    }
+
+    async fn prepare_downloaded_plugin_source(
+        source_url: &str,
+        content_type: Option<&str>,
+        bytes: &[u8],
+    ) -> Result<PreparedPluginSource> {
+        if Self::looks_like_zip_url(source_url, content_type, bytes) {
+            let temp_dir = tempfile::Builder::new()
+                .prefix("polaris-plugin-download-")
+                .tempdir()?;
+            Self::extract_zip_reader(Cursor::new(bytes), temp_dir.path())?;
+            let source_path = Self::plugin_package_root(temp_dir.path())?;
+            return Ok(PreparedPluginSource {
+                path: source_path,
+                _temp_dir: Some(temp_dir),
+            });
+        }
+
+        match serde_json::from_slice::<PluginManifestFile>(bytes) {
+            Ok(manifest) => {
+                if let Some(download_url) = manifest.origin.download_url.as_deref() {
+                    let resolved = Self::resolve_source_url(source_url, download_url);
+                    if resolved != source_url {
+                        return Box::pin(Self::download_plugin_source(&resolved)).await;
+                    }
+                }
+
+                let temp_dir = tempfile::Builder::new()
+                    .prefix("polaris-plugin-manifest-")
+                    .tempdir()?;
+                std::fs::write(temp_dir.path().join("plugin.json"), bytes)?;
+                Ok(PreparedPluginSource {
+                    path: temp_dir.path().to_path_buf(),
+                    _temp_dir: Some(temp_dir),
+                })
+            }
+            Err(error) => Err(AppError::ConfigError(format!(
+                "远程插件来源既不是 zip 安装包，也不是有效 manifest: {}",
+                error
+            ))),
+        }
+    }
+
+    fn copy_prepared_plugin_source(
+        source: &PreparedPluginSource,
+        target: &Path,
+    ) -> Result<PluginManifestValidationResult> {
+        Self::copy_dir_recursive(&source.path, target)?;
+        let manifest_path = Self::find_manifest_path(target).ok_or_else(|| {
+            AppError::ConfigError(
+                "插件安装包必须包含 plugin.json 或 .codex-plugin/plugin.json".to_string(),
+            )
+        })?;
+        Ok(Self::validate_manifest_file_path(&manifest_path))
+    }
+
+    fn plugin_package_root(root: &Path) -> Result<PathBuf> {
+        if Self::find_manifest_path(root).is_some() {
+            return Ok(root.to_path_buf());
+        }
+
+        let directories = std::fs::read_dir(root)?
+            .filter_map(|entry| entry.ok())
+            .filter_map(|entry| entry.file_type().ok().filter(|file_type| file_type.is_dir()).map(|_| entry.path()))
+            .collect::<Vec<_>>();
+
+        if directories.len() == 1 && Self::find_manifest_path(&directories[0]).is_some() {
+            return Ok(directories[0].clone());
+        }
+
+        Err(AppError::ConfigError(
+            "插件安装包必须在根目录或唯一顶层目录中包含 plugin.json / .codex-plugin/plugin.json".to_string(),
+        ))
+    }
+
+    fn extract_zip_reader<R: Read + Seek>(reader: R, target: &Path) -> Result<()> {
+        let mut archive = zip::ZipArchive::new(reader)
+            .map_err(|error| AppError::ConfigError(format!("插件 zip 安装包格式错误: {}", error)))?;
+
+        for index in 0..archive.len() {
+            let mut file = archive
+                .by_index(index)
+                .map_err(|error| AppError::ConfigError(format!("读取插件 zip 安装包失败: {}", error)))?;
+            let enclosed_path = file.enclosed_name().ok_or_else(|| {
+                AppError::PermissionDenied(format!("插件 zip 安装包包含不安全路径: {}", file.name()))
+            })?;
+            let output_path = target.join(enclosed_path);
+
+            if file.is_dir() {
+                std::fs::create_dir_all(&output_path)?;
+            } else {
+                if let Some(parent) = output_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                let mut output = File::create(&output_path)?;
+                std::io::copy(&mut file, &mut output)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn looks_like_zip_path(path: &Path) -> bool {
+        path.extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("zip"))
+    }
+
+    fn looks_like_zip_url(source_url: &str, content_type: Option<&str>, bytes: &[u8]) -> bool {
+        source_url.to_ascii_lowercase().split('?').next().unwrap_or_default().ends_with(".zip")
+            || content_type
+                .map(|value| value.contains("application/zip") || value.contains("application/octet-stream"))
+                .unwrap_or(false)
+            || bytes.starts_with(b"PK\x03\x04")
+    }
+
+    fn resolve_source_url(base_url: &str, source_url: &str) -> String {
+        if source_url.starts_with("http://")
+            || source_url.starts_with("https://")
+            || Path::new(source_url).is_absolute()
+        {
+            return source_url.to_string();
+        }
+
+        if let Ok(base) = url::Url::parse(base_url) {
+            if let Ok(joined) = base.join(source_url) {
+                return joined.to_string();
+            }
+        }
+
+        Path::new(base_url)
+            .parent()
+            .map(|parent| parent.join(source_url).to_string_lossy().to_string())
+            .unwrap_or_else(|| source_url.to_string())
     }
 
     fn validate_manifest_file_path(path: &Path) -> PluginManifestValidationResult {
@@ -1092,6 +1531,62 @@ mod tests {
         assert_eq!(result.plugin_id, "example.update");
         assert_eq!(result.current_version, "0.1.0");
         assert_eq!(result.latest_version.as_deref(), Some("0.2.0"));
+    }
+
+    #[tokio::test]
+    async fn applies_local_plugin_update_from_download_url() {
+        let app_config = tempfile::tempdir().unwrap();
+        let installed = app_config.path().join("plugins").join("example.update");
+        std::fs::create_dir_all(&installed).unwrap();
+        let package = tempfile::tempdir().unwrap();
+        std::fs::write(
+            package.path().join("plugin.json"),
+            r#"{
+              "id": "example.update",
+              "name": "Example Update",
+              "version": "0.2.0"
+            }"#,
+        )
+        .unwrap();
+        let latest = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            latest.path(),
+            format!(
+                r#"{{
+                  "id": "example.update",
+                  "name": "Example Update",
+                  "version": "0.2.0",
+                  "origin": {{
+                    "downloadUrl": "{}"
+                  }}
+                }}"#,
+                package.path().to_string_lossy().replace('\\', "\\\\")
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            installed.join("plugin.json"),
+            format!(
+                r#"{{
+                  "id": "example.update",
+                  "name": "Example Update",
+                  "version": "0.1.0",
+                  "origin": {{
+                    "updateUrl": "{}"
+                  }}
+                }}"#,
+                latest.path().to_string_lossy().replace('\\', "\\\\")
+            ),
+        )
+        .unwrap();
+
+        let result = PluginService::apply_local_plugin_update(app_config.path(), None, &installed)
+            .await
+            .unwrap();
+
+        assert!(result.success);
+        let manifest = PluginService::read_manifest(&installed.join("plugin.json")).unwrap();
+        assert_eq!(manifest.version, "0.2.0");
     }
 
     #[test]

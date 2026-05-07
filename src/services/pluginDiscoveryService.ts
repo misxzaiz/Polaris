@@ -46,6 +46,7 @@ export interface PluginUpdateCheckResult {
   updateAvailable: boolean
   checked: boolean
   sourceUrl?: string
+  downloadUrl?: string
   error?: string
 }
 
@@ -194,8 +195,9 @@ function normalizeOrigin(value: unknown): PluginOriginMetadata | undefined {
     repository: asString(value.repository),
     homepage: asString(value.homepage),
     updateUrl: asString(value.updateUrl),
+    downloadUrl: asString(value.downloadUrl),
   }
-  return origin.repository || origin.homepage || origin.updateUrl ? origin : undefined
+  return origin.repository || origin.homepage || origin.updateUrl || origin.downloadUrl ? origin : undefined
 }
 
 export function normalizeDiscoveredPlugin(raw: unknown): PolarisPluginManifest | null {
@@ -298,6 +300,30 @@ export async function installLocalPlugin(
   })
 }
 
+export async function installPluginPackage(
+  packagePath: string,
+  scope: 'user' | 'project',
+  workspacePath?: string
+): Promise<PluginOperationResult> {
+  return invoke<PluginOperationResult>('plugin_install_package', {
+    packagePath,
+    scope,
+    workspacePath,
+  })
+}
+
+export async function installRemotePlugin(
+  sourceUrl: string,
+  scope: 'user' | 'project',
+  workspacePath?: string
+): Promise<PluginOperationResult> {
+  return invoke<PluginOperationResult>('plugin_install_remote', {
+    sourceUrl,
+    scope,
+    workspacePath,
+  })
+}
+
 export async function uninstallLocalPlugin(
   installPath: string,
   workspacePath?: string
@@ -310,4 +336,11 @@ export async function uninstallLocalPlugin(
 
 export async function checkPluginUpdate(installPath: string): Promise<PluginUpdateCheckResult> {
   return invoke<PluginUpdateCheckResult>('plugin_check_update', { installPath })
+}
+
+export async function applyPluginUpdate(
+  installPath: string,
+  workspacePath?: string
+): Promise<PluginOperationResult> {
+  return invoke<PluginOperationResult>('plugin_apply_update', { installPath, workspacePath })
 }

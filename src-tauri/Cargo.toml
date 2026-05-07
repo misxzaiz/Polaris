@@ -87,6 +87,8 @@ walkdir = "2"
 reqwest = { version = "0.11", default-features = false, features = ["json", "stream", "rustls-tls"] }
 futures-util = "0.3"
 md5 = "0.7"
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
+tempfile = "3"
 tauri-plugin-notification = { version = "2.3.3", optional = true }
 
 # 集成模块依赖（rustls：纯 Rust TLS，不依赖系统 OpenSSL）
@@ -111,9 +113,6 @@ crossbeam-channel = "0.5"
 notify = { version = "6", features = ["macos_kqueue"] }
 tauri-plugin-updater = { version = "2.10.1", optional = true }
 tauri-plugin-process = { version = "2.3.1", optional = true }
-
-[dev-dependencies]
-tempfile = "3"
 
 # -- 平台条件依赖 --
 

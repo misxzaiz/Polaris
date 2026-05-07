@@ -285,8 +285,11 @@ pub async fn handle_ipc_bridge(
         "plugin_install_locations" => dispatch_plugin_install_locations(&state, &args),
         "plugin_validate_manifest" => dispatch_plugin_validate_manifest(&args),
         "plugin_install_local" => dispatch_plugin_install_local(&state, &args),
+        "plugin_install_package" => dispatch_plugin_install_package(&state, &args),
+        "plugin_install_remote" => dispatch_plugin_install_remote(&state, &args).await,
         "plugin_uninstall_local" => dispatch_plugin_uninstall_local(&state, &args),
         "plugin_check_update" => dispatch_plugin_check_update(&args).await,
+        "plugin_apply_update" => dispatch_plugin_apply_update(&state, &args).await,
         "plugin_state_load" => dispatch_plugin_state_load(&state),
         "plugin_state_save" => dispatch_plugin_state_save(&state, &args),
 
@@ -1477,6 +1480,49 @@ fn dispatch_plugin_install_local(state: &AppState, args: &Value) -> Result<Json<
     ))
 }
 
+fn dispatch_plugin_install_package(
+    state: &AppState,
+    args: &Value,
+) -> Result<Json<Value>, WebError> {
+    let config_dir = get_config_dir(state)?;
+    let workspace_path = plugin_workspace_path(args);
+    let package_path = require_string(args, "packagePath")?;
+    let scope = match args.get("scope").and_then(|value| value.as_str()) {
+        Some("project") => crate::models::plugin::PluginManifestSourceKind::Project,
+        _ => crate::models::plugin::PluginManifestSourceKind::User,
+    };
+
+    json_result!(crate::services::plugin_service::PluginService::install_plugin_package(
+        &config_dir,
+        workspace_path.as_deref(),
+        Path::new(&package_path),
+        scope,
+    ))
+}
+
+async fn dispatch_plugin_install_remote(
+    state: &AppState,
+    args: &Value,
+) -> Result<Json<Value>, WebError> {
+    let config_dir = get_config_dir(state)?;
+    let workspace_path = plugin_workspace_path(args);
+    let source_url = require_string(args, "sourceUrl")?;
+    let scope = match args.get("scope").and_then(|value| value.as_str()) {
+        Some("project") => crate::models::plugin::PluginManifestSourceKind::Project,
+        _ => crate::models::plugin::PluginManifestSourceKind::User,
+    };
+
+    json_result!(
+        crate::services::plugin_service::PluginService::install_remote_plugin(
+            &config_dir,
+            workspace_path.as_deref(),
+            &source_url,
+            scope,
+        )
+        .await
+    )
+}
+
 fn dispatch_plugin_uninstall_local(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
     let config_dir = get_config_dir(state)?;
     let workspace_path = plugin_workspace_path(args);
@@ -1499,6 +1545,24 @@ async fn dispatch_plugin_check_update(args: &Value) -> Result<Json<Value>, WebEr
         .await,
     )
     .unwrap_or_default()))
+}
+
+async fn dispatch_plugin_apply_update(
+    state: &AppState,
+    args: &Value,
+) -> Result<Json<Value>, WebError> {
+    let config_dir = get_config_dir(state)?;
+    let workspace_path = plugin_workspace_path(args);
+    let install_path = require_string(args, "installPath")?;
+
+    json_result!(
+        crate::services::plugin_service::PluginService::apply_local_plugin_update(
+            &config_dir,
+            workspace_path.as_deref(),
+            Path::new(&install_path),
+        )
+        .await
+    )
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

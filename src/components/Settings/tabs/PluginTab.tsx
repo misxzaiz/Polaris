@@ -3,10 +3,13 @@ import { useTranslation } from 'react-i18next'
 import { FolderOpen, PackagePlus, RefreshCw, Trash2 } from 'lucide-react'
 import { listPluginMcpServerStatuses, pluginIconMap, pluginRegistry } from '@/plugin-system'
 import {
+  applyPluginUpdate,
   checkPluginUpdate,
   discoverInstalledPlugins,
   getPluginInstallLocations,
   installLocalPlugin,
+  installPluginPackage,
+  installRemotePlugin,
   uninstallLocalPlugin,
   type PluginDiscoveryIssue,
   type PluginInstallLocations,
@@ -34,7 +37,9 @@ export function PluginTab() {
   const [pluginOperationMessage, setPluginOperationMessage] = useState<string | null>(null)
   const [pluginUpdateChecks, setPluginUpdateChecks] = useState<Record<string, PluginUpdateCheckResult>>({})
   const [pluginUpdateLoadingId, setPluginUpdateLoadingId] = useState<string | null>(null)
+  const [pluginUpdateApplyLoadingId, setPluginUpdateApplyLoadingId] = useState<string | null>(null)
   const [pluginInstallScope, setPluginInstallScope] = useState<'user' | 'project'>('user')
+  const [pluginRemoteSourceUrl, setPluginRemoteSourceUrl] = useState('')
   const [plugins, setPlugins] = useState(() => pluginRegistry.listPlugins())
   const currentWorkspacePath = useWorkspaceStore((state) => state.getCurrentWorkspace()?.path)
   const pluginStates = usePluginStore((state) => state.pluginStates)
@@ -128,6 +133,64 @@ export function PluginTab() {
     }
   }, [currentWorkspacePath, pluginInstallScope, refreshInstallLocations, refreshInstalledPlugins, t])
 
+  const handleInstallPluginPackage = useCallback(async () => {
+    setPluginOperationMessage(null)
+
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog')
+      const selected = await open({
+        directory: false,
+        multiple: false,
+        filters: [
+          { name: 'Plugin package', extensions: ['zip', 'json'] },
+        ],
+        title: t('plugins.selectPluginPackage', { defaultValue: 'Select plugin package' }),
+      })
+      const packagePath = Array.isArray(selected) ? selected[0] : selected
+      if (!packagePath) return
+
+      setPluginOperationLoading(true)
+      const result = await installPluginPackage(packagePath, pluginInstallScope, currentWorkspacePath)
+      if (!result.success) {
+        setPluginOperationMessage(result.error ?? t('plugins.installFailed', { defaultValue: 'Plugin install failed' }))
+        return
+      }
+
+      setPluginOperationMessage(result.message ?? t('plugins.installSucceeded', { defaultValue: 'Plugin installed' }))
+      await refreshInstalledPlugins()
+      await refreshInstallLocations()
+    } catch (error) {
+      setPluginOperationMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setPluginOperationLoading(false)
+    }
+  }, [currentWorkspacePath, pluginInstallScope, refreshInstallLocations, refreshInstalledPlugins, t])
+
+  const handleInstallRemotePlugin = useCallback(async () => {
+    const sourceUrl = pluginRemoteSourceUrl.trim()
+    if (!sourceUrl) return
+
+    setPluginOperationLoading(true)
+    setPluginOperationMessage(null)
+
+    try {
+      const result = await installRemotePlugin(sourceUrl, pluginInstallScope, currentWorkspacePath)
+      if (!result.success) {
+        setPluginOperationMessage(result.error ?? t('plugins.installFailed', { defaultValue: 'Plugin install failed' }))
+        return
+      }
+
+      setPluginRemoteSourceUrl('')
+      setPluginOperationMessage(result.message ?? t('plugins.installSucceeded', { defaultValue: 'Plugin installed' }))
+      await refreshInstalledPlugins()
+      await refreshInstallLocations()
+    } catch (error) {
+      setPluginOperationMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setPluginOperationLoading(false)
+    }
+  }, [currentWorkspacePath, pluginInstallScope, pluginRemoteSourceUrl, refreshInstallLocations, refreshInstalledPlugins, t])
+
   const handleUninstallLocalPlugin = useCallback(async (pluginId: string, installPath?: string) => {
     if (!installPath) return
     const confirmed = window.confirm(t('plugins.uninstallConfirm', {
@@ -175,6 +238,39 @@ export function PluginTab() {
       setPluginUpdateLoadingId(null)
     }
   }, [])
+
+  const handleApplyPluginUpdate = useCallback(async (pluginId: string, installPath?: string) => {
+    if (!installPath) return
+    const confirmed = window.confirm(t('plugins.applyUpdateConfirm', {
+      defaultValue: 'Apply update for plugin {{pluginId}}? This replaces its installed directory.',
+      pluginId,
+    }))
+    if (!confirmed) return
+
+    setPluginUpdateApplyLoadingId(pluginId)
+    setPluginOperationMessage(null)
+
+    try {
+      const result = await applyPluginUpdate(installPath, currentWorkspacePath)
+      if (!result.success) {
+        setPluginOperationMessage(result.error ?? t('plugins.updateApplyFailed', { defaultValue: 'Plugin update failed' }))
+        return
+      }
+
+      setPluginOperationMessage(result.message ?? t('plugins.updateApplySucceeded', { defaultValue: 'Plugin updated' }))
+      setPluginUpdateChecks((checks) => {
+        const next = { ...checks }
+        delete next[pluginId]
+        return next
+      })
+      await refreshInstalledPlugins()
+      await refreshInstallLocations()
+    } catch (error) {
+      setPluginOperationMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setPluginUpdateApplyLoadingId(null)
+    }
+  }, [currentWorkspacePath, refreshInstallLocations, refreshInstalledPlugins, t])
 
   useEffect(() => {
     refreshMcpHealth()
@@ -254,7 +350,34 @@ export function PluginTab() {
                 ? t('plugins.installingPlugin', { defaultValue: 'Installing...' })
                 : t('plugins.installFromDirectory', { defaultValue: 'Install from directory' })}
             </button>
+            <button
+              type="button"
+              onClick={handleInstallPluginPackage}
+              disabled={pluginOperationLoading || (pluginInstallScope === 'project' && !currentWorkspacePath)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs text-primary hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <PackagePlus size={13} />
+              {t('plugins.installFromPackage', { defaultValue: 'Install package' })}
+            </button>
           </div>
+        </div>
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+          <input
+            type="text"
+            value={pluginRemoteSourceUrl}
+            onChange={(event) => setPluginRemoteSourceUrl(event.target.value)}
+            placeholder={t('plugins.remoteSourcePlaceholder', { defaultValue: 'Remote manifest or package URL' })}
+            className="min-w-0 flex-1 rounded-md border border-border-subtle bg-background-surface px-3 py-1.5 text-xs text-text-secondary placeholder:text-text-tertiary"
+          />
+          <button
+            type="button"
+            onClick={handleInstallRemotePlugin}
+            disabled={pluginOperationLoading || !pluginRemoteSourceUrl.trim() || (pluginInstallScope === 'project' && !currentWorkspacePath)}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle px-3 py-1.5 text-xs text-text-secondary hover:bg-background-hover disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <PackagePlus size={13} />
+            {t('plugins.installRemote', { defaultValue: 'Install remote' })}
+          </button>
         </div>
         {pluginOperationMessage && (
           <div className="mt-2 text-xs text-text-tertiary">{pluginOperationMessage}</div>
@@ -520,19 +643,41 @@ export function PluginTab() {
                 )}
               </div>
               {updateCheck && (
-                <div className="mt-3 rounded-md border border-border-subtle bg-background-elevated px-3 py-2 text-xs text-text-tertiary">
-                  {updateCheck.checked
-                    ? updateCheck.updateAvailable
-                      ? t('plugins.updateAvailable', {
-                        defaultValue: 'Update available: {{current}} -> {{latest}}',
-                        current: updateCheck.currentVersion,
-                        latest: updateCheck.latestVersion ?? '?',
-                      })
-                      : t('plugins.noUpdateAvailable', {
-                        defaultValue: 'No update found. Current version: {{version}}',
-                        version: updateCheck.currentVersion,
-                      })
-                    : updateCheck.error ?? t('plugins.updateUnavailable', { defaultValue: 'Update check unavailable' })}
+                <div className="mt-3 flex flex-col gap-2 rounded-md border border-border-subtle bg-background-elevated px-3 py-2 text-xs text-text-tertiary sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div>
+                      {updateCheck.checked
+                        ? updateCheck.updateAvailable
+                          ? t('plugins.updateAvailable', {
+                            defaultValue: 'Update available: {{current}} -> {{latest}}',
+                            current: updateCheck.currentVersion,
+                            latest: updateCheck.latestVersion ?? '?',
+                          })
+                          : t('plugins.noUpdateAvailable', {
+                            defaultValue: 'No update found. Current version: {{version}}',
+                            version: updateCheck.currentVersion,
+                          })
+                        : updateCheck.error ?? t('plugins.updateUnavailable', { defaultValue: 'Update check unavailable' })}
+                    </div>
+                    {updateCheck.downloadUrl && (
+                      <div className="mt-1 truncate text-[11px] text-text-tertiary">
+                        {t('plugins.updateDownloadUrl', { defaultValue: 'Package: {{url}}', url: updateCheck.downloadUrl })}
+                      </div>
+                    )}
+                  </div>
+                  {updateCheck.updateAvailable && (
+                    <button
+                      type="button"
+                      onClick={() => handleApplyPluginUpdate(plugin.id, plugin.installPath)}
+                      disabled={pluginUpdateApplyLoadingId === plugin.id || !plugin.installPath || !updateCheck.downloadUrl}
+                      className="inline-flex items-center gap-1.5 self-start rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs text-primary hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
+                    >
+                      <RefreshCw size={13} />
+                      {pluginUpdateApplyLoadingId === plugin.id
+                        ? t('plugins.applyingUpdate', { defaultValue: 'Updating...' })
+                        : t('plugins.applyUpdate', { defaultValue: 'Apply update' })}
+                    </button>
+                  )}
                 </div>
               )}
             </section>

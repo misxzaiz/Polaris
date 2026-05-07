@@ -109,6 +109,45 @@ pub async fn plugin_install_local(
     )
 }
 
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn plugin_install_package(
+    state: State<'_, AppState>,
+    package_path: String,
+    scope: String,
+    workspace_path: Option<String>,
+) -> Result<PluginOperationResult> {
+    let config_dir = get_plugin_config_dir(&state)?;
+    let workspace_path = workspace_path.as_deref().map(std::path::Path::new);
+
+    PluginService::install_plugin_package(
+        &config_dir,
+        workspace_path,
+        std::path::Path::new(&package_path),
+        parse_local_plugin_scope(&scope),
+    )
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn plugin_install_remote(
+    state: State<'_, AppState>,
+    source_url: String,
+    scope: String,
+    workspace_path: Option<String>,
+) -> Result<PluginOperationResult> {
+    let config_dir = get_plugin_config_dir(&state)?;
+    let workspace_path = workspace_path.as_deref().map(std::path::Path::new);
+
+    PluginService::install_remote_plugin(
+        &config_dir,
+        workspace_path,
+        &source_url,
+        parse_local_plugin_scope(&scope),
+    )
+    .await
+}
+
 /// 卸载已发现的 Polaris 本地插件目录
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
@@ -133,6 +172,24 @@ pub async fn plugin_check_update(
     install_path: String,
 ) -> Result<PluginUpdateCheckResult> {
     Ok(PluginService::check_local_plugin_update(std::path::Path::new(&install_path)).await)
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn plugin_apply_update(
+    state: State<'_, AppState>,
+    install_path: String,
+    workspace_path: Option<String>,
+) -> Result<PluginOperationResult> {
+    let config_dir = get_plugin_config_dir(&state)?;
+    let workspace_path = workspace_path.as_deref().map(std::path::Path::new);
+
+    PluginService::apply_local_plugin_update(
+        &config_dir,
+        workspace_path,
+        std::path::Path::new(&install_path),
+    )
+    .await
 }
 
 /// 安装插件

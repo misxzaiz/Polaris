@@ -84,11 +84,16 @@ pub struct PluginOriginMetadata {
     pub homepage: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub update_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub download_url: Option<String>,
 }
 
 impl PluginOriginMetadata {
     pub fn is_empty(&self) -> bool {
-        self.repository.is_none() && self.homepage.is_none() && self.update_url.is_none()
+        self.repository.is_none()
+            && self.homepage.is_none()
+            && self.update_url.is_none()
+            && self.download_url.is_none()
     }
 }
 
@@ -214,6 +219,8 @@ pub struct PluginUpdateCheckResult {
     pub checked: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub download_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }

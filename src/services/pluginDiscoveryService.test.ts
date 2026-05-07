@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  applyPluginUpdate,
   checkPluginUpdate,
+  installPluginPackage,
+  installRemotePlugin,
   normalizeDiscoveredPlugin,
   validateDiscoveredPlugin,
   validatePluginManifest,
@@ -50,6 +53,7 @@ describe('pluginDiscoveryService', () => {
       origin: {
         repository: 'https://example.test/example.todo',
         updateUrl: 'https://example.test/example.todo/plugin.json',
+        downloadUrl: 'https://example.test/example.todo/plugin.zip',
       },
       source: {
         kind: 'project',
@@ -70,6 +74,7 @@ describe('pluginDiscoveryService', () => {
         origin: {
           repository: 'https://example.test/example.todo',
           updateUrl: 'https://example.test/example.todo/plugin.json',
+          downloadUrl: 'https://example.test/example.todo/plugin.zip',
         },
       })
     )
@@ -191,6 +196,7 @@ describe('pluginDiscoveryService', () => {
       updateAvailable: true,
       checked: true,
       sourceUrl: 'https://example.test/plugin.json',
+      downloadUrl: 'https://example.test/plugin.zip',
     })
 
     await expect(checkPluginUpdate('D:\\plugins\\demo')).resolves.toEqual({
@@ -200,9 +206,42 @@ describe('pluginDiscoveryService', () => {
       updateAvailable: true,
       checked: true,
       sourceUrl: 'https://example.test/plugin.json',
+      downloadUrl: 'https://example.test/plugin.zip',
     })
     expect(invokeMock).toHaveBeenCalledWith('plugin_check_update', {
       installPath: 'D:\\plugins\\demo',
+    })
+  })
+
+  it('calls the backend package install command', async () => {
+    invokeMock.mockResolvedValueOnce({ success: true })
+
+    await expect(installPluginPackage('D:\\packages\\demo.zip', 'user')).resolves.toEqual({ success: true })
+    expect(invokeMock).toHaveBeenCalledWith('plugin_install_package', {
+      packagePath: 'D:\\packages\\demo.zip',
+      scope: 'user',
+      workspacePath: undefined,
+    })
+  })
+
+  it('calls the backend remote install command', async () => {
+    invokeMock.mockResolvedValueOnce({ success: true })
+
+    await expect(installRemotePlugin('https://example.test/plugin.json', 'project', 'D:\\space\\project')).resolves.toEqual({ success: true })
+    expect(invokeMock).toHaveBeenCalledWith('plugin_install_remote', {
+      sourceUrl: 'https://example.test/plugin.json',
+      scope: 'project',
+      workspacePath: 'D:\\space\\project',
+    })
+  })
+
+  it('calls the backend apply update command', async () => {
+    invokeMock.mockResolvedValueOnce({ success: true })
+
+    await expect(applyPluginUpdate('D:\\plugins\\demo')).resolves.toEqual({ success: true })
+    expect(invokeMock).toHaveBeenCalledWith('plugin_apply_update', {
+      installPath: 'D:\\plugins\\demo',
+      workspacePath: undefined,
     })
   })
 })
