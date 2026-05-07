@@ -1,5 +1,7 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { listPluginMcpServerStatuses, pluginIconMap, pluginRegistry } from '@/plugin-system'
+import { listMcpHealthStatuses, type McpHealthStatus } from '@/services/mcpHealthService'
 import { usePluginStore } from '@/stores/pluginStore'
 
 function formatPermissionLabel(key: string, t: (key: string, options?: { defaultValue?: string }) => string): string {
@@ -8,6 +10,9 @@ function formatPermissionLabel(key: string, t: (key: string, options?: { default
 
 export function PluginTab() {
   const { t } = useTranslation('settings')
+  const [mcpHealthStatuses, setMcpHealthStatuses] = useState<McpHealthStatus[]>([])
+  const [mcpHealthLoading, setMcpHealthLoading] = useState(false)
+  const [mcpHealthError, setMcpHealthError] = useState<string | null>(null)
   const pluginStates = usePluginStore((state) => state.pluginStates)
   const getPluginState = usePluginStore((state) => state.getPluginState)
   const setPluginEnabled = usePluginStore((state) => state.setPluginEnabled)
@@ -17,11 +22,49 @@ export function PluginTab() {
 
   const plugins = pluginRegistry.listPlugins()
   const mcpServerStatuses = listPluginMcpServerStatuses(pluginStates)
+  const mcpHealthByName = useMemo(() => {
+    return new Map(mcpHealthStatuses.map((status) => [status.name, status]))
+  }, [mcpHealthStatuses])
+
+  const refreshMcpHealth = useCallback(async () => {
+    setMcpHealthLoading(true)
+    setMcpHealthError(null)
+
+    try {
+      setMcpHealthStatuses(await listMcpHealthStatuses())
+    } catch (error) {
+      setMcpHealthError(error instanceof Error ? error.message : String(error))
+      setMcpHealthStatuses([])
+    } finally {
+      setMcpHealthLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    refreshMcpHealth()
+  }, [refreshMcpHealth])
 
   return (
     <div className="space-y-4">
       <div className="text-sm text-text-secondary">
         {t('plugins.description')}
+      </div>
+      <div className="flex flex-col gap-2 rounded-md border border-border-subtle bg-background-elevated px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-xs text-text-tertiary">
+          {mcpHealthError
+            ? t('plugins.mcpHealthError', { defaultValue: 'MCP status unavailable: {{error}}', error: mcpHealthError })
+            : t('plugins.mcpHealthSummary', { defaultValue: '{{count}} MCP runtime statuses loaded', count: mcpHealthStatuses.length })}
+        </div>
+        <button
+          type="button"
+          onClick={refreshMcpHealth}
+          disabled={mcpHealthLoading}
+          className="self-start rounded-md border border-border-subtle px-3 py-1.5 text-xs text-text-secondary hover:bg-background-hover disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
+        >
+          {mcpHealthLoading
+            ? t('plugins.refreshingMcpStatus', { defaultValue: 'Refreshing...' })
+            : t('plugins.refreshMcpStatus', { defaultValue: 'Refresh MCP status' })}
+        </button>
       </div>
 
       <div className="space-y-3">
@@ -127,15 +170,45 @@ export function PluginTab() {
                   </div>
                   {mcpServers.length > 0 && (
                     <div className="mt-3 space-y-1">
-                      {mcpServers.map((server) => (
-                        <div
-                          key={server.id}
-                          className={server.enabled ? 'text-xs text-text-secondary' : 'text-xs text-text-tertiary line-through'}
-                        >
-                          {server.id} · {server.transport}
-                          {!server.enabled && ` · ${t('plugins.disabled')}`}
-                        </div>
-                      ))}
+                      {mcpServers.map((server) => {
+                        const runtime = mcpHealthByName.get(server.id)
+                        return (
+                          <div key={server.id} className="rounded border border-border-subtle px-2 py-1.5">
+                            <div className="flex flex-wrap items-center gap-2 text-xs">
+                              <span className={server.enabled ? 'font-medium text-text-secondary' : 'font-medium text-text-tertiary line-through'}>
+                                {server.id}
+                              </span>
+                              <span className="text-text-tertiary">{server.transport}</span>
+                              {!server.enabled ? (
+                                <span className="rounded bg-background-hover px-1.5 py-0.5 text-[11px] text-text-tertiary">
+                                  {t('plugins.disabled')}
+                                </span>
+                              ) : runtime ? (
+                                <span
+                                  className={
+                                    runtime.connected
+                                      ? 'rounded bg-success/10 px-1.5 py-0.5 text-[11px] text-success'
+                                      : 'rounded bg-warning/10 px-1.5 py-0.5 text-[11px] text-warning'
+                                  }
+                                >
+                                  {runtime.connected
+                                    ? t('plugins.mcpConnected', { defaultValue: 'Connected' })
+                                    : t('plugins.mcpDisconnected', { defaultValue: 'Disconnected' })}
+                                </span>
+                              ) : (
+                                <span className="rounded bg-background-hover px-1.5 py-0.5 text-[11px] text-text-tertiary">
+                                  {t('plugins.mcpUnknown', { defaultValue: 'Not reported' })}
+                                </span>
+                              )}
+                            </div>
+                            {runtime?.status && (
+                              <div className="mt-1 text-[11px] text-text-tertiary">
+                                {runtime.status}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
                 </div>
