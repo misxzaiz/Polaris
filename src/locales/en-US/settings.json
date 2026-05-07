@@ -30,6 +30,11 @@
   },
   "plugins": {
     "description": "Manage Polaris built-in and discovered plugin UI entries and MCP capabilities. Changes are saved locally immediately.",
+    "discoverySummary": "{{count}} installed plugins discovered, {{issues}} diagnostics",
+    "discoveryError": "Plugin discovery failed: {{error}}",
+    "refreshDiscovery": "Refresh installed plugins",
+    "refreshingDiscovery": "Refreshing...",
+    "discoveryIssuesTitle": "Manifest diagnostics",
     "builtin": "Built-in",
     "userInstalled": "User installed",
     "projectInstalled": "Project plugin",

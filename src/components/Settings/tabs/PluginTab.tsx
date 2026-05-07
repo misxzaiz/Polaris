@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { listPluginMcpServerStatuses, pluginIconMap, pluginRegistry } from '@/plugin-system'
+import {
+  discoverInstalledPlugins,
+  type PluginDiscoveryIssue,
+} from '@/services/pluginDiscoveryService'
 import { listMcpHealthStatuses, type McpHealthStatus } from '@/services/mcpHealthService'
 import { usePluginStore } from '@/stores/pluginStore'
+import { useWorkspaceStore } from '@/stores/workspaceStore'
 
 function formatPermissionLabel(key: string, t: (key: string, options?: { defaultValue?: string }) => string): string {
   return t(`plugins.permissions.${key}`, { defaultValue: key })
@@ -13,6 +18,11 @@ export function PluginTab() {
   const [mcpHealthStatuses, setMcpHealthStatuses] = useState<McpHealthStatus[]>([])
   const [mcpHealthLoading, setMcpHealthLoading] = useState(false)
   const [mcpHealthError, setMcpHealthError] = useState<string | null>(null)
+  const [pluginDiscoveryLoading, setPluginDiscoveryLoading] = useState(false)
+  const [pluginDiscoveryError, setPluginDiscoveryError] = useState<string | null>(null)
+  const [pluginDiscoveryIssues, setPluginDiscoveryIssues] = useState<PluginDiscoveryIssue[]>([])
+  const [plugins, setPlugins] = useState(() => pluginRegistry.listPlugins())
+  const currentWorkspacePath = useWorkspaceStore((state) => state.getCurrentWorkspace()?.path)
   const pluginStates = usePluginStore((state) => state.pluginStates)
   const getPluginState = usePluginStore((state) => state.getPluginState)
   const setPluginEnabled = usePluginStore((state) => state.setPluginEnabled)
@@ -20,7 +30,7 @@ export function PluginTab() {
   const setPluginMcpEnabled = usePluginStore((state) => state.setPluginMcpEnabled)
   const resetPluginState = usePluginStore((state) => state.resetPluginState)
 
-  const plugins = pluginRegistry.listPlugins()
+  const discoveredPluginCount = plugins.filter((plugin) => !plugin.builtin).length
   const mcpServerStatuses = listPluginMcpServerStatuses(pluginStates)
   const mcpHealthByName = useMemo(() => {
     return new Map(mcpHealthStatuses.map((status) => [status.name, status]))
@@ -40,6 +50,23 @@ export function PluginTab() {
     }
   }, [])
 
+  const refreshInstalledPlugins = useCallback(async () => {
+    setPluginDiscoveryLoading(true)
+    setPluginDiscoveryError(null)
+
+    try {
+      const result = await discoverInstalledPlugins(currentWorkspacePath)
+      pluginRegistry.replaceInstalled(result.plugins)
+      setPluginDiscoveryIssues(result.errors)
+      setPlugins(pluginRegistry.listPlugins())
+    } catch (error) {
+      setPluginDiscoveryError(error instanceof Error ? error.message : String(error))
+      setPluginDiscoveryIssues([])
+    } finally {
+      setPluginDiscoveryLoading(false)
+    }
+  }, [currentWorkspacePath])
+
   useEffect(() => {
     refreshMcpHealth()
   }, [refreshMcpHealth])
@@ -49,6 +76,42 @@ export function PluginTab() {
       <div className="text-sm text-text-secondary">
         {t('plugins.description')}
       </div>
+      <div className="flex flex-col gap-2 rounded-md border border-border-subtle bg-background-elevated px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0 text-xs text-text-tertiary">
+          {pluginDiscoveryError
+            ? t('plugins.discoveryError', { defaultValue: 'Plugin discovery failed: {{error}}', error: pluginDiscoveryError })
+            : t('plugins.discoverySummary', {
+              defaultValue: '{{count}} installed plugins discovered, {{issues}} diagnostics',
+              count: discoveredPluginCount,
+              issues: pluginDiscoveryIssues.length,
+            })}
+        </div>
+        <button
+          type="button"
+          onClick={refreshInstalledPlugins}
+          disabled={pluginDiscoveryLoading}
+          className="self-start rounded-md border border-border-subtle px-3 py-1.5 text-xs text-text-secondary hover:bg-background-hover disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
+        >
+          {pluginDiscoveryLoading
+            ? t('plugins.refreshingDiscovery', { defaultValue: 'Refreshing...' })
+            : t('plugins.refreshDiscovery', { defaultValue: 'Refresh installed plugins' })}
+        </button>
+      </div>
+      {pluginDiscoveryIssues.length > 0 && (
+        <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2">
+          <div className="text-xs font-medium text-warning">
+            {t('plugins.discoveryIssuesTitle', { defaultValue: 'Manifest diagnostics' })}
+          </div>
+          <div className="mt-2 space-y-1">
+            {pluginDiscoveryIssues.map((issue, index) => (
+              <div key={`${issue.path}-${index}`} className="text-xs text-text-secondary">
+                <span className="font-medium">{issue.path}</span>
+                <span className="text-text-tertiary"> - {issue.error}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="flex flex-col gap-2 rounded-md border border-border-subtle bg-background-elevated px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-xs text-text-tertiary">
           {mcpHealthError

@@ -30,6 +30,11 @@
   },
   "plugins": {
     "description": "管理 Polaris 内置插件和已发现插件的界面入口与 MCP 能力。当前状态会立即保存到本地。",
+    "discoverySummary": "已发现 {{count}} 个安装插件，{{issues}} 条诊断",
+    "discoveryError": "插件发现失败：{{error}}",
+    "refreshDiscovery": "刷新安装插件",
+    "refreshingDiscovery": "刷新中...",
+    "discoveryIssuesTitle": "Manifest 诊断",
     "builtin": "内置",
     "userInstalled": "用户安装",
     "projectInstalled": "项目插件",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeDiscoveredPlugin } from './pluginDiscoveryService'
+import { normalizeDiscoveredPlugin, validateDiscoveredPlugin } from './pluginDiscoveryService'
 
 describe('pluginDiscoveryService', () => {
   it('normalizes discovered plugin metadata', () => {
@@ -66,5 +66,44 @@ describe('pluginDiscoveryService', () => {
       name: 'Invalid',
       version: '0.1.0',
     })).toBeNull()
+  })
+
+  it('reports invalid contribution diagnostics while keeping valid metadata', () => {
+    const result = validateDiscoveredPlugin({
+      id: 'example.partial',
+      name: 'Partial',
+      version: '0.1.0',
+      contributes: {
+        views: [
+          {
+            id: 'bad-view',
+            area: 'activityBar',
+            panelType: 'unknown',
+            icon: 'CheckSquare',
+            labelKey: 'example:view',
+          },
+        ],
+        mcpServers: [
+          {
+            id: 'bad-server',
+            transport: 'websocket',
+            command: 'bad-server',
+          },
+        ],
+      },
+      permissions: {},
+      source: {
+        kind: 'user',
+      },
+      installPath: 'C:\\Users\\sample\\plugins\\partial',
+    })
+
+    expect(result.plugin).toEqual(expect.objectContaining({ id: 'example.partial' }))
+    expect(result.plugin?.contributes.views).toEqual([])
+    expect(result.plugin?.contributes.mcpServers).toEqual([])
+    expect(result.errors).toEqual([
+      'contributes.views[0] is invalid and was ignored',
+      'contributes.mcpServers[0] is invalid and was ignored',
+    ])
   })
 })

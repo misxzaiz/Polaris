@@ -26,6 +26,16 @@ class PluginRegistry {
     }
   }
 
+  replaceInstalled(manifests: PolarisPluginManifest[]): void {
+    for (const [pluginId, manifest] of this.manifests) {
+      if (!manifest.builtin) {
+        this.manifests.delete(pluginId)
+      }
+    }
+
+    this.registerInstalled(manifests)
+  }
+
   listPlugins(): PolarisPluginManifest[] {
     return Array.from(this.manifests.values())
   }

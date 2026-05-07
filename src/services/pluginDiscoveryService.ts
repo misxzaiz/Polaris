@@ -9,12 +9,19 @@ import type {
   PolarisPluginManifest,
 } from '@/plugin-system/types'
 
-interface PluginDiscoveryResult {
+export interface PluginDiscoveryIssue {
+  path: string
+  error: string
+}
+
+interface BackendPluginDiscoveryResult {
+  plugins: unknown[]
+  errors: PluginDiscoveryIssue[]
+}
+
+export interface PluginDiscoveryResult {
   plugins: PolarisPluginManifest[]
-  errors: Array<{
-    path: string
-    error: string
-  }>
+  errors: PluginDiscoveryIssue[]
 }
 
 const VALID_VIEW_AREAS = new Set(['activityBar'])
@@ -65,11 +72,18 @@ function normalizeSource(value: unknown): PluginManifestSource | undefined {
   }
 }
 
-function normalizeViews(value: unknown): Omit<PluginViewContribution, 'pluginId'>[] {
+function normalizeViews(
+  value: unknown,
+  errors: string[]
+): Omit<PluginViewContribution, 'pluginId'>[] {
   if (!Array.isArray(value)) return []
 
-  return value.flatMap((item) => {
-    if (!isRecord(item)) return []
+  return value.flatMap((item, index) => {
+    if (!isRecord(item)) {
+      errors.push(`contributes.views[${index}] must be an object`)
+      return []
+    }
+
     const id = asString(item.id)
     const area = asString(item.area)
     const panelType = asString(item.panelType)
@@ -86,6 +100,7 @@ function normalizeViews(value: unknown): Omit<PluginViewContribution, 'pluginId'
       !VALID_PANEL_TYPES.has(panelType as PluginLeftPanelType) ||
       !VALID_PLUGIN_ICONS.has(icon as PluginIconId)
     ) {
+      errors.push(`contributes.views[${index}] is invalid and was ignored`)
       return []
     }
 
@@ -102,16 +117,24 @@ function normalizeViews(value: unknown): Omit<PluginViewContribution, 'pluginId'
   })
 }
 
-function normalizeMcpServers(value: unknown): Omit<PluginMcpServerContribution, 'pluginId'>[] {
+function normalizeMcpServers(
+  value: unknown,
+  errors: string[]
+): Omit<PluginMcpServerContribution, 'pluginId'>[] {
   if (!Array.isArray(value)) return []
 
-  return value.flatMap((item) => {
-    if (!isRecord(item)) return []
+  return value.flatMap((item, index) => {
+    if (!isRecord(item)) {
+      errors.push(`contributes.mcpServers[${index}] must be an object`)
+      return []
+    }
+
     const id = asString(item.id)
     const transport = asString(item.transport)
     const command = asString(item.command)
 
     if (!id || !transport || !command || !VALID_TRANSPORTS.has(transport)) {
+      errors.push(`contributes.mcpServers[${index}] is invalid and was ignored`)
       return []
     }
 
@@ -135,41 +158,76 @@ function normalizePermissions(value: unknown): PluginPermissionDeclaration {
 }
 
 export function normalizeDiscoveredPlugin(raw: unknown): PolarisPluginManifest | null {
-  if (!isRecord(raw)) return null
+  return validateDiscoveredPlugin(raw).plugin
+}
+
+export function validateDiscoveredPlugin(raw: unknown): {
+  plugin: PolarisPluginManifest | null
+  errors: string[]
+} {
+  const errors: string[] = []
+
+  if (!isRecord(raw)) {
+    return { plugin: null, errors: ['manifest must be an object'] }
+  }
 
   const id = asString(raw.id)
   const name = asString(raw.name)
   const version = asString(raw.version)
   const source = normalizeSource(raw.source)
 
-  if (!id || !name || !version || !source) return null
+  if (!id) errors.push('id is required and must be a string')
+  if (!name) errors.push('name is required and must be a string')
+  if (!version) errors.push('version is required and must be a string')
+  if (!source) errors.push('source.kind must be user or project')
+  if (!id || !name || !version || !source) {
+    return { plugin: null, errors }
+  }
 
   const contributes = isRecord(raw.contributes) ? raw.contributes : {}
 
   return {
-    id,
-    name,
-    version,
-    description: asString(raw.description),
-    builtin: false,
-    enabledByDefault: raw.enabledByDefault === true,
-    contributes: {
-      views: normalizeViews(contributes.views),
-      mcpServers: normalizeMcpServers(contributes.mcpServers),
+    plugin: {
+      id,
+      name,
+      version,
+      description: asString(raw.description),
+      builtin: false,
+      enabledByDefault: raw.enabledByDefault === true,
+      contributes: {
+        views: normalizeViews(contributes.views, errors),
+        mcpServers: normalizeMcpServers(contributes.mcpServers, errors),
+      },
+      permissions: normalizePermissions(raw.permissions),
+      source,
+      installPath: asString(raw.installPath),
     },
-    permissions: normalizePermissions(raw.permissions),
-    source,
-    installPath: asString(raw.installPath),
+    errors,
   }
 }
 
 export async function discoverInstalledPlugins(workspacePath?: string): Promise<PluginDiscoveryResult> {
-  const result = await invoke<PluginDiscoveryResult>('plugin_discover', { workspacePath })
+  const result = await invoke<BackendPluginDiscoveryResult>('plugin_discover', { workspacePath })
+  const normalized = Array.isArray(result.plugins)
+    ? result.plugins.map((raw) => ({
+      raw,
+      validation: validateDiscoveredPlugin(raw),
+    }))
+    : []
+
+  const backendErrors = Array.isArray(result.errors) ? result.errors : []
+  const validationErrors = normalized.flatMap(({ raw, validation }) => {
+    if (validation.errors.length === 0) return []
+    const path = isRecord(raw)
+      ? asString(raw.installPath) ?? asString(raw.id) ?? '<unknown plugin>'
+      : '<unknown plugin>'
+    return validation.errors.map((error) => ({ path, error }))
+  })
 
   return {
-    plugins: result.plugins
-      .map(normalizeDiscoveredPlugin)
+    plugins: normalized
+      .map(({ validation }) => validation.plugin)
       .filter((plugin): plugin is PolarisPluginManifest => plugin !== null),
-    errors: Array.isArray(result.errors) ? result.errors : [],
+    errors: backendErrors.concat(validationErrors),
   }
 }
