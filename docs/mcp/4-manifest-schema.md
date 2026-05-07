@@ -21,6 +21,13 @@ interface PolarisPluginManifest {
     mcpServers?: PluginMcpServerContribution[]
   }
   permissions: PluginPermissionDeclaration
+  origin?: PluginOriginMetadata
+}
+
+interface PluginOriginMetadata {
+  repository?: string
+  homepage?: string
+  updateUrl?: string
 }
 ```
 
@@ -30,6 +37,7 @@ interface PolarisPluginManifest {
 - `builtin` 为 `true` 的插件必须在前端内置 registry 中注册。
 - 如果内置插件贡献 MCP server，后端必须在内置 MCP registry 中声明相同 `plugin_id` 和 server name。
 - 外部安装插件可以贡献受控宿主面板，例如 demo 插件使用 `panelType: 'demoPlugin'`；当前不执行插件目录中的动态前端代码。
+- `origin.repository` / `origin.homepage` 用于设置页展示插件来源；`origin.updateUrl` 指向可读取的远端或本地 manifest，用于检查是否存在新版本。检查更新只读取 manifest 并比较版本，不执行远端代码、不自动覆盖安装目录。
 
 ## MCP Server Contribution
 
@@ -60,3 +68,4 @@ interface PluginMcpServerContribution {
 
 - 前端：`src/plugin-system/mcp.test.ts` 校验 `polaris.todo` manifest 声明。
 - 后端：`src-tauri/src/services/mcp_config_service.rs` 中 `builtin_plugin_mcp_manifest_matches_registry` 校验 Rust mirror 与 registry。
+- 后端：`plugin_validate_manifest` 校验本地外部 manifest；`plugin_check_update` 读取 `origin.updateUrl` 并返回 `currentVersion` / `latestVersion` / `updateAvailable`。

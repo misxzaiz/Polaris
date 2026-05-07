@@ -9,7 +9,7 @@ use crate::error::{AppError, Result};
 use crate::models::plugin::{
     Marketplace, PluginDiscoveryError, PluginDiscoveryResult, PluginInstallLocations,
     PluginListResult, PluginManifestFile, PluginManifestSource, PluginManifestSourceKind,
-    PluginManifestValidationResult, PluginOperationResult, PluginScope,
+    PluginManifestValidationResult, PluginOperationResult, PluginScope, PluginUpdateCheckResult,
 };
 
 #[cfg(windows)]
@@ -514,6 +514,78 @@ impl PluginService {
         })
     }
 
+    pub async fn check_local_plugin_update(install_path: &Path) -> PluginUpdateCheckResult {
+        let manifest_path = match Self::find_manifest_path(install_path) {
+            Some(path) => path,
+            None => {
+                return PluginUpdateCheckResult {
+                    plugin_id: String::new(),
+                    current_version: String::new(),
+                    latest_version: None,
+                    update_available: false,
+                    checked: false,
+                    source_url: None,
+                    error: Some("插件目录缺少 plugin.json / .codex-plugin/plugin.json".to_string()),
+                };
+            }
+        };
+
+        let manifest = match Self::read_manifest(&manifest_path) {
+            Ok(manifest) => manifest,
+            Err(error) => {
+                return PluginUpdateCheckResult {
+                    plugin_id: String::new(),
+                    current_version: String::new(),
+                    latest_version: None,
+                    update_available: false,
+                    checked: false,
+                    source_url: None,
+                    error: Some(error.to_string()),
+                };
+            }
+        };
+
+        let Some(update_url) = manifest.origin.update_url.clone() else {
+            return PluginUpdateCheckResult {
+                plugin_id: manifest.id,
+                current_version: manifest.version,
+                latest_version: None,
+                update_available: false,
+                checked: false,
+                source_url: None,
+                error: Some("插件 manifest 未声明 origin.updateUrl，无法检查更新".to_string()),
+            };
+        };
+
+        let latest_manifest = match Self::read_update_manifest(&update_url).await {
+            Ok(manifest) => manifest,
+            Err(error) => {
+                return PluginUpdateCheckResult {
+                    plugin_id: manifest.id,
+                    current_version: manifest.version,
+                    latest_version: None,
+                    update_available: false,
+                    checked: false,
+                    source_url: Some(update_url),
+                    error: Some(error.to_string()),
+                };
+            }
+        };
+
+        let latest_version = latest_manifest.version;
+        let update_available = Self::is_version_newer(&latest_version, &manifest.version);
+
+        PluginUpdateCheckResult {
+            plugin_id: manifest.id,
+            current_version: manifest.version,
+            latest_version: Some(latest_version),
+            update_available,
+            checked: true,
+            source_url: Some(update_url),
+            error: None,
+        }
+    }
+
     fn scan_plugin_root(
         root: &Path,
         source: PluginManifestSource,
@@ -581,6 +653,25 @@ impl PluginService {
         let content = std::fs::read_to_string(path)?;
         serde_json::from_str::<PluginManifestFile>(&content)
             .map_err(|error| AppError::ConfigError(format!("插件 manifest 格式错误: {}", error)))
+    }
+
+    async fn read_update_manifest(update_url: &str) -> Result<PluginManifestFile> {
+        if update_url.starts_with("http://") || update_url.starts_with("https://") {
+            let content = reqwest::Client::new()
+                .get(update_url)
+                .send()
+                .await
+                .map_err(|error| AppError::ProcessError(format!("获取插件更新 manifest 失败: {}", error)))?
+                .error_for_status()
+                .map_err(|error| AppError::ProcessError(format!("获取插件更新 manifest 失败: {}", error)))?
+                .text()
+                .await
+                .map_err(|error| AppError::ProcessError(format!("读取插件更新 manifest 失败: {}", error)))?;
+            serde_json::from_str::<PluginManifestFile>(&content)
+                .map_err(|error| AppError::ConfigError(format!("插件更新 manifest 格式错误: {}", error)))
+        } else {
+            Self::read_manifest(Path::new(update_url))
+        }
     }
 
     fn validate_manifest_file_path(path: &Path) -> PluginManifestValidationResult {
@@ -674,6 +765,27 @@ impl PluginService {
             .collect::<Vec<_>>()
             .join("; ");
         format!("插件 manifest 校验失败: {}", diagnostics)
+    }
+
+    fn is_version_newer(latest: &str, current: &str) -> bool {
+        let latest_parts = Self::version_parts(latest);
+        let current_parts = Self::version_parts(current);
+        for index in 0..latest_parts.len().max(current_parts.len()) {
+            let latest_value = latest_parts.get(index).copied().unwrap_or(0);
+            let current_value = current_parts.get(index).copied().unwrap_or(0);
+            if latest_value != current_value {
+                return latest_value > current_value;
+            }
+        }
+        latest.trim() > current.trim()
+    }
+
+    fn version_parts(version: &str) -> Vec<u64> {
+        version
+            .split(|ch: char| !ch.is_ascii_digit())
+            .filter(|part| !part.is_empty())
+            .filter_map(|part| part.parse::<u64>().ok())
+            .collect()
     }
 
     fn safe_plugin_dir_name(plugin_id: &str) -> String {
@@ -941,6 +1053,45 @@ mod tests {
             PluginService::uninstall_local_plugin(app_config.path(), None, &install_path).unwrap();
         assert!(uninstalled.success);
         assert!(!install_path.exists());
+    }
+
+    #[tokio::test]
+    async fn checks_local_plugin_update_manifest() {
+        let plugin = tempfile::tempdir().unwrap();
+        let latest = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            latest.path(),
+            r#"{
+              "id": "example.update",
+              "name": "Example Update",
+              "version": "0.2.0"
+            }"#,
+        )
+        .unwrap();
+        std::fs::write(
+            plugin.path().join("plugin.json"),
+            format!(
+                r#"{{
+                  "id": "example.update",
+                  "name": "Example Update",
+                  "version": "0.1.0",
+                  "origin": {{
+                    "repository": "https://example.test/example.update",
+                    "updateUrl": "{}"
+                  }}
+                }}"#,
+                latest.path().to_string_lossy().replace('\\', "\\\\")
+            ),
+        )
+        .unwrap();
+
+        let result = PluginService::check_local_plugin_update(plugin.path()).await;
+
+        assert!(result.checked);
+        assert!(result.update_available);
+        assert_eq!(result.plugin_id, "example.update");
+        assert_eq!(result.current_version, "0.1.0");
+        assert_eq!(result.latest_version.as_deref(), Some("0.2.0"));
     }
 
     #[test]

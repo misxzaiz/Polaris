@@ -48,6 +48,16 @@
     "permissionsTitle": "Permissions",
     "noPermissions": "No extra permissions",
     "reset": "Reset",
+    "checkUpdate": "Check update",
+    "checkingUpdate": "Checking...",
+    "updateAvailable": "Update available: {{current}} -> {{latest}}",
+    "noUpdateAvailable": "No update found. Current version: {{version}}",
+    "updateUnavailable": "Update check unavailable",
+    "origin": {
+      "repository": "Repository",
+      "homepage": "Homepage",
+      "updateUrl": "Update source"
+    },
     "permissions": {
       "workspaceRead": "Read workspace",
       "workspaceWrite": "Write workspace",

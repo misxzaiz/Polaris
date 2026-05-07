@@ -68,8 +68,28 @@ pub struct DiscoveredPluginManifest {
     pub contributes: PluginManifestContributes,
     #[serde(default)]
     pub permissions: PluginManifestPermissions,
+    #[serde(default, skip_serializing_if = "PluginOriginMetadata::is_empty")]
+    pub origin: PluginOriginMetadata,
     pub source: PluginManifestSource,
     pub install_path: String,
+}
+
+/// 插件来源链接元数据
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginOriginMetadata {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repository: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub homepage: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub update_url: Option<String>,
+}
+
+impl PluginOriginMetadata {
+    pub fn is_empty(&self) -> bool {
+        self.repository.is_none() && self.homepage.is_none() && self.update_url.is_none()
+    }
 }
 
 /// 插件来源
@@ -157,6 +177,8 @@ pub(crate) struct PluginManifestFile {
     pub contributes: PluginManifestContributes,
     #[serde(default)]
     pub permissions: PluginManifestPermissions,
+    #[serde(default)]
+    pub origin: PluginOriginMetadata,
 }
 
 impl PluginManifestFile {
@@ -174,10 +196,26 @@ impl PluginManifestFile {
             enabled_by_default: self.enabled_by_default,
             contributes: self.contributes,
             permissions: self.permissions,
+            origin: self.origin,
             source,
             install_path: install_path.to_string_lossy().to_string(),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginUpdateCheckResult {
+    pub plugin_id: String,
+    pub current_version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_version: Option<String>,
+    pub update_available: bool,
+    pub checked: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 /// 已安装插件

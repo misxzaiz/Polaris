@@ -286,6 +286,7 @@ pub async fn handle_ipc_bridge(
         "plugin_validate_manifest" => dispatch_plugin_validate_manifest(&args),
         "plugin_install_local" => dispatch_plugin_install_local(&state, &args),
         "plugin_uninstall_local" => dispatch_plugin_uninstall_local(&state, &args),
+        "plugin_check_update" => dispatch_plugin_check_update(&args).await,
         "plugin_state_load" => dispatch_plugin_state_load(&state),
         "plugin_state_save" => dispatch_plugin_state_save(&state, &args),
 
@@ -1486,6 +1487,18 @@ fn dispatch_plugin_uninstall_local(state: &AppState, args: &Value) -> Result<Jso
         workspace_path.as_deref(),
         Path::new(&install_path),
     ))
+}
+
+async fn dispatch_plugin_check_update(args: &Value) -> Result<Json<Value>, WebError> {
+    let install_path = require_string(args, "installPath")?;
+
+    Ok(Json(serde_json::to_value(
+        crate::services::plugin_service::PluginService::check_local_plugin_update(
+            Path::new(&install_path),
+        )
+        .await,
+    )
+    .unwrap_or_default()))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

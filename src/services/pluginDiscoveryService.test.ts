@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  checkPluginUpdate,
   normalizeDiscoveredPlugin,
   validateDiscoveredPlugin,
   validatePluginManifest,
@@ -46,6 +47,10 @@ describe('pluginDiscoveryService', () => {
         workspaceRead: true,
         unsupported: 'ignored',
       },
+      origin: {
+        repository: 'https://example.test/example.todo',
+        updateUrl: 'https://example.test/example.todo/plugin.json',
+      },
       source: {
         kind: 'project',
         workspacePath: 'D:\\space\\project',
@@ -61,6 +66,10 @@ describe('pluginDiscoveryService', () => {
         source: {
           kind: 'project',
           workspacePath: 'D:\\space\\project',
+        },
+        origin: {
+          repository: 'https://example.test/example.todo',
+          updateUrl: 'https://example.test/example.todo/plugin.json',
         },
       })
     )
@@ -171,6 +180,29 @@ describe('pluginDiscoveryService', () => {
     })
     expect(invokeMock).toHaveBeenCalledWith('plugin_validate_manifest', {
       sourcePath: 'D:\\plugins\\demo',
+    })
+  })
+
+  it('calls the backend update check command', async () => {
+    invokeMock.mockResolvedValueOnce({
+      pluginId: 'example.demo-mcp',
+      currentVersion: '0.1.0',
+      latestVersion: '0.2.0',
+      updateAvailable: true,
+      checked: true,
+      sourceUrl: 'https://example.test/plugin.json',
+    })
+
+    await expect(checkPluginUpdate('D:\\plugins\\demo')).resolves.toEqual({
+      pluginId: 'example.demo-mcp',
+      currentVersion: '0.1.0',
+      latestVersion: '0.2.0',
+      updateAvailable: true,
+      checked: true,
+      sourceUrl: 'https://example.test/plugin.json',
+    })
+    expect(invokeMock).toHaveBeenCalledWith('plugin_check_update', {
+      installPath: 'D:\\plugins\\demo',
     })
   })
 })

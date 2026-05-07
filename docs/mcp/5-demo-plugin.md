@@ -27,6 +27,7 @@ examples/plugins/demo-mcp-plugin/
 - 插件列表出现 `example.demo-mcp`。
 - 插件来源显示为用户安装或项目插件。
 - 插件安装路径可见。
+- 插件来源链接显示 demo 的 repository/homepage 元数据。
 - ActivityBar 出现 `Demo MCP` 入口。
 - 点击入口后左侧面板显示 demo 插件可视化面板。
 - 面板内 Echo 功能可本地回显输入文本。
@@ -49,4 +50,5 @@ examples/plugins/demo-mcp-plugin/
 - 支持 `{{pluginDir}}`、`{{workspacePath}}`、`{{appConfigDir}}` 占位符。
 - 外部 server name 与内置 server 冲突时跳过外部 server。
 - 插件状态关闭或 MCP surface 关闭时不会注入运行时配置。
-- 尚未实现远程来源、依赖安装、更新检查和权限确认 UX。
+- 已提供 `origin.updateUrl` 驱动的更新检查入口；demo 样例未声明可用更新源。
+- 尚未实现远程来源安装、依赖安装、自动更新覆盖安装和权限确认 UX。

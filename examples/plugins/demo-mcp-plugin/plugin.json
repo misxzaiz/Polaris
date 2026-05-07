@@ -4,6 +4,10 @@
   "version": "0.1.0",
   "description": "A demo external MCP plugin for Polaris install and discovery testing.",
   "enabledByDefault": true,
+  "origin": {
+    "repository": "examples/plugins/demo-mcp-plugin",
+    "homepage": "docs/mcp/5-demo-plugin.md"
+  },
   "contributes": {
     "views": [
       {

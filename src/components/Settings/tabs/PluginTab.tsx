@@ -3,12 +3,14 @@ import { useTranslation } from 'react-i18next'
 import { FolderOpen, PackagePlus, RefreshCw, Trash2 } from 'lucide-react'
 import { listPluginMcpServerStatuses, pluginIconMap, pluginRegistry } from '@/plugin-system'
 import {
+  checkPluginUpdate,
   discoverInstalledPlugins,
   getPluginInstallLocations,
   installLocalPlugin,
   uninstallLocalPlugin,
   type PluginDiscoveryIssue,
   type PluginInstallLocations,
+  type PluginUpdateCheckResult,
 } from '@/services/pluginDiscoveryService'
 import { listMcpHealthStatuses, type McpHealthStatus } from '@/services/mcpHealthService'
 import { openInDefaultApp } from '@/services/tauri/windowService'
@@ -30,6 +32,8 @@ export function PluginTab() {
   const [pluginInstallLocations, setPluginInstallLocations] = useState<PluginInstallLocations | null>(null)
   const [pluginOperationLoading, setPluginOperationLoading] = useState(false)
   const [pluginOperationMessage, setPluginOperationMessage] = useState<string | null>(null)
+  const [pluginUpdateChecks, setPluginUpdateChecks] = useState<Record<string, PluginUpdateCheckResult>>({})
+  const [pluginUpdateLoadingId, setPluginUpdateLoadingId] = useState<string | null>(null)
   const [pluginInstallScope, setPluginInstallScope] = useState<'user' | 'project'>('user')
   const [plugins, setPlugins] = useState(() => pluginRegistry.listPlugins())
   const currentWorkspacePath = useWorkspaceStore((state) => state.getCurrentWorkspace()?.path)
@@ -152,6 +156,25 @@ export function PluginTab() {
       setPluginOperationLoading(false)
     }
   }, [currentWorkspacePath, refreshInstallLocations, refreshInstalledPlugins, resetPluginState, t])
+
+  const handleCheckPluginUpdate = useCallback(async (pluginId: string, installPath?: string) => {
+    if (!installPath) return
+
+    setPluginOperationMessage(null)
+    setPluginUpdateLoadingId(pluginId)
+
+    try {
+      const result = await checkPluginUpdate(installPath)
+      setPluginUpdateChecks((checks) => ({ ...checks, [pluginId]: result }))
+      if (result.error) {
+        setPluginOperationMessage(result.error)
+      }
+    } catch (error) {
+      setPluginOperationMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setPluginUpdateLoadingId(null)
+    }
+  }, [])
 
   useEffect(() => {
     refreshMcpHealth()
@@ -277,6 +300,9 @@ export function PluginTab() {
           const mcpServers = mcpServerStatuses.filter((server) => server.pluginId === plugin.id)
           const permissionEntries = Object.entries(plugin.permissions).filter(([, enabled]) => enabled)
           const isCorePlugin = plugin.id === 'polaris.core'
+          const updateCheck = pluginUpdateChecks[plugin.id]
+          const originEntries = Object.entries(plugin.origin ?? {})
+            .filter(([, value]) => typeof value === 'string' && value.length > 0)
 
           return (
             <section
@@ -311,6 +337,18 @@ export function PluginTab() {
                   )}
                   {plugin.description && (
                     <p className="mt-2 text-sm text-text-secondary">{plugin.description}</p>
+                  )}
+                  {originEntries.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {originEntries.map(([key, value]) => (
+                        <div key={key} className="truncate text-xs text-text-tertiary">
+                          <span className="text-text-secondary">
+                            {t(`plugins.origin.${key}`, { defaultValue: key })}
+                          </span>
+                          <span> {value}</span>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
 
@@ -459,6 +497,19 @@ export function PluginTab() {
                 {!plugin.builtin && (
                   <button
                     type="button"
+                    onClick={() => handleCheckPluginUpdate(plugin.id, plugin.installPath)}
+                    disabled={pluginUpdateLoadingId === plugin.id || !plugin.installPath}
+                    className="inline-flex items-center gap-1.5 self-start rounded-md border border-border-subtle px-3 py-1.5 text-xs text-text-secondary hover:bg-background-hover disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
+                  >
+                    <RefreshCw size={13} />
+                    {pluginUpdateLoadingId === plugin.id
+                      ? t('plugins.checkingUpdate', { defaultValue: 'Checking...' })
+                      : t('plugins.checkUpdate', { defaultValue: 'Check update' })}
+                  </button>
+                )}
+                {!plugin.builtin && (
+                  <button
+                    type="button"
                     onClick={() => handleUninstallLocalPlugin(plugin.id, plugin.installPath)}
                     disabled={pluginOperationLoading || !plugin.installPath}
                     className="inline-flex items-center gap-1.5 self-start rounded-md border border-danger/30 px-3 py-1.5 text-xs text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
@@ -468,6 +519,22 @@ export function PluginTab() {
                   </button>
                 )}
               </div>
+              {updateCheck && (
+                <div className="mt-3 rounded-md border border-border-subtle bg-background-elevated px-3 py-2 text-xs text-text-tertiary">
+                  {updateCheck.checked
+                    ? updateCheck.updateAvailable
+                      ? t('plugins.updateAvailable', {
+                        defaultValue: 'Update available: {{current}} -> {{latest}}',
+                        current: updateCheck.currentVersion,
+                        latest: updateCheck.latestVersion ?? '?',
+                      })
+                      : t('plugins.noUpdateAvailable', {
+                        defaultValue: 'No update found. Current version: {{version}}',
+                        version: updateCheck.currentVersion,
+                      })
+                    : updateCheck.error ?? t('plugins.updateUnavailable', { defaultValue: 'Update check unavailable' })}
+                </div>
+              )}
             </section>
           )
         })}

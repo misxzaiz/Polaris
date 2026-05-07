@@ -2,6 +2,7 @@ import { invoke } from './transport'
 import type {
   PluginIconId,
   PluginLeftPanelType,
+  PluginOriginMetadata,
   PluginManifestSource,
   PluginMcpServerContribution,
   PluginPermissionDeclaration,
@@ -36,6 +37,16 @@ export interface PluginManifestValidationResult {
   manifestPath?: string
   pluginId?: string
   errors: PluginDiscoveryIssue[]
+}
+
+export interface PluginUpdateCheckResult {
+  pluginId: string
+  currentVersion: string
+  latestVersion?: string
+  updateAvailable: boolean
+  checked: boolean
+  sourceUrl?: string
+  error?: string
 }
 
 export interface PluginDiscoveryResult {
@@ -177,6 +188,16 @@ function normalizePermissions(value: unknown): PluginPermissionDeclaration {
   ) as PluginPermissionDeclaration
 }
 
+function normalizeOrigin(value: unknown): PluginOriginMetadata | undefined {
+  if (!isRecord(value)) return undefined
+  const origin = {
+    repository: asString(value.repository),
+    homepage: asString(value.homepage),
+    updateUrl: asString(value.updateUrl),
+  }
+  return origin.repository || origin.homepage || origin.updateUrl ? origin : undefined
+}
+
 export function normalizeDiscoveredPlugin(raw: unknown): PolarisPluginManifest | null {
   return validateDiscoveredPlugin(raw).plugin
 }
@@ -219,6 +240,7 @@ export function validateDiscoveredPlugin(raw: unknown): {
         mcpServers: normalizeMcpServers(contributes.mcpServers, errors),
       },
       permissions: normalizePermissions(raw.permissions),
+      origin: normalizeOrigin(raw.origin),
       source,
       installPath: asString(raw.installPath),
     },
@@ -284,4 +306,8 @@ export async function uninstallLocalPlugin(
     installPath,
     workspacePath,
   })
+}
+
+export async function checkPluginUpdate(installPath: string): Promise<PluginUpdateCheckResult> {
+  return invoke<PluginUpdateCheckResult>('plugin_check_update', { installPath })
 }

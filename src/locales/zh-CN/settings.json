@@ -48,6 +48,16 @@
     "permissionsTitle": "权限",
     "noPermissions": "无额外权限",
     "reset": "重置",
+    "checkUpdate": "检查更新",
+    "checkingUpdate": "检查中...",
+    "updateAvailable": "发现更新：{{current}} -> {{latest}}",
+    "noUpdateAvailable": "未发现更新，当前版本：{{version}}",
+    "updateUnavailable": "无法检查更新",
+    "origin": {
+      "repository": "仓库",
+      "homepage": "主页",
+      "updateUrl": "更新源"
+    },
     "permissions": {
       "workspaceRead": "读取工作区",
       "workspaceWrite": "写入工作区",

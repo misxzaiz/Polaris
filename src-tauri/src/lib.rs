@@ -734,6 +734,7 @@ pub fn run() {
             commands::plugin::plugin_install_locations,
             commands::plugin::plugin_validate_manifest,
             commands::plugin::plugin_install_local,
+            commands::plugin::plugin_check_update,
             commands::plugin::plugin_install,
             commands::plugin::plugin_enable,
             commands::plugin::plugin_disable,

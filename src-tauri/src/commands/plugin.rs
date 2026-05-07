@@ -9,6 +9,7 @@ use crate::error::Result;
 use crate::models::plugin::{
     Marketplace, PluginDiscoveryResult, PluginListResult, PluginOperationResult,
     PluginInstallLocations, PluginManifestSourceKind, PluginManifestValidationResult, PluginScope,
+    PluginUpdateCheckResult,
 };
 use crate::services::plugin_service::PluginService;
 use crate::state::AppState;
@@ -124,6 +125,14 @@ pub async fn plugin_uninstall_local(
         workspace_path,
         std::path::Path::new(&install_path),
     )
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn plugin_check_update(
+    install_path: String,
+) -> Result<PluginUpdateCheckResult> {
+    Ok(PluginService::check_local_plugin_update(std::path::Path::new(&install_path)).await)
 }
 
 /// 安装插件

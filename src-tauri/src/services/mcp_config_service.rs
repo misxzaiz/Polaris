@@ -809,6 +809,7 @@ mod tests {
     use crate::models::plugin::{
         DiscoveredPluginManifest, PluginManifestContributes, PluginManifestPermissions,
         PluginManifestSource, PluginManifestSourceKind, PluginMcpServerManifestContribution,
+        PluginOriginMetadata,
     };
     use crate::models::plugin_state::PluginState;
 
@@ -834,6 +835,7 @@ mod tests {
                 }],
             },
             permissions: PluginManifestPermissions::default(),
+            origin: PluginOriginMetadata::default(),
             source: PluginManifestSource {
                 kind: PluginManifestSourceKind::User,
                 workspace_path: None,

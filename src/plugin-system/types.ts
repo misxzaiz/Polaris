@@ -55,6 +55,12 @@ export interface PluginManifestSource {
   workspacePath?: string
 }
 
+export interface PluginOriginMetadata {
+  repository?: string
+  homepage?: string
+  updateUrl?: string
+}
+
 export interface PolarisPluginManifest {
   id: PluginId
   name: string
@@ -67,6 +73,7 @@ export interface PolarisPluginManifest {
     mcpServers?: Omit<PluginMcpServerContribution, 'pluginId'>[]
   }
   permissions: PluginPermissionDeclaration
+  origin?: PluginOriginMetadata
   source?: PluginManifestSource
   installPath?: string
 }
