@@ -29,8 +29,10 @@
     "saveFailed": "Save failed"
   },
   "plugins": {
-    "description": "Manage Polaris built-in plugin UI entries and MCP capabilities. Changes are saved locally immediately.",
+    "description": "Manage Polaris built-in and discovered plugin UI entries and MCP capabilities. Changes are saved locally immediately.",
     "builtin": "Built-in",
+    "userInstalled": "User installed",
+    "projectInstalled": "Project plugin",
     "enablePlugin": "Enable plugin",
     "disabled": "Disabled",
     "coreLocked": "The core plugin owns base panel entries and cannot be disabled in this version.",

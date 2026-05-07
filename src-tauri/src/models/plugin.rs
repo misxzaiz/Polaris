@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 /// 插件列表结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -12,6 +13,149 @@ pub struct PluginListResult {
     pub installed: Vec<InstalledPlugin>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub available: Option<Vec<AvailablePlugin>>,
+}
+
+/// 插件发现结果
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginDiscoveryResult {
+    pub plugins: Vec<DiscoveredPluginManifest>,
+    pub errors: Vec<PluginDiscoveryError>,
+}
+
+/// 插件发现错误
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginDiscoveryError {
+    pub path: String,
+    pub error: String,
+}
+
+/// 已发现插件 manifest
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoveredPluginManifest {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub builtin: bool,
+    pub enabled_by_default: bool,
+    #[serde(default)]
+    pub contributes: PluginManifestContributes,
+    #[serde(default)]
+    pub permissions: PluginManifestPermissions,
+    pub source: PluginManifestSource,
+    pub install_path: String,
+}
+
+/// 插件来源
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginManifestSource {
+    pub kind: PluginManifestSourceKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_path: Option<String>,
+}
+
+/// 插件来源类型
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum PluginManifestSourceKind {
+    User,
+    Project,
+}
+
+/// 插件 manifest contributes
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginManifestContributes {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub views: Vec<PluginViewContribution>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mcp_servers: Vec<PluginMcpServerManifestContribution>,
+}
+
+/// 插件 UI contribution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginViewContribution {
+    pub id: String,
+    pub area: String,
+    pub panel_type: String,
+    pub icon: String,
+    pub label_key: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label_default: Option<String>,
+    pub order: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub badge: Option<String>,
+}
+
+/// 插件 MCP server contribution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginMcpServerManifestContribution {
+    pub id: String,
+    pub transport: String,
+    pub command: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args_template: Vec<String>,
+}
+
+/// 插件权限声明
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginManifestPermissions {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_read: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_write: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app_config_read: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app_config_write: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ai_tool_access: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PluginManifestFile {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub description: Option<String>,
+    #[serde(default)]
+    pub enabled_by_default: bool,
+    #[serde(default)]
+    pub contributes: PluginManifestContributes,
+    #[serde(default)]
+    pub permissions: PluginManifestPermissions,
+}
+
+impl PluginManifestFile {
+    pub(crate) fn into_discovered(
+        self,
+        source: PluginManifestSource,
+        install_path: PathBuf,
+    ) -> DiscoveredPluginManifest {
+        DiscoveredPluginManifest {
+            id: self.id,
+            name: self.name,
+            version: self.version,
+            description: self.description,
+            builtin: false,
+            enabled_by_default: self.enabled_by_default,
+            contributes: self.contributes,
+            permissions: self.permissions,
+            source,
+            install_path: install_path.to_string_lossy().to_string(),
+        }
+    }
 }
 
 /// 已安装插件

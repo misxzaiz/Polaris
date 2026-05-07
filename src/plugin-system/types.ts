@@ -48,6 +48,13 @@ export interface PluginPermissionDeclaration {
   aiToolAccess?: boolean
 }
 
+export type PluginSourceKind = 'builtin' | 'user' | 'project'
+
+export interface PluginManifestSource {
+  kind: PluginSourceKind
+  workspacePath?: string
+}
+
 export interface PolarisPluginManifest {
   id: PluginId
   name: string
@@ -60,4 +67,6 @@ export interface PolarisPluginManifest {
     mcpServers?: Omit<PluginMcpServerContribution, 'pluginId'>[]
   }
   permissions: PluginPermissionDeclaration
+  source?: PluginManifestSource
+  installPath?: string
 }

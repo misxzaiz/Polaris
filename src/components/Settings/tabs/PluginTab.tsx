@@ -92,8 +92,20 @@ export function PluginTab() {
                         {t('plugins.builtin')}
                       </span>
                     )}
+                    {!plugin.builtin && plugin.source && (
+                      <span className="rounded bg-background-hover px-1.5 py-0.5 text-[11px] text-text-tertiary">
+                        {plugin.source.kind === 'project'
+                          ? t('plugins.projectInstalled', { defaultValue: 'Project' })
+                          : t('plugins.userInstalled', { defaultValue: 'User installed' })}
+                      </span>
+                    )}
                   </div>
                   <div className="mt-1 text-xs text-text-tertiary">{plugin.id}</div>
+                  {!plugin.builtin && plugin.installPath && (
+                    <div className="mt-1 truncate text-xs text-text-tertiary">
+                      {plugin.installPath}
+                    </div>
+                  )}
                   {plugin.description && (
                     <p className="mt-2 text-sm text-text-secondary">{plugin.description}</p>
                   )}

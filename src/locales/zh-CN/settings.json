@@ -29,8 +29,10 @@
     "saveFailed": "保存失败"
   },
   "plugins": {
-    "description": "管理 Polaris 内置插件的界面入口和 MCP 能力。当前状态会立即保存到本地。",
+    "description": "管理 Polaris 内置插件和已发现插件的界面入口与 MCP 能力。当前状态会立即保存到本地。",
     "builtin": "内置",
+    "userInstalled": "用户安装",
+    "projectInstalled": "项目插件",
     "enablePlugin": "启用插件",
     "disabled": "已禁用",
     "coreLocked": "核心插件承载基础面板入口，当前版本不可禁用。",

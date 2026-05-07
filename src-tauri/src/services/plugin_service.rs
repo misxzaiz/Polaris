@@ -2,12 +2,14 @@
 //!
 //! 封装 Claude CLI 的 plugin 命令调用
 
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::error::{AppError, Result};
 use crate::models::plugin::{
-    Marketplace, PluginListResult, PluginOperationResult,
-    PluginScope,
+    Marketplace, PluginDiscoveryError, PluginDiscoveryResult, PluginListResult,
+    PluginManifestFile, PluginManifestSource, PluginManifestSourceKind,
+    PluginOperationResult, PluginScope,
 };
 
 #[cfg(windows)]
@@ -269,5 +271,202 @@ impl PluginService {
             }
         }
         Ok(())
+    }
+
+    /// 扫描 Polaris 插件目录，返回已安装插件 manifest。
+    ///
+    /// 当前仅发现 metadata，不执行插件代码。
+    pub fn discover_installed_plugins(
+        app_config_dir: &Path,
+        workspace_path: Option<&Path>,
+    ) -> PluginDiscoveryResult {
+        let mut result = PluginDiscoveryResult::default();
+
+        Self::scan_plugin_root(
+            &app_config_dir.join("plugins"),
+            PluginManifestSource {
+                kind: PluginManifestSourceKind::User,
+                workspace_path: None,
+            },
+            &mut result,
+        );
+
+        if let Some(workspace_path) = workspace_path {
+            let workspace = workspace_path.to_string_lossy().to_string();
+            for root in [
+                workspace_path.join(".polaris").join("plugins"),
+                workspace_path.join(".codex").join("plugins"),
+            ] {
+                Self::scan_plugin_root(
+                    &root,
+                    PluginManifestSource {
+                        kind: PluginManifestSourceKind::Project,
+                        workspace_path: Some(workspace.clone()),
+                    },
+                    &mut result,
+                );
+            }
+        }
+
+        result
+    }
+
+    fn scan_plugin_root(
+        root: &Path,
+        source: PluginManifestSource,
+        result: &mut PluginDiscoveryResult,
+    ) {
+        let entries = match std::fs::read_dir(root) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+            Err(error) => {
+                result.errors.push(PluginDiscoveryError {
+                    path: root.to_string_lossy().to_string(),
+                    error: error.to_string(),
+                });
+                return;
+            }
+        };
+
+        for entry in entries {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(error) => {
+                    result.errors.push(PluginDiscoveryError {
+                        path: root.to_string_lossy().to_string(),
+                        error: error.to_string(),
+                    });
+                    continue;
+                }
+            };
+
+            let plugin_dir = entry.path();
+            if !plugin_dir.is_dir() {
+                continue;
+            }
+
+            if let Some(manifest_path) = Self::find_manifest_path(&plugin_dir) {
+                match Self::read_manifest(&manifest_path) {
+                    Ok(manifest) => result.plugins.push(manifest.into_discovered(
+                        source.clone(),
+                        plugin_dir,
+                    )),
+                    Err(error) => result.errors.push(PluginDiscoveryError {
+                        path: manifest_path.to_string_lossy().to_string(),
+                        error: error.to_string(),
+                    }),
+                }
+            }
+        }
+    }
+
+    fn find_manifest_path(plugin_dir: &Path) -> Option<PathBuf> {
+        [
+            plugin_dir.join("plugin.json"),
+            plugin_dir.join(".codex-plugin").join("plugin.json"),
+        ]
+        .into_iter()
+        .find(|path| path.is_file())
+    }
+
+    fn read_manifest(path: &Path) -> Result<PluginManifestFile> {
+        let content = std::fs::read_to_string(path)?;
+        serde_json::from_str::<PluginManifestFile>(&content)
+            .map_err(|error| AppError::ConfigError(format!("插件 manifest 格式错误: {}", error)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn discovers_user_and_project_plugin_manifests() {
+        let app_config = tempfile::tempdir().unwrap();
+        let user_plugin = app_config.path().join("plugins").join("sample-user");
+        std::fs::create_dir_all(&user_plugin).unwrap();
+        std::fs::write(
+            user_plugin.join("plugin.json"),
+            r#"{
+              "id": "example.user",
+              "name": "Example User",
+              "version": "0.1.0",
+              "enabledByDefault": true,
+              "contributes": {
+                "mcpServers": [
+                  {
+                    "id": "example-user",
+                    "transport": "stdio",
+                    "command": "example-user"
+                  }
+                ]
+              },
+              "permissions": { "workspaceRead": true }
+            }"#,
+        )
+        .unwrap();
+
+        let workspace = tempfile::tempdir().unwrap();
+        let project_plugin = workspace
+            .path()
+            .join(".polaris")
+            .join("plugins")
+            .join("sample-project")
+            .join(".codex-plugin");
+        std::fs::create_dir_all(&project_plugin).unwrap();
+        std::fs::write(
+            project_plugin.join("plugin.json"),
+            r#"{
+              "id": "example.project",
+              "name": "Example Project",
+              "version": "0.1.0",
+              "permissions": {}
+            }"#,
+        )
+        .unwrap();
+
+        let result = PluginService::discover_installed_plugins(
+            app_config.path(),
+            Some(workspace.path()),
+        );
+
+        assert!(result.errors.is_empty());
+        assert_eq!(result.plugins.len(), 2);
+        assert!(result.plugins.iter().any(|plugin| {
+            plugin.id == "example.user"
+                && plugin.source.kind == PluginManifestSourceKind::User
+                && plugin.enabled_by_default
+        }));
+        assert!(result.plugins.iter().any(|plugin| {
+            plugin.id == "example.project"
+                && plugin.source.kind == PluginManifestSourceKind::Project
+                && !plugin.enabled_by_default
+        }));
+    }
+
+    #[test]
+    fn reports_invalid_manifest_without_stopping_scan() {
+        let app_config = tempfile::tempdir().unwrap();
+        let invalid_plugin = app_config.path().join("plugins").join("invalid");
+        let valid_plugin = app_config.path().join("plugins").join("valid");
+        std::fs::create_dir_all(&invalid_plugin).unwrap();
+        std::fs::create_dir_all(&valid_plugin).unwrap();
+        std::fs::write(invalid_plugin.join("plugin.json"), "{").unwrap();
+        std::fs::write(
+            valid_plugin.join("plugin.json"),
+            r#"{
+              "id": "example.valid",
+              "name": "Example Valid",
+              "version": "0.1.0"
+            }"#,
+        )
+        .unwrap();
+
+        let result = PluginService::discover_installed_plugins(app_config.path(), None);
+
+        assert_eq!(result.plugins.len(), 1);
+        assert_eq!(result.plugins[0].id, "example.valid");
+        assert_eq!(result.errors.len(), 1);
+        assert!(result.errors[0].path.ends_with("plugin.json"));
     }
 }

@@ -730,6 +730,7 @@ pub fn run() {
             commands::knowledge::knowledge_list_domains,
             // Plugin 相关
             commands::plugin::plugin_list,
+            commands::plugin::plugin_discover,
             commands::plugin::plugin_install,
             commands::plugin::plugin_enable,
             commands::plugin::plugin_disable,

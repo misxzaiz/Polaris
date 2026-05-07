@@ -22,9 +22,11 @@ import { sessionStoreManager } from '../stores/conversationStore';
 import { bootstrapEngines, type EngineId } from '../core/engine-bootstrap';
 import { bootstrapTools } from '../core/tool-bootstrap';
 import { voiceNotificationService } from '../services/voiceNotificationService';
+import { discoverInstalledPlugins } from '../services/pluginDiscoveryService';
 import { disconnect as disconnectTransport } from '../services/transport';
 import { createLogger } from '../utils/logger';
 import { currentMode } from '../services/transport';
+import { pluginRegistry } from '../plugin-system';
 
 const log = createLogger('AppInit');
 
@@ -68,6 +70,17 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
           log.error('Auto-create workspace failed', err as Error);
         }
       }
+    }
+
+    const currentWorkspacePath = useWorkspaceStore.getState().getCurrentWorkspace()?.path;
+    try {
+      const result = await discoverInstalledPlugins(currentWorkspacePath);
+      pluginRegistry.registerInstalled(result.plugins);
+      if (result.errors.length > 0) {
+        log.warn('Plugin discovery completed with errors', { errors: result.errors });
+      }
+    } catch (err) {
+      log.warn('Plugin discovery failed', { error: String(err) });
     }
 
     if (signal?.aborted) return;

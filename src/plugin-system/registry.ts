@@ -12,6 +12,20 @@ class PluginRegistry {
     this.manifests.set(manifest.id, manifest)
   }
 
+  registerInstalled(manifests: PolarisPluginManifest[]): void {
+    for (const manifest of manifests) {
+      const existing = this.manifests.get(manifest.id)
+      if (existing?.builtin) {
+        continue
+      }
+
+      this.manifests.set(manifest.id, {
+        ...manifest,
+        builtin: false,
+      })
+    }
+  }
+
   listPlugins(): PolarisPluginManifest[] {
     return Array.from(this.manifests.values())
   }
@@ -43,4 +57,3 @@ class PluginRegistry {
 }
 
 export const pluginRegistry = new PluginRegistry()
-

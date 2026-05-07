@@ -7,7 +7,8 @@ use tauri::State;
 
 use crate::error::Result;
 use crate::models::plugin::{
-    Marketplace, PluginListResult, PluginOperationResult, PluginScope,
+    Marketplace, PluginDiscoveryResult, PluginListResult, PluginOperationResult,
+    PluginScope,
 };
 use crate::services::plugin_service::PluginService;
 use crate::state::AppState;
@@ -33,6 +34,24 @@ pub async fn plugin_list(
     let service = PluginService::new(claude_path);
 
     service.list_plugins(available)
+}
+
+/// 发现已安装 Polaris 插件
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn plugin_discover(
+    state: State<'_, AppState>,
+    workspace_path: Option<String>,
+) -> Result<PluginDiscoveryResult> {
+    let config_dir = state.app_config_dir.get().cloned().or_else(|| {
+        dirs::config_dir().map(|dir| dir.join("claude-code-pro"))
+    }).ok_or_else(|| crate::error::AppError::ConfigError("无法获取配置目录".to_string()))?;
+    let workspace_path = workspace_path.as_deref().map(std::path::Path::new);
+
+    Ok(PluginService::discover_installed_plugins(
+        &config_dir,
+        workspace_path,
+    ))
 }
 
 /// 安装插件
