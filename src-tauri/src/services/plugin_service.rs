@@ -9,7 +9,7 @@ use crate::error::{AppError, Result};
 use crate::models::plugin::{
     Marketplace, PluginDiscoveryError, PluginDiscoveryResult, PluginInstallLocations,
     PluginListResult, PluginManifestFile, PluginManifestSource, PluginManifestSourceKind,
-    PluginOperationResult, PluginScope,
+    PluginManifestValidationResult, PluginOperationResult, PluginScope,
 };
 
 #[cfg(windows)]
@@ -17,6 +17,35 @@ use std::os::windows::process::CommandExt;
 
 #[cfg(windows)]
 use crate::utils::CREATE_NO_WINDOW;
+
+const VALID_PANEL_TYPES: &[&str] = &[
+    "files",
+    "git",
+    "translate",
+    "scheduler",
+    "requirement",
+    "terminal",
+    "developer",
+    "integration",
+    "knowledge",
+    "todo",
+    "problems",
+    "demoPlugin",
+];
+const VALID_PLUGIN_ICONS: &[&str] = &[
+    "Files",
+    "GitPullRequest",
+    "CheckSquare",
+    "Languages",
+    "Clock",
+    "ClipboardList",
+    "Terminal",
+    "Code2",
+    "Bot",
+    "BookOpen",
+    "AlertCircle",
+];
+const VALID_TRANSPORTS: &[&str] = &["stdio", "http"];
 
 /// Plugin 服务
 pub struct PluginService {
@@ -346,6 +375,29 @@ impl PluginService {
         }
     }
 
+    pub fn validate_plugin_manifest(source_path: &Path) -> PluginManifestValidationResult {
+        let manifest_path = if source_path.is_file() {
+            Some(source_path.to_path_buf())
+        } else if source_path.is_dir() {
+            Self::find_manifest_path(source_path)
+        } else {
+            None
+        };
+
+        match manifest_path {
+            Some(path) => Self::validate_manifest_file_path(&path),
+            None => {
+                let mut result = PluginManifestValidationResult::default();
+                Self::push_validation_error(
+                    &mut result,
+                    &source_path.to_string_lossy(),
+                    "插件路径不存在，或目录内缺少 plugin.json / .codex-plugin/plugin.json",
+                );
+                result
+            }
+        }
+    }
+
     pub fn install_local_plugin(
         app_config_dir: &Path,
         workspace_path: Option<&Path>,
@@ -372,6 +424,14 @@ impl PluginService {
                 "插件目录必须包含 plugin.json 或 .codex-plugin/plugin.json".to_string(),
             )
         })?;
+        let validation = Self::validate_manifest_file_path(&manifest_path);
+        if !validation.valid {
+            return Ok(PluginOperationResult {
+                success: false,
+                message: None,
+                error: Some(Self::format_validation_errors(&validation)),
+            });
+        }
         let manifest = Self::read_manifest(&manifest_path)?;
 
         let install_root = match scope {
@@ -489,6 +549,12 @@ impl PluginService {
             }
 
             if let Some(manifest_path) = Self::find_manifest_path(&plugin_dir) {
+                let validation = Self::validate_manifest_file_path(&manifest_path);
+                if !validation.valid {
+                    result.errors.extend(validation.errors);
+                    continue;
+                }
+
                 match Self::read_manifest(&manifest_path) {
                     Ok(manifest) => result
                         .plugins
@@ -515,6 +581,99 @@ impl PluginService {
         let content = std::fs::read_to_string(path)?;
         serde_json::from_str::<PluginManifestFile>(&content)
             .map_err(|error| AppError::ConfigError(format!("插件 manifest 格式错误: {}", error)))
+    }
+
+    fn validate_manifest_file_path(path: &Path) -> PluginManifestValidationResult {
+        let path_text = path.to_string_lossy().to_string();
+        let mut result = PluginManifestValidationResult {
+            manifest_path: Some(path_text.clone()),
+            ..Default::default()
+        };
+
+        let content = match std::fs::read_to_string(path) {
+            Ok(content) => content,
+            Err(error) => {
+                Self::push_validation_error(&mut result, &path_text, format!("无法读取插件 manifest: {}", error));
+                return result;
+            }
+        };
+        let manifest = match serde_json::from_str::<PluginManifestFile>(&content) {
+            Ok(manifest) => manifest,
+            Err(error) => {
+                Self::push_validation_error(&mut result, &path_text, format!("插件 manifest 格式错误: {}", error));
+                return result;
+            }
+        };
+
+        result.plugin_id = Some(manifest.id.clone());
+        if manifest.id.trim().is_empty() {
+            Self::push_validation_error(&mut result, &path_text, "id is required and must be a non-empty string");
+        }
+        if manifest.name.trim().is_empty() {
+            Self::push_validation_error(&mut result, &path_text, "name is required and must be a non-empty string");
+        }
+        if manifest.version.trim().is_empty() {
+            Self::push_validation_error(&mut result, &path_text, "version is required and must be a non-empty string");
+        }
+
+        for (index, view) in manifest.contributes.views.iter().enumerate() {
+            let prefix = format!("contributes.views[{}]", index);
+            if view.id.trim().is_empty() {
+                Self::push_validation_error(&mut result, &path_text, format!("{}.id is required", prefix));
+            }
+            if view.area != "activityBar" {
+                Self::push_validation_error(&mut result, &path_text, format!("{}.area has unsupported value: {}", prefix, view.area));
+            }
+            if !VALID_PANEL_TYPES.contains(&view.panel_type.as_str()) {
+                Self::push_validation_error(&mut result, &path_text, format!("{}.panelType has unsupported value: {}", prefix, view.panel_type));
+            }
+            if !VALID_PLUGIN_ICONS.contains(&view.icon.as_str()) {
+                Self::push_validation_error(&mut result, &path_text, format!("{}.icon has unsupported value: {}", prefix, view.icon));
+            }
+            if view.label_key.trim().is_empty() {
+                Self::push_validation_error(&mut result, &path_text, format!("{}.labelKey is required", prefix));
+            }
+            if view.badge.as_deref().is_some_and(|badge| badge != "problems") {
+                Self::push_validation_error(&mut result, &path_text, format!("{}.badge must be problems", prefix));
+            }
+        }
+
+        for (index, server) in manifest.contributes.mcp_servers.iter().enumerate() {
+            let prefix = format!("contributes.mcpServers[{}]", index);
+            if server.id.trim().is_empty() {
+                Self::push_validation_error(&mut result, &path_text, format!("{}.id is required", prefix));
+            }
+            if !VALID_TRANSPORTS.contains(&server.transport.as_str()) {
+                Self::push_validation_error(&mut result, &path_text, format!("{}.transport has unsupported value: {}", prefix, server.transport));
+            }
+            if server.command.trim().is_empty() {
+                Self::push_validation_error(&mut result, &path_text, format!("{}.command is required", prefix));
+            }
+        }
+
+        result.valid = result.errors.is_empty();
+        result
+    }
+
+    fn push_validation_error(
+        result: &mut PluginManifestValidationResult,
+        path: &str,
+        error: impl Into<String>,
+    ) {
+        result.errors.push(PluginDiscoveryError {
+            path: path.to_string(),
+            error: error.into(),
+        });
+    }
+
+    fn format_validation_errors(result: &PluginManifestValidationResult) -> String {
+        let diagnostics = result
+            .errors
+            .iter()
+            .map(|issue| format!("{}: {}", issue.path, issue.error))
+            .collect::<Vec<_>>()
+            .join("; ");
+        format!("插件 manifest 校验失败: {}", diagnostics)
     }
 
     fn safe_plugin_dir_name(plugin_id: &str) -> String {
@@ -645,6 +804,111 @@ mod tests {
         assert_eq!(result.plugins[0].id, "example.valid");
         assert_eq!(result.errors.len(), 1);
         assert!(result.errors[0].path.ends_with("plugin.json"));
+    }
+
+    #[test]
+    fn validates_plugin_manifest_schema() {
+        let plugin = tempfile::tempdir().unwrap();
+        std::fs::write(
+            plugin.path().join("plugin.json"),
+            r#"{
+              "id": "example.demo-mcp",
+              "name": "Demo MCP Plugin",
+              "version": "0.1.0",
+              "enabledByDefault": true,
+              "contributes": {
+                "views": [
+                  {
+                    "id": "example.demo-mcp.panel",
+                    "area": "activityBar",
+                    "panelType": "demoPlugin",
+                    "icon": "Bot",
+                    "labelKey": "plugins.demoMcpPanel",
+                    "labelDefault": "Demo MCP",
+                    "order": 85
+                  }
+                ],
+                "mcpServers": [
+                  {
+                    "id": "example-demo-mcp",
+                    "transport": "stdio",
+                    "command": "node",
+                    "argsTemplate": ["{{pluginDir}}/mcp/demo-mcp-server.js"]
+                  }
+                ]
+              },
+              "permissions": {
+                "workspaceRead": true,
+                "aiToolAccess": true
+              }
+            }"#,
+        )
+        .unwrap();
+
+        let result = PluginService::validate_plugin_manifest(plugin.path());
+
+        assert!(result.valid);
+        assert_eq!(result.plugin_id.as_deref(), Some("example.demo-mcp"));
+        assert!(result.errors.is_empty());
+    }
+
+    #[test]
+    fn rejects_invalid_manifest_schema_before_install() {
+        let app_config = tempfile::tempdir().unwrap();
+        let plugin = tempfile::tempdir().unwrap();
+        std::fs::write(
+            plugin.path().join("plugin.json"),
+            r#"{
+              "id": "example.invalid",
+              "name": "Invalid Plugin",
+              "version": "0.1.0",
+              "contributes": {
+                "views": [
+                  {
+                    "id": "bad-view",
+                    "area": "activityBar",
+                    "panelType": "unknown",
+                    "icon": "Bot",
+                    "labelKey": "bad:view",
+                    "order": 1
+                  }
+                ],
+                "mcpServers": [
+                  {
+                    "id": "bad-server",
+                    "transport": "websocket",
+                    "command": "bad-server"
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+
+        let validation = PluginService::validate_plugin_manifest(plugin.path());
+        assert!(!validation.valid);
+        assert!(validation
+            .errors
+            .iter()
+            .any(|issue| issue.error.contains("contributes.views[0].panelType")));
+        assert!(validation
+            .errors
+            .iter()
+            .any(|issue| issue.error.contains("contributes.mcpServers[0].transport")));
+
+        let installed = PluginService::install_local_plugin(
+            app_config.path(),
+            None,
+            plugin.path(),
+            PluginManifestSourceKind::User,
+        )
+        .unwrap();
+        assert!(!installed.success);
+        assert!(installed
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("插件 manifest 校验失败"));
     }
 
     #[test]

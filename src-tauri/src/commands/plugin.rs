@@ -8,7 +8,7 @@ use tauri::State;
 use crate::error::Result;
 use crate::models::plugin::{
     Marketplace, PluginDiscoveryResult, PluginListResult, PluginOperationResult,
-    PluginInstallLocations, PluginManifestSourceKind, PluginScope,
+    PluginInstallLocations, PluginManifestSourceKind, PluginManifestValidationResult, PluginScope,
 };
 use crate::services::plugin_service::PluginService;
 use crate::state::AppState;
@@ -78,6 +78,14 @@ pub async fn plugin_install_locations(
     let workspace_path = workspace_path.as_deref().map(std::path::Path::new);
 
     Ok(PluginService::install_locations(&config_dir, workspace_path))
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn plugin_validate_manifest(
+    source_path: String,
+) -> Result<PluginManifestValidationResult> {
+    Ok(PluginService::validate_plugin_manifest(std::path::Path::new(&source_path)))
 }
 
 /// 从本地目录安装 Polaris 插件

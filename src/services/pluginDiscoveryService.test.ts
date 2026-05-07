@@ -1,7 +1,21 @@
-import { describe, expect, it } from 'vitest'
-import { normalizeDiscoveredPlugin, validateDiscoveredPlugin } from './pluginDiscoveryService'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  normalizeDiscoveredPlugin,
+  validateDiscoveredPlugin,
+  validatePluginManifest,
+} from './pluginDiscoveryService'
+
+const invokeMock = vi.hoisted(() => vi.fn())
+
+vi.mock('./transport', () => ({
+  invoke: invokeMock,
+}))
 
 describe('pluginDiscoveryService', () => {
+  beforeEach(() => {
+    invokeMock.mockReset()
+  })
+
   it('normalizes discovered plugin metadata', () => {
     const plugin = normalizeDiscoveredPlugin({
       id: 'example.todo',
@@ -139,5 +153,24 @@ describe('pluginDiscoveryService', () => {
         icon: 'Bot',
       }),
     ])
+  })
+
+  it('calls the backend manifest validation command', async () => {
+    invokeMock.mockResolvedValueOnce({
+      valid: true,
+      manifestPath: 'D:\\plugins\\demo\\plugin.json',
+      pluginId: 'example.demo-mcp',
+      errors: [],
+    })
+
+    await expect(validatePluginManifest('D:\\plugins\\demo')).resolves.toEqual({
+      valid: true,
+      manifestPath: 'D:\\plugins\\demo\\plugin.json',
+      pluginId: 'example.demo-mcp',
+      errors: [],
+    })
+    expect(invokeMock).toHaveBeenCalledWith('plugin_validate_manifest', {
+      sourcePath: 'D:\\plugins\\demo',
+    })
   })
 })

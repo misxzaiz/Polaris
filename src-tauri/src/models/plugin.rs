@@ -42,6 +42,17 @@ pub struct PluginDiscoveryError {
     pub error: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginManifestValidationResult {
+    pub valid: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manifest_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plugin_id: Option<String>,
+    pub errors: Vec<PluginDiscoveryError>,
+}
+
 /// 已发现插件 manifest
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -283,6 +283,7 @@ pub async fn handle_ipc_bridge(
         "plugin_list" => dispatch_plugin_list(&state, &args),
         "plugin_discover" => dispatch_plugin_discover(&state, &args),
         "plugin_install_locations" => dispatch_plugin_install_locations(&state, &args),
+        "plugin_validate_manifest" => dispatch_plugin_validate_manifest(&args),
         "plugin_install_local" => dispatch_plugin_install_local(&state, &args),
         "plugin_uninstall_local" => dispatch_plugin_uninstall_local(&state, &args),
         "plugin_state_load" => dispatch_plugin_state_load(&state),
@@ -1443,6 +1444,16 @@ fn dispatch_plugin_install_locations(state: &AppState, args: &Value) -> Result<J
         crate::services::plugin_service::PluginService::install_locations(
             &config_dir,
             workspace_path.as_deref(),
+        ),
+    )
+    .unwrap_or_default()))
+}
+
+fn dispatch_plugin_validate_manifest(args: &Value) -> Result<Json<Value>, WebError> {
+    let source_path = require_string(args, "sourcePath")?;
+    Ok(Json(serde_json::to_value(
+        crate::services::plugin_service::PluginService::validate_plugin_manifest(
+            Path::new(&source_path),
         ),
     )
     .unwrap_or_default()))

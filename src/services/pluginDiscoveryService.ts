@@ -31,6 +31,13 @@ export interface PluginOperationResult {
   error?: string
 }
 
+export interface PluginManifestValidationResult {
+  valid: boolean
+  manifestPath?: string
+  pluginId?: string
+  errors: PluginDiscoveryIssue[]
+}
+
 export interface PluginDiscoveryResult {
   plugins: PolarisPluginManifest[]
   errors: PluginDiscoveryIssue[]
@@ -249,6 +256,12 @@ export async function getPluginInstallLocations(
   workspacePath?: string
 ): Promise<PluginInstallLocations> {
   return invoke<PluginInstallLocations>('plugin_install_locations', { workspacePath })
+}
+
+export async function validatePluginManifest(
+  sourcePath: string
+): Promise<PluginManifestValidationResult> {
+  return invoke<PluginManifestValidationResult>('plugin_validate_manifest', { sourcePath })
 }
 
 export async function installLocalPlugin(
