@@ -20,42 +20,73 @@ fn mcp_exe_path(prefix: &str) -> String {
     format!("{}{}", prefix, EXE_SUFFIX)
 }
 
+#[cfg(test)]
 fn todo_bundle_path() -> String {
     mcp_exe_path("bin/polaris-todo-mcp")
 }
+#[cfg(test)]
 fn todo_fallback_path() -> String {
     mcp_exe_path("polaris-todo-mcp")
 }
+#[cfg(test)]
 fn todo_dev_path() -> String {
     mcp_exe_path("src-tauri/target/debug/polaris-todo-mcp")
 }
-fn requirements_bundle_path() -> String {
-    mcp_exe_path("bin/polaris-requirements-mcp")
+
+#[derive(Debug, Clone, Copy)]
+struct BuiltinMcpServerDefinition {
+    server_name: &'static str,
+    bin_name: &'static str,
+    bundled_path_prefix: &'static str,
+    fallback_path_prefix: &'static str,
+    dev_path_prefix: &'static str,
+    env_var_name: &'static str,
+    requires_config_dir: bool,
+    required: bool,
 }
-fn requirements_fallback_path() -> String {
-    mcp_exe_path("polaris-requirements-mcp")
-}
-fn requirements_dev_path() -> String {
-    mcp_exe_path("src-tauri/target/debug/polaris-requirements-mcp")
-}
-fn scheduler_bundle_path() -> String {
-    mcp_exe_path("bin/polaris-scheduler-mcp")
-}
-fn scheduler_fallback_path() -> String {
-    mcp_exe_path("polaris-scheduler-mcp")
-}
-fn scheduler_dev_path() -> String {
-    mcp_exe_path("src-tauri/target/debug/polaris-scheduler-mcp")
-}
-fn knowledge_bundle_path() -> String {
-    mcp_exe_path("bin/polaris-knowledge-mcp")
-}
-fn knowledge_fallback_path() -> String {
-    mcp_exe_path("polaris-knowledge-mcp")
-}
-fn knowledge_dev_path() -> String {
-    mcp_exe_path("src-tauri/target/debug/polaris-knowledge-mcp")
-}
+
+const BUILTIN_MCP_SERVER_DEFINITIONS: &[BuiltinMcpServerDefinition] = &[
+    BuiltinMcpServerDefinition {
+        server_name: TODO_MCP_SERVER_NAME,
+        bin_name: TODO_MCP_BIN_NAME,
+        bundled_path_prefix: "bin/polaris-todo-mcp",
+        fallback_path_prefix: "polaris-todo-mcp",
+        dev_path_prefix: "src-tauri/target/debug/polaris-todo-mcp",
+        env_var_name: "POLARIS_TODO_MCP_PATH",
+        requires_config_dir: true,
+        required: true,
+    },
+    BuiltinMcpServerDefinition {
+        server_name: REQUIREMENTS_MCP_SERVER_NAME,
+        bin_name: REQUIREMENTS_MCP_BIN_NAME,
+        bundled_path_prefix: "bin/polaris-requirements-mcp",
+        fallback_path_prefix: "polaris-requirements-mcp",
+        dev_path_prefix: "src-tauri/target/debug/polaris-requirements-mcp",
+        env_var_name: "POLARIS_REQUIREMENTS_MCP_PATH",
+        requires_config_dir: true,
+        required: false,
+    },
+    BuiltinMcpServerDefinition {
+        server_name: SCHEDULER_MCP_SERVER_NAME,
+        bin_name: SCHEDULER_MCP_BIN_NAME,
+        bundled_path_prefix: "bin/polaris-scheduler-mcp",
+        fallback_path_prefix: "polaris-scheduler-mcp",
+        dev_path_prefix: "src-tauri/target/debug/polaris-scheduler-mcp",
+        env_var_name: "POLARIS_SCHEDULER_MCP_PATH",
+        requires_config_dir: true,
+        required: false,
+    },
+    BuiltinMcpServerDefinition {
+        server_name: KNOWLEDGE_MCP_SERVER_NAME,
+        bin_name: KNOWLEDGE_MCP_BIN_NAME,
+        bundled_path_prefix: "bin/polaris-knowledge-mcp",
+        fallback_path_prefix: "polaris-knowledge-mcp",
+        dev_path_prefix: "src-tauri/target/debug/polaris-knowledge-mcp",
+        env_var_name: "POLARIS_KNOWLEDGE_MCP_PATH",
+        requires_config_dir: true,
+        required: false,
+    },
+];
 
 #[derive(Debug, Clone, serde::Serialize)]
 struct ClaudeMcpServerConfig {
@@ -73,6 +104,7 @@ struct ClaudeMcpConfig {
 struct ResolvedMcpBinary {
     server_name: &'static str,
     executable_path: PathBuf,
+    requires_config_dir: bool,
 }
 
 pub struct WorkspaceMcpConfigService {
@@ -91,12 +123,14 @@ impl WorkspaceMcpConfigService {
         let mut binaries = vec![ResolvedMcpBinary {
             server_name: TODO_MCP_SERVER_NAME,
             executable_path: todo_executable_path,
+            requires_config_dir: true,
         }];
 
         if let Some(path) = requirements_executable_path {
             binaries.push(ResolvedMcpBinary {
                 server_name: REQUIREMENTS_MCP_SERVER_NAME,
                 executable_path: path,
+                requires_config_dir: true,
             });
         }
 
@@ -104,6 +138,7 @@ impl WorkspaceMcpConfigService {
             binaries.push(ResolvedMcpBinary {
                 server_name: SCHEDULER_MCP_SERVER_NAME,
                 executable_path: path,
+                requires_config_dir: true,
             });
         }
 
@@ -111,6 +146,7 @@ impl WorkspaceMcpConfigService {
             binaries.push(ResolvedMcpBinary {
                 server_name: KNOWLEDGE_MCP_SERVER_NAME,
                 executable_path: path,
+                requires_config_dir: true,
             });
         }
 
@@ -129,53 +165,26 @@ impl WorkspaceMcpConfigService {
         resource_dir: Option<PathBuf>,
         app_root: PathBuf,
     ) -> Result<Self> {
-        let todo_executable_path = resolve_mcp_executable_path(
-            resource_dir.clone(),
-            app_root.clone(),
-            TODO_MCP_BIN_NAME,
-            &todo_bundle_path(),
-            &todo_fallback_path(),
-            &todo_dev_path(),
-            "POLARIS_TODO_MCP_PATH",
-        )?;
+        let mut binaries = Vec::new();
 
-        let requirements_executable_path = resolve_optional_mcp_executable_path(
-            resource_dir.clone(),
-            app_root.clone(),
-            REQUIREMENTS_MCP_BIN_NAME,
-            &requirements_bundle_path(),
-            &requirements_fallback_path(),
-            &requirements_dev_path(),
-            "POLARIS_REQUIREMENTS_MCP_PATH",
-        );
+        for definition in BUILTIN_MCP_SERVER_DEFINITIONS {
+            match resolve_builtin_mcp_binary(*definition, resource_dir.clone(), app_root.clone()) {
+                Ok(binary) => binaries.push(binary),
+                Err(error) if definition.required => return Err(error),
+                Err(error) => {
+                    tracing::warn!(
+                        "[MCP] 璺宠繃鍙€?MCP server {}: {}",
+                        definition.bin_name,
+                        error.to_message()
+                    );
+                }
+            }
+        }
 
-        let scheduler_executable_path = resolve_optional_mcp_executable_path(
-            resource_dir.clone(),
-            app_root.clone(),
-            SCHEDULER_MCP_BIN_NAME,
-            &scheduler_bundle_path(),
-            &scheduler_fallback_path(),
-            &scheduler_dev_path(),
-            "POLARIS_SCHEDULER_MCP_PATH",
-        );
-
-        let knowledge_executable_path = resolve_optional_mcp_executable_path(
-            resource_dir,
-            app_root,
-            KNOWLEDGE_MCP_BIN_NAME,
-            &knowledge_bundle_path(),
-            &knowledge_fallback_path(),
-            &knowledge_dev_path(),
-            "POLARIS_KNOWLEDGE_MCP_PATH",
-        );
-
-        Ok(Self::new(
+        Ok(Self {
+            binaries,
             config_dir,
-            todo_executable_path,
-            requirements_executable_path,
-            scheduler_executable_path,
-            knowledge_executable_path,
-        ))
+        })
     }
 
     pub fn prepare_workspace_config(&self, workspace_path: &str) -> Result<PathBuf> {
@@ -217,13 +226,7 @@ impl WorkspaceMcpConfigService {
                 )));
             }
 
-            // Todo MCP, Requirements MCP, Scheduler MCP, and Knowledge MCP need both config_dir and workspace_path
-            // Other MCPs only need workspace_path
-            let args = if binary.server_name == TODO_MCP_SERVER_NAME
-                || binary.server_name == REQUIREMENTS_MCP_SERVER_NAME
-                || binary.server_name == SCHEDULER_MCP_SERVER_NAME
-                || binary.server_name == KNOWLEDGE_MCP_SERVER_NAME
-            {
+            let args = if binary.requires_config_dir {
                 vec![
                     strip_unc_prefix(&self.config_dir.to_string_lossy()),
                     normalized_workspace.to_string(),
@@ -280,11 +283,7 @@ impl WorkspaceMcpConfigService {
                 )));
             }
 
-            let server_args = if binary.server_name == TODO_MCP_SERVER_NAME
-                || binary.server_name == REQUIREMENTS_MCP_SERVER_NAME
-                || binary.server_name == SCHEDULER_MCP_SERVER_NAME
-                || binary.server_name == KNOWLEDGE_MCP_SERVER_NAME
-            {
+            let server_args = if binary.requires_config_dir {
                 vec![
                     strip_unc_prefix(&self.config_dir.to_string_lossy()),
                     normalized_workspace.to_string(),
@@ -329,6 +328,29 @@ fn strip_unc_prefix(s: &str) -> String {
     }
 }
 
+fn resolve_builtin_mcp_binary(
+    definition: BuiltinMcpServerDefinition,
+    resource_dir: Option<PathBuf>,
+    app_root: PathBuf,
+) -> Result<ResolvedMcpBinary> {
+    let executable_path = resolve_mcp_executable_path(
+        resource_dir,
+        app_root,
+        definition.bin_name,
+        &mcp_exe_path(definition.bundled_path_prefix),
+        &mcp_exe_path(definition.fallback_path_prefix),
+        &mcp_exe_path(definition.dev_path_prefix),
+        definition.env_var_name,
+    )?;
+
+    Ok(ResolvedMcpBinary {
+        server_name: definition.server_name,
+        executable_path,
+        requires_config_dir: definition.requires_config_dir,
+    })
+}
+
+#[allow(dead_code)]
 fn resolve_optional_mcp_executable_path(
     resource_dir: Option<PathBuf>,
     app_root: PathBuf,
