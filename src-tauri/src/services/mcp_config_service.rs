@@ -179,6 +179,14 @@ impl WorkspaceMcpConfigService {
     }
 
     pub fn prepare_workspace_config(&self, workspace_path: &str) -> Result<PathBuf> {
+        self.prepare_workspace_config_with_disabled(workspace_path, &[])
+    }
+
+    pub fn prepare_workspace_config_with_disabled(
+        &self,
+        workspace_path: &str,
+        disabled_server_names: &[String],
+    ) -> Result<PathBuf> {
         let normalized_workspace = workspace_path.trim();
         if normalized_workspace.is_empty() {
             return Err(AppError::ValidationError(
@@ -196,6 +204,11 @@ impl WorkspaceMcpConfigService {
 
         let mut servers = std::collections::BTreeMap::new();
         for binary in &self.binaries {
+            if is_server_disabled(disabled_server_names, binary.server_name) {
+                tracing::info!("[MCP] 跳过已禁用 MCP server: {}", binary.server_name);
+                continue;
+            }
+
             if !binary.executable_path.exists() {
                 return Err(AppError::ProcessError(format!(
                     "{} 可执行文件不存在: {}",
@@ -237,6 +250,14 @@ impl WorkspaceMcpConfigService {
     }
 
     pub fn prepare_workspace_codex_config_args(&self, workspace_path: &str) -> Result<Vec<String>> {
+        self.prepare_workspace_codex_config_args_with_disabled(workspace_path, &[])
+    }
+
+    pub fn prepare_workspace_codex_config_args_with_disabled(
+        &self,
+        workspace_path: &str,
+        disabled_server_names: &[String],
+    ) -> Result<Vec<String>> {
         let normalized_workspace = workspace_path.trim();
         if normalized_workspace.is_empty() {
             return Err(AppError::ValidationError(
@@ -246,6 +267,11 @@ impl WorkspaceMcpConfigService {
 
         let mut args = Vec::new();
         for binary in &self.binaries {
+            if is_server_disabled(disabled_server_names, binary.server_name) {
+                tracing::info!("[MCP] 跳过已禁用 Codex MCP server: {}", binary.server_name);
+                continue;
+            }
+
             if !binary.executable_path.exists() {
                 return Err(AppError::ProcessError(format!(
                     "{} 可执行文件不存在: {}",
@@ -283,6 +309,10 @@ impl WorkspaceMcpConfigService {
 
         Ok(args)
     }
+}
+
+fn is_server_disabled(disabled_server_names: &[String], server_name: &str) -> bool {
+    disabled_server_names.iter().any(|name| name == server_name)
 }
 
 /// Strip the Windows UNC extended-length path prefix (`\\?\`) from a path string.
@@ -803,6 +833,64 @@ mod tests {
 
         assert_eq!(first, second);
         assert_eq!(first_content, second_content);
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn prepare_workspace_config_skips_disabled_servers() {
+        let temp_root =
+            std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
+        let workspace = temp_root.join("workspace-disabled");
+        let config_dir = temp_root.join("config");
+        let todo_executable_path = temp_root.join(fixture_exe("bin/polaris-todo-mcp"));
+
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::create_dir_all(todo_executable_path.parent().unwrap()).unwrap();
+        std::fs::write(&todo_executable_path, "todo bin").unwrap();
+
+        let service =
+            WorkspaceMcpConfigService::new(config_dir, todo_executable_path, None, None, None);
+
+        let config_path = service
+            .prepare_workspace_config_with_disabled(
+                workspace.to_string_lossy().as_ref(),
+                &[TODO_MCP_SERVER_NAME.to_string()],
+            )
+            .unwrap();
+
+        let content = std::fs::read_to_string(&config_path).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(json["mcpServers"].as_object().unwrap().len(), 0);
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn prepare_workspace_codex_config_args_skips_disabled_servers() {
+        let temp_root =
+            std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
+        let workspace = temp_root.join("workspace-disabled-codex");
+        let config_dir = temp_root.join("config");
+        let todo_executable_path = temp_root.join(fixture_exe("bin/polaris-todo-mcp"));
+
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::create_dir_all(todo_executable_path.parent().unwrap()).unwrap();
+        std::fs::write(&todo_executable_path, "todo bin").unwrap();
+
+        let service =
+            WorkspaceMcpConfigService::new(config_dir, todo_executable_path, None, None, None);
+
+        let args = service
+            .prepare_workspace_codex_config_args_with_disabled(
+                workspace.to_string_lossy().as_ref(),
+                &[TODO_MCP_SERVER_NAME.to_string()],
+            )
+            .unwrap();
+
+        assert!(args.is_empty());
 
         let _ = std::fs::remove_dir_all(&temp_root);
     }

@@ -7,7 +7,10 @@ use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::ai::{ClaudeHistoryProvider, CodexHistoryProvider, HistoryMessage, SessionHistoryProvider, SessionMeta};
+use crate::ai::{
+    ClaudeHistoryProvider, CodexHistoryProvider, HistoryMessage, SessionHistoryProvider,
+    SessionMeta,
+};
 use crate::ai::{EngineId, ImageAttachment, PagedResult, Pagination, SessionOptions};
 use crate::error::{AppError, Result};
 use crate::models::AIEvent;
@@ -60,6 +63,9 @@ pub struct ChatRequestOptions {
     /// 是否启用 MCP 工具
     #[serde(default)]
     pub enable_mcp_tools: Option<bool>,
+    /// 禁用的 MCP server 名称列表
+    #[serde(default)]
+    pub disabled_mcp_servers: Option<Vec<String>>,
     /// 上下文 ID
     #[serde(default)]
     pub context_id: Option<String>,
@@ -396,14 +402,18 @@ fn prepare_mcp_config_with_paths(
 
     match engine {
         EngineId::ClaudeCode => {
-            let config_path = service.prepare_workspace_config(work_dir)?;
+            let disabled_servers = options.disabled_mcp_servers.as_deref().unwrap_or(&[]);
+            let config_path =
+                service.prepare_workspace_config_with_disabled(work_dir, disabled_servers)?;
             Ok(PreparedMcpConfig {
                 claude_config_path: Some(config_path.to_string_lossy().to_string()),
                 codex_config_args: Vec::new(),
             })
         }
         EngineId::Codex => {
-            let codex_config_args = service.prepare_workspace_codex_config_args(work_dir)?;
+            let disabled_servers = options.disabled_mcp_servers.as_deref().unwrap_or(&[]);
+            let codex_config_args = service
+                .prepare_workspace_codex_config_args_with_disabled(work_dir, disabled_servers)?;
             Ok(PreparedMcpConfig {
                 claude_config_path: None,
                 codex_config_args,

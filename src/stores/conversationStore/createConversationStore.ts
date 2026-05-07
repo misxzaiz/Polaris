@@ -19,6 +19,8 @@ import { MessageCompactor, isCompacted } from '../../utils/messageCompactor'
 import { isEditTool, extractEditDiff } from '../../utils/diffExtractor'
 import { getSessionConfig } from '../sessionConfigStore'
 import { getActiveModelProfile } from '../modelProfileStore'
+import { listPluginMcpServerStatuses } from '@/plugin-system'
+import { usePluginStore } from '../pluginStore'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('ConversationStore')
@@ -26,6 +28,12 @@ const log = createLogger('ConversationStore')
 function resolveSessionEngine(sessionId: string, configEngineId?: string): EngineId {
   const metadataEngineId = sessionStoreManager.getState().sessionMetadata.get(sessionId)?.engineId
   return (metadataEngineId || configEngineId || 'claude-code') as EngineId
+}
+
+function getDisabledPluginMcpServers(): string[] {
+  return listPluginMcpServerStatuses(usePluginStore.getState().pluginStates)
+    .filter((server) => !server.enabled)
+    .map((server) => server.id)
 }
 
 // ============================================================================
@@ -956,6 +964,7 @@ export function createConversationStore(
           // 获取当前激活的模型 Profile ID
           const activeProfile = getActiveModelProfile()
           const modelProfileId = activeProfile?.id
+          const disabledMcpServers = getDisabledPluginMcpServers()
 
           if (conversationId) {
             // 继续会话
@@ -969,6 +978,7 @@ export function createConversationStore(
                 contextId: deps.contextId,
                 engineId: engine,
                 enableMcpTools: true,
+                disabledMcpServers,
                 attachments: attachmentsForBackend,
                 additionalDirs: contextWorkspaces.map(w => w.path).filter(Boolean),
                 agent: sessionConfig.agent || undefined,
@@ -993,6 +1003,7 @@ export function createConversationStore(
                 contextId: deps.contextId,
                 engineId: engine,
                 enableMcpTools: true,
+                disabledMcpServers,
                 attachments: attachmentsForBackend,
                 additionalDirs: contextWorkspaces.map(w => w.path).filter(Boolean),
                 agent: sessionConfig.agent || undefined,
@@ -1123,6 +1134,7 @@ export function createConversationStore(
         // 获取当前激活的模型 Profile ID
         const activeProfile = getActiveModelProfile()
         const modelProfileId = activeProfile?.id
+        const disabledMcpServers = getDisabledPluginMcpServers()
 
         try {
           await invoke('continue_chat', {
@@ -1135,6 +1147,7 @@ export function createConversationStore(
               contextId: deps.contextId,
               engineId: currentEngine,
               enableMcpTools: true,
+              disabledMcpServers,
               additionalDirs: contextWorkspaces.map(w => w.path).filter(Boolean),
               agent: sessionConfig.agent || undefined,
               model: sessionConfig.model || undefined,
