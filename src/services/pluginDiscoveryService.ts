@@ -64,6 +64,7 @@ const VALID_PANEL_TYPES = new Set<PluginLeftPanelType>([
   'knowledge',
   'todo',
   'problems',
+  'demoPlugin',
 ])
 
 function isRecord(value: unknown): value is Record<string, unknown> {

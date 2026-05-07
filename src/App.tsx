@@ -18,6 +18,7 @@ import { RequirementPanel } from './components/RequirementPanel/RequirementPanel
 import { TerminalPanel } from './components/Terminal/TerminalPanel';
 import { KnowledgePanel } from './components/KnowledgePanel';
 import { ProblemsPanel } from './components/Problems/ProblemsPanel';
+import { DemoPluginPanel } from './components/Plugins/DemoPluginPanel';
 
 // 懒加载大型组件，减少初始 bundle 大小
 const SettingsModal = lazy(() => import('./components/Settings/SettingsModal').then(m => ({ default: m.SettingsModal })));
@@ -172,6 +173,7 @@ function App() {
                 integrationContent={<Suspense fallback={loadingFallback}><IntegrationPanel /></Suspense>}
                 knowledgeContent={<KnowledgePanel />}
                 problemsContent={<ProblemsPanel />}
+                demoPluginContent={<DemoPluginPanel onSendToChat={sendMessage} />}
               />
             </LeftPanel>
           )}

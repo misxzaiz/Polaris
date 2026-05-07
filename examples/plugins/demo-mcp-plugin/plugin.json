@@ -1,0 +1,35 @@
+{
+  "id": "example.demo-mcp",
+  "name": "Demo MCP Plugin",
+  "version": "0.1.0",
+  "description": "A demo external MCP plugin for Polaris install and discovery testing.",
+  "enabledByDefault": true,
+  "contributes": {
+    "views": [
+      {
+        "id": "example.demo-mcp.panel",
+        "area": "activityBar",
+        "panelType": "demoPlugin",
+        "icon": "Bot",
+        "labelKey": "plugins.demoMcpPanel",
+        "labelDefault": "Demo MCP",
+        "order": 85
+      }
+    ],
+    "mcpServers": [
+      {
+        "id": "example-demo-mcp",
+        "transport": "stdio",
+        "command": "node",
+        "argsTemplate": [
+          "{{pluginDir}}/mcp/demo-mcp-server.js",
+          "{{workspacePath}}"
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "workspaceRead": true,
+    "aiToolAccess": true
+  }
+}

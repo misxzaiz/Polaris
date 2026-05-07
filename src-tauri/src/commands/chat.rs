@@ -14,7 +14,11 @@ use crate::ai::{
 use crate::ai::{EngineId, ImageAttachment, PagedResult, Pagination, SessionOptions};
 use crate::error::{AppError, Result};
 use crate::models::AIEvent;
-use crate::services::mcp_config_service::WorkspaceMcpConfigService;
+use crate::services::mcp_config_service::{
+    resolve_external_plugin_mcp_servers, WorkspaceMcpConfigService,
+};
+use crate::services::plugin_service::PluginService;
+use crate::services::plugin_state_service::PluginStateService;
 #[cfg(feature = "tauri-app")]
 use tauri::{Emitter, Manager, State, Window};
 #[cfg(feature = "tauri-app")]
@@ -399,6 +403,30 @@ fn prepare_mcp_config_with_paths(
         paths.resource_dir.clone(),
         app_root,
     )?;
+
+    let plugin_discovery = PluginService::discover_installed_plugins(
+        &paths.config_dir,
+        Some(std::path::Path::new(work_dir)),
+    );
+    for error in &plugin_discovery.errors {
+        tracing::warn!("[MCP] 插件发现诊断 {}: {}", error.path, error.error);
+    }
+
+    let plugin_states = match PluginStateService::new(paths.config_dir.clone()).load() {
+        Ok(states) => states,
+        Err(error) => {
+            tracing::warn!("[MCP] 加载插件状态失败，按默认状态处理: {}", error);
+            Default::default()
+        }
+    };
+
+    let external_servers = resolve_external_plugin_mcp_servers(
+        &paths.config_dir,
+        std::path::Path::new(work_dir),
+        &plugin_discovery.plugins,
+        &plugin_states,
+    );
+    let service = service.with_external_servers(external_servers);
 
     match engine {
         EngineId::ClaudeCode => {

@@ -106,4 +106,38 @@ describe('pluginDiscoveryService', () => {
       'contributes.mcpServers[0] is invalid and was ignored',
     ])
   })
+
+  it('accepts the controlled demo plugin panel type', () => {
+    const plugin = normalizeDiscoveredPlugin({
+      id: 'example.demo-mcp',
+      name: 'Demo MCP Plugin',
+      version: '0.1.0',
+      enabledByDefault: true,
+      contributes: {
+        views: [
+          {
+            id: 'example.demo-mcp.panel',
+            area: 'activityBar',
+            panelType: 'demoPlugin',
+            icon: 'Bot',
+            labelKey: 'plugins.demoMcpPanel',
+            labelDefault: 'Demo MCP',
+            order: 85,
+          },
+        ],
+      },
+      permissions: {},
+      source: {
+        kind: 'user',
+      },
+      installPath: 'C:\\Users\\sample\\plugins\\example.demo-mcp',
+    })
+
+    expect(plugin?.contributes.views).toEqual([
+      expect.objectContaining({
+        panelType: 'demoPlugin',
+        icon: 'Bot',
+      }),
+    ])
+  })
 })

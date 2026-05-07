@@ -1,6 +1,9 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use crate::error::{AppError, Result};
+use crate::models::plugin::DiscoveredPluginManifest;
+use crate::models::plugin_state::{PluginState, PluginStateMap};
 
 const MCP_CONFIG_RELATIVE_PATH: &str = ".polaris/claude/mcp.json";
 const TODO_MCP_SERVER_NAME: &str = "polaris-todo";
@@ -194,7 +197,7 @@ struct ClaudeMcpServerConfig {
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ClaudeMcpConfig {
-    mcp_servers: std::collections::BTreeMap<String, ClaudeMcpServerConfig>,
+    mcp_servers: BTreeMap<String, ClaudeMcpServerConfig>,
 }
 
 #[derive(Debug, Clone)]
@@ -204,8 +207,17 @@ struct ResolvedMcpBinary {
     args_mode: McpServerArgsMode,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedExternalMcpServer {
+    pub plugin_id: String,
+    pub server_name: String,
+    pub command: String,
+    pub args: Vec<String>,
+}
+
 pub struct WorkspaceMcpConfigService {
     binaries: Vec<ResolvedMcpBinary>,
+    external_servers: Vec<ResolvedExternalMcpServer>,
     config_dir: PathBuf,
 }
 
@@ -249,6 +261,7 @@ impl WorkspaceMcpConfigService {
 
         Self {
             binaries,
+            external_servers: Vec::new(),
             config_dir,
         }
     }
@@ -298,8 +311,17 @@ impl WorkspaceMcpConfigService {
 
         Ok(Self {
             binaries,
+            external_servers: Vec::new(),
             config_dir,
         })
+    }
+
+    pub fn with_external_servers(
+        mut self,
+        external_servers: Vec<ResolvedExternalMcpServer>,
+    ) -> Self {
+        self.external_servers = external_servers;
+        self
     }
 
     pub fn prepare_workspace_config(&self, workspace_path: &str) -> Result<PathBuf> {
@@ -326,7 +348,7 @@ impl WorkspaceMcpConfigService {
                 .map_err(|e| AppError::ProcessError(format!("创建 MCP 配置目录失败: {}", e)))?;
         }
 
-        let mut servers = std::collections::BTreeMap::new();
+        let mut servers = BTreeMap::new();
         for binary in &self.binaries {
             if is_server_disabled(disabled_server_names, &binary.server_name) {
                 tracing::info!("[MCP] 跳过已禁用 MCP server: {}", binary.server_name);
@@ -349,6 +371,36 @@ impl WorkspaceMcpConfigService {
                 ClaudeMcpServerConfig {
                     command: strip_unc_prefix(&binary.executable_path.to_string_lossy()),
                     args,
+                },
+            );
+        }
+
+        for server in &self.external_servers {
+            if is_server_disabled(disabled_server_names, &server.server_name) {
+                tracing::info!(
+                    "[MCP] 跳过已禁用外部插件 MCP server: {}",
+                    server.server_name
+                );
+                continue;
+            }
+
+            if servers.contains_key(&server.server_name) {
+                tracing::warn!(
+                    "[MCP] 跳过外部插件 MCP server {}，名称与已有 server 冲突",
+                    server.server_name
+                );
+                continue;
+            }
+
+            servers.insert(
+                server.server_name.clone(),
+                ClaudeMcpServerConfig {
+                    command: strip_unc_prefix(&server.command),
+                    args: server
+                        .args
+                        .iter()
+                        .map(|arg| strip_unc_prefix(arg))
+                        .collect(),
                 },
             );
         }
@@ -378,6 +430,7 @@ impl WorkspaceMcpConfigService {
         }
 
         let mut args = Vec::new();
+        let mut registered_names = BTreeSet::new();
         for binary in &self.binaries {
             if is_server_disabled(disabled_server_names, &binary.server_name) {
                 tracing::info!("[MCP] 跳过已禁用 Codex MCP server: {}", binary.server_name);
@@ -395,6 +448,7 @@ impl WorkspaceMcpConfigService {
             let server_args =
                 build_mcp_server_args(binary.args_mode, &self.config_dir, normalized_workspace);
 
+            registered_names.insert(binary.server_name.clone());
             args.push("-c".to_string());
             args.push(format!(
                 "mcp_servers.{}.command={}",
@@ -409,8 +463,127 @@ impl WorkspaceMcpConfigService {
             ));
         }
 
+        for server in &self.external_servers {
+            if is_server_disabled(disabled_server_names, &server.server_name) {
+                tracing::info!(
+                    "[MCP] 跳过已禁用 Codex 外部插件 MCP server: {}",
+                    server.server_name
+                );
+                continue;
+            }
+
+            if registered_names.contains(&server.server_name) {
+                tracing::warn!(
+                    "[MCP] 跳过 Codex 外部插件 MCP server {}，名称与已有 server 冲突",
+                    server.server_name
+                );
+                continue;
+            }
+
+            registered_names.insert(server.server_name.clone());
+            args.push("-c".to_string());
+            args.push(format!(
+                "mcp_servers.{}.command={}",
+                server.server_name,
+                toml_string(&strip_unc_prefix(&server.command))?
+            ));
+            args.push("-c".to_string());
+            args.push(format!(
+                "mcp_servers.{}.args={}",
+                server.server_name,
+                toml_string_array(
+                    &server
+                        .args
+                        .iter()
+                        .map(|arg| strip_unc_prefix(arg))
+                        .collect::<Vec<_>>()
+                )?
+            ));
+        }
+
         Ok(args)
     }
+}
+
+pub fn resolve_external_plugin_mcp_servers(
+    config_dir: &Path,
+    workspace_path: &Path,
+    plugins: &[DiscoveredPluginManifest],
+    plugin_states: &PluginStateMap,
+) -> Vec<ResolvedExternalMcpServer> {
+    let workspace = workspace_path.to_string_lossy().to_string();
+    let app_config_dir = config_dir.to_string_lossy().to_string();
+    let mut resolved = Vec::new();
+
+    for plugin in plugins {
+        if !is_plugin_mcp_enabled(plugin, plugin_states.get(&plugin.id)) {
+            continue;
+        }
+
+        let plugin_dir = plugin.install_path.trim();
+        if plugin_dir.is_empty() {
+            tracing::warn!("[MCP] 跳过插件 {}，缺少 installPath", plugin.id);
+            continue;
+        }
+
+        for server in &plugin.contributes.mcp_servers {
+            if server.transport != "stdio" {
+                tracing::warn!(
+                    "[MCP] 跳过插件 {} 的 MCP server {}，当前仅支持 stdio transport",
+                    plugin.id,
+                    server.id
+                );
+                continue;
+            }
+
+            if server.id.trim().is_empty() || server.command.trim().is_empty() {
+                tracing::warn!("[MCP] 跳过插件 {} 的无效 MCP server 声明", plugin.id);
+                continue;
+            }
+
+            let command = expand_external_mcp_template(
+                &server.command,
+                plugin_dir,
+                &workspace,
+                &app_config_dir,
+            );
+            let args = server
+                .args_template
+                .iter()
+                .map(|arg| {
+                    expand_external_mcp_template(arg, plugin_dir, &workspace, &app_config_dir)
+                })
+                .collect();
+
+            resolved.push(ResolvedExternalMcpServer {
+                plugin_id: plugin.id.clone(),
+                server_name: server.id.clone(),
+                command,
+                args,
+            });
+        }
+    }
+
+    resolved
+}
+
+fn is_plugin_mcp_enabled(plugin: &DiscoveredPluginManifest, state: Option<&PluginState>) -> bool {
+    match state {
+        Some(state) => state.enabled && state.mcp_enabled,
+        None => plugin.enabled_by_default,
+    }
+}
+
+fn expand_external_mcp_template(
+    value: &str,
+    plugin_dir: &str,
+    workspace_path: &str,
+    app_config_dir: &str,
+) -> String {
+    value
+        .replace("{{pluginDir}}", plugin_dir)
+        .replace("{{workspacePath}}", workspace_path)
+        .replace("{{appConfigDir}}", app_config_dir)
 }
 
 fn is_server_disabled(disabled_server_names: &[String], server_name: &str) -> bool {
@@ -633,6 +806,41 @@ fn toml_string_literal(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::plugin::{
+        DiscoveredPluginManifest, PluginManifestContributes, PluginManifestPermissions,
+        PluginManifestSource, PluginManifestSourceKind, PluginMcpServerManifestContribution,
+    };
+    use crate::models::plugin_state::PluginState;
+
+    fn external_plugin_manifest(plugin_dir: &Path, server_name: &str) -> DiscoveredPluginManifest {
+        DiscoveredPluginManifest {
+            id: "example.demo-mcp".to_string(),
+            name: "Demo MCP Plugin".to_string(),
+            version: "0.1.0".to_string(),
+            description: None,
+            builtin: false,
+            enabled_by_default: true,
+            contributes: PluginManifestContributes {
+                views: Vec::new(),
+                mcp_servers: vec![PluginMcpServerManifestContribution {
+                    id: server_name.to_string(),
+                    transport: "stdio".to_string(),
+                    command: "node".to_string(),
+                    args_template: vec![
+                        "{{pluginDir}}/mcp/demo-mcp-server.js".to_string(),
+                        "{{workspacePath}}".to_string(),
+                        "{{appConfigDir}}".to_string(),
+                    ],
+                }],
+            },
+            permissions: PluginManifestPermissions::default(),
+            source: PluginManifestSource {
+                kind: PluginManifestSourceKind::User,
+                workspace_path: None,
+            },
+            install_path: plugin_dir.to_string_lossy().to_string(),
+        }
+    }
 
     /// Helper to create a platform-correct fixture file path.
     fn fixture_exe(base: &str) -> String {
@@ -903,6 +1111,178 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn resolves_external_plugin_mcp_server_templates() {
+        let temp_root =
+            std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
+        let config_dir = temp_root.join("config");
+        let workspace = temp_root.join("workspace-external");
+        let plugin_dir = config_dir.join("plugins").join("example.demo-mcp");
+        let plugin = external_plugin_manifest(&plugin_dir, "example-demo-mcp");
+        let mut states = PluginStateMap::new();
+        states.insert(
+            plugin.id.clone(),
+            PluginState {
+                enabled: true,
+                ui_enabled: true,
+                mcp_enabled: true,
+            },
+        );
+
+        let servers =
+            resolve_external_plugin_mcp_servers(&config_dir, &workspace, &[plugin], &states);
+
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].plugin_id, "example.demo-mcp");
+        assert_eq!(servers[0].server_name, "example-demo-mcp");
+        assert_eq!(servers[0].command, "node");
+        assert_eq!(
+            servers[0].args[0],
+            format!("{}/mcp/demo-mcp-server.js", plugin_dir.to_string_lossy())
+        );
+        assert_eq!(servers[0].args[1], workspace.to_string_lossy().to_string());
+        assert_eq!(servers[0].args[2], config_dir.to_string_lossy().to_string());
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn external_plugin_mcp_server_is_written_to_claude_config() {
+        let temp_root =
+            std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
+        let workspace = temp_root.join("workspace-external-config");
+        let config_dir = temp_root.join("config");
+        let todo_executable_path = temp_root.join(fixture_exe("bin/polaris-todo-mcp"));
+        let plugin_script = config_dir
+            .join("plugins")
+            .join("example.demo-mcp")
+            .join("mcp")
+            .join("demo-mcp-server.js");
+
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::create_dir_all(todo_executable_path.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(plugin_script.parent().unwrap()).unwrap();
+        std::fs::write(&todo_executable_path, "todo bin").unwrap();
+        std::fs::write(&plugin_script, "demo server").unwrap();
+
+        let service =
+            WorkspaceMcpConfigService::new(config_dir, todo_executable_path, None, None, None)
+                .with_external_servers(vec![ResolvedExternalMcpServer {
+                    plugin_id: "example.demo-mcp".to_string(),
+                    server_name: "example-demo-mcp".to_string(),
+                    command: "node".to_string(),
+                    args: vec![
+                        plugin_script.to_string_lossy().to_string(),
+                        workspace.to_string_lossy().to_string(),
+                    ],
+                }]);
+
+        let config_path = service
+            .prepare_workspace_config(workspace.to_string_lossy().as_ref())
+            .unwrap();
+        let content = std::fs::read_to_string(&config_path).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let external_server = &json["mcpServers"]["example-demo-mcp"];
+
+        assert_eq!(
+            external_server["command"],
+            serde_json::Value::String("node".to_string())
+        );
+        assert_eq!(
+            external_server["args"][0],
+            serde_json::Value::String(plugin_script.to_string_lossy().to_string())
+        );
+        assert!(json["mcpServers"][TODO_MCP_SERVER_NAME].is_object());
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn external_plugin_mcp_server_is_written_to_codex_args() {
+        let temp_root =
+            std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
+        let workspace = temp_root.join("workspace-external-codex");
+        let config_dir = temp_root.join("config");
+        let todo_executable_path = temp_root.join(fixture_exe("bin/polaris-todo-mcp"));
+        let plugin_script = config_dir
+            .join("plugins")
+            .join("example.demo-mcp")
+            .join("mcp")
+            .join("demo-mcp-server.js");
+
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::create_dir_all(todo_executable_path.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(plugin_script.parent().unwrap()).unwrap();
+        std::fs::write(&todo_executable_path, "todo bin").unwrap();
+        std::fs::write(&plugin_script, "demo server").unwrap();
+
+        let service =
+            WorkspaceMcpConfigService::new(config_dir, todo_executable_path, None, None, None)
+                .with_external_servers(vec![ResolvedExternalMcpServer {
+                    plugin_id: "example.demo-mcp".to_string(),
+                    server_name: "example-demo-mcp".to_string(),
+                    command: "node".to_string(),
+                    args: vec![
+                        plugin_script.to_string_lossy().to_string(),
+                        workspace.to_string_lossy().to_string(),
+                    ],
+                }]);
+
+        let args = service
+            .prepare_workspace_codex_config_args(workspace.to_string_lossy().as_ref())
+            .unwrap();
+        let joined = args.join("\n");
+
+        assert!(joined.contains("mcp_servers.example-demo-mcp.command='node'"));
+        assert!(joined.contains("mcp_servers.example-demo-mcp.args="));
+        assert!(joined.contains(plugin_script.to_string_lossy().as_ref()));
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn external_plugin_mcp_server_does_not_override_builtin_server() {
+        let temp_root =
+            std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
+        let workspace = temp_root.join("workspace-external-conflict");
+        let config_dir = temp_root.join("config");
+        let todo_executable_path = temp_root.join(fixture_exe("bin/polaris-todo-mcp"));
+
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::create_dir_all(todo_executable_path.parent().unwrap()).unwrap();
+        std::fs::write(&todo_executable_path, "todo bin").unwrap();
+
+        let service = WorkspaceMcpConfigService::new(
+            config_dir,
+            todo_executable_path.clone(),
+            None,
+            None,
+            None,
+        )
+        .with_external_servers(vec![ResolvedExternalMcpServer {
+            plugin_id: "example.conflict".to_string(),
+            server_name: TODO_MCP_SERVER_NAME.to_string(),
+            command: "node".to_string(),
+            args: vec!["conflict.js".to_string()],
+        }]);
+
+        let config_path = service
+            .prepare_workspace_config(workspace.to_string_lossy().as_ref())
+            .unwrap();
+        let content = std::fs::read_to_string(&config_path).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+        assert_eq!(
+            json["mcpServers"][TODO_MCP_SERVER_NAME]["command"],
+            serde_json::Value::String(todo_executable_path.to_string_lossy().to_string())
+        );
+
+        let _ = std::fs::remove_dir_all(&temp_root);
     }
 
     #[test]
