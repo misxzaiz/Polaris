@@ -6,12 +6,14 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Files, GitPullRequest, CheckSquare, Settings, Languages, Clock, ClipboardList, Terminal, Code2, PanelRight, Bot, BookOpen, AlertCircle } from 'lucide-react'
+import { Settings, PanelRight } from 'lucide-react'
 import { useViewStore } from '@/stores/viewStore'
 import { useDiagnosticsStore } from '@/stores/diagnosticsStore'
 import { ActivityBarIcon } from './ActivityBarIcon'
 import { RadialMenu, RadialMenuTrigger } from './RadialMenu'
 import { useTranslation } from 'react-i18next'
+import { pluginIconMap, pluginRegistry } from '@/plugin-system'
+import { isPluginUiEnabled, usePluginStore } from '@/stores/pluginStore'
 
 interface ActivityBarProps {
   className?: string
@@ -50,6 +52,7 @@ export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rig
   const toggleLeftPanel = useViewStore((state) => state.toggleLeftPanel)
   const activityBarCollapsed = useViewStore((state) => state.activityBarCollapsed)
   const toggleActivityBar = useViewStore((state) => state.toggleActivityBar)
+  const pluginStates = usePluginStore((state) => state.pluginStates)
 
   // 扇形菜单状态 - 支持悬停和点击
   const [isRadialMenuOpen, setIsRadialMenuOpen] = useState(false)
@@ -93,63 +96,9 @@ export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rig
     }
   }, [])
 
-  const panelButtons = [
-    {
-      id: 'files' as const,
-      icon: Files,
-      label: t('labels.fileExplorer'),
-    },
-    {
-      id: 'git' as const,
-      icon: GitPullRequest,
-      label: t('labels.gitPanel'),
-    },
-    {
-      id: 'todo' as const,
-      icon: CheckSquare,
-      label: t('labels.todoPanel'),
-    },
-    {
-      id: 'translate' as const,
-      icon: Languages,
-      label: t('labels.translatePanel'),
-    },
-    {
-      id: 'scheduler' as const,
-      icon: Clock,
-      label: t('labels.schedulerPanel'),
-    },
-    {
-      id: 'requirement' as const,
-      icon: ClipboardList,
-      label: t('labels.requirementPanel'),
-    },
-    {
-      id: 'terminal' as const,
-      icon: Terminal,
-      label: t('labels.terminalPanel'),
-    },
-    {
-      id: 'developer' as const,
-      icon: Code2,
-      label: t('labels.developerPanel'),
-    },
-    {
-      id: 'integration' as const,
-      icon: Bot,
-      label: t('labels.integrationPanel'),
-    },
-    {
-      id: 'knowledge' as const,
-      icon: BookOpen,
-      label: t('labels.knowledgePanel'),
-    },
-    {
-      id: 'problems' as const,
-      icon: AlertCircle,
-      label: t('labels.problemsPanel', { defaultValue: 'Problems' }),
-    },
-  ]
+  const panelButtons = pluginRegistry
+    .listViewContributions('activityBar')
+    .filter((view) => isPluginUiEnabled(pluginStates, view.pluginId))
 
   // 折叠状态下的渲染（或强制折叠模式）：显示贴边半圆悬浮球 + 扇形菜单
   if (activityBarCollapsed || forceCollapsed) {
@@ -189,17 +138,20 @@ export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rig
         <PanelRight className="w-5 h-5" />
       </button>
 
-      {panelButtons.map((btn) => (
-        <ActivityBarIcon
-          key={btn.id}
-          icon={btn.icon}
-          label={btn.label}
-          active={leftPanelType === btn.id}
-          onClick={() => toggleLeftPanel(btn.id)}
-        >
-          {btn.id === 'problems' && <ProblemsBadge />}
-        </ActivityBarIcon>
-      ))}
+      {panelButtons.map((btn) => {
+        const Icon = pluginIconMap[btn.icon]
+        return (
+          <ActivityBarIcon
+            key={btn.id}
+            icon={Icon}
+            label={t(btn.labelKey, { defaultValue: btn.labelDefault ?? btn.panelType })}
+            active={leftPanelType === btn.panelType}
+            onClick={() => toggleLeftPanel(btn.panelType)}
+          >
+            {btn.badge === 'problems' && <ProblemsBadge />}
+          </ActivityBarIcon>
+        )
+      })}
 
       <div className="flex-1" />
 

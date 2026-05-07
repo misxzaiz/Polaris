@@ -28,6 +28,8 @@ const FileSearchModal = lazy(() => import('./components/Editor/FileSearchModal')
 const SymbolPalette = lazy(() => import('./components/Editor/SymbolPalette').then(m => ({ default: m.SymbolPalette })));
 
 import { useConfigStore, useViewStore, useWorkspaceStore, useTabStore } from './stores';
+import { isPluginUiEnabled, usePluginStore } from './stores/pluginStore';
+import { pluginRegistry } from './plugin-system';
 import { useActiveSessionActions, useActiveSessionStreaming, useActiveSessionError } from './stores/conversationStore/useActiveSession';
 import type { EngineId } from './types';
 import './index.css';
@@ -61,6 +63,7 @@ function App() {
     state => state.workspaces.find(w => w.id === state.currentWorkspaceId) || null
   );
   const leftPanelType = useViewStore(state => state.leftPanelType);
+  const pluginStates = usePluginStore(state => state.pluginStates);
   const rightPanelCollapsed = useViewStore(state => state.rightPanelCollapsed);
   const toggleRightPanel = useViewStore(state => state.toggleRightPanel);
   const showSessionHistory = useViewStore(state => state.showSessionHistory);
@@ -102,7 +105,13 @@ function App() {
   }, [workspaces, currentWorkspace]);
 
   // === 面板显示状态 ===
-  const hasLeftPanel = !isCompact && leftPanelType !== 'none';
+  const activeLeftPanelContribution = pluginRegistry
+    .listViewContributions('activityBar')
+    .find(view => view.panelType === leftPanelType);
+  const hasLeftPanel = !isCompact &&
+    leftPanelType !== 'none' &&
+    !!activeLeftPanelContribution &&
+    isPluginUiEnabled(pluginStates, activeLeftPanelContribution.pluginId);
   const hasCenterStage = !isCompact && hasOpenTabs;
 
   // 右侧面板填充模式：无编辑器时自适应填充，有编辑器时固定宽度

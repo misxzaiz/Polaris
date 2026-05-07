@@ -26,6 +26,7 @@ import { AutoModeTab } from './tabs/AutoModeTab';
 import { AppUpdateTab } from './tabs/AppUpdateTab';
 import { LspTab } from './tabs/LspTab';
 import { WebTab } from './tabs/WebTab';
+import { PluginTab } from './tabs/PluginTab';
 import { createLogger } from '../../utils/logger';
 import { applyWebServer, getConfig } from '../../services/tauri/configService';
 import { currentMode } from '../../services/transport';
@@ -43,6 +44,7 @@ interface SettingsModalProps {
 const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'general': 'nav.general',
   'auto-mode': 'nav.autoMode',
+  'plugins': 'nav.plugins',
   'system-prompt': 'nav.systemPrompt',
   'prompt-snippet': 'nav.promptSnippet',
   'window': 'nav.window',
@@ -235,6 +237,10 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
 
               {activeTab === 'auto-mode' && (
                 <AutoModeTab />
+              )}
+
+              {activeTab === 'plugins' && (
+                <PluginTab />
               )}
 
               {activeTab === 'ai-engine' && (

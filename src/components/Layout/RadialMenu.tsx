@@ -6,9 +6,11 @@
  */
 
 import { useRef, useEffect } from 'react'
-import { Files, GitPullRequest, CheckSquare, Settings, Languages, Clock, ClipboardList, Terminal, Code2, PanelRight, Bot, BookOpen } from 'lucide-react'
-import { useViewStore, LeftPanelType } from '@/stores/viewStore'
+import { Settings, PanelRight } from 'lucide-react'
+import { useViewStore } from '@/stores/viewStore'
 import { useTranslation } from 'react-i18next'
+import { pluginIconMap, pluginRegistry, type PluginLeftPanelType } from '@/plugin-system'
+import { isPluginUiEnabled, usePluginStore } from '@/stores/pluginStore'
 
 interface RadialMenuProps {
   /** 是否显示 */
@@ -26,7 +28,7 @@ interface RadialMenuProps {
 }
 
 interface MenuItem {
-  id: LeftPanelType | 'settings' | 'rightPanel'
+  id: PluginLeftPanelType | 'settings' | 'rightPanel'
   icon: React.ComponentType<{ size?: number; className?: string }>
   label: string
   onClick: () => void
@@ -43,100 +45,24 @@ export function RadialMenu({
   const { t } = useTranslation('common')
   const leftPanelType = useViewStore((state) => state.leftPanelType)
   const toggleLeftPanel = useViewStore((state) => state.toggleLeftPanel)
+  const pluginStates = usePluginStore((state) => state.pluginStates)
   const menuRef = useRef<HTMLDivElement>(null)
 
-  // 构建菜单项
+  const pluginMenuItems: MenuItem[] = pluginRegistry
+    .listViewContributions('activityBar')
+    .filter((view) => isPluginUiEnabled(pluginStates, view.pluginId))
+    .map((view) => ({
+      id: view.panelType,
+      icon: pluginIconMap[view.icon],
+      label: t(view.labelKey, { defaultValue: view.labelDefault ?? view.panelType }),
+      onClick: () => {
+        toggleLeftPanel(view.panelType)
+        onClose()
+      },
+    }))
+
   const menuItems: MenuItem[] = [
-    {
-      id: 'files',
-      icon: Files,
-      label: t('labels.fileExplorer'),
-      onClick: () => {
-        toggleLeftPanel('files')
-        onClose()
-      }
-    },
-    {
-      id: 'git',
-      icon: GitPullRequest,
-      label: t('labels.gitPanel'),
-      onClick: () => {
-        toggleLeftPanel('git')
-        onClose()
-      }
-    },
-    {
-      id: 'todo',
-      icon: CheckSquare,
-      label: t('labels.todoPanel'),
-      onClick: () => {
-        toggleLeftPanel('todo')
-        onClose()
-      }
-    },
-    {
-      id: 'translate',
-      icon: Languages,
-      label: t('labels.translatePanel'),
-      onClick: () => {
-        toggleLeftPanel('translate')
-        onClose()
-      }
-    },
-    {
-      id: 'scheduler',
-      icon: Clock,
-      label: t('labels.schedulerPanel'),
-      onClick: () => {
-        toggleLeftPanel('scheduler')
-        onClose()
-      }
-    },
-    {
-      id: 'requirement',
-      icon: ClipboardList,
-      label: t('labels.requirementPanel'),
-      onClick: () => {
-        toggleLeftPanel('requirement')
-        onClose()
-      }
-    },
-    {
-      id: 'terminal',
-      icon: Terminal,
-      label: t('labels.terminalPanel'),
-      onClick: () => {
-        toggleLeftPanel('terminal')
-        onClose()
-      }
-    },
-    {
-      id: 'developer',
-      icon: Code2,
-      label: t('labels.developerPanel'),
-      onClick: () => {
-        toggleLeftPanel('developer')
-        onClose()
-      }
-    },
-    {
-      id: 'integration',
-      icon: Bot,
-      label: t('labels.integrationPanel'),
-      onClick: () => {
-        toggleLeftPanel('integration')
-        onClose()
-      }
-    },
-    {
-      id: 'knowledge',
-      icon: BookOpen,
-      label: t('labels.knowledgePanel'),
-      onClick: () => {
-        toggleLeftPanel('knowledge')
-        onClose()
-      }
-    },
+    ...pluginMenuItems,
     {
       id: 'rightPanel',
       icon: PanelRight,

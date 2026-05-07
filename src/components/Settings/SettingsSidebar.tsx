@@ -13,7 +13,7 @@ import {
   IconMic,
   IconMessageSquareText,
 } from '../Common/Icons';
-import { Download, Shield, Code2, Globe } from 'lucide-react';
+import { Download, Shield, Code2, Globe, Blocks } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 export type SettingsTabId =
@@ -29,6 +29,7 @@ export type SettingsTabId =
   | 'lsp'
   | 'auto-mode'
   | 'app-update'
+  | 'plugins'
   | 'advanced'
   | 'web';
 
@@ -57,6 +58,7 @@ const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'speech', icon: <IconMic size={16} />, labelKey: 'nav.speech' },
   { id: 'lsp', icon: <Code2 size={16} />, labelKey: 'nav.lsp' },
   { id: 'auto-mode', icon: <Shield size={16} />, labelKey: 'nav.autoMode' },
+  { id: 'plugins', icon: <Blocks size={16} />, labelKey: 'nav.plugins' },
   { id: 'app-update', icon: <Download size={16} />, labelKey: 'nav.appUpdate' },
   { id: 'web', icon: <Globe size={16} />, labelKey: 'nav.web' },
   // { id: 'advanced', icon: <IconSettings size={16} />, labelKey: 'nav.advanced' },

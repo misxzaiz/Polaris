@@ -18,6 +18,7 @@
     "lsp": "语言服务器",
     "advanced": "高级",
     "autoMode": "自动模式",
+    "plugins": "插件",
     "mcp": "MCP 服务器",
     "web": "Web 服务",
     "appUpdate": "应用更新"
@@ -26,6 +27,27 @@
     "saved": "已保存",
     "configSavedDesc": "配置已成功保存",
     "saveFailed": "保存失败"
+  },
+  "plugins": {
+    "description": "管理 Polaris 内置插件的界面入口和 MCP 能力。当前状态会立即保存到本地。",
+    "builtin": "内置",
+    "enablePlugin": "启用插件",
+    "coreLocked": "核心插件承载基础面板入口，当前版本不可禁用。",
+    "uiSurface": "可视化模块",
+    "mcpSurface": "MCP 服务",
+    "viewCount": "{{count}} 个入口",
+    "mcpCount": "{{count}} 个服务",
+    "permissionsTitle": "权限",
+    "noPermissions": "无额外权限",
+    "reset": "重置",
+    "permissions": {
+      "workspaceRead": "读取工作区",
+      "workspaceWrite": "写入工作区",
+      "appConfigRead": "读取应用配置",
+      "appConfigWrite": "写入应用配置",
+      "network": "网络访问",
+      "aiToolAccess": "AI 工具访问"
+    }
   },
   "engines": {
     "claudeCode": {

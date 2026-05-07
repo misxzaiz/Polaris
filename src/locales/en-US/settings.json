@@ -17,6 +17,7 @@
     "speech": "Speech Input",
     "advanced": "Advanced",
     "autoMode": "Auto Mode",
+    "plugins": "Plugins",
     "appUpdate": "App Update",
     "mcp": "MCP Servers",
     "lsp": "Language Servers",
@@ -26,6 +27,27 @@
     "saved": "Saved",
     "configSavedDesc": "Configuration saved successfully",
     "saveFailed": "Save failed"
+  },
+  "plugins": {
+    "description": "Manage Polaris built-in plugin UI entries and MCP capabilities. Changes are saved locally immediately.",
+    "builtin": "Built-in",
+    "enablePlugin": "Enable plugin",
+    "coreLocked": "The core plugin owns base panel entries and cannot be disabled in this version.",
+    "uiSurface": "Visual module",
+    "mcpSurface": "MCP services",
+    "viewCount": "{{count}} entries",
+    "mcpCount": "{{count}} services",
+    "permissionsTitle": "Permissions",
+    "noPermissions": "No extra permissions",
+    "reset": "Reset",
+    "permissions": {
+      "workspaceRead": "Read workspace",
+      "workspaceWrite": "Write workspace",
+      "appConfigRead": "Read app config",
+      "appConfigWrite": "Write app config",
+      "network": "Network access",
+      "aiToolAccess": "AI tool access"
+    }
   },
   "engines": {
     "claudeCode": {

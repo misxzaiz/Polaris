@@ -32,3 +32,5 @@ export { useTerminalScriptStore } from './terminalScriptStore';
 export { useRequirementStore } from './requirementStore';
 export { useSessionStore, getSessionEffectiveWorkspace } from './sessionStore';
 export { useModelProfileStore, getActiveModelProfile } from './modelProfileStore';
+export { usePluginStore } from './pluginStore';
+export type { PluginState, PluginStateMap, PluginStore } from './pluginStore';
