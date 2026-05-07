@@ -282,6 +282,9 @@ pub async fn handle_ipc_bridge(
         // ── Plugin ─────────────────────────────────────────────────────────
         "plugin_list" => dispatch_plugin_list(&state, &args),
         "plugin_discover" => dispatch_plugin_discover(&state, &args),
+        "plugin_install_locations" => dispatch_plugin_install_locations(&state, &args),
+        "plugin_install_local" => dispatch_plugin_install_local(&state, &args),
+        "plugin_uninstall_local" => dispatch_plugin_uninstall_local(&state, &args),
         "plugin_state_load" => dispatch_plugin_state_load(&state),
         "plugin_state_save" => dispatch_plugin_state_save(&state, &args),
 
@@ -1423,6 +1426,55 @@ fn dispatch_plugin_discover(state: &AppState, args: &Value) -> Result<Json<Value
         ),
     )
     .unwrap_or_default()))
+}
+
+fn plugin_workspace_path(args: &Value) -> Option<std::path::PathBuf> {
+    args.get("workspacePath")
+        .and_then(|value| value.as_str())
+        .filter(|path| !path.trim().is_empty())
+        .map(std::path::PathBuf::from)
+}
+
+fn dispatch_plugin_install_locations(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+    let config_dir = get_config_dir(state)?;
+    let workspace_path = plugin_workspace_path(args);
+
+    Ok(Json(serde_json::to_value(
+        crate::services::plugin_service::PluginService::install_locations(
+            &config_dir,
+            workspace_path.as_deref(),
+        ),
+    )
+    .unwrap_or_default()))
+}
+
+fn dispatch_plugin_install_local(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+    let config_dir = get_config_dir(state)?;
+    let workspace_path = plugin_workspace_path(args);
+    let source_path = require_string(args, "sourcePath")?;
+    let scope = match args.get("scope").and_then(|value| value.as_str()) {
+        Some("project") => crate::models::plugin::PluginManifestSourceKind::Project,
+        _ => crate::models::plugin::PluginManifestSourceKind::User,
+    };
+
+    json_result!(crate::services::plugin_service::PluginService::install_local_plugin(
+        &config_dir,
+        workspace_path.as_deref(),
+        Path::new(&source_path),
+        scope,
+    ))
+}
+
+fn dispatch_plugin_uninstall_local(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+    let config_dir = get_config_dir(state)?;
+    let workspace_path = plugin_workspace_path(args);
+    let install_path = require_string(args, "installPath")?;
+
+    json_result!(crate::services::plugin_service::PluginService::uninstall_local_plugin(
+        &config_dir,
+        workspace_path.as_deref(),
+        Path::new(&install_path),
+    ))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

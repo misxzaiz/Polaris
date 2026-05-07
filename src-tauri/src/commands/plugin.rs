@@ -8,7 +8,7 @@ use tauri::State;
 use crate::error::Result;
 use crate::models::plugin::{
     Marketplace, PluginDiscoveryResult, PluginListResult, PluginOperationResult,
-    PluginScope,
+    PluginInstallLocations, PluginManifestSourceKind, PluginScope,
 };
 use crate::services::plugin_service::PluginService;
 use crate::state::AppState;
@@ -52,6 +52,70 @@ pub async fn plugin_discover(
         &config_dir,
         workspace_path,
     ))
+}
+
+fn get_plugin_config_dir(state: &State<'_, AppState>) -> Result<std::path::PathBuf> {
+    state.app_config_dir.get().cloned().or_else(|| {
+        dirs::config_dir().map(|dir| dir.join("claude-code-pro"))
+    }).ok_or_else(|| crate::error::AppError::ConfigError("无法获取配置目录".to_string()))
+}
+
+fn parse_local_plugin_scope(scope: &str) -> PluginManifestSourceKind {
+    match scope {
+        "project" => PluginManifestSourceKind::Project,
+        _ => PluginManifestSourceKind::User,
+    }
+}
+
+/// 获取 Polaris 本地插件安装目录
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn plugin_install_locations(
+    state: State<'_, AppState>,
+    workspace_path: Option<String>,
+) -> Result<PluginInstallLocations> {
+    let config_dir = get_plugin_config_dir(&state)?;
+    let workspace_path = workspace_path.as_deref().map(std::path::Path::new);
+
+    Ok(PluginService::install_locations(&config_dir, workspace_path))
+}
+
+/// 从本地目录安装 Polaris 插件
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn plugin_install_local(
+    state: State<'_, AppState>,
+    source_path: String,
+    scope: String,
+    workspace_path: Option<String>,
+) -> Result<PluginOperationResult> {
+    let config_dir = get_plugin_config_dir(&state)?;
+    let workspace_path = workspace_path.as_deref().map(std::path::Path::new);
+
+    PluginService::install_local_plugin(
+        &config_dir,
+        workspace_path,
+        std::path::Path::new(&source_path),
+        parse_local_plugin_scope(&scope),
+    )
+}
+
+/// 卸载已发现的 Polaris 本地插件目录
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn plugin_uninstall_local(
+    state: State<'_, AppState>,
+    install_path: String,
+    workspace_path: Option<String>,
+) -> Result<PluginOperationResult> {
+    let config_dir = get_plugin_config_dir(&state)?;
+    let workspace_path = workspace_path.as_deref().map(std::path::Path::new);
+
+    PluginService::uninstall_local_plugin(
+        &config_dir,
+        workspace_path,
+        std::path::Path::new(&install_path),
+    )
 }
 
 /// 安装插件

@@ -731,10 +731,13 @@ pub fn run() {
             // Plugin 相关
             commands::plugin::plugin_list,
             commands::plugin::plugin_discover,
+            commands::plugin::plugin_install_locations,
+            commands::plugin::plugin_install_local,
             commands::plugin::plugin_install,
             commands::plugin::plugin_enable,
             commands::plugin::plugin_disable,
             commands::plugin::plugin_update,
+            commands::plugin::plugin_uninstall_local,
             commands::plugin::plugin_uninstall,
             commands::plugin::marketplace_list,
             commands::plugin::marketplace_add,

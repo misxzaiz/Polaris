@@ -7,8 +7,8 @@ use std::process::Command;
 
 use crate::error::{AppError, Result};
 use crate::models::plugin::{
-    Marketplace, PluginDiscoveryError, PluginDiscoveryResult, PluginListResult,
-    PluginManifestFile, PluginManifestSource, PluginManifestSourceKind,
+    Marketplace, PluginDiscoveryError, PluginDiscoveryResult, PluginInstallLocations,
+    PluginListResult, PluginManifestFile, PluginManifestSource, PluginManifestSourceKind,
     PluginOperationResult, PluginScope,
 };
 
@@ -36,9 +36,9 @@ impl PluginService {
 
         cmd.args(args);
 
-        let output = cmd.output().map_err(|e| {
-            AppError::ProcessError(format!("执行 Claude CLI 失败: {}", e))
-        })?;
+        let output = cmd
+            .output()
+            .map_err(|e| AppError::ProcessError(format!("执行 Claude CLI 失败: {}", e)))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -81,9 +81,8 @@ impl PluginService {
         // - 不带 --available: 直接返回已安装插件数组
         // - 带 --available: 返回 { installed: [...], available: [...] }
         if available {
-            let result: PluginListResult = serde_json::from_str(&output).map_err(|e| {
-                AppError::ProcessError(format!("解析插件列表失败: {}", e))
-            })?;
+            let result: PluginListResult = serde_json::from_str(&output)
+                .map_err(|e| AppError::ProcessError(format!("解析插件列表失败: {}", e)))?;
             Ok(result)
         } else {
             // 直接是已安装插件数组
@@ -228,10 +227,8 @@ impl PluginService {
     pub fn list_marketplaces(&self) -> Result<Vec<Marketplace>> {
         let output = self.execute_claude(&["plugin", "marketplace", "list", "--json"])?;
 
-        let marketplaces: Vec<Marketplace> =
-            serde_json::from_str(&output).map_err(|e| {
-                AppError::ProcessError(format!("解析市场列表失败: {}", e))
-            })?;
+        let marketplaces: Vec<Marketplace> = serde_json::from_str(&output)
+            .map_err(|e| AppError::ProcessError(format!("解析市场列表失败: {}", e)))?;
 
         Ok(marketplaces)
     }
@@ -311,6 +308,152 @@ impl PluginService {
         result
     }
 
+    pub fn install_locations(
+        app_config_dir: &Path,
+        workspace_path: Option<&Path>,
+    ) -> PluginInstallLocations {
+        let user_root = app_config_dir.join("plugins");
+        let _ = std::fs::create_dir_all(&user_root);
+        let user_path = user_root.to_string_lossy().to_string();
+        let project_path = workspace_path.map(|path| {
+            let project_root = path.join(".polaris").join("plugins");
+            let _ = std::fs::create_dir_all(&project_root);
+            project_root.to_string_lossy().to_string()
+        });
+        let mut discovery_paths = vec![user_path.clone()];
+
+        if let Some(workspace_path) = workspace_path {
+            discovery_paths.push(
+                workspace_path
+                    .join(".polaris")
+                    .join("plugins")
+                    .to_string_lossy()
+                    .to_string(),
+            );
+            discovery_paths.push(
+                workspace_path
+                    .join(".codex")
+                    .join("plugins")
+                    .to_string_lossy()
+                    .to_string(),
+            );
+        }
+
+        PluginInstallLocations {
+            user_path,
+            project_path,
+            discovery_paths,
+        }
+    }
+
+    pub fn install_local_plugin(
+        app_config_dir: &Path,
+        workspace_path: Option<&Path>,
+        source_path: &Path,
+        scope: PluginManifestSourceKind,
+    ) -> Result<PluginOperationResult> {
+        let source_dir = source_path.canonicalize().map_err(|error| {
+            AppError::InvalidPath(format!(
+                "无法读取插件目录 {}: {}",
+                source_path.display(),
+                error
+            ))
+        })?;
+
+        if !source_dir.is_dir() {
+            return Err(AppError::InvalidPath(format!(
+                "插件来源不是目录: {}",
+                source_dir.display()
+            )));
+        }
+
+        let manifest_path = Self::find_manifest_path(&source_dir).ok_or_else(|| {
+            AppError::ConfigError(
+                "插件目录必须包含 plugin.json 或 .codex-plugin/plugin.json".to_string(),
+            )
+        })?;
+        let manifest = Self::read_manifest(&manifest_path)?;
+
+        let install_root = match scope {
+            PluginManifestSourceKind::User => app_config_dir.join("plugins"),
+            PluginManifestSourceKind::Project => workspace_path
+                .map(|path| path.join(".polaris").join("plugins"))
+                .ok_or_else(|| AppError::ConfigError("项目插件安装需要当前工作区".to_string()))?,
+        };
+        std::fs::create_dir_all(&install_root)?;
+
+        let target_dir = install_root.join(Self::safe_plugin_dir_name(&manifest.id));
+        if target_dir.exists() {
+            return Ok(PluginOperationResult {
+                success: false,
+                message: None,
+                error: Some(format!("插件已存在: {}", target_dir.display())),
+            });
+        }
+
+        let canonical_root = install_root.canonicalize()?;
+        if source_dir.starts_with(&canonical_root) {
+            return Ok(PluginOperationResult {
+                success: false,
+                message: None,
+                error: Some("来源目录已经位于插件安装目录中，请直接刷新已安装插件".to_string()),
+            });
+        }
+
+        Self::copy_dir_recursive(&source_dir, &target_dir)?;
+
+        Ok(PluginOperationResult {
+            success: true,
+            message: Some(format!(
+                "已安装插件 {} 到 {}",
+                manifest.id,
+                target_dir.display()
+            )),
+            error: None,
+        })
+    }
+
+    pub fn uninstall_local_plugin(
+        app_config_dir: &Path,
+        workspace_path: Option<&Path>,
+        install_path: &Path,
+    ) -> Result<PluginOperationResult> {
+        let target = install_path.canonicalize().map_err(|error| {
+            AppError::InvalidPath(format!(
+                "无法读取插件安装目录 {}: {}",
+                install_path.display(),
+                error
+            ))
+        })?;
+
+        let mut allowed_roots = vec![app_config_dir.join("plugins")];
+        if let Some(workspace_path) = workspace_path {
+            allowed_roots.push(workspace_path.join(".polaris").join("plugins"));
+            allowed_roots.push(workspace_path.join(".codex").join("plugins"));
+        }
+
+        let is_allowed = allowed_roots.iter().any(|root| {
+            root.canonicalize()
+                .map(|canonical| target.starts_with(&canonical) && target != canonical)
+                .unwrap_or(false)
+        });
+
+        if !is_allowed {
+            return Err(AppError::PermissionDenied(format!(
+                "只能卸载已发现插件目录下的插件: {}",
+                target.display()
+            )));
+        }
+
+        std::fs::remove_dir_all(&target)?;
+
+        Ok(PluginOperationResult {
+            success: true,
+            message: Some(format!("已卸载插件目录 {}", target.display())),
+            error: None,
+        })
+    }
+
     fn scan_plugin_root(
         root: &Path,
         source: PluginManifestSource,
@@ -347,10 +490,9 @@ impl PluginService {
 
             if let Some(manifest_path) = Self::find_manifest_path(&plugin_dir) {
                 match Self::read_manifest(&manifest_path) {
-                    Ok(manifest) => result.plugins.push(manifest.into_discovered(
-                        source.clone(),
-                        plugin_dir,
-                    )),
+                    Ok(manifest) => result
+                        .plugins
+                        .push(manifest.into_discovered(source.clone(), plugin_dir)),
                     Err(error) => result.errors.push(PluginDiscoveryError {
                         path: manifest_path.to_string_lossy().to_string(),
                         error: error.to_string(),
@@ -373,6 +515,43 @@ impl PluginService {
         let content = std::fs::read_to_string(path)?;
         serde_json::from_str::<PluginManifestFile>(&content)
             .map_err(|error| AppError::ConfigError(format!("插件 manifest 格式错误: {}", error)))
+    }
+
+    fn safe_plugin_dir_name(plugin_id: &str) -> String {
+        let name: String = plugin_id
+            .chars()
+            .map(|ch| {
+                if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_') {
+                    ch
+                } else {
+                    '-'
+                }
+            })
+            .collect();
+        let trimmed = name.trim_matches(|ch| matches!(ch, '.' | '-' | '_'));
+        if trimmed.is_empty() {
+            "plugin".to_string()
+        } else {
+            trimmed.to_string()
+        }
+    }
+
+    fn copy_dir_recursive(source: &Path, target: &Path) -> Result<()> {
+        std::fs::create_dir_all(target)?;
+        for entry in std::fs::read_dir(source)? {
+            let entry = entry?;
+            let source_path = entry.path();
+            let target_path = target.join(entry.file_name());
+            let file_type = entry.file_type()?;
+
+            if file_type.is_dir() {
+                Self::copy_dir_recursive(&source_path, &target_path)?;
+            } else if file_type.is_file() {
+                std::fs::copy(&source_path, &target_path)?;
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -425,10 +604,8 @@ mod tests {
         )
         .unwrap();
 
-        let result = PluginService::discover_installed_plugins(
-            app_config.path(),
-            Some(workspace.path()),
-        );
+        let result =
+            PluginService::discover_installed_plugins(app_config.path(), Some(workspace.path()));
 
         assert!(result.errors.is_empty());
         assert_eq!(result.plugins.len(), 2);
@@ -468,5 +645,47 @@ mod tests {
         assert_eq!(result.plugins[0].id, "example.valid");
         assert_eq!(result.errors.len(), 1);
         assert!(result.errors[0].path.ends_with("plugin.json"));
+    }
+
+    #[test]
+    fn installs_and_uninstalls_local_plugin_within_allowed_root() {
+        let app_config = tempfile::tempdir().unwrap();
+        let source = tempfile::tempdir().unwrap();
+        std::fs::write(
+            source.path().join("plugin.json"),
+            r#"{
+              "id": "example.local",
+              "name": "Example Local",
+              "version": "0.1.0"
+            }"#,
+        )
+        .unwrap();
+
+        let installed = PluginService::install_local_plugin(
+            app_config.path(),
+            None,
+            source.path(),
+            PluginManifestSourceKind::User,
+        )
+        .unwrap();
+        assert!(installed.success);
+
+        let install_path = app_config.path().join("plugins").join("example.local");
+        assert!(install_path.join("plugin.json").is_file());
+
+        let uninstalled =
+            PluginService::uninstall_local_plugin(app_config.path(), None, &install_path).unwrap();
+        assert!(uninstalled.success);
+        assert!(!install_path.exists());
+    }
+
+    #[test]
+    fn refuses_to_uninstall_outside_plugin_roots() {
+        let app_config = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+
+        let result = PluginService::uninstall_local_plugin(app_config.path(), None, outside.path());
+
+        assert!(result.is_err());
     }
 }

@@ -19,6 +19,18 @@ interface BackendPluginDiscoveryResult {
   errors: PluginDiscoveryIssue[]
 }
 
+export interface PluginInstallLocations {
+  userPath: string
+  projectPath?: string
+  discoveryPaths: string[]
+}
+
+export interface PluginOperationResult {
+  success: boolean
+  message?: string
+  error?: string
+}
+
 export interface PluginDiscoveryResult {
   plugins: PolarisPluginManifest[]
   errors: PluginDiscoveryIssue[]
@@ -230,4 +242,32 @@ export async function discoverInstalledPlugins(workspacePath?: string): Promise<
       .filter((plugin): plugin is PolarisPluginManifest => plugin !== null),
     errors: backendErrors.concat(validationErrors),
   }
+}
+
+export async function getPluginInstallLocations(
+  workspacePath?: string
+): Promise<PluginInstallLocations> {
+  return invoke<PluginInstallLocations>('plugin_install_locations', { workspacePath })
+}
+
+export async function installLocalPlugin(
+  sourcePath: string,
+  scope: 'user' | 'project',
+  workspacePath?: string
+): Promise<PluginOperationResult> {
+  return invoke<PluginOperationResult>('plugin_install_local', {
+    sourcePath,
+    scope,
+    workspacePath,
+  })
+}
+
+export async function uninstallLocalPlugin(
+  installPath: string,
+  workspacePath?: string
+): Promise<PluginOperationResult> {
+  return invoke<PluginOperationResult>('plugin_uninstall_local', {
+    installPath,
+    workspacePath,
+  })
 }

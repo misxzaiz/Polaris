@@ -23,6 +23,17 @@ pub struct PluginDiscoveryResult {
     pub errors: Vec<PluginDiscoveryError>,
 }
 
+/// Polaris 本地插件安装位置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginInstallLocations {
+    pub user_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub discovery_paths: Vec<String>,
+}
+
 /// 插件发现错误
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

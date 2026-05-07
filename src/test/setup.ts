@@ -71,6 +71,7 @@ vi.mock('@tauri-apps/plugin-opener', () => ({
  * 用于测试文件保存对话框场景。
  */
 vi.mock('@tauri-apps/plugin-dialog', () => ({
+  open: vi.fn(() => Promise.resolve(null)),
   save: vi.fn(() => Promise.resolve(null)),
 }));
 

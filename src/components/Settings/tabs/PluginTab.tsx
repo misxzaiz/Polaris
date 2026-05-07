@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { FolderOpen, PackagePlus, RefreshCw, Trash2 } from 'lucide-react'
 import { listPluginMcpServerStatuses, pluginIconMap, pluginRegistry } from '@/plugin-system'
 import {
   discoverInstalledPlugins,
+  getPluginInstallLocations,
+  installLocalPlugin,
+  uninstallLocalPlugin,
   type PluginDiscoveryIssue,
+  type PluginInstallLocations,
 } from '@/services/pluginDiscoveryService'
 import { listMcpHealthStatuses, type McpHealthStatus } from '@/services/mcpHealthService'
+import { openInDefaultApp } from '@/services/tauri/windowService'
 import { usePluginStore } from '@/stores/pluginStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 
@@ -21,6 +27,10 @@ export function PluginTab() {
   const [pluginDiscoveryLoading, setPluginDiscoveryLoading] = useState(false)
   const [pluginDiscoveryError, setPluginDiscoveryError] = useState<string | null>(null)
   const [pluginDiscoveryIssues, setPluginDiscoveryIssues] = useState<PluginDiscoveryIssue[]>([])
+  const [pluginInstallLocations, setPluginInstallLocations] = useState<PluginInstallLocations | null>(null)
+  const [pluginOperationLoading, setPluginOperationLoading] = useState(false)
+  const [pluginOperationMessage, setPluginOperationMessage] = useState<string | null>(null)
+  const [pluginInstallScope, setPluginInstallScope] = useState<'user' | 'project'>('user')
   const [plugins, setPlugins] = useState(() => pluginRegistry.listPlugins())
   const currentWorkspacePath = useWorkspaceStore((state) => state.getCurrentWorkspace()?.path)
   const pluginStates = usePluginStore((state) => state.pluginStates)
@@ -67,9 +77,89 @@ export function PluginTab() {
     }
   }, [currentWorkspacePath])
 
+  const refreshInstallLocations = useCallback(async () => {
+    try {
+      setPluginInstallLocations(await getPluginInstallLocations(currentWorkspacePath))
+    } catch (error) {
+      setPluginDiscoveryError(error instanceof Error ? error.message : String(error))
+      setPluginInstallLocations(null)
+    }
+  }, [currentWorkspacePath])
+
+  const handleOpenInstallDirectory = useCallback(async () => {
+    const path = pluginInstallScope === 'project'
+      ? pluginInstallLocations?.projectPath
+      : pluginInstallLocations?.userPath
+    if (!path) return
+    await openInDefaultApp(path)
+  }, [pluginInstallLocations, pluginInstallScope])
+
+  const handleInstallLocalPlugin = useCallback(async () => {
+    setPluginOperationMessage(null)
+
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog')
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: t('plugins.selectPluginDirectory', { defaultValue: 'Select plugin directory' }),
+      })
+      const sourcePath = Array.isArray(selected) ? selected[0] : selected
+      if (!sourcePath) return
+
+      setPluginOperationLoading(true)
+      const result = await installLocalPlugin(sourcePath, pluginInstallScope, currentWorkspacePath)
+      if (!result.success) {
+        setPluginOperationMessage(result.error ?? t('plugins.installFailed', { defaultValue: 'Plugin install failed' }))
+        return
+      }
+
+      setPluginOperationMessage(result.message ?? t('plugins.installSucceeded', { defaultValue: 'Plugin installed' }))
+      await refreshInstalledPlugins()
+      await refreshInstallLocations()
+    } catch (error) {
+      setPluginOperationMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setPluginOperationLoading(false)
+    }
+  }, [currentWorkspacePath, pluginInstallScope, refreshInstallLocations, refreshInstalledPlugins, t])
+
+  const handleUninstallLocalPlugin = useCallback(async (pluginId: string, installPath?: string) => {
+    if (!installPath) return
+    const confirmed = window.confirm(t('plugins.uninstallConfirm', {
+      defaultValue: 'Uninstall plugin {{pluginId}}? This removes its installed directory.',
+      pluginId,
+    }))
+    if (!confirmed) return
+
+    setPluginOperationLoading(true)
+    setPluginOperationMessage(null)
+
+    try {
+      const result = await uninstallLocalPlugin(installPath, currentWorkspacePath)
+      if (!result.success) {
+        setPluginOperationMessage(result.error ?? t('plugins.uninstallFailed', { defaultValue: 'Plugin uninstall failed' }))
+        return
+      }
+
+      resetPluginState(pluginId)
+      setPluginOperationMessage(result.message ?? t('plugins.uninstallSucceeded', { defaultValue: 'Plugin uninstalled' }))
+      await refreshInstalledPlugins()
+      await refreshInstallLocations()
+    } catch (error) {
+      setPluginOperationMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setPluginOperationLoading(false)
+    }
+  }, [currentWorkspacePath, refreshInstallLocations, refreshInstalledPlugins, resetPluginState, t])
+
   useEffect(() => {
     refreshMcpHealth()
   }, [refreshMcpHealth])
+
+  useEffect(() => {
+    refreshInstallLocations()
+  }, [refreshInstallLocations])
 
   return (
     <div className="space-y-4">
@@ -90,12 +180,62 @@ export function PluginTab() {
           type="button"
           onClick={refreshInstalledPlugins}
           disabled={pluginDiscoveryLoading}
-          className="self-start rounded-md border border-border-subtle px-3 py-1.5 text-xs text-text-secondary hover:bg-background-hover disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
+          className="inline-flex items-center gap-1.5 self-start rounded-md border border-border-subtle px-3 py-1.5 text-xs text-text-secondary hover:bg-background-hover disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
         >
+          <RefreshCw size={13} />
           {pluginDiscoveryLoading
             ? t('plugins.refreshingDiscovery', { defaultValue: 'Refreshing...' })
             : t('plugins.refreshDiscovery', { defaultValue: 'Refresh installed plugins' })}
         </button>
+      </div>
+      <div className="rounded-md border border-border-subtle bg-background-elevated px-3 py-3">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <div className="text-xs font-medium text-text-secondary">
+              {t('plugins.installDirectoryTitle', { defaultValue: 'Install directories' })}
+            </div>
+            <div className="mt-1 truncate text-xs text-text-tertiary">
+              {pluginInstallScope === 'project'
+                ? pluginInstallLocations?.projectPath ?? t('plugins.projectInstallUnavailable', { defaultValue: 'Open a workspace to install project plugins' })
+                : pluginInstallLocations?.userPath ?? t('plugins.installLocationsUnavailable', { defaultValue: 'Install locations unavailable' })}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={pluginInstallScope}
+              onChange={(event) => setPluginInstallScope(event.target.value as 'user' | 'project')}
+              className="rounded-md border border-border-subtle bg-background-surface px-2 py-1.5 text-xs text-text-secondary"
+            >
+              <option value="user">{t('plugins.userInstallScope', { defaultValue: 'User' })}</option>
+              <option value="project" disabled={!currentWorkspacePath}>
+                {t('plugins.projectInstallScope', { defaultValue: 'Project' })}
+              </option>
+            </select>
+            <button
+              type="button"
+              onClick={handleOpenInstallDirectory}
+              disabled={pluginInstallScope === 'project' && !pluginInstallLocations?.projectPath}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle px-3 py-1.5 text-xs text-text-secondary hover:bg-background-hover disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <FolderOpen size={13} />
+              {t('plugins.openInstallDirectory', { defaultValue: 'Open directory' })}
+            </button>
+            <button
+              type="button"
+              onClick={handleInstallLocalPlugin}
+              disabled={pluginOperationLoading || (pluginInstallScope === 'project' && !currentWorkspacePath)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs text-primary hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <PackagePlus size={13} />
+              {pluginOperationLoading
+                ? t('plugins.installingPlugin', { defaultValue: 'Installing...' })
+                : t('plugins.installFromDirectory', { defaultValue: 'Install from directory' })}
+            </button>
+          </div>
+        </div>
+        {pluginOperationMessage && (
+          <div className="mt-2 text-xs text-text-tertiary">{pluginOperationMessage}</div>
+        )}
       </div>
       {pluginDiscoveryIssues.length > 0 && (
         <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2">
@@ -316,6 +456,17 @@ export function PluginTab() {
                 >
                   {t('plugins.reset')}
                 </button>
+                {!plugin.builtin && (
+                  <button
+                    type="button"
+                    onClick={() => handleUninstallLocalPlugin(plugin.id, plugin.installPath)}
+                    disabled={pluginOperationLoading || !plugin.installPath}
+                    className="inline-flex items-center gap-1.5 self-start rounded-md border border-danger/30 px-3 py-1.5 text-xs text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
+                  >
+                    <Trash2 size={13} />
+                    {t('plugins.uninstall', { defaultValue: 'Uninstall' })}
+                  </button>
+                )}
               </div>
             </section>
           )
