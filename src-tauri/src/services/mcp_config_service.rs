@@ -11,6 +11,7 @@ const SCHEDULER_MCP_SERVER_NAME: &str = "polaris-scheduler";
 const SCHEDULER_MCP_BIN_NAME: &str = "polaris-scheduler-mcp";
 const KNOWLEDGE_MCP_SERVER_NAME: &str = "polaris-knowledge";
 const KNOWLEDGE_MCP_BIN_NAME: &str = "polaris-knowledge-mcp";
+const TODO_PLUGIN_ID: &str = "polaris.todo";
 
 /// Platform-aware executable suffix: ".exe" on Windows, "" on Linux/macOS.
 const EXE_SUFFIX: &str = std::env::consts::EXE_SUFFIX;
@@ -56,6 +57,12 @@ pub struct PluginMcpServerContribution {
     pub env_var_name: String,
     pub args_mode: McpServerArgsMode,
     required: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BuiltinPluginMcpManifest {
+    pub plugin_id: &'static str,
+    pub mcp_server_names: &'static [&'static str],
 }
 
 impl PluginMcpServerContribution {
@@ -114,20 +121,37 @@ impl McpServerContributionRegistry {
     fn contributions(&self) -> &[PluginMcpServerContribution] {
         &self.contributions
     }
+
+    pub fn has_plugin_server(&self, plugin_id: &str, server_name: &str) -> bool {
+        self.contributions.iter().any(|contribution| {
+            contribution.plugin_id.as_deref() == Some(plugin_id)
+                && contribution.server_name == server_name
+        })
+    }
+}
+
+pub fn builtin_plugin_mcp_manifests() -> &'static [BuiltinPluginMcpManifest] {
+    &[BuiltinPluginMcpManifest {
+        plugin_id: TODO_PLUGIN_ID,
+        mcp_server_names: &[TODO_MCP_SERVER_NAME],
+    }]
 }
 
 fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
     let mut registry = McpServerContributionRegistry::new();
-    registry.register(PluginMcpServerContribution::builtin(
-        TODO_MCP_SERVER_NAME,
-        TODO_MCP_BIN_NAME,
-        "bin/polaris-todo-mcp",
-        "polaris-todo-mcp",
-        "src-tauri/target/debug/polaris-todo-mcp",
-        "POLARIS_TODO_MCP_PATH",
-        McpServerArgsMode::ConfigDirAndWorkspace,
-        true,
-    ));
+    registry.register_plugin_server(
+        TODO_PLUGIN_ID,
+        PluginMcpServerContribution::builtin(
+            TODO_MCP_SERVER_NAME,
+            TODO_MCP_BIN_NAME,
+            "bin/polaris-todo-mcp",
+            "polaris-todo-mcp",
+            "src-tauri/target/debug/polaris-todo-mcp",
+            "POLARIS_TODO_MCP_PATH",
+            McpServerArgsMode::ConfigDirAndWorkspace,
+            true,
+        ),
+    );
     registry.register(PluginMcpServerContribution::builtin(
         REQUIREMENTS_MCP_SERVER_NAME,
         REQUIREMENTS_MCP_BIN_NAME,
@@ -863,6 +887,22 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn builtin_plugin_mcp_manifest_matches_registry() {
+        let registry = builtin_mcp_contribution_registry();
+
+        for manifest in builtin_plugin_mcp_manifests() {
+            for server_name in manifest.mcp_server_names {
+                assert!(
+                    registry.has_plugin_server(manifest.plugin_id, server_name),
+                    "plugin {} must register MCP server {}",
+                    manifest.plugin_id,
+                    server_name
+                );
+            }
+        }
     }
 
     #[test]

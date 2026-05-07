@@ -28,6 +28,8 @@
 
 ## 阶段 5：前后端插件 manifest 对齐
 
+状态：已完成第一步。当前已有 `docs/mcp/4-manifest-schema.md` 固化内置 manifest schema，前端测试校验 `polaris.todo` manifest 声明，后端 Rust mirror 校验 `polaris.todo` 的 `polaris-todo` server 已注册到 MCP contribution registry。
+
 目标：避免前端 Todo manifest 和后端 MCP 定义各自维护，降低 server id/name 漂移风险。
 
 建议方向：
@@ -37,6 +39,11 @@
 - 增加一致性检查：
   - `polaris.todo` 前端声明的 `polaris-todo` 必须存在于后端 registry。
   - 后端 registry 的内置 plugin id 必须能在前端插件 registry 中找到。
+
+后续可选增强：
+
+- 引入 JSON schema 或生成式 manifest，减少 TypeScript/Rust mirror 的重复字段。
+- 将更多内置插件拆分为独立 manifest 后，扩展内置对齐表与测试覆盖。
 
 ## 阶段 6：插件安装与发现流程
 
