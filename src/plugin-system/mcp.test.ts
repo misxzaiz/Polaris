@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
   listEnabledPluginMcpServers,
   listPluginMcpServerStatuses,
@@ -7,6 +7,10 @@ import type { PluginStateMap } from '@/stores/pluginStore'
 import { pluginRegistry } from './registry'
 
 describe('plugin MCP contributions', () => {
+  afterEach(() => {
+    pluginRegistry.replaceInstalled([])
+  })
+
   it('lists Todo MCP as enabled by default', () => {
     const servers = listEnabledPluginMcpServers({})
 
@@ -63,5 +67,36 @@ describe('plugin MCP contributions', () => {
         argsTemplate: ['{{appConfigDir}}', '{{workspacePath}}'],
       }),
     ])
+  })
+
+  it('lists installed MCP contributions even when the plugin is disabled by default', () => {
+    pluginRegistry.registerInstalled([
+      {
+        id: 'example.disabled-mcp',
+        name: 'Disabled MCP',
+        version: '0.1.0',
+        builtin: false,
+        enabledByDefault: false,
+        contributes: {
+          mcpServers: [
+            {
+              id: 'example-disabled-mcp',
+              transport: 'stdio',
+              command: 'node',
+            },
+          ],
+        },
+        permissions: {},
+      },
+    ])
+
+    expect(listPluginMcpServerStatuses({})).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'example-disabled-mcp',
+          pluginId: 'example.disabled-mcp',
+        }),
+      ])
+    )
   })
 })

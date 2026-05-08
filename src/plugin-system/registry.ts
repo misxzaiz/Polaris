@@ -56,7 +56,6 @@ class PluginRegistry {
 
   listMcpServerContributions(): PluginMcpServerContribution[] {
     return this.listPlugins()
-      .filter((plugin) => plugin.enabledByDefault)
       .flatMap((plugin) =>
         (plugin.contributes.mcpServers ?? []).map((server) => ({
           ...server,
