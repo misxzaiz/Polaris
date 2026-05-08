@@ -415,6 +415,61 @@ feat: advance long goal <goal-id> step <step-id>
 - `long_goal_record_progress`
 - `long_goal_set_status`
 
+## 外部 MCP 迁移实施方案
+
+目标不是让外部 MCP 插件接管后台调度，而是把“协议文档读写能力”和“AI 可调用工具面”迁出宿主；宿主保留会话编排、定时扫描、AI 引擎选择、中断和复审。
+
+### 阶段 1：修正宿主原型和外部样例边界
+
+- 修复宿主 Tauri 调用参数：所有 `params` 结构体命令必须按 `{ params: ... }` 传入。
+- 外部样例插件继续只声明 `mcpServers`，不声明 `views`。
+- 外部样例 MCP tools 只操作 `.polaris/long-goals/<goal-id>/` 文档和 `goal.json`。
+- 设置页应显示该插件 `0 个入口 / 1 个 MCP 服务`。
+
+### 阶段 2：抽出共享文档服务边界
+
+当前 Rust `LongGoalService` 同时服务 Tauri 命令和宿主 UI。下一步应抽出一个稳定的文档服务边界：
+
+- `create_goal`
+- `list_goals`
+- `read_goal`
+- `append_supplement`
+- `record_progress`
+- `set_status`
+- `prepare_planning_context`
+- `prepare_execution_context`
+- `prepare_maintenance_context`
+
+宿主 Tauri 命令继续调用该服务；外部 MCP server 后续可以复用同一套语义，避免 JS 样例和 Rust 服务长期分叉。
+
+### 阶段 3：外部 MCP server 正式化
+
+有两条可选路线：
+
+1. Node 外部插件路线：保留 `examples/plugins/long-goal-mcp-plugin/mcp/long-goal-mcp-server.js`，补齐工具校验、文件锁、状态机约束和测试。
+2. Rust 二进制路线：新增 `polaris-long-goal-mcp`，像 `polaris-todo-mcp` 一样由宿主解析路径，并可复用 Rust `LongGoalService`。
+
+建议最终采用 Rust 二进制路线；Node 样例只用于验证外部插件安装、manifest 和工具边界。
+
+### 阶段 4：UI 入口归属调整
+
+当前长期目标面板仍来自 `polaris.core` 的受控宿主入口，不是外部插件自带 UI。
+
+迁移顺序：
+
+1. 先保留内置 `LongGoalPanel`，确保功能稳定。
+2. 将 `long-goal.panel` 从 `polaris.core` 移到一个受控 manifest，例如 `polaris.long-goal`。
+3. 外部插件 manifest 可声明 `panelType: 'longGoal'`，但 React 组件仍由宿主提供。
+4. 只有插件系统支持外部前端代码后，才考虑真正动态加载外部 UI。
+
+### 阶段 5：权限和状态约束
+
+- `workspaceRead`：读取长期目标文档。
+- `workspaceWrite`：写入补充、进度、队列和状态。
+- `aiToolAccess`：允许聊天会话调用 MCP tools。
+- `allowCodeChanges` / `allowGitCommit` 仍是长期目标执行策略，不等同于插件安装权限。
+- 外部 MCP 不应直接新建会话、启动后台定时器或绕过用户暂停状态。
+
 ### 阶段 A：纯设计和 schema
 
 - 定义 `goal.json` schema。

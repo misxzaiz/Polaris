@@ -114,7 +114,7 @@ export interface CompleteLongGoalParams {
 }
 
 export async function createLongGoal(params: CreateLongGoalParams): Promise<LongGoalState> {
-  return invoke<LongGoalState>('long_goal_create', { ...params })
+  return invoke<LongGoalState>('long_goal_create', { params })
 }
 
 export async function listLongGoals(workspacePath: string): Promise<LongGoalState[]> {
@@ -128,19 +128,19 @@ export async function readLongGoal(workspacePath: string, goalId: string): Promi
 export async function appendLongGoalSupplement(
   params: AppendLongGoalSupplementParams
 ): Promise<LongGoalState> {
-  return invoke<LongGoalState>('long_goal_append_supplement', { ...params })
+  return invoke<LongGoalState>('long_goal_append_supplement', { params })
 }
 
 export async function bindLongGoalSession(
   params: BindLongGoalSessionParams
 ): Promise<LongGoalState> {
-  return invoke<LongGoalState>('long_goal_bind_session', { ...params })
+  return invoke<LongGoalState>('long_goal_bind_session', { params })
 }
 
 export async function finishLongGoalSession(
   params: FinishLongGoalSessionParams
 ): Promise<LongGoalState> {
-  return invoke<LongGoalState>('long_goal_finish_session', { ...params })
+  return invoke<LongGoalState>('long_goal_finish_session', { params })
 }
 
 export async function pauseLongGoal(workspacePath: string, goalId: string): Promise<LongGoalState> {
@@ -166,11 +166,11 @@ export async function prepareLongGoalExecution(
 }
 
 export async function recordLongGoalStep(params: RecordLongGoalStepParams): Promise<LongGoalState> {
-  return invoke<LongGoalState>('long_goal_record_step', { ...params })
+  return invoke<LongGoalState>('long_goal_record_step', { params })
 }
 
 export async function completeLongGoal(params: CompleteLongGoalParams): Promise<LongGoalState> {
-  return invoke<LongGoalState>('long_goal_complete', { ...params })
+  return invoke<LongGoalState>('long_goal_complete', { params })
 }
 
 export async function prepareLongGoalMaintenance(

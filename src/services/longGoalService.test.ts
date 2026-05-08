@@ -38,11 +38,13 @@ describe('longGoalService', () => {
     })).resolves.toEqual({ config: { id: 'goal-1' } })
 
     expect(invokeMock).toHaveBeenCalledWith('long_goal_create', {
-      title: 'Goal',
-      goal: 'Build long goal executor',
-      workspacePath: 'D:\\space\\base\\Polaris',
-      engineId: 'codex',
-      interval: '30m',
+      params: {
+        title: 'Goal',
+        goal: 'Build long goal executor',
+        workspacePath: 'D:\\space\\base\\Polaris',
+        engineId: 'codex',
+        interval: '30m',
+      },
     })
   })
 
@@ -78,17 +80,21 @@ describe('longGoalService', () => {
       goalId: 'goal-1',
     })
     expect(invokeMock).toHaveBeenNthCalledWith(3, 'long_goal_bind_session', {
-      workspacePath: 'D:\\workspace',
-      goalId: 'goal-1',
-      sessionId: 'session-1',
-      phase: 'planning',
+      params: {
+        workspacePath: 'D:\\workspace',
+        goalId: 'goal-1',
+        sessionId: 'session-1',
+        phase: 'planning',
+      },
     })
     expect(invokeMock).toHaveBeenNthCalledWith(4, 'long_goal_finish_session', {
-      workspacePath: 'D:\\workspace',
-      goalId: 'goal-1',
-      sessionId: 'session-1',
-      summary: 'Planning completed',
-      result: 'success',
+      params: {
+        workspacePath: 'D:\\workspace',
+        goalId: 'goal-1',
+        sessionId: 'session-1',
+        summary: 'Planning completed',
+        result: 'success',
+      },
     })
     expect(invokeMock).toHaveBeenNthCalledWith(5, 'long_goal_pause', {
       workspacePath: 'D:\\workspace',
@@ -141,28 +147,34 @@ describe('longGoalService', () => {
     })
 
     expect(invokeMock).toHaveBeenNthCalledWith(1, 'long_goal_append_supplement', {
-      workspacePath: 'D:\\workspace',
-      goalId: 'goal-1',
-      content: 'Please prioritize tests',
-      priority: 'high',
+      params: {
+        workspacePath: 'D:\\workspace',
+        goalId: 'goal-1',
+        content: 'Please prioritize tests',
+        priority: 'high',
+      },
     })
     expect(invokeMock).toHaveBeenNthCalledWith(2, 'long_goal_record_step', {
-      workspacePath: 'D:\\workspace',
-      goalId: 'goal-1',
-      stepId: 'step-1',
-      summary: 'Implemented document service',
-      changedFiles: ['src-tauri/src/services/long_goal_service.rs'],
-      testsRun: ['cargo test --lib long_goal_service --no-run'],
-      commitSha: 'abc123',
-      result: 'success',
-      nextStep: 'Build UI',
+      params: {
+        workspacePath: 'D:\\workspace',
+        goalId: 'goal-1',
+        stepId: 'step-1',
+        summary: 'Implemented document service',
+        changedFiles: ['src-tauri/src/services/long_goal_service.rs'],
+        testsRun: ['cargo test --lib long_goal_service --no-run'],
+        commitSha: 'abc123',
+        result: 'success',
+        nextStep: 'Build UI',
+      },
     })
     expect(invokeMock).toHaveBeenNthCalledWith(3, 'long_goal_complete', {
-      workspacePath: 'D:\\workspace',
-      goalId: 'goal-1',
-      completionSummary: 'Goal completed',
-      remainingRisks: ['Needs review'],
-      reviewSuggestions: ['Run full app'],
+      params: {
+        workspacePath: 'D:\\workspace',
+        goalId: 'goal-1',
+        completionSummary: 'Goal completed',
+        remainingRisks: ['Needs review'],
+        reviewSuggestions: ['Run full app'],
+      },
     })
   })
 })

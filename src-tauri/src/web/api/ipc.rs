@@ -1262,7 +1262,7 @@ fn dispatch_knowledge_list_domains(state: &AppState, args: &Value) -> Result<Jso
 
 fn dispatch_long_goal_create(args: &Value) -> Result<Json<Value>, WebError> {
     let params: crate::models::long_goal::CreateLongGoalParams =
-        serde_json::from_value(args.clone())
+        serde_json::from_value(long_goal_params_value(args))
             .map_err(|error| WebError::BadRequest(format!("Invalid long goal params: {}", error)))?;
     json_result!(crate::services::long_goal_service::LongGoalService::create_goal(params))
 }
@@ -1285,21 +1285,21 @@ fn dispatch_long_goal_read(args: &Value) -> Result<Json<Value>, WebError> {
 
 fn dispatch_long_goal_append_supplement(args: &Value) -> Result<Json<Value>, WebError> {
     let params: crate::models::long_goal::AppendLongGoalSupplementParams =
-        serde_json::from_value(args.clone())
+        serde_json::from_value(long_goal_params_value(args))
             .map_err(|error| WebError::BadRequest(format!("Invalid supplement params: {}", error)))?;
     json_result!(crate::services::long_goal_service::LongGoalService::append_supplement(params))
 }
 
 fn dispatch_long_goal_bind_session(args: &Value) -> Result<Json<Value>, WebError> {
     let params: crate::models::long_goal::BindLongGoalSessionParams =
-        serde_json::from_value(args.clone())
+        serde_json::from_value(long_goal_params_value(args))
             .map_err(|error| WebError::BadRequest(format!("Invalid session binding params: {}", error)))?;
     json_result!(crate::services::long_goal_service::LongGoalService::bind_session(params))
 }
 
 fn dispatch_long_goal_finish_session(args: &Value) -> Result<Json<Value>, WebError> {
     let params: crate::models::long_goal::FinishLongGoalSessionParams =
-        serde_json::from_value(args.clone())
+        serde_json::from_value(long_goal_params_value(args))
             .map_err(|error| WebError::BadRequest(format!("Invalid session finish params: {}", error)))?;
     json_result!(crate::services::long_goal_service::LongGoalService::finish_session(params))
 }
@@ -1324,16 +1324,20 @@ fn dispatch_long_goal_resume(args: &Value) -> Result<Json<Value>, WebError> {
 
 fn dispatch_long_goal_record_step(args: &Value) -> Result<Json<Value>, WebError> {
     let params: crate::models::long_goal::RecordLongGoalStepParams =
-        serde_json::from_value(args.clone())
+        serde_json::from_value(long_goal_params_value(args))
             .map_err(|error| WebError::BadRequest(format!("Invalid step result params: {}", error)))?;
     json_result!(crate::services::long_goal_service::LongGoalService::record_step(params))
 }
 
 fn dispatch_long_goal_complete(args: &Value) -> Result<Json<Value>, WebError> {
     let params: crate::models::long_goal::CompleteLongGoalParams =
-        serde_json::from_value(args.clone())
+        serde_json::from_value(long_goal_params_value(args))
             .map_err(|error| WebError::BadRequest(format!("Invalid completion params: {}", error)))?;
     json_result!(crate::services::long_goal_service::LongGoalService::complete_goal(params))
+}
+
+fn long_goal_params_value(args: &Value) -> Value {
+    args.get("params").cloned().unwrap_or_else(|| args.clone())
 }
 
 fn dispatch_long_goal_prepare_planning(args: &Value) -> Result<Json<Value>, WebError> {
