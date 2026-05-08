@@ -425,6 +425,7 @@ feat: advance long goal <goal-id> step <step-id>
 - 外部样例插件继续只声明 `mcpServers`，不声明 `views`。
 - 外部样例 MCP tools 只操作 `.polaris/long-goals/<goal-id>/` 文档和 `goal.json`。
 - 设置页应显示该插件 `0 个入口 / 1 个 MCP 服务`。
+- 已补充安装发现回归测试，覆盖 `examples/plugins/long-goal-mcp-plugin` manifest 校验、项目级安装、发现结果和 MCP server contribution。
 
 ### 阶段 2：抽出共享文档服务边界
 

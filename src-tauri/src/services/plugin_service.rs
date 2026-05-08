@@ -1406,6 +1406,55 @@ mod tests {
     }
 
     #[test]
+    fn installs_long_goal_mcp_plugin_example() {
+        let app_config = tempfile::tempdir().unwrap();
+        let workspace = tempfile::tempdir().unwrap();
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let source = repo_root
+            .join("examples")
+            .join("plugins")
+            .join("long-goal-mcp-plugin");
+
+        let validation = PluginService::validate_plugin_manifest(&source);
+        assert!(validation.valid, "{:?}", validation.errors);
+        assert_eq!(
+            validation.plugin_id.as_deref(),
+            Some("polaris.long-goal-mcp")
+        );
+
+        let installed = PluginService::install_local_plugin(
+            app_config.path(),
+            Some(workspace.path()),
+            &source,
+            PluginManifestSourceKind::Project,
+        )
+        .unwrap();
+        assert!(installed.success, "{:?}", installed.error);
+
+        let discovered =
+            PluginService::discover_installed_plugins(app_config.path(), Some(workspace.path()));
+        assert!(discovered.errors.is_empty(), "{:?}", discovered.errors);
+        let plugin = discovered
+            .plugins
+            .iter()
+            .find(|plugin| plugin.id == "polaris.long-goal-mcp")
+            .expect("long goal plugin should be discovered");
+        assert_eq!(plugin.contributes.views.len(), 0);
+        assert_eq!(plugin.contributes.mcp_servers.len(), 1);
+        assert_eq!(plugin.contributes.mcp_servers[0].id, "polaris-long-goal");
+        assert_eq!(
+            plugin.contributes.mcp_servers[0].args_template,
+            vec![
+                "{{pluginDir}}/mcp/long-goal-mcp-server.js".to_string(),
+                "{{workspacePath}}".to_string(),
+            ]
+        );
+    }
+
+    #[test]
     fn rejects_invalid_manifest_schema_before_install() {
         let app_config = tempfile::tempdir().unwrap();
         let plugin = tempfile::tempdir().unwrap();
