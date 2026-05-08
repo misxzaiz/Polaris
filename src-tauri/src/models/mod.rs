@@ -10,6 +10,7 @@ pub mod scheduler;
 pub mod todo;
 pub mod requirement;
 pub mod knowledge;
+pub mod long_goal;
 
 pub use ai_event::{
     AIEvent, ToolCallInfo, ToolCallStatus,

@@ -14,6 +14,7 @@ import type { SettingsTabId } from './components/Settings/SettingsSidebar';
 import { SimpleTodoPanel } from './components/TodoPanel/SimpleTodoPanel';
 import { TranslatePanel, SelectionContextMenu } from './components/Translate';
 import { SchedulerPanel } from './components/Scheduler/SchedulerPanel';
+import { LongGoalPanel } from './components/LongGoalPanel';
 import { RequirementPanel } from './components/RequirementPanel/RequirementPanel';
 import { TerminalPanel } from './components/Terminal/TerminalPanel';
 import { KnowledgePanel } from './components/KnowledgePanel';
@@ -167,6 +168,7 @@ function App() {
                 todoContent={<SimpleTodoPanel />}
                 translateContent={<TranslatePanel onSendToChat={sendMessage} />}
                 schedulerContent={<SchedulerPanel />}
+                longGoalContent={<LongGoalPanel />}
                 requirementContent={<RequirementPanel />}
                 terminalContent={<TerminalPanel />}
                 developerContent={<Suspense fallback={loadingFallback}><DeveloperPanel fillRemaining /></Suspense>}

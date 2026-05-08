@@ -17,6 +17,7 @@ pub mod diagnostics;
 pub mod todo;
 pub mod requirement;
 pub mod knowledge;
+pub mod long_goal;
 pub mod prompt_snippet;
 
 // 重新导出命令函数，确保它们在模块级别可见

@@ -728,6 +728,17 @@ pub fn run() {
             commands::knowledge::knowledge_update_trap,
             commands::knowledge::knowledge_delete_trap,
             commands::knowledge::knowledge_list_domains,
+            // Long Goal 相关
+            commands::long_goal::long_goal_create,
+            commands::long_goal::long_goal_list,
+            commands::long_goal::long_goal_read,
+            commands::long_goal::long_goal_append_supplement,
+            commands::long_goal::long_goal_pause,
+            commands::long_goal::long_goal_resume,
+            commands::long_goal::long_goal_prepare_planning,
+            commands::long_goal::long_goal_record_step,
+            commands::long_goal::long_goal_complete,
+            commands::long_goal::long_goal_prepare_maintenance,
             // Plugin 相关
             commands::plugin::plugin_list,
             commands::plugin::plugin_discover,

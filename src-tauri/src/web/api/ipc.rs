@@ -219,6 +219,18 @@ pub async fn handle_ipc_bridge(
             Err(WebError::NotFound(format!("Knowledge command not supported via HTTP: {}", cmd)))
         }
 
+        // ── Long Goal ───────────────────────────────────────────────────────
+        "long_goal_create" => dispatch_long_goal_create(&args),
+        "long_goal_list" => dispatch_long_goal_list(&args),
+        "long_goal_read" => dispatch_long_goal_read(&args),
+        "long_goal_append_supplement" => dispatch_long_goal_append_supplement(&args),
+        "long_goal_pause" => dispatch_long_goal_pause(&args),
+        "long_goal_resume" => dispatch_long_goal_resume(&args),
+        "long_goal_prepare_planning" => dispatch_long_goal_prepare_planning(&args),
+        "long_goal_record_step" => dispatch_long_goal_record_step(&args),
+        "long_goal_complete" => dispatch_long_goal_complete(&args),
+        "long_goal_prepare_maintenance" => dispatch_long_goal_prepare_maintenance(&args),
+
         // ── Scheduler: Run & Protocol (stubs) ──────────────────────────────────
         "scheduler_run_task" | "scheduler_update_run_status" | "scheduler_start" | "scheduler_stop" => {
             Err(WebError::BadRequest("This scheduler command requires local runtime".into()))
@@ -1239,6 +1251,94 @@ fn dispatch_knowledge_get_module(state: &AppState, args: &Value) -> Result<Json<
 fn dispatch_knowledge_list_domains(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
     let repo = get_knowledge_service(state, args)?;
     json_result!(repo.list_domains())
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Long Goal — document-backed long goal executor
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn dispatch_long_goal_create(args: &Value) -> Result<Json<Value>, WebError> {
+    let params: crate::models::long_goal::CreateLongGoalParams =
+        serde_json::from_value(args.clone())
+            .map_err(|error| WebError::BadRequest(format!("Invalid long goal params: {}", error)))?;
+    json_result!(crate::services::long_goal_service::LongGoalService::create_goal(params))
+}
+
+fn dispatch_long_goal_list(args: &Value) -> Result<Json<Value>, WebError> {
+    let workspace_path = require_string(args, "workspacePath")?;
+    json_result!(crate::services::long_goal_service::LongGoalService::list_goals(
+        &workspace_path,
+    ))
+}
+
+fn dispatch_long_goal_read(args: &Value) -> Result<Json<Value>, WebError> {
+    let workspace_path = require_string(args, "workspacePath")?;
+    let goal_id = require_string(args, "goalId")?;
+    json_result!(crate::services::long_goal_service::LongGoalService::read_goal(
+        &workspace_path,
+        &goal_id,
+    ))
+}
+
+fn dispatch_long_goal_append_supplement(args: &Value) -> Result<Json<Value>, WebError> {
+    let params: crate::models::long_goal::AppendLongGoalSupplementParams =
+        serde_json::from_value(args.clone())
+            .map_err(|error| WebError::BadRequest(format!("Invalid supplement params: {}", error)))?;
+    json_result!(crate::services::long_goal_service::LongGoalService::append_supplement(params))
+}
+
+fn dispatch_long_goal_pause(args: &Value) -> Result<Json<Value>, WebError> {
+    let workspace_path = require_string(args, "workspacePath")?;
+    let goal_id = require_string(args, "goalId")?;
+    json_result!(crate::services::long_goal_service::LongGoalService::pause_goal(
+        &workspace_path,
+        &goal_id,
+    ))
+}
+
+fn dispatch_long_goal_resume(args: &Value) -> Result<Json<Value>, WebError> {
+    let workspace_path = require_string(args, "workspacePath")?;
+    let goal_id = require_string(args, "goalId")?;
+    json_result!(crate::services::long_goal_service::LongGoalService::resume_goal(
+        &workspace_path,
+        &goal_id,
+    ))
+}
+
+fn dispatch_long_goal_record_step(args: &Value) -> Result<Json<Value>, WebError> {
+    let params: crate::models::long_goal::RecordLongGoalStepParams =
+        serde_json::from_value(args.clone())
+            .map_err(|error| WebError::BadRequest(format!("Invalid step result params: {}", error)))?;
+    json_result!(crate::services::long_goal_service::LongGoalService::record_step(params))
+}
+
+fn dispatch_long_goal_complete(args: &Value) -> Result<Json<Value>, WebError> {
+    let params: crate::models::long_goal::CompleteLongGoalParams =
+        serde_json::from_value(args.clone())
+            .map_err(|error| WebError::BadRequest(format!("Invalid completion params: {}", error)))?;
+    json_result!(crate::services::long_goal_service::LongGoalService::complete_goal(params))
+}
+
+fn dispatch_long_goal_prepare_planning(args: &Value) -> Result<Json<Value>, WebError> {
+    let workspace_path = require_string(args, "workspacePath")?;
+    let goal_id = require_string(args, "goalId")?;
+    json_result!(
+        crate::services::long_goal_service::LongGoalService::prepare_planning_session(
+            &workspace_path,
+            &goal_id,
+        )
+    )
+}
+
+fn dispatch_long_goal_prepare_maintenance(args: &Value) -> Result<Json<Value>, WebError> {
+    let workspace_path = require_string(args, "workspacePath")?;
+    let goal_id = require_string(args, "goalId")?;
+    json_result!(
+        crate::services::long_goal_service::LongGoalService::prepare_maintenance_session(
+            &workspace_path,
+            &goal_id,
+        )
+    )
 }
 
 

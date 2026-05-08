@@ -10,6 +10,7 @@ export type PluginIconId =
   | 'CheckSquare'
   | 'Languages'
   | 'Clock'
+  | 'Target'
   | 'ClipboardList'
   | 'Terminal'
   | 'Code2'

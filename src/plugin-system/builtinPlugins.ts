@@ -48,6 +48,15 @@ const corePluginManifest: PolarisPluginManifest = {
         order: 50,
       },
       {
+        id: 'long-goal.panel',
+        area: 'activityBar',
+        panelType: 'longGoal',
+        icon: 'Target',
+        labelKey: 'labels.longGoalPanel',
+        labelDefault: 'Long Goals',
+        order: 55,
+      },
+      {
         id: 'requirement.panel',
         area: 'activityBar',
         panelType: 'requirement',

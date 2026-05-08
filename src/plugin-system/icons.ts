@@ -9,6 +9,7 @@ import {
   Files,
   GitPullRequest,
   Languages,
+  Target,
   Terminal,
   type LucideIcon,
 } from 'lucide-react'
@@ -26,5 +27,5 @@ export const pluginIconMap: Record<PluginIconId, LucideIcon> = {
   GitPullRequest,
   Languages,
   Terminal,
+  Target,
 }
-
