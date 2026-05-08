@@ -4,6 +4,7 @@ import { useConfigStore, useWorkspaceStore } from '@/stores'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import {
   appendLongGoalSupplement,
+  bindLongGoalSession,
   completeLongGoal,
   createLongGoal,
   listLongGoals,
@@ -11,6 +12,7 @@ import {
   prepareLongGoalMaintenance,
   prepareLongGoalPlanning,
   resumeLongGoal,
+  type LongGoalPhase,
   type LongGoalState,
   type LongGoalStatus,
 } from '@/services/longGoalService'
@@ -174,7 +176,12 @@ export function LongGoalPanel() {
     }
   }, [selectedGoal, workspacePath])
 
-  const startGoalSession = useCallback(async (prompt: string, sessionTitle: string, goal: LongGoalState) => {
+  const startGoalSession = useCallback(async (
+    prompt: string,
+    sessionTitle: string,
+    goal: LongGoalState,
+    phase: LongGoalPhase
+  ) => {
     if (!workspacePath) return
     const sessionId = sessionStoreManager.getState().createSession({
       type: 'project',
@@ -188,8 +195,14 @@ export function LongGoalPanel() {
     if (!store) {
       throw new Error('无法创建长期目标会话')
     }
+    updateSelectedGoal(await bindLongGoalSession({
+      workspacePath,
+      goalId: goal.config.id,
+      sessionId,
+      phase,
+    }))
     await store.sendMessage(prompt, workspacePath)
-  }, [currentWorkspace?.id, workspacePath])
+  }, [currentWorkspace?.id, updateSelectedGoal, workspacePath])
 
   const handlePlanningSession = useCallback(async () => {
     if (!workspacePath || !selectedGoal) return
@@ -197,7 +210,7 @@ export function LongGoalPanel() {
     setMessage(null)
     try {
       const prompt = await prepareLongGoalPlanning(workspacePath, selectedGoal.config.id)
-      await startGoalSession(prompt, `长期目标规划: ${selectedGoal.config.title}`, selectedGoal)
+      await startGoalSession(prompt, `长期目标规划: ${selectedGoal.config.title}`, selectedGoal, 'planning')
       setMessage('已创建规划会话')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error))
@@ -213,7 +226,7 @@ export function LongGoalPanel() {
     try {
       const prompt = await prepareLongGoalMaintenance(workspacePath, selectedGoal.config.id)
       setMaintenancePrompt(prompt)
-      await startGoalSession(prompt, `长期目标维护: ${selectedGoal.config.title}`, selectedGoal)
+      await startGoalSession(prompt, `长期目标维护: ${selectedGoal.config.title}`, selectedGoal, 'maintenance')
       setMessage('已创建维护会话')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error))
@@ -343,6 +356,11 @@ export function LongGoalPanel() {
               <div className="mt-1 text-xs text-text-tertiary">
                 {statusLabel[selectedGoal.config.status]} · {selectedGoal.config.phase} · rev {selectedGoal.config.revision}
               </div>
+              {selectedGoal.config.currentSessionId && (
+                <div className="mt-1 truncate text-xs text-text-tertiary">
+                  当前会话: {selectedGoal.config.currentSessionId}
+                </div>
+              )}
               <p className="mt-2 whitespace-pre-wrap text-sm text-text-secondary">{selectedGoal.config.goal}</p>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button type="button" onClick={handlePlanningSession} disabled={loading} className="inline-flex items-center justify-center gap-1 rounded-md border border-primary/40 bg-primary/10 px-2 py-1.5 text-xs text-primary hover:bg-primary/15 disabled:opacity-50">

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   appendLongGoalSupplement,
+  bindLongGoalSession,
   completeLongGoal,
   createLongGoal,
   listLongGoals,
@@ -48,6 +49,12 @@ describe('longGoalService', () => {
 
     await listLongGoals('D:\\workspace')
     await readLongGoal('D:\\workspace', 'goal-1')
+    await bindLongGoalSession({
+      workspacePath: 'D:\\workspace',
+      goalId: 'goal-1',
+      sessionId: 'session-1',
+      phase: 'planning',
+    })
     await pauseLongGoal('D:\\workspace', 'goal-1')
     await resumeLongGoal('D:\\workspace', 'goal-1')
     await prepareLongGoalPlanning('D:\\workspace', 'goal-1')
@@ -60,19 +67,25 @@ describe('longGoalService', () => {
       workspacePath: 'D:\\workspace',
       goalId: 'goal-1',
     })
-    expect(invokeMock).toHaveBeenNthCalledWith(3, 'long_goal_pause', {
+    expect(invokeMock).toHaveBeenNthCalledWith(3, 'long_goal_bind_session', {
+      workspacePath: 'D:\\workspace',
+      goalId: 'goal-1',
+      sessionId: 'session-1',
+      phase: 'planning',
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(4, 'long_goal_pause', {
       workspacePath: 'D:\\workspace',
       goalId: 'goal-1',
     })
-    expect(invokeMock).toHaveBeenNthCalledWith(4, 'long_goal_resume', {
+    expect(invokeMock).toHaveBeenNthCalledWith(5, 'long_goal_resume', {
       workspacePath: 'D:\\workspace',
       goalId: 'goal-1',
     })
-    expect(invokeMock).toHaveBeenNthCalledWith(5, 'long_goal_prepare_planning', {
+    expect(invokeMock).toHaveBeenNthCalledWith(6, 'long_goal_prepare_planning', {
       workspacePath: 'D:\\workspace',
       goalId: 'goal-1',
     })
-    expect(invokeMock).toHaveBeenNthCalledWith(6, 'long_goal_prepare_maintenance', {
+    expect(invokeMock).toHaveBeenNthCalledWith(7, 'long_goal_prepare_maintenance', {
       workspacePath: 'D:\\workspace',
       goalId: 'goal-1',
     })

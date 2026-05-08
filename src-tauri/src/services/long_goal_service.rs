@@ -7,8 +7,9 @@ use uuid::Uuid;
 
 use crate::error::{AppError, Result};
 use crate::models::long_goal::{
-    AppendLongGoalSupplementParams, CompleteLongGoalParams, CreateLongGoalParams, LongGoalConfig,
-    LongGoalDocuments, LongGoalPhase, LongGoalState, LongGoalStatus, RecordLongGoalStepParams,
+    AppendLongGoalSupplementParams, BindLongGoalSessionParams, CompleteLongGoalParams,
+    CreateLongGoalParams, LongGoalConfig, LongGoalDocuments, LongGoalPhase, LongGoalState,
+    LongGoalStatus, RecordLongGoalStepParams,
 };
 
 pub struct LongGoalService;
@@ -99,6 +100,20 @@ impl LongGoalService {
             params.content.trim()
         ));
         Self::write_text(&goal_dir.join("supplement.md"), &supplement)?;
+        Self::touch_config(&mut config);
+        Self::write_config(&goal_dir, &config)?;
+        Self::read_goal_state(&workspace, &params.goal_id)
+    }
+
+    pub fn bind_session(params: BindLongGoalSessionParams) -> Result<LongGoalState> {
+        let workspace = Self::canonical_workspace(&params.workspace_path)?;
+        let goal_dir = Self::checked_goal_dir(&workspace, &params.goal_id)?;
+        let mut config = Self::read_config(&goal_dir)?;
+        config.current_session_id = Some(params.session_id.clone());
+        config.last_session_id = Some(params.session_id);
+        config.status = LongGoalStatus::Running;
+        config.phase = params.phase;
+        config.next_run_at = None;
         Self::touch_config(&mut config);
         Self::write_config(&goal_dir, &config)?;
         Self::read_goal_state(&workspace, &params.goal_id)
@@ -237,6 +252,7 @@ impl LongGoalService {
             config.status = LongGoalStatus::Active;
             config.phase = LongGoalPhase::Execution;
         }
+        config.current_session_id = None;
         Self::touch_config(&mut config);
         Self::write_config(&goal_dir, &config)?;
         Self::read_goal_state(&workspace, &params.goal_id)
@@ -260,6 +276,7 @@ impl LongGoalService {
 
         config.status = LongGoalStatus::Completed;
         config.phase = LongGoalPhase::Review;
+        config.current_session_id = None;
         config.next_run_at = None;
         Self::touch_config(&mut config);
         Self::write_config(&goal_dir, &config)?;
@@ -277,6 +294,7 @@ impl LongGoalService {
         let mut config = Self::read_config(&goal_dir)?;
         config.status = status;
         config.phase = phase;
+        config.current_session_id = None;
         if matches!(status, LongGoalStatus::Paused | LongGoalStatus::Completed) {
             config.next_run_at = None;
         }
@@ -521,5 +539,34 @@ mod tests {
             LongGoalService::pause_goal(&workspace.path().to_string_lossy(), &state.config.id)
                 .unwrap();
         assert_eq!(paused.config.status, LongGoalStatus::Paused);
+    }
+
+    #[test]
+    fn binds_session_and_marks_goal_running() {
+        let workspace = tempfile::tempdir().unwrap();
+        let state = LongGoalService::create_goal(CreateLongGoalParams {
+            title: "Session Goal".to_string(),
+            goal: "Track session lifecycle".to_string(),
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            engine_id: "codex".to_string(),
+            interval: "10m".to_string(),
+            auto_pause_on_complete: true,
+            allow_code_changes: true,
+            allow_git_commit: true,
+        })
+        .unwrap();
+
+        let bound = LongGoalService::bind_session(BindLongGoalSessionParams {
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            goal_id: state.config.id,
+            session_id: "session-1".to_string(),
+            phase: LongGoalPhase::Planning,
+        })
+        .unwrap();
+
+        assert_eq!(bound.config.status, LongGoalStatus::Running);
+        assert_eq!(bound.config.phase, LongGoalPhase::Planning);
+        assert_eq!(bound.config.current_session_id.as_deref(), Some("session-1"));
+        assert_eq!(bound.config.last_session_id.as_deref(), Some("session-1"));
     }
 }

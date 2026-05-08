@@ -733,6 +733,7 @@ pub fn run() {
             commands::long_goal::long_goal_list,
             commands::long_goal::long_goal_read,
             commands::long_goal::long_goal_append_supplement,
+            commands::long_goal::long_goal_bind_session,
             commands::long_goal::long_goal_pause,
             commands::long_goal::long_goal_resume,
             commands::long_goal::long_goal_prepare_planning,

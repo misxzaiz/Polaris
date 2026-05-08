@@ -67,6 +67,13 @@ export interface AppendLongGoalSupplementParams {
   priority?: string
 }
 
+export interface BindLongGoalSessionParams {
+  workspacePath: string
+  goalId: string
+  sessionId: string
+  phase: LongGoalPhase
+}
+
 export interface RecordLongGoalStepParams {
   workspacePath: string
   goalId: string
@@ -104,6 +111,12 @@ export async function appendLongGoalSupplement(
   params: AppendLongGoalSupplementParams
 ): Promise<LongGoalState> {
   return invoke<LongGoalState>('long_goal_append_supplement', { ...params })
+}
+
+export async function bindLongGoalSession(
+  params: BindLongGoalSessionParams
+): Promise<LongGoalState> {
+  return invoke<LongGoalState>('long_goal_bind_session', { ...params })
 }
 
 export async function pauseLongGoal(workspacePath: string, goalId: string): Promise<LongGoalState> {

@@ -2,8 +2,8 @@
 
 use crate::error::Result;
 use crate::models::long_goal::{
-    AppendLongGoalSupplementParams, CompleteLongGoalParams, CreateLongGoalParams, LongGoalState,
-    RecordLongGoalStepParams,
+    AppendLongGoalSupplementParams, BindLongGoalSessionParams, CompleteLongGoalParams,
+    CreateLongGoalParams, LongGoalState, RecordLongGoalStepParams,
 };
 use crate::services::long_goal_service::LongGoalService;
 
@@ -27,6 +27,11 @@ pub async fn long_goal_append_supplement(
     params: AppendLongGoalSupplementParams,
 ) -> Result<LongGoalState> {
     LongGoalService::append_supplement(params)
+}
+
+#[cfg_attr(feature = "tauri-app", tauri::command)]
+pub async fn long_goal_bind_session(params: BindLongGoalSessionParams) -> Result<LongGoalState> {
+    LongGoalService::bind_session(params)
 }
 
 #[cfg_attr(feature = "tauri-app", tauri::command)]
