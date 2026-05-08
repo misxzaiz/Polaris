@@ -405,6 +405,16 @@ feat: advance long goal <goal-id> step <step-id>
 - 外部 MCP server 打包和 manifest。
 - 外部插件权限模型扩展。
 
+当前已新增外部插件样例骨架：`examples/plugins/long-goal-mcp-plugin`。该样例贡献 `polaris-long-goal` stdio MCP server，第一版只暴露文档读写和状态更新 tools；自动调度、新建会话、AI 引擎选择、中断和完成复审仍归宿主侧负责。
+
+第一版外部 MCP tools 边界：
+
+- `long_goal_list`
+- `long_goal_read`
+- `long_goal_append_supplement`
+- `long_goal_record_progress`
+- `long_goal_set_status`
+
 ### 阶段 A：纯设计和 schema
 
 - 定义 `goal.json` schema。

@@ -1,0 +1,29 @@
+{
+  "id": "polaris.long-goal-mcp",
+  "name": "Long Goal MCP",
+  "version": "0.1.0",
+  "description": "External MCP plugin prototype for document-backed long goal execution.",
+  "enabledByDefault": false,
+  "origin": {
+    "repository": "examples/plugins/long-goal-mcp-plugin",
+    "homepage": "docs/mcp/6-long-goal-executor-plugin.md"
+  },
+  "contributes": {
+    "mcpServers": [
+      {
+        "id": "polaris-long-goal",
+        "transport": "stdio",
+        "command": "node",
+        "argsTemplate": [
+          "{{pluginDir}}/mcp/long-goal-mcp-server.js",
+          "{{workspacePath}}"
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "workspaceRead": true,
+    "workspaceWrite": true,
+    "aiToolAccess": true
+  }
+}
