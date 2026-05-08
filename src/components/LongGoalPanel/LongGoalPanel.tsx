@@ -48,6 +48,8 @@ export function LongGoalPanel() {
   const [interval, setInterval] = useState('30m')
   const [maxRetries, setMaxRetries] = useState(2)
   const [retryBackoff, setRetryBackoff] = useState('5m')
+  const [allowCodeChanges, setAllowCodeChanges] = useState(true)
+  const [allowGitCommit, setAllowGitCommit] = useState(true)
   const [autoStartPlanning, setAutoStartPlanning] = useState(true)
   const [supplement, setSupplement] = useState('')
   const [reviewSupplement, setReviewSupplement] = useState('')
@@ -99,6 +101,12 @@ export function LongGoalPanel() {
       setEngineId(config.defaultEngine as EngineId)
     }
   }, [config?.defaultEngine])
+
+  useEffect(() => {
+    if (!allowCodeChanges && allowGitCommit) {
+      setAllowGitCommit(false)
+    }
+  }, [allowCodeChanges, allowGitCommit])
 
   const updateSelectedGoal = useCallback((updated: LongGoalState) => {
     setGoals((current) => (
@@ -223,8 +231,8 @@ export function LongGoalPanel() {
         maxRetries,
         retryBackoff: retryBackoff.trim() || '5m',
         autoPauseOnComplete: true,
-        allowCodeChanges: true,
-        allowGitCommit: true,
+        allowCodeChanges,
+        allowGitCommit: allowCodeChanges && allowGitCommit,
       })
       setTitle('')
       setGoalText('')
@@ -244,6 +252,8 @@ export function LongGoalPanel() {
     }
   }, [
     autoStartPlanning,
+    allowCodeChanges,
+    allowGitCommit,
     engineId,
     goalText,
     interval,
@@ -466,6 +476,27 @@ export function LongGoalPanel() {
             />
             创建后自动启动规划会话
           </label>
+          <div className="grid grid-cols-1 gap-2">
+            <label className="flex items-center gap-2 rounded-md border border-border-subtle bg-background-surface px-3 py-2 text-xs text-text-secondary">
+              <input
+                type="checkbox"
+                checked={allowCodeChanges}
+                onChange={(event) => setAllowCodeChanges(event.target.checked)}
+                className="h-3.5 w-3.5"
+              />
+              允许修改代码
+            </label>
+            <label className="flex items-center gap-2 rounded-md border border-border-subtle bg-background-surface px-3 py-2 text-xs text-text-secondary">
+              <input
+                type="checkbox"
+                checked={allowGitCommit}
+                onChange={(event) => setAllowGitCommit(event.target.checked)}
+                disabled={!allowCodeChanges}
+                className="h-3.5 w-3.5 disabled:opacity-50"
+              />
+              允许提交 git
+            </label>
+          </div>
           <button
             type="button"
             onClick={handleCreate}
@@ -529,6 +560,9 @@ export function LongGoalPanel() {
               )}
               <div className="mt-1 truncate text-xs text-text-tertiary">
                 重试: {selectedGoal.config.retryCount}/{selectedGoal.config.maxRetries} · 退避: {selectedGoal.config.retryBackoff}
+              </div>
+              <div className="mt-1 truncate text-xs text-text-tertiary">
+                执行策略: {selectedGoal.config.allowCodeChanges ? '可改代码' : '不可改代码'} · {selectedGoal.config.allowGitCommit ? '可提交' : '不提交'}
               </div>
               {selectedGoal.config.lastFailureAt && (
                 <div className="mt-1 truncate text-xs text-text-tertiary">

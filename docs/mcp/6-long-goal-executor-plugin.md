@@ -389,7 +389,7 @@ feat: advance long goal <goal-id> step <step-id>
 - Tauri 命令已注册：`long_goal_create`、`long_goal_list`、`long_goal_read`、`long_goal_append_supplement`、`long_goal_bind_session`、`long_goal_finish_session`、`long_goal_pause`、`long_goal_resume`、`long_goal_prepare_planning`、`long_goal_prepare_execution`、`long_goal_record_step`、`long_goal_complete`、`long_goal_prepare_maintenance`。
 - Web IPC 已支持同名命令。
 - 前端新增 `longGoalService.ts`，提供上述命令的 typed wrapper。
-- 前端新增长期目标左侧面板入口，支持创建目标、选择 AI 引擎、设置间隔、查看目标状态、追加用户补充、暂停/恢复、创建规划会话、创建执行会话、创建维护会话、预览维护会话输入和手动标记完成。
+- 前端新增长期目标左侧面板入口，支持创建目标、选择 AI 引擎、设置间隔、设置重试策略、设置是否允许修改代码和提交 git、查看目标状态、追加用户补充、暂停/恢复、创建规划会话、创建执行会话、创建维护会话、预览维护会话输入和手动标记完成。
 - 目标创建表单支持“创建后自动启动规划会话”开关，默认开启；创建成功后会立即生成规划 prompt、创建项目会话并绑定 `planning` phase。
 - 规划/执行/维护会话当前复用已有聊天 UI：面板创建新的项目会话，使用目标配置的 `engineId`，把 `currentSessionId`、`lastSessionId`、`running` 状态和当前 phase 写回 `goal.json`，并把后端生成的 prompt 作为首条用户消息发送。
 - 长期目标面板在存在 `currentSessionId` 时显示“中断会话”按钮，调用会话管理器中断当前 AI 会话，并将目标切回暂停状态。
@@ -397,13 +397,13 @@ feat: advance long goal <goal-id> step <step-id>
 - 后端会在目标进入 `active` 状态时按 `interval` 写入 `nextRunAt`；前端跟踪器每 30 秒扫描到期目标并自动启动下一次执行会话。
 - 自动启动执行会话失败，或会话以 `error/aborted` 结束时，会写入失败记录；未超过 `maxRetries` 时按 `retryBackoff` 重新排期，超过上限后将目标标记为 `blocked`，停止继续自动推进。
 - `completed` 状态下长期目标面板显示完成复审区，支持确认完成、继续执行、补充后重新规划。
-- 长期目标详情中显示当前会话、上次会话、下次执行时间，并可展开最近会话摘要。
+- 长期目标详情中显示当前会话、上次会话、下次执行时间、重试状态和执行权限策略，并可展开最近会话摘要。
 - 已补充 Rust 文档服务编译测试和前端 service 调用测试。
 
 尚未完成：
 
 - 外部 MCP server 打包和 manifest。
-- 权限模型扩展。
+- 外部插件权限模型扩展。
 
 ### 阶段 A：纯设计和 schema
 
