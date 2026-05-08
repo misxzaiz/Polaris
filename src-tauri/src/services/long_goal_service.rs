@@ -202,9 +202,7 @@ impl LongGoalService {
                 }
             }
         }
-        if matches!(config.status, LongGoalStatus::Completed | LongGoalStatus::Paused) {
-            config.next_run_at = None;
-        }
+        Self::update_next_run_at(&mut config, now.timestamp());
         Self::touch_config(&mut config);
         Self::write_config(&goal_dir, &config)?;
         Self::read_goal_state(&workspace, &params.goal_id)
@@ -442,9 +440,7 @@ impl LongGoalService {
         config.status = status;
         config.phase = phase;
         config.current_session_id = None;
-        if matches!(status, LongGoalStatus::Paused | LongGoalStatus::Completed) {
-            config.next_run_at = None;
-        }
+        Self::update_next_run_at(&mut config, Utc::now().timestamp());
         Self::touch_config(&mut config);
         Self::write_config(&goal_dir, &config)?;
         Self::read_goal_state(&workspace, goal_id)
@@ -539,6 +535,45 @@ impl LongGoalService {
             LongGoalPhase::Maintenance => "maintenance",
             LongGoalPhase::Review => "review",
         }
+    }
+
+    fn update_next_run_at(config: &mut LongGoalConfig, now: i64) {
+        if config.status == LongGoalStatus::Active {
+            config.next_run_at = Self::parse_interval_seconds(&config.interval)
+                .map(|seconds| now + seconds);
+        } else {
+            config.next_run_at = None;
+        }
+    }
+
+    fn parse_interval_seconds(interval: &str) -> Option<i64> {
+        let trimmed = interval.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+
+        let number_len = trimmed
+            .chars()
+            .take_while(|ch| ch.is_ascii_digit())
+            .map(char::len_utf8)
+            .sum::<usize>();
+        let amount = trimmed.get(..number_len)?.parse::<i64>().ok()?;
+        if amount <= 0 {
+            return None;
+        }
+        let unit = trimmed
+            .get(number_len..)
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase();
+        let multiplier = match unit.as_str() {
+            "" | "s" | "sec" | "secs" | "second" | "seconds" => 1,
+            "m" | "min" | "mins" | "minute" | "minutes" => 60,
+            "h" | "hr" | "hrs" | "hour" | "hours" => 60 * 60,
+            "d" | "day" | "days" => 24 * 60 * 60,
+            _ => return None,
+        };
+        amount.checked_mul(multiplier)
     }
 
     fn initial_documents(config: &LongGoalConfig) -> LongGoalDocuments {
@@ -745,8 +780,18 @@ mod tests {
         assert_eq!(finished.config.status, LongGoalStatus::Active);
         assert_eq!(finished.config.phase, LongGoalPhase::Execution);
         assert_eq!(finished.config.current_session_id, None);
+        assert!(finished.config.next_run_at.is_some());
         assert!(finished.documents.progress.contains("Planning completed"));
         assert!(finished.documents.queue.contains("Run first execution step"));
         assert!(Path::new(&finished.goal_path).join("sessions").is_dir());
+    }
+
+    #[test]
+    fn parses_interval_values() {
+        assert_eq!(LongGoalService::parse_interval_seconds("30m"), Some(1800));
+        assert_eq!(LongGoalService::parse_interval_seconds("1h"), Some(3600));
+        assert_eq!(LongGoalService::parse_interval_seconds("2 days"), Some(172800));
+        assert_eq!(LongGoalService::parse_interval_seconds("0m"), None);
+        assert_eq!(LongGoalService::parse_interval_seconds("later"), None);
     }
 }

@@ -3,12 +3,27 @@ import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreMana
 import { useWorkspaceStore } from '@/stores'
 import type { ChatMessage, ContentBlock } from '@/types/chat'
 import { createLogger } from '@/utils/logger'
-import { finishLongGoalSession, listLongGoals } from './longGoalService'
+import {
+  bindLongGoalSession,
+  finishLongGoalSession,
+  listLongGoals,
+  prepareLongGoalExecution,
+  type LongGoalState,
+} from './longGoalService'
 
 const log = createLogger('LongGoalSessionTracker')
 
 let unsubscribeSessionEnd: (() => void) | null = null
+let schedulerTimer: ReturnType<typeof setInterval> | null = null
 const finishingSessions = new Set<string>()
+const startingGoals = new Set<string>()
+
+const AUTO_EXECUTION_SCAN_MS = 30_000
+
+type WorkspaceInfo = {
+  id: string
+  path: string
+}
 
 type RoutedSessionEndEvent = SessionEndEvent & {
   _routeSessionId?: string
@@ -22,14 +37,23 @@ export function startLongGoalSessionTracker(): () => void {
   unsubscribeSessionEnd = getEventBus().on('session_end', (event) => {
     void handleSessionEnd(event as RoutedSessionEndEvent)
   }, { namespace: 'long-goal-session-tracker' })
+  schedulerTimer = setInterval(() => {
+    void scanDueLongGoals()
+  }, AUTO_EXECUTION_SCAN_MS)
+  void scanDueLongGoals()
 
   return stopLongGoalSessionTracker
 }
 
 export function stopLongGoalSessionTracker(): void {
   unsubscribeSessionEnd?.()
+  if (schedulerTimer) {
+    clearInterval(schedulerTimer)
+  }
   unsubscribeSessionEnd = null
+  schedulerTimer = null
   finishingSessions.clear()
+  startingGoals.clear()
 }
 
 async function handleSessionEnd(event: RoutedSessionEndEvent): Promise<void> {
@@ -88,6 +112,67 @@ async function findLongGoalBySession(sessionId: string): Promise<{
   }
 
   return null
+}
+
+async function scanDueLongGoals(): Promise<void> {
+  const workspaces = useWorkspaceStore.getState().workspaces
+  const now = Math.floor(Date.now() / 1000)
+
+  for (const workspace of workspaces) {
+    try {
+      const goals = await listLongGoals(workspace.path)
+      for (const goal of goals) {
+        if (!shouldStartExecution(goal, now)) continue
+        await startAutomaticExecution(workspace, goal)
+      }
+    } catch (error) {
+      log.warn('扫描长期目标自动执行失败', {
+        workspacePath: workspace.path,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+}
+
+function shouldStartExecution(goal: LongGoalState, now: number): boolean {
+  if (goal.config.status !== 'active') return false
+  if (goal.config.currentSessionId) return false
+  if (!goal.config.nextRunAt || goal.config.nextRunAt > now) return false
+  return !startingGoals.has(goal.config.id)
+}
+
+async function startAutomaticExecution(workspace: WorkspaceInfo, goal: LongGoalState): Promise<void> {
+  const key = goal.config.id
+  startingGoals.add(key)
+  try {
+    const prompt = await prepareLongGoalExecution(workspace.path, goal.config.id)
+    const sessionId = sessionStoreManager.getState().createSession({
+      type: 'project',
+      title: `长期目标执行: ${goal.config.title}`,
+      workspaceId: workspace.id,
+      engineId: goal.config.engineId,
+    })
+    sessionStoreManager.getState().switchSession(sessionId)
+    const store = sessionStoreManager.getState().getStore(sessionId)
+    if (!store) {
+      throw new Error('无法创建长期目标执行会话')
+    }
+    await bindLongGoalSession({
+      workspacePath: workspace.path,
+      goalId: goal.config.id,
+      sessionId,
+      phase: 'execution',
+    })
+    notifyLongGoalUpdated()
+    await store.sendMessage(prompt, workspace.path)
+  } catch (error) {
+    log.warn('自动启动长期目标执行会话失败', {
+      goalId: goal.config.id,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  } finally {
+    startingGoals.delete(key)
+  }
 }
 
 function buildSessionSummary(sessionId: string): string {
