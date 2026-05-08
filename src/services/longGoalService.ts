@@ -22,6 +22,9 @@ export interface LongGoalConfig {
   engineId: string
   triggerMode: string
   interval: string
+  retryCount: number
+  maxRetries: number
+  retryBackoff: string
   autoPauseOnComplete: boolean
   allowCodeChanges: boolean
   allowGitCommit: boolean
@@ -29,6 +32,7 @@ export interface LongGoalConfig {
   currentSessionId?: string
   lastSessionId?: string
   nextRunAt?: number
+  lastFailureAt?: number
   revision: number
   createdAt: number
   updatedAt: number
@@ -40,6 +44,8 @@ export interface CreateLongGoalParams {
   workspacePath: string
   engineId: string
   interval?: string
+  maxRetries?: number
+  retryBackoff?: string
   autoPauseOnComplete?: boolean
   allowCodeChanges?: boolean
   allowGitCommit?: boolean
@@ -82,6 +88,7 @@ export interface FinishLongGoalSessionParams {
   result?: string
   nextStep?: string
   goalStatus?: LongGoalStatus
+  retryFailure?: boolean
 }
 
 export interface RecordLongGoalStepParams {
@@ -95,6 +102,7 @@ export interface RecordLongGoalStepParams {
   result?: string
   nextStep?: string
   goalStatus?: LongGoalStatus
+  retryFailure?: boolean
 }
 
 export interface CompleteLongGoalParams {

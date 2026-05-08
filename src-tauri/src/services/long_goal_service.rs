@@ -38,6 +38,9 @@ impl LongGoalService {
             engine_id: params.engine_id,
             trigger_mode: "afterCompletion".to_string(),
             interval: params.interval,
+            retry_count: 0,
+            max_retries: params.max_retries,
+            retry_backoff: params.retry_backoff,
             auto_pause_on_complete: params.auto_pause_on_complete,
             allow_code_changes: params.allow_code_changes,
             allow_git_commit: params.allow_git_commit,
@@ -45,6 +48,7 @@ impl LongGoalService {
             current_session_id: None,
             last_session_id: None,
             next_run_at: None,
+            last_failure_at: None,
             revision: 1,
             created_at: now,
             updated_at: now,
@@ -183,7 +187,9 @@ impl LongGoalService {
 
         config.current_session_id = None;
         config.last_session_id = Some(params.session_id);
-        if let Some(status) = params.goal_status {
+        if params.retry_failure {
+            Self::apply_retry_failure(&mut config, now.timestamp());
+        } else if let Some(status) = params.goal_status {
             config.status = status;
             config.phase = if status == LongGoalStatus::Completed {
                 LongGoalPhase::Review
@@ -202,7 +208,12 @@ impl LongGoalService {
                 }
             }
         }
-        Self::update_next_run_at(&mut config, now.timestamp());
+        if Self::is_success_result(result) && !params.retry_failure {
+            Self::reset_retry_state(&mut config);
+        }
+        if !params.retry_failure {
+            Self::update_next_run_at(&mut config, now.timestamp());
+        }
         Self::touch_config(&mut config);
         Self::write_config(&goal_dir, &config)?;
         Self::read_goal_state(&workspace, &params.goal_id)
@@ -387,7 +398,10 @@ impl LongGoalService {
         }
 
         config.current_step_id = params.next_step.as_ref().map(|_| params.step_id);
-        if let Some(status) = params.goal_status {
+        let now = Utc::now().timestamp();
+        if params.retry_failure {
+            Self::apply_retry_failure(&mut config, now);
+        } else if let Some(status) = params.goal_status {
             config.status = status;
             if status == LongGoalStatus::Completed {
                 config.phase = LongGoalPhase::Review;
@@ -396,6 +410,11 @@ impl LongGoalService {
         } else {
             config.status = LongGoalStatus::Active;
             config.phase = LongGoalPhase::Execution;
+        }
+        if Self::is_success_result(empty_as_default(&params.result, "unknown"))
+            && !params.retry_failure
+        {
+            Self::reset_retry_state(&mut config);
         }
         config.current_session_id = None;
         Self::touch_config(&mut config);
@@ -423,6 +442,7 @@ impl LongGoalService {
         config.phase = LongGoalPhase::Review;
         config.current_session_id = None;
         config.next_run_at = None;
+        Self::reset_retry_state(&mut config);
         Self::touch_config(&mut config);
         Self::write_config(&goal_dir, &config)?;
         Self::read_goal_state(&workspace, &params.goal_id)
@@ -539,11 +559,35 @@ impl LongGoalService {
 
     fn update_next_run_at(config: &mut LongGoalConfig, now: i64) {
         if config.status == LongGoalStatus::Active {
-            config.next_run_at = Self::parse_interval_seconds(&config.interval)
-                .map(|seconds| now + seconds);
+            config.next_run_at =
+                Self::parse_interval_seconds(&config.interval).map(|seconds| now + seconds);
         } else {
             config.next_run_at = None;
         }
+    }
+
+    fn apply_retry_failure(config: &mut LongGoalConfig, now: i64) {
+        config.retry_count = config.retry_count.saturating_add(1);
+        config.last_failure_at = Some(now);
+        config.current_session_id = None;
+        if config.retry_count <= config.max_retries {
+            config.status = LongGoalStatus::Active;
+            config.phase = LongGoalPhase::Execution;
+            let retry_seconds = Self::parse_interval_seconds(&config.retry_backoff).unwrap_or(300);
+            config.next_run_at = Some(now + retry_seconds);
+        } else {
+            config.status = LongGoalStatus::Blocked;
+            config.next_run_at = None;
+        }
+    }
+
+    fn reset_retry_state(config: &mut LongGoalConfig) {
+        config.retry_count = 0;
+        config.last_failure_at = None;
+    }
+
+    fn is_success_result(result: &str) -> bool {
+        matches!(result, "success" | "completed")
     }
 
     fn parse_interval_seconds(interval: &str) -> Option<i64> {
@@ -680,6 +724,8 @@ mod tests {
             workspace_path: workspace.path().to_string_lossy().to_string(),
             engine_id: "codex".to_string(),
             interval: "10m".to_string(),
+            max_retries: 2,
+            retry_backoff: "5m".to_string(),
             auto_pause_on_complete: true,
             allow_code_changes: true,
             allow_git_commit: true,
@@ -698,9 +744,11 @@ mod tests {
                 .unwrap();
         assert_eq!(reread.config.id, state.config.id);
 
-        let prompt =
-            LongGoalService::prepare_execution_session(&workspace.path().to_string_lossy(), &state.config.id)
-                .unwrap();
+        let prompt = LongGoalService::prepare_execution_session(
+            &workspace.path().to_string_lossy(),
+            &state.config.id,
+        )
+        .unwrap();
         assert!(prompt.contains("长期目标执行会话"));
         assert!(prompt.contains("Build a long goal executor"));
     }
@@ -714,6 +762,8 @@ mod tests {
             workspace_path: workspace.path().to_string_lossy().to_string(),
             engine_id: "codex".to_string(),
             interval: "10m".to_string(),
+            max_retries: 2,
+            retry_backoff: "5m".to_string(),
             auto_pause_on_complete: true,
             allow_code_changes: true,
             allow_git_commit: true,
@@ -747,6 +797,8 @@ mod tests {
             workspace_path: workspace.path().to_string_lossy().to_string(),
             engine_id: "codex".to_string(),
             interval: "10m".to_string(),
+            max_retries: 2,
+            retry_backoff: "5m".to_string(),
             auto_pause_on_complete: true,
             allow_code_changes: true,
             allow_git_commit: true,
@@ -763,7 +815,10 @@ mod tests {
 
         assert_eq!(bound.config.status, LongGoalStatus::Running);
         assert_eq!(bound.config.phase, LongGoalPhase::Planning);
-        assert_eq!(bound.config.current_session_id.as_deref(), Some("session-1"));
+        assert_eq!(
+            bound.config.current_session_id.as_deref(),
+            Some("session-1")
+        );
         assert_eq!(bound.config.last_session_id.as_deref(), Some("session-1"));
 
         let finished = LongGoalService::finish_session(FinishLongGoalSessionParams {
@@ -774,6 +829,7 @@ mod tests {
             result: "success".to_string(),
             next_step: Some("Run first execution step".to_string()),
             goal_status: None,
+            retry_failure: false,
         })
         .unwrap();
 
@@ -782,7 +838,10 @@ mod tests {
         assert_eq!(finished.config.current_session_id, None);
         assert!(finished.config.next_run_at.is_some());
         assert!(finished.documents.progress.contains("Planning completed"));
-        assert!(finished.documents.queue.contains("Run first execution step"));
+        assert!(finished
+            .documents
+            .queue
+            .contains("Run first execution step"));
         assert!(Path::new(&finished.goal_path).join("sessions").is_dir());
     }
 
@@ -790,8 +849,65 @@ mod tests {
     fn parses_interval_values() {
         assert_eq!(LongGoalService::parse_interval_seconds("30m"), Some(1800));
         assert_eq!(LongGoalService::parse_interval_seconds("1h"), Some(3600));
-        assert_eq!(LongGoalService::parse_interval_seconds("2 days"), Some(172800));
+        assert_eq!(
+            LongGoalService::parse_interval_seconds("2 days"),
+            Some(172800)
+        );
         assert_eq!(LongGoalService::parse_interval_seconds("0m"), None);
         assert_eq!(LongGoalService::parse_interval_seconds("later"), None);
+    }
+
+    #[test]
+    fn retry_failure_reschedules_then_blocks_after_limit() {
+        let workspace = tempfile::tempdir().unwrap();
+        let state = LongGoalService::create_goal(CreateLongGoalParams {
+            title: "Retry Goal".to_string(),
+            goal: "Retry failed execution".to_string(),
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            engine_id: "codex".to_string(),
+            interval: "10m".to_string(),
+            max_retries: 1,
+            retry_backoff: "5m".to_string(),
+            auto_pause_on_complete: true,
+            allow_code_changes: true,
+            allow_git_commit: true,
+        })
+        .unwrap();
+
+        let first_failure = LongGoalService::record_step(RecordLongGoalStepParams {
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            goal_id: state.config.id.clone(),
+            step_id: "auto-start".to_string(),
+            summary: "failed to start".to_string(),
+            changed_files: Vec::new(),
+            tests_run: Vec::new(),
+            commit_sha: None,
+            result: "failed".to_string(),
+            next_step: None,
+            goal_status: None,
+            retry_failure: true,
+        })
+        .unwrap();
+        assert_eq!(first_failure.config.status, LongGoalStatus::Active);
+        assert_eq!(first_failure.config.retry_count, 1);
+        assert!(first_failure.config.next_run_at.is_some());
+
+        let blocked = LongGoalService::record_step(RecordLongGoalStepParams {
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            goal_id: state.config.id,
+            step_id: "auto-start-2".to_string(),
+            summary: "failed again".to_string(),
+            changed_files: Vec::new(),
+            tests_run: Vec::new(),
+            commit_sha: None,
+            result: "failed".to_string(),
+            next_step: None,
+            goal_status: None,
+            retry_failure: true,
+        })
+        .unwrap();
+        assert_eq!(blocked.config.status, LongGoalStatus::Blocked);
+        assert_eq!(blocked.config.retry_count, 2);
+        assert_eq!(blocked.config.next_run_at, None);
     }
 }

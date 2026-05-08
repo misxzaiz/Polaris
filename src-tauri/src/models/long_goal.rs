@@ -52,6 +52,12 @@ pub struct LongGoalConfig {
     pub engine_id: String,
     pub trigger_mode: String,
     pub interval: String,
+    #[serde(default)]
+    pub retry_count: u32,
+    #[serde(default = "default_max_retries")]
+    pub max_retries: u32,
+    #[serde(default = "default_retry_backoff")]
+    pub retry_backoff: String,
     pub auto_pause_on_complete: bool,
     pub allow_code_changes: bool,
     pub allow_git_commit: bool,
@@ -63,6 +69,8 @@ pub struct LongGoalConfig {
     pub last_session_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_run_at: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_failure_at: Option<i64>,
     pub revision: u64,
     pub created_at: i64,
     pub updated_at: i64,
@@ -77,6 +85,10 @@ pub struct CreateLongGoalParams {
     pub engine_id: String,
     #[serde(default = "default_interval")]
     pub interval: String,
+    #[serde(default = "default_max_retries")]
+    pub max_retries: u32,
+    #[serde(default = "default_retry_backoff")]
+    pub retry_backoff: String,
     #[serde(default = "default_true")]
     pub auto_pause_on_complete: bool,
     #[serde(default = "default_true")]
@@ -137,6 +149,8 @@ pub struct FinishLongGoalSessionParams {
     pub next_step: Option<String>,
     #[serde(default)]
     pub goal_status: Option<LongGoalStatus>,
+    #[serde(default)]
+    pub retry_failure: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -158,6 +172,8 @@ pub struct RecordLongGoalStepParams {
     pub next_step: Option<String>,
     #[serde(default)]
     pub goal_status: Option<LongGoalStatus>,
+    #[serde(default)]
+    pub retry_failure: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -178,4 +194,12 @@ fn default_interval() -> String {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_max_retries() -> u32 {
+    2
+}
+
+fn default_retry_backoff() -> String {
+    "5m".to_string()
 }

@@ -46,6 +46,8 @@ export function LongGoalPanel() {
   const [goalText, setGoalText] = useState('')
   const [engineId, setEngineId] = useState<EngineId>((config?.defaultEngine ?? 'claude-code') as EngineId)
   const [interval, setInterval] = useState('30m')
+  const [maxRetries, setMaxRetries] = useState(2)
+  const [retryBackoff, setRetryBackoff] = useState('5m')
   const [autoStartPlanning, setAutoStartPlanning] = useState(true)
   const [supplement, setSupplement] = useState('')
   const [reviewSupplement, setReviewSupplement] = useState('')
@@ -218,6 +220,8 @@ export function LongGoalPanel() {
         workspacePath,
         engineId,
         interval: interval.trim() || '30m',
+        maxRetries,
+        retryBackoff: retryBackoff.trim() || '5m',
         autoPauseOnComplete: true,
         allowCodeChanges: true,
         allowGitCommit: true,
@@ -243,6 +247,8 @@ export function LongGoalPanel() {
     engineId,
     goalText,
     interval,
+    maxRetries,
+    retryBackoff,
     startGoalSession,
     title,
     updateSelectedGoal,
@@ -434,6 +440,23 @@ export function LongGoalPanel() {
               placeholder="30m"
             />
           </div>
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              type="number"
+              min={0}
+              max={10}
+              value={maxRetries}
+              onChange={(event) => setMaxRetries(Math.max(0, Number(event.target.value) || 0))}
+              className="rounded-md border border-border-subtle bg-background-surface px-2 py-2 text-xs text-text-secondary"
+              aria-label="最大重试次数"
+            />
+            <input
+              value={retryBackoff}
+              onChange={(event) => setRetryBackoff(event.target.value)}
+              className="rounded-md border border-border-subtle bg-background-surface px-2 py-2 text-xs text-text-secondary"
+              placeholder="重试退避 5m"
+            />
+          </div>
           <label className="flex items-center gap-2 rounded-md border border-border-subtle bg-background-surface px-3 py-2 text-xs text-text-secondary">
             <input
               type="checkbox"
@@ -475,7 +498,9 @@ export function LongGoalPanel() {
                 <span className="truncate text-sm font-medium text-text-primary">{goal.config.title}</span>
                 <span className="shrink-0 text-[11px] text-text-tertiary">{statusLabel[goal.config.status]}</span>
               </div>
-              <div className="mt-1 truncate text-xs text-text-tertiary">{goal.config.engineId} · {goal.config.interval}</div>
+              <div className="mt-1 truncate text-xs text-text-tertiary">
+                {goal.config.engineId} · {goal.config.interval} · 重试 {goal.config.retryCount}/{goal.config.maxRetries}
+              </div>
             </button>
           ))}
         </section>
@@ -500,6 +525,14 @@ export function LongGoalPanel() {
               {selectedGoal.config.nextRunAt && (
                 <div className="mt-1 truncate text-xs text-text-tertiary">
                   下次执行: {formatScheduleTime(selectedGoal.config.nextRunAt)}
+                </div>
+              )}
+              <div className="mt-1 truncate text-xs text-text-tertiary">
+                重试: {selectedGoal.config.retryCount}/{selectedGoal.config.maxRetries} · 退避: {selectedGoal.config.retryBackoff}
+              </div>
+              {selectedGoal.config.lastFailureAt && (
+                <div className="mt-1 truncate text-xs text-text-tertiary">
+                  上次失败: {formatScheduleTime(selectedGoal.config.lastFailureAt)}
                 </div>
               )}
               <p className="mt-2 whitespace-pre-wrap text-sm text-text-secondary">{selectedGoal.config.goal}</p>

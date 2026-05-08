@@ -73,7 +73,7 @@ async function handleSessionEnd(event: RoutedSessionEndEvent): Promise<void> {
       sessionId: frontendSessionId,
       summary: buildSessionSummary(frontendSessionId),
       result: event.reason || 'success',
-      goalStatus: isFailure ? 'blocked' : undefined,
+      retryFailure: isFailure,
     })
     notifyLongGoalUpdated()
   } catch (error) {
@@ -169,7 +169,7 @@ async function startAutomaticExecution(workspace: WorkspaceInfo, goal: LongGoalS
     notifyLongGoalUpdated()
     await store.sendMessage(prompt, workspace.path)
   } catch (error) {
-    await markGoalBlocked(
+    await markGoalExecutionFailure(
       workspace.path,
       goal.config.id,
       'auto-execution-start',
@@ -184,7 +184,7 @@ async function startAutomaticExecution(workspace: WorkspaceInfo, goal: LongGoalS
   }
 }
 
-async function markGoalBlocked(
+async function markGoalExecutionFailure(
   workspacePath: string,
   goalId: string,
   stepId: string,
@@ -197,8 +197,8 @@ async function markGoalBlocked(
       stepId: `${stepId}-${Date.now()}`,
       summary,
       result: 'failed',
-      nextStep: '请复审长期目标状态，补充要求后再恢复执行。',
-      goalStatus: 'blocked',
+      nextStep: '系统将按重试退避策略重新尝试；若超过上限，请复审长期目标状态后再恢复执行。',
+      retryFailure: true,
     })
     notifyLongGoalUpdated()
   } catch (error) {
