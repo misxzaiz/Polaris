@@ -46,6 +46,7 @@ export function LongGoalPanel() {
   const [goalText, setGoalText] = useState('')
   const [engineId, setEngineId] = useState<EngineId>((config?.defaultEngine ?? 'claude-code') as EngineId)
   const [interval, setInterval] = useState('30m')
+  const [autoStartPlanning, setAutoStartPlanning] = useState(true)
   const [supplement, setSupplement] = useState('')
   const [maintenancePrompt, setMaintenancePrompt] = useState<string | null>(null)
 
@@ -96,36 +97,12 @@ export function LongGoalPanel() {
     }
   }, [config?.defaultEngine])
 
-  const handleCreate = useCallback(async () => {
-    if (!workspacePath || !title.trim() || !goalText.trim()) return
-
-    setLoading(true)
-    setMessage(null)
-    try {
-      const created = await createLongGoal({
-        title: title.trim(),
-        goal: goalText.trim(),
-        workspacePath,
-        engineId,
-        interval: interval.trim() || '30m',
-        autoPauseOnComplete: true,
-        allowCodeChanges: true,
-        allowGitCommit: true,
-      })
-      setTitle('')
-      setGoalText('')
-      setGoals((current) => [created, ...current])
-      setSelectedGoalId(created.config.id)
-      setMessage('长期目标已创建')
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error))
-    } finally {
-      setLoading(false)
-    }
-  }, [engineId, goalText, interval, title, workspacePath])
-
   const updateSelectedGoal = useCallback((updated: LongGoalState) => {
-    setGoals((current) => current.map((goal) => goal.config.id === updated.config.id ? updated : goal))
+    setGoals((current) => (
+      current.some((goal) => goal.config.id === updated.config.id)
+        ? current.map((goal) => goal.config.id === updated.config.id ? updated : goal)
+        : [updated, ...current]
+    ))
     setSelectedGoalId(updated.config.id)
   }, [])
 
@@ -212,6 +189,49 @@ export function LongGoalPanel() {
     }))
     await store.sendMessage(prompt, workspacePath)
   }, [currentWorkspace?.id, updateSelectedGoal, workspacePath])
+
+  const handleCreate = useCallback(async () => {
+    if (!workspacePath || !title.trim() || !goalText.trim()) return
+
+    setLoading(true)
+    setMessage(null)
+    try {
+      const created = await createLongGoal({
+        title: title.trim(),
+        goal: goalText.trim(),
+        workspacePath,
+        engineId,
+        interval: interval.trim() || '30m',
+        autoPauseOnComplete: true,
+        allowCodeChanges: true,
+        allowGitCommit: true,
+      })
+      setTitle('')
+      setGoalText('')
+      updateSelectedGoal(created)
+
+      if (autoStartPlanning) {
+        const prompt = await prepareLongGoalPlanning(workspacePath, created.config.id)
+        await startGoalSession(prompt, `长期目标规划: ${created.config.title}`, created, 'planning')
+        setMessage('长期目标已创建，已启动规划会话')
+      } else {
+        setMessage('长期目标已创建')
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setLoading(false)
+    }
+  }, [
+    autoStartPlanning,
+    engineId,
+    goalText,
+    interval,
+    startGoalSession,
+    title,
+    updateSelectedGoal,
+    workspacePath,
+  ])
 
   const handlePlanningSession = useCallback(async () => {
     if (!workspacePath || !selectedGoal) return
@@ -336,6 +356,15 @@ export function LongGoalPanel() {
               placeholder="30m"
             />
           </div>
+          <label className="flex items-center gap-2 rounded-md border border-border-subtle bg-background-surface px-3 py-2 text-xs text-text-secondary">
+            <input
+              type="checkbox"
+              checked={autoStartPlanning}
+              onChange={(event) => setAutoStartPlanning(event.target.checked)}
+              className="h-3.5 w-3.5"
+            />
+            创建后自动启动规划会话
+          </label>
           <button
             type="button"
             onClick={handleCreate}
