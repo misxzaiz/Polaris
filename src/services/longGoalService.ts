@@ -1,5 +1,18 @@
 import { invoke } from './transport'
 
+export const LONG_GOAL_MCP_SERVER_ID = 'polaris-long-goal'
+
+export const LONG_GOAL_MCP_ALLOWED_TOOLS = [
+  'mcp__polaris-long-goal__long_goal_list',
+  'mcp__polaris-long-goal__long_goal_read',
+  'mcp__polaris-long-goal__long_goal_create',
+  'mcp__polaris-long-goal__long_goal_append_supplement',
+  'mcp__polaris-long-goal__long_goal_record_progress',
+  'mcp__polaris-long-goal__long_goal_update_documents',
+  'mcp__polaris-long-goal__long_goal_set_status',
+  'mcp__polaris-long-goal__long_goal_complete',
+] as const
+
 export type LongGoalStatus =
   | 'planning'
   | 'active'
@@ -105,6 +118,17 @@ export interface RecordLongGoalStepParams {
   retryFailure?: boolean
 }
 
+export interface UpdateLongGoalDocumentsParams {
+  workspacePath: string
+  goalId: string
+  protocol?: string
+  plan?: string
+  progress?: string
+  queue?: string
+  supplement?: string
+  note?: string
+}
+
 export interface CompleteLongGoalParams {
   workspacePath: string
   goalId: string
@@ -167,6 +191,12 @@ export async function prepareLongGoalExecution(
 
 export async function recordLongGoalStep(params: RecordLongGoalStepParams): Promise<LongGoalState> {
   return invoke<LongGoalState>('long_goal_record_step', { params })
+}
+
+export async function updateLongGoalDocuments(
+  params: UpdateLongGoalDocumentsParams
+): Promise<LongGoalState> {
+  return invoke<LongGoalState>('long_goal_update_documents', { params })
 }
 
 export async function completeLongGoal(params: CompleteLongGoalParams): Promise<LongGoalState> {

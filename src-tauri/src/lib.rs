@@ -740,6 +740,7 @@ pub fn run() {
             commands::long_goal::long_goal_prepare_planning,
             commands::long_goal::long_goal_prepare_execution,
             commands::long_goal::long_goal_record_step,
+            commands::long_goal::long_goal_update_documents,
             commands::long_goal::long_goal_complete,
             commands::long_goal::long_goal_prepare_maintenance,
             // Plugin 相关

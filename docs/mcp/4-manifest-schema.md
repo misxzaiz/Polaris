@@ -38,7 +38,7 @@ interface PluginOriginMetadata {
 - `builtin` 为 `true` 的插件必须在前端内置 registry 中注册。
 - 如果内置插件贡献 MCP server，后端必须在内置 MCP registry 中声明相同 `plugin_id` 和 server name。
 - 外部安装插件可以贡献受控宿主面板，例如 demo 插件使用 `panelType: 'demoPlugin'`；当前不执行插件目录中的动态前端代码。
-- 长期目标执行面板使用受控宿主 `panelType: 'longGoal'` 和 `icon: 'Target'`。
+- 长期目标执行面板由 `polaris.long-goal` manifest 贡献受控宿主 `panelType: 'longGoal'` 和 `icon: 'Target'`；React 组件仍由宿主实现。
 - `origin.repository` / `origin.homepage` 用于设置页展示插件来源；`origin.updateUrl` 指向可读取的远端或本地 manifest，用于检查是否存在新版本。`origin.downloadUrl` 指向插件 zip 包或插件目录/manifest 来源，用于远程安装和用户确认后的覆盖更新。检查更新只读取 manifest 并比较版本，不执行远端代码；覆盖安装必须由用户在设置页确认。
 
 ## MCP Server Contribution

@@ -94,6 +94,13 @@ describe('plugin MCP contributions', () => {
       .find((plugin) => plugin.id === 'polaris.long-goal')
 
     expect(longGoalPlugin).toBeDefined()
+    expect(longGoalPlugin?.contributes.views).toEqual([
+      expect.objectContaining({
+        id: 'long-goal.panel',
+        panelType: 'longGoal',
+        icon: 'Target',
+      }),
+    ])
     expect(longGoalPlugin?.contributes.mcpServers).toEqual([
       expect.objectContaining({
         id: 'polaris-long-goal',

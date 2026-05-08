@@ -170,6 +170,24 @@ function listTools(id) {
         },
       },
       {
+        name: 'long_goal_update_documents',
+        description: 'Replace long goal protocol, plan, progress, queue, or supplement documents.',
+        inputSchema: {
+          type: 'object',
+          required: ['goalId'],
+          properties: {
+            goalId: { type: 'string', minLength: 1 },
+            protocol: { type: 'string' },
+            plan: { type: 'string' },
+            progress: { type: 'string' },
+            queue: { type: 'string' },
+            supplement: { type: 'string' },
+            note: { type: 'string' },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
         name: 'long_goal_set_status',
         description: 'Update one long goal status and phase in goal.json.',
         inputSchema: {
@@ -179,13 +197,28 @@ function listTools(id) {
             goalId: { type: 'string', minLength: 1 },
             status: {
               type: 'string',
-              enum: ['planning', 'active', 'running', 'paused', 'maintenance', 'blocked', 'completed', 'failed'],
+              enum: ['planning', 'active', 'paused', 'maintenance', 'blocked', 'completed', 'failed'],
             },
             phase: {
               type: 'string',
               enum: ['planning', 'execution', 'maintenance', 'review'],
             },
             nextRunAt: { type: 'number' },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: 'long_goal_complete',
+        description: 'Record completion judgement and move the goal to completed/review.',
+        inputSchema: {
+          type: 'object',
+          required: ['goalId', 'completionSummary'],
+          properties: {
+            goalId: { type: 'string', minLength: 1 },
+            completionSummary: { type: 'string', minLength: 1 },
+            remainingRisks: { type: 'array', items: { type: 'string' } },
+            reviewSuggestions: { type: 'array', items: { type: 'string' } },
           },
           additionalProperties: false,
         },
@@ -234,15 +267,67 @@ function callTool(id, params) {
     return
   }
 
+  if (name === 'long_goal_update_documents') {
+    const goalDir = ensureInsideRoot(args.goalId)
+    const updates = [
+      ['protocol', 'protocol.md'],
+      ['plan', 'plan.md'],
+      ['progress', 'progress.md'],
+      ['queue', 'queue.md'],
+      ['supplement', 'supplement.md'],
+    ].filter(([key]) => typeof args[key] === 'string' && args[key].trim())
+    if (updates.length === 0) {
+      throw new Error('At least one document field is required')
+    }
+    for (const [key, fileName] of updates) {
+      const content = args[key].endsWith('\n') ? args[key] : `${args[key]}\n`
+      writeText(path.join(goalDir, fileName), content)
+    }
+    if (args.note) {
+      appendSection(
+        path.join(goalDir, 'progress.md'),
+        '文档更新',
+        `- 文件: ${updates.map(([, fileName]) => fileName).join(', ')}\n- 说明: ${args.note}`
+      )
+    }
+    result(id, toolContent({ ok: true, goalId: args.goalId, updated: updates.map(([, fileName]) => fileName) }))
+    return
+  }
+
   if (name === 'long_goal_set_status') {
     const goalDir = ensureInsideRoot(args.goalId)
     const configPath = path.join(goalDir, 'goal.json')
     const config = readJson(configPath)
+    if (args.status === 'running') {
+      throw new Error('running status can only be entered by host session binding')
+    }
+    if (Object.prototype.hasOwnProperty.call(args, 'nextRunAt') && args.status !== 'active') {
+      throw new Error('nextRunAt can only be set when status is active')
+    }
     config.status = args.status
     if (args.phase) config.phase = args.phase
     if (Object.prototype.hasOwnProperty.call(args, 'nextRunAt')) {
       config.nextRunAt = args.nextRunAt
     }
+    touchConfig(config)
+    writeJson(configPath, config)
+    result(id, toolContent({ ok: true, config }))
+    return
+  }
+
+  if (name === 'long_goal_complete') {
+    const goalDir = ensureInsideRoot(args.goalId)
+    const configPath = path.join(goalDir, 'goal.json')
+    const config = readJson(configPath)
+    appendSection(
+      path.join(goalDir, 'progress.md'),
+      '完成判定',
+      `${args.completionSummary}\n\n### 剩余风险\n${(args.remainingRisks || []).map((item) => `- ${item}`).join('\n') || '无'}\n\n### 复审建议\n${(args.reviewSuggestions || []).map((item) => `- ${item}`).join('\n') || '无'}`
+    )
+    config.status = 'completed'
+    config.phase = 'review'
+    delete config.currentSessionId
+    delete config.nextRunAt
     touchConfig(config)
     writeJson(configPath, config)
     result(id, toolContent({ ok: true, config }))

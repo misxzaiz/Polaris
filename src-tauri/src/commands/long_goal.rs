@@ -4,6 +4,7 @@ use crate::error::Result;
 use crate::models::long_goal::{
     AppendLongGoalSupplementParams, BindLongGoalSessionParams, CompleteLongGoalParams,
     CreateLongGoalParams, FinishLongGoalSessionParams, LongGoalState, RecordLongGoalStepParams,
+    UpdateLongGoalDocumentsParams,
 };
 use crate::services::long_goal_service::LongGoalService;
 
@@ -35,7 +36,9 @@ pub async fn long_goal_bind_session(params: BindLongGoalSessionParams) -> Result
 }
 
 #[cfg_attr(feature = "tauri-app", tauri::command)]
-pub async fn long_goal_finish_session(params: FinishLongGoalSessionParams) -> Result<LongGoalState> {
+pub async fn long_goal_finish_session(
+    params: FinishLongGoalSessionParams,
+) -> Result<LongGoalState> {
     LongGoalService::finish_session(params)
 }
 
@@ -50,10 +53,7 @@ pub async fn long_goal_resume(workspace_path: String, goal_id: String) -> Result
 }
 
 #[cfg_attr(feature = "tauri-app", tauri::command)]
-pub async fn long_goal_prepare_planning(
-    workspace_path: String,
-    goal_id: String,
-) -> Result<String> {
+pub async fn long_goal_prepare_planning(workspace_path: String, goal_id: String) -> Result<String> {
     LongGoalService::prepare_planning_session(&workspace_path, &goal_id)
 }
 
@@ -68,6 +68,13 @@ pub async fn long_goal_prepare_execution(
 #[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn long_goal_record_step(params: RecordLongGoalStepParams) -> Result<LongGoalState> {
     LongGoalService::record_step(params)
+}
+
+#[cfg_attr(feature = "tauri-app", tauri::command)]
+pub async fn long_goal_update_documents(
+    params: UpdateLongGoalDocumentsParams,
+) -> Result<LongGoalState> {
+    LongGoalService::update_documents(params)
 }
 
 #[cfg_attr(feature = "tauri-app", tauri::command)]

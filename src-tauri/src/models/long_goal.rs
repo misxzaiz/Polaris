@@ -178,6 +178,25 @@ pub struct RecordLongGoalStepParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct UpdateLongGoalDocumentsParams {
+    pub workspace_path: String,
+    pub goal_id: String,
+    #[serde(default)]
+    pub protocol: Option<String>,
+    #[serde(default)]
+    pub plan: Option<String>,
+    #[serde(default)]
+    pub progress: Option<String>,
+    #[serde(default)]
+    pub queue: Option<String>,
+    #[serde(default)]
+    pub supplement: Option<String>,
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CompleteLongGoalParams {
     pub workspace_path: String,
     pub goal_id: String,

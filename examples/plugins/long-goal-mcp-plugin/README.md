@@ -21,7 +21,9 @@ After installation, the plugin contributes one stdio MCP server: `polaris-long-g
 - `long_goal_read`: read one long goal's config and protocol documents.
 - `long_goal_append_supplement`: append user or AI supplement text to `supplement.md`.
 - `long_goal_record_progress`: append execution progress to `progress.md`, with an optional next queue item.
+- `long_goal_update_documents`: replace protocol, plan, progress, queue, or supplement documents.
 - `long_goal_set_status`: update status, phase, and scheduling fields in `goal.json`.
+- `long_goal_complete`: record completion judgement and move the goal to completed review.
 
 ## Boundary
 

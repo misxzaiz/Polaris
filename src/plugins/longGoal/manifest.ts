@@ -2,12 +2,23 @@ import type { PolarisPluginManifest } from '@/plugin-system/types'
 
 export const longGoalPluginManifest: PolarisPluginManifest = {
   id: 'polaris.long-goal',
-  name: 'Long Goal MCP',
+  name: 'Long Goals',
   version: '0.1.0',
-  description: '长期目标执行 MCP 工具面。UI 暂由 Polaris Core 托管。',
+  description: '长期目标执行面板和 MCP 工具面。',
   builtin: true,
   enabledByDefault: true,
   contributes: {
+    views: [
+      {
+        id: 'long-goal.panel',
+        area: 'activityBar',
+        panelType: 'longGoal',
+        icon: 'Target',
+        labelKey: 'labels.longGoalPanel',
+        labelDefault: 'Long Goals',
+        order: 55,
+      },
+    ],
     mcpServers: [
       {
         id: 'polaris-long-goal',

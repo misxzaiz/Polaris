@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 use crate::error::{AppError, Result};
 use crate::models::long_goal::{
     AppendLongGoalSupplementParams, CompleteLongGoalParams, CreateLongGoalParams,
-    RecordLongGoalStepParams, SetLongGoalStatusParams,
+    RecordLongGoalStepParams, SetLongGoalStatusParams, UpdateLongGoalDocumentsParams,
 };
 use crate::services::long_goal_service::LongGoalService;
 
@@ -96,7 +96,11 @@ fn handle_request(request: JsonRpcRequest, workspace_path: &str) -> JsonRpcRespo
     let id = request.id.unwrap_or(Value::Null);
 
     if request.jsonrpc != "2.0" {
-        return error_response(id, -32600, "Invalid Request: jsonrpc must be 2.0".to_string());
+        return error_response(
+            id,
+            -32600,
+            "Invalid Request: jsonrpc must be 2.0".to_string(),
+        );
     }
 
     let result = match request.method.as_str() {
@@ -210,9 +214,27 @@ fn handle_tools_list() -> Value {
                         "nextStep": { "type": "string" },
                         "goalStatus": {
                             "type": "string",
-                            "enum": ["planning", "active", "running", "paused", "maintenance", "blocked", "completed", "failed"]
+                            "enum": ["planning", "active", "paused", "maintenance", "blocked", "completed", "failed"]
                         },
                         "retryFailure": { "type": "boolean" }
+                    },
+                    "additionalProperties": false
+                }
+            },
+            {
+                "name": "long_goal_update_documents",
+                "description": "替换长期目标的协议、计划、进度、队列或补充文档。规划和维护会话优先使用此工具。",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["goalId"],
+                    "properties": {
+                        "goalId": { "type": "string", "minLength": 1 },
+                        "protocol": { "type": "string" },
+                        "plan": { "type": "string" },
+                        "progress": { "type": "string" },
+                        "queue": { "type": "string" },
+                        "supplement": { "type": "string" },
+                        "note": { "type": "string" }
                     },
                     "additionalProperties": false
                 }
@@ -227,7 +249,7 @@ fn handle_tools_list() -> Value {
                         "goalId": { "type": "string", "minLength": 1 },
                         "status": {
                             "type": "string",
-                            "enum": ["planning", "active", "running", "paused", "maintenance", "blocked", "completed", "failed"]
+                            "enum": ["planning", "active", "paused", "maintenance", "blocked", "completed", "failed"]
                         },
                         "phase": {
                             "type": "string",
@@ -262,7 +284,10 @@ fn handle_tools_call(params: Value, workspace_path: &str) -> Result<Value> {
         .get("name")
         .and_then(Value::as_str)
         .ok_or_else(|| AppError::ValidationError("缺少工具名称".to_string()))?;
-    let arguments = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
+    let arguments = params
+        .get("arguments")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
 
     match name {
         "long_goal_list" => tool_success(json!({
@@ -275,8 +300,10 @@ fn handle_tools_call(params: Value, workspace_path: &str) -> Result<Value> {
         }
         "long_goal_create" => {
             let params_value = with_workspace_path(arguments, workspace_path);
-            let params: CreateLongGoalParams = serde_json::from_value(params_value)
-                .map_err(|error| AppError::ValidationError(format!("创建长期目标参数无效: {}", error)))?;
+            let params: CreateLongGoalParams =
+                serde_json::from_value(params_value).map_err(|error| {
+                    AppError::ValidationError(format!("创建长期目标参数无效: {}", error))
+                })?;
             tool_success(json!(LongGoalService::create_goal(params)?))
         }
         "long_goal_append_supplement" => {
@@ -294,7 +321,8 @@ fn handle_tools_call(params: Value, workspace_path: &str) -> Result<Value> {
                 goal_id: require_string(&arguments, "goalId")?,
                 step_id: require_string(&arguments, "stepId")?,
                 summary: require_string(&arguments, "summary")?,
-                changed_files: optional_string_array(&arguments, "changedFiles")?.unwrap_or_default(),
+                changed_files: optional_string_array(&arguments, "changedFiles")?
+                    .unwrap_or_default(),
                 tests_run: optional_string_array(&arguments, "testsRun")?.unwrap_or_default(),
                 commit_sha: optional_string(&arguments, "commitSha"),
                 result: optional_string(&arguments, "result").unwrap_or_default(),
@@ -307,6 +335,19 @@ fn handle_tools_call(params: Value, workspace_path: &str) -> Result<Value> {
             };
             tool_success(json!(LongGoalService::record_step(params)?))
         }
+        "long_goal_update_documents" => {
+            let params = UpdateLongGoalDocumentsParams {
+                workspace_path: workspace_path.to_string(),
+                goal_id: require_string(&arguments, "goalId")?,
+                protocol: optional_string(&arguments, "protocol"),
+                plan: optional_string(&arguments, "plan"),
+                progress: optional_string(&arguments, "progress"),
+                queue: optional_string(&arguments, "queue"),
+                supplement: optional_string(&arguments, "supplement"),
+                note: optional_string(&arguments, "note"),
+            };
+            tool_success(json!(LongGoalService::update_documents(params)?))
+        }
         "long_goal_set_status" => {
             let params_value = with_workspace_path(arguments, workspace_path);
             let params: SetLongGoalStatusParams = serde_json::from_value(params_value)
@@ -318,8 +359,10 @@ fn handle_tools_call(params: Value, workspace_path: &str) -> Result<Value> {
                 workspace_path: workspace_path.to_string(),
                 goal_id: require_string(&arguments, "goalId")?,
                 completion_summary: require_string(&arguments, "completionSummary")?,
-                remaining_risks: optional_string_array(&arguments, "remainingRisks")?.unwrap_or_default(),
-                review_suggestions: optional_string_array(&arguments, "reviewSuggestions")?.unwrap_or_default(),
+                remaining_risks: optional_string_array(&arguments, "remainingRisks")?
+                    .unwrap_or_default(),
+                review_suggestions: optional_string_array(&arguments, "reviewSuggestions")?
+                    .unwrap_or_default(),
             };
             tool_success(json!(LongGoalService::complete_goal(params)?))
         }
@@ -340,7 +383,10 @@ fn tool_success(value: Value) -> Result<Value> {
 
 fn with_workspace_path(mut arguments: Value, workspace_path: &str) -> Value {
     if let Some(object) = arguments.as_object_mut() {
-        object.insert("workspacePath".to_string(), Value::String(workspace_path.to_string()));
+        object.insert(
+            "workspacePath".to_string(),
+            Value::String(workspace_path.to_string()),
+        );
     }
     arguments
 }
@@ -409,6 +455,7 @@ pub fn current_tool_definitions() -> BTreeMap<&'static str, &'static str> {
         ("long_goal_create", "创建长期目标文档结构。"),
         ("long_goal_append_supplement", "追加长期目标补充。"),
         ("long_goal_record_progress", "记录长期目标执行进度。"),
+        ("long_goal_update_documents", "更新长期目标文档。"),
         ("long_goal_set_status", "更新长期目标状态。"),
         ("long_goal_complete", "记录长期目标完成判定。"),
     ])
@@ -421,17 +468,24 @@ mod tests {
     #[test]
     fn exposes_expected_tools() {
         let defs = current_tool_definitions();
-        assert_eq!(defs.len(), 7);
+        assert_eq!(defs.len(), 8);
         assert!(defs.contains_key("long_goal_list"));
         assert!(defs.contains_key("long_goal_record_progress"));
+        assert!(defs.contains_key("long_goal_update_documents"));
         assert!(defs.contains_key("long_goal_set_status"));
     }
 
     #[test]
     fn initialize_returns_protocol_metadata() {
         let value = handle_initialize().unwrap();
-        assert_eq!(value["protocolVersion"], Value::String(PROTOCOL_VERSION.to_string()));
-        assert_eq!(value["serverInfo"]["name"], Value::String(SERVER_NAME.to_string()));
+        assert_eq!(
+            value["protocolVersion"],
+            Value::String(PROTOCOL_VERSION.to_string())
+        );
+        assert_eq!(
+            value["serverInfo"]["name"],
+            Value::String(SERVER_NAME.to_string())
+        );
     }
 
     #[test]

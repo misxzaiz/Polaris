@@ -10,7 +10,7 @@ use crate::models::long_goal::{
     AppendLongGoalSupplementParams, BindLongGoalSessionParams, CompleteLongGoalParams,
     CreateLongGoalParams, FinishLongGoalSessionParams, LongGoalConfig, LongGoalDocuments,
     LongGoalPhase, LongGoalState, LongGoalStatus, RecordLongGoalStepParams,
-    SetLongGoalStatusParams,
+    SetLongGoalStatusParams, UpdateLongGoalDocumentsParams,
 };
 
 pub struct LongGoalService;
@@ -191,6 +191,7 @@ impl LongGoalService {
         if params.retry_failure {
             Self::apply_retry_failure(&mut config, now.timestamp());
         } else if let Some(status) = params.goal_status {
+            Self::ensure_status_not_running(status)?;
             config.status = status;
             config.phase = if status == LongGoalStatus::Completed {
                 LongGoalPhase::Review
@@ -240,7 +241,7 @@ impl LongGoalService {
 
     pub fn prepare_planning_session(workspace_path: &str, goal_id: &str) -> Result<String> {
         let state = Self::read_goal(workspace_path, goal_id)?;
-        Ok(format!(
+        let prompt = format!(
             "# 长期目标规划会话\n\n\
              你正在为 Polaris 长期目标执行系统进行第一次规划会话。\n\n\
              ## 目标元数据\n\n\
@@ -280,12 +281,17 @@ impl LongGoalService {
             state.documents.progress,
             state.documents.queue,
             state.documents.supplement
+        );
+        Ok(format!(
+            "{}\n\n{}",
+            prompt,
+            Self::mcp_usage_rules(&state.config.id, "planning")
         ))
     }
 
     pub fn prepare_execution_session(workspace_path: &str, goal_id: &str) -> Result<String> {
         let state = Self::read_goal(workspace_path, goal_id)?;
-        Ok(format!(
+        let prompt = format!(
             "# 长期目标执行会话\n\n\
              你正在推进 Polaris 长期目标中的一个小模块。本轮必须保持边界清晰，只处理任务队列中的第一个可执行小模块。\n\n\
              ## 目标元数据\n\n\
@@ -337,12 +343,17 @@ impl LongGoalService {
                 .last_session_summary
                 .as_deref()
                 .unwrap_or("暂无")
+        );
+        Ok(format!(
+            "{}\n\n{}",
+            prompt,
+            Self::mcp_usage_rules(&state.config.id, "execution")
         ))
     }
 
     pub fn prepare_maintenance_session(workspace_path: &str, goal_id: &str) -> Result<String> {
         let state = Self::read_goal(workspace_path, goal_id)?;
-        Ok(format!(
+        let prompt = format!(
             "# 长期目标维护会话\n\n\
              目标：{}\n\n\
              当前状态：{:?}\n\n\
@@ -360,7 +371,33 @@ impl LongGoalService {
             state.documents.progress,
             state.documents.queue,
             state.documents.supplement
+        );
+        Ok(format!(
+            "{}\n\n{}",
+            prompt,
+            Self::mcp_usage_rules(&state.config.id, "maintenance")
         ))
+    }
+
+    fn mcp_usage_rules(goal_id: &str, phase: &str) -> String {
+        let write_rule = match phase {
+            "planning" | "maintenance" => {
+                "- 结束前必须调用 `mcp__polaris-long-goal__long_goal_update_documents` 写回 `plan`、`queue`、`progress` 等已整理文档。"
+            }
+            _ => {
+                "- 结束前必须调用 `mcp__polaris-long-goal__long_goal_record_progress` 记录本轮结果、验证、修改文件、commit 和下一步。"
+            }
+        };
+        format!(
+            "## MCP 工具写回要求\n\n\
+             - 开始执行前先调用 `mcp__polaris-long-goal__long_goal_read` 读取最新目标状态，参数：`{{\"goalId\":\"{}\"}}`。\n\
+             - 优先使用 `polaris-long-goal` MCP tools 读写长期目标文档，不要直接把 `.polaris/long-goals` 当成唯一写回通道。\n\
+             {}\n\
+             - 如果判断长期目标完成，必须调用 `mcp__polaris-long-goal__long_goal_complete`，写入完成判定、剩余风险和复审建议。\n\
+             - 如果信息不足或需要用户补充，调用 `mcp__polaris-long-goal__long_goal_append_supplement` 或 `mcp__polaris-long-goal__long_goal_set_status` 标记 `blocked`/`maintenance`。\n\
+             - 最终回答中简要说明已经调用了哪些长期目标 MCP tools；宿主仍会在会话结束时做兜底摘要写回。\n",
+            goal_id, write_rule
+        )
     }
 
     pub fn record_step(params: RecordLongGoalStepParams) -> Result<LongGoalState> {
@@ -404,6 +441,7 @@ impl LongGoalService {
         if params.retry_failure {
             Self::apply_retry_failure(&mut config, now);
         } else if let Some(status) = params.goal_status {
+            Self::ensure_status_not_running(status)?;
             config.status = status;
             if status == LongGoalStatus::Completed {
                 config.phase = LongGoalPhase::Review;
@@ -419,6 +457,73 @@ impl LongGoalService {
             Self::reset_retry_state(&mut config);
         }
         config.current_session_id = None;
+        Self::touch_config(&mut config);
+        Self::write_config(&goal_dir, &config)?;
+        Self::read_goal_state(&workspace, &params.goal_id)
+    }
+
+    pub fn update_documents(params: UpdateLongGoalDocumentsParams) -> Result<LongGoalState> {
+        let workspace = Self::canonical_workspace(&params.workspace_path)?;
+        let goal_dir = Self::checked_goal_dir(&workspace, &params.goal_id)?;
+        let mut config = Self::read_config(&goal_dir)?;
+        let mut changed = Vec::new();
+
+        if let Some(content) = params.protocol {
+            Self::write_text(
+                &goal_dir.join("protocol.md"),
+                &ensure_trailing_newline(content),
+            )?;
+            changed.push("protocol.md");
+        }
+        if let Some(content) = params.plan {
+            Self::write_text(&goal_dir.join("plan.md"), &ensure_trailing_newline(content))?;
+            changed.push("plan.md");
+        }
+        if let Some(content) = params.progress {
+            Self::write_text(
+                &goal_dir.join("progress.md"),
+                &ensure_trailing_newline(content),
+            )?;
+            changed.push("progress.md");
+        }
+        if let Some(content) = params.queue {
+            Self::write_text(
+                &goal_dir.join("queue.md"),
+                &ensure_trailing_newline(content),
+            )?;
+            changed.push("queue.md");
+        }
+        if let Some(content) = params.supplement {
+            Self::write_text(
+                &goal_dir.join("supplement.md"),
+                &ensure_trailing_newline(content),
+            )?;
+            changed.push("supplement.md");
+        }
+
+        if changed.is_empty() {
+            return Err(AppError::ValidationError(
+                "至少需要更新一个长期目标文档".to_string(),
+            ));
+        }
+
+        if let Some(note) = params
+            .note
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            let now_text = Utc::now().format("%Y-%m-%d %H:%M:%S UTC");
+            let mut progress = Self::read_text(&goal_dir.join("progress.md"))?;
+            progress.push_str(&format!(
+                "\n\n## 文档更新 - {}\n\n- 文件: {}\n- 说明: {}\n",
+                now_text,
+                changed.join(", "),
+                note
+            ));
+            Self::write_text(&goal_dir.join("progress.md"), &progress)?;
+        }
+
         Self::touch_config(&mut config);
         Self::write_config(&goal_dir, &config)?;
         Self::read_goal_state(&workspace, &params.goal_id)
@@ -454,6 +559,7 @@ impl LongGoalService {
         let workspace = Self::canonical_workspace(&params.workspace_path)?;
         let goal_dir = Self::checked_goal_dir(&workspace, &params.goal_id)?;
         let mut config = Self::read_config(&goal_dir)?;
+        Self::ensure_status_not_running(params.status)?;
         config.status = params.status;
         if let Some(phase) = params.phase {
             config.phase = phase;
@@ -464,6 +570,11 @@ impl LongGoalService {
             config.current_session_id = None;
         }
         if let Some(next_run_at) = params.next_run_at {
+            if params.status != LongGoalStatus::Active {
+                return Err(AppError::ValidationError(
+                    "只有 active 状态可以设置 nextRunAt".to_string(),
+                ));
+            }
             config.next_run_at = Some(next_run_at);
         } else {
             Self::update_next_run_at(&mut config, Utc::now().timestamp());
@@ -489,6 +600,15 @@ impl LongGoalService {
         Self::touch_config(&mut config);
         Self::write_config(&goal_dir, &config)?;
         Self::read_goal_state(&workspace, goal_id)
+    }
+
+    fn ensure_status_not_running(status: LongGoalStatus) -> Result<()> {
+        if status == LongGoalStatus::Running {
+            return Err(AppError::ValidationError(
+                "running 状态只能通过绑定长期目标会话进入".to_string(),
+            ));
+        }
+        Ok(())
     }
 
     fn read_goal_state(workspace: &Path, goal_id: &str) -> Result<LongGoalState> {
@@ -736,6 +856,13 @@ fn empty_as_default<'a>(value: &'a str, default: &'a str) -> &'a str {
     }
 }
 
+fn ensure_trailing_newline(mut value: String) -> String {
+    if !value.ends_with('\n') {
+        value.push('\n');
+    }
+    value
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -934,5 +1061,90 @@ mod tests {
         assert_eq!(blocked.config.status, LongGoalStatus::Blocked);
         assert_eq!(blocked.config.retry_count, 2);
         assert_eq!(blocked.config.next_run_at, None);
+    }
+
+    #[test]
+    fn updates_documents_and_rejects_empty_updates() {
+        let workspace = tempfile::tempdir().unwrap();
+        let state = LongGoalService::create_goal(CreateLongGoalParams {
+            title: "Document Goal".to_string(),
+            goal: "Keep planning documents current".to_string(),
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            engine_id: "codex".to_string(),
+            interval: "10m".to_string(),
+            max_retries: 2,
+            retry_backoff: "5m".to_string(),
+            auto_pause_on_complete: true,
+            allow_code_changes: true,
+            allow_git_commit: true,
+        })
+        .unwrap();
+
+        let updated = LongGoalService::update_documents(UpdateLongGoalDocumentsParams {
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            goal_id: state.config.id.clone(),
+            protocol: None,
+            plan: Some("# Plan\n\nUpdated plan".to_string()),
+            progress: None,
+            queue: Some("# Queue\n\n1. First executable step".to_string()),
+            supplement: None,
+            note: Some("Planning pass completed".to_string()),
+        })
+        .unwrap();
+
+        assert!(updated.documents.plan.contains("Updated plan"));
+        assert!(updated.documents.queue.contains("First executable step"));
+        assert!(updated
+            .documents
+            .progress
+            .contains("Planning pass completed"));
+
+        let empty = LongGoalService::update_documents(UpdateLongGoalDocumentsParams {
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            goal_id: state.config.id,
+            protocol: None,
+            plan: None,
+            progress: None,
+            queue: None,
+            supplement: None,
+            note: Some("No document".to_string()),
+        });
+        assert!(empty.is_err());
+    }
+
+    #[test]
+    fn set_goal_status_rejects_running_and_non_active_schedule() {
+        let workspace = tempfile::tempdir().unwrap();
+        let state = LongGoalService::create_goal(CreateLongGoalParams {
+            title: "Status Goal".to_string(),
+            goal: "Constrain status transitions".to_string(),
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            engine_id: "codex".to_string(),
+            interval: "10m".to_string(),
+            max_retries: 2,
+            retry_backoff: "5m".to_string(),
+            auto_pause_on_complete: true,
+            allow_code_changes: true,
+            allow_git_commit: true,
+        })
+        .unwrap();
+
+        let running = LongGoalService::set_goal_status(SetLongGoalStatusParams {
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            goal_id: state.config.id.clone(),
+            status: LongGoalStatus::Running,
+            phase: Some(LongGoalPhase::Execution),
+            next_run_at: None,
+        });
+        assert!(running.is_err());
+
+        let paused_with_schedule = LongGoalService::set_goal_status(SetLongGoalStatusParams {
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            goal_id: state.config.id,
+            status: LongGoalStatus::Paused,
+            phase: Some(LongGoalPhase::Review),
+            next_run_at: Some(Utc::now().timestamp() + 60),
+        });
+        assert!(paused_with_schedule.is_err());
     }
 }

@@ -6,6 +6,7 @@ import { createLogger } from '@/utils/logger'
 import {
   bindLongGoalSession,
   finishLongGoalSession,
+  LONG_GOAL_MCP_ALLOWED_TOOLS,
   listLongGoals,
   prepareLongGoalExecution,
   recordLongGoalStep,
@@ -167,7 +168,9 @@ async function startAutomaticExecution(workspace: WorkspaceInfo, goal: LongGoalS
       phase: 'execution',
     })
     notifyLongGoalUpdated()
-    await store.sendMessage(prompt, workspace.path)
+    await store.sendMessage(prompt, workspace.path, undefined, {
+      allowedTools: [...LONG_GOAL_MCP_ALLOWED_TOOLS],
+    })
   } catch (error) {
     await markGoalExecutionFailure(
       workspace.path,

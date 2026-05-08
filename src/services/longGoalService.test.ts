@@ -13,6 +13,7 @@ import {
   readLongGoal,
   recordLongGoalStep,
   resumeLongGoal,
+  updateLongGoalDocuments,
 } from './longGoalService'
 
 const invokeMock = vi.hoisted(() => vi.fn())
@@ -138,6 +139,13 @@ describe('longGoalService', () => {
       result: 'success',
       nextStep: 'Build UI',
     })
+    await updateLongGoalDocuments({
+      workspacePath: 'D:\\workspace',
+      goalId: 'goal-1',
+      plan: '# Plan\n\nUpdated',
+      queue: '# Queue\n\n1. Next',
+      note: 'Planning updated',
+    })
     await completeLongGoal({
       workspacePath: 'D:\\workspace',
       goalId: 'goal-1',
@@ -167,7 +175,16 @@ describe('longGoalService', () => {
         nextStep: 'Build UI',
       },
     })
-    expect(invokeMock).toHaveBeenNthCalledWith(3, 'long_goal_complete', {
+    expect(invokeMock).toHaveBeenNthCalledWith(3, 'long_goal_update_documents', {
+      params: {
+        workspacePath: 'D:\\workspace',
+        goalId: 'goal-1',
+        plan: '# Plan\n\nUpdated',
+        queue: '# Queue\n\n1. Next',
+        note: 'Planning updated',
+      },
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(4, 'long_goal_complete', {
       params: {
         workspacePath: 'D:\\workspace',
         goalId: 'goal-1',

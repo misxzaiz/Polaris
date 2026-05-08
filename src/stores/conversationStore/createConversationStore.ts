@@ -831,7 +831,7 @@ export function createConversationStore(
 
       // ===== 主动操作 =====
 
-      sendMessage: async (content, workspaceDir?, attachments?) => {
+      sendMessage: async (content, workspaceDir?, attachments?, sendOptions?) => {
         const { conversationId, sessionId, messages } = get()
         const config = deps.getConfig()
         const engine = resolveSessionEngine(sessionId, config?.defaultEngine)
@@ -985,6 +985,9 @@ export function createConversationStore(
                 model: sessionConfig.model || undefined,
                 effort: sessionConfig.effort || undefined,
                 permissionMode: sessionConfig.permissionMode || undefined,
+                allowedTools: sendOptions?.allowedTools && sendOptions.allowedTools.length > 0
+                  ? sendOptions.allowedTools
+                  : undefined,
                 modelProfileId: modelProfileId || undefined,
               },
             })
@@ -1010,6 +1013,9 @@ export function createConversationStore(
                 model: sessionConfig.model || undefined,
                 effort: sessionConfig.effort || undefined,
                 permissionMode: sessionConfig.permissionMode || undefined,
+                allowedTools: sendOptions?.allowedTools && sendOptions.allowedTools.length > 0
+                  ? sendOptions.allowedTools
+                  : undefined,
                 forkSessionId: forkSessionId || undefined,
                 modelProfileId: modelProfileId || undefined,
               },

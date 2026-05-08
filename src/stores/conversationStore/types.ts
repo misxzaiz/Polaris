@@ -80,6 +80,10 @@ export interface StoreDeps {
   contextId: string
 }
 
+export interface SendMessageOptions {
+  allowedTools?: string[]
+}
+
 // ============================================================================
 // 会话状态
 // ============================================================================
@@ -202,7 +206,12 @@ export interface ConversationActions {
   handleAIEvent: (event: AIEvent) => void
 
   // ===== 主动操作 =====
-  sendMessage: (content: string, workspaceDir?: string, attachments?: import('../../types/attachment').Attachment[]) => Promise<void>
+  sendMessage: (
+    content: string,
+    workspaceDir?: string,
+    attachments?: import('../../types/attachment').Attachment[],
+    options?: SendMessageOptions
+  ) => Promise<void>
   /** 继续会话（用于回答问题/审批计划/权限重试后） */
   continueChat: (prompt?: string, allowedTools?: string[]) => Promise<void>
   interrupt: () => Promise<void>

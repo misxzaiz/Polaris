@@ -415,7 +415,17 @@ feat: advance long goal <goal-id> step <step-id>
 - `long_goal_read`
 - `long_goal_append_supplement`
 - `long_goal_record_progress`
+- `long_goal_update_documents`
 - `long_goal_set_status`
+- `long_goal_complete`
+
+当前已完成补充：
+
+- `polaris.long-goal` manifest 同时贡献受控宿主 `long-goal.panel` 可视化入口和 `polaris-long-goal` MCP server。
+- 规划/执行/维护会话 prompt 已明确要求先调用 `long_goal_read`，结束前调用 `long_goal_update_documents`、`long_goal_record_progress` 或 `long_goal_complete` 写回。
+- 长期目标会话启动时会把 `polaris-long-goal` MCP tools 加入允许工具列表。
+- `LongGoalService` 已收紧外部状态更新，`running` 只能通过宿主绑定会话进入，非 `active` 状态不能直接设置 `nextRunAt`。
+- 会话结束监听仍保留为兜底：如果 AI 没有通过 MCP tools 写回，宿主会在 `session_end` 后记录会话摘要和重试/排期状态。
 
 ## 外部 MCP 迁移实施方案
 
@@ -431,21 +441,20 @@ feat: advance long goal <goal-id> step <step-id>
 
 ### 阶段 2：抽出共享文档服务边界
 
-当前 Rust `LongGoalService` 同时服务 Tauri 命令和宿主 UI。下一步应抽出一个稳定的文档服务边界：
+当前 Rust `LongGoalService` 同时服务 Tauri 命令、宿主 UI 和 Rust MCP server。稳定文档服务边界已经形成：
 
 - `create_goal`
 - `list_goals`
 - `read_goal`
 - `append_supplement`
 - `record_progress`
+- `update_documents`
 - `set_status`
 - `prepare_planning_context`
 - `prepare_execution_context`
 - `prepare_maintenance_context`
 
-宿主 Tauri 命令继续调用该服务；外部 MCP server 后续可以复用同一套语义，避免 JS 样例和 Rust 服务长期分叉。
-
-当前状态：Rust `polaris-long-goal-mcp` 已直接复用 `LongGoalService` 暴露最小 tools；后续仍需要继续收敛方法命名和状态机约束。
+宿主 Tauri 命令和正式 Rust MCP server 复用同一套语义，避免 JS 样例和 Rust 服务长期分叉。Node 样例只保留为外部安装/manifest 示例。
 
 ### 阶段 3：外部 MCP server 正式化
 
@@ -458,12 +467,12 @@ feat: advance long goal <goal-id> step <step-id>
 
 ### 阶段 4：UI 入口归属调整
 
-当前长期目标面板仍来自 `polaris.core` 的受控宿主入口，不是外部插件自带 UI。
+当前长期目标面板来自 `polaris.long-goal` 的受控宿主入口，不是外部插件自带前端代码。
 
 迁移顺序：
 
-1. 先保留内置 `LongGoalPanel`，确保功能稳定。
-2. 将 `long-goal.panel` 从 `polaris.core` 移到一个受控 manifest，例如 `polaris.long-goal`。
+1. 已保留内置 `LongGoalPanel`，确保功能稳定。
+2. 已将 `long-goal.panel` 从 `polaris.core` 移到受控 manifest `polaris.long-goal`。
 3. 外部插件 manifest 可声明 `panelType: 'longGoal'`，但 React 组件仍由宿主提供。
 4. 只有插件系统支持外部前端代码后，才考虑真正动态加载外部 UI。
 

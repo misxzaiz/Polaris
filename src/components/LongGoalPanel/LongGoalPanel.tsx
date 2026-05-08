@@ -7,6 +7,7 @@ import {
   bindLongGoalSession,
   completeLongGoal,
   createLongGoal,
+  LONG_GOAL_MCP_ALLOWED_TOOLS,
   listLongGoals,
   pauseLongGoal,
   prepareLongGoalExecution,
@@ -213,7 +214,9 @@ export function LongGoalPanel() {
       sessionId,
       phase,
     }))
-    await store.sendMessage(prompt, workspacePath)
+    await store.sendMessage(prompt, workspacePath, undefined, {
+      allowedTools: [...LONG_GOAL_MCP_ALLOWED_TOOLS],
+    })
   }, [currentWorkspace?.id, updateSelectedGoal, workspacePath])
 
   const handleCreate = useCallback(async () => {

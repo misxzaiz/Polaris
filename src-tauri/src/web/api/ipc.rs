@@ -231,6 +231,7 @@ pub async fn handle_ipc_bridge(
         "long_goal_prepare_planning" => dispatch_long_goal_prepare_planning(&args),
         "long_goal_prepare_execution" => dispatch_long_goal_prepare_execution(&args),
         "long_goal_record_step" => dispatch_long_goal_record_step(&args),
+        "long_goal_update_documents" => dispatch_long_goal_update_documents(&args),
         "long_goal_complete" => dispatch_long_goal_complete(&args),
         "long_goal_prepare_maintenance" => dispatch_long_goal_prepare_maintenance(&args),
 
@@ -1327,6 +1328,13 @@ fn dispatch_long_goal_record_step(args: &Value) -> Result<Json<Value>, WebError>
         serde_json::from_value(long_goal_params_value(args))
             .map_err(|error| WebError::BadRequest(format!("Invalid step result params: {}", error)))?;
     json_result!(crate::services::long_goal_service::LongGoalService::record_step(params))
+}
+
+fn dispatch_long_goal_update_documents(args: &Value) -> Result<Json<Value>, WebError> {
+    let params: crate::models::long_goal::UpdateLongGoalDocumentsParams =
+        serde_json::from_value(long_goal_params_value(args))
+            .map_err(|error| WebError::BadRequest(format!("Invalid document update params: {}", error)))?;
+    json_result!(crate::services::long_goal_service::LongGoalService::update_documents(params))
 }
 
 fn dispatch_long_goal_complete(args: &Value) -> Result<Json<Value>, WebError> {
