@@ -492,6 +492,16 @@ export function LongGoalPanel() {
                   当前会话: {selectedGoal.config.currentSessionId}
                 </div>
               )}
+              {selectedGoal.config.lastSessionId && (
+                <div className="mt-1 truncate text-xs text-text-tertiary">
+                  上次会话: {selectedGoal.config.lastSessionId}
+                </div>
+              )}
+              {selectedGoal.config.nextRunAt && (
+                <div className="mt-1 truncate text-xs text-text-tertiary">
+                  下次执行: {formatScheduleTime(selectedGoal.config.nextRunAt)}
+                </div>
+              )}
               <p className="mt-2 whitespace-pre-wrap text-sm text-text-secondary">{selectedGoal.config.goal}</p>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button type="button" onClick={handlePlanningSession} disabled={loading} className="inline-flex items-center justify-center gap-1 rounded-md border border-primary/40 bg-primary/10 px-2 py-1.5 text-xs text-primary hover:bg-primary/15 disabled:opacity-50">
@@ -583,6 +593,9 @@ export function LongGoalPanel() {
 
             <DocumentPreview title="进度" content={selectedGoal.documents.progress} />
             <DocumentPreview title="任务队列" content={selectedGoal.documents.queue} />
+            {selectedGoal.documents.lastSessionSummary && (
+              <DocumentPreview title="最近会话摘要" content={selectedGoal.documents.lastSessionSummary} />
+            )}
             {maintenancePrompt && <DocumentPreview title="维护会话输入" content={maintenancePrompt} />}
           </section>
         )}
@@ -598,4 +611,8 @@ function DocumentPreview({ title, content }: { title: string; content: string })
       <pre className="max-h-64 overflow-auto whitespace-pre-wrap px-3 pb-3 text-xs text-text-tertiary">{content}</pre>
     </details>
   )
+}
+
+function formatScheduleTime(timestamp: number): string {
+  return new Date(timestamp * 1000).toLocaleString()
 }
