@@ -389,13 +389,14 @@ feat: advance long goal <goal-id> step <step-id>
 - 长期目标面板在存在 `currentSessionId` 时显示“中断会话”按钮，调用会话管理器中断当前 AI 会话，并将目标切回暂停状态。
 - 前端已注册 App 级长期目标会话跟踪器，监听 `session_end` 后根据 `currentSessionId` 找到目标，写入 `sessions/*.md` 和 `progress.md`，并清空 `currentSessionId`。
 - 后端会在目标进入 `active` 状态时按 `interval` 写入 `nextRunAt`；前端跟踪器每 30 秒扫描到期目标并自动启动下一次执行会话。
+- 自动启动执行会话失败，或会话以 `error/aborted` 结束时，会写入失败记录并将目标标记为 `blocked`，停止继续自动推进。
 - `completed` 状态下长期目标面板显示完成复审区，支持确认完成、继续执行、补充后重新规划。
 - 长期目标详情中显示当前会话、上次会话、下次执行时间，并可展开最近会话摘要。
 - 已补充 Rust 文档服务编译测试和前端 service 调用测试。
 
 尚未完成：
 
-- 自动执行失败后的暂停/重试策略。
+- 自动执行重试次数和退避策略。
 - 外部 MCP server 打包和 manifest。
 - 权限模型扩展。
 

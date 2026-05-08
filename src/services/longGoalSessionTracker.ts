@@ -8,6 +8,7 @@ import {
   finishLongGoalSession,
   listLongGoals,
   prepareLongGoalExecution,
+  recordLongGoalStep,
   type LongGoalState,
 } from './longGoalService'
 
@@ -65,12 +66,14 @@ async function handleSessionEnd(event: RoutedSessionEndEvent): Promise<void> {
 
   finishingSessions.add(frontendSessionId)
   try {
+    const isFailure = event.reason === 'error' || event.reason === 'aborted'
     await finishLongGoalSession({
       workspacePath: target.workspacePath,
       goalId: target.goalId,
       sessionId: frontendSessionId,
       summary: buildSessionSummary(frontendSessionId),
       result: event.reason || 'success',
+      goalStatus: isFailure ? 'blocked' : undefined,
     })
     notifyLongGoalUpdated()
   } catch (error) {
@@ -166,13 +169,48 @@ async function startAutomaticExecution(workspace: WorkspaceInfo, goal: LongGoalS
     notifyLongGoalUpdated()
     await store.sendMessage(prompt, workspace.path)
   } catch (error) {
+    await markGoalBlocked(
+      workspace.path,
+      goal.config.id,
+      'auto-execution-start',
+      `自动启动长期目标执行会话失败：${formatError(error)}`
+    )
     log.warn('自动启动长期目标执行会话失败', {
       goalId: goal.config.id,
-      error: error instanceof Error ? error.message : String(error),
+      error: formatError(error),
     })
   } finally {
     startingGoals.delete(key)
   }
+}
+
+async function markGoalBlocked(
+  workspacePath: string,
+  goalId: string,
+  stepId: string,
+  summary: string
+): Promise<void> {
+  try {
+    await recordLongGoalStep({
+      workspacePath,
+      goalId,
+      stepId: `${stepId}-${Date.now()}`,
+      summary,
+      result: 'failed',
+      nextStep: '请复审长期目标状态，补充要求后再恢复执行。',
+      goalStatus: 'blocked',
+    })
+    notifyLongGoalUpdated()
+  } catch (error) {
+    log.warn('长期目标失败状态写回失败', {
+      goalId,
+      error: formatError(error),
+    })
+  }
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 function buildSessionSummary(sessionId: string): string {
