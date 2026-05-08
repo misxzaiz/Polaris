@@ -379,12 +379,12 @@ feat: advance long goal <goal-id> step <step-id>
 已完成第一阶段基础能力：
 
 - Rust 侧新增长期目标模型。
-- Rust 侧新增文档服务，支持创建目标、读取状态、列出目标、追加用户补充、绑定运行会话、结束会话写回、暂停、恢复、记录步骤、标记完成、生成规划会话 prompt 和生成维护会话 prompt。
-- Tauri 命令已注册：`long_goal_create`、`long_goal_list`、`long_goal_read`、`long_goal_append_supplement`、`long_goal_bind_session`、`long_goal_finish_session`、`long_goal_pause`、`long_goal_resume`、`long_goal_prepare_planning`、`long_goal_record_step`、`long_goal_complete`、`long_goal_prepare_maintenance`。
+- Rust 侧新增文档服务，支持创建目标、读取状态、列出目标、追加用户补充、绑定运行会话、结束会话写回、暂停、恢复、记录步骤、标记完成、生成规划会话 prompt、生成执行会话 prompt 和生成维护会话 prompt。
+- Tauri 命令已注册：`long_goal_create`、`long_goal_list`、`long_goal_read`、`long_goal_append_supplement`、`long_goal_bind_session`、`long_goal_finish_session`、`long_goal_pause`、`long_goal_resume`、`long_goal_prepare_planning`、`long_goal_prepare_execution`、`long_goal_record_step`、`long_goal_complete`、`long_goal_prepare_maintenance`。
 - Web IPC 已支持同名命令。
 - 前端新增 `longGoalService.ts`，提供上述命令的 typed wrapper。
-- 前端新增长期目标左侧面板入口，支持创建目标、选择 AI 引擎、设置间隔、查看目标状态、追加用户补充、暂停/恢复、创建规划会话、创建维护会话、预览维护会话输入和手动标记完成。
-- 规划/维护会话当前复用已有聊天 UI：面板创建新的项目会话，使用目标配置的 `engineId`，把 `currentSessionId`、`lastSessionId`、`running` 状态和当前 phase 写回 `goal.json`，并把后端生成的 prompt 作为首条用户消息发送。
+- 前端新增长期目标左侧面板入口，支持创建目标、选择 AI 引擎、设置间隔、查看目标状态、追加用户补充、暂停/恢复、创建规划会话、创建执行会话、创建维护会话、预览维护会话输入和手动标记完成。
+- 规划/执行/维护会话当前复用已有聊天 UI：面板创建新的项目会话，使用目标配置的 `engineId`，把 `currentSessionId`、`lastSessionId`、`running` 状态和当前 phase 写回 `goal.json`，并把后端生成的 prompt 作为首条用户消息发送。
 - 前端已注册 App 级长期目标会话跟踪器，监听 `session_end` 后根据 `currentSessionId` 找到目标，写入 `sessions/*.md` 和 `progress.md`，并清空 `currentSessionId`。
 - 已补充 Rust 文档服务编译测试和前端 service 调用测试。
 
@@ -392,7 +392,6 @@ feat: advance long goal <goal-id> step <step-id>
 
 - 目标创建后自动触发规划会话。
 - 完成后按间隔自动新建下一次执行会话。
-- 生成执行会话 prompt，并要求每轮只推进队列中的一个小模块。
 - 目标创建后自动触发规划会话。
 - 在长期目标面板提供当前运行会话的中断入口。
 - 完成后复审入口。

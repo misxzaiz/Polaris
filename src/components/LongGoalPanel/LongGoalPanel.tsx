@@ -9,6 +9,7 @@ import {
   createLongGoal,
   listLongGoals,
   pauseLongGoal,
+  prepareLongGoalExecution,
   prepareLongGoalMaintenance,
   prepareLongGoalPlanning,
   resumeLongGoal,
@@ -227,6 +228,21 @@ export function LongGoalPanel() {
     }
   }, [selectedGoal, startGoalSession, workspacePath])
 
+  const handleExecutionSession = useCallback(async () => {
+    if (!workspacePath || !selectedGoal) return
+    setLoading(true)
+    setMessage(null)
+    try {
+      const prompt = await prepareLongGoalExecution(workspacePath, selectedGoal.config.id)
+      await startGoalSession(prompt, `长期目标执行: ${selectedGoal.config.title}`, selectedGoal, 'execution')
+      setMessage('已创建执行会话')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setLoading(false)
+    }
+  }, [selectedGoal, startGoalSession, workspacePath])
+
   const handleMaintenanceSession = useCallback(async () => {
     if (!workspacePath || !selectedGoal) return
     setLoading(true)
@@ -373,6 +389,9 @@ export function LongGoalPanel() {
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button type="button" onClick={handlePlanningSession} disabled={loading} className="inline-flex items-center justify-center gap-1 rounded-md border border-primary/40 bg-primary/10 px-2 py-1.5 text-xs text-primary hover:bg-primary/15 disabled:opacity-50">
                   <Send size={13} /> 规划会话
+                </button>
+                <button type="button" onClick={handleExecutionSession} disabled={loading} className="inline-flex items-center justify-center gap-1 rounded-md border border-primary/40 bg-primary/10 px-2 py-1.5 text-xs text-primary hover:bg-primary/15 disabled:opacity-50">
+                  <Send size={13} /> 执行会话
                 </button>
                 <button type="button" onClick={handleMaintenanceSession} disabled={loading} className="inline-flex items-center justify-center gap-1 rounded-md border border-primary/40 bg-primary/10 px-2 py-1.5 text-xs text-primary hover:bg-primary/15 disabled:opacity-50">
                   <Send size={13} /> 维护会话

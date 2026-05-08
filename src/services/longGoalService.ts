@@ -150,6 +150,13 @@ export async function prepareLongGoalPlanning(
   return invoke<string>('long_goal_prepare_planning', { workspacePath, goalId })
 }
 
+export async function prepareLongGoalExecution(
+  workspacePath: string,
+  goalId: string
+): Promise<string> {
+  return invoke<string>('long_goal_prepare_execution', { workspacePath, goalId })
+}
+
 export async function recordLongGoalStep(params: RecordLongGoalStepParams): Promise<LongGoalState> {
   return invoke<LongGoalState>('long_goal_record_step', { ...params })
 }

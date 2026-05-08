@@ -229,6 +229,7 @@ pub async fn handle_ipc_bridge(
         "long_goal_pause" => dispatch_long_goal_pause(&args),
         "long_goal_resume" => dispatch_long_goal_resume(&args),
         "long_goal_prepare_planning" => dispatch_long_goal_prepare_planning(&args),
+        "long_goal_prepare_execution" => dispatch_long_goal_prepare_execution(&args),
         "long_goal_record_step" => dispatch_long_goal_record_step(&args),
         "long_goal_complete" => dispatch_long_goal_complete(&args),
         "long_goal_prepare_maintenance" => dispatch_long_goal_prepare_maintenance(&args),
@@ -1340,6 +1341,17 @@ fn dispatch_long_goal_prepare_planning(args: &Value) -> Result<Json<Value>, WebE
     let goal_id = require_string(args, "goalId")?;
     json_result!(
         crate::services::long_goal_service::LongGoalService::prepare_planning_session(
+            &workspace_path,
+            &goal_id,
+        )
+    )
+}
+
+fn dispatch_long_goal_prepare_execution(args: &Value) -> Result<Json<Value>, WebError> {
+    let workspace_path = require_string(args, "workspacePath")?;
+    let goal_id = require_string(args, "goalId")?;
+    json_result!(
+        crate::services::long_goal_service::LongGoalService::prepare_execution_session(
             &workspace_path,
             &goal_id,
         )

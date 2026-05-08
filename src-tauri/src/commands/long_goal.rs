@@ -58,6 +58,14 @@ pub async fn long_goal_prepare_planning(
 }
 
 #[cfg_attr(feature = "tauri-app", tauri::command)]
+pub async fn long_goal_prepare_execution(
+    workspace_path: String,
+    goal_id: String,
+) -> Result<String> {
+    LongGoalService::prepare_execution_session(&workspace_path, &goal_id)
+}
+
+#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn long_goal_record_step(params: RecordLongGoalStepParams) -> Result<LongGoalState> {
     LongGoalService::record_step(params)
 }

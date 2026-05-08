@@ -7,6 +7,7 @@ import {
   finishLongGoalSession,
   listLongGoals,
   pauseLongGoal,
+  prepareLongGoalExecution,
   prepareLongGoalMaintenance,
   prepareLongGoalPlanning,
   readLongGoal,
@@ -66,6 +67,7 @@ describe('longGoalService', () => {
     await pauseLongGoal('D:\\workspace', 'goal-1')
     await resumeLongGoal('D:\\workspace', 'goal-1')
     await prepareLongGoalPlanning('D:\\workspace', 'goal-1')
+    await prepareLongGoalExecution('D:\\workspace', 'goal-1')
     await prepareLongGoalMaintenance('D:\\workspace', 'goal-1')
 
     expect(invokeMock).toHaveBeenNthCalledWith(1, 'long_goal_list', {
@@ -100,7 +102,11 @@ describe('longGoalService', () => {
       workspacePath: 'D:\\workspace',
       goalId: 'goal-1',
     })
-    expect(invokeMock).toHaveBeenNthCalledWith(8, 'long_goal_prepare_maintenance', {
+    expect(invokeMock).toHaveBeenNthCalledWith(8, 'long_goal_prepare_execution', {
+      workspacePath: 'D:\\workspace',
+      goalId: 'goal-1',
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(9, 'long_goal_prepare_maintenance', {
       workspacePath: 'D:\\workspace',
       goalId: 'goal-1',
     })

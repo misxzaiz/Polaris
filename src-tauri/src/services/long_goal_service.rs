@@ -273,6 +273,62 @@ impl LongGoalService {
         ))
     }
 
+    pub fn prepare_execution_session(workspace_path: &str, goal_id: &str) -> Result<String> {
+        let state = Self::read_goal(workspace_path, goal_id)?;
+        Ok(format!(
+            "# 长期目标执行会话\n\n\
+             你正在推进 Polaris 长期目标中的一个小模块。本轮必须保持边界清晰，只处理任务队列中的第一个可执行小模块。\n\n\
+             ## 目标元数据\n\n\
+             - 目标 ID: {}\n\
+             - 目标标题: {}\n\
+             - 工作区: {}\n\
+             - AI 引擎: {}\n\
+             - 当前状态: {:?}\n\
+             - 当前阶段: {:?}\n\
+             - 允许修改代码: {}\n\
+             - 允许提交 git: {}\n\n\
+             ## 本轮执行规则\n\n\
+             - 执行前必须阅读目标协议、计划、进度、队列、用户补充和上一轮摘要。\n\
+             - 本轮只推进 `queue.md` 中最靠前的一个可执行小模块，不要顺手扩大范围。\n\
+             - 如果任务需要修改代码，必须保持改动集中，并在结束前说明修改文件和验证方式。\n\
+             - 如果 `allowGitCommit` 为 true 且本轮有代码变更、验证通过，可以提交 git；否则不要提交。\n\
+             - 如果发现信息不足、权限不足、测试失败且无法在本轮修复，请明确标记阻塞点和建议下一步。\n\
+             - 如果你判断长期目标已经满足验收标准，请在最终回答中明确写出完成判定、剩余风险和复审建议。\n\n\
+             ## 结束前输出格式\n\n\
+             请在最终回答中包含以下小节：\n\n\
+             - 本轮结果\n\
+             - 修改文件\n\
+             - 验证\n\
+             - Commit\n\
+             - 下一步\n\
+             - 是否完成长期目标\n\n\
+             ## 目标协议\n\n{}\n\n\
+             ## 当前计划\n\n{}\n\n\
+             ## 当前进度\n\n{}\n\n\
+             ## 当前队列\n\n{}\n\n\
+             ## 用户补充\n\n{}\n\n\
+             ## 上一轮摘要\n\n{}\n",
+            state.config.id,
+            state.config.title,
+            state.config.workspace_path,
+            state.config.engine_id,
+            state.config.status,
+            state.config.phase,
+            state.config.allow_code_changes,
+            state.config.allow_git_commit,
+            state.documents.protocol,
+            state.documents.plan,
+            state.documents.progress,
+            state.documents.queue,
+            state.documents.supplement,
+            state
+                .documents
+                .last_session_summary
+                .as_deref()
+                .unwrap_or("暂无")
+        ))
+    }
+
     pub fn prepare_maintenance_session(workspace_path: &str, goal_id: &str) -> Result<String> {
         let state = Self::read_goal(workspace_path, goal_id)?;
         Ok(format!(
@@ -606,6 +662,12 @@ mod tests {
             LongGoalService::read_goal(&workspace.path().to_string_lossy(), &state.config.id)
                 .unwrap();
         assert_eq!(reread.config.id, state.config.id);
+
+        let prompt =
+            LongGoalService::prepare_execution_session(&workspace.path().to_string_lossy(), &state.config.id)
+                .unwrap();
+        assert!(prompt.contains("长期目标执行会话"));
+        assert!(prompt.contains("Build a long goal executor"));
     }
 
     #[test]
