@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, Pause, Play, Plus, RefreshCw, Send, Wrench } from 'lucide-react'
+import { CheckCircle2, Pause, Play, Plus, RefreshCw, Send, Square, Wrench } from 'lucide-react'
 import { useConfigStore, useWorkspaceStore } from '@/stores'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import {
@@ -131,6 +131,21 @@ export function LongGoalPanel() {
     setLoading(true)
     try {
       updateSelectedGoal(await pauseLongGoal(workspacePath, selectedGoal.config.id))
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setLoading(false)
+    }
+  }, [selectedGoal, updateSelectedGoal, workspacePath])
+
+  const handleInterruptCurrentSession = useCallback(async () => {
+    if (!workspacePath || !selectedGoal?.config.currentSessionId) return
+    setLoading(true)
+    setMessage(null)
+    try {
+      await sessionStoreManager.getState().interruptSession(selectedGoal.config.currentSessionId)
+      updateSelectedGoal(await pauseLongGoal(workspacePath, selectedGoal.config.id))
+      setMessage('已中断当前会话并暂停目标')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error))
     } finally {
@@ -425,6 +440,11 @@ export function LongGoalPanel() {
                 <button type="button" onClick={handleMaintenanceSession} disabled={loading} className="inline-flex items-center justify-center gap-1 rounded-md border border-primary/40 bg-primary/10 px-2 py-1.5 text-xs text-primary hover:bg-primary/15 disabled:opacity-50">
                   <Send size={13} /> 维护会话
                 </button>
+                {selectedGoal.config.currentSessionId && (
+                  <button type="button" onClick={handleInterruptCurrentSession} disabled={loading} className="inline-flex items-center justify-center gap-1 rounded-md border border-danger/30 bg-danger-faint px-2 py-1.5 text-xs text-danger hover:bg-danger/10 disabled:opacity-50">
+                    <Square size={13} /> 中断会话
+                  </button>
+                )}
                 <button type="button" onClick={handlePause} disabled={loading} className="inline-flex items-center justify-center gap-1 rounded-md border border-border-subtle px-2 py-1.5 text-xs text-text-secondary hover:bg-background-hover disabled:opacity-50">
                   <Pause size={13} /> 暂停
                 </button>

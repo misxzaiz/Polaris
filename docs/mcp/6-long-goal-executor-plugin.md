@@ -386,13 +386,13 @@ feat: advance long goal <goal-id> step <step-id>
 - 前端新增长期目标左侧面板入口，支持创建目标、选择 AI 引擎、设置间隔、查看目标状态、追加用户补充、暂停/恢复、创建规划会话、创建执行会话、创建维护会话、预览维护会话输入和手动标记完成。
 - 目标创建表单支持“创建后自动启动规划会话”开关，默认开启；创建成功后会立即生成规划 prompt、创建项目会话并绑定 `planning` phase。
 - 规划/执行/维护会话当前复用已有聊天 UI：面板创建新的项目会话，使用目标配置的 `engineId`，把 `currentSessionId`、`lastSessionId`、`running` 状态和当前 phase 写回 `goal.json`，并把后端生成的 prompt 作为首条用户消息发送。
+- 长期目标面板在存在 `currentSessionId` 时显示“中断会话”按钮，调用会话管理器中断当前 AI 会话，并将目标切回暂停状态。
 - 前端已注册 App 级长期目标会话跟踪器，监听 `session_end` 后根据 `currentSessionId` 找到目标，写入 `sessions/*.md` 和 `progress.md`，并清空 `currentSessionId`。
 - 已补充 Rust 文档服务编译测试和前端 service 调用测试。
 
 尚未完成：
 
 - 完成后按间隔自动新建下一次执行会话。
-- 在长期目标面板提供当前运行会话的中断入口。
 - 完成后复审入口。
 - 外部 MCP server 打包和 manifest。
 - 权限模型扩展。
