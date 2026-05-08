@@ -33,6 +33,7 @@ import { useConfigStore, useViewStore, useWorkspaceStore, useTabStore } from './
 import { isPluginUiEnabled, usePluginStore } from './stores/pluginStore';
 import { pluginRegistry } from './plugin-system';
 import { useActiveSessionActions, useActiveSessionStreaming, useActiveSessionError } from './stores/conversationStore/useActiveSession';
+import { startLongGoalSessionTracker } from './services/longGoalSessionTracker';
 import type { EngineId } from './types';
 import './index.css';
 
@@ -92,6 +93,10 @@ function App() {
   });
 
   useWorkspaceSync(true);
+
+  useEffect(() => {
+    return startLongGoalSessionTracker();
+  }, []);
 
   // === 诊断日志 ===
   useEffect(() => {

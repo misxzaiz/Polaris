@@ -4,6 +4,7 @@ import {
   bindLongGoalSession,
   completeLongGoal,
   createLongGoal,
+  finishLongGoalSession,
   listLongGoals,
   pauseLongGoal,
   prepareLongGoalMaintenance,
@@ -55,6 +56,13 @@ describe('longGoalService', () => {
       sessionId: 'session-1',
       phase: 'planning',
     })
+    await finishLongGoalSession({
+      workspacePath: 'D:\\workspace',
+      goalId: 'goal-1',
+      sessionId: 'session-1',
+      summary: 'Planning completed',
+      result: 'success',
+    })
     await pauseLongGoal('D:\\workspace', 'goal-1')
     await resumeLongGoal('D:\\workspace', 'goal-1')
     await prepareLongGoalPlanning('D:\\workspace', 'goal-1')
@@ -73,19 +81,26 @@ describe('longGoalService', () => {
       sessionId: 'session-1',
       phase: 'planning',
     })
-    expect(invokeMock).toHaveBeenNthCalledWith(4, 'long_goal_pause', {
+    expect(invokeMock).toHaveBeenNthCalledWith(4, 'long_goal_finish_session', {
+      workspacePath: 'D:\\workspace',
+      goalId: 'goal-1',
+      sessionId: 'session-1',
+      summary: 'Planning completed',
+      result: 'success',
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(5, 'long_goal_pause', {
       workspacePath: 'D:\\workspace',
       goalId: 'goal-1',
     })
-    expect(invokeMock).toHaveBeenNthCalledWith(5, 'long_goal_resume', {
+    expect(invokeMock).toHaveBeenNthCalledWith(6, 'long_goal_resume', {
       workspacePath: 'D:\\workspace',
       goalId: 'goal-1',
     })
-    expect(invokeMock).toHaveBeenNthCalledWith(6, 'long_goal_prepare_planning', {
+    expect(invokeMock).toHaveBeenNthCalledWith(7, 'long_goal_prepare_planning', {
       workspacePath: 'D:\\workspace',
       goalId: 'goal-1',
     })
-    expect(invokeMock).toHaveBeenNthCalledWith(7, 'long_goal_prepare_maintenance', {
+    expect(invokeMock).toHaveBeenNthCalledWith(8, 'long_goal_prepare_maintenance', {
       workspacePath: 'D:\\workspace',
       goalId: 'goal-1',
     })

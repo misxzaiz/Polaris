@@ -225,6 +225,7 @@ pub async fn handle_ipc_bridge(
         "long_goal_read" => dispatch_long_goal_read(&args),
         "long_goal_append_supplement" => dispatch_long_goal_append_supplement(&args),
         "long_goal_bind_session" => dispatch_long_goal_bind_session(&args),
+        "long_goal_finish_session" => dispatch_long_goal_finish_session(&args),
         "long_goal_pause" => dispatch_long_goal_pause(&args),
         "long_goal_resume" => dispatch_long_goal_resume(&args),
         "long_goal_prepare_planning" => dispatch_long_goal_prepare_planning(&args),
@@ -1293,6 +1294,13 @@ fn dispatch_long_goal_bind_session(args: &Value) -> Result<Json<Value>, WebError
         serde_json::from_value(args.clone())
             .map_err(|error| WebError::BadRequest(format!("Invalid session binding params: {}", error)))?;
     json_result!(crate::services::long_goal_service::LongGoalService::bind_session(params))
+}
+
+fn dispatch_long_goal_finish_session(args: &Value) -> Result<Json<Value>, WebError> {
+    let params: crate::models::long_goal::FinishLongGoalSessionParams =
+        serde_json::from_value(args.clone())
+            .map_err(|error| WebError::BadRequest(format!("Invalid session finish params: {}", error)))?;
+    json_result!(crate::services::long_goal_service::LongGoalService::finish_session(params))
 }
 
 fn dispatch_long_goal_pause(args: &Value) -> Result<Json<Value>, WebError> {

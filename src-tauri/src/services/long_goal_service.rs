@@ -8,8 +8,8 @@ use uuid::Uuid;
 use crate::error::{AppError, Result};
 use crate::models::long_goal::{
     AppendLongGoalSupplementParams, BindLongGoalSessionParams, CompleteLongGoalParams,
-    CreateLongGoalParams, LongGoalConfig, LongGoalDocuments, LongGoalPhase, LongGoalState,
-    LongGoalStatus, RecordLongGoalStepParams,
+    CreateLongGoalParams, FinishLongGoalSessionParams, LongGoalConfig, LongGoalDocuments,
+    LongGoalPhase, LongGoalState, LongGoalStatus, RecordLongGoalStepParams,
 };
 
 pub struct LongGoalService;
@@ -114,6 +114,97 @@ impl LongGoalService {
         config.status = LongGoalStatus::Running;
         config.phase = params.phase;
         config.next_run_at = None;
+        Self::touch_config(&mut config);
+        Self::write_config(&goal_dir, &config)?;
+        Self::read_goal_state(&workspace, &params.goal_id)
+    }
+
+    pub fn finish_session(params: FinishLongGoalSessionParams) -> Result<LongGoalState> {
+        let workspace = Self::canonical_workspace(&params.workspace_path)?;
+        let goal_dir = Self::checked_goal_dir(&workspace, &params.goal_id)?;
+        let mut config = Self::read_config(&goal_dir)?;
+        let is_current = config.current_session_id.as_deref() == Some(params.session_id.as_str());
+        if !is_current {
+            return Self::read_goal_state(&workspace, &params.goal_id);
+        }
+
+        let now = Utc::now();
+        let now_text = now.format("%Y-%m-%d %H:%M:%S UTC");
+        let phase = config.phase;
+        let result = empty_as_default(&params.result, "success");
+        let summary = params.summary.trim();
+        let session_doc = format!(
+            "# 会话摘要 - {}\n\n\
+             - 会话 ID: {}\n\
+             - 阶段: {:?}\n\
+             - 结果: {}\n\n\
+             ## 摘要\n\n{}\n\n\
+             ## 下一步\n\n{}\n",
+            now_text,
+            params.session_id,
+            phase,
+            result,
+            empty_as_default(summary, "未捕获到会话摘要。"),
+            params.next_step.as_deref().unwrap_or("待定")
+        );
+        let session_file = format!(
+            "{}-{}-{}.md",
+            now.format("%Y%m%d%H%M%S"),
+            Self::phase_slug(phase),
+            Self::safe_id(&params.session_id)
+        );
+        Self::write_text(&goal_dir.join("sessions").join(session_file), &session_doc)?;
+
+        let mut progress = Self::read_text(&goal_dir.join("progress.md"))?;
+        progress.push_str(&format!(
+            "\n\n## 会话结束 - {} - {}\n\n\
+             - 阶段: {:?}\n\
+             - 结果: {}\n\
+             - 摘要: {}\n\
+             - 下一步: {}\n",
+            now_text,
+            params.session_id,
+            phase,
+            result,
+            empty_as_default(summary, "未捕获到会话摘要。"),
+            params.next_step.as_deref().unwrap_or("待定")
+        ));
+        Self::write_text(&goal_dir.join("progress.md"), &progress)?;
+
+        if let Some(next_step) = params.next_step.as_deref() {
+            let mut queue = Self::read_text(&goal_dir.join("queue.md"))?;
+            queue.push_str(&format!(
+                "\n\n## 会话建议下一步 - {}\n\n{}\n",
+                now_text,
+                next_step.trim()
+            ));
+            Self::write_text(&goal_dir.join("queue.md"), &queue)?;
+        }
+
+        config.current_session_id = None;
+        config.last_session_id = Some(params.session_id);
+        if let Some(status) = params.goal_status {
+            config.status = status;
+            config.phase = if status == LongGoalStatus::Completed {
+                LongGoalPhase::Review
+            } else {
+                phase
+            };
+        } else if config.status == LongGoalStatus::Running {
+            match phase {
+                LongGoalPhase::Planning | LongGoalPhase::Execution => {
+                    config.status = LongGoalStatus::Active;
+                    config.phase = LongGoalPhase::Execution;
+                }
+                LongGoalPhase::Maintenance | LongGoalPhase::Review => {
+                    config.status = LongGoalStatus::Paused;
+                    config.phase = LongGoalPhase::Review;
+                }
+            }
+        }
+        if matches!(config.status, LongGoalStatus::Completed | LongGoalStatus::Paused) {
+            config.next_run_at = None;
+        }
         Self::touch_config(&mut config);
         Self::write_config(&goal_dir, &config)?;
         Self::read_goal_state(&workspace, &params.goal_id)
@@ -385,6 +476,15 @@ impl LongGoalService {
             .to_string()
     }
 
+    fn phase_slug(phase: LongGoalPhase) -> &'static str {
+        match phase {
+            LongGoalPhase::Planning => "planning",
+            LongGoalPhase::Execution => "execution",
+            LongGoalPhase::Maintenance => "maintenance",
+            LongGoalPhase::Review => "review",
+        }
+    }
+
     fn initial_documents(config: &LongGoalConfig) -> LongGoalDocuments {
         LongGoalDocuments {
             protocol: format!(
@@ -568,5 +668,23 @@ mod tests {
         assert_eq!(bound.config.phase, LongGoalPhase::Planning);
         assert_eq!(bound.config.current_session_id.as_deref(), Some("session-1"));
         assert_eq!(bound.config.last_session_id.as_deref(), Some("session-1"));
+
+        let finished = LongGoalService::finish_session(FinishLongGoalSessionParams {
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            goal_id: bound.config.id,
+            session_id: "session-1".to_string(),
+            summary: "Planning completed".to_string(),
+            result: "success".to_string(),
+            next_step: Some("Run first execution step".to_string()),
+            goal_status: None,
+        })
+        .unwrap();
+
+        assert_eq!(finished.config.status, LongGoalStatus::Active);
+        assert_eq!(finished.config.phase, LongGoalPhase::Execution);
+        assert_eq!(finished.config.current_session_id, None);
+        assert!(finished.documents.progress.contains("Planning completed"));
+        assert!(finished.documents.queue.contains("Run first execution step"));
+        assert!(Path::new(&finished.goal_path).join("sessions").is_dir());
     }
 }

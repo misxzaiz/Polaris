@@ -74,6 +74,16 @@ export interface BindLongGoalSessionParams {
   phase: LongGoalPhase
 }
 
+export interface FinishLongGoalSessionParams {
+  workspacePath: string
+  goalId: string
+  sessionId: string
+  summary: string
+  result?: string
+  nextStep?: string
+  goalStatus?: LongGoalStatus
+}
+
 export interface RecordLongGoalStepParams {
   workspacePath: string
   goalId: string
@@ -117,6 +127,12 @@ export async function bindLongGoalSession(
   params: BindLongGoalSessionParams
 ): Promise<LongGoalState> {
   return invoke<LongGoalState>('long_goal_bind_session', { ...params })
+}
+
+export async function finishLongGoalSession(
+  params: FinishLongGoalSessionParams
+): Promise<LongGoalState> {
+  return invoke<LongGoalState>('long_goal_finish_session', { ...params })
 }
 
 export async function pauseLongGoal(workspacePath: string, goalId: string): Promise<LongGoalState> {

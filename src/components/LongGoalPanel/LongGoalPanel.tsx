@@ -82,6 +82,14 @@ export function LongGoalPanel() {
   }, [refresh])
 
   useEffect(() => {
+    const handleLongGoalUpdated = () => {
+      void refresh()
+    }
+    window.addEventListener('long-goal:updated', handleLongGoalUpdated)
+    return () => window.removeEventListener('long-goal:updated', handleLongGoalUpdated)
+  }, [refresh])
+
+  useEffect(() => {
     if (config?.defaultEngine) {
       setEngineId(config.defaultEngine as EngineId)
     }

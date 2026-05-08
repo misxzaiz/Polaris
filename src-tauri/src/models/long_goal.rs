@@ -126,6 +126,21 @@ pub struct BindLongGoalSessionParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct FinishLongGoalSessionParams {
+    pub workspace_path: String,
+    pub goal_id: String,
+    pub session_id: String,
+    pub summary: String,
+    #[serde(default)]
+    pub result: String,
+    #[serde(default)]
+    pub next_step: Option<String>,
+    #[serde(default)]
+    pub goal_status: Option<LongGoalStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RecordLongGoalStepParams {
     pub workspace_path: String,
     pub goal_id: String,
