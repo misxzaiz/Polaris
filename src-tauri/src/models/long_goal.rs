@@ -188,6 +188,18 @@ pub struct CompleteLongGoalParams {
     pub review_suggestions: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetLongGoalStatusParams {
+    pub workspace_path: String,
+    pub goal_id: String,
+    pub status: LongGoalStatus,
+    #[serde(default)]
+    pub phase: Option<LongGoalPhase>,
+    #[serde(default)]
+    pub next_run_at: Option<i64>,
+}
+
 fn default_interval() -> String {
     "30m".to_string()
 }

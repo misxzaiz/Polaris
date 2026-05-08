@@ -65,6 +65,7 @@ interface PluginMcpServerContribution {
 | Plugin ID | MCP Server ID | Transport | Frontend command | Backend bin name | Args mode |
 | --- | --- | --- | --- | --- | --- |
 | `polaris.todo` | `polaris-todo` | `stdio` | `polaris_todo_mcp` | `polaris-todo-mcp` | `ConfigDirAndWorkspace` |
+| `polaris.long-goal` | `polaris-long-goal` | `stdio` | `polaris_long_goal_mcp` | `polaris-long-goal-mcp` | `ConfigDirAndWorkspace` |
 
 ## 校验入口
 

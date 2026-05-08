@@ -14,13 +14,20 @@ describe('plugin MCP contributions', () => {
   it('lists Todo MCP as enabled by default', () => {
     const servers = listEnabledPluginMcpServers({})
 
-    expect(servers).toEqual([
+    expect(servers).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'polaris-todo',
         pluginId: 'polaris.todo',
         transport: 'stdio',
       }),
-    ])
+    ]))
+    expect(servers).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'polaris-long-goal',
+        pluginId: 'polaris.long-goal',
+        transport: 'stdio',
+      }),
+    ]))
   })
 
   it('filters Todo MCP when its plugin MCP surface is disabled', () => {
@@ -32,13 +39,19 @@ describe('plugin MCP contributions', () => {
       },
     }
 
-    expect(listEnabledPluginMcpServers(pluginStates)).toEqual([])
-    expect(listPluginMcpServerStatuses(pluginStates)).toEqual([
+    expect(listEnabledPluginMcpServers(pluginStates)).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'polaris-todo',
+        }),
+      ])
+    )
+    expect(listPluginMcpServerStatuses(pluginStates)).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'polaris-todo',
         enabled: false,
       }),
-    ])
+    ]))
   })
 
   it('filters Todo MCP when the whole plugin is disabled', () => {
@@ -50,7 +63,13 @@ describe('plugin MCP contributions', () => {
       },
     }
 
-    expect(listEnabledPluginMcpServers(pluginStates)).toEqual([])
+    expect(listEnabledPluginMcpServers(pluginStates)).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'polaris-todo',
+        }),
+      ])
+    )
   })
 
   it('keeps the Todo manifest aligned with the backend MCP registry contract', () => {
@@ -64,6 +83,22 @@ describe('plugin MCP contributions', () => {
         id: 'polaris-todo',
         transport: 'stdio',
         command: 'polaris_todo_mcp',
+        argsTemplate: ['{{appConfigDir}}', '{{workspacePath}}'],
+      }),
+    ])
+  })
+
+  it('keeps the Long Goal manifest aligned with the backend MCP registry contract', () => {
+    const longGoalPlugin = pluginRegistry
+      .listPlugins()
+      .find((plugin) => plugin.id === 'polaris.long-goal')
+
+    expect(longGoalPlugin).toBeDefined()
+    expect(longGoalPlugin?.contributes.mcpServers).toEqual([
+      expect.objectContaining({
+        id: 'polaris-long-goal',
+        transport: 'stdio',
+        command: 'polaris_long_goal_mcp',
         argsTemplate: ['{{appConfigDir}}', '{{workspacePath}}'],
       }),
     ])

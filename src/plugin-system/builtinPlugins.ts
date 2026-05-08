@@ -1,6 +1,7 @@
 import type { PolarisPluginManifest } from './types'
 import { pluginRegistry } from './registry'
 import { todoPluginManifest } from '@/plugins/todo/manifest'
+import { longGoalPluginManifest } from '@/plugins/longGoal/manifest'
 
 const corePluginManifest: PolarisPluginManifest = {
   id: 'polaris.core',
@@ -119,6 +120,7 @@ const corePluginManifest: PolarisPluginManifest = {
 export function registerBuiltinPlugins(): void {
   pluginRegistry.register(corePluginManifest)
   pluginRegistry.register(todoPluginManifest)
+  pluginRegistry.register(longGoalPluginManifest)
 }
 
 registerBuiltinPlugins()

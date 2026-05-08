@@ -14,7 +14,10 @@ const SCHEDULER_MCP_SERVER_NAME: &str = "polaris-scheduler";
 const SCHEDULER_MCP_BIN_NAME: &str = "polaris-scheduler-mcp";
 const KNOWLEDGE_MCP_SERVER_NAME: &str = "polaris-knowledge";
 const KNOWLEDGE_MCP_BIN_NAME: &str = "polaris-knowledge-mcp";
+const LONG_GOAL_MCP_SERVER_NAME: &str = "polaris-long-goal";
+const LONG_GOAL_MCP_BIN_NAME: &str = "polaris-long-goal-mcp";
 const TODO_PLUGIN_ID: &str = "polaris.todo";
+const LONG_GOAL_PLUGIN_ID: &str = "polaris.long-goal";
 
 /// Platform-aware executable suffix: ".exe" on Windows, "" on Linux/macOS.
 const EXE_SUFFIX: &str = std::env::consts::EXE_SUFFIX;
@@ -134,10 +137,16 @@ impl McpServerContributionRegistry {
 }
 
 pub fn builtin_plugin_mcp_manifests() -> &'static [BuiltinPluginMcpManifest] {
-    &[BuiltinPluginMcpManifest {
-        plugin_id: TODO_PLUGIN_ID,
-        mcp_server_names: &[TODO_MCP_SERVER_NAME],
-    }]
+    &[
+        BuiltinPluginMcpManifest {
+            plugin_id: TODO_PLUGIN_ID,
+            mcp_server_names: &[TODO_MCP_SERVER_NAME],
+        },
+        BuiltinPluginMcpManifest {
+            plugin_id: LONG_GOAL_PLUGIN_ID,
+            mcp_server_names: &[LONG_GOAL_MCP_SERVER_NAME],
+        },
+    ]
 }
 
 fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
@@ -185,6 +194,19 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
         McpServerArgsMode::ConfigDirAndWorkspace,
         false,
     ));
+    registry.register_plugin_server(
+        LONG_GOAL_PLUGIN_ID,
+        PluginMcpServerContribution::builtin(
+            LONG_GOAL_MCP_SERVER_NAME,
+            LONG_GOAL_MCP_BIN_NAME,
+            "bin/polaris-long-goal-mcp",
+            "polaris-long-goal-mcp",
+            "src-tauri/target/debug/polaris-long-goal-mcp",
+            "POLARIS_LONG_GOAL_MCP_PATH",
+            McpServerArgsMode::ConfigDirAndWorkspace,
+            false,
+        ),
+    );
     registry
 }
 

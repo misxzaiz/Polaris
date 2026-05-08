@@ -407,6 +407,8 @@ feat: advance long goal <goal-id> step <step-id>
 
 当前已新增外部插件样例骨架：`examples/plugins/long-goal-mcp-plugin`。该样例贡献 `polaris-long-goal` stdio MCP server，第一版只暴露文档读写和状态更新 tools；自动调度、新建会话、AI 引擎选择、中断和完成复审仍归宿主侧负责。
 
+当前已新增正式 Rust MCP server 骨架：`polaris-long-goal-mcp`。它通过内置 `polaris.long-goal` manifest 暴露 `polaris-long-goal` MCP server，复用 Rust `LongGoalService`，用于替代 Node 样例成为正式执行面。Node 外部样例仍保留，用于验证外部插件安装和 manifest 模板。
+
 第一版外部 MCP tools 边界：
 
 - `long_goal_list`
@@ -443,6 +445,8 @@ feat: advance long goal <goal-id> step <step-id>
 
 宿主 Tauri 命令继续调用该服务；外部 MCP server 后续可以复用同一套语义，避免 JS 样例和 Rust 服务长期分叉。
 
+当前状态：Rust `polaris-long-goal-mcp` 已直接复用 `LongGoalService` 暴露最小 tools；后续仍需要继续收敛方法命名和状态机约束。
+
 ### 阶段 3：外部 MCP server 正式化
 
 有两条可选路线：
@@ -450,7 +454,7 @@ feat: advance long goal <goal-id> step <step-id>
 1. Node 外部插件路线：保留 `examples/plugins/long-goal-mcp-plugin/mcp/long-goal-mcp-server.js`，补齐工具校验、文件锁、状态机约束和测试。
 2. Rust 二进制路线：新增 `polaris-long-goal-mcp`，像 `polaris-todo-mcp` 一样由宿主解析路径，并可复用 Rust `LongGoalService`。
 
-建议最终采用 Rust 二进制路线；Node 样例只用于验证外部插件安装、manifest 和工具边界。
+已开始采用 Rust 二进制路线；Node 样例只用于验证外部插件安装、manifest 和工具边界。
 
 ### 阶段 4：UI 入口归属调整
 

@@ -10,6 +10,7 @@ use crate::models::long_goal::{
     AppendLongGoalSupplementParams, BindLongGoalSessionParams, CompleteLongGoalParams,
     CreateLongGoalParams, FinishLongGoalSessionParams, LongGoalConfig, LongGoalDocuments,
     LongGoalPhase, LongGoalState, LongGoalStatus, RecordLongGoalStepParams,
+    SetLongGoalStatusParams,
 };
 
 pub struct LongGoalService;
@@ -444,6 +445,29 @@ impl LongGoalService {
         config.current_session_id = None;
         config.next_run_at = None;
         Self::reset_retry_state(&mut config);
+        Self::touch_config(&mut config);
+        Self::write_config(&goal_dir, &config)?;
+        Self::read_goal_state(&workspace, &params.goal_id)
+    }
+
+    pub fn set_goal_status(params: SetLongGoalStatusParams) -> Result<LongGoalState> {
+        let workspace = Self::canonical_workspace(&params.workspace_path)?;
+        let goal_dir = Self::checked_goal_dir(&workspace, &params.goal_id)?;
+        let mut config = Self::read_config(&goal_dir)?;
+        config.status = params.status;
+        if let Some(phase) = params.phase {
+            config.phase = phase;
+        } else if params.status == LongGoalStatus::Completed {
+            config.phase = LongGoalPhase::Review;
+        }
+        if params.status != LongGoalStatus::Running {
+            config.current_session_id = None;
+        }
+        if let Some(next_run_at) = params.next_run_at {
+            config.next_run_at = Some(next_run_at);
+        } else {
+            Self::update_next_run_at(&mut config, Utc::now().timestamp());
+        }
         Self::touch_config(&mut config);
         Self::write_config(&goal_dir, &config)?;
         Self::read_goal_state(&workspace, &params.goal_id)

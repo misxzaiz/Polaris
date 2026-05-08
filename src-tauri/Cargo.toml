@@ -50,6 +50,10 @@ name = "polaris-knowledge-mcp"
 path = "src/bin/polaris_knowledge_mcp.rs"
 
 [[bin]]
+name = "polaris-long-goal-mcp"
+path = "src/bin/polaris_long_goal_mcp.rs"
+
+[[bin]]
 name = "polaris-web"
 path = "src/bin/polaris_web.rs"
 
