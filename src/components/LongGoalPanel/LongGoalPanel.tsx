@@ -48,6 +48,7 @@ export function LongGoalPanel() {
   const [interval, setInterval] = useState('30m')
   const [autoStartPlanning, setAutoStartPlanning] = useState(true)
   const [supplement, setSupplement] = useState('')
+  const [reviewSupplement, setReviewSupplement] = useState('')
   const [maintenancePrompt, setMaintenancePrompt] = useState<string | null>(null)
 
   const workspacePath = currentWorkspace?.path
@@ -297,6 +298,7 @@ export function LongGoalPanel() {
   const handleComplete = useCallback(async () => {
     if (!workspacePath || !selectedGoal) return
     setLoading(true)
+    setMessage(null)
     try {
       updateSelectedGoal(await completeLongGoal({
         workspacePath,
@@ -304,12 +306,73 @@ export function LongGoalPanel() {
         completionSummary: '用户在面板中手动标记完成，等待复审。',
         reviewSuggestions: ['复审目标文档和最近会话结果后决定是否继续。'],
       }))
+      setMessage('已标记完成，等待复审')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error))
     } finally {
       setLoading(false)
     }
   }, [selectedGoal, updateSelectedGoal, workspacePath])
+
+  const handleConfirmCompletion = useCallback(async () => {
+    if (!workspacePath || !selectedGoal) return
+    setLoading(true)
+    setMessage(null)
+    try {
+      updateSelectedGoal(await completeLongGoal({
+        workspacePath,
+        goalId: selectedGoal.config.id,
+        completionSummary: '用户复审确认长期目标完成。',
+        reviewSuggestions: ['无需继续自动执行。'],
+      }))
+      setMessage('已确认完成')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setLoading(false)
+    }
+  }, [selectedGoal, updateSelectedGoal, workspacePath])
+
+  const handleContinueAfterReview = useCallback(async () => {
+    if (!workspacePath || !selectedGoal) return
+    setLoading(true)
+    setMessage(null)
+    try {
+      updateSelectedGoal(await resumeLongGoal(workspacePath, selectedGoal.config.id))
+      setMessage('已恢复执行，系统将按间隔继续推进')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setLoading(false)
+    }
+  }, [selectedGoal, updateSelectedGoal, workspacePath])
+
+  const handleReplanAfterReview = useCallback(async () => {
+    if (!workspacePath || !selectedGoal) return
+    setLoading(true)
+    setMessage(null)
+    try {
+      let goal = selectedGoal
+      if (reviewSupplement.trim()) {
+        goal = await appendLongGoalSupplement({
+          workspacePath,
+          goalId: selectedGoal.config.id,
+          content: reviewSupplement.trim(),
+          priority: 'review',
+        })
+        updateSelectedGoal(goal)
+        setReviewSupplement('')
+      }
+
+      const prompt = await prepareLongGoalPlanning(workspacePath, goal.config.id)
+      await startGoalSession(prompt, `长期目标重新规划: ${goal.config.title}`, goal, 'planning')
+      setMessage('已启动重新规划会话')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setLoading(false)
+    }
+  }, [reviewSupplement, selectedGoal, startGoalSession, updateSelectedGoal, workspacePath])
 
   if (!workspacePath) {
     return (
@@ -478,6 +541,45 @@ export function LongGoalPanel() {
                 追加补充
               </button>
             </div>
+
+            {selectedGoal.config.status === 'completed' && (
+              <div className="rounded-md border border-success/30 bg-success/5 p-3">
+                <div className="text-xs font-medium text-text-secondary">完成复审</div>
+                <textarea
+                  value={reviewSupplement}
+                  onChange={(event) => setReviewSupplement(event.target.value)}
+                  rows={3}
+                  className="mt-2 w-full resize-none rounded-md border border-border-subtle bg-background-elevated px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary"
+                  placeholder="补充继续执行或重新规划的要求"
+                />
+                <div className="mt-2 grid grid-cols-1 gap-2">
+                  <button
+                    type="button"
+                    onClick={handleConfirmCompletion}
+                    disabled={loading}
+                    className="inline-flex items-center justify-center gap-1 rounded-md border border-success/30 px-3 py-1.5 text-xs text-success hover:bg-success/10 disabled:opacity-50"
+                  >
+                    <CheckCircle2 size={13} /> 确认完成
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleContinueAfterReview}
+                    disabled={loading}
+                    className="inline-flex items-center justify-center gap-1 rounded-md border border-border-subtle px-3 py-1.5 text-xs text-text-secondary hover:bg-background-hover disabled:opacity-50"
+                  >
+                    <Play size={13} /> 继续执行
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleReplanAfterReview}
+                    disabled={loading}
+                    className="inline-flex items-center justify-center gap-1 rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs text-primary hover:bg-primary/15 disabled:opacity-50"
+                  >
+                    <Send size={13} /> 补充后重新规划
+                  </button>
+                </div>
+              </div>
+            )}
 
             <DocumentPreview title="进度" content={selectedGoal.documents.progress} />
             <DocumentPreview title="任务队列" content={selectedGoal.documents.queue} />
