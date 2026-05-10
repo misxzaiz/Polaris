@@ -455,6 +455,44 @@ feat: advance long goal <goal-id> step <step-id>
 
 宿主独占 IPC（**不**通过 MCP 暴露，详细文档归 LG-008）：`long_goal_bind_session`、`long_goal_finish_session`、`long_goal_prepare_planning`、`long_goal_prepare_execution`、`long_goal_prepare_maintenance`。这些命令承载会话编排、调度协议生成、`running` 状态写入等"宿主-only"特权操作，**不应**让外部 MCP 客户端绕过宿主直接调用。
 
+### 宿主独占 IPC：hosted-only 命令边界（LG-008）
+
+LG-006 的三方命名表覆盖的是"MCP 与 IPC 同名或仅 MCP 名分叉"的工具表面。除此之外，长期目标还有**5 个 IPC 命令只对宿主前端开放，故意不进入 MCP `tools/list`**。这层边界不是历史遗留，而是 owner 边界设计：每条命令都依赖外部 MCP 客户端拿不到（也不应该拿到）的运行时上下文。
+
+#### 命令清单
+
+| Tauri IPC 命令 | Service 方法 | 触发时机 | 主要副作用 |
+|---|---|---|---|
+| `long_goal_bind_session`        | `LongGoalService::bind_session`              | 宿主新建 / 接管 AI 会话时 | 写 `current_session_id` + `last_session_id`；状态置 `running`；清空 `next_run_at`（避免运行期间被调度器二次拉起） |
+| `long_goal_finish_session`      | `LongGoalService::finish_session`            | 宿主监听到 `session_end` 兜底写回时 | 写 `sessions/<ts>-<phase>-<sid>.md`；追加 `progress.md` / `queue.md`；触发 retry 状态机（LG-007 Failed 分流）；调用 `update_next_run_at` 重排期 |
+| `long_goal_prepare_planning`    | `LongGoalService::prepare_planning_session`  | 宿主创建第一次规划会话前 | 读 `goal.config` 组装规划阶段 first-message prompt（不写盘） |
+| `long_goal_prepare_execution`   | `LongGoalService::prepare_execution_session` | 宿主创建自动执行会话前 | 读 `goal.config` + 当前 `progress` / `queue` / `supplement` 组装执行阶段 first-message prompt（不写盘） |
+| `long_goal_prepare_maintenance` | `LongGoalService::prepare_maintenance_session` | 宿主创建维护会话前 | 读 `goal.config` 组装"只整理文档"维护阶段 first-message prompt（不写盘） |
+
+#### 设计动机：三组特权操作
+
+**1. `running` 状态写入特权 —— `bind_session`**
+
+`bind_session` 是项目内**唯一**的 `LongGoalStatus::Running` 写入路径。LG-004 状态机表已经记录：`set_goal_status` 通过 `ensure_status_not_running` 守门员**显式拒绝**任何把状态设成 `running` 的请求，包括 MCP 工具 `long_goal_set_status`、IPC 包装 `long_goal_pause` / `long_goal_resume`、以及内部直接调用。`running` 语义被收窄成"宿主已经在某个 AI 会话上挂了一个执行槽位"——只有持有 `session_id` 的宿主能进入这个状态。如果允许外部 MCP 写 `running`，调度器就无法再用 `running` 作为"是否有 in-flight 会话"的断言依据，nextRunAt 双拉起、并发写盘等 corner case 会立刻浮出。
+
+**2. 会话边界与重试状态机 —— `finish_session`**
+
+`finish_session` 是会话生命周期的写盘汇聚点：它接收 `session_id` + `summary` + `next_step` + `result` + `retry_failure` 五个仅在 `session_end` 时刻才能确定的入参，串起三处落盘（`sessions/*.md` 写入、`progress.md` 追加、`queue.md` 追加）+ retry 状态机（成功路径重置 retry，失败路径走 `apply_retry_failure` 退避并在耗尽时落 `LongGoalStatus::Failed`，详见 LG-007）+ `update_next_run_at` 重排期（依赖当前 `status` + `interval` 决定是否清零或自动接力，详见 LG-004 状态机表）。这套语义高度依赖宿主侧的两个上下文：一是当前 session 是否仍是 `current_session_id`（用于幂等校验，避免延迟回调写错会话）；二是会话退出原因是否触发 retry（仅宿主的会话事件层能给出 `error/aborted` 信号）。外部 MCP 没有这两路信号源，强行暴露只会让 retry 状态机被错误的 `retry_failure=false` 调用污染。
+
+**3. 宿主上下文注入路径 —— `prepare_planning` / `prepare_execution` / `prepare_maintenance`**
+
+三个 `prepare_*` 命令的产出是字符串——一段被宿主当作 first-message 注入到刚创建的 AI 会话里的 prompt。它们读取 `goal.config`（含 `allowCodeChanges` / `allowGitCommit` 权限）和 `progress` / `queue` / `supplement` 文档，按阶段组装"本轮边界 + 期望产出 + MCP 工具写回要求"模板。换句话说，**调用方就是即将运行该 prompt 的会话本身**：宿主在 `t=0` 时为新会话生成上下文，会话在 `t>0` 时执行该上下文。外部 MCP 客户端处于会话内部，没有"为自己生成 prompt"的语义需求；如果暴露这层接口，反而会让用户混淆"prepare 是查询还是触发"。如果只是想看下一轮 prompt 长什么样，可以从 `read_goal_state` 拿到原料并在客户端侧自行组装预览，不需要服务端能力。
+
+#### 与 `long_goal_set_status` MCP 工具的边界对比
+
+`long_goal_set_status` 已经在外部 MCP 暴露，能把目标状态切到 `planning` / `active` / `paused` / `maintenance` / `blocked` / `completed` / `failed`，唯独**不能切到 `running`**（守门员显式拒绝）。这条边界本质上就是：
+
+> **状态机的"业务态"对外开放，"运行态"对内封闭。**
+
+业务态由用户主观决策驱动（暂停 / 恢复 / 标记完成 / 声明阻塞），允许 AI 通过 MCP 工具配合用户决策；运行态由宿主调度层客观写入（绑定会话进 / 结束会话出），只能由宿主自己拥有。`bind_session` 与 `finish_session` 是这条运行态边界的入口和出口，不通过 MCP 暴露；`prepare_*` 则是绑定前的上下文注入，与运行态本质同源。
+
+外部 MCP 客户端**仍然可以观察**这些状态变化——通过 `long_goal_read` / `long_goal_list` 拿到的 `status` 字段会真实反映 `running`，但不能通过 MCP 写入。
+
 当前已完成补充：
 
 - `polaris.long-goal` manifest 同时贡献受控宿主 `long-goal.panel` 可视化入口和 `polaris-long-goal` MCP server。
