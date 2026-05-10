@@ -65,6 +65,20 @@ pub async fn long_goal_prepare_execution(
     LongGoalService::prepare_execution_session(&workspace_path, &goal_id)
 }
 
+/// 记录长期目标本轮执行进度。
+///
+/// **命名映射 (LG-006)**：本 IPC 命令对外暴露三套同义名称，**有意保留分叉**，不要轻易统一：
+///
+/// | 表面层 | 名称 | 维护者 |
+/// |---|---|---|
+/// | MCP 工具 (外部接口)         | `long_goal_record_progress` | `services::long_goal_mcp_server` |
+/// | Tauri IPC 命令 (前端调用)   | `long_goal_record_step`     | 本文件                            |
+/// | Service 方法 (Rust 内部)    | `LongGoalService::record_step` | `services::long_goal_service` |
+///
+/// MCP 名 `record_progress` 是已发布的外部接口（外部插件 / agent prompt 已硬编码），改名属于
+/// breaking change，需要走 deprecation 周期。三个名字语义等价：MCP 调用最终会 fan-in 到
+/// `LongGoalService::record_step`。完整对照表见 `docs/mcp/6-long-goal-executor-plugin.md`
+/// 的"MCP / IPC / Service 三方命名对照（LG-006）"小节。
 #[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn long_goal_record_step(params: RecordLongGoalStepParams) -> Result<LongGoalState> {
     LongGoalService::record_step(params)

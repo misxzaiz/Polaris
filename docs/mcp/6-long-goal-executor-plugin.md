@@ -438,6 +438,23 @@ feat: advance long goal <goal-id> step <step-id>
 - `long_goal_set_status`
 - `long_goal_complete`
 
+### MCP / IPC / Service 三方命名对照（LG-006）
+
+长期目标的工具表面分三层：MCP（外部插件 / agent 调用）、Tauri IPC（前端调用）、Rust Service（内部实现）。三者**绝大多数同名**，仅 `record_progress` 一线**有意保留分叉**——MCP 名是已发布的外部接口，改名属 breaking change 需走 deprecation 周期；IPC / Service 名沿用 `record_step` 历史命名。**修改任何工具时必须同步三处**。
+
+| MCP 工具名 (外部接口)            | Tauri IPC 命令 (前端)              | Service 方法 (Rust)                              | 备注 |
+|---|---|---|---|
+| `long_goal_create`               | `long_goal_create`                 | `LongGoalService::create_goal`                   | — |
+| `long_goal_list`                 | `long_goal_list`                   | `LongGoalService::list_goals`                    | — |
+| `long_goal_read`                 | `long_goal_read`                   | `LongGoalService::read_goal`                     | — |
+| `long_goal_append_supplement`    | `long_goal_append_supplement`      | `LongGoalService::append_supplement`             | — |
+| **`long_goal_record_progress`**  | **`long_goal_record_step`**        | **`LongGoalService::record_step`**               | **LG-006 命名分叉，三名同义** |
+| `long_goal_update_documents`     | `long_goal_update_documents`       | `LongGoalService::update_documents`              | — |
+| `long_goal_set_status`           | `long_goal_pause` / `long_goal_resume` | `LongGoalService::pause_goal` / `resume_goal` + 内部 `set_goal_status` 守门员 | MCP 暴露通用 set_status，IPC 拆成 pause/resume 两入口 |
+| `long_goal_complete`             | `long_goal_complete`               | `LongGoalService::complete_goal`                 | — |
+
+宿主独占 IPC（**不**通过 MCP 暴露，详细文档归 LG-008）：`long_goal_bind_session`、`long_goal_finish_session`、`long_goal_prepare_planning`、`long_goal_prepare_execution`、`long_goal_prepare_maintenance`。这些命令承载会话编排、调度协议生成、`running` 状态写入等"宿主-only"特权操作，**不应**让外部 MCP 客户端绕过宿主直接调用。
+
 当前已完成补充：
 
 - `polaris.long-goal` manifest 同时贡献受控宿主 `long-goal.panel` 可视化入口和 `polaris-long-goal` MCP server。

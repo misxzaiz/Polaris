@@ -314,6 +314,10 @@ fn handle_tools_call(params: Value, workspace_path: &str) -> Result<Value> {
             };
             tool_success(json!(LongGoalService::append_supplement(params)?))
         }
+        // LG-006: MCP 工具名 `long_goal_record_progress` 是已发布的外部接口。
+        // 它与 IPC 命令 `long_goal_record_step` / Service 方法 `LongGoalService::record_step`
+        // 三方同义但保留分叉，详见 commands/long_goal.rs 的 long_goal_record_step doc 注释，
+        // 以及 docs/mcp/6-long-goal-executor-plugin.md 的三方命名对照表。
         "long_goal_record_progress" => {
             let params = RecordLongGoalStepParams {
                 workspace_path: workspace_path.to_string(),
