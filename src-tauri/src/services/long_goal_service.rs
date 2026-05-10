@@ -447,7 +447,11 @@ impl LongGoalService {
                 config.phase = LongGoalPhase::Review;
                 config.next_run_at = None;
             }
-        } else {
+        } else if config.status == LongGoalStatus::Running {
+            // 仅当当前状态是 Running（即正在被绑定的会话刚执行完）时，
+            // 才回落到 Active+Execution。其他状态（Paused / Maintenance / Blocked /
+            // Completed / Active 等）保持原值，避免 record_step 静默篡改用户在
+            // UI 中明确设定的状态。LG-001。
             config.status = LongGoalStatus::Active;
             config.phase = LongGoalPhase::Execution;
         }
@@ -1061,6 +1065,134 @@ mod tests {
         assert_eq!(blocked.config.status, LongGoalStatus::Blocked);
         assert_eq!(blocked.config.retry_count, 2);
         assert_eq!(blocked.config.next_run_at, None);
+    }
+
+    #[test]
+    fn record_step_preserves_paused_status() {
+        let workspace = tempfile::tempdir().unwrap();
+        let state = LongGoalService::create_goal(CreateLongGoalParams {
+            title: "Pause Goal".to_string(),
+            goal: "Verify record_step does not override paused state".to_string(),
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            engine_id: "codex".to_string(),
+            interval: "10m".to_string(),
+            max_retries: 2,
+            retry_backoff: "5m".to_string(),
+            auto_pause_on_complete: true,
+            allow_code_changes: true,
+            allow_git_commit: true,
+        })
+        .unwrap();
+
+        // Paused：用户主动暂停后，record_step 不应该把它撩回 Active
+        let paused =
+            LongGoalService::pause_goal(&workspace.path().to_string_lossy(), &state.config.id)
+                .unwrap();
+        assert_eq!(paused.config.status, LongGoalStatus::Paused);
+
+        let after_paused_step = LongGoalService::record_step(RecordLongGoalStepParams {
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            goal_id: state.config.id.clone(),
+            step_id: "step-while-paused".to_string(),
+            summary: "user paused goal then AI submitted progress".to_string(),
+            changed_files: Vec::new(),
+            tests_run: Vec::new(),
+            commit_sha: None,
+            result: "success".to_string(),
+            next_step: None,
+            goal_status: None,
+            retry_failure: false,
+        })
+        .unwrap();
+        assert_eq!(
+            after_paused_step.config.status,
+            LongGoalStatus::Paused,
+            "Paused 状态在 record_step 后必须保持，不能被静默重置为 Active"
+        );
+
+        // Maintenance：长期维护态同样不应被 record_step 重置
+        let maintenance = LongGoalService::set_goal_status(SetLongGoalStatusParams {
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            goal_id: state.config.id.clone(),
+            status: LongGoalStatus::Maintenance,
+            phase: Some(LongGoalPhase::Maintenance),
+            next_run_at: None,
+        })
+        .unwrap();
+        assert_eq!(maintenance.config.status, LongGoalStatus::Maintenance);
+
+        let after_maintenance_step = LongGoalService::record_step(RecordLongGoalStepParams {
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            goal_id: state.config.id.clone(),
+            step_id: "step-while-maintenance".to_string(),
+            summary: "maintenance submission".to_string(),
+            changed_files: Vec::new(),
+            tests_run: Vec::new(),
+            commit_sha: None,
+            result: "success".to_string(),
+            next_step: None,
+            goal_status: None,
+            retry_failure: false,
+        })
+        .unwrap();
+        assert_eq!(
+            after_maintenance_step.config.status,
+            LongGoalStatus::Maintenance
+        );
+
+        // Blocked：等待用户输入态，record_step 不应解锁
+        let blocked = LongGoalService::set_goal_status(SetLongGoalStatusParams {
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            goal_id: state.config.id.clone(),
+            status: LongGoalStatus::Blocked,
+            phase: Some(LongGoalPhase::Review),
+            next_run_at: None,
+        })
+        .unwrap();
+        assert_eq!(blocked.config.status, LongGoalStatus::Blocked);
+
+        let after_blocked_step = LongGoalService::record_step(RecordLongGoalStepParams {
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            goal_id: state.config.id.clone(),
+            step_id: "step-while-blocked".to_string(),
+            summary: "blocked submission".to_string(),
+            changed_files: Vec::new(),
+            tests_run: Vec::new(),
+            commit_sha: None,
+            result: "success".to_string(),
+            next_step: None,
+            goal_status: None,
+            retry_failure: false,
+        })
+        .unwrap();
+        assert_eq!(after_blocked_step.config.status, LongGoalStatus::Blocked);
+
+        // 回归保护：Running → record_step（goal_status=None）应仍然回落到 Active+Execution
+        let bound = LongGoalService::bind_session(BindLongGoalSessionParams {
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            goal_id: state.config.id.clone(),
+            session_id: "running-session".to_string(),
+            phase: LongGoalPhase::Execution,
+        })
+        .unwrap();
+        assert_eq!(bound.config.status, LongGoalStatus::Running);
+
+        let after_running_step = LongGoalService::record_step(RecordLongGoalStepParams {
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            goal_id: state.config.id,
+            step_id: "step-from-running".to_string(),
+            summary: "AI completed a step inside the bound session".to_string(),
+            changed_files: Vec::new(),
+            tests_run: Vec::new(),
+            commit_sha: None,
+            result: "success".to_string(),
+            next_step: None,
+            goal_status: None,
+            retry_failure: false,
+        })
+        .unwrap();
+        assert_eq!(after_running_step.config.status, LongGoalStatus::Active);
+        assert_eq!(after_running_step.config.phase, LongGoalPhase::Execution);
     }
 
     #[test]
