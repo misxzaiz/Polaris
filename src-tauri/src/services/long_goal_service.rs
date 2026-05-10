@@ -1527,4 +1527,136 @@ mod tests {
         });
         assert!(paused_with_schedule.is_err());
     }
+
+    #[test]
+    fn set_goal_status_clears_next_run_at_when_transitioning_to_non_active() {
+        // LG-004 维度 1（核心隐性副作用）：
+        // set_goal_status 把目标从 Active 切到 非-Active（Paused / Maintenance / Blocked）时，
+        // 即使调用方不传 next_run_at，update_next_run_at 也会把已存在的 nextRunAt 清空。
+        // 这是 set_goal_status 的隐性契约：调度只对 Active 生效，状态一旦离开 Active，
+        // 调度信号必须立刻失效，避免 sessionTracker 在已暂停的目标上继续触发。
+        let workspace = tempfile::tempdir().unwrap();
+        let state = LongGoalService::create_goal(CreateLongGoalParams {
+            title: "Schedule Clear Goal".to_string(),
+            goal: "Verify nextRunAt clears on non-Active transition".to_string(),
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            engine_id: "codex".to_string(),
+            interval: "10m".to_string(),
+            max_retries: 2,
+            retry_backoff: "5m".to_string(),
+            auto_pause_on_complete: true,
+            allow_code_changes: true,
+            allow_git_commit: true,
+        })
+        .unwrap();
+        let workspace_str = workspace.path().to_string_lossy().to_string();
+
+        // 把目标分别切到 Paused / Maintenance / Blocked，每次先用 set_goal_status
+        // 把 status 拉回 Active 并显式带上 nextRunAt，再切到目标状态验证清零。
+        for target_status in [
+            LongGoalStatus::Paused,
+            LongGoalStatus::Maintenance,
+            LongGoalStatus::Blocked,
+        ] {
+            let scheduled_at = Utc::now().timestamp() + 600;
+            let active = LongGoalService::set_goal_status(SetLongGoalStatusParams {
+                workspace_path: workspace_str.clone(),
+                goal_id: state.config.id.clone(),
+                status: LongGoalStatus::Active,
+                phase: Some(LongGoalPhase::Execution),
+                next_run_at: Some(scheduled_at),
+            })
+            .unwrap();
+            assert_eq!(active.config.status, LongGoalStatus::Active);
+            assert_eq!(
+                active.config.next_run_at,
+                Some(scheduled_at),
+                "前置条件：Active + 显式 nextRunAt 必须落盘"
+            );
+
+            let target_phase = if target_status == LongGoalStatus::Maintenance {
+                Some(LongGoalPhase::Maintenance)
+            } else {
+                Some(LongGoalPhase::Review)
+            };
+            let transitioned = LongGoalService::set_goal_status(SetLongGoalStatusParams {
+                workspace_path: workspace_str.clone(),
+                goal_id: state.config.id.clone(),
+                status: target_status,
+                phase: target_phase,
+                next_run_at: None,
+            })
+            .unwrap();
+
+            assert_eq!(transitioned.config.status, target_status);
+            assert_eq!(
+                transitioned.config.next_run_at,
+                None,
+                "切到 {:?} 时 nextRunAt 必须被清空（LG-004 设计契约：调度只对 Active 生效）",
+                target_status
+            );
+        }
+    }
+
+    #[test]
+    fn set_goal_status_recomputes_next_run_at_when_returning_to_active() {
+        // LG-004 维度 2（核心隐性副作用）：
+        // set_goal_status 把目标切到 Active 且不传 next_run_at 时，
+        // update_next_run_at 会基于 interval 重新计算 nextRunAt。
+        // 这条契约支撑用户在 UI 暂停后"恢复"目标的体验——
+        // 不需要用户提供时间戳，调度器自动接力。
+        let workspace = tempfile::tempdir().unwrap();
+        let state = LongGoalService::create_goal(CreateLongGoalParams {
+            title: "Schedule Recompute Goal".to_string(),
+            goal: "Verify nextRunAt recomputes on Active transition".to_string(),
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            engine_id: "codex".to_string(),
+            interval: "10m".to_string(),
+            max_retries: 2,
+            retry_backoff: "5m".to_string(),
+            auto_pause_on_complete: true,
+            allow_code_changes: true,
+            allow_git_commit: true,
+        })
+        .unwrap();
+        let workspace_str = workspace.path().to_string_lossy().to_string();
+
+        // Step 1：把目标先暂停，确保 nextRunAt 已经为 None。
+        let paused = LongGoalService::set_goal_status(SetLongGoalStatusParams {
+            workspace_path: workspace_str.clone(),
+            goal_id: state.config.id.clone(),
+            status: LongGoalStatus::Paused,
+            phase: Some(LongGoalPhase::Review),
+            next_run_at: None,
+        })
+        .unwrap();
+        assert_eq!(paused.config.status, LongGoalStatus::Paused);
+        assert_eq!(paused.config.next_run_at, None);
+
+        // Step 2：切回 Active 但不传 next_run_at，update_next_run_at 应基于 interval 重算。
+        let before = Utc::now().timestamp();
+        let active = LongGoalService::set_goal_status(SetLongGoalStatusParams {
+            workspace_path: workspace_str,
+            goal_id: state.config.id,
+            status: LongGoalStatus::Active,
+            phase: Some(LongGoalPhase::Execution),
+            next_run_at: None,
+        })
+        .unwrap();
+        let after = Utc::now().timestamp();
+
+        assert_eq!(active.config.status, LongGoalStatus::Active);
+        let next_run_at = active.config.next_run_at.expect(
+            "Active 状态不传 next_run_at 时必须基于 interval 重算 nextRunAt（LG-004 设计契约：恢复语义自动接力）",
+        );
+        // interval=10m=600s。next_run_at 必须落在 [before+600, after+600] 区间内，
+        // 因为 update_next_run_at 用 Utc::now().timestamp() 作为基准时刻。
+        assert!(
+            next_run_at >= before + 600 && next_run_at <= after + 600,
+            "nextRunAt 必须落在 [now+interval, now+interval+δ] 区间，实际 = {}, before+600={}, after+600={}",
+            next_run_at,
+            before + 600,
+            after + 600
+        );
+    }
 }

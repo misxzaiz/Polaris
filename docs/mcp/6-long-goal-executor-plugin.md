@@ -122,6 +122,25 @@
 - `completed`：AI 判定目标完成。
 - `failed`：执行失败且无法继续。
 
+### 状态机与 `nextRunAt` 语义（LG-004）
+
+`nextRunAt` 是 Polaris 调度器决定下一次自动会话触发时间的唯一信号。它的取值与 `status` 之间存在**强契约**：调度只对 `active` 生效，状态一旦离开 `active`，`nextRunAt` 必须立即失效。`set_goal_status` 与 `update_next_run_at` 共同维护这条契约，具体行为如下表（实现见 `long_goal_service.rs::update_next_run_at`）：
+
+| 入参 status | 入参 next_run_at | nextRunAt 实际写入值 | 说明 |
+|---|---|---|---|
+| `active` | `Some(ts)` | `Some(ts)` | 显式排期，调用方完全控制下一次触发时间。 |
+| `active` | `None` | `Some(now + interval)` | 重算分支，基于目标 `interval` 自动接力。**典型用例：用户从 UI 把 paused 目标恢复成 active，无需提供时间戳。** |
+| `paused` / `maintenance` / `blocked` / `failed` / `completed` | `None` | `None` | **隐性副作用**：`update_next_run_at` 看到非 active 状态会清空 nextRunAt，调度器立刻不再扫到该目标。 |
+| `paused` / `maintenance` / `blocked` / `failed` / `completed` | `Some(ts)` | — | **被显式拒绝**：`set_goal_status` 在写盘前直接返回 `ValidationError("只有 active 状态可以设置 nextRunAt")`，避免误排期。 |
+| `running` | 任意 | — | **被显式拒绝**：`running` 只能通过 `bind_session` 进入；外部调用 `set_goal_status` 设 `running` 会返回 `ValidationError`。 |
+
+要点：
+
+- "显式拒绝"由 `ensure_status_not_running` + `params.status != Active` 守门员负责，**任何写盘前**就报错，不会污染目标状态。
+- "隐性副作用"由 `update_next_run_at` 在写盘路径上根据当前 `status` 决定，调用方不必关心是否要手动清零。
+- `bind_session` 进入 `running` 时也会主动把 `next_run_at` 清空，避免在执行期间被调度器二次拉起。
+- 单测覆盖：`set_goal_status_rejects_running_and_non_active_schedule`（显式拒绝）+ `set_goal_status_clears_next_run_at_when_transitioning_to_non_active`（隐性清零，覆盖 paused / maintenance / blocked 三个分支）+ `set_goal_status_recomputes_next_run_at_when_returning_to_active`（重算分支）。
+
 ## MCP Tools 草案
 
 ### `create_goal`
