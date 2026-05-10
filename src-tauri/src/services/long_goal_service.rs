@@ -436,7 +436,12 @@ impl LongGoalService {
             Self::write_text(&goal_dir.join("queue.md"), &queue)?;
         }
 
-        config.current_step_id = params.next_step.as_ref().map(|_| params.step_id);
+        // current_step_id 语义：始终记录"刚完成的步骤标识"。
+        // 旧实现把 current_step_id 与 next_step 是否存在绑定 —— 不传 next_step 时
+        // current_step_id 直接被清空，导致 LongGoalPanel 永远拿不到最新一步标识，
+        // UI"当前步骤"展示断档。next_step 内容已经在 line 429-437 写入 queue.md，
+        // 不应该再反向影响 current_step_id 的写入。LG-002。
+        config.current_step_id = Some(params.step_id);
         let now = Utc::now().timestamp();
         if params.retry_failure {
             Self::apply_retry_failure(&mut config, now);
@@ -1193,6 +1198,92 @@ mod tests {
         .unwrap();
         assert_eq!(after_running_step.config.status, LongGoalStatus::Active);
         assert_eq!(after_running_step.config.phase, LongGoalPhase::Execution);
+    }
+
+    #[test]
+    fn record_step_keeps_current_step_id_without_next_step() {
+        // LG-002 回归测试：current_step_id 字段语义是"刚完成的步骤"，
+        // 必须无条件写入；不能因为调用方未传 next_step 就清空。
+        let workspace = tempfile::tempdir().unwrap();
+        let state = LongGoalService::create_goal(CreateLongGoalParams {
+            title: "Step ID Goal".to_string(),
+            goal: "Verify current_step_id is always recorded".to_string(),
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            engine_id: "codex".to_string(),
+            interval: "10m".to_string(),
+            max_retries: 2,
+            retry_backoff: "5m".to_string(),
+            auto_pause_on_complete: true,
+            allow_code_changes: true,
+            allow_git_commit: true,
+        })
+        .unwrap();
+        // 初始：未执行任何步骤，current_step_id 应为 None
+        assert_eq!(state.config.current_step_id, None);
+
+        // 维度 1（核心）：不传 next_step 时，current_step_id 仍必须写入刚完成步骤
+        let after_no_next = LongGoalService::record_step(RecordLongGoalStepParams {
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            goal_id: state.config.id.clone(),
+            step_id: "step-alpha".to_string(),
+            summary: "first step without next_step".to_string(),
+            changed_files: Vec::new(),
+            tests_run: Vec::new(),
+            commit_sha: None,
+            result: "success".to_string(),
+            next_step: None,
+            goal_status: None,
+            retry_failure: false,
+        })
+        .unwrap();
+        assert_eq!(
+            after_no_next.config.current_step_id.as_deref(),
+            Some("step-alpha"),
+            "不传 next_step 时 current_step_id 必须记录刚完成的 step_id（LG-002 核心断言）"
+        );
+
+        // 维度 2（回归）：传 next_step 时 current_step_id 也必须正确写入
+        let after_with_next = LongGoalService::record_step(RecordLongGoalStepParams {
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            goal_id: state.config.id.clone(),
+            step_id: "step-beta".to_string(),
+            summary: "second step with next_step".to_string(),
+            changed_files: Vec::new(),
+            tests_run: Vec::new(),
+            commit_sha: None,
+            result: "success".to_string(),
+            next_step: Some("step-gamma".to_string()),
+            goal_status: None,
+            retry_failure: false,
+        })
+        .unwrap();
+        assert_eq!(
+            after_with_next.config.current_step_id.as_deref(),
+            Some("step-beta"),
+            "传 next_step 时 current_step_id 必须记录刚完成的 step_id，不能记成 next_step 的值"
+        );
+
+        // 维度 3（语义正确性）：连续调用，current_step_id 始终反映最新一步，
+        // 而不是被清空或保留旧值
+        let after_third = LongGoalService::record_step(RecordLongGoalStepParams {
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            goal_id: state.config.id,
+            step_id: "step-delta".to_string(),
+            summary: "third step without next_step again".to_string(),
+            changed_files: Vec::new(),
+            tests_run: Vec::new(),
+            commit_sha: None,
+            result: "success".to_string(),
+            next_step: None,
+            goal_status: None,
+            retry_failure: false,
+        })
+        .unwrap();
+        assert_eq!(
+            after_third.config.current_step_id.as_deref(),
+            Some("step-delta"),
+            "连续调用时 current_step_id 必须更新为最新的 step_id"
+        );
     }
 
     #[test]
