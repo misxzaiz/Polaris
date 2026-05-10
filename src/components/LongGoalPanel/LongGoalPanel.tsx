@@ -52,6 +52,7 @@ export function LongGoalPanel() {
   const [allowCodeChanges, setAllowCodeChanges] = useState(true)
   const [allowGitCommit, setAllowGitCommit] = useState(true)
   const [autoStartPlanning, setAutoStartPlanning] = useState(true)
+  const [autoPauseOnComplete, setAutoPauseOnComplete] = useState(true)
   const [supplement, setSupplement] = useState('')
   const [reviewSupplement, setReviewSupplement] = useState('')
   const [maintenancePrompt, setMaintenancePrompt] = useState<string | null>(null)
@@ -233,7 +234,7 @@ export function LongGoalPanel() {
         interval: interval.trim() || '30m',
         maxRetries,
         retryBackoff: retryBackoff.trim() || '5m',
-        autoPauseOnComplete: true,
+        autoPauseOnComplete,
         allowCodeChanges,
         allowGitCommit: allowCodeChanges && allowGitCommit,
       })
@@ -255,6 +256,7 @@ export function LongGoalPanel() {
     }
   }, [
     autoStartPlanning,
+    autoPauseOnComplete,
     allowCodeChanges,
     allowGitCommit,
     engineId,
@@ -479,6 +481,15 @@ export function LongGoalPanel() {
             />
             创建后自动启动规划会话
           </label>
+          <label className="flex items-center gap-2 rounded-md border border-border-subtle bg-background-surface px-3 py-2 text-xs text-text-secondary">
+            <input
+              type="checkbox"
+              checked={autoPauseOnComplete}
+              onChange={(event) => setAutoPauseOnComplete(event.target.checked)}
+              className="h-3.5 w-3.5"
+            />
+            完成时自动暂停等待复审（取消则 AI 完成判定后直接进入终态）
+          </label>
           <div className="grid grid-cols-1 gap-2">
             <label className="flex items-center gap-2 rounded-md border border-border-subtle bg-background-surface px-3 py-2 text-xs text-text-secondary">
               <input
@@ -622,9 +633,17 @@ export function LongGoalPanel() {
               </button>
             </div>
 
-            {selectedGoal.config.status === 'completed' && (
+            {((selectedGoal.config.status === 'paused' && selectedGoal.config.phase === 'review')
+              || selectedGoal.config.status === 'completed') && (
               <div className="rounded-md border border-success/30 bg-success/5 p-3">
-                <div className="text-xs font-medium text-text-secondary">完成复审</div>
+                <div className="text-xs font-medium text-text-secondary">
+                  {selectedGoal.config.status === 'completed' ? '完成复盘' : '完成复审'}
+                </div>
+                <div className="mt-1 text-[11px] text-text-tertiary">
+                  {selectedGoal.config.status === 'completed'
+                    ? '目标已进入终态。仍可补充复盘说明、继续执行或重新规划。'
+                    : 'AI 已判定完成，等待你确认。点击「确认完成」目标会进入终态。'}
+                </div>
                 <textarea
                   value={reviewSupplement}
                   onChange={(event) => setReviewSupplement(event.target.value)}

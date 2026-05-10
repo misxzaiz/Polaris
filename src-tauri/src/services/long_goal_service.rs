@@ -554,7 +554,23 @@ impl LongGoalService {
         ));
         Self::write_text(&goal_dir.join("progress.md"), &progress)?;
 
-        config.status = LongGoalStatus::Completed;
+        // LG-003: auto_pause_on_complete 字段语义贯通。
+        // 字段字面语义 = "完成时自动暂停"，所以：
+        //   - auto_pause_on_complete=true 且当前不是 Paused+Review：
+        //     首次完成调用 → 设 Paused+Review，等待用户在 UI 复审后再确认；
+        //   - auto_pause_on_complete=true 且当前已是 Paused+Review：
+        //     用户复审后 UI 二次调用 → 进入终态 Completed；
+        //   - auto_pause_on_complete=false：
+        //     跳过暂停一步到位 → Completed（旧行为）。
+        // progress.md 里"完成判定"无论哪个分支都先落盘，避免 AI 第一次填写的判定丢失。
+        let was_paused_for_review = config.status == LongGoalStatus::Paused
+            && config.phase == LongGoalPhase::Review;
+        let final_status = if config.auto_pause_on_complete && !was_paused_for_review {
+            LongGoalStatus::Paused
+        } else {
+            LongGoalStatus::Completed
+        };
+        config.status = final_status;
         config.phase = LongGoalPhase::Review;
         config.current_session_id = None;
         config.next_run_at = None;
@@ -1284,6 +1300,147 @@ mod tests {
             Some("step-delta"),
             "连续调用时 current_step_id 必须更新为最新的 step_id"
         );
+    }
+
+    #[test]
+    fn complete_goal_pauses_when_auto_pause_true_first_call() {
+        // LG-003 维度 1（核心）：auto_pause_on_complete=true（默认）时，
+        // AI 首次调用 complete_goal 应设 Paused+Review，等待用户在 UI 复审。
+        let workspace = tempfile::tempdir().unwrap();
+        let state = LongGoalService::create_goal(CreateLongGoalParams {
+            title: "Auto Pause Goal".to_string(),
+            goal: "Verify auto pause on first complete call".to_string(),
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            engine_id: "codex".to_string(),
+            interval: "10m".to_string(),
+            max_retries: 2,
+            retry_backoff: "5m".to_string(),
+            auto_pause_on_complete: true,
+            allow_code_changes: true,
+            allow_git_commit: true,
+        })
+        .unwrap();
+        assert!(state.config.auto_pause_on_complete);
+
+        let completed = LongGoalService::complete_goal(CompleteLongGoalParams {
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            goal_id: state.config.id.clone(),
+            completion_summary: "AI 判定目标完成，等待复审".to_string(),
+            remaining_risks: vec!["需要用户复核测试覆盖".to_string()],
+            review_suggestions: vec!["请检查 commit 列表".to_string()],
+        })
+        .unwrap();
+
+        assert_eq!(
+            completed.config.status,
+            LongGoalStatus::Paused,
+            "auto_pause_on_complete=true 时首次 complete 必须设 Paused 等待用户复审（LG-003 核心断言）"
+        );
+        assert_eq!(completed.config.phase, LongGoalPhase::Review);
+        assert_eq!(completed.config.current_session_id, None);
+        assert_eq!(completed.config.next_run_at, None);
+        // 完成判定文本无论分支都必须落盘
+        assert!(completed
+            .documents
+            .progress
+            .contains("AI 判定目标完成，等待复审"));
+        assert!(completed
+            .documents
+            .progress
+            .contains("需要用户复核测试覆盖"));
+    }
+
+    #[test]
+    fn complete_goal_skips_pause_when_auto_pause_false() {
+        // LG-003 维度 2：auto_pause_on_complete=false 时，complete_goal 一步到位 Completed。
+        let workspace = tempfile::tempdir().unwrap();
+        let state = LongGoalService::create_goal(CreateLongGoalParams {
+            title: "Skip Pause Goal".to_string(),
+            goal: "Verify auto pause off bypasses paused state".to_string(),
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            engine_id: "codex".to_string(),
+            interval: "10m".to_string(),
+            max_retries: 2,
+            retry_backoff: "5m".to_string(),
+            auto_pause_on_complete: false,
+            allow_code_changes: true,
+            allow_git_commit: true,
+        })
+        .unwrap();
+        assert!(!state.config.auto_pause_on_complete);
+
+        let completed = LongGoalService::complete_goal(CompleteLongGoalParams {
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            goal_id: state.config.id,
+            completion_summary: "auto_pause 关闭，直接终态".to_string(),
+            remaining_risks: vec![],
+            review_suggestions: vec![],
+        })
+        .unwrap();
+
+        assert_eq!(
+            completed.config.status,
+            LongGoalStatus::Completed,
+            "auto_pause_on_complete=false 时 complete 必须一步到位进入 Completed"
+        );
+        assert_eq!(completed.config.phase, LongGoalPhase::Review);
+        assert_eq!(completed.config.current_session_id, None);
+        assert_eq!(completed.config.next_run_at, None);
+    }
+
+    #[test]
+    fn complete_goal_advances_to_completed_on_second_call() {
+        // LG-003 维度 3：auto_pause_on_complete=true 时，
+        // 第一次 complete → Paused+Review；
+        // 用户在 UI 复审后第二次 complete → Completed（终态）。
+        let workspace = tempfile::tempdir().unwrap();
+        let state = LongGoalService::create_goal(CreateLongGoalParams {
+            title: "Two-Phase Complete Goal".to_string(),
+            goal: "Verify second complete advances to Completed".to_string(),
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            engine_id: "codex".to_string(),
+            interval: "10m".to_string(),
+            max_retries: 2,
+            retry_backoff: "5m".to_string(),
+            auto_pause_on_complete: true,
+            allow_code_changes: true,
+            allow_git_commit: true,
+        })
+        .unwrap();
+
+        // 第一次：AI 触发完成 → Paused + Review
+        let after_first = LongGoalService::complete_goal(CompleteLongGoalParams {
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            goal_id: state.config.id.clone(),
+            completion_summary: "AI 判定完成".to_string(),
+            remaining_risks: vec![],
+            review_suggestions: vec![],
+        })
+        .unwrap();
+        assert_eq!(after_first.config.status, LongGoalStatus::Paused);
+        assert_eq!(after_first.config.phase, LongGoalPhase::Review);
+
+        // 第二次：UI 用户复审确认 → Completed
+        let after_second = LongGoalService::complete_goal(CompleteLongGoalParams {
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            goal_id: state.config.id,
+            completion_summary: "用户复审确认完成".to_string(),
+            remaining_risks: vec![],
+            review_suggestions: vec![],
+        })
+        .unwrap();
+        assert_eq!(
+            after_second.config.status,
+            LongGoalStatus::Completed,
+            "auto_pause=true 且当前已 Paused+Review 时，二次 complete 必须进入终态 Completed"
+        );
+        assert_eq!(after_second.config.phase, LongGoalPhase::Review);
+        // 两次完成判定都应该写入 progress.md，第二次不能覆盖第一次
+        assert!(after_second.documents.progress.contains("AI 判定完成"));
+        assert!(after_second
+            .documents
+            .progress
+            .contains("用户复审确认完成"));
     }
 
     #[test]
