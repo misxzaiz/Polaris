@@ -2,7 +2,6 @@
 //!
 //! MCP server for document-backed long goal execution tools.
 
-use std::collections::BTreeMap;
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::PathBuf;
 
@@ -448,31 +447,58 @@ fn optional_status(arguments: &Value) -> Result<Option<crate::models::long_goal:
         .map_err(|error| AppError::ValidationError(format!("goalStatus 无效: {}", error)))
 }
 
-pub fn current_tool_definitions() -> BTreeMap<&'static str, &'static str> {
-    BTreeMap::from([
-        ("long_goal_list", "列出当前工作区的长期目标。"),
-        ("long_goal_read", "读取单个长期目标的配置和协议文档。"),
-        ("long_goal_create", "创建长期目标文档结构。"),
-        ("long_goal_append_supplement", "追加长期目标补充。"),
-        ("long_goal_record_progress", "记录长期目标执行进度。"),
-        ("long_goal_update_documents", "更新长期目标文档。"),
-        ("long_goal_set_status", "更新长期目标状态。"),
-        ("long_goal_complete", "记录长期目标完成判定。"),
-    ])
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// `handle_tools_list` is the single source of truth for the MCP tool surface
+    /// (LG-005). All other consumers — including this assertion — must derive from
+    /// it instead of maintaining a parallel registry. Adding a new tool requires
+    /// only one edit (the JSON literal in `handle_tools_list`); the white-list
+    /// here will catch accidental removal of a critical tool.
     #[test]
     fn exposes_expected_tools() {
-        let defs = current_tool_definitions();
-        assert_eq!(defs.len(), 8);
-        assert!(defs.contains_key("long_goal_list"));
-        assert!(defs.contains_key("long_goal_record_progress"));
-        assert!(defs.contains_key("long_goal_update_documents"));
-        assert!(defs.contains_key("long_goal_set_status"));
+        let value = handle_tools_list();
+        let tools = value["tools"].as_array().expect("tools must be an array");
+        let names: Vec<&str> = tools
+            .iter()
+            .filter_map(|tool| tool["name"].as_str())
+            .collect();
+
+        // White-list of critical tools. Adding a new tool here is intentional;
+        // we deliberately avoid `assert_eq!(tools.len(), N)` so the count can
+        // grow without churning this test (LG-005).
+        for required in [
+            "long_goal_list",
+            "long_goal_read",
+            "long_goal_create",
+            "long_goal_append_supplement",
+            "long_goal_record_progress",
+            "long_goal_update_documents",
+            "long_goal_set_status",
+            "long_goal_complete",
+        ] {
+            assert!(
+                names.contains(&required),
+                "tools/list must expose `{required}` — got {names:?}"
+            );
+        }
+
+        // Every tool surface must carry a non-empty description and a JSON-Schema
+        // input definition; otherwise downstream MCP clients render unusable UI.
+        for tool in tools {
+            let name = tool["name"].as_str().unwrap_or("<missing-name>");
+            assert!(
+                tool["description"]
+                    .as_str()
+                    .is_some_and(|description| !description.trim().is_empty()),
+                "tool `{name}` is missing a non-empty description"
+            );
+            assert!(
+                tool["inputSchema"].is_object(),
+                "tool `{name}` is missing an inputSchema object"
+            );
+        }
     }
 
     #[test]
@@ -486,17 +512,5 @@ mod tests {
             value["serverInfo"]["name"],
             Value::String(SERVER_NAME.to_string())
         );
-    }
-
-    #[test]
-    fn tools_list_contains_long_goal_tools() {
-        let value = handle_tools_list();
-        let tools = value["tools"].as_array().unwrap();
-        let names = tools
-            .iter()
-            .filter_map(|tool| tool["name"].as_str())
-            .collect::<Vec<_>>();
-        assert!(names.contains(&"long_goal_list"));
-        assert!(names.contains(&"long_goal_complete"));
     }
 }
