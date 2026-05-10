@@ -746,7 +746,11 @@ impl LongGoalService {
             let retry_seconds = Self::parse_interval_seconds(&config.retry_backoff).unwrap_or(300);
             config.next_run_at = Some(now + retry_seconds);
         } else {
-            config.status = LongGoalStatus::Blocked;
+            // retry 耗尽属于"系统判定不可恢复"，写 Failed 而非 Blocked。
+            // Blocked 专用于"等待用户输入"语义（AI 主动声明 blocker / 用户从 UI
+            // 显式 set_status=Blocked），两类来源混用同一个状态会让用户分不清
+            // 该去看 supplement 还是去做根因分析。LG-007。
+            config.status = LongGoalStatus::Failed;
             config.next_run_at = None;
         }
     }
@@ -1035,7 +1039,7 @@ mod tests {
     }
 
     #[test]
-    fn retry_failure_reschedules_then_blocks_after_limit() {
+    fn retry_failure_reschedules_then_fails_after_limit() {
         let workspace = tempfile::tempdir().unwrap();
         let state = LongGoalService::create_goal(CreateLongGoalParams {
             title: "Retry Goal".to_string(),
@@ -1069,7 +1073,8 @@ mod tests {
         assert_eq!(first_failure.config.retry_count, 1);
         assert!(first_failure.config.next_run_at.is_some());
 
-        let blocked = LongGoalService::record_step(RecordLongGoalStepParams {
+        // retry 耗尽 → 写 Failed（系统判定不可恢复），区别于 Blocked（等待用户输入）。LG-007。
+        let failed = LongGoalService::record_step(RecordLongGoalStepParams {
             workspace_path: workspace.path().to_string_lossy().to_string(),
             goal_id: state.config.id,
             step_id: "auto-start-2".to_string(),
@@ -1083,9 +1088,9 @@ mod tests {
             retry_failure: true,
         })
         .unwrap();
-        assert_eq!(blocked.config.status, LongGoalStatus::Blocked);
-        assert_eq!(blocked.config.retry_count, 2);
-        assert_eq!(blocked.config.next_run_at, None);
+        assert_eq!(failed.config.status, LongGoalStatus::Failed);
+        assert_eq!(failed.config.retry_count, 2);
+        assert_eq!(failed.config.next_run_at, None);
     }
 
     #[test]
