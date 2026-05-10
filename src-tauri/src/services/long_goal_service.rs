@@ -465,7 +465,13 @@ impl LongGoalService {
         {
             Self::reset_retry_state(&mut config);
         }
-        config.current_session_id = None;
+        // LG-010: current_session_id 归属权由 bind_session（写入）和
+        // finish_session（清除）配对管理，record_step 不能碰。旧实现在此无条件
+        // 清空 sid，导致后续 session_end 触发的 finish_session 在
+        // is_current 校验上短路（service.rs:131-134），从而跳过
+        // update_next_run_at（line 217），nextRunAt 永远停在 None，
+        // scanDueLongGoals 之后再也不会触发自动执行。现象表现为长期目标
+        // 仅在"创建即规划"+"第 1 次自动执行"两次后死锁。
         Self::touch_config(&mut config);
         Self::write_config(&goal_dir, &config)?;
         Self::read_goal_state(&workspace, &params.goal_id)
@@ -1322,6 +1328,115 @@ mod tests {
         .unwrap();
         assert_eq!(after_running_step.config.status, LongGoalStatus::Active);
         assert_eq!(after_running_step.config.phase, LongGoalPhase::Execution);
+    }
+
+    #[test]
+    fn record_step_keeps_session_id_so_finish_can_reschedule() {
+        // LG-010 核心回归：record_step 必须保留 current_session_id，
+        // 否则后续 session_end 触发的 finish_session 会在 is_current 校验
+        // 上短路（service.rs:131-134），跳过 update_next_run_at（line 217），
+        // nextRunAt 永远停在 None，scanDueLongGoals 之后再也不会触发自动执行。
+        //
+        // 用户现象：长期目标只会自动执行 2 次（创建即规划 + 第 1 次自动执行），
+        // 第 2 次执行会话内部 AI 调 record_progress 后，第 3 次开始永远死锁。
+        let workspace = tempfile::tempdir().unwrap();
+        let workspace_str = workspace.path().to_string_lossy().to_string();
+        let state = LongGoalService::create_goal(CreateLongGoalParams {
+            title: "Reschedule Loop Goal".to_string(),
+            goal: "Verify auto-execution loop continues past second iteration".to_string(),
+            workspace_path: workspace_str.clone(),
+            engine_id: "codex".to_string(),
+            interval: "10m".to_string(),
+            max_retries: 2,
+            retry_backoff: "5m".to_string(),
+            auto_pause_on_complete: true,
+            allow_code_changes: true,
+            allow_git_commit: true,
+        })
+        .unwrap();
+
+        // ── 第 2 次（执行会话）模拟：bind → record_step → 验证 sid 保留 ──
+        let bound = LongGoalService::bind_session(BindLongGoalSessionParams {
+            workspace_path: workspace_str.clone(),
+            goal_id: state.config.id.clone(),
+            session_id: "exec-session-1".to_string(),
+            phase: LongGoalPhase::Execution,
+        })
+        .unwrap();
+        assert_eq!(bound.config.status, LongGoalStatus::Running);
+        assert_eq!(
+            bound.config.current_session_id.as_deref(),
+            Some("exec-session-1")
+        );
+
+        let after_record = LongGoalService::record_step(RecordLongGoalStepParams {
+            workspace_path: workspace_str.clone(),
+            goal_id: state.config.id.clone(),
+            step_id: "exec-step-1".to_string(),
+            summary: "AI 在执行会话里调用 record_progress 报告进度".to_string(),
+            changed_files: vec!["foo.rs".to_string()],
+            tests_run: vec!["cargo test".to_string()],
+            commit_sha: None,
+            result: "success".to_string(),
+            next_step: None,
+            goal_status: None,
+            retry_failure: false,
+        })
+        .unwrap();
+        // 修复前：current_session_id 被清成 None，下面这条断言会 fail
+        assert_eq!(
+            after_record.config.current_session_id.as_deref(),
+            Some("exec-session-1"),
+            "record_step 必须保留 current_session_id，否则 finish_session 短路 → nextRunAt 死锁（LG-010 核心断言）"
+        );
+        // 状态机仍然按 LG-001 契约回落
+        assert_eq!(after_record.config.status, LongGoalStatus::Active);
+        assert_eq!(after_record.config.phase, LongGoalPhase::Execution);
+
+        // ── 后续 session_end → finish_session 必须能命中 is_current 通路 ──
+        let finished = LongGoalService::finish_session(FinishLongGoalSessionParams {
+            workspace_path: workspace_str.clone(),
+            goal_id: state.config.id.clone(),
+            session_id: "exec-session-1".to_string(),
+            summary: "execution session ended".to_string(),
+            result: "success".to_string(),
+            next_step: Some("继续推进下一个模块".to_string()),
+            goal_status: None,
+            retry_failure: false,
+        })
+        .unwrap();
+        // 修复前：finish_session 因 is_current 失配直接 return，下两条断言都会 fail
+        assert_eq!(
+            finished.config.current_session_id, None,
+            "finish_session 是 sid 的唯一清除入口（成功路径）"
+        );
+        assert!(
+            finished.config.next_run_at.is_some(),
+            "finish_session 必须基于 interval 重排 nextRunAt，否则 scanDueLongGoals 永远不再触发（LG-010 闭环断言）"
+        );
+        assert_eq!(finished.config.status, LongGoalStatus::Active);
+        // 落盘完整：sessions 目录有第 1 次执行的 .md 文件
+        let sessions_dir = std::path::Path::new(&finished.goal_path).join("sessions");
+        let session_count = std::fs::read_dir(&sessions_dir).unwrap().count();
+        assert_eq!(
+            session_count, 1,
+            "finish_session 必须把会话摘要落盘到 sessions/，否则 progress 链路断"
+        );
+
+        // ── 第 3 次循环：模拟 scanDueLongGoals 命中 nextRunAt → 再次 bind ──
+        let bound_again = LongGoalService::bind_session(BindLongGoalSessionParams {
+            workspace_path: workspace_str.clone(),
+            goal_id: state.config.id.clone(),
+            session_id: "exec-session-2".to_string(),
+            phase: LongGoalPhase::Execution,
+        })
+        .unwrap();
+        assert_eq!(bound_again.config.status, LongGoalStatus::Running);
+        assert_eq!(
+            bound_again.config.current_session_id.as_deref(),
+            Some("exec-session-2"),
+            "第 3 次循环：bind_session 必须能正常进入 Running，证明前一次循环没有死锁"
+        );
     }
 
     #[test]

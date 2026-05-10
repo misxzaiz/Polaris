@@ -63,7 +63,17 @@ async function handleSessionEnd(event: RoutedSessionEndEvent): Promise<void> {
   if (!frontendSessionId || finishingSessions.has(frontendSessionId)) return
 
   const target = await findLongGoalBySession(frontendSessionId)
-  if (!target) return
+  if (!target) {
+    // LG-010: silent return 会让用户感觉"会话结束没通知到长期目标"，
+    // 而真正原因往往是 currentSessionId 在 session_end 之前被中间写入清空
+    // （历史 record_step 清 sid bug 已修，但保留警告以便观察其他边界场景，
+    // 例如外部 MCP 客户端调用 set_status 等）。
+    log.warn('收到 session_end 但找不到匹配的长期目标', {
+      frontendSessionId,
+      reason: event.reason ?? 'unknown',
+    })
+    return
+  }
 
   finishingSessions.add(frontendSessionId)
   try {
