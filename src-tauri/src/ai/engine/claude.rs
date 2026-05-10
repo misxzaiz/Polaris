@@ -250,7 +250,6 @@ impl ClaudeEngine {
         fork_session: bool,
         settings_overlay_path: Option<&str>,
     ) -> Result<Command> {
-        let has_images = !image_attachments.is_empty();
         #[cfg(windows)]
         {
             let mut cmd = match self.cli_type {
@@ -346,24 +345,24 @@ impl ClaudeEngine {
                 cmd.arg("--allowedTools").arg(allowed_tools.join(","));
             }
 
-            if has_images {
-                // 有图片：使用 stream-json 模式通过 stdin 发送（支持原生图片内容块）
-                cmd.arg("--print")
-                    .arg("--verbose")
-                    .arg("--output-format")
-                    .arg("stream-json")
-                    .arg("--input-format")
-                    .arg("stream-json");
-                // 注意：不传 message 参数，消息通过 stdin 发送
-                tracing::info!("[ClaudeEngine] 使用 stream-json 模式（{} 张图片）", image_attachments.len());
-            } else {
-                // 无图片：使用文本参数模式（稳定可靠）
-                cmd.arg("--print")
-                    .arg("--verbose")
-                    .arg("--output-format")
-                    .arg("stream-json")
-                    .arg(message);
-            }
+            // 统一使用 stream-json + stdin 模式（无论是否带图片）。
+            // 此前对纯文本走 `.arg(message)` 把消息拼进命令行，会在 message 较长时
+            // 触发 Windows CreateProcess `lpCommandLine` 32767 字符限制，
+            // 报 `os error 206 (ERROR_FILENAME_EXCED_RANGE)`。
+            // 改走 stdin 后，message 长度由 OS pipe buffer 承载（远超 32K）。
+            cmd.arg("--print")
+                .arg("--verbose")
+                .arg("--output-format")
+                .arg("stream-json")
+                .arg("--input-format")
+                .arg("stream-json");
+            tracing::info!(
+                "[ClaudeEngine] stream-json + stdin 模式（{} 张图片，message {} 字符，system_prompt {} 字符，append_system_prompt {} 字符）",
+                image_attachments.len(),
+                message.len(),
+                system_prompt.map(|s| s.len()).unwrap_or(0),
+                append_system_prompt.map(|s| s.len()).unwrap_or(0)
+            );
 
             Ok(cmd)
         }
@@ -452,23 +451,22 @@ impl ClaudeEngine {
                 cmd.arg("--allowedTools").arg(allowed_tools.join(","));
             }
 
-            if has_images {
-                // 有图片：使用 stream-json 模式通过 stdin 发送（支持原生图片内容块）
-                cmd.arg("--print")
-                    .arg("--verbose")
-                    .arg("--output-format")
-                    .arg("stream-json")
-                    .arg("--input-format")
-                    .arg("stream-json");
-                tracing::info!("[ClaudeEngine] 使用 stream-json 模式（{} 张图片）", image_attachments.len());
-            } else {
-                // 无图片：使用文本参数模式（稳定可靠）
-                cmd.arg("--print")
-                    .arg("--verbose")
-                    .arg("--output-format")
-                    .arg("stream-json")
-                    .arg(message);
-            }
+            // 统一使用 stream-json + stdin 模式（与 Windows 分支保持一致），
+            // 避免 message 通过命令行参数传递时受平台参数长度限制。
+            // 详细原因见 Windows 分支注释。
+            cmd.arg("--print")
+                .arg("--verbose")
+                .arg("--output-format")
+                .arg("stream-json")
+                .arg("--input-format")
+                .arg("stream-json");
+            tracing::info!(
+                "[ClaudeEngine] stream-json + stdin 模式（{} 张图片，message {} 字符，system_prompt {} 字符，append_system_prompt {} 字符）",
+                image_attachments.len(),
+                message.len(),
+                system_prompt.map(|s| s.len()).unwrap_or(0),
+                append_system_prompt.map(|s| s.len()).unwrap_or(0)
+            );
 
             Ok(cmd)
         }
@@ -551,6 +549,27 @@ impl ClaudeEngine {
             .map_err(|e| AppError::ProcessError(format!("写入 stdin 失败: {}", e)))?;
 
         Ok(())
+    }
+
+    /// 把 `cmd.spawn()` 失败转换为 `AppError`。
+    ///
+    /// 针对 Windows `os error 206` (`ERROR_FILENAME_EXCED_RANGE`) 提供友好提示：
+    /// 该错误的实际语义是 `CreateProcess` 的 `lpCommandLine` 总长度超过 32767 字符限制，
+    /// 而不是字面"文件名过长"。当前 `message` 已通过 stdin 发送（不再走命令行），
+    /// 但 `--system-prompt` / `--append-system-prompt` / `--add-dir` 等参数仍走命令行,
+    /// 这些参数若过长仍会触发该错误。
+    fn map_spawn_error(e: std::io::Error, message_len: usize, prefix: &str) -> AppError {
+        if e.raw_os_error() == Some(206) {
+            AppError::ProcessError(format!(
+                "{}: 命令行参数总长度超过 Windows 限制 (32767 字符)。\
+                 当前 message 长度 {} 字符（已通过 stdin 发送，不计入命令行）。\
+                 请检查 --system-prompt / --append-system-prompt / --add-dir 等参数是否过长，\
+                 必要时减少本轮上下文或将长内容改为通过 --add-dir 文件挂载。原始错误: {}",
+                prefix, message_len, e
+            ))
+        } else {
+            AppError::ProcessError(format!("{}: {}", prefix, e))
+        }
     }
 
     /// 格式化命令为可复制的字符串（用于日志输出）
@@ -826,16 +845,16 @@ impl AIEngine for ClaudeEngine {
             }
         }
 
-        // 构建初始 stdin 数据（如果有图片，构造 stream-json 消息）
-        let initial_stdin_data = if !options.image_attachments.is_empty() {
+        // 构建初始 stdin 数据：统一使用 stream-json 格式（无论是否带图片）。
+        // 这条路径与 build_command 的 `--input-format stream-json` 配合，
+        // 把 message 完全从命令行移到 stdin，规避 Windows 32K 命令行限制。
+        let initial_stdin_data = {
             let mut json_bytes = Vec::new();
             Self::send_stream_json_message(&mut json_bytes, message, &options.image_attachments)?;
             // 加换行符
             json_bytes.extend_from_slice(b"\n");
             Some(String::from_utf8(json_bytes)
                 .map_err(|e| AppError::ProcessError(format!("stream-json 数据包含非 UTF-8: {}", e)))?)
-        } else {
-            None
         };
 
         // 构建命令
@@ -870,7 +889,7 @@ impl AIEngine for ClaudeEngine {
 
         // 启动进程
         let child = cmd.spawn()
-            .map_err(|e| AppError::ProcessError(format!("启动 Claude 进程失败: {}", e)))?;
+            .map_err(|e| Self::map_spawn_error(e, message.len(), "启动 Claude 进程失败"))?;
 
         let pid = child.id();
         let temp_id = uuid::Uuid::new_v4().to_string();
@@ -923,15 +942,14 @@ impl AIEngine for ClaudeEngine {
         tracing::info!("[ClaudeEngine] 工作目录: {:?}", work_dir);
         tracing::info!("[ClaudeEngine] 使用 --resume 参数，session_id: {}", real_session_id);
 
-        // 构建初始 stdin 数据（如果有图片，构造 stream-json 消息）
-        let initial_stdin_data = if !options.image_attachments.is_empty() {
+        // 构建初始 stdin 数据：统一使用 stream-json 格式（无论是否带图片）。
+        // 与 start_session 一致，避免 message 通过命令行传递时受平台参数长度限制。
+        let initial_stdin_data = {
             let mut json_bytes = Vec::new();
             Self::send_stream_json_message(&mut json_bytes, message, &options.image_attachments)?;
             json_bytes.extend_from_slice(b"\n");
             Some(String::from_utf8(json_bytes)
                 .map_err(|e| AppError::ProcessError(format!("stream-json 数据包含非 UTF-8: {}", e)))?)
-        } else {
-            None
         };
 
         // 构建命令（带 --resume，使用真实 session_id）
@@ -960,7 +978,7 @@ impl AIEngine for ClaudeEngine {
 
         // 启动进程
         let child = cmd.spawn()
-            .map_err(|e| AppError::ProcessError(format!("继续 Claude 会话失败: {}", e)))?;
+            .map_err(|e| Self::map_spawn_error(e, message.len(), "继续 Claude 会话失败"))?;
 
         let pid = child.id();
 
