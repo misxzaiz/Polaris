@@ -501,6 +501,27 @@ LG-006 的三方命名表覆盖的是"MCP 与 IPC 同名或仅 MCP 名分叉"的
 - `LongGoalService` 已收紧外部状态更新，`running` 只能通过宿主绑定会话进入，非 `active` 状态不能直接设置 `nextRunAt`。
 - 会话结束监听仍保留为兜底：如果 AI 没有通过 MCP tools 写回，宿主会在 `session_end` 后记录会话摘要和重试/排期状态。
 
+### 路径形态契约：workspacePath 与 goalPath（LG-009）
+
+**适用范围**：仅 Windows 平台。`std::fs::canonicalize` 在 Windows 上会把 `D:\space\base\Polaris` 规范化成 `\\?\D:\space\base\Polaris`（verbatim / UNC 形态）。前端 `longGoalSessionTracker` 持有的工作区路径来自 Tauri 启动时的 `currentWorkspacePath`，是非-UNC 形态 `D:\…`。两者通过字符串比较匹配，UNC vs 非-UNC 不一致 → `findLongGoalBySession` 返回 None → 自动会话写回链路断裂。
+
+**契约**：
+
+| 字段 | 持久化形态 | 暴露给前端 | 内部路径校验 |
+|---|---|---|---|
+| `LongGoalConfig.workspace_path` | 非-UNC `D:\…` | 是（`workspacePath`） | 不参与（每次都重新 canonicalize） |
+| `LongGoalState.goal_path` | 非-UNC `D:\…\.polaris\long-goals\<id>` | 是（`goalPath`） | 不参与 |
+| `canonical_workspace` 内部 `PathBuf` | strip-after-canonicalize | 否（私有） | 调用 `checked_goal_dir` 时由后者再 canonicalize |
+| `checked_goal_dir` 内部 `canonical_root` / `canonical_dir` | UNC（仅在比对那一刻） | 否 | **越权前缀比对在此完成**（UNC vs UNC） |
+
+**实现要点**：
+
+- `strip_verbatim_prefix(PathBuf) -> PathBuf` 是 cfg(windows) 私有 helper，**只**剥离 `\\?\D:\…` 这种"verbatim 盘符"形态；`\\?\UNC\server\share` 的 UNC server 形态保留原样（无非-verbatim 等价表达）；非 Windows 目标编译为 no-op。
+- 剥离时机：`canonical_workspace` 末端 + `checked_goal_dir` **越权检查通过之后** 的返回值。两个 strip 点都在"安全检查已结束"的地方，不会削弱路径越权防御。
+- 已有数据迁移：不做主动迁移。新建 goal 自动落非-UNC 形态；存量 goal.json 如果是 UNC，由前端 sessionTracker 在后续 P2（LG-014 测试覆盖周边）层面通过 PathMatcher 等价判定吸收，本契约只关闭源头。
+
+**回归保护**：单测 `create_goal_persists_non_unc_workspace_path`（cfg(windows)）断言 `state.config.workspace_path` 与 `state.goal_path` 都不以 `\\?\` 开头；纯函数级单测覆盖三档：盘符 strip / UNC server passthrough / 非 UNC passthrough。
+
 ## 外部 MCP 迁移实施方案
 
 目标不是让外部 MCP 插件接管后台调度，而是把“协议文档读写能力”和“AI 可调用工具面”迁出宿主；宿主保留会话编排、定时扫描、AI 引擎选择、中断和复审。

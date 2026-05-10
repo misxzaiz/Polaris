@@ -664,7 +664,14 @@ impl LongGoalService {
                 workspace.display()
             )));
         }
-        Ok(workspace)
+        // LG-009: strip the `\\?\` verbatim prefix on Windows so the path
+        // persisted into `goal.config.workspace_path` matches the non-UNC
+        // form held by the frontend (`longGoalSessionTracker`'s
+        // `currentWorkspacePath`). The path-traversal check inside
+        // `checked_goal_dir` re-canonicalizes both sides before comparing,
+        // so this is purely an output-shape concern and does not weaken
+        // the security boundary.
+        Ok(strip_verbatim_prefix(workspace))
     }
 
     fn checked_goal_dir(workspace: &Path, goal_id: &str) -> Result<PathBuf> {
@@ -680,13 +687,17 @@ impl LongGoalService {
         let canonical_dir = dir.canonicalize().map_err(|error| {
             AppError::InvalidPath(format!("无法读取长期目标 {}: {}", goal_id, error))
         })?;
+        // The traversal check happens BEFORE the prefix is stripped, while
+        // both sides are still in canonicalized (UNC on Windows) form. We
+        // only strip on the returned value so that `goal_path` exposed via
+        // `LongGoalState` stays in the non-UNC shape the frontend expects.
         if !canonical_dir.starts_with(&canonical_root) || canonical_dir == canonical_root {
             return Err(AppError::PermissionDenied(format!(
                 "长期目标路径超出允许目录: {}",
                 canonical_dir.display()
             )));
         }
-        Ok(canonical_dir)
+        Ok(strip_verbatim_prefix(canonical_dir))
     }
 
     fn goal_dir(workspace: &Path, goal_id: &str) -> PathBuf {
@@ -877,6 +888,31 @@ fn list_or_none(items: &[String]) -> String {
     }
 }
 
+/// Strip the `\\?\` verbatim prefix that `Path::canonicalize` emits on
+/// Windows so persisted/exposed paths stay in the plain `D:\…` form the
+/// frontend uses (LG-009).
+///
+/// Only strips the disk-letter form (`\\?\D:\…`); UNC server paths
+/// (`\\?\UNC\server\share`) are returned unchanged because they have no
+/// canonical non-verbatim equivalent. On non-Windows targets this is a
+/// no-op.
+#[cfg(windows)]
+fn strip_verbatim_prefix(path: PathBuf) -> PathBuf {
+    let s = path.to_string_lossy();
+    if let Some(rest) = s.strip_prefix(r"\\?\") {
+        let bytes = rest.as_bytes();
+        if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+            return PathBuf::from(rest.to_string());
+        }
+    }
+    path
+}
+
+#[cfg(not(windows))]
+fn strip_verbatim_prefix(path: PathBuf) -> PathBuf {
+    path
+}
+
 fn empty_as_default<'a>(value: &'a str, default: &'a str) -> &'a str {
     if value.trim().is_empty() {
         default
@@ -895,6 +931,73 @@ fn ensure_trailing_newline(mut value: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn strip_verbatim_prefix_disk_form_is_stripped() {
+        // LG-009: the disk-letter verbatim form must lose the `\\?\` prefix
+        // so `goal.config.workspace_path` matches the renderer-side path.
+        let unc = PathBuf::from(r"\\?\D:\space\base\Polaris");
+        assert_eq!(
+            strip_verbatim_prefix(unc),
+            PathBuf::from(r"D:\space\base\Polaris")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn strip_verbatim_prefix_unc_server_form_is_preserved() {
+        // LG-009: UNC server paths have no canonical non-verbatim
+        // equivalent — strip would be unsafe, so they must pass through.
+        let server = PathBuf::from(r"\\?\UNC\server\share\foo");
+        assert_eq!(strip_verbatim_prefix(server.clone()), server);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn strip_verbatim_prefix_plain_path_is_passthrough() {
+        // LG-009: paths that already lack the `\\?\` prefix must be
+        // returned unchanged, including standard UNC shares without the
+        // verbatim escape (`\\server\share\…`).
+        let plain = PathBuf::from(r"D:\already\plain");
+        assert_eq!(strip_verbatim_prefix(plain.clone()), plain);
+        let standard_unc = PathBuf::from(r"\\server\share\foo");
+        assert_eq!(strip_verbatim_prefix(standard_unc.clone()), standard_unc);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn create_goal_persists_non_unc_workspace_path() {
+        // LG-009 regression guard: the workspace_path written to goal.json
+        // and exposed via LongGoalState must not retain the `\\?\` verbatim
+        // prefix on Windows, otherwise `longGoalSessionTracker` cannot
+        // string-match it against the renderer's currentWorkspacePath.
+        let workspace = tempfile::tempdir().unwrap();
+        let state = LongGoalService::create_goal(CreateLongGoalParams {
+            title: "LG-009 Guard".to_string(),
+            goal: "Verify workspace_path is non-UNC".to_string(),
+            workspace_path: workspace.path().to_string_lossy().to_string(),
+            engine_id: "codex".to_string(),
+            interval: "10m".to_string(),
+            max_retries: 1,
+            retry_backoff: "5m".to_string(),
+            auto_pause_on_complete: true,
+            allow_code_changes: true,
+            allow_git_commit: true,
+        })
+        .unwrap();
+
+        assert!(
+            !state.config.workspace_path.starts_with(r"\\?\"),
+            "workspace_path must not retain the verbatim prefix: {}",
+            state.config.workspace_path
+        );
+        assert!(
+            !state.goal_path.starts_with(r"\\?\"),
+            "goal_path must not retain the verbatim prefix: {}",
+            state.goal_path
+        );
+    }
 
     #[test]
     fn creates_and_reads_long_goal_documents() {
