@@ -26,7 +26,9 @@ const log = createLogger('SessionHistoryPanel')
 const PAGE_SIZE = 20
 
 function getHistoryEngines(filter: 'all' | EngineId): HistoryEngineFilter[] {
-  return filter === 'codex' ? ['codex'] : ['claude-code']
+  if (filter === 'codex') return ['codex']
+  if (filter === 'claude-code') return ['claude-code']
+  return ['claude-code', 'codex']
 }
 
 function withAssistantEngineId(messages: ChatMessage[], engineId: EngineId): ChatMessage[] {

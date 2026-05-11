@@ -277,6 +277,15 @@ export const historyService = {
 
       if (engineId === 'codex') {
         restoredEngineId = 'codex'
+        // 拉取 Codex 原生历史消息，否则 UI 恢复后会显示空白
+        const codexService = getCodexHistoryService()
+        const codexMessages = await codexService.getSessionHistory(sessionId)
+        if (codexMessages.length > 0) {
+          chatMessages = withAssistantEngineId(
+            codexService.convertToChatMessages(codexMessages),
+            'codex',
+          )
+        }
         title = localSession?.title || titleHint || '恢复的 Codex 会话'
         externalSessionId = sessionId
       }
