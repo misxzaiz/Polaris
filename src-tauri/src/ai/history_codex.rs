@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 use std::time::SystemTime;
 
 use crate::ai::history::{
@@ -18,6 +19,71 @@ struct CodexStatEntry {
     mtime: SystemTime,
     file_size: u64,
     file_path: PathBuf,
+}
+
+/// 阶段 1 收集的轻量条目：stat 元数据 + 头部读到的 cwd / created_at，
+/// 可选携带兜底全量 parse 结果（仅在 head 缺失 cwd 但需要 work_dir 过滤时）。
+struct StageOneEntry {
+    stat: CodexStatEntry,
+    cwd: Option<String>,
+    head_created_at: Option<String>,
+    /// (summary, message_count, created_at) — 阶段 3 可直接复用避免重复 IO
+    prefetched_full: Option<(Option<String>, usize, Option<String>)>,
+}
+
+/// 从 jsonl 文件头部 `session_meta` 行提取的轻量元数据。
+/// 用于阶段 1 stat-only 扫描，避免对每个文件做全量解析。
+struct SessionMetaHead {
+    session_id: String,
+    cwd: Option<String>,
+    created_at: Option<String>,
+}
+
+/// 进程级缓存：sessionId -> 文件路径。
+/// 由 `list_sessions` 填充，`find_session_file` / `delete_session` 复用。
+/// 写入时校验 path.exists()，保证不返回已删除文件。
+static CODEX_SESSION_INDEX: OnceLock<Mutex<HashMap<String, PathBuf>>> = OnceLock::new();
+
+fn codex_session_index() -> &'static Mutex<HashMap<String, PathBuf>> {
+    CODEX_SESSION_INDEX.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// 读取 jsonl 文件前若干行，提取 `session_meta` 头部信息。
+/// 大多数 codex rollout 文件第一行即为 session_meta，限定上界避免坏文件 IO 失控。
+fn read_session_meta_only(path: &Path) -> Option<SessionMetaHead> {
+    use std::io::{BufRead, BufReader};
+
+    const SCAN_LINES_LIMIT: usize = 32;
+
+    let file = std::fs::File::open(path).ok()?;
+    let reader = BufReader::new(file);
+
+    for line in reader.lines().take(SCAN_LINES_LIMIT).map_while(|r| r.ok()) {
+        let trimmed = line.trim_start();
+        if !trimmed.starts_with('{') {
+            continue;
+        }
+        let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) else {
+            continue;
+        };
+        if json.get("type").and_then(|t| t.as_str()) != Some("session_meta") {
+            continue;
+        }
+        let payload = json.get("payload")?;
+        let session_id = payload.get("id").and_then(|v| v.as_str())?.to_string();
+        let cwd = payload
+            .get("cwd")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let created_at = payload
+            .get("timestamp")
+            .and_then(|v| v.as_str())
+            .or_else(|| json.get("timestamp").and_then(|v| v.as_str()))
+            .map(|s| s.to_string());
+        return Some(SessionMetaHead { session_id, cwd, created_at });
+    }
+
+    None
 }
 
 pub struct CodexHistoryProvider {
@@ -80,16 +146,37 @@ impl CodexHistoryProvider {
     }
 
     fn find_session_file(&self, session_id: &str) -> Option<PathBuf> {
-        let mut files = Vec::new();
-        Self::collect_jsonl_files(&Self::get_codex_sessions_dir(), &mut files);
-
-        for file in files {
-            if Self::session_id_from_file(&file).as_deref() == Some(session_id) {
-                return Some(file);
+        // 1. 优先查进程级缓存（由 list_sessions 填充）
+        if let Ok(cache) = codex_session_index().lock() {
+            if let Some(p) = cache.get(session_id) {
+                if p.exists() {
+                    return Some(p.clone());
+                }
             }
         }
 
-        None
+        // 2. 缓存未命中：扫描所有文件 + 顺便回填缓存
+        let mut files = Vec::new();
+        Self::collect_jsonl_files(&Self::get_codex_sessions_dir(), &mut files);
+
+        let mut matched: Option<PathBuf> = None;
+        for file in files {
+            // 优先用轻量头读取（只扫前 32 行）；失败回退到旧的全文扫描
+            let sid = read_session_meta_only(&file)
+                .map(|h| h.session_id)
+                .or_else(|| Self::session_id_from_file(&file));
+            if let Some(sid) = sid {
+                if let Ok(mut cache) = codex_session_index().lock() {
+                    cache.insert(sid.clone(), file.clone());
+                }
+                if sid == session_id {
+                    matched = Some(file);
+                    // 不 break：继续回填后面的条目，下次 find 也能命中
+                }
+            }
+        }
+
+        matched
     }
 
     fn text_from_content_array(value: &serde_json::Value, text_key: &str) -> String {
@@ -260,6 +347,130 @@ impl CodexHistoryProvider {
 
         (summary, message_count, created_at, cwd, session_id)
     }
+
+    /// list_sessions 的内部实现，接受任意 sessions 目录便于测试。
+    /// 实际入口由 `<Self as SessionHistoryProvider>::list_sessions` 传入 `~/.codex/sessions`。
+    fn list_sessions_in(
+        &self,
+        sessions_dir: &Path,
+        work_dir: Option<&str>,
+        pagination: Pagination,
+    ) -> Result<PagedResult<SessionMeta>> {
+        // ── 阶段 1：stat + 仅读 session_meta 头部，按 work_dir 过滤 ──
+        // 同时把 sessionId -> 路径回填到进程级缓存，加速后续 find_session_file。
+        let mut files = Vec::new();
+        Self::collect_jsonl_files(sessions_dir, &mut files);
+
+        let mut stat_entries: Vec<StageOneEntry> = Vec::with_capacity(files.len());
+
+        for file_path in files {
+            let Ok(metadata) = std::fs::metadata(&file_path) else {
+                continue;
+            };
+
+            // 优先用轻量头读取（限 32 行）；失败回退到 session_id_from_file 兜底。
+            let head = read_session_meta_only(&file_path);
+            let (session_id_opt, head_cwd, head_created_at) = match head {
+                Some(h) => (Some(h.session_id), h.cwd, h.created_at),
+                None => (Self::session_id_from_file(&file_path), None, None),
+            };
+
+            // work_dir 过滤策略：
+            //   - head 有 cwd 且匹配  → 通过，prefetched=None
+            //   - head 有 cwd 且不匹配 → 跳过
+            //   - head 没 cwd 但调用方指定了 wd → 回退到全量 parse 验证（同时复用其结果）
+            //   - head 没 cwd 且调用方未指定 wd → 通过
+            let (resolved_cwd, prefetched_full) = match (work_dir, head_cwd.clone()) {
+                (Some(wd), Some(c)) if c == wd => (Some(c), None),
+                (Some(_), Some(_)) => continue,
+                (Some(wd), None) => {
+                    let (s, m, ts, c, _sid) = Self::parse_metadata(&file_path);
+                    if c.as_deref() != Some(wd) {
+                        continue;
+                    }
+                    (c.clone(), Some((s, m, ts)))
+                }
+                (None, c) => (c, None),
+            };
+
+            let session_id = session_id_opt.unwrap_or_else(|| {
+                file_path
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            });
+
+            // 回填进程级缓存
+            if !session_id.is_empty() {
+                if let Ok(mut cache) = codex_session_index().lock() {
+                    cache.insert(session_id.clone(), file_path.clone());
+                }
+            }
+
+            stat_entries.push(StageOneEntry {
+                stat: CodexStatEntry {
+                    session_id,
+                    mtime: metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH),
+                    file_size: metadata.len(),
+                    file_path,
+                },
+                cwd: resolved_cwd,
+                head_created_at,
+                prefetched_full,
+            });
+        }
+
+        // ── 阶段 2：按 mtime 倒序 + 分页 ──
+        stat_entries.sort_by(|a, b| b.stat.mtime.cmp(&a.stat.mtime));
+
+        let total = stat_entries.len();
+        let page_entries: Vec<StageOneEntry> = stat_entries
+            .into_iter()
+            .skip(pagination.skip())
+            .take(pagination.take())
+            .collect();
+
+        // ── 阶段 3：仅对当前页做全量 parse 拿 summary + message_count ──
+        let mut items: Vec<SessionMeta> = Vec::with_capacity(page_entries.len());
+        for entry in page_entries {
+            // 优先复用阶段 1 的 prefetched 结果，避免重复 IO
+            let (summary, message_count, created_at_full) = match entry.prefetched_full {
+                Some(prefetched) => prefetched,
+                None => {
+                    let (s, m, ts, _cwd, _sid) = Self::parse_metadata(&entry.stat.file_path);
+                    (s, m, ts)
+                }
+            };
+
+            let updated_at = entry
+                .stat
+                .mtime
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .ok()
+                .and_then(|d| chrono::DateTime::from_timestamp(d.as_secs() as i64, 0))
+                .map(|dt| dt.to_rfc3339());
+
+            items.push(SessionMeta {
+                session_id: entry.stat.session_id,
+                engine_id: "codex".to_string(),
+                project_path: entry.cwd,
+                created_at: created_at_full.or(entry.head_created_at),
+                updated_at,
+                message_count: Some(message_count),
+                summary,
+                file_size: Some(entry.stat.file_size),
+                claude_project_name: None,
+                file_path: Some(entry.stat.file_path.to_string_lossy().to_string()),
+                parent_session_id: None,
+                child_session_ids: Vec::new(),
+                git_branch: None,
+                linked_pr: None,
+                extra: HashMap::new(),
+            });
+        }
+
+        Ok(PagedResult::new(items, total, pagination.page, pagination.page_size))
+    }
 }
 
 impl SessionHistoryProvider for CodexHistoryProvider {
@@ -272,83 +483,7 @@ impl SessionHistoryProvider for CodexHistoryProvider {
         work_dir: Option<&str>,
         pagination: Pagination,
     ) -> Result<PagedResult<SessionMeta>> {
-        let mut files = Vec::new();
-        Self::collect_jsonl_files(&Self::get_codex_sessions_dir(), &mut files);
-
-        let mut stat_entries = Vec::new();
-        for file_path in files {
-            let Ok(metadata) = std::fs::metadata(&file_path) else {
-                continue;
-            };
-            let (summary, message_count, created_at, cwd, parsed_session_id) =
-                Self::parse_metadata(&file_path);
-
-            if let Some(wd) = work_dir {
-                if cwd.as_deref() != Some(wd) {
-                    continue;
-                }
-            }
-
-            let session_id = parsed_session_id
-                .or_else(|| Self::session_id_from_file(&file_path))
-                .unwrap_or_else(|| {
-                    file_path
-                        .file_stem()
-                        .map(|s| s.to_string_lossy().to_string())
-                        .unwrap_or_default()
-                });
-
-            stat_entries.push((
-                CodexStatEntry {
-                    session_id,
-                    mtime: metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH),
-                    file_size: metadata.len(),
-                    file_path,
-                },
-                summary,
-                message_count,
-                created_at,
-                cwd,
-            ));
-        }
-
-        stat_entries.sort_by(|a, b| b.0.mtime.cmp(&a.0.mtime));
-
-        let total = stat_entries.len();
-        let page_entries = stat_entries
-            .into_iter()
-            .skip(pagination.skip())
-            .take(pagination.take());
-
-        let mut items = Vec::new();
-        for (entry, summary, message_count, created_at, cwd) in page_entries {
-            let updated_at = entry
-                .mtime
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .ok()
-                .and_then(|d| chrono::DateTime::from_timestamp(d.as_secs() as i64, 0))
-                .map(|dt| dt.to_rfc3339());
-
-            items.push(SessionMeta {
-                session_id: entry.session_id,
-                engine_id: "codex".to_string(),
-                project_path: cwd,
-                created_at,
-                updated_at,
-                message_count: Some(message_count),
-                summary,
-                file_size: Some(entry.file_size),
-                claude_project_name: None,
-                file_path: Some(entry.file_path.to_string_lossy().to_string()),
-                parent_session_id: None,
-                child_session_ids: Vec::new(),
-                git_branch: None,
-                linked_pr: None,
-                extra: HashMap::new(),
-            });
-        }
-
-        Ok(PagedResult::new(items, total, pagination.page, pagination.page_size))
+        self.list_sessions_in(&Self::get_codex_sessions_dir(), work_dir, pagination)
     }
 
     fn get_session_history(
@@ -387,6 +522,11 @@ impl SessionHistoryProvider for CodexHistoryProvider {
 
         std::fs::remove_file(&session_file)
             .map_err(|e| AppError::ValidationError(format!("删除 Codex 会话失败: {}", e)))?;
+
+        // 失效进程级缓存中的对应条目
+        if let Ok(mut cache) = codex_session_index().lock() {
+            cache.remove(session_id);
+        }
 
         Ok(())
     }
@@ -434,5 +574,141 @@ mod tests {
         assert_eq!(messages[0].content, "你好");
         assert_eq!(messages[1].role, "assistant");
         assert_eq!(messages[1].content, "你好，有什么可以帮你？");
+    }
+
+    /// 辅助：写入一个 codex 风格 jsonl 文件
+    fn write_codex_rollout(
+        dir: &Path,
+        file_name: &str,
+        session_id: &str,
+        cwd: &str,
+        user_msg: &str,
+        assistant_msg: &str,
+    ) -> PathBuf {
+        let path = dir.join(file_name);
+        let mut file = std::fs::File::create(&path).unwrap();
+        writeln!(
+            file,
+            r#"{{"timestamp":"2026-05-01T00:00:00Z","type":"session_meta","payload":{{"id":"{}","timestamp":"2026-05-01T00:00:00Z","cwd":"{}"}}}}"#,
+            session_id,
+            cwd.replace('\\', "\\\\")
+        )
+        .unwrap();
+        writeln!(
+            file,
+            r#"{{"timestamp":"2026-05-01T00:00:01Z","type":"response_item","payload":{{"type":"message","role":"user","content":[{{"type":"input_text","text":"{}"}}]}}}}"#,
+            user_msg
+        )
+        .unwrap();
+        writeln!(
+            file,
+            r#"{{"timestamp":"2026-05-01T00:00:02Z","type":"response_item","payload":{{"type":"message","role":"assistant","content":[{{"type":"output_text","text":"{}"}}]}}}}"#,
+            assistant_msg
+        )
+        .unwrap();
+        path
+    }
+
+    /// `read_session_meta_only` 应该只读到 session_meta 头部信息，且尊重 32 行扫描上限。
+    #[test]
+    fn read_session_meta_only_returns_head_from_first_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_codex_rollout(
+            dir.path(),
+            "rollout-1.jsonl",
+            "sid-head-1",
+            "/tmp/projA",
+            "hi",
+            "hello",
+        );
+
+        let head = read_session_meta_only(&path).expect("应该读到 session_meta");
+        assert_eq!(head.session_id, "sid-head-1");
+        assert_eq!(head.cwd.as_deref(), Some("/tmp/projA"));
+        assert_eq!(head.created_at.as_deref(), Some("2026-05-01T00:00:00Z"));
+    }
+
+    #[test]
+    fn read_session_meta_only_returns_none_when_session_meta_beyond_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rollout-late.jsonl");
+        let mut file = std::fs::File::create(&path).unwrap();
+        // 写 40 行无用 noop，确保 session_meta 超出 SCAN_LINES_LIMIT (32)
+        for i in 0..40 {
+            writeln!(file, r#"{{"type":"noop","seq":{}}}"#, i).unwrap();
+        }
+        writeln!(
+            file,
+            r#"{{"type":"session_meta","payload":{{"id":"sid-late","cwd":"/tmp/late"}}}}"#
+        )
+        .unwrap();
+        assert!(read_session_meta_only(&path).is_none());
+    }
+
+    /// 阶段 1 应该按 cwd 正确过滤，且阶段 3 只 parse 当前页文件。
+    #[test]
+    fn list_sessions_in_filters_by_cwd_and_paginates() {
+        let dir = tempfile::tempdir().unwrap();
+        write_codex_rollout(
+            dir.path(),
+            "rollout-a.jsonl",
+            "sid-A",
+            "/tmp/projA",
+            "msgA",
+            "respA",
+        );
+        write_codex_rollout(
+            dir.path(),
+            "rollout-b.jsonl",
+            "sid-B",
+            "/tmp/projB",
+            "msgB",
+            "respB",
+        );
+
+        let provider = CodexHistoryProvider::new(Config::default());
+
+        // 过滤 projA：只返回 sid-A
+        let result_a = provider
+            .list_sessions_in(dir.path(), Some("/tmp/projA"), Pagination::new(1, 50))
+            .unwrap();
+        assert_eq!(result_a.total, 1);
+        assert_eq!(result_a.items[0].session_id, "sid-A");
+        assert_eq!(result_a.items[0].project_path.as_deref(), Some("/tmp/projA"));
+        assert_eq!(result_a.items[0].summary.as_deref(), Some("msgA"));
+
+        // 不过滤：返回两条
+        let result_all = provider
+            .list_sessions_in(dir.path(), None, Pagination::new(1, 50))
+            .unwrap();
+        assert_eq!(result_all.total, 2);
+    }
+
+    /// list_sessions_in 应填充进程级缓存，find_session_file 后续命中缓存。
+    #[test]
+    fn find_session_file_uses_cache_populated_by_list_sessions() {
+        let dir = tempfile::tempdir().unwrap();
+        let path_x = write_codex_rollout(
+            dir.path(),
+            "rollout-x.jsonl",
+            "sid-find-X",
+            "/tmp/projX",
+            "msgX",
+            "respX",
+        );
+
+        let provider = CodexHistoryProvider::new(Config::default());
+
+        // 触发缓存填充
+        provider
+            .list_sessions_in(dir.path(), None, Pagination::new(1, 50))
+            .unwrap();
+
+        // 直接查缓存（绕过 find_session_file 的 fallback 全目录扫描）
+        let cached = {
+            let cache = codex_session_index().lock().unwrap();
+            cache.get("sid-find-X").cloned()
+        };
+        assert_eq!(cached, Some(path_x));
     }
 }
