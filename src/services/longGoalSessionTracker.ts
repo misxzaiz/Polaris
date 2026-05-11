@@ -226,12 +226,32 @@ function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+// 上一轮摘要硬上限。超过则取头尾各一半 + 中段省略号占位，
+// 防止 Claude 的 extended-thinking 流水账或冗长结构化输出在多轮间无限滚雪球。
+// 经验值：常规结构化输出（本轮结果/修改文件/验证/Commit/下一步/是否完成）≈ 800-1200 字符，
+// 1500 留 25% 余量，再大就一定是 thinking 泄漏或重复贴 progress.md，应当截断。
+export const SESSION_SUMMARY_MAX_CHARS = 1500
+
 function buildSessionSummary(sessionId: string): string {
   const store = sessionStoreManager.getState().getStore(sessionId)
   const messages = store?.messages ?? []
   const assistantMessage = [...messages].reverse().find((message) => message.type === 'assistant')
   const content = assistantMessage ? messageToText(assistantMessage) : ''
-  return content.trim() || `会话 ${sessionId} 已结束，但未捕获到助手摘要。`
+  const trimmed = content.trim() || `会话 ${sessionId} 已结束，但未捕获到助手摘要。`
+  return truncateSummary(trimmed, SESSION_SUMMARY_MAX_CHARS)
+}
+
+/**
+ * 摘要长度上限截断器。导出仅为单测可见，业务代码请用 buildSessionSummary。
+ * @internal
+ */
+export function truncateSummary(text: string, max: number): string {
+  if (text.length <= max) return text
+  // 头部承载"本轮结果/修改文件"，尾部承载"下一步/是否完成"，两端都要保留。
+  const half = Math.floor((max - 20) / 2)
+  const head = text.slice(0, half).trimEnd()
+  const tail = text.slice(text.length - half).trimStart()
+  return `${head}\n\n…（已省略中段，共 ${text.length} 字符）…\n\n${tail}`
 }
 
 function messageToText(message: ChatMessage): string {
@@ -247,11 +267,20 @@ function messageToText(message: ChatMessage): string {
   return ''
 }
 
-function blockToText(block: ContentBlock): string {
+/**
+ * 把单个内容块降级为纯文本。导出仅为单测可见。
+ * @internal
+ */
+export function blockToText(block: ContentBlock): string {
   switch (block.type) {
     case 'text':
-    case 'thinking':
       return block.content
+    // 'thinking' 块是 Claude 的 extended-thinking 内部独白（"I'm checking...",
+    // "I need to...", "Let me try..."），本质是 chain-of-thought，不应作为长期记忆
+    // 落盘到 sessions/{ts}.md 再回灌进下一轮 prompt 的「上一轮摘要」段。
+    // 参见 temp/bugfix/20260511.md 来源 3。
+    case 'thinking':
+      return ''
     case 'agent_run':
       return block.output || block.progressMessage || block.error || ''
     case 'tool_group':
