@@ -253,16 +253,32 @@ fn run_event_loop(
             continue;
         }
 
-        // Peek at method name to decide synchronous vs. pooled dispatch.
-        // MCP handshake (initialize / notifications/initialized) MUST be
-        // handled synchronously to guarantee response ordering — the
-        // thread-pool can reorder responses which breaks the client handshake.
-        let method = serde_json::from_str::<serde_json::Value>(trimmed)
-            .ok()
+        // Peek at the raw JSON once to detect notifications and route by
+        // method name. JSON-RPC 2.0 §4.1 defines a Notification as a Request
+        // without an `id` field; per spec the server MUST NOT reply. Strict
+        // clients (e.g. codex 0.130's rmcp transport) will fail to parse any
+        // response framed against a notification and tear the stdio pipe down.
+        let raw_value: Option<serde_json::Value> = serde_json::from_str(trimmed).ok();
+
+        let is_notification = raw_value
+            .as_ref()
+            .and_then(|v| v.as_object())
+            .map(|obj| !obj.contains_key("id"))
+            .unwrap_or(false);
+        if is_notification {
+            // Silently consume and continue; never write a frame.
+            continue;
+        }
+
+        // MCP handshake (initialize / ping) MUST be handled synchronously to
+        // guarantee response ordering — the thread pool can reorder responses
+        // which breaks the client handshake.
+        let method = raw_value
+            .as_ref()
             .and_then(|v| v.get("method").and_then(|m| m.as_str()).map(String::from));
 
         match method.as_deref() {
-            Some("initialize") | Some("notifications/initialized") | Some("ping") => {
+            Some("initialize") | Some("ping") => {
                 // Synchronous path — parse, handle, write response immediately
                 let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
                     Ok(request) => handle_request(request, &ctx),
@@ -708,6 +724,54 @@ mod tests {
         // Verify the error response we'd build
         let err_resp = error_response(Value::Null, -32700, "Parse error".to_string());
         assert_eq!(err_resp.error.unwrap().code, -32700);
+    }
+
+    // ── notification detection (main-loop raw-value peek) ───────────
+    //
+    // Regression coverage for the codex 0.130 / rmcp incident: the main
+    // event loop classifies a payload as a JSON-RPC Notification iff the
+    // raw JSON object lacks an `id` field. When this is true the server
+    // MUST NOT write any frame to stdout — strict clients tear the stdio
+    // transport down on receiving a spurious response.
+    //
+    // These tests mirror the logic inside `run_event_loop` precisely so
+    // future refactors can't silently regress detection.
+
+    fn is_notification_payload(payload: &str) -> bool {
+        let raw: Option<Value> = serde_json::from_str(payload).ok();
+        raw.as_ref()
+            .and_then(|v| v.as_object())
+            .map(|obj| !obj.contains_key("id"))
+            .unwrap_or(false)
+    }
+
+    #[test]
+    fn raw_peek_classifies_missing_id_as_notification() {
+        let payload = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#;
+        assert!(is_notification_payload(payload));
+    }
+
+    #[test]
+    fn raw_peek_classifies_explicit_null_id_as_request() {
+        // Even though serde collapses `"id": null` and missing-id to the
+        // same `Option::None` in JsonRpcRequest, the main-loop raw peek
+        // sees the physical presence of the field — i.e. a real (if
+        // spec-discouraged) Request. We dispatch and reply normally.
+        let payload = r#"{"jsonrpc":"2.0","id":null,"method":"ping"}"#;
+        assert!(!is_notification_payload(payload));
+    }
+
+    #[test]
+    fn raw_peek_classifies_numeric_id_as_request() {
+        let payload = r#"{"jsonrpc":"2.0","id":42,"method":"initialize"}"#;
+        assert!(!is_notification_payload(payload));
+    }
+
+    #[test]
+    fn raw_peek_treats_garbled_json_as_request() {
+        // Unparseable payload — fall through to the dispatch path where
+        // the parse-error frame is emitted with id: null. NOT a notification.
+        assert!(!is_notification_payload("not valid json"));
     }
 
     // ── protocol serialization round-trip ───────────────────────────

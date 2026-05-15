@@ -10,7 +10,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::error::{AppError, Result};
-use crate::models::todo::{QueryScope, TodoCreateParams, TodoPriority, TodoStatus, TodoUpdateParams};
+use crate::models::todo::{
+    QueryScope, TodoCreateParams, TodoPriority, TodoStatus, TodoUpdateParams,
+};
 use crate::services::unified_todo_repository::UnifiedTodoRepository;
 
 const SERVER_NAME: &str = "polaris-todo-mcp";
@@ -78,6 +80,12 @@ pub fn run_todo_mcp_server(config_dir: &str, workspace_path: Option<&str>) -> Re
         }
 
         let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
+            // JSON-RPC 2.0 §4.1: a Notification is a Request without an `id`
+            // field. The server MUST NOT reply to notifications. Returning
+            // any frame here makes strict clients (e.g. codex 0.130's rmcp)
+            // fail to parse it as a valid JsonRpcMessage and tear down the
+            // stdio transport. Silently consume and continue.
+            Ok(request) if request.id.is_none() => continue,
             Ok(request) => handle_request(request, &repository),
             Err(error) => JsonRpcResponse {
                 jsonrpc: "2.0",
@@ -98,11 +106,18 @@ pub fn run_todo_mcp_server(config_dir: &str, workspace_path: Option<&str>) -> Re
     Ok(())
 }
 
-fn handle_request(request: JsonRpcRequest, repository: &UnifiedTodoRepository) -> JsonRpcResponse<'static> {
+fn handle_request(
+    request: JsonRpcRequest,
+    repository: &UnifiedTodoRepository,
+) -> JsonRpcResponse<'static> {
     let id = request.id.unwrap_or(Value::Null);
 
     if request.jsonrpc != "2.0" {
-        return error_response(id, -32600, "Invalid Request: jsonrpc must be 2.0".to_string());
+        return error_response(
+            id,
+            -32600,
+            "Invalid Request: jsonrpc must be 2.0".to_string(),
+        );
     }
 
     let result = match request.method.as_str() {
@@ -111,7 +126,10 @@ fn handle_request(request: JsonRpcRequest, repository: &UnifiedTodoRepository) -
         "ping" => Ok(json!({})),
         "tools/list" => Ok(handle_tools_list()),
         "tools/call" => handle_tools_call(request.params, repository),
-        _ => Err(AppError::ValidationError(format!("Unsupported method: {}", request.method))),
+        _ => Err(AppError::ValidationError(format!(
+            "Unsupported method: {}",
+            request.method
+        ))),
     };
 
     match result {
@@ -362,7 +380,10 @@ fn handle_tools_call(params: Value, repository: &UnifiedTodoRepository) -> Resul
         .get("name")
         .and_then(Value::as_str)
         .ok_or_else(|| AppError::ValidationError("tools/call 缺少 name".to_string()))?;
-    let arguments = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
+    let arguments = params
+        .get("arguments")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
 
     match name {
         "list_todos" => execute_list_todos(arguments, repository),
@@ -382,12 +403,15 @@ fn handle_tools_call(params: Value, repository: &UnifiedTodoRepository) -> Resul
 
 fn execute_list_todos(arguments: Value, repository: &UnifiedTodoRepository) -> Result<Value> {
     let scope = parse_scope(arguments.get("scope"));
-    let status_filter = arguments.get("status").map(parse_status_value).transpose()?;
-    let priority_filter = arguments.get("priority").map(parse_priority_value).transpose()?;
-    let limit = arguments
-        .get("limit")
-        .map(parse_limit_value)
+    let status_filter = arguments
+        .get("status")
+        .map(parse_status_value)
         .transpose()?;
+    let priority_filter = arguments
+        .get("priority")
+        .map(parse_priority_value)
+        .transpose()?;
+    let limit = arguments.get("limit").map(parse_limit_value).transpose()?;
 
     let mut todos = repository.list_todos(scope)?;
 
@@ -429,7 +453,10 @@ fn execute_create_todo(arguments: Value, repository: &UnifiedTodoRepository) -> 
     let params = TodoCreateParams {
         content,
         description: optional_trimmed_string(arguments.get("description")),
-        priority: arguments.get("priority").map(parse_priority_value).transpose()?,
+        priority: arguments
+            .get("priority")
+            .map(parse_priority_value)
+            .transpose()?,
         tags: optional_string_array(arguments.get("tags"))?,
         related_files: optional_string_array(arguments.get("relatedFiles"))?,
         due_date: optional_trimmed_string(arguments.get("dueDate")),
@@ -468,8 +495,14 @@ fn execute_update_todo(arguments: Value, repository: &UnifiedTodoRepository) -> 
     let params = TodoUpdateParams {
         content: optional_trimmed_string(arguments.get("content")),
         description: optional_trimmed_string(arguments.get("description")),
-        status: arguments.get("status").map(parse_status_value).transpose()?,
-        priority: arguments.get("priority").map(parse_priority_value).transpose()?,
+        status: arguments
+            .get("status")
+            .map(parse_status_value)
+            .transpose()?,
+        priority: arguments
+            .get("priority")
+            .map(parse_priority_value)
+            .transpose()?,
         tags: optional_string_array(arguments.get("tags"))?,
         related_files: optional_string_array(arguments.get("relatedFiles"))?,
         due_date: optional_trimmed_string(arguments.get("dueDate")),
@@ -483,13 +516,19 @@ fn execute_update_todo(arguments: Value, repository: &UnifiedTodoRepository) -> 
     };
 
     let todo = repository.update_todo(&id, params)?;
-    Ok(tool_success_single(format!("已更新待办：{}", todo.content), todo))
+    Ok(tool_success_single(
+        format!("已更新待办：{}", todo.content),
+        todo,
+    ))
 }
 
 fn execute_delete_todo(arguments: Value, repository: &UnifiedTodoRepository) -> Result<Value> {
     let id = parse_id_arg(&arguments)?;
     let todo = repository.delete_todo(&id)?;
-    Ok(tool_success_single(format!("已删除待办：{}", todo.content), todo))
+    Ok(tool_success_single(
+        format!("已删除待办：{}", todo.content),
+        todo,
+    ))
 }
 
 fn execute_start_todo(arguments: Value, repository: &UnifiedTodoRepository) -> Result<Value> {
@@ -505,7 +544,10 @@ fn execute_start_todo(arguments: Value, repository: &UnifiedTodoRepository) -> R
         },
     )?;
 
-    Ok(tool_success_single(format!("已开始待办：{}", todo.content), todo))
+    Ok(tool_success_single(
+        format!("已开始待办：{}", todo.content),
+        todo,
+    ))
 }
 
 fn execute_complete_todo(arguments: Value, repository: &UnifiedTodoRepository) -> Result<Value> {
@@ -521,7 +563,10 @@ fn execute_complete_todo(arguments: Value, repository: &UnifiedTodoRepository) -
         },
     )?;
 
-    Ok(tool_success_single(format!("已完成待办：{}", todo.content), todo))
+    Ok(tool_success_single(
+        format!("已完成待办：{}", todo.content),
+        todo,
+    ))
 }
 
 fn execute_get_workspace_breakdown(repository: &UnifiedTodoRepository) -> Result<Value> {
@@ -638,7 +683,9 @@ fn parse_limit_value(value: &Value) -> Result<u64> {
         .as_u64()
         .ok_or_else(|| AppError::ValidationError("limit 必须是正整数".to_string()))?;
     if limit == 0 || limit > 200 {
-        return Err(AppError::ValidationError("limit 必须在 1 到 200 之间".to_string()));
+        return Err(AppError::ValidationError(
+            "limit 必须在 1 到 200 之间".to_string(),
+        ));
     }
     Ok(limit)
 }
@@ -658,7 +705,9 @@ fn parse_non_negative_number(value: &Value) -> Result<f64> {
         .as_f64()
         .ok_or_else(|| AppError::ValidationError("数值字段必须是数字".to_string()))?;
     if number < 0.0 {
-        return Err(AppError::ValidationError("数值字段必须大于等于 0".to_string()));
+        return Err(AppError::ValidationError(
+            "数值字段必须大于等于 0".to_string(),
+        ));
     }
     Ok(number)
 }
@@ -724,8 +773,14 @@ fn optional_string_array(value: Option<&Value>) -> Result<Option<Vec<String>>> {
 
 pub fn current_tool_definitions() -> BTreeMap<&'static str, &'static str> {
     BTreeMap::from([
-        ("list_todos", "列出待办事项。默认仅当前工作区，可通过 scope 参数查询全部。"),
-        ("create_todo", "创建一条新待办事项。待办将关联到当前工作区。"),
+        (
+            "list_todos",
+            "列出待办事项。默认仅当前工作区，可通过 scope 参数查询全部。",
+        ),
+        (
+            "create_todo",
+            "创建一条新待办事项。待办将关联到当前工作区。",
+        ),
         ("update_todo", "更新一条待办事项。"),
         ("delete_todo", "删除一条待办事项。"),
         ("start_todo", "将待办标记为进行中。"),
@@ -750,8 +805,14 @@ mod tests {
     #[test]
     fn initialize_returns_protocol_metadata() {
         let value = handle_initialize().unwrap();
-        assert_eq!(value["protocolVersion"], Value::String(PROTOCOL_VERSION.to_string()));
-        assert_eq!(value["serverInfo"]["name"], Value::String(SERVER_NAME.to_string()));
+        assert_eq!(
+            value["protocolVersion"],
+            Value::String(PROTOCOL_VERSION.to_string())
+        );
+        assert_eq!(
+            value["serverInfo"]["name"],
+            Value::String(SERVER_NAME.to_string())
+        );
     }
 
     #[test]
@@ -761,5 +822,35 @@ mod tests {
         let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
         assert!(names.contains(&"get_workspace_breakdown"));
         assert!(names.contains(&"list_todos"));
+    }
+
+    // Regression: JSON-RPC 2.0 §4.1 — a Notification is a Request whose `id`
+    // field is absent. The main loop relies on `request.id.is_none()` to
+    // suppress the response frame. If anyone changes `JsonRpcRequest::id`
+    // (e.g. drops `Option`, adds `#[serde(default)]`), this test will catch
+    // it before strict clients (codex 0.130+) break in production.
+    #[test]
+    fn notification_is_detected_when_id_field_is_absent() {
+        let payload = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#;
+        let request: JsonRpcRequest = serde_json::from_str(payload).unwrap();
+        assert!(
+            request.id.is_none(),
+            "missing id field must deserialize to None"
+        );
+    }
+
+    // Document a known spec edge case: serde's default `Option<Value>`
+    // deserializer treats both "field absent" and "field present but JSON
+    // null" as `None`. Per JSON-RPC 2.0 a Request with `"id": null` is
+    // technically legal, so the main loop will misclassify it as a
+    // Notification and suppress the response. In practice no real MCP
+    // client (Claude Code, codex) sends a null-id request, so this trade-off
+    // is acceptable. If this assumption ever changes, swap `id: Option<Value>`
+    // for a custom deserializer that distinguishes Missing from JsonNull.
+    #[test]
+    fn explicit_null_id_collapses_to_none_by_serde_default() {
+        let payload = r#"{"jsonrpc":"2.0","id":null,"method":"ping"}"#;
+        let request: JsonRpcRequest = serde_json::from_str(payload).unwrap();
+        assert!(request.id.is_none());
     }
 }

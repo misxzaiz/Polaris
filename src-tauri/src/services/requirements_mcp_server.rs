@@ -81,6 +81,12 @@ pub fn run_requirements_mcp_server(config_dir: &str, workspace_path: Option<&str
         }
 
         let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
+            // JSON-RPC 2.0 §4.1: a Notification is a Request without an `id`
+            // field. The server MUST NOT reply to notifications. Returning
+            // any frame here makes strict clients (e.g. codex 0.130's rmcp)
+            // fail to parse it as a valid JsonRpcMessage and tear down the
+            // stdio transport. Silently consume and continue.
+            Ok(request) if request.id.is_none() => continue,
             Ok(request) => handle_request(request, &repository),
             Err(error) => JsonRpcResponse {
                 jsonrpc: "2.0",
@@ -101,11 +107,18 @@ pub fn run_requirements_mcp_server(config_dir: &str, workspace_path: Option<&str
     Ok(())
 }
 
-fn handle_request(request: JsonRpcRequest, repository: &UnifiedRequirementRepository) -> JsonRpcResponse<'static> {
+fn handle_request(
+    request: JsonRpcRequest,
+    repository: &UnifiedRequirementRepository,
+) -> JsonRpcResponse<'static> {
     let id = request.id.unwrap_or(Value::Null);
 
     if request.jsonrpc != "2.0" {
-        return error_response(id, -32600, "Invalid Request: jsonrpc must be 2.0".to_string());
+        return error_response(
+            id,
+            -32600,
+            "Invalid Request: jsonrpc must be 2.0".to_string(),
+        );
     }
 
     let result = match request.method.as_str() {
@@ -114,7 +127,10 @@ fn handle_request(request: JsonRpcRequest, repository: &UnifiedRequirementReposi
         "ping" => Ok(json!({})),
         "tools/list" => Ok(handle_tools_list()),
         "tools/call" => handle_tools_call(request.params, repository),
-        _ => Err(AppError::ValidationError(format!("Unsupported method: {}", request.method))),
+        _ => Err(AppError::ValidationError(format!(
+            "Unsupported method: {}",
+            request.method
+        ))),
     };
 
     match result {
@@ -256,7 +272,10 @@ fn handle_tools_call(params: Value, repository: &UnifiedRequirementRepository) -
         .get("name")
         .and_then(Value::as_str)
         .ok_or_else(|| AppError::ValidationError("tools/call 缺少 name".to_string()))?;
-    let arguments = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
+    let arguments = params
+        .get("arguments")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
 
     match name {
         "list_requirements" => execute_list_requirements(arguments, repository),
@@ -273,10 +292,19 @@ fn handle_tools_call(params: Value, repository: &UnifiedRequirementRepository) -
 // Tool implementations
 // ============================================================================
 
-fn execute_list_requirements(arguments: Value, repository: &UnifiedRequirementRepository) -> Result<Value> {
+fn execute_list_requirements(
+    arguments: Value,
+    repository: &UnifiedRequirementRepository,
+) -> Result<Value> {
     let scope = parse_scope(arguments.get("scope"));
-    let status_filter = arguments.get("status").map(parse_status_value).transpose()?;
-    let priority_filter = arguments.get("priority").map(parse_priority_value).transpose()?;
+    let status_filter = arguments
+        .get("status")
+        .map(parse_status_value)
+        .transpose()?;
+    let priority_filter = arguments
+        .get("priority")
+        .map(parse_priority_value)
+        .transpose()?;
     let limit = arguments.get("limit").map(parse_limit_value).transpose()?;
 
     let mut requirements = repository.list_requirements(scope)?;
@@ -305,7 +333,10 @@ fn execute_list_requirements(arguments: Value, repository: &UnifiedRequirementRe
     ))
 }
 
-fn execute_create_requirement(arguments: Value, repository: &UnifiedRequirementRepository) -> Result<Value> {
+fn execute_create_requirement(
+    arguments: Value,
+    repository: &UnifiedRequirementRepository,
+) -> Result<Value> {
     let title = arguments
         .get("title")
         .and_then(Value::as_str)
@@ -325,10 +356,16 @@ fn execute_create_requirement(arguments: Value, repository: &UnifiedRequirementR
     let params = RequirementCreateParams {
         title,
         description,
-        priority: arguments.get("priority").map(parse_priority_value).transpose()?,
+        priority: arguments
+            .get("priority")
+            .map(parse_priority_value)
+            .transpose()?,
         tags: optional_string_array(arguments.get("tags"))?,
         has_prototype: arguments.get("hasPrototype").and_then(Value::as_bool),
-        generated_by: arguments.get("generatedBy").map(parse_source_value).transpose()?,
+        generated_by: arguments
+            .get("generatedBy")
+            .map(parse_source_value)
+            .transpose()?,
         generator_task_id: optional_trimmed_string(arguments.get("generatorTaskId")),
     };
 
@@ -346,36 +383,63 @@ fn execute_create_requirement(arguments: Value, repository: &UnifiedRequirementR
     ))
 }
 
-fn execute_update_requirement(arguments: Value, repository: &UnifiedRequirementRepository) -> Result<Value> {
+fn execute_update_requirement(
+    arguments: Value,
+    repository: &UnifiedRequirementRepository,
+) -> Result<Value> {
     let id = parse_id_arg(&arguments)?;
 
     let updates = RequirementUpdateParams {
         title: optional_trimmed_string(arguments.get("title")),
         description: optional_trimmed_string(arguments.get("description")),
-        status: arguments.get("status").map(parse_status_value).transpose()?,
-        priority: arguments.get("priority").map(parse_priority_value).transpose()?,
+        status: arguments
+            .get("status")
+            .map(parse_status_value)
+            .transpose()?,
+        priority: arguments
+            .get("priority")
+            .map(parse_priority_value)
+            .transpose()?,
         tags: optional_string_array(arguments.get("tags"))?,
         prototype_path: optional_trimmed_string(arguments.get("prototypePath")),
         has_prototype: arguments.get("hasPrototype").and_then(Value::as_bool),
         review_note: optional_trimmed_string(arguments.get("reviewNote")),
-        execute_config: arguments.get("executeConfig").map(parse_execute_config).transpose()?,
+        execute_config: arguments
+            .get("executeConfig")
+            .map(parse_execute_config)
+            .transpose()?,
         execute_log: optional_trimmed_string(arguments.get("executeLog")),
         execute_error: optional_trimmed_string(arguments.get("executeError")),
-        generated_by: arguments.get("generatedBy").map(parse_source_value).transpose()?,
+        generated_by: arguments
+            .get("generatedBy")
+            .map(parse_source_value)
+            .transpose()?,
         session_id: optional_trimmed_string(arguments.get("sessionId")),
     };
 
     let requirement = repository.update_requirement(&id, updates)?;
-    Ok(tool_success_single(format!("已更新需求：{}", requirement.title), requirement))
+    Ok(tool_success_single(
+        format!("已更新需求：{}", requirement.title),
+        requirement,
+    ))
 }
 
-fn execute_delete_requirement(arguments: Value, repository: &UnifiedRequirementRepository) -> Result<Value> {
+fn execute_delete_requirement(
+    arguments: Value,
+    repository: &UnifiedRequirementRepository,
+) -> Result<Value> {
     let id = parse_id_arg(&arguments)?;
     let requirement = repository.delete_requirement(&id)?;
-    Ok(tool_success_single(format!("已删除需求：{}", requirement.title), requirement))
+    Ok(tool_success_single(
+        format!("已删除需求：{}", requirement.title),
+        requirement,
+    ))
 }
 
-fn execute_save_prototype(arguments: Value, repository: &UnifiedRequirementRepository) -> Result<Value> {
+fn execute_save_prototype(
+    arguments: Value,
+    repository: &UnifiedRequirementRepository,
+) -> Result<Value> {
     let id = parse_id_arg(&arguments)?;
     let html = arguments
         .get("html")
@@ -510,7 +574,9 @@ fn parse_limit_value(value: &Value) -> Result<u64> {
         .as_u64()
         .ok_or_else(|| AppError::ValidationError("limit 必须是正整数".to_string()))?;
     if limit == 0 || limit > 200 {
-        return Err(AppError::ValidationError("limit 必须在 1 到 200 之间".to_string()));
+        return Err(AppError::ValidationError(
+            "limit 必须在 1 到 200 之间".to_string(),
+        ));
     }
     Ok(limit)
 }
@@ -599,8 +665,14 @@ fn optional_string_array(value: Option<&Value>) -> Result<Option<Vec<String>>> {
 
 pub fn current_tool_definitions() -> BTreeMap<&'static str, &'static str> {
     BTreeMap::from([
-        ("list_requirements", "列出需求。默认仅当前工作区，可通过 scope 参数查询全部。"),
-        ("create_requirement", "创建一条新需求。需求将关联到当前工作区。"),
+        (
+            "list_requirements",
+            "列出需求。默认仅当前工作区，可通过 scope 参数查询全部。",
+        ),
+        (
+            "create_requirement",
+            "创建一条新需求。需求将关联到当前工作区。",
+        ),
         ("update_requirement", "更新一条需求。"),
         ("delete_requirement", "删除一条需求。"),
         ("save_requirement_prototype", "保存需求原型 HTML。"),
@@ -623,7 +695,36 @@ mod tests {
     #[test]
     fn initialize_returns_protocol_metadata() {
         let value = handle_initialize().unwrap();
-        assert_eq!(value["protocolVersion"], Value::String(PROTOCOL_VERSION.to_string()));
-        assert_eq!(value["serverInfo"]["name"], Value::String(SERVER_NAME.to_string()));
+        assert_eq!(
+            value["protocolVersion"],
+            Value::String(PROTOCOL_VERSION.to_string())
+        );
+        assert_eq!(
+            value["serverInfo"]["name"],
+            Value::String(SERVER_NAME.to_string())
+        );
+    }
+
+    // Regression: JSON-RPC 2.0 §4.1 — a Notification is a Request whose `id`
+    // field is absent. The main loop relies on `request.id.is_none()` to
+    // suppress the response frame. If anyone changes `JsonRpcRequest::id`
+    // (e.g. drops `Option`, adds `#[serde(default)]`), this test will catch
+    // it before strict clients (codex 0.130+) break in production.
+    #[test]
+    fn notification_is_detected_when_id_field_is_absent() {
+        let payload = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#;
+        let request: JsonRpcRequest = serde_json::from_str(payload).unwrap();
+        assert!(
+            request.id.is_none(),
+            "missing id field must deserialize to None"
+        );
+    }
+
+    // Document a known spec edge case: see todo_mcp_server.rs for full notes.
+    #[test]
+    fn explicit_null_id_collapses_to_none_by_serde_default() {
+        let payload = r#"{"jsonrpc":"2.0","id":null,"method":"ping"}"#;
+        let request: JsonRpcRequest = serde_json::from_str(payload).unwrap();
+        assert!(request.id.is_none());
     }
 }

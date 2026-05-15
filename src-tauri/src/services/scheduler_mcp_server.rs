@@ -77,6 +77,12 @@ pub fn run_scheduler_mcp_server(config_dir: &str, workspace_path: Option<&str>) 
         }
 
         let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
+            // JSON-RPC 2.0 §4.1: a Notification is a Request without an `id`
+            // field. The server MUST NOT reply to notifications. Returning
+            // any frame here makes strict clients (e.g. codex 0.130's rmcp)
+            // fail to parse it as a valid JsonRpcMessage and tear down the
+            // stdio transport. Silently consume and continue.
+            Ok(request) if request.id.is_none() => continue,
             Ok(request) => handle_request(request, &repository),
             Err(error) => JsonRpcResponse {
                 jsonrpc: "2.0",
@@ -97,11 +103,18 @@ pub fn run_scheduler_mcp_server(config_dir: &str, workspace_path: Option<&str>) 
     Ok(())
 }
 
-fn handle_request(request: JsonRpcRequest, repository: &UnifiedSchedulerRepository) -> JsonRpcResponse<'static> {
+fn handle_request(
+    request: JsonRpcRequest,
+    repository: &UnifiedSchedulerRepository,
+) -> JsonRpcResponse<'static> {
     let id = request.id.unwrap_or(Value::Null);
 
     if request.jsonrpc != "2.0" {
-        return error_response(id, -32600, "Invalid Request: jsonrpc must be 2.0".to_string());
+        return error_response(
+            id,
+            -32600,
+            "Invalid Request: jsonrpc must be 2.0".to_string(),
+        );
     }
 
     let result = match request.method.as_str() {
@@ -110,7 +123,10 @@ fn handle_request(request: JsonRpcRequest, repository: &UnifiedSchedulerReposito
         "ping" => Ok(json!({})),
         "tools/list" => Ok(handle_tools_list()),
         "tools/call" => handle_tools_call(request.params, repository),
-        _ => Err(AppError::ValidationError(format!("Unsupported method: {}", request.method))),
+        _ => Err(AppError::ValidationError(format!(
+            "Unsupported method: {}",
+            request.method
+        ))),
     };
 
     match result {
@@ -243,7 +259,10 @@ fn handle_tools_call(params: Value, repository: &UnifiedSchedulerRepository) -> 
         .get("name")
         .and_then(Value::as_str)
         .ok_or_else(|| AppError::ValidationError("tools/call 缺少 name".to_string()))?;
-    let arguments = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
+    let arguments = params
+        .get("arguments")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
 
     match name {
         "list_tasks" => execute_list_tasks(repository),
@@ -341,7 +360,10 @@ fn execute_create_task(arguments: Value, repository: &UnifiedSchedulerRepository
 
     let params = CreateTaskParams {
         name,
-        enabled: arguments.get("enabled").and_then(Value::as_bool).unwrap_or(true),
+        enabled: arguments
+            .get("enabled")
+            .and_then(Value::as_bool)
+            .unwrap_or(true),
         trigger_type,
         trigger_value,
         engine_id,
@@ -500,7 +522,10 @@ fn parse_trigger_type(value: &str) -> Result<TriggerType> {
         "cron" => Ok(TriggerType::Cron),
         "interval" => Ok(TriggerType::Interval),
         "after_completion" => Ok(TriggerType::AfterCompletion),
-        _ => Err(AppError::ValidationError(format!("无效的 triggerType: {}", value))),
+        _ => Err(AppError::ValidationError(format!(
+            "无效的 triggerType: {}",
+            value
+        ))),
     }
 }
 
@@ -552,7 +577,36 @@ mod tests {
     #[test]
     fn initialize_returns_protocol_metadata() {
         let value = handle_initialize().unwrap();
-        assert_eq!(value["protocolVersion"], Value::String(PROTOCOL_VERSION.to_string()));
-        assert_eq!(value["serverInfo"]["name"], Value::String(SERVER_NAME.to_string()));
+        assert_eq!(
+            value["protocolVersion"],
+            Value::String(PROTOCOL_VERSION.to_string())
+        );
+        assert_eq!(
+            value["serverInfo"]["name"],
+            Value::String(SERVER_NAME.to_string())
+        );
+    }
+
+    // Regression: JSON-RPC 2.0 §4.1 — a Notification is a Request whose `id`
+    // field is absent. The main loop relies on `request.id.is_none()` to
+    // suppress the response frame. If anyone changes `JsonRpcRequest::id`
+    // (e.g. drops `Option`, adds `#[serde(default)]`), this test will catch
+    // it before strict clients (codex 0.130+) break in production.
+    #[test]
+    fn notification_is_detected_when_id_field_is_absent() {
+        let payload = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#;
+        let request: JsonRpcRequest = serde_json::from_str(payload).unwrap();
+        assert!(
+            request.id.is_none(),
+            "missing id field must deserialize to None"
+        );
+    }
+
+    // Document a known spec edge case: see todo_mcp_server.rs for full notes.
+    #[test]
+    fn explicit_null_id_collapses_to_none_by_serde_default() {
+        let payload = r#"{"jsonrpc":"2.0","id":null,"method":"ping"}"#;
+        let request: JsonRpcRequest = serde_json::from_str(payload).unwrap();
+        assert!(request.id.is_none());
     }
 }

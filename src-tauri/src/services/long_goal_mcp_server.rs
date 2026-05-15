@@ -71,6 +71,12 @@ pub fn run_long_goal_mcp_server(_config_dir: &str, workspace_path: Option<&str>)
         }
 
         let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
+            // JSON-RPC 2.0 §4.1: a Notification is a Request without an `id`
+            // field. The server MUST NOT reply to notifications. Returning
+            // any frame here makes strict clients (e.g. codex 0.130's rmcp)
+            // fail to parse it as a valid JsonRpcMessage and tear down the
+            // stdio transport. Silently consume and continue.
+            Ok(request) if request.id.is_none() => continue,
             Ok(request) => handle_request(request, &workspace_path),
             Err(error) => JsonRpcResponse {
                 jsonrpc: "2.0",
@@ -516,5 +522,28 @@ mod tests {
             value["serverInfo"]["name"],
             Value::String(SERVER_NAME.to_string())
         );
+    }
+
+    // Regression: JSON-RPC 2.0 §4.1 — a Notification is a Request whose `id`
+    // field is absent. The main loop relies on `request.id.is_none()` to
+    // suppress the response frame. If anyone changes `JsonRpcRequest::id`
+    // (e.g. drops `Option`, adds `#[serde(default)]`), this test will catch
+    // it before strict clients (codex 0.130+) break in production.
+    #[test]
+    fn notification_is_detected_when_id_field_is_absent() {
+        let payload = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#;
+        let request: JsonRpcRequest = serde_json::from_str(payload).unwrap();
+        assert!(
+            request.id.is_none(),
+            "missing id field must deserialize to None"
+        );
+    }
+
+    // Document a known spec edge case: see todo_mcp_server.rs for full notes.
+    #[test]
+    fn explicit_null_id_collapses_to_none_by_serde_default() {
+        let payload = r#"{"jsonrpc":"2.0","id":null,"method":"ping"}"#;
+        let request: JsonRpcRequest = serde_json::from_str(payload).unwrap();
+        assert!(request.id.is_none());
     }
 }
