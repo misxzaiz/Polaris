@@ -388,6 +388,61 @@ async fn session_patch_returns_404() {
 }
 
 // ============================================================================
+// Terminal IPC Bridge Tests
+// ============================================================================
+
+#[tokio::test]
+async fn terminal_list_available_via_web_ipc() {
+    let app = test_app();
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/api/terminal-list")
+        .header(AUTHORIZATION, format!("Bearer {}", md5_of(TEST_TOKEN)))
+        .header(CONTENT_TYPE, "application/json")
+        .body(Body::from(r#"{}"#))
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(json.as_array().is_some());
+}
+
+#[tokio::test]
+async fn terminal_discover_scripts_available_via_web_ipc() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let root = temp_dir.path();
+    std::fs::write(
+        root.join("package.json"),
+        r#"{"scripts":{"test":"vitest run"}}"#,
+    )
+    .unwrap();
+    std::fs::write(root.join("package-lock.json"), "{}").unwrap();
+
+    let app = test_app();
+    let body = serde_json::json!({
+        "workspacePath": root.to_string_lossy(),
+    })
+    .to_string();
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/api/terminal-discover-scripts")
+        .header(AUTHORIZATION, format!("Bearer {}", md5_of(TEST_TOKEN)))
+        .header(CONTENT_TYPE, "application/json")
+        .body(Body::from(body))
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(res.into_body(), 4096).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let scripts = json.as_array().unwrap();
+    assert_eq!(scripts.len(), 1);
+    assert_eq!(scripts[0]["command"], "npm run test");
+}
+
+// ============================================================================
 // Chat API Tests
 // ============================================================================
 

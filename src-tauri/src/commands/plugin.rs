@@ -55,6 +55,7 @@ pub async fn plugin_discover(
     ))
 }
 
+#[cfg(feature = "tauri-app")]
 fn get_plugin_config_dir(state: &State<'_, AppState>) -> Result<std::path::PathBuf> {
     state.app_config_dir.get().cloned().or_else(|| {
         dirs::config_dir().map(|dir| dir.join("claude-code-pro"))

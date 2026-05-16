@@ -12,6 +12,7 @@ use portable_pty::{native_pty_system, CommandBuilder, PtyPair, PtySize};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "tauri-app")]
 use tauri::{AppHandle, Emitter};
+use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
@@ -57,6 +58,51 @@ pub struct TerminalExitEvent {
     pub exit_code: Option<i32>,
 }
 
+/// 终端事件输出目标。
+///
+/// 桌面端通过 Tauri event system 通知 WebView；Web 模式通过 broadcast channel
+/// 转发到 WebSocket。事件 payload 保持和前端现有类型一致。
+#[derive(Clone)]
+pub enum TerminalEventSink {
+    #[cfg(feature = "tauri-app")]
+    Tauri(AppHandle),
+    Web(broadcast::Sender<String>),
+}
+
+impl TerminalEventSink {
+    fn emit_output(&self, event: TerminalOutputEvent) {
+        match self {
+            #[cfg(feature = "tauri-app")]
+            TerminalEventSink::Tauri(app_handle) => {
+                let _ = app_handle.emit("terminal:output", event);
+            }
+            TerminalEventSink::Web(tx) => {
+                let payload = serde_json::json!({
+                    "event": "terminal:output",
+                    "payload": event,
+                });
+                let _ = tx.send(payload.to_string());
+            }
+        }
+    }
+
+    fn emit_exit(&self, event: TerminalExitEvent) {
+        match self {
+            #[cfg(feature = "tauri-app")]
+            TerminalEventSink::Tauri(app_handle) => {
+                let _ = app_handle.emit("terminal:exit", event);
+            }
+            TerminalEventSink::Web(tx) => {
+                let payload = serde_json::json!({
+                    "event": "terminal:exit",
+                    "payload": event,
+                });
+                let _ = tx.send(payload.to_string());
+            }
+        }
+    }
+}
+
 /// 终端会话管理器
 pub struct TerminalManager {
     /// PTY 会话映射
@@ -94,10 +140,9 @@ impl TerminalManager {
     }
 
     /// 创建新的终端会话
-    #[cfg(feature = "tauri-app")]
     pub fn create_session(
         &self,
-        app_handle: AppHandle,
+        event_sink: TerminalEventSink,
         name: Option<String>,
         cwd: Option<String>,
         cols: u16,
@@ -188,7 +233,7 @@ impl TerminalManager {
 
         // 启动读取线程
         let session_id_clone = session_id.clone();
-        let app_handle_clone = app_handle.clone();
+        let event_sink_clone = event_sink.clone();
         let closed_sessions = Arc::clone(&self.closed_sessions);
         let thread_handle = thread::spawn(move || {
             let mut buffer = [0u8; 4096];
@@ -202,7 +247,7 @@ impl TerminalManager {
                         if let Ok(mut closed) = closed_sessions.lock() {
                             closed.insert(session_id_clone.clone());
                         }
-                        let _ = app_handle_clone.emit("terminal:exit", TerminalExitEvent {
+                        event_sink_clone.emit_exit(TerminalExitEvent {
                             session_id: session_id_clone.clone(),
                             exit_code,
                         });
@@ -214,7 +259,7 @@ impl TerminalManager {
                             &base64::engine::general_purpose::STANDARD,
                             &buffer[..n]
                         );
-                        let _ = app_handle_clone.emit("terminal:output", TerminalOutputEvent {
+                        event_sink_clone.emit_output(TerminalOutputEvent {
                             session_id: session_id_clone.clone(),
                             data,
                         });
@@ -381,7 +426,7 @@ pub fn terminal_create(
         .map_err(|e| AppError::StateError(e.to_string()))?;
 
     manager.create_session(
-        app_handle,
+        TerminalEventSink::Tauri(app_handle),
         name,
         cwd,
         cols.unwrap_or(80),
