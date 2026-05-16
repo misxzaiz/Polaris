@@ -20,6 +20,7 @@ import { ForkIndicator } from './ForkIndicator'
 import { SessionTree } from './SessionTree'
 import { ForkSessionDialog } from './ForkSessionDialog'
 import { getEngineFullName } from '../../utils/engineDisplay'
+import { getPathBasename, normalizeWorkspacePath } from '../../utils/workspacePath'
 
 const log = createLogger('SessionHistoryPanel')
 
@@ -46,6 +47,34 @@ type ViewMode = 'list' | 'tree'
 
 /** 日期分组顺序 */
 const DATE_GROUP_ORDER: DateGroup[] = ['today', 'yesterday', 'thisWeek', 'earlier']
+
+async function resolveForkWorkspaceId(
+  item: UnifiedHistoryItem,
+  fallbackWorkspaceId?: string | null
+): Promise<string | undefined> {
+  const projectPath = item.projectPath?.trim()
+  const workspaceState = useWorkspaceStore.getState()
+
+  if (projectPath) {
+    const normalizedProjectPath = normalizeWorkspacePath(projectPath)
+    let workspace = workspaceState.workspaces.find(
+      w => normalizeWorkspacePath(w.path) === normalizedProjectPath
+    )
+    if (workspace) return workspace.id
+
+    try {
+      await workspaceState.createWorkspace(getPathBasename(projectPath), projectPath, false)
+      workspace = useWorkspaceStore.getState().workspaces.find(
+        w => normalizeWorkspacePath(w.path) === normalizedProjectPath
+      )
+      if (workspace) return workspace.id
+    } catch (error) {
+      log.warn('Failed to resolve fork workspace', { error: String(error), projectPath })
+    }
+  }
+
+  return fallbackWorkspaceId ?? undefined
+}
 
 interface SessionHistoryPanelProps {
   onClose?: () => void
@@ -214,11 +243,13 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
       const isClaudeNative = item.source === 'claude-code-native'
       const title = branchName || `Fork: ${item.title}`
       const prevActiveId = sessionStoreManager.getState().activeSessionId
+      const workspaceId = await resolveForkWorkspaceId(item, currentWorkspace?.id)
       const newSessionId = sessionStoreManager.getState().createSessionFromHistory(
         messages,
         null, // 不传 conversationId，确保发消息走 start_chat
         {
           title,
+          workspaceId,
           forkFromId: isClaudeNative ? item.id : undefined,
           engineId: item.engineId,
         },
@@ -229,6 +260,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
         sourceId: item.id,
         branchName,
         isClaudeNative,
+        workspaceId,
       })
 
       // 3. 多窗口模式下，恢复 activeSessionId 到原来的会话，不抢焦点

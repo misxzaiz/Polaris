@@ -15,6 +15,7 @@ import { useConfigStore } from '../stores/configStore'
 import { getClaudeCodeHistoryService } from './claudeCodeHistoryService'
 import { getCodexHistoryService } from './codexHistoryService'
 import { normalizeEngineId } from '../utils/engineDisplay'
+import { getPathBasename, normalizeWorkspacePath } from '../utils/workspacePath'
 
 const log = createLogger('HistoryService')
 
@@ -79,13 +80,6 @@ export interface PagedHistoryResult {
 /** 历史查询范围 */
 export type HistoryScope = 'workspace' | 'global'
 export type HistoryEngineFilter = Extract<EngineId, 'claude-code' | 'codex'>
-
-/** 从路径中提取名称 */
-function getPathBasename(pathStr: string): string {
-  const normalized = pathStr.replace(/\\/g, '/')
-  const parts = normalized.split('/')
-  return parts[parts.length - 1] || pathStr
-}
 
 function withAssistantEngineId(messages: ChatMessage[], engineId: EngineId): ChatMessage[] {
   return messages.map(message => {
@@ -247,8 +241,11 @@ export const historyService = {
       let workspaceId: string | undefined
 
       if (projectPath) {
+        const normalizedProjectPath = normalizeWorkspacePath(projectPath)
         const workspaces = useWorkspaceStore.getState().workspaces
-        const existingWorkspace = workspaces.find(w => w.path === projectPath)
+        const existingWorkspace = workspaces.find(
+          w => normalizeWorkspacePath(w.path) === normalizedProjectPath
+        )
 
         if (existingWorkspace) {
           workspaceId = existingWorkspace.id
@@ -256,7 +253,9 @@ export const historyService = {
           const workspaceName = getPathBasename(projectPath)
           try {
             await useWorkspaceStore.getState().createWorkspace(workspaceName, projectPath, false)
-            const newWorkspace = useWorkspaceStore.getState().workspaces.find(w => w.path === projectPath)
+            const newWorkspace = useWorkspaceStore.getState().workspaces.find(
+              w => normalizeWorkspacePath(w.path) === normalizedProjectPath
+            )
             if (newWorkspace) workspaceId = newWorkspace.id
           } catch (e) {
             log.warn('创建工作区失败，将创建自由会话', { error: String(e), projectPath })
