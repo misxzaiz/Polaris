@@ -27,6 +27,12 @@ export interface ConversationRound {
   messageIndices: number[];
 }
 
+/** 轮次覆盖的消息索引范围 */
+export interface ConversationRoundBounds {
+  startIndex: number;
+  endIndex: number;
+}
+
 /** 从消息内容中提取纯文本摘要 */
 function extractSummary(content: string, maxLength = 40): string {
   const trimmed = content.trim();
@@ -144,4 +150,51 @@ export function groupConversationRounds(messages: ChatMessage[]): ConversationRo
   }
 
   return rounds;
+}
+
+/** 获取轮次覆盖的消息索引范围 */
+export function getRoundBounds(round: ConversationRound): ConversationRoundBounds | null {
+  if (round.messageIndices.length === 0) return null;
+
+  return {
+    startIndex: Math.min(...round.messageIndices),
+    endIndex: Math.max(...round.messageIndices),
+  };
+}
+
+/** 获取点击轮次时应滚动到的消息索引 */
+export function getRoundScrollTargetIndex(round: ConversationRound): number | null {
+  return round.messageIndices[0] ?? null;
+}
+
+/**
+ * 根据当前可视消息范围查找应高亮的轮次。
+ *
+ * 优先选择包含视口中心消息索引的轮次；如果中心落在轮次间隙，
+ * 回退到第一个与可视范围重叠的轮次。
+ */
+export function findCurrentRoundIndexForRange(
+  rounds: ConversationRound[],
+  startIndex: number,
+  endIndex: number
+): number {
+  if (rounds.length === 0) return -1;
+
+  const visibleStart = Math.min(startIndex, endIndex);
+  const visibleEnd = Math.max(startIndex, endIndex);
+  const centerIndex = Math.floor((visibleStart + visibleEnd) / 2);
+
+  const centerRoundIndex = rounds.findIndex((round) => {
+    const bounds = getRoundBounds(round);
+    return !!bounds && centerIndex >= bounds.startIndex && centerIndex <= bounds.endIndex;
+  });
+
+  if (centerRoundIndex >= 0) {
+    return centerRoundIndex;
+  }
+
+  return rounds.findIndex((round) => {
+    const bounds = getRoundBounds(round);
+    return !!bounds && bounds.endIndex >= visibleStart && bounds.startIndex <= visibleEnd;
+  });
 }

@@ -109,7 +109,7 @@ export function ChatNavigator({
     return () => clearTimers();
   }, [clearTimers]);
 
-  // 面板定位
+  // 面板定位：相对当前聊天消息区域定位，避免在弹窗场景跑到窗口边缘
   const panelStyle = useMemo(() => {
     if (isCompact) {
       return {
@@ -156,11 +156,16 @@ export function ChatNavigator({
   }, []);
 
   // 点击面板外部关闭（触摸模式）
-  const containerRef = useRef<HTMLDivElement>(null);
+  const floatingBallRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!isPanelVisible || !isCompact) return;
     const handleClickOutside = (e: MouseEvent | TouchEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      const inFloatingBall = floatingBallRef.current?.contains(target) ?? false;
+      const inPanel = panelRef.current?.contains(target) ?? false;
+
+      if (!inFloatingBall && !inPanel) {
         setIsPanelVisible(false);
       }
     };
@@ -177,14 +182,14 @@ export function ChatNavigator({
   }
 
   return (
-    <>
-      {/* 贴边悬浮球 - 固定在右边缘垂直居中 */}
+    <div className="absolute inset-0 pointer-events-none z-40">
+      {/* 贴边悬浮球 - 位于当前聊天区域右边缘 */}
       <div
-        ref={containerRef}
+        ref={floatingBallRef}
         className={clsx(
-          'fixed right-0 top-1/2 -translate-y-1/2',
+          'absolute right-0 top-1/2 -translate-y-1/2',
           // 尺寸：紧凑模式更大方便触摸
-          isCompact ? 'w-9 h-9 -mr-0 rounded-l-xl' : 'w-7 h-12 -mr-3 rounded-l-xl',
+          isCompact ? 'w-9 h-9 rounded-l-xl' : 'w-7 h-12 rounded-l-xl',
           // 实心背景
           'bg-[#1A1A1F]',
           'border border-border/50 border-r-0',
@@ -192,7 +197,7 @@ export function ChatNavigator({
           // 内容布局
           'flex items-center justify-center',
           // 交互
-          'cursor-pointer transition-all duration-150',
+          'pointer-events-auto cursor-pointer transition-all duration-150',
           'group',
           // 悬停状态
           isPanelVisible
@@ -229,6 +234,7 @@ export function ChatNavigator({
       {/* 悬浮面板 */}
       {isPanelVisible && (
         <div
+          ref={panelRef}
           className={clsx(
             isCompact
               ? 'w-auto bg-[#1A1A1F]'
@@ -236,7 +242,7 @@ export function ChatNavigator({
             'border border-border rounded-lg shadow-lg shadow-primary/10',
             'overflow-hidden animate-in fade-in zoom-in-95 duration-150',
             'pointer-events-auto flex flex-col',
-            'z-50'
+            'absolute z-50'
           )}
           style={panelStyle}
           onMouseEnter={handlePanelMouseEnter}
@@ -325,6 +331,6 @@ export function ChatNavigator({
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

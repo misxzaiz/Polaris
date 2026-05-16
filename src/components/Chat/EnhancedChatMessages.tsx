@@ -21,7 +21,11 @@ import { ChevronDown } from 'lucide-react';
 import type { ChatMessage, AssistantChatMessage, TextBlock } from '../../types';
 import { useActiveSessionMessages, useActiveSessionStreaming, useSessionMessages, useSessionStreaming } from '../../stores/conversationStore/useActiveSession';
 import { sessionStoreManager } from '../../stores/conversationStore/sessionStoreManager';
-import { groupConversationRounds } from '../../utils/conversationRounds';
+import {
+  findCurrentRoundIndexForRange,
+  getRoundScrollTargetIndex,
+  groupConversationRounds,
+} from '../../utils/conversationRounds';
 import { ChatNavigator } from './ChatNavigator';
 import { useMessageSearch, MessageSearchPanel } from './MessageSearchPanel';
 import { VIEWPORT_EXTENSION, FOOTER_SPACER_STYLE } from './chatUtils/constants';
@@ -182,18 +186,7 @@ export function EnhancedChatMessages({ sessionId, compact = false }: EnhancedCha
 
     onVisibleRangeChange(startIndex, endIndex);
 
-    const centerIndex = Math.floor((startIndex + endIndex) / 2);
-
-    const round = conversationRounds.findIndex(r =>
-      r.messageIndices.some(idx => idx >= startIndex && idx <= endIndex) &&
-      r.messageIndices.some(idx => idx > centerIndex)
-    );
-
-    const fallbackRound = conversationRounds.findIndex(r =>
-      r.messageIndices.some(idx => idx >= startIndex && idx <= endIndex)
-    );
-
-    const targetRound = round >= 0 ? round : fallbackRound;
+    const targetRound = findCurrentRoundIndexForRange(conversationRounds, startIndex, endIndex);
     if (targetRound >= 0) {
       setCurrentRoundIndex(targetRound);
     }
@@ -203,9 +196,8 @@ export function EnhancedChatMessages({ sessionId, compact = false }: EnhancedCha
     const round = conversationRounds[roundIndex];
     if (!round || !virtuosoRef.current) return;
 
-    const targetIndex = round.assistantMessage
-      ? round.messageIndices[1]
-      : round.messageIndices[0];
+    const targetIndex = getRoundScrollTargetIndex(round);
+    if (targetIndex === null) return;
 
     virtuosoRef.current.scrollToIndex({
       index: targetIndex,
@@ -214,6 +206,7 @@ export function EnhancedChatMessages({ sessionId, compact = false }: EnhancedCha
     });
 
     setAutoScroll(false);
+    setCurrentRoundIndex(roundIndex);
   }, [conversationRounds]);
 
   const scrollToBottom = useCallback(() => {
