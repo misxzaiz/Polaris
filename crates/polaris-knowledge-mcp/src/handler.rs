@@ -14,7 +14,8 @@ use serde_json::Value;
 use crate::error::{KnowledgeError, Result};
 use crate::extractor::matches_any;
 use crate::models::{
-    ChangeFrequency, Complexity, KnowledgeIndex, ModuleEntry, ModuleV2, ScopeSpec,
+    ChangeFrequency, Complexity, KnowledgeIndex, KnowledgeIndexV2, ModuleEntry, ModuleV2,
+    ScopeSpec, WorkspaceInfo, V2_SCHEMA_VERSION,
 };
 use crate::seeder::{self, SeedOptions};
 
@@ -23,6 +24,10 @@ const INDEX_READ_RETRIES: u32 = 3;
 
 /// Delay between retries in milliseconds.
 const INDEX_READ_RETRY_DELAY_MS: u64 = 100;
+
+fn strip_utf8_bom(content: &str) -> &str {
+    content.strip_prefix('\u{feff}').unwrap_or(content)
+}
 
 /// Load and parse the index.json.
 ///
@@ -34,7 +39,7 @@ pub fn load_index(index_path: &PathBuf) -> Result<KnowledgeIndex> {
     for attempt in 0..=INDEX_READ_RETRIES {
         match fs::read_to_string(index_path) {
             Ok(content) => {
-                return serde_json::from_str(&content)
+                return serde_json::from_str(strip_utf8_bom(&content))
                     .map_err(|e| KnowledgeError::Json(format!("知识索引格式错误: {}", e)));
             }
             Err(e) => {
@@ -165,11 +170,156 @@ pub fn load_v2_cached(index_path: &PathBuf, cache: &SharedCache) -> Result<crate
 
     let content = std::fs::read_to_string(&v2_path)
         .map_err(|e| KnowledgeError::Io(format!("无法读取 index.v2.json: {}", e)))?;
-    let v2: crate::models::KnowledgeIndexV2 = serde_json::from_str(&content)?;
+    let v2: crate::models::KnowledgeIndexV2 = serde_json::from_str(strip_utf8_bom(&content))?;
     if let Some(mtime) = mtime {
         cache.write().unwrap().v2 = Some((v2.clone(), mtime));
     }
     Ok(v2)
+}
+
+fn path_to_slash_string(path: &std::path::Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+fn infer_workspace_root(index_path: &PathBuf) -> String {
+    index_path
+        .parent()
+        .and_then(|knowledge_dir| knowledge_dir.parent())
+        .and_then(|polaris_dir| polaris_dir.parent())
+        .map(|path| path_to_slash_string(path))
+        .unwrap_or_default()
+}
+
+fn empty_v2_index(index_path: &PathBuf) -> KnowledgeIndexV2 {
+    KnowledgeIndexV2 {
+        version: "2.0.0".to_string(),
+        schema_version: V2_SCHEMA_VERSION.to_string(),
+        generated_at: Some(chrono_timestamp()),
+        workspace: WorkspaceInfo {
+            root_path: infer_workspace_root(index_path),
+            language: Vec::new(),
+            framework: Vec::new(),
+        },
+        domains: Vec::new(),
+        modules: Vec::new(),
+        global_conventions: Vec::new(),
+    }
+}
+
+fn normalize_v2_index_for_write(mut raw: Value, index_path: &PathBuf) -> Value {
+    let root_path = infer_workspace_root(index_path);
+
+    if let Value::Object(ref mut obj) = raw {
+        obj.entry("version".to_string())
+            .or_insert_with(|| Value::String("2.0.0".to_string()));
+        obj.entry("schemaVersion".to_string())
+            .or_insert_with(|| Value::String(V2_SCHEMA_VERSION.to_string()));
+        obj.entry("generatedAt".to_string())
+            .or_insert_with(|| Value::String(chrono_timestamp()));
+        obj.entry("domains".to_string())
+            .or_insert_with(|| Value::Array(Vec::new()));
+        obj.entry("modules".to_string())
+            .or_insert_with(|| Value::Array(Vec::new()));
+        obj.entry("workspace".to_string()).or_insert_with(|| {
+            json!({
+                "rootPath": root_path,
+                "language": [],
+                "framework": []
+            })
+        });
+
+        if !matches!(obj.get("workspace"), Some(Value::Object(_))) {
+            obj.insert(
+                "workspace".to_string(),
+                json!({
+                    "rootPath": infer_workspace_root(index_path),
+                    "language": [],
+                    "framework": []
+                }),
+            );
+        }
+
+        if let Some(Value::Object(workspace)) = obj.get_mut("workspace") {
+            workspace
+                .entry("rootPath".to_string())
+                .or_insert_with(|| Value::String(infer_workspace_root(index_path)));
+            workspace
+                .entry("language".to_string())
+                .or_insert_with(|| Value::Array(Vec::new()));
+            workspace
+                .entry("framework".to_string())
+                .or_insert_with(|| Value::Array(Vec::new()));
+        }
+    }
+
+    raw
+}
+
+fn load_v2_for_write(
+    index_path: &PathBuf,
+    v1_index: &KnowledgeIndex,
+) -> Result<(PathBuf, KnowledgeIndexV2)> {
+    let knowledge_dir = index_path
+        .parent()
+        .ok_or_else(|| KnowledgeError::Io("无法确定知识目录".to_string()))?;
+    let v2_path = knowledge_dir.join("index.v2.json");
+
+    if !v2_path.exists() {
+        if !v1_index.modules.is_empty() {
+            let workspace_root = infer_workspace_root(index_path);
+            let (v2, _report) = crate::migrate::migrate_index(v1_index, &workspace_root)?;
+            return Ok((v2_path, v2));
+        }
+
+        return Ok((v2_path, empty_v2_index(index_path)));
+    }
+
+    let content = fs::read_to_string(&v2_path)
+        .map_err(|e| KnowledgeError::Io(format!("无法读取 index.v2.json: {}", e)))?;
+    let raw: Value = serde_json::from_str(strip_utf8_bom(&content))
+        .map_err(|e| KnowledgeError::Json(format!("index.v2.json 格式错误: {}", e)))?;
+    let normalized = normalize_v2_index_for_write(raw, index_path);
+    let mut v2: KnowledgeIndexV2 = serde_json::from_value(normalized)
+        .map_err(|e| KnowledgeError::Json(format!("index.v2.json 格式错误: {}", e)))?;
+
+    merge_missing_v1_modules_into_v2(index_path, v1_index, &mut v2)?;
+
+    Ok((v2_path, v2))
+}
+
+fn merge_missing_v1_modules_into_v2(
+    index_path: &PathBuf,
+    v1_index: &KnowledgeIndex,
+    v2: &mut KnowledgeIndexV2,
+) -> Result<()> {
+    if v1_index.modules.is_empty() {
+        return Ok(());
+    }
+
+    let workspace_root = infer_workspace_root(index_path);
+    let (migrated, _report) = crate::migrate::migrate_index(v1_index, &workspace_root)?;
+
+    for migrated_domain in migrated.domains {
+        if !v2.domains.iter().any(|domain| domain.id == migrated_domain.id) {
+            let mut domain = migrated_domain.clone();
+            domain.modules.clear();
+            v2.domains.push(domain);
+        }
+    }
+
+    for module in migrated.modules {
+        if !v2.modules.iter().any(|existing| existing.id == module.id) {
+            v2.modules.push(module.clone());
+        }
+
+        if let Some(domain) = v2.domains.iter_mut().find(|domain| domain.id == module.domain) {
+            if !domain.modules.iter().any(|id| id == &module.id) {
+                domain.modules.push(module.id.clone());
+            }
+        }
+    }
+
+    Ok(())
 }
 
 // ─── Tool Execution ─────────────────────────────────────────────
@@ -507,7 +657,7 @@ pub fn execute_create_module(
     index_path: &PathBuf,
     modules_dir: &PathBuf,
     cache: &SharedCache,
-    write_lock: &WriteLock,
+    _write_lock: &WriteLock,
 ) -> Result<Value> {
     // ── Parse arguments ──────────────────────────────────────────
     let id = arguments
@@ -608,11 +758,19 @@ pub fn execute_create_module(
     // Document filename: <id>.md
     let document_file = format!("{}.md", id);
 
-    // ── Check for duplicate in v1 index ──────────────────────────
+    // ── Load and validate indexes before writing files ───────────
     let mut index = load_index_cached(index_path, cache)?;
     if index.modules.iter().any(|m| m.id == id) {
         return Err(KnowledgeError::Validation(format!(
             "模块 ID '{}' 已存在，请使用 update_module 更新",
+            id
+        )));
+    }
+
+    let (v2_path, mut v2) = load_v2_for_write(index_path, &index)?;
+    if v2.modules.iter().any(|m| m.id == id) {
+        return Err(KnowledgeError::Validation(format!(
+            "模块 ID '{}' 已存在于 v2 索引，请使用 update_module 更新",
             id
         )));
     }
@@ -629,7 +787,7 @@ pub fn execute_create_module(
         KnowledgeError::Io(format!("无法写入模块文档 {}: {}", document_file, e))
     })?;
 
-    // ── Append to v1 index.json ──────────────────────────────────
+    // ── Build v1 entry and reverse dependencies ─────────────────
     let v1_entry = ModuleEntry {
         id: id.clone(),
         name: name.clone(),
@@ -640,6 +798,72 @@ pub fn execute_create_module(
         complexity: complexity_str.clone(),
         change_frequency: change_frequency_str.clone(),
     };
+
+    for dep_id in &dependencies {
+        if let Some(dep) = index.modules.iter_mut().find(|m| &m.id == dep_id) {
+            if !dep.dependents.iter().any(|d| d == &id) {
+                dep.dependents.push(id.clone());
+            }
+        }
+    }
+
+    // ── Append to v2 index.v2.json ──────────────────────────────
+    let mut v2_domain_warning: Option<String> = None;
+
+    // Validate domain exists in v2
+    let domain_exists = v2.domains.iter().any(|d| d.id == domain);
+    if !domain_exists {
+        v2_domain_warning = Some(format!(
+            "领域 '{}' 在 v2 domains 中不存在。模块已创建但领域引用可能无效。建议补充 domain 或修改 domain 参数。",
+            domain
+        ));
+    }
+
+    for dep_id in &dependencies {
+        if let Some(dep) = v2.modules.iter_mut().find(|m| &m.id == dep_id) {
+            if !dep.dependents.iter().any(|d| d == &id) {
+                dep.dependents.push(id.clone());
+            }
+        }
+    }
+
+    // Build v2 module entry
+    let v2_entry = ModuleV2 {
+        id: id.clone(),
+        name: name.clone(),
+        domain: domain.clone(),
+        scope: ScopeSpec {
+            include: scope_include,
+            exclude: scope_exclude,
+        },
+        dependencies,
+        dependents: Vec::new(),
+        document_file: document_file.clone(),
+        structure_file: None,
+        complexity,
+        change_frequency,
+        assertions: Vec::new(),
+        traps: Vec::new(),
+    };
+    v2.modules.push(v2_entry);
+
+    // Also register module ID in the domain's modules list
+    if let Some(d) = v2.domains.iter_mut().find(|d| d.id == domain) {
+        if !d.modules.iter().any(|m| m == &id) {
+            d.modules.push(id.clone());
+        }
+    }
+
+    let v2_content = serde_json::to_string_pretty(&v2)
+        .map_err(|e| KnowledgeError::Json(format!("v2 索引序列化失败: {}", e)))?;
+    if let Some(parent) = v2_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| KnowledgeError::Io(format!("无法创建知识目录: {}", e)))?;
+    }
+    fs::write(&v2_path, &v2_content)
+        .map_err(|e| KnowledgeError::Io(format!("无法写入 index.v2.json: {}", e)))?;
+
+    // ── Persist v1 index.json ───────────────────────────────────
     index.modules.push(v1_entry);
 
     let index_content = serde_json::to_string_pretty(&index)
@@ -647,74 +871,12 @@ pub fn execute_create_module(
     fs::write(index_path, &index_content)
         .map_err(|e| KnowledgeError::Io(format!("无法写入 index.json: {}", e)))?;
 
-    // ── Append to v2 index.v2.json ──────────────────────────────
-    let knowledge_dir = index_path
-        .parent()
-        .ok_or_else(|| KnowledgeError::Io("无法确定知识目录".to_string()))?;
-    let v2_path = knowledge_dir.join("index.v2.json");
-
-    let mut v2_written = false;
-    let mut v2_domain_warning: Option<String> = None;
-
-    if v2_path.exists() {
-        let mut v2 = load_v2_cached(index_path, cache)?;
-
-        // Check duplicate in v2
-        if v2.modules.iter().any(|m| m.id == id) {
-            // v1 already written — this is a partial state.
-            // We do NOT roll back v1 to keep things simple; the caller can
-            // resolve manually. Report the inconsistency.
-            return Err(KnowledgeError::Validation(format!(
-                "模块 ID '{}' 在 v1 创建成功但 v2 已存在。数据不一致，请手动检查 index.v2.json",
-                id
-            )));
-        }
-
-        // Validate domain exists in v2
-        let domain_exists = v2.domains.iter().any(|d| d.id == domain);
-        if !domain_exists {
-            v2_domain_warning = Some(format!(
-                "领域 '{}' 在 v2 domains 中不存在。模块已创建但领域引用可能无效。建议补充 domain 或修改 domain 参数。",
-                domain
-            ));
-        }
-
-        // Build v2 module entry
-        let v2_entry = ModuleV2 {
-            id: id.clone(),
-            name: name.clone(),
-            domain: domain.clone(),
-            scope: ScopeSpec {
-                include: scope_include,
-                exclude: scope_exclude,
-            },
-            dependencies,
-            dependents: Vec::new(),
-            document_file: document_file.clone(),
-            structure_file: None,
-            complexity,
-            change_frequency,
-            assertions: Vec::new(),
-            traps: Vec::new(),
-        };
-        v2.modules.push(v2_entry);
-
-        // Also register module ID in the domain's modules list
-        if let Some(d) = v2.domains.iter_mut().find(|d| d.id == domain) {
-            d.modules.push(id.clone());
-        }
-
-        let v2_content = serde_json::to_string_pretty(&v2)
-            .map_err(|e| KnowledgeError::Json(format!("v2 索引序列化失败: {}", e)))?;
-        fs::write(&v2_path, &v2_content)
-            .map_err(|e| KnowledgeError::Io(format!("无法写入 index.v2.json: {}", e)))?;
-
-        v2_written = true;
-    }
-
     // ── Invalidate cache (indexes changed on disk) ───────────────
-    cache.write().unwrap().v1 = None;
-    cache.write().unwrap().v2 = None;
+    {
+        let mut cache = cache.write().unwrap();
+        cache.v1 = None;
+        cache.v2 = None;
+    }
 
     // ── Build response ───────────────────────────────────────────
     let timestamp = chrono_timestamp();
@@ -724,7 +886,7 @@ pub fn execute_create_module(
         "domain": domain,
         "created": true,
         "v1Updated": true,
-        "v2Updated": v2_written,
+        "v2Updated": true,
         "timestamp": timestamp,
         "contentLength": content.len()
     });
@@ -736,11 +898,7 @@ pub fn execute_create_module(
         "模块 '{}' ({}) 创建成功。v1 已更新。",
         id, name
     );
-    if v2_written {
-        text.push_str(" v2 已更新。");
-    } else {
-        text.push_str(" v2 索引不存在，跳过。");
-    }
+    text.push_str(" v2 已更新。");
     if let Some(warning) = &v2_domain_warning {
         text.push_str(&format!(" ⚠️ {}", warning));
     }
@@ -1286,6 +1444,7 @@ fn calculate_graph_stats(index: &crate::models::KnowledgeIndex) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Mutex, RwLock};
 
     /// Guard rail: timestamp MUST be ISO 8601 parseable.
     /// Previous implementation produced strings like "1776776576Z" which broke
@@ -1319,6 +1478,220 @@ mod tests {
             "timestamp `{}` looks like a raw unix epoch (regression)",
             ts
         );
+    }
+
+    #[test]
+    fn load_index_accepts_utf8_bom() {
+        let dir = tempfile::tempdir().unwrap();
+        let index_path = dir.path().join("index.json");
+        std::fs::write(
+            &index_path,
+            "\u{feff}{\"version\":\"1.0\",\"modules\":[]}",
+        )
+        .unwrap();
+
+        let index = load_index(&index_path).unwrap();
+        assert_eq!(index.version, "1.0");
+        assert!(index.modules.is_empty());
+    }
+
+    fn test_context(workspace_root: &std::path::Path) -> crate::server::SharedContext {
+        let knowledge_dir = workspace_root.join(".polaris").join("knowledge");
+        Arc::new(crate::server::ServerContext {
+            index_path: knowledge_dir.join("index.json"),
+            modules_dir: knowledge_dir.join("modules"),
+            workspace_root: Some(workspace_root.to_path_buf()),
+            cache: Arc::new(RwLock::new(KnowledgeCache::new())),
+            write_lock: Arc::new(Mutex::new(())),
+        })
+    }
+
+    #[test]
+    fn init_knowledge_writes_parseable_v2_index() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("workspace");
+        std::fs::create_dir_all(workspace.join(".polaris").join("knowledge")).unwrap();
+        let ctx = test_context(&workspace);
+
+        execute_init_knowledge(&ctx).unwrap();
+
+        let content = std::fs::read_to_string(
+            workspace.join(".polaris").join("knowledge").join("index.v2.json"),
+        )
+        .unwrap();
+        let v2: KnowledgeIndexV2 = serde_json::from_str(&content).unwrap();
+
+        assert_eq!(v2.version, "2.0.0");
+        assert_eq!(v2.schema_version, V2_SCHEMA_VERSION);
+        assert_eq!(v2.workspace.root_path, path_to_slash_string(&workspace));
+    }
+
+    #[test]
+    fn create_module_repairs_legacy_empty_v2_and_updates_modules() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("workspace");
+        let knowledge_dir = workspace.join(".polaris").join("knowledge");
+        std::fs::create_dir_all(knowledge_dir.join("modules")).unwrap();
+        std::fs::write(
+            knowledge_dir.join("index.json"),
+            r#"{"version":"1.0","modules":[]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            knowledge_dir.join("index.v2.json"),
+            r#"{"version":"2.0","domains":[],"modules":[],"workspace":{"rootPath":"","language":[],"framework":[]}}"#,
+        )
+        .unwrap();
+        let ctx = test_context(&workspace);
+
+        let result = execute_create_module(
+            json!({
+                "id": "visual-index",
+                "name": "Visual Index",
+                "domain": "developer-tools",
+                "scope": { "include": ["src/components/KnowledgePanel/**"] },
+                "content": "# Visual Index\n",
+                "dependencies": [],
+                "complexity": "low",
+                "changeFrequency": "medium"
+            }),
+            &ctx.index_path,
+            &ctx.modules_dir,
+            &ctx.cache,
+            &ctx.write_lock,
+        )
+        .unwrap();
+
+        assert_eq!(
+            result["structuredContent"]["v2Updated"].as_bool(),
+            Some(true)
+        );
+
+        let content = std::fs::read_to_string(knowledge_dir.join("index.v2.json")).unwrap();
+        let v2: KnowledgeIndexV2 = serde_json::from_str(&content).unwrap();
+        assert_eq!(v2.schema_version, V2_SCHEMA_VERSION);
+        assert!(v2.modules.iter().any(|m| m.id == "visual-index"));
+    }
+
+    #[test]
+    fn create_module_migrates_existing_v1_modules_when_v2_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("workspace");
+        let knowledge_dir = workspace.join(".polaris").join("knowledge");
+        std::fs::create_dir_all(knowledge_dir.join("modules")).unwrap();
+        std::fs::write(
+            knowledge_dir.join("index.json"),
+            r#"{
+                "version": "1.0",
+                "modules": [{
+                    "id": "git",
+                    "name": "Git",
+                    "scope": ["src/services/git/"],
+                    "dependencies": [],
+                    "dependents": [],
+                    "file": "git.md",
+                    "complexity": "medium",
+                    "changeFrequency": "high"
+                }]
+            }"#,
+        )
+        .unwrap();
+        let ctx = test_context(&workspace);
+
+        execute_create_module(
+            json!({
+                "id": "visual-index",
+                "name": "Visual Index",
+                "domain": "developer-tools",
+                "scope": { "include": ["src/components/KnowledgePanel/**"] },
+                "content": "# Visual Index\n",
+                "dependencies": ["git"],
+                "complexity": "low",
+                "changeFrequency": "medium"
+            }),
+            &ctx.index_path,
+            &ctx.modules_dir,
+            &ctx.cache,
+            &ctx.write_lock,
+        )
+        .unwrap();
+
+        let v2_content = std::fs::read_to_string(knowledge_dir.join("index.v2.json")).unwrap();
+        let v2: KnowledgeIndexV2 = serde_json::from_str(&v2_content).unwrap();
+        assert!(v2.modules.iter().any(|m| m.id == "git"));
+        assert!(v2.modules.iter().any(|m| m.id == "visual-index"));
+        let git = v2.modules.iter().find(|m| m.id == "git").unwrap();
+        assert!(git.dependents.iter().any(|id| id == "visual-index"));
+
+        let developer_tools = v2
+            .domains
+            .iter()
+            .find(|domain| domain.id == "developer-tools")
+            .unwrap();
+        assert!(developer_tools.modules.iter().any(|id| id == "git"));
+        assert!(developer_tools.modules.iter().any(|id| id == "visual-index"));
+    }
+
+    #[test]
+    fn create_module_merges_existing_v1_modules_when_v2_is_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("workspace");
+        let knowledge_dir = workspace.join(".polaris").join("knowledge");
+        std::fs::create_dir_all(knowledge_dir.join("modules")).unwrap();
+        std::fs::write(
+            knowledge_dir.join("index.json"),
+            r#"{
+                "version": "1.0",
+                "modules": [{
+                    "id": "git",
+                    "name": "Git",
+                    "scope": ["src/services/git/"],
+                    "dependencies": [],
+                    "dependents": [],
+                    "file": "git.md",
+                    "complexity": "medium",
+                    "changeFrequency": "high"
+                }]
+            }"#,
+        )
+        .unwrap();
+        std::fs::write(
+            knowledge_dir.join("index.v2.json"),
+            r#"{"version":"2.0","domains":[],"modules":[],"workspace":{"rootPath":"","language":[],"framework":[]}}"#,
+        )
+        .unwrap();
+        let ctx = test_context(&workspace);
+
+        execute_create_module(
+            json!({
+                "id": "visual-index",
+                "name": "Visual Index",
+                "domain": "developer-tools",
+                "scope": { "include": ["src/components/KnowledgePanel/**"] },
+                "content": "# Visual Index\n",
+                "dependencies": ["git"],
+                "complexity": "low",
+                "changeFrequency": "medium"
+            }),
+            &ctx.index_path,
+            &ctx.modules_dir,
+            &ctx.cache,
+            &ctx.write_lock,
+        )
+        .unwrap();
+
+        let v2_content = std::fs::read_to_string(knowledge_dir.join("index.v2.json")).unwrap();
+        let v2: KnowledgeIndexV2 = serde_json::from_str(&v2_content).unwrap();
+        assert!(v2.modules.iter().any(|m| m.id == "git"));
+        assert!(v2.modules.iter().any(|m| m.id == "visual-index"));
+
+        let developer_tools = v2
+            .domains
+            .iter()
+            .find(|domain| domain.id == "developer-tools")
+            .unwrap();
+        assert!(developer_tools.modules.iter().any(|id| id == "git"));
+        assert!(developer_tools.modules.iter().any(|id| id == "visual-index"));
     }
 }
 
@@ -1455,12 +1828,19 @@ fn execute_init_knowledge(ctx: &crate::server::SharedContext) -> Result<Value> {
     // 5. Create index.v2.json if missing
     let v2_path = knowledge_dir.join("index.v2.json");
     if !v2_path.exists() {
+        let root_path = ctx
+            .workspace_root
+            .as_deref()
+            .map(|path| path_to_slash_string(path))
+            .unwrap_or_default();
         let v2_content = serde_json::json!({
-            "version": "2.0",
+            "version": "2.0.0",
+            "schemaVersion": V2_SCHEMA_VERSION,
+            "generatedAt": chrono_timestamp(),
             "domains": [],
             "modules": [],
             "workspace": {
-                "rootPath": "",
+                "rootPath": root_path,
                 "language": [],
                 "framework": []
             }

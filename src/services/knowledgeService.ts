@@ -271,10 +271,12 @@ export class LocalFileKnowledgeService implements IKnowledgeService {
     const v2Exists = await pathExists(v2Path).catch(() => false)
     if (!v2Exists) {
       const v2Content = JSON.stringify({
-        version: '2.0',
+        version: '2.0.0',
+        schemaVersion: 'assertion-based',
+        generatedAt: new Date().toISOString(),
         domains: [],
         modules: [],
-        workspace: { rootPath: '', language: [], framework: [] },
+        workspace: { rootPath: workspacePath, language: [], framework: [] },
       }, null, 2)
       await createFile(v2Path, v2Content)
       log.info('已创建空 v2 知识索引')

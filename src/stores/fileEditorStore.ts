@@ -84,9 +84,19 @@ export const useFileEditorStore = create<FileEditorStore>((set, get) => ({
   openFile: async (path: string, name: string) => {
     log.debug('打开文件', { path, name });
     const { currentFile } = get();
+    const notifyFileOpened = async () => {
+      try {
+        await emit('file:opened', { path, name });
+      } catch (emitError) {
+        log.warn('发送 file:opened 事件失败', { error: String(emitError) });
+      }
+    };
 
     // 相同文件不重复加载
-    if (currentFile?.path === path) return;
+    if (currentFile?.path === path) {
+      await notifyFileOpened();
+      return;
+    }
 
     // 保存当前文件到缓冲区
     get()._saveCurrentToBuffer();
@@ -119,11 +129,7 @@ export const useFileEditorStore = create<FileEditorStore>((set, get) => ({
       });
 
       // 发送事件通知 Tab 系统创建 Editor Tab
-      try {
-        await emit('file:opened', { path, name });
-      } catch (emitError) {
-        log.warn('发送 file:opened 事件失败', { error: String(emitError) });
-      }
+      await notifyFileOpened();
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '读取文件失败';
       log.error('打开文件失败', error instanceof Error ? error : new Error(String(error)));

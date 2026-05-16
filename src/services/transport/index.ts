@@ -56,6 +56,45 @@ const transport = currentMode === 'tauri'
       { onStatusChange: handleConnectionStatusChange },
     );
 
+const LOCAL_EVENTS = new Set([
+  'file:opened',
+  'file:preview',
+  'editor:closed',
+]);
+
+const localListeners = new Map<string, Set<(payload: unknown) => void>>();
+
+function emitLocal(event: string, payload: unknown): void {
+  const listeners = localListeners.get(event);
+  if (!listeners) return;
+
+  for (const listener of Array.from(listeners)) {
+    try {
+      listener(payload);
+    } catch (error) {
+      console.error(`[Transport] Local event listener failed for "${event}":`, error);
+    }
+  }
+}
+
+function listenLocal<T>(event: string, handler: (payload: T) => void): () => void {
+  if (!localListeners.has(event)) {
+    localListeners.set(event, new Set());
+  }
+
+  const listeners = localListeners.get(event);
+  listeners?.add(handler as (payload: unknown) => void);
+
+  return () => {
+    const current = localListeners.get(event);
+    if (!current) return;
+    current.delete(handler as (payload: unknown) => void);
+    if (current.size === 0) {
+      localListeners.delete(event);
+    }
+  };
+}
+
 /**
  * 统一 emit — 向其他组件发送本地事件
  *
@@ -67,7 +106,9 @@ export const emit = currentMode === 'tauri'
       const { emit: tauriEmit } = await import('@tauri-apps/api/event');
       return tauriEmit(event, payload);
     })
-  : ((_event: string, _payload: unknown) => Promise.resolve()) as (event: string, payload: unknown) => Promise<void>;
+  : (async (event: string, payload: unknown) => {
+      emitLocal(event, payload);
+    }) as (event: string, payload: unknown) => Promise<void>;
 
 /**
  * 断开传输层连接（清理 WebSocket 等资源）。
@@ -90,8 +131,12 @@ export const invoke = <T>(cmd: string, args?: Record<string, unknown>): Promise<
  * Tauri 模式：Tauri event system
  * HTTP 模式：WebSocket 消息分发
  */
-export const listen = <T>(event: string, handler: (p: T) => void): Promise<() => void> =>
-  transport.listen<T>(event, handler);
+export const listen = <T>(event: string, handler: (p: T) => void): Promise<() => void> => {
+  if (currentMode === 'http' && LOCAL_EVENTS.has(event)) {
+    return Promise.resolve(listenLocal(event, handler));
+  }
+  return transport.listen<T>(event, handler);
+};
 
 /**
  * 手动重连 — 重置重连计数器并立即尝试重新建立连接
