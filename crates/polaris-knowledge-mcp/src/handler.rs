@@ -170,7 +170,11 @@ pub fn load_v2_cached(index_path: &PathBuf, cache: &SharedCache) -> Result<crate
 
     let content = std::fs::read_to_string(&v2_path)
         .map_err(|e| KnowledgeError::Io(format!("无法读取 index.v2.json: {}", e)))?;
-    let v2: crate::models::KnowledgeIndexV2 = serde_json::from_str(strip_utf8_bom(&content))?;
+    let raw: Value = serde_json::from_str(strip_utf8_bom(&content))
+        .map_err(|e| KnowledgeError::Json(format!("index.v2.json 格式错误: {}", e)))?;
+    let normalized = normalize_v2_index(raw, index_path);
+    let v2: crate::models::KnowledgeIndexV2 = serde_json::from_value(normalized)
+        .map_err(|e| KnowledgeError::Json(format!("index.v2.json 格式错误: {}", e)))?;
     if let Some(mtime) = mtime {
         cache.write().unwrap().v2 = Some((v2.clone(), mtime));
     }
@@ -206,7 +210,7 @@ fn empty_v2_index(index_path: &PathBuf) -> KnowledgeIndexV2 {
     }
 }
 
-fn normalize_v2_index_for_write(mut raw: Value, index_path: &PathBuf) -> Value {
+fn normalize_v2_index(mut raw: Value, index_path: &PathBuf) -> Value {
     let root_path = infer_workspace_root(index_path);
 
     if let Value::Object(ref mut obj) = raw {
@@ -250,9 +254,87 @@ fn normalize_v2_index_for_write(mut raw: Value, index_path: &PathBuf) -> Value {
                 .entry("framework".to_string())
                 .or_insert_with(|| Value::Array(Vec::new()));
         }
+
+        if let Some(Value::Array(modules)) = obj.get_mut("modules") {
+            for module in modules {
+                let Value::Object(module) = module else {
+                    continue;
+                };
+                normalize_module_schema(module);
+            }
+        }
     }
 
     raw
+}
+
+fn normalize_module_schema(module: &mut serde_json::Map<String, Value>) {
+    let module_id = module
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("<unknown>")
+        .to_string();
+    let document_file_missing = module
+        .get("documentFile")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .map(str::is_empty)
+        .unwrap_or(true);
+
+    if document_file_missing {
+        if let Some(document_file) = infer_module_document_file(module) {
+            eprintln!(
+                "[knowledge-mcp] index.v2.json module '{}' missing documentFile; using '{}'",
+                module_id, document_file
+            );
+            module.insert("documentFile".to_string(), Value::String(document_file));
+        }
+    }
+
+    if let Some(Value::Array(traps)) = module.get_mut("traps") {
+        for trap in traps {
+            let Value::Object(trap) = trap else {
+                continue;
+            };
+            let severity_missing = trap
+                .get("severity")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .map(str::is_empty)
+                .unwrap_or(true);
+            if !severity_missing {
+                continue;
+            }
+
+            let trap_id = trap
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or("<unknown>");
+            eprintln!(
+                "[knowledge-mcp] index.v2.json trap '{}' in module '{}' missing severity; using 'medium'",
+                trap_id, module_id
+            );
+            trap.insert("severity".to_string(), Value::String("medium".to_string()));
+        }
+    }
+}
+
+fn infer_module_document_file(module: &serde_json::Map<String, Value>) -> Option<String> {
+    if let Some(file) = module
+        .get("file")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|file| !file.is_empty())
+    {
+        return Some(file.to_string());
+    }
+
+    module
+        .get("id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(|id| format!("{}.md", id))
 }
 
 fn load_v2_for_write(
@@ -278,7 +360,7 @@ fn load_v2_for_write(
         .map_err(|e| KnowledgeError::Io(format!("无法读取 index.v2.json: {}", e)))?;
     let raw: Value = serde_json::from_str(strip_utf8_bom(&content))
         .map_err(|e| KnowledgeError::Json(format!("index.v2.json 格式错误: {}", e)))?;
-    let normalized = normalize_v2_index_for_write(raw, index_path);
+    let normalized = normalize_v2_index(raw, index_path);
     let mut v2: KnowledgeIndexV2 = serde_json::from_value(normalized)
         .map_err(|e| KnowledgeError::Json(format!("index.v2.json 格式错误: {}", e)))?;
 
@@ -1493,6 +1575,52 @@ mod tests {
         let index = load_index(&index_path).unwrap();
         assert_eq!(index.version, "1.0");
         assert!(index.modules.is_empty());
+    }
+
+    #[test]
+    fn load_v2_cached_repairs_missing_schema_fields() {
+        let dir = tempfile::tempdir().unwrap();
+        let knowledge_dir = dir.path().join("workspace").join(".polaris").join("knowledge");
+        std::fs::create_dir_all(&knowledge_dir).unwrap();
+        let index_path = knowledge_dir.join("index.json");
+        std::fs::write(
+            knowledge_dir.join("index.v2.json"),
+            r#"{
+                "version": "2.0.0",
+                "schemaVersion": "assertion-based",
+                "workspace": {
+                    "rootPath": "",
+                    "language": [],
+                    "framework": []
+                },
+                "domains": [],
+                "modules": [{
+                    "id": "integration",
+                    "name": "Integration",
+                    "domain": "platform-integration",
+                    "scope": { "include": ["src/integrations/**"] },
+                    "dependencies": [],
+                    "dependents": [],
+                    "complexity": "medium",
+                    "changeFrequency": "low",
+                    "assertions": [],
+                    "traps": [{
+                        "id": "integration/trap-missing-severity",
+                        "description": "Legacy trap without severity"
+                    }]
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        let cache = Arc::new(RwLock::new(KnowledgeCache::new()));
+        let v2 = load_v2_cached(&index_path, &cache).unwrap();
+
+        assert_eq!(v2.modules[0].document_file, "integration.md");
+        assert_eq!(
+            v2.modules[0].traps[0].severity,
+            crate::models::TrapSeverity::Medium
+        );
     }
 
     fn test_context(workspace_root: &std::path::Path) -> crate::server::SharedContext {

@@ -702,6 +702,7 @@
         "ai-runtime",
         "ipc-bridge"
       ],
+      "documentFile": "integration.md",
       "complexity": "high",
       "changeFrequency": "low",
       "assertions": [
@@ -1384,37 +1385,43 @@
           "id": "todo-requirement/trap-json-rpc-duplication",
           "file": "src-tauri/src/services/todo_mcp_server.rs",
           "line": 20,
-          "description": "JsonRpcRequest/JsonRpcError/JsonRpcResponse 在两个 MCP server 中完全重复定义，修改协议时需同步两处"
+          "description": "JsonRpcRequest/JsonRpcError/JsonRpcResponse 在两个 MCP server 中完全重复定义，修改协议时需同步两处",
+          "severity": "medium"
         },
         {
           "id": "todo-requirement/trap-timestamp-inconsistency",
           "file": "src-tauri/src/models/todo.rs",
           "line": 33,
-          "description": "Todo 时间戳为 String(ISO 8601)，Requirement 时间戳为 i64(epoch millis)，前端格式化需要两套逻辑"
+          "description": "Todo 时间戳为 String(ISO 8601)，Requirement 时间戳为 i64(epoch millis)，前端格式化需要两套逻辑",
+          "severity": "medium"
         },
         {
           "id": "todo-requirement/trap-save-prototype-ignores-error",
           "file": "src-tauri/src/services/unified_requirement_repository.rs",
           "line": 299,
-          "description": "save_prototype 用 let _ = self.update_requirement() 忽略更新错误，需求被删除后 HTML 成为孤儿文件"
+          "description": "save_prototype 用 let _ = self.update_requirement() 忽略更新错误，需求被删除后 HTML 成为孤儿文件",
+          "severity": "high"
         },
         {
           "id": "todo-requirement/trap-unused-todo-types",
           "file": "src/types/todo.ts",
           "line": 433,
-          "description": "TodoState/TodoActions 约 100 行类型声明从未被任何实现消费，实际使用 simpleTodoService + useState"
+          "description": "TodoState/TodoActions 约 100 行类型声明从未被任何实现消费，实际使用 simpleTodoService + useState",
+          "severity": "low"
         },
         {
           "id": "todo-requirement/trap-default-scope-differs",
           "file": "src/services/simpleTodoService.ts",
           "line": 18,
-          "description": "Todo 默认 scope=workspace，Requirement 默认 scope=all，用户切换面板时可能看到不同范围的数据"
+          "description": "Todo 默认 scope=workspace，Requirement 默认 scope=all，用户切换面板时可能看到不同范围的数据",
+          "severity": "medium"
         },
         {
           "id": "todo-requirement/trap-no-status-validation",
           "file": "src-tauri/src/services/todo_mcp_server.rs",
           "line": 520,
-          "description": "start_todo/complete_todo 不校验当前状态，已完成待办可被重新开始"
+          "description": "start_todo/complete_todo 不校验当前状态，已完成待办可被重新开始",
+          "severity": "high"
         }
       ]
     },
