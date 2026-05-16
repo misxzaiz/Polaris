@@ -4,6 +4,7 @@
   "updateConfigFailed": "更新配置失败",
   "setWorkDirFailed": "设置工作目录失败",
   "setClaudeCmdFailed": "设置 Claude 命令失败",
+  "resetCliConfigFailed": "重置 CLI 配置失败",
   "refreshHealthFailed": "刷新健康状态失败",
   "claudeNotFound": "Claude CLI 未找到。当前路径: {{path}}",
   "cliNotFound": "{{name}} CLI 未找到。当前路径: {{path}}",

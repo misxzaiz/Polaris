@@ -11,7 +11,7 @@ import { useConfigStore } from '../../../stores';
 import { useCliInfoStore } from '../../../stores/cliInfoStore';
 import { useModelProfileStore } from '../../../stores/modelProfileStore';
 import type { Config, EngineId, ModelProfile } from '../../../types';
-import { Shield, ShieldCheck, ShieldX, RefreshCw, Bot, Plus, Trash2, Globe, Check } from 'lucide-react';
+import { Shield, ShieldCheck, ShieldX, RefreshCw, Bot, Plus, Trash2, Globe, Check, RotateCcw } from 'lucide-react';
 
 interface AIEngineTabProps {
   config: Config;
@@ -27,11 +27,12 @@ const FIXED_ENGINE_OPTIONS: { id: EngineId; nameKey: string; descKey: string }[]
 
 export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProps) {
   const { t } = useTranslation('settings');
-  const { healthStatus } = useConfigStore();
+  const { healthStatus, resetCliConfig } = useConfigStore();
   const { authStatus, agents, loading: cliLoading, fetchAll } = useCliInfoStore();
   const { profiles, activeProfileId, addProfile, removeProfile, activateProfile, setProfiles, setActiveProfileId } = useModelProfileStore();
   const [showAddForm, setShowAddForm] = useState(false);
   const [newProfile, setNewProfile] = useState({ name: '', baseUrl: '', apiKey: '', model: '', description: '' });
+  const [resetting, setResetting] = useState(false);
   const isCodex = config.defaultEngine === 'codex';
 
   // 初始化同步：确保 modelProfileStore 和 localConfig 双向一致
@@ -97,6 +98,19 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
     });
   };
 
+  const handleResetCliConfig = async () => {
+    const confirmed = window.confirm(
+      t('aiEngine.resetCliConfirm', '将 Claude/Codex CLI 路径重置为默认值,并触发重新检测.若 PATH 中没有对应 CLI,会回到初始连接界面.确认继续?')
+    );
+    if (!confirmed) return;
+    setResetting(true);
+    try {
+      await resetCliConfig();
+    } finally {
+      setResetting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* 认证状态 */}
@@ -159,7 +173,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
       {/* 引擎选择 */}
       <div>
         <label className="block text-sm font-medium text-text-secondary mb-3">
-          {t('aiEngine')}
+          {t('aiEngine.title', 'AI 引擎')}
         </label>
         <div className="space-y-2">
           {FIXED_ENGINE_OPTIONS.map((option) => (
@@ -383,6 +397,31 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
           </div>
         </div>
       )}
+
+      {/* 重置 CLI 配置(测试/调试用) */}
+      <div className="p-4 rounded-lg border border-amber-500/30 bg-amber-500/5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="text-sm font-medium text-amber-600 dark:text-amber-400">
+              {t('aiEngine.resetCliTitle', '重置 CLI 配置')}
+            </h3>
+            <p className="text-xs text-text-secondary mt-1">
+              {t('aiEngine.resetCliDescription', '将 Claude/Codex CLI 路径恢复为默认值并失效引擎缓存,用于测试首次启动检测流程.若 PATH 中没有 CLI,会自动回到初始连接界面.')}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleResetCliConfig}
+            disabled={resetting || loading}
+            className="shrink-0 flex items-center gap-1.5 text-xs px-3 py-2 rounded-md border border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <RotateCcw size={12} className={resetting ? 'animate-spin' : ''} />
+            {resetting
+              ? t('aiEngine.resetting', '重置中...')
+              : t('aiEngine.resetCliAction', '一键重置')}
+          </button>
+        </div>
+      </div>
 
       {/* 可用 Agent 列表 */}
       {agents.length > 0 && (

@@ -1,7 +1,22 @@
 {
   "title": "Settings",
   "search": "Search settings...",
-  "aiEngine": "AI Engine",
+  "aiEngine": {
+    "title": "AI Engine",
+    "authStatus": "Auth Status",
+    "loggedIn": "Logged In",
+    "notLoggedIn": "Not Logged In",
+    "checkingAuth": "Checking...",
+    "authUnknown": "Unknown",
+    "availableAgents": "Available Agents",
+    "builtinAgents": "Built-in",
+    "pluginAgents": "Plugin",
+    "resetCliTitle": "Reset CLI Configuration",
+    "resetCliDescription": "Resets Claude/Codex CLI paths to defaults and invalidates engine caches. Useful for testing the first-launch detection flow. If no CLI is found on PATH, you'll return to the initial connection screen.",
+    "resetCliAction": "Reset Now",
+    "resetCliConfirm": "This resets Claude/Codex CLI paths to defaults and triggers re-detection. If the CLI isn't on PATH, the app returns to the initial connection screen. Continue?",
+    "resetting": "Resetting..."
+  },
   "currentGroup": "Current group: {{name}}",
   "saveTab": "Save {{name}}",
   "nav": {

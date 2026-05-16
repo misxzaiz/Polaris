@@ -45,6 +45,15 @@ export async function setClaudeCmd(cmd: string): Promise<void> {
   return invoke('set_claude_cmd', { cmd });
 }
 
+/**
+ * 重置 CLI 配置(将 Claude/Codex 的 cli_path 重置为默认占位符).
+ * 用于测试/调试:可让应用回到"初始检测"状态,触发首启动检测流程.
+ * 同时会刷新所有引擎缓存,避免引擎实例继续使用旧路径.
+ */
+export async function resetCliConfig(): Promise<Config> {
+  return invoke<Config>('reset_cli_config');
+}
+
 /** 路径验证结果 */
 export interface PathValidationResult {
   valid: boolean;

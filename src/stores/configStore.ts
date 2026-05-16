@@ -38,6 +38,8 @@ interface ConfigState {
   setWorkDir: (path: string | null) => Promise<void>;
   /** 设置 Claude 命令 */
   setClaudeCmd: (cmd: string) => Promise<void>;
+  /** 重置 CLI 配置(测试用):将 Claude/Codex 路径重置为默认值并触发重新检测 */
+  resetCliConfig: () => Promise<void>;
 
   /** 刷新健康状态 */
   refreshHealth: () => Promise<void>;
@@ -152,6 +154,31 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       set({
         error: e instanceof Error ? e.message : i18n.t('errors:setClaudeCmdFailed'),
         loading: false
+      });
+    }
+  },
+
+  resetCliConfig: async () => {
+    set({ loading: true, error: null });
+    try {
+      const config = await tauri.resetCliConfig();
+      // 重新跑健康检查 + 评估连接状态;若 PATH 中没有 claude/codex,
+      // connectionState 会变为 'failed',ConnectingOverlay 会自然显示出来
+      const health = await tauri.healthCheck();
+      const connectionState = getSelectedEngineHealth(config, health).available ? 'success' : 'failed';
+      set({
+        config,
+        healthStatus: health,
+        connectionState,
+        isConnecting: connectionState !== 'success',
+        loading: false,
+        error: null,
+      });
+    } catch (e) {
+      log.error('resetCliConfig failed', e instanceof Error ? e : new Error(String(e)));
+      set({
+        error: e instanceof Error ? e.message : i18n.t('errors:resetCliConfigFailed'),
+        loading: false,
       });
     }
   },

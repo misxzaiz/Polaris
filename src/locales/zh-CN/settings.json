@@ -1,7 +1,22 @@
 {
   "title": "设置",
   "search": "搜索设置...",
-  "aiEngine": "AI 引擎",
+  "aiEngine": {
+    "title": "AI 引擎",
+    "authStatus": "认证状态",
+    "loggedIn": "已登录",
+    "notLoggedIn": "未登录",
+    "checkingAuth": "检查中...",
+    "authUnknown": "未知",
+    "availableAgents": "可用 Agent",
+    "builtinAgents": "内置",
+    "pluginAgents": "插件",
+    "resetCliTitle": "重置 CLI 配置",
+    "resetCliDescription": "将 Claude/Codex CLI 路径恢复为默认值并失效引擎缓存,用于测试首次启动检测流程.若 PATH 中没有 CLI,会自动回到初始连接界面.",
+    "resetCliAction": "一键重置",
+    "resetCliConfirm": "将 Claude/Codex CLI 路径重置为默认值,并触发重新检测.若 PATH 中没有对应 CLI,会回到初始连接界面.确认继续?",
+    "resetting": "重置中..."
+  },
   "currentGroup": "当前分组：{{name}}",
   "saveTab": "保存{{name}}",
   "nav": {

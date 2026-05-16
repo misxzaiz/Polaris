@@ -4,6 +4,7 @@
   "updateConfigFailed": "Failed to update config",
   "setWorkDirFailed": "Failed to set working directory",
   "setClaudeCmdFailed": "Failed to set Claude command",
+  "resetCliConfigFailed": "Failed to reset CLI configuration",
   "refreshHealthFailed": "Failed to refresh health status",
   "claudeNotFound": "Claude CLI not found. Current path: {{path}}",
   "cliNotFound": "{{name}} CLI not found. Current path: {{path}}",

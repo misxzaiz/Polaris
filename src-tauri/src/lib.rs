@@ -143,19 +143,38 @@ fn get_config(state: tauri::State<AppState>) -> Result<Config> {
 /// 更新配置
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-fn update_config(config: Config, state: tauri::State<AppState>) -> Result<()> {
-    let mut store = state.config_store.lock()
-        .map_err(|e| error::AppError::Unknown(e.to_string()))?;
-    store.update(config)
+async fn update_config(config: Config, state: tauri::State<'_, AppState>) -> Result<()> {
+    let next_config = {
+        let mut store = state.config_store.lock()
+            .map_err(|e| error::AppError::Unknown(e.to_string()))?;
+        store.update(config)?;
+        store.get().clone()
+    };
+    refresh_engine_configs(&state, next_config).await;
+    Ok(())
 }
 
 /// 按字段合并更新配置
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-fn update_config_patch(patch: serde_json::Value, state: tauri::State<AppState>) -> Result<Config> {
-    let mut store = state.config_store.lock()
-        .map_err(|e| error::AppError::Unknown(e.to_string()))?;
-    store.patch(patch)
+async fn update_config_patch(patch: serde_json::Value, state: tauri::State<'_, AppState>) -> Result<Config> {
+    let saved_config = {
+        let mut store = state.config_store.lock()
+            .map_err(|e| error::AppError::Unknown(e.to_string()))?;
+        store.patch(patch)?
+    };
+    refresh_engine_configs(&state, saved_config.clone()).await;
+    Ok(saved_config)
+}
+
+/// 把最新配置同步到所有已注册 AI 引擎(失效缓存).
+///
+/// ConfigStore 和 EngineRegistry 是两个独立的锁(同步 + 异步),
+/// 调用前请先释放 config_store 锁,避免出现锁顺序问题.
+#[cfg(feature = "tauri-app")]
+async fn refresh_engine_configs(state: &AppState, new_config: Config) {
+    let mut registry = state.engine_registry.lock().await;
+    registry.refresh_all_configs(new_config);
 }
 
 const LEGACY_WEB_PORT: u16 = 9800;
@@ -315,10 +334,34 @@ fn set_work_dir(path: Option<String>, state: tauri::State<AppState>) -> Result<(
 /// 设置 Claude 命令路径
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-fn set_claude_cmd(cmd: String, state: tauri::State<AppState>) -> Result<()> {
-    let mut store = state.config_store.lock()
-        .map_err(|e| error::AppError::Unknown(e.to_string()))?;
-    store.set_claude_cmd(cmd)
+async fn set_claude_cmd(cmd: String, state: tauri::State<'_, AppState>) -> Result<()> {
+    let next_config = {
+        let mut store = state.config_store.lock()
+            .map_err(|e| error::AppError::Unknown(e.to_string()))?;
+        store.set_claude_cmd(cmd)?;
+        store.get().clone()
+    };
+    refresh_engine_configs(&state, next_config).await;
+    Ok(())
+}
+
+/// 重置 CLI 路径(测试/调试用):
+/// 将 claude_code.cli_path / codex_code.cli_path 重置为默认占位符,
+/// 并刷新引擎缓存.前端随后调用 health_check 可触发"初始检测"流程.
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+async fn reset_cli_config(state: tauri::State<'_, AppState>) -> Result<Config> {
+    let next_config = {
+        let mut store = state.config_store.lock()
+            .map_err(|e| error::AppError::Unknown(e.to_string()))?;
+        let mut config = store.get().clone();
+        config.claude_code.cli_path = "claude".to_string();
+        config.codex_code.cli_path = "codex".to_string();
+        store.update(config)?;
+        store.get().clone()
+    };
+    refresh_engine_configs(&state, next_config.clone()).await;
+    Ok(next_config)
 }
 
 /// 查找所有可用的 Claude CLI 路径
@@ -493,6 +536,7 @@ pub fn run() {
             get_local_ips,
             set_work_dir,
             set_claude_cmd,
+            reset_cli_config,
             find_claude_paths,
             validate_claude_path,
             // 健康检查

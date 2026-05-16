@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 use crate::error::{AppError, Result};
+use crate::models::config::Config;
 use super::traits::{AIEngine, EngineId, SessionOptions};
 use super::types::EngineStatus;
 
@@ -166,6 +167,17 @@ impl EngineRegistry {
         }
         tracing::warn!("[EngineRegistry] 未找到会话 {}", session_id);
         Ok(false)
+    }
+
+    /// 同步最新配置到所有已注册引擎(并失效内部缓存).
+    ///
+    /// 适用场景:用户在设置页面修改 CLI 路径或其他配置后,
+    /// 需要让正在运行的引擎实例感知到变更,而不必重启应用.
+    pub fn refresh_all_configs(&mut self, new_config: Config) {
+        for (id, engine) in &mut self.engines {
+            tracing::info!("[EngineRegistry] 刷新引擎 {} 的配置", id);
+            engine.update_config(new_config.clone());
+        }
     }
 }
 

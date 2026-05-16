@@ -1013,6 +1013,16 @@ impl AIEngine for ClaudeEngine {
     fn active_session_count(&self) -> usize {
         self.sessions.count()
     }
+
+    fn update_config(&mut self, new_config: Config) {
+        tracing::info!("[ClaudeEngine] 应用新配置,失效 CLI 路径缓存");
+        self.config = new_config;
+        self.cli_path = None;
+        #[cfg(windows)]
+        {
+            self.cli_type = None;
+        }
+    }
 }
 
 // ============================================================================

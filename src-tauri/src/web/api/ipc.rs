@@ -120,7 +120,8 @@ pub async fn handle_ipc_bridge(
 
         // ── Config helpers ─────────────────────────────────────────────────
         "set_work_dir" => dispatch_set_work_dir(&state, &args),
-        "set_claude_cmd" => dispatch_set_claude_cmd(&state, &args),
+        "set_claude_cmd" => dispatch_set_claude_cmd(&state, &args).await,
+        "reset_cli_config" => dispatch_reset_cli_config(&state).await,
 
         // ── File Explorer ──────────────────────────────────────────────────
         "read_directory" => dispatch_read_directory(&args).await,
@@ -782,13 +783,36 @@ fn dispatch_set_work_dir(state: &AppState, args: &Value) -> Result<Json<Value>, 
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
 
-fn dispatch_set_claude_cmd(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+async fn dispatch_set_claude_cmd(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
     let cmd = require_string(args, "cmd")?;
-    let mut store = state.lock_config()?;
-    let mut config = store.get().clone();
-    config.claude_cmd = Some(cmd);
-    store.update(config).map_err(|e| WebError::Internal(e.to_string()))?;
+    let next_config = {
+        let mut store = state.lock_config()?;
+        store
+            .set_claude_cmd(cmd)
+            .map_err(|e| WebError::Internal(e.to_string()))?;
+        store.get().clone()
+    };
+    let mut registry = state.engine_registry.lock().await;
+    registry.refresh_all_configs(next_config);
+    drop(registry);
     Ok(Json(serde_json::json!({ "status": "ok" })))
+}
+
+async fn dispatch_reset_cli_config(state: &AppState) -> Result<Json<Value>, WebError> {
+    let next_config = {
+        let mut store = state.lock_config()?;
+        let mut config = store.get().clone();
+        config.claude_code.cli_path = "claude".to_string();
+        config.codex_code.cli_path = "codex".to_string();
+        store
+            .update(config)
+            .map_err(|e| WebError::Internal(e.to_string()))?;
+        store.get().clone()
+    };
+    let mut registry = state.engine_registry.lock().await;
+    registry.refresh_all_configs(next_config.clone());
+    drop(registry);
+    Ok(Json(serde_json::json!({ "status": "ok", "config": next_config })))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

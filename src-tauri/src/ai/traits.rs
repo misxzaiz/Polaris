@@ -4,6 +4,7 @@
  */
 
 use crate::error::Result;
+use crate::models::config::Config;
 use crate::models::AIEvent;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -306,4 +307,12 @@ pub trait AIEngine: Send + Sync {
     fn active_session_count(&self) -> usize {
         0
     }
+
+    /// 应用最新配置(并失效内部缓存)
+    ///
+    /// 当用户通过设置页面修改 CLI 路径或其他配置时,引擎需要
+    /// 重新读取最新配置,而不是继续使用启动时的快照.
+    ///
+    /// 默认实现是空操作;引擎可以按需覆盖.
+    fn update_config(&mut self, _new_config: Config) {}
 }

@@ -897,6 +897,12 @@ impl AIEngine for CodexEngine {
     fn active_session_count(&self) -> usize {
         self.sessions.count()
     }
+
+    fn update_config(&mut self, new_config: Config) {
+        tracing::info!("[CodexEngine] 应用新配置,失效 CLI 路径缓存");
+        self.config = new_config;
+        self.cli_path = None;
+    }
 }
 
 #[cfg(test)]
