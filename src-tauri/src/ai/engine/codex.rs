@@ -4,13 +4,13 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
 use super::codex_parser::{
-    CodexEvent, codex_event_to_ai_events, extract_event_type, parse_codex_line,
+    codex_event_to_ai_events, extract_event_type, parse_codex_line, CodexEvent,
 };
 use crate::ai::session::SessionManager;
 use crate::ai::traits::{AIEngine, EngineId, SessionOptions};
 use crate::error::{AppError, Result};
-use crate::models::AIEvent;
 use crate::models::config::Config;
+use crate::models::AIEvent;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -100,6 +100,38 @@ fn build_codex_generated_images_markdown_for_names(
         .collect::<Vec<_>>();
 
     Some(lines.join("\n\n"))
+}
+
+fn decode_process_output_line(bytes: &[u8]) -> (String, Option<&'static str>) {
+    match std::str::from_utf8(bytes) {
+        Ok(line) => (line.to_string(), None),
+        Err(_) => {
+            #[cfg(windows)]
+            {
+                // Windows CLI wrappers and child tools can occasionally leak
+                // CP936/GBK bytes into otherwise JSONL stdout. Keep reading the
+                // stream instead of tearing down Codex's stdout pipe.
+                let (decoded, had_errors) = encoding_rs::GBK.decode_without_bom_handling(bytes);
+                if !had_errors {
+                    return (decoded.into_owned(), Some("gbk"));
+                }
+            }
+
+            (
+                String::from_utf8_lossy(bytes).into_owned(),
+                Some("utf8-lossy"),
+            )
+        }
+    }
+}
+
+fn hex_preview(bytes: &[u8], max_len: usize) -> String {
+    bytes
+        .iter()
+        .take(max_len)
+        .map(|byte| format!("{:02X}", byte))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// OpenAI Codex CLI 引擎
@@ -486,7 +518,7 @@ impl CodexEngine {
             });
 
             // 读取 stdout JSONL
-            let reader = BufReader::new(stdout);
+            let mut reader = BufReader::new(stdout);
             let mut received_session_end = false;
             let mut real_session_id = current_session_id.clone();
             let mut initial_codex_images = list_codex_generated_image_names(&current_session_id);
@@ -494,15 +526,34 @@ impl CodexEngine {
             let mut known_event_count: u32 = 0;
             let mut unknown_event_count: u32 = 0;
             let mut parse_fail_count: u32 = 0;
+            let mut non_json_line_count: u32 = 0;
+            let mut decode_recovery_count: u32 = 0;
+            let mut line_bytes = Vec::new();
 
-            for line in reader.lines() {
-                let line = match line {
-                    Ok(l) => l,
+            loop {
+                line_bytes.clear();
+                let bytes_read = match reader.read_until(b'\n', &mut line_bytes) {
+                    Ok(0) => break,
+                    Ok(n) => n,
                     Err(e) => {
                         tracing::warn!("[CodexEngine] stdout 读取错误: {}", e);
                         break;
                     }
                 };
+
+                if bytes_read == 0 {
+                    break;
+                }
+
+                let (line, decoded_with) = decode_process_output_line(&line_bytes);
+                if let Some(encoding) = decoded_with {
+                    decode_recovery_count += 1;
+                    tracing::warn!(
+                        "[CodexEngine] stdout 包含非 UTF-8 字节，已按 {} 容错解码后继续读取。hex={}",
+                        encoding,
+                        hex_preview(&line_bytes, 80)
+                    );
+                }
 
                 let trimmed = line.trim();
                 if trimmed.is_empty() {
@@ -583,7 +634,7 @@ impl CodexEngine {
                     for ai_event in codex_event_to_ai_events(codex_event, sid) {
                         event_callback(ai_event);
                     }
-                } else {
+                } else if trimmed.starts_with('{') {
                     parse_fail_count += 1;
                     tracing::warn!(
                         "[CodexEngine] JSON 解析失败 [{}/{}]: {}",
@@ -591,15 +642,25 @@ impl CodexEngine {
                         line_count,
                         preview
                     );
+                } else {
+                    non_json_line_count += 1;
+                    tracing::info!(
+                        "[CodexEngine] 跳过非 JSON stdout 行 [{}/{}]: {}",
+                        non_json_line_count,
+                        line_count,
+                        preview
+                    );
                 }
             }
 
             tracing::info!(
-                "[CodexEngine] stdout 读取完成: {} 行, {} 已知事件, {} 未知事件, {} 解析失败",
+                "[CodexEngine] stdout 读取完成: {} 行, {} 已知事件, {} 未知事件, {} 非 JSON 行, {} 解析失败, {} 行容错解码",
                 line_count,
                 known_event_count,
                 unknown_event_count,
-                parse_fail_count
+                non_json_line_count,
+                parse_fail_count,
+                decode_recovery_count
             );
 
             // 如果没有收到 turn 结束事件，发送 fallback
@@ -868,6 +929,31 @@ mod tests {
             markdown,
             "![Codex 生成图片](/api/artifacts/codex-images/thread-1/ig_new.png)"
         );
+    }
+
+    #[test]
+    fn decodes_utf8_process_output_line_without_recovery() {
+        let (line, decoded_with) = decode_process_output_line(b"{\"type\":\"turn.completed\"}\n");
+
+        assert_eq!(line, "{\"type\":\"turn.completed\"}\n");
+        assert!(decoded_with.is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn decodes_gbk_jsonl_line_after_utf8_failure() {
+        let mut bytes =
+            b"{\"type\":\"item.completed\",\"item\":{\"id\":\"item_1\",\"type\":\"agent_message\",\"text\":\""
+                .to_vec();
+        // "中文" encoded as Windows CP936/GBK.
+        bytes.extend_from_slice(&[0xD6, 0xD0, 0xCE, 0xC4]);
+        bytes.extend_from_slice(b"\"}}\n");
+
+        let (line, decoded_with) = decode_process_output_line(&bytes);
+
+        assert_eq!(decoded_with, Some("gbk"));
+        assert!(line.contains("\"text\":\"中文\""));
+        assert!(parse_codex_line(line.trim()).is_some());
     }
 
     #[test]
