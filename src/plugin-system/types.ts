@@ -47,6 +47,15 @@ export interface PluginPermissionDeclaration {
   appConfigWrite?: boolean
   network?: boolean
   aiToolAccess?: boolean
+  /**
+   * Allowlist of IPC command and event names this plugin may pass through
+   * `PolarisPluginApi.transport.invoke` / `transport.listen`.
+   *
+   * Entries support exact match (`"read_file"`) and suffix glob
+   * (`"knowledge_*"`). An absent or empty array is treated as deny-all.
+   * See `src/plugin-system/runtime/transport.ts` for the matcher.
+   */
+  ipc?: string[]
 }
 
 export type PluginSourceKind = 'builtin' | 'user' | 'project'

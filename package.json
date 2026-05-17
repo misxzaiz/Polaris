@@ -18,7 +18,9 @@
     "test:coverage": "vitest run --coverage",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "security:audit": "audit-ci --config ./audit-ci.json"
+    "security:audit": "audit-ci --config ./audit-ci.json",
+    "build:plugin:knowledge": "pnpm --filter @polaris-plugins/knowledge-panel build",
+    "build:plugins": "pnpm run build:plugin:knowledge"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.0",

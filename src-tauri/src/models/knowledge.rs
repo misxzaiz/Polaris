@@ -387,3 +387,97 @@ pub struct KnowledgeListDomainsParams {
 pub struct KnowledgeInitParams {
     pub workspace_path: Option<String>,
 }
+
+// =============================================================================
+// Drift-prevention sentry tests
+// =============================================================================
+//
+// The Tauri-side knowledge models duplicate part of the `polaris-knowledge-mcp`
+// crate's v2 schema. Until Phase 5 of the plugin refactor unifies the two, this
+// sentry locks the Tauri-side model to the live `.polaris/knowledge/index.v2.json`
+// shape so a unilateral change here cannot silently break IPC deserialization
+// in production.
+//
+// The test is skipped (not failed) when the live file is absent.
+
+#[cfg(test)]
+mod live_data_sentry {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn live_index_path() -> PathBuf {
+        // src-tauri/  →  workspace root
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join(".polaris")
+            .join("knowledge")
+            .join("index.v2.json")
+    }
+
+    #[test]
+    fn live_v2_index_deserializes_with_tauri_model() {
+        let path = live_index_path();
+        if !path.exists() {
+            eprintln!(
+                "[sentry] live index not found at {}, skipping",
+                path.display()
+            );
+            return;
+        }
+
+        let raw = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read live index ({}): {e}", path.display()));
+
+        let index: KnowledgeIndex = serde_json::from_str(&raw).unwrap_or_else(|e| {
+            panic!(
+                "Tauri-side KnowledgeIndex rejected live data at {}: {e}",
+                path.display()
+            )
+        });
+
+        assert_eq!(
+            index.schema_version.as_deref(),
+            Some("assertion-based"),
+            "schemaVersion in live data must be 'assertion-based'"
+        );
+        assert!(
+            !index.modules.is_empty(),
+            "live index must contain at least one module"
+        );
+        assert!(
+            !index.domains.is_empty(),
+            "live index must contain at least one domain"
+        );
+
+        // Each module's enum-valued fields must round-trip cleanly.
+        for m in &index.modules {
+            // Re-encode and re-decode each module to ensure no field is lost.
+            let s = serde_json::to_string(m)
+                .unwrap_or_else(|e| panic!("serialize module {}: {e}", m.id));
+            let _: KnowledgeModule = serde_json::from_str(&s)
+                .unwrap_or_else(|e| panic!("reparse module {}: {e}", m.id));
+        }
+    }
+
+    #[test]
+    fn live_v2_index_roundtrips_through_tauri_model() {
+        let path = live_index_path();
+        if !path.exists() {
+            eprintln!(
+                "[sentry] live index not found at {}, skipping",
+                path.display()
+            );
+            return;
+        }
+
+        let raw = std::fs::read_to_string(&path).expect("read live index");
+        let parsed: KnowledgeIndex =
+            serde_json::from_str(&raw).expect("first parse must succeed");
+        let reserialized = serde_json::to_string(&parsed).expect("serialize");
+        let reparsed: KnowledgeIndex =
+            serde_json::from_str(&reserialized).expect("reparse");
+
+        assert_eq!(parsed.modules.len(), reparsed.modules.len());
+        assert_eq!(parsed.domains.len(), reparsed.domains.len());
+    }
+}

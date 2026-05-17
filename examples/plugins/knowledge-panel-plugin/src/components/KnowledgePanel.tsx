@@ -19,10 +19,8 @@ import {
   Plus,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { useWorkspaceStore } from '@/stores'
-import { useKnowledgeStore } from '@/stores/knowledgeStore'
-import { useToastStore } from '@/stores/toastStore'
-import { ConfirmDialog } from '@/components/Common/ConfirmDialog'
+import { useWorkspaceStore, useToastStore, ConfirmDialog } from '../runtime'
+import { useKnowledgeStore } from '../stores/knowledgeStore'
 import { ModuleCard } from './ModuleCard'
 import { KnowledgeDependencyGraph } from './KnowledgeDependencyGraph'
 import { KnowledgeHealthDashboard } from './KnowledgeHealthDashboard'
@@ -30,7 +28,7 @@ import { ModuleDetailDialog } from './ModuleDetailDialog'
 import { ModuleForm } from './ModuleForm'
 import type { ModuleNode } from './KnowledgeDependencyGraph'
 import type { ConfidenceLevel } from './constants'
-import type { CreateModuleData, UpdateModuleData } from '@/services/tauri/knowledgeIpcService'
+import type { CreateModuleData, UpdateModuleData } from '../services/knowledgeIpcService'
 
 type ViewMode = 'list' | 'graph' | 'health'
 

@@ -1,0 +1,8 @@
+packages:
+  # Host application (this directory). Listed explicitly so pnpm doesn't
+  # treat the root as a non-workspace project once example plugins are added.
+  - '.'
+  # Example plugins — these are real workspace projects so pnpm symlinks
+  # their dependencies against the host node_modules, sharing React,
+  # CodeMirror, Zustand etc. instead of duplicating them on disk.
+  - 'examples/plugins/*'

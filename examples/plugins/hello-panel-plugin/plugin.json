@@ -1,0 +1,28 @@
+{
+  "id": "polaris.example.hello-panel",
+  "name": "Hello Panel Example",
+  "version": "0.1.0",
+  "apiVersion": "^0.1.0",
+  "description": "Minimal validation example for the Polaris Plugin Runtime API. Demonstrates how a plugin consumes the host-injected PolarisPluginApi to render a panel that reuses host React, i18n, stores, and UI primitives.",
+  "builtin": false,
+  "enabledByDefault": false,
+  "contributes": {
+    "views": [
+      {
+        "id": "hello-panel.example",
+        "area": "activityBar",
+        "panelType": "demoPlugin",
+        "icon": "Code2",
+        "labelKey": "labels.helloPanel",
+        "labelDefault": "Hello Panel",
+        "order": 999
+      }
+    ]
+  },
+  "permissions": {
+    "ipc": [
+      "read_file",
+      "path_exists"
+    ]
+  }
+}

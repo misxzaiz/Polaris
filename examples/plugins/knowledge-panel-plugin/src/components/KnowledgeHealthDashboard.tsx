@@ -18,7 +18,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { useKnowledgeStore } from '@/stores/knowledgeStore'
+import { useKnowledgeStore } from '../stores/knowledgeStore'
 import { type ConfidenceLevel, CONFIDENCE_CONFIG } from './constants'
 
 /** 置信度图标映射 */

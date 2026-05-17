@@ -2,6 +2,7 @@ import type { PolarisPluginManifest } from './types'
 import { pluginRegistry } from './registry'
 import { todoPluginManifest } from '@/plugins/todo/manifest'
 import { longGoalPluginManifest } from '@/plugins/longGoal/manifest'
+import { knowledgePluginManifest } from '@/plugins/knowledge/manifest'
 
 const corePluginManifest: PolarisPluginManifest = {
   id: 'polaris.core',
@@ -85,15 +86,6 @@ const corePluginManifest: PolarisPluginManifest = {
         order: 90,
       },
       {
-        id: 'knowledge.panel',
-        area: 'activityBar',
-        panelType: 'knowledge',
-        icon: 'BookOpen',
-        labelKey: 'labels.knowledgePanel',
-        labelDefault: 'Knowledge',
-        order: 100,
-      },
-      {
         id: 'problems.panel',
         area: 'activityBar',
         panelType: 'problems',
@@ -112,6 +104,7 @@ export function registerBuiltinPlugins(): void {
   pluginRegistry.register(corePluginManifest)
   pluginRegistry.register(todoPluginManifest)
   pluginRegistry.register(longGoalPluginManifest)
+  pluginRegistry.register(knowledgePluginManifest)
 }
 
 registerBuiltinPlugins()

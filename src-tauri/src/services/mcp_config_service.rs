@@ -18,6 +18,7 @@ const LONG_GOAL_MCP_SERVER_NAME: &str = "polaris-long-goal";
 const LONG_GOAL_MCP_BIN_NAME: &str = "polaris-long-goal-mcp";
 const TODO_PLUGIN_ID: &str = "polaris.todo";
 const LONG_GOAL_PLUGIN_ID: &str = "polaris.long-goal";
+const KNOWLEDGE_PLUGIN_ID: &str = "polaris.knowledge";
 
 /// Platform-aware executable suffix: ".exe" on Windows, "" on Linux/macOS.
 const EXE_SUFFIX: &str = std::env::consts::EXE_SUFFIX;
@@ -146,6 +147,10 @@ pub fn builtin_plugin_mcp_manifests() -> &'static [BuiltinPluginMcpManifest] {
             plugin_id: LONG_GOAL_PLUGIN_ID,
             mcp_server_names: &[LONG_GOAL_MCP_SERVER_NAME],
         },
+        BuiltinPluginMcpManifest {
+            plugin_id: KNOWLEDGE_PLUGIN_ID,
+            mcp_server_names: &[KNOWLEDGE_MCP_SERVER_NAME],
+        },
     ]
 }
 
@@ -184,16 +189,19 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
         McpServerArgsMode::ConfigDirAndWorkspace,
         false,
     ));
-    registry.register(PluginMcpServerContribution::builtin(
-        KNOWLEDGE_MCP_SERVER_NAME,
-        KNOWLEDGE_MCP_BIN_NAME,
-        "bin/polaris-knowledge-mcp",
-        "polaris-knowledge-mcp",
-        "src-tauri/target/debug/polaris-knowledge-mcp",
-        "POLARIS_KNOWLEDGE_MCP_PATH",
-        McpServerArgsMode::ConfigDirAndWorkspace,
-        false,
-    ));
+    registry.register_plugin_server(
+        KNOWLEDGE_PLUGIN_ID,
+        PluginMcpServerContribution::builtin(
+            KNOWLEDGE_MCP_SERVER_NAME,
+            KNOWLEDGE_MCP_BIN_NAME,
+            "bin/polaris-knowledge-mcp",
+            "polaris-knowledge-mcp",
+            "src-tauri/target/debug/polaris-knowledge-mcp",
+            "POLARIS_KNOWLEDGE_MCP_PATH",
+            McpServerArgsMode::ConfigDirAndWorkspace,
+            false,
+        ),
+    );
     registry.register_plugin_server(
         LONG_GOAL_PLUGIN_ID,
         PluginMcpServerContribution::builtin(

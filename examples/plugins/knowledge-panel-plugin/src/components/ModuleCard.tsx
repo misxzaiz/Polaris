@@ -17,8 +17,8 @@ import {
   Trash2,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { ModuleIndexEntry as KnowledgeModule, StaleModule } from '@/services/knowledgeService'
-import { useKnowledgeStore } from '@/stores/knowledgeStore'
+import type { ModuleIndexEntry as KnowledgeModule, StaleModule } from '../services/knowledgeService'
+import { useKnowledgeStore } from '../stores/knowledgeStore'
 
 interface ModuleCardProps {
   module: KnowledgeModule

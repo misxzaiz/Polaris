@@ -40,6 +40,10 @@ import '@testing-library/jest-dom';
  */
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
+  // `convertFileSrc` is used by code that converts local paths into webview
+  // URLs (image previews, plugin asset loading). Tests don't need it to do
+  // anything special — passing the path through is enough for unit-test scope.
+  convertFileSrc: vi.fn((path: string) => path),
 }));
 
 /**

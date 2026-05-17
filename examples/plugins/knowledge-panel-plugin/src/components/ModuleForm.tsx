@@ -8,9 +8,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { useKnowledgeStore } from '@/stores/knowledgeStore'
-import type { ModuleIndexEntry, DomainDefinition } from '@/services/knowledgeService'
-import type { CreateModuleData, UpdateModuleData } from '@/services/tauri/knowledgeIpcService'
+import { useKnowledgeStore } from '../stores/knowledgeStore'
+import type { ModuleIndexEntry, DomainDefinition } from '../services/knowledgeService'
+import type { CreateModuleData, UpdateModuleData } from '../services/knowledgeIpcService'
 
 interface ModuleFormProps {
   module?: ModuleIndexEntry

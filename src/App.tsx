@@ -16,9 +16,43 @@ import { SchedulerPanel } from './components/Scheduler/SchedulerPanel';
 import { LongGoalPanel } from './components/LongGoalPanel';
 import { RequirementPanel } from './components/RequirementPanel/RequirementPanel';
 import { TerminalPanel } from './components/Terminal/TerminalPanel';
-import { KnowledgePanel } from './components/KnowledgePanel';
 import { ProblemsPanel } from './components/Problems/ProblemsPanel';
 import { DemoPluginPanel } from './components/Plugins/DemoPluginPanel';
+import { PluginPanelHost } from './plugin-system/PluginPanelHost';
+
+/**
+ * Knowledge panel mount.
+ *
+ * The Knowledge UI lives in `examples/plugins/knowledge-panel-plugin/` and
+ * is loaded via the dynamic plugin runtime (Phase 3 of the externalization
+ * refactor). The in-bundle `KnowledgePanel` has been removed; the only way
+ * to render the panel is now through `PluginPanelHost`.
+ *
+ * ## Entry URL resolution
+ *
+ * - **Dev (`pnpm dev` / `pnpm tauri:dev`)**: Vite serves the workspace root
+ *   so the plugin's built artifact is reachable at
+ *   `/examples/plugins/knowledge-panel-plugin/dist/index.js`.
+ * - **Packaged Tauri build**: the plugin directory ships under the install
+ *   tree (see `tauri.conf.json` resources) and is resolved via
+ *   `convertFileSrc(...)`.
+ *
+ * Override via `VITE_KNOWLEDGE_PLUGIN_URL` if you need to point at a
+ * locally-built fork during debugging.
+ */
+const KNOWLEDGE_PLUGIN_URL =
+  import.meta.env.VITE_KNOWLEDGE_PLUGIN_URL ??
+  '/examples/plugins/knowledge-panel-plugin/dist/index.js';
+
+function KnowledgePanelMount() {
+  return (
+    <PluginPanelHost
+      pluginId="polaris.knowledge"
+      entryUrl={KNOWLEDGE_PLUGIN_URL}
+      requiredApiVersion="^0.1.0"
+    />
+  );
+}
 
 // 懒加载大型组件，减少初始 bundle 大小
 const SettingsModal = lazy(() => import('./components/Settings/SettingsModal').then(m => ({ default: m.SettingsModal })));
@@ -157,7 +191,7 @@ function App() {
                 terminalContent={<TerminalPanel />}
                 developerContent={<Suspense fallback={loadingFallback}><DeveloperPanel fillRemaining /></Suspense>}
                 integrationContent={<Suspense fallback={loadingFallback}><IntegrationPanel /></Suspense>}
-                knowledgeContent={<KnowledgePanel />}
+                knowledgeContent={<KnowledgePanelMount />}
                 problemsContent={<ProblemsPanel />}
                 demoPluginContent={<DemoPluginPanel onSendToChat={sendMessage} />}
               />

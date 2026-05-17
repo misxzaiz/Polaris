@@ -6,9 +6,7 @@
  */
 
 import { useEffect, useRef, memo, useState, useMemo } from 'react';
-import { getMermaidConfig } from '../../utils/mermaid-config';
-import { createLogger } from '../../utils/logger';
-import { ZoomableDiagramContainer } from '../Common/ZoomableDiagramContainer';
+import { getMermaidConfig, createLogger, ZoomableDiagramContainer, getMermaid } from '../runtime';
 
 const log = createLogger('KnowledgeDependencyGraph');
 
@@ -253,8 +251,7 @@ export const KnowledgeDependencyGraph = memo(function KnowledgeDependencyGraph({
 
     const render = async () => {
       try {
-        const mermaidModule = await import('mermaid');
-        const mermaid = mermaidModule.default;
+        const mermaid = await getMermaid();
 
         const config = getMermaidConfig('dark');
         mermaid.initialize(config);

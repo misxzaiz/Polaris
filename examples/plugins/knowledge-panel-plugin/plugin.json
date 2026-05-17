@@ -1,0 +1,47 @@
+{
+  "id": "polaris.knowledge",
+  "name": "Knowledge",
+  "version": "0.1.0",
+  "apiVersion": "^0.1.0",
+  "description": "项目知识库面板和 Knowledge MCP 工具面。",
+  "builtin": false,
+  "enabledByDefault": true,
+  "contributes": {
+    "views": [
+      {
+        "id": "knowledge.panel",
+        "area": "activityBar",
+        "panelType": "knowledge",
+        "icon": "BookOpen",
+        "labelKey": "labels.knowledgePanel",
+        "labelDefault": "Knowledge",
+        "order": 100,
+        "entry": "dist/index.js"
+      }
+    ],
+    "mcpServers": [
+      {
+        "id": "polaris-knowledge",
+        "transport": "stdio",
+        "command": "polaris_knowledge_mcp",
+        "argsTemplate": ["{{appConfigDir}}", "{{workspacePath}}"]
+      }
+    ]
+  },
+  "permissions": {
+    "workspaceRead": true,
+    "workspaceWrite": true,
+    "appConfigRead": true,
+    "appConfigWrite": true,
+    "aiToolAccess": true,
+    "ipc": [
+      "knowledge_*",
+      "get_file_content",
+      "read_directory",
+      "delete_file",
+      "create_directory",
+      "create_file",
+      "path_exists"
+    ]
+  }
+}

@@ -9,11 +9,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import { X, BookOpen, AlertTriangle, Link2, Pencil, Trash2, Save, RotateCcw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { ModuleIndexEntry as KnowledgeModule } from '@/services/knowledgeService'
-import { useKnowledgeStore } from '@/stores/knowledgeStore'
-import { ProgressiveStreamingMarkdown } from '@/utils/lightweightMarkdown'
-import { CodeMirrorEditor } from '@/components/Editor'
-import { useToastStore } from '@/stores/toastStore'
+import type { ModuleIndexEntry as KnowledgeModule } from '../services/knowledgeService'
+import { useKnowledgeStore } from '../stores/knowledgeStore'
+import {
+  ProgressiveStreamingMarkdown,
+  CodeMirrorEditor,
+  useToastStore,
+} from '../runtime'
 import {
   type ConfidenceLevel,
   CONFIDENCE_CONFIG,

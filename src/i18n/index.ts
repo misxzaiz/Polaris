@@ -18,6 +18,10 @@ import zhCNScheduler from '../locales/zh-CN/scheduler.json';
 import zhCNRequirement from '../locales/zh-CN/requirement.json';
 import zhCNCommands from '../locales/zh-CN/commands.json';
 import zhCNPromptSnippet from '../locales/zh-CN/promptSnippet.json';
+// `knowledge` namespace is kept available here for non-UI consumers
+// (ChatInput #module-id suggestions, conversationStore prompt enrichment).
+// The Knowledge plugin re-registers an identical bundle on mount so plugin
+// code does not rely on the host's pre-bundled copy.
 import zhCNKnowledge from '../locales/zh-CN/knowledge.json';
 
 import enUSCommon from '../locales/en-US/common.json';

@@ -167,6 +167,16 @@ pub struct PluginManifestPermissions {
     pub network: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ai_tool_access: Option<bool>,
+    /// IPC command/event allowlist for `PolarisPluginApi.transport`.
+    ///
+    /// Each entry supports exact match (`"read_file"`) or suffix glob
+    /// (`"knowledge_*"`). Empty/absent vec ⇒ deny-all at runtime.
+    /// Enforcement lives in the front-end runtime
+    /// (`src/plugin-system/runtime/transport.ts`); the backend just preserves
+    /// the field so the same manifest survives round-trips through
+    /// discovery / install / save.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ipc: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
