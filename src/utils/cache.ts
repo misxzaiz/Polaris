@@ -29,12 +29,35 @@ function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }
 
+let markdownArtifactBaseUrl: string | null = null;
+let markdownImageSrcConfigVersion = 0;
+
+export function setMarkdownArtifactBaseUrl(baseUrl: string | null): void {
+  const normalized = baseUrl?.trim().replace(/\/+$/, '') || null;
+  if (normalized === markdownArtifactBaseUrl) return;
+
+  markdownArtifactBaseUrl = normalized;
+  markdownImageSrcConfigVersion += 1;
+}
+
+function isCodexArtifactApiReference(href: string): boolean {
+  return href.startsWith('/api/artifacts/codex-images/');
+}
+
 function isLocalFileReference(href: string): boolean {
+  if (href.startsWith('/api/')) {
+    return false;
+  }
+
   return /^[a-zA-Z]:[\\/]/.test(href) || href.startsWith('/') || href.startsWith('file://');
 }
 
 function normalizeMarkdownImageSrc(href: string): string {
   if (!href) return '';
+  if (isTauriRuntime() && isCodexArtifactApiReference(href) && markdownArtifactBaseUrl) {
+    return `${markdownArtifactBaseUrl}${href}`;
+  }
+
   if (!isTauriRuntime() || !isLocalFileReference(href)) return href;
 
   const path = href.startsWith('file://') ? href.replace(/^file:\/\/\/?/, '') : href;
@@ -352,6 +375,7 @@ export class MarkdownRenderCache {
   private lastContent: string = '';
   private lastHtml: string = '';
   private lastRenderedLength: number = 0;
+  private lastImageSrcConfigVersion: number = -1;
 
   private readonly ALLOWED_TAGS = MARKDOWN_ALLOWED_TAGS;
   private readonly ALLOWED_ATTR = MARKDOWN_ALLOWED_ATTR;
@@ -381,28 +405,39 @@ export class MarkdownRenderCache {
     // 空内容快速返回
     if (!content) return '';
 
+    const imageSrcConfigVersion = markdownImageSrcConfigVersion;
+
     // 如果内容没变，返回缓存的 HTML
-    if (content === this.lastContent && this.lastHtml) {
+    if (
+      content === this.lastContent
+      && this.lastHtml
+      && imageSrcConfigVersion === this.lastImageSrcConfigVersion
+    ) {
       return this.lastHtml;
     }
 
     // 检查缓存
-    const fingerprint = getContentFingerprint(content);
+    const fingerprint = `${imageSrcConfigVersion}:${getContentFingerprint(content)}`;
     const cached = this.cache.get(fingerprint);
     if (cached) {
       this.lastContent = content;
       this.lastHtml = cached.html;
       this.lastRenderedLength = content.length;
+      this.lastImageSrcConfigVersion = imageSrcConfigVersion;
       return cached.html;
     }
 
     // 尝试增量渲染
-    if (this.isIncrementalAppend(content, this.lastContent)) {
+    if (
+      imageSrcConfigVersion === this.lastImageSrcConfigVersion
+      && this.isIncrementalAppend(content, this.lastContent)
+    ) {
       const incrementalHtml = this.renderIncremental(content, this.lastContent, this.lastHtml);
       if (incrementalHtml) {
         this.lastContent = content;
         this.lastHtml = incrementalHtml;
         this.lastRenderedLength = content.length;
+        this.lastImageSrcConfigVersion = imageSrcConfigVersion;
 
         // 缓存结果
         this.cache.set(fingerprint, {
@@ -432,6 +467,7 @@ export class MarkdownRenderCache {
       this.lastContent = content;
       this.lastHtml = html;
       this.lastRenderedLength = content.length;
+      this.lastImageSrcConfigVersion = imageSrcConfigVersion;
 
       return html;
     } catch (error) {
@@ -512,6 +548,7 @@ export class MarkdownRenderCache {
     this.lastContent = '';
     this.lastHtml = '';
     this.lastRenderedLength = 0;
+    this.lastImageSrcConfigVersion = -1;
   }
 
   /**

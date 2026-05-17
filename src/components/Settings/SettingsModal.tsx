@@ -30,6 +30,7 @@ import { PluginTab } from './tabs/PluginTab';
 import { createLogger } from '../../utils/logger';
 import { applyWebServer, getConfig } from '../../services/tauri/configService';
 import { currentMode } from '../../services/transport';
+import { setMarkdownArtifactBaseUrl } from '../../utils/cache';
 import type { Config, ConfigPatch } from '../../types';
 
 const log = createLogger('SettingsModal');
@@ -125,7 +126,8 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
 
   const applyWebServerIfNeeded = async (shouldApply: boolean) => {
     if (!shouldApply || currentMode !== 'tauri') return;
-    await applyWebServer();
+    const status = await applyWebServer();
+    setMarkdownArtifactBaseUrl(status.running && status.url ? status.url : null);
     setWebStatusRefreshKey((key) => key + 1);
   };
 

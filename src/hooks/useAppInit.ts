@@ -26,12 +26,60 @@ import { discoverInstalledPlugins } from '../services/pluginDiscoveryService';
 import { disconnect as disconnectTransport } from '../services/transport';
 import { createLogger } from '../utils/logger';
 import { currentMode } from '../services/transport';
+import { getWebServerStatus } from '../services/tauri/configService';
+import { setMarkdownArtifactBaseUrl } from '../utils/cache';
 import { pluginRegistry } from '../plugin-system';
 
 const log = createLogger('AppInit');
+const MARKDOWN_ARTIFACT_STATUS_ATTEMPTS = 5;
+const MARKDOWN_ARTIFACT_STATUS_RETRY_MS = 200;
 
 interface UseAppInitOptions {
   onNoWorkspaces: () => void;
+}
+
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
+
+    const timeout = window.setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => {
+      window.clearTimeout(timeout);
+      resolve();
+    }, { once: true });
+  });
+}
+
+async function syncMarkdownArtifactBaseUrl(signal?: AbortSignal): Promise<void> {
+  if (currentMode !== 'tauri') {
+    setMarkdownArtifactBaseUrl(null);
+    return;
+  }
+
+  for (let attempt = 0; attempt < MARKDOWN_ARTIFACT_STATUS_ATTEMPTS; attempt += 1) {
+    if (signal?.aborted) return;
+
+    try {
+      const status = await getWebServerStatus();
+      if (status.running && status.url) {
+        setMarkdownArtifactBaseUrl(status.url);
+        return;
+      }
+    } catch (error) {
+      log.debug('Web server status unavailable while preparing markdown artifacts', {
+        error: String(error),
+      });
+    }
+
+    if (attempt < MARKDOWN_ARTIFACT_STATUS_ATTEMPTS - 1) {
+      await delay(MARKDOWN_ARTIFACT_STATUS_RETRY_MS, signal);
+    }
+  }
+
+  setMarkdownArtifactBaseUrl(null);
 }
 
 export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
@@ -177,6 +225,7 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
       try {
         // 先加载配置
         await loadConfig();
+        await syncMarkdownArtifactBaseUrl(controller.signal);
 
         // Web 模式鉴权未通过时，停止后续初始化，优先让用户输入 Token
         if (useConfigStore.getState().connectionState === 'needsToken') {
