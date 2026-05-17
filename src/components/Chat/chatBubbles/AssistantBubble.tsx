@@ -9,6 +9,7 @@ import { renderBlocksWithGrouping } from '../blockGrouping';
 import { MessageContextMenu } from './MessageContextMenu';
 import { Bot } from 'lucide-react';
 import { getEngineDisplayName } from '../../../utils/engineDisplay';
+import { MarkdownImageSurface } from '../MarkdownImageSurface';
 
 export const AssistantBubble = memo(function AssistantBubble({
   message,
@@ -83,10 +84,12 @@ export const AssistantBubble = memo(function AssistantBubble({
             </div>
           ) : message.content ? (
             // 兼容旧格式（content 字符串）
-            <div
-              className="prose prose-invert prose-sm max-w-none"
-              dangerouslySetInnerHTML={{ __html: formatContent(message.content) }}
-            />
+            <MarkdownImageSurface>
+              <div
+                className="prose prose-invert prose-sm max-w-none"
+                dangerouslySetInnerHTML={{ __html: formatContent(message.content) }}
+              />
+            </MarkdownImageSurface>
           ) : null}
 
           {/* 流式光标 */}

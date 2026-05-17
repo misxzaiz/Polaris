@@ -1,8 +1,11 @@
 use crate::error::{AppError, Result};
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use std::path::Path;
 use std::fs;
 use std::time::SystemTime;
 use std::collections::HashSet;
+
+const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif"];
 
 /// 文件搜索结果（用于 @file 引用）
 #[derive(serde::Serialize)]
@@ -159,6 +162,92 @@ pub async fn create_file(path: String, content: Option<String>) -> Result<()> {
     }
     
     Ok(())
+}
+
+fn is_supported_image_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|v| v.to_str())
+        .map(|ext| {
+            let ext = ext.to_ascii_lowercase();
+            IMAGE_EXTENSIONS.iter().any(|candidate| *candidate == ext.as_str())
+        })
+        .unwrap_or(false)
+}
+
+fn ensure_image_destination(path: &Path) -> Result<()> {
+    if !is_supported_image_path(path) {
+        return Err(AppError::InvalidPath(
+            "仅支持保存 png、jpg、jpeg、webp、gif 图片".to_string(),
+        ));
+    }
+
+    if let Some(parent) = path.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn is_safe_codex_artifact_segment(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+        && !value.contains("..")
+}
+
+fn codex_generated_image_path(thread_id: &str, file_name: &str) -> Result<std::path::PathBuf> {
+    if !is_safe_codex_artifact_segment(thread_id) || !is_safe_codex_artifact_segment(file_name) {
+        return Err(AppError::InvalidPath("无效的图片路径".to_string()));
+    }
+
+    if !is_supported_image_path(Path::new(file_name)) {
+        return Err(AppError::InvalidPath("不支持的图片类型".to_string()));
+    }
+
+    let home = dirs::home_dir()
+        .ok_or_else(|| AppError::InvalidPath("无法获取用户目录".to_string()))?;
+
+    Ok(home
+        .join(".codex")
+        .join("generated_images")
+        .join(thread_id)
+        .join(file_name))
+}
+
+/// 保存前端传入的图片二进制数据
+#[cfg_attr(feature = "tauri-app", tauri::command)]
+pub async fn save_image_bytes(path: String, data_base64: String) -> Result<String> {
+    let path_obj = Path::new(&path);
+    ensure_image_destination(path_obj)?;
+
+    let bytes = BASE64_STANDARD
+        .decode(data_base64.trim())
+        .map_err(|e| AppError::InvalidPath(format!("图片数据无效: {}", e)))?;
+
+    fs::write(path_obj, bytes)?;
+    Ok(path)
+}
+
+/// 保存 Codex 生成图片 artifact
+#[cfg_attr(feature = "tauri-app", tauri::command)]
+pub async fn save_codex_image_artifact(
+    thread_id: String,
+    file_name: String,
+    destination: String,
+) -> Result<String> {
+    let source = codex_generated_image_path(&thread_id, &file_name)?;
+    if !source.exists() || !source.is_file() {
+        return Err(AppError::InvalidPath("图片不存在".to_string()));
+    }
+
+    let destination_path = Path::new(&destination);
+    ensure_image_destination(destination_path)?;
+
+    fs::copy(source, destination_path)?;
+    Ok(destination)
 }
 
 /// 创建目录

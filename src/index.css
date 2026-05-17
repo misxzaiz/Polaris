@@ -214,6 +214,32 @@ body {
   line-height: 1.5;
 }
 
+.prose img.markdown-chat-image {
+  display: block;
+  width: 30%;
+  min-width: 160px;
+  max-width: 360px;
+  height: auto;
+  margin: 8px 0;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  object-fit: contain;
+  cursor: zoom-in;
+}
+
+.prose img.markdown-chat-image:hover {
+  border-color: rgba(96, 165, 250, 0.45);
+}
+
+@media (max-width: 640px) {
+  .prose img.markdown-chat-image {
+    width: 58%;
+    min-width: 140px;
+    max-width: 100%;
+  }
+}
+
 /* 表格样式 */
 .prose table {
   width: 100%;

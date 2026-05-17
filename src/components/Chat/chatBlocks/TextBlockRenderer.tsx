@@ -11,6 +11,7 @@
 import { memo } from 'react';
 import type { TextBlock } from '../../../types';
 import { ProgressiveStreamingMarkdown } from '../../../utils/lightweightMarkdown';
+import { MarkdownImageSurface } from '../MarkdownImageSurface';
 
 export const TextBlockRenderer = memo(function TextBlockRenderer({
   block,
@@ -24,8 +25,10 @@ export const TextBlockRenderer = memo(function TextBlockRenderer({
   // 非流式时 completed=true（所有段落用完整 Markdown 渲染）
   // 优势：流式→非流式切换时无 DOM 结构变化，避免视觉跳变
   return (
-    <div className="prose prose-invert prose-sm max-w-none">
-      <ProgressiveStreamingMarkdown content={block.content} completed={!isStreaming} />
-    </div>
+    <MarkdownImageSurface>
+      <div className="prose prose-invert prose-sm max-w-none">
+        <ProgressiveStreamingMarkdown content={block.content} completed={!isStreaming} />
+      </div>
+    </MarkdownImageSurface>
   );
 });

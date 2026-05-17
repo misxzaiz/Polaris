@@ -12,6 +12,7 @@ describe('MarkdownRenderCache', () => {
     const html = cache.render('![puppy](data:image/png;base64,abc "dog")');
 
     expect(html).toContain('<img');
+    expect(html).toContain('class="markdown-chat-image"');
     expect(html).toContain('alt="puppy"');
     expect(html).toContain('title="dog"');
     expect(html).toContain('loading="lazy"');

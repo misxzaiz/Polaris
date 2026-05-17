@@ -74,7 +74,7 @@ const linkRenderer = {
     const safeSrc = escapeHtmlAttribute(normalizeMarkdownImageSrc(href));
     const safeAlt = escapeHtmlAttribute(text || '');
     const safeTitle = title ? ` title="${escapeHtmlAttribute(title)}"` : '';
-    return `<img src="${safeSrc}" alt="${safeAlt}"${safeTitle} loading="lazy" />`;
+    return `<img src="${safeSrc}" alt="${safeAlt}"${safeTitle} class="markdown-chat-image" loading="lazy" />`;
   },
 };
 marked.use({ renderer: linkRenderer });

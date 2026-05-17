@@ -40,7 +40,7 @@ use commands::file_explorer::{
     read_directory, get_file_content, create_file, create_directory,
     delete_file, rename_file, path_exists, read_commands, search_files,
     search_file_contents,
-    copy_path, move_path,
+    copy_path, move_path, save_image_bytes, save_codex_image_artifact,
 };
 #[cfg(feature = "tauri-app")]
 use commands::file_watcher::{
@@ -582,6 +582,8 @@ pub fn run() {
             read_directory,
             get_file_content,
             create_file,
+            save_image_bytes,
+            save_codex_image_artifact,
             create_directory,
             delete_file,
             rename_file,
