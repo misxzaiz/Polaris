@@ -80,7 +80,6 @@ const VALID_PANEL_TYPES = new Set<PluginLeftPanelType>([
   'terminal',
   'developer',
   'integration',
-  'knowledge',
   'todo',
   'problems',
   'demoPlugin',

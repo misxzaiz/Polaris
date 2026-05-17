@@ -16,7 +16,6 @@ pub mod file_watcher;
 pub mod diagnostics;
 pub mod todo;
 pub mod requirement;
-pub mod knowledge;
 pub mod long_goal;
 pub mod prompt_snippet;
 

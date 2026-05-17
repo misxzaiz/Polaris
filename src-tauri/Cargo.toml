@@ -46,10 +46,6 @@ name = "polaris-scheduler-mcp"
 path = "src/bin/polaris_scheduler_mcp.rs"
 
 [[bin]]
-name = "polaris-knowledge-mcp"
-path = "src/bin/polaris_knowledge_mcp.rs"
-
-[[bin]]
 name = "polaris-long-goal-mcp"
 path = "src/bin/polaris_long_goal_mcp.rs"
 
@@ -61,9 +57,6 @@ path = "src/bin/polaris_web.rs"
 tauri-build = { version = "2.0", features = [], optional = true }
 
 [dependencies]
-# Internal crates
-polaris-knowledge-mcp = { path = "../crates/polaris-knowledge-mcp" }
-
 tauri = { version = "2.0", features = ["devtools"], optional = true }
 tauri-plugin-opener = { version = "2", optional = true }
 tauri-plugin-dialog = { version = "2.7", optional = true }

@@ -5,9 +5,6 @@
  * - @path - 引用当前工作区的文件（更简洁，常用场景）
  * - @workspace:path - 引用指定工作区的文件（跨工作区）
  *
- * 注意：
- * - 模块知识引用使用 #module-id 语法，见 knowledgeService.ts
- * - # 开头的引用不会被此服务处理
  */
 
 import i18n from 'i18next';
@@ -293,8 +290,7 @@ export function buildWorkspaceContextExtra(
  */
 export function buildWorkspaceSystemPrompt(
   currentWorkspace: Workspace,
-  _contextWorkspaces: Workspace[],
-  moduleDocs?: Map<string, string>
+  _contextWorkspaces: Workspace[]
 ): string {
   const t = i18n.t.bind(i18n);
   const lines: string[] = [];
@@ -315,17 +311,6 @@ export function buildWorkspaceSystemPrompt(
 
   lines.push(``);
   lines.push(t('systemPrompt:workspaceToolGuidance'));
-
-  // 注入模块知识文档
-  if (moduleDocs && moduleDocs.size > 0) {
-    lines.push('');
-    lines.push('## 项目模块知识');
-    lines.push('');
-    for (const [_moduleId, doc] of moduleDocs) {
-      lines.push(doc);
-      lines.push('');
-    }
-  }
 
   return lines.join('\n');
 }
@@ -393,7 +378,4 @@ export function getUserSystemPrompt(
   log.info('用户自定义提示词已生成', { length: resolvedPrompt.length })
   return resolvedPrompt;
 }
-
-// Re-export from knowledgeService for convenience
-export { getKnowledgeService } from './knowledgeService'
 

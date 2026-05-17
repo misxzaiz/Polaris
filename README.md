@@ -37,7 +37,7 @@ Polaris includes three AI engine adapters, switchable in settings:
 ### Core Features
 
 - **AI Chat** - Streaming response, multi-session management, session history, workspace context
-- **Workspace Management** - Multi-workspace switching, workspace context config, project knowledge base
+- **Workspace Management** - Multi-workspace switching and workspace context config
 - **File Explorer** - Git status integration, search, context menu
 - **Code Editor** - CodeMirror 6, multi-language syntax highlighting, diff preview
 - **Git Integration** - Status view, commit, branch management, stash, rebase, cherry-pick
@@ -46,7 +46,6 @@ Polaris includes three AI engine adapters, switchable in settings:
 - **Todo Management** - MCP-integrated todo system
 - **Requirements Management** - MCP-integrated requirements tracking
 - **Long Goal** - MCP-integrated long-term goal tracking and execution system
-- **Knowledge Base** - Assertion-based context compiler, auto-validate code anchors
 - **Bot Integration** - QQ Bot / Feishu platform remote interaction support
 - **Translate Panel** - Integrated translation, send to AI chat
 - **Terminal Panel** - Built-in xterm.js terminal emulator
@@ -111,10 +110,9 @@ pnpm run tauri:dev:win
 | Todo Management | ✅ Available | ❌ Unavailable |
 | Requirements Management | ✅ Available | ❌ Unavailable |
 | Scheduler | ✅ Available | ❌ Unavailable |
-| Knowledge Base | ✅ Available | ❌ Unavailable |
 | Long Goal | ✅ Available | ❌ Unavailable |
 
-> **Note**: MCP (Model Context Protocol) are five independent services built into Polaris. They don't affect core AI chat functionality, only disable related panels.
+> **Note**: MCP (Model Context Protocol) are four independent services built into Polaris. They don't affect core AI chat functionality, only disable related panels.
 
 ### 3. Build
 
@@ -140,7 +138,7 @@ pnpm run lint         # Code linting
 
 ```
 src/
-├── components/          # React components (26 directories)
+├── components/          # React components
 │   ├── Chat/           # AI chat components
 │   ├── Editor/         # Code editor
 │   ├── FileExplorer/   # File browser
@@ -149,7 +147,6 @@ src/
 │   ├── TodoPanel/      # Todo panel
 │   ├── RequirementPanel/ # Requirements panel
 │   ├── LongGoalPanel/  # Long goal panel
-│   ├── KnowledgePanel/ # Knowledge base panel
 │   ├── Integration/    # Bot integration panel
 │   ├── Terminal/       # Terminal panel
 │   ├── Translate/      # Translate panel
@@ -161,7 +158,7 @@ src/
 │   ├── codex/          # OpenAI Codex CLI engine
 │   ├── claude-code/    # Claude Code CLI engine
 │   └── openai-protocol/ # OpenAI-compatible API engine
-├── stores/             # Zustand state management (25+ stores)
+├── stores/             # Zustand state management
 ├── services/           # Tauri API wrappers
 ├── core/               # Core logic
 ├── hooks/              # Custom hooks
@@ -185,29 +182,18 @@ src-tauri/
 │   └── bin/           # Standalone MCP Server binaries
 └── Cargo.toml
 
-crates/
-└── polaris-knowledge-mcp/  # Knowledge MCP Server (standalone crate)
 ```
 
 ## MCP Services
 
-Polaris includes five independent MCP Servers, usable by other AI tools:
+Polaris includes four independent MCP Servers, usable by other AI tools:
 
 | MCP Server | Description | Tools Count |
 |------------|-------------|-------------|
 | `polaris-todo-mcp` | Todo management | 8 |
 | `polaris-requirements-mcp` | Requirements management | 8 |
 | `polaris-scheduler-mcp` | Scheduler management | 7 |
-| `polaris-knowledge-mcp` | Project knowledge base | 16 |
 | `polaris-long-goal-mcp` | Long-term goal tracking | 11 |
-
-### Knowledge Base (Knowledge MCP)
-
-Assertion-based context compiler, core function `compile_context`:
-- Intent-based multi-path recall
-- Token-budgeted context generation
-- Five-tier confidence evolution: 🟢 green → 🟡 yellow → 🟠 orange → 🔴 red → ⚫ black
-- Post-commit hook auto-validates code anchors
 
 ## Plugin System
 

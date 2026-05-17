@@ -37,7 +37,7 @@ Polaris 内置三套 AI 引擎适配层，可在设置中自由切换：
 ### 核心功能
 
 - **AI 对话** - 流式响应、多会话管理、会话历史、上下文工作区
-- **工作区管理** - 多工作区切换、上下文工作区配置、项目知识库
+- **工作区管理** - 多工作区切换、上下文工作区配置
 - **文件浏览** - Git 状态集成、搜索、右键菜单
 - **代码编辑** - CodeMirror 6 编辑器、多语言语法高亮、Diff 预览
 - **Git 集成** - 状态查看、提交、分支管理、Stash、Rebase、Cherry-pick
@@ -46,7 +46,6 @@ Polaris 内置三套 AI 引擎适配层，可在设置中自由切换：
 - **待办管理** - MCP 集成的待办事项系统
 - **需求管理** - MCP 集成的需求跟踪系统
 - **长期目标** - MCP 集成的长期目标追踪与执行系统
-- **项目知识库** - Assertion-based 上下文编译器，自动校验代码锚点
 - **机器人集成** - QQ Bot / 飞书平台远程交互支持
 - **翻译面板** - 集成翻译功能，支持发送到 AI 对话
 - **终端面板** - 内置 xterm.js 终端模拟器
@@ -111,10 +110,9 @@ pnpm run tauri:dev:win
 | 待办管理 (Todo) | ✅ 可用 | ❌ 不可用 |
 | 需求管理 (Requirements) | ✅ 可用 | ❌ 不可用 |
 | 定时任务 (Scheduler) | ✅ 可用 | ❌ 不可用 |
-| 项目知识库 (Knowledge) | ✅ 可用 | ❌ 不可用 |
 | 长期目标 (Long Goal) | ✅ 可用 | ❌ 不可用 |
 
-> **说明**：MCP（Model Context Protocol）是 Polaris 内置的五个独立服务。它们不影响核心 AI 对话功能，仅禁用相关面板。
+> **说明**：MCP（Model Context Protocol）是 Polaris 内置的四个独立服务。它们不影响核心 AI 对话功能，仅禁用相关面板。
 
 ### 3. 构建
 
@@ -140,7 +138,7 @@ pnpm run lint         # 代码检查
 
 ```
 src/
-├── components/          # React 组件 (26 个目录)
+├── components/          # React 组件
 │   ├── Chat/           # AI 对话相关
 │   ├── Editor/         # 代码编辑器
 │   ├── FileExplorer/   # 文件浏览器
@@ -149,7 +147,6 @@ src/
 │   ├── TodoPanel/      # 待办事项面板
 │   ├── RequirementPanel/ # 需求管理面板
 │   ├── LongGoalPanel/  # 长期目标面板
-│   ├── KnowledgePanel/ # 项目知识库面板
 │   ├── Integration/    # 机器人集成面板
 │   ├── Terminal/       # 终端面板
 │   ├── Translate/      # 翻译面板
@@ -161,7 +158,7 @@ src/
 │   ├── codex/          # OpenAI Codex CLI 引擎
 │   ├── claude-code/    # Claude Code CLI 引擎
 │   └── openai-protocol/ # OpenAI 兼容 API 引擎
-├── stores/             # Zustand 状态管理 (25+ stores)
+├── stores/             # Zustand 状态管理
 ├── services/           # Tauri API 封装
 ├── core/               # 核心逻辑
 ├── hooks/              # 自定义 Hooks
@@ -185,29 +182,18 @@ src-tauri/
 │   └── bin/           # 独立 MCP Server 二进制
 └── Cargo.toml
 
-crates/
-└── polaris-knowledge-mcp/  # 项目知识库 MCP Server（独立 crate）
 ```
 
 ## MCP 服务
 
-Polaris 内置五个独立的 MCP Server，可供其他 AI 工具使用：
+Polaris 内置四个独立的 MCP Server，可供其他 AI 工具使用：
 
 | MCP Server | 说明 | 工具数量 |
 |------------|------|----------|
 | `polaris-todo-mcp` | 待办事项管理 | 8 |
 | `polaris-requirements-mcp` | 需求管理 | 8 |
 | `polaris-scheduler-mcp` | 定时任务管理 | 7 |
-| `polaris-knowledge-mcp` | 项目知识库 | 16 |
 | `polaris-long-goal-mcp` | 长期目标追踪 | 11 |
-
-### 项目知识库 (Knowledge MCP)
-
-Assertion-based 上下文编译器，核心抓手 `compile_context`：
-- 基于 Intent 识别的多路召回
-- Token-budgeted 上下文生成
-- 五档置信度演化：🟢 green → 🟡 yellow → 🟠 orange → 🔴 red → ⚫ black
-- Post-commit hook 自动校验代码锚点
 
 ## 插件系统
 

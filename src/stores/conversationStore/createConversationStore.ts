@@ -13,7 +13,7 @@ import type { ChatMessage, ContentBlock, EngineId } from '../../types'
 import { handleAIEvent } from './eventHandler'
 import { toAppError, ErrorSource } from '../../types/errors'
 import { sessionStoreManager } from './sessionStoreManager'
-import { parseWorkspaceReferences, getUserSystemPrompt, getKnowledgeService } from '../../services/workspaceReference'
+import { parseWorkspaceReferences, getUserSystemPrompt } from '../../services/workspaceReference'
 import i18n from 'i18next'
 import { MessageCompactor, isCompacted } from '../../utils/messageCompactor'
 import { isEditTool, extractEditDiff } from '../../utils/diffExtractor'
@@ -880,12 +880,10 @@ export function createConversationStore(
         // 构建工作区系统提示词（始终传递，通过 --append-system-prompt）
         let workspacePrompt = ''
         if (currentWorkspace) {
-          // 使用 KnowledgeService 统一注入模块知识
-          const knowledgeService = getKnowledgeService()
           const basePrompt = i18n.t('systemPrompt:workingIn', { name: currentWorkspace.name }) + '\n' +
             i18n.t('systemPrompt:projectPath', { path: currentWorkspace.path }) + '\n' +
             i18n.t('systemPrompt:fileRefSyntax')
-          workspacePrompt = await knowledgeService.enrichPrompt(content, basePrompt)
+          workspacePrompt = basePrompt
         }
 
         // 构建用户自定义系统提示词（开启时传递，通过 --system-prompt）
@@ -1106,12 +1104,10 @@ export function createConversationStore(
         // 构建工作区系统提示词（始终传递，通过 --append-system-prompt）
         let workspacePrompt = ''
         if (currentWorkspace) {
-          // 使用 KnowledgeService 统一注入模块知识
-          const knowledgeService = getKnowledgeService()
           const basePrompt = i18n.t('systemPrompt:workingIn', { name: currentWorkspace.name }) + '\n' +
             i18n.t('systemPrompt:projectPath', { path: currentWorkspace.path }) + '\n' +
             i18n.t('systemPrompt:fileRefSyntax')
-          workspacePrompt = await knowledgeService.enrichPrompt(prompt, basePrompt)
+          workspacePrompt = basePrompt
         }
 
         // 构建用户自定义系统提示词（开启时传递，通过 --system-prompt）

@@ -32,7 +32,6 @@
     "createUpdaterArtifacts": true,
     "resources": [
       "../dist",
-      "target/release/polaris-knowledge-mcp",
       "target/release/polaris-todo-mcp",
       "target/release/polaris-requirements-mcp",
       "target/release/polaris-scheduler-mcp"

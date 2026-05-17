@@ -17,5 +17,4 @@ export * from './terminalScript';
 export * from './attachment';
 export * from './errors';
 export * from './requirement';
-export * from './knowledge';
 export * from './modelProfile';

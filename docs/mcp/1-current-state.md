@@ -35,7 +35,7 @@
 
 - `feat: add backend mcp contribution registry`
   - 新增 Rust 侧 `PluginMcpServerContribution`、`McpServerContributionRegistry`、`McpServerArgsMode`。
-  - 当前 Todo、Requirements、Scheduler、Knowledge MCP server 已迁移为 registry 初始化内容。
+  - 当前 Todo、Requirements、Scheduler、Long Goal MCP server 已迁移为 registry 初始化内容。
   - `WorkspaceMcpConfigService` 支持从外部 contribution registry 构造，默认入口保持内置行为不变。
 
 ## 当前关键文件

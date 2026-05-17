@@ -212,15 +212,6 @@ pub async fn handle_ipc_bridge(
         "read_requirement_prototype" => dispatch_read_requirement_prototype(&state, &args),
         "get_requirement_workspace_breakdown" => dispatch_requirement_workspace_breakdown(&state, &args),
 
-        // ── Knowledge ─────────────────────────────────────────────────────────
-        "knowledge_init" => dispatch_knowledge_init(&state, &args),
-        "knowledge_list_modules" => dispatch_knowledge_list_modules(&state, &args),
-        "knowledge_get_module" => dispatch_knowledge_get_module(&state, &args),
-        "knowledge_list_domains" => dispatch_knowledge_list_domains(&state, &args),
-        cmd if cmd.starts_with("knowledge_") => {
-            Err(WebError::NotFound(format!("Knowledge command not supported via HTTP: {}", cmd)))
-        }
-
         // ── Long Goal ───────────────────────────────────────────────────────
         "long_goal_create" => dispatch_long_goal_create(&args),
         "long_goal_list" => dispatch_long_goal_list(&args),
@@ -1241,44 +1232,6 @@ fn dispatch_read_requirement_prototype(state: &AppState, args: &Value) -> Result
 }
 fn dispatch_requirement_workspace_breakdown(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
     json_result!(get_req_repo(state, args)?.get_workspace_breakdown())
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Knowledge — uses UnifiedKnowledgeRepository
-// ═══════════════════════════════════════════════════════════════════════════
-
-fn get_knowledge_service(state: &AppState, args: &Value) -> Result<crate::services::unified_knowledge_repository::UnifiedKnowledgeRepository, WebError> {
-    let config_dir = get_config_dir(state)?;
-    // Frontend wraps args in { params: { workspacePath, ... } }
-    let wp = args.get("workspacePath")
-        .or_else(|| args.get("params").and_then(|p| p.get("workspacePath")))
-        .and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()).map(std::path::PathBuf::from);
-    Ok(crate::services::unified_knowledge_repository::UnifiedKnowledgeRepository::new(config_dir, wp))
-}
-
-/// Extract a required string field for knowledge commands, checking both top-level and nested `params`.
-fn knowledge_string(args: &Value, key: &str) -> Result<String, WebError> {
-    args.get(key).and_then(|v| v.as_str()).map(String::from)
-        .or_else(|| args.get("params").and_then(|p| p.get(key)).and_then(|v| v.as_str()).map(String::from))
-        .ok_or_else(|| WebError::BadRequest(format!("Missing required field: {}", key)))
-}
-
-fn dispatch_knowledge_init(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let _ = get_knowledge_service(state, args)?;
-    Ok(Json(serde_json::json!({ "status": "ok" })))
-}
-fn dispatch_knowledge_list_modules(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let repo = get_knowledge_service(state, args)?;
-    json_result!(repo.list_modules())
-}
-fn dispatch_knowledge_get_module(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let repo = get_knowledge_service(state, args)?;
-    let id = knowledge_string(args, "id")?;
-    json_result!(repo.get_module(&id))
-}
-fn dispatch_knowledge_list_domains(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let repo = get_knowledge_service(state, args)?;
-    json_result!(repo.list_domains())
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

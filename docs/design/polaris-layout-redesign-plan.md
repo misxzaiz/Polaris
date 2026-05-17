@@ -69,7 +69,7 @@ Polaris 当前已经具备清晰的 IDE 型骨架：顶部窗口栏、左侧 Act
 布局：
 
 - 中心区域默认是 Agent Timeline，展示消息、工具调用、计划、问题、运行状态。
-- 左侧保留 Context Rail：文件、Git、知识库、需求、Todo 等作为上下文来源。
+- 左侧保留 Context Rail：文件、Git、需求、Todo 等作为上下文来源。
 - 右侧改为 Inspector：当前工具调用详情、Diff、任务日志、引用文件预览。
 - 编辑器不默认常驻，打开文件时以中间分屏或右侧 Inspector 形式出现。
 
@@ -77,7 +77,7 @@ Polaris 当前已经具备清晰的 IDE 型骨架：顶部窗口栏、左侧 Act
 
 - Polaris 希望区别于 VS Code 类 IDE，突出“多引擎 AI 编程助手”的产品定位。
 - 用户主要从自然语言任务开始，而不是从文件编辑开始。
-- 长期目标、定时任务、需求管理、知识库是核心卖点。
+- 长期目标、定时任务、需求管理是核心卖点。
 
 实施重点：
 
@@ -147,7 +147,7 @@ Polaris 当前已经具备清晰的 IDE 型骨架：顶部窗口栏、左侧 Act
 ### 阶段 2：面板规范化
 
 - 新增通用 `PanelHeader`、`PanelToolbar`、`PanelTabs`。
-- FileExplorer、GitPanel、KnowledgePanel、RequirementPanel 先迁移到统一头部。
+- FileExplorer、GitPanel、RequirementPanel 先迁移到统一头部。
 - ChatInput 的容器视觉降噪，输入区保持清楚但不抢占消息主体。
 
 ### 阶段 3：布局能力增强
@@ -173,4 +173,3 @@ Polaris 当前已经具备清晰的 IDE 型骨架：顶部窗口栏、左侧 Act
 - `Focus IDE`：代码编辑优先方案。
 
 原型不依赖构建工具，直接用浏览器打开即可查看。文件内已声明 `<meta charset="UTF-8">`，中文不会乱码。
-

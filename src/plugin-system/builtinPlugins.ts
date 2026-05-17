@@ -85,15 +85,6 @@ const corePluginManifest: PolarisPluginManifest = {
         order: 90,
       },
       {
-        id: 'knowledge.panel',
-        area: 'activityBar',
-        panelType: 'knowledge',
-        icon: 'BookOpen',
-        labelKey: 'labels.knowledgePanel',
-        labelDefault: 'Knowledge',
-        order: 100,
-      },
-      {
         id: 'problems.panel',
         area: 'activityBar',
         panelType: 'problems',

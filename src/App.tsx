@@ -16,7 +16,6 @@ import { SchedulerPanel } from './components/Scheduler/SchedulerPanel';
 import { LongGoalPanel } from './components/LongGoalPanel';
 import { RequirementPanel } from './components/RequirementPanel/RequirementPanel';
 import { TerminalPanel } from './components/Terminal/TerminalPanel';
-import { KnowledgePanel } from './components/KnowledgePanel';
 import { ProblemsPanel } from './components/Problems/ProblemsPanel';
 import { DemoPluginPanel } from './components/Plugins/DemoPluginPanel';
 
@@ -157,7 +156,6 @@ function App() {
                 terminalContent={<TerminalPanel />}
                 developerContent={<Suspense fallback={loadingFallback}><DeveloperPanel fillRemaining /></Suspense>}
                 integrationContent={<Suspense fallback={loadingFallback}><IntegrationPanel /></Suspense>}
-                knowledgeContent={<KnowledgePanel />}
                 problemsContent={<ProblemsPanel />}
                 demoPluginContent={<DemoPluginPanel onSendToChat={sendMessage} />}
               />

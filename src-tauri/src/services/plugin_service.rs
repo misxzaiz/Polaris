@@ -31,7 +31,6 @@ const VALID_PANEL_TYPES: &[&str] = &[
     "terminal",
     "developer",
     "integration",
-    "knowledge",
     "todo",
     "problems",
     "demoPlugin",

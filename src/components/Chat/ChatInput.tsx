@@ -6,7 +6,6 @@
  * - 文件/图片附件 (粘贴、拖放、选择)
  * - 工作区引用 (@workspace)
  * - 文件引用 (@/path)
- * - 知识模块引用 (#module-id)
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
@@ -24,13 +23,11 @@ import { SnippetParamPanel } from './SnippetParamPanel'
 import { useFileSearch } from '../../hooks/useFileSearch'
 import { useSnippetStore } from '../../stores/snippetStore'
 import { resolveTemplateVariables } from '../../services/workspaceReference'
-import { getKnowledgeService } from '../../services/knowledgeService'
 import type { FileMatch } from '../../services/fileSearch'
 import type { Workspace } from '../../types'
 import type { Attachment } from '../../types/attachment'
 import { createLogger } from '../../utils/logger'
 import type { PromptSnippet } from '../../types/promptSnippet'
-import type { ModuleIndexEntry } from '../../services/knowledgeService'
 import {
   createAttachment,
   validateAttachment,
@@ -421,53 +418,6 @@ export function ChatInput({
       return
     }
 
-    // 5. 检测 #module 知识模块引用
-    const moduleMatch = textBeforeCursor.match(/#([a-z][a-z0-9-]*)$/)
-    if (moduleMatch) {
-      const query = moduleMatch[1].toLowerCase()
-      const knowledgeService = getKnowledgeService()
-      const modules = knowledgeService.searchModules(query)
-
-      const moduleItems: SuggestionItem[] = modules
-        .slice(0, 10)
-        .map((m: ModuleIndexEntry) => ({ type: 'module' as const, data: m }))
-
-      if (moduleItems.length > 0) {
-        setSuggestionItems(moduleItems)
-        setSelectedIndex(0)
-        setShowSuggestions(true)
-        setFileWorkspace(null)
-
-        const position = calculateSuggestionPosition()
-        setSuggestionPosition({ top: position.top, left: position.left })
-        return
-      }
-    }
-
-    // 6. 检测单独的 # 符号（显示所有知识模块）
-    const hashOnlyMatch = textBeforeCursor.match(/#$/)
-    if (hashOnlyMatch) {
-      const knowledgeService = getKnowledgeService()
-      const modules = knowledgeService.getModuleIds()
-
-      const moduleItems: SuggestionItem[] = modules
-        .slice(0, 15)
-        .map((id: string) => knowledgeService.getModule(id))
-        .filter((entry): entry is ModuleIndexEntry => entry != null)
-        .map((entry: ModuleIndexEntry) => ({ type: 'module' as const, data: entry }))
-
-      if (moduleItems.length > 0) {
-        setSuggestionItems(moduleItems)
-        setSelectedIndex(0)
-        setShowSuggestions(true)
-        setFileWorkspace(null)
-
-        const position = calculateSuggestionPosition()
-        setSuggestionPosition({ top: position.top, left: position.left })
-        return
-      }
-    }
-
     // 隐藏所有建议
     setShowSuggestions(false)
     setSuggestionItems([])
@@ -530,10 +480,6 @@ export function ChatInput({
     } else if (item.type === 'workspace') {
       const workspace = item.data as Workspace
       newText = textBeforeCursor.replace(/@[\w\u4e00-\u9fa5-/]*$/, `@${workspace.name}:`) + textAfterCursor
-    } else if (item.type === 'module') {
-      // 知识模块引用: #module-id
-      const module = item.data as { id: string }
-      newText = textBeforeCursor.replace(/#[a-z0-9-]*$/, `#${module.id} `) + textAfterCursor
     } else {
       const file = item.data as FileMatch
       if (fileWorkspace) {

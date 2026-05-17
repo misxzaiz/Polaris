@@ -1,5 +1,5 @@
 /**
- * 统一建议下拉组件 - 合并工作区、文件和知识模块建议
+ * 统一建议下拉组件 - 合并工作区、文件和快捷片段建议
  */
 
 import { useEffect, useRef } from 'react';
@@ -7,7 +7,6 @@ import { useTranslation } from 'react-i18next';
 import type { FileMatch } from '../../services/fileSearch';
 import type { Workspace } from '../../types';
 import type { PromptSnippet } from '../../types/promptSnippet';
-import type { ModuleIndexEntry } from '../../services/knowledgeService';
 
 // 分离文件名和目录路径
 function splitPath(relativePath: string): { dir: string; name: string } {
@@ -18,8 +17,8 @@ function splitPath(relativePath: string): { dir: string; name: string } {
 }
 
 export interface SuggestionItem {
-  type: 'workspace' | 'file' | 'snippet' | 'module';
-  data: Workspace | FileMatch | PromptSnippet | ModuleIndexEntry;
+  type: 'workspace' | 'file' | 'snippet';
+  data: Workspace | FileMatch | PromptSnippet;
 }
 
 interface UnifiedSuggestionProps {
@@ -60,7 +59,6 @@ export function UnifiedSuggestion({
   const workspaceItems = items.filter(i => i.type === 'workspace');
   const fileItems = items.filter(i => i.type === 'file');
   const snippetItems = items.filter(i => i.type === 'snippet');
-  const moduleItems = items.filter(i => i.type === 'module');
 
   return (
     <div
@@ -73,38 +71,6 @@ export function UnifiedSuggestion({
         maxWidth: '450px',
       }}
     >
-      {/* 知识模块分组 */}
-      {moduleItems.length > 0 && (
-        <>
-          <div className="px-3 py-1.5 text-xs text-text-tertiary border-b border-border bg-background-elevated/50 sticky top-0">
-            知识模块
-          </div>
-          {moduleItems.map((item) => {
-            const globalIdx = items.findIndex(i => i === item);
-            const module = item.data as ModuleIndexEntry;
-
-            return (
-              <div
-                key={module.id}
-                data-index={globalIdx}
-                className={`px-3 py-2 cursor-pointer flex items-center gap-2 text-sm ${
-                  globalIdx === selectedIndex
-                    ? 'bg-primary/20 text-text-primary'
-                    : 'text-text-secondary hover:bg-background-hover'
-                }`}
-                onClick={() => onSelect(item)}
-                onMouseEnter={() => onHover(globalIdx)}
-              >
-                <span className="font-mono text-sm text-accent shrink-0">#{module.id}</span>
-                <span className="flex-1 truncate font-medium">{module.name}</span>
-                <span className="text-xs text-text-tertiary bg-background-elevated px-1.5 py-0.5 rounded shrink-0">
-                  {module.complexity}
-                </span>
-              </div>
-            );
-          })}
-        </>
-      )}
       {/* 工作区分组 */}
       {workspaceItems.length > 0 && (
         <>
