@@ -1,7 +1,7 @@
 {
   "name": "polaris",
   "private": true,
-  "version": "9.2.5",
+  "version": "9.2.6",
   "type": "module",
   "scripts": {
     "dev": "vite",
