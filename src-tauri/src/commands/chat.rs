@@ -551,15 +551,23 @@ pub async fn start_chat_inner(
         processed.file_references.len()
     );
 
+    let default_engine = || {
+        state
+            .clone_config()
+            .ok()
+            .and_then(|config| EngineId::parse(&config.default_engine))
+            .unwrap_or(EngineId::ClaudeCode)
+    };
+
     let engine = match &options.engine_id {
         Some(id) => EngineId::parse(id).unwrap_or_else(|| {
             tracing::warn!(
-                "[start_chat_inner] Unrecognized engine_id '{}', defaulting to ClaudeCode",
+                "[start_chat_inner] Unrecognized engine_id '{}', falling back to configured default",
                 id
             );
-            EngineId::ClaudeCode
+            default_engine()
         }),
-        None => EngineId::ClaudeCode,
+        None => default_engine(),
     };
 
     tracing::info!("[start_chat_inner] 使用引擎: {:?}", engine);

@@ -11,6 +11,7 @@ import { WorkspaceMenu } from './WorkspaceMenu'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import type { SessionMetadata } from '@/stores/conversationStore/types'
 import type { SessionStatus } from '@/types/session'
+import { getEngineDisplayName, getEngineFullName } from '@/utils/engineDisplay'
 
 interface SessionTabProps {
   session: SessionMetadata
@@ -64,6 +65,18 @@ export const SessionTab = memo(function SessionTab({
         {/* 标题 - 占 70% */}
         <span className="flex-1 text-sm truncate min-w-0" title={session.title}>
           {session.title}
+        </span>
+
+        <span
+          className={cn(
+            'shrink-0 px-1.5 py-0.5 rounded border text-[10px] leading-none',
+            isActive
+              ? 'border-primary/30 bg-primary/10 text-primary'
+              : 'border-border-subtle text-text-tertiary'
+          )}
+          title={getEngineFullName(session.engineId)}
+        >
+          {getEngineDisplayName(session.engineId)}
         </span>
 
         {/* 工作区徽章 - 占 20% */}

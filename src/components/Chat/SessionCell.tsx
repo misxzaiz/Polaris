@@ -18,6 +18,7 @@ import { sessionStoreManager } from '../../stores/conversationStore/sessionStore
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { WorkspaceBadge } from '../Session/WorkspaceBadge';
 import { WorkspaceMenu } from '../Session/WorkspaceMenu';
+import { getEngineDisplayName, getEngineFullName } from '../../utils/engineDisplay';
 
 /** 状态图标映射 */
 const SESSION_STATUS_CONFIG = {
@@ -76,6 +77,7 @@ export const SessionCell = memo(function SessionCell({
   const statusKey = (sessionMetadata?.status || 'idle').replace(/-/g, '_') as keyof typeof SESSION_STATUS_CONFIG;
   const statusConfig = SESSION_STATUS_CONFIG[statusKey] || SESSION_STATUS_CONFIG.idle;
   const StatusIcon = statusConfig.icon;
+  const engineId = sessionMetadata?.engineId;
 
   // 点击切换活跃会话
   const handleClick = useCallback(() => {
@@ -119,10 +121,22 @@ export const SessionCell = memo(function SessionCell({
         )}>
           {/* 会话标题 */}
           <span className={clsx(
-            'text-xs font-medium truncate',
+            'text-xs font-medium truncate min-w-0',
             isActive ? 'text-primary' : 'text-text-secondary'
           )}>
             {sessionMetadata?.title || '未命名会话'}
+          </span>
+
+          <span
+            className={clsx(
+              'shrink-0 px-1.5 py-0.5 rounded border text-[10px] leading-none',
+              isActive
+                ? 'border-primary/30 bg-primary/10 text-primary'
+                : 'border-border-subtle text-text-tertiary'
+            )}
+            title={getEngineFullName(engineId)}
+          >
+            {getEngineDisplayName(engineId)}
           </span>
 
           {/* 工作区徽章 */}

@@ -41,4 +41,39 @@ describe('SessionStoreManager engine initialization', () => {
     expect(activeSessionId).toBeTruthy()
     expect(state.sessionMetadata.get(activeSessionId!)?.engineId).toBe('claude-code')
   })
+
+  it('uses the explicit engine when creating a session', () => {
+    useConfigStore.setState({
+      config: { defaultEngine: 'claude-code' } as Config,
+    })
+
+    const sessionId = sessionStoreManager.getState().createSession({
+      type: 'free',
+      title: 'Codex window',
+      engineId: 'codex',
+    })
+
+    expect(sessionStoreManager.getState().sessionMetadata.get(sessionId)?.engineId).toBe('codex')
+  })
+
+  it('only allows changing engine before a session has content', () => {
+    const sessionId = sessionStoreManager.getState().createSession({
+      type: 'free',
+      title: 'Empty session',
+    })
+
+    expect(sessionStoreManager.getState().updateSessionEngine(sessionId, 'codex')).toBe(true)
+    expect(sessionStoreManager.getState().sessionMetadata.get(sessionId)?.engineId).toBe('codex')
+
+    const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
+    store?.addMessage({
+      id: 'message-1',
+      type: 'user',
+      content: 'hello',
+      timestamp: new Date().toISOString(),
+    })
+
+    expect(sessionStoreManager.getState().updateSessionEngine(sessionId, 'claude-code')).toBe(false)
+    expect(sessionStoreManager.getState().sessionMetadata.get(sessionId)?.engineId).toBe('codex')
+  })
 })

@@ -125,6 +125,7 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
         ...messages.slice(0, existingIndex),
         {
           ...messages[existingIndex],
+          engineId: currentMessage.engineId,
           blocks: currentMessage.blocks,
           isStreaming: true,
         } as AssistantChatMessage,
@@ -136,6 +137,7 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
       return [...messages, {
         id: currentMessage.id,
         type: 'assistant' as const,
+        engineId: currentMessage.engineId,
         blocks: currentMessage.blocks,
         timestamp: new Date().toISOString(),
         isStreaming: true,

@@ -22,12 +22,30 @@ import { getActiveModelProfile } from '../modelProfileStore'
 import { listPluginMcpServerStatuses } from '@/plugin-system'
 import { usePluginStore } from '../pluginStore'
 import { createLogger } from '../../utils/logger'
+import { normalizeEngineId } from '../../utils/engineDisplay'
+import type { SessionRuntimeConfig } from '../../types/sessionConfig'
 
 const log = createLogger('ConversationStore')
 
 function resolveSessionEngine(sessionId: string, configEngineId?: string): EngineId {
   const metadataEngineId = sessionStoreManager.getState().sessionMetadata.get(sessionId)?.engineId
-  return (metadataEngineId || configEngineId || 'claude-code') as EngineId
+  return normalizeEngineId(metadataEngineId || configEngineId)
+}
+
+const CLAUDE_MODEL_ALIASES = new Set(['opus', 'sonnet', 'haiku'])
+
+function resolveRuntimeConfigForEngine(
+  sessionConfig: SessionRuntimeConfig,
+  engineId: EngineId
+): Partial<SessionRuntimeConfig> {
+  const model = sessionConfig.model || undefined
+
+  return {
+    agent: engineId === 'claude-code' ? sessionConfig.agent || undefined : undefined,
+    model: engineId === 'codex' && model && CLAUDE_MODEL_ALIASES.has(model) ? undefined : model,
+    effort: engineId === 'claude-code' ? sessionConfig.effort || undefined : undefined,
+    permissionMode: sessionConfig.permissionMode || undefined,
+  }
 }
 
 function getDisabledPluginMcpServers(): string[] {
@@ -175,7 +193,7 @@ export function createConversationStore(
   const initialState = createInitialState(sessionId)
 
   const getCurrentEngineId = (): EngineId => {
-    return deps.getConfig()?.defaultEngine === 'codex' ? 'codex' : 'claude-code'
+    return resolveSessionEngine(sessionId, deps.getConfig()?.defaultEngine)
   }
 
   const createCurrentAssistantMessage = (blocks: ContentBlock[]) => ({
@@ -961,6 +979,7 @@ export function createConversationStore(
           // 调用后端 API
           // 获取会话配置
           const sessionConfig = getSessionConfig()
+          const runtimeConfig = resolveRuntimeConfigForEngine(sessionConfig, engine)
           // 获取当前激活的模型 Profile ID
           const activeProfile = getActiveModelProfile()
           const modelProfileId = activeProfile?.id
@@ -981,10 +1000,10 @@ export function createConversationStore(
                 disabledMcpServers,
                 attachments: attachmentsForBackend,
                 additionalDirs: contextWorkspaces.map(w => w.path).filter(Boolean),
-                agent: sessionConfig.agent || undefined,
-                model: sessionConfig.model || undefined,
-                effort: sessionConfig.effort || undefined,
-                permissionMode: sessionConfig.permissionMode || undefined,
+                agent: runtimeConfig.agent,
+                model: runtimeConfig.model,
+                effort: runtimeConfig.effort,
+                permissionMode: runtimeConfig.permissionMode,
                 allowedTools: sendOptions?.allowedTools && sendOptions.allowedTools.length > 0
                   ? sendOptions.allowedTools
                   : undefined,
@@ -1009,10 +1028,10 @@ export function createConversationStore(
                 disabledMcpServers,
                 attachments: attachmentsForBackend,
                 additionalDirs: contextWorkspaces.map(w => w.path).filter(Boolean),
-                agent: sessionConfig.agent || undefined,
-                model: sessionConfig.model || undefined,
-                effort: sessionConfig.effort || undefined,
-                permissionMode: sessionConfig.permissionMode || undefined,
+                agent: runtimeConfig.agent,
+                model: runtimeConfig.model,
+                effort: runtimeConfig.effort,
+                permissionMode: runtimeConfig.permissionMode,
                 allowedTools: sendOptions?.allowedTools && sendOptions.allowedTools.length > 0
                   ? sendOptions.allowedTools
                   : undefined,
@@ -1043,7 +1062,7 @@ export function createConversationStore(
         if (!conversationId || !isStreaming) return
 
         const config = deps.getConfig()
-        const engine = config?.defaultEngine || 'claude-code'
+        const engine = resolveSessionEngine(get().sessionId, config?.defaultEngine)
 
         log.info('Attempting to interrupt session', { conversationId, engine, isStreaming })
 
@@ -1137,6 +1156,7 @@ export function createConversationStore(
 
         // 获取会话配置
         const sessionConfig = getSessionConfig()
+        const runtimeConfig = resolveRuntimeConfigForEngine(sessionConfig, currentEngine)
         // 获取当前激活的模型 Profile ID
         const activeProfile = getActiveModelProfile()
         const modelProfileId = activeProfile?.id
@@ -1155,10 +1175,10 @@ export function createConversationStore(
               enableMcpTools: true,
               disabledMcpServers,
               additionalDirs: contextWorkspaces.map(w => w.path).filter(Boolean),
-              agent: sessionConfig.agent || undefined,
-              model: sessionConfig.model || undefined,
-              effort: sessionConfig.effort || undefined,
-              permissionMode: sessionConfig.permissionMode || undefined,
+              agent: runtimeConfig.agent,
+              model: runtimeConfig.model,
+              effort: runtimeConfig.effort,
+              permissionMode: runtimeConfig.permissionMode,
               allowedTools: allowedTools && allowedTools.length > 0 ? allowedTools : undefined,
               modelProfileId: modelProfileId || undefined,
             },

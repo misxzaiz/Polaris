@@ -327,6 +327,8 @@ export interface SessionManagerActions {
   switchSession: (sessionId: string) => void
   /** 更新会话标题 */
   updateSessionTitle: (sessionId: string, title: string) => void
+  /** 更新空会话的 AI 引擎 */
+  updateSessionEngine: (sessionId: string, engineId: EngineId) => boolean
 
   // ===== Store 访问 =====
   getStore: (sessionId: string) => ConversationStore | undefined

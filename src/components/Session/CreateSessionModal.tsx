@@ -9,12 +9,15 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/utils/cn'
-import { Check } from 'lucide-react'
+import { Bot, Check, Cpu } from 'lucide-react'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { useConfigStore } from '@/stores/configStore'
 import { useSessionManagerActions } from '@/stores/conversationStore/sessionStoreManager'
 import { Button } from '@/components/Common'
 import { CreateWorkspaceModal } from '@/components/Workspace/CreateWorkspaceModal'
 import { createLogger } from '@/utils/logger'
+import type { EngineId } from '@/types'
+import { getEngineFullName, normalizeEngineId } from '@/utils/engineDisplay'
 
 const log = createLogger('CreateSessionModal')
 
@@ -32,6 +35,8 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
   const workspacesRaw = useWorkspaceStore((state) => state.workspaces)
   const currentWorkspaceId = useWorkspaceStore((state) => state.currentWorkspaceId)
   const { createSession } = useSessionManagerActions()
+  const { config } = useConfigStore()
+  const defaultEngineId = normalizeEngineId(config?.defaultEngine)
 
   // 按最近访问排序的工作区列表
   const sortedWorkspaces = useMemo(() =>
@@ -43,6 +48,7 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
   // 内部状态
   const [primaryWorkspaceId, setPrimaryWorkspaceId] = useState<string | null>(null)
   const [contextWorkspaceIds, setContextWorkspaceIds] = useState<string[]>([])
+  const [engineId, setEngineId] = useState<EngineId>(defaultEngineId)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showCreateWorkspaceModal, setShowCreateWorkspaceModal] = useState(false)
@@ -53,6 +59,15 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
       setPrimaryWorkspaceId(currentWorkspaceId)
     }
   }, [currentWorkspaceId, primaryWorkspaceId])
+
+  useEffect(() => {
+    setEngineId(defaultEngineId)
+  }, [defaultEngineId])
+
+  const engineOptions = useMemo(() => [
+    { id: 'claude-code' as EngineId, label: 'Claude', Icon: Bot },
+    { id: 'codex' as EngineId, label: 'Codex', Icon: Cpu },
+  ], [])
 
   // 点击外部关闭
   const modalRef = useRef<HTMLDivElement>(null)
@@ -108,9 +123,10 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
         workspaceId: primaryWorkspaceId,
         contextWorkspaceIds,
         workspaceLocked: true, // 创建时锁定主工作区
+        engineId,
       })
 
-      log.info('创建会话成功', { sessionId, primaryWorkspaceId, contextWorkspaceIds })
+      log.info('创建会话成功', { sessionId, primaryWorkspaceId, contextWorkspaceIds, engineId })
       onCreated?.(sessionId)
       onClose()
     } catch (err) {
@@ -157,6 +173,33 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
           </div>
         ) : (
           <div className="space-y-4">
+            {/* AI 引擎选择区 */}
+            <div>
+              <label className="block text-sm font-medium text-text-secondary mb-2">
+                AI 引擎
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {engineOptions.map(({ id, label, Icon }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setEngineId(id)}
+                    disabled={isLoading}
+                    title={getEngineFullName(id)}
+                    className={cn(
+                      'flex items-center justify-center gap-2 px-3 py-2 rounded-lg border text-sm transition-colors',
+                      engineId === id
+                        ? 'bg-primary/10 text-primary border-primary/30'
+                        : 'text-text-secondary border-border-subtle hover:text-text-primary hover:bg-background-hover'
+                    )}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span>{label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* 主工作区选择区 */}
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-2">

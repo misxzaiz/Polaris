@@ -42,10 +42,7 @@
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
-      "icons/icon.ico",
-      "icons/polaris-octopus.svg",
-      "icons/polaris-commander.svg",
-      "icons/polaris-brain.svg"
+      "icons/icon.ico"
     ]
   },
   "plugins": {

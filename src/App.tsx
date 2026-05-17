@@ -4,7 +4,6 @@ import { Layout, FileExplorer, ConnectingOverlay, ErrorBoundary, ToastContainer 
 import { createLogger } from './utils/logger';
 
 const log = createLogger('App');
-import { ConfirmDialog } from './components/Common/ConfirmDialog';
 
 import { TopMenuBar as TopMenuBarComponent } from './components/TopMenuBar';
 import { GitPanel } from './components/GitPanel';
@@ -34,7 +33,6 @@ import { isPluginUiEnabled, usePluginStore } from './stores/pluginStore';
 import { pluginRegistry } from './plugin-system';
 import { useActiveSessionActions, useActiveSessionStreaming, useActiveSessionError } from './stores/conversationStore/useActiveSession';
 import { startLongGoalSessionTracker } from './services/longGoalSessionTracker';
-import type { EngineId } from './types';
 import './index.css';
 
 // 拆分后的 Hooks
@@ -45,20 +43,18 @@ import { useWorkspaceSync } from './hooks/useWorkspaceSync';
 
 function App() {
   const { t } = useTranslation('common');
-  const { isConnecting, connectionState, config, updateConfigPatch } = useConfigStore();
+  const { isConnecting, connectionState } = useConfigStore();
 
   // Chat 状态
   const isStreaming = useActiveSessionStreaming();
   const error = useActiveSessionError();
-  const { sendMessage, interrupt: interruptChat, clearMessages } = useActiveSessionActions();
+  const { sendMessage, interrupt: interruptChat } = useActiveSessionActions();
 
   // UI 状态
   const [showSettings, setShowSettings] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<string | undefined>(undefined);
   const [showCreateWorkspace, setShowCreateWorkspace] = useState(false);
   const [showFileSearch, setShowFileSearch] = useState(false);
-  const [showEngineSwitchConfirm, setShowEngineSwitchConfirm] = useState(false);
-  const [pendingEngineId, setPendingEngineId] = useState<EngineId | null>(null);
 
   // Store 状态
   const workspaces = useWorkspaceStore(state => state.workspaces);
@@ -123,23 +119,6 @@ function App() {
 
   // 右侧面板填充模式：无编辑器时自适应填充，有编辑器时固定宽度
   const rightPanelFillRemaining = !hasCenterStage;
-
-  // === 引擎切换 ===
-  const applyEngineSwitch = useCallback(async (engineId: EngineId) => {
-    if (!config) return;
-    if (engineId === config.defaultEngine) return;
-
-    if (isStreaming) {
-      try {
-        await interruptChat();
-      } catch (e) {
-        log.warn('Interrupt failed, continuing engine switch', { error: e instanceof Error ? e.message : String(e) });
-      }
-    }
-
-    clearMessages();
-    await updateConfigPatch({ defaultEngine: engineId });
-  }, [config, isStreaming, interruptChat, clearMessages, updateConfigPatch]);
 
   // === 渲染 ===
   const loadingFallback = (
@@ -238,19 +217,6 @@ function App() {
           <Suspense fallback={null}>
             <FileSearchModal onClose={() => setShowFileSearch(false)} />
           </Suspense>
-        )}
-
-        {showEngineSwitchConfirm && (
-          <ConfirmDialog
-            message={t('messages.engineSwitchConfirm', { ns: 'common' })}
-            onCancel={() => { setShowEngineSwitchConfirm(false); setPendingEngineId(null); }}
-            onConfirm={async () => {
-              const nextId = pendingEngineId;
-              setShowEngineSwitchConfirm(false);
-              setPendingEngineId(null);
-              if (nextId) await applyEngineSwitch(nextId);
-            }}
-          />
         )}
 
         {showSessionHistory && (

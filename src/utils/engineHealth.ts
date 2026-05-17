@@ -13,8 +13,9 @@ export interface SelectedEngineHealth {
 export function getSelectedEngineHealth(
   config: Config | null | undefined,
   health: HealthStatus | null | undefined,
+  engineOverride?: string | null,
 ): SelectedEngineHealth {
-  const engineId = normalizeEngineId(config?.defaultEngine);
+  const engineId = normalizeEngineId(engineOverride ?? config?.defaultEngine);
 
   if (engineId === 'codex') {
     return {
@@ -35,4 +36,8 @@ export function getSelectedEngineHealth(
     available: health?.claudeAvailable ?? false,
     version: health?.claudeVersion,
   };
+}
+
+export function hasAnyEngineAvailable(health: HealthStatus | null | undefined): boolean {
+  return Boolean(health?.claudeAvailable || health?.codexAvailable);
 }

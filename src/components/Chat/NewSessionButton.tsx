@@ -1,11 +1,13 @@
 import { memo, useCallback, useState, useRef, useEffect, useMemo } from 'react';
 import { clsx } from 'clsx';
-import { Plus, Folder, Check } from 'lucide-react';
-import { useViewStore, useWorkspaceStore } from '../../stores';
+import { Plus, Folder, Check, Bot, Cpu } from 'lucide-react';
+import { useViewStore, useWorkspaceStore, useConfigStore } from '../../stores';
 import {
   useSessionMetadataList,
   useSessionManagerActions,
 } from '../../stores/conversationStore/sessionStoreManager';
+import type { EngineId } from '../../types';
+import { getEngineFullName, normalizeEngineId } from '../../utils/engineDisplay';
 
 /**
  * 新建会话按钮
@@ -14,6 +16,8 @@ export const NewSessionButton = memo(function NewSessionButton() {
   const multiSessionMode = useViewStore(state => state.multiSessionMode);
   const multiSessionIds = useViewStore(state => state.multiSessionIds);
   const { createSession, switchSession } = useSessionManagerActions();
+  const { config } = useConfigStore();
+  const defaultEngineId = normalizeEngineId(config?.defaultEngine);
 
   // 工作区列表 - 直接订阅原始数据，避免函数调用导致无限循环
   const workspaces = useWorkspaceStore(state => state.workspaces);
@@ -31,11 +35,23 @@ export const NewSessionButton = memo(function NewSessionButton() {
 
   // 下拉菜单状态
   const [isOpen, setIsOpen] = useState(false);
+  const [selectedEngineId, setSelectedEngineId] = useState<EngineId>(defaultEngineId);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
   // 最多 16 个会话（与 viewStore 上限一致）
   const canAdd = multiSessionIds.length < 16;
+
+  const engineOptions = useMemo(() => [
+    { id: 'claude-code' as EngineId, label: 'Claude', Icon: Bot },
+    { id: 'codex' as EngineId, label: 'Codex', Icon: Cpu },
+  ], []);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setSelectedEngineId(defaultEngineId);
+    }
+  }, [defaultEngineId, isOpen]);
 
   // 点击外部关闭
   useEffect(() => {
@@ -59,14 +75,16 @@ export const NewSessionButton = memo(function NewSessionButton() {
   // 创建会话
   const handleCreateSession = useCallback((workspaceId?: string) => {
     const newSessionId = createSession({
-      type: 'free',
+      type: workspaceId ? 'project' : 'free',
       title: `新对话 ${allSessionMetadata.length + 1}`,
       workspaceId,
+      workspaceLocked: Boolean(workspaceId),
+      engineId: selectedEngineId,
     });
     // createSession 已自动处理 addToMultiView，此处无需手动调用
     switchSession(newSessionId);
     setIsOpen(false);
-  }, [createSession, allSessionMetadata.length, switchSession]);
+  }, [createSession, allSessionMetadata.length, selectedEngineId, switchSession]);
 
   // 非多会话模式或已达上限，不显示
   if (!multiSessionMode || !canAdd) {
@@ -95,10 +113,32 @@ export const NewSessionButton = memo(function NewSessionButton() {
           ref={dropdownRef}
           className={clsx(
             'absolute left-0 bottom-full mb-1 z-50',
-            'min-w-[180px] max-h-[240px] overflow-y-auto py-1 rounded-lg shadow-lg',
+            'min-w-[220px] max-h-[320px] overflow-y-auto py-1 rounded-lg shadow-lg',
             'bg-background-elevated border border-border'
           )}
         >
+          <div className="px-2 pb-2 border-b border-border-subtle">
+            <div className="px-1 py-1 text-[11px] font-medium text-text-tertiary">AI 引擎</div>
+            <div className="grid grid-cols-2 gap-1">
+              {engineOptions.map(({ id, label, Icon }) => (
+                <button
+                  key={id}
+                  onClick={() => setSelectedEngineId(id)}
+                  className={clsx(
+                    'flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs transition-colors',
+                    selectedEngineId === id
+                      ? 'bg-primary/10 text-primary border border-primary/30'
+                      : 'text-text-secondary hover:text-text-primary hover:bg-background-hover border border-border-subtle'
+                  )}
+                  title={getEngineFullName(id)}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* 无工作区选项 */}
           <button
             onClick={() => handleCreateSession(undefined)}

@@ -105,6 +105,7 @@ export function EnhancedChatMessages({ sessionId, compact = false }: EnhancedCha
         ...messages.slice(0, existingIndex),
         {
           ...messages[existingIndex],
+          engineId: currentMessage.engineId,
           blocks: currentMessage.blocks,
           isStreaming: true,
         } as AssistantChatMessage,
@@ -116,6 +117,7 @@ export function EnhancedChatMessages({ sessionId, compact = false }: EnhancedCha
       const newMessages: ChatMessage[] = [...messages, {
         id: currentMessage.id,
         type: 'assistant' as const,
+        engineId: currentMessage.engineId,
         blocks: currentMessage.blocks,
         timestamp: new Date().toISOString(),
         isStreaming: true,

@@ -9,9 +9,21 @@ import { useTranslation } from 'react-i18next'
 import { X } from 'lucide-react'
 import { EnhancedChatMessages, ChatInput } from '../Chat'
 import { useConfigStore, useWorkspaceStore } from '../../stores'
-import { useActiveSessionStreaming, useActiveSessionError, useActiveSessionActions } from '../../stores/conversationStore/useActiveSession'
+import {
+  useActiveSessionConversationId,
+  useActiveSessionError,
+  useActiveSessionActions,
+  useActiveSessionMessages,
+  useActiveSessionStreaming,
+} from '../../stores/conversationStore/useActiveSession'
+import {
+  useActiveSessionId,
+  useSessionManagerActions,
+  useSessionMetadataList,
+} from '../../stores/conversationStore/sessionStoreManager'
 import type { EngineId } from '../../types'
 import { createLogger } from '../../utils/logger'
+import { normalizeEngineId } from '../../utils/engineDisplay'
 
 const log = createLogger('AIPopover')
 
@@ -22,10 +34,15 @@ interface AIPopoverProps {
 
 export function AIPopover({ isOpen, onClose }: AIPopoverProps) {
   const { t } = useTranslation('common')
-  const { config, updateConfigPatch } = useConfigStore()
+  const { config } = useConfigStore()
   const isStreaming = useActiveSessionStreaming()
   const error = useActiveSessionError()
-  const { sendMessage, interrupt: interruptChat, clearMessages } = useActiveSessionActions()
+  const { sendMessage, interrupt: interruptChat } = useActiveSessionActions()
+  const { updateSessionEngine } = useSessionManagerActions()
+  const activeSessionId = useActiveSessionId()
+  const sessionMetadataList = useSessionMetadataList()
+  const { messages } = useActiveSessionMessages()
+  const conversationId = useActiveSessionConversationId()
   const currentWorkspace = useWorkspaceStore(state => state.getCurrentWorkspace())
 
   // ESC 键关闭
@@ -45,22 +62,21 @@ export function AIPopover({ isOpen, onClose }: AIPopoverProps) {
     { id: 'codex' as EngineId, name: 'OpenAI Codex' },
   ], [])
 
-  const handleEngineSelect = useCallback(async (engineId: EngineId) => {
-    if (!config) return
-    if (engineId === config.defaultEngine) return
+  const activeSessionMetadata = useMemo(
+    () => sessionMetadataList.find(session => session.id === activeSessionId),
+    [activeSessionId, sessionMetadataList]
+  )
+  const activeEngineId = normalizeEngineId(activeSessionMetadata?.engineId || config?.defaultEngine)
+  const canSwitchEngine = Boolean(activeSessionId) && !isStreaming && !conversationId && messages.length === 0
 
-    if (isStreaming) {
-      try {
-        await interruptChat()
-      } catch (e) {
-        log.warn('Interrupt failed, continuing engine switch', { error: e instanceof Error ? e.message : String(e) })
-      }
+  const handleEngineSelect = useCallback((engineId: EngineId) => {
+    if (!activeSessionId || engineId === activeEngineId) return
+
+    const updated = updateSessionEngine(activeSessionId, engineId)
+    if (!updated) {
+      log.warn('Engine switch ignored because active session is no longer empty', { activeSessionId, engineId })
     }
-
-    clearMessages()
-
-    await updateConfigPatch({ defaultEngine: engineId })
-  }, [config, isStreaming, interruptChat, clearMessages, updateConfigPatch])
+  }, [activeEngineId, activeSessionId, updateSessionEngine])
 
   if (!isOpen) return null
 
@@ -83,9 +99,11 @@ export function AIPopover({ isOpen, onClose }: AIPopoverProps) {
             <div className="flex items-center gap-3">
               <span className="text-sm font-medium text-text-primary">{t('labels.aiChat')}</span>
               <select
-                className="bg-background-elevated border border-border-subtle text-text-primary text-xs px-2 py-1 rounded-md"
-                value={config?.defaultEngine || 'claude-code'}
+                className="bg-background-elevated border border-border-subtle text-text-primary text-xs px-2 py-1 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+                value={activeEngineId}
                 onChange={(e) => handleEngineSelect(e.target.value as EngineId)}
+                disabled={!canSwitchEngine}
+                title={canSwitchEngine ? '选择当前会话的 AI 引擎' : '已有消息或正在运行时不能切换引擎'}
               >
                 {engineOptions.map((opt) => (
                   <option key={opt.id} value={opt.id} className="bg-background text-text-primary">{opt.name}</option>

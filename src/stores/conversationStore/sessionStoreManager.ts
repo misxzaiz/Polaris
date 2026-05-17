@@ -148,7 +148,7 @@ function createSessionManagerStore() {
       const sessionId = options.id || generateUUID()
       const timestamp = new Date().toISOString()
 
-      log.info('createSession 调用', { sessionId, optionsWorkspaceId: options.workspaceId, optionsType: options.type, optionsTitle: options.title })
+      log.info('createSession 调用', { sessionId, optionsWorkspaceId: options.workspaceId, optionsType: options.type, optionsTitle: options.title, engineId: options.engineId })
 
       // 检查会话是否已存在
       if (get().stores.has(sessionId)) {
@@ -174,7 +174,7 @@ function createSessionManagerStore() {
         forkFromId: options.forkFromId,
       }
 
-      log.info('创建会话元数据', { sessionId, metadataWorkspaceId: metadata.workspaceId, metadataType: metadata.type })
+      log.info('创建会话元数据', { sessionId, metadataWorkspaceId: metadata.workspaceId, metadataType: metadata.type, engineId: metadata.engineId })
 
       // 构建依赖注入
       const contextId = `session-${sessionId}`
@@ -389,6 +389,43 @@ function createSessionManagerStore() {
       })
 
       log.info('更新会话标题', { sessionId, title })
+    },
+
+    updateSessionEngine: (sessionId, engineId) => {
+      const metadata = get().sessionMetadata.get(sessionId)
+      if (!metadata) {
+        log.warn('会话不存在', { sessionId })
+        return false
+      }
+
+      const store = get().stores.get(sessionId)?.getState()
+      if (store && (store.isStreaming || store.conversationId || store.messages.length > 0)) {
+        log.warn('已有内容的会话不允许切换引擎', {
+          sessionId,
+          isStreaming: store.isStreaming,
+          hasConversationId: Boolean(store.conversationId),
+          messageCount: store.messages.length,
+        })
+        return false
+      }
+
+      const normalizedEngineId = normalizeEngineId(engineId)
+      if (normalizeEngineId(metadata.engineId) === normalizedEngineId) {
+        return true
+      }
+
+      set((state) => {
+        const newMetadata = new Map(state.sessionMetadata)
+        newMetadata.set(sessionId, {
+          ...metadata,
+          engineId: normalizedEngineId,
+          updatedAt: new Date().toISOString(),
+        })
+        return { sessionMetadata: newMetadata }
+      })
+
+      log.info('更新会话引擎', { sessionId, engineId: normalizedEngineId })
+      return true
     },
 
     makeSessionVisible: (sessionId: string) => {
@@ -750,6 +787,7 @@ const cachedActions = {
   get deleteSession() { return sessionStoreManager.getState().deleteSession },
   get switchSession() { return sessionStoreManager.getState().switchSession },
   get updateSessionTitle() { return sessionStoreManager.getState().updateSessionTitle },
+  get updateSessionEngine() { return sessionStoreManager.getState().updateSessionEngine },
   get makeSessionVisible() { return sessionStoreManager.getState().makeSessionVisible },
   get addToBackground() { return sessionStoreManager.getState().addToBackground },
   get removeFromBackground() { return sessionStoreManager.getState().removeFromBackground },

@@ -11,7 +11,6 @@ import { createLogger } from '../utils/logger'
 import { useWorkspaceStore } from '../stores/workspaceStore'
 import { useViewStore } from '../stores/index'
 import { sessionStoreManager } from '../stores/conversationStore/sessionStoreManager'
-import { useConfigStore } from '../stores/configStore'
 import { getClaudeCodeHistoryService } from './claudeCodeHistoryService'
 import { getCodexHistoryService } from './codexHistoryService'
 import { normalizeEngineId } from '../utils/engineDisplay'
@@ -97,8 +96,8 @@ export const historyService = {
       const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
       if (!store || !store.conversationId || store.messages.length === 0) return
 
-      const config = useConfigStore.getState().config
-      const engineId: EngineId = (config?.defaultEngine || 'claude-code') as EngineId
+      const metadata = sessionStoreManager.getState().sessionMetadata.get(sessionId)
+      const engineId = normalizeEngineId(metadata?.engineId)
 
       const historyJson = localStorage.getItem(SESSION_HISTORY_KEY)
       const history: HistoryEntry[] = historyJson ? JSON.parse(historyJson) : []

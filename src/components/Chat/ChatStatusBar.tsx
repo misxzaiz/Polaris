@@ -28,6 +28,8 @@ import { SessionConfigSelector } from './SessionConfigSelector';
 import { voiceNotificationService } from '../../services/voiceNotificationService';
 import { isAssistantMessage } from '../../types/chat';
 import { getSelectedEngineHealth } from '../../utils/engineHealth';
+import { normalizeEngineId } from '../../utils/engineDisplay';
+import { useActiveSessionId, useSessionMetadataList } from '../../stores/conversationStore/sessionStoreManager';
 
 /** 宽度分级阈值 */
 const BREAKPOINTS = {
@@ -75,6 +77,8 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
   const isStreaming = useActiveSessionStreaming();
   const { interrupt } = useActiveSessionActions();
   const { messages, currentMessage } = useActiveSessionMessages();
+  const activeSessionId = useActiveSessionId();
+  const sessionMetadataList = useSessionMetadataList();
   const {
     inputLength,
     attachmentCount,
@@ -221,7 +225,9 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
   const inputHint = getInputHint();
 
   // 版本徽章
-  const selectedEngineHealth = getSelectedEngineHealth(config, healthStatus);
+  const activeSessionMetadata = sessionMetadataList.find(session => session.id === activeSessionId);
+  const activeEngineId = normalizeEngineId(activeSessionMetadata?.engineId || config?.defaultEngine);
+  const selectedEngineHealth = getSelectedEngineHealth(config, healthStatus, activeEngineId);
   const versionBadge = selectedEngineHealth.version ? (
     <span className="px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-500 border border-green-500/20 shrink-0">
       {selectedEngineHealth.version}
