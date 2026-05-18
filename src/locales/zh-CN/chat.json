@@ -42,7 +42,9 @@
     "translateFailed": "翻译失败",
     "apiKeyNotSet": "请先在设置中配置百度翻译 API",
     "connectionFailed": "连接失败",
-    "regenerateFailed": "重新生成失败"
+    "regenerateFailed": "重新生成失败",
+    "interruptFailed": "中断失败",
+    "interruptFailedHint": "后端可能仍在执行,请稍候或检查日志"
   },
   "context": {
     "fileTooLarge": "文件过大，已省略部分内容",

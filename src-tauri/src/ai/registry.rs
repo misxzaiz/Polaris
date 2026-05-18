@@ -186,3 +186,163 @@ impl Default for EngineRegistry {
         Self::new()
     }
 }
+
+// ============================================================================
+// 单元测试
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::AppError;
+    use std::collections::HashSet;
+
+    /// 测试用的轻量级 mock 引擎
+    ///
+    /// 维护一个内存中的 session 集合,只支持 interrupt 操作.
+    /// 用于验证 EngineRegistry.interrupt / try_interrupt_all 的路由行为.
+    struct MockEngine {
+        id: EngineId,
+        sessions: HashSet<String>,
+    }
+
+    impl MockEngine {
+        fn new(id: EngineId, sessions: &[&str]) -> Self {
+            Self {
+                id,
+                sessions: sessions.iter().map(|s| s.to_string()).collect(),
+            }
+        }
+    }
+
+    impl AIEngine for MockEngine {
+        fn id(&self) -> EngineId {
+            self.id.clone()
+        }
+
+        fn name(&self) -> &'static str {
+            match self.id {
+                EngineId::ClaudeCode => "MockClaude",
+                EngineId::Codex => "MockCodex",
+            }
+        }
+
+        fn is_available(&self) -> bool {
+            true
+        }
+
+        fn start_session(
+            &mut self,
+            _message: &str,
+            _options: SessionOptions,
+        ) -> Result<String> {
+            Err(AppError::Unknown("not implemented in mock".to_string()))
+        }
+
+        fn continue_session(
+            &mut self,
+            _session_id: &str,
+            _message: &str,
+            _options: SessionOptions,
+        ) -> Result<()> {
+            Err(AppError::Unknown("not implemented in mock".to_string()))
+        }
+
+        fn interrupt(&mut self, session_id: &str) -> Result<()> {
+            if self.sessions.remove(session_id) {
+                Ok(())
+            } else {
+                Err(AppError::ProcessError(format!(
+                    "会话不存在: {}",
+                    session_id
+                )))
+            }
+        }
+    }
+
+    fn build_registry() -> EngineRegistry {
+        let mut registry = EngineRegistry::new();
+        // Claude 引擎持有 "claude-sess"
+        registry.register(MockEngine::new(EngineId::ClaudeCode, &["claude-sess"]));
+        // Codex 引擎持有 "codex-sess"
+        registry.register(MockEngine::new(EngineId::Codex, &["codex-sess"]));
+        registry
+    }
+
+    /// 基线: 按正确 engineId 中断对应 session 应该成功.
+    #[test]
+    fn interrupt_with_correct_engine_succeeds() {
+        let mut registry = build_registry();
+        assert!(registry
+            .interrupt(&EngineId::ClaudeCode, "claude-sess")
+            .is_ok());
+        assert!(registry.interrupt(&EngineId::Codex, "codex-sess").is_ok());
+    }
+
+    /// 路由错配场景: 用 Claude 引擎中断 Codex session 必须失败.
+    ///
+    /// 这是 per-session 多引擎改造后的核心风险点:前端 metadata.engineId 与后端
+    /// 实际引擎错配时,直接路由会找不到 session.
+    #[test]
+    fn interrupt_with_wrong_engine_fails() {
+        let mut registry = build_registry();
+        let err = registry
+            .interrupt(&EngineId::ClaudeCode, "codex-sess")
+            .unwrap_err();
+        assert!(
+            matches!(err, AppError::ProcessError(_)),
+            "应返回 ProcessError,实际: {:?}",
+            err
+        );
+    }
+
+    /// 兜底场景: try_interrupt_all 应在遍历到正确引擎时返回 true.
+    ///
+    /// 这覆盖了 interrupt_chat_inner 的修复:当指定 engineId 路由失败时,
+    /// 后端回退到 try_interrupt_all,本应能在另一个引擎中找到 session.
+    #[test]
+    fn try_interrupt_all_finds_session_in_any_engine() {
+        let mut registry = build_registry();
+        assert!(
+            registry.try_interrupt_all("codex-sess"),
+            "try_interrupt_all 应能在 Codex 引擎中找到 codex-sess"
+        );
+        assert!(
+            registry.try_interrupt_all("claude-sess"),
+            "try_interrupt_all 应能在 Claude 引擎中找到 claude-sess"
+        );
+    }
+
+    /// 边界场景: session 在所有引擎中都不存在时,try_interrupt_all 返回 false.
+    #[test]
+    fn try_interrupt_all_returns_false_when_session_missing() {
+        let mut registry = build_registry();
+        assert!(!registry.try_interrupt_all("ghost-session"));
+    }
+
+    /// 兜底语义: interrupt 路由失败后,session 应当还在另一个引擎里能找到.
+    ///
+    /// 模拟 interrupt_chat_inner 修复后的完整逻辑:
+    ///   1. 按 engineId 路由 -> 报错
+    ///   2. 回退到 try_interrupt_all -> 命中真实引擎
+    #[test]
+    fn fallback_flow_recovers_misrouted_interrupt() {
+        let mut registry = build_registry();
+
+        // 步骤 1: 误把 codex-sess 当作 claude-code 的 session 中断
+        let primary = registry.interrupt(&EngineId::ClaudeCode, "codex-sess");
+        assert!(primary.is_err(), "误路由应失败");
+
+        // 步骤 2: 兜底应能找到并中断
+        assert!(
+            registry.try_interrupt_all("codex-sess"),
+            "兜底应在 Codex 引擎中找到并中断"
+        );
+
+        // 步骤 3: session 已被消费,再次兜底应返回 false
+        assert!(
+            !registry.try_interrupt_all("codex-sess"),
+            "已中断过的 session 再次兜底应返回 false"
+        );
+    }
+}

@@ -996,12 +996,30 @@ impl AIEngine for ClaudeEngine {
     fn interrupt(&mut self, session_id: &str) -> Result<()> {
         tracing::info!("[ClaudeEngine] 中断会话: {}", session_id);
 
-        if self.sessions.kill_process(session_id)? {
-            tracing::info!("[ClaudeEngine] 会话已中断: {}", session_id);
-            Ok(())
-        } else {
-            // 找不到会话，返回错误让调用者尝试其他引擎
-            Err(AppError::ProcessError(format!("会话不存在: {}", session_id)))
+        match self.sessions.kill_process(session_id) {
+            Ok(true) => {
+                tracing::info!("[ClaudeEngine] 会话已中断: {}", session_id);
+                Ok(())
+            }
+            Ok(false) => {
+                // session 不在 map,或 kill 命令本身失败 -> 让上层兜底
+                tracing::warn!(
+                    "[ClaudeEngine] kill_process 返回 false (session 不在本引擎或 kill 失败): {}",
+                    session_id
+                );
+                Err(AppError::ProcessError(format!(
+                    "会话不存在或 kill 失败: {}",
+                    session_id
+                )))
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "[ClaudeEngine] kill_process 返回 Err: {} ({})",
+                    e,
+                    session_id
+                );
+                Err(e)
+            }
         }
     }
 

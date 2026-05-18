@@ -1073,10 +1073,24 @@ export function createConversationStore(
           set({ isStreaming: false })
           get().finishMessage()
         } catch (e) {
-          log.error('Interrupt failed', e instanceof Error ? e : new Error(String(e)))
-          // 即使中断失败，也停止流式状态
+          const err = e instanceof Error ? e : new Error(String(e))
+          log.error('Interrupt failed', err, { conversationId, engine })
+
+          // 即使中断失败,也停止前端流式状态,避免 UI 卡死
           set({ isStreaming: false })
           get().finishMessage()
+
+          // 用户可见提示:不再静默吞错,让用户感知"后端可能仍在执行"
+          // 动态导入避免循环依赖
+          try {
+            const { useToastStore } = await import('../toastStore')
+            useToastStore.getState().error(
+              i18n.t('chat:error.interruptFailed'),
+              i18n.t('chat:error.interruptFailedHint')
+            )
+          } catch (toastErr) {
+            log.warn('Toast 提示失败', { error: String(toastErr) })
+          }
         }
       },
 

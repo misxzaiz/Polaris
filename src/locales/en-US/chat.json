@@ -42,7 +42,9 @@
     "translateFailed": "Translation failed",
     "apiKeyNotSet": "Please configure Baidu Translate API in settings first",
     "connectionFailed": "Connection failed",
-    "regenerateFailed": "Failed to regenerate"
+    "regenerateFailed": "Failed to regenerate",
+    "interruptFailed": "Interrupt failed",
+    "interruptFailedHint": "Backend may still be running. Please wait or check logs."
   },
   "context": {
     "fileTooLarge": "File too large, content omitted",

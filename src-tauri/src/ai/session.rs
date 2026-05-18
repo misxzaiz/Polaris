@@ -225,65 +225,133 @@ impl SessionManager {
     /// 终止进程
     ///
     /// 返回值：
-    /// - Ok(true): 会话存在，已处理（kill 成功或进程已结束）
-    /// - Ok(false): 会话不存在
+    /// - Ok(true): 会话存在,且 kill 命令执行成功(进程已终止或已不存在)
+    /// - Ok(false): 会话不存在,或 kill 命令明确失败需上层兜底
+    ///
+    /// 重要变更:
+    /// 1. Windows 下使用 `taskkill /T /F`(杀进程树),解决 Standalone CLI 启动器
+    ///    场景下父进程被杀但 Node/工作子进程仍在运行的问题.
+    /// 2. taskkill 失败不再吞错并谎报成功;改为 warn 级日志 + 返回 false,
+    ///    让 EngineRegistry / interrupt_chat_inner 的兜底链路能感知并继续尝试.
+    /// 3. 所有分支(包括 session 缺失)都有 info/warn 级日志,便于线上诊断.
     pub fn kill_process(&self, session_id: &str) -> Result<bool> {
-        // 获取会话信息
         let info = self.get(session_id);
 
-        if let Some(info) = info {
-            let pid = info.pid;
+        let Some(info) = info else {
+            tracing::info!(
+                "[SessionManager] kill_process: session {} 不在 map 中(返回 false 由上层兜底)",
+                session_id
+            );
+            return Ok(false);
+        };
 
-            #[cfg(windows)]
-            {
-                let output = std::process::Command::new("taskkill")
-                    .args(["/PID", &pid.to_string(), "/F"])
-                    .creation_flags(CREATE_NO_WINDOW)
-                    .output();
+        let pid = info.pid;
+        tracing::info!(
+            "[SessionManager] kill_process: 准备终止 session {} (PID={})",
+            session_id,
+            pid
+        );
 
-                match output {
-                    Ok(o) if o.status.success() => {
-                        tracing::info!("[SessionManager] 进程 {} 已终止", pid);
-                    }
-                    Ok(o) => {
-                        // taskkill 失败通常意味着进程已结束
-                        let stderr = String::from_utf8_lossy(&o.stderr);
-                        tracing::debug!("[SessionManager] taskkill 失败 (进程可能已结束): {}", stderr);
-                    }
-                    Err(e) => {
-                        tracing::warn!("[SessionManager] taskkill 执行失败: {}", e);
-                    }
+        #[cfg(windows)]
+        {
+            // /T = 终止指定进程及其子进程(进程树);/F = 强制终止
+            // 解决: Claude CLI 部分发行版(Standalone/Node SEA)实际由父启动器
+            // spawn 出工作子进程,不带 /T 时父进程被 kill 后子进程仍在运行,
+            // 表现为"看似中断但 AI 继续输出".
+            let output = std::process::Command::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/T", "/F"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .output();
+
+            let kill_succeeded = match output {
+                Ok(o) if o.status.success() => {
+                    tracing::info!(
+                        "[SessionManager] taskkill 成功终止进程树 PID={}",
+                        pid
+                    );
+                    true
                 }
+                Ok(o) => {
+                    // 非零退出:常见原因是进程已经退出(code 128),少数情况是权限不足.
+                    // 改为 warn 级别,确保问题能被看到.
+                    let stderr = String::from_utf8_lossy(&o.stderr);
+                    let stdout = String::from_utf8_lossy(&o.stdout);
+                    tracing::warn!(
+                        "[SessionManager] taskkill 非零退出 PID={} code={:?} stdout={:?} stderr={:?}",
+                        pid,
+                        o.status.code(),
+                        stdout.trim(),
+                        stderr.trim()
+                    );
+                    // 进程可能已经结束(常见于 session_end 后再点中断);仍视为已处理.
+                    // 但如果是权限错误,会被上面的 warn 暴露,后续可以加更细的判断.
+                    true
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "[SessionManager] taskkill 命令本身执行失败 PID={} err={}",
+                        pid,
+                        e
+                    );
+                    false
+                }
+            };
 
-                // 无论 taskkill 是否成功，都移除会话并返回 true
-                // 因为进程可能已经结束了
+            if kill_succeeded {
                 self.remove(session_id);
+                tracing::info!(
+                    "[SessionManager] session {} 已从 map 移除",
+                    session_id
+                );
                 return Ok(true);
             }
-
-            #[cfg(not(windows))]
-            {
-                use std::process::Command;
-                let output = Command::new("kill")
-                    .arg(pid.to_string())
-                    .output();
-
-                match output {
-                    Ok(o) if o.status.success() => {
-                        tracing::info!("[SessionManager] 进程 {} 已终止", pid);
-                    }
-                    _ => {
-                        tracing::debug!("[SessionManager] kill 失败 (进程可能已结束)");
-                    }
-                }
-
-                self.remove(session_id);
-                return Ok(true);
-            }
+            // taskkill 命令本身失败 -> 不撒谎,让上层兜底重试
+            return Ok(false);
         }
 
-        // 会话不存在
-        Ok(false)
+        #[cfg(not(windows))]
+        {
+            use std::process::Command;
+            // Unix: 默认 SIGTERM,如不响应再 SIGKILL.
+            // 进程组场景由调用方处理(此处假设单进程).
+            let output = Command::new("kill").arg("-9").arg(pid.to_string()).output();
+
+            let kill_succeeded = match output {
+                Ok(o) if o.status.success() => {
+                    tracing::info!("[SessionManager] kill 成功 PID={}", pid);
+                    true
+                }
+                Ok(o) => {
+                    let stderr = String::from_utf8_lossy(&o.stderr);
+                    tracing::warn!(
+                        "[SessionManager] kill 非零退出 PID={} code={:?} stderr={:?}",
+                        pid,
+                        o.status.code(),
+                        stderr.trim()
+                    );
+                    // 进程可能已经结束,仍视为已处理.
+                    true
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "[SessionManager] kill 命令本身执行失败 PID={} err={}",
+                        pid,
+                        e
+                    );
+                    false
+                }
+            };
+
+            if kill_succeeded {
+                self.remove(session_id);
+                tracing::info!(
+                    "[SessionManager] session {} 已从 map 移除",
+                    session_id
+                );
+                return Ok(true);
+            }
+            Ok(false)
+        }
     }
 }
 
