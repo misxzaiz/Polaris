@@ -11,6 +11,7 @@ import { currentMode } from '../services/transport';
 import { storeTokenMd5, md5Hex } from '../services/transport/auth';
 import { getSelectedEngineHealth, hasAnyEngineAvailable } from '../utils/engineHealth';
 import { normalizeEngineId } from '../utils/engineDisplay';
+import { useThemeStore } from './themeStore';
 
 const log = createLogger('ConfigStore');
 
@@ -68,6 +69,9 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       if (config?.language) {
         i18n.changeLanguage(config.language);
       }
+      if (config?.theme) {
+        useThemeStore.getState().applyTheme(config.theme);
+      }
       set({ config, healthStatus: health, loading: false, isConnecting: false, connectionState });
 
       // CLI 可用时，异步获取动态信息（agents, auth status, version）
@@ -102,6 +106,9 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       if (savedConfig?.language) {
         i18n.changeLanguage(savedConfig.language);
       }
+      if (savedConfig?.theme) {
+        useThemeStore.getState().applyTheme(savedConfig.theme);
+      }
       set({ config: savedConfig, loading: false });
     } catch (e) {
       set({
@@ -117,6 +124,9 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       const savedConfig = await tauri.updateConfigPatch(patch);
       if (savedConfig?.language) {
         i18n.changeLanguage(savedConfig.language);
+      }
+      if (savedConfig?.theme) {
+        useThemeStore.getState().applyTheme(savedConfig.theme);
       }
       set({ config: savedConfig, loading: false });
       return savedConfig;
@@ -273,6 +283,9 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       const connectionState = hasAnyEngineAvailable(health) ? 'success' : 'failed';
       if (config?.language) {
         i18n.changeLanguage(config.language);
+      }
+      if (config?.theme) {
+        useThemeStore.getState().applyTheme(config.theme);
       }
       set({ config, healthStatus: health, loading: false, isConnecting: false, connectionState });
     } catch (e: unknown) {

@@ -6,12 +6,14 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { Terminal as XTerm } from 'xterm';
+import type { ITheme } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import { WebLinksAddon } from 'xterm-addon-web-links';
 import { useTerminalStore } from '@/stores/terminalStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useTerminalScriptStore } from '@/stores/terminalScriptStore';
+import { useThemeStore, type Theme } from '@/stores/themeStore';
 import { Plus, X, Terminal as TerminalIcon } from 'lucide-react';
 import { createLogger } from '@/utils/logger';
 import { TerminalScriptPanel } from './TerminalScriptPanel';
@@ -21,6 +23,58 @@ import { TerminalTabContextMenu } from './TerminalTabContextMenu';
 import 'xterm/css/xterm.css';
 
 const log = createLogger('TerminalPanel');
+
+/** 根据主题返回 xterm 终端配色 */
+function getXtermTheme(theme: Theme): ITheme {
+  if (theme === 'light') {
+    return {
+      background: '#ffffff',
+      foreground: '#1e1e1e',
+      cursor: '#1e1e1e',
+      cursorAccent: '#ffffff',
+      selectionBackground: 'rgba(0, 0, 0, 0.2)',
+      black: '#000000',
+      red: '#cd3131',
+      green: '#107c10',
+      yellow: '#b58900',
+      blue: '#1f6feb',
+      magenta: '#8250df',
+      cyan: '#0598bc',
+      white: '#5c5c5c',
+      brightBlack: '#7a7a7a',
+      brightRed: '#cd3131',
+      brightGreen: '#14ce14',
+      brightYellow: '#b89500',
+      brightBlue: '#0451a5',
+      brightMagenta: '#bc05bc',
+      brightCyan: '#0598bc',
+      brightWhite: '#1e1e1e',
+    };
+  }
+  return {
+    background: '#1e1e1e',
+    foreground: '#d4d4d4',
+    cursor: '#d4d4d4',
+    cursorAccent: '#1e1e1e',
+    selectionBackground: 'rgba(255, 255, 255, 0.3)',
+    black: '#000000',
+    red: '#cd3131',
+    green: '#0dbc79',
+    yellow: '#e5e510',
+    blue: '#2472c8',
+    magenta: '#bc3fbc',
+    cyan: '#11a8cd',
+    white: '#e5e5e5',
+    brightBlack: '#666666',
+    brightRed: '#f14c4c',
+    brightGreen: '#23d18b',
+    brightYellow: '#f5f543',
+    brightBlue: '#3b8eea',
+    brightMagenta: '#d670d6',
+    brightCyan: '#29b8db',
+    brightWhite: '#e5e5e5',
+  };
+}
 
 interface TerminalInstanceProps {
   sessionId: string;
@@ -34,6 +88,7 @@ function TerminalInstance({ sessionId, isActive }: TerminalInstanceProps) {
   const fitAddonRef = useRef<FitAddon | null>(null);
   const write = useTerminalStore((state) => state.write);
   const resize = useTerminalStore((state) => state.resize);
+  const theme = useThemeStore((state) => state.theme);
 
   // 初始化终端
   useEffect(() => {
@@ -47,29 +102,7 @@ function TerminalInstance({ sessionId, isActive }: TerminalInstanceProps) {
     }
 
     const xterm = new XTerm({
-      theme: {
-        background: '#1e1e1e',
-        foreground: '#d4d4d4',
-        cursor: '#d4d4d4',
-        cursorAccent: '#1e1e1e',
-        selectionBackground: 'rgba(255, 255, 255, 0.3)',
-        black: '#000000',
-        red: '#cd3131',
-        green: '#0dbc79',
-        yellow: '#e5e510',
-        blue: '#2472c8',
-        magenta: '#bc3fbc',
-        cyan: '#11a8cd',
-        white: '#e5e5e5',
-        brightBlack: '#666666',
-        brightRed: '#f14c4c',
-        brightGreen: '#23d18b',
-        brightYellow: '#f5f543',
-        brightBlue: '#3b8eea',
-        brightMagenta: '#d670d6',
-        brightCyan: '#29b8db',
-        brightWhite: '#e5e5e5',
-      },
+      theme: getXtermTheme(useThemeStore.getState().theme),
       fontFamily: 'Consolas, "SF Mono", Menlo, "DejaVu Sans Mono", "Courier New", monospace',
       fontSize: 14,
       lineHeight: 1.2,
@@ -181,6 +214,13 @@ function TerminalInstance({ sessionId, isActive }: TerminalInstanceProps) {
     }
   }, [isActive]);
 
+  // 主题变化时更新 xterm 配色
+  useEffect(() => {
+    const xterm = xtermRef.current;
+    if (!xterm) return;
+    xterm.options.theme = getXtermTheme(theme);
+  }, [theme]);
+
   return (
     <div
       ref={terminalRef}
@@ -258,7 +298,7 @@ export function TerminalPanel() {
   }, [closeSession, contextSession]);
 
   return (
-    <div className="flex flex-col h-full bg-[#1e1e1e]">
+    <div className="flex flex-col h-full bg-background-base">
       <TerminalQuickRunBar
         collapsed={terminalScriptPanelCollapsed}
         onToggleCollapsed={toggleTerminalScriptPanelCollapsed}
@@ -267,7 +307,7 @@ export function TerminalPanel() {
       {!terminalScriptPanelCollapsed && <TerminalScriptPanel workspacePath={cwd || null} />}
 
       {/* 标签栏 */}
-      <div className="flex items-center h-9 bg-[#252526] border-b border-[#3c3c3c] shrink-0">
+      <div className="flex items-center h-9 bg-background-elevated border-b border-border shrink-0">
         {/* 终端标签 */}
         <div className="flex-1 flex items-center overflow-x-auto">
           {sessions.map((session) => (
@@ -281,10 +321,10 @@ export function TerminalPanel() {
               }}
               className={`
                 flex items-center gap-1.5 px-3 h-full min-w-[100px] max-w-[200px]
-                cursor-pointer border-r border-[#3c3c3c]
+                cursor-pointer border-r border-border
                 ${activeSessionId === session.id
-                  ? 'bg-[#1e1e1e] text-text-primary'
-                  : 'bg-[#2d2d2d] text-text-secondary hover:bg-[#2a2a2a]'
+                  ? 'bg-background-base text-text-primary'
+                  : 'bg-background-surface text-text-secondary hover:bg-background-hover'
                 }
               `}
             >
@@ -292,7 +332,7 @@ export function TerminalPanel() {
               <span className="flex-1 truncate text-sm">{session.name}</span>
               <button
                 onClick={(e) => handleClose(session.id, e)}
-                className="p-0.5 rounded hover:bg-[#3c3c3c] shrink-0"
+                className="p-0.5 rounded hover:bg-background-hover shrink-0"
               >
                 <X size={14} />
               </button>
@@ -303,7 +343,7 @@ export function TerminalPanel() {
         {/* 新建按钮 */}
         <button
           onClick={handleCreate}
-          className="flex items-center justify-center w-9 h-9 text-text-secondary hover:text-text-primary hover:bg-[#3c3c3c] shrink-0"
+          className="flex items-center justify-center w-9 h-9 text-text-secondary hover:text-text-primary hover:bg-background-hover shrink-0"
           title="新建终端"
         >
           <Plus size={16} />

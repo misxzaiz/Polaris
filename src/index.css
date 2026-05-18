@@ -4,9 +4,121 @@
 
 
 /* 全局样式 */
+/* === 主题变量（Dark - 默认） ===
+ * 所有颜色 token 以 `R G B` 三元组形式存储，由 tailwind.config.js 通过
+ * `rgb(var(--c-xxx) / <alpha-value>)` 引用。切换主题只需替换变量值。 */
 :root {
   color-scheme: dark;
   --window-opacity: 1.0;
+
+  /* Primary - Blue */
+  --c-primary: 59 130 246;
+  --c-primary-hover: 37 99 235;
+  --c-primary-50: 239 246 255;
+  --c-primary-100: 219 234 254;
+  --c-primary-200: 191 219 254;
+  --c-primary-300: 147 197 253;
+  --c-primary-400: 96 165 250;
+  --c-primary-500: 59 130 246;
+  --c-primary-600: 37 99 235;
+  --c-primary-700: 29 78 216;
+
+  /* Background */
+  --c-bg-base: 15 15 17;
+  --c-bg-elevated: 26 26 31;
+  --c-bg-surface: 37 37 43;
+  --c-bg-hover: 45 45 53;
+  --c-bg-active: 53 53 61;
+  --c-bg-tertiary: 33 38 45;
+  --c-bg-secondary: 22 27 34;
+
+  /* Border base RGB (alpha 由 tailwind token 控制) */
+  --c-border: 255 255 255;
+
+  /* Text */
+  --c-text-primary: 248 248 248;
+  --c-text-secondary: 180 180 184;
+  --c-text-tertiary: 142 142 147;
+  --c-text-muted: 109 109 112;
+
+  /* Status */
+  --c-status-warning: 251 191 36;
+  --c-status-success: 52 211 153;
+  --c-status-danger: 248 113 113;
+  --c-status-info: 96 165 250;
+  --c-status-done: 16 185 129;
+  --c-status-failed: 239 68 68;
+  --c-status-neutral: 156 163 175;
+
+  /* Priority */
+  --c-priority-low: 156 163 175;
+  --c-priority-normal: 96 165 250;
+  --c-priority-high: 251 146 60;
+  --c-priority-urgent: 248 113 113;
+
+  /* Accent */
+  --c-accent-ai: 167 139 250;
+  --c-accent-prototype: 34 211 238;
+  --c-accent-workspace: 251 191 36;
+
+  /* Misc */
+  --c-overlay: 0 0 0;
+  --c-on-primary: 255 255 255;
+  --c-canvas: 255 255 255;
+  --c-tag-bg: 255 255 255;
+  --c-shadow: 0 0 0;
+}
+
+/* === 主题变量（Light） === */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* Primary - 保持品牌蓝，略加深 */
+  --c-primary: 37 99 235;
+  --c-primary-hover: 29 78 216;
+
+  /* Background - 浅色分层 */
+  --c-bg-base: 250 250 252;
+  --c-bg-elevated: 255 255 255;
+  --c-bg-surface: 241 245 249;
+  --c-bg-hover: 226 232 240;
+  --c-bg-active: 203 213 225;
+  --c-bg-tertiary: 232 236 241;
+  --c-bg-secondary: 248 250 252;
+
+  /* Border base RGB（黑色基底） */
+  --c-border: 15 23 42;
+
+  /* Text - 深色 */
+  --c-text-primary: 15 23 42;
+  --c-text-secondary: 51 65 85;
+  --c-text-tertiary: 100 116 139;
+  --c-text-muted: 148 163 184;
+
+  /* Status - 加深以保证对比度 */
+  --c-status-warning: 217 119 6;
+  --c-status-success: 22 163 74;
+  --c-status-danger: 220 38 38;
+  --c-status-info: 37 99 235;
+  --c-status-done: 5 150 105;
+  --c-status-failed: 185 28 28;
+  --c-status-neutral: 107 114 128;
+
+  /* Priority */
+  --c-priority-low: 107 114 128;
+  --c-priority-normal: 37 99 235;
+  --c-priority-high: 234 88 12;
+  --c-priority-urgent: 220 38 38;
+
+  /* Accent */
+  --c-accent-ai: 124 58 237;
+  --c-accent-prototype: 14 165 233;
+  --c-accent-workspace: 217 119 6;
+
+  /* Misc */
+  --c-overlay: 15 23 42;
+  --c-shadow: 15 23 42;
+  --c-tag-bg: 15 23 42;
 }
 
 * {
@@ -21,10 +133,10 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: rgba(15, 15, 17, var(--window-opacity));
-  color: #F8F8F8;
-  /* 透明度变化时的平滑过渡 */
-  transition: background-color 0.3s ease;
+  background-color: rgb(var(--c-bg-base) / var(--window-opacity));
+  color: rgb(var(--c-text-primary));
+  /* 透明度/主题变化时的平滑过渡 */
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 #root {

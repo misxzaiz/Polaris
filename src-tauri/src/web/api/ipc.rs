@@ -1090,7 +1090,7 @@ fn dispatch_list_todos(state: &AppState, args: &Value) -> Result<Json<Value>, We
 }
 
 fn dispatch_create_todo(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let repo = get_todo_repo(state, args)?;
+    let _repo = get_todo_repo(state, args)?;
     let params: crate::commands::todo::CreateTodoParams = serde_json::from_value(args.get("params").cloned().unwrap_or(Value::Null))
         .map_err(|e| WebError::BadRequest(format!("Invalid params: {}", e)))?;
     let priority = params.priority

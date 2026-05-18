@@ -105,6 +105,14 @@
     "current": "Current Language",
     "hint": "Switch interface display language"
   },
+  "appearance": {
+    "title": "Appearance",
+    "current": "Current Theme",
+    "hint": "Switch between dark and light theme (light is experimental)",
+    "dark": "Dark",
+    "light": "Light",
+    "experimental": "Experimental"
+  },
   "window": {
     "title": "Window Settings",
     "opacityTitle": "Window Opacity",

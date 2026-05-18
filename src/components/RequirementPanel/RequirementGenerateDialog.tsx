@@ -52,7 +52,7 @@ export function RequirementGenerateDialog({
       role="dialog"
       aria-modal="true"
       aria-label={t('generate.title')}
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      className="fixed inset-0 bg-overlay flex items-center justify-center z-50"
     >
       <div
         className="bg-background-elevated rounded-lg shadow-xl w-full max-w-md"
@@ -86,7 +86,7 @@ export function RequirementGenerateDialog({
                   onClick={() => setScope(option)}
                   className={`px-3 py-1.5 text-xs rounded-lg transition-all ${
                     scope === option
-                      ? 'bg-primary text-white'
+                      ? 'bg-primary text-on-primary'
                       : 'bg-background-surface border border-border text-text-secondary hover:bg-background-hover'
                   }`}
                 >
@@ -121,7 +121,7 @@ export function RequirementGenerateDialog({
           </button>
           <button
             onClick={handleConfirm}
-            className="px-3 py-1.5 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 transition-all"
+            className="px-3 py-1.5 text-sm bg-primary text-on-primary rounded-lg hover:bg-primary/90 transition-all"
           >
             {t('generate.confirm')}
           </button>

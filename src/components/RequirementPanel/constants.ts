@@ -8,29 +8,29 @@ import type { RequirementStatus, RequirementPriority } from '@/types/requirement
 
 /** 状态颜色配置（含 dot 用于卡片状态点） */
 export const STATUS_STYLES: Record<RequirementStatus, { text: string; bg: string; dot: string }> = {
-  draft: { text: 'text-text-tertiary', bg: 'bg-gray-500/10', dot: 'bg-gray-500' },
-  pending: { text: 'text-amber-500', bg: 'bg-amber-500/10', dot: 'bg-amber-500' },
-  approved: { text: 'text-green-500', bg: 'bg-green-500/10', dot: 'bg-green-500' },
-  rejected: { text: 'text-red-500', bg: 'bg-red-500/10', dot: 'bg-red-500' },
-  executing: { text: 'text-blue-500', bg: 'bg-blue-500/10', dot: 'bg-blue-500' },
-  completed: { text: 'text-indigo-500', bg: 'bg-indigo-500/10', dot: 'bg-indigo-500' },
-  failed: { text: 'text-red-400', bg: 'bg-red-400/10', dot: 'bg-red-400' },
+  draft: { text: 'text-status-neutral', bg: 'bg-status-neutral/10', dot: 'bg-status-neutral' },
+  pending: { text: 'text-status-warning', bg: 'bg-status-warning/10', dot: 'bg-status-warning' },
+  approved: { text: 'text-status-success', bg: 'bg-status-success/10', dot: 'bg-status-success' },
+  rejected: { text: 'text-status-danger', bg: 'bg-status-danger/10', dot: 'bg-status-danger' },
+  executing: { text: 'text-status-info', bg: 'bg-status-info/10', dot: 'bg-status-info' },
+  completed: { text: 'text-status-done', bg: 'bg-status-done/10', dot: 'bg-status-done' },
+  failed: { text: 'text-status-failed', bg: 'bg-status-failed/10', dot: 'bg-status-failed' },
 }
 
 /** 优先级文字颜色 */
 export const PRIORITY_TEXT: Record<RequirementPriority, string> = {
-  low: 'text-text-tertiary',
-  normal: 'text-blue-500',
-  high: 'text-orange-500',
-  urgent: 'text-red-500',
+  low: 'text-priority-low',
+  normal: 'text-priority-normal',
+  high: 'text-priority-high',
+  urgent: 'text-priority-urgent',
 }
 
 /** 优先级背景颜色 */
 export const PRIORITY_BG: Record<RequirementPriority, string> = {
-  low: 'bg-gray-500/10',
-  normal: 'bg-blue-500/10',
-  high: 'bg-orange-500/10',
-  urgent: 'bg-red-500/10',
+  low: 'bg-priority-low/10',
+  normal: 'bg-priority-normal/10',
+  high: 'bg-priority-high/10',
+  urgent: 'bg-priority-urgent/10',
 }
 
 /** 优先级排序权重（高权重优先） */

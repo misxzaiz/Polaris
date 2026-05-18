@@ -11,6 +11,7 @@
 import { memo, useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getMermaidConfig } from '../../utils/mermaid-config';
+import { useThemeStore } from '../../stores/themeStore';
 import { modKey } from '../../utils/path';
 import { createLogger } from '../../utils/logger';
 import {
@@ -92,7 +93,8 @@ export const DeferredMermaidDiagram = memo(function DeferredMermaidDiagram({
 
       // 检查是否已初始化（mermaid 10.x 不支持 isInitialized 检查，直接调用 initialize）
       try {
-        const config = getMermaidConfig('dark');
+        const theme = useThemeStore.getState().theme;
+        const config = getMermaidConfig(theme);
         mermaidInstance.initialize(config);
       } catch {
         // 可能已初始化，忽略错误

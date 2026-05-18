@@ -246,7 +246,7 @@ export function TodoForm({ todo, onSubmit, onCancel, mode, tags, onAddTag, onRem
                               onRemoveTag(tag)
                             }
                           }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-blue-500 bg-blue-500/10 rounded cursor-pointer hover:bg-blue-500/20 transition-colors"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-tag-foreground bg-status-info/10 rounded cursor-pointer hover:bg-status-info/20 transition-colors"
                           title={mode === 'create' ? t('form.clickRemove') : tag}
                         >
                           {tag}
@@ -267,7 +267,7 @@ export function TodoForm({ todo, onSubmit, onCancel, mode, tags, onAddTag, onRem
                     <button
                       onClick={handleAddTag}
                       disabled={!tagInput.trim()}
-                      className="px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-500/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm"
+                      className="px-3 py-2 bg-primary text-on-primary rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm"
                     >
                       {t('form.addTagButton')}
                     </button>
@@ -321,7 +321,7 @@ export function TodoForm({ todo, onSubmit, onCancel, mode, tags, onAddTag, onRem
                       />
                       <button
                         onClick={() => handleDeleteSubtask(subtask.id)}
-                        className="p-1 text-text-tertiary hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                        className="p-1 text-text-tertiary hover:text-status-danger opacity-0 group-hover:opacity-100 transition-all"
                         title={t('form.deleteSubtask')}
                       >
                         <Trash2 size={14} />
@@ -348,7 +348,7 @@ export function TodoForm({ todo, onSubmit, onCancel, mode, tags, onAddTag, onRem
                 <button
                   onClick={handleAddSubtask}
                   disabled={!newSubtaskTitle.trim()}
-                  className="px-3 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm flex items-center gap-1"
+                  className="px-3 py-2 bg-primary text-on-primary rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm flex items-center gap-1"
                 >
                   <Plus size={16} />
                   {t('form.addTagButton')}
@@ -369,7 +369,7 @@ export function TodoForm({ todo, onSubmit, onCancel, mode, tags, onAddTag, onRem
         <button
           onClick={handleSubmit}
           disabled={!content.trim()}
-          className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+          className="px-4 py-2 text-sm bg-primary text-on-primary rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
         >
           {isEditMode ? t('form.saveButton', { shortcut: `${modKey}+Enter` }) : t('form.createButton', { shortcut: `${modKey}+Enter` })}
         </button>

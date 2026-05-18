@@ -15,6 +15,7 @@
 import { memo, useEffect, useRef, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getMermaidConfig } from '../../utils/mermaid-config';
+import { useThemeStore } from '../../stores/themeStore';
 import { modKey } from '../../utils/path';
 import { createLogger } from '../../utils/logger';
 import {
@@ -132,7 +133,8 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code, id }: Mermaid
 
         // 检查是否已初始化
         if (!mermaidInstance.isInitialized?.()) {
-          const config = getMermaidConfig('dark');
+          const theme = useThemeStore.getState().theme;
+          const config = getMermaidConfig(theme);
           mermaidInstance.initialize(config);
         }
 

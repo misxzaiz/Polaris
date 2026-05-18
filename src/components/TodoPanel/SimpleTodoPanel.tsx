@@ -212,7 +212,7 @@ export function SimpleTodoPanel() {
           </h2>
           <button
             onClick={() => setShowCreateDialog(true)}
-            className="p-1.5 rounded-lg bg-primary text-white hover:bg-primary/90 transition-all"
+            className="p-1.5 rounded-lg bg-primary text-on-primary hover:bg-primary/90 transition-all"
             title={t('createTodo')}
           >
             <Plus size={16} />
@@ -264,7 +264,7 @@ export function SimpleTodoPanel() {
               onClick={() => setStatusFilter('all')}
               className={`px-2 py-1 text-xs rounded whitespace-nowrap transition-all ${
                 statusFilter === 'all'
-                  ? 'bg-primary text-white'
+                  ? 'bg-primary text-on-primary'
                   : 'hover:bg-background-hover text-text-secondary'
               }`}
             >
@@ -274,7 +274,7 @@ export function SimpleTodoPanel() {
               onClick={() => setStatusFilter('pending')}
               className={`px-2 py-1 text-xs rounded flex items-center gap-1 whitespace-nowrap transition-all ${
                 statusFilter === 'pending'
-                  ? 'bg-primary text-white'
+                  ? 'bg-primary text-on-primary'
                   : 'hover:bg-background-hover text-text-secondary'
               }`}
             >
@@ -285,7 +285,7 @@ export function SimpleTodoPanel() {
               onClick={() => setStatusFilter('in_progress')}
               className={`px-2 py-1 text-xs rounded flex items-center gap-1 whitespace-nowrap transition-all ${
                 statusFilter === 'in_progress'
-                  ? 'bg-primary text-white'
+                  ? 'bg-primary text-on-primary'
                   : 'hover:bg-background-hover text-text-secondary'
               }`}
             >
@@ -296,7 +296,7 @@ export function SimpleTodoPanel() {
               onClick={() => setStatusFilter('completed')}
               className={`px-2 py-1 text-xs rounded flex items-center gap-1 whitespace-nowrap transition-all ${
                 statusFilter === 'completed'
-                  ? 'bg-primary text-white'
+                  ? 'bg-primary text-on-primary'
                   : 'hover:bg-background-hover text-text-secondary'
               }`}
             >
@@ -346,7 +346,7 @@ export function SimpleTodoPanel() {
             </p>
             <button
               onClick={() => setShowCreateDialog(true)}
-              className="mt-4 px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 transition-all"
+              className="mt-4 px-4 py-2 text-sm bg-primary text-on-primary rounded-lg hover:bg-primary/90 transition-all"
             >
               {t('createTodo')}
             </button>
@@ -355,7 +355,7 @@ export function SimpleTodoPanel() {
       </div>
 
       {showCreateDialog && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50">
           <TodoForm
             mode="create"
             onSubmit={handleCreateTodo}

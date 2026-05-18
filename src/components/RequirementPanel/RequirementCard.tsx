@@ -55,9 +55,9 @@ export function RequirementCard({
       tabIndex={0}
       className={`p-3 rounded-lg border transition-all hover:shadow-sm cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${
         requirement.status === 'executing'
-          ? 'bg-blue-500/5 border-blue-500/30'
+          ? 'bg-status-info/5 border-status-info/30'
           : requirement.status === 'completed'
-          ? 'bg-indigo-500/5 border-indigo-500/30 opacity-60'
+          ? 'bg-status-done/5 border-status-done/30 opacity-60'
           : 'bg-background-surface border-border-subtle hover:border-border'
       }`}
       onClick={() => onClick?.(requirement)}
@@ -106,7 +106,7 @@ export function RequirementCard({
             {/* 来源标识 */}
             <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs rounded ${
               requirement.generatedBy === 'ai'
-                ? 'text-purple-500 bg-purple-500/10'
+                ? 'text-accent-ai bg-accent-ai/10'
                 : 'text-text-tertiary bg-background-tertiary'
             }`}>
               {requirement.generatedBy === 'ai' ? (
@@ -118,7 +118,7 @@ export function RequirementCard({
 
             {/* 原型标识 */}
             {requirement.hasPrototype && (
-              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs text-cyan-500 bg-cyan-500/10 rounded">
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs text-accent-prototype bg-accent-prototype/10 rounded">
                 <Eye size={10} />
                 {t('card.prototype')}
               </span>
@@ -126,7 +126,7 @@ export function RequirementCard({
 
             {/* 工作区标识（仅在显示所有工作区时） */}
             {showWorkspace && requirement.workspaceName && (
-              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs text-amber-600 bg-amber-500/10 rounded">
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs text-accent-workspace bg-accent-workspace/10 rounded">
                 <FolderOpen size={10} />
                 {requirement.workspaceName}
               </span>
@@ -145,7 +145,7 @@ export function RequirementCard({
             <>
               <button
                 onClick={e => { e.stopPropagation(); onApproveClick?.(requirement) }}
-                className="p-1.5 rounded hover:bg-green-500/10 text-text-secondary hover:text-green-500 transition-all"
+                className="p-1.5 rounded hover:bg-status-success/10 text-text-secondary hover:text-status-success transition-all"
                 title={t('card.approve')}
                 aria-label={t('card.approve')}
                 disabled={disabled}
@@ -154,7 +154,7 @@ export function RequirementCard({
               </button>
               <button
                 onClick={e => { e.stopPropagation(); onRejectClick?.(requirement) }}
-                className="p-1.5 rounded hover:bg-red-500/10 text-text-secondary hover:text-red-500 transition-all"
+                className="p-1.5 rounded hover:bg-status-danger/10 text-text-secondary hover:text-status-danger transition-all"
                 title={t('card.reject')}
                 aria-label={t('card.reject')}
                 disabled={disabled}
@@ -167,7 +167,7 @@ export function RequirementCard({
           {requirement.status === 'approved' && onExecuteClick && (
             <button
               onClick={e => { e.stopPropagation(); onExecuteClick(requirement) }}
-              className="p-1.5 rounded hover:bg-blue-500/10 text-text-secondary hover:text-blue-500 transition-all"
+              className="p-1.5 rounded hover:bg-status-info/10 text-text-secondary hover:text-status-info transition-all"
               title={t('execute')}
               aria-label={t('execute')}
               disabled={disabled}
@@ -192,7 +192,7 @@ export function RequirementCard({
                 e.stopPropagation()
                 onDeleteClick(requirement)
               }}
-              className="p-1.5 rounded hover:bg-red-500/10 text-text-secondary hover:text-red-500 transition-all"
+              className="p-1.5 rounded hover:bg-status-danger/10 text-text-secondary hover:text-status-danger transition-all"
               title={t('card.delete')}
               aria-label={t('card.delete')}
               disabled={disabled}

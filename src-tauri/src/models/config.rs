@@ -785,6 +785,10 @@ pub struct Config {
     #[serde(default)]
     pub language: Option<String>,
 
+    /// 界面主题（"dark" | "light"）
+    #[serde(default)]
+    pub theme: Option<String>,
+
     /// Claude Code 引擎配置
     #[serde(default)]
     pub claude_code: ClaudeCodeConfig,
@@ -881,6 +885,7 @@ impl Default for Config {
         Self {
             default_engine: default_default_engine(),
             language: None,
+            theme: None,
             claude_code: ClaudeCodeConfig::default(),
             codex_code: CodexCodeConfig::default(),
             work_dir: None,

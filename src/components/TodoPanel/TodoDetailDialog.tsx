@@ -22,7 +22,7 @@ export function TodoDetailDialog({ todo, open, onClose, onUpdate, onDelete }: To
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50">
       <div
         className="bg-background-elevated rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
@@ -63,7 +63,7 @@ export function TodoDetailDialog({ todo, open, onClose, onUpdate, onDelete }: To
                   onClose()
                 }
               }}
-              className="w-full px-4 py-2 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all flex items-center justify-center gap-2"
+              className="w-full px-4 py-2 text-sm bg-status-danger text-on-primary rounded-lg hover:bg-status-danger/80 transition-all flex items-center justify-center gap-2"
             >
               <Trash2 size={16} />
               删除待办

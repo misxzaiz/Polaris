@@ -586,6 +586,7 @@ impl OldConfig {
         Config {
             default_engine: "claude-code".to_string(),
             language: None,
+            theme: None,
             claude_code: crate::models::config::ClaudeCodeConfig {
                 cli_path: self.claude_cmd,
             },

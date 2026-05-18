@@ -313,7 +313,7 @@ export function RequirementPanel() {
             <button
               onClick={() => setShowGenerateDialog(true)}
               disabled={generating}
-              className="p-1.5 rounded-lg hover:bg-purple-500/10 text-text-secondary hover:text-purple-500 transition-all disabled:opacity-50"
+              className="p-1.5 rounded-lg hover:bg-accent-ai/10 text-text-secondary hover:text-accent-ai transition-all disabled:opacity-50"
               title={t('generate.title')}
               aria-label={t('generate.title')}
             >
@@ -321,7 +321,7 @@ export function RequirementPanel() {
             </button>
             <button
               onClick={() => setShowCreateDialog(true)}
-              className="p-1.5 rounded-lg bg-primary text-white hover:bg-primary/90 transition-all"
+              className="p-1.5 rounded-lg bg-primary text-on-primary hover:bg-primary/90 transition-all"
               title={t('newRequirement')}
               aria-label={t('newRequirement')}
             >
@@ -367,7 +367,7 @@ export function RequirementPanel() {
                   aria-pressed={statusFilter === s}
                   className={`px-2 py-1 text-xs rounded flex items-center gap-1 whitespace-nowrap transition-all ${
                     statusFilter === s
-                      ? 'bg-primary text-white'
+                      ? 'bg-primary text-on-primary'
                       : 'hover:bg-background-hover text-text-secondary'
                   }`}
                 >
@@ -427,7 +427,7 @@ export function RequirementPanel() {
       {/* 需求列表 */}
       <div className="flex-1 overflow-y-auto px-4 py-2 space-y-2">
         {error && (
-          <div className="p-2 text-xs text-red-500 bg-red-500/10 rounded-lg">
+          <div className="p-2 text-xs text-status-danger bg-status-danger/10 rounded-lg">
             {error}
           </div>
         )}
@@ -476,7 +476,7 @@ export function RequirementPanel() {
           role="dialog"
           aria-modal="true"
           aria-label={t('detail.createTitle')}
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          className="fixed inset-0 bg-overlay flex items-center justify-center z-50"
         >
           <RequirementForm
             mode="create"

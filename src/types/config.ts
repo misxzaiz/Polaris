@@ -12,6 +12,9 @@ export type EngineId = 'claude-code' | 'codex'
 /** 支持的语言 */
 export type Language = 'zh-CN' | 'en-US'
 
+/** 界面主题 */
+export type Theme = 'dark' | 'light'
+
 /** AI 引擎配置 */
 export interface EngineConfig {
   /** 引擎 ID */
@@ -144,6 +147,8 @@ export interface Config {
   defaultEngine: EngineId;
   /** 界面语言 */
   language?: Language;
+  /** 界面主题 */
+  theme?: Theme;
   /** Claude Code 引擎配置 */
   claudeCode: {
     /** Claude CLI 命令路径 */

@@ -36,8 +36,8 @@ export function TodoCard({ todo, onEditClick, onToggleStatus, onDeleteClick }: T
     },
     completed: {
       icon: CheckCircle,
-      color: 'text-green-500',
-      bg: 'bg-green-500/10',
+      color: 'text-status-success',
+      bg: 'bg-status-success/10',
       labelKey: 'status.completed',
     },
     cancelled: {
@@ -74,7 +74,7 @@ export function TodoCard({ todo, onEditClick, onToggleStatus, onDeleteClick }: T
         todo.status === 'in_progress'
           ? 'bg-primary/5 border-primary/30'
           : todo.status === 'completed'
-          ? 'bg-green-500/5 border-green-500/30 opacity-60'
+          ? 'bg-status-success/5 border-status-success/30 opacity-60'
           : 'bg-background-surface border-border-subtle hover:border-border'
       }`}
     >
@@ -115,12 +115,12 @@ export function TodoCard({ todo, onEditClick, onToggleStatus, onDeleteClick }: T
           )}
 
           {isGlobal ? (
-            <div className="mt-1.5 flex items-center gap-1 text-xs text-blue-500">
+            <div className="mt-1.5 flex items-center gap-1 text-xs text-status-info">
               <Globe size={12} />
               <span>{t('card.globalTodo')}</span>
             </div>
           ) : workspaceDisplayName && (
-            <div className="mt-1.5 flex items-center gap-1 text-xs text-purple-500">
+            <div className="mt-1.5 flex items-center gap-1 text-xs text-accent-workspace">
               <FolderOpen size={12} />
               <span>{workspaceDisplayName}</span>
             </div>
@@ -129,7 +129,7 @@ export function TodoCard({ todo, onEditClick, onToggleStatus, onDeleteClick }: T
           {todo.dueDate && (
             <div className="mt-1.5 flex items-center gap-1 text-xs">
               <Calendar size={12} />
-              <span className={new Date(todo.dueDate) < new Date() ? 'text-red-500 font-medium' : 'text-text-secondary'}>
+              <span className={new Date(todo.dueDate) < new Date() ? 'text-status-danger font-medium' : 'text-text-secondary'}>
                 {new Date(todo.dueDate).toLocaleDateString('zh-CN', {
                   month: 'short',
                   day: 'numeric',
@@ -167,7 +167,7 @@ export function TodoCard({ todo, onEditClick, onToggleStatus, onDeleteClick }: T
               {todo.relatedFiles.map((file) => (
                 <span
                   key={file}
-                  className="px-1.5 py-0.5 text-xs text-blue-500 bg-blue-500/10 rounded font-mono max-w-[120px] truncate"
+                  className="px-1.5 py-0.5 text-xs text-tag-foreground bg-status-info/10 rounded font-mono max-w-[120px] truncate"
                   title={file}
                 >
                   {file.split('/').pop()}
@@ -196,7 +196,7 @@ export function TodoCard({ todo, onEditClick, onToggleStatus, onDeleteClick }: T
                 onDeleteClick(todo)
               }
             }}
-            className="p-1.5 rounded hover:bg-red-500/10 text-text-secondary hover:text-red-500 transition-all"
+            className="p-1.5 rounded hover:bg-status-danger/10 text-text-secondary hover:text-status-danger transition-all"
             title={t('card.deleteTodo')}
           >
             <Trash2 size={14} />
@@ -225,7 +225,7 @@ export function TodoCard({ todo, onEditClick, onToggleStatus, onDeleteClick }: T
                 key={subtask.id}
                 className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded max-w-[150px] truncate ${
                   subtask.completed
-                    ? 'bg-green-500/10 text-green-500 line-through'
+                    ? 'bg-status-success/10 text-status-success line-through'
                     : 'bg-background-tertiary'
                 }`}
                 title={subtask.title}

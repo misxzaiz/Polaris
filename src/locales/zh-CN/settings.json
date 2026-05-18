@@ -105,6 +105,14 @@
     "current": "当前语言",
     "hint": "切换界面显示语言"
   },
+  "appearance": {
+    "title": "外观主题",
+    "current": "当前主题",
+    "hint": "深色 / 浅色主题切换（浅色为实验性）",
+    "dark": "深色",
+    "light": "浅色",
+    "experimental": "实验性"
+  },
   "window": {
     "title": "窗口设置",
     "opacityTitle": "窗口透明度",

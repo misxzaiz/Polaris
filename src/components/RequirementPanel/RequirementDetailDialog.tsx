@@ -135,7 +135,7 @@ export function RequirementDetailDialog({
         role="dialog"
         aria-modal="true"
         aria-label={t('detail.editTitle')}
-        className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+        className="fixed inset-0 bg-overlay flex items-center justify-center z-50"
       >
         <RequirementForm
           requirement={requirement}
@@ -164,7 +164,7 @@ export function RequirementDetailDialog({
     if (prototypeError) {
       return (
         <div className="flex items-center justify-center h-full p-4">
-          <div className="p-4 text-sm text-red-400 bg-red-400/10 rounded-lg">
+          <div className="p-4 text-sm text-status-failed bg-status-failed/10 rounded-lg">
             {prototypeError}
           </div>
         </div>
@@ -196,12 +196,12 @@ export function RequirementDetailDialog({
         role="dialog"
         aria-modal="true"
         aria-label={t('detail.prototype')}
-        className="fixed inset-0 bg-black/90 z-50 flex flex-col"
+        className="fixed inset-0 bg-overlay-strong z-50 flex flex-col"
       >
         {/* 头部 */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-background-elevated">
           <div className="flex items-center gap-2">
-            <Eye size={16} className="text-cyan-500" />
+            <Eye size={16} className="text-accent-prototype" />
             <span className="text-sm font-medium text-text-primary">
               {t('detail.prototype')}
             </span>
@@ -221,7 +221,7 @@ export function RequirementDetailDialog({
         </div>
 
         {/* 原型内容 */}
-        <div className="flex-1 bg-white">
+        <div className="flex-1 bg-canvas">
           {renderPrototypeContent()}
         </div>
       </div>
@@ -234,7 +234,7 @@ export function RequirementDetailDialog({
       role="dialog"
       aria-modal="true"
       aria-label={t('detail.title')}
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4"
     >
       <div
         className={clsx(
@@ -308,7 +308,7 @@ export function RequirementDetailDialog({
               {/* 来源 */}
               <div className="flex items-center gap-1">
                 {requirement.generatedBy === 'ai' ? (
-                  <><Sparkles size={12} className="text-purple-500" /> {t('source.ai')}</>
+                  <><Sparkles size={12} className="text-accent-ai" /> {t('source.ai')}</>
                 ) : (
                   <><User size={12} /> {t('source.user')}</>
                 )}
@@ -316,7 +316,7 @@ export function RequirementDetailDialog({
 
               {/* 原型标识 */}
               {requirement.hasPrototype && (
-                <div className="flex items-center gap-1 text-cyan-500">
+                <div className="flex items-center gap-1 text-accent-prototype">
                   <Eye size={12} />
                   {t('card.prototype')}
                 </div>
@@ -376,7 +376,7 @@ export function RequirementDetailDialog({
                 )}
 
                 {requirement.executeError && (
-                  <div className="text-xs text-red-400 mt-1">
+                  <div className="text-xs text-status-failed mt-1">
                     {t('detail.executeError')}: {requirement.executeError}
                   </div>
                 )}
@@ -413,7 +413,7 @@ export function RequirementDetailDialog({
               </div>
 
               {/* 原型内容 */}
-              <div className="flex-1 overflow-hidden bg-white rounded-bl-lg">
+              <div className="flex-1 overflow-hidden bg-canvas rounded-bl-lg">
                 {renderPrototypeContent()}
               </div>
             </div>
@@ -427,7 +427,7 @@ export function RequirementDetailDialog({
             {canReview && onApprove && (
               <button
                 onClick={() => onApprove(requirement)}
-                className="px-3 py-1.5 text-sm bg-green-500/10 text-green-500 rounded-lg hover:bg-green-500/20 transition-all flex items-center gap-1 disabled:opacity-50 disabled:pointer-events-none"
+                className="px-3 py-1.5 text-sm bg-status-success/10 text-status-success rounded-lg hover:bg-status-success/20 transition-all flex items-center gap-1 disabled:opacity-50 disabled:pointer-events-none"
                 disabled={disabled}
               >
                 <Check size={14} />
@@ -437,7 +437,7 @@ export function RequirementDetailDialog({
             {canReview && onReject && !showRejectInput && (
               <button
                 onClick={() => setShowRejectInput(true)}
-                className="px-3 py-1.5 text-sm bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500/20 transition-all flex items-center gap-1 disabled:opacity-50 disabled:pointer-events-none"
+                className="px-3 py-1.5 text-sm bg-status-danger/10 text-status-danger rounded-lg hover:bg-status-danger/20 transition-all flex items-center gap-1 disabled:opacity-50 disabled:pointer-events-none"
                 disabled={disabled}
               >
                 <XCircle size={14} />
@@ -462,7 +462,7 @@ export function RequirementDetailDialog({
                     }
                   }}
                   placeholder={t('detail.actions.rejectPlaceholder')}
-                  className="w-40 px-2 py-1 text-xs bg-background-surface border border-border rounded focus:outline-none focus:ring-1 focus:ring-red-500/50 text-text-primary placeholder-text-tertiary"
+                  className="w-40 px-2 py-1 text-xs bg-background-surface border border-border rounded focus:outline-none focus:ring-1 focus:ring-status-danger/50 text-text-primary placeholder-text-tertiary"
                   autoFocus
                 />
                 <button
@@ -471,7 +471,7 @@ export function RequirementDetailDialog({
                     setShowRejectInput(false)
                     setRejectReason('')
                   }}
-                  className="px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-500/90 transition-all"
+                  className="px-2 py-1 text-xs bg-status-danger text-on-primary rounded hover:bg-status-danger/90 transition-all"
                 >
                   {t('detail.actions.reject')}
                 </button>
@@ -486,7 +486,7 @@ export function RequirementDetailDialog({
             {requirement.status === 'approved' && onExecute && (
               <button
                 onClick={() => onExecute(requirement)}
-                className="px-3 py-1.5 text-sm bg-blue-500/10 text-blue-500 rounded-lg hover:bg-blue-500/20 transition-all flex items-center gap-1 disabled:opacity-50 disabled:pointer-events-none"
+                className="px-3 py-1.5 text-sm bg-status-info/10 text-status-info rounded-lg hover:bg-status-info/20 transition-all flex items-center gap-1 disabled:opacity-50 disabled:pointer-events-none"
                 disabled={disabled}
               >
                 <Play size={14} />
@@ -510,7 +510,7 @@ export function RequirementDetailDialog({
                 onDelete()
                 onClose()
               }}
-              className="px-3 py-1.5 text-sm text-red-500 rounded-lg hover:bg-red-500/10 transition-all flex items-center gap-1 disabled:opacity-50 disabled:pointer-events-none"
+              className="px-3 py-1.5 text-sm text-status-danger rounded-lg hover:bg-status-danger/10 transition-all flex items-center gap-1 disabled:opacity-50 disabled:pointer-events-none"
               disabled={disabled}
             >
               <Trash2 size={14} />

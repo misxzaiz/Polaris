@@ -7,73 +7,112 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // 主色调 - 蓝色系
+        // 主色调 - 蓝色系（CSS 变量驱动，支持多主题）
         primary: {
-          DEFAULT: '#3B82F6',
-          hover: '#2563EB',
-          50: '#EFF6FF',
-          100: '#DBEAFE',
-          200: '#BFDBFE',
-          300: '#93C5FD',
-          400: '#60A5FA',
-          500: '#3B82F6',
-          600: '#2563EB',
-          700: '#1D4ED8',
-          faint: 'rgba(59, 130, 246, 0.15)',
-          glow: 'rgba(59, 130, 246, 0.3)',
+          DEFAULT: 'rgb(var(--c-primary) / <alpha-value>)',
+          hover: 'rgb(var(--c-primary-hover) / <alpha-value>)',
+          50: 'rgb(var(--c-primary-50) / <alpha-value>)',
+          100: 'rgb(var(--c-primary-100) / <alpha-value>)',
+          200: 'rgb(var(--c-primary-200) / <alpha-value>)',
+          300: 'rgb(var(--c-primary-300) / <alpha-value>)',
+          400: 'rgb(var(--c-primary-400) / <alpha-value>)',
+          500: 'rgb(var(--c-primary-500) / <alpha-value>)',
+          600: 'rgb(var(--c-primary-600) / <alpha-value>)',
+          700: 'rgb(var(--c-primary-700) / <alpha-value>)',
+          faint: 'rgb(var(--c-primary) / 0.15)',
+          glow: 'rgb(var(--c-primary) / 0.3)',
         },
-        // 背景色系 - 优化的分层深色，支持透明度调节
+        // 背景色系 - 复合 --window-opacity 与 <alpha-value>
         background: {
-          base: 'rgba(15, 15, 17, var(--window-opacity, 1))',           // 全局背景 - 透明度可调
-          elevated: 'rgba(26, 26, 31, var(--window-opacity, 1))',        // 侧边栏/面板 - 增加层次
-          surface: 'rgba(37, 37, 43, var(--window-opacity, 1))',         // 卡片/输入框 - 更明显的区分
-          hover: 'rgba(45, 45, 53, var(--window-opacity, 1))',           // 悬停 - 增强交互反馈
-          active: 'rgba(53, 53, 61, var(--window-opacity, 1))',          // 激活 - 更强的反馈
-          tertiary: 'rgba(33, 38, 45, var(--window-opacity, 1))',         // 兼容旧名
-          secondary: 'rgba(22, 27, 34, var(--window-opacity, 1))',       // 兼容旧名
+          base: 'rgb(var(--c-bg-base) / calc(var(--window-opacity, 1) * <alpha-value>))',
+          elevated: 'rgb(var(--c-bg-elevated) / calc(var(--window-opacity, 1) * <alpha-value>))',
+          surface: 'rgb(var(--c-bg-surface) / calc(var(--window-opacity, 1) * <alpha-value>))',
+          hover: 'rgb(var(--c-bg-hover) / calc(var(--window-opacity, 1) * <alpha-value>))',
+          active: 'rgb(var(--c-bg-active) / calc(var(--window-opacity, 1) * <alpha-value>))',
+          tertiary: 'rgb(var(--c-bg-tertiary) / calc(var(--window-opacity, 1) * <alpha-value>))',
+          secondary: 'rgb(var(--c-bg-secondary) / calc(var(--window-opacity, 1) * <alpha-value>))',
         },
-        // 边框色系 - 增强对比度
+        // 边框色系 - 固定 alpha（边框不复合窗口透明度，保持可见性）
         border: {
-          DEFAULT: 'rgba(255, 255, 255, 0.15)',
-          subtle: 'rgba(255, 255, 255, 0.08)',
-          default: 'rgba(255, 255, 255, 0.15)',
-          strong: 'rgba(255, 255, 255, 0.25)',
-          muted: 'rgba(255, 255, 255, 0.12)',
-          focus: 'rgba(59, 130, 246, 0.5)',
+          DEFAULT: 'rgb(var(--c-border) / 0.15)',
+          subtle: 'rgb(var(--c-border) / 0.08)',
+          default: 'rgb(var(--c-border) / 0.15)',
+          strong: 'rgb(var(--c-border) / 0.25)',
+          muted: 'rgb(var(--c-border) / 0.12)',
+          focus: 'rgb(var(--c-primary) / 0.5)',
         },
-        // 文本色系 - 优化可读性
+        // 文本色系
         text: {
-          DEFAULT: '#F8F8F8',
-          primary: '#F8F8F8',          // 主要文本 - 稍微柔和
-          secondary: '#B4B4B8',        // 次要文本 - 增加对比度
-          tertiary: '#8E8E93',         // 辅助文本 - 提高可读性
-          muted: '#6D6D70',            // 弱化文本 - 保持可见性
+          DEFAULT: 'rgb(var(--c-text-primary) / <alpha-value>)',
+          primary: 'rgb(var(--c-text-primary) / <alpha-value>)',
+          secondary: 'rgb(var(--c-text-secondary) / <alpha-value>)',
+          tertiary: 'rgb(var(--c-text-tertiary) / <alpha-value>)',
+          muted: 'rgb(var(--c-text-muted) / <alpha-value>)',
         },
-        // 语义化颜色 - 增加温度感
+        // 语义化颜色（保留旧 token 兼容）
         success: {
-          DEFAULT: '#34D399',
-          faint: 'rgba(52, 211, 153, 0.15)',
+          DEFAULT: 'rgb(var(--c-status-success) / <alpha-value>)',
+          faint: 'rgb(var(--c-status-success) / 0.15)',
         },
         warning: {
-          DEFAULT: '#FBBF24',
-          faint: 'rgba(251, 191, 36, 0.15)',
+          DEFAULT: 'rgb(var(--c-status-warning) / <alpha-value>)',
+          faint: 'rgb(var(--c-status-warning) / 0.15)',
         },
         danger: {
-          DEFAULT: '#F87171',
-          faint: 'rgba(248, 113, 113, 0.15)',
+          DEFAULT: 'rgb(var(--c-status-danger) / <alpha-value>)',
+          faint: 'rgb(var(--c-status-danger) / 0.15)',
         },
         info: {
-          DEFAULT: '#60A5FA',
-          faint: 'rgba(96, 165, 250, 0.15)',
+          DEFAULT: 'rgb(var(--c-status-info) / <alpha-value>)',
+          faint: 'rgb(var(--c-status-info) / 0.15)',
+        },
+        // 新增：业务状态色（需求库/Todo 等使用）
+        status: {
+          warning: 'rgb(var(--c-status-warning) / <alpha-value>)',
+          success: 'rgb(var(--c-status-success) / <alpha-value>)',
+          danger: 'rgb(var(--c-status-danger) / <alpha-value>)',
+          info: 'rgb(var(--c-status-info) / <alpha-value>)',
+          done: 'rgb(var(--c-status-done) / <alpha-value>)',
+          failed: 'rgb(var(--c-status-failed) / <alpha-value>)',
+          neutral: 'rgb(var(--c-status-neutral) / <alpha-value>)',
+        },
+        // 新增：优先级色
+        priority: {
+          low: 'rgb(var(--c-priority-low) / <alpha-value>)',
+          normal: 'rgb(var(--c-priority-normal) / <alpha-value>)',
+          high: 'rgb(var(--c-priority-high) / <alpha-value>)',
+          urgent: 'rgb(var(--c-priority-urgent) / <alpha-value>)',
+        },
+        // 新增：强调色
+        accent: {
+          ai: 'rgb(var(--c-accent-ai) / <alpha-value>)',
+          prototype: 'rgb(var(--c-accent-prototype) / <alpha-value>)',
+          workspace: 'rgb(var(--c-accent-workspace) / <alpha-value>)',
+        },
+        // 新增：模态遮罩
+        overlay: {
+          DEFAULT: 'rgb(var(--c-overlay) / 0.5)',
+          light: 'rgb(var(--c-overlay) / 0.3)',
+          strong: 'rgb(var(--c-overlay) / 0.9)',
+        },
+        // 新增：主色/危险按钮文字色
+        'on-primary': 'rgb(var(--c-on-primary) / <alpha-value>)',
+        'on-danger': 'rgb(var(--c-on-primary) / <alpha-value>)',
+        // 新增：恒白画布（原型 HTML 预览底色等）
+        canvas: 'rgb(var(--c-canvas) / <alpha-value>)',
+        // 新增：标签色
+        tag: {
+          bg: 'rgb(var(--c-tag-bg) / 0.08)',
+          foreground: 'rgb(var(--c-status-info) / <alpha-value>)',
         },
       },
-      // 阴影 - 更自然的阴影系统
+      // 阴影 - 引用 --c-shadow，主题感知
       boxShadow: {
-        'soft': '0 4px 12px rgba(0, 0, 0, 0.15)',
-        'medium': '0 8px 24px rgba(0, 0, 0, 0.2)',
-        'glow': '0 0 24px rgba(59, 130, 246, 0.15)',
-        'glow-lg': '0 0 48px rgba(59, 130, 246, 0.1)',
-        'inner-soft': 'inset 0 2px 4px rgba(0, 0, 0, 0.1)',
+        'soft': '0 4px 12px rgb(var(--c-shadow) / 0.15)',
+        'medium': '0 8px 24px rgb(var(--c-shadow) / 0.2)',
+        'glow': '0 0 24px rgb(var(--c-primary) / 0.15)',
+        'glow-lg': '0 0 48px rgb(var(--c-primary) / 0.1)',
+        'inner-soft': 'inset 0 2px 4px rgb(var(--c-shadow) / 0.1)',
       },
       // 间距
       spacing: {

@@ -157,7 +157,7 @@ export function RequirementForm({ requirement, onSubmit, onCancel, mode }: Requi
                       handleRemoveTag(tag)
                     }
                   }}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 text-xs text-blue-500 bg-blue-500/10 rounded cursor-pointer hover:bg-blue-500/20 transition-colors"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 text-xs text-tag-foreground bg-status-info/10 rounded cursor-pointer hover:bg-status-info/20 transition-colors"
                   title={t('form.clickRemove')}
                   aria-label={`${t('form.clickRemove')}: ${tag}`}
                 >
@@ -184,7 +184,7 @@ export function RequirementForm({ requirement, onSubmit, onCancel, mode }: Requi
             <button
               onClick={handleAddTag}
               disabled={!tagInput.trim()}
-              className="px-3 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              className="px-3 py-2 text-sm bg-primary text-on-primary rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               {t('form.addTag')}
             </button>
@@ -268,7 +268,7 @@ export function RequirementForm({ requirement, onSubmit, onCancel, mode }: Requi
         <button
           onClick={handleSubmit}
           disabled={!title.trim()}
-          className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+          className="px-4 py-2 text-sm bg-primary text-on-primary rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
         >
           {isEditMode ? t('form.saveButton') : t('form.createButton')}
         </button>

@@ -83,7 +83,7 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
   }, [config]);
 
   const topLevelKeysByTab: Partial<Record<SettingsTabId, (keyof Config)[]>> = {
-    general: ['language'],
+    general: ['language', 'theme'],
     window: ['window'],
     translate: ['baiduTranslate'],
     speech: ['speech', 'tts', 'wakeWord', 'voiceNotification', 'voiceCommands'],
