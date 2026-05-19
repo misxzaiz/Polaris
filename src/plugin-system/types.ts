@@ -56,6 +56,17 @@ export interface PluginViewContribution {
    * 渐进式迁移策略: 各模块按独立 PR 切到 useShell=true, 期间双形态共存.
    */
   useShell?: boolean
+  /**
+   * V2: 响应式约束.
+   * - minWidth/minHeight: 模块工作所需的最小尺寸 (px). 小于此值时 SpatialDropOverlay
+   *   会拒绝把模块拖入该槽位 (toast 提示"槽位过小"), 防止用户陷入不可用状态.
+   * - 模块内部已通过 useSlotContext().variant 拿到 compact/standard/wide 分档,
+   *   这里只关心 "硬下限". 例如 Terminal 不应被拖到 width<200 的槽位.
+   */
+  responsive?: {
+    minWidth?: number
+    minHeight?: number
+  }
 }
 
 export interface PluginMcpServerContribution {

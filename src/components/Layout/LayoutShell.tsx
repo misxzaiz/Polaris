@@ -14,8 +14,10 @@
  * 顶层,因为它们是全局级 UI 而非布局槽位的一部分。
  */
 
+import { useRef } from 'react'
 import { useLayoutStore } from '@/stores/layoutStore'
 import { ChatModule } from '@/components/Chat/ChatModule'
+import { SlotContextProvider } from '@/hooks/useSlotContext'
 import { CenterStage } from './CenterStage'
 import { SlotPanel } from './SlotPanel'
 import { ModuleRenderer } from './ModuleRenderer'
@@ -32,6 +34,8 @@ interface LayoutShellProps {
 export function LayoutShell({ isCompactMode = false, activityBar }: LayoutShellProps) {
   const activityBarPosition = useLayoutStore((s) => s.activityBarPosition)
   const centerSlot = useLayoutStore((s) => s.slots.center)
+  // V2: center 槽位也需要 SlotContextProvider, 给在其中渲染的模块 (Editor/Chat) 提供尺寸感知.
+  const centerContainerRef = useRef<HTMLElement | null>(null)
 
   // 小屏: 强制单栏 Chat,但保留 ActivityBar (forceCollapsed=true) 让用户通过悬浮球访问模块
   if (isCompactMode) {
@@ -61,10 +65,15 @@ export function LayoutShell({ isCompactMode = false, activityBar }: LayoutShellP
     if (modules.length === 0 || activeModule === null) {
       return (
         <main
+          ref={(node) => {
+            centerContainerRef.current = node
+          }}
           className="flex flex-col flex-1 min-w-0 overflow-hidden bg-background-elevated ring-1 ring-border/40"
           style={{ borderRadius: 'var(--slot-radius)' }}
         >
-          <CenterStage />
+          <SlotContextProvider slotId="center" containerRef={centerContainerRef}>
+            <CenterStage />
+          </SlotContextProvider>
         </main>
       )
     }
@@ -83,11 +92,16 @@ export function LayoutShell({ isCompactMode = false, activityBar }: LayoutShellP
 
     return (
       <main
+        ref={(node) => {
+          centerContainerRef.current = node
+        }}
         className="flex flex-col flex-1 min-w-0 overflow-hidden bg-background-elevated ring-1 ring-border/40"
         style={{ borderRadius: 'var(--slot-radius)' }}
       >
         {showTabs && <ModuleTabBar slot="center" />}
-        <div className="flex flex-1 min-h-0 flex-col">{content}</div>
+        <SlotContextProvider slotId="center" containerRef={centerContainerRef}>
+          <div className="flex flex-1 min-h-0 flex-col">{content}</div>
+        </SlotContextProvider>
       </main>
     )
   }

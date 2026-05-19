@@ -24,10 +24,11 @@
  *   xterm/Virtuoso 在零尺寸容器中的副作用。
  */
 
-import { useCallback } from 'react'
+import { useCallback, useRef } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import { useLayoutStore } from '@/stores/layoutStore'
 import { ResizeHandle } from '@/components/Common'
+import { SlotContextProvider } from '@/hooks/useSlotContext'
 import { ModuleRenderer } from './ModuleRenderer'
 import { ModuleTabBar } from './ModuleTabBar'
 import { pluginRegistry } from '@/plugin-system'
@@ -92,6 +93,18 @@ export function SlotPanel({ slot, className = '' }: SlotPanelProps) {
     id: slotDroppableId(slot),
     data: dropData,
   })
+
+  // V2: 合并 dnd-kit 的 droppable ref 与 SlotContextProvider 的 measurement ref.
+  // 同一个 aside 既要被 dnd-kit 当作 drop target, 也要被 ResizeObserver 监测尺寸.
+  const containerRef = useRef<HTMLElement | null>(null)
+  const setMergedRef = useCallback(
+    (node: HTMLElement | null) => {
+      setNodeRef(node)
+      containerRef.current = node
+    },
+    [setNodeRef]
+  )
+
   // 仅在有拖拽中时显示视觉反馈,避免静态时也有 ring
   const isDragging = active !== null
   const showDropHint = isOver && isDragging
@@ -141,7 +154,7 @@ export function SlotPanel({ slot, className = '' }: SlotPanelProps) {
       {(slot === 'right' || slot === 'bottom') && handleEl}
 
       <aside
-        ref={setNodeRef}
+        ref={setMergedRef}
         className={`flex flex-col bg-background-elevated overflow-hidden ring-1 ring-border/40 shrink-0 relative min-w-0 min-h-0 transition-shadow ${
           showDropHint ? 'ring-2 ring-primary/60 shadow-glow' : ''
         } ${className}`}
@@ -158,24 +171,30 @@ export function SlotPanel({ slot, className = '' }: SlotPanelProps) {
          * - 非 active 且 keepAlive 模块: 保持 mount, display:none (保留 xterm/编辑器状态)
          * - active 模块: display:flex 占满槽位
          * 注意: display:none 元素在 flex 容器中不占位,所以多个 keepAlive 模块叠加不影响 active 占空间
+         *
+         * V2: SlotContextProvider 包裹所有模块, 提供 {width, height, orientation, variant}.
+         * 注意 keep-alive 模块在 display:none 时仍接收 context value (尺寸为 0), 模块自身需要
+         * 在 display:flex 切换回来时由 React 自动 re-render 重读 ResizeObserver — 这是天然的.
          */}
-        {slotState.modules.map((moduleId) => {
-          const isActive = moduleId === activeModule
-          const keepAlive = isModuleKeepAlive(moduleId)
-          if (!isActive && !keepAlive) return null
-          return (
-            <div
-              key={moduleId}
-              className="flex-1 min-h-0 flex flex-col transition-opacity duration-150"
-              style={{ display: isActive ? 'flex' : 'none', opacity: isActive ? 1 : 0 }}
-              data-module-id={moduleId}
-              data-keep-alive={keepAlive ? '1' : undefined}
-              aria-hidden={!isActive}
-            >
-              <ModuleRenderer moduleId={moduleId} />
-            </div>
-          )
-        })}
+        <SlotContextProvider slotId={slot} containerRef={containerRef}>
+          {slotState.modules.map((moduleId) => {
+            const isActive = moduleId === activeModule
+            const keepAlive = isModuleKeepAlive(moduleId)
+            if (!isActive && !keepAlive) return null
+            return (
+              <div
+                key={moduleId}
+                className="flex-1 min-h-0 flex flex-col transition-opacity duration-150"
+                style={{ display: isActive ? 'flex' : 'none', opacity: isActive ? 1 : 0 }}
+                data-module-id={moduleId}
+                data-keep-alive={keepAlive ? '1' : undefined}
+                aria-hidden={!isActive}
+              >
+                <ModuleRenderer moduleId={moduleId} />
+              </div>
+            )
+          })}
+        </SlotContextProvider>
       </aside>
 
       {slot === 'left' && handleEl}

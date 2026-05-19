@@ -28,6 +28,7 @@ import { useLayoutStore } from '@/stores/layoutStore'
 import { pluginIconMap, pluginRegistry } from '@/plugin-system'
 import { useToastStore } from '@/stores/toastStore'
 import { handleLayoutDragEnd, isDragData, type DragData } from './dnd'
+import { SpatialDropOverlay } from './SpatialDropOverlay'
 import type { ModuleId, SlotId } from '@/types/layout'
 
 interface LayoutDndProviderProps {
@@ -116,6 +117,8 @@ export function LayoutDndProvider({ children }: LayoutDndProviderProps) {
       onDragCancel={handleDragCancel}
     >
       {children}
+      {/* V2: 全屏 4 落点 ghost overlay, 拖动 200ms 后激活. 仅视觉, 不引入新 droppable. */}
+      <SpatialDropOverlay />
       <DragOverlay dropAnimation={null}>
         {activeData ? <DragPreview data={activeData} /> : null}
       </DragOverlay>

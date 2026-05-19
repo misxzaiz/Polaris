@@ -24,3 +24,7 @@ export { useAppearanceSync } from './useAppearanceSync';
 // V2: 命令面板订阅 + 内置命令注册
 export { useCommands } from './useCommands';
 export { useBuiltinCommands } from './useBuiltinCommands';
+
+// V2: 槽位上下文 (模块响应式空间感知)
+export { useSlotContext, SlotContextProvider } from './useSlotContext';
+export type { SlotContextValue, SlotOrientation } from './useSlotContext';
