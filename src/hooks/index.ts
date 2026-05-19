@@ -20,3 +20,7 @@ export type { ErrorState, UseErrorReturn, ErrorOptions, StoreErrorState, StoreEr
 
 // V2: 布局外观同步 (layoutStore.appearance → :root CSS 变量 + data-* 属性)
 export { useAppearanceSync } from './useAppearanceSync';
+
+// V2: 命令面板订阅 + 内置命令注册
+export { useCommands } from './useCommands';
+export { useBuiltinCommands } from './useBuiltinCommands';
