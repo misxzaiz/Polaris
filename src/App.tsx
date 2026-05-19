@@ -7,6 +7,7 @@ const log = createLogger('App');
 
 import { TopMenuBar as TopMenuBarComponent } from './components/TopMenuBar';
 import { ActivityBar, LayoutShell } from './components/Layout';
+import { DetachedWindowsLayer } from './components/Layout/DetachedWindowsLayer';
 import { Dock } from './components/Dock';
 import { SessionHistoryPanel } from './components/Chat';
 import { SelectionContextMenu } from './components/Translate';
@@ -149,6 +150,9 @@ function App() {
           )}
 
           <SelectionContextMenu />
+
+          {/* V2 Phase 5: 浮动模块窗口层 (顶层 fixed, 不参与 LayoutShell 槽位) */}
+          <DetachedWindowsLayer />
 
           <Suspense fallback={null}>
             <SymbolPalette />

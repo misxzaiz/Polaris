@@ -20,9 +20,11 @@ import {
   type CommandCategory,
 } from '@/services/commandRegistry'
 import { useLayoutStore } from '@/stores/layoutStore'
+import { useDetachedWindowStore } from '@/stores/detachedWindowStore'
 import { BUILTIN_PRESETS } from '@/config/layoutPresets'
 import { pluginRegistry, pluginIconMap } from '@/plugin-system'
 import { isPluginUiEnabled, usePluginStore } from '@/stores/pluginStore'
+import type { SlotId } from '@/types/layout'
 
 export function useBuiltinCommands(): void {
   const { t } = useTranslation('layout')
@@ -131,6 +133,37 @@ export function useBuiltinCommands(): void {
         icon: pluginIconMap[view.icon] ? '◧' : undefined,
         keywords: [view.moduleId, label, 'open', 'goto'],
         perform: () => useLayoutStore.getState().activateModule(view.moduleId),
+      })
+    }
+
+    // ============================================================
+    // V2 Phase 5: Action 类 — Detach 模块到浮动窗口
+    // chat 是 bareRender 模块, detach 后体验未充分验证, 暂不暴露
+    // ============================================================
+    for (const view of viewContributions) {
+      if (view.moduleId === 'chat') continue
+      const label = tCommon(view.labelKey, {
+        defaultValue: view.labelDefault ?? view.moduleId,
+      })
+      commands.push({
+        id: `window.detach.${view.moduleId}`,
+        title: `${t('command.detach', { defaultValue: '分离到浮窗' })}: ${label}`,
+        category: 'action',
+        icon: '⤴',
+        keywords: ['detach', 'float', 'window', view.moduleId, label],
+        perform: () => {
+          const slots = useLayoutStore.getState().slots
+          // 找模块所在 slot, 移除
+          for (const [slotId, slotState] of Object.entries(slots)) {
+            if (slotState.modules.includes(view.moduleId)) {
+              useLayoutStore
+                .getState()
+                .removeModuleFromSlot(view.moduleId, slotId as SlotId)
+              break
+            }
+          }
+          useDetachedWindowStore.getState().detach(view.moduleId)
+        },
       })
     }
 
