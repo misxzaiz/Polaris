@@ -103,6 +103,11 @@ export const DEFAULT_APPEARANCE: LayoutAppearance = {
 export interface CustomLayout extends LayoutSnapshot {
   id: string;
   name: string;
+  /**
+   * V2: 可选的简短描述 (30 字内推荐), 在 LayoutTab 卡片上显示.
+   * 不填则不显示, 不影响布局功能.
+   */
+  description?: string;
 }
 
 /** 内置预设 id */
@@ -111,7 +116,12 @@ export type BuiltinPresetId =
   | 'developer'
   | 'task-cockpit'
   | 'minimal-chat'
-  | 'panorama';
+  | 'panorama'
+  // V2 新增 4 套
+  | 'review'
+  | 'presenting'
+  | 'parallel-chat'
+  | 'data-explorer';
 
 /** 预设定义 (内置或自定义) */
 export interface LayoutPreset extends LayoutSnapshot {

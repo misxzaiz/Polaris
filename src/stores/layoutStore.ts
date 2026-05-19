@@ -87,9 +87,17 @@ interface LayoutActions {
 
   // === 预设 / 自定义布局 ===
   applyPreset: (presetId: string) => void;
-  saveAsCustomLayout: (name: string) => string;
+  /**
+   * 保存当前布局为自定义布局.
+   * @param name 必填, 显示名 (trim 后非空)
+   * @param description 可选, 简短描述 (30 字内推荐)
+   * @returns 新建的布局 id
+   */
+  saveAsCustomLayout: (name: string, description?: string) => string;
   deleteCustomLayout: (id: string) => void;
   renameCustomLayout: (id: string, name: string) => void;
+  /** V2: 仅更新 description, 不影响 name / 布局内容 */
+  updateCustomLayoutDescription: (id: string, description: string) => void;
   /**
    * 导出布局为 JSON 字符串.
    * - 'snapshot' (默认): 只导出当前布局 (layout 字段), customLayouts 设为空数组.
@@ -527,7 +535,7 @@ export const useLayoutStore = create<LayoutStore>()(
         });
       },
 
-      saveAsCustomLayout: (name) => {
+      saveAsCustomLayout: (name, description) => {
         const trimmed = name.trim();
         if (!trimmed) throw new Error('Layout name must not be empty');
         const id = generateLayoutId();
@@ -536,11 +544,13 @@ export const useLayoutStore = create<LayoutStore>()(
           slots: state.slots,
           activityBarPosition: state.activityBarPosition,
         });
+        const trimmedDesc = description?.trim();
         const layout: CustomLayout = {
           id,
           name: trimmed,
           slots: snapshot.slots,
           activityBarPosition: snapshot.activityBarPosition,
+          ...(trimmedDesc ? { description: trimmedDesc } : {}),
         };
         set({
           customLayouts: [...state.customLayouts, layout],
@@ -573,6 +583,23 @@ export const useLayoutStore = create<LayoutStore>()(
             customLayouts: state.customLayouts.map((l) =>
               l.id === id ? { ...l, name: trimmed } : l
             ),
+          };
+        }),
+
+      updateCustomLayoutDescription: (id, description) =>
+        set((state) => {
+          const trimmed = description.trim();
+          return {
+            customLayouts: state.customLayouts.map((l) => {
+              if (l.id !== id) return l;
+              if (trimmed === '') {
+                // 空 description → 删除字段, 保持序列化干净
+                // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                const { description: _, ...rest } = l;
+                return rest as CustomLayout;
+              }
+              return { ...l, description: trimmed };
+            }),
           };
         }),
 
@@ -619,17 +646,28 @@ export const useLayoutStore = create<LayoutStore>()(
           return (
             typeof v.id === 'string' &&
             typeof v.name === 'string' &&
+            // description 可选, 但如果存在必须是字符串
+            (v.description === undefined || typeof v.description === 'string') &&
             isValidSnapshot(v)
           );
         };
         const importedCustomLayouts: CustomLayout[] = Array.isArray(p.customLayouts)
           ? (p.customLayouts as unknown[])
               .filter(isCustomLayout)
-              .map((l) => ({
-                id: l.id,
-                name: l.name,
-                ...cloneSnapshot(l),
-              }))
+              .map((l) => {
+                // V2: 保留 description 字段 (V1 payload 没这字段, 自动 undefined)
+                const snapshot = cloneSnapshot(l);
+                const layout: CustomLayout = {
+                  id: l.id,
+                  name: l.name,
+                  slots: snapshot.slots,
+                  activityBarPosition: snapshot.activityBarPosition,
+                };
+                if (typeof l.description === 'string' && l.description.length > 0) {
+                  layout.description = l.description;
+                }
+                return layout;
+              })
           : [];
 
         // 合并/覆盖语义:

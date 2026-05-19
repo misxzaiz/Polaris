@@ -82,6 +82,71 @@ const panoramaSnapshot: LayoutSnapshot = {
   activityBarPosition: 'left',
 };
 
+// ============================================================
+// V2 新增 4 套预设
+// ============================================================
+
+/** 评审模式 (Review): 左=Files+Git, 中=编辑器 (CenterStage), 右=Chat, 底=Problems.
+ *  专为代码 review 设计 — Files/Git 看变更, 中央编辑器看代码, AI 帮助分析, Problems 跟踪 lint/编译.
+ */
+const reviewSnapshot: LayoutSnapshot = {
+  slots: {
+    left: { modules: ['files', 'git'], activeModule: 'git', size: 300 },
+    center: emptySlot(),
+    right: { modules: ['chat'], activeModule: 'chat', size: 380 },
+    bottom: { modules: ['problems'], activeModule: 'problems', size: 180 },
+  },
+  activityBarPosition: 'left',
+};
+
+/** 演示模式 (Presenting): Chat 占满 center, Dock 隐藏.
+ *  适合屏幕共享、录课. 用户可结合 density='spacious' 进一步放大字号
+ *  (后续可加联动: 应用此预设时自动设置 density). */
+const presentingSnapshot: LayoutSnapshot = {
+  slots: {
+    left: emptySlot(280),
+    center: { modules: ['chat'], activeModule: 'chat', size: 0 },
+    right: emptySlot(400),
+    bottom: emptySlot(),
+  },
+  activityBarPosition: 'hidden',
+};
+
+/** 多任务并行 (Parallel Work): 左=Todo, 中=Chat, 右=Scheduler+LongGoal.
+ *  V2 PRD 设想的"双 Chat 并行"需要 chat 多实例支持, 本期 chat 仍是单实例,
+ *  这里把"多任务"的语义落在工作流模块组合上: Todo 管理 + Chat 协作 + 调度 + 长目标.
+ */
+const parallelChatSnapshot: LayoutSnapshot = {
+  slots: {
+    left: { modules: ['todo'], activeModule: 'todo', size: 280 },
+    center: { modules: ['chat'], activeModule: 'chat', size: 0 },
+    right: {
+      modules: ['scheduler', 'longGoal'],
+      activeModule: 'scheduler',
+      size: 360,
+    },
+    bottom: emptySlot(),
+  },
+  activityBarPosition: 'left',
+};
+
+/** 数据探索 (Data Explorer): 左=Files, 中=编辑器, 右=Chat, 底=Terminal+Problems.
+ *  与 review 相似但更偏向"调试/分析" — 强调 Terminal 输出与 AI 协同分析.
+ */
+const dataExplorerSnapshot: LayoutSnapshot = {
+  slots: {
+    left: { modules: ['files'], activeModule: 'files', size: 260 },
+    center: emptySlot(),
+    right: { modules: ['chat'], activeModule: 'chat', size: 380 },
+    bottom: {
+      modules: ['terminal', 'problems'],
+      activeModule: 'terminal',
+      size: 220,
+    },
+  },
+  activityBarPosition: 'left',
+};
+
 export const BUILTIN_PRESETS: readonly LayoutPreset[] = [
   {
     id: 'focus-writing',
@@ -122,6 +187,39 @@ export const BUILTIN_PRESETS: readonly LayoutPreset[] = [
     icon: 'LayoutGrid',
     builtin: true,
     ...panoramaSnapshot,
+  },
+  // V2 新增 4 套
+  {
+    id: 'review',
+    nameKey: 'layout:preset.review.name',
+    descriptionKey: 'layout:preset.review.description',
+    icon: 'ScrollText',
+    builtin: true,
+    ...reviewSnapshot,
+  },
+  {
+    id: 'presenting',
+    nameKey: 'layout:preset.presenting.name',
+    descriptionKey: 'layout:preset.presenting.description',
+    icon: 'Presentation',
+    builtin: true,
+    ...presentingSnapshot,
+  },
+  {
+    id: 'parallel-chat',
+    nameKey: 'layout:preset.parallelChat.name',
+    descriptionKey: 'layout:preset.parallelChat.description',
+    icon: 'Workflow',
+    builtin: true,
+    ...parallelChatSnapshot,
+  },
+  {
+    id: 'data-explorer',
+    nameKey: 'layout:preset.dataExplorer.name',
+    descriptionKey: 'layout:preset.dataExplorer.description',
+    icon: 'Microscope',
+    builtin: true,
+    ...dataExplorerSnapshot,
   },
 ];
 

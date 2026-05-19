@@ -44,6 +44,22 @@
     "panorama": {
       "name": "Panorama",
       "description": "All panels visible, ideal for multi-task coordination."
+    },
+    "review": {
+      "name": "Review",
+      "description": "Files + Git on the left, editor in the center, AI on the right, Problems at the bottom. For code review."
+    },
+    "presenting": {
+      "name": "Presenting",
+      "description": "Conversation takes the main stage, Dock hidden. For screen sharing and recording."
+    },
+    "parallelChat": {
+      "name": "Parallel Work",
+      "description": "Todo on the left, conversation in the center, Scheduler + Long Goals on the right."
+    },
+    "dataExplorer": {
+      "name": "Data Explorer",
+      "description": "Files on the left, editor in the center, AI on the right, Terminal + Problems at the bottom. For debugging and analysis."
     }
   },
   "activityBar": {

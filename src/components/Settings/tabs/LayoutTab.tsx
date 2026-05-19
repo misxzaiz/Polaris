@@ -28,7 +28,8 @@ import {
 } from 'lucide-react';
 import { useLayoutStore, CUSTOM_PRESET_ID } from '@/stores/layoutStore';
 import { BUILTIN_PRESETS } from '@/config/layoutPresets';
-import type { ActivityBarPosition, CustomLayout, LayoutPreset } from '@/types/layout';
+import { pluginIconMap, pluginRegistry } from '@/plugin-system';
+import type { ActivityBarPosition, CustomLayout, LayoutPreset, ModuleId } from '@/types/layout';
 import { ConfirmDialog, InputDialog } from '@/components/Common';
 import { useToastStore } from '@/stores/toastStore';
 import { exportLayoutToFile, importLayoutFromFile } from '@/services/layoutTransferService';
@@ -142,6 +143,12 @@ function CustomLayoutCard({
         )}
       </div>
 
+      {layout.description && (
+        <p className="text-xs text-text-tertiary leading-relaxed line-clamp-2">
+          {layout.description}
+        </p>
+      )}
+
       <PresetPreview preset={fakePreset} />
 
       <div className="flex items-center gap-1 mt-1">
@@ -174,6 +181,32 @@ function CustomLayoutCard({
   );
 }
 
+/**
+ * V2 P4.1: 把 modules 数组解析成可渲染的 mini icon 列表.
+ * - 最多渲染前 2 个图标 (避免 thumbnail 过密)
+ * - 没有 contribution / 没有 icon 映射时回退到 null (上层会用色块占位)
+ */
+function ModuleMiniIcons({ modules, color }: { modules: readonly ModuleId[]; color: string }) {
+  if (modules.length === 0) return null;
+  const contributions = pluginRegistry.listViewContributions('activityBar');
+  const visible = modules.slice(0, 2);
+  return (
+    <div className="flex gap-0.5 mb-0.5 shrink-0" aria-hidden="true">
+      {visible.map((moduleId) => {
+        const c = contributions.find((x) => x.moduleId === moduleId);
+        const Icon = c ? pluginIconMap[c.icon] : null;
+        if (!Icon) {
+          return <span key={moduleId} className={`block w-2 h-2 rounded-sm ${color}`} />;
+        }
+        return <Icon key={moduleId} size={8} className={`shrink-0 ${color}`} />;
+      })}
+      {modules.length > 2 && (
+        <span className={`text-[7px] leading-none ${color}`}>+{modules.length - 2}</span>
+      )}
+    </div>
+  );
+}
+
 /** Mini 布局示意图: 按真实 size 比例绘制各槽位,center 区按 activeModule 类型绘制内容 */
 function PresetPreview({ preset }: { preset: LayoutPreset }) {
   const hasLeft = preset.slots.left.activeModule !== null;
@@ -201,20 +234,21 @@ function PresetPreview({ preset }: { preset: LayoutPreset }) {
           className="rounded-sm bg-text-secondary/25 flex flex-col gap-0.5 p-0.5"
           style={{ width: `${leftWidth}px` }}
         >
+          <ModuleMiniIcons modules={preset.slots.left.modules} color="text-text-secondary/60" />
           <div className="h-0.5 bg-text-secondary/40 rounded-sm" />
           <div className="h-0.5 bg-text-secondary/40 rounded-sm w-3/4" />
           <div className="h-0.5 bg-text-secondary/40 rounded-sm w-5/6" />
         </div>
       )}
       <div className="flex flex-col flex-1 gap-0.5 min-w-0">
-        <CenterPreview activeModule={centerActive} />
+        <CenterPreview activeModule={centerActive} modules={preset.slots.center.modules} />
         {hasBottom && (
           <div
-            className="rounded-sm bg-text-secondary/25 flex items-center gap-0.5 px-1"
+            className="rounded-sm bg-text-secondary/25 flex items-center gap-1 px-1"
             style={{ height: `${bottomHeight}px` }}
           >
-            <div className="h-1 w-2 bg-text-secondary/50 rounded-sm" />
-            <div className="h-1 w-3 bg-text-secondary/35 rounded-sm" />
+            <ModuleMiniIcons modules={preset.slots.bottom.modules} color="text-text-secondary/60" />
+            <div className="flex-1 h-1 bg-text-secondary/40 rounded-sm" />
           </div>
         )}
       </div>
@@ -223,6 +257,7 @@ function PresetPreview({ preset }: { preset: LayoutPreset }) {
           className="rounded-sm bg-primary/30 flex flex-col gap-0.5 p-0.5"
           style={{ width: `${rightWidth}px` }}
         >
+          <ModuleMiniIcons modules={preset.slots.right.modules} color="text-primary/80" />
           <div className="h-0.5 bg-primary/60 rounded-sm w-2/3" />
           <div className="h-0.5 bg-primary/50 rounded-sm w-3/4" />
           <div className="h-0.5 bg-primary/40 rounded-sm w-1/2" />
@@ -236,10 +271,17 @@ function PresetPreview({ preset }: { preset: LayoutPreset }) {
 }
 
 /** Center 区域的语义化预览: chat 画对话气泡, 其他模块画列表行, 空时画编辑器代码线 */
-function CenterPreview({ activeModule }: { activeModule: string | null }) {
+function CenterPreview({
+  activeModule,
+  modules,
+}: {
+  activeModule: string | null;
+  modules: readonly ModuleId[];
+}) {
   if (activeModule === 'chat') {
     return (
-      <div className="flex-1 rounded-sm bg-primary/15 flex flex-col justify-center gap-0.5 px-1">
+      <div className="flex-1 rounded-sm bg-primary/15 flex flex-col justify-center gap-0.5 px-1 py-0.5">
+        <ModuleMiniIcons modules={modules} color="text-primary/80" />
         <div className="h-1 w-2/3 bg-primary/50 rounded-full self-start" />
         <div className="h-1 w-1/2 bg-primary/40 rounded-full self-end" />
         <div className="h-1 w-3/5 bg-primary/45 rounded-full self-start" />
@@ -249,6 +291,7 @@ function CenterPreview({ activeModule }: { activeModule: string | null }) {
   if (activeModule) {
     return (
       <div className="flex-1 rounded-sm bg-text-secondary/15 flex flex-col gap-0.5 px-1 py-0.5">
+        <ModuleMiniIcons modules={modules} color="text-text-secondary/70" />
         <div className="h-1 w-full bg-text-secondary/40 rounded-sm" />
         <div className="h-1 w-3/4 bg-text-secondary/35 rounded-sm" />
         <div className="h-1 w-5/6 bg-text-secondary/30 rounded-sm" />

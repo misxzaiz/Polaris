@@ -898,4 +898,97 @@ describe('layoutStore', () => {
       expect(useLayoutStore.getState().appearance.appPadding).toBe(6); // default
     });
   });
+
+  // ============================================================
+  // V2 P4.3: CustomLayout description 字段
+  // ============================================================
+  describe('V2 CustomLayout description', () => {
+    it('saveAsCustomLayout accepts optional description', () => {
+      const id = useLayoutStore
+        .getState()
+        .saveAsCustomLayout('My Layout', '团队评审场景使用');
+      const layout = useLayoutStore.getState().customLayouts.find((l) => l.id === id);
+      expect(layout?.description).toBe('团队评审场景使用');
+    });
+
+    it('saveAsCustomLayout without description does not add the field', () => {
+      const id = useLayoutStore.getState().saveAsCustomLayout('No Desc');
+      const layout = useLayoutStore.getState().customLayouts.find((l) => l.id === id);
+      expect(layout?.description).toBeUndefined();
+    });
+
+    it('saveAsCustomLayout trims description whitespace', () => {
+      const id = useLayoutStore.getState().saveAsCustomLayout('Trimmed', '  hi  ');
+      const layout = useLayoutStore.getState().customLayouts.find((l) => l.id === id);
+      expect(layout?.description).toBe('hi');
+    });
+
+    it('saveAsCustomLayout treats whitespace-only description as undefined', () => {
+      const id = useLayoutStore.getState().saveAsCustomLayout('Whitespace', '   ');
+      const layout = useLayoutStore.getState().customLayouts.find((l) => l.id === id);
+      expect(layout?.description).toBeUndefined();
+    });
+
+    it('updateCustomLayoutDescription updates description', () => {
+      const id = useLayoutStore.getState().saveAsCustomLayout('Layout');
+      useLayoutStore.getState().updateCustomLayoutDescription(id, '新描述');
+      const layout = useLayoutStore.getState().customLayouts.find((l) => l.id === id);
+      expect(layout?.description).toBe('新描述');
+    });
+
+    it('updateCustomLayoutDescription with empty string removes description', () => {
+      const id = useLayoutStore.getState().saveAsCustomLayout('Layout', '初始描述');
+      useLayoutStore.getState().updateCustomLayoutDescription(id, '');
+      const layout = useLayoutStore.getState().customLayouts.find((l) => l.id === id);
+      expect(layout?.description).toBeUndefined();
+    });
+
+    it('exportLayout preserves description in payload', () => {
+      useLayoutStore.getState().saveAsCustomLayout('With Desc', '描述内容');
+      const exported = useLayoutStore.getState().exportLayout('all');
+      const parsed = JSON.parse(exported);
+      expect(parsed.customLayouts[0].description).toBe('描述内容');
+    });
+
+    it('importLayout preserves description on round-trip', () => {
+      useLayoutStore.getState().saveAsCustomLayout('Original', '原始描述');
+      const exported = useLayoutStore.getState().exportLayout('all');
+      resetStore();
+      useLayoutStore.getState().importLayout(exported, 'replace');
+      const layout = useLayoutStore.getState().customLayouts[0];
+      expect(layout.description).toBe('原始描述');
+    });
+
+    it('importLayout rejects malformed description (non-string)', () => {
+      // 非字符串 description → 整个 customLayout 被 filter 掉
+      const payload = JSON.stringify({
+        version: 2,
+        layout: {
+          slots: {
+            left: { modules: [], activeModule: null, size: 280 },
+            right: { modules: [], activeModule: null, size: 400 },
+            center: { modules: [], activeModule: null, size: 0 },
+            bottom: { modules: [], activeModule: null, size: 0 },
+          },
+          activityBarPosition: 'left',
+        },
+        customLayouts: [
+          {
+            id: 'bad',
+            name: 'Bad',
+            description: { evil: true },
+            slots: {
+              left: { modules: [], activeModule: null, size: 280 },
+              right: { modules: [], activeModule: null, size: 400 },
+              center: { modules: [], activeModule: null, size: 0 },
+              bottom: { modules: [], activeModule: null, size: 0 },
+            },
+            activityBarPosition: 'left',
+          },
+        ],
+      });
+      useLayoutStore.getState().importLayout(payload, 'replace');
+      expect(useLayoutStore.getState().customLayouts).toHaveLength(0);
+    });
+  });
 });

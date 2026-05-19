@@ -44,6 +44,22 @@
     "panorama": {
       "name": "全景模式",
       "description": "所有面板可见,适合多任务协同。"
+    },
+    "review": {
+      "name": "评审模式",
+      "description": "左侧文件 + Git,中央编辑器,右侧 AI,底部问题面板。适合代码评审。"
+    },
+    "presenting": {
+      "name": "演示模式",
+      "description": "对话占满主舞台,隐藏 Dock。适合屏幕共享与录课。"
+    },
+    "parallelChat": {
+      "name": "多任务并行",
+      "description": "左侧 Todo,中央对话,右侧调度器 + 长期目标。多任务并进。"
+    },
+    "dataExplorer": {
+      "name": "数据探索",
+      "description": "左侧文件,中央编辑器,右侧 AI,底部终端 + 问题面板。适合调试与分析。"
     }
   },
   "activityBar": {
