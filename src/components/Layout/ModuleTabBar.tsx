@@ -10,6 +10,11 @@
  *   (跨槽位移动)。
  * - SortableContext 仅在该 slot 范围内有效,DragEndEvent 由全局 DndContext 处理.
  * - 内容区不参与拖拽,确保 Virtuoso/CodeMirror 不受干扰.
+ *
+ * V2 升级:
+ * - 加 trailing prop, 接收右侧工具按钮区 (设置/分离窗口/更多等)
+ * - 高度对齐 var(--module-header-h) (36px), 跟 ModuleShell.ModuleHeader 一致
+ * - 单模块仍返回 null (由 SlotPanel/ModuleShell.ModuleHeader 接管标题)
  */
 
 import { useTranslation } from 'react-i18next'
@@ -19,6 +24,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import type { ReactNode } from 'react'
 import { useLayoutStore } from '@/stores/layoutStore'
 import { pluginRegistry, pluginIconMap } from '@/plugin-system'
 import type { ModuleId, SlotId } from '@/types/layout'
@@ -26,10 +32,12 @@ import { tabDraggableId, type DragData } from './dnd'
 
 interface ModuleTabBarProps {
   slot: SlotId
+  /** V2: 右侧 trailing actions 区 (悬浮工具按钮组) */
+  trailing?: ReactNode
   className?: string
 }
 
-export function ModuleTabBar({ slot, className = '' }: ModuleTabBarProps) {
+export function ModuleTabBar({ slot, trailing, className = '' }: ModuleTabBarProps) {
   const slotState = useLayoutStore((s) => s.slots[slot])
 
   if (slotState.modules.length <= 1) return null
@@ -38,13 +46,15 @@ export function ModuleTabBar({ slot, className = '' }: ModuleTabBarProps) {
 
   return (
     <div
-      className={`flex items-center gap-0.5 h-9 px-2 bg-background-surface border-b border-border-subtle overflow-x-auto shrink-0 ${className}`}
+      className={`flex items-center gap-0.5 px-2 bg-background-surface border-b border-border-subtle overflow-x-auto shrink-0 ${className}`}
+      style={{ height: 'var(--module-header-h)' }}
     >
       <SortableContext items={sortableIds} strategy={horizontalListSortingStrategy}>
         {slotState.modules.map((moduleId) => (
           <SortableTab key={moduleId} slot={slot} moduleId={moduleId} />
         ))}
       </SortableContext>
+      {trailing && <div className="ml-auto flex items-center gap-0.5 shrink-0">{trailing}</div>}
     </div>
   )
 }

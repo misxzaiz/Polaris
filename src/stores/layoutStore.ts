@@ -13,12 +13,14 @@ import { persist } from 'zustand/middleware';
 import type {
   ActivityBarPosition,
   CustomLayout,
+  LayoutAppearance,
   LayoutExportPayload,
   LayoutSnapshot,
   ModuleId,
   SlotId,
   SlotState,
 } from '@/types/layout';
+import { APPEARANCE_LIMITS, DEFAULT_APPEARANCE } from '@/types/layout';
 import {
   DEFAULT_LAYOUT_SNAPSHOT,
   DEFAULT_PRESET_ID,
@@ -49,6 +51,11 @@ interface LayoutState {
    * 后续即使用户主动把 module 从全部 slot 移除, 也不会被再次塞回去.
    */
   seenModules: ModuleId[];
+  /**
+   * V2: 外观配置 (padding/gap/radius/density/动效/Dock 模式).
+   * 与槽位布局正交,独立持久化,不参与 LayoutSnapshot.
+   */
+  appearance: LayoutAppearance;
 }
 
 interface LayoutActions {
@@ -113,6 +120,12 @@ interface LayoutActions {
       preferredSize?: number
     }>
   ) => ModuleId[];
+
+  // === V2: 外观 ===
+  /** 部分更新外观字段, 自动 clamp 数值到合法范围 */
+  setAppearance: (patch: Partial<LayoutAppearance>) => void;
+  /** 重置外观为默认值 */
+  resetAppearance: () => void;
 }
 
 export type LayoutStore = LayoutState & LayoutActions;
@@ -164,6 +177,50 @@ function generateLayoutId(): string {
   return `layout-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+/**
+ * V2: 把 appearance 字段 clamp 到合法范围.
+ * - 数值字段走 APPEARANCE_LIMITS
+ * - 枚举字段未通过白名单 → 回退到默认值
+ */
+function sanitizeAppearance(input: unknown): LayoutAppearance {
+  const out: LayoutAppearance = { ...DEFAULT_APPEARANCE };
+  if (!input || typeof input !== 'object') return out;
+  const v = input as Record<string, unknown>;
+  if (typeof v.appPadding === 'number' && Number.isFinite(v.appPadding)) {
+    out.appPadding = Math.max(
+      APPEARANCE_LIMITS.appPadding.min,
+      Math.min(APPEARANCE_LIMITS.appPadding.max, Math.round(v.appPadding))
+    );
+  }
+  if (typeof v.slotGap === 'number' && Number.isFinite(v.slotGap)) {
+    out.slotGap = Math.max(
+      APPEARANCE_LIMITS.slotGap.min,
+      Math.min(APPEARANCE_LIMITS.slotGap.max, Math.round(v.slotGap))
+    );
+  }
+  if (typeof v.slotRadius === 'number' && Number.isFinite(v.slotRadius)) {
+    out.slotRadius = Math.max(
+      APPEARANCE_LIMITS.slotRadius.min,
+      Math.min(APPEARANCE_LIMITS.slotRadius.max, Math.round(v.slotRadius))
+    );
+  }
+  if (v.density === 'compact' || v.density === 'standard' || v.density === 'spacious') {
+    out.density = v.density;
+  }
+  if (
+    v.transitionLevel === 'off' ||
+    v.transitionLevel === 'minimal' ||
+    v.transitionLevel === 'standard' ||
+    v.transitionLevel === 'lively'
+  ) {
+    out.transitionLevel = v.transitionLevel;
+  }
+  if (v.dockMode === 'expanded' || v.dockMode === 'compact' || v.dockMode === 'floating') {
+    out.dockMode = v.dockMode;
+  }
+  return out;
+}
+
 function findSlotContaining(
   slots: Record<SlotId, SlotState>,
   moduleId: ModuleId
@@ -213,6 +270,7 @@ export const useLayoutStore = create<LayoutStore>()(
       activePresetId: DEFAULT_PRESET_ID,
       customLayouts: [],
       seenModules: [],
+      appearance: { ...DEFAULT_APPEARANCE },
 
       setSlotActive: (slot, moduleId) =>
         set((state) => {
@@ -521,7 +579,7 @@ export const useLayoutStore = create<LayoutStore>()(
       exportLayout: (mode = 'snapshot') => {
         const state = get();
         const payload: LayoutExportPayload = {
-          version: 1,
+          version: 2,
           layout: {
             slots: state.slots,
             activityBarPosition: state.activityBarPosition,
@@ -530,6 +588,8 @@ export const useLayoutStore = create<LayoutStore>()(
           // 'all' 模式: 导出当前 + 所有自定义布局 (用于备份/迁移)
           customLayouts: mode === 'all' ? state.customLayouts : [],
           activePresetId: state.activePresetId,
+          // V2 新增: 外观配置. v1 导入侧会忽略此字段; v2 导入侧用其覆盖默认值.
+          appearance: { ...state.appearance },
         };
         return JSON.stringify(payload, null, 2);
       },
@@ -545,7 +605,8 @@ export const useLayoutStore = create<LayoutStore>()(
           throw new Error('Invalid layout payload');
         }
         const p = parsed as Record<string, unknown>;
-        if (p.version !== 1) {
+        // 兼容 v1 与 v2: v1 没有 appearance 字段, 由默认值填充
+        if (p.version !== 1 && p.version !== 2) {
           throw new Error(`Unsupported layout version: ${String(p.version)}`);
         }
         if (!isValidSnapshot(p.layout)) {
@@ -592,11 +653,24 @@ export const useLayoutStore = create<LayoutStore>()(
           getBuiltinPreset(rawPresetId) !== undefined ||
           finalCustomLayouts.some((l) => l.id === rawPresetId);
         const activePresetId = isKnownPreset ? rawPresetId : DEFAULT_PRESET_ID;
+
+        // V2: 外观配置导入策略
+        // - 'replace' 模式: 用 imported.appearance 替换 (v1 → 默认值; v2 → sanitize)
+        // - 'merge' 模式: 保留现有 appearance, 不覆盖
+        // 这是有意的: 用户从他人布局 merge 时不应被对方的字号/动效偏好覆盖.
+        const nextAppearance: LayoutAppearance =
+          mode === 'replace'
+            ? p.version === 2
+              ? sanitizeAppearance(p.appearance)
+              : { ...DEFAULT_APPEARANCE }
+            : get().appearance;
+
         set({
           slots: layout.slots,
           activityBarPosition: layout.activityBarPosition,
           customLayouts: finalCustomLayouts,
           activePresetId,
+          appearance: nextAppearance,
         });
       },
 
@@ -662,10 +736,30 @@ export const useLayoutStore = create<LayoutStore>()(
         });
         return placed;
       },
+
+      // === V2: 外观 ===
+      setAppearance: (patch) =>
+        set((state) => ({
+          appearance: sanitizeAppearance({ ...state.appearance, ...patch }),
+        })),
+
+      resetAppearance: () => set({ appearance: { ...DEFAULT_APPEARANCE } }),
     }),
     {
       name: 'layout-store',
-      version: 1,
+      version: 2,
+      // V1 → V2 迁移: 持久化中无 appearance 字段时填入默认值, 其他字段照旧.
+      migrate: (persistedState: unknown, fromVersion: number) => {
+        if (!persistedState || typeof persistedState !== 'object') return persistedState;
+        const s = persistedState as Record<string, unknown>;
+        if (fromVersion < 2) {
+          return {
+            ...s,
+            appearance: { ...DEFAULT_APPEARANCE },
+          };
+        }
+        return s;
+      },
       // 只持久化布局相关字段,瞬时态(未来如 isDragging) 不持久化
       partialize: (state) => ({
         slots: state.slots,
@@ -673,6 +767,7 @@ export const useLayoutStore = create<LayoutStore>()(
         activePresetId: state.activePresetId,
         customLayouts: state.customLayouts,
         seenModules: state.seenModules,
+        appearance: state.appearance,
       }),
     }
   )

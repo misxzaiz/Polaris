@@ -1,0 +1,120 @@
+/**
+ * Polaris 布局 V2 — 设计 Token
+ *
+ * 本文件定义 V2 布局系统的所有 CSS 变量,被 index.css 顶层 @import.
+ * 与 index.css 的颜色 token 互补,这里负责"空间"与"时间"两类 token:
+ *  - 空间: padding/gap/radius/header-h 等几何尺寸
+ *  - 时间: motion-* / ease-* 缓动函数
+ *
+ * 运行时覆盖:
+ *  - layoutStore.appearance 通过 document.documentElement.style.setProperty
+ *    动态更新 --app-padding / --slot-gap / --slot-radius
+ *  - density 通过 <html data-density="..."> 切换 padding/row-height
+ *  - transitionLevel 通过 <html data-motion="..."> 全局降级动效
+ *  - 拖动期间 <html class="layout-resizing"> 暂停所有 transition
+ *
+ * 不要直接在组件里 hardcode 这些数值,统一用 CSS 变量或 Tailwind 任意值
+ * (如 className="rounded-[var(--slot-radius)]").
+ */
+
+:root {
+  /* ========== 空间 Tokens (默认值, 可被运行时覆盖) ========== */
+  --app-padding: 6px;
+  --slot-gap: 4px;
+  --slot-radius: 10px;
+
+  /* Module Chrome (ModuleShell 四件套高度) */
+  --module-header-h: 36px;
+  --module-toolbar-h: 32px;
+  --module-footer-h: 28px;
+  --module-padding-x-compact: 12px;
+  --module-padding-x-standard: 16px;
+  --module-padding-x-spacious: 20px;
+  --module-padding-y-compact: 8px;
+  --module-padding-y-standard: 12px;
+  --module-padding-y-spacious: 16px;
+  --module-divider: rgb(255 255 255 / 0.06);
+  --module-divider-strong: rgb(255 255 255 / 0.10);
+
+  /* Dock Tokens (V2 替代 ActivityBar) */
+  --dock-w-expanded: 56px;
+  --dock-w-compact: 48px;
+  --dock-item-h: 44px;
+  --dock-icon-size: 26px;
+
+  /* ========== 时间 Tokens ========== */
+  --motion-instant: 80ms;
+  --motion-fast: 120ms;
+  --motion-base: 200ms;
+  --motion-slow: 320ms;
+
+  /* Easing - spatial 用于布局尺寸变化, soft 用于元素状态变化 */
+  --ease-spatial: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-soft: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ========== 当前 density 派生 (默认 standard) ========== */
+  --module-padding-x: var(--module-padding-x-standard);
+  --module-padding-y: var(--module-padding-y-standard);
+}
+
+/* ========== Density 切换 ========== */
+:root[data-density='compact'] {
+  --module-padding-x: var(--module-padding-x-compact);
+  --module-padding-y: var(--module-padding-y-compact);
+}
+
+:root[data-density='spacious'] {
+  --module-padding-x: var(--module-padding-x-spacious);
+  --module-padding-y: var(--module-padding-y-spacious);
+}
+
+/* ========== Motion 强度档位 ==========
+ * off: 几乎瞬时
+ * minimal: 60% 加速 (仅留关键 hover 反馈)
+ * standard: 默认 (无覆盖)
+ * lively: 略放慢 + 弹性 (无降级覆盖, 留给具体组件用 var(--ease-out-back))
+ */
+:root[data-motion='off'] *,
+:root[data-motion='off'] *::before,
+:root[data-motion='off'] *::after {
+  transition-duration: 0.001ms !important;
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+}
+
+:root[data-motion='minimal'] * {
+  transition-duration: 80ms !important;
+}
+
+/* ========== prefers-reduced-motion 兼容 ==========
+ * 用户系统层设置了减少动画 → 默认走 off, 除非显式选 lively */
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion='lively']) *,
+  :root:not([data-motion='lively']) *::before,
+  :root:not([data-motion='lively']) *::after {
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
+  }
+}
+
+/* ========== Resizing 全局开关 ==========
+ * 用户拖 ResizeHandle 期间 LayoutDndProvider/ResizeHandle 给 <html> 加这个类,
+ * 暂停所有 transition, 避免槽位尺寸 200ms 过渡和实时拖动叠加产生拖泥带水. */
+html.layout-resizing,
+html.layout-resizing *,
+html.layout-resizing *::before,
+html.layout-resizing *::after {
+  transition: none !important;
+}
+
+/* ========== 实用 helper class ========== */
+
+/* 槽位 chrome 色阶分层 (与 index.css 的颜色 token 配合) */
+.slot-chrome-1 { background: rgb(var(--c-bg-elevated)); }
+.slot-chrome-2 { background: rgb(var(--c-bg-surface)); }
+
+/* Module Header 标准 token */
+.module-header-h { height: var(--module-header-h); }
+.module-toolbar-h { height: var(--module-toolbar-h); }
+.module-footer-h { height: var(--module-footer-h); }

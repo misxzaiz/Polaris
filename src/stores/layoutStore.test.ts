@@ -761,4 +761,141 @@ describe('layoutStore', () => {
       expect(second).toEqual([]);
     });
   });
+
+  // ============================================================
+  // V2: appearance 外观字段
+  // ============================================================
+  describe('V2 appearance', () => {
+    it('initializes with DEFAULT_APPEARANCE', () => {
+      const { appearance } = useLayoutStore.getState();
+      expect(appearance.appPadding).toBe(6);
+      expect(appearance.slotGap).toBe(4);
+      expect(appearance.slotRadius).toBe(10);
+      expect(appearance.density).toBe('standard');
+      expect(appearance.transitionLevel).toBe('standard');
+      expect(appearance.dockMode).toBe('expanded');
+    });
+
+    it('partial update via setAppearance', () => {
+      useLayoutStore.getState().setAppearance({ appPadding: 8, density: 'compact' });
+      const { appearance } = useLayoutStore.getState();
+      expect(appearance.appPadding).toBe(8);
+      expect(appearance.density).toBe('compact');
+      // 未指定字段保留
+      expect(appearance.slotGap).toBe(4);
+      expect(appearance.transitionLevel).toBe('standard');
+    });
+
+    it('clamps numeric fields to legal range', () => {
+      useLayoutStore.getState().setAppearance({
+        appPadding: 999,
+        slotGap: -5,
+        slotRadius: 50,
+      });
+      const { appearance } = useLayoutStore.getState();
+      expect(appearance.appPadding).toBe(12); // max
+      expect(appearance.slotGap).toBe(0); // min
+      expect(appearance.slotRadius).toBe(12); // max
+    });
+
+    it('rounds non-integer numeric values', () => {
+      useLayoutStore.getState().setAppearance({ appPadding: 7.6 });
+      expect(useLayoutStore.getState().appearance.appPadding).toBe(8);
+    });
+
+    it('rejects invalid enum values (fallback to default)', () => {
+      useLayoutStore.getState().setAppearance({
+        density: 'huge' as unknown as 'standard',
+      });
+      // sanitize fallback: 整体回默认(因为 sanitize 收到 invalid 枚举会保留默认值)
+      expect(useLayoutStore.getState().appearance.density).toBe('standard');
+    });
+
+    it('resetAppearance restores defaults', () => {
+      useLayoutStore.getState().setAppearance({ appPadding: 12, dockMode: 'compact' });
+      useLayoutStore.getState().resetAppearance();
+      const { appearance } = useLayoutStore.getState();
+      expect(appearance.appPadding).toBe(6);
+      expect(appearance.dockMode).toBe('expanded');
+    });
+
+    it('exportLayout emits version=2 and includes appearance', () => {
+      useLayoutStore.getState().setAppearance({ slotGap: 6 });
+      const exported = useLayoutStore.getState().exportLayout('all');
+      const parsed = JSON.parse(exported);
+      expect(parsed.version).toBe(2);
+      expect(parsed.appearance).toBeDefined();
+      expect(parsed.appearance.slotGap).toBe(6);
+    });
+
+    it('importLayout v1 payload fills appearance with defaults (merge mode keeps existing)', () => {
+      useLayoutStore.getState().setAppearance({ slotGap: 7 });
+      // v1 payload 没有 appearance
+      const payload = JSON.stringify({
+        version: 1,
+        layout: {
+          slots: {
+            left: { modules: [], activeModule: null, size: 280 },
+            right: { modules: [], activeModule: null, size: 400 },
+            center: { modules: [], activeModule: null, size: 0 },
+            bottom: { modules: [], activeModule: null, size: 0 },
+          },
+          activityBarPosition: 'left',
+        },
+        customLayouts: [],
+      });
+      useLayoutStore.getState().importLayout(payload, 'merge');
+      // merge 模式: appearance 不被覆盖
+      expect(useLayoutStore.getState().appearance.slotGap).toBe(7);
+    });
+
+    it('importLayout v2 replace mode applies imported appearance', () => {
+      const payload = JSON.stringify({
+        version: 2,
+        layout: {
+          slots: {
+            left: { modules: [], activeModule: null, size: 280 },
+            right: { modules: [], activeModule: null, size: 400 },
+            center: { modules: [], activeModule: null, size: 0 },
+            bottom: { modules: [], activeModule: null, size: 0 },
+          },
+          activityBarPosition: 'left',
+        },
+        customLayouts: [],
+        appearance: {
+          appPadding: 10,
+          slotGap: 2,
+          slotRadius: 4,
+          density: 'spacious',
+          transitionLevel: 'lively',
+          dockMode: 'compact',
+        },
+      });
+      useLayoutStore.getState().importLayout(payload, 'replace');
+      const { appearance } = useLayoutStore.getState();
+      expect(appearance.appPadding).toBe(10);
+      expect(appearance.slotGap).toBe(2);
+      expect(appearance.density).toBe('spacious');
+      expect(appearance.dockMode).toBe('compact');
+    });
+
+    it('importLayout v1 replace mode resets appearance to defaults', () => {
+      useLayoutStore.getState().setAppearance({ appPadding: 12 });
+      const payload = JSON.stringify({
+        version: 1,
+        layout: {
+          slots: {
+            left: { modules: [], activeModule: null, size: 280 },
+            right: { modules: [], activeModule: null, size: 400 },
+            center: { modules: [], activeModule: null, size: 0 },
+            bottom: { modules: [], activeModule: null, size: 0 },
+          },
+          activityBarPosition: 'left',
+        },
+        customLayouts: [],
+      });
+      useLayoutStore.getState().importLayout(payload, 'replace');
+      expect(useLayoutStore.getState().appearance.appPadding).toBe(6); // default
+    });
+  });
 });

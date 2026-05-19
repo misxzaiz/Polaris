@@ -26,6 +26,7 @@ import { useAppInit } from './hooks/useAppInit';
 import { useAppEvents } from './hooks/useAppEvents';
 import { useWindowManager } from './hooks/useWindowManager';
 import { useWorkspaceSync } from './hooks/useWorkspaceSync';
+import { useAppearanceSync } from './hooks/useAppearanceSync';
 
 function App() {
   const { t } = useTranslation('common');
@@ -35,6 +36,8 @@ function App() {
   useLayoutStoreMigration();
   // 把新插件按 manifest.defaultSlot 安置到布局; 仅对 "首次见到" 的 module 生效
   usePluginDefaultSlotsSweep();
+  // V2: 同步 layoutStore.appearance → :root CSS 变量 + data-* 属性
+  useAppearanceSync();
 
   const [showSettings, setShowSettings] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<string | undefined>(undefined);

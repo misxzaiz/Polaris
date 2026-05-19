@@ -14,11 +14,26 @@ interface ResizeHandleProps {
 }
 
 /**
+ * 把 <html> 标记为正在 resize. V2 token (layout-tokens.css) 监听这个类名,
+ * 拖动期间禁用所有 CSS transition, 避免槽位尺寸的过渡动画与实时拖动叠加产生
+ * "拖泥带水"的视觉.
+ */
+function setHtmlResizing(active: boolean) {
+  if (typeof document === 'undefined') return;
+  const html = document.documentElement;
+  if (active) html.classList.add('layout-resizing');
+  else html.classList.remove('layout-resizing');
+}
+
+/**
  * 面板拖拽手柄组件
  * 支持鼠标和触摸操作
+ *
+ * V2: 默认透明, 仅 hover/active 显现; 拖动期间挂 html.layout-resizing 暂停 transition.
  */
 export function ResizeHandle({ direction, position, onDrag, onDragEnd, disabled = false }: ResizeHandleProps) {
   const [isDragging, setIsDragging] = useState(false);
+  const [isHovering, setIsHovering] = useState(false);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (disabled) return;
@@ -29,6 +44,7 @@ export function ResizeHandle({ direction, position, onDrag, onDragEnd, disabled 
     const startY = e.clientY;
 
     setIsDragging(true);
+    setHtmlResizing(true);
 
     // 添加全局样式，防止选中文字
     document.body.style.userSelect = 'none';
@@ -55,6 +71,7 @@ export function ResizeHandle({ direction, position, onDrag, onDragEnd, disabled 
 
     const handleMouseUp = () => {
       setIsDragging(false);
+      setHtmlResizing(false);
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
       document.removeEventListener('mousemove', handleMouseMove);
@@ -74,6 +91,7 @@ export function ResizeHandle({ direction, position, onDrag, onDragEnd, disabled 
     const startY = touch.clientY;
 
     setIsDragging(true);
+    setHtmlResizing(true);
 
     document.body.style.userSelect = 'none';
     document.body.style.cursor = direction === 'horizontal' ? 'col-resize' : 'row-resize';
@@ -99,6 +117,7 @@ export function ResizeHandle({ direction, position, onDrag, onDragEnd, disabled 
 
     const handleTouchEnd = () => {
       setIsDragging(false);
+      setHtmlResizing(false);
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
       document.removeEventListener('touchmove', handleTouchMove);
@@ -110,22 +129,30 @@ export function ResizeHandle({ direction, position, onDrag, onDragEnd, disabled 
     document.addEventListener('touchend', handleTouchEnd);
   }, [disabled, direction, position, onDrag, onDragEnd]);
 
+  // V2: 默认透明, hover 显现 1.5px 半透明, active 满色 2px.
+  // baseClasses 控制 "命中区" — 永远是 4px(横向)/4px(纵向), 视觉条更细以避免侵占.
   const baseClasses = direction === 'horizontal'
-    ? 'w-1 hover:w-1.5 cursor-col-resize'
-    : 'h-1 hover:h-1.5 cursor-row-resize';
+    ? 'w-1 cursor-col-resize'
+    : 'h-1 cursor-row-resize';
 
   const colorClasses = disabled
     ? 'bg-transparent'
     : isDragging
-    ? 'bg-primary'
-    : 'bg-white/20 hover:bg-primary/70';
+      ? 'bg-primary'
+      : isHovering
+        ? 'bg-primary/60'
+        : 'bg-transparent';
 
   return (
     <div
       onMouseDown={handleMouseDown}
       onTouchStart={handleTouchStart}
-      className={`${baseClasses} ${colorClasses} transition-all duration-150 flex-shrink-0`}
+      onMouseEnter={() => setIsHovering(true)}
+      onMouseLeave={() => setIsHovering(false)}
+      className={`${baseClasses} ${colorClasses} transition-colors duration-150 flex-shrink-0`}
       style={{ touchAction: 'none' }}
+      role="separator"
+      aria-orientation={direction === 'horizontal' ? 'vertical' : 'horizontal'}
     />
   );
 }

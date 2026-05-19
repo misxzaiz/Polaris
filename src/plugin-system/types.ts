@@ -46,6 +46,16 @@ export interface PluginViewContribution {
    * 默认 false: 切换 Tab 走 mount/unmount, 让无状态模块释放内存.
    */
   keepAlive?: boolean
+  /**
+   * V2: 模块声明使用 ModuleShell 4 件套接管 chrome.
+   * - true: SlotPanel 单模块时不绘制 ModuleTabBar 头部, 由模块内 ModuleHeader 接管.
+   *         多模块时 ModuleTabBar 仍画 Tab, 但 Tab 上的"模块名"由 Tab 自身显示,
+   *         模块内 ModuleHeader 可作为二级标题或省略.
+   * - false (默认): 走 V1 行为, 模块自管 chrome.
+   *
+   * 渐进式迁移策略: 各模块按独立 PR 切到 useShell=true, 期间双形态共存.
+   */
+  useShell?: boolean
 }
 
 export interface PluginMcpServerContribution {

@@ -17,3 +17,6 @@ export { useContainerWidth } from './useContainerWidth';
 // 错误处理 Hooks
 export { useError, useGlobalErrorHandler, safeAsync } from './useError';
 export type { ErrorState, UseErrorReturn, ErrorOptions, StoreErrorState, StoreErrorActions } from './useError';
+
+// V2: 布局外观同步 (layoutStore.appearance → :root CSS 变量 + data-* 属性)
+export { useAppearanceSync } from './useAppearanceSync';

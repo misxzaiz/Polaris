@@ -129,7 +129,10 @@ export function ActivityBar({ className, side = 'left', onOpenSettings, forceCol
 
   return (
     <div
-      className={`flex flex-col items-center shrink-0 w-12 py-2 bg-background-elevated border-border ${borderClass} ${className || ''}`}
+      className={`flex flex-col items-center shrink-0 w-12 py-2 bg-background-elevated ring-1 ring-border/40 overflow-hidden ${className || ''}`}
+      style={{ borderRadius: 'var(--slot-radius)' }}
+      data-side={side}
+      data-border-class={borderClass /* V1 兼容: 保留语义供未来回滚 */}
     >
       <button
         type="button"

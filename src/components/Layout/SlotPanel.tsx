@@ -105,16 +105,24 @@ export function SlotPanel({ slot, className = '' }: SlotPanelProps) {
   }
 
   const isHorizontal = slot === 'left' || slot === 'right'
-  const sizeStyle = isHorizontal
-    ? { width: `${slotState.size}px` }
-    : { height: `${slotState.size}px` }
+  // V2: 给 size 维度加 transition, 让 applyPreset / setSlotActive 等"非用户拖动"
+  // 触发的尺寸变化走 200ms 过渡. 用户拖 ResizeHandle 期间, ResizeHandle 会给
+  // <html> 挂 .layout-resizing 类, layout-tokens.css 全局 disable transition,
+  // 所以实时拖动不会被过渡拖泥带水. 见 layout-tokens.css 的 html.layout-resizing 规则.
+  const sizeStyle: React.CSSProperties = isHorizontal
+    ? {
+        width: `${slotState.size}px`,
+        transition: 'width var(--motion-base) var(--ease-spatial)',
+      }
+    : {
+        height: `${slotState.size}px`,
+        transition: 'height var(--motion-base) var(--ease-spatial)',
+      }
 
-  const containerBorder =
-    slot === 'left'
-      ? 'border-r border-border'
-      : slot === 'right'
-        ? 'border-l border-border'
-        : 'border-t border-border'
+  // V2: 槽位卡片化 — 圆角 + 微差色阶, 不再用 border 区分槽位.
+  // 槽位之间由 LayoutShell 的 gap 制造视觉间距, 因此各槽位都用相同的边描.
+  // 早期 V1 用 border-r/border-l/border-t 在槽位毗邻处画分隔线, V2 改为整圈 ring-1.
+  // 这是 V2 空间美学的核心: 模块如卡片浮在桌面.
 
   // 此处 slotState.activeModule 非 null (上方 isSlotEmpty 已 early return)
   const activeModule = slotState.activeModule as ModuleId
@@ -134,10 +142,13 @@ export function SlotPanel({ slot, className = '' }: SlotPanelProps) {
 
       <aside
         ref={setNodeRef}
-        className={`flex flex-col bg-background-elevated ${containerBorder} shrink-0 relative min-w-0 min-h-0 transition-shadow ${
-          showDropHint ? 'ring-2 ring-primary/60 ring-inset shadow-glow' : ''
+        className={`flex flex-col bg-background-elevated overflow-hidden ring-1 ring-border/40 shrink-0 relative min-w-0 min-h-0 transition-shadow ${
+          showDropHint ? 'ring-2 ring-primary/60 shadow-glow' : ''
         } ${className}`}
-        style={sizeStyle}
+        style={{
+          ...sizeStyle,
+          borderRadius: 'var(--slot-radius)',
+        }}
       >
         {!activeIsBare && slotState.modules.length > 1 && <ModuleTabBar slot={slot} />}
 
@@ -196,7 +207,10 @@ function GhostDropZone({ slot, setNodeRef, isOver }: GhostDropZoneProps) {
           ? 'border-primary bg-primary/10 text-primary'
           : 'border-border-subtle bg-background-surface/50 text-text-tertiary'
       }`}
-      style={sizeStyle}
+      style={{
+        ...sizeStyle,
+        borderRadius: 'var(--slot-radius)',
+      }}
       aria-label={`Drop zone for ${slot} slot`}
     >
       <span className="text-[10px] font-medium opacity-70 select-none pointer-events-none">

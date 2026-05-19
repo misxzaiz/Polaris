@@ -59,7 +59,14 @@ export function LayoutShell({ isCompactMode = false, activityBar }: LayoutShellP
   const renderCenter = () => {
     const { modules, activeModule } = centerSlot
     if (modules.length === 0 || activeModule === null) {
-      return <CenterStage />
+      return (
+        <main
+          className="flex flex-col flex-1 min-w-0 overflow-hidden bg-background-elevated ring-1 ring-border/40"
+          style={{ borderRadius: 'var(--slot-radius)' }}
+        >
+          <CenterStage />
+        </main>
+      )
     }
 
     const content =
@@ -75,7 +82,10 @@ export function LayoutShell({ isCompactMode = false, activityBar }: LayoutShellP
     const showTabs = hasMultipleTabs && activeModule !== 'chat'
 
     return (
-      <main className="flex flex-col flex-1 min-w-0 overflow-hidden">
+      <main
+        className="flex flex-col flex-1 min-w-0 overflow-hidden bg-background-elevated ring-1 ring-border/40"
+        style={{ borderRadius: 'var(--slot-radius)' }}
+      >
         {showTabs && <ModuleTabBar slot="center" />}
         <div className="flex flex-1 min-h-0 flex-col">{content}</div>
       </main>
@@ -84,11 +94,20 @@ export function LayoutShell({ isCompactMode = false, activityBar }: LayoutShellP
 
   return (
     <LayoutDndProvider>
-      <div className="flex flex-1 overflow-hidden">
+      <div
+        className="flex flex-1 overflow-hidden"
+        style={{
+          padding: 'var(--app-padding)',
+          gap: 'var(--slot-gap)',
+        }}
+      >
         {activityBarOnLeft && activityBar}
         <SlotPanel slot="left" />
 
-        <div className="flex flex-col flex-1 min-w-0">
+        <div
+          className="flex flex-col flex-1 min-w-0"
+          style={{ gap: 'var(--slot-gap)' }}
+        >
           {renderCenter()}
           <SlotPanel slot="bottom" />
         </div>

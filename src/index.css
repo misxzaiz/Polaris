@@ -2,6 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
+/* V2 布局系统 token (空间 + 时间 + density/motion 切换) */
+@import './styles/layout-tokens.css';
+
 
 /* 全局样式 */
 /* === 主题变量（Dark - 默认） ===
