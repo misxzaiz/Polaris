@@ -1,0 +1,114 @@
+{
+  "tab": {
+    "title": "Layout",
+    "description": "Switch built-in layout presets, adjust ActivityBar placement, or reset to default. Layout changes save automatically."
+  },
+  "menu": {
+    "buttonTitle": "Switch layout",
+    "presetsHeader": "Built-in presets",
+    "customHeader": "My layouts",
+    "customEmpty": "No custom layouts yet",
+    "saveAs": "Save current as...",
+    "openSettings": "Layout settings...",
+    "customActive": "Modified · unsaved",
+    "expandCollapsedHeader": "Expand collapsed slots",
+    "expandCollapsedItem": "{{slot}} · {{module}}",
+    "noCollapsedSlots": "No collapsed slots"
+  },
+  "slot": {
+    "left": "Left",
+    "right": "Right",
+    "center": "Center",
+    "bottom": "Bottom"
+  },
+  "preset": {
+    "sectionTitle": "Layout Presets",
+    "currentLabel": "Current",
+    "customLabel": "Custom",
+    "focusWriting": {
+      "name": "Focus Writing",
+      "description": "Hide all panels except the conversation, for long-form writing."
+    },
+    "developer": {
+      "name": "Developer",
+      "description": "Files + Git on the left, AI on the right, Terminal + Problems at the bottom."
+    },
+    "taskCockpit": {
+      "name": "Task Cockpit",
+      "description": "Todo + Requirements on the left, conversation in the center, Scheduler + Long Goals on the right."
+    },
+    "minimalChat": {
+      "name": "Minimal Chat",
+      "description": "ChatGPT-like, conversation panel only."
+    },
+    "panorama": {
+      "name": "Panorama",
+      "description": "All panels visible, ideal for multi-task coordination."
+    }
+  },
+  "activityBar": {
+    "sectionTitle": "ActivityBar Placement",
+    "description": "Position of the module navigation rail. When hidden, a floating button gives quick access.",
+    "left": "Left",
+    "right": "Right",
+    "hidden": "Hidden"
+  },
+  "actions": {
+    "sectionTitle": "Actions",
+    "reset": "Reset to default layout",
+    "resetDescription": "Restore layout to the \"Developer\" preset.",
+    "saveAs": "Save current as...",
+    "export": "Export...",
+    "import": "Import...",
+    "transferDescription": "Share layouts as JSON files across devices or teammates.",
+    "exportMode": {
+      "label": "Export scope",
+      "all": "Current layout + all My Layouts",
+      "allHint": "Best for backup/migration",
+      "snapshot": "Current layout only",
+      "snapshotHint": "Best for sharing a single setup"
+    }
+  },
+  "custom": {
+    "sectionTitle": "My Layouts",
+    "empty": "No custom layouts saved yet. After editing your layout, click \"Save current as...\" to create one.",
+    "apply": "Apply",
+    "rename": "Rename",
+    "delete": "Delete"
+  },
+  "renameDialog": {
+    "title": "Rename layout",
+    "message": "Give this layout a new name.",
+    "placeholder": "New name"
+  },
+  "deleteDialog": {
+    "title": "Delete layout",
+    "message": "Delete \"{{name}}\"? This cannot be undone."
+  },
+  "saveDialog": {
+    "title": "Save current layout",
+    "message": "Give this layout a memorable name. You can switch back from the menu any time.",
+    "placeholder": "e.g. My writing layout",
+    "errorEmpty": "Name cannot be empty",
+    "errorDuplicate": "A layout with this name already exists"
+  },
+  "toast": {
+    "saved": "Layout saved",
+    "savedDesc": "\"{{name}}\" added to My layouts",
+    "saveFailed": "Failed to save layout",
+    "applied": "Switched to \"{{name}}\"",
+    "deleted": "Deleted \"{{name}}\"",
+    "renamed": "Renamed to \"{{name}}\"",
+    "exported": "Layout exported",
+    "exportedDesc": "Saved to {{path}}",
+    "exportCancelled": "Export cancelled",
+    "exportFailed": "Failed to export layout",
+    "imported": "Layout imported",
+    "importFailed": "Failed to import layout"
+  },
+  "dnd": {
+    "added": "Module added to layout",
+    "moved": "Module moved",
+    "rejected": "This module cannot be placed here"
+  }
+}

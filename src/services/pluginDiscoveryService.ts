@@ -1,7 +1,6 @@
 import { invoke } from './transport'
 import type {
   PluginIconId,
-  PluginLeftPanelType,
   PluginOriginMetadata,
   PluginManifestSource,
   PluginMcpServerContribution,
@@ -9,6 +8,7 @@ import type {
   PluginViewContribution,
   PolarisPluginManifest,
 } from '@/plugin-system/types'
+import type { ModuleId, SlotId } from '@/types/layout'
 
 export interface PluginDiscoveryIssue {
   path: string
@@ -71,19 +71,22 @@ const VALID_PLUGIN_ICONS = new Set<PluginIconId>([
   'BookOpen',
   'AlertCircle',
 ])
-const VALID_PANEL_TYPES = new Set<PluginLeftPanelType>([
+const VALID_MODULE_IDS = new Set<ModuleId>([
+  'chat',
   'files',
   'git',
-  'translate',
-  'scheduler',
+  'todo',
   'requirement',
+  'scheduler',
+  'longGoal',
   'terminal',
+  'problems',
   'developer',
   'integration',
-  'todo',
-  'problems',
+  'translate',
   'demoPlugin',
 ])
+const VALID_SLOT_IDS = new Set<SlotId>(['left', 'right', 'center', 'bottom'])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -117,33 +120,47 @@ function normalizeViews(
 
     const id = asString(item.id)
     const area = asString(item.area)
-    const panelType = asString(item.panelType)
+    const moduleId = asString(item.moduleId)
     const icon = asString(item.icon)
     const labelKey = asString(item.labelKey)
 
     if (
       !id ||
       !area ||
-      !panelType ||
+      !moduleId ||
       !icon ||
       !labelKey ||
       !VALID_VIEW_AREAS.has(area) ||
-      !VALID_PANEL_TYPES.has(panelType as PluginLeftPanelType) ||
+      !VALID_MODULE_IDS.has(moduleId as ModuleId) ||
       !VALID_PLUGIN_ICONS.has(icon as PluginIconId)
     ) {
       errors.push(`contributes.views[${index}] is invalid and was ignored`)
       return []
     }
 
+    const allowedSlots = Array.isArray(item.allowedSlots)
+      ? (item.allowedSlots.filter((s): s is SlotId => typeof s === 'string' && VALID_SLOT_IDS.has(s as SlotId)))
+      : undefined
+    const defaultSlot =
+      typeof item.defaultSlot === 'string' && VALID_SLOT_IDS.has(item.defaultSlot as SlotId)
+        ? (item.defaultSlot as SlotId)
+        : undefined
+    const preferredSize = typeof item.preferredSize === 'number' ? item.preferredSize : undefined
+    const bareRender = typeof item.bareRender === 'boolean' ? item.bareRender : undefined
+
     return [{
       id,
       area: area as PluginViewContribution['area'],
-      panelType: panelType as PluginLeftPanelType,
+      moduleId: moduleId as ModuleId,
       icon: icon as PluginIconId,
       labelKey,
       labelDefault: asString(item.labelDefault),
       order: typeof item.order === 'number' ? item.order : 1000,
       badge: item.badge === 'problems' ? 'problems' : undefined,
+      allowedSlots,
+      defaultSlot,
+      preferredSize,
+      bareRender,
     }]
   })
 }

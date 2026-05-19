@@ -1,0 +1,114 @@
+{
+  "tab": {
+    "title": "布局",
+    "description": "切换内置布局预设、调整 ActivityBar 位置,或重置为默认值。布局更改会自动保存。"
+  },
+  "menu": {
+    "buttonTitle": "切换布局",
+    "presetsHeader": "内置预设",
+    "customHeader": "我的布局",
+    "customEmpty": "暂无自定义布局",
+    "saveAs": "保存当前为...",
+    "openSettings": "布局设置...",
+    "customActive": "已修改 · 未保存",
+    "expandCollapsedHeader": "展开折叠槽位",
+    "expandCollapsedItem": "{{slot}} · {{module}}",
+    "noCollapsedSlots": "没有已折叠的槽位"
+  },
+  "slot": {
+    "left": "左侧",
+    "right": "右侧",
+    "center": "中央",
+    "bottom": "底部"
+  },
+  "preset": {
+    "sectionTitle": "布局预设",
+    "currentLabel": "当前",
+    "customLabel": "自定义",
+    "focusWriting": {
+      "name": "专注写作",
+      "description": "隐藏所有面板,仅保留对话区,适合长文撰写。"
+    },
+    "developer": {
+      "name": "开发模式",
+      "description": "左侧文件 + Git,右侧 AI,底部终端 + 问题面板。"
+    },
+    "taskCockpit": {
+      "name": "任务驾驶舱",
+      "description": "左侧 Todo + 需求,中心对话,右侧调度器 + 长期目标。"
+    },
+    "minimalChat": {
+      "name": "极简对话",
+      "description": "类 ChatGPT 体验,仅显示对话面板。"
+    },
+    "panorama": {
+      "name": "全景模式",
+      "description": "所有面板可见,适合多任务协同。"
+    }
+  },
+  "activityBar": {
+    "sectionTitle": "ActivityBar 位置",
+    "description": "侧边模块导航栏的位置。隐藏后可通过悬浮球快速访问。",
+    "left": "左侧",
+    "right": "右侧",
+    "hidden": "隐藏"
+  },
+  "actions": {
+    "sectionTitle": "操作",
+    "reset": "重置为默认布局",
+    "resetDescription": "将布局恢复为 \"开发模式\" 预设。",
+    "saveAs": "保存当前为...",
+    "export": "导出...",
+    "import": "导入...",
+    "transferDescription": "把布局以 JSON 文件分享给其他设备或团队。",
+    "exportMode": {
+      "label": "导出范围",
+      "all": "当前布局 + 全部我的布局",
+      "allHint": "适合备份/迁移",
+      "snapshot": "仅当前布局",
+      "snapshotHint": "适合单纯分享一份配置"
+    }
+  },
+  "custom": {
+    "sectionTitle": "我的布局",
+    "empty": "尚未保存任何自定义布局。修改布局后,点击「保存当前为...」即可创建。",
+    "apply": "应用",
+    "rename": "重命名",
+    "delete": "删除"
+  },
+  "renameDialog": {
+    "title": "重命名布局",
+    "message": "为这套布局起一个新的名字。",
+    "placeholder": "新名字"
+  },
+  "deleteDialog": {
+    "title": "删除布局",
+    "message": "确定要删除「{{name}}」吗?此操作不可撤销。"
+  },
+  "saveDialog": {
+    "title": "保存当前布局",
+    "message": "为这套布局起一个易记的名字,稍后可以在菜单中快速切换。",
+    "placeholder": "例如:我的写作布局",
+    "errorEmpty": "名字不能为空",
+    "errorDuplicate": "已存在同名布局,请换一个"
+  },
+  "toast": {
+    "saved": "布局已保存",
+    "savedDesc": "「{{name}}」已加入我的布局",
+    "saveFailed": "保存失败",
+    "applied": "已切换到「{{name}}」",
+    "deleted": "已删除「{{name}}」",
+    "renamed": "已重命名为「{{name}}」",
+    "exported": "布局已导出",
+    "exportedDesc": "已保存到 {{path}}",
+    "exportCancelled": "已取消导出",
+    "exportFailed": "导出失败",
+    "imported": "布局已导入",
+    "importFailed": "导入失败"
+  },
+  "dnd": {
+    "added": "模块已加入布局",
+    "moved": "模块已移动",
+    "rejected": "该模块不允许放在这个位置"
+  }
+}

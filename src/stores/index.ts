@@ -35,3 +35,9 @@ export { useSessionStore, getSessionEffectiveWorkspace } from './sessionStore';
 export { useModelProfileStore, getActiveModelProfile } from './modelProfileStore';
 export { usePluginStore } from './pluginStore';
 export type { PluginState, PluginStateMap, PluginStore } from './pluginStore';
+export {
+  useLayoutStore,
+  LAYOUT_SLOT_IDS,
+  LAYOUT_ACTIVITY_BAR_POSITIONS,
+  type LayoutStore,
+} from './layoutStore';

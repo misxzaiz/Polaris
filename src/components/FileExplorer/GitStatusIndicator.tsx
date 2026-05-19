@@ -6,11 +6,11 @@
 
 import { GitBranch } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
-import { useViewStore } from '@/stores'
+import { useLayoutStore } from '@/stores/layoutStore'
 
 export function GitStatusIndicator() {
   const { status } = useGitStore()
-  const { toggleGitPanel } = useViewStore()
+  const toggleModule = useLayoutStore((state) => state.toggleModule)
 
   if (!status || !status.branch) {
     return null
@@ -20,7 +20,7 @@ export function GitStatusIndicator() {
 
   return (
     <button
-      onClick={() => toggleGitPanel()}
+      onClick={() => toggleModule('git')}
       className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs bg-background-surface hover:bg-background-hover transition-colors group cursor-pointer"
       title={`分支: ${status.branch}${totalChanges > 0 ? `\n未提交变更: ${totalChanges}` : ''}`}
     >

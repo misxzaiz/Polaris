@@ -1,37 +1,37 @@
 /**
- * ActivityBar - 左侧 Activity Bar 组件
+ * ActivityBar - 应用左/右侧的模块导航栏
  *
- * 支持折叠隐藏，悬停悬浮球展开扇形菜单
- * 扇形菜单从悬浮球位置向右展开，包含所有侧边栏功能
+ * 由 layoutStore.activityBarPosition 决定显示位置 (left/right/hidden)。
+ * - 展开状态: 显示垂直图标栏,点击模块图标激活对应槽位
+ * - 折叠状态 (small-screen forceCollapsed): 显示贴边半圆悬浮球 + 扇形菜单
+ * - hidden 模式: LayoutShell 不渲染此组件 (本组件无需自己 return null)
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Settings, PanelRight } from 'lucide-react'
-import { useViewStore } from '@/stores/viewStore'
+import { Settings, PanelRight, PanelLeftClose, PanelRightClose } from 'lucide-react'
+import { useDraggable } from '@dnd-kit/core'
+import { useLayoutStore } from '@/stores/layoutStore'
 import { useDiagnosticsStore } from '@/stores/diagnosticsStore'
 import { ActivityBarIcon } from './ActivityBarIcon'
 import { RadialMenu, RadialMenuTrigger } from './RadialMenu'
 import { useTranslation } from 'react-i18next'
 import { pluginIconMap, pluginRegistry } from '@/plugin-system'
 import { isPluginUiEnabled, usePluginStore } from '@/stores/pluginStore'
+import { activityBarDraggableId, type DragData } from './dnd'
+import type { ModuleId } from '@/types/layout'
 
 interface ActivityBarProps {
   className?: string
-  /** 可选: 打开设置的回调 */
+  /** 在主布局中的位置;LayoutShell 根据 layoutStore.activityBarPosition 传入 */
+  side?: 'left' | 'right'
+  /** 打开设置的回调 */
   onOpenSettings?: () => void
-  /** 可选: 切换右侧面板的回调 */
-  onToggleRightPanel?: () => void
-  /** 右侧面板是否折叠 */
-  rightPanelCollapsed?: boolean
-  /** 强制折叠模式（如小屏模式），忽略 activityBarCollapsed 状态，始终显示半球触发器 */
+  /** 强制折叠模式 (小屏),忽略布局位置,始终显示半球触发器 */
   forceCollapsed?: boolean
 }
 
-/** Problems 按钮右下角的错误计数徽章 */
 function ProblemsBadge() {
-  // 订阅 version 以在诊断变化时重渲染
   useDiagnosticsStore((s) => s.version)
-  // Use getState() to avoid creating new object in selector (causes infinite re-render)
   const { errors, warnings } = useDiagnosticsStore.getState().summary
   const total = errors + warnings
   if (total === 0) return null
@@ -46,19 +46,17 @@ function ProblemsBadge() {
   )
 }
 
-export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rightPanelCollapsed, forceCollapsed }: ActivityBarProps) {
+export function ActivityBar({ className, side = 'left', onOpenSettings, forceCollapsed }: ActivityBarProps) {
   const { t } = useTranslation('common')
-  const leftPanelType = useViewStore((state) => state.leftPanelType)
-  const toggleLeftPanel = useViewStore((state) => state.toggleLeftPanel)
-  const activityBarCollapsed = useViewStore((state) => state.activityBarCollapsed)
-  const toggleActivityBar = useViewStore((state) => state.toggleActivityBar)
+  const slots = useLayoutStore((s) => s.slots)
+  const activateModule = useLayoutStore((s) => s.activateModule)
+  const toggleModule = useLayoutStore((s) => s.toggleModule)
+  const setActivityBarPosition = useLayoutStore((s) => s.setActivityBarPosition)
   const pluginStates = usePluginStore((state) => state.pluginStates)
 
-  // 扇形菜单状态 - 支持悬停和点击
   const [isRadialMenuOpen, setIsRadialMenuOpen] = useState(false)
   const hideTimerRef = useRef<NodeJS.Timeout | null>(null)
 
-  // 清理定时器
   useEffect(() => {
     return () => {
       if (hideTimerRef.current) {
@@ -67,29 +65,23 @@ export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rig
     }
   }, [])
 
-  // 悬停处理
   const handleTriggerHover = useCallback((isHovering: boolean) => {
     if (isHovering) {
-      // 鼠标进入触发器，取消隐藏定时器并显示菜单
       if (hideTimerRef.current) {
         clearTimeout(hideTimerRef.current)
         hideTimerRef.current = null
       }
       setIsRadialMenuOpen(true)
     }
-    // 鼠标离开触发器时不立即隐藏，等待菜单区域的处理
   }, [])
 
-  // 菜单区域悬停处理
   const handleMenuHover = useCallback((isHovering: boolean) => {
     if (isHovering) {
-      // 鼠标进入菜单，取消隐藏定时器
       if (hideTimerRef.current) {
         clearTimeout(hideTimerRef.current)
         hideTimerRef.current = null
       }
     } else {
-      // 鼠标离开菜单，延迟隐藏
       hideTimerRef.current = setTimeout(() => {
         setIsRadialMenuOpen(false)
       }, 200)
@@ -99,69 +91,80 @@ export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rig
   const panelButtons = pluginRegistry
     .listViewContributions('activityBar')
     .filter((view) => isPluginUiEnabled(pluginStates, view.pluginId))
+    // chat 模块的入口由 right slot 的折叠按钮专门处理,不重复在 ActivityBar 中显示
+    .filter((view) => view.moduleId !== 'chat')
 
-  // 折叠状态下的渲染（或强制折叠模式）：显示贴边半圆悬浮球 + 扇形菜单
-  if (activityBarCollapsed || forceCollapsed) {
+  const isModuleActiveNow = (moduleId: string) =>
+    Object.values(slots).some((s) => s.activeModule === moduleId)
+
+  const chatActive = isModuleActiveNow('chat')
+  const chatBoundSomewhere = Object.values(slots).some((s) => s.modules.includes('chat'))
+  const toggleChat = () => toggleModule('chat')
+
+  // 强制折叠 (小屏 / hidden 位置已由 LayoutShell 阻止渲染)
+  if (forceCollapsed) {
     return (
       <>
-        {/* 贴边半圆悬浮触发器 */}
         <RadialMenuTrigger
+          side={side}
           onHover={handleTriggerHover}
           onClick={() => setIsRadialMenuOpen(!isRadialMenuOpen)}
           isOpen={isRadialMenuOpen}
         />
-
-        {/* 扇形菜单 */}
         <RadialMenu
+          side={side}
           isOpen={isRadialMenuOpen}
           onClose={() => setIsRadialMenuOpen(false)}
           onOpenSettings={onOpenSettings}
-          onToggleRightPanel={onToggleRightPanel}
-          rightPanelCollapsed={rightPanelCollapsed}
+          onToggleRightPanel={chatBoundSomewhere ? toggleChat : undefined}
+          rightPanelCollapsed={!chatActive}
           onHover={handleMenuHover}
         />
       </>
     )
   }
 
-  // 展开状态：显示传统的垂直图标栏
+  const borderClass = side === 'left' ? 'border-r' : 'border-l'
+  const HideIcon = side === 'left' ? PanelLeftClose : PanelRightClose
+
   return (
     <div
-      className={`flex flex-col items-center shrink-0 w-12 py-2 bg-background-elevated border-r border-border ${className || ''}`}
+      className={`flex flex-col items-center shrink-0 w-12 py-2 bg-background-elevated border-border ${borderClass} ${className || ''}`}
     >
-      {/* 折叠按钮 */}
       <button
-        onClick={toggleActivityBar}
+        type="button"
+        onClick={() => setActivityBarPosition('hidden')}
         className="w-10 h-10 mx-1 mb-2 rounded-md flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-background-hover transition-colors"
         title={t('labels.hideActivityBar')}
       >
-        <PanelRight className="w-5 h-5" />
+        <HideIcon className="w-5 h-5" />
       </button>
 
       {panelButtons.map((btn) => {
         const Icon = pluginIconMap[btn.icon]
         return (
-          <ActivityBarIcon
+          <DraggableActivityIcon
             key={btn.id}
+            moduleId={btn.moduleId}
             icon={Icon}
-            label={t(btn.labelKey, { defaultValue: btn.labelDefault ?? btn.panelType })}
-            active={leftPanelType === btn.panelType}
-            onClick={() => toggleLeftPanel(btn.panelType)}
-          >
-            {btn.badge === 'problems' && <ProblemsBadge />}
-          </ActivityBarIcon>
+            label={t(btn.labelKey, { defaultValue: btn.labelDefault ?? btn.moduleId })}
+            active={isModuleActiveNow(btn.moduleId)}
+            onClick={() => activateModule(btn.moduleId)}
+            badge={btn.badge === 'problems' ? <ProblemsBadge /> : undefined}
+          />
         )
       })}
 
       <div className="flex-1" />
 
-      {/* 右侧 AI 面板切换按钮 */}
-      <ActivityBarIcon
-        icon={PanelRight}
-        label={rightPanelCollapsed ? t('labels.showAIPanel') : t('labels.hideAIPanel')}
-        active={!rightPanelCollapsed}
-        onClick={onToggleRightPanel || (() => {})}
-      />
+      {chatBoundSomewhere && (
+        <ActivityBarIcon
+          icon={PanelRight}
+          label={chatActive ? t('labels.hideAIPanel') : t('labels.showAIPanel')}
+          active={chatActive}
+          onClick={toggleChat}
+        />
+      )}
 
       <ActivityBarIcon
         icon={Settings}
@@ -169,6 +172,46 @@ export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rig
         active={false}
         onClick={onOpenSettings || (() => {})}
       />
+    </div>
+  )
+}
+
+// ============================================================
+// DraggableActivityIcon - 包装 ActivityBarIcon, 让它可被拖到槽位
+// ============================================================
+interface DraggableActivityIconProps {
+  moduleId: ModuleId
+  icon: React.ComponentType<{ size?: number; className?: string }>
+  label: string
+  active: boolean
+  onClick: () => void
+  badge?: React.ReactNode
+}
+
+function DraggableActivityIcon({
+  moduleId,
+  icon,
+  label,
+  active,
+  onClick,
+  badge,
+}: DraggableActivityIconProps) {
+  const dragData: DragData = { type: 'activity-bar', moduleId }
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: activityBarDraggableId(moduleId),
+    data: dragData,
+  })
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`relative ${isDragging ? 'opacity-40' : ''}`}
+      {...attributes}
+      {...listeners}
+    >
+      <ActivityBarIcon icon={icon} label={label} active={active} onClick={onClick}>
+        {badge}
+      </ActivityBarIcon>
     </div>
   )
 }

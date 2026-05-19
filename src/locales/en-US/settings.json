@@ -21,6 +21,7 @@
   "saveTab": "Save {{name}}",
   "nav": {
     "general": "General",
+    "layout": "Layout",
     "systemPrompt": "System Prompt",
     "promptSnippet": "Prompt Snippets",
     "window": "Window",

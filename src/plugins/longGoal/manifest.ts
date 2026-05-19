@@ -12,11 +12,14 @@ export const longGoalPluginManifest: PolarisPluginManifest = {
       {
         id: 'long-goal.panel',
         area: 'activityBar',
-        panelType: 'longGoal',
+        moduleId: 'longGoal',
         icon: 'Target',
         labelKey: 'labels.longGoalPanel',
         labelDefault: 'Long Goals',
         order: 55,
+        allowedSlots: ['left', 'right', 'bottom'],
+        defaultSlot: 'left',
+        preferredSize: 320,
       },
     ],
     mcpServers: [

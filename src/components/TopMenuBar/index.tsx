@@ -10,31 +10,56 @@
  * - 窗口控制按钮（最小化、最大化、关闭）
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Minus, Square, X, PanelRight, Pin, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { invoke } from '@/services/transport';
-import { useViewStore } from '../../stores';
+import { useLayoutStore } from '../../stores/layoutStore';
 import * as tauri from '../../services/tauri';
 import { WorkspaceQuickSwitch } from '../Workspace';
+import { LayoutSwitcherMenu } from './LayoutSwitcherMenu';
 import { createLogger } from '../../utils/logger';
 
 const log = createLogger('TopMenuBar');
 
-// 检测是否在 Tauri 环境中运行
 const isTauriEnv = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 interface TopMenuBarProps {
-  onToggleRightPanel?: () => void;
-  rightPanelCollapsed?: boolean;
   isCompactMode?: boolean;
 }
 
-export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactMode }: TopMenuBarProps) {
+export function TopMenuBar({ isCompactMode }: TopMenuBarProps) {
   const { t } = useTranslation('common');
-  const { activityBarCollapsed, toggleActivityBar } = useViewStore();
+  const activityBarPosition = useLayoutStore((s) => s.activityBarPosition);
+  const setActivityBarPosition = useLayoutStore((s) => s.setActivityBarPosition);
+  const slots = useLayoutStore((s) => s.slots);
+  const toggleModule = useLayoutStore((s) => s.toggleModule);
   const [isMaximized, setIsMaximized] = useState(false);
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
+  // 记住用户上次显示 ActivityBar 时的位置,hidden→show 时恢复
+  const lastVisiblePositionRef = useRef<'left' | 'right'>(
+    activityBarPosition === 'right' ? 'right' : 'left'
+  );
+
+  useEffect(() => {
+    if (activityBarPosition !== 'hidden') {
+      lastVisiblePositionRef.current = activityBarPosition;
+    }
+  }, [activityBarPosition]);
+
+  const activityBarHidden = activityBarPosition === 'hidden';
+  const chatActive = Object.values(slots).some((s) => s.activeModule === 'chat');
+  const chatBound = Object.values(slots).some((s) => s.modules.includes('chat'));
+
+  const toggleActivityBar = () => {
+    if (activityBarHidden) {
+      setActivityBarPosition(lastVisiblePositionRef.current);
+    } else {
+      setActivityBarPosition('hidden');
+    }
+  };
+
+  const toggleRightPanel = () => toggleModule('chat');
 
   useEffect(() => {
     if (!isTauriEnv) return;
@@ -173,29 +198,34 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
             <button
               onClick={toggleActivityBar}
               className={`p-1.5 rounded-md transition-colors ${
-                activityBarCollapsed
+                activityBarHidden
                   ? 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
                   : 'text-primary bg-primary/10 hover:bg-primary/20'
               }`}
-              title={activityBarCollapsed ? t('labels.showActivityBar') : t('labels.hideActivityBar')}
+              title={activityBarHidden ? t('labels.showActivityBar') : t('labels.hideActivityBar')}
               data-tauri-drag-region={false}
             >
-              {activityBarCollapsed ? <PanelLeft className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+              {activityBarHidden ? <PanelLeft className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
             </button>
 
-            {/* 右侧 AI 面板切换按钮 */}
-            <button
-              onClick={onToggleRightPanel}
-              className={`p-1.5 rounded-md transition-colors ${
-                rightPanelCollapsed
-                  ? 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
-                  : 'text-primary bg-primary/10 hover:bg-primary/20'
-              }`}
-              title={rightPanelCollapsed ? t('labels.showAIPanel') : t('labels.hideAIPanel')}
-              data-tauri-drag-region={false}
-            >
-              <PanelRight className="w-4 h-4" />
-            </button>
+            {/* 布局切换菜单 (预设 + 自定义布局 + 保存/设置) */}
+            <LayoutSwitcherMenu />
+
+            {/* 右侧 AI 面板切换按钮 (chat 模块未绑定到任何槽位时隐藏) */}
+            {chatBound && (
+              <button
+                onClick={toggleRightPanel}
+                className={`p-1.5 rounded-md transition-colors ${
+                  chatActive
+                    ? 'text-primary bg-primary/10 hover:bg-primary/20'
+                    : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
+                }`}
+                title={chatActive ? t('labels.hideAIPanel') : t('labels.showAIPanel')}
+                data-tauri-drag-region={false}
+              >
+                <PanelRight className="w-4 h-4" />
+              </button>
+            )}
 
             {isTauriEnv && (
               <>

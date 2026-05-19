@@ -3,6 +3,9 @@
  */
 
 export { ActivityBar } from './ActivityBar'
-export { LeftPanel, LeftPanelContent } from './LeftPanel'
-export { RightPanel } from './RightPanel'
 export { CenterStage, TabBar } from './CenterStage'
+export { LayoutShell } from './LayoutShell'
+export { LayoutDndProvider } from './LayoutDndProvider'
+export { SlotPanel } from './SlotPanel'
+export { ModuleRenderer, listRegisteredModules } from './ModuleRenderer'
+export { ModuleTabBar } from './ModuleTabBar'

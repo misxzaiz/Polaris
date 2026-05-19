@@ -12,11 +12,14 @@ export const todoPluginManifest: PolarisPluginManifest = {
       {
         id: 'todo.panel',
         area: 'activityBar',
-        panelType: 'todo',
+        moduleId: 'todo',
         icon: 'CheckSquare',
         labelKey: 'labels.todoPanel',
         labelDefault: 'Todo',
         order: 30,
+        allowedSlots: ['left', 'right', 'bottom'],
+        defaultSlot: 'left',
+        preferredSize: 320,
       },
     ],
     mcpServers: [

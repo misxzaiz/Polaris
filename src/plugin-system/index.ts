@@ -8,7 +8,6 @@ export {
 export type {
   PluginIconId,
   PluginId,
-  PluginLeftPanelType,
   PluginMcpServerContribution,
   PluginPermissionDeclaration,
   PluginViewArea,

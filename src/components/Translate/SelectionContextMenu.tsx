@@ -11,7 +11,8 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useTranslateStore, useConfigStore, useViewStore, useWorkspaceStore } from '../../stores';
+import { useTranslateStore, useConfigStore, useWorkspaceStore } from '../../stores';
+import { useLayoutStore } from '../../stores/layoutStore';
 import { useActiveSessionActions } from '../../stores/conversationStore/useActiveSession';
 import { baiduTranslate } from '../../services/tauri';
 import { Copy, Search, Languages, Quote, MessageSquare, Check, X, Send, Loader2 } from 'lucide-react';
@@ -47,7 +48,7 @@ export function SelectionContextMenu() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const config = useConfigStore((state) => state.config);
-  const setLeftPanelType = useViewStore((state) => state.setLeftPanelType);
+  const activateTranslate = useLayoutStore((state) => state.activateModule);
   const setSourceText = useTranslateStore((state) => state.setSourceText);
   const { sendMessage } = useActiveSessionActions();
   const currentWorkspace = useWorkspaceStore((state) => state.getCurrentWorkspace());
@@ -162,7 +163,7 @@ export function SelectionContextMenu() {
     if (!baiduConfig?.appId || !baiduConfig?.secretKey) {
       // 未配置则跳转到翻译面板
       setSourceText(selection.text);
-      setLeftPanelType('translate');
+      activateTranslate('translate');
       setSelection(null);
       return;
     }

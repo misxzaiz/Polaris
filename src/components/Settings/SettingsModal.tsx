@@ -27,6 +27,7 @@ import { AppUpdateTab } from './tabs/AppUpdateTab';
 import { LspTab } from './tabs/LspTab';
 import { WebTab } from './tabs/WebTab';
 import { PluginTab } from './tabs/PluginTab';
+import { LayoutTab } from './tabs/LayoutTab';
 import { createLogger } from '../../utils/logger';
 import { applyWebServer, getConfig } from '../../services/tauri/configService';
 import { currentMode } from '../../services/transport';
@@ -44,6 +45,7 @@ interface SettingsModalProps {
 // Tab 标题映射 - 使用 i18n key
 const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'general': 'nav.general',
+  'layout': 'nav.layout',
   'auto-mode': 'nav.autoMode',
   'plugins': 'nav.plugins',
   'system-prompt': 'nav.systemPrompt',
@@ -239,6 +241,10 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
 
               {activeTab === 'auto-mode' && (
                 <AutoModeTab />
+              )}
+
+              {activeTab === 'layout' && (
+                <LayoutTab />
               )}
 
               {activeTab === 'plugins' && (

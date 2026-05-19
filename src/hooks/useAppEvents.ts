@@ -11,7 +11,6 @@
 import { useEffect, useRef } from 'react';
 import { listen } from '../services/transport';
 import { useTabStore } from '../stores/tabStore';
-import { useViewStore } from '../stores/viewStore';
 import { initEditorFileChangeListener } from '../stores/fileEditorStore';
 import { useTerminalScriptStore } from '../stores/terminalScriptStore';
 import { sessionStoreManager } from '../stores/conversationStore';
@@ -71,17 +70,8 @@ export function useAppEvents() {
     };
   }, []);
 
-  // editor:closed → 隐藏编辑器视图
-  useEffect(() => {
-    const unlistenPromise = listen('editor:closed', () => {
-      log.info('editor:closed event, hiding editor view');
-      useViewStore.getState().setShowEditor(false);
-    });
-
-    return () => {
-      unlistenPromise.then(unlisten => unlisten());
-    };
-  }, []);
+  // editor:closed → tabStore 自身已经在 closeTab 中同步关闭,无需 viewStore 联动
+  // (历史上 viewStore.showEditor 用于切换布局,现已迁移到 layoutStore 槽位系统)
 
   // 文件系统变更监听
   useEffect(() => {

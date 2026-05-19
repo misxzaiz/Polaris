@@ -21,6 +21,7 @@
   "saveTab": "保存{{name}}",
   "nav": {
     "general": "通用",
+    "layout": "布局",
     "systemPrompt": "系统提示词",
     "promptSnippet": "快捷片段",
     "window": "窗口",

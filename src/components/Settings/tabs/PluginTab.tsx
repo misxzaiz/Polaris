@@ -520,7 +520,7 @@ export function PluginTab() {
                             className="inline-flex items-center gap-1 rounded border border-border-subtle px-2 py-1 text-xs text-text-secondary"
                           >
                             <Icon size={12} />
-                            {t(view.labelKey, { defaultValue: view.labelDefault ?? view.panelType })}
+                            {t(view.labelKey, { defaultValue: view.labelDefault ?? view.moduleId })}
                           </span>
                         )
                       })}

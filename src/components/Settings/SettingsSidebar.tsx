@@ -13,11 +13,12 @@ import {
   IconMic,
   IconMessageSquareText,
 } from '../Common/Icons';
-import { Download, Shield, Code2, Globe, Blocks } from 'lucide-react';
+import { Download, Shield, Code2, Globe, Blocks, LayoutGrid } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 export type SettingsTabId =
   | 'general'
+  | 'layout'
   | 'system-prompt'
   | 'prompt-snippet'
   | 'window'
@@ -48,6 +49,7 @@ interface SettingsSidebarProps {
 
 const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'general', icon: <IconGeneral size={16} />, labelKey: 'nav.general' },
+  { id: 'layout', icon: <LayoutGrid size={16} />, labelKey: 'nav.layout' },
   { id: 'system-prompt', icon: <IconMessageSquareText size={16} />, labelKey: 'nav.systemPrompt' },
   { id: 'prompt-snippet', icon: <IconMessageSquareText size={16} />, labelKey: 'nav.promptSnippet' },
   { id: 'window', icon: <IconSettings size={16} />, labelKey: 'nav.window' },

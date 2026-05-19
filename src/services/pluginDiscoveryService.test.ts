@@ -31,7 +31,7 @@ describe('pluginDiscoveryService', () => {
           {
             id: 'example.todo.panel',
             area: 'activityBar',
-            panelType: 'todo',
+            moduleId: 'todo',
             icon: 'CheckSquare',
             labelKey: 'todo:title',
             order: 120,
@@ -106,7 +106,7 @@ describe('pluginDiscoveryService', () => {
           {
             id: 'bad-view',
             area: 'activityBar',
-            panelType: 'unknown',
+            moduleId: 'unknown',
             icon: 'CheckSquare',
             labelKey: 'example:view',
           },
@@ -146,7 +146,7 @@ describe('pluginDiscoveryService', () => {
           {
             id: 'example.demo-mcp.panel',
             area: 'activityBar',
-            panelType: 'demoPlugin',
+            moduleId: 'demoPlugin',
             icon: 'Bot',
             labelKey: 'plugins.demoMcpPanel',
             labelDefault: 'Demo MCP',
@@ -163,10 +163,78 @@ describe('pluginDiscoveryService', () => {
 
     expect(plugin?.contributes.views).toEqual([
       expect.objectContaining({
-        panelType: 'demoPlugin',
+        moduleId: 'demoPlugin',
         icon: 'Bot',
       }),
     ])
+  })
+
+  it('preserves allowedSlots / defaultSlot / preferredSize / bareRender when discovering', () => {
+    const plugin = normalizeDiscoveredPlugin({
+      id: 'example.layout-aware',
+      name: 'Layout Aware',
+      version: '0.1.0',
+      enabledByDefault: true,
+      contributes: {
+        views: [
+          {
+            id: 'example.layout-aware.panel',
+            area: 'activityBar',
+            moduleId: 'todo',
+            icon: 'CheckSquare',
+            labelKey: 'example:view',
+            order: 200,
+            allowedSlots: ['left', 'bottom'],
+            defaultSlot: 'bottom',
+            preferredSize: 240,
+            bareRender: true,
+          },
+        ],
+      },
+      permissions: {},
+      source: { kind: 'user' },
+      installPath: 'C:\\Users\\sample\\plugins\\layout-aware',
+    })
+
+    expect(plugin?.contributes.views).toEqual([
+      expect.objectContaining({
+        moduleId: 'todo',
+        allowedSlots: ['left', 'bottom'],
+        defaultSlot: 'bottom',
+        preferredSize: 240,
+        bareRender: true,
+      }),
+    ])
+  })
+
+  it('drops unknown slot ids in allowedSlots and falls back when defaultSlot is invalid', () => {
+    const plugin = normalizeDiscoveredPlugin({
+      id: 'example.dirty-slots',
+      name: 'Dirty Slots',
+      version: '0.1.0',
+      enabledByDefault: true,
+      contributes: {
+        views: [
+          {
+            id: 'example.dirty-slots.panel',
+            area: 'activityBar',
+            moduleId: 'todo',
+            icon: 'CheckSquare',
+            labelKey: 'example:view',
+            order: 200,
+            allowedSlots: ['left', 'evil', 99, 'right'],
+            defaultSlot: 'galaxy',
+          },
+        ],
+      },
+      permissions: {},
+      source: { kind: 'user' },
+      installPath: 'C:\\Users\\sample\\plugins\\dirty-slots',
+    })
+
+    const view = plugin?.contributes.views?.[0]
+    expect(view?.allowedSlots).toEqual(['left', 'right'])
+    expect(view?.defaultSlot).toBeUndefined()
   })
 
   it('normalizes the long goal MCP plugin without a view contribution', () => {

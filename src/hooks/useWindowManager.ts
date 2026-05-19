@@ -12,6 +12,7 @@
 import { useEffect } from 'react';
 import { useConfigStore } from '../stores';
 import { useViewStore } from '../stores/viewStore';
+import { useLayoutStore } from '../stores/layoutStore';
 import { useWindowSize } from './useWindowSize';
 import * as tauri from '../services/tauri';
 import { createLogger } from '../utils/logger';
@@ -68,7 +69,7 @@ export function useWindowManager({ onOpenSettings, onToggleFileSearch }: UseWind
       }
       if (e.key === 'R' && e.shiftKey && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        if (useViewStore.getState().leftPanelType === 'terminal') {
+        if (useLayoutStore.getState().isModuleActive('terminal')) {
           window.dispatchEvent(new CustomEvent('terminal:open-runner'));
         } else {
           onToggleFileSearch();

@@ -97,7 +97,7 @@ describe('plugin MCP contributions', () => {
     expect(longGoalPlugin?.contributes.views).toEqual([
       expect.objectContaining({
         id: 'long-goal.panel',
-        panelType: 'longGoal',
+        moduleId: 'longGoal',
         icon: 'Target',
       }),
     ])
