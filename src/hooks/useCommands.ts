@@ -13,18 +13,38 @@ interface UseCommandsResult {
   recentIds: string[]
 }
 
+let cachedSnapshot: UseCommandsResult = {
+  commands: [],
+  recentIds: [],
+}
+
 function subscribe(listener: () => void): () => void {
   return commandRegistry.subscribe(listener)
 }
 
-// snapshot 必须是同步函数, 且引用稳定 (相同状态 → 相同对象)
-// 用一个简单的 memo: 每次内部状态变化时 commandRegistry 会 notify → React 重新调用 snapshot
-// 我们生成新对象, React 浅比较会发现不同 → re-render. 这是 OK 的因为 notify 频率很低.
+function sameCommands(a: Command[], b: Command[]): boolean {
+  return a.length === b.length && a.every((cmd, idx) => cmd === b[idx])
+}
+
+function sameStrings(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((value, idx) => value === b[idx])
+}
+
+// snapshot 必须是同步函数, 且在 registry 未变化时返回同一个引用.
+// React 会在提交阶段再次读取 snapshot; 若每次都返回新对象, 会触发无限重渲染.
 function getSnapshot(): UseCommandsResult {
-  return {
-    commands: commandRegistry.list(),
-    recentIds: commandRegistry.recentIds(),
+  const commands = commandRegistry.list()
+  const recentIds = commandRegistry.recentIds()
+
+  if (
+    sameCommands(commands, cachedSnapshot.commands) &&
+    sameStrings(recentIds, cachedSnapshot.recentIds)
+  ) {
+    return cachedSnapshot
   }
+
+  cachedSnapshot = { commands, recentIds }
+  return cachedSnapshot
 }
 
 export function useCommands(): UseCommandsResult {
