@@ -411,6 +411,16 @@ pub fn git_get_log(
     GitService::get_log(&path, limit, skip, branch.as_deref()).map_err(GitError::from)
 }
 
+/// 获取单个提交详情
+#[cfg_attr(feature = "tauri-app", tauri::command)]
+pub fn git_get_commit_details(
+    workspacePath: String,
+    commitSha: String,
+) -> Result<GitCommitDetails, GitError> {
+    let path = PathBuf::from(workspacePath);
+    GitService::get_commit_details(&path, &commitSha).map_err(GitError::from)
+}
+
 /// 批量暂存文件
 #[cfg_attr(feature = "tauri-app", tauri::command)]
 pub fn git_batch_stage(

@@ -17,7 +17,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 import { createCommitSlice } from './commitSlice'
 import { createStatusSlice } from './statusSlice'
 import type { GitState, CommitState, CommitActions, StatusState, StatusActions } from './types'
-import type { GitCommit, GitRepositoryStatus, BatchStageResult } from '@/types/git'
+import type { GitCommit, GitCommitDetails, GitRepositoryStatus, BatchStageResult } from '@/types/git'
 
 // 创建测试用的最小状态
 type TestState = CommitState &
@@ -31,6 +31,7 @@ function createTestStore() {
   return create<TestState>((...args) => ({
     // Commit 状态
     commits: [],
+    commitDetails: {},
 
     // 状态数据
     status: null,
@@ -405,6 +406,58 @@ describe('commitSlice', () => {
 
       expect(result).toEqual([])
       expect(store.getState().error).toBe('Invalid branch name')
+    })
+  })
+
+  describe('getCommitDetails', () => {
+    it('应成功获取并缓存提交详情', async () => {
+      const mockDetails: GitCommitDetails = {
+        commit: {
+          sha: 'abcdef1234567890',
+          shortSha: 'abcdef12',
+          message: 'Update file',
+          author: 'Test Author',
+          authorEmail: 'test@example.com',
+          timestamp: 1710000000,
+          parents: ['parent123'],
+        },
+        files: [
+          {
+            file_path: 'src/file.ts',
+            change_type: 'modified',
+            old_content: 'old',
+            new_content: 'new',
+            additions: 1,
+            deletions: 1,
+            is_binary: false,
+          },
+        ],
+        totalAdditions: 1,
+        totalDeletions: 1,
+      }
+      mockInvoke.mockResolvedValueOnce(mockDetails)
+
+      const store = createTestStore()
+      const result = await store.getState().getCommitDetails('/workspace', 'abcdef12')
+
+      expect(mockInvoke).toHaveBeenCalledWith('git_get_commit_details', {
+        workspacePath: '/workspace',
+        commitSha: 'abcdef12',
+      })
+      expect(result).toEqual(mockDetails)
+      expect(store.getState().commitDetails.abcdef1234567890).toEqual(mockDetails)
+      expect(store.getState().commitDetails.abcdef12).toEqual(mockDetails)
+    })
+
+    it('应正确处理提交详情错误', async () => {
+      mockInvoke.mockRejectedValueOnce(new Error('Commit not found'))
+
+      const store = createTestStore()
+      await expect(
+        store.getState().getCommitDetails('/workspace', 'missing')
+      ).rejects.toThrow('Commit not found')
+
+      expect(store.getState().error).toBe('Commit not found')
     })
   })
 })

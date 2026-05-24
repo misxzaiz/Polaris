@@ -83,6 +83,16 @@ export interface GitCommit {
 }
 
 /**
+ * Git 提交详情
+ */
+export interface GitCommitDetails {
+  commit: GitCommit
+  files: GitDiffEntry[]
+  totalAdditions: number
+  totalDeletions: number
+}
+
+/**
  * Git 分支
  */
 export interface GitBranch {

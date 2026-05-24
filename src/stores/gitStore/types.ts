@@ -20,6 +20,7 @@ import type {
   GitCherryPickResult,
   GitRevertResult,
   GitCommit,
+  GitCommitDetails,
   GitTag,
   GitBlameResult,
   BatchStageResult,
@@ -102,6 +103,7 @@ export interface TagState {
  */
 export interface CommitState {
   commits: GitCommit[]
+  commitDetails: Record<string, GitCommitDetails>
 }
 
 /**
@@ -187,6 +189,7 @@ export interface CommitActions {
   discardChanges: (workspacePath: string, filePath: string) => Promise<void>
   batchStage: (workspacePath: string, filePaths: string[]) => Promise<BatchStageResult>
   getLog: (workspacePath: string, limit?: number, skip?: number, branch?: string) => Promise<GitCommit[]>
+  getCommitDetails: (workspacePath: string, commitSha: string) => Promise<GitCommitDetails>
 }
 
 /**

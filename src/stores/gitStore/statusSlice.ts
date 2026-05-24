@@ -194,6 +194,7 @@ export const createStatusSlice: StatusSlice = (set, get) => ({
       tags: [],
       currentPR: null,
       commits: [],
+      commitDetails: {},
       stashList: [],
       error: null,
       selectedFilePath: null,

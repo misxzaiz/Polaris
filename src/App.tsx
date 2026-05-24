@@ -64,10 +64,12 @@ function App() {
   const pluginStates = usePluginStore(state => state.pluginStates);
   const rightPanelCollapsed = useViewStore(state => state.rightPanelCollapsed);
   const toggleRightPanel = useViewStore(state => state.toggleRightPanel);
+  const closeLeftPanel = useViewStore(state => state.closeLeftPanel);
   const showSessionHistory = useViewStore(state => state.showSessionHistory);
   const toggleSessionHistory = useViewStore(state => state.toggleSessionHistory);
   const multiSessionMode = useViewStore(state => state.multiSessionMode);
   const openDiffTab = useTabStore(state => state.openDiffTab);
+  const openGitTab = useTabStore(state => state.openGitTab);
   const hasOpenTabs = useTabStore(state => state.tabs.length > 0);
 
   // === 拆分后的 Hooks ===
@@ -119,6 +121,11 @@ function App() {
   // 右侧面板填充模式：无编辑器时自适应填充，有编辑器时固定宽度
   const rightPanelFillRemaining = !hasCenterStage;
 
+  const openGitWorkbench = useCallback(() => {
+    openGitTab();
+    closeLeftPanel();
+  }, [closeLeftPanel, openGitTab]);
+
   // === 渲染 ===
   const loadingFallback = (
     <div className="flex items-center justify-center h-full text-text-muted">{t('status.loading')}</div>
@@ -147,7 +154,7 @@ function App() {
             <LeftPanel>
               <LeftPanelContent
                 filesContent={<FileExplorer />}
-                gitContent={<GitPanel onOpenDiffInTab={(diff) => openDiffTab(diff)} />}
+                gitContent={<GitPanel onOpenDiffInTab={(diff) => openDiffTab(diff)} onOpenWorkbench={openGitWorkbench} />}
                 todoContent={<SimpleTodoPanel />}
                 translateContent={<TranslatePanel onSendToChat={sendMessage} />}
                 schedulerContent={<SchedulerPanel />}

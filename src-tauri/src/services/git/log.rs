@@ -5,8 +5,24 @@
 
 use std::path::Path;
 
-use crate::models::git::{GitBlameLine, GitBlameResult, GitCommit, GitServiceError};
+use git2::{DiffOptions, Oid, Repository};
+
+use crate::models::git::{GitBlameLine, GitBlameResult, GitCommit, GitCommitDetails, GitServiceError};
+use super::diff::convert_diff;
 use super::executor::open_repository;
+
+fn commit_to_model(commit: &git2::Commit<'_>) -> GitCommit {
+    let sha = commit.id().to_string();
+    GitCommit {
+        sha: sha.clone(),
+        short_sha: sha[..8.min(sha.len())].to_string(),
+        message: commit.message().unwrap_or("").to_string(),
+        author: commit.author().name().unwrap_or("").to_string(),
+        author_email: commit.author().email().unwrap_or("").to_string(),
+        timestamp: Some(commit.time().seconds()),
+        parents: commit.parent_ids().map(|id| id.to_string()).collect(),
+    }
+}
 
 /// 获取提交历史
 pub fn get_log(
@@ -42,18 +58,71 @@ pub fn get_log(
         let oid = oid_result?;
         let commit = repo.find_commit(oid)?;
 
-        commits.push(GitCommit {
-            sha: commit.id().to_string(),
-            short_sha: commit.id().to_string()[..8].to_string(),
-            message: commit.message().unwrap_or("").to_string(),
-            author: commit.author().name().unwrap_or("").to_string(),
-            author_email: commit.author().email().unwrap_or("").to_string(),
-            timestamp: Some(commit.time().seconds()),
-            parents: commit.parent_ids().map(|id| id.to_string()).collect(),
-        });
+        commits.push(commit_to_model(&commit));
     }
 
     Ok(commits)
+}
+
+/// 获取单个提交详情，包括该提交变更的文件和内容
+pub fn get_commit_details(
+    path: &Path,
+    commit_sha: &str,
+) -> Result<GitCommitDetails, GitServiceError> {
+    let repo = open_repository(path)?;
+    let commit = find_commit_by_prefix(&repo, commit_sha)?;
+    let commit_tree = commit.tree()?;
+    let parent_tree = if commit.parent_count() > 0 {
+        Some(commit.parent(0)?.tree()?)
+    } else {
+        None
+    };
+
+    let mut diff_opts = DiffOptions::new();
+    diff_opts.include_typechange(true);
+
+    let mut diff = repo.diff_tree_to_tree(
+        parent_tree.as_ref(),
+        Some(&commit_tree),
+        Some(&mut diff_opts),
+    )?;
+    diff.find_similar(None)?;
+
+    let files = convert_diff(&repo, &diff)?;
+    let total_additions = files.iter().map(|file| file.additions.unwrap_or(0)).sum();
+    let total_deletions = files.iter().map(|file| file.deletions.unwrap_or(0)).sum();
+
+    Ok(GitCommitDetails {
+        commit: commit_to_model(&commit),
+        files,
+        total_additions,
+        total_deletions,
+    })
+}
+
+fn find_commit_by_prefix<'repo>(
+    repo: &'repo Repository,
+    commit_sha: &str,
+) -> Result<git2::Commit<'repo>, GitServiceError> {
+    let trimmed = commit_sha.trim();
+    if trimmed.is_empty() {
+        return Err(GitServiceError::CommitNotFound(commit_sha.to_string()));
+    }
+
+    if let Ok(oid) = Oid::from_str(trimmed) {
+        return repo
+            .find_commit(oid)
+            .map_err(|_| GitServiceError::CommitNotFound(commit_sha.to_string()));
+    }
+
+    let object = repo
+        .revparse_single(trimmed)
+        .or_else(|_| repo.revparse_single(&format!("{}^{{commit}}", trimmed)))
+        .map_err(|_| GitServiceError::CommitNotFound(commit_sha.to_string()))?;
+
+    object
+        .peel_to_commit()
+        .map_err(|_| GitServiceError::CommitNotFound(commit_sha.to_string()))
 }
 
 /// 获取文件 Blame 信息

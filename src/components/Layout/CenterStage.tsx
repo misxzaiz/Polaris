@@ -6,12 +6,13 @@
 
 import { ReactNode, useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { X, FileDiff, FileText, Image as ImageIcon } from 'lucide-react'
+import { X, FileDiff, FileText, Image as ImageIcon, GitPullRequest } from 'lucide-react'
 import { useTabStore, Tab } from '@/stores/tabStore'
 import { useFileEditorStore } from '@/stores/fileEditorStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useFileExplorerStore } from '@/stores/fileExplorerStore'
 import { DiffViewer } from '@/components/Diff/DiffViewer'
+import { GitPanel } from '@/components/GitPanel'
 import { EditorPanel, BreadcrumbBar } from '@/components/Editor'
 import { TabContextMenu } from './TabContextMenu'
 import { ImagePreview } from '@/components/Preview/ImagePreview'
@@ -80,6 +81,9 @@ export function TabBar({ className = '' }: TabBarProps) {
     }
     if (tab.type === 'preview') {
       return <ImageIcon size={14} />
+    }
+    if (tab.type === 'git') {
+      return <GitPullRequest size={14} />
     }
     return <FileText size={14} />
   }
@@ -325,6 +329,7 @@ interface TabContentProps {
 export function TabContent({ className = '' }: TabContentProps) {
   const { t } = useTranslation('common')
   const activeTab = useTabStore((state) => state.getActiveTab())
+  const openDiffTab = useTabStore((state) => state.openDiffTab)
   const switchToFile = useFileEditorStore((state) => state.switchToFile)
 
   // Tab 切换时确保 fileEditorStore 加载正确的文件
@@ -375,8 +380,19 @@ export function TabContent({ className = '' }: TabContentProps) {
               newContent={activeTab.diffData?.new_content}
               changeType={activeTab.diffData?.change_type}
               statusHint={activeTab.diffData?.status_hint}
+              contentOmitted={activeTab.diffData?.content_omitted ?? false}
             />
           </div>
+        </div>
+      )
+
+    case 'git':
+      return (
+        <div className={`flex-1 flex flex-col overflow-hidden ${className}`}>
+          <GitPanel
+            variant="workbench"
+            onOpenDiffInTab={(diff) => openDiffTab(diff)}
+          />
         </div>
       )
 

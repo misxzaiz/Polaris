@@ -4,7 +4,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, GitPullRequest, X, Check, RotateCcw, MoreHorizontal, GitBranch, FolderGit2, FileText, History, Archive, Globe, Tag, GitCommit, FileX } from 'lucide-react'
+import { ChevronRight, GitPullRequest, X, Check, RotateCcw, MoreHorizontal, GitBranch, FolderGit2, FileText, History, Archive, Globe, Tag, GitCommit, FileX, Maximize2 } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useToastStore } from '@/stores/toastStore'
@@ -31,9 +31,11 @@ type TabType = 'changes' | 'history' | 'branch' | 'remote' | 'tags' | 'stash' | 
 interface GitPanelProps {
   className?: string
   onOpenDiffInTab?: (diff: GitDiffEntry) => void
+  onOpenWorkbench?: () => void
+  variant?: 'sidebar' | 'workbench'
 }
 
-export function GitPanel({ className = '', onOpenDiffInTab }: GitPanelProps) {
+export function GitPanel({ className = '', onOpenDiffInTab, onOpenWorkbench, variant = 'sidebar' }: GitPanelProps) {
   const { t } = useTranslation('git')
   const { status, isLoading, error, refreshStatus, getWorktreeFileDiff, getIndexFileDiff, stageFile, unstageFile, discardChanges, initRepository } = useGitStore()
   const currentWorkspace = useWorkspaceStore((s) => {
@@ -149,7 +151,8 @@ export function GitPanel({ className = '', onOpenDiffInTab }: GitPanelProps) {
     ]
 
     setSelectedFiles(prev => {
-      if (prev.size === allPaths.length && allPaths.length > 0) {
+      const selectedVisibleCount = allPaths.filter(path => prev.has(path)).length
+      if (selectedVisibleCount === allPaths.length && allPaths.length > 0) {
         return new Set()
       } else {
         return new Set(allPaths)
@@ -187,7 +190,7 @@ export function GitPanel({ className = '', onOpenDiffInTab }: GitPanelProps) {
       setBatchProgress(null)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- t is stable i18n function
-  }, [currentWorkspace, selectedFiles, stageFile, refreshStatus, toast, t])
+  }, [currentWorkspace, selectedFiles, status, stageFile, refreshStatus, toast, t])
 
   const handleBatchUnstage = useCallback(async () => {
     if (!currentWorkspace || selectedFiles.size === 0) return
@@ -278,6 +281,7 @@ export function GitPanel({ className = '', onOpenDiffInTab }: GitPanelProps) {
   }, [currentWorkspace, initBranchName, initRepository, toast, t])
 
   const useInternalDiff = !onOpenDiffInTab
+  const showWorkbenchButton = variant === 'sidebar' && !!onOpenWorkbench
 
   useEffect(() => {
     if (currentWorkspace) {
@@ -285,6 +289,30 @@ export function GitPanel({ className = '', onOpenDiffInTab }: GitPanelProps) {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshStatus triggers on workspace change
   }, [currentWorkspace?.path])
+
+  useEffect(() => {
+    setSelectedFiles(new Set())
+    setSelectedDiff(null)
+    setTargetCommitSha(null)
+  }, [currentWorkspace?.path])
+
+  useEffect(() => {
+    if (!status) {
+      setSelectedFiles(new Set())
+      return
+    }
+
+    const existingPaths = new Set([
+      ...status.staged.map(f => f.path),
+      ...status.unstaged.map(f => f.path),
+      ...status.untracked,
+    ])
+
+    setSelectedFiles(prev => {
+      const next = new Set(Array.from(prev).filter(path => existingPaths.has(path)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [status])
 
   const hasChanges =
     status &&
@@ -385,16 +413,27 @@ export function GitPanel({ className = '', onOpenDiffInTab }: GitPanelProps) {
           <GitPullRequest size={16} className="text-primary" />
           <span className="text-sm font-medium text-text-primary">{t('title')}</span>
         </div>
-        {useInternalDiff && selectedDiff && (
-          <button
-            onClick={handleCloseDiff}
-            className="p-1 text-text-tertiary hover:text-text-primary hover:bg-background-surface rounded transition-all"
-            title={t('closeDiff')}
-          >
-            <X size={14} />
-          </button>
-        )}
-        {!(useInternalDiff && selectedDiff) && <ChevronRight size={14} className="text-text-tertiary" />}
+        <div className="flex items-center gap-1">
+          {showWorkbenchButton && (
+            <button
+              onClick={onOpenWorkbench}
+              className="p-1 text-text-tertiary hover:text-primary hover:bg-background-surface rounded transition-all"
+              title={t('openWorkbench')}
+            >
+              <Maximize2 size={14} />
+            </button>
+          )}
+          {useInternalDiff && selectedDiff && (
+            <button
+              onClick={handleCloseDiff}
+              className="p-1 text-text-tertiary hover:text-text-primary hover:bg-background-surface rounded transition-all"
+              title={t('closeDiff')}
+            >
+              <X size={14} />
+            </button>
+          )}
+          {!(useInternalDiff && selectedDiff) && <ChevronRight size={14} className="text-text-tertiary" />}
+        </div>
       </div>
 
       {useInternalDiff && selectedDiff && (
@@ -551,6 +590,8 @@ export function GitPanel({ className = '', onOpenDiffInTab }: GitPanelProps) {
             <HistoryTab
               targetCommitSha={targetCommitSha}
               onCommitSelected={() => setTargetCommitSha(null)}
+              onOpenDiffInTab={onOpenDiffInTab}
+              variant={variant}
             />
           )}
           {activeTab === 'branch' && <BranchTab />}

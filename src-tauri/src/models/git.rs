@@ -159,6 +159,16 @@ pub struct GitCommit {
     pub parents: Vec<String>,
 }
 
+/// Git 提交详情
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitDetails {
+    pub commit: GitCommit,
+    pub files: Vec<GitDiffEntry>,
+    pub total_additions: usize,
+    pub total_deletions: usize,
+}
+
 // ============================================================================
 // Git 分支
 // ============================================================================

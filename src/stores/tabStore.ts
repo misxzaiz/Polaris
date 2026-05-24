@@ -10,7 +10,7 @@ import type { GitDiffEntry } from '@/types/git'
 import { useFileEditorStore } from './fileEditorStore'
 
 /** Tab 类型 */
-export type TabType = 'editor' | 'diff' | 'preview'
+export type TabType = 'editor' | 'diff' | 'preview' | 'git'
 
 /** Tab 数据结构 */
 export interface Tab {
@@ -38,6 +38,7 @@ interface TabActions {
   openEditorTab: (filePath: string, title?: string) => string
   openPreviewTab: (filePath: string, title?: string, metadata?: Record<string, any>) => string
   openDiffTab: (diff: GitDiffEntry) => string
+  openGitTab: () => string
   closeTab: (tabId: string) => void
   switchTab: (tabId: string) => void
   closeAllTabs: () => void
@@ -122,6 +123,31 @@ export const useTabStore = create<TabStore>()(
           title: `${fileName} (Diff)`,
           closable: true,
           diffData: diff,
+        }
+
+        set((state) => ({
+          tabs: [...state.tabs, newTab],
+          activeTabId: tabId,
+        }))
+
+        return tabId
+      },
+
+      // 打开 Git 工作台 Tab
+      openGitTab: () => {
+        const existingTab = get().tabs.find((tab) => tab.type === 'git')
+
+        if (existingTab) {
+          set({ activeTabId: existingTab.id })
+          return existingTab.id
+        }
+
+        const tabId = `git-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+        const newTab: Tab = {
+          id: tabId,
+          type: 'git',
+          title: 'Git',
+          closable: true,
         }
 
         set((state) => ({

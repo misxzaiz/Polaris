@@ -7,7 +7,7 @@
 import { invoke } from '@/services/transport'
 import type { CommitSlice } from './types'
 import { parseGitError } from './types'
-import type { GitCommit, BatchStageResult } from '@/types/git'
+import type { GitCommit, GitCommitDetails, BatchStageResult } from '@/types/git'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('GitStore')
@@ -18,6 +18,7 @@ const log = createLogger('GitStore')
 export const createCommitSlice: CommitSlice = (set, get) => ({
   // ===== 状态 =====
   commits: [],
+  commitDetails: {},
 
   // ===== 方法 =====
 
@@ -152,6 +153,27 @@ export const createCommitSlice: CommitSlice = (set, get) => ({
     } catch (err) {
       set({ error: parseGitError(err) })
       return []
+    }
+  },
+
+  // 获取单个提交详情
+  async getCommitDetails(workspacePath: string, commitSha: string) {
+    try {
+      const details = await invoke<GitCommitDetails>('git_get_commit_details', {
+        workspacePath,
+        commitSha,
+      })
+      set((state) => ({
+        commitDetails: {
+          ...state.commitDetails,
+          [details.commit.sha]: details,
+          [details.commit.shortSha]: details,
+        },
+      }))
+      return details
+    } catch (err) {
+      set({ error: parseGitError(err) })
+      throw err
     }
   },
 })

@@ -150,7 +150,7 @@ pub fn get_index_file_diff(path: &Path, file_path: &str) -> Result<GitDiffEntry,
 }
 
 /// 将 git2::Diff 转换为 GitDiffEntry
-fn convert_diff(repo: &Repository, diff: &Diff) -> Result<Vec<GitDiffEntry>, GitServiceError> {
+pub(super) fn convert_diff(repo: &Repository, diff: &Diff) -> Result<Vec<GitDiffEntry>, GitServiceError> {
     let mut entries = Vec::new();
 
     for delta in diff.deltas() {
