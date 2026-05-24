@@ -338,6 +338,16 @@ export function GitPanel({ className = '', onOpenDiffInTab, onOpenWorkbench, var
             <GitPullRequest size={16} className="text-primary" />
             <span className="text-sm font-medium text-text-primary">Git</span>
           </div>
+          {showWorkbenchButton && (
+            <button
+              type="button"
+              onClick={onOpenWorkbench}
+              className="p-1 text-text-tertiary hover:text-primary hover:bg-background-surface rounded transition-all"
+              title={t('openWorkbench')}
+            >
+              <Maximize2 size={14} />
+            </button>
+          )}
         </div>
         <div className="flex-1 flex flex-col items-center justify-center py-12 px-4 gap-4">
           <FolderGit2 size={48} className="text-text-tertiary opacity-50" />
@@ -416,6 +426,7 @@ export function GitPanel({ className = '', onOpenDiffInTab, onOpenWorkbench, var
         <div className="flex items-center gap-1">
           {showWorkbenchButton && (
             <button
+              type="button"
               onClick={onOpenWorkbench}
               className="p-1 text-text-tertiary hover:text-primary hover:bg-background-surface rounded transition-all"
               title={t('openWorkbench')}
@@ -425,6 +436,7 @@ export function GitPanel({ className = '', onOpenDiffInTab, onOpenWorkbench, var
           )}
           {useInternalDiff && selectedDiff && (
             <button
+              type="button"
               onClick={handleCloseDiff}
               className="p-1 text-text-tertiary hover:text-text-primary hover:bg-background-surface rounded transition-all"
               title={t('closeDiff')}

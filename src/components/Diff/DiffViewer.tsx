@@ -7,6 +7,9 @@ import { computeDiff } from '../../services/diffService';
 import { logger } from '@/utils/logger';
 import { useTranslation } from 'react-i18next';
 import type { DiffChangeType } from '@/types/git';
+import type { DiffLine } from '../../services/diffService';
+
+export type DiffViewMode = 'unified' | 'split';
 
 interface DiffViewerProps {
   /** 原始内容 */
@@ -27,6 +30,104 @@ interface DiffViewerProps {
   maxHeight?: string;
   /** 内容是否被省略（如文件过大） */
   contentOmitted?: boolean;
+  /** Diff 展示模式 */
+  viewMode?: DiffViewMode;
+}
+
+type SplitSideType = 'context' | 'added' | 'removed' | 'empty' | 'folded';
+
+interface SplitDiffRow {
+  oldLineNumber: number | null;
+  newLineNumber: number | null;
+  oldContent: string;
+  newContent: string;
+  oldType: SplitSideType;
+  newType: SplitSideType;
+}
+
+const isFoldedLine = (line: DiffLine) => line.content.startsWith('⋯') && line.content.endsWith('⋯');
+
+function buildSplitRows(lines: DiffLine[]): SplitDiffRow[] {
+  const rows: SplitDiffRow[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index];
+
+    if (isFoldedLine(line)) {
+      rows.push({
+        oldLineNumber: null,
+        newLineNumber: null,
+        oldContent: line.content,
+        newContent: line.content,
+        oldType: 'folded',
+        newType: 'folded',
+      });
+      index++;
+      continue;
+    }
+
+    if (line.type === 'context') {
+      rows.push({
+        oldLineNumber: line.oldLineNumber,
+        newLineNumber: line.newLineNumber,
+        oldContent: line.content,
+        newContent: line.content,
+        oldType: 'context',
+        newType: 'context',
+      });
+      index++;
+      continue;
+    }
+
+    if (line.type === 'removed') {
+      const removedLines: DiffLine[] = [];
+      const addedLines: DiffLine[] = [];
+
+      while (index < lines.length && lines[index].type === 'removed') {
+        removedLines.push(lines[index]);
+        index++;
+      }
+      while (index < lines.length && lines[index].type === 'added') {
+        addedLines.push(lines[index]);
+        index++;
+      }
+
+      const rowCount = Math.max(removedLines.length, addedLines.length);
+      for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
+        const oldLine = removedLines[rowIndex];
+        const newLine = addedLines[rowIndex];
+        rows.push({
+          oldLineNumber: oldLine?.oldLineNumber ?? null,
+          newLineNumber: newLine?.newLineNumber ?? null,
+          oldContent: oldLine?.content ?? '',
+          newContent: newLine?.content ?? '',
+          oldType: oldLine ? 'removed' : 'empty',
+          newType: newLine ? 'added' : 'empty',
+        });
+      }
+      continue;
+    }
+
+    const addedLines: DiffLine[] = [];
+    while (index < lines.length && lines[index].type === 'added') {
+      addedLines.push(lines[index]);
+      index++;
+    }
+
+    for (const addedLine of addedLines) {
+      rows.push({
+        oldLineNumber: null,
+        newLineNumber: addedLine.newLineNumber,
+        oldContent: '',
+        newContent: addedLine.content,
+        oldType: 'empty',
+        newType: 'added',
+      });
+    }
+  }
+
+  return rows;
 }
 
 /**
@@ -40,7 +141,8 @@ export function DiffViewer({
   statusHint,
   showStatusHint = true,
   maxHeight,
-  contentOmitted = false
+  contentOmitted = false,
+  viewMode = 'unified'
 }: DiffViewerProps) {
   const { t } = useTranslation('git');
 
@@ -84,6 +186,30 @@ export function DiffViewer({
   })()
 
   const diff = computeDiff(effectiveOldContent, effectiveNewContent);
+  const splitRows = viewMode === 'split' ? buildSplitRows(diff.lines) : [];
+
+  const renderSplitCell = (content: string, type: SplitSideType) => {
+    const isEmpty = type === 'empty';
+    const isFolded = type === 'folded';
+
+    return (
+      <span
+        className={`px-3 py-0.5 whitespace-pre ${
+          isFolded
+            ? 'text-text-tertiary italic text-center'
+            : type === 'removed'
+              ? 'bg-red-500/10 text-text-tertiary line-through'
+              : type === 'added'
+                ? 'bg-green-500/10 text-text-secondary'
+                : isEmpty
+                  ? 'bg-background-elevated/30 text-text-tertiary'
+                  : 'text-text-secondary'
+        }`}
+      >
+        {content || '\u00A0'}
+      </span>
+    );
+  };
 
   return (
     <div
@@ -125,6 +251,37 @@ export function DiffViewer({
       <div className="flex-1 overflow-auto p-4">
         {diff.lines.length === 0 ? (
           <div className="text-text-tertiary text-center py-8">{t('diff.noChanges')}</div>
+        ) : viewMode === 'split' ? (
+          <div className="min-w-[900px]">
+            <div className="grid grid-cols-[4rem_minmax(16rem,1fr)_4rem_minmax(16rem,1fr)] sticky top-0 z-10 bg-background-elevated border-b border-border text-xs text-text-tertiary">
+              <span className="px-2 py-1 text-right select-none">#</span>
+              <span className="px-3 py-1 font-sans">{t('diff.oldVersion')}</span>
+              <span className="px-2 py-1 text-right select-none">#</span>
+              <span className="px-3 py-1 font-sans">{t('diff.newVersion')}</span>
+            </div>
+            <div className="space-y-0.5">
+              {splitRows.map((row, idx) => {
+                const rowIsFolded = row.oldType === 'folded' && row.newType === 'folded';
+                return (
+                  <div
+                    key={idx}
+                    className={`grid grid-cols-[4rem_minmax(16rem,1fr)_4rem_minmax(16rem,1fr)] ${
+                      rowIsFolded ? 'bg-background-elevated/50' : ''
+                    }`}
+                  >
+                    <span className="px-2 py-0.5 text-right text-text-tertiary shrink-0 select-none border-r border-border-subtle">
+                      {row.oldLineNumber ?? (row.oldType === 'empty' ? '' : '×')}
+                    </span>
+                    {renderSplitCell(row.oldContent, row.oldType)}
+                    <span className="px-2 py-0.5 text-right text-text-tertiary shrink-0 select-none border-l border-r border-border-subtle">
+                      {row.newLineNumber ?? (row.newType === 'empty' ? '' : '×')}
+                    </span>
+                    {renderSplitCell(row.newContent, row.newType)}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         ) : (
           <div className="space-y-0.5">
             {diff.lines.map((line, idx) => {

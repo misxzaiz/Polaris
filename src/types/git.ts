@@ -93,6 +93,14 @@ export interface GitCommitDetails {
 }
 
 /**
+ * 单文件提交历史条目
+ */
+export interface GitFileHistoryEntry {
+  commit: GitCommit
+  file: GitDiffEntry
+}
+
+/**
  * Git 分支
  */
 export interface GitBranch {

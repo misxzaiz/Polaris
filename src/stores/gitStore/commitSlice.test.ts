@@ -17,7 +17,13 @@ vi.mock('@tauri-apps/api/core', () => ({
 import { createCommitSlice } from './commitSlice'
 import { createStatusSlice } from './statusSlice'
 import type { GitState, CommitState, CommitActions, StatusState, StatusActions } from './types'
-import type { GitCommit, GitCommitDetails, GitRepositoryStatus, BatchStageResult } from '@/types/git'
+import type {
+  GitCommit,
+  GitCommitDetails,
+  GitFileHistoryEntry,
+  GitRepositoryStatus,
+  BatchStageResult,
+} from '@/types/git'
 
 // 创建测试用的最小状态
 type TestState = CommitState &
@@ -458,6 +464,55 @@ describe('commitSlice', () => {
       ).rejects.toThrow('Commit not found')
 
       expect(store.getState().error).toBe('Commit not found')
+    })
+  })
+
+  describe('getFileHistory', () => {
+    it('应成功获取单文件提交历史', async () => {
+      const mockEntries: GitFileHistoryEntry[] = [
+        {
+          commit: {
+            sha: 'abcdef1234567890',
+            shortSha: 'abcdef12',
+            message: 'Update file',
+            author: 'Test Author',
+            authorEmail: 'test@example.com',
+            timestamp: 1710000000,
+            parents: ['parent123'],
+          },
+          file: {
+            file_path: 'src/file.ts',
+            change_type: 'modified',
+            old_content: 'old',
+            new_content: 'new',
+            additions: 1,
+            deletions: 1,
+            is_binary: false,
+          },
+        },
+      ]
+      mockInvoke.mockResolvedValueOnce(mockEntries)
+
+      const store = createTestStore()
+      const result = await store.getState().getFileHistory('/workspace', 'src/file.ts', 25, 50)
+
+      expect(mockInvoke).toHaveBeenCalledWith('git_get_file_history', {
+        workspacePath: '/workspace',
+        filePath: 'src/file.ts',
+        limit: 25,
+        skip: 50,
+      })
+      expect(result).toEqual(mockEntries)
+    })
+
+    it('应正确处理单文件历史错误', async () => {
+      mockInvoke.mockRejectedValueOnce(new Error('File history failed'))
+
+      const store = createTestStore()
+      const result = await store.getState().getFileHistory('/workspace', 'src/file.ts')
+
+      expect(result).toEqual([])
+      expect(store.getState().error).toBe('File history failed')
     })
   })
 })

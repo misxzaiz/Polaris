@@ -421,6 +421,18 @@ pub fn git_get_commit_details(
     GitService::get_commit_details(&path, &commitSha).map_err(GitError::from)
 }
 
+/// 获取单文件提交历史
+#[cfg_attr(feature = "tauri-app", tauri::command)]
+pub fn git_get_file_history(
+    workspacePath: String,
+    filePath: String,
+    limit: Option<usize>,
+    skip: Option<usize>,
+) -> Result<Vec<GitFileHistoryEntry>, GitError> {
+    let path = PathBuf::from(workspacePath);
+    GitService::get_file_history(&path, &filePath, limit, skip).map_err(GitError::from)
+}
+
 /// 批量暂存文件
 #[cfg_attr(feature = "tauri-app", tauri::command)]
 pub fn git_batch_stage(

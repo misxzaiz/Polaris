@@ -7,7 +7,7 @@
 import { invoke } from '@/services/transport'
 import type { CommitSlice } from './types'
 import { parseGitError } from './types'
-import type { GitCommit, GitCommitDetails, BatchStageResult } from '@/types/git'
+import type { GitCommit, GitCommitDetails, GitFileHistoryEntry, BatchStageResult } from '@/types/git'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('GitStore')
@@ -174,6 +174,21 @@ export const createCommitSlice: CommitSlice = (set, get) => ({
     } catch (err) {
       set({ error: parseGitError(err) })
       throw err
+    }
+  },
+
+  // 获取单文件提交历史
+  async getFileHistory(workspacePath: string, filePath: string, limit = 50, skip = 0) {
+    try {
+      return await invoke<GitFileHistoryEntry[]>('git_get_file_history', {
+        workspacePath,
+        filePath,
+        limit,
+        skip,
+      })
+    } catch (err) {
+      set({ error: parseGitError(err) })
+      return []
     }
   },
 })

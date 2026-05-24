@@ -7,7 +7,10 @@ use std::path::Path;
 
 use git2::{DiffOptions, Oid, Repository};
 
-use crate::models::git::{GitBlameLine, GitBlameResult, GitCommit, GitCommitDetails, GitServiceError};
+use crate::models::git::{
+    GitBlameLine, GitBlameResult, GitCommit, GitCommitDetails, GitFileHistoryEntry,
+    GitServiceError,
+};
 use super::diff::convert_diff;
 use super::executor::open_repository;
 
@@ -98,6 +101,88 @@ pub fn get_commit_details(
         total_additions,
         total_deletions,
     })
+}
+
+/// 获取单个文件的提交历史，并返回每次提交中该文件的 diff
+pub fn get_file_history(
+    path: &Path,
+    file_path: &str,
+    limit: Option<usize>,
+    skip: Option<usize>,
+) -> Result<Vec<GitFileHistoryEntry>, GitServiceError> {
+    let repo = open_repository(path)?;
+    let mut revwalk = repo.revwalk()?;
+
+    revwalk.set_sorting(git2::Sort::TIME)?;
+    revwalk.push_head()?;
+
+    let limit = limit.unwrap_or(50);
+    let skip = skip.unwrap_or(0);
+    let normalized_file_path = file_path.replace('\\', "/");
+
+    let mut matched_count = 0usize;
+    let mut entries = Vec::new();
+
+    for oid_result in revwalk {
+        if entries.len() >= limit {
+            break;
+        }
+
+        let oid = oid_result?;
+        let commit = repo.find_commit(oid)?;
+        let commit_tree = commit.tree()?;
+        let parent_tree = if commit.parent_count() > 0 {
+            Some(commit.parent(0)?.tree()?)
+        } else {
+            None
+        };
+
+        let mut diff_opts = DiffOptions::new();
+        diff_opts.include_typechange(true);
+        diff_opts.pathspec(file_path);
+
+        let mut diff = repo.diff_tree_to_tree(
+            parent_tree.as_ref(),
+            Some(&commit_tree),
+            Some(&mut diff_opts),
+        )?;
+        diff.find_similar(None)?;
+
+        let mut files = convert_diff(&repo, &diff)?;
+        if files.is_empty() {
+            continue;
+        }
+
+        let matching_index = files
+            .iter()
+            .position(|file| {
+                file.file_path.replace('\\', "/") == normalized_file_path
+                    || file.old_file_path
+                        .as_ref()
+                        .map(|old_path| old_path.replace('\\', "/") == normalized_file_path)
+                        .unwrap_or(false)
+            });
+        let file = matching_index
+            .map(|index| files.remove(index))
+            .or_else(|| files.into_iter().next());
+
+        let Some(file) = file else {
+            continue;
+        };
+
+        if matched_count < skip {
+            matched_count += 1;
+            continue;
+        }
+
+        matched_count += 1;
+        entries.push(GitFileHistoryEntry {
+            commit: commit_to_model(&commit),
+            file,
+        });
+    }
+
+    Ok(entries)
 }
 
 fn find_commit_by_prefix<'repo>(

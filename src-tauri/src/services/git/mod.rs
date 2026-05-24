@@ -36,7 +36,7 @@ pub use remote::{
     get_remotes, detect_git_host, add_remote, delete_remote,
     push_branch, push_set_upstream, create_pr, get_pr_status, pull,
 };
-pub use log::{get_log, get_commit_details, blame_file};
+pub use log::{get_log, get_commit_details, get_file_history, blame_file};
 pub use stash::{stash_save, stash_list, stash_pop, stash_drop};
 pub use gitignore::{get_gitignore, save_gitignore, add_to_gitignore, get_gitignore_templates};
 
@@ -44,8 +44,9 @@ use std::path::Path;
 
 use crate::models::git::{
     BatchStageResult, CreatePROptions, GitBlameResult, GitBranch, GitCherryPickResult,
-    GitCommit, GitCommitDetails, GitDiffEntry, GitIgnoreResult, GitIgnoreTemplate, GitMergeResult, GitPullResult,
-    GitRebaseResult, GitRemote, GitRepositoryStatus, GitRevertResult, GitStashEntry, GitTag,
+    GitCommit, GitCommitDetails, GitDiffEntry, GitFileHistoryEntry, GitIgnoreResult,
+    GitIgnoreTemplate, GitMergeResult, GitPullResult, GitRebaseResult, GitRemote,
+    GitRepositoryStatus, GitRevertResult, GitStashEntry, GitTag,
     GitServiceError, PullRequest,
 };
 
@@ -341,6 +342,16 @@ impl GitService {
         commit_sha: &str,
     ) -> Result<GitCommitDetails, GitServiceError> {
         get_commit_details(path, commit_sha)
+    }
+
+    /// 获取单文件提交历史
+    pub fn get_file_history(
+        path: &Path,
+        file_path: &str,
+        limit: Option<usize>,
+        skip: Option<usize>,
+    ) -> Result<Vec<GitFileHistoryEntry>, GitServiceError> {
+        get_file_history(path, file_path, limit, skip)
     }
 
     /// 获取文件 Blame 信息

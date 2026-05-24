@@ -142,6 +142,7 @@ pub async fn handle_ipc_bridge(
         "git_get_diffs" => dispatch_git_get_diffs(&args),
         "git_get_log" => dispatch_git_get_log(&args),
         "git_get_commit_details" => dispatch_git_get_commit_details(&args),
+        "git_get_file_history" => dispatch_git_get_file_history(&args),
         "git_init_repository" => dispatch_git_init_repository(&args),
         "git_commit_changes" => dispatch_git_commit_changes(&args).await,
         "git_create_branch" => dispatch_git_create_branch(&args),
@@ -938,6 +939,14 @@ fn dispatch_git_get_commit_details(args: &Value) -> Result<Json<Value>, WebError
     let wp = require_string(args, "workspacePath")?;
     let commit_sha = require_string(args, "commitSha")?;
     Ok(Json(serde_json::to_value(crate::commands::git::git_get_commit_details(wp, commit_sha).map_err(git_err)?).unwrap_or_default()))
+}
+
+fn dispatch_git_get_file_history(args: &Value) -> Result<Json<Value>, WebError> {
+    let wp = require_string(args, "workspacePath")?;
+    let file_path = require_string(args, "filePath")?;
+    let limit = args.get("limit").and_then(|v| v.as_u64()).map(|n| n as usize);
+    let skip = args.get("skip").and_then(|v| v.as_u64()).map(|n| n as usize);
+    Ok(Json(serde_json::to_value(crate::commands::git::git_get_file_history(wp, file_path, limit, skip).map_err(git_err)?).unwrap_or_default()))
 }
 
 fn dispatch_git_init_repository(args: &Value) -> Result<Json<Value>, WebError> {

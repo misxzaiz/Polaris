@@ -21,6 +21,7 @@ import type {
   GitRevertResult,
   GitCommit,
   GitCommitDetails,
+  GitFileHistoryEntry,
   GitTag,
   GitBlameResult,
   BatchStageResult,
@@ -190,6 +191,7 @@ export interface CommitActions {
   batchStage: (workspacePath: string, filePaths: string[]) => Promise<BatchStageResult>
   getLog: (workspacePath: string, limit?: number, skip?: number, branch?: string) => Promise<GitCommit[]>
   getCommitDetails: (workspacePath: string, commitSha: string) => Promise<GitCommitDetails>
+  getFileHistory: (workspacePath: string, filePath: string, limit?: number, skip?: number) => Promise<GitFileHistoryEntry[]>
 }
 
 /**

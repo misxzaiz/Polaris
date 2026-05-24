@@ -169,6 +169,14 @@ pub struct GitCommitDetails {
     pub total_deletions: usize,
 }
 
+/// 单文件提交历史条目
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitFileHistoryEntry {
+    pub commit: GitCommit,
+    pub file: GitDiffEntry,
+}
+
 // ============================================================================
 // Git 分支
 // ============================================================================
