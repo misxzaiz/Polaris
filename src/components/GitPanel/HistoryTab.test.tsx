@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { HistoryTab } from './HistoryTab'
 import { useGitStore } from '@/stores/gitStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
-import type { GitCommit, GitCommitDetails, GitDiffEntry, GitFileHistoryEntry } from '@/types/git'
+import type { GitBranch, GitCommit, GitCommitDetails, GitDiffEntry, GitFileHistoryEntry } from '@/types/git'
 import type { GitState } from '@/stores/gitStore'
 
 vi.mock('@/components/Diff/DiffViewer', () => ({
@@ -30,6 +30,21 @@ const commits: GitCommit[] = [
     authorEmail: 'bob@example.com',
     timestamp: 1_700_000_100,
     parents: ['1111111111111111111111111111111111111111'],
+  },
+]
+
+const branches: GitBranch[] = [
+  {
+    name: 'main',
+    isCurrent: true,
+    isRemote: false,
+    commit: commits[0].sha,
+  },
+  {
+    name: 'feature/history',
+    isCurrent: false,
+    isRemote: false,
+    commit: commits[1].sha,
   },
 ]
 
@@ -90,6 +105,7 @@ describe('HistoryTab', () => {
   const getLog = vi.fn()
   const getCommitDetails = vi.fn()
   const getFileHistory = vi.fn()
+  const getBranches = vi.fn()
   const clipboardWriteText = vi.fn()
 
   beforeEach(() => {
@@ -103,6 +119,7 @@ describe('HistoryTab', () => {
 
     getLog.mockResolvedValue(commits)
     getFileHistory.mockResolvedValue(fileHistoryEntries)
+    getBranches.mockResolvedValue(undefined)
     getCommitDetails.mockImplementation((_workspacePath: string, sha: string) => {
       const commit = commits.find((item) => item.sha === sha) ?? commits[0]
       return Promise.resolve(detailsFor(commit))
@@ -112,6 +129,14 @@ describe('HistoryTab', () => {
       getLog: getLog as unknown as GitState['getLog'],
       getCommitDetails: getCommitDetails as unknown as GitState['getCommitDetails'],
       getFileHistory: getFileHistory as unknown as GitState['getFileHistory'],
+      getBranches: getBranches as unknown as GitState['getBranches'],
+      branches,
+      status: {
+        branch: 'main',
+        staged: [],
+        unstaged: [],
+        untracked: [],
+      } as unknown as GitState['status'],
       commitDetails: {},
     })
 
@@ -146,6 +171,34 @@ describe('HistoryTab', () => {
     fireEvent.click(screen.getByTitle('history.clearSearch'))
 
     expect(await screen.findByText('Fix search panel')).toBeInTheDocument()
+  })
+
+  it('filters commit history by branch without checking out that branch', async () => {
+    render(<HistoryTab variant="workbench" />)
+
+    await waitFor(() => {
+      expect(getBranches).toHaveBeenCalledWith('D:/repo')
+    })
+    await waitFor(() => {
+      expect(getLog).toHaveBeenCalledWith('D:/repo', 20, 0, undefined)
+    })
+
+    fireEvent.change(screen.getByLabelText('history.branchFilter'), {
+      target: { value: 'feature/history' },
+    })
+
+    await waitFor(() => {
+      expect(getLog).toHaveBeenLastCalledWith('D:/repo', 20, 0, 'feature/history')
+    })
+
+    await waitFor(() => {
+      expect(screen.getAllByTitle('history.viewFileHistory').length).toBeGreaterThan(0)
+    })
+    fireEvent.click(screen.getAllByTitle('history.viewFileHistory')[0])
+
+    await waitFor(() => {
+      expect(getFileHistory).toHaveBeenLastCalledWith('D:/repo', 'src/App.tsx', 20, 0, 'feature/history')
+    })
   })
 
   it('auto-selects the latest commit in workbench mode and can close details', async () => {
@@ -240,6 +293,19 @@ describe('HistoryTab', () => {
     expect(screen.getByTestId('diff-viewer')).toHaveAttribute('data-view-mode', 'split')
   })
 
+  it('opens the selected history file in the editor with a workspace path', async () => {
+    const onOpenFileInEditor = vi.fn()
+    render(<HistoryTab variant="workbench" onOpenFileInEditor={onOpenFileInEditor} />)
+
+    await waitFor(() => {
+      expect(getCommitDetails).toHaveBeenCalledWith('D:/repo', commits[0].sha)
+    })
+
+    fireEvent.click(screen.getByTitle('history.openFileInEditor'))
+
+    expect(onOpenFileInEditor).toHaveBeenCalledWith('D:/repo/src/App.tsx')
+  })
+
   it('opens a focused file history view from a changed file and can return', async () => {
     render(<HistoryTab variant="workbench" />)
 
@@ -250,7 +316,7 @@ describe('HistoryTab', () => {
     fireEvent.click(screen.getAllByTitle('history.viewFileHistory')[0])
 
     await waitFor(() => {
-      expect(getFileHistory).toHaveBeenCalledWith('D:/repo', 'src/App.tsx', 20, 0)
+      expect(getFileHistory).toHaveBeenCalledWith('D:/repo', 'src/App.tsx', 20, 0, undefined)
     })
 
     expect(await screen.findByText('history.fileHistoryTitle')).toBeInTheDocument()

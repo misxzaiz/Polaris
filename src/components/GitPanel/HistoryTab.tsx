@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import type { PointerEvent as ReactPointerEvent } from 'react'
+import type { ChangeEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   GitCommit as GitCommitIcon,
@@ -27,6 +27,7 @@ import {
   Columns2,
   ArrowLeft,
   FileClock,
+  GitBranch as GitBranchIcon,
 } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -96,6 +97,7 @@ interface HistoryTabProps {
   targetCommitSha?: string | null
   onCommitSelected?: () => void
   onOpenDiffInTab?: (diff: GitDiffEntry) => void
+  onOpenFileInEditor?: (filePath: string) => void
   variant?: 'sidebar' | 'workbench'
 }
 
@@ -103,6 +105,7 @@ export function HistoryTab({
   targetCommitSha,
   onCommitSelected,
   onOpenDiffInTab,
+  onOpenFileInEditor,
   variant = 'sidebar',
 }: HistoryTabProps) {
   const { t } = useTranslation('git')
@@ -122,6 +125,7 @@ export function HistoryTab({
   const [fileHistoryEntries, setFileHistoryEntries] = useState<GitFileHistoryEntry[]>([])
   const [fileHistoryHasMore, setFileHistoryHasMore] = useState(true)
   const [fileHistoryTotalCount, setFileHistoryTotalCount] = useState(0)
+  const [selectedBranch, setSelectedBranch] = useState('')
   const [fileSearchQuery, setFileSearchQuery] = useState('')
   const [fileListMode, setFileListMode] = useState<FileListMode>(getInitialFileListMode)
   const [diffViewMode, setDiffViewMode] = useState<DiffViewMode>(getInitialDiffViewMode)
@@ -148,6 +152,9 @@ export function HistoryTab({
   const getLog = useGitStore((s) => s.getLog)
   const getCommitDetails = useGitStore((s) => s.getCommitDetails)
   const getFileHistory = useGitStore((s) => s.getFileHistory)
+  const branches = useGitStore((s) => s.branches)
+  const getBranches = useGitStore((s) => s.getBranches)
+  const currentBranchName = useGitStore((s) => s.status?.branch ?? '')
   const currentWorkspace = useWorkspaceStore((s) => {
     const { workspaces, currentWorkspaceId, viewingWorkspaceId } = s
     const targetId = viewingWorkspaceId || currentWorkspaceId
@@ -161,6 +168,16 @@ export function HistoryTab({
   const noWorkspaceError = t('errors.noWorkspace')
   const rootDirectoryLabel = t('history.rootDirectory')
 
+  const resolveWorkspaceFilePath = useCallback((filePath: string) => {
+    if (!currentWorkspace) return filePath
+    if (/^(?:[a-zA-Z]:[\\/]|\\\\|\/)/.test(filePath)) return filePath
+
+    const separator = currentWorkspace.path.includes('\\') ? '\\' : '/'
+    const basePath = currentWorkspace.path.replace(/[\\/]+$/, '')
+    const relativePath = filePath.replace(/^[\\/]+/, '').replace(/[\\/]/g, separator)
+    return `${basePath}${separator}${relativePath}`
+  }, [currentWorkspace])
+
   const clearSelection = useCallback(() => {
     detailsRequestRef.current += 1
     setSelectedCommit(null)
@@ -172,8 +189,25 @@ export function HistoryTab({
     setCopiedAction(null)
   }, [])
 
+  const clearFileHistoryMode = useCallback(() => {
+    setFileHistoryPath(null)
+    setFileHistoryEntries([])
+    setFileHistoryHasMore(true)
+    setFileHistoryTotalCount(0)
+  }, [])
+
   const normalizedSearchQuery = searchQuery.trim().toLowerCase()
   const normalizedFileSearchQuery = fileSearchQuery.trim().toLowerCase()
+
+  const branchOptions = useMemo(() => {
+    const seen = new Set<string>()
+    return branches.filter((branch) => {
+      if (!branch.name || seen.has(branch.name)) return false
+      if (branch.name === currentBranchName) return false
+      seen.add(branch.name)
+      return true
+    })
+  }, [branches, currentBranchName])
 
   const filteredCommits = useMemo(() => {
     if (!normalizedSearchQuery) return commits
@@ -326,8 +360,8 @@ export function HistoryTab({
     setHasMore(true)
 
     try {
-      log.debug('Loading commits', { path: currentWorkspace.path })
-      const result = await getLog(currentWorkspace.path, PAGE_SIZE, 0)
+      log.debug('Loading commits', { path: currentWorkspace.path, branch: selectedBranch || null })
+      const result = await getLog(currentWorkspace.path, PAGE_SIZE, 0, selectedBranch || undefined)
       log.debug('Loaded commits', { count: result.length })
 
       setCommits(result)
@@ -347,7 +381,16 @@ export function HistoryTab({
     } finally {
       setIsLoading(false)
     }
-  }, [clearSelection, currentWorkspace, getLog, isWorkbench, loadCommitDetails, noWorkspaceError, targetCommitSha])
+  }, [
+    clearSelection,
+    currentWorkspace,
+    getLog,
+    isWorkbench,
+    loadCommitDetails,
+    noWorkspaceError,
+    selectedBranch,
+    targetCommitSha,
+  ])
 
   // 加载更多提交
   const loadMoreCommits = useCallback(async () => {
@@ -357,7 +400,7 @@ export function HistoryTab({
 
     try {
       const skip = commits.length
-      const result = await getLog(currentWorkspace.path, PAGE_SIZE, skip)
+      const result = await getLog(currentWorkspace.path, PAGE_SIZE, skip, selectedBranch || undefined)
 
       if (result.length === 0) {
         setHasMore(false)
@@ -371,7 +414,7 @@ export function HistoryTab({
     } finally {
       setIsLoadingMore(false)
     }
-  }, [currentWorkspace, commits.length, isLoadingMore, hasMore, getLog])
+  }, [currentWorkspace, commits.length, getLog, hasMore, isLoadingMore, selectedBranch])
 
   const loadFileHistory = useCallback(async (filePath: string) => {
     if (!currentWorkspace) {
@@ -388,7 +431,13 @@ export function HistoryTab({
     setSearchQuery('')
 
     try {
-      const result = await getFileHistory(currentWorkspace.path, filePath, PAGE_SIZE, 0)
+      const result = await getFileHistory(
+        currentWorkspace.path,
+        filePath,
+        PAGE_SIZE,
+        0,
+        selectedBranch || undefined
+      )
       setFileHistoryEntries(result)
       setFileHistoryHasMore(result.length === PAGE_SIZE)
       setFileHistoryTotalCount(result.length)
@@ -404,7 +453,14 @@ export function HistoryTab({
     } finally {
       setIsLoading(false)
     }
-  }, [clearSelection, currentWorkspace, getFileHistory, noWorkspaceError, selectFileHistoryEntry])
+  }, [
+    clearSelection,
+    currentWorkspace,
+    getFileHistory,
+    noWorkspaceError,
+    selectFileHistoryEntry,
+    selectedBranch,
+  ])
 
   const loadMoreFileHistory = useCallback(async () => {
     if (!currentWorkspace || !fileHistoryPath || isLoadingMore || !fileHistoryHasMore) return
@@ -416,7 +472,8 @@ export function HistoryTab({
         currentWorkspace.path,
         fileHistoryPath,
         PAGE_SIZE,
-        fileHistoryEntries.length
+        fileHistoryEntries.length,
+        selectedBranch || undefined
       )
 
       if (result.length === 0) {
@@ -438,6 +495,7 @@ export function HistoryTab({
     fileHistoryPath,
     getFileHistory,
     isLoadingMore,
+    selectedBranch,
   ])
 
   // 滚动加载更多
@@ -459,6 +517,11 @@ export function HistoryTab({
   useEffect(() => {
     loadCommits()
   }, [loadCommits])
+
+  useEffect(() => {
+    if (!currentWorkspace) return
+    void getBranches(currentWorkspace.path)
+  }, [currentWorkspace?.path, getBranches])
 
   useEffect(() => {
     writeLocalStorage(FILE_LIST_MODE_STORAGE_KEY, fileListMode)
@@ -491,12 +554,10 @@ export function HistoryTab({
 
   useEffect(() => {
     hasAutoSelectedRef.current = false
-    setFileHistoryPath(null)
-    setFileHistoryEntries([])
-    setFileHistoryHasMore(true)
-    setFileHistoryTotalCount(0)
+    setSelectedBranch('')
+    clearFileHistoryMode()
     clearSelection()
-  }, [clearSelection, currentWorkspace?.path])
+  }, [clearFileHistoryMode, clearSelection, currentWorkspace?.path])
 
   // 处理从 Blame 跳转
   useEffect(() => {
@@ -540,18 +601,26 @@ export function HistoryTab({
     loadCommits()
   }, [fileHistoryPath, loadCommits, loadFileHistory])
 
+  const handleBranchFilterChange = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
+    const nextBranch = event.target.value
+    if (nextBranch === selectedBranch) return
+
+    setSelectedBranch(nextBranch)
+    setSearchQuery('')
+    hasAutoSelectedRef.current = false
+    clearFileHistoryMode()
+    clearSelection()
+  }, [clearFileHistoryMode, clearSelection, selectedBranch])
+
   const handleExitFileHistory = useCallback(() => {
-    setFileHistoryPath(null)
-    setFileHistoryEntries([])
-    setFileHistoryHasMore(true)
-    setFileHistoryTotalCount(0)
+    clearFileHistoryMode()
     setSearchQuery('')
     clearSelection()
 
     if (isWorkbench && commits[0]) {
       void loadCommitDetails(commits[0])
     }
-  }, [clearSelection, commits, isWorkbench, loadCommitDetails])
+  }, [clearFileHistoryMode, clearSelection, commits, isWorkbench, loadCommitDetails])
 
   const copyText = useCallback(async (text: string | undefined, action: CopyAction) => {
     if (!text) return
@@ -996,6 +1065,16 @@ export function HistoryTab({
                     <span className="flex-1 text-xs font-medium text-text-secondary truncate">
                       {selectedFileDiff.file_path}
                     </span>
+                    {onOpenFileInEditor && selectedFileDiff.change_type !== 'deleted' && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenFileInEditor(resolveWorkspaceFilePath(selectedFileDiff.file_path))}
+                        className="p-1 text-text-tertiary hover:text-primary hover:bg-background-hover rounded transition-colors shrink-0"
+                        title={t('history.openFileInEditor')}
+                      >
+                        <FileText size={14} />
+                      </button>
+                    )}
                     <div className="flex items-center bg-background-base border border-border rounded shrink-0">
                       <button
                         type="button"
@@ -1078,15 +1157,40 @@ export function HistoryTab({
             )}
           </div>
         </div>
-        <button
-          type="button"
-          onClick={handleRefresh}
-          disabled={isLoading}
-          className="p-1 text-text-tertiary hover:text-text-primary hover:bg-background-hover rounded transition-colors disabled:opacity-50"
-          title={t('refreshStatus')}
-        >
-          <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
-        </button>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <label
+            className="h-7 max-w-[180px] flex items-center gap-1.5 px-2 bg-background-surface border border-border rounded text-text-tertiary focus-within:ring-1 focus-within:ring-primary"
+            title={t('history.branchFilter')}
+          >
+            <GitBranchIcon size={13} className="shrink-0" />
+            <select
+              value={selectedBranch}
+              onChange={handleBranchFilterChange}
+              aria-label={t('history.branchFilter')}
+              className="min-w-0 max-w-[140px] bg-transparent text-xs text-text-secondary focus:outline-none"
+            >
+              <option value="">
+                {t('history.currentBranchFilter', {
+                  branch: currentBranchName || t('history.head'),
+                })}
+              </option>
+              {branchOptions.map((branch) => (
+                <option key={branch.name} value={branch.name}>
+                  {branch.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={isLoading}
+            className="p-1 text-text-tertiary hover:text-text-primary hover:bg-background-hover rounded transition-colors disabled:opacity-50"
+            title={t('refreshStatus')}
+          >
+            <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
+          </button>
+        </div>
       </div>
 
       <div className="px-3 py-2 border-b border-border-subtle shrink-0">

@@ -28,6 +28,10 @@ export interface Tab {
   isDirty?: boolean
 }
 
+export interface OpenGitTabOptions {
+  initialGitTab?: string
+}
+
 interface TabState {
   tabs: Tab[]
   activeTabId: string | null
@@ -38,7 +42,7 @@ interface TabActions {
   openEditorTab: (filePath: string, title?: string) => string
   openPreviewTab: (filePath: string, title?: string, metadata?: Record<string, any>) => string
   openDiffTab: (diff: GitDiffEntry) => string
-  openGitTab: () => string
+  openGitTab: (options?: OpenGitTabOptions) => string
   closeTab: (tabId: string) => void
   switchTab: (tabId: string) => void
   closeAllTabs: () => void
@@ -134,11 +138,21 @@ export const useTabStore = create<TabStore>()(
       },
 
       // 打开 Git 工作台 Tab
-      openGitTab: () => {
+      openGitTab: (options) => {
         const existingTab = get().tabs.find((tab) => tab.type === 'git')
+        const metadata = options
+          ? { ...options, gitFocusToken: Date.now() }
+          : { gitFocusToken: Date.now() }
 
         if (existingTab) {
-          set({ activeTabId: existingTab.id })
+          set((state) => ({
+            tabs: state.tabs.map((tab) =>
+              tab.id === existingTab.id
+                ? { ...tab, metadata: { ...tab.metadata, ...metadata } }
+                : tab
+            ),
+            activeTabId: existingTab.id,
+          }))
           return existingTab.id
         }
 
@@ -148,6 +162,7 @@ export const useTabStore = create<TabStore>()(
           type: 'git',
           title: 'Git',
           closable: true,
+          metadata,
         }
 
         set((state) => ({

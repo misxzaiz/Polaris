@@ -494,13 +494,14 @@ describe('commitSlice', () => {
       mockInvoke.mockResolvedValueOnce(mockEntries)
 
       const store = createTestStore()
-      const result = await store.getState().getFileHistory('/workspace', 'src/file.ts', 25, 50)
+      const result = await store.getState().getFileHistory('/workspace', 'src/file.ts', 25, 50, 'feature')
 
       expect(mockInvoke).toHaveBeenCalledWith('git_get_file_history', {
         workspacePath: '/workspace',
         filePath: 'src/file.ts',
         limit: 25,
         skip: 50,
+        branch: 'feature',
       })
       expect(result).toEqual(mockEntries)
     })
@@ -511,6 +512,13 @@ describe('commitSlice', () => {
       const store = createTestStore()
       const result = await store.getState().getFileHistory('/workspace', 'src/file.ts')
 
+      expect(mockInvoke).toHaveBeenCalledWith('git_get_file_history', {
+        workspacePath: '/workspace',
+        filePath: 'src/file.ts',
+        limit: 50,
+        skip: 0,
+        branch: null,
+      })
       expect(result).toEqual([])
       expect(store.getState().error).toBe('File history failed')
     })

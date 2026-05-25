@@ -1,5 +1,5 @@
 {
-  "title": "Git(Not recommended for use temporarily)",
+  "title": "Git",
   "notGitRepo": "Not a Git repository",
   "emptyRepo": "Empty repository (no commits)",
   "noCommits": "No commits",
@@ -227,6 +227,8 @@
     "fileHistoryTitle": "File History",
     "viewFileHistory": "View this file's history",
     "backToCommitHistory": "Back to commit history",
+    "branchFilter": "History scope",
+    "currentBranchFilter": "Current branch: {{branch}}",
     "viewMore": "View more",
     "noCommits": "No commits yet",
     "noFileHistory": "No history found for this file",
@@ -244,6 +246,7 @@
     "noFileChanges": "This commit has no file changes",
     "mergeCommit": "Merge commit",
     "openDiffInEditor": "Open Diff in editor",
+    "openFileInEditor": "Open file in editor",
     "closeDetails": "Close details",
     "copySha": "Copy commit SHA",
     "copyMessage": "Copy commit message",

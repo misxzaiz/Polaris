@@ -946,7 +946,8 @@ fn dispatch_git_get_file_history(args: &Value) -> Result<Json<Value>, WebError> 
     let file_path = require_string(args, "filePath")?;
     let limit = args.get("limit").and_then(|v| v.as_u64()).map(|n| n as usize);
     let skip = args.get("skip").and_then(|v| v.as_u64()).map(|n| n as usize);
-    Ok(Json(serde_json::to_value(crate::commands::git::git_get_file_history(wp, file_path, limit, skip).map_err(git_err)?).unwrap_or_default()))
+    let branch = args.get("branch").and_then(|v| v.as_str()).map(String::from);
+    Ok(Json(serde_json::to_value(crate::commands::git::git_get_file_history(wp, file_path, limit, skip, branch).map_err(git_err)?).unwrap_or_default()))
 }
 
 fn dispatch_git_init_repository(args: &Value) -> Result<Json<Value>, WebError> {

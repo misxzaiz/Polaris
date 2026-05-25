@@ -27,6 +27,39 @@ fn commit_to_model(commit: &git2::Commit<'_>) -> GitCommit {
     }
 }
 
+fn push_history_tip(
+    repo: &Repository,
+    revwalk: &mut git2::Revwalk<'_>,
+    branch: Option<&str>,
+) -> Result<(), GitServiceError> {
+    let Some(branch_name) = branch.map(str::trim).filter(|name| !name.is_empty()) else {
+        revwalk.push_head()?;
+        return Ok(());
+    };
+
+    let ref_names = [
+        format!("refs/heads/{}", branch_name),
+        format!("refs/remotes/{}", branch_name),
+    ];
+
+    for ref_name in ref_names {
+        if repo.find_reference(&ref_name).is_ok() {
+            revwalk.push_ref(&ref_name)?;
+            return Ok(());
+        }
+    }
+
+    let object = repo
+        .revparse_single(branch_name)
+        .map_err(|_| GitServiceError::BranchNotFound(branch_name.to_string()))?;
+    let commit = object
+        .peel_to_commit()
+        .map_err(|_| GitServiceError::BranchNotFound(branch_name.to_string()))?;
+    revwalk.push(commit.id())?;
+
+    Ok(())
+}
+
 /// 获取提交历史
 pub fn get_log(
     path: &Path,
@@ -39,12 +72,7 @@ pub fn get_log(
 
     revwalk.set_sorting(git2::Sort::TIME)?;
 
-    if let Some(branch_name) = branch {
-        let ref_name = format!("refs/heads/{}", branch_name);
-        revwalk.push_ref(&ref_name)?;
-    } else {
-        revwalk.push_head()?;
-    }
+    push_history_tip(&repo, &mut revwalk, branch)?;
 
     let limit = limit.unwrap_or(50);
     let skip = skip.unwrap_or(0);
@@ -109,12 +137,13 @@ pub fn get_file_history(
     file_path: &str,
     limit: Option<usize>,
     skip: Option<usize>,
+    branch: Option<&str>,
 ) -> Result<Vec<GitFileHistoryEntry>, GitServiceError> {
     let repo = open_repository(path)?;
     let mut revwalk = repo.revwalk()?;
 
     revwalk.set_sorting(git2::Sort::TIME)?;
-    revwalk.push_head()?;
+    push_history_tip(&repo, &mut revwalk, branch)?;
 
     let limit = limit.unwrap_or(50);
     let skip = skip.unwrap_or(0);

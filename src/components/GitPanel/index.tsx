@@ -28,14 +28,29 @@ import type { GitFileChange, GitDiffEntry } from '@/types'
 
 type TabType = 'changes' | 'history' | 'branch' | 'remote' | 'tags' | 'stash' | 'gitignore'
 
+interface GitWorkbenchOpenOptions {
+  initialGitTab?: TabType
+}
+
 interface GitPanelProps {
   className?: string
   onOpenDiffInTab?: (diff: GitDiffEntry) => void
-  onOpenWorkbench?: () => void
+  onOpenFileInEditor?: (filePath: string) => void
+  onOpenWorkbench?: (options?: GitWorkbenchOpenOptions) => void
+  initialTab?: TabType
+  focusToken?: number
   variant?: 'sidebar' | 'workbench'
 }
 
-export function GitPanel({ className = '', onOpenDiffInTab, onOpenWorkbench, variant = 'sidebar' }: GitPanelProps) {
+export function GitPanel({
+  className = '',
+  onOpenDiffInTab,
+  onOpenFileInEditor,
+  onOpenWorkbench,
+  initialTab,
+  focusToken,
+  variant = 'sidebar',
+}: GitPanelProps) {
   const { t } = useTranslation('git')
   const { status, isLoading, error, refreshStatus, getWorktreeFileDiff, getIndexFileDiff, stageFile, unstageFile, discardChanges, initRepository } = useGitStore()
   const currentWorkspace = useWorkspaceStore((s) => {
@@ -46,7 +61,7 @@ export function GitPanel({ className = '', onOpenDiffInTab, onOpenWorkbench, var
   })
   const toast = useToastStore()
 
-  const [activeTab, setActiveTab] = useState<TabType>('changes')
+  const [activeTab, setActiveTab] = useState<TabType>(initialTab ?? 'changes')
   const [selectedDiff, setSelectedDiff] = useState<GitDiffEntry | null>(null)
   const [isDiffLoading, setIsDiffLoading] = useState(false)
   const [showBlame, setShowBlame] = useState(false)
@@ -283,6 +298,16 @@ export function GitPanel({ className = '', onOpenDiffInTab, onOpenWorkbench, var
   const useInternalDiff = !onOpenDiffInTab
   const showWorkbenchButton = variant === 'sidebar' && !!onOpenWorkbench
 
+  const handleOpenWorkbench = useCallback(() => {
+    onOpenWorkbench?.({ initialGitTab: activeTab })
+  }, [activeTab, onOpenWorkbench])
+
+  useEffect(() => {
+    if (!initialTab) return
+    setActiveTab(initialTab)
+    setSelectedDiff(null)
+  }, [focusToken, initialTab])
+
   useEffect(() => {
     if (currentWorkspace) {
       refreshStatus(currentWorkspace.path)
@@ -341,7 +366,7 @@ export function GitPanel({ className = '', onOpenDiffInTab, onOpenWorkbench, var
           {showWorkbenchButton && (
             <button
               type="button"
-              onClick={onOpenWorkbench}
+              onClick={handleOpenWorkbench}
               className="p-1 text-text-tertiary hover:text-primary hover:bg-background-surface rounded transition-all"
               title={t('openWorkbench')}
             >
@@ -427,7 +452,7 @@ export function GitPanel({ className = '', onOpenDiffInTab, onOpenWorkbench, var
           {showWorkbenchButton && (
             <button
               type="button"
-              onClick={onOpenWorkbench}
+              onClick={handleOpenWorkbench}
               className="p-1 text-text-tertiary hover:text-primary hover:bg-background-surface rounded transition-all"
               title={t('openWorkbench')}
             >
@@ -508,6 +533,19 @@ export function GitPanel({ className = '', onOpenDiffInTab, onOpenWorkbench, var
           </div>
 
           <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+          {showWorkbenchButton && activeTab === 'history' && (
+            <div className="px-3 py-2 border-b border-border-subtle bg-primary/5 shrink-0">
+              <button
+                type="button"
+                onClick={handleOpenWorkbench}
+                className="w-full h-8 flex items-center justify-center gap-2 text-xs font-medium text-primary bg-background-surface border border-primary/30 rounded hover:bg-primary/10 transition-colors"
+              >
+                <Maximize2 size={13} />
+                <span className="truncate">{t('openWorkbench')}</span>
+              </button>
+            </div>
+          )}
+
           {activeTab === 'changes' && (
             <>
               <GitStatusHeader
@@ -603,6 +641,7 @@ export function GitPanel({ className = '', onOpenDiffInTab, onOpenWorkbench, var
               targetCommitSha={targetCommitSha}
               onCommitSelected={() => setTargetCommitSha(null)}
               onOpenDiffInTab={onOpenDiffInTab}
+              onOpenFileInEditor={onOpenFileInEditor}
               variant={variant}
             />
           )}

@@ -350,8 +350,9 @@ impl GitService {
         file_path: &str,
         limit: Option<usize>,
         skip: Option<usize>,
+        branch: Option<&str>,
     ) -> Result<Vec<GitFileHistoryEntry>, GitServiceError> {
-        get_file_history(path, file_path, limit, skip)
+        get_file_history(path, file_path, limit, skip, branch)
     }
 
     /// 获取文件 Blame 信息

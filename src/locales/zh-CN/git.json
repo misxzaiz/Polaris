@@ -1,5 +1,5 @@
 {
-  "title": "Git(暂不推荐使用)",
+  "title": "Git",
   "notGitRepo": "不是 Git 仓库",
   "emptyRepo": "空仓库（无提交）",
   "noCommits": "无提交",
@@ -227,6 +227,8 @@
     "fileHistoryTitle": "文件历史",
     "viewFileHistory": "查看此文件历史",
     "backToCommitHistory": "返回提交历史",
+    "branchFilter": "历史范围",
+    "currentBranchFilter": "当前分支: {{branch}}",
     "viewMore": "查看更多",
     "noCommits": "暂无提交",
     "noFileHistory": "此文件暂无历史提交",
@@ -244,6 +246,7 @@
     "noFileChanges": "此提交没有文件变更",
     "mergeCommit": "合并提交",
     "openDiffInEditor": "在编辑区打开 Diff",
+    "openFileInEditor": "在编辑区打开文件",
     "closeDetails": "关闭详情",
     "copySha": "复制提交 SHA",
     "copyMessage": "复制提交信息",

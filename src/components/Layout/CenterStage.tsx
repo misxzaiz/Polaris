@@ -18,6 +18,7 @@ import { TabContextMenu } from './TabContextMenu'
 import { ImagePreview } from '@/components/Preview/ImagePreview'
 import { UnsavedDialog } from '@/components/Common/UnsavedDialog'
 import { useToastStore } from '@/stores/toastStore'
+import type { ComponentProps } from 'react'
 
 interface TabBarProps {
   className?: string
@@ -330,7 +331,15 @@ export function TabContent({ className = '' }: TabContentProps) {
   const { t } = useTranslation('common')
   const activeTab = useTabStore((state) => state.getActiveTab())
   const openDiffTab = useTabStore((state) => state.openDiffTab)
+  const openEditorTab = useTabStore((state) => state.openEditorTab)
   const switchToFile = useFileEditorStore((state) => state.switchToFile)
+
+  const initialGitTab = typeof activeTab?.metadata?.initialGitTab === 'string'
+    ? activeTab.metadata.initialGitTab as ComponentProps<typeof GitPanel>['initialTab']
+    : undefined
+  const gitFocusToken = typeof activeTab?.metadata?.gitFocusToken === 'number'
+    ? activeTab.metadata.gitFocusToken
+    : undefined
 
   // Tab 切换时确保 fileEditorStore 加载正确的文件
   useEffect(() => {
@@ -391,7 +400,13 @@ export function TabContent({ className = '' }: TabContentProps) {
         <div className={`flex-1 flex flex-col overflow-hidden ${className}`}>
           <GitPanel
             variant="workbench"
+            initialTab={initialGitTab}
+            focusToken={gitFocusToken}
             onOpenDiffInTab={(diff) => openDiffTab(diff)}
+            onOpenFileInEditor={(filePath) => {
+              const fileName = filePath.split(/[\\/]/).pop() || filePath
+              openEditorTab(filePath, fileName)
+            }}
           />
         </div>
       )

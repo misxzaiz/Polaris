@@ -121,10 +121,13 @@ function App() {
   // 右侧面板填充模式：无编辑器时自适应填充，有编辑器时固定宽度
   const rightPanelFillRemaining = !hasCenterStage;
 
-  const openGitWorkbench = useCallback(() => {
-    openGitTab();
+  const openGitWorkbench = useCallback((options?: { initialGitTab?: string }) => {
+    openGitTab(options);
     closeLeftPanel();
-  }, [closeLeftPanel, openGitTab]);
+    if (!rightPanelCollapsed) {
+      toggleRightPanel();
+    }
+  }, [closeLeftPanel, openGitTab, rightPanelCollapsed, toggleRightPanel]);
 
   // === 渲染 ===
   const loadingFallback = (

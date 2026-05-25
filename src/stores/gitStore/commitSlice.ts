@@ -178,13 +178,14 @@ export const createCommitSlice: CommitSlice = (set, get) => ({
   },
 
   // 获取单文件提交历史
-  async getFileHistory(workspacePath: string, filePath: string, limit = 50, skip = 0) {
+  async getFileHistory(workspacePath: string, filePath: string, limit = 50, skip = 0, branch?: string) {
     try {
       return await invoke<GitFileHistoryEntry[]>('git_get_file_history', {
         workspacePath,
         filePath,
         limit,
         skip,
+        branch: branch || null,
       })
     } catch (err) {
       set({ error: parseGitError(err) })

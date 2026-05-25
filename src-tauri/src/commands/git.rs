@@ -428,9 +428,11 @@ pub fn git_get_file_history(
     filePath: String,
     limit: Option<usize>,
     skip: Option<usize>,
+    branch: Option<String>,
 ) -> Result<Vec<GitFileHistoryEntry>, GitError> {
     let path = PathBuf::from(workspacePath);
-    GitService::get_file_history(&path, &filePath, limit, skip).map_err(GitError::from)
+    GitService::get_file_history(&path, &filePath, limit, skip, branch.as_deref())
+        .map_err(GitError::from)
 }
 
 /// 批量暂存文件
