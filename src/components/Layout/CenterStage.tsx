@@ -329,10 +329,15 @@ interface TabContentProps {
  */
 export function TabContent({ className = '' }: TabContentProps) {
   const { t } = useTranslation('common')
+  const { t: tGit } = useTranslation('git')
   const activeTab = useTabStore((state) => state.getActiveTab())
   const openDiffTab = useTabStore((state) => state.openDiffTab)
   const openEditorTab = useTabStore((state) => state.openEditorTab)
   const switchToFile = useFileEditorStore((state) => state.switchToFile)
+  const currentWorkspace = useWorkspaceStore((state) => {
+    const targetId = state.viewingWorkspaceId || state.currentWorkspaceId
+    return state.workspaces.find(w => w.id === targetId) || null
+  })
 
   const initialGitTab = typeof activeTab?.metadata?.initialGitTab === 'string'
     ? activeTab.metadata.initialGitTab as ComponentProps<typeof GitPanel>['initialTab']
@@ -349,6 +354,25 @@ export function TabContent({ className = '' }: TabContentProps) {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- title derived from activeTab
   }, [activeTab?.id, activeTab?.type, activeTab?.filePath, switchToFile])
+
+  const resolveWorkspaceFilePath = useCallback((filePath: string) => {
+    if (!currentWorkspace) return filePath
+    if (/^(?:[a-zA-Z]:[\\/]|\\\\|\/)/.test(filePath)) return filePath
+
+    const separator = currentWorkspace.path.includes('\\') ? '\\' : '/'
+    const basePath = currentWorkspace.path.replace(/[\\/]+$/, '')
+    const relativePath = filePath.replace(/^[\\/]+/, '').replace(/[\\/]/g, separator)
+    return `${basePath}${separator}${relativePath}`
+  }, [currentWorkspace])
+
+  const openDiffFileInEditor = useCallback(() => {
+    const filePath = activeTab?.diffData?.file_path
+    if (!filePath || activeTab.diffData?.change_type === 'deleted') return
+
+    const resolvedPath = resolveWorkspaceFilePath(filePath)
+    const fileName = resolvedPath.split(/[\\/]/).pop() || resolvedPath
+    openEditorTab(resolvedPath, fileName)
+  }, [activeTab?.diffData, openEditorTab, resolveWorkspaceFilePath])
 
   if (!activeTab) {
     return (
@@ -378,8 +402,20 @@ export function TabContent({ className = '' }: TabContentProps) {
       return (
         <div className={`flex-1 flex flex-col overflow-hidden ${className}`}>
           {/* Diff 头部 */}
-          <div className="px-4 py-2 text-xs font-medium text-text-secondary bg-background-surface border-b border-border-subtle shrink-0">
-            {activeTab.diffData?.file_path}
+          <div className="px-4 py-2 text-xs font-medium text-text-secondary bg-background-surface border-b border-border-subtle shrink-0 flex items-center gap-2">
+            <span className="flex-1 min-w-0 truncate" title={activeTab.diffData?.file_path}>
+              {activeTab.diffData?.file_path}
+            </span>
+            {activeTab.diffData && activeTab.diffData.change_type !== 'deleted' && (
+              <button
+                type="button"
+                onClick={openDiffFileInEditor}
+                className="p-1 text-text-tertiary hover:text-primary hover:bg-background-hover rounded transition-colors shrink-0"
+                title={tGit('history.openFileInEditor')}
+              >
+                <FileText size={14} />
+              </button>
+            )}
           </div>
 
           {/* Diff 内容 */}
@@ -402,7 +438,7 @@ export function TabContent({ className = '' }: TabContentProps) {
             variant="workbench"
             initialTab={initialGitTab}
             focusToken={gitFocusToken}
-            onOpenDiffInTab={(diff) => openDiffTab(diff)}
+            onOpenDiffInTab={(diff, options) => openDiffTab(diff, options)}
             onOpenFileInEditor={(filePath) => {
               const fileName = filePath.split(/[\\/]/).pop() || filePath
               openEditorTab(filePath, fileName)

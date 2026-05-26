@@ -39,6 +39,7 @@ import type {
   GitDiffEntry,
   GitFileHistoryEntry,
 } from '@/types/git'
+import type { OpenDiffTabOptions } from '@/stores/tabStore'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('HistoryTab')
@@ -96,7 +97,7 @@ const getInitialPaneWidth = (key: string, fallback: number, min: number, max: nu
 interface HistoryTabProps {
   targetCommitSha?: string | null
   onCommitSelected?: () => void
-  onOpenDiffInTab?: (diff: GitDiffEntry) => void
+  onOpenDiffInTab?: (diff: GitDiffEntry, options?: OpenDiffTabOptions) => void
   onOpenFileInEditor?: (filePath: string) => void
   variant?: 'sidebar' | 'workbench'
 }
@@ -130,6 +131,7 @@ export function HistoryTab({
   const [fileListMode, setFileListMode] = useState<FileListMode>(getInitialFileListMode)
   const [diffViewMode, setDiffViewMode] = useState<DiffViewMode>(getInitialDiffViewMode)
   const [copiedAction, setCopiedAction] = useState<CopyAction | null>(null)
+  const [isCommitMessageExpanded, setIsCommitMessageExpanded] = useState(false)
   const [commitListWidth, setCommitListWidth] = useState(() => getInitialPaneWidth(
     COMMIT_LIST_WIDTH_STORAGE_KEY,
     380,
@@ -187,6 +189,7 @@ export function HistoryTab({
     setDetailsError(null)
     setFileSearchQuery('')
     setCopiedAction(null)
+    setIsCommitMessageExpanded(false)
   }, [])
 
   const clearFileHistoryMode = useCallback(() => {
@@ -291,6 +294,7 @@ export function HistoryTab({
     setDetailsError(null)
     setIsDetailsLoading(false)
     setFileSearchQuery('')
+    setIsCommitMessageExpanded(false)
   }, [])
 
   const loadCommitDetails = useCallback(async (commit: GitCommitType) => {
@@ -302,6 +306,7 @@ export function HistoryTab({
     setSelectedFileDiff(null)
     setDetailsError(null)
     setIsDetailsLoading(true)
+    setIsCommitMessageExpanded(false)
 
     try {
       const details = await getCommitDetails(currentWorkspace.path, commit.sha)
@@ -328,6 +333,7 @@ export function HistoryTab({
     const requestId = ++detailsRequestRef.current
     setDetailsError(null)
     setIsDetailsLoading(true)
+    setIsCommitMessageExpanded(false)
 
     try {
       const details = await getCommitDetails(currentWorkspace.path, commitSha)
@@ -875,6 +881,20 @@ export function HistoryTab({
     )
   }
 
+  const openSelectedDiffInTab = useCallback(() => {
+    if (!selectedCommit || !selectedFileDiff) return
+
+    onOpenDiffInTab?.(selectedFileDiff, {
+      identity: `history:${selectedCommit.sha}:${getDiffKey(selectedFileDiff)}`,
+      titleContext: selectedCommit.shortSha,
+      metadata: {
+        commitSha: selectedCommit.sha,
+        shortSha: selectedCommit.shortSha,
+        source: isFileHistoryMode ? 'file-history' : 'commit-history',
+      },
+    })
+  }, [isFileHistoryMode, onOpenDiffInTab, selectedCommit, selectedFileDiff])
+
   const renderDetails = () => {
     if (!selectedCommit && !isDetailsLoading) {
       return (
@@ -884,31 +904,64 @@ export function HistoryTab({
       )
     }
 
+    const selectedMessage = selectedCommit?.message ?? ''
+    const selectedMessageLines = selectedMessage.split('\n')
+    const selectedMessageSubject = selectedMessageLines[0] || selectedMessage
+    const hasCommitMessageBody = selectedMessageLines.slice(1).some(line => line.trim().length > 0)
+    const visibleCommitMessage = isCommitMessageExpanded ? selectedMessage : selectedMessageSubject
+
     return (
       <div className="flex-1 flex flex-col min-h-0 bg-background-base">
-        <div className="px-4 py-3 border-b border-border-subtle bg-background-surface shrink-0">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xs font-mono text-text-tertiary bg-background-elevated px-1.5 py-0.5 rounded">
-                  {selectedCommit?.shortSha}
+        <div className="px-3 py-2 border-b border-border-subtle bg-background-surface shrink-0">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <span className="text-xs font-mono text-text-tertiary bg-background-elevated px-1.5 py-0.5 rounded shrink-0">
+                {selectedCommit?.shortSha}
+              </span>
+              {selectedCommit && selectedCommit.parents.length > 1 && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-info/10 text-info shrink-0">
+                  {t('history.mergeCommit')}
                 </span>
-                {selectedCommit && selectedCommit.parents.length > 1 && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-info/10 text-info">
-                    {t('history.mergeCommit')}
-                  </span>
-                )}
-              </div>
-              <div className="text-sm text-text-primary font-medium whitespace-pre-wrap break-words">
-                {selectedCommit?.message}
-              </div>
-              <div className="mt-2 text-xs text-text-tertiary">
-                {selectedCommit?.author} · {formatTime(selectedCommit?.timestamp)}
+              )}
+              <div className="min-w-0 flex-1">
+                <div
+                  className={`text-sm text-text-primary font-medium ${
+                    isCommitMessageExpanded
+                      ? 'whitespace-pre-wrap break-words max-h-32 overflow-y-auto pr-1'
+                      : 'truncate'
+                  }`}
+                  title={isCommitMessageExpanded ? undefined : selectedMessage}
+                >
+                  {visibleCommitMessage}
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-text-tertiary">
+                  <span className="truncate max-w-[220px]">{selectedCommit?.author}</span>
+                  <span>·</span>
+                  <span>{formatTime(selectedCommit?.timestamp)}</span>
+                  {selectedDetails && (
+                    <>
+                      <span>·</span>
+                      <span>{t('history.filesChanged', { count: selectedDetails.files.length })}</span>
+                      <span className="text-success">+{selectedDetails.totalAdditions}</span>
+                      <span className="text-danger">-{selectedDetails.totalDeletions}</span>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
             <div className="flex items-center gap-1 shrink-0">
               {selectedCommit && (
                 <>
+                  {hasCommitMessageBody && (
+                    <button
+                      type="button"
+                      onClick={() => setIsCommitMessageExpanded(prev => !prev)}
+                      className="p-1 text-text-tertiary hover:text-primary hover:bg-background-hover rounded transition-colors"
+                      title={isCommitMessageExpanded ? t('history.collapseMessage') : t('history.expandMessage')}
+                    >
+                      {isCommitMessageExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => copyText(selectedCommit.sha, 'sha')}
@@ -937,14 +990,6 @@ export function HistoryTab({
               </button>
             </div>
           </div>
-
-          {selectedDetails && (
-            <div className="mt-3 flex items-center gap-3 text-xs text-text-tertiary">
-              <span>{t('history.filesChanged', { count: selectedDetails.files.length })}</span>
-              <span className="text-success">+{selectedDetails.totalAdditions}</span>
-              <span className="text-danger">-{selectedDetails.totalDeletions}</span>
-            </div>
-          )}
         </div>
 
         {detailsError && (
@@ -1096,7 +1141,7 @@ export function HistoryTab({
                     {onOpenDiffInTab && (
                       <button
                         type="button"
-                        onClick={() => onOpenDiffInTab(selectedFileDiff)}
+                        onClick={openSelectedDiffInTab}
                         className="p-1 text-text-tertiary hover:text-primary hover:bg-background-hover rounded transition-colors"
                         title={t('history.openDiffInEditor')}
                       >

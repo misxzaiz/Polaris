@@ -32,6 +32,15 @@ export interface OpenGitTabOptions {
   initialGitTab?: string
 }
 
+export interface OpenDiffTabOptions {
+  /** Stable identity for reuse. Defaults to file path for working-tree diffs. */
+  identity?: string
+  /** Context shown in the tab title, such as a short commit SHA. */
+  titleContext?: string
+  /** Extra metadata to preserve on the diff tab. */
+  metadata?: Record<string, any>
+}
+
 interface TabState {
   tabs: Tab[]
   activeTabId: string | null
@@ -41,7 +50,7 @@ interface TabActions {
   // Tab 操作
   openEditorTab: (filePath: string, title?: string) => string
   openPreviewTab: (filePath: string, title?: string, metadata?: Record<string, any>) => string
-  openDiffTab: (diff: GitDiffEntry) => string
+  openDiffTab: (diff: GitDiffEntry, options?: OpenDiffTabOptions) => string
   openGitTab: (options?: OpenGitTabOptions) => string
   closeTab: (tabId: string) => void
   switchTab: (tabId: string) => void
@@ -99,10 +108,18 @@ export const useTabStore = create<TabStore>()(
       },
 
       // 打开 Diff Tab
-      openDiffTab: (diff: GitDiffEntry) => {
-        // 检查是否已存在相同文件的 Diff Tab
+      openDiffTab: (diff: GitDiffEntry, options?: OpenDiffTabOptions) => {
+        const diffIdentity = options?.identity ?? diff.file_path
+        const titleContext = options?.titleContext
+        const metadata = {
+          ...options?.metadata,
+          diffIdentity,
+          diffTitleContext: titleContext,
+        }
+
+        // 检查是否已存在相同上下文的 Diff Tab
         const existingTab = get().tabs.find(
-          (tab) => tab.type === 'diff' && tab.diffData?.file_path === diff.file_path
+          (tab) => tab.type === 'diff' && (tab.metadata?.diffIdentity ?? tab.diffData?.file_path) === diffIdentity
         )
 
         if (existingTab) {
@@ -110,7 +127,7 @@ export const useTabStore = create<TabStore>()(
           set((state) => ({
             tabs: state.tabs.map((tab) =>
               tab.id === existingTab.id
-                ? { ...tab, diffData: diff }
+                ? { ...tab, diffData: diff, metadata: { ...tab.metadata, ...metadata } }
                 : tab
             ),
             activeTabId: existingTab.id,
@@ -120,13 +137,14 @@ export const useTabStore = create<TabStore>()(
 
         // 否则创建新 Tab
         const tabId = `diff-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
-        const fileName = diff.file_path.split('/').pop() || diff.file_path
+        const fileName = diff.file_path.split(/[\\/]/).pop() || diff.file_path
         const newTab: Tab = {
           id: tabId,
           type: 'diff',
-          title: `${fileName} (Diff)`,
+          title: titleContext ? `${fileName} @ ${titleContext} (Diff)` : `${fileName} (Diff)`,
           closable: true,
           diffData: diff,
+          metadata,
         }
 
         set((state) => ({

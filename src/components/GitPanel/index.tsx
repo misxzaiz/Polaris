@@ -25,6 +25,7 @@ import { DropdownMenu } from '@/components/Common/DropdownMenu'
 import { ConfirmDialog } from '@/components/Common/ConfirmDialog'
 import { logger } from '@/utils/logger'
 import type { GitFileChange, GitDiffEntry } from '@/types'
+import type { OpenDiffTabOptions } from '@/stores/tabStore'
 
 type TabType = 'changes' | 'history' | 'branch' | 'remote' | 'tags' | 'stash' | 'gitignore'
 
@@ -34,7 +35,7 @@ interface GitWorkbenchOpenOptions {
 
 interface GitPanelProps {
   className?: string
-  onOpenDiffInTab?: (diff: GitDiffEntry) => void
+  onOpenDiffInTab?: (diff: GitDiffEntry, options?: OpenDiffTabOptions) => void
   onOpenFileInEditor?: (filePath: string) => void
   onOpenWorkbench?: (options?: GitWorkbenchOpenOptions) => void
   initialTab?: TabType
@@ -302,6 +303,21 @@ export function GitPanel({
     onOpenWorkbench?.({ initialGitTab: activeTab })
   }, [activeTab, onOpenWorkbench])
 
+  const resolveWorkspaceFilePath = useCallback((filePath: string) => {
+    if (!currentWorkspace) return filePath
+    if (/^(?:[a-zA-Z]:[\\/]|\\\\|\/)/.test(filePath)) return filePath
+
+    const separator = currentWorkspace.path.includes('\\') ? '\\' : '/'
+    const basePath = currentWorkspace.path.replace(/[\\/]+$/, '')
+    const relativePath = filePath.replace(/^[\\/]+/, '').replace(/[\\/]/g, separator)
+    return `${basePath}${separator}${relativePath}`
+  }, [currentWorkspace])
+
+  const handleOpenSelectedDiffFile = useCallback(() => {
+    if (!selectedDiff || selectedDiff.change_type === 'deleted') return
+    onOpenFileInEditor?.(resolveWorkspaceFilePath(selectedDiff.file_path))
+  }, [onOpenFileInEditor, resolveWorkspaceFilePath, selectedDiff])
+
   useEffect(() => {
     if (!initialTab) return
     setActiveTab(initialTab)
@@ -482,17 +498,31 @@ export function GitPanel({
           ) : (
             <div className="h-full">
               <div className="px-4 py-2 text-xs font-medium text-text-secondary bg-background-surface border-b border-border-subtle flex items-center justify-between">
-                <span className="truncate">{selectedDiff.file_path}</span>
-                <button
-                  onClick={() => {
-                    setBlameFilePath(selectedDiff.file_path)
-                    setShowBlame(true)
-                  }}
-                  className="p-1 text-text-tertiary hover:text-text-primary hover:bg-background-hover rounded transition-colors"
-                  title={t('blame.button')}
-                >
-                  <GitCommit size={14} />
-                </button>
+                <span className="flex-1 min-w-0 truncate" title={selectedDiff.file_path}>
+                  {selectedDiff.file_path}
+                </span>
+                <div className="flex items-center gap-1 shrink-0">
+                  {onOpenFileInEditor && selectedDiff.change_type !== 'deleted' && (
+                    <button
+                      type="button"
+                      onClick={handleOpenSelectedDiffFile}
+                      className="p-1 text-text-tertiary hover:text-primary hover:bg-background-hover rounded transition-colors"
+                      title={t('history.openFileInEditor')}
+                    >
+                      <FileText size={14} />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      setBlameFilePath(selectedDiff.file_path)
+                      setShowBlame(true)
+                    }}
+                    className="p-1 text-text-tertiary hover:text-text-primary hover:bg-background-hover rounded transition-colors"
+                    title={t('blame.button')}
+                  >
+                    <GitCommit size={14} />
+                  </button>
+                </div>
               </div>
               <div className="h-[calc(100%-32px)]">
                 <DiffViewer

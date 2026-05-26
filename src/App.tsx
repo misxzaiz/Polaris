@@ -70,6 +70,7 @@ function App() {
   const multiSessionMode = useViewStore(state => state.multiSessionMode);
   const openDiffTab = useTabStore(state => state.openDiffTab);
   const openGitTab = useTabStore(state => state.openGitTab);
+  const openEditorTab = useTabStore(state => state.openEditorTab);
   const hasOpenTabs = useTabStore(state => state.tabs.length > 0);
 
   // === 拆分后的 Hooks ===
@@ -129,6 +130,11 @@ function App() {
     }
   }, [closeLeftPanel, openGitTab, rightPanelCollapsed, toggleRightPanel]);
 
+  const openFileInEditor = useCallback((filePath: string) => {
+    const fileName = filePath.split(/[\\/]/).pop() || filePath;
+    openEditorTab(filePath, fileName);
+  }, [openEditorTab]);
+
   // === 渲染 ===
   const loadingFallback = (
     <div className="flex items-center justify-center h-full text-text-muted">{t('status.loading')}</div>
@@ -157,7 +163,13 @@ function App() {
             <LeftPanel>
               <LeftPanelContent
                 filesContent={<FileExplorer />}
-                gitContent={<GitPanel onOpenDiffInTab={(diff) => openDiffTab(diff)} onOpenWorkbench={openGitWorkbench} />}
+                gitContent={(
+                  <GitPanel
+                    onOpenDiffInTab={(diff, options) => openDiffTab(diff, options)}
+                    onOpenFileInEditor={openFileInEditor}
+                    onOpenWorkbench={openGitWorkbench}
+                  />
+                )}
                 todoContent={<SimpleTodoPanel />}
                 translateContent={<TranslatePanel onSendToChat={sendMessage} />}
                 schedulerContent={<SchedulerPanel />}

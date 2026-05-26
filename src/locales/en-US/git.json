@@ -250,6 +250,8 @@
     "closeDetails": "Close details",
     "copySha": "Copy commit SHA",
     "copyMessage": "Copy commit message",
+    "expandMessage": "Expand full commit message",
+    "collapseMessage": "Collapse commit message",
     "copied": "Copied",
     "listView": "Flat list",
     "treeView": "Directory groups",

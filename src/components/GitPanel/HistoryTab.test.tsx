@@ -306,6 +306,57 @@ describe('HistoryTab', () => {
     expect(onOpenFileInEditor).toHaveBeenCalledWith('D:/repo/src/App.tsx')
   })
 
+  it('opens history diffs with commit-scoped tab identity', async () => {
+    const onOpenDiffInTab = vi.fn()
+    render(<HistoryTab variant="workbench" onOpenDiffInTab={onOpenDiffInTab} />)
+
+    await waitFor(() => {
+      expect(getCommitDetails).toHaveBeenCalledWith('D:/repo', commits[0].sha)
+    })
+
+    fireEvent.click(screen.getByTitle('history.openDiffInEditor'))
+
+    expect(onOpenDiffInTab).toHaveBeenCalledWith(
+      changedFiles[0],
+      expect.objectContaining({
+        identity: `history:${commits[0].sha}::src/App.tsx`,
+        titleContext: commits[0].shortSha,
+        metadata: expect.objectContaining({
+          commitSha: commits[0].sha,
+          source: 'commit-history',
+        }),
+      })
+    )
+  })
+
+  it('keeps multiline commit messages collapsed until requested', async () => {
+    const multilineCommit = {
+      ...commits[0],
+      message: 'Fix search panel\n\n- Keep the body out of the way',
+    }
+    getCommitDetails.mockResolvedValueOnce(detailsFor(multilineCommit))
+
+    render(<HistoryTab variant="workbench" />)
+
+    await waitFor(() => {
+      expect(getCommitDetails).toHaveBeenCalledWith('D:/repo', commits[0].sha)
+    })
+
+    const bodyMatcher = (_content: string, node: Element | null) => {
+      return node?.textContent?.includes('- Keep the body out of the way') ?? false
+    }
+
+    expect(screen.queryAllByText(bodyMatcher)).toHaveLength(0)
+
+    fireEvent.click(screen.getByTitle('history.expandMessage'))
+
+    expect(screen.queryAllByText(bodyMatcher).length).toBeGreaterThan(0)
+
+    fireEvent.click(screen.getByTitle('history.collapseMessage'))
+
+    expect(screen.queryAllByText(bodyMatcher)).toHaveLength(0)
+  })
+
   it('opens a focused file history view from a changed file and can return', async () => {
     render(<HistoryTab variant="workbench" />)
 
