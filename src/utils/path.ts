@@ -67,6 +67,36 @@ export function normalizePath(path: string): string {
 }
 
 /**
+ * 判断路径是否已经是绝对路径。
+ * 支持 Windows 盘符、UNC 路径和 Unix 根路径。
+ */
+export function isAbsolutePath(path: string): boolean {
+  return /^(?:[a-zA-Z]:[\\/]|\\\\|\/)/.test(path);
+}
+
+/**
+ * 从路径中获取文件名。
+ * 同时支持 Windows 和 Unix 分隔符。
+ */
+export function getFileNameFromPath(path: string): string {
+  const normalized = path.replace(/\\/g, '/');
+  return normalized.split('/').pop() || path;
+}
+
+/**
+ * 将 Git 返回的仓库相对路径解析成工作区内的绝对路径。
+ * 如果 filePath 已经是绝对路径，原样返回。
+ */
+export function resolveWorkspacePath(workspacePath: string | null | undefined, filePath: string): string {
+  if (!workspacePath || isAbsolutePath(filePath)) return filePath;
+
+  const separator = workspacePath.includes('\\') ? '\\' : '/';
+  const basePath = workspacePath.replace(/[\\/]+$/, '');
+  const relativePath = filePath.replace(/^[\\/]+/, '').replace(/[\\/]/g, separator);
+  return `${basePath}${separator}${relativePath}`;
+}
+
+/**
  * 校验文件名合法性
  * Windows 上应用 Windows 文件名限制（保留名、非法字符、尾部点号/空格）；
  * Unix 上仅禁止 / 和空字节，以及 . 和 .. 两个特殊目录名。

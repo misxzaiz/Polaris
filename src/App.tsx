@@ -32,6 +32,7 @@ import { isPluginUiEnabled, usePluginStore } from './stores/pluginStore';
 import { pluginRegistry } from './plugin-system';
 import { useActiveSessionActions, useActiveSessionStreaming, useActiveSessionError } from './stores/conversationStore/useActiveSession';
 import { startLongGoalSessionTracker } from './services/longGoalSessionTracker';
+import { getFileNameFromPath } from './utils/path';
 import './index.css';
 
 // 拆分后的 Hooks
@@ -131,8 +132,7 @@ function App() {
   }, [closeLeftPanel, openGitTab, rightPanelCollapsed, toggleRightPanel]);
 
   const openFileInEditor = useCallback((filePath: string) => {
-    const fileName = filePath.split(/[\\/]/).pop() || filePath;
-    openEditorTab(filePath, fileName);
+    openEditorTab(filePath, getFileNameFromPath(filePath));
   }, [openEditorTab]);
 
   // === 渲染 ===
