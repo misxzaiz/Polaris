@@ -18,6 +18,7 @@ import { TabContextMenu } from './TabContextMenu'
 import { ImagePreview } from '@/components/Preview/ImagePreview'
 import { UnsavedDialog } from '@/components/Common/UnsavedDialog'
 import { useToastStore } from '@/stores/toastStore'
+import { getFileNameFromPath, resolveWorkspacePath } from '@/utils/path'
 import type { ComponentProps } from 'react'
 
 interface TabBarProps {
@@ -355,24 +356,13 @@ export function TabContent({ className = '' }: TabContentProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- title derived from activeTab
   }, [activeTab?.id, activeTab?.type, activeTab?.filePath, switchToFile])
 
-  const resolveWorkspaceFilePath = useCallback((filePath: string) => {
-    if (!currentWorkspace) return filePath
-    if (/^(?:[a-zA-Z]:[\\/]|\\\\|\/)/.test(filePath)) return filePath
-
-    const separator = currentWorkspace.path.includes('\\') ? '\\' : '/'
-    const basePath = currentWorkspace.path.replace(/[\\/]+$/, '')
-    const relativePath = filePath.replace(/^[\\/]+/, '').replace(/[\\/]/g, separator)
-    return `${basePath}${separator}${relativePath}`
-  }, [currentWorkspace])
-
   const openDiffFileInEditor = useCallback(() => {
     const filePath = activeTab?.diffData?.file_path
     if (!filePath || activeTab.diffData?.change_type === 'deleted') return
 
-    const resolvedPath = resolveWorkspaceFilePath(filePath)
-    const fileName = resolvedPath.split(/[\\/]/).pop() || resolvedPath
-    openEditorTab(resolvedPath, fileName)
-  }, [activeTab?.diffData, openEditorTab, resolveWorkspaceFilePath])
+    const resolvedPath = resolveWorkspacePath(currentWorkspace?.path, filePath)
+    openEditorTab(resolvedPath, getFileNameFromPath(resolvedPath))
+  }, [activeTab?.diffData, currentWorkspace?.path, openEditorTab])
 
   if (!activeTab) {
     return (
@@ -440,8 +430,7 @@ export function TabContent({ className = '' }: TabContentProps) {
             focusToken={gitFocusToken}
             onOpenDiffInTab={(diff, options) => openDiffTab(diff, options)}
             onOpenFileInEditor={(filePath) => {
-              const fileName = filePath.split(/[\\/]/).pop() || filePath
-              openEditorTab(filePath, fileName)
+              openEditorTab(filePath, getFileNameFromPath(filePath))
             }}
           />
         </div>

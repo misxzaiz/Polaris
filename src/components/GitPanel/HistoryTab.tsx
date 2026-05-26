@@ -40,6 +40,7 @@ import type {
   GitFileHistoryEntry,
 } from '@/types/git'
 import type { OpenDiffTabOptions } from '@/stores/tabStore'
+import { resolveWorkspacePath } from '@/utils/path'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('HistoryTab')
@@ -169,16 +170,6 @@ export function HistoryTab({
   const activeHasMore = isFileHistoryMode ? fileHistoryHasMore : hasMore
   const noWorkspaceError = t('errors.noWorkspace')
   const rootDirectoryLabel = t('history.rootDirectory')
-
-  const resolveWorkspaceFilePath = useCallback((filePath: string) => {
-    if (!currentWorkspace) return filePath
-    if (/^(?:[a-zA-Z]:[\\/]|\\\\|\/)/.test(filePath)) return filePath
-
-    const separator = currentWorkspace.path.includes('\\') ? '\\' : '/'
-    const basePath = currentWorkspace.path.replace(/[\\/]+$/, '')
-    const relativePath = filePath.replace(/^[\\/]+/, '').replace(/[\\/]/g, separator)
-    return `${basePath}${separator}${relativePath}`
-  }, [currentWorkspace])
 
   const clearSelection = useCallback(() => {
     detailsRequestRef.current += 1
@@ -1113,7 +1104,7 @@ export function HistoryTab({
                     {onOpenFileInEditor && selectedFileDiff.change_type !== 'deleted' && (
                       <button
                         type="button"
-                        onClick={() => onOpenFileInEditor(resolveWorkspaceFilePath(selectedFileDiff.file_path))}
+                        onClick={() => onOpenFileInEditor(resolveWorkspacePath(currentWorkspace?.path, selectedFileDiff.file_path))}
                         className="p-1 text-text-tertiary hover:text-primary hover:bg-background-hover rounded transition-colors shrink-0"
                         title={t('history.openFileInEditor')}
                       >

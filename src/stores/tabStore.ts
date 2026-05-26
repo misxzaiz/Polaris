@@ -8,6 +8,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { GitDiffEntry } from '@/types/git'
 import { useFileEditorStore } from './fileEditorStore'
+import { getFileNameFromPath } from '@/utils/path'
 
 /** Tab 类型 */
 export type TabType = 'editor' | 'diff' | 'preview' | 'git'
@@ -137,7 +138,7 @@ export const useTabStore = create<TabStore>()(
 
         // 否则创建新 Tab
         const tabId = `diff-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
-        const fileName = diff.file_path.split(/[\\/]/).pop() || diff.file_path
+        const fileName = getFileNameFromPath(diff.file_path)
         const newTab: Tab = {
           id: tabId,
           type: 'diff',

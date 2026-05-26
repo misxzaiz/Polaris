@@ -26,6 +26,7 @@ import { ConfirmDialog } from '@/components/Common/ConfirmDialog'
 import { logger } from '@/utils/logger'
 import type { GitFileChange, GitDiffEntry } from '@/types'
 import type { OpenDiffTabOptions } from '@/stores/tabStore'
+import { resolveWorkspacePath } from '@/utils/path'
 
 type TabType = 'changes' | 'history' | 'branch' | 'remote' | 'tags' | 'stash' | 'gitignore'
 
@@ -303,20 +304,10 @@ export function GitPanel({
     onOpenWorkbench?.({ initialGitTab: activeTab })
   }, [activeTab, onOpenWorkbench])
 
-  const resolveWorkspaceFilePath = useCallback((filePath: string) => {
-    if (!currentWorkspace) return filePath
-    if (/^(?:[a-zA-Z]:[\\/]|\\\\|\/)/.test(filePath)) return filePath
-
-    const separator = currentWorkspace.path.includes('\\') ? '\\' : '/'
-    const basePath = currentWorkspace.path.replace(/[\\/]+$/, '')
-    const relativePath = filePath.replace(/^[\\/]+/, '').replace(/[\\/]/g, separator)
-    return `${basePath}${separator}${relativePath}`
-  }, [currentWorkspace])
-
   const handleOpenSelectedDiffFile = useCallback(() => {
     if (!selectedDiff || selectedDiff.change_type === 'deleted') return
-    onOpenFileInEditor?.(resolveWorkspaceFilePath(selectedDiff.file_path))
-  }, [onOpenFileInEditor, resolveWorkspaceFilePath, selectedDiff])
+    onOpenFileInEditor?.(resolveWorkspacePath(currentWorkspace?.path, selectedDiff.file_path))
+  }, [currentWorkspace?.path, onOpenFileInEditor, selectedDiff])
 
   useEffect(() => {
     if (!initialTab) return
