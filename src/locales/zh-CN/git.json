@@ -252,6 +252,8 @@
     "copyMessage": "复制提交信息",
     "expandMessage": "展开完整提交信息",
     "collapseMessage": "折叠提交信息",
+    "collapseFilePane": "收起变更文件列表",
+    "expandFilePane": "展开变更文件列表",
     "copied": "已复制",
     "listView": "平铺列表",
     "treeView": "目录分组",

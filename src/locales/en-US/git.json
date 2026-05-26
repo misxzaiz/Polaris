@@ -252,6 +252,8 @@
     "copyMessage": "Copy commit message",
     "expandMessage": "Expand full commit message",
     "collapseMessage": "Collapse commit message",
+    "collapseFilePane": "Collapse changed files",
+    "expandFilePane": "Expand changed files",
     "copied": "Copied",
     "listView": "Flat list",
     "treeView": "Directory groups",

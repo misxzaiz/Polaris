@@ -28,6 +28,8 @@ import {
   ArrowLeft,
   FileClock,
   GitBranch as GitBranchIcon,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -49,6 +51,7 @@ const PAGE_SIZE = 20
 const FILE_LIST_MODE_STORAGE_KEY = 'polaris.git.history.fileListMode'
 const COMMIT_LIST_WIDTH_STORAGE_KEY = 'polaris.git.history.commitListWidth'
 const FILE_PANE_WIDTH_STORAGE_KEY = 'polaris.git.history.filePaneWidth'
+const FILE_PANE_COLLAPSED_STORAGE_KEY = 'polaris.git.history.filePaneCollapsed'
 const DIFF_VIEW_MODE_STORAGE_KEY = 'polaris.git.history.diffViewMode'
 const COMMIT_LIST_MIN_WIDTH = 280
 const COMMIT_LIST_MAX_WIDTH = 560
@@ -87,6 +90,8 @@ const getInitialFileListMode = (): FileListMode => {
 const getInitialDiffViewMode = (): DiffViewMode => {
   return readLocalStorage(DIFF_VIEW_MODE_STORAGE_KEY) === 'split' ? 'split' : 'unified'
 }
+
+const getInitialFilePaneCollapsed = () => readLocalStorage(FILE_PANE_COLLAPSED_STORAGE_KEY) === 'true'
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
 
@@ -133,6 +138,7 @@ export function HistoryTab({
   const [diffViewMode, setDiffViewMode] = useState<DiffViewMode>(getInitialDiffViewMode)
   const [copiedAction, setCopiedAction] = useState<CopyAction | null>(null)
   const [isCommitMessageExpanded, setIsCommitMessageExpanded] = useState(false)
+  const [isFilePaneCollapsed, setIsFilePaneCollapsed] = useState(getInitialFilePaneCollapsed)
   const [commitListWidth, setCommitListWidth] = useState(() => getInitialPaneWidth(
     COMMIT_LIST_WIDTH_STORAGE_KEY,
     380,
@@ -529,6 +535,10 @@ export function HistoryTab({
   }, [diffViewMode])
 
   useEffect(() => {
+    writeLocalStorage(FILE_PANE_COLLAPSED_STORAGE_KEY, String(isFilePaneCollapsed))
+  }, [isFilePaneCollapsed])
+
+  useEffect(() => {
     writeLocalStorage(COMMIT_LIST_WIDTH_STORAGE_KEY, String(commitListWidth))
   }, [commitListWidth])
 
@@ -900,6 +910,7 @@ export function HistoryTab({
     const selectedMessageSubject = selectedMessageLines[0] || selectedMessage
     const hasCommitMessageBody = selectedMessageLines.slice(1).some(line => line.trim().length > 0)
     const visibleCommitMessage = isCommitMessageExpanded ? selectedMessage : selectedMessageSubject
+    const shouldShowFilePane = !isFileHistoryMode && (!isWorkbench || !isFilePaneCollapsed)
 
     return (
       <div className="flex-1 flex flex-col min-h-0 bg-background-base">
@@ -996,7 +1007,7 @@ export function HistoryTab({
           </div>
         ) : selectedDetails ? (
           <div className={isWorkbench ? 'flex-1 flex min-h-0' : 'flex-1 flex flex-col min-h-0'}>
-            {!isFileHistoryMode && (
+            {shouldShowFilePane && (
               <div
                 className={`${isWorkbench ? 'relative border-r' : 'max-h-56 border-b'} border-border-subtle shrink-0 flex flex-col min-h-0`}
                 style={isWorkbench ? { width: filePaneWidth } : undefined}
@@ -1050,6 +1061,16 @@ export function HistoryTab({
                             <FolderTree size={13} />
                           </button>
                         </div>
+                        {isWorkbench && (
+                          <button
+                            type="button"
+                            onClick={() => setIsFilePaneCollapsed(true)}
+                            className="p-1.5 text-text-tertiary hover:text-primary hover:bg-background-hover rounded transition-colors shrink-0"
+                            title={t('history.collapseFilePane')}
+                          >
+                            <PanelLeftClose size={13} />
+                          </button>
+                        )}
                       </div>
                       {normalizedFileSearchQuery && (
                         <div className="mt-1.5 text-[11px] text-text-tertiary">
@@ -1098,6 +1119,16 @@ export function HistoryTab({
               {selectedFileDiff ? (
                 <>
                   <div className="px-4 py-2 border-b border-border-subtle bg-background-surface flex items-center gap-2 shrink-0">
+                    {isWorkbench && !isFileHistoryMode && isFilePaneCollapsed && (
+                      <button
+                        type="button"
+                        onClick={() => setIsFilePaneCollapsed(false)}
+                        className="p-1 text-text-tertiary hover:text-primary hover:bg-background-hover rounded transition-colors shrink-0"
+                        title={t('history.expandFilePane')}
+                      >
+                        <PanelLeftOpen size={14} />
+                      </button>
+                    )}
                     <span className="flex-1 text-xs font-medium text-text-secondary truncate">
                       {selectedFileDiff.file_path}
                     </span>

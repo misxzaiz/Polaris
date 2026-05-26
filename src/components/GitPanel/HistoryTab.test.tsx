@@ -293,6 +293,27 @@ describe('HistoryTab', () => {
     expect(screen.getByTestId('diff-viewer')).toHaveAttribute('data-view-mode', 'split')
   })
 
+  it('collapses and restores the changed files pane in workbench mode', async () => {
+    render(<HistoryTab variant="workbench" />)
+
+    await waitFor(() => {
+      expect(getCommitDetails).toHaveBeenCalledWith('D:/repo', commits[0].sha)
+    })
+
+    expect(screen.getAllByTitle('history.viewFileHistory').length).toBeGreaterThan(0)
+
+    fireEvent.click(screen.getByTitle('history.collapseFilePane'))
+
+    expect(screen.queryByTitle('history.viewFileHistory')).not.toBeInTheDocument()
+    expect(screen.getByTitle('history.expandFilePane')).toBeInTheDocument()
+    expect(window.localStorage.getItem('polaris.git.history.filePaneCollapsed')).toBe('true')
+
+    fireEvent.click(screen.getByTitle('history.expandFilePane'))
+
+    expect(screen.getAllByTitle('history.viewFileHistory').length).toBeGreaterThan(0)
+    expect(window.localStorage.getItem('polaris.git.history.filePaneCollapsed')).toBe('false')
+  })
+
   it('opens the selected history file in the editor with a workspace path', async () => {
     const onOpenFileInEditor = vi.fn()
     render(<HistoryTab variant="workbench" onOpenFileInEditor={onOpenFileInEditor} />)
