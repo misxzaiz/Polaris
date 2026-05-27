@@ -44,61 +44,28 @@ import type {
 import type { OpenDiffTabOptions } from '@/stores/tabStore'
 import { resolveWorkspacePath } from '@/utils/path'
 import { createLogger } from '../../utils/logger'
+import {
+  PAGE_SIZE,
+  COMMIT_LIST_MIN_WIDTH,
+  COMMIT_LIST_MAX_WIDTH,
+  FILE_PANE_MIN_WIDTH,
+  FILE_PANE_MAX_WIDTH,
+  getDiffKey,
+  writeLocalStorage,
+  getInitialFileListMode,
+  getInitialDiffViewMode,
+  getInitialFilePaneCollapsed,
+  getInitialPaneWidth,
+  clamp,
+  FILE_LIST_MODE_STORAGE_KEY,
+  COMMIT_LIST_WIDTH_STORAGE_KEY,
+  FILE_PANE_WIDTH_STORAGE_KEY,
+  FILE_PANE_COLLAPSED_STORAGE_KEY,
+  DIFF_VIEW_MODE_STORAGE_KEY,
+} from './historyTabUtils'
+import type { FileListMode, CopyAction } from './historyTabUtils'
 
 const log = createLogger('HistoryTab')
-
-const PAGE_SIZE = 20
-const FILE_LIST_MODE_STORAGE_KEY = 'polaris.git.history.fileListMode'
-const COMMIT_LIST_WIDTH_STORAGE_KEY = 'polaris.git.history.commitListWidth'
-const FILE_PANE_WIDTH_STORAGE_KEY = 'polaris.git.history.filePaneWidth'
-const FILE_PANE_COLLAPSED_STORAGE_KEY = 'polaris.git.history.filePaneCollapsed'
-const DIFF_VIEW_MODE_STORAGE_KEY = 'polaris.git.history.diffViewMode'
-const COMMIT_LIST_MIN_WIDTH = 280
-const COMMIT_LIST_MAX_WIDTH = 560
-const FILE_PANE_MIN_WIDTH = 240
-const FILE_PANE_MAX_WIDTH = 520
-
-type FileListMode = 'list' | 'tree'
-type CopyAction = 'sha' | 'message'
-
-const getDiffKey = (file: GitDiffEntry) => `${file.old_file_path ?? ''}:${file.file_path}`
-
-const readLocalStorage = (key: string) => {
-  if (typeof window === 'undefined') return null
-
-  try {
-    return window.localStorage.getItem(key)
-  } catch {
-    return null
-  }
-}
-
-const writeLocalStorage = (key: string, value: string) => {
-  if (typeof window === 'undefined') return
-
-  try {
-    window.localStorage.setItem(key, value)
-  } catch {
-    // Storage can be unavailable in restricted browser contexts; keep UI state in memory.
-  }
-}
-
-const getInitialFileListMode = (): FileListMode => {
-  return readLocalStorage(FILE_LIST_MODE_STORAGE_KEY) === 'tree' ? 'tree' : 'list'
-}
-
-const getInitialDiffViewMode = (): DiffViewMode => {
-  return readLocalStorage(DIFF_VIEW_MODE_STORAGE_KEY) === 'split' ? 'split' : 'unified'
-}
-
-const getInitialFilePaneCollapsed = () => readLocalStorage(FILE_PANE_COLLAPSED_STORAGE_KEY) === 'true'
-
-const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
-
-const getInitialPaneWidth = (key: string, fallback: number, min: number, max: number) => {
-  const stored = Number(readLocalStorage(key))
-  return Number.isFinite(stored) && stored > 0 ? clamp(stored, min, max) : fallback
-}
 
 interface HistoryTabProps {
   targetCommitSha?: string | null
