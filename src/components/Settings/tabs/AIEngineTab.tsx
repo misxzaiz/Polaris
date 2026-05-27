@@ -26,7 +26,7 @@ const FIXED_ENGINE_OPTIONS: { id: EngineId; nameKey: string; descKey: string }[]
 ];
 
 export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProps) {
-  const { t } = useTranslation('settings');
+  const { t } = useTranslation(['settings', 'common']);
   const { healthStatus, resetCliConfig } = useConfigStore();
   const { authStatus, agents, loading: cliLoading, fetchAll } = useCliInfoStore();
   const { profiles, activeProfileId, addProfile, removeProfile, activateProfile, setProfiles, setActiveProfileId } = useModelProfileStore();
@@ -100,7 +100,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
 
   const handleResetCliConfig = async () => {
     const confirmed = window.confirm(
-      t('aiEngine.resetCliConfirm', '将 Claude/Codex CLI 路径重置为默认值,并触发重新检测.若 PATH 中没有对应 CLI,会回到初始连接界面.确认继续?')
+      t('aiEngine.resetCliConfirm')
     );
     if (!confirmed) return;
     setResetting(true);
@@ -117,13 +117,13 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
       <div>
         <div className="flex items-center justify-between mb-2">
           <label className="block text-sm font-medium text-text-secondary">
-            {t('aiEngine.authStatus', '认证状态')}
+            {t('aiEngine.authStatus')}
           </label>
           <button
             onClick={() => fetchAll()}
             disabled={cliLoading}
             className="flex items-center gap-1 text-xs text-text-tertiary hover:text-text-primary transition-colors disabled:opacity-50"
-            title="刷新"
+            title={t('buttons.refresh', { ns: 'common' })}
           >
             <RefreshCw size={12} className={cliLoading ? 'animate-spin' : ''} />
           </button>
@@ -144,8 +144,8 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
                 authStatus.loggedIn ? 'text-green-600' : 'text-red-600'
               }`}>
                 {authStatus.loggedIn
-                  ? t('aiEngine.loggedIn', '已登录')
-                  : t('aiEngine.notLoggedIn', '未登录')
+                  ? t('aiEngine.loggedIn')
+                  : t('aiEngine.notLoggedIn')
                 }
               </div>
               {authStatus.loggedIn && (
@@ -162,8 +162,8 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
             <Shield size={16} className="text-text-muted shrink-0" />
             <span className="text-sm text-text-muted">
               {cliLoading
-                ? t('aiEngine.checkingAuth', '检查中...')
-                : t('aiEngine.authUnknown', '未知')
+                ? t('aiEngine.checkingAuth')
+                : t('aiEngine.authUnknown')
               }
             </span>
           </div>
@@ -173,7 +173,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
       {/* 引擎选择 */}
       <div>
         <label className="block text-sm font-medium text-text-secondary mb-3">
-          {t('aiEngine.title', 'AI 引擎')}
+          {t('aiEngine.title')}
         </label>
         <div className="space-y-2">
           {FIXED_ENGINE_OPTIONS.map((option) => (
@@ -213,14 +213,14 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
       <div className="p-4 bg-surface rounded-lg border border-border">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-medium text-text-primary">
-            {t('modelProfile.title', '模型 Profile')}
+            {t('modelProfile.title')}
           </h3>
           <button
             onClick={() => setShowAddForm(!showAddForm)}
             className="flex items-center gap-1 text-xs text-primary hover:text-primary-hover transition-colors"
           >
             <Plus size={14} />
-            {t('modelProfile.add', '添加')}
+            {t('modelProfile.add')}
           </button>
         </div>
 
@@ -229,7 +229,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
           <div className="mb-4 p-3 bg-background-default rounded-lg border border-border space-y-3">
             <input
               type="text"
-              placeholder={t('modelProfile.profileName', 'Profile 名称')}
+              placeholder={t('modelProfile.profileName')}
               value={newProfile.name}
               onChange={(e) => setNewProfile({ ...newProfile, name: e.target.value })}
               className="w-full px-3 py-2 text-sm bg-background-surface border border-border rounded-lg outline-none focus:border-primary"
@@ -238,8 +238,8 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
               type="text"
               placeholder={
                 isCodex
-                  ? t('modelProfile.codexBaseUrl', 'API 端点 URL (如 https://api.openai.com/v1)')
-                  : t('modelProfile.baseUrl', 'API 端点 URL (如 https://api.deepseek.com/anthropic)')
+                  ? t('modelProfile.codexBaseUrl')
+                  : t('modelProfile.baseUrl')
               }
               value={newProfile.baseUrl}
               onChange={(e) => setNewProfile({ ...newProfile, baseUrl: e.target.value })}
@@ -247,7 +247,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
             />
             <input
               type="password"
-              placeholder={t('modelProfile.apiKey', 'API Key')}
+              placeholder={t('modelProfile.apiKey')}
               value={newProfile.apiKey}
               onChange={(e) => setNewProfile({ ...newProfile, apiKey: e.target.value })}
               className="w-full px-3 py-2 text-sm bg-background-surface border border-border rounded-lg outline-none focus:border-primary"
@@ -256,8 +256,8 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
               type="text"
               placeholder={
                 isCodex
-                  ? t('modelProfile.codexModelName', '模型名称 (如 gpt-5.1)')
-                  : t('modelProfile.modelName', '模型名称 (如 deepseek-chat)')
+                  ? t('modelProfile.codexModelName')
+                  : t('modelProfile.modelName')
               }
               value={newProfile.model}
               onChange={(e) => setNewProfile({ ...newProfile, model: e.target.value })}
@@ -265,7 +265,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
             />
             <input
               type="text"
-              placeholder={t('modelProfile.description', '描述 (可选)')}
+              placeholder={t('modelProfile.description')}
               value={newProfile.description}
               onChange={(e) => setNewProfile({ ...newProfile, description: e.target.value })}
               className="w-full px-3 py-2 text-sm bg-background-surface border border-border rounded-lg outline-none focus:border-primary"
@@ -275,14 +275,14 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
                 onClick={() => { setShowAddForm(false); setNewProfile({ name: '', baseUrl: '', apiKey: '', model: '', description: '' }); }}
                 className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary"
               >
-                {t('common.cancel', '取消')}
+                {t('common.cancel')}
               </button>
               <button
                 onClick={handleAddProfile}
                 disabled={!newProfile.name || !newProfile.baseUrl || !newProfile.apiKey || !newProfile.model}
                 className="px-3 py-1.5 text-xs bg-primary text-white rounded hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {t('common.add', '添加')}
+                {t('common.add')}
               </button>
             </div>
           </div>
@@ -291,7 +291,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
         {/* Profile 列表 */}
         {profiles.length === 0 ? (
           <div className="text-center py-4 text-xs text-text-tertiary">
-            {t('modelProfile.noProfiles', '暂无模型 Profile，点击添加配置第三方模型端点')}
+            {t('modelProfile.noProfiles')}
           </div>
         ) : (
           <div className="space-y-2">
@@ -327,7 +327,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
                 <button
                   onClick={(e) => { e.stopPropagation(); handleDeleteProfile(profile.id); }}
                   className="text-text-tertiary hover:text-red-500 transition-colors shrink-0"
-                  title={t('common.delete', '删除')}
+                  title={t('common.delete')}
                 >
                   <Trash2 size={14} />
                 </button>
@@ -350,7 +350,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
             )}
             {healthStatus && !healthStatus.claudeAvailable && (
               <span className="text-xs px-2 py-1 rounded-full bg-red-500/10 text-red-500 border border-red-500/20">
-                {t('claudeCode.notAvailable', '未安装')}
+                {t('claudeCode.notAvailable')}
               </span>
             )}
           </div>
@@ -372,7 +372,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
       {config.defaultEngine === 'codex' && (
         <div className="p-4 bg-surface rounded-lg border border-border">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-medium text-text-primary">{t('codex.title', 'OpenAI Codex 配置')}</h3>
+            <h3 className="text-sm font-medium text-text-primary">{t('codex.title')}</h3>
             {healthStatus?.codexVersion && (
               <span className="text-xs px-2 py-1 rounded-full bg-green-500/10 text-green-500 border border-green-500/20">
                 {healthStatus.codexVersion}
@@ -380,13 +380,13 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
             )}
             {healthStatus && !healthStatus.codexAvailable && (
               <span className="text-xs px-2 py-1 rounded-full bg-red-500/10 text-red-500 border border-red-500/20">
-                {t('codex.notAvailable', '未安装')}
+                {t('codex.notAvailable')}
               </span>
             )}
           </div>
           <div>
             <label className="block text-xs text-text-secondary mb-2">
-              {t('codex.cliPath', 'Codex CLI 命令路径')}
+              {t('codex.cliPath')}
             </label>
             <ClaudePathSelector
               value={config.codexCode?.cliPath || 'codex'}
@@ -403,10 +403,10 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h3 className="text-sm font-medium text-amber-600 dark:text-amber-400">
-              {t('aiEngine.resetCliTitle', '重置 CLI 配置')}
+              {t('aiEngine.resetCliTitle')}
             </h3>
             <p className="text-xs text-text-secondary mt-1">
-              {t('aiEngine.resetCliDescription', '将 Claude/Codex CLI 路径恢复为默认值并失效引擎缓存,用于测试首次启动检测流程.若 PATH 中没有 CLI,会自动回到初始连接界面.')}
+              {t('aiEngine.resetCliDescription')}
             </p>
           </div>
           <button
@@ -417,8 +417,8 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
           >
             <RotateCcw size={12} className={resetting ? 'animate-spin' : ''} />
             {resetting
-              ? t('aiEngine.resetting', '重置中...')
-              : t('aiEngine.resetCliAction', '一键重置')}
+              ? t('aiEngine.resetting')
+              : t('aiEngine.resetCliAction')}
           </button>
         </div>
       </div>
@@ -428,7 +428,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="block text-sm font-medium text-text-secondary">
-              {t('aiEngine.availableAgents', '可用 Agent')} ({agents.length})
+              {t('aiEngine.availableAgents')} ({agents.length})
             </label>
           </div>
           <div className="space-y-1">
@@ -436,7 +436,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
             {agents.filter(a => a.source === 'builtin').length > 0 && (
               <div>
                 <div className="text-xs text-text-tertiary px-2 py-1">
-                  {t('aiEngine.builtinAgents', '内置')}
+                  {t('aiEngine.builtinAgents')}
                 </div>
                 {agents.filter(a => a.source === 'builtin').map(agent => (
                   <div key={agent.id} className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-background-hover">
@@ -458,7 +458,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
             {agents.filter(a => a.source === 'plugin').length > 0 && (
               <div>
                 <div className="text-xs text-text-tertiary px-2 py-1 mt-1">
-                  {t('aiEngine.pluginAgents', '插件')}
+                  {t('aiEngine.pluginAgents')}
                 </div>
                 {agents.filter(a => a.source === 'plugin').map(agent => (
                   <div key={agent.id} className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-background-hover">

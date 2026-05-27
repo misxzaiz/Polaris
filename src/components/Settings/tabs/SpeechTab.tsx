@@ -182,7 +182,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
       ttsService.setConfig(ttsConfig);
 
       // 播放测试文本
-      await ttsService.speak('你好，这是语音测试。');
+      await ttsService.speak(t('speech.tts.test.sampleText'));
     } catch (error) {
       log.error('Voice test failed:', error instanceof Error ? error : new Error(String(error)));
     } finally {
@@ -201,7 +201,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
       {/* ========== 语音输入部分 ========== */}
       <div className="border-b border-border pb-6">
         <h2 className="text-base font-medium text-text-primary mb-4">
-          {t('speech.input.title', '语音输入')}
+          {t('speech.input.title')}
         </h2>
 
         {/* 启用语音输入 */}
@@ -209,10 +209,10 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-sm font-medium text-text-primary">
-                {t('speech.enabled.title', '启用语音输入')}
+                {t('speech.enabled.title')}
               </h3>
               <p className="text-xs text-text-secondary mt-1">
-                {t('speech.enabled.desc', '在状态栏点击语音按钮开始连续语音识别')}
+                {t('speech.enabled.desc')}
               </p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
@@ -231,7 +231,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
         {/* 语言选择 */}
         <div className="p-4 bg-surface rounded-lg border border-border mb-4">
           <h3 className="text-sm font-medium text-text-primary mb-3">
-            {t('speech.language.title', '识别语言')}
+            {t('speech.language.title')}
           </h3>
           <select
             value={speechConfig.language}
@@ -253,10 +253,10 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h3 className="text-sm font-medium text-text-primary">
-                  {t('speech.wakeWord.title', '唤醒词模式')}
+                  {t('speech.wakeWord.title')}
                 </h3>
                 <p className="text-xs text-text-secondary mt-1">
-                  {t('speech.wakeWord.desc', '开启后，语音识别将持续运行，但只有说出唤醒词后的内容才会写入输入框')}
+                  {t('speech.wakeWord.desc')}
                 </p>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
@@ -285,7 +285,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
                         <button
                           onClick={() => removeWakeWord(word)}
                           className="text-primary/60 hover:text-primary"
-                          title={t('speech.wakeWord.remove', '删除')}
+                          title={t('speech.wakeWord.remove')}
                         >
                           &times;
                         </button>
@@ -294,7 +294,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
                   </div>
                 ) : (
                   <p className="text-xs text-warning mb-3">
-                    {t('speech.wakeWord.empty', '请至少添加一个唤醒词，否则唤醒模式无法生效')}
+                    {t('speech.wakeWord.empty')}
                   </p>
                 )}
                 <div className="flex gap-2">
@@ -303,7 +303,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
                     value={newWakeWord}
                     onChange={(e) => setNewWakeWord(e.target.value)}
                     onKeyDown={handleWakeWordKeyDown}
-                    placeholder={t('speech.wakeWord.placeholder', '输入唤醒词，按回车添加')}
+                    placeholder={t('speech.wakeWord.placeholder')}
                     disabled={loading}
                     className="flex-1 px-3 py-1.5 bg-background border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                   />
@@ -312,11 +312,11 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
                     disabled={loading || !newWakeWord.trim()}
                     className="px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    {t('speech.wakeWord.add', '添加')}
+                    {t('speech.wakeWord.add')}
                   </button>
                 </div>
                 <p className="text-xs text-text-tertiary mt-2">
-                  {t('speech.wakeWord.hint', '说唤醒词后，后续语音内容将写入输入框；发送后自动回到待命状态')}
+                  {t('speech.wakeWord.hint')}
                 </p>
               </div>
             )}
@@ -326,7 +326,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
         {/* 语音命令说明 */}
         <div className="p-4 bg-surface rounded-lg border border-border">
           <h3 className="text-sm font-medium text-text-primary mb-3">
-            {t('speech.commands.title', '语音命令')}
+            {t('speech.commands.title')}
           </h3>
           <div className="space-y-3">
             {voiceCommands.map(entry => (
@@ -346,7 +346,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
                       <button
                         onClick={() => removeCommandKeyword(entry.type, keyword)}
                         className="text-primary/60 hover:text-primary"
-                        title={t('speech.commands.removeKeyword', '删除')}
+                        title={t('speech.commands.removeKeyword')}
                       >
                         &times;
                       </button>
@@ -354,7 +354,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
                   ))}
                   {entry.keywords.length === 0 && (
                     <span className="text-xs text-warning">
-                      {t('speech.commands.noKeywords', '无关键词，请至少添加一个')}
+                      {t('speech.commands.noKeywords')}
                     </span>
                   )}
                 </div>
@@ -365,7 +365,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
                     value={newKeywordByCommand[entry.type] ?? ''}
                     onChange={(e) => setNewKeywordByCommand(prev => ({ ...prev, [entry.type]: e.target.value }))}
                     onKeyDown={(e) => handleCommandKeywordKeyDown(e, entry.type)}
-                    placeholder={t('speech.commands.addKeywordPlaceholder', '输入关键词，按回车添加')}
+                    placeholder={t('speech.commands.addKeywordPlaceholder')}
                     disabled={loading}
                     className="flex-1 px-2 py-1 bg-surface border border-border rounded text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-primary"
                   />
@@ -374,7 +374,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
                     disabled={loading || !(newKeywordByCommand[entry.type] ?? '').trim()}
                     className="px-2 py-1 bg-primary text-white rounded text-xs hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    {t('speech.commands.addKeyword', '添加')}
+                    {t('speech.commands.addKeyword')}
                   </button>
                 </div>
               </div>
@@ -384,7 +384,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
               disabled={loading}
               className="text-xs text-text-tertiary hover:text-text-secondary transition-colors"
             >
-              {t('speech.commands.resetToDefault', '恢复默认命令')}
+              {t('speech.commands.resetToDefault')}
             </button>
           </div>
         </div>
@@ -393,7 +393,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
       {/* ========== 语音输出部分 (TTS) ========== */}
       <div>
         <h2 className="text-base font-medium text-text-primary mb-4">
-          {t('speech.output.title', '语音输出')}
+          {t('speech.output.title')}
         </h2>
 
         {/* 启用语音输出 */}
@@ -401,10 +401,10 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-sm font-medium text-text-primary">
-                {t('speech.tts.enabled.title', '启用语音输出')}
+                {t('speech.tts.enabled.title')}
               </h3>
               <p className="text-xs text-text-secondary mt-1">
-                {t('speech.tts.enabled.desc', 'AI 回复完成后自动朗读文本内容')}
+                {t('speech.tts.enabled.desc')}
               </p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
@@ -426,7 +426,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
             {/* 语音选择 */}
             <div className="p-4 bg-surface rounded-lg border border-border mb-4">
               <h3 className="text-sm font-medium text-text-primary mb-3">
-                {t('speech.tts.voice.title', '语音角色')}
+                {t('speech.tts.voice.title')}
               </h3>
               <select
                 value={ttsConfig.voice}
@@ -445,7 +445,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
             {/* 语速选择 */}
             <div className="p-4 bg-surface rounded-lg border border-border mb-4">
               <h3 className="text-sm font-medium text-text-primary mb-3">
-                {t('speech.tts.rate.title', '语速')}
+                {t('speech.tts.rate.title')}
               </h3>
               <select
                 value={ttsConfig.rate}
@@ -464,7 +464,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
             {/* 音量控制 */}
             <div className="p-4 bg-surface rounded-lg border border-border mb-4">
               <h3 className="text-sm font-medium text-text-primary mb-3">
-                {t('speech.tts.volume.title', '音量')}: {Math.round(ttsConfig.volume * 100)}%
+                {t('speech.tts.volume.title')}: {Math.round(ttsConfig.volume * 100)}%
               </h3>
               <input
                 type="range"
@@ -482,10 +482,10 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-medium text-text-primary">
-                    {t('speech.tts.autoPlay.title', '自动播放')}
+                    {t('speech.tts.autoPlay.title')}
                   </h3>
                   <p className="text-xs text-text-secondary mt-1">
-                    {t('speech.tts.autoPlay.desc', '消息完成后自动朗读，关闭后需手动触发')}
+                    {t('speech.tts.autoPlay.desc')}
                   </p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
@@ -504,7 +504,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
             {/* 测试按钮 */}
             <div className="p-4 bg-surface rounded-lg border border-border">
               <h3 className="text-sm font-medium text-text-primary mb-3">
-                {t('speech.tts.test.title', '测试语音')}
+                {t('speech.tts.test.title')}
               </h3>
               <div className="flex gap-2">
                 <button
@@ -513,8 +513,8 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
                   className="flex-1 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {isTestingVoice
-                    ? t('speech.tts.test.playing', '播放中...')
-                    : t('speech.tts.test.play', '播放测试')
+                    ? t('speech.tts.test.playing')
+                    : t('speech.tts.test.play')
                   }
                 </button>
                 <button
@@ -522,7 +522,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
                   disabled={!isTestingVoice}
                   className="px-4 py-2 bg-danger text-white rounded-lg text-sm font-medium hover:bg-danger/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
-                  {t('speech.tts.test.stop', '停止')}
+                  {t('speech.tts.test.stop')}
                 </button>
               </div>
             </div>
@@ -537,12 +537,12 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
             </svg>
             <div className="flex-1">
               <p className="text-xs text-text-primary">
-                <span className="font-medium">{t('speech.tts.tips.title', '使用说明')}：</span>
+                <span className="font-medium">{t('speech.tts.tips.title')}：</span>
               </p>
               <ul className="text-xs text-text-tertiary mt-1 space-y-1 list-disc list-inside">
-                <li>{t('speech.tts.tips.filter', '自动过滤代码块、工具调用等内容，只朗读纯文本')}</li>
-                <li>{t('speech.tts.tips.interrupt', '发送新消息或中断对话时会自动停止朗读')}</li>
-                <li>{t('speech.tts.tips.online', '语音合成需要网络连接')}</li>
+                <li>{t('speech.tts.tips.filter')}</li>
+                <li>{t('speech.tts.tips.interrupt')}</li>
+                <li>{t('speech.tts.tips.online')}</li>
               </ul>
             </div>
           </div>
@@ -552,7 +552,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
       {/* ========== 语音提醒部分 ========== */}
       <div className="border-t border-border pt-6">
         <h2 className="text-base font-medium text-text-primary mb-4">
-          {t('speech.notification.title', '语音提醒')}
+          {t('speech.notification.title')}
         </h2>
 
         {/* 总开关 */}
@@ -560,10 +560,10 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-sm font-medium text-text-primary">
-                {t('speech.notification.enabled.title', '启用语音提醒')}
+                {t('speech.notification.enabled.title')}
               </h3>
               <p className="text-xs text-text-secondary mt-1">
-                {t('speech.notification.enabled.desc', '在关键事件时通过语音播报提醒，如消息已发送、唤醒回应等')}
+                {t('speech.notification.enabled.desc')}
               </p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
@@ -587,10 +587,10 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <h3 className="text-sm font-medium text-text-primary">
-                    {t('speech.notification.sendConfirm.title', '发送确认')}
+                    {t('speech.notification.sendConfirm.title')}
                   </h3>
                   <p className="text-xs text-text-secondary mt-1">
-                    {t('speech.notification.sendConfirm.desc', '发送消息后播报确认语音')}
+                    {t('speech.notification.sendConfirm.desc')}
                   </p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
@@ -607,7 +607,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
               {notifConfig.sendConfirm && (
                 <div>
                   <label className="text-xs text-text-secondary mb-1 block">
-                    {t('speech.notification.sendConfirm.label', '播报文本')}
+                    {t('speech.notification.sendConfirm.label')}
                   </label>
                   <input
                     type="text"
@@ -625,10 +625,10 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <h3 className="text-sm font-medium text-text-primary">
-                    {t('speech.notification.wakeResponse.title', '唤醒回应')}
+                    {t('speech.notification.wakeResponse.title')}
                   </h3>
                   <p className="text-xs text-text-secondary mt-1">
-                    {t('speech.notification.wakeResponse.desc', '唤醒词匹配后播报回应语音，随机选择一条')}
+                    {t('speech.notification.wakeResponse.desc')}
                   </p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
@@ -655,7 +655,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
                           <button
                             onClick={() => removeWakeResponseText(text)}
                             className="text-green-600/60 hover:text-green-600"
-                            title={t('speech.notification.wakeResponse.remove', '删除')}
+                            title={t('speech.notification.wakeResponse.remove')}
                           >
                             &times;
                           </button>
@@ -669,7 +669,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
                       value={newWakeResponse}
                       onChange={(e) => setNewWakeResponse(e.target.value)}
                       onKeyDown={handleWakeResponseKeyDown}
-                      placeholder={t('speech.notification.wakeResponse.placeholder', '输入回应语，按回车添加')}
+                      placeholder={t('speech.notification.wakeResponse.placeholder')}
                       disabled={loading}
                       className="flex-1 px-3 py-1.5 bg-background border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                     />
@@ -678,7 +678,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
                       disabled={loading || !newWakeResponse.trim()}
                       className="px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
-                      {t('speech.notification.wakeResponse.add', '添加')}
+                      {t('speech.notification.wakeResponse.add')}
                     </button>
                   </div>
                 </div>
@@ -690,10 +690,10 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <h3 className="text-sm font-medium text-text-primary">
-                    {t('speech.notification.errorAlert.title', '错误提醒')}
+                    {t('speech.notification.errorAlert.title')}
                   </h3>
                   <p className="text-xs text-text-secondary mt-1">
-                    {t('speech.notification.errorAlert.desc', '聊天出错时播报错误提醒')}
+                    {t('speech.notification.errorAlert.desc')}
                   </p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
@@ -710,7 +710,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
               {notifConfig.errorAlert && (
                 <div>
                   <label className="text-xs text-text-secondary mb-1 block">
-                    {t('speech.notification.errorAlert.label', '播报文本')}
+                    {t('speech.notification.errorAlert.label')}
                   </label>
                   <input
                     type="text"
@@ -728,10 +728,10 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <h3 className="text-sm font-medium text-text-primary">
-                    {t('speech.notification.backgroundNotify.title', '后台完成通知')}
+                    {t('speech.notification.backgroundNotify.title')}
                   </h3>
                   <p className="text-xs text-text-secondary mt-1">
-                    {t('speech.notification.backgroundNotify.desc', '后台任务完成时播报通知')}
+                    {t('speech.notification.backgroundNotify.desc')}
                   </p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
@@ -748,7 +748,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
               {notifConfig.backgroundNotify && (
                 <div>
                   <label className="text-xs text-text-secondary mb-1 block">
-                    {t('speech.notification.backgroundNotify.label', '播报文本')}
+                    {t('speech.notification.backgroundNotify.label')}
                   </label>
                   <input
                     type="text"
@@ -768,7 +768,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
                   <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
                 </svg>
                 <p className="text-xs text-text-secondary">
-                  {t('speech.notification.autoPlayHint', 'AI 回复自动朗读由上方「自动播放」开关控制，开启后 AI 每次回复完成都会自动朗读内容。')}
+                  {t('speech.notification.autoPlayHint')}
                 </p>
               </div>
             </div>

@@ -92,13 +92,27 @@
       "description": "OpenAI Codex CLI — 全部操作权限"
     }
   },
+  "modelProfile": {
+    "title": "模型 Profile",
+    "add": "添加",
+    "profileName": "Profile 名称",
+    "codexBaseUrl": "API 端点 URL (如 https://api.openai.com/v1)",
+    "baseUrl": "API 端点 URL (如 https://api.deepseek.com/anthropic)",
+    "apiKey": "API Key",
+    "codexModelName": "模型名称 (如 gpt-5.1)",
+    "modelName": "模型名称 (如 deepseek-chat)",
+    "description": "描述 (可选)",
+    "noProfiles": "暂无模型 Profile，点击添加配置第三方模型端点"
+  },
   "claudeCode": {
     "title": "Claude Code 配置",
-    "cliPath": "Claude CLI 命令路径"
+    "cliPath": "Claude CLI 命令路径",
+    "notAvailable": "未安装"
   },
   "codex": {
     "title": "OpenAI Codex 配置",
-    "cliPath": "Codex CLI 命令路径"
+    "cliPath": "Codex CLI 命令路径",
+    "notAvailable": "未安装"
   },
   "language": {
     "title": "语言设置",
@@ -245,13 +259,27 @@
     "language": {
       "title": "识别语言"
     },
+    "wakeWord": {
+      "title": "唤醒词模式",
+      "desc": "开启后，语音识别将持续运行，等待唤醒词触发",
+      "remove": "删除",
+      "empty": "请至少添加一个唤醒词，否则唤醒词模式无法生效",
+      "placeholder": "输入唤醒词，按回车添加",
+      "add": "添加",
+      "hint": "说唤醒词后，后续语音内容将写入输入框，再次说唤醒词停止"
+    },
     "commands": {
       "title": "语音命令",
       "send": "发送消息",
       "clear": "清空输入框",
       "interrupt": "中断对话",
       "undo": "撤回最后输入",
-      "play": "朗读回复"
+      "play": "朗读回复",
+      "removeKeyword": "删除",
+      "noKeywords": "无关键词，请至少添加一个",
+      "addKeywordPlaceholder": "输入关键词，按回车添加",
+      "addKeyword": "添加",
+      "resetToDefault": "恢复默认命令"
     },
     "tips": {
       "title": "使用说明",
@@ -281,7 +309,8 @@
         "title": "测试语音",
         "play": "播放测试",
         "playing": "播放中...",
-        "stop": "停止"
+        "stop": "停止",
+        "sampleText": "你好，这是语音测试。"
       },
       "tips": {
         "title": "使用说明",
@@ -289,6 +318,36 @@
         "interrupt": "发送新消息或中断对话时会自动停止朗读",
         "online": "语音合成需要网络连接"
       }
+    },
+    "notification": {
+      "title": "语音提醒",
+      "enabled": {
+        "title": "启用语音提醒",
+        "desc": "在关键事件时通过语音播报提醒"
+      },
+      "sendConfirm": {
+        "title": "发送确认",
+        "desc": "发送消息后播报确认语音",
+        "label": "播报文本"
+      },
+      "wakeResponse": {
+        "title": "唤醒回应",
+        "desc": "唤醒词匹配后播报回应语音",
+        "remove": "删除",
+        "placeholder": "输入回应语，按回车添加",
+        "add": "添加"
+      },
+      "errorAlert": {
+        "title": "错误提醒",
+        "desc": "聊天出错时播报错误提醒",
+        "label": "播报文本"
+      },
+      "backgroundNotify": {
+        "title": "后台完成通知",
+        "desc": "后台任务完成时播报通知",
+        "label": "播报文本"
+      },
+      "autoPlayHint": "AI 回复自动朗读由上方「自动播放」开关控制"
     }
   },
   "systemPrompt": {

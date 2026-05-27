@@ -92,13 +92,27 @@
       "description": "OpenAI Codex CLI — full permissions"
     }
   },
+  "modelProfile": {
+    "title": "Model Profiles",
+    "add": "Add",
+    "profileName": "Profile Name",
+    "codexBaseUrl": "API Endpoint URL (e.g. https://api.openai.com/v1)",
+    "baseUrl": "API Endpoint URL (e.g. https://api.deepseek.com/anthropic)",
+    "apiKey": "API Key",
+    "codexModelName": "Model Name (e.g. gpt-5.1)",
+    "modelName": "Model Name (e.g. deepseek-chat)",
+    "description": "Description (optional)",
+    "noProfiles": "No model profiles yet. Click add to configure a third-party model endpoint"
+  },
   "claudeCode": {
     "title": "Claude Code Configuration",
-    "cliPath": "Claude CLI Path"
+    "cliPath": "Claude CLI Path",
+    "notAvailable": "Not Installed"
   },
   "codex": {
     "title": "OpenAI Codex Configuration",
-    "cliPath": "Codex CLI Path"
+    "cliPath": "Codex CLI Path",
+    "notAvailable": "Not Installed"
   },
   "language": {
     "title": "Language Settings",
@@ -245,13 +259,27 @@
     "language": {
       "title": "Recognition Language"
     },
+    "wakeWord": {
+      "title": "Wake Word Mode",
+      "desc": "When enabled, speech recognition runs continuously waiting for wake word trigger",
+      "remove": "Remove",
+      "empty": "Please add at least one wake word, otherwise wake word mode cannot work",
+      "placeholder": "Enter wake word, press Enter to add",
+      "add": "Add",
+      "hint": "After saying the wake word, subsequent speech will be written to the input field. Say the wake word again to stop"
+    },
     "commands": {
       "title": "Voice Commands",
       "send": "Send message",
       "clear": "Clear input",
       "interrupt": "Interrupt conversation",
       "undo": "Undo last input",
-      "play": "Read response"
+      "play": "Read response",
+      "removeKeyword": "Remove",
+      "noKeywords": "No keywords, please add at least one",
+      "addKeywordPlaceholder": "Enter keyword, press Enter to add",
+      "addKeyword": "Add",
+      "resetToDefault": "Reset to Default"
     },
     "tips": {
       "title": "Instructions",
@@ -281,7 +309,8 @@
         "title": "Test Voice",
         "play": "Play Test",
         "playing": "Playing...",
-        "stop": "Stop"
+        "stop": "Stop",
+        "sampleText": "Hello, this is a voice test."
       },
       "tips": {
         "title": "Instructions",
@@ -289,6 +318,36 @@
         "interrupt": "Stops automatically when sending new message or interrupting",
         "online": "Speech synthesis requires network connection"
       }
+    },
+    "notification": {
+      "title": "Voice Notifications",
+      "enabled": {
+        "title": "Enable Voice Notifications",
+        "desc": "Voice alerts for key events"
+      },
+      "sendConfirm": {
+        "title": "Send Confirmation",
+        "desc": "Play confirmation voice after sending message",
+        "label": "Announcement text"
+      },
+      "wakeResponse": {
+        "title": "Wake Response",
+        "desc": "Play response voice after wake word match",
+        "remove": "Remove",
+        "placeholder": "Enter response phrase, press Enter to add",
+        "add": "Add"
+      },
+      "errorAlert": {
+        "title": "Error Alert",
+        "desc": "Play error alert when chat encounters an error",
+        "label": "Announcement text"
+      },
+      "backgroundNotify": {
+        "title": "Background Completion",
+        "desc": "Play notification when background task completes",
+        "label": "Announcement text"
+      },
+      "autoPlayHint": "AI response auto-play is controlled by the \"Auto Play\" toggle above"
     }
   },
   "systemPrompt": {
