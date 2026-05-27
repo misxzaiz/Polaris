@@ -103,7 +103,7 @@ export function AIPopover({ isOpen, onClose }: AIPopoverProps) {
                 value={activeEngineId}
                 onChange={(e) => handleEngineSelect(e.target.value as EngineId)}
                 disabled={!canSwitchEngine}
-                title={canSwitchEngine ? '选择当前会话的 AI 引擎' : '已有消息或正在运行时不能切换引擎'}
+                title={canSwitchEngine ? t('tooltips.engineSwitchEnabled') : t('tooltips.engineSwitchDisabled')}
               >
                 {engineOptions.map((opt) => (
                   <option key={opt.id} value={opt.id} className="bg-background text-text-primary">{opt.name}</option>

@@ -252,10 +252,10 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code, id }: Mermaid
           </svg>
 
           <div className="flex-1 min-w-0">
-            <p className="text-sm text-danger font-medium">图表渲染失败</p>
+            <p className="text-sm text-danger font-medium">{t('mermaid.renderFailed')}</p>
             <details className="mt-2">
               <summary className="text-xs text-text-tertiary cursor-pointer hover:text-text-secondary transition-colors">
-                查看原始代码
+                {t('mermaid.viewSource')}
               </summary>
               <pre className="mt-2 text-xs text-text-secondary bg-background-base p-3 rounded border border-border-subtle overflow-auto">
                 <code>{code}</code>
@@ -278,7 +278,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code, id }: Mermaid
             <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
             <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
           </div>
-          <p className="text-sm text-text-tertiary">正在渲染图表...</p>
+          <p className="text-sm text-text-tertiary">{t('mermaidStream.generating')}</p>
         </div>
       </div>
     );
@@ -399,7 +399,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code, id }: Mermaid
 
           {/* 提示文本 */}
           <div className="ml-auto text-xs text-text-muted">
-            {diagramState.viewMode === 'chart' && `${modKey} + 滚轮缩放`}
+            {diagramState.viewMode === 'chart' && t('mermaid.wheelZoom', { modKey })}
           </div>
         </div>
 
@@ -448,7 +448,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code, id }: Mermaid
         <svg className="w-5 h-5 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
         </svg>
-        <span className="text-sm text-text-tertiary">图表将在滚动到可视区域时渲染</span>
+        <span className="text-sm text-text-tertiary">{t('mermaid.deferredRender')}</span>
       </div>
     </div>
   );

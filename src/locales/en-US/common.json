@@ -159,5 +159,9 @@
     "recovering": "Recovering...",
     "refreshPage": "Refresh Page",
     "contentSaved": "Your chat content has been saved automatically"
+  },
+  "tooltips": {
+    "engineSwitchEnabled": "Select AI engine for current session",
+    "engineSwitchDisabled": "Cannot switch engine when messages exist or session is running"
   }
 }

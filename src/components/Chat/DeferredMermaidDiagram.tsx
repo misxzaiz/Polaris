@@ -198,10 +198,10 @@ export const DeferredMermaidDiagram = memo(function DeferredMermaidDiagram({
             />
           </svg>
           <div className="flex-1 min-w-0">
-            <p className="text-sm text-danger font-medium">图表渲染失败</p>
+            <p className="text-sm text-danger font-medium">{t('mermaid.renderFailed')}</p>
             <details className="mt-2">
               <summary className="text-xs text-text-tertiary cursor-pointer hover:text-text-secondary transition-colors">
-                查看原始代码
+                {t('mermaid.viewSource')}
               </summary>
               <pre className="mt-2 text-xs text-text-secondary bg-background-base p-3 rounded border border-border-subtle overflow-auto">
                 <code>{code}</code>
@@ -333,7 +333,7 @@ export const DeferredMermaidDiagram = memo(function DeferredMermaidDiagram({
           )}
 
           <div className="ml-auto text-xs text-text-muted">
-            {diagramState.viewMode === 'chart' && `${modKey} + 滚轮缩放`}
+            {diagramState.viewMode === 'chart' && t('mermaid.wheelZoom', { modKey })}
           </div>
         </div>
 
@@ -381,7 +381,7 @@ export const DeferredMermaidDiagram = memo(function DeferredMermaidDiagram({
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
-            <span className="text-sm">Mermaid 图表</span>
+            <span className="text-sm">{t('mermaid.diagram')}</span>
           </div>
           <button
             onClick={renderDiagram}
@@ -391,13 +391,13 @@ export const DeferredMermaidDiagram = memo(function DeferredMermaidDiagram({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            点击渲染
+            {t('mermaid.clickToRender')}
           </button>
         </div>
         {/* 源码预览（折叠状态） */}
         <details className="mt-3">
           <summary className="text-xs text-text-quaternary cursor-pointer hover:text-text-tertiary transition-colors">
-            查看源码
+            {t('mermaid.viewSourceCode')}
           </summary>
           <pre className="mt-2 text-xs text-text-secondary bg-background-base p-2 rounded border border-border-subtle overflow-auto max-h-[200px]">
             <code className="font-mono whitespace-pre-wrap">{code}</code>

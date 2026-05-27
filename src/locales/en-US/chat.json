@@ -291,7 +291,14 @@
     "reset": "Reset",
     "copySource": "Copy source",
     "copied": "Copied",
-    "copy": "Copy"
+    "copy": "Copy",
+    "renderFailed": "Chart render failed",
+    "viewSource": "View source code",
+    "wheelZoom": "{{modKey}} + scroll to zoom",
+    "diagram": "Mermaid diagram",
+    "clickToRender": "Click to render",
+    "viewSourceCode": "View source",
+    "deferredRender": "Chart will render when scrolled into view"
   },
   "suggestion": {
     "commands": "Commands",
@@ -306,6 +313,20 @@
   },
   "mermaidStream": {
     "generating": "Generating chart..."
+  },
+  "fork": {
+    "title": "Create Session Branch",
+    "sourceSession": "Source Session",
+    "messages": "{{count}} messages",
+    "gitBranch": "Git branch: {{branch}}",
+    "linkedPr": "Linked PR #{{number}}",
+    "inheritContext": "New branch will inherit:",
+    "historyMessages": "{{count}} history messages",
+    "prLink": "PR link: #{{number}}",
+    "branchName": "Branch name (optional)",
+    "branchNamePlaceholder": "e.g.: Try new approach",
+    "cancel": "Cancel",
+    "confirm": "Create Branch"
   },
   "compact": {
     "typing": "Typing...",

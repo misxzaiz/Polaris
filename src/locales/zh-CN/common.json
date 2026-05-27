@@ -160,5 +160,9 @@
     "recovering": "自动恢复中...",
     "refreshPage": "刷新页面",
     "contentSaved": "您的聊天内容已自动保存"
+  },
+  "tooltips": {
+    "engineSwitchEnabled": "选择当前会话的 AI 引擎",
+    "engineSwitchDisabled": "已有消息或正在运行时不能切换引擎"
   }
 }
