@@ -23,6 +23,7 @@ import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
 import { useTTS } from '../../hooks/useTTS';
 import { useContainerWidth } from '../../hooks/useContainerWidth';
 import type { SpeechConfig, VoiceCommand, TTSConfig, WakeWordConfig } from '../../types/speech';
+import type { AssistantChatMessage } from '../../types/chat';
 import { DEFAULT_TTS_CONFIG } from '../../types/speech';
 import { SessionConfigSelector } from './SessionConfigSelector';
 import { voiceNotificationService } from '../../services/voiceNotificationService';
@@ -188,7 +189,7 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
           ? { ...currentMessage, type: 'assistant' as const, timestamp: new Date().toISOString() }
           : [...messages].reverse().find(m => isAssistantMessage(m));
         if (lastAssistant) {
-          voiceNotificationService.speakAIResponse(lastAssistant as any, { force: true });
+          voiceNotificationService.speakAIResponse(lastAssistant as AssistantChatMessage, { force: true });
         }
         break;
       }
