@@ -321,5 +321,32 @@
     "listening": "Listening...",
     "processing": "Processing...",
     "error": "Recognition failed"
+  },
+  "sessionConfig": {
+    "noAgent": "None",
+    "noAgentDesc": "No agent parameter, use CLI default mode",
+    "pluginSource": "Plugin",
+    "builtinSource": "Built-in",
+    "noModel": "None",
+    "noEffort": "None",
+    "noPermission": "None",
+    "officialApi": "Official API",
+    "officialApiDesc": "Use Anthropic official endpoint",
+    "custom": "Custom...",
+    "agentTooltip": "Select Agent",
+    "modelTooltip": "Select Model",
+    "effortTooltip": "Select Effort Level",
+    "permissionTooltip": "Select Permission Mode",
+    "profileTooltip": "Select Endpoint",
+    "agent": "Agent",
+    "model": "Model",
+    "effort": "Effort",
+    "permission": "Permission",
+    "profile": "Endpoint",
+    "noProfile": "Official",
+    "customInputLabel": "Enter custom {{type}} value:",
+    "customInputPlaceholder": "Enter {{type}} value...",
+    "cancel": "Cancel",
+    "confirm": "Confirm"
   }
 }

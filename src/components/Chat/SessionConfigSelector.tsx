@@ -65,19 +65,19 @@ export function SessionConfigSelector({
   // 动态 Agent 列表：优先 CLI 获取，降级 PRESET
   const dynamicAgents = useCliInfoStore(s => s.agents)
   const agentList = useMemo(() => {
-    const emptyOption = { id: '', name: '不设置', description: '不传 Agent 参数，使用 CLI 默认模式' }
+    const emptyOption = { id: '', name: t('sessionConfig.noAgent'), description: t('sessionConfig.noAgentDesc') }
     if (dynamicAgents.length > 0) {
       return [
         emptyOption,
         ...dynamicAgents.map(a => ({
           id: a.id,
           name: a.name,
-          description: `${a.source === 'plugin' ? '插件' : '内置'}${a.defaultModel ? ` · ${a.defaultModel}` : ''}`,
+          description: `${a.source === 'plugin' ? t('sessionConfig.pluginSource') : t('sessionConfig.builtinSource')}${a.defaultModel ? ` · ${a.defaultModel}` : ''}`,
         }))
       ]
     }
     return PRESET_AGENTS
-  }, [dynamicAgents])
+  }, [dynamicAgents, t])
 
   // 模型 Profile 列表
   const profiles = useModelProfileStore(s => s.profiles)
@@ -95,13 +95,13 @@ export function SessionConfigSelector({
 
   // 获取当前选择的显示名称
   const getAgentLabel = useCallback((agentId?: string) => {
-    if (!agentId) return t('sessionConfig.noAgent', '不设置')
+    if (!agentId) return t('sessionConfig.noAgent')
     const agent = agentList.find(a => a.id === agentId)
     return agent?.name || agentId
   }, [t, agentList])
 
   const getModelLabel = useCallback((modelId?: string) => {
-    if (!modelId) return t('sessionConfig.noModel', '不设置')
+    if (!modelId) return t('sessionConfig.noModel')
     // Profile 模型
     if (modelId.startsWith('profile:')) {
       const profileId = modelId.slice('profile:'.length)
@@ -114,13 +114,13 @@ export function SessionConfigSelector({
   }, [t, profiles])
 
   const getEffortLabel = useCallback((effort?: EffortLevel | '') => {
-    if (!effort) return t('sessionConfig.noEffort', '不设置')
+    if (!effort) return t('sessionConfig.noEffort')
     const opt = EFFORT_OPTIONS.find(o => o.value === effort)
     return opt?.label || effort
   }, [t])
 
   const getPermissionLabel = useCallback((mode?: PermissionMode | '') => {
-    if (!mode) return t('sessionConfig.noPermission', '不设置')
+    if (!mode) return t('sessionConfig.noPermission')
     const opt = PERMISSION_MODE_OPTIONS.find(o => o.value === mode)
     return opt?.label || mode
   }, [t])
@@ -193,8 +193,8 @@ export function SessionConfigSelector({
         // 官方 API（空 = 不使用 Profile）
         items.push({
           value: '',
-          label: t('sessionConfig.officialApi', '官方 API'),
-          description: t('sessionConfig.officialApiDesc', '使用 Anthropic 官方端点'),
+          label: t('sessionConfig.officialApi'),
+          description: t('sessionConfig.officialApiDesc'),
         })
         // Profile 列表
         items.push(...profiles.map(p => ({
@@ -253,7 +253,7 @@ export function SessionConfigSelector({
             'text-text-tertiary italic'
           )}
         >
-          ✏️ 自定义...
+          ✏️ {t('sessionConfig.custom')}
         </button>
       </div>
     )
@@ -277,7 +277,7 @@ export function SessionConfigSelector({
             : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover',
           openDropdown === type && 'bg-primary/10 text-primary'
         )}
-        title={t(`sessionConfig.${type}Tooltip`, `选择${label}`)}
+        title={t(`sessionConfig.${type}Tooltip`)}
       >
         {icon}
         <span className="max-w-[60px] truncate">{currentValue}</span>
@@ -291,31 +291,31 @@ export function SessionConfigSelector({
   const selectorMeta: Record<SelectorType, { icon: React.ReactNode; label: string; getValue: () => string }> = {
     agent: {
       icon: <Bot size={12} />,
-      label: t('sessionConfig.agent', 'Agent'),
+      label: t('sessionConfig.agent'),
       getValue: () => getAgentLabel(config.agent),
     },
     model: {
       icon: <Cpu size={12} />,
-      label: t('sessionConfig.model', '模型'),
+      label: t('sessionConfig.model'),
       getValue: () => getModelLabel(config.model),
     },
     effort: {
       icon: <Zap size={12} />,
-      label: t('sessionConfig.effort', '努力'),
+      label: t('sessionConfig.effort'),
       getValue: () => getEffortLabel(config.effort),
     },
     permission: {
       icon: <Shield size={12} />,
-      label: t('sessionConfig.permission', '权限'),
+      label: t('sessionConfig.permission'),
       getValue: () => getPermissionLabel(config.permissionMode),
     },
     profile: {
       icon: <Cpu size={12} />,
-      label: t('sessionConfig.profile', '端点'),
+      label: t('sessionConfig.profile'),
       getValue: () => {
-        if (!config.modelProfileId) return t('sessionConfig.noProfile', '官方')
+        if (!config.modelProfileId) return t('sessionConfig.noProfile')
         const profile = profiles.find(p => p.id === config.modelProfileId)
-        return profile ? `🔄 ${profile.name}` : t('sessionConfig.noProfile', '官方')
+        return profile ? `🔄 ${profile.name}` : t('sessionConfig.noProfile')
       },
     },
   }
@@ -334,7 +334,7 @@ export function SessionConfigSelector({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
           <div className="bg-background-elevated border border-border rounded-lg p-4 min-w-[280px] shadow-xl">
             <div className="text-xs text-text-secondary mb-2">
-              输入自定义 {selectorMeta[customInput.type].label} 值：
+              {t('sessionConfig.customInputLabel', { type: selectorMeta[customInput.type].label })}
             </div>
             <input
               ref={inputRef}
@@ -346,20 +346,20 @@ export function SessionConfigSelector({
                 if (e.key === 'Escape') setCustomInput(null)
               }}
               className="w-full px-3 py-2 text-sm bg-background-surface border border-border rounded-lg outline-none focus:border-primary"
-              placeholder={`输入 ${customInput.type} 值...`}
+              placeholder={t('sessionConfig.customInputPlaceholder', { type: customInput.type })}
             />
             <div className="flex justify-end gap-2 mt-3">
               <button
                 onClick={() => setCustomInput(null)}
                 className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary"
               >
-                取消
+                {t('sessionConfig.cancel')}
               </button>
               <button
                 onClick={() => handleCustomInputConfirm(customInput.type)}
                 className="px-3 py-1.5 text-xs bg-primary text-white rounded hover:bg-primary-hover"
               >
-                确认
+                {t('sessionConfig.confirm')}
               </button>
             </div>
           </div>
@@ -379,6 +379,7 @@ export function CompactSessionSelector({
   onChange,
   disabled = false,
 }: SessionConfigSelectorProps) {
+  const { t } = useTranslation('chat')
   const [openDropdown, setOpenDropdown] = useState<SelectorType | null>(null)
   const [customInput, setCustomInput] = useState<{ type: SelectorType; value: string } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -387,12 +388,12 @@ export function CompactSessionSelector({
   // 动态 Agent 列表
   const dynamicAgents = useCliInfoStore(s => s.agents)
   const agentList = useMemo(() => {
-    const emptyOption = { id: '', name: '不设置' }
+    const emptyOption = { id: '', name: t('sessionConfig.noAgent') }
     if (dynamicAgents.length > 0) {
       return [emptyOption, ...dynamicAgents.map(a => ({ id: a.id, name: a.name }))]
     }
     return PRESET_AGENTS
-  }, [dynamicAgents])
+  }, [dynamicAgents, t])
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -434,21 +435,21 @@ export function CompactSessionSelector({
   }, [])
 
   const getAgentLabel = (agentId?: string) => {
-    if (!agentId) return '不设置'
+    if (!agentId) return t('sessionConfig.noAgent')
     return agentList.find(a => a.id === agentId)?.name || agentId
   }
 
   const getModelLabel = (modelId?: string) => {
-    if (!modelId) return '不设置'
+    if (!modelId) return t('sessionConfig.noModel')
     return PRESET_MODELS.find(m => m.id === modelId)?.name || modelId
   }
 
   const selectorLabels: Record<SelectorType, string> = {
-    agent: 'Agent',
-    model: '模型',
-    effort: '努力',
-    permission: '权限',
-    profile: '端点',
+    agent: t('sessionConfig.agent'),
+    model: t('sessionConfig.model'),
+    effort: t('sessionConfig.effort'),
+    permission: t('sessionConfig.permission'),
+    profile: t('sessionConfig.profile'),
   }
 
   return (
@@ -489,7 +490,7 @@ export function CompactSessionSelector({
               onClick={() => openCustomInput('agent')}
               className="w-full px-2 py-1.5 text-left text-xs hover:bg-background-hover text-text-tertiary italic"
             >
-              ✏️ 自定义...
+              ✏️ {t('sessionConfig.custom')}
             </button>
           </div>
         )}
@@ -531,7 +532,7 @@ export function CompactSessionSelector({
               onClick={() => openCustomInput('model')}
               className="w-full px-2 py-1.5 text-left text-xs hover:bg-background-hover text-text-tertiary italic"
             >
-              ✏️ 自定义...
+              ✏️ {t('sessionConfig.custom')}
             </button>
           </div>
         )}
@@ -542,7 +543,7 @@ export function CompactSessionSelector({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
           <div className="bg-background-elevated border border-border rounded-lg p-4 min-w-[280px] shadow-xl">
             <div className="text-xs text-text-secondary mb-2">
-              输入自定义 {selectorLabels[customInput.type]} 值：
+              {t('sessionConfig.customInputLabel', { type: selectorLabels[customInput.type] })}
             </div>
             <input
               ref={inputRef}
@@ -554,20 +555,20 @@ export function CompactSessionSelector({
                 if (e.key === 'Escape') setCustomInput(null)
               }}
               className="w-full px-3 py-2 text-sm bg-background-surface border border-border rounded-lg outline-none focus:border-primary"
-              placeholder={`输入 ${customInput.type} 值...`}
+              placeholder={t('sessionConfig.customInputPlaceholder', { type: customInput.type })}
             />
             <div className="flex justify-end gap-2 mt-3">
               <button
                 onClick={() => setCustomInput(null)}
                 className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary"
               >
-                取消
+                {t('sessionConfig.cancel')}
               </button>
               <button
                 onClick={() => handleCustomInputConfirm(customInput.type)}
                 className="px-3 py-1.5 text-xs bg-primary text-white rounded hover:bg-primary-hover"
               >
-                确认
+                {t('sessionConfig.confirm')}
               </button>
             </div>
           </div>

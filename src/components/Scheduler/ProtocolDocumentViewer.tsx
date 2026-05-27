@@ -51,7 +51,7 @@ export function ProtocolDocumentViewer({ task, onClose }: ProtocolDocumentViewer
         setDocuments(docs);
       } catch (e) {
         log.error('Failed to load protocol documents', e instanceof Error ? e : new Error(String(e)));
-        toast.error(t('protocolDoc.loadFailed', '加载协议文档失败'), e instanceof Error ? e.message : '');
+        toast.error(t('protocolDoc.loadFailed'), e instanceof Error ? e.message : '');
       } finally {
         setLoading(false);
       }
@@ -85,10 +85,10 @@ export function ProtocolDocumentViewer({ task, onClose }: ProtocolDocumentViewer
 
   // Tab 标题
   const tabLabels: Record<TabType, string> = {
-    protocol: t('protocolDoc.protocol', '协议文档'),
-    supplement: t('protocolDoc.supplement', '用户补充'),
-    memory: t('protocolDoc.memory', '记忆索引'),
-    tasks: t('protocolDoc.tasks', '任务队列'),
+    protocol: t('protocolDoc.protocol'),
+    supplement: t('protocolDoc.supplement'),
+    memory: t('protocolDoc.memory'),
+    tasks: t('protocolDoc.tasks'),
   };
 
   // 开始编辑
@@ -127,12 +127,12 @@ export function ProtocolDocumentViewer({ task, onClose }: ProtocolDocumentViewer
           setDocuments((prev) => prev ? { ...prev, memoryTasks: editContent } : null);
           break;
       }
-      toast.success(t('protocolDoc.saveSuccess', '保存成功'));
+      toast.success(t('protocolDoc.saveSuccess'));
       setEditing(false);
       setEditContent('');
     } catch (e) {
       log.error('Failed to save document', e instanceof Error ? e : new Error(String(e)));
-      toast.error(t('protocolDoc.saveFailed', '保存失败'), e instanceof Error ? e.message : '');
+      toast.error(t('protocolDoc.saveFailed'), e instanceof Error ? e.message : '');
     } finally {
       setSaving(false);
     }
@@ -150,10 +150,10 @@ export function ProtocolDocumentViewer({ task, onClose }: ProtocolDocumentViewer
         task.workDir || ''
       );
       setDocuments(docs);
-      toast.success(t('protocolDoc.clearSuccess', '已清空用户补充'));
+      toast.success(t('protocolDoc.clearSuccess'));
     } catch (e) {
       log.error('Failed to clear user supplements', e instanceof Error ? e : new Error(String(e)));
-      toast.error(t('protocolDoc.clearFailed', '清空失败'), e instanceof Error ? e.message : '');
+      toast.error(t('protocolDoc.clearFailed'), e instanceof Error ? e.message : '');
     } finally {
       setSaving(false);
     }
@@ -173,10 +173,10 @@ export function ProtocolDocumentViewer({ task, onClose }: ProtocolDocumentViewer
         getCurrentContent(),
         undefined
       );
-      toast.success(t('protocolDoc.backupSuccess', '备份成功'));
+      toast.success(t('protocolDoc.backupSuccess'));
     } catch (e) {
       log.error('Failed to backup document', e instanceof Error ? e : new Error(String(e)));
-      toast.error(t('protocolDoc.backupFailed', '备份失败'), e instanceof Error ? e.message : '');
+      toast.error(t('protocolDoc.backupFailed'), e instanceof Error ? e.message : '');
     } finally {
       setSaving(false);
     }
@@ -189,7 +189,7 @@ export function ProtocolDocumentViewer({ task, onClose }: ProtocolDocumentViewer
         <div className="bg-background-elevated rounded-xl w-[800px] max-h-[85vh] overflow-hidden border border-border-subtle shadow-2xl flex flex-col">
           <div className="px-5 py-4 border-b border-border-subtle flex items-center justify-between">
             <h2 className="text-lg font-semibold text-text-primary">
-              {t('protocolDoc.title', '协议文档')}
+              {t('protocolDoc.title')}
             </h2>
             <button
               onClick={onClose}
@@ -200,7 +200,7 @@ export function ProtocolDocumentViewer({ task, onClose }: ProtocolDocumentViewer
           </div>
           <div className="flex-1 flex items-center justify-center">
             <p className="text-text-muted">
-              {t('protocolDoc.noTaskPath', '此任务不是协议模式或没有关联的文档路径')}
+              {t('protocolDoc.noTaskPath')}
             </p>
           </div>
         </div>
@@ -215,7 +215,7 @@ export function ProtocolDocumentViewer({ task, onClose }: ProtocolDocumentViewer
         <div className="px-5 py-4 border-b border-border-subtle flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold text-text-primary">
-              {t('protocolDoc.title', '协议文档')}
+              {t('protocolDoc.title')}
             </h2>
             <p className="text-sm text-text-muted mt-0.5">{task.name}</p>
           </div>
@@ -251,7 +251,7 @@ export function ProtocolDocumentViewer({ task, onClose }: ProtocolDocumentViewer
         <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
           {loading ? (
             <div className="flex items-center justify-center h-full">
-              <p className="text-text-muted">{t('protocolDoc.loading', '加载中...')}</p>
+              <p className="text-text-muted">{t('protocolDoc.loading')}</p>
             </div>
           ) : editing ? (
             <div className="flex-1 min-h-0 flex flex-col">
@@ -259,7 +259,7 @@ export function ProtocolDocumentViewer({ task, onClose }: ProtocolDocumentViewer
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
                 className="flex-1 min-h-0 w-full p-4 bg-background-base text-text-primary font-mono text-sm resize-none focus:outline-none overflow-auto"
-                placeholder={t('protocolDoc.editPlaceholder', '编辑文档内容...')}
+                placeholder={t('protocolDoc.editPlaceholder')}
               />
               <div className="px-5 py-3 border-t border-border-subtle flex justify-end gap-2 shrink-0">
                 <button
@@ -267,14 +267,14 @@ export function ProtocolDocumentViewer({ task, onClose }: ProtocolDocumentViewer
                   disabled={saving}
                   className="px-4 py-2 bg-background-hover text-text-secondary hover:bg-background-active rounded-lg transition-colors"
                 >
-                  {t('editor.cancel', '取消')}
+                  {t('editor.cancel')}
                 </button>
                 <button
                   onClick={handleSave}
                   disabled={saving}
                   className="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors disabled:opacity-50"
                 >
-                  {saving ? t('protocolDoc.saving', '保存中...') : t('editor.save', '保存')}
+                  {saving ? t('protocolDoc.saving') : t('editor.save')}
                 </button>
               </div>
             </div>
@@ -282,7 +282,7 @@ export function ProtocolDocumentViewer({ task, onClose }: ProtocolDocumentViewer
             <div className="flex-1 min-h-0 flex flex-col">
               <div className="flex-1 min-h-0 overflow-auto p-4">
                 <pre className="text-sm text-text-primary font-mono whitespace-pre-wrap break-words">
-                  {getCurrentContent() || t('protocolDoc.empty', '暂无内容')}
+                  {getCurrentContent() || t('protocolDoc.empty')}
                 </pre>
               </div>
               <div className="px-5 py-3 border-t border-border-subtle flex justify-between shrink-0">
@@ -293,7 +293,7 @@ export function ProtocolDocumentViewer({ task, onClose }: ProtocolDocumentViewer
                       disabled={saving}
                       className="px-3 py-1.5 text-sm bg-warning-faint text-warning hover:bg-warning/20 rounded-lg transition-colors disabled:opacity-50"
                     >
-                      {t('protocolDoc.clearSupplement', '清空补充')}
+                      {t('protocolDoc.clearSupplement')}
                     </button>
                   )}
                   <button
@@ -301,14 +301,14 @@ export function ProtocolDocumentViewer({ task, onClose }: ProtocolDocumentViewer
                     disabled={saving}
                     className="px-3 py-1.5 text-sm bg-info-faint text-info hover:bg-info/20 rounded-lg transition-colors"
                   >
-                    {t('protocolDoc.backup', '备份文档')}
+                    {t('protocolDoc.backup')}
                   </button>
                 </div>
                 <button
                   onClick={handleStartEdit}
                   className="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors text-sm"
                 >
-                  {t('protocolDoc.edit', '编辑')}
+                  {t('protocolDoc.edit')}
                 </button>
               </div>
             </div>

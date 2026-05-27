@@ -321,5 +321,32 @@
     "listening": "正在听...",
     "processing": "处理中...",
     "error": "识别失败"
+  },
+  "sessionConfig": {
+    "noAgent": "不设置",
+    "noAgentDesc": "不传 Agent 参数，使用 CLI 默认模式",
+    "pluginSource": "插件",
+    "builtinSource": "内置",
+    "noModel": "不设置",
+    "noEffort": "不设置",
+    "noPermission": "不设置",
+    "officialApi": "官方 API",
+    "officialApiDesc": "使用 Anthropic 官方端点",
+    "custom": "自定义...",
+    "agentTooltip": "选择 Agent",
+    "modelTooltip": "选择模型",
+    "effortTooltip": "选择努力程度",
+    "permissionTooltip": "选择权限模式",
+    "profileTooltip": "选择端点",
+    "agent": "Agent",
+    "model": "模型",
+    "effort": "努力",
+    "permission": "权限",
+    "profile": "端点",
+    "noProfile": "官方",
+    "customInputLabel": "输入自定义 {{type}} 值：",
+    "customInputPlaceholder": "输入 {{type}} 值...",
+    "cancel": "取消",
+    "confirm": "确认"
   }
 }
