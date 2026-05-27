@@ -10,79 +10,12 @@ import { searchFiles } from '../services/fileSearch';
 import type { FileMatch } from '../services/fileSearch';
 import { createLogger } from '../utils/logger';
 import { getParentPath, joinPath, normalizePath } from '../utils/path';
+import { updateFolderChildren, filterFiles, countFiles } from './fileExplorerStoreUtils';
 
 const log = createLogger('FileExplorer');
 
 // 搜索取消令牌（用于取消正在进行的搜索）
 let searchAbortController: AbortController | null = null;
-
-// 辅助函数：更新文件树中的子节点
-function updateFolderChildren(tree: FileInfo[], folderPath: string, children: FileInfo[]): FileInfo[] {
-  // 规范化路径用于比较
-  const normalizedFolderPath = normalizePath(folderPath);
-
-  return tree.map(file => {
-    // 规范化比较，处理 Windows 路径分隔符问题
-    if (normalizePath(file.path) === normalizedFolderPath) {
-      // 保留 children 数组，即使是空数组也不要变成 undefined
-      // 空数组表示文件夹确实为空，undefined 表示尚未加载
-      return { ...file, children };
-    }
-
-    if (file.children) {
-      const updatedChildren = updateFolderChildren(file.children, folderPath, children);
-      return {
-        ...file,
-        children: updatedChildren,
-      };
-    }
-
-    return file;
-  });
-}
-
-// 辅助函数：递归过滤文件树
-function filterFiles(files: FileInfo[], query: string): FileInfo[] {
-  if (!query.trim()) return files;
-
-  const lowerQuery = query.toLowerCase();
-
-  return files.reduce((acc: FileInfo[], file) => {
-    const nameMatches = file.name.toLowerCase().includes(lowerQuery);
-
-    if (file.is_dir) {
-      // 对于目录，检查名称是否匹配或子文件是否匹配
-      const filteredChildren = file.children ? filterFiles(file.children, query) : [];
-
-      if (nameMatches || filteredChildren.length > 0) {
-        acc.push({
-          ...file,
-          children: filteredChildren.length > 0 ? filteredChildren : file.children
-        });
-      }
-    } else if (nameMatches) {
-      // 对于文件，只检查名称是否匹配
-      acc.push(file);
-    }
-
-    return acc;
-  }, []);
-}
-
-// 辅助函数：递归计数文件数量（排除目录）
-function countFiles(files: FileInfo[]): number {
-  let count = 0;
-  for (const file of files) {
-    if (file.is_dir) {
-      if (file.children) {
-        count += countFiles(file.children);
-      }
-    } else {
-      count++;
-    }
-  }
-  return count;
-}
 
 export const useFileExplorerStore = create<FileExplorerStore>((set, get) => ({
   // 初始状态
