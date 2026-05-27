@@ -240,17 +240,16 @@ export class LRUCache<K, V> {
       return
     }
 
-    // 移除节点
+    // 从链表中移除节点
     if (node.prev) {
       node.prev.next = node.next
-    } else {
-      this.tail = node.next
     }
 
     if (node.next) {
       node.next.prev = node.prev
     } else {
-      this.head = node.prev
+      // 节点是尾部，更新 tail 指针
+      this.tail = node.prev
     }
 
     // 添加到头部
