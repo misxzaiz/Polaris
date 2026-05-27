@@ -369,6 +369,17 @@
       "backgroundRunning": "后台运行"
     }
   },
+  "history": {
+    "title": "会话历史",
+    "loading": "加载历史会话...",
+    "currentProject": "当前项目",
+    "all": "全部",
+    "listView": "列表视图",
+    "treeView": "树形视图 (Fork/PR 关系)",
+    "createBranch": "创建分支",
+    "loadingMore": "加载中...",
+    "loadMore": "加载更多 (剩余 {{count}} 条)"
+  },
   "compact": {
     "typing": "正在输入...",
     "output": "输出:",

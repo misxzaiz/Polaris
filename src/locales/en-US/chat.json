@@ -369,6 +369,17 @@
       "backgroundRunning": "Background"
     }
   },
+  "history": {
+    "title": "Session History",
+    "loading": "Loading history...",
+    "currentProject": "Current Project",
+    "all": "All",
+    "listView": "List view",
+    "treeView": "Tree view (Fork/PR)",
+    "createBranch": "Create branch",
+    "loadingMore": "Loading...",
+    "loadMore": "Load more ({{count}} remaining)"
+  },
   "compact": {
     "typing": "Typing...",
     "output": "Output:",

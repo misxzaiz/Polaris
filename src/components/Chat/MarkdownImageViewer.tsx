@@ -53,7 +53,7 @@ export function MarkdownImageViewer({ image, onClose }: MarkdownImageViewerProps
     } finally {
       setSaving(false);
     }
-  }, [image.alt, image.src, image.title, saving, success, toastError]);
+  }, [image.alt, image.src, image.title, saving, success, toastError, t]);
 
   if (typeof document === 'undefined') return null;
 

@@ -425,7 +425,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
       <div className="flex flex-col h-full">
         {/* 头部 */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <h2 className="text-base font-semibold text-text-primary">会话历史</h2>
+          <h2 className="text-base font-semibold text-text-primary">{t('history.title')}</h2>
           <button
             onClick={onClose}
             className="p-1 rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors"
@@ -437,7 +437,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
         {/* 加载中 */}
         <div className="flex flex-col items-center justify-center flex-1 p-8">
           <Loader2 className="w-8 h-8 animate-spin text-text-tertiary" />
-          <p className="mt-4 text-sm text-text-secondary">加载历史会话...</p>
+          <p className="mt-4 text-sm text-text-secondary">{t('history.loading')}</p>
         </div>
       </div>
     )
@@ -447,7 +447,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
     <div className="flex flex-col h-full">
       {/* 头部 */}
       <div className="flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 border-b border-border shrink-0">
-        <h2 className="text-base font-semibold text-text-primary">会话历史</h2>
+        <h2 className="text-base font-semibold text-text-primary">{t('history.title')}</h2>
         <button
           onClick={onClose}
           className="p-1 rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors"
@@ -468,7 +468,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
           }`}
         >
           <FolderOpen className="w-3 h-3" />
-          当前项目
+          {t('history.currentProject')}
         </button>
         <button
           onClick={() => handleScopeChange('global')}
@@ -479,7 +479,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
           }`}
         >
           <Globe className="w-3 h-3" />
-          全部
+          {t('history.all')}
         </button>
 
         {/* 分隔符 */}
@@ -528,7 +528,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
               ? 'bg-primary/20 text-primary'
               : 'text-text-tertiary hover:bg-background-hover hover:text-text-primary'
           }`}
-          title="列表视图"
+          title={t('history.listView')}
         >
           <List className="w-3.5 h-3.5" />
         </button>
@@ -539,7 +539,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
               ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'
               : 'text-text-tertiary hover:bg-background-hover hover:text-text-primary'
           }`}
-          title="树形视图 (Fork/PR 关系)"
+          title={t('history.treeView')}
         >
           <GitBranch className="w-3.5 h-3.5" />
         </button>
@@ -656,7 +656,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
                             <button
                               onClick={() => setForkTarget(item)}
                               className="p-1.5 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/30 text-text-tertiary hover:text-amber-500 transition-colors"
-                              title="创建分支"
+                              title={t('history.createBranch')}
                             >
                               <GitBranch className="w-4 h-4" />
                             </button>
@@ -708,7 +708,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
               ) : (
                 <ChevronDown className="w-4 h-4" />
               )}
-              <span>{loadingMore ? '加载中...' : `加载更多 (剩余 ${Math.max(0, totalCount - allHistory.length)} 条)`}</span>
+              <span>{loadingMore ? t('history.loadingMore') : t('history.loadMore', { count: Math.max(0, totalCount - allHistory.length) })}</span>
             </button>
           </div>
         )}
