@@ -10,11 +10,11 @@
  */
 
 import { useEffect } from 'react';
-import { useConfigStore } from '../stores';
-import { useViewStore } from '../stores/viewStore';
+import { useConfigStore } from '@/stores';
+import { useViewStore } from '@/stores/viewStore';
 import { useWindowSize } from './useWindowSize';
-import * as tauri from '../services/tauri';
-import { createLogger } from '../utils/logger';
+import * as tauri from '@/services/tauri';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('WindowManager');
 

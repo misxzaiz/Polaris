@@ -10,7 +10,7 @@
  */
 
 import { create } from 'zustand';
-import { createLogger } from '../utils/logger';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('ThemeStore');
 

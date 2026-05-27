@@ -1,5 +1,5 @@
-import type { FileInfo } from '../types';
-import { normalizePath } from '../utils/path';
+import type { FileInfo } from '@/types';
+import { normalizePath } from '@/utils/path';
 
 /** 更新文件树中的子节点 */
 export function updateFolderChildren(tree: FileInfo[], folderPath: string, children: FileInfo[]): FileInfo[] {

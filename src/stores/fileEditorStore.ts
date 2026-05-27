@@ -6,11 +6,11 @@
  */
 
 import { create } from 'zustand';
-import type { FileEditorStore, BufferEntry } from '../types';
-import * as tauri from '../services/tauri';
+import type { FileEditorStore, BufferEntry } from '@/types';
+import * as tauri from '@/services/tauri';
 import { emit, listen } from '@/services/transport';
-import { createLogger } from '../utils/logger';
-import type { FsChangeEvent } from '../types/fileExplorer';
+import { createLogger } from '@/utils/logger';
+import type { FsChangeEvent } from '@/types/fileExplorer';
 
 const log = createLogger('Editor');
 

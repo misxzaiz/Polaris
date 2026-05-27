@@ -6,9 +6,9 @@
  */
 
 import { listen } from '@/services/transport'
-import { createLogger } from '../utils/logger'
-import { sessionStoreManager } from '../stores/conversationStore'
-import type { AIEvent } from '../ai-runtime'
+import { createLogger } from '@/utils/logger'
+import { sessionStoreManager } from '@/stores/conversationStore'
+import type { AIEvent } from '@/ai-runtime'
 
 const log = createLogger('EventRouter')
 

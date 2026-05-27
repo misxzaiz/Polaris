@@ -4,8 +4,8 @@
  * 从助手消息中提取可朗读的文本，过滤代码块、工具调用等内容
  */
 
-import type { AssistantChatMessage } from '../types/chat';
-import { isTextBlock } from '../types/chat';
+import type { AssistantChatMessage } from '@/types/chat';
+import { isTextBlock } from '@/types/chat';
 
 /**
  * 从助手消息中提取可朗读的文本

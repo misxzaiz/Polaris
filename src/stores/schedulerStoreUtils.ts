@@ -1,4 +1,4 @@
-import type { LogEntryType } from '../types/scheduler';
+import type { LogEntryType } from '@/types/scheduler';
 
 /** 生成唯一 ID */
 export function generateLogId(): string {

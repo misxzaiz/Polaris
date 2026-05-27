@@ -19,7 +19,7 @@ import type {
   ThinkingBlock,
   TextBlock,
   ToolGroupBlock,
-} from '../types/chat'
+} from '@/types/chat'
 
 // ============================================================================
 // 常量

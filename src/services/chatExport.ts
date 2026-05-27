@@ -3,8 +3,8 @@
  * 支持 ChatMessage 类型（内容块架构）
  */
 
-import type { ChatMessage, AssistantChatMessage, UserChatMessage, ContentBlock } from '../types';
-import { isTextBlock, isToolCallBlock, isSystemMessage } from '../types';
+import type { ChatMessage, AssistantChatMessage, UserChatMessage, ContentBlock } from '@/types';
+import { isTextBlock, isToolCallBlock, isSystemMessage } from '@/types';
 
 /**
  * 从内容块中提取文本内容

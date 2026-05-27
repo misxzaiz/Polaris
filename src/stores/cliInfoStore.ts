@@ -7,7 +7,7 @@
  */
 
 import { create } from 'zustand'
-import { createLogger } from '../utils/logger'
+import { createLogger } from '@/utils/logger'
 import { listen } from '@/services/transport'
 
 type UnlistenFn = () => void

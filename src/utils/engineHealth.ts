@@ -1,4 +1,4 @@
-import type { Config, EngineId, HealthStatus } from '../types';
+import type { Config, EngineId, HealthStatus } from '@/types';
 import { normalizeEngineId, getEngineFullName } from './engineDisplay';
 
 export interface SelectedEngineHealth {

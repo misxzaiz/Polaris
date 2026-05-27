@@ -3,7 +3,7 @@
  */
 
 import { invoke } from '@/services/transport'
-import { createLogger } from '../utils/logger';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('FileSearch');
 

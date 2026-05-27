@@ -5,7 +5,7 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import type { FileMatch } from '../services/fileSearch';
+import type { FileMatch } from '@/services/fileSearch';
 import { createLogger } from './logger';
 
 const logger = createLogger('cache');

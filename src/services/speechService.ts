@@ -6,8 +6,8 @@ import type {
   SpeechLanguage,
   SpeechRecognitionStatus,
   SpeechRecognitionError as AppSpeechError
-} from '../types/speech';
-import { createLogger } from '../utils/logger';
+} from '@/types/speech';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('SpeechService');
 

@@ -5,7 +5,7 @@
 import { create } from 'zustand';
 import { invoke, listen } from '@/services/transport';
 import type { CreateTerminalSessionOptions, TerminalSession, TerminalOutputEvent, TerminalExitEvent } from '@/types/terminal';
-import { createLogger } from '../utils/logger';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('Terminal');
 

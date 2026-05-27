@@ -13,8 +13,8 @@ import type {
   ModelProfile,
   CreateModelProfileParams,
   UpdateModelProfileParams,
-} from '../types/modelProfile'
-import { generateProfileId } from '../types/modelProfile'
+} from '@/types/modelProfile'
+import { generateProfileId } from '@/types/modelProfile'
 
 interface ModelProfileState {
   /** Profile 列表 */

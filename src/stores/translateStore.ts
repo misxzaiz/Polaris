@@ -1,7 +1,7 @@
 import { generateUUID } from '@/utils/uuid';
 import { create } from 'zustand';
-import i18n from '../i18n';
-import { baiduTranslate } from '../services/tauri';
+import i18n from '@/i18n';
+import { baiduTranslate } from '@/services/tauri';
 
 export type TranslateDirection = 'toEn' | 'toZh';
 

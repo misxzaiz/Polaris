@@ -4,10 +4,10 @@
 
 import { create } from 'zustand';
 import { invoke } from '@/services/transport';
-import type { Command } from '../types/command';
-import { builtinCommands } from '../types/command';
-import { createLogger } from '../utils/logger';
-import i18n from '../i18n';
+import type { Command } from '@/types/command';
+import { builtinCommands } from '@/types/command';
+import { createLogger } from '@/utils/logger';
+import i18n from '@/i18n';
 
 const log = createLogger('CommandStore');
 

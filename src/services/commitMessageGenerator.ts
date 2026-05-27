@@ -8,9 +8,9 @@
 import { invoke } from '@/services/transport'
 import { getEventRouter, createContextId } from './eventRouter'
 import type { GitDiffEntry } from '@/types/git'
-import { createLogger } from '../utils/logger'
-import { useConfigStore } from '../stores/configStore'
-import { normalizeEngineId } from '../utils/engineDisplay'
+import { createLogger } from '@/utils/logger'
+import { useConfigStore } from '@/stores/configStore'
+import { normalizeEngineId } from '@/utils/engineDisplay'
 import {
   isAIEvent,
   isTokenEvent,
@@ -20,7 +20,7 @@ import {
   isErrorEvent,
   isResultEvent,
   type AIEvent,
-} from '../ai-runtime'
+} from '@/ai-runtime'
 
 const log = createLogger('CommitMessageGenerator')
 

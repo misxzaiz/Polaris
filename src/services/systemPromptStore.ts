@@ -5,7 +5,7 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { SystemPromptConfig, SystemPromptMode } from '../types/config';
+import type { SystemPromptConfig, SystemPromptMode } from '@/types/config';
 
 interface SystemPromptState {
   /** 当前配置 */

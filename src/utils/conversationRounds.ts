@@ -4,8 +4,8 @@
  * 将用户消息和助手回复配对分组，用于消息导航
  */
 
-import type { ChatMessage, UserChatMessage, AssistantChatMessage } from '../types';
-import { isTextBlock, isToolCallBlock } from '../types';
+import type { ChatMessage, UserChatMessage, AssistantChatMessage } from '@/types';
+import { isTextBlock, isToolCallBlock } from '@/types';
 
 /** 对话轮次摘要 */
 export interface ConversationRound {

@@ -12,8 +12,8 @@
  */
 
 import { Communicate } from 'edge-tts-universal';
-import type { TTSVoice } from '../types/speech';
-import { createLogger } from '../utils/logger';
+import type { TTSVoice } from '@/types/speech';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('VoicePackage');
 

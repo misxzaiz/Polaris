@@ -10,11 +10,11 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Workspace, WorkspaceStore } from '../types';
-import type { WorkspaceEntry } from '../types/config';
-import * as tauri from '../services/tauri';
-import { createLogger } from '../utils/logger';
-import { generateUUID } from '../utils/uuid';
+import type { Workspace, WorkspaceStore } from '@/types';
+import type { WorkspaceEntry } from '@/types/config';
+import * as tauri from '@/services/tauri';
+import { createLogger } from '@/utils/logger';
+import { generateUUID } from '@/utils/uuid';
 
 const log = createLogger('WorkspaceStore');
 

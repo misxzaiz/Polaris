@@ -6,9 +6,9 @@ import { generateUUID } from '@/utils/uuid';
  * 即 ~/.claude/projects/{项目名}/sessions-index.json
  */
 
-import { invoke } from '../services/tauri'
-import type { Message, ChatMessage, ContentBlock, UserChatMessage, AssistantChatMessage, SystemChatMessage, ToolCallBlock } from '../types'
-import { createLogger } from '../utils/logger'
+import { invoke } from '@/services/tauri'
+import type { Message, ChatMessage, ContentBlock, UserChatMessage, AssistantChatMessage, SystemChatMessage, ToolCallBlock } from '@/types'
+import { createLogger } from '@/utils/logger'
 
 const log = createLogger('ClaudeCodeHistoryService')
 

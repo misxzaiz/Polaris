@@ -7,7 +7,7 @@
 
 import { getClaudeCodeHistoryService } from './claudeCodeHistoryService'
 import { getCodexHistoryService } from './codexHistoryService'
-import type { Message } from '../types'
+import type { Message } from '@/types'
 
 // ============================================================================
 // 类型定义

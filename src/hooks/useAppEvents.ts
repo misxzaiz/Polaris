@@ -9,15 +9,15 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { listen } from '../services/transport';
-import { useTabStore } from '../stores/tabStore';
-import { useViewStore } from '../stores/viewStore';
-import { initEditorFileChangeListener } from '../stores/fileEditorStore';
-import { useTerminalScriptStore } from '../stores/terminalScriptStore';
-import { sessionStoreManager } from '../stores/conversationStore';
-import { getEventRouter } from '../services/eventRouter';
-import { isAIEvent } from '../ai-runtime';
-import { createLogger } from '../utils/logger';
+import { listen } from '@/services/transport';
+import { useTabStore } from '@/stores/tabStore';
+import { useViewStore } from '@/stores/viewStore';
+import { initEditorFileChangeListener } from '@/stores/fileEditorStore';
+import { useTerminalScriptStore } from '@/stores/terminalScriptStore';
+import { sessionStoreManager } from '@/stores/conversationStore';
+import { getEventRouter } from '@/services/eventRouter';
+import { isAIEvent } from '@/ai-runtime';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('AppEvents');
 

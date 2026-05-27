@@ -10,24 +10,24 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { useConfigStore } from '../stores';
-import { useWorkspaceStore } from '../stores/workspaceStore';
-import { useIntegrationStore } from '../stores/integrationStore';
-import { useAutoModeStore } from '../stores/autoModeStore';
-import { useSnippetStore } from '../stores/snippetStore';
-import { useCliInfoStore } from '../stores/cliInfoStore';
-import { useTerminalScriptStore } from '../stores/terminalScriptStore';
-import { usePluginStore } from '../stores/pluginStore';
-import { sessionStoreManager } from '../stores/conversationStore';
+import { useConfigStore } from '@/stores';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useIntegrationStore } from '@/stores/integrationStore';
+import { useAutoModeStore } from '@/stores/autoModeStore';
+import { useSnippetStore } from '@/stores/snippetStore';
+import { useCliInfoStore } from '@/stores/cliInfoStore';
+import { useTerminalScriptStore } from '@/stores/terminalScriptStore';
+import { usePluginStore } from '@/stores/pluginStore';
+import { sessionStoreManager } from '@/stores/conversationStore';
 import { bootstrapEngines, type EngineId } from '../core/engine-bootstrap';
 import { bootstrapTools } from '../core/tool-bootstrap';
-import { voiceNotificationService } from '../services/voiceNotificationService';
-import { discoverInstalledPlugins } from '../services/pluginDiscoveryService';
-import { disconnect as disconnectTransport } from '../services/transport';
-import { createLogger } from '../utils/logger';
-import { currentMode } from '../services/transport';
-import { getWebServerStatus } from '../services/tauri/configService';
-import { setMarkdownArtifactBaseUrl } from '../utils/cache';
+import { voiceNotificationService } from '@/services/voiceNotificationService';
+import { discoverInstalledPlugins } from '@/services/pluginDiscoveryService';
+import { disconnect as disconnectTransport } from '@/services/transport';
+import { createLogger } from '@/utils/logger';
+import { currentMode } from '@/services/transport';
+import { getWebServerStatus } from '@/services/tauri/configService';
+import { setMarkdownArtifactBaseUrl } from '@/utils/cache';
 import { pluginRegistry } from '../plugin-system';
 
 const log = createLogger('AppInit');

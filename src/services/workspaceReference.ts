@@ -8,10 +8,10 @@
  */
 
 import i18n from 'i18next';
-import type { Workspace, WorkspaceReference, ParsedWorkspaceMessage } from '../types';
-import { joinPath } from '../utils/path';
+import type { Workspace, WorkspaceReference, ParsedWorkspaceMessage } from '@/types';
+import { joinPath } from '@/utils/path';
 import { getSystemPromptConfigDirect } from './systemPromptStore';
-import { createLogger } from '../utils/logger'
+import { createLogger } from '@/utils/logger'
 
 const log = createLogger('WorkspaceReference')
 

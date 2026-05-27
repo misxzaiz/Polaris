@@ -5,10 +5,10 @@
  */
 
 import { generateUUID } from '@/utils/uuid'
-import { invoke } from '../services/tauri'
-import type { AssistantChatMessage, ChatMessage, SystemChatMessage, UserChatMessage } from '../types'
+import { invoke } from '@/services/tauri'
+import type { AssistantChatMessage, ChatMessage, SystemChatMessage, UserChatMessage } from '@/types'
 import type { PagedResult, SessionMetaResponse } from './claudeCodeHistoryService'
-import { createLogger } from '../utils/logger'
+import { createLogger } from '@/utils/logger'
 
 const log = createLogger('CodexHistoryService')
 

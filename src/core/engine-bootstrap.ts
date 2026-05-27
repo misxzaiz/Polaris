@@ -5,10 +5,10 @@
  * UI/Core 通过 Registry 获取 Engine，而非直接 new。
  */
 
-import { getEngineRegistry, registerEngine } from '../ai-runtime'
+import { getEngineRegistry, registerEngine } from '@/ai-runtime'
 import { ClaudeCodeEngine } from '../engines/claude-code'
 import { CodexEngine } from '../engines/codex'
-import { createLogger } from '../utils/logger'
+import { createLogger } from '@/utils/logger'
 
 const log = createLogger('EngineBootstrap')
 

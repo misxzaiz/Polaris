@@ -5,9 +5,9 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ttsService } from '../services/ttsService';
-import { useConfigStore } from '../stores';
-import type { TTSStatus, TTSConfig } from '../types/speech';
+import { ttsService } from '@/services/ttsService';
+import { useConfigStore } from '@/stores';
+import type { TTSStatus, TTSConfig } from '@/types/speech';
 
 interface UseTTSReturn {
   /** 当前状态 */

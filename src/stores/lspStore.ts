@@ -13,11 +13,11 @@ import {
 } from '@codemirror/lsp-client';
 import type { Extension } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
-import { TauriIpcTransport } from '../services/lsp/TauriIpcTransport';
-import { lspConfigList } from '../services/tauri/lspService';
-import { createLogger } from '../utils/logger';
+import { TauriIpcTransport } from '@/services/lsp/TauriIpcTransport';
+import { lspConfigList } from '@/services/tauri/lspService';
+import { createLogger } from '@/utils/logger';
 import { ctrlHoverLink } from '../components/Editor/ctrlHoverLink';
-import { jumpToDefinitionCrossFile } from '../services/lsp/lspNavigation';
+import { jumpToDefinitionCrossFile } from '@/services/lsp/lspNavigation';
 import { useLspUiStore } from './lspUiStore';
 import { useDiagnosticsStore, type DiagnosticItem } from './diagnosticsStore';
 

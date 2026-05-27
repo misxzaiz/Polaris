@@ -13,7 +13,7 @@
  *   // 清理时调用 unsub()
  */
 
-import { createLogger } from '../utils/logger'
+import { createLogger } from '@/utils/logger'
 
 const log = createLogger('StoreEventBus')
 

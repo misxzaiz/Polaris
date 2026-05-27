@@ -5,7 +5,7 @@
  */
 
 import { invoke } from '@/services/transport'
-import type { AutoModeConfig, AutoModeDefaults } from '../types/autoMode';
+import type { AutoModeConfig, AutoModeDefaults } from '@/types/autoMode';
 
 /**
  * 获取自动模式配置

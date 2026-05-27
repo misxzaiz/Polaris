@@ -4,8 +4,8 @@
  */
 
 import { invoke } from '@/services/transport'
-import type { CommitContextChip, DiffContextChip } from '../types/context';
-import { createLogger } from '../utils/logger';
+import type { CommitContextChip, DiffContextChip } from '@/types/context';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('GitContextService');
 

@@ -17,12 +17,12 @@
 import { ttsService } from './ttsService';
 import { voicePackageService } from './voicePackageService';
 import { extractSpeakableText, cleanTextForSpeech, shouldSpeakText } from './ttsTextFilter';
-import type { VoiceNotificationConfig, TTSConfig } from '../types/speech';
-import { DEFAULT_VOICE_NOTIFICATION_CONFIG } from '../types/speech';
-import type { ChatMessage } from '../types/chat';
-import { isAssistantMessage } from '../types/chat';
-import type { Config } from '../types';
-import { createLogger } from '../utils/logger';
+import type { VoiceNotificationConfig, TTSConfig } from '@/types/speech';
+import { DEFAULT_VOICE_NOTIFICATION_CONFIG } from '@/types/speech';
+import type { ChatMessage } from '@/types/chat';
+import { isAssistantMessage } from '@/types/chat';
+import type { Config } from '@/types';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('VoiceNotification');
 

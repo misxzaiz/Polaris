@@ -6,8 +6,8 @@
 
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { loadPluginStates, savePluginStates } from '../services/pluginStateService'
-import { createLogger } from '../utils/logger'
+import { loadPluginStates, savePluginStates } from '@/services/pluginStateService'
+import { createLogger } from '@/utils/logger'
 
 const log = createLogger('PluginStore')
 

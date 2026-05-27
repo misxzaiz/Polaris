@@ -6,7 +6,7 @@
 
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { createLogger } from '../utils/logger'
+import { createLogger } from '@/utils/logger'
 
 const log = createLogger('EditorSettings')
 

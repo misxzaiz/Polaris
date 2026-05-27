@@ -7,9 +7,9 @@ import { generateUUID } from '@/utils/uuid';
  */
 
 import { Communicate } from 'edge-tts-universal';
-import type { TTSConfig, TTSStatus, TTSVoice } from '../types/speech';
-import { DEFAULT_TTS_CONFIG } from '../types/speech';
-import { createLogger } from '../utils/logger';
+import type { TTSConfig, TTSStatus, TTSVoice } from '@/types/speech';
+import { DEFAULT_TTS_CONFIG } from '@/types/speech';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('TTSService');
 

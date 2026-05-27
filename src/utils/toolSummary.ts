@@ -5,8 +5,8 @@
  * Supports specialized parsing for Bash, Grep, Edit, etc.
  */
 
-import i18n from '../i18n';
-import type { ToolStatus } from '../types';
+import i18n from '@/i18n';
+import type { ToolStatus } from '@/types';
 import {
   extractFilePath,
   extractCommand,

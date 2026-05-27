@@ -3,7 +3,7 @@
  * 将后端返回的错误消息转换为国际化消息
  */
 
-import i18n from '../i18n';
+import i18n from '@/i18n';
 
 /**
  * 后端错误消息关键词到 i18n key 的映射

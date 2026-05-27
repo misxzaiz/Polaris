@@ -3,12 +3,12 @@
  * 支持指定工作区搜索
  */
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { searchFiles } from '../services/fileSearch';
-import type { FileMatch } from '../services/fileSearch';
-import type { Workspace } from '../types';
-import { useWorkspaceStore } from '../stores';
-import { fileSearchCache } from '../utils/cache';
-import { createLogger } from '../utils/logger';
+import { searchFiles } from '@/services/fileSearch';
+import type { FileMatch } from '@/services/fileSearch';
+import type { Workspace } from '@/types';
+import { useWorkspaceStore } from '@/stores';
+import { fileSearchCache } from '@/utils/cache';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('FileSearch');
 

@@ -12,10 +12,10 @@ import type {
   ClaudeSettings,
   EditMode,
   RuleType,
-} from '../types/autoMode';
-import * as autoModeService from '../services/autoModeService';
-import * as claudeSettingsService from '../services/claudeSettingsService';
-import { createLogger } from '../utils/logger';
+} from '@/types/autoMode';
+import * as autoModeService from '@/services/autoModeService';
+import * as claudeSettingsService from '@/services/claudeSettingsService';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('AutoModeStore');
 

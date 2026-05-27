@@ -17,13 +17,13 @@ import type {
   ProtocolTemplate,
   CreateProtocolTemplateParams,
   TaskCategory,
-} from '../types/scheduler';
-import type { AIEvent } from '../ai-runtime';
-import * as tauri from '../services/tauri';
+} from '@/types/scheduler';
+import type { AIEvent } from '@/ai-runtime';
+import * as tauri from '@/services/tauri';
 import { invoke as transportInvoke } from '@/services/transport';
-import { getEventRouter } from '../services/eventRouter';
-import { extractErrorMessage } from '../utils/errorMapping';
-import { createLogger } from '../utils/logger'
+import { getEventRouter } from '@/services/eventRouter';
+import { extractErrorMessage } from '@/utils/errorMapping';
+import { createLogger } from '@/utils/logger'
 import { generateLogId, parseEventToLog } from './schedulerStoreUtils'
 
 const log = createLogger('Scheduler')

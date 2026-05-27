@@ -17,7 +17,7 @@ import type {
   FeishuConfig,
   PlatformInstance,
   InstanceId,
-} from '../types';
+} from '@/types';
 import {
   startIntegration,
   stopIntegration,
@@ -35,8 +35,8 @@ import {
   switchIntegrationInstance,
   disconnectIntegrationInstance,
   updateIntegrationInstance,
-} from '../services/tauri';
-import { createLogger } from '../utils/logger'
+} from '@/services/tauri';
+import { createLogger } from '@/utils/logger'
 
 interface IntegrationState {
   // 状态

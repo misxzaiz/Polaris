@@ -5,9 +5,9 @@
  */
 
 import { useEffect } from 'react';
-import { useWorkspaceStore } from '../stores/workspaceStore';
-import * as tauri from '../services/tauri';
-import { createLogger } from '../utils/logger';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
+import * as tauri from '@/services/tauri';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('WorkspaceSync');
 

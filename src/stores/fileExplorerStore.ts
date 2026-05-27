@@ -4,12 +4,12 @@
 
 import { create } from 'zustand';
 import { listen } from '@/services/transport';
-import type { FileExplorerStore, FileInfo, FsChangeEvent } from '../types';
-import * as tauri from '../services/tauri';
-import { searchFiles } from '../services/fileSearch';
-import type { FileMatch } from '../services/fileSearch';
-import { createLogger } from '../utils/logger';
-import { getParentPath, joinPath, normalizePath } from '../utils/path';
+import type { FileExplorerStore, FileInfo, FsChangeEvent } from '@/types';
+import * as tauri from '@/services/tauri';
+import { searchFiles } from '@/services/fileSearch';
+import type { FileMatch } from '@/services/fileSearch';
+import { createLogger } from '@/utils/logger';
+import { getParentPath, joinPath, normalizePath } from '@/utils/path';
 import { updateFolderChildren, filterFiles, countFiles } from './fileExplorerStoreUtils';
 
 const log = createLogger('FileExplorer');

@@ -1,4 +1,4 @@
-import type { EngineId } from '../types';
+import type { EngineId } from '@/types';
 
 export function normalizeEngineId(engineId?: string | null): EngineId {
   return engineId === 'codex' ? 'codex' : 'claude-code';

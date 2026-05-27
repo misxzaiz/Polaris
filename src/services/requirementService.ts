@@ -13,7 +13,7 @@ import type {
   RequirementStats,
 } from '@/types'
 import { computeRequirementStats } from '@/types/requirement'
-import { createLogger } from '../utils/logger'
+import { createLogger } from '@/utils/logger'
 
 const log = createLogger('RequirementService')
 

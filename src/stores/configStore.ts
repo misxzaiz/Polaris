@@ -3,14 +3,14 @@
  */
 
 import { create } from 'zustand';
-import i18n from '../i18n';
-import type { Config, ConfigPatch, HealthStatus } from '../types';
-import * as tauri from '../services/tauri';
-import { createLogger } from '../utils/logger';
-import { currentMode } from '../services/transport';
-import { storeTokenMd5, md5Hex } from '../services/transport/auth';
-import { getSelectedEngineHealth, hasAnyEngineAvailable } from '../utils/engineHealth';
-import { normalizeEngineId } from '../utils/engineDisplay';
+import i18n from '@/i18n';
+import type { Config, ConfigPatch, HealthStatus } from '@/types';
+import * as tauri from '@/services/tauri';
+import { createLogger } from '@/utils/logger';
+import { currentMode } from '@/services/transport';
+import { storeTokenMd5, md5Hex } from '@/services/transport/auth';
+import { getSelectedEngineHealth, hasAnyEngineAvailable } from '@/utils/engineHealth';
+import { normalizeEngineId } from '@/utils/engineDisplay';
 import { useThemeStore } from './themeStore';
 
 const log = createLogger('ConfigStore');

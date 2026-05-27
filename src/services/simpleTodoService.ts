@@ -6,7 +6,7 @@
 
 import { invoke } from '@/services/transport'
 import type { TodoItem, TodoPriority, TodoStatus } from '@/types'
-import { createLogger } from '../utils/logger'
+import { createLogger } from '@/utils/logger'
 
 const log = createLogger('SimpleTodoService')
 

@@ -6,15 +6,15 @@
  * 不依赖任何 Zustand store，仅操作 localStorage + 调用 sessionStoreManager。
  */
 
-import type { ChatMessage, EngineId } from '../types'
-import { createLogger } from '../utils/logger'
-import { useWorkspaceStore } from '../stores/workspaceStore'
-import { useViewStore } from '../stores/index'
-import { sessionStoreManager } from '../stores/conversationStore/sessionStoreManager'
+import type { ChatMessage, EngineId } from '@/types'
+import { createLogger } from '@/utils/logger'
+import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { useViewStore } from '@/stores/index'
+import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { getClaudeCodeHistoryService } from './claudeCodeHistoryService'
 import { getCodexHistoryService } from './codexHistoryService'
-import { normalizeEngineId } from '../utils/engineDisplay'
-import { getPathBasename, normalizeWorkspacePath } from '../utils/workspacePath'
+import { normalizeEngineId } from '@/utils/engineDisplay'
+import { getPathBasename, normalizeWorkspacePath } from '@/utils/workspacePath'
 
 const log = createLogger('HistoryService')
 

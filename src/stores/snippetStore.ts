@@ -3,9 +3,9 @@
  */
 
 import { create } from 'zustand';
-import * as tauri from '../services/tauri';
-import type { PromptSnippet, CreateSnippetParams, UpdateSnippetParams } from '../types/promptSnippet';
-import { createLogger } from '../utils/logger';
+import * as tauri from '@/services/tauri';
+import type { PromptSnippet, CreateSnippetParams, UpdateSnippetParams } from '@/types/promptSnippet';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('SnippetStore');
 

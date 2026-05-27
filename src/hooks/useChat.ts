@@ -3,9 +3,9 @@
  */
 
 import { useEffect } from 'react';
-import type { AIEvent } from '../ai-runtime';
-import { getEventRouter } from '../services/eventRouter';
-import { createLogger } from '../utils/logger';
+import type { AIEvent } from '@/ai-runtime';
+import { getEventRouter } from '@/services/eventRouter';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('ChatHook');
 

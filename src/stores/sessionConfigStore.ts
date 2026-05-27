@@ -10,8 +10,8 @@ import type {
   SessionRuntimeConfig,
   EffortLevel,
   PermissionMode,
-} from '../types/sessionConfig'
-import { DEFAULT_SESSION_CONFIG } from '../types/sessionConfig'
+} from '@/types/sessionConfig'
+import { DEFAULT_SESSION_CONFIG } from '@/types/sessionConfig'
 
 interface SessionConfigState {
   /** 当前会话配置 */

@@ -3,7 +3,7 @@
  * Uses lucide-react icon library
  */
 
-import i18n from '../i18n';
+import i18n from '@/i18n';
 import type { ToolCategory, ToolConfig } from './toolConfig.types';
 import {
   extractFilePath,

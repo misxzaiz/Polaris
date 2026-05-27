@@ -5,7 +5,7 @@
  */
 
 import { invoke } from '@/services/transport'
-import type { ClaudeSettings, AutoModeCustomRules } from '../types/autoMode';
+import type { ClaudeSettings, AutoModeCustomRules } from '@/types/autoMode';
 
 /**
  * 读取 Claude settings.json

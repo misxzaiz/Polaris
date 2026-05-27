@@ -6,9 +6,9 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { speechService } from '../services/speechService';
-import { voiceNotificationService } from '../services/voiceNotificationService';
-import type { SpeechControl } from '../services/voiceNotificationService';
+import { speechService } from '@/services/speechService';
+import { voiceNotificationService } from '@/services/voiceNotificationService';
+import type { SpeechControl } from '@/services/voiceNotificationService';
 import type {
   SpeechRecognitionStatus,
   SpeechRecognitionError,
@@ -16,9 +16,9 @@ import type {
   VoiceCommand,
   VoiceCommandConfig,
   WakeWordConfig,
-} from '../types/speech';
-import { checkVoiceCommand, matchWakeWord } from '../types/speech';
-import { createLogger } from '../utils/logger';
+} from '@/types/speech';
+import { checkVoiceCommand, matchWakeWord } from '@/types/speech';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('useSpeechRecognition');
 
