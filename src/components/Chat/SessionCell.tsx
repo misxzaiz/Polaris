@@ -9,6 +9,7 @@
  */
 
 import { memo, useCallback, useState, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { Loader2, XCircle, X, Circle, Maximize2, Minimize2, Square } from 'lucide-react';
 import { SessionMessagesView } from './SessionMessagesView';
@@ -22,11 +23,11 @@ import { getEngineDisplayName, getEngineFullName } from '@/utils/engineDisplay';
 
 /** 状态图标映射 */
 const SESSION_STATUS_CONFIG = {
-  idle: { icon: Circle, className: 'text-text-muted', label: '空闲' },
-  running: { icon: Loader2, className: 'animate-spin text-primary', label: '运行中' },
-  waiting: { icon: Loader2, className: 'animate-spin text-warning', label: '等待中' },
-  error: { icon: XCircle, className: 'text-error', label: '错误' },
-  background_running: { icon: Loader2, className: 'animate-spin text-text-muted', label: '后台运行' },
+  idle: { icon: Circle, className: 'text-text-muted' },
+  running: { icon: Loader2, className: 'animate-spin text-primary' },
+  waiting: { icon: Loader2, className: 'animate-spin text-warning' },
+  error: { icon: XCircle, className: 'text-error' },
+  background_running: { icon: Loader2, className: 'animate-spin text-text-muted' },
 };
 
 /** SessionCell Props */
@@ -48,6 +49,7 @@ export const SessionCell = memo(function SessionCell({
   isExpanded = false,
   onToggleExpand,
 }: SessionCellProps) {
+  const { t } = useTranslation('chat');
   const { switchSession, deleteSession } = useSessionManagerActions();
 
   // 获取会话元数据
@@ -124,7 +126,7 @@ export const SessionCell = memo(function SessionCell({
             'text-xs font-medium truncate min-w-0',
             isActive ? 'text-primary' : 'text-text-secondary'
           )}>
-            {sessionMetadata?.title || '未命名会话'}
+            {sessionMetadata?.title || t('sessionCell.unnamed')}
           </span>
 
           <span
@@ -161,7 +163,7 @@ export const SessionCell = memo(function SessionCell({
 
           {/* 待回答问题指示 - 仅非活跃会话显示 */}
           {hasPendingQuestion && !isActive && !isStreaming && (
-            <span className="w-1.5 h-1.5 bg-warning rounded-full shrink-0" title="有待回答的问题" />
+            <span className="w-1.5 h-1.5 bg-warning rounded-full shrink-0" title={t('sessionCell.pendingQuestion')} />
           )}
 
           {/* 状态图标 */}
@@ -172,7 +174,7 @@ export const SessionCell = memo(function SessionCell({
             <button
               onClick={handleInterrupt}
               className="shrink-0 p-0.5 rounded bg-danger/80 text-white hover:bg-danger transition-colors"
-              title="中断"
+              title={t('sessionCell.interrupt')}
             >
               <Square className="w-3 h-3" />
             </button>
@@ -182,7 +184,7 @@ export const SessionCell = memo(function SessionCell({
           <button
             onClick={handleExpand}
             className="shrink-0 p-0.5 rounded text-text-muted hover:text-text-primary hover:bg-background-hover transition-colors"
-            title={isExpanded ? '收起' : '展开'}
+            title={isExpanded ? t('sessionCell.collapse') : t('sessionCell.expand')}
           >
             {isExpanded ? (
               <Minimize2 className="w-3 h-3" />
@@ -195,7 +197,7 @@ export const SessionCell = memo(function SessionCell({
           <button
             onClick={handleClose}
             className="shrink-0 p-0.5 rounded text-text-muted hover:text-text-primary hover:bg-background-hover transition-colors"
-            title="关闭"
+            title={t('sessionCell.close')}
           >
             <X className="w-3 h-3" />
           </button>

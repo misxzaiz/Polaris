@@ -9,6 +9,7 @@
  */
 
 import { memo, useCallback, useMemo, useRef, forwardRef, useImperativeHandle, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { LayoutGrid } from 'lucide-react';
 import { SessionCell } from './SessionCell';
@@ -44,6 +45,7 @@ function scrollRowTo(rowRef: React.RefObject<HTMLDivElement | null>, index: numb
  */
 export const MultiSessionGrid = memo(forwardRef<MultiSessionGridRef, MultiSessionGridProps>(
   function MultiSessionGrid(_, ref) {
+    const { t } = useTranslation('chat');
     const multiSessionIds = useViewStore(state => state.multiSessionIds);
     const multiSessionMode = useViewStore(state => state.multiSessionMode);
     const multiSessionRows = useViewStore(state => state.multiSessionRows);
@@ -150,8 +152,8 @@ export const MultiSessionGrid = memo(forwardRef<MultiSessionGridRef, MultiSessio
       return (
         <div className="flex flex-col items-center justify-center h-full text-center p-4">
           <LayoutGrid className="w-12 h-12 text-text-muted mb-4" />
-          <p className="text-text-secondary text-sm mb-4">多会话窗口模式</p>
-          <p className="text-text-muted text-xs mb-4">使用状态栏上的按钮新建会话</p>
+          <p className="text-text-secondary text-sm mb-4">{t('multiSession.mode')}</p>
+          <p className="text-text-muted text-xs mb-4">{t('multiSession.hint')}</p>
         </div>
       );
     }

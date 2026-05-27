@@ -350,6 +350,25 @@
     "aiEngine": "AI Engine",
     "noWorkspace": "No workspace"
   },
+  "multiSession": {
+    "mode": "Multi-session window mode",
+    "hint": "Use the button on the status bar to create a new session"
+  },
+  "sessionCell": {
+    "unnamed": "Untitled session",
+    "pendingQuestion": "Pending question",
+    "interrupt": "Interrupt",
+    "collapse": "Collapse",
+    "expand": "Expand",
+    "close": "Close",
+    "status": {
+      "idle": "Idle",
+      "running": "Running",
+      "waiting": "Waiting",
+      "error": "Error",
+      "backgroundRunning": "Background"
+    }
+  },
   "compact": {
     "typing": "Typing...",
     "output": "Output:",

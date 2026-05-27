@@ -350,6 +350,25 @@
     "aiEngine": "AI 引擎",
     "noWorkspace": "无工作区"
   },
+  "multiSession": {
+    "mode": "多会话窗口模式",
+    "hint": "使用状态栏上的按钮新建会话"
+  },
+  "sessionCell": {
+    "unnamed": "未命名会话",
+    "pendingQuestion": "有待回答的问题",
+    "interrupt": "中断",
+    "collapse": "收起",
+    "expand": "展开",
+    "close": "关闭",
+    "status": {
+      "idle": "空闲",
+      "running": "运行中",
+      "waiting": "等待中",
+      "error": "错误",
+      "backgroundRunning": "后台运行"
+    }
+  },
   "compact": {
     "typing": "正在输入...",
     "output": "输出:",
