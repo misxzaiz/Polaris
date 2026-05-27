@@ -21,7 +21,10 @@ import { createHttpTransport } from './httpTransport';
 import type { ConnectionStatus } from './httpTransport';
 import { getServerUrl } from './auth';
 import { useToastStore } from '../../stores/toastStore';
+import { createLogger } from '../../utils/logger';
 import i18n from 'i18next';
+
+const log = createLogger('Transport');
 
 /** Track the "connection lost" toast so it can be dismissed on reconnect */
 let connectionLostToastId: string | null = null;
@@ -72,7 +75,7 @@ function emitLocal(event: string, payload: unknown): void {
     try {
       listener(payload);
     } catch (error) {
-      console.error(`[Transport] Local event listener failed for "${event}":`, error);
+      log.error(`Local event listener failed for "${event}"`, error instanceof Error ? error : new Error(String(error)));
     }
   }
 }

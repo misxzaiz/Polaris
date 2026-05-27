@@ -72,7 +72,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       const timeSinceCrash = Date.now() - crashTime.getTime();
       // 如果是最近5秒内崩溃的，记录日志
       if (timeSinceCrash < 5000) {
-        console.warn('[ErrorBoundary] 检测到最近有崩溃，已自动恢复');
+        log.warn('检测到最近有崩溃，已自动恢复');
       }
     }
 
@@ -236,7 +236,7 @@ export function useWhiteScreenDetection(enabled: boolean = true) {
         checkCount++;
 
         if (checkCount >= maxChecks) {
-          console.warn('[WhiteScreenDetection] 检测到可能的白屏，尝试恢复');
+          log.warn('检测到可能的白屏，尝试恢复');
           clearInterval(checkInterval);
 
           // 尝试触发恢复

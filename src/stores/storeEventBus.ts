@@ -13,6 +13,10 @@
  *   // 清理时调用 unsub()
  */
 
+import { createLogger } from '../utils/logger'
+
+const log = createLogger('StoreEventBus')
+
 type Listener<T = unknown> = (payload: T) => void
 
 // ============================================================================
@@ -105,7 +109,7 @@ class StoreEventBus {
       try {
         listener(payload)
       } catch (err) {
-        console.error(`[StoreEventBus] Error in listener for "${event}":`, err)
+        log.error(`Error in listener for "${event}"`, err instanceof Error ? err : new Error(String(err)))
       }
     }
   }

@@ -7,6 +7,9 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { loadPluginStates, savePluginStates } from '../services/pluginStateService'
+import { createLogger } from '../utils/logger'
+
+const log = createLogger('PluginStore')
 
 export interface PluginState {
   enabled: boolean
@@ -78,7 +81,7 @@ let saveQueue: Promise<void> = Promise.resolve()
 
 function persistPluginStates(states: PluginStateMap): void {
   saveQueue = saveQueue.then(() => savePluginStates(states)).catch((error) => {
-    console.warn('Failed to persist plugin states to backend', error)
+    log.warn('Failed to persist plugin states to backend', { error })
   })
 }
 

@@ -9,6 +9,9 @@ import { Component, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import type { ContentBlock } from '../../types';
+import { createLogger } from '../../utils/logger';
+
+const log = createLogger('ContentBlockErrorBoundary');
 
 interface ContentBlockErrorBoundaryProps {
   children: ReactNode;
@@ -48,11 +51,9 @@ export class ContentBlockErrorBoundary extends Component<
     const { blockType, blockId } = this.props;
 
     // 记录错误日志
-    console.error('[ContentBlockErrorBoundary] 内容块渲染错误:', {
+    log.error('内容块渲染错误', error, {
       blockType,
       blockId,
-      error: error.message,
-      stack: error.stack,
       componentStack: errorInfo.componentStack,
     });
   }
