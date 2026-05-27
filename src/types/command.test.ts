@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { builtinCommands, type Command, type ParsedCommand } from './command'
+import { builtinCommands } from './command'
 
 describe('builtinCommands', () => {
   it('应该包含内置命令', () => {

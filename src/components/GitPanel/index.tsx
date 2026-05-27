@@ -206,7 +206,6 @@ export function GitPanel({
       setIsBatchOperating(false)
       setBatchProgress(null)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- t is stable i18n function
   }, [currentWorkspace, selectedFiles, status, stageFile, refreshStatus, toast, t])
 
   const handleBatchUnstage = useCallback(async () => {
@@ -237,7 +236,6 @@ export function GitPanel({
       setIsBatchOperating(false)
       setBatchProgress(null)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- t is stable i18n function
   }, [currentWorkspace, selectedFiles, status, unstageFile, refreshStatus, toast, t])
 
   const handleBatchDiscard = useCallback(() => {
@@ -294,7 +292,6 @@ export function GitPanel({
     } finally {
       setIsInitializing(false)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- t is stable i18n function
   }, [currentWorkspace, initBranchName, initRepository, toast, t])
 
   const useInternalDiff = !onOpenDiffInTab

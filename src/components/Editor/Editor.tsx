@@ -3,7 +3,7 @@
  */
 
 import { useEffect, useRef, useMemo } from 'react';
-import { EditorState } from '@codemirror/state';
+import { EditorState, type Extension } from '@codemirror/state';
 import {
   EditorView,
   keymap,
@@ -80,7 +80,7 @@ const customHighlightStyle = HighlightStyle.define([
 
 // 获取语言扩展
 async function getLanguageExtension(lang: string) {
-  const langMap: Record<string, any> = {
+  const langMap: Record<string, () => Promise<Extension>> = {
     // JavaScript / TypeScript
     javascript: () => import('@codemirror/lang-javascript').then(m => m.javascript({ jsx: true })),
     typescript: () => import('@codemirror/lang-javascript').then(m => m.javascript({ jsx: true, typescript: true })),

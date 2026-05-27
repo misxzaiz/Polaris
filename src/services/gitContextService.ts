@@ -82,7 +82,8 @@ export async function getGitCommits(
     // Apply filters
     let filtered = commits;
     if (options.branch) {
-      filtered = filtered.filter(c => c.message.includes(options.branch!));
+      const branch = options.branch;
+      filtered = filtered.filter(c => c.message.includes(branch));
     }
     if (options.author) {
       const author = options.author.toLowerCase();

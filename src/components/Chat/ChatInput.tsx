@@ -80,7 +80,6 @@ export function ChatInput({
   useEffect(() => {
     setLocalText(inputDraft.text)
     setLocalAttachments(inputDraft.attachments)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- inputDraft synced with sessionId only
   }, [inputDraft])
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)

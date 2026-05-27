@@ -524,7 +524,7 @@ export function HistoryTab({
   useEffect(() => {
     if (!currentWorkspace) return
     void getBranches(currentWorkspace.path)
-  }, [currentWorkspace?.path, getBranches])
+  }, [currentWorkspace, getBranches])
 
   useEffect(() => {
     writeLocalStorage(FILE_LIST_MODE_STORAGE_KEY, fileListMode)

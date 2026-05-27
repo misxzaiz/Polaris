@@ -30,7 +30,6 @@ export const AutoResizingTextarea = forwardRef<HTMLTextAreaElement, AutoResizing
       // 计算新高度：在 minHeight 和 maxHeight 之间
       const newHeight = Math.min(Math.max(textarea.scrollHeight, minHeight), maxHeight);
       textarea.style.height = `${newHeight}px`;
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- textareaRef is a stable ref object
     }, [minHeight, maxHeight, textareaRef]);
 
     return (
