@@ -15,26 +15,14 @@ import {
   ChevronRight,
   Loader2,
   ChevronDown,
-  FileText,
-  ExternalLink,
   Search,
   X,
-  Copy,
-  Check,
-  List,
-  FolderTree,
-  Rows3,
-  Columns2,
-  ArrowLeft,
   FileClock,
   GitBranch as GitBranchIcon,
-  PanelLeftClose,
-  PanelLeftOpen,
+  ArrowLeft,
 } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
-import { DiffViewer } from '@/components/Diff/DiffViewer'
-import type { DiffViewMode } from '@/components/Diff/DiffViewer'
 import type {
   GitCommit as GitCommitType,
   GitCommitDetails,
@@ -42,7 +30,6 @@ import type {
   GitFileHistoryEntry,
 } from '@/types/git'
 import type { OpenDiffTabOptions } from '@/stores/tabStore'
-import { resolveWorkspacePath } from '@/utils/path'
 import { createLogger } from '../../utils/logger'
 import {
   PAGE_SIZE,
@@ -57,6 +44,7 @@ import {
   getInitialFilePaneCollapsed,
   getInitialPaneWidth,
   clamp,
+  formatRelativeTime,
   FILE_LIST_MODE_STORAGE_KEY,
   COMMIT_LIST_WIDTH_STORAGE_KEY,
   FILE_PANE_WIDTH_STORAGE_KEY,
@@ -64,6 +52,7 @@ import {
   DIFF_VIEW_MODE_STORAGE_KEY,
 } from './historyTabUtils'
 import type { FileListMode, CopyAction } from './historyTabUtils'
+import { CommitDetailsPane } from './CommitDetailsPane'
 
 const log = createLogger('HistoryTab')
 
@@ -102,7 +91,7 @@ export function HistoryTab({
   const [selectedBranch, setSelectedBranch] = useState('')
   const [fileSearchQuery, setFileSearchQuery] = useState('')
   const [fileListMode, setFileListMode] = useState<FileListMode>(getInitialFileListMode)
-  const [diffViewMode, setDiffViewMode] = useState<DiffViewMode>(getInitialDiffViewMode)
+  const [diffViewMode, setDiffViewMode] = useState<import('@/components/Diff/DiffViewer').DiffViewMode>(getInitialDiffViewMode)
   const [copiedAction, setCopiedAction] = useState<CopyAction | null>(null)
   const [isCommitMessageExpanded, setIsCommitMessageExpanded] = useState(false)
   const [isFilePaneCollapsed, setIsFilePaneCollapsed] = useState(getInitialFilePaneCollapsed)
@@ -318,7 +307,6 @@ export function HistoryTab({
     }
   }, [currentWorkspace, getCommitDetails])
 
-  // 加载提交历史（初始）
   const loadCommits = useCallback(async () => {
     if (!currentWorkspace) {
       setError(noWorkspaceError)
@@ -362,7 +350,6 @@ export function HistoryTab({
     targetCommitSha,
   ])
 
-  // 加载更多提交
   const loadMoreCommits = useCallback(async () => {
     if (!currentWorkspace || isLoadingMore || !hasMore) return
 
@@ -468,7 +455,6 @@ export function HistoryTab({
     selectedBranch,
   ])
 
-  // 滚动加载更多
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current
     if (!container || isLoadingMore || !activeHasMore) return
@@ -483,7 +469,6 @@ export function HistoryTab({
     }
   }, [activeHasMore, isFileHistoryMode, isLoadingMore, loadMoreCommits, loadMoreFileHistory])
 
-  // 初始加载
   useEffect(() => {
     loadCommits()
   }, [loadCommits])
@@ -533,7 +518,6 @@ export function HistoryTab({
     clearSelection()
   }, [clearFileHistoryMode, clearSelection, currentWorkspace?.path])
 
-  // 处理从 Blame 跳转
   useEffect(() => {
     if (!targetCommitSha) return
 
@@ -547,24 +531,6 @@ export function HistoryTab({
     void loadCommitDetailsBySha(targetCommitSha)
     onCommitSelected?.()
   }, [commits, loadCommitDetails, loadCommitDetailsBySha, onCommitSelected, targetCommitSha])
-
-  // 格式化时间
-  const formatTime = (timestamp?: number) => {
-    if (!timestamp) return ''
-
-    const date = new Date(timestamp * 1000)
-    const now = new Date()
-    const diffMs = now.getTime() - date.getTime()
-    const diffMins = Math.floor(diffMs / 60000)
-    const diffHours = Math.floor(diffMs / 3600000)
-    const diffDays = Math.floor(diffMs / 86400000)
-
-    if (diffMins < 1) return t('history.justNow')
-    if (diffMins < 60) return t('history.minutesAgo', { count: diffMins })
-    if (diffHours < 24) return t('history.hoursAgo', { count: diffHours })
-    if (diffDays < 7) return t('history.daysAgo', { count: diffDays })
-    return date.toLocaleDateString()
-  }
 
   const handleRefresh = useCallback(() => {
     if (fileHistoryPath) {
@@ -694,7 +660,7 @@ export function HistoryTab({
             </span>
             <span className="flex items-center gap-1 shrink-0">
               <Clock size={10} />
-              {formatTime(commit.timestamp)}
+              {formatRelativeTime(commit.timestamp, t)}
             </span>
           </div>
         </div>
@@ -736,7 +702,7 @@ export function HistoryTab({
             </span>
             <span className="flex items-center gap-1 shrink-0">
               <Clock size={10} />
-              {formatTime(entry.commit.timestamp)}
+              {formatRelativeTime(entry.commit.timestamp, t)}
             </span>
           </div>
         </div>
@@ -808,353 +774,6 @@ export function HistoryTab({
             )}
           </>
         )}
-      </div>
-    )
-  }
-
-  const renderFileButton = (file: GitDiffEntry) => {
-    const isSelected = selectedFileDiff ? getDiffKey(selectedFileDiff) === getDiffKey(file) : false
-
-    return (
-      <div
-        key={getDiffKey(file)}
-        title={file.file_path}
-        className={`group flex items-center border-b border-border-subtle hover:bg-background-hover transition-colors ${
-          isSelected ? 'bg-primary/5' : ''
-        }`}
-      >
-        <button
-          type="button"
-          onClick={() => setSelectedFileDiff(file)}
-          className="min-w-0 flex-1 px-4 py-2 flex items-center gap-2 text-left"
-        >
-          <FileText size={13} className="text-text-tertiary shrink-0" />
-          <span className="flex-1 min-w-0 text-sm text-text-primary truncate">
-            {file.file_path}
-          </span>
-          <span className="text-xs shrink-0">
-            <span className="text-success">+{file.additions ?? 0}</span>
-            <span className="text-danger ml-1">-{file.deletions ?? 0}</span>
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={() => void loadFileHistory(file.file_path)}
-          className="mr-2 p-1.5 text-text-tertiary hover:text-primary hover:bg-primary/10 rounded transition-colors opacity-70 group-hover:opacity-100 shrink-0"
-          title={t('history.viewFileHistory')}
-        >
-          <FileClock size={13} />
-        </button>
-      </div>
-    )
-  }
-
-  const openSelectedDiffInTab = useCallback(() => {
-    if (!selectedCommit || !selectedFileDiff) return
-
-    onOpenDiffInTab?.(selectedFileDiff, {
-      identity: `history:${selectedCommit.sha}:${getDiffKey(selectedFileDiff)}`,
-      titleContext: selectedCommit.shortSha,
-      metadata: {
-        commitSha: selectedCommit.sha,
-        shortSha: selectedCommit.shortSha,
-        source: isFileHistoryMode ? 'file-history' : 'commit-history',
-      },
-    })
-  }, [isFileHistoryMode, onOpenDiffInTab, selectedCommit, selectedFileDiff])
-
-  const renderDetails = () => {
-    if (!selectedCommit && !isDetailsLoading) {
-      return (
-        <div className="flex-1 flex items-center justify-center text-text-tertiary text-sm p-6 text-center">
-          {t('history.selectCommit')}
-        </div>
-      )
-    }
-
-    const selectedMessage = selectedCommit?.message ?? ''
-    const selectedMessageLines = selectedMessage.split('\n')
-    const selectedMessageSubject = selectedMessageLines[0] || selectedMessage
-    const hasCommitMessageBody = selectedMessageLines.slice(1).some(line => line.trim().length > 0)
-    const visibleCommitMessage = isCommitMessageExpanded ? selectedMessage : selectedMessageSubject
-    const shouldShowFilePane = !isFileHistoryMode && (!isWorkbench || !isFilePaneCollapsed)
-
-    return (
-      <div className="flex-1 flex flex-col min-h-0 bg-background-base">
-        <div className="px-3 py-2 border-b border-border-subtle bg-background-surface shrink-0">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              <span className="text-xs font-mono text-text-tertiary bg-background-elevated px-1.5 py-0.5 rounded shrink-0">
-                {selectedCommit?.shortSha}
-              </span>
-              {selectedCommit && selectedCommit.parents.length > 1 && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-info/10 text-info shrink-0">
-                  {t('history.mergeCommit')}
-                </span>
-              )}
-              <div className="min-w-0 flex-1">
-                <div
-                  className={`text-sm text-text-primary font-medium ${
-                    isCommitMessageExpanded
-                      ? 'whitespace-pre-wrap break-words max-h-32 overflow-y-auto pr-1'
-                      : 'truncate'
-                  }`}
-                  title={isCommitMessageExpanded ? undefined : selectedMessage}
-                >
-                  {visibleCommitMessage}
-                </div>
-                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-text-tertiary">
-                  <span className="truncate max-w-[220px]">{selectedCommit?.author}</span>
-                  <span>·</span>
-                  <span>{formatTime(selectedCommit?.timestamp)}</span>
-                  {selectedDetails && (
-                    <>
-                      <span>·</span>
-                      <span>{t('history.filesChanged', { count: selectedDetails.files.length })}</span>
-                      <span className="text-success">+{selectedDetails.totalAdditions}</span>
-                      <span className="text-danger">-{selectedDetails.totalDeletions}</span>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center gap-1 shrink-0">
-              {selectedCommit && (
-                <>
-                  {hasCommitMessageBody && (
-                    <button
-                      type="button"
-                      onClick={() => setIsCommitMessageExpanded(prev => !prev)}
-                      className="p-1 text-text-tertiary hover:text-primary hover:bg-background-hover rounded transition-colors"
-                      title={isCommitMessageExpanded ? t('history.collapseMessage') : t('history.expandMessage')}
-                    >
-                      {isCommitMessageExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => copyText(selectedCommit.sha, 'sha')}
-                    className="p-1 text-text-tertiary hover:text-primary hover:bg-background-hover rounded transition-colors"
-                    title={copiedAction === 'sha' ? t('history.copied') : t('history.copySha')}
-                  >
-                    {copiedAction === 'sha' ? <Check size={14} /> : <Copy size={14} />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => copyText(selectedCommit.message, 'message')}
-                    className="p-1 text-text-tertiary hover:text-primary hover:bg-background-hover rounded transition-colors"
-                    title={copiedAction === 'message' ? t('history.copied') : t('history.copyMessage')}
-                  >
-                    {copiedAction === 'message' ? <Check size={14} /> : <Copy size={14} />}
-                  </button>
-                </>
-              )}
-              <button
-                type="button"
-                onClick={clearSelection}
-                className="p-1 text-text-tertiary hover:text-text-primary hover:bg-background-hover rounded transition-colors"
-                title={t('history.closeDetails')}
-              >
-                <X size={14} />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {detailsError && (
-          <div className="px-4 py-2 text-xs text-danger bg-danger/10 border-b border-danger/20">
-            {t('history.detailLoadFailed')}: {detailsError}
-          </div>
-        )}
-
-        {isDetailsLoading ? (
-          <div className="flex-1 flex items-center justify-center text-text-tertiary text-sm">
-            <Loader2 size={16} className="animate-spin mr-2" />
-            {t('history.loadingDetails')}
-          </div>
-        ) : selectedDetails ? (
-          <div className={isWorkbench ? 'flex-1 flex min-h-0' : 'flex-1 flex flex-col min-h-0'}>
-            {shouldShowFilePane && (
-              <div
-                className={`${isWorkbench ? 'relative border-r' : 'max-h-56 border-b'} border-border-subtle shrink-0 flex flex-col min-h-0`}
-                style={isWorkbench ? { width: filePaneWidth } : undefined}
-              >
-                {selectedDetails.files.length === 0 ? (
-                  <div className="p-4 text-sm text-text-tertiary text-center">
-                    {t('history.noFileChanges')}
-                  </div>
-                ) : (
-                  <>
-                    <div className="p-2 border-b border-border-subtle bg-background-surface shrink-0">
-                      <div className="flex items-center gap-1.5">
-                        <div className="relative flex-1 min-w-0">
-                          <Search
-                            size={13}
-                            className="absolute left-2 top-1/2 -translate-y-1/2 text-text-tertiary pointer-events-none"
-                          />
-                          <input
-                            type="search"
-                            value={fileSearchQuery}
-                            onChange={(event) => setFileSearchQuery(event.target.value)}
-                            placeholder={t('history.fileSearchPlaceholder')}
-                            className="w-full h-7 pl-7 pr-7 text-xs bg-background-base border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary text-text-primary placeholder:text-text-tertiary"
-                          />
-                          {fileSearchQuery && (
-                            <button
-                              type="button"
-                              onClick={() => setFileSearchQuery('')}
-                              className="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-text-tertiary hover:text-text-primary hover:bg-background-hover rounded transition-colors"
-                              title={t('history.clearFileSearch')}
-                            >
-                              <X size={12} />
-                            </button>
-                          )}
-                        </div>
-                        <div className="flex items-center bg-background-base border border-border rounded shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => setFileListMode('list')}
-                            className={`p-1.5 transition-colors ${fileListMode === 'list' ? 'text-primary bg-primary/10' : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'}`}
-                            title={t('history.listView')}
-                          >
-                            <List size={13} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setFileListMode('tree')}
-                            className={`p-1.5 transition-colors ${fileListMode === 'tree' ? 'text-primary bg-primary/10' : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'}`}
-                            title={t('history.treeView')}
-                          >
-                            <FolderTree size={13} />
-                          </button>
-                        </div>
-                        {isWorkbench && (
-                          <button
-                            type="button"
-                            onClick={() => setIsFilePaneCollapsed(true)}
-                            className="p-1.5 text-text-tertiary hover:text-primary hover:bg-background-hover rounded transition-colors shrink-0"
-                            title={t('history.collapseFilePane')}
-                          >
-                            <PanelLeftClose size={13} />
-                          </button>
-                        )}
-                      </div>
-                      {normalizedFileSearchQuery && (
-                        <div className="mt-1.5 text-[11px] text-text-tertiary">
-                          {t('history.fileSearchCount', {
-                            shown: filteredSelectedFiles.length,
-                            count: selectedDetails.files.length,
-                          })}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto min-h-0">
-                      {filteredSelectedFiles.length === 0 ? (
-                        <div className="p-4 text-sm text-text-tertiary text-center">
-                          {t('history.noFileSearchResults')}
-                        </div>
-                      ) : fileListMode === 'tree' ? (
-                        groupedSelectedFiles.map((group) => (
-                          <div key={group.directory}>
-                            <div className="sticky top-0 px-4 py-1.5 bg-background-surface border-b border-border-subtle text-[11px] font-medium text-text-tertiary flex items-center gap-1.5">
-                              <FolderTree size={12} />
-                              <span className="truncate">{group.directory}</span>
-                            </div>
-                            {group.files.map(renderFileButton)}
-                          </div>
-                        ))
-                      ) : (
-                        filteredSelectedFiles.map(renderFileButton)
-                      )}
-                    </div>
-                  </>
-                )}
-                {isWorkbench && (
-                  <div
-                    role="separator"
-                    aria-orientation="vertical"
-                    onPointerDown={(event) => startPaneResize('files', event)}
-                    className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-primary/40 transition-colors"
-                    title={t('history.resizePane')}
-                  />
-                )}
-              </div>
-            )}
-
-            <div className="flex-1 flex flex-col min-h-0">
-              {selectedFileDiff ? (
-                <>
-                  <div className="px-4 py-2 border-b border-border-subtle bg-background-surface flex items-center gap-2 shrink-0">
-                    {isWorkbench && !isFileHistoryMode && isFilePaneCollapsed && (
-                      <button
-                        type="button"
-                        onClick={() => setIsFilePaneCollapsed(false)}
-                        className="p-1 text-text-tertiary hover:text-primary hover:bg-background-hover rounded transition-colors shrink-0"
-                        title={t('history.expandFilePane')}
-                      >
-                        <PanelLeftOpen size={14} />
-                      </button>
-                    )}
-                    <span className="flex-1 text-xs font-medium text-text-secondary truncate">
-                      {selectedFileDiff.file_path}
-                    </span>
-                    {onOpenFileInEditor && selectedFileDiff.change_type !== 'deleted' && (
-                      <button
-                        type="button"
-                        onClick={() => onOpenFileInEditor(resolveWorkspacePath(currentWorkspace?.path, selectedFileDiff.file_path))}
-                        className="p-1 text-text-tertiary hover:text-primary hover:bg-background-hover rounded transition-colors shrink-0"
-                        title={t('history.openFileInEditor')}
-                      >
-                        <FileText size={14} />
-                      </button>
-                    )}
-                    <div className="flex items-center bg-background-base border border-border rounded shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => setDiffViewMode('unified')}
-                        className={`p-1.5 transition-colors ${diffViewMode === 'unified' ? 'text-primary bg-primary/10' : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'}`}
-                        title={t('diff.unifiedView')}
-                      >
-                        <Rows3 size={13} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDiffViewMode('split')}
-                        className={`p-1.5 transition-colors ${diffViewMode === 'split' ? 'text-primary bg-primary/10' : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'}`}
-                        title={t('diff.splitView')}
-                      >
-                        <Columns2 size={13} />
-                      </button>
-                    </div>
-                    {onOpenDiffInTab && (
-                      <button
-                        type="button"
-                        onClick={openSelectedDiffInTab}
-                        className="p-1 text-text-tertiary hover:text-primary hover:bg-background-hover rounded transition-colors"
-                        title={t('history.openDiffInEditor')}
-                      >
-                        <ExternalLink size={14} />
-                      </button>
-                    )}
-                  </div>
-                  <DiffViewer
-                    oldContent={selectedFileDiff.old_content}
-                    newContent={selectedFileDiff.new_content}
-                    changeType={selectedFileDiff.change_type}
-                    statusHint={selectedFileDiff.status_hint}
-                    contentOmitted={selectedFileDiff.content_omitted ?? false}
-                    viewMode={diffViewMode}
-                  />
-                </>
-              ) : (
-                <div className="flex-1 flex items-center justify-center text-sm text-text-tertiary p-6 text-center">
-                  {t('history.selectFile')}
-                </div>
-              )}
-            </div>
-          </div>
-        ) : null}
       </div>
     )
   }
@@ -1280,7 +899,39 @@ export function HistoryTab({
 
         {(selectedCommit || isDetailsLoading || isWorkbench) && (
           <div className={isWorkbench ? 'flex-1 flex min-w-0 min-h-0' : 'min-h-[360px] max-h-[70%] flex flex-col border-t border-border-subtle'}>
-            {renderDetails()}
+            <CommitDetailsPane
+              selectedCommit={selectedCommit}
+              selectedDetails={selectedDetails}
+              selectedFileDiff={selectedFileDiff}
+              isDetailsLoading={isDetailsLoading}
+              detailsError={detailsError}
+              fileSearchQuery={fileSearchQuery}
+              fileListMode={fileListMode}
+              diffViewMode={diffViewMode}
+              copiedAction={copiedAction}
+              isCommitMessageExpanded={isCommitMessageExpanded}
+              isFilePaneCollapsed={isFilePaneCollapsed}
+              filePaneWidth={filePaneWidth}
+              filteredSelectedFiles={filteredSelectedFiles}
+              groupedSelectedFiles={groupedSelectedFiles}
+              normalizedFileSearchQuery={normalizedFileSearchQuery}
+              isWorkbench={isWorkbench}
+              isFileHistoryMode={isFileHistoryMode}
+              currentWorkspacePath={currentWorkspace?.path}
+              onSetFileSearchQuery={setFileSearchQuery}
+              onSetFileListMode={setFileListMode}
+              onSetDiffViewMode={setDiffViewMode}
+              onSetCopiedAction={setCopiedAction}
+              onSetIsCommitMessageExpanded={setIsCommitMessageExpanded}
+              onSetIsFilePaneCollapsed={setIsFilePaneCollapsed}
+              onSetSelectedFileDiff={setSelectedFileDiff}
+              onClearSelection={clearSelection}
+              onCopyText={copyText}
+              onLoadFileHistory={loadFileHistory}
+              onOpenDiffInTab={onOpenDiffInTab}
+              onOpenFileInEditor={onOpenFileInEditor}
+              onStartPaneResize={startPaneResize}
+            />
           </div>
         )}
       </div>

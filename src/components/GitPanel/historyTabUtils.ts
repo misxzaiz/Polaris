@@ -53,3 +53,20 @@ export const getInitialPaneWidth = (key: string, fallback: number, min: number, 
   const stored = Number(readLocalStorage(key))
   return Number.isFinite(stored) && stored > 0 ? clamp(stored, min, max) : fallback
 }
+
+export function formatRelativeTime(timestamp: number | undefined, t: (key: string, opts?: Record<string, unknown>) => string): string {
+  if (!timestamp) return ''
+
+  const date = new Date(timestamp * 1000)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffMins = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMs / 3600000)
+  const diffDays = Math.floor(diffMs / 86400000)
+
+  if (diffMins < 1) return t('history.justNow')
+  if (diffMins < 60) return t('history.minutesAgo', { count: diffMins })
+  if (diffHours < 24) return t('history.hoursAgo', { count: diffHours })
+  if (diffDays < 7) return t('history.daysAgo', { count: diffDays })
+  return date.toLocaleDateString()
+}
