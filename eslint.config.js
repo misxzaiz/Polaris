@@ -16,6 +16,7 @@ export default tseslint.config(
       '*.config.js',
       '*.config.ts',
       'docs-site/**',
+      '.codex-test/**',
     ],
   },
   // 基础推荐规则
