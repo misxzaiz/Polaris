@@ -34,6 +34,20 @@ interface MenuItem {
   onClick: () => void
 }
 
+/** 菜单容器定位样式 */
+const MENU_CONTAINER_STYLE: React.CSSProperties = {
+  left: '20px',
+  top: '58%',
+  transform: 'translateY(-50%)',
+}
+
+/** 触发器定位样式 */
+const TRIGGER_STYLE: React.CSSProperties = {
+  top: '50%',
+  transform: 'translateY(-50%)',
+  left: '0',
+}
+
 export function RadialMenu({
   isOpen,
   onClose,
@@ -135,6 +149,11 @@ export function RadialMenu({
   const endAngle = 90 // 展开到正下方
   const angleRange = endAngle - startAngle
   const radius = 120 // 半径（像素），14 项需要更大半径避免拥挤
+  const menuContainerSizeStyle: React.CSSProperties = {
+    width: radius + 60,
+    height: radius * 2 + 60,
+    marginTop: -radius - 10,
+  }
 
   // 计算菜单项位置
   const getMenuPosition = (index: number) => {
@@ -150,25 +169,14 @@ export function RadialMenu({
     <div
       ref={menuRef}
       className="fixed z-50 animate-in fade-in duration-150"
-      style={{
-        // 菜单展开位置：触发器右侧
-        // 触发器是贴边半圆，右半圆在屏幕内约 16px
-        left: '20px', // 触发器宽度 + 少量间距
-        top: '58%',
-        transform: 'translateY(-50%)'
-      }}
+      style={MENU_CONTAINER_STYLE}
       onMouseEnter={() => onHover?.(true)}
       onMouseLeave={() => onHover?.(false)}
     >
       {/* 菜单项容器 - 垂直布局 */}
       <div
         className="relative"
-        style={{
-          width: radius + 60,
-          height: radius * 2 + 60,
-          // 容器中心对齐触发器中心
-          marginTop: -radius - 10,
-        }}
+        style={menuContainerSizeStyle}
       >
         {menuItems.map((item, index) => {
           const { x, y } = getMenuPosition(index)
@@ -245,11 +253,7 @@ export function RadialMenuTrigger({
         hover:bg-background-elevated/95 hover:shadow-xl
         ${isOpen ? 'bg-background-elevated/95 shadow-xl' : ''}
       `}
-      style={{
-        top: '50%',
-        transform: 'translateY(-50%)',
-        left: '0'
-      }}
+      style={TRIGGER_STYLE}
       title={t('labels.showActivityBar')}
     >
       {/* 网格图标 - 表示功能菜单 */}

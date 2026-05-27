@@ -37,6 +37,9 @@ const LANGUAGE_DISPLAY: Record<string, string> = {
   text: 'Plain Text',
 }
 
+/** 隐藏滚动条样式 */
+const HIDDEN_SCROLLBAR_STYLE: React.CSSProperties = { scrollbarWidth: 'none' }
+
 /** 根据扩展名获取文件图标 */
 function getItemIcon(item: FileInfo) {
   if (item.is_dir) {
@@ -236,7 +239,7 @@ export function BreadcrumbBar() {
     <div
       ref={barRef}
       className="flex items-center h-7 px-3 bg-background-surface border-b border-border-subtle overflow-x-auto shrink-0"
-      style={{ scrollbarWidth: 'none' }}
+      style={HIDDEN_SCROLLBAR_STYLE}
     >
       {segments.map((segment, index) => (
         <span key={segment.fullPath} className="flex items-center shrink-0">

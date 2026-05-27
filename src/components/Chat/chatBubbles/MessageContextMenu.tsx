@@ -95,6 +95,24 @@ export const MessageContextMenu = memo(function MessageContextMenu({
     };
   }, [visible, onClose]);
 
+  // 跳转到消息位置
+  const handleScrollToMessage = useCallback(() => {
+    if (onScrollToMessage && messageIndex !== undefined) {
+      onScrollToMessage(messageIndex);
+      onClose();
+    }
+  }, [onScrollToMessage, messageIndex, onClose])
+
+  const handleScrollToTop = useCallback(() => {
+    onScrollToTop?.();
+    onClose();
+  }, [onScrollToTop, onClose])
+
+  const handleScrollToBottom = useCallback(() => {
+    onScrollToBottom?.();
+    onClose();
+  }, [onScrollToBottom, onClose])
+
   // 复制消息内容
   const handleCopy = useCallback(async () => {
     if (!messageText) return;
@@ -124,7 +142,7 @@ export const MessageContextMenu = memo(function MessageContextMenu({
         <button
           type="button"
           className="w-full px-3 py-2 text-left text-sm text-text-secondary hover:bg-background-hover hover:text-text-primary flex items-center gap-2 transition-colors"
-          onClick={() => { if (onScrollToMessage && messageIndex !== undefined) { onScrollToMessage(messageIndex); onClose(); } }}
+          onClick={handleScrollToMessage}
         >
           <ArrowUp size={14} />
           <span>{t('contextMenu.scrollToStart')}</span>
@@ -136,7 +154,7 @@ export const MessageContextMenu = memo(function MessageContextMenu({
         <button
           type="button"
           className="w-full px-3 py-2 text-left text-sm text-text-secondary hover:bg-background-hover hover:text-text-primary flex items-center gap-2 transition-colors"
-          onClick={() => { onScrollToTop(); onClose(); }}
+          onClick={handleScrollToTop}
         >
           <ChevronsUp size={14} />
           <span>{t('contextMenu.scrollToTop')}</span>
@@ -148,7 +166,7 @@ export const MessageContextMenu = memo(function MessageContextMenu({
         <button
           type="button"
           className="w-full px-3 py-2 text-left text-sm text-text-secondary hover:bg-background-hover hover:text-text-primary flex items-center gap-2 transition-colors"
-          onClick={() => { onScrollToBottom(); onClose(); }}
+          onClick={handleScrollToBottom}
         >
           <ChevronsDown size={14} />
           <span>{t('contextMenu.scrollToBottom')}</span>

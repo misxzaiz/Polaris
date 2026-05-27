@@ -45,6 +45,9 @@ const INTERSECTION_OPTIONS: IntersectionObserverInit = {
   threshold: 0.1,      // 10% 可见时触发
 };
 
+/** 图表容器最大高度样式 */
+const CHART_MAX_HEIGHT_STYLE: React.CSSProperties = { maxHeight: '600px' };
+
 /**
  * Mermaid 渲染状态
  */
@@ -406,9 +409,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code, id }: Mermaid
             <div
               ref={contentRef}
               className="overflow-auto"
-              style={{
-                maxHeight: '600px',
-              }}
+              style={CHART_MAX_HEIGHT_STYLE}
             >
               <div
                 style={{

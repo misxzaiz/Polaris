@@ -18,6 +18,9 @@ import {
   useActiveSessionId,
 } from '../../stores/conversationStore/sessionStoreManager';
 
+/** 第二行静态最小高度样式 */
+const ROW2_MIN_HEIGHT_STYLE: React.CSSProperties = { minHeight: '50%' }
+
 /** 暴露给父组件的方法 */
 export interface MultiSessionGridRef {
   /** 滚动到指定会话 */
@@ -184,7 +187,7 @@ export const MultiSessionGrid = memo(forwardRef<MultiSessionGridRef, MultiSessio
           <div
             ref={row2Ref}
             className="flex-1 flex gap-1 p-1 overflow-x-auto overflow-y-hidden"
-            style={{ minHeight: '50%' }}
+            style={ROW2_MIN_HEIGHT_STYLE}
           >
             {row2Sessions.map((session) => (
               <div
