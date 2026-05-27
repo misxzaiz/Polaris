@@ -380,6 +380,14 @@
     "loadingMore": "加载中...",
     "loadMore": "加载更多 (剩余 {{count}} 条)"
   },
+  "emptyState": {
+    "startChat": "开始对话吧"
+  },
+  "thinking": {
+    "title": "思考",
+    "streaming": "思考中...",
+    "charCount": "{{count}} 字"
+  },
   "compact": {
     "typing": "正在输入...",
     "output": "输出:",

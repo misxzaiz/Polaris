@@ -5,6 +5,7 @@
  */
 
 import { memo, useMemo, useRef, useCallback, useEffect, useSyncExternalStore } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
 import { renderChatMessage } from './EnhancedChatMessages';
@@ -14,10 +15,11 @@ import type { ConversationStoreInstance, ConversationState } from '@/stores/conv
 
 /** 空状态组件 */
 const EmptyState = memo(function EmptyState() {
+  const { t } = useTranslation('chat');
   return (
     <div className="h-full flex items-center justify-center text-text-muted">
       <div className="text-center">
-        <p className="text-sm">开始对话吧</p>
+        <p className="text-sm">{t('emptyState.startChat')}</p>
       </div>
     </div>
   );

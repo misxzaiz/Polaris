@@ -59,13 +59,13 @@ const ThinkingAsToolRenderer = memo(function ThinkingAsToolRenderer({
           <Brain className="w-3.5 h-3.5" />
         </div>
         <span className="text-xs font-medium text-text-secondary shrink-0">
-          {t('thinking.title') || '思考'}
+          {t('thinking.title')}
         </span>
         <span className="text-xs text-text-tertiary truncate flex-1 min-w-0">
-          {charCount > 1000 ? `${(charCount / 1000).toFixed(1)}k` : charCount} 字
+          {t('thinking.charCount', { count: charCount > 1000 ? `${(charCount / 1000).toFixed(1)}k` : charCount })}
         </span>
         {isStreaming && (
-          <span className="text-xs text-primary">思考中...</span>
+          <span className="text-xs text-primary">{t('thinking.streaming')}</span>
         )}
         <StatusIcon className={clsx('w-3.5 h-3.5 shrink-0', statusClass)} />
         <ChevronDown

@@ -380,6 +380,14 @@
     "loadingMore": "Loading...",
     "loadMore": "Load more ({{count}} remaining)"
   },
+  "emptyState": {
+    "startChat": "Start chatting"
+  },
+  "thinking": {
+    "title": "Thinking",
+    "streaming": "Thinking...",
+    "charCount": "{{count}} chars"
+  },
   "compact": {
     "typing": "Typing...",
     "output": "Output:",
