@@ -7,7 +7,7 @@
 
 import { invoke } from '@/services/transport';
 
-import type { LspServerConfig } from '../../stores/lspStore';
+import type { LspServerConfig } from '@/stores/lspStore';
 
 // ── 进程管理 ──────────────────────────────────────
 

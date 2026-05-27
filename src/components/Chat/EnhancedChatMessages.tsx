@@ -18,14 +18,14 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { ChevronDown } from 'lucide-react';
-import type { ChatMessage, AssistantChatMessage, TextBlock } from '../../types';
-import { useActiveSessionMessages, useActiveSessionStreaming, useSessionMessages, useSessionStreaming } from '../../stores/conversationStore/useActiveSession';
-import { sessionStoreManager } from '../../stores/conversationStore/sessionStoreManager';
+import type { ChatMessage, AssistantChatMessage, TextBlock } from '@/types';
+import { useActiveSessionMessages, useActiveSessionStreaming, useSessionMessages, useSessionStreaming } from '@/stores/conversationStore/useActiveSession';
+import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
 import {
   findCurrentRoundIndexForRange,
   getRoundScrollTargetIndex,
   groupConversationRounds,
-} from '../../utils/conversationRounds';
+} from '@/utils/conversationRounds';
 import { ChatNavigator } from './ChatNavigator';
 import { useMessageSearch, MessageSearchPanel } from './MessageSearchPanel';
 import { VIEWPORT_EXTENSION, FOOTER_SPACER_STYLE } from './chatUtils/constants';

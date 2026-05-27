@@ -4,8 +4,8 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { TriggerType, IntervalUnit } from '../../types/scheduler';
-import { TRIGGER_TYPE_LABELS, INTERVAL_UNIT_LABELS, parseIntervalValue } from '../../types/scheduler';
+import type { TriggerType, IntervalUnit } from '@/types/scheduler';
+import { TRIGGER_TYPE_LABELS, INTERVAL_UNIT_LABELS, parseIntervalValue } from '@/types/scheduler';
 
 /** 预设间隔选项 */
 const INTERVAL_PRESETS = [

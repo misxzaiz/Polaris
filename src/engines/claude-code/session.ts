@@ -5,12 +5,12 @@
  * 这是 Claude Code Adapter 的核心实现。
  */
 
-import type { AISessionConfig } from '../../ai-runtime'
-import type { AITask, AIEvent } from '../../ai-runtime'
-import { BaseSession } from '../../ai-runtime/base'
-import { createEventIterable } from '../../ai-runtime/base'
+import type { AISessionConfig } from '@/ai-runtime'
+import type { AITask, AIEvent } from '@/ai-runtime'
+import { BaseSession } from '@/ai-runtime/base'
+import { createEventIterable } from '@/ai-runtime/base'
 import { invoke, listen } from '@/services/tauri'
-import { createLogger } from '../../utils/logger'
+import { createLogger } from '@/utils/logger'
 
 const log = createLogger('ClaudeCodeSession')
 

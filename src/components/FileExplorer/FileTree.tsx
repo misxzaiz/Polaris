@@ -1,9 +1,9 @@
 import { memo, useMemo, useCallback } from 'react';
 import { FileTreeNode } from './FileTreeNode';
 import { SearchResultsList } from './SearchResultsList';
-import { useFileExplorerStore } from '../../stores';
-import { normalizePath } from '../../utils/path';
-import type { FileInfo } from '../../types';
+import { useFileExplorerStore } from '@/stores';
+import { normalizePath } from '@/utils/path';
+import type { FileInfo } from '@/types';
 
 interface FileTreeProps {
   files?: FileInfo[];

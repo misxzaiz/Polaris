@@ -4,8 +4,8 @@
 
 import { memo, useState, useCallback } from 'react';
 import { Image, Code, FileText, File } from 'lucide-react';
-import type { UserChatMessage } from '../../../types';
-import { formatFileSize, getFileIcon } from '../../../types/attachment';
+import type { UserChatMessage } from '@/types';
+import { formatFileSize, getFileIcon } from '@/types/attachment';
 import { MessageContextMenu } from '../chatBubbles/MessageContextMenu';
 
 export const UserBubble = memo(function UserBubble({

@@ -7,7 +7,7 @@
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Save, FileText } from 'lucide-react';
-import { createLogger } from '../../utils/logger';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('UnsavedDialog');
 

@@ -1,13 +1,13 @@
 import { memo, useCallback, useState, useRef, useEffect, useMemo } from 'react';
 import { clsx } from 'clsx';
 import { Plus, Folder, Check, Bot, Cpu } from 'lucide-react';
-import { useViewStore, useWorkspaceStore, useConfigStore } from '../../stores';
+import { useViewStore, useWorkspaceStore, useConfigStore } from '@/stores';
 import {
   useSessionMetadataList,
   useSessionManagerActions,
-} from '../../stores/conversationStore/sessionStoreManager';
-import type { EngineId } from '../../types';
-import { getEngineFullName, normalizeEngineId } from '../../utils/engineDisplay';
+} from '@/stores/conversationStore/sessionStoreManager';
+import type { EngineId } from '@/types';
+import { getEngineFullName, normalizeEngineId } from '@/utils/engineDisplay';
 
 /**
  * 新建会话按钮

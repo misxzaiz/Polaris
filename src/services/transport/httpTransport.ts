@@ -6,7 +6,7 @@
  */
 
 import type { TransportAdapter } from './types';
-import { createLogger } from '../../utils/logger';
+import { createLogger } from '@/utils/logger';
 import { getTokenMd5, storeTokenMd5 } from './auth';
 
 const log = createLogger('HttpTransport');

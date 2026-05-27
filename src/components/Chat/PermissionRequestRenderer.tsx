@@ -11,10 +11,10 @@ import { memo, useState, useCallback, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { Shield, AlertTriangle, CheckCircle, XCircle, ChevronDown, ChevronRight } from 'lucide-react';
-import { createLogger } from '../../utils/logger';
-import { sessionStoreManager } from '../../stores/conversationStore/sessionStoreManager';
+import { createLogger } from '@/utils/logger';
+import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
 import { Button } from '../Common/Button';
-import type { PermissionRequestBlock } from '../../types';
+import type { PermissionRequestBlock } from '@/types';
 
 const log = createLogger('PermissionRequest');
 

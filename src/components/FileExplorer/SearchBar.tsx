@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useFileExplorerStore } from '../../stores';
+import { useFileExplorerStore } from '@/stores';
 
 function useDebounce(value: string, delay: number): string {
   const [debouncedValue, setDebouncedValue] = useState(value);

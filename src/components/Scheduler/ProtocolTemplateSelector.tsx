@@ -4,9 +4,9 @@
 
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ProtocolTemplate, TaskCategory, TemplateParam } from '../../types/scheduler';
-import { TASK_CATEGORY_LABELS } from '../../types/scheduler';
-import { useSchedulerStore } from '../../stores';
+import type { ProtocolTemplate, TaskCategory, TemplateParam } from '@/types/scheduler';
+import { TASK_CATEGORY_LABELS } from '@/types/scheduler';
+import { useSchedulerStore } from '@/stores';
 
 export interface ProtocolTemplateSelectorProps {
   /** 当前选中的模板 ID */

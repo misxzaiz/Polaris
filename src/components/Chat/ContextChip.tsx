@@ -5,8 +5,8 @@
 
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ContextChipWithId } from '../../types/context';
-import { getChipLabel, getChipDescription, getChipIcon } from '../../types/context';
+import type { ContextChipWithId } from '@/types/context';
+import { getChipLabel, getChipDescription, getChipIcon } from '@/types/context';
 
 interface ContextChipProps {
   chip: ContextChipWithId;

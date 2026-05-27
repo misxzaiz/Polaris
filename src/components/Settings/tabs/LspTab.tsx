@@ -6,10 +6,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useLspStore, type LspServerConfig, type LspConnectionStatus } from '../../../stores/lspStore';
-import { useEditorSettingsStore } from '../../../stores/editorSettingsStore';
-import { lspConfigUpsert, lspConfigRemove, lspConfigToggle } from '../../../services/tauri/lspService';
-import { createLogger } from '../../../utils/logger';
+import { useLspStore, type LspServerConfig, type LspConnectionStatus } from '@/stores/lspStore';
+import { useEditorSettingsStore } from '@/stores/editorSettingsStore';
+import { lspConfigUpsert, lspConfigRemove, lspConfigToggle } from '@/services/tauri/lspService';
+import { createLogger } from '@/utils/logger';
 import { Power, Trash2, Plus, RefreshCw, Terminal } from 'lucide-react';
 
 const log = createLogger('LspTab');

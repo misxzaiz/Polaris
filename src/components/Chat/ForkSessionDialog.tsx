@@ -9,7 +9,7 @@
 
 import { useState } from 'react'
 import { GitBranch, MessageSquare, Clock, X } from 'lucide-react'
-import type { UnifiedHistoryItem } from '../../services/historyService'
+import type { UnifiedHistoryItem } from '@/services/historyService'
 
 interface ForkSessionDialogProps {
   /** 源会话信息 */

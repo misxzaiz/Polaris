@@ -12,13 +12,13 @@ import { memo, useCallback, useState, useRef } from 'react';
 import { clsx } from 'clsx';
 import { Loader2, XCircle, X, Circle, Maximize2, Minimize2, Square } from 'lucide-react';
 import { SessionMessagesView } from './SessionMessagesView';
-import { useSessionMetadataList, useSessionManagerActions } from '../../stores/conversationStore/sessionStoreManager';
-import { useSessionStreaming, useSessionHasPendingQuestion } from '../../stores/conversationStore/useActiveSession';
-import { sessionStoreManager } from '../../stores/conversationStore/sessionStoreManager';
-import { useWorkspaceStore } from '../../stores/workspaceStore';
+import { useSessionMetadataList, useSessionManagerActions } from '@/stores/conversationStore/sessionStoreManager';
+import { useSessionStreaming, useSessionHasPendingQuestion } from '@/stores/conversationStore/useActiveSession';
+import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { WorkspaceBadge } from '../Session/WorkspaceBadge';
 import { WorkspaceMenu } from '../Session/WorkspaceMenu';
-import { getEngineDisplayName, getEngineFullName } from '../../utils/engineDisplay';
+import { getEngineDisplayName, getEngineFullName } from '@/utils/engineDisplay';
 
 /** 状态图标映射 */
 const SESSION_STATUS_CONFIG = {

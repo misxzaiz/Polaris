@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { GitCommit } from '../../services/gitContextService';
-import { formatRelativeTime } from '../../services/gitContextService';
+import type { GitCommit } from '@/services/gitContextService';
+import { formatRelativeTime } from '@/services/gitContextService';
 
 export type GitSuggestionMode =
   | 'root'        // @git

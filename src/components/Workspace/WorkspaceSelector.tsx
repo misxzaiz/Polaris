@@ -4,11 +4,11 @@
 
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useWorkspaceStore } from '../../stores';
+import { useWorkspaceStore } from '@/stores';
 import { Button } from '../Common';
 import { CreateWorkspaceModal } from './CreateWorkspaceModal';
 import { WorkspaceSearchInput, useWorkspaceFilter } from './WorkspaceSearchInput';
-import { createLogger } from '../../utils/logger';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('WorkspaceSelector');
 

@@ -10,10 +10,10 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { FileIcon } from '../FileExplorer/FileIcon';
-import { useFileExplorerStore, useFileEditorStore } from '../../stores';
-import { searchFileContents, type ContentMatch } from '../../services/tauri';
+import { useFileExplorerStore, useFileEditorStore } from '@/stores';
+import { searchFileContents, type ContentMatch } from '@/services/tauri';
 import { Search, Loader2, FileText, FileSearch } from 'lucide-react';
-import type { FileInfo } from '../../types';
+import type { FileInfo } from '@/types';
 
 interface FileSearchModalProps {
   onClose: () => void;

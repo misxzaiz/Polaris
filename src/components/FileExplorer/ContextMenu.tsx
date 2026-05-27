@@ -3,7 +3,7 @@
  */
 
 import { useEffect, useRef } from 'react';
-import type { FileInfo } from '../../types';
+import type { FileInfo } from '@/types';
 import type { ReactNode } from 'react';
 
 export interface ContextMenuItem {

@@ -7,8 +7,8 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X, FileText, Image, File, Loader2, AlertCircle } from 'lucide-react'
-import type { Attachment } from '../../types/attachment'
-import { formatFileSize, getFileIcon, isPreviewableImage } from '../../types/attachment'
+import type { Attachment } from '@/types/attachment'
+import { formatFileSize, getFileIcon, isPreviewableImage } from '@/types/attachment'
 
 interface AttachmentPreviewProps {
   attachments: Attachment[]

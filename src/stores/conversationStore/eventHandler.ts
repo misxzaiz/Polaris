@@ -5,12 +5,12 @@ import { generateUUID } from '@/utils/uuid';
  * 处理单个会话的 AI 事件，所有事件都应该已经包含 sessionId
  */
 
-import type { AIEvent } from '../../ai-runtime'
-import { isEditTool, extractEditDiff } from '../../utils/diffExtractor'
+import type { AIEvent } from '@/ai-runtime'
+import { isEditTool, extractEditDiff } from '@/utils/diffExtractor'
 import type { ConversationStore } from './types'
-import { voiceNotificationService } from '../../services/voiceNotificationService'
+import { voiceNotificationService } from '@/services/voiceNotificationService'
 import { useSessionStore } from '../index'
-import { createLogger } from '../../utils/logger'
+import { createLogger } from '@/utils/logger'
 
 const log = createLogger('EventHandler')
 

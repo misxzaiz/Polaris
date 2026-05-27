@@ -4,8 +4,8 @@
 
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSystemPromptStore } from '../../../services/systemPromptStore';
-import { useWorkspaceStore } from '../../../stores/workspaceStore';
+import { useSystemPromptStore } from '@/services/systemPromptStore';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import i18n from 'i18next';
 
 /** 可用变量列表 */

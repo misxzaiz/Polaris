@@ -7,10 +7,10 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ClaudePathSelector } from '../../Common';
-import { useConfigStore } from '../../../stores';
-import { useCliInfoStore } from '../../../stores/cliInfoStore';
-import { useModelProfileStore } from '../../../stores/modelProfileStore';
-import type { Config, EngineId, ModelProfile } from '../../../types';
+import { useConfigStore } from '@/stores';
+import { useCliInfoStore } from '@/stores/cliInfoStore';
+import { useModelProfileStore } from '@/stores/modelProfileStore';
+import type { Config, EngineId, ModelProfile } from '@/types';
 import { Shield, ShieldCheck, ShieldX, RefreshCw, Bot, Plus, Trash2, Globe, Check, RotateCcw } from 'lucide-react';
 
 interface AIEngineTabProps {

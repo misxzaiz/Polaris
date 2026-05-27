@@ -10,11 +10,11 @@ import type {
   EngineId,
   ToolStatus,
   Workspace,
-} from '../../types'
-import type { Attachment } from '../../types/attachment'
-import type { AIEvent } from '../../ai-runtime'
+} from '@/types'
+import type { Attachment } from '@/types/attachment'
+import type { AIEvent } from '@/ai-runtime'
 import type { StoreApi, UseBoundStore } from 'zustand'
-import type { EventRouter } from '../../services/eventRouter'
+import type { EventRouter } from '@/services/eventRouter'
 
 /** 当前正在构建的 Assistant 消息 */
 export interface CurrentAssistantMessage {

@@ -1,7 +1,7 @@
 import { useEffect, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useFileExplorerStore, useWorkspaceStore, useCommandStore } from '../../stores';
-import { initFileWatcherListener, startFileWatcher, stopFileWatcher } from '../../stores/fileExplorerStore';
+import { useFileExplorerStore, useWorkspaceStore, useCommandStore } from '@/stores';
+import { initFileWatcherListener, startFileWatcher, stopFileWatcher } from '@/stores/fileExplorerStore';
 import { FileTree } from './FileTree';
 import { SearchBar } from './SearchBar';
 import { GitStatusIndicator } from './GitStatusIndicator';
@@ -10,7 +10,7 @@ import { InputDialog } from '../Common/InputDialog';
 import { IconPlus, IconFile, IconFolder } from '../Common/Icons';
 import { WorkspaceSearchInput, useWorkspaceFilter } from '../Workspace/WorkspaceSearchInput';
 import type { ContextMenuItem } from './ContextMenu';
-import { joinPath, isValidFileName } from '../../utils/path';
+import { joinPath, isValidFileName } from '@/utils/path';
 
 export function FileExplorer() {
   const { t } = useTranslation('fileExplorer');

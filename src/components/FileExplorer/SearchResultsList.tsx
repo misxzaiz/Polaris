@@ -4,9 +4,9 @@ import { useTranslation } from 'react-i18next';
 import { FileIcon } from './FileIcon';
 import { Folder } from 'lucide-react';
 import { ContextMenu, isHtmlFile, type ContextMenuItem } from './ContextMenu';
-import { useFileExplorerStore, useFileEditorStore } from '../../stores';
-import { openInDefaultApp } from '../../services/tauri';
-import type { FileInfo } from '../../types';
+import { useFileExplorerStore, useFileEditorStore } from '@/stores';
+import { openInDefaultApp } from '@/services/tauri';
+import type { FileInfo } from '@/types';
 
 interface SearchResultsListProps {
   results: FileInfo[];

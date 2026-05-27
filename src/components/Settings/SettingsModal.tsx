@@ -9,7 +9,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useConfigStore, useToastStore } from '../../stores';
+import { useConfigStore, useToastStore } from '@/stores';
 import { Button } from '../Common';
 import { SettingsSidebar, type SettingsTabId } from './SettingsSidebar';
 import { AIEngineTab } from './tabs/AIEngineTab';
@@ -27,11 +27,11 @@ import { AppUpdateTab } from './tabs/AppUpdateTab';
 import { LspTab } from './tabs/LspTab';
 import { WebTab } from './tabs/WebTab';
 import { PluginTab } from './tabs/PluginTab';
-import { createLogger } from '../../utils/logger';
-import { applyWebServer, getConfig } from '../../services/tauri/configService';
-import { currentMode } from '../../services/transport';
-import { setMarkdownArtifactBaseUrl } from '../../utils/cache';
-import type { Config, ConfigPatch } from '../../types';
+import { createLogger } from '@/utils/logger';
+import { applyWebServer, getConfig } from '@/services/tauri/configService';
+import { currentMode } from '@/services/transport';
+import { setMarkdownArtifactBaseUrl } from '@/utils/cache';
+import type { Config, ConfigPatch } from '@/types';
 
 const log = createLogger('SettingsModal');
 

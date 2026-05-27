@@ -6,11 +6,11 @@
 
 import { memo, useMemo, useRef, useCallback, useEffect, useSyncExternalStore } from 'react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
-import { sessionStoreManager } from '../../stores/conversationStore/sessionStoreManager';
+import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
 import { renderChatMessage } from './EnhancedChatMessages';
 import type { MessageScrollActions } from './EnhancedChatMessages';
-import type { ChatMessage, AssistantChatMessage } from '../../types/chat';
-import type { ConversationStoreInstance, ConversationState } from '../../stores/conversationStore/types';
+import type { ChatMessage, AssistantChatMessage } from '@/types/chat';
+import type { ConversationStoreInstance, ConversationState } from '@/stores/conversationStore/types';
 
 /** 空状态组件 */
 const EmptyState = memo(function EmptyState() {

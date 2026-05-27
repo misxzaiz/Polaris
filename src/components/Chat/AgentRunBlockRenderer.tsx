@@ -7,11 +7,11 @@
 import { memo, useState, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import type { AgentRunBlock } from '../../types';
+import type { AgentRunBlock } from '@/types';
 import {
   formatDuration,
   calculateDuration,
-} from '../../utils/toolSummary';
+} from '@/utils/toolSummary';
 import { Check, XCircle, Loader2, AlertTriangle, ChevronDown, Circle, ListChecks, Play } from 'lucide-react';
 
 // ========================================

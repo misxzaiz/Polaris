@@ -9,8 +9,8 @@ import type {
   AISession,
   AISessionConfig,
   EngineCapabilities,
-} from '../../ai-runtime'
-import { createCapabilities } from '../../ai-runtime'
+} from '@/ai-runtime'
+import { createCapabilities } from '@/ai-runtime'
 import { ClaudeCodeSession, ClaudeSessionConfig } from './session'
 
 /**

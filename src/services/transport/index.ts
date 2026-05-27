@@ -20,8 +20,8 @@ import { tauriTransport } from './tauriTransport';
 import { createHttpTransport } from './httpTransport';
 import type { ConnectionStatus } from './httpTransport';
 import { getServerUrl } from './auth';
-import { useToastStore } from '../../stores/toastStore';
-import { createLogger } from '../../utils/logger';
+import { useToastStore } from '@/stores/toastStore';
+import { createLogger } from '@/utils/logger';
 import i18n from 'i18next';
 
 const log = createLogger('Transport');

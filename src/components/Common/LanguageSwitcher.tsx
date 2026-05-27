@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { Globe } from 'lucide-react';
 import { useEffect } from 'react';
-import { useConfigStore } from '../../stores';
+import { useConfigStore } from '@/stores';
 
 export function LanguageSwitcher() {
   const { i18n } = useTranslation();

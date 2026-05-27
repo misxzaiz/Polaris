@@ -13,13 +13,13 @@ import {
   useIntegrationStatus,
   useIntegrationInstances,
   useActiveIntegrationInstance,
-} from '../../../stores';
-import type { PlatformInstance } from '../../../types';
+} from '@/stores';
+import type { PlatformInstance } from '@/types';
 import {
   ConnectionStateLabels,
   type ConnectionState,
-} from '../../../types/integration';
-import { createLogger } from '../../../utils/logger';
+} from '@/types/integration';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('FeishuTab');
 

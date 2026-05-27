@@ -4,7 +4,7 @@
 
 import { Component, ReactNode, useEffect } from 'react';
 import i18n from 'i18next';
-import { createLogger } from '../../utils/logger';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('ErrorBoundary');
 

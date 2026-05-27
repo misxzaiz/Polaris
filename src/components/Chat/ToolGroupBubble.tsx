@@ -6,9 +6,9 @@
 
 import { memo, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { type ToolGroupChatMessage, type ToolChatMessage } from '../../types';
-import { formatDuration, calculateToolGroupStatus } from '../../utils/toolSummary';
-import { getToolStatusIcon, getToolStatusColor } from '../../utils/toolStatusHelpers';
+import { type ToolGroupChatMessage, type ToolChatMessage } from '@/types';
+import { formatDuration, calculateToolGroupStatus } from '@/utils/toolSummary';
+import { getToolStatusIcon, getToolStatusColor } from '@/utils/toolStatusHelpers';
 import { IconChevronRight, IconChevronDown } from '../Common/Icons';
 import { clsx } from 'clsx';
 

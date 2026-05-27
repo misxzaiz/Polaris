@@ -4,7 +4,7 @@
 
 import { memo, useState, useEffect, useMemo } from 'react';
 import { Brain, ChevronDown, ChevronRight, ListOrdered } from 'lucide-react';
-import type { ThinkingBlock } from '../../../types';
+import type { ThinkingBlock } from '@/types';
 import { extractThinkingSteps } from '../chatUtils/thinkingSteps';
 
 export const ThinkingBlockRenderer = memo(function ThinkingBlockRenderer({

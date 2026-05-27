@@ -6,8 +6,8 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Play, Square, FileText, MoreHorizontal, CheckCircle, XCircle, Circle, Loader2 } from 'lucide-react';
-import type { ScheduledTask, TaskStatus } from '../../types/scheduler';
-import { formatRelativeTime } from '../../types/scheduler';
+import type { ScheduledTask, TaskStatus } from '@/types/scheduler';
+import { formatRelativeTime } from '@/types/scheduler';
 
 /** 状态图标 */
 function StatusIcon({ status, isRunning }: { status?: TaskStatus; isRunning?: boolean }) {

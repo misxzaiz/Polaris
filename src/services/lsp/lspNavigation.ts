@@ -12,8 +12,8 @@
 
 import type { LSPClient } from '@codemirror/lsp-client';
 import { EditorView } from '@codemirror/view';
-import { useFileEditorStore } from '../../stores/fileEditorStore';
-import { createLogger } from '../../utils/logger';
+import { useFileEditorStore } from '@/stores/fileEditorStore';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('LspNav');
 

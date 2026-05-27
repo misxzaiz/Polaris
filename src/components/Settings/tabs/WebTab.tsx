@@ -8,8 +8,8 @@ import { useTranslation } from 'react-i18next';
 import { useState, useEffect } from 'react';
 import * as tauri from '@/services/tauri';
 import { invoke } from '@/services/transport';
-import { createLogger } from '../../../utils/logger';
-import type { Config, WebConfig } from '../../../types';
+import { createLogger } from '@/utils/logger';
+import type { Config, WebConfig } from '@/types';
 import type { WebServerStatus } from '@/services/tauri';
 
 const log = createLogger('WebTab');

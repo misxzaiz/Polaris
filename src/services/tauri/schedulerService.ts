@@ -4,10 +4,10 @@
  */
 
 import { invoke } from '@/services/transport';
-import type { ScheduledTask, TriggerType, CreateTaskParams, TaskCategory, TaskMode, ProtocolTemplate, CreateProtocolTemplateParams } from '../../types/scheduler';
-import type { PromptTemplate, CreateTemplateParams } from '../../types/scheduler';
-import type { ProtocolDocuments } from '../../types/scheduler';
-import type { PromptSnippet, CreateSnippetParams, UpdateSnippetParams } from '../../types/promptSnippet';
+import type { ScheduledTask, TriggerType, CreateTaskParams, TaskCategory, TaskMode, ProtocolTemplate, CreateProtocolTemplateParams } from '@/types/scheduler';
+import type { PromptTemplate, CreateTemplateParams } from '@/types/scheduler';
+import type { ProtocolDocuments } from '@/types/scheduler';
+import type { PromptSnippet, CreateSnippetParams, UpdateSnippetParams } from '@/types/promptSnippet';
 
 // ============================================================================
 // 定时任务 CRUD 命令

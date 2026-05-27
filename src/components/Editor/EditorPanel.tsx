@@ -2,7 +2,7 @@
  * 编辑器面板组件
  */
 
-import { useFileEditorStore } from '../../stores';
+import { useFileEditorStore } from '@/stores';
 import { CodeMirrorEditor } from './Editor';
 import { EditorHeader } from './EditorHeader';
 import { MarkdownEditor } from './MarkdownEditor';

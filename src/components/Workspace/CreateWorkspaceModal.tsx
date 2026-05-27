@@ -5,9 +5,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { useWorkspaceStore } from '../../stores';
+import { useWorkspaceStore } from '@/stores';
 import { Button } from '../Common';
-import { createLogger } from '../../utils/logger';
+import { createLogger } from '@/utils/logger';
 import { invoke } from '@/services/transport';
 
 const log = createLogger('CreateWorkspaceModal');

@@ -16,7 +16,7 @@ import { useTranslation } from 'react-i18next';
 import DOMPurify from 'dompurify';
 import { Copy, Check, List, ListX, ChevronDown, ChevronUp } from 'lucide-react';
 import hljs from 'highlight.js';
-import { LRUCache } from '../../utils/lru-cache';
+import { LRUCache } from '@/utils/lru-cache';
 
 // 导入常用语言
 import javascript from 'highlight.js/lib/languages/javascript';

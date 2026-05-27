@@ -4,9 +4,9 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useFileEditorStore } from '../../stores';
-import { createLogger } from '../../utils/logger';
-import { modKey } from '../../utils/path';
+import { useFileEditorStore } from '@/stores';
+import { createLogger } from '@/utils/logger';
+import { modKey } from '@/utils/path';
 
 const log = createLogger('EditorHeader');
 

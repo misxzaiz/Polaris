@@ -9,7 +9,7 @@ import { memo, useState, useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
 import { X, HelpCircle, Send, Check } from 'lucide-react'
-import type { QuestionBlock } from '../../types'
+import type { QuestionBlock } from '@/types'
 
 export interface QuestionFloatingPanelProps {
   questions: QuestionBlock[]

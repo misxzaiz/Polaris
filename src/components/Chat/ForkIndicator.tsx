@@ -8,7 +8,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { GitBranch, GitPullRequest, ExternalLink, ChevronRight, ChevronDown } from 'lucide-react'
-import type { LinkedPR } from '../../services/claudeCodeHistoryService'
+import type { LinkedPR } from '@/services/claudeCodeHistoryService'
 
 export interface ForkIndicatorProps {
   /** 父会话 ID */

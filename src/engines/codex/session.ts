@@ -5,12 +5,12 @@
  * 与 ClaudeCodeSession 结构对称，通过 Tauri invoke/listen 与后端通信。
  */
 
-import type { AISessionConfig } from '../../ai-runtime'
-import type { AITask, AIEvent } from '../../ai-runtime'
-import { BaseSession } from '../../ai-runtime/base'
-import { createEventIterable } from '../../ai-runtime/base'
+import type { AISessionConfig } from '@/ai-runtime'
+import type { AITask, AIEvent } from '@/ai-runtime'
+import { BaseSession } from '@/ai-runtime/base'
+import { createEventIterable } from '@/ai-runtime/base'
 import { invoke, listen } from '@/services/tauri'
-import { createLogger } from '../../utils/logger'
+import { createLogger } from '@/utils/logger'
 
 const log = createLogger('CodexSession')
 

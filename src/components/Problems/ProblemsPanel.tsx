@@ -7,8 +7,8 @@
 
 import { useMemo, useState } from 'react';
 import { AlertCircle, AlertTriangle, Info, Lightbulb, ChevronRight, ChevronDown } from 'lucide-react';
-import { useDiagnosticsStore, type DiagnosticItem } from '../../stores/diagnosticsStore';
-import { useFileEditorStore } from '../../stores/fileEditorStore';
+import { useDiagnosticsStore, type DiagnosticItem } from '@/stores/diagnosticsStore';
+import { useFileEditorStore } from '@/stores/fileEditorStore';
 
 /** LSP URI → 本地路径 */
 function uriToPath(uri: string): string {

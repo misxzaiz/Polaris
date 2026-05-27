@@ -1,10 +1,10 @@
-import type { ChatMessage, EngineId, Workspace } from '../../types'
-import type { SessionRuntimeConfig } from '../../types/sessionConfig'
+import type { ChatMessage, EngineId, Workspace } from '@/types'
+import type { SessionRuntimeConfig } from '@/types/sessionConfig'
 import { sessionStoreManager } from './sessionStoreManager'
-import { normalizeEngineId } from '../../utils/engineDisplay'
+import { normalizeEngineId } from '@/utils/engineDisplay'
 import { listPluginMcpServerStatuses } from '@/plugin-system'
 import { usePluginStore } from '../pluginStore'
-import { getUserSystemPrompt } from '../../services/workspaceReference'
+import { getUserSystemPrompt } from '@/services/workspaceReference'
 import i18n from 'i18next'
 
 export function resolveSessionEngine(sessionId: string, configEngineId?: string): EngineId {

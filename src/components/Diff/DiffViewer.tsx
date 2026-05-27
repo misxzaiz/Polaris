@@ -3,11 +3,11 @@
  * 简化版实现，使用纯文本渲染
  */
 
-import { computeDiff } from '../../services/diffService';
+import { computeDiff } from '@/services/diffService';
 import { logger } from '@/utils/logger';
 import { useTranslation } from 'react-i18next';
 import type { DiffChangeType } from '@/types/git';
-import type { DiffLine } from '../../services/diffService';
+import type { DiffLine } from '@/services/diffService';
 
 export type DiffViewMode = 'unified' | 'split';
 

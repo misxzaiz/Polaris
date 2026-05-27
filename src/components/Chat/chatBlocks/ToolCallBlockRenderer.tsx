@@ -7,21 +7,21 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { Check, XCircle, ChevronDown, ChevronRight, Code, FileDiff, Copy } from 'lucide-react';
-import type { ToolCallBlock } from '../../../types';
-import { getToolConfig, extractToolKeyInfo, getToolShortName } from '../../../utils/toolConfig';
-import { extractFullFilePath, extractFullCommand } from '../../../utils/toolInputExtractor';
-import { copyToClipboard } from '../../../utils/clipboard';
-import { useFileEditorStore } from '../../../stores/fileEditorStore';
-import { useWorkspaceStore } from '../../../stores/workspaceStore';
+import type { ToolCallBlock } from '@/types';
+import { getToolConfig, extractToolKeyInfo, getToolShortName } from '@/utils/toolConfig';
+import { extractFullFilePath, extractFullCommand } from '@/utils/toolInputExtractor';
+import { copyToClipboard } from '@/utils/clipboard';
+import { useFileEditorStore } from '@/stores/fileEditorStore';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import {
   formatDuration,
   calculateDuration,
   generateCollapsedSummary,
   stripAnsiCodes,
   parseGrepMatches,
-} from '../../../utils/toolSummary';
+} from '@/utils/toolSummary';
 import { DiffViewer } from '../../Diff/DiffViewer';
-import { isEditTool } from '../../../utils/diffExtractor';
+import { isEditTool } from '@/utils/diffExtractor';
 import { STATUS_CONFIG } from '../chatUtils/constants';
 import { isTodoWriteTool, isGrepTool, parseTodoInput } from '../chatUtils/helpers';
 import { GrepOutputRenderer } from './GrepOutputRenderer';

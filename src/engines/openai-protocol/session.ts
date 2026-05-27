@@ -1,6 +1,6 @@
-import type { AISession, AISessionStatus } from '../../ai-runtime'
-import type { AITask, AIEvent } from '../../ai-runtime'
-import { EventEmitter } from '../../ai-runtime'
+import type { AISession, AISessionStatus } from '@/ai-runtime'
+import type { AITask, AIEvent } from '@/ai-runtime'
+import { EventEmitter } from '@/ai-runtime'
 import type { OpenAIEngineConfig, OpenAIMessage, OpenAITool, OpenAIToolCall } from './types'
 
 /**

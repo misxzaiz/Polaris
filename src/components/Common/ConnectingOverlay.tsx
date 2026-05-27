@@ -4,12 +4,12 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useConfigStore } from '../../stores';
+import { useConfigStore } from '@/stores';
 import { Button, ClaudePathSelector } from './index';
-import { isWindows } from '../../utils/path';
-import { currentMode } from '../../services/transport';
-import { createLogger } from '../../utils/logger';
-import { getSelectedEngineHealth } from '../../utils/engineHealth';
+import { isWindows } from '@/utils/path';
+import { currentMode } from '@/services/transport';
+import { createLogger } from '@/utils/logger';
+import { getSelectedEngineHealth } from '@/utils/engineHealth';
 
 const log = createLogger('ConnectingOverlay');
 

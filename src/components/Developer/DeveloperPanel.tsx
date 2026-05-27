@@ -11,8 +11,8 @@ import { generateUUID } from '@/utils/uuid';
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx'
-import type { AIEvent } from '../../ai-runtime'
-import { getEventBus } from '../../ai-runtime'
+import type { AIEvent } from '@/ai-runtime'
+import { getEventBus } from '@/ai-runtime'
 
 /** 单个事件记录 */
 interface EventRecord {

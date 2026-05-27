@@ -1,5 +1,5 @@
-import type { AIEngine, AISession, AISessionConfig, EngineCapabilities } from '../../ai-runtime'
-import { createCapabilities } from '../../ai-runtime'
+import type { AIEngine, AISession, AISessionConfig, EngineCapabilities } from '@/ai-runtime'
+import { createCapabilities } from '@/ai-runtime'
 import type { OpenAIEngineConfig, OpenAITool, OpenAIMessage } from './types'
 import { OpenAISession } from './session'
 import { validateConfig, mergeWithDefaults, isConfigComplete } from './config'

@@ -12,11 +12,11 @@ import { memo, useCallback, useMemo, useRef, forwardRef, useImperativeHandle, us
 import { clsx } from 'clsx';
 import { LayoutGrid } from 'lucide-react';
 import { SessionCell } from './SessionCell';
-import { useViewStore } from '../../stores';
+import { useViewStore } from '@/stores';
 import {
   useSessionMetadataList,
   useActiveSessionId,
-} from '../../stores/conversationStore/sessionStoreManager';
+} from '@/stores/conversationStore/sessionStoreManager';
 
 /** 第二行静态最小高度样式 */
 const ROW2_MIN_HEIGHT_STYLE: React.CSSProperties = { minHeight: '50%' }

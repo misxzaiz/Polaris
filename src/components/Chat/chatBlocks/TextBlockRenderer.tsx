@@ -9,8 +9,8 @@
  */
 
 import { memo } from 'react';
-import type { TextBlock } from '../../../types';
-import { ProgressiveStreamingMarkdown } from '../../../utils/lightweightMarkdown';
+import type { TextBlock } from '@/types';
+import { ProgressiveStreamingMarkdown } from '@/utils/lightweightMarkdown';
 import { MarkdownImageSurface } from '../MarkdownImageSurface';
 
 export const TextBlockRenderer = memo(function TextBlockRenderer({

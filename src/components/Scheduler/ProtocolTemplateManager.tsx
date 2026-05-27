@@ -4,15 +4,15 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSchedulerStore, useToastStore } from '../../stores';
+import { useSchedulerStore, useToastStore } from '@/stores';
 import type {
   ProtocolTemplate,
   CreateProtocolTemplateParams,
   TemplateParam,
   TaskCategory,
   TemplateParamType,
-} from '../../types/scheduler';
-import { TASK_CATEGORY_LABELS, generateProtocolDocument } from '../../types/scheduler';
+} from '@/types/scheduler';
+import { TASK_CATEGORY_LABELS, generateProtocolDocument } from '@/types/scheduler';
 
 export interface ProtocolTemplateManagerProps {
   /** 关闭回调 */

@@ -13,24 +13,24 @@
 
 import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useConfigStore, useSessionStore } from '../../stores';
-import { useActiveSessionActions, useActiveSessionStreaming, useHasPendingQuestion, useHasActivePlan, useActiveSessionMessages } from '../../stores/conversationStore/useActiveSession';
-import { useSessionConfig } from '../../stores/sessionConfigStore';
+import { useConfigStore, useSessionStore } from '@/stores';
+import { useActiveSessionActions, useActiveSessionStreaming, useHasPendingQuestion, useHasActivePlan, useActiveSessionMessages } from '@/stores/conversationStore/useActiveSession';
+import { useSessionConfig } from '@/stores/sessionConfigStore';
 import { Paperclip, Loader2, ChevronDown } from 'lucide-react';
 import { clsx } from 'clsx';
 import { IconMic, IconVolume, IconVolumeX } from '../Common/Icons';
-import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
-import { useTTS } from '../../hooks/useTTS';
-import { useContainerWidth } from '../../hooks/useContainerWidth';
-import type { SpeechConfig, VoiceCommand, TTSConfig, WakeWordConfig } from '../../types/speech';
-import type { AssistantChatMessage } from '../../types/chat';
-import { DEFAULT_TTS_CONFIG } from '../../types/speech';
+import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
+import { useTTS } from '@/hooks/useTTS';
+import { useContainerWidth } from '@/hooks/useContainerWidth';
+import type { SpeechConfig, VoiceCommand, TTSConfig, WakeWordConfig } from '@/types/speech';
+import type { AssistantChatMessage } from '@/types/chat';
+import { DEFAULT_TTS_CONFIG } from '@/types/speech';
 import { SessionConfigSelector } from './SessionConfigSelector';
-import { voiceNotificationService } from '../../services/voiceNotificationService';
-import { isAssistantMessage } from '../../types/chat';
-import { getSelectedEngineHealth } from '../../utils/engineHealth';
-import { normalizeEngineId } from '../../utils/engineDisplay';
-import { useActiveSessionId, useSessionMetadataList } from '../../stores/conversationStore/sessionStoreManager';
+import { voiceNotificationService } from '@/services/voiceNotificationService';
+import { isAssistantMessage } from '@/types/chat';
+import { getSelectedEngineHealth } from '@/utils/engineHealth';
+import { normalizeEngineId } from '@/utils/engineDisplay';
+import { useActiveSessionId, useSessionMetadataList } from '@/stores/conversationStore/sessionStoreManager';
 
 /** 宽度分级阈值 */
 const BREAKPOINTS = {

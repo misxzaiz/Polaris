@@ -19,9 +19,9 @@ import {
   type SessionRuntimeConfig,
   type EffortLevel,
   type PermissionMode,
-} from '../../types/sessionConfig'
-import { useCliInfoStore } from '../../stores/cliInfoStore'
-import { useModelProfileStore } from '../../stores/modelProfileStore'
+} from '@/types/sessionConfig'
+import { useCliInfoStore } from '@/stores/cliInfoStore'
+import { useModelProfileStore } from '@/stores/modelProfileStore'
 
 interface SessionConfigSelectorProps {
   /** 当前配置 */

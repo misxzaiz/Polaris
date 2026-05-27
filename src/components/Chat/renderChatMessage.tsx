@@ -3,7 +3,7 @@
  */
 
 import React from 'react';
-import type { ChatMessage, SystemChatMessage } from '../../types';
+import type { ChatMessage, SystemChatMessage } from '@/types';
 import { UserBubble } from './chatBubbles/UserBubble';
 import { AssistantBubble } from './chatBubbles/AssistantBubble';
 import { SystemBubble } from './chatBubbles/SystemBubble';

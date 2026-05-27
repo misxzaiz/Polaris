@@ -21,8 +21,8 @@ import {
 } from 'lucide-react';
 import { ResizeHandle } from '../Common';
 import { useViewStore } from '@/stores/viewStore';
-import type { ExecutionLogEntry, TaskExecutionInfo, ExecutionState } from '../../types/scheduler';
-import { useSchedulerStore } from '../../stores';
+import type { ExecutionLogEntry, TaskExecutionInfo, ExecutionState } from '@/types/scheduler';
+import { useSchedulerStore } from '@/stores';
 
 /** 状态图标 - lucide-react */
 function StateIcon({ state }: { state: ExecutionState }) {

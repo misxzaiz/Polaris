@@ -45,8 +45,8 @@ import type { AITask, AIEvent } from '../index'
 import { BaseSession } from './base-session'
 import { createEventIterable } from './base-session'
 import { validateCLIEngineConfig } from '../config-validator'
-import { createLogger } from '../../utils/logger'
-import i18n from '../../i18n'
+import { createLogger } from '@/utils/logger'
+import i18n from '@/i18n'
 
 const log = createLogger('BaseCLIEngine')
 

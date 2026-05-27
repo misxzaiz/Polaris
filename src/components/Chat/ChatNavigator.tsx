@@ -12,7 +12,7 @@ import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { BookOpen, User, Bot, ArrowDown, Wrench } from 'lucide-react';
-import type { ConversationRound } from '../../utils/conversationRounds';
+import type { ConversationRound } from '@/utils/conversationRounds';
 import { useWindowSize } from '@/hooks/useWindowSize';
 
 interface ChatNavigatorProps {

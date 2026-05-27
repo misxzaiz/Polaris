@@ -19,9 +19,9 @@ import {
   Code,
   List,
 } from 'lucide-react';
-import { useAutoModeStore } from '../../../stores/autoModeStore';
+import { useAutoModeStore } from '@/stores/autoModeStore';
 import { Button } from '../../Common';
-import type { RuleType } from '../../../types/autoMode';
+import type { RuleType } from '@/types/autoMode';
 
 export function AutoModeTab() {
   const { t } = useTranslation('settings');

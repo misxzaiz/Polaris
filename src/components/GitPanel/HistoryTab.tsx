@@ -30,7 +30,7 @@ import type {
   GitFileHistoryEntry,
 } from '@/types/git'
 import type { OpenDiffTabOptions } from '@/stores/tabStore'
-import { createLogger } from '../../utils/logger'
+import { createLogger } from '@/utils/logger'
 import {
   PAGE_SIZE,
   COMMIT_LIST_MIN_WIDTH,

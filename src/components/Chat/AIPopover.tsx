@@ -8,22 +8,22 @@ import { useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X } from 'lucide-react'
 import { EnhancedChatMessages, ChatInput } from '../Chat'
-import { useConfigStore, useWorkspaceStore } from '../../stores'
+import { useConfigStore, useWorkspaceStore } from '@/stores'
 import {
   useActiveSessionConversationId,
   useActiveSessionError,
   useActiveSessionActions,
   useActiveSessionMessages,
   useActiveSessionStreaming,
-} from '../../stores/conversationStore/useActiveSession'
+} from '@/stores/conversationStore/useActiveSession'
 import {
   useActiveSessionId,
   useSessionManagerActions,
   useSessionMetadataList,
-} from '../../stores/conversationStore/sessionStoreManager'
-import type { EngineId } from '../../types'
-import { createLogger } from '../../utils/logger'
-import { normalizeEngineId } from '../../utils/engineDisplay'
+} from '@/stores/conversationStore/sessionStoreManager'
+import type { EngineId } from '@/types'
+import { createLogger } from '@/utils/logger'
+import { normalizeEngineId } from '@/utils/engineDisplay'
 
 const log = createLogger('AIPopover')
 

@@ -18,7 +18,7 @@ import {
 } from './sessionStoreManager'
 import { useWorkspaceStore } from '../workspaceStore'
 import type { ConversationStore, ConversationState, ConversationStoreInstance } from './types'
-import type { ContentBlock } from '../../types'
+import type { ContentBlock } from '@/types'
 
 /**
  * 订阅活跃会话的特定状态

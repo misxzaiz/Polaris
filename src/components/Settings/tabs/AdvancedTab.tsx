@@ -3,8 +3,8 @@
  */
 
 import { useTranslation } from 'react-i18next';
-import type { Config } from '../../../types';
-import { platform } from '../../../utils/path';
+import type { Config } from '@/types';
+import { platform } from '@/utils/path';
 
 interface AdvancedTabProps {
   config: Config;

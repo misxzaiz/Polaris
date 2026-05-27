@@ -8,8 +8,8 @@
 import { Component, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
-import type { ContentBlock } from '../../types';
-import { createLogger } from '../../utils/logger';
+import type { ContentBlock } from '@/types';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('ContentBlockErrorBoundary');
 

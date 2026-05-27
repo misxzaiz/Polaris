@@ -13,10 +13,10 @@ import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { invoke } from '@/services/tauri';
 import { Check, HelpCircle, CheckCircle } from 'lucide-react';
-import { createLogger } from '../../utils/logger';
-import { useActiveSessionConversationId, useActiveSessionActions } from '../../stores/conversationStore/useActiveSession';
+import { createLogger } from '@/utils/logger';
+import { useActiveSessionConversationId, useActiveSessionActions } from '@/stores/conversationStore/useActiveSession';
 import { Button } from '../Common/Button';
-import type { QuestionBlock } from '../../types';
+import type { QuestionBlock } from '@/types';
 
 const log = createLogger('QuestionBlock');
 

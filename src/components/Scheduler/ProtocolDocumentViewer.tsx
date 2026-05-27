@@ -5,10 +5,10 @@
 
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ScheduledTask, ProtocolDocuments } from '../../types/scheduler';
-import * as tauri from '../../services/tauri';
-import { useToastStore } from '../../stores';
-import { createLogger } from '../../utils/logger';
+import type { ScheduledTask, ProtocolDocuments } from '@/types/scheduler';
+import * as tauri from '@/services/tauri';
+import { useToastStore } from '@/stores';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('ProtocolDocViewer');
 

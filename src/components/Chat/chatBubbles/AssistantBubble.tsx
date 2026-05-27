@@ -3,12 +3,12 @@
  */
 
 import { memo, useState, useMemo, useCallback } from 'react';
-import type { AssistantChatMessage, TextBlock } from '../../../types';
+import type { AssistantChatMessage, TextBlock } from '@/types';
 import { formatContent, extractAssistantText } from '../chatUtils/helpers';
 import { renderBlocksWithGrouping } from '../blockGrouping';
 import { MessageContextMenu } from './MessageContextMenu';
 import { Bot } from 'lucide-react';
-import { getEngineDisplayName } from '../../../utils/engineDisplay';
+import { getEngineDisplayName } from '@/utils/engineDisplay';
 import { MarkdownImageSurface } from '../MarkdownImageSurface';
 
 export const AssistantBubble = memo(function AssistantBubble({

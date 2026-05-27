@@ -13,8 +13,8 @@ import type {
   MessageContent,
   QQBotConfig,
   FeishuConfig,
-} from '../../types';
-import type { PlatformInstance, InstanceId } from '../../types';
+} from '@/types';
+import type { PlatformInstance, InstanceId } from '@/types';
 
 // ============================================================================
 // 钉钉相关命令

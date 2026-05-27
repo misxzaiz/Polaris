@@ -4,7 +4,7 @@
  */
 
 import { useTranslation } from 'react-i18next';
-import type { Config } from '../../../types';
+import type { Config } from '@/types';
 
 interface GeneralTabProps {
   config: Config;

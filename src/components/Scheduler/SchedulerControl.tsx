@@ -3,7 +3,7 @@
  */
 
 import { useTranslation } from 'react-i18next';
-import { useSchedulerStore, useToastStore } from '../../stores';
+import { useSchedulerStore, useToastStore } from '@/stores';
 
 /** 状态指示器 */
 function StatusIndicator({ isRunning }: { isRunning: boolean }) {

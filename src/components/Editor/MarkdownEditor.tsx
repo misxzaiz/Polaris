@@ -8,7 +8,7 @@ import { CodeMirrorEditor } from './Editor';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 import { MermaidDiagram } from '../Chat/MermaidDiagram';
-import { splitMarkdownWithMermaid, type MarkdownPart } from '../../utils/markdown';
+import { splitMarkdownWithMermaid, type MarkdownPart } from '@/utils/markdown';
 import hljs from 'highlight.js';
 
 interface MarkdownEditorProps {

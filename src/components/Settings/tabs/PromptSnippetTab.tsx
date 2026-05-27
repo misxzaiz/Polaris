@@ -6,10 +6,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSnippetStore } from '../../../stores/snippetStore';
-import { useToastStore } from '../../../stores';
-import type { PromptSnippet, SnippetVariable, CreateSnippetParams, UpdateSnippetParams } from '../../../types/promptSnippet';
-import { extractVariables, AUTO_VARIABLES } from '../../../types/promptSnippet';
+import { useSnippetStore } from '@/stores/snippetStore';
+import { useToastStore } from '@/stores';
+import type { PromptSnippet, SnippetVariable, CreateSnippetParams, UpdateSnippetParams } from '@/types/promptSnippet';
+import { extractVariables, AUTO_VARIABLES } from '@/types/promptSnippet';
 import { IconPlus, IconEdit, IconTrash } from '../../Common/Icons';
 
 interface SnippetFormData {

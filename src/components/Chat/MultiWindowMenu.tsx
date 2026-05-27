@@ -10,8 +10,8 @@
 import { memo, useCallback, useState, useRef, useEffect } from 'react';
 import { clsx } from 'clsx';
 import { Grid3x3, RowsIcon, ColumnsIcon, Minus, Plus, Check } from 'lucide-react';
-import { useViewStore } from '../../stores';
-import { useActiveSessionId } from '../../stores/conversationStore/sessionStoreManager';
+import { useViewStore } from '@/stores';
+import { useActiveSessionId } from '@/stores/conversationStore/sessionStoreManager';
 
 /** 预设宽度选项 */
 const WIDTH_PRESETS = [250, 300, 350, 400, 450];

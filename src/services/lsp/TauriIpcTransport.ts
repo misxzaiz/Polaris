@@ -11,7 +11,7 @@
 
 import { listen as transportListen } from '@/services/transport';
 import { lspStart, lspSend, lspStop } from '../tauri/lspService';
-import { createLogger } from '../../utils/logger';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('LspTransport');
 

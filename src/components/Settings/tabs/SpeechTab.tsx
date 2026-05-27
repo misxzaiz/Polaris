@@ -5,8 +5,8 @@
 
 import { useTranslation } from 'react-i18next';
 import { useState, useCallback, type KeyboardEvent } from 'react';
-import type { Config } from '../../../types';
-import type { SpeechLanguage, TTSVoice, WakeWordConfig, VoiceNotificationConfig, VoiceCommandEntry, VoiceCommand } from '../../../types/speech';
+import type { Config } from '@/types';
+import type { SpeechLanguage, TTSVoice, WakeWordConfig, VoiceNotificationConfig, VoiceCommandEntry, VoiceCommand } from '@/types/speech';
 import {
   SPEECH_LANGUAGE_OPTIONS,
   DEFAULT_SPEECH_CONFIG,
@@ -16,10 +16,10 @@ import {
   DEFAULT_VOICE_COMMAND_CONFIG,
   TTS_VOICE_OPTIONS,
   TTS_RATE_OPTIONS,
-} from '../../../types/speech';
-import { ttsService } from '../../../services/ttsService';
-import { voiceNotificationService } from '../../../services/voiceNotificationService';
-import { createLogger } from '../../../utils/logger';
+} from '@/types/speech';
+import { ttsService } from '@/services/ttsService';
+import { voiceNotificationService } from '@/services/voiceNotificationService';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('SpeechTab');
 

@@ -11,10 +11,10 @@
 import { memo, useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import DOMPurify from 'dompurify';
-import { getMermaidConfig } from '../../utils/mermaid-config';
-import { useThemeStore } from '../../stores/themeStore';
-import { modKey } from '../../utils/path';
-import { createLogger } from '../../utils/logger';
+import { getMermaidConfig } from '@/utils/mermaid-config';
+import { useThemeStore } from '@/stores/themeStore';
+import { modKey } from '@/utils/path';
+import { createLogger } from '@/utils/logger';
 import {
   type ViewMode,
   type DiagramState,

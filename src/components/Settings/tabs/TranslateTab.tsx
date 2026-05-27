@@ -2,7 +2,7 @@
  * 翻译配置 Tab
  */
 
-import type { Config } from '../../../types';
+import type { Config } from '@/types';
 
 interface TranslateTabProps {
   config: Config;

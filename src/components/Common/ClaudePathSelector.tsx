@@ -6,9 +6,9 @@
 
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import * as tauri from '../../services/tauri';
-import { mapErrorMessage } from '../../utils/errorMapping';
-import { createLogger } from '../../utils/logger';
+import * as tauri from '@/services/tauri';
+import { mapErrorMessage } from '@/utils/errorMapping';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('ClaudePathSelector');
 

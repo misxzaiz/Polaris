@@ -8,7 +8,7 @@ import { invoke } from '@/services/transport'
 import type { CommitSlice } from './types'
 import { parseGitError } from './types'
 import type { GitCommit, GitCommitDetails, GitFileHistoryEntry, BatchStageResult } from '@/types/git'
-import { createLogger } from '../../utils/logger'
+import { createLogger } from '@/utils/logger'
 
 const log = createLogger('GitStore')
 

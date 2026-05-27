@@ -5,7 +5,7 @@
 
 import { memo } from 'react';
 import { ContextChip } from './ContextChip';
-import type { ContextChipWithId } from '../../types/context';
+import type { ContextChipWithId } from '@/types/context';
 
 export interface ContextChipsProps {
   chips: ContextChipWithId[];

@@ -8,19 +8,19 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { historyService } from '../../services/historyService'
-import type { UnifiedHistoryItem, HistoryScope, HistoryEngineFilter } from '../../services/historyService'
-import type { ChatMessage, EngineId } from '../../types'
-import { useWorkspaceStore } from '../../stores/workspaceStore'
-import { sessionStoreManager } from '../../stores/conversationStore/sessionStoreManager'
-import { useViewStore, useToastStore } from '../../stores/index'
-import { createLogger } from '../../utils/logger'
+import { historyService } from '@/services/historyService'
+import type { UnifiedHistoryItem, HistoryScope, HistoryEngineFilter } from '@/services/historyService'
+import type { ChatMessage, EngineId } from '@/types'
+import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
+import { useViewStore, useToastStore } from '@/stores/index'
+import { createLogger } from '@/utils/logger'
 import { Clock, MessageSquare, Trash2, RotateCcw, HardDrive, Loader2, X, ChevronDown, Globe, FolderOpen, List, GitBranch } from 'lucide-react'
 import { ForkIndicator } from './ForkIndicator'
 import { SessionTree } from './SessionTree'
 import { ForkSessionDialog } from './ForkSessionDialog'
-import { getEngineFullName } from '../../utils/engineDisplay'
-import { getPathBasename, normalizeWorkspacePath } from '../../utils/workspacePath'
+import { getEngineFullName } from '@/utils/engineDisplay'
+import { getPathBasename, normalizeWorkspacePath } from '@/utils/workspacePath'
 
 const log = createLogger('SessionHistoryPanel')
 

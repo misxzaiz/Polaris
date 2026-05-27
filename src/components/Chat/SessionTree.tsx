@@ -7,7 +7,7 @@
 import { useState, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Clock, MessageSquare, RotateCcw, Loader2, ChevronRight, ChevronDown, Circle, Dot } from 'lucide-react'
-import type { UnifiedHistoryItem } from '../../services/historyService'
+import type { UnifiedHistoryItem } from '@/services/historyService'
 import { ForkIndicator } from './ForkIndicator'
 
 export interface SessionTreeProps {

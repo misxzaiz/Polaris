@@ -4,13 +4,13 @@ import { ChevronRight, ChevronDown, Folder, Loader2, Copy, FolderOpen } from 'lu
 import { clsx } from 'clsx';
 import { FileIcon } from './FileIcon';
 import { ContextMenu, isHtmlFile, type ContextMenuItem } from './ContextMenu';
-import { useFileExplorerStore, useFileEditorStore } from '../../stores';
-import { openInDefaultApp } from '../../services/tauri';
+import { useFileExplorerStore, useFileEditorStore } from '@/stores';
+import { openInDefaultApp } from '@/services/tauri';
 import { InputDialog } from '../Common/InputDialog';
 import { ConfirmDialog } from '../Common/ConfirmDialog';
 import { IconFile, IconFolder, IconEdit, IconTrash, IconExternalLink, IconOpen } from '../Common/Icons';
-import type { FileInfo } from '../../types';
-import { getParentPath, joinPath, normalizePath, isValidFileName } from '../../utils/path';
+import type { FileInfo } from '@/types';
+import { getParentPath, joinPath, normalizePath, isValidFileName } from '@/utils/path';
 
 interface FileTreeNodeProps {
   file: FileInfo;

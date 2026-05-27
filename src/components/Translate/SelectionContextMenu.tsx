@@ -11,9 +11,9 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useTranslateStore, useConfigStore, useViewStore, useWorkspaceStore } from '../../stores';
-import { useActiveSessionActions } from '../../stores/conversationStore/useActiveSession';
-import { baiduTranslate } from '../../services/tauri';
+import { useTranslateStore, useConfigStore, useViewStore, useWorkspaceStore } from '@/stores';
+import { useActiveSessionActions } from '@/stores/conversationStore/useActiveSession';
+import { baiduTranslate } from '@/services/tauri';
 import { Copy, Search, Languages, Quote, MessageSquare, Check, X, Send, Loader2 } from 'lucide-react';
 
 interface Position {

@@ -3,7 +3,7 @@
  */
 
 import { invoke } from '@/services/transport';
-import type { Config, ConfigPatch, HealthStatus } from '../../types';
+import type { Config, ConfigPatch, HealthStatus } from '@/types';
 
 export interface WebServerStatus {
   running: boolean;

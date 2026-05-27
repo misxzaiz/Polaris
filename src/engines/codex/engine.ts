@@ -10,8 +10,8 @@ import type {
   AISession,
   AISessionConfig,
   EngineCapabilities,
-} from '../../ai-runtime'
-import { createCapabilities } from '../../ai-runtime'
+} from '@/ai-runtime'
+import { createCapabilities } from '@/ai-runtime'
 import { CodexSession, CodexSessionConfig } from './session'
 
 /**

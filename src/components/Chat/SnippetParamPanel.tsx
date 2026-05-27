@@ -7,7 +7,7 @@
 
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { PromptSnippet } from '../../types/promptSnippet';
+import type { PromptSnippet } from '@/types/promptSnippet';
 
 interface SnippetParamPanelProps {
   snippet: PromptSnippet;

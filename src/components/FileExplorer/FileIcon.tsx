@@ -1,5 +1,5 @@
 import { File, FileCode, FileJson, Image, FileText, Lock, FileWarning, FileArchive } from 'lucide-react';
-import type { FileInfo } from '../../types';
+import type { FileInfo } from '@/types';
 
 interface FileIconProps {
   file: FileInfo;

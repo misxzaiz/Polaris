@@ -11,7 +11,7 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronUp, Clock, Plus, Trash2 } from 'lucide-react'
 import type { TodoItem, TodoPriority, TodoSubtask } from '@/types'
-import { modKey } from '../../utils/path'
+import { modKey } from '@/utils/path'
 
 interface TodoFormProps {
   // 待办数据(创建时为空对象,编辑时传入现有待办)

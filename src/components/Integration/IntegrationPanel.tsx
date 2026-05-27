@@ -12,13 +12,13 @@ import {
   useIntegrationInstances,
   useActiveIntegrationInstance,
   useWorkspaceStore,
-} from '../../stores'
-import type { Platform, PlatformInstance } from '../../types'
+} from '@/stores'
+import type { Platform, PlatformInstance } from '@/types'
 import {
   ConnectionStateLabels,
   type ConnectionState,
-} from '../../types/integration'
-import { createLogger } from '../../utils/logger'
+} from '@/types/integration'
+import { createLogger } from '@/utils/logger'
 
 const log = createLogger('IntegrationPanel')
 

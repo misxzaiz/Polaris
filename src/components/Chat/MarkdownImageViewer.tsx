@@ -1,8 +1,8 @@
 import { type MouseEvent, useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Download, Loader2, X } from 'lucide-react';
-import { saveMarkdownImage } from '../../services/imageSaveService';
-import { useToastStore } from '../../stores';
+import { saveMarkdownImage } from '@/services/imageSaveService';
+import { useToastStore } from '@/stores';
 
 export interface MarkdownImageViewState {
   src: string;

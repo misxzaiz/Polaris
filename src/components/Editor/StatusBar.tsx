@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useState } from 'react'
-import { useFileEditorStore } from '../../stores/fileEditorStore'
+import { useFileEditorStore } from '@/stores/fileEditorStore'
 import type { EditorView } from '@codemirror/view'
 
 interface StatusBarProps {

@@ -4,11 +4,11 @@
 
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ScheduledTask, CreateTaskParams, TriggerType, TaskMode, TaskCategory, ProtocolTemplate } from '../../types/scheduler';
-import { TEMPLATE_VARIABLES, TASK_MODE_LABELS, TASK_CATEGORY_LABELS } from '../../types/scheduler';
+import type { ScheduledTask, CreateTaskParams, TriggerType, TaskMode, TaskCategory, ProtocolTemplate } from '@/types/scheduler';
+import { TEMPLATE_VARIABLES, TASK_MODE_LABELS, TASK_CATEGORY_LABELS } from '@/types/scheduler';
 import { TriggerConfig } from './TriggerConfig';
 import { ProtocolTemplateSelector, TemplateParamsForm } from './ProtocolTemplateSelector';
-import { useToastStore, useWorkspaceStore, useConfigStore, useSchedulerStore } from '../../stores';
+import { useToastStore, useWorkspaceStore, useConfigStore, useSchedulerStore } from '@/stores';
 
 export interface TaskEditorProps {
   /** 编辑的任务（可选，不传则为新建） */

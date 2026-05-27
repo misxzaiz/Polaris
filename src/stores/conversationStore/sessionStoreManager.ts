@@ -9,7 +9,7 @@ import { generateUUID } from '@/utils/uuid';
  */
 
 import { createStore, useStore } from 'zustand'
-import type { AIEvent } from '../../ai-runtime'
+import type { AIEvent } from '@/ai-runtime'
 import type {
   ConversationStore,
   ConversationStoreInstance,
@@ -20,14 +20,14 @@ import type {
   StoreDeps,
 } from './types'
 import { createConversationStore } from './createConversationStore'
-import { getEventRouter } from '../../services/eventRouter'
+import { getEventRouter } from '@/services/eventRouter'
 import { useConfigStore } from '../configStore'
-import { getEventBus } from '../../ai-runtime'
-import { voiceNotificationService } from '../../services/voiceNotificationService'
+import { getEventBus } from '@/ai-runtime'
+import { voiceNotificationService } from '@/services/voiceNotificationService'
 import { useWorkspaceStore } from '../workspaceStore'
 import { useViewStore } from '../index'
-import { createLogger } from '../../utils/logger'
-import { normalizeEngineId } from '../../utils/engineDisplay'
+import { createLogger } from '@/utils/logger'
+import { normalizeEngineId } from '@/utils/engineDisplay'
 
 const log = createLogger('SessionStoreManager')
 

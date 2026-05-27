@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useTranslateStore, useConfigStore } from '../../stores';
+import { useTranslateStore, useConfigStore } from '@/stores';
 import { ArrowRightLeft, Copy, Send, Trash2, Clock } from 'lucide-react';
 
 interface TranslatePanelProps {

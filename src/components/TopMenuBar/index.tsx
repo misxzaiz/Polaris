@@ -14,10 +14,10 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Minus, Square, X, PanelRight, Pin, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { invoke } from '@/services/transport';
-import { useViewStore } from '../../stores';
-import * as tauri from '../../services/tauri';
+import { useViewStore } from '@/stores';
+import * as tauri from '@/services/tauri';
 import { WorkspaceQuickSwitch } from '../Workspace';
-import { createLogger } from '../../utils/logger';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('TopMenuBar');
 

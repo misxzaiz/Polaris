@@ -7,8 +7,8 @@
 
 import type { LSPClient } from '@codemirror/lsp-client';
 import type { EditorView } from '@codemirror/view';
-import { useLspStore } from '../../stores/lspStore';
-import { createLogger } from '../../utils/logger';
+import { useLspStore } from '@/stores/lspStore';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('LspFormat');
 

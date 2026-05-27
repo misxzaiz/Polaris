@@ -13,7 +13,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { createLogger } from '../../utils/logger'
+import { createLogger } from '@/utils/logger'
 import { cn } from '@/utils/cn'
 import { Check, Plus, X, Link, Lock } from 'lucide-react'
 import { useWorkspaceStore } from '@/stores/workspaceStore'

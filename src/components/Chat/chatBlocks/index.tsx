@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import type { ContentBlock } from '../../../types';
+import type { ContentBlock } from '@/types';
 import { ContentBlockErrorBoundary } from '../ContentBlockErrorBoundary';
 import { QuestionBlockRenderer } from '../QuestionBlockRenderer';
 import { PlanModeBlockRenderer } from '../PlanModeBlockRenderer';

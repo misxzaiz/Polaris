@@ -7,7 +7,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { Check, Loader2, ChevronDown, ChevronRight, ChevronUp, Brain } from 'lucide-react';
-import type { ContentBlock, ThinkingBlock, ToolCallBlock } from '../../types';
+import type { ContentBlock, ThinkingBlock, ToolCallBlock } from '@/types';
 import type { CollapsibleBlockGroup } from './chatUtils/types';
 import { TOOL_COLLAPSE_CONFIG } from './chatUtils/constants';
 import { isEmptyTextBlock } from './chatUtils/helpers';

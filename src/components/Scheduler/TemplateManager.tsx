@@ -4,9 +4,9 @@
 
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSchedulerStore, useToastStore } from '../../stores';
-import type { PromptTemplate, CreateTemplateParams } from '../../types/scheduler';
-import { TEMPLATE_VARIABLES } from '../../types/scheduler';
+import { useSchedulerStore, useToastStore } from '@/stores';
+import type { PromptTemplate, CreateTemplateParams } from '@/types/scheduler';
+import { TEMPLATE_VARIABLES } from '@/types/scheduler';
 
 export interface TemplateManagerProps {
   /** 关闭回调 */

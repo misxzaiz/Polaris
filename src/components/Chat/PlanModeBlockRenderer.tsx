@@ -11,7 +11,7 @@ import { memo, useState, useCallback, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { invoke } from '@/services/tauri';
-import { createLogger } from '../../utils/logger';
+import { createLogger } from '@/utils/logger';
 import {
   Check,
   XCircle,
@@ -26,9 +26,9 @@ import {
   ListChecks,
   ClipboardList,
 } from 'lucide-react';
-import { useActiveSessionConversationId, useActiveSessionActions } from '../../stores/conversationStore/useActiveSession';
+import { useActiveSessionConversationId, useActiveSessionActions } from '@/stores/conversationStore/useActiveSession';
 import { Button } from '../Common/Button';
-import type { PlanModeBlock, PlanStageBlock } from '../../types';
+import type { PlanModeBlock, PlanStageBlock } from '@/types';
 
 const log = createLogger('PlanModeBlock');
 

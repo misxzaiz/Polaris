@@ -8,8 +8,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { EditorView } from '@codemirror/view';
 import { Search } from 'lucide-react';
-import { useLspUiStore } from '../../stores/lspUiStore';
-import { createLogger } from '../../utils/logger';
+import { useLspUiStore } from '@/stores/lspUiStore';
+import { createLogger } from '@/utils/logger';
 
 const log = createLogger('SymbolPalette');
 

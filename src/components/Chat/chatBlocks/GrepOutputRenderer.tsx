@@ -4,8 +4,8 @@
 
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { escapeRegExp } from '../../../utils/toolSummary';
-import type { GrepMatch, GrepOutputData } from '../../../utils/toolSummary';
+import { escapeRegExp } from '@/utils/toolSummary';
+import type { GrepMatch, GrepOutputData } from '@/utils/toolSummary';
 
 /**
  * 高亮文本组件 - 用于 Grep 结果

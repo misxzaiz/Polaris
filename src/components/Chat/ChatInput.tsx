@@ -11,30 +11,30 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { IconSend, IconStop, IconPaperclip } from '../Common/Icons'
-import { useWorkspaceStore, useSessionStore } from '../../stores'
-import { voiceNotificationService } from '../../services/voiceNotificationService'
-import { useActiveSessionInputDraft, useActiveSessionActions, useActiveSessionWorkspace, usePendingQuestions } from '../../stores/conversationStore/useActiveSession'
-import { useDebouncedCallback } from '../../hooks/useDebounce'
+import { useWorkspaceStore, useSessionStore } from '@/stores'
+import { voiceNotificationService } from '@/services/voiceNotificationService'
+import { useActiveSessionInputDraft, useActiveSessionActions, useActiveSessionWorkspace, usePendingQuestions } from '@/stores/conversationStore/useActiveSession'
+import { useDebouncedCallback } from '@/hooks/useDebounce'
 import { UnifiedSuggestion, type SuggestionItem } from './FileSuggestion'
 import { AttachmentPreview } from './AttachmentPreview'
 import { AutoResizingTextarea } from './AutoResizingTextarea'
 import { QuestionFloatingPanel } from './QuestionFloatingPanel'
 import { SnippetParamPanel } from './SnippetParamPanel'
-import { useFileSearch } from '../../hooks/useFileSearch'
-import { useSnippetStore } from '../../stores/snippetStore'
-import { resolveTemplateVariables } from '../../services/workspaceReference'
-import type { FileMatch } from '../../services/fileSearch'
-import type { Workspace } from '../../types'
-import type { Attachment } from '../../types/attachment'
-import { createLogger } from '../../utils/logger'
-import type { PromptSnippet } from '../../types/promptSnippet'
+import { useFileSearch } from '@/hooks/useFileSearch'
+import { useSnippetStore } from '@/stores/snippetStore'
+import { resolveTemplateVariables } from '@/services/workspaceReference'
+import type { FileMatch } from '@/services/fileSearch'
+import type { Workspace } from '@/types'
+import type { Attachment } from '@/types/attachment'
+import { createLogger } from '@/utils/logger'
+import type { PromptSnippet } from '@/types/promptSnippet'
 import {
   createAttachment,
   validateAttachment,
   validateAttachments,
   isImageType,
   ATTACHMENT_LIMITS,
-} from '../../types/attachment'
+} from '@/types/attachment'
 
 const log = createLogger('ChatInput')
 
