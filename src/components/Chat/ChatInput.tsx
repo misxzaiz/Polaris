@@ -691,7 +691,7 @@ export function ChatInput({
             placeholder={attachments.length > 0 ? t('input.placeholderWithAttachment') : t('input.placeholder')}
             className="flex-1 px-1.5 sm:px-2 py-1 sm:py-1.5 bg-transparent text-text-primary placeholder:text-text-tertiary resize-none outline-none text-sm leading-relaxed"
             disabled={disabled}
-            maxHeight={160}
+            maxHeight={200}
             minHeight={40}
           />
 
