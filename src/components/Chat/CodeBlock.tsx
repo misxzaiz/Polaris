@@ -13,6 +13,7 @@
 
 import { memo, useState, useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import DOMPurify from 'dompurify';
 import { Copy, Check, List, ListX, ChevronDown, ChevronUp } from 'lucide-react';
 import hljs from 'highlight.js';
 import { LRUCache } from '../../utils/lru-cache';
@@ -381,9 +382,12 @@ export const CodeBlock = memo(function CodeBlock({ children, className }: CodeBl
                       {line.split(' | ')[0]}
                     </span>
                     <span className="table-cell pl-4" dangerouslySetInnerHTML={{
-                      __html: useHighlight
-                        ? (highlightedCode?.split('\n')[index] || line.split(' | ')[1] || '')
-                        : (line.split(' | ')[1] || '')
+                      __html: DOMPurify.sanitize(
+                        useHighlight
+                          ? (highlightedCode?.split('\n')[index] || line.split(' | ')[1] || '')
+                          : (line.split(' | ')[1] || ''),
+                        { ALLOWED_TAGS: ['span'], ALLOWED_ATTR: ['class'] }
+                      )
                     }} />
                   </div>
                 ))}
@@ -391,7 +395,7 @@ export const CodeBlock = memo(function CodeBlock({ children, className }: CodeBl
             ) : useHighlight ? (
               <code
                 className="hljs text-sm"
-                dangerouslySetInnerHTML={{ __html: displayCode }}
+                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(displayCode, { ALLOWED_TAGS: ['span'], ALLOWED_ATTR: ['class'] }) }}
               />
             ) : (
               <code className="text-sm text-text-secondary">{codeString}</code>

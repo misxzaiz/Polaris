@@ -253,7 +253,7 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
       cleanupCliListeners();
       disconnectTransport();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only init, all deps are stable refs
   }, []);
 
   // Web 模式：Token 提交成功后触发后续初始化（首次进入时 needsToken → submitToken → success）

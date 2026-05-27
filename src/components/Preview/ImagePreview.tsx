@@ -12,7 +12,7 @@ export function ImagePreview({ filePath, title }: ImagePreviewProps) {
     if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
       // Dynamic import to avoid bundling Tauri API in web mode
       try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        // eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic require for Tauri-only code path, avoids bundling in web mode
         const { convertFileSrc } = require('@tauri-apps/api/core')
         return convertFileSrc(filePath)
       } catch {

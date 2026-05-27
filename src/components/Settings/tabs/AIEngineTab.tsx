@@ -48,7 +48,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
         setActiveProfileId(config.activeModelProfileId)
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync once on mount from backend config
   }, [])
 
   const handleEngineChange = (engineId: EngineId) => {
