@@ -535,10 +535,17 @@ function extractQuestionsFromBlocks(blocks: import('../../types').ContentBlock[]
               preview: o.preview as string | undefined,
             }))
           : []
+        // 当同时存在 header 和 question 时，header 作为类别标签，question 作为问题正文
+        const rawHeader = q.header as string | undefined
+        const rawQuestion = q.question as string | undefined
+        const header = rawQuestion || rawHeader || ''
+        const categoryLabel = rawQuestion && rawHeader ? rawHeader : (q.categoryLabel as string | undefined)
+
         result.push({
           type: 'question',
           id: `${toolBlock.id}_q${i}`,
-          header: (q.header as string) || (q.question as string) || '',
+          header,
+          categoryLabel,
           multiSelect: q.multiSelect as boolean | undefined,
           options,
           allowCustomInput: q.allowCustomInput as boolean | undefined,

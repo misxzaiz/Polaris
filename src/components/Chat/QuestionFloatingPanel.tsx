@@ -115,7 +115,7 @@ export const QuestionFloatingPanel = memo(function QuestionFloatingPanel({
         <HelpCircle className="w-3.5 h-3.5 text-accent shrink-0" />
         <span className="text-xs font-medium text-text-primary truncate flex-1">
           {isSingle
-            ? questions[0].header
+            ? (questions[0].categoryLabel || t('question.label', '问题'))
             : t('question.pendingQuestion', `待回答问题 (${questions.length})`)
           }
         </span>
@@ -135,30 +135,45 @@ export const QuestionFloatingPanel = memo(function QuestionFloatingPanel({
 
           return (
             <div key={question.id}>
-              {/* 多问题时显示每个问题的 header */}
-              {!isSingle && (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-background-surface/50">
-                  <span className="text-xs font-medium text-text-secondary flex-1 truncate">
-                    {question.header}
-                  </span>
-                  {hasAnswer && (
-                    <Check className="w-3 h-3 text-accent shrink-0" />
-                  )}
-                </div>
-              )}
+              {/* 问题标题 + 正文 */}
+              <div className={clsx(
+                'px-3',
+                !isSingle ? 'pt-2 pb-1' : 'pt-2.5 pb-1.5'
+              )}>
+                {/* 多问题时显示类别标签 + 完成状态 */}
+                {!isSingle && (
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    {question.categoryLabel && (
+                      <span className="text-[10px] font-medium text-accent bg-accent/10 px-1.5 py-0.5 rounded shrink-0">
+                        {question.categoryLabel}
+                      </span>
+                    )}
+                    <span className="flex-1" />
+                    {hasAnswer && (
+                      <Check className="w-3 h-3 text-accent shrink-0" />
+                    )}
+                  </div>
+                )}
+                {/* 问题正文：不截断，允许换行 */}
+                <p className="text-[13px] leading-relaxed text-text-primary whitespace-pre-wrap break-words">
+                  {question.header}
+                </p>
+              </div>
 
               {/* 选项 */}
-              <div className={clsx(isSingle ? 'p-2 space-y-1' : 'px-2 pb-2 pt-1 space-y-0.5')}>
+              <div className={clsx(isSingle ? 'px-2.5 pb-2 space-y-1' : 'px-2.5 pb-2 space-y-1')}>
                 {question.options.map((option) => {
                   const isSelected = selected.includes(option.value)
+                  const hasDescription = !!option.description
                   return (
                     <button
                       key={option.value}
                       onClick={() => handleOptionClick(question.id, option.value, question.multiSelect)}
                       className={clsx(
-                        'w-full text-left px-2.5 py-1.5 rounded-md text-sm transition-colors',
-                        'flex items-center gap-2 cursor-pointer',
+                        'w-full text-left px-2.5 rounded-md text-sm transition-colors',
+                        'flex items-start gap-2 cursor-pointer',
                         'focus:outline-none',
+                        hasDescription ? 'py-2' : 'py-1.5',
                         isSelected
                           ? 'bg-accent/15 text-accent border border-accent/25'
                           : 'hover:bg-background-hover border border-transparent',
@@ -168,7 +183,7 @@ export const QuestionFloatingPanel = memo(function QuestionFloatingPanel({
                         role="presentation"
                         className={clsx(
                           question.multiSelect ? 'rounded-sm' : 'rounded-full',
-                          'w-3.5 h-3.5 border-2 flex items-center justify-center shrink-0',
+                          'w-3.5 h-3.5 border-2 flex items-center justify-center shrink-0 mt-0.5',
                           isSelected
                             ? 'border-accent bg-accent'
                             : 'border-border'
@@ -176,9 +191,21 @@ export const QuestionFloatingPanel = memo(function QuestionFloatingPanel({
                       >
                         {isSelected && <Check className="w-2 h-2 text-white" />}
                       </div>
-                      <span className="font-medium text-[13px] leading-tight truncate">
-                        {option.label || option.value}
-                      </span>
+                      <div className="flex-1 min-w-0">
+                        <span className="font-medium text-[13px] leading-tight text-text-primary block">
+                          {option.label || option.value}
+                        </span>
+                        {option.description && (
+                          <span className="text-[12px] leading-snug text-text-tertiary mt-0.5 block">
+                            {option.description}
+                          </span>
+                        )}
+                        {option.preview && (
+                          <code className="text-[11px] leading-snug text-text-tertiary/80 mt-0.5 block font-mono truncate opacity-75">
+                            {option.preview}
+                          </code>
+                        )}
+                      </div>
                     </button>
                   )
                 })}
