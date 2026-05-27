@@ -14,7 +14,7 @@ export { LanguageSwitcher } from './LanguageSwitcher';
 export { ToastContainer } from './Toast';
 export { ConfirmDialog } from './ConfirmDialog';
 export { UnsavedDialog } from './UnsavedDialog';
-export * from './Icons';
+export * from './Icons/index';
 export * from '../Workspace';
 export * from '../Settings';
 export * from '../FileExplorer';
