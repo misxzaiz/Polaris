@@ -8,8 +8,9 @@
 import { memo, useState, useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
-import { X, HelpCircle, Send, Check } from 'lucide-react'
+import { X, HelpCircle, Send, Check, Pencil } from 'lucide-react'
 import type { QuestionBlock } from '@/types'
+import { AutoResizingTextarea } from './AutoResizingTextarea'
 
 export interface QuestionFloatingPanelProps {
   questions: QuestionBlock[]
@@ -27,14 +28,23 @@ export const QuestionFloatingPanel = memo(function QuestionFloatingPanel({
 
   // 每个问题独立追踪选择: questionId → selected values
   const [selections, setSelections] = useState<Map<string, string[]>>(new Map())
+  // 自定义输入: questionId → 自定义文本
+  const [customInputs, setCustomInputs] = useState<Map<string, string>>(new Map())
 
-  // questions 变化时重置选择
+  // questions 变化时重置状态
   useEffect(() => {
     setSelections(new Map())
+    setCustomInputs(new Map())
   }, [questions])
 
-  // 某个问题的选择处理
+  // 某个问题的选择处理 — 选选项时清除自定义输入
   const handleOptionClick = useCallback((questionId: string, value: string, multiSelect?: boolean) => {
+    setCustomInputs(prev => {
+      if (!prev.has(questionId)) return prev
+      const next = new Map(prev)
+      next.delete(questionId)
+      return next
+    })
     setSelections(prev => {
       const next = new Map(prev)
       if (multiSelect) {
@@ -47,16 +57,47 @@ export const QuestionFloatingPanel = memo(function QuestionFloatingPanel({
     })
   }, [])
 
-  // 是否所有问题都已选择
-  const allAnswered = questions.every(q => (selections.get(q.id)?.length ?? 0) > 0)
+  // 自定义输入变更 — 输入时清除已选选项
+  const handleCustomInputChange = useCallback((questionId: string, text: string) => {
+    setCustomInputs(prev => {
+      const next = new Map(prev)
+      if (text.trim()) {
+        next.set(questionId, text)
+      } else {
+        next.delete(questionId)
+      }
+      return next
+    })
+    // 输入内容非空时清除选项选择
+    if (text.trim()) {
+      setSelections(prev => {
+        if (!prev.has(questionId)) return prev
+        const next = new Map(prev)
+        next.delete(questionId)
+        return next
+      })
+    }
+  }, [])
+
+  // 判断某个问题是否已回答（选项已选 或 自定义输入非空）
+  const isQuestionAnswered = useCallback((qId: string) => {
+    return (selections.get(qId)?.length ?? 0) > 0 || (customInputs.get(qId)?.trim().length ?? 0) > 0
+  }, [selections, customInputs])
+
+  // 是否所有问题都已回答
+  const allAnswered = questions.every(q => isQuestionAnswered(q.id))
 
   // 已回答数
-  const answeredCount = questions.filter(q => (selections.get(q.id)?.length ?? 0) > 0).length
+  const answeredCount = questions.filter(q => isQuestionAnswered(q.id)).length
 
   // 构建格式化文本并发送
   const handleSend = useCallback(() => {
     if (!allAnswered) return
     const lines = questions.map(q => {
+      const customText = customInputs.get(q.id)?.trim()
+      if (customText) {
+        return `${q.header}: ${customText}`
+      }
       const values = selections.get(q.id) || []
       const labels = values.map(v => {
         const opt = q.options.find(o => o.value === v)
@@ -65,7 +106,7 @@ export const QuestionFloatingPanel = memo(function QuestionFloatingPanel({
       return `${q.header}: ${labels.join(', ')}`
     })
     onFillAndSend(lines.join('\n'))
-  }, [allAnswered, questions, selections, onFillAndSend])
+  }, [allAnswered, questions, selections, customInputs, onFillAndSend])
 
   // 点击外部关闭
   useEffect(() => {
@@ -83,14 +124,17 @@ export const QuestionFloatingPanel = memo(function QuestionFloatingPanel({
     }
   }, [onDismiss])
 
-  // 键盘
+  // 键盘 — textarea 内的 Enter 不触发发送
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault()
       e.stopPropagation()
       onDismiss()
     }
-    if ((e.key === 'Enter' || e.key === ' ') && allAnswered) {
+    // 如果焦点在 textarea 内，不拦截 Enter（允许换行）
+    const target = e.target as HTMLElement
+    const isInTextarea = target.tagName === 'TEXTAREA'
+    if ((e.key === 'Enter' && !e.shiftKey && !isInTextarea) && allAnswered) {
       e.preventDefault()
       e.stopPropagation()
       handleSend()
@@ -131,7 +175,8 @@ export const QuestionFloatingPanel = memo(function QuestionFloatingPanel({
       <div className="flex-1 overflow-y-auto">
         {questions.map((question, qIdx) => {
           const selected = selections.get(question.id) || []
-          const hasAnswer = selected.length > 0
+          const hasCustomInput = (customInputs.get(question.id)?.trim().length ?? 0) > 0
+          const hasAnswer = selected.length > 0 || hasCustomInput
 
           return (
             <div key={question.id}>
@@ -210,6 +255,52 @@ export const QuestionFloatingPanel = memo(function QuestionFloatingPanel({
                   )
                 })}
               </div>
+
+              {/* 自定义输入区域 */}
+              {question.allowCustomInput !== false && (
+                <div className="px-2.5 pb-2">
+                  {/* 当已有选项选中时，显示"或输入自定义内容"入口 */}
+                  {selected.length > 0 && !customInputs.get(question.id) ? (
+                    <button
+                      onClick={() => {
+                        // 清除选项选中，聚焦到输入框
+                        setSelections(prev => {
+                          const next = new Map(prev)
+                          next.delete(question.id)
+                          return next
+                        })
+                      }}
+                      className="flex items-center gap-1.5 px-2.5 py-1 text-[12px] text-text-tertiary hover:text-accent transition-colors cursor-pointer"
+                    >
+                      <Pencil size={12} />
+                      {t('question.orCustomInput', '或输入自定义内容...')}
+                    </button>
+                  ) : (
+                    <div className={clsx(
+                      'rounded-md border transition-colors',
+                      customInputs.get(question.id)?.trim()
+                        ? 'border-accent/40 bg-accent/5'
+                        : 'border-border bg-background-surface/30'
+                    )}>
+                      <AutoResizingTextarea
+                        value={customInputs.get(question.id) || ''}
+                        onChange={(e) => handleCustomInputChange(question.id, e.target.value)}
+                        placeholder={t('question.customInputPlaceholder', '输入自定义回答...')}
+                        maxHeight={80}
+                        minHeight={32}
+                        className="w-full px-2.5 py-1.5 text-[13px] leading-snug bg-transparent resize-none focus:outline-none text-text-primary placeholder:text-text-tertiary/60"
+                        // 阻止 Enter 向上冒泡到容器的 handleKeyDown，避免误触发发送
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            // 普通 Enter = 换行，不冒泡
+                            e.stopPropagation()
+                          }
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* 分隔线（非最后一个） */}
               {qIdx < questions.length - 1 && (
