@@ -328,6 +328,28 @@
     "cancel": "Cancel",
     "confirm": "Create Branch"
   },
+  "imageViewer": {
+    "saveImage": "Save image",
+    "close": "Close",
+    "imageSaved": "Image saved",
+    "saveFailed": "Failed to save image"
+  },
+  "multiWindow": {
+    "settings": "Multi-window settings",
+    "mode": "Multi-window mode",
+    "layout": "Layout",
+    "row1": "1 row",
+    "row2": "2 rows",
+    "cellWidth": "Cell width",
+    "decreaseWidth": "Decrease width",
+    "increaseWidth": "Increase width"
+  },
+  "newSession": {
+    "title": "New session",
+    "newChat": "New chat {{number}}",
+    "aiEngine": "AI Engine",
+    "noWorkspace": "No workspace"
+  },
   "compact": {
     "typing": "Typing...",
     "output": "Output:",

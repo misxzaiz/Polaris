@@ -1,4 +1,5 @@
 import { memo, useCallback, useState, useRef, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { Plus, Folder, Check, Bot, Cpu } from 'lucide-react';
 import { useViewStore, useWorkspaceStore, useConfigStore } from '@/stores';
@@ -13,6 +14,7 @@ import { getEngineFullName, normalizeEngineId } from '@/utils/engineDisplay';
  * 新建会话按钮
  */
 export const NewSessionButton = memo(function NewSessionButton() {
+  const { t } = useTranslation('chat');
   const multiSessionMode = useViewStore(state => state.multiSessionMode);
   const multiSessionIds = useViewStore(state => state.multiSessionIds);
   const { createSession, switchSession } = useSessionManagerActions();
@@ -76,7 +78,7 @@ export const NewSessionButton = memo(function NewSessionButton() {
   const handleCreateSession = useCallback((workspaceId?: string) => {
     const newSessionId = createSession({
       type: workspaceId ? 'project' : 'free',
-      title: `新对话 ${allSessionMetadata.length + 1}`,
+      title: t('newSession.newChat', { number: allSessionMetadata.length + 1 }),
       workspaceId,
       workspaceLocked: Boolean(workspaceId),
       engineId: selectedEngineId,
@@ -84,7 +86,7 @@ export const NewSessionButton = memo(function NewSessionButton() {
     // createSession 已自动处理 addToMultiView，此处无需手动调用
     switchSession(newSessionId);
     setIsOpen(false);
-  }, [createSession, allSessionMetadata.length, selectedEngineId, switchSession]);
+  }, [createSession, allSessionMetadata.length, selectedEngineId, switchSession, t]);
 
   // 非多会话模式或已达上限，不显示
   if (!multiSessionMode || !canAdd) {
@@ -102,7 +104,7 @@ export const NewSessionButton = memo(function NewSessionButton() {
             ? 'bg-primary/10 text-primary'
             : 'text-text-muted hover:text-text-primary hover:bg-background-hover'
         )}
-        title="新建会话"
+        title={t('newSession.title')}
       >
         <Plus className="w-4 h-4" />
       </button>
@@ -118,7 +120,7 @@ export const NewSessionButton = memo(function NewSessionButton() {
           )}
         >
           <div className="px-2 pb-2 border-b border-border-subtle">
-            <div className="px-1 py-1 text-[11px] font-medium text-text-tertiary">AI 引擎</div>
+            <div className="px-1 py-1 text-[11px] font-medium text-text-tertiary">{t('newSession.aiEngine')}</div>
             <div className="grid grid-cols-2 gap-1">
               {engineOptions.map(({ id, label, Icon }) => (
                 <button
@@ -149,7 +151,7 @@ export const NewSessionButton = memo(function NewSessionButton() {
             )}
           >
             <Folder className="w-4 h-4 text-text-muted" />
-            <span>无工作区</span>
+            <span>{t('newSession.noWorkspace')}</span>
           </button>
 
           {/* 分隔线 */}

@@ -8,6 +8,7 @@
  */
 
 import { memo, useCallback, useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { Grid3x3, RowsIcon, ColumnsIcon, Minus, Plus, Check } from 'lucide-react';
 import { useViewStore } from '@/stores';
@@ -20,6 +21,7 @@ const WIDTH_PRESETS = [250, 300, 350, 400, 450];
  * 多窗口设置菜单组件
  */
 export const MultiWindowMenu = memo(function MultiWindowMenu() {
+  const { t } = useTranslation('chat');
   const multiSessionMode = useViewStore(state => state.multiSessionMode);
   const multiSessionRows = useViewStore(state => state.multiSessionRows);
   const multiSessionCellWidth = useViewStore(state => state.multiSessionCellWidth);
@@ -87,8 +89,8 @@ export const MultiWindowMenu = memo(function MultiWindowMenu() {
               ? 'bg-primary text-white'
               : 'text-text-muted hover:text-text-primary hover:bg-background-hover'
         )}
-        title="多窗口设置"
-        aria-label="多窗口设置"
+        title={t('multiWindow.settings')}
+        aria-label={t('multiWindow.settings')}
         aria-expanded={isOpen}
         aria-haspopup="menu"
       >
@@ -119,7 +121,7 @@ export const MultiWindowMenu = memo(function MultiWindowMenu() {
             role="menuitemcheckbox"
             aria-checked={multiSessionMode}
           >
-            <span>多窗口模式</span>
+            <span>{t('multiWindow.mode')}</span>
             {multiSessionMode && <Check className="w-4 h-4" />}
           </button>
 
@@ -131,7 +133,7 @@ export const MultiWindowMenu = memo(function MultiWindowMenu() {
 
               {/* Section 2: 布局 */}
               <div className="mb-3">
-                <div className="text-xs text-text-muted mb-1.5 px-1">布局</div>
+                <div className="text-xs text-text-muted mb-1.5 px-1">{t('multiWindow.layout')}</div>
                 <div className="flex gap-1">
                   <button
                     onClick={() => setMultiSessionRows(1)}
@@ -146,7 +148,7 @@ export const MultiWindowMenu = memo(function MultiWindowMenu() {
                     aria-checked={multiSessionRows === 1}
                   >
                     <RowsIcon className="w-3.5 h-3.5" />
-                    <span>1行</span>
+                    <span>{t('multiWindow.row1')}</span>
                   </button>
                   <button
                     onClick={() => setMultiSessionRows(2)}
@@ -161,21 +163,21 @@ export const MultiWindowMenu = memo(function MultiWindowMenu() {
                     aria-checked={multiSessionRows === 2}
                   >
                     <ColumnsIcon className="w-3.5 h-3.5" />
-                    <span>2行</span>
+                    <span>{t('multiWindow.row2')}</span>
                   </button>
                 </div>
               </div>
 
               {/* Section 3: 格子宽度 */}
               <div>
-                <div className="text-xs text-text-muted mb-1.5 px-1">格子宽度</div>
+                <div className="text-xs text-text-muted mb-1.5 px-1">{t('multiWindow.cellWidth')}</div>
 
                 {/* 步进调整 */}
                 <div className="flex items-center gap-2 mb-2">
                   <button
                     onClick={() => handleAdjustWidth(-25)}
                     className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-background-hover"
-                    aria-label="减少宽度"
+                    aria-label={t('multiWindow.decreaseWidth')}
                   >
                     <Minus className="w-3.5 h-3.5" />
                   </button>
@@ -185,7 +187,7 @@ export const MultiWindowMenu = memo(function MultiWindowMenu() {
                   <button
                     onClick={() => handleAdjustWidth(25)}
                     className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-background-hover"
-                    aria-label="增加宽度"
+                    aria-label={t('multiWindow.increaseWidth')}
                   >
                     <Plus className="w-3.5 h-3.5" />
                   </button>

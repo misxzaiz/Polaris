@@ -1,4 +1,5 @@
 import { type MouseEvent, useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 import { Download, Loader2, X } from 'lucide-react';
 import { saveMarkdownImage } from '@/services/imageSaveService';
@@ -16,6 +17,7 @@ interface MarkdownImageViewerProps {
 }
 
 export function MarkdownImageViewer({ image, onClose }: MarkdownImageViewerProps) {
+  const { t } = useTranslation('chat');
   const [saving, setSaving] = useState(false);
   const { success, error: toastError } = useToastStore();
 
@@ -43,11 +45,11 @@ export function MarkdownImageViewer({ image, onClose }: MarkdownImageViewerProps
     try {
       const savedPath = await saveMarkdownImage(image.src, image.title || image.alt);
       if (savedPath) {
-        success('图片已保存', savedPath);
+        success(t('imageViewer.imageSaved'), savedPath);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      toastError('保存图片失败', message);
+      toastError(t('imageViewer.saveFailed'), message);
     } finally {
       setSaving(false);
     }
@@ -66,8 +68,8 @@ export function MarkdownImageViewer({ image, onClose }: MarkdownImageViewerProps
         <button
           type="button"
           className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 bg-black/45 text-white shadow-soft transition-colors hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
-          title="保存图片"
-          aria-label="保存图片"
+          title={t('imageViewer.saveImage')}
+          aria-label={t('imageViewer.saveImage')}
           onClick={handleSave}
           disabled={saving}
         >
@@ -80,8 +82,8 @@ export function MarkdownImageViewer({ image, onClose }: MarkdownImageViewerProps
         <button
           type="button"
           className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 bg-black/45 text-white shadow-soft transition-colors hover:bg-white/15"
-          title="关闭"
-          aria-label="关闭"
+          title={t('imageViewer.close')}
+          aria-label={t('imageViewer.close')}
           onClick={onClose}
         >
           <X className="h-4 w-4" />

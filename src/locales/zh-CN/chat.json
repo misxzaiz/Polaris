@@ -328,6 +328,28 @@
     "cancel": "取消",
     "confirm": "确认创建分支"
   },
+  "imageViewer": {
+    "saveImage": "保存图片",
+    "close": "关闭",
+    "imageSaved": "图片已保存",
+    "saveFailed": "保存图片失败"
+  },
+  "multiWindow": {
+    "settings": "多窗口设置",
+    "mode": "多窗口模式",
+    "layout": "布局",
+    "row1": "1行",
+    "row2": "2行",
+    "cellWidth": "格子宽度",
+    "decreaseWidth": "减少宽度",
+    "increaseWidth": "增加宽度"
+  },
+  "newSession": {
+    "title": "新建会话",
+    "newChat": "新对话 {{number}}",
+    "aiEngine": "AI 引擎",
+    "noWorkspace": "无工作区"
+  },
   "compact": {
     "typing": "正在输入...",
     "output": "输出:",
