@@ -1,0 +1,84 @@
+{
+  "status": {
+    "planning": "Planning",
+    "active": "Active",
+    "running": "Session Running",
+    "paused": "Paused",
+    "maintenance": "Maintenance",
+    "blocked": "Blocked",
+    "completed": "Completed",
+    "failed": "Failed"
+  },
+  "empty": "Open a workspace to manage long-term goals",
+  "title": "Long-term Goals",
+  "form": {
+    "titlePlaceholder": "Goal title",
+    "goalPlaceholder": "Long-term goal",
+    "maxRetries": "Max retries",
+    "retryBackoffPlaceholder": "Retry backoff 5m",
+    "autoStartPlanning": "Auto-start planning session after creation",
+    "autoPauseOnComplete": "Auto-pause on completion for review (uncheck to let AI finalize directly)",
+    "allowCodeChanges": "Allow code changes",
+    "allowGitCommit": "Allow git commits",
+    "createButton": "Create Long-term Goal"
+  },
+  "info": {
+    "currentSession": "Current session",
+    "lastSession": "Last session",
+    "nextRun": "Next run",
+    "retry": "Retry",
+    "backoff": "Backoff",
+    "strategy": "Execution strategy",
+    "codeChangeAllowed": "Code changes allowed",
+    "codeChangeDenied": "No code changes",
+    "commitAllowed": "Commits allowed",
+    "commitDenied": "No commits",
+    "lastFailure": "Last failure"
+  },
+  "actions": {
+    "refresh": "Refresh",
+    "planningSession": "Planning Session",
+    "executionSession": "Execution Session",
+    "maintenanceSession": "Maintenance Session",
+    "interruptSession": "Interrupt Session",
+    "pause": "Pause",
+    "resume": "Resume",
+    "maintenance": "Maintenance",
+    "complete": "Complete",
+    "confirmCompletion": "Confirm Completion",
+    "continueExecution": "Continue Execution",
+    "replan": "Replan with Supplement"
+  },
+  "supplement": {
+    "title": "User Supplement",
+    "placeholder": "Append supplement for the next session to read",
+    "append": "Append Supplement"
+  },
+  "review": {
+    "completionReview": "Completion Review",
+    "completionRetrospective": "Completion Retrospective",
+    "reviewHint": "AI has determined completion, waiting for your confirmation. Click 'Confirm Completion' to finalize.",
+    "retrospectiveHint": "Goal has reached terminal state. You can still add retrospective notes, continue execution, or replan.",
+    "reviewPlaceholder": "Add requirements for continuing execution or replanning"
+  },
+  "documents": {
+    "progress": "Progress",
+    "taskQueue": "Task Queue",
+    "lastSessionSummary": "Last Session Summary",
+    "maintenanceInput": "Maintenance Session Input"
+  },
+  "messages": {
+    "supplementAppended": "Supplement appended",
+    "sessionInterrupted": "Current session interrupted and goal paused",
+    "createdWithPlanning": "Long-term goal created, planning session started",
+    "created": "Long-term goal created",
+    "planningCreated": "Planning session created",
+    "executionCreated": "Execution session created",
+    "maintenanceCreated": "Maintenance session created",
+    "markedComplete": "Marked complete, awaiting review",
+    "confirmedComplete": "Completion confirmed",
+    "resumedExecution": "Execution resumed, system will continue at intervals",
+    "replanStarted": "Replanning session started",
+    "sessionCreateFailed": "Unable to create long-term goal session"
+  }
+}

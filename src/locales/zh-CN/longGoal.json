@@ -1,0 +1,84 @@
+{
+  "status": {
+    "planning": "规划中",
+    "active": "执行中",
+    "running": "会话运行中",
+    "paused": "已暂停",
+    "maintenance": "维护中",
+    "blocked": "等待补充",
+    "completed": "已完成",
+    "failed": "失败"
+  },
+  "empty": "打开工作区后可管理长期目标",
+  "title": "长期目标",
+  "form": {
+    "titlePlaceholder": "目标标题",
+    "goalPlaceholder": "长期目标",
+    "maxRetries": "最大重试次数",
+    "retryBackoffPlaceholder": "重试退避 5m",
+    "autoStartPlanning": "创建后自动启动规划会话",
+    "autoPauseOnComplete": "完成时自动暂停等待复审（取消则 AI 完成判定后直接进入终态）",
+    "allowCodeChanges": "允许修改代码",
+    "allowGitCommit": "允许提交 git",
+    "createButton": "创建长期目标"
+  },
+  "info": {
+    "currentSession": "当前会话",
+    "lastSession": "上次会话",
+    "nextRun": "下次执行",
+    "retry": "重试",
+    "backoff": "退避",
+    "strategy": "执行策略",
+    "codeChangeAllowed": "可改代码",
+    "codeChangeDenied": "不可改代码",
+    "commitAllowed": "可提交",
+    "commitDenied": "不提交",
+    "lastFailure": "上次失败"
+  },
+  "actions": {
+    "refresh": "刷新",
+    "planningSession": "规划会话",
+    "executionSession": "执行会话",
+    "maintenanceSession": "维护会话",
+    "interruptSession": "中断会话",
+    "pause": "暂停",
+    "resume": "恢复",
+    "maintenance": "维护",
+    "complete": "完成",
+    "confirmCompletion": "确认完成",
+    "continueExecution": "继续执行",
+    "replan": "补充后重新规划"
+  },
+  "supplement": {
+    "title": "用户补充",
+    "placeholder": "追加给下一次会话读取的补充",
+    "append": "追加补充"
+  },
+  "review": {
+    "completionReview": "完成复审",
+    "completionRetrospective": "完成复盘",
+    "reviewHint": "AI 已判定完成，等待你确认。点击「确认完成」目标会进入终态。",
+    "retrospectiveHint": "目标已进入终态。仍可补充复盘说明、继续执行或重新规划。",
+    "reviewPlaceholder": "补充继续执行或重新规划的要求"
+  },
+  "documents": {
+    "progress": "进度",
+    "taskQueue": "任务队列",
+    "lastSessionSummary": "最近会话摘要",
+    "maintenanceInput": "维护会话输入"
+  },
+  "messages": {
+    "supplementAppended": "补充已追加",
+    "sessionInterrupted": "已中断当前会话并暂停目标",
+    "createdWithPlanning": "长期目标已创建，已启动规划会话",
+    "created": "长期目标已创建",
+    "planningCreated": "已创建规划会话",
+    "executionCreated": "已创建执行会话",
+    "maintenanceCreated": "已创建维护会话",
+    "markedComplete": "已标记完成，等待复审",
+    "confirmedComplete": "已确认完成",
+    "resumedExecution": "已恢复执行，系统将按间隔继续推进",
+    "replanStarted": "已启动重新规划会话",
+    "sessionCreateFailed": "无法创建长期目标会话"
+  }
+}
