@@ -1,9 +1,11 @@
-import type { ChatMessage, EngineId } from '../../types'
+import type { ChatMessage, EngineId, Workspace } from '../../types'
 import type { SessionRuntimeConfig } from '../../types/sessionConfig'
 import { sessionStoreManager } from './sessionStoreManager'
 import { normalizeEngineId } from '../../utils/engineDisplay'
 import { listPluginMcpServerStatuses } from '@/plugin-system'
 import { usePluginStore } from '../pluginStore'
+import { getUserSystemPrompt } from '../../services/workspaceReference'
+import i18n from 'i18next'
 
 export function resolveSessionEngine(sessionId: string, configEngineId?: string): EngineId {
   const metadataEngineId = sessionStoreManager.getState().sessionMetadata.get(sessionId)?.engineId
@@ -97,4 +99,56 @@ export function generateTitleFromMessage(content: string): string {
     return cleanContent
   }
   return cleanContent.slice(0, maxTitleLength) + '...'
+}
+
+// ============================================================================
+// 工作区提示词构建
+// ============================================================================
+
+export interface WorkspacePrompts {
+  workspacePrompt: string
+  userPrompt: string | null
+  contextWorkspaces: Workspace[]
+  allWorkspaces: Workspace[]
+}
+
+/**
+ * 构建工作区系统提示词和用户自定义提示词
+ * sendMessage 和 continueChat 共用
+ */
+export function buildWorkspacePrompts(
+  getWorkspace: () => Workspace | null,
+  getContextWorkspaceIds: () => string[],
+  getAllWorkspaces: () => Workspace[],
+): WorkspacePrompts {
+  const currentWorkspace = getWorkspace()
+  const contextWorkspaceIds = getContextWorkspaceIds()
+  const allWorkspaces = getAllWorkspaces()
+  const contextWorkspaces = allWorkspaces.filter(w => contextWorkspaceIds.includes(w.id))
+
+  let workspacePrompt = ''
+  if (currentWorkspace) {
+    workspacePrompt = i18n.t('systemPrompt:workingIn', { name: currentWorkspace.name }) + '\n' +
+      i18n.t('systemPrompt:projectPath', { path: currentWorkspace.path }) + '\n' +
+      i18n.t('systemPrompt:fileRefSyntax')
+  }
+
+  let userPrompt: string | null = null
+  if (currentWorkspace) {
+    userPrompt = getUserSystemPrompt(currentWorkspace, contextWorkspaces)
+  }
+
+  return { workspacePrompt, userPrompt, contextWorkspaces, allWorkspaces }
+}
+
+/**
+ * 规范化文本用于 Tauri IPC 传输
+ * 将换行符统一转义为 \\n 字面量
+ */
+export function normalizeForInvoke(text: string): string {
+  return text
+    .replace(/\r\n/g, '\\n')
+    .replace(/\r/g, '\\n')
+    .replace(/\n/g, '\\n')
+    .trim()
 }

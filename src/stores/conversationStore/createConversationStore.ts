@@ -13,7 +13,7 @@ import type { ContentBlock, EngineId } from '../../types'
 import { handleAIEvent } from './eventHandler'
 import { toAppError, ErrorSource } from '../../types/errors'
 import { sessionStoreManager } from './sessionStoreManager'
-import { parseWorkspaceReferences, getUserSystemPrompt } from '../../services/workspaceReference'
+import { parseWorkspaceReferences } from '../../services/workspaceReference'
 import i18n from 'i18next'
 import { MessageCompactor, isCompacted } from '../../utils/messageCompactor'
 import { isEditTool, extractEditDiff } from '../../utils/diffExtractor'
@@ -26,6 +26,8 @@ import {
   getDisabledPluginMcpServers,
   hydrateFromLocalStorage,
   generateTitleFromMessage,
+  buildWorkspacePrompts,
+  normalizeForInvoke,
 } from './conversationStoreUtils'
 
 const log = createLogger('ConversationStore')
@@ -763,19 +765,16 @@ export function createConversationStore(
         const engine = resolveSessionEngine(sessionId, config?.defaultEngine)
 
         // 如果存在未完成的流式消息（如 AI 提问等待回答），先归档到 messages
-        // 防止 currentMessage 被清空后丢失 AI 已生成的内容
         if (get().currentMessage) {
           get().finishMessage()
         }
 
-        // 获取工作区信息
         const currentWorkspace = deps.getWorkspace()
         const actualWorkspaceDir = workspaceDir || currentWorkspace?.path
 
-        // 获取关联工作区
-        const contextWorkspaceIds = deps.getContextWorkspaceIds()
-        const allWorkspaces = deps.getAllWorkspaces()
-        const contextWorkspaces = allWorkspaces.filter(w => contextWorkspaceIds.includes(w.id))
+        // 构建工作区提示词
+        const { workspacePrompt, userPrompt, contextWorkspaces, allWorkspaces } =
+          buildWorkspacePrompts(deps.getWorkspace, deps.getContextWorkspaceIds, deps.getAllWorkspaces)
 
         // 解析工作区引用
         const { processedMessage } = parseWorkspaceReferences(
@@ -785,29 +784,12 @@ export function createConversationStore(
           currentWorkspace?.id || null
         )
 
-        // 构建工作区系统提示词（始终传递，通过 --append-system-prompt）
-        let workspacePrompt = ''
-        if (currentWorkspace) {
-          const basePrompt = i18n.t('systemPrompt:workingIn', { name: currentWorkspace.name }) + '\n' +
-            i18n.t('systemPrompt:projectPath', { path: currentWorkspace.path }) + '\n' +
-            i18n.t('systemPrompt:fileRefSyntax')
-          workspacePrompt = basePrompt
-        }
-
-        // 构建用户自定义系统提示词（开启时传递，通过 --system-prompt）
-        let userPrompt: string | null = null
-        if (currentWorkspace) {
-          userPrompt = getUserSystemPrompt(currentWorkspace, contextWorkspaces)
-        }
-
-        // 调试日志：打印工作区信息
         log.info('sendMessage debug', {
           sessionId,
           conversationId,
           providedWorkspaceDir: workspaceDir,
           actualWorkspaceDir,
           currentWorkspace: currentWorkspace ? { id: currentWorkspace.id, name: currentWorkspace.name, path: currentWorkspace.path } : null,
-          contextWorkspaceIds,
           workspacePromptLength: workspacePrompt.length,
           userPromptLength: userPrompt?.length ?? 0,
         })
@@ -828,16 +810,13 @@ export function createConversationStore(
         }
         get().addMessage(userMessage)
 
-        // 如果是第一条消息，更新会话标题
         if (messages.length === 0) {
           const title = generateTitleFromMessage(content)
           sessionStoreManager.getState().updateSessionTitle(sessionId, title)
         }
 
-        // 清空输入草稿
         get().clearInputDraft()
 
-        // 设置流式状态
         set({
           isStreaming: true,
           error: null,
@@ -846,11 +825,9 @@ export function createConversationStore(
         })
 
         try {
-          // 初始化事件路由器
           const router = deps.getEventRouter()
           await router.initialize()
 
-          // 准备附件数据
           const attachmentsForBackend = attachments?.map(a => ({
             type: a.type,
             fileName: a.fileName,
@@ -859,93 +836,49 @@ export function createConversationStore(
             textContent: a.textContent,
           }))
 
-          // 规范化工作区提示词（换行符处理）
-          const normalizedWorkspacePrompt = workspacePrompt
-            .replace(/\r\n/g, '\\n')
-            .replace(/\r/g, '\\n')
-            .replace(/\n/g, '\\n')
-            .trim()
-
-          // 规范化用户提示词（换行符处理）
-          const normalizedUserPrompt = userPrompt
-            ? userPrompt
-                .replace(/\r\n/g, '\\n')
-                .replace(/\r/g, '\\n')
-                .replace(/\n/g, '\\n')
-                .trim()
-            : null
-
-          // 规范化消息（换行符处理）
-          const normalizedMessage = processedMessage
-            .replace(/\r\n/g, '\\n')
-            .replace(/\r/g, '\\n')
-            .replace(/\n/g, '\\n')
-            .trim()
-
-          // 调用后端 API
-          // 获取会话配置
           const sessionConfig = getSessionConfig()
           const runtimeConfig = resolveRuntimeConfigForEngine(sessionConfig, engine)
-          // 获取当前激活的模型 Profile ID
           const activeProfile = getActiveModelProfile()
           const modelProfileId = activeProfile?.id
           const disabledMcpServers = getDisabledPluginMcpServers()
 
+          const chatOptions = {
+            appendSystemPrompt: normalizeForInvoke(workspacePrompt),
+            systemPrompt: userPrompt ? normalizeForInvoke(userPrompt) : null,
+            workDir: actualWorkspaceDir,
+            contextId: deps.contextId,
+            engineId: engine,
+            enableMcpTools: true,
+            disabledMcpServers,
+            attachments: attachmentsForBackend,
+            additionalDirs: contextWorkspaces.map(w => w.path).filter(Boolean),
+            agent: runtimeConfig.agent,
+            model: runtimeConfig.model,
+            effort: runtimeConfig.effort,
+            permissionMode: runtimeConfig.permissionMode,
+            allowedTools: sendOptions?.allowedTools && sendOptions.allowedTools.length > 0
+              ? sendOptions.allowedTools
+              : undefined,
+            modelProfileId: modelProfileId || undefined,
+          }
+
           if (conversationId) {
-            // 继续会话
             await invoke('continue_chat', {
               sessionId: conversationId,
-              message: normalizedMessage,
-              options: {
-                appendSystemPrompt: normalizedWorkspacePrompt,
-                systemPrompt: normalizedUserPrompt,
-                workDir: actualWorkspaceDir,
-                contextId: deps.contextId,
-                engineId: engine,
-                enableMcpTools: true,
-                disabledMcpServers,
-                attachments: attachmentsForBackend,
-                additionalDirs: contextWorkspaces.map(w => w.path).filter(Boolean),
-                agent: runtimeConfig.agent,
-                model: runtimeConfig.model,
-                effort: runtimeConfig.effort,
-                permissionMode: runtimeConfig.permissionMode,
-                allowedTools: sendOptions?.allowedTools && sendOptions.allowedTools.length > 0
-                  ? sendOptions.allowedTools
-                  : undefined,
-                modelProfileId: modelProfileId || undefined,
-              },
+              message: normalizeForInvoke(processedMessage),
+              options: chatOptions,
             })
           } else {
-            // 新会话
-            // 检查是否有 forkFromId（Fork 分支会话）
             const sessionMeta = sessionStoreManager.getState().sessionMetadata.get(sessionId)
             const forkSessionId = sessionMeta?.forkFromId
 
             const newSessionId = await invoke<string>('start_chat', {
-              message: normalizedMessage,
+              message: normalizeForInvoke(processedMessage),
               options: {
-                appendSystemPrompt: normalizedWorkspacePrompt,
-                systemPrompt: normalizedUserPrompt,
-                workDir: actualWorkspaceDir,
-                contextId: deps.contextId,
-                engineId: engine,
-                enableMcpTools: true,
-                disabledMcpServers,
-                attachments: attachmentsForBackend,
-                additionalDirs: contextWorkspaces.map(w => w.path).filter(Boolean),
-                agent: runtimeConfig.agent,
-                model: runtimeConfig.model,
-                effort: runtimeConfig.effort,
-                permissionMode: runtimeConfig.permissionMode,
-                allowedTools: sendOptions?.allowedTools && sendOptions.allowedTools.length > 0
-                  ? sendOptions.allowedTools
-                  : undefined,
+                ...chatOptions,
                 forkSessionId: forkSessionId || undefined,
-                modelProfileId: modelProfileId || undefined,
               },
             })
-            // 注意：这里设置的是临时 sessionId，真实的会话 ID 通过 session_start 事件设置
             set({ conversationId: newSessionId })
           }
         } catch (e) {
@@ -1012,70 +945,26 @@ export function createConversationStore(
         const router = deps.getEventRouter()
         await router.initialize()
 
-        // 获取工作区信息
         const currentWorkspace = deps.getWorkspace()
         const actualWorkspaceDir = currentWorkspace?.path
         const config = deps.getConfig()
         const currentEngine = resolveSessionEngine(get().sessionId, config?.defaultEngine)
 
-        // 获取关联工作区
-        const contextWorkspaceIds = deps.getContextWorkspaceIds()
-        const allWorkspaces = deps.getAllWorkspaces()
-        const contextWorkspaces = allWorkspaces.filter(w => contextWorkspaceIds.includes(w.id))
+        const { workspacePrompt, userPrompt, contextWorkspaces } =
+          buildWorkspacePrompts(deps.getWorkspace, deps.getContextWorkspaceIds, deps.getAllWorkspaces)
 
-        // 构建工作区系统提示词（始终传递，通过 --append-system-prompt）
-        let workspacePrompt = ''
-        if (currentWorkspace) {
-          const basePrompt = i18n.t('systemPrompt:workingIn', { name: currentWorkspace.name }) + '\n' +
-            i18n.t('systemPrompt:projectPath', { path: currentWorkspace.path }) + '\n' +
-            i18n.t('systemPrompt:fileRefSyntax')
-          workspacePrompt = basePrompt
-        }
-
-        // 构建用户自定义系统提示词（开启时传递，通过 --system-prompt）
-        let userPrompt: string | null = null
-        if (currentWorkspace) {
-          userPrompt = getUserSystemPrompt(currentWorkspace, contextWorkspaces)
-        }
-
-        // 调试日志：打印工作区信息
         log.info('continueChat debug', {
           conversationId,
           actualWorkspaceDir,
           currentWorkspace: currentWorkspace ? { id: currentWorkspace.id, name: currentWorkspace.name, path: currentWorkspace.path } : null,
-          contextWorkspaceIds,
           workspacePromptLength: workspacePrompt.length,
           userPromptLength: userPrompt?.length ?? 0,
         })
 
-        const normalizedPrompt = prompt
-          .replace(/\r\n/g, '\\n')
-          .replace(/\r/g, '\\n')
-          .replace(/\n/g, '\\n')
-          .trim()
-
-        // 规范化工作区提示词
-        const normalizedWorkspacePrompt = workspacePrompt
-          .replace(/\r\n/g, '\\n')
-          .replace(/\r/g, '\\n')
-          .replace(/\n/g, '\\n')
-          .trim()
-
-        // 规范化用户提示词
-        const normalizedUserPrompt = userPrompt
-          ? userPrompt
-              .replace(/\r\n/g, '\\n')
-              .replace(/\r/g, '\\n')
-              .replace(/\n/g, '\\n')
-              .trim()
-          : null
-
         set({ isStreaming: true, error: null })
 
-        // 获取会话配置
         const sessionConfig = getSessionConfig()
         const runtimeConfig = resolveRuntimeConfigForEngine(sessionConfig, currentEngine)
-        // 获取当前激活的模型 Profile ID
         const activeProfile = getActiveModelProfile()
         const modelProfileId = activeProfile?.id
         const disabledMcpServers = getDisabledPluginMcpServers()
@@ -1083,10 +972,10 @@ export function createConversationStore(
         try {
           await invoke('continue_chat', {
             sessionId: conversationId,
-            message: normalizedPrompt,
+            message: normalizeForInvoke(prompt),
             options: {
-              appendSystemPrompt: normalizedWorkspacePrompt,
-              systemPrompt: normalizedUserPrompt,
+              appendSystemPrompt: normalizeForInvoke(workspacePrompt),
+              systemPrompt: userPrompt ? normalizeForInvoke(userPrompt) : null,
               workDir: actualWorkspaceDir,
               contextId: deps.contextId,
               engineId: currentEngine,
