@@ -597,12 +597,18 @@ export function ChatInput({
       return
     }
 
-    // ESC 关闭建议
+    // ESC 关闭建议 / 中断流式输出
     if (e.key === 'Escape') {
-      setShowSuggestions(false)
-      setSuggestionItems([])
-      clearResults()
-      return
+      if (showSuggestions) {
+        setShowSuggestions(false)
+        setSuggestionItems([])
+        clearResults()
+        return
+      }
+      if (isStreaming && onInterrupt) {
+        onInterrupt()
+        return
+      }
     }
 
     // Tab 选择建议
@@ -617,6 +623,8 @@ export function ChatInput({
     selectSuggestion,
     clearResults,
     handleSend,
+    isStreaming,
+    onInterrupt,
   ])
 
   // 点击外部关闭建议
