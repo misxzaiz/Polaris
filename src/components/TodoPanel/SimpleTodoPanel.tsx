@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, CheckCircle, Circle, Clock, Search, ArrowUpDown, Globe, FolderOpen } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { useWorkspaceStore } from '@/stores'
+import { useWorkspaceStore, useToastStore } from '@/stores'
 import { simpleTodoService } from '@/services/simpleTodoService'
 import { TodoCard } from './TodoCard'
 import { TodoDetailDialog } from './TodoDetailDialog'
@@ -18,6 +18,7 @@ const log = createLogger('SimpleTodoPanel')
 export function SimpleTodoPanel() {
   const { t } = useTranslation('todo')
   const currentWorkspace = useWorkspaceStore(state => state.getCurrentWorkspace())
+  const toast = useToastStore()
   const [todos, setTodos] = useState<TodoItem[]>([])
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'in_progress' | 'completed'>('all')
   const [showCreateDialog, setShowCreateDialog] = useState(false)
@@ -144,7 +145,7 @@ export function SimpleTodoPanel() {
       await refreshTodos()
     } catch (error) {
       log.error(t('errors.createFailed'), error instanceof Error ? error : new Error(String(error)))
-      alert(t('errors.createFailed') + ': ' + (error as Error).message)
+      toast.error(t('errors.createFailed'))
     }
   }
 
@@ -184,7 +185,7 @@ export function SimpleTodoPanel() {
       refreshTodos()
     } catch (error) {
       log.error(t('errors.deleteFailed'), error instanceof Error ? error : new Error(String(error)))
-      alert(t('errors.deleteFailed') + ': ' + (error as Error).message)
+      toast.error(t('errors.deleteFailed'))
     }
   }
 

@@ -17,7 +17,6 @@
 
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
-import { ChevronDown } from 'lucide-react';
 import type { ChatMessage, AssistantChatMessage, TextBlock } from '@/types';
 import { useActiveSessionMessages, useActiveSessionStreaming, useSessionMessages, useSessionStreaming } from '@/stores/conversationStore/useActiveSession';
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
@@ -53,7 +52,7 @@ export function EnhancedChatMessages({ sessionId, compact = false }: EnhancedCha
   const sessionIsStreaming = useSessionStreaming(sessionId ?? null);
 
   // 选择数据源
-  const { messages, archivedMessages, currentMessage } = sessionId ? sessionData : activeSessionData;
+  const { messages, currentMessage } = sessionId ? sessionData : activeSessionData;
   const isStreaming = sessionId ? sessionIsStreaming : activeIsStreaming;
 
   // 可见范围变更和归档加载路由到正确的 session store
@@ -63,14 +62,6 @@ export function EnhancedChatMessages({ sessionId, compact = false }: EnhancedCha
     const store = sessionStoreManager.getState().stores.get(targetId)?.getState();
     if (!store) return;
     return store.onVisibleRangeChange(start, end);
-  }, [sessionId]);
-
-  const loadMoreArchivedMessages = useCallback((count = 20) => {
-    const targetId = sessionId ?? sessionStoreManager.getState().activeSessionId;
-    if (!targetId) return;
-    const store = sessionStoreManager.getState().stores.get(targetId)?.getState();
-    if (!store) return;
-    return store.loadMoreArchivedMessages(count);
   }, [sessionId]);
 
   // 性能优化：流式阶段合并 currentMessage 到消息列表
@@ -128,7 +119,6 @@ export function EnhancedChatMessages({ sessionId, compact = false }: EnhancedCha
   }, [messages, currentMessage, isStreaming]);
 
   const isEmpty = displayMessages.length === 0;
-  const hasArchive = archivedMessages.length > 0;
 
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -248,21 +238,6 @@ export function EnhancedChatMessages({ sessionId, compact = false }: EnhancedCha
 
   return (
     <div className="flex-1 overflow-hidden flex flex-col">
-      {/* 归档消息提示 - 分批加载 */}
-      {hasArchive && (
-        <div className="flex justify-center py-2 bg-background-surface border-b border-border">
-          <button
-            onClick={() => loadMoreArchivedMessages(20)}
-            className="text-xs text-primary hover:text-primary-hover transition-colors flex items-center gap-2 px-3 py-1.5 rounded-full hover:bg-primary-faint"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-            </svg>
-            加载更早的消息 ({archivedMessages.length} 条)
-          </button>
-        </div>
-      )}
-
       {/* 消息列表 */}
       <div className="flex-1 min-h-0 relative">
         <div className="h-full">
@@ -278,17 +253,6 @@ export function EnhancedChatMessages({ sessionId, compact = false }: EnhancedCha
               }}
               components={{
                 EmptyPlaceholder: () => null,
-                Header: hasArchive ? (() => (
-                  <div className="flex justify-center py-3">
-                    <button
-                      onClick={() => loadMoreArchivedMessages(20)}
-                      className="text-xs text-text-tertiary hover:text-primary transition-colors flex items-center gap-1"
-                    >
-                      <ChevronDown className="w-3 h-3" />
-                      加载更早 20 条消息
-                    </button>
-                  </div>
-                )) : undefined,
                 Footer: () => <div style={FOOTER_SPACER_STYLE} />,
               }}
               followOutput={autoScroll ? (isStreaming ? true : 'smooth') : false}

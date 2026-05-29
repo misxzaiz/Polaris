@@ -8,6 +8,7 @@ import { useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X } from 'lucide-react'
 import { EnhancedChatMessages, ChatInput } from '../Chat'
+import { ErrorBanner } from './ErrorBanner'
 import { useConfigStore, useWorkspaceStore } from '@/stores'
 import {
   useActiveSessionConversationId,
@@ -120,11 +121,7 @@ export function AIPopover({ isOpen, onClose }: AIPopoverProps) {
           </div>
 
           {/* 错误提示 */}
-          {error && (
-            <div className="mx-4 mt-4 p-3 bg-danger-faint border border-danger/30 rounded-xl text-danger text-sm shrink-0">
-              {error}
-            </div>
-          )}
+          {error && <ErrorBanner error={error} />}
 
           {/* 消息区域 */}
           <EnhancedChatMessages />

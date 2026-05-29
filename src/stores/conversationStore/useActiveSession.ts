@@ -330,6 +330,13 @@ export function useActiveSessionActions() {
         if (!store) return
         return store.clearInputDraft()
       },
+      clearError: () => {
+        const sessionId = sessionStoreManager.getState().activeSessionId
+        if (!sessionId) return
+        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
+        if (!store) return
+        return store.setError(null)
+      },
       clearMessages: () => {
         const sessionId = sessionStoreManager.getState().activeSessionId
         if (!sessionId) return
