@@ -15,11 +15,18 @@ export interface MessageScrollActions {
   scrollToBottom: () => void;
 }
 
+/** 消息操作集合 */
+export interface MessageActions {
+  onEdit?: (messageId: string, content: string) => void;
+  onRegenerate?: (messageId: string) => void;
+}
+
 /** 消息渲染器 */
 export function renderChatMessage(
   message: ChatMessage,
   messageIndex: number | undefined,
   scrollActions: MessageScrollActions | undefined,
+  messageActions?: MessageActions,
 ): React.ReactNode {
   switch (message.type) {
     case 'user':
@@ -31,6 +38,7 @@ export function renderChatMessage(
           onScrollToMessage={scrollActions?.scrollToMessage}
           onScrollToTop={scrollActions?.scrollToTop}
           onScrollToBottom={scrollActions?.scrollToBottom}
+          onEdit={messageActions?.onEdit}
         />
       );
     case 'assistant':
@@ -42,6 +50,7 @@ export function renderChatMessage(
           onScrollToMessage={scrollActions?.scrollToMessage}
           onScrollToTop={scrollActions?.scrollToTop}
           onScrollToBottom={scrollActions?.scrollToBottom}
+          onRegenerate={messageActions?.onRegenerate}
         />
       );
     case 'system':

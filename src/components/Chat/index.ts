@@ -3,6 +3,7 @@
  */
 
 export { ChatInput } from './ChatInput';
+export type { EditMode } from './ChatInput';
 export { SessionHistoryPanel } from './SessionHistoryPanel';
 export { AIPopover } from './AIPopover';
 export { ChatStatusBar } from './ChatStatusBar';

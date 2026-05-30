@@ -17,7 +17,9 @@
     "hint": "Enter 发送 · Shift+Enter 换行",
     "diffChip": "差异: {{status}}",
     "attachmentCount": "{{count}} 个附件",
-    "readyToSend": "可直接发送"
+    "readyToSend": "可直接发送",
+    "editingMessage": "正在编辑消息",
+    "cancelEdit": "取消"
   },
   "message": {
     "user": "用户",
@@ -214,7 +216,9 @@
     "scrollToTop": "跳转到顶部",
     "scrollToBottom": "跳转到底部",
     "copyMessage": "复制消息内容",
-    "copied": "已复制"
+    "copied": "已复制",
+    "edit": "编辑",
+    "regenerate": "重新生成"
   },
   "history": {
     "title": "会话历史",

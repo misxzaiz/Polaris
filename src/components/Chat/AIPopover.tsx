@@ -4,10 +4,11 @@
  * 一个可从多个位置打开的 AI 对话弹出窗口
  */
 
-import { useEffect, useCallback, useMemo } from 'react'
+import { useEffect, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X } from 'lucide-react'
 import { EnhancedChatMessages, ChatInput } from '../Chat'
+import type { EditMode } from '../Chat'
 import { ErrorBanner } from './ErrorBanner'
 import { useConfigStore, useWorkspaceStore } from '@/stores'
 import {
@@ -38,8 +39,21 @@ export function AIPopover({ isOpen, onClose }: AIPopoverProps) {
   const { config } = useConfigStore()
   const isStreaming = useActiveSessionStreaming()
   const error = useActiveSessionError()
-  const { sendMessage, interrupt: interruptChat } = useActiveSessionActions()
+  const { sendMessage, interrupt: interruptChat, editAndResend } = useActiveSessionActions()
   const { updateSessionEngine } = useSessionManagerActions()
+
+  // 编辑模式状态
+  const [editMode, setEditMode] = useState<EditMode | null>(null)
+  const handleEditMessage = useCallback((messageId: string, content: string) => {
+    setEditMode({ messageId, content })
+  }, [])
+  const handleCancelEdit = useCallback(() => {
+    setEditMode(null)
+  }, [])
+  const handleEditSend = useCallback((messageId: string, newContent: string) => {
+    editAndResend(messageId, newContent)
+    setEditMode(null)
+  }, [editAndResend])
   const activeSessionId = useActiveSessionId()
   const sessionMetadataList = useSessionMetadataList()
   const { messages } = useActiveSessionMessages()
@@ -124,7 +138,7 @@ export function AIPopover({ isOpen, onClose }: AIPopoverProps) {
           {error && <ErrorBanner error={error} />}
 
           {/* 消息区域 */}
-          <EnhancedChatMessages />
+          <EnhancedChatMessages onEditMessage={handleEditMessage} />
 
           {/* 输入区域 */}
           <ChatInput
@@ -132,6 +146,9 @@ export function AIPopover({ isOpen, onClose }: AIPopoverProps) {
             onInterrupt={interruptChat}
             disabled={!currentWorkspace}
             isStreaming={isStreaming}
+            editMode={editMode}
+            onCancelEdit={handleCancelEdit}
+            onEditSend={handleEditSend}
           />
         </div>
       </div>

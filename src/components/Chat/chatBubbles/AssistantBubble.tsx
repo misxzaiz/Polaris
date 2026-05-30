@@ -3,11 +3,12 @@
  */
 
 import { memo, useState, useMemo, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { AssistantChatMessage, TextBlock } from '@/types';
 import { formatContent, extractAssistantText } from '../chatUtils/helpers';
 import { renderBlocksWithGrouping } from '../blockGrouping';
 import { MessageContextMenu } from './MessageContextMenu';
-import { Bot } from 'lucide-react';
+import { Bot, RefreshCw } from 'lucide-react';
 import { getEngineDisplayName } from '@/utils/engineDisplay';
 import { MarkdownImageSurface } from '../MarkdownImageSurface';
 
@@ -17,17 +18,25 @@ export const AssistantBubble = memo(function AssistantBubble({
   onScrollToMessage,
   onScrollToTop,
   onScrollToBottom,
+  onRegenerate,
 }: {
   message: AssistantChatMessage;
   messageIndex?: number;
   onScrollToMessage?: (index: number) => void;
   onScrollToTop?: () => void;
   onScrollToBottom?: () => void;
+  onRegenerate?: (messageId: string) => void;
 }) {
+  const { t } = useTranslation('chat');
   const hasBlocks = message.blocks && message.blocks.length > 0;
 
   // 提取消息文本（用于复制）
   const messageText = useMemo(() => extractAssistantText(message), [message]);
+
+  // 重新生成
+  const handleRegenerate = useCallback(() => {
+    onRegenerate?.(message.id);
+  }, [onRegenerate, message.id]);
 
   // 右键菜单状态
   const [contextMenu, setContextMenu] = useState<{
@@ -59,7 +68,7 @@ export const AssistantBubble = memo(function AssistantBubble({
 
   return (
     <>
-      <div className="flex gap-2 my-2" onContextMenu={handleContextMenu}>
+      <div className="flex gap-2 my-2 group" onContextMenu={handleContextMenu}>
         {/* Avatar */}
         <div className="shrink-0 mt-0.5">
           <div className="w-5 h-5 rounded-full bg-primary-faint flex items-center justify-center">
@@ -69,12 +78,22 @@ export const AssistantBubble = memo(function AssistantBubble({
 
         {/* 内容 */}
         <div className="flex-1 space-y-1 min-w-0">
-          {/* 头部信息 */}
+          {/* 头部信息 + hover 操作 */}
           <div className="flex items-baseline gap-2">
             <span className="text-sm font-medium text-text-primary">{getEngineDisplayName(message.engineId)}</span>
             <span className="text-xs text-text-tertiary">
               {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
             </span>
+            {/* Hover 重新生成按钮 */}
+            {onRegenerate && !message.isStreaming && (
+              <button
+                onClick={handleRegenerate}
+                className="ml-auto p-1 rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors opacity-0 group-hover:opacity-100"
+                title={t('contextMenu.regenerate')}
+              >
+                <RefreshCw size={14} />
+              </button>
+            )}
           </div>
 
           {/* 渲染内容块（支持工具和思考块折叠聚合） */}

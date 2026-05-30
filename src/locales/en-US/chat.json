@@ -17,7 +17,9 @@
     "hint": "Enter to send · Shift+Enter for new line",
     "diffChip": "Diff: {{status}}",
     "attachmentCount": "{{count}} attachments",
-    "readyToSend": "ready to send"
+    "readyToSend": "ready to send",
+    "editingMessage": "Editing message",
+    "cancelEdit": "Cancel"
   },
   "message": {
     "user": "User",
@@ -214,7 +216,9 @@
     "scrollToTop": "Scroll to top",
     "scrollToBottom": "Scroll to bottom",
     "copyMessage": "Copy message content",
-    "copied": "Copied"
+    "copied": "Copied",
+    "edit": "Edit",
+    "regenerate": "Regenerate"
   },
   "history": {
     "title": "Session History",

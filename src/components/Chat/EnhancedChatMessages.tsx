@@ -18,7 +18,7 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import type { ChatMessage, AssistantChatMessage, TextBlock } from '@/types';
-import { useActiveSessionMessages, useActiveSessionStreaming, useSessionMessages, useSessionStreaming } from '@/stores/conversationStore/useActiveSession';
+import { useActiveSessionMessages, useActiveSessionStreaming, useSessionMessages, useSessionStreaming, useActiveSessionActions } from '@/stores/conversationStore/useActiveSession';
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
 import {
   findCurrentRoundIndexForRange,
@@ -30,10 +30,10 @@ import { useMessageSearch, MessageSearchPanel } from './MessageSearchPanel';
 import { VIEWPORT_EXTENSION, FOOTER_SPACER_STYLE } from './chatUtils/constants';
 import { renderChatMessage } from './renderChatMessage';
 import { EmptyState } from './EmptyState';
-import type { MessageScrollActions } from './renderChatMessage';
+import type { MessageScrollActions, MessageActions } from './renderChatMessage';
 
 // Re-export for external consumers
-export type { MessageScrollActions } from './renderChatMessage';
+export type { MessageScrollActions, MessageActions } from './renderChatMessage';
 export { renderChatMessage } from './renderChatMessage';
 
 /** 组件 Props */
@@ -42,9 +42,11 @@ interface EnhancedChatMessagesProps {
   sessionId?: string;
   /** 渲染模式：full 完整功能，compact 精简模式（用于多窗口格子） */
   compact?: boolean;
+  /** 编辑消息回调（由父组件控制输入框编辑模式） */
+  onEditMessage?: (messageId: string, content: string) => void;
 }
 
-export function EnhancedChatMessages({ sessionId, compact = false }: EnhancedChatMessagesProps = {}) {
+export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage }: EnhancedChatMessagesProps = {}) {
   // 根据是否提供 sessionId 选择使用对应的 hooks
   const activeSessionData = useActiveSessionMessages();
   const activeIsStreaming = useActiveSessionStreaming();
@@ -54,6 +56,16 @@ export function EnhancedChatMessages({ sessionId, compact = false }: EnhancedCha
   // 选择数据源
   const { messages, currentMessage } = sessionId ? sessionData : activeSessionData;
   const isStreaming = sessionId ? sessionIsStreaming : activeIsStreaming;
+
+  // 消息操作（编辑/重新生成）
+  const { regenerateResponse } = useActiveSessionActions();
+  const messageActions = useMemo<MessageActions | undefined>(() => {
+    if (!onEditMessage && !regenerateResponse) return undefined;
+    return {
+      onEdit: onEditMessage,
+      onRegenerate: regenerateResponse,
+    };
+  }, [onEditMessage, regenerateResponse]);
 
   // 可见范围变更和归档加载路由到正确的 session store
   const onVisibleRangeChange = useCallback((start: number, end: number) => {
@@ -249,7 +261,7 @@ export function EnhancedChatMessages({ sessionId, compact = false }: EnhancedCha
               style={{ height: '100%' }}
               data={displayMessages}
               itemContent={(index, item) => {
-                return renderChatMessage(item, index, scrollActions);
+                return renderChatMessage(item, index, scrollActions, messageActions);
               }}
               components={{
                 EmptyPlaceholder: () => null,

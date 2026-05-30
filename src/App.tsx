@@ -9,6 +9,7 @@ import { TopMenuBar as TopMenuBarComponent } from './components/TopMenuBar';
 import { GitPanel } from './components/GitPanel';
 import { ActivityBar, LeftPanel, LeftPanelContent, CenterStage, RightPanel } from './components/Layout';
 import { EnhancedChatMessages, ChatInput, ChatStatusBar, SessionHistoryPanel, MultiSessionGrid, MultiWindowMenu, NewSessionButton, ErrorBanner } from './components/Chat';
+import type { EditMode } from './components/Chat';
 import type { SettingsTabId } from './components/Settings/SettingsSidebar';
 import { SimpleTodoPanel } from './components/TodoPanel/SimpleTodoPanel';
 import { TranslatePanel, SelectionContextMenu } from './components/Translate';
@@ -48,7 +49,20 @@ function App() {
   // Chat 状态
   const isStreaming = useActiveSessionStreaming();
   const error = useActiveSessionError();
-  const { sendMessage, interrupt: interruptChat } = useActiveSessionActions();
+  const { sendMessage, interrupt: interruptChat, editAndResend } = useActiveSessionActions();
+
+  // 编辑模式状态
+  const [editMode, setEditMode] = useState<EditMode | null>(null);
+  const handleEditMessage = useCallback((messageId: string, content: string) => {
+    setEditMode({ messageId, content });
+  }, []);
+  const handleCancelEdit = useCallback(() => {
+    setEditMode(null);
+  }, []);
+  const handleEditSend = useCallback((messageId: string, newContent: string, _workspaceDir?: string) => {
+    editAndResend(messageId, newContent);
+    setEditMode(null);
+  }, [editAndResend]);
 
   // UI 状态
   const [showSettings, setShowSettings] = useState(false);
@@ -193,7 +207,7 @@ function App() {
               {multiSessionMode ? (
                 <MultiSessionGrid />
               ) : (
-                <EnhancedChatMessages />
+                <EnhancedChatMessages onEditMessage={handleEditMessage} />
               )}
 
               <div className="relative">
@@ -209,6 +223,9 @@ function App() {
                 onInterrupt={interruptChat}
                 disabled={!currentWorkspace}
                 isStreaming={isStreaming}
+                editMode={editMode}
+                onCancelEdit={handleCancelEdit}
+                onEditSend={handleEditSend}
               />
             </RightPanel>
           )}

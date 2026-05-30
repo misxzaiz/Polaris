@@ -11,7 +11,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { IconSend, IconStop, IconPaperclip } from '../Common/Icons'
-import { useWorkspaceStore, useSessionStore } from '@/stores'
+import { useWorkspaceStore, useSessionStore, useToastStore } from '@/stores'
 import { voiceNotificationService } from '@/services/voiceNotificationService'
 import { useActiveSessionInputDraft, useActiveSessionActions, useActiveSessionWorkspace, usePendingQuestions } from '@/stores/conversationStore/useActiveSession'
 import { useDebouncedCallback } from '@/hooks/useDebounce'
@@ -38,12 +38,20 @@ import {
 
 const log = createLogger('ChatInput')
 
+export interface EditMode {
+  messageId: string
+  content: string
+}
+
 interface ChatInputProps {
   onSend: (message: string, workspaceDir?: string, attachments?: Attachment[]) => void
   disabled?: boolean
   isStreaming?: boolean
   onInterrupt?: () => void
   currentWorkDir?: string | null
+  editMode?: EditMode | null
+  onCancelEdit?: () => void
+  onEditSend?: (messageId: string, newContent: string, workspaceDir?: string) => void
 }
 
 export function ChatInput({
@@ -52,6 +60,9 @@ export function ChatInput({
   isStreaming = false,
   onInterrupt,
   currentWorkDir: _currentWorkDir,
+  editMode = null,
+  onCancelEdit,
+  onEditSend,
 }: ChatInputProps) {
   const { t } = useTranslation('chat')
 
@@ -66,6 +77,21 @@ export function ChatInput({
   const [localText, setLocalText] = useState('')
   const [localAttachments, setLocalAttachments] = useState<Attachment[]>([])
   const [activeSnippet, setActiveSnippet] = useState<PromptSnippet | null>(null)
+
+  // Prompt 历史记录（终端风格 ArrowUp 召回）
+  const sentHistoryRef = useRef<string[]>([])
+  const [historyIndex, setHistoryIndex] = useState(-1)
+  const savedCurrentInputRef = useRef('')
+
+  // 编辑模式同步：进入编辑模式时填入消息内容
+  useEffect(() => {
+    if (editMode) {
+      setLocalText(editMode.content)
+      setHistoryIndex(-1)
+      // 聚焦输入框
+      setTimeout(() => textareaRef.current?.focus(), 0)
+    }
+  }, [editMode])
 
   // 创建防抖的持久化函数（300ms 延迟）
   const { debounced: debouncedPersistDraft, cancel: cancelPersistDraft } = useDebouncedCallback(
@@ -179,6 +205,7 @@ export function ChatInput({
     const validation = validateAttachment(file)
     if (!validation.valid) {
       log.warn('Attachment validation failed', { error: validation.error })
+      useToastStore.getState().error(validation.error!)
       return
     }
 
@@ -188,6 +215,7 @@ export function ChatInput({
     const totalValidation = validateAttachments(newAttachments)
     if (!totalValidation.valid) {
       log.warn('Total attachment validation failed', { error: totalValidation.error })
+      useToastStore.getState().error(totalValidation.error!)
       return
     }
     // 立即更新本地 state
@@ -296,6 +324,8 @@ export function ChatInput({
     const newValue = e.target.value
     // 立即更新本地 state（即时响应）
     setLocalText(newValue)
+    // 用户手动编辑时退出历史浏览模式
+    if (historyIndex >= 0) setHistoryIndex(-1)
     // 防抖持久化到 Store
     debouncedPersistDraft(newValue, attachments)
 
@@ -421,7 +451,7 @@ export function ChatInput({
     setShowSuggestions(false)
     setSuggestionItems([])
     clearResults()
-  }, [workspaces, searchFiles, clearResults, calculateSuggestionPosition, buildSuggestionItems, attachments, debouncedPersistDraft])
+  }, [workspaces, searchFiles, clearResults, calculateSuggestionPosition, buildSuggestionItems, attachments, debouncedPersistDraft, historyIndex])
 
   // 当 fileMatches 更新时，合并到 suggestionItems
   useEffect(() => {
@@ -512,20 +542,40 @@ export function ChatInput({
 
     // 取消 pending 的防抖回调，防止旧值写回 Store
     cancelPersistDraft()
-    // 传递当前会话的工作区路径
-    onSend(trimmed, currentWorkspace?.path, attachments.length > 0 ? attachments : undefined)
+
+    // 编辑模式：调用 editAndResend 而非普通发送
+    if (editMode && onEditSend) {
+      onEditSend(editMode.messageId, trimmed, currentWorkspace?.path)
+    } else {
+      // 普通发送
+      onSend(trimmed, currentWorkspace?.path, attachments.length > 0 ? attachments : undefined)
+      // 记录到 prompt 历史（仅普通发送，编辑模式不记录）
+      if (trimmed) {
+        const history = sentHistoryRef.current
+        // 去重：如果最后一条相同则不重复添加
+        if (history.length === 0 || history[0] !== trimmed) {
+          history.unshift(trimmed)
+          if (history.length > 100) history.length = 100
+        }
+      }
+    }
+
     // 清空本地 state
     setLocalText('')
     setLocalAttachments([])
     // 清空 Store 草稿
     updateInputDraft({ text: '', attachments: [] })
+    // 退出编辑模式
+    if (editMode) onCancelEdit?.()
+    // 重置历史索引
+    setHistoryIndex(-1)
     // 发送后关闭问题浮窗
     setQuestionPanelHidden(false)
     // 发送后重置语音唤醒状态（回到待命）
     setSpeechWakeActive(false)
     // 语音提醒：发送确认
     voiceNotificationService.notifySendConfirm()
-  }, [value, disabled, isStreaming, attachments, onSend, updateInputDraft, cancelPersistDraft, currentWorkspace, setSpeechWakeActive])
+  }, [value, disabled, isStreaming, attachments, onSend, updateInputDraft, cancelPersistDraft, currentWorkspace, setSpeechWakeActive, editMode, onEditSend, onCancelEdit])
 
   // 问题浮窗：填入格式化文本并直接发送
   const handleQuestionFillAndSend = useCallback((text: string) => {
@@ -581,7 +631,7 @@ export function ChatInput({
       return
     }
 
-    // 上下箭头选择建议
+    // 上下箭头选择建议（优先级高于历史记录）
     if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && showSuggestions && suggestionItems.length > 0) {
       e.preventDefault()
 
@@ -597,12 +647,42 @@ export function ChatInput({
       return
     }
 
-    // ESC 关闭建议 / 中断流式输出
+    // ArrowUp/ArrowDown prompt 历史记录（终端风格）
+    const history = sentHistoryRef.current
+    if (e.key === 'ArrowUp' && !showSuggestions && value === '' && history.length > 0) {
+      e.preventDefault()
+      if (historyIndex === -1) savedCurrentInputRef.current = value
+      const newIndex = Math.min(historyIndex + 1, history.length - 1)
+      setHistoryIndex(newIndex)
+      setLocalText(history[newIndex])
+      debouncedPersistDraft(history[newIndex], attachments)
+      return
+    }
+    if (e.key === 'ArrowDown' && !showSuggestions && historyIndex >= 0) {
+      e.preventDefault()
+      const newIndex = historyIndex - 1
+      if (newIndex < 0) {
+        setHistoryIndex(-1)
+        setLocalText(savedCurrentInputRef.current)
+        debouncedPersistDraft(savedCurrentInputRef.current, attachments)
+      } else {
+        setHistoryIndex(newIndex)
+        setLocalText(history[newIndex])
+        debouncedPersistDraft(history[newIndex], attachments)
+      }
+      return
+    }
+
+    // ESC 关闭建议 / 中断流式输出 / 退出编辑模式
     if (e.key === 'Escape') {
       if (showSuggestions) {
         setShowSuggestions(false)
         setSuggestionItems([])
         clearResults()
+        return
+      }
+      if (editMode) {
+        onCancelEdit?.()
         return
       }
       if (isStreaming && onInterrupt) {
@@ -625,6 +705,12 @@ export function ChatInput({
     handleSend,
     isStreaming,
     onInterrupt,
+    value,
+    historyIndex,
+    attachments,
+    debouncedPersistDraft,
+    editMode,
+    onCancelEdit,
   ])
 
   // 点击外部关闭建议
@@ -665,6 +751,18 @@ export function ChatInput({
           }}
           onCancel={() => setActiveSnippet(null)}
         />
+      )}
+      {/* 编辑模式提示条 */}
+      {editMode && (
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 border-b border-primary/20 text-xs text-primary">
+          <span>{t('input.editingMessage')}</span>
+          <button
+            onClick={onCancelEdit}
+            className="ml-auto px-1.5 py-0.5 rounded hover:bg-primary/20 transition-colors"
+          >
+            {t('input.cancelEdit')}
+          </button>
+        </div>
       )}
       <div className="p-2 sm:p-3">
         {/* 附件预览 */}
