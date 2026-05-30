@@ -8,6 +8,7 @@ package-lock.json  # 项目使用 pnpm，忽略 npm 的 lock 文件
 dist/
 dist-ssr/
 *.local
+polaris-web/
 
 # Tauri
 /src-tauri/target/

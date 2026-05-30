@@ -13,6 +13,7 @@
     "tauri:build": "tauri build",
     "tauri:build:win": "tauri build --config src-tauri/tauri.windows.conf.json",
     "build:web": "vite build && cd src-tauri && cargo build --bin polaris-web --release --no-default-features",
+    "package:web": "node scripts/package-web.mjs",
     "test": "vitest",
     "test:run": "vitest run",
     "test:ui": "vitest --ui",
