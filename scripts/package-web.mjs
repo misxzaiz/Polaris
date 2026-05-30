@@ -27,6 +27,7 @@ import {
   writeFileSync,
   chmodSync,
   statSync,
+  readdirSync,
 } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
@@ -88,9 +89,14 @@ if (!existsSync(join(distDir, 'index.html'))) {
 // ---------------------------------------------------------------------------
 if (existsSync(outDir)) {
   log(`清理旧的输出目录：${outDir}`);
-  rmSync(outDir, { recursive: true, force: true });
+  // 逐个清空目录内容，而非删除目录本身：Windows 上若有进程的工作目录(cwd)
+  // 停留在此目录，删除目录本身会因 EPERM/EBUSY 失败，但清空内容通常可成功。
+  for (const entry of readdirSync(outDir)) {
+    rmSync(join(outDir, entry), { recursive: true, force: true });
+  }
+} else {
+  mkdirSync(outDir, { recursive: true });
 }
-mkdirSync(outDir, { recursive: true });
 
 // ---------------------------------------------------------------------------
 // 4. 拷贝二进制 + dist
@@ -103,7 +109,7 @@ log('拷贝前端 dist……');
 cpSync(distDir, join(outDir, 'dist'), { recursive: true });
 
 // ---------------------------------------------------------------------------
-// 5. 生成与当前平台匹配的启动脚本
+// 5. 生成与当前平台匹配的启动 / 停止脚本
 // ---------------------------------------------------------------------------
 if (isWindows) {
   const startBat = [
@@ -114,7 +120,7 @@ if (isWindows) {
     'echo   Polaris Web 服务启动中...',
     'echo   浏览器访问: http://localhost:9830',
     'echo   自定义端口: start.bat --port 8080',
-    'echo   关闭此窗口即可停止服务',
+    'echo   停止服务: 关闭本窗口 / 按 Ctrl+C / 运行 stop.bat',
     'echo ============================================',
     'echo.',
     'polaris-web.exe %*',
@@ -122,11 +128,24 @@ if (isWindows) {
     '',
   ].join('\r\n');
   writeFileSync(join(outDir, 'start.bat'), startBat, 'utf8');
+
+  // 停止脚本：强制终止所有 polaris-web 进程（兜底，适用于后台运行或窗口已关闭的情况）
+  const stopBat = [
+    '@echo off',
+    'chcp 65001 >nul',
+    'echo 正在停止 Polaris Web 服务...',
+    'taskkill /F /IM polaris-web.exe >nul 2>&1',
+    'if %errorlevel%==0 (echo 服务已停止。) else (echo 当前没有正在运行的 Polaris Web 服务。)',
+    'pause',
+    '',
+  ].join('\r\n');
+  writeFileSync(join(outDir, 'stop.bat'), stopBat, 'utf8');
 } else {
   const startSh = [
     '#!/bin/bash',
     '# Polaris Web 服务启动脚本（默认 0.0.0.0:9830）',
     '# 自定义端口： ./start.sh --port 8080',
+    '# 停止服务：按 Ctrl+C，或在另一个终端运行 ./stop.sh',
     'cd "$(dirname "$0")"',
     'echo "Polaris Web 启动中，浏览器访问 http://localhost:9830 （Ctrl+C 停止）"',
     './polaris-web "$@"',
@@ -134,6 +153,21 @@ if (isWindows) {
   ].join('\n');
   writeFileSync(join(outDir, 'start.sh'), startSh, 'utf8');
   chmodSync(join(outDir, 'start.sh'), 0o755);
+
+  // 停止脚本：按进程名精确终止 polaris-web（兜底，适用于后台运行）
+  const stopSh = [
+    '#!/bin/bash',
+    '# 停止 Polaris Web 服务',
+    'echo "正在停止 Polaris Web 服务..."',
+    'if pkill -x polaris-web; then',
+    '  echo "服务已停止。"',
+    'else',
+    '  echo "当前没有正在运行的 Polaris Web 服务。"',
+    'fi',
+    '',
+  ].join('\n');
+  writeFileSync(join(outDir, 'stop.sh'), stopSh, 'utf8');
+  chmodSync(join(outDir, 'stop.sh'), 0o755);
 }
 
 // ---------------------------------------------------------------------------
@@ -155,6 +189,13 @@ if (isWindows) {
 } else {
   console.log('    cd polaris-web && ./start.sh');
   console.log('    自定义端口: ./polaris-web --port 8080');
+}
+console.log('');
+console.log('  停止方式：');
+if (isWindows) {
+  console.log('    关闭启动窗口 / 按 Ctrl+C / 双击 polaris-web\\stop.bat');
+} else {
+  console.log('    按 Ctrl+C / 运行 ./stop.sh');
 }
 console.log('');
 console.log('  启动后浏览器访问: http://localhost:9830');
