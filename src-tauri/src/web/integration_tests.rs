@@ -78,6 +78,7 @@ fn create_test_state() -> Arc<AppState> {
         lsp_manager: Mutex::new(LspManager::new()),
         lsp_config: Mutex::new(LspConfigRepository::new(&std::path::PathBuf::from("/tmp"))),
         event_broadcast: tx,
+        #[cfg(feature = "tauri-app")]
         app_handle: OnceLock::new(),
         app_config_dir: OnceLock::new(),
         resource_dir: OnceLock::new(),
@@ -817,6 +818,7 @@ async fn reject_plan_without_pending_returns_not_found() {
 // Dual Emission Structural Verification
 // ============================================================================
 
+#[cfg(feature = "tauri-app")]
 #[test]
 fn test_state_has_app_handle_field() {
     let state = create_test_state();
@@ -835,7 +837,7 @@ fn clone_for_web_preserves_shared_state() {
     assert!(Arc::ptr_eq(&state.pending_plans, &cloned.pending_plans));
     assert!(Arc::ptr_eq(&state.config_store, &cloned.config_store));
 
-    // app_handle should also be None in the clone (no handle set in test)
+    #[cfg(feature = "tauri-app")]
     assert!(cloned.app_handle.get().is_none());
 }
 

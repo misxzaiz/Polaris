@@ -230,10 +230,11 @@ pub async fn handle_ipc_bridge(
         "long_goal_complete" => dispatch_long_goal_complete(&args),
         "long_goal_prepare_maintenance" => dispatch_long_goal_prepare_maintenance(&args),
 
-        // ── Scheduler: Run & Protocol (stubs) ──────────────────────────────────
-        "scheduler_run_task" | "scheduler_update_run_status" | "scheduler_start" | "scheduler_stop" => {
-            Err(WebError::BadRequest("This scheduler command requires local runtime".into()))
-        }
+        // ── Scheduler: Run & Protocol ─────────────────────────────────────────
+        "scheduler_run_task" => dispatch_scheduler_run_task(&state, &args).await,
+        "scheduler_update_run_status" => dispatch_scheduler_update_run_status(&state, &args).await,
+        "scheduler_start" => dispatch_scheduler_start(&state).await,
+        "scheduler_stop" => dispatch_scheduler_stop(&state).await,
         "scheduler_read_protocol_documents" => Ok(Json(serde_json::json!([]))),
         "scheduler_build_protocol_prompt" => Ok(Json(Value::String(String::new()))),
 
@@ -1577,20 +1578,135 @@ fn dispatch_read_file_absolute(args: &Value) -> Result<Json<Value>, WebError> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Scheduler: Run & Protocol (stubs for HTTP-incompatible commands)
+// Scheduler: Run & Protocol (web-compatible implementations)
 // ═══════════════════════════════════════════════════════════════════════════
 
-fn dispatch_scheduler_run_task(_state: &AppState, _args: &Value) -> Result<Json<Value>, WebError> {
-    Err(WebError::BadRequest("scheduler_run_task not available via HTTP".into()))
+async fn dispatch_scheduler_start(state: &AppState) -> Result<Json<Value>, WebError> {
+    use crate::commands::scheduler::SchedulerStatus;
+    let pid = std::process::id();
+
+    if crate::utils::is_holding_lock() {
+        return Ok(Json(serde_json::to_value(SchedulerStatus {
+            is_running: true,
+            is_holder: true,
+            is_locked_by_other: false,
+            pid,
+            message: Some("调度器已在运行".to_string()),
+        }).unwrap()));
+    }
+
+    match crate::utils::acquire_and_hold_lock() {
+        Ok(true) => {
+            let config_dir = state.app_config_dir.get()
+                .cloned()
+                .unwrap_or_else(|| {
+                    dirs::config_dir()
+                        .unwrap_or_else(|| std::path::PathBuf::from("."))
+                        .join("claude-code-pro")
+                });
+
+            let event_tx = state.event_broadcast.clone();
+            let mut daemon = crate::services::scheduler_daemon::SchedulerDaemon::new(config_dir, None);
+            daemon.start_with_broadcast(event_tx)
+                .map_err(|e| WebError::Internal(format!("启动调度器失败: {}", e)))?;
+
+            let mut scheduler_daemon = state.scheduler_daemon.lock().await;
+            *scheduler_daemon = Some(daemon);
+
+            Ok(Json(serde_json::to_value(SchedulerStatus {
+                is_running: true,
+                is_holder: true,
+                is_locked_by_other: false,
+                pid,
+                message: Some("调度器启动成功".to_string()),
+            }).unwrap()))
+        }
+        Ok(false) => Ok(Json(serde_json::to_value(SchedulerStatus {
+            is_running: false,
+            is_holder: false,
+            is_locked_by_other: true,
+            pid,
+            message: Some("无法启动：其他实例正在运行调度器".to_string()),
+        }).unwrap())),
+        Err(e) => Err(WebError::Internal(format!("启动调度器失败: {}", e))),
+    }
 }
-fn dispatch_scheduler_update_run_status(_state: &AppState, _args: &Value) -> Result<Json<Value>, WebError> {
-    Err(WebError::BadRequest("scheduler_update_run_status not available via HTTP".into()))
+
+async fn dispatch_scheduler_stop(state: &AppState) -> Result<Json<Value>, WebError> {
+    use crate::commands::scheduler::SchedulerStatus;
+    let pid = std::process::id();
+
+    if !crate::utils::is_holding_lock() {
+        return Ok(Json(serde_json::to_value(SchedulerStatus {
+            is_running: false,
+            is_holder: false,
+            is_locked_by_other: crate::utils::get_lock_status().is_locked_by_other,
+            pid,
+            message: Some("调度器未在运行".to_string()),
+        }).unwrap()));
+    }
+
+    {
+        let mut scheduler_daemon = state.scheduler_daemon.lock().await;
+        if let Some(mut daemon) = scheduler_daemon.take() {
+            daemon.stop().ok();
+        }
+    }
+
+    let _ = crate::utils::release_held_lock();
+
+    Ok(Json(serde_json::to_value(SchedulerStatus {
+        is_running: false,
+        is_holder: false,
+        is_locked_by_other: false,
+        pid,
+        message: Some("调度器已停止".to_string()),
+    }).unwrap()))
 }
-fn dispatch_scheduler_start(_state: &AppState, _args: &Value) -> Result<Json<Value>, WebError> {
-    Err(WebError::BadRequest("Scheduler start/stop requires local runtime".into()))
+
+async fn dispatch_scheduler_run_task(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+    let id = require_string(args, "id")?;
+    let workspace_path = args.get("workspacePath").and_then(|v| v.as_str()).map(String::from);
+    let workspace_path_buf = workspace_path.filter(|p| !p.trim().is_empty()).map(std::path::PathBuf::from);
+
+    let config_dir = state.app_config_dir.get()
+        .cloned()
+        .unwrap_or_else(|| {
+            dirs::config_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join("claude-code-pro")
+        });
+
+    let repository = crate::services::unified_scheduler_repository::UnifiedSchedulerRepository::new(config_dir, workspace_path_buf);
+    let task = repository.update_task_status(&id, crate::models::scheduler::TaskStatus::Running)
+        .map_err(|e| WebError::Internal(format!("更新任务状态失败: {}", e)))?;
+
+    Ok(Json(serde_json::to_value(task).unwrap()))
 }
-fn dispatch_scheduler_stop(_state: &AppState, _args: &Value) -> Result<Json<Value>, WebError> {
-    Err(WebError::BadRequest("Scheduler start/stop requires local runtime".into()))
+
+async fn dispatch_scheduler_update_run_status(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+    let id = require_string(args, "id")?;
+    let status = require_string(args, "status")?;
+    let workspace_path = args.get("workspacePath").and_then(|v| v.as_str()).map(String::from);
+    let workspace_path_buf = workspace_path.filter(|p| !p.trim().is_empty()).map(std::path::PathBuf::from);
+
+    let config_dir = state.app_config_dir.get()
+        .cloned()
+        .unwrap_or_else(|| {
+            dirs::config_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join("claude-code-pro")
+        });
+
+    let repository = crate::services::unified_scheduler_repository::UnifiedSchedulerRepository::new(config_dir, workspace_path_buf);
+    let task_status = match status.as_str() {
+        "success" => crate::models::scheduler::TaskStatus::Success,
+        _ => crate::models::scheduler::TaskStatus::Failed,
+    };
+    let task = repository.update_task_status(&id, task_status)
+        .map_err(|e| WebError::Internal(format!("更新任务状态失败: {}", e)))?;
+
+    Ok(Json(serde_json::to_value(task).unwrap()))
 }
 fn dispatch_scheduler_read_protocol_docs(_state: &AppState, _args: &Value) -> Result<Json<Value>, WebError> {
     Ok(Json(serde_json::json!([])))

@@ -73,10 +73,9 @@ impl SchedulerDaemon {
         }
     }
 
-    /// 启动守护进程
+    /// 启动守护进程（Tauri 桌面模式）
     #[cfg(feature = "tauri-app")]
     pub fn start(&mut self, app_handle: AppHandle) -> Result<()> {
-        // 检查是否已经在运行
         if self.running.load(Ordering::SeqCst) {
             tracing::warn!("[SchedulerDaemon] 守护进程已在运行");
             return Ok(());
@@ -88,36 +87,76 @@ impl SchedulerDaemon {
         let config_dir = self.config_dir.clone();
         let workspace_path = self.workspace_path.clone();
 
-        // 创建停止信号通道
         let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
         self.stop_signal = Some(stop_tx);
 
         tracing::info!("[SchedulerDaemon] 启动守护进程，检查间隔: {}秒", CHECK_INTERVAL_SECS);
 
-        // 启动后台任务
         tokio::spawn(async move {
             let mut stop_rx = stop_rx;
 
             loop {
-                // 检查是否应该停止
                 if !running.load(Ordering::SeqCst) {
                     tracing::info!("[SchedulerDaemon] 收到停止信号，退出循环");
                     break;
                 }
 
-                // 检查是否有停止请求
                 if stop_rx.try_recv().is_ok() {
                     tracing::info!("[SchedulerDaemon] 收到停止请求，退出循环");
                     running.store(false, Ordering::SeqCst);
                     break;
                 }
 
-                // 执行检查
-                if let Err(e) = check_and_notify_due_tasks(&app_handle, &config_dir, &workspace_path).await {
+                if let Err(e) = check_and_notify_due_tasks_tauri(&app_handle, &config_dir, &workspace_path).await {
                     tracing::error!("[SchedulerDaemon] 检查任务失败: {}", e);
                 }
 
-                // 等待下一次检查
+                sleep(Duration::from_secs(CHECK_INTERVAL_SECS)).await;
+            }
+
+            tracing::info!("[SchedulerDaemon] 守护进程已停止");
+        });
+
+        Ok(())
+    }
+
+    /// 启动守护进程（Web-only 模式，使用 WebSocket broadcast 替代 Tauri events）
+    pub fn start_with_broadcast(&mut self, event_tx: tokio::sync::broadcast::Sender<String>) -> Result<()> {
+        if self.running.load(Ordering::SeqCst) {
+            tracing::warn!("[SchedulerDaemon] 守护进程已在运行");
+            return Ok(());
+        }
+
+        let running = self.running.clone();
+        running.store(true, Ordering::SeqCst);
+
+        let config_dir = self.config_dir.clone();
+        let workspace_path = self.workspace_path.clone();
+
+        let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
+        self.stop_signal = Some(stop_tx);
+
+        tracing::info!("[SchedulerDaemon] 启动守护进程 (web mode)，检查间隔: {}秒", CHECK_INTERVAL_SECS);
+
+        tokio::spawn(async move {
+            let mut stop_rx = stop_rx;
+
+            loop {
+                if !running.load(Ordering::SeqCst) {
+                    tracing::info!("[SchedulerDaemon] 收到停止信号，退出循环");
+                    break;
+                }
+
+                if stop_rx.try_recv().is_ok() {
+                    tracing::info!("[SchedulerDaemon] 收到停止请求，退出循环");
+                    running.store(false, Ordering::SeqCst);
+                    break;
+                }
+
+                if let Err(e) = check_and_notify_due_tasks_broadcast(&event_tx, &config_dir, &workspace_path).await {
+                    tracing::error!("[SchedulerDaemon] 检查任务失败: {}", e);
+                }
+
                 sleep(Duration::from_secs(CHECK_INTERVAL_SECS)).await;
             }
 
@@ -153,36 +192,29 @@ impl SchedulerDaemon {
     }
 }
 
-/// 检查到期任务并发送通知
+/// 检查到期任务并发送通知（Tauri 桌面模式）
 #[cfg(feature = "tauri-app")]
-async fn check_and_notify_due_tasks(
+async fn check_and_notify_due_tasks_tauri(
     app_handle: &AppHandle,
     config_dir: &Path,
     workspace_path: &Option<PathBuf>,
 ) -> Result<()> {
     let repository = UnifiedSchedulerRepository::new(config_dir.to_path_buf(), workspace_path.clone());
-
-    // 获取所有启用的任务
     let tasks = repository.list_tasks()?;
-
     let now = chrono::Utc::now().timestamp();
 
-    // 检查每个任务
     for task in tasks {
         if !task.enabled {
             continue;
         }
 
-        // 检查是否到期
         if let Some(next_run_at) = task.next_run_at {
             if next_run_at <= now {
                 tracing::info!(
                     "[SchedulerDaemon] 任务到期: {} (ID: {})",
-                    task.name,
-                    task.id
+                    task.name, task.id
                 );
 
-                // 发送任务到期事件到前端
                 let event = TaskDueEvent {
                     task_id: task.id.clone(),
                     task_name: task.name.clone(),
@@ -195,17 +227,60 @@ async fn check_and_notify_due_tasks(
                     mission: task.mission.clone(),
                 };
 
-                // 发送全局事件
-                match app_handle.emit("scheduler-task-due", &event) {
-                    Ok(()) => {
-                        tracing::info!("[SchedulerDaemon] 已发送任务到期事件: {}", task.name);
-                    }
-                    Err(e) => {
-                        tracing::error!("[SchedulerDaemon] 发送事件失败: {}", e);
-                    }
+                if let Err(e) = app_handle.emit("scheduler-task-due", &event) {
+                    tracing::error!("[SchedulerDaemon] 发送事件失败: {}", e);
                 }
 
-                // 更新下次执行时间（避免重复触发）
+                update_next_run_time(&repository, &task)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// 检查到期任务并发送通知（Web 模式，通过 WebSocket broadcast）
+async fn check_and_notify_due_tasks_broadcast(
+    event_tx: &tokio::sync::broadcast::Sender<String>,
+    config_dir: &Path,
+    workspace_path: &Option<PathBuf>,
+) -> Result<()> {
+    let repository = UnifiedSchedulerRepository::new(config_dir.to_path_buf(), workspace_path.clone());
+    let tasks = repository.list_tasks()?;
+    let now = chrono::Utc::now().timestamp();
+
+    for task in tasks {
+        if !task.enabled {
+            continue;
+        }
+
+        if let Some(next_run_at) = task.next_run_at {
+            if next_run_at <= now {
+                tracing::info!(
+                    "[SchedulerDaemon] 任务到期: {} (ID: {})",
+                    task.name, task.id
+                );
+
+                let event = TaskDueEvent {
+                    task_id: task.id.clone(),
+                    task_name: task.name.clone(),
+                    engine_id: task.engine_id.clone(),
+                    work_dir: task.work_dir.clone(),
+                    prompt: task.prompt.clone(),
+                    template_id: task.template_id.clone(),
+                    mode: task.mode.to_string(),
+                    task_path: task.task_path.clone(),
+                    mission: task.mission.clone(),
+                };
+
+                let ws_msg = serde_json::json!({
+                    "event": "scheduler-task-due",
+                    "payload": event,
+                });
+                if let Err(e) = event_tx.send(ws_msg.to_string()) {
+                    tracing::warn!("[SchedulerDaemon] WebSocket broadcast 发送失败: {}", e);
+                }
+
                 update_next_run_time(&repository, &task)?;
             }
         }

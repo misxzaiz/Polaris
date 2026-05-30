@@ -842,7 +842,9 @@ pub fn run() {
 ///
 /// 用于 WSL/Linux 服务器部署，仅启动 HTTP/WebSocket 服务。
 /// Token 默认不检查（WebConfig.token = None），可通过 Web UI Settings 页面配置。
-pub fn run_web_server() {
+///
+/// 参数优先级: cli_* > 环境变量 > 配置文件
+pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>) {
     // 初始化配置存储
     let config_store = ConfigStore::new()
         .expect("无法初始化配置存储");
@@ -875,11 +877,27 @@ pub fn run_web_server() {
     let config_dir = dirs::config_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("claude-code-pro");
-    let _ = app_state.app_config_dir.set(config_dir);
+    let _ = app_state.app_config_dir.set(config_dir.clone());
 
-    // 启动 Web 服务器
-    let port = web_port_for_runtime(config.web.port);
-    let host = config.web.host.clone();
+    // 启动调度器守护进程（web 模式使用 WebSocket broadcast）
+    let event_tx = app_state.event_broadcast.clone();
+    let scheduler_config_dir = config_dir;
+    let mut scheduler_daemon = services::scheduler_daemon::SchedulerDaemon::new(
+        scheduler_config_dir,
+        None,
+    );
+    if let Err(e) = scheduler_daemon.start_with_broadcast(event_tx) {
+        tracing::warn!("[Polaris-Web] 调度器守护进程启动失败: {}", e);
+    } else {
+        tracing::info!("[Polaris-Web] 调度器守护进程已启动");
+    }
+
+    // 启动 Web 服务器（优先级: CLI > 环境变量 > 配置文件）
+    let port = cli_port
+        .or_else(|| std::env::var("POLARIS_WEB_PORT").ok().and_then(|v| v.parse().ok()))
+        .unwrap_or_else(|| web_port_for_runtime(config.web.port));
+    let host = cli_host
+        .unwrap_or_else(|| config.web.host.clone());
     let state = Arc::new(app_state);
     let web_server = web::server::WebServer::new(state);
 
@@ -895,6 +913,7 @@ pub fn run_web_server() {
         // 等待 Ctrl+C 信号以优雅关停
         tokio::signal::ctrl_c().await.ok();
         tracing::info!("[Polaris-Web] Received shutdown signal, stopping...");
+        scheduler_daemon.stop().ok();
         handle.shutdown.cancel();
         let _ = handle.task.await;
     });
