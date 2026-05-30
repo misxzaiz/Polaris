@@ -16,13 +16,11 @@ import { Minus, Square, X, PanelRight, Pin, PanelLeftClose, PanelLeft } from 'lu
 import { invoke } from '@/services/transport';
 import { useViewStore } from '@/stores';
 import * as tauri from '@/services/tauri';
+import { isTauri } from '@/utils/platform';
 import { WorkspaceQuickSwitch } from '../Workspace';
 import { createLogger } from '@/utils/logger';
 
 const log = createLogger('TopMenuBar');
-
-// 检测是否在 Tauri 环境中运行
-const isTauriEnv = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 interface TopMenuBarProps {
   onToggleRightPanel?: () => void;
@@ -37,7 +35,7 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
 
   useEffect(() => {
-    if (!isTauriEnv) return;
+    if (!isTauri()) return;
 
     const checkMaximized = async () => {
       try {
@@ -65,7 +63,7 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
 
   // 同步置顶状态
   useEffect(() => {
-    if (!isTauriEnv) return;
+    if (!isTauri()) return;
 
     const syncOnTopState = async () => {
       try {
@@ -109,14 +107,14 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
       </div>
 
       {/* 中间:可拖拽区域 (自动填充剩余空间) */}
-      <div data-tauri-drag-region className="flex-1 h-full cursor-move" />
+      <div data-tauri-drag-region className={`flex-1 h-full${isTauri() ? ' cursor-move' : ''}`} />
 
       {/* 右侧:菜单 + 窗口控制 - 小屏模式下简化 */}
       <div className="flex items-center">
         {/* 小屏模式：显示置顶按钮和窗口控制按钮 */}
         {isCompactMode ? (
           <>
-            {isTauriEnv && (
+            {isTauri() && (
               <>
                 {/* 窗口置顶按钮 */}
                 <button
@@ -197,7 +195,7 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
               <PanelRight className="w-4 h-4" />
             </button>
 
-            {isTauriEnv && (
+            {isTauri() && (
               <>
                 {/* 窗口置顶按钮 */}
                 <button

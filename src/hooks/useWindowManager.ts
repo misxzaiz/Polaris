@@ -14,6 +14,7 @@ import { useConfigStore } from '@/stores';
 import { useViewStore } from '@/stores/viewStore';
 import { useWindowSize } from './useWindowSize';
 import * as tauri from '@/services/tauri';
+import { isTauri } from '@/utils/platform';
 import { createLogger } from '@/utils/logger';
 
 const log = createLogger('WindowManager');
@@ -58,7 +59,7 @@ export function useWindowManager({ onOpenSettings, onToggleFileSearch }: UseWind
   // F12 + Shift+Ctrl+R 快捷键
   useEffect(() => {
     const handleKeyDown = async (e: KeyboardEvent) => {
-      if (e.key === 'F12') {
+      if (e.key === 'F12' && isTauri()) {
         e.preventDefault();
         try {
           await tauri.invoke('toggle_devtools');

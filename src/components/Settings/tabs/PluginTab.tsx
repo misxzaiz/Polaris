@@ -17,6 +17,7 @@ import {
 } from '@/services/pluginDiscoveryService'
 import { listMcpHealthStatuses, type McpHealthStatus } from '@/services/mcpHealthService'
 import { openInDefaultApp } from '@/services/tauri/windowService'
+import { isTauri } from '@/utils/platform'
 import { usePluginStore } from '@/stores/pluginStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 
@@ -104,6 +105,7 @@ export function PluginTab() {
   }, [pluginInstallLocations, pluginInstallScope])
 
   const handleInstallLocalPlugin = useCallback(async () => {
+    if (!isTauri()) return
     setPluginOperationMessage(null)
 
     try {
@@ -134,6 +136,7 @@ export function PluginTab() {
   }, [currentWorkspacePath, pluginInstallScope, refreshInstallLocations, refreshInstalledPlugins, t])
 
   const handleInstallPluginPackage = useCallback(async () => {
+    if (!isTauri()) return
     setPluginOperationMessage(null)
 
     try {
@@ -342,7 +345,7 @@ export function PluginTab() {
             <button
               type="button"
               onClick={handleInstallLocalPlugin}
-              disabled={pluginOperationLoading || (pluginInstallScope === 'project' && !currentWorkspacePath)}
+              disabled={pluginOperationLoading || !isTauri() || (pluginInstallScope === 'project' && !currentWorkspacePath)}
               className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs text-primary hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <PackagePlus size={13} />
@@ -353,7 +356,7 @@ export function PluginTab() {
             <button
               type="button"
               onClick={handleInstallPluginPackage}
-              disabled={pluginOperationLoading || (pluginInstallScope === 'project' && !currentWorkspacePath)}
+              disabled={pluginOperationLoading || !isTauri() || (pluginInstallScope === 'project' && !currentWorkspacePath)}
               className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs text-primary hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <PackagePlus size={13} />

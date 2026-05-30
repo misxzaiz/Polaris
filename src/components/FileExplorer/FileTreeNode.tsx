@@ -6,6 +6,7 @@ import { FileIcon } from './FileIcon';
 import { ContextMenu, isHtmlFile, type ContextMenuItem } from './ContextMenu';
 import { useFileExplorerStore, useFileEditorStore } from '@/stores';
 import { openInDefaultApp } from '@/services/tauri';
+import { isTauri } from '@/utils/platform';
 import { InputDialog } from '../Common/InputDialog';
 import { ConfirmDialog } from '../Common/ConfirmDialog';
 import { IconFile, IconFolder, IconEdit, IconTrash, IconExternalLink, IconOpen } from '../Common/Icons';
@@ -205,34 +206,24 @@ export const FileTreeNode = memo<FileTreeNodeProps>(({
       },
     });
 
-    // 在外部文件管理器打开
-    items.push({
-      id: 'open-in-explorer',
-      label: file.is_dir ? t('contextMenu.openInExplorer') : t('contextMenu.openFolderInExplorer'),
-      icon: <FolderOpen size={14} />,
-      action: async () => {
-        const openInSystem = async (p: string) => {
-          if ('__TAURI_INTERNALS__' in window) {
-            try {
-              const { openPath } = await import('@tauri-apps/plugin-opener');
-              await openPath(p);
-            } catch {
-              // fallback: no-op in web mode
-            }
+    // 在外部文件管理器打开（仅桌面端）
+    if (isTauri()) {
+      items.push({
+        id: 'open-in-explorer',
+        label: file.is_dir ? t('contextMenu.openInExplorer') : t('contextMenu.openFolderInExplorer'),
+        icon: <FolderOpen size={14} />,
+        action: async () => {
+          try {
+            const { openPath } = await import('@tauri-apps/plugin-opener');
+            const targetPath = file.is_dir ? file.path : getParentPath(file.path);
+            if (targetPath) await openPath(targetPath);
+          } catch {
+            // no-op
           }
-        };
-        if (file.is_dir) {
-          await openInSystem(file.path);
-        } else {
-          const parentPath = getParentPath(file.path);
-          if (parentPath) {
-            await openInSystem(parentPath);
-          }
-        }
-      },
-    });
-
-    items.push({ id: 'separator-2', label: '-', icon: undefined, action: () => {} });
+        },
+      });
+      items.push({ id: 'separator-2', label: '-', icon: undefined, action: () => {} });
+    }
 
     // 复制文件
     items.push({

@@ -1,7 +1,5 @@
-import { getVersion } from '@tauri-apps/api/app'
-import { relaunch } from '@tauri-apps/plugin-process'
-import { check, type Update } from '@tauri-apps/plugin-updater'
 import { currentMode } from '@/services/transport'
+import type { Update } from '@tauri-apps/plugin-updater'
 
 const GITHUB_RELEASES_URL = 'https://api.github.com/repos/misxzaiz/Polaris/releases'
 
@@ -31,6 +29,7 @@ export async function getCurrentAppVersion(): Promise<string> {
     return 'unknown'
   }
 
+  const { getVersion } = await import('@tauri-apps/api/app')
   return getVersion()
 }
 
@@ -39,6 +38,7 @@ export async function checkAppUpdate(): Promise<Update | null> {
     throw new Error('App updates are only available in the desktop app')
   }
 
+  const { check } = await import('@tauri-apps/plugin-updater')
   return check()
 }
 
@@ -48,6 +48,8 @@ export async function downloadInstallAndRelaunch(
 ): Promise<void> {
   let downloaded = 0
   let contentLength: number | undefined
+
+  const { relaunch } = await import('@tauri-apps/plugin-process')
 
   await update.downloadAndInstall((event: unknown) => {
     const payload = event as {

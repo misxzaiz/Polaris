@@ -2,6 +2,7 @@
  * 设置侧边栏导航
  */
 
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   IconAIEngine,
@@ -14,6 +15,7 @@ import {
   IconMessageSquareText,
 } from '../Common/Icons';
 import { Download, Shield, Code2, Globe, Blocks } from 'lucide-react';
+import { isTauri } from '@/utils/platform';
 import type { ReactNode } from 'react';
 
 export type SettingsTabId =
@@ -64,8 +66,16 @@ const NAV_ITEMS: SettingsNavItem[] = [
   // { id: 'advanced', icon: <IconSettings size={16} />, labelKey: 'nav.advanced' },
 ];
 
+/** 桌面端专属 Tab ID */
+const DESKTOP_ONLY_TABS: SettingsTabId[] = ['app-update', 'window', 'web'];
+
 export function SettingsSidebar({ activeTab, onTabChange, searchQuery, onSearchChange }: SettingsSidebarProps) {
   const { t } = useTranslation('settings');
+  const isDesktop = isTauri();
+  const navItems = useMemo(
+    () => isDesktop ? NAV_ITEMS : NAV_ITEMS.filter(item => !DESKTOP_ONLY_TABS.includes(item.id)),
+    [isDesktop],
+  );
 
   return (
     <div className="sm:w-48 sm:flex-shrink-0 sm:border-r sm:border-b-0 border-b border-border-subtle bg-background-elevated flex sm:flex-col">
@@ -87,7 +97,7 @@ export function SettingsSidebar({ activeTab, onTabChange, searchQuery, onSearchC
 
       {/* 导航列表 — 小屏水平滚动，大屏垂直列表 */}
       <nav className="flex sm:flex-col overflow-x-auto sm:overflow-y-auto sm:flex-1 py-0 sm:py-2">
-        {NAV_ITEMS.map((item) => (
+        {navItems.map((item) => (
           <button
             key={item.id}
             onClick={() => onTabChange(item.id)}
