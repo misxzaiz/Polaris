@@ -879,18 +879,9 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>) {
         .join("claude-code-pro");
     let _ = app_state.app_config_dir.set(config_dir.clone());
 
-    // 启动调度器守护进程（web 模式使用 WebSocket broadcast）
+    // 预先准备调度器守护进程所需数据（app_state 即将被 Arc 包装而 move）
     let event_tx = app_state.event_broadcast.clone();
     let scheduler_config_dir = config_dir;
-    let mut scheduler_daemon = services::scheduler_daemon::SchedulerDaemon::new(
-        scheduler_config_dir,
-        None,
-    );
-    if let Err(e) = scheduler_daemon.start_with_broadcast(event_tx) {
-        tracing::warn!("[Polaris-Web] 调度器守护进程启动失败: {}", e);
-    } else {
-        tracing::info!("[Polaris-Web] 调度器守护进程已启动");
-    }
 
     // 启动 Web 服务器（优先级: CLI > 环境变量 > 配置文件）
     let port = cli_port
@@ -906,6 +897,18 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>) {
     let rt = tokio::runtime::Runtime::new()
         .expect("Failed to create tokio runtime");
     rt.block_on(async move {
+        // 调度器守护进程内部使用 tokio::spawn，必须在 Tokio runtime 上下文内启动，
+        // 否则会 panic "there is no reactor running"。
+        let mut scheduler_daemon = services::scheduler_daemon::SchedulerDaemon::new(
+            scheduler_config_dir,
+            None,
+        );
+        if let Err(e) = scheduler_daemon.start_with_broadcast(event_tx) {
+            tracing::warn!("[Polaris-Web] 调度器守护进程启动失败: {}", e);
+        } else {
+            tracing::info!("[Polaris-Web] 调度器守护进程已启动");
+        }
+
         let handle = web_server
             .start_on_available_port(&host, port)
             .await
