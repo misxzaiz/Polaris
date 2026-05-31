@@ -9,6 +9,7 @@ dist/
 dist-ssr/
 *.local
 polaris-web/
+*.tar.gz
 
 # Tauri
 /src-tauri/target/

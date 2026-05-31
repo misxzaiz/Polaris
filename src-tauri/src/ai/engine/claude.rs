@@ -223,9 +223,16 @@ impl ClaudeEngine {
         #[cfg(not(windows))]
         {
             // Unix/Linux/Mac: 检查文件是否存在或使用 which 查找
-            Path::new(cli_path).exists() ||
+            let cli_path = match self.get_cli_path() {
+                Ok(p) => p.to_string(),
+                Err(e) => {
+                    tracing::error!("[ClaudeEngine] 获取 CLI 路径失败: {}", e);
+                    return false;
+                }
+            };
+            Path::new(&cli_path).exists() ||
                 std::process::Command::new("which")
-                    .arg(cli_path)
+                    .arg(&cli_path)
                     .output()
                     .map(|o| o.status.success())
                     .unwrap_or(false)

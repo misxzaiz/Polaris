@@ -18,6 +18,7 @@ use std::os::windows::process::CommandExt;
 use tauri::{AppHandle, Emitter};
 
 use crate::error::{AppError, Result};
+#[cfg(windows)]
 use crate::utils::CREATE_NO_WINDOW;
 
 /// LSP 会话：持有子进程和 stdin 句柄

@@ -1,3 +1,9 @@
+// Web-only 构建（--no-default-features，无 tauri-app feature）下，大量 import 与符号
+// 仅服务于桌面端 Tauri 命令，会产生 unused 噪音；且 rustc 1.95.0 在 early-lint 阶段
+// 存在 ICE（core/slice/index 越界 panic），在渲染这些 warning 时会触发编译器崩溃。
+// 仅在非 tauri-app（web）模式放宽 lint；桌面 / CI 构建保留完整告警，不受影响。
+#![cfg_attr(not(feature = "tauri-app"), allow(warnings))]
+
 pub mod error;
 pub mod models;
 pub mod services;
