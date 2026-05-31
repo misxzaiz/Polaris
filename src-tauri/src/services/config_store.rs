@@ -178,6 +178,12 @@ impl ConfigStore {
         &self.config
     }
 
+    /// Mutable reference to the in-memory config (does not persist to disk).
+    /// Call `save()` explicitly if persistence is needed.
+    pub fn get_mut(&mut self) -> &mut Config {
+        &mut self.config
+    }
+
     /// 更新配置（带回滚机制）
     pub fn update(&mut self, config: Config) -> Result<()> {
         // 保存旧配置以便回滚

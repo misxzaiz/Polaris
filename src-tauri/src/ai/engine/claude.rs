@@ -16,6 +16,26 @@ use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 use crate::utils::CREATE_NO_WINDOW;
 
+/// 返回当前用户的默认权限模式。
+///
+/// Claude Code CLI 禁止 root 使用 `bypassPermissions`（映射到
+/// `--dangerously-skip-permissions`），因此 root 下回退到 `acceptEdits`，
+/// 该模式允许文件编辑无需确认，但仍保留沙箱保护。
+fn default_permission_mode() -> &'static str {
+    #[cfg(unix)]
+    {
+        // geteuid() == 0 表示 root（或 setuid-root）
+        if unsafe { libc::geteuid() } == 0 {
+            tracing::warn!(
+                "[ClaudeEngine] 检测到 root 用户，bypassPermissions 不可用；\
+                 回退到 acceptEdits 模式"
+            );
+            return "acceptEdits";
+        }
+    }
+    "bypassPermissions"
+}
+
 /// Claude Code CLI 安装类型
 #[cfg(windows)]
 #[derive(Debug, Clone)]
@@ -337,14 +357,13 @@ impl ClaudeEngine {
                 }
             }
 
-            // 添加权限模式参数（如果用户指定，否则使用默认 bypassPermissions）
+            // 添加权限模式参数（如果用户指定，否则使用默认值）
             if let Some(pm) = permission_mode {
                 if !pm.is_empty() {
                     cmd.arg("--permission-mode").arg(pm);
                 }
             } else {
-                // 默认使用 bypassPermissions 以支持前端权限交互
-                cmd.arg("--permission-mode").arg("bypassPermissions");
+                cmd.arg("--permission-mode").arg(default_permission_mode());
             }
 
             // 添加允许的工具列表（权限重试时使用）
@@ -443,14 +462,13 @@ impl ClaudeEngine {
                 }
             }
 
-            // 添加权限模式参数（如果用户指定，否则使用默认 bypassPermissions）
+            // 添加权限模式参数（如果用户指定，否则使用默认值）
             if let Some(pm) = permission_mode {
                 if !pm.is_empty() {
                     cmd.arg("--permission-mode").arg(pm);
                 }
             } else {
-                // 默认使用 bypassPermissions 以支持前端权限交互
-                cmd.arg("--permission-mode").arg("bypassPermissions");
+                cmd.arg("--permission-mode").arg(default_permission_mode());
             }
 
             // 添加允许的工具列表（权限重试时使用）

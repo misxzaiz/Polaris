@@ -39,6 +39,17 @@ const isWindows = process.platform === 'win32';
 const binName = isWindows ? 'polaris-web.exe' : 'polaris-web';
 const skipBuild = process.argv.slice(2).includes('--no-build');
 
+// 内置 MCP server 二进制。与 polaris-web 同目录打包，匹配 run_web_server 将 resource_dir
+// 设为可执行文件目录后的 fallback 解析布局（<exe_dir>/<bin>）。
+// 全部为可选 —— 缺失时对应 MCP 工具不可用，但 AI 对话正常运行。
+const mcpBins = [
+  { name: 'polaris-todo-mcp', required: false },
+  { name: 'polaris-requirements-mcp', required: false },
+  { name: 'polaris-scheduler-mcp', required: false },
+  { name: 'polaris-long-goal-mcp', required: false },
+];
+const mcpBinFile = (n) => (isWindows ? `${n}.exe` : n);
+
 const C = {
   reset: '\x1b[0m',
   cyan: '\x1b[36m',
@@ -104,6 +115,27 @@ if (existsSync(outDir)) {
 log('拷贝二进制……');
 copyFileSync(binSrc, join(outDir, binName));
 if (!isWindows) chmodSync(join(outDir, binName), 0o755);
+
+log('拷贝 MCP server 二进制……');
+const releaseDir = join(root, 'src-tauri', 'target', 'release');
+for (const { name, required } of mcpBins) {
+  const file = mcpBinFile(name);
+  const src = join(releaseDir, file);
+  if (!existsSync(src)) {
+    if (required) {
+      fail(
+        `缺少必需的 MCP 二进制：${src}\n` +
+          '  请去掉 --no-build 重新运行；build:web 已包含全部 MCP server 的编译。',
+      );
+    }
+    warn(`未找到可选 MCP 二进制 ${file}，跳过（对应功能在 Web 端将不可用）。`);
+    continue;
+  }
+  const dest = join(outDir, file);
+  copyFileSync(src, dest);
+  if (!isWindows) chmodSync(dest, 0o755);
+  ok(`已拷贝 MCP: ${file}`);
+}
 
 log('拷贝前端 dist……');
 cpSync(distDir, join(outDir, 'dist'), { recursive: true });

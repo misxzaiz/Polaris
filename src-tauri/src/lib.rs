@@ -850,13 +850,20 @@ pub fn run() {
 /// Token 默认不检查（WebConfig.token = None），可通过 Web UI Settings 页面配置。
 ///
 /// 参数优先级: cli_* > 环境变量 > 配置文件
-pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>) {
+pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token: Option<String>) {
     // 初始化配置存储
-    let config_store = ConfigStore::new()
+    let mut config_store = ConfigStore::new()
         .expect("无法初始化配置存储");
 
     // 启用日志系统
     let _logger_guard = Logger::init(true);
+
+    // CLI token 覆盖（优先级: CLI args > 环境变量 > 配置文件）。
+    // 仅内存覆盖，不持久化到 config.json。
+    if let Some(ref t) = cli_token {
+        config_store.get_mut().web.token = Some(t.clone());
+        tracing::info!("[Polaris-Web] Token auth enabled via CLI/env (not persisted)");
+    }
 
     // 初始化 AI 引擎注册表
     let config = config_store.get().clone();
@@ -884,6 +891,27 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>) {
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("claude-code-pro");
     let _ = app_state.app_config_dir.set(config_dir.clone());
+
+    // 设置 resource_dir 为可执行文件所在目录。
+    // Web 独立部署没有 Tauri 的资源解析器，若不设置 resource_dir，内置 MCP 二进制的解析会
+    // 回退到编译期常量 CARGO_MANIFEST_DIR 推导的开发路径——该路径在部署机上通常不存在，
+    // 导致 required 的 polaris-todo-mcp 定位失败并使对话接口返回 500。
+    // 以可执行文件目录作为资源根后，只要 MCP 二进制与 polaris-web 同目录即可被发现，
+    // 支持脱离编译目录的可移植部署；若仍未找到，解析逻辑会继续回退到环境变量与开发路径。
+    match std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+    {
+        Some(exe_dir) => {
+            tracing::info!("[Polaris-Web] resource_dir 设为可执行文件目录: {:?}", exe_dir);
+            let _ = app_state.resource_dir.set(Some(exe_dir));
+        }
+        None => {
+            tracing::warn!(
+                "[Polaris-Web] 无法确定可执行文件目录，resource_dir 未设置，MCP 二进制将回退到开发路径解析"
+            );
+        }
+    }
 
     // 预先准备调度器守护进程所需数据（app_state 即将被 Arc 包装而 move）
     let event_tx = app_state.event_broadcast.clone();

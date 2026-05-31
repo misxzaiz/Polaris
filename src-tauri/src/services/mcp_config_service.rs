@@ -159,7 +159,7 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
             "src-tauri/target/debug/polaris-todo-mcp",
             "POLARIS_TODO_MCP_PATH",
             McpServerArgsMode::ConfigDirAndWorkspace,
-            true,
+            false,
         ),
     );
     registry.register(PluginMcpServerContribution::builtin(
@@ -357,11 +357,12 @@ impl WorkspaceMcpConfigService {
             }
 
             if !binary.executable_path.exists() {
-                return Err(AppError::ProcessError(format!(
-                    "{} 可执行文件不存在: {}",
+                tracing::warn!(
+                    "[MCP] 跳过 MCP server {}，可执行文件不存在: {}",
                     binary.server_name,
                     binary.executable_path.display()
-                )));
+                );
+                continue;
             }
 
             let args =
@@ -439,11 +440,12 @@ impl WorkspaceMcpConfigService {
             }
 
             if !binary.executable_path.exists() {
-                return Err(AppError::ProcessError(format!(
-                    "{} 可执行文件不存在: {}",
+                tracing::warn!(
+                    "[MCP] 跳过 Codex MCP server {}，可执行文件不存在: {}",
                     binary.server_name,
                     binary.executable_path.display()
-                )));
+                );
+                continue;
             }
 
             let server_args =

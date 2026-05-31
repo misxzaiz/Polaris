@@ -38,6 +38,12 @@
   - 当前 Todo、Requirements、Scheduler、Long Goal MCP server 已迁移为 registry 初始化内容。
   - `WorkspaceMcpConfigService` 支持从外部 contribution registry 构造，默认入口保持内置行为不变。
 
+- `fix: make all MCP server binaries optional`
+  - 将 `polaris-todo-mcp` 从 `required: true` 改为 `required: false`，与其余 3 个 MCP server 保持一致。
+  - MCP 二进制缺失时优雅降级（`tracing::warn` + 跳过），不再阻断 AI 对话。
+  - 配置写入阶段的可执行文件存在性检查改为警告+跳过（Claude 引擎和 Codex 引擎均受影响）。
+  - 解决 Linux Web 部署因未编译 MCP 二进制导致 AI 对话返回 500 的问题。
+
 ## 当前关键文件
 
 - 前端插件系统：

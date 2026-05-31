@@ -121,12 +121,20 @@ pub async fn handle_send_message(
         Some(session_id) => {
             validate_session_id(&session_id)?;
             continue_chat_inner(session_id, message, options, &state, callbacks, &app_paths)
-                .await?;
+                .await
+                .map_err(|e| {
+                    tracing::error!("[handle_send_message] continue_chat_inner 失败: {}", e);
+                    e
+                })?;
             Ok(ok_response())
         }
         None => {
             let sid = start_chat_inner(message, options, &state, callbacks, &app_paths)
-                .await?;
+                .await
+                .map_err(|e| {
+                    tracing::error!("[handle_send_message] start_chat_inner 失败: {}", e);
+                    e
+                })?;
             Ok(Json(serde_json::json!(sid)))
         }
     }
