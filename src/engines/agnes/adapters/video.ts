@@ -1,0 +1,253 @@
+/**
+ * Agnes Video Adapter
+ *
+ * 处理视频生成请求（文生视频 / 图生视频 / 多图视频 / 关键帧动画）。
+ * 采用异步任务模型：创建任务 → 轮询进度 → 获取结果。
+ * 端点为 /v1/videos。
+ */
+
+import type { AIEvent } from '@/ai-runtime'
+import type { AgnesConfig, AgnesVideoRequest, AgnesVideoCreateResponse, AgnesVideoQueryResponse } from '../types'
+import { validateNumFrames, VIDEO_FRAME_PRESETS } from '../config'
+import { createLogger } from '@/utils/logger'
+
+const log = createLogger('AgnesVideo')
+
+/** 视频适配器选项 */
+export interface VideoAdapterOptions {
+  /** 输入图像 URL（图生视频） */
+  imageUrl?: string
+  /** 多图输入（多图引导视频 / 关键帧） */
+  imageUrls?: string[]
+  /** 关键帧模式 */
+  keyframeMode?: boolean
+  /** 视频尺寸 */
+  width?: number
+  height?: number
+  /** 帧数 */
+  numFrames?: number
+  /** 帧率 */
+  frameRate?: number
+  /** 随机种子 */
+  seed?: number
+}
+
+/** 视频轮询配置 */
+const POLL_CONFIG = {
+  /** 最大轮询次数 */
+  maxAttempts: 200,
+  /** 最大等待时间（毫秒） */
+  maxWaitTime: 600000, // 10 分钟
+}
+
+/**
+ * 延迟等待
+ */
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, ms)
+    if (signal) {
+      signal.addEventListener('abort', () => {
+        clearTimeout(timer)
+        reject(new DOMException('Aborted', 'AbortError'))
+      })
+    }
+  })
+}
+
+/**
+ * 执行视频生成（异步任务 + 轮询）
+ */
+export async function* generateVideo(
+  config: AgnesConfig,
+  prompt: string,
+  sessionId: string,
+  taskId: string,
+  options: VideoAdapterOptions = {},
+  signal?: AbortSignal,
+): AsyncIterable<AIEvent> {
+  const pollInterval = config.videoPollInterval ?? 3000
+  const numFrames = options.numFrames ?? VIDEO_FRAME_PRESETS.medium
+
+  // 验证帧数
+  const frameCheck = validateNumFrames(numFrames)
+  const adjustedFrames = frameCheck.adjusted
+
+  // 1. 创建视频任务
+  yield {
+    type: 'progress',
+    sessionId,
+    message: '正在创建视频生成任务...',
+    percent: 5,
+  }
+
+  const createRequest: AgnesVideoRequest = {
+    model: config.videoModel,
+    prompt,
+    width: options.width ?? 1152,
+    height: options.height ?? 768,
+    num_frames: adjustedFrames,
+    frame_rate: options.frameRate ?? 24,
+  }
+
+  if (options.seed) {
+    createRequest.seed = options.seed
+  }
+
+  // 图生视频模式
+  if (options.imageUrl) {
+    createRequest.image = options.imageUrl
+  }
+
+  // 多图 / 关键帧模式
+  if (options.imageUrls?.length) {
+    createRequest.extra_body = {
+      image: options.imageUrls,
+    }
+    if (options.keyframeMode) {
+      createRequest.extra_body.mode = 'keyframes'
+    }
+  }
+
+  try {
+    const createResponse = await fetch(`${config.baseUrl}/videos`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify(createRequest),
+      signal,
+    })
+
+    if (!createResponse.ok) {
+      const error = await createResponse.json().catch(() => ({ error: { message: createResponse.statusText } }))
+      throw new Error(error.error?.message || `Video API error: ${createResponse.status}`)
+    }
+
+    const taskResult: AgnesVideoCreateResponse = await createResponse.json()
+    const videoTaskId = taskResult.id
+
+    // 发送任务创建事件
+    yield {
+      type: 'video_task_created',
+      sessionId,
+      taskId,
+      videoTaskId,
+      status: 'queued',
+      prompt,
+    }
+
+    log.info('Video task created', { videoTaskId, prompt: prompt.substring(0, 50) })
+
+    // 2. 轮询任务进度
+    let attempts = 0
+    const startTime = Date.now()
+
+    while (attempts < POLL_CONFIG.maxAttempts) {
+      if (signal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError')
+      }
+
+      if (Date.now() - startTime > POLL_CONFIG.maxWaitTime) {
+        throw new Error('Video generation timed out after 10 minutes')
+      }
+
+      await delay(pollInterval, signal)
+      attempts++
+
+      const queryResponse = await fetch(
+        `${config.baseUrl}/videos/${videoTaskId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${config.apiKey}`,
+          },
+          signal,
+        },
+      )
+
+      if (!queryResponse.ok) {
+        if (queryResponse.status === 404) {
+          yield {
+            type: 'video_task_progress',
+            sessionId,
+            taskId,
+            videoTaskId,
+            progress: 0,
+            status: 'queued',
+            message: '任务排队中...',
+          }
+          continue
+        }
+        throw new Error(`Video query error: ${queryResponse.status}`)
+      }
+
+      const queryResult: AgnesVideoQueryResponse = await queryResponse.json()
+
+      // 发送进度事件
+      yield {
+        type: 'video_task_progress',
+        sessionId,
+        taskId,
+        videoTaskId,
+        progress: queryResult.progress,
+        status: queryResult.status,
+        message: queryResult.status === 'in_progress'
+          ? `视频生成中... ${queryResult.progress}%`
+          : `状态: ${queryResult.status}`,
+      }
+
+      // 任务完成
+      if (queryResult.status === 'completed' && queryResult.video_url) {
+        yield {
+          type: 'video_completed',
+          sessionId,
+          taskId,
+          videoTaskId,
+          videoUrl: queryResult.video_url,
+          duration: queryResult.seconds ? parseFloat(queryResult.seconds) : undefined,
+          size: queryResult.size,
+          usage: queryResult.usage ? {
+            durationSeconds: queryResult.usage.duration_seconds,
+          } : undefined,
+        }
+        log.info('Video generation completed', { videoTaskId, url: queryResult.video_url })
+        return
+      }
+
+      // 任务失败
+      if (queryResult.status === 'failed') {
+        const errorMsg = queryResult.error || 'Video generation failed'
+        yield {
+          type: 'video_task_failed',
+          sessionId,
+          taskId,
+          videoTaskId,
+          error: errorMsg,
+        }
+        throw new Error(errorMsg)
+      }
+    }
+
+    throw new Error(`Video generation exceeded max polling attempts (${POLL_CONFIG.maxAttempts})`)
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      yield {
+        type: 'video_task_failed',
+        sessionId,
+        taskId,
+        videoTaskId: '',
+        error: 'Task was aborted',
+      }
+      return
+    }
+    yield {
+      type: 'video_task_failed',
+      sessionId,
+      taskId,
+      videoTaskId: '',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }
+    throw error
+  }
+}

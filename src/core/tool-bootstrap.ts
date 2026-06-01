@@ -6,6 +6,7 @@
 
 import { globalToolRegistry } from '@/ai-runtime'
 import { todoTools } from '@/ai-runtime/tools/todoTools'
+import { agnesTools } from '@/ai-runtime/tools/agnesTools'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('ToolBootstrap')
@@ -20,7 +21,13 @@ export function bootstrapTools(): void {
   for (const tool of todoTools) {
     globalToolRegistry.register(tool)
   }
+  log.info('Todo tools registered', { count: todoTools.length })
 
-  log.info("Todo tools registered", { count: todoTools.length })
+  // 注册 Agnes 多模态工具
+  for (const tool of agnesTools) {
+    globalToolRegistry.register(tool)
+  }
+  log.info('Agnes multimodal tools registered', { count: agnesTools.length })
+
   log.info('All available tools', { tools: globalToolRegistry.listNames() })
 }

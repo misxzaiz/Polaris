@@ -242,6 +242,25 @@ export function handleAIEvent(
     case 'todo_execution_completed':
       break
 
+    // 多模态事件 - 由媒体面板处理，不在 ConversationStore 范围内
+    case 'image_generation_start':
+    case 'image_generation_progress':
+    case 'image_generated':
+    case 'image_generation_error':
+    case 'video_task_created':
+    case 'video_task_progress':
+    case 'video_completed':
+    case 'video_task_failed':
+      break
+
+    // 管线事件 - 由 ComicStudio/Pipeline 面板处理
+    case 'pipeline_start':
+    case 'pipeline_phase':
+    case 'pipeline_progress':
+    case 'pipeline_completed':
+    case 'pipeline_failed':
+      break
+
     default: {
       // 穷尽性检查：如果所有 AIEvent 类型都已处理，此处应为 never
       const _exhaustive: never = event

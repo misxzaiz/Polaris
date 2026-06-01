@@ -33,7 +33,17 @@ export interface WorkspaceContextExtra {
 /**
  * 任务类型
  */
-export type AITaskKind = 'chat' | 'refactor' | 'analyze' | 'generate'
+export type AITaskKind =
+  | 'chat'
+  | 'refactor'
+  | 'analyze'
+  | 'generate'
+  // 多模态任务类型
+  | 'image_generate'    // 文生图
+  | 'image_edit'        // 图生图/图片编辑
+  | 'video_generate'    // 文生视频
+  | 'image_to_video'    // 图生视频
+  | 'comic_generate'    // 漫画/漫剧管线生成
 
 /**
  * 任务输入

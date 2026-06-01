@@ -17,6 +17,7 @@ export type PluginIconId =
   | 'Bot'
   | 'BookOpen'
   | 'AlertCircle'
+  | 'Film'
 
 export type PluginLeftPanelType = Exclude<LeftPanelType, 'none' | 'tools'>
 

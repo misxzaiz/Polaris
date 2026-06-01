@@ -12,7 +12,7 @@ import { createLogger } from '@/utils/logger';
 
 const log = createLogger('ClaudePathSelector');
 
-type EngineType = 'claude-code' | 'codex';
+type EngineType = 'claude-code' | 'codex' | 'agnes';
 
 interface ClaudePathSelectorProps {
   /** 当前路径值 */

@@ -1,17 +1,22 @@
 /**
  * AI 引擎配置 Tab
  *
- * 包含：认证状态、引擎选择、CLI 路径、模型 Profile 管理、可用 Agent 列表
+ * 包含：认证状态、引擎选择、CLI 路径、模型 Profile 管理、Agnes 全模态引擎、可用 Agent 列表
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ClaudePathSelector } from '../../Common';
 import { useConfigStore } from '@/stores';
 import { useCliInfoStore } from '@/stores/cliInfoStore';
 import { useModelProfileStore } from '@/stores/modelProfileStore';
 import type { Config, EngineId, ModelProfile } from '@/types';
-import { Shield, ShieldCheck, ShieldX, RefreshCw, Bot, Plus, Trash2, Globe, Check, RotateCcw } from 'lucide-react';
+import { Shield, ShieldCheck, ShieldX, RefreshCw, Bot, Plus, Trash2, Globe, Check, RotateCcw, Key, Zap } from 'lucide-react';
+import { registerAgnesEngine } from '@/core/engine-bootstrap';
+import { getEngineRegistry } from '@/ai-runtime';
+import { createLogger } from '@/utils/logger';
+
+const log = createLogger('AIEngineTab');
 
 interface AIEngineTabProps {
   config: Config;
@@ -19,11 +24,155 @@ interface AIEngineTabProps {
   loading: boolean;
 }
 
-// 固定的传统引擎选项
+// 固定的传统引擎选项（Agnes 是独立的多模态引擎，不在此列表）
 const FIXED_ENGINE_OPTIONS: { id: EngineId; nameKey: string; descKey: string }[] = [
   { id: 'claude-code', nameKey: 'engines.claudeCode.name', descKey: 'engines.claudeCode.description' },
   { id: 'codex', nameKey: 'engines.codex.name', descKey: 'engines.codex.description' },
 ];
+
+/**
+ * Agnes AI 全模态引擎配置区块
+ *
+ * 独立于对话引擎（Claude Code / Codex），提供：
+ * - API Key 输入与保存
+ * - 引擎运行时注册（保存后立即生效，无需重启）
+ * - 注册状态实时反馈
+ */
+function AgnesSection({
+  config,
+  onConfigChange,
+}: {
+  config: Config;
+  onConfigChange: (config: Config) => void;
+}) {
+  const { t } = useTranslation(['settings', 'common']);
+  const [registering, setRegistering] = useState(false);
+  const [registerStatus, setRegisterStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [statusMessage, setStatusMessage] = useState('');
+
+  // 检查引擎是否已注册
+  const isRegistered = getEngineRegistry().has('agnes');
+
+  const handleRegister = useCallback(async () => {
+    const apiKey = config.agnesApiKey?.trim();
+    if (!apiKey) {
+      setRegisterStatus('error');
+      setStatusMessage(t('engines.agnes.apiKeyRequired', { defaultValue: '请先输入 API Key' }));
+      return;
+    }
+
+    setRegistering(true);
+    setRegisterStatus('idle');
+    setStatusMessage('');
+
+    try {
+      // 先确保 config 已保存
+      onConfigChange({ ...config, agnesApiKey: apiKey });
+
+      // 注册引擎
+      registerAgnesEngine({ apiKey });
+      setRegisterStatus('success');
+      setStatusMessage(t('engines.agnes.registered', { defaultValue: '引擎已注册，可立即使用' }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log.error(`Failed to register Agnes engine: ${msg}`);
+      setRegisterStatus('error');
+      setStatusMessage(msg);
+    } finally {
+      setRegistering(false);
+    }
+  }, [config, onConfigChange, t]);
+
+  return (
+    <div className="p-4 bg-surface rounded-lg border border-border">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Zap size={16} className="text-amber-400" />
+          <h3 className="text-sm font-medium text-text-primary">
+            {t('engines.agnes.name', { defaultValue: 'Agnes AI 全模态' })}
+          </h3>
+        </div>
+        <div className="flex items-center gap-2">
+          {isRegistered ? (
+            <span className="text-xs px-2 py-1 rounded-full bg-green-500/10 text-green-500 border border-green-500/20 flex items-center gap-1">
+              <Check size={10} />
+              {t('engines.agnes.registeredBadge', { defaultValue: '已注册' })}
+            </span>
+          ) : (
+            <span className="text-xs px-2 py-1 rounded-full bg-yellow-500/10 text-yellow-500 border border-yellow-500/20">
+              {t('engines.agnes.unregisteredBadge', { defaultValue: '未注册' })}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <p className="text-xs text-text-secondary mb-4">
+        {t('engines.agnes.description', { defaultValue: '对话 / 文生图 / 图生图 / 文生视频 / 图生视频 / 漫画漫剧管线' })}
+      </p>
+
+      {/* API Key 输入 */}
+      <div className="mb-3">
+        <label className="block text-xs text-text-secondary mb-2">
+          {t('engines.agnes.apiKeyLabel', { defaultValue: 'Agnes API Key' })}
+        </label>
+        <input
+          type="password"
+          placeholder={t('engines.agnes.apiKeyPlaceholder', { defaultValue: '输入你的 Agnes API Key（从 agnes-ai.com 获取）' })}
+          value={config.agnesApiKey || ''}
+          onChange={(e) => {
+            onConfigChange({ ...config, agnesApiKey: e.target.value });
+            setRegisterStatus('idle');
+            setStatusMessage('');
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleRegister();
+          }}
+          className="w-full px-3 py-2 text-sm bg-background-surface border border-border rounded-lg outline-none focus:border-primary"
+        />
+      </div>
+
+      {/* Key 预览 */}
+      {config.agnesApiKey && (
+        <p className="text-xs text-text-tertiary mb-3 font-mono">
+          {config.agnesApiKey.substring(0, 8)}...{config.agnesApiKey.substring(config.agnesApiKey.length - 4)}
+        </p>
+      )}
+
+      {/* 状态消息 */}
+      {statusMessage && (
+        <div
+          className={`mb-3 px-3 py-2 rounded-md text-xs ${
+            registerStatus === 'success'
+              ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+              : registerStatus === 'error'
+                ? 'bg-red-500/10 text-red-400 border border-red-500/20'
+                : ''
+          }`}
+        >
+          {statusMessage}
+        </div>
+      )}
+
+      {/* 注册按钮 */}
+      <button
+        onClick={handleRegister}
+        disabled={registering || !config.agnesApiKey?.trim()}
+        className="flex items-center gap-2 px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      >
+        <Key size={14} className={registering ? 'animate-pulse' : ''} />
+        {registering
+          ? t('engines.agnes.registering', { defaultValue: '注册中...' })
+          : isRegistered
+            ? t('engines.agnes.reRegister', { defaultValue: '重新注册引擎' })
+            : t('engines.agnes.register', { defaultValue: '注册引擎' })}
+      </button>
+
+      <p className="text-xs text-text-tertiary mt-2">
+        {t('engines.agnes.apiKeyHint', { defaultValue: 'API Key 将安全存储于本地配置文件，仅用于 Agnes API 调用。注册后立即生效。' })}
+      </p>
+    </div>
+  );
+}
 
 export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProps) {
   const { t } = useTranslation(['settings', 'common']);
@@ -397,6 +546,9 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
           </div>
         </div>
       )}
+
+      {/* Agnes AI 全模态引擎 — 独立区块，不作为对话引擎选项 */}
+      <AgnesSection config={config} onConfigChange={onConfigChange} />
 
       {/* 重置 CLI 配置(测试/调试用) */}
       <div className="p-4 rounded-lg border border-amber-500/30 bg-amber-500/5">

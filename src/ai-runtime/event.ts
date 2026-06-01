@@ -544,6 +544,222 @@ export interface PlanEndEvent {
 }
 
 // ========================================
+// Image Generation 相关事件
+// ========================================
+
+/** 图像生成状态 */
+export type ImageGenerationStatus = 'generating' | 'completed' | 'failed'
+
+/**
+ * 图像生成开始事件
+ */
+export interface ImageGenerationStartEvent {
+  type: 'image_generation_start'
+  sessionId: string
+  taskId: string
+  /** 生成提示词 */
+  prompt: string
+  /** 图像尺寸 */
+  size?: string
+  /** 是否为图生图模式 */
+  isImageEdit?: boolean
+}
+
+/**
+ * 图像生成进度事件
+ */
+export interface ImageGenerationProgressEvent {
+  type: 'image_generation_progress'
+  sessionId: string
+  taskId: string
+  progress: number
+  message?: string
+}
+
+/**
+ * 图像生成完成事件
+ */
+export interface ImageGeneratedEvent {
+  type: 'image_generated'
+  sessionId: string
+  taskId: string
+  /** 生成图像的 URL */
+  imageUrl: string
+  /** 原始提示词 */
+  prompt: string
+  /** 图像尺寸 */
+  size?: string
+  /** 元数据 */
+  metadata?: {
+    model?: string
+    revisedPrompt?: string
+    seed?: number
+  }
+}
+
+/**
+ * 图像生成错误事件
+ */
+export interface ImageGenerationErrorEvent {
+  type: 'image_generation_error'
+  sessionId: string
+  taskId: string
+  error: string
+  code?: string
+}
+
+// ========================================
+// Video Generation 相关事件 (异步任务模型)
+// ========================================
+
+/** 视频任务状态 */
+export type VideoTaskStatus = 'queued' | 'in_progress' | 'completed' | 'failed'
+
+/**
+ * 视频任务创建事件
+ */
+export interface VideoTaskCreatedEvent {
+  type: 'video_task_created'
+  sessionId: string
+  taskId: string
+  /** Agnes Video API 返回的远程 task_id */
+  videoTaskId: string
+  status: 'queued'
+  /** 原始提示词 */
+  prompt: string
+}
+
+/**
+ * 视频任务进度事件
+ */
+export interface VideoTaskProgressEvent {
+  type: 'video_task_progress'
+  sessionId: string
+  taskId: string
+  videoTaskId: string
+  progress: number
+  status: VideoTaskStatus
+  message?: string
+}
+
+/**
+ * 视频生成完成事件
+ */
+export interface VideoCompletedEvent {
+  type: 'video_completed'
+  sessionId: string
+  taskId: string
+  videoTaskId: string
+  /** 生成视频的 URL */
+  videoUrl: string
+  /** 视频时长（秒） */
+  duration?: number
+  /** 视频分辨率 */
+  size?: string
+  /** 使用统计 */
+  usage?: {
+    durationSeconds?: number
+  }
+}
+
+/**
+ * 视频任务失败事件
+ */
+export interface VideoTaskFailedEvent {
+  type: 'video_task_failed'
+  sessionId: string
+  taskId: string
+  videoTaskId: string
+  error: string
+  code?: string
+}
+
+// ========================================
+// Pipeline (漫画/漫剧) 相关事件
+// ========================================
+
+/** 管线阶段 */
+export type PipelinePhase =
+  | 'script'       // 剧本生成
+  | 'character'    // 角色设计
+  | 'storyboard'   // 分镜图生成
+  | 'animation'    // 漫剧动效
+  | 'finalize'     // 合成输出
+
+/** 管线阶段状态 */
+export interface PipelinePhaseInfo {
+  phase: PipelinePhase
+  status: 'pending' | 'in_progress' | 'completed' | 'failed'
+  progress: number
+  message?: string
+  /** 阶段产物 */
+  artifacts?: string[]
+}
+
+/**
+ * 管线开始事件
+ */
+export interface PipelineStartEvent {
+  type: 'pipeline_start'
+  sessionId: string
+  taskId: string
+  /** 管线类型 */
+  pipelineType: 'comic' | 'motion_comic' | 'both'
+  /** 各阶段计划 */
+  phases: PipelinePhaseInfo[]
+}
+
+/**
+ * 管线阶段变更事件
+ */
+export interface PipelinePhaseEvent {
+  type: 'pipeline_phase'
+  sessionId: string
+  taskId: string
+  phase: PipelinePhaseInfo
+}
+
+/**
+ * 管线进度事件
+ */
+export interface PipelineProgressEvent {
+  type: 'pipeline_progress'
+  sessionId: string
+  taskId: string
+  overallProgress: number
+  currentPhase: PipelinePhase
+  message: string
+}
+
+/**
+ * 管线完成事件
+ */
+export interface PipelineCompletedEvent {
+  type: 'pipeline_completed'
+  sessionId: string
+  taskId: string
+  /** 最终产物列表 */
+  artifacts: Array<{
+    type: 'image' | 'video' | 'document'
+    url: string
+    label: string
+  }>
+  /** 总耗时（毫秒） */
+  totalDuration?: number
+}
+
+/**
+ * 管线失败事件
+ */
+export interface PipelineFailedEvent {
+  type: 'pipeline_failed'
+  sessionId: string
+  taskId: string
+  error: string
+  failedPhase: PipelinePhase
+}
+
+// ========================================
 // PermissionRequest 相关事件
 // ========================================
 
@@ -609,6 +825,21 @@ export type AIEvent =
   | PlanApprovalResultEvent
   | PlanEndEvent
   | PermissionRequestEvent
+  // 多模态事件
+  | ImageGenerationStartEvent
+  | ImageGenerationProgressEvent
+  | ImageGeneratedEvent
+  | ImageGenerationErrorEvent
+  | VideoTaskCreatedEvent
+  | VideoTaskProgressEvent
+  | VideoCompletedEvent
+  | VideoTaskFailedEvent
+  // 管线事件
+  | PipelineStartEvent
+  | PipelinePhaseEvent
+  | PipelineProgressEvent
+  | PipelineCompletedEvent
+  | PipelineFailedEvent
 
 /**
  * 事件监听器类型
@@ -973,6 +1204,21 @@ const AI_EVENT_TYPES = new Set([
   'plan_approval_result',
   'plan_end',
   'permission_request',
+  // 多模态事件
+  'image_generation_start',
+  'image_generation_progress',
+  'image_generated',
+  'image_generation_error',
+  'video_task_created',
+  'video_task_progress',
+  'video_completed',
+  'video_task_failed',
+  // 管线事件
+  'pipeline_start',
+  'pipeline_phase',
+  'pipeline_progress',
+  'pipeline_completed',
+  'pipeline_failed',
 ])
 
 /**
@@ -1082,4 +1328,221 @@ export function getEventSessionId(event: AIEvent): string | null {
  */
 export function hasSessionId(event: AIEvent): event is AIEvent & { sessionId: string } {
   return 'sessionId' in event && typeof (event as AIEvent & { sessionId?: string }).sessionId === 'string'
+}
+
+// ========================================
+// Image Generation 事件工厂函数
+// ========================================
+
+export function createImageGenerationStartEvent(
+  sessionId: string,
+  taskId: string,
+  prompt: string,
+  size?: string,
+  isImageEdit?: boolean
+): ImageGenerationStartEvent {
+  return { type: 'image_generation_start', sessionId, taskId, prompt, size, isImageEdit }
+}
+
+export function createImageGenerationProgressEvent(
+  sessionId: string,
+  taskId: string,
+  progress: number,
+  message?: string
+): ImageGenerationProgressEvent {
+  return { type: 'image_generation_progress', sessionId, taskId, progress, message }
+}
+
+export function createImageGeneratedEvent(
+  sessionId: string,
+  taskId: string,
+  imageUrl: string,
+  prompt: string,
+  size?: string,
+  metadata?: ImageGeneratedEvent['metadata']
+): ImageGeneratedEvent {
+  return { type: 'image_generated', sessionId, taskId, imageUrl, prompt, size, metadata }
+}
+
+export function createImageGenerationErrorEvent(
+  sessionId: string,
+  taskId: string,
+  error: string,
+  code?: string
+): ImageGenerationErrorEvent {
+  return { type: 'image_generation_error', sessionId, taskId, error, code }
+}
+
+// ========================================
+// Video Generation 事件工厂函数
+// ========================================
+
+export function createVideoTaskCreatedEvent(
+  sessionId: string,
+  taskId: string,
+  videoTaskId: string,
+  prompt: string
+): VideoTaskCreatedEvent {
+  return { type: 'video_task_created', sessionId, taskId, videoTaskId, status: 'queued', prompt }
+}
+
+export function createVideoTaskProgressEvent(
+  sessionId: string,
+  taskId: string,
+  videoTaskId: string,
+  progress: number,
+  status: VideoTaskStatus,
+  message?: string
+): VideoTaskProgressEvent {
+  return { type: 'video_task_progress', sessionId, taskId, videoTaskId, progress, status, message }
+}
+
+export function createVideoCompletedEvent(
+  sessionId: string,
+  taskId: string,
+  videoTaskId: string,
+  videoUrl: string,
+  duration?: number,
+  size?: string,
+  usage?: VideoCompletedEvent['usage']
+): VideoCompletedEvent {
+  return { type: 'video_completed', sessionId, taskId, videoTaskId, videoUrl, duration, size, usage }
+}
+
+export function createVideoTaskFailedEvent(
+  sessionId: string,
+  taskId: string,
+  videoTaskId: string,
+  error: string,
+  code?: string
+): VideoTaskFailedEvent {
+  return { type: 'video_task_failed', sessionId, taskId, videoTaskId, error, code }
+}
+
+// ========================================
+// Pipeline 事件工厂函数
+// ========================================
+
+export function createPipelineStartEvent(
+  sessionId: string,
+  taskId: string,
+  pipelineType: PipelineStartEvent['pipelineType'],
+  phases: PipelinePhaseInfo[]
+): PipelineStartEvent {
+  return { type: 'pipeline_start', sessionId, taskId, pipelineType, phases }
+}
+
+export function createPipelinePhaseEvent(
+  sessionId: string,
+  taskId: string,
+  phase: PipelinePhaseInfo
+): PipelinePhaseEvent {
+  return { type: 'pipeline_phase', sessionId, taskId, phase }
+}
+
+export function createPipelineProgressEvent(
+  sessionId: string,
+  taskId: string,
+  overallProgress: number,
+  currentPhase: PipelinePhase,
+  message: string
+): PipelineProgressEvent {
+  return { type: 'pipeline_progress', sessionId, taskId, overallProgress, currentPhase, message }
+}
+
+export function createPipelineCompletedEvent(
+  sessionId: string,
+  taskId: string,
+  artifacts: PipelineCompletedEvent['artifacts'],
+  totalDuration?: number
+): PipelineCompletedEvent {
+  return { type: 'pipeline_completed', sessionId, taskId, artifacts, totalDuration }
+}
+
+export function createPipelineFailedEvent(
+  sessionId: string,
+  taskId: string,
+  error: string,
+  failedPhase: PipelinePhase
+): PipelineFailedEvent {
+  return { type: 'pipeline_failed', sessionId, taskId, error, failedPhase }
+}
+
+// ========================================
+// Image Generation 事件类型守卫
+// ========================================
+
+export function isImageGenerationStartEvent(event: AIEvent): event is ImageGenerationStartEvent {
+  return event.type === 'image_generation_start'
+}
+
+export function isImageGenerationProgressEvent(event: AIEvent): event is ImageGenerationProgressEvent {
+  return event.type === 'image_generation_progress'
+}
+
+export function isImageGeneratedEvent(event: AIEvent): event is ImageGeneratedEvent {
+  return event.type === 'image_generated'
+}
+
+export function isImageGenerationErrorEvent(event: AIEvent): event is ImageGenerationErrorEvent {
+  return event.type === 'image_generation_error'
+}
+
+/** 判断是否为任意 Image Generation 事件 */
+export function isImageGenerationEvent(event: AIEvent): event is ImageGenerationStartEvent | ImageGenerationProgressEvent | ImageGeneratedEvent | ImageGenerationErrorEvent {
+  return event.type.startsWith('image_generation') || event.type === 'image_generated'
+}
+
+// ========================================
+// Video Generation 事件类型守卫
+// ========================================
+
+export function isVideoTaskCreatedEvent(event: AIEvent): event is VideoTaskCreatedEvent {
+  return event.type === 'video_task_created'
+}
+
+export function isVideoTaskProgressEvent(event: AIEvent): event is VideoTaskProgressEvent {
+  return event.type === 'video_task_progress'
+}
+
+export function isVideoCompletedEvent(event: AIEvent): event is VideoCompletedEvent {
+  return event.type === 'video_completed'
+}
+
+export function isVideoTaskFailedEvent(event: AIEvent): event is VideoTaskFailedEvent {
+  return event.type === 'video_task_failed'
+}
+
+/** 判断是否为任意 Video Generation 事件 */
+export function isVideoGenerationEvent(event: AIEvent): event is VideoTaskCreatedEvent | VideoTaskProgressEvent | VideoCompletedEvent | VideoTaskFailedEvent {
+  return event.type.startsWith('video_task') || event.type === 'video_completed'
+}
+
+// ========================================
+// Pipeline 事件类型守卫
+// ========================================
+
+export function isPipelineStartEvent(event: AIEvent): event is PipelineStartEvent {
+  return event.type === 'pipeline_start'
+}
+
+export function isPipelinePhaseEvent(event: AIEvent): event is PipelinePhaseEvent {
+  return event.type === 'pipeline_phase'
+}
+
+export function isPipelineProgressEvent(event: AIEvent): event is PipelineProgressEvent {
+  return event.type === 'pipeline_progress'
+}
+
+export function isPipelineCompletedEvent(event: AIEvent): event is PipelineCompletedEvent {
+  return event.type === 'pipeline_completed'
+}
+
+export function isPipelineFailedEvent(event: AIEvent): event is PipelineFailedEvent {
+  return event.type === 'pipeline_failed'
+}
+
+/** 判断是否为任意 Pipeline 事件 */
+export function isPipelineEvent(event: AIEvent): event is PipelineStartEvent | PipelinePhaseEvent | PipelineProgressEvent | PipelineCompletedEvent | PipelineFailedEvent {
+  return event.type.startsWith('pipeline_')
 }
