@@ -173,6 +173,13 @@ export type {
   EngineDescriptor,
 } from './engine'
 
+// AI Tool 类型导出
+export type {
+  AITool,
+  AIToolInput,
+  AIToolResult,
+} from './types/tool-types'
+
 // Engine Registry 导出
 export {
   AIEngineRegistry,

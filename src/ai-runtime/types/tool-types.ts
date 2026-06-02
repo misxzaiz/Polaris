@@ -17,6 +17,8 @@ export interface AITool {
   name: string
   description: string
   inputSchema: {
+    /** JSON Schema 根类型，通常为 'object' */
+    type?: string
     properties?: Record<string, unknown>
     required?: string[]
   }

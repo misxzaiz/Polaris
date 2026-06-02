@@ -8,7 +8,7 @@
 import { simpleTodoService } from '@/services/simpleTodoService'
 import { useWorkspaceStore } from '@/stores'
 import type { TodoPriority, TodoStatus } from '@/types'
-import type { AITool, AIToolInput, AIToolResult } from '@/types/tool-types'
+import type { AITool, AIToolInput, AIToolResult } from '@/ai-runtime'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('TodoTools')
