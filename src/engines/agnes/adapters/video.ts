@@ -9,6 +9,7 @@
 import type { AIEvent } from '@/ai-runtime'
 import type { AgnesConfig, AgnesVideoRequest, AgnesVideoCreateResponse, AgnesVideoQueryResponse } from '../types'
 import { validateNumFrames, VIDEO_FRAME_PRESETS } from '../config'
+import { maybeTranslatePrompt } from './translate'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('AgnesVideo')
@@ -81,9 +82,12 @@ export async function* generateVideo(
     percent: 5,
   }
 
+  // 按需将非英文提示词翻译为英文（Agnes 视频对英文提示词更稳定）
+  const finalPrompt = await maybeTranslatePrompt(config, prompt, signal)
+
   const createRequest: AgnesVideoRequest = {
     model: config.videoModel,
-    prompt,
+    prompt: finalPrompt,
     width: options.width ?? 1152,
     height: options.height ?? 768,
     num_frames: adjustedFrames,
@@ -197,21 +201,23 @@ export async function* generateVideo(
           : `状态: ${queryResult.status}`,
       }
 
-      // 任务完成
-      if (queryResult.status === 'completed' && queryResult.video_url) {
+      // 任务完成 — 视频地址可能出现在 video_url / url / remixed_from_video_id 任一字段
+      const resolvedVideoUrl =
+        queryResult.video_url || queryResult.url || queryResult.remixed_from_video_id
+      if (queryResult.status === 'completed' && resolvedVideoUrl) {
         yield {
           type: 'video_completed',
           sessionId,
           taskId,
           videoTaskId,
-          videoUrl: queryResult.video_url,
+          videoUrl: resolvedVideoUrl,
           duration: queryResult.seconds ? parseFloat(queryResult.seconds) : undefined,
           size: queryResult.size,
           usage: queryResult.usage ? {
             durationSeconds: queryResult.usage.duration_seconds,
           } : undefined,
         }
-        log.info('Video generation completed', { videoTaskId, url: queryResult.video_url })
+        log.info('Video generation completed', { videoTaskId, url: resolvedVideoUrl })
         return
       }
 

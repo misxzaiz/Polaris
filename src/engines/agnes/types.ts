@@ -24,6 +24,11 @@ export interface AgnesConfig {
   timeout?: number
   /** 视频轮询间隔（毫秒） */
   videoPollInterval?: number
+  /**
+   * 是否在调用图像/视频接口前，自动将非英文提示词翻译为英文。
+   * Agnes 视频对英文提示词更稳定（官方建议）。默认开启，翻译失败时回退原文。
+   */
+  translatePrompt?: boolean
 }
 
 /** 默认配置 */
@@ -34,6 +39,7 @@ export const DEFAULT_AGNES_CONFIG: Partial<AgnesConfig> = {
   videoModel: 'agnes-video-v2.0',
   timeout: 120000,
   videoPollInterval: 3000,
+  translatePrompt: true,
 }
 
 // ========================================
@@ -152,6 +158,10 @@ export interface AgnesVideoQueryResponse {
   created_at: number
   completed_at?: number
   video_url?: string
+  /** 备用视频地址字段（部分响应用 url 返回） */
+  url?: string
+  /** 备用视频地址字段（部分响应用 remixed_from_video_id 返回） */
+  remixed_from_video_id?: string
   size?: string
   seconds?: string
   usage?: {

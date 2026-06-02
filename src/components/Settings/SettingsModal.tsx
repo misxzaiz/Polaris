@@ -89,7 +89,7 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
     speech: ['speech', 'tts', 'wakeWord', 'voiceNotification', 'voiceCommands'],
     advanced: ['gitBinPath', 'sessionDir'],
     web: ['web'],
-    'ai-engine': ['defaultEngine', 'claudeCode', 'codexCode', 'modelProfiles', 'activeModelProfileId'],
+    'ai-engine': ['defaultEngine', 'claudeCode', 'codexCode', 'modelProfiles', 'activeModelProfileId', 'agnesApiKey'],
   };
 
   const hasChanged = (a: unknown, b: unknown) => JSON.stringify(a ?? null) !== JSON.stringify(b ?? null);

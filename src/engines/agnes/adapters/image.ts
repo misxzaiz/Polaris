@@ -7,6 +7,7 @@
 
 import type { AIEvent } from '@/ai-runtime'
 import type { AgnesConfig, AgnesImageRequest, AgnesImageResponse } from '../types'
+import { maybeTranslatePrompt } from './translate'
 
 /** 图像适配器选项 */
 export interface ImageAdapterOptions {
@@ -14,6 +15,8 @@ export interface ImageAdapterOptions {
   isImageEdit?: boolean
   /** 参考图像 URL（图生图） */
   referenceImageUrls?: string[]
+  /** 输出图像尺寸（如 1024x768 / 768x1024 / 1024x1024），默认 1024x768 */
+  size?: string
 }
 
 /**
@@ -44,10 +47,13 @@ export async function* generateImage(
   }
 
   try {
+    // 按需将非英文提示词翻译为英文（提升生成质量与稳定性）
+    const finalPrompt = await maybeTranslatePrompt(config, prompt)
+
     const request: AgnesImageRequest = {
       model: config.imageModel,
-      prompt,
-      size: '1024x768',
+      prompt: finalPrompt,
+      size: options.size || '1024x768',
     }
 
     // 图生图模式

@@ -66,10 +66,12 @@ function AgnesSection({
     setStatusMessage('');
 
     try {
-      // 先确保 config 已保存
+      // 持久化到后端配置文件（写入 config.json，刷新后不丢失）
+      await useConfigStore.getState().updateConfigPatch({ agnesApiKey: apiKey });
+      // 同步本地 state，保持 UI 即时一致
       onConfigChange({ ...config, agnesApiKey: apiKey });
 
-      // 注册引擎
+      // 注册引擎（运行时立即生效，无需重启）
       registerAgnesEngine({ apiKey });
       setRegisterStatus('success');
       setStatusMessage(t('engines.agnes.registered', { defaultValue: '引擎已注册，可立即使用' }));

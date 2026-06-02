@@ -176,6 +176,7 @@ export class AgnesMultiModalSession extends EventEmitter implements AISession {
   ): AsyncIterable<AIEvent> {
     yield* generateImage(this.config, task.input.prompt, sessionId, task.id, {
       isImageEdit: false,
+      size: task.input.extra?.size as string | undefined,
     })
   }
 
@@ -196,6 +197,7 @@ export class AgnesMultiModalSession extends EventEmitter implements AISession {
     yield* generateImage(this.config, prompt, sessionId, task.id, {
       isImageEdit: true,
       referenceImageUrls: referenceUrls,
+      size: task.input.extra?.size as string | undefined,
     })
   }
 

@@ -616,6 +616,7 @@ impl OldConfig {
             terminal_scripts: Default::default(),
             model_profiles: Vec::new(),
             active_model_profile_id: None,
+            agnes_api_key: None,
             claude_cmd: Some(claude_cmd_clone),
         }
     }
