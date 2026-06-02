@@ -47,7 +47,7 @@ export async function* designCharacters(
   pipelineConfig: ComicPipelineConfig,
   sessionId: string,
   taskId: string,
-): AsyncIterable<AIEvent> {
+): AsyncGenerator<AIEvent, CharacterDesign[], void> {
   const designs: CharacterDesign[] = []
 
   for (let i = 0; i < characters.length; i++) {
@@ -96,4 +96,7 @@ export async function* designCharacters(
     message: `角色设计完成：${designs.length} 个角色`,
     percent: 100,
   }
+
+  // 返回收集到的角色设计，供 session 回写 this.characterDesigns
+  return designs
 }

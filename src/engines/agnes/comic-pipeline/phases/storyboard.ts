@@ -64,7 +64,7 @@ export async function* generateStoryboards(
   pipelineConfig: ComicPipelineConfig,
   sessionId: string,
   taskId: string,
-): AsyncIterable<AIEvent> {
+): AsyncGenerator<AIEvent, StoryboardPanel[], void> {
   const totalPanels = panels.length
   const storyboards: StoryboardPanel[] = []
 
@@ -122,4 +122,7 @@ export async function* generateStoryboards(
     message: `分镜绘制完成：${storyboards.length}/${totalPanels} 格`,
     percent: 100,
   }
+
+  // 返回收集到的分镜，供 session 回写 this.storyboards
+  return storyboards
 }

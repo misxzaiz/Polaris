@@ -260,19 +260,13 @@ export class ComicPipelineSession extends EventEmitter implements AISession {
 
     const characters = this.script.characters
 
-    for await (const event of designCharacters(
+    this.characterDesigns = yield* designCharacters(
       this.agnesConfig,
       characters,
       this.pipelineConfig,
       sessionId,
       taskId,
-    )) {
-      yield event
-    }
-
-    // 收集角色设计结果
-    // 注意：character adapter 内部发出 image_generated 事件，我们需要从中提取 URL
-    // 这里简化处理，实际实现中需要在 designCharacters 返回结果
+    )
   }
 
   /** 执行分镜绘制阶段 */
@@ -293,16 +287,14 @@ export class ComicPipelineSession extends EventEmitter implements AISession {
       })),
     )
 
-    for await (const event of generateStoryboards(
+    this.storyboards = yield* generateStoryboards(
       this.agnesConfig,
       flatPanels,
       this.characterDesigns,
       this.pipelineConfig,
       sessionId,
       taskId,
-    )) {
-      yield event
-    }
+    )
   }
 
   /** 执行漫剧动效阶段 */
@@ -321,15 +313,13 @@ export class ComicPipelineSession extends EventEmitter implements AISession {
       return
     }
 
-    for await (const event of generateAnimations(
+    this.animationClips = yield* generateAnimations(
       this.agnesConfig,
       this.storyboards,
       sessionId,
       taskId,
       signal,
-    )) {
-      yield event
-    }
+    )
   }
 
   /** 执行合成输出阶段 */

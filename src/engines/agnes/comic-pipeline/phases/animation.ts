@@ -39,7 +39,7 @@ export async function* generateAnimations(
   sessionId: string,
   taskId: string,
   signal?: AbortSignal,
-): AsyncIterable<AIEvent> {
+): AsyncGenerator<AIEvent, AnimationClip[], void> {
   // 选取关键分镜进行动画化（跳帧策略：取第一个、每个关键转折点、最后一个）
   const keyPanels = selectKeyPanels(storyboards)
   const animationClips: AnimationClip[] = []
@@ -104,6 +104,9 @@ export async function* generateAnimations(
     message: `漫剧动画完成：${animationClips.length}/${keyPanels.length} 片段`,
     percent: 100,
   }
+
+  // 返回收集到的动画片段，供 session 回写 this.animationClips
+  return animationClips
 }
 
 /**

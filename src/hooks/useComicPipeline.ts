@@ -184,13 +184,27 @@ export function useComicPipeline() {
         }
       }
 
-      // 管线结束后提取产物
+      // 管线结束后提取产物并回填到 ComicStudio Store
+      // 阶段产物在 ComicPipelineSession 内部已通过 yield* 返回值收集，
+      // 这里统一回填，确保角色画廊 / 分镜网格 / 动画播放器有数据展示。
       const results = session.getResults()
       if (results.script) {
         setScript(results.script)
       }
-      // Note: characterDesigns, storyboards, animationClips 在管线的各个阶段被填充
-      // 这里仅设置 script。其他产物由事件驱动更新。
+      for (const design of results.characterDesigns) {
+        addCharacterDesign(design)
+      }
+      for (const panel of results.storyboards) {
+        addStoryboard(panel)
+      }
+      for (const clip of results.animationClips) {
+        addAnimationClip(clip)
+      }
+      log.info('Pipeline artifacts backfilled', {
+        characters: results.characterDesigns.length,
+        storyboards: results.storyboards.length,
+        animations: results.animationClips.length,
+      })
 
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
