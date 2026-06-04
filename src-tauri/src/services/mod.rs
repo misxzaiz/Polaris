@@ -2,8 +2,6 @@ pub mod config_store;
 pub mod file_watcher;
 pub mod git;
 pub mod logger;
-pub mod long_goal_mcp_server;
-pub mod long_goal_service;
 pub mod mcp_config_service;
 pub mod mcp_diagnostics_service;
 pub mod plugin_service;

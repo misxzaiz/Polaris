@@ -50,7 +50,6 @@ polaris-web/                               polaris-web/
 ├── polaris-todo-mcp.exe    (~2 MB)        ├── polaris-todo-mcp           (~2 MB)
 ├── polaris-requirements-mcp.exe (~2 MB)   ├── polaris-requirements-mcp   (~2 MB)
 ├── polaris-scheduler-mcp.exe   (~2 MB)    ├── polaris-scheduler-mcp      (~2 MB)
-├── polaris-long-goal-mcp.exe   (~2 MB)    ├── polaris-long-goal-mcp      (~2 MB)
 ├── dist/                                  ├── dist/
 ├── start.bat                              ├── start.sh
 └── stop.bat                               └── stop.sh
@@ -107,7 +106,7 @@ polaris-web/                               polaris-web/
 
 ## 桌面应用打包
 
-标准 Tauri 构建流程，产出带安装包的桌面应用（包含全部 MCP 功能：Todo / Requirements / Scheduler / Long Goal）：
+标准 Tauri 构建流程，产出带安装包的桌面应用（包含全部 MCP 功能：Todo / Requirements / Scheduler）：
 
 ```bash
 pnpm run tauri:build        # 当前平台

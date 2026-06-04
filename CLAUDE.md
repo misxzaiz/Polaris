@@ -143,8 +143,7 @@ polaris/
 │   │   └── bin/                  # 独立 MCP Server 二进制入口
 │   │       ├── polaris_todo_mcp.rs
 │   │       ├── polaris_requirements_mcp.rs
-│   │       ├── polaris_scheduler_mcp.rs
-│   │       └── polaris_long_goal_mcp.rs
+│   │       └── polaris_scheduler_mcp.rs
 │   │
 │   └── Cargo.toml                # 应用、Web 入口和内置 MCP Server 二进制目标
 │
@@ -190,7 +189,7 @@ polaris/
 ## 关键架构决策
 
 1. **双引擎架构**: `engines/claude-code/` (CLI 模式) 和 `engines/openai-protocol/` (API 模式)，通过 `engine-registry.ts` 统一管理
-2. **MCP Server 独立二进制**: Todo/Requirement/Scheduler/Long Goal 各自编译为独立 exe，通过 stdio JSON-RPC 与 Claude Code 通信
+2. **MCP Server 独立二进制**: Todo/Requirement/Scheduler 各自编译为独立 exe，通过 stdio JSON-RPC 与 Claude Code 通信
 3. **上下文注入三通道**: `--append-system-prompt` (工作区信息) + `--system-prompt` (用户自定义) + `--add-dir` (额外目录)
 4. **虚拟滚动 + 消息压缩**: Virtuoso 管理可见区域，离屏消息文本替换为占位符 (messageCompactor)
 5. **LRU 缓存体系**: MarkdownRenderCache(20), streamingMdCache(30), highlightCache(50), diagramStates(30)

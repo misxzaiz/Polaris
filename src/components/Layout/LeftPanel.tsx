@@ -54,7 +54,6 @@ export function LeftPanelContent({
   todoContent,
   translateContent,
   schedulerContent,
-  longGoalContent,
   requirementContent,
   terminalContent,
   toolsContent,
@@ -70,7 +69,6 @@ export function LeftPanelContent({
   todoContent: ReactNode
   translateContent?: ReactNode
   schedulerContent?: ReactNode
-  longGoalContent?: ReactNode
   requirementContent?: ReactNode
   terminalContent?: ReactNode
   toolsContent?: ReactNode
@@ -95,8 +93,6 @@ export function LeftPanelContent({
     return <>{translateContent}</>
   } else if (type === 'scheduler') {
     return <>{schedulerContent}</>
-  } else if (type === 'longGoal') {
-    return <>{longGoalContent}</>
   } else if (type === 'requirement') {
     return <>{requirementContent}</>
   } else if (type === 'terminal') {

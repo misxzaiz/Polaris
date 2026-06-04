@@ -14,7 +14,6 @@ import type { SettingsTabId } from './components/Settings/SettingsSidebar';
 import { SimpleTodoPanel } from './components/TodoPanel/SimpleTodoPanel';
 import { TranslatePanel, SelectionContextMenu } from './components/Translate';
 import { SchedulerPanel } from './components/Scheduler/SchedulerPanel';
-import { LongGoalPanel } from './components/LongGoalPanel';
 import { RequirementPanel } from './components/RequirementPanel/RequirementPanel';
 import { TerminalPanel } from './components/Terminal/TerminalPanel';
 import { ProblemsPanel } from './components/Problems/ProblemsPanel';
@@ -33,7 +32,6 @@ import { useConfigStore, useViewStore, useWorkspaceStore, useTabStore } from './
 import { isPluginUiEnabled, usePluginStore } from './stores/pluginStore';
 import { pluginRegistry } from './plugin-system';
 import { useActiveSessionActions, useActiveSessionStreaming, useActiveSessionError } from './stores/conversationStore/useActiveSession';
-import { startLongGoalSessionTracker } from './services/longGoalSessionTracker';
 import { getFileNameFromPath } from './utils/path';
 import './index.css';
 
@@ -107,10 +105,6 @@ function App() {
   });
 
   useWorkspaceSync(true);
-
-  useEffect(() => {
-    return startLongGoalSessionTracker();
-  }, []);
 
   // === 诊断日志 ===
   useEffect(() => {
@@ -188,7 +182,6 @@ function App() {
                 todoContent={<SimpleTodoPanel />}
                 translateContent={<TranslatePanel onSendToChat={sendMessage} />}
                 schedulerContent={<SchedulerPanel />}
-                longGoalContent={<LongGoalPanel />}
                 requirementContent={<RequirementPanel />}
                 terminalContent={<TerminalPanel />}
                 developerContent={<Suspense fallback={loadingFallback}><DeveloperPanel fillRemaining /></Suspense>}

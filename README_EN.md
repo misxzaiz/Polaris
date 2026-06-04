@@ -45,7 +45,6 @@ Polaris includes three AI engine adapters, switchable in settings:
 - **Scheduler** - Create and manage AI automation tasks, supports cron and interval triggers
 - **Todo Management** - MCP-integrated todo system
 - **Requirements Management** - MCP-integrated requirements tracking
-- **Long Goal** - MCP-integrated long-term goal tracking and execution system
 - **Bot Integration** - QQ Bot / Feishu platform remote interaction support
 - **Translate Panel** - Integrated translation, send to AI chat
 - **Terminal Panel** - Built-in xterm.js terminal emulator
@@ -110,9 +109,8 @@ pnpm run tauri:dev:win
 | Todo Management | ✅ Available | ❌ Unavailable |
 | Requirements Management | ✅ Available | ❌ Unavailable |
 | Scheduler | ✅ Available | ❌ Unavailable |
-| Long Goal | ✅ Available | ❌ Unavailable |
 
-> **Note**: MCP (Model Context Protocol) are four independent services built into Polaris. They don't affect core AI chat functionality, only disable related panels.
+> **Note**: MCP (Model Context Protocol) are three independent services built into Polaris. They don't affect core AI chat functionality, only disable related panels.
 
 ### 3. Build
 
@@ -159,7 +157,6 @@ src/
 │   ├── Scheduler/      # Scheduler management
 │   ├── TodoPanel/      # Todo panel
 │   ├── RequirementPanel/ # Requirements panel
-│   ├── LongGoalPanel/  # Long goal panel
 │   ├── Integration/    # Bot integration panel
 │   ├── Terminal/       # Terminal panel
 │   ├── Translate/      # Translate panel
@@ -184,7 +181,6 @@ src-tauri/
 │   ├── services/       # Backend services
 │   │   ├── git/       # Git operations
 │   │   ├── scheduler/ # Task scheduling
-│   │   ├── long_goal_service.rs  # Long goal service
 │   │   └── mcp_config_service.rs # MCP config management
 │   ├── ai/            # AI engine integration
 │   │   ├── engine/codex.rs   # Codex engine
@@ -199,14 +195,13 @@ src-tauri/
 
 ## MCP Services
 
-Polaris includes four independent MCP Servers, usable by other AI tools:
+Polaris includes three independent MCP Servers, usable by other AI tools:
 
 | MCP Server | Description | Tools Count |
 |------------|-------------|-------------|
 | `polaris-todo-mcp` | Todo management | 8 |
 | `polaris-requirements-mcp` | Requirements management | 8 |
 | `polaris-scheduler-mcp` | Scheduler management | 7 |
-| `polaris-long-goal-mcp` | Long-term goal tracking | 11 |
 
 ## Plugin System
 

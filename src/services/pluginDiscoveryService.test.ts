@@ -169,52 +169,6 @@ describe('pluginDiscoveryService', () => {
     ])
   })
 
-  it('normalizes the long goal MCP plugin without a view contribution', () => {
-    const plugin = normalizeDiscoveredPlugin({
-      id: 'polaris.long-goal-mcp',
-      name: 'Long Goal MCP',
-      version: '0.1.0',
-      enabledByDefault: false,
-      contributes: {
-        mcpServers: [
-          {
-            id: 'polaris-long-goal',
-            transport: 'stdio',
-            command: 'node',
-            argsTemplate: [
-              '{{pluginDir}}/mcp/long-goal-mcp-server.js',
-              '{{workspacePath}}',
-            ],
-          },
-        ],
-      },
-      permissions: {
-        workspaceRead: true,
-        workspaceWrite: true,
-        aiToolAccess: true,
-      },
-      source: {
-        kind: 'project',
-        workspacePath: 'D:\\space\\base\\Polaris',
-      },
-      installPath: 'D:\\space\\base\\Polaris\\.polaris\\plugins\\polaris.long-goal-mcp',
-    })
-
-    expect(plugin?.contributes.views).toEqual([])
-    expect(plugin?.contributes.mcpServers).toEqual([
-      expect.objectContaining({
-        id: 'polaris-long-goal',
-        transport: 'stdio',
-        command: 'node',
-      }),
-    ])
-    expect(plugin?.permissions).toEqual({
-      workspaceRead: true,
-      workspaceWrite: true,
-      aiToolAccess: true,
-    })
-  })
-
   it('calls the backend manifest validation command', async () => {
     invokeMock.mockResolvedValueOnce({
       valid: true,

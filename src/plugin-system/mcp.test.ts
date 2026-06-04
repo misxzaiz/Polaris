@@ -21,13 +21,6 @@ describe('plugin MCP contributions', () => {
         transport: 'stdio',
       }),
     ]))
-    expect(servers).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        id: 'polaris-long-goal',
-        pluginId: 'polaris.long-goal',
-        transport: 'stdio',
-      }),
-    ]))
   })
 
   it('filters Todo MCP when its plugin MCP surface is disabled', () => {
@@ -83,29 +76,6 @@ describe('plugin MCP contributions', () => {
         id: 'polaris-todo',
         transport: 'stdio',
         command: 'polaris_todo_mcp',
-        argsTemplate: ['{{appConfigDir}}', '{{workspacePath}}'],
-      }),
-    ])
-  })
-
-  it('keeps the Long Goal manifest aligned with the backend MCP registry contract', () => {
-    const longGoalPlugin = pluginRegistry
-      .listPlugins()
-      .find((plugin) => plugin.id === 'polaris.long-goal')
-
-    expect(longGoalPlugin).toBeDefined()
-    expect(longGoalPlugin?.contributes.views).toEqual([
-      expect.objectContaining({
-        id: 'long-goal.panel',
-        panelType: 'longGoal',
-        icon: 'Target',
-      }),
-    ])
-    expect(longGoalPlugin?.contributes.mcpServers).toEqual([
-      expect.objectContaining({
-        id: 'polaris-long-goal',
-        transport: 'stdio',
-        command: 'polaris_long_goal_mcp',
         argsTemplate: ['{{appConfigDir}}', '{{workspacePath}}'],
       }),
     ])

@@ -45,7 +45,6 @@ Polaris 内置三套 AI 引擎适配层，可在设置中自由切换：
 - **定时任务** - 创建和管理 AI 自动化任务，支持 Cron 和间隔触发
 - **待办管理** - MCP 集成的待办事项系统
 - **需求管理** - MCP 集成的需求跟踪系统
-- **长期目标** - MCP 集成的长期目标追踪与执行系统
 - **机器人集成** - QQ Bot / 飞书平台远程交互支持
 - **翻译面板** - 集成翻译功能，支持发送到 AI 对话
 - **终端面板** - 内置 xterm.js 终端模拟器
@@ -110,9 +109,8 @@ pnpm run tauri:dev:win
 | 待办管理 (Todo) | ✅ 可用 | ❌ 不可用 |
 | 需求管理 (Requirements) | ✅ 可用 | ❌ 不可用 |
 | 定时任务 (Scheduler) | ✅ 可用 | ❌ 不可用 |
-| 长期目标 (Long Goal) | ✅ 可用 | ❌ 不可用 |
 
-> **说明**：MCP（Model Context Protocol）是 Polaris 内置的四个独立服务。它们不影响核心 AI 对话功能，仅禁用相关面板。
+> **说明**：MCP（Model Context Protocol）是 Polaris 内置的三个独立服务。它们不影响核心 AI 对话功能，仅禁用相关面板。
 
 ### 3. 构建
 
@@ -159,7 +157,6 @@ src/
 │   ├── Scheduler/      # 定时任务管理
 │   ├── TodoPanel/      # 待办事项面板
 │   ├── RequirementPanel/ # 需求管理面板
-│   ├── LongGoalPanel/  # 长期目标面板
 │   ├── Integration/    # 机器人集成面板
 │   ├── Terminal/       # 终端面板
 │   ├── Translate/      # 翻译面板
@@ -184,7 +181,6 @@ src-tauri/
 │   ├── services/       # 后端服务
 │   │   ├── git/       # Git 操作封装
 │   │   ├── scheduler/ # 定时任务调度
-│   │   ├── long_goal_service.rs  # 长期目标服务
 │   │   └── mcp_config_service.rs # MCP 配置管理
 │   ├── ai/            # AI 引擎集成
 │   │   ├── engine/codex.rs   # Codex 引擎
@@ -206,7 +202,6 @@ Polaris 内置四个独立的 MCP Server，可供其他 AI 工具使用：
 | `polaris-todo-mcp` | 待办事项管理 | 8 |
 | `polaris-requirements-mcp` | 需求管理 | 8 |
 | `polaris-scheduler-mcp` | 定时任务管理 | 7 |
-| `polaris-long-goal-mcp` | 长期目标追踪 | 11 |
 
 ## 插件系统
 

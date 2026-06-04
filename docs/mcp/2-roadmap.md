@@ -19,7 +19,7 @@
 
 - 将当前内置定义表迁移到 registry 初始化。
 - `WorkspaceMcpConfigService` 从 registry 读取定义并生成 Claude/Codex 配置。
-- 保持 Todo、Requirements、Scheduler、Long Goal 当前行为不变。
+- 保持 Todo、Requirements、Scheduler 当前行为不变。
 - 增加测试覆盖：
   - Todo required，缺失时报错。
   - optional server 缺失时跳过。

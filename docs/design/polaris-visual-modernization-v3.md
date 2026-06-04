@@ -12,7 +12,7 @@
 - 左侧 Context Sidebar(按 Context / Changes / Run / Integrations 分组)
 - 中间 Agent Board(Multi-Session 网格 + Session Tabs + 单会话可展开)
 - 右侧 Session Dock(可钉住,默认 pinned)
-- 底部 Run Dock(Terminal / Problems / Scheduler Logs / Tool Output / Long Goals)
+- 底部 Run Dock(Terminal / Problems / Scheduler Logs / Tool Output)
 
 **v3 不再讨论"选哪种布局",而是回答"v2-A 用哪种视觉语言落地"。**
 
