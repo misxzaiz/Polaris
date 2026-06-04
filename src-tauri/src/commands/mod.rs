@@ -5,6 +5,7 @@ pub mod window;
 pub mod context;
 pub mod git;
 pub mod translate;
+pub mod agnes;
 pub mod plugin;
 pub mod plugin_state;
 

@@ -62,7 +62,7 @@ const ThinkingAsToolRenderer = memo(function ThinkingAsToolRenderer({
           {t('thinking.title')}
         </span>
         <span className="text-xs text-text-tertiary truncate flex-1 min-w-0">
-          {t('thinking.charCount', { count: charCount > 1000 ? `${(charCount / 1000).toFixed(1)}k` : charCount })}
+          {t('thinking.charCount', { display: charCount > 1000 ? `${(charCount / 1000).toFixed(1)}k` : String(charCount) })}
         </span>
         {isStreaming && (
           <span className="text-xs text-primary">{t('thinking.streaming')}</span>

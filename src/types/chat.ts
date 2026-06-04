@@ -65,7 +65,7 @@ export interface PermissionRequest {
  */
 
 /** 内容块类型 - 用于 Assistant 消息的内容分段 */
-export type ContentBlock = TextBlock | ThinkingBlock | ToolCallBlock | QuestionBlock | PlanModeBlock | AgentRunBlock | ToolGroupBlock | PermissionRequestBlock;
+export type ContentBlock = TextBlock | ThinkingBlock | ToolCallBlock | QuestionBlock | PlanModeBlock | AgentRunBlock | ToolGroupBlock | PermissionRequestBlock | MediaBlock;
 
 /** 文本内容块 */
 export interface TextBlock {
@@ -105,6 +105,31 @@ export interface ToolCallBlock {
     /** AI 修改前的完整文件内容（用于精确撤销） */
     fullOldContent?: string;
   };
+}
+
+/** 媒体内容块 - 用于 AI 生成的图像/视频在聊天流中内联展示 */
+export interface MediaBlock {
+  type: 'media';
+  /** 关联的任务 ID（= 事件 taskId，用于流式 update 定位） */
+  id: string;
+  /** 媒体类型 */
+  mediaType: 'image' | 'video';
+  /** 生成状态 */
+  status: 'generating' | 'completed' | 'failed';
+  /** 完成后的媒体 URL（图像/视频地址，或 base64 data URI） */
+  url?: string;
+  /** 生成提示词 */
+  prompt?: string;
+  /** 进度百分比 0-100（生成中） */
+  progress?: number;
+  /** 媒体尺寸（如 1024x768） */
+  size?: string;
+  /** 错误信息（失败时） */
+  error?: string;
+  /** 开始时间 */
+  startedAt: string;
+  /** 完成时间 */
+  completedAt?: string;
 }
 
 /** 问题选项 */
@@ -522,4 +547,9 @@ export function isToolGroupBlock(block: ContentBlock): block is ToolGroupBlock {
 /** 类型守卫：判断是否为权限请求块 */
 export function isPermissionRequestBlock(block: ContentBlock): block is PermissionRequestBlock {
   return block.type === 'permission_request';
+}
+
+/** 类型守卫：判断是否为媒体块 */
+export function isMediaBlock(block: ContentBlock): block is MediaBlock {
+  return block.type === 'media';
 }

@@ -263,7 +263,7 @@ export function SessionConfigSelector({
   const renderSelector = (
     type: SelectorType,
     icon: React.ReactNode,
-    label: string,
+    _label: string,
     currentValue: string | undefined
   ) => (
     <div className="relative">

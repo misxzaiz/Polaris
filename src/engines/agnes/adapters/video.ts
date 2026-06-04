@@ -10,6 +10,7 @@ import type { AIEvent } from '@/ai-runtime'
 import type { AgnesConfig, AgnesVideoRequest, AgnesVideoCreateResponse, AgnesVideoQueryResponse } from '../types'
 import { validateNumFrames, VIDEO_FRAME_PRESETS } from '../config'
 import { maybeTranslatePrompt } from './translate'
+import { invoke } from '@/services/transport'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('AgnesVideo')
@@ -114,22 +115,11 @@ export async function* generateVideo(
   }
 
   try {
-    const createResponse = await fetch(`${config.baseUrl}/videos`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify(createRequest),
-      signal,
+    const taskResult = await invoke<AgnesVideoCreateResponse>('agnes_create_video', {
+      baseUrl: config.baseUrl,
+      apiKey: config.apiKey,
+      body: createRequest,
     })
-
-    if (!createResponse.ok) {
-      const error = await createResponse.json().catch(() => ({ error: { message: createResponse.statusText } }))
-      throw new Error(error.error?.message || `Video API error: ${createResponse.status}`)
-    }
-
-    const taskResult: AgnesVideoCreateResponse = await createResponse.json()
     const videoTaskId = taskResult.id
 
     // 发送任务创建事件
@@ -160,33 +150,12 @@ export async function* generateVideo(
       await delay(pollInterval, signal)
       attempts++
 
-      const queryResponse = await fetch(
-        `${config.baseUrl}/videos/${videoTaskId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${config.apiKey}`,
-          },
-          signal,
-        },
-      )
-
-      if (!queryResponse.ok) {
-        if (queryResponse.status === 404) {
-          yield {
-            type: 'video_task_progress',
-            sessionId,
-            taskId,
-            videoTaskId,
-            progress: 0,
-            status: 'queued',
-            message: '任务排队中...',
-          }
-          continue
-        }
-        throw new Error(`Video query error: ${queryResponse.status}`)
-      }
-
-      const queryResult: AgnesVideoQueryResponse = await queryResponse.json()
+      // 经后端代理查询任务状态；404 由后端转为 { status: 'queued' } 继续轮询
+      const queryResult = await invoke<AgnesVideoQueryResponse>('agnes_query_video', {
+        baseUrl: config.baseUrl,
+        apiKey: config.apiKey,
+        videoTaskId,
+      })
 
       // 发送进度事件
       yield {

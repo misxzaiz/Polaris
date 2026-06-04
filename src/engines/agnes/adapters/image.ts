@@ -6,6 +6,7 @@
  */
 
 import type { AIEvent } from '@/ai-runtime'
+import { invoke } from '@/services/transport'
 import type { AgnesConfig, AgnesImageRequest, AgnesImageResponse } from '../types'
 import { maybeTranslatePrompt } from './translate'
 
@@ -72,19 +73,18 @@ export async function* generateImage(
       message: '正在生成图像...',
     }
 
-    const response = await fetch(`${config.baseUrl}/images/generations`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify(request),
+    // 通过 Rust 后端代理图像生成请求，规避浏览器 CORS（dev/打包态行为一致）
+    const result = await invoke<AgnesImageResponse>('agnes_generate_image', {
+      baseUrl: config.baseUrl,
+      apiKey: config.apiKey,
+      model: config.imageModel,
+      prompt: finalPrompt,
+      size: request.size,
+      referenceImageUrls:
+        options.isImageEdit && options.referenceImageUrls?.length
+          ? options.referenceImageUrls
+          : undefined,
     })
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: { message: response.statusText } }))
-      throw new Error(error.error?.message || `Image API error: ${response.status}`)
-    }
 
     yield {
       type: 'image_generation_progress',
@@ -93,8 +93,6 @@ export async function* generateImage(
       progress: 70,
       message: '正在处理图像结果...',
     }
-
-    const result: AgnesImageResponse = await response.json()
 
     if (!result.data?.length) {
       throw new Error('No image data returned from API')

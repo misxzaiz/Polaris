@@ -11,6 +11,7 @@
  */
 
 import type { AgnesConfig } from '../types'
+import { invoke } from '@/services/transport'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('AgnesTranslate')
@@ -44,33 +45,22 @@ export async function translatePromptToEnglish(
   prompt: string,
   signal?: AbortSignal,
 ): Promise<string> {
-  const response = await fetch(`${config.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${config.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: config.chatModel,
-      messages: [
-        { role: 'system', content: TRANSLATE_SYSTEM_PROMPT },
-        { role: 'user', content: prompt },
-      ],
-      temperature: 0,
-      stream: false,
-    }),
-    signal,
-  })
-
-  if (!response.ok) {
-    const error = await response
-      .json()
-      .catch(() => ({ error: { message: response.statusText } }))
-    throw new Error(error.error?.message || `Translate API error: ${response.status}`)
+  // 已取消则直接中止（invoke 不透传 AbortSignal，此处做请求前检查）
+  if (signal?.aborted) {
+    throw new DOMException('Aborted', 'AbortError')
   }
 
-  const data = await response.json()
-  const translated: string = data.choices?.[0]?.message?.content?.trim() ?? ''
+  // 通过 Rust 后端代理翻译请求（非流式 chat completion），规避浏览器 CORS
+  const translated = await invoke<string>('agnes_chat_completion', {
+    baseUrl: config.baseUrl,
+    apiKey: config.apiKey,
+    model: config.chatModel,
+    messages: [
+      { role: 'system', content: TRANSLATE_SYSTEM_PROMPT },
+      { role: 'user', content: prompt },
+    ],
+    temperature: 0,
+  })
 
   if (!translated) {
     throw new Error('Prompt translation failed: empty translated prompt')

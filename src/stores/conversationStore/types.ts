@@ -114,6 +114,7 @@ export interface ConversationState {
   pendingToolGroup: PendingToolGroup | null
   permissionRequestBlockMap: Map<string, number>
   activePermissionRequestId: string | null
+  mediaBlockMap: Map<string, number>
   streamingUpdateCounter: number
 
   // ===== 会话状态 =====
@@ -191,6 +192,10 @@ export interface ConversationActions {
   appendPermissionRequestBlock: (requestId: string, sessionId: string, denials: Array<{ toolName: string; reason: string; extra?: Record<string, unknown> }>) => void
   updatePermissionRequestBlock: (requestId: string, status: 'pending' | 'approved' | 'denied', decision?: { approved: boolean; timestamp: string }) => void
   setActivePermissionRequest: (requestId: string | null) => void
+
+  // ===== Media（AI 生成的图像/视频内联展示） =====
+  appendMediaBlock: (taskId: string, mediaType: 'image' | 'video', prompt?: string) => void
+  updateMediaBlock: (taskId: string, patch: Partial<Pick<import('../../types/chat').MediaBlock, 'status' | 'url' | 'progress' | 'size' | 'error'>>) => void
 
   // ===== 会话控制 =====
   setConversationId: (id: string | null) => void

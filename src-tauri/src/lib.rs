@@ -78,6 +78,8 @@ use commands::git::{
 #[cfg(feature = "tauri-app")]
 use commands::translate::baidu_translate;
 #[cfg(feature = "tauri-app")]
+use commands::agnes::{agnes_generate_image, agnes_chat_completion, agnes_create_video, agnes_query_video};
+#[cfg(feature = "tauri-app")]
 use commands::integration::{
     start_integration, stop_integration, get_integration_status,
     get_all_integration_status, send_integration_message,
@@ -675,6 +677,11 @@ pub fn run() {
             read_file_absolute,
             // 翻译相关
             baidu_translate,
+            // Agnes 全模态引擎
+            agnes_generate_image,
+            agnes_chat_completion,
+            agnes_create_video,
+            agnes_query_video,
             // 集成相关
             start_integration,
             stop_integration,
