@@ -14,7 +14,7 @@
 
 import { memo, useEffect, useRef, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import DOMPurify from 'dompurify';
+import { sanitizeMermaidSvg } from '@/utils/sanitizeMermaidSvg';
 import { getMermaidConfig } from '@/utils/mermaid-config';
 import { useThemeStore } from '@/stores/themeStore';
 import { modKey } from '@/utils/path';
@@ -422,7 +422,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code, id }: Mermaid
                   minWidth: `${diagramState.scale * 100}%`,
                 }}
               >
-                <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true } }) }} />
+                <div dangerouslySetInnerHTML={{ __html: sanitizeMermaidSvg(svg) }} />
               </div>
             </div>
           ) : (
