@@ -74,6 +74,18 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       }
       set({ config, healthStatus: health, loading: false, isConnecting: false, connectionState });
 
+      // 同步 Model Profile 到 modelProfileStore，确保重启后 Profile 仍然生效
+      // （modelProfileStore 没有 persist 中间件，依赖此初始化）
+      if (config.modelProfiles?.length) {
+        import('./modelProfileStore').then(({ useModelProfileStore }) => {
+          const store = useModelProfileStore.getState();
+          store.setProfiles(config.modelProfiles!);
+          if (config.activeModelProfileId) {
+            store.setActiveProfileId(config.activeModelProfileId);
+          }
+        }).catch(() => {})
+      }
+
       // CLI 可用时，异步获取动态信息（agents, auth status, version）
       if (connectionState === 'success') {
         import('./cliInfoStore').then(({ useCliInfoStore }) => {

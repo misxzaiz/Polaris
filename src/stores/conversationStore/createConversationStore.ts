@@ -907,8 +907,8 @@ export function createConversationStore(
 
           const sessionConfig = getSessionConfig()
           const runtimeConfig = resolveRuntimeConfigForEngine(sessionConfig, engine)
-          const activeProfile = getActiveModelProfile()
-          const modelProfileId = activeProfile?.id
+          // 优先使用 sessionConfig（状态栏选择器），降级到 modelProfileStore（设置页激活）
+          const modelProfileId = sessionConfig.modelProfileId || getActiveModelProfile()?.id
           const disabledMcpServers = getDisabledPluginMcpServers()
 
           const chatOptions = {
@@ -1044,8 +1044,8 @@ export function createConversationStore(
 
         const sessionConfig = getSessionConfig()
         const runtimeConfig = resolveRuntimeConfigForEngine(sessionConfig, currentEngine)
-        const activeProfile = getActiveModelProfile()
-        const modelProfileId = activeProfile?.id
+        // 优先使用 sessionConfig（状态栏选择器），降级到 modelProfileStore（设置页激活）
+        const modelProfileId = sessionConfig.modelProfileId || getActiveModelProfile()?.id
         const disabledMcpServers = getDisabledPluginMcpServers()
 
         try {

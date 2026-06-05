@@ -199,8 +199,8 @@ export function SessionConfigSelector({
         // Profile 列表
         items.push(...profiles.map(p => ({
           value: p.id,
-          label: `🔄 ${p.name}`,
-          description: p.description || `${p.model} @ ${p.baseUrl}`,
+          label: p.wireApi === 'openai-chat-completions' ? `🔵 ${p.name}` : `🔄 ${p.name}`,
+          description: p.description || `${p.model} @ ${p.baseUrl}${p.wireApi === 'openai-chat-completions' ? ' (OpenAI)' : ''}`,
         })))
         break
     }
@@ -315,7 +315,8 @@ export function SessionConfigSelector({
       getValue: () => {
         if (!config.modelProfileId) return t('sessionConfig.noProfile')
         const profile = profiles.find(p => p.id === config.modelProfileId)
-        return profile ? `🔄 ${profile.name}` : t('sessionConfig.noProfile')
+        if (!profile) return t('sessionConfig.noProfile')
+        return profile.wireApi === 'openai-chat-completions' ? `🔵 ${profile.name}` : `🔄 ${profile.name}`
       },
     },
   }

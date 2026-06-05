@@ -42,19 +42,19 @@ const BREAKPOINTS = {
   narrow: 300,
 } as const;
 
-type SelectorType = 'agent' | 'model' | 'effort' | 'permission';
+type SelectorType = 'agent' | 'model' | 'effort' | 'permission' | 'profile';
 
 /** 根据容器宽度计算主行应显示的选择器类型 */
 function getVisibleTypes(width: number): SelectorType[] {
-  if (width >= BREAKPOINTS.full) return ['agent', 'model', 'effort', 'permission'];
-  if (width >= BREAKPOINTS.medium) return ['agent', 'model', 'effort', 'permission'];
-  if (width >= BREAKPOINTS.narrow) return ['agent', 'effort', 'permission'];
+  if (width >= BREAKPOINTS.full) return ['agent', 'model', 'effort', 'permission', 'profile'];
+  if (width >= BREAKPOINTS.medium) return ['agent', 'model', 'effort', 'profile'];
+  if (width >= BREAKPOINTS.narrow) return ['agent', 'effort', 'profile'];
   return [];
 }
 
 /** 被主行隐藏的选择器类型 */
 function getHiddenTypes(visible: SelectorType[]): SelectorType[] {
-  const all: SelectorType[] = ['agent', 'model', 'effort', 'permission'];
+  const all: SelectorType[] = ['agent', 'model', 'effort', 'permission', 'profile'];
   return all.filter(t => !visible.includes(t));
 }
 
