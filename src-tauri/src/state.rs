@@ -140,6 +140,8 @@ pub struct AppState {
     pub start_time: Option<std::time::Instant>,
     /// Running web server handle — allows dynamic start/stop without app restart.
     pub web_server_handle: Arc<AsyncMutex<Option<WebServerHandle>>>,
+    /// 内嵌代理管理器 — 管理 OpenAI Chat Completions 格式转换代理实例
+    pub proxy_manager: crate::services::ProxyManager,
 }
 
 /// 创建应用状态
@@ -172,6 +174,7 @@ pub fn create_app_state(
         resource_dir: OnceLock::new(),
         start_time: Some(std::time::Instant::now()),
         web_server_handle: Arc::new(AsyncMutex::new(None)),
+        proxy_manager: crate::services::ProxyManager::new(),
     }
 }
 
@@ -238,6 +241,7 @@ impl AppState {
             resource_dir,
             start_time: self.start_time,
             web_server_handle: self.web_server_handle.clone(),
+            proxy_manager: crate::services::ProxyManager::new(),
         }
     }
 }

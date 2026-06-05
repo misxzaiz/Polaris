@@ -120,7 +120,13 @@
     "codexModelName": "Model Name (e.g. gpt-5.1)",
     "modelName": "Model Name (e.g. deepseek-chat)",
     "description": "Description (optional)",
-    "noProfiles": "No model profiles yet. Click add to configure a third-party model endpoint"
+    "noProfiles": "No model profiles yet. Click add to configure a third-party model endpoint",
+    "wireApi": {
+      "label": "Wire Protocol",
+      "anthropicMessages": "Anthropic Messages (default)",
+      "openaiChatCompletions": "OpenAI Chat Completions",
+      "openaiHint": "Polaris embedded proxy will convert Claude CLI requests to OpenAI format for this endpoint"
+    }
   },
   "claudeCode": {
     "title": "Claude Code Configuration",

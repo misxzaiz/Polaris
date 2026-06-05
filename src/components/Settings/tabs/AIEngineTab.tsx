@@ -10,7 +10,7 @@ import { ClaudePathSelector } from '../../Common';
 import { useConfigStore } from '@/stores';
 import { useCliInfoStore } from '@/stores/cliInfoStore';
 import { useModelProfileStore } from '@/stores/modelProfileStore';
-import type { Config, EngineId, ModelProfile } from '@/types';
+import type { Config, EngineId, ModelProfile, WireApi } from '@/types';
 import { Shield, ShieldCheck, ShieldX, RefreshCw, Bot, Plus, Trash2, Globe, Check, RotateCcw, Key, Zap } from 'lucide-react';
 import { registerAgnesEngine } from '@/core/engine-bootstrap';
 import { getEngineRegistry } from '@/ai-runtime';
@@ -182,7 +182,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
   const { authStatus, agents, loading: cliLoading, fetchAll } = useCliInfoStore();
   const { profiles, activeProfileId, addProfile, removeProfile, activateProfile, setProfiles, setActiveProfileId } = useModelProfileStore();
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newProfile, setNewProfile] = useState({ name: '', baseUrl: '', apiKey: '', model: '', description: '' });
+  const [newProfile, setNewProfile] = useState({ name: '', baseUrl: '', apiKey: '', model: '', wireApi: undefined as WireApi | undefined, description: '' });
   const [resetting, setResetting] = useState(false);
   const isCodex = config.defaultEngine === 'codex';
 
@@ -226,7 +226,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
   const handleAddProfile = () => {
     if (!newProfile.name || !newProfile.baseUrl || !newProfile.apiKey || !newProfile.model) return;
     addProfile(newProfile);
-    setNewProfile({ name: '', baseUrl: '', apiKey: '', model: '', description: '' });
+    setNewProfile({ name: '', baseUrl: '', apiKey: '', model: '', wireApi: undefined, description: '' });
     setShowAddForm(false);
     // 同步到 localConfig，确保保存时写入后端配置文件
     const updated = useModelProfileStore.getState()
@@ -414,6 +414,24 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
               onChange={(e) => setNewProfile({ ...newProfile, model: e.target.value })}
               className="w-full px-3 py-2 text-sm bg-background-surface border border-border rounded-lg outline-none focus:border-primary"
             />
+            <div>
+              <label className="block text-xs text-text-secondary mb-1">
+                {t('modelProfile.wireApi.label')}
+              </label>
+              <select
+                value={newProfile.wireApi || ''}
+                onChange={(e) => setNewProfile({ ...newProfile, wireApi: (e.target.value || undefined) as WireApi | undefined })}
+                className="w-full px-3 py-2 text-sm bg-background-surface border border-border rounded-lg outline-none focus:border-primary"
+              >
+                <option value="">{t('modelProfile.wireApi.anthropicMessages')}</option>
+                <option value="openai-chat-completions">{t('modelProfile.wireApi.openaiChatCompletions')}</option>
+              </select>
+              {newProfile.wireApi === 'openai-chat-completions' && (
+                <p className="text-xs text-text-tertiary mt-1">
+                  {t('modelProfile.wireApi.openaiHint')}
+                </p>
+              )}
+            </div>
             <input
               type="text"
               placeholder={t('modelProfile.description')}
@@ -423,7 +441,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
             />
             <div className="flex justify-end gap-2">
               <button
-                onClick={() => { setShowAddForm(false); setNewProfile({ name: '', baseUrl: '', apiKey: '', model: '', description: '' }); }}
+                onClick={() => { setShowAddForm(false); setNewProfile({ name: '', baseUrl: '', apiKey: '', model: '', wireApi: undefined, description: '' }); }}
                 className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary"
               >
                 {t('common.cancel')}
@@ -470,6 +488,11 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
                   <div className="flex items-center gap-2">
                     <Globe size={12} className="text-text-tertiary shrink-0" />
                     <span className="text-sm font-medium text-text-primary truncate">{profile.name}</span>
+                    {profile.wireApi === 'openai-chat-completions' && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 shrink-0">
+                        OpenAI
+                      </span>
+                    )}
                   </div>
                   <div className="text-xs text-text-tertiary truncate mt-0.5">
                     {profile.model} · {profile.baseUrl}

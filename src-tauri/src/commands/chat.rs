@@ -435,7 +435,7 @@ fn prepare_mcp_config_with_paths(
     }
 }
 
-fn apply_model_profile_options(
+async fn apply_model_profile_options(
     mut session_opts: SessionOptions,
     profile_id: Option<&String>,
     engine: &EngineId,
@@ -456,27 +456,85 @@ fn apply_model_profile_options(
     };
 
     tracing::info!(
-        "[{}] 使用模型 Profile: {} ({})",
+        "[{}] 使用模型 Profile: {} ({}), wireApi={:?}",
         log_scope,
         profile.name,
-        profile.model
+        profile.model,
+        profile.wire_api
     );
 
     match engine {
         EngineId::ClaudeCode => {
-            match crate::services::ModelProfileService::write_settings_overlay(profile) {
-                Ok(path) => {
-                    session_opts =
-                        session_opts.with_settings_overlay_path(path.to_string_lossy().to_string());
-                }
-                Err(e) => {
-                    tracing::warn!("[{}] 生成 settings overlay 失败: {}", log_scope, e);
-                }
-            }
+            if crate::services::ModelProfileService::is_openai_wire_api(profile) {
+                // OpenAI Chat Completions 模式：启动本地代理
+                tracing::info!(
+                    "[{}] Profile {} 使用 OpenAI Chat Completions 格式，启动内嵌代理",
+                    log_scope,
+                    profile.name
+                );
 
-            let env_overrides =
-                crate::services::ModelProfileService::generate_env_overrides(profile);
-            session_opts = session_opts.with_env_overrides(env_overrides);
+                match state
+                    .proxy_manager
+                    .start_proxy(&profile.id, &profile.base_url, &profile.api_key)
+                    .await
+                {
+                    Ok(proxy_addr) => {
+                        tracing::info!(
+                            "[{}] 代理已启动: {} -> http://{}",
+                            log_scope,
+                            profile.name,
+                            proxy_addr
+                        );
+
+                        match crate::services::ModelProfileService::write_proxy_settings_overlay(
+                            profile,
+                            proxy_addr,
+                        ) {
+                            Ok(path) => {
+                                session_opts = session_opts
+                                    .with_settings_overlay_path(path.to_string_lossy().to_string());
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "[{}] 生成 proxy settings overlay 失败: {}",
+                                    log_scope,
+                                    e
+                                );
+                            }
+                        }
+
+                        // 代理模式下 env overrides 只需设置基础覆盖（API key 由代理管理）
+                        let mut env_overrides = std::collections::HashMap::new();
+                        env_overrides
+                            .insert("ANTHROPIC_BASE_URL".to_string(), format!("http://{}", proxy_addr));
+                        env_overrides
+                            .insert("ANTHROPIC_AUTH_TOKEN".to_string(), "PROXY_MANAGED".to_string());
+                        session_opts = session_opts.with_env_overrides(env_overrides);
+                    }
+                    Err(e) => {
+                        tracing::error!("[{}] 启动代理失败: {}", log_scope, e);
+                        return Err(crate::error::AppError::ProcessError(format!(
+                            "启动 OpenAI Chat Completions 代理失败: {}",
+                            e
+                        )));
+                    }
+                }
+            } else {
+                // Anthropic Messages 直连模式（原有逻辑）
+                match crate::services::ModelProfileService::write_settings_overlay(profile) {
+                    Ok(path) => {
+                        session_opts = session_opts
+                            .with_settings_overlay_path(path.to_string_lossy().to_string());
+                    }
+                    Err(e) => {
+                        tracing::warn!("[{}] 生成 settings overlay 失败: {}", log_scope, e);
+                    }
+                }
+
+                let env_overrides =
+                    crate::services::ModelProfileService::generate_env_overrides(profile);
+                session_opts = session_opts.with_env_overrides(env_overrides);
+            }
         }
         EngineId::Codex => {
             let codex_args =
@@ -652,7 +710,8 @@ pub async fn start_chat_inner(
         &engine,
         state,
         "start_chat_inner",
-    )?;
+    )
+    .await?;
 
     let mut registry = state.engine_registry.lock().await;
     registry.start_session(Some(engine), &final_message, session_opts)
@@ -792,7 +851,8 @@ pub async fn continue_chat_inner(
         &engine,
         state,
         "continue_chat_inner",
-    )?;
+    )
+    .await?;
 
     let mut registry = state.engine_registry.lock().await;
     registry.continue_session(engine, &session_id, &final_message, session_opts)

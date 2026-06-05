@@ -96,6 +96,10 @@ tower-http = { version = "0.6", features = ["cors", "fs"] }
 if-addrs = "0.13"
 subtle = "2"
 
+# 内嵌代理服务（Anthropic ↔ OpenAI Chat Completions 格式转换）
+async-stream = "0.3"
+bytes = "1"
+
 # 定时任务依赖
 cron = "0.12"
 

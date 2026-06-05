@@ -34,3 +34,6 @@ pub use mcp_manager_service::McpManagerService;
 
 pub mod model_profile_service;
 pub use model_profile_service::ModelProfileService;
+
+pub mod proxy;
+pub use proxy::ProxyManager;

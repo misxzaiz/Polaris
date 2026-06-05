@@ -137,6 +137,10 @@ pub struct BaiduTranslateConfig {
 ///
 /// Claude Code 通过 --settings 临时文件 + 环境变量覆盖路由到 Anthropic 兼容端点。
 /// Codex CLI 通过 model_provider 配置路由到 Responses API 兼容端点。
+///
+/// 当 `wire_api` 为 `"openai-chat-completions"` 时，Polaris 内嵌代理会透明地
+/// 将 Claude CLI 的 Anthropic Messages 请求转换为 OpenAI Chat Completions
+/// 格式发送给上游端点，再将响应转换回 Anthropic 格式返回给 CLI。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelProfile {
@@ -153,6 +157,12 @@ pub struct ModelProfile {
     /// 是否为当前激活 Profile
     #[serde(default)]
     pub active: bool,
+    /// Wire API 协议格式。
+    /// - `None` 或 `"anthropic-messages"`：端点兼容 Anthropic Messages API（默认）
+    /// - `"openai-chat-completions"`：端点兼容 OpenAI Chat Completions API，
+    ///   Polaris 内嵌代理负责格式转换
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wire_api: Option<String>,
     /// 可选：Profile 描述
     #[serde(default)]
     pub description: Option<String>,

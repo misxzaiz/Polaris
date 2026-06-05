@@ -120,7 +120,13 @@
     "codexModelName": "模型名称 (如 gpt-5.1)",
     "modelName": "模型名称 (如 deepseek-chat)",
     "description": "描述 (可选)",
-    "noProfiles": "暂无模型 Profile，点击添加配置第三方模型端点"
+    "noProfiles": "暂无模型 Profile，点击添加配置第三方模型端点",
+    "wireApi": {
+      "label": "协议格式",
+      "anthropicMessages": "Anthropic Messages (默认)",
+      "openaiChatCompletions": "OpenAI Chat Completions",
+      "openaiHint": "Polaris 内嵌代理会将 Claude CLI 请求转换为 OpenAI 格式发送给此端点"
+    }
   },
   "claudeCode": {
     "title": "Claude Code 配置",

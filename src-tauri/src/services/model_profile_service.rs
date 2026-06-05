@@ -8,12 +8,62 @@
 use crate::error::Result;
 use crate::models::config::ModelProfile;
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 
 /// 模型 Profile 服务
 pub struct ModelProfileService;
 
 impl ModelProfileService {
+    /// 判断 Profile 是否使用 OpenAI Chat Completions 线路格式
+    pub fn is_openai_wire_api(profile: &ModelProfile) -> bool {
+        profile.wire_api.as_deref() == Some("openai-chat-completions")
+    }
+
+    /// 生成代理模式的 settings overlay
+    ///
+    /// 当 Profile 使用 OpenAI Chat Completions 格式时，ANTHROPIC_BASE_URL 指向
+    /// 本地代理服务器，API key 由代理内部管理（使用占位符）。
+    pub fn generate_proxy_settings_overlay(
+        profile: &ModelProfile,
+        proxy_addr: SocketAddr,
+    ) -> serde_json::Value {
+        serde_json::json!({
+            "model": profile.model,
+            "env": {
+                "ANTHROPIC_MODEL": profile.model,
+                "ANTHROPIC_DEFAULT_HAIKU_MODEL": profile.model,
+                "ANTHROPIC_DEFAULT_OPUS_MODEL": profile.model,
+                "ANTHROPIC_DEFAULT_SONNET_MODEL": profile.model,
+                "ANTHROPIC_REASONING_MODEL": profile.model,
+                "ANTHROPIC_BASE_URL": format!("http://{}", proxy_addr),
+                "ANTHROPIC_AUTH_TOKEN": "PROXY_MANAGED",
+            }
+        })
+    }
+
+    /// 将代理模式的 settings overlay 写入临时文件
+    pub fn write_proxy_settings_overlay(
+        profile: &ModelProfile,
+        proxy_addr: SocketAddr,
+    ) -> Result<PathBuf> {
+        let overlay = Self::generate_proxy_settings_overlay(profile, proxy_addr);
+        let json_str = serde_json::to_string_pretty(&overlay).map_err(|e| {
+            crate::error::AppError::ProcessError(format!("序列化 proxy settings overlay 失败: {}", e))
+        })?;
+
+        let temp_dir = std::env::temp_dir();
+        let file_name = format!("polaris-model-settings-{}.json", profile.id);
+        let path = temp_dir.join(&file_name);
+
+        std::fs::write(&path, json_str).map_err(|e| {
+            crate::error::AppError::ProcessError(format!("写入 proxy settings overlay 文件失败: {}", e))
+        })?;
+
+        tracing::info!("[ModelProfileService] 写入 proxy settings overlay: {:?}", path);
+        Ok(path)
+    }
+
     /// 根据 Profile 生成 settings overlay JSON 内容
     ///
     /// 覆盖所有五个模型变体（MODEL / HAIKU / OPUS / SONNET / REASONING）
@@ -172,7 +222,9 @@ impl ModelProfileService {
 
     /// 测试 Profile 连接是否可用
     ///
-    /// 尝试向 Profile 配置的端点发送简单请求验证连通性
+    /// 根据 wire_api 选择不同的测试方式：
+    /// - `openai-chat-completions`：发送 `/v1/chat/completions` 请求
+    /// - 其他（默认 Anthropic Messages）：发送 `/v1/messages` 请求
     pub async fn test_connection(profile: &ModelProfile) -> Result<bool> {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
@@ -181,14 +233,24 @@ impl ModelProfileService {
                 crate::error::AppError::ProcessError(format!("创建 HTTP 客户端失败: {}", e))
             })?;
 
-        // 构建 messages 端点 URL
+        if Self::is_openai_wire_api(profile) {
+            Self::test_openai_connection(&client, profile).await
+        } else {
+            Self::test_anthropic_connection(&client, profile).await
+        }
+    }
+
+    /// 测试 Anthropic Messages API 端点连通性
+    async fn test_anthropic_connection(
+        client: &reqwest::Client,
+        profile: &ModelProfile,
+    ) -> Result<bool> {
         let url = if profile.base_url.ends_with('/') {
             format!("{}v1/messages", profile.base_url)
         } else {
             format!("{}/v1/messages", profile.base_url)
         };
 
-        // 发送最小化请求测试连通性
         let response = client
             .post(&url)
             .header("x-api-key", &profile.api_key)
@@ -206,15 +268,57 @@ impl ModelProfileService {
             Ok(resp) => {
                 let status = resp.status();
                 tracing::info!(
-                    "[ModelProfileService] 连接测试: {} -> status {}",
+                    "[ModelProfileService] Anthropic 连接测试: {} -> status {}",
                     profile.base_url,
                     status
                 );
-                // 200-299 或 400（模型参数错误但连接成功）都算连通
                 Ok(status.is_success() || status.as_u16() == 400)
             }
             Err(e) => {
-                tracing::warn!("[ModelProfileService] 连接测试失败: {}", e);
+                tracing::warn!("[ModelProfileService] Anthropic 连接测试失败: {}", e);
+                Ok(false)
+            }
+        }
+    }
+
+    /// 测试 OpenAI Chat Completions API 端点连通性
+    async fn test_openai_connection(
+        client: &reqwest::Client,
+        profile: &ModelProfile,
+    ) -> Result<bool> {
+        let base = profile.base_url.trim_end_matches('/');
+        let url = if base.ends_with("/chat/completions") {
+            base.to_string()
+        } else if base.ends_with("/v1") {
+            format!("{}/chat/completions", base)
+        } else {
+            format!("{}/v1/chat/completions", base)
+        };
+
+        let response = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", profile.api_key))
+            .header("Content-Type", "application/json")
+            .json(&serde_json::json!({
+                "model": profile.model,
+                "max_tokens": 1,
+                "messages": [{"role": "user", "content": "hi"}]
+            }))
+            .send()
+            .await;
+
+        match response {
+            Ok(resp) => {
+                let status = resp.status();
+                tracing::info!(
+                    "[ModelProfileService] OpenAI 连接测试: {} -> status {}",
+                    profile.base_url,
+                    status
+                );
+                Ok(status.is_success() || status.as_u16() == 400)
+            }
+            Err(e) => {
+                tracing::warn!("[ModelProfileService] OpenAI 连接测试失败: {}", e);
                 Ok(false)
             }
         }
@@ -237,6 +341,7 @@ mod tests {
             api_key: "secret".to_string(),
             model: "glm-5.1".to_string(),
             active: true,
+            wire_api: None,
             description: None,
             created_at: None,
             updated_at: None,

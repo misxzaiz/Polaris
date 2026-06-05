@@ -84,6 +84,7 @@ fn create_test_state() -> Arc<AppState> {
         resource_dir: OnceLock::new(),
         start_time: Some(std::time::Instant::now()),
         web_server_handle: Arc::new(AsyncMutex::new(None)),
+        proxy_manager: crate::services::ProxyManager::new(),
     })
 }
 
