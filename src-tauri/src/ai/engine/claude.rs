@@ -16,6 +16,13 @@ use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 use crate::utils::CREATE_NO_WINDOW;
 
+/// 判断当前用户是否为 root（仅 Unix）。
+#[cfg(unix)]
+fn is_root() -> bool {
+    // geteuid() == 0 表示 root（或 setuid-root）
+    unsafe { libc::geteuid() == 0 }
+}
+
 /// 返回当前用户的默认权限模式。
 ///
 /// Claude Code CLI 禁止 root 使用 `bypassPermissions`（映射到
@@ -24,8 +31,7 @@ use crate::utils::CREATE_NO_WINDOW;
 fn default_permission_mode() -> &'static str {
     #[cfg(unix)]
     {
-        // geteuid() == 0 表示 root（或 setuid-root）
-        if unsafe { libc::geteuid() } == 0 {
+        if is_root() {
             tracing::warn!(
                 "[ClaudeEngine] 检测到 root 用户，bypassPermissions 不可用；\
                  回退到 acceptEdits 模式"
@@ -34,6 +40,31 @@ fn default_permission_mode() -> &'static str {
         }
     }
     "bypassPermissions"
+}
+
+/// 解析并返回实际使用的权限模式。
+///
+/// 当用户显式传入 `bypassPermissions` 但在 root 下运行时，自动降级为
+/// `acceptEdits` 并输出警告日志。此前此逻辑仅在 `default_permission_mode()`
+/// 的 else 分支中生效，但前端默认值始终为 `Some("bypassPermissions")`，
+/// 导致 root 检测成为死代码。此函数统一处理两种路径。
+fn resolve_permission_mode<'a>(user_mode: Option<&'a str>) -> &'a str {
+    match user_mode {
+        Some(pm) if !pm.is_empty() => {
+            #[cfg(unix)]
+            {
+                if pm == "bypassPermissions" && is_root() {
+                    tracing::warn!(
+                        "[ClaudeEngine] 检测到 root 用户，权限模式 bypassPermissions \
+                         不可用；自动降级为 acceptEdits"
+                    );
+                    return "acceptEdits";
+                }
+            }
+            pm
+        }
+        _ => default_permission_mode(),
+    }
 }
 
 /// Claude Code CLI 安装类型
@@ -357,14 +388,9 @@ impl ClaudeEngine {
                 }
             }
 
-            // 添加权限模式参数（如果用户指定，否则使用默认值）
-            if let Some(pm) = permission_mode {
-                if !pm.is_empty() {
-                    cmd.arg("--permission-mode").arg(pm);
-                }
-            } else {
-                cmd.arg("--permission-mode").arg(default_permission_mode());
-            }
+            // 添加权限模式参数（统一通过 resolve_permission_mode 处理 root 回退）
+            cmd.arg("--permission-mode")
+                .arg(resolve_permission_mode(permission_mode));
 
             // 添加允许的工具列表（权限重试时使用）
             if !allowed_tools.is_empty() {
@@ -462,14 +488,9 @@ impl ClaudeEngine {
                 }
             }
 
-            // 添加权限模式参数（如果用户指定，否则使用默认值）
-            if let Some(pm) = permission_mode {
-                if !pm.is_empty() {
-                    cmd.arg("--permission-mode").arg(pm);
-                }
-            } else {
-                cmd.arg("--permission-mode").arg(default_permission_mode());
-            }
+            // 添加权限模式参数（统一通过 resolve_permission_mode 处理 root 回退）
+            cmd.arg("--permission-mode")
+                .arg(resolve_permission_mode(permission_mode));
 
             // 添加允许的工具列表（权限重试时使用）
             if !allowed_tools.is_empty() {
