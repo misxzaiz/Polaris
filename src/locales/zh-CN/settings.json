@@ -113,6 +113,8 @@
   "modelProfile": {
     "title": "模型 Profile",
     "add": "添加",
+    "edit": "编辑",
+    "save": "保存",
     "profileName": "Profile 名称",
     "codexBaseUrl": "API 端点 URL (如 https://api.openai.com/v1)",
     "baseUrl": "API 端点 URL (如 https://api.deepseek.com/anthropic)",

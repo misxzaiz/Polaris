@@ -51,3 +51,6 @@ pub use mcp_manager::{mcp_list_servers, mcp_get_server, mcp_health_check, mcp_he
 
 pub mod claude_settings;
 pub use claude_settings::{read_claude_settings, write_claude_settings, get_claude_settings_path};
+
+pub mod model_profile;
+pub use model_profile::test_model_profile_connection;

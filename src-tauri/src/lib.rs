@@ -127,6 +127,8 @@ use commands::diagnostics::get_todo_mcp_diagnostics;
 use commands::prompt_snippet::{
     snippet_list, snippet_get, snippet_create, snippet_update, snippet_delete,
 };
+#[cfg(feature = "tauri-app")]
+use commands::test_model_profile_connection;
 
 use std::sync::Arc;
 use tokio::sync::Mutex as AsyncMutex;
@@ -826,7 +828,8 @@ pub fn run() {
             commands::lsp::lsp_config_upsert,
             commands::lsp::lsp_config_remove,
             commands::lsp::lsp_config_toggle,
-
+            // 模型 Profile 命令
+            test_model_profile_connection,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

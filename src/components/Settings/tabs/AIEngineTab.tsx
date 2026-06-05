@@ -11,7 +11,7 @@ import { useConfigStore } from '@/stores';
 import { useCliInfoStore } from '@/stores/cliInfoStore';
 import { useModelProfileStore } from '@/stores/modelProfileStore';
 import type { Config, EngineId, ModelProfile, WireApi } from '@/types';
-import { Shield, ShieldCheck, ShieldX, RefreshCw, Bot, Plus, Trash2, Globe, Check, RotateCcw, Key, Zap } from 'lucide-react';
+import { Shield, ShieldCheck, ShieldX, RefreshCw, Bot, Plus, Trash2, Globe, Check, RotateCcw, Key, Zap, Pencil } from 'lucide-react';
 import { registerAgnesEngine } from '@/core/engine-bootstrap';
 import { getEngineRegistry } from '@/ai-runtime';
 import { createLogger } from '@/utils/logger';
@@ -180,8 +180,9 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
   const { t } = useTranslation(['settings', 'common']);
   const { healthStatus, resetCliConfig } = useConfigStore();
   const { authStatus, agents, loading: cliLoading, fetchAll } = useCliInfoStore();
-  const { profiles, activeProfileId, addProfile, removeProfile, activateProfile, setProfiles, setActiveProfileId } = useModelProfileStore();
+  const { profiles, activeProfileId, addProfile, updateProfile, removeProfile, activateProfile, setProfiles, setActiveProfileId } = useModelProfileStore();
   const [showAddForm, setShowAddForm] = useState(false);
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [newProfile, setNewProfile] = useState({ name: '', baseUrl: '', apiKey: '', model: '', wireApi: undefined as WireApi | undefined, description: '' });
   const [resetting, setResetting] = useState(false);
   const isCodex = config.defaultEngine === 'codex';
@@ -223,18 +224,48 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
     });
   };
 
-  const handleAddProfile = () => {
+  const handleSaveProfile = () => {
     if (!newProfile.name || !newProfile.baseUrl || !newProfile.apiKey || !newProfile.model) return;
-    addProfile(newProfile);
+
+    if (editingProfileId) {
+      // 编辑模式：更新已有 Profile
+      updateProfile({ id: editingProfileId, ...newProfile });
+    } else {
+      // 新增模式：创建新 Profile
+      addProfile(newProfile);
+    }
+
+    // 重置表单状态
     setNewProfile({ name: '', baseUrl: '', apiKey: '', model: '', wireApi: undefined, description: '' });
     setShowAddForm(false);
+    setEditingProfileId(null);
+
     // 同步到 localConfig，确保保存时写入后端配置文件
     const updated = useModelProfileStore.getState()
     syncProfilesToConfig(updated.profiles, updated.activeProfileId)
   };
 
+  const handleEditProfile = (profile: ModelProfile) => {
+    setEditingProfileId(profile.id);
+    setNewProfile({
+      name: profile.name,
+      baseUrl: profile.baseUrl,
+      apiKey: profile.apiKey,
+      model: profile.model,
+      wireApi: profile.wireApi,
+      description: profile.description || '',
+    });
+    setShowAddForm(true);
+  };
+
   const handleDeleteProfile = (id: string) => {
     removeProfile(id);
+    // 如果删除的是正在编辑的 Profile，重置编辑状态
+    if (editingProfileId === id) {
+      setEditingProfileId(null);
+      setNewProfile({ name: '', baseUrl: '', apiKey: '', model: '', wireApi: undefined, description: '' });
+      setShowAddForm(false);
+    }
     // 同步到 localConfig
     const updated = useModelProfileStore.getState()
     syncProfilesToConfig(updated.profiles, updated.activeProfileId)
@@ -367,7 +398,19 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
             {t('modelProfile.title')}
           </h3>
           <button
-            onClick={() => setShowAddForm(!showAddForm)}
+            onClick={() => {
+              if (showAddForm) {
+                // 收起表单时清除所有状态
+                setShowAddForm(false);
+                setEditingProfileId(null);
+                setNewProfile({ name: '', baseUrl: '', apiKey: '', model: '', wireApi: undefined, description: '' });
+              } else {
+                // 展开新增表单，清除编辑状态
+                setEditingProfileId(null);
+                setNewProfile({ name: '', baseUrl: '', apiKey: '', model: '', wireApi: undefined, description: '' });
+                setShowAddForm(true);
+              }
+            }}
             className="flex items-center gap-1 text-xs text-primary hover:text-primary-hover transition-colors"
           >
             <Plus size={14} />
@@ -375,7 +418,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
           </button>
         </div>
 
-        {/* 添加 Profile 表单 */}
+        {/* 添加/编辑 Profile 表单 */}
         {showAddForm && (
           <div className="mb-4 p-3 bg-background-default rounded-lg border border-border space-y-3">
             <input
@@ -441,17 +484,17 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
             />
             <div className="flex justify-end gap-2">
               <button
-                onClick={() => { setShowAddForm(false); setNewProfile({ name: '', baseUrl: '', apiKey: '', model: '', wireApi: undefined, description: '' }); }}
+                onClick={() => { setShowAddForm(false); setEditingProfileId(null); setNewProfile({ name: '', baseUrl: '', apiKey: '', model: '', wireApi: undefined, description: '' }); }}
                 className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary"
               >
                 {t('common.cancel')}
               </button>
               <button
-                onClick={handleAddProfile}
+                onClick={handleSaveProfile}
                 disabled={!newProfile.name || !newProfile.baseUrl || !newProfile.apiKey || !newProfile.model}
                 className="px-3 py-1.5 text-xs bg-primary text-white rounded hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {t('common.add')}
+                {editingProfileId ? t('modelProfile.save') : t('common.add')}
               </button>
             </div>
           </div>
@@ -498,6 +541,13 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
                     {profile.model} · {profile.baseUrl}
                   </div>
                 </div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleEditProfile(profile); }}
+                  className="text-text-tertiary hover:text-primary transition-colors shrink-0"
+                  title={t('modelProfile.edit')}
+                >
+                  <Pencil size={14} />
+                </button>
                 <button
                   onClick={(e) => { e.stopPropagation(); handleDeleteProfile(profile.id); }}
                   className="text-text-tertiary hover:text-red-500 transition-colors shrink-0"
