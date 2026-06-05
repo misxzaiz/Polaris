@@ -15,6 +15,7 @@ import { useConfigStore } from '@/stores/configStore'
 import { useSessionManagerActions } from '@/stores/conversationStore/sessionStoreManager'
 import { Button } from '@/components/Common'
 import { CreateWorkspaceModal } from '@/components/Workspace/CreateWorkspaceModal'
+import { WorkspaceSearchInput, useWorkspaceFilter } from '@/components/Workspace/WorkspaceSearchInput'
 import { createLogger } from '@/utils/logger'
 import type { EngineId } from '@/types'
 import { getEngineFullName, normalizeEngineId } from '@/utils/engineDisplay'
@@ -52,6 +53,11 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showCreateWorkspaceModal, setShowCreateWorkspaceModal] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+
+  // 搜索过滤
+  const showSearch = sortedWorkspaces.length > 3
+  const filteredWorkspaces = useWorkspaceFilter(sortedWorkspaces, showSearch ? searchQuery : '')
 
   // 默认选中当前工作区
   useEffect(() => {
@@ -205,15 +211,23 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
               <label className="block text-sm font-medium text-text-secondary mb-2">
                 {t('createSessionModal.primaryWorkspaceLabel')} *
               </label>
+              {showSearch && (
+                <WorkspaceSearchInput
+                  value={searchQuery}
+                  onChange={setSearchQuery}
+                  className="mb-2"
+                  autoFocus
+                />
+              )}
               <div className="max-h-48 overflow-y-auto border border-border rounded-lg">
-                {sortedWorkspaces.map((workspace, index) => (
+                {filteredWorkspaces.map((workspace, index) => (
                   <button
                     key={workspace.id}
                     onClick={() => setPrimaryWorkspaceId(workspace.id)}
                     disabled={isLoading}
                     className={cn(
                       'w-full text-left px-3 py-2.5 text-sm transition-colors',
-                      index !== sortedWorkspaces.length - 1 && 'border-b border-border-subtle',
+                      index !== filteredWorkspaces.length - 1 && 'border-b border-border-subtle',
                       workspace.id === primaryWorkspaceId
                         ? 'bg-primary/10 text-primary'
                         : 'text-text-secondary hover:text-text-primary hover:bg-background-hover'
@@ -253,7 +267,7 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
                   </span>
                 </label>
                 <div className="max-h-32 overflow-y-auto border border-border rounded-lg">
-                  {sortedWorkspaces
+                  {filteredWorkspaces
                     .filter(w => w.id !== primaryWorkspaceId)
                     .map((workspace, index, arr) => (
                       <label

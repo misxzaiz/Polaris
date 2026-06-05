@@ -1,12 +1,13 @@
 import { memo, useCallback, useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { Plus, Folder, Check, Bot, Cpu, Image as ImageIcon } from 'lucide-react';
+import { Plus, Folder, Check, Bot, Cpu, Image as ImageIcon, Search } from 'lucide-react';
 import { useViewStore, useWorkspaceStore, useConfigStore } from '@/stores';
 import {
   useSessionMetadataList,
   useSessionManagerActions,
 } from '@/stores/conversationStore/sessionStoreManager';
+import { useWorkspaceFilter } from '@/components/Workspace/WorkspaceSearchInput';
 import type { EngineId } from '@/types';
 import { getEngineFullName, normalizeEngineId } from '@/utils/engineDisplay';
 
@@ -38,8 +39,14 @@ export const NewSessionButton = memo(function NewSessionButton() {
   // 下拉菜单状态
   const [isOpen, setIsOpen] = useState(false);
   const [selectedEngineId, setSelectedEngineId] = useState<EngineId>(defaultEngineId);
+  const [searchQuery, setSearchQuery] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // 搜索过滤
+  const showSearch = sortedWorkspaces.length > 3;
+  const filteredWorkspaces = useWorkspaceFilter(sortedWorkspaces, showSearch ? searchQuery : '');
 
   // 最多 16 个会话（与 viewStore 上限一致）
   const canAdd = multiSessionIds.length < 16;
@@ -53,6 +60,7 @@ export const NewSessionButton = memo(function NewSessionButton() {
   useEffect(() => {
     if (!isOpen) {
       setSelectedEngineId(defaultEngineId);
+      setSearchQuery('');
     }
   }, [defaultEngineId, isOpen]);
 
@@ -160,8 +168,28 @@ export const NewSessionButton = memo(function NewSessionButton() {
             <div className="my-1 border-t border-border-subtle" />
           )}
 
+          {/* 搜索框 */}
+          {showSearch && (
+            <div className="px-2 py-1">
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none">
+                  <Search className="w-3 h-3 text-text-tertiary" />
+                </div>
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={t('newSession.searchWorkspace', '搜索工作区...')}
+                  className="w-full pl-7 pr-2 py-1 text-xs bg-background-surface border border-border rounded text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                  autoFocus
+                />
+              </div>
+            </div>
+          )}
+
           {/* 工作区列表 */}
-          {sortedWorkspaces.map(workspace => (
+          {filteredWorkspaces.map(workspace => (
             <button
               key={workspace.id}
               onClick={() => handleCreateSession(workspace.id)}
