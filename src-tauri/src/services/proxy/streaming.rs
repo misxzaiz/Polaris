@@ -49,10 +49,14 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
 
         use futures_util::StreamExt;
         tokio::pin!(stream);
+        let mut chunk_count: u32 = 0;
+        let mut event_count: u32 = 0;
 
         while let Some(chunk) = stream.next().await {
             match chunk {
                 Ok(bytes) => {
+                    chunk_count += 1;
+                    tracing::debug!("[SSE] 收到 chunk #{}: {}bytes", chunk_count, bytes.len());
                     append_utf8_safe(&mut buffer, &mut utf8_remainder, &bytes);
 
                     while let Some(block) = take_sse_block(&mut buffer) {
@@ -67,6 +71,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
 
                             // [DONE] 标记流结束
                             if data.trim() == "[DONE]" {
+                                tracing::info!("[SSE] 收到 [DONE]，已发出 {} 个事件", event_count);
                                 // 发出缓存的 message_delta（含完整 usage）
                                 if let Some((stop_reason, usage_json)) = pending_message_delta.take() {
                                     let event = build_message_delta_event(stop_reason, usage_json);
@@ -84,6 +89,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
 
                             // 解析 OpenAI chunk
                             let Ok(chunk) = serde_json::from_str::<OpenAIStreamChunk>(data) else {
+                                tracing::warn!("[SSE] 无法解析 OpenAI chunk: {}", &data[..data.len().min(200)]);
                                 continue;
                             };
 
@@ -345,6 +351,12 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
             let sse = format_sse("message_stop", &json!({"type": "message_stop"}));
             yield Ok(Bytes::from(sse));
         }
+
+        tracing::info!(
+            "[SSE] 流转换完成: chunks={}, message_stop={}",
+            chunk_count,
+            has_sent_message_stop
+        );
     }
 }
 
