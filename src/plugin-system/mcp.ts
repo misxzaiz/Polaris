@@ -1,6 +1,6 @@
 import type { PluginMcpServerContribution } from './types'
 import { pluginRegistry } from './registry'
-import { isPluginMcpEnabled, type PluginStateMap } from '@/stores/pluginStore'
+import { isPluginMcpServerEnabled, type PluginStateMap } from '@/stores/pluginStore'
 
 export interface PluginMcpServerStatus extends PluginMcpServerContribution {
   enabled: boolean
@@ -9,11 +9,18 @@ export interface PluginMcpServerStatus extends PluginMcpServerContribution {
 export function listPluginMcpServerStatuses(
   pluginStates: PluginStateMap
 ): PluginMcpServerStatus[] {
+  const pluginsById = new Map(pluginRegistry.listPlugins().map((plugin) => [plugin.id, plugin]))
+
   return pluginRegistry
     .listMcpServerContributions()
     .map((server) => ({
       ...server,
-      enabled: isPluginMcpEnabled(pluginStates, server.pluginId),
+      enabled: isPluginMcpServerEnabled(
+        pluginStates,
+        server.pluginId,
+        server.id,
+        pluginsById.get(server.pluginId)?.enabledByDefault ?? true
+      ),
     }))
 }
 

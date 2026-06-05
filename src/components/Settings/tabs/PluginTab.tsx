@@ -44,14 +44,16 @@ export function PluginTab() {
   const [plugins, setPlugins] = useState(() => pluginRegistry.listPlugins())
   const currentWorkspacePath = useWorkspaceStore((state) => state.getCurrentWorkspace()?.path)
   const pluginStates = usePluginStore((state) => state.pluginStates)
-  const getPluginState = usePluginStore((state) => state.getPluginState)
   const setPluginEnabled = usePluginStore((state) => state.setPluginEnabled)
   const setPluginUiEnabled = usePluginStore((state) => state.setPluginUiEnabled)
   const setPluginMcpEnabled = usePluginStore((state) => state.setPluginMcpEnabled)
+  const setPluginMcpServerEnabled = usePluginStore((state) => state.setPluginMcpServerEnabled)
   const resetPluginState = usePluginStore((state) => state.resetPluginState)
 
   const discoveredPluginCount = plugins.filter((plugin) => !plugin.builtin).length
   const mcpServerStatuses = listPluginMcpServerStatuses(pluginStates)
+  const enabledMcpServerCount = mcpServerStatuses.filter((server) => server.enabled).length
+  const disabledMcpServerCount = mcpServerStatuses.length - enabledMcpServerCount
   const mcpHealthByName = useMemo(() => {
     return new Map(mcpHealthStatuses.map((status) => [status.name, status]))
   }, [mcpHealthStatuses])
@@ -402,10 +404,20 @@ export function PluginTab() {
         </div>
       )}
       <div className="flex flex-col gap-2 rounded-md border border-border-subtle bg-background-elevated px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="text-xs text-text-tertiary">
-          {mcpHealthError
-            ? t('plugins.mcpHealthError', { defaultValue: 'MCP status unavailable: {{error}}', error: mcpHealthError })
-            : t('plugins.mcpHealthSummary', { defaultValue: '{{count}} MCP runtime statuses loaded', count: mcpHealthStatuses.length })}
+        <div className="min-w-0">
+          <div className="text-xs font-medium text-text-secondary">
+            {t('plugins.mcpRuntimePlan', { defaultValue: 'MCP runtime plan' })}
+          </div>
+          <div className="mt-1 text-xs text-text-tertiary">
+            {mcpHealthError
+              ? t('plugins.mcpHealthError', { defaultValue: 'MCP status unavailable: {{error}}', error: mcpHealthError })
+              : t('plugins.mcpRuntimeSummary', {
+                defaultValue: '{{enabled}} enabled, {{disabled}} disabled, {{reported}} runtime statuses reported',
+                enabled: enabledMcpServerCount,
+                disabled: disabledMcpServerCount,
+                reported: mcpHealthStatuses.length,
+              })}
+          </div>
         </div>
         <button
           type="button"
@@ -421,7 +433,11 @@ export function PluginTab() {
 
       <div className="space-y-3">
         {plugins.map((plugin) => {
-          const state = getPluginState(plugin.id)
+          const state = pluginStates[plugin.id] ?? {
+            enabled: plugin.enabledByDefault,
+            uiEnabled: true,
+            mcpEnabled: true,
+          }
           const views = plugin.contributes.views ?? []
           const mcpServers = mcpServerStatuses.filter((server) => server.pluginId === plugin.id)
           const permissionEntries = Object.entries(plugin.permissions).filter(([, enabled]) => enabled)
@@ -539,52 +555,75 @@ export function PluginTab() {
                         {t('plugins.mcpCount', { count: mcpServers.length })}
                       </div>
                     </div>
-                    <input
-                      type="checkbox"
-                      checked={state.mcpEnabled}
-                      disabled={!state.enabled || mcpServers.length === 0}
-                      onChange={(event) => setPluginMcpEnabled(plugin.id, event.target.checked)}
-                      className="h-4 w-4 accent-primary"
-                    />
+                    <label className="inline-flex items-center gap-2 text-xs text-text-secondary">
+                      <span>{t('plugins.enableAllMcp', { defaultValue: 'Enable all' })}</span>
+                      <input
+                        type="checkbox"
+                        checked={state.mcpEnabled}
+                        disabled={!state.enabled || mcpServers.length === 0}
+                        onChange={(event) => setPluginMcpEnabled(plugin.id, event.target.checked)}
+                        className="h-4 w-4 accent-primary"
+                      />
+                    </label>
                   </div>
                   {mcpServers.length > 0 && (
-                    <div className="mt-3 space-y-1">
+                    <div className="mt-3 divide-y divide-border-subtle overflow-hidden rounded-md border border-border-subtle">
                       {mcpServers.map((server) => {
                         const runtime = mcpHealthByName.get(server.id)
                         return (
-                          <div key={server.id} className="rounded border border-border-subtle px-2 py-1.5">
-                            <div className="flex flex-wrap items-center gap-2 text-xs">
-                              <span className={server.enabled ? 'font-medium text-text-secondary' : 'font-medium text-text-tertiary line-through'}>
-                                {server.id}
-                              </span>
-                              <span className="text-text-tertiary">{server.transport}</span>
-                              {!server.enabled ? (
-                                <span className="rounded bg-background-hover px-1.5 py-0.5 text-[11px] text-text-tertiary">
-                                  {t('plugins.disabled')}
-                                </span>
-                              ) : runtime ? (
-                                <span
-                                  className={
-                                    runtime.connected
-                                      ? 'rounded bg-success/10 px-1.5 py-0.5 text-[11px] text-success'
-                                      : 'rounded bg-warning/10 px-1.5 py-0.5 text-[11px] text-warning'
-                                  }
-                                >
-                                  {runtime.connected
-                                    ? t('plugins.mcpConnected', { defaultValue: 'Connected' })
-                                    : t('plugins.mcpDisconnected', { defaultValue: 'Disconnected' })}
-                                </span>
-                              ) : (
-                                <span className="rounded bg-background-hover px-1.5 py-0.5 text-[11px] text-text-tertiary">
-                                  {t('plugins.mcpUnknown', { defaultValue: 'Not reported' })}
-                                </span>
-                              )}
-                            </div>
-                            {runtime?.status && (
-                              <div className="mt-1 text-[11px] text-text-tertiary">
-                                {runtime.status}
+                          <div key={server.id} className="bg-background-surface px-2.5 py-2">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2 text-xs">
+                                  <span className={server.enabled ? 'font-medium text-text-secondary' : 'font-medium text-text-tertiary line-through'}>
+                                    {server.id}
+                                  </span>
+                                  <span className="rounded bg-background-hover px-1.5 py-0.5 text-[11px] text-text-tertiary">
+                                    {server.transport}
+                                  </span>
+                                  {!server.enabled ? (
+                                    <span className="rounded bg-background-hover px-1.5 py-0.5 text-[11px] text-text-tertiary">
+                                      {t('plugins.disabled')}
+                                    </span>
+                                  ) : runtime ? (
+                                    <span
+                                      className={
+                                        runtime.connected
+                                          ? 'rounded bg-success/10 px-1.5 py-0.5 text-[11px] text-success'
+                                          : 'rounded bg-warning/10 px-1.5 py-0.5 text-[11px] text-warning'
+                                      }
+                                    >
+                                      {runtime.connected
+                                        ? t('plugins.mcpConnected', { defaultValue: 'Connected' })
+                                        : t('plugins.mcpDisconnected', { defaultValue: 'Disconnected' })}
+                                    </span>
+                                  ) : (
+                                    <span className="rounded bg-background-hover px-1.5 py-0.5 text-[11px] text-text-tertiary">
+                                      {t('plugins.mcpUnknown', { defaultValue: 'Not reported' })}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="mt-1 truncate text-[11px] text-text-tertiary">
+                                  {server.command}
+                                </div>
+                                {runtime?.status && (
+                                  <div className="mt-1 text-[11px] text-text-tertiary">
+                                    {runtime.status}
+                                  </div>
+                                )}
                               </div>
-                            )}
+                              <label className="flex shrink-0 items-center gap-2 text-xs text-text-secondary">
+                                <span>{server.enabled ? t('plugins.enabled', { defaultValue: 'Enabled' }) : t('plugins.disabled')}</span>
+                                <input
+                                  type="checkbox"
+                                  checked={server.enabled}
+                                  disabled={!state.enabled || !state.mcpEnabled}
+                                  onChange={(event) =>
+                                    setPluginMcpServerEnabled(plugin.id, server.id, event.target.checked)}
+                                  className="h-4 w-4 accent-primary"
+                                />
+                              </label>
+                            </div>
                           </div>
                         )
                       })}

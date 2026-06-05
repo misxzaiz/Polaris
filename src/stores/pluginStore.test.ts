@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   isPluginMcpEnabled,
+  isPluginMcpServerEnabled,
   isPluginUiEnabled,
   usePluginStore,
 } from './pluginStore'
@@ -46,6 +47,16 @@ describe('pluginStore', () => {
     const states = usePluginStore.getState().pluginStates
     expect(isPluginUiEnabled(states, pluginId)).toBe(false)
     expect(isPluginMcpEnabled(states, pluginId)).toBe(true)
+    expect(mockedSavePluginStates).toHaveBeenCalledWith(states)
+  })
+
+  it('can disable one MCP server while keeping the plugin MCP surface enabled', async () => {
+    usePluginStore.getState().setPluginMcpServerEnabled(pluginId, 'polaris-todo', false)
+    await Promise.resolve()
+
+    const states = usePluginStore.getState().pluginStates
+    expect(isPluginMcpEnabled(states, pluginId)).toBe(true)
+    expect(isPluginMcpServerEnabled(states, pluginId, 'polaris-todo')).toBe(false)
     expect(mockedSavePluginStates).toHaveBeenCalledWith(states)
   })
 

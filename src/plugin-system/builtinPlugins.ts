@@ -1,5 +1,7 @@
 import type { PolarisPluginManifest } from './types'
 import { pluginRegistry } from './registry'
+import { requirementPluginManifest } from '@/plugins/requirement/manifest'
+import { schedulerPluginManifest } from '@/plugins/scheduler/manifest'
 import { todoPluginManifest } from '@/plugins/todo/manifest'
 
 const corePluginManifest: PolarisPluginManifest = {
@@ -37,24 +39,6 @@ const corePluginManifest: PolarisPluginManifest = {
         labelKey: 'labels.translatePanel',
         labelDefault: 'Translate',
         order: 40,
-      },
-      {
-        id: 'scheduler.panel',
-        area: 'activityBar',
-        panelType: 'scheduler',
-        icon: 'Clock',
-        labelKey: 'labels.schedulerPanel',
-        labelDefault: 'Scheduler',
-        order: 50,
-      },
-      {
-        id: 'requirement.panel',
-        area: 'activityBar',
-        panelType: 'requirement',
-        icon: 'ClipboardList',
-        labelKey: 'labels.requirementPanel',
-        labelDefault: 'Requirements',
-        order: 60,
       },
       {
         id: 'terminal.panel',
@@ -109,7 +93,9 @@ const corePluginManifest: PolarisPluginManifest = {
 
 export function registerBuiltinPlugins(): void {
   pluginRegistry.register(corePluginManifest)
+  pluginRegistry.register(schedulerPluginManifest)
   pluginRegistry.register(todoPluginManifest)
+  pluginRegistry.register(requirementPluginManifest)
 }
 
 registerBuiltinPlugins()

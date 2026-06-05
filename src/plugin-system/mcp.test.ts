@@ -11,13 +11,23 @@ describe('plugin MCP contributions', () => {
     pluginRegistry.replaceInstalled([])
   })
 
-  it('lists Todo MCP as enabled by default', () => {
+  it('lists built-in MCP servers as enabled by default', () => {
     const servers = listEnabledPluginMcpServers({})
 
     expect(servers).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'polaris-todo',
         pluginId: 'polaris.todo',
+        transport: 'stdio',
+      }),
+      expect.objectContaining({
+        id: 'polaris-requirements',
+        pluginId: 'polaris.requirements',
+        transport: 'stdio',
+      }),
+      expect.objectContaining({
+        id: 'polaris-scheduler',
+        pluginId: 'polaris.scheduler',
         transport: 'stdio',
       }),
     ]))
@@ -65,17 +75,53 @@ describe('plugin MCP contributions', () => {
     )
   })
 
-  it('keeps the Todo manifest aligned with the backend MCP registry contract', () => {
-    const todoPlugin = pluginRegistry
-      .listPlugins()
-      .find((plugin) => plugin.id === 'polaris.todo')
+  it('filters a single MCP server when only that server is disabled', () => {
+    const pluginStates: PluginStateMap = {
+      'polaris.scheduler': {
+        enabled: true,
+        uiEnabled: true,
+        mcpEnabled: true,
+        mcpServers: {
+          'polaris-scheduler': { enabled: false },
+        },
+      },
+    }
 
-    expect(todoPlugin).toBeDefined()
-    expect(todoPlugin?.contributes.mcpServers).toEqual([
+    expect(listEnabledPluginMcpServers(pluginStates)).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'polaris-scheduler',
+        }),
+      ])
+    )
+    expect(listEnabledPluginMcpServers(pluginStates)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'polaris-todo',
+        }),
+      ])
+    )
+  })
+
+  it.each([
+    ['polaris.todo', 'polaris-todo', 'polaris_todo_mcp'],
+    ['polaris.requirements', 'polaris-requirements', 'polaris_requirements_mcp'],
+    ['polaris.scheduler', 'polaris-scheduler', 'polaris_scheduler_mcp'],
+  ])('keeps %s manifest aligned with the backend MCP registry contract', (
+    pluginId,
+    serverId,
+    command
+  ) => {
+    const plugin = pluginRegistry
+      .listPlugins()
+      .find((plugin) => plugin.id === pluginId)
+
+    expect(plugin).toBeDefined()
+    expect(plugin?.contributes.mcpServers).toEqual([
       expect.objectContaining({
-        id: 'polaris-todo',
+        id: serverId,
         transport: 'stdio',
-        command: 'polaris_todo_mcp',
+        command,
         argsTemplate: ['{{appConfigDir}}', '{{workspacePath}}'],
       }),
     ])
@@ -107,6 +153,7 @@ describe('plugin MCP contributions', () => {
         expect.objectContaining({
           id: 'example-disabled-mcp',
           pluginId: 'example.disabled-mcp',
+          enabled: false,
         }),
       ])
     )

@@ -73,6 +73,7 @@ mod tests {
                 enabled: true,
                 ui_enabled: false,
                 mcp_enabled: true,
+                mcp_servers: Default::default(),
             },
         );
 

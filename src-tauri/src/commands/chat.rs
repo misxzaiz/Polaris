@@ -14,11 +14,7 @@ use crate::ai::{
 use crate::ai::{EngineId, ImageAttachment, PagedResult, Pagination, SessionOptions};
 use crate::error::{AppError, Result};
 use crate::models::AIEvent;
-use crate::services::mcp_config_service::{
-    resolve_external_plugin_mcp_servers, WorkspaceMcpConfigService,
-};
-use crate::services::plugin_service::PluginService;
-use crate::services::plugin_state_service::PluginStateService;
+use crate::services::mcp_config_service::resolve_workspace_mcp_runtime_service;
 #[cfg(feature = "tauri-app")]
 use tauri::{Emitter, Manager, State, Window};
 #[cfg(feature = "tauri-app")]
@@ -378,6 +374,16 @@ struct PreparedMcpConfig {
     codex_config_args: Vec<String>,
 }
 
+fn merge_disabled_mcp_servers(requested: &[String], persisted: Vec<String>) -> Vec<String> {
+    let mut merged = requested.to_vec();
+    for server_name in persisted {
+        if !merged.iter().any(|name| name == &server_name) {
+            merged.push(server_name);
+        }
+    }
+    merged
+}
+
 fn prepare_mcp_config_with_paths(
     options: &ChatRequestOptions,
     engine: &EngineId,
@@ -398,50 +404,29 @@ fn prepare_mcp_config_with_paths(
         .ok_or_else(|| AppError::ProcessError("无法确定应用根目录".to_string()))?
         .to_path_buf();
 
-    let service = WorkspaceMcpConfigService::from_app_paths(
+    let (service, persisted_disabled_servers) = resolve_workspace_mcp_runtime_service(
         paths.config_dir.clone(),
         paths.resource_dir.clone(),
         app_root,
-    )?;
-
-    let plugin_discovery = PluginService::discover_installed_plugins(
-        &paths.config_dir,
-        Some(std::path::Path::new(work_dir)),
-    );
-    for error in &plugin_discovery.errors {
-        tracing::warn!("[MCP] 插件发现诊断 {}: {}", error.path, error.error);
-    }
-
-    let plugin_states = match PluginStateService::new(paths.config_dir.clone()).load() {
-        Ok(states) => states,
-        Err(error) => {
-            tracing::warn!("[MCP] 加载插件状态失败，按默认状态处理: {}", error);
-            Default::default()
-        }
-    };
-
-    let external_servers = resolve_external_plugin_mcp_servers(
-        &paths.config_dir,
         std::path::Path::new(work_dir),
-        &plugin_discovery.plugins,
-        &plugin_states,
+    )?;
+    let disabled_servers = merge_disabled_mcp_servers(
+        options.disabled_mcp_servers.as_deref().unwrap_or(&[]),
+        persisted_disabled_servers,
     );
-    let service = service.with_external_servers(external_servers);
 
     match engine {
         EngineId::ClaudeCode => {
-            let disabled_servers = options.disabled_mcp_servers.as_deref().unwrap_or(&[]);
             let config_path =
-                service.prepare_workspace_config_with_disabled(work_dir, disabled_servers)?;
+                service.prepare_workspace_config_with_disabled(work_dir, &disabled_servers)?;
             Ok(PreparedMcpConfig {
                 claude_config_path: Some(config_path.to_string_lossy().to_string()),
                 codex_config_args: Vec::new(),
             })
         }
         EngineId::Codex => {
-            let disabled_servers = options.disabled_mcp_servers.as_deref().unwrap_or(&[]);
             let codex_config_args = service
-                .prepare_workspace_codex_config_args_with_disabled(work_dir, disabled_servers)?;
+                .prepare_workspace_codex_config_args_with_disabled(work_dir, &disabled_servers)?;
             Ok(PreparedMcpConfig {
                 claude_config_path: None,
                 codex_config_args,

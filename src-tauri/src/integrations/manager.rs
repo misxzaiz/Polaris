@@ -20,7 +20,7 @@ use super::types::*;
 use super::commands::{BotCommand, CommandParser, get_help_text, PromptMode};
 use super::instance_registry::{InstanceRegistry, PlatformInstance, InstanceConfig, InstanceId};
 use crate::ai::{EngineRegistry, SessionOptions};
-use crate::services::mcp_config_service::WorkspaceMcpConfigService;
+use crate::services::mcp_config_service::resolve_workspace_mcp_runtime_service;
 use crate::error::Result;
 use crate::models::config::{QQBotConfig, QQBotRuntimeConfig, FeishuConfig, FeishuRuntimeConfig};
 use crate::services::prompt_store::PromptStore;
@@ -1152,10 +1152,15 @@ impl IntegrationManager {
                 let resource_dir: Option<std::path::PathBuf> = None;
                 match (config_dir, app_root) {
                     (Some(cdir), Some(aroot)) => {
-                        match WorkspaceMcpConfigService::from_app_paths(cdir, resource_dir, aroot) {
-                            Ok(service) => {
+                        match resolve_workspace_mcp_runtime_service(
+                            cdir,
+                            resource_dir,
+                            aroot,
+                            std::path::Path::new(dir),
+                        ) {
+                            Ok((service, disabled_servers)) => {
                                 match &engine_id {
-                                    crate::ai::EngineId::ClaudeCode => match service.prepare_workspace_config(dir) {
+                                    crate::ai::EngineId::ClaudeCode => match service.prepare_workspace_config_with_disabled(dir, &disabled_servers) {
                                     Ok(path) => {
                                         tracing::info!("[IntegrationManager] ✅ Claude MCP 配置已准备: {}", path.display());
                                         IntegrationMcpConfig {
@@ -1168,7 +1173,7 @@ impl IntegrationManager {
                                         IntegrationMcpConfig::default()
                                     }
                                     },
-                                    crate::ai::EngineId::Codex => match service.prepare_workspace_codex_config_args(dir) {
+                                    crate::ai::EngineId::Codex => match service.prepare_workspace_codex_config_args_with_disabled(dir, &disabled_servers) {
                                         Ok(args) => {
                                             tracing::info!("[IntegrationManager] ✅ Codex MCP 配置已准备: {} 个参数", args.len());
                                             IntegrationMcpConfig {

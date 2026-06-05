@@ -15,6 +15,11 @@ export interface PluginState {
   enabled: boolean
   uiEnabled: boolean
   mcpEnabled: boolean
+  mcpServers?: Record<string, PluginMcpServerState>
+}
+
+export interface PluginMcpServerState {
+  enabled: boolean
 }
 
 export type PluginStateMap = Record<string, PluginState>
@@ -32,9 +37,11 @@ interface PluginStoreActions {
   isPluginEnabled: (pluginId: string) => boolean
   isPluginUiEnabled: (pluginId: string) => boolean
   isPluginMcpEnabled: (pluginId: string) => boolean
+  isPluginMcpServerEnabled: (pluginId: string, serverId: string) => boolean
   setPluginEnabled: (pluginId: string, enabled: boolean) => void
   setPluginUiEnabled: (pluginId: string, uiEnabled: boolean) => void
   setPluginMcpEnabled: (pluginId: string, mcpEnabled: boolean) => void
+  setPluginMcpServerEnabled: (pluginId: string, serverId: string, enabled: boolean) => void
   resetPluginState: (pluginId: string) => void
 }
 
@@ -61,6 +68,24 @@ export function isPluginUiEnabled(pluginStates: PluginStateMap, pluginId: string
 export function isPluginMcpEnabled(pluginStates: PluginStateMap, pluginId: string): boolean {
   const state = getEffectivePluginState(pluginStates, pluginId)
   return state.enabled && state.mcpEnabled
+}
+
+export function isPluginMcpServerEnabled(
+  pluginStates: PluginStateMap,
+  pluginId: string,
+  serverId: string,
+  defaultEnabled = true
+): boolean {
+  const state = pluginStates[pluginId]
+  const pluginMcpEnabled = state
+    ? state.enabled && state.mcpEnabled
+    : defaultEnabled
+
+  if (!pluginMcpEnabled) {
+    return false
+  }
+
+  return state?.mcpServers?.[serverId]?.enabled ?? true
 }
 
 function mergePluginState(
@@ -129,6 +154,9 @@ export const usePluginStore = create<PluginStore>()(
 
       isPluginMcpEnabled: (pluginId) => isPluginMcpEnabled(get().pluginStates, pluginId),
 
+      isPluginMcpServerEnabled: (pluginId, serverId) =>
+        isPluginMcpServerEnabled(get().pluginStates, pluginId, serverId),
+
       setPluginEnabled: (pluginId, enabled) => {
         const pluginStates = mergePluginState(get().pluginStates, pluginId, { enabled })
         set({ pluginStates })
@@ -143,6 +171,18 @@ export const usePluginStore = create<PluginStore>()(
 
       setPluginMcpEnabled: (pluginId, mcpEnabled) => {
         const pluginStates = mergePluginState(get().pluginStates, pluginId, { mcpEnabled })
+        set({ pluginStates })
+        persistPluginStates(pluginStates)
+      },
+
+      setPluginMcpServerEnabled: (pluginId, serverId, enabled) => {
+        const current = getEffectivePluginState(get().pluginStates, pluginId)
+        const pluginStates = mergePluginState(get().pluginStates, pluginId, {
+          mcpServers: {
+            ...(current.mcpServers ?? {}),
+            [serverId]: { enabled },
+          },
+        })
         set({ pluginStates })
         persistPluginStates(pluginStates)
       },
