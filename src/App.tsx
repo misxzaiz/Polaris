@@ -21,7 +21,7 @@ import { DemoPluginPanel } from './components/Plugins/DemoPluginPanel';
 import { ComicStudioPanel } from './components/ComicStudio';
 
 // 懒加载大型组件，减少初始 bundle 大小
-const SettingsModal = lazy(() => import('./components/Settings/SettingsModal').then(m => ({ default: m.SettingsModal })));
+const SettingsPage = lazy(() => import('./components/Settings/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const DeveloperPanel = lazy(() => import('./components/Developer/DeveloperPanel').then(m => ({ default: m.DeveloperPanel })));
 const IntegrationPanel = lazy(() => import('./components/Integration/IntegrationPanel').then(m => ({ default: m.IntegrationPanel })));
 const CreateWorkspaceModal = lazy(() => import('./components/Workspace/CreateWorkspaceModal').then(m => ({ default: m.CreateWorkspaceModal })));
@@ -161,79 +161,81 @@ function App() {
         />
 
         <div className="flex flex-1 overflow-hidden relative">
-          <ActivityBar
-            onOpenSettings={() => setShowSettings(true)}
-            onToggleRightPanel={toggleRightPanel}
-            rightPanelCollapsed={rightPanelCollapsed}
-            forceCollapsed={isCompact}
-          />
-
-          {!isCompact && hasLeftPanel && (
-            <LeftPanel>
-              <LeftPanelContent
-                filesContent={<FileExplorer />}
-                gitContent={(
-                  <GitPanel
-                    onOpenDiffInTab={(diff, options) => openDiffTab(diff, options)}
-                    onOpenFileInEditor={openFileInEditor}
-                    onOpenWorkbench={openGitWorkbench}
-                  />
-                )}
-                todoContent={<SimpleTodoPanel />}
-                translateContent={<TranslatePanel onSendToChat={sendMessage} />}
-                schedulerContent={<SchedulerPanel />}
-                requirementContent={<RequirementPanel />}
-                terminalContent={<TerminalPanel />}
-                developerContent={<Suspense fallback={loadingFallback}><DeveloperPanel fillRemaining /></Suspense>}
-                integrationContent={<Suspense fallback={loadingFallback}><IntegrationPanel /></Suspense>}
-                problemsContent={<ProblemsPanel />}
-                demoPluginContent={<DemoPluginPanel onSendToChat={sendMessage} />}
-                comicStudioContent={<ComicStudioPanel />}
+          {showSettings ? (
+            <Suspense fallback={loadingFallback}>
+              <SettingsPage
+                initialTab={settingsInitialTab as SettingsTabId | undefined}
+                onClose={() => { setShowSettings(false); setSettingsInitialTab(undefined); }}
               />
-            </LeftPanel>
-          )}
+            </Suspense>
+          ) : (
+            <>
+              <ActivityBar
+                onOpenSettings={() => setShowSettings(true)}
+                onToggleRightPanel={toggleRightPanel}
+                rightPanelCollapsed={rightPanelCollapsed}
+                forceCollapsed={isCompact}
+              />
 
-          {!isCompact && hasCenterStage && <CenterStage fillRemaining={!rightPanelCollapsed} />}
-
-          {(isCompact || !rightPanelCollapsed) && (
-            <RightPanel fillRemaining={rightPanelFillRemaining}>
-              {error && <ErrorBanner error={error} />}
-
-              {multiSessionMode ? (
-                <MultiSessionGrid />
-              ) : (
-                <EnhancedChatMessages onEditMessage={handleEditMessage} />
+              {!isCompact && hasLeftPanel && (
+                <LeftPanel>
+                  <LeftPanelContent
+                    filesContent={<FileExplorer />}
+                    gitContent={(
+                      <GitPanel
+                        onOpenDiffInTab={(diff, options) => openDiffTab(diff, options)}
+                        onOpenFileInEditor={openFileInEditor}
+                        onOpenWorkbench={openGitWorkbench}
+                      />
+                    )}
+                    todoContent={<SimpleTodoPanel />}
+                    translateContent={<TranslatePanel onSendToChat={sendMessage} />}
+                    schedulerContent={<SchedulerPanel />}
+                    requirementContent={<RequirementPanel />}
+                    terminalContent={<TerminalPanel />}
+                    developerContent={<Suspense fallback={loadingFallback}><DeveloperPanel fillRemaining /></Suspense>}
+                    integrationContent={<Suspense fallback={loadingFallback}><IntegrationPanel /></Suspense>}
+                    problemsContent={<ProblemsPanel />}
+                    demoPluginContent={<DemoPluginPanel onSendToChat={sendMessage} />}
+                    comicStudioContent={<ComicStudioPanel />}
+                  />
+                </LeftPanel>
               )}
 
-              <div className="relative">
-                <ToastContainer />
-                <ChatStatusBar>
-                  <MultiWindowMenu />
-                  <NewSessionButton />
-                </ChatStatusBar>
-              </div>
+              {!isCompact && hasCenterStage && <CenterStage fillRemaining={!rightPanelCollapsed} />}
 
-              <ChatInput
-                onSend={sendMessage}
-                onInterrupt={interruptChat}
-                disabled={!currentWorkspace}
-                isStreaming={isStreaming}
-                editMode={editMode}
-                onCancelEdit={handleCancelEdit}
-                onEditSend={handleEditSend}
-              />
-            </RightPanel>
+              {(isCompact || !rightPanelCollapsed) && (
+                <RightPanel fillRemaining={rightPanelFillRemaining}>
+                  {error && <ErrorBanner error={error} />}
+
+                  {multiSessionMode ? (
+                    <MultiSessionGrid />
+                  ) : (
+                    <EnhancedChatMessages onEditMessage={handleEditMessage} />
+                  )}
+
+                  <div className="relative">
+                    <ToastContainer />
+                    <ChatStatusBar>
+                      <MultiWindowMenu />
+                      <NewSessionButton />
+                    </ChatStatusBar>
+                  </div>
+
+                  <ChatInput
+                    onSend={sendMessage}
+                    onInterrupt={interruptChat}
+                    disabled={!currentWorkspace}
+                    isStreaming={isStreaming}
+                    editMode={editMode}
+                    onCancelEdit={handleCancelEdit}
+                    onEditSend={handleEditSend}
+                  />
+                </RightPanel>
+              )}
+            </>
           )}
         </div>
-
-        {showSettings && (
-          <Suspense fallback={<div className="flex items-center justify-center text-text-muted">{t('status.loading')}</div>}>
-            <SettingsModal
-              initialTab={settingsInitialTab as SettingsTabId | undefined}
-              onClose={() => { setShowSettings(false); setSettingsInitialTab(undefined); }}
-            />
-          </Suspense>
-        )}
 
         {showCreateWorkspace && (
           <Suspense fallback={<div className="flex items-center justify-center text-text-muted">{t('status.loading')}</div>}>

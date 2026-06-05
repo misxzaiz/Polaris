@@ -77,11 +77,14 @@ pub async fn handle_messages(
         tracing::debug!("[Proxy] 转换后请求体已写入: {:?}", debug_path);
     }
 
-    if is_streaming {
+    let start = std::time::Instant::now();
+    let result = if is_streaming {
         handle_streaming(state, openai_body).await
     } else {
         handle_non_streaming(state, openai_body).await
-    }
+    };
+    tracing::info!("[Proxy] 请求处理完成，耗时: {:?}", start.elapsed());
+    result
 }
 
 /// 处理非流式请求

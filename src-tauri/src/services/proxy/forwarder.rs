@@ -27,7 +27,9 @@ impl ForwarderConfig {
         Self {
             upstream_url: url,
             api_key: api_key.to_string(),
-            timeout_secs: 120,
+            // 大 payload（100KB+ 含 28+ tools）的上游响应可能需要 55s+，
+            // 设置 180s 超时以覆盖最坏情况
+            timeout_secs: 180,
         }
     }
 }
@@ -121,34 +123,105 @@ pub async fn forward_streaming_request(
     Ok(response.bytes_stream())
 }
 
+/// 最大重试次数
+const MAX_RETRIES: u32 = 2;
+
 /// 转发请求，返回原始 Response（用于流式处理的底层方法）
+///
+/// 对超时和 5xx 错误自动重试（最多 MAX_RETRIES 次），
+/// 解决上游 API 偶尔超时的问题。
 pub async fn forward_raw_response(
     config: &ForwarderConfig,
     body: &Value,
 ) -> Result<Response, ProxyError> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(config.timeout_secs))
+        .connect_timeout(std::time::Duration::from_secs(10))
         .build()
         .map_err(|e| ProxyError::Server(format!("创建 HTTP 客户端失败: {}", e)))?;
 
-    let response = client
-        .post(&config.upstream_url)
-        .header("Authorization", format!("Bearer {}", config.api_key))
-        .header("Content-Type", "application/json")
-        .json(body)
-        .send()
-        .await?;
+    let body_str = serde_json::to_string(body).unwrap_or_default();
+    tracing::info!(
+        "[Forwarder] 发送请求到 {}: model={}, messages={}, tools={}, body_size={}bytes, timeout={}s",
+        config.upstream_url,
+        body.get("model").and_then(|v| v.as_str()).unwrap_or("?"),
+        body.get("messages").and_then(|m| m.as_array()).map(|a| a.len()).unwrap_or(0),
+        body.get("tools").and_then(|t| t.as_array()).map(|a| a.len()).unwrap_or(0),
+        body_str.len(),
+        config.timeout_secs
+    );
 
-    let status = response.status();
-    if !status.is_success() {
+    let mut last_error: Option<ProxyError> = None;
+
+    for attempt in 0..=MAX_RETRIES {
+        if attempt > 0 {
+            let delay = std::time::Duration::from_secs(attempt as u64);
+            tracing::warn!(
+                "[Forwarder] 重试 {}/{}，等待 {:?}...",
+                attempt,
+                MAX_RETRIES,
+                delay
+            );
+            tokio::time::sleep(delay).await;
+        }
+
+        let response = match client
+            .post(&config.upstream_url)
+            .header("Authorization", format!("Bearer {}", config.api_key))
+            .header("Content-Type", "application/json")
+            .body(body_str.clone())
+            .send()
+            .await
+        {
+            Ok(resp) => resp,
+            Err(e) => {
+                tracing::warn!("[Forwarder] 请求发送失败 (attempt {}): {}", attempt + 1, e);
+                last_error = Some(ProxyError::Http(e));
+                continue;
+            }
+        };
+
+        let status = response.status();
+
+        // 成功：直接返回
+        if status.is_success() {
+            if attempt > 0 {
+                tracing::info!("[Forwarder] 重试成功 (attempt {})", attempt + 1);
+            }
+            return Ok(response);
+        }
+
+        // 4xx 客户端错误：不重试
+        if status.is_client_error() {
+            let body_text = response.text().await.unwrap_or_default();
+            tracing::error!(
+                "[Forwarder] 上游客户端错误: status={}, body={}",
+                status,
+                body_text
+            );
+            return Err(ProxyError::UpstreamError {
+                status: status.as_u16(),
+                body: body_text,
+            });
+        }
+
+        // 5xx 服务端错误：可重试
         let body_text = response.text().await.unwrap_or_default();
-        return Err(ProxyError::UpstreamError {
+        tracing::warn!(
+            "[Forwarder] 上游服务端错误 (attempt {}): status={}, body={}",
+            attempt + 1,
+            status,
+            body_text
+        );
+        last_error = Some(ProxyError::UpstreamError {
             status: status.as_u16(),
             body: body_text,
         });
     }
 
-    Ok(response)
+    // 所有重试都失败
+    tracing::error!("[Forwarder] 所有 {} 次重试都失败", MAX_RETRIES + 1);
+    Err(last_error.unwrap_or(ProxyError::Server("未知错误".to_string())))
 }
 
 #[cfg(test)]

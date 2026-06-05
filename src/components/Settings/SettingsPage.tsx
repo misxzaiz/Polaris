@@ -1,5 +1,5 @@
 /**
- * 设置模态框 - 重构版
+ * 设置全页面 - 重构自 SettingsModal
  * 支持：
  * - 左侧导航分组
  * - 右侧内容区域
@@ -33,9 +33,9 @@ import { currentMode } from '@/services/transport';
 import { setMarkdownArtifactBaseUrl } from '@/utils/cache';
 import type { Config, ConfigPatch } from '@/types';
 
-const log = createLogger('SettingsModal');
+const log = createLogger('SettingsPage');
 
-interface SettingsModalProps {
+interface SettingsPageProps {
   onClose: () => void;
   /** 初始显示的标签页 */
   initialTab?: SettingsTabId;
@@ -60,7 +60,7 @@ const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'web': 'nav.web',
 };
 
-export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
+export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
   const { t } = useTranslation('settings');
   const { t: tCommon } = useTranslation('common');
 
@@ -180,171 +180,167 @@ export function SettingsModal({ onClose, initialTab }: SettingsModalProps) {
 
   if (!localConfig) {
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-        <div className="bg-background-elevated rounded-xl p-6 max-w-md w-full mx-4 shadow-soft">
-          <div className="text-center">{tCommon('status.loading')}</div>
-        </div>
+      <div className="flex-1 flex items-center justify-center bg-background-elevated">
+        <div className="text-center text-text-muted">{tCommon('status.loading')}</div>
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
-      <div className="bg-background-elevated rounded-xl w-full max-w-4xl h-[95vh] sm:h-[85vh] flex flex-col shadow-soft overflow-hidden">
-        {/* 顶部标题栏 */}
-        <div className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4 border-b border-border-subtle">
-          <h2 className="text-lg font-semibold text-text-primary">{t('title')}</h2>
-          <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              onClick={onClose}
-              disabled={saving}
-            >
-              {tCommon('actions.cancel')}
-            </Button>
-            <Button
-              variant="primary"
-              onClick={handleSaveAndClose}
-              disabled={saving || loading}
-            >
-              {saving ? tCommon('status.saving') : tCommon('actions.saveAndClose')}
-            </Button>
-          </div>
+    <div className="flex-1 flex flex-col overflow-hidden bg-background-elevated animate-in fade-in duration-150">
+      {/* 顶部标题栏 */}
+      <div className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4 border-b border-border-subtle">
+        <h2 className="text-lg font-semibold text-text-primary">{t('title')}</h2>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            onClick={onClose}
+            disabled={saving}
+          >
+            {tCommon('actions.cancel')}
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleSaveAndClose}
+            disabled={saving || loading}
+          >
+            {saving ? tCommon('status.saving') : tCommon('actions.saveAndClose')}
+          </Button>
         </div>
+      </div>
 
-        {/* 主体内容 */}
-        <div className="flex flex-col sm:flex-row flex-1 overflow-hidden">
-          {/* 左侧导航 */}
-          <SettingsSidebar
-            activeTab={activeTab}
-            onTabChange={setActiveTab}
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-          />
+      {/* 主体内容 */}
+      <div className="flex flex-col sm:flex-row flex-1 overflow-hidden">
+        {/* 左侧导航 */}
+        <SettingsSidebar
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+        />
 
-          {/* 右侧内容区域 */}
-          <div className="flex-1 flex flex-col overflow-hidden">
-            {/* 错误提示 */}
-            {error && (
-              <div className="mx-4 mt-4 p-3 bg-danger-faint border border-danger/30 rounded-lg text-danger text-sm">
-                {error}
-              </div>
+        {/* 右侧内容区域 */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* 错误提示 */}
+          {error && (
+            <div className="mx-4 mt-4 p-3 bg-danger-faint border border-danger/30 rounded-lg text-danger text-sm">
+              {error}
+            </div>
+          )}
+
+          {/* Tab 内容 */}
+          <div className="flex-1 overflow-y-auto p-3 sm:p-6">
+            <h3 className="text-base font-medium text-text-primary mb-4">
+              {t(TAB_TITLE_KEYS[activeTab])}
+            </h3>
+
+            {activeTab === 'auto-mode' && (
+              <AutoModeTab />
             )}
 
-            {/* Tab 内容 */}
-            <div className="flex-1 overflow-y-auto p-3 sm:p-6">
-              <h3 className="text-base font-medium text-text-primary mb-4">
-                {t(TAB_TITLE_KEYS[activeTab])}
-              </h3>
+            {activeTab === 'plugins' && (
+              <PluginTab />
+            )}
 
-              {activeTab === 'auto-mode' && (
-                <AutoModeTab />
-              )}
+            {activeTab === 'ai-engine' && (
+              <AIEngineTab
+                config={localConfig}
+                onConfigChange={setLocalConfig}
+                loading={loading}
+              />
+            )}
 
-              {activeTab === 'plugins' && (
-                <PluginTab />
-              )}
+            {activeTab === 'general' && (
+              <GeneralTab
+                config={localConfig}
+                onConfigChange={setLocalConfig}
+                loading={loading}
+              />
+            )}
 
-              {activeTab === 'ai-engine' && (
-                <AIEngineTab
-                  config={localConfig}
-                  onConfigChange={setLocalConfig}
-                  loading={loading}
-                />
-              )}
+            {activeTab === 'system-prompt' && (
+              <SystemPromptTab />
+            )}
 
-              {activeTab === 'general' && (
-                <GeneralTab
-                  config={localConfig}
-                  onConfigChange={setLocalConfig}
-                  loading={loading}
-                />
-              )}
+            {activeTab === 'prompt-snippet' && (
+              <PromptSnippetTab />
+            )}
 
-              {activeTab === 'system-prompt' && (
-                <SystemPromptTab />
-              )}
+            {activeTab === 'window' && (
+              <WindowTab
+                config={localConfig}
+                onConfigChange={setLocalConfig}
+                loading={loading}
+              />
+            )}
 
-              {activeTab === 'prompt-snippet' && (
-                <PromptSnippetTab />
-              )}
+            {activeTab === 'translate' && (
+              <TranslateTab
+                config={localConfig}
+                onConfigChange={setLocalConfig}
+                loading={loading}
+              />
+            )}
 
-              {activeTab === 'window' && (
-                <WindowTab
-                  config={localConfig}
-                  onConfigChange={setLocalConfig}
-                  loading={loading}
-                />
-              )}
+            {activeTab === 'qqbot' && (
+              <QQBotTab
+                loading={loading}
+              />
+            )}
 
-              {activeTab === 'translate' && (
-                <TranslateTab
-                  config={localConfig}
-                  onConfigChange={setLocalConfig}
-                  loading={loading}
-                />
-              )}
+            {activeTab === 'feishu' && (
+              <FeishuTab
+                loading={loading}
+              />
+            )}
 
-              {activeTab === 'qqbot' && (
-                <QQBotTab
-                  loading={loading}
-                />
-              )}
+            {activeTab === 'speech' && (
+              <SpeechTab
+                config={localConfig}
+                onConfigChange={setLocalConfig}
+                loading={loading}
+              />
+            )}
 
-              {activeTab === 'feishu' && (
-                <FeishuTab
-                  loading={loading}
-                />
-              )}
+            {activeTab === 'advanced' && (
+              <AdvancedTab
+                config={localConfig}
+                onConfigChange={setLocalConfig}
+                loading={loading}
+              />
+            )}
 
-              {activeTab === 'speech' && (
-                <SpeechTab
-                  config={localConfig}
-                  onConfigChange={setLocalConfig}
-                  loading={loading}
-                />
-              )}
+            {activeTab === 'lsp' && (
+              <LspTab />
+            )}
 
-              {activeTab === 'advanced' && (
-                <AdvancedTab
-                  config={localConfig}
-                  onConfigChange={setLocalConfig}
-                  loading={loading}
-                />
-              )}
+            {activeTab === 'app-update' && (
+              <AppUpdateTab />
+            )}
 
-              {activeTab === 'lsp' && (
-                <LspTab />
-              )}
+            {activeTab === 'web' && (
+              <WebTab
+                config={localConfig}
+                onConfigChange={setLocalConfig}
+                loading={loading}
+                statusRefreshKey={webStatusRefreshKey}
+              />
+            )}
+          </div>
 
-              {activeTab === 'app-update' && (
-                <AppUpdateTab />
-              )}
-
-              {activeTab === 'web' && (
-                <WebTab
-                  config={localConfig}
-                  onConfigChange={setLocalConfig}
-                  loading={loading}
-                  statusRefreshKey={webStatusRefreshKey}
-                />
-              )}
-            </div>
-
-            {/* 底部保存按钮 - 支持分组保存 */}
-            <div className="px-3 sm:px-6 py-3 sm:py-4 border-t border-border-subtle bg-background-elevated">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-text-tertiary">
-                  {t('currentGroup', '当前分组：{{name}}', { name: t(TAB_TITLE_KEYS[activeTab]) })}
-                </span>
-                <Button
-                  variant="secondary"
-                  onClick={handleSaveCurrentTab}
-                  disabled={saving || loading}
-                >
-                  {saving ? tCommon('status.saving') : t('saveTab', '保存{{name}}', { name: t(TAB_TITLE_KEYS[activeTab]) })}
-                </Button>
-              </div>
+          {/* 底部保存按钮 - 支持分组保存 */}
+          <div className="px-3 sm:px-6 py-3 sm:py-4 border-t border-border-subtle bg-background-elevated">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-text-tertiary">
+                {t('currentGroup', '当前分组：{{name}}', { name: t(TAB_TITLE_KEYS[activeTab]) })}
+              </span>
+              <Button
+                variant="secondary"
+                onClick={handleSaveCurrentTab}
+                disabled={saving || loading}
+              >
+                {saving ? tCommon('status.saving') : t('saveTab', '保存{{name}}', { name: t(TAB_TITLE_KEYS[activeTab]) })}
+              </Button>
             </div>
           </div>
         </div>

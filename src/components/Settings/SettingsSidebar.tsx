@@ -78,7 +78,7 @@ export function SettingsSidebar({ activeTab, onTabChange, searchQuery, onSearchC
   );
 
   return (
-    <div className="sm:w-48 sm:flex-shrink-0 sm:border-r sm:border-b-0 border-b border-border-subtle bg-background-elevated flex sm:flex-col">
+    <div className="sm:w-56 sm:flex-shrink-0 sm:border-r sm:border-b-0 border-b border-border-subtle bg-background-elevated flex sm:flex-col">
       {/* 搜索框 — 小屏隐藏，大屏显示 */}
       <div className="hidden sm:block p-3 border-b border-border-subtle">
         <div className="relative">
