@@ -64,6 +64,10 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                             continue;
                         }
 
+                        if chunk_count <= 3 {
+                            tracing::info!("[SSE] block#{}: {}", chunk_count, &block[..block.len().min(300)]);
+                        }
+
                         for line in block.lines() {
                             let Some(data) = strip_sse_field(line, "data") else {
                                 continue;
@@ -88,9 +92,17 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                             }
 
                             // 解析 OpenAI chunk
-                            let Ok(chunk) = serde_json::from_str::<OpenAIStreamChunk>(data) else {
-                                tracing::warn!("[SSE] 无法解析 OpenAI chunk: {}", &data[..data.len().min(200)]);
-                                continue;
+                            let chunk = match serde_json::from_str::<OpenAIStreamChunk>(data) {
+                                Ok(c) => {
+                                    if chunk_count <= 3 {
+                                        tracing::info!("[SSE] chunk#{} 解析成功: choices={}", chunk_count, c.choices.len());
+                                    }
+                                    c
+                                }
+                                Err(e) => {
+                                    tracing::error!("[SSE] 无法解析 OpenAI chunk: error={}, data={}", e, &data[..data.len().min(500)]);
+                                    continue;
+                                }
                             };
 
                             // 记录 message_id 和 model
@@ -423,4 +435,80 @@ fn build_message_delta_event(stop_reason: Option<String>, usage_json: Option<Val
         },
         "usage": usage
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::proxy::models::OpenAIStreamChunk;
+
+    #[test]
+    fn test_parse_agnes_normal_chunk() {
+        // agnes API 正常 chunk（空 content）
+        let data = r#"{"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"agnes-2.0-flash","choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}"#;
+        let result = serde_json::from_str::<OpenAIStreamChunk>(data);
+        assert!(result.is_ok(), "Failed to parse: {:?}", result.err());
+        let chunk = result.unwrap();
+        assert_eq!(chunk.choices.len(), 1);
+        assert_eq!(chunk.choices[0].delta.content, Some("".to_string()));
+    }
+
+    #[test]
+    fn test_parse_agnes_text_chunk() {
+        // agnes API 文本 chunk
+        let data = r#"{"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"agnes-2.0-flash","choices":[{"index":0,"delta":{"content":"Hi"}}]}"#;
+        let result = serde_json::from_str::<OpenAIStreamChunk>(data);
+        assert!(result.is_ok(), "Failed to parse: {:?}", result.err());
+        let chunk = result.unwrap();
+        assert_eq!(chunk.choices[0].delta.content, Some("Hi".to_string()));
+    }
+
+    #[test]
+    fn test_parse_agnes_usage_chunk() {
+        // agnes API usage chunk — choices 为空数组！
+        let data = r#"{"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"agnes-2.0-flash","system_fingerprint":"","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12,"prompt_tokens_details":{"cached_tokens":0,"text_tokens":0},"input_tokens":0,"output_tokens":0}}"#;
+        let result = serde_json::from_str::<OpenAIStreamChunk>(data);
+        assert!(result.is_ok(), "Failed to parse usage chunk: {:?}", result.err());
+        let chunk = result.unwrap();
+        assert_eq!(chunk.choices.len(), 0);
+        assert!(chunk.usage.is_some());
+        assert_eq!(chunk.usage.as_ref().unwrap().prompt_tokens, 10);
+    }
+
+    #[test]
+    fn test_parse_agnes_finish_chunk() {
+        // agnes API finish chunk
+        let data = r#"{"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"agnes-2.0-flash","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#;
+        let result = serde_json::from_str::<OpenAIStreamChunk>(data);
+        assert!(result.is_ok(), "Failed to parse: {:?}", result.err());
+        let chunk = result.unwrap();
+        assert_eq!(chunk.choices[0].finish_reason, Some("stop".to_string()));
+    }
+
+    #[test]
+    fn test_parse_agnes_real_response() {
+        // 完整的 agnes API 流式响应
+        let lines = vec![
+            r#"data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"agnes-2.0-flash","choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}"#,
+            r#"data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"agnes-2.0-flash","choices":[{"index":0,"delta":{"content":"Hi"}}]}"#,
+            r#"data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"agnes-2.0-flash","choices":[{"index":0,"delta":{"content":"!"}}]}"#,
+            r#"data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"agnes-2.0-flash","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#,
+            r#"data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"agnes-2.0-flash","system_fingerprint":"","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12,"prompt_tokens_details":{"cached_tokens":0,"text_tokens":0},"input_tokens":0,"output_tokens":0}}"#,
+        ];
+
+        let mut parsed_count = 0;
+        for line in &lines {
+            if let Some(data) = strip_sse_field(line, "data") {
+                if data.trim() == "[DONE]" {
+                    continue;
+                }
+                let result = serde_json::from_str::<OpenAIStreamChunk>(data);
+                match result {
+                    Ok(_) => parsed_count += 1,
+                    Err(e) => panic!("Failed to parse chunk: {}\nData: {}", e, data),
+                }
+            }
+        }
+        assert_eq!(parsed_count, 5, "Expected 5 chunks to parse successfully");
+    }
 }

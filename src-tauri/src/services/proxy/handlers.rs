@@ -9,10 +9,9 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::Response,
 };
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use super::forwarder::{forward_raw_response, ForwarderConfig};
-use super::streaming::create_anthropic_sse_stream;
 use super::transform::{anthropic_to_openai, openai_to_anthropic};
 
 /// 代理服务器共享状态
@@ -148,18 +147,210 @@ async fn handle_non_streaming(state: ProxyState, openai_body: Value) -> Response
 }
 
 /// 处理流式请求
+///
+/// 收集完整的上游响应体，转换为 Anthropic 格式后一次性返回。
+/// 虽然不是真正的流式，但避免了 Body::from_stream 与 async_stream 的兼容性问题，
+/// 且上游 API 响应通常在几秒内完成。
 async fn handle_streaming(state: ProxyState, openai_body: Value) -> Response {
     match forward_raw_response(&state.forwarder, &openai_body).await {
         Ok(response) => {
-            let byte_stream = response.bytes_stream();
-            let anthropic_stream = create_anthropic_sse_stream(byte_stream);
+            // 收集完整的上游响应体
+            let body_bytes = match response.bytes().await {
+                Ok(b) => b,
+                Err(e) => {
+                    tracing::error!("[Proxy] 读取上游流式响应体失败: {}", e);
+                    return error_response(StatusCode::BAD_GATEWAY, &format!("读取上游响应失败: {}", e));
+                }
+            };
+
+            let body_str = String::from_utf8_lossy(&body_bytes);
+            tracing::info!("[Proxy] 上游流式响应: {}bytes, {}lines", body_bytes.len(), body_str.lines().count());
+
+            // 解析所有 SSE data 行为 OpenAI chunks，转换为 Anthropic 格式
+            let mut anthropic_events: Vec<serde_json::Value> = Vec::new();
+            let mut message_id = String::from("msg_proxy");
+            let mut model = String::from("unknown");
+            let mut next_content_index: u32 = 0;
+            let mut has_emitted_content = false;
+            let mut stop_reason = String::from("end_turn");
+            let mut usage_json = json!({"input_tokens": 0, "output_tokens": 0});
+
+            for line in body_str.lines() {
+                let data = match line.strip_prefix("data: ") {
+                    Some(d) => d.trim(),
+                    None => continue,
+                };
+
+                if data == "[DONE]" {
+                    break;
+                }
+
+                let chunk: super::models::OpenAIStreamChunk = match serde_json::from_str(data) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        tracing::warn!("[Proxy] 跳过无法解析的 chunk: {} - {}", e, &data[..data.len().min(100)]);
+                        continue;
+                    }
+                };
+
+                if !chunk.id.is_empty() {
+                    message_id = chunk.id.clone();
+                }
+                if !chunk.model.is_empty() {
+                    model = chunk.model.clone();
+                }
+
+                if let Some(u) = &chunk.usage {
+                    usage_json = json!({
+                        "input_tokens": u.prompt_tokens,
+                        "output_tokens": u.completion_tokens
+                    });
+                }
+
+                if let Some(choice) = chunk.choices.first() {
+                    // 首次有内容时发出 message_start
+                    if !has_emitted_content {
+                        has_emitted_content = true;
+                        anthropic_events.push(json!({
+                            "event": "message_start",
+                            "data": {
+                                "type": "message_start",
+                                "message": {
+                                    "id": message_id,
+                                    "type": "message",
+                                    "role": "assistant",
+                                    "model": model,
+                                    "usage": {"input_tokens": 0, "output_tokens": 0}
+                                }
+                            }
+                        }));
+                    }
+
+                    // 文本内容
+                    if let Some(content) = &choice.delta.content {
+                        if !content.is_empty() {
+                            anthropic_events.push(json!({
+                                "event": "content_block_start",
+                                "data": {
+                                    "type": "content_block_start",
+                                    "index": next_content_index,
+                                    "content_block": {"type": "text", "text": ""}
+                                }
+                            }));
+                            anthropic_events.push(json!({
+                                "event": "content_block_delta",
+                                "data": {
+                                    "type": "content_block_delta",
+                                    "index": next_content_index,
+                                    "delta": {"type": "text_delta", "text": content}
+                                }
+                            }));
+                            anthropic_events.push(json!({
+                                "event": "content_block_stop",
+                                "data": {"type": "content_block_stop", "index": next_content_index}
+                            }));
+                            next_content_index += 1;
+                        }
+                    }
+
+                    // reasoning
+                    let reasoning = choice.delta.reasoning.as_deref();
+                    if let Some(r) = reasoning {
+                        if !r.is_empty() {
+                            anthropic_events.push(json!({
+                                "event": "content_block_start",
+                                "data": {
+                                    "type": "content_block_start",
+                                    "index": next_content_index,
+                                    "content_block": {"type": "thinking", "thinking": ""}
+                                }
+                            }));
+                            anthropic_events.push(json!({
+                                "event": "content_block_delta",
+                                "data": {
+                                    "type": "content_block_delta",
+                                    "index": next_content_index,
+                                    "delta": {"type": "thinking_delta", "thinking": r}
+                                }
+                            }));
+                            anthropic_events.push(json!({
+                                "event": "content_block_stop",
+                                "data": {"type": "content_block_stop", "index": next_content_index}
+                            }));
+                            next_content_index += 1;
+                        }
+                    }
+
+                    // finish_reason
+                    if let Some(fr) = &choice.finish_reason {
+                        stop_reason = match fr.as_str() {
+                            "stop" => "end_turn".to_string(),
+                            "length" => "max_tokens".to_string(),
+                            "tool_calls" => "tool_use".to_string(),
+                            _ => "end_turn".to_string(),
+                        };
+                    }
+                }
+            }
+
+            // 如果没有发出任何内容，发出一个空文本块
+            if !has_emitted_content {
+                anthropic_events.push(json!({
+                    "event": "message_start",
+                    "data": {
+                        "type": "message_start",
+                        "message": {
+                            "id": message_id,
+                            "type": "message",
+                            "role": "assistant",
+                            "model": model,
+                            "usage": {"input_tokens": 0, "output_tokens": 0}
+                        }
+                    }
+                }));
+                anthropic_events.push(json!({
+                    "event": "content_block_start",
+                    "data": {
+                        "type": "content_block_start",
+                        "index": 0,
+                        "content_block": {"type": "text", "text": ""}
+                    }
+                }));
+                anthropic_events.push(json!({
+                    "event": "content_block_stop",
+                    "data": {"type": "content_block_stop", "index": 0}
+                }));
+            }
+
+            // 发出 message_delta + message_stop
+            anthropic_events.push(json!({
+                "event": "message_delta",
+                "data": {
+                    "type": "message_delta",
+                    "delta": {"stop_reason": stop_reason, "stop_sequence": null},
+                    "usage": usage_json
+                }
+            }));
+            anthropic_events.push(json!({
+                "event": "message_stop",
+                "data": {"type": "message_stop"}
+            }));
+
+            tracing::info!("[Proxy] 生成 {} 个 Anthropic SSE 事件", anthropic_events.len());
+
+            // 构建 SSE 响应体
+            let mut sse_body = String::new();
+            for event in &anthropic_events {
+                let event_name = event["event"].as_str().unwrap_or("message");
+                let event_data = serde_json::to_string(&event["data"]).unwrap_or_default();
+                sse_body.push_str(&format!("event: {}\ndata: {}\n\n", event_name, event_data));
+            }
 
             Response::builder()
                 .status(StatusCode::OK)
                 .header("Content-Type", "text/event-stream")
                 .header("Cache-Control", "no-cache")
-                .header("Connection", "keep-alive")
-                .body(Body::from_stream(anthropic_stream))
+                .body(Body::from(sse_body))
                 .unwrap_or_else(|_| {
                     error_response(StatusCode::INTERNAL_SERVER_ERROR, "构建流式响应失败")
                 })
