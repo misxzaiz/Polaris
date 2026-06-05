@@ -4,7 +4,7 @@
  * 包含：认证状态、引擎选择、CLI 路径、模型 Profile 管理、Agnes 全模态引擎、可用 Agent 列表
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ClaudePathSelector } from '../../Common';
 import { useConfigStore } from '@/stores';
@@ -185,6 +185,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [newProfile, setNewProfile] = useState({ name: '', baseUrl: '', apiKey: '', model: '', wireApi: undefined as WireApi | undefined, description: '' });
   const [resetting, setResetting] = useState(false);
+  const formRef = useRef<HTMLDivElement>(null);
   const isCodex = config.defaultEngine === 'codex';
 
   // 初始化同步：确保 modelProfileStore 和 localConfig 双向一致
@@ -202,6 +203,13 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sync once on mount from backend config
   }, [])
+
+  // 表单展开时自动滚动到表单位置
+  useEffect(() => {
+    if (showAddForm && formRef.current) {
+      formRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  }, [showAddForm])
 
   const handleEngineChange = (engineId: EngineId) => {
     onConfigChange({
@@ -420,7 +428,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
 
         {/* 添加/编辑 Profile 表单 */}
         {showAddForm && (
-          <div className="mb-4 p-3 bg-background-default rounded-lg border border-border space-y-3">
+          <div ref={formRef} className="mb-4 p-3 bg-background-default rounded-lg border border-border space-y-3">
             <input
               type="text"
               placeholder={t('modelProfile.profileName')}
@@ -510,51 +518,59 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
             {profiles.map((profile) => (
               <div
                 key={profile.id}
-                className={`flex items-center gap-3 p-3 rounded-lg border transition-all cursor-pointer ${
+                className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${
                   activeProfileId === profile.id
                     ? 'border-primary bg-primary/5'
                     : 'border-border bg-background-default hover:border-primary/30'
                 }`}
-                onClick={() => {
-                  const newActiveId = activeProfileId === profile.id ? null : profile.id
-                  activateProfile(newActiveId)
-                  // 同步到 localConfig
-                  syncProfilesToConfig(useModelProfileStore.getState().profiles, newActiveId)
-                }}
               >
-                <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                  activeProfileId === profile.id ? 'border-primary bg-primary' : 'border-border'
-                }`}>
-                  {activeProfileId === profile.id && <Check size={10} className="text-white" />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <Globe size={12} className="text-text-tertiary shrink-0" />
-                    <span className="text-sm font-medium text-text-primary truncate">{profile.name}</span>
-                    {profile.wireApi === 'openai-chat-completions' && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 shrink-0">
-                        OpenAI
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-xs text-text-tertiary truncate mt-0.5">
-                    {profile.model} · {profile.baseUrl}
-                  </div>
-                </div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleEditProfile(profile); }}
-                  className="text-text-tertiary hover:text-primary transition-colors shrink-0"
-                  title={t('modelProfile.edit')}
+                {/* 激活区域：点击切换 Profile 激活状态 */}
+                <div
+                  className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
+                  onClick={() => {
+                    const newActiveId = activeProfileId === profile.id ? null : profile.id
+                    activateProfile(newActiveId)
+                    // 同步到 localConfig
+                    syncProfilesToConfig(useModelProfileStore.getState().profiles, newActiveId)
+                  }}
                 >
-                  <Pencil size={14} />
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDeleteProfile(profile.id); }}
-                  className="text-text-tertiary hover:text-red-500 transition-colors shrink-0"
-                  title={t('common.delete')}
-                >
-                  <Trash2 size={14} />
-                </button>
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                    activeProfileId === profile.id ? 'border-primary bg-primary' : 'border-border'
+                  }`}>
+                    {activeProfileId === profile.id && <Check size={10} className="text-white" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <Globe size={12} className="text-text-tertiary shrink-0" />
+                      <span className="text-sm font-medium text-text-primary truncate">{profile.name}</span>
+                      {profile.wireApi === 'openai-chat-completions' && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 shrink-0">
+                          OpenAI
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-text-tertiary truncate mt-0.5">
+                      {profile.model} · {profile.baseUrl}
+                    </div>
+                  </div>
+                </div>
+                {/* 操作按钮区域：独立于激活点击 */}
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => handleEditProfile(profile)}
+                    className="p-1 text-text-tertiary hover:text-primary transition-colors"
+                    title={t('modelProfile.edit')}
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteProfile(profile.id)}
+                    className="p-1 text-text-tertiary hover:text-red-500 transition-colors"
+                    title={t('common.delete')}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
             ))}
           </div>

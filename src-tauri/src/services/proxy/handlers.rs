@@ -154,13 +154,29 @@ struct AccumulatedToolCall {
     arguments: String,
 }
 
+/// 内容 delta 类型（保持原始顺序）
+#[derive(Debug)]
+enum ContentDelta {
+    Text(String),
+    Thinking(String),
+}
+
+/// 当前活跃的非 tool content block 状态
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ActiveBlock {
+    None,
+    Text,
+    Thinking,
+}
+
 /// 处理流式请求
 ///
 /// 收集完整的上游响应体，转换为 Anthropic 格式后一次性返回。
+/// 使用状态机将连续的 text/reasoning chunks 合并到同一个 content_block，
+/// 避免每个 chunk 独立成块导致 markdown 渲染（表格、代码块、列表等）断裂。
 async fn handle_streaming(state: ProxyState, openai_body: Value) -> Response {
     match forward_raw_response(&state.forwarder, &openai_body).await {
         Ok(response) => {
-            // 收集完整的上游响应体
             let body_bytes = match response.bytes().await {
                 Ok(b) => b,
                 Err(e) => {
@@ -172,27 +188,23 @@ async fn handle_streaming(state: ProxyState, openai_body: Value) -> Response {
             let body_str = String::from_utf8_lossy(&body_bytes);
             tracing::info!("[Proxy] 上游流式响应: {}bytes, {}lines", body_bytes.len(), body_str.lines().count());
 
-            // 解析所有 SSE data 行为 OpenAI chunks，转换为 Anthropic 格式
-            let mut anthropic_events: Vec<serde_json::Value> = Vec::new();
+            // --- 第一阶段：收集所有 chunk 数据 ---
             let mut message_id = String::from("msg_proxy");
             let mut model = String::from("unknown");
-            let mut next_content_index: u32 = 0;
-            let mut has_emitted_content = false;
             let mut stop_reason = String::from("end_turn");
             let mut usage_json = json!({"input_tokens": 0, "output_tokens": 0});
-            // 按 index 累积 tool_calls delta
             let mut tool_calls_map: std::collections::HashMap<usize, AccumulatedToolCall> =
                 std::collections::HashMap::new();
+
+            // 收集文本和推理 delta（保持顺序）
+            let mut content_deltas: Vec<ContentDelta> = Vec::new();
 
             for line in body_str.lines() {
                 let data = match line.strip_prefix("data: ") {
                     Some(d) => d.trim(),
                     None => continue,
                 };
-
-                if data == "[DONE]" {
-                    break;
-                }
+                if data == "[DONE]" { break; }
 
                 let chunk: super::models::OpenAIStreamChunk = match serde_json::from_str(data) {
                     Ok(c) => c,
@@ -202,121 +214,37 @@ async fn handle_streaming(state: ProxyState, openai_body: Value) -> Response {
                     }
                 };
 
-                if !chunk.id.is_empty() {
-                    message_id = chunk.id.clone();
-                }
-                if !chunk.model.is_empty() {
-                    model = chunk.model.clone();
-                }
-
+                if !chunk.id.is_empty() { message_id = chunk.id.clone(); }
+                if !chunk.model.is_empty() { model = chunk.model.clone(); }
                 if let Some(u) = &chunk.usage {
-                    usage_json = json!({
-                        "input_tokens": u.prompt_tokens,
-                        "output_tokens": u.completion_tokens
-                    });
+                    usage_json = json!({"input_tokens": u.prompt_tokens, "output_tokens": u.completion_tokens});
                 }
-
-                // 也检查 usage chunk（choices 为空数组）
-                if chunk.choices.is_empty() {
-                    continue;
-                }
+                if chunk.choices.is_empty() { continue; }
 
                 if let Some(choice) = chunk.choices.first() {
-                    // 首次有内容时发出 message_start
-                    if !has_emitted_content {
-                        has_emitted_content = true;
-                        anthropic_events.push(json!({
-                            "event": "message_start",
-                            "data": {
-                                "type": "message_start",
-                                "message": {
-                                    "id": message_id,
-                                    "type": "message",
-                                    "role": "assistant",
-                                    "model": model,
-                                    "usage": {"input_tokens": 0, "output_tokens": 0}
-                                }
-                            }
-                        }));
-                    }
-
                     // 文本内容
                     if let Some(content) = &choice.delta.content {
                         if !content.is_empty() {
-                            anthropic_events.push(json!({
-                                "event": "content_block_start",
-                                "data": {
-                                    "type": "content_block_start",
-                                    "index": next_content_index,
-                                    "content_block": {"type": "text", "text": ""}
-                                }
-                            }));
-                            anthropic_events.push(json!({
-                                "event": "content_block_delta",
-                                "data": {
-                                    "type": "content_block_delta",
-                                    "index": next_content_index,
-                                    "delta": {"type": "text_delta", "text": content}
-                                }
-                            }));
-                            anthropic_events.push(json!({
-                                "event": "content_block_stop",
-                                "data": {"type": "content_block_stop", "index": next_content_index}
-                            }));
-                            next_content_index += 1;
+                            content_deltas.push(ContentDelta::Text(content.clone()));
                         }
                     }
-
                     // reasoning / thinking
-                    let reasoning = choice.delta.reasoning.as_deref();
-                    if let Some(r) = reasoning {
+                    if let Some(r) = &choice.delta.reasoning {
                         if !r.is_empty() {
-                            anthropic_events.push(json!({
-                                "event": "content_block_start",
-                                "data": {
-                                    "type": "content_block_start",
-                                    "index": next_content_index,
-                                    "content_block": {"type": "thinking", "thinking": ""}
-                                }
-                            }));
-                            anthropic_events.push(json!({
-                                "event": "content_block_delta",
-                                "data": {
-                                    "type": "content_block_delta",
-                                    "index": next_content_index,
-                                    "delta": {"type": "thinking_delta", "thinking": r}
-                                }
-                            }));
-                            anthropic_events.push(json!({
-                                "event": "content_block_stop",
-                                "data": {"type": "content_block_stop", "index": next_content_index}
-                            }));
-                            next_content_index += 1;
+                            content_deltas.push(ContentDelta::Thinking(r.clone()));
                         }
                     }
-
-                    // 累积 tool_calls delta
+                    // tool_calls delta
                     if let Some(ref delta_tool_calls) = choice.delta.tool_calls {
                         for dtc in delta_tool_calls {
                             let entry = tool_calls_map.entry(dtc.index).or_default();
-                            if let Some(ref id) = dtc.id {
-                                if !id.is_empty() {
-                                    entry.id = id.clone();
-                                }
-                            }
+                            if let Some(ref id) = dtc.id { if !id.is_empty() { entry.id = id.clone(); } }
                             if let Some(ref func) = dtc.function {
-                                if let Some(ref name) = func.name {
-                                    if !name.is_empty() {
-                                        entry.name = name.clone();
-                                    }
-                                }
-                                if let Some(ref args) = func.arguments {
-                                    entry.arguments.push_str(args);
-                                }
+                                if let Some(ref name) = func.name { if !name.is_empty() { entry.name = name.clone(); } }
+                                if let Some(ref args) = func.arguments { entry.arguments.push_str(args); }
                             }
                         }
                     }
-
                     // finish_reason
                     if let Some(fr) = &choice.finish_reason {
                         stop_reason = match fr.as_str() {
@@ -329,12 +257,18 @@ async fn handle_streaming(state: ProxyState, openai_body: Value) -> Response {
                 }
             }
 
-            // --- 后处理：生成 tool_use content blocks ---
-            if !tool_calls_map.is_empty() {
-                // 确保 message_start 已发出
-                if !has_emitted_content {
-                    has_emitted_content = true;
-                    anthropic_events.push(json!({
+            // --- 第二阶段：用状态机生成 Anthropic SSE 事件 ---
+            // 核心：连续的同类型 delta 合并到同一个 content_block
+            let mut events: Vec<serde_json::Value> = Vec::new();
+            let mut next_index: u32 = 0;
+            let mut active_block = ActiveBlock::None;
+            let mut has_content = false;
+
+            // 确保 message_start 已发出
+            let mut ensure_message_start = |events: &mut Vec<Value>, has_content: &mut bool| {
+                if !*has_content {
+                    *has_content = true;
+                    events.push(json!({
                         "event": "message_start",
                         "data": {
                             "type": "message_start",
@@ -348,47 +282,113 @@ async fn handle_streaming(state: ProxyState, openai_body: Value) -> Response {
                         }
                     }));
                 }
+            };
 
-                // 按 index 排序保证顺序一致
+            // 关闭当前活跃 block
+            let mut close_block = |events: &mut Vec<Value>, active: &mut ActiveBlock, index: &mut u32| {
+                if *active != ActiveBlock::None {
+                    events.push(json!({
+                        "event": "content_block_stop",
+                        "data": {"type": "content_block_stop", "index": *index}
+                    }));
+                    *index += 1;
+                    *active = ActiveBlock::None;
+                }
+            };
+
+            // 开启新的 text block
+            let mut open_text_block = |events: &mut Vec<Value>, active: &mut ActiveBlock, index: u32| {
+                events.push(json!({
+                    "event": "content_block_start",
+                    "data": {
+                        "type": "content_block_start",
+                        "index": index,
+                        "content_block": {"type": "text", "text": ""}
+                    }
+                }));
+                *active = ActiveBlock::Text;
+            };
+
+            // 开启新的 thinking block
+            let mut open_thinking_block = |events: &mut Vec<Value>, active: &mut ActiveBlock, index: u32| {
+                events.push(json!({
+                    "event": "content_block_start",
+                    "data": {
+                        "type": "content_block_start",
+                        "index": index,
+                        "content_block": {"type": "thinking", "thinking": ""}
+                    }
+                }));
+                *active = ActiveBlock::Thinking;
+            };
+
+            // 处理所有内容 delta
+            for delta in &content_deltas {
+                match delta {
+                    ContentDelta::Text(text) => {
+                        ensure_message_start(&mut events, &mut has_content);
+                        if active_block != ActiveBlock::Text {
+                            close_block(&mut events, &mut active_block, &mut next_index);
+                            open_text_block(&mut events, &mut active_block, next_index);
+                        }
+                        events.push(json!({
+                            "event": "content_block_delta",
+                            "data": {
+                                "type": "content_block_delta",
+                                "index": next_index,
+                                "delta": {"type": "text_delta", "text": text}
+                            }
+                        }));
+                    }
+                    ContentDelta::Thinking(thinking) => {
+                        ensure_message_start(&mut events, &mut has_content);
+                        if active_block != ActiveBlock::Thinking {
+                            close_block(&mut events, &mut active_block, &mut next_index);
+                            open_thinking_block(&mut events, &mut active_block, next_index);
+                        }
+                        events.push(json!({
+                            "event": "content_block_delta",
+                            "data": {
+                                "type": "content_block_delta",
+                                "index": next_index,
+                                "delta": {"type": "thinking_delta", "thinking": thinking}
+                            }
+                        }));
+                    }
+                }
+            }
+
+            // 关闭最后一个非 tool block
+            close_block(&mut events, &mut active_block, &mut next_index);
+
+            // --- 生成 tool_use content blocks ---
+            let tool_call_count = tool_calls_map.len();
+            if !tool_calls_map.is_empty() {
+                ensure_message_start(&mut events, &mut has_content);
                 let mut sorted_calls: Vec<(usize, AccumulatedToolCall)> = tool_calls_map.into_iter().collect();
                 sorted_calls.sort_by_key(|(i, _)| *i);
 
                 for (_idx, tc) in sorted_calls {
-                    // 解析累积的 arguments JSON 字符串
                     let input: Value = serde_json::from_str(&tc.arguments).unwrap_or_else(|e| {
-                        tracing::warn!(
-                            "[Proxy] 工具调用 arguments JSON 解析失败 ({}): {}",
-                            e,
-                            &tc.arguments[..tc.arguments.len().min(200)]
-                        );
+                        tracing::warn!("[Proxy] 工具调用 arguments JSON 解析失败 ({}): {}", e, &tc.arguments[..tc.arguments.len().min(200)]);
                         json!({})
                     });
+                    tracing::info!("[Proxy] 生成 tool_use block: id={}, name={}, args_len={}", tc.id, tc.name, tc.arguments.len());
 
-                    tracing::info!(
-                        "[Proxy] 生成 tool_use block: id={}, name={}, args_len={}",
-                        tc.id, tc.name, tc.arguments.len()
-                    );
-
-                    anthropic_events.push(json!({
+                    events.push(json!({
                         "event": "content_block_start",
                         "data": {
                             "type": "content_block_start",
-                            "index": next_content_index,
-                            "content_block": {
-                                "type": "tool_use",
-                                "id": tc.id,
-                                "name": tc.name,
-                                "input": {}
-                            }
+                            "index": next_index,
+                            "content_block": {"type": "tool_use", "id": tc.id, "name": tc.name, "input": {}}
                         }
                     }));
-                    // 只在有实际参数时发送 delta
                     if !tc.arguments.is_empty() && tc.arguments != "{}" {
-                        anthropic_events.push(json!({
+                        events.push(json!({
                             "event": "content_block_delta",
                             "data": {
                                 "type": "content_block_delta",
-                                "index": next_content_index,
+                                "index": next_index,
                                 "delta": {
                                     "type": "input_json_delta",
                                     "partial_json": serde_json::to_string(&input).unwrap_or_else(|_| "{}".to_string())
@@ -396,65 +396,41 @@ async fn handle_streaming(state: ProxyState, openai_body: Value) -> Response {
                             }
                         }));
                     }
-                    anthropic_events.push(json!({
+                    events.push(json!({
                         "event": "content_block_stop",
-                        "data": {"type": "content_block_stop", "index": next_content_index}
+                        "data": {"type": "content_block_stop", "index": next_index}
                     }));
-                    next_content_index += 1;
+                    next_index += 1;
                 }
-
-                // tool_calls 模式下强制 stop_reason 为 tool_use
                 stop_reason = "tool_use".to_string();
             }
 
-            // 如果没有发出任何内容（纯文本响应也为空），发出一个空文本块
-            if !has_emitted_content {
-                anthropic_events.push(json!({
+            // 空响应 fallback
+            if !has_content {
+                events.push(json!({
                     "event": "message_start",
                     "data": {
                         "type": "message_start",
                         "message": {
-                            "id": message_id,
-                            "type": "message",
-                            "role": "assistant",
-                            "model": model,
-                            "usage": {"input_tokens": 0, "output_tokens": 0}
+                            "id": message_id, "type": "message", "role": "assistant",
+                            "model": model, "usage": {"input_tokens": 0, "output_tokens": 0}
                         }
                     }
                 }));
-                anthropic_events.push(json!({
-                    "event": "content_block_start",
-                    "data": {
-                        "type": "content_block_start",
-                        "index": 0,
-                        "content_block": {"type": "text", "text": ""}
-                    }
-                }));
-                anthropic_events.push(json!({
-                    "event": "content_block_stop",
-                    "data": {"type": "content_block_stop", "index": 0}
-                }));
+                events.push(json!({"event": "content_block_start", "data": {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}}));
+                events.push(json!({"event": "content_block_stop", "data": {"type": "content_block_stop", "index": 0}}));
             }
 
-            // 发出 message_delta + message_stop
-            anthropic_events.push(json!({
-                "event": "message_delta",
-                "data": {
-                    "type": "message_delta",
-                    "delta": {"stop_reason": stop_reason, "stop_sequence": null},
-                    "usage": usage_json
-                }
-            }));
-            anthropic_events.push(json!({
-                "event": "message_stop",
-                "data": {"type": "message_stop"}
-            }));
+            // message_delta + message_stop
+            events.push(json!({"event": "message_delta", "data": {"type": "message_delta", "delta": {"stop_reason": stop_reason, "stop_sequence": null}, "usage": usage_json}}));
+            events.push(json!({"event": "message_stop", "data": {"type": "message_stop"}}));
 
-            tracing::info!("[Proxy] 生成 {} 个 Anthropic SSE 事件", anthropic_events.len());
+            tracing::info!("[Proxy] 生成 {} 个 Anthropic SSE 事件 (text_deltas={}, tool_calls={})",
+                events.len(), content_deltas.len(), tool_call_count);
 
             // 构建 SSE 响应体
             let mut sse_body = String::new();
-            for event in &anthropic_events {
+            for event in &events {
                 let event_name = event["event"].as_str().unwrap_or("message");
                 let event_data = serde_json::to_string(&event["data"]).unwrap_or_default();
                 sse_body.push_str(&format!("event: {}\ndata: {}\n\n", event_name, event_data));
@@ -465,9 +441,7 @@ async fn handle_streaming(state: ProxyState, openai_body: Value) -> Response {
                 .header("Content-Type", "text/event-stream")
                 .header("Cache-Control", "no-cache")
                 .body(Body::from(sse_body))
-                .unwrap_or_else(|_| {
-                    error_response(StatusCode::INTERNAL_SERVER_ERROR, "构建流式响应失败")
-                })
+                .unwrap_or_else(|_| error_response(StatusCode::INTERNAL_SERVER_ERROR, "构建流式响应失败"))
         }
         Err(e) => {
             tracing::error!("[Proxy] 上游流式请求失败: {}", e);
