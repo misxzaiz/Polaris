@@ -261,6 +261,58 @@ impl ModelProfileService {
         Self::codex_provider_id(profile).to_ascii_uppercase() + "_API_KEY"
     }
 
+    /// 生成 Codex 代理转换模式的 provider 参数。
+    ///
+    /// Codex CLI 始终请求本地 `/v1/responses`，Polaris 代理将其转换到上游 Chat Completions 端点。
+    pub fn generate_codex_proxy_config_args(
+        profile: &ModelProfile,
+        proxy_addr: SocketAddr,
+    ) -> Vec<String> {
+        let provider_id = Self::codex_provider_id(profile);
+        let env_key = Self::codex_api_key_env(profile);
+        let base_url = format!("http://{}/v1", proxy_addr);
+
+        vec![
+            "-c".to_string(),
+            format!(
+                "model_provider={}",
+                toml_string(&provider_id).unwrap_or_else(|_| format!("\"{}\"", provider_id))
+            ),
+            "-c".to_string(),
+            format!(
+                "model_providers.{}.name={}",
+                provider_id,
+                toml_string(&profile.name).unwrap_or_else(|_| format!("\"{}\"", profile.name))
+            ),
+            "-c".to_string(),
+            format!(
+                "model_providers.{}.base_url={}",
+                provider_id,
+                toml_string(&base_url).unwrap_or_else(|_| format!("\"{}\"", base_url))
+            ),
+            "-c".to_string(),
+            format!(
+                "model_providers.{}.env_key={}",
+                provider_id,
+                toml_string(&env_key).unwrap_or_else(|_| format!("\"{}\"", env_key))
+            ),
+            "-c".to_string(),
+            format!("model_providers.{}.wire_api=\"responses\"", provider_id),
+        ]
+    }
+
+    /// 生成 Codex 代理转换模式的环境变量覆盖。
+    pub fn generate_codex_proxy_env_overrides(profile: &ModelProfile) -> HashMap<String, String> {
+        let mut env = HashMap::new();
+        env.insert(Self::codex_api_key_env(profile), "PROXY_MANAGED".to_string());
+        if let Some(custom) = &profile.custom_env {
+            for (k, v) in custom {
+                env.insert(k.clone(), v.clone());
+            }
+        }
+        env
+    }
+
     /// 清理指定 Profile 的 settings overlay 临时文件
     pub fn cleanup_settings_overlay(profile_id: &str) -> Result<()> {
         let temp_dir = std::env::temp_dir();
@@ -593,5 +645,47 @@ mod tests {
             Some(&"secret".to_string())
         );
         assert!(!env.contains_key("OPENAI_API_KEY"));
+    }
+
+    #[test]
+    fn maps_openai_chat_codex_wire_to_chat() {
+        let mut p = profile();
+        p.wire_api = Some("openai-chat-completions".to_string());
+        let args = ModelProfileService::generate_codex_config_args(&p);
+        let joined = args.join("\n");
+
+        assert!(joined.contains("model_providers.polaris_profile_test_1.wire_api=\"chat\""));
+        assert!(joined.contains("model_providers.polaris_profile_test_1.base_url=\"https://ruoli.dev/v1\""));
+    }
+
+    #[test]
+    fn generates_codex_proxy_config_args_pointing_to_local_proxy() {
+        let mut p = profile();
+        p.wire_api = Some("openai-chat-completions".to_string());
+        let args = ModelProfileService::generate_codex_proxy_config_args(
+            &p,
+            "127.0.0.1:12345".parse().unwrap(),
+        );
+        let joined = args.join("\n");
+
+        assert!(joined.contains("model_provider=\"polaris_profile_test_1\""));
+        assert!(joined.contains("model_providers.polaris_profile_test_1.base_url=\"http://127.0.0.1:12345/v1\""));
+        assert!(joined.contains("model_providers.polaris_profile_test_1.env_key=\"POLARIS_PROFILE_TEST_1_API_KEY\""));
+        assert!(joined.contains("model_providers.polaris_profile_test_1.wire_api=\"responses\""));
+    }
+
+    #[test]
+    fn generates_codex_proxy_env_overrides_with_placeholder_and_custom_env() {
+        let mut p = profile();
+        p.wire_api = Some("openai-chat-completions".to_string());
+        p.custom_env = Some(std::collections::HashMap::from([(
+            "EXTRA_HEADER".to_string(),
+            "1".to_string(),
+        )]));
+
+        let env = ModelProfileService::generate_codex_proxy_env_overrides(&p);
+
+        assert_eq!(env.get("POLARIS_PROFILE_TEST_1_API_KEY"), Some(&"PROXY_MANAGED".to_string()));
+        assert_eq!(env.get("EXTRA_HEADER"), Some(&"1".to_string()));
     }
 }

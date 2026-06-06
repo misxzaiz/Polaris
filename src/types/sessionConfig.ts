@@ -46,7 +46,7 @@ export interface CLIModel {
  * 控制模型在回答时投入的努力程度
  * 空字符串表示不传参数，使用 CLI 默认
  */
-export type EffortLevel = '' | 'low' | 'medium' | 'high' | 'max'
+export type EffortLevel = '' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 /**
  * 权限模式
@@ -92,8 +92,8 @@ export interface SessionRuntimeConfig {
 export const DEFAULT_SESSION_CONFIG: Required<SessionRuntimeConfig> = {
   agent: '',
   model: 'opus',
-  effort: 'max',
-  permissionMode: 'bypassPermissions',
+  effort: 'xhigh',
+  permissionMode: 'default',
   modelProfileId: '',
 }
 /**
@@ -221,6 +221,11 @@ export const EFFORT_OPTIONS: Array<{ value: EffortLevel; label: string; descript
     description: '全力以赴，最高质量输出',
   },
   {
+    value: 'xhigh',
+    label: '极高',
+    description: '适合复杂编码和长程 Agent 任务，质量与成本更均衡',
+  },
+  {
     value: 'high',
     label: '高',
     description: '深入思考，适合复杂问题',
@@ -242,24 +247,24 @@ export const EFFORT_OPTIONS: Array<{ value: EffortLevel; label: string; descript
  */
 export const PERMISSION_MODE_OPTIONS: Array<{ value: PermissionMode | ''; label: string; description: string }> = [
   {
-    value: 'bypassPermissions',
+    value: '',
     label: '不设置',
-    description: '跳过所有权限检查',
+    description: '不传权限参数，使用 CLI 默认权限策略',
   },
   {
     value: 'default',
     label: '默认',
-    description: '敏感操作需要确认',
+    description: '敏感操作需要确认，推荐日常使用',
   },
   {
     value: 'auto',
     label: '自动',
-    description: '安全操作自动批准',
+    description: '安全操作自动批准，高风险操作仍会受限',
   },
   {
     value: 'acceptEdits',
     label: '接受编辑',
-    description: '自动接受文件编辑',
+    description: '自动接受文件编辑，但不跳过所有权限检查',
   },
   {
     value: 'plan',
@@ -269,6 +274,11 @@ export const PERMISSION_MODE_OPTIONS: Array<{ value: PermissionMode | ''; label:
   {
     value: 'dontAsk',
     label: '拒绝危险',
-    description: '拒绝危险操作',
+    description: '拒绝需要确认的危险操作',
+  },
+  {
+    value: 'bypassPermissions',
+    label: '跳过权限（高风险）',
+    description: '绕过所有权限检查，仅建议在隔离且无外网的沙箱中使用',
   },
 ]

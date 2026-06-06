@@ -13,6 +13,17 @@ import type {
 } from '@/types/sessionConfig'
 import { DEFAULT_SESSION_CONFIG } from '@/types/sessionConfig'
 
+function normalizeSessionConfig(config: SessionRuntimeConfig | undefined): SessionRuntimeConfig {
+  return {
+    ...DEFAULT_SESSION_CONFIG,
+    ...(config ?? {}),
+    effort: config?.effort === 'max' ? DEFAULT_SESSION_CONFIG.effort : config?.effort ?? DEFAULT_SESSION_CONFIG.effort,
+    permissionMode: config?.permissionMode === 'bypassPermissions'
+      ? DEFAULT_SESSION_CONFIG.permissionMode
+      : config?.permissionMode ?? DEFAULT_SESSION_CONFIG.permissionMode,
+  }
+}
+
 interface SessionConfigState {
   /** 当前会话配置 */
   config: SessionRuntimeConfig

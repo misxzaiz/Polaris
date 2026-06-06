@@ -9,6 +9,7 @@
 //! Claude CLI ← (Anthropic Messages) ← Polaris Proxy ← (OpenAI Chat Completions) ← 上游 API
 //! ```
 
+pub mod codex_chat;
 pub mod error;
 pub mod forwarder;
 pub mod handlers;

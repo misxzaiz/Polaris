@@ -8,7 +8,7 @@ use tokio::net::TcpListener;
 use tokio::sync::watch;
 
 use super::forwarder::ForwarderConfig;
-use super::handlers::{handle_messages, ProxyState};
+use super::handlers::{handle_messages, handle_responses, ProxyState};
 
 /// 代理服务器句柄
 ///
@@ -41,6 +41,8 @@ pub async fn start_proxy_server(
 
     let app = Router::new()
         .route("/v1/messages", post(handle_messages))
+        .route("/v1/responses", post(handle_responses))
+        .route("/responses", post(handle_responses))
         .with_state(state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));

@@ -232,13 +232,38 @@ export function createConversationStore(
       // 3. 超时保护：200ms 内没有段落结束也 flush
       // 效果：渲染更像"事件级"，一个段落一次渲染，减少视觉跳动
       appendTextBlock: (content) => {
-        // 追加到闭包级 buffer（O(1)，不触发 Zustand）
+        // 追加到闭包级 buffer（O(1），不触发 Zustand）
         _textBuffer += content
 
         const state = get()
 
         // 首次创建消息时立即 flush（保证首 token 响应速度）
         if (!state.currentMessage) {
+          // 防御：session_end 已到达但迟到的 token 仍在写入
+          // 此时 isStreaming=false 且 currentMessage=null，说明 finishMessage 已执行
+          // 迟到的内容应追加到最后一条助手消息，而非创建孤儿消息
+          if (!state.isStreaming) {
+            const bufferContent = _textBuffer
+            _textBuffer = ''
+            if (bufferContent) {
+              const { messages } = get()
+              const lastIdx = messages.length - 1
+              if (lastIdx >= 0 && messages[lastIdx].type === 'assistant') {
+                const lastMsg = messages[lastIdx]
+                const blocks = [...lastMsg.blocks]
+                const lastBlock = blocks[blocks.length - 1]
+                if (lastBlock?.type === 'text') {
+                  blocks[blocks.length - 1] = { ...lastBlock, content: lastBlock.content + bufferContent }
+                } else {
+                  blocks.push({ type: 'text', content: bufferContent })
+                }
+                const newMessages = [...messages]
+                newMessages[lastIdx] = { ...lastMsg, blocks }
+                set({ messages: newMessages })
+              }
+            }
+            return
+          }
           get()._flushTextBuffer()
           return
         }
@@ -277,12 +302,31 @@ export function createConversationStore(
         if (!bufferToFlush && state.currentMessage) return
 
         if (!state.currentMessage) {
-          // 首次创建消息
           if (bufferToFlush) {
-            set({
-              currentMessage: createCurrentAssistantMessage([{ type: 'text', content: bufferToFlush }]),
-              streamingUpdateCounter: state.streamingUpdateCounter + 1,
-            })
+            if (!state.isStreaming) {
+              // session_end 已到达，定时器 flush 的迟到内容追加到最后一条消息
+              const { messages } = get()
+              const lastIdx = messages.length - 1
+              if (lastIdx >= 0 && messages[lastIdx].type === 'assistant') {
+                const lastMsg = messages[lastIdx]
+                const blocks = [...lastMsg.blocks]
+                const lastBlock = blocks[blocks.length - 1]
+                if (lastBlock?.type === 'text') {
+                  blocks[blocks.length - 1] = { ...lastBlock, content: lastBlock.content + bufferToFlush }
+                } else {
+                  blocks.push({ type: 'text', content: bufferToFlush })
+                }
+                const newMessages = [...messages]
+                newMessages[lastIdx] = { ...lastMsg, blocks }
+                set({ messages: newMessages })
+              }
+            } else {
+              // 首次创建消息
+              set({
+                currentMessage: createCurrentAssistantMessage([{ type: 'text', content: bufferToFlush }]),
+                streamingUpdateCounter: state.streamingUpdateCounter + 1,
+              })
+            }
           }
         } else {
           // 更新最后一个文本块

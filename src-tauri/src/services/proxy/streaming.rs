@@ -50,7 +50,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
         use futures_util::StreamExt;
         tokio::pin!(stream);
         let mut chunk_count: u32 = 0;
-        let mut event_count: u32 = 0;
+        let event_count: u32 = 0;
 
         while let Some(chunk) = stream.next().await {
             match chunk {

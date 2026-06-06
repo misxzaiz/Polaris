@@ -11,6 +11,7 @@ use crate::ai::{
     ClaudeHistoryProvider, CodexHistoryProvider, HistoryMessage, SessionHistoryProvider,
     SessionMeta,
 };
+use crate::services::proxy::ProxyWireApi;
 use crate::ai::{EngineId, ImageAttachment, PagedResult, Pagination, SessionOptions};
 use crate::error::{AppError, Result};
 use crate::models::AIEvent;
@@ -575,13 +576,54 @@ async fn apply_model_profile_options(
             }
         }
         EngineId::Codex => {
-            let codex_args =
-                crate::services::ModelProfileService::generate_codex_config_args(profile);
-            session_opts.codex_config_args.extend(codex_args);
+            let wire = profile.wire_api.as_deref();
+            let use_codex_proxy = matches!(wire, Some("openai-chat-completions"));
 
-            let env_overrides =
-                crate::services::ModelProfileService::generate_codex_env_overrides(profile);
-            session_opts.env_overrides.extend(env_overrides);
+            if use_codex_proxy {
+                tracing::info!(
+                    "[{}] Profile {} 使用 Codex Responses→Chat 代理转换模式",
+                    log_scope,
+                    profile.name
+                );
+
+                match state
+                    .proxy_manager
+                    .start_proxy(
+                        &format!("codex:{}", profile.id),
+                        &profile.base_url,
+                        &profile.api_key,
+                        ProxyWireApi::CodexResponsesToChatCompletions,
+                        profile.custom_headers.clone().unwrap_or_default(),
+                    )
+                    .await
+                {
+                    Ok(proxy_addr) => {
+                        let codex_args = crate::services::ModelProfileService::generate_codex_proxy_config_args(profile, proxy_addr);
+                        session_opts.codex_config_args.extend(codex_args);
+
+                        let env_overrides = crate::services::ModelProfileService::generate_codex_proxy_env_overrides(profile);
+                        session_opts.env_overrides.extend(env_overrides);
+                    }
+                    Err(e) => {
+                        tracing::error!("[{}] 启动 Codex Responses 代理失败，回退到直连: {}", log_scope, e);
+                        let codex_args =
+                            crate::services::ModelProfileService::generate_codex_config_args(profile);
+                        session_opts.codex_config_args.extend(codex_args);
+
+                        let env_overrides =
+                            crate::services::ModelProfileService::generate_codex_env_overrides(profile);
+                        session_opts.env_overrides.extend(env_overrides);
+                    }
+                }
+            } else {
+                let codex_args =
+                    crate::services::ModelProfileService::generate_codex_config_args(profile);
+                session_opts.codex_config_args.extend(codex_args);
+
+                let env_overrides =
+                    crate::services::ModelProfileService::generate_codex_env_overrides(profile);
+                session_opts.env_overrides.extend(env_overrides);
+            }
         }
     }
 

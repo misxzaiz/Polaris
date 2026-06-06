@@ -1017,4 +1017,47 @@ mod tests {
             args.contains(&"mcp_servers.polaris-todo.args=[\"config\",\"workspace\"]".to_string())
         );
     }
+
+    #[test]
+    fn build_command_accepts_codex_proxy_profile_args_and_model() {
+        let mut engine = CodexEngine::new(Config::default());
+        engine.cli_path = Some("codex".to_string());
+
+        let config_args = vec![
+            "-c".to_string(),
+            "model_provider=\"polaris_test\"".to_string(),
+            "-c".to_string(),
+            "model_providers.polaris_test.base_url=\"http://127.0.0.1:12345/v1\"".to_string(),
+            "-c".to_string(),
+            "model_providers.polaris_test.wire_api=\"responses\"".to_string(),
+        ];
+
+        let cmd = engine
+            .build_command(
+                "hello",
+                None,
+                Some("D:\\workspace"),
+                Some("gpt-5.5"),
+                &[],
+                None,
+                &config_args,
+            )
+            .unwrap();
+
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|arg| arg.to_string_lossy().to_string())
+            .collect();
+
+        let first_config_index = args.iter().position(|arg| arg == "-c").unwrap();
+        let model_flag_index = args.iter().position(|arg| arg == "--model").unwrap();
+        let model_value_index = args.iter().position(|arg| arg == "gpt-5.5").unwrap();
+        let message_index = args.iter().position(|arg| arg == "hello").unwrap();
+
+        assert!(first_config_index < model_flag_index);
+        assert!(model_flag_index < model_value_index);
+        assert!(model_value_index < message_index);
+        assert!(args.contains(&"model_providers.polaris_test.base_url=\"http://127.0.0.1:12345/v1\"".to_string()));
+        assert!(args.contains(&"model_providers.polaris_test.wire_api=\"responses\"".to_string()));
+    }
 }
