@@ -23,7 +23,9 @@ import {
 import { useCliInfoStore } from '@/stores/cliInfoStore'
 import { useConfigStore } from '@/stores'
 import { useModelProfileStore } from '@/stores/modelProfileStore'
-import { isProfileForEngine } from '@/types/modelProfile'
+import { isProfileForEngine, type WireApi } from '@/types/modelProfile'
+import { useActiveSessionId, useSessionMetadataList } from '@/stores/conversationStore/sessionStoreManager'
+import { normalizeEngineId } from '@/utils/engineDisplay'
 
 interface SessionConfigSelectorProps {
   /** 当前配置 */
@@ -39,6 +41,40 @@ interface SessionConfigSelectorProps {
 }
 
 type SelectorType = 'agent' | 'model' | 'effort' | 'permission' | 'profile'
+
+/** Profile 线路协议的视觉标识（状态栏 Profile 选择器用，三协议各自区分） */
+function wireApiBadge(wireApi?: WireApi): string {
+  switch (wireApi) {
+    case 'openai-chat-completions':
+      return '🔵'
+    case 'openai-responses':
+      return '🟢'
+    default:
+      // 缺省 / anthropic-messages
+      return '🟣'
+  }
+}
+
+/** Profile 线路协议的简短名称（描述文案用） */
+function wireApiShortLabel(wireApi?: WireApi): string {
+  switch (wireApi) {
+    case 'openai-chat-completions':
+      return 'OpenAI Chat'
+    case 'openai-responses':
+      return 'OpenAI Responses'
+    default:
+      return 'Anthropic'
+  }
+}
+
+/** 安全解析 baseUrl 主机名，非法 URL 时回退原串（避免选择器渲染崩溃） */
+function safeHostname(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).hostname
+  } catch {
+    return baseUrl
+  }
+}
 
 /**
  * 会话配置选择器组件
@@ -87,9 +123,19 @@ export function SessionConfigSelector({
   // 模型 Profile 列表
   const profiles = useModelProfileStore(s => s.profiles)
 
-  // 当前引擎（用于过滤 Profile）
-  const defaultEngine = useConfigStore(s => s.config?.defaultEngine || 'claude-code')
-  const currentEngine: 'claude' | 'codex' = defaultEngine === 'codex' ? 'codex' : 'claude'
+  // 当前引擎（用于过滤 Profile）：优先取活动会话的引擎，降级到全局默认引擎。
+  // 映射到 isProfileForEngine 的引擎参数（claude / codex / simple-ai）。
+  const activeSessionId = useActiveSessionId()
+  const sessionMetadataList = useSessionMetadataList()
+  const defaultEngine = useConfigStore(s => s.config?.defaultEngine)
+  const activeMeta = sessionMetadataList.find(s => s.id === activeSessionId)
+  const activeEngineId = normalizeEngineId(activeMeta?.engineId || defaultEngine)
+  const currentEngine: 'claude' | 'codex' | 'simple-ai' =
+    activeEngineId === 'codex'
+      ? 'codex'
+      : activeEngineId === 'simple-ai'
+        ? 'simple-ai'
+        : 'claude'
 
   // 模型列表：仅官方模型档位（opus/sonnet/haiku）。
   // 第三方端点请使用独立的「端点（profile）」选择器——model 字段会原样传给 CLI 的 --model，
@@ -209,8 +255,8 @@ export function SessionConfigSelector({
         // 过滤出与当前引擎兼容的 Profile
         items.push(...compatibleProfiles.map(p => ({
           value: p.id,
-          label: `${p.wireApi === 'openai-chat-completions' ? '🔵' : '🔄'} ${p.name}`,
-          description: p.description || `${p.model} @ ${new URL(p.baseUrl).hostname}${p.wireApi === 'openai-chat-completions' ? ' (OpenAI)' : ''}`,
+          label: `${wireApiBadge(p.wireApi)} ${p.name}`,
+          description: p.description || `${p.model} @ ${safeHostname(p.baseUrl)} · ${wireApiShortLabel(p.wireApi)}`,
         })))
         // 如果有被过滤掉的 Profile，显示提示
         const skippedCount = profiles.length - compatibleProfiles.length
@@ -308,7 +354,7 @@ export function SessionConfigSelector({
         if (!config.modelProfileId) return t('sessionConfig.noProfile')
         const profile = profiles.find(p => p.id === config.modelProfileId)
         if (!profile) return t('sessionConfig.noProfile')
-        return `${profile.wireApi === 'openai-chat-completions' ? '🔵' : '🔄'} ${profile.name}`
+        return `${wireApiBadge(profile.wireApi)} ${profile.name}`
       },
     },
   }

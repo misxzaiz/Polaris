@@ -183,7 +183,9 @@
       "label": "Target Engine",
       "claude": "Claude Code",
       "codex": "Codex CLI",
-      "both": "Both (Claude + Codex)"
+      "both": "Both (Claude + Codex)",
+      "simple-ai": "Simple AI",
+      "all": "All Engines"
     },
     "category": {
       "label": "Provider Category",

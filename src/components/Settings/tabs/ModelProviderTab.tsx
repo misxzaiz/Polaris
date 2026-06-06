@@ -560,13 +560,13 @@ function ProfileEditorModal({
             </div>
             <div>
               <label className={labelClass}>{t('modelProfile.targetEngine.label')}</label>
-              <div className="flex gap-2">
-                {(['claude', 'codex', 'both'] as ProfileTargetEngine[]).map((engineOption) => (
+              <div className="grid grid-cols-3 gap-2">
+                {(['claude', 'codex', 'simple-ai', 'both', 'all'] as ProfileTargetEngine[]).map((engineOption) => (
                   <button
                     key={engineOption}
                     type="button"
                     onClick={() => patch({ targetEngine: engineOption })}
-                    className={`flex-1 px-3 py-1.5 text-xs rounded-md border transition-all ${
+                    className={`px-3 py-1.5 text-xs rounded-md border transition-all ${
                       form.targetEngine === engineOption
                         ? 'border-primary bg-primary/10 text-primary'
                         : 'border-border bg-background-surface text-text-tertiary hover:border-primary/30'

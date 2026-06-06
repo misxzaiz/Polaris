@@ -183,7 +183,9 @@
       "label": "适用引擎",
       "claude": "Claude Code",
       "codex": "Codex CLI",
-      "both": "通用（Claude + Codex）"
+      "both": "通用（Claude + Codex）",
+      "simple-ai": "Simple AI",
+      "all": "全部引擎"
     },
     "category": {
       "label": "供应商分类",
