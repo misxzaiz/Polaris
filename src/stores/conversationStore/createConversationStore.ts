@@ -359,8 +359,15 @@ export function createConversationStore(
             streamingUpdateCounter: streamingUpdateCounter + 1,
           })
         } else {
+          const blocks = [...currentMessage.blocks]
+          const lastBlock = blocks[blocks.length - 1]
+          if (lastBlock?.type === 'thinking') {
+            blocks[blocks.length - 1] = { ...lastBlock, content: lastBlock.content + content }
+          } else {
+            blocks.push(block)
+          }
           set({
-            currentMessage: { ...currentMessage, blocks: [...currentMessage.blocks, block] },
+            currentMessage: { ...currentMessage, blocks },
             streamingUpdateCounter: streamingUpdateCounter + 1,
           })
         }

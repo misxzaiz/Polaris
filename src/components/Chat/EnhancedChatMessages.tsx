@@ -17,7 +17,7 @@
 
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
-import type { ChatMessage, AssistantChatMessage, TextBlock } from '@/types';
+import type { ChatMessage, AssistantChatMessage, TextBlock, ThinkingBlock } from '@/types';
 import { useActiveSessionMessages, useActiveSessionStreaming, useSessionMessages, useSessionStreaming, useActiveSessionActions } from '@/stores/conversationStore/useActiveSession';
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
 import {
@@ -88,7 +88,11 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
     }
 
     const lastBlock = currentMessage.blocks[currentMessage.blocks.length - 1];
-    const currentContentLen = lastBlock?.type === 'text' ? (lastBlock as TextBlock).content?.length || 0 : 0;
+    const currentContentLen = lastBlock?.type === 'text'
+      ? (lastBlock as TextBlock).content?.length || 0
+      : lastBlock?.type === 'thinking'
+        ? (lastBlock as ThinkingBlock).content?.length || 0
+        : 0;
     const currentBlockCount = currentMessage.blocks.length;
 
     if (
