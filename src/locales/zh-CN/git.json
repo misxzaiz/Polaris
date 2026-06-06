@@ -409,5 +409,16 @@
     "newVersion": "新版本",
     "unifiedView": "统一 Diff",
     "splitView": "左右对比"
+  },
+  "ultraReview": {
+    "button": "AI 审查",
+    "title": "AI 代码审查",
+    "reviewing": "审查中…",
+    "reviewingHint": "正在调用云端多 Agent 审查当前分支，可能需要数分钟，请耐心等待。",
+    "currentBranch": "当前分支：{{branch}}",
+    "empty": "未发现问题，或暂无输出。",
+    "failed": "AI 审查失败",
+    "close": "关闭",
+    "rerun": "重新审查"
   }
 }
