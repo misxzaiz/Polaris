@@ -11,8 +11,10 @@ use axum::{
 };
 use serde_json::{json, Value};
 
-use super::forwarder::{forward_raw_response, ForwarderConfig};
-use super::transform::{anthropic_to_openai, openai_to_anthropic};
+use super::forwarder::{forward_raw_response, ForwarderConfig, ProxyWireApi};
+use super::transform::{
+    anthropic_to_openai, anthropic_to_responses, openai_to_anthropic, responses_to_anthropic,
+};
 
 /// 代理服务器共享状态
 #[derive(Debug, Clone)]
@@ -44,8 +46,12 @@ pub async fn handle_messages(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    // 转换 Anthropic → OpenAI
-    let openai_body = match anthropic_to_openai(anthropic_body) {
+    // 根据线路格式转换 Anthropic → 上游（Chat Completions / Responses）
+    let upstream_result = match state.forwarder.wire_api {
+        ProxyWireApi::Responses => anthropic_to_responses(anthropic_body),
+        ProxyWireApi::ChatCompletions => anthropic_to_openai(anthropic_body),
+    };
+    let openai_body = match upstream_result {
         Ok(v) => v,
         Err(e) => {
             tracing::error!("[Proxy] 格式转换失败: {}", e);
@@ -95,7 +101,11 @@ async fn handle_non_streaming(state: ProxyState, openai_body: Value) -> Response
                 Ok(body_text) => {
                     match serde_json::from_str::<Value>(&body_text) {
                         Ok(openai_response) => {
-                            match openai_to_anthropic(openai_response) {
+                            let converted = match state.forwarder.wire_api {
+                                ProxyWireApi::Responses => responses_to_anthropic(openai_response),
+                                ProxyWireApi::ChatCompletions => openai_to_anthropic(openai_response),
+                            };
+                            match converted {
                                 Ok(anthropic_response) => {
                                     let json_str =
                                         serde_json::to_string(&anthropic_response).unwrap_or_default();
@@ -147,11 +157,21 @@ async fn handle_non_streaming(state: ProxyState, openai_body: Value) -> Response
 }
 
 /// 累积的工具调用状态
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 struct AccumulatedToolCall {
     id: String,
     name: String,
     arguments: String,
+}
+
+/// 流式收集的中间结果（Chat / Responses 解析统一产出，供阶段二复用）
+struct StreamCollected {
+    message_id: String,
+    model: String,
+    stop_reason: String,
+    usage_json: Value,
+    content_deltas: Vec<ContentDelta>,
+    tool_calls: Vec<AccumulatedToolCall>,
 }
 
 /// 内容 delta 类型（保持原始顺序）
@@ -188,74 +208,18 @@ async fn handle_streaming(state: ProxyState, openai_body: Value) -> Response {
             let body_str = String::from_utf8_lossy(&body_bytes);
             tracing::info!("[Proxy] 上游流式响应: {}bytes, {}lines", body_bytes.len(), body_str.lines().count());
 
-            // --- 第一阶段：收集所有 chunk 数据 ---
-            let mut message_id = String::from("msg_proxy");
-            let mut model = String::from("unknown");
-            let mut stop_reason = String::from("end_turn");
-            let mut usage_json = json!({"input_tokens": 0, "output_tokens": 0});
-            let mut tool_calls_map: std::collections::HashMap<usize, AccumulatedToolCall> =
-                std::collections::HashMap::new();
-
-            // 收集文本和推理 delta（保持顺序）
-            let mut content_deltas: Vec<ContentDelta> = Vec::new();
-
-            for line in body_str.lines() {
-                let data = match line.strip_prefix("data: ") {
-                    Some(d) => d.trim(),
-                    None => continue,
-                };
-                if data == "[DONE]" { break; }
-
-                let chunk: super::models::OpenAIStreamChunk = match serde_json::from_str(data) {
-                    Ok(c) => c,
-                    Err(e) => {
-                        tracing::warn!("[Proxy] 跳过无法解析的 chunk: {} - {}", e, &data[..data.len().min(100)]);
-                        continue;
-                    }
-                };
-
-                if !chunk.id.is_empty() { message_id = chunk.id.clone(); }
-                if !chunk.model.is_empty() { model = chunk.model.clone(); }
-                if let Some(u) = &chunk.usage {
-                    usage_json = json!({"input_tokens": u.prompt_tokens, "output_tokens": u.completion_tokens});
-                }
-                if chunk.choices.is_empty() { continue; }
-
-                if let Some(choice) = chunk.choices.first() {
-                    // 文本内容
-                    if let Some(content) = &choice.delta.content {
-                        if !content.is_empty() {
-                            content_deltas.push(ContentDelta::Text(content.clone()));
-                        }
-                    }
-                    // reasoning / thinking
-                    if let Some(r) = &choice.delta.reasoning {
-                        if !r.is_empty() {
-                            content_deltas.push(ContentDelta::Thinking(r.clone()));
-                        }
-                    }
-                    // tool_calls delta
-                    if let Some(ref delta_tool_calls) = choice.delta.tool_calls {
-                        for dtc in delta_tool_calls {
-                            let entry = tool_calls_map.entry(dtc.index).or_default();
-                            if let Some(ref id) = dtc.id { if !id.is_empty() { entry.id = id.clone(); } }
-                            if let Some(ref func) = dtc.function {
-                                if let Some(ref name) = func.name { if !name.is_empty() { entry.name = name.clone(); } }
-                                if let Some(ref args) = func.arguments { entry.arguments.push_str(args); }
-                            }
-                        }
-                    }
-                    // finish_reason
-                    if let Some(fr) = &choice.finish_reason {
-                        stop_reason = match fr.as_str() {
-                            "stop" => "end_turn".to_string(),
-                            "length" => "max_tokens".to_string(),
-                            "tool_calls" => "tool_use".to_string(),
-                            _ => "end_turn".to_string(),
-                        };
-                    }
-                }
-            }
+            // --- 第一阶段：根据线路格式收集 chunk 数据 ---
+            let StreamCollected {
+                message_id,
+                model,
+                mut stop_reason,
+                usage_json,
+                content_deltas,
+                tool_calls,
+            } = match state.forwarder.wire_api {
+                ProxyWireApi::Responses => collect_from_responses_sse(&body_str),
+                ProxyWireApi::ChatCompletions => collect_from_chat_sse(&body_str),
+            };
 
             // --- 第二阶段：用状态机生成 Anthropic SSE 事件 ---
             // 核心：连续的同类型 delta 合并到同一个 content_block
@@ -362,13 +326,10 @@ async fn handle_streaming(state: ProxyState, openai_body: Value) -> Response {
             close_block(&mut events, &mut active_block, &mut next_index);
 
             // --- 生成 tool_use content blocks ---
-            let tool_call_count = tool_calls_map.len();
-            if !tool_calls_map.is_empty() {
+            let tool_call_count = tool_calls.len();
+            if !tool_calls.is_empty() {
                 ensure_message_start(&mut events, &mut has_content);
-                let mut sorted_calls: Vec<(usize, AccumulatedToolCall)> = tool_calls_map.into_iter().collect();
-                sorted_calls.sort_by_key(|(i, _)| *i);
-
-                for (_idx, tc) in sorted_calls {
+                for tc in tool_calls {
                     let input: Value = serde_json::from_str(&tc.arguments).unwrap_or_else(|e| {
                         tracing::warn!("[Proxy] 工具调用 arguments JSON 解析失败 ({}): {}", e, &tc.arguments[..tc.arguments.len().min(200)]);
                         json!({})
@@ -448,6 +409,281 @@ async fn handle_streaming(state: ProxyState, openai_body: Value) -> Response {
             let status = StatusCode::from_u16(e.status_code()).unwrap_or(StatusCode::BAD_GATEWAY);
             error_response(status, &format!("上游请求失败: {}", e))
         }
+    }
+}
+
+/// 从 OpenAI Chat Completions SSE 流收集中间数据
+fn collect_from_chat_sse(body_str: &str) -> StreamCollected {
+    let mut message_id = String::from("msg_proxy");
+    let mut model = String::from("unknown");
+    let mut stop_reason = String::from("end_turn");
+    let mut usage_json = json!({"input_tokens": 0, "output_tokens": 0});
+    let mut tool_calls_map: std::collections::HashMap<usize, AccumulatedToolCall> =
+        std::collections::HashMap::new();
+    let mut content_deltas: Vec<ContentDelta> = Vec::new();
+
+    for line in body_str.lines() {
+        let data = match line.strip_prefix("data: ") {
+            Some(d) => d.trim(),
+            None => continue,
+        };
+        if data == "[DONE]" {
+            break;
+        }
+
+        let chunk: super::models::OpenAIStreamChunk = match serde_json::from_str(data) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!("[Proxy] 跳过无法解析的 chunk: {} - {}", e, &data[..data.len().min(100)]);
+                continue;
+            }
+        };
+
+        if !chunk.id.is_empty() {
+            message_id = chunk.id.clone();
+        }
+        if !chunk.model.is_empty() {
+            model = chunk.model.clone();
+        }
+        if let Some(u) = &chunk.usage {
+            usage_json = json!({"input_tokens": u.prompt_tokens, "output_tokens": u.completion_tokens});
+        }
+        if chunk.choices.is_empty() {
+            continue;
+        }
+
+        if let Some(choice) = chunk.choices.first() {
+            if let Some(content) = &choice.delta.content {
+                if !content.is_empty() {
+                    content_deltas.push(ContentDelta::Text(content.clone()));
+                }
+            }
+            if let Some(r) = &choice.delta.reasoning {
+                if !r.is_empty() {
+                    content_deltas.push(ContentDelta::Thinking(r.clone()));
+                }
+            }
+            if let Some(ref delta_tool_calls) = choice.delta.tool_calls {
+                for dtc in delta_tool_calls {
+                    let entry = tool_calls_map.entry(dtc.index).or_default();
+                    if let Some(ref id) = dtc.id {
+                        if !id.is_empty() {
+                            entry.id = id.clone();
+                        }
+                    }
+                    if let Some(ref func) = dtc.function {
+                        if let Some(ref name) = func.name {
+                            if !name.is_empty() {
+                                entry.name = name.clone();
+                            }
+                        }
+                        if let Some(ref args) = func.arguments {
+                            entry.arguments.push_str(args);
+                        }
+                    }
+                }
+            }
+            if let Some(fr) = &choice.finish_reason {
+                stop_reason = match fr.as_str() {
+                    "stop" => "end_turn".to_string(),
+                    "length" => "max_tokens".to_string(),
+                    "tool_calls" => "tool_use".to_string(),
+                    _ => "end_turn".to_string(),
+                };
+            }
+        }
+    }
+
+    let mut sorted: Vec<(usize, AccumulatedToolCall)> = tool_calls_map.into_iter().collect();
+    sorted.sort_by_key(|(i, _)| *i);
+    let tool_calls = sorted.into_iter().map(|(_, tc)| tc).collect();
+
+    StreamCollected {
+        message_id,
+        model,
+        stop_reason,
+        usage_json,
+        content_deltas,
+        tool_calls,
+    }
+}
+
+/// 从 OpenAI Responses SSE 流收集中间数据
+///
+/// 解析 Responses 专有事件：output_text.delta / reasoning_summary_text.delta /
+/// output_item.added / function_call_arguments.delta / output_item.done /
+/// response.completed|incomplete（usage / 状态）。
+fn collect_from_responses_sse(body_str: &str) -> StreamCollected {
+    let mut message_id = String::from("msg_proxy");
+    let mut model = String::from("unknown");
+    let mut stop_reason = String::from("end_turn");
+    let mut usage_json = json!({"input_tokens": 0, "output_tokens": 0});
+    let mut content_deltas: Vec<ContentDelta> = Vec::new();
+    // function_call 累积：item_id -> AccumulatedToolCall（id 字段存 call_id）
+    let mut fc_map: std::collections::HashMap<String, AccumulatedToolCall> =
+        std::collections::HashMap::new();
+    let mut fc_order: Vec<String> = Vec::new();
+
+    for line in body_str.lines() {
+        let data = match line.strip_prefix("data: ") {
+            Some(d) => d.trim(),
+            None => continue,
+        };
+        if data.is_empty() || data == "[DONE]" {
+            continue;
+        }
+
+        let event: Value = match serde_json::from_str(data) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let event_type = event.get("type").and_then(|t| t.as_str()).unwrap_or("");
+
+        match event_type {
+            "response.output_text.delta" => {
+                if let Some(d) = event.get("delta").and_then(|d| d.as_str()) {
+                    if !d.is_empty() {
+                        content_deltas.push(ContentDelta::Text(d.to_string()));
+                    }
+                }
+            }
+            "response.reasoning_summary_text.delta" | "response.reasoning_text.delta" => {
+                if let Some(d) = event.get("delta").and_then(|d| d.as_str()) {
+                    if !d.is_empty() {
+                        content_deltas.push(ContentDelta::Thinking(d.to_string()));
+                    }
+                }
+            }
+            "response.output_item.added" => {
+                if let Some(item) = event.get("item") {
+                    if item.get("type").and_then(|t| t.as_str()) == Some("function_call") {
+                        let item_id = item
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        if !item_id.is_empty() {
+                            let call_id = item
+                                .get("call_id")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let name = item
+                                .get("name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            if !fc_order.contains(&item_id) {
+                                fc_order.push(item_id.clone());
+                            }
+                            fc_map.insert(
+                                item_id,
+                                AccumulatedToolCall {
+                                    id: call_id,
+                                    name,
+                                    arguments: String::new(),
+                                },
+                            );
+                        }
+                    }
+                }
+            }
+            "response.function_call_arguments.delta" => {
+                if let Some(item_id) = event.get("item_id").and_then(|v| v.as_str()) {
+                    if let Some(entry) = fc_map.get_mut(item_id) {
+                        if let Some(d) = event.get("delta").and_then(|d| d.as_str()) {
+                            entry.arguments.push_str(d);
+                        }
+                    }
+                }
+            }
+            "response.output_item.done" => {
+                if let Some(item) = event.get("item") {
+                    if item.get("type").and_then(|t| t.as_str()) == Some("function_call") {
+                        let item_id = item
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        if !item_id.is_empty() {
+                            if !fc_order.contains(&item_id) {
+                                fc_order.push(item_id.clone());
+                            }
+                            let entry = fc_map.entry(item_id).or_default();
+                            if let Some(call_id) = item.get("call_id").and_then(|v| v.as_str()) {
+                                if !call_id.is_empty() {
+                                    entry.id = call_id.to_string();
+                                }
+                            }
+                            if let Some(name) = item.get("name").and_then(|v| v.as_str()) {
+                                if !name.is_empty() {
+                                    entry.name = name.to_string();
+                                }
+                            }
+                            if let Some(args) = item.get("arguments").and_then(|v| v.as_str()) {
+                                if !args.is_empty() {
+                                    entry.arguments = args.to_string();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            "response.created"
+            | "response.in_progress"
+            | "response.completed"
+            | "response.incomplete" => {
+                if let Some(resp) = event.get("response") {
+                    if let Some(id) = resp.get("id").and_then(|v| v.as_str()) {
+                        if !id.is_empty() {
+                            message_id = id.to_string();
+                        }
+                    }
+                    if let Some(m) = resp.get("model").and_then(|v| v.as_str()) {
+                        if !m.is_empty() {
+                            model = m.to_string();
+                        }
+                    }
+                    if let Some(u) = resp.get("usage") {
+                        let it = u.get("input_tokens").cloned().unwrap_or(json!(0));
+                        let ot = u.get("output_tokens").cloned().unwrap_or(json!(0));
+                        usage_json = json!({"input_tokens": it, "output_tokens": ot});
+                    }
+                    if event_type == "response.incomplete"
+                        && resp
+                            .pointer("/incomplete_details/reason")
+                            .and_then(|v| v.as_str())
+                            == Some("max_output_tokens")
+                    {
+                        stop_reason = "max_tokens".to_string();
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut tool_calls: Vec<AccumulatedToolCall> = Vec::new();
+    for item_id in &fc_order {
+        if let Some(tc) = fc_map.get(item_id) {
+            let mut tc = tc.clone();
+            if tc.id.is_empty() {
+                tc.id = item_id.clone();
+            }
+            tool_calls.push(tc);
+        }
+    }
+    if !tool_calls.is_empty() {
+        stop_reason = "tool_use".to_string();
+    }
+
+    StreamCollected {
+        message_id,
+        model,
+        stop_reason,
+        usage_json,
+        content_deltas,
+        tool_calls,
     }
 }
 

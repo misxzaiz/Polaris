@@ -407,7 +407,11 @@ impl ClaudeEngine {
                 .arg("--output-format")
                 .arg("stream-json")
                 .arg("--input-format")
-                .arg("stream-json");
+                .arg("stream-json")
+                // 启用 partial messages：CLI 把模型 SSE 增量转成 stream_event 输出，
+                // 实现逐段打字机式渲染。端点不支持流式时 CLI 自动回退为整段 assistant 消息，
+                // 解析侧（event_parser）对两种形态均兼容，故无条件启用是安全的。
+                .arg("--include-partial-messages");
             tracing::info!(
                 "[ClaudeEngine] stream-json + stdin 模式（{} 张图片，message {} 字符，system_prompt {} 字符，append_system_prompt {} 字符）",
                 image_attachments.len(),
@@ -505,7 +509,11 @@ impl ClaudeEngine {
                 .arg("--output-format")
                 .arg("stream-json")
                 .arg("--input-format")
-                .arg("stream-json");
+                .arg("stream-json")
+                // 启用 partial messages：CLI 把模型 SSE 增量转成 stream_event 输出，
+                // 实现逐段打字机式渲染。端点不支持流式时 CLI 自动回退为整段 assistant 消息，
+                // 解析侧（event_parser）对两种形态均兼容，故无条件启用是安全的。
+                .arg("--include-partial-messages");
             tracing::info!(
                 "[ClaudeEngine] stream-json + stdin 模式（{} 张图片，message {} 字符，system_prompt {} 字符，append_system_prompt {} 字符）",
                 image_attachments.len(),

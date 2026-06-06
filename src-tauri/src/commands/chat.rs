@@ -484,17 +484,30 @@ async fn apply_model_profile_options(
 
     match engine {
         EngineId::ClaudeCode => {
-            if crate::services::ModelProfileService::is_openai_wire_api(profile) {
-                // OpenAI Chat Completions 模式：启动本地代理
+            let wire = profile.wire_api.as_deref();
+            let use_proxy =
+                matches!(wire, Some("openai-chat-completions") | Some("openai-responses"));
+            if use_proxy {
+                let proxy_wire =
+                    crate::services::proxy::ProxyWireApi::from_profile_wire_api(wire);
+                let custom_headers = profile.custom_headers.clone().unwrap_or_default();
+                // 启动本地代理（Chat Completions 或 Responses 线路，由 proxy_wire 决定转换方式）
                 tracing::info!(
-                    "[{}] Profile {} 使用 OpenAI Chat Completions 格式，启动内嵌代理",
+                    "[{}] Profile {} 使用代理模式（{:?}），启动内嵌代理",
                     log_scope,
-                    profile.name
+                    profile.name,
+                    proxy_wire
                 );
 
                 match state
                     .proxy_manager
-                    .start_proxy(&profile.id, &profile.base_url, &profile.api_key)
+                    .start_proxy(
+                        &profile.id,
+                        &profile.base_url,
+                        &profile.api_key,
+                        proxy_wire,
+                        custom_headers,
+                    )
                     .await
                 {
                     Ok(proxy_addr) => {
@@ -528,12 +541,18 @@ async fn apply_model_profile_options(
                             .insert("ANTHROPIC_BASE_URL".to_string(), format!("http://{}", proxy_addr));
                         env_overrides
                             .insert("ANTHROPIC_AUTH_TOKEN".to_string(), "PROXY_MANAGED".to_string());
+                        // 合并用户自定义环境变量
+                        if let Some(custom) = &profile.custom_env {
+                            for (k, v) in custom {
+                                env_overrides.insert(k.clone(), v.clone());
+                            }
+                        }
                         session_opts = session_opts.with_env_overrides(env_overrides);
                     }
                     Err(e) => {
                         tracing::error!("[{}] 启动代理失败: {}", log_scope, e);
                         return Err(crate::error::AppError::ProcessError(format!(
-                            "启动 OpenAI Chat Completions 代理失败: {}",
+                            "启动模型代理失败: {}",
                             e
                         )));
                     }

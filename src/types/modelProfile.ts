@@ -13,7 +13,16 @@
  */
 
 /** Wire API 协议格式 */
-export type WireApi = 'anthropic-messages' | 'openai-chat-completions'
+export type WireApi = 'anthropic-messages' | 'openai-chat-completions' | 'openai-responses'
+
+/**
+ * 认证方式 — 决定 API 密钥注入到哪个鉴权字段。
+ * - 'auth_token'：注入为 ANTHROPIC_AUTH_TOKEN（Bearer，默认，等价历史行为）
+ * - 'api_key'：注入为 ANTHROPIC_API_KEY（x-api-key）
+ * - 'custom_env'：注入为用户指定的环境变量名（见 apiKeyEnvName）
+ * - 'none'：本地模型 / 无需鉴权
+ */
+export type AuthType = 'auth_token' | 'api_key' | 'custom_env' | 'none'
 
 /** Profile 适用的引擎
  * - 'claude': 仅适用于 Claude Code 引擎
@@ -70,6 +79,18 @@ export interface ModelProfile {
   category?: ProfileCategory
   /** 可选：Profile 描述 */
   description?: string
+  /**
+   * 认证方式。缺省按 'auth_token' 处理（旧 Profile 兼容），参见 resolveAuthType()。
+   */
+  authType?: AuthType
+  /** authType='custom_env' 时使用的环境变量名（如 OPENAI_API_KEY） */
+  apiKeyEnvName?: string
+  /** 自定义请求头（连接测试与内嵌代理转发时附加） */
+  customHeaders?: Record<string, string>
+  /** 注入 CLI 子进程的额外环境变量 */
+  customEnv?: Record<string, string>
+  /** 上次从端点拉取的模型列表（仅前端 UI 缓存用） */
+  fetchedModels?: string[]
   /** 创建时间 (ISO 8601) */
   createdAt?: string
   /** 最后更新时间 (ISO 8601) */
@@ -86,6 +107,10 @@ export interface CreateModelProfileParams {
   targetEngine?: ProfileTargetEngine
   category?: ProfileCategory
   description?: string
+  authType?: AuthType
+  apiKeyEnvName?: string
+  customHeaders?: Record<string, string>
+  customEnv?: Record<string, string>
 }
 
 /** 更新 Profile 的参数 */
@@ -99,6 +124,10 @@ export interface UpdateModelProfileParams {
   targetEngine?: ProfileTargetEngine
   category?: ProfileCategory
   description?: string
+  authType?: AuthType
+  apiKeyEnvName?: string
+  customHeaders?: Record<string, string>
+  customEnv?: Record<string, string>
 }
 
 /** 默认 Profile 列表（示例/引导用） */
@@ -207,4 +236,12 @@ export function getCategoryLabel(category?: ProfileCategory): string {
     custom: '自定义',
   }
   return category ? (labels[category] || category) : ''
+}
+
+/**
+ * 解析 Profile 的有效认证方式。
+ * 旧 Profile 未设置 authType 时回退到 'auth_token'（保持历史行为：注入 ANTHROPIC_AUTH_TOKEN）。
+ */
+export function resolveAuthType(profile: Pick<ModelProfile, 'authType'>): AuthType {
+  return profile.authType ?? 'auth_token'
 }

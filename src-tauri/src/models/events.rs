@@ -87,6 +87,14 @@ pub enum StreamEvent {
     /// 会话结束
     #[serde(rename = "session_end")]
     SessionEnd,
+
+    /// 流式增量事件（--include-partial-messages）
+    ///
+    /// 包裹 Anthropic Messages API 的原始 SSE 事件
+    /// （message_start / content_block_start / content_block_delta / content_block_stop / ...）。
+    /// `event` 为原始 SSE 事件对象，由 `EventParser::parse_stream_event_chunk` 进一步解析为增量 AIEvent。
+    #[serde(rename = "stream_event")]
+    StreamEventChunk { event: serde_json::Value },
 }
 
 impl StreamEvent {

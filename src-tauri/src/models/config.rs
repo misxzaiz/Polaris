@@ -180,6 +180,19 @@ pub struct ModelProfile {
     /// 可选：Profile 描述
     #[serde(default)]
     pub description: Option<String>,
+    /// 认证方式：auth_token（默认）/ api_key / custom_env / none。
+    /// None 时按 "auth_token" 处理，兼容旧数据。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_type: Option<String>,
+    /// authType='custom_env' 时使用的环境变量名
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key_env_name: Option<String>,
+    /// 自定义请求头（连接测试与代理转发时附加）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_headers: Option<std::collections::HashMap<String, String>>,
+    /// 注入 CLI 子进程的额外环境变量
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_env: Option<std::collections::HashMap<String, String>>,
     /// 创建时间 (ISO 8601)
     #[serde(default)]
     pub created_at: Option<String>,

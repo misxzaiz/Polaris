@@ -89,6 +89,15 @@ impl ToolCallManager {
 pub struct EventParser {
     session_id: String,
     tool_call_manager: ToolCallManager,
+    // ===== partial messages 增量流式状态（--include-partial-messages）=====
+    /// content_block index → 类型（"thinking" / "text" / "tool_use"）
+    stream_block_types: HashMap<u64, String>,
+    /// 累积 thinking_delta，在 content_block_stop 时整段发出（避免前端碎片化）
+    thinking_buffer: String,
+    /// 本 turn 是否已通过 stream_event 流式过文本（用于完整快照去重，防止翻倍）
+    streamed_text_this_turn: bool,
+    /// 本 turn 是否已通过 stream_event 流式过 thinking
+    streamed_thinking_this_turn: bool,
 }
 
 impl EventParser {
@@ -96,6 +105,10 @@ impl EventParser {
         Self {
             session_id: session_id.into(),
             tool_call_manager: ToolCallManager::new(),
+            stream_block_types: HashMap::new(),
+            thinking_buffer: String::new(),
+            streamed_text_this_turn: false,
+            streamed_thinking_this_turn: false,
         }
     }
 
@@ -156,6 +169,9 @@ impl EventParser {
                     SessionEndEvent::new(&self.session_id)
                         .with_reason(SessionEndReason::Completed)
                 )]
+            }
+            StreamEvent::StreamEventChunk { event } => {
+                self.parse_stream_event_chunk(event)
             }
         }
     }
@@ -264,6 +280,100 @@ impl EventParser {
         vec![AIEvent::CliInit(init_event)]
     }
 
+    /// 解析 partial messages 增量事件（stream_event，--include-partial-messages）
+    ///
+    /// 包裹的是 Anthropic Messages API 原始 SSE 事件。此处只消费文本与思考增量：
+    /// - content_block_delta / text_delta     → 增量 AssistantMessage(isDelta=true)，前端追加累积
+    /// - content_block_delta / thinking_delta → 累积到 thinking_buffer，在 content_block_stop 时整段发出
+    ///   （保证 thinking 块顺序正确，且不被前端 appendThinkingBlock 碎片化）
+    /// - input_json_delta 等                  → 忽略，工具调用统一由完整 assistant 消息的 tool_use 处理
+    ///
+    /// 同时维护 turn 状态，供 parse_assistant_event 去重（避免增量 + 完整快照导致文本翻倍）。
+    fn parse_stream_event_chunk(&mut self, event: serde_json::Value) -> Vec<AIEvent> {
+        let event_type = match event.get("type").and_then(|v| v.as_str()) {
+            Some(t) => t,
+            None => return vec![],
+        };
+
+        match event_type {
+            // 新一轮 assistant 输出开始：重置 turn 状态
+            "message_start" => {
+                self.reset_stream_turn_state();
+                vec![]
+            }
+
+            // 记录 content block 类型，供 content_block_stop / 去重判断
+            "content_block_start" => {
+                if let Some(index) = event.get("index").and_then(|v| v.as_u64()) {
+                    let block_type = event
+                        .get("content_block")
+                        .and_then(|cb| cb.get("type"))
+                        .and_then(|t| t.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    self.stream_block_types.insert(index, block_type);
+                }
+                vec![]
+            }
+
+            // 文本 / 思考增量
+            "content_block_delta" => {
+                let delta = match event.get("delta") {
+                    Some(d) => d,
+                    None => return vec![],
+                };
+                match delta.get("type").and_then(|v| v.as_str()) {
+                    Some("text_delta") => {
+                        if let Some(text) = delta.get("text").and_then(|v| v.as_str()) {
+                            if !text.is_empty() {
+                                self.streamed_text_this_turn = true;
+                                return vec![AIEvent::AssistantMessage(
+                                    AssistantMessageEvent::new(&self.session_id, text, true),
+                                )];
+                            }
+                        }
+                        vec![]
+                    }
+                    Some("thinking_delta") => {
+                        if let Some(thinking) = delta.get("thinking").and_then(|v| v.as_str()) {
+                            self.thinking_buffer.push_str(thinking);
+                            self.streamed_thinking_this_turn = true;
+                        }
+                        vec![]
+                    }
+                    _ => vec![],
+                }
+            }
+
+            // content block 结束：thinking 块在此整段发出
+            "content_block_stop" => {
+                let is_thinking = event
+                    .get("index")
+                    .and_then(|v| v.as_u64())
+                    .and_then(|idx| self.stream_block_types.get(&idx))
+                    .map(|t| t == "thinking")
+                    .unwrap_or(false);
+                if is_thinking && !self.thinking_buffer.trim().is_empty() {
+                    let thinking = std::mem::take(&mut self.thinking_buffer);
+                    return vec![AIEvent::Thinking(ThinkingEvent::new(&self.session_id, thinking))];
+                }
+                vec![]
+            }
+
+            // message_delta / message_stop / 其他：忽略
+            // （turn 状态由下一个 message_start 或完整 assistant 消息重置）
+            _ => vec![],
+        }
+    }
+
+    /// 重置一轮 assistant 输出的流式状态
+    fn reset_stream_turn_state(&mut self) {
+        self.stream_block_types.clear();
+        self.thinking_buffer.clear();
+        self.streamed_text_this_turn = false;
+        self.streamed_thinking_this_turn = false;
+    }
+
     /// 解析助手消息事件
     fn parse_assistant_event(&mut self, message: serde_json::Value) -> Vec<AIEvent> {
         let mut results = Vec::new();
@@ -278,12 +388,17 @@ impl EventParser {
         let tool_calls = self.extract_tool_calls(&message);
 
         // 先发送思考事件（如果有）
-        for thinking in &thinking_blocks {
-            results.push(AIEvent::Thinking(ThinkingEvent::new(&self.session_id, thinking.clone())));
+        // 若本 turn 已通过 stream_event 流式发送过 thinking，则跳过，避免与完整快照重复
+        if !self.streamed_thinking_this_turn {
+            for thinking in &thinking_blocks {
+                results.push(AIEvent::Thinking(ThinkingEvent::new(&self.session_id, thinking.clone())));
+            }
         }
 
         // 发出 AI 消息事件
-        if !text.is_empty() || !tool_calls.is_empty() {
+        // 若本 turn 已通过 stream_event 流式发送过文本，则跳过（避免增量 + 完整快照翻倍）；
+        // 未流式时（整段路径 / 端点不支持 partial）保持原行为。
+        if !self.streamed_text_this_turn && (!text.is_empty() || !tool_calls.is_empty()) {
             results.push(AIEvent::AssistantMessage(
                 AssistantMessageEvent::new(&self.session_id, text, false)
                     .with_tool_calls(tool_calls.clone())
@@ -297,6 +412,9 @@ impl EventParser {
                     .with_call_id(tc.id.clone())
             ));
         }
+
+        // 完整 assistant 消息代表本 turn 输出结束，重置流式 turn 状态
+        self.reset_stream_turn_state();
 
         results
     }

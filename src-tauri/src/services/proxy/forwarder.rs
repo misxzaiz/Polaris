@@ -9,6 +9,25 @@ use futures_util::stream::Stream;
 use reqwest::Response;
 use serde_json::Value;
 
+/// 上游线路格式（决定 URL 与请求/响应转换方式）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProxyWireApi {
+    /// OpenAI Chat Completions（/v1/chat/completions）
+    ChatCompletions,
+    /// OpenAI Responses（/v1/responses）
+    Responses,
+}
+
+impl ProxyWireApi {
+    /// 从 Profile 的 wireApi 字符串解析（None / 其他 → Chat Completions）
+    pub fn from_profile_wire_api(s: Option<&str>) -> Self {
+        match s {
+            Some("openai-responses") => ProxyWireApi::Responses,
+            _ => ProxyWireApi::ChatCompletions,
+        }
+    }
+}
+
 /// 上游转发器配置
 #[derive(Debug, Clone)]
 pub struct ForwarderConfig {
@@ -16,33 +35,74 @@ pub struct ForwarderConfig {
     pub upstream_url: String,
     /// API 密钥
     pub api_key: String,
+    /// 线路格式（Chat Completions / Responses）
+    pub wire_api: ProxyWireApi,
+    /// 附加的自定义请求头
+    pub custom_headers: std::collections::HashMap<String, String>,
     /// 请求超时时间（秒）
     pub timeout_secs: u64,
 }
 
 impl ForwarderConfig {
     pub fn new(base_url: &str, api_key: &str) -> Self {
-        // 确保 URL 指向 /v1/chat/completions
-        let url = build_chat_completions_url(base_url);
+        Self::with_options(
+            base_url,
+            api_key,
+            ProxyWireApi::ChatCompletions,
+            std::collections::HashMap::new(),
+        )
+    }
+
+    /// 完整构造：指定线路格式与自定义请求头
+    pub fn with_options(
+        base_url: &str,
+        api_key: &str,
+        wire_api: ProxyWireApi,
+        custom_headers: std::collections::HashMap<String, String>,
+    ) -> Self {
+        let url = build_upstream_url(base_url, wire_api);
         Self {
             upstream_url: url,
             api_key: api_key.to_string(),
+            wire_api,
+            custom_headers,
             // 大 payload（100KB+ 含 28+ tools）的上游响应可能需要 55s+，
             // 设置 180s 超时以覆盖最坏情况
             timeout_secs: 180,
         }
     }
+
+    /// 将自定义请求头应用到 reqwest 请求构建器
+    fn apply_custom_headers(&self, mut builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        for (k, v) in &self.custom_headers {
+            builder = builder.header(k.as_str(), v.as_str());
+        }
+        builder
+    }
 }
 
-/// 构建完整的 chat/completions URL
-fn build_chat_completions_url(base_url: &str) -> String {
+/// 根据线路格式构建完整上游 URL
+fn build_upstream_url(base_url: &str, wire_api: ProxyWireApi) -> String {
     let base = base_url.trim_end_matches('/');
-    if base.ends_with("/chat/completions") {
-        base.to_string()
-    } else if base.ends_with("/v1") {
-        format!("{}/chat/completions", base)
-    } else {
-        format!("{}/v1/chat/completions", base)
+    match wire_api {
+        ProxyWireApi::Responses => {
+            if base.ends_with("/responses") {
+                base.to_string()
+            } else if base.ends_with("/v1") {
+                format!("{}/responses", base)
+            } else {
+                format!("{}/v1/responses", base)
+            }
+        }
+        ProxyWireApi::ChatCompletions => {
+            if base.ends_with("/chat/completions") {
+                base.to_string()
+            } else if base.ends_with("/v1") {
+                format!("{}/chat/completions", base)
+            } else {
+                format!("{}/v1/chat/completions", base)
+            }
+        }
     }
 }
 
@@ -165,13 +225,13 @@ pub async fn forward_raw_response(
             tokio::time::sleep(delay).await;
         }
 
-        let response = match client
+        let mut req_builder = client
             .post(&config.upstream_url)
             .header("Authorization", format!("Bearer {}", config.api_key))
             .header("Content-Type", "application/json")
-            .body(body_str.clone())
-            .send()
-            .await
+            .body(body_str.clone());
+        req_builder = config.apply_custom_headers(req_builder);
+        let response = match req_builder.send().await
         {
             Ok(resp) => resp,
             Err(e) => {
@@ -229,22 +289,41 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_build_chat_completions_url() {
+    fn test_build_upstream_url_chat() {
         assert_eq!(
-            build_chat_completions_url("https://api.deepseek.com"),
+            build_upstream_url("https://api.deepseek.com", ProxyWireApi::ChatCompletions),
             "https://api.deepseek.com/v1/chat/completions"
         );
         assert_eq!(
-            build_chat_completions_url("https://api.deepseek.com/v1"),
+            build_upstream_url("https://api.deepseek.com/v1", ProxyWireApi::ChatCompletions),
             "https://api.deepseek.com/v1/chat/completions"
         );
         assert_eq!(
-            build_chat_completions_url("https://api.deepseek.com/v1/chat/completions"),
+            build_upstream_url(
+                "https://api.deepseek.com/v1/chat/completions",
+                ProxyWireApi::ChatCompletions
+            ),
             "https://api.deepseek.com/v1/chat/completions"
         );
         assert_eq!(
-            build_chat_completions_url("https://api.deepseek.com/v1/"),
+            build_upstream_url("https://api.deepseek.com/v1/", ProxyWireApi::ChatCompletions),
             "https://api.deepseek.com/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn test_build_upstream_url_responses() {
+        assert_eq!(
+            build_upstream_url("https://api.openai.com", ProxyWireApi::Responses),
+            "https://api.openai.com/v1/responses"
+        );
+        assert_eq!(
+            build_upstream_url("https://api.openai.com/v1", ProxyWireApi::Responses),
+            "https://api.openai.com/v1/responses"
+        );
+        assert_eq!(
+            build_upstream_url("https://api.openai.com/v1/responses", ProxyWireApi::Responses),
+            "https://api.openai.com/v1/responses"
         );
     }
 }

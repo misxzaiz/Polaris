@@ -20,6 +20,7 @@ pub mod transform;
 
 use error::ProxyError;
 use forwarder::ForwarderConfig;
+pub use forwarder::ProxyWireApi;
 use server::ProxyHandle;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -49,6 +50,8 @@ impl ProxyManager {
         profile_id: &str,
         base_url: &str,
         api_key: &str,
+        wire_api: ProxyWireApi,
+        custom_headers: HashMap<String, String>,
     ) -> Result<SocketAddr, ProxyError> {
         let mut proxies = self.proxies.lock().await;
 
@@ -61,7 +64,8 @@ impl ProxyManager {
             old.shutdown();
         }
 
-        let forwarder_config = ForwarderConfig::new(base_url, api_key);
+        let forwarder_config =
+            ForwarderConfig::with_options(base_url, api_key, wire_api, custom_headers);
         let handle = server::start_proxy_server(forwarder_config, 0).await?;
         let addr = handle.addr;
 

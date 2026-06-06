@@ -273,6 +273,338 @@ pub fn openai_to_anthropic(body: Value) -> Result<Value, ProxyError> {
 }
 
 // ============================================================================
+// Responses API 转换（OpenAI /v1/responses）
+// ============================================================================
+
+/// Anthropic Messages 请求 → OpenAI Responses 请求
+///
+/// 与 Chat Completions 的差异：
+/// - system → 顶层 `instructions`
+/// - messages → `input[]`（user 用 input_text/input_image，assistant 用 output_text，
+///   tool_use/tool_result 作为独立的 function_call / function_call_output item）
+/// - tools 为扁平结构（`{type:"function", name, parameters}`，无嵌套 function 对象）
+/// - max_tokens → max_output_tokens；thinking → reasoning.effort
+pub fn anthropic_to_responses(body: Value) -> Result<Value, ProxyError> {
+    let mut result = json!({});
+
+    if let Some(model) = body.get("model").and_then(|m| m.as_str()) {
+        result["model"] = json!(model);
+    }
+
+    // --- system → instructions ---
+    let mut instructions = String::new();
+    if let Some(system) = body.get("system") {
+        if let Some(text) = system.as_str() {
+            instructions = strip_leading_billing_header(text).to_string();
+        } else if let Some(arr) = system.as_array() {
+            let parts: Vec<String> = arr
+                .iter()
+                .filter_map(|m| m.get("text").and_then(|t| t.as_str()))
+                .map(|t| strip_leading_billing_header(t).to_string())
+                .filter(|t| !t.is_empty())
+                .collect();
+            instructions = parts.join("\n");
+        }
+    }
+    if !instructions.is_empty() {
+        result["instructions"] = json!(instructions);
+    }
+
+    // --- messages → input[] ---
+    let mut input = Vec::new();
+    if let Some(msgs) = body.get("messages").and_then(|m| m.as_array()) {
+        for msg in msgs {
+            let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("user");
+            let content = msg.get("content");
+            convert_message_to_responses_input(role, content, &mut input);
+        }
+    }
+    result["input"] = json!(input);
+
+    // --- 参数 ---
+    let model = body.get("model").and_then(|m| m.as_str()).unwrap_or("");
+    if let Some(v) = body.get("max_tokens") {
+        result["max_output_tokens"] = v.clone();
+    }
+    if let Some(v) = body.get("temperature") {
+        result["temperature"] = v.clone();
+    }
+    if let Some(v) = body.get("top_p") {
+        result["top_p"] = v.clone();
+    }
+    if let Some(v) = body.get("stream") {
+        result["stream"] = v.clone();
+    }
+
+    // thinking → reasoning.effort
+    if supports_reasoning_effort(model) {
+        if let Some(effort) = resolve_reasoning_effort(&body) {
+            result["reasoning"] = json!({ "effort": effort });
+        }
+    }
+
+    // --- tools（扁平 function）---
+    if let Some(tools) = body.get("tools").and_then(|t| t.as_array()) {
+        let resp_tools: Vec<Value> = tools
+            .iter()
+            .filter(|t| t.get("type").and_then(|v| v.as_str()) != Some("BatchTool"))
+            .map(|t| {
+                let mut tool = json!({
+                    "type": "function",
+                    "name": t.get("name").and_then(|n| n.as_str()).unwrap_or(""),
+                    "parameters": clean_schema(t.get("input_schema").cloned().unwrap_or(json!({})))
+                });
+                if let Some(desc) = t.get("description").and_then(|d| d.as_str()) {
+                    if !desc.is_empty() {
+                        tool["description"] = json!(desc);
+                    }
+                }
+                tool
+            })
+            .collect();
+        if !resp_tools.is_empty() {
+            result["tools"] = json!(resp_tools);
+        }
+    }
+
+    if let Some(v) = body.get("tool_choice") {
+        result["tool_choice"] = map_tool_choice_to_responses(v);
+    }
+
+    Ok(result)
+}
+
+/// OpenAI Responses 响应 → Anthropic Messages 响应（非流式）
+pub fn responses_to_anthropic(body: Value) -> Result<Value, ProxyError> {
+    let id = body
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("msg_proxy")
+        .to_string();
+    let model = body
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let mut blocks = Vec::new();
+    let mut stop_reason = "end_turn";
+
+    if let Some(output) = body.get("output").and_then(|o| o.as_array()) {
+        for item in output {
+            match item.get("type").and_then(|t| t.as_str()) {
+                Some("reasoning") => {
+                    let mut texts = Vec::new();
+                    if let Some(summary) = item.get("summary").and_then(|s| s.as_array()) {
+                        for s in summary {
+                            if let Some(t) = s.get("text").and_then(|t| t.as_str()) {
+                                texts.push(t.to_string());
+                            }
+                        }
+                    }
+                    let combined = texts.join("");
+                    if !combined.is_empty() {
+                        blocks.push(json!({"type": "thinking", "thinking": combined}));
+                    }
+                }
+                Some("message") => {
+                    if let Some(content) = item.get("content").and_then(|c| c.as_array()) {
+                        for part in content {
+                            if part.get("type").and_then(|t| t.as_str()) == Some("output_text") {
+                                if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
+                                    if !text.is_empty() {
+                                        blocks.push(json!({"type": "text", "text": text}));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Some("function_call") => {
+                    let call_id = item
+                        .get("call_id")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| item.get("id").and_then(|v| v.as_str()))
+                        .unwrap_or("");
+                    let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    let args_str = item.get("arguments").and_then(|v| v.as_str()).unwrap_or("{}");
+                    let parsed: Value = serde_json::from_str(args_str).unwrap_or(json!({}));
+                    blocks.push(json!({
+                        "type": "tool_use",
+                        "id": call_id,
+                        "name": name,
+                        "input": parsed
+                    }));
+                    stop_reason = "tool_use";
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // 便捷字段 output_text 兜底
+    if blocks.is_empty() {
+        if let Some(text) = body.get("output_text").and_then(|t| t.as_str()) {
+            if !text.is_empty() {
+                blocks.push(json!({"type": "text", "text": text}));
+            }
+        }
+    }
+    if blocks.is_empty() {
+        blocks.push(json!({"type": "text", "text": ""}));
+    }
+
+    // incomplete → max_tokens
+    if body
+        .pointer("/incomplete_details/reason")
+        .and_then(|v| v.as_str())
+        == Some("max_output_tokens")
+    {
+        stop_reason = "max_tokens";
+    }
+
+    let mut usage = json!({"input_tokens": 0, "output_tokens": 0});
+    if let Some(u) = body.get("usage") {
+        usage["input_tokens"] = u.get("input_tokens").cloned().unwrap_or(json!(0));
+        usage["output_tokens"] = u.get("output_tokens").cloned().unwrap_or(json!(0));
+        if let Some(cached) = u
+            .pointer("/input_tokens_details/cached_tokens")
+            .and_then(|v| v.as_u64())
+        {
+            usage["cache_read_input_tokens"] = json!(cached);
+        }
+    }
+
+    Ok(json!({
+        "id": id,
+        "type": "message",
+        "role": "assistant",
+        "model": model,
+        "content": blocks,
+        "stop_reason": stop_reason,
+        "stop_sequence": null,
+        "usage": usage
+    }))
+}
+
+/// 将单条 Anthropic message 转换为 Responses input item(s)，追加到 `input`
+fn convert_message_to_responses_input(role: &str, content: Option<&Value>, input: &mut Vec<Value>) {
+    let text_type = if role == "assistant" {
+        "output_text"
+    } else {
+        "input_text"
+    };
+
+    let Some(content) = content else {
+        input.push(json!({"role": role, "content": [{"type": text_type, "text": ""}]}));
+        return;
+    };
+
+    // 字符串内容
+    if let Some(text) = content.as_str() {
+        input.push(json!({
+            "role": role,
+            "content": [{"type": text_type, "text": text}]
+        }));
+        return;
+    }
+
+    let Some(blocks) = content.as_array() else {
+        return;
+    };
+
+    let mut parts: Vec<Value> = Vec::new();
+    let flush = |parts: &mut Vec<Value>, input: &mut Vec<Value>| {
+        if !parts.is_empty() {
+            input.push(json!({"role": role, "content": parts.clone()}));
+            parts.clear();
+        }
+    };
+
+    for block in blocks {
+        let block_type = block.get("type").and_then(|t| t.as_str()).unwrap_or("text");
+        match block_type {
+            "text" => {
+                if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+                    parts.push(json!({"type": text_type, "text": text}));
+                }
+            }
+            "image" => {
+                if let Some(source) = block.get("source") {
+                    let media_type = source
+                        .get("media_type")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("image/png");
+                    let data = source.get("data").and_then(|d| d.as_str()).unwrap_or("");
+                    parts.push(json!({
+                        "type": "input_image",
+                        "image_url": format!("data:{};base64,{}", media_type, data)
+                    }));
+                }
+            }
+            "tool_use" => {
+                flush(&mut parts, input);
+                let id = block.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                let name = block.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let args = block.get("input").cloned().unwrap_or(json!({}));
+                let args_str = serde_json::to_string(&args).unwrap_or_else(|_| "{}".to_string());
+                input.push(json!({
+                    "type": "function_call",
+                    "call_id": id,
+                    "name": name,
+                    "arguments": args_str
+                }));
+            }
+            "tool_result" => {
+                flush(&mut parts, input);
+                let tool_use_id = block
+                    .get("tool_use_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let output = extract_tool_result_text(block);
+                input.push(json!({
+                    "type": "function_call_output",
+                    "call_id": tool_use_id,
+                    "output": output
+                }));
+            }
+            "thinking" => {
+                // assistant thinking block 不回传上游
+            }
+            _ => {
+                if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+                    parts.push(json!({"type": text_type, "text": text}));
+                }
+            }
+        }
+    }
+
+    flush(&mut parts, input);
+}
+
+/// 映射 Anthropic tool_choice → OpenAI Responses tool_choice
+/// （Responses 指定具体工具用 `{type:"function", name}`，非嵌套 function 对象）
+fn map_tool_choice_to_responses(tool_choice: &Value) -> Value {
+    match tool_choice {
+        Value::String(s) => match s.as_str() {
+            "any" => json!("required"),
+            other => json!(other),
+        },
+        Value::Object(obj) => match obj.get("type").and_then(|t| t.as_str()) {
+            Some("any") => json!("required"),
+            Some("auto") => json!("auto"),
+            Some("none") => json!("none"),
+            Some("tool") => {
+                let name = obj.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                json!({"type": "function", "name": name})
+            }
+            _ => json!("auto"),
+        },
+        _ => json!("auto"),
+    }
+}
+
+// ============================================================================
 // Message 转换
 // ============================================================================
 
@@ -839,5 +1171,120 @@ mod tests {
         assert!(cleaned["properties"]["path"].get("cache_control").is_none());
         assert_eq!(cleaned["properties"]["path"]["type"], "string");
         assert_eq!(cleaned["required"], json!(["path"]));
+    }
+
+    // ===== Responses API 转换测试 =====
+
+    #[test]
+    fn test_anthropic_to_responses_basic() {
+        let anthropic = json!({
+            "model": "gpt-5",
+            "max_tokens": 4096,
+            "system": "You are helpful.",
+            "messages": [{"role": "user", "content": "Hello"}]
+        });
+        let result = anthropic_to_responses(anthropic).unwrap();
+        assert_eq!(result["model"], "gpt-5");
+        assert_eq!(result["instructions"], "You are helpful.");
+        assert_eq!(result["max_output_tokens"], 4096);
+        let input = result["input"].as_array().unwrap();
+        assert_eq!(input.len(), 1);
+        assert_eq!(input[0]["role"], "user");
+        assert_eq!(input[0]["content"][0]["type"], "input_text");
+        assert_eq!(input[0]["content"][0]["text"], "Hello");
+    }
+
+    #[test]
+    fn test_anthropic_to_responses_tools_and_reasoning() {
+        let anthropic = json!({
+            "model": "gpt-5",
+            "max_tokens": 1024,
+            "thinking": {"type": "enabled", "budget_tokens": 20000},
+            "messages": [{"role": "user", "content": "test"}],
+            "tools": [{
+                "name": "read_file",
+                "description": "Read a file",
+                "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}}
+            }],
+            "tool_choice": {"type": "any"}
+        });
+        let result = anthropic_to_responses(anthropic).unwrap();
+        assert_eq!(result["reasoning"]["effort"], "high");
+        let tools = result["tools"].as_array().unwrap();
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0]["type"], "function");
+        assert_eq!(tools[0]["name"], "read_file");
+        assert_eq!(tools[0]["parameters"]["properties"]["path"]["type"], "string");
+        assert_eq!(result["tool_choice"], "required");
+    }
+
+    #[test]
+    fn test_anthropic_to_responses_tool_use_and_result() {
+        let anthropic = json!({
+            "model": "gpt-5",
+            "max_tokens": 1024,
+            "messages": [
+                {"role": "assistant", "content": [
+                    {"type": "tool_use", "id": "call_1", "name": "read_file", "input": {"path": "/a"}}
+                ]},
+                {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": "call_1", "content": "file body"}
+                ]}
+            ]
+        });
+        let result = anthropic_to_responses(anthropic).unwrap();
+        let input = result["input"].as_array().unwrap();
+        assert_eq!(input[0]["type"], "function_call");
+        assert_eq!(input[0]["call_id"], "call_1");
+        assert_eq!(input[0]["name"], "read_file");
+        assert_eq!(input[1]["type"], "function_call_output");
+        assert_eq!(input[1]["call_id"], "call_1");
+        assert_eq!(input[1]["output"], "file body");
+    }
+
+    #[test]
+    fn test_responses_to_anthropic_text_and_reasoning() {
+        let resp = json!({
+            "id": "resp_1",
+            "model": "gpt-5",
+            "output": [
+                {"type": "reasoning", "summary": [{"type": "summary_text", "text": "thinking..."}]},
+                {"type": "message", "role": "assistant", "content": [
+                    {"type": "output_text", "text": "Hello there!"}
+                ]}
+            ],
+            "usage": {"input_tokens": 10, "output_tokens": 5}
+        });
+        let result = responses_to_anthropic(resp).unwrap();
+        assert_eq!(result["type"], "message");
+        assert_eq!(result["stop_reason"], "end_turn");
+        let content = result["content"].as_array().unwrap();
+        assert_eq!(content.len(), 2);
+        assert_eq!(content[0]["type"], "thinking");
+        assert_eq!(content[0]["thinking"], "thinking...");
+        assert_eq!(content[1]["type"], "text");
+        assert_eq!(content[1]["text"], "Hello there!");
+        assert_eq!(result["usage"]["input_tokens"], 10);
+        assert_eq!(result["usage"]["output_tokens"], 5);
+    }
+
+    #[test]
+    fn test_responses_to_anthropic_function_call() {
+        let resp = json!({
+            "id": "resp_2",
+            "model": "gpt-5",
+            "output": [
+                {"type": "function_call", "call_id": "call_9", "name": "read_file",
+                 "arguments": "{\"path\":\"/test.txt\"}"}
+            ],
+            "usage": {"input_tokens": 20, "output_tokens": 30}
+        });
+        let result = responses_to_anthropic(resp).unwrap();
+        assert_eq!(result["stop_reason"], "tool_use");
+        let content = result["content"].as_array().unwrap();
+        assert_eq!(content[0]["type"], "tool_use");
+        assert_eq!(content[0]["id"], "call_9");
+        assert_eq!(content[0]["name"], "read_file");
+        assert_eq!(content[0]["input"]["path"], "/test.txt");
     }
 }

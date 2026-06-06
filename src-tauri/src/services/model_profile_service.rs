@@ -69,17 +69,11 @@ impl ModelProfileService {
     /// 覆盖所有五个模型变体（MODEL / HAIKU / OPUS / SONNET / REASONING）
     /// 确保无论 CLI 内部选择哪个变体，都路由到用户指定的模型。
     pub fn generate_settings_overlay(profile: &ModelProfile) -> serde_json::Value {
+        // 与 generate_env_overrides 保持一致（含 authType 与 customEnv）
+        let env = Self::generate_env_overrides(profile);
         serde_json::json!({
             "model": profile.model,
-            "env": {
-                "ANTHROPIC_MODEL": profile.model,
-                "ANTHROPIC_DEFAULT_HAIKU_MODEL": profile.model,
-                "ANTHROPIC_DEFAULT_OPUS_MODEL": profile.model,
-                "ANTHROPIC_DEFAULT_SONNET_MODEL": profile.model,
-                "ANTHROPIC_REASONING_MODEL": profile.model,
-                "ANTHROPIC_BASE_URL": profile.base_url,
-                "ANTHROPIC_AUTH_TOKEN": profile.api_key,
-            }
+            "env": env,
         })
     }
 
@@ -128,8 +122,42 @@ impl ModelProfileService {
             profile.model.clone(),
         );
         env.insert("ANTHROPIC_BASE_URL".to_string(), profile.base_url.clone());
-        env.insert("ANTHROPIC_AUTH_TOKEN".to_string(), profile.api_key.clone());
+        // 按认证方式注入鉴权变量
+        Self::apply_auth_env(profile, &mut env);
+        // 合并用户自定义环境变量（可覆盖上述默认）
+        if let Some(custom) = &profile.custom_env {
+            for (k, v) in custom {
+                env.insert(k.clone(), v.clone());
+            }
+        }
         env
+    }
+
+    /// 按 authType 注入鉴权环境变量
+    ///
+    /// - `auth_token`（默认）→ `ANTHROPIC_AUTH_TOKEN`
+    /// - `api_key` → `ANTHROPIC_API_KEY`
+    /// - `custom_env` → 用户指定的环境变量名（缺省回退 `ANTHROPIC_AUTH_TOKEN`）
+    /// - `none` → 不注入
+    fn apply_auth_env(profile: &ModelProfile, env: &mut HashMap<String, String>) {
+        let auth_type = profile.auth_type.as_deref().unwrap_or("auth_token");
+        match auth_type {
+            "api_key" => {
+                env.insert("ANTHROPIC_API_KEY".to_string(), profile.api_key.clone());
+            }
+            "custom_env" => {
+                let name = profile
+                    .api_key_env_name
+                    .as_deref()
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("ANTHROPIC_AUTH_TOKEN");
+                env.insert(name.to_string(), profile.api_key.clone());
+            }
+            "none" => {}
+            _ => {
+                env.insert("ANTHROPIC_AUTH_TOKEN".to_string(), profile.api_key.clone());
+            }
+        }
     }
 
     /// 根据 Profile 生成 Codex CLI provider 配置参数。
@@ -139,6 +167,11 @@ impl ModelProfileService {
     pub fn generate_codex_config_args(profile: &ModelProfile) -> Vec<String> {
         let provider_id = Self::codex_provider_id(profile);
         let env_key = Self::codex_api_key_env(profile);
+        // Codex 仅支持 OpenAI 风格线路：chat-completions → "chat"，其余默认 "responses"
+        let codex_wire = match profile.wire_api.as_deref() {
+            Some("openai-chat-completions") => "chat",
+            _ => "responses",
+        };
 
         vec![
             "-c".to_string(),
@@ -166,7 +199,7 @@ impl ModelProfileService {
                 toml_string(&env_key).unwrap_or_else(|_| format!("\"{}\"", env_key))
             ),
             "-c".to_string(),
-            format!("model_providers.{}.wire_api=\"responses\"", provider_id),
+            format!("model_providers.{}.wire_api=\"{}\"", provider_id, codex_wire),
         ]
     }
 
@@ -220,6 +253,82 @@ impl ModelProfileService {
         Ok(())
     }
 
+    /// 从 Profile 端点拉取可用模型列表
+    ///
+    /// `GET {baseUrl}/v1/models`，按线路格式注入鉴权头（Anthropic 用 x-api-key，
+    /// OpenAI 系用 Bearer），兼容 `{data:[{id}]}` / `{models:[...]}` / 顶层数组。
+    pub async fn fetch_models(profile: &ModelProfile) -> Result<Vec<String>> {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(15))
+            .build()
+            .map_err(|e| {
+                crate::error::AppError::ProcessError(format!("创建 HTTP 客户端失败: {}", e))
+            })?;
+
+        let base = profile.base_url.trim_end_matches('/');
+        let url = if base.ends_with("/models") {
+            base.to_string()
+        } else if base.ends_with("/v1") {
+            format!("{}/models", base)
+        } else {
+            format!("{}/v1/models", base)
+        };
+
+        // 按线路格式选择鉴权头
+        let is_anthropic = !matches!(
+            profile.wire_api.as_deref(),
+            Some("openai-chat-completions") | Some("openai-responses")
+        );
+        let mut req = client.get(&url);
+        if is_anthropic {
+            req = req
+                .header("x-api-key", &profile.api_key)
+                .header("anthropic-version", "2023-06-01");
+        } else {
+            req = req.header("Authorization", format!("Bearer {}", profile.api_key));
+        }
+        req = Self::apply_custom_headers(req, profile);
+
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| crate::error::AppError::ProcessError(format!("请求模型列表失败: {}", e)))?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(crate::error::AppError::ProcessError(format!(
+                "模型列表端点返回 {}: {}",
+                status,
+                body.chars().take(200).collect::<String>()
+            )));
+        }
+
+        let json: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| crate::error::AppError::ProcessError(format!("解析模型列表失败: {}", e)))?;
+
+        let mut models = Vec::new();
+        let arr = json
+            .get("data")
+            .and_then(|d| d.as_array())
+            .or_else(|| json.get("models").and_then(|d| d.as_array()))
+            .or_else(|| json.as_array());
+        if let Some(arr) = arr {
+            for m in arr {
+                if let Some(id) = m.get("id").and_then(|v| v.as_str()) {
+                    models.push(id.to_string());
+                } else if let Some(name) = m.get("name").and_then(|v| v.as_str()) {
+                    models.push(name.to_string());
+                } else if let Some(s) = m.as_str() {
+                    models.push(s.to_string());
+                }
+            }
+        }
+        Ok(models)
+    }
+
     /// 测试 Profile 连接是否可用
     ///
     /// 根据 wire_api 选择不同的测试方式：
@@ -233,11 +342,24 @@ impl ModelProfileService {
                 crate::error::AppError::ProcessError(format!("创建 HTTP 客户端失败: {}", e))
             })?;
 
-        if Self::is_openai_wire_api(profile) {
-            Self::test_openai_connection(&client, profile).await
-        } else {
-            Self::test_anthropic_connection(&client, profile).await
+        match profile.wire_api.as_deref() {
+            Some("openai-chat-completions") => Self::test_openai_connection(&client, profile).await,
+            Some("openai-responses") => Self::test_responses_connection(&client, profile).await,
+            _ => Self::test_anthropic_connection(&client, profile).await,
         }
+    }
+
+    /// 将 Profile 自定义请求头应用到请求构建器
+    fn apply_custom_headers(
+        mut req: reqwest::RequestBuilder,
+        profile: &ModelProfile,
+    ) -> reqwest::RequestBuilder {
+        if let Some(headers) = &profile.custom_headers {
+            for (k, v) in headers {
+                req = req.header(k.as_str(), v.as_str());
+            }
+        }
+        req
     }
 
     /// 测试 Anthropic Messages API 端点连通性
@@ -260,9 +382,8 @@ impl ModelProfileService {
                 "model": profile.model,
                 "max_tokens": 1,
                 "messages": [{"role": "user", "content": "hi"}]
-            }))
-            .send()
-            .await;
+            }));
+        let response = Self::apply_custom_headers(response, profile).send().await;
 
         match response {
             Ok(resp) => {
@@ -303,9 +424,8 @@ impl ModelProfileService {
                 "model": profile.model,
                 "max_tokens": 1,
                 "messages": [{"role": "user", "content": "hi"}]
-            }))
-            .send()
-            .await;
+            }));
+        let response = Self::apply_custom_headers(response, profile).send().await;
 
         match response {
             Ok(resp) => {
@@ -319,6 +439,48 @@ impl ModelProfileService {
             }
             Err(e) => {
                 tracing::warn!("[ModelProfileService] OpenAI 连接测试失败: {}", e);
+                Ok(false)
+            }
+        }
+    }
+
+    /// 测试 OpenAI Responses API 端点连通性
+    async fn test_responses_connection(
+        client: &reqwest::Client,
+        profile: &ModelProfile,
+    ) -> Result<bool> {
+        let base = profile.base_url.trim_end_matches('/');
+        let url = if base.ends_with("/responses") {
+            base.to_string()
+        } else if base.ends_with("/v1") {
+            format!("{}/responses", base)
+        } else {
+            format!("{}/v1/responses", base)
+        };
+
+        let response = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", profile.api_key))
+            .header("Content-Type", "application/json")
+            .json(&serde_json::json!({
+                "model": profile.model,
+                "input": "hi",
+                "max_output_tokens": 16
+            }));
+        let response = Self::apply_custom_headers(response, profile).send().await;
+
+        match response {
+            Ok(resp) => {
+                let status = resp.status();
+                tracing::info!(
+                    "[ModelProfileService] Responses 连接测试: {} -> status {}",
+                    profile.base_url,
+                    status
+                );
+                Ok(status.is_success() || status.as_u16() == 400)
+            }
+            Err(e) => {
+                tracing::warn!("[ModelProfileService] Responses 连接测试失败: {}", e);
                 Ok(false)
             }
         }
@@ -345,6 +507,10 @@ mod tests {
             target_engine: None,
             category: None,
             description: None,
+            auth_type: None,
+            api_key_env_name: None,
+            custom_headers: None,
+            custom_env: None,
             created_at: None,
             updated_at: None,
         }
