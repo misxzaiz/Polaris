@@ -86,6 +86,165 @@ impl CliInfoService {
         let output = self.execute_claude(&["--version"])?;
         Ok(output.trim().to_string())
     }
+
+    /// 运行 ultrareview 云端多 agent 代码审查
+    ///
+    /// 在指定工作区目录下执行
+    /// `claude ultrareview [target] --timeout <mins> [--json]`。
+    /// `target` 为空时审查当前分支，也可传 PR 号或 base 分支名。
+    ///
+    /// 注意：云端审查可能耗时数分钟至数十分钟。本方法为同步阻塞调用，
+    /// 调用方（Tauri 命令）应放入 `tokio::task::spawn_blocking` 执行，
+    /// 避免阻塞 async runtime。CLI 自带 `--timeout` 会在超时后自行退出，
+    /// 无需在 Rust 侧额外计时。
+    pub fn run_ultrareview(
+        &self,
+        workspace_dir: &str,
+        target: Option<&str>,
+        timeout_mins: u32,
+        json: bool,
+    ) -> Result<String> {
+        let mut cmd = self.build_command();
+        // ultrareview 审查的是"当前仓库/分支"，必须在工作区目录下执行
+        cmd.current_dir(workspace_dir);
+        cmd.arg("ultrareview");
+        if let Some(t) = target {
+            let t = t.trim();
+            if !t.is_empty() {
+                cmd.arg(t);
+            }
+        }
+        cmd.arg("--timeout").arg(timeout_mins.to_string());
+        if json {
+            cmd.arg("--json");
+        }
+
+        let output = cmd.output().map_err(|e| {
+            AppError::ProcessError(format!("执行 claude ultrareview 失败: {}", e))
+        })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(AppError::ProcessError(format!(
+                "claude ultrareview 执行失败: {}",
+                stderr.trim()
+            )));
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+
+    /// 调用 Claude CLI 进行结构化提取（`--json-schema`）
+    ///
+    /// 以自然语言 `prompt` 为输入（经 **stdin** 传入，规避命令行长度限制），
+    /// 用 `schema_json`（JSON Schema 字符串）约束模型输出结构，执行：
+    /// `claude --print --output-format json --json-schema <schema-file> [--model <m>]`。
+    ///
+    /// 返回 CLI 的完整 stdout（`--output-format json` 的结果对象 JSON 字符串）。
+    /// 结构化结果的解包（从结果包装中取出符合 schema 的对象）交由前端 service
+    /// 层完成，以兼容不同 CLI 版本的结果包装结构。
+    ///
+    /// 注意：
+    /// - `--json-schema` 接受 schema **文件路径**，故先将 schema 写入系统临时文件，
+    ///   执行完成后清理；
+    /// - 该命令会真实调用模型（需有效认证），耗时取决于模型响应，
+    ///   调用方（Tauri 命令）应放入 `tokio::task::spawn_blocking` 执行。
+    pub fn extract_structured(
+        &self,
+        prompt: &str,
+        schema_json: &str,
+        workspace_dir: Option<&str>,
+        model: Option<&str>,
+    ) -> Result<String> {
+        use std::io::Write;
+        use std::process::Stdio;
+
+        if prompt.trim().is_empty() {
+            return Err(AppError::ValidationError("提取内容不能为空".to_string()));
+        }
+        if schema_json.trim().is_empty() {
+            return Err(AppError::ValidationError("JSON Schema 不能为空".to_string()));
+        }
+
+        // `--json-schema` 接受文件路径：写入系统临时文件，执行后删除。
+        // 用进程 ID + 纳秒时间戳生成唯一文件名，避免并发冲突。
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let schema_path = std::env::temp_dir().join(format!(
+            "polaris-schema-{}-{}.json",
+            std::process::id(),
+            suffix
+        ));
+        std::fs::write(&schema_path, schema_json)
+            .map_err(|e| AppError::ProcessError(format!("写入 JSON Schema 临时文件失败: {}", e)))?;
+
+        let mut cmd = self.build_command();
+        if let Some(dir) = workspace_dir {
+            let dir = dir.trim();
+            if !dir.is_empty() {
+                cmd.current_dir(dir);
+            }
+        }
+        cmd.arg("--print")
+            .arg("--output-format")
+            .arg("json")
+            .arg("--json-schema")
+            .arg(&schema_path);
+        if let Some(m) = model {
+            let m = m.trim();
+            if !m.is_empty() {
+                cmd.arg("--model").arg(m);
+            }
+        }
+        cmd.stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = std::fs::remove_file(&schema_path);
+                return Err(AppError::ProcessError(format!(
+                    "执行 claude 结构化提取失败: {}",
+                    e
+                )));
+            }
+        };
+
+        // 通过 stdin 写入 prompt，写完 drop 触发 EOF
+        if let Some(mut stdin) = child.stdin.take() {
+            let write_result = stdin.write_all(prompt.as_bytes());
+            drop(stdin);
+            if let Err(e) = write_result {
+                let _ = child.kill();
+                let _ = std::fs::remove_file(&schema_path);
+                return Err(AppError::ProcessError(format!(
+                    "向 claude 写入提取内容失败: {}",
+                    e
+                )));
+            }
+        }
+
+        let wait_result = child.wait_with_output();
+        // 无论成功与否都清理临时文件
+        let _ = std::fs::remove_file(&schema_path);
+
+        let output = wait_result.map_err(|e| {
+            AppError::ProcessError(format!("等待 claude 结构化提取结果失败: {}", e))
+        })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(AppError::ProcessError(format!(
+                "claude 结构化提取执行失败: {}",
+                stderr.trim()
+            )));
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
 }
 
 /// 检查指定 CLI 是否已安装

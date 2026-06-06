@@ -807,6 +807,8 @@ pub fn run() {
             commands::cli_info::cli_get_version,
             commands::cli_info::cli_check_installed,
             commands::cli_info::cli_get_version_for,
+            commands::cli_info::cli_run_ultrareview,
+            commands::cli_info::cli_extract_structured,
             // MCP 管理器相关
             commands::mcp_manager::mcp_list_servers,
             commands::mcp_manager::mcp_get_server,

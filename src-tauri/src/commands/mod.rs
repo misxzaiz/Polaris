@@ -43,7 +43,7 @@ pub use auto_mode::{auto_mode_config, auto_mode_defaults};
 
 pub mod cli_info;
 #[cfg(feature = "tauri-app")]
-pub use cli_info::{cli_get_agents, cli_get_auth_status, cli_get_version};
+pub use cli_info::{cli_get_agents, cli_get_auth_status, cli_get_version, cli_run_ultrareview, cli_extract_structured};
 
 pub mod mcp_manager;
 #[cfg(feature = "tauri-app")]

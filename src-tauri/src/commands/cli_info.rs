@@ -57,6 +57,60 @@ pub async fn cli_get_version(
     service.get_version()
 }
 
+/// 运行 ultrareview 云端代码审查
+///
+/// 在工作区目录执行 `claude ultrareview [target]`，返回格式化的审查结果
+/// （markdown 文本）。云端审查耗时较长，放入阻塞线程池执行，避免阻塞
+/// async runtime；超时由 CLI 的 `--timeout` 控制（默认 30 分钟）。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn cli_run_ultrareview(
+    state: State<'_, AppState>,
+    workspace_dir: String,
+    target: Option<String>,
+    timeout_mins: Option<u32>,
+) -> Result<String> {
+    let claude_path = get_claude_path(&state)?;
+    let timeout = timeout_mins.unwrap_or(30);
+
+    tokio::task::spawn_blocking(move || {
+        let service = CliInfoService::new(claude_path);
+        service.run_ultrareview(&workspace_dir, target.as_deref(), timeout, false)
+    })
+    .await
+    .map_err(|e| crate::error::AppError::Unknown(format!("ultrareview 任务执行失败: {}", e)))?
+}
+
+/// 结构化提取（`--json-schema`）
+///
+/// 以自然语言 `prompt` 为输入、`schema_json` 为 JSON Schema 约束，调用
+/// `claude --print --output-format json --json-schema <schema>`，返回 CLI 的
+/// 完整 JSON stdout（结构化结果由前端 service 层解包）。会真实调用模型，
+/// 放入阻塞线程池执行以避免阻塞 async runtime。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn cli_extract_structured(
+    state: State<'_, AppState>,
+    prompt: String,
+    schema_json: String,
+    workspace_dir: Option<String>,
+    model: Option<String>,
+) -> Result<String> {
+    let claude_path = get_claude_path(&state)?;
+
+    tokio::task::spawn_blocking(move || {
+        let service = CliInfoService::new(claude_path);
+        service.extract_structured(
+            &prompt,
+            &schema_json,
+            workspace_dir.as_deref(),
+            model.as_deref(),
+        )
+    })
+    .await
+    .map_err(|e| crate::error::AppError::Unknown(format!("结构化提取任务执行失败: {}", e)))?
+}
+
 /// 检查指定 CLI 是否已安装
 ///
 /// 使用 which/where 命令查找可执行文件
