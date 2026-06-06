@@ -251,7 +251,10 @@
     "tools": "工具",
     "minutes": "{{count}}分钟",
     "hoursMinutes": "{{hours}}小时{{minutes}}分钟",
-    "responding": "响应中..."
+    "responding": "响应中...",
+    "more": "更多设置",
+    "collapse": "收起",
+    "engineUnavailable": "引擎不可用"
   },
   "search": {
     "placeholder": "搜索消息...",

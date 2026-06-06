@@ -251,7 +251,10 @@
     "tools": "tools",
     "minutes": "{{count}} min",
     "hoursMinutes": "{{hours}}h {{minutes}}m",
-    "responding": "Responding..."
+    "responding": "Responding...",
+    "more": "More settings",
+    "collapse": "Collapse",
+    "engineUnavailable": "Engine unavailable"
   },
   "search": {
     "placeholder": "Search messages...",

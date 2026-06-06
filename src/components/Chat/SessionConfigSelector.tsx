@@ -9,7 +9,7 @@
 
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, Bot, Cpu, Zap, Shield } from 'lucide-react'
+import { ChevronDown, Bot, Cpu, Zap, Shield, Plug } from 'lucide-react'
 import { clsx } from 'clsx'
 import {
   PRESET_AGENTS,
@@ -34,6 +34,8 @@ interface SessionConfigSelectorProps {
   disabled?: boolean
   /** 只渲染指定类型的选择器，不传则渲染全部 */
   visibleTypes?: SelectorType[]
+  /** 布局变体：inline 横向紧凑（主行），panel 纵向带 label（折叠面板） */
+  variant?: 'inline' | 'panel'
 }
 
 type SelectorType = 'agent' | 'model' | 'effort' | 'permission' | 'profile'
@@ -46,6 +48,7 @@ export function SessionConfigSelector({
   onChange,
   disabled = false,
   visibleTypes,
+  variant = 'inline',
 }: SessionConfigSelectorProps) {
   const { t } = useTranslation('chat')
   const [openDropdown, setOpenDropdown] = useState<SelectorType | null>(null)
@@ -88,16 +91,10 @@ export function SessionConfigSelector({
   const defaultEngine = useConfigStore(s => s.config?.defaultEngine || 'claude-code')
   const currentEngine: 'claude' | 'codex' = defaultEngine === 'codex' ? 'codex' : 'claude'
 
-  // 合并后的模型列表：官方模型 + Profile
-  const modelList = useMemo(() => {
-    const officialModels = PRESET_MODELS
-    const profileModels = profiles.map(p => ({
-      id: `profile:${p.id}`,
-      name: `${p.wireApi === 'openai-chat-completions' ? '🔵' : '🔄'} ${p.name}`,
-      description: p.description || `${p.model} @ ${new URL(p.baseUrl).hostname}${p.wireApi === 'openai-chat-completions' ? ' (OpenAI)' : ''}${p.category ? ` · ${p.category}` : ''}`,
-    }))
-    return [...officialModels, ...profileModels]
-  }, [profiles])
+  // 模型列表：仅官方模型档位（opus/sonnet/haiku）。
+  // 第三方端点请使用独立的「端点（profile）」选择器——model 字段会原样传给 CLI 的 --model，
+  // 混入 profile: 项会被当作无效模型名，故此处不再合并 Profile。
+  const modelList = PRESET_MODELS
 
   // 按当前引擎过滤 Profile 列表
   const compatibleProfiles = useMemo(() => {
@@ -202,7 +199,7 @@ export function SessionConfigSelector({
           description: o.description,
         })))
         break
-      case 'profile':
+      case 'profile': {
         // 官方 API（空 = 不使用 Profile）
         items.push({
           value: '',
@@ -225,6 +222,7 @@ export function SessionConfigSelector({
           })
         }
         break
+      }
     }
 
     const getCurrentValue = (): string | undefined => {
@@ -281,35 +279,7 @@ export function SessionConfigSelector({
     )
   }
 
-  // 渲染单个选择器按钮
-  const renderSelector = (
-    type: SelectorType,
-    icon: React.ReactNode,
-    _label: string,
-    currentValue: string | undefined
-  ) => (
-    <div className="relative">
-      <button
-        onClick={() => !disabled && setOpenDropdown(openDropdown === type ? null : type)}
-        disabled={disabled}
-        className={clsx(
-          'flex items-center gap-1 px-1.5 py-0.5 rounded text-xs transition-colors',
-          disabled
-            ? 'text-text-muted cursor-not-allowed'
-            : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover',
-          openDropdown === type && 'bg-primary/10 text-primary'
-        )}
-        title={t(`sessionConfig.${type}Tooltip`)}
-      >
-        {icon}
-        <span className="max-w-[60px] truncate">{currentValue}</span>
-        <ChevronDown size={12} className="opacity-50" />
-      </button>
-      {renderDropdown(type)}
-    </div>
-  )
-
-  // 选择器元数据映射
+  // 选择器元数据映射（图标需可区分：profile 用 Plug，与 model 的 Cpu 区分开）
   const selectorMeta: Record<SelectorType, { icon: React.ReactNode; label: string; getValue: () => string }> = {
     agent: {
       icon: <Bot size={12} />,
@@ -332,7 +302,7 @@ export function SessionConfigSelector({
       getValue: () => getPermissionLabel(config.permissionMode),
     },
     profile: {
-      icon: <Cpu size={12} />,
+      icon: <Plug size={12} />,
       label: t('sessionConfig.profile'),
       getValue: () => {
         if (!config.modelProfileId) return t('sessionConfig.noProfile')
@@ -343,15 +313,56 @@ export function SessionConfigSelector({
     },
   }
 
+  // 各选择器值的最大宽度：profile（端点）最常用，给更宽的展示空间
+  const VALUE_MAX_W: Record<SelectorType, string> = {
+    profile: 'max-w-[140px]',
+    model: 'max-w-[90px]',
+    effort: 'max-w-[64px]',
+    agent: 'max-w-[90px]',
+    permission: 'max-w-[72px]',
+  }
+
+  // 渲染单个选择器按钮
+  // - inline：横向紧凑，仅图标 + 截断值（主行）
+  // - panel：纵向，图标 + 字段名 + 值（折叠面板，可读性优先）
+  const renderSelector = (type: SelectorType, mode: 'inline' | 'panel') => {
+    const { icon, label, getValue } = selectorMeta[type]
+    const currentValue = getValue()
+    return (
+      <div className={clsx('relative', mode === 'panel' && 'w-full')}>
+        <button
+          onClick={() => !disabled && setOpenDropdown(openDropdown === type ? null : type)}
+          disabled={disabled}
+          className={clsx(
+            'flex items-center gap-1 rounded text-xs transition-colors',
+            mode === 'panel' ? 'w-full px-2 py-1' : 'px-1.5 py-0.5',
+            disabled
+              ? 'text-text-muted cursor-not-allowed'
+              : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover',
+            openDropdown === type && 'bg-primary/10 text-primary'
+          )}
+          title={t(`sessionConfig.${type}Tooltip`)}
+        >
+          <span className="shrink-0">{icon}</span>
+          {mode === 'panel' && <span className="shrink-0 text-text-muted">{label}</span>}
+          <span className={clsx('truncate', mode === 'panel' ? 'flex-1 text-left' : VALUE_MAX_W[type])}>
+            {currentValue}
+          </span>
+          <ChevronDown size={12} className="opacity-50 shrink-0" />
+        </button>
+        {renderDropdown(type)}
+      </div>
+    )
+  }
+
   const ALL_TYPES: SelectorType[] = ['agent', 'model', 'effort', 'permission', 'profile']
   const typesToShow = visibleTypes ?? ALL_TYPES
 
   return (
-    <div ref={containerRef} className="flex items-center gap-1">
-      {typesToShow.map(type => {
-        const { icon, label, getValue } = selectorMeta[type]
-        return <React.Fragment key={type}>{renderSelector(type, icon, label, getValue())}</React.Fragment>
-      })}
+    <div ref={containerRef} className={clsx(variant === 'panel' ? 'flex flex-col gap-0.5 w-full' : 'flex items-center gap-1')}>
+      {typesToShow.map(type => (
+        <React.Fragment key={type}>{renderSelector(type, variant)}</React.Fragment>
+      ))}
       {/* 自定义输入浮层 */}
       {customInput && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
