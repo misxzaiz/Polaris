@@ -5,6 +5,7 @@ mod claude;
 mod codex;
 pub mod codex_parser;
 mod simple_ai;
+mod simple_ai_protocol;
 
 pub use claude::ClaudeEngine;
 pub use codex::CodexEngine;

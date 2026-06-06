@@ -17,6 +17,7 @@ use futures_util::StreamExt;
 use serde_json::{json, Value};
 use tokio::sync::{watch, Mutex};
 
+use super::simple_ai_protocol::{build_request_body, StreamDelta, StreamState, WireProtocol};
 use crate::ai::traits::{AIEngine, EngineId, SessionOptions};
 use crate::error::{AppError, Result};
 use crate::models::ai_event::{
@@ -360,7 +361,12 @@ async fn run_chat_loop(
     event_callback: &Arc<dyn Fn(AIEvent) + Send + Sync>,
     abort_rx: &mut watch::Receiver<bool>,
 ) -> Result<()> {
-    tracing::info!("[SimpleAI] run_chat_loop 开始, session={}", session_id);
+    let protocol = WireProtocol::from_wire_api(profile.wire_api.as_deref());
+    tracing::info!(
+        "[SimpleAI] run_chat_loop 开始, session={}, protocol={}",
+        session_id,
+        protocol.as_str()
+    );
     let max_tool_rounds = 20;
     let mut round = 0;
 
@@ -379,25 +385,16 @@ async fn run_chat_loop(
             return Ok(());
         }
 
-        // 构建请求体
-        let mut body = json!({
-            "model": profile.model,
-            "messages": messages,
-            "stream": true,
-        });
-        if !tools.is_empty() {
-            body["tools"] = json!(tools);
-            body["tool_choice"] = json!("auto");
-            tracing::info!(
-                "[SimpleAI] 发送 {} 个工具定义, tool_names=[{}]",
-                tools.len(),
-                tools.iter()
-                    .filter_map(|t| t["function"]["name"].as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
-        } else {
+        // 构建请求体（按线路协议转换内部 OpenAI 消息格式）
+        let body = build_request_body(protocol, &profile.model, messages, tools);
+        if tools.is_empty() {
             tracing::warn!("[SimpleAI] 工具列表为空!");
+        } else {
+            tracing::info!(
+                "[SimpleAI] 发送 {} 个工具定义 (protocol={})",
+                tools.len(),
+                protocol.as_str()
+            );
         }
 
         // HTTP 请求
@@ -406,16 +403,13 @@ async fn run_chat_loop(
             .build()
             .map_err(|e| AppError::ProcessError(format!("HTTP client error: {}", e)))?;
 
-        let url = format!(
-            "{}/chat/completions",
-            profile.base_url.trim_end_matches('/')
-        );
+        let url = protocol.build_url(&profile.base_url);
         tracing::info!("[SimpleAI] 发送 API 请求: {} (model={})", url, profile.model);
 
         let mut req = client.post(&url).header("Content-Type", "application/json");
 
-        if !profile.api_key.is_empty() {
-            req = req.header("Authorization", format!("Bearer {}", profile.api_key));
+        for (k, v) in protocol.auth_headers(&profile.api_key) {
+            req = req.header(k, v);
         }
         if let Some(headers) = &profile.custom_headers {
             for (k, v) in headers {
@@ -448,7 +442,7 @@ async fn run_chat_loop(
         let mut stream = response.bytes_stream();
         let mut buffer = String::new();
         let mut assistant_content = String::new();
-        let mut tool_calls: Vec<Value> = Vec::new();
+        let mut stream_state = StreamState::new(protocol);
 
         loop {
             if *abort_rx.borrow() {
@@ -491,59 +485,20 @@ async fn run_chat_loop(
                     continue;
                 };
 
-                let delta = &chunk_json["choices"][0]["delta"];
-
-                // 文本增量
-                if let Some(content) = delta["content"].as_str() {
-                    if !content.is_empty() {
-                        assistant_content.push_str(content);
-                        let _ = event_callback(AIEvent::Token(TokenEvent::new(
-                            session_id,
-                            content.to_string(),
-                        )));
-                    }
-                }
-
-                // 思考过程
-                if let Some(thinking) = delta["reasoning_content"].as_str() {
-                    if !thinking.is_empty() {
-                        let _ = event_callback(AIEvent::Thinking(ThinkingEvent::new(
-                            session_id,
-                            thinking.to_string(),
-                        )));
-                    }
-                }
-
-                // 工具调用增量
-                if let Some(tc_deltas) = delta["tool_calls"].as_array() {
-                    for tc_delta in tc_deltas {
-                        let index = tc_delta["index"].as_u64().unwrap_or(0) as usize;
-
-                        while tool_calls.len() <= index {
-                            tool_calls.push(json!({
-                                "id": "",
-                                "type": "function",
-                                "function": { "name": "", "arguments": "" }
-                            }));
+                for delta in stream_state.feed(&chunk_json) {
+                    match delta {
+                        StreamDelta::Text(text) => {
+                            assistant_content.push_str(&text);
+                            let _ = event_callback(AIEvent::Token(TokenEvent::new(
+                                session_id,
+                                text,
+                            )));
                         }
-
-                        if let Some(call) = tool_calls.get_mut(index) {
-                            if let Some(id) = tc_delta["id"].as_str() {
-                                if !id.is_empty() {
-                                    call["id"] = json!(id);
-                                }
-                            }
-                            if let Some(name) = tc_delta["function"]["name"].as_str() {
-                                let existing = call["function"]["name"].as_str().unwrap_or("");
-                                call["function"]["name"] =
-                                    json!(format!("{}{}", existing, name));
-                            }
-                            if let Some(args) = tc_delta["function"]["arguments"].as_str() {
-                                let existing =
-                                    call["function"]["arguments"].as_str().unwrap_or("");
-                                call["function"]["arguments"] =
-                                    json!(format!("{}{}", existing, args));
-                            }
+                        StreamDelta::Thinking(thinking) => {
+                            let _ = event_callback(AIEvent::Thinking(ThinkingEvent::new(
+                                session_id,
+                                thinking,
+                            )));
                         }
                     }
                 }
@@ -551,6 +506,7 @@ async fn run_chat_loop(
         }
 
         // 流处理完毕
+        let mut tool_calls = stream_state.finish_tool_calls();
         tracing::info!(
             "[SimpleAI] 流处理完毕, session={}, content_len={}, tool_calls={}, first_100_chars={:?}",
             session_id,
@@ -769,21 +725,27 @@ impl AIEngine for SimpleAIEngine {
             message.to_string(),
         )));
 
-        // 创建会话
-        let session = SimpleAISession::new(work_dir.clone());
+        // 创建会话：初始即带上 system + 历史 + 首轮 user 消息，并标记运行中。
+        // 这样即便运行期间用户触发 continue_session，也能读到完整初始上下文而非空历史。
+        let mut session = SimpleAISession::new(work_dir.clone());
+        session.messages = messages.clone();
+        session.is_running = true;
         let mut abort_rx = session.abort_rx.clone();
 
+        // 启动后台任务：先插入会话，再跑对话循环，结束后回写完整历史。
+        //
+        // 合并为单个 spawn 的关键原因：
+        // 1. 保证「插入会话」先于「run_chat_loop」执行，消除 continue_session 读不到会话的竞态；
+        // 2. 循环结束后必须把累积的 messages 回写 session.messages，否则后续 continue_session
+        //    读到空历史 → 模型丢失系统提示词与首轮上下文（即「会话失忆」根因）。
         let sessions = Arc::clone(&self.sessions);
-        let sid = session_id.clone();
-        tokio::spawn(async move {
-            sessions.lock().await.insert(sid, session);
-        });
-
-        // 启动后台任务
         let sid = session_id.clone();
         let cb: Arc<dyn Fn(AIEvent) + Send + Sync> = options.event_callback.clone();
         tokio::spawn(async move {
             tracing::info!("[SimpleAI] 后台任务启动, session={}", sid);
+            sessions.lock().await.insert(sid.clone(), session);
+
+            // messages 为 spawn 局部独占，避免 run_chat_loop 长时间持锁阻塞 interrupt。
             let result = run_chat_loop(
                 &sid,
                 &mut messages,
@@ -794,6 +756,15 @@ impl AIEngine for SimpleAIEngine {
                 &mut abort_rx,
             )
             .await;
+
+            // 回写完整历史并清除运行标记，供后续 continue_session 续接上下文。
+            {
+                let mut guard = sessions.lock().await;
+                if let Some(s) = guard.get_mut(&sid) {
+                    s.messages = messages;
+                    s.is_running = false;
+                }
+            }
 
             match result {
                 Ok(()) => {
@@ -842,24 +813,20 @@ impl AIEngine for SimpleAIEngine {
         tokio::spawn(async move {
             tracing::info!("[SimpleAI] continue_session 后台任务启动, session={}", sid);
 
-            // 获取会话历史
-            let mut existing_messages = {
-                let guard = sessions.lock().await;
-                if let Some(session) = guard.get(&sid) {
-                    session.messages.clone()
+            // 获取会话历史与中断接收端，并标记运行中（单次加锁完成）。
+            let (mut existing_messages, mut abort_rx) = {
+                let mut guard = sessions.lock().await;
+                if let Some(session) = guard.get_mut(&sid) {
+                    session.is_running = true;
+                    (session.messages.clone(), session.abort_rx.clone())
                 } else {
+                    // 会话不存在（异常路径）：用仅含系统提示词的初始历史兜底。
                     let system_prompt = build_system_prompt(&work_dir);
-                    vec![json!({ "role": "system", "content": system_prompt })]
-                }
-            };
-
-            let mut abort_rx = {
-                let guard = sessions.lock().await;
-                if let Some(session) = guard.get(&sid) {
-                    session.abort_rx.clone()
-                } else {
                     let (_, rx) = watch::channel(false);
-                    rx
+                    (
+                        vec![json!({ "role": "system", "content": system_prompt })],
+                        rx,
+                    )
                 }
             };
 
