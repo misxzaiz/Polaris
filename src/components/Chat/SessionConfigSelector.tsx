@@ -21,7 +21,9 @@ import {
   type PermissionMode,
 } from '@/types/sessionConfig'
 import { useCliInfoStore } from '@/stores/cliInfoStore'
+import { useConfigStore } from '@/stores'
 import { useModelProfileStore } from '@/stores/modelProfileStore'
+import { isProfileForEngine } from '@/types/modelProfile'
 
 interface SessionConfigSelectorProps {
   /** 当前配置 */
@@ -82,16 +84,25 @@ export function SessionConfigSelector({
   // 模型 Profile 列表
   const profiles = useModelProfileStore(s => s.profiles)
 
+  // 当前引擎（用于过滤 Profile）
+  const defaultEngine = useConfigStore(s => s.config?.defaultEngine || 'claude-code')
+  const currentEngine: 'claude' | 'codex' = defaultEngine === 'codex' ? 'codex' : 'claude'
+
   // 合并后的模型列表：官方模型 + Profile
   const modelList = useMemo(() => {
     const officialModels = PRESET_MODELS
     const profileModels = profiles.map(p => ({
       id: `profile:${p.id}`,
-      name: `🔄 ${p.name}`,
-      description: p.description || `${p.model} @ ${new URL(p.baseUrl).hostname}`,
+      name: `${p.wireApi === 'openai-chat-completions' ? '🔵' : '🔄'} ${p.name}`,
+      description: p.description || `${p.model} @ ${new URL(p.baseUrl).hostname}${p.wireApi === 'openai-chat-completions' ? ' (OpenAI)' : ''}${p.category ? ` · ${p.category}` : ''}`,
     }))
     return [...officialModels, ...profileModels]
   }, [profiles])
+
+  // 按当前引擎过滤 Profile 列表
+  const compatibleProfiles = useMemo(() => {
+    return profiles.filter(p => isProfileForEngine(p, currentEngine))
+  }, [profiles, currentEngine])
 
   // 获取当前选择的显示名称
   const getAgentLabel = useCallback((agentId?: string) => {
@@ -127,6 +138,8 @@ export function SessionConfigSelector({
 
   // 通用选择处理
   const handleSelect = useCallback((type: SelectorType, value: string) => {
+    // 跳过提示项
+    if (value === '__skipped__') return
     // 处理字段名映射
     const configKey = type === 'permission' ? 'permissionMode' : type === 'profile' ? 'modelProfileId' : type
     onChange({
@@ -196,12 +209,21 @@ export function SessionConfigSelector({
           label: t('sessionConfig.officialApi'),
           description: t('sessionConfig.officialApiDesc'),
         })
-        // Profile 列表
-        items.push(...profiles.map(p => ({
+        // 过滤出与当前引擎兼容的 Profile
+        items.push(...compatibleProfiles.map(p => ({
           value: p.id,
-          label: p.wireApi === 'openai-chat-completions' ? `🔵 ${p.name}` : `🔄 ${p.name}`,
-          description: p.description || `${p.model} @ ${p.baseUrl}${p.wireApi === 'openai-chat-completions' ? ' (OpenAI)' : ''}`,
+          label: `${p.wireApi === 'openai-chat-completions' ? '🔵' : '🔄'} ${p.name}`,
+          description: p.description || `${p.model} @ ${new URL(p.baseUrl).hostname}${p.wireApi === 'openai-chat-completions' ? ' (OpenAI)' : ''}`,
         })))
+        // 如果有被过滤掉的 Profile，显示提示
+        const skippedCount = profiles.length - compatibleProfiles.length
+        if (skippedCount > 0) {
+          items.push({
+            value: '__skipped__',
+            label: `… 另有 ${skippedCount} 个 Profile 不适用于当前引擎`,
+            description: '',
+          })
+        }
         break
     }
 
@@ -316,7 +338,7 @@ export function SessionConfigSelector({
         if (!config.modelProfileId) return t('sessionConfig.noProfile')
         const profile = profiles.find(p => p.id === config.modelProfileId)
         if (!profile) return t('sessionConfig.noProfile')
-        return profile.wireApi === 'openai-chat-completions' ? `🔵 ${profile.name}` : `🔄 ${profile.name}`
+        return `${profile.wireApi === 'openai-chat-completions' ? '🔵' : '🔄'} ${profile.name}`
       },
     },
   }

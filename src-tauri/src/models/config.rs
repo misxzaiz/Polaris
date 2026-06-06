@@ -163,6 +163,20 @@ pub struct ModelProfile {
     ///   Polaris 内嵌代理负责格式转换
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wire_api: Option<String>,
+    /// 适用的引擎。
+    /// - `None` 或 `"both"`：同时适用于 Claude Code 和 Codex CLI
+    /// - `"claude"`：仅适用于 Claude Code
+    /// - `"codex"`：仅适用于 Codex CLI
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_engine: Option<String>,
+    /// 供应商分类。
+    /// - `"official"`：官方直连（Anthropic / OpenAI）
+    /// - `"cn_official"`：国内官方直连
+    /// - `"aggregator"`：API 聚合/转售平台
+    /// - `"third_party"`：第三方供应商
+    /// - `"custom"`：用户自定义端点
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
     /// 可选：Profile 描述
     #[serde(default)]
     pub description: Option<String>,

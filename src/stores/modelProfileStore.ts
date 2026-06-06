@@ -14,7 +14,7 @@ import type {
   CreateModelProfileParams,
   UpdateModelProfileParams,
 } from '@/types/modelProfile'
-import { generateProfileId } from '@/types/modelProfile'
+import { generateProfileId, isProfileForEngine } from '@/types/modelProfile'
 
 interface ModelProfileState {
   /** Profile 列表 */
@@ -41,6 +41,8 @@ interface ModelProfileState {
   activateProfile: (id: string | null) => void
   /** 获取当前激活的 Profile */
   getActiveProfile: () => ModelProfile | undefined
+  /** 根据引擎筛选 Profile */
+  getProfilesByEngine: (engine: 'claude' | 'codex') => ModelProfile[]
   /** 重置状态 */
   reset: () => void
 }
@@ -76,6 +78,8 @@ export const useModelProfileStore = create<ModelProfileState>()((set, get) => ({
       apiKey: params.apiKey,
       model: params.model,
       wireApi: params.wireApi,
+      targetEngine: params.targetEngine,
+      category: params.category,
       description: params.description,
       active: false,
       createdAt: now,
@@ -134,6 +138,11 @@ export const useModelProfileStore = create<ModelProfileState>()((set, get) => ({
     return profiles.find((p) => p.id === activeProfileId)
   },
 
+  getProfilesByEngine: (engine) => {
+    const { profiles } = get()
+    return profiles.filter((p) => isProfileForEngine(p, engine))
+  },
+
   reset: () => {
     set(initialState)
   },
@@ -144,4 +153,11 @@ export const useModelProfileStore = create<ModelProfileState>()((set, get) => ({
  */
 export function getActiveModelProfile(): ModelProfile | undefined {
   return useModelProfileStore.getState().getActiveProfile()
+}
+
+/**
+ * 根据引擎筛选 Profile（公开 store 方法供外部使用）
+ */
+export function getProfilesByEngine(engine: 'claude' | 'codex'): ModelProfile[] {
+  return useModelProfileStore.getState().getProfilesByEngine(engine)
 }

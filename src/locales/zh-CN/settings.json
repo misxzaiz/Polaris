@@ -115,17 +115,34 @@
     "add": "添加",
     "edit": "编辑",
     "save": "保存",
+    "delete": "删除",
     "profileName": "Profile 名称",
-    "codexBaseUrl": "API 端点 URL (如 https://api.openai.com/v1)",
-    "baseUrl": "API 端点 URL (如 https://api.deepseek.com/anthropic)",
+    "baseUrl": "API 端点 URL (如 https://api.siliconflow.cn)",
     "apiKey": "API Key",
-    "codexModelName": "模型名称 (如 gpt-5.1)",
-    "modelName": "模型名称 (如 deepseek-chat)",
+    "modelName": "模型名称 (如 glm-4)",
     "description": "描述 (可选)",
     "noProfiles": "暂无模型 Profile，点击添加配置第三方模型端点",
+    "fromPreset": "从预设导入",
+    "presetHint": "选择常用供应商一键填充表单，稍后输入 API Key",
+    "testConnection": "测试连接",
+    "targetEngine": {
+      "label": "适用引擎",
+      "claude": "Claude Code",
+      "codex": "Codex CLI",
+      "both": "通用（Claude + Codex）"
+    },
+    "category": {
+      "label": "供应商分类",
+      "unspecified": "未指定",
+      "official": "官方直连",
+      "cn_official": "国内官方",
+      "aggregator": "聚合平台",
+      "third_party": "第三方",
+      "custom": "自定义"
+    },
     "wireApi": {
       "label": "协议格式",
-      "anthropicMessages": "Anthropic Messages (默认)",
+      "anthropicMessages": "Anthropic Messages（默认）",
       "openaiChatCompletions": "OpenAI Chat Completions",
       "openaiHint": "Polaris 内嵌代理会将 Claude CLI 请求转换为 OpenAI 格式发送给此端点"
     }

@@ -456,12 +456,31 @@ async fn apply_model_profile_options(
     };
 
     tracing::info!(
-        "[{}] 使用模型 Profile: {} ({}), wireApi={:?}",
+        "[{}] 使用模型 Profile: {} ({}), wireApi={:?}, targetEngine={:?}, category={:?}",
         log_scope,
         profile.name,
         profile.model,
-        profile.wire_api
+        profile.wire_api,
+        profile.target_engine,
+        profile.category
     );
+
+    // 检查 Profile 是否适用于当前引擎
+    let target = profile.target_engine.as_deref().unwrap_or("both");
+    let expected_engine = match engine {
+        EngineId::ClaudeCode => "claude",
+        EngineId::Codex => "codex",
+    };
+    if target != "both" && target != expected_engine {
+        tracing::warn!(
+            "[{}] Profile {} 不适用于引擎 {:?}（targetEngine={:?}），跳过",
+            log_scope,
+            profile.name,
+            engine,
+            target
+        );
+        return Ok(session_opts);
+    }
 
     match engine {
         EngineId::ClaudeCode => {
