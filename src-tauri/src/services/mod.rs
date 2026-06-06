@@ -33,7 +33,7 @@ pub mod mcp_manager_service;
 pub use mcp_manager_service::McpManagerService;
 
 pub mod model_profile_service;
-pub use model_profile_service::ModelProfileService;
+pub use model_profile_service::{ConnectionTestResult, ModelProfileService};
 
 pub mod proxy;
 pub use proxy::ProxyManager;

@@ -13,6 +13,7 @@ import { useConfigStore, useToastStore } from '@/stores';
 import { Button } from '../Common';
 import { SettingsSidebar, type SettingsTabId } from './SettingsSidebar';
 import { AIEngineTab } from './tabs/AIEngineTab';
+import { ModelProviderTab } from './tabs/ModelProviderTab';
 import { GeneralTab } from './tabs/GeneralTab';
 import { SystemPromptTab } from './tabs/SystemPromptTab';
 import { PromptSnippetTab } from './tabs/PromptSnippetTab';
@@ -50,6 +51,7 @@ const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'prompt-snippet': 'nav.promptSnippet',
   'window': 'nav.window',
   'ai-engine': 'nav.aiEngine',
+  'model-provider': 'nav.modelProvider',
   'translate': 'nav.translate',
   'qqbot': 'nav.qqbot',
   'feishu': 'nav.feishu',
@@ -89,7 +91,8 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
     speech: ['speech', 'tts', 'wakeWord', 'voiceNotification', 'voiceCommands'],
     advanced: ['gitBinPath', 'sessionDir'],
     web: ['web'],
-    'ai-engine': ['defaultEngine', 'claudeCode', 'codexCode', 'modelProfiles', 'activeModelProfileId', 'agnesApiKey'],
+    'ai-engine': ['defaultEngine', 'claudeCode', 'codexCode', 'agnesApiKey'],
+    'model-provider': ['modelProfiles', 'activeModelProfileId'],
   };
 
   const hasChanged = (a: unknown, b: unknown) => JSON.stringify(a ?? null) !== JSON.stringify(b ?? null);
@@ -244,6 +247,14 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
 
             {activeTab === 'ai-engine' && (
               <AIEngineTab
+                config={localConfig}
+                onConfigChange={setLocalConfig}
+                loading={loading}
+              />
+            )}
+
+            {activeTab === 'model-provider' && (
+              <ModelProviderTab
                 config={localConfig}
                 onConfigChange={setLocalConfig}
                 loading={loading}

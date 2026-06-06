@@ -130,6 +130,21 @@ export interface UpdateModelProfileParams {
   customEnv?: Record<string, string>
 }
 
+/**
+ * 连接测试结果（对应后端 ConnectionTestResult）
+ *
+ * 由 testModelProfileConnection 返回，用于在 UI 上区分失败原因：
+ * 鉴权失败(401/403)、路径错误(404)、服务端错误(5xx)、网络不可达(status 缺失)。
+ */
+export interface ConnectionTestResult {
+  /** 是否连通（HTTP 2xx 或 400 视为端点可达） */
+  ok: boolean
+  /** HTTP 状态码；网络层失败（无响应）时为 undefined */
+  status?: number
+  /** 失败详情：错误体摘要或网络错误信息；成功时为 undefined */
+  detail?: string
+}
+
 /** 默认 Profile 列表（示例/引导用） */
 export const PRESET_MODEL_PROFILES: ModelProfile[] = []
 

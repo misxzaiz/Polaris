@@ -11,6 +11,32 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
+/// 连接测试结果
+///
+/// 相比此前的 `bool`，额外携带 HTTP 状态码与错误体摘要，
+/// 使前端能区分鉴权失败(401/403)、路径错误(404)、服务端错误(5xx)与网络不可达。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectionTestResult {
+    /// 是否连通（HTTP 2xx 或 400 视为端点可达）
+    pub ok: bool,
+    /// HTTP 状态码；网络层失败（无响应）时为 None
+    pub status: Option<u16>,
+    /// 失败详情：错误体摘要或网络错误信息；成功时为 None
+    pub detail: Option<String>,
+}
+
+impl ConnectionTestResult {
+    /// 网络层失败（无 HTTP 响应）构造器
+    fn network_error(detail: String) -> Self {
+        Self {
+            ok: false,
+            status: None,
+            detail: Some(detail),
+        }
+    }
+}
+
 /// 模型 Profile 服务
 pub struct ModelProfileService;
 
@@ -334,7 +360,7 @@ impl ModelProfileService {
     /// 根据 wire_api 选择不同的测试方式：
     /// - `openai-chat-completions`：发送 `/v1/chat/completions` 请求
     /// - 其他（默认 Anthropic Messages）：发送 `/v1/messages` 请求
-    pub async fn test_connection(profile: &ModelProfile) -> Result<bool> {
+    pub async fn test_connection(profile: &ModelProfile) -> Result<ConnectionTestResult> {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
             .build()
@@ -346,6 +372,29 @@ impl ModelProfileService {
             Some("openai-chat-completions") => Self::test_openai_connection(&client, profile).await,
             Some("openai-responses") => Self::test_responses_connection(&client, profile).await,
             _ => Self::test_anthropic_connection(&client, profile).await,
+        }
+    }
+
+    /// 根据 HTTP 响应构造连接测试结果。
+    ///
+    /// 失败（非 2xx/400）时读取响应体作为错误详情摘要（截断 300 字符），
+    /// 便于前端展示具体原因（如鉴权错误信息、上游报错）。
+    async fn build_result(ok: bool, code: u16, resp: reqwest::Response) -> ConnectionTestResult {
+        let detail = if ok {
+            None
+        } else {
+            let body = resp.text().await.unwrap_or_default();
+            let trimmed = body.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.chars().take(300).collect::<String>())
+            }
+        };
+        ConnectionTestResult {
+            ok,
+            status: Some(code),
+            detail,
         }
     }
 
@@ -366,7 +415,7 @@ impl ModelProfileService {
     async fn test_anthropic_connection(
         client: &reqwest::Client,
         profile: &ModelProfile,
-    ) -> Result<bool> {
+    ) -> Result<ConnectionTestResult> {
         let url = if profile.base_url.ends_with('/') {
             format!("{}v1/messages", profile.base_url)
         } else {
@@ -388,16 +437,17 @@ impl ModelProfileService {
         match response {
             Ok(resp) => {
                 let status = resp.status();
+                let code = status.as_u16();
                 tracing::info!(
                     "[ModelProfileService] Anthropic 连接测试: {} -> status {}",
                     profile.base_url,
                     status
                 );
-                Ok(status.is_success() || status.as_u16() == 400)
+                Ok(Self::build_result(status.is_success() || code == 400, code, resp).await)
             }
             Err(e) => {
                 tracing::warn!("[ModelProfileService] Anthropic 连接测试失败: {}", e);
-                Ok(false)
+                Ok(ConnectionTestResult::network_error(e.to_string()))
             }
         }
     }
@@ -406,7 +456,7 @@ impl ModelProfileService {
     async fn test_openai_connection(
         client: &reqwest::Client,
         profile: &ModelProfile,
-    ) -> Result<bool> {
+    ) -> Result<ConnectionTestResult> {
         let base = profile.base_url.trim_end_matches('/');
         let url = if base.ends_with("/chat/completions") {
             base.to_string()
@@ -430,16 +480,17 @@ impl ModelProfileService {
         match response {
             Ok(resp) => {
                 let status = resp.status();
+                let code = status.as_u16();
                 tracing::info!(
                     "[ModelProfileService] OpenAI 连接测试: {} -> status {}",
                     profile.base_url,
                     status
                 );
-                Ok(status.is_success() || status.as_u16() == 400)
+                Ok(Self::build_result(status.is_success() || code == 400, code, resp).await)
             }
             Err(e) => {
                 tracing::warn!("[ModelProfileService] OpenAI 连接测试失败: {}", e);
-                Ok(false)
+                Ok(ConnectionTestResult::network_error(e.to_string()))
             }
         }
     }
@@ -448,7 +499,7 @@ impl ModelProfileService {
     async fn test_responses_connection(
         client: &reqwest::Client,
         profile: &ModelProfile,
-    ) -> Result<bool> {
+    ) -> Result<ConnectionTestResult> {
         let base = profile.base_url.trim_end_matches('/');
         let url = if base.ends_with("/responses") {
             base.to_string()
@@ -472,16 +523,17 @@ impl ModelProfileService {
         match response {
             Ok(resp) => {
                 let status = resp.status();
+                let code = status.as_u16();
                 tracing::info!(
                     "[ModelProfileService] Responses 连接测试: {} -> status {}",
                     profile.base_url,
                     status
                 );
-                Ok(status.is_success() || status.as_u16() == 400)
+                Ok(Self::build_result(status.is_success() || code == 400, code, resp).await)
             }
             Err(e) => {
                 tracing::warn!("[ModelProfileService] Responses 连接测试失败: {}", e);
-                Ok(false)
+                Ok(ConnectionTestResult::network_error(e.to_string()))
             }
         }
     }

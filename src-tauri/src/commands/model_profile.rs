@@ -4,14 +4,15 @@
 
 use crate::error::Result;
 use crate::models::config::ModelProfile;
-use crate::services::ModelProfileService;
+use crate::services::{ConnectionTestResult, ModelProfileService};
 
 /// 测试模型 Profile 连接
 ///
 /// 向 Profile 配置的端点发送最小化请求，验证连通性。
-/// 返回 `true` 表示端点可达（HTTP 2xx 或 400），`false` 表示不可达。
+/// 返回结构化结果：`ok` 表示端点可达（HTTP 2xx 或 400）；失败时
+/// `status`/`detail` 携带 HTTP 状态码与错误体摘要，供前端展示具体原因。
 #[tauri::command]
-pub async fn test_model_profile_connection(profile: ModelProfile) -> Result<bool> {
+pub async fn test_model_profile_connection(profile: ModelProfile) -> Result<ConnectionTestResult> {
     ModelProfileService::test_connection(&profile).await
 }
 

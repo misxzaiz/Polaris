@@ -14,7 +14,7 @@ import {
   IconMic,
   IconMessageSquareText,
 } from '../Common/Icons';
-import { Download, Shield, Code2, Globe, Blocks } from 'lucide-react';
+import { Download, Shield, Code2, Globe, Blocks, Server } from 'lucide-react';
 import { isTauri } from '@/utils/platform';
 import type { ReactNode } from 'react';
 
@@ -24,6 +24,7 @@ export type SettingsTabId =
   | 'prompt-snippet'
   | 'window'
   | 'ai-engine'
+  | 'model-provider'
   | 'translate'
   | 'qqbot'
   | 'feishu'
@@ -54,6 +55,7 @@ const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'prompt-snippet', icon: <IconMessageSquareText size={16} />, labelKey: 'nav.promptSnippet' },
   { id: 'window', icon: <IconSettings size={16} />, labelKey: 'nav.window' },
   { id: 'ai-engine', icon: <IconAIEngine size={16} />, labelKey: 'nav.aiEngine' },
+  { id: 'model-provider', icon: <Server size={16} />, labelKey: 'nav.modelProvider' },
   { id: 'translate', icon: <IconTranslate size={16} />, labelKey: 'nav.translate' },
   { id: 'qqbot', icon: <IconBot size={16} />, labelKey: 'nav.qqbot' },
   { id: 'feishu', icon: <IconBot size={16} />, labelKey: 'nav.feishu' },
