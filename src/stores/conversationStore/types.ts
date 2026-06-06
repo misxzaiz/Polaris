@@ -123,6 +123,8 @@ export interface ConversationState {
   isStreaming: boolean
   error: string | null
   progressMessage: string | null
+  /** 下一步提示建议（--prompt-suggestions），点击填入输入框；null 表示无建议 */
+  promptSuggestion: string | null
 
   // ===== 元数据 =====
   sessionId: string // 会话唯一标识，由后端返回或前端生成
@@ -202,6 +204,7 @@ export interface ConversationActions {
   setStreaming: (streaming: boolean) => void
   setError: (error: string | null) => void
   setProgressMessage: (message: string | null) => void
+  setPromptSuggestion: (suggestion: string | null) => void
 
   // ===== 历史恢复 =====
   /** 设置初始消息（用于从历史恢复） */

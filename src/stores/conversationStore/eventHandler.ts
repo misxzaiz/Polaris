@@ -30,6 +30,7 @@ export function handleAIEvent(
         conversationId: event.sessionId,
         isStreaming: true,
         error: null,
+        promptSuggestion: null,
       })
       log.info('Session started', { sessionId: event.sessionId })
       break
@@ -202,6 +203,28 @@ export function handleAIEvent(
         event.sessionId,
         event.denials
       )
+      break
+
+    case 'hook': {
+      // Hook 可视化（克制）：仅在 hook 执行失败时用进度行提示，
+      // 避免高频 hook（PreToolUse/PostToolUse）刷屏；成功/开始仅记录日志。
+      // 完整 hook 时间线可后续做独立面板消费此事件。
+      if (event.phase === 'completed' && event.outcome && event.outcome !== 'success') {
+        set({ progressMessage: `🪝 ${event.hookEvent || event.hookName}: ${event.outcome}` })
+      } else {
+        log.debug('Hook event', {
+          hookName: event.hookName,
+          phase: event.phase,
+          outcome: event.outcome,
+        })
+      }
+      break
+    }
+
+    case 'prompt_suggestion':
+      // 下一步提示建议：保存到 store，由输入框渲染为可点击气泡。
+      // 仅保留最近一条；空字符串视为清除。
+      set({ promptSuggestion: event.suggestion?.trim() ? event.suggestion : null })
       break
 
     // permission_result is handled via plan_approval_result

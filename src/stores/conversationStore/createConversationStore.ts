@@ -69,6 +69,7 @@ function createInitialState(sessionId: string): ConversationState {
     isStreaming: false,
     error: null,
     progressMessage: null,
+    promptSuggestion: null,
 
     // 输入草稿
     inputDraft: {
@@ -775,6 +776,7 @@ export function createConversationStore(
       setStreaming: (streaming) => set({ isStreaming: streaming }),
       setError: (error) => set({ error }),
       setProgressMessage: (message) => set({ progressMessage: message }),
+      setPromptSuggestion: (suggestion) => set({ promptSuggestion: suggestion }),
 
       // ===== 历史恢复 =====
       setMessagesFromHistory: (messages, conversationId) => {

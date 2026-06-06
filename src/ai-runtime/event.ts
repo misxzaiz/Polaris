@@ -787,6 +787,42 @@ export interface PermissionRequestEvent {
 }
 
 /**
+ * Hook 生命周期事件（--include-hook-events）
+ *
+ * 来自 CLI 的 system/hook_started 与 system/hook_response，
+ * 由后端 event_parser 归一化为此事件。
+ */
+export interface HookEvent {
+  type: 'hook'
+  /** 会话 ID - 用于事件路由 */
+  sessionId: string
+  /** hook 名称，如 "SessionStart:startup" / "PreToolUse:Bash" */
+  hookName: string
+  /** hook 事件类别，如 "SessionStart" / "PreToolUse" / "PostToolUse" */
+  hookEvent: string
+  /** 阶段 */
+  phase: 'started' | 'completed'
+  /** 执行结果（仅 completed），如 "success" / "cancelled" */
+  outcome?: string
+  /** 退出码（仅 completed） */
+  exitCode?: number
+}
+
+/**
+ * 下一步提示建议事件（--prompt-suggestions）
+ *
+ * CLI 每轮结束后预测用户下一条输入，由后端 event_parser 归一化。
+ * UI 在输入框上方展示为可点击气泡，点击后填入输入框。
+ */
+export interface PromptSuggestionEvent {
+  type: 'prompt_suggestion'
+  /** 会话 ID - 用于事件路由 */
+  sessionId: string
+  /** 建议的下一步输入文本 */
+  suggestion: string
+}
+
+/**
  * AI Event - 所有事件的联合类型
  *
  * UI 层只能消费此类型的事件，禁止直接解析 CLI 输出。
@@ -840,6 +876,10 @@ export type AIEvent =
   | PipelineProgressEvent
   | PipelineCompletedEvent
   | PipelineFailedEvent
+  // Hook 事件
+  | HookEvent
+  // 下一步提示建议事件
+  | PromptSuggestionEvent
 
 /**
  * 事件监听器类型
@@ -1219,6 +1259,10 @@ const AI_EVENT_TYPES = new Set([
   'pipeline_progress',
   'pipeline_completed',
   'pipeline_failed',
+  // Hook 事件
+  'hook',
+  // 下一步提示建议事件
+  'prompt_suggestion',
 ])
 
 /**
@@ -1280,6 +1324,22 @@ export function isPlanEvent(event: AIEvent): event is PlanStartEvent | PlanConte
 
 export function isPermissionRequestEvent(event: AIEvent): event is PermissionRequestEvent {
   return event.type === 'permission_request'
+}
+
+// ========================================
+// Hook 事件类型守卫
+// ========================================
+
+export function isHookEvent(event: AIEvent): event is HookEvent {
+  return event.type === 'hook'
+}
+
+// ========================================
+// PromptSuggestion 事件类型守卫
+// ========================================
+
+export function isPromptSuggestionEvent(event: AIEvent): event is PromptSuggestionEvent {
+  return event.type === 'prompt_suggestion'
 }
 
 // ========================================

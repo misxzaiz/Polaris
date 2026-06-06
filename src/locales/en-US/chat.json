@@ -23,7 +23,8 @@
     "attachmentCount": "{{count}} attachments",
     "readyToSend": "ready to send",
     "editingMessage": "Editing message",
-    "cancelEdit": "Cancel"
+    "cancelEdit": "Cancel",
+    "promptSuggestionHint": "Click to fill the input"
   },
   "message": {
     "user": "User",

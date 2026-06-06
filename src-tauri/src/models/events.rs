@@ -95,6 +95,17 @@ pub enum StreamEvent {
     /// `event` 为原始 SSE 事件对象，由 `EventParser::parse_stream_event_chunk` 进一步解析为增量 AIEvent。
     #[serde(rename = "stream_event")]
     StreamEventChunk { event: serde_json::Value },
+
+    /// 提示建议（--prompt-suggestions）
+    ///
+    /// CLI 每轮结束后发送，预测下一条用户输入。真实字段名未在本环境验证，
+    /// 由 `event_parser::parse_prompt_suggestion` 从 flatten 的 extra 中
+    /// 按多个候选字段名（suggestion/text/prompt/content/value）防御性提取。
+    #[serde(rename = "prompt_suggestion")]
+    PromptSuggestion {
+        #[serde(flatten)]
+        extra: HashMap<String, serde_json::Value>,
+    },
 }
 
 impl StreamEvent {

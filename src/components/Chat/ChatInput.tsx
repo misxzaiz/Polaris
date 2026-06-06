@@ -11,9 +11,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { IconSend, IconStop, IconPaperclip } from '../Common/Icons'
+import { Sparkles } from 'lucide-react'
 import { useWorkspaceStore, useSessionStore, useToastStore } from '@/stores'
 import { voiceNotificationService } from '@/services/voiceNotificationService'
-import { useActiveSessionInputDraft, useActiveSessionActions, useActiveSessionWorkspace, usePendingQuestions } from '@/stores/conversationStore/useActiveSession'
+import { useActiveSessionInputDraft, useActiveSessionActions, useActiveSessionWorkspace, usePendingQuestions, useActiveSessionPromptSuggestion } from '@/stores/conversationStore/useActiveSession'
 import { useDebouncedCallback } from '@/hooks/useDebounce'
 import { UnifiedSuggestion, type SuggestionItem } from './FileSuggestion'
 import { AttachmentPreview } from './AttachmentPreview'
@@ -71,7 +72,8 @@ export function ChatInput({
 
   // 使用 Store 中的输入草稿（用于会话切换同步）
   const inputDraft = useActiveSessionInputDraft()
-  const { updateInputDraft, clearInputDraft } = useActiveSessionActions()
+  const promptSuggestion = useActiveSessionPromptSuggestion()
+  const { updateInputDraft, clearInputDraft, setPromptSuggestion } = useActiveSessionActions()
 
   // 本地 state（即时响应）
   const [localText, setLocalText] = useState('')
@@ -761,6 +763,25 @@ export function ChatInput({
             className="ml-auto px-1.5 py-0.5 rounded hover:bg-primary/20 transition-colors"
           >
             {t('input.cancelEdit')}
+          </button>
+        </div>
+      )}
+      {/* 下一步建议气泡（--prompt-suggestions）：仅在输入框为空、非流式、非编辑态时展示 */}
+      {promptSuggestion && !value.trim() && !isStreaming && !editMode && (
+        <div className="px-2 sm:px-3 pt-2">
+          <button
+            type="button"
+            onClick={() => {
+              setLocalText(promptSuggestion)
+              setPromptSuggestion(null)
+              debouncedPersistDraft(promptSuggestion, attachments)
+              setTimeout(() => textareaRef.current?.focus(), 0)
+            }}
+            title={t('input.promptSuggestionHint')}
+            className="group flex items-start gap-1.5 max-w-full px-2.5 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/20 text-xs text-primary/90 text-left transition-colors"
+          >
+            <Sparkles size={13} className="shrink-0 mt-0.5 opacity-70" />
+            <span className="line-clamp-2 break-words">{promptSuggestion}</span>
           </button>
         </div>
       )}

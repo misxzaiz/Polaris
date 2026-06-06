@@ -10,7 +10,7 @@ use crate::models::{
     SessionEndEvent, SessionEndReason, ThinkingEvent,
     ToolCallEndEvent, ToolCallInfo, ToolCallStartEvent, ToolCallStatus, UserMessageEvent,
     PermissionDenial, PermissionRequestEvent,
-    CliInitEvent, McpServerStatus,
+    CliInitEvent, McpServerStatus, HookEvent, PromptSuggestionEvent,
 };
 use std::collections::HashMap;
 
@@ -173,6 +173,9 @@ impl EventParser {
             StreamEvent::StreamEventChunk { event } => {
                 self.parse_stream_event_chunk(event)
             }
+            StreamEvent::PromptSuggestion { extra } => {
+                self.parse_prompt_suggestion(extra)
+            }
         }
     }
 
@@ -190,6 +193,11 @@ impl EventParser {
         // 特殊处理 init 事件
         if subtype == "init" {
             return self.parse_init_event(extra);
+        }
+
+        // Hook 生命周期事件（--include-hook-events）
+        if subtype == "hook_started" || subtype == "hook_response" {
+            return self.parse_hook_event(&subtype, extra);
         }
 
         // 已知的有意义子类型映射
@@ -278,6 +286,63 @@ impl EventParser {
         );
 
         vec![AIEvent::CliInit(init_event)]
+    }
+
+    /// 解析 hook 生命周期事件（system/hook_started、system/hook_response）
+    ///
+    /// 字段缺失时兜底为空字符串/None，保证不同 CLI 版本下的健壮性。
+    fn parse_hook_event(
+        &self,
+        subtype: &str,
+        extra: HashMap<String, serde_json::Value>,
+    ) -> Vec<AIEvent> {
+        let hook_name = extra
+            .get("hook_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let hook_event = extra
+            .get("hook_event")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        let ev = if subtype == "hook_started" {
+            HookEvent::started(&self.session_id, hook_name, hook_event)
+        } else {
+            let outcome = extra
+                .get("outcome")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let exit_code = extra.get("exit_code").and_then(|v| v.as_i64());
+            HookEvent::completed(&self.session_id, hook_name, hook_event, outcome, exit_code)
+        };
+
+        vec![AIEvent::Hook(ev)]
+    }
+
+    /// 解析提示建议事件（--prompt-suggestions）
+    ///
+    /// 真实字段名未在本环境验证，按多个候选键防御性提取建议文本；
+    /// 全部缺失或为空时返回空，不发出事件。
+    fn parse_prompt_suggestion(
+        &self,
+        extra: HashMap<String, serde_json::Value>,
+    ) -> Vec<AIEvent> {
+        let suggestion = ["suggestion", "text", "prompt", "content", "value", "message"]
+            .iter()
+            .find_map(|key| extra.get(*key).and_then(|v| v.as_str()))
+            .map(|s| s.to_string());
+
+        match suggestion {
+            Some(s) if !s.trim().is_empty() => {
+                vec![AIEvent::PromptSuggestion(PromptSuggestionEvent::new(
+                    &self.session_id,
+                    s,
+                ))]
+            }
+            _ => vec![],
+        }
     }
 
     /// 解析 partial messages 增量事件（stream_event，--include-partial-messages）

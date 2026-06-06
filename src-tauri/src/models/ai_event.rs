@@ -1140,6 +1140,99 @@ impl CliInitEvent {
 }
 
 // ============================================================================
+// Hook 事件
+// ============================================================================
+
+/// Hook 生命周期事件
+///
+/// 来自 CLI stream-json 的 `system/hook_started` 与 `system/hook_response`，
+/// 启用 `--include-hook-events` 后覆盖完整 hook 生命周期（PreToolUse/PostToolUse 等）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HookEvent {
+    #[serde(rename = "type")]
+    pub event_type: String,
+    /// 会话 ID - 用于事件路由
+    pub session_id: String,
+    /// hook 名称，如 "SessionStart:startup" / "PreToolUse:Bash"
+    pub hook_name: String,
+    /// hook 事件类别，如 "SessionStart" / "PreToolUse" / "PostToolUse"
+    pub hook_event: String,
+    /// 阶段："started" | "completed"
+    pub phase: String,
+    /// 执行结果（仅 completed），如 "success" / "cancelled"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<String>,
+    /// 退出码（仅 completed）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i64>,
+}
+
+impl HookEvent {
+    pub fn started(
+        session_id: impl Into<String>,
+        hook_name: impl Into<String>,
+        hook_event: impl Into<String>,
+    ) -> Self {
+        Self {
+            event_type: "hook".to_string(),
+            session_id: session_id.into(),
+            hook_name: hook_name.into(),
+            hook_event: hook_event.into(),
+            phase: "started".to_string(),
+            outcome: None,
+            exit_code: None,
+        }
+    }
+
+    pub fn completed(
+        session_id: impl Into<String>,
+        hook_name: impl Into<String>,
+        hook_event: impl Into<String>,
+        outcome: Option<String>,
+        exit_code: Option<i64>,
+    ) -> Self {
+        Self {
+            event_type: "hook".to_string(),
+            session_id: session_id.into(),
+            hook_name: hook_name.into(),
+            hook_event: hook_event.into(),
+            phase: "completed".to_string(),
+            outcome,
+            exit_code,
+        }
+    }
+}
+
+// ============================================================================
+// PromptSuggestion 事件
+// ============================================================================
+
+/// 提示建议事件（--prompt-suggestions）
+///
+/// CLI 在每轮结束后发送，预测下一条用户输入，用于输入框快捷气泡。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PromptSuggestionEvent {
+    #[serde(rename = "type")]
+    pub event_type: String,
+    /// 会话 ID - 用于事件路由
+    pub session_id: String,
+    /// 建议的下一条用户输入
+    pub suggestion: String,
+}
+
+impl PromptSuggestionEvent {
+    pub fn new(session_id: impl Into<String>, suggestion: impl Into<String>) -> Self {
+        Self {
+            event_type: "prompt_suggestion".to_string(),
+            session_id: session_id.into(),
+            suggestion: suggestion.into(),
+        }
+    }
+}
+
+// ============================================================================
 // AI Event 枚举
 // ============================================================================
 
@@ -1180,6 +1273,10 @@ pub enum AIEvent {
     QuestionAnswered(QuestionAnsweredEvent),
     // CLI Init 事件
     CliInit(CliInitEvent),
+    // Hook 生命周期事件
+    Hook(HookEvent),
+    // 提示建议事件
+    PromptSuggestion(PromptSuggestionEvent),
 }
 
 impl AIEvent {
@@ -1212,6 +1309,8 @@ impl AIEvent {
             AIEvent::Question(e) => &e.event_type,
             AIEvent::QuestionAnswered(e) => &e.event_type,
             AIEvent::CliInit(e) => &e.event_type,
+            AIEvent::Hook(e) => &e.event_type,
+            AIEvent::PromptSuggestion(e) => &e.event_type,
         }
     }
 
@@ -1298,6 +1397,8 @@ impl AIEvent {
             AIEvent::Question(e) => &e.session_id,
             AIEvent::QuestionAnswered(e) => &e.session_id,
             AIEvent::CliInit(e) => &e.session_id,
+            AIEvent::Hook(e) => &e.session_id,
+            AIEvent::PromptSuggestion(e) => &e.session_id,
         }
     }
 

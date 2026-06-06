@@ -216,6 +216,16 @@ export function useActiveSessionInputDraft() {
 }
 
 /**
+ * 获取活跃会话的下一步提示建议（--prompt-suggestions）
+ */
+export function useActiveSessionPromptSuggestion() {
+  return useActiveSessionSelector(
+    useCallback((state: ConversationState) => state.promptSuggestion, []),
+    null
+  )
+}
+
+/**
  * 获取活跃会话的工作区
  */
 export function useActiveSessionWorkspace() {
@@ -329,6 +339,13 @@ export function useActiveSessionActions() {
         const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
         if (!store) return
         return store.clearInputDraft()
+      },
+      setPromptSuggestion: (suggestion: string | null) => {
+        const sessionId = sessionStoreManager.getState().activeSessionId
+        if (!sessionId) return
+        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
+        if (!store) return
+        return store.setPromptSuggestion(suggestion)
       },
       clearError: () => {
         const sessionId = sessionStoreManager.getState().activeSessionId

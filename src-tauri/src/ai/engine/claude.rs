@@ -411,7 +411,14 @@ impl ClaudeEngine {
                 // 启用 partial messages：CLI 把模型 SSE 增量转成 stream_event 输出，
                 // 实现逐段打字机式渲染。端点不支持流式时 CLI 自动回退为整段 assistant 消息，
                 // 解析侧（event_parser）对两种形态均兼容，故无条件启用是安全的。
-                .arg("--include-partial-messages");
+                .arg("--include-partial-messages")
+                // 启用 hook 生命周期事件输出（--include-hook-events）：
+                // CLI 输出 system/hook_started 与 system/hook_response，
+                // 由 event_parser 解析为 AIEvent::Hook；解析侧对缺失字段兜底，安全。
+                .arg("--include-hook-events")
+                // 启用下一步提示建议（--prompt-suggestions）：CLI 每轮结束后
+                // 发送 prompt_suggestion 消息，由 event_parser 解析为 AIEvent::PromptSuggestion。
+                .arg("--prompt-suggestions");
             tracing::info!(
                 "[ClaudeEngine] stream-json + stdin 模式（{} 张图片，message {} 字符，system_prompt {} 字符，append_system_prompt {} 字符）",
                 image_attachments.len(),
@@ -513,7 +520,14 @@ impl ClaudeEngine {
                 // 启用 partial messages：CLI 把模型 SSE 增量转成 stream_event 输出，
                 // 实现逐段打字机式渲染。端点不支持流式时 CLI 自动回退为整段 assistant 消息，
                 // 解析侧（event_parser）对两种形态均兼容，故无条件启用是安全的。
-                .arg("--include-partial-messages");
+                .arg("--include-partial-messages")
+                // 启用 hook 生命周期事件输出（--include-hook-events）：
+                // CLI 输出 system/hook_started 与 system/hook_response，
+                // 由 event_parser 解析为 AIEvent::Hook；解析侧对缺失字段兜底，安全。
+                .arg("--include-hook-events")
+                // 启用下一步提示建议（--prompt-suggestions）：CLI 每轮结束后
+                // 发送 prompt_suggestion 消息，由 event_parser 解析为 AIEvent::PromptSuggestion。
+                .arg("--prompt-suggestions");
             tracing::info!(
                 "[ClaudeEngine] stream-json + stdin 模式（{} 张图片，message {} 字符，system_prompt {} 字符，append_system_prompt {} 字符）",
                 image_attachments.len(),

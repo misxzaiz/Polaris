@@ -24,6 +24,10 @@ pub use ai_event::{
     PermissionDenial, PermissionRequestEvent,
     // CliInit 类型
     CliInitEvent, McpServerStatus,
+    // Hook 类型
+    HookEvent,
+    // PromptSuggestion 类型
+    PromptSuggestionEvent,
 };
 pub mod auto_mode;
 pub use auto_mode::{AutoModeConfig, AutoModeDefaults};
