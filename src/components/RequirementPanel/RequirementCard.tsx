@@ -13,6 +13,7 @@ import {
   User,
   Eye,
   Play,
+  Wand2,
   FolderOpen,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -29,6 +30,7 @@ interface RequirementCardProps {
   onRejectClick?: (requirement: Requirement) => void
   onDeleteClick?: (requirement: Requirement) => void
   onExecuteClick?: (requirement: Requirement) => void
+  onGeneratePrototypeClick?: (requirement: Requirement) => void
   onClick?: (requirement: Requirement) => void
 }
 
@@ -41,6 +43,7 @@ export function RequirementCard({
   onRejectClick,
   onDeleteClick,
   onExecuteClick,
+  onGeneratePrototypeClick,
   onClick,
 }: RequirementCardProps) {
   const { t, i18n } = useTranslation('requirement')
@@ -173,6 +176,18 @@ export function RequirementCard({
               disabled={disabled}
             >
               <Play size={14} />
+            </button>
+          )}
+
+          {onGeneratePrototypeClick && requirement.status !== 'executing' && (
+            <button
+              onClick={e => { e.stopPropagation(); onGeneratePrototypeClick(requirement) }}
+              className="p-1.5 rounded hover:bg-accent-prototype/10 text-text-secondary hover:text-accent-prototype transition-all"
+              title={t('generatePrototype')}
+              aria-label={t('generatePrototype')}
+              disabled={disabled}
+            >
+              <Wand2 size={14} />
             </button>
           )}
 

@@ -8,7 +8,7 @@ import type { AssistantChatMessage, TextBlock } from '@/types';
 import { formatContent, extractAssistantText } from '../chatUtils/helpers';
 import { renderBlocksWithGrouping } from '../blockGrouping';
 import { MessageContextMenu } from './MessageContextMenu';
-import { Bot, RefreshCw } from 'lucide-react';
+import { Bot, RefreshCw, Copy, Check } from 'lucide-react';
 import { getEngineDisplayName } from '@/utils/engineDisplay';
 import { MarkdownImageSurface } from '../MarkdownImageSurface';
 
@@ -37,6 +37,19 @@ export const AssistantBubble = memo(function AssistantBubble({
   const handleRegenerate = useCallback(() => {
     onRegenerate?.(message.id);
   }, [onRegenerate, message.id]);
+
+  // 复制反馈状态
+  const [copied, setCopied] = useState(false);
+
+  // 复制助手回答正文（纯文本）
+  const handleCopy = useCallback(async () => {
+    if (!messageText) return;
+    try {
+      await navigator.clipboard.writeText(messageText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* 复制失败静默处理 */ }
+  }, [messageText]);
 
   // 右键菜单状态
   const [contextMenu, setContextMenu] = useState<{
@@ -84,15 +97,28 @@ export const AssistantBubble = memo(function AssistantBubble({
             <span className="text-xs text-text-tertiary">
               {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
             </span>
-            {/* Hover 重新生成按钮 */}
-            {onRegenerate && !message.isStreaming && (
-              <button
-                onClick={handleRegenerate}
-                className="ml-auto p-1 rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors opacity-0 group-hover:opacity-100"
-                title={t('contextMenu.regenerate')}
-              >
-                <RefreshCw size={14} />
-              </button>
+            {/* Hover 操作栏：复制 + 重新生成（与用户消息「复制 + 编辑」对称） */}
+            {!message.isStreaming && (messageText || onRegenerate) && (
+              <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                {messageText && (
+                  <button
+                    onClick={handleCopy}
+                    className="p-1 rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors"
+                    title={copied ? t('contextMenu.copied') : t('contextMenu.copyMessage')}
+                  >
+                    {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+                  </button>
+                )}
+                {onRegenerate && (
+                  <button
+                    onClick={handleRegenerate}
+                    className="p-1 rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors"
+                    title={t('contextMenu.regenerate')}
+                  >
+                    <RefreshCw size={14} />
+                  </button>
+                )}
+              </div>
             )}
           </div>
 

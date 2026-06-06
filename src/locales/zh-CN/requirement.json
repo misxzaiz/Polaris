@@ -141,7 +141,9 @@
     "generateTriggered": "已触发 AI 生成需求",
     "generateTriggerFailed": "触发 AI 生成需求失败",
     "executeTriggered": "已触发 AI 执行分析",
-    "executeTriggerFailed": "触发 AI 执行分析失败"
+    "executeTriggerFailed": "触发 AI 执行分析失败",
+    "prototypeTriggered": "已触发 AI 生成原型",
+    "prototypeTriggerFailed": "触发生成原型失败"
   },
 
   "empty": {
@@ -175,6 +177,7 @@
     "success": "需求已创建"
   },
   "execute": "执行分析",
+  "generatePrototype": "生成原型",
 
   "newRequirement": "新建",
   "refresh": "刷新"

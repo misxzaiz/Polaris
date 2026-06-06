@@ -272,6 +272,36 @@ export function RequirementPanel() {
     }
   }
 
+  /** 触发 AI 生成原型 */
+  const handleGeneratePrototype = async (req: Requirement) => {
+    setProcessing(req.id, true)
+    try {
+      const workspacePath = currentWorkspace?.path
+      if (!workspacePath) return
+
+      const config = useConfigStore.getState().config
+      const engineId = config?.defaultEngine || 'claude-code'
+
+      const taskName = `[原型生成] ${req.title}`
+
+      await useSchedulerStore.getState().createTask({
+        name: taskName,
+        triggerType: 'once',
+        triggerValue: '',
+        engineId,
+        prompt: `为需求《${req.title}》生成一个自包含的 HTML 原型页面（单文件、内联 CSS、可含少量原生 JS、暗色主题）。需求描述：${req.description}。要求：直接输出可在 iframe(sandbox=allow-scripts)中预览的完整 HTML，不引用任何外部资源（CDN/字体/图片全部内联）；完成后调用 MCP 工具 save_requirement_prototype 保存，id="${req.id}"，html 为完整 HTML 字符串。`,
+        workDir: workspacePath,
+      })
+
+      toast.success(t('toast.prototypeTriggered'))
+    } catch (e) {
+      log.error('触发生成原型失败:', e instanceof Error ? e : new Error(String(e)))
+      toast.error(t('toast.prototypeTriggerFailed'))
+    } finally {
+      setProcessing(req.id, false)
+    }
+  }
+
   // --- 渲染 ---
 
   if (!currentWorkspace) {
@@ -459,6 +489,7 @@ export function RequirementPanel() {
               onConfirm: () => handleDelete(req),
             })}
             onExecuteClick={handleExecute}
+            onGeneratePrototypeClick={handleGeneratePrototype}
             onEditClick={req => setSelectedId(req.id)}
             onClick={req => setSelectedId(req.id)}
           />
@@ -596,6 +627,7 @@ export function RequirementPanel() {
           onApprove={handleApprove}
           onReject={handleReject}
           onExecute={handleExecute}
+          onGeneratePrototype={handleGeneratePrototype}
           onReadPrototype={readPrototype}
         />
       )}

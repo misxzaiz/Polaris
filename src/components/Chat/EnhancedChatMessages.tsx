@@ -26,6 +26,7 @@ import {
   groupConversationRounds,
 } from '@/utils/conversationRounds';
 import { ChatNavigator } from './ChatNavigator';
+import { ScrollToBottomButton } from './ScrollToBottomButton';
 import { useMessageSearch, MessageSearchPanel } from './MessageSearchPanel';
 import { VIEWPORT_EXTENSION, FOOTER_SPACER_STYLE } from './chatUtils/constants';
 import { renderChatMessage } from './renderChatMessage';
@@ -302,6 +303,14 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
             currentRoundIndex={currentRoundIndex}
             onScrollToBottom={scrollToBottom}
             onScrollToRound={scrollToRound}
+          />
+        )}
+
+        {/* 回到底部悬浮按钮 - 离开底部时显示，流式时提示有新内容 */}
+        {!isEmpty && !autoScroll && (
+          <ScrollToBottomButton
+            onClick={scrollToBottom}
+            showNewIndicator={isStreaming}
           />
         )}
       </div>

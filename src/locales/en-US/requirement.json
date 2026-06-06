@@ -141,7 +141,9 @@
     "generateTriggered": "AI generation triggered",
     "generateTriggerFailed": "Failed to trigger AI generation",
     "executeTriggered": "AI execution triggered",
-    "executeTriggerFailed": "Failed to trigger AI execution"
+    "executeTriggerFailed": "Failed to trigger AI execution",
+    "prototypeTriggered": "AI prototype generation triggered",
+    "prototypeTriggerFailed": "Failed to trigger prototype generation"
   },
 
   "empty": {
@@ -175,6 +177,7 @@
     "success": "Requirement created"
   },
   "execute": "Execute Analysis",
+  "generatePrototype": "Generate Prototype",
 
   "newRequirement": "New",
   "refresh": "Refresh"

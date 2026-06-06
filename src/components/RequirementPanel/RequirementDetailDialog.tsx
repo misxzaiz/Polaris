@@ -24,6 +24,7 @@ import {
   Clock,
   Loader2,
   Play,
+  Wand2,
   Maximize2,
   Minimize2,
 } from 'lucide-react'
@@ -54,6 +55,8 @@ interface RequirementDetailDialogProps {
   onReadPrototype?: (path: string) => Promise<string>
   /** 执行需求分析 */
   onExecute?: (req: Requirement) => void
+  /** 生成原型 */
+  onGeneratePrototype?: (req: Requirement) => void
 }
 
 export function RequirementDetailDialog({
@@ -67,6 +70,7 @@ export function RequirementDetailDialog({
   onEditSubmit,
   onReadPrototype,
   onExecute,
+  onGeneratePrototype,
 }: RequirementDetailDialogProps) {
   const { t, i18n } = useTranslation('requirement')
   const [editing, setEditing] = useState(false)
@@ -491,6 +495,16 @@ export function RequirementDetailDialog({
               >
                 <Play size={14} />
                 {t('execute')}
+              </button>
+            )}
+            {onGeneratePrototype && requirement.status !== 'executing' && (
+              <button
+                onClick={() => onGeneratePrototype(requirement)}
+                className="px-3 py-1.5 text-sm bg-accent-prototype/10 text-accent-prototype rounded-lg hover:bg-accent-prototype/20 transition-all flex items-center gap-1 disabled:opacity-50 disabled:pointer-events-none"
+                disabled={disabled}
+              >
+                <Wand2 size={14} />
+                {t('generatePrototype')}
               </button>
             )}
             <button
