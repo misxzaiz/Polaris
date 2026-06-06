@@ -2,13 +2,17 @@
  * SessionTab - 单个会话标签组件
  */
 
-import { memo, useState, useRef } from 'react'
+import { memo, useState, useRef, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { cn } from '@/utils/cn'
 import { X, Loader2 } from 'lucide-react'
 import { StatusDot } from './StatusDot'
 import { WorkspaceBadge } from './WorkspaceBadge'
 import { WorkspaceMenu } from './WorkspaceMenu'
+import { SessionTabContextMenu } from './SessionTabContextMenu'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { useToastStore } from '@/stores/toastStore'
+import { handoffSessionToNewSession } from '@/services/sessionHandoff'
 import type { SessionMetadata } from '@/stores/conversationStore/types'
 import type { SessionStatus } from '@/types/session'
 import { getEngineDisplayName, getEngineFullName } from '@/utils/engineDisplay'
@@ -28,11 +32,25 @@ export const SessionTab = memo(function SessionTab({
   onClose,
   canClose,
 }: SessionTabProps) {
+  const { t } = useTranslation('chat')
   const isRunning = session.status === 'running' || session.status === 'background-running'
-  
+
   // 工作区菜单状态
   const [showWorkspaceMenu, setShowWorkspaceMenu] = useState(false)
   const badgeRef = useRef<HTMLButtonElement>(null)
+
+  // 右键菜单状态（按鼠标坐标定位）
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+
+  // 续接到新会话：导出当前会话内容并开启了解此前进展的新会话
+  const handleHandoff = useCallback(async () => {
+    const result = await handoffSessionToNewSession(session.id)
+    if (result.ok) {
+      useToastStore.getState().success(t('handoff.successToast'), t('handoff.successToastHint'))
+    } else {
+      useToastStore.getState().error(t('handoff.failToast'), result.error)
+    }
+  }, [session.id, t])
   
   // 获取工作区信息
   const workspace = useWorkspaceStore(state => 
@@ -48,6 +66,10 @@ export const SessionTab = memo(function SessionTab({
     <>
       <div
         onClick={onSelect}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          setContextMenu({ x: e.clientX, y: e.clientY })
+        }}
         className={cn(
           'group flex items-center gap-2 px-3 py-1.5 rounded-t-lg cursor-pointer',
           'border border-b-0 border-border transition-colors',
@@ -121,6 +143,18 @@ export const SessionTab = memo(function SessionTab({
           sessionId={session.id}
           anchorEl={badgeRef.current}
           onClose={() => setShowWorkspaceMenu(false)}
+        />
+      )}
+
+      {/* 右键菜单 */}
+      {contextMenu && (
+        <SessionTabContextMenu
+          visible
+          x={contextMenu.x}
+          y={contextMenu.y}
+          sessionId={session.id}
+          onClose={() => setContextMenu(null)}
+          onHandoff={handleHandoff}
         />
       )}
     </>

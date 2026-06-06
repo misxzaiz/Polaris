@@ -65,6 +65,7 @@ Desktop.ini
 
 # AI assistant working directories
 .polaris
+.polaris-handoff/
 .oprcli
 .claude
 .kiro

@@ -8,7 +8,7 @@ import { memo, useMemo, useState, useRef, useEffect, useLayoutEffect } from 'rea
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/utils/cn'
-import { Plus, Loader2, X, FolderOpen, ChevronDown, Lock, Check, Download, Clock, FolderPlus, Pin, PinOff } from 'lucide-react'
+import { Plus, Loader2, X, FolderOpen, ChevronDown, Lock, Check, Download, Clock, FolderPlus, Pin, PinOff, GitBranchPlus } from 'lucide-react'
 import { StatusSymbol } from './StatusSymbol'
 import { CreateWorkspaceModal } from '@/components/Workspace/CreateWorkspaceModal'
 import { WorkspaceSearchInput, useWorkspaceFilter } from '@/components/Workspace/WorkspaceSearchInput'
@@ -36,6 +36,8 @@ interface QuickSwitchContentProps {
   onSwitchSession: (sessionId: string) => void
   /** 删除会话回调 */
   onDeleteSession: (sessionId: string) => void
+  /** 续接到新会话回调 */
+  onHandoffSession?: (sessionId: string) => void
   /** 新建会话回调 */
   onCreateSession: () => void
   /** 切换主工作区回调 */
@@ -66,6 +68,7 @@ export const QuickSwitchContent = memo(function QuickSwitchContent({
   onTogglePin,
   onSwitchSession,
   onDeleteSession,
+  onHandoffSession,
   onCreateSession,
   onSwitchWorkspace,
   onToggleContextWorkspace,
@@ -76,6 +79,8 @@ export const QuickSwitchContent = memo(function QuickSwitchContent({
   onMouseEnter,
   onMouseLeave,
 }: QuickSwitchContentProps) {
+  const { t } = useTranslation('chat')
+
   // 工作区下拉状态
   const [isWorkspaceDropdownOpen, setIsWorkspaceDropdownOpen] = useState(false)
   const workspaceButtonRef = useRef<HTMLButtonElement>(null)
@@ -267,6 +272,26 @@ export const QuickSwitchContent = memo(function QuickSwitchContent({
               {/* 运行中 */}
               {session.status === 'running' && (
                 <Loader2 className="w-3 h-3 animate-spin text-success shrink-0" />
+              )}
+
+              {/* 续接按钮 */}
+              {onHandoffSession && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (session.canHandoff) onHandoffSession(session.id)
+                  }}
+                  disabled={!session.canHandoff}
+                  className={cn(
+                    'opacity-0 group-hover:opacity-100 p-0.5 rounded transition-all shrink-0',
+                    session.canHandoff
+                      ? 'text-text-muted hover:text-primary hover:bg-primary/10'
+                      : 'text-text-muted/50 cursor-not-allowed'
+                  )}
+                  title={session.canHandoff ? t('handoff.menuItem') : t(session.handoffReasonKey || 'handoff.notEligible')}
+                >
+                  <GitBranchPlus className="w-3 h-3" />
+                </button>
               )}
 
               {/* 删除按钮 */}

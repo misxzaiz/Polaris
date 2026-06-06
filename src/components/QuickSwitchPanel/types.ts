@@ -15,6 +15,10 @@ export interface QuickSessionInfo {
   isActive: boolean
   /** 是否可删除（非当前会话且至少有一个其他会话） */
   canDelete: boolean
+  /** 是否可续接到新会话 */
+  canHandoff?: boolean
+  /** 不可续接原因（chat 命名空间 i18n key） */
+  handoffReasonKey?: string
 }
 
 /** 工作区项信息 */

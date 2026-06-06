@@ -18,8 +18,9 @@ import {
   useSessionManagerActions,
   useActiveSessionMessages,
 } from '@/stores/conversationStore'
-import { useWorkspaceStore, useViewStore } from '@/stores'
+import { useWorkspaceStore, useViewStore, useToastStore } from '@/stores'
 import { exportToMarkdown, generateFileName } from '@/services/chatExport'
+import { getHandoffEligibility, handoffSessionToNewSession } from '@/services/sessionHandoff'
 import * as tauri from '@/services/tauri'
 import { createLogger } from '@/utils/logger'
 
@@ -172,6 +173,20 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
     deleteSession(sessionId)
   }, [deleteSession])
 
+  // 会话续接到新会话
+  const handleHandoffSession = useCallback(async (sessionId: string) => {
+    const result = await handoffSessionToNewSession(sessionId)
+    if (result.ok) {
+      useToastStore.getState().success(
+        '已续接到新会话',
+        '新会话输入框已填好引导语，补充需求后发送即可',
+      )
+      setIsPanelVisible(false)
+    } else {
+      useToastStore.getState().error('续接失败', result.error)
+    }
+  }, [])
+
   // 新建会话 - 打开弹窗
   const handleCreateSession = useCallback(() => {
     setShowCreateModal(true)
@@ -189,13 +204,18 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
   const sessionList = useMemo<QuickSessionInfo[]>(() => {
     // 过滤静默会话
     const visibleSessions = sessions.filter(s => !s.silentMode)
-    return visibleSessions.map(session => ({
-      id: session.id,
-      title: session.title,
-      status: mapSessionStatus(session.status),
-      isActive: session.id === activeSessionId,
-      canDelete: session.id !== activeSessionId && visibleSessions.length > 1,
-    }))
+    return visibleSessions.map(session => {
+      const handoff = getHandoffEligibility(session.id)
+      return {
+        id: session.id,
+        title: session.title,
+        status: mapSessionStatus(session.status),
+        isActive: session.id === activeSessionId,
+        canDelete: session.id !== activeSessionId && visibleSessions.length > 1,
+        canHandoff: handoff.enabled,
+        handoffReasonKey: handoff.reasonKey,
+      }
+    })
   }, [sessions, activeSessionId])
 
   // 计算当前工作区信息
@@ -319,6 +339,7 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
               onTogglePin={handleTogglePin}
               onSwitchSession={handleSwitchSession}
               onDeleteSession={handleDeleteSession}
+              onHandoffSession={handleHandoffSession}
               onCreateSession={handleCreateSession}
               onSwitchWorkspace={handleSwitchWorkspace}
               onToggleContextWorkspace={handleToggleContextWorkspace}

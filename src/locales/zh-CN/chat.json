@@ -339,6 +339,21 @@
     "cancel": "取消",
     "confirm": "确认创建分支"
   },
+  "handoff": {
+    "menuItem": "续接到新会话",
+    "menuTooltip": "导出当前会话内容，开启一个了解此前进展的新会话",
+    "newSessionTitle": "续接: {{title}}",
+    "guidePrompt": "请先阅读 {{ref}} 了解我们之前会话的内容和进展，读完后用一两句话说明你的理解，然后我们继续。",
+    "notEligible": "当前会话暂不支持续接",
+    "emptyContent": "无法读取会话内容，可能尚未产生记录",
+    "reasonNoSession": "会话不存在",
+    "reasonEngine": "仅 Claude Code 会话支持续接",
+    "reasonEmpty": "会话尚未开始，暂无内容可续接",
+    "reasonNoWorkspace": "会话未关联工作区，无法导出文件",
+    "successToast": "已续接到新会话",
+    "successToastHint": "新会话输入框已填好引导语，补充需求后发送即可",
+    "failToast": "续接失败"
+  },
   "imageViewer": {
     "saveImage": "保存图片",
     "close": "关闭",

@@ -340,6 +340,21 @@
     "cancel": "Cancel",
     "confirm": "Create Branch"
   },
+  "handoff": {
+    "menuItem": "Continue in new session",
+    "menuTooltip": "Export this session's content and start a new session aware of prior progress",
+    "newSessionTitle": "Continued: {{title}}",
+    "guidePrompt": "Please first read {{ref}} to understand the content and progress of our previous session. After reading, briefly summarize your understanding, then we'll continue.",
+    "notEligible": "This session does not support continuation",
+    "emptyContent": "Unable to read session content; it may have no records yet",
+    "reasonNoSession": "Session does not exist",
+    "reasonEngine": "Only Claude Code sessions support continuation",
+    "reasonEmpty": "Session hasn't started; no content to continue",
+    "reasonNoWorkspace": "Session has no associated workspace; cannot export file",
+    "successToast": "Continued in new session",
+    "successToastHint": "The new session's input is pre-filled; add your request and send",
+    "failToast": "Continuation failed"
+  },
   "imageViewer": {
     "saveImage": "Save image",
     "close": "Close",
