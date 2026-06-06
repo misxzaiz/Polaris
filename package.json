@@ -44,6 +44,7 @@
     "@codemirror/state": "^6.5.3",
     "@codemirror/view": "^6.39.8",
     "@lezer/highlight": "^1.2.3",
+    "@openai/codex": "^0.137.0",
     "@tauri-apps/api": "^2.10.0",
     "@tauri-apps/plugin-dialog": "^2.7.0",
     "@tauri-apps/plugin-opener": "^2",

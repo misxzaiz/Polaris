@@ -44,6 +44,8 @@ pub enum EngineId {
     ClaudeCode,
     /// OpenAI Codex 引擎
     Codex,
+    /// Simple AI 引擎（轻量级内置助手，使用模型供应商配置）
+    SimpleAi,
 }
 
 
@@ -53,6 +55,7 @@ impl EngineId {
         match self {
             Self::ClaudeCode => "claude-code",
             Self::Codex => "codex",
+            Self::SimpleAi => "simple-ai",
         }
     }
 
@@ -61,6 +64,7 @@ impl EngineId {
         match s {
             "claude-code" => Some(Self::ClaudeCode),
             "codex" | "openai-codex" | "openai_codex" => Some(Self::Codex),
+            "simple-ai" | "simpleai" | "simple_ai" => Some(Self::SimpleAi),
             _ => None,
         }
     }

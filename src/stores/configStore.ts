@@ -65,7 +65,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         tauri.getConfig(),
         tauri.healthCheck(),
       ]);
-      const connectionState = hasAnyEngineAvailable(health) ? 'success' : 'failed';
+      const connectionState = hasAnyEngineAvailable(health, config) ? 'success' : 'failed';
       if (config?.language) {
         i18n.changeLanguage(config.language);
       }
@@ -187,7 +187,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       // 重新跑健康检查 + 评估连接状态;若 PATH 中没有 claude/codex,
       // connectionState 会变为 'failed',ConnectingOverlay 会自然显示出来
       const health = await tauri.healthCheck();
-      const connectionState = hasAnyEngineAvailable(health) ? 'success' : 'failed';
+      const connectionState = hasAnyEngineAvailable(health, config) ? 'success' : 'failed';
       set({
         config,
         healthStatus: health,
@@ -214,7 +214,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       if (!config) {
         config = await tauri.getConfig();
       }
-      const connectionState = hasAnyEngineAvailable(health) ? 'success' : 'failed';
+      const connectionState = hasAnyEngineAvailable(health, config) ? 'success' : 'failed';
       set({ healthStatus: health, connectionState });
     } catch (e) {
       log.error('refreshHealth failed', e instanceof Error ? e : new Error(String(e)), { isWebAuth: isWebAuthError(e) });
@@ -292,7 +292,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         tauri.getConfig(),
         tauri.healthCheck(),
       ]);
-      const connectionState = hasAnyEngineAvailable(health) ? 'success' : 'failed';
+      const connectionState = hasAnyEngineAvailable(health, config) ? 'success' : 'failed';
       if (config?.language) {
         i18n.changeLanguage(config.language);
       }
