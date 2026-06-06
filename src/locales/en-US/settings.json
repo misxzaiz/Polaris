@@ -556,6 +556,7 @@
     "accessInfo": "Access Information",
     "accessUrl": "Access URL",
     "otherAccessUrl": "Other Access URL",
+    "selectAddress": "Select Address",
     "accessHint": "Instructions",
     "accessHintDesc": "Save Web settings to take effect immediately. Open the access URL in a browser to use directly.",
     "openInBrowser": "Open in Browser",

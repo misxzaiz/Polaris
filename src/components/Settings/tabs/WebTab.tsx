@@ -5,7 +5,8 @@
  */
 
 import { useTranslation } from 'react-i18next';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import QRCode from 'react-qr-code';
 import * as tauri from '@/services/tauri';
 import { invoke } from '@/services/transport';
 import { createLogger } from '@/utils/logger';
@@ -29,6 +30,7 @@ export function WebTab({ config, onConfigChange, loading, statusRefreshKey = 0 }
   const [localIps, setLocalIps] = useState<string[]>([]);
   const [webServerStatus, setWebServerStatus] = useState<WebServerStatus | null>(null);
   const [openingBrowser, setOpeningBrowser] = useState(false);
+  const [selectedAddress, setSelectedAddress] = useState<string>('');
 
   useEffect(() => {
     if (!web.enabled) return;
@@ -61,6 +63,37 @@ export function WebTab({ config, onConfigChange, loading, statusRefreshKey = 0 }
   const accessUrl = webServerStatus?.running && webServerStatus.url
     ? webServerStatus.url
     : `http://${web.host === '0.0.0.0' ? 'localhost' : web.host}:${effectivePort}`;
+
+  const addressList = useMemo(() => {
+    const set = new Set<string>();
+    const list: { label: string; url: string }[] = [];
+
+    const add = (label: string, url: string) => {
+      if (set.has(url)) return;
+      set.add(url);
+      list.push({ label, url });
+    };
+
+    add('localhost', `http://localhost:${effectivePort}`);
+
+    if (web.host && web.host !== '0.0.0.0' && web.host !== '::'
+        && web.host !== 'localhost' && web.host !== '127.0.0.1') {
+      add(t('web.host'), `http://${web.host}:${effectivePort}`);
+    }
+
+    for (const ip of localIps) {
+      add(ip, `http://${ip}:${effectivePort}`);
+    }
+
+    return list;
+  }, [effectivePort, web.host, localIps, t]);
+
+  useEffect(() => {
+    if (addressList.length > 0 && !addressList.some(a => a.url === selectedAddress)) {
+      setSelectedAddress(addressList[0].url);
+    }
+  }, [addressList, selectedAddress]);
+
   const isUsingFallbackPort = Boolean(
     webServerStatus?.running
       && webServerStatus.port
@@ -130,24 +163,57 @@ export function WebTab({ config, onConfigChange, loading, statusRefreshKey = 0 }
                 {t('web.actualPortHint', { port: effectivePort })}
               </p>
           )}
-
-          <p>
-            <code className="text-text-secondary">{t('web.otherAccessUrl')}：</code>
-          </p>
-          {localIps.length > 1 && (
-              <div className="text-xs text-text-tertiary">
-                {localIps.map((ip) => (
-                    <span key={ip} className="inline-block mr-2">
-                  <code className="text-text-primary">{ip}:{effectivePort}</code>
-                </span>
-                ))}
-              </div>
-          )}
           <p>
             <span className="text-text-secondary">{t('web.accessHint')}：</span>
             {t('web.accessHintDesc')}
           </p>
         </div>
+      </div>
+
+      {/* 扫码访问 */}
+      <div className="p-4 bg-surface rounded-lg border border-border">
+        <h3 className="text-sm font-medium text-text-primary mb-3">{t('web.qrTitle')}</h3>
+        {!web.enabled ? (
+          <p className="text-xs text-text-tertiary">{t('web.qrDisabled')}</p>
+        ) : addressList.length === 0 ? (
+          <p className="text-xs text-text-tertiary">{t('web.qrNoIp')}</p>
+        ) : (
+          <div className="flex flex-col items-center gap-4">
+            {/* 地址选择 */}
+            <div className="w-full">
+              <p className="text-xs text-text-secondary mb-2">{t('web.selectAddress')}：</p>
+              <div className="space-y-1.5">
+                {addressList.map(({ label, url }) => (
+                  <label
+                    key={url}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md cursor-pointer transition-colors ${
+                      selectedAddress === url
+                        ? 'bg-primary/10 border border-primary/30'
+                        : 'hover:bg-background border border-transparent'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="qr-address"
+                      value={url}
+                      checked={selectedAddress === url}
+                      onChange={() => setSelectedAddress(url)}
+                      className="accent-primary"
+                    />
+                    <span className="text-xs text-text-secondary">{label}</span>
+                    <code className="text-xs text-text-primary ml-auto">{url}</code>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* 二维码 */}
+            <div className="p-3 bg-white rounded-lg">
+              <QRCode value={selectedAddress} size={160} />
+            </div>
+            <p className="text-xs text-text-tertiary text-center">{t('web.qrHint')}</p>
+          </div>
+        )}
       </div>
 
       {/* 端口配置 */}

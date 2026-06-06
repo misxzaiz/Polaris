@@ -556,6 +556,7 @@
     "accessInfo": "访问信息",
     "accessUrl": "访问地址",
     "otherAccessUrl": "其他访问地址",
+    "selectAddress": "选择地址",
     "accessHint": "使用说明",
     "accessHintDesc": "保存 Web 设置后即时生效。在浏览器中打开访问地址即可直接使用。",
     "openInBrowser": "从浏览器打开",
