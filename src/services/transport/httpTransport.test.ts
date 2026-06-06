@@ -168,4 +168,35 @@ describe('createHttpTransport', () => {
     // Stored token should be cleared
     expect(localStorage.getItem('polaris_web_token_md5')).toBe('');
   });
+
+  it('routes get_claude_code_session_history to the dedicated /history sub-path (not the list endpoint)', async () => {
+    const transport = createHttpTransport('http://127.0.0.1:9800');
+
+    // Regression guard: this command must NOT be treated as a generic GET command.
+    // It needs /api/claude-sessions/{sessionId}/history (returns the session's messages),
+    // not /api/claude-sessions?sessionId=... which collides with the "list sessions"
+    // endpoint and returns session metadata — silently breaking restore in Web mode.
+    await transport.invoke('get_claude_code_session_history', {
+      sessionId: 'abc-123',
+      projectPath: 'D--space-base-Polaris',
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://127.0.0.1:9800/api/claude-sessions/abc-123/history',
+      expect.objectContaining({ method: 'GET' })
+    );
+  });
+
+  it('routes list_claude_code_sessions to the list endpoint with query params', async () => {
+    const transport = createHttpTransport('http://127.0.0.1:9800');
+
+    await transport.invoke('list_claude_code_sessions', {
+      projectPath: 'D--space-base-Polaris',
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://127.0.0.1:9800/api/claude-sessions?projectPath=D--space-base-Polaris',
+      expect.objectContaining({ method: 'GET' })
+    );
+  });
 });

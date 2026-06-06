@@ -458,6 +458,9 @@ pub fn run() {
     // 注册 Codex CLI 引擎
     engine_registry.register(ai::CodexEngine::new(config.clone()));
 
+    // 注册 Simple AI 引擎（轻量级备用引擎，使用模型供应商配置）
+    engine_registry.register(ai::SimpleAIEngine::new(config.clone()));
+
     // 设置默认引擎
     let default_engine = ai::EngineId::parse(&config.default_engine)
         .unwrap_or(ai::EngineId::ClaudeCode);
@@ -868,6 +871,7 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
     let mut engine_registry = EngineRegistry::new();
     engine_registry.register(ai::ClaudeEngine::new(config.clone()));
     engine_registry.register(ai::CodexEngine::new(config.clone()));
+    engine_registry.register(ai::SimpleAIEngine::new(config.clone()));
     let default_engine = ai::EngineId::parse(&config.default_engine)
         .unwrap_or(ai::EngineId::ClaudeCode);
     let _ = engine_registry.set_default(default_engine);

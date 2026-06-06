@@ -31,7 +31,7 @@ export type {
  * 获取所有可用的 Engine IDs
  */
 export function getAvailableEngineIds(): string[] {
-  return ['claude-code', 'codex', 'agnes']
+  return ['claude-code', 'codex', 'agnes', 'simple-ai']
 }
 
 /**
@@ -73,6 +73,12 @@ export function getEngineDescriptors(): EngineDescriptor[] {
       name: 'Agnes Multi-Modal',
       description: 'Agnes AI 全模态引擎 — 对话 / 生图 / 生视频 / 图片编辑',
       available: false,
+    },
+    {
+      id: 'simple-ai',
+      name: 'Simple AI',
+      description: '轻量级 AI 助手 — 使用模型供应商配置，内置 bash/文件工具',
+      available: true,
     },
   ]
 }

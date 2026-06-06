@@ -18,6 +18,7 @@ pub use traits::{EngineId, SessionOptions, HistoryEntry, ImageAttachment};
 pub use registry::EngineRegistry;
 pub use engine::ClaudeEngine;
 pub use engine::CodexEngine;
+pub use engine::SimpleAIEngine;
 pub use history::{
     Pagination, PagedResult, SessionMeta, HistoryMessage, SessionHistoryProvider,
 };

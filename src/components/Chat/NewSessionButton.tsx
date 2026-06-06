@@ -1,7 +1,7 @@
 import { memo, useCallback, useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { Plus, Folder, Check, Bot, Cpu, Image as ImageIcon, Search } from 'lucide-react';
+import { Plus, Folder, Check, Bot, Cpu, Image as ImageIcon, Search, Zap } from 'lucide-react';
 import { useViewStore, useWorkspaceStore, useConfigStore } from '@/stores';
 import {
   useSessionMetadataList,
@@ -55,6 +55,7 @@ export const NewSessionButton = memo(function NewSessionButton() {
     { id: 'claude-code' as EngineId, label: 'Claude', Icon: Bot },
     { id: 'codex' as EngineId, label: 'Codex', Icon: Cpu },
     { id: 'agnes' as EngineId, label: 'Agnes', Icon: ImageIcon },
+    { id: 'simple-ai' as EngineId, label: 'Simple', Icon: Zap },
   ], []);
 
   useEffect(() => {
@@ -130,7 +131,7 @@ export const NewSessionButton = memo(function NewSessionButton() {
         >
           <div className="px-2 pb-2 border-b border-border-subtle">
             <div className="px-1 py-1 text-[11px] font-medium text-text-tertiary">{t('newSession.aiEngine')}</div>
-            <div className="grid grid-cols-3 gap-1">
+            <div className="grid grid-cols-2 gap-1">
               {engineOptions.map(({ id, label, Icon }) => (
                 <button
                   key={id}

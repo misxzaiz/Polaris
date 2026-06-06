@@ -18,7 +18,7 @@ const log = createLogger('EngineBootstrap')
 /**
  * 已注册的 Engine ID 列表（传统引擎）
  */
-export const REGISTERED_ENGINE_IDS = ['claude-code', 'codex', 'agnes'] as const
+export const REGISTERED_ENGINE_IDS = ['claude-code', 'codex', 'agnes', 'simple-ai'] as const
 
 /**
  * Engine 类型

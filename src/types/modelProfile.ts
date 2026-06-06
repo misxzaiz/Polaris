@@ -27,9 +27,11 @@ export type AuthType = 'auth_token' | 'api_key' | 'custom_env' | 'none'
 /** Profile 适用的引擎
  * - 'claude': 仅适用于 Claude Code 引擎
  * - 'codex': 仅适用于 Codex CLI 引擎
- * - 'both': 同时适用于两个引擎
+ * - 'both': 同时适用于 Claude 和 Codex
+ * - 'simple-ai': 仅适用于 Simple AI 引擎
+ * - 'all': 适用于所有引擎
  */
-export type ProfileTargetEngine = 'claude' | 'codex' | 'both'
+export type ProfileTargetEngine = 'claude' | 'codex' | 'both' | 'simple-ai' | 'all'
 
 /** 供应商分类 — 决定预设引导和提示文案
  * - 'official': 官方直连（Anthropic / OpenAI）
@@ -237,8 +239,14 @@ export function generateProfileId(): string {
 }
 
 /** 判断 Profile 是否适用于指定引擎 */
-export function isProfileForEngine(profile: ModelProfile, engine: 'claude' | 'codex'): boolean {
-  return profile.targetEngine === 'both' || profile.targetEngine === engine
+export function isProfileForEngine(
+  profile: ModelProfile,
+  engine: 'claude' | 'codex' | 'simple-ai',
+): boolean {
+  if (!profile.targetEngine || profile.targetEngine === 'both' || profile.targetEngine === 'all') {
+    return true
+  }
+  return profile.targetEngine === engine
 }
 
 /** 获取 Profile 的 category 显示名称 */

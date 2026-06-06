@@ -14,6 +14,7 @@ use std::sync::Arc;
 pub enum EngineId {
     ClaudeCode,
     Codex,
+    SimpleAI,
 }
 
 impl EngineId {
@@ -26,6 +27,7 @@ impl EngineId {
         match lower.as_str() {
             "claude" | "claude-code" | "claudecode" => Some(Self::ClaudeCode),
             "codex" | "openai-codex" | "openai_codex" => Some(Self::Codex),
+            "simple-ai" | "simpleai" | "simple_ai" => Some(Self::SimpleAI),
             _ => None,
         }
     }
@@ -35,6 +37,7 @@ impl EngineId {
         match self {
             Self::ClaudeCode => "claude".to_string(),
             Self::Codex => "codex".to_string(),
+            Self::SimpleAI => "simple-ai".to_string(),
         }
     }
 
@@ -43,6 +46,7 @@ impl EngineId {
         match self {
             Self::ClaudeCode => "Claude Code",
             Self::Codex => "OpenAI Codex",
+            Self::SimpleAI => "Simple AI",
         }
     }
 }

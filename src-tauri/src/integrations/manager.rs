@@ -1186,6 +1186,11 @@ impl IntegrationManager {
                                             IntegrationMcpConfig::default()
                                         }
                                     },
+                                    crate::ai::EngineId::SimpleAI => {
+                                        // SimpleAI 不使用 MCP，返回默认空配置
+                                        tracing::info!("[IntegrationManager] SimpleAI 引擎不使用 MCP，跳过配置");
+                                        IntegrationMcpConfig::default()
+                                    },
                                 }
                             }
                             Err(e) => {

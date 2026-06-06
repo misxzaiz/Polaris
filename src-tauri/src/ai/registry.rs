@@ -224,6 +224,7 @@ mod tests {
             match self.id {
                 EngineId::ClaudeCode => "MockClaude",
                 EngineId::Codex => "MockCodex",
+                EngineId::SimpleAI => "MockSimpleAI",
             }
         }
 

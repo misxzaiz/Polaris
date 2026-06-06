@@ -109,6 +109,10 @@
       "registered": "Engine registered and ready to use",
       "registeredBadge": "Registered",
       "unregisteredBadge": "Unregistered"
+    },
+    "simpleAi": {
+      "name": "Simple AI",
+      "description": "Lightweight AI assistant — uses model provider config, built-in bash/file tools, no CLI required"
     }
   },
   "modelProfile": {

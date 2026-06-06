@@ -17,6 +17,7 @@ fn validate_engine(engine_id: &str) -> Result<&'static str, WebError> {
     match engine_id {
         "claude" | "claude-code" => Ok("claude-code"),
         "codex" | "openai-codex" => Ok("codex"),
+        "simple-ai" | "simpleai" => Ok("simple-ai"),
         _ => Err(WebError::BadRequest(format!("Unsupported engine: {}", engine_id))),
     }
 }

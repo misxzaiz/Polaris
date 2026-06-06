@@ -47,8 +47,18 @@ const COMMAND_ROUTE_MAP: Record<string, string> = {
   health_check: '/api/health',
 };
 
-/** GET-only commands (read-only operations) */
-const GET_COMMANDS: ReadonlySet<string> = new Set(['get_config', 'list_sessions', 'health_check', 'get_claude_code_session_history', 'list_claude_code_sessions']);
+/**
+ * GET-only commands — dispatched to their mapped path with args serialized as a query string.
+ *
+ * IMPORTANT: do NOT add `get_claude_code_session_history` here. It shares the
+ * `/api/claude-sessions` base path with `list_claude_code_sessions`, but fetching a
+ * session's *messages* requires the dedicated `/api/claude-sessions/{sessionId}/history`
+ * sub-path (handled by an explicit branch in `invoke`). Routing it through this generic
+ * GET branch would emit `/api/claude-sessions?sessionId=...`, colliding with the
+ * "list sessions" endpoint and returning session metadata instead of messages — which
+ * silently breaks session restore in Web mode.
+ */
+const GET_COMMANDS: ReadonlySet<string> = new Set(['get_config', 'list_sessions', 'health_check', 'list_claude_code_sessions']);
 
 function commandToPath(command: string): string {
   if (command in COMMAND_ROUTE_MAP) {

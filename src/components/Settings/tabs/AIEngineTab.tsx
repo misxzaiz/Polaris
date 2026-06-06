@@ -28,6 +28,7 @@ interface AIEngineTabProps {
 const FIXED_ENGINE_OPTIONS: { id: EngineId; nameKey: string; descKey: string }[] = [
   { id: 'claude-code', nameKey: 'engines.claudeCode.name', descKey: 'engines.claudeCode.description' },
   { id: 'codex', nameKey: 'engines.codex.name', descKey: 'engines.codex.description' },
+  { id: 'simple-ai', nameKey: 'engines.simpleAi.name', descKey: 'engines.simpleAi.description' },
 ];
 
 /**

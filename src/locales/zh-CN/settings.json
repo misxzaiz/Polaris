@@ -109,6 +109,10 @@
       "registered": "引擎已注册，可立即使用",
       "registeredBadge": "已注册",
       "unregisteredBadge": "未注册"
+    },
+    "simpleAi": {
+      "name": "Simple AI",
+      "description": "轻量级 AI 助手 — 使用模型供应商配置，内置 bash/文件工具，无需安装 CLI"
     }
   },
   "modelProfile": {

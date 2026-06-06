@@ -433,6 +433,13 @@ fn prepare_mcp_config_with_paths(
                 codex_config_args,
             })
         }
+        EngineId::SimpleAI => {
+            // SimpleAI 不使用 MCP
+            Ok(PreparedMcpConfig {
+                claude_config_path: None,
+                codex_config_args: Vec::new(),
+            })
+        }
     }
 }
 
@@ -471,6 +478,7 @@ async fn apply_model_profile_options(
     let expected_engine = match engine {
         EngineId::ClaudeCode => "claude",
         EngineId::Codex => "codex",
+        EngineId::SimpleAI => "simple-ai",
     };
     if target != "both" && target != expected_engine {
         tracing::warn!(
@@ -624,6 +632,21 @@ async fn apply_model_profile_options(
                     crate::services::ModelProfileService::generate_codex_env_overrides(profile);
                 session_opts.env_overrides.extend(env_overrides);
             }
+        }
+        EngineId::SimpleAI => {
+            // SimpleAI 引擎直接使用 profile 的 baseUrl/apiKey/model
+            // 通过 env_overrides 传递 profile ID，让 SimpleAI 可以精确查找 Profile
+            tracing::info!(
+                "[{}] SimpleAI 引擎使用 Profile: {} (id={}, model={}, baseUrl={})",
+                log_scope,
+                profile.name,
+                profile.id,
+                profile.model,
+                profile.base_url
+            );
+            let mut env_overrides = std::collections::HashMap::new();
+            env_overrides.insert("__simple_ai_profile_id".to_string(), profile.id.clone());
+            session_opts = session_opts.with_env_overrides(env_overrides);
         }
     }
 

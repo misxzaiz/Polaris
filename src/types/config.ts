@@ -7,7 +7,7 @@ import type { ModelProfile } from './modelProfile'
 import type { WorkspaceTerminalScripts } from './terminalScript'
 
 /**  引擎 ID */
-export type EngineId = 'claude-code' | 'codex' | 'agnes'
+export type EngineId = 'claude-code' | 'codex' | 'agnes' | 'simple-ai'
 
 /** 支持的语言 */
 export type Language = 'zh-CN' | 'en-US'
