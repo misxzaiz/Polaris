@@ -2,6 +2,7 @@
  * Toast 通知组件
  */
 
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { CheckCircle, XCircle, AlertTriangle, Info, X } from 'lucide-react'
 import { useToastStore, ToastType } from '@/stores/toastStore'
@@ -48,12 +49,16 @@ export function ToastContainer() {
 
   if (toasts.length === 0) return null
 
-  return (
-    <div className="absolute right-0 top-0 transform -translate-y-full -translate-y-2 z-50 flex flex-col gap-2 max-w-sm w-max pr-4">
+  // 通过 Portal 渲染到 body，使用 fixed + 最高层级 z-[10000]，
+  // 确保 Toast 浮于设置页、各类 Modal 之上，且不受视图切换（如打开设置页）影响而被卸载。
+  // 容器本身 pointer-events-none，仅 Toast 卡片可交互，避免遮挡下方 UI 点击。
+  return createPortal(
+    <div className="fixed top-4 right-4 z-[10000] flex flex-col gap-2 max-w-sm w-max pointer-events-none [&>*]:pointer-events-auto">
       {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} onClose={() => removeToast(toast.id)} />
       ))}
-    </div>
+    </div>,
+    document.body
   )
 }
 

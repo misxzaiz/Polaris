@@ -215,7 +215,6 @@ function App() {
                   )}
 
                   <div className="relative">
-                    <ToastContainer />
                     <ChatStatusBar>
                       <MultiWindowMenu />
                       <NewSessionButton />
@@ -259,6 +258,9 @@ function App() {
         )}
 
         <SelectionContextMenu />
+
+        {/* 全局 Toast 通知：挂载在视图切换之外，经 Portal 渲染到 body，浮于所有面板/弹窗之上 */}
+        <ToastContainer />
 
         {/* LSP 符号面板（Mod+Shift+O），只有在 LSP keymap 触发后才有内容挂载 */}
         <Suspense fallback={null}>
