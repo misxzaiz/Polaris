@@ -109,5 +109,19 @@
     "createFailed": "Failed to create todo",
     "updateFailed": "Failed to update todo",
     "deleteFailed": "Failed to delete todo"
+  },
+  "aiExtract": {
+    "button": "AI Extract",
+    "title": "Extract Todos with AI",
+    "description": "Paste requirements, meeting notes, or task descriptions; AI will break them into a todo list",
+    "placeholder": "Paste or type the content to break down…",
+    "extract": "Extract",
+    "extracting": "Extracting…",
+    "confirm": "Create Todos",
+    "cancel": "Cancel",
+    "empty": "No todos could be extracted from the content",
+    "inputRequired": "Please enter some content first",
+    "previewCount": "Extracted {{count}} todo(s)",
+    "success": "Created {{count}} todo(s)"
   }
 }

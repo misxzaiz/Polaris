@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect } from 'react'
-import { Plus, CheckCircle, Circle, Clock, Search, ArrowUpDown, Globe, FolderOpen } from 'lucide-react'
+import { Plus, CheckCircle, Circle, Clock, Search, ArrowUpDown, Globe, FolderOpen, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useWorkspaceStore, useToastStore } from '@/stores'
 import { simpleTodoService } from '@/services/simpleTodoService'
@@ -11,6 +11,9 @@ import { TodoCard } from './TodoCard'
 import { TodoDetailDialog } from './TodoDetailDialog'
 import { TodoForm } from './TodoForm'
 import type { TodoItem, TodoStatus, TodoPriority } from '@/types'
+import type { TodoCreateParams } from '@/types/todo'
+import { AiExtractDialog } from '@/components/Common/AiExtractDialog'
+import { extractTodos } from '@/services/structuredExtractionService'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('SimpleTodoPanel')
@@ -23,6 +26,7 @@ export function SimpleTodoPanel() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'in_progress' | 'completed'>('all')
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [selectedTodo, setSelectedTodo] = useState<TodoItem | null>(null)
+  const [showExtractDialog, setShowExtractDialog] = useState(false)
 
   // 范围切换：工作区 / 全部
   const [scope, setScope] = useState<'workspace' | 'all'>('workspace')
@@ -211,13 +215,22 @@ export function SimpleTodoPanel() {
               ({stats.pending} {t('stats.pending')} / {stats.inProgress} {t('stats.inProgress')})
             </span>
           </h2>
-          <button
-            onClick={() => setShowCreateDialog(true)}
-            className="p-1.5 rounded-lg bg-primary text-on-primary hover:bg-primary/90 transition-all"
-            title={t('createTodo')}
-          >
-            <Plus size={16} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setShowExtractDialog(true)}
+              className="p-1.5 rounded-lg text-text-secondary hover:text-primary hover:bg-background-hover transition-all"
+              title={t('aiExtract.button')}
+            >
+              <Sparkles size={16} />
+            </button>
+            <button
+              onClick={() => setShowCreateDialog(true)}
+              className="p-1.5 rounded-lg bg-primary text-on-primary hover:bg-primary/90 transition-all"
+              title={t('createTodo')}
+            >
+              <Plus size={16} />
+            </button>
+          </div>
         </div>
 
         {/* 范围切换 */}
@@ -371,6 +384,55 @@ export function SimpleTodoPanel() {
           />
         </div>
       )}
+
+      <AiExtractDialog<TodoCreateParams[]>
+        open={showExtractDialog}
+        labels={{
+          title: t('aiExtract.title'),
+          description: t('aiExtract.description'),
+          placeholder: t('aiExtract.placeholder'),
+          extract: t('aiExtract.extract'),
+          extracting: t('aiExtract.extracting'),
+          confirm: t('aiExtract.confirm'),
+          cancel: t('aiExtract.cancel'),
+          empty: t('aiExtract.empty'),
+          inputRequired: t('aiExtract.inputRequired'),
+        }}
+        onExtract={(text) => extractTodos(text, { workspaceDir: currentWorkspace?.path ?? null })}
+        isEmpty={(list) => list.length === 0}
+        renderPreview={(list) => (
+          <div className="space-y-2">
+            <p className="text-xs text-text-secondary">{t('aiExtract.previewCount', { count: list.length })}</p>
+            <ul className="space-y-1.5">
+              {list.map((todo, i) => (
+                <li key={i} className="flex items-start gap-2 text-sm text-text-primary">
+                  <span className="mt-0.5 text-text-tertiary shrink-0">{i + 1}.</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="break-words">{todo.content}</div>
+                    {todo.description && (
+                      <div className="text-xs text-text-tertiary break-words">{todo.description}</div>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        onConfirm={async (list) => {
+          for (const params of list) {
+            await simpleTodoService.createTodo({
+              content: params.content,
+              description: params.description,
+              priority: params.priority,
+              tags: params.tags,
+              estimatedHours: params.estimatedHours,
+            })
+          }
+          await refreshTodos()
+          toast.success(t('aiExtract.success', { count: list.length }))
+        }}
+        onClose={() => setShowExtractDialog(false)}
+      />
 
       {selectedTodo && (
         <TodoDetailDialog

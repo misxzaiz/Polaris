@@ -109,5 +109,19 @@
     "createFailed": "创建待办失败",
     "updateFailed": "更新待办失败",
     "deleteFailed": "删除待办失败"
+  },
+  "aiExtract": {
+    "button": "AI 提取",
+    "title": "AI 提取待办",
+    "description": "粘贴需求、会议记录或任务描述，AI 会自动拆解为待办列表",
+    "placeholder": "在此粘贴或输入要拆解的内容…",
+    "extract": "提取",
+    "extracting": "提取中…",
+    "confirm": "创建待办",
+    "cancel": "取消",
+    "empty": "未能从内容中提取出待办",
+    "inputRequired": "请先输入内容",
+    "previewCount": "提取到 {{count}} 条待办",
+    "success": "已创建 {{count}} 条待办"
   }
 }

@@ -19,6 +19,7 @@ import {
   AlertCircle,
   RefreshCw,
   Sparkles,
+  Wand2,
   FolderOpen,
   Globe,
 } from 'lucide-react'
@@ -33,7 +34,9 @@ import { RequirementCard } from './RequirementCard'
 import { RequirementDetailDialog } from './RequirementDetailDialog'
 import { RequirementForm } from './RequirementForm'
 import { RequirementGenerateDialog } from './RequirementGenerateDialog'
-import type { Requirement, RequirementStatus } from '@/types/requirement'
+import type { Requirement, RequirementStatus, RequirementCreateParams } from '@/types/requirement'
+import { AiExtractDialog } from '@/components/Common/AiExtractDialog'
+import { extractRequirement } from '@/services/structuredExtractionService'
 import { PRIORITY_WEIGHT } from './constants'
 import { createLogger } from '@/utils/logger'
 
@@ -91,6 +94,7 @@ export function RequirementPanel() {
   // Dialog 状态
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [showGenerateDialog, setShowGenerateDialog] = useState(false)
+  const [showExtractDialog, setShowExtractDialog] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const selectedRequirement = selectedId ? requirements.find(r => r.id === selectedId) ?? null : null
@@ -320,6 +324,14 @@ export function RequirementPanel() {
               <Sparkles size={16} className={generating ? 'animate-pulse' : ''} />
             </button>
             <button
+              onClick={() => setShowExtractDialog(true)}
+              className="p-1.5 rounded-lg hover:bg-background-hover text-text-secondary hover:text-text-primary transition-all"
+              title={t('aiExtract.button')}
+              aria-label={t('aiExtract.button')}
+            >
+              <Wand2 size={16} />
+            </button>
+            <button
               onClick={() => setShowCreateDialog(true)}
               className="p-1.5 rounded-lg bg-primary text-on-primary hover:bg-primary/90 transition-all"
               title={t('newRequirement')}
@@ -503,6 +515,51 @@ export function RequirementPanel() {
           handleGenerate(scope, context)
         }}
         onCancel={() => setShowGenerateDialog(false)}
+      />
+
+      {/* AI 提取需求弹窗（--json-schema 结构化提取，区别于上方 req-generate 协议任务） */}
+      <AiExtractDialog<RequirementCreateParams>
+        open={showExtractDialog}
+        labels={{
+          title: t('aiExtract.title'),
+          description: t('aiExtract.description'),
+          placeholder: t('aiExtract.placeholder'),
+          extract: t('aiExtract.extract'),
+          extracting: t('aiExtract.extracting'),
+          confirm: t('aiExtract.confirm'),
+          cancel: t('aiExtract.cancel'),
+          empty: t('aiExtract.empty'),
+          inputRequired: t('aiExtract.inputRequired'),
+        }}
+        onExtract={(text) => extractRequirement(text, { workspaceDir: currentWorkspace?.path ?? null })}
+        isEmpty={(req) => !req?.title}
+        renderPreview={(req) => (
+          <div className="space-y-1.5">
+            <div className="text-sm font-medium text-text-primary break-words">{req.title}</div>
+            {req.description && (
+              <div className="text-xs text-text-secondary break-words whitespace-pre-wrap line-clamp-6">
+                {req.description}
+              </div>
+            )}
+            <div className="flex items-center gap-2 flex-wrap pt-1">
+              {req.priority && (
+                <span className="text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+                  {t(`priority.${req.priority}`)}
+                </span>
+              )}
+              {req.tags?.map((tag) => (
+                <span key={tag} className="text-xs px-1.5 py-0.5 rounded bg-background-hover text-text-tertiary">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        onConfirm={async (req) => {
+          await createRequirement(req)
+          toast.success(t('aiExtract.success'))
+        }}
+        onClose={() => setShowExtractDialog(false)}
       />
 
       {/* 需求详情弹窗 */}

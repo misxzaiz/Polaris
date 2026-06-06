@@ -161,6 +161,19 @@
     "confirm": "开始生成",
     "cancel": "取消"
   },
+  "aiExtract": {
+    "button": "AI 提取",
+    "title": "AI 提取需求",
+    "description": "粘贴一段描述、讨论或想法，AI 会结构化为单条需求",
+    "placeholder": "在此粘贴或输入需求相关内容…",
+    "extract": "提取",
+    "extracting": "提取中…",
+    "confirm": "创建需求",
+    "cancel": "取消",
+    "empty": "未能提取出有效需求",
+    "inputRequired": "请先输入内容",
+    "success": "需求已创建"
+  },
   "execute": "执行分析",
 
   "newRequirement": "新建",

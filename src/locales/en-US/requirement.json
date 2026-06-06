@@ -161,6 +161,19 @@
     "confirm": "Generate",
     "cancel": "Cancel"
   },
+  "aiExtract": {
+    "button": "AI Extract",
+    "title": "Extract Requirement with AI",
+    "description": "Paste a description, discussion, or idea; AI will structure it into a single requirement",
+    "placeholder": "Paste or type requirement-related content…",
+    "extract": "Extract",
+    "extracting": "Extracting…",
+    "confirm": "Create Requirement",
+    "cancel": "Cancel",
+    "empty": "No valid requirement could be extracted",
+    "inputRequired": "Please enter some content first",
+    "success": "Requirement created"
+  },
   "execute": "Execute Analysis",
 
   "newRequirement": "New",
