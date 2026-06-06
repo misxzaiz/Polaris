@@ -151,7 +151,11 @@
     "tokenRequiredHint": "此服务需要 Token 才能访问",
     "tokenPrompt": "请输入服务端配置的 Token",
     "tokenPlaceholder": "输入 Token",
-    "tokenSubmit": "验证并连接"
+    "tokenSubmit": "验证并连接",
+    "statusConnecting": "检测引擎中…",
+    "statusFailed": "未检测到可用引擎",
+    "statusFailedAction": "点击查看详情",
+    "dismiss": "稍后再说"
   },
   "errorBoundary": {
     "title": "应用遇到错误",

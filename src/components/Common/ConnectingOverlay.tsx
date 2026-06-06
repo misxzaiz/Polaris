@@ -10,10 +10,16 @@ import { isWindows } from '@/utils/path';
 import { currentMode } from '@/services/transport';
 import { createLogger } from '@/utils/logger';
 import { getSelectedEngineHealth } from '@/utils/engineHealth';
+import { X } from 'lucide-react';
 
 const log = createLogger('ConnectingOverlay');
 
-export function ConnectingOverlay() {
+interface ConnectingOverlayProps {
+  /** 传入则显示关闭按钮（用于「按需唤出」诊断模式）；needsToken 阻塞鉴权时不应传入 */
+  onClose?: () => void;
+}
+
+export function ConnectingOverlay({ onClose }: ConnectingOverlayProps) {
   const { t } = useTranslation('common');
   const { config, healthStatus, connectionState, error, retryConnection, submitToken } = useConfigStore();
   const selectedEngine = getSelectedEngineHealth(config, healthStatus);
@@ -68,6 +74,16 @@ export function ConnectingOverlay() {
 
   return (
     <div className="fixed inset-0 bg-background-base flex items-center justify-center z-50">
+      {onClose && (
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute top-4 right-4 p-2 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-background-surface transition-colors"
+          title={t('connection.dismiss')}
+        >
+          <X size={20} />
+        </button>
+      )}
       <div className="text-center space-y-6">
         {/* 加载动画或错误图标 */}
         <div className="flex items-center justify-center">
