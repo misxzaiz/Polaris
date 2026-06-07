@@ -34,7 +34,8 @@
       "../dist",
       "target/release/polaris-todo-mcp",
       "target/release/polaris-requirements-mcp",
-      "target/release/polaris-scheduler-mcp"
+      "target/release/polaris-scheduler-mcp",
+      "target/release/polaris-computer-mcp"
     ],
     "icon": [
       "icons/32x32.png",

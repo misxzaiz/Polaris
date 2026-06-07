@@ -10,6 +10,8 @@
 
 mod apply_patch;
 mod bash;
+#[cfg(windows)]
+mod computer;
 mod fs;
 mod plan;
 mod search;
@@ -93,19 +95,22 @@ pub(super) struct ToolRegistry {
 impl ToolRegistry {
     /// 构建内置工具集。
     pub(super) fn with_builtins() -> Self {
-        Self {
-            tools: vec![
-                Box::new(BashTool),
-                Box::new(ReadFileTool),
-                Box::new(WriteFileTool),
-                Box::new(ListDirectoryTool),
-                Box::new(EditFileTool),
-                Box::new(SearchFilesTool),
-                Box::new(GlobTool),
-                Box::new(ApplyPatchTool),
-                Box::new(UpdatePlanTool),
-            ],
-        }
+        let mut tools: Vec<Box<dyn Tool>> = vec![
+            Box::new(BashTool),
+            Box::new(ReadFileTool),
+            Box::new(WriteFileTool),
+            Box::new(ListDirectoryTool),
+            Box::new(EditFileTool),
+            Box::new(SearchFilesTool),
+            Box::new(GlobTool),
+            Box::new(ApplyPatchTool),
+            Box::new(UpdatePlanTool),
+        ];
+        // 电脑操作工具（截图/输入/控件树）。仅在 Windows 编入（依赖 Windows UI Automation 等平台能力），
+        // 故 Windows 主程序内的 SimpleAI 默认可用；其它平台不提供。
+        #[cfg(windows)]
+        tools.push(Box::new(computer::ComputerTool));
+        Self { tools }
     }
 
     /// 全部工具的 OpenAI function schema（替代旧的 `builtin_tools()`）。
@@ -139,7 +144,6 @@ mod tests {
     fn registry_exposes_all_builtins_and_dispatches_unknown() {
         let reg = ToolRegistry::with_builtins();
         let specs = reg.specs();
-        assert_eq!(specs.len(), 9);
         let names: Vec<&str> = specs
             .iter()
             .map(|s| s["function"]["name"].as_str().unwrap())
@@ -157,5 +161,13 @@ mod tests {
         ] {
             assert!(names.contains(&expected), "missing tool: {}", expected);
         }
+        // Windows 上额外注册 1 个 computer 工具（电脑操作）。
+        #[cfg(windows)]
+        {
+            assert_eq!(specs.len(), 10);
+            assert!(names.contains(&"computer"));
+        }
+        #[cfg(not(windows))]
+        assert_eq!(specs.len(), 9);
     }
 }

@@ -62,17 +62,19 @@ jobs:
             touch src-tauri/target/release/polaris-todo-mcp.exe
             touch src-tauri/target/release/polaris-requirements-mcp.exe
             touch src-tauri/target/release/polaris-scheduler-mcp.exe
+            touch src-tauri/target/release/polaris-computer-mcp.exe
           else
             touch src-tauri/target/release/polaris-todo-mcp
             touch src-tauri/target/release/polaris-requirements-mcp
             touch src-tauri/target/release/polaris-scheduler-mcp
+            touch src-tauri/target/release/polaris-computer-mcp
             chmod +x src-tauri/target/release/polaris-*
           fi
 
       - name: Build MCP binaries
         shell: bash
         run: |
-          cargo build --manifest-path src-tauri/Cargo.toml --release --bin polaris-todo-mcp --bin polaris-requirements-mcp --bin polaris-scheduler-mcp
+          cargo build --manifest-path src-tauri/Cargo.toml --release --bin polaris-todo-mcp --bin polaris-requirements-mcp --bin polaris-scheduler-mcp --bin polaris-computer-mcp
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0

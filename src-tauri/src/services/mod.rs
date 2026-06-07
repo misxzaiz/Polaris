@@ -17,6 +17,11 @@ pub mod unified_requirement_repository;
 pub mod unified_scheduler_repository;
 pub mod requirements_mcp_server;
 
+#[cfg(windows)]
+pub mod computer_control;
+#[cfg(windows)]
+pub mod computer_mcp_server;
+
 
 pub mod auto_mode_service;
 pub use auto_mode_service::AutoModeService;

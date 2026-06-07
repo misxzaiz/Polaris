@@ -49,6 +49,11 @@ path = "src/bin/polaris_scheduler_mcp.rs"
 name = "polaris-web"
 path = "src/bin/polaris_web.rs"
 
+# 电脑操作 MCP server。Windows 上为真实实现，其它平台为 stub（电脑操作依赖 Windows UI Automation）。
+[[bin]]
+name = "polaris-computer-mcp"
+path = "src/bin/polaris_computer_mcp.rs"
+
 [build-dependencies]
 tauri-build = { version = "2.0", features = [], optional = true }
 
@@ -116,6 +121,13 @@ tauri-plugin-process = { version = "2.3.1", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 libloading = "0.8"
+# 电脑操作（Windows-only）：截图(xcap) + 鼠标键盘模拟(enigo) + 控件树(uiautomation)。
+# 核心能力 inspect_ui 依赖 Windows UI Automation，故整体限定 Windows 编译；
+# 其它平台不引入这些依赖，避免 Linux CI 需要 pipewire/xcb/zbus 等系统库。
+# 图片编码复用 xcap re-export 的 image crate（xcap::image），避免版本错配。
+enigo = "0.6"
+xcap = "0.9"
+uiautomation = "0.25"
 
 [target.'cfg(not(windows))'.dependencies]
 libc = "0.2"
