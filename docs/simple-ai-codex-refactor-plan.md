@@ -1,6 +1,6 @@
 # SimpleAI 引擎重构规划（对照 OpenAI Codex）
 
-> 状态：**Phase 0 + 1 + 2 已实施（2026-06-07）**；Phase 3 待续。
+> 状态：**Phase 0 + 1 + 2 + 补充批次 A/B/C 已实施（2026-06-07）**；Phase 3（usage/retry/compact 主体）待续。
 > 验证：本机 `cargo check --lib` 通过、单测编译通过；本机 Tauri DLL 限制无法运行测试，单测随 CI 执行。详见 §11 实施记录。
 > 范围：基本对话 · 工具使用 · AI 身份定位 · 项目指令注入（不含权限/sandbox/审批）
 > 参考源码：`temp/codex/codex-rs`（openai/codex 浅克隆）
@@ -280,6 +280,16 @@ impl ToolRegistry {
 - **chat_loop**：去掉 `tools` 入参，内部 `ToolRegistry::with_builtins()` + `registry.specs()`，每次 dispatch 构造 `ToolContext`。
 - **persona**：补充 apply_patch/update_plan/glob 使用指引（`prompt.rs`）。
 - **验证**：`cargo check --lib` + `cargo test --lib --no-run` 通过（仅 3 个预存无关 warning）；新增单测覆盖 apply_patch 解析/应用/move、glob matcher、update_plan 事件序列、registry 聚合。
+
+### 补充批次 A/B/C（完成 · 2026-06-07）
+
+> 重新通读更新版 codex 后，先落地三项低风险、可独立验证的改进（不依赖 Phase 3 的 usage/compact）。
+
+- **A 身份补强**（`prompt.rs`）：persona 增量吸收 codex `gpt-5.2` prompt 的高价值行为约束——**Safety（git 破坏性操作护栏：禁止擅自 revert / `git reset --hard` / `git checkout --`，发现意外改动先停下询问）**、Planning 时机细化（最简单约 25% 跳过 + 不做单步计划）、Editing（默认 ASCII + 注释克制）、Final answer（可点击行内代码路径 + 多选项用数字列表）。新增单测 `persona_has_safety_guardrails`。
+- **B 轻量历史裁剪**（新增 `history.rs` + `chat_loop` 接入）：借鉴 codex `tools/src/response_history.rs`，`truncate_history_assistant_outputs` 逐条截断历史中超长 assistant 文本（`HISTORY_ASSISTANT_TOKEN_CAP=4000`，约 16k 字符），`approx_token_count` 约 4 字符/token。**关键差异**：不照搬 codex 的「删消息」（SimpleAI 历史含 tool_calls/tool 配对 + Anthropic 协议要求交替，删消息会破坏结构），仅逐条截断、零结构风险、零额外 API 调用。6 个单测覆盖。
+- **C 超时常量化 + 可配 + 流空闲超时**（`chat_loop.rs`）：硬编码 300s → 常量 `DEFAULT_REQUEST_TIMEOUT_SECS`；新增 `STREAM_IDLE_TIMEOUT_SECS=120`（`tokio::select!` 加 sleep 分支，距上个 chunk 超时即报错，对应 codex `stream_idle_timeout`）；二者均可经 `profile.custom_env` 的 `SIMPLE_AI_TIMEOUT_SECS` / `SIMPLE_AI_STREAM_IDLE_SECS` 覆盖（不改 `ModelProfile` 结构/前端，新增 `read_env_u64` helper）。附带：`max_tool_rounds` 抽常量 `MAX_TOOL_ROUNDS=40` 并修正提示文案原「(20)」与实际不一致。
+
+**验证**：`cargo check --lib` + `cargo test --lib --no-run` 通过（仅 3 个预存无关 warning：`ws.rs` / `ipc.rs`）；本机运行测试仍报 `STATUS_ENTRYPOINT_NOT_FOUND`（Tauri DLL，既知限制）→ 纯函数单测逻辑由 CI 执行。
 
 ### 下一步（待续）
 
