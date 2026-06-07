@@ -61,38 +61,17 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   error: null,
 
   loadConfig: async () => {
-    const ts = Date.now()
-    console.warn('[loadConfig] START', { ts, currentMode })
     set({ loading: true, isConnecting: true, error: null, connectionState: 'connecting' });
     try {
       const [config, health] = await Promise.all([
         tauri.getConfig(),
         tauri.healthCheck(),
       ]);
-      console.warn('[loadConfig] FETCHED', {
-        hasConfig: !!config,
-        defaultEngine: config?.defaultEngine,
-        workDir: config?.workDir,
-        claudeAvailable: health?.claudeAvailable,
-        claudeVersion: health?.claudeVersion,
-        codexAvailable: health?.codexAvailable,
-        codexVersion: health?.codexVersion,
-        configValid: health?.configValid,
-        hasProfile: !!config?.modelProfiles?.length,
-        activeProfileId: config?.activeModelProfileId,
-        mode: currentMode,
-        durationMs: Date.now() - ts,
-      })
 
-      const engineAvailable = hasAnyEngineAvailable(health, config)
-      const connectionState = (currentMode === 'http' || engineAvailable)
+      // Web 模式下，认证成功拿到 config 即视为连接成功（CLI 可用性是服务端的事）
+      const connectionState = (currentMode === 'http' || hasAnyEngineAvailable(health, config))
         ? 'success'
         : 'failed';
-      console.warn('[loadConfig] STATE', {
-        connectionState,
-        mode: currentMode,
-        engineAvailable,
-      })
 
       if (config?.language) {
         i18n.changeLanguage(config.language);
@@ -101,64 +80,42 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         useThemeStore.getState().applyTheme(config.theme);
       }
       set({ config, healthStatus: health, loading: false, isConnecting: false, connectionState });
-      console.warn('[loadConfig] DONE', { connectionState, totalDurationMs: Date.now() - ts })
 
       // 同步 Model Profile 到 modelProfileStore，确保重启后 Profile 仍然生效
       // （modelProfileStore 没有 persist 中间件，依赖此初始化）
       if (config.modelProfiles?.length) {
-        console.warn('[loadConfig] syncing modelProfiles', { count: config.modelProfiles.length, activeId: config.activeModelProfileId })
         import('./modelProfileStore').then(({ useModelProfileStore }) => {
           const store = useModelProfileStore.getState();
           store.setProfiles(config.modelProfiles!);
           if (config.activeModelProfileId) {
             store.setActiveProfileId(config.activeModelProfileId);
           }
-          console.warn('[loadConfig] modelProfiles synced')
-        }).catch((err) => {
-          console.warn('[loadConfig] modelProfiles sync FAILED', err)
-        })
-      } else {
-        console.warn('[loadConfig] no modelProfiles to sync')
+        }).catch(() => {})
       }
 
       // P0 修复：初始化时将全局 activeModelProfileId 同步到 sessionConfigStore
       // 确保未手动设置过状态栏 Profile 的会话能使用设置页的激活配置
       if (config.activeModelProfileId) {
         const activeProfileId = config.activeModelProfileId
-        console.warn('[loadConfig] syncing sessionConfigStore', { activeId: activeProfileId })
         import('./sessionConfigStore').then(({ useSessionConfig }) => {
           const sessionState = useSessionConfig.getState()
           if (!sessionState.config.modelProfileId) {
             sessionState.setModelProfileId(activeProfileId)
-            console.warn('[loadConfig] sessionConfigStore synced')
-          } else {
-            console.warn('[loadConfig] sessionConfigStore already set, skip')
           }
-        }).catch((err) => {
-          console.warn('[loadConfig] sessionConfigStore sync FAILED', err)
-        })
+        }).catch(() => {})
       }
 
       // CLI 可用时，异步获取动态信息（agents, auth status, version）
       if (connectionState === 'success') {
-        console.warn('[loadConfig] triggering cliInfoStore.fetchAll')
         import('./cliInfoStore').then(({ useCliInfoStore }) => {
           useCliInfoStore.getState().fetchAll()
-          console.warn('[loadConfig] cliInfoStore.fetchAll triggered')
-        }).catch((err) => {
-          console.warn('[loadConfig] cliInfoStore import FAILED', err)
-        })
-      } else {
-        console.warn('[loadConfig] skipping cliInfoStore', { connectionState })
+        }).catch(() => {})
       }
     } catch (e: unknown) {
-      console.warn('[loadConfig] FAILED', {
-        message: e instanceof Error ? e.message : String(e),
-        isAuthError: isWebAuthError(e),
-        durationMs: Date.now() - ts,
-      })
+      // In web mode, detect 401 auth error → show token input instead of CLI error
+      log.error('loadConfig failed', e instanceof Error ? e : new Error(String(e)), { currentMode, isWebAuth: isWebAuthError(e) });
       if (isWebAuthError(e)) {
-        console.warn('[loadConfig] → needsToken')
+        log.info('loadConfig → needsToken (web auth error detected)');
         set(setNeedsToken());
         return;
       }
@@ -168,7 +125,6 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         isConnecting: false,
         connectionState: 'failed'
       });
-      console.warn('[loadConfig] error state set', { error: e instanceof Error ? e.message : String(e) })
     }
   },
 
