@@ -29,6 +29,7 @@ import { useViewStore } from '../index'
 import { createLogger } from '@/utils/logger'
 import { normalizeEngineId } from '@/utils/engineDisplay'
 import { useSessionConfig } from '../sessionConfigStore'
+import { OFFICIAL_API_PROFILE } from '@/types/modelProfile'
 
 const log = createLogger('SessionStoreManager')
 
@@ -374,7 +375,13 @@ function createSessionManagerStore() {
       const targetMetadata = get().sessionMetadata.get(sessionId)
       if (targetMetadata) {
         const globalDefault = useConfigStore.getState().config?.activeModelProfileId
-        useSessionConfig.getState().setModelProfileId(targetMetadata.modelProfileId ?? globalDefault ?? '')
+        // 会话明确选官方（哨兵）→ 镜像置空串（状态栏高亮「官方 API」项，且不把哨兵写入镜像）；
+        // 有具体覆盖 → 原样；未设置(undefined) → 跟随全局默认。
+        const sessionOverride = targetMetadata.modelProfileId
+        const mirror = sessionOverride === OFFICIAL_API_PROFILE
+          ? ''
+          : (sessionOverride ?? globalDefault ?? '')
+        useSessionConfig.getState().setModelProfileId(mirror)
       }
 
       log.info('切换会话', { sessionId })
@@ -449,7 +456,9 @@ function createSessionManagerStore() {
         const newMetadata = new Map(state.sessionMetadata)
         newMetadata.set(sessionId, {
           ...metadata,
-          modelProfileId: modelProfileId || undefined,
+          // null = 清除会话级覆盖（→ 跟随全局默认）；字符串（含官方哨兵）原样保留。
+          // 用 ?? 而非 ||：只把 null/undefined 当「清除」，避免误伤有意义的值。
+          modelProfileId: modelProfileId ?? undefined,
           updatedAt: new Date().toISOString(),
         })
         return { sessionMetadata: newMetadata }

@@ -26,7 +26,7 @@ import type {
   ProfileCategory,
   AuthType,
 } from '@/types'
-import { COMMON_PROVIDER_PRESETS, type ProviderPreset, type ConnectionTestResult, resolveAuthType } from '@/types/modelProfile'
+import { COMMON_PROVIDER_PRESETS, OFFICIAL_API_PROFILE, type ProviderPreset, type ConnectionTestResult, resolveAuthType } from '@/types/modelProfile'
 import {
   testModelProfileConnection,
   fetchModelsForProfile,
@@ -823,7 +823,13 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
     // 会话有覆盖则保持覆盖，无覆盖才跟随新全局默认（避免"显示全局却发覆盖值"）。
     const activeId = sessionStoreManager.getState().activeSessionId
     const activeMeta = activeId ? sessionStoreManager.getState().sessionMetadata.get(activeId) : undefined
-    useSessionConfig.getState().setModelProfileId(activeMeta?.modelProfileId ?? nextActiveId ?? '')
+    // 会话明确选官方（哨兵）→ 镜像置空（保持「官方 API」显示，不被新全局默认覆盖）；
+    // 有具体覆盖 → 原样；未设置 → 跟随新全局默认 nextActiveId。
+    const sessionOverride = activeMeta?.modelProfileId
+    const mirror = sessionOverride === OFFICIAL_API_PROFILE
+      ? ''
+      : (sessionOverride ?? nextActiveId ?? '')
+    useSessionConfig.getState().setModelProfileId(mirror)
     syncToConfig(useModelProfileStore.getState().profiles, nextActiveId)
   }
 

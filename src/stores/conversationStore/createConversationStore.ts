@@ -30,6 +30,7 @@ import {
   buildWorkspacePrompts,
   normalizeForInvoke,
   resolveChatError,
+  resolveEffectiveProfileId,
 } from './conversationStoreUtils'
 
 const log = createLogger('ConversationStore')
@@ -960,9 +961,14 @@ export function createConversationStore(
 
           const sessionConfig = getSessionConfig()
           const runtimeConfig = resolveRuntimeConfigForEngine(sessionConfig, engine)
-          // P1: 会话级 Profile 绑定 — 优先会话 metadata，降级全局状态栏，再降级设置页激活
+          // P1: 会话级 Profile 绑定（三态解析）— 会话覆盖（含「明确官方」哨兵）优先，
+          // 降级状态栏镜像，再降级设置页激活的全局默认；返回 undefined 表示走官方端点。
           const sessionMeta = sessionStoreManager.getState().sessionMetadata.get(get().sessionId)
-          const modelProfileId = sessionMeta?.modelProfileId || sessionConfig.modelProfileId || getActiveModelProfile()?.id
+          const modelProfileId = resolveEffectiveProfileId(
+            sessionMeta?.modelProfileId,
+            sessionConfig.modelProfileId,
+            getActiveModelProfile()?.id,
+          )
           const disabledMcpServers = getDisabledPluginMcpServers()
 
           const chatOptions = {
@@ -982,7 +988,7 @@ export function createConversationStore(
             allowedTools: sendOptions?.allowedTools && sendOptions.allowedTools.length > 0
               ? sendOptions.allowedTools
               : undefined,
-            modelProfileId: modelProfileId || undefined,
+            modelProfileId,
           }
 
           if (conversationId) {
@@ -1093,9 +1099,14 @@ export function createConversationStore(
 
         const sessionConfig = getSessionConfig()
         const runtimeConfig = resolveRuntimeConfigForEngine(sessionConfig, currentEngine)
-        // P1: 会话级 Profile 绑定 — 优先会话 metadata，降级全局状态栏，再降级设置页激活
+        // P1: 会话级 Profile 绑定（三态解析）— 会话覆盖（含「明确官方」哨兵）优先，
+        // 降级状态栏镜像，再降级设置页激活的全局默认；返回 undefined 表示走官方端点。
         const sessionMeta = sessionStoreManager.getState().sessionMetadata.get(get().sessionId)
-        const modelProfileId = sessionMeta?.modelProfileId || sessionConfig.modelProfileId || getActiveModelProfile()?.id
+        const modelProfileId = resolveEffectiveProfileId(
+          sessionMeta?.modelProfileId,
+          sessionConfig.modelProfileId,
+          getActiveModelProfile()?.id,
+        )
         const disabledMcpServers = getDisabledPluginMcpServers()
 
         try {
@@ -1116,7 +1127,7 @@ export function createConversationStore(
               effort: runtimeConfig.effort,
               permissionMode: runtimeConfig.permissionMode,
               allowedTools: allowedTools && allowedTools.length > 0 ? allowedTools : undefined,
-              modelProfileId: modelProfileId || undefined,
+              modelProfileId,
             },
           })
         } catch (e) {

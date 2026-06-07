@@ -47,6 +47,20 @@ export type ProfileCategory =
   | 'third_party'
   | 'custom'
 
+/**
+ * 会话级「明确选择官方 API」的哨兵值。
+ *
+ * 写入 `SessionMetadata.modelProfileId` 时用它表达「用户主动选了官方端点」，
+ * 与 `undefined`（从未设置 → 跟随全局默认）区分开。这样会话级「官方 API」
+ * 覆盖才能优先于设置页激活的全局 Profile（否则会被静默回退，造成意外费用 / 答非所选）。
+ *
+ * 注意：该哨兵**绝不能透传到后端** —— 后端 apply_model_profile_options 会按 id 查找，
+ * 查不到即中断请求。解析最终生效 Profile 时（resolveEffectiveProfileId）必须把它归一化为
+ * `undefined`（= 不使用任何 Profile，走官方）。值以 `__` 包裹，保证不与 generateProfileId
+ * 生成的 `profile_*` 真实 id 冲突。
+ */
+export const OFFICIAL_API_PROFILE = '__official_api__'
+
 /** 模型 Profile — 描述一个第三方模型端点配置 */
 export interface ModelProfile {
   /** 唯一 ID */

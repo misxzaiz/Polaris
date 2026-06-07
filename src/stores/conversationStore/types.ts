@@ -266,7 +266,13 @@ export interface SessionMetadata {
   updatedAt: string
   /** Fork 来源会话 ID（Fork 创建时记录，发送第一条消息时作为 --fork-session 参数传给 CLI） */
   forkFromId?: string
-  /** 会话绑定的模型 Profile ID（第三方端点配置） */
+  /**
+   * 会话绑定的模型 Profile ID（第三方端点配置），三态语义：
+   * - `undefined`：未设置 → 发送时跟随全局默认
+   * - `OFFICIAL_API_PROFILE` 哨兵：用户明确选「官方 API」→ 不使用任何 Profile（优先于全局默认）
+   * - 具体 id：使用该 Profile
+   * 解析见 resolveEffectiveProfileId；哨兵不会透传后端。
+   */
   modelProfileId?: string
 }
 
@@ -341,7 +347,11 @@ export interface SessionManagerActions {
   updateSessionTitle: (sessionId: string, title: string) => void
   /** 更新空会话的 AI 引擎 */
   updateSessionEngine: (sessionId: string, engineId: EngineId) => boolean
-  /** 更新会话的模型 Profile ID */
+  /**
+   * 更新会话的模型 Profile ID。
+   * - 传具体 id 或 OFFICIAL_API_PROFILE 哨兵 → 写入会话级覆盖
+   * - 传 `null` → 清除会话级覆盖（回到「未设置 → 跟随全局默认」）
+   */
   updateSessionModelProfile: (sessionId: string, modelProfileId: string | null) => void
 
   // ===== Store 访问 =====

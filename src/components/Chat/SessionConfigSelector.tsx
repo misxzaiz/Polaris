@@ -23,7 +23,7 @@ import {
 import { useCliInfoStore } from '@/stores/cliInfoStore'
 import { useConfigStore } from '@/stores'
 import { useModelProfileStore } from '@/stores/modelProfileStore'
-import { isProfileForEngine, type WireApi } from '@/types/modelProfile'
+import { isProfileForEngine, OFFICIAL_API_PROFILE, type WireApi } from '@/types/modelProfile'
 import { useActiveSessionId, useSessionMetadataList, sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { normalizeEngineId } from '@/utils/engineDisplay'
 
@@ -194,7 +194,9 @@ export function SessionConfigSelector({
     if (type === 'profile') {
       const activeId = sessionStoreManager.getState().activeSessionId
       if (activeId) {
-        sessionStoreManager.getState().updateSessionModelProfile(activeId, value || null)
+        // 空值 = 用户明确选「官方 API」：用哨兵记录，与「未设置 → 跟随全局」区分，
+        // 使会话级官方覆盖优先于全局默认（否则发送时会被静默回退到全局 Profile）。
+        sessionStoreManager.getState().updateSessionModelProfile(activeId, value || OFFICIAL_API_PROFILE)
       }
     }
     setOpenDropdown(null)

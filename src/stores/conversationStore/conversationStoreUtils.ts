@@ -6,6 +6,7 @@ import { listPluginMcpServerStatuses } from '@/plugin-system'
 import { usePluginStore } from '../pluginStore'
 import { getUserSystemPrompt } from '@/services/workspaceReference'
 import { toAppError, ErrorSource } from '@/types/errors'
+import { OFFICIAL_API_PROFILE } from '@/types/modelProfile'
 import i18n from 'i18next'
 
 export function resolveSessionEngine(sessionId: string, configEngineId?: string): EngineId {
@@ -33,6 +34,36 @@ export function getDisabledPluginMcpServers(): string[] {
   return listPluginMcpServerStatuses(usePluginStore.getState().pluginStates)
     .filter((server) => !server.enabled)
     .map((server) => server.id)
+}
+
+/**
+ * 解析发送 / 继续消息时最终生效的模型 Profile ID。
+ *
+ * 三态优先级：
+ * 1. 会话级覆盖（SessionMetadata.modelProfileId）—— 最高优先级、三态权威：
+ *    - 哨兵 OFFICIAL_API_PROFILE 或空串 → 用户明确选官方 API，返回 undefined（不使用任何 Profile）
+ *    - 具体 id → 使用该 Profile
+ *    - undefined → 从未设置，向下降级
+ * 2. 状态栏镜像（sessionConfig.modelProfileId）
+ * 3. 设置页激活的全局默认（globalActiveProfileId）
+ *
+ * 返回 `undefined` 表示「走官方端点」。哨兵值绝不会作为结果返回，确保不透传后端
+ * （后端按 id 查找，拿到哨兵会命中 notFoundRuntime 中断请求）。
+ */
+export function resolveEffectiveProfileId(
+  sessionMetaProfileId: string | undefined,
+  sessionConfigProfileId: string | undefined,
+  globalActiveProfileId: string | undefined,
+): string | undefined {
+  // 会话级覆盖存在（含「明确官方」）时以它为准，不再向下降级
+  if (sessionMetaProfileId !== undefined) {
+    return sessionMetaProfileId === OFFICIAL_API_PROFILE || sessionMetaProfileId === ''
+      ? undefined
+      : sessionMetaProfileId
+  }
+  // 无会话级覆盖 → 降级状态栏镜像，再降级全局默认（两者按惯例只存真实 id 或空串）
+  const fallback = sessionConfigProfileId || globalActiveProfileId
+  return fallback && fallback !== OFFICIAL_API_PROFILE ? fallback : undefined
 }
 
 /**
