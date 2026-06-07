@@ -113,6 +113,13 @@ pub enum AppError {
         task_path: Option<String>,
     },
 
+    /// 前端可识别的业务错误码（i18n key）
+    ///
+    /// 与其他变体不同，`to_message()` 会**原样返回**该字符串（不加任何中文前缀），
+    /// 使前端能直接拿到形如 `errors:modelProfile.notFoundRuntime` 的 i18n key 并翻译。
+    #[error("{0}")]
+    ClientError(String),
+
     /// 其他错误
     #[error("Unknown error: {0}")]
     Unknown(String),
@@ -147,6 +154,8 @@ impl AppError {
                     format!("协议错误: {}", message)
                 }
             }
+            // 业务错误码原样透传（前端按 i18n key 翻译，不加前缀）
+            AppError::ClientError(code) => code.clone(),
             AppError::Unknown(e) => format!("未知错误: {}", e),
         }
     }

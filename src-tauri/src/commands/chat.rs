@@ -459,8 +459,12 @@ async fn apply_model_profile_options(
         .map_err(|e| AppError::ProcessError(e))?;
     let profiles = &config.model_profiles;
     let Some(profile) = profiles.iter().find(|p| p.id == *profile_id) else {
-        tracing::warn!("[{}] 未找到模型 Profile: {}", log_scope, profile_id);
-        return Ok(session_opts);
+        // 用户明确选择了某 Profile，但配置中已不存在（可能已删除或未同步）。
+        // 不再静默回退到官方端点（会产生意外费用/答非所选），而是中断并提示用户。
+        tracing::warn!("[{}] 未找到模型 Profile: {}，中断请求", log_scope, profile_id);
+        return Err(AppError::ClientError(
+            "errors:modelProfile.notFoundRuntime".to_string(),
+        ));
     };
 
     tracing::info!(
@@ -473,22 +477,27 @@ async fn apply_model_profile_options(
         profile.category
     );
 
-    // 检查 Profile 是否适用于当前引擎
+    // 检查 Profile 是否适用于当前引擎。
+    // "both" 和 "all" 均视为通配（适用于所有引擎）；其余须与当前引擎精确匹配。
     let target = profile.target_engine.as_deref().unwrap_or("both");
     let expected_engine = match engine {
         EngineId::ClaudeCode => "claude",
         EngineId::Codex => "codex",
         EngineId::SimpleAI => "simple-ai",
     };
-    if target != "both" && target != expected_engine {
+    let is_universal = target == "both" || target == "all";
+    if !is_universal && target != expected_engine {
+        // 同样不静默跳过：明确告知用户所选 Profile 不适用于当前引擎，引导重新选择。
         tracing::warn!(
-            "[{}] Profile {} 不适用于引擎 {:?}（targetEngine={:?}），跳过",
+            "[{}] Profile {} 不适用于引擎 {:?}（targetEngine={:?}），中断请求",
             log_scope,
             profile.name,
             engine,
             target
         );
-        return Ok(session_opts);
+        return Err(AppError::ClientError(
+            "errors:modelProfile.incompatibleRuntime".to_string(),
+        ));
     }
 
     match engine {

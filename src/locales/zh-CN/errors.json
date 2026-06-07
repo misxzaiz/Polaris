@@ -1,4 +1,13 @@
 {
+  "appError": {
+    "network": "网络请求失败，请检查网络连接后重试",
+    "file": "文件操作失败，请检查文件路径和权限",
+    "git": "Git 操作失败，请检查仓库状态",
+    "ai": "AI 处理失败，请稍后重试",
+    "system": "系统操作失败，请重启应用",
+    "render": "页面渲染错误，正在尝试恢复",
+    "unknown": "操作失败，请重试"
+  },
   "unknown": "未知错误",
   "loadConfigFailed": "加载配置失败",
   "updateConfigFailed": "更新配置失败",
@@ -13,6 +22,10 @@
   "configLoadFailed": "加载配置失败",
   "configSaveFailed": "保存配置失败",
   "networkError": "网络错误",
+  "modelProfile": {
+    "notFoundRuntime": "所选模型供应商配置未找到，可能已被删除。请在「设置 → 模型供应商」中重新选择或检查配置。",
+    "incompatibleRuntime": "所选模型供应商不适用于当前引擎，请在状态栏重新选择匹配的供应商。"
+  },
   "validation": {
     "fileNotFound": "文件不存在",
     "executionFailed": "执行失败",

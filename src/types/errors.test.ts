@@ -126,49 +126,49 @@ describe('AppError', () => {
   });
 
   describe('getUserMessage', () => {
-    it('should return friendly message for Network error', () => {
+    it('should return i18n key for Network error', () => {
       const error = new AppError({
         message: 'Connection refused',
         source: ErrorSource.Network,
       });
-      
-      expect(error.getUserMessage()).toBe('网络请求失败，请检查网络连接后重试');
+
+      expect(error.getUserMessage()).toBe('errors:appError.network');
     });
 
-    it('should return friendly message for File error', () => {
+    it('should return i18n key for File error', () => {
       const error = new AppError({
         message: 'File not found',
         source: ErrorSource.File,
       });
-      
-      expect(error.getUserMessage()).toBe('文件操作失败，请检查文件路径和权限');
+
+      expect(error.getUserMessage()).toBe('errors:appError.file');
     });
 
-    it('should return friendly message for Git error', () => {
+    it('should return i18n key for Git error', () => {
       const error = new AppError({
         message: 'Merge conflict',
         source: ErrorSource.Git,
       });
-      
-      expect(error.getUserMessage()).toBe('Git 操作失败，请检查仓库状态');
+
+      expect(error.getUserMessage()).toBe('errors:appError.git');
     });
 
-    it('should return friendly message for AI error', () => {
+    it('should return i18n key for AI error', () => {
       const error = new AppError({
         message: 'Model timeout',
         source: ErrorSource.AI,
       });
-      
-      expect(error.getUserMessage()).toBe('AI 处理失败，请稍后重试');
+
+      expect(error.getUserMessage()).toBe('errors:appError.ai');
     });
 
-    it('should return friendly message for System error', () => {
+    it('should return i18n key for System error', () => {
       const error = new AppError({
         message: 'Tauri API failed',
         source: ErrorSource.System,
       });
-      
-      expect(error.getUserMessage()).toBe('系统操作失败，请重启应用');
+
+      expect(error.getUserMessage()).toBe('errors:appError.system');
     });
 
     it('should return original message for User error', () => {
@@ -176,26 +176,26 @@ describe('AppError', () => {
         message: 'Invalid input format',
         source: ErrorSource.User,
       });
-      
+
       expect(error.getUserMessage()).toBe('Invalid input format');
     });
 
-    it('should return friendly message for Render error', () => {
+    it('should return i18n key for Render error', () => {
       const error = new AppError({
         message: 'Component crash',
         source: ErrorSource.Render,
       });
-      
-      expect(error.getUserMessage()).toBe('页面渲染错误，正在尝试恢复');
+
+      expect(error.getUserMessage()).toBe('errors:appError.render');
     });
 
-    it('should return default message for Unknown error', () => {
+    it('should return i18n key for Unknown error', () => {
       const error = new AppError({
         message: 'Something went wrong',
         source: ErrorSource.Unknown,
       });
-      
-      expect(error.getUserMessage()).toBe('操作失败，请重试');
+
+      expect(error.getUserMessage()).toBe('errors:appError.unknown');
     });
   });
 });
@@ -480,9 +480,9 @@ describe('toAppError', () => {
 });
 
 describe('getErrorMessage', () => {
-  it('should return user message for AppError', () => {
+  it('should return i18n key for AppError', () => {
     const error = new NetworkError({ message: 'Connection failed' });
-    expect(getErrorMessage(error)).toBe('网络请求失败，请检查网络连接后重试');
+    expect(getErrorMessage(error)).toBe('errors:appError.network');
   });
 
   it('should return message for Error', () => {
@@ -494,10 +494,10 @@ describe('getErrorMessage', () => {
     expect(getErrorMessage('String error')).toBe('String error');
   });
 
-  it('should return default message for other types', () => {
-    expect(getErrorMessage(null)).toBe('操作失败，请重试');
-    expect(getErrorMessage(undefined)).toBe('操作失败，请重试');
-    expect(getErrorMessage(42)).toBe('操作失败，请重试');
+  it('should return i18n key for other types', () => {
+    expect(getErrorMessage(null)).toBe('errors:appError.unknown');
+    expect(getErrorMessage(undefined)).toBe('errors:appError.unknown');
+    expect(getErrorMessage(42)).toBe('errors:appError.unknown');
   });
 });
 

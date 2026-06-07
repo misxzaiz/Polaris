@@ -15,12 +15,16 @@ import {
 import { isUserMessage, type UserChatMessage } from '@/types/chat'
 
 export function ErrorBanner({ error }: { error: string }) {
-  const { t } = useTranslation('common')
+  const { t } = useTranslation(['errors', 'common'])
   const { sendMessage, clearError } = useActiveSessionActions()
   const { messages } = useActiveSessionMessages()
   const currentWorkspace = useWorkspaceStore(
     state => state.workspaces.find(w => w.id === state.currentWorkspaceId) || null
   )
+
+  // i18n key 格式: "errors:appError.network" → t('appError.network', { ns: 'errors' })
+  // 非 key 格式（如 User 类型错误的原文）直接显示
+  const displayError = error.startsWith('errors:') ? t(error.slice(7), { ns: 'errors' }) : error
 
   // 找到最后一条用户消息，用于重试
   const lastUserMessage = useMemo((): UserChatMessage | null => {
@@ -45,7 +49,7 @@ export function ErrorBanner({ error }: { error: string }) {
 
   return (
     <div className="mx-4 mt-4 p-3 bg-danger-faint border border-danger/30 rounded-xl text-danger text-sm shrink-0 flex items-start gap-2">
-      <div className="flex-1 min-w-0 break-words">{error}</div>
+      <div className="flex-1 min-w-0 break-words">{displayError}</div>
       <div className="flex items-center gap-1 shrink-0">
         {lastUserMessage && (
           <button

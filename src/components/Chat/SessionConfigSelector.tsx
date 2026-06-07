@@ -24,7 +24,7 @@ import { useCliInfoStore } from '@/stores/cliInfoStore'
 import { useConfigStore } from '@/stores'
 import { useModelProfileStore } from '@/stores/modelProfileStore'
 import { isProfileForEngine, type WireApi } from '@/types/modelProfile'
-import { useActiveSessionId, useSessionMetadataList } from '@/stores/conversationStore/sessionStoreManager'
+import { useActiveSessionId, useSessionMetadataList, sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { normalizeEngineId } from '@/utils/engineDisplay'
 
 interface SessionConfigSelectorProps {
@@ -189,6 +189,14 @@ export function SessionConfigSelector({
       ...config,
       [configKey]: value,
     })
+    // P1: Profile 是会话级覆盖 — 写入当前会话的 metadata，实现窗口间隔离。
+    // 不写全局 modelProfileStore（避免泄漏到其他无覆盖会话）；全局默认仅由设置页管理。
+    if (type === 'profile') {
+      const activeId = sessionStoreManager.getState().activeSessionId
+      if (activeId) {
+        sessionStoreManager.getState().updateSessionModelProfile(activeId, value || null)
+      }
+    }
     setOpenDropdown(null)
   }, [config, onChange])
 

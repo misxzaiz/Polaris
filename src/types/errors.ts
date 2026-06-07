@@ -135,27 +135,28 @@ export class AppError extends Error {
   }
 
   /**
-   * 获取用户友好的错误消息
+   * 获取 i18n 错误 key（由 UI 层 t() 翻译）
+   *
+   * User 类型错误返回原始 message，其余返回 errors:appError.* 格式的 key。
    */
   getUserMessage(): string {
-    // 根据错误来源返回友好消息
     switch (this.source) {
       case ErrorSource.Network:
-        return '网络请求失败，请检查网络连接后重试';
+        return 'errors:appError.network';
       case ErrorSource.File:
-        return '文件操作失败，请检查文件路径和权限';
+        return 'errors:appError.file';
       case ErrorSource.Git:
-        return 'Git 操作失败，请检查仓库状态';
+        return 'errors:appError.git';
       case ErrorSource.AI:
-        return 'AI 处理失败，请稍后重试';
+        return 'errors:appError.ai';
       case ErrorSource.System:
-        return '系统操作失败，请重启应用';
+        return 'errors:appError.system';
       case ErrorSource.User:
-        return this.message; // 用户错误直接显示
+        return this.message; // 用户错误直接显示原文
       case ErrorSource.Render:
-        return '页面渲染错误，正在尝试恢复';
+        return 'errors:appError.render';
       default:
-        return '操作失败，请重试';
+        return 'errors:appError.unknown';
     }
   }
 }
@@ -442,7 +443,7 @@ export function getErrorMessage(error: unknown): string {
     return error;
   }
 
-  return '操作失败，请重试';
+  return 'errors:appError.unknown';
 }
 
 /**

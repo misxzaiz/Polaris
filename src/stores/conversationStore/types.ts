@@ -266,6 +266,8 @@ export interface SessionMetadata {
   updatedAt: string
   /** Fork 来源会话 ID（Fork 创建时记录，发送第一条消息时作为 --fork-session 参数传给 CLI） */
   forkFromId?: string
+  /** 会话绑定的模型 Profile ID（第三方端点配置） */
+  modelProfileId?: string
 }
 
 /**
@@ -286,6 +288,8 @@ export interface CreateSessionOptions {
   silentMode?: boolean
   /** Fork 来源会话 ID（Fork 场景下记录源会话，发消息时用于 --fork-session） */
   forkFromId?: string
+  /** 会话绑定的模型 Profile ID（可选，不指定则使用全局默认） */
+  modelProfileId?: string
 }
 
 /**
@@ -337,6 +341,8 @@ export interface SessionManagerActions {
   updateSessionTitle: (sessionId: string, title: string) => void
   /** 更新空会话的 AI 引擎 */
   updateSessionEngine: (sessionId: string, engineId: EngineId) => boolean
+  /** 更新会话的模型 Profile ID */
+  updateSessionModelProfile: (sessionId: string, modelProfileId: string | null) => void
 
   // ===== Store 访问 =====
   getStore: (sessionId: string) => ConversationStore | undefined

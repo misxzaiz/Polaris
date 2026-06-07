@@ -15,6 +15,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useModelProfileStore } from '@/stores/modelProfileStore'
+import { useSessionConfig } from '@/stores/sessionConfigStore'
+import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { useToastStore } from '@/stores'
 import type {
   Config,
@@ -797,6 +799,19 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
   const handleDelete = (id: string) => {
     removeProfile(id)
     const updated = useModelProfileStore.getState()
+    // P0 修复：如果删除的是当前在状态栏激活的 Profile，同步清除
+    const sessionConfig = useSessionConfig.getState()
+    if (sessionConfig.config.modelProfileId === id) {
+      sessionConfig.setModelProfileId('')
+    }
+    // P1: 清扫所有会话 metadata 中指向已删除 Profile 的悬空引用，
+    // 避免该会话因悬空 id 遮蔽全局默认而意外回退到官方 API。
+    const mgr = sessionStoreManager.getState()
+    mgr.sessionMetadata.forEach((meta, sid) => {
+      if (meta.modelProfileId === id) {
+        mgr.updateSessionModelProfile(sid, null)
+      }
+    })
     syncToConfig(updated.profiles, updated.activeProfileId)
     if (editingProfile?.id === id) closeEditor()
   }
@@ -804,6 +819,11 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
   const handleActivate = (profile: ModelProfile) => {
     const nextActiveId = activeProfileId === profile.id ? null : profile.id
     activateProfile(nextActiveId)
+    // P1: 设置页激活 = 设全局默认。状态栏镜像应显示当前会话的生效值：
+    // 会话有覆盖则保持覆盖，无覆盖才跟随新全局默认（避免"显示全局却发覆盖值"）。
+    const activeId = sessionStoreManager.getState().activeSessionId
+    const activeMeta = activeId ? sessionStoreManager.getState().sessionMetadata.get(activeId) : undefined
+    useSessionConfig.getState().setModelProfileId(activeMeta?.modelProfileId ?? nextActiveId ?? '')
     syncToConfig(useModelProfileStore.getState().profiles, nextActiveId)
   }
 

@@ -13,7 +13,13 @@ import type {
 } from '@/types/sessionConfig'
 import { DEFAULT_SESSION_CONFIG } from '@/types/sessionConfig'
 
-function normalizeSessionConfig(config: SessionRuntimeConfig | undefined): SessionRuntimeConfig {
+/**
+ * 清洗会话配置：剔除废弃/高风险值，并用默认值补全缺失字段。
+ * 用于 persist 反序列化（merge）时兜底，兼容旧版本持久化数据。
+ * - effort='max' → 回退默认（'max' 已废弃）
+ * - permissionMode='bypassPermissions' → 回退默认（高风险，不持久化）
+ */
+export function normalizeSessionConfig(config: SessionRuntimeConfig | undefined): SessionRuntimeConfig {
   return {
     ...DEFAULT_SESSION_CONFIG,
     ...(config ?? {}),
@@ -84,6 +90,15 @@ export const useSessionConfig = create<SessionConfigState>()(
     {
       name: 'polaris-session-config',
       partialize: (state) => ({ config: state.config }),
+      // 反序列化时清洗废弃值（effort='max' / permissionMode='bypassPermissions'），
+      // 并用 DEFAULT_SESSION_CONFIG 补全缺失字段（兼容旧版本持久化数据）。
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as { config?: SessionRuntimeConfig } | undefined
+        return {
+          ...currentState,
+          config: normalizeSessionConfig(persisted?.config),
+        }
+      },
     }
   )
 )

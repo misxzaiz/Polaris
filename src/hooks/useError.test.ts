@@ -96,12 +96,12 @@ describe('useError', () => {
 
     it('should update message from getUserMessage', () => {
       const { result } = renderHook(() => useError());
-      
+
       act(() => {
         result.current.setError(new NetworkError({ message: 'Connection failed' }));
       });
-      
-      expect(result.current.message).toBe('网络请求失败，请检查网络连接后重试');
+
+      expect(result.current.message).toBe('errors:appError.network');
     });
 
     it('should update isRecoverable based on error', () => {

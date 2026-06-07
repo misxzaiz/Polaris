@@ -28,6 +28,7 @@ import { useWorkspaceStore } from '../workspaceStore'
 import { useViewStore } from '../index'
 import { createLogger } from '@/utils/logger'
 import { normalizeEngineId } from '@/utils/engineDisplay'
+import { useSessionConfig } from '../sessionConfigStore'
 
 const log = createLogger('SessionStoreManager')
 
@@ -172,6 +173,7 @@ function createSessionManagerStore() {
         createdAt: timestamp,
         updatedAt: timestamp,
         forkFromId: options.forkFromId,
+        modelProfileId: options.modelProfileId,
       }
 
       log.info('创建会话元数据', { sessionId, metadataWorkspaceId: metadata.workspaceId, metadataType: metadata.type, engineId: metadata.engineId })
@@ -367,6 +369,14 @@ function createSessionManagerStore() {
         viewState.requestScrollToSession(sessionId)
       }
 
+      // P1: 切换会话时，把该会话的生效 Profile 同步到状态栏镜像。
+      // 生效值 = 会话覆盖 ?? 全局默认；这样无覆盖会话显示并使用全局默认，与发送逻辑一致。
+      const targetMetadata = get().sessionMetadata.get(sessionId)
+      if (targetMetadata) {
+        const globalDefault = useConfigStore.getState().config?.activeModelProfileId
+        useSessionConfig.getState().setModelProfileId(targetMetadata.modelProfileId ?? globalDefault ?? '')
+      }
+
       log.info('切换会话', { sessionId })
     },
 
@@ -426,6 +436,26 @@ function createSessionManagerStore() {
 
       log.info('更新会话引擎', { sessionId, engineId: normalizedEngineId })
       return true
+    },
+
+    updateSessionModelProfile: (sessionId, modelProfileId) => {
+      const metadata = get().sessionMetadata.get(sessionId)
+      if (!metadata) {
+        log.warn('会话不存在', { sessionId })
+        return
+      }
+
+      set((state) => {
+        const newMetadata = new Map(state.sessionMetadata)
+        newMetadata.set(sessionId, {
+          ...metadata,
+          modelProfileId: modelProfileId || undefined,
+          updatedAt: new Date().toISOString(),
+        })
+        return { sessionMetadata: newMetadata }
+      })
+
+      log.info('更新会话 Profile', { sessionId, modelProfileId })
     },
 
     makeSessionVisible: (sessionId: string) => {

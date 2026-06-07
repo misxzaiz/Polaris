@@ -5,6 +5,7 @@ import { normalizeEngineId } from '@/utils/engineDisplay'
 import { listPluginMcpServerStatuses } from '@/plugin-system'
 import { usePluginStore } from '../pluginStore'
 import { getUserSystemPrompt } from '@/services/workspaceReference'
+import { toAppError, ErrorSource } from '@/types/errors'
 import i18n from 'i18next'
 
 export function resolveSessionEngine(sessionId: string, configEngineId?: string): EngineId {
@@ -32,6 +33,20 @@ export function getDisabledPluginMcpServers(): string[] {
   return listPluginMcpServerStatuses(usePluginStore.getState().pluginStates)
     .filter((server) => !server.enabled)
     .map((server) => server.id)
+}
+
+/**
+ * 解析聊天发送/继续时的错误为可展示文案。
+ *
+ * 后端业务错误（i18n key，以 `errors:` 开头，如 `errors:modelProfile.notFoundRuntime`）
+ * 原样透传给 ErrorBanner（其内部会按 key 翻译）；其余错误按 AI 来源包装为泛化文案。
+ */
+export function resolveChatError(e: unknown, context: Record<string, unknown>): string {
+  const raw = typeof e === 'string' ? e : e instanceof Error ? e.message : ''
+  if (raw.startsWith('errors:')) {
+    return raw
+  }
+  return toAppError(e, { source: ErrorSource.AI, context }).getUserMessage()
 }
 
 // ============================================================================

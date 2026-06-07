@@ -1,4 +1,13 @@
 {
+  "appError": {
+    "network": "Network request failed. Please check your connection and retry.",
+    "file": "File operation failed. Please check the file path and permissions.",
+    "git": "Git operation failed. Please check the repository status.",
+    "ai": "AI processing failed. Please retry later.",
+    "system": "System operation failed. Please restart the application.",
+    "render": "Page rendering error. Attempting to recover.",
+    "unknown": "Operation failed. Please retry."
+  },
   "unknown": "Unknown error",
   "loadConfigFailed": "Failed to load config",
   "updateConfigFailed": "Failed to update config",
@@ -13,6 +22,10 @@
   "configLoadFailed": "Failed to load config",
   "configSaveFailed": "Failed to save config",
   "networkError": "Network error",
+  "modelProfile": {
+    "notFoundRuntime": "The selected model provider was not found and may have been deleted. Please reselect or check it in Settings → Model Providers.",
+    "incompatibleRuntime": "The selected model provider is not compatible with the current engine. Please reselect a matching provider from the status bar."
+  },
   "validation": {
     "fileNotFound": "File not found",
     "executionFailed": "Execution failed",

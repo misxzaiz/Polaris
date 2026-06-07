@@ -13,7 +13,6 @@ import type { ContentBlock, EngineId } from '@/types'
 import type { AISession } from '@/ai-runtime'
 import { handleAIEvent } from './eventHandler'
 import { runAgnesImageGeneration } from './agnesRunner'
-import { toAppError, ErrorSource } from '@/types/errors'
 import { sessionStoreManager } from './sessionStoreManager'
 import { parseWorkspaceReferences } from '@/services/workspaceReference'
 import i18n from 'i18next'
@@ -30,6 +29,7 @@ import {
   generateTitleFromMessage,
   buildWorkspacePrompts,
   normalizeForInvoke,
+  resolveChatError,
 } from './conversationStoreUtils'
 
 const log = createLogger('ConversationStore')
@@ -960,8 +960,9 @@ export function createConversationStore(
 
           const sessionConfig = getSessionConfig()
           const runtimeConfig = resolveRuntimeConfigForEngine(sessionConfig, engine)
-          // 优先使用 sessionConfig（状态栏选择器），降级到 modelProfileStore（设置页激活）
-          const modelProfileId = sessionConfig.modelProfileId || getActiveModelProfile()?.id
+          // P1: 会话级 Profile 绑定 — 优先会话 metadata，降级全局状态栏，再降级设置页激活
+          const sessionMeta = sessionStoreManager.getState().sessionMetadata.get(get().sessionId)
+          const modelProfileId = sessionMeta?.modelProfileId || sessionConfig.modelProfileId || getActiveModelProfile()?.id
           const disabledMcpServers = getDisabledPluginMcpServers()
 
           const chatOptions = {
@@ -1004,13 +1005,8 @@ export function createConversationStore(
             set({ conversationId: newSessionId })
           }
         } catch (e) {
-          const appError = toAppError(e, {
-            source: ErrorSource.AI,
-            context: { sessionId, workspaceDir: actualWorkspaceDir }
-          })
-
           set({
-            error: appError.getUserMessage(),
+            error: resolveChatError(e, { sessionId, workspaceDir: actualWorkspaceDir }),
             isStreaming: false,
             currentMessage: null,
             progressMessage: null,
@@ -1097,8 +1093,9 @@ export function createConversationStore(
 
         const sessionConfig = getSessionConfig()
         const runtimeConfig = resolveRuntimeConfigForEngine(sessionConfig, currentEngine)
-        // 优先使用 sessionConfig（状态栏选择器），降级到 modelProfileStore（设置页激活）
-        const modelProfileId = sessionConfig.modelProfileId || getActiveModelProfile()?.id
+        // P1: 会话级 Profile 绑定 — 优先会话 metadata，降级全局状态栏，再降级设置页激活
+        const sessionMeta = sessionStoreManager.getState().sessionMetadata.get(get().sessionId)
+        const modelProfileId = sessionMeta?.modelProfileId || sessionConfig.modelProfileId || getActiveModelProfile()?.id
         const disabledMcpServers = getDisabledPluginMcpServers()
 
         try {
@@ -1123,13 +1120,8 @@ export function createConversationStore(
             },
           })
         } catch (e) {
-          const appError = toAppError(e, {
-            source: ErrorSource.AI,
-            context: { conversationId, workspaceDir: actualWorkspaceDir }
-          })
-
           set({
-            error: appError.getUserMessage(),
+            error: resolveChatError(e, { conversationId, workspaceDir: actualWorkspaceDir }),
             isStreaming: false,
             currentMessage: null,
             progressMessage: null,
