@@ -21,6 +21,21 @@ export interface ImageAdapterOptions {
 }
 
 /**
+ * 将单条图像数据解析为可直接用于 `<img src>` 的地址。
+ * - `url`：直接返回
+ * - `b64_json`：裸 base64（无 data URI 前缀），包装为 data URL（默认 image/png）
+ * - 两者皆无：返回 undefined（调用方跳过）
+ *
+ * 部分图像模型（如 gpt-image-1 系）只返回 b64_json，且文生图请求未强制
+ * response_format；旧代码直接把裸 base64 当 imageUrl 会导致内联图像裂图。
+ */
+export function resolveImageDataUrl(imageData: { url?: string; b64_json?: string }): string | undefined {
+  if (imageData.url) return imageData.url
+  if (imageData.b64_json) return `data:image/png;base64,${imageData.b64_json}`
+  return undefined
+}
+
+/**
  * 执行图像生成
  */
 export async function* generateImage(
@@ -100,7 +115,7 @@ export async function* generateImage(
 
     // 发送每个生成图像的事件
     for (const imageData of result.data) {
-      const imageUrl = imageData.url || imageData.b64_json
+      const imageUrl = resolveImageDataUrl(imageData)
       if (!imageUrl) continue
 
       yield {

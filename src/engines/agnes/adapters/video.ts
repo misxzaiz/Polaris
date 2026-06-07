@@ -43,17 +43,26 @@ const POLL_CONFIG = {
 }
 
 /**
- * 延迟等待
+ * 延迟等待。abort 时立即拒绝并清理 timer；正常 resolve 时移除 abort 监听，
+ * 避免在轮询循环中反复 addEventListener 造成监听器累积。
  */
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(resolve, ms)
-    if (signal) {
-      signal.addEventListener('abort', () => {
-        clearTimeout(timer)
-        reject(new DOMException('Aborted', 'AbortError'))
-      })
+    if (signal?.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'))
+      return
     }
+    // 用 holder 持有 timer，使 onAbort 无需前向引用 timer 即可清理它（规避 prefer-const / use-before-define）
+    const handle: { timer?: ReturnType<typeof setTimeout> } = {}
+    const onAbort = () => {
+      if (handle.timer) clearTimeout(handle.timer)
+      reject(new DOMException('Aborted', 'AbortError'))
+    }
+    handle.timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    signal?.addEventListener('abort', onAbort, { once: true })
   })
 }
 
@@ -114,13 +123,16 @@ export async function* generateVideo(
     }
   }
 
+  // 提升到 try 外：abort/error 时 catch 仍能拿到真实 videoTaskId 以关联前端任务
+  let videoTaskId = ''
+
   try {
     const taskResult = await invoke<AgnesVideoCreateResponse>('agnes_create_video', {
       baseUrl: config.baseUrl,
       apiKey: config.apiKey,
       body: createRequest,
     })
-    const videoTaskId = taskResult.id
+    videoTaskId = taskResult.id
 
     // 发送任务创建事件
     yield {
@@ -211,7 +223,7 @@ export async function* generateVideo(
         type: 'video_task_failed',
         sessionId,
         taskId,
-        videoTaskId: '',
+        videoTaskId,
         error: 'Task was aborted',
       }
       return
@@ -220,7 +232,7 @@ export async function* generateVideo(
       type: 'video_task_failed',
       sessionId,
       taskId,
-      videoTaskId: '',
+      videoTaskId,
       error: error instanceof Error ? error.message : 'Unknown error',
     }
     throw error
