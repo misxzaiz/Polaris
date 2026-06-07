@@ -1326,28 +1326,18 @@ impl IntegrationManager {
                 // Progress 事件：忽略（已由 Thinking/ToolCall 覆盖）
                 crate::models::AIEvent::Progress(_) => {}
 
-                // 文本类事件：直接发送到平台，不累积
-                _ => {
+                // 文本类事件（流式增量 / 整段回复）：仅累积，待进程完成后整段发送到平台。
+                // 不再逐片段 send_reply —— 钉钉 / QQ / 飞书等 IM 不需要打字机式流式效果，
+                // 逐片段发送会造成碎片消息轰炸并触发平台频率限制。
+                crate::models::AIEvent::AssistantMessage(_) | crate::models::AIEvent::Token(_) => {
                     if let Some(text) = event.extract_text() {
                         if !text.is_empty() {
-                            let preview: String = text.chars().take(100).collect();
-                            let preview = if preview.len() < text.len() { format!("{}...", preview) } else { preview };
-                            tracing::info!("[IntegrationManager] AI 文本 (len={}): {}", text.len(), preview);
-
-                            // 直接送文本到平台
-                            let adapters = adapters_for_callback.clone();
-                            let conv_id = conversation_id_for_callback.clone();
-                            let text_for_send = text.clone();
-                            rt_handle.spawn(async move {
-                                Self::send_reply(&adapters, platform, &conv_id, &text_for_send).await;
-                            });
-
-                            // 仍然累积文本（用于前端 integration:ai:complete 事件）
+                            // 累积完整回复文本，供进程完成后整段发送
                             if let Ok(mut accumulated) = accumulated_text_clone.try_lock() {
                                 accumulated.push_str(&text);
                             }
 
-                            // 发送增量更新到前端
+                            // 发送增量更新到前端（Polaris 本地监控面板保留流式预览，不影响外部平台）
                             #[cfg(feature = "tauri-app")]
                             let _ = app_handle_for_callback.emit("integration:ai:delta", serde_json::json!({
                                 "conversationId": conversation_id_for_callback,
@@ -1357,6 +1347,11 @@ impl IntegrationManager {
                         }
                     }
                 }
+
+                // 其余事件（Result / SessionStart / SessionEnd / Hook / PromptSuggestion 等）：
+                // 不发送到平台。其中 Result.output 与上面已累积的增量正文重复，
+                // 必须跳过，否则整段发送时正文会翻倍。
+                _ => {}
             }
 
             if event.is_session_end() {
@@ -1512,9 +1507,12 @@ impl IntegrationManager {
                 "text": final_text
             }));
 
-            // 文本已在回调中实时发送到平台，此处只发送完成通知
+            // 整段发送 AI 回复正文（替代回调中的流式逐片段），再补一条完成通知
             if !final_text.is_empty() {
                 let elapsed = start_time.elapsed();
+                // 先发送完整正文：IM 用户收到一条完整回复，而非打字机式碎片
+                Self::send_reply(&task_adapters, platform, &task_conversation_id, &final_text).await;
+                // 再发送处理完成通知（含耗时）
                 let complete_msg = format!("✅ 处理完成（⏰ {:.1}s）", elapsed.as_secs_f32());
                 Self::send_reply(&task_adapters, platform, &task_conversation_id, &complete_msg).await;
             } else {
