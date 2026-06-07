@@ -34,8 +34,13 @@ const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 300;
 /// 可经 ModelProfile.custom_env 的 `SIMPLE_AI_STREAM_IDLE_SECS` 覆盖。
 const STREAM_IDLE_TIMEOUT_SECS: u64 = 120;
 
-/// 单轮对话内工具调用的最大轮次。
-const MAX_TOOL_ROUNDS: usize = 40;
+/// 工具调用轮次上限，**默认 0 = 不限制**（对齐 codex：靠模型自然终止 + 用户中断 + token
+/// 控制，而非数轮次封顶；codex `session/turn.rs` 的工具循环本身无轮次上限）。可经
+/// ModelProfile.custom_env 的 `SIMPLE_AI_MAX_TOOL_ROUNDS` 设为正整数作为防御性兜底。
+///
+/// 注意：SimpleAI 尚未实现上下文压缩(compact)，无限轮次下超长任务的 token 会单调增长，
+/// 最终可能触发 API 的上下文超限错误而终止（详见 docs/simple-ai-codex-refactor-plan.md）。
+const DEFAULT_MAX_TOOL_ROUNDS: u64 = 0;
 
 /// 发起 OpenAI Chat Completions 流式请求，执行工具调用循环
 pub(super) async fn run_chat_loop(
@@ -58,6 +63,14 @@ pub(super) async fn run_chat_loop(
         read_env_u64(&profile.custom_env, "SIMPLE_AI_TIMEOUT_SECS", DEFAULT_REQUEST_TIMEOUT_SECS);
     let stream_idle_secs =
         read_env_u64(&profile.custom_env, "SIMPLE_AI_STREAM_IDLE_SECS", STREAM_IDLE_TIMEOUT_SECS);
+    // 工具调用轮次上限：0 = 不限制（默认）。这里不复用 read_env_u64（它会把 0 视为非法回退），
+    // 因为 0 对轮次而言是合法的「无限制」语义。
+    let max_tool_rounds = profile
+        .custom_env
+        .as_ref()
+        .and_then(|m| m.get("SIMPLE_AI_MAX_TOOL_ROUNDS"))
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_MAX_TOOL_ROUNDS);
 
     // 工具注册表 + 本轮 schema。新增工具无需改动本循环。
     let registry = ToolRegistry::with_builtins();
@@ -66,13 +79,14 @@ pub(super) async fn run_chat_loop(
     let plan_id = format!("{}-plan", session_id);
     let plan_started = AtomicBool::new(false);
 
-    let mut round = 0;
+    let mut round: u64 = 0;
 
     loop {
-        if round >= MAX_TOOL_ROUNDS {
+        // 仅当配置了正整数上限时才封顶；默认 0 = 不限制（靠模型自然终止 / 用户中断 / 流超时）。
+        if max_tool_rounds > 0 && round >= max_tool_rounds {
             let _ = event_callback(AIEvent::Progress(ProgressEvent::new(
                 session_id,
-                format!("Reached maximum tool call rounds ({}), stopping.", MAX_TOOL_ROUNDS),
+                format!("Reached configured tool call round cap ({}), stopping.", max_tool_rounds),
             )));
             break;
         }
