@@ -269,8 +269,27 @@ fn build_anthropic_body(model: &str, messages: &[Value], openai_tools: &[Value])
                 out.push(json!({ "role": "assistant", "content": blocks }));
             }
             _ => {
-                // user：content 原样透传（字符串或多模态数组）。
+                // user：content 透传；但 Anthropic 要求 user/assistant 严格交替，而 SimpleAI
+                // 首轮会注入 environment_context + 项目指令 + 用户消息（连续多条 user）。
+                // 故合并相邻 user 消息：字符串直接拼接；若上一条 user 的 content 已是数组
+                // （如 tool_result block），则把本条文本作为 text block 追加进去。
                 let content = msg.get("content").cloned().unwrap_or_else(|| json!(""));
+                if let Some(text) = content.as_str() {
+                    if let Some(last) = out.last_mut() {
+                        if last.get("role").and_then(|r| r.as_str()) == Some("user") {
+                            if let Some(last_content) = last.get_mut("content") {
+                                if let Some(prev) = last_content.as_str() {
+                                    *last_content = json!(format!("{}\n\n{}", prev, text));
+                                    continue;
+                                }
+                                if let Some(arr) = last_content.as_array_mut() {
+                                    arr.push(json!({ "type": "text", "text": text }));
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                }
                 out.push(json!({ "role": "user", "content": content }));
             }
         }
@@ -812,5 +831,41 @@ mod tests {
         assert_eq!(tcs[0]["id"], "call_7");
         assert_eq!(tcs[0]["function"]["name"], "bash");
         assert_eq!(tcs[0]["function"]["arguments"], "{\"command\":\"pwd\"}");
+    }
+
+    #[test]
+    fn anthropic_body_merges_consecutive_user_messages() {
+        // SimpleAI 首轮注入 environment_context + 项目指令 + 用户消息，连续三条 user。
+        // Anthropic 要求 user/assistant 交替，故应合并为单条 user。
+        let messages = vec![
+            json!({ "role": "system", "content": "sys" }),
+            json!({ "role": "user", "content": "<environment_context>cwd</environment_context>" }),
+            json!({ "role": "user", "content": "# Project instructions\nrules" }),
+            json!({ "role": "user", "content": "actual question" }),
+        ];
+        let body = build_request_body(WireProtocol::Anthropic, "claude-x", &messages, &[]);
+        let msgs = body["messages"].as_array().unwrap();
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0]["role"], "user");
+        let c = msgs[0]["content"].as_str().unwrap();
+        assert!(c.contains("environment_context"));
+        assert!(c.contains("Project instructions"));
+        assert!(c.contains("actual question"));
+    }
+
+    #[test]
+    fn anthropic_body_appends_user_text_after_tool_result() {
+        // tool_result 产生 user(content=[block])；随后的 user 文本应作为 text block 追加。
+        let messages = vec![
+            json!({ "role": "tool", "tool_call_id": "t1", "content": "result" }),
+            json!({ "role": "user", "content": "follow-up" }),
+        ];
+        let body = build_request_body(WireProtocol::Anthropic, "claude-x", &messages, &[]);
+        let msgs = body["messages"].as_array().unwrap();
+        assert_eq!(msgs.len(), 1);
+        let arr = msgs[0]["content"].as_array().unwrap();
+        assert_eq!(arr[0]["type"], "tool_result");
+        assert_eq!(arr[1]["type"], "text");
+        assert_eq!(arr[1]["text"], "follow-up");
     }
 }
