@@ -72,3 +72,6 @@ Desktop.ini
 .kirocrates/polaris-knowledge-mcp/target/
 crates/*/target/
 ngrok
+
+# CodeX / AI tools generated logs
+.codex*
