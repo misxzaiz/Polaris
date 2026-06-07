@@ -19,6 +19,7 @@
 
 mod chat_loop;
 mod context;
+mod history;
 mod prompt;
 mod session;
 mod tools;

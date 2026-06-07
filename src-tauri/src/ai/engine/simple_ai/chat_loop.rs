@@ -20,7 +20,22 @@ use crate::models::ai_event::{
 };
 use crate::models::AIEvent;
 
+use super::history;
 use super::tools::{ToolContext, ToolRegistry};
+
+/// 历史中单条 assistant 文本输出的 token 上限，超出则截断头部（约 16k 字符）。
+/// 仅截真正巨大的输出（如模型贴大段代码/文件），正常回答不受影响；零额外 API 调用。
+const HISTORY_ASSISTANT_TOKEN_CAP: usize = 4000;
+
+/// 默认请求总超时（秒）。可经 ModelProfile.custom_env 的 `SIMPLE_AI_TIMEOUT_SECS` 覆盖。
+const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 300;
+
+/// 默认流空闲超时（秒）：距上一个数据块超过该时长视为流卡死。
+/// 可经 ModelProfile.custom_env 的 `SIMPLE_AI_STREAM_IDLE_SECS` 覆盖。
+const STREAM_IDLE_TIMEOUT_SECS: u64 = 120;
+
+/// 单轮对话内工具调用的最大轮次。
+const MAX_TOOL_ROUNDS: usize = 40;
 
 /// 发起 OpenAI Chat Completions 流式请求，执行工具调用循环
 pub(super) async fn run_chat_loop(
@@ -38,6 +53,12 @@ pub(super) async fn run_chat_loop(
         protocol.as_str()
     );
 
+    // 超时配置：默认常量，可经 profile.custom_env 覆盖（不改 ModelProfile 结构/前端）。
+    let request_timeout_secs =
+        read_env_u64(&profile.custom_env, "SIMPLE_AI_TIMEOUT_SECS", DEFAULT_REQUEST_TIMEOUT_SECS);
+    let stream_idle_secs =
+        read_env_u64(&profile.custom_env, "SIMPLE_AI_STREAM_IDLE_SECS", STREAM_IDLE_TIMEOUT_SECS);
+
     // 工具注册表 + 本轮 schema。新增工具无需改动本循环。
     let registry = ToolRegistry::with_builtins();
     let tools = registry.specs();
@@ -45,14 +66,13 @@ pub(super) async fn run_chat_loop(
     let plan_id = format!("{}-plan", session_id);
     let plan_started = AtomicBool::new(false);
 
-    let max_tool_rounds = 40;
     let mut round = 0;
 
     loop {
-        if round >= max_tool_rounds {
+        if round >= MAX_TOOL_ROUNDS {
             let _ = event_callback(AIEvent::Progress(ProgressEvent::new(
                 session_id,
-                "Reached maximum tool call rounds (20), stopping.",
+                format!("Reached maximum tool call rounds ({}), stopping.", MAX_TOOL_ROUNDS),
             )));
             break;
         }
@@ -62,6 +82,9 @@ pub(super) async fn run_chat_loop(
             let _ = event_callback(AIEvent::SessionEnd(SessionEndEvent::new(session_id)));
             return Ok(());
         }
+
+        // 裁剪历史中超长的 assistant 输出，避免长会话撑爆上下文窗口（零额外 API 调用）。
+        history::truncate_history_assistant_outputs(messages, HISTORY_ASSISTANT_TOKEN_CAP);
 
         // 构建请求体（按线路协议转换内部 OpenAI 消息格式）
         let body = build_request_body(protocol, &profile.model, messages, &tools);
@@ -77,7 +100,7 @@ pub(super) async fn run_chat_loop(
 
         // HTTP 请求
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(300))
+            .timeout(std::time::Duration::from_secs(request_timeout_secs))
             .build()
             .map_err(|e| AppError::ProcessError(format!("HTTP client error: {}", e)))?;
 
@@ -133,6 +156,12 @@ pub(super) async fn run_chat_loop(
                 _ = abort_rx.changed() => {
                     let _ = event_callback(AIEvent::SessionEnd(SessionEndEvent::new(session_id)));
                     return Ok(());
+                }
+                _ = tokio::time::sleep(std::time::Duration::from_secs(stream_idle_secs)) => {
+                    return Err(AppError::ProcessError(format!(
+                        "Stream idle timeout: no data for {}s",
+                        stream_idle_secs
+                    )));
                 }
             };
 
@@ -264,4 +293,18 @@ pub(super) async fn run_chat_loop(
     }
 
     Ok(())
+}
+
+/// 从 profile 的 `custom_env` 读取一个正整数 u64 配置；缺失/非法/为 0 时回退默认值。
+fn read_env_u64(
+    custom_env: &Option<std::collections::HashMap<String, String>>,
+    key: &str,
+    default: u64,
+) -> u64 {
+    custom_env
+        .as_ref()
+        .and_then(|m| m.get(key))
+        .and_then(|v| v.parse::<u64>().ok())
+        .filter(|&n| n > 0)
+        .unwrap_or(default)
 }
