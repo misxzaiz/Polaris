@@ -1,7 +1,7 @@
-//! Computer MCP Server —— 电脑操作（截图 / 鼠标键盘 / Windows 控件树）。
+//! Computer MCP Server —— 电脑操作（截图 / 鼠标键盘 / Windows 控件树 / 剪贴板）。
 //!
-//! JSON-RPC over stdio，框架与 `scheduler_mcp_server` / `todo_mcp_server` 完全一致；
-//! 状态持有一个可变 [`ComputerController`]（输入模拟有状态）。
+//! JSON-RPC over stdio，框架与 `scheduler_mcp_server` / `todo_mcp_server` 一致；
+//! 状态持有一个可变 [`ComputerController`]。
 
 use std::io::{self, BufRead, Write};
 use std::thread;
@@ -14,12 +14,11 @@ use crate::error::{AppError, Result};
 use crate::services::computer_control::{ComputerConfig, ComputerController};
 
 const SERVER_NAME: &str = "polaris-computer-mcp";
-const SERVER_VERSION: &str = "0.1.0";
+const SERVER_VERSION: &str = "0.2.0";
 const PROTOCOL_VERSION: &str = "2024-11-05";
 
-/// 单次工具输出的最大等待时长（wait 工具），避免模型挂起会话。
 const MAX_WAIT_MS: u64 = 10_000;
-/// inspect_ui 递归深度上限。
+const MAX_HOLD_MS: u64 = 10_000;
 const MAX_INSPECT_DEPTH: u64 = 8;
 
 #[derive(Debug, Deserialize)]
@@ -47,10 +46,6 @@ struct JsonRpcError {
     message: String,
 }
 
-/// 运行 computer MCP server。
-///
-/// `_config_dir` / `_workspace_path` 仅为与其它内置 MCP server 的命令行约定对齐而保留，
-/// 电脑操作本身与工作区无关。配置从环境变量读取（见 [`ComputerConfig::from_env`]）。
 pub fn run_computer_mcp_server(_config_dir: &str, _workspace_path: Option<&str>) -> Result<()> {
     let mut controller = ComputerController::new(ComputerConfig::from_env())?;
 
@@ -72,7 +67,6 @@ pub fn run_computer_mcp_server(_config_dir: &str, _workspace_path: Option<&str>)
         }
 
         let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
-            // JSON-RPC 2.0 §4.1：无 `id` 的请求是通知，不得回复（与其它 server 一致）。
             Ok(request) if request.id.is_none() => continue,
             Ok(request) => handle_request(request, &mut controller),
             Err(error) => JsonRpcResponse {
@@ -138,14 +132,15 @@ fn handle_tools_list() -> Value {
     json!({ "tools": [
         {
             "name": "screenshot",
-            "description": "截取屏幕，返回 PNG 图像（base64）。用它来观察当前界面。可选 monitor 指定显示器序号（默认主屏 0）。",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "monitor": { "type": "integer", "minimum": 0, "description": "显示器序号，默认 0" }
-                },
-                "additionalProperties": false
-            }
+            "description": "截取屏幕，返回 PNG 图像（base64）。monitor 指定显示器序号（默认主屏 0）；region={x,y,width,height} 只截局部；scale(0~1)降采样缩小体积（如 0.5 半尺寸）。截全屏前建议用 region 或 scale 控制图像 token。",
+            "inputSchema": { "type": "object", "properties": {
+                "monitor": { "type": "integer", "minimum": 0 },
+                "region": { "type": "object", "properties": {
+                    "x": { "type": "integer", "minimum": 0 }, "y": { "type": "integer", "minimum": 0 },
+                    "width": { "type": "integer", "minimum": 1 }, "height": { "type": "integer", "minimum": 1 }
+                }, "required": ["x", "y", "width", "height"], "additionalProperties": false },
+                "scale": { "type": "number", "minimum": 0.05, "maximum": 1 }
+            }, "additionalProperties": false }
         },
         {
             "name": "cursor_position",
@@ -155,79 +150,111 @@ fn handle_tools_list() -> Value {
         {
             "name": "move_mouse",
             "description": "把鼠标移动到绝对坐标 (x, y)。",
-            "inputSchema": {
-                "type": "object",
-                "required": ["x", "y"],
-                "properties": {
-                    "x": { "type": "integer" },
-                    "y": { "type": "integer" }
-                },
-                "additionalProperties": false
-            }
+            "inputSchema": { "type": "object", "required": ["x", "y"], "properties": {
+                "x": { "type": "integer" }, "y": { "type": "integer" }
+            }, "additionalProperties": false }
         },
         {
             "name": "click",
-            "description": "鼠标点击。给定 x/y 则先移动再点击；省略则在当前位置点击。button 取 left/right/middle，double=true 为双击。",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "x": { "type": "integer" },
-                    "y": { "type": "integer" },
-                    "button": { "type": "string", "enum": ["left", "right", "middle"] },
-                    "double": { "type": "boolean" }
-                },
-                "additionalProperties": false
-            }
+            "description": "鼠标点击。给定 x/y 则先移动再点击；省略则在当前位置点击。button=left/right/middle；count=连击次数（1 单击、2 双击、3 三击）。",
+            "inputSchema": { "type": "object", "properties": {
+                "x": { "type": "integer" }, "y": { "type": "integer" },
+                "button": { "type": "string", "enum": ["left", "right", "middle"] },
+                "count": { "type": "integer", "minimum": 1, "maximum": 3 }
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "drag",
+            "description": "按住鼠标从 (from_x,from_y) 拖拽到 (to_x,to_y)。button 默认 left。",
+            "inputSchema": { "type": "object", "required": ["from_x", "from_y", "to_x", "to_y"], "properties": {
+                "from_x": { "type": "integer" }, "from_y": { "type": "integer" },
+                "to_x": { "type": "integer" }, "to_y": { "type": "integer" },
+                "button": { "type": "string", "enum": ["left", "right", "middle"] }
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "mouse_down",
+            "description": "按下鼠标键不释放（配合 mouse_up 实现自定义拖拽/长按）。可选 x/y 先移动。button 默认 left。",
+            "inputSchema": { "type": "object", "properties": {
+                "x": { "type": "integer" }, "y": { "type": "integer" },
+                "button": { "type": "string", "enum": ["left", "right", "middle"] }
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "mouse_up",
+            "description": "释放鼠标键。可选 x/y 先移动。button 默认 left。",
+            "inputSchema": { "type": "object", "properties": {
+                "x": { "type": "integer" }, "y": { "type": "integer" },
+                "button": { "type": "string", "enum": ["left", "right", "middle"] }
+            }, "additionalProperties": false }
         },
         {
             "name": "type_text",
-            "description": "在当前焦点处输入一段文本（逐字符键入）。",
-            "inputSchema": {
-                "type": "object",
-                "required": ["text"],
-                "properties": { "text": { "type": "string" } },
-                "additionalProperties": false
-            }
+            "description": "在当前焦点处输入一段文本（逐字符键入）。大段文本建议用 clipboard 设置后 press_key ctrl+v 粘贴。",
+            "inputSchema": { "type": "object", "required": ["text"], "properties": {
+                "text": { "type": "string" }
+            }, "additionalProperties": false }
         },
         {
             "name": "press_key",
-            "description": "按下组合键，如 'ctrl+c'、'alt+f4'、'enter'、'ctrl+shift+t'。最后一段为主键，前面为修饰键。",
-            "inputSchema": {
-                "type": "object",
-                "required": ["keys"],
-                "properties": { "keys": { "type": "string" } },
-                "additionalProperties": false
-            }
+            "description": "按下组合键并释放，如 'ctrl+c'、'alt+f4'、'enter'、'ctrl+shift+t'。最后一段为主键。",
+            "inputSchema": { "type": "object", "required": ["keys"], "properties": {
+                "keys": { "type": "string" }
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "hold_key",
+            "description": "按住组合键 ms 毫秒后释放（如游戏按住方向键）。上限 10000ms。",
+            "inputSchema": { "type": "object", "required": ["keys"], "properties": {
+                "keys": { "type": "string" }, "ms": { "type": "integer", "minimum": 0 }
+            }, "additionalProperties": false }
         },
         {
             "name": "scroll",
             "description": "滚动滚轮。dx 水平、dy 垂直，正负代表方向。",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "dx": { "type": "integer" },
-                    "dy": { "type": "integer" }
-                },
-                "additionalProperties": false
-            }
+            "inputSchema": { "type": "object", "properties": {
+                "dx": { "type": "integer" }, "dy": { "type": "integer" }
+            }, "additionalProperties": false }
         },
         {
             "name": "wait",
-            "description": "等待若干毫秒（用于等待界面响应），上限 10000ms。",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "ms": { "type": "integer", "minimum": 0 } },
-                "additionalProperties": false
-            }
+            "description": "等待若干毫秒（等界面响应），上限 10000ms。",
+            "inputSchema": { "type": "object", "properties": {
+                "ms": { "type": "integer", "minimum": 0 }
+            }, "additionalProperties": false }
         },
         {
             "name": "inspect_ui",
-            "description": "（仅 Windows）返回前台桌面的无障碍控件树，含每个控件的 name/controlType/enabled/rect。比截图更精确、更省 token，优先用它定位可点击元素。max_depth 控制深度（默认 3）。",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "max_depth": { "type": "integer", "minimum": 1, "maximum": 8 } },
-                "additionalProperties": false
-            }
+            "description": "返回前台桌面的无障碍控件树，每个控件含 name/controlType/automationId/enabled/rect/center。比截图更精确省 token，优先用它定位元素，再用 click（配合 center 坐标）或 click_element 操作。max_depth 默认 3；interactable_only=true 剔除无名噪声节点。",
+            "inputSchema": { "type": "object", "properties": {
+                "max_depth": { "type": "integer", "minimum": 1, "maximum": 8 },
+                "interactable_only": { "type": "boolean" }
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "click_element",
+            "description": "按控件名(name，模糊匹配)或 automationId 查找并直接点击，不依赖坐标（不受窗口移动/遮挡影响），比 click 更可靠。button=left/right；count>=2 为双击。name 与 automation_id 至少给一个。",
+            "inputSchema": { "type": "object", "properties": {
+                "name": { "type": "string" }, "automation_id": { "type": "string" },
+                "button": { "type": "string", "enum": ["left", "right"] },
+                "count": { "type": "integer", "minimum": 1, "maximum": 2 }
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "set_text",
+            "description": "按控件名或 automationId 查找输入框并填入文本（聚焦后剪贴板粘贴，比逐字符可靠）。name 与 automation_id 至少给一个。",
+            "inputSchema": { "type": "object", "required": ["text"], "properties": {
+                "name": { "type": "string" }, "automation_id": { "type": "string" },
+                "text": { "type": "string" }
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "clipboard",
+            "description": "读写系统剪贴板。action=get 读取当前内容；action=set 写入 text（再 press_key ctrl+v 可粘贴）。",
+            "inputSchema": { "type": "object", "required": ["action"], "properties": {
+                "action": { "type": "string", "enum": ["get", "set"] },
+                "text": { "type": "string" }
+            }, "additionalProperties": false }
         }
     ] })
 }
@@ -237,18 +264,25 @@ fn handle_tools_call(params: Value, controller: &mut ComputerController) -> Resu
         .get("name")
         .and_then(Value::as_str)
         .ok_or_else(|| AppError::ValidationError("tools/call 缺少 name".to_string()))?;
-    let arguments = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
+    let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
 
     match name {
-        "screenshot" => exec_screenshot(&arguments, controller),
+        "screenshot" => exec_screenshot(&args, controller),
         "cursor_position" => exec_cursor_position(controller),
-        "move_mouse" => exec_move_mouse(&arguments, controller),
-        "click" => exec_click(&arguments, controller),
-        "type_text" => exec_type_text(&arguments, controller),
-        "press_key" => exec_press_key(&arguments, controller),
-        "scroll" => exec_scroll(&arguments, controller),
-        "wait" => exec_wait(&arguments),
-        "inspect_ui" => exec_inspect_ui(&arguments, controller),
+        "move_mouse" => exec_move_mouse(&args, controller),
+        "click" => exec_click(&args, controller),
+        "drag" => exec_drag(&args, controller),
+        "mouse_down" => exec_mouse_down(&args, controller),
+        "mouse_up" => exec_mouse_up(&args, controller),
+        "type_text" => exec_type_text(&args, controller),
+        "press_key" => exec_press_key(&args, controller),
+        "hold_key" => exec_hold_key(&args, controller),
+        "scroll" => exec_scroll(&args, controller),
+        "wait" => exec_wait(&args),
+        "inspect_ui" => exec_inspect_ui(&args, controller),
+        "click_element" => exec_click_element(&args, controller),
+        "set_text" => exec_set_text(&args, controller),
+        "clipboard" => exec_clipboard(&args, controller),
         other => Err(AppError::ValidationError(format!("未知工具: {other}"))),
     }
 }
@@ -257,12 +291,18 @@ fn handle_tools_call(params: Value, controller: &mut ComputerController) -> Resu
 // Tool implementations
 // ============================================================================
 
-fn exec_screenshot(arguments: &Value, controller: &mut ComputerController) -> Result<Value> {
-    let monitor = arguments
-        .get("monitor")
-        .and_then(Value::as_u64)
-        .map(|v| v as usize);
-    let shot = controller.screenshot(monitor)?;
+fn exec_screenshot(args: &Value, c: &mut ComputerController) -> Result<Value> {
+    let monitor = args.get("monitor").and_then(Value::as_u64).map(|v| v as usize);
+    let region = args.get("region").and_then(|r| {
+        Some((
+            r.get("x")?.as_u64()? as u32,
+            r.get("y")?.as_u64()? as u32,
+            r.get("width")?.as_u64()? as u32,
+            r.get("height")?.as_u64()? as u32,
+        ))
+    });
+    let scale = args.get("scale").and_then(Value::as_f64).map(|v| v as f32);
+    let shot = c.screenshot(monitor, region, scale)?;
     Ok(json!({
         "structuredContent": { "width": shot.width, "height": shot.height },
         "content": [
@@ -272,78 +312,133 @@ fn exec_screenshot(arguments: &Value, controller: &mut ComputerController) -> Re
     }))
 }
 
-fn exec_cursor_position(controller: &mut ComputerController) -> Result<Value> {
-    let (x, y) = controller.cursor_position()?;
+fn exec_cursor_position(c: &mut ComputerController) -> Result<Value> {
+    let (x, y) = c.cursor_position()?;
     Ok(text_result(json!({ "x": x, "y": y }), format!("光标位置: ({x}, {y})")))
 }
 
-fn exec_move_mouse(arguments: &Value, controller: &mut ComputerController) -> Result<Value> {
-    let x = require_i32(arguments, "x")?;
-    let y = require_i32(arguments, "y")?;
-    controller.move_mouse(x, y)?;
+fn exec_move_mouse(args: &Value, c: &mut ComputerController) -> Result<Value> {
+    let x = require_i32(args, "x")?;
+    let y = require_i32(args, "y")?;
+    c.move_mouse(x, y)?;
     Ok(text_result(json!({ "x": x, "y": y }), format!("已移动鼠标到 ({x}, {y})")))
 }
 
-fn exec_click(arguments: &Value, controller: &mut ComputerController) -> Result<Value> {
-    let x = optional_i32(arguments, "x");
-    let y = optional_i32(arguments, "y");
-    let button = arguments
-        .get("button")
-        .and_then(Value::as_str)
-        .unwrap_or("left");
-    let double = arguments
-        .get("double")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    controller.click(x, y, button, double)?;
-    let kind = if double { "双击" } else { "单击" };
+fn exec_click(args: &Value, c: &mut ComputerController) -> Result<Value> {
+    let x = optional_i32(args, "x");
+    let y = optional_i32(args, "y");
+    let button = args.get("button").and_then(Value::as_str).unwrap_or("left");
+    let count = args.get("count").and_then(Value::as_u64).unwrap_or(1).clamp(1, 3) as u32;
+    c.click(x, y, button, count)?;
     Ok(text_result(
-        json!({ "clicked": true, "button": button, "double": double }),
-        format!("已{kind} {button} 键"),
+        json!({ "button": button, "count": count }),
+        format!("已点击 {button} 键 x{count}"),
     ))
 }
 
-fn exec_type_text(arguments: &Value, controller: &mut ComputerController) -> Result<Value> {
-    let text = require_str(arguments, "text")?;
-    controller.type_text(text)?;
+fn exec_drag(args: &Value, c: &mut ComputerController) -> Result<Value> {
+    let from_x = require_i32(args, "from_x")?;
+    let from_y = require_i32(args, "from_y")?;
+    let to_x = require_i32(args, "to_x")?;
+    let to_y = require_i32(args, "to_y")?;
+    let button = args.get("button").and_then(Value::as_str).unwrap_or("left");
+    c.drag(from_x, from_y, to_x, to_y, button)?;
+    Ok(text_result(
+        json!({ "from": [from_x, from_y], "to": [to_x, to_y] }),
+        format!("已拖拽 ({from_x},{from_y}) → ({to_x},{to_y})"),
+    ))
+}
+
+fn exec_mouse_down(args: &Value, c: &mut ComputerController) -> Result<Value> {
+    let button = args.get("button").and_then(Value::as_str).unwrap_or("left");
+    c.mouse_down(optional_i32(args, "x"), optional_i32(args, "y"), button)?;
+    Ok(text_result(json!({ "button": button }), format!("已按下 {button} 键")))
+}
+
+fn exec_mouse_up(args: &Value, c: &mut ComputerController) -> Result<Value> {
+    let button = args.get("button").and_then(Value::as_str).unwrap_or("left");
+    c.mouse_up(optional_i32(args, "x"), optional_i32(args, "y"), button)?;
+    Ok(text_result(json!({ "button": button }), format!("已释放 {button} 键")))
+}
+
+fn exec_type_text(args: &Value, c: &mut ComputerController) -> Result<Value> {
+    let text = require_str(args, "text")?;
+    c.type_text(text)?;
     let count = text.chars().count();
     Ok(text_result(json!({ "typed": count }), format!("已输入 {count} 个字符")))
 }
 
-fn exec_press_key(arguments: &Value, controller: &mut ComputerController) -> Result<Value> {
-    let keys = require_str(arguments, "keys")?;
-    controller.press_key(keys)?;
+fn exec_press_key(args: &Value, c: &mut ComputerController) -> Result<Value> {
+    let keys = require_str(args, "keys")?;
+    c.press_key(keys)?;
     Ok(text_result(json!({ "keys": keys }), format!("已按下 {keys}")))
 }
 
-fn exec_scroll(arguments: &Value, controller: &mut ComputerController) -> Result<Value> {
-    let dx = optional_i32(arguments, "dx").unwrap_or(0);
-    let dy = optional_i32(arguments, "dy").unwrap_or(0);
-    controller.scroll(dx, dy)?;
+fn exec_hold_key(args: &Value, c: &mut ComputerController) -> Result<Value> {
+    let keys = require_str(args, "keys")?;
+    let ms = args.get("ms").and_then(Value::as_u64).unwrap_or(500).min(MAX_HOLD_MS);
+    c.hold_key(keys, ms)?;
+    Ok(text_result(json!({ "keys": keys, "ms": ms }), format!("已按住 {keys} {ms}ms")))
+}
+
+fn exec_scroll(args: &Value, c: &mut ComputerController) -> Result<Value> {
+    let dx = optional_i32(args, "dx").unwrap_or(0);
+    let dy = optional_i32(args, "dy").unwrap_or(0);
+    c.scroll(dx, dy)?;
     Ok(text_result(json!({ "dx": dx, "dy": dy }), format!("已滚动 ({dx}, {dy})")))
 }
 
-fn exec_wait(arguments: &Value) -> Result<Value> {
-    let ms = arguments
-        .get("ms")
-        .and_then(Value::as_u64)
-        .unwrap_or(500)
-        .min(MAX_WAIT_MS);
+fn exec_wait(args: &Value) -> Result<Value> {
+    let ms = args.get("ms").and_then(Value::as_u64).unwrap_or(500).min(MAX_WAIT_MS);
     thread::sleep(Duration::from_millis(ms));
     Ok(text_result(json!({ "ms": ms }), format!("已等待 {ms} ms")))
 }
 
-fn exec_inspect_ui(arguments: &Value, controller: &mut ComputerController) -> Result<Value> {
-    let max_depth = arguments
+fn exec_inspect_ui(args: &Value, c: &mut ComputerController) -> Result<Value> {
+    let max_depth = args
         .get("max_depth")
         .and_then(Value::as_u64)
         .unwrap_or(3)
         .clamp(1, MAX_INSPECT_DEPTH) as usize;
-    let tree = controller.inspect_ui(max_depth)?;
+    let interactable_only = args.get("interactable_only").and_then(Value::as_bool).unwrap_or(false);
+    let tree = c.inspect_ui(max_depth, interactable_only)?;
     Ok(json!({
         "structuredContent": tree,
         "content": [ { "type": "text", "text": "已返回前台控件树" } ]
     }))
+}
+
+fn exec_click_element(args: &Value, c: &mut ComputerController) -> Result<Value> {
+    let name = args.get("name").and_then(Value::as_str);
+    let automation_id = args.get("automation_id").and_then(Value::as_str);
+    let button = args.get("button").and_then(Value::as_str).unwrap_or("left");
+    let count = args.get("count").and_then(Value::as_u64).unwrap_or(1).clamp(1, 2) as u32;
+    let label = c.click_element(name, automation_id, button, count)?;
+    Ok(text_result(json!({ "clicked": label }), label))
+}
+
+fn exec_set_text(args: &Value, c: &mut ComputerController) -> Result<Value> {
+    let name = args.get("name").and_then(Value::as_str);
+    let automation_id = args.get("automation_id").and_then(Value::as_str);
+    let text = require_str(args, "text")?;
+    let label = c.set_text(name, automation_id, text)?;
+    Ok(text_result(json!({ "element": label }), label))
+}
+
+fn exec_clipboard(args: &Value, c: &mut ComputerController) -> Result<Value> {
+    let action = require_str(args, "action")?;
+    match action {
+        "get" => {
+            let text = c.clipboard_get()?;
+            Ok(text_result(json!({ "text": text }), format!("剪贴板内容（{} 字符）", text.chars().count())))
+        }
+        "set" => {
+            let text = require_str(args, "text")?;
+            c.clipboard_set(text)?;
+            Ok(text_result(json!({ "set": true }), format!("已写入剪贴板（{} 字符）", text.chars().count())))
+        }
+        other => Err(AppError::ValidationError(format!("未知 clipboard action: {other}"))),
+    }
 }
 
 // ============================================================================
@@ -357,21 +452,19 @@ fn text_result(structured: Value, message: String) -> Value {
     })
 }
 
-fn require_i32(arguments: &Value, key: &str) -> Result<i32> {
-    arguments
-        .get(key)
+fn require_i32(args: &Value, key: &str) -> Result<i32> {
+    args.get(key)
         .and_then(Value::as_i64)
         .map(|v| v as i32)
         .ok_or_else(|| AppError::ValidationError(format!("缺少整数参数: {key}")))
 }
 
-fn optional_i32(arguments: &Value, key: &str) -> Option<i32> {
-    arguments.get(key).and_then(Value::as_i64).map(|v| v as i32)
+fn optional_i32(args: &Value, key: &str) -> Option<i32> {
+    args.get(key).and_then(Value::as_i64).map(|v| v as i32)
 }
 
-fn require_str<'a>(arguments: &'a Value, key: &str) -> Result<&'a str> {
-    arguments
-        .get(key)
+fn require_str<'a>(args: &'a Value, key: &str) -> Result<&'a str> {
+    args.get(key)
         .and_then(Value::as_str)
         .ok_or_else(|| AppError::ValidationError(format!("缺少字符串参数: {key}")))
 }
@@ -391,12 +484,19 @@ pub fn current_tool_definitions() -> std::collections::BTreeMap<&'static str, &'
         ("screenshot", "截屏为 PNG。"),
         ("cursor_position", "获取光标坐标。"),
         ("move_mouse", "移动鼠标到坐标。"),
-        ("click", "鼠标点击。"),
+        ("click", "鼠标点击（可连击）。"),
+        ("drag", "拖拽。"),
+        ("mouse_down", "按下鼠标键。"),
+        ("mouse_up", "释放鼠标键。"),
         ("type_text", "输入文本。"),
         ("press_key", "按下组合键。"),
+        ("hold_key", "按住组合键一段时间。"),
         ("scroll", "滚动。"),
         ("wait", "等待毫秒。"),
         ("inspect_ui", "Windows 控件树。"),
+        ("click_element", "按控件查找并点击。"),
+        ("set_text", "按控件查找并输入文本。"),
+        ("clipboard", "读写剪贴板。"),
     ])
 }
 
@@ -407,7 +507,7 @@ mod tests {
     #[test]
     fn exposes_expected_tool_count() {
         let defs = current_tool_definitions();
-        assert_eq!(defs.len(), 9);
+        assert_eq!(defs.len(), 16);
         let listed = handle_tools_list();
         let tools = listed["tools"].as_array().unwrap();
         assert_eq!(tools.len(), defs.len());

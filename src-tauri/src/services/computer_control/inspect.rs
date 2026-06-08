@@ -1,61 +1,116 @@
-//! Windows 控件树（无障碍 UI Automation）。
+//! Windows 控件树（UI Automation）：查询 + 结构化操作。
 //!
-//! 结构化驱动路线：相比纯视觉，控件树带 `name/controlType/bounds/enabled`，确定性高、省 token，
-//! 且不依赖模型视觉能力。仅 Windows 可用；其它平台返回明确错误。
+//! 结构化驱动是 Windows 电脑操作相对裸坐标点击的核心优势：
+//! - `inspect_ui` 返回控件树（含 name/controlType/automationId/enabled/rect/center），模型据此定位元素；
+//! - `click_element` / `set_text` 按控件名或 automationId **直接操作控件**（UIAutomation invoke），
+//!   不受窗口移动、遮挡、DPI 缩放影响，比"算坐标 + 物理点击"可靠。
+//!
+//! 整个 `computer_control` 模块仅在 Windows 编译（见 `services/mod.rs` 的 `#[cfg(windows)]`），
+//! 故此处直接使用 uiautomation，无需平台分支。
 
-use crate::error::Result;
+use serde_json::{json, Value};
+use uiautomation::{UIAutomation, UIElement, UIMatcher, UITreeWalker};
 
-/// 遍历当前桌面的控件树，返回结构化 JSON。
-///
+use crate::error::{AppError, Result};
+
+/// 控件匹配的超时（毫秒）。
+const MATCH_TIMEOUT_MS: u64 = 3000;
+
+/// 遍历前台桌面控件树。
 /// - `max_depth`：递归深度上限（根为 0）。
 /// - `sibling_cap`：每层兄弟节点上限，防止超大窗口输出爆炸。
-#[cfg(windows)]
-pub fn inspect_ui(max_depth: usize, sibling_cap: usize) -> Result<serde_json::Value> {
-    windows_impl::inspect_ui(max_depth, sibling_cap)
+/// - `interactable_only`：剔除"无名且无子"的噪声节点，节省 token。
+pub fn inspect_ui(max_depth: usize, sibling_cap: usize, interactable_only: bool) -> Result<Value> {
+    let automation = UIAutomation::new()
+        .map_err(|e| AppError::ProcessError(format!("初始化 UIAutomation 失败: {e}")))?;
+    let root = automation
+        .get_root_element()
+        .map_err(|e| AppError::ProcessError(format!("获取桌面根元素失败: {e}")))?;
+    let walker = automation
+        .create_tree_walker()
+        .map_err(|e| AppError::ProcessError(format!("创建控件树遍历器失败: {e}")))?;
+    Ok(walk(&walker, &root, max_depth, sibling_cap, interactable_only, 0).unwrap_or(json!({})))
 }
 
-#[cfg(not(windows))]
-pub fn inspect_ui(_max_depth: usize, _sibling_cap: usize) -> Result<serde_json::Value> {
-    Err(crate::error::AppError::ValidationError(
-        "inspect_ui（控件树）仅在 Windows 平台可用".to_string(),
-    ))
+/// 按控件查找并直接点击（UIAutomation）。`name`（模糊匹配）与 `automation_id` 至少给一个。
+/// `count >= 2` 为双击，`button == "right"` 为右键。
+pub fn click_element(
+    name: Option<&str>,
+    automation_id: Option<&str>,
+    button: &str,
+    count: u32,
+) -> Result<String> {
+    let automation = UIAutomation::new()
+        .map_err(|e| AppError::ProcessError(format!("初始化 UIAutomation 失败: {e}")))?;
+    let element = find_element(&automation, name, automation_id)?;
+    let label = element.get_name().unwrap_or_default();
+    let result = match button.trim().to_ascii_lowercase().as_str() {
+        "right" => element.right_click(),
+        _ if count >= 2 => element.double_click(),
+        _ => element.click(),
+    };
+    result.map_err(|e| AppError::ProcessError(format!("点击控件失败: {e}")))?;
+    Ok(format!("已点击控件「{label}」"))
 }
 
-#[cfg(windows)]
-mod windows_impl {
-    use serde_json::{json, Value};
-    use uiautomation::{UIAutomation, UIElement, UITreeWalker};
+/// 按控件查找并输入文本（聚焦后经剪贴板粘贴，比逐字符可靠）。
+pub fn set_text(name: Option<&str>, automation_id: Option<&str>, text: &str) -> Result<String> {
+    let automation = UIAutomation::new()
+        .map_err(|e| AppError::ProcessError(format!("初始化 UIAutomation 失败: {e}")))?;
+    let element = find_element(&automation, name, automation_id)?;
+    let label = element.get_name().unwrap_or_default();
+    let _ = element.set_focus();
+    element
+        .send_text_by_clipboard(text)
+        .map_err(|e| AppError::ProcessError(format!("向控件输入文本失败: {e}")))?;
+    Ok(format!("已向控件「{label}」输入文本"))
+}
 
-    use crate::error::{AppError, Result};
-
-    pub fn inspect_ui(max_depth: usize, sibling_cap: usize) -> Result<Value> {
-        let automation = UIAutomation::new()
-            .map_err(|e| AppError::ProcessError(format!("初始化 UIAutomation 失败: {e}")))?;
-        let root = automation
-            .get_root_element()
-            .map_err(|e| AppError::ProcessError(format!("获取桌面根元素失败: {e}")))?;
-        let walker = automation
-            .create_tree_walker()
-            .map_err(|e| AppError::ProcessError(format!("创建控件树遍历器失败: {e}")))?;
-        Ok(walk(&walker, &root, max_depth, sibling_cap, 0))
+fn find_element(
+    automation: &UIAutomation,
+    name: Option<&str>,
+    automation_id: Option<&str>,
+) -> Result<UIElement> {
+    if name.is_none() && automation_id.is_none() {
+        return Err(AppError::ValidationError(
+            "需要提供 name 或 automation_id 之一来定位控件".to_string(),
+        ));
     }
+    let mut matcher: UIMatcher = automation.create_matcher().timeout(MATCH_TIMEOUT_MS);
+    if let Some(n) = name {
+        matcher = matcher.contains_name(n.to_string());
+    }
+    if let Some(aid) = automation_id {
+        let aid = aid.to_string();
+        matcher = matcher.filter_fn(Box::new(move |e: &UIElement| -> uiautomation::Result<bool> {
+            Ok(e.get_automation_id().map(|x| x == aid).unwrap_or(false))
+        }));
+    }
+    matcher
+        .find_first()
+        .map_err(|e| AppError::ValidationError(format!("未找到匹配的控件: {e}")))
+}
 
-    fn walk(
-        walker: &UITreeWalker,
-        element: &UIElement,
-        max_depth: usize,
-        sibling_cap: usize,
-        depth: usize,
-    ) -> Value {
-        let mut node = element_json(element);
-        if depth >= max_depth {
-            return node;
-        }
+fn walk(
+    walker: &UITreeWalker,
+    element: &UIElement,
+    max_depth: usize,
+    sibling_cap: usize,
+    interactable_only: bool,
+    depth: usize,
+) -> Option<Value> {
+    let name_empty = element.get_name().map(|n| n.is_empty()).unwrap_or(true);
+    let mut node = element_json(element);
 
-        let mut children = Vec::new();
+    let mut children = Vec::new();
+    if depth < max_depth {
         if let Ok(mut child) = walker.get_first_child(element) {
             loop {
-                children.push(walk(walker, &child, max_depth, sibling_cap, depth + 1));
+                if let Some(child_json) =
+                    walk(walker, &child, max_depth, sibling_cap, interactable_only, depth + 1)
+                {
+                    children.push(child_json);
+                }
                 if children.len() >= sibling_cap {
                     break;
                 }
@@ -65,36 +120,47 @@ mod windows_impl {
                 }
             }
         }
-        if !children.is_empty() {
-            node["children"] = Value::Array(children);
+    }
+
+    let has_children = !children.is_empty();
+    if has_children {
+        node["children"] = Value::Array(children);
+    }
+
+    // 根节点（depth 0）始终保留；interactable_only 下剔除无名且无子的噪声节点。
+    if interactable_only && depth > 0 && name_empty && !has_children {
+        return None;
+    }
+    Some(node)
+}
+
+fn element_json(element: &UIElement) -> Value {
+    let name = element.get_name().unwrap_or_default();
+    let control_type = element
+        .get_control_type()
+        .map(|ct| format!("{ct:?}"))
+        .unwrap_or_default();
+    let automation_id = element.get_automation_id().unwrap_or_default();
+    let enabled = element.is_enabled().unwrap_or(false);
+
+    let (rect, center) = match element.get_bounding_rectangle() {
+        Ok(r) => {
+            let (left, top, right, bottom) =
+                (r.get_left(), r.get_top(), r.get_right(), r.get_bottom());
+            (
+                json!({ "x": left, "y": top, "width": right - left, "height": bottom - top }),
+                json!({ "x": (left + right) / 2, "y": (top + bottom) / 2 }),
+            )
         }
-        node
-    }
+        Err(_) => (Value::Null, Value::Null),
+    };
 
-    fn element_json(element: &UIElement) -> Value {
-        let name = element.get_name().unwrap_or_default();
-        let control_type = element
-            .get_control_type()
-            .map(|ct| format!("{ct:?}"))
-            .unwrap_or_default();
-        let enabled = element.is_enabled().unwrap_or(false);
-        let rect = element
-            .get_bounding_rectangle()
-            .map(|r| {
-                json!({
-                    "x": r.get_left(),
-                    "y": r.get_top(),
-                    "width": r.get_right() - r.get_left(),
-                    "height": r.get_bottom() - r.get_top(),
-                })
-            })
-            .unwrap_or(Value::Null);
-
-        json!({
-            "name": name,
-            "controlType": control_type,
-            "enabled": enabled,
-            "rect": rect,
-        })
-    }
+    json!({
+        "name": name,
+        "controlType": control_type,
+        "automationId": automation_id,
+        "enabled": enabled,
+        "rect": rect,
+        "center": center,
+    })
 }
