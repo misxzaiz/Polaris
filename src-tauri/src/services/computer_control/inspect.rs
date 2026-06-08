@@ -66,6 +66,57 @@ pub fn set_text(name: Option<&str>, automation_id: Option<&str>, text: &str) -> 
     Ok(format!("已向控件「{label}」输入文本"))
 }
 
+/// 查找控件并返回其信息（不操作）。`timeout_ms > 0` 时轮询等待控件出现（wait_for 语义）。
+/// `name`（模糊匹配）与 `automation_id` 至少给一个。
+pub fn find_element_info(
+    name: Option<&str>,
+    automation_id: Option<&str>,
+    timeout_ms: u64,
+) -> Result<Value> {
+    let automation = UIAutomation::new()
+        .map_err(|e| AppError::ProcessError(format!("初始化 UIAutomation 失败: {e}")))?;
+    if name.is_none() && automation_id.is_none() {
+        return Err(AppError::ValidationError(
+            "需要提供 name 或 automation_id 之一来定位控件".to_string(),
+        ));
+    }
+    let mut matcher: UIMatcher = automation.create_matcher().timeout(timeout_ms);
+    if let Some(n) = name {
+        matcher = matcher.contains_name(n.to_string());
+    }
+    if let Some(aid) = automation_id {
+        let aid = aid.to_string();
+        matcher = matcher.filter_fn(Box::new(move |e: &UIElement| -> uiautomation::Result<bool> {
+            Ok(e.get_automation_id().map(|x| x == aid).unwrap_or(false))
+        }));
+    }
+    let element = matcher
+        .find_first()
+        .map_err(|e| AppError::ValidationError(format!("未找到控件（{timeout_ms}ms 内）: {e}")))?;
+    Ok(element_json(&element))
+}
+
+/// 按标题激活（前置 + 聚焦）顶层窗口（control_type=Window，标题模糊匹配）。
+pub fn activate_window(title: &str) -> Result<String> {
+    use uiautomation::controls::ControlType;
+
+    let automation = UIAutomation::new()
+        .map_err(|e| AppError::ProcessError(format!("初始化 UIAutomation 失败: {e}")))?;
+    let matcher = automation
+        .create_matcher()
+        .timeout(2000)
+        .control_type(ControlType::Window)
+        .contains_name(title.to_string());
+    let window = matcher
+        .find_first()
+        .map_err(|e| AppError::ValidationError(format!("未找到标题含「{title}」的窗口: {e}")))?;
+    let name = window.get_name().unwrap_or_default();
+    window
+        .set_focus()
+        .map_err(|e| AppError::ProcessError(format!("激活窗口失败: {e}")))?;
+    Ok(format!("已激活窗口「{name}」"))
+}
+
 fn find_element(
     automation: &UIAutomation,
     name: Option<&str>,

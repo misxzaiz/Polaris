@@ -264,6 +264,33 @@ impl ComputerController {
         tracing::info!(target: "computer", "clipboard_set");
         clipboard::set_text(text)
     }
+
+    // ------------------------------------------------- 查找 / 窗口管理
+
+    /// 查找控件并返回信息（不操作）；`timeout_ms > 0` 时等待控件出现（wait_for 语义）。
+    pub fn find_element(
+        &self,
+        name: Option<&str>,
+        automation_id: Option<&str>,
+        timeout_ms: u64,
+    ) -> Result<serde_json::Value> {
+        self.ensure_enabled()?;
+        tracing::info!(target: "computer", "find_element");
+        inspect::find_element_info(name, automation_id, timeout_ms)
+    }
+
+    /// 枚举顶层窗口（标题/应用/位置/状态）。
+    pub fn list_windows(&self) -> Result<serde_json::Value> {
+        self.ensure_enabled()?;
+        tracing::info!(target: "computer", "list_windows");
+        capture::list_windows()
+    }
+
+    /// 按标题激活（前置 + 聚焦）窗口。
+    pub fn activate_window(&self, title: &str) -> Result<String> {
+        self.guard_action(&format!("activate_window({title})"))?;
+        inspect::activate_window(title)
+    }
 }
 
 #[cfg(test)]

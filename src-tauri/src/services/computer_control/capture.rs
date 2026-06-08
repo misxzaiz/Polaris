@@ -6,8 +6,9 @@
 use std::io::Cursor;
 
 use base64::Engine;
+use serde_json::{json, Value};
 use xcap::image::imageops::{self, FilterType};
-use xcap::Monitor;
+use xcap::{Monitor, Window};
 
 use crate::error::{AppError, Result};
 
@@ -81,4 +82,29 @@ pub fn screenshot(
         width,
         height,
     })
+}
+
+/// 枚举当前可见的顶层窗口（标题/应用/位置/状态），跳过无标题窗口（噪声）。
+pub fn list_windows() -> Result<Value> {
+    let windows = Window::all().map_err(|e| AppError::ProcessError(format!("枚举窗口失败: {e}")))?;
+    let mut list = Vec::new();
+    for w in &windows {
+        let title = w.title().unwrap_or_default();
+        if title.trim().is_empty() {
+            continue;
+        }
+        list.push(json!({
+            "title": title,
+            "app": w.app_name().unwrap_or_default(),
+            "pid": w.pid().unwrap_or(0),
+            "x": w.x().unwrap_or(0),
+            "y": w.y().unwrap_or(0),
+            "width": w.width().unwrap_or(0),
+            "height": w.height().unwrap_or(0),
+            "focused": w.is_focused().unwrap_or(false),
+            "minimized": w.is_minimized().unwrap_or(false),
+        }));
+    }
+    let count = list.len();
+    Ok(json!({ "count": count, "windows": list }))
 }

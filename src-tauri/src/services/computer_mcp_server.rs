@@ -255,6 +255,26 @@ fn handle_tools_list() -> Value {
                 "action": { "type": "string", "enum": ["get", "set"] },
                 "text": { "type": "string" }
             }, "additionalProperties": false }
+        },
+        {
+            "name": "find_element",
+            "description": "按控件名(模糊)或 automationId 查找并返回信息(name/controlType/center/automationId/rect/enabled)，不操作。timeout_ms>0 时轮询等待控件出现（用于等界面加载，即 wait_for）。name 与 automation_id 至少给一个。",
+            "inputSchema": { "type": "object", "properties": {
+                "name": { "type": "string" }, "automation_id": { "type": "string" },
+                "timeout_ms": { "type": "integer", "minimum": 0, "maximum": 30000 }
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "list_windows",
+            "description": "列出当前可见的顶层窗口（title/app/pid/位置/focused/minimized），用于了解有哪些窗口、定位目标窗口标题。",
+            "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+        },
+        {
+            "name": "activate_window",
+            "description": "按标题(模糊匹配)将顶层窗口前置并聚焦。可先用 list_windows 查看可用标题。",
+            "inputSchema": { "type": "object", "required": ["title"], "properties": {
+                "title": { "type": "string" }
+            }, "additionalProperties": false }
         }
     ] })
 }
@@ -283,6 +303,9 @@ fn handle_tools_call(params: Value, controller: &mut ComputerController) -> Resu
         "click_element" => exec_click_element(&args, controller),
         "set_text" => exec_set_text(&args, controller),
         "clipboard" => exec_clipboard(&args, controller),
+        "find_element" => exec_find_element(&args, controller),
+        "list_windows" => exec_list_windows(controller),
+        "activate_window" => exec_activate_window(&args, controller),
         other => Err(AppError::ValidationError(format!("未知工具: {other}"))),
     }
 }
@@ -441,6 +464,36 @@ fn exec_clipboard(args: &Value, c: &mut ComputerController) -> Result<Value> {
     }
 }
 
+fn exec_find_element(args: &Value, c: &mut ComputerController) -> Result<Value> {
+    let name = args.get("name").and_then(Value::as_str);
+    let automation_id = args.get("automation_id").and_then(Value::as_str);
+    let timeout_ms = args
+        .get("timeout_ms")
+        .and_then(Value::as_u64)
+        .unwrap_or(1000)
+        .min(30_000);
+    let info = c.find_element(name, automation_id, timeout_ms)?;
+    Ok(json!({
+        "structuredContent": info,
+        "content": [ { "type": "text", "text": "已找到控件" } ]
+    }))
+}
+
+fn exec_list_windows(c: &mut ComputerController) -> Result<Value> {
+    let windows = c.list_windows()?;
+    let count = windows.get("count").and_then(Value::as_u64).unwrap_or(0);
+    Ok(json!({
+        "structuredContent": windows,
+        "content": [ { "type": "text", "text": format!("共 {count} 个窗口") } ]
+    }))
+}
+
+fn exec_activate_window(args: &Value, c: &mut ComputerController) -> Result<Value> {
+    let title = require_str(args, "title")?;
+    let message = c.activate_window(title)?;
+    Ok(text_result(json!({ "activated": message }), message))
+}
+
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -497,6 +550,9 @@ pub fn current_tool_definitions() -> std::collections::BTreeMap<&'static str, &'
         ("click_element", "按控件查找并点击。"),
         ("set_text", "按控件查找并输入文本。"),
         ("clipboard", "读写剪贴板。"),
+        ("find_element", "查找控件信息/等待出现。"),
+        ("list_windows", "列出顶层窗口。"),
+        ("activate_window", "激活窗口。"),
     ])
 }
 
@@ -507,7 +563,7 @@ mod tests {
     #[test]
     fn exposes_expected_tool_count() {
         let defs = current_tool_definitions();
-        assert_eq!(defs.len(), 16);
+        assert_eq!(defs.len(), 19);
         let listed = handle_tools_list();
         let tools = listed["tools"].as_array().unwrap();
         assert_eq!(tools.len(), defs.len());
