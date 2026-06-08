@@ -91,9 +91,9 @@ export interface SessionRuntimeConfig {
  */
 export const DEFAULT_SESSION_CONFIG: Required<SessionRuntimeConfig> = {
   agent: '',
-  model: 'opus',
-  effort: 'xhigh',
-  permissionMode: 'default',
+  model: '',
+  effort: '',
+  permissionMode: 'bypassPermissions',
   modelProfileId: '',
 }
 /**
