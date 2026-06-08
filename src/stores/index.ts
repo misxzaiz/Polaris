@@ -26,7 +26,7 @@ export {
   useActiveIntegrationInstance,
   useHasActiveInstance,
 } from './integrationStore';
-export { useToastStore, type Toast, type ToastType } from './toastStore';
+export { useToastStore, type Toast, type ToastType, type NotificationRecord } from './toastStore';
 export { useSchedulerStore } from './schedulerStore';
 export { useTerminalStore } from './terminalStore';
 export { useTerminalScriptStore } from './terminalScriptStore';

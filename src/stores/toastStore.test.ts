@@ -177,4 +177,68 @@ describe('toastStore', () => {
       expect(useToastStore.getState().toasts).toHaveLength(1)
     })
   })
+
+  describe('通知历史（消息中心）', () => {
+    beforeEach(() => {
+      useToastStore.getState().clearNotifications()
+    })
+
+    it('addToast 应同步沉淀一条通知历史', () => {
+      useToastStore.getState().addToast({ type: 'success', title: 'Saved', message: 'ok' })
+
+      const { notifications } = useToastStore.getState()
+      expect(notifications).toHaveLength(1)
+      expect(notifications[0].type).toBe('success')
+      expect(notifications[0].title).toBe('Saved')
+      expect(notifications[0].message).toBe('ok')
+      expect(notifications[0].read).toBe(false)
+      expect(typeof notifications[0].timestamp).toBe('number')
+    })
+
+    it('clearAll 清理活跃 toast 但保留通知历史', () => {
+      useToastStore.getState().addToast({ type: 'info', title: 'Keep me' })
+      useToastStore.getState().clearAll()
+
+      expect(useToastStore.getState().toasts).toHaveLength(0)
+      expect(useToastStore.getState().notifications).toHaveLength(1)
+    })
+
+    it('markAllNotificationsRead 应将所有通知标为已读', () => {
+      useToastStore.getState().addToast({ type: 'info', title: 'A' })
+      useToastStore.getState().addToast({ type: 'error', title: 'B' })
+
+      useToastStore.getState().markAllNotificationsRead()
+
+      const { notifications } = useToastStore.getState()
+      expect(notifications.every((n) => n.read)).toBe(true)
+    })
+
+    it('removeNotification 应移除指定通知', () => {
+      const id = useToastStore.getState().addToast({ type: 'info', title: 'A' })
+      useToastStore.getState().addToast({ type: 'info', title: 'B' })
+
+      useToastStore.getState().removeNotification(id)
+
+      const { notifications } = useToastStore.getState()
+      expect(notifications).toHaveLength(1)
+      expect(notifications[0].title).toBe('B')
+    })
+
+    it('clearNotifications 应清空通知历史', () => {
+      useToastStore.getState().addToast({ type: 'info', title: 'A' })
+      useToastStore.getState().clearNotifications()
+
+      expect(useToastStore.getState().notifications).toHaveLength(0)
+    })
+
+    it('通知历史上限为 100（FIFO 移除最旧）', () => {
+      for (let i = 0; i < 105; i++) {
+        useToastStore.getState().addToast({ type: 'info', title: `N${i}` })
+      }
+
+      const { notifications } = useToastStore.getState()
+      expect(notifications).toHaveLength(100)
+      expect(notifications[0].title).toBe('N5') // 最旧 5 条被移除
+    })
+  })
 })

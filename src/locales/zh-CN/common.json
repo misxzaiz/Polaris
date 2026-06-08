@@ -103,6 +103,18 @@
     "sessionComplete": "会话「{{title}}」已完成",
     "switch": "切换"
   },
+  "notificationCenter": {
+    "title": "消息中心",
+    "markAllRead": "全部标为已读",
+    "clear": "清空",
+    "empty": "暂无消息",
+    "bell": "消息中心",
+    "switch": "切换",
+    "justNow": "刚刚",
+    "minutesAgo": "{{count}} 分钟前",
+    "hoursAgo": "{{count}} 小时前",
+    "daysAgo": "{{count}} 天前"
+  },
   "tabs": {
     "openFileOrDiff": "打开文件或查看差异",
     "close": "关闭",

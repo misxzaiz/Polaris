@@ -1707,6 +1707,22 @@ body {
   animation: slide-in-right 0.3s ease-out;
 }
 
+/* Toast 顶部居中滑入（顶部居中浮层用） */
+@keyframes slide-in-top {
+  from {
+    transform: translateY(-16px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in-top {
+  animation: slide-in-top 0.25s ease-out;
+}
+
 /* ============================================================================
    布局切换过渡动画
    ============================================================================ */

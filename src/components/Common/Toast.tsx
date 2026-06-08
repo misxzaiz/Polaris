@@ -51,9 +51,10 @@ export function ToastContainer() {
 
   // 通过 Portal 渲染到 body，使用 fixed + 最高层级 z-[10000]，
   // 确保 Toast 浮于设置页、各类 Modal 之上，且不受视图切换（如打开设置页）影响而被卸载。
+  // 顶部居中（top-12）落在 40px 顶栏下方的纯拖拽区，避让右上角窗口控制按钮与右下输入区；
   // 容器本身 pointer-events-none，仅 Toast 卡片可交互，避免遮挡下方 UI 点击。
   return createPortal(
-    <div className="fixed top-4 right-4 z-[10000] flex flex-col gap-2 max-w-sm w-max pointer-events-none [&>*]:pointer-events-auto">
+    <div className="fixed top-12 left-1/2 -translate-x-1/2 z-[10000] flex flex-col items-center gap-2 max-w-sm w-max pointer-events-none [&>*]:pointer-events-auto">
       {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} onClose={() => removeToast(toast.id)} />
       ))}
@@ -87,7 +88,7 @@ function ToastItem({ toast, onClose }: ToastItemProps) {
         'flex items-start gap-3 p-3 rounded-lg border shadow-lg',
         colors.bg,
         colors.border,
-        'animate-slide-in-right',
+        'animate-slide-in-top',
         toast.type === 'session_complete' && 'min-w-[280px]'
       )}
       role="alert"

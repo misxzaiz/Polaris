@@ -102,6 +102,18 @@
     "sessionComplete": "Session \"{{title}}\" completed",
     "switch": "Switch"
   },
+  "notificationCenter": {
+    "title": "Notifications",
+    "markAllRead": "Mark all as read",
+    "clear": "Clear",
+    "empty": "No notifications",
+    "bell": "Notifications",
+    "switch": "Switch",
+    "justNow": "Just now",
+    "minutesAgo": "{{count}}m ago",
+    "hoursAgo": "{{count}}h ago",
+    "daysAgo": "{{count}}d ago"
+  },
   "tabs": {
     "openFileOrDiff": "Open file or view diff",
     "close": "Close",

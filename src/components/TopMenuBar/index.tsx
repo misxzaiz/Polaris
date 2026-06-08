@@ -19,6 +19,7 @@ import * as tauri from '@/services/tauri';
 import { isTauri } from '@/utils/platform';
 import { WorkspaceQuickSwitch } from '../Workspace';
 import { ConnectionStatusIndicator } from '../Common/ConnectionStatusIndicator';
+import { NotificationBell } from '../Notification';
 import { createLogger } from '@/utils/logger';
 
 const log = createLogger('TopMenuBar');
@@ -120,6 +121,9 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
         {/* 小屏模式：显示置顶按钮和窗口控制按钮 */}
         {isCompactMode ? (
           <>
+            {/* 消息中心入口 */}
+            <NotificationBell />
+
             {isTauri() && (
               <>
                 {/* 窗口置顶按钮 */}
@@ -200,6 +204,9 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
             >
               <PanelRight className="w-4 h-4" />
             </button>
+
+            {/* 消息中心入口 */}
+            <NotificationBell />
 
             {isTauri() && (
               <>

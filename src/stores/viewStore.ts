@@ -22,6 +22,7 @@ interface ViewState {
   showDeveloperPanel: boolean;
   showGitPanel: boolean;      // Git 面板
   showSessionHistory: boolean; // 会话历史面板
+  showNotificationCenter: boolean; // 消息中心面板
   sidebarWidth: number;      // 侧边栏宽度（像素）
   editorWidth: number;       // 编辑器宽度百分比（0-100）
   developerPanelWidth: number; // Developer 面板宽度（像素）
@@ -52,6 +53,7 @@ interface ViewActions {
   toggleDeveloperPanel: () => void;
   toggleGitPanel: () => void;
   toggleSessionHistory: () => void;
+  toggleNotificationCenter: () => void;
   setShowEditor: (show: boolean) => void;
   setAIOnlyMode: () => void;
   resetView: () => void;
@@ -101,6 +103,7 @@ export const useViewStore = create<ViewStore>()(
       showDeveloperPanel: false,  // 默认关闭 Developer 面板
       showGitPanel: false,       // 默认关闭 Git 面板
       showSessionHistory: false,  // 默认关闭会话历史面板
+      showNotificationCenter: false, // 默认关闭消息中心面板
       sidebarWidth: 240,
       editorWidth: 50,
       developerPanelWidth: 400,
@@ -144,6 +147,9 @@ export const useViewStore = create<ViewStore>()(
 
       // 切换会话历史面板
       toggleSessionHistory: () => set((state) => ({ showSessionHistory: !state.showSessionHistory })),
+
+      // 切换消息中心面板
+      toggleNotificationCenter: () => set((state) => ({ showNotificationCenter: !state.showNotificationCenter })),
 
       // 仅 AI 对话模式
       setAIOnlyMode: () => set({

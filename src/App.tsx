@@ -19,6 +19,7 @@ import { TerminalPanel } from './components/Terminal/TerminalPanel';
 import { ProblemsPanel } from './components/Problems/ProblemsPanel';
 import { DemoPluginPanel } from './components/Plugins/DemoPluginPanel';
 import { ComicStudioPanel } from './components/ComicStudio';
+import { NotificationCenterPanel } from './components/Notification';
 
 // 懒加载大型组件，减少初始 bundle 大小
 const SettingsPage = lazy(() => import('./components/Settings/SettingsPage').then(m => ({ default: m.SettingsPage })));
@@ -83,6 +84,8 @@ function App() {
   const closeLeftPanel = useViewStore(state => state.closeLeftPanel);
   const showSessionHistory = useViewStore(state => state.showSessionHistory);
   const toggleSessionHistory = useViewStore(state => state.toggleSessionHistory);
+  const showNotificationCenter = useViewStore(state => state.showNotificationCenter);
+  const toggleNotificationCenter = useViewStore(state => state.toggleNotificationCenter);
   const multiSessionMode = useViewStore(state => state.multiSessionMode);
   const openDiffTab = useTabStore(state => state.openDiffTab);
   const openGitTab = useTabStore(state => state.openGitTab);
@@ -268,6 +271,16 @@ function App() {
             style={{ top: '10%', right: '0', height: '80%', width: 'min(400px, 90vw)' }}
           >
             <SessionHistoryPanel onClose={toggleSessionHistory} />
+          </div>
+        )}
+
+        {/* 全局消息中心：右侧滑出，复用会话历史面板的浮层范式 */}
+        {showNotificationCenter && (
+          <div
+            className="fixed z-50 bg-background-elevated border border-border rounded-l-xl shadow-xl animate-in slide-in-from-right duration-200"
+            style={{ top: '10%', right: '0', height: '80%', width: 'min(400px, 90vw)' }}
+          >
+            <NotificationCenterPanel onClose={toggleNotificationCenter} />
           </div>
         )}
 
