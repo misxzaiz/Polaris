@@ -781,11 +781,25 @@ export function createConversationStore(
       // ===== PermissionRequest =====
       appendPermissionRequestBlock: (requestId, sessionId, denials) => {
         const { currentMessage, permissionRequestBlockMap, streamingUpdateCounter } = get()
+        // 归一化每个 denial：兼容后端 flatten 的 snake_case（tool_input/tool_use_id），
+        // 提取为 toolInput/toolUseId，并初始化逐项决策状态为 pending。
+        // 空 denials（plan 审批复用此方法）天然为空数组，行为不变。
+        const normalizedDenials = denials.map(d => {
+          const raw = d as Record<string, unknown>
+          return {
+            toolName: d.toolName,
+            reason: d.reason,
+            toolInput: (d.toolInput ?? raw.tool_input) as Record<string, unknown> | undefined,
+            toolUseId: (d.toolUseId ?? raw.tool_use_id) as string | undefined,
+            status: 'pending' as const,
+            extra: d.extra,
+          }
+        })
         const block = {
           type: 'permission_request' as const,
           id: requestId,
           sessionId,
-          denials,
+          denials: normalizedDenials,
           status: 'pending' as const,
         }
         const newMap = new Map(permissionRequestBlockMap)
@@ -823,6 +837,87 @@ export function createConversationStore(
 
       setActivePermissionRequest: (requestId) => set({ activePermissionRequestId: requestId }),
 
+      resolvePermissionRequest: (requestId, perItem) => {
+        // 逐项落库决策（status/scope），并据此推导整卡状态：任一批准→approved，否则 denied。
+        // 同时扫描当前流式消息与已归档消息（块可能已被 session_end 归档），保证刷新/重载一致。
+        const applyToBlocks = (blocks: import('../../types/chat').ContentBlock[]) => {
+          let changed = false
+          const next = blocks.map(b => {
+            if (b.type === 'permission_request' && b.id === requestId && b.status === 'pending') {
+              changed = true
+              const denials = b.denials.map((d, i) => {
+                const dec = perItem[i]
+                return dec ? { ...d, status: dec.status, scope: dec.scope } : d
+              })
+              const anyApproved = denials.some(d => d.status === 'approved')
+              return {
+                ...b,
+                denials,
+                status: (anyApproved ? 'approved' : 'denied') as 'approved' | 'denied',
+                decision: { approved: anyApproved, timestamp: new Date().toISOString() },
+              }
+            }
+            return b
+          })
+          return changed ? next : null
+        }
+
+        const { currentMessage, messages } = get()
+        const nextCurrent = currentMessage ? applyToBlocks(currentMessage.blocks) : null
+        let messagesChanged = false
+        const nextMessages = messages.map(m => {
+          if (m.type === 'assistant' && m.blocks) {
+            const nb = applyToBlocks(m.blocks)
+            if (nb) { messagesChanged = true; return { ...m, blocks: nb } }
+          }
+          return m
+        })
+
+        if (nextCurrent || messagesChanged) {
+          set({
+            ...(nextCurrent && currentMessage ? { currentMessage: { ...currentMessage, blocks: nextCurrent } } : {}),
+            ...(messagesChanged ? { messages: nextMessages } : {}),
+            activePermissionRequestId: null,
+          })
+        }
+      },
+
+      expireStalePermissionRequests: () => {
+        // 失效仍待处理的「工具权限请求」：仅 status==='pending' 且有真实 denials 的块。
+        // 跳过 plan 审批复用的空 denials 块（不影响其原流程）。
+        // 触发时机：用户发新消息 / 历史会话恢复——卡片绑定的后端等待点已不再有效。
+        const expireInBlocks = (blocks: import('../../types/chat').ContentBlock[]) => {
+          let changed = false
+          const next = blocks.map(b => {
+            if (b.type === 'permission_request' && b.status === 'pending' && b.denials.length > 0) {
+              changed = true
+              return { ...b, status: 'expired' as const }
+            }
+            return b
+          })
+          return changed ? next : null
+        }
+
+        const { currentMessage, messages } = get()
+        const nextCurrent = currentMessage ? expireInBlocks(currentMessage.blocks) : null
+        let messagesChanged = false
+        const nextMessages = messages.map(m => {
+          if (m.type === 'assistant' && m.blocks) {
+            const nb = expireInBlocks(m.blocks)
+            if (nb) { messagesChanged = true; return { ...m, blocks: nb } }
+          }
+          return m
+        })
+
+        if (nextCurrent || messagesChanged) {
+          set({
+            ...(nextCurrent && currentMessage ? { currentMessage: { ...currentMessage, blocks: nextCurrent } } : {}),
+            ...(messagesChanged ? { messages: nextMessages } : {}),
+            ...(get().activePermissionRequestId ? { activePermissionRequestId: null } : {}),
+          })
+        }
+      },
+
       // ===== 会话控制 =====
       setConversationId: (id) => set({ conversationId: id }),
       setStreaming: (streaming) => set({ isStreaming: streaming }),
@@ -853,6 +948,16 @@ export function createConversationStore(
                 return { ...block, diffData: diff }
               }
             }
+            // 历史恢复：仍待处理的「工具权限请求」一律失效（后端那一轮已结束，不可再授权）。
+            // 仅作用于有真实 denials 的块，跳过 plan 审批复用的空 denials 块。
+            if (
+              block.type === 'permission_request' &&
+              block.status === 'pending' &&
+              block.denials.length > 0
+            ) {
+              modified = true
+              return { ...block, status: 'expired' as const }
+            }
             return block
           })
           return modified ? { ...msg, blocks } : msg
@@ -879,6 +984,10 @@ export function createConversationStore(
         const { conversationId, sessionId, messages } = get()
         const config = deps.getConfig()
         const engine = resolveSessionEngine(sessionId, config?.defaultEngine)
+
+        // 失效收口：用户发出新消息时，将仍待处理的工具权限请求标记为已失效
+        // （卡片绑定上一轮后端等待点，新消息推进后不再可授权）。
+        get().expireStalePermissionRequests()
 
         // 如果存在未完成的流式消息（如 AI 提问等待回答），先归档到 messages
         if (get().currentMessage) {

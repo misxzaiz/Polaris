@@ -824,6 +824,7 @@ pub fn run() {
             commands::claude_settings::read_claude_settings,
             commands::claude_settings::write_claude_settings,
             commands::claude_settings::get_claude_settings_path,
+            commands::claude_settings::add_claude_permission_rules,
             // LSP 语言服务器相关
             commands::lsp::lsp_start,
             commands::lsp::lsp_send,

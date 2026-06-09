@@ -19,6 +19,9 @@ pub struct ClaudeSettings {
     pub extra_known_marketplaces: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_mode: Option<AutoModeCustomRules>,
+    /// 权限规则（Claude Code 标准 permissions 字段：allow/deny/ask）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub permissions: Option<ClaudePermissions>,
     #[serde(flatten)]
     pub other: serde_json::Map<String, serde_json::Value>,
 }
@@ -31,6 +34,21 @@ pub struct AutoModeCustomRules {
     pub allow: Vec<String>,
     #[serde(default)]
     pub soft_deny: Vec<String>,
+}
+
+/// Claude Code 权限规则（settings.json 的 permissions 字段）。
+/// 评估顺序 deny > ask > allow；通过 flatten 保留未知子字段（如 defaultMode），避免写回时丢失。
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaudePermissions {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allow: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deny: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ask: Vec<String>,
+    #[serde(flatten)]
+    pub other: serde_json::Map<String, serde_json::Value>,
 }
 
 fn get_settings_path() -> PathBuf {
@@ -74,4 +92,29 @@ pub async fn write_claude_settings(settings: ClaudeSettings) -> Result<()> {
 #[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn get_claude_settings_path() -> Result<String> {
     Ok(get_settings_path().to_string_lossy().to_string())
+}
+
+/// 向 settings.json 的 permissions 列表追加规则（去重保序）。
+/// kind: "allow" | "deny" | "ask"。返回更新后的完整 settings 供前端同步。
+#[cfg_attr(feature = "tauri-app", tauri::command)]
+pub async fn add_claude_permission_rules(rules: Vec<String>, kind: String) -> Result<ClaudeSettings> {
+    let mut settings = read_claude_settings().await?;
+    let mut perms = settings.permissions.take().unwrap_or_default();
+    {
+        let list = match kind.as_str() {
+            "allow" => &mut perms.allow,
+            "deny" => &mut perms.deny,
+            "ask" => &mut perms.ask,
+            other => return Err(AppError::ProcessError(format!("未知权限列表类型: {}", other))),
+        };
+        for rule in rules {
+            let rule = rule.trim().to_string();
+            if !rule.is_empty() && !list.contains(&rule) {
+                list.push(rule);
+            }
+        }
+    }
+    settings.permissions = Some(perms);
+    write_claude_settings(settings.clone()).await?;
+    Ok(settings)
 }

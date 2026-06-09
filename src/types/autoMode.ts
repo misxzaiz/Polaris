@@ -49,12 +49,24 @@ export type RuleType = 'allow' | 'softDeny';
 export type EditMode = 'list' | 'advanced';
 
 /**
+ * Claude Code 权限规则（permissions：allow/deny/ask）
+ */
+export interface ClaudePermissions {
+  allow?: string[];
+  deny?: string[];
+  ask?: string[];
+  [key: string]: unknown;
+}
+
+/**
  * Claude settings.json 结构
  */
 export interface ClaudeSettings {
   env?: Record<string, string>;
   model?: string;
   autoMode?: AutoModeCustomRules;
+  /** 权限规则（allow/deny/ask） */
+  permissions?: ClaudePermissions;
   [key: string]: unknown;
 }
 

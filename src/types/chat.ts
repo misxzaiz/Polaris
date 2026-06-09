@@ -346,8 +346,21 @@ export interface ToolGroupBlock {
  * PermissionRequest 相关类型
  * ======================================== */
 
-/** 权限请求状态 */
-export type PermissionRequestStatus = 'pending' | 'approved' | 'denied';
+/**
+ * 权限请求状态
+ * - pending: 待用户处理（仅在「实时且后端正在等待授权」时有效）
+ * - approved/denied: 用户已决策
+ * - expired: 已失效（上下文推进 / 历史会话恢复后归一化），不可再交互
+ */
+export type PermissionRequestStatus = 'pending' | 'approved' | 'denied' | 'expired';
+
+/**
+ * 授权范围
+ * - once: 仅本次（当前回合放行，下次同样操作仍询问）
+ * - session: 本会话（会话存活期内不再询问）
+ * - global: 全局永久（写入 ~/.claude/settings.json 的 permissions.allow）
+ */
+export type PermissionScope = 'once' | 'session' | 'global';
 
 /** 权限拒绝详情（内容块内） */
 export interface PermissionDenialBlock {
@@ -355,6 +368,14 @@ export interface PermissionDenialBlock {
   toolName: string;
   /** 拒绝原因 */
   reason: string;
+  /** 工具入参（来自后端 flatten 的 tool_input，按工具类型展示文件/命令/内容等） */
+  toolInput?: Record<string, unknown>;
+  /** 工具调用 ID（来自后端 tool_use_id） */
+  toolUseId?: string;
+  /** 逐项决策状态（支持单卡内多工具独立批准/拒绝；缺省视为 pending） */
+  status?: 'pending' | 'approved' | 'denied';
+  /** 该项批准时选择的授权范围 */
+  scope?: PermissionScope;
   /** 额外信息 */
   extra?: Record<string, unknown>;
 }

@@ -191,9 +191,13 @@ export interface ConversationActions {
   finalizePendingToolGroup: () => void
 
   // ===== PermissionRequest =====
-  appendPermissionRequestBlock: (requestId: string, sessionId: string, denials: Array<{ toolName: string; reason: string; extra?: Record<string, unknown> }>) => void
+  appendPermissionRequestBlock: (requestId: string, sessionId: string, denials: Array<{ toolName: string; reason: string; toolInput?: Record<string, unknown>; toolUseId?: string; extra?: Record<string, unknown> }>) => void
   updatePermissionRequestBlock: (requestId: string, status: 'pending' | 'approved' | 'denied', decision?: { approved: boolean; timestamp: string }) => void
   setActivePermissionRequest: (requestId: string | null) => void
+  /** 逐项落库权限请求决策（每项批准/拒绝 + 授权范围），并据此推导整卡状态（任一批准→approved，否则 denied）。同时扫描流式消息与已归档消息。 */
+  resolvePermissionRequest: (requestId: string, perItem: Array<{ status: 'approved' | 'denied'; scope?: import('../../types/chat').PermissionScope } | undefined>) => void
+  /** 失效仍待处理的「工具权限请求」（仅 status==='pending' 且有真实 denials 的块；跳过 plan 审批复用的空 denials 块）。用户发新消息 / 历史恢复时调用。 */
+  expireStalePermissionRequests: () => void
 
   // ===== Media（AI 生成的图像/视频内联展示） =====
   appendMediaBlock: (taskId: string, mediaType: 'image' | 'video', prompt?: string) => void

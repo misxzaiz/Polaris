@@ -771,6 +771,10 @@ export interface PermissionDenial {
   toolName: string
   /** 拒绝原因 */
   reason: string
+  /** 工具入参（后端 flatten 自 tool_input；运行时也可能为 snake_case 的 tool_input 键） */
+  toolInput?: Record<string, unknown>
+  /** 工具调用 ID（后端 tool_use_id） */
+  toolUseId?: string
   /** 额外信息 */
   extra?: Record<string, unknown>
 }

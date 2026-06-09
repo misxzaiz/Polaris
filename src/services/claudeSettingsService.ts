@@ -50,3 +50,14 @@ export function updateCustomRules(
 ): ClaudeSettings {
   return { ...settings, autoMode: rules };
 }
+
+/**
+ * 向 settings.json 的 permissions 列表追加规则（去重，后端落盘）。
+ * kind: allow | deny | ask
+ */
+export async function addClaudePermissionRules(
+  rules: string[],
+  kind: 'allow' | 'deny' | 'ask' = 'allow',
+): Promise<ClaudeSettings> {
+  return invoke<ClaudeSettings>('add_claude_permission_rules', { rules, kind });
+}
