@@ -61,6 +61,7 @@ function createInitialState(sessionId: string): ConversationState {
     pendingToolGroup: null,
     permissionRequestBlockMap: new Map(),
     activePermissionRequestId: null,
+    sessionAllowedTools: [],
     mediaBlockMap: new Map(),
     streamingUpdateCounter: 0,
 
@@ -918,6 +919,14 @@ export function createConversationStore(
         }
       },
 
+      addSessionAllowedTools: (tools) => {
+        if (!tools || tools.length === 0) return
+        const cur = get().sessionAllowedTools
+        const merged = [...new Set([...cur, ...tools])]
+        // 仅在确有新增时 set，避免无意义的状态更新触发重渲染
+        if (merged.length !== cur.length) set({ sessionAllowedTools: merged })
+      },
+
       // ===== 会话控制 =====
       setConversationId: (id) => set({ conversationId: id }),
       setStreaming: (streaming) => set({ isStreaming: streaming }),
@@ -1235,7 +1244,12 @@ export function createConversationStore(
               model: runtimeConfig.model,
               effort: runtimeConfig.effort,
               permissionMode: runtimeConfig.permissionMode,
-              allowedTools: allowedTools && allowedTools.length > 0 ? allowedTools : undefined,
+              // 并入会话级放行集合：scope=session/global 授权过的工具在本会话续聊中持续放行（每次新进程 --resume 自动携带）。
+              // 普通续聊（无显式 allowedTools）同样并入，这是期望行为——会话内放行应跨轮持续生效。
+              allowedTools: (() => {
+                const merged = [...new Set([...(allowedTools ?? []), ...get().sessionAllowedTools])]
+                return merged.length > 0 ? merged : undefined
+              })(),
               modelProfileId,
             },
           })

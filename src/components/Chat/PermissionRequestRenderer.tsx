@@ -275,6 +275,11 @@ export const PermissionRequestRenderer = memo(function PermissionRequestRenderer
       const store = findStore();
       if (store) {
         store.resolvePermissionRequest(block.id, perItem);
+        // scope=session/global：批准项写入会话级放行集合，使本会话后续续聊不再询问该工具
+        // （新进程 --resume 自动携带，无需等 CLI 重启读 settings.json）。once 不进集合。
+        if ((scope === 'session' || scope === 'global') && approvedTools.length > 0) {
+          store.addSessionAllowedTools(approvedTools);
+        }
         // 立即乐观反馈（不等 store→props 传播），卡片即时切换为结果态
         setSubmittedStatus(approvedTools.length > 0 ? 'approved' : 'denied');
         // 全局范围：将批准项生成规则写入 ~/.claude/settings.json 的 permissions.allow

@@ -114,6 +114,8 @@ export interface ConversationState {
   pendingToolGroup: PendingToolGroup | null
   permissionRequestBlockMap: Map<string, number>
   activePermissionRequestId: string | null
+  /** 会话级工具放行集合（scope=session/global 的批准项累积；--resume 续聊自动并入 allowedTools）。绑定会话生命周期，不持久化。 */
+  sessionAllowedTools: string[]
   mediaBlockMap: Map<string, number>
   streamingUpdateCounter: number
 
@@ -198,6 +200,8 @@ export interface ConversationActions {
   resolvePermissionRequest: (requestId: string, perItem: Array<{ status: 'approved' | 'denied'; scope?: import('../../types/chat').PermissionScope } | undefined>) => void
   /** 失效仍待处理的「工具权限请求」（仅 status==='pending' 且有真实 denials 的块；跳过 plan 审批复用的空 denials 块）。用户发新消息 / 历史恢复时调用。 */
   expireStalePermissionRequests: () => void
+  /** 追加会话级放行工具（去重）。scope=session/global 的批准项调用，使本会话续聊不再询问。绑定会话生命周期，不持久化。 */
+  addSessionAllowedTools: (tools: string[]) => void
 
   // ===== Media（AI 生成的图像/视频内联展示） =====
   appendMediaBlock: (taskId: string, mediaType: 'image' | 'video', prompt?: string) => void
