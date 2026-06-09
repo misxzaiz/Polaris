@@ -41,7 +41,7 @@ import { useActiveSessionId, useSessionMetadataList } from '@/stores/conversatio
  */
 const BREAKPOINTS = {
   /** 主行可容纳 profile + model + effort，并内联显示语音/TTS */
-  wide: 560,
+  wide: 600,
   /** 主行可容纳 profile + model */
   medium: 360,
   /** 主行仅显示 profile（端点，最高优先级） */
