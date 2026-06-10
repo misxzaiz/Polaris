@@ -60,6 +60,8 @@ export function useVoiceCompanion() {
   const speakingTextRef = useRef(''); // 当前朗读文本（回声指纹）
   const bufferRef = useRef(''); // 累积输入缓冲
   const standbyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // 停顿合并发送
+  const handleResultRef = useRef<(text: string, isFinal: boolean) => void>(() => {}); // 稳定回调引用，避免 setup effect 重跑
 
   // ===== 激活后静默 → 回待命 =====
   const resetStandbyTimer = useCallback(() => {
@@ -156,15 +158,29 @@ export function useVoiceCompanion() {
     [sendText, interruptAI],
   );
 
+  // ===== 停顿合并发送：累积期间反复重置定时器，静默达阈值才整段发出 =====
+  const AUTO_SEND_DELAY = 1500;
+  const scheduleAutoSend = useCallback(() => {
+    if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
+    autoSendTimerRef.current = setTimeout(() => {
+      if (bufferRef.current.trim()) sendText(bufferRef.current);
+    }, AUTO_SEND_DELAY);
+  }, [sendText]);
+
   // ===== 识别结果分流（按阶段） =====
   const handleResult = useCallback(
     (text: string, isFinal: boolean) => {
       const st = useVoiceCompanionStore.getState();
       const { phase: cur, config: cfg } = st;
 
+      // 实时字幕：待命/激活都显示（待命时也给视觉反馈）
       if (!isFinal) {
-        // 仅激活聆听时显示实时字幕
-        if (cur === 'listening') st.setTranscript(bufferRef.current + text);
+        if (cur === 'listening' || cur === 'standby') {
+          const sep = bufferRef.current ? ' ' : '';
+          st.setTranscript(bufferRef.current + sep + text);
+          // 还在说话 → 推迟自动发送
+          if (cur === 'listening' && autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
+        }
         return;
       }
 
@@ -181,7 +197,11 @@ export function useVoiceCompanion() {
           voiceTts.stop();
           speakingTextRef.current = '';
           activate();
-          if (wake.content) sendText(wake.content);
+          if (wake.content) {
+            bufferRef.current = wake.content;
+            st.setTranscript(wake.content);
+            if (cfg.autoSend) scheduleAutoSend();
+          }
         }
         return; // 非回声非唤醒一律丢弃
       }
@@ -198,30 +218,44 @@ export function useVoiceCompanion() {
       if (cur === 'standby') {
         if (!cfg.wakeWord.enabled) {
           activate();
-          sendText(finalText);
+          bufferRef.current = finalText;
+          st.setTranscript(finalText);
+          if (cfg.autoSend) scheduleAutoSend();
           return;
         }
         const wake = matchWakeWord(finalText, cfg.wakeWord.words);
         if (wake) {
           activate();
-          if (wake.content) sendText(wake.content);
+          if (wake.content) {
+            bufferRef.current = wake.content;
+            st.setTranscript(wake.content);
+            if (cfg.autoSend) scheduleAutoSend();
+          } else {
+            st.setTranscript('');
+          }
         }
         return;
       }
 
-      // —— listening（激活）：命令优先，否则累积/自动发送 ——
+      // —— listening（激活）：命令优先，否则累积；停顿合并后整段发送 ——
       resetStandbyTimer();
       const cmd = checkVoiceCommand(finalText, cfg.voiceCommands);
       if (cmd) {
+        if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
         executeCommand(cmd);
         return;
       }
       bufferRef.current = bufferRef.current ? `${bufferRef.current} ${finalText}` : finalText;
       st.setTranscript(bufferRef.current);
-      if (cfg.autoSend) sendText(bufferRef.current);
+      if (cfg.autoSend) scheduleAutoSend(); // 不立即发，攒一会儿合并
     },
-    [activate, resetStandbyTimer, sendText, executeCommand, interruptAI],
+    [activate, resetStandbyTimer, executeCommand, interruptAI, scheduleAutoSend],
   );
+
+  // 固定回调引用，避免 setup effect 因 handleResult 变化反复重注册（P1）
+  useEffect(() => {
+    handleResultRef.current = handleResult;
+  }, [handleResult]);
 
   // ===== 注册回调 + 启动（界面打开时） =====
   useEffect(() => {
@@ -236,7 +270,7 @@ export function useVoiceCompanion() {
     });
 
     speechService.setCallbacks({
-      onResult: (text, isFinal) => handleResult(text, isFinal),
+      onResult: (text, isFinal) => handleResultRef.current(text, isFinal),
       onError: (err) => {
         if (err.type === 'no-speech' || err.type === 'aborted') {
           log.debug('语音识别可恢复错误', { type: err.type });
@@ -270,6 +304,7 @@ export function useVoiceCompanion() {
 
     return () => {
       if (standbyTimerRef.current) clearTimeout(standbyTimerRef.current);
+      if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
       speechService.stop();
       voiceTts.stop();
       voiceTts.onStart = undefined;
@@ -278,7 +313,7 @@ export function useVoiceCompanion() {
       bufferRef.current = '';
       awaitingReplyRef.current = false;
     };
-  }, [isOpen, config.language, handleResult, activate, resetStandbyTimer]);
+  }, [isOpen, config.language, activate, resetStandbyTimer]);
 
   // ===== AI 回复完成 → 朗读 =====
   useEffect(() => {
@@ -355,6 +390,7 @@ export function useVoiceCompanion() {
   // ===== 挂断 =====
   const hangup = useCallback(() => {
     if (standbyTimerRef.current) clearTimeout(standbyTimerRef.current);
+    if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
     speechService.stop();
     voiceTts.stop();
     speakingTextRef.current = '';

@@ -4,19 +4,23 @@
  * 显示当前对话的状态信息：
  * - 会话配置选择器 (Agent/Model/Effort/Permission)
  * - 引擎健康指示
- * - 语音伙伴「小白」入口
+ * - 语音区：听写麦克风（填输入框） + 语音伙伴「小白」通话入口 + 听筒(TTS 朗读)
  * - 输入状态提示 / 流式状态 / 输入字数
  */
 
-import { useState, type ReactNode } from 'react';
+import { useState, useCallback, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConfigStore, useSessionStore } from '@/stores';
 import { useActiveSessionStreaming, useHasPendingQuestion, useHasActivePlan } from '@/stores/conversationStore/useActiveSession';
 import { useSessionConfig } from '@/stores/sessionConfigStore';
-import { Paperclip, MoreHorizontal } from 'lucide-react';
+import { Paperclip, MoreHorizontal, Loader2 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { IconMic } from '../Common/Icons';
+import { IconMic, IconVolume, IconVolumeX } from '../Common/Icons';
+import { useTTS } from '@/hooks/useTTS';
+import { useVoiceDictation } from '@/hooks/useVoiceDictation';
 import { useContainerWidth } from '@/hooks/useContainerWidth';
+import type { TTSConfig } from '@/types/speech';
+import { DEFAULT_TTS_CONFIG } from '@/types/speech';
 import { SessionConfigSelector } from './SessionConfigSelector';
 import { getSelectedEngineHealth } from '@/utils/engineHealth';
 import { normalizeEngineId } from '@/utils/engineDisplay';
@@ -25,10 +29,6 @@ import { useVoiceCompanionStore } from '@/stores/voiceCompanionStore';
 
 /**
  * 宽度分级阈值（主行可容纳的高频选择器数量）
- *
- * 选择器分两层：
- * - 主行（高频，按宽度收敛）：profile > model > effort
- * - 折叠面板（低频，始终收纳）：agent、permission
  */
 const BREAKPOINTS = {
   /** 主行可容纳 profile + model + effort，并显示版本号文字 */
@@ -67,14 +67,14 @@ interface ChatStatusBarProps {
 /**
  * 聊天状态栏组件
  *
- * 四区布局：[会话操作] │ [配置选择器] … [工具/健康] │ [输入状态]
+ * 四区布局：[会话操作] │ [配置选择器] … [语音区/健康] │ [输入状态]
  * - 配置选择器分层 + 宽度自适应（profile > model > effort，agent/permission 始终折叠）
+ * - 语音区常驻右侧（不随宽度折叠，保证可发现性）：听写 / 通话 / 听筒
  * - 引擎版本降级为健康圆点（hover 显示版本号）
- * - 语音伙伴入口常驻右侧工具区（不随宽度折叠，保证可发现性）
  */
 export function ChatStatusBar({ children }: ChatStatusBarProps) {
   const { t } = useTranslation('chat');
-  const { config, healthStatus } = useConfigStore();
+  const { config, healthStatus, updateConfigPatch } = useConfigStore();
   const isStreaming = useActiveSessionStreaming();
   const activeSessionId = useActiveSessionId();
   const sessionMetadataList = useSessionMetadataList();
@@ -82,6 +82,7 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
     inputLength,
     attachmentCount,
     suggestionMode,
+    appendSpeechTranscript,
   } = useSessionStore();
 
   // 直接从 conversationStore 获取状态（消除 chatInputStore 冗余同步）
@@ -103,8 +104,35 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
   // 展开/收起
   const [expanded, setExpanded] = useState(false);
 
-  // 语音伙伴入口
+  // ===== 语音区 =====
+  // 全屏语音伙伴入口
   const openVoiceCompanion = useVoiceCompanionStore((s) => s.open);
+
+  // 语音听写（填输入框，可编辑后发送）；与全屏伙伴互斥
+  const {
+    isDictating,
+    toggle: toggleDictation,
+    isSupported: dictationSupported,
+    companionOpen,
+  } = useVoiceDictation(appendSpeechTranscript);
+
+  // 听筒（TTS 朗读控制）
+  const ttsConfig = config?.tts as TTSConfig | undefined;
+  const ttsEnabled = ttsConfig?.enabled ?? false;
+  const { status: ttsStatus, stop: stopTTS } = useTTS();
+  const handleTTSClick = useCallback(() => {
+    if (!config) return;
+    if (ttsStatus === 'playing') {
+      stopTTS();
+    } else if (ttsStatus === 'paused') {
+      stopTTS();
+      updateConfigPatch({ tts: { ...(ttsConfig || DEFAULT_TTS_CONFIG), enabled: false } });
+    } else if (ttsStatus === 'idle' || ttsStatus === 'error') {
+      if (!ttsEnabled) {
+        updateConfigPatch({ tts: { ...(ttsConfig || DEFAULT_TTS_CONFIG), enabled: true } });
+      }
+    }
+  }, [ttsStatus, stopTTS, ttsEnabled, ttsConfig, config, updateConfigPatch]);
 
   // 获取输入状态提示文本
   const getInputHint = () => {
@@ -131,7 +159,7 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
 
   const inputHint = getInputHint();
 
-  // 引擎健康指示（替代醒目的版本徽章）：绿点=可用，灰点=不可用；版本号收入 tooltip
+  // 引擎健康指示：绿点=可用，灰点=不可用；版本号收入 tooltip
   const activeSessionMetadata = sessionMetadataList.find(session => session.id === activeSessionId);
   const activeEngineId = normalizeEngineId(activeSessionMetadata?.engineId || config?.defaultEngine);
   const selectedEngineHealth = getSelectedEngineHealth(config, healthStatus, activeEngineId);
@@ -153,14 +181,64 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
   // 是否有内容被折叠（需要「更多」按钮）：低频选择器（agent/permission）始终折叠
   const hasOverflow = hiddenTypes.length > 0;
 
-  // 语音伙伴入口按钮（常驻右侧，点击打开全屏通话）
+  // 听写麦克风：识别结果填入输入框，可编辑后发送（全屏伙伴占用时禁用）
+  const dictationButton = dictationSupported ? (
+    <button
+      onClick={toggleDictation}
+      disabled={companionOpen}
+      className={clsx(
+        'flex items-center px-1.5 py-0.5 rounded transition-colors shrink-0 disabled:opacity-40',
+        isDictating
+          ? 'bg-primary/10 text-primary'
+          : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover',
+      )}
+      title={companionOpen ? t('voiceCompanion.busy', '语音伙伴使用中') : isDictating ? t('speech.stop', '停止听写') : t('speech.dictate', '语音输入到输入框')}
+    >
+      <IconMic size={14} className={isDictating ? 'animate-pulse' : ''} />
+    </button>
+  ) : null;
+
+  // 全屏语音伙伴通话入口（主色强调，区别于听写）
   const voiceCompanionButton = (
     <button
       onClick={openVoiceCompanion}
-      className="flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors shrink-0 text-text-tertiary hover:text-text-primary hover:bg-background-hover"
-      title={t('voiceCompanion.entry', '和小白语音聊天')}
+      className="flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors shrink-0 text-primary hover:bg-primary/10"
+      title={t('voiceCompanion.entry', '和小白语音通话')}
     >
       <IconMic size={14} />
+      <span className="hidden sm:inline">{t('voiceCompanion.entryLabel', '小白')}</span>
+    </button>
+  );
+
+  // 听筒：TTS 朗读控制
+  const ttsButton = (
+    <button
+      onClick={handleTTSClick}
+      disabled={ttsStatus === 'synthesizing'}
+      className={clsx(
+        'flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors shrink-0',
+        ttsStatus === 'playing' && 'bg-primary/10 text-primary',
+        ttsStatus === 'paused' && 'text-text-secondary hover:text-text-primary hover:bg-background-hover',
+        ttsStatus === 'synthesizing' && 'text-warning cursor-wait',
+        (ttsStatus === 'idle' || ttsStatus === 'error') && (ttsEnabled
+          ? 'text-text-muted cursor-not-allowed'
+          : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
+        )
+      )}
+      title={
+        ttsStatus === 'playing' ? t('tts.stop', '停止播放') :
+        ttsStatus === 'paused' ? t('tts.disable', '关闭语音播放') :
+        ttsStatus === 'synthesizing' ? t('tts.synthesizing', '合成中...') :
+        ttsEnabled ? t('tts.idle', '语音播放') : t('tts.enable', '开启语音播放')
+      }
+    >
+      {ttsStatus === 'synthesizing' && <Loader2 size={14} className="animate-spin" />}
+      {(ttsStatus === 'playing' || ttsStatus === 'paused') && (
+        <IconVolume size={14} className={ttsStatus === 'playing' ? 'animate-pulse' : ''} />
+      )}
+      {(ttsStatus === 'idle' || ttsStatus === 'error') && (
+        <IconVolumeX size={14} />
+      )}
     </button>
   );
 
@@ -176,7 +254,7 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
         gridTemplateRows: expanded ? 'auto auto' : 'auto 0fr',
       }}
     >
-      {/* 主行：[会话操作] │ [配置选择器] … [工具/健康] │ [输入状态] */}
+      {/* 主行：[会话操作] │ [配置选择器] … [语音区/健康] │ [输入状态] */}
       <div className="flex items-center justify-between gap-2 py-1.5 min-w-0">
         {/* 左侧：会话操作 + 配置选择器 + 更多按钮 */}
         <div className="flex items-center gap-2 min-w-0">
@@ -207,9 +285,11 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
           )}
         </div>
 
-        {/* 右侧：工具/健康 │ 输入状态 */}
+        {/* 右侧：语音区(听写/通话/听筒) │ 健康 │ 输入状态 */}
         <div className="flex items-center gap-2 shrink-0">
+          {dictationButton}
           {voiceCompanionButton}
+          {ttsButton}
           {healthIndicator}
 
           {(isStreaming || inputHint || inputLength > 0) && (

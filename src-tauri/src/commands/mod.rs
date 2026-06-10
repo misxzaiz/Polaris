@@ -53,4 +53,5 @@ pub mod claude_settings;
 pub use claude_settings::{read_claude_settings, write_claude_settings, get_claude_settings_path};
 
 pub mod model_profile;
+#[cfg(feature = "tauri-app")]
 pub use model_profile::{test_model_profile_connection, fetch_models_for_profile};
