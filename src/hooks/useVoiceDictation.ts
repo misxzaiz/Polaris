@@ -8,13 +8,38 @@
  *   - 启动前申请 'dictation' 焦点，被 'companion'（更高优先级）持有时申请失败不启动；
  *   - 通话开启会抢占焦点 → 本 hook 经订阅感知并复位 UI（无需亲自 stop，麦克风已被接管）；
  *   - 卸载时仅在自己仍持有焦点时才停止识别，避免误杀通话麦克风。
+ *
+ * 唤醒词 + 命令管线：
+ *   - final 结果先过 checkVoiceCommand 检测命令（命中则 onCommand 回调，不进输入框）；
+ *   - 未命中命令且 wakeWord 启用 → 用 speechWakeActive 门控：
+ *     待命 → matchWakeWord 命中 → setWakeActive(true) + 唤醒回应播报 + 唤醒词后内容写入；
+ *     不命中 → 丢弃。
+ *   - 发送后 handleSend 中 setSpeechWakeActive(false) 回待命（需重新唤醒）。
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { speechService } from '@/services/speechService';
 import { audioFocusManager } from '@/services/audioFocusManager';
 import { useVoiceCompanionStore } from '@/stores/voiceCompanionStore';
-import type { SpeechLanguage } from '@/types/speech';
+import { useSessionStore } from '@/stores';
+import { voiceNotificationService } from '@/services/voiceNotificationService';
+import type { SpeechControl } from '@/services/voiceNotificationService';
+import type { SpeechLanguage, VoiceCommand, VoiceCommandConfig, WakeWordConfig } from '@/types/speech';
+import { checkVoiceCommand, matchWakeWord } from '@/types/speech';
+import { createLogger } from '@/utils/logger';
+
+const log = createLogger('useVoiceDictation');
+
+export interface UseVoiceDictationOptions {
+  /** 识别语言 */
+  language?: SpeechLanguage;
+  /** 语音命令配置（用户自定义 + 默认合并） */
+  voiceCommands?: VoiceCommandConfig;
+  /** 唤醒词配置（启用时生效） */
+  wakeWordConfig?: WakeWordConfig;
+  /** 语音命令回调 */
+  onCommand?: (command: VoiceCommand) => void;
+}
 
 export interface UseVoiceDictationReturn {
   /** 是否正在听写 */
@@ -25,6 +50,8 @@ export interface UseVoiceDictationReturn {
   isSupported: boolean;
   /** 全屏语音伙伴是否打开（打开时听写不可用，互斥） */
   companionOpen: boolean;
+  /** 当前是否已唤醒（唤醒词模式下有用） */
+  wakeActive: boolean;
   /** 切换听写 */
   toggle: () => void;
   /** 停止听写 */
@@ -34,16 +61,36 @@ export interface UseVoiceDictationReturn {
 export function useVoiceDictation(
   onText: (text: string) => void,
   language: SpeechLanguage = 'zh-CN',
+  options: UseVoiceDictationOptions = {},
 ): UseVoiceDictationReturn {
+  const {
+    language: optLanguage = language,
+    voiceCommands,
+    wakeWordConfig,
+    onCommand,
+  } = options;
+
   const [isDictating, setIsDictating] = useState(false);
   const [interimText, setInterimText] = useState('');
   const companionOpen = useVoiceCompanionStore((s) => s.isOpen);
   const isSupported = speechService.supported;
 
   const onTextRef = useRef(onText);
-  useEffect(() => {
-    onTextRef.current = onText;
-  }, [onText]);
+  const onCommandRef = useRef(onCommand);
+  const voiceCommandsRef = useRef(voiceCommands);
+  const wakeWordConfigRef = useRef(wakeWordConfig);
+  useEffect(() => { onTextRef.current = onText; }, [onText]);
+  useEffect(() => { onCommandRef.current = onCommand; }, [onCommand]);
+  useEffect(() => { voiceCommandsRef.current = voiceCommands; }, [voiceCommands]);
+  useEffect(() => { wakeWordConfigRef.current = wakeWordConfig; }, [wakeWordConfig]);
+
+  /** 静默标志：唤醒回应播报期间为 true，丢弃所有识别结果 */
+  const muteRef = useRef(false);
+
+  const getWakeActive = useCallback(() => useSessionStore.getState().speechWakeActive, []);
+  const setWakeActive = useCallback((active: boolean) => {
+    useSessionStore.getState().setSpeechWakeActive(active);
+  }, []);
 
   const stop = useCallback(() => {
     if (audioFocusManager.isHeldBy('dictation')) {
@@ -54,22 +101,79 @@ export function useVoiceDictation(
     setInterimText('');
   }, []);
 
-  const start = useCallback(() => {
-    if (!speechService.supported) return;
-    // 焦点仲裁：通话占用时申请失败，不抢麦克风
-    if (!audioFocusManager.request('dictation')) return;
+  // ===== 启动：注入 SpeechControl + 注册回调 =====
+  useEffect(() => {
+    const speechControl: SpeechControl = {
+      pause: () => {
+        muteRef.current = true;
+        speechService.pause();
+        log.debug('语音识别已暂停 + 静默窗口开启');
+      },
+      resume: () => {
+        speechService.resume();
+        setTimeout(() => {
+          muteRef.current = false;
+          log.debug('静默窗口关闭，识别结果恢复正常处理');
+        }, 300);
+      },
+    };
+    voiceNotificationService.setSpeechControl(speechControl);
 
-    speechService.setConfig({
-      enabled: true,
-      language,
-      continuous: true, // 持续听写，直到用户再次点击停止
-      interimResults: true, // 实时预览识别中的文本
-    });
+    // 启动时注入回调
     speechService.setCallbacks({
       onResult: (text, isFinal) => {
+        if (muteRef.current) {
+          log.debug('静默窗口中，丢弃识别结果', { text });
+          return;
+        }
+
         if (isFinal) {
-          setInterimText('');
-          if (text.trim()) onTextRef.current(text.trim());
+          const cleanText = text.trim();
+          if (!cleanText) {
+            setInterimText('');
+            return;
+          }
+
+          // 1. 检查语音命令
+          const cmd = checkVoiceCommand(cleanText, voiceCommandsRef.current);
+          if (cmd) {
+            log.info('检测到语音命令:', { cmd });
+            onCommandRef.current?.(cmd);
+            setInterimText('');
+            return; // 命令不填入输入框
+          }
+
+          // 2. 唤醒词模式未启用 → 直接写入
+          const wakeConfig = wakeWordConfigRef.current;
+          if (!wakeConfig?.enabled) {
+            onTextRef.current(cleanText);
+            setInterimText('');
+            return;
+          }
+
+          // 3. 唤醒词门控
+          const isActive = getWakeActive();
+
+          if (!isActive) {
+            // 待命状态：检查唤醒词
+            const match = matchWakeWord(cleanText, wakeConfig.words);
+            if (match) {
+              log.info('唤醒词匹配:', { wakeWord: match.wakeWord, content: match.content });
+              setWakeActive(true);
+              // 唤醒回应播报（暂停识别防回声）
+              voiceNotificationService.notifyWakeResponse();
+              // 唤醒词后紧跟的内容也写入
+              if (match.content) {
+                onTextRef.current(match.content);
+              }
+            }
+            // 不匹配 → 丢弃
+            setInterimText('');
+          } else {
+            // 已激活 → 正常写入
+            onTextRef.current(cleanText);
+            setInterimText('');
+          }
         } else {
           setInterimText(text);
         }
@@ -85,16 +189,29 @@ export function useVoiceDictation(
         setInterimText('');
       },
     });
+  }, [getWakeActive, setWakeActive]);
+
+  const start = useCallback(() => {
+    if (!speechService.supported) return;
+    // 焦点仲裁：通话占用时申请失败，不抢麦克风
+    if (!audioFocusManager.request('dictation')) return;
+
+    speechService.setConfig({
+      enabled: true,
+      language: optLanguage,
+      continuous: true,
+      interimResults: true,
+    });
     speechService.start();
     setIsDictating(true);
-  }, [language]);
+  }, [optLanguage]);
 
   const toggle = useCallback(() => {
     if (isDictating) stop();
     else start();
   }, [isDictating, start, stop]);
 
-  // 焦点被抢占（如通话开启）→ 复位 UI；麦克风已被新持有者接管，无需亲自 stop
+  // 焦点被抢占 → 复位 UI
   useEffect(() => {
     return audioFocusManager.subscribe((owner) => {
       if (owner !== 'dictation') {
@@ -104,7 +221,7 @@ export function useVoiceDictation(
     });
   }, []);
 
-  // 卸载：仅在自己仍持有焦点时停止识别（避免误杀通话麦克风）
+  // 卸载：仅在自己仍持有焦点时停止识别
   useEffect(() => {
     return () => {
       if (audioFocusManager.isHeldBy('dictation')) {
@@ -114,5 +231,13 @@ export function useVoiceDictation(
     };
   }, []);
 
-  return { isDictating, interimText, isSupported, companionOpen, toggle, stop };
+  return {
+    isDictating,
+    interimText,
+    isSupported,
+    companionOpen,
+    wakeActive: getWakeActive(),
+    toggle,
+    stop,
+  };
 }

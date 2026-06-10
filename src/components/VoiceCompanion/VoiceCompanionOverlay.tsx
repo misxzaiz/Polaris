@@ -61,12 +61,14 @@ function statusText(phase: VoicePhase, transcript: string, errorMessage: string 
 }
 
 /** 阶段副状态文案（操作引导） */
-function statusSubText(phase: VoicePhase, fullDuplex: boolean): string {
+function statusSubText(phase: VoicePhase, fullDuplex: boolean, autoSend: boolean): string {
   switch (phase) {
     case 'standby':
       return '待命中 · 只认唤醒词，旁人聊天不上屏';
     case 'listening':
-      return '停顿片刻自动发送 · 说「发送」立即发出';
+      return autoSend
+        ? '停顿片刻自动发送 · 说「发送」立即发出'
+        : '说「发送」或点击下方发送按钮发出';
     case 'thinking':
       return '点击光球可打断';
     case 'speaking':
@@ -140,7 +142,7 @@ export function VoiceCompanionOverlay() {
 
   const { Icon: MainIcon, label: mainLabel } = mainAction(phase, !!transcript);
   const status = statusText(phase, transcript, errorMessage);
-  const statusSub = statusSubText(phase, config.fullDuplex);
+  const statusSub = statusSubText(phase, config.fullDuplex, config.autoSend);
 
   return (
     <div

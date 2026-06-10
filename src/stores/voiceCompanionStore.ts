@@ -18,7 +18,7 @@ function loadConfig(): VoiceCompanionConfig {
     const raw = localStorage.getItem(VOICE_COMPANION_CONFIG_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<VoiceCompanionConfig>;
-      // 迁移：v2 默认唤醒词 ['小白'] 升级为含同音容错的新默认列表
+      // 迁移 v2：默认唤醒词 ['小白'] 升级为含同音容错的新默认列表
       if (
         parsed.wakeWord?.words?.length === 1 &&
         parsed.wakeWord.words[0] === '小白'
@@ -27,6 +27,13 @@ function loadConfig(): VoiceCompanionConfig {
           ...parsed.wakeWord,
           words: [...DEFAULT_VOICE_COMPANION_CONFIG.wakeWord.words],
         };
+      }
+      // 迁移 v4：autoSend 默认改为 false（旧默认 true 会误发）
+      if (
+        !parsed.configVersion ||
+        parsed.configVersion < 4
+      ) {
+        parsed.autoSend = false;
       }
       return { ...DEFAULT_VOICE_COMPANION_CONFIG, ...parsed };
     }

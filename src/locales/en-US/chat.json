@@ -450,7 +450,28 @@
   "speech": {
     "listening": "Listening...",
     "processing": "Processing...",
-    "error": "Recognition failed"
+    "error": "Recognition failed",
+    "stop": "Stop dictation",
+    "dictate": "Voice dictation: results fill the input box",
+    "dictating": "Dictating",
+    "dictateLabel": "Dictate",
+    "waitingWake": "Waiting for wake word...",
+    "awake": "Awake...",
+    "awakeShort": "Awake"
+  },
+  "tts": {
+    "stop": "Stop playback",
+    "disable": "Disable voice playback",
+    "enable": "Enable voice playback",
+    "synthesizing": "Synthesizing...",
+    "playing": "Speaking",
+    "enabled": "Read on",
+    "label": "Read"
+  },
+  "voiceCompanion": {
+    "busy": "Voice call is using the microphone",
+    "entry": "Voice call with Xiaobai",
+    "entryLabel": "Xiaobai"
   },
   "sessionConfig": {
     "noAgent": "None",

@@ -15,8 +15,7 @@
  * 人格经 sendMessage 的 oneTimeSystemPrompt 注入（不出现在消息流中）。
  */
 
-import type { SpeechLanguage, TTSVoice, WakeWordConfig, VoiceCommandConfig } from './speech';
-import { DEFAULT_VOICE_COMMAND_CONFIG } from './speech';
+import type { SpeechLanguage, TTSVoice, WakeWordConfig } from './speech';
 
 /** 对话阶段状态机 */
 export type VoicePhase =
@@ -35,6 +34,8 @@ export type VoiceCompanionMode =
 
 /** 语音伙伴配置（独立持久化于 localStorage，不进全局 Config） */
 export interface VoiceCompanionConfig {
+  /** 配置版本（用于 localStorage 迁移） */
+  configVersion?: number;
   /** 对话模式 */
   mode: VoiceCompanionMode;
   /** STT 识别语言（Web Speech） */
@@ -49,8 +50,6 @@ export interface VoiceCompanionConfig {
   autoSendDelay: number;
   /** 唤醒词配置（默认开启，喊「小白」激活/打断） */
   wakeWord: WakeWordConfig;
-  /** 语音命令（发送/清空/中断/朗读） */
-  voiceCommands: VoiceCommandConfig;
   /** 激活后静默多久回到待命（毫秒，0=不回） */
   standbyTimeout: number;
   /**
@@ -64,14 +63,14 @@ export interface VoiceCompanionConfig {
 
 /** 默认配置（小白默认「晓晓」女声；唤醒词默认开，含同音容错；默认半双工） */
 export const DEFAULT_VOICE_COMPANION_CONFIG: VoiceCompanionConfig = {
+  configVersion: 4,
   mode: 'companion',
   language: 'zh-CN',
   voice: 'zh-CN-XiaoxiaoNeural',
   rate: '+0%',
-  autoSend: true,
+  autoSend: false,
   autoSendDelay: 1500,
   wakeWord: { enabled: true, words: ['小白', '小百', '小柏', '小拜'] },
-  voiceCommands: DEFAULT_VOICE_COMMAND_CONFIG,
   standbyTimeout: 15000,
   fullDuplex: false,
   echoCooldownMs: 800,

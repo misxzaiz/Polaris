@@ -449,7 +449,28 @@
   "speech": {
     "listening": "正在听...",
     "processing": "处理中...",
-    "error": "识别失败"
+    "error": "识别失败",
+    "stop": "停止听写",
+    "dictate": "语音听写：识别结果填入输入框",
+    "dictating": "听写中",
+    "dictateLabel": "听写",
+    "waitingWake": "等待唤醒...",
+    "awake": "已唤醒...",
+    "awakeShort": "已唤醒"
+  },
+  "tts": {
+    "stop": "停止播放",
+    "disable": "关闭语音播放",
+    "enable": "开启语音播放",
+    "synthesizing": "合成中...",
+    "playing": "朗读中",
+    "enabled": "朗读开",
+    "label": "朗读"
+  },
+  "voiceCompanion": {
+    "busy": "语音通话占用麦克风中",
+    "entry": "和小白语音通话",
+    "entryLabel": "小白"
   },
   "sessionConfig": {
     "noAgent": "不设置",

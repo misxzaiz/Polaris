@@ -8,23 +8,25 @@
  * - 输入状态提示 / 流式状态 / 输入字数
  */
 
-import { useState, useCallback, type ReactNode } from 'react';
+import { useState, useCallback, useEffect, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConfigStore, useSessionStore } from '@/stores';
-import { useActiveSessionStreaming, useHasPendingQuestion, useHasActivePlan } from '@/stores/conversationStore/useActiveSession';
+import { useActiveSessionStreaming, useHasPendingQuestion, useHasActivePlan, useActiveSessionMessages } from '@/stores/conversationStore/useActiveSession';
 import { useSessionConfig } from '@/stores/sessionConfigStore';
 import { Paperclip, MoreHorizontal, Loader2, Mic, AudioLines, Volume2, VolumeX } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useTTS } from '@/hooks/useTTS';
 import { useVoiceDictation } from '@/hooks/useVoiceDictation';
 import { useContainerWidth } from '@/hooks/useContainerWidth';
-import type { TTSConfig } from '@/types/speech';
+import type { TTSConfig, WakeWordConfig, VoiceCommandConfig, VoiceCommand } from '@/types/speech';
 import { DEFAULT_TTS_CONFIG } from '@/types/speech';
 import { SessionConfigSelector } from './SessionConfigSelector';
 import { getSelectedEngineHealth } from '@/utils/engineHealth';
 import { normalizeEngineId } from '@/utils/engineDisplay';
 import { useActiveSessionId, useSessionMetadataList } from '@/stores/conversationStore/sessionStoreManager';
 import { useVoiceCompanionStore } from '@/stores/voiceCompanionStore';
+import { voiceNotificationService } from '@/services/voiceNotificationService';
+import { isAssistantMessage } from '@/types/chat';
 
 /**
  * 宽度分级阈值（主行可容纳的高频选择器数量）
@@ -82,11 +84,17 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
     attachmentCount,
     suggestionMode,
     appendSpeechTranscript,
+    speechCommand,
+    setSpeechCommand,
+    undoSpeechTranscript,
   } = useSessionStore();
 
   // 直接从 conversationStore 获取状态（消除 chatInputStore 冗余同步）
   const hasPendingQuestion = useHasPendingQuestion();
   const hasActivePlan = useHasActivePlan();
+
+  // 会话消息（用于命令 "播放"）
+  const { messages } = useActiveSessionMessages();
 
   // 会话配置
   const { config: sessionConfig, setConfig: setSessionConfig } = useSessionConfig();
@@ -107,14 +115,56 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
   // 全屏语音伙伴入口
   const openVoiceCompanion = useVoiceCompanionStore((s) => s.open);
 
+  // 唤醒词 + 语音命令配置（统一读全局 config）
+  const wakeWordConfig = config?.wakeWord as WakeWordConfig | undefined;
+  const voiceCommands = config?.voiceCommands as VoiceCommandConfig | undefined;
+  const wakeWordEnabled = wakeWordConfig?.enabled && wakeWordConfig.words.length > 0;
+
   // 语音听写（填输入框，可编辑后发送）；与全屏伙伴经音频焦点仲裁互斥
   const {
     isDictating,
     interimText,
+    wakeActive,
     toggle: toggleDictation,
     isSupported: dictationSupported,
     companionOpen,
-  } = useVoiceDictation(appendSpeechTranscript);
+  } = useVoiceDictation(appendSpeechTranscript, undefined, {
+    voiceCommands,
+    wakeWordConfig: wakeWordEnabled ? wakeWordConfig : undefined,
+    onCommand: (cmd: VoiceCommand) => {
+      setSpeechCommand(cmd);
+    },
+  });
+
+  // ===== 语音命令处理 =====
+  // send/clear 留给 ChatInput 消费（handleSend 已处理 send、clear 清空输入框）
+  // interrupt/undo/play 在此处处理
+  useEffect(() => {
+    const cmd = speechCommand;
+    if (!cmd) return;
+
+    switch (cmd) {
+      case 'interrupt':
+        if (isStreaming) {
+          // ChatInput 也会消费 send，这里不处理 send/clear
+        }
+        break;
+      case 'undo':
+        undoSpeechTranscript();
+        break;
+      case 'play': {
+        const lastAssistant = [...messages].reverse().find(m => isAssistantMessage(m));
+        if (lastAssistant) {
+          voiceNotificationService.speakAIResponse(lastAssistant as Parameters<typeof voiceNotificationService.speakAIResponse>[0], { force: true });
+        }
+        break;
+      }
+    }
+
+    if (cmd !== 'send' && cmd !== 'clear') {
+      setSpeechCommand(null);
+    }
+  }, [speechCommand, isStreaming, setSpeechCommand, undoSpeechTranscript, messages]);
 
   // 听筒（TTS 朗读控制）
   const ttsConfig = config?.tts as TTSConfig | undefined;
@@ -211,21 +261,23 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
             disabled={companionOpen}
             className={clsx(
               btnBase,
-              isDictating
-                ? 'bg-primary/10 text-primary'
-                : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover',
+              isDictating && wakeWordEnabled && wakeActive
+                ? 'bg-green-500/10 text-green-500'
+                : isDictating
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover',
             )}
             title={
               companionOpen
                 ? t('voiceCompanion.busy', '语音通话占用麦克风中')
                 : isDictating
-                  ? t('speech.stop', '停止听写')
+                  ? (wakeWordEnabled ? (wakeActive ? t('speech.awake', '已唤醒...') : t('speech.waitingWake', '等待唤醒...')) : t('speech.stop', '停止听写'))
                   : t('speech.dictate', '语音听写：识别结果填入输入框')
             }
           >
             <Mic size={13} className={isDictating ? 'animate-pulse' : ''} />
             {(withLabel || isDictating) && (
-              <span>{isDictating ? t('speech.dictating', '听写中') : t('speech.dictateLabel', '听写')}</span>
+              <span>{isDictating ? (wakeWordEnabled ? (wakeActive ? t('speech.awakeShort', '已唤醒') : t('speech.waitingWake', '等待唤醒')) : t('speech.dictating', '听写中')) : t('speech.dictateLabel', '听写')}</span>
             )}
           </button>
         )}
@@ -330,6 +382,11 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
           {isDictating && interimText && (
             <span className="italic text-text-muted truncate max-w-[160px]" title={interimText}>
               {interimText}
+            </span>
+          )}
+          {isDictating && !interimText && wakeWordEnabled && (
+            <span className={clsx('text-xs shrink-0', wakeActive ? 'text-green-500' : 'text-text-muted')}>
+              {wakeActive ? t('speech.awakeShort', '已唤醒') : t('speech.waitingWake', '等待唤醒')}
             </span>
           )}
           {voiceInline && renderVoiceSegment('inline')}
