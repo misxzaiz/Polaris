@@ -20,6 +20,7 @@ import { ProblemsPanel } from './components/Problems/ProblemsPanel';
 import { DemoPluginPanel } from './components/Plugins/DemoPluginPanel';
 import { ComicStudioPanel } from './components/ComicStudio';
 import { NotificationCenterPanel } from './components/Notification';
+import { VoiceCompanionOverlay } from './components/VoiceCompanion';
 
 // 懒加载大型组件，减少初始 bundle 大小
 const SettingsPage = lazy(() => import('./components/Settings/SettingsPage').then(m => ({ default: m.SettingsPage })));
@@ -293,6 +294,9 @@ function App() {
         <Suspense fallback={null}>
           <SymbolPalette />
         </Suspense>
+
+        {/* 语音伙伴「小白」：未打开时渲染悬浮入口，打开时全屏通话界面 */}
+        <VoiceCompanionOverlay />
       </Layout>
     </ErrorBoundary>
   );
