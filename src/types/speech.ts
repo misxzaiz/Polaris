@@ -198,6 +198,58 @@ export function matchWakeWord(text: string, words: string[]): WakeWordMatchResul
 }
 
 // ========================================
+// 回声相似度判定
+// ========================================
+
+/** 去标点/空白，用于回声指纹比对 */
+function normalizeForEcho(s: string): string {
+  return s.replace(/[。！？，、,.!?；;：:\s'"「」『』（）()]/g, '');
+}
+
+/** 提取字符 bigram 集合（单字文本退化为单字集合） */
+function bigrams(s: string): Set<string> {
+  const set = new Set<string>();
+  if (s.length <= 1) {
+    if (s) set.add(s);
+    return set;
+  }
+  for (let i = 0; i < s.length - 1; i++) {
+    set.add(s.slice(i, i + 2));
+  }
+  return set;
+}
+
+/**
+ * 判断识别文本是否为正在朗读文本的回声
+ *
+ * 比子串包含更鲁棒：ASR 同音错字、断句重组下仍可命中。
+ * 规则：识别文本的 bigram 有 ≥ threshold 比例出现在朗读文本的 bigram 中
+ * （方向性 containment，识别端通常只是朗读内容的一个片段）。
+ *
+ * @param recognized 识别出的文本
+ * @param speaking 当前正在朗读的文本（回声指纹源）
+ * @param threshold 命中比例阈值，默认 0.6
+ */
+export function isLikelyEcho(recognized: string, speaking: string, threshold = 0.6): boolean {
+  const rec = normalizeForEcho(recognized);
+  const spk = normalizeForEcho(speaking);
+  if (!rec || !spk) return false;
+
+  // 快路径：仍保留子串判定（完全命中）
+  if (spk.includes(rec)) return true;
+
+  const recGrams = bigrams(rec);
+  if (recGrams.size === 0) return false;
+  const spkGrams = bigrams(spk);
+
+  let hit = 0;
+  for (const g of recGrams) {
+    if (spkGrams.has(g)) hit++;
+  }
+  return hit / recGrams.size >= threshold;
+}
+
+// ========================================
 // 语音提醒类型定义
 // ========================================
 

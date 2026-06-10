@@ -82,6 +82,11 @@ export interface StoreDeps {
 
 export interface SendMessageOptions {
   allowedTools?: string[]
+  /**
+   * 一次性系统提示（仅本次请求生效，不持久化、不出现在消息流中）。
+   * 经 appendSystemPrompt 通道注入引擎，用于语音伙伴人格等场景。
+   */
+  oneTimeSystemPrompt?: string
 }
 
 // ============================================================================

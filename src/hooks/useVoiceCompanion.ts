@@ -1,25 +1,33 @@
 /**
- * useVoiceCompanion - 语音伙伴核心编排 Hook（v2：连续 + 唤醒 + 命令 + 软全双工）
+ * useVoiceCompanion - 语音伙伴核心编排 Hook（v3：半双工回声治理 + 焦点仲裁 + 隐形人格）
  *
- * 状态机：idle → standby(待命,只听"小白") → listening(激活,连续识别) → thinking → speaking(朗读)
+ * 状态机：idle → standby(待命,只听"小白") → listening(激活,连续识别) → thinking
+ *       → speaking(朗读) → cooldown(回声冷却) → listening
  *
- * 软全双工防回声（解决"小白把自己的话录成输入"）：
- *   - 全程开麦（continuous），不暂停识别 → 因此 speaking 时也能听到用户喊"小白"打断；
- *   - speaking 时对识别结果做「回声指纹过滤」：若识别文本是当前正在朗读文本的子串 → 判回声丢弃；
- *   - speaking 时只有唤醒词「小白」能穿透 → 打断朗读、进入聆听；
- *   - 人格 prompt 额外要求"绝不自称小白"，杜绝朗读到自身名字时自我打断。
+ * 回声治理（解决"小白把自己的话录成输入"）：
+ *   - 默认半双工：speaking 时 speechService.pause() 暂停识别 → 最大回声窗口被物理隔离；
+ *     打断方式为点击光球/主按钮/空格键（由 UI 层调用 interruptSpeaking）。
+ *   - TTS 结束 → resume() 恢复识别并进入 cooldown（默认 800ms）：识别器恢复期间
+ *     扬声器尾音可能成为识别结果，cooldown 内的 final 结果先过 isLikelyEcho
+ *     （bigram 相似度，比子串包含更耐 ASR 同音错字）→ 回声丢弃；
+ *     非回声 = 用户真在说话 → 提前结束冷却并按正常聆听处理（不吞首句）。
+ *   - 实验性全双工（config.fullDuplex）：speaking 保持识别，isLikelyEcho 过滤
+ *     + 唤醒词「小白」穿透打断（外放场景有回声风险，设置中明示）。
  *
- * 命令（listening 阶段，复用 checkVoiceCommand）：发送/清空/中断/朗读。
- * 唤醒（standby/speaking，复用 matchWakeWord）：喊"小白"激活或打断。
+ * 人格注入：每次发送经 sendMessage 的 oneTimeSystemPrompt 通道（appendSystemPrompt），
+ * 不再拼接进用户消息 → 消息流中不可见，切会话/切模式天然生效。
+ *
+ * 音频焦点：打开通话即持有 'companion' 焦点（最高优先级），听写/语音通知让位。
  */
 
 import { useEffect, useRef, useCallback } from 'react';
 import { useVoiceCompanionStore } from '@/stores/voiceCompanionStore';
 import { speechService } from '@/services/speechService';
 import { voiceTts } from '@/services/voiceCompanion/streamingTts';
+import { audioFocusManager } from '@/services/audioFocusManager';
 import { buildCompanionSystemPrompt } from '@/services/voiceCompanion/companionPrompt';
 import { extractSpeakableText, shouldSpeakText } from '@/services/ttsTextFilter';
-import { checkVoiceCommand, matchWakeWord, type VoiceCommand } from '@/types/speech';
+import { checkVoiceCommand, matchWakeWord, isLikelyEcho, type VoiceCommand } from '@/types/speech';
 import {
   useActiveSessionActions,
   useActiveSessionStreaming,
@@ -30,10 +38,8 @@ import { createLogger } from '@/utils/logger';
 
 const log = createLogger('useVoiceCompanion');
 
-/** 去标点/空白，用于回声指纹与命令匹配 */
-function normalize(s: string): string {
-  return s.replace(/[。！？，、,.!?；;\s]/g, '');
-}
+/** 冷却结束后，回声指纹再保留的兜底窗口（毫秒） */
+const ECHO_GUARD_AFTER_COOLDOWN_MS = 1200;
 
 export function useVoiceCompanion() {
   // —— 渲染态 ——
@@ -54,18 +60,26 @@ export function useVoiceCompanion() {
   const isSupported = speechService.supported;
 
   // —— refs（避免闭包陈旧） ——
-  const injectedModeRef = useRef<string | null>(null); // 人格注入过的模式
   const awaitingReplyRef = useRef(false); // 是否等待语音发起的回复
   const prevStreamingRef = useRef(false); // 检测 isStreaming 边沿
   const speakingTextRef = useRef(''); // 当前朗读文本（回声指纹）
   const bufferRef = useRef(''); // 累积输入缓冲
   const standbyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // 停顿合并发送
-  const handleResultRef = useRef<(text: string, isFinal: boolean) => void>(() => {}); // 稳定回调引用，避免 setup effect 重跑
+  const cooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // 回声冷却
+  const echoGuardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // 冷却后指纹保留
+  const handleResultRef = useRef<(text: string, isFinal: boolean) => void>(() => {}); // 稳定回调引用
+
+  const clearTimer = (ref: React.MutableRefObject<ReturnType<typeof setTimeout> | null>) => {
+    if (ref.current) {
+      clearTimeout(ref.current);
+      ref.current = null;
+    }
+  };
 
   // ===== 激活后静默 → 回待命 =====
   const resetStandbyTimer = useCallback(() => {
-    if (standbyTimerRef.current) clearTimeout(standbyTimerRef.current);
+    clearTimer(standbyTimerRef);
     const { config: cfg } = useVoiceCompanionStore.getState();
     if (cfg.standbyTimeout > 0 && cfg.wakeWord.enabled) {
       standbyTimerRef.current = setTimeout(() => {
@@ -90,14 +104,14 @@ export function useVoiceCompanion() {
 
   // ===== 回到待命 =====
   const toStandby = useCallback(() => {
-    if (standbyTimerRef.current) clearTimeout(standbyTimerRef.current);
+    clearTimer(standbyTimerRef);
     const st = useVoiceCompanionStore.getState();
     st.setPhase('standby');
     st.setTranscript('');
     bufferRef.current = '';
   }, []);
 
-  // ===== 发送一段文本（注入人格） =====
+  // ===== 发送一段文本（人格经 oneTimeSystemPrompt 隐形注入） =====
   const sendText = useCallback(
     (text: string) => {
       const clean = text.trim();
@@ -109,25 +123,68 @@ export function useVoiceCompanion() {
       st.setPhase('thinking');
       bufferRef.current = '';
       awaitingReplyRef.current = true;
-      if (standbyTimerRef.current) clearTimeout(standbyTimerRef.current);
+      clearTimer(standbyTimerRef);
+      clearTimer(autoSendTimerRef);
 
-      let prompt = clean;
-      if (injectedModeRef.current !== cfg.mode) {
-        prompt = `${buildCompanionSystemPrompt(cfg.mode)}\n\n（以上是你的角色设定，现在开始用语音和我对话）\n${clean}`;
-        injectedModeRef.current = cfg.mode;
-      }
-      log.info('语音发送', { text: clean });
-      void sendMessage(prompt);
+      log.info('语音发送', { text: clean, mode: cfg.mode });
+      void sendMessage(clean, undefined, undefined, {
+        oneTimeSystemPrompt: buildCompanionSystemPrompt(cfg.mode),
+      });
     },
     [sendMessage],
   );
 
+  // ===== 结束朗读后的善后：恢复识别 + 冷却 =====
+  const enterCooldown = useCallback(() => {
+    const st = useVoiceCompanionStore.getState();
+    const { config: cfg } = st;
+    // 恢复识别（半双工时 speaking 期间被 pause）
+    if (!cfg.fullDuplex && !st.muted) {
+      speechService.resume();
+    }
+    st.setPhase('cooldown');
+    clearTimer(cooldownTimerRef);
+    cooldownTimerRef.current = setTimeout(() => {
+      cooldownTimerRef.current = null;
+      const cur = useVoiceCompanionStore.getState();
+      if (cur.phase === 'cooldown') {
+        cur.setPhase('listening');
+        resetStandbyTimer();
+      }
+      // 指纹再保留一小段时间兜底迟到的回声，之后清除
+      clearTimer(echoGuardTimerRef);
+      echoGuardTimerRef.current = setTimeout(() => {
+        echoGuardTimerRef.current = null;
+        speakingTextRef.current = '';
+      }, ECHO_GUARD_AFTER_COOLDOWN_MS);
+    }, Math.max(0, cfg.echoCooldownMs));
+  }, [resetStandbyTimer]);
+
+  // ===== 打断朗读（点击光球/主按钮/空格） =====
+  const interruptSpeaking = useCallback(() => {
+    const st = useVoiceCompanionStore.getState();
+    voiceTts.stop();
+    speakingTextRef.current = '';
+    clearTimer(cooldownTimerRef);
+    clearTimer(echoGuardTimerRef);
+    if (!st.config.fullDuplex && !st.muted) {
+      speechService.resume();
+    }
+    activate();
+  }, [activate]);
+
   // ===== 中断 AI（思考/朗读中） =====
   const interruptAI = useCallback(() => {
+    const st = useVoiceCompanionStore.getState();
     voiceTts.stop();
     speakingTextRef.current = '';
     awaitingReplyRef.current = false;
+    clearTimer(cooldownTimerRef);
+    clearTimer(echoGuardTimerRef);
     void interrupt();
+    if (!st.config.fullDuplex && !st.muted && st.phase === 'speaking') {
+      speechService.resume();
+    }
     activate();
   }, [interrupt, activate]);
 
@@ -159,13 +216,32 @@ export function useVoiceCompanion() {
   );
 
   // ===== 停顿合并发送：累积期间反复重置定时器，静默达阈值才整段发出 =====
-  const AUTO_SEND_DELAY = 1500;
   const scheduleAutoSend = useCallback(() => {
-    if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
+    clearTimer(autoSendTimerRef);
+    const { config: cfg } = useVoiceCompanionStore.getState();
     autoSendTimerRef.current = setTimeout(() => {
       if (bufferRef.current.trim()) sendText(bufferRef.current);
-    }, AUTO_SEND_DELAY);
+    }, Math.max(300, cfg.autoSendDelay));
   }, [sendText]);
+
+  // ===== listening 阶段的最终结果处理（命令优先，否则累积合并） =====
+  const handleListeningFinal = useCallback(
+    (finalText: string) => {
+      const st = useVoiceCompanionStore.getState();
+      const { config: cfg } = st;
+      resetStandbyTimer();
+      const cmd = checkVoiceCommand(finalText, cfg.voiceCommands);
+      if (cmd) {
+        clearTimer(autoSendTimerRef);
+        executeCommand(cmd);
+        return;
+      }
+      bufferRef.current = bufferRef.current ? `${bufferRef.current} ${finalText}` : finalText;
+      st.setTranscript(bufferRef.current);
+      if (cfg.autoSend) scheduleAutoSend(); // 不立即发，攒一会儿合并
+    },
+    [resetStandbyTimer, executeCommand, scheduleAutoSend],
+  );
 
   // ===== 识别结果分流（按阶段） =====
   const handleResult = useCallback(
@@ -173,13 +249,13 @@ export function useVoiceCompanion() {
       const st = useVoiceCompanionStore.getState();
       const { phase: cur, config: cfg } = st;
 
-      // 实时字幕：待命/激活都显示（待命时也给视觉反馈）
+      // 实时字幕：聆听/待命显示；冷却期不上屏（可能是回声尾巴）
       if (!isFinal) {
         if (cur === 'listening' || cur === 'standby') {
           const sep = bufferRef.current ? ' ' : '';
           st.setTranscript(bufferRef.current + sep + text);
           // 还在说话 → 推迟自动发送
-          if (cur === 'listening' && autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
+          if (cur === 'listening') clearTimer(autoSendTimerRef);
         }
         return;
       }
@@ -187,11 +263,12 @@ export function useVoiceCompanion() {
       const finalText = text.trim();
       if (!finalText) return;
 
-      // —— speaking：回声过滤 + 仅"小白"穿透打断 ——
+      // —— speaking（仅全双工会收到结果）：回声过滤 + 仅唤醒词穿透 ——
       if (cur === 'speaking') {
-        const norm = normalize(finalText);
-        const spk = normalize(speakingTextRef.current);
-        if (norm && spk && spk.includes(norm)) return; // 回声，丢弃
+        if (speakingTextRef.current && isLikelyEcho(finalText, speakingTextRef.current)) {
+          log.debug('speaking 回声丢弃', { text: finalText });
+          return;
+        }
         const wake = matchWakeWord(finalText, cfg.wakeWord.words);
         if (wake) {
           voiceTts.stop();
@@ -204,6 +281,19 @@ export function useVoiceCompanion() {
           }
         }
         return; // 非回声非唤醒一律丢弃
+      }
+
+      // —— cooldown：回声丢弃；真人声提前结束冷却并按聆听处理 ——
+      if (cur === 'cooldown') {
+        if (speakingTextRef.current && isLikelyEcho(finalText, speakingTextRef.current)) {
+          log.debug('cooldown 回声丢弃', { text: finalText });
+          return;
+        }
+        clearTimer(cooldownTimerRef);
+        speakingTextRef.current = '';
+        st.setPhase('listening');
+        handleListeningFinal(finalText);
+        return;
       }
 
       // —— thinking：监听打断 ——
@@ -237,22 +327,20 @@ export function useVoiceCompanion() {
         return;
       }
 
-      // —— listening（激活）：命令优先，否则累积；停顿合并后整段发送 ——
-      resetStandbyTimer();
-      const cmd = checkVoiceCommand(finalText, cfg.voiceCommands);
-      if (cmd) {
-        if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
-        executeCommand(cmd);
-        return;
+      // —— listening（激活） ——
+      if (cur === 'listening') {
+        // 冷却后的兜底窗口内仍过滤迟到回声
+        if (speakingTextRef.current && isLikelyEcho(finalText, speakingTextRef.current)) {
+          log.debug('listening 迟到回声丢弃', { text: finalText });
+          return;
+        }
+        handleListeningFinal(finalText);
       }
-      bufferRef.current = bufferRef.current ? `${bufferRef.current} ${finalText}` : finalText;
-      st.setTranscript(bufferRef.current);
-      if (cfg.autoSend) scheduleAutoSend(); // 不立即发，攒一会儿合并
     },
-    [activate, resetStandbyTimer, executeCommand, interruptAI, scheduleAutoSend],
+    [activate, scheduleAutoSend, handleListeningFinal, interruptAI],
   );
 
-  // 固定回调引用，避免 setup effect 因 handleResult 变化反复重注册（P1）
+  // 固定回调引用，避免 setup effect 因 handleResult 变化反复重注册
   useEffect(() => {
     handleResultRef.current = handleResult;
   }, [handleResult]);
@@ -261,11 +349,14 @@ export function useVoiceCompanion() {
   useEffect(() => {
     if (!isOpen) return;
 
+    // 持有音频焦点：听写/语音通知让位（companion 优先级最高，必成功）
+    audioFocusManager.request('companion');
+
     const st = useVoiceCompanionStore.getState();
     speechService.setConfig({
       enabled: true,
       language: st.config.language,
-      continuous: true, // 全程连续聆听
+      continuous: true,
       interimResults: true,
     });
 
@@ -280,12 +371,28 @@ export function useVoiceCompanion() {
       },
     });
 
-    voiceTts.onStart = () => useVoiceCompanionStore.getState().setPhase('speaking');
+    voiceTts.onStart = () => {
+      const cur = useVoiceCompanionStore.getState();
+      cur.setPhase('speaking');
+      // 半双工：朗读期间物理暂停识别，回声无从进入
+      if (!cur.config.fullDuplex) {
+        speechService.pause();
+      }
+    };
     voiceTts.onDone = () => {
-      speakingTextRef.current = '';
-      // 朗读结束回到激活聆听（仍在对话中，无需再喊"小白"）
-      const cur = useVoiceCompanionStore.getState().phase;
-      if (cur === 'speaking') activate();
+      const cur = useVoiceCompanionStore.getState();
+      if (cur.phase !== 'speaking') return;
+      if (cur.config.fullDuplex) {
+        // 全双工：指纹再兜底一段时间后清除
+        clearTimer(echoGuardTimerRef);
+        echoGuardTimerRef.current = setTimeout(() => {
+          echoGuardTimerRef.current = null;
+          speakingTextRef.current = '';
+        }, ECHO_GUARD_AFTER_COOLDOWN_MS);
+        activate();
+      } else {
+        enterCooldown();
+      }
     };
 
     // 启动：默认进入待命（喊"小白"激活）；未开唤醒词则直接聆听
@@ -303,8 +410,10 @@ export function useVoiceCompanion() {
     }
 
     return () => {
-      if (standbyTimerRef.current) clearTimeout(standbyTimerRef.current);
-      if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
+      clearTimer(standbyTimerRef);
+      clearTimer(autoSendTimerRef);
+      clearTimer(cooldownTimerRef);
+      clearTimer(echoGuardTimerRef);
       speechService.stop();
       voiceTts.stop();
       voiceTts.onStart = undefined;
@@ -312,8 +421,9 @@ export function useVoiceCompanion() {
       speakingTextRef.current = '';
       bufferRef.current = '';
       awaitingReplyRef.current = false;
+      audioFocusManager.release('companion');
     };
-  }, [isOpen, config.language, activate, resetStandbyTimer]);
+  }, [isOpen, config.language, activate, resetStandbyTimer, enterCooldown]);
 
   // ===== AI 回复完成 → 朗读 =====
   useEffect(() => {
@@ -359,14 +469,29 @@ export function useVoiceCompanion() {
         interruptAI();
         break;
       case 'speaking':
-        voiceTts.stop();
-        speakingTextRef.current = '';
-        activate();
+      case 'cooldown':
+        interruptSpeaking();
+        break;
+      case 'error':
+        try {
+          speechService.start();
+          activate();
+        } catch {
+          /* 保持 error 态 */
+        }
         break;
       default:
         activate();
     }
-  }, [activate, toStandby, sendText, interruptAI]);
+  }, [activate, toStandby, sendText, interruptAI, interruptSpeaking]);
+
+  // ===== 光球点击：speaking/thinking=打断，standby=唤醒 =====
+  const handleOrbClick = useCallback(() => {
+    const cur = useVoiceCompanionStore.getState().phase;
+    if (cur === 'speaking' || cur === 'cooldown') interruptSpeaking();
+    else if (cur === 'thinking') interruptAI();
+    else if (cur === 'standby' || cur === 'idle' || cur === 'error') handleMainAction();
+  }, [interruptSpeaking, interruptAI, handleMainAction]);
 
   // ===== 静音（暂停麦克风） =====
   const toggleMute = useCallback(() => {
@@ -374,7 +499,8 @@ export function useVoiceCompanion() {
     const next = !st.muted;
     st.setMuted(next);
     if (next) {
-      if (standbyTimerRef.current) clearTimeout(standbyTimerRef.current);
+      clearTimer(standbyTimerRef);
+      clearTimer(autoSendTimerRef);
       speechService.stop();
       st.setPhase('idle');
     } else {
@@ -389,14 +515,15 @@ export function useVoiceCompanion() {
 
   // ===== 挂断 =====
   const hangup = useCallback(() => {
-    if (standbyTimerRef.current) clearTimeout(standbyTimerRef.current);
-    if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
+    clearTimer(standbyTimerRef);
+    clearTimer(autoSendTimerRef);
+    clearTimer(cooldownTimerRef);
+    clearTimer(echoGuardTimerRef);
     speechService.stop();
     voiceTts.stop();
     speakingTextRef.current = '';
     bufferRef.current = '';
     awaitingReplyRef.current = false;
-    injectedModeRef.current = null;
     const st = useVoiceCompanionStore.getState();
     st.reset();
     st.close();
@@ -413,6 +540,8 @@ export function useVoiceCompanion() {
     config,
     isSupported,
     handleMainAction,
+    handleOrbClick,
+    interruptSpeaking,
     toggleMute,
     hangup,
   };

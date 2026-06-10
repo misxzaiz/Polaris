@@ -16,6 +16,7 @@
 
 import { ttsService } from './ttsService';
 import { voicePackageService } from './voicePackageService';
+import { audioFocusManager } from './audioFocusManager';
 import { extractSpeakableText, cleanTextForSpeech, shouldSpeakText } from './ttsTextFilter';
 import type { VoiceNotificationConfig, TTSConfig } from '@/types/speech';
 import { DEFAULT_VOICE_NOTIFICATION_CONFIG } from '@/types/speech';
@@ -112,6 +113,12 @@ class VoiceNotificationService {
     const ttsConfig = this.getTTSConfig();
     if (!ttsConfig?.enabled) return;
 
+    // 语音通话中（companion 持有音频焦点）静默，避免打断伙伴朗读
+    if (audioFocusManager.isHeldBy('companion')) {
+      log.debug('语音通话中，跳过通知', { text });
+      return;
+    }
+
     // 如果正在播放高优先级内容，不打断
     if (ttsService.isPlaying()) {
       log.debug('TTS 正在播放，跳过通知', { text });
@@ -147,6 +154,12 @@ class VoiceNotificationService {
       return;
     }
 
+    // 语音通话中由 voiceTts 负责朗读，状态栏自动朗读静默让位
+    if (audioFocusManager.isHeldBy('companion')) {
+      log.debug('语音通话中，跳过 AI 回复自动朗读');
+      return;
+    }
+
     try {
       await ttsService.speak(text, { force: force === true });
     } catch (error) {
@@ -174,6 +187,9 @@ class VoiceNotificationService {
   async notifyWakeResponse(): Promise<void> {
     const config = this.getNotificationConfig();
     if (!config.enabled || !config.wakeResponse) return;
+
+    // 语音通话中静默（通话有自己的交互反馈）
+    if (audioFocusManager.isHeldBy('companion')) return;
 
     const texts = config.wakeResponseTexts;
     if (texts.length === 0) return;

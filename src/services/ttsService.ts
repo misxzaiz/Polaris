@@ -66,6 +66,14 @@ export class TTSService {
     return this.status;
   }
 
+  /**
+   * 当前正在播放的音频元素（供 AudioContext 音量分析等只读消费，可能为 null）。
+   * 每句合成会创建新元素，消费方需自行检测变化并重新挂载分析节点。
+   */
+  getCurrentAudio(): HTMLAudioElement | null {
+    return this.audio;
+  }
+
   /** 是否正在播放或合成 */
   isPlaying(): boolean {
     return this.status === 'playing' || this.status === 'synthesizing';

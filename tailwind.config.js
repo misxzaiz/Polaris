@@ -135,10 +135,45 @@ module.exports = {
           '50%': { backgroundPosition: '100% 50%' },
           '100%': { backgroundPosition: '0% 50%' },
         },
+        // 语音伙伴：呼吸（光晕/描边环，带透明度起伏）
+        'breathe': {
+          '0%, 100%': { transform: 'scale(1)', opacity: '0.75' },
+          '50%': { transform: 'scale(1.07)', opacity: '1' },
+        },
+        // 语音伙伴：核心球呼吸（仅缩放，幅度更小）
+        'breathe-core': {
+          '0%, 100%': { transform: 'scale(1)' },
+          '50%': { transform: 'scale(1.035)' },
+        },
+        // 语音伙伴：聆听涟漪扩散
+        'voice-ripple': {
+          '0%': { transform: 'scale(0.78)', opacity: '0.7' },
+          '100%': { transform: 'scale(1.5)', opacity: '0' },
+        },
+        // 语音伙伴：说话音量条律动
+        'voice-bar': {
+          '0%, 100%': { transform: 'scaleY(0.45)' },
+          '50%': { transform: 'scaleY(1)' },
+        },
+        // 语音伙伴：aurora 光斑漂移
+        'aurora-drift-1': {
+          '0%, 100%': { transform: 'translate(0, 0) scale(1)' },
+          '50%': { transform: 'translate(8%, 10%) scale(1.12)' },
+        },
+        'aurora-drift-2': {
+          '0%, 100%': { transform: 'translate(0, 0) scale(1)' },
+          '50%': { transform: 'translate(-10%, -8%) scale(1.08)' },
+        },
       },
       animation: {
         'shake-once': 'shake-once 0.5s ease-in-out',
         'flow': 'flow 3s ease infinite',
+        'breathe': 'breathe 5.6s ease-in-out infinite',
+        'breathe-core': 'breathe-core 5.6s ease-in-out infinite',
+        'voice-ripple': 'voice-ripple 2.6s ease-out infinite',
+        'voice-bar': 'voice-bar 1s ease-in-out infinite',
+        'aurora-drift-1': 'aurora-drift-1 22s ease-in-out infinite',
+        'aurora-drift-2': 'aurora-drift-2 28s ease-in-out infinite',
       },
     },
   },

@@ -13,9 +13,8 @@ import { useTranslation } from 'react-i18next';
 import { useConfigStore, useSessionStore } from '@/stores';
 import { useActiveSessionStreaming, useHasPendingQuestion, useHasActivePlan } from '@/stores/conversationStore/useActiveSession';
 import { useSessionConfig } from '@/stores/sessionConfigStore';
-import { Paperclip, MoreHorizontal, Loader2 } from 'lucide-react';
+import { Paperclip, MoreHorizontal, Loader2, Mic, AudioLines, Volume2, VolumeX } from 'lucide-react';
 import { clsx } from 'clsx';
-import { IconMic, IconVolume, IconVolumeX } from '../Common/Icons';
 import { useTTS } from '@/hooks/useTTS';
 import { useVoiceDictation } from '@/hooks/useVoiceDictation';
 import { useContainerWidth } from '@/hooks/useContainerWidth';
@@ -108,9 +107,10 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
   // 全屏语音伙伴入口
   const openVoiceCompanion = useVoiceCompanionStore((s) => s.open);
 
-  // 语音听写（填输入框，可编辑后发送）；与全屏伙伴互斥
+  // 语音听写（填输入框，可编辑后发送）；与全屏伙伴经音频焦点仲裁互斥
   const {
     isDictating,
+    interimText,
     toggle: toggleDictation,
     isSupported: dictationSupported,
     companionOpen,
@@ -120,19 +120,24 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
   const ttsConfig = config?.tts as TTSConfig | undefined;
   const ttsEnabled = ttsConfig?.enabled ?? false;
   const { status: ttsStatus, stop: stopTTS } = useTTS();
+  const setTTSEnabled = useCallback(
+    (enabled: boolean) => {
+      updateConfigPatch({ tts: { ...(ttsConfig || DEFAULT_TTS_CONFIG), enabled } });
+    },
+    [ttsConfig, updateConfigPatch],
+  );
   const handleTTSClick = useCallback(() => {
     if (!config) return;
     if (ttsStatus === 'playing') {
       stopTTS();
     } else if (ttsStatus === 'paused') {
       stopTTS();
-      updateConfigPatch({ tts: { ...(ttsConfig || DEFAULT_TTS_CONFIG), enabled: false } });
+      setTTSEnabled(false);
     } else if (ttsStatus === 'idle' || ttsStatus === 'error') {
-      if (!ttsEnabled) {
-        updateConfigPatch({ tts: { ...(ttsConfig || DEFAULT_TTS_CONFIG), enabled: true } });
-      }
+      // 任意空闲状态点击即开关：修复「开启后空闲时关不掉」
+      setTTSEnabled(!ttsEnabled);
     }
-  }, [ttsStatus, stopTTS, ttsEnabled, ttsConfig, config, updateConfigPatch]);
+  }, [ttsStatus, stopTTS, ttsEnabled, config, setTTSEnabled]);
 
   // 获取输入状态提示文本
   const getInputHint = () => {
@@ -181,66 +186,100 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
   // 是否有内容被折叠（需要「更多」按钮）：低频选择器（agent/permission）始终折叠
   const hasOverflow = hiddenTypes.length > 0;
 
-  // 听写麦克风：识别结果填入输入框，可编辑后发送（全屏伙伴占用时禁用）
-  const dictationButton = dictationSupported ? (
-    <button
-      onClick={toggleDictation}
-      disabled={companionOpen}
-      className={clsx(
-        'flex items-center px-1.5 py-0.5 rounded transition-colors shrink-0 disabled:opacity-40',
-        isDictating
-          ? 'bg-primary/10 text-primary'
-          : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover',
-      )}
-      title={companionOpen ? t('voiceCompanion.busy', '语音伙伴使用中') : isDictating ? t('speech.stop', '停止听写') : t('speech.dictate', '语音输入到输入框')}
-    >
-      <IconMic size={14} className={isDictating ? 'animate-pulse' : ''} />
-    </button>
-  ) : null;
+  // 语音区是否内联在主行（窄屏折叠进「更多」面板，保证 260px 不溢出）
+  const voiceInline = containerWidth >= BREAKPOINTS.medium;
 
-  // 全屏语音伙伴通话入口（主色强调，区别于听写）
-  const voiceCompanionButton = (
-    <button
-      onClick={openVoiceCompanion}
-      className="flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors shrink-0 text-primary hover:bg-primary/10"
-      title={t('voiceCompanion.entry', '和小白语音通话')}
-    >
-      <IconMic size={14} />
-      <span className="hidden sm:inline">{t('voiceCompanion.entryLabel', '小白')}</span>
-    </button>
-  );
+  /**
+   * 语音分段控件：听写(Mic) / 通话(AudioLines) / 朗读(Volume2)
+   * 图标差异化 + 激活态自说明；panel 变体带文字标签（窄屏折叠面板用）
+   */
+  const renderVoiceSegment = (variant: 'inline' | 'panel') => {
+    const withLabel = variant === 'panel';
+    const btnBase = 'flex items-center gap-1 px-1.5 py-0.5 rounded-full transition-colors shrink-0 disabled:opacity-40';
 
-  // 听筒：TTS 朗读控制
-  const ttsButton = (
-    <button
-      onClick={handleTTSClick}
-      disabled={ttsStatus === 'synthesizing'}
-      className={clsx(
-        'flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors shrink-0',
-        ttsStatus === 'playing' && 'bg-primary/10 text-primary',
-        ttsStatus === 'paused' && 'text-text-secondary hover:text-text-primary hover:bg-background-hover',
-        ttsStatus === 'synthesizing' && 'text-warning cursor-wait',
-        (ttsStatus === 'idle' || ttsStatus === 'error') && (ttsEnabled
-          ? 'text-text-muted cursor-not-allowed'
-          : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
-        )
-      )}
-      title={
-        ttsStatus === 'playing' ? t('tts.stop', '停止播放') :
-        ttsStatus === 'paused' ? t('tts.disable', '关闭语音播放') :
-        ttsStatus === 'synthesizing' ? t('tts.synthesizing', '合成中...') :
-        ttsEnabled ? t('tts.idle', '语音播放') : t('tts.enable', '开启语音播放')
-      }
-    >
-      {ttsStatus === 'synthesizing' && <Loader2 size={14} className="animate-spin" />}
-      {(ttsStatus === 'playing' || ttsStatus === 'paused') && (
-        <IconVolume size={14} className={ttsStatus === 'playing' ? 'animate-pulse' : ''} />
-      )}
-      {(ttsStatus === 'idle' || ttsStatus === 'error') && (
-        <IconVolumeX size={14} />
-      )}
-    </button>
-  );
+    return (
+      <div
+        className={clsx(
+          'flex items-center gap-0.5 p-0.5 rounded-full border border-border-subtle bg-background-surface/60 shrink-0',
+          withLabel && 'self-start',
+        )}
+      >
+        {/* 听写：识别填入输入框 */}
+        {dictationSupported && (
+          <button
+            onClick={toggleDictation}
+            disabled={companionOpen}
+            className={clsx(
+              btnBase,
+              isDictating
+                ? 'bg-primary/10 text-primary'
+                : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover',
+            )}
+            title={
+              companionOpen
+                ? t('voiceCompanion.busy', '语音通话占用麦克风中')
+                : isDictating
+                  ? t('speech.stop', '停止听写')
+                  : t('speech.dictate', '语音听写：识别结果填入输入框')
+            }
+          >
+            <Mic size={13} className={isDictating ? 'animate-pulse' : ''} />
+            {(withLabel || isDictating) && (
+              <span>{isDictating ? t('speech.dictating', '听写中') : t('speech.dictateLabel', '听写')}</span>
+            )}
+          </button>
+        )}
+
+        {/* 通话：全屏语音伙伴（声波图标，与听写区分） */}
+        <button
+          onClick={openVoiceCompanion}
+          className={clsx(btnBase, 'text-primary hover:bg-primary/10')}
+          title={t('voiceCompanion.entry', '和小白语音通话')}
+        >
+          <AudioLines size={13} />
+          {(withLabel || containerWidth >= BREAKPOINTS.wide) && (
+            <span>{t('voiceCompanion.entryLabel', '小白')}</span>
+          )}
+        </button>
+
+        {/* 朗读：TTS 控制（任意状态可关） */}
+        <button
+          onClick={handleTTSClick}
+          disabled={ttsStatus === 'synthesizing'}
+          className={clsx(
+            btnBase,
+            ttsStatus === 'playing' && 'bg-primary/10 text-primary',
+            ttsStatus === 'paused' && 'text-text-secondary hover:text-text-primary hover:bg-background-hover',
+            ttsStatus === 'synthesizing' && 'text-warning cursor-wait',
+            (ttsStatus === 'idle' || ttsStatus === 'error') && (ttsEnabled
+              ? 'text-primary/70 hover:text-primary hover:bg-primary/10'
+              : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
+            ),
+          )}
+          title={
+            ttsStatus === 'playing' ? t('tts.stop', '停止播放') :
+            ttsStatus === 'paused' ? t('tts.disable', '关闭语音播放') :
+            ttsStatus === 'synthesizing' ? t('tts.synthesizing', '合成中...') :
+            ttsEnabled ? t('tts.disable', '关闭语音播放') : t('tts.enable', '开启语音播放')
+          }
+        >
+          {ttsStatus === 'synthesizing' && <Loader2 size={13} className="animate-spin" />}
+          {(ttsStatus === 'playing' || ttsStatus === 'paused') && (
+            <Volume2 size={13} className={ttsStatus === 'playing' ? 'animate-pulse' : ''} />
+          )}
+          {(ttsStatus === 'idle' || ttsStatus === 'error') && (
+            ttsEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />
+          )}
+          {withLabel && (
+            <span>
+              {ttsStatus === 'playing' ? t('tts.playing', '朗读中')
+                : ttsEnabled ? t('tts.enabled', '朗读开') : t('tts.label', '朗读')}
+            </span>
+          )}
+        </button>
+      </div>
+    );
+  };
 
   return (
     <div
@@ -285,11 +324,15 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
           )}
         </div>
 
-        {/* 右侧：语音区(听写/通话/听筒) │ 健康 │ 输入状态 */}
-        <div className="flex items-center gap-2 shrink-0">
-          {dictationButton}
-          {voiceCompanionButton}
-          {ttsButton}
+        {/* 右侧：语音区(听写/通话/朗读) │ 健康 │ 输入状态 */}
+        <div className="flex items-center gap-2 shrink-0 min-w-0">
+          {/* 听写实时预览（ghost text） */}
+          {isDictating && interimText && (
+            <span className="italic text-text-muted truncate max-w-[160px]" title={interimText}>
+              {interimText}
+            </span>
+          )}
+          {voiceInline && renderVoiceSegment('inline')}
           {healthIndicator}
 
           {(isStreaming || inputHint || inputLength > 0) && (
@@ -324,13 +367,14 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
         </div>
       </div>
 
-      {/* 折叠面板：低频选择器（agent/permission） */}
+      {/* 折叠面板：低频选择器（agent/permission） + 窄屏折叠的语音区 */}
       {hasOverflow && (
         <div className={clsx(
           'transition-opacity duration-200',
           expanded ? 'opacity-100 overflow-visible' : 'opacity-0 overflow-hidden',
         )}>
-          <div className="flex flex-col gap-1 py-2 border-t border-border-subtle/50">
+          <div className="flex flex-col gap-2 py-2 border-t border-border-subtle/50">
+            {!voiceInline && renderVoiceSegment('panel')}
             <SessionConfigSelector
               config={sessionConfig}
               onChange={setSessionConfig}

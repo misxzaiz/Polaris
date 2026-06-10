@@ -12,12 +12,23 @@ import { createLogger } from '@/utils/logger';
 
 const log = createLogger('VoiceCompanionStore');
 
-/** 从 localStorage 读取配置（带默认值合并） */
+/** 从 localStorage 读取配置（带默认值合并 + 旧版本迁移） */
 function loadConfig(): VoiceCompanionConfig {
   try {
     const raw = localStorage.getItem(VOICE_COMPANION_CONFIG_KEY);
     if (raw) {
-      return { ...DEFAULT_VOICE_COMPANION_CONFIG, ...JSON.parse(raw) };
+      const parsed = JSON.parse(raw) as Partial<VoiceCompanionConfig>;
+      // 迁移：v2 默认唤醒词 ['小白'] 升级为含同音容错的新默认列表
+      if (
+        parsed.wakeWord?.words?.length === 1 &&
+        parsed.wakeWord.words[0] === '小白'
+      ) {
+        parsed.wakeWord = {
+          ...parsed.wakeWord,
+          words: [...DEFAULT_VOICE_COMPANION_CONFIG.wakeWord.words],
+        };
+      }
+      return { ...DEFAULT_VOICE_COMPANION_CONFIG, ...parsed };
     }
   } catch (e) {
     log.warn('读取语音伙伴配置失败，使用默认配置', { error: String(e) });

@@ -1089,8 +1089,14 @@ export function createConversationStore(
           )
           const disabledMcpServers = getDisabledPluginMcpServers()
 
+          // 一次性系统提示（语音伙伴人格等）：经 appendSystemPrompt 通道注入，
+          // 仅本次请求生效，不出现在消息流中
+          const appendPrompt = sendOptions?.oneTimeSystemPrompt
+            ? `${workspacePrompt}\n\n${sendOptions.oneTimeSystemPrompt}`
+            : workspacePrompt
+
           const chatOptions = {
-            appendSystemPrompt: normalizeForInvoke(workspacePrompt),
+            appendSystemPrompt: normalizeForInvoke(appendPrompt),
             systemPrompt: userPrompt ? normalizeForInvoke(userPrompt) : null,
             workDir: actualWorkspaceDir,
             contextId: deps.contextId,
