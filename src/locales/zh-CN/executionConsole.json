@@ -1,0 +1,32 @@
+{
+  "title": "AI 执行控制台",
+  "section": {
+    "overview": "触发源总览",
+    "active": "实时执行",
+    "history": "执行历史"
+  },
+  "source": {
+    "chat": "聊天会话",
+    "chatDetail": "{{total}} 个会话 · {{running}} 个活动中",
+    "scheduler": "定时任务",
+    "schedulerDetail": "{{enabled}} 个启用 · {{running}} 个执行中",
+    "integration": "机器人集成",
+    "integrationNone": "未配置集成",
+    "connectedCount": "{{count}} 个平台已连接"
+  },
+  "platform": {
+    "qqbot": "QQ 机器人",
+    "feishu": "飞书",
+    "wechat": "微信",
+    "telegram": "Telegram"
+  },
+  "active": {
+    "empty": "当前没有正在运行的 AI 执行",
+    "prompt": "触发消息",
+    "output": "最新输出"
+  },
+  "history": {
+    "empty": "暂无执行历史（本次启动以来）",
+    "clear": "清空历史"
+  }
+}

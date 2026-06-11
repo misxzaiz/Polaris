@@ -4,10 +4,10 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { invoke, listen } from '@/services/transport';
+import { invoke } from '@/services/transport';
 import { Clock, MoreVertical, Search, Plus, FileText, ScrollText, Activity } from 'lucide-react';
 import { useSchedulerStore, useToastStore } from '@/stores';
-import type { ScheduledTask, CreateTaskParams, TaskDueEvent, TriggerType } from '@/types/scheduler';
+import type { ScheduledTask, CreateTaskParams, TriggerType } from '@/types/scheduler';
 import { createLogger } from '@/utils/logger';
 import { TaskCard } from './TaskCard';
 import { TaskEditor } from './TaskEditor';
@@ -164,7 +164,6 @@ export function SchedulerPanel() {
     isTaskSubscribed,
     subscribeToEvents,
     loadSchedulerStatus,
-    handleTaskDue,
     buildPrompt,
     schedulerStatus,
     startScheduler,
@@ -228,32 +227,8 @@ export function SchedulerPanel() {
     saveSortToStorage(sort);
   }, [sort]);
 
-  // 监听任务到期事件
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    let mounted = true;
-
-    const setupListener = async () => {
-      unlisten = await listen<TaskDueEvent>('scheduler-task-due', async (event) => {
-        if (!mounted) return;
-
-        try {
-          toast.info(t('toast.taskDue'), t('toast.executing', { name: event.taskName }));
-          await handleTaskDue(event);
-        } catch (e) {
-          log.error('任务执行失败', e instanceof Error ? e : new Error(String(e)));
-          toast.error(t('toast.executeFailed'), e instanceof Error ? e.message : String(e));
-        }
-      });
-    };
-
-    setupListener();
-
-    return () => {
-      mounted = false;
-      if (unlisten) unlisten();
-    };
-  }, [handleTaskDue, toast, t]);
+  // 监听任务到期事件：已上移至 useAppEvents（App 级常驻监听），
+  // 确保面板未打开时定时任务仍能执行，此处不再重复监听。
 
   // 创建任务
   const handleCreate = async (params: CreateTaskParams) => {

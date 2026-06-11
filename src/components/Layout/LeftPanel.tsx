@@ -62,6 +62,7 @@ export function LeftPanelContent({
   problemsContent,
   demoPluginContent,
   comicStudioContent,
+  aiConsoleContent,
   currentType,
 }: {
   filesContent: ReactNode
@@ -77,6 +78,7 @@ export function LeftPanelContent({
   problemsContent?: ReactNode
   demoPluginContent?: ReactNode
   comicStudioContent?: ReactNode
+  aiConsoleContent?: ReactNode
   currentType?: LeftPanelType
 }) {
   // Hook 必须在条件之外调用
@@ -109,6 +111,8 @@ export function LeftPanelContent({
     return <>{demoPluginContent}</>
   } else if (type === 'comicStudio') {
     return <>{comicStudioContent}</>
+  } else if (type === 'aiConsole') {
+    return <>{aiConsoleContent}</>
   }
 
   return null

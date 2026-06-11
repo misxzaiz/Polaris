@@ -14,19 +14,17 @@ import type {
 import { DEFAULT_SESSION_CONFIG } from '@/types/sessionConfig'
 
 /**
- * 清洗会话配置：剔除废弃/高风险值，并用默认值补全缺失字段。
+ * 清洗会话配置：剔除废弃值，并用默认值补全缺失字段。
  * 用于 persist 反序列化（merge）时兜底，兼容旧版本持久化数据。
  * - effort='max' → 回退默认（'max' 已废弃）
- * - permissionMode='bypassPermissions' → 回退默认（高风险，不持久化）
+ * - permissionMode 保留持久化值（默认值已为 bypassPermissions，见 DEFAULT_SESSION_CONFIG）
  */
 export function normalizeSessionConfig(config: SessionRuntimeConfig | undefined): SessionRuntimeConfig {
   return {
     ...DEFAULT_SESSION_CONFIG,
     ...(config ?? {}),
     effort: config?.effort === 'max' ? DEFAULT_SESSION_CONFIG.effort : config?.effort ?? DEFAULT_SESSION_CONFIG.effort,
-    permissionMode: config?.permissionMode === 'bypassPermissions'
-      ? DEFAULT_SESSION_CONFIG.permissionMode
-      : config?.permissionMode ?? DEFAULT_SESSION_CONFIG.permissionMode,
+    permissionMode: config?.permissionMode ?? DEFAULT_SESSION_CONFIG.permissionMode,
   }
 }
 

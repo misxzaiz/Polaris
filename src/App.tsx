@@ -26,6 +26,7 @@ import { VoiceCompanionOverlay } from './components/VoiceCompanion';
 const SettingsPage = lazy(() => import('./components/Settings/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const DeveloperPanel = lazy(() => import('./components/Developer/DeveloperPanel').then(m => ({ default: m.DeveloperPanel })));
 const IntegrationPanel = lazy(() => import('./components/Integration/IntegrationPanel').then(m => ({ default: m.IntegrationPanel })));
+const ExecutionConsolePanel = lazy(() => import('./components/ExecutionConsole').then(m => ({ default: m.ExecutionConsolePanel })));
 const CreateWorkspaceModal = lazy(() => import('./components/Workspace/CreateWorkspaceModal').then(m => ({ default: m.CreateWorkspaceModal })));
 const FileSearchModal = lazy(() => import('./components/Editor/FileSearchModal').then(m => ({ default: m.FileSearchModal })));
 const SymbolPalette = lazy(() => import('./components/Editor/SymbolPalette').then(m => ({ default: m.SymbolPalette })));
@@ -213,6 +214,7 @@ function App() {
                     terminalContent={<TerminalPanel />}
                     developerContent={<Suspense fallback={loadingFallback}><DeveloperPanel fillRemaining /></Suspense>}
                     integrationContent={<Suspense fallback={loadingFallback}><IntegrationPanel /></Suspense>}
+                    aiConsoleContent={<Suspense fallback={loadingFallback}><ExecutionConsolePanel /></Suspense>}
                     problemsContent={<ProblemsPanel />}
                     demoPluginContent={<DemoPluginPanel onSendToChat={sendMessage} />}
                     comicStudioContent={<ComicStudioPanel />}

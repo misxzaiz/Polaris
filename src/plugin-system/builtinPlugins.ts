@@ -68,6 +68,15 @@ const corePluginManifest: PolarisPluginManifest = {
         order: 90,
       },
       {
+        id: 'aiConsole.panel',
+        area: 'activityBar',
+        panelType: 'aiConsole',
+        icon: 'Activity',
+        labelKey: 'labels.aiConsolePanel',
+        labelDefault: 'AI Console',
+        order: 95,
+      },
+      {
         id: 'problems.panel',
         area: 'activityBar',
         panelType: 'problems',

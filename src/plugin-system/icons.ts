@@ -1,4 +1,5 @@
 import {
+  Activity,
   AlertCircle,
   BookOpen,
   Bot,
@@ -17,6 +18,7 @@ import {
 import type { PluginIconId } from './types'
 
 export const pluginIconMap: Record<PluginIconId, LucideIcon> = {
+  Activity,
   AlertCircle,
   BookOpen,
   Bot,

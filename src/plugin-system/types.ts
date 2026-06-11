@@ -18,6 +18,7 @@ export type PluginIconId =
   | 'BookOpen'
   | 'AlertCircle'
   | 'Film'
+  | 'Activity'
 
 export type PluginLeftPanelType = Exclude<LeftPanelType, 'none' | 'tools'>
 

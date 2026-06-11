@@ -1,0 +1,146 @@
+name: Release Web
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release-web:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            target: win
+            archive_extension: zip
+            bin_suffix: '.exe'
+          - platform: ubuntu-22.04
+            target: linux
+            archive_extension: tar.gz
+            bin_suffix: ''
+          - platform: macos-latest
+            target: macos
+            archive_extension: tar.gz
+            bin_suffix: ''
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ------------------------------------------------------------------
+      # Linux: 只需 libssl-dev（git2/openssl 编译用），不需要 webkit2gtk
+      # ------------------------------------------------------------------
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+
+      # ------------------------------------------------------------------
+      # 通用: 工具链
+      # ------------------------------------------------------------------
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      # ------------------------------------------------------------------
+      # 编译
+      # ------------------------------------------------------------------
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Web (compile + package)
+        run: pnpm run package:web
+
+      # ------------------------------------------------------------------
+      # 准备分发包
+      # ------------------------------------------------------------------
+      - name: Prepare archive
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          PLATFORM="${{ matrix.target }}"
+          ARCH="$(uname -m)"
+          if [ "$PLATFORM" = "win" ]; then
+            ARCH="x64"
+          fi
+          ARCHIVE_NAME="polaris-web-${VERSION}-${PLATFORM}-${ARCH}"
+
+          if [ "$PLATFORM" = "win" ]; then
+            7z a "${ARCHIVE_NAME}.zip" polaris-web/ > /dev/null
+            mv "${ARCHIVE_NAME}.zip" "${ARCHIVE_NAME}.tar.gz" 2>/dev/null || true
+            echo "ARCHIVE=${ARCHIVE_NAME}.zip" >> $GITHUB_ENV
+            cp "polaris-web/${ARCHIVE_NAME}.zip" "." 2>/dev/null || \
+              7z a "${ARCHIVE_NAME}.zip" polaris-web/ > /dev/null
+          else
+            tar czf "${ARCHIVE_NAME}.tar.gz" polaris-web/
+            echo "ARCHIVE=${ARCHIVE_NAME}.tar.gz" >> $GITHUB_ENV
+          fi
+
+          echo "Archive: ${ARCHIVE_NAME}"
+          ls -lh "${ARCHIVE_NAME}"*
+
+      - name: Upload archive artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: polaris-web-${{ matrix.target }}
+          path: ${{ env.ARCHIVE }}
+          retention-days: 14
+
+      # ------------------------------------------------------------------
+      # 发布到 GitHub Releases
+      # ------------------------------------------------------------------
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        with:
+          files: ${{ env.ARCHIVE }}
+          tag_name: ${{ github.ref_name }}
+          name: "Polaris ${{ github.ref_name }} (Web)"
+          body: |
+            ## Polaris ${{ github.ref_name }} — Web 独立服务
+
+            纯 Web 模式，无需桌面环境，通过浏览器访问。
+
+            ### 平台
+
+            | 平台 | 架构 | 文件 |
+            |------|------|------|
+            | Windows | x64 | polaris-web-${{ github.ref_name }}-win-x64.zip |
+            | Linux | $(uname -m) | polaris-web-${{ github.ref_name }}-linux-$(uname -m).tar.gz |
+            | macOS | $(uname -m) | polaris-web-${{ github.ref_name }}-macos-$(uname -m).tar.gz |
+
+            ### 快速启动
+
+            ```bash
+            tar xzf polaris-web-*-linux-*.tar.gz
+            cd polaris-web
+            ./start.sh
+            # 浏览器访问 http://localhost:9830
+            ```
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

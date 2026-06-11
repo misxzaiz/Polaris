@@ -21,10 +21,11 @@ describe('normalizeSessionConfig', () => {
     expect(result.effort).not.toBe('max')
   })
 
-  it('剔除高风险的 permissionMode=bypassPermissions', () => {
+  it('保留持久化的 permissionMode（默认值即 bypassPermissions，不再特判剔除）', () => {
     const result = normalizeSessionConfig({ permissionMode: 'bypassPermissions' })
-    expect(result.permissionMode).toBe(DEFAULT_SESSION_CONFIG.permissionMode)
-    expect(result.permissionMode).not.toBe('bypassPermissions')
+    expect(result.permissionMode).toBe('bypassPermissions')
+    // 非默认模式同样原样保留
+    expect(normalizeSessionConfig({ permissionMode: 'plan' }).permissionMode).toBe('plan')
   })
 
   it('保留合法值', () => {

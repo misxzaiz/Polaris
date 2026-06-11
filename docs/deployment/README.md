@@ -77,6 +77,7 @@ polaris-web/                               polaris-web/
 |---|---|---|
 | Windows | [web-only-windows.md](./web-only-windows.md) | 双击启动、按端口精准停止、EPERM 排查 |
 | Linux / 服务器 | [web-only-linux.md](./web-only-linux.md) | systemd 服务、Nginx 反向代理、tar.gz 分发 |
+| Windows → Linux (WSL) | [wsl-one-click-guide.md](./wsl-one-click-guide.md) | 一键脚本使用教程、环境配置 |
 
 ### ⚠️ 跨平台核心注意事项
 
@@ -88,7 +89,7 @@ polaris-web/                               polaris-web/
 - **要在某平台部署，必须把源码放到该平台（或对应架构）上重新运行 `pnpm run package:web`**。打包脚本本身是跨平台的，会自动生成匹配当前平台的二进制与 `start`/`stop` 脚本
 - **Linux glibc 版本**：二进制动态链接 glibc，构建机的 glibc 版本**不能比目标机更新**，否则目标机启动时报 `GLIBC_x.xx not found`。若目标是较老发行版（CentOS 7、Ubuntu 18.04 等），请在该系统或同等/更旧环境上编译
 
-> Windows 无法交叉编译 Linux 版（项目依赖 `git2` 等 C 库，交叉编译成本极高）。Windows 用户可借助 **WSL** 获得真实 Linux 环境进行编译，详见 [web-only-linux.md](./web-only-linux.md)。
+> Windows 无法交叉编译 Linux 版（项目依赖 `git2` 等 C 库，交叉编译成本极高）。推荐通过 WSL 获得真实 Linux 环境，使用 **一键脚本** 完成完整打包流程。详见下方 [WSL 一键打包](#wsl-一键打包) 和 [Linux 手动打包](./web-only-linux.md)。
 
 ### Web 模式功能限制
 

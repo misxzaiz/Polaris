@@ -246,7 +246,7 @@ export function useVoiceCompanion() {
       const { config: cfg } = st;
       resetStandbyTimer();
       // 语音命令统一读全局 config
-      const cmd = checkVoiceCommand(finalText, globalConfig?.voiceCommands as typeof cfg.voiceCommands | undefined);
+      const cmd = checkVoiceCommand(finalText, globalConfig?.voiceCommands);
       if (cmd) {
         clearTimer(autoSendTimerRef);
         executeCommand(cmd);
@@ -315,7 +315,7 @@ export function useVoiceCompanion() {
       // —— thinking：监听打断 ——
       if (cur === 'thinking') {
         const wake = matchWakeWord(finalText, cfg.wakeWord.words);
-        const cmd = checkVoiceCommand(finalText, globalConfig?.voiceCommands as typeof cfg.voiceCommands | undefined);
+        const cmd = checkVoiceCommand(finalText, globalConfig?.voiceCommands);
         if (wake || cmd === 'interrupt') interruptAI();
         return;
       }

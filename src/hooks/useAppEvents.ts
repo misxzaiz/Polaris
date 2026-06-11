@@ -5,6 +5,7 @@
  * - Tauri EventRouter 初始化与注册
  * - file:opened / file:preview / editor:closed 事件
  * - 文件系统变更监听
+ * - 定时任务到期事件（App 级常驻，确保调度面板未打开时任务仍执行）
  * - 工作区切换时清理聊天错误
  */
 
@@ -14,9 +15,14 @@ import { useTabStore } from '@/stores/tabStore';
 import { useViewStore } from '@/stores/viewStore';
 import { initEditorFileChangeListener } from '@/stores/fileEditorStore';
 import { useTerminalScriptStore } from '@/stores/terminalScriptStore';
+import { useSchedulerStore } from '@/stores/schedulerStore';
+import { useToastStore } from '@/stores/toastStore';
 import { sessionStoreManager } from '@/stores/conversationStore';
 import { getEventRouter } from '@/services/eventRouter';
+import { initExecutionConsoleListeners } from '@/stores/executionConsoleStore';
 import { isAIEvent } from '@/ai-runtime';
+import i18n from '@/i18n';
+import type { TaskDueEvent } from '@/types/scheduler';
 import { createLogger } from '@/utils/logger';
 
 const log = createLogger('AppEvents');
@@ -42,6 +48,38 @@ export function useAppEvents() {
       mounted = false;
       eventListenerCleanupRef.current?.();
       eventListenerCleanupRef.current = null;
+    };
+  }, []);
+
+  // AI 执行控制台：App 级安装集成执行监听（面板未打开也累计历史）
+  useEffect(() => {
+    initExecutionConsoleListeners().catch((e) =>
+      log.warn('Execution console listeners init failed', { error: String(e) })
+    );
+  }, []);
+
+  // 定时任务到期 → 执行任务（App 级常驻监听，原在 SchedulerPanel 内，
+  // 面板未打开时事件无人消费导致任务不执行；handleTaskDue 自带重入保护）
+  useEffect(() => {
+    const unlistenPromise = listen<TaskDueEvent>('scheduler-task-due', async (event) => {
+      const toast = useToastStore.getState();
+      try {
+        toast.info(
+          i18n.t('scheduler:toast.taskDue'),
+          i18n.t('scheduler:toast.executing', { name: event.taskName })
+        );
+        await useSchedulerStore.getState().handleTaskDue(event);
+      } catch (e) {
+        log.error('定时任务执行失败', e instanceof Error ? e : new Error(String(e)));
+        toast.error(
+          i18n.t('scheduler:toast.executeFailed'),
+          e instanceof Error ? e.message : String(e)
+        );
+      }
+    });
+
+    return () => {
+      unlistenPromise.then(unlisten => unlisten());
     };
   }, []);
 

@@ -1,0 +1,32 @@
+{
+  "title": "AI Execution Console",
+  "section": {
+    "overview": "Trigger Sources",
+    "active": "Active Executions",
+    "history": "Execution History"
+  },
+  "source": {
+    "chat": "Chat Sessions",
+    "chatDetail": "{{total}} sessions · {{running}} active",
+    "scheduler": "Scheduled Tasks",
+    "schedulerDetail": "{{enabled}} enabled · {{running}} running",
+    "integration": "Bot Integrations",
+    "integrationNone": "No integrations configured",
+    "connectedCount": "{{count}} platforms connected"
+  },
+  "platform": {
+    "qqbot": "QQ Bot",
+    "feishu": "Feishu",
+    "wechat": "WeChat",
+    "telegram": "Telegram"
+  },
+  "active": {
+    "empty": "No AI executions currently running",
+    "prompt": "Trigger message",
+    "output": "Latest output"
+  },
+  "history": {
+    "empty": "No execution history (since app start)",
+    "clear": "Clear history"
+  }
+}
