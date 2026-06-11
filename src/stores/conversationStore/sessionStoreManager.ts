@@ -555,12 +555,32 @@ function createSessionManagerStore() {
     dispatchEvent: (event: AIEvent & { sessionId?: string; _routeSessionId?: string }) => {
       // 使用 _routeSessionId（前端 sessionId）进行路由，如果没有则使用 sessionId
       // 如果都没有，使用当前活跃会话 ID
-      const routeSessionId = event._routeSessionId || event.sessionId || get().activeSessionId
+      let routeSessionId = event._routeSessionId || event.sessionId || get().activeSessionId
       if (!routeSessionId) {
         log.warn('无法确定路由目标，缺少 sessionId 和 activeSessionId')
         return
       }
       let store = get().stores.get(routeSessionId)
+
+      // conversationId 反向索引兜底：Web 页面重载/历史恢复后，后端事件携带的
+      // 旧前端 sessionId 已不存在，但该会话可能已通过历史恢复绑定到新 store
+      // （createSessionFromHistory / 手动刷新恢复注册了 conversationId → sessionId 索引）。
+      // 优先续接到恢复的会话，而不是自动创建一个丢失上下文的孤儿会话。
+      if (!store && event.sessionId) {
+        const mappedSessionId = get().conversationIdToStoreId.get(event.sessionId)
+        if (mappedSessionId && mappedSessionId !== routeSessionId) {
+          const mappedStore = get().stores.get(mappedSessionId)
+          if (mappedStore) {
+            log.info('通过 conversationId 反向索引续接事件', {
+              staleRouteId: routeSessionId,
+              conversationId: event.sessionId,
+              mappedSessionId,
+            })
+            routeSessionId = mappedSessionId
+            store = mappedStore
+          }
+        }
+      }
 
       // 如果会话不存在，自动创建
       if (!store) {

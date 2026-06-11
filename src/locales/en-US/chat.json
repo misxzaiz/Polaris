@@ -277,7 +277,11 @@
     "responding": "Responding...",
     "more": "More settings",
     "collapse": "Collapse",
-    "engineUnavailable": "Engine unavailable"
+    "engineUnavailable": "Engine unavailable",
+    "syncRecover": "Sync & recover: reconnect and restore content lost while disconnected",
+    "syncRecoverDone": "Recovered, receiving new content",
+    "syncRecoverNothing": "Nothing to recover for this session",
+    "syncRecoverFailed": "Sync recovery failed"
   },
   "search": {
     "placeholder": "Search messages...",

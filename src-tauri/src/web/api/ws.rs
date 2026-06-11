@@ -30,6 +30,13 @@ enum ClientMessage {
     Subscribe { events: Vec<String> },
     #[serde(rename = "unsubscribe")]
     Unsubscribe { events: Vec<String> },
+    /// 断线重连后补发请求：客户端上报最后收到的事件 seq，
+    /// 服务端从重放缓冲补发 seq > lastSeq 的事件。
+    #[serde(rename = "resume")]
+    Resume {
+        #[serde(rename = "lastSeq")]
+        last_seq: u64,
+    },
 }
 
 /// Maximum allowed WebSocket frame size (1 MB).
@@ -136,6 +143,11 @@ async fn handle_ws_connection(mut socket: WebSocket, state: Arc<AppState>) {
                                 }
                                 tracing::info!(count, total = subscriptions.len(), "WS client unsubscribed from events");
                             }
+                            Ok(ClientMessage::Resume { last_seq }) => {
+                                if handle_resume(&mut socket, &state, last_seq, &subscriptions).await.is_err() {
+                                    break;
+                                }
+                            }
                             Err(e) => {
                                 tracing::debug!("Ignoring malformed WS message: {}", e);
                             }
@@ -178,6 +190,66 @@ async fn handle_ws_connection(mut socket: WebSocket, state: Arc<AppState>) {
     }
 }
 
+/// 处理客户端的 resume 请求：从重放缓冲补发错过的事件。
+///
+/// 流程：
+/// 1. `resume-start` — 告知客户端补发开始，附带 `gap` 标记（缓冲是否完整覆盖）。
+/// 2. 逐条补发 seq > lastSeq 且匹配订阅过滤的事件（与实时事件同构，客户端按 seq 去重）。
+/// 3. `resume-complete` — 附带服务端当前最新 seq，客户端据此对齐。
+///
+/// 返回 Err 表示 socket 已断开，调用方应退出连接循环。
+async fn handle_resume(
+    socket: &mut WebSocket,
+    state: &Arc<AppState>,
+    last_seq: u64,
+    subscriptions: &HashSet<String>,
+) -> Result<(), ()> {
+    let replay = state.event_broadcast.replay_after(last_seq);
+    let latest_seq = state.event_broadcast.current_seq();
+    let total = replay.events.len();
+
+    tracing::info!(
+        last_seq,
+        latest_seq,
+        buffered = total,
+        gap = replay.gap,
+        "WS client requested resume"
+    );
+
+    let start_msg = serde_json::json!({
+        "type": "resume-start",
+        "gap": replay.gap,
+        "count": total,
+    });
+    if socket.send(Message::Text(start_msg.to_string().into())).await.is_err() {
+        return Err(());
+    }
+
+    let mut sent = 0usize;
+    for event in replay.events {
+        if !should_send(&event, subscriptions) {
+            continue;
+        }
+        if socket.send(Message::Text(event.into())).await.is_err() {
+            return Err(());
+        }
+        sent += 1;
+    }
+
+    let complete_msg = serde_json::json!({
+        "type": "resume-complete",
+        "gap": replay.gap,
+        "latestSeq": latest_seq,
+        "replayed": sent,
+    });
+    if socket.send(Message::Text(complete_msg.to_string().into())).await.is_err() {
+        return Err(());
+    }
+
+    tracing::info!(sent, latest_seq, "WS resume replay finished");
+    Ok(())
+}
+
 /// Check if a broadcast event matches the subscription filter.
 /// Empty subscriptions = send everything (backward compatible).
 fn should_send(event_json: &str, subscriptions: &HashSet<String>) -> bool {
@@ -193,11 +265,12 @@ fn should_send(event_json: &str, subscriptions: &HashSet<String>) -> bool {
 
 /// Extract the value of the top-level `"event"` field without full JSON deserialization.
 /// Event names are simple ASCII identifiers (e.g. "chat-event") so escaped quotes
-/// are not a concern.
+/// are not a concern. Tolerates whitespace around the colon (`"event" : "x"`).
 fn extract_event_type(json: &str) -> Option<&str> {
-    let marker = r#""event":"#;
+    let marker = r#""event""#;
     let pos = json.find(marker)?;
     let rest = json[pos + marker.len()..].trim_start();
+    let rest = rest.strip_prefix(':')?.trim_start();
     if !rest.starts_with('"') { return None; }
     let value = &rest[1..];
     let end = value.find('"')?;
@@ -296,5 +369,16 @@ mod tests {
             r#"{"type":"ping"}"#
         ).unwrap();
         matches!(msg, ClientMessage::Ping);
+    }
+
+    #[test]
+    fn test_deserialize_resume() {
+        let msg: ClientMessage = serde_json::from_str(
+            r#"{"type":"resume","lastSeq":42}"#
+        ).unwrap();
+        match msg {
+            ClientMessage::Resume { last_seq } => assert_eq!(last_seq, 42),
+            _ => panic!("Expected Resume"),
+        }
     }
 }

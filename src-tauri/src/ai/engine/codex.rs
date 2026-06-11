@@ -913,6 +913,10 @@ impl AIEngine for CodexEngine {
         self.sessions.count()
     }
 
+    fn has_active_session(&self, session_id: &str) -> bool {
+        self.sessions.get(session_id).is_some()
+    }
+
     fn update_config(&mut self, new_config: Config) {
         tracing::info!("[CodexEngine] 应用新配置,失效 CLI 路径缓存");
         self.config = new_config;

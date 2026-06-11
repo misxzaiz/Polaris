@@ -121,7 +121,7 @@ impl SchedulerDaemon {
     }
 
     /// 启动守护进程（Web-only 模式，使用 WebSocket broadcast 替代 Tauri events）
-    pub fn start_with_broadcast(&mut self, event_tx: tokio::sync::broadcast::Sender<String>) -> Result<()> {
+    pub fn start_with_broadcast(&mut self, event_tx: crate::web::EventBroadcaster) -> Result<()> {
         if self.running.load(Ordering::SeqCst) {
             tracing::warn!("[SchedulerDaemon] 守护进程已在运行");
             return Ok(());
@@ -241,7 +241,7 @@ async fn check_and_notify_due_tasks_tauri(
 
 /// 检查到期任务并发送通知（Web 模式，通过 WebSocket broadcast）
 async fn check_and_notify_due_tasks_broadcast(
-    event_tx: &tokio::sync::broadcast::Sender<String>,
+    event_tx: &crate::web::EventBroadcaster,
     config_dir: &Path,
     workspace_path: &Option<PathBuf>,
 ) -> Result<()> {

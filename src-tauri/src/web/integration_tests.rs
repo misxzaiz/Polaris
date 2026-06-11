@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
-use tokio::sync::{Mutex as AsyncMutex, broadcast};
+use tokio::sync::Mutex as AsyncMutex;
 use tower::ServiceExt;
 
 use crate::ai::EngineRegistry;
@@ -63,7 +63,6 @@ fn create_test_state() -> Arc<AppState> {
         token: Some(TEST_TOKEN.to_string()),
     };
     let config_store = ConfigStore::new_test(config, std::path::PathBuf::from("/tmp/polaris_test"));
-    let (tx, _) = broadcast::channel(256);
     Arc::new(AppState {
         config_store: Arc::new(Mutex::new(config_store)),
         sessions: Arc::new(Mutex::new(HashMap::new())),
@@ -77,7 +76,7 @@ fn create_test_state() -> Arc<AppState> {
         scheduler_daemon: AsyncMutex::new(None),
         lsp_manager: Mutex::new(LspManager::new()),
         lsp_config: Mutex::new(LspConfigRepository::new(&std::path::PathBuf::from("/tmp"))),
-        event_broadcast: tx,
+        event_broadcast: crate::web::EventBroadcaster::new(256),
         #[cfg(feature = "tauri-app")]
         app_handle: OnceLock::new(),
         app_config_dir: OnceLock::new(),
@@ -559,8 +558,10 @@ async fn answer_question_broadcasts_event() {
     assert!(event.is_ok());
     let msg = event.unwrap().unwrap();
     let json: serde_json::Value = serde_json::from_str(&msg).unwrap();
-    assert_eq!(json["type"], "question_answered");
-    assert_eq!(json["sessionId"], "s-bc");
+    // dual_emit 将事件包入 {"event":"chat-event","payload":...} envelope
+    assert_eq!(json["event"], "chat-event");
+    assert_eq!(json["payload"]["type"], "question_answered");
+    assert_eq!(json["payload"]["sessionId"], "s-bc");
 }
 
 #[tokio::test]
@@ -590,8 +591,10 @@ async fn approve_plan_broadcasts_event() {
     assert!(event.is_ok());
     let msg = event.unwrap().unwrap();
     let json: serde_json::Value = serde_json::from_str(&msg).unwrap();
-    assert_eq!(json["contextId"], "main");
-    assert_eq!(json["payload"]["planId"], "plan-bc");
+    // dual_emit envelope：payload 内才是 {"contextId":"main","payload":{...}}
+    assert_eq!(json["event"], "chat-event");
+    assert_eq!(json["payload"]["contextId"], "main");
+    assert_eq!(json["payload"]["payload"]["planId"], "plan-bc");
 }
 
 // ============================================================================
@@ -643,8 +646,10 @@ async fn reject_plan_broadcasts_event() {
     assert!(event.is_ok());
     let msg = event.unwrap().unwrap();
     let json: serde_json::Value = serde_json::from_str(&msg).unwrap();
-    assert_eq!(json["contextId"], "main");
-    assert_eq!(json["payload"]["planId"], "plan-rej-bc");
+    // dual_emit envelope：payload 内才是 {"contextId":"main","payload":{...}}
+    assert_eq!(json["event"], "chat-event");
+    assert_eq!(json["payload"]["contextId"], "main");
+    assert_eq!(json["payload"]["payload"]["planId"], "plan-rej-bc");
 }
 
 #[tokio::test]
@@ -998,7 +1003,7 @@ async fn answer_question_with_custom_input() {
     assert!(event.is_ok());
     let msg = event.unwrap().unwrap();
     let json: serde_json::Value = serde_json::from_str(&msg).unwrap();
-    assert_eq!(json["answer"]["customInput"], "my custom text");
+    assert_eq!(json["payload"]["answer"]["customInput"], "my custom text");
 }
 
 #[tokio::test]
@@ -1410,11 +1415,15 @@ async fn broadcast_event_contains_correct_fields() {
     let event = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv()).await;
     let msg = event.unwrap().unwrap();
     let json: serde_json::Value = serde_json::from_str(&msg).unwrap();
-    assert_eq!(json["type"], "question_answered");
-    assert_eq!(json["sessionId"], "s-fields");
-    assert_eq!(json["callId"], "call-fields");
-    assert!(json["answer"]["selected"].is_array());
-    assert_eq!(json["answer"]["selected"].as_array().unwrap().len(), 2);
+    // dual_emit envelope + EventBroadcaster 注入的顶层 seq
+    assert!(json["seq"].is_u64());
+    assert_eq!(json["event"], "chat-event");
+    let inner = &json["payload"];
+    assert_eq!(inner["type"], "question_answered");
+    assert_eq!(inner["sessionId"], "s-fields");
+    assert_eq!(inner["callId"], "call-fields");
+    assert!(inner["answer"]["selected"].is_array());
+    assert_eq!(inner["answer"]["selected"].as_array().unwrap().len(), 2);
 }
 
 // ============================================================================

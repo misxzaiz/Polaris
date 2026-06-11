@@ -1027,6 +1027,21 @@ pub async fn interrupt_chat_inner(
 // Tauri Commands - 聊天
 // ============================================================================
 
+/// 将 chat 事件包装为 WS envelope 后广播。
+///
+/// 前端 HTTP 传输层（httpTransport）按顶层 `event` 字段路由事件，
+/// 未包 envelope 的裸事件会被 Web 客户端静默丢弃 —— 桌面端发起的会话
+/// 在手机/浏览器端将完全看不到流式输出。格式与 `web::api::chat::dual_emit`
+/// 的 WebSocket 分支保持一致。
+#[cfg(feature = "tauri-app")]
+fn broadcast_chat_event(tx: &crate::web::EventBroadcaster, event: &serde_json::Value) {
+    let ws_msg = serde_json::json!({
+        "event": "chat-event",
+        "payload": event,
+    });
+    let _ = tx.send(ws_msg.to_string());
+}
+
 /// 启动聊天会话
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
@@ -1048,7 +1063,7 @@ pub async fn start_chat(
     let callbacks = ChatCallbacks {
         emit_event: Arc::new(move |json: serde_json::Value| {
             let _ = window_clone.emit("chat-event", &json);
-            let _ = broadcast_tx.send(json.to_string());
+            broadcast_chat_event(&broadcast_tx, &json);
         }),
         notify_complete: Arc::new(move || {
             notify_ai_reply_complete(&window);
@@ -1080,7 +1095,7 @@ pub async fn continue_chat(
     let callbacks = ChatCallbacks {
         emit_event: Arc::new(move |json: serde_json::Value| {
             let _ = window_clone.emit("chat-event", &json);
-            let _ = broadcast_tx.send(json.to_string());
+            broadcast_chat_event(&broadcast_tx, &json);
         }),
         notify_complete: Arc::new(move || {
             notify_ai_reply_complete(&window);
@@ -1883,7 +1898,7 @@ pub async fn answer_question(
         .map_err(|e| AppError::ProcessError(format!("发送事件失败: {}", e)))?;
 
     // Dual emission: also broadcast to WebSocket clients
-    let _ = state.event_broadcast.send(event.to_string());
+    broadcast_chat_event(&state.event_broadcast, &event);
 
     tracing::info!("[answer_question] 答案已提交，事件已发送");
 
@@ -2023,7 +2038,7 @@ pub async fn approve_plan(
         .map_err(|e| AppError::ProcessError(format!("发送事件失败: {}", e)))?;
 
     // Dual emission: also broadcast to WebSocket clients
-    let _ = state.event_broadcast.send(payload.to_string());
+    broadcast_chat_event(&state.event_broadcast, &payload);
 
     tracing::info!("[approve_plan] 计划已批准，事件已发送");
 
@@ -2076,7 +2091,7 @@ pub async fn reject_plan(
         .map_err(|e| AppError::ProcessError(format!("发送事件失败: {}", e)))?;
 
     // Dual emission: also broadcast to WebSocket clients
-    let _ = state.event_broadcast.send(payload.to_string());
+    broadcast_chat_event(&state.event_broadcast, &payload);
 
     tracing::info!("[reject_plan] 计划已拒绝，事件已发送");
 

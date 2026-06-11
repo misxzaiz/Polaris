@@ -312,6 +312,14 @@ pub trait AIEngine: Send + Sync {
         0
     }
 
+    /// 检查指定会话是否仍在本引擎中运行
+    ///
+    /// Web 端断线重连后用于判断会话是否仍在输出中（恢复 isStreaming 状态）。
+    /// 默认实现返回 false；维护会话表的引擎应覆盖。
+    fn has_active_session(&self, _session_id: &str) -> bool {
+        false
+    }
+
     /// 应用最新配置(并失效内部缓存)
     ///
     /// 当用户通过设置页面修改 CLI 路径或其他配置时,引擎需要

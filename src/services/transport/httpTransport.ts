@@ -113,7 +113,16 @@ export type ConnectionStatus = 'connected' | 'disconnected' | 'failed';
 export interface HttpTransportOptions {
   /** Called when WebSocket connection status changes */
   onStatusChange?: (status: ConnectionStatus) => void;
+  /**
+   * Called when the server reports a replay gap on resume —
+   * events were missed beyond the server buffer and a full state
+   * resync (e.g. re-fetching session history) is required.
+   */
+  onResumeGap?: () => void;
 }
+
+/** How long to wait for any server frame after a liveness probe before force-closing (ms). */
+const PROBE_TIMEOUT_MS = 5_000;
 
 /**
  * 创建 HTTP 传输适配器
@@ -132,6 +141,10 @@ export function createHttpTransport(
   let intentionalClose = false;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  /** Highest event seq received from the server — basis for resume + dedupe. */
+  let lastSeq = 0;
+  /** Liveness probe timer — armed on wake-up when the socket looks open. */
+  let probeTimer: ReturnType<typeof setTimeout> | null = null;
   const listeners = new Map<string, Set<(payload: unknown) => void>>();
 
   /** Send a JSON message to the WebSocket if connected */
@@ -205,8 +218,15 @@ export function createHttpTransport(
         heartbeatTimer = setInterval(() => {
           sendWsMsg({ type: 'ping' });
         }, CLIENT_HEARTBEAT_MS);
-        // Re-sync subscriptions after (re)connect
+        // Re-sync subscriptions after (re)connect — must happen BEFORE resume
+        // so the server applies the subscription filter to replayed events.
         syncSubscriptions();
+        // Resume: ask the server to replay events missed while disconnected.
+        // lastSeq === 0 means fresh page load — nothing to resume.
+        if (lastSeq > 0) {
+          log.info(`Requesting event resume from seq ${lastSeq}`);
+          sendWsMsg({ type: 'resume', lastSeq });
+        }
         resolve();
       };
 
@@ -225,11 +245,46 @@ export function createHttpTransport(
       socket.addEventListener('error', errorHandler);
 
       socket.addEventListener('message', (msg) => {
+        // Any inbound frame proves the socket is alive — cancel the liveness probe.
+        clearProbe();
         try {
           const raw = typeof msg.data === 'string' ? msg.data : '';
-          const data = JSON.parse(raw) as { event?: string; type?: string; payload: unknown };
+          const data = JSON.parse(raw) as {
+            event?: string;
+            type?: string;
+            payload: unknown;
+            seq?: number;
+            gap?: boolean;
+            latestSeq?: number;
+          };
+          // Resume protocol control messages
+          if (data.type === 'resume-complete') {
+            const latest = typeof data.latestSeq === 'number' ? data.latestSeq : null;
+            // Server restart resets seq to 0 — a latestSeq below our lastSeq
+            // means a different event epoch: everything in between is lost.
+            const serverRestarted = latest !== null && latest < lastSeq;
+            if (latest !== null) {
+              lastSeq = latest;
+            }
+            if (data.gap || serverRestarted) {
+              log.warn(
+                serverRestarted
+                  ? 'Server seq rolled back (backend restarted) — full resync required'
+                  : 'Resume gap detected — server buffer did not cover the disconnect window, full resync required'
+              );
+              options?.onResumeGap?.();
+            } else {
+              log.info('Resume replay complete');
+            }
+            return;
+          }
           // Skip server pong/control messages — they have no 'event' field
           if (!data.event) return;
+          // Seq-based dedupe: replayed events may overlap with queued live events.
+          if (typeof data.seq === 'number') {
+            if (data.seq <= lastSeq) return;
+            lastSeq = data.seq;
+          }
           listeners.get(data.event)?.forEach((cb) => cb(data.payload));
         } catch {
           const preview = typeof msg.data === 'string' ? msg.data.slice(0, 200) : '(non-string)';
@@ -241,6 +296,7 @@ export function createHttpTransport(
         ws = null;
         wsConnecting = null;
         stopHeartbeat();
+        clearProbe();
         options?.onStatusChange?.('disconnected');
         scheduleReconnect();
       });
@@ -255,6 +311,64 @@ export function createHttpTransport(
       clearInterval(heartbeatTimer);
       heartbeatTimer = null;
     }
+  }
+
+  /** Cancel a pending liveness probe */
+  function clearProbe(): void {
+    if (probeTimer !== null) {
+      clearTimeout(probeTimer);
+      probeTimer = null;
+    }
+  }
+
+  /**
+   * Wake-up handler for visibilitychange / online / focus.
+   *
+   * Mobile browsers freeze JS timers when the screen is locked or the tab is
+   * backgrounded, so the exponential-backoff reconnect timer never fires and
+   * the page appears permanently disconnected after unlock. This handler:
+   * - reconnects immediately (bypassing the backoff) if the socket is closed;
+   * - probes a seemingly-open socket with a ping, force-closing it if the
+   *   server doesn't respond in time (half-open connection after sleep).
+   */
+  function wakeUp(): void {
+    if (intentionalClose) return;
+
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      // Socket claims to be open, but after device sleep it may be half-dead.
+      // Probe it: any inbound frame clears the timer; silence force-closes.
+      if (probeTimer === null) {
+        sendWsMsg({ type: 'ping' });
+        probeTimer = setTimeout(() => {
+          probeTimer = null;
+          log.warn('Liveness probe timed out after wake-up, force-closing stale socket');
+          reconnectAttempt = 0;
+          ws?.close();
+        }, PROBE_TIMEOUT_MS);
+      }
+      return;
+    }
+
+    if (wsConnecting) return;
+
+    // Socket is closed — reconnect right now, bypassing any frozen backoff timer.
+    log.info('Page became visible/online with closed socket, reconnecting immediately');
+    if (reconnectTimer !== null) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    reconnectAttempt = 0;
+    connectWs().catch(() => { /* scheduleReconnect called on close */ });
+  }
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') wakeUp();
+    });
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('online', wakeUp);
+    window.addEventListener('focus', wakeUp);
   }
 
   return {
@@ -385,6 +499,7 @@ export function createHttpTransport(
     disconnect() {
       intentionalClose = true;
       stopHeartbeat();
+      clearProbe();
       if (reconnectTimer !== null) {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;

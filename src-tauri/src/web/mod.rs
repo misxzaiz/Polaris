@@ -1,9 +1,12 @@
 pub mod api;
 pub mod auth;
 pub mod error;
+pub mod event_broadcaster;
 pub mod middleware;
 pub mod router;
 pub mod server;
+
+pub use event_broadcaster::EventBroadcaster;
 
 use std::collections::HashMap;
 use std::sync::MutexGuard;

@@ -1,5 +1,6 @@
 import type { PolarisPluginManifest } from './types'
 import { pluginRegistry } from './registry'
+import { computerPluginManifest } from '@/plugins/computer/manifest'
 import { requirementPluginManifest } from '@/plugins/requirement/manifest'
 import { schedulerPluginManifest } from '@/plugins/scheduler/manifest'
 import { todoPluginManifest } from '@/plugins/todo/manifest'
@@ -105,6 +106,7 @@ export function registerBuiltinPlugins(): void {
   pluginRegistry.register(schedulerPluginManifest)
   pluginRegistry.register(todoPluginManifest)
   pluginRegistry.register(requirementPluginManifest)
+  pluginRegistry.register(computerPluginManifest)
 }
 
 registerBuiltinPlugins()

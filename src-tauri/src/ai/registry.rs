@@ -145,6 +145,13 @@ impl EngineRegistry {
         false
     }
 
+    /// 检查会话是否仍在任一引擎中运行
+    ///
+    /// Web 端断线重连后查询会话存活状态，用于恢复前端 isStreaming。
+    pub fn is_session_active(&self, session_id: &str) -> bool {
+        self.engines.values().any(|engine| engine.has_active_session(session_id))
+    }
+
     /// 向会话发送输入
     ///
     /// 尝试在所有引擎中找到对应的会话并发送输入

@@ -269,6 +269,9 @@ pub async fn handle_ipc_bridge(
         "get_local_ips" => dispatch_get_local_ips(),
         "get_web_server_status" => dispatch_get_web_server_status(&state).await,
 
+        // ── Chat session liveness（Web 断线重连状态恢复） ────────────────────
+        "is_chat_session_running" => dispatch_is_chat_session_running(&state, &args).await,
+
         // ── Integration ────────────────────────────────────────────────────
         "init_integration" => Ok(Json(Value::Null)), // no-op in web mode (no AppHandle)
         "get_all_integration_status" => dispatch_get_all_integration_status(&state).await,
@@ -1307,6 +1310,17 @@ fn dispatch_terminal_create(state: &AppState, args: &Value) -> Result<Json<Value
         optional_string(args, "purpose"),
         optional_string(args, "scriptId"),
     ))
+}
+
+/// 查询聊天会话是否仍在任一引擎中运行。
+///
+/// Web 端断线重连（resume-gap 兜底恢复）后调用，决定前端是否恢复
+/// isStreaming 状态：进程仍在 → 继续等待后续事件；已结束 → 标记完成。
+async fn dispatch_is_chat_session_running(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+    let session_id = require_string(args, "sessionId")?;
+    let registry = state.engine_registry.lock().await;
+    let running = registry.is_session_active(&session_id);
+    Ok(Json(serde_json::json!({ "running": running })))
 }
 
 fn dispatch_terminal_write(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {

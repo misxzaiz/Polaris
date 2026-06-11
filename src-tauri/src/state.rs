@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
-use tokio::sync::{Mutex as AsyncMutex, broadcast};
+use tokio::sync::Mutex as AsyncMutex;
 
 use crate::ai::EngineRegistry;
 use crate::commands::context::ContextMemoryStore;
@@ -125,8 +125,8 @@ pub struct AppState {
     pub lsp_manager: Mutex<LspManager>,
     /// LSP 配置持久化
     pub lsp_config: Mutex<LspConfigRepository>,
-    /// WebSocket 事件广播通道（Web Access Layer）
-    pub event_broadcast: broadcast::Sender<String>,
+    /// WebSocket 事件广播通道（Web Access Layer）— 带 seq 与重放缓冲
+    pub event_broadcast: crate::web::EventBroadcaster,
     /// Tauri AppHandle — set once during setup, used by Web API handlers
     /// to emit events back to the desktop webview (dual emission).
     #[cfg(feature = "tauri-app")]
@@ -167,7 +167,7 @@ pub fn create_app_state(
         scheduler_daemon: AsyncMutex::new(None),
         lsp_manager: Mutex::new(LspManager::new()),
         lsp_config: Mutex::new(LspConfigRepository::new(&config_dir)),
-        event_broadcast: broadcast::channel(256).0,
+        event_broadcast: crate::web::EventBroadcaster::new(256),
         #[cfg(feature = "tauri-app")]
         app_handle: OnceLock::new(),
         app_config_dir: OnceLock::new(),

@@ -30,6 +30,11 @@ describe('plugin MCP contributions', () => {
         pluginId: 'polaris.scheduler',
         transport: 'stdio',
       }),
+      expect.objectContaining({
+        id: 'polaris-computer',
+        pluginId: 'polaris.computer',
+        transport: 'stdio',
+      }),
     ]))
   })
 
@@ -75,6 +80,30 @@ describe('plugin MCP contributions', () => {
     )
   })
 
+  it('filters Computer MCP when its plugin is disabled (关闭即不注入)', () => {
+    const pluginStates: PluginStateMap = {
+      'polaris.computer': {
+        enabled: false,
+        uiEnabled: true,
+        mcpEnabled: true,
+      },
+    }
+
+    expect(listEnabledPluginMcpServers(pluginStates)).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'polaris-computer',
+        }),
+      ])
+    )
+    expect(listPluginMcpServerStatuses(pluginStates)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'polaris-computer',
+        enabled: false,
+      }),
+    ]))
+  })
+
   it('filters a single MCP server when only that server is disabled', () => {
     const pluginStates: PluginStateMap = {
       'polaris.scheduler': {
@@ -107,6 +136,7 @@ describe('plugin MCP contributions', () => {
     ['polaris.todo', 'polaris-todo', 'polaris_todo_mcp'],
     ['polaris.requirements', 'polaris-requirements', 'polaris_requirements_mcp'],
     ['polaris.scheduler', 'polaris-scheduler', 'polaris_scheduler_mcp'],
+    ['polaris.computer', 'polaris-computer', 'polaris_computer_mcp'],
   ])('keeps %s manifest aligned with the backend MCP registry contract', (
     pluginId,
     serverId,

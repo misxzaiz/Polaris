@@ -48,6 +48,19 @@ function handleConnectionStatusChange(status: ConnectionStatus): void {
   }
 }
 
+/**
+ * 服务端重放缓冲无法覆盖断线窗口（resume-gap）时的兜底：
+ * 对仍在流式输出的会话重新拉取落盘历史并校正状态。
+ * 动态 import 避免 transport ↔ store 的模块级循环依赖。
+ */
+function handleResumeGap(): void {
+  void import('../webReconnectResync')
+    .then((m) => m.resyncAfterResumeGap())
+    .catch((err) => {
+      log.error('Resume-gap 兜底恢复失败', err instanceof Error ? err : new Error(String(err)));
+    });
+}
+
 /** 当前传输模式 */
 export const currentMode = detectTransport();
 
@@ -56,7 +69,10 @@ const transport = currentMode === 'tauri'
   ? tauriTransport
   : createHttpTransport(
       getServerUrl(),
-      { onStatusChange: handleConnectionStatusChange },
+      {
+        onStatusChange: handleConnectionStatusChange,
+        onResumeGap: handleResumeGap,
+      },
     );
 
 const LOCAL_EVENTS = new Set([

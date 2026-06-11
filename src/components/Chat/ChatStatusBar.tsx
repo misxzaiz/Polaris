@@ -13,7 +13,7 @@ import { useTranslation } from 'react-i18next';
 import { useConfigStore, useSessionStore } from '@/stores';
 import { useActiveSessionStreaming, useHasPendingQuestion, useHasActivePlan, useActiveSessionMessages } from '@/stores/conversationStore/useActiveSession';
 import { useSessionConfig } from '@/stores/sessionConfigStore';
-import { Paperclip, MoreHorizontal, Loader2, Mic, AudioLines, Volume2, VolumeX } from 'lucide-react';
+import { Paperclip, MoreHorizontal, Loader2, Mic, AudioLines, Volume2, VolumeX, RefreshCw } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useTTS } from '@/hooks/useTTS';
 import { useVoiceDictation } from '@/hooks/useVoiceDictation';
@@ -27,6 +27,8 @@ import { useActiveSessionId, useSessionMetadataList } from '@/stores/conversatio
 import { useVoiceCompanionStore } from '@/stores/voiceCompanionStore';
 import { voiceNotificationService } from '@/services/voiceNotificationService';
 import { isAssistantMessage } from '@/types/chat';
+import { currentMode } from '@/services/transport';
+import { useToastStore } from '@/stores/toastStore';
 
 /**
  * 宽度分级阈值（主行可容纳的高频选择器数量）
@@ -165,6 +167,28 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
       setSpeechCommand(null);
     }
   }, [speechCommand, isStreaming, setSpeechCommand, undoSpeechTranscript, messages]);
+
+  // ===== 同步恢复（Web 模式专用）=====
+  // 手机锁屏/切后台导致断线后，手动触发：重连 WS → 重拉会话历史 → 续接新内容
+  const [syncing, setSyncing] = useState(false);
+  const handleSyncRecover = useCallback(async () => {
+    if (syncing) return;
+    setSyncing(true);
+    const toast = useToastStore.getState();
+    try {
+      const { manualRefreshActiveSession } = await import('@/services/webReconnectResync');
+      const recovered = await manualRefreshActiveSession();
+      if (recovered) {
+        toast.success(t('statusBar.syncRecoverDone', '已恢复，继续接收新内容'));
+      } else {
+        toast.info(t('statusBar.syncRecoverNothing', '当前会话无需恢复'));
+      }
+    } catch (e) {
+      toast.error(t('statusBar.syncRecoverFailed', '同步恢复失败'), String(e));
+    } finally {
+      setSyncing(false);
+    }
+  }, [syncing, t]);
 
   // 听筒（TTS 朗读控制）
   const ttsConfig = config?.tts as TTSConfig | undefined;
@@ -386,6 +410,22 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
           )}
 
           {voiceInline && renderVoiceSegment('inline')}
+          {/* 同步恢复（仅 Web 模式）：断线/锁屏后手动补回丢失内容并续接 */}
+          {currentMode === 'http' && (
+            <button
+              onClick={handleSyncRecover}
+              disabled={syncing}
+              className={clsx(
+                'flex items-center px-1.5 py-0.5 rounded-full transition-colors shrink-0',
+                syncing
+                  ? 'text-primary cursor-wait'
+                  : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover',
+              )}
+              title={t('statusBar.syncRecover', '同步恢复：重连并补回断线丢失的内容')}
+            >
+              <RefreshCw size={13} className={syncing ? 'animate-spin' : ''} />
+            </button>
+          )}
           {healthIndicator}
 
           {(isStreaming || inputHint || inputLength > 0) && (

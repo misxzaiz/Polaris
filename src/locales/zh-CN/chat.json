@@ -276,7 +276,11 @@
     "responding": "响应中...",
     "more": "更多设置",
     "collapse": "收起",
-    "engineUnavailable": "引擎不可用"
+    "engineUnavailable": "引擎不可用",
+    "syncRecover": "同步恢复：重连并补回断线丢失的内容",
+    "syncRecoverDone": "已恢复，继续接收新内容",
+    "syncRecoverNothing": "当前会话无需恢复",
+    "syncRecoverFailed": "同步恢复失败"
   },
   "search": {
     "placeholder": "搜索消息...",

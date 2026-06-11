@@ -12,7 +12,6 @@ use portable_pty::{native_pty_system, CommandBuilder, PtyPair, PtySize};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "tauri-app")]
 use tauri::{AppHandle, Emitter};
-use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
@@ -66,7 +65,7 @@ pub struct TerminalExitEvent {
 pub enum TerminalEventSink {
     #[cfg(feature = "tauri-app")]
     Tauri(AppHandle),
-    Web(broadcast::Sender<String>),
+    Web(crate::web::EventBroadcaster),
 }
 
 impl TerminalEventSink {
