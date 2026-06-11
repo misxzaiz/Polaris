@@ -112,7 +112,7 @@
     },
     "simpleAi": {
       "name": "Simple AI",
-      "description": "轻量级 AI 助手 — 使用模型供应商配置，内置 bash/文件工具，无需安装 CLI"
+      "description": "轻量级 AI 助手 — 用于安装ClaudeCode、Codex，简单对话"
     }
   },
   "modelProfile": {

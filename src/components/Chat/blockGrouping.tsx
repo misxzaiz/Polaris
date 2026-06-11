@@ -78,7 +78,7 @@ const ThinkingAsToolRenderer = memo(function ThinkingAsToolRenderer({
 
       {isExpanded && (
         <div className="px-3 py-2 border-t border-border bg-background-subtle">
-          <div className="text-sm text-text-secondary whitespace-pre-wrap leading-relaxed">
+          <div className="text-sm text-text-secondary whitespace-pre-wrap break-words leading-relaxed">
             {block.content}
           </div>
           {isStreaming && (

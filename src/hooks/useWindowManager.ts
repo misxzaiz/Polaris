@@ -6,7 +6,8 @@
  * - 窗口透明度应用
  * - F12 DevTools 快捷键
  * - Shift+Ctrl+R 文件搜索/终端快速运行快捷键
- * - Ctrl+'+' 新建 AI 对话会话并自动切换
+ * - Ctrl+'+' 新建 AI 对话会话并自动切换、聚焦输入框
+ * - Ctrl+Shift+'+' 弹出工作区/关联工作区选择（CreateSessionModal）
  * - navigate-to-settings 事件监听
  */
 
@@ -26,9 +27,18 @@ const log = createLogger('WindowManager');
 interface UseWindowManagerOptions {
   onOpenSettings: (tab?: string) => void;
   onToggleFileSearch: () => void;
+  /** Ctrl/Cmd+Shift+'+' 触发：弹出工作区/关联工作区选择弹窗 */
+  onOpenCreateSessionModal: () => void;
+  /** 新建会话弹窗是否已打开（打开期间屏蔽 '+' 系列快捷键，避免背后静默建会话） */
+  isCreateSessionModalOpen: boolean;
 }
 
-export function useWindowManager({ onOpenSettings, onToggleFileSearch }: UseWindowManagerOptions) {
+export function useWindowManager({
+  onOpenSettings,
+  onToggleFileSearch,
+  onOpenCreateSessionModal,
+  isCreateSessionModalOpen,
+}: UseWindowManagerOptions) {
   const { t } = useTranslation('chat');
   const config = useConfigStore(state => state.config);
   const compactMode = useViewStore(state => state.compactMode);
@@ -80,16 +90,27 @@ export function useWindowManager({ onOpenSettings, onToggleFileSearch }: UseWind
           onToggleFileSearch();
         }
       }
-      // Ctrl/Cmd + '+' 新建 AI 对话会话并切换过去
-      // 兼容：主键盘 Shift+= 得到的 '+'、不按 Shift 的 '='（与浏览器放大同手感）、小键盘 NumpadAdd
+      // Ctrl/Cmd + '+' 系列快捷键（主键盘 Equal 物理键 / 小键盘 NumpadAdd）
+      // 用 e.code 判断物理键，避免 Shift 状态下 e.key 值漂移（'=' → '+'）；
+      // 同时保留 e.key 兜底，兼容 '+' 不在 Equal 键上的非美式布局
       // !e.repeat：避免按住不放时自动重复，连续创建大量会话
       if (
         (e.ctrlKey || e.metaKey) &&
         !e.altKey &&
         !e.repeat &&
-        (e.key === '+' || e.key === '=' || e.code === 'NumpadAdd')
+        (e.code === 'Equal' || e.code === 'NumpadAdd' || e.key === '+' || e.key === '=')
       ) {
         e.preventDefault();
+        // 弹窗打开期间屏蔽，避免在弹窗背后静默创建会话
+        if (isCreateSessionModalOpen) return;
+
+        // Ctrl/Cmd + Shift + '+'：弹出工作区/关联工作区选择
+        if (e.shiftKey) {
+          onOpenCreateSessionModal();
+          return;
+        }
+
+        // Ctrl/Cmd + '+'（不含 Shift）：快速新建会话并切换
         const manager = sessionStoreManager.getState();
         // 新会话跟随当前活跃会话的工作区：有工作区则建 project 会话，否则建 free 会话
         const activeId = manager.activeSessionId;
@@ -108,13 +129,17 @@ export function useWindowManager({ onOpenSettings, onToggleFileSearch }: UseWind
         });
         // createSession 已设为活跃会话并按需 addToMultiView；switchSession 补充滚动定位
         manager.switchSession(newSessionId);
+        // 等一帧让视图完成切换后，请求聚焦聊天输入框（ChatInput 监听该事件）
+        requestAnimationFrame(() => {
+          window.dispatchEvent(new CustomEvent('chat:focus-input'));
+        });
         log.info('快捷键新建会话', { newSessionId, workspaceId: activeWorkspaceId, engineId });
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onToggleFileSearch, t]);
+  }, [onToggleFileSearch, onOpenCreateSessionModal, isCreateSessionModalOpen, t]);
 
   // navigate-to-settings 事件
   useEffect(() => {

@@ -114,6 +114,16 @@ export function ChatInput({
   const containerRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // 监听全局聚焦请求（快捷键新建会话等场景触发，见 useWindowManager）
+  useEffect(() => {
+    const handleFocusRequest = () => {
+      // 推迟一拍，确保会话切换引起的重渲染完成后再聚焦
+      setTimeout(() => textareaRef.current?.focus(), 0)
+    }
+    window.addEventListener('chat:focus-input', handleFocusRequest)
+    return () => window.removeEventListener('chat:focus-input', handleFocusRequest)
+  }, [])
+
   // 从本地 state 获取当前值
   const value = localText
   const attachments = localAttachments

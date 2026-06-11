@@ -28,6 +28,7 @@ const DeveloperPanel = lazy(() => import('./components/Developer/DeveloperPanel'
 const IntegrationPanel = lazy(() => import('./components/Integration/IntegrationPanel').then(m => ({ default: m.IntegrationPanel })));
 const ExecutionConsolePanel = lazy(() => import('./components/ExecutionConsole').then(m => ({ default: m.ExecutionConsolePanel })));
 const CreateWorkspaceModal = lazy(() => import('./components/Workspace/CreateWorkspaceModal').then(m => ({ default: m.CreateWorkspaceModal })));
+const CreateSessionModal = lazy(() => import('./components/Session/CreateSessionModal').then(m => ({ default: m.CreateSessionModal })));
 const FileSearchModal = lazy(() => import('./components/Editor/FileSearchModal').then(m => ({ default: m.FileSearchModal })));
 const SymbolPalette = lazy(() => import('./components/Editor/SymbolPalette').then(m => ({ default: m.SymbolPalette })));
 
@@ -70,6 +71,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<string | undefined>(undefined);
   const [showCreateWorkspace, setShowCreateWorkspace] = useState(false);
+  const [showCreateSession, setShowCreateSession] = useState(false);
   const [showFileSearch, setShowFileSearch] = useState(false);
   // 连接诊断面板：静默加载下默认不弹，由顶栏连接状态指示器按需唤出
   const [showConnectionDiagnostics, setShowConnectionDiagnostics] = useState(false);
@@ -109,6 +111,10 @@ function App() {
     onToggleFileSearch: useCallback(() => {
       setShowFileSearch(prev => !prev);
     }, []),
+    onOpenCreateSessionModal: useCallback(() => {
+      setShowCreateSession(true);
+    }, []),
+    isCreateSessionModalOpen: showCreateSession,
   });
 
   useWorkspaceSync(true);
@@ -259,6 +265,21 @@ function App() {
         {showCreateWorkspace && (
           <Suspense fallback={<div className="flex items-center justify-center text-text-muted">{t('status.loading')}</div>}>
             <CreateWorkspaceModal onClose={() => setShowCreateWorkspace(false)} />
+          </Suspense>
+        )}
+
+        {/* Ctrl/Cmd+Shift+'+' 唤出：选择主工作区/关联工作区新建会话 */}
+        {showCreateSession && (
+          <Suspense fallback={null}>
+            <CreateSessionModal
+              onClose={() => setShowCreateSession(false)}
+              onCreated={() => {
+                // createSession 已切换活跃会话，这里等一帧后请求聚焦输入框
+                requestAnimationFrame(() => {
+                  window.dispatchEvent(new CustomEvent('chat:focus-input'));
+                });
+              }}
+            />
           </Suspense>
         )}
 

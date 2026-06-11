@@ -11,7 +11,7 @@ import { ClaudePathSelector } from '../../Common';
 import { useConfigStore } from '@/stores';
 import { useCliInfoStore } from '@/stores/cliInfoStore';
 import type { Config, EngineId } from '@/types';
-import { Shield, ShieldCheck, ShieldX, RefreshCw, Bot, RotateCcw, Key, Zap, Check } from 'lucide-react';
+import { Bot, RotateCcw, Key, Zap, Check } from 'lucide-react';
 import { registerAgnesEngine } from '@/core/engine-bootstrap';
 import { getEngineRegistry } from '@/ai-runtime';
 import { createLogger } from '@/utils/logger';
@@ -180,7 +180,7 @@ function AgnesSection({
 export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProps) {
   const { t } = useTranslation(['settings', 'common']);
   const { healthStatus, resetCliConfig } = useConfigStore();
-  const { authStatus, agents, loading: cliLoading, fetchAll } = useCliInfoStore();
+  const { agents } = useCliInfoStore();
   const [resetting, setResetting] = useState(false);
 
   const handleEngineChange = (engineId: EngineId) => {
@@ -219,62 +219,6 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
 
   return (
     <div className="space-y-6">
-      {/* 认证状态 */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <label className="block text-sm font-medium text-text-secondary">
-            {t('aiEngine.authStatus')}
-          </label>
-          <button
-            onClick={() => fetchAll()}
-            disabled={cliLoading}
-            className="flex items-center gap-1 text-xs text-text-tertiary hover:text-text-primary transition-colors disabled:opacity-50"
-            title={t('buttons.refresh', { ns: 'common' })}
-          >
-            <RefreshCw size={12} className={cliLoading ? 'animate-spin' : ''} />
-          </button>
-        </div>
-        {authStatus ? (
-          <div className={`flex items-center gap-2 p-3 rounded-lg border ${
-            authStatus.loggedIn
-              ? 'bg-green-500/5 border-green-500/20'
-              : 'bg-red-500/5 border-red-500/20'
-          }`}>
-            {authStatus.loggedIn ? (
-              <ShieldCheck size={16} className="text-green-500 shrink-0" />
-            ) : (
-              <ShieldX size={16} className="text-red-500 shrink-0" />
-            )}
-            <div className="min-w-0">
-              <div className={`text-sm font-medium ${
-                authStatus.loggedIn ? 'text-green-600' : 'text-red-600'
-              }`}>
-                {authStatus.loggedIn
-                  ? t('aiEngine.loggedIn')
-                  : t('aiEngine.notLoggedIn')
-                }
-              </div>
-              {authStatus.loggedIn && (
-                <div className="text-xs text-text-tertiary mt-0.5">
-                  {authStatus.authMethod === 'oauth_token' ? 'OAuth' : 'API Key'}
-                  {' · '}
-                  {authStatus.apiProvider === 'firstParty' ? 'Anthropic' : authStatus.apiProvider}
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 p-3 rounded-lg border border-border bg-surface">
-            <Shield size={16} className="text-text-muted shrink-0" />
-            <span className="text-sm text-text-muted">
-              {cliLoading
-                ? t('aiEngine.checkingAuth')
-                : t('aiEngine.authUnknown')
-              }
-            </span>
-          </div>
-        )}
-      </div>
 
       {/* 引擎选择 */}
       <div>

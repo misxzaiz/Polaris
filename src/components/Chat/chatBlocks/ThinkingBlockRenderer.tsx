@@ -101,7 +101,7 @@ export const ThinkingBlockRenderer = memo(function ThinkingBlockRenderer({
       {!isCollapsed && (
         <div className="px-3 py-2 border-t border-primary/10 bg-background-surface/30">
           {/* 完整思考内容 */}
-          <div className="text-sm text-text-secondary whitespace-pre-wrap leading-relaxed">
+          <div className="text-sm text-text-secondary whitespace-pre-wrap break-words leading-relaxed">
             {block.content}
           </div>
           {/* 流式光标 */}

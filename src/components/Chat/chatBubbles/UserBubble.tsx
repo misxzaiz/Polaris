@@ -125,7 +125,7 @@ export const UserBubble = memo(function UserBubble({
                 })}
               </div>
             )}
-            <div className="text-sm leading-relaxed whitespace-pre-wrap">
+            <div className="text-sm leading-relaxed whitespace-pre-wrap break-words">
               {message.content}
             </div>
           </div>
