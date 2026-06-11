@@ -384,11 +384,7 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
               {interimText}
             </span>
           )}
-          {isDictating && !interimText && wakeWordEnabled && (
-            <span className={clsx('text-xs shrink-0', wakeActive ? 'text-green-500' : 'text-text-muted')}>
-              {wakeActive ? t('speech.awakeShort', '已唤醒') : t('speech.waitingWake', '等待唤醒')}
-            </span>
-          )}
+
           {voiceInline && renderVoiceSegment('inline')}
           {healthIndicator}
 

@@ -237,8 +237,20 @@ export async function initExecutionConsoleListeners(): Promise<void> {
 
 // === 选择器 ===
 
+// 以 Map 引用为键缓存派生数组，保证 selector 返回稳定引用
+// （否则 useSyncExternalStore 会因 snapshot 每次变化而无限重渲染，
+// 同 sessionStoreManager.useSessionMetadataList 的处理方式）
+let cachedRunsMap: Map<string, IntegrationRun> | null = null
+let cachedActiveRuns: IntegrationRun[] | null = null
+
 /** 运行中的集成执行列表（新→旧） */
-export const selectActiveIntegrationRuns = (state: ExecutionConsoleState): IntegrationRun[] =>
-  Array.from(state.integrationRuns.values())
+export const selectActiveIntegrationRuns = (state: ExecutionConsoleState): IntegrationRun[] => {
+  if (state.integrationRuns === cachedRunsMap && cachedActiveRuns !== null) {
+    return cachedActiveRuns
+  }
+  cachedRunsMap = state.integrationRuns
+  cachedActiveRuns = Array.from(state.integrationRuns.values())
     .filter((run) => run.status === 'running')
     .sort((a, b) => b.startedAt - a.startedAt)
+  return cachedActiveRuns
+}

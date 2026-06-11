@@ -17,8 +17,22 @@ import {
   useActiveSessionId,
 } from './sessionStoreManager'
 import { useWorkspaceStore } from '../workspaceStore'
-import type { ConversationStore, ConversationState, ConversationStoreInstance } from './types'
+import type { ConversationStore, ConversationState, ConversationStoreInstance, InputDraft } from './types'
 import type { ContentBlock } from '@/types'
+import type { ChatMessage } from '@/types/chat'
+
+// ============================================================================
+// 模块级稳定空值常量
+//
+// 关键：getSnapshot 在 store 缺失时（LRU 驱逐 / 会话删除 / 创建竞态）直接
+// 返回 defaultValue。若每次渲染传入新建的 [] / {} / new Map()，
+// useSyncExternalStore 会判定 snapshot 持续变化，触发同步重渲染循环，
+// 最终抛出 React error #185（同一 root 连续 50 次同步重渲染）。
+// 因此空默认值必须为模块级单例，保证引用稳定。
+// ============================================================================
+const EMPTY_MESSAGES: ChatMessage[] = []
+const EMPTY_INPUT_DRAFT: InputDraft = { text: '', attachments: [] }
+const EMPTY_BLOCK_MAP: Map<string, number> = new Map()
 
 /**
  * 订阅活跃会话的特定状态
@@ -157,11 +171,11 @@ function useSessionSelector<T>(
 export function useActiveSessionMessages() {
   const messages = useActiveSessionSelector(
     useCallback((state: ConversationState) => state.messages, []),
-    []
+    EMPTY_MESSAGES
   )
   const archivedMessages = useActiveSessionSelector(
     useCallback((state: ConversationState) => state.archivedMessages, []),
-    []
+    EMPTY_MESSAGES
   )
   const currentMessage = useActiveSessionSelector(
     useCallback((state: ConversationState) => state.currentMessage, []),
@@ -211,7 +225,7 @@ export function useActiveSessionConversationId() {
 export function useActiveSessionInputDraft() {
   return useActiveSessionSelector(
     useCallback((state: ConversationState) => state.inputDraft, []),
-    { text: '', attachments: [] }
+    EMPTY_INPUT_DRAFT
   )
 }
 
@@ -251,15 +265,15 @@ export function useActiveSessionWorkspace() {
 export function useActiveSessionBlockMaps() {
   const toolBlockMap = useActiveSessionSelector(
     useCallback((state: ConversationState) => state.toolBlockMap, []),
-    new Map()
+    EMPTY_BLOCK_MAP
   )
   const questionBlockMap = useActiveSessionSelector(
     useCallback((state: ConversationState) => state.questionBlockMap, []),
-    new Map()
+    EMPTY_BLOCK_MAP
   )
   const planBlockMap = useActiveSessionSelector(
     useCallback((state: ConversationState) => state.planBlockMap, []),
-    new Map()
+    EMPTY_BLOCK_MAP
   )
   const activePlanId = useActiveSessionSelector(
     useCallback((state: ConversationState) => state.activePlanId, []),
@@ -454,12 +468,12 @@ export function useSessionMessages(sessionId: string | null) {
   const messages = useSessionSelector(
     sessionId,
     useCallback((state: ConversationState) => state.messages, []),
-    []
+    EMPTY_MESSAGES
   )
   const archivedMessages = useSessionSelector(
     sessionId,
     useCallback((state: ConversationState) => state.archivedMessages, []),
-    []
+    EMPTY_MESSAGES
   )
   const currentMessage = useSessionSelector(
     sessionId,

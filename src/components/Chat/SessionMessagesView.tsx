@@ -13,6 +13,11 @@ import type { MessageScrollActions } from './EnhancedChatMessages';
 import type { ChatMessage, AssistantChatMessage } from '@/types/chat';
 import type { ConversationStoreInstance, ConversationState } from '@/stores/conversationStore/types';
 
+// 模块级稳定空数组：store 缺失时 getSnapshot 返回 defaultValue，
+// 内联 [] 每次渲染新建引用会被 useSyncExternalStore 判定为 snapshot
+// 持续变化，触发同步重渲染循环（React error #185）。
+const EMPTY_MESSAGES: ChatMessage[] = [];
+
 /** 空状态组件 */
 const EmptyState = memo(function EmptyState() {
   const { t } = useTranslation('chat');
@@ -97,7 +102,7 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
   const messages = useSessionStoreSubscription(
     sessionId,
     useCallback((state) => state.messages, []),
-    []
+    EMPTY_MESSAGES
   );
 
   const currentMessage = useSessionStoreSubscription(
