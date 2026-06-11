@@ -40,6 +40,9 @@ export interface NotificationRecord {
 const MAX_TOASTS = 5
 const MAX_NOTIFICATIONS = 100
 
+/** 活跃 toast 的自动消失定时器，用于组件卸载时清理防止内存泄漏 */
+const toastTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
 interface ToastState {
   toasts: Toast[]
   notifications: NotificationRecord[]
@@ -106,21 +109,29 @@ export const useToastStore = create<ToastState>()(
 
         // 自动移除（仅清理活跃 Toast，历史记录保留）
         if (newToast.duration && newToast.duration > 0) {
-          setTimeout(() => {
+          const timerId = setTimeout(() => {
             get().removeToast(id)
           }, newToast.duration)
+          toastTimers.set(id, timerId)
         }
 
         return id
       },
 
       removeToast: (id) => {
+        const timer = toastTimers.get(id)
+        if (timer) {
+          clearTimeout(timer)
+          toastTimers.delete(id)
+        }
         set((state) => ({
           toasts: state.toasts.filter((t) => t.id !== id),
         }))
       },
 
       clearAll: () => {
+        toastTimers.forEach((timer) => clearTimeout(timer))
+        toastTimers.clear()
         set({ toasts: [] })
       },
 

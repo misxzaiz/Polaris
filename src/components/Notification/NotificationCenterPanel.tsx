@@ -40,15 +40,13 @@ export function NotificationCenterPanel({ onClose }: NotificationCenterPanelProp
   const markAllNotificationsRead = useToastStore((s) => s.markAllNotificationsRead)
   const clearNotifications = useToastStore((s) => s.clearNotifications)
 
-  // 打开瞬间的未读集合：用于本次高亮「新」消息；随后立即清零未读计数（铃铛徽章归零）
+  // 打开瞬间的未读集合：用于本次高亮「新」消息；不再自动全部已读，
+  // 铃铛徽章保留，用户点击「全部已读」按钮后再清零
   const newIdsRef = useRef<Set<string>>(new Set())
   useEffect(() => {
     const unread = useToastStore.getState().notifications.filter((n) => !n.read)
     newIdsRef.current = new Set(unread.map((n) => n.id))
-    if (unread.length > 0) {
-      markAllNotificationsRead()
-    }
-  }, [markAllNotificationsRead])
+  }, [])
 
   const formatTime = (ts: number) => {
     const diffMs = Date.now() - ts

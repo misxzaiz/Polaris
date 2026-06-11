@@ -191,6 +191,10 @@ class VoiceNotificationService {
     // 语音通话中静默（通话有自己的交互反馈）
     if (audioFocusManager.isHeldBy('companion')) return;
 
+    // 听写未持有焦点时（如 companion 接管了音频焦点），跳过暂停/恢复
+    // 因为 companion 端已有自己的回声管理，且 dictation 的 speechControl 可能未就绪
+    if (!audioFocusManager.isHeldBy('dictation')) return;
+
     const texts = config.wakeResponseTexts;
     if (texts.length === 0) return;
 

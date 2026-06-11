@@ -195,15 +195,13 @@ export const PermissionRequestRenderer = memo(function PermissionRequestRenderer
 
   const isPlanApproval = block.denials.length === 0;
 
-  // 通过 block.sessionId（后端 conversationId）反查前端 store
-  const findStore = useCallback(() => {
-    const stores = sessionStoreManager.getState().stores;
-    for (const [, store] of stores) {
-      const state = store.getState();
-      if (state.conversationId === block.sessionId) return state;
-    }
-    return null;
-  }, [block.sessionId]);
+  // 通过 block.sessionId（后端 conversationId）反向查前端 store — O(1) 查找
+  const getStoreByConversationId = useCallback((conversationId: string) => {
+    const sessionId = sessionStoreManager.getState().conversationIdToStoreId.get(conversationId);
+    if (!sessionId) return null;
+    const store = sessionStoreManager.getState().stores.get(sessionId);
+    return store?.getState() ?? null;
+  }, []);
 
   const setItemDecision = useCallback((index: number, dec: ItemDecision | undefined) => {
     setDecisions(prev => {
@@ -241,7 +239,7 @@ export const PermissionRequestRenderer = memo(function PermissionRequestRenderer
     setIsProcessing(true);
     setPlanLocalStatus(approved ? 'approved' : 'denied');
     try {
-      const store = findStore();
+      const store = getStoreByConversationId(block.sessionId);
       if (store) {
         const toolNames = [...new Set(block.denials.map(d => d.toolName))];
         if (approved) {
@@ -256,9 +254,11 @@ export const PermissionRequestRenderer = memo(function PermissionRequestRenderer
     } finally {
       setIsProcessing(false);
     }
-  }, [planLocalStatus, isProcessing, block.denials, findStore]);
+  }, [planLocalStatus, isProcessing, block.denials, block.sessionId, getStoreByConversationId]);
 
   // 工具权限：逐项决策落库 + 合并为一次 continueChat（allowedTools = 被批准项）
+  // 安全模式：先调用 continueChat，成功后再应用乐观 UI 更新；
+  // 如果 continueChat 失败，UI 保持在 pending 状态，用户可以重试。
   const handleSubmit = useCallback(async () => {
     if (isProcessing || counts.decided === 0) return;
     setIsProcessing(true);
@@ -272,40 +272,48 @@ export const PermissionRequestRenderer = memo(function PermissionRequestRenderer
         block.denials.filter((_, i) => decisions[i] === 'approved').map(d => d.toolName)
       )];
 
-      const store = findStore();
-      if (store) {
-        store.resolvePermissionRequest(block.id, perItem);
-        // scope=session/global：批准项写入会话级放行集合，使本会话后续续聊不再询问该工具
-        // （新进程 --resume 自动携带，无需等 CLI 重启读 settings.json）。once 不进集合。
-        if ((scope === 'session' || scope === 'global') && approvedTools.length > 0) {
-          store.addSessionAllowedTools(approvedTools);
-        }
-        // 立即乐观反馈（不等 store→props 传播），卡片即时切换为结果态
-        setSubmittedStatus(approvedTools.length > 0 ? 'approved' : 'denied');
-        // 全局范围：将批准项生成规则写入 ~/.claude/settings.json 的 permissions.allow
-        if (scope === 'global') {
-          const approvedDenials = block.denials.filter((_, i) => decisions[i] === 'approved');
-          if (approvedDenials.length > 0) {
-            try {
-              const rules = [...new Set(approvedDenials.map(buildGlobalRule))];
-              await addClaudePermissionRules(rules, 'allow');
-            } catch (e) {
-              log.error('写入全局权限规则失败:', e instanceof Error ? e : new Error(String(e)));
-            }
+      // 1. 先执行 continueChat（可能失败的操作）
+      const store = getStoreByConversationId(block.sessionId);
+      if (!store) {
+        log.warn('未找到对应的 store', { conversationId: block.sessionId });
+        return;
+      }
+
+      await store.continueChat(
+        approvedTools.length > 0
+          ? `[已授权] ${approvedTools.join(', ')}`
+          : `[权限确认] 用户拒绝了操作\n工具: ${block.denials.map(d => d.toolName).join(', ')}`,
+        approvedTools.length > 0 ? approvedTools : undefined,
+      );
+
+      // 2. continueChat 成功后，再应用乐观 UI 更新
+      store.resolvePermissionRequest(block.id, perItem);
+      // scope=session/global：批准项写入会话级放行集合，使本会话后续续聊不再询问该工具
+      // （新进程 --resume 自动携带，无需等 CLI 重启读 settings.json）。once 不进集合。
+      if ((scope === 'session' || scope === 'global') && approvedTools.length > 0) {
+        store.addSessionAllowedTools(approvedTools);
+      }
+      // 立即乐观反馈（不等 store→props 传播），卡片即时切换为结果态
+      setSubmittedStatus(approvedTools.length > 0 ? 'approved' : 'denied');
+      // 全局范围：将批准项生成规则写入 ~/.claude/settings.json 的 permissions.allow
+      if (scope === 'global') {
+        const approvedDenials = block.denials.filter((_, i) => decisions[i] === 'approved');
+        if (approvedDenials.length > 0) {
+          try {
+            const rules = [...new Set(approvedDenials.map(buildGlobalRule))];
+            await addClaudePermissionRules(rules, 'allow');
+          } catch (e) {
+            log.error('写入全局权限规则失败:', e instanceof Error ? e : new Error(String(e)));
           }
-        }
-        if (approvedTools.length > 0) {
-          await store.continueChat(`[已授权] ${approvedTools.join(', ')}`, approvedTools);
-        } else {
-          await store.continueChat(`[权限确认] 用户拒绝了操作\n工具: ${block.denials.map(d => d.toolName).join(', ')}`);
         }
       }
     } catch (error) {
       log.error('提交权限决策失败:', error instanceof Error ? error : new Error(String(error)));
+      // continueChat 失败：保持 submittedStatus 为 null，UI 停留在 pending 态
     } finally {
       setIsProcessing(false);
     }
-  }, [isProcessing, counts.decided, block.denials, block.id, decisions, scope, findStore]);
+  }, [isProcessing, counts.decided, block.denials, block.id, block.sessionId, decisions, scope, getStoreByConversationId]);
 
   // 键盘：Enter=批准/提交，Shift+Enter=拒绝/全部拒绝（保留 plan 原交互）
   const handleKeyDown = useCallback((event: React.KeyboardEvent) => {

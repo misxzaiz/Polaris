@@ -344,6 +344,9 @@ export interface SessionManagerState {
 
   /** 初始化状态 */
   isInitialized: boolean
+
+  /** 反向索引：后端 conversationId → 前端 sessionId，用于 O(1) 查找 store */
+  conversationIdToStoreId: Map<string, string>
 }
 
 /**
@@ -371,6 +374,12 @@ export interface SessionManagerActions {
   getStore: (sessionId: string) => ConversationStore | undefined
   getActiveStore: () => ConversationStore | undefined
   getActiveSessionId: () => string | null
+  /** 通过后端 conversationId 查找前端 store 状态 (O(1)) */
+  getStoreByConversationId: (conversationId: string) => ConversationStore | undefined
+  /** 注册 conversationId → sessionId 反向索引 */
+  registerConversationId: (conversationId: string, sessionId: string) => void
+  /** 注销 conversationId 反向索引 */
+  unregisterConversationId: (conversationId: string) => void
 
   // ===== 事件分发 =====
   dispatchEvent: (event: AIEvent & { sessionId?: string; _routeSessionId?: string }) => void

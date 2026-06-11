@@ -238,6 +238,9 @@ export function isLikelyEcho(recognized: string, speaking: string, threshold = 0
   // 快路径：仍保留子串判定（完全命中）
   if (spk.includes(rec)) return true;
 
+  // 短文本保护：识别端或朗读端 < 3 字符时不做回声判定（bigram 偶然重合概率过高）
+  if (rec.length < 3 || spk.length < 3) return false;
+
   const recGrams = bigrams(rec);
   if (recGrams.size === 0) return false;
   const spkGrams = bigrams(spk);

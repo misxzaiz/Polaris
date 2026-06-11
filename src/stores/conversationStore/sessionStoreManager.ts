@@ -142,6 +142,7 @@ function createSessionManagerStore() {
     backgroundSessionIds: [],
     completedNotifications: [],
     isInitialized: false,
+    conversationIdToStoreId: new Map<string, string>(),
 
     // ===== 会话生命周期 =====
 
@@ -279,6 +280,11 @@ function createSessionManagerStore() {
       if (store) {
         store.getState().setMessagesFromHistory(messages, conversationId)
 
+        // 注册 conversationId → sessionId 反向索引（历史恢复场景）
+        if (conversationId) {
+          get().registerConversationId(conversationId, sessionId)
+        }
+
         log.info('从历史创建会话', { sessionId, messageCount: messages.length, conversationId, forkFromId: metadata?.forkFromId })
       }
 
@@ -296,6 +302,12 @@ function createSessionManagerStore() {
 
       // 清理资源
       store.getState().dispose()
+
+      // 注销 conversationId 反向索引（防止悬垂引用）
+      const storeState = store.getState()
+      if (storeState.conversationId) {
+        get().unregisterConversationId(storeState.conversationId)
+      }
 
       set((state) => {
         const newStores = new Map(state.stores)
@@ -513,6 +525,31 @@ function createSessionManagerStore() {
       return get().activeSessionId
     },
 
+    // ===== O(1) conversationId → sessionId 查找 =====
+
+    getStoreByConversationId: (conversationId) => {
+      const sessionId = get().conversationIdToStoreId.get(conversationId)
+      if (!sessionId) return undefined
+      const store = get().stores.get(sessionId)
+      return store?.getState()
+    },
+
+    registerConversationId: (conversationId, sessionId) => {
+      set((state) => {
+        const newIndex = new Map(state.conversationIdToStoreId)
+        newIndex.set(conversationId, sessionId)
+        return { conversationIdToStoreId: newIndex }
+      })
+    },
+
+    unregisterConversationId: (conversationId) => {
+      set((state) => {
+        const newIndex = new Map(state.conversationIdToStoreId)
+        newIndex.delete(conversationId)
+        return { conversationIdToStoreId: newIndex }
+      })
+    },
+
     // ===== 事件分发 =====
 
     dispatchEvent: (event: AIEvent & { sessionId?: string; _routeSessionId?: string }) => {
@@ -550,6 +587,11 @@ function createSessionManagerStore() {
       // 注意：事件总是路由到 routeSessionId 对应的会话，而不是当前活跃会话
       // 这是多会话并行的核心：每个会话独立处理自己的事件
       store.getState().handleAIEvent(event)
+
+      // 注册 conversationId → sessionId 反向索引（session_start 事件携带后端 conversationId）
+      if (event.type === 'session_start' && event.sessionId) {
+        get().registerConversationId(event.sessionId, routeSessionId)
+      }
 
       // touch lastAccessedAt（LRU 追踪）
       const touchedMeta = touchSession(get().sessionMetadata, routeSessionId)
@@ -837,6 +879,9 @@ const cachedActions = {
   get updateSessionWorkspace() { return sessionStoreManager.getState().updateSessionWorkspace },
   get addContextWorkspace() { return sessionStoreManager.getState().addContextWorkspace },
   get removeContextWorkspace() { return sessionStoreManager.getState().removeContextWorkspace },
+  get getStoreByConversationId() { return sessionStoreManager.getState().getStoreByConversationId },
+  get registerConversationId() { return sessionStoreManager.getState().registerConversationId },
+  get unregisterConversationId() { return sessionStoreManager.getState().unregisterConversationId },
 }
 
 // ============================================================================
