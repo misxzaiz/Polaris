@@ -461,7 +461,8 @@
     "dictateLabel": "Dictate",
     "waitingWake": "Waiting for wake word...",
     "awake": "Awake...",
-    "awakeShort": "Awake"
+    "awakeShort": "Awake",
+    "insecureContext": "HTTP environment detected. Speech recognition and TTS are limited. HTTPS or localhost required for full voice features."
   },
   "tts": {
     "stop": "Stop playback",

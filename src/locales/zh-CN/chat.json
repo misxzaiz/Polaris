@@ -460,7 +460,8 @@
     "dictateLabel": "听写",
     "waitingWake": "等待唤醒...",
     "awake": "已唤醒...",
-    "awakeShort": "已唤醒"
+    "awakeShort": "已唤醒",
+    "insecureContext": "当前为 HTTP 环境，语音识别和语音合成受限。需要 HTTPS 或 localhost 才能完整使用语音功能。"
   },
   "tts": {
     "stop": "停止播放",

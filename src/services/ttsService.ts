@@ -4,6 +4,9 @@ import { generateUUID } from '@/utils/uuid';
  *
  * 使用 edge-tts-universal 实现文本转语音功能
  * 支持后台播放、中断控制、音量调节
+ *
+ * 在非安全上下文（非 HTTPS / 非 localhost）下，edge-tts 因 crypto.subtle 不可用而失败，
+ * 此时自动降级到浏览器内置 speechSynthesis API（质量较低但所有现代浏览器均支持）。
  */
 
 import { Communicate } from 'edge-tts-universal';
@@ -199,6 +202,17 @@ export class TTSService {
         return;
       }
 
+      // edge-tts 失败 → 尝试浏览器内置 TTS 降级
+      if (TTSService.browserTTSSupported && !window.isSecureContext) {
+        log.info('edge-tts 失败（非安全上下文），降级到浏览器内置 TTS');
+        try {
+          await this.speakWithBrowserTTS(text, options?.rate);
+          return;
+        } catch (fallbackErr) {
+          log.error('浏览器内置 TTS 也失败', fallbackErr instanceof Error ? fallbackErr : new Error(String(fallbackErr)));
+        }
+      }
+
       this.setStatus('error');
       const err = error instanceof Error ? error : new Error(String(error));
       this.callbacks.onError?.(err);
@@ -272,6 +286,75 @@ export class TTSService {
     this.audioContext?.close();
     this.audioContext = null;
     log.debug('TTS 服务已销毁');
+  }
+
+  // ========================================
+  // 浏览器内置 speechSynthesis 降级
+  // ========================================
+
+  /**
+   * 将 edge-tts 格式的语速（如 "+20%", "-10%"）转换为 speechSynthesis 的 rate 值
+   * speechSynthesis rate: 0.1 ~ 10, 默认 1.0
+   */
+  private static convertRateForBrowser(rate: string): number {
+    const match = rate.match(/([+-]?\d+)%/);
+    if (!match) return 1.0;
+    const percent = parseInt(match[1], 10);
+    // +20% → 1.2, -30% → 0.7
+    return Math.max(0.1, Math.min(10, 1 + percent / 100));
+  }
+
+  /** 浏览器 speechSynthesis 是否可用 */
+  static get browserTTSSupported(): boolean {
+    return typeof window !== 'undefined' && 'speechSynthesis' in window;
+  }
+
+  /**
+   * 使用浏览器内置 speechSynthesis 播放文本（降级路径）
+   */
+  private speakWithBrowserTTS(text: string, rate?: string): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      if (!TTSService.browserTTSSupported) {
+        reject(new Error('speechSynthesis API 不可用'));
+        return;
+      }
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      // 从 voice 名称中提取语言代码（如 "zh-CN-XiaoxiaoNeural" → "zh-CN"）
+      const voiceName = this.config.voice || 'zh-CN-XiaoxiaoNeural';
+      const langCode = voiceName.split('-').slice(0, 2).join('-');
+      utterance.lang = langCode;
+      utterance.rate = TTSService.convertRateForBrowser(rate || this.config.rate);
+      utterance.volume = this.config.volume;
+
+      // 尝试选择匹配语言的语音
+      const voices = window.speechSynthesis.getVoices();
+      const zhVoice = voices.find(v => v.lang.startsWith('zh'));
+      if (zhVoice) {
+        utterance.voice = zhVoice;
+      }
+
+      utterance.onstart = () => {
+        this.setStatus('playing');
+        this.callbacks.onStart?.();
+        log.debug('浏览器 TTS 开始播放');
+      };
+
+      utterance.onend = () => {
+        this.setStatus('idle');
+        this.callbacks.onEnd?.();
+        log.debug('浏览器 TTS 播放完成');
+        resolve();
+      };
+
+      utterance.onerror = (e) => {
+        log.error('浏览器 TTS 播放失败', new Error(e.error));
+        reject(new Error(e.error));
+      };
+
+      this.setStatus('synthesizing');
+      window.speechSynthesis.speak(utterance);
+    });
   }
 
   private setStatus(status: TTSStatus): void {

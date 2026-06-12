@@ -13,7 +13,7 @@ import { useTranslation } from 'react-i18next';
 import { useConfigStore, useSessionStore } from '@/stores';
 import { useActiveSessionStreaming, useHasPendingQuestion, useHasActivePlan, useActiveSessionMessages } from '@/stores/conversationStore/useActiveSession';
 import { useSessionConfig } from '@/stores/sessionConfigStore';
-import { Paperclip, MoreHorizontal, Loader2, Mic, AudioLines, Volume2, VolumeX, RefreshCw } from 'lucide-react';
+import { Paperclip, MoreHorizontal, Loader2, Mic, AudioLines, Volume2, VolumeX, RefreshCw, ShieldAlert } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useTTS } from '@/hooks/useTTS';
 import { useVoiceDictation } from '@/hooks/useVoiceDictation';
@@ -129,6 +129,7 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
     wakeActive,
     toggle: toggleDictation,
     isSupported: dictationSupported,
+    isSecureContext,
     companionOpen,
   } = useVoiceDictation(appendSpeechTranscript, undefined, {
     voiceCommands,
@@ -353,6 +354,16 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
             </span>
           )}
         </button>
+
+        {/* 非安全上下文警告：语音功能受限 */}
+        {!isSecureContext && (
+          <span
+            className="text-warning/70 hover:text-warning cursor-help"
+            title={t('speech.insecureContext', '当前为 HTTP 环境，语音识别和语音合成受限。需要 HTTPS 或 localhost 才能完整使用语音功能。')}
+          >
+            <ShieldAlert size={12} />
+          </span>
+        )}
       </div>
     );
   };

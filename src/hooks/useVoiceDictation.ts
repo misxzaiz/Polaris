@@ -48,6 +48,8 @@ export interface UseVoiceDictationReturn {
   interimText: string;
   /** 是否支持语音识别 */
   isSupported: boolean;
+  /** 是否为安全上下文（HTTPS 或 localhost），非安全上下文下语音功能受限 */
+  isSecureContext: boolean;
   /** 全屏语音伙伴是否打开（打开时听写不可用，互斥） */
   companionOpen: boolean;
   /** 当前是否已唤醒（唤醒词模式下有用） */
@@ -235,6 +237,7 @@ export function useVoiceDictation(
     isDictating,
     interimText,
     isSupported,
+    isSecureContext: speechService.isSecureContext,
     companionOpen,
     wakeActive: getWakeActive(),
     toggle,

@@ -1,5 +1,8 @@
 /**
  * 语音识别服务 - 封装 Web Speech API
+ *
+ * 注意：Web Speech API 要求安全上下文（HTTPS 或 localhost），
+ * 在非安全 HTTP 环境下浏览器会拒绝麦克风权限。
  */
 
 import type {
@@ -100,6 +103,11 @@ export class SpeechService {
       this.isSupported = false;
       log.warn('Web Speech API 不可用');
     }
+
+    // 安全上下文检测：非 HTTPS / 非 localhost 下语音功能受限
+    if (!window.isSecureContext) {
+      log.warn('非安全上下文，语音识别和 TTS 可能受限（需要 HTTPS 或 localhost）');
+    }
   }
 
   /**
@@ -107,6 +115,11 @@ export class SpeechService {
    */
   get supported(): boolean {
     return this.isSupported;
+  }
+
+  /** 是否为安全上下文（HTTPS 或 localhost） */
+  get isSecureContext(): boolean {
+    return window.isSecureContext;
   }
 
   /**
