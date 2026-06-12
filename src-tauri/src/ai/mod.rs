@@ -2,6 +2,9 @@
  *
  * 提供统一的 AI 引擎接口，支持多种 AI CLI 工具：
  * - Claude Code
+ * - OpenAI Codex
+ * - Simple AI
+ * - Mimo Code (Mimocode)
  */
 
 pub mod traits;
@@ -19,6 +22,7 @@ pub use registry::EngineRegistry;
 pub use engine::ClaudeEngine;
 pub use engine::CodexEngine;
 pub use engine::SimpleAIEngine;
+pub use engine::MimocodeEngine;
 pub use history::{
     Pagination, PagedResult, SessionMeta, HistoryMessage, SessionHistoryProvider,
 };

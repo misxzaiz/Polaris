@@ -7,7 +7,7 @@ import type { ModelProfile } from './modelProfile'
 import type { WorkspaceTerminalScripts } from './terminalScript'
 
 /**  引擎 ID */
-export type EngineId = 'claude-code' | 'codex' | 'agnes' | 'simple-ai'
+export type EngineId = 'claude-code' | 'codex' | 'agnes' | 'simple-ai' | 'mimo'
 
 /** 支持的语言 */
 export type Language = 'zh-CN' | 'en-US'
@@ -157,6 +157,11 @@ export interface Config {
   /** OpenAI Codex 引擎配置 */
   codexCode: {
     /** Codex CLI 命令路径 */
+    cliPath: string;
+  };
+  /** Mimo Code 引擎配置 */
+  mimoCode: {
+    /** Mimo CLI 命令路径 */
     cliPath: string;
   };
   /** 工作目录 */

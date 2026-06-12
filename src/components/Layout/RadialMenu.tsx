@@ -225,10 +225,13 @@ export function RadialMenu({
 export function RadialMenuTrigger({
   onHover,
   onClick,
+  onPressStart,
   isOpen
 }: {
   onHover?: (isHovering: boolean) => void
   onClick: () => void
+  /** 按下瞬间回调（pointerdown，早于触屏合成的 mouseenter，用于记录按下前菜单状态） */
+  onPressStart?: () => void
   isOpen: boolean
 }) {
   const { t } = useTranslation('common')
@@ -236,6 +239,7 @@ export function RadialMenuTrigger({
   return (
     <button
       onClick={onClick}
+      onPointerDown={onPressStart}
       onMouseEnter={() => onHover?.(true)}
       onMouseLeave={() => onHover?.(false)}
       className={`

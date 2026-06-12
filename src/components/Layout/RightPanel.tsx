@@ -11,6 +11,8 @@ interface RightPanelProps {
   children: ReactNode
   /** 是否填充剩余空间（无编辑器时自适应，不显示拖拽条） */
   fillRemaining?: boolean
+  /** 强制显示（小屏模式下忽略持久化的折叠状态，避免整页空白） */
+  forceShow?: boolean
 }
 
 /**
@@ -18,13 +20,13 @@ interface RightPanelProps {
  * - fillRemaining=true: flex-1 自适应填充，无拖拽条（无编辑器时）
  * - fillRemaining=false: 固定宽度 + 拖拽条（有编辑器时）
  */
-export function RightPanel({ children, fillRemaining = false }: RightPanelProps) {
+export function RightPanel({ children, fillRemaining = false, forceShow = false }: RightPanelProps) {
   const width = useViewStore((state) => state.rightPanelWidth)
   const setWidth = useViewStore((state) => state.setRightPanelWidth)
   const collapsed = useViewStore((state) => state.rightPanelCollapsed)
 
-  // 折叠状态：不渲染面板
-  if (collapsed) {
+  // 折叠状态：不渲染面板（小屏模式下 forceShow 兜底，防止白屏）
+  if (collapsed && !forceShow) {
     return null
   }
 

@@ -882,3 +882,102 @@ fn search_in_file(
         }
     }
 }
+
+// ============================================================================
+// 文件下载
+// ============================================================================
+
+/// 二进制文件下载命令 — 读取文件原始字节，以 base64 编码返回
+/// 适用于所有文件类型（文本、图片、压缩包等），不受 UTF-8 限制
+#[cfg_attr(feature = "tauri-app", tauri::command)]
+pub async fn download_file_binary(path: String) -> Result<String> {
+    let path_obj = Path::new(&path);
+
+    if !path_obj.exists() {
+        return Err(AppError::InvalidPath("文件不存在".to_string()));
+    }
+
+    if path_obj.is_dir() {
+        return Err(AppError::InvalidPath("是目录，不是文件".to_string()));
+    }
+
+    let bytes = fs::read(path_obj)?;
+    let encoded = BASE64_STANDARD.encode(&bytes);
+
+    Ok(encoded)
+}
+
+/// 目录打包下载命令 — 递归将目录内容打包为 zip，以 base64 编码返回
+/// 单文件上限 100MB，总文件数上限 1000，超出时返回错误
+#[cfg_attr(feature = "tauri-app", tauri::command)]
+pub async fn download_directory_to_zip(dir_path: String) -> Result<String> {
+    const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024; // 100MB
+    const MAX_FILE_COUNT: usize = 1000;
+
+    let path_obj = Path::new(&dir_path);
+
+    if !path_obj.exists() {
+        return Err(AppError::InvalidPath("目录不存在".to_string()));
+    }
+
+    if !path_obj.is_dir() {
+        return Err(AppError::InvalidPath("是文件，不是目录".to_string()));
+    }
+
+    // 收集目录中的所有文件
+    let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
+
+    for recursive_result in walkdir::WalkDir::new(path_obj).into_iter() {
+        let entry = recursive_result.map_err(|e| AppError::Unknown(e.to_string()))?;
+        let file_path = entry.path();
+
+        // 跳过自身
+        if file_path == path_obj {
+            continue;
+        }
+
+        if file_path.is_file() {
+            if entries.len() >= MAX_FILE_COUNT {
+                return Err(AppError::InvalidPath(format!(
+                    "目录文件数超过上限 {}，请缩小打包范围",
+                    MAX_FILE_COUNT
+                )));
+            }
+
+            let metadata = fs::metadata(file_path)?;
+            if metadata.len() > MAX_FILE_SIZE {
+                return Err(AppError::InvalidPath(format!(
+                    "文件 {} 超过 100MB 上限，无法打包",
+                    file_path.display()
+                )));
+            }
+
+            let bytes = fs::read(file_path)?;
+            // 使用相对路径作为 zip 内部路径
+            let relative_path = pathdiff::diff_paths(file_path, path_obj)
+                .unwrap_or_else(|| file_path.to_path_buf());
+            let relative_str = relative_path.to_string_lossy().to_string();
+            entries.push((relative_str, bytes));
+        }
+    }
+
+    // 打包为 zip
+    let mut zip_bytes = Vec::new();
+    {
+        let mut archive = zip::ZipWriter::new(std::io::Cursor::new(&mut zip_bytes));
+        let options = zip::write::FileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+
+        for (name, data) in entries {
+            archive.start_file(name, options)
+                .map_err(|e| AppError::Unknown(e.to_string()))?;
+            std::io::Write::write_all(&mut archive, &data)
+                .map_err(|e| AppError::Unknown(e.to_string()))?;
+        }
+        archive.finish()
+            .map_err(|e| AppError::Unknown(e.to_string()))?;
+    }
+
+    let encoded = BASE64_STANDARD.encode(&zip_bytes);
+    Ok(encoded)
+}

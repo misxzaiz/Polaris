@@ -57,6 +57,9 @@ export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rig
   // 扇形菜单状态 - 支持悬停和点击
   const [isRadialMenuOpen, setIsRadialMenuOpen] = useState(false)
   const hideTimerRef = useRef<NodeJS.Timeout | null>(null)
+  // 按下瞬间（pointerdown）的菜单开关状态：触屏 tap 会先合成 mouseenter（hover 打开菜单）
+  // 再触发 click，若 click 直接 toggle 会把刚打开的菜单立即关闭，导致触屏无法打开菜单
+  const pressOpenRef = useRef(false)
 
   // 清理定时器
   useEffect(() => {
@@ -107,7 +110,8 @@ export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rig
         {/* 贴边半圆悬浮触发器 */}
         <RadialMenuTrigger
           onHover={handleTriggerHover}
-          onClick={() => setIsRadialMenuOpen(!isRadialMenuOpen)}
+          onPressStart={() => { pressOpenRef.current = isRadialMenuOpen }}
+          onClick={() => setIsRadialMenuOpen(!pressOpenRef.current)}
           isOpen={isRadialMenuOpen}
         />
 

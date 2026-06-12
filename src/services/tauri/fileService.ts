@@ -38,6 +38,45 @@ export async function readFile(path: string): Promise<string> {
   return invoke('get_file_content', { path });
 }
 
+/**
+ * 下载文件到本地
+ * - Tauri: 通过 base64 二进制接口读取，支持所有文件类型
+ * - Web: 浏览器默认下载行为（仅文本文件可靠）
+ */
+export async function downloadFile(
+  filePath: string,
+  fileName: string,
+): Promise<void> {
+  try {
+    // 优先使用二进制接口（Tauri 环境）
+    const base64Content: string = await invoke('download_file_binary', { path: filePath });
+    const binaryString = atob(base64Content);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const blob = new Blob([bytes], { type: 'application/octet-stream' });
+    downloadBlob(blob, fileName);
+  } catch {
+    // 回退到文本接口（Web 环境或二进制命令不可用时）
+    const content = await getFileContent(filePath);
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    downloadBlob(blob, fileName);
+  }
+}
+
+function downloadBlob(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 /** 创建文件 */
 export async function createFile(path: string, content?: string) {
   return invoke('create_file', { path, content });

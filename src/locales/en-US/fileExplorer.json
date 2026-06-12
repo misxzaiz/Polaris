@@ -41,6 +41,7 @@
     "openInExplorer": "Open in Explorer",
     "openFolderInExplorer": "Open Containing Folder",
     "copyPath": "Copy Path",
+    "downloadFile": "Download",
     "inputFileName": "Enter file name:",
     "inputFolderName": "Enter folder name:",
     "inputNewName": "Enter new name:",

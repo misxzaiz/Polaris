@@ -3,6 +3,6 @@
  */
 
 export { ActivityBar } from './ActivityBar'
-export { LeftPanel, LeftPanelContent } from './LeftPanel'
+export { LeftPanel, LeftPanelContent, LeftPanelDrawer } from './LeftPanel'
 export { RightPanel } from './RightPanel'
 export { CenterStage, TabBar } from './CenterStage'

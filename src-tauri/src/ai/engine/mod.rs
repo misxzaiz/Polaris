@@ -6,7 +6,9 @@ mod codex;
 pub mod codex_parser;
 mod simple_ai;
 mod simple_ai_protocol;
+mod mimo;
 
 pub use claude::ClaudeEngine;
 pub use codex::CodexEngine;
 pub use simple_ai::SimpleAIEngine;
+pub use mimo::MimocodeEngine;

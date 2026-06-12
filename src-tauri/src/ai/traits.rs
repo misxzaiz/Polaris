@@ -15,6 +15,7 @@ pub enum EngineId {
     ClaudeCode,
     Codex,
     SimpleAI,
+    MimoCode,
 }
 
 impl EngineId {
@@ -28,6 +29,7 @@ impl EngineId {
             "claude" | "claude-code" | "claudecode" => Some(Self::ClaudeCode),
             "codex" | "openai-codex" | "openai_codex" => Some(Self::Codex),
             "simple-ai" | "simpleai" | "simple_ai" => Some(Self::SimpleAI),
+            "mimo" | "mimo-code" | "mimocode" => Some(Self::MimoCode),
             _ => None,
         }
     }
@@ -38,6 +40,7 @@ impl EngineId {
             Self::ClaudeCode => "claude".to_string(),
             Self::Codex => "codex".to_string(),
             Self::SimpleAI => "simple-ai".to_string(),
+            Self::MimoCode => "mimo".to_string(),
         }
     }
 
@@ -47,6 +50,7 @@ impl EngineId {
             Self::ClaudeCode => "Claude Code",
             Self::Codex => "OpenAI Codex",
             Self::SimpleAI => "Simple AI",
+            Self::MimoCode => "Mimo Code",
         }
     }
 }

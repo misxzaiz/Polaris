@@ -31,7 +31,7 @@ export type {
  * 获取所有可用的 Engine IDs
  */
 export function getAvailableEngineIds(): string[] {
-  return ['claude-code', 'codex', 'agnes', 'simple-ai']
+  return ['claude-code', 'codex', 'agnes', 'simple-ai', 'mimo']
 }
 
 /**
@@ -79,6 +79,12 @@ export function getEngineDescriptors(): EngineDescriptor[] {
       name: 'Simple AI',
       description: '轻量级 AI 助手 — 使用模型供应商配置，内置 bash/文件工具',
       available: true,
+    },
+    {
+      id: 'mimo',
+      name: 'Mimo Code',
+      description: 'Mimo (Mimocode) CLI - 多提供商 AI 编程助手，支持内置认证',
+      available: false,
     },
   ]
 }

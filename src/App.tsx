@@ -7,7 +7,7 @@ const log = createLogger('App');
 
 import { TopMenuBar as TopMenuBarComponent } from './components/TopMenuBar';
 import { GitPanel } from './components/GitPanel';
-import { ActivityBar, LeftPanel, LeftPanelContent, CenterStage, RightPanel } from './components/Layout';
+import { ActivityBar, LeftPanel, LeftPanelContent, LeftPanelDrawer, CenterStage, RightPanel } from './components/Layout';
 import { EnhancedChatMessages, ChatInput, ChatStatusBar, SessionHistoryPanel, MultiSessionGrid, MultiWindowMenu, NewSessionButton, ErrorBanner } from './components/Chat';
 import type { EditMode } from './components/Chat';
 import type { SettingsTabId } from './components/Settings/SettingsSidebar';
@@ -119,6 +119,14 @@ function App() {
 
   useWorkspaceSync(true);
 
+  // 进入小屏模式时自动关闭左侧面板：leftPanelType 持久化且默认 'files'，
+  // 不关闭的话手机首屏会被左面板抽屉直接盖住聊天区
+  useEffect(() => {
+    if (isCompact) {
+      closeLeftPanel();
+    }
+  }, [isCompact, closeLeftPanel]);
+
   // 连接恢复后自动收起诊断面板
   useEffect(() => {
     if (connectionState === 'success') {
@@ -143,8 +151,7 @@ function App() {
   const activeLeftPanelContribution = pluginRegistry
     .listViewContributions('activityBar')
     .find(view => view.panelType === leftPanelType);
-  const hasLeftPanel = !isCompact &&
-    leftPanelType !== 'none' &&
+  const hasLeftPanel = leftPanelType !== 'none' &&
     !!activeLeftPanelContribution &&
     isPluginUiEnabled(pluginStates, activeLeftPanelContribution.pluginId);
   const hasCenterStage = !isCompact && hasOpenTabs;
@@ -167,6 +174,31 @@ function App() {
   // === 渲染 ===
   const loadingFallback = (
     <div className="flex items-center justify-center h-full text-text-muted">{t('status.loading')}</div>
+  );
+
+  // 左侧面板内容：桌面布局停靠在 LeftPanel，小屏模式渲染在 LeftPanelDrawer 抽屉中
+  const leftPanelContent = (
+    <LeftPanelContent
+      filesContent={<FileExplorer />}
+      gitContent={(
+        <GitPanel
+          onOpenDiffInTab={(diff, options) => openDiffTab(diff, options)}
+          onOpenFileInEditor={openFileInEditor}
+          onOpenWorkbench={openGitWorkbench}
+        />
+      )}
+      todoContent={<SimpleTodoPanel />}
+      translateContent={<TranslatePanel onSendToChat={sendMessage} />}
+      schedulerContent={<SchedulerPanel />}
+      requirementContent={<RequirementPanel />}
+      terminalContent={<TerminalPanel />}
+      developerContent={<Suspense fallback={loadingFallback}><DeveloperPanel fillRemaining /></Suspense>}
+      integrationContent={<Suspense fallback={loadingFallback}><IntegrationPanel /></Suspense>}
+      aiConsoleContent={<Suspense fallback={loadingFallback}><ExecutionConsolePanel /></Suspense>}
+      problemsContent={<ProblemsPanel />}
+      demoPluginContent={<DemoPluginPanel onSendToChat={sendMessage} />}
+      comicStudioContent={<ComicStudioPanel />}
+    />
   );
 
   return (
@@ -204,34 +236,21 @@ function App() {
 
               {!isCompact && hasLeftPanel && (
                 <LeftPanel>
-                  <LeftPanelContent
-                    filesContent={<FileExplorer />}
-                    gitContent={(
-                      <GitPanel
-                        onOpenDiffInTab={(diff, options) => openDiffTab(diff, options)}
-                        onOpenFileInEditor={openFileInEditor}
-                        onOpenWorkbench={openGitWorkbench}
-                      />
-                    )}
-                    todoContent={<SimpleTodoPanel />}
-                    translateContent={<TranslatePanel onSendToChat={sendMessage} />}
-                    schedulerContent={<SchedulerPanel />}
-                    requirementContent={<RequirementPanel />}
-                    terminalContent={<TerminalPanel />}
-                    developerContent={<Suspense fallback={loadingFallback}><DeveloperPanel fillRemaining /></Suspense>}
-                    integrationContent={<Suspense fallback={loadingFallback}><IntegrationPanel /></Suspense>}
-                    aiConsoleContent={<Suspense fallback={loadingFallback}><ExecutionConsolePanel /></Suspense>}
-                    problemsContent={<ProblemsPanel />}
-                    demoPluginContent={<DemoPluginPanel onSendToChat={sendMessage} />}
-                    comicStudioContent={<ComicStudioPanel />}
-                  />
+                  {leftPanelContent}
                 </LeftPanel>
+              )}
+
+              {/* 小屏模式：左侧面板以覆盖式抽屉渲染，保证扇形菜单各功能入口可用 */}
+              {isCompact && hasLeftPanel && (
+                <LeftPanelDrawer onClose={closeLeftPanel}>
+                  {leftPanelContent}
+                </LeftPanelDrawer>
               )}
 
               {!isCompact && hasCenterStage && <CenterStage fillRemaining={!rightPanelCollapsed} />}
 
               {(isCompact || !rightPanelCollapsed) && (
-                <RightPanel fillRemaining={rightPanelFillRemaining}>
+                <RightPanel fillRemaining={rightPanelFillRemaining} forceShow={isCompact}>
                   {error && <ErrorBanner error={error} />}
 
                   {multiSessionMode ? (

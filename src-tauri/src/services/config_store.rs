@@ -280,6 +280,12 @@ impl ConfigStore {
         Self::detect_cli_version(&cmd, "detect_codex")
     }
 
+    /// 检测 Mimo CLI 是否可用
+    pub fn detect_mimo(&self) -> Option<String> {
+        let cmd = self.config.get_mimo_cmd();
+        Self::detect_cli_version(&cmd, "detect_mimo")
+    }
+
     fn detect_cli_version(cmd: &str, log_prefix: &str) -> Option<String> {
         eprintln!("[{}] 尝试执行: {} --version", log_prefix, cmd);
 
@@ -404,12 +410,16 @@ impl ConfigStore {
         let claude_available = claude_version.is_some();
         let codex_version = self.detect_codex();
         let codex_available = codex_version.is_some();
+        let mimo_version = self.detect_mimo();
+        let mimo_available = mimo_version.is_some();
 
         HealthStatus {
             claude_available,
             claude_version,
             codex_available,
             codex_version,
+            mimo_available,
+            mimo_version,
             work_dir: self
                 .config
                 .work_dir
@@ -597,6 +607,7 @@ impl OldConfig {
                 cli_path: self.claude_cmd,
             },
             codex_code: Default::default(),
+            mimo_code: Default::default(),
             qqbot: Default::default(),
             feishu: Default::default(),
             work_dir: self.work_dir,

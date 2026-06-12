@@ -34,6 +34,22 @@ impl Default for CodexCodeConfig {
     }
 }
 
+/// Mimo Code 引擎配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MimoCodeConfig {
+    /// Mimo CLI 命令路径
+    pub cli_path: String,
+}
+
+impl Default for MimoCodeConfig {
+    fn default() -> Self {
+        Self {
+            cli_path: "mimo".to_string(),
+        }
+    }
+}
+
 /// 引擎 ID 类型
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -46,6 +62,8 @@ pub enum EngineId {
     Codex,
     /// Simple AI 引擎（轻量级内置助手，使用模型供应商配置）
     SimpleAi,
+    /// Mimo Code 引擎（mimocode CLI）
+    MimoCode,
 }
 
 
@@ -56,6 +74,7 @@ impl EngineId {
             Self::ClaudeCode => "claude-code",
             Self::Codex => "codex",
             Self::SimpleAi => "simple-ai",
+            Self::MimoCode => "mimo",
         }
     }
 
@@ -65,6 +84,7 @@ impl EngineId {
             "claude-code" => Some(Self::ClaudeCode),
             "codex" | "openai-codex" | "openai_codex" => Some(Self::Codex),
             "simple-ai" | "simpleai" | "simple_ai" => Some(Self::SimpleAi),
+            "mimo" | "mimo-code" | "mimocode" => Some(Self::MimoCode),
             _ => None,
         }
     }
@@ -838,6 +858,10 @@ pub struct Config {
     #[serde(default)]
     pub codex_code: CodexCodeConfig,
 
+    /// Mimo Code 引擎配置
+    #[serde(default)]
+    pub mimo_code: MimoCodeConfig,
+
     /// 工作目录
     pub work_dir: Option<PathBuf>,
 
@@ -933,6 +957,7 @@ impl Default for Config {
             theme: None,
             claude_code: ClaudeCodeConfig::default(),
             codex_code: CodexCodeConfig::default(),
+            mimo_code: MimoCodeConfig::default(),
             work_dir: None,
             session_dir: None,
             git_bin_path: None,
@@ -976,6 +1001,11 @@ impl Config {
         self.codex_code.cli_path.clone()
     }
 
+    /// 获取 Mimo CLI 命令路径
+    pub fn get_mimo_cmd(&self) -> String {
+        self.mimo_code.cli_path.clone()
+    }
+
     /// 确保 default_engine 有效
     pub fn validate(&mut self) {
         if EngineId::parse(&self.default_engine).is_none() {
@@ -1012,6 +1042,14 @@ pub struct HealthStatus {
     /// Codex 版本
     #[serde(default)]
     pub codex_version: Option<String>,
+
+    /// Mimo CLI 是否可用
+    #[serde(default)]
+    pub mimo_available: bool,
+
+    /// Mimo 版本
+    #[serde(default)]
+    pub mimo_version: Option<String>,
 
     /// 工作目录
     pub work_dir: Option<String>,

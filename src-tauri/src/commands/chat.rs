@@ -440,6 +440,13 @@ fn prepare_mcp_config_with_paths(
                 codex_config_args: Vec::new(),
             })
         }
+        EngineId::MimoCode => {
+            // Mimo 不使用 MCP 配置文件
+            Ok(PreparedMcpConfig {
+                claude_config_path: None,
+                codex_config_args: Vec::new(),
+            })
+        }
     }
 }
 
@@ -484,6 +491,7 @@ async fn apply_model_profile_options(
         EngineId::ClaudeCode => "claude",
         EngineId::Codex => "codex",
         EngineId::SimpleAI => "simple-ai",
+        EngineId::MimoCode => "mimo",
     };
     let is_universal = target == "both" || target == "all";
     if !is_universal && target != expected_engine {
@@ -656,6 +664,14 @@ async fn apply_model_profile_options(
             let mut env_overrides = std::collections::HashMap::new();
             env_overrides.insert("__simple_ai_profile_id".to_string(), profile.id.clone());
             session_opts = session_opts.with_env_overrides(env_overrides);
+        }
+        EngineId::MimoCode => {
+            // Mimo 引擎使用模型配置（通过 --model 传递）
+            tracing::info!(
+                "[{}] Mimo 引擎使用 Profile 模型: {}",
+                log_scope, profile.model
+            );
+            // Mimo 不直接使用 env_overrides，由 CLI 自身处理认证
         }
     }
 
