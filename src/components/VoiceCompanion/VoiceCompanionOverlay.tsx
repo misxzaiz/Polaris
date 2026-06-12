@@ -44,13 +44,13 @@ function mainAction(phase: VoicePhase, hasBuffer: boolean): { Icon: typeof Mic; 
 function statusText(phase: VoicePhase, transcript: string, errorMessage: string | null): string {
   switch (phase) {
     case 'standby':
-      return '喊一声「小白」，我就来～';
+      return '喊一声「小陈」，我就来～';
     case 'listening':
       return transcript || '在听你说…';
     case 'thinking':
-      return '小白在想…';
+      return '小陈在想…';
     case 'speaking':
-      return '小白正在说…';
+      return '小陈正在说…';
     case 'cooldown':
       return '稍等，让回声散一散…';
     case 'error':
@@ -72,7 +72,7 @@ function statusSubText(phase: VoicePhase, fullDuplex: boolean, autoSend: boolean
     case 'thinking':
       return '点击光球可打断';
     case 'speaking':
-      return fullDuplex ? '全双工 · 喊「小白」可打断' : '🎤 识别已暂停（防回声） · 点击光球打断';
+      return fullDuplex ? '全双工 · 喊「小陈」可打断' : '🎤 识别已暂停（防回声） · 点击光球打断';
     case 'cooldown':
       return '即将恢复聆听 · 直接说话不会丢字';
     default:
@@ -210,7 +210,7 @@ export function VoiceCompanionOverlay() {
               {statusSub && <div className="text-xs text-text-tertiary">{statusSub}</div>}
             </div>
 
-            {/* 字幕气泡：用户右 / 小白左，可滚动 */}
+            {/* 字幕气泡：用户右 / 小陈左，可滚动 */}
             {(lastUserText || lastReply) && (
               <div className="w-full max-w-xl flex flex-col gap-2.5 max-h-44 overflow-y-auto px-2">
                 {lastUserText && (
@@ -236,7 +236,7 @@ export function VoiceCompanionOverlay() {
       {/* 命令提示 */}
       {isSupported && (
         <div className="relative text-center text-xs text-text-muted pb-3">
-          试试说：「发送」·「清空」·「中断」 — 待命时喊「小白」唤醒 · ESC 挂断
+          试试说：「发送」·「清空」·「中断」 — 待命时喊「小陈」唤醒 · ESC 挂断
         </div>
       )}
 

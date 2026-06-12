@@ -1,10 +1,10 @@
 /**
  * useVoiceCompanion - 语音伙伴核心编排 Hook（v3：半双工回声治理 + 焦点仲裁 + 隐形人格）
  *
- * 状态机：idle → standby(待命,只听"小白") → listening(激活,连续识别) → thinking
+ * 状态机：idle → standby(待命,只听"小陈") → listening(激活,连续识别) → thinking
  *       → speaking(朗读) → cooldown(回声冷却) → listening
  *
- * 回声治理（解决"小白把自己的话录成输入"）：
+ * 回声治理（解决"小陈把自己的话录成输入"）：
  *   - 默认半双工：speaking 时 speechService.pause() 暂停识别 → 最大回声窗口被物理隔离；
  *     打断方式为点击光球/主按钮/空格键（由 UI 层调用 interruptSpeaking）。
  *   - TTS 结束 → resume() 恢复识别并进入 cooldown（默认 800ms）：识别器恢复期间
@@ -12,7 +12,7 @@
  *     （bigram 相似度，比子串包含更耐 ASR 同音错字）→ 回声丢弃；
  *     非回声 = 用户真在说话 → 提前结束冷却并按正常聆听处理（不吞首句）。
  *   - 实验性全双工（config.fullDuplex）：speaking 保持识别，isLikelyEcho 过滤
- *     + 唤醒词「小白」穿透打断（外放场景有回声风险，设置中明示）。
+ *     + 唤醒词「小陈」穿透打断（外放场景有回声风险，设置中明示）。
  *
  * 人格注入：每次发送经 sendMessage 的 oneTimeSystemPrompt 通道（appendSystemPrompt），
  * 不再拼接进用户消息 → 消息流中不可见，切会话/切模式天然生效。
@@ -424,7 +424,7 @@ export function useVoiceCompanion() {
       }
     };
 
-    // 启动：默认进入待命（喊"小白"激活）；未开唤醒词则直接聆听
+    // 启动：默认进入待命（喊"小陈"激活）；未开唤醒词则直接聆听
     if (st.config.wakeWord.enabled) {
       st.setPhase('standby');
     } else {

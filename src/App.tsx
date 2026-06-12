@@ -337,7 +337,7 @@ function App() {
           <SymbolPalette />
         </Suspense>
 
-        {/* 语音伙伴「小白」：未打开时渲染悬浮入口，打开时全屏通话界面 */}
+        {/* 语音伙伴「小陈」：未打开时渲染悬浮入口，打开时全屏通话界面 */}
         <VoiceCompanionOverlay />
       </Layout>
     </ErrorBoundary>

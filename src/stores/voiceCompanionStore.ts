@@ -18,10 +18,10 @@ function loadConfig(): VoiceCompanionConfig {
     const raw = localStorage.getItem(VOICE_COMPANION_CONFIG_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<VoiceCompanionConfig>;
-      // 迁移 v2：默认唤醒词 ['小白'] 升级为含同音容错的新默认列表
+      // 迁移 v2：默认唤醒词 ['小陈'] 升级为含同音容错的新默认列表
       if (
         parsed.wakeWord?.words?.length === 1 &&
-        parsed.wakeWord.words[0] === '小白'
+        parsed.wakeWord.words[0] === '小陈'
       ) {
         parsed.wakeWord = {
           ...parsed.wakeWord,

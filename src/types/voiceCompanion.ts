@@ -20,16 +20,16 @@ import type { SpeechLanguage, TTSVoice, WakeWordConfig } from './speech';
 /** 对话阶段状态机 */
 export type VoicePhase =
   | 'idle'        // 未激活 / 通话已开但未运行
-  | 'standby'     // 待命：麦克风开着，但只听唤醒词「小白」
+  | 'standby'     // 待命：麦克风开着，但只听唤醒词「小陈」
   | 'listening'   // 激活：连续识别用户语音
   | 'thinking'    // 已发送，等待 AI 流式回复
-  | 'speaking'    // 小白正在朗读（半双工：识别暂停；全双工：可被唤醒词打断）
+  | 'speaking'    // 小陈正在朗读（半双工：识别暂停；全双工：可被唤醒词打断）
   | 'cooldown'    // 朗读结束后的回声冷却期（半双工专属，自动流转回 listening）
   | 'error';
 
 /** 语音伙伴模式 */
 export type VoiceCompanionMode =
-  | 'companion'   // 陪伴闲聊：小白人格、简短口语、适合朗读
+  | 'companion'   // 陪伴闲聊：小陈人格、简短口语、适合朗读
   | 'work';       // 干活：保留完整能力与工具链，口头汇报精炼
 
 /** 语音伙伴配置（独立持久化于 localStorage，不进全局 Config） */
@@ -48,7 +48,7 @@ export interface VoiceCompanionConfig {
   autoSend: boolean;
   /** 停顿合并发送的静默阈值（毫秒，800-3000） */
   autoSendDelay: number;
-  /** 唤醒词配置（默认开启，喊「小白」激活/打断） */
+  /** 唤醒词配置（默认开启，喊「小陈」激活/打断） */
   wakeWord: WakeWordConfig;
   /** 激活后静默多久回到待命（毫秒，0=不回） */
   standbyTimeout: number;
@@ -61,7 +61,7 @@ export interface VoiceCompanionConfig {
   echoCooldownMs: number;
 }
 
-/** 默认配置（小白默认「晓晓」女声；唤醒词默认开，含同音容错；默认半双工） */
+/** 默认配置（小陈默认「晓晓」女声；唤醒词默认开，含同音容错；默认半双工） */
 export const DEFAULT_VOICE_COMPANION_CONFIG: VoiceCompanionConfig = {
   configVersion: 4,
   mode: 'companion',
@@ -70,7 +70,7 @@ export const DEFAULT_VOICE_COMPANION_CONFIG: VoiceCompanionConfig = {
   rate: '+0%',
   autoSend: false,
   autoSendDelay: 1500,
-  wakeWord: { enabled: true, words: ['小白', '小百', '小柏', '小拜'] },
+  wakeWord: { enabled: true, words: ['小陈', '小臣', '小晨', '小沉', '小趁'] },
   standbyTimeout: 15000,
   fullDuplex: false,
   echoCooldownMs: 800,
@@ -78,7 +78,7 @@ export const DEFAULT_VOICE_COMPANION_CONFIG: VoiceCompanionConfig = {
 
 /** 伙伴身份（用于 UI 展示与人格构建） */
 export const COMPANION_IDENTITY = {
-  name: '小白',
+  name: '小陈',
   tagline: '你的语音陪伴伙伴',
 } as const;
 

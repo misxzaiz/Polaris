@@ -4,7 +4,7 @@
  * 显示当前对话的状态信息：
  * - 会话配置选择器 (Agent/Model/Effort/Permission)
  * - 引擎健康指示
- * - 语音区：听写麦克风（填输入框） + 语音伙伴「小白」通话入口 + 听筒(TTS 朗读)
+ * - 语音区：听写麦克风（填输入框） + 语音伙伴「小陈」通话入口 + 听筒(TTS 朗读)
  * - 输入状态提示 / 流式状态 / 输入字数
  */
 
@@ -310,11 +310,11 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
         <button
           onClick={openVoiceCompanion}
           className={clsx(btnBase, 'text-primary hover:bg-primary/10')}
-          title={t('voiceCompanion.entry', '和小白语音通话')}
+          title={t('voiceCompanion.entry', '和小陈语音通话')}
         >
           <AudioLines size={13} />
           {(withLabel || containerWidth >= BREAKPOINTS.wide) && (
-            <span>{t('voiceCompanion.entryLabel', '小白')}</span>
+            <span>{t('voiceCompanion.entryLabel', '小陈')}</span>
           )}
         </button>
 

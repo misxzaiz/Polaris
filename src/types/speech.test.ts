@@ -35,7 +35,7 @@ describe('isLikelyEcho', () => {
   it('语义无关的用户输入 → 不是回声', () => {
     expect(isLikelyEcho('帮我打开设置页面', speaking)).toBe(false);
     expect(isLikelyEcho('现在几点了', speaking)).toBe(false);
-    expect(isLikelyEcho('小白', speaking)).toBe(false);
+    expect(isLikelyEcho('小陈', speaking)).toBe(false);
   });
 
   it('与朗读内容部分重叠但主体不同的指令 → 不是回声', () => {

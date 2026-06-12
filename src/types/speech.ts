@@ -149,7 +149,7 @@ export const VOICE_COMMANDS: Record<string, VoiceCommand> = {
 export interface WakeWordConfig {
   /** 是否启用唤醒词模式 */
   enabled: boolean;
-  /** 唤醒词列表（支持多个，如 ["小白", "小百", "小柏"]） */
+  /** 唤醒词列表（支持多个，如 ["小陈", "小臣", "小晨", "小沉", "小趁"]） */
   words: string[];
 }
 
