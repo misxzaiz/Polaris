@@ -290,31 +290,33 @@ export const FileTreeNode = memo<FileTreeNodeProps>(({
     items.push({ id: 'separator-3', label: '-', icon: undefined, action: () => {} });
 
     // 下载（Tauri: 选择路径后保存; Web: 浏览器默认下载）
-    items.push({
-      id: 'download',
-      label: t('contextMenu.downloadFile'),
-      icon: <Download size={14} />,
-      action: async () => {
-        if (isTauri()) {
-          // Tauri: 弹出保存对话框让用户选择路径
-          const { save } = await import('@tauri-apps/plugin-dialog');
-          const destination = await save({
-            defaultPath: file.name,
-          });
-          if (!destination) return;
+    if (!file.is_dir) {
+      items.push({
+        id: 'download',
+        label: t('contextMenu.downloadFile'),
+        icon: <Download size={14} />,
+        action: async () => {
+          if (isTauri()) {
+            // Tauri: 弹出保存对话框让用户选择路径
+            const { save } = await import('@tauri-apps/plugin-dialog');
+            const destination = await save({
+              defaultPath: file.name,
+            });
+            if (!destination) return;
 
-          const { copyPath } = await import('@/services/tauri/fileService');
-          await copyPath(file.path, destination);
-        } else {
-          // Web: 浏览器默认下载行为（复用 fileService）
-          const { downloadFile } = await import('@/services/tauri/fileService');
-          await downloadFile(file.path, file.name);
-        }
-      },
-    });
+            const { copyPath } = await import('@/services/tauri/fileService');
+            await copyPath(file.path, destination);
+          } else {
+            // Web: 浏览器默认下载行为（复用 fileService）
+            const { downloadFile } = await import('@/services/tauri/fileService');
+            await downloadFile(file.path, file.name);
+          }
+        },
+      });
+    }
 
     if (isHtmlFile(file)) {
-      items.push({ id: 'separator-3', label: '-', icon: undefined, action: () => {} });
+      items.push({ id: 'separator-4', label: '-', icon: undefined, action: () => {} });
       items.push({
         id: 'open-in-browser',
         label: t('contextMenu.openInBrowser'),

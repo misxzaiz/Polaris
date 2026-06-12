@@ -64,6 +64,21 @@ function isImagePath(path: string): boolean {
   return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext || '');
 }
 
+const BINARY_EXTENSIONS = new Set([
+  'msi', 'exe', 'dmg', 'deb', 'rpm', 'pkg', 'appimage', 'app',
+  'zip', 'tar', 'gz', 'rar', '7z', 'bz2', 'xz', 'zst',
+  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+  'mp3', 'mp4', 'avi', 'mov', 'mkv', 'flac', 'wav', 'ogg',
+  'woff', 'woff2', 'ttf', 'otf', 'eot',
+  'so', 'dll', 'dylib', 'bin', 'dat',
+  'iso', 'img', 'vdi',
+]);
+
+function isBinaryFile(path: string): boolean {
+  const ext = path.split('.').pop()?.toLowerCase();
+  return BINARY_EXTENSIONS.has(ext || '');
+}
+
 export const useFileEditorStore = create<FileEditorStore>((set, get) => ({
   // ========== 初始状态 ==========
   isOpen: false,
@@ -107,6 +122,24 @@ export const useFileEditorStore = create<FileEditorStore>((set, get) => ({
       if (isImagePath(path)) {
         set({ isOpen: false, status: 'idle', error: null, currentFile: null });
         await emit('file:preview', { path, name, kind: 'image' });
+        return;
+      }
+
+      if (isBinaryFile(path)) {
+        log.debug('跳过二进制文件', { path });
+        set({
+          isOpen: true,
+          status: 'error',
+          error: `不支持编辑二进制文件: ${name}`,
+          currentFile: {
+            path,
+            name,
+            content: '',
+            originalContent: '',
+            isModified: false,
+            language: 'text',
+          },
+        });
         return;
       }
 

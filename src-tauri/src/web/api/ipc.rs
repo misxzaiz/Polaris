@@ -135,6 +135,7 @@ pub async fn handle_ipc_bridge(
         "search_files" => dispatch_search_files(&args).await,
         "search_file_contents" => dispatch_search_file_contents(&args).await,
         "read_commands" => dispatch_read_commands(&args).await,
+        "download_file_binary" => dispatch_download_file_binary(&args).await,
 
         // ── Git ──────────────────────────────────────────────────────────────
         "git_is_repository" => dispatch_git_is_repository(&args),
@@ -864,6 +865,11 @@ async fn dispatch_search_file_contents(args: &Value) -> Result<Json<Value>, WebE
 async fn dispatch_read_commands(args: &Value) -> Result<Json<Value>, WebError> {
     let work_dir = args.get("workDir").and_then(|v| v.as_str()).map(String::from);
     json_result!(crate::commands::file_explorer::read_commands(work_dir).await)
+}
+
+async fn dispatch_download_file_binary(args: &Value) -> Result<Json<Value>, WebError> {
+    let path = require_string(args, "path")?;
+    json_result!(crate::commands::file_explorer::download_file_binary(path).await)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

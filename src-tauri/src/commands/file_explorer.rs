@@ -889,8 +889,11 @@ fn search_in_file(
 
 /// 二进制文件下载命令 — 读取文件原始字节，以 base64 编码返回
 /// 适用于所有文件类型（文本、图片、压缩包等），不受 UTF-8 限制
+/// 单文件上限 50MB，超出时返回错误（避免 base64 膨胀导致内存问题）
 #[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn download_file_binary(path: String) -> Result<String> {
+    const MAX_FILE_SIZE: u64 = 50 * 1024 * 1024; // 50MB
+
     let path_obj = Path::new(&path);
 
     if !path_obj.exists() {
@@ -899,6 +902,14 @@ pub async fn download_file_binary(path: String) -> Result<String> {
 
     if path_obj.is_dir() {
         return Err(AppError::InvalidPath("是目录，不是文件".to_string()));
+    }
+
+    let metadata = fs::metadata(path_obj)?;
+    if metadata.len() > MAX_FILE_SIZE {
+        return Err(AppError::InvalidPath(format!(
+            "文件过大 ({}MB)，超过 50MB 下载限制",
+            metadata.len() / (1024 * 1024)
+        )));
     }
 
     let bytes = fs::read(path_obj)?;

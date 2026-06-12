@@ -107,6 +107,11 @@ function getFileIcon(extension: string | undefined, fileName: string) {
     return <FileArchive className="w-4 h-4" />;
   }
 
+  // 安装包 / 二进制文件
+  if (['msi', 'exe', 'dmg', 'deb', 'rpm', 'pkg', 'appimage', 'app'].includes(ext)) {
+    return <FileArchive className="w-4 h-4" />;
+  }
+
   // 默认图标
   return <File className="w-4 h-4" />;
 }

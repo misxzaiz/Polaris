@@ -40,7 +40,7 @@ export async function readFile(path: string): Promise<string> {
 
 /**
  * 下载文件到本地
- * - Tauri: 通过 base64 二进制接口读取，支持所有文件类型
+ * - Tauri: 通过 base64 二进制接口读取，支持所有文件类型（上限 50MB）
  * - Web: 浏览器默认下载行为（仅文本文件可靠）
  */
 export async function downloadFile(
@@ -57,11 +57,17 @@ export async function downloadFile(
     }
     const blob = new Blob([bytes], { type: 'application/octet-stream' });
     downloadBlob(blob, fileName);
-  } catch {
-    // 回退到文本接口（Web 环境或二进制命令不可用时）
-    const content = await getFileContent(filePath);
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-    downloadBlob(blob, fileName);
+  } catch (error) {
+    // 二进制接口失败（文件过大或命令不可用），回退到文本接口
+    try {
+      const content = await getFileContent(filePath);
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      downloadBlob(blob, fileName);
+    } catch {
+      // 两个接口都失败，抛出有意义的错误
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`下载文件失败: ${message}`);
+    }
   }
 }
 
