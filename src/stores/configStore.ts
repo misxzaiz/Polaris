@@ -261,6 +261,10 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
           await tauri.updateConfigPatch({
             codexCode: { ...(config.codexCode || { cliPath: 'codex' }), cliPath },
           });
+        } else if (engineId === 'mimo') {
+          await tauri.updateConfigPatch({
+            mimoCode: { ...(config.mimoCode || { cliPath: 'mimo' }), cliPath },
+          });
         } else {
           await tauri.setClaudeCmd(cliPath);
         }

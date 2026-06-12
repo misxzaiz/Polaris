@@ -76,6 +76,7 @@ export function AIPopover({ isOpen, onClose }: AIPopoverProps) {
     { id: 'claude-code' as EngineId, name: 'Claude Code' },
     { id: 'codex' as EngineId, name: 'OpenAI Codex' },
     { id: 'agnes' as EngineId, name: 'Agnes（生图）' },
+    { id: 'mimo' as EngineId, name: 'Mimo Code' },
   ], [])
 
   const activeSessionMetadata = useMemo(

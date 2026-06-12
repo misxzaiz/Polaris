@@ -4,7 +4,7 @@ import { normalizeEngineId, getEngineFullName } from './engineDisplay';
 export interface SelectedEngineHealth {
   engineId: EngineId;
   name: string;
-  command: 'claude' | 'codex' | 'simple-ai';
+  command: 'claude' | 'codex' | 'simple-ai' | 'mimo';
   cliPath: string;
   available: boolean;
   version?: string;
@@ -43,6 +43,17 @@ export function getSelectedEngineHealth(
     };
   }
 
+  if (engineId === 'mimo') {
+    return {
+      engineId,
+      name: getEngineFullName(engineId),
+      command: 'mimo',
+      cliPath: config?.mimoCode?.cliPath || 'mimo',
+      available: health?.mimoAvailable ?? false,
+      version: health?.mimoVersion,
+    };
+  }
+
   // agnes 和 claude-code 默认走 Claude 路径
   return {
     engineId,
@@ -62,5 +73,5 @@ export function hasAnyEngineAvailable(
   const hasSimpleAI = (config?.modelProfiles ?? []).some(
     p => p.baseUrl && p.apiKey && p.model,
   );
-  return Boolean(health?.claudeAvailable || health?.codexAvailable || hasSimpleAI);
+  return Boolean(health?.claudeAvailable || health?.codexAvailable || health?.mimoAvailable || hasSimpleAI);
 }

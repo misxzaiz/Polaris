@@ -285,16 +285,85 @@ pub fn check_cli_installed(cli_name: &str) -> bool {
     }
 }
 
+/// 查找指定 CLI 的所有可用完整路径
+///
+/// 使用 which/where 命令解析 PATH 中的实际安装位置（绝对路径）。
+/// 输入若已是存在的绝对路径则原样返回。
+pub fn find_cli_paths(cli_name: &str) -> Vec<String> {
+    if Path::new(cli_name).is_absolute() {
+        return if Path::new(cli_name).exists() {
+            vec![cli_name.to_string()]
+        } else {
+            Vec::new()
+        };
+    }
+
+    let which_cmd = if cfg!(windows) { "where" } else { "which" };
+    let mut cmd = Command::new(which_cmd);
+    cmd.arg(cli_name);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let output = match cmd.output() {
+        Ok(o) if o.status.success() => o,
+        _ => return Vec::new(),
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut paths: Vec<String> = stdout
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty() && Path::new(l).exists())
+        .collect();
+
+    // Windows: 优先可执行的扩展名（where 可能先输出无扩展名的 shell 脚本）
+    #[cfg(windows)]
+    paths.sort_by_key(|p| {
+        let lower = p.to_ascii_lowercase();
+        if lower.ends_with(".exe") {
+            0
+        } else if lower.ends_with(".cmd") || lower.ends_with(".bat") {
+            1
+        } else {
+            2
+        }
+    });
+
+    paths.dedup();
+    paths
+}
+
 /// 获取指定 CLI 的版本
 ///
-/// 通用版本获取函数，执行 `<cli_name> --version`
+/// 通用版本获取函数，执行 `<cli_name> --version`。
+/// Windows 下 .cmd/.bat 脚本（npm shim）无法被 CreateProcess 直接执行，
+/// 自动解析真实路径并用 cmd /c 包装。
 pub fn get_cli_version(cli_name: &str) -> Result<String> {
     #[cfg(windows)]
-    let output = Command::new(cli_name)
-        .arg("--version")
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()
-        .map_err(|e| AppError::ProcessError(format!("执行 {} --version 失败: {}", cli_name, e)))?;
+    let output = {
+        // 解析为完整路径（处理 "mimo" → "...\npm\mimo.cmd" 的情况）
+        let resolved = if Path::new(cli_name).is_absolute() {
+            cli_name.to_string()
+        } else {
+            find_cli_paths(cli_name)
+                .into_iter()
+                .next()
+                .unwrap_or_else(|| cli_name.to_string())
+        };
+
+        let lower = resolved.to_ascii_lowercase();
+        let mut cmd = if lower.ends_with(".cmd") || lower.ends_with(".bat") {
+            let mut c = Command::new("cmd");
+            c.arg("/c").arg(&resolved);
+            c
+        } else {
+            Command::new(&resolved)
+        };
+        cmd.arg("--version")
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .map_err(|e| AppError::ProcessError(format!("执行 {} --version 失败: {}", cli_name, e)))?
+    };
 
     #[cfg(not(windows))]
     let output = Command::new(cli_name)

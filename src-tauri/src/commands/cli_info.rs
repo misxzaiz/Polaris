@@ -120,6 +120,15 @@ pub fn cli_check_installed(cli_name: String) -> bool {
     check_cli_installed(&cli_name)
 }
 
+/// 查找指定 CLI 的所有可用完整路径
+///
+/// 使用 which/where 命令解析 PATH 中的实际安装位置（绝对路径）
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn cli_find_paths(cli_name: String) -> Vec<String> {
+    crate::services::cli_info_service::find_cli_paths(&cli_name)
+}
+
 /// 获取指定 CLI 的版本
 ///
 /// 执行 `<cli_name> --version` 获取版本信息

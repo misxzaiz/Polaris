@@ -10,6 +10,10 @@ describe('normalizeEngineId', () => {
     expect(normalizeEngineId('claude-code')).toBe('claude-code')
   })
 
+  it('应该返回 mimo 当输入为 mimo', () => {
+    expect(normalizeEngineId('mimo')).toBe('mimo')
+  })
+
   it('应该返回 claude-code 当输入为空', () => {
     expect(normalizeEngineId()).toBe('claude-code')
     expect(normalizeEngineId(null)).toBe('claude-code')
@@ -31,6 +35,10 @@ describe('getEngineDisplayName', () => {
     expect(getEngineDisplayName('claude-code')).toBe('Claude')
   })
 
+  it('应该返回 Mimo 当引擎为 mimo', () => {
+    expect(getEngineDisplayName('mimo')).toBe('Mimo')
+  })
+
   it('应该返回 Claude 当输入为空', () => {
     expect(getEngineDisplayName()).toBe('Claude')
     expect(getEngineDisplayName(null)).toBe('Claude')
@@ -44,6 +52,10 @@ describe('getEngineFullName', () => {
 
   it('应该返回 Claude Code 当引擎为 claude-code', () => {
     expect(getEngineFullName('claude-code')).toBe('Claude Code')
+  })
+
+  it('应该返回 Mimo Code 当引擎为 mimo', () => {
+    expect(getEngineFullName('mimo')).toBe('Mimo Code')
   })
 
   it('应该返回 Claude Code 当输入为空', () => {

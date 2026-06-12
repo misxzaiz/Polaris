@@ -76,6 +76,11 @@ export async function checkCliInstalled(cliName: string): Promise<boolean> {
   return invoke<boolean>('cli_check_installed', { cliName });
 }
 
+/** 查找指定 CLI 的所有可用完整路径（where/which 解析） */
+export async function findCliPaths(cliName: string): Promise<string[]> {
+  return invoke<string[]>('cli_find_paths', { cliName });
+}
+
 /** 获取指定 CLI 版本 */
 export async function getCliVersionFor(cliName: string): Promise<string> {
   return invoke<string>('cli_get_version_for', { cliName });

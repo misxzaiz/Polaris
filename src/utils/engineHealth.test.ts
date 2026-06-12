@@ -40,6 +40,26 @@ describe('getSelectedEngineHealth', () => {
     expect(result.version).toBe('2.0.0')
   })
 
+  it('应该返回 Mimo 引擎健康状态', () => {
+    const config = {
+      defaultEngine: 'mimo' as const,
+      mimoCode: { cliPath: 'C:\\npm\\mimo.cmd' },
+    }
+    const health = {
+      claudeAvailable: false,
+      mimoAvailable: true,
+      mimoVersion: '0.1.0',
+    }
+
+    const result = getSelectedEngineHealth(config, health)
+    expect(result.engineId).toBe('mimo')
+    expect(result.name).toBe('Mimo Code')
+    expect(result.command).toBe('mimo')
+    expect(result.cliPath).toBe('C:\\npm\\mimo.cmd')
+    expect(result.available).toBe(true)
+    expect(result.version).toBe('0.1.0')
+  })
+
   it('应该使用 engineOverride', () => {
     const config = { defaultEngine: 'claude-code' as const }
     const health = { codexAvailable: true }
@@ -80,6 +100,10 @@ describe('hasAnyEngineAvailable', () => {
 
   it('应该返回 true 当两者都可用', () => {
     expect(hasAnyEngineAvailable({ claudeAvailable: true, codexAvailable: true })).toBe(true)
+  })
+
+  it('应该返回 true 当仅 Mimo 可用', () => {
+    expect(hasAnyEngineAvailable({ claudeAvailable: false, codexAvailable: false, mimoAvailable: true })).toBe(true)
   })
 
   it('应该返回 false 当两者都不可用', () => {

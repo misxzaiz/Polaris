@@ -63,9 +63,17 @@ export function ClaudePathSelector({
   const detectPaths = async () => {
     setDetecting(true);
     try {
-      const paths = engineType === 'claude-code'
-        ? await tauri.findClaudePaths()
-        : (await tauri.checkCliInstalled(config.command) ? [config.command] : []);
+      let paths: string[];
+      if (engineType === 'claude-code') {
+        paths = await tauri.findClaudePaths();
+      } else {
+        // 其他引擎：通过 where/which 解析 PATH 中的完整安装路径
+        paths = await tauri.findCliPaths(config.command);
+        if (paths.length === 0 && await tauri.checkCliInstalled(config.command)) {
+          // 兜底：可执行但未解析出绝对路径时，退回命令名
+          paths = [config.command];
+        }
+      }
       setDetectedPaths(paths);
 
       if (paths.length > 0 && !value) {

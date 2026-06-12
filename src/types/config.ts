@@ -219,6 +219,10 @@ export interface HealthStatus {
   codexAvailable?: boolean;
   /** Codex 版本 */
   codexVersion?: string;
+  /** Mimo CLI 是否可用 */
+  mimoAvailable?: boolean;
+  /** Mimo 版本 */
+  mimoVersion?: string;
   /** 工作目录 */
   workDir?: string;
   /** 配置是否有效 */

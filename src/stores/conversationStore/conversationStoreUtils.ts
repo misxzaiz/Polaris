@@ -24,7 +24,9 @@ export function resolveRuntimeConfigForEngine(
 
   return {
     agent: engineId === 'claude-code' ? sessionConfig.agent || undefined : undefined,
-    model: engineId === 'codex' && model && CLAUDE_MODEL_ALIASES.has(model) ? undefined : model,
+    // Claude 模型别名（opus/sonnet/haiku）对 codex/mimo 无意义：codex 有自己的模型名，
+    // mimo 要求 provider/model 格式，透传会导致 CLI 报错
+    model: (engineId === 'codex' || engineId === 'mimo') && model && CLAUDE_MODEL_ALIASES.has(model) ? undefined : model,
     effort: engineId === 'claude-code' ? sessionConfig.effort || undefined : undefined,
     permissionMode: sessionConfig.permissionMode || undefined,
   }

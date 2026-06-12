@@ -812,6 +812,7 @@ pub fn run() {
             commands::cli_info::cli_get_auth_status,
             commands::cli_info::cli_get_version,
             commands::cli_info::cli_check_installed,
+            commands::cli_info::cli_find_paths,
             commands::cli_info::cli_get_version_for,
             commands::cli_info::cli_run_ultrareview,
             commands::cli_info::cli_extract_structured,

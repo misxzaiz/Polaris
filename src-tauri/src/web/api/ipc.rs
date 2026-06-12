@@ -229,6 +229,7 @@ pub async fn handle_ipc_bridge(
         "cli_get_auth_status" => dispatch_cli_get_auth_status(&state),
         "cli_get_version" => dispatch_cli_get_version(&state),
         "cli_check_installed" => dispatch_cli_check_installed(&args),
+        "cli_find_paths" => dispatch_cli_find_paths(&args),
         "cli_get_version_for" => dispatch_cli_get_version_for(&args),
         "baidu_translate" => dispatch_baidu_translate(&args).await,
         "find_claude_paths" => dispatch_find_claude_paths(),
@@ -1410,6 +1411,11 @@ fn dispatch_cli_get_version(state: &AppState) -> Result<Json<Value>, WebError> {
 fn dispatch_cli_check_installed(args: &Value) -> Result<Json<Value>, WebError> {
     let _ = args;
     Ok(Json(Value::Bool(false)))
+}
+fn dispatch_cli_find_paths(args: &Value) -> Result<Json<Value>, WebError> {
+    let cli_name = require_string(args, "cliName")?;
+    let paths = crate::services::cli_info_service::find_cli_paths(&cli_name);
+    Ok(Json(serde_json::to_value(paths).unwrap_or_default()))
 }
 fn dispatch_cli_get_version_for(args: &Value) -> Result<Json<Value>, WebError> {
     let _ = args;

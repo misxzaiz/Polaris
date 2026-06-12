@@ -1,7 +1,7 @@
 import { memo, useCallback, useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { Plus, Folder, Check, Bot, Cpu, Image as ImageIcon, Search, Zap } from 'lucide-react';
+import { Plus, Folder, Check, Bot, Cpu, Image as ImageIcon, Search, Zap, Sparkles } from 'lucide-react';
 import { useViewStore, useWorkspaceStore, useConfigStore } from '@/stores';
 import {
   useSessionMetadataList,
@@ -56,6 +56,7 @@ export const NewSessionButton = memo(function NewSessionButton() {
     { id: 'codex' as EngineId, label: 'Codex', Icon: Cpu },
     { id: 'agnes' as EngineId, label: 'Agnes', Icon: ImageIcon },
     { id: 'simple-ai' as EngineId, label: 'Simple', Icon: Zap },
+    { id: 'mimo' as EngineId, label: 'Mimo', Icon: Sparkles },
   ], []);
 
   useEffect(() => {
