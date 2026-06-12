@@ -113,6 +113,13 @@
     "simpleAi": {
       "name": "Simple AI",
       "description": "Lightweight AI assistant — uses model provider config, built-in bash/file tools, no CLI required"
+    },
+    "mimo": {
+      "name": "Mimo Code",
+      "description": "Mimo (Mimocode) CLI - multi-provider AI coding assistant with built-in auth",
+      "title": "Mimo Code Configuration",
+      "cliPath": "Mimo CLI Path",
+      "notAvailable": "Not available"
     }
   },
   "modelProfile": {
@@ -263,6 +270,11 @@
       "name": "OpenAI Codex",
       "placeholder": "Enter the full path or command name for Codex CLI",
       "example": "e.g., codex, C:\\Users\\...\\codex.cmd (Windows), or /usr/local/bin/codex (macOS/Linux)"
+    },
+    "mimo": {
+      "name": "Mimo Code",
+      "placeholder": "Enter the full path or command name for Mimo CLI",
+      "example": "e.g., mimo, C:\\Users\\...\\mimo.cmd (Windows), or /usr/local/bin/mimo (macOS/Linux)"
     }
   },
   "validation": {

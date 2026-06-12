@@ -27,6 +27,12 @@ export type {
   AgnesSessionConfig,
 } from './agnes'
 
+// 导出 Mimo Code Engine
+export { MimoCodeEngine, getMimoEngine } from './mimo'
+export type { MimoEngineConfig } from './mimo'
+export { MimoCodeSession, createMimoSession } from './mimo'
+export type { MimoSessionConfig } from './mimo'
+
 /**
  * 获取所有可用的 Engine IDs
  */
@@ -84,7 +90,7 @@ export function getEngineDescriptors(): EngineDescriptor[] {
       id: 'mimo',
       name: 'Mimo Code',
       description: 'Mimo (Mimocode) CLI - 多提供商 AI 编程助手，支持内置认证',
-      available: false,
+      available: true,
     },
   ]
 }

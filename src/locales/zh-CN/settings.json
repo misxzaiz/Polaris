@@ -113,6 +113,13 @@
     "simpleAi": {
       "name": "Simple AI",
       "description": "轻量级 AI 助手 — 用于安装ClaudeCode、Codex，简单对话"
+    },
+    "mimo": {
+      "name": "Mimo Code",
+      "description": "Mimo (Mimocode) CLI - 多提供商 AI 编程助手，支持内置认证",
+      "title": "Mimo Code 配置",
+      "cliPath": "Mimo CLI 路径",
+      "notAvailable": "不可用"
     }
   },
   "modelProfile": {
@@ -263,6 +270,11 @@
       "name": "OpenAI Codex",
       "placeholder": "请输入 Codex CLI 的完整路径或命令名",
       "example": "例如: codex、C:\\Users\\...\\codex.cmd (Windows) 或 /usr/local/bin/codex (macOS/Linux)"
+    },
+    "mimo": {
+      "name": "Mimo Code",
+      "placeholder": "请输入 Mimo CLI 的完整路径或命令名",
+      "example": "例如: mimo、C:\\Users\\...\\mimo.cmd (Windows) 或 /usr/local/bin/mimo (macOS/Linux)"
     }
   },
   "validation": {

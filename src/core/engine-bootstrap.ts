@@ -9,6 +9,7 @@ import { getEngineRegistry, registerEngine } from '@/ai-runtime'
 import { ClaudeCodeEngine } from '../engines/claude-code'
 import { CodexEngine } from '../engines/codex'
 import { AgnesMultiModalEngine } from '../engines/agnes'
+import { MimoCodeEngine } from '../engines/mimo'
 import type { AgnesConfig } from '../engines/agnes'
 import type { Config } from '@/types'
 import { createLogger } from '@/utils/logger'
@@ -18,7 +19,7 @@ const log = createLogger('EngineBootstrap')
 /**
  * 已注册的 Engine ID 列表（传统引擎）
  */
-export const REGISTERED_ENGINE_IDS = ['claude-code', 'codex', 'agnes', 'simple-ai'] as const
+export const REGISTERED_ENGINE_IDS = ['claude-code', 'codex', 'agnes', 'simple-ai', 'mimo'] as const
 
 /**
  * Engine 类型
@@ -53,6 +54,10 @@ export async function bootstrapEngines(
   } else if (defaultEngineId === 'agnes') {
     log.warn('Agnes selected as default but no API key configured')
   }
+
+  // 注册 Mimo Code 引擎
+  const mimoEngine = new MimoCodeEngine()
+  registerEngine(mimoEngine, { asDefault: defaultEngineId === 'mimo' })
 
   // 初始化已注册的引擎
   await registry.initializeAll()
@@ -93,6 +98,10 @@ export async function registerEngineLazy(
     const agnesEngine = new AgnesMultiModalEngine(agnesConfig)
     registerEngine(agnesEngine)
     await agnesEngine.initialize()
+  } else if (engineId === 'mimo') {
+    const mimoEngine = new MimoCodeEngine()
+    registerEngine(mimoEngine)
+    await mimoEngine.initialize()
   }
 
   log.info('Lazy registered engine', { engineId })

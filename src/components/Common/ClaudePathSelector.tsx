@@ -48,7 +48,7 @@ export function ClaudePathSelector({
     name: t(`pathSelector.${type}.name`),
     placeholder: t(`pathSelector.${type}.placeholder`),
     example: t(`pathSelector.${type}.example`),
-    command: type === 'codex' ? 'codex' : 'claude',
+    command: type === 'codex' ? 'codex' : type === 'mimo' ? 'mimo' : 'claude',
   });
   
   const config = getConfig(engineType);

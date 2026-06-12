@@ -29,6 +29,7 @@ const FIXED_ENGINE_OPTIONS: { id: EngineId; nameKey: string; descKey: string }[]
   { id: 'claude-code', nameKey: 'engines.claudeCode.name', descKey: 'engines.claudeCode.description' },
   { id: 'codex', nameKey: 'engines.codex.name', descKey: 'engines.codex.description' },
   { id: 'simple-ai', nameKey: 'engines.simpleAi.name', descKey: 'engines.simpleAi.description' },
+  { id: 'mimo', nameKey: 'engines.mimo.name', descKey: 'engines.mimo.description' },
 ];
 
 /**
@@ -204,6 +205,13 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
     });
   };
 
+  const handleMimoCmdChange = (cmd: string) => {
+    onConfigChange({
+      ...config,
+      mimoCode: { ...(config.mimoCode || { cliPath: 'mimo' }), cliPath: cmd }
+    });
+  };
+
   const handleResetCliConfig = async () => {
     const confirmed = window.confirm(
       t('aiEngine.resetCliConfirm')
@@ -314,6 +322,26 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
               value={config.codexCode?.cliPath || 'codex'}
               onChange={handleCodexCmdChange}
               engineType="codex"
+              disabled={loading}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Mimo Code 配置 */}
+      {config.defaultEngine === 'mimo' && (
+        <div className="p-4 bg-surface rounded-lg border border-border">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-medium text-text-primary">{t('engines.mimo.title')}</h3>
+          </div>
+          <div>
+            <label className="block text-xs text-text-secondary mb-2">
+              {t('engines.mimo.cliPath')}
+            </label>
+            <ClaudePathSelector
+              value={config.mimoCode?.cliPath || 'mimo'}
+              onChange={handleMimoCmdChange}
+              engineType="mimo"
               disabled={loading}
             />
           </div>
