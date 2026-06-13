@@ -32,7 +32,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # ------------------------------------------------------------------
       # Linux: 只需 libssl-dev（git2/openssl 编译用），不需要 webkit2gtk
