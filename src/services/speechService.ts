@@ -208,6 +208,15 @@ export class SpeechService {
     };
 
     this.recognition.onerror = (event: WebSpeechRecognitionErrorEvent) => {
+      // 'aborted' 是 pause()/abort()/stop() 主动中止识别的预期回调
+      // （如 TTS 播报期间暂停识别防回声），不是真实错误：
+      // 不打 ERROR 日志、不进入 error 状态、不向上传播（下游 onError 无需感知）。
+      // 后续 onend 会按 shouldKeepListening 决定自动重启或回 idle。
+      if (event.error === 'aborted') {
+        log.debug('语音识别被中止（预期流程，通常由 pause/abort 触发）');
+        return;
+      }
+
       log.error('语音识别错误:', new Error(`${event.error}: ${event.message}`));
 
       const errorMap: Record<string, AppSpeechError['type']> = {

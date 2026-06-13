@@ -35,11 +35,11 @@ import { useToastStore } from '@/stores/toastStore';
  */
 const BREAKPOINTS = {
   /** 主行可容纳 profile + model + effort，并显示版本号文字 */
-  wide: 600,
+  wide: 700,
   /** 主行可容纳 profile + model */
-  medium: 360,
+  medium: 500,
   /** 主行仅显示 profile（端点，最高优先级） */
-  narrow: 260,
+  narrow: 400,
 } as const;
 
 type SelectorType = 'agent' | 'model' | 'effort' | 'permission' | 'profile';
