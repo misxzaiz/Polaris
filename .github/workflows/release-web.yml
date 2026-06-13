@@ -103,7 +103,7 @@ jobs:
           ls -lh "${ARCHIVE_NAME}"*
 
       - name: Upload archive artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: polaris-web-${{ matrix.target }}
           path: ${{ env.ARCHIVE }}
