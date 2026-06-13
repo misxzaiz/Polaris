@@ -110,12 +110,6 @@ export class SpeechService {
   private readonly RESTART_WINDOW_MS = 2000;
 
   // ========================================
-  // 重试计数（仅 no-speech 错误）
-  // ========================================
-  private retryCount = 0;
-  private maxRetries = 1;
-
-  // ========================================
   // 回调函数
   // ========================================
   private onStatusChange: ((status: SpeechRecognitionStatus) => void) | null = null;
@@ -323,6 +317,9 @@ export class SpeechService {
     };
 
     this.recognition.onerror = (event: WebSpeechRecognitionErrorEvent) => {
+      // 代际检查：epoch 已变说明已被新实例替换，这是旧会话的过期回调，丢弃
+      // （pause/stop/start 都会自增 epoch 并创建新实例，旧实例的 onerror 不应再触发）
+      //
       // 'aborted' 是 pause()/abort()/stop() 主动中止的预期回调
       // （如 TTS 播报期间暂停识别防回声），不是真实错误：
       // 不打 ERROR 日志、不进入 error 状态、不向上传播（下游 onError 无需感知）。
@@ -332,7 +329,7 @@ export class SpeechService {
         return;
       }
 
-      log.error('语音识别错误:', new Error(`${event.error}: ${event.message}`));
+      log.error(`语音识别错误: ${event.error}: ${event.message}`);
 
       const errorMap: Record<string, AppSpeechError['type']> = {
         'not-allowed': 'service-not-allowed',
@@ -341,22 +338,6 @@ export class SpeechService {
         'network': 'network',
         'language-not-supported': 'language-not-supported',
       };
-
-      // no-speech 错误自动重试一次
-      if (event.error === 'no-speech' && this.retryCount < this.maxRetries) {
-        this.retryCount++;
-        log.info('no-speech 错误，自动重试');
-        this.clearRestartTimer();
-        this.restartTimer = setTimeout(() => {
-          this.clearRestartTimer();
-          try {
-            this.recognition?.start();
-          } catch {
-            // 忽略重复启动错误
-          }
-        }, 100);
-        return;
-      }
 
       this.onError?.({
         type: errorMap[event.error] || 'unknown',
@@ -403,7 +384,6 @@ export class SpeechService {
 
     this.desiredState = 'listening';
     this.epoch++;  // 新会话代际
-    this.retryCount = 0;
 
     // 取消遗留重启定时器（防止旧 onend 排的重启被触发）
     this.clearRestartTimer();
@@ -475,7 +455,6 @@ export class SpeechService {
     // 恢复到 pause 前的期望状态
     this.desiredState = this._resumeTarget;
     this.epoch++;  // 新会话代际
-    this.retryCount = 0;
 
     // 取消遗留重启定时器
     this.clearRestartTimer();

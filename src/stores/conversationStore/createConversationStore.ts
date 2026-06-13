@@ -8,6 +8,7 @@ import { generateUUID } from '@/utils/uuid';
 import { create, StoreApi, UseBoundStore } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import { invoke } from '@/services/tauri'
+import { speechService } from '@/services/speechService'
 import type { ConversationStore, ConversationState, StoreDeps } from './types'
 import type { ContentBlock, EngineId } from '@/types'
 import type { AISession } from '@/ai-runtime'
@@ -1468,6 +1469,9 @@ export function createConversationStore(
 
         // 清理压缩器快照
         compactor.clearSnapshots()
+
+        // 停止语音识别，防止会话结束时 STT 仍在后台运行
+        speechService.stop()
 
         const state = get()
         // 重置状态
