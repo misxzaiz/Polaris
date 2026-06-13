@@ -160,7 +160,8 @@ async fn update_config(config: Config, state: tauri::State<'_, AppState>) -> Res
         store.update(config)?;
         store.get().clone()
     };
-    refresh_engine_configs(&state, next_config).await;
+    refresh_engine_configs(&state, next_config.clone()).await;
+    cascade_active_model_profile(&next_config);
     Ok(())
 }
 
@@ -174,7 +175,41 @@ async fn update_config_patch(patch: serde_json::Value, state: tauri::State<'_, A
         store.patch(patch)?
     };
     refresh_engine_configs(&state, saved_config.clone()).await;
+    cascade_active_model_profile(&saved_config);
     Ok(saved_config)
+}
+
+/// 配置保存后将激活的 ModelProfile 凭证级联写入 agent 原生配置文件。
+///
+/// 仅处理当前激活的 Profile（`active: true` 且 target_engine 适用于 Claude Code）。
+/// 级联失败不中断保存流程（仅记录警告日志），因为级联本质是便利功能：
+/// 即使写入失败，下次会话启动时仍会通过 settings overlay 注入环境变量。
+fn cascade_active_model_profile(config: &Config) {
+    let active_profile = config.model_profiles.iter().find(|p| p.active);
+    let Some(profile) = active_profile else {
+        return;
+    };
+
+    // 仅当 Profile 适用于 Claude Code 时才写入 Claude settings.json
+    let target = profile.target_engine.as_deref().unwrap_or("both");
+    if target != "claude" && target != "both" && target != "all" {
+        return;
+    }
+
+    if let Err(e) =
+        crate::services::ModelProfileService::cascade_to_claude_settings(profile)
+    {
+        tracing::warn!(
+            "[update_config] 级联写入 Claude settings.json 失败 (Profile {}): {}",
+            profile.id,
+            e
+        );
+    } else {
+        tracing::info!(
+            "[update_config] 已级联写入 Claude settings.json (Profile: {})",
+            profile.id
+        );
+    }
 }
 
 /// 把最新配置同步到所有已注册 AI 引擎(失效缓存).

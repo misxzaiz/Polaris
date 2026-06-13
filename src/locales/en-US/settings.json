@@ -149,6 +149,8 @@
     "tabDescription": "Manage third-party model provider endpoints. Route Claude Code / Codex to endpoints compatible with the Anthropic Messages, OpenAI Chat Completions, or OpenAI Responses protocol.",
     "searchPlaceholder": "Search by name, model, or endpoint…",
     "noMatchingProfiles": "No matching profiles",
+    "cascadeTitle": "Auto-synced",
+    "cascadeHint": "Active model provider credentials have been synced to agent native config files (e.g., ~/.claude/settings.json). No manual editing needed.",
     "addTitle": "Add Model Provider",
     "editTitle": "Edit Model Provider",
     "cancel": "Cancel",

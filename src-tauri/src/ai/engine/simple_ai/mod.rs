@@ -30,7 +30,10 @@ use std::sync::Arc;
 use serde_json::{json, Value};
 use tokio::sync::{watch, Mutex};
 
-use crate::ai::traits::{AIEngine, EngineId, SessionOptions};
+use crate::ai::traits::{
+    AIEngine, EngineId, SessionOptions,
+    EngineMetadata, EngineDistribution, EngineCapabilities, EnvKeyMapping,
+};
 use crate::error::{AppError, Result};
 use crate::models::ai_event::{
     ErrorEvent, SessionEndEvent, SessionStartEvent, UserMessageEvent,
@@ -111,6 +114,26 @@ impl AIEngine for SimpleAIEngine {
 
     fn description(&self) -> &'static str {
         "Lightweight AI assistant using model provider configuration with built-in tools"
+    }
+
+    fn metadata(&self) -> EngineMetadata {
+        EngineMetadata {
+            id: EngineId::SimpleAI,
+            name: "Simple AI".into(),
+            description: Some("内置轻量 AI 引擎 — 直连模型供应商 API，无需外部 CLI，支持工具调用与流式输出".into()),
+            distribution: EngineDistribution::Builtin,
+            capabilities: EngineCapabilities {
+                tools: true,
+                image_input: false,
+                streaming: true,
+                interrupt: true,
+                resume: true,
+                stdin_input: false,
+                fork_session: false,
+            },
+            env_keys: EnvKeyMapping::default(), // OpenAI 兼容（默认值）
+            supports_model_provider: true,
+        }
     }
 
     fn is_available(&self) -> bool {

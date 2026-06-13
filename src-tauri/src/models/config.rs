@@ -50,45 +50,15 @@ impl Default for MimoCodeConfig {
     }
 }
 
-/// 引擎 ID 类型
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-#[derive(Default)]
-pub enum EngineId {
-    /// Claude Code 引擎
-    #[default]
-    ClaudeCode,
-    /// OpenAI Codex 引擎
-    Codex,
-    /// Simple AI 引擎（轻量级内置助手，使用模型供应商配置）
-    SimpleAi,
-    /// Mimo Code 引擎（mimocode CLI）
-    MimoCode,
-}
-
-
-impl EngineId {
-    /// 转换为字符串
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::ClaudeCode => "claude-code",
-            Self::Codex => "codex",
-            Self::SimpleAi => "simple-ai",
-            Self::MimoCode => "mimo",
-        }
-    }
-
-    /// 从字符串解析
-    pub fn parse(s: &str) -> Option<Self> {
-        match s {
-            "claude-code" => Some(Self::ClaudeCode),
-            "codex" | "openai-codex" | "openai_codex" => Some(Self::Codex),
-            "simple-ai" | "simpleai" | "simple_ai" => Some(Self::SimpleAi),
-            "mimo" | "mimo-code" | "mimocode" => Some(Self::MimoCode),
-            _ => None,
-        }
-    }
-}
+// EngineId 的定义统一在 crate::ai::EngineId（ai/traits.rs）。
+// 此处仅做兼容性重导出，避免破坏现有引用路径。
+//
+// 约定：
+// - 新代码请直接 `use crate::ai::EngineId`
+// - 存量 `use crate::models::config::EngineId` 仍可编译，但应逐步迁移
+//
+// MEMORY: [[dual-engineid-sync]]
+pub use crate::ai::EngineId;
 
 /// 悬浮窗模式
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

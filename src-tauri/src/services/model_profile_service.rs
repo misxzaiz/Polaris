@@ -5,6 +5,7 @@
  * 用于将 Claude Code CLI 的请求路由到非官方模型端点。
  */
 
+use crate::ai::EnvKeyMapping;
 use crate::error::Result;
 use crate::models::config::ModelProfile;
 use std::collections::HashMap;
@@ -125,47 +126,34 @@ impl ModelProfileService {
         Ok(path)
     }
 
-    /// 根据 Profile 生成环境变量覆盖映射
+    /// 根据 Profile 生成环境变量覆盖映射（引擎感知版本）。
     ///
-    /// 用于注入到 Claude Code CLI 子进程的环境中
-    pub fn generate_env_overrides(profile: &ModelProfile) -> HashMap<String, String> {
+    /// 使用引擎元数据中的 `EnvKeyMapping` 确定正确的环境变量名，
+    /// 而非硬编码 ANTHROPIC_*。Claude Code 使用 5 槽位模型映射，
+    /// 其他引擎使用单模型 key。
+    pub fn generate_env_overrides_for_engine(
+        profile: &ModelProfile,
+        env_keys: &EnvKeyMapping,
+    ) -> HashMap<String, String> {
         let mut env = HashMap::new();
-        env.insert("ANTHROPIC_MODEL".to_string(), profile.model.clone());
-        env.insert(
-            "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(),
-            profile.model.clone(),
-        );
-        env.insert(
-            "ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(),
-            profile.model.clone(),
-        );
-        env.insert(
-            "ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(),
-            profile.model.clone(),
-        );
-        env.insert(
-            "ANTHROPIC_REASONING_MODEL".to_string(),
-            profile.model.clone(),
-        );
-        env.insert("ANTHROPIC_BASE_URL".to_string(), profile.base_url.clone());
-        // 按认证方式注入鉴权变量
-        Self::apply_auth_env(profile, &mut env);
-        // 合并用户自定义环境变量（可覆盖上述默认）
-        if let Some(custom) = &profile.custom_env {
-            for (k, v) in custom {
-                env.insert(k.clone(), v.clone());
-            }
-        }
-        env
-    }
+        env.insert(env_keys.base_url.to_string(), profile.base_url.clone());
 
-    /// 按 authType 注入鉴权环境变量
-    ///
-    /// - `auth_token`（默认）→ `ANTHROPIC_AUTH_TOKEN`
-    /// - `api_key` → `ANTHROPIC_API_KEY`
-    /// - `custom_env` → 用户指定的环境变量名（缺省回退 `ANTHROPIC_AUTH_TOKEN`）
-    /// - `none` → 不注入
-    fn apply_auth_env(profile: &ModelProfile, env: &mut HashMap<String, String>) {
+        // Claude Code 专属：展开主模型到所有 5 个模型槽位
+        if env_keys.base_url == "ANTHROPIC_BASE_URL" {
+            for model_key in &[
+                "ANTHROPIC_MODEL",
+                "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+                "ANTHROPIC_DEFAULT_OPUS_MODEL",
+                "ANTHROPIC_DEFAULT_SONNET_MODEL",
+                "ANTHROPIC_REASONING_MODEL",
+            ] {
+                env.insert(model_key.to_string(), profile.model.clone());
+            }
+        } else {
+            env.insert(env_keys.model.to_string(), profile.model.clone());
+        }
+
+        // 按认证方式注入鉴权变量（引擎感知）
         let auth_type = profile.auth_type.as_deref().unwrap_or("auth_token");
         match auth_type {
             "api_key" => {
@@ -176,14 +164,35 @@ impl ModelProfileService {
                     .api_key_env_name
                     .as_deref()
                     .filter(|s| !s.is_empty())
-                    .unwrap_or("ANTHROPIC_AUTH_TOKEN");
+                    .unwrap_or(env_keys.api_key);
                 env.insert(name.to_string(), profile.api_key.clone());
             }
             "none" => {}
             _ => {
-                env.insert("ANTHROPIC_AUTH_TOKEN".to_string(), profile.api_key.clone());
+                env.insert(env_keys.api_key.to_string(), profile.api_key.clone());
             }
         }
+
+        // 合并用户自定义环境变量（可覆盖上述默认）
+        if let Some(custom) = &profile.custom_env {
+            for (k, v) in custom {
+                env.insert(k.clone(), v.clone());
+            }
+        }
+        env
+    }
+
+    /// 根据 Profile 生成环境变量覆盖映射
+    ///
+    /// 用于注入到 Claude Code CLI 子进程的环境中。
+    /// 向后兼容方法：内部调用 `generate_env_overrides_for_engine` 并使用 Claude 的 env key。
+    pub fn generate_env_overrides(profile: &ModelProfile) -> HashMap<String, String> {
+        let claude_keys = EnvKeyMapping {
+            base_url: "ANTHROPIC_BASE_URL",
+            api_key: "ANTHROPIC_AUTH_TOKEN",
+            model: "ANTHROPIC_MODEL",
+        };
+        Self::generate_env_overrides_for_engine(profile, &claude_keys)
     }
 
     /// 根据 Profile 生成 Codex CLI provider 配置参数。
@@ -311,6 +320,147 @@ impl ModelProfileService {
             }
         }
         env
+    }
+
+    // ========================================================================
+    // 配置级联（Configuration Cascade）
+    //
+    // 当用户通过设置页面修改模型供应商配置后，这些方法将凭证同步到
+    // agent 的原生配置文件，使用户无需手动编辑 CLI 配置。
+    // ========================================================================
+
+    /// 将激活的 Profile 凭证级联写入 Claude Code 的原生配置文件。
+    ///
+    /// 文件路径：`~/.claude/settings.json`（跨平台一致）。
+    /// 写入前备份原文件（`.bak`），仅更新 `config.env` 节，
+    /// 保留用户手工编辑的其他配置。
+    pub fn cascade_to_claude_settings(profile: &ModelProfile) -> Result<()> {
+        let claude_config_dir = dirs::config_dir()
+            .ok_or_else(|| {
+                crate::error::AppError::ConfigError("无法获取用户配置目录".to_string())
+            })?
+            .join("claude");
+
+        let settings_path = claude_config_dir.join("settings.json");
+
+        // 读取现有 settings.json（可能不存在）
+        let mut settings: serde_json::Value = if settings_path.exists() {
+            let raw = std::fs::read_to_string(&settings_path).map_err(|e| {
+                crate::error::AppError::ProcessError(format!(
+                    "读取 Claude settings.json 失败: {}",
+                    e
+                ))
+            })?;
+            serde_json::from_str(&raw).unwrap_or(serde_json::json!({}))
+        } else {
+            serde_json::json!({})
+        };
+
+        // 备份原文件
+        if settings_path.exists() {
+            let bak_path = settings_path.with_extension("json.bak");
+            if let Err(e) = std::fs::copy(&settings_path, &bak_path) {
+                tracing::warn!(
+                    "[ModelProfileService] 备份 Claude settings.json 失败: {}",
+                    e
+                );
+            }
+        }
+
+        // 确保父目录存在
+        if let Some(parent) = settings_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                crate::error::AppError::ProcessError(format!(
+                    "创建 Claude 配置目录失败: {}",
+                    e
+                ))
+            })?;
+        }
+
+        // 将环境变量覆盖写入 config.env
+        let env_overrides = Self::generate_env_overrides(profile);
+        let env_map: serde_json::Map<String, serde_json::Value> = env_overrides
+            .into_iter()
+            .map(|(k, v)| (k, serde_json::Value::String(v)))
+            .collect();
+
+        if let Some(config) = settings.as_object_mut() {
+            config.insert(
+                "env".to_string(),
+                serde_json::Value::Object(env_map),
+            );
+        } else {
+            // settings 不是 object（极端情况），重建
+            settings = serde_json::json!({ "env": env_map });
+        }
+
+        // 原子写入（先写临时文件再 rename）
+        let tmp_path = settings_path.with_extension("json.tmp");
+        let pretty = serde_json::to_string_pretty(&settings).map_err(|e| {
+            crate::error::AppError::ProcessError(format!(
+                "序列化 Claude settings.json 失败: {}",
+                e
+            ))
+        })?;
+        std::fs::write(&tmp_path, &pretty).map_err(|e| {
+            crate::error::AppError::ProcessError(format!(
+                "写入 Claude settings.json 临时文件失败: {}",
+                e
+            ))
+        })?;
+        std::fs::rename(&tmp_path, &settings_path).map_err(|e| {
+            crate::error::AppError::ProcessError(format!(
+                "替换 Claude settings.json 失败: {}",
+                e
+            ))
+        })?;
+
+        tracing::info!(
+            "[ModelProfileService] 已级联写入 Claude settings.json: {} (model={})",
+            settings_path.display(),
+            profile.model
+        );
+        Ok(())
+    }
+
+    /// 清除 Claude Code settings.json 中由 Polaris 管理的配置节。
+    ///
+    /// 在删除所有 ModelProfile 时调用，恢复用户手工配置。
+    /// 仅移除 `env` 键，保留其他配置不变。
+    pub fn clear_claude_settings_env() -> Result<()> {
+        let settings_path = dirs::config_dir()
+            .ok_or_else(|| {
+                crate::error::AppError::ConfigError("无法获取用户配置目录".to_string())
+            })?
+            .join("claude")
+            .join("settings.json");
+
+        if !settings_path.exists() {
+            return Ok(());
+        }
+
+        let raw = std::fs::read_to_string(&settings_path).map_err(|e| {
+            crate::error::AppError::ProcessError(format!("读取 Claude settings.json 失败: {}", e))
+        })?;
+        let mut settings: serde_json::Value =
+            serde_json::from_str(&raw).unwrap_or(serde_json::json!({}));
+
+        if let Some(obj) = settings.as_object_mut() {
+            obj.remove("env");
+        }
+
+        let tmp_path = settings_path.with_extension("json.tmp");
+        let pretty = serde_json::to_string_pretty(&settings).map_err(|e| {
+            crate::error::AppError::ProcessError(format!(
+                "序列化 Claude settings.json 失败: {}",
+                e
+            ))
+        })?;
+        std::fs::write(&tmp_path, &pretty)?;
+        std::fs::rename(&tmp_path, &settings_path)?;
+
+        tracing::info!("[ModelProfileService] 已清除 Claude settings.json 中的 Polaris env 配置");
+        Ok(())
     }
 
     /// 清理指定 Profile 的 settings overlay 临时文件

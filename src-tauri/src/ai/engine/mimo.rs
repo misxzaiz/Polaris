@@ -23,7 +23,10 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 
 use crate::ai::session::SessionManager;
-use crate::ai::traits::{AIEngine, EngineId, SessionOptions, ImageAttachment};
+use crate::ai::traits::{
+    AIEngine, EngineId, SessionOptions, ImageAttachment,
+    EngineMetadata, EngineDistribution, EngineCapabilities, EnvKeyMapping,
+};
 use crate::error::{AppError, Result};
 use crate::models::config::Config;
 use crate::models::{AIEvent, ToolCallStartEvent, ToolCallEndEvent};
@@ -618,6 +621,31 @@ impl AIEngine for MimocodeEngine {
 
     fn description(&self) -> &'static str {
         "Mimo (Mimocode) CLI - 多提供商 AI 编程助手"
+    }
+
+    fn metadata(&self) -> EngineMetadata {
+        EngineMetadata {
+            id: EngineId::MimoCode,
+            name: "Mimo Code".into(),
+            description: Some("Mimo (Mimocode) CLI — 支持多模型提供商、工具调用、流式输出与会话续接".into()),
+            distribution: EngineDistribution::PackageRunner {
+                package: "mimocode".into(),
+                cmd: "mimo".into(),
+                args: vec!["run".into()],
+                runtime_min_version: None,
+            },
+            capabilities: EngineCapabilities {
+                tools: true,
+                image_input: false,
+                streaming: true,
+                interrupt: true,
+                resume: true,
+                stdin_input: true,
+                fork_session: false,
+            },
+            env_keys: EnvKeyMapping::default(), // 多提供商（使用通用 OpenAI 兼容 key）
+            supports_model_provider: false,
+        }
     }
 
     fn is_available(&self) -> bool {

@@ -17,7 +17,10 @@ pub mod history_claude;
 pub mod history_codex;
 pub mod event_parser;
 
-pub use traits::{EngineId, SessionOptions, HistoryEntry, ImageAttachment};
+pub use traits::{
+    EngineId, SessionOptions, HistoryEntry, ImageAttachment, EngineMetadata,
+    EngineDistribution, EngineCapabilities, EnvKeyMapping, PlatformBinary,
+};
 pub use registry::EngineRegistry;
 pub use engine::ClaudeEngine;
 pub use engine::CodexEngine;

@@ -4,7 +4,10 @@ use std::process::{Child, Command, Stdio};
 
 use crate::ai::event_parser::EventParser;
 use crate::ai::session::SessionManager;
-use crate::ai::traits::{AIEngine, EngineId, SessionOptions, ImageAttachment};
+use crate::ai::traits::{
+    AIEngine, EngineId, SessionOptions, ImageAttachment,
+    EngineMetadata, EngineDistribution, EngineCapabilities, EnvKeyMapping,
+};
 use crate::error::{AppError, Result};
 use crate::models::config::Config;
 use crate::models::events::StreamEvent;
@@ -862,13 +865,45 @@ impl AIEngine for ClaudeEngine {
         "Anthropic 官方 Claude CLI"
     }
 
-    fn is_available(&self) -> bool {
-        // 需要可变引用来检查 CLI
-        true // 简化实现，实际检查在 start_session 时进行
+    fn metadata(&self) -> EngineMetadata {
+        EngineMetadata {
+            id: EngineId::ClaudeCode,
+            name: "Claude Code".into(),
+            description: Some("Anthropic 官方 Claude CLI — 支持工具调用、多模态图片、流式输出、会话续接与分支".into()),
+            distribution: EngineDistribution::PackageRunner {
+                package: "@anthropic-ai/claude-code".into(),
+                cmd: "claude".into(),
+                args: vec![],
+                runtime_min_version: Some("18.0.0".into()),
+            },
+            capabilities: EngineCapabilities {
+                tools: true,
+                image_input: true,
+                streaming: true,
+                interrupt: true,
+                resume: true,
+                stdin_input: true,
+                fork_session: true,
+            },
+            env_keys: EnvKeyMapping {
+                base_url: "ANTHROPIC_BASE_URL",
+                api_key: "ANTHROPIC_AUTH_TOKEN",
+                model: "ANTHROPIC_MODEL",
+            },
+            supports_model_provider: true,
+        }
     }
 
-    fn unavailable_reason(&self) -> Option<String> {
+    fn version(&self) -> Option<String> {
+        // 版本检测在 cli_resolver 中完成，引擎实例不缓存版本号。
+        // 前端可通过 health API 获取 claude_version 字段。
         None
+    }
+
+    fn is_available(&self) -> bool {
+        // 不可变 trait 方法无法触发 CLI 路径自动检测（需 &mut self）。
+        // 实际可用性检查在 start_session / continue_session 入口完成。
+        true
     }
 
     fn start_session(

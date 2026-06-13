@@ -280,7 +280,7 @@ impl ConversationState {
 
     /// 设置引擎
     pub fn set_engine(&mut self, engine_id: &EngineId) {
-        self.engine_id = engine_id.as_str();
+        self.engine_id = engine_id.as_str().to_string();
     }
 
     /// 切换引擎。跨引擎切换时清除旧 AI 会话，避免用 Claude session 续接 Codex 或反向续接。

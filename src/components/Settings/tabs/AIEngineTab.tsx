@@ -3,6 +3,9 @@
  *
  * 包含：认证状态、引擎选择、CLI 路径、Agnes 全模态引擎、可用 Agent 列表。
  * 模型供应商 Profile 管理已抽离至独立的 ModelProviderTab（设置 → 模型供应商）。
+ *
+ * 引擎能力信息（工具调用 / 图片输入 / 流式输出等）由后端 EngineMetadata 提供，
+ * 在引擎选择卡片中以标签形式展示。
  */
 
 import { useState, useCallback } from 'react';
@@ -10,7 +13,8 @@ import { useTranslation } from 'react-i18next';
 import { ClaudePathSelector } from '../../Common';
 import { useConfigStore } from '@/stores';
 import { useCliInfoStore } from '@/stores/cliInfoStore';
-import type { Config, EngineId } from '@/types';
+import type { Config, EngineId, EngineCapabilities } from '@/types';
+import { getCapabilityLabels } from '@/types/engineMetadata';
 import { Bot, RotateCcw, Key, Zap, Check } from 'lucide-react';
 import { registerAgnesEngine } from '@/core/engine-bootstrap';
 import { getEngineRegistry } from '@/ai-runtime';
@@ -24,13 +28,104 @@ interface AIEngineTabProps {
   loading: boolean;
 }
 
-// 固定的传统引擎选项（Agnes 是独立的多模态引擎，不在此列表）
-const FIXED_ENGINE_OPTIONS: { id: EngineId; nameKey: string; descKey: string }[] = [
-  { id: 'claude-code', nameKey: 'engines.claudeCode.name', descKey: 'engines.claudeCode.description' },
-  { id: 'codex', nameKey: 'engines.codex.name', descKey: 'engines.codex.description' },
-  { id: 'simple-ai', nameKey: 'engines.simpleAi.name', descKey: 'engines.simpleAi.description' },
-  { id: 'mimo', nameKey: 'engines.mimo.name', descKey: 'engines.mimo.description' },
-];
+// ============================================================================
+// 引擎元数据（前端硬编码，作为后端 EngineMetadata 的镜像。
+// 未来从 Tauri command 获取后可删除此常量。）
+// ============================================================================
+
+interface EngineMetaEntry {
+  id: EngineId
+  nameKey: string
+  descKey: string
+  capabilities: EngineCapabilities
+  distribution: string
+}
+
+const ENGINE_META: EngineMetaEntry[] = [
+  {
+    id: 'claude-code',
+    nameKey: 'engines.claudeCode.name',
+    descKey: 'engines.claudeCode.description',
+    capabilities: {
+      tools: true,
+      imageInput: true,
+      streaming: true,
+      interrupt: true,
+      resume: true,
+      stdinInput: true,
+      forkSession: true,
+    },
+    distribution: 'npx @anthropic-ai/claude-code',
+  },
+  {
+    id: 'codex',
+    nameKey: 'engines.codex.name',
+    descKey: 'engines.codex.description',
+    capabilities: {
+      tools: true,
+      imageInput: false,
+      streaming: true,
+      interrupt: true,
+      resume: true,
+      stdinInput: false,
+      forkSession: false,
+    },
+    distribution: 'npm @openai/codex',
+  },
+  {
+    id: 'simple-ai',
+    nameKey: 'engines.simpleAi.name',
+    descKey: 'engines.simpleAi.description',
+    capabilities: {
+      tools: true,
+      imageInput: false,
+      streaming: true,
+      interrupt: true,
+      resume: true,
+      stdinInput: false,
+      forkSession: false,
+    },
+    distribution: '内置引擎',
+  },
+  {
+    id: 'mimo',
+    nameKey: 'engines.mimo.name',
+    descKey: 'engines.mimo.description',
+    capabilities: {
+      tools: true,
+      imageInput: false,
+      streaming: true,
+      interrupt: true,
+      resume: true,
+      stdinInput: true,
+      forkSession: false,
+    },
+    distribution: 'npx mimocode',
+  },
+]
+
+/** 引擎能力标签渲染 */
+function CapabilityTags({ capabilities }: { capabilities: EngineCapabilities }) {
+  const labels = getCapabilityLabels(capabilities)
+  if (labels.length === 0) return null
+  return (
+    <div className="flex flex-wrap gap-1 mt-2">
+      {labels.slice(0, 5).map((label) => (
+        <span
+          key={label}
+          className="text-[10px] px-1.5 py-0.5 rounded bg-primary/5 text-primary/70 border border-primary/10"
+        >
+          {label}
+        </span>
+      ))}
+      {labels.length > 5 && (
+        <span className="text-[10px] px-1.5 py-0.5 rounded text-text-tertiary">
+          +{labels.length - 5}
+        </span>
+      )}
+    </div>
+  )
+}
 
 /**
  * Agnes AI 全模态引擎配置区块
@@ -234,28 +329,34 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
           {t('aiEngine.title')}
         </label>
         <div className="space-y-2">
-          {FIXED_ENGINE_OPTIONS.map((option) => (
+          {ENGINE_META.map((engine) => (
             <button
-              key={option.id}
+              key={engine.id}
               type="button"
-              onClick={() => handleEngineChange(option.id)}
+              onClick={() => handleEngineChange(engine.id)}
               className={`w-full text-left p-4 rounded-lg border-2 transition-all ${
-                config.defaultEngine === option.id
+                config.defaultEngine === engine.id
                   ? 'border-primary bg-primary/5'
                   : 'border-border bg-surface hover:border-primary/30'
               }`}
             >
               <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-medium text-text-primary">{t(option.nameKey)}</div>
-                  <div className="text-sm text-text-secondary mt-1">{t(option.descKey)}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-text-primary">{t(engine.nameKey)}</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-hover text-text-tertiary font-mono">
+                      {engine.distribution}
+                    </span>
+                  </div>
+                  <div className="text-sm text-text-secondary mt-1">{t(engine.descKey)}</div>
+                  <CapabilityTags capabilities={engine.capabilities} />
                 </div>
-                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                  config.defaultEngine === option.id
+                <div className={`ml-3 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                  config.defaultEngine === engine.id
                     ? 'border-primary bg-primary'
                     : 'border-border'
                 }`}>
-                  {config.defaultEngine === option.id && (
+                  {config.defaultEngine === engine.id && (
                     <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>

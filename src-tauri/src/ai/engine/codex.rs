@@ -7,7 +7,10 @@ use super::codex_parser::{
     codex_event_to_ai_events, extract_event_type, parse_codex_line, CodexEvent,
 };
 use crate::ai::session::SessionManager;
-use crate::ai::traits::{AIEngine, EngineId, SessionOptions};
+use crate::ai::traits::{
+    AIEngine, EngineId, SessionOptions,
+    EngineMetadata, EngineDistribution, EngineCapabilities, EnvKeyMapping,
+};
 use crate::error::{AppError, Result};
 use crate::models::config::Config;
 use crate::models::AIEvent;
@@ -745,6 +748,35 @@ impl AIEngine for CodexEngine {
 
     fn description(&self) -> &'static str {
         "OpenAI Codex CLI - 全部操作权限"
+    }
+
+    fn metadata(&self) -> EngineMetadata {
+        EngineMetadata {
+            id: EngineId::Codex,
+            name: "OpenAI Codex".into(),
+            description: Some("OpenAI Codex CLI — 基于 Responses API，支持工具调用与会话续接".into()),
+            distribution: EngineDistribution::PackageRunner {
+                package: "@openai/codex".into(),
+                cmd: "codex".into(),
+                args: vec![],
+                runtime_min_version: Some("20.0.0".into()),
+            },
+            capabilities: EngineCapabilities {
+                tools: true,
+                image_input: false,
+                streaming: true,
+                interrupt: true,
+                resume: true,
+                stdin_input: false,
+                fork_session: false,
+            },
+            env_keys: EnvKeyMapping {
+                base_url: "OPENAI_BASE_URL",
+                api_key: "OPENAI_API_KEY",
+                model: "OPENAI_MODEL",
+            },
+            supports_model_provider: true,
+        }
     }
 
     fn is_available(&self) -> bool {

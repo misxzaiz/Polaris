@@ -149,6 +149,8 @@
     "tabDescription": "管理第三方模型供应商端点，可将 Claude Code / Codex 路由到兼容 Anthropic Messages、OpenAI Chat Completions 或 OpenAI Responses 协议的端点。",
     "searchPlaceholder": "搜索名称、模型或端点…",
     "noMatchingProfiles": "没有匹配的 Profile",
+    "cascadeTitle": "已自动同步",
+    "cascadeHint": "激活的模型供应商凭证已同步到 Agent 原生配置文件（如 ~/.claude/settings.json），无需手动修改。",
     "addTitle": "添加模型供应商",
     "editTitle": "编辑模型供应商",
     "cancel": "取消",
