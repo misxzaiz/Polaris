@@ -60,7 +60,7 @@ export function useVoiceCompanion() {
   // —— 主对话管道 ——
   const { sendMessage, interrupt } = useActiveSessionActions();
   const isStreaming = useActiveSessionStreaming();
-  const { messages } = useActiveSessionMessages();
+  const { messages, currentMessage } = useActiveSessionMessages();
 
   const isSupported = speechService.supported;
 
@@ -132,6 +132,9 @@ export function useVoiceCompanion() {
       streamFedLenRef.current = 0; // 新一轮回复：流式喂句游标归零
       clearTimer(standbyTimerRef);
       clearTimer(autoSendTimerRef);
+      // 用户发新消息：立刻停止旧回复播报，清空 TTS 队列
+      voiceTts.stop();
+      speakingTextRef.current = '';
 
       log.info('语音发送', { text: clean, mode: cfg.mode });
       void sendMessage(clean, undefined, undefined, {
@@ -475,9 +478,10 @@ export function useVoiceCompanion() {
 
     // —— 流式进行中：增量喂句 ——
     if (isStreaming && awaitingReplyRef.current) {
-      const lastAssistant = [...messages].reverse().find((m) => isAssistantMessage(m));
-      if (lastAssistant) {
-        const fullText = extractSpeakableText(lastAssistant as AssistantChatMessage);
+      // 用 currentMessage（正在生成的）而非 messages 最后一个，
+      // 因为 session_start 触发时 messages 中最后一个 assistant 可能是旧回复
+      if (currentMessage) {
+        const fullText = extractSpeakableText(currentMessage as AssistantChatMessage);
         if (fullText.length > streamFedLenRef.current) {
           const delta = fullText.slice(streamFedLenRef.current);
           streamFedLenRef.current = fullText.length;
@@ -520,7 +524,7 @@ export function useVoiceCompanion() {
       }
     }
     prevStreamingRef.current = isStreaming;
-  }, [isStreaming, messages, isOpen, resumeAfterReply]);
+  }, [isStreaming, messages, currentMessage, isOpen, resumeAfterReply]);
 
   // ===== 主操作按钮：随阶段 =====
   const handleMainAction = useCallback(() => {
