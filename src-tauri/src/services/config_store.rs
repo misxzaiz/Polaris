@@ -357,6 +357,29 @@ impl ConfigStore {
             .output()
     }
 
+    /// 查询 npm 真实全局安装前缀（`npm prefix -g`）。
+    ///
+    /// 在用户 home 目录下执行，避免项目级 `.npmrc`（如 pnpm 的 `node-linker`）
+    /// 干扰前缀解析。Windows 下 `npm` 为 `.cmd`，经 `cmd /c` 调用。
+    #[cfg(windows)]
+    fn query_npm_global_prefix() -> Option<String> {
+        let mut cmd = Command::new("cmd");
+        cmd.arg("/c").arg("npm").arg("prefix").arg("-g");
+        if let Some(home) = dirs::home_dir() {
+            cmd.current_dir(home);
+        }
+        let output = cmd.creation_flags(CREATE_NO_WINDOW).output().ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let prefix = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if prefix.is_empty() {
+            None
+        } else {
+            Some(prefix)
+        }
+    }
+
     #[cfg(windows)]
     fn resolve_windows_cmd_shim(cmd: &str) -> Option<String> {
         if cmd.contains('\\') || cmd.contains('/') || Path::new(cmd).extension().is_some() {
@@ -374,6 +397,12 @@ impl ConfigStore {
         }
         if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
             candidates.push(PathBuf::from(localappdata).join("pnpm").join(&shim_name));
+        }
+
+        // npm 真实全局前缀（覆盖 nvm-windows / fnm / volta / 自定义 prefix 等
+        // 非 %APPDATA%\npm 的情况）。Windows 下 npm 把 .cmd shim 直接放在 prefix 目录。
+        if let Some(prefix) = Self::query_npm_global_prefix() {
+            candidates.push(PathBuf::from(&prefix).join(&shim_name));
         }
 
         for candidate in candidates {

@@ -98,6 +98,34 @@ pub async fn engine_uninstall(
     .await
 }
 
+/// 全局安装应使用的中性工作目录。
+///
+/// **关键**：若沿用应用进程的 cwd（dev 模式下即 Polaris 项目目录），
+/// npm 会逐级读取该目录的 `.npmrc`（含 pnpm 的 `node-linker` 等设置），
+/// 导致 `-g` 全局安装行为异常、甚至把包落到项目内。固定到用户 home
+/// 目录可隔离项目级 npm 配置，并确保绝不污染用户工程。
+#[cfg(feature = "tauri-app")]
+fn neutral_cwd() -> std::path::PathBuf {
+    dirs::home_dir().unwrap_or_else(std::env::temp_dir)
+}
+
+/// 查询 npm 真实全局安装前缀（`npm prefix -g`），用于安装后回显与定位。
+#[cfg(feature = "tauri-app")]
+fn query_npm_global_prefix() -> Option<String> {
+    let mut cmd = build_npm_command(&["prefix".to_string(), "-g".to_string()]);
+    cmd.current_dir(neutral_cwd());
+    let output = cmd.output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let prefix = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if prefix.is_empty() {
+        None
+    } else {
+        Some(prefix)
+    }
+}
+
 /// 构建跨平台 npm 命令。
 ///
 /// Windows 下 `npm` 实为 `npm.cmd`，CreateProcess 无法直接执行，需经 `cmd /c`。
@@ -160,7 +188,14 @@ async fn run_npm_streaming(
     tokio::task::spawn_blocking(move || {
         emit_install(&app, &task_id, "started", &spec);
 
+        // 在中性目录（用户 home）下执行，隔离项目级 .npmrc 对 -g 全局安装的干扰
+        let cwd = neutral_cwd();
+        if let Some(prefix) = query_npm_global_prefix() {
+            emit_install(&app, &task_id, "log", &format!("npm 全局目录: {}", prefix));
+        }
+
         let mut cmd = build_npm_command(&args);
+        cmd.current_dir(&cwd);
         cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
         let mut child = cmd.spawn().map_err(|e| {
