@@ -104,7 +104,7 @@ pnpm run package:web
 
 - [Claude Code](https://github.com/anthropics/claude-code)
 - [Codex (OpenAI)](https://github.com/openai/codex)
-- [iFlow](https://cli.iflow.cn/?)
+- [iFlow(白月光)](https://cli.iflow.cn/?)
 - [cc-switch](https://github.com/farion1231/cc-switch)
 - [CodeG](https://github.com/xintaofei/codeg)
 - [GLM (智谱)](https://open.bigmodel.cn/)
