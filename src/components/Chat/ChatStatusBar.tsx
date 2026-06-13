@@ -25,6 +25,7 @@ import { getSelectedEngineHealth } from '@/utils/engineHealth';
 import { normalizeEngineId } from '@/utils/engineDisplay';
 import { useActiveSessionId, useSessionMetadataList } from '@/stores/conversationStore/sessionStoreManager';
 import { useVoiceCompanionStore } from '@/stores/voiceCompanionStore';
+import { getCompanionName } from '@/types/voiceCompanion';
 import { voiceNotificationService } from '@/services/voiceNotificationService';
 import { isAssistantMessage } from '@/types/chat';
 import { currentMode } from '@/services/transport';
@@ -116,6 +117,9 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
   // ===== 语音区 =====
   // 全屏语音伙伴入口
   const openVoiceCompanion = useVoiceCompanionStore((s) => s.open);
+  // 语音伙伴配置（用于获取动态唤醒词名称）
+  const companionConfig = useVoiceCompanionStore((s) => s.config);
+  const companionName = getCompanionName(companionConfig.wakeWord.words);
 
   // 唤醒词 + 语音命令配置（统一读全局 config）
   const wakeWordConfig = config?.wakeWord as WakeWordConfig | undefined;
@@ -311,11 +315,11 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
         <button
           onClick={openVoiceCompanion}
           className={clsx(btnBase, 'text-primary hover:bg-primary/10')}
-          title={t('voiceCompanion.entry', '和小陈语音通话')}
+          title={t('voiceCompanion.entry', `和${companionName}语音通话`)}
         >
           <AudioLines size={13} />
           {(withLabel || containerWidth >= BREAKPOINTS.wide) && (
-            <span>{t('voiceCompanion.entryLabel', '小陈')}</span>
+            <span>{companionName}</span>
           )}
         </button>
 

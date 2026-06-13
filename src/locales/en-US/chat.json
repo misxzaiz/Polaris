@@ -475,8 +475,7 @@
   },
   "voiceCompanion": {
     "busy": "Voice call is using the microphone",
-    "entry": "Voice call with Xiaobai",
-    "entryLabel": "Xiaobai"
+    "entry": "Voice call with Xiaobai"
   },
   "sessionConfig": {
     "noAgent": "None",

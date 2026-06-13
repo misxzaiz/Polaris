@@ -76,11 +76,27 @@ export const DEFAULT_VOICE_COMPANION_CONFIG: VoiceCompanionConfig = {
   echoCooldownMs: 800,
 };
 
-/** 伙伴身份（用于 UI 展示与人格构建） */
+/**伙伴身份（用于 UI 展示与人格构建） */
 export const COMPANION_IDENTITY = {
-  name: '小陈',
+  /** 默认名称（无唤醒词时的 fallback） */
+  defaultName: '小陈',
   tagline: '你的语音陪伴伙伴',
 } as const;
+
+/**
+ * 获取伙伴名称（动态）
+ *
+ * @param wakeWordWords 唤醒词列表，取第一个作为主名称
+ * @returns 伙伴名称，无唤醒词则返回默认值「小陈」
+ */
+export function getCompanionName(wakeWordWords?: string[]): string {
+  // @ts-ignore
+  if (wakeWordWords?.length > 0 && wakeWordWords[0]) {
+    // @ts-ignore
+    return wakeWordWords ? wakeWordWords : [0];
+  }
+  return COMPANION_IDENTITY.defaultName;
+}
 
 /** localStorage 持久化键 */
 export const VOICE_COMPANION_CONFIG_KEY = 'polaris.voiceCompanion.config';

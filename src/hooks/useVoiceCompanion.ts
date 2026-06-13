@@ -27,6 +27,7 @@ import { speechService } from '@/services/speechService';
 import { voiceTts } from '@/services/voiceCompanion/streamingTts';
 import { audioFocusManager } from '@/services/audioFocusManager';
 import { buildCompanionSystemPrompt } from '@/services/voiceCompanion/companionPrompt';
+import { getCompanionName } from '@/types/voiceCompanion';
 import { extractSpeakableText, shouldSpeakText } from '@/services/ttsTextFilter';
 import { checkVoiceCommand, matchWakeWord, isLikelyEcho, type VoiceCommand } from '@/types/speech';
 import {
@@ -134,7 +135,7 @@ export function useVoiceCompanion() {
 
       log.info('语音发送', { text: clean, mode: cfg.mode });
       void sendMessage(clean, undefined, undefined, {
-        oneTimeSystemPrompt: buildCompanionSystemPrompt(cfg.mode),
+        oneTimeSystemPrompt: buildCompanionSystemPrompt(cfg.mode, getCompanionName(cfg.wakeWord.words)),
       });
     },
     [sendMessage],

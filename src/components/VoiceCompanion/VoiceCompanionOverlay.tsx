@@ -20,7 +20,7 @@ import { useVoiceCompanion } from '@/hooks/useVoiceCompanion';
 import { useTtsVolume } from '@/hooks/useTtsVolume';
 import { useVoiceCompanionStore } from '@/stores/voiceCompanionStore';
 import { VoiceOrb } from './VoiceOrb';
-import { COMPANION_IDENTITY, type VoiceCompanionMode, type VoicePhase } from '@/types/voiceCompanion';
+import { COMPANION_IDENTITY, getCompanionName, type VoiceCompanionMode, type VoicePhase } from '@/types/voiceCompanion';
 
 /** 主操作按钮随阶段的图标与文案 */
 function mainAction(phase: VoicePhase, hasBuffer: boolean): { Icon: typeof Mic; label: string } {
@@ -41,16 +41,21 @@ function mainAction(phase: VoicePhase, hasBuffer: boolean): { Icon: typeof Mic; 
 }
 
 /** 阶段主状态文案 */
-function statusText(phase: VoicePhase, transcript: string, errorMessage: string | null): string {
+function statusText(
+  phase: VoicePhase,
+  transcript: string,
+  errorMessage: string | null,
+  companionName: string,
+): string {
   switch (phase) {
     case 'standby':
-      return '喊一声「小陈」，我就来～';
+      return `喊一声「${companionName}」，我就来～`;
     case 'listening':
       return transcript || '在听你说…';
     case 'thinking':
-      return '小陈在想…';
+      return `${companionName}在想…`;
     case 'speaking':
-      return '小陈正在说…';
+      return `${companionName}正在说…`;
     case 'cooldown':
       return '稍等，让回声散一散…';
     case 'error':
@@ -61,7 +66,7 @@ function statusText(phase: VoicePhase, transcript: string, errorMessage: string 
 }
 
 /** 阶段副状态文案（操作引导） */
-function statusSubText(phase: VoicePhase, fullDuplex: boolean, autoSend: boolean): string {
+function statusSubText(phase: VoicePhase, fullDuplex: boolean, autoSend: boolean, companionName: string): string {
   switch (phase) {
     case 'standby':
       return '待命中 · 只认唤醒词，旁人聊天不上屏';
@@ -72,7 +77,7 @@ function statusSubText(phase: VoicePhase, fullDuplex: boolean, autoSend: boolean
     case 'thinking':
       return '点击光球可打断';
     case 'speaking':
-      return fullDuplex ? '全双工 · 喊「小陈」可打断' : '🎤 识别已暂停（防回声） · 点击光球打断';
+      return fullDuplex ? `全双工 · 喊「${companionName}」可打断` : '🎤 识别已暂停（防回声） · 点击光球打断';
     case 'cooldown':
       return '即将恢复聆听 · 直接说话不会丢字';
     default:
@@ -140,9 +145,12 @@ export function VoiceCompanionOverlay() {
 
   if (!isOpen) return null;
 
+  // 动态获取伙伴名称：优先唤醒词第一个，无唤醒词则用默认值「小陈」
+  const companionName = getCompanionName(config.wakeWord.words);
+
   const { Icon: MainIcon, label: mainLabel } = mainAction(phase, !!transcript);
-  const status = statusText(phase, transcript, errorMessage);
-  const statusSub = statusSubText(phase, config.fullDuplex, config.autoSend);
+  const status = statusText(phase, transcript, errorMessage, companionName);
+  const statusSub = statusSubText(phase, config.fullDuplex, config.autoSend, companionName);
 
   return (
     <div
@@ -167,7 +175,7 @@ export function VoiceCompanionOverlay() {
       {/* 顶部：身份 + 模式切换 */}
       <div className="relative flex items-center justify-between px-6 py-4">
         <div>
-          <div className="text-base font-semibold text-text-primary">{COMPANION_IDENTITY.name}</div>
+          <div className="text-base font-semibold text-text-primary">{companionName}</div>
           <div className="text-xs text-text-tertiary">{COMPANION_IDENTITY.tagline}</div>
         </div>
 
@@ -236,7 +244,7 @@ export function VoiceCompanionOverlay() {
       {/* 命令提示 */}
       {isSupported && (
         <div className="relative text-center text-xs text-text-muted pb-3">
-          试试说：「发送」·「清空」·「中断」 — 待命时喊「小陈」唤醒 · ESC 挂断
+          试试说：「发送」·「清空」·「中断」 — 待命时喊「{companionName}」唤醒 · ESC 挂断
         </div>
       )}
 

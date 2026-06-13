@@ -474,8 +474,7 @@
   },
   "voiceCompanion": {
     "busy": "语音通话占用麦克风中",
-    "entry": "和小陈语音通话",
-    "entryLabel": "小陈"
+    "entry": "和小陈语音通话"
   },
   "sessionConfig": {
     "noAgent": "不设置",
