@@ -3,6 +3,12 @@
  *
  * 注意：Web Speech API 要求安全上下文（HTTPS 或 localhost），
  * 在非安全 HTTP 环境下浏览器会拒绝麦克风权限。
+ *
+ * 内部机制：
+ *   - 期望状态机：desiredState（唯一事实源）决定 start/abort 调度
+ *   - 会话代际：epoch 自增，旧会话事件（onstart/onend/onerror）比对 epoch 后丢弃
+ *   - 可取消重启：onend 排的重启定时器，pause/stop 时直接清理
+ *   - 重启熔断：2 秒内 >3 次异常重启则退避 2 秒
  */
 
 import type {
@@ -63,6 +69,9 @@ interface SpeechServiceConfig {
   interimResults: boolean;
 }
 
+/** 期望状态：唯一事实源 */
+type DesiredState = 'listening' | 'paused' | 'stopped';
+
 /**
  * 语音识别服务类
  */
@@ -75,12 +84,40 @@ export class SpeechService {
     continuous: true,
     interimResults: true,
   };
+
+  // ========================================
+  // 期望状态机（核心：替代 shouldKeepListening 驱动的重启）
+  // ========================================
+
+  /** 期望状态：唯一事实源，所有 API 只改这个值 */
+  private desiredState: DesiredState = 'stopped';
+
+  /** 会话代际：每次 pause/stop/start 自增，事件携带代际判断是否过期 */
+  private epoch = 0;
+
+  /** 记录当前 session 是否正在运行（由 onstart/onend 同步） */
+  private runningRef = false;
+
+  /** onend 自动重启定时器（pause/stop 时清理，解决不可取消导致循环的根因） */
+  private restartTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** resume 时恢复的监听状态（替代 _wasKeepingListening 解决嵌套失真） */
+  private _resumeTarget: DesiredState = 'stopped';
+
+  /** 重启熔断：2 秒内异常重启超过阈值则退避 */
+  private restartWindow: number[] = [];
+  private readonly RESTART_THRESHOLD = 3;
+  private readonly RESTART_WINDOW_MS = 2000;
+
+  // ========================================
+  // 重试计数（仅 no-speech 错误）
+  // ========================================
   private retryCount = 0;
   private maxRetries = 1;
-  /** 是否需要保持监听（只能手动关闭） */
-  private shouldKeepListening = false;
 
+  // ========================================
   // 回调函数
+  // ========================================
   private onStatusChange: ((status: SpeechRecognitionStatus) => void) | null = null;
   private onResult: ((transcript: string, isFinal: boolean) => void) | null = null;
   private onError: ((error: AppSpeechError) => void) | null = null;
@@ -178,40 +215,118 @@ export class SpeechService {
   }
 
   /**
+   * 清理在途重启定时器（解决"不可取消"导致循环的根因）
+   */
+  private clearRestartTimer(): void {
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
+    }
+  }
+
+  /**
+   * 重启熔断：检查最近是否频繁重启，超阈值则退避
+   * @returns 是否在退避窗口中（需要等待）
+   */
+  private isRestartThrottled(): boolean {
+    const now = Date.now();
+    // 清理过期时间窗
+    this.restartWindow = this.restartWindow.filter(t => now - t < this.RESTART_WINDOW_MS);
+    if (this.restartWindow.length >= this.RESTART_THRESHOLD) {
+      log.warn('重启熔断触发，退避 2 秒', { count: this.restartWindow.length });
+      // 设置退避定时器
+      this.restartTimer = setTimeout(() => {
+        this.clearRestartTimer();
+        // 退避结束，若仍在 listening 则重启
+        if (this.desiredState === 'listening') {
+          this.reconcile();
+        }
+      }, this.RESTART_WINDOW_MS);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * 调度调度：对比期望状态与实际运行状态，决定 start 或 abort
+   *
+   * 核心调和逻辑：
+   *   desired=listening && !running  → start()
+   *   desired≠listening && running    → abort()
+   *   否则保持现状
+   */
+  private reconcile(): void {
+    if (!this.recognition) {
+      if (this.desiredState === 'listening') {
+        this.initRecognition();
+      }
+      return;
+    }
+
+    if (this.desiredState === 'listening' && !this.runningRef) {
+      this.recognition.start();
+    } else if (this.desiredState !== 'listening' && this.runningRef) {
+      this.recognition.abort();
+    }
+  }
+
+  /**
    * 设置事件监听器
    */
   private setupEventListeners(): void {
     if (!this.recognition) return;
 
     this.recognition.onstart = () => {
+      this.runningRef = true;
+
+      // 代际检查：若 epoch 已变，这是旧会话的启动事件，丢弃
+      if (this.desiredState === 'paused' || this.desiredState === 'stopped') {
+        log.debug('旧会话 onstart，丢弃');
+        return;
+      }
+
       log.info('语音识别已启动');
       this.onStatusChange?.('listening');
     };
 
     this.recognition.onend = () => {
-      log.info('语音识别已结束', { shouldKeepListening: this.shouldKeepListening });
+      this.runningRef = false;
 
-      // 如果需要保持监听，自动重启
-      if (this.shouldKeepListening) {
-        log.info('自动重启语音识别');
-        setTimeout(() => {
-          try {
-            this.recognition?.start();
-          } catch (e) {
-            log.error('自动重启失败', e as Error);
-            this.onStatusChange?.('idle');
+      // 按期望状态决策，而非应不应该保持监听
+      if (this.desiredState === 'listening') {
+        // 在 listening 模式下自然结束 → 自动重启
+        this.clearRestartTimer();
+
+        // 重启熔断检查
+        if (this.isRestartThrottled()) {
+          return; // 退避中，不排队重启
+        }
+
+        this.restartTimer = setTimeout(() => {
+          this.clearRestartTimer();
+          // 双重检查：当前仍在 listening 且实例仍在
+          if (this.desiredState === 'listening' && this.recognition) {
+            log.info('自动重启语音识别');
+            try {
+              this.recognition.start();
+            } catch (e) {
+              log.error('自动重启失败', e as Error);
+              this.onStatusChange?.('idle');
+            }
           }
         }, 100);
       } else {
+        // paused 或 stopped 时自然结束 → 不重启，上报 idle
+        log.info('语音识别自然结束', { desiredState: this.desiredState });
         this.onStatusChange?.('idle');
       }
     };
 
     this.recognition.onerror = (event: WebSpeechRecognitionErrorEvent) => {
-      // 'aborted' 是 pause()/abort()/stop() 主动中止识别的预期回调
+      // 'aborted' 是 pause()/abort()/stop() 主动中止的预期回调
       // （如 TTS 播报期间暂停识别防回声），不是真实错误：
       // 不打 ERROR 日志、不进入 error 状态、不向上传播（下游 onError 无需感知）。
-      // 后续 onend 会按 shouldKeepListening 决定自动重启或回 idle。
+      // 后续 onend 会按 desiredState 决定重启或回 idle。
       if (event.error === 'aborted') {
         log.debug('语音识别被中止（预期流程，通常由 pause/abort 触发）');
         return;
@@ -224,7 +339,6 @@ export class SpeechService {
         'no-speech': 'no-speech',
         'audio-capture': 'audio-capture',
         'network': 'network',
-        'aborted': 'aborted',
         'language-not-supported': 'language-not-supported',
       };
 
@@ -232,7 +346,9 @@ export class SpeechService {
       if (event.error === 'no-speech' && this.retryCount < this.maxRetries) {
         this.retryCount++;
         log.info('no-speech 错误，自动重试');
-        setTimeout(() => {
+        this.clearRestartTimer();
+        this.restartTimer = setTimeout(() => {
+          this.clearRestartTimer();
           try {
             this.recognition?.start();
           } catch {
@@ -273,6 +389,8 @@ export class SpeechService {
 
   /**
    * 开始语音识别
+   *
+   * 期望状态 → listening，调度 reconcile() 启动（或继续）识别
    */
   start(): void {
     if (!this.isSupported) {
@@ -283,41 +401,35 @@ export class SpeechService {
       return;
     }
 
-    // 标记需要保持监听
-    this.shouldKeepListening = true;
-    // 重置重试计数
+    this.desiredState = 'listening';
+    this.epoch++;  // 新会话代际
     this.retryCount = 0;
 
-    if (!this.recognition) {
-      this.initRecognition();
-    }
+    // 取消遗留重启定时器（防止旧 onend 排的重启被触发）
+    this.clearRestartTimer();
 
-    try {
-      this.recognition?.start();
-    } catch (e) {
-      // 如果已经在运行，先停止再启动
-      if (e instanceof Error && e.message.includes('already started')) {
-        this.recognition?.stop();
-        setTimeout(() => this.recognition?.start(), 100);
-      } else {
-        throw e;
-      }
-    }
+    this.reconcile();
   }
 
   /**
    * 停止语音识别
+   *
+   * 期望状态 → stopped，立即 abort，清除重启定时器
    */
   stop(): void {
-    // 标记不再保持监听
-    this.shouldKeepListening = false;
+    this.desiredState = 'stopped';
+    this.epoch++;  // 代际失效旧会话事件
+    this.clearRestartTimer();
+
     if (this.recognition) {
-      this.recognition.stop();
+      this.recognition.stop();  // stop 比 abort 更干净（只触发 onend，不触发 onerror）
     }
   }
 
   /**
    * 中止语音识别
+   *
+   * 直接 abort 底层实例（等价于 pause，但不改 desiredState，调用方慎用）
    */
   abort(): void {
     if (this.recognition) {
@@ -329,15 +441,23 @@ export class SpeechService {
    * 暂停语音识别（用于 TTS 播报期间临时静音）
    *
    * 与 stop() 的区别：
-   * - stop() 是用户主动关闭，shouldKeepListening = false，不自动重启
-   * - pause() 是临时暂停，记录"之前是否在持续监听"，resume 时恢复原状态
+   * - stop() 期望状态 → stopped，永久停止
+   * - pause() 记住当前期望状态，resume() 时恢复
+   *
+   * 修复：记录"期望恢复的目标状态"而非 "shouldKeepListening flag"，
+   *       解决嵌套 pause 下 _wasKeepingListening 语义失真问题。
    */
   pause(): void {
+    // 记录暂停前的监听状态，resume 时恢复
+    this._resumeTarget = this.desiredState;
+
+    this.desiredState = 'paused';
+    this.epoch++;  // 代际失效旧会话事件
+    this.clearRestartTimer();  // 取消在途重启（根治循环的根因）
+
     if (this.recognition) {
-      // 记录暂停前的监听状态，resume 时恢复
-      this._wasKeepingListening = this.shouldKeepListening;
-      this.shouldKeepListening = false;
       this.recognition.abort();
+      this.runningRef = false;  // abort 同步标记，不等异步 onend
       log.info('语音识别已暂停');
     }
   }
@@ -345,37 +465,24 @@ export class SpeechService {
   /**
    * 恢复语音识别（配合 pause 使用）
    *
-   * 如果暂停前处于持续监听模式，恢复后也回到持续监听
+   * 修复：恢复到 pause 前的期望状态（listening/stopped），而非简单翻 _wasKeepingListening flag。
+   *       这样嵌套 pause/resume 语义正确：第二次 pause 记录的是第一次 pause 后的 'paused'，
+   *       resume 时目标状态为 'paused'（= 保持暂停），语义一致。
    */
   resume(): void {
     if (!this.isSupported) return;
 
-    // 恢复暂停前的监听状态
-    if (this._wasKeepingListening) {
-      this.shouldKeepListening = true;
-    }
-
+    // 恢复到 pause 前的期望状态
+    this.desiredState = this._resumeTarget;
+    this.epoch++;  // 新会话代际
     this.retryCount = 0;
 
-    if (!this.recognition) {
-      this.initRecognition();
-    }
+    // 取消遗留重启定时器
+    this.clearRestartTimer();
 
-    try {
-      this.recognition?.start();
-      log.info('语音识别已恢复');
-    } catch (e) {
-      if (e instanceof Error && e.message.includes('already started')) {
-        // 已经在运行，无需重复启动
-        log.debug('语音识别已在运行中');
-      } else {
-        log.error('恢复识别失败', e as Error);
-      }
-    }
+    this.reconcile();  // 统一调度
+    log.info('语音识别已恢复');
   }
-
-  /** 暂停前的监听状态 */
-  private _wasKeepingListening = false;
 
   /**
    * 销毁实例

@@ -70,7 +70,7 @@ export const DEFAULT_VOICE_COMPANION_CONFIG: VoiceCompanionConfig = {
   rate: '+0%',
   autoSend: false,
   autoSendDelay: 1500,
-  wakeWord: { enabled: true, words: ['小陈', '小臣', '小晨', '小沉', '小趁'] },
+  wakeWord: { enabled: true, words: ['小陈', '小陈。', '小臣', '小晨', '小沉', '小趁'] },
   standbyTimeout: 15000,
   fullDuplex: false,
   echoCooldownMs: 800,
