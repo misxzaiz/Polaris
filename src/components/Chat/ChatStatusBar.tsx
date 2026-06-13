@@ -447,13 +447,13 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
             <span className="w-px h-3.5 bg-border-subtle shrink-0" aria-hidden="true" />
           )}
 
-          {/* 流式状态 */}
-          {isStreaming && (
-            <div className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 bg-primary rounded-full animate-pulse" />
-              <span className="text-primary">{t('statusBar.responding')}</span>
-            </div>
-          )}
+          {/*/!* 流式状态 *!/*/}
+          {/*{isStreaming && (*/}
+          {/*  <div className="flex items-center gap-1.5">*/}
+          {/*    <span className="w-1.5 h-1.5 bg-primary rounded-full animate-pulse" />*/}
+          {/*    <span className="text-primary">{t('statusBar.responding')}</span>*/}
+          {/*  </div>*/}
+          {/*)}*/}
 
           {/* 输入状态提示 */}
           {inputHint && (
