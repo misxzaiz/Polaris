@@ -7,7 +7,7 @@ export { useChatEvent } from './useChat';
 
 // 防抖/节流 Hooks
 export { useDebounce, useDebouncedCallback } from './useDebounce';
-export { useThrottle, useThrottledCallback, useThrottledStreamingValue } from './useThrottle';
+export { useThrottle, useThrottledCallback } from './useThrottle';
 
 // 响应式 Hooks
 export { useWindowSize } from './useWindowSize';

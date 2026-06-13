@@ -67,6 +67,7 @@ export function useVoiceCompanion() {
   const awaitingReplyRef = useRef(false); // 是否等待语音发起的回复
   const prevStreamingRef = useRef(false); // 检测 isStreaming 边沿
   const speakingTextRef = useRef(''); // 当前朗读文本（回声指纹）
+  const streamFedLenRef = useRef(0); // 流式朗读：已喂给 voiceTts 的可朗读文本长度
   const bufferRef = useRef(''); // 累积输入缓冲
   const standbyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // 停顿合并发送
@@ -127,6 +128,7 @@ export function useVoiceCompanion() {
       st.setPhase('thinking');
       bufferRef.current = '';
       awaitingReplyRef.current = true;
+      streamFedLenRef.current = 0; // 新一轮回复：流式喂句游标归零
       clearTimer(standbyTimerRef);
       clearTimer(autoSendTimerRef);
 
@@ -180,6 +182,9 @@ export function useVoiceCompanion() {
     const st = useVoiceCompanionStore.getState();
     voiceTts.stop();
     speakingTextRef.current = '';
+    // 流式逐句朗读期间打断：停止继续喂句（AI 在主聊天继续生成，但不再朗读）
+    awaitingReplyRef.current = false;
+    streamFedLenRef.current = 0;
     clearTimer(cooldownTimerRef);
     clearTimer(echoGuardTimerRef);
     if (!st.config.fullDuplex && !st.muted) {
@@ -194,6 +199,7 @@ export function useVoiceCompanion() {
     voiceTts.stop();
     speakingTextRef.current = '';
     awaitingReplyRef.current = false;
+    streamFedLenRef.current = 0;
     clearTimer(cooldownTimerRef);
     clearTimer(echoGuardTimerRef);
     void interrupt();
@@ -450,32 +456,65 @@ export function useVoiceCompanion() {
       speakingTextRef.current = '';
       bufferRef.current = '';
       awaitingReplyRef.current = false;
+      streamFedLenRef.current = 0;
       audioFocusManager.release('companion');
     };
   }, [isOpen, config.language, activate, resetStandbyTimer, enterCooldown, resumeAfterReply]);
 
-  // ===== AI 回复完成 → 朗读 =====
+  // ===== AI 回复 → 流式逐句朗读（Phase 2） =====
+  // 流式期间：助手消息每次增长，把新增的可朗读文本增量喂给 voiceTts，
+  //          凑满一句即开始合成播放（无需等整段回复完成）；
+  // 完成边沿：补喂最后一段增量并 flush 收尾。
   useEffect(() => {
     if (!isOpen) {
       prevStreamingRef.current = isStreaming;
       return;
     }
-    if (prevStreamingRef.current && !isStreaming && awaitingReplyRef.current) {
-      awaitingReplyRef.current = false;
+    const st = useVoiceCompanionStore.getState();
+
+    // —— 流式进行中：增量喂句 ——
+    if (isStreaming && awaitingReplyRef.current) {
       const lastAssistant = [...messages].reverse().find((m) => isAssistantMessage(m));
-      const st = useVoiceCompanionStore.getState();
       if (lastAssistant) {
-        const replyText = extractSpeakableText(lastAssistant as AssistantChatMessage);
-        if (shouldSpeakText(replyText)) {
-          st.setLastReply(replyText);
-          speakingTextRef.current = replyText; // 回声指纹
-          void voiceTts.speak(replyText, { voice: st.config.voice, rate: st.config.rate });
-          prevStreamingRef.current = isStreaming;
-          return;
+        const fullText = extractSpeakableText(lastAssistant as AssistantChatMessage);
+        if (fullText.length > streamFedLenRef.current) {
+          const delta = fullText.slice(streamFedLenRef.current);
+          streamFedLenRef.current = fullText.length;
+          speakingTextRef.current = fullText; // 回声指纹随朗读内容增长
+          voiceTts.enqueueDelta(delta, { voice: st.config.voice, rate: st.config.rate });
         }
       }
-      // 无可朗读内容 → 回到对应待机
-      if (st.phase === 'thinking') {
+      prevStreamingRef.current = isStreaming;
+      return;
+    }
+
+    // —— 完成边沿：补余量 + flush ——
+    if (prevStreamingRef.current && !isStreaming && awaitingReplyRef.current) {
+      awaitingReplyRef.current = false;
+      const fedLen = streamFedLenRef.current;
+      streamFedLenRef.current = 0;
+
+      const lastAssistant = [...messages].reverse().find((m) => isAssistantMessage(m));
+      const replyText = lastAssistant
+        ? extractSpeakableText(lastAssistant as AssistantChatMessage)
+        : '';
+      const speakable = shouldSpeakText(replyText);
+
+      if (speakable) {
+        st.setLastReply(replyText);
+        speakingTextRef.current = replyText; // 回声指纹
+        if (replyText.length > fedLen) {
+          voiceTts.enqueueDelta(replyText.slice(fedLen), {
+            voice: st.config.voice,
+            rate: st.config.rate,
+          });
+        }
+      }
+      // 收尾：朗读缓冲余量；全部播完后触发 onDone（无内容时为 no-op）
+      voiceTts.flush();
+
+      // 全程无可朗读内容 → 直接回到对应待机
+      if (!speakable && fedLen === 0 && st.phase === 'thinking') {
         resumeAfterReply();
       }
     }
@@ -552,6 +591,7 @@ export function useVoiceCompanion() {
     speakingTextRef.current = '';
     bufferRef.current = '';
     awaitingReplyRef.current = false;
+    streamFedLenRef.current = 0;
     const st = useVoiceCompanionStore.getState();
     st.reset();
     st.close();

@@ -5,6 +5,11 @@ import { generateUUID } from '@/utils/uuid';
  * 使用 edge-tts-universal 实现文本转语音功能
  * 支持后台播放、中断控制、音量调节
  *
+ * 架构：合成（synthesize）与播放（playBlob）解耦——
+ *   - synthesize: 纯合成，不触碰播放状态，可被并发调用（供流水线预取）
+ *   - playBlob:   播放一个 Blob，Promise 在播放结束时 resolve
+ *   - speak:      二者的组合，保持单次播放语义（打断上一次）
+ *
  * 在非安全上下文（非 HTTPS / 非 localhost）下，edge-tts 因 crypto.subtle 不可用而失败，
  * 此时自动降级到浏览器内置 speechSynthesis API（质量较低但所有现代浏览器均支持）。
  */
@@ -43,6 +48,10 @@ export class TTSService {
   private isStopped = false;
   private currentTaskId: string | null = null;
   private audioContext: AudioContext | null = null;
+  /** 当前播放音频的 objectURL（结束/打断时 revoke 防泄漏） */
+  private currentObjectUrl: string | null = null;
+  /** 结清当前 playBlob 的 pending Promise（stop/接管时调用，避免调用方永久挂起） */
+  private settleCurrentPlayback: (() => void) | null = null;
 
   /** 设置配置 */
   setConfig(config: Partial<TTSConfig>): void {
@@ -88,7 +97,132 @@ export class TTSService {
   }
 
   /**
-   * 合成并播放语音
+   * 纯合成：文本 → 音频 Blob
+   *
+   * 与播放完全解耦：不打断当前播放、不修改全局状态（status/audio），
+   * 供流水线预取（边播第 N 句边合成第 N+1 句）使用。
+   *
+   * @returns 音频 Blob；文本为空 / 无音频数据 / 被 signal 中止时返回 null；网络等错误抛异常
+   */
+  async synthesize(
+    text: string,
+    options?: {
+      voice?: TTSVoice;
+      rate?: string;
+      signal?: AbortSignal;
+      onProgress?: (text: string, offset: number, duration: number) => void;
+    },
+  ): Promise<Blob | null> {
+    if (!text || !text.trim()) return null;
+
+    const communicate = new Communicate(text, {
+      voice: options?.voice || this.config.voice,
+      rate: options?.rate || this.config.rate,
+    });
+
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of communicate.stream()) {
+      if (options?.signal?.aborted) {
+        log.debug('语音合成被中止');
+        return null;
+      }
+      if (chunk.type === 'audio' && chunk.data) {
+        chunks.push(chunk.data);
+      } else if (chunk.type === 'WordBoundary' && chunk.text && chunk.offset !== undefined) {
+        options?.onProgress?.(chunk.text, chunk.offset, chunk.duration || 0);
+      }
+    }
+
+    if (options?.signal?.aborted) return null;
+    if (chunks.length === 0) return null;
+    return new Blob(chunks as BlobPart[], { type: 'audio/mp3' });
+  }
+
+  /**
+   * 播放一个音频 Blob
+   *
+   * Promise 在「播放结束 / 出错 / 被 stop() 或下一次播放接管」时 resolve，
+   * 调用方可借此实现按句衔接。开始前会自动结清上一段未完成的播放。
+   */
+  playBlob(blob: Blob): Promise<void> {
+    // 接管：停掉并结清上一段播放，避免双声重叠
+    this.detachCurrentAudio();
+
+    return new Promise<void>((resolve) => {
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.volume = this.config.volume;
+      this.audio = audio;
+      this.currentObjectUrl = url;
+
+      let settled = false;
+      const finish = (status: TTSStatus | null) => {
+        if (settled) return;
+        settled = true;
+        URL.revokeObjectURL(url);
+        if (this.audio === audio) {
+          this.audio = null;
+          this.currentObjectUrl = null;
+          this.settleCurrentPlayback = null;
+        }
+        if (status) this.setStatus(status);
+        resolve();
+      };
+
+      // 注册结清入口：stop() / 下一次 playBlob 接管时提前 resolve
+      this.settleCurrentPlayback = () => finish(null);
+
+      audio.onplay = () => {
+        this.setStatus('playing');
+        this.callbacks.onStart?.();
+        log.debug('开始播放音频');
+      };
+
+      audio.onended = () => {
+        this.callbacks.onEnd?.();
+        log.debug('音频播放完成');
+        finish('idle');
+      };
+
+      audio.onerror = (e) => {
+        const errorMsg = typeof e === 'string' ? e : 'Audio playback failed';
+        this.callbacks.onError?.(new Error(errorMsg));
+        log.error('音频播放失败', new Error(errorMsg));
+        finish('error');
+      };
+
+      audio.play().catch((err) => {
+        const error = err instanceof Error ? err : new Error(String(err));
+        this.callbacks.onError?.(error);
+        log.error('音频播放失败', error);
+        finish('error');
+      });
+    });
+  }
+
+  /** 停掉当前音频元素、revoke objectURL 并结清其播放 Promise */
+  private detachCurrentAudio(): void {
+    const settle = this.settleCurrentPlayback;
+    this.settleCurrentPlayback = null;
+
+    if (this.audio) {
+      this.audio.pause();
+      this.audio.src = '';
+      this.audio = null;
+    }
+    if (this.currentObjectUrl) {
+      URL.revokeObjectURL(this.currentObjectUrl);
+      this.currentObjectUrl = null;
+    }
+    settle?.();
+  }
+
+  /**
+   * 合成并播放语音（synthesize + playBlob 的组合）
+   *
+   * 注意：Promise 在「播放结束」时 resolve（而非播放开始），
+   * 调用方 await 后即可安全执行"播报完成后"的逻辑（如恢复语音识别）。
+   *
    * @param text 要朗读的文本
    * @param options 可选配置
    * @param options.force 是否强制播放（绕过 enabled 检查）
@@ -115,86 +249,26 @@ export class TTSService {
     log.info('开始合成语音', { textLength: text.length, voice: options?.voice || this.config.voice });
 
     try {
-      // 合成音频
-      const communicate = new Communicate(text, {
-        voice: options?.voice || this.config.voice,
-        rate: options?.rate || this.config.rate,
+      const blob = await this.synthesize(text, {
+        voice: options?.voice,
+        rate: options?.rate,
+        onProgress: (t, offset, duration) => this.callbacks.onProgress?.(t, offset, duration),
       });
 
-      const chunks: Uint8Array[] = [];
-      for await (const chunk of communicate.stream()) {
-        // 检查是否已被停止
-        if (this.isStopped || this.currentTaskId !== taskId) {
-          log.debug('语音合成被中断');
-          return;
-        }
-
-        if (chunk.type === 'audio' && chunk.data) {
-          chunks.push(chunk.data);
-        } else if (chunk.type === 'WordBoundary' && chunk.text && chunk.offset !== undefined) {
-          // 触发进度回调
-          this.callbacks.onProgress?.(chunk.text, chunk.offset, chunk.duration || 0);
-        }
-      }
-
-      // 再次检查是否被停止
+      // 检查是否被停止
       if (this.isStopped || this.currentTaskId !== taskId) {
+        log.debug('语音合成被中断');
         return;
       }
 
-      if (chunks.length === 0) {
+      if (!blob) {
         log.warn('未生成音频数据');
         this.setStatus('idle');
         return;
       }
 
-      // 合并音频数据
-      const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-      const audioBuffer = new Uint8Array(totalLength);
-      let offset = 0;
-      for (const chunk of chunks) {
-        audioBuffer.set(chunk, offset);
-        offset += chunk.length;
-      }
-
-      // 转换为 base64 Data URL（使用分块处理避免栈溢出）
-      let binary = '';
-      const chunkSize = 0x8000; // 32768 字符分块
-      for (let i = 0; i < audioBuffer.length; i += chunkSize) {
-        const subChunk = audioBuffer.subarray(i, Math.min(i + chunkSize, audioBuffer.length));
-        binary += String.fromCharCode.apply(null, Array.from(subChunk));
-      }
-      const base64 = btoa(binary);
-      const dataUrl = `data:audio/mp3;base64,${base64}`;
-
-      // 创建音频元素并播放
-      this.audio = new Audio(dataUrl);
-      this.audio.volume = this.config.volume;
-
-      // 绑定事件
-      this.audio.onplay = () => {
-        this.setStatus('playing');
-        this.callbacks.onStart?.();
-        log.debug('开始播放音频');
-      };
-
-      this.audio.onended = () => {
-        this.setStatus('idle');
-        this.callbacks.onEnd?.();
-        this.audio = null;
-        log.debug('音频播放完成');
-      };
-
-      this.audio.onerror = (e) => {
-        this.setStatus('error');
-        const errorMsg = typeof e === 'string' ? e : 'Audio playback failed';
-        this.callbacks.onError?.(new Error(errorMsg));
-        this.audio = null;
-        log.error('音频播放失败', new Error(errorMsg));
-      };
-
-      // 开始播放
-      await this.audio.play();
+      // 播放（结束/被打断后 resolve）
+      await this.playBlob(blob);
 
     } catch (error) {
       if (this.isStopped) {
@@ -244,11 +318,8 @@ export class TTSService {
     this.isStopped = true;
     this.currentTaskId = null;
 
-    if (this.audio) {
-      this.audio.pause();
-      this.audio.src = '';
-      this.audio = null;
-    }
+    // 停掉音频 + revoke objectURL + 结清 pending 的 playBlob Promise
+    this.detachCurrentAudio();
 
     if (this.status !== 'idle') {
       this.setStatus('idle');

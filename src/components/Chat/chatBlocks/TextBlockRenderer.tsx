@@ -1,11 +1,13 @@
 /**
  * 文本内容块组件（支持 Mermaid 渲染 + 代码高亮）
  *
- * 性能优化策略：
- * 1. 流式输出时使用节流（而非防抖），确保固定间隔渲染，提供更好的实时性
- * 2. 流式阶段显示简化版内容（纯文本），避免复杂 markdown 渲染
- * 3. 使用 useDeferredValue 降低渲染优先级，保持 UI 响应
- * 4. 流式结束后显示完整渲染结果
+ * 渲染策略（与实际实现保持同步）：
+ * 1. 流式更新频率由 store 层缓冲控制（createConversationStore 的
+ *    STREAM_FLUSH_INTERVAL + \n\n 段落边界），本组件不做节流
+ * 2. 流式/非流式统一走 ProgressiveStreamingMarkdown：
+ *    - 流式（completed=false）：已完成段落完整渲染，最后一段轻量渲染
+ *    - 非流式（completed=true）：全部完整 Markdown 渲染
+ * 3. 统一渲染路径保证流式→完成切换时 DOM 结构稳定，避免视觉跳变
  */
 
 import { memo } from 'react';

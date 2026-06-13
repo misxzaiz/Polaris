@@ -123,14 +123,19 @@ export function createConversationStore(
   // 段落级缓冲策略：
   // 1. 首段立即显示（快速响应）
   // 2. 后续段落等待 \n\n（段落结束）才 flush
-  // 3. 超时保护：200ms 内没有段落结束也 flush
+  // 3. 超时保护：STREAM_FLUSH_INTERVAL 内没有段落结束也 flush
   let _textBuffer = ''
   let _paragraphTimer: ReturnType<typeof setTimeout> | null = null
   // 当前活跃的 Agnes 前端会话（仅 agnes 引擎使用，用于 interrupt 中止）
   let _agnesSession: AISession | null = null
   // 上一次压缩操作的可见范围，用于防止反馈循环（压缩→高度变化→新 range→再压缩）
   let _lastCompactionRange: { start: number; end: number } | null = null
-  const PARAGRAPH_TIMEOUT = 200 // ms，超时保护
+  // 流式 flush 超时间隔（ms）。
+  // 取舍说明：该值决定段落内部文字更新帧率（1000/interval fps）。
+  // - 曾为 200ms：渲染成本低，但文字以 5fps "一坨坨"跳出，观感卡顿（详见 temp/streaming-mvp）
+  // - 现为 50ms：20fps 更新，观感平滑；末段走轻量渲染路径，成本可承受
+  // 不要在未实测观感的情况下调大此值。
+  const STREAM_FLUSH_INTERVAL = 50
 
   // ===== 消息压缩器 =====
   // 模块级实例，管理消息快照的 LRU 缓存
@@ -284,7 +289,7 @@ export function createConversationStore(
           _paragraphTimer = setTimeout(() => {
             _paragraphTimer = null
             get()._flushTextBuffer()
-          }, PARAGRAPH_TIMEOUT)
+          }, STREAM_FLUSH_INTERVAL)
         }
       },
 
