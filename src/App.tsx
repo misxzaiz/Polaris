@@ -18,7 +18,6 @@ import { RequirementPanel } from './components/RequirementPanel/RequirementPanel
 import { TerminalPanel } from './components/Terminal/TerminalPanel';
 import { ProblemsPanel } from './components/Problems/ProblemsPanel';
 import { DemoPluginPanel } from './components/Plugins/DemoPluginPanel';
-import { ComicStudioPanel } from './components/ComicStudio';
 import { NotificationCenterPanel } from './components/Notification';
 import { VoiceCompanionOverlay } from './components/VoiceCompanion';
 
@@ -197,7 +196,6 @@ function App() {
       aiConsoleContent={<Suspense fallback={loadingFallback}><ExecutionConsolePanel /></Suspense>}
       problemsContent={<ProblemsPanel />}
       demoPluginContent={<DemoPluginPanel onSendToChat={sendMessage} />}
-      comicStudioContent={<ComicStudioPanel />}
     />
   );
 

@@ -78,8 +78,6 @@ use commands::git::{
 #[cfg(feature = "tauri-app")]
 use commands::translate::baidu_translate;
 #[cfg(feature = "tauri-app")]
-use commands::agnes::{agnes_generate_image, agnes_chat_completion, agnes_create_video, agnes_query_video};
-#[cfg(feature = "tauri-app")]
 use commands::integration::{
     start_integration, stop_integration, get_integration_status,
     get_all_integration_status, send_integration_message,
@@ -720,11 +718,6 @@ pub fn run() {
             read_file_absolute,
             // 翻译相关
             baidu_translate,
-            // Agnes 全模态引擎
-            agnes_generate_image,
-            agnes_chat_completion,
-            agnes_create_video,
-            agnes_query_video,
             // 集成相关
             start_integration,
             stop_integration,
@@ -851,6 +844,10 @@ pub fn run() {
             commands::cli_info::cli_get_version_for,
             commands::cli_info::cli_run_ultrareview,
             commands::cli_info::cli_extract_structured,
+            // 引擎安装 / 卸载 / 检测
+            commands::engine_install::engine_detect_version,
+            commands::engine_install::engine_install,
+            commands::engine_install::engine_uninstall,
             // MCP 管理器相关
             commands::mcp_manager::mcp_list_servers,
             commands::mcp_manager::mcp_get_server,

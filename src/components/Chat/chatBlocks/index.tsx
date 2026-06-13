@@ -13,7 +13,6 @@ import { PermissionRequestRenderer } from '../PermissionRequestRenderer';
 import { TextBlockRenderer } from './TextBlockRenderer';
 import { ThinkingBlockRenderer } from './ThinkingBlockRenderer';
 import { ToolCallBlockRenderer } from './ToolCallBlockRenderer';
-import { MediaBlockRenderer } from './MediaBlockRenderer';
 
 export function renderContentBlock(
   block: ContentBlock,
@@ -60,11 +59,6 @@ export function renderContentBlock(
     case 'permission_request':
       return wrapWithErrorBoundary(
         <PermissionRequestRenderer block={block} />,
-        block.id
-      );
-    case 'media':
-      return wrapWithErrorBoundary(
-        <MediaBlockRenderer block={block} />,
         block.id
       );
     default:

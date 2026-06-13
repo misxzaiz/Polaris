@@ -54,13 +54,13 @@ export function getSelectedEngineHealth(
     };
   }
 
-  // agnes 和 claude-code 默认走 Claude 路径
+  // claude-code 默认走 Claude 路径
   return {
     engineId,
     name: getEngineFullName(engineId),
     command: 'claude',
     cliPath: config?.claudeCode?.cliPath || 'claude',
-    available: engineId === 'agnes' ? true : (health?.claudeAvailable ?? false),
+    available: health?.claudeAvailable ?? false,
     version: health?.claudeVersion,
   };
 }

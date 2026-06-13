@@ -10,23 +10,6 @@ export * from './claude-code'
 // 导出 Codex Engine
 export * from './codex'
 
-// 导出 Agnes Multi-Modal Engine
-export { AgnesMultiModalEngine } from './agnes'
-export type {
-  AgnesConfig,
-  AgnesMessage,
-  AgnesMessageRole,
-  AgnesTool,
-  AgnesToolCall,
-  AgnesImageRequest,
-  AgnesImageResponse,
-  AgnesVideoRequest,
-  AgnesVideoCreateResponse,
-  AgnesVideoQueryResponse,
-  AgnesVideoTaskStatus,
-  AgnesSessionConfig,
-} from './agnes'
-
 // 导出 Mimo Code Engine
 export { MimoCodeEngine, getMimoEngine } from './mimo'
 export type { MimoEngineConfig } from './mimo'
@@ -37,7 +20,7 @@ export type { MimoSessionConfig } from './mimo'
  * 获取所有可用的 Engine IDs
  */
 export function getAvailableEngineIds(): string[] {
-  return ['claude-code', 'codex', 'agnes', 'simple-ai', 'mimo']
+  return ['claude-code', 'codex', 'simple-ai', 'mimo']
 }
 
 /**
@@ -73,12 +56,6 @@ export function getEngineDescriptors(): EngineDescriptor[] {
       name: 'OpenAI Codex',
       description: 'OpenAI Codex CLI - 全部操作权限',
       available: true,
-    },
-    {
-      id: 'agnes',
-      name: 'Agnes Multi-Modal',
-      description: 'Agnes AI 全模态引擎 — 对话 / 生图 / 生视频 / 图片编辑',
-      available: false,
     },
     {
       id: 'simple-ai',

@@ -91,7 +91,7 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
     speech: ['speech', 'tts', 'wakeWord', 'voiceNotification', 'voiceCommands'],
     advanced: ['gitBinPath', 'sessionDir'],
     web: ['web'],
-    'ai-engine': ['defaultEngine', 'claudeCode', 'codexCode', 'agnesApiKey'],
+    'ai-engine': ['defaultEngine', 'claudeCode', 'codexCode', 'mimoCode'],
     'model-provider': ['modelProfiles', 'activeModelProfileId'],
   };
 

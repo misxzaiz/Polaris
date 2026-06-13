@@ -443,9 +443,9 @@ mod tests {
     use crate::services::proxy::models::OpenAIStreamChunk;
 
     #[test]
-    fn test_parse_agnes_normal_chunk() {
-        // agnes API 正常 chunk（空 content）
-        let data = r#"{"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"agnes-2.0-flash","choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}"#;
+    fn test_parse_openai_normal_chunk() {
+        // OpenAI 兼容流式 chunk（空 content）
+        let data = r#"{"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"test-model","choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}"#;
         let result = serde_json::from_str::<OpenAIStreamChunk>(data);
         assert!(result.is_ok(), "Failed to parse: {:?}", result.err());
         let chunk = result.unwrap();
@@ -454,9 +454,9 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_agnes_text_chunk() {
-        // agnes API 文本 chunk
-        let data = r#"{"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"agnes-2.0-flash","choices":[{"index":0,"delta":{"content":"Hi"}}]}"#;
+    fn test_parse_openai_text_chunk() {
+        // OpenAI 兼容流式文本 chunk
+        let data = r#"{"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"test-model","choices":[{"index":0,"delta":{"content":"Hi"}}]}"#;
         let result = serde_json::from_str::<OpenAIStreamChunk>(data);
         assert!(result.is_ok(), "Failed to parse: {:?}", result.err());
         let chunk = result.unwrap();
@@ -464,9 +464,9 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_agnes_usage_chunk() {
-        // agnes API usage chunk — choices 为空数组！
-        let data = r#"{"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"agnes-2.0-flash","system_fingerprint":"","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12,"prompt_tokens_details":{"cached_tokens":0,"text_tokens":0},"input_tokens":0,"output_tokens":0}}"#;
+    fn test_parse_openai_usage_chunk() {
+        // OpenAI 兼容 usage chunk — choices 为空数组！
+        let data = r#"{"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"test-model","system_fingerprint":"","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12,"prompt_tokens_details":{"cached_tokens":0,"text_tokens":0},"input_tokens":0,"output_tokens":0}}"#;
         let result = serde_json::from_str::<OpenAIStreamChunk>(data);
         assert!(result.is_ok(), "Failed to parse usage chunk: {:?}", result.err());
         let chunk = result.unwrap();
@@ -476,9 +476,9 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_agnes_finish_chunk() {
-        // agnes API finish chunk
-        let data = r#"{"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"agnes-2.0-flash","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#;
+    fn test_parse_openai_finish_chunk() {
+        // OpenAI 兼容 finish chunk
+        let data = r#"{"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"test-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#;
         let result = serde_json::from_str::<OpenAIStreamChunk>(data);
         assert!(result.is_ok(), "Failed to parse: {:?}", result.err());
         let chunk = result.unwrap();
@@ -486,14 +486,14 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_agnes_real_response() {
-        // 完整的 agnes API 流式响应
+    fn test_parse_openai_real_response() {
+        // 完整的 OpenAI 兼容流式响应
         let lines = vec![
-            r#"data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"agnes-2.0-flash","choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}"#,
-            r#"data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"agnes-2.0-flash","choices":[{"index":0,"delta":{"content":"Hi"}}]}"#,
-            r#"data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"agnes-2.0-flash","choices":[{"index":0,"delta":{"content":"!"}}]}"#,
-            r#"data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"agnes-2.0-flash","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#,
-            r#"data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"agnes-2.0-flash","system_fingerprint":"","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12,"prompt_tokens_details":{"cached_tokens":0,"text_tokens":0},"input_tokens":0,"output_tokens":0}}"#,
+            r#"data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"test-model","choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}"#,
+            r#"data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"test-model","choices":[{"index":0,"delta":{"content":"Hi"}}]}"#,
+            r#"data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"test-model","choices":[{"index":0,"delta":{"content":"!"}}]}"#,
+            r#"data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"test-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#,
+            r#"data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"test-model","system_fingerprint":"","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12,"prompt_tokens_details":{"cached_tokens":0,"text_tokens":0},"input_tokens":0,"output_tokens":0}}"#,
         ];
 
         let mut parsed_count = 0;

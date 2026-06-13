@@ -6,7 +6,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 /** 左侧面板类型 */
-export type LeftPanelType = 'files' | 'git' | 'todo' | 'translate' | 'scheduler' | 'requirement' | 'terminal' | 'tools' | 'developer' | 'integration' | 'problems' | 'demoPlugin' | 'comicStudio' | 'aiConsole' | 'none';
+export type LeftPanelType = 'files' | 'git' | 'todo' | 'translate' | 'scheduler' | 'requirement' | 'terminal' | 'tools' | 'developer' | 'integration' | 'problems' | 'demoPlugin' | 'aiConsole' | 'none';
 
 /** 小屏模式状态 */
 export interface CompactModeState {
@@ -288,6 +288,12 @@ export const useViewStore = create<ViewStore>()(
       partialize: (state) => {
         const { pendingScrollToId: _pendingScrollToId, ...rest } = state;
         return rest;
+      },
+      // 兼容旧持久化值：移除 ComicStudio 面板后，将遗留的面板类型回退到文件浏览器
+      onRehydrateStorage: () => (state) => {
+        if (state && (state.leftPanelType as string) === 'comicStudio') {
+          state.leftPanelType = 'files';
+        }
       },
     }
   )

@@ -121,7 +121,6 @@ export interface ConversationState {
   activePermissionRequestId: string | null
   /** 会话级工具放行集合（scope=session/global 的批准项累积；--resume 续聊自动并入 allowedTools）。绑定会话生命周期，不持久化。 */
   sessionAllowedTools: string[]
-  mediaBlockMap: Map<string, number>
   streamingUpdateCounter: number
 
   // ===== 会话状态 =====
@@ -207,10 +206,6 @@ export interface ConversationActions {
   expireStalePermissionRequests: () => void
   /** 追加会话级放行工具（去重）。scope=session/global 的批准项调用，使本会话续聊不再询问。绑定会话生命周期，不持久化。 */
   addSessionAllowedTools: (tools: string[]) => void
-
-  // ===== Media（AI 生成的图像/视频内联展示） =====
-  appendMediaBlock: (taskId: string, mediaType: 'image' | 'video', prompt?: string) => void
-  updateMediaBlock: (taskId: string, patch: Partial<Pick<import('../../types/chat').MediaBlock, 'status' | 'url' | 'progress' | 'size' | 'error'>>) => void
 
   // ===== 会话控制 =====
   setConversationId: (id: string | null) => void

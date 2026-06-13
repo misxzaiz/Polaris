@@ -265,45 +265,6 @@ export function handleAIEvent(
     case 'todo_execution_completed':
       break
 
-    // 多模态：图像生成 → 内联 MediaBlock（主聊天 Agnes 文生图）
-    case 'image_generation_start':
-      state.appendMediaBlock(event.taskId, 'image', event.prompt)
-      break
-
-    case 'image_generation_progress':
-      state.updateMediaBlock(event.taskId, { progress: event.progress })
-      break
-
-    case 'image_generated':
-      state.updateMediaBlock(event.taskId, {
-        status: 'completed',
-        url: event.imageUrl,
-        size: event.size,
-      })
-      break
-
-    case 'image_generation_error':
-      state.updateMediaBlock(event.taskId, {
-        status: 'failed',
-        error: event.error,
-      })
-      break
-
-    // 视频事件 - Phase 2 内联（暂由媒体面板处理）
-    case 'video_task_created':
-    case 'video_task_progress':
-    case 'video_completed':
-    case 'video_task_failed':
-      break
-
-    // 管线事件 - 由 ComicStudio/Pipeline 面板处理
-    case 'pipeline_start':
-    case 'pipeline_phase':
-    case 'pipeline_progress':
-    case 'pipeline_completed':
-    case 'pipeline_failed':
-      break
-
     default: {
       // 穷尽性检查：如果所有 AIEvent 类型都已处理，此处应为 never
       const _exhaustive: never = event

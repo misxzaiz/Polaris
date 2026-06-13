@@ -96,20 +96,6 @@
       "name": "OpenAI Codex",
       "description": "OpenAI Codex CLI — full permissions"
     },
-    "agnes": {
-      "name": "Agnes AI Multi-Modal",
-      "description": "Chat / Text-to-Image / Image-to-Image / Text-to-Video / Image-to-Video / Comic Pipeline",
-      "apiKeyLabel": "Agnes API Key",
-      "apiKeyPlaceholder": "Enter your Agnes API Key (get it from agnes-ai.com)",
-      "apiKeyHint": "API Key is stored securely in local config and used only for Agnes API calls.",
-      "apiKeyRequired": "Please enter an API Key first",
-      "register": "Register Engine",
-      "reRegister": "Re-register Engine",
-      "registering": "Registering...",
-      "registered": "Engine registered and ready to use",
-      "registeredBadge": "Registered",
-      "unregisteredBadge": "Unregistered"
-    },
     "simpleAi": {
       "name": "Simple AI",
       "description": "Lightweight AI assistant — uses model provider config, built-in bash/file tools, no CLI required"

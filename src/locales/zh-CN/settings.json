@@ -96,20 +96,6 @@
       "name": "OpenAI Codex",
       "description": "OpenAI Codex CLI — 全部操作权限"
     },
-    "agnes": {
-      "name": "Agnes AI 全模态",
-      "description": "对话 / 文生图 / 图生图 / 文生视频 / 图生视频 / 漫画漫剧管线",
-      "apiKeyLabel": "Agnes API Key",
-      "apiKeyPlaceholder": "输入你的 Agnes API Key（从 agnes-ai.com 获取）",
-      "apiKeyHint": "API Key 将安全存储于本地配置文件，仅用于 Agnes API 调用。",
-      "apiKeyRequired": "请先输入 API Key",
-      "register": "注册引擎",
-      "reRegister": "重新注册引擎",
-      "registering": "注册中...",
-      "registered": "引擎已注册，可立即使用",
-      "registeredBadge": "已注册",
-      "unregisteredBadge": "未注册"
-    },
     "simpleAi": {
       "name": "Simple AI",
       "description": "轻量级 AI 助手 — 用于安装ClaudeCode、Codex，简单对话"

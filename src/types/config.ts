@@ -7,7 +7,7 @@ import type { ModelProfile } from './modelProfile'
 import type { WorkspaceTerminalScripts } from './terminalScript'
 
 /**  引擎 ID */
-export type EngineId = 'claude-code' | 'codex' | 'agnes' | 'simple-ai' | 'mimo'
+export type EngineId = 'claude-code' | 'codex' | 'simple-ai' | 'mimo'
 
 /** 支持的语言 */
 export type Language = 'zh-CN' | 'en-US'
@@ -200,8 +200,6 @@ export interface Config {
   modelProfiles?: ModelProfile[];
   /** 当前激活的模型 Profile ID（为空时使用官方模型） */
   activeModelProfileId?: string;
-  /** Agnes AI 全模态引擎 API Key */
-  agnesApiKey?: string;
 }
 
 /** 配置 patch：只包含要更新的顶层字段，null 用于清空可选字段 */

@@ -1,8 +1,4 @@
 {
-  "media": {
-    "generating": "Generating image…",
-    "failed": "Media generation failed"
-  },
   "input": {
     "placeholder": "Type a message... (Enter to send, Shift+Enter for new line)",
     "placeholderWithAttachment": "Describe your question or send directly...",

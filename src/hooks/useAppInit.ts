@@ -145,7 +145,7 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
     log.info('SessionStoreManager initialized', { defaultEngine });
 
     // 按需初始化传统 AI Engine
-    await bootstrapEngines(defaultEngine as EngineId, config ?? undefined);
+    await bootstrapEngines(defaultEngine as EngineId);
 
     // 注册 AI 工具
     bootstrapTools();

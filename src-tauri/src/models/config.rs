@@ -905,10 +905,6 @@ pub struct Config {
     #[serde(default)]
     pub active_model_profile_id: Option<String>,
 
-    /// Agnes AI 全模态引擎 API Key
-    #[serde(default)]
-    pub agnes_api_key: Option<String>,
-
     // === 旧字段，保持向后兼容 ===
     /// @deprecated 请使用 claude_code.cli_path
     #[serde(default)]
@@ -947,7 +943,6 @@ impl Default for Config {
             terminal_scripts: BTreeMap::new(),
             model_profiles: Vec::new(),
             active_model_profile_id: None,
-            agnes_api_key: None,
             claude_cmd: None,
         }
     }

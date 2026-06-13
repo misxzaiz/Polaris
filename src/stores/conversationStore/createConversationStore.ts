@@ -11,9 +11,7 @@ import { invoke } from '@/services/tauri'
 import { speechService } from '@/services/speechService'
 import type { ConversationStore, ConversationState, StoreDeps } from './types'
 import type { ContentBlock, EngineId } from '@/types'
-import type { AISession } from '@/ai-runtime'
 import { handleAIEvent } from './eventHandler'
-import { runAgnesImageGeneration } from './agnesRunner'
 import { sessionStoreManager } from './sessionStoreManager'
 import { parseWorkspaceReferences } from '@/services/workspaceReference'
 import i18n from 'i18next'
@@ -63,7 +61,6 @@ function createInitialState(sessionId: string): ConversationState {
     permissionRequestBlockMap: new Map(),
     activePermissionRequestId: null,
     sessionAllowedTools: [],
-    mediaBlockMap: new Map(),
     streamingUpdateCounter: 0,
 
     // 会话状态
@@ -127,8 +124,6 @@ export function createConversationStore(
   // 3. 超时保护：STREAM_FLUSH_INTERVAL 内没有段落结束也 flush
   let _textBuffer = ''
   let _paragraphTimer: ReturnType<typeof setTimeout> | null = null
-  // 当前活跃的 Agnes 前端会话（仅 agnes 引擎使用，用于 interrupt 中止）
-  let _agnesSession: AISession | null = null
   // 上一次压缩操作的可见范围，用于防止反馈循环（压缩→高度变化→新 range→再压缩）
   let _lastCompactionRange: { start: number; end: number } | null = null
   // 流式 flush 超时间隔（ms）。
@@ -186,7 +181,6 @@ export function createConversationStore(
           pendingToolGroup: null,
           permissionRequestBlockMap: new Map(),
           activePermissionRequestId: null,
-          mediaBlockMap: new Map(),
         })
       },
 
@@ -429,62 +423,6 @@ export function createConversationStore(
           completedAt: status === 'completed' || status === 'failed' ? new Date().toISOString() : block.completedAt,
         }
         set({ currentMessage: { ...currentMessage, blocks } })
-      },
-
-      appendMediaBlock: (taskId, mediaType, prompt) => {
-        // 先 flush 文本缓冲区
-        if (_textBuffer) get()._flushTextBuffer()
-
-        const { currentMessage, mediaBlockMap, streamingUpdateCounter } = get()
-        const block = {
-          type: 'media' as const,
-          id: taskId,
-          mediaType,
-          status: 'generating' as const,
-          prompt,
-          progress: 0,
-          startedAt: new Date().toISOString(),
-        }
-        const newMap = new Map(mediaBlockMap)
-        if (!currentMessage) {
-          newMap.set(taskId, 0)
-          set({
-            currentMessage: createCurrentAssistantMessage([block]),
-            mediaBlockMap: newMap,
-            streamingUpdateCounter: streamingUpdateCounter + 1,
-          })
-        } else {
-          const blocks = [...currentMessage.blocks, block]
-          newMap.set(taskId, blocks.length - 1)
-          set({
-            currentMessage: { ...currentMessage, blocks },
-            mediaBlockMap: newMap,
-            streamingUpdateCounter: streamingUpdateCounter + 1,
-          })
-        }
-      },
-
-      updateMediaBlock: (taskId, patch) => {
-        const { currentMessage, mediaBlockMap, streamingUpdateCounter } = get()
-        if (!currentMessage) return
-        const idx = mediaBlockMap.get(taskId)
-        if (idx === undefined) return
-        const blocks = [...currentMessage.blocks]
-        const block = blocks[idx]
-        if (block?.type !== 'media') return
-        const nextStatus = patch.status ?? block.status
-        blocks[idx] = {
-          ...block,
-          ...patch,
-          completedAt:
-            nextStatus === 'completed' || nextStatus === 'failed'
-              ? new Date().toISOString()
-              : block.completedAt,
-        }
-        set({
-          currentMessage: { ...currentMessage, blocks },
-          streamingUpdateCounter: streamingUpdateCounter + 1,
-        })
       },
 
       updateToolCallBlockDiff: (toolId, diffData) => {
@@ -1062,16 +1000,9 @@ export function createConversationStore(
           error: null,
           currentMessage: null,
           toolBlockMap: new Map(),
-          mediaBlockMap: new Map(),
         })
 
         try {
-          // Agnes 引擎：前端 generator 路径（输入即生图），不经后端 invoke / eventRouter
-          if (engine === 'agnes') {
-            await runAgnesImageGeneration(content, set, get, (s) => { _agnesSession = s })
-            return
-          }
-
           const router = deps.getEventRouter()
           await router.initialize()
 
@@ -1156,16 +1087,6 @@ export function createConversationStore(
 
         const config = deps.getConfig()
         const engine = resolveSessionEngine(get().sessionId, config?.defaultEngine)
-
-        // Agnes 引擎：前端 AbortController 中止，不经后端 invoke
-        if (engine === 'agnes') {
-          _agnesSession?.abort()
-          _agnesSession = null
-          set({ isStreaming: false })
-          get().finishMessage()
-          log.info('Agnes session interrupted', { conversationId })
-          return
-        }
 
         log.info('Attempting to interrupt session', { conversationId, engine, isStreaming })
 
