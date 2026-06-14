@@ -9,6 +9,8 @@ import {
   Trash2,
   AlertTriangle,
   BookOpen,
+  Copy,
+  Check,
 } from 'lucide-react'
 import { listPluginMcpServerStatuses, pluginIconMap, pluginRegistry } from '@/plugin-system'
 import {
@@ -33,6 +35,365 @@ import type { PolarisPluginManifest } from '@/plugin-system/types'
 
 function formatPermissionLabel(key: string, t: (key: string, options?: { defaultValue?: string }) => string): string {
   return t(`plugins.permissions.${key}`, { defaultValue: key })
+}
+
+function PluginGuide() {
+  const [copied, setCopied] = useState(false)
+
+  const guideContent = `# Polaris 插件开发指南
+
+## 快速开始 — 最简 MCP 插件
+
+### 目录结构
+
+my-plugin/
+├── plugin.json
+└── mcp/
+    └── server.js
+
+### plugin.json
+
+{
+  "id": "my-tool",
+  "name": "我的工具",
+  "version": "1.0.0",
+  "enabledByDefault": true,
+  "contributes": {
+    "mcpServers": [{
+      "id": "my-server",
+      "transport": "stdio",
+      "command": "node",
+      "argsTemplate": ["{{pluginDir}}/mcp/server.js"]
+    }]
+  },
+  "permissions": { "aiToolAccess": true }
+}
+
+### mcp/server.js
+
+#!/usr/bin/env node
+function send(m) { process.stdout.write(JSON.stringify(m) + '\\n') }
+
+const tools = [{
+  name: 'my_tool',
+  description: '工具描述',
+  inputSchema: {
+    type: 'object',
+    properties: { text: { type: 'string', description: '输入文本' } },
+    required: ['text']
+  }
+}]
+
+let buf = ''
+process.stdin.setEncoding('utf8')
+process.stdin.on('data', c => {
+  buf += c
+  while (true) {
+    const i = buf.indexOf('\\n')
+    if (i === -1) break
+    const msg = JSON.parse(buf.slice(0, i).trim())
+    buf = buf.slice(i + 1)
+    if (!msg) continue
+
+    if (msg.method === 'initialize') {
+      send({ jsonrpc: '2.0', id: msg.id, result: {
+        protocolVersion: '2024-11-05',
+        capabilities: { tools: {} },
+        serverInfo: { name: 'my-tool', version: '1.0.0' }
+      }})
+    } else if (msg.method === 'tools/list') {
+      send({ jsonrpc: '2.0', id: msg.id, result: { tools } })
+    } else if (msg.method === 'tools/call') {
+      const args = msg.params?.arguments || {}
+      send({ jsonrpc: '2.0', id: msg.id, result: {
+        content: [{ type: 'text', text: '结果: ' + args.text }]
+      }})
+    }
+  }
+})
+
+安装方式：设置 → 插件 → Install from directory → 选择此目录。
+
+---
+
+## Manifest 规范
+
+### 完整 plugin.json
+
+{
+  "id": "my-plugin",              // 必填，全局唯一
+  "name": "我的插件",              // 必填，显示名称
+  "version": "1.0.0",             // 必填，语义化版本
+  "description": "插件描述",       // 可选
+  "enabledByDefault": true,       // 可选，默认 true
+
+  "contributes": {
+    "views": [{                   // ActivityBar 入口
+      "id": "my-plugin.panel",
+      "area": "activityBar",      // 固定值
+      "panelType": "myPanel",     // 全局唯一，映射 LeftPanelType
+      "icon": "Code2",            // Lucide 图标名
+      "labelKey": "plugins.myPanel",
+      "labelDefault": "我的面板",
+      "order": 85
+    }],
+    "mcpServers": [{
+      "id": "my-server",
+      "transport": "stdio",       // 固定: "stdio"
+      "command": "node",
+      "argsTemplate": ["{{pluginDir}}/mcp/server.js"]
+    }],
+    "panel": {
+      "entry": "./dist/panel.js"  // 面板 JS bundle 路径
+    }
+  },
+
+  "permissions": {
+    "workspaceRead": true,        // 读取工作区文件
+    "workspaceWrite": false,      // 写入工作区文件
+    "appConfigRead": false,       // 读取应用配置
+    "appConfigWrite": false,      // 写入应用配置
+    "network": false,             // 网络访问
+    "aiToolAccess": true          // AI 工具调用
+  },
+
+  "origin": {
+    "repository": "https://github.com/user/repo",
+    "homepage": "https://example.com",
+    "updateUrl": "https://example.com/update.json",
+    "downloadUrl": "https://example.com/plugin.zip"
+  }
+}
+
+### 模板占位符
+
+{{pluginDir}}     — 插件安装目录
+{{workspacePath}}  — 当前工作区路径
+{{appConfigDir}}   — 应用配置目录
+
+### 可用图标
+
+Files, GitPullRequest, CheckSquare, Languages, Clock, Target,
+ClipboardList, Terminal, Code2, Bot, BookOpen, AlertCircle, Film, Activity
+
+---
+
+## MCP Server 开发
+
+### 必须处理的方法
+
+initialize      — 返回协议版本和能力声明
+tools/list      — 返回工具列表
+tools/call      — 执行工具调用，返回结果
+
+### 成功响应
+
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "content": [{ "type": "text", "text": "输出内容" }]
+  }
+}
+
+### 错误响应
+
+{
+  "content": [{ "type": "text", "text": "错误信息" }],
+  "isError": true
+}
+
+---
+
+## 可视化面板开发
+
+### 目录结构
+
+my-plugin/
+├── plugin.json
+├── src/
+│   └── Panel.tsx          # 面板源码（React）
+├── dist/
+│   └── panel.js           # 打包输出（自包含）
+└── mcp/
+    └── server.js
+
+### src/Panel.tsx
+
+import { useState } from 'react'
+
+interface PluginPanelProps {
+  pluginId: string
+  onSendToChat?: (message: string) => void | Promise<void>
+}
+
+export default function MyPanel({ pluginId, onSendToChat }: PluginPanelProps) {
+  const [input, setInput] = useState('')
+  const [output, setOutput] = useState('')
+
+  return (
+    <div style={{ padding: 16, display: 'flex', flexDirection: 'column', height: '100%', gap: 12 }}>
+      <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>我的面板</h3>
+      <div style={{ fontSize: 11, color: '#8E8E93' }}>插件: {pluginId}</div>
+      <textarea
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        style={{ flex: 1, minHeight: 80, padding: 8, borderRadius: 6,
+          border: '1px solid #3F3F46', background: '#25252B', color: '#F8F8F8',
+          fontFamily: 'monospace', fontSize: 12 }}
+      />
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={() => setOutput(input)}
+          style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #3F3F46',
+            background: '#2D2D33', color: '#B4B4B8', fontSize: 12 }}>
+          处理
+        </button>
+        {onSendToChat && (
+          <button onClick={() => onSendToChat('处理: ' + input)}
+            style={{ padding: '6px 12px', borderRadius: 6, border: 'none',
+              background: '#3B82F6', color: '#fff', fontSize: 12 }}>
+            发送到聊天
+          </button>
+        )}
+      </div>
+      {output && (
+        <pre style={{ padding: 8, borderRadius: 6, border: '1px solid #3F3F46',
+          background: '#25252B', color: '#B4B4B8', fontFamily: 'monospace',
+          fontSize: 12, margin: 0, overflow: 'auto' }}>
+          {output}
+        </pre>
+      )}
+    </div>
+  )
+}
+
+### 打包命令
+
+npx esbuild src/Panel.tsx --bundle --format=esm --outfile=dist/panel.js --jsx=automatic --nodePaths=/path/to/polaris/node_modules
+
+### 面板 Props
+
+pluginId       — 当前插件 ID
+onSendToChat() — 发送消息到聊天
+
+---
+
+## 内置插件开发
+
+### src/plugins/myPlugin/manifest.ts
+
+import type { PolarisPluginManifest } from '@/plugin-system/types'
+
+export const myPluginManifest: PolarisPluginManifest = {
+  id: 'polaris.myPlugin',
+  name: '我的插件',
+  version: '0.1.0',
+  description: '插件描述',
+  builtin: true,
+  enabledByDefault: true,
+  contributes: {
+    views: [{
+      id: 'myPlugin.panel',
+      area: 'activityBar',
+      panelType: 'myPanelType',
+      icon: 'Bot',
+      labelKey: 'labels.myPanel',
+      labelDefault: '我的面板',
+      order: 85,
+    }],
+    mcpServers: [{
+      id: 'my-mcp-server',
+      transport: 'stdio',
+      command: 'my_mcp_command',
+      argsTemplate: ['{{appConfigDir}}', '{{workspacePath}}'],
+    }],
+  },
+  permissions: { workspaceRead: true, aiToolAccess: true },
+}
+
+### 在 src/plugin-system/builtinPlugins.ts 中注册
+
+import { myPluginManifest } from '@/plugins/myPlugin/manifest'
+
+export function registerBuiltinPlugins(): void {
+  pluginRegistry.register(corePluginManifest)
+  pluginRegistry.register(myPluginManifest)
+}
+
+---
+
+## 安装与调试
+
+### 安装方式
+
+本地目录：设置 → 插件 → Install from directory
+包文件：  设置 → 插件 → Install package（.zip/.json）
+远程 URL：设置 → 插件 → 输入 URL → Install remote
+
+### 安装路径
+
+用户级：%APPDATA%/com.polaris.app/plugins/（Windows）
+         ~/.config/polaris/plugins/（Linux/Mac）
+项目级：工作区根目录 .polaris/plugins/
+
+### 调试技巧
+
+- 手动运行 MCP Server：node mcp/server.js
+- 浏览器 DevTools 中查看 blob URL 对应源码
+- "Manifest diagnostics" 显示校验错误
+- 修改 plugin.json 后点击 Refresh 刷新
+
+---
+
+## 常见问题
+
+问：面板报错 "Invalid hook call"
+答：面板 bundle 内嵌了独立的 React 副本。重新打包时 React 设为 external，运行时由宿主提供。
+
+问：面板报错 "Failed to fetch"
+答：不能用 import() 加载 file:// URL。使用 Polaris 注册表系统，通过 Tauri 后端读取文件。
+
+问：MCP Server 启动失败
+答：检查：command 是否在 PATH 中、argsTemplate 路径是否正确、脚本是否有执行权限、手动运行是否报错。
+
+---
+
+完整文档：docs/plugins/plugin-development-guide.md`
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(guideContent)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      const ta = document.createElement('textarea')
+      ta.value = guideContent
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-text-tertiary">复制以下全部内容，粘贴给 AI 助手（如 Claude Code）即可生成插件。</span>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs text-primary hover:bg-primary/15 transition-colors shrink-0"
+        >
+          {copied ? <><Check size={12} /> 已复制</> : <><Copy size={12} /> 复制全部</>}
+        </button>
+      </div>
+      <pre className="rounded-lg border border-border-subtle bg-background-elevated p-3 text-[11px] font-mono text-text-tertiary overflow-auto max-h-[500px] whitespace-pre-wrap leading-relaxed">
+        {guideContent}
+      </pre>
+    </div>
+  )
 }
 
 export function PluginTab() {
@@ -443,89 +804,8 @@ export function PluginTab() {
           {showGuide ? <ChevronDown size={14} className="text-text-muted" /> : <ChevronRight size={14} className="text-text-muted" />}
         </button>
         {showGuide && (
-          <div className="border-t border-border-subtle px-3 py-3 text-xs text-text-tertiary space-y-3">
-            <div>
-              <div className="font-medium text-text-secondary mb-1">1. 创建目录结构</div>
-              <pre className="rounded bg-background-elevated p-2 text-[11px] font-mono overflow-x-auto">{`my-plugin/
-├── plugin.json          # 插件清单
-├── dist/
-│   └── panel.js         # 面板 bundle（可选）
-└── mcp/
-    └── server.js        # MCP Server`}</pre>
-            </div>
-            <div>
-              <div className="font-medium text-text-secondary mb-1">2. plugin.json 示例</div>
-              <pre className="rounded bg-background-elevated p-2 text-[11px] font-mono overflow-x-auto">{`{
-  "id": "my-tool",
-  "name": "My Tool",
-  "version": "1.0.0",
-  "enabledByDefault": true,
-  "contributes": {
-    "mcpServers": [{
-      "id": "my-server",
-      "transport": "stdio",
-      "command": "node",
-      "argsTemplate": ["{{pluginDir}}/mcp/server.js"]
-    }]
-  },
-  "permissions": { "aiToolAccess": true }
-}`}</pre>
-            </div>
-            <div>
-              <div className="font-medium text-text-secondary mb-1">3. MCP Server 最小模板</div>
-              <pre className="rounded bg-background-elevated p-2 text-[11px] font-mono overflow-x-auto">{`#!/usr/bin/env node
-function send(m) { process.stdout.write(JSON.stringify(m)+'\\n') }
-let buf = ''
-process.stdin.setEncoding('utf8')
-process.stdin.on('data', c => {
-  buf += c
-  while (true) {
-    const i = buf.indexOf('\\n')
-    if (i === -1) break
-    const msg = JSON.parse(buf.slice(0,i).trim())
-    buf = buf.slice(i+1)
-    if (msg.method === 'initialize')
-      send({jsonrpc:'2.0',id:msg.id,result:{
-        protocolVersion:'2024-11-05',
-        capabilities:{tools:{}},
-        serverInfo:{name:'my-tool',version:'1.0.0'}
-      }})
-    else if (msg.method === 'tools/list')
-      send({jsonrpc:'2.0',id:msg.id,result:{tools:[{
-        name:'my_tool',description:'工具描述',
-        inputSchema:{type:'object',properties:{
-          text:{type:'string'}
-        },required:['text']}
-      }]}})
-    else if (msg.method === 'tools/call')
-      send({jsonrpc:'2.0',id:msg.id,result:{
-        content:[{type:'text',text:'结果: '+msg.params.arguments.text}]
-      }})
-  }
-})`}</pre>
-            </div>
-            <div>
-              <div className="font-medium text-text-secondary mb-1">4. 模板占位符</div>
-              <div className="space-y-0.5">
-                <div><code className="text-primary">{'{{pluginDir}}'}</code> — 插件安装目录</div>
-                <div><code className="text-primary">{'{{workspacePath}}'}</code> — 当前工作区路径</div>
-                <div><code className="text-primary">{'{{appConfigDir}}'}</code> — 应用配置目录</div>
-              </div>
-            </div>
-            <div>
-              <div className="font-medium text-text-secondary mb-1">5. 可视化面板（可选）</div>
-              <div className="space-y-0.5">
-                <div>面板组件：<code className="text-primary">export default function MyPanel({'{'} pluginId, onSendToChat {'}'})</code></div>
-                <div>打包命令：<code className="text-primary">npx esbuild src/Panel.tsx --bundle --format=esm --outfile=dist/panel.js --jsx=automatic --nodePaths=/path/to/polaris/node_modules</code></div>
-                <div>manifest 声明：<code className="text-primary">{'"panel": { "entry": "./dist/panel.js" }'}</code></div>
-                <div>views 声明：<code className="text-primary">{'"panelType": "myPanelType"'}</code>（全局唯一）</div>
-              </div>
-            </div>
-            <div className="pt-1 border-t border-border-subtle">
-              <div className="text-text-muted">
-                详细文档：<code className="text-primary">docs/plugins/plugin-development-guide.md</code>
-              </div>
-            </div>
+          <div className="border-t border-border-subtle px-3 py-3">
+            <PluginGuide />
           </div>
         )}
       </div>
