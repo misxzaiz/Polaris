@@ -149,6 +149,8 @@ export interface QuestionBlock {
   status: QuestionStatus;
   /** 用户答案 */
   answer?: QuestionAnswer;
+  /** 问题来源：'mcp' 表示来自 MCP companion，答案通过 oneshot channel 回填；其他表示传统 tool_call */
+  source?: 'mcp' | 'tool_call';
 }
 
 /** ========================================

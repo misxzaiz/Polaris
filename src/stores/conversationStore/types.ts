@@ -172,7 +172,7 @@ export interface ConversationActions {
   updateCurrentAssistantMessage: (blocks: ContentBlock[]) => void
 
   // ===== 问题块 =====
-  appendQuestionBlock: (questionId: string, header: string, options: Array<{ value: string; label?: string; description?: string; preview?: string }>, multiSelect?: boolean, allowCustomInput?: boolean, categoryLabel?: string) => void
+  appendQuestionBlock: (questionId: string, header: string, options: Array<{ value: string; label?: string; description?: string; preview?: string }>, multiSelect?: boolean, allowCustomInput?: boolean, categoryLabel?: string, source?: 'mcp' | 'tool_call') => void
   updateQuestionBlock: (questionId: string, answer: { selected: string[]; customInput?: string }) => void
 
   // ===== PlanMode =====

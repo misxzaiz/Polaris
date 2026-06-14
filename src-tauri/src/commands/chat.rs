@@ -450,6 +450,96 @@ fn prepare_mcp_config_with_paths(
     }
 }
 
+/// Inject polaris-ask-mcp server into MCP config file
+fn inject_ask_mcp_server(
+    config_path: &str,
+    port: u16,
+    token: &str,
+) -> Result<()> {
+    use std::collections::BTreeMap;
+    use std::fs;
+
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct ClaudeMcpServerConfig {
+        command: String,
+        args: Vec<String>,
+    }
+
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct ClaudeMcpConfig {
+        #[serde(rename = "mcpServers")]
+        mcp_servers: BTreeMap<String, ClaudeMcpServerConfig>,
+    }
+
+    let content = fs::read_to_string(config_path)
+        .map_err(|e| AppError::ProcessError(format!("读取 MCP 配置失败: {}", e)))?;
+
+    let mut config: ClaudeMcpConfig = serde_json::from_str(&content)
+        .map_err(|e| AppError::ParseError(format!("解析 MCP 配置失败: {}", e)))?;
+
+    // Find polaris-ask-mcp binary path
+    let ask_mcp_path = find_ask_mcp_binary()?;
+
+    // Inject polaris-ask-mcp server
+    config.mcp_servers.insert(
+        "polaris-ask".to_string(),
+        ClaudeMcpServerConfig {
+            command: ask_mcp_path,
+            args: vec![
+                "--polaris-port".to_string(),
+                port.to_string(),
+                "--polaris-token".to_string(),
+                token.to_string(),
+            ],
+        },
+    );
+
+    // Write back
+    let content = serde_json::to_string_pretty(&config)
+        .map_err(|e| AppError::SerializationError(e))?;
+    fs::write(config_path, content)
+        .map_err(|e| AppError::ProcessError(format!("写入 MCP 配置失败: {}", e)))?;
+
+    Ok(())
+}
+
+/// Find polaris-ask-mcp binary path
+fn find_ask_mcp_binary() -> Result<String> {
+    // Try to find in the same directory as the main binary
+    let exe_path = std::env::current_exe()
+        .map_err(|e| AppError::ProcessError(format!("获取可执行文件路径失败: {}", e)))?;
+    let exe_dir = exe_path.parent()
+        .ok_or_else(|| AppError::ProcessError("无法获取可执行文件目录".to_string()))?;
+
+    // Check for polaris-ask-mcp in the same directory
+    let ask_mcp_name = if cfg!(target_os = "windows") {
+        "polaris-ask-mcp.exe"
+    } else {
+        "polaris-ask-mcp"
+    };
+
+    let ask_mcp_path = exe_dir.join(ask_mcp_name);
+    if ask_mcp_path.exists() {
+        return Ok(ask_mcp_path.to_string_lossy().to_string());
+    }
+
+    // Fallback: try cargo target directory (development mode)
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let target_debug = manifest_dir.parent()
+        .ok_or_else(|| AppError::ProcessError("无法获取项目根目录".to_string()))?
+        .join("target")
+        .join("debug")
+        .join(ask_mcp_name);
+
+    if target_debug.exists() {
+        return Ok(target_debug.to_string_lossy().to_string());
+    }
+
+    Err(AppError::ProcessError(
+        "polaris-ask-mcp 二进制文件未找到".to_string(),
+    ))
+}
+
 async fn apply_model_profile_options(
     mut session_opts: SessionOptions,
     profile_id: Option<&String>,
@@ -788,6 +878,25 @@ pub async fn start_chat_inner(
         session_opts = session_opts.with_append_system_prompt(prompt.clone());
     }
     if let Some(ref mcp_config_path) = mcp_config.claude_config_path {
+        // Spawn AskUserQuestion TCP listener and inject into MCP config
+        if engine == EngineId::ClaudeCode {
+            let ask_token = uuid::Uuid::new_v4().to_string();
+            let app_handle = state.app_handle.get().cloned();
+            match crate::services::ask_listener::spawn_ask_listener(
+                state.pending_ask.clone(),
+                app_handle,
+            ).await {
+                Ok(port) => {
+                    tracing::info!("[start_chat_inner] AskUserQuestion listener started on port {}", port);
+                    if let Err(e) = inject_ask_mcp_server(mcp_config_path, port, &ask_token) {
+                        tracing::warn!("[start_chat_inner] 注入 polaris-ask-mcp 失败: {}", e);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("[start_chat_inner] 启动 AskUserQuestion listener 失败: {}", e);
+                }
+            }
+        }
         session_opts = session_opts.with_mcp_config_path(mcp_config_path.clone());
     }
     if !mcp_config.codex_config_args.is_empty() {
@@ -1887,7 +1996,31 @@ pub async fn answer_question(
         answer.custom_input
     );
 
-    // 更新问题状态并移除已处理的条目（避免内存泄漏）
+    // Try to answer via MCP companion's oneshot channel first
+    let answered_via_mcp = {
+        let answers_json = serde_json::json!({
+            "type": "answer",
+            "declined": false,
+            "answers": answer.selected.iter().map(|s| {
+                serde_json::json!({
+                    "question": "",
+                    "header": "",
+                    "selected": [s.clone()]
+                })
+            }).collect::<Vec<_>>()
+        });
+        crate::services::ask_listener::answer_pending_question(
+            &state.pending_ask,
+            &call_id,
+            answers_json,
+        ).await.is_ok()
+    };
+
+    if answered_via_mcp {
+        tracing::info!("[answer_question] 答案已通过 MCP companion 回填");
+    }
+
+    // Also update the old pending_questions map (for UI state tracking)
     {
         let mut pending = state
             .pending_questions

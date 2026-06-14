@@ -125,6 +125,8 @@ pub struct AppState {
     pub lsp_manager: Mutex<LspManager>,
     /// LSP 配置持久化
     pub lsp_config: Mutex<LspConfigRepository>,
+    /// AskUserQuestion MCP companion 的待回答问题（带 oneshot channel）
+    pub pending_ask: crate::services::ask_listener::PendingAskMap,
     /// WebSocket 事件广播通道（Web Access Layer）— 带 seq 与重放缓冲
     pub event_broadcast: crate::web::EventBroadcaster,
     /// Tauri AppHandle — set once during setup, used by Web API handlers
@@ -164,6 +166,7 @@ pub fn create_app_state(
         file_watcher_manager: Mutex::new(FileWatcherManager::new()),
         pending_questions: Arc::new(Mutex::new(HashMap::new())),
         pending_plans: Arc::new(Mutex::new(HashMap::new())),
+        pending_ask: crate::services::ask_listener::new_pending_ask_map(),
         scheduler_daemon: AsyncMutex::new(None),
         lsp_manager: Mutex::new(LspManager::new()),
         lsp_config: Mutex::new(LspConfigRepository::new(&config_dir)),
@@ -227,6 +230,7 @@ impl AppState {
             file_watcher_manager: Mutex::new(FileWatcherManager::new()),
             pending_questions: self.pending_questions.clone(),
             pending_plans: self.pending_plans.clone(),
+            pending_ask: self.pending_ask.clone(),
             scheduler_daemon: AsyncMutex::new(None),
             lsp_manager: Mutex::new(LspManager::new()),
             lsp_config: Mutex::new(LspConfigRepository::new(&config_dir)),
