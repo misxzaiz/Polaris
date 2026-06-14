@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { FolderOpen, PackagePlus, RefreshCw, Trash2 } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronRight,
+  FolderOpen,
+  PackagePlus,
+  RefreshCw,
+  Trash2,
+  AlertTriangle,
+} from 'lucide-react'
 import { listPluginMcpServerStatuses, pluginIconMap, pluginRegistry } from '@/plugin-system'
 import {
   applyPluginUpdate,
@@ -20,6 +28,7 @@ import { openInDefaultApp } from '@/services/tauri/windowService'
 import { isTauri } from '@/utils/platform'
 import { usePluginStore } from '@/stores/pluginStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
+import type { PolarisPluginManifest } from '@/plugin-system/types'
 
 function formatPermissionLabel(key: string, t: (key: string, options?: { defaultValue?: string }) => string): string {
   return t(`plugins.permissions.${key}`, { defaultValue: key })
@@ -42,6 +51,7 @@ export function PluginTab() {
   const [pluginInstallScope, setPluginInstallScope] = useState<'user' | 'project'>('user')
   const [pluginRemoteSourceUrl, setPluginRemoteSourceUrl] = useState('')
   const [plugins, setPlugins] = useState(() => pluginRegistry.listPlugins())
+  const [expandedPlugins, setExpandedPlugins] = useState<Set<string>>(new Set())
   const currentWorkspacePath = useWorkspaceStore((state) => state.getCurrentWorkspace()?.path)
   const pluginStates = usePluginStore((state) => state.pluginStates)
   const setPluginEnabled = usePluginStore((state) => state.setPluginEnabled)
@@ -57,6 +67,18 @@ export function PluginTab() {
   const mcpHealthByName = useMemo(() => {
     return new Map(mcpHealthStatuses.map((status) => [status.name, status]))
   }, [mcpHealthStatuses])
+
+  const toggleExpand = useCallback((pluginId: string) => {
+    setExpandedPlugins((prev) => {
+      const next = new Set(prev)
+      if (next.has(pluginId)) {
+        next.delete(pluginId)
+      } else {
+        next.add(pluginId)
+      }
+      return next
+    })
+  }, [])
 
   const refreshMcpHealth = useCallback(async () => {
     setMcpHealthLoading(true)
@@ -286,446 +308,491 @@ export function PluginTab() {
   }, [refreshInstallLocations])
 
   return (
-    <div className="space-y-4">
-      <div className="text-sm text-text-secondary">
-        {t('plugins.description')}
-      </div>
-      <div className="flex flex-col gap-2 rounded-md border border-border-subtle bg-background-elevated px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0 text-xs text-text-tertiary">
-          {pluginDiscoveryError
-            ? t('plugins.discoveryError', { defaultValue: 'Plugin discovery failed: {{error}}', error: pluginDiscoveryError })
-            : t('plugins.discoverySummary', {
-              defaultValue: '{{count}} installed plugins discovered, {{issues}} diagnostics',
-              count: discoveredPluginCount,
-              issues: pluginDiscoveryIssues.length,
-            })}
-        </div>
-        <button
-          type="button"
-          onClick={refreshInstalledPlugins}
-          disabled={pluginDiscoveryLoading}
-          className="inline-flex items-center gap-1.5 self-start rounded-md border border-border-subtle px-3 py-1.5 text-xs text-text-secondary hover:bg-background-hover disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
-        >
-          <RefreshCw size={13} />
-          {pluginDiscoveryLoading
-            ? t('plugins.refreshingDiscovery', { defaultValue: 'Refreshing...' })
-            : t('plugins.refreshDiscovery', { defaultValue: 'Refresh installed plugins' })}
-        </button>
-      </div>
-      <div className="rounded-md border border-border-subtle bg-background-elevated px-3 py-3">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <div className="text-xs font-medium text-text-secondary">
-              {t('plugins.installDirectoryTitle', { defaultValue: 'Install directories' })}
-            </div>
-            <div className="mt-1 truncate text-xs text-text-tertiary">
-              {pluginInstallScope === 'project'
-                ? pluginInstallLocations?.projectPath ?? t('plugins.projectInstallUnavailable', { defaultValue: 'Open a workspace to install project plugins' })
-                : pluginInstallLocations?.userPath ?? t('plugins.installLocationsUnavailable', { defaultValue: 'Install locations unavailable' })}
-            </div>
+    <div className="space-y-3">
+      {/* === 顶部紧凑工具栏 === */}
+      <div className="rounded-lg border border-border-subtle bg-background-surface p-3 space-y-2">
+        {/* 第一行：摘要信息 + 刷新 */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3 text-xs text-text-tertiary">
+            {pluginDiscoveryError
+              ? <span className="text-danger">{t('plugins.discoveryError', { defaultValue: 'Discovery failed', error: pluginDiscoveryError })}</span>
+              : <span>{t('plugins.discoverySummary', { defaultValue: '{{count}} installed, {{issues}} diagnostics', count: discoveredPluginCount, issues: pluginDiscoveryIssues.length })}</span>
+            }
+            <span className="text-border-subtle">|</span>
+            {mcpHealthError
+              ? <span className="text-danger">{t('plugins.mcpHealthError', { defaultValue: 'MCP unavailable', error: mcpHealthError })}</span>
+              : <span>{t('plugins.mcpRuntimeSummary', { defaultValue: 'MCP: {{enabled}} on, {{disabled}} off', enabled: enabledMcpServerCount, disabled: disabledMcpServerCount })}</span>
+            }
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={pluginInstallScope}
-              onChange={(event) => setPluginInstallScope(event.target.value as 'user' | 'project')}
-              className="rounded-md border border-border-subtle bg-background-surface px-2 py-1.5 text-xs text-text-secondary"
-            >
-              <option value="user">{t('plugins.userInstallScope', { defaultValue: 'User' })}</option>
-              <option value="project" disabled={!currentWorkspacePath}>
-                {t('plugins.projectInstallScope', { defaultValue: 'Project' })}
-              </option>
-            </select>
-            <button
-              type="button"
-              onClick={handleOpenInstallDirectory}
-              disabled={pluginInstallScope === 'project' && !pluginInstallLocations?.projectPath}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle px-3 py-1.5 text-xs text-text-secondary hover:bg-background-hover disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <FolderOpen size={13} />
-              {t('plugins.openInstallDirectory', { defaultValue: 'Open directory' })}
-            </button>
-            <button
-              type="button"
-              onClick={handleInstallLocalPlugin}
-              disabled={pluginOperationLoading || !isTauri() || (pluginInstallScope === 'project' && !currentWorkspacePath)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs text-primary hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <PackagePlus size={13} />
-              {pluginOperationLoading
-                ? t('plugins.installingPlugin', { defaultValue: 'Installing...' })
-                : t('plugins.installFromDirectory', { defaultValue: 'Install from directory' })}
-            </button>
-            <button
-              type="button"
-              onClick={handleInstallPluginPackage}
-              disabled={pluginOperationLoading || !isTauri() || (pluginInstallScope === 'project' && !currentWorkspacePath)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs text-primary hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <PackagePlus size={13} />
-              {t('plugins.installFromPackage', { defaultValue: 'Install package' })}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => { refreshInstalledPlugins(); refreshMcpHealth() }}
+            disabled={pluginDiscoveryLoading || mcpHealthLoading}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-text-secondary hover:bg-background-hover disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <RefreshCw size={12} className={pluginDiscoveryLoading || mcpHealthLoading ? 'animate-spin' : ''} />
+            {t('plugins.refreshDiscovery', { defaultValue: 'Refresh' })}
+          </button>
         </div>
-        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+
+        {/* 第二行：安装目录 + 操作按钮 */}
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-text-tertiary">{t('plugins.installDirectoryTitle', { defaultValue: 'Dir' })}:</span>
+          <span className="max-w-[280px] truncate text-text-secondary">
+            {pluginInstallScope === 'project'
+              ? pluginInstallLocations?.projectPath ?? t('plugins.projectInstallUnavailable', { defaultValue: 'Open a workspace' })
+              : pluginInstallLocations?.userPath ?? t('plugins.installLocationsUnavailable', { defaultValue: 'Unavailable' })}
+          </span>
+          <select
+            value={pluginInstallScope}
+            onChange={(event) => setPluginInstallScope(event.target.value as 'user' | 'project')}
+            className="rounded border border-border-subtle bg-background-surface px-1.5 py-1 text-xs text-text-secondary"
+          >
+            <option value="user">{t('plugins.userInstallScope', { defaultValue: 'User' })}</option>
+            <option value="project" disabled={!currentWorkspacePath}>
+              {t('plugins.projectInstallScope', { defaultValue: 'Project' })}
+            </option>
+          </select>
+          <button
+            type="button"
+            onClick={handleOpenInstallDirectory}
+            disabled={pluginInstallScope === 'project' && !pluginInstallLocations?.projectPath}
+            className="inline-flex items-center gap-1 rounded border border-border-subtle px-2 py-1 text-xs text-text-secondary hover:bg-background-hover disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <FolderOpen size={11} />
+            {t('plugins.openInstallDirectory', { defaultValue: 'Open' })}
+          </button>
+          <button
+            type="button"
+            onClick={handleInstallLocalPlugin}
+            disabled={pluginOperationLoading || !isTauri() || (pluginInstallScope === 'project' && !currentWorkspacePath)}
+            className="inline-flex items-center gap-1 rounded border border-primary/40 bg-primary/10 px-2 py-1 text-xs text-primary hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <PackagePlus size={11} />
+            {t('plugins.installFromDirectory', { defaultValue: 'Install dir' })}
+          </button>
+          <button
+            type="button"
+            onClick={handleInstallPluginPackage}
+            disabled={pluginOperationLoading || !isTauri() || (pluginInstallScope === 'project' && !currentWorkspacePath)}
+            className="inline-flex items-center gap-1 rounded border border-primary/40 bg-primary/10 px-2 py-1 text-xs text-primary hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <PackagePlus size={11} />
+            {t('plugins.installFromPackage', { defaultValue: 'Install pkg' })}
+          </button>
+        </div>
+
+        {/* 第三行：远程安装 URL */}
+        <div className="flex items-center gap-2">
           <input
             type="text"
             value={pluginRemoteSourceUrl}
             onChange={(event) => setPluginRemoteSourceUrl(event.target.value)}
             placeholder={t('plugins.remoteSourcePlaceholder', { defaultValue: 'Remote manifest or package URL' })}
-            className="min-w-0 flex-1 rounded-md border border-border-subtle bg-background-surface px-3 py-1.5 text-xs text-text-secondary placeholder:text-text-tertiary"
+            className="min-w-0 flex-1 rounded border border-border-subtle bg-background-elevated px-2 py-1 text-xs text-text-secondary placeholder:text-text-muted"
           />
           <button
             type="button"
             onClick={handleInstallRemotePlugin}
             disabled={pluginOperationLoading || !pluginRemoteSourceUrl.trim() || (pluginInstallScope === 'project' && !currentWorkspacePath)}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle px-3 py-1.5 text-xs text-text-secondary hover:bg-background-hover disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center gap-1 rounded border border-border-subtle px-2 py-1 text-xs text-text-secondary hover:bg-background-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <PackagePlus size={13} />
-            {t('plugins.installRemote', { defaultValue: 'Install remote' })}
+            <PackagePlus size={11} />
+            {t('plugins.installRemote', { defaultValue: 'Remote' })}
           </button>
         </div>
+
+        {/* 操作反馈消息 */}
         {pluginOperationMessage && (
-          <div className="mt-2 text-xs text-text-tertiary">{pluginOperationMessage}</div>
+          <div className="text-xs text-text-tertiary">{pluginOperationMessage}</div>
         )}
       </div>
+
+      {/* === 诊断警告 === */}
       {pluginDiscoveryIssues.length > 0 && (
-        <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2">
-          <div className="text-xs font-medium text-warning">
-            {t('plugins.discoveryIssuesTitle', { defaultValue: 'Manifest diagnostics' })}
-          </div>
-          <div className="mt-2 space-y-1">
+        <div className="flex items-start gap-2 rounded-lg border border-warning/20 bg-warning/5 px-3 py-2">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0 text-warning" />
+          <div className="min-w-0 space-y-0.5">
+            <div className="text-xs font-medium text-warning">
+              {t('plugins.discoveryIssuesTitle', { defaultValue: 'Manifest diagnostics' })}
+            </div>
             {pluginDiscoveryIssues.map((issue, index) => (
-              <div key={`${issue.path}-${index}`} className="text-xs text-text-secondary">
-                <span className="font-medium">{issue.path}</span>
-                <span className="text-text-tertiary"> - {issue.error}</span>
+              <div key={`${issue.path}-${index}`} className="text-[11px] text-text-tertiary">
+                <span className="text-text-secondary">{issue.path}</span>
+                {' — '}
+                {issue.error}
               </div>
             ))}
           </div>
         </div>
       )}
-      <div className="flex flex-col gap-2 rounded-md border border-border-subtle bg-background-elevated px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <div className="text-xs font-medium text-text-secondary">
-            {t('plugins.mcpRuntimePlan', { defaultValue: 'MCP runtime plan' })}
+
+      {/* === 插件列表 === */}
+      <div className="space-y-1">
+        {plugins.map((plugin) => (
+          <PluginCard
+            key={plugin.id}
+            plugin={plugin}
+            state={pluginStates[plugin.id] ?? {
+              enabled: plugin.enabledByDefault,
+              uiEnabled: true,
+              mcpEnabled: true,
+            }}
+            expanded={expandedPlugins.has(plugin.id)}
+            onToggleExpand={toggleExpand}
+            mcpServerStatuses={mcpServerStatuses.filter((server) => server.pluginId === plugin.id)}
+            mcpHealthByName={mcpHealthByName}
+            updateCheck={pluginUpdateChecks[plugin.id]}
+            updateLoadingId={pluginUpdateLoadingId}
+            updateApplyLoadingId={pluginUpdateApplyLoadingId}
+            onSetEnabled={setPluginEnabled}
+            onSetUiEnabled={setPluginUiEnabled}
+            onSetMcpEnabled={setPluginMcpEnabled}
+            onSetMcpServerEnabled={setPluginMcpServerEnabled}
+            onReset={resetPluginState}
+            onCheckUpdate={handleCheckPluginUpdate}
+            onApplyUpdate={handleApplyPluginUpdate}
+            onUninstall={handleUninstallLocalPlugin}
+            pluginStates={pluginStates}
+            operationLoading={pluginOperationLoading}
+            t={t}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* ========================================================================
+   单个插件卡片（折叠/展开）
+   ======================================================================== */
+
+interface PluginCardProps {
+  plugin: PolarisPluginManifest
+  state: { enabled: boolean; uiEnabled: boolean; mcpEnabled: boolean }
+  expanded: boolean
+  onToggleExpand: (id: string) => void
+  mcpServerStatuses: Array<{ id: string; pluginId: string; transport: string; command: string; enabled: boolean }>
+  mcpHealthByName: Map<string, McpHealthStatus>
+  updateCheck?: PluginUpdateCheckResult
+  updateLoadingId: string | null
+  updateApplyLoadingId: string | null
+  pluginStates: Record<string, { enabled: boolean; uiEnabled: boolean; mcpEnabled: boolean }>
+  operationLoading: boolean
+  onSetEnabled: (id: string, enabled: boolean) => void
+  onSetUiEnabled: (id: string, enabled: boolean) => void
+  onSetMcpEnabled: (id: string, enabled: boolean) => void
+  onSetMcpServerEnabled: (pluginId: string, serverId: string, enabled: boolean) => void
+  onReset: (id: string) => void
+  onCheckUpdate: (id: string, installPath?: string) => void
+  onApplyUpdate: (id: string, installPath?: string) => void
+  onUninstall: (id: string, installPath?: string) => void
+  t: (key: string, options?: Record<string, unknown>) => string
+}
+
+function PluginCard({
+  plugin,
+  state,
+  expanded,
+  onToggleExpand,
+  mcpServerStatuses,
+  mcpHealthByName,
+  updateCheck,
+  updateLoadingId,
+  updateApplyLoadingId,
+  pluginStates,
+  operationLoading,
+  onSetEnabled,
+  onSetUiEnabled,
+  onSetMcpEnabled,
+  onSetMcpServerEnabled,
+  onReset,
+  onCheckUpdate,
+  onApplyUpdate,
+  onUninstall,
+  t,
+}: PluginCardProps) {
+  const isCorePlugin = plugin.id === 'polaris.core'
+  const views = plugin.contributes.views ?? []
+  const permissionEntries = Object.entries(plugin.permissions).filter(([, enabled]) => enabled)
+  const originEntries = Object.entries(plugin.origin ?? {})
+    .filter(([, value]) => typeof value === 'string' && value.length > 0)
+  const hasDetails = views.length > 0 || mcpServerStatuses.length > 0 || permissionEntries.length > 0 || originEntries.length > 0
+
+  return (
+    <div className={`rounded-lg border transition-colors ${expanded ? 'border-border-subtle bg-background-surface' : 'border-transparent hover:border-border-subtle hover:bg-background-surface/50'}`}>
+      {/* === 折叠头：始终显示 === */}
+      <div
+        className={`flex items-center gap-3 px-3 py-2.5 ${hasDetails ? 'cursor-pointer select-none' : ''}`}
+        onClick={() => hasDetails && onToggleExpand(plugin.id)}
+      >
+        {/* 展开箭头 */}
+        <span className="shrink-0 text-text-muted">
+          {hasDetails
+            ? expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />
+            : <span className="inline-block w-[14px]" />
+          }
+        </span>
+
+        {/* 插件名称 + 版本 + 标签 */}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-sm font-medium text-text-primary truncate">{plugin.name}</span>
+            <span className="text-[10px] text-text-muted">v{plugin.version}</span>
+            {plugin.builtin && (
+              <span className="rounded-sm bg-primary/10 px-1 py-px text-[10px] leading-tight text-primary">
+                {t('plugins.builtin')}
+              </span>
+            )}
+            {!plugin.builtin && plugin.source && (
+              <span className="rounded-sm bg-background-hover px-1 py-px text-[10px] leading-tight text-text-muted">
+                {plugin.source.kind === 'project'
+                  ? t('plugins.projectInstalled', { defaultValue: 'Project' })
+                  : t('plugins.userInstalled', { defaultValue: 'User' })}
+              </span>
+            )}
           </div>
-          <div className="mt-1 text-xs text-text-tertiary">
-            {mcpHealthError
-              ? t('plugins.mcpHealthError', { defaultValue: 'MCP status unavailable: {{error}}', error: mcpHealthError })
-              : t('plugins.mcpRuntimeSummary', {
-                defaultValue: '{{enabled}} enabled, {{disabled}} disabled, {{reported}} runtime statuses reported',
-                enabled: enabledMcpServerCount,
-                disabled: disabledMcpServerCount,
-                reported: mcpHealthStatuses.length,
-              })}
-          </div>
+          {plugin.description && (
+            <div className="mt-0.5 text-xs text-text-tertiary line-clamp-1">{plugin.description}</div>
+          )}
         </div>
-        <button
-          type="button"
-          onClick={refreshMcpHealth}
-          disabled={mcpHealthLoading}
-          className="self-start rounded-md border border-border-subtle px-3 py-1.5 text-xs text-text-secondary hover:bg-background-hover disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
+
+        {/* 功能摘要 badge */}
+        {!expanded && (
+          <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+            {views.length > 0 && (
+              <span className="text-[10px] text-text-muted">
+                {t('plugins.viewCount', { defaultValue: '{{count}} views', count: views.length })}
+              </span>
+            )}
+            {mcpServerStatuses.length > 0 && (
+              <span className="text-[10px] text-text-muted">
+                {t('plugins.mcpCount', { defaultValue: '{{count}} MCP', count: mcpServerStatuses.length })}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* 启用开关 */}
+        <label
+          className="shrink-0 flex items-center gap-1.5 text-xs text-text-secondary"
+          onClick={(e) => e.stopPropagation()}
         >
-          {mcpHealthLoading
-            ? t('plugins.refreshingMcpStatus', { defaultValue: 'Refreshing...' })
-            : t('plugins.refreshMcpStatus', { defaultValue: 'Refresh MCP status' })}
-        </button>
+          <input
+            type="checkbox"
+            checked={state.enabled}
+            disabled={isCorePlugin}
+            onChange={(event) => onSetEnabled(plugin.id, event.target.checked)}
+            className="h-3.5 w-3.5 accent-primary"
+          />
+        </label>
       </div>
 
-      <div className="space-y-3">
-        {plugins.map((plugin) => {
-          const state = pluginStates[plugin.id] ?? {
-            enabled: plugin.enabledByDefault,
-            uiEnabled: true,
-            mcpEnabled: true,
-          }
-          const views = plugin.contributes.views ?? []
-          const mcpServers = mcpServerStatuses.filter((server) => server.pluginId === plugin.id)
-          const permissionEntries = Object.entries(plugin.permissions).filter(([, enabled]) => enabled)
-          const isCorePlugin = plugin.id === 'polaris.core'
-          const updateCheck = pluginUpdateChecks[plugin.id]
-          const originEntries = Object.entries(plugin.origin ?? {})
-            .filter(([, value]) => typeof value === 'string' && value.length > 0)
+      {/* === 展开详情 === */}
+      {expanded && (
+        <div className="px-3 pb-3 space-y-3 border-t border-border-subtle">
+          {/* 插件 ID + 路径 + 来源 */}
+          <div className="pt-2 space-y-0.5 text-[11px] text-text-muted">
+            <div className="font-mono">{plugin.id}</div>
+            {!plugin.builtin && plugin.installPath && (
+              <div className="truncate">{plugin.installPath}</div>
+            )}
+            {originEntries.length > 0 && (
+              <div className="flex flex-wrap gap-x-3">
+                {originEntries.map(([key, value]) => (
+                  <span key={key}>
+                    {t(`plugins.origin.${key}`, { defaultValue: key })}: {value}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
 
-          return (
-            <section
-              key={plugin.id}
-              className="rounded-lg border border-border-subtle bg-background-surface p-4"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-sm font-semibold text-text-primary">{plugin.name}</h4>
-                    <span className="rounded bg-background-hover px-1.5 py-0.5 text-[11px] text-text-tertiary">
-                      v{plugin.version}
-                    </span>
-                    {plugin.builtin && (
-                      <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary">
-                        {t('plugins.builtin')}
+          {/* 核心插件锁定提示 */}
+          {isCorePlugin && (
+            <div className="rounded border border-border-subtle bg-background-elevated px-2.5 py-1.5 text-xs text-text-muted">
+              {t('plugins.coreLocked')}
+            </div>
+          )}
+
+          {/* 三列信息：界面 | MCP 服务器 | 权限 */}
+          <div className="grid gap-2 sm:grid-cols-3">
+            {/* 界面 */}
+            <div className="rounded border border-border-subtle bg-background-elevated p-2.5">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs font-medium text-text-secondary">
+                  {t('plugins.uiSurface', { defaultValue: 'UI' })}
+                </span>
+                <input
+                  type="checkbox"
+                  checked={state.uiEnabled}
+                  disabled={!state.enabled || isCorePlugin}
+                  onChange={(event) => onSetUiEnabled(plugin.id, event.target.checked)}
+                  className="h-3.5 w-3.5 accent-primary"
+                />
+              </div>
+              {views.length > 0 ? (
+                <div className="flex flex-wrap gap-1">
+                  {views.map((view) => {
+                    const Icon = pluginIconMap[view.icon]
+                    return (
+                      <span
+                        key={view.id}
+                        className="inline-flex items-center gap-0.5 rounded-sm bg-background-surface px-1.5 py-0.5 text-[11px] text-text-secondary"
+                      >
+                        <Icon size={10} />
+                        {t(view.labelKey, { defaultValue: view.labelDefault ?? view.panelType })}
                       </span>
-                    )}
-                    {!plugin.builtin && plugin.source && (
-                      <span className="rounded bg-background-hover px-1.5 py-0.5 text-[11px] text-text-tertiary">
-                        {plugin.source.kind === 'project'
-                          ? t('plugins.projectInstalled', { defaultValue: 'Project' })
-                          : t('plugins.userInstalled', { defaultValue: 'User installed' })}
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-1 text-xs text-text-tertiary">{plugin.id}</div>
-                  {!plugin.builtin && plugin.installPath && (
-                    <div className="mt-1 truncate text-xs text-text-tertiary">
-                      {plugin.installPath}
-                    </div>
-                  )}
-                  {plugin.description && (
-                    <p className="mt-2 text-sm text-text-secondary">{plugin.description}</p>
-                  )}
-                  {originEntries.length > 0 && (
-                    <div className="mt-2 space-y-1">
-                      {originEntries.map(([key, value]) => (
-                        <div key={key} className="truncate text-xs text-text-tertiary">
-                          <span className="text-text-secondary">
-                            {t(`plugins.origin.${key}`, { defaultValue: key })}
-                          </span>
-                          <span> {value}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                    )
+                  })}
                 </div>
+              ) : (
+                <span className="text-[11px] text-text-muted">{t('plugins.noViews', { defaultValue: 'None' })}</span>
+              )}
+            </div>
 
-                <label className="flex items-center gap-2 text-sm text-text-secondary">
+            {/* MCP 服务器 */}
+            <div className="rounded border border-border-subtle bg-background-elevated p-2.5">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs font-medium text-text-secondary">
+                  {t('plugins.mcpSurface', { defaultValue: 'MCP' })}
+                </span>
+                <label className="flex items-center gap-1 text-[11px] text-text-muted">
+                  {t('plugins.enableAllMcp', { defaultValue: 'All' })}
                   <input
                     type="checkbox"
-                    checked={state.enabled}
-                    disabled={isCorePlugin}
-                    onChange={(event) => setPluginEnabled(plugin.id, event.target.checked)}
-                    className="h-4 w-4 accent-primary"
+                    checked={state.mcpEnabled}
+                    disabled={!state.enabled || mcpServerStatuses.length === 0}
+                    onChange={(event) => onSetMcpEnabled(plugin.id, event.target.checked)}
+                    className="h-3.5 w-3.5 accent-primary"
                   />
-                  {t('plugins.enablePlugin')}
                 </label>
               </div>
-
-              {isCorePlugin && (
-                <div className="mt-3 rounded-md border border-border-subtle bg-background-elevated px-3 py-2 text-xs text-text-tertiary">
-                  {t('plugins.coreLocked')}
-                </div>
-              )}
-
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-md border border-border-subtle bg-background-elevated p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-medium text-text-primary">{t('plugins.uiSurface')}</div>
-                      <div className="mt-1 text-xs text-text-tertiary">
-                        {t('plugins.viewCount', { count: views.length })}
-                      </div>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={state.uiEnabled}
-                      disabled={!state.enabled || isCorePlugin}
-                      onChange={(event) => setPluginUiEnabled(plugin.id, event.target.checked)}
-                      className="h-4 w-4 accent-primary"
-                    />
-                  </div>
-                  {views.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {views.map((view) => {
-                        const Icon = pluginIconMap[view.icon]
-                        return (
-                          <span
-                            key={view.id}
-                            className="inline-flex items-center gap-1 rounded border border-border-subtle px-2 py-1 text-xs text-text-secondary"
-                          >
-                            <Icon size={12} />
-                            {t(view.labelKey, { defaultValue: view.labelDefault ?? view.panelType })}
+              {mcpServerStatuses.length > 0 ? (
+                <div className="space-y-1">
+                  {mcpServerStatuses.map((server) => {
+                    const runtime = mcpHealthByName.get(server.id)
+                    return (
+                      <div key={server.id} className="flex items-center justify-between gap-1 text-[11px]">
+                        <div className="min-w-0 flex-1">
+                          <span className={server.enabled ? 'text-text-secondary' : 'text-text-muted line-through'}>
+                            {server.id}
                           </span>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                <div className="rounded-md border border-border-subtle bg-background-elevated p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-medium text-text-primary">{t('plugins.mcpSurface')}</div>
-                      <div className="mt-1 text-xs text-text-tertiary">
-                        {t('plugins.mcpCount', { count: mcpServers.length })}
+                          <span className="ml-1 text-text-muted">[{server.transport}]</span>
+                          {server.enabled && runtime && (
+                            <span className={`ml-1 ${runtime.connected ? 'text-success' : 'text-warning'}`}>
+                              {runtime.connected ? '●' : '○'}
+                            </span>
+                          )}
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={server.enabled}
+                          disabled={!state.enabled || !state.mcpEnabled}
+                          onChange={(event) => onSetMcpServerEnabled(plugin.id, server.id, event.target.checked)}
+                          className="h-3 w-3 shrink-0 accent-primary"
+                        />
                       </div>
-                    </div>
-                    <label className="inline-flex items-center gap-2 text-xs text-text-secondary">
-                      <span>{t('plugins.enableAllMcp', { defaultValue: 'Enable all' })}</span>
-                      <input
-                        type="checkbox"
-                        checked={state.mcpEnabled}
-                        disabled={!state.enabled || mcpServers.length === 0}
-                        onChange={(event) => setPluginMcpEnabled(plugin.id, event.target.checked)}
-                        className="h-4 w-4 accent-primary"
-                      />
-                    </label>
-                  </div>
-                  {mcpServers.length > 0 && (
-                    <div className="mt-3 divide-y divide-border-subtle overflow-hidden rounded-md border border-border-subtle">
-                      {mcpServers.map((server) => {
-                        const runtime = mcpHealthByName.get(server.id)
-                        return (
-                          <div key={server.id} className="bg-background-surface px-2.5 py-2">
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <div className="flex flex-wrap items-center gap-2 text-xs">
-                                  <span className={server.enabled ? 'font-medium text-text-secondary' : 'font-medium text-text-tertiary line-through'}>
-                                    {server.id}
-                                  </span>
-                                  <span className="rounded bg-background-hover px-1.5 py-0.5 text-[11px] text-text-tertiary">
-                                    {server.transport}
-                                  </span>
-                                  {!server.enabled ? (
-                                    <span className="rounded bg-background-hover px-1.5 py-0.5 text-[11px] text-text-tertiary">
-                                      {t('plugins.disabled')}
-                                    </span>
-                                  ) : runtime ? (
-                                    <span
-                                      className={
-                                        runtime.connected
-                                          ? 'rounded bg-success/10 px-1.5 py-0.5 text-[11px] text-success'
-                                          : 'rounded bg-warning/10 px-1.5 py-0.5 text-[11px] text-warning'
-                                      }
-                                    >
-                                      {runtime.connected
-                                        ? t('plugins.mcpConnected', { defaultValue: 'Connected' })
-                                        : t('plugins.mcpDisconnected', { defaultValue: 'Disconnected' })}
-                                    </span>
-                                  ) : (
-                                    <span className="rounded bg-background-hover px-1.5 py-0.5 text-[11px] text-text-tertiary">
-                                      {t('plugins.mcpUnknown', { defaultValue: 'Not reported' })}
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="mt-1 truncate text-[11px] text-text-tertiary">
-                                  {server.command}
-                                </div>
-                                {runtime?.status && (
-                                  <div className="mt-1 text-[11px] text-text-tertiary">
-                                    {runtime.status}
-                                  </div>
-                                )}
-                              </div>
-                              <label className="flex shrink-0 items-center gap-2 text-xs text-text-secondary">
-                                <span>{server.enabled ? t('plugins.enabled', { defaultValue: 'Enabled' }) : t('plugins.disabled')}</span>
-                                <input
-                                  type="checkbox"
-                                  checked={server.enabled}
-                                  disabled={!state.enabled || !state.mcpEnabled}
-                                  onChange={(event) =>
-                                    setPluginMcpServerEnabled(plugin.id, server.id, event.target.checked)}
-                                  className="h-4 w-4 accent-primary"
-                                />
-                              </label>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
+                    )
+                  })}
                 </div>
+              ) : (
+                <span className="text-[11px] text-text-muted">{t('plugins.noMcpServers', { defaultValue: 'None' })}</span>
+              )}
+            </div>
+
+            {/* 权限 */}
+            <div className="rounded border border-border-subtle bg-background-elevated p-2.5">
+              <div className="mb-1.5">
+                <span className="text-xs font-medium text-text-secondary">
+                  {t('plugins.permissionsTitle', { defaultValue: 'Permissions' })}
+                </span>
               </div>
-
-              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <div className="text-xs font-medium text-text-secondary">{t('plugins.permissionsTitle')}</div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {permissionEntries.length === 0 ? (
-                      <span className="text-xs text-text-tertiary">{t('plugins.noPermissions')}</span>
-                    ) : (
-                      permissionEntries.map(([key]) => (
-                        <span
-                          key={key}
-                          className="rounded border border-border-subtle px-2 py-1 text-xs text-text-secondary"
-                        >
-                          {formatPermissionLabel(key, t)}
-                        </span>
-                      ))
-                    )}
-                  </div>
+              {permissionEntries.length > 0 ? (
+                <div className="text-[11px] text-text-tertiary">
+                  {permissionEntries.map(([key], i) => (
+                    <span key={key}>
+                      {i > 0 && <span className="text-text-muted">, </span>}
+                      {formatPermissionLabel(key, t)}
+                    </span>
+                  ))}
                 </div>
+              ) : (
+                <span className="text-[11px] text-text-muted">{t('plugins.noPermissions')}</span>
+              )}
+            </div>
+          </div>
 
+          {/* 操作按钮行 */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => onReset(plugin.id)}
+              disabled={pluginStates[plugin.id] === undefined}
+              className="rounded border border-border-subtle px-2 py-1 text-[11px] text-text-secondary hover:bg-background-hover disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {t('plugins.reset')}
+            </button>
+            {!plugin.builtin && (
+              <>
                 <button
                   type="button"
-                  onClick={() => resetPluginState(plugin.id)}
-                  disabled={pluginStates[plugin.id] === undefined}
-                  className="self-start rounded-md border border-border-subtle px-3 py-1.5 text-xs text-text-secondary hover:bg-background-hover disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
+                  onClick={() => onCheckUpdate(plugin.id, plugin.installPath)}
+                  disabled={updateLoadingId === plugin.id || !plugin.installPath}
+                  className="inline-flex items-center gap-1 rounded border border-border-subtle px-2 py-1 text-[11px] text-text-secondary hover:bg-background-hover disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {t('plugins.reset')}
+                  <RefreshCw size={10} className={updateLoadingId === plugin.id ? 'animate-spin' : ''} />
+                  {updateLoadingId === plugin.id
+                    ? t('plugins.checkingUpdate', { defaultValue: 'Checking...' })
+                    : t('plugins.checkUpdate', { defaultValue: 'Update' })}
                 </button>
-                {!plugin.builtin && (
-                  <button
-                    type="button"
-                    onClick={() => handleCheckPluginUpdate(plugin.id, plugin.installPath)}
-                    disabled={pluginUpdateLoadingId === plugin.id || !plugin.installPath}
-                    className="inline-flex items-center gap-1.5 self-start rounded-md border border-border-subtle px-3 py-1.5 text-xs text-text-secondary hover:bg-background-hover disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
-                  >
-                    <RefreshCw size={13} />
-                    {pluginUpdateLoadingId === plugin.id
-                      ? t('plugins.checkingUpdate', { defaultValue: 'Checking...' })
-                      : t('plugins.checkUpdate', { defaultValue: 'Check update' })}
-                  </button>
-                )}
-                {!plugin.builtin && (
-                  <button
-                    type="button"
-                    onClick={() => handleUninstallLocalPlugin(plugin.id, plugin.installPath)}
-                    disabled={pluginOperationLoading || !plugin.installPath}
-                    className="inline-flex items-center gap-1.5 self-start rounded-md border border-danger/30 px-3 py-1.5 text-xs text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
-                  >
-                    <Trash2 size={13} />
-                    {t('plugins.uninstall', { defaultValue: 'Uninstall' })}
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => onUninstall(plugin.id, plugin.installPath)}
+                  disabled={operationLoading || !plugin.installPath}
+                  className="inline-flex items-center gap-1 rounded border border-danger/30 px-2 py-1 text-[11px] text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Trash2 size={10} />
+                  {t('plugins.uninstall', { defaultValue: 'Uninstall' })}
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* 更新信息条 */}
+          {updateCheck && (
+            <div className="flex items-center justify-between gap-2 rounded border border-border-subtle bg-background-elevated px-2.5 py-1.5 text-[11px] text-text-tertiary">
+              <div className="min-w-0 truncate">
+                {updateCheck.checked
+                  ? updateCheck.updateAvailable
+                    ? t('plugins.updateAvailable', {
+                      defaultValue: 'Update: {{current}} → {{latest}}',
+                      current: updateCheck.currentVersion,
+                      latest: updateCheck.latestVersion ?? '?',
+                    })
+                    : t('plugins.noUpdateAvailable', {
+                      defaultValue: 'Up to date ({{version}})',
+                      version: updateCheck.currentVersion,
+                    })
+                  : updateCheck.error ?? t('plugins.updateUnavailable', { defaultValue: 'Update check failed' })}
               </div>
-              {updateCheck && (
-                <div className="mt-3 flex flex-col gap-2 rounded-md border border-border-subtle bg-background-elevated px-3 py-2 text-xs text-text-tertiary sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0">
-                    <div>
-                      {updateCheck.checked
-                        ? updateCheck.updateAvailable
-                          ? t('plugins.updateAvailable', {
-                            defaultValue: 'Update available: {{current}} -> {{latest}}',
-                            current: updateCheck.currentVersion,
-                            latest: updateCheck.latestVersion ?? '?',
-                          })
-                          : t('plugins.noUpdateAvailable', {
-                            defaultValue: 'No update found. Current version: {{version}}',
-                            version: updateCheck.currentVersion,
-                          })
-                        : updateCheck.error ?? t('plugins.updateUnavailable', { defaultValue: 'Update check unavailable' })}
-                    </div>
-                    {updateCheck.downloadUrl && (
-                      <div className="mt-1 truncate text-[11px] text-text-tertiary">
-                        {t('plugins.updateDownloadUrl', { defaultValue: 'Package: {{url}}', url: updateCheck.downloadUrl })}
-                      </div>
-                    )}
-                  </div>
-                  {updateCheck.updateAvailable && (
-                    <button
-                      type="button"
-                      onClick={() => handleApplyPluginUpdate(plugin.id, plugin.installPath)}
-                      disabled={pluginUpdateApplyLoadingId === plugin.id || !plugin.installPath || !updateCheck.downloadUrl}
-                      className="inline-flex items-center gap-1.5 self-start rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs text-primary hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
-                    >
-                      <RefreshCw size={13} />
-                      {pluginUpdateApplyLoadingId === plugin.id
-                        ? t('plugins.applyingUpdate', { defaultValue: 'Updating...' })
-                        : t('plugins.applyUpdate', { defaultValue: 'Apply update' })}
-                    </button>
-                  )}
-                </div>
+              {updateCheck.updateAvailable && (
+                <button
+                  type="button"
+                  onClick={() => onApplyUpdate(plugin.id, plugin.installPath)}
+                  disabled={updateApplyLoadingId === plugin.id || !plugin.installPath || !updateCheck.downloadUrl}
+                  className="shrink-0 inline-flex items-center gap-1 rounded border border-primary/40 bg-primary/10 px-2 py-1 text-[11px] text-primary hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <RefreshCw size={10} className={updateApplyLoadingId === plugin.id ? 'animate-spin' : ''} />
+                  {updateApplyLoadingId === plugin.id
+                    ? t('plugins.applyingUpdate', { defaultValue: 'Updating...' })
+                    : t('plugins.applyUpdate', { defaultValue: 'Apply' })}
+                </button>
               )}
-            </section>
-          )
-        })}
-      </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

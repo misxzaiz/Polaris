@@ -199,6 +199,7 @@ function App() {
           onToggleRightPanel={toggleRightPanel}
           rightPanelCollapsed={rightPanelCollapsed}
           isCompactMode={isCompact}
+          onOpenSettings={() => setShowSettings(true)}
         />
 
         <div className="flex flex-1 overflow-hidden relative">

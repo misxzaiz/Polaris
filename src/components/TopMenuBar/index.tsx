@@ -12,7 +12,7 @@
 
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Minus, Square, X, PanelRight, Pin, PanelLeftClose, PanelLeft } from 'lucide-react';
+import { Minus, Square, X, PanelRight, Pin, PanelLeftClose, PanelLeft, Settings } from 'lucide-react';
 import { invoke } from '@/services/transport';
 import { useViewStore } from '@/stores';
 import * as tauri from '@/services/tauri';
@@ -27,9 +27,10 @@ interface TopMenuBarProps {
   onToggleRightPanel?: () => void;
   rightPanelCollapsed?: boolean;
   isCompactMode?: boolean;
+  onOpenSettings?: () => void;
 }
 
-export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactMode }: TopMenuBarProps) {
+export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactMode, onOpenSettings }: TopMenuBarProps) {
   const { t } = useTranslation('common');
   const { activityBarCollapsed, toggleActivityBar } = useViewStore();
   const [isMaximized, setIsMaximized] = useState(false);
@@ -118,6 +119,18 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
             {/* 消息中心入口 */}
             <NotificationBell />
 
+            {/* 设置入口 */}
+            {onOpenSettings && (
+              <button
+                onClick={onOpenSettings}
+                className="p-1.5 rounded-md transition-colors text-text-tertiary hover:text-text-primary hover:bg-background-hover"
+                title={t('settings.title')}
+                data-tauri-drag-region={false}
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+            )}
+
             {isTauri() && (
               <>
                 {/* 窗口置顶按钮 */}
@@ -201,6 +214,18 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
 
             {/* 消息中心入口 */}
             <NotificationBell />
+
+            {/* 设置入口 */}
+            {onOpenSettings && (
+              <button
+                onClick={onOpenSettings}
+                className="p-1.5 rounded-md transition-colors text-text-tertiary hover:text-text-primary hover:bg-background-hover"
+                title={t('settings.title')}
+                data-tauri-drag-region={false}
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+            )}
 
             {isTauri() && (
               <>
