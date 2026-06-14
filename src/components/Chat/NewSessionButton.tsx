@@ -2,7 +2,7 @@ import { memo, useCallback, useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { Plus, Folder, Check, Bot, Cpu, Search, Zap, Sparkles } from 'lucide-react';
-import { useViewStore, useWorkspaceStore, useConfigStore } from '@/stores';
+import { useWorkspaceStore, useConfigStore } from '@/stores';
 import {
   useSessionMetadataList,
   useSessionManagerActions,
@@ -16,8 +16,8 @@ import { getEngineFullName, normalizeEngineId } from '@/utils/engineDisplay';
  */
 export const NewSessionButton = memo(function NewSessionButton() {
   const { t } = useTranslation('chat');
-  const multiSessionMode = useViewStore(state => state.multiSessionMode);
-  const multiSessionIds = useViewStore(state => state.multiSessionIds);
+  // const multiSessionMode = useViewStore(state => state.multiSessionMode);
+  // const multiSessionIds = useViewStore(state => state.multiSessionIds);
   const { createSession, switchSession } = useSessionManagerActions();
   const { config } = useConfigStore();
   const defaultEngineId = normalizeEngineId(config?.defaultEngine);
@@ -49,7 +49,7 @@ export const NewSessionButton = memo(function NewSessionButton() {
   const filteredWorkspaces = useWorkspaceFilter(sortedWorkspaces, showSearch ? searchQuery : '');
 
   // 最多 16 个会话（与 viewStore 上限一致）
-  const canAdd = multiSessionIds.length < 16;
+  // const canAdd = multiSessionIds.length < 16;
 
   const engineOptions = useMemo(() => [
     { id: 'claude-code' as EngineId, label: 'Claude', Icon: Bot },
@@ -99,9 +99,9 @@ export const NewSessionButton = memo(function NewSessionButton() {
   }, [createSession, allSessionMetadata.length, selectedEngineId, switchSession, t]);
 
   // 非多会话模式或已达上限，不显示
-  if (!multiSessionMode || !canAdd) {
-    return null;
-  }
+  // if (!multiSessionMode || !canAdd) {
+  //   return null;
+  // }
 
   return (
     <div className="relative">
