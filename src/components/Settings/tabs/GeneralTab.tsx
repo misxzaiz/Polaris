@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Config } from '@/types';
 import { getDataRootInfo, formatBytes } from '@/services/tauri/dataRootService';
-import { migrateDataRoot } from '@/services/tauri/dataRootService';
+import { migrateDataRoot, type DataRootInfo } from '@/services/tauri/dataRootService';
 import { useToastStore } from '@/stores';
 import { currentMode } from '@/services/transport';
 import { createLogger } from '@/utils/logger';
@@ -30,7 +30,7 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
   const currentTheme = config.theme ?? 'dark';
 
   // ─── Data Root state ───────────────────────────────────────────────────
-  const [dataRootInfo, setDataRootInfo] = useState<ReturnType<typeof getDataRootInfo> | null>(null);
+  const [dataRootInfo, setDataRootInfo] = useState<DataRootInfo | null>(null);
   const [pendingNewRoot, setPendingNewRoot] = useState<string | null>(null);
   const [migrateMode, setMigrateMode] = useState<MigrateMode>('move');
   const [migrating, setMigrating] = useState(false);
@@ -39,7 +39,9 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
     if (currentMode !== 'tauri') return;
     getDataRootInfo()
       .then(info => setDataRootInfo(info))
-      .catch(e => log.error('Failed to get data root info:', e));
+      .catch((err: unknown) => {
+        log.error('Failed to get data root info:', err);
+      });
   }, []);
 
   const copyPath = async (path?: string) => {

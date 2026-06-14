@@ -53,6 +53,7 @@
     "copy": "Copy",
     "openInExplorer": "Open in file explorer",
     "changeRoot": "Change storage path",
+    "changeRootHint": "All existing data will be migrated to the new directory. Select a target and click Start migration.",
     "notSelected": "No new path selected",
     "browse": "Browse",
     "modeMove": "Move (old directory renamed as backup after migration)",

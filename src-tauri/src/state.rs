@@ -140,7 +140,8 @@ pub struct AppState {
     pub app_config_dir: OnceLock<std::path::PathBuf>,
     /// 应用数据根目录抽象 — 所有落盘服务/命令的统一路径来源。
     /// 由启动流程一次性解析（基于 `Config.data_root` 或系统默认）。
-    pub data_root: Arc<DataRoot>,
+    /// 使用 Mutex 支持迁移后热切换。
+    pub data_root: Mutex<Arc<DataRoot>>,
     /// Application resource directory — set once during setup from window.path().
     pub resource_dir: OnceLock<Option<std::path::PathBuf>>,
     /// Application start instant — used by health check to report uptime.
@@ -162,8 +163,8 @@ pub fn create_app_state(
         let cfg = config_store.get();
         cfg.data_root.clone()
     };
-    let data_root = DataRoot::resolve(custom_root).shared();
-    let config_dir = data_root.config_dir();
+    let data_root = Mutex::new(DataRoot::resolve(custom_root).shared());
+    let config_dir = { let r = data_root.lock().unwrap(); r.config_dir() };
 
     AppState {
         config_store: Arc::new(Mutex::new(config_store)),
@@ -209,9 +210,9 @@ impl AppState {
     /// Non-shared fields (integration_manager, terminal_manager, etc.) get fresh
     /// empty instances — the web server never accesses them.
     pub fn clone_for_web(&self) -> AppState {
-        // DataRoot 是 Arc，直接共享
-        let data_root = self.data_root.clone();
-        let config_dir = data_root.config_dir();
+        // DataRoot 在 Mutex 中，克隆 Arc 值并共享给 Web 模式
+        let data_root = Mutex::new(self.data_root.lock().unwrap().clone());
+        let config_dir = { let r = data_root.lock().unwrap(); r.config_dir() };
 
         // Carry over app_handle if already set
         #[cfg(feature = "tauri-app")]

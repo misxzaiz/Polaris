@@ -53,6 +53,7 @@
     "copy": "复制",
     "openInExplorer": "在文件管理器中打开",
     "changeRoot": "更改存储路径",
+    "changeRootHint": "更改后会迁移所有已有数据到新目录，请选择目标目录并点击开始迁移",
     "notSelected": "未选择新路径",
     "browse": "浏览",
     "modeMove": "移动（迁移后旧目录改名备份）",

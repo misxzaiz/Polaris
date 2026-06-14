@@ -85,7 +85,7 @@ fn create_test_state() -> Arc<AppState> {
             let _ = lock.set(std::path::PathBuf::from("/tmp"));
             lock
         },
-        data_root: DataRoot::resolve(None).shared(),
+        data_root: Mutex::new(DataRoot::resolve(None).shared()),
         resource_dir: OnceLock::new(),
         start_time: Some(std::time::Instant::now()),
         web_server_handle: Arc::new(AsyncMutex::new(None)),

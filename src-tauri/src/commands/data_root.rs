@@ -14,6 +14,7 @@ use crate::services::data_root::{DataRoot, LEGACY_APP_NAME};
 use crate::state::AppState;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// 当前数据根目录信息
 #[derive(Debug, Clone, Serialize)]
@@ -109,7 +110,7 @@ pub fn detect_legacy_data_internal() -> Option<LegacyDataInfo> {
 
 /// 公共逻辑：给定 AppState 返回 DataRootInfo
 pub fn build_info(state: &AppState) -> DataRootInfo {
-    let dr = state.data_root.clone();
+    let dr = state.data_root.lock().unwrap().clone();
     let (cfg_bytes, cfg_files) = dir_size_and_files(dr.config_root());
     let (data_bytes, data_files) = if dr.config_root() == dr.data_root() {
         (0, 0)
@@ -139,21 +140,20 @@ pub fn build_info(state: &AppState) -> DataRootInfo {
     }
 }
 
-/// 公共逻辑：执行迁移并写回 Config.data_root
+/// 执行数据迁移（仅搬运文件，不修改 state 或 config）
+pub fn do_migration(src: &Path, dst: &Path, mode: MigrateMode) -> Result<MigrateReport> {
+    data_migrator::migrate(src, dst, mode)
+}
+
+/// 公共逻辑：执行迁移并写回 Config.data_root 和 AppState.data_root
 pub fn perform_migration(
     state: &AppState,
     req: MigrateRequest,
 ) -> Result<MigrateReport> {
-    let current = state.data_root.clone();
+    let current = state.data_root.lock().unwrap().clone();
+    let new_root = req.new_root.clone();
 
-    // 自定义根：双根合一，源 = config_root（即 data_root）
-    // 默认双根：源使用 config_root；data_root 留待用户在新根下重建（logs/sessions）
-    // 注意：这里只迁移 config_root，避免把 logs 锁文件等带过去出错。
-    // logs/sessions 在切换根后由各服务在新根下自动重建。
-    let src = current.config_root().to_path_buf();
-    let dst = req.new_root.clone();
-
-    let report = data_migrator::migrate(&src, &dst, req.mode)?;
+    let report = do_migration(&current.config_root(), &new_root, req.mode)?;
 
     // 写回 Config.data_root（让下次启动用新根）
     {
@@ -161,8 +161,14 @@ pub fn perform_migration(
             AppError::ConfigError(format!("锁 ConfigStore 失败: {}", e))
         })?;
         let mut cfg = store.get().clone();
-        cfg.data_root = Some(dst);
+        cfg.data_root = Some(new_root.clone());
         store.update(cfg)?;
+    }
+
+    // 热更新 AppState.data_root，避免迁移后立刻 get_data_root_info 读到旧路径
+    {
+        let mut dr = state.data_root.lock().unwrap();
+        *dr = Arc::new(DataRoot::resolve(Some(new_root)));
     }
 
     Ok(report)

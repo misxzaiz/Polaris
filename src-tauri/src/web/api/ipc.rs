@@ -1488,7 +1488,7 @@ async fn dispatch_scheduler_start(state: &AppState) -> Result<Json<Value>, WebEr
 
     match crate::utils::acquire_and_hold_lock() {
         Ok(true) => {
-            let config_dir = state.data_root.config_dir();
+            let config_dir = state.data_root.lock().unwrap().config_dir();
 
             let event_tx = state.event_broadcast.clone();
             let mut daemon = crate::services::scheduler_daemon::SchedulerDaemon::new(config_dir, None);
@@ -1554,7 +1554,7 @@ async fn dispatch_scheduler_run_task(state: &AppState, args: &Value) -> Result<J
     let workspace_path = args.get("workspacePath").and_then(|v| v.as_str()).map(String::from);
     let workspace_path_buf = workspace_path.filter(|p| !p.trim().is_empty()).map(std::path::PathBuf::from);
 
-    let config_dir = state.data_root.config_dir();
+    let config_dir = state.data_root.lock().unwrap().config_dir();
 
     let repository = crate::services::unified_scheduler_repository::UnifiedSchedulerRepository::new(config_dir, workspace_path_buf);
     let task = repository.update_task_status(&id, crate::models::scheduler::TaskStatus::Running)
@@ -1569,7 +1569,7 @@ async fn dispatch_scheduler_update_run_status(state: &AppState, args: &Value) ->
     let workspace_path = args.get("workspacePath").and_then(|v| v.as_str()).map(String::from);
     let workspace_path_buf = workspace_path.filter(|p| !p.trim().is_empty()).map(std::path::PathBuf::from);
 
-    let config_dir = state.data_root.config_dir();
+    let config_dir = state.data_root.lock().unwrap().config_dir();
 
     let repository = crate::services::unified_scheduler_repository::UnifiedSchedulerRepository::new(config_dir, workspace_path_buf);
     let task_status = match status.as_str() {

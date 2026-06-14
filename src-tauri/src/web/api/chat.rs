@@ -18,7 +18,7 @@ use super::WebError;
 ///
 /// 优先取 `data_root.config_dir()`，与启动期解析保持一致。
 pub fn resolve_app_paths(state: &AppState) -> AppPaths {
-    let config_dir = state.data_root.config_dir();
+    let config_dir = state.data_root.lock().unwrap().config_dir();
     let resource_dir = state.resource_dir.get().and_then(|p| p.clone());
     AppPaths { config_dir, resource_dir }
 }

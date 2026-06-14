@@ -958,7 +958,7 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
 
     // 预先准备调度器守护进程所需数据（app_state 即将被 Arc 包装而 move）
     let event_tx = app_state.event_broadcast.clone();
-    let scheduler_config_dir = app_state.data_root.config_dir();
+    let scheduler_config_dir = app_state.data_root.lock().unwrap().config_dir();
 
     // 启动 Web 服务器（优先级: CLI > 环境变量 > 配置文件）
     let port = cli_port

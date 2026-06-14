@@ -44,7 +44,7 @@ pub async fn plugin_discover(
     state: State<'_, AppState>,
     workspace_path: Option<String>,
 ) -> Result<PluginDiscoveryResult> {
-    let config_dir = state.data_root.config_dir();
+    let config_dir = state.data_root.lock().unwrap().config_dir();
     let workspace_path = workspace_path.as_deref().map(std::path::Path::new);
 
     Ok(PluginService::discover_installed_plugins(
@@ -55,7 +55,7 @@ pub async fn plugin_discover(
 
 #[cfg(feature = "tauri-app")]
 fn get_plugin_config_dir(state: &State<'_, AppState>) -> Result<std::path::PathBuf> {
-    Ok(state.data_root.config_dir())
+    Ok(state.data_root.lock().unwrap().config_dir())
 }
 
 fn parse_local_plugin_scope(scope: &str) -> PluginManifestSourceKind {
