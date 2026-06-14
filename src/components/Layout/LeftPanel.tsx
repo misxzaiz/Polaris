@@ -9,6 +9,8 @@ import { ReactNode, useEffect, useRef } from 'react'
 import { X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useViewStore, LeftPanelType } from '@/stores/viewStore'
+import { pluginPanelRegistry } from '@/plugin-system/panelRegistry'
+import { PluginPanelHost } from '../Plugins/PluginPanelHost'
 import { ResizeHandle } from '../Common'
 
 interface LeftPanelProps {
@@ -182,6 +184,8 @@ export function LeftPanelContent({
     return <>{demoPluginContent}</>
   } else if (type === 'aiConsole') {
     return <>{aiConsoleContent}</>
+  } else if (pluginPanelRegistry.has(type)) {
+    return <PluginPanelHost panelType={type} />
   }
 
   return null

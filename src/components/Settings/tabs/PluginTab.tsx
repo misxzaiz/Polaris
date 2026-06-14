@@ -8,6 +8,7 @@ import {
   RefreshCw,
   Trash2,
   AlertTriangle,
+  BookOpen,
 } from 'lucide-react'
 import { listPluginMcpServerStatuses, pluginIconMap, pluginRegistry } from '@/plugin-system'
 import {
@@ -52,6 +53,7 @@ export function PluginTab() {
   const [pluginRemoteSourceUrl, setPluginRemoteSourceUrl] = useState('')
   const [plugins, setPlugins] = useState(() => pluginRegistry.listPlugins())
   const [expandedPlugins, setExpandedPlugins] = useState<Set<string>>(new Set())
+  const [showGuide, setShowGuide] = useState(false)
   const currentWorkspacePath = useWorkspaceStore((state) => state.getCurrentWorkspace()?.path)
   const pluginStates = usePluginStore((state) => state.pluginStates)
   const setPluginEnabled = usePluginStore((state) => state.setPluginEnabled)
@@ -426,6 +428,107 @@ export function PluginTab() {
           </div>
         </div>
       )}
+
+      {/* === 插件开发指南 === */}
+      <div className="rounded-lg border border-border-subtle bg-background-surface">
+        <button
+          type="button"
+          onClick={() => setShowGuide(!showGuide)}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left"
+        >
+          <BookOpen size={14} className="shrink-0 text-text-muted" />
+          <span className="flex-1 text-xs font-medium text-text-secondary">
+            {t('plugins.guideTitle', { defaultValue: 'Plugin Development Guide' })}
+          </span>
+          {showGuide ? <ChevronDown size={14} className="text-text-muted" /> : <ChevronRight size={14} className="text-text-muted" />}
+        </button>
+        {showGuide && (
+          <div className="border-t border-border-subtle px-3 py-3 text-xs text-text-tertiary space-y-3">
+            <div>
+              <div className="font-medium text-text-secondary mb-1">1. 创建目录结构</div>
+              <pre className="rounded bg-background-elevated p-2 text-[11px] font-mono overflow-x-auto">{`my-plugin/
+├── plugin.json          # 插件清单
+├── dist/
+│   └── panel.js         # 面板 bundle（可选）
+└── mcp/
+    └── server.js        # MCP Server`}</pre>
+            </div>
+            <div>
+              <div className="font-medium text-text-secondary mb-1">2. plugin.json 示例</div>
+              <pre className="rounded bg-background-elevated p-2 text-[11px] font-mono overflow-x-auto">{`{
+  "id": "my-tool",
+  "name": "My Tool",
+  "version": "1.0.0",
+  "enabledByDefault": true,
+  "contributes": {
+    "mcpServers": [{
+      "id": "my-server",
+      "transport": "stdio",
+      "command": "node",
+      "argsTemplate": ["{{pluginDir}}/mcp/server.js"]
+    }]
+  },
+  "permissions": { "aiToolAccess": true }
+}`}</pre>
+            </div>
+            <div>
+              <div className="font-medium text-text-secondary mb-1">3. MCP Server 最小模板</div>
+              <pre className="rounded bg-background-elevated p-2 text-[11px] font-mono overflow-x-auto">{`#!/usr/bin/env node
+function send(m) { process.stdout.write(JSON.stringify(m)+'\\n') }
+let buf = ''
+process.stdin.setEncoding('utf8')
+process.stdin.on('data', c => {
+  buf += c
+  while (true) {
+    const i = buf.indexOf('\\n')
+    if (i === -1) break
+    const msg = JSON.parse(buf.slice(0,i).trim())
+    buf = buf.slice(i+1)
+    if (msg.method === 'initialize')
+      send({jsonrpc:'2.0',id:msg.id,result:{
+        protocolVersion:'2024-11-05',
+        capabilities:{tools:{}},
+        serverInfo:{name:'my-tool',version:'1.0.0'}
+      }})
+    else if (msg.method === 'tools/list')
+      send({jsonrpc:'2.0',id:msg.id,result:{tools:[{
+        name:'my_tool',description:'工具描述',
+        inputSchema:{type:'object',properties:{
+          text:{type:'string'}
+        },required:['text']}
+      }]}})
+    else if (msg.method === 'tools/call')
+      send({jsonrpc:'2.0',id:msg.id,result:{
+        content:[{type:'text',text:'结果: '+msg.params.arguments.text}]
+      }})
+  }
+})`}</pre>
+            </div>
+            <div>
+              <div className="font-medium text-text-secondary mb-1">4. 模板占位符</div>
+              <div className="space-y-0.5">
+                <div><code className="text-primary">{'{{pluginDir}}'}</code> — 插件安装目录</div>
+                <div><code className="text-primary">{'{{workspacePath}}'}</code> — 当前工作区路径</div>
+                <div><code className="text-primary">{'{{appConfigDir}}'}</code> — 应用配置目录</div>
+              </div>
+            </div>
+            <div>
+              <div className="font-medium text-text-secondary mb-1">5. 可视化面板（可选）</div>
+              <div className="space-y-0.5">
+                <div>面板组件：<code className="text-primary">export default function MyPanel({'{'} pluginId, onSendToChat {'}'})</code></div>
+                <div>打包命令：<code className="text-primary">npx esbuild src/Panel.tsx --bundle --format=esm --outfile=dist/panel.js --jsx=automatic --nodePaths=/path/to/polaris/node_modules</code></div>
+                <div>manifest 声明：<code className="text-primary">{'"panel": { "entry": "./dist/panel.js" }'}</code></div>
+                <div>views 声明：<code className="text-primary">{'"panelType": "myPanelType"'}</code>（全局唯一）</div>
+              </div>
+            </div>
+            <div className="pt-1 border-t border-border-subtle">
+              <div className="text-text-muted">
+                详细文档：<code className="text-primary">docs/plugins/plugin-development-guide.md</code>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* === 插件列表 === */}
       <div className="space-y-1">

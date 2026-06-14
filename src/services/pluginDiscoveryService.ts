@@ -5,6 +5,7 @@ import type {
   PluginOriginMetadata,
   PluginManifestSource,
   PluginMcpServerContribution,
+  PluginPanelContribution,
   PluginPermissionDeclaration,
   PluginViewContribution,
   PolarisPluginManifest,
@@ -71,19 +72,7 @@ const VALID_PLUGIN_ICONS = new Set<PluginIconId>([
   'BookOpen',
   'AlertCircle',
 ])
-const VALID_PANEL_TYPES = new Set<PluginLeftPanelType>([
-  'files',
-  'git',
-  'translate',
-  'scheduler',
-  'requirement',
-  'terminal',
-  'developer',
-  'integration',
-  'todo',
-  'problems',
-  'demoPlugin',
-])
+
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -128,7 +117,6 @@ function normalizeViews(
       !icon ||
       !labelKey ||
       !VALID_VIEW_AREAS.has(area) ||
-      !VALID_PANEL_TYPES.has(panelType as PluginLeftPanelType) ||
       !VALID_PLUGIN_ICONS.has(icon as PluginIconId)
     ) {
       errors.push(`contributes.views[${index}] is invalid and was ignored`)
@@ -199,6 +187,13 @@ function normalizeOrigin(value: unknown): PluginOriginMetadata | undefined {
   return origin.repository || origin.homepage || origin.updateUrl || origin.downloadUrl ? origin : undefined
 }
 
+function normalizePanel(value: unknown): PluginPanelContribution | undefined {
+  if (!isRecord(value)) return undefined
+  const entry = asString(value.entry)
+  if (!entry) return undefined
+  return { entry }
+}
+
 export function normalizeDiscoveredPlugin(raw: unknown): PolarisPluginManifest | null {
   return validateDiscoveredPlugin(raw).plugin
 }
@@ -239,6 +234,7 @@ export function validateDiscoveredPlugin(raw: unknown): {
       contributes: {
         views: normalizeViews(contributes.views, errors),
         mcpServers: normalizeMcpServers(contributes.mcpServers, errors),
+        panel: normalizePanel(contributes.panel),
       },
       permissions: normalizePermissions(raw.permissions),
       origin: normalizeOrigin(raw.origin),

@@ -1,7 +1,12 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import * as ReactJSXRuntime from "react/jsx-runtime";
 import App from "./App";
 import "./i18n";
+
+// 暴露宿主 React 给外部插件面板使用
+;(window as any).__POLARIS_HOST_REACT__ = React;
+;(window as any).__POLARIS_HOST_REACT_JSX__ = ReactJSXRuntime;
 
 // 主题预设：在 React render 之前同步读取 localStorage 并写入 data-theme，防止首屏闪烁（FOUC）
 (() => {

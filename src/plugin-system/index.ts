@@ -1,4 +1,5 @@
 export { pluginRegistry } from './registry'
+export { pluginPanelRegistry } from './panelRegistry'
 export { pluginIconMap } from './icons'
 export {
   listEnabledPluginMcpServers,
@@ -10,6 +11,9 @@ export type {
   PluginId,
   PluginLeftPanelType,
   PluginMcpServerContribution,
+  PluginPanelComponent,
+  PluginPanelContribution,
+  PluginPanelLoader,
   PluginPermissionDeclaration,
   PluginViewArea,
   PluginViewContribution,

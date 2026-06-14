@@ -21,19 +21,6 @@ use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 use crate::utils::CREATE_NO_WINDOW;
 
-const VALID_PANEL_TYPES: &[&str] = &[
-    "files",
-    "git",
-    "translate",
-    "scheduler",
-    "requirement",
-    "terminal",
-    "developer",
-    "integration",
-    "todo",
-    "problems",
-    "demoPlugin",
-];
 const VALID_PLUGIN_ICONS: &[&str] = &[
     "Files",
     "GitPullRequest",
@@ -1154,8 +1141,8 @@ impl PluginService {
             if view.area != "activityBar" {
                 Self::push_validation_error(&mut result, &path_text, format!("{}.area has unsupported value: {}", prefix, view.area));
             }
-            if !VALID_PANEL_TYPES.contains(&view.panel_type.as_str()) {
-                Self::push_validation_error(&mut result, &path_text, format!("{}.panelType has unsupported value: {}", prefix, view.panel_type));
+            if view.panel_type.trim().is_empty() {
+                Self::push_validation_error(&mut result, &path_text, format!("{}.panelType is required", prefix));
             }
             if !VALID_PLUGIN_ICONS.contains(&view.icon.as_str()) {
                 Self::push_validation_error(&mut result, &path_text, format!("{}.icon has unsupported value: {}", prefix, view.icon));

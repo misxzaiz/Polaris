@@ -122,6 +122,15 @@ pub struct PluginManifestContributes {
     pub views: Vec<PluginViewContribution>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mcp_servers: Vec<PluginMcpServerManifestContribution>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub panel: Option<PluginPanelContribution>,
+}
+
+/// 插件面板贡献
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginPanelContribution {
+    pub entry: String,
 }
 
 /// 插件 UI contribution

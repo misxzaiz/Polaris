@@ -1,4 +1,4 @@
-import type { LeftPanelType } from '@/stores/viewStore'
+import type { ComponentType } from 'react'
 
 export type PluginId = string
 
@@ -20,7 +20,7 @@ export type PluginIconId =
   | 'Film'
   | 'Activity'
 
-export type PluginLeftPanelType = Exclude<LeftPanelType, 'none' | 'tools'>
+export type PluginLeftPanelType = string
 
 export interface PluginViewContribution {
   id: string
@@ -40,6 +40,10 @@ export interface PluginMcpServerContribution {
   transport: 'stdio' | 'http'
   command: string
   argsTemplate?: string[]
+}
+
+export interface PluginPanelContribution {
+  entry: string
 }
 
 export interface PluginPermissionDeclaration {
@@ -75,9 +79,17 @@ export interface PolarisPluginManifest {
   contributes: {
     views?: Omit<PluginViewContribution, 'pluginId'>[]
     mcpServers?: Omit<PluginMcpServerContribution, 'pluginId'>[]
+    panel?: PluginPanelContribution
   }
   permissions: PluginPermissionDeclaration
   origin?: PluginOriginMetadata
   source?: PluginManifestSource
   installPath?: string
 }
+
+export type PluginPanelComponent = ComponentType<{
+  pluginId: string
+  onSendToChat?: (message: string) => void | Promise<void>
+}>
+
+export type PluginPanelLoader = () => Promise<{ default: PluginPanelComponent }>
