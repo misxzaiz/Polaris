@@ -12,6 +12,7 @@ use crate::commands::context::ContextMemoryStore;
 use crate::commands::terminal::TerminalManager;
 use crate::integrations::IntegrationManager;
 use crate::services::config_store::ConfigStore;
+use crate::services::data_root::DataRoot;
 use crate::services::file_watcher::FileWatcherManager;
 use crate::services::lsp::LspManager;
 use crate::services::lsp_config_repository::LspConfigRepository;
@@ -133,7 +134,13 @@ pub struct AppState {
     pub app_handle: OnceLock<tauri::AppHandle>,
     /// Application config directory — set once during setup from window.path().
     /// Shared by both Tauri commands and Web API handlers for consistent path resolution.
+    ///
+    /// **Deprecation note**: 新代码应改用 `data_root.config_dir()`，该字段保留是为了
+    /// 不一次性破坏所有调用方；启动时会被同步设置为 `data_root.config_dir()`。
     pub app_config_dir: OnceLock<std::path::PathBuf>,
+    /// 应用数据根目录抽象 — 所有落盘服务/命令的统一路径来源。
+    /// 由启动流程一次性解析（基于 `Config.data_root` 或系统默认）。
+    pub data_root: Arc<DataRoot>,
     /// Application resource directory — set once during setup from window.path().
     pub resource_dir: OnceLock<Option<std::path::PathBuf>>,
     /// Application start instant — used by health check to report uptime.
@@ -150,9 +157,13 @@ pub fn create_app_state(
     engine_registry: Arc<AsyncMutex<EngineRegistry>>,
     integration_manager: IntegrationManager,
 ) -> AppState {
-    let config_dir = dirs::config_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("claude-code-pro");
+    // 解析 DataRoot：优先使用 Config.data_root，否则系统默认（含 LEGACY 命名兼容）
+    let custom_root = {
+        let cfg = config_store.get();
+        cfg.data_root.clone()
+    };
+    let data_root = DataRoot::resolve(custom_root).shared();
+    let config_dir = data_root.config_dir();
 
     AppState {
         config_store: Arc::new(Mutex::new(config_store)),
@@ -170,7 +181,13 @@ pub fn create_app_state(
         event_broadcast: crate::web::EventBroadcaster::new(256),
         #[cfg(feature = "tauri-app")]
         app_handle: OnceLock::new(),
-        app_config_dir: OnceLock::new(),
+        app_config_dir: {
+            // 同步初始化为 data_root.config_dir() 以兼容旧调用方
+            let lock = OnceLock::new();
+            let _ = lock.set(config_dir.clone());
+            lock
+        },
+        data_root,
         resource_dir: OnceLock::new(),
         start_time: Some(std::time::Instant::now()),
         web_server_handle: Arc::new(AsyncMutex::new(None)),
@@ -192,14 +209,9 @@ impl AppState {
     /// Non-shared fields (integration_manager, terminal_manager, etc.) get fresh
     /// empty instances — the web server never accesses them.
     pub fn clone_for_web(&self) -> AppState {
-        // Carry over app_config_dir if set, fallback to heuristic
-        let config_dir = self.app_config_dir.get()
-            .cloned()
-            .unwrap_or_else(|| {
-                dirs::config_dir()
-                    .unwrap_or_else(|| std::path::PathBuf::from("."))
-                    .join("claude-code-pro")
-            });
+        // DataRoot 是 Arc，直接共享
+        let data_root = self.data_root.clone();
+        let config_dir = data_root.config_dir();
 
         // Carry over app_handle if already set
         #[cfg(feature = "tauri-app")]
@@ -238,6 +250,7 @@ impl AppState {
                 let _ = lock.set(config_dir);
                 lock
             },
+            data_root,
             resource_dir,
             start_time: self.start_time,
             web_server_handle: self.web_server_handle.clone(),

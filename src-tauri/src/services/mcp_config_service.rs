@@ -934,6 +934,7 @@ mod tests {
                         "{{appConfigDir}}".to_string(),
                     ],
                 }],
+                panel: None,
             },
             permissions: PluginManifestPermissions::default(),
             origin: PluginOriginMetadata::default(),

@@ -293,6 +293,11 @@ pub async fn handle_ipc_bridge(
         "plugin_state_load" => dispatch_plugin_state_load(&state),
         "plugin_state_save" => dispatch_plugin_state_save(&state, &args),
 
+        // ── Data Root ──────────────────────────────────────────────────────
+        "get_data_root_info" => dispatch_get_data_root_info(&state),
+        "migrate_data_root" => dispatch_migrate_data_root(&state, &args),
+        "detect_legacy_data" => dispatch_detect_legacy_data(),
+
         // ── Unsupported ────────────────────────────────────────────────────
         _ => {
             tracing::debug!("[Web:IPC] Unsupported command: {}", command);
@@ -1483,13 +1488,7 @@ async fn dispatch_scheduler_start(state: &AppState) -> Result<Json<Value>, WebEr
 
     match crate::utils::acquire_and_hold_lock() {
         Ok(true) => {
-            let config_dir = state.app_config_dir.get()
-                .cloned()
-                .unwrap_or_else(|| {
-                    dirs::config_dir()
-                        .unwrap_or_else(|| std::path::PathBuf::from("."))
-                        .join("claude-code-pro")
-                });
+            let config_dir = state.data_root.config_dir();
 
             let event_tx = state.event_broadcast.clone();
             let mut daemon = crate::services::scheduler_daemon::SchedulerDaemon::new(config_dir, None);
@@ -1555,13 +1554,7 @@ async fn dispatch_scheduler_run_task(state: &AppState, args: &Value) -> Result<J
     let workspace_path = args.get("workspacePath").and_then(|v| v.as_str()).map(String::from);
     let workspace_path_buf = workspace_path.filter(|p| !p.trim().is_empty()).map(std::path::PathBuf::from);
 
-    let config_dir = state.app_config_dir.get()
-        .cloned()
-        .unwrap_or_else(|| {
-            dirs::config_dir()
-                .unwrap_or_else(|| std::path::PathBuf::from("."))
-                .join("claude-code-pro")
-        });
+    let config_dir = state.data_root.config_dir();
 
     let repository = crate::services::unified_scheduler_repository::UnifiedSchedulerRepository::new(config_dir, workspace_path_buf);
     let task = repository.update_task_status(&id, crate::models::scheduler::TaskStatus::Running)
@@ -1576,13 +1569,7 @@ async fn dispatch_scheduler_update_run_status(state: &AppState, args: &Value) ->
     let workspace_path = args.get("workspacePath").and_then(|v| v.as_str()).map(String::from);
     let workspace_path_buf = workspace_path.filter(|p| !p.trim().is_empty()).map(std::path::PathBuf::from);
 
-    let config_dir = state.app_config_dir.get()
-        .cloned()
-        .unwrap_or_else(|| {
-            dirs::config_dir()
-                .unwrap_or_else(|| std::path::PathBuf::from("."))
-                .join("claude-code-pro")
-        });
+    let config_dir = state.data_root.config_dir();
 
     let repository = crate::services::unified_scheduler_repository::UnifiedSchedulerRepository::new(config_dir, workspace_path_buf);
     let task_status = match status.as_str() {
@@ -1906,4 +1893,28 @@ fn dispatch_get_local_ips() -> Result<Json<Value>, WebError> {
 
 async fn dispatch_get_web_server_status(state: &AppState) -> Result<Json<Value>, WebError> {
     Ok(Json(serde_json::to_value(crate::current_web_server_status(state).await).unwrap_or_default()))
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Data Root
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn dispatch_get_data_root_info(state: &AppState) -> Result<Json<Value>, WebError> {
+    let info = crate::commands::data_root::build_info(state);
+    Ok(Json(serde_json::to_value(info).unwrap_or_default()))
+}
+
+fn dispatch_migrate_data_root(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+    let req: crate::commands::data_root::MigrateRequest = serde_json::from_value(args.clone())
+        .map_err(|e| WebError::BadRequest(format!("invalid migrate request: {}", e)))?;
+    let report = crate::commands::data_root::perform_migration(state, req)
+        .map_err(|e| WebError::Internal(e.to_string()))?;
+    Ok(Json(serde_json::to_value(report).unwrap_or_default()))
+}
+
+fn dispatch_detect_legacy_data() -> Result<Json<Value>, WebError> {
+    // 直接调用 build_info 时已包含 legacy 探测，这里返回独立的 LegacyDataInfo
+    // 通过构造一个临时 AppState 调用 build_info 不合适，复用底层探测逻辑：
+    let legacy = crate::commands::data_root::detect_legacy_data_internal();
+    Ok(Json(serde_json::to_value(legacy).unwrap_or_default()))
 }

@@ -127,6 +127,8 @@ use commands::prompt_snippet::{
 };
 #[cfg(feature = "tauri-app")]
 use commands::{test_model_profile_connection, fetch_models_for_profile};
+#[cfg(feature = "tauri-app")]
+use commands::data_root::{get_data_root_info, migrate_data_root, detect_legacy_data};
 
 use std::sync::Arc;
 use tokio::sync::Mutex as AsyncMutex;
@@ -524,10 +526,8 @@ pub fn run() {
             let state = app.state::<AppState>();
             let _ = state.app_handle.set(app.handle().clone());
 
-            // Store application paths for consistent path resolution across Tauri & Web API
-            if let Ok(config_dir) = app.path().app_config_dir() {
-                let _ = state.app_config_dir.set(config_dir);
-            }
+            // 注：app_config_dir / data_root 已在 create_app_state 中初始化完成，
+            // 此处不再覆盖。Tauri 的 app.path().app_config_dir() 仅作为兜底参考。
             let _ = state.resource_dir.set(app.path().resource_dir().ok());
 
             // Conditionally start the web server based on WebConfig.enabled
@@ -598,6 +598,10 @@ pub fn run() {
             snippet_create,
             snippet_update,
             snippet_delete,
+            // 数据根目录管理
+            get_data_root_info,
+            migrate_data_root,
+            detect_legacy_data,
             // 聊天相关（统一接口）
             start_chat,
             continue_chat,
@@ -928,11 +932,8 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
         integration_manager,
     );
 
-    // 设置 config_dir（替代 Tauri path resolver）
-    let config_dir = dirs::config_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("claude-code-pro");
-    let _ = app_state.app_config_dir.set(config_dir.clone());
+    // 注：app_config_dir / data_root 已在 create_app_state 中初始化完成，
+    // 不再就地解析 dirs::config_dir() —— 路径来源单一收敛到 DataRoot。
 
     // 设置 resource_dir 为可执行文件所在目录。
     // Web 独立部署没有 Tauri 的资源解析器，若不设置 resource_dir，内置 MCP 二进制的解析会
@@ -957,7 +958,7 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
 
     // 预先准备调度器守护进程所需数据（app_state 即将被 Arc 包装而 move）
     let event_tx = app_state.event_broadcast.clone();
-    let scheduler_config_dir = config_dir;
+    let scheduler_config_dir = app_state.data_root.config_dir();
 
     // 启动 Web 服务器（优先级: CLI > 环境变量 > 配置文件）
     let port = cli_port

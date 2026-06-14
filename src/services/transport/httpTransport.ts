@@ -58,7 +58,7 @@ const COMMAND_ROUTE_MAP: Record<string, string> = {
  * "list sessions" endpoint and returning session metadata instead of messages — which
  * silently breaks session restore in Web mode.
  */
-const GET_COMMANDS: ReadonlySet<string> = new Set(['get_config', 'list_sessions', 'health_check', 'list_claude_code_sessions']);
+const GET_COMMANDS: ReadonlySet<string> = new Set(['get_config', 'list_sessions', 'health_check', 'list_claude_code_sessions', 'get_data_root_info', 'detect_legacy_data']);
 
 function commandToPath(command: string): string {
   if (command in COMMAND_ROUTE_MAP) {

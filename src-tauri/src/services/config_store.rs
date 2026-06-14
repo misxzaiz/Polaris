@@ -1,5 +1,6 @@
 use crate::error::{AppError, Result};
 use crate::models::config::{Config, EngineId, HealthStatus};
+use crate::services::data_root::DataRoot;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::path::{Path, PathBuf};
@@ -20,9 +21,11 @@ pub struct ConfigStore {
 impl ConfigStore {
     /// 创建新的配置存储
     pub fn new() -> Result<Self> {
-        let config_dir = dirs::config_dir()
-            .ok_or_else(|| AppError::ConfigError("无法获取配置目录".to_string()))?
-            .join("claude-code-pro");
+        // 使用 DataRoot 默认解析（兼容 LEGACY 命名）。
+        // 注：此处无法读取 Config.data_root（鸡生蛋问题），首次加载固定走默认根。
+        // Phase 2 引入"切换路径"功能后，由迁移命令搬运数据，重启后用户感知一致。
+        let data_root = DataRoot::resolve_default();
+        let config_dir = data_root.config_dir();
 
         eprintln!("配置目录: {:?}", config_dir);
 
@@ -30,7 +33,7 @@ impl ConfigStore {
         std::fs::create_dir_all(&config_dir)?;
         eprintln!("配置目录已创建");
 
-        let config_path = config_dir.join("config.json");
+        let config_path = data_root.config_file();
         eprintln!("配置文件路径: {:?}", config_path);
 
         let mut config = Self::load_from_file(&config_path)?;
@@ -257,10 +260,10 @@ impl ConfigStore {
         if let Some(ref dir) = self.config.session_dir {
             Ok(dir.clone())
         } else {
-            let data_dir = dirs::data_local_dir()
-                .ok_or_else(|| AppError::ConfigError("无法获取数据目录".to_string()))?
-                .join("claude-code-pro")
-                .join("sessions");
+            // 用户未自定义 session_dir，回退到 DataRoot 默认 sessions 子目录。
+            // 注：此处不持有 AppState 的 DataRoot 引用，使用 resolve_default
+            // 与启动期保持一致；Phase 2 引入自定义根后此处会跟随 Config.data_root。
+            let data_dir = DataRoot::resolve_default().sessions_dir();
 
             // 确保目录存在
             std::fs::create_dir_all(&data_dir)?;
@@ -641,6 +644,7 @@ impl OldConfig {
             feishu: Default::default(),
             work_dir: self.work_dir,
             session_dir: self.session_dir,
+            data_root: None,
             git_bin_path: self.git_bin_path,
             floating_window: Default::default(),
             baidu_translate: None,

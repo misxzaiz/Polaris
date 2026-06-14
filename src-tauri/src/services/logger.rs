@@ -1,3 +1,4 @@
+use crate::services::data_root::DataRoot;
 use std::path::PathBuf;
 use tracing::Level;
 use tracing_subscriber::{fmt, prelude::*};
@@ -54,13 +55,11 @@ impl Logger {
 
     /// 获取日志目录
     pub fn log_dir() -> PathBuf {
-        if let Some(data_dir) = dirs::data_local_dir() {
-            data_dir.join("claude-code-pro").join("logs")
-        } else {
-            std::env::current_dir()
-                .unwrap()
-                .join("logs")
-        }
+        // 使用 DataRoot 默认解析（兼容 LEGACY 命名）。
+        // log_dir 是静态方法，无法访问 AppState 的动态 DataRoot；
+        // Phase 2 引入自定义根后，Logger 可改为从参数或全局持有 DataRoot。
+        let dr = DataRoot::resolve_default();
+        dr.logs_dir()
     }
 
     /// 获取当前日志文件路径

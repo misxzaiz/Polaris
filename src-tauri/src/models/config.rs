@@ -838,6 +838,15 @@ pub struct Config {
     /// 会话保存路径
     pub session_dir: Option<PathBuf>,
 
+    /// 应用数据根目录（用户自定义）
+    ///
+    /// `None` 表示使用系统默认（`dirs::config_dir()/Polaris` 或兼容老路径）。
+    /// 设置该值后，所有应用自身数据（config / logs / sessions / todo / scheduler /
+    /// requirements / plugins / lsp / integrations）都会落到该目录下。
+    /// 修改路径需要通过迁移命令完成（不会自动搬运现有数据）。
+    #[serde(default)]
+    pub data_root: Option<PathBuf>,
+
     /// Git 二进制路径 (Windows)
     pub git_bin_path: Option<String>,
 
@@ -926,6 +935,7 @@ impl Default for Config {
             mimo_code: MimoCodeConfig::default(),
             work_dir: None,
             session_dir: None,
+            data_root: None,
             git_bin_path: None,
             floating_window: FloatingWindowConfig::default(),
             baidu_translate: None,

@@ -348,9 +348,8 @@ impl IntegrationManager {
         // 确定保存目录
         let media_dir = match work_dir {
             Some(dir) => std::path::PathBuf::from(dir).join(".media"),
-            None => dirs::data_local_dir()
-                .unwrap_or_else(|| std::path::PathBuf::from("."))
-                .join("claude-code-pro")
+            None => crate::services::data_root::DataRoot::resolve_default()
+                .data_root()
                 .join("media"),
         };
 

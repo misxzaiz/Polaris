@@ -2,9 +2,14 @@
  * 高级配置 Tab
  */
 
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Config } from '@/types';
-import { platform } from '@/utils/path';
+import { getDataRootInfo } from '@/services/tauri/dataRootService';
+import { currentMode } from '@/services/transport';
+import { createLogger } from '@/utils/logger';
+
+const log = createLogger('AdvancedTab');
 
 interface AdvancedTabProps {
   config: Config;
@@ -14,6 +19,15 @@ interface AdvancedTabProps {
 
 export function AdvancedTab({ config, onConfigChange, loading }: AdvancedTabProps) {
   const { t } = useTranslation('settings');
+  const [dataRootInfo, setDataRootInfo] = useState<{ configRoot: string; dataRoot: string } | null>(null);
+
+  useEffect(() => {
+    if (currentMode !== 'tauri') return;
+    getDataRootInfo()
+      .then(info => setDataRootInfo(info))
+      .catch(e => log.error('Failed to get data root info:', e));
+  }, []);
+
   const handleGitBinPathChange = (gitBinPath: string) => {
     onConfigChange({
       ...config,
@@ -27,6 +41,14 @@ export function AdvancedTab({ config, onConfigChange, loading }: AdvancedTabProp
       sessionDir: sessionDir || undefined
     });
   };
+
+  // 动态路径展示
+  const configPath = dataRootInfo
+    ? `${dataRootInfo.configRoot}\\config.json`
+    : (currentMode === 'tauri' ? '%APPDATA%\\Polaris\\config.json' : '~/.config/Polaris/config.json');
+  const logPath = dataRootInfo
+    ? `${dataRootInfo.dataRoot}\\logs`
+    : (currentMode === 'tauri' ? '%LOCALAPPDATA%\\Polaris\\logs' : '~/.local/share/Polaris/logs');
 
   return (
     <div className="space-y-6">
@@ -79,8 +101,8 @@ export function AdvancedTab({ config, onConfigChange, loading }: AdvancedTabProp
         <h3 className="text-sm font-medium text-text-primary mb-3">{t('advanced.debugInfo')}</h3>
 
         <div className="text-xs text-text-tertiary space-y-1">
-          <p><span className="text-text-secondary">{t('advanced.configFile')}：</span>{platform === 'windows' ? '%APPDATA%\\claude-code-pro\\config.json' : '~/.config/claude-code-pro/config.json'}</p>
-          <p><span className="text-text-secondary">{t('advanced.logDir')}：</span>{platform === 'windows' ? '%LOCALAPPDATA%\\claude-code-pro\\logs' : '~/.local/share/claude-code-pro/logs'}</p>
+          <p><span className="text-text-secondary">{t('advanced.configFile')}：</span>{configPath}</p>
+          <p><span className="text-text-secondary">{t('advanced.logDir')}：</span>{logPath}</p>
           <p><span className="text-text-secondary">{t('advanced.currentEngine')}：</span>{config.defaultEngine}</p>
         </div>
       </div>

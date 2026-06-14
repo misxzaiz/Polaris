@@ -168,6 +168,8 @@ export interface Config {
   workDir?: string;
   /** 会话保存路径 */
   sessionDir?: string;
+  /** 应用数据根目录（用户自定义，空则使用系统默认） */
+  dataRoot?: string;
   /** Git 二进制路径（自定义 Git 安装位置时使用） */
   gitBinPath?: string;
   /** 百度翻译配置 */
@@ -225,6 +227,55 @@ export interface HealthStatus {
   workDir?: string;
   /** 配置是否有效 */
   configValid: boolean;
+}
+
+/** 数据根目录信息 */
+export interface DataRootInfo {
+  /** 当前配置类数据根 */
+  configRoot: string;
+  /** 当前大数据根 */
+  dataRoot: string;
+  /** 是否为用户自定义 */
+  isCustom: boolean;
+  /** 当前根占用字节 */
+  totalBytes: number;
+  /** 当前根文件数 */
+  totalFiles: number;
+  /** 系统默认配置类根 */
+  defaultConfigRoot: string;
+  /** 系统默认大数据根 */
+  defaultDataRoot: string;
+  /** 是否检测到旧版残留数据 */
+  legacyPresent: boolean;
+  /** 旧版残留路径 */
+  legacyPath?: string;
+}
+
+/** 旧版残留数据信息 */
+export interface LegacyDataInfo {
+  path: string;
+  bytes: number;
+  files: number;
+}
+
+/** 迁移模式 */
+export type MigrateMode = 'move' | 'copy';
+
+/** 迁移请求参数 */
+export interface MigrateRequest {
+  newRoot: string;
+  mode?: MigrateMode;
+}
+
+/** 迁移报告 */
+export interface MigrateReport {
+  oldRoot: string;
+  newRoot: string;
+  mode: MigrateMode;
+  fileCount: number;
+  bytesCopied: number;
+  backupPath?: string;
+  requiresRestart: boolean;
 }
 
 /** 系统提示词模式 */

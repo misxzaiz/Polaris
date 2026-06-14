@@ -3,7 +3,7 @@
 > 多引擎 AI 编程助手的跨平台桌面客户端
 
 ## 简介
-
+ 
 Polaris 是一款基于 Tauri 2.x 构建的跨平台桌面应用，为多种 AI 编程 CLI 工具提供统一的图形化操作界面。支持 **OpenAI Codex CLI**、**Claude Code CLI** 引擎，让你无需命令行也能享受 AI 辅助编程的体验。
 
 ## 技术栈

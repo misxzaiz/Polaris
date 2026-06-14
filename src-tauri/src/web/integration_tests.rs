@@ -12,6 +12,7 @@ use crate::commands::context::ContextMemoryStore;
 use crate::commands::terminal::TerminalManager;
 use crate::integrations::IntegrationManager;
 use crate::models::config::{Config, WebConfig};
+use crate::services::data_root::DataRoot;
 use crate::services::config_store::ConfigStore;
 use crate::services::file_watcher::FileWatcherManager;
 use crate::services::lsp::LspManager;
@@ -79,7 +80,12 @@ fn create_test_state() -> Arc<AppState> {
         event_broadcast: crate::web::EventBroadcaster::new(256),
         #[cfg(feature = "tauri-app")]
         app_handle: OnceLock::new(),
-        app_config_dir: OnceLock::new(),
+        app_config_dir: {
+            let lock = OnceLock::new();
+            let _ = lock.set(std::path::PathBuf::from("/tmp"));
+            lock
+        },
+        data_root: DataRoot::resolve(None).shared(),
         resource_dir: OnceLock::new(),
         start_time: Some(std::time::Instant::now()),
         web_server_handle: Arc::new(AsyncMutex::new(None)),
