@@ -53,6 +53,12 @@ interface ChatInputProps {
   editMode?: EditMode | null
   onCancelEdit?: () => void
   onEditSend?: (messageId: string, newContent: string, workspaceDir?: string) => void
+  /**
+   * 嵌入式状态栏（会话配置选择器/语音区等）。
+   * 渲染在底部工具栏中段（附件按钮和发送按钮之间）。
+   * 不传则只显示附件 + 发送（用于 AIPopover 等极简场景）。
+   */
+  statusBarSlot?: React.ReactNode
 }
 
 export function ChatInput({
@@ -64,6 +70,7 @@ export function ChatInput({
   editMode = null,
   onCancelEdit,
   onEditSend,
+  statusBarSlot,
 }: ChatInputProps) {
   const { t } = useTranslation('chat')
 
@@ -796,15 +803,9 @@ export function ChatInput({
         </div>
       )}
       <div className="p-2 sm:p-3">
-        {/* 附件预览 */}
-        <AttachmentPreview
-          attachments={attachments}
-          onRemove={removeAttachment}
-        />
-
-        {/* 输入框容器 */}
+        {/* 输入框统一容器（纵向布局：附件预览 + textarea + 底部工具栏） */}
         <div
-          className="relative flex items-end gap-1.5 sm:gap-2 bg-background-surface border border-border rounded-lg sm:rounded-xl p-1.5 sm:p-2 focus-within:ring-2 focus-within:ring-border focus-within:border-primary transition-all shadow-soft hover:shadow-medium"
+          className="relative flex flex-col bg-background-surface border border-border rounded-lg sm:rounded-xl focus-within:ring-2 focus-within:ring-border focus-within:border-primary transition-all shadow-soft hover:shadow-medium"
           onDrop={handleDrop}
           onDragOver={handleDragOver}
         >
@@ -818,7 +819,13 @@ export function ChatInput({
             accept={`image/*,${ATTACHMENT_LIMITS.codeExtensions.join(',')}`}
           />
 
-          {/* 文本输入 */}
+          {/* 附件预览（内嵌到容器顶部） */}
+          <AttachmentPreview
+            attachments={attachments}
+            onRemove={removeAttachment}
+          />
+
+          {/* 文本输入（独占整宽，无边框融入外框） */}
           <AutoResizingTextarea
             ref={textareaRef}
             value={value}
@@ -826,43 +833,61 @@ export function ChatInput({
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder={attachments.length > 0 ? t('input.placeholderWithAttachment') : t('input.placeholder')}
-            className="flex-1 px-1.5 sm:px-2 py-1 sm:py-1.5 bg-transparent text-text-primary placeholder:text-text-tertiary resize-none outline-none text-sm leading-relaxed"
+            className="w-full px-2.5 sm:px-3 pt-2 pb-1 bg-transparent text-text-primary placeholder:text-text-tertiary resize-none outline-none text-sm leading-relaxed border-0"
             disabled={disabled}
             maxHeight={200}
             minHeight={40}
           />
 
-          {/* 右侧按钮组 - 垂直布局 */}
-          <div className="flex flex-col gap-1 shrink-0">
-            {/* 附件按钮 */}
-            <button
-              onClick={openFileDialog}
-              disabled={disabled || isStreaming}
-              className="shrink-0 p-2 sm:p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors disabled:opacity-50"
-              title={t('input.addAttachment')}
-            >
-              <IconPaperclip size={18} />
-            </button>
+          {/* 底部工具栏 - 单行 flex justify-between */}
+          <div className="flex items-center gap-1 px-1.5 sm:px-2 pb-1.5 pt-0.5">
+            {/* 左侧：附件按钮 */}
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                onClick={openFileDialog}
+                disabled={disabled || isStreaming}
+                className="shrink-0 p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors disabled:opacity-50"
+                title={t('input.addAttachment')}
+              >
+                <IconPaperclip size={16} />
+              </button>
+            </div>
 
-            {/* 发送/中断按钮 */}
-            {isStreaming && onInterrupt ? (
-              <button
-                onClick={onInterrupt}
-                className="shrink-0 p-2 sm:p-1.5 rounded-lg bg-danger text-white hover:bg-danger-hover transition-colors"
-                title={t('input.interrupt')}
-              >
-                <IconStop size={18} />
-              </button>
-            ) : (
-              <button
-                onClick={handleSend}
-                disabled={!canSend}
-                className="shrink-0 p-2 sm:p-1.5 rounded-lg bg-primary text-white hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                title={t('input.send')}
-              >
-                <IconSend size={18} />
-              </button>
+            {/* 中段：嵌入式状态栏（会话配置/语音区等） */}
+            {statusBarSlot && (
+              <div className="flex-1 min-w-0 flex items-center">
+                {statusBarSlot}
+              </div>
             )}
+            {/* 无 statusBarSlot 时占位撑开右侧 */}
+            {!statusBarSlot && <div className="flex-1" />}
+
+            {/* 右侧：字数 + 发送/中断 */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* 字数（仅 statusBarSlot 模式下显示） */}
+              {statusBarSlot && value.length > 0 && (
+                <span className="text-xs text-text-tertiary tabular-nums">{value.length}</span>
+              )}
+              {/* 发送/中断按钮 */}
+              {isStreaming && onInterrupt ? (
+                <button
+                  onClick={onInterrupt}
+                  className="shrink-0 p-1.5 rounded-md bg-danger text-white hover:bg-danger-hover transition-colors"
+                  title={t('input.interrupt')}
+                >
+                  <IconStop size={16} />
+                </button>
+              ) : (
+                <button
+                  onClick={handleSend}
+                  disabled={!canSend}
+                  className="shrink-0 p-1.5 rounded-md bg-primary text-white hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={t('input.send')}
+                >
+                  <IconSend size={16} />
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>

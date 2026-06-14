@@ -66,6 +66,13 @@ function getHiddenTypes(visible: SelectorType[]): SelectorType[] {
 
 interface ChatStatusBarProps {
   children?: ReactNode;
+  /**
+   * 嵌入模式：作为 ChatInput 底栏的中段使用
+   * - 去掉外层 border-t/background/px-4（由父容器提供）
+   * - 隐藏字数（避免与父布局重复）
+   * - 折叠面板使用绝对定位浮出，不占据父容器高度
+   */
+  embedded?: boolean;
 }
 
 /**
@@ -76,7 +83,7 @@ interface ChatStatusBarProps {
  * - 语音区常驻右侧（不随宽度折叠，保证可发现性）：听写 / 通话 / 听筒
  * - 引擎版本降级为健康圆点（hover 显示版本号）
  */
-export function ChatStatusBar({ children }: ChatStatusBarProps) {
+export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps) {
   const { t } = useTranslation('chat');
   const { config, healthStatus, updateConfigPatch } = useConfigStore();
   const isStreaming = useActiveSessionStreaming();
@@ -376,16 +383,21 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
     <div
       ref={containerRef}
       className={clsx(
-        'grid px-4 text-xs text-text-tertiary',
-        'bg-background-surface/50 border-t border-border-subtle',
+        'relative grid text-xs text-text-tertiary',
         'transition-[grid-template-rows] duration-200 ease-in-out',
+        embedded
+          ? 'w-full'
+          : 'px-4 bg-background-surface/50 border-t border-border-subtle',
       )}
       style={{
         gridTemplateRows: expanded ? 'auto auto' : 'auto 0fr',
       }}
     >
       {/* 主行：[会话操作] │ [配置选择器] … [语音区/健康] │ [输入状态] */}
-      <div className="flex items-center justify-between gap-2 py-1.5 min-w-0">
+      <div className={clsx(
+        'flex items-center justify-between gap-1.5 min-w-0',
+        embedded ? 'py-0' : 'py-1.5 gap-2',
+      )}>
         {/* 左侧：会话操作 + 配置选择器 + 更多按钮 */}
         <div className="flex items-center gap-2 min-w-0">
           {children}
@@ -468,8 +480,8 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
             </span>
           )}
 
-          {/* 字数 */}
-          {inputLength > 0 && (
+          {/* 字数（嵌入模式由 ChatInput 自行展示） */}
+          {!embedded && inputLength > 0 && (
             <span className="text-text-tertiary">{inputLength}</span>
           )}
         </div>
@@ -479,9 +491,15 @@ export function ChatStatusBar({ children }: ChatStatusBarProps) {
       {hasOverflow && (
         <div className={clsx(
           'transition-opacity duration-200',
-          expanded ? 'opacity-100 overflow-visible' : 'opacity-0 overflow-hidden',
+          embedded && 'absolute bottom-full left-0 right-0 mb-1 z-20',
+          expanded ? 'opacity-100 overflow-visible' : 'opacity-0 overflow-hidden pointer-events-none',
         )}>
-          <div className="flex flex-col gap-2 py-2 border-t border-border-subtle/50">
+          <div className={clsx(
+            'flex flex-col gap-2 py-2',
+            embedded
+              ? 'px-3 rounded-lg bg-background-elevated border border-border shadow-medium'
+              : 'border-t border-border-subtle/50',
+          )}>
             {!voiceInline && renderVoiceSegment('panel')}
             <SessionConfigSelector
               config={sessionConfig}

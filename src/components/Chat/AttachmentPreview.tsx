@@ -19,7 +19,7 @@ export function AttachmentPreview({ attachments, onRemove }: AttachmentPreviewPr
   if (attachments.length === 0) return null
 
   return (
-    <div className="flex flex-wrap gap-2 p-2 bg-background-surface rounded-t-lg border-b border-border-subtle">
+    <div className="flex flex-wrap gap-2 px-2.5 sm:px-3 pt-2 pb-1 border-b border-border-subtle">
       {attachments.map((attachment) => (
         <AttachmentItem
           key={attachment.id}

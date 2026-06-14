@@ -244,13 +244,6 @@ function App() {
                     <EnhancedChatMessages onEditMessage={handleEditMessage} />
                   )}
 
-                  <div className="relative">
-                    <ChatStatusBar>
-                      <MultiWindowMenu />
-                      <NewSessionButton />
-                    </ChatStatusBar>
-                  </div>
-
                   <ChatInput
                     onSend={sendMessage}
                     onInterrupt={interruptChat}
@@ -259,6 +252,12 @@ function App() {
                     editMode={editMode}
                     onCancelEdit={handleCancelEdit}
                     onEditSend={handleEditSend}
+                    statusBarSlot={
+                      <ChatStatusBar embedded>
+                        <MultiWindowMenu />
+                        <NewSessionButton />
+                      </ChatStatusBar>
+                    }
                   />
                 </RightPanel>
               )}
