@@ -8,6 +8,13 @@ use crate::services::plugin_service::PluginService;
 use crate::services::plugin_state_service::PluginStateService;
 
 const MCP_CONFIG_RELATIVE_PATH: &str = ".polaris/claude/mcp.json";
+
+/// Resolve the workspace-scoped Claude MCP config file path. Public for use
+/// by the chat command's ask-MCP injection path, which may need to register
+/// `polaris-ask` even when project MCP tooling is otherwise disabled.
+pub fn workspace_claude_mcp_config_path(workspace_path: &str) -> std::path::PathBuf {
+    std::path::PathBuf::from(workspace_path).join(std::path::Path::new(MCP_CONFIG_RELATIVE_PATH))
+}
 const TODO_MCP_SERVER_NAME: &str = "polaris-todo";
 const TODO_MCP_BIN_NAME: &str = "polaris-todo-mcp";
 const REQUIREMENTS_MCP_SERVER_NAME: &str = "polaris-requirements";

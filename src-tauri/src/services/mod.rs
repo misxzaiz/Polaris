@@ -11,6 +11,7 @@ pub mod prompt_snippet_service;
 pub mod scheduler;
 pub mod scheduler_daemon;
 pub mod scheduler_mcp_server;
+#[cfg(feature = "tauri-app")]
 pub mod ask_listener;
 pub mod ask_mcp_server;
 pub mod todo_mcp_server;

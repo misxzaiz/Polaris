@@ -450,7 +450,11 @@ fn prepare_mcp_config_with_paths(
     }
 }
 
-/// Inject polaris-ask-mcp server into MCP config file
+/// Inject polaris-ask-mcp server into MCP config file. The file may not yet
+/// exist (when MCP project tools are disabled but we still want to register
+/// `polaris-ask`); in that case we create a minimal `{ "mcpServers": {} }`
+/// document first.
+#[cfg(feature = "tauri-app")]
 fn inject_ask_mcp_server(
     config_path: &str,
     port: u16,
@@ -465,22 +469,23 @@ fn inject_ask_mcp_server(
         args: Vec<String>,
     }
 
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Default)]
     struct ClaudeMcpConfig {
-        #[serde(rename = "mcpServers")]
+        #[serde(rename = "mcpServers", default)]
         mcp_servers: BTreeMap<String, ClaudeMcpServerConfig>,
     }
 
-    let content = fs::read_to_string(config_path)
-        .map_err(|e| AppError::ProcessError(format!("读取 MCP 配置失败: {}", e)))?;
-
-    let mut config: ClaudeMcpConfig = serde_json::from_str(&content)
-        .map_err(|e| AppError::ParseError(format!("解析 MCP 配置失败: {}", e)))?;
+    let mut config: ClaudeMcpConfig = match fs::read_to_string(config_path) {
+        Ok(content) if !content.trim().is_empty() => serde_json::from_str(&content)
+            .map_err(|e| AppError::ParseError(format!("解析 MCP 配置失败: {}", e)))?,
+        _ => ClaudeMcpConfig::default(),
+    };
 
     // Find polaris-ask-mcp binary path
     let ask_mcp_path = find_ask_mcp_binary()?;
 
-    // Inject polaris-ask-mcp server
+    // Inject polaris-ask-mcp server (overwrites any prior entry — port/token
+    // may differ between runs even if the listener is single-instance).
     config.mcp_servers.insert(
         "polaris-ask".to_string(),
         ClaudeMcpServerConfig {
@@ -494,7 +499,11 @@ fn inject_ask_mcp_server(
         },
     );
 
-    // Write back
+    if let Some(parent) = std::path::Path::new(config_path).parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| AppError::ProcessError(format!("创建 MCP 配置目录失败: {}", e)))?;
+    }
+
     let content = serde_json::to_string_pretty(&config)
         .map_err(|e| AppError::SerializationError(e))?;
     fs::write(config_path, content)
@@ -504,6 +513,7 @@ fn inject_ask_mcp_server(
 }
 
 /// Find polaris-ask-mcp binary path
+#[cfg(feature = "tauri-app")]
 fn find_ask_mcp_binary() -> Result<String> {
     // Try to find in the same directory as the main binary
     let exe_path = std::env::current_exe()
@@ -538,6 +548,92 @@ fn find_ask_mcp_binary() -> Result<String> {
     Err(AppError::ProcessError(
         "polaris-ask-mcp 二进制文件未找到".to_string(),
     ))
+}
+
+/// Ensure the AskUserQuestion MCP companion is registered for this Claude
+/// session. Returns the path to the MCP config file that should be passed
+/// to Claude (creating one in the workspace if necessary).
+///
+/// Behaviour:
+/// 1. Starts the singleton TCP listener on first call (subsequent calls
+///    reuse the same port + token).
+/// 2. Picks the MCP config file path: prefer the one already produced by
+///    `prepare_mcp_config_with_paths`; otherwise fall back to the
+///    workspace-default location and create a minimal `mcpServers: {}`
+///    document.
+/// 3. Injects/refreshes the `polaris-ask` entry in that file.
+///
+/// Failures are non-fatal — the caller logs and continues without ask
+/// support rather than aborting the chat.
+#[cfg(feature = "tauri-app")]
+async fn ensure_ask_mcp_registered(
+    state: &crate::AppState,
+    work_dir: Option<&str>,
+    existing_mcp_config_path: Option<&str>,
+) -> Option<String> {
+    let work_dir = work_dir
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())?;
+
+    // 1) Singleton listener
+    let (port, token) = {
+        let mut guard = state.ask_listener.lock().await;
+        if guard.is_none() {
+            let app_handle = {
+                #[cfg(feature = "tauri-app")]
+                {
+                    state.app_handle.get().cloned()
+                }
+                #[cfg(not(feature = "tauri-app"))]
+                {
+                    None
+                }
+            };
+            match crate::services::ask_listener::spawn_ask_listener(
+                state.pending_ask.clone(),
+                state.pending_questions.clone(),
+                app_handle,
+            )
+            .await
+            {
+                Ok(handle) => {
+                    tracing::info!(
+                        "[ensure_ask_mcp_registered] AskUserQuestion listener started on port {}",
+                        handle.port
+                    );
+                    *guard = Some(handle);
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "[ensure_ask_mcp_registered] 启动 AskUserQuestion listener 失败: {}",
+                        e
+                    );
+                    return None;
+                }
+            }
+        }
+        let handle = guard.as_ref().expect("listener just initialized");
+        (handle.port, handle.token.clone())
+    };
+
+    // 2) Pick (and if needed create) the MCP config file
+    let config_path = match existing_mcp_config_path {
+        Some(p) => p.to_string(),
+        None => crate::services::mcp_config_service::workspace_claude_mcp_config_path(work_dir)
+            .to_string_lossy()
+            .to_string(),
+    };
+
+    // 3) Inject polaris-ask
+    if let Err(e) = inject_ask_mcp_server(&config_path, port, &token) {
+        tracing::warn!(
+            "[ensure_ask_mcp_registered] 注入 polaris-ask-mcp 失败: {}",
+            e
+        );
+        return None;
+    }
+
+    Some(config_path)
 }
 
 async fn apply_model_profile_options(
@@ -877,27 +973,27 @@ pub async fn start_chat_inner(
     if let Some(ref prompt) = options.append_system_prompt {
         session_opts = session_opts.with_append_system_prompt(prompt.clone());
     }
-    if let Some(ref mcp_config_path) = mcp_config.claude_config_path {
-        // Spawn AskUserQuestion TCP listener and inject into MCP config
-        if engine == EngineId::ClaudeCode {
-            let ask_token = uuid::Uuid::new_v4().to_string();
-            let app_handle = state.app_handle.get().cloned();
-            match crate::services::ask_listener::spawn_ask_listener(
-                state.pending_ask.clone(),
-                app_handle,
-            ).await {
-                Ok(port) => {
-                    tracing::info!("[start_chat_inner] AskUserQuestion listener started on port {}", port);
-                    if let Err(e) = inject_ask_mcp_server(mcp_config_path, port, &ask_token) {
-                        tracing::warn!("[start_chat_inner] 注入 polaris-ask-mcp 失败: {}", e);
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("[start_chat_inner] 启动 AskUserQuestion listener 失败: {}", e);
-                }
-            }
-        }
-        session_opts = session_opts.with_mcp_config_path(mcp_config_path.clone());
+    // For ClaudeCode, register the AskUserQuestion MCP companion. This runs
+    // even when project MCP tooling is disabled — `ensure_ask_mcp_registered`
+    // will fall back to creating a minimal config file in the workspace.
+    // Only meaningful in the Tauri desktop build (web has no UI to host
+    // the question dialog).
+    #[cfg(feature = "tauri-app")]
+    let mcp_config_path: Option<String> = if engine == EngineId::ClaudeCode {
+        ensure_ask_mcp_registered(
+            state,
+            options.work_dir.as_deref(),
+            mcp_config.claude_config_path.as_deref(),
+        )
+        .await
+        .or(mcp_config.claude_config_path.clone())
+    } else {
+        mcp_config.claude_config_path.clone()
+    };
+    #[cfg(not(feature = "tauri-app"))]
+    let mcp_config_path: Option<String> = mcp_config.claude_config_path.clone();
+    if let Some(ref path) = mcp_config_path {
+        session_opts = session_opts.with_mcp_config_path(path.clone());
     }
     if !mcp_config.codex_config_args.is_empty() {
         session_opts = session_opts.with_codex_config_args(mcp_config.codex_config_args);
@@ -1040,8 +1136,22 @@ pub async fn continue_chat_inner(
     if let Some(ref prompt) = options.append_system_prompt {
         session_opts = session_opts.with_append_system_prompt(prompt.clone());
     }
-    if let Some(ref mcp_config_path) = mcp_config.claude_config_path {
-        session_opts = session_opts.with_mcp_config_path(mcp_config_path.clone());
+    #[cfg(feature = "tauri-app")]
+    let mcp_config_path: Option<String> = if engine == EngineId::ClaudeCode {
+        ensure_ask_mcp_registered(
+            state,
+            options.work_dir.as_deref(),
+            mcp_config.claude_config_path.as_deref(),
+        )
+        .await
+        .or(mcp_config.claude_config_path.clone())
+    } else {
+        mcp_config.claude_config_path.clone()
+    };
+    #[cfg(not(feature = "tauri-app"))]
+    let mcp_config_path: Option<String> = mcp_config.claude_config_path.clone();
+    if let Some(ref path) = mcp_config_path {
+        session_opts = session_opts.with_mcp_config_path(path.clone());
     }
     if !mcp_config.codex_config_args.is_empty() {
         session_opts = session_opts.with_codex_config_args(mcp_config.codex_config_args);
@@ -1996,25 +2106,17 @@ pub async fn answer_question(
         answer.custom_input
     );
 
-    // Try to answer via MCP companion's oneshot channel first
-    let answered_via_mcp = {
-        let answers_json = serde_json::json!({
-            "type": "answer",
-            "declined": false,
-            "answers": answer.selected.iter().map(|s| {
-                serde_json::json!({
-                    "question": "",
-                    "header": "",
-                    "selected": [s.clone()]
-                })
-            }).collect::<Vec<_>>()
-        });
-        crate::services::ask_listener::answer_pending_question(
-            &state.pending_ask,
-            &call_id,
-            answers_json,
-        ).await.is_ok()
-    };
+    // Try to answer via MCP companion's oneshot channel first. Listener
+    // mirrors the question id into `pending_questions` under the same key,
+    // so a successful MCP answer also unblocks the legacy state below.
+    let answered_via_mcp = crate::services::ask_listener::answer_pending_question(
+        &state.pending_ask,
+        &call_id,
+        answer.selected.clone(),
+        answer.custom_input.clone(),
+    )
+    .await
+    .is_ok();
 
     if answered_via_mcp {
         tracing::info!("[answer_question] 答案已通过 MCP companion 回填");

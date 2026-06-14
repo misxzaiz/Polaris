@@ -126,7 +126,13 @@ pub struct AppState {
     /// LSP 配置持久化
     pub lsp_config: Mutex<LspConfigRepository>,
     /// AskUserQuestion MCP companion 的待回答问题（带 oneshot channel）
+    #[cfg(feature = "tauri-app")]
     pub pending_ask: crate::services::ask_listener::PendingAskMap,
+    /// AskUserQuestion 单例 TCP listener — 进程生命周期内仅启动一次。
+    /// 使用 `Arc<AsyncMutex<...>>` 是为了让 web 镜像 state 共享同一份 listener。
+    #[cfg(feature = "tauri-app")]
+    pub ask_listener:
+        Arc<AsyncMutex<Option<crate::services::ask_listener::AskListenerHandle>>>,
     /// WebSocket 事件广播通道（Web Access Layer）— 带 seq 与重放缓冲
     pub event_broadcast: crate::web::EventBroadcaster,
     /// Tauri AppHandle — set once during setup, used by Web API handlers
@@ -166,7 +172,10 @@ pub fn create_app_state(
         file_watcher_manager: Mutex::new(FileWatcherManager::new()),
         pending_questions: Arc::new(Mutex::new(HashMap::new())),
         pending_plans: Arc::new(Mutex::new(HashMap::new())),
+        #[cfg(feature = "tauri-app")]
         pending_ask: crate::services::ask_listener::new_pending_ask_map(),
+        #[cfg(feature = "tauri-app")]
+        ask_listener: Arc::new(AsyncMutex::new(None)),
         scheduler_daemon: AsyncMutex::new(None),
         lsp_manager: Mutex::new(LspManager::new()),
         lsp_config: Mutex::new(LspConfigRepository::new(&config_dir)),
@@ -230,7 +239,10 @@ impl AppState {
             file_watcher_manager: Mutex::new(FileWatcherManager::new()),
             pending_questions: self.pending_questions.clone(),
             pending_plans: self.pending_plans.clone(),
+            #[cfg(feature = "tauri-app")]
             pending_ask: self.pending_ask.clone(),
+            #[cfg(feature = "tauri-app")]
+            ask_listener: self.ask_listener.clone(),
             scheduler_daemon: AsyncMutex::new(None),
             lsp_manager: Mutex::new(LspManager::new()),
             lsp_config: Mutex::new(LspConfigRepository::new(&config_dir)),
