@@ -1018,8 +1018,10 @@ export function createConversationStore(
           const runtimeConfig = resolveRuntimeConfigForEngine(sessionConfig, engine)
           // P1: 会话级 Profile 绑定（三态解析）— 会话覆盖（含「明确官方」哨兵）优先，
           // 降级状态栏镜像，再降级设置页激活的全局默认；返回 undefined 表示走官方端点。
+          // mimo 使用内置认证，不支持 Profile：强制走官方端点，避免全局激活的 Profile
+          // 泄漏到 mimo 触发后端 incompatibleRuntime 报错。
           const sessionMeta = sessionStoreManager.getState().sessionMetadata.get(get().sessionId)
-          const modelProfileId = resolveEffectiveProfileId(
+          const modelProfileId = engine === 'mimo' ? undefined : resolveEffectiveProfileId(
             sessionMeta?.modelProfileId,
             sessionConfig.modelProfileId,
             getActiveModelProfile()?.id,
@@ -1152,8 +1154,10 @@ export function createConversationStore(
         const runtimeConfig = resolveRuntimeConfigForEngine(sessionConfig, currentEngine)
         // P1: 会话级 Profile 绑定（三态解析）— 会话覆盖（含「明确官方」哨兵）优先，
         // 降级状态栏镜像，再降级设置页激活的全局默认；返回 undefined 表示走官方端点。
+        // mimo 使用内置认证，不支持 Profile：强制走官方端点，避免全局激活的 Profile
+        // 泄漏到 mimo 触发后端 incompatibleRuntime 报错。
         const sessionMeta = sessionStoreManager.getState().sessionMetadata.get(get().sessionId)
-        const modelProfileId = resolveEffectiveProfileId(
+        const modelProfileId = currentEngine === 'mimo' ? undefined : resolveEffectiveProfileId(
           sessionMeta?.modelProfileId,
           sessionConfig.modelProfileId,
           getActiveModelProfile()?.id,

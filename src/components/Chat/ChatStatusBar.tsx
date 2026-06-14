@@ -23,6 +23,7 @@ import { DEFAULT_TTS_CONFIG } from '@/types/speech';
 import { SessionConfigSelector } from './SessionConfigSelector';
 import { getSelectedEngineHealth } from '@/utils/engineHealth';
 import { normalizeEngineId } from '@/utils/engineDisplay';
+import { getEngineSelectors } from '@/utils/engineCapabilities';
 import { useActiveSessionId, useSessionMetadataList } from '@/stores/conversationStore/sessionStoreManager';
 import { useVoiceCompanionStore } from '@/stores/voiceCompanionStore';
 import { getCompanionName } from '@/types/voiceCompanion';
@@ -50,17 +51,19 @@ const PRIMARY_PRIORITY: SelectorType[] = ['profile', 'model', 'effort'];
 /** 低频选择器：始终收纳到「更多」折叠面板 */
 const SECONDARY_TYPES: SelectorType[] = ['agent', 'permission'];
 
-/** 根据容器宽度计算主行应显示的选择器类型 */
-function getVisibleTypes(width: number): SelectorType[] {
-  if (width >= BREAKPOINTS.wide) return ['profile', 'model', 'effort'];
-  if (width >= BREAKPOINTS.medium) return ['profile', 'model'];
-  if (width >= BREAKPOINTS.narrow) return ['profile'];
-  return [];
+/** 根据容器宽度计算主行应显示的选择器类型（再按引擎能力求交集） */
+function getVisibleTypes(width: number, engineSelectors: SelectorType[]): SelectorType[] {
+  let base: SelectorType[];
+  if (width >= BREAKPOINTS.wide) base = ['profile', 'model', 'effort'];
+  else if (width >= BREAKPOINTS.medium) base = ['profile', 'model'];
+  else if (width >= BREAKPOINTS.narrow) base = ['profile'];
+  else base = [];
+  return base.filter(t => engineSelectors.includes(t));
 }
 
-/** 被折叠到「更多」面板的选择器类型（低频 + 主行放不下的高频） */
-function getHiddenTypes(visible: SelectorType[]): SelectorType[] {
-  const all: SelectorType[] = [...PRIMARY_PRIORITY, ...SECONDARY_TYPES];
+/** 被折叠到「更多」面板的选择器类型（仅保留当前引擎支持的项） */
+function getHiddenTypes(visible: SelectorType[], engineSelectors: SelectorType[]): SelectorType[] {
+  const all: SelectorType[] = [...PRIMARY_PRIORITY, ...SECONDARY_TYPES].filter(t => engineSelectors.includes(t));
   return all.filter(t => !visible.includes(t));
 }
 
@@ -112,9 +115,14 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
   // 容器宽度监听
   const { ref: containerRef, width: containerWidth } = useContainerWidth();
 
-  // 根据宽度决定主行显示哪些选择器
-  const visibleTypes = getVisibleTypes(containerWidth);
-  const hiddenTypes = getHiddenTypes(visibleTypes);
+  // 当前活动引擎：决定哪些配置选择器对该引擎有效（避免向 mimo 展示会报错的 profile 等）
+  const activeSessionMetadata = sessionMetadataList.find(session => session.id === activeSessionId);
+  const activeEngineId = normalizeEngineId(activeSessionMetadata?.engineId || config?.defaultEngine);
+  const engineSelectors = getEngineSelectors(activeEngineId);
+
+  // 根据宽度 + 引擎能力决定主行显示哪些选择器
+  const visibleTypes = getVisibleTypes(containerWidth, engineSelectors);
+  const hiddenTypes = getHiddenTypes(visibleTypes, engineSelectors);
   // 是否在健康圆点旁显示版本号文字（窄屏仅显示圆点）
   const showVersionText = containerWidth >= BREAKPOINTS.wide;
 
@@ -251,8 +259,7 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
   const inputHint = getInputHint();
 
   // 引擎健康指示：绿点=可用，灰点=不可用；版本号收入 tooltip
-  const activeSessionMetadata = sessionMetadataList.find(session => session.id === activeSessionId);
-  const activeEngineId = normalizeEngineId(activeSessionMetadata?.engineId || config?.defaultEngine);
+  // （activeSessionMetadata / activeEngineId 已在上方计算，供选择器裁剪与健康指示共用）
   const selectedEngineHealth = getSelectedEngineHealth(config, healthStatus, activeEngineId);
   const engineTooltip = selectedEngineHealth.available
     ? `${selectedEngineHealth.name}${selectedEngineHealth.version ? ` ${selectedEngineHealth.version}` : ''}`

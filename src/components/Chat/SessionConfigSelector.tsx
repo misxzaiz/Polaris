@@ -26,6 +26,7 @@ import { useModelProfileStore } from '@/stores/modelProfileStore'
 import { isProfileForEngine, OFFICIAL_API_PROFILE, type WireApi } from '@/types/modelProfile'
 import { useActiveSessionId, useSessionMetadataList, sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { normalizeEngineId } from '@/utils/engineDisplay'
+import { getEngineSelectors } from '@/utils/engineCapabilities'
 
 interface SessionConfigSelectorProps {
   /** 当前配置 */
@@ -130,12 +131,14 @@ export function SessionConfigSelector({
   const defaultEngine = useConfigStore(s => s.config?.defaultEngine)
   const activeMeta = sessionMetadataList.find(s => s.id === activeSessionId)
   const activeEngineId = normalizeEngineId(activeMeta?.engineId || defaultEngine)
-  const currentEngine: 'claude' | 'codex' | 'simple-ai' =
+  const currentEngine: 'claude' | 'codex' | 'simple-ai' | 'mimo' =
     activeEngineId === 'codex'
       ? 'codex'
       : activeEngineId === 'simple-ai'
         ? 'simple-ai'
-        : 'claude'
+        : activeEngineId === 'mimo'
+          ? 'mimo'
+          : 'claude'
 
   // 模型列表：仅官方模型档位（opus/sonnet/haiku）。
   // 第三方端点请使用独立的「端点（profile）」选择器——model 字段会原样传给 CLI 的 --model，
@@ -412,7 +415,10 @@ export function SessionConfigSelector({
   }
 
   const ALL_TYPES: SelectorType[] = ['agent', 'model', 'effort', 'permission', 'profile']
-  const typesToShow = visibleTypes ?? ALL_TYPES
+  // 仅展示当前引擎实际支持的选择器：与调用方传入的 visibleTypes 求交集，
+  // 防止向 mimo 等引擎渲染会导致后端报错的 profile / 无效的 agent·effort。
+  const allowedByEngine = getEngineSelectors(activeEngineId)
+  const typesToShow = (visibleTypes ?? ALL_TYPES).filter(t => allowedByEngine.includes(t))
 
   return (
     <div ref={containerRef} className={clsx(variant === 'panel' ? 'flex flex-col gap-0.5 w-full' : 'flex items-center gap-1')}>

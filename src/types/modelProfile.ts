@@ -255,7 +255,7 @@ export function generateProfileId(): string {
 /** 判断 Profile 是否适用于指定引擎 */
 export function isProfileForEngine(
   profile: ModelProfile,
-  engine: 'claude' | 'codex' | 'simple-ai',
+  engine: 'claude' | 'codex' | 'simple-ai' | 'mimo',
 ): boolean {
   if (!profile.targetEngine || profile.targetEngine === 'both' || profile.targetEngine === 'all') {
     return true
