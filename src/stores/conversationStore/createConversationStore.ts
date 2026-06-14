@@ -446,7 +446,7 @@ export function createConversationStore(
       },
 
       // ===== 问题块 =====
-      appendQuestionBlock: (questionId, header, options, multiSelect?, allowCustomInput?, categoryLabel?, source?) => {
+      appendQuestionBlock: (questionId, header, options, multiSelect?, allowCustomInput?, categoryLabel?) => {
         const { currentMessage, questionBlockMap, streamingUpdateCounter } = get()
         const block = {
           type: 'question' as const,
@@ -457,7 +457,6 @@ export function createConversationStore(
           allowCustomInput: allowCustomInput ?? true,
           categoryLabel,
           status: 'pending' as const,
-          source: source ?? 'tool_call',
         }
         const newMap = new Map(questionBlockMap)
         if (!currentMessage) {

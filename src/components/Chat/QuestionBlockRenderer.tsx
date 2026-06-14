@@ -102,13 +102,12 @@ export const QuestionBlockRenderer = memo(function QuestionBlockRenderer({ block
         answer,
       });
 
-      // 2. 如果是 MCP companion 的问题，答案已通过 oneshot channel 回填，CLI 会自动继续
-      //    如果是传统 tool_call 问题，需要通过 continueChat 将答案发送给 CLI
-      if (block.source !== 'mcp') {
-        const answerPrompt = buildAnswerPrompt(answer);
-        if (conversationId) {
-          await continueChat(answerPrompt);
-        }
+      // 2. 构建答案 prompt 并发送给 CLI
+      const answerPrompt = buildAnswerPrompt(answer);
+
+      // 3. 调用 continueChat 将答案发送给 CLI
+      if (conversationId) {
+        await continueChat(answerPrompt);
       }
     } catch (error) {
       log.error('提交答案失败:', error instanceof Error ? error : new Error(String(error)));

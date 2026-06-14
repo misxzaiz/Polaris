@@ -237,8 +237,7 @@ export function handleAIEvent(
         event.options,
         event.multiSelect,
         event.allowCustomInput,
-        event.categoryLabel,
-        (event as any).source
+        event.categoryLabel
       )
       break
 

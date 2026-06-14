@@ -54,11 +54,6 @@ path = "src/bin/polaris_web.rs"
 name = "polaris-computer-mcp"
 path = "src/bin/polaris_computer_mcp.rs"
 
-# AskUserQuestion MCP 伴生进程 - 处理 Claude CLI 的 ask_user_question 工具调用
-[[bin]]
-name = "polaris-ask-mcp"
-path = "src/bin/polaris_ask_mcp.rs"
-
 [build-dependencies]
 tauri-build = { version = "2.0", features = [], optional = true }
 
