@@ -60,9 +60,6 @@ export function WebTab({ config, onConfigChange, loading, statusRefreshKey = 0 }
   const effectivePort = webServerStatus?.running && webServerStatus.port
     ? webServerStatus.port
     : web.port;
-  const accessUrl = webServerStatus?.running && webServerStatus.url
-    ? webServerStatus.url
-    : `http://${web.host === '0.0.0.0' ? 'localhost' : web.host}:${effectivePort}`;
 
   const addressList = useMemo(() => {
     const set = new Set<string>();
@@ -74,8 +71,6 @@ export function WebTab({ config, onConfigChange, loading, statusRefreshKey = 0 }
       list.push({ label, url });
     };
 
-    add('localhost', `http://localhost:${effectivePort}`);
-
     if (web.host && web.host !== '0.0.0.0' && web.host !== '::'
         && web.host !== 'localhost' && web.host !== '127.0.0.1') {
       add(t('web.host'), `http://${web.host}:${effectivePort}`);
@@ -84,6 +79,8 @@ export function WebTab({ config, onConfigChange, loading, statusRefreshKey = 0 }
     for (const ip of localIps) {
       add(ip, `http://${ip}:${effectivePort}`);
     }
+
+    add('localhost', `http://localhost:${effectivePort}`);
 
     return list;
   }, [effectivePort, web.host, localIps, t]);
@@ -94,18 +91,12 @@ export function WebTab({ config, onConfigChange, loading, statusRefreshKey = 0 }
     }
   }, [addressList, selectedAddress]);
 
-  const isUsingFallbackPort = Boolean(
-    webServerStatus?.running
-      && webServerStatus.port
-      && webServerStatus.port !== web.port,
-  );
-
   const handleOpenInBrowser = async () => {
     setOpeningBrowser(true);
     try {
-      await tauri.openInBrowser(accessUrl);
+      await tauri.openInBrowser(selectedAddress);
     } catch (e: unknown) {
-      log.warn('Open web URL failed', { error: String(e), url: accessUrl });
+      log.warn('Open web URL failed', { error: String(e), url: selectedAddress });
     } finally {
       setOpeningBrowser(false);
     }
@@ -136,37 +127,6 @@ export function WebTab({ config, onConfigChange, loading, statusRefreshKey = 0 }
               }`}
             />
           </button>
-        </div>
-      </div>
-
-      {/* 访问信息 */}
-      <div className="p-4 bg-surface rounded-lg border border-border">
-        <div className="flex items-center justify-between gap-3 mb-3">
-          <h3 className="text-sm font-medium text-text-primary">{t('web.accessInfo')}</h3>
-          <button
-              type="button"
-              onClick={handleOpenInBrowser}
-              disabled={!web.enabled || openingBrowser || loading}
-              className="px-3 py-1.5 text-xs font-medium text-white bg-primary rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {openingBrowser ? '...' : t('web.openInBrowser')}
-          </button>
-        </div>
-        <div className="text-xs text-text-tertiary space-y-1">
-          <p>
-            <span className="text-text-secondary">{t('web.accessUrl')}：</span>
-            <code className="text-text-primary">{accessUrl}</code>
-          </p>
-          {isUsingFallbackPort && (
-              <p>
-                <span className="text-text-secondary">{t('web.actualPort')}：</span>
-                {t('web.actualPortHint', { port: effectivePort })}
-              </p>
-          )}
-          <p>
-            <span className="text-text-secondary">{t('web.accessHint')}：</span>
-            {t('web.accessHintDesc')}
-          </p>
         </div>
       </div>
 
@@ -210,6 +170,16 @@ export function WebTab({ config, onConfigChange, loading, statusRefreshKey = 0 }
             {/* 二维码 */}
             <div className="p-3 bg-white rounded-lg">
               <QRCode value={selectedAddress} size={160} />
+            </div>
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <button
+                  type="button"
+                  onClick={handleOpenInBrowser}
+                  disabled={!web.enabled || openingBrowser || loading}
+                  className="px-3 py-1.5 text-xs font-medium text-white bg-primary rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {openingBrowser ? '...' : t('web.openInBrowser')}
+              </button>
             </div>
             <p className="text-xs text-text-tertiary text-center">{t('web.qrHint')}</p>
           </div>
