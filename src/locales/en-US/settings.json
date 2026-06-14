@@ -117,6 +117,8 @@
     "profileName": "Profile Name",
     "baseUrl": "API Endpoint URL (e.g. https://api.siliconflow.cn)",
     "apiKey": "API Key",
+    "showApiKey": "Show plaintext",
+    "hideApiKey": "Hide plaintext",
     "modelName": "Model Name (e.g. glm-4)",
     "description": "Description (optional)",
     "noProfiles": "No model profiles yet. Click add to configure a third-party model endpoint",

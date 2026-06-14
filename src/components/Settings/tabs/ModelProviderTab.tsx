@@ -46,6 +46,8 @@ import {
   Download,
   KeyRound,
   Server,
+  Eye,
+  EyeOff,
 } from 'lucide-react'
 
 const log = createLogger('ModelProviderTab')
@@ -345,6 +347,7 @@ function ProfileEditorModal({
   const [fetchedModels, setFetchedModels] = useState<string[]>(initialProfile?.fetchedModels ?? [])
   const [fetching, setFetching] = useState(false)
   const [testing, setTesting] = useState(false)
+  const [showApiKey, setShowApiKey] = useState(false)
 
   const patch = (p: Partial<ProfileForm>) => setForm((prev) => ({ ...prev, ...p }))
 
@@ -529,12 +532,24 @@ function ProfileEditorModal({
             {form.authType !== 'none' && (
               <div>
                 <label className={labelClass}>{t('modelProfile.apiKey')}</label>
-                <input
-                  type="password"
-                  value={form.apiKey}
-                  onChange={(e) => patch({ apiKey: e.target.value })}
-                  className={fieldClass}
-                />
+                <div className="relative">
+                  <input
+                    type={showApiKey ? 'text' : 'password'}
+                    value={form.apiKey}
+                    onChange={(e) => patch({ apiKey: e.target.value })}
+                    autoComplete="off"
+                    className={`${fieldClass} pr-9`}
+                  />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={() => setShowApiKey((v) => !v)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-text-tertiary hover:text-text-primary transition-colors shrink-0"
+                    title={showApiKey ? t('modelProfile.hideApiKey') : t('modelProfile.showApiKey')}
+                  >
+                    {showApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
               </div>
             )}
           </div>
