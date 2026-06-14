@@ -163,11 +163,7 @@
     "tokenRequiredHint": "This server requires a token to access",
     "tokenPrompt": "Please enter the token configured on the server",
     "tokenPlaceholder": "Enter token",
-    "tokenSubmit": "Verify & Connect",
-    "statusConnecting": "Detecting engine…",
-    "statusFailed": "No engine detected",
-    "statusFailedAction": "Click for details",
-    "dismiss": "Dismiss"
+    "tokenSubmit": "Verify & Connect"
   },
   "errorBoundary": {
     "title": "Application Error",

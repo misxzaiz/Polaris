@@ -46,7 +46,7 @@ import { useWorkspaceSync } from './hooks/useWorkspaceSync';
 
 function App() {
   const { t } = useTranslation('common');
-  const { connectionState } = useConfigStore();
+  const { isConnecting, connectionState } = useConfigStore();
 
   // Chat 状态
   const isStreaming = useActiveSessionStreaming();
@@ -72,8 +72,6 @@ function App() {
   const [showCreateWorkspace, setShowCreateWorkspace] = useState(false);
   const [showCreateSession, setShowCreateSession] = useState(false);
   const [showFileSearch, setShowFileSearch] = useState(false);
-  // 连接诊断面板：静默加载下默认不弹，由顶栏连接状态指示器按需唤出
-  const [showConnectionDiagnostics, setShowConnectionDiagnostics] = useState(false);
 
   // Store 状态
   const workspaces = useWorkspaceStore(state => state.workspaces);
@@ -125,13 +123,6 @@ function App() {
       closeLeftPanel();
     }
   }, [isCompact, closeLeftPanel]);
-
-  // 连接恢复后自动收起诊断面板
-  useEffect(() => {
-    if (connectionState === 'success') {
-      setShowConnectionDiagnostics(false);
-    }
-  }, [connectionState]);
 
   // === 诊断日志 ===
   useEffect(() => {
@@ -202,17 +193,12 @@ function App() {
   return (
     <ErrorBoundary>
       <Layout>
-        {(connectionState === 'needsToken' || showConnectionDiagnostics) && (
-          <ConnectingOverlay
-            onClose={connectionState === 'needsToken' ? undefined : () => setShowConnectionDiagnostics(false)}
-          />
-        )}
+        {(isConnecting || connectionState === 'failed' || connectionState === 'needsToken') && <ConnectingOverlay />}
 
         <TopMenuBarComponent
           onToggleRightPanel={toggleRightPanel}
           rightPanelCollapsed={rightPanelCollapsed}
           isCompactMode={isCompact}
-          onShowConnectionDiagnostics={() => setShowConnectionDiagnostics(true)}
         />
 
         <div className="flex flex-1 overflow-hidden relative">

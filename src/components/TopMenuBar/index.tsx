@@ -18,7 +18,6 @@ import { useViewStore } from '@/stores';
 import * as tauri from '@/services/tauri';
 import { isTauri } from '@/utils/platform';
 import { WorkspaceQuickSwitch } from '../Workspace';
-import { ConnectionStatusIndicator } from '../Common/ConnectionStatusIndicator';
 import { NotificationBell } from '../Notification';
 import { createLogger } from '@/utils/logger';
 
@@ -28,11 +27,9 @@ interface TopMenuBarProps {
   onToggleRightPanel?: () => void;
   rightPanelCollapsed?: boolean;
   isCompactMode?: boolean;
-  /** 点击顶栏连接状态指示器的「失败」态时触发，用于唤出诊断面板 */
-  onShowConnectionDiagnostics?: () => void;
 }
 
-export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactMode, onShowConnectionDiagnostics }: TopMenuBarProps) {
+export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactMode }: TopMenuBarProps) {
   const { t } = useTranslation('common');
   const { activityBarCollapsed, toggleActivityBar } = useViewStore();
   const [isMaximized, setIsMaximized] = useState(false);
@@ -109,9 +106,6 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
           </>
         )}
       </div>
-
-      {/* 连接状态指示器（常驻，静默加载反馈；success/needsToken 时不渲染） */}
-      <ConnectionStatusIndicator onShowDiagnostics={onShowConnectionDiagnostics} />
 
       {/* 中间:可拖拽区域 (自动填充剩余空间) */}
       <div data-tauri-drag-region className={`flex-1 h-full${isTauri() ? ' cursor-move' : ''}`} />
