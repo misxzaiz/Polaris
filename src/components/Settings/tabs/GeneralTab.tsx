@@ -82,8 +82,8 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
   };
 
   const handleMigrate = async () => {
-    if (!pendingNewRoot || !dataRootInfo || !dataRootInfo.isCustom) {
-      toastError(t('storage.migrateFailed'), t('storage.customOnly'));
+    if (!pendingNewRoot || !dataRootInfo) {
+      toastError(t('storage.migrateFailed'), '请选择目标路径');
       return;
     }
     try {
@@ -233,32 +233,33 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
           </div>
         )}
 
-        {/* 自定义路径变更（仅自定义模式可用） */}
-        {dataRootInfo?.isCustom && (
-          <div className="mb-3">
-            <label className="block text-xs text-text-secondary mb-2">
-              {t('storage.changeRoot')}
-            </label>
-            <div className="flex items-center gap-2">
-              <input
-                readOnly
-                value={pendingNewRoot ?? t('storage.notSelected')}
-                placeholder={t('storage.notSelected')}
-                className="flex-1 px-3 py-2 bg-background border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-              />
-              <button
-                type="button"
-                onClick={handlePickDirectory}
-                className="px-3 py-2 text-xs bg-background-surface border border-border rounded-lg text-text-secondary hover:text-text-primary transition-colors"
-              >
-                {t('storage.browse')}
-              </button>
-            </div>
+        {/* 自定义路径变更 */}
+        <div className="mb-3">
+          <label className="block text-xs text-text-secondary mb-2">
+            {t('storage.changeRoot')}
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              readOnly
+              value={pendingNewRoot ?? t('storage.notSelected')}
+              placeholder={t('storage.notSelected')}
+              className="flex-1 px-3 py-2 bg-background border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            />
+            <button
+              type="button"
+              onClick={handlePickDirectory}
+              className="px-3 py-2 text-xs bg-background-surface border border-border rounded-lg text-text-secondary hover:text-text-primary transition-colors"
+            >
+              {t('storage.browse')}
+            </button>
           </div>
-        )}
+          <p className="mt-1 text-xs text-text-tertiary">
+            {t('storage.changeRootHint')}
+          </p>
+        </div>
 
         {/* 迁移模式 + 触发 */}
-        {dataRootInfo?.isCustom && pendingNewRoot && (
+        {pendingNewRoot && (
           <div className="space-y-2">
             <div className="flex items-center gap-3">
               <label className="flex items-center gap-1.5 text-xs text-text-primary cursor-pointer">

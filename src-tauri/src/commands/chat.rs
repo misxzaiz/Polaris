@@ -91,6 +91,9 @@ pub struct ChatRequestOptions {
     /// 允许的工具列表（权限重试时使用）
     #[serde(default)]
     pub allowed_tools: Option<Vec<String>>,
+    /// 禁用的工具列表（通过 --disallowedTools 传递给 Claude CLI）
+    #[serde(default)]
+    pub disallowed_tools: Option<Vec<String>>,
     /// Fork 来源会话 ID（配合 --fork-session 创建分支会话）
     #[serde(default)]
     pub fork_session_id: Option<String>,
@@ -813,6 +816,16 @@ pub async fn start_chat_inner(
             session_opts = session_opts.with_allowed_tools(tools.clone());
         }
     }
+
+    // 默认禁用 AskUserQuestion 工具（用户可显式传空数组覆盖）
+    let mut disallowed = options.disallowed_tools.unwrap_or_default();
+    if !disallowed.iter().any(|t| t.eq_ignore_ascii_case("AskUserQuestion")) {
+        disallowed.push("AskUserQuestion".to_string());
+    }
+    if !disallowed.is_empty() {
+        session_opts = session_opts.with_disallowed_tools(disallowed);
+    }
+
     if let Some(ref fork_sid) = options.fork_session_id {
         session_opts.fork_session_id = Some(fork_sid.clone());
     }
@@ -957,6 +970,16 @@ pub async fn continue_chat_inner(
             session_opts = session_opts.with_allowed_tools(tools.clone());
         }
     }
+
+    // 默认禁用 AskUserQuestion 工具（用户可显式传空数组覆盖）
+    let mut disallowed = options.disallowed_tools.unwrap_or_default();
+    if !disallowed.iter().any(|t| t.eq_ignore_ascii_case("AskUserQuestion")) {
+        disallowed.push("AskUserQuestion".to_string());
+    }
+    if !disallowed.is_empty() {
+        session_opts = session_opts.with_disallowed_tools(disallowed);
+    }
+
     if !processed.image_data.is_empty() {
         let images: Vec<ImageAttachment> = processed
             .image_data
