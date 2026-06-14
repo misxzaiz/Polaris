@@ -180,6 +180,7 @@ async fn update_config_patch(patch: serde_json::Value, state: tauri::State<'_, A
 /// 仅处理当前激活的 Profile（`active: true` 且 target_engine 适用于 Claude Code）。
 /// 级联失败不中断保存流程（仅记录警告日志），因为级联本质是便利功能：
 /// 即使写入失败，下次会话启动时仍会通过 settings overlay 注入环境变量。
+#[cfg(feature = "tauri-app")]
 fn cascade_active_model_profile(config: &Config) {
     let active_profile = config.model_profiles.iter().find(|p| p.active);
     let Some(profile) = active_profile else {
