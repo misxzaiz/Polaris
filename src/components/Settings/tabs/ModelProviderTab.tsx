@@ -933,23 +933,6 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
         </div>
       </div>
 
-      {/* 级联同步说明 */}
-      {profiles.some((p) => p.active) && (
-        <div className="px-3 py-2 rounded-md bg-green-500/5 border border-green-500/20 flex items-start gap-2 text-xs">
-          <Check size={14} className="text-green-400 shrink-0 mt-0.5" />
-          <div className="text-text-secondary">
-            <span className="font-medium text-green-400">
-              {t('modelProfile.cascadeTitle', { defaultValue: '已自动同步' })}
-            </span>
-            {' — '}
-            {t('modelProfile.cascadeHint', {
-              defaultValue:
-                '激活的模型供应商凭证已同步到 Agent 原生配置文件（如 ~/.claude/settings.json），无需手动修改。',
-            })}
-          </div>
-        </div>
-      )}
-
       {/* Profile 列表 */}
       {profiles.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
