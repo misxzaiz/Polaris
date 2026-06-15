@@ -15,6 +15,7 @@ import { getClaudeCodeHistoryService } from './claudeCodeHistoryService'
 import { getCodexHistoryService } from './codexHistoryService'
 import { normalizeEngineId } from '@/utils/engineDisplay'
 import { getPathBasename, normalizeWorkspacePath } from '@/utils/workspacePath'
+import { dialogStorageService } from './dialogStorage'
 
 const log = createLogger('HistoryService')
 
@@ -89,7 +90,7 @@ function withAssistantEngineId(messages: ChatMessage[], engineId: EngineId): Cha
 
 export const historyService = {
   /** 保存当前活跃会话到历史 */
-  saveToHistory(title?: string): void {
+  async saveToHistory(title?: string): Promise<void> {
     try {
       const sessionId = sessionStoreManager.getState().activeSessionId
       if (!sessionId) return
@@ -126,8 +127,61 @@ export const historyService = {
 
       localStorage.setItem(SESSION_HISTORY_KEY, JSON.stringify(limitedHistory))
       log.info('会话已保存到历史', { sessionTitle })
+
+      // 同时保存到 IndexedDB
+      await this.saveToIndexedDB(store, metadata, sessionTitle)
     } catch (e) {
       log.error('保存历史失败', e instanceof Error ? e : new Error(String(e)))
+    }
+  },
+
+  /** 保存到 IndexedDB */
+  private async saveToIndexedDB(
+    store: { conversationId: string | null; messages: ChatMessage[] },
+    metadata: { engineId?: string; workspaceId?: string } | undefined,
+    title: string
+  ): Promise<void> {
+    try {
+      if (!store.conversationId) return
+      const externalId = store.conversationId
+      const engineId = normalizeEngineId(metadata?.engineId)
+
+      // 检查是否已存在
+      const existing = await dialogStorageService.getConversation(externalId)
+
+      let conversationId: string
+      if (existing) {
+        conversationId = existing.id
+        await dialogStorageService.updateConversation(conversationId, {
+          title,
+          messageCount: store.messages.length,
+          lastMessageAt: new Date().toISOString(),
+        })
+      } else {
+        conversationId = await dialogStorageService.createConversation({
+          externalId,
+          engineId,
+          title,
+          workspaceId: metadata?.workspaceId,
+        })
+      }
+
+      // 保存消息
+      for (const message of store.messages) {
+        await dialogStorageService.addMessage({
+          conversationId,
+          type: message.type,
+          role: message.type,
+          content: 'content' in message ? (message.content as string) : '',
+          blocks: 'blocks' in message ? message.blocks : undefined,
+          attachments: 'attachments' in message ? message.attachments : undefined,
+          engineId: 'engineId' in message ? message.engineId : undefined,
+        })
+      }
+
+      log.info('会话已保存到 IndexedDB', { conversationId, messageCount: store.messages.length })
+    } catch (e) {
+      log.error('保存到 IndexedDB 失败', e instanceof Error ? e : new Error(String(e)))
     }
   },
 
@@ -143,87 +197,144 @@ export const historyService = {
     const includeCodex = engines.includes('codex')
 
     try {
-      // 1. 读取 localStorage 条目（轻量，最多 50 条）
-      const historyJson = localStorage.getItem(SESSION_HISTORY_KEY)
-      const localHistory: HistoryEntry[] = historyJson ? JSON.parse(historyJson) : []
-
-      const localItems: UnifiedHistoryItem[] = localHistory
-        .filter(h => engines.includes(normalizeEngineId(h.engineId || 'claude-code') as HistoryEngineFilter))
-        .map(h => ({
-          id: h.id,
-          title: h.title,
-          timestamp: h.timestamp,
-          messageCount: h.messageCount,
-          engineId: h.engineId || 'claude-code',
-          source: 'local' as const,
-        }))
-
-      // 2. 调用后端分页 API 获取原生会话
-      const workDir = scope === 'workspace' ? (currentWorkspace?.path ?? null) : null
-      const emptyPagedResult = { items: [], total: 0, page, pageSize, totalPages: 0 }
-      const [claudePagedResult, codexPagedResult] = await Promise.all([
-        includeClaudeCode
-          ? getClaudeCodeHistoryService().listSessionsPaged({ page, pageSize, workDir })
-          : Promise.resolve(emptyPagedResult),
-        includeCodex
-          ? getCodexHistoryService().listSessionsPaged({ page, pageSize, workDir })
-          : Promise.resolve(emptyPagedResult),
-      ])
-
-      const claudeNativeItems: UnifiedHistoryItem[] = claudePagedResult.items.map(s => ({
-        id: s.sessionId,
-        title: s.summary || '无标题会话',
-        timestamp: s.updatedAt || s.createdAt || new Date().toISOString(),
-        messageCount: s.messageCount ?? 0,
-        engineId: 'claude-code' as const,
-        source: 'claude-code-native' as const,
-        fileSize: s.fileSize,
-        projectPath: s.projectPath,
-        claudeProjectName: s.claudeProjectName,
-        // Fork/PR 关系字段
-        parentSessionId: s.parentSessionId,
-        childSessionIds: s.childSessionIds,
-        gitBranch: s.gitBranch,
-        linkedPr: s.linkedPr,
-      }))
-      const codexNativeItems: UnifiedHistoryItem[] = codexPagedResult.items.map(s => ({
-        id: s.sessionId,
-        title: s.summary || 'Codex 对话',
-        timestamp: s.updatedAt || s.createdAt || new Date().toISOString(),
-        messageCount: s.messageCount ?? 0,
-        engineId: 'codex' as const,
-        source: 'codex-native' as const,
-        fileSize: s.fileSize,
-        projectPath: s.projectPath,
-      }))
-
-      const nativeItems = [...claudeNativeItems, ...codexNativeItems]
-
-      // 3. 合并去重（localStorage 条目优先）
-      const nativeIdSet = new Set(nativeItems.map(n => n.id))
-      const uniqueLocalItems = localItems.filter(l => !nativeIdSet.has(l.id))
-
-      // 4. 合并 + 排序
-      const merged = [...uniqueLocalItems, ...nativeItems]
-      merged.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-
-      // 5. 计算总数
-      // localStorage 条目可能和后端条目重叠，实际 uniqueLocalItems 数量可能少于 total localItems
-      // total 应为：后端 total + 去重后的 local 增量
-      const total = claudePagedResult.total + codexPagedResult.total + uniqueLocalItems.length
-      const totalPages = Math.ceil(total / pageSize)
-
-      return {
-        items: merged,
-        total,
-        page,
-        pageSize,
-        totalPages,
-        hasMore: page < totalPages,
+      // 1. 优先从 IndexedDB 获取
+      const indexedDBResult = await this.getFromIndexedDB(page, pageSize, engines)
+      if (indexedDBResult.items.length > 0) {
+        return indexedDBResult
       }
+
+      // 2. 降级到 localStorage + AI引擎
+      return await this.getFromLegacySources(scope, page, pageSize, engines)
     } catch (e) {
       log.error('获取统一历史失败', e instanceof Error ? e : new Error(String(e)))
       return { items: [], total: 0, page, pageSize, totalPages: 0, hasMore: false }
+    }
+  },
+
+  /** 从 IndexedDB 获取历史 */
+  private async getFromIndexedDB(
+    page: number,
+    pageSize: number,
+    engines: HistoryEngineFilter[]
+  ): Promise<PagedHistoryResult> {
+    try {
+      const result = await dialogStorageService.listConversations({
+        page,
+        pageSize,
+        sortBy: 'updatedAt',
+        sortOrder: 'desc',
+      })
+
+      const items: UnifiedHistoryItem[] = result.items
+        .filter(c => engines.includes(c.engineId as HistoryEngineFilter))
+        .map(c => ({
+          id: c.externalId || c.id,
+          title: c.title,
+          timestamp: c.updatedAt,
+          messageCount: c.messageCount,
+          engineId: c.engineId,
+          source: 'local' as const,
+        }))
+
+      return {
+        items,
+        total: result.total,
+        page: result.page,
+        pageSize: result.pageSize,
+        totalPages: result.totalPages,
+        hasMore: result.hasMore,
+      }
+    } catch (e) {
+      log.warn('从 IndexedDB 获取历史失败', e instanceof Error ? e : new Error(String(e)))
+      return { items: [], total: 0, page, pageSize, totalPages: 0, hasMore: false }
+    }
+  },
+
+  /** 从传统源获取历史 */
+  private async getFromLegacySources(
+    scope: HistoryScope,
+    page: number,
+    pageSize: number,
+    engines: HistoryEngineFilter[]
+  ): Promise<PagedHistoryResult> {
+    const currentWorkspace = useWorkspaceStore.getState().getCurrentWorkspace()
+    const includeClaudeCode = engines.includes('claude-code')
+    const includeCodex = engines.includes('codex')
+
+    // 1. 读取 localStorage 条目（轻量，最多 50 条）
+    const historyJson = localStorage.getItem(SESSION_HISTORY_KEY)
+    const localHistory: HistoryEntry[] = historyJson ? JSON.parse(historyJson) : []
+
+    const localItems: UnifiedHistoryItem[] = localHistory
+      .filter(h => engines.includes(normalizeEngineId(h.engineId || 'claude-code') as HistoryEngineFilter))
+      .map(h => ({
+        id: h.id,
+        title: h.title,
+        timestamp: h.timestamp,
+        messageCount: h.messageCount,
+        engineId: h.engineId || 'claude-code',
+        source: 'local' as const,
+      }))
+
+    // 2. 调用后端分页 API 获取原生会话
+    const workDir = scope === 'workspace' ? (currentWorkspace?.path ?? null) : null
+    const emptyPagedResult = { items: [], total: 0, page, pageSize, totalPages: 0 }
+    const [claudePagedResult, codexPagedResult] = await Promise.all([
+      includeClaudeCode
+        ? getClaudeCodeHistoryService().listSessionsPaged({ page, pageSize, workDir })
+        : Promise.resolve(emptyPagedResult),
+      includeCodex
+        ? getCodexHistoryService().listSessionsPaged({ page, pageSize, workDir })
+        : Promise.resolve(emptyPagedResult),
+    ])
+
+    const claudeNativeItems: UnifiedHistoryItem[] = claudePagedResult.items.map(s => ({
+      id: s.sessionId,
+      title: s.summary || '无标题会话',
+      timestamp: s.updatedAt || s.createdAt || new Date().toISOString(),
+      messageCount: s.messageCount ?? 0,
+      engineId: 'claude-code' as const,
+      source: 'claude-code-native' as const,
+      fileSize: s.fileSize,
+      projectPath: s.projectPath,
+      claudeProjectName: s.claudeProjectName,
+      parentSessionId: s.parentSessionId,
+      childSessionIds: s.childSessionIds,
+      gitBranch: s.gitBranch,
+      linkedPr: s.linkedPr,
+    }))
+    const codexNativeItems: UnifiedHistoryItem[] = codexPagedResult.items.map(s => ({
+      id: s.sessionId,
+      title: s.summary || 'Codex 对话',
+      timestamp: s.updatedAt || s.createdAt || new Date().toISOString(),
+      messageCount: s.messageCount ?? 0,
+      engineId: 'codex' as const,
+      source: 'codex-native' as const,
+      fileSize: s.fileSize,
+      projectPath: s.projectPath,
+    }))
+
+    const nativeItems = [...claudeNativeItems, ...codexNativeItems]
+
+    // 3. 合并去重（localStorage 条目优先）
+    const nativeIdSet = new Set(nativeItems.map(n => n.id))
+    const uniqueLocalItems = localItems.filter(l => !nativeIdSet.has(l.id))
+
+    // 4. 合并 + 排序
+    const merged = [...uniqueLocalItems, ...nativeItems]
+    merged.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+
+    // 5. 计算总数
+    const total = claudePagedResult.total + codexPagedResult.total + uniqueLocalItems.length
+    const totalPages = Math.ceil(total / pageSize)
+
+    return {
+      items: merged,
+      total,
+      page,
+      pageSize,
+      totalPages,
+      hasMore: page < totalPages,
     }
   },
 

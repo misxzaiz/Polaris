@@ -11,6 +11,9 @@ import type { ConversationStore } from './types'
 import { voiceNotificationService } from '@/services/voiceNotificationService'
 import { useSessionStore } from '../index'
 import { createLogger } from '@/utils/logger'
+import { dialogStorageService } from '@/services/dialogStorage'
+import { sessionStoreManager } from './sessionStoreManager'
+import { normalizeEngineId } from '@/utils/engineDisplay'
 
 const log = createLogger('EventHandler')
 
@@ -52,6 +55,10 @@ export function handleAIEvent(
           setInputWasVoice(false)
         }
       }
+
+      // 保存到 IndexedDB
+      saveToIndexedDB(get())
+
       log.info('Session ended', {
         sessionId: state.sessionId,
         reason: event.reason,
@@ -270,5 +277,55 @@ export function handleAIEvent(
       const _exhaustive: never = event
       log.warn('Unhandled event type', { type: (_exhaustive as { type: string }).type })
     }
+  }
+}
+
+/**
+ * 保存会话到 IndexedDB
+ */
+async function saveToIndexedDB(state: ConversationStore): Promise<void> {
+  try {
+    const { conversationId, messages, sessionId } = state
+    if (!conversationId || messages.length === 0) return
+
+    // 获取会话元数据
+    const metadata = sessionStoreManager.getState().sessionMetadata.get(sessionId)
+    const engineId = normalizeEngineId(metadata?.engineId)
+
+    // 检查是否已存在
+    const existing = await dialogStorageService.getConversation(conversationId)
+
+    let indexedDbId: string
+    if (existing) {
+      indexedDbId = existing.id
+      await dialogStorageService.updateConversation(indexedDbId, {
+        messageCount: messages.length,
+        lastMessageAt: new Date().toISOString(),
+      })
+    } else {
+      indexedDbId = await dialogStorageService.createConversation({
+        externalId: conversationId,
+        engineId,
+        title: metadata?.title || '新会话',
+        workspaceId: metadata?.workspaceId,
+      })
+    }
+
+    // 保存消息
+    for (const message of messages) {
+      await dialogStorageService.addMessage({
+        conversationId: indexedDbId,
+        type: message.type,
+        role: message.type,
+        content: 'content' in message ? (message.content as string) : '',
+        blocks: 'blocks' in message ? message.blocks : undefined,
+        attachments: 'attachments' in message ? message.attachments : undefined,
+        engineId: 'engineId' in message ? message.engineId : undefined,
+      })
+    }
+
+    log.info('会话已保存到 IndexedDB', { conversationId: indexedDbId, messageCount: messages.length })
+  } catch (e) {
+    log.error('保存到 IndexedDB 失败', e instanceof Error ? e : new Error(String(e)))
   }
 }
