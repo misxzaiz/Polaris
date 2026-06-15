@@ -307,7 +307,6 @@ impl ClaudeEngine {
         effort: Option<&str>,
         permission_mode: Option<&str>,
         allowed_tools: &[String],
-        disallowed_tools: &[String],
         image_attachments: &[ImageAttachment],
         fork_session: bool,
         settings_overlay_path: Option<&str>,
@@ -399,11 +398,6 @@ impl ClaudeEngine {
             // 添加允许的工具列表（权限重试时使用）
             if !allowed_tools.is_empty() {
                 cmd.arg("--allowedTools").arg(allowed_tools.join(","));
-            }
-
-            // 添加禁用的工具列表
-            if !disallowed_tools.is_empty() {
-                cmd.arg("--disallowedTools").arg(disallowed_tools.join(","));
             }
 
             // 统一使用 stream-json + stdin 模式（无论是否带图片）。
@@ -515,11 +509,6 @@ impl ClaudeEngine {
             // 添加允许的工具列表（权限重试时使用）
             if !allowed_tools.is_empty() {
                 cmd.arg("--allowedTools").arg(allowed_tools.join(","));
-            }
-
-            // 添加禁用的工具列表
-            if !disallowed_tools.is_empty() {
-                cmd.arg("--disallowedTools").arg(disallowed_tools.join(","));
             }
 
             // 统一使用 stream-json + stdin 模式（与 Windows 分支保持一致），
@@ -990,7 +979,6 @@ impl AIEngine for ClaudeEngine {
             options.effort.as_deref(),
             options.permission_mode.as_deref(),
             &options.allowed_tools,
-            &options.disallowed_tools,
             &options.image_attachments,
             fork_flag,
             options.settings_overlay_path.as_deref(),
@@ -1080,7 +1068,6 @@ impl AIEngine for ClaudeEngine {
             options.effort.as_deref(),
             options.permission_mode.as_deref(),
             &options.allowed_tools,
-            &options.disallowed_tools,
             &options.image_attachments,
             false, // continue_session 不 fork
             options.settings_overlay_path.as_deref(),
