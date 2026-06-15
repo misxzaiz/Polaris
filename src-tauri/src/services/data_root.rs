@@ -1,31 +1,23 @@
 //! 统一数据根目录抽象
 //!
 //! Polaris 的应用自身数据曾散落在多个根：
-//! - `dirs::config_dir()/claude-code-pro`（遗留）
-//! - `app.path().app_config_dir()` = `<config_dir>/com.polaris.app`
-//! - `dirs::data_local_dir()/claude-code-pro/{logs,sessions}`（遗留）
+//! - `app.path().app_config_dir()` → `<Roaming>/com.polaris.app`（MCP 数据：todo/scheduler/requirement）
+//! - `dirs::config_dir()/claude-code-pro` → `<Roaming>/claude-code-pro`（遗留命名：config/plugins/integrations）
+//! - `dirs::data_local_dir()/claude-code-pro` → `<Local>/claude-code-pro`（遗留命名：logs/sessions）
 //!
-//! 本模块将所有路径解析集中到 `DataRoot` 中，并支持用户在配置中
-//! 通过 `Config.data_root` 覆盖默认值（用于"自定义存储路径"功能）。
+//! 本模块将所有路径解析集中到 `DataRoot`，支持用户在配置中通过 `Config.data_root` 覆盖默认值。
 //!
-//! ## 双根设计
+//! ## 三层结构
 //!
-//! 出于历史与平台习惯：
-//! - **config root**：用于 config.json / 插件 / 集成 / lsp 等可被备份的"轻"数据
-//! - **data root**：用于 logs / sessions 等会快速增长的"重"数据
+//! 统一根 `<DataRoot>` 包含三个子目录：
+//! - `config/` — 配置类数据（config.json、plugins、integrations、todo、scheduler、requirement）
+//! - `data/` — 运行数据（logs、sessions）
+//! - `mcp/` — MCP 专用数据
 //!
-//! 当用户未自定义 `Config.data_root` 时：
-//! - config root = `dirs::config_dir()/<app_name>`
-//! - data root   = `dirs::data_local_dir()/<app_name>`
-//!
-//! 当用户**自定义**了 `Config.data_root` 时（用户感知是单一目录）：
-//! - config root = data root = `<custom>`（在自定义目录下统一存放）
-//!
-//! ## 命名兼容
-//!
-//! - 老用户：磁盘上若已存在 `claude-code-pro/`，优先沿用以避免破坏。
-//! - 新用户：使用新名 `Polaris`。
-//! - 自定义路径：直接使用用户提供的目录，无名称约束。
+//! 老用户首次启动时，`DataRoot::resolve_default()` 自动检测历史路径：
+//! - 若存在 `com.polaris.app` → 使用它作为默认根（兼容 MCP 数据）
+//! - 若存在 `claude-code-pro` → 使用它作为默认根（兼容配置/日志）
+//! - 否则 → 新命名 `Polaris`
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -51,89 +43,74 @@ fn pick_app_name<F: Fn() -> Option<PathBuf>>(base_resolver: F) -> &'static str {
 /// 取该实例，禁止再就地 `dirs::config_dir() / app.path().app_config_dir()`。
 #[derive(Debug, Clone)]
 pub struct DataRoot {
-    /// 配置类数据根（config.json、plugins/、integrations/、lsp/、todo/、scheduler/、requirements/）
-    config_root: PathBuf,
-    /// 大数据根（logs/、sessions/）
-    data_root: PathBuf,
-    /// 是否来自用户自定义（true = `Config.data_root` 命中）
+    /// 用户自定义根（Phase 2 由用户通过设置界面指定）
+    root: PathBuf,
+    /// 是否来自用户自定义
     is_custom: bool,
 }
 
 impl DataRoot {
-    /// 通过自定义路径构建（用户在设置界面指定）
-    ///
-    /// 自定义模式下 config_root == data_root，简化用户心智。
+    /// 通过自定义路径构建
     pub fn from_custom(custom: PathBuf) -> Self {
         Self {
-            config_root: custom.clone(),
-            data_root: custom,
+            root: custom,
             is_custom: true,
         }
     }
 
-    /// 显式构建（测试 / 特殊场景）
-    pub fn from_parts(config_root: PathBuf, data_root: PathBuf) -> Self {
-        Self {
-            config_root,
-            data_root,
-            is_custom: false,
-        }
+    /// 显式构建
+    pub fn from_parts(root: PathBuf) -> Self {
+        Self { root, is_custom: false }
     }
 
     /// 解析默认根（基于系统目录 + 命名兼容策略）
     ///
-    /// 优先级：
-    /// 1. Tauri `app_config_dir`（若提供，用 identifier `com.polaris.app`）
-    ///    注意：当前 Tauri identifier 是 `com.polaris.app`，与磁盘上 `claude-code-pro`
-    ///    并存。我们**不**采用 Tauri 路径作为 config_root 默认（避免数据双写），
-    ///    保持与历史 `dirs::config_dir()/<app_name>` 一致。
-    /// 2. `dirs::config_dir()/<app_name>` + `dirs::data_local_dir()/<app_name>`
-    /// 3. 兜底 `./polaris-data`
+    /// 检测历史路径，优先使用已存在的目录，避免破坏老用户数据。
     pub fn resolve_default() -> Self {
-        let app_name = pick_app_name(dirs::config_dir);
+        // 按优先级检查历史路径是否存在且有数据
+        let legacy_com_polaris = dirs::config_dir()
+            .as_ref()
+            .map(|d| d.join("com.polaris.app"))
+            .filter(|p| p.exists() && has_data(p));
+        let legacy_claude = dirs::config_dir()
+            .as_ref()
+            .map(|d| d.join(LEGACY_APP_NAME))
+            .filter(|p| p.exists() && has_data(p));
+        let legacy_data_local = dirs::data_local_dir()
+            .as_ref()
+            .map(|d| d.join(LEGACY_APP_NAME))
+            .filter(|p| p.exists() && has_data(p));
 
-        let config_root = dirs::config_dir()
-            .map(|d| d.join(app_name))
-            .unwrap_or_else(|| PathBuf::from(".").join("polaris-data"));
-
-        // data_root 单独看 data_local_dir 是否已有 LEGACY，不强行同步 app_name
-        let data_app_name = pick_app_name(dirs::data_local_dir);
-        let data_root = dirs::data_local_dir()
-            .map(|d| d.join(data_app_name))
-            .unwrap_or_else(|| config_root.clone());
+        // 有数据时优先使用已有根
+        let root = legacy_com_polaris
+            .or(legacy_claude)
+            .or(legacy_data_local)
+            .unwrap_or_else(|| dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join(DEFAULT_APP_NAME));
 
         Self {
-            config_root,
-            data_root,
+            root,
             is_custom: false,
         }
     }
 
     /// 综合解析（含用户配置覆盖）
-    ///
-    /// 调用方应在启动期解析一次后注入 `AppState`。
-    pub fn resolve(custom_data_root: Option<PathBuf>) -> Self {
-        match custom_data_root {
+    pub fn resolve(custom_root: Option<PathBuf>) -> Self {
+        match custom_root {
             Some(p) if !p.as_os_str().is_empty() => Self::from_custom(p),
             _ => Self::resolve_default(),
         }
     }
 
-    /// 共享 Arc 包装（便于在 AppState 中持有）
+    /// 共享 Arc 包装
     pub fn shared(self) -> Arc<DataRoot> {
         Arc::new(self)
     }
 
     // ========== 访问器 ==========
 
-    /// 配置类数据根目录（与历史 `claude-code-pro` config 子树等价）
-    pub fn config_root(&self) -> &Path {
-        &self.config_root
-    }
-
-    /// 大数据根目录
-    pub fn data_root(&self) -> &Path {
-        &self.data_root
+    /// 统一根目录
+    pub fn root(&self) -> &Path {
+        &self.root
     }
 
     /// 是否为用户自定义
@@ -143,55 +120,90 @@ impl DataRoot {
 
     // ========== 标准子目录 ==========
 
-    /// 主配置文件所在目录（`config.json` 的父目录）
+    /// 配置类数据根目录（与历史 `com.polaris.app` / `claude-code-pro` 等价）
     pub fn config_dir(&self) -> PathBuf {
-        self.config_root.clone()
+        self.root.join("config")
     }
 
     /// 主配置文件路径
     pub fn config_file(&self) -> PathBuf {
-        self.config_root.join("config.json")
+        self.config_dir().join("config.json")
+    }
+
+    /// 运行数据目录（logs、sessions）
+    pub fn data_dir(&self) -> PathBuf {
+        self.root.join("data")
     }
 
     /// 日志目录
     pub fn logs_dir(&self) -> PathBuf {
-        self.data_root.join("logs")
+        self.data_dir().join("logs")
     }
 
-    /// 会话默认目录（用户未设置 `Config.session_dir` 时使用）
+    /// 会话默认目录
     pub fn sessions_dir(&self) -> PathBuf {
-        self.data_root.join("sessions")
+        self.data_dir().join("sessions")
+    }
+
+    /// MCP 数据目录
+    pub fn mcp_dir(&self) -> PathBuf {
+        self.root.join("mcp")
     }
 
     /// Todo 数据目录
     pub fn todo_dir(&self) -> PathBuf {
-        self.config_root.join("todo")
+        self.config_dir().join("todo")
     }
 
     /// 调度器数据目录
     pub fn scheduler_dir(&self) -> PathBuf {
-        self.config_root.join("scheduler")
+        self.config_dir().join("scheduler")
     }
 
     /// 需求数据目录
     pub fn requirements_dir(&self) -> PathBuf {
-        self.config_root.join("requirements")
+        self.config_dir().join("requirements")
     }
 
     /// 插件目录
     pub fn plugins_dir(&self) -> PathBuf {
-        self.config_root.join("plugins")
+        self.config_dir().join("plugins")
     }
 
     /// LSP 配置目录
     pub fn lsp_dir(&self) -> PathBuf {
-        self.config_root.join("lsp")
+        self.config_dir().join("lsp")
     }
 
     /// 集成管理器目录
     pub fn integrations_dir(&self) -> PathBuf {
-        self.config_root.join("integrations")
+        self.config_dir().join("integrations")
     }
+
+    /// 获取三个子路径信息（供前端显示）
+    pub fn sub_paths(&self) -> SubPaths {
+        SubPaths {
+            config: self.config_dir(),
+            data: self.data_dir(),
+            mcp: self.mcp_dir(),
+        }
+    }
+}
+
+/// 子路径信息（供前端显示用）
+#[derive(Debug, Clone)]
+pub struct SubPaths {
+    pub config: PathBuf,
+    pub data: PathBuf,
+    pub mcp: PathBuf,
+}
+
+/// 判断目录是否有数据文件
+fn has_data(dir: &Path) -> bool {
+    std::fs::read_dir(dir)
+        .ok()
+        .map(|mut rd| rd.next().is_some())
+        .unwrap_or(false)
 }
 
 impl Default for DataRoot {
@@ -205,38 +217,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn custom_root_uses_same_path_for_config_and_data() {
+    fn custom_root_uses_same_base() {
         let tmp = std::env::temp_dir().join(format!("polaris-test-{}", uuid::Uuid::new_v4()));
         let dr = DataRoot::from_custom(tmp.clone());
-        assert_eq!(dr.config_root(), tmp.as_path());
-        assert_eq!(dr.data_root(), tmp.as_path());
+        assert_eq!(dr.root(), tmp.as_path());
         assert!(dr.is_custom());
-        assert_eq!(dr.config_file(), tmp.join("config.json"));
-        assert_eq!(dr.logs_dir(), tmp.join("logs"));
-        assert_eq!(dr.todo_dir(), tmp.join("todo"));
-    }
-
-    #[test]
-    fn from_parts_keeps_dual_root() {
-        let cfg = PathBuf::from("/tmp/cfg");
-        let data = PathBuf::from("/tmp/data");
-        let dr = DataRoot::from_parts(cfg.clone(), data.clone());
-        assert_eq!(dr.config_root(), cfg.as_path());
-        assert_eq!(dr.data_root(), data.as_path());
-        assert!(!dr.is_custom());
+        assert_eq!(dr.config_dir(), tmp.join("config"));
+        assert_eq!(dr.logs_dir(), tmp.join("data").join("logs"));
+        assert_eq!(dr.mcp_dir(), tmp.join("mcp"));
+        assert_eq!(dr.todo_dir(), tmp.join("config").join("todo"));
     }
 
     #[test]
     fn resolve_with_none_falls_back_to_default() {
         let dr = DataRoot::resolve(None);
         assert!(!dr.is_custom());
-        assert!(dr.config_root().is_absolute() || dr.config_root().starts_with("."));
-    }
-
-    #[test]
-    fn resolve_with_empty_path_falls_back_to_default() {
-        let dr = DataRoot::resolve(Some(PathBuf::new()));
-        assert!(!dr.is_custom());
+        assert!(dr.root().is_absolute() || dr.root().starts_with("."));
     }
 
     #[test]
@@ -244,6 +240,15 @@ mod tests {
         let tmp = std::env::temp_dir().join("polaris-resolve-test");
         let dr = DataRoot::resolve(Some(tmp.clone()));
         assert!(dr.is_custom());
-        assert_eq!(dr.config_root(), tmp.as_path());
+        assert_eq!(dr.root(), tmp.as_path());
+    }
+
+    #[test]
+    fn sub_paths_are_consistent() {
+        let dr = DataRoot::from_custom(PathBuf::from("/tmp/roots"));
+        let sp = dr.sub_paths();
+        assert_eq!(sp.config, PathBuf::from("/tmp/roots/config"));
+        assert_eq!(sp.data, PathBuf::from("/tmp/roots/data"));
+        assert_eq!(sp.mcp, PathBuf::from("/tmp/roots/mcp"));
     }
 }

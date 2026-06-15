@@ -3,36 +3,40 @@
 //! Commands for scheduled task management using unified repository.
 //! Supports both simple mode and protocol mode (document-driven workflow).
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-#[cfg(feature = "tauri-app")]
-use tauri::{AppHandle, Manager};
-
 use crate::error::Result;
-use crate::models::scheduler::{CreateTaskParams, ScheduledTask, TaskCategory, TaskMode, TriggerType};
+use crate::models::scheduler::{
+    CreateTaskParams, CreateTemplateParams, CreateProtocolTemplateParams, ScheduledTask,
+    TaskCategory, TaskMode, PromptTemplate, ProtocolTemplate, TriggerType,
+};
 use crate::services::scheduler::protocol_task::ProtocolTaskService;
 use crate::services::scheduler::TaskUpdateParams;
+use crate::services::scheduler::ProtocolTemplateService;
 use crate::services::unified_scheduler_repository::UnifiedSchedulerRepository;
+use crate::state::AppState;
 use crate::utils::LockStatus;
 
+#[cfg(feature = "tauri-app")]
+use tauri::Manager;
+
 // ============================================================================
-// Helper
+// Shared helper
 // ============================================================================
 
 #[cfg(feature = "tauri-app")]
-fn get_config_dir(app: &AppHandle) -> Result<PathBuf> {
-    app.path()
-        .app_config_dir()
-        .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))
+fn get_config_dir(state: &AppState) -> PathBuf {
+    state.data_root.lock().unwrap().config_dir()
 }
 
 #[cfg(feature = "tauri-app")]
-fn get_repository(app: &AppHandle, workspace_path: Option<String>) -> Result<UnifiedSchedulerRepository> {
-    let config_dir = get_config_dir(app)?;
+fn get_repository(state: &AppState, workspace_path: Option<String>) -> UnifiedSchedulerRepository {
     let workspace_path = workspace_path
         .filter(|p| !p.trim().is_empty())
         .map(PathBuf::from);
-    Ok(UnifiedSchedulerRepository::new(config_dir, workspace_path))
+    let config_dir = get_config_dir(state);
+    UnifiedSchedulerRepository::new(config_dir, workspace_path)
 }
 
 // ============================================================================
@@ -44,9 +48,9 @@ fn get_repository(app: &AppHandle, workspace_path: Option<String>) -> Result<Uni
 #[tauri::command]
 pub async fn scheduler_list_tasks(
     workspace_path: Option<String>,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<Vec<ScheduledTask>> {
-    let repository = get_repository(&app, workspace_path)?;
+    let repository = get_repository(&state, workspace_path);
     repository.list_tasks()
 }
 
@@ -56,9 +60,9 @@ pub async fn scheduler_list_tasks(
 pub async fn scheduler_get_task(
     id: String,
     workspace_path: Option<String>,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<Option<ScheduledTask>> {
-    let repository = get_repository(&app, workspace_path)?;
+    let repository = get_repository(&state, workspace_path);
     repository.get_task(&id)
 }
 
@@ -68,9 +72,9 @@ pub async fn scheduler_get_task(
 pub async fn scheduler_create_task(
     params: CreateTaskParams,
     workspace_path: Option<String>,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<ScheduledTask> {
-    let repository = get_repository(&app, workspace_path.clone())?;
+    let repository = get_repository(&state, workspace_path.clone());
 
     // 如果是协议模式，创建任务文档结构
     let mut task = repository.create_task(params.clone())?;
@@ -103,9 +107,9 @@ pub async fn scheduler_create_task(
 pub async fn scheduler_update_task(
     task: ScheduledTask,
     workspace_path: Option<String>,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<ScheduledTask> {
-    let repository = get_repository(&app, workspace_path)?;
+    let repository = get_repository(&state, workspace_path);
     repository.update_task(&task.id, TaskUpdateParams {
         name: Some(task.name),
         enabled: Some(task.enabled),
@@ -142,9 +146,9 @@ pub async fn scheduler_update_task(
 pub async fn scheduler_delete_task(
     id: String,
     workspace_path: Option<String>,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<ScheduledTask> {
-    let repository = get_repository(&app, workspace_path.clone())?;
+    let repository = get_repository(&state, workspace_path.clone());
 
     // 获取任务信息以检查是否是协议模式
     let task = repository.get_task(&id)?;
@@ -168,9 +172,9 @@ pub async fn scheduler_toggle_task(
     id: String,
     enabled: bool,
     workspace_path: Option<String>,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<ScheduledTask> {
-    let repository = get_repository(&app, workspace_path)?;
+    let repository = get_repository(&state, workspace_path);
     repository.toggle_task(&id, enabled)
 }
 
@@ -199,9 +203,9 @@ pub fn scheduler_parse_interval(value: String) -> Option<i64> {
 #[tauri::command]
 pub async fn scheduler_get_workspace_breakdown(
     workspace_path: Option<String>,
-    app: AppHandle,
-) -> Result<std::collections::BTreeMap<String, usize>> {
-    let repository = get_repository(&app, workspace_path)?;
+    state: tauri::State<'_, AppState>,
+) -> Result<BTreeMap<String, usize>> {
+    let repository = get_repository(&state, workspace_path);
     repository.get_workspace_breakdown()
 }
 
@@ -211,9 +215,9 @@ pub async fn scheduler_get_workspace_breakdown(
 pub async fn scheduler_list_tasks_by_category(
     category: TaskCategory,
     workspace_path: Option<String>,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<Vec<ScheduledTask>> {
-    let repository = get_repository(&app, workspace_path)?;
+    let repository = get_repository(&state, workspace_path);
     repository.list_tasks_by_category(category)
 }
 
@@ -223,9 +227,9 @@ pub async fn scheduler_list_tasks_by_category(
 pub async fn scheduler_list_tasks_by_mode(
     mode: TaskMode,
     workspace_path: Option<String>,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<Vec<ScheduledTask>> {
-    let repository = get_repository(&app, workspace_path)?;
+    let repository = get_repository(&state, workspace_path);
     repository.list_tasks_by_mode(mode)
 }
 
@@ -235,9 +239,9 @@ pub async fn scheduler_list_tasks_by_mode(
 pub async fn scheduler_list_tasks_by_group(
     group: String,
     workspace_path: Option<String>,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<Vec<ScheduledTask>> {
-    let repository = get_repository(&app, workspace_path)?;
+    let repository = get_repository(&state, workspace_path);
     repository.list_tasks_by_group(&group)
 }
 
@@ -313,7 +317,7 @@ pub fn scheduler_get_status() -> Result<SchedulerStatus> {
 /// 返回启动结果
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn scheduler_start(app: AppHandle) -> Result<SchedulerStatus> {
+pub async fn scheduler_start(app: tauri::AppHandle) -> Result<SchedulerStatus> {
     let pid = std::process::id();
 
     // 检查是否已经在运行
@@ -332,7 +336,7 @@ pub async fn scheduler_start(app: AppHandle) -> Result<SchedulerStatus> {
         Ok(true) => {
             tracing::info!("[Scheduler] 调度器启动成功，已获取锁");
 
-            // 启动后台守护进程
+            // 启动后台守护进程 — 守护进程需要 AppHandle
             let config_dir = app.path()
                 .app_config_dir()
                 .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
@@ -381,7 +385,7 @@ pub async fn scheduler_start(app: AppHandle) -> Result<SchedulerStatus> {
 /// 2. 释放锁
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn scheduler_stop(app: AppHandle) -> Result<SchedulerStatus> {
+pub async fn scheduler_stop(app: tauri::AppHandle) -> Result<SchedulerStatus> {
     let pid = std::process::id();
 
     // 检查是否正在运行
@@ -431,9 +435,9 @@ pub async fn scheduler_stop(app: AppHandle) -> Result<SchedulerStatus> {
 pub async fn scheduler_run_task(
     id: String,
     workspace_path: Option<String>,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<ScheduledTask> {
-    let repository = get_repository(&app, workspace_path)?;
+    let repository = get_repository(&state, workspace_path);
 
     // 更新任务状态为 running
     let task = repository.update_task_status(&id, crate::models::scheduler::TaskStatus::Running)?;
@@ -448,9 +452,9 @@ pub async fn scheduler_update_run_status(
     id: String,
     status: String, // "success" | "failed"
     workspace_path: Option<String>,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<ScheduledTask> {
-    let repository = get_repository(&app, workspace_path)?;
+    let repository = get_repository(&state, workspace_path);
 
     let task_status = match status.as_str() {
         "success" => crate::models::scheduler::TaskStatus::Success,
@@ -467,16 +471,14 @@ pub async fn scheduler_update_run_status(
 // Template Commands
 // ============================================================================
 
-use crate::models::scheduler::{CreateTemplateParams, PromptTemplate};
-
 /// 列出所有模板
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_list_templates(
     workspace_path: Option<String>,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<Vec<PromptTemplate>> {
-    let repository = get_repository(&app, workspace_path)?;
+    let repository = get_repository(&state, workspace_path);
     repository.list_templates()
 }
 
@@ -486,9 +488,9 @@ pub async fn scheduler_list_templates(
 pub async fn scheduler_get_template(
     id: String,
     workspace_path: Option<String>,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<Option<PromptTemplate>> {
-    let repository = get_repository(&app, workspace_path)?;
+    let repository = get_repository(&state, workspace_path);
     repository.get_template(&id)
 }
 
@@ -498,9 +500,9 @@ pub async fn scheduler_get_template(
 pub async fn scheduler_create_template(
     params: CreateTemplateParams,
     workspace_path: Option<String>,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<PromptTemplate> {
-    let repository = get_repository(&app, workspace_path)?;
+    let repository = get_repository(&state, workspace_path);
     repository.create_template(params)
 }
 
@@ -510,9 +512,9 @@ pub async fn scheduler_create_template(
 pub async fn scheduler_update_template(
     template: PromptTemplate,
     workspace_path: Option<String>,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<PromptTemplate> {
-    let repository = get_repository(&app, workspace_path)?;
+    let repository = get_repository(&state, workspace_path);
     repository.update_template(template)
 }
 
@@ -522,9 +524,9 @@ pub async fn scheduler_update_template(
 pub async fn scheduler_delete_template(
     id: String,
     workspace_path: Option<String>,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<()> {
-    let repository = get_repository(&app, workspace_path)?;
+    let repository = get_repository(&state, workspace_path);
     repository.delete_template(&id)
 }
 
@@ -535,9 +537,9 @@ pub async fn scheduler_toggle_template(
     id: String,
     enabled: bool,
     workspace_path: Option<String>,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<PromptTemplate> {
-    let repository = get_repository(&app, workspace_path)?;
+    let repository = get_repository(&state, workspace_path);
     repository.toggle_template(&id, enabled)
 }
 
@@ -549,9 +551,9 @@ pub async fn scheduler_build_prompt(
     task_name: String,
     user_prompt: String,
     workspace_path: Option<String>,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<String> {
-    let repository = get_repository(&app, workspace_path)?;
+    let repository = get_repository(&state, workspace_path);
     repository.build_prompt_with_template(&template_id, &task_name, &user_prompt)
 }
 
@@ -692,22 +694,14 @@ pub fn scheduler_extract_user_content(content: String) -> String {
 // Protocol Template Commands
 // ============================================================================
 
-use crate::models::scheduler::{CreateProtocolTemplateParams, ProtocolTemplate};
-use crate::services::scheduler::ProtocolTemplateService;
-
-#[cfg(feature = "tauri-app")]
-fn get_template_service(app: &AppHandle) -> Result<ProtocolTemplateService> {
-    let config_dir = get_config_dir(app)?;
-    Ok(ProtocolTemplateService::new(&config_dir))
-}
-
 /// 列出所有协议模板（内置 + 自定义）
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn scheduler_list_protocol_templates(
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<Vec<ProtocolTemplate>> {
-    let service = get_template_service(&app)?;
+    let config_dir = get_config_dir(&state);
+    let service = ProtocolTemplateService::new(&config_dir);
     service.list_templates()
 }
 
@@ -716,9 +710,10 @@ pub async fn scheduler_list_protocol_templates(
 #[tauri::command]
 pub async fn scheduler_list_protocol_templates_by_category(
     category: TaskCategory,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<Vec<ProtocolTemplate>> {
-    let service = get_template_service(&app)?;
+    let config_dir = get_config_dir(&state);
+    let service = ProtocolTemplateService::new(&config_dir);
     service.list_templates_by_category(category)
 }
 
@@ -727,9 +722,10 @@ pub async fn scheduler_list_protocol_templates_by_category(
 #[tauri::command]
 pub async fn scheduler_get_protocol_template(
     id: String,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<Option<ProtocolTemplate>> {
-    let service = get_template_service(&app)?;
+    let config_dir = get_config_dir(&state);
+    let service = ProtocolTemplateService::new(&config_dir);
     service.get_template(&id)
 }
 
@@ -738,9 +734,10 @@ pub async fn scheduler_get_protocol_template(
 #[tauri::command]
 pub async fn scheduler_create_protocol_template(
     params: CreateProtocolTemplateParams,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<ProtocolTemplate> {
-    let service = get_template_service(&app)?;
+    let config_dir = get_config_dir(&state);
+    let service = ProtocolTemplateService::new(&config_dir);
     service.create_template(params)
 }
 
@@ -750,9 +747,10 @@ pub async fn scheduler_create_protocol_template(
 pub async fn scheduler_update_protocol_template(
     id: String,
     params: CreateProtocolTemplateParams,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<Option<ProtocolTemplate>> {
-    let service = get_template_service(&app)?;
+    let config_dir = get_config_dir(&state);
+    let service = ProtocolTemplateService::new(&config_dir);
     service.update_template(&id, params)
 }
 
@@ -761,9 +759,10 @@ pub async fn scheduler_update_protocol_template(
 #[tauri::command]
 pub async fn scheduler_delete_protocol_template(
     id: String,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<bool> {
-    let service = get_template_service(&app)?;
+    let config_dir = get_config_dir(&state);
+    let service = ProtocolTemplateService::new(&config_dir);
     service.delete_template(&id)
 }
 
@@ -773,9 +772,10 @@ pub async fn scheduler_delete_protocol_template(
 pub async fn scheduler_toggle_protocol_template(
     id: String,
     enabled: bool,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<Option<ProtocolTemplate>> {
-    let service = get_template_service(&app)?;
+    let config_dir = get_config_dir(&state);
+    let service = ProtocolTemplateService::new(&config_dir);
     service.toggle_template(&id, enabled)
 }
 

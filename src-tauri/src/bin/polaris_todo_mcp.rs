@@ -76,10 +76,7 @@ fn parse_args(args: &[String]) -> Result<(String, Option<&str>)> {
 
 /// Get the default config directory for the application
 fn get_default_config_dir() -> Result<String> {
-    // Try to get the app config directory using dirs crate
-    let config_dir = dirs::config_dir()
-        .ok_or_else(|| AppError::ProcessError("无法确定配置目录".to_string()))?
-        .join("com.polaris.app");
-
+    let config_dir = polaris_lib::services::data_root::DataRoot::resolve_default()
+        .config_dir();
     Ok(config_dir.to_string_lossy().to_string())
 }

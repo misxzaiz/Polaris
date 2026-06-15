@@ -5,15 +5,25 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-#[cfg(feature = "tauri-app")]
-use tauri::{AppHandle, Manager};
-
 use crate::error::Result;
 use crate::models::requirement::{
     QueryScope, RequirementCreateParams, RequirementExecuteConfig, RequirementItem,
     RequirementPriority, RequirementSource, RequirementStatus, RequirementUpdateParams,
 };
 use crate::services::unified_requirement_repository::UnifiedRequirementRepository;
+use crate::state::AppState;
+
+// ============================================================================
+// Helper
+// ============================================================================
+
+fn get_repository(state: &AppState, workspace_path: Option<String>) -> UnifiedRequirementRepository {
+    let config_dir = state.data_root.lock().unwrap().config_dir();
+    let workspace_path = workspace_path
+        .filter(|p| !p.trim().is_empty())
+        .map(PathBuf::from);
+    UnifiedRequirementRepository::new(config_dir, workspace_path)
+}
 
 // ============================================================================
 // List requirements
@@ -35,29 +45,22 @@ pub struct ListRequirementsParams {
     pub limit: Option<u32>,
 }
 
+/// List requirements
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn list_requirements(
     params: ListRequirementsParams,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<Vec<RequirementItem>> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
-
-    let workspace_path = params
-        .workspace_path
-        .filter(|p| !p.trim().is_empty())
-        .map(PathBuf::from);
-
-    let repository = UnifiedRequirementRepository::new(config_dir, workspace_path);
-    repository.register_workspace().ok();
+    let workspace_path = params.workspace_path.clone();
 
     let scope = match params.scope.as_str() {
         "all" => QueryScope::All,
         _ => QueryScope::Workspace,
     };
+
+    let repository = get_repository(&state, workspace_path);
+    repository.register_workspace().ok();
 
     let mut requirements = repository.list_requirements(scope)?;
 
@@ -107,25 +110,18 @@ pub struct CreateRequirementParams {
     pub workspace_path: Option<String>,
 }
 
+/// Create requirement
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn create_requirement(
     params: CreateRequirementParams,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<RequirementItem> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
+    let workspace_path = params.workspace_path.clone();
 
-    let workspace_path = params
-        .workspace_path
-        .filter(|p| !p.trim().is_empty())
-        .map(PathBuf::from);
+    let repository = get_repository(&state, workspace_path.clone());
 
-    let repository = UnifiedRequirementRepository::new(config_dir.clone(), workspace_path.clone());
-
-    if workspace_path.is_some() {
+    if workspace_path.filter(|p| !p.trim().is_empty()).is_some() {
         repository.register_workspace().ok();
     }
 
@@ -199,23 +195,16 @@ pub struct ExecuteConfigParam {
     pub work_dir: Option<String>,
 }
 
+/// Update requirement
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn update_requirement(
     params: UpdateRequirementParams,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<RequirementItem> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
+    let workspace_path = params.workspace_path.clone();
 
-    let workspace_path = params
-        .workspace_path
-        .filter(|p| !p.trim().is_empty())
-        .map(PathBuf::from);
-
-    let repository = UnifiedRequirementRepository::new(config_dir, workspace_path);
+    let repository = get_repository(&state, workspace_path);
 
     let execute_config = params.execute_config.map(|ec| RequirementExecuteConfig {
         scheduled_at: ec.scheduled_at,
@@ -255,23 +244,14 @@ pub struct DeleteRequirementParams {
     pub workspace_path: Option<String>,
 }
 
+/// Delete requirement
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn delete_requirement(
     params: DeleteRequirementParams,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<RequirementItem> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
-
-    let workspace_path = params
-        .workspace_path
-        .filter(|p| !p.trim().is_empty())
-        .map(PathBuf::from);
-
-    let repository = UnifiedRequirementRepository::new(config_dir, workspace_path);
+    let repository = get_repository(&state, params.workspace_path);
 
     repository.delete_requirement(&params.id)
 }
@@ -288,23 +268,14 @@ pub struct SavePrototypeParams {
     pub workspace_path: Option<String>,
 }
 
+/// Save requirement prototype
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn save_requirement_prototype(
     params: SavePrototypeParams,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<String> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
-
-    let workspace_path = params
-        .workspace_path
-        .filter(|p| !p.trim().is_empty())
-        .map(PathBuf::from);
-
-    let repository = UnifiedRequirementRepository::new(config_dir, workspace_path);
+    let repository = get_repository(&state, params.workspace_path);
 
     repository.save_prototype(&params.id, &params.html)
 }
@@ -316,23 +287,14 @@ pub struct ReadPrototypeParams {
     pub workspace_path: Option<String>,
 }
 
+/// Read requirement prototype
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn read_requirement_prototype(
     params: ReadPrototypeParams,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<String> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
-
-    let workspace_path = params
-        .workspace_path
-        .filter(|p| !p.trim().is_empty())
-        .map(PathBuf::from);
-
-    let repository = UnifiedRequirementRepository::new(config_dir, workspace_path);
+    let repository = get_repository(&state, params.workspace_path);
 
     repository.read_prototype(&params.prototype_path)
 }
@@ -347,23 +309,14 @@ pub struct GetBreakdownParams {
     pub workspace_path: Option<String>,
 }
 
+/// Get requirement workspace breakdown
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn get_requirement_workspace_breakdown(
     params: GetBreakdownParams,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<BTreeMap<String, usize>> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
-
-    let workspace_path = params
-        .workspace_path
-        .filter(|p| !p.trim().is_empty())
-        .map(PathBuf::from);
-
-    let repository = UnifiedRequirementRepository::new(config_dir, workspace_path);
+    let repository = get_repository(&state, params.workspace_path);
 
     repository.get_workspace_breakdown()
 }

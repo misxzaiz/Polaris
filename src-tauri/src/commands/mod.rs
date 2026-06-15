@@ -59,3 +59,19 @@ pub use claude_settings::{read_claude_settings, write_claude_settings, get_claud
 pub mod model_profile;
 #[cfg(feature = "tauri-app")]
 pub use model_profile::{test_model_profile_connection, fetch_models_for_profile};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Shared helpers
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Resolve the application config directory for repository commands.
+///
+/// Prefers `AppState.data_root.config_dir()` (the unified data root), falling back
+/// to Tauri's `app.path().app_config_dir()` for backward compatibility.
+#[cfg(feature = "tauri-app")]
+pub fn resolve_config_dir(
+    app: &tauri::AppHandle,
+    state: &crate::state::AppState,
+) -> std::path::PathBuf {
+    state.data_root.lock().unwrap().config_dir()
+}

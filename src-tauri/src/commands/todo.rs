@@ -5,12 +5,10 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-#[cfg(feature = "tauri-app")]
-use tauri::{AppHandle, Manager};
-
 use crate::error::Result;
 use crate::models::todo::{QueryScope, TodoCreateParams, TodoItem, TodoPriority, TodoStatus, TodoUpdateParams};
 use crate::services::unified_todo_repository::UnifiedTodoRepository;
+use crate::state::AppState;
 
 // ============================================================================
 // List todos
@@ -32,14 +30,14 @@ pub struct ListTodosParams {
     pub limit: Option<u32>,
 }
 
+/// List todos
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn list_todos(
     params: ListTodosParams,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<Vec<TodoItem>> {
-    let config_dir = app.path().app_config_dir()
-        .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
+    let config_dir = state.data_root.lock().unwrap().config_dir();
 
     let workspace_path = params.workspace_path
         .filter(|p| !p.trim().is_empty())
@@ -110,14 +108,14 @@ pub struct TodoCreateSubtask {
     pub title: String,
 }
 
+/// Create todo
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn create_todo(
     params: CreateTodoParams,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<TodoItem> {
-    let config_dir = app.path().app_config_dir()
-        .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
+    let config_dir = state.data_root.lock().unwrap().config_dir();
 
     let workspace_path = params.workspace_path
         .filter(|p| !p.trim().is_empty())
@@ -188,14 +186,14 @@ pub struct UpdateTodoParams {
     pub workspace_path: Option<String>,
 }
 
+/// Update todo
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn update_todo(
     params: UpdateTodoParams,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<TodoItem> {
-    let config_dir = app.path().app_config_dir()
-        .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
+    let config_dir = state.data_root.lock().unwrap().config_dir();
 
     let workspace_path = params.workspace_path
         .filter(|p| !p.trim().is_empty())
@@ -237,14 +235,14 @@ pub struct DeleteTodoParams {
     pub workspace_path: Option<String>,
 }
 
+/// Delete todo
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn delete_todo(
     params: DeleteTodoParams,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<TodoItem> {
-    let config_dir = app.path().app_config_dir()
-        .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
+    let config_dir = state.data_root.lock().unwrap().config_dir();
 
     let workspace_path = params.workspace_path
         .filter(|p| !p.trim().is_empty())
@@ -267,14 +265,14 @@ pub struct StartTodoParams {
     pub workspace_path: Option<String>,
 }
 
+/// Start todo
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn start_todo(
     params: StartTodoParams,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<TodoItem> {
-    let config_dir = app.path().app_config_dir()
-        .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
+    let config_dir = state.data_root.lock().unwrap().config_dir();
 
     let workspace_path = params.workspace_path
         .filter(|p| !p.trim().is_empty())
@@ -297,14 +295,14 @@ pub struct CompleteTodoParams {
     pub workspace_path: Option<String>,
 }
 
+/// Complete todo
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn complete_todo(
     params: CompleteTodoParams,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<TodoItem> {
-    let config_dir = app.path().app_config_dir()
-        .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
+    let config_dir = state.data_root.lock().unwrap().config_dir();
 
     let workspace_path = params.workspace_path
         .filter(|p| !p.trim().is_empty())
@@ -329,14 +327,14 @@ pub struct GetBreakdownParams {
     pub workspace_path: Option<String>,
 }
 
+/// Get todo workspace breakdown
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn get_todo_workspace_breakdown(
     params: GetBreakdownParams,
-    app: AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<BTreeMap<String, usize>> {
-    let config_dir = app.path().app_config_dir()
-        .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
+    let config_dir = state.data_root.lock().unwrap().config_dir();
 
     let workspace_path = params.workspace_path
         .filter(|p| !p.trim().is_empty())

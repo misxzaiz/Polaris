@@ -111,11 +111,11 @@ pub fn detect_legacy_data_internal() -> Option<LegacyDataInfo> {
 /// 公共逻辑：给定 AppState 返回 DataRootInfo
 pub fn build_info(state: &AppState) -> DataRootInfo {
     let dr = state.data_root.lock().unwrap().clone();
-    let (cfg_bytes, cfg_files) = dir_size_and_files(dr.config_root());
-    let (data_bytes, data_files) = if dr.config_root() == dr.data_root() {
+    let (cfg_bytes, cfg_files) = dir_size_and_files(&dr.config_dir());
+    let (data_bytes, data_files) = if dr.config_dir() == dr.data_dir() {
         (0, 0)
     } else {
-        dir_size_and_files(dr.data_root())
+        dir_size_and_files(&dr.data_dir())
     };
 
     let default_dr = DataRoot::resolve_default();
@@ -123,18 +123,18 @@ pub fn build_info(state: &AppState) -> DataRootInfo {
     let legacy = detect_legacy_path();
     // 当前根已是旧版根，则不再提示"导入旧版"
     let legacy_present = match &legacy {
-        Some(info) => dr.config_root() != info.path && dr.data_root() != info.path,
+        Some(info) => dr.config_dir() != info.path && dr.data_dir() != info.path,
         None => false,
     };
 
     DataRootInfo {
-        config_root: dr.config_root().to_path_buf(),
-        data_root: dr.data_root().to_path_buf(),
+        config_root: dr.config_dir(),
+        data_root: dr.data_dir(),
         is_custom: dr.is_custom(),
         total_bytes: cfg_bytes + data_bytes,
         total_files: cfg_files + data_files,
-        default_config_root: default_dr.config_root().to_path_buf(),
-        default_data_root: default_dr.data_root().to_path_buf(),
+        default_config_root: default_dr.config_dir(),
+        default_data_root: default_dr.data_dir(),
         legacy_present,
         legacy_path: legacy.map(|i| i.path),
     }
@@ -153,7 +153,7 @@ pub fn perform_migration(
     let current = state.data_root.lock().unwrap().clone();
     let new_root = req.new_root.clone();
 
-    let report = do_migration(&current.config_root(), &new_root, req.mode)?;
+    let report = do_migration(&current.config_dir(), &new_root, req.mode)?;
 
     // 写回 Config.data_root（让下次启动用新根）
     {

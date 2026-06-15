@@ -5,53 +5,65 @@ use crate::models::prompt_snippet::{
     CreateSnippetParams, PromptSnippet, UpdateSnippetParams,
 };
 use crate::services::prompt_snippet_service::PromptSnippetService;
-#[cfg(feature = "tauri-app")]
-use tauri::{AppHandle, Manager};
+use crate::state::AppState;
 
 #[cfg(feature = "tauri-app")]
-fn get_snippet_service(app: &AppHandle) -> Result<PromptSnippetService> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
+fn get_snippet_service(state: &AppState) -> Result<PromptSnippetService> {
+    let config_dir = state.data_root.lock().unwrap().config_dir();
     Ok(PromptSnippetService::new(&config_dir))
 }
 
+/// List all snippets
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn snippet_list(app: AppHandle) -> Result<Vec<PromptSnippet>> {
-    let service = get_snippet_service(&app)?;
+pub async fn snippet_list(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<PromptSnippet>> {
+    let service = get_snippet_service(&state)?;
     service.list_all_snippets()
 }
 
+/// Get a single snippet
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn snippet_get(app: AppHandle, id: String) -> Result<Option<PromptSnippet>> {
-    let service = get_snippet_service(&app)?;
+pub async fn snippet_get(
+    id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<PromptSnippet>> {
+    let service = get_snippet_service(&state)?;
     service.get_snippet(&id)
 }
 
+/// Create a snippet
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn snippet_create(app: AppHandle, params: CreateSnippetParams) -> Result<PromptSnippet> {
-    let service = get_snippet_service(&app)?;
+pub async fn snippet_create(
+    params: CreateSnippetParams,
+    state: tauri::State<'_, AppState>,
+) -> Result<PromptSnippet> {
+    let service = get_snippet_service(&state)?;
     service.create_snippet(params)
 }
 
+/// Update a snippet
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn snippet_update(
-    app: AppHandle,
     id: String,
     params: UpdateSnippetParams,
+    state: tauri::State<'_, AppState>,
 ) -> Result<Option<PromptSnippet>> {
-    let service = get_snippet_service(&app)?;
+    let service = get_snippet_service(&state)?;
     service.update_snippet(&id, params)
 }
 
+/// Delete a snippet
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn snippet_delete(app: AppHandle, id: String) -> Result<bool> {
-    let service = get_snippet_service(&app)?;
+pub async fn snippet_delete(
+    id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<bool> {
+    let service = get_snippet_service(&state)?;
     service.delete_snippet(&id)
 }

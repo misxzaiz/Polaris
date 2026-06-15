@@ -1091,10 +1091,7 @@ pub async fn start_chat(
     options: ChatRequestOptions,
 ) -> Result<String> {
     let app_paths = AppPaths {
-        config_dir: window
-            .path()
-            .app_config_dir()
-            .map_err(|e| AppError::ProcessError(format!("获取配置目录失败: {}", e)))?,
+        config_dir: state.data_root.lock().unwrap().config_dir(),
         resource_dir: window.path().resource_dir().ok(),
     };
     let window_clone = window.clone();
@@ -1123,10 +1120,7 @@ pub async fn continue_chat(
     options: ChatRequestOptions,
 ) -> Result<()> {
     let app_paths = AppPaths {
-        config_dir: window
-            .path()
-            .app_config_dir()
-            .map_err(|e| AppError::ProcessError(format!("获取配置目录失败: {}", e)))?,
+        config_dir: state.data_root.lock().unwrap().config_dir(),
         resource_dir: window.path().resource_dir().ok(),
     };
     let window_clone = window.clone();

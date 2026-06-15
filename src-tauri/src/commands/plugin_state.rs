@@ -1,29 +1,32 @@
 //! Plugin state commands for Tauri IPC.
 
-#[cfg(feature = "tauri-app")]
-use tauri::{AppHandle, Manager};
-
 use crate::error::{AppError, Result};
 use crate::models::plugin_state::PluginStateMap;
 use crate::services::plugin_state_service::PluginStateService;
+use crate::state::AppState;
 
 #[cfg(feature = "tauri-app")]
-fn make_service(app: &AppHandle) -> Result<PluginStateService> {
-    let config_dir = app.path().app_config_dir().map_err(|e| {
-        AppError::ProcessError(format!("Failed to get app config directory: {}", e))
-    })?;
-
+fn make_service(state: &AppState) -> Result<PluginStateService> {
+    let config_dir = state.data_root.lock().unwrap().config_dir();
     Ok(PluginStateService::new(config_dir))
 }
 
+/// Load plugin state
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn plugin_state_load(app: AppHandle) -> Result<PluginStateMap> {
-    make_service(&app)?.load()
+pub async fn plugin_state_load(
+    state: tauri::State<'_, AppState>,
+) -> Result<PluginStateMap> {
+    make_service(&state)?.load()
 }
 
+/// Save plugin state
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn plugin_state_save(app: AppHandle, states: PluginStateMap) -> Result<()> {
-    make_service(&app)?.save(&states)
+pub async fn plugin_state_save(
+    states: PluginStateMap,
+    state: tauri::State<'_, AppState>,
+) -> Result<()> {
+    let _ = state; // keep parameter for consistency
+    make_service(&state)?.save(&states)
 }

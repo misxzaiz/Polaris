@@ -349,7 +349,7 @@ impl IntegrationManager {
         let media_dir = match work_dir {
             Some(dir) => std::path::PathBuf::from(dir).join(".media"),
             None => crate::services::data_root::DataRoot::resolve_default()
-                .data_root()
+                .data_dir()
                 .join("media"),
         };
 
@@ -1138,7 +1138,12 @@ impl IntegrationManager {
         let mcp_config = match &work_dir {
             Some(dir) if !dir.trim().is_empty() => {
                 #[cfg(feature = "tauri-app")]
-                let config_dir = app_handle.path().app_config_dir().ok();
+                let config_dir = app_handle.path().app_config_dir().ok().or_else(|| {
+                    let state = app_handle.state::<crate::AppState>();
+                    let dr = state.data_root.lock().unwrap();
+                    let p = dr.config_dir();
+                    Some(p)
+                });
                 #[cfg(feature = "tauri-app")]
                 let resource_dir = app_handle.path().resource_dir().ok();
                 let app_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

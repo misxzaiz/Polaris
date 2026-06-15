@@ -842,7 +842,7 @@ pub struct Config {
     ///
     /// `None` 表示使用系统默认（`dirs::config_dir()/Polaris` 或兼容老路径）。
     /// 设置该值后，所有应用自身数据（config / logs / sessions / todo / scheduler /
-    /// requirements / plugins / lsp / integrations）都会落到该目录下。
+    /// requirements / plugins / lsp / integrations / mcp）都会落到该目录下的子目录中。
     /// 修改路径需要通过迁移命令完成（不会自动搬运现有数据）。
     #[serde(default)]
     pub data_root: Option<PathBuf>,
