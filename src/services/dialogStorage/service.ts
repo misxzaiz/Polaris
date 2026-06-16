@@ -1,15 +1,19 @@
 /**
- * AI对话存储服务
+ * AI 对话存储服务（JSONL 文件版）
+ *
+ * 职责：会话的保存 / 列举 / 读取 / 删除，基于 JSONL 文件存储。
+ * 整存整取 → 幂等、保序、不重复，根治此前 IndexedDB 方案的"对话错乱"。
  */
 
-import { generateUUID } from '@/utils/uuid'
 import { createLogger } from '@/utils/logger'
-import { initDatabase } from './db'
+import type { ChatMessage } from '@/types'
+import { getDialogBackend, dialogFileName } from './dialogBackend'
+import { serializeDialog, parseDialog, parseMeta, buildMeta } from './jsonlCodec'
 import type {
-  ConversationRecord,
-  MessageRecord,
-  CreateConversationData,
-  CreateMessageData,
+  DialogMeta,
+  DialogRecord,
+  DialogSummary,
+  SaveDialogInput,
   ListOptions,
   PaginatedResult,
 } from './types'
@@ -19,101 +23,91 @@ const log = createLogger('DialogStorageService')
 const DEFAULT_PAGE_SIZE = 20
 
 class DialogStorageServiceImpl {
-  private db: IDBDatabase | null = null
-  private initPromise: Promise<void> | null = null
+  /**
+   * 保存会话（整体覆写）
+   *
+   * 以 externalId 为文件名，全量重写。多次保存同一会话 → 幂等，不会重复累积。
+   * 创建时间在已存在的文件中保留（读旧 meta 取 createdAt）。
+   */
+  async saveConversation(input: SaveDialogInput): Promise<void> {
+    if (!input.externalId || input.messages.length === 0) return
 
-  async init(): Promise<void> {
-    if (this.db) return
-    if (this.initPromise) return this.initPromise
+    const backend = getDialogBackend()
+    const fileName = dialogFileName(input.externalId)
 
-    this.initPromise = (async () => {
-      try {
-        this.db = await initDatabase()
-        log.info('DialogStorage 服务初始化完成')
-      } catch (error) {
-        log.error('DialogStorage 服务初始化失败', error instanceof Error ? error : new Error(String(error)))
-        this.initPromise = null
-        throw error
+    // 保留已有 createdAt
+    let createdAt: string | undefined
+    try {
+      const existing = await backend.readFile(fileName)
+      if (existing) {
+        const existingMeta = parseMeta(existing)
+        if (existingMeta) createdAt = existingMeta.createdAt
       }
-    })()
-
-    return this.initPromise
-  }
-
-  // ============================================================================
-  // 对话操作
-  // ============================================================================
-
-  async createConversation(data: CreateConversationData): Promise<string> {
-    await this.init()
-    
-    const id = generateUUID()
-    const now = new Date().toISOString()
-    
-    const record: ConversationRecord = {
-      id,
-      externalId: data.externalId || null,
-      engineId: data.engineId,
-      title: data.title || '新会话',
-      workspaceId: data.workspaceId || null,
-      status: 'idle',
-      messageCount: 0,
-      createdAt: now,
-      updatedAt: now,
-      lastMessageAt: null,
+    } catch {
+      /* 忽略，按新建处理 */
     }
-    
-    await this.put('conversations', record)
-    log.info('创建对话', { id, engineId: data.engineId })
-    return id
-  }
 
-  async updateConversation(id: string, data: Partial<ConversationRecord>): Promise<void> {
-    await this.init()
-    
-    const existing = await this.getConversation(id)
-    if (!existing) {
-      log.warn('对话不存在', { id })
-      return
-    }
-    
-    const updated: ConversationRecord = {
-      ...existing,
-      ...data,
-      id,
+    const meta = buildMeta({
+      externalId: input.externalId,
+      engineId: input.engineId,
+      title: input.title,
+      workspaceId: input.workspaceId,
+      workspacePath: input.workspacePath,
+      messages: input.messages,
+      createdAt,
       updatedAt: new Date().toISOString(),
-    }
-    
-    await this.put('conversations', updated)
+    })
+
+    const jsonl = serializeDialog(meta, input.messages)
+    await backend.writeFile(fileName, jsonl)
+    log.info('会话已保存到 JSONL', {
+      externalId: input.externalId,
+      messageCount: input.messages.length,
+      backend: backend.kind,
+    })
   }
 
-  async getConversation(id: string): Promise<ConversationRecord | null> {
-    await this.init()
-    return this.get('conversations', id)
-  }
-
-  async listConversations(options?: ListOptions): Promise<PaginatedResult<ConversationRecord>> {
-    await this.init()
-    
+  /**
+   * 分页列出会话（只读 meta 行，不解析完整消息 → 高效）
+   */
+  async listConversations(options?: ListOptions): Promise<PaginatedResult<DialogSummary>> {
+    const backend = getDialogBackend()
     const page = options?.page || 1
     const pageSize = options?.pageSize || DEFAULT_PAGE_SIZE
-    const sortBy = options?.sortBy || 'updatedAt'
     const sortOrder = options?.sortOrder || 'desc'
-    
-    const all = await this.getAll('conversations')
-    
-    all.sort((a, b) => {
-      const aVal = (a as Record<string, unknown>)[sortBy] as string
-      const bVal = (b as Record<string, unknown>)[sortBy] as string
-      const comparison = new Date(aVal).getTime() - new Date(bVal).getTime()
-      return sortOrder === 'desc' ? -comparison : comparison
+
+    let fileNames: string[] = []
+    try {
+      fileNames = await backend.listFiles()
+    } catch (e) {
+      log.warn('列出对话文件失败', { error: String(e) })
+      return { items: [], total: 0, page, pageSize, totalPages: 0, hasMore: false }
+    }
+
+    // 读取每个文件的 meta 行
+    const metas: DialogMeta[] = []
+    for (const name of fileNames) {
+      try {
+        const content = await backend.readFile(name)
+        if (!content) continue
+        const meta = parseMeta(content)
+        if (meta) metas.push(meta)
+      } catch {
+        /* 跳过坏文件 */
+      }
+    }
+
+    // 按 updatedAt 排序
+    metas.sort((a, b) => {
+      const cmp = new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
+      return sortOrder === 'desc' ? -cmp : cmp
     })
-    
-    const total = all.length
+
+    const total = metas.length
     const totalPages = Math.ceil(total / pageSize)
     const start = (page - 1) * pageSize
-    const items = all.slice(start, start + pageSize)
-    
+    const items = metas.slice(start, start + pageSize)
+
     return {
       items,
       total,
@@ -124,170 +118,37 @@ class DialogStorageServiceImpl {
     }
   }
 
-  async deleteConversation(id: string): Promise<void> {
-    await this.init()
-    
-    await this.delete('conversations', id)
-    
-    const messages = await this.listMessages(id)
-    for (const msg of messages.items) {
-      await this.delete('messages', msg.id)
-    }
-    
-    log.info('删除对话', { id })
-  }
-
-  // ============================================================================
-  // 消息操作
-  // ============================================================================
-
-  async addMessage(data: CreateMessageData): Promise<string> {
-    await this.init()
-    
-    const id = generateUUID()
-    const now = new Date().toISOString()
-    
-    const record: MessageRecord = {
-      id,
-      conversationId: data.conversationId,
-      type: data.type,
-      role: data.role,
-      content: data.content,
-      blocks: data.blocks,
-      attachments: data.attachments,
-      engineId: data.engineId,
-      createdAt: now,
-    }
-    
-    await this.put('messages', record)
-    
-    await this.updateConversation(data.conversationId, {
-      messageCount: (await this.getMessageCount(data.conversationId)) + 1,
-      lastMessageAt: now,
-    })
-    
-    return id
-  }
-
-  async getMessage(id: string): Promise<MessageRecord | null> {
-    await this.init()
-    return this.get('messages', id)
-  }
-
-  async listMessages(
-    conversationId: string,
-    options?: ListOptions
-  ): Promise<PaginatedResult<MessageRecord>> {
-    await this.init()
-    
-    const page = options?.page || 1
-    const pageSize = options?.pageSize || DEFAULT_PAGE_SIZE
-    const sortOrder = options?.sortOrder || 'asc'
-    
-    const all = await this.getAllByIndex<MessageRecord>('messages', 'by-conversation', conversationId)
-    
-    all.sort((a, b) => {
-      const comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-      return sortOrder === 'desc' ? -comparison : comparison
-    })
-    
-    const total = all.length
-    const totalPages = Math.ceil(total / pageSize)
-    const start = (page - 1) * pageSize
-    const items = all.slice(start, start + pageSize)
-    
-    return {
-      items,
-      total,
-      page,
-      pageSize,
-      totalPages,
-      hasMore: page < totalPages,
+  /** 读取单个会话的完整记录（meta + 有序消息） */
+  async getConversation(externalId: string): Promise<DialogRecord | null> {
+    const backend = getDialogBackend()
+    try {
+      const content = await backend.readFile(dialogFileName(externalId))
+      if (!content) return null
+      return parseDialog(content)
+    } catch (e) {
+      log.warn('读取会话失败', { externalId, error: String(e) })
+      return null
     }
   }
 
-  async deleteMessage(id: string): Promise<void> {
-    await this.init()
-    await this.delete('messages', id)
+  /** 读取单个会话的有序消息列表（恢复/Fork 用） */
+  async getConversationMessages(externalId: string): Promise<ChatMessage[]> {
+    const record = await this.getConversation(externalId)
+    return record?.messages ?? []
   }
 
-  // ============================================================================
-  // 私有方法
-  // ============================================================================
-
-  private async put<T>(storeName: string, data: T): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized')
-    
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(storeName, 'readwrite')
-      const store = transaction.objectStore(storeName)
-      const request = store.put(data)
-      
-      request.onsuccess = () => resolve()
-      request.onerror = () => reject(request.error)
-    })
+  /** 会话是否存在 */
+  async hasConversation(externalId: string): Promise<boolean> {
+    const backend = getDialogBackend()
+    const content = await backend.readFile(dialogFileName(externalId))
+    return !!content
   }
 
-  private async get<T>(storeName: string, key: string): Promise<T | null> {
-    if (!this.db) throw new Error('Database not initialized')
-    
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(storeName, 'readonly')
-      const store = transaction.objectStore(storeName)
-      const request = store.get(key)
-      
-      request.onsuccess = () => resolve(request.result || null)
-      request.onerror = () => reject(request.error)
-    })
-  }
-
-  private async getAll<T>(storeName: string): Promise<T[]> {
-    if (!this.db) throw new Error('Database not initialized')
-    
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(storeName, 'readonly')
-      const store = transaction.objectStore(storeName)
-      const request = store.getAll()
-      
-      request.onsuccess = () => resolve((request.result || []) as T[])
-      request.onerror = () => reject(request.error)
-    })
-  }
-
-  private async getAllByIndex<T>(
-    storeName: string,
-    indexName: string,
-    key: string
-  ): Promise<T[]> {
-    if (!this.db) throw new Error('Database not initialized')
-    
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(storeName, 'readonly')
-      const store = transaction.objectStore(storeName)
-      const index = store.index(indexName)
-      const request = index.getAll(key)
-      
-      request.onsuccess = () => resolve(request.result || [])
-      request.onerror = () => reject(request.error)
-    })
-  }
-
-  private async delete(storeName: string, key: string): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized')
-    
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(storeName, 'readwrite')
-      const store = transaction.objectStore(storeName)
-      const request = store.delete(key)
-      
-      request.onsuccess = () => resolve()
-      request.onerror = () => reject(request.error)
-    })
-  }
-
-  private async getMessageCount(conversationId: string): Promise<number> {
-    const result = await this.listMessages(conversationId)
-    return result.total
+  /** 删除会话 */
+  async deleteConversation(externalId: string): Promise<void> {
+    const backend = getDialogBackend()
+    await backend.deleteFile(dialogFileName(externalId))
+    log.info('会话已删除', { externalId })
   }
 }
 

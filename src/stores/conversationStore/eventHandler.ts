@@ -1,19 +1,20 @@
-import { generateUUID } from '@/utils/uuid';
 /**
  * AI 事件处理器
  *
  * 处理单个会话的 AI 事件，所有事件都应该已经包含 sessionId
  */
 
+import { generateUUID } from '@/utils/uuid'
+import { createLogger } from '@/utils/logger'
 import type { AIEvent } from '@/ai-runtime'
 import { isEditTool, extractEditDiff } from '@/utils/diffExtractor'
 import type { ConversationStore } from './types'
 import { voiceNotificationService } from '@/services/voiceNotificationService'
 import { useSessionStore } from '../index'
-import { createLogger } from '@/utils/logger'
-import { dialogStorageService } from '@/services/dialogStorage'
 import { sessionStoreManager } from './sessionStoreManager'
 import { normalizeEngineId } from '@/utils/engineDisplay'
+import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { dialogStorageService } from '@/services/dialogStorage'
 
 const log = createLogger('EventHandler')
 
@@ -23,7 +24,7 @@ const log = createLogger('EventHandler')
 export function handleAIEvent(
   event: AIEvent,
   set: (partial: Partial<ConversationStore>) => void,
-  get: () => ConversationStore
+  get: () => ConversationStore,
 ): void {
   const state = get()
 
@@ -56,8 +57,9 @@ export function handleAIEvent(
         }
       }
 
-      // 保存到 IndexedDB
-      saveToIndexedDB(get())
+      // 保存到自有 JSONL 存储（整体覆写，幂等保序）
+      // 必须用 get() 取 finishMessage() 之后的最新 state，否则会丢失最后一条 AI 回复
+      saveDialog(get())
 
       log.info('Session ended', {
         sessionId: state.sessionId,
@@ -96,7 +98,7 @@ export function handleAIEvent(
       state.updateToolCallBlock(
         callId,
         event.success ? 'completed' : 'failed',
-        output
+        output,
       )
 
       // Edit 工具：提取 diff 数据写入 block
@@ -142,7 +144,7 @@ export function handleAIEvent(
         event.planId,
         event.sessionId,
         undefined, // title from plan_content event
-        undefined  // description from plan_content event
+        undefined,  // description from plan_content event
       )
       break
 
@@ -155,7 +157,7 @@ export function handleAIEvent(
           description: event.description,
           stages: event.stages,
           status: event.status,
-        }
+        },
       )
       break
 
@@ -164,7 +166,7 @@ export function handleAIEvent(
         event.planId,
         event.stageId,
         event.status,
-        event.tasks
+        event.tasks,
       )
       break
 
@@ -172,14 +174,14 @@ export function handleAIEvent(
       state.appendPermissionRequestBlock(
         event.planId,
         event.sessionId,
-        [] // approval denials
+        [], // approval denials
       )
       break
 
     case 'plan_approval_result':
       state.updatePermissionRequestBlock(
         event.planId,
-        event.approved ? 'approved' : 'denied'
+        event.approved ? 'approved' : 'denied',
       )
       break
 
@@ -191,7 +193,7 @@ export function handleAIEvent(
       state.appendAgentRunBlock(
         event.taskId,
         event.agentType,
-        event.capabilities
+        event.capabilities,
       )
       break
 
@@ -208,7 +210,7 @@ export function handleAIEvent(
       state.appendPermissionRequestBlock(
         `perm-${Date.now()}`, // generate a unique request ID
         event.sessionId,
-        event.denials
+        event.denials,
       )
       break
 
@@ -235,7 +237,7 @@ export function handleAIEvent(
       break
 
     // permission_result is handled via plan_approval_result
-      // there is no separate permission_result event type
+    // there is no separate permission_result event type
 
     case 'question':
       state.appendQuestionBlock(
@@ -244,7 +246,7 @@ export function handleAIEvent(
         event.options,
         event.multiSelect,
         event.allowCustomInput,
-        event.categoryLabel
+        event.categoryLabel,
       )
       break
 
@@ -281,51 +283,49 @@ export function handleAIEvent(
 }
 
 /**
- * 保存会话到 IndexedDB
+ * 保存会话到自有 JSONL 存储
+ *
+ * 在 session_end 时整体覆写该会话文件（一个会话一个 .jsonl）。
+ * 整存整取 → 幂等、保序、不重复，根治 IndexedDB 方案的消息错乱。
+ * 完整序列化 ChatMessage（含 blocks/附件）→ 恢复时无损还原。
  */
-async function saveToIndexedDB(state: ConversationStore): Promise<void> {
+async function saveDialog(state: ConversationStore): Promise<void> {
   try {
     const { conversationId, messages, sessionId } = state
     if (!conversationId || messages.length === 0) return
 
-    // 获取会话元数据
+    // 会话元数据
     const metadata = sessionStoreManager.getState().sessionMetadata.get(sessionId)
     const engineId = normalizeEngineId(metadata?.engineId)
 
-    // 检查是否已存在
-    const existing = await dialogStorageService.getConversation(conversationId)
-
-    let indexedDbId: string
-    if (existing) {
-      indexedDbId = existing.id
-      await dialogStorageService.updateConversation(indexedDbId, {
-        messageCount: messages.length,
-        lastMessageAt: new Date().toISOString(),
-      })
-    } else {
-      indexedDbId = await dialogStorageService.createConversation({
-        externalId: conversationId,
-        engineId,
-        title: metadata?.title || '新会话',
-        workspaceId: metadata?.workspaceId,
-      })
+    // 标题：优先首条用户消息，其次 metadata.title
+    const firstUserMessage = messages.find((m) => m.type === 'user')
+    let title = metadata?.title || '新会话'
+    if (firstUserMessage && 'content' in firstUserMessage && firstUserMessage.content) {
+      title = (firstUserMessage.content as string).slice(0, 50)
     }
 
-    // 保存消息
-    for (const message of messages) {
-      await dialogStorageService.addMessage({
-        conversationId: indexedDbId,
-        type: message.type,
-        role: message.type,
-        content: 'content' in message ? (message.content as string) : '',
-        blocks: 'blocks' in message ? message.blocks : undefined,
-        attachments: 'attachments' in message ? message.attachments : undefined,
-        engineId: 'engineId' in message ? message.engineId : undefined,
-      })
+    // 工作区路径（用于按项目过滤 / 恢复时定位工作区）
+    let workspacePath: string | null = null
+    if (metadata?.workspaceId) {
+      const ws = useWorkspaceStore
+        .getState()
+        .workspaces.find((w) => w.id === metadata.workspaceId)
+      workspacePath = ws?.path ?? null
     }
 
-    log.info('会话已保存到 IndexedDB', { conversationId: indexedDbId, messageCount: messages.length })
+    await dialogStorageService.saveConversation({
+      externalId: conversationId,
+      engineId,
+      title,
+      workspaceId: metadata?.workspaceId ?? null,
+      workspacePath,
+      messages,
+    })
+
+    log.info('会话已保存到 JSONL', { conversationId, messageCount: messages.length })
   } catch (e) {
-    log.error('保存到 IndexedDB 失败', e instanceof Error ? e : new Error(String(e)))
+    log.error('保存会话到 JSONL 失败', e instanceof Error ? e : new Error(String(e)))
   }
 }
+

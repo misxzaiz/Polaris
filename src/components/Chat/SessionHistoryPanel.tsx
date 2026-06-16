@@ -1,9 +1,10 @@
 /**
  * 会话历史面板
  *
- * 显示所有历史会话（localStorage + Claude Code 原生），支持恢复和删除
- * 支持服务端分页加载 + 按项目/全局范围切换
- * 集成 Fork/PR 关系可视化 + 树形/列表视图切换
+ * 双 Tab 切换：
+ * - 「自有存储」：读取自有 JSONL 存储（默认，无损、保序）
+ * - 「引擎历史」：读取 Claude Code / Codex 引擎原生会话 + localStorage 旧历史
+ * 支持服务端分页加载 + 按项目/全局范围切换、Fork/PR 关系可视化、树形/列表视图。
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
@@ -26,17 +27,13 @@ const log = createLogger('SessionHistoryPanel')
 
 const PAGE_SIZE = 20
 
+/** 历史来源 Tab */
+type HistoryTab = 'self' | 'native'
+
 function getHistoryEngines(filter: 'all' | EngineId): HistoryEngineFilter[] {
   if (filter === 'codex') return ['codex']
   if (filter === 'claude-code') return ['claude-code']
   return ['claude-code', 'codex']
-}
-
-function withAssistantEngineId(messages: ChatMessage[], engineId: EngineId): ChatMessage[] {
-  return messages.map(message => {
-    if (message.type !== 'assistant' || message.engineId) return message
-    return { ...message, engineId }
-  })
 }
 
 /** 日期分组类型 */
@@ -50,7 +47,7 @@ const DATE_GROUP_ORDER: DateGroup[] = ['today', 'yesterday', 'thisWeek', 'earlie
 
 async function resolveForkWorkspaceId(
   item: UnifiedHistoryItem,
-  fallbackWorkspaceId?: string | null
+  fallbackWorkspaceId?: string | null,
 ): Promise<string | undefined> {
   const projectPath = item.projectPath?.trim()
   const workspaceState = useWorkspaceStore.getState()
@@ -58,14 +55,14 @@ async function resolveForkWorkspaceId(
   if (projectPath) {
     const normalizedProjectPath = normalizeWorkspacePath(projectPath)
     let workspace = workspaceState.workspaces.find(
-      w => normalizeWorkspacePath(w.path) === normalizedProjectPath
+      (w) => normalizeWorkspacePath(w.path) === normalizedProjectPath,
     )
     if (workspace) return workspace.id
 
     try {
       await workspaceState.createWorkspace(getPathBasename(projectPath), projectPath, false)
       workspace = useWorkspaceStore.getState().workspaces.find(
-        w => normalizeWorkspacePath(w.path) === normalizedProjectPath
+        (w) => normalizeWorkspacePath(w.path) === normalizedProjectPath,
       )
       if (workspace) return workspace.id
     } catch (error) {
@@ -90,72 +87,63 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [restoring, setRestoring] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<HistoryTab>('self')
   const [filter, setFilter] = useState<'all' | EngineId>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [forkTarget, setForkTarget] = useState<UnifiedHistoryItem | null>(null)
 
   const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const currentWorkspace = useWorkspaceStore(state => state.getCurrentWorkspace())
+  const currentWorkspace = useWorkspaceStore((state) => state.getCurrentWorkspace())
 
-  // 加载历史会话（首页或 scope 变化时）
+  /** 拉取一页历史（按当前 Tab 选择数据源） */
+  const fetchPage = useCallback(
+    async (targetPage: number) => {
+      const engines = getHistoryEngines(filter)
+      if (activeTab === 'self') {
+        return historyService.listSelfHistory(targetPage, PAGE_SIZE, engines)
+      }
+      return historyService.listNativeHistory(scope, targetPage, PAGE_SIZE, engines)
+    },
+    [activeTab, scope, filter],
+  )
+
+  // 加载历史（首页或 Tab/scope/filter 变化时）
   useEffect(() => {
-    loadHistory(true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadHistory triggers on currentWorkspace/scope change
-  }, [currentWorkspace?.path, scope, filter])
-
-  const loadHistory = async (reset: boolean = true) => {
-    if (reset) {
+    let cancelled = false
+    const load = async () => {
       setLoading(true)
       setPage(1)
-    } else {
-      setLoadingMore(true)
-    }
-
-    try {
-      const currentPage = reset ? 1 : page
-      const result = await historyService.getUnifiedHistory(
-        scope,
-        currentPage,
-        PAGE_SIZE,
-        getHistoryEngines(filter),
-      )
-
-      if (reset) {
+      try {
+        const result = await fetchPage(1)
+        if (cancelled) return
         setAllHistory(result.items)
-      } else {
-        // 追加去重
-        const existingIds = new Set(allHistory.map(h => h.id))
-        const newItems = result.items.filter(item => !existingIds.has(item.id))
-        setAllHistory(prev => [...prev, ...newItems])
+        setTotalCount(result.total)
+        setHasMore(result.hasMore)
+      } catch (e) {
+        if (!cancelled) {
+          log.error('Failed to load history', e instanceof Error ? e : new Error(String(e)))
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
       }
-
-      setTotalCount(result.total)
-      setHasMore(result.hasMore)
-    } catch (e) {
-      log.error('Failed to load history', e instanceof Error ? e : new Error(String(e)))
-    } finally {
-      setLoading(false)
-      setLoadingMore(false)
     }
-  }
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [currentWorkspace?.path, fetchPage])
 
   // 加载更多
   const handleLoadMore = useCallback(async () => {
     const nextPage = page + 1
     setPage(nextPage)
-
     setLoadingMore(true)
     try {
-      const result = await historyService.getUnifiedHistory(
-        scope,
-        nextPage,
-        PAGE_SIZE,
-        getHistoryEngines(filter),
-      )
-      const existingIds = new Set(allHistory.map(h => h.id))
-      const newItems = result.items.filter(item => !existingIds.has(item.id))
-      setAllHistory(prev => [...prev, ...newItems])
+      const result = await fetchPage(nextPage)
+      const existingIds = new Set(allHistory.map((h) => h.id))
+      const newItems = result.items.filter((item) => !existingIds.has(item.id))
+      setAllHistory((prev) => [...prev, ...newItems])
       setTotalCount(result.total)
       setHasMore(result.hasMore)
     } catch (e) {
@@ -163,7 +151,15 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
     } finally {
       setLoadingMore(false)
     }
-  }, [page, scope, filter, allHistory])
+  }, [page, fetchPage, allHistory])
+
+  // 切换 Tab
+  const handleTabChange = (tab: HistoryTab) => {
+    if (tab === activeTab) return
+    setActiveTab(tab)
+    setFilter('all')
+    setSearchQuery('')
+  }
 
   // 切换 scope
   const handleScopeChange = (newScope: HistoryScope) => {
@@ -188,7 +184,6 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
         log.info('Session restored', { itemId: item.id })
         onClose?.()
       } else {
-        log.error('Failed to restore session')
         useToastStore.getState().addToast({
           type: 'error',
           title: t('history.restoreFailed', '恢复会话失败'),
@@ -211,8 +206,8 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
   const handleDelete = async (item: UnifiedHistoryItem) => {
     try {
       await historyService.deleteHistorySession(item.id, item.source, item.engineId)
-      setAllHistory(prev => prev.filter(h => h.id !== item.id))
-      setTotalCount(prev => prev - 1)
+      setAllHistory((prev) => prev.filter((h) => h.id !== item.id))
+      setTotalCount((prev) => prev - 1)
     } catch (e) {
       log.error('Failed to delete session', e instanceof Error ? e : new Error(String(e)))
       useToastStore.getState().addToast({
@@ -223,10 +218,21 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
     }
   }
 
+  // 加载会话消息（用于 Fork）
+  const loadSessionMessages = async (item: UnifiedHistoryItem): Promise<ChatMessage[]> => {
+    const loaded = await historyService.loadMessagesForItem(
+      item.id,
+      item.engineId,
+      item.projectPath,
+      item.claudeProjectName,
+      item.title,
+    )
+    return loaded.messages
+  }
+
   // Fork 会话
   const handleFork = async (item: UnifiedHistoryItem, branchName?: string) => {
     try {
-      // 1. 先恢复源会话的消息
       const messages = await loadSessionMessages(item)
       if (messages.length === 0) {
         useToastStore.getState().addToast({
@@ -237,9 +243,6 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
         return
       }
 
-      // 2. 创建新会话并复制消息
-      //    不传 conversationId（第二个参数为 null），这样 sendMessage 走 start_chat 而非 continue_chat
-      //    只有 Claude Code 原生会话才能传 forkFromId（有 CLI session ID 可用于 --fork-session）
       const isClaudeNative = item.source === 'claude-code-native'
       const title = branchName || `Fork: ${item.title}`
       const prevActiveId = sessionStoreManager.getState().activeSessionId
@@ -255,20 +258,12 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
         },
       )
 
-      log.info('Fork created', {
-        newSessionId,
-        sourceId: item.id,
-        branchName,
-        isClaudeNative,
-        workspaceId,
-      })
+      log.info('Fork created', { newSessionId, sourceId: item.id, branchName, isClaudeNative, workspaceId })
 
-      // 3. 多窗口模式下，恢复 activeSessionId 到原来的会话，不抢焦点
       if (useViewStore.getState().multiSessionMode && prevActiveId) {
         sessionStoreManager.getState().switchSession(prevActiveId)
       }
 
-      // 4. 关闭对话框
       setForkTarget(null)
     } catch (e) {
       log.error('Fork failed', e instanceof Error ? e : new Error(String(e)))
@@ -280,37 +275,6 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
     }
   }
 
-  // 加载会话消息（用于 Fork）
-  const loadSessionMessages = async (item: UnifiedHistoryItem): Promise<ChatMessage[]> => {
-    // 从 localStorage 尝试
-    const historyJson = localStorage.getItem('event_chat_session_history')
-    const localHistory = historyJson ? JSON.parse(historyJson) : []
-    const localSession = localHistory.find((h: { id: string }) => h.id === item.id)
-    if (localSession?.data?.messages?.length > 0) {
-      return withAssistantEngineId(localSession.data.messages, item.engineId)
-    }
-
-    // 从 Claude Code 原生历史尝试
-    if (!item.engineId || item.engineId === 'claude-code') {
-      const { getClaudeCodeHistoryService } = await import('../../services/claudeCodeHistoryService')
-      const claudeCodeService = getClaudeCodeHistoryService()
-      const messages = await claudeCodeService.getSessionHistory(item.id, item.claudeProjectName)
-      if (messages.length > 0) {
-        return withAssistantEngineId(claudeCodeService.convertToChatMessages(messages), 'claude-code')
-      }
-    }
-    if (item.engineId === 'codex') {
-      const { getCodexHistoryService } = await import('../../services/codexHistoryService')
-      const codexService = getCodexHistoryService()
-      const messages = await codexService.getSessionHistory(item.id)
-      if (messages.length > 0) {
-        return withAssistantEngineId(codexService.convertToChatMessages(messages), 'codex')
-      }
-    }
-
-    return []
-  }
-
   // 判断日期分组
   const getDateGroup = (timestamp: string): DateGroup => {
     const date = new Date(timestamp)
@@ -319,15 +283,10 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
     const startOfYesterday = new Date(startOfToday.getTime() - 86400000)
     const startOfWeek = new Date(startOfToday.getTime() - 6 * 86400000)
 
-    if (date >= startOfToday) {
-      return 'today'
-    } else if (date >= startOfYesterday) {
-      return 'yesterday'
-    } else if (date >= startOfWeek) {
-      return 'thisWeek'
-    } else {
-      return 'earlier'
-    }
+    if (date >= startOfToday) return 'today'
+    if (date >= startOfYesterday) return 'yesterday'
+    if (date >= startOfWeek) return 'thisWeek'
+    return 'earlier'
   }
 
   // 格式化时间
@@ -342,10 +301,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
     if (diffMins < 60) return t('history.minutesAgo', { count: diffMins })
     if (diffHours < 24) return t('history.hoursAgo', { count: diffHours })
 
-    return date.toLocaleTimeString('zh-CN', {
-      hour: '2-digit',
-      minute: '2-digit',
-    })
+    return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
   }
 
   // 获取引擎信息
@@ -358,28 +314,18 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
         icon: HardDrive,
       }
     }
-    if (source === 'claude-code-native') {
-      return {
-        name: getEngineFullName(engineId),
-        color: 'text-blue-500',
-        bgColor: 'bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300',
-        icon: HardDrive,
-      }
-    }
     return {
       name: getEngineFullName(engineId),
-      color: 'text-blue-500',
+      color: source === 'self' ? 'text-primary' : 'text-blue-500',
       bgColor: 'bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300',
       icon: HardDrive,
     }
   }
 
   // 过滤历史（客户端搜索）
-  const filteredHistory = allHistory.filter(item => {
+  const filteredHistory = allHistory.filter((item) => {
     if (filter !== 'all' && item.engineId !== filter) return false
-    if (searchQuery && !item.title.toLowerCase().includes(searchQuery.toLowerCase())) {
-      return false
-    }
+    if (searchQuery && !item.title.toLowerCase().includes(searchQuery.toLowerCase())) return false
     return true
   })
 
@@ -402,13 +348,11 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
       thisWeek: [],
       earlier: [],
     }
-
     for (const item of filteredHistory) {
-      const group = getDateGroup(item.timestamp)
-      groups[group].push(item)
+      groups[getDateGroup(item.timestamp)].push(item)
     }
-
     return groups
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredHistory])
 
   // 格式化文件大小
@@ -423,7 +367,6 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
   if (loading) {
     return (
       <div className="flex flex-col h-full">
-        {/* 头部 */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <h2 className="text-base font-semibold text-text-primary">{t('history.title')}</h2>
           <button
@@ -433,8 +376,6 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
             <X className="w-4 h-4" />
           </button>
         </div>
-
-        {/* 加载中 */}
         <div className="flex flex-col items-center justify-center flex-1 p-8">
           <Loader2 className="w-8 h-8 animate-spin text-text-tertiary" />
           <p className="mt-4 text-sm text-text-secondary">{t('history.loading')}</p>
@@ -456,42 +397,60 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
         </button>
       </div>
 
-      {/* 范围 + 引擎筛选 + 视图切换 */}
-      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 border-b border-border-subtle shrink-0">
-        {/* 范围切换 */}
+      {/* 来源 Tab：自有存储 / 引擎历史 */}
+      <div className="flex items-center gap-1 px-3 sm:px-4 py-2 border-b border-border-subtle shrink-0">
         <button
-          onClick={() => handleScopeChange('workspace')}
-          className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors ${
-            scope === 'workspace'
-              ? 'bg-primary/20 text-primary'
-              : 'text-text-secondary hover:bg-background-hover'
+          onClick={() => handleTabChange('self')}
+          className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+            activeTab === 'self' ? 'bg-primary/20 text-primary' : 'text-text-secondary hover:bg-background-hover'
           }`}
         >
-          <FolderOpen className="w-3 h-3" />
-          {t('history.currentProject')}
+          <HardDrive className="w-3 h-3" />
+          {t('history.selfStorage', '自有存储')}
         </button>
         <button
-          onClick={() => handleScopeChange('global')}
-          className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors ${
-            scope === 'global'
-              ? 'bg-primary/20 text-primary'
-              : 'text-text-secondary hover:bg-background-hover'
+          onClick={() => handleTabChange('native')}
+          className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+            activeTab === 'native' ? 'bg-primary/20 text-primary' : 'text-text-secondary hover:bg-background-hover'
           }`}
         >
           <Globe className="w-3 h-3" />
-          {t('history.all')}
+          {t('history.engineStorage', '引擎历史')}
         </button>
+      </div>
 
-        {/* 分隔符 */}
-        <span className="hidden sm:block border-l border-border h-4" />
+      {/* 范围 + 引擎筛选 + 视图切换 */}
+      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 border-b border-border-subtle shrink-0">
+        {/* 范围切换（仅引擎历史 Tab 生效） */}
+        {activeTab === 'native' && (
+          <>
+            <button
+              onClick={() => handleScopeChange('workspace')}
+              className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors ${
+                scope === 'workspace' ? 'bg-primary/20 text-primary' : 'text-text-secondary hover:bg-background-hover'
+              }`}
+            >
+              <FolderOpen className="w-3 h-3" />
+              {t('history.currentProject')}
+            </button>
+            <button
+              onClick={() => handleScopeChange('global')}
+              className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors ${
+                scope === 'global' ? 'bg-primary/20 text-primary' : 'text-text-secondary hover:bg-background-hover'
+              }`}
+            >
+              <Globe className="w-3 h-3" />
+              {t('history.all')}
+            </button>
+            <span className="hidden sm:block border-l border-border h-4" />
+          </>
+        )}
 
         {/* 引擎筛选 */}
         <button
           onClick={() => setFilter('all')}
           className={`px-2 py-1 rounded-md text-xs transition-colors ${
-            filter === 'all'
-              ? 'bg-primary/20 text-primary'
-              : 'text-text-secondary hover:bg-background-hover'
+            filter === 'all' ? 'bg-primary/20 text-primary' : 'text-text-secondary hover:bg-background-hover'
           }`}
         >
           全部
@@ -517,7 +476,6 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
           OpenAI Codex
         </button>
 
-        {/* 分隔符 */}
         <span className="hidden sm:block border-l border-border h-4" />
 
         {/* 视图模式切换 */}
@@ -557,24 +515,15 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
       </div>
 
       {/* 会话列表 */}
-      <div
-        ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto min-h-0"
-      >
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto min-h-0">
         {filteredHistory.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full p-8 text-text-tertiary">
             <MessageSquare className="w-12 h-12 mb-4 opacity-50" />
             <p className="text-sm">{t('history.noHistory')}</p>
           </div>
         ) : viewMode === 'tree' ? (
-          /* ===== 树形视图 ===== */
-          <SessionTree
-            sessions={filteredHistory}
-            onRestore={handleRestore}
-            restoringId={restoring}
-          />
+          <SessionTree sessions={filteredHistory} onRestore={handleRestore} restoringId={restoring} />
         ) : (
-          /* ===== 列表视图 ===== */
           <>
             {DATE_GROUP_ORDER.map((group) => {
               const items = groupedHistory[group]
@@ -589,7 +538,6 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
 
               return (
                 <div key={group} className="mb-2">
-                  {/* 分组标题 */}
                   <div className="sticky top-0 z-10 px-3 sm:px-4 py-1.5 sm:py-2 bg-background-elevated border-b border-border-subtle">
                     <span className="text-xs font-medium text-text-tertiary">
                       {groupLabels[group]}
@@ -597,11 +545,11 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
                     </span>
                   </div>
 
-                  {/* 分组内的会话列表 */}
                   <ul>
                     {items.map((item, index) => {
                       const isRestoring = restoring === item.id
-                      const canDelete = item.source === 'local' || item.source === 'codex-native'
+                      const canDelete =
+                        item.source === 'self' || item.source === 'local' || item.source === 'codex-native'
                       const engineInfo = getEngineInfo(item.engineId, item.source)
                       const EngineIcon = engineInfo.icon
 
@@ -610,12 +558,10 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
                           key={item.id}
                           className={`flex items-start gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 hover:bg-background-hover transition-colors ${index > 0 ? 'border-t border-border-subtle' : ''}`}
                         >
-                          {/* 引擎标识 */}
                           <div className={`mt-0.5 ${engineInfo.color}`}>
                             <EngineIcon className="w-4 h-4" />
                           </div>
 
-                          {/* 会话信息 */}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
                               <h3 className="text-sm font-medium text-text-primary truncate">{item.title}</h3>
@@ -633,13 +579,13 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
                                 <Clock className="w-3 h-3" />
                                 {formatTime(item.timestamp)}
                               </span>
-                              {item.fileSize && (
-                                <span>{formatFileSize(item.fileSize)}</span>
-                              )}
+                              {item.fileSize && <span>{formatFileSize(item.fileSize)}</span>}
                             </div>
 
-                            {/* Fork/PR 关系指示器 */}
-                            {(item.parentSessionId || (item.childSessionIds && item.childSessionIds.length > 0) || item.gitBranch || item.linkedPr) && (
+                            {(item.parentSessionId ||
+                              (item.childSessionIds && item.childSessionIds.length > 0) ||
+                              item.gitBranch ||
+                              item.linkedPr) && (
                               <ForkIndicator
                                 parentSessionId={item.parentSessionId}
                                 childSessionIds={item.childSessionIds}
@@ -650,9 +596,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
                             )}
                           </div>
 
-                          {/* 操作按钮 */}
                           <div className="flex items-center gap-1 shrink-0">
-                            {/* Fork 按钮 */}
                             <button
                               onClick={() => setForkTarget(item)}
                               className="p-1.5 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/30 text-text-tertiary hover:text-amber-500 transition-colors"
@@ -660,7 +604,6 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
                             >
                               <GitBranch className="w-4 h-4" />
                             </button>
-                            {/* 恢复按钮 */}
                             <button
                               onClick={() => handleRestore(item)}
                               disabled={isRestoring}
@@ -703,12 +646,12 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
               disabled={loadingMore}
               className="flex items-center gap-2 px-4 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-background-hover rounded-md transition-colors disabled:opacity-50"
             >
-              {loadingMore ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <ChevronDown className="w-4 h-4" />
-              )}
-              <span>{loadingMore ? t('history.loadingMore') : t('history.loadMore', { count: Math.max(0, totalCount - allHistory.length) })}</span>
+              {loadingMore ? <Loader2 className="w-4 h-4 animate-spin" /> : <ChevronDown className="w-4 h-4" />}
+              <span>
+                {loadingMore
+                  ? t('history.loadingMore')
+                  : t('history.loadMore', { count: Math.max(0, totalCount - allHistory.length) })}
+              </span>
             </button>
           </div>
         )}
@@ -718,10 +661,12 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
       <div className="px-3 sm:px-4 py-1.5 sm:py-2 border-t border-border-subtle text-xs text-text-tertiary shrink-0">
         <div className="flex items-center justify-between">
           <div>
-            <p>{t('history.claudeCodeHint')}</p>
-            <p>{t('history.localSessionHint')}</p>
+            <p>
+              {activeTab === 'self'
+                ? t('history.selfStorageHint', '自有存储的对话历史（JSONL）')
+                : t('history.engineStorageHint', '引擎原生会话历史')}
+            </p>
           </div>
-          {/* Fork/PR 统计 */}
           {(forkStats.forkCount > 0 || forkStats.prCount > 0) && (
             <div className="flex items-center gap-2 text-[10px]">
               {forkStats.forkCount > 0 && (

@@ -1,9 +1,13 @@
 /**
  * 历史管理服务
  *
- * 从 eventChatStore 的 historySlice 中提取的独立服务。
  * 负责会话历史的存储、查询、恢复和删除。
- * 不依赖任何 Zustand store，仅操作 localStorage + 调用 sessionStoreManager。
+ * 不依赖任何 Zustand store 的渲染，仅操作 localStorage + 自有 JSONL 存储 + 调用 sessionStoreManager。
+ *
+ * 数据源：
+ * - 自有存储（self）：JSONL 文件，整存整取、无损、保序，默认数据源
+ * - 引擎原生（claude-code-native / codex-native）：读取 AI 引擎自身的会话文件
+ * - localStorage（local）：旧版轻量历史，作为降级兜底
  */
 
 import type { ChatMessage, EngineId } from '@/types'
@@ -22,6 +26,10 @@ const log = createLogger('HistoryService')
 const SESSION_HISTORY_KEY = 'event_chat_session_history'
 const MAX_SESSION_HISTORY = 50
 
+// ============================================================================
+// 类型定义
+// ============================================================================
+
 /** 历史会话记录（localStorage 存储） */
 export interface HistoryEntry {
   id: string
@@ -35,14 +43,14 @@ export interface HistoryEntry {
   }
 }
 
-/** 统一的历史条目（包含 localStorage 和 Claude Code 原生的会话） */
+/** 统一的历史条目 */
 export interface UnifiedHistoryItem {
   id: string
   title: string
   timestamp: string
   messageCount: number
   engineId: EngineId
-  source: 'local' | 'claude-code-native' | 'codex-native'
+  source: 'self' | 'local' | 'claude-code-native' | 'codex-native'
   fileSize?: number
   inputTokens?: number
   outputTokens?: number
@@ -50,15 +58,11 @@ export interface UnifiedHistoryItem {
   claudeProjectName?: string
 
   // === Fork 关系字段 ===
-  /** 父会话 ID（fork 来源） */
   parentSessionId?: string
-  /** 子会话 ID 列表 */
   childSessionIds?: string[]
 
   // === Git/PR 关联字段 ===
-  /** Git 分支名称 */
   gitBranch?: string
-  /** PR 关联信息 */
   linkedPr?: {
     number: number
     url?: string
@@ -81,15 +85,34 @@ export interface PagedHistoryResult {
 export type HistoryScope = 'workspace' | 'global'
 export type HistoryEngineFilter = Extract<EngineId, 'claude-code' | 'codex'>
 
+// ============================================================================
+// 工具函数
+// ============================================================================
+
 function withAssistantEngineId(messages: ChatMessage[], engineId: EngineId): ChatMessage[] {
-  return messages.map(message => {
+  return messages.map((message) => {
     if (message.type !== 'assistant' || message.engineId) return message
     return { ...message, engineId }
   })
 }
 
+/** 根据 workspaceId 查询工作区路径 */
+function resolveWorkspacePath(workspaceId: string | null | undefined): string | null {
+  if (!workspaceId) return null
+  const ws = useWorkspaceStore.getState().workspaces.find((w) => w.id === workspaceId)
+  return ws?.path ?? null
+}
+
+// ============================================================================
+// 服务实现
+// ============================================================================
+
 export const historyService = {
-  /** 保存当前活跃会话到历史 */
+  // ============================================================================
+  // 保存
+  // ============================================================================
+
+  /** 保存当前活跃会话到历史（localStorage + 自有 JSONL 双写） */
   async saveToHistory(title?: string): Promise<void> {
     try {
       const sessionId = sessionStoreManager.getState().activeSessionId
@@ -100,14 +123,15 @@ export const historyService = {
       const metadata = sessionStoreManager.getState().sessionMetadata.get(sessionId)
       const engineId = normalizeEngineId(metadata?.engineId)
 
+      const firstUserMessage = store.messages.find((m) => m.type === 'user')
+      let sessionTitle = title || '新对话'
+      if (!title && firstUserMessage && 'content' in firstUserMessage && firstUserMessage.content) {
+        sessionTitle = (firstUserMessage.content as string).slice(0, 50)
+      }
+
+      // 1. 保存 localStorage（旧版轻量历史，用于降级恢复）
       const historyJson = localStorage.getItem(SESSION_HISTORY_KEY)
       const history: HistoryEntry[] = historyJson ? JSON.parse(historyJson) : []
-
-      const firstUserMessage = store.messages.find(m => m.type === 'user')
-      let sessionTitle = title || '新对话'
-      if (!title && firstUserMessage && 'content' in firstUserMessage) {
-        sessionTitle = (firstUserMessage.content as string).slice(0, 50) + '...'
-      }
 
       const historyEntry: HistoryEntry = {
         id: store.conversationId,
@@ -121,153 +145,110 @@ export const historyService = {
         },
       }
 
-      const filteredHistory = history.filter(h => h.id !== store.conversationId)
+      const filteredHistory = history.filter((h) => h.id !== store.conversationId)
       filteredHistory.unshift(historyEntry)
       const limitedHistory = filteredHistory.slice(0, MAX_SESSION_HISTORY)
-
       localStorage.setItem(SESSION_HISTORY_KEY, JSON.stringify(limitedHistory))
-      log.info('会话已保存到历史', { sessionTitle })
 
-      // 同时保存到 IndexedDB
-      await this.saveToIndexedDB(store, metadata, sessionTitle)
+      // 2. 保存自有 JSONL（整体覆写，幂等保序）
+      await dialogStorageService.saveConversation({
+        externalId: store.conversationId,
+        engineId,
+        title: sessionTitle,
+        workspaceId: metadata?.workspaceId ?? null,
+        workspacePath: resolveWorkspacePath(metadata?.workspaceId),
+        messages: store.messages,
+      })
+
+      log.info('会话已保存到历史', { sessionTitle })
     } catch (e) {
       log.error('保存历史失败', e instanceof Error ? e : new Error(String(e)))
     }
   },
 
-  /** 保存到 IndexedDB */
-  private async saveToIndexedDB(
-    store: { conversationId: string | null; messages: ChatMessage[] },
-    metadata: { engineId?: string; workspaceId?: string } | undefined,
-    title: string
-  ): Promise<void> {
-    try {
-      if (!store.conversationId) return
-      const externalId = store.conversationId
-      const engineId = normalizeEngineId(metadata?.engineId)
+  // ============================================================================
+  // 查询
+  // ============================================================================
 
-      // 检查是否已存在
-      const existing = await dialogStorageService.getConversation(externalId)
-
-      let conversationId: string
-      if (existing) {
-        conversationId = existing.id
-        await dialogStorageService.updateConversation(conversationId, {
-          title,
-          messageCount: store.messages.length,
-          lastMessageAt: new Date().toISOString(),
-        })
-      } else {
-        conversationId = await dialogStorageService.createConversation({
-          externalId,
-          engineId,
-          title,
-          workspaceId: metadata?.workspaceId,
-        })
-      }
-
-      // 保存消息
-      for (const message of store.messages) {
-        await dialogStorageService.addMessage({
-          conversationId,
-          type: message.type,
-          role: message.type,
-          content: 'content' in message ? (message.content as string) : '',
-          blocks: 'blocks' in message ? message.blocks : undefined,
-          attachments: 'attachments' in message ? message.attachments : undefined,
-          engineId: 'engineId' in message ? message.engineId : undefined,
-        })
-      }
-
-      log.info('会话已保存到 IndexedDB', { conversationId, messageCount: store.messages.length })
-    } catch (e) {
-      log.error('保存到 IndexedDB 失败', e instanceof Error ? e : new Error(String(e)))
-    }
-  },
-
-  /** 聚合 localStorage + Claude Code 原生的统一历史列表（分页） */
+  /**
+   * 统一历史（默认自有优先，无数据时降级到 localStorage + 引擎原生）
+   * 兼容旧调用方；双 Tab UI 请直接用 listSelfHistory / listNativeHistory。
+   */
   async getUnifiedHistory(
     scope: HistoryScope = 'workspace',
     page: number = 1,
     pageSize: number = 20,
     engines: HistoryEngineFilter[] = ['claude-code'],
   ): Promise<PagedHistoryResult> {
-    const currentWorkspace = useWorkspaceStore.getState().getCurrentWorkspace()
-    const includeClaudeCode = engines.includes('claude-code')
-    const includeCodex = engines.includes('codex')
-
     try {
-      // 1. 优先从 IndexedDB 获取
-      const indexedDBResult = await this.getFromIndexedDB(page, pageSize, engines)
-      if (indexedDBResult.items.length > 0) {
-        return indexedDBResult
-      }
-
-      // 2. 降级到 localStorage + AI引擎
-      return await this.getFromLegacySources(scope, page, pageSize, engines)
+      const selfResult = await this.listSelfHistory(page, pageSize, engines)
+      if (selfResult.items.length > 0) return selfResult
+      return await this.listNativeHistory(scope, page, pageSize, engines)
     } catch (e) {
       log.error('获取统一历史失败', e instanceof Error ? e : new Error(String(e)))
       return { items: [], total: 0, page, pageSize, totalPages: 0, hasMore: false }
     }
   },
 
-  /** 从 IndexedDB 获取历史 */
-  private async getFromIndexedDB(
+  /** 自有存储历史（JSONL）——「自有存储」Tab 数据源 */
+  async listSelfHistory(
     page: number,
     pageSize: number,
-    engines: HistoryEngineFilter[]
+    engines: HistoryEngineFilter[],
   ): Promise<PagedHistoryResult> {
     try {
-      const result = await dialogStorageService.listConversations({
-        page,
-        pageSize,
-        sortBy: 'updatedAt',
+      // 多读取一些用于按引擎过滤后仍能填满页（自有会话量通常不大，直接全量读 meta）
+      const all = await dialogStorageService.listConversations({
+        page: 1,
+        pageSize: Number.MAX_SAFE_INTEGER,
         sortOrder: 'desc',
       })
 
-      const items: UnifiedHistoryItem[] = result.items
-        .filter(c => engines.includes(c.engineId as HistoryEngineFilter))
-        .map(c => ({
-          id: c.externalId || c.id,
-          title: c.title,
-          timestamp: c.updatedAt,
-          messageCount: c.messageCount,
-          engineId: c.engineId,
-          source: 'local' as const,
-        }))
+      const filtered = all.items.filter((m) =>
+        engines.includes(m.engineId as HistoryEngineFilter),
+      )
 
-      return {
-        items,
-        total: result.total,
-        page: result.page,
-        pageSize: result.pageSize,
-        totalPages: result.totalPages,
-        hasMore: result.hasMore,
-      }
+      const total = filtered.length
+      const totalPages = Math.ceil(total / pageSize)
+      const start = (page - 1) * pageSize
+      const pageItems = filtered.slice(start, start + pageSize)
+
+      const items: UnifiedHistoryItem[] = pageItems.map((m) => ({
+        id: m.externalId,
+        title: m.title,
+        timestamp: m.updatedAt,
+        messageCount: m.messageCount,
+        engineId: m.engineId,
+        source: 'self' as const,
+        projectPath: m.workspacePath ?? undefined,
+      }))
+
+      return { items, total, page, pageSize, totalPages, hasMore: page < totalPages }
     } catch (e) {
-      log.warn('从 IndexedDB 获取历史失败', e instanceof Error ? e : new Error(String(e)))
+      log.warn('读取自有历史失败', { error: e instanceof Error ? e.message : String(e) })
       return { items: [], total: 0, page, pageSize, totalPages: 0, hasMore: false }
     }
   },
 
-  /** 从传统源获取历史 */
-  private async getFromLegacySources(
+  /** 引擎原生 + localStorage 历史——「引擎历史」Tab 数据源 */
+  async listNativeHistory(
     scope: HistoryScope,
     page: number,
     pageSize: number,
-    engines: HistoryEngineFilter[]
+    engines: HistoryEngineFilter[],
   ): Promise<PagedHistoryResult> {
     const currentWorkspace = useWorkspaceStore.getState().getCurrentWorkspace()
     const includeClaudeCode = engines.includes('claude-code')
     const includeCodex = engines.includes('codex')
 
-    // 1. 读取 localStorage 条目（轻量，最多 50 条）
+    // 1. localStorage 轻量条目
     const historyJson = localStorage.getItem(SESSION_HISTORY_KEY)
     const localHistory: HistoryEntry[] = historyJson ? JSON.parse(historyJson) : []
-
     const localItems: UnifiedHistoryItem[] = localHistory
-      .filter(h => engines.includes(normalizeEngineId(h.engineId || 'claude-code') as HistoryEngineFilter))
-      .map(h => ({
+      .filter((h) =>
+        engines.includes(normalizeEngineId(h.engineId || 'claude-code') as HistoryEngineFilter),
+      )
+      .map((h) => ({
         id: h.id,
         title: h.title,
         timestamp: h.timestamp,
@@ -276,8 +257,8 @@ export const historyService = {
         source: 'local' as const,
       }))
 
-    // 2. 调用后端分页 API 获取原生会话
-    const workDir = scope === 'workspace' ? (currentWorkspace?.path ?? null) : null
+    // 2. 后端分页 API
+    const workDir = scope === 'workspace' ? currentWorkspace?.path ?? null : null
     const emptyPagedResult = { items: [], total: 0, page, pageSize, totalPages: 0 }
     const [claudePagedResult, codexPagedResult] = await Promise.all([
       includeClaudeCode
@@ -288,7 +269,7 @@ export const historyService = {
         : Promise.resolve(emptyPagedResult),
     ])
 
-    const claudeNativeItems: UnifiedHistoryItem[] = claudePagedResult.items.map(s => ({
+    const claudeNativeItems: UnifiedHistoryItem[] = claudePagedResult.items.map((s) => ({
       id: s.sessionId,
       title: s.summary || '无标题会话',
       timestamp: s.updatedAt || s.createdAt || new Date().toISOString(),
@@ -303,7 +284,7 @@ export const historyService = {
       gitBranch: s.gitBranch,
       linkedPr: s.linkedPr,
     }))
-    const codexNativeItems: UnifiedHistoryItem[] = codexPagedResult.items.map(s => ({
+    const codexNativeItems: UnifiedHistoryItem[] = codexPagedResult.items.map((s) => ({
       id: s.sessionId,
       title: s.summary || 'Codex 对话',
       timestamp: s.updatedAt || s.createdAt || new Date().toISOString(),
@@ -315,28 +296,20 @@ export const historyService = {
     }))
 
     const nativeItems = [...claudeNativeItems, ...codexNativeItems]
-
-    // 3. 合并去重（localStorage 条目优先）
-    const nativeIdSet = new Set(nativeItems.map(n => n.id))
-    const uniqueLocalItems = localItems.filter(l => !nativeIdSet.has(l.id))
-
-    // 4. 合并 + 排序
+    const nativeIdSet = new Set(nativeItems.map((n) => n.id))
+    const uniqueLocalItems = localItems.filter((l) => !nativeIdSet.has(l.id))
     const merged = [...uniqueLocalItems, ...nativeItems]
     merged.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
 
-    // 5. 计算总数
     const total = claudePagedResult.total + codexPagedResult.total + uniqueLocalItems.length
     const totalPages = Math.ceil(total / pageSize)
 
-    return {
-      items: merged,
-      total,
-      page,
-      pageSize,
-      totalPages,
-      hasMore: page < totalPages,
-    }
+    return { items: merged, total, page, pageSize, totalPages, hasMore: page < totalPages }
   },
+
+  // ============================================================================
+  // 恢复
+  // ============================================================================
 
   /** 从历史恢复会话 */
   async restoreFromHistory(
@@ -347,91 +320,39 @@ export const historyService = {
     titleHint?: string,
   ): Promise<boolean> {
     try {
-      // 1. 准备工作区
-      let workspaceId: string | undefined
+      // 1. 加载消息（自有 → localStorage → 引擎原生）
+      const loaded = await this.loadMessagesForItem(
+        sessionId,
+        engineId,
+        projectPath,
+        claudeProjectName,
+        titleHint,
+      )
 
-      if (projectPath) {
-        const normalizedProjectPath = normalizeWorkspacePath(projectPath)
-        const workspaces = useWorkspaceStore.getState().workspaces
-        const existingWorkspace = workspaces.find(
-          w => normalizeWorkspacePath(w.path) === normalizedProjectPath
-        )
-
-        if (existingWorkspace) {
-          workspaceId = existingWorkspace.id
-        } else {
-          const workspaceName = getPathBasename(projectPath)
-          try {
-            await useWorkspaceStore.getState().createWorkspace(workspaceName, projectPath, false)
-            const newWorkspace = useWorkspaceStore.getState().workspaces.find(
-              w => normalizeWorkspacePath(w.path) === normalizedProjectPath
-            )
-            if (newWorkspace) workspaceId = newWorkspace.id
-          } catch (e) {
-            log.warn('创建工作区失败，将创建自由会话', { error: String(e), projectPath })
-          }
-        }
-      }
-
-      // 2. 从历史源加载消息
-      let chatMessages: ChatMessage[] = []
-      let title = '恢复的会话'
-      let externalSessionId: string | undefined
-      let restoredEngineId: EngineId = normalizeEngineId(engineId)
-
-      // 2.1 尝试从 localStorage 恢复
-      const historyJson = localStorage.getItem(SESSION_HISTORY_KEY)
-      const localHistory = historyJson ? JSON.parse(historyJson) : []
-      const localSession = localHistory.find((h: HistoryEntry) => h.id === sessionId)
-
-      if (engineId === 'codex') {
-        restoredEngineId = 'codex'
-        // 拉取 Codex 原生历史消息，否则 UI 恢复后会显示空白
-        const codexService = getCodexHistoryService()
-        const codexMessages = await codexService.getSessionHistory(sessionId)
-        if (codexMessages.length > 0) {
-          chatMessages = withAssistantEngineId(
-            codexService.convertToChatMessages(codexMessages),
-            'codex',
-          )
-        }
-        title = localSession?.title || titleHint || '恢复的 Codex 会话'
-        externalSessionId = sessionId
-      }
-      else if (localSession) {
-        restoredEngineId = normalizeEngineId(localSession.engineId || engineId)
-        chatMessages = withAssistantEngineId(localSession.data.messages || [], restoredEngineId)
-        title = localSession.title
-        externalSessionId = localSession.id
-      }
-      // 2.2 尝试从 Claude Code 原生历史恢复
-      else if (!engineId || engineId === 'claude-code') {
-        const claudeCodeService = getClaudeCodeHistoryService()
-        const messages = await claudeCodeService.getSessionHistory(sessionId, claudeProjectName)
-
-        if (messages.length > 0) {
-          restoredEngineId = 'claude-code'
-          chatMessages = withAssistantEngineId(claudeCodeService.convertToChatMessages(messages), restoredEngineId)
-          title = '恢复的会话'
-          externalSessionId = sessionId
-        }
-      }
-
-      if (chatMessages.length === 0 && restoredEngineId !== 'codex') {
+      // 2. codex 允许空消息裸 resume（后端 continue 已有会话）；其他引擎空消息视为失败
+      if (loaded.messages.length === 0 && loaded.engineId !== 'codex') {
         log.warn('无法从历史加载消息', { sessionId, engineId })
         return false
       }
 
+      // 2. 准备工作区（优先用传入 projectPath，其次用自有存储记录的 workspacePath）
+      const effectiveProjectPath = projectPath || loaded.workspacePath || undefined
+      const workspaceId = await this.ensureWorkspace(effectiveProjectPath)
+
       // 3. 创建新会话
       const newSessionId = sessionStoreManager.getState().createSessionFromHistory(
-        chatMessages,
-        externalSessionId || null,
-        { title, workspaceId, engineId: restoredEngineId },
+        loaded.messages,
+        loaded.externalSessionId || sessionId,
+        { title: loaded.title, workspaceId, engineId: loaded.engineId },
       )
 
-      log.info('从历史恢复成功', { sessionId: newSessionId, title, messageCount: chatMessages.length })
+      log.info('从历史恢复成功', {
+        sessionId: newSessionId,
+        source: loaded.source,
+        title: loaded.title,
+        messageCount: loaded.messages.length,
+      })
 
-      // 多窗口模式时，自动加入
       if (useViewStore.getState().multiSessionMode) {
         useViewStore.getState().addToMultiView(newSessionId)
       }
@@ -443,32 +364,165 @@ export const historyService = {
     }
   },
 
+  /**
+   * 加载某条历史的完整消息（统一入口，供恢复 / Fork 复用）
+   * 优先级：自有 JSONL（无损）→ localStorage → 引擎原生
+   */
+  async loadMessagesForItem(
+    sessionId: string,
+    engineId?: string,
+    _projectPath?: string,
+    claudeProjectName?: string,
+    titleHint?: string,
+  ): Promise<{
+    messages: ChatMessage[]
+    title: string
+    engineId: EngineId
+    externalSessionId: string | null
+    workspacePath: string | null
+    source: UnifiedHistoryItem['source']
+  }> {
+    // 1. 自有 JSONL（无损，含 blocks/附件）
+    try {
+      const record = await dialogStorageService.getConversation(sessionId)
+      if (record && record.messages.length > 0) {
+        return {
+          messages: record.messages,
+          title: record.meta.title,
+          engineId: normalizeEngineId(engineId || record.meta.engineId),
+          externalSessionId: sessionId,
+          workspacePath: record.meta.workspacePath,
+          source: 'self',
+        }
+      }
+    } catch (e) {
+      log.warn('自有存储恢复失败，降级', { error: e instanceof Error ? e.message : String(e) })
+    }
+
+    // 2. localStorage
+    const historyJson = localStorage.getItem(SESSION_HISTORY_KEY)
+    const localHistory: HistoryEntry[] = historyJson ? JSON.parse(historyJson) : []
+    const localSession = localHistory.find((h) => h.id === sessionId)
+
+    // 2.1 Codex 原生（需要主动拉取消息）
+    if (engineId === 'codex') {
+      const codexService = getCodexHistoryService()
+      const codexMessages = await codexService.getSessionHistory(sessionId)
+      const messages = codexMessages.length > 0
+        ? withAssistantEngineId(codexService.convertToChatMessages(codexMessages), 'codex')
+        : []
+      return {
+        messages,
+        title: localSession?.title || titleHint || '恢复的 Codex 会话',
+        engineId: 'codex',
+        externalSessionId: sessionId,
+        workspacePath: null,
+        source: 'codex-native',
+      }
+    }
+
+    // 2.2 localStorage 命中
+    if (localSession) {
+      const restoredEngineId = normalizeEngineId(localSession.engineId || engineId)
+      return {
+        messages: withAssistantEngineId(localSession.data.messages || [], restoredEngineId),
+        title: localSession.title,
+        engineId: restoredEngineId,
+        externalSessionId: localSession.id,
+        workspacePath: null,
+        source: 'local',
+      }
+    }
+
+    // 3. Claude Code 原生
+    if (!engineId || engineId === 'claude-code') {
+      const claudeCodeService = getClaudeCodeHistoryService()
+      const messages = await claudeCodeService.getSessionHistory(sessionId, claudeProjectName)
+      if (messages.length > 0) {
+        return {
+          messages: withAssistantEngineId(
+            claudeCodeService.convertToChatMessages(messages),
+            'claude-code',
+          ),
+          title: titleHint || '恢复的会话',
+          engineId: 'claude-code',
+          externalSessionId: sessionId,
+          workspacePath: null,
+          source: 'claude-code-native',
+        }
+      }
+    }
+
+    return {
+      messages: [],
+      title: titleHint || '恢复的会话',
+      engineId: normalizeEngineId(engineId),
+      externalSessionId: sessionId,
+      workspacePath: null,
+      source: 'self',
+    }
+  },
+
+  /** 确保工作区存在，返回 workspaceId */
+  async ensureWorkspace(projectPath?: string): Promise<string | undefined> {
+    if (!projectPath) return undefined
+
+    const normalizedProjectPath = normalizeWorkspacePath(projectPath)
+    const workspaces = useWorkspaceStore.getState().workspaces
+    const existing = workspaces.find(
+      (w) => normalizeWorkspacePath(w.path) === normalizedProjectPath,
+    )
+    if (existing) return existing.id
+
+    try {
+      const workspaceName = getPathBasename(projectPath)
+      await useWorkspaceStore.getState().createWorkspace(workspaceName, projectPath, false)
+      const created = useWorkspaceStore.getState().workspaces.find(
+        (w) => normalizeWorkspacePath(w.path) === normalizedProjectPath,
+      )
+      return created?.id
+    } catch (e) {
+      log.warn('创建工作区失败，将创建自由会话', { error: String(e), projectPath })
+      return undefined
+    }
+  },
+
+  // ============================================================================
+  // 删除 / 清空
+  // ============================================================================
+
   /** 删除历史会话 */
   async deleteHistorySession(
     sessionId: string,
-    source: UnifiedHistoryItem['source'] = 'local',
+    source: UnifiedHistoryItem['source'] = 'self',
     engineId?: EngineId,
   ): Promise<void> {
     try {
-      if (source !== 'local') {
-        const { invoke } = await import('../services/tauri')
-        await invoke('delete_session', {
-          sessionId,
-          engineId: engineId || (source === 'codex-native' ? 'codex' : 'claude-code'),
-        })
+      if (source === 'self') {
+        await dialogStorageService.deleteConversation(sessionId)
         return
       }
 
-      const historyJson = localStorage.getItem(SESSION_HISTORY_KEY)
-      const history: HistoryEntry[] = historyJson ? JSON.parse(historyJson) : []
-      const filteredHistory = history.filter(h => h.id !== sessionId)
-      localStorage.setItem(SESSION_HISTORY_KEY, JSON.stringify(filteredHistory))
+      if (source === 'local') {
+        const historyJson = localStorage.getItem(SESSION_HISTORY_KEY)
+        const history: HistoryEntry[] = historyJson ? JSON.parse(historyJson) : []
+        const filteredHistory = history.filter((h) => h.id !== sessionId)
+        localStorage.setItem(SESSION_HISTORY_KEY, JSON.stringify(filteredHistory))
+        return
+      }
+
+      // 引擎原生
+      const { invoke } = await import('../services/tauri')
+      await invoke('delete_session', {
+        sessionId,
+        engineId: engineId || (source === 'codex-native' ? 'codex' : 'claude-code'),
+      })
     } catch (e) {
       log.error('删除历史会话失败', e instanceof Error ? e : new Error(String(e)))
     }
   },
 
-  /** 清空所有历史 */
+  /** 清空 localStorage 历史（自有 JSONL 文件请逐个删除） */
   clearHistory(): void {
     try {
       localStorage.removeItem(SESSION_HISTORY_KEY)
