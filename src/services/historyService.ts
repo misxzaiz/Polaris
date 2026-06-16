@@ -83,7 +83,7 @@ export interface PagedHistoryResult {
 
 /** 历史查询范围 */
 export type HistoryScope = 'workspace' | 'global'
-export type HistoryEngineFilter = Extract<EngineId, 'claude-code' | 'codex'>
+export type HistoryEngineFilter = Extract<EngineId, 'claude-code' | 'codex' | 'mimo' | 'simple-ai'>
 
 // ============================================================================
 // 工具函数

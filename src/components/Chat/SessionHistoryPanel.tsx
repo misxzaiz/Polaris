@@ -33,7 +33,9 @@ type HistoryTab = 'self' | 'native'
 function getHistoryEngines(filter: 'all' | EngineId): HistoryEngineFilter[] {
   if (filter === 'codex') return ['codex']
   if (filter === 'claude-code') return ['claude-code']
-  return ['claude-code', 'codex']
+  if (filter === 'mimo') return ['mimo']
+  if (filter === 'simple-ai') return ['simple-ai']
+  return ['claude-code', 'codex', 'mimo', 'simple-ai']
 }
 
 /** 日期分组类型 */
@@ -474,6 +476,26 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
           }`}
         >
           OpenAI Codex
+        </button>
+        <button
+          onClick={() => setFilter('mimo')}
+          className={`px-2 py-1 rounded-md text-xs transition-colors ${
+            filter === 'mimo'
+              ? 'bg-purple-100 text-purple-600 dark:bg-purple-900 dark:text-purple-300'
+              : 'text-text-secondary hover:bg-background-hover'
+          }`}
+        >
+          MiMo
+        </button>
+        <button
+          onClick={() => setFilter('simple-ai')}
+          className={`px-2 py-1 rounded-md text-xs transition-colors ${
+            filter === 'simple-ai'
+              ? 'bg-orange-100 text-orange-600 dark:bg-orange-900 dark:text-orange-300'
+              : 'text-text-secondary hover:bg-background-hover'
+          }`}
+        >
+          Simple AI
         </button>
 
         <span className="hidden sm:block border-l border-border h-4" />
