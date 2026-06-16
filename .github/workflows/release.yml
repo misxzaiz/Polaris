@@ -25,6 +25,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
@@ -84,7 +86,7 @@ jobs:
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          PREV_TAG=$(git tag --sort=-creatordate --list "v*.*.*" | grep -v "^${GITHUB_REF_NAME}$" | head -n 1)
+          PREV_TAG=$(git tag --sort=-creatordate --list "v*.*.*" | grep -v "^${GITHUB_REF_NAME}$" | head -n 1 || true)
           if [ -n "$PREV_TAG" ]; then
             COMMITS=$(git log --oneline "${PREV_TAG}..${GITHUB_REF_NAME}")
           else
