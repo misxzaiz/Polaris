@@ -79,6 +79,65 @@ jobs:
         run: |
           cargo build --manifest-path src-tauri/Cargo.toml --release --bin polaris-todo-mcp --bin polaris-requirements-mcp --bin polaris-scheduler-mcp --bin polaris-computer-mcp
 
+      - name: Generate release notes
+        id: notes
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          PREV_TAG=$(git tag --sort=-creatordate --list "v*.*.*" | grep -v "^${GITHUB_REF_NAME}$" | head -n 1)
+          if [ -n "$PREV_TAG" ]; then
+            COMMITS=$(git log --oneline "${PREV_TAG}..${GITHUB_REF_NAME}")
+          else
+            COMMITS=$(git log --oneline -30)
+          fi
+
+          features=""
+          fixes=""
+          others=""
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            # 分类：feat / fix / refactor / docs / chore / perf / ...
+            if echo "$line" | grep -qE "^(feat|feat\(.*\)):"; then
+              features="${features}  - ${line}\n"
+            elif echo "$line" | grep -qE "^(fix|fix\(.*\)):"; then
+              fixes="${fixes}  - ${line}\n"
+            elif echo "$line" | grep -qE "^(perf|refactor|docs|chore|revert|style|ci|test|build):"; then
+              others="${others}  - ${line}\n"
+            else
+              others="${others}  - ${line}\n"
+            fi
+          done <<< "$COMMITS"
+
+          cat > release_notes.md << 'NOTES_EOF'
+          # Polaris $VERSION 发布说明
+
+          本次发布包含 Tauri 桌面端 + Web 独立服务双端产物。
+
+          NOTES_EOF
+
+          if [ -n "$features" ]; then
+            echo "## 新增功能" >> release_notes.md
+            echo "" >> release_notes.md
+            echo -e "$features" >> release_notes.md
+            echo "" >> release_notes.md
+          fi
+          if [ -n "$fixes" ]; then
+            echo "## 修复问题" >> release_notes.md
+            echo "" >> release_notes.md
+            echo -e "$fixes" >> release_notes.md
+            echo "" >> release_notes.md
+          fi
+          if [ -n "$others" ]; then
+            echo "## 优化与变更" >> release_notes.md
+            echo "" >> release_notes.md
+            echo -e "$others" >> release_notes.md
+            echo "" >> release_notes.md
+          fi
+
+          echo "release_body<<EOF" >> $GITHUB_OUTPUT
+          cat release_notes.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -88,6 +147,6 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Polaris ${{ github.ref_name }}'
-          releaseBody: 'See the assets to download and install this version.'
+          releaseBody: ${{ steps.notes.outputs.release_body }}
           releaseDraft: false
           prerelease: false
