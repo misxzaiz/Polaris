@@ -245,7 +245,7 @@
   },
   "history": {
     "title": "Session History",
-    "loading": "Loading...",
+    "loading": "Loading history...",
     "today": "Today",
     "yesterday": "Yesterday",
     "thisWeek": "This Week",
@@ -254,7 +254,7 @@
     "minutesAgo": "{{count}} minutes ago",
     "hoursAgo": "{{count}} hours ago",
     "messages": "{{count}} messages",
-    "loadMore": "Load more ({{count}} hidden)",
+    "loadMore": "Load more ({{count}} remaining)",
     "restoreSession": "Restore session",
     "deleteSession": "Delete session",
     "searchPlaceholder": "Search sessions...",
@@ -263,7 +263,22 @@
     "localSessionHint": "• Local sessions can be deleted, CLI sessions are read-only",
     "forkedFrom": "Forked from",
     "childSessions": "{{count}} child sessions",
-    "viewPr": "View PR"
+    "viewPr": "View PR",
+    "currentProject": "Current Project",
+    "all": "All",
+    "listView": "List view",
+    "treeView": "Tree view (Fork/PR)",
+    "createBranch": "Create branch",
+    "loadingMore": "Loading...",
+    "restoreFailed": "Failed to restore session",
+    "restoreFailedMessage": "Unable to load session messages, session data may be expired",
+    "deleteFailed": "Failed to delete session",
+    "forkFailed": "Failed to create branch",
+    "forkFailedMessage": "Unable to load session messages, session data may be expired",
+    "selfStorage": "Self Storage",
+    "engineStorage": "Engine History",
+    "selfStorageHint": "Self-stored conversation history (JSONL)",
+    "engineStorageHint": "Engine native session history"
   },
   "statusBar": {
     "conversations": "conversations",
@@ -418,17 +433,7 @@
       "backgroundRunning": "Background"
     }
   },
-  "history": {
-    "title": "Session History",
-    "loading": "Loading history...",
-    "currentProject": "Current Project",
-    "all": "All",
-    "listView": "List view",
-    "treeView": "Tree view (Fork/PR)",
-    "createBranch": "Create branch",
-    "loadingMore": "Loading...",
-    "loadMore": "Load more ({{count}} remaining)"
-  },
+
   "emptyState": {
     "startChat": "Start chatting"
   },

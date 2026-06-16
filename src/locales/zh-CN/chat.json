@@ -244,7 +244,7 @@
   },
   "history": {
     "title": "会话历史",
-    "loading": "加载中...",
+    "loading": "加载历史会话...",
     "today": "今天",
     "yesterday": "昨天",
     "thisWeek": "本周",
@@ -253,7 +253,7 @@
     "minutesAgo": "{{count}} 分钟前",
     "hoursAgo": "{{count}} 小时前",
     "messages": "{{count}} 条消息",
-    "loadMore": "加载更多 ({{count}} 条未显示)",
+    "loadMore": "加载更多 (剩余 {{count}} 条)",
     "restoreSession": "恢复会话",
     "deleteSession": "删除会话",
     "searchPlaceholder": "搜索会话...",
@@ -262,7 +262,22 @@
     "localSessionHint": "• 本地会话可删除，CLI 会话只读",
     "forkedFrom": "从会话分叉",
     "childSessions": "{{count}} 个子会话",
-    "viewPr": "查看 PR"
+    "viewPr": "查看 PR",
+    "currentProject": "当前项目",
+    "all": "全部",
+    "listView": "列表视图",
+    "treeView": "树形视图 (Fork/PR 关系)",
+    "createBranch": "创建分支",
+    "loadingMore": "加载中...",
+    "restoreFailed": "恢复会话失败",
+    "restoreFailedMessage": "无法加载会话消息，会话数据可能已过期",
+    "deleteFailed": "删除会话失败",
+    "forkFailed": "创建分支失败",
+    "forkFailedMessage": "无法加载会话消息，会话数据可能已过期",
+    "selfStorage": "自有存储",
+    "engineStorage": "引擎历史",
+    "selfStorageHint": "自有存储的对话历史（JSONL）",
+    "engineStorageHint": "引擎原生会话历史"
   },
   "statusBar": {
     "conversations": "对话",
@@ -417,17 +432,7 @@
       "backgroundRunning": "后台运行"
     }
   },
-  "history": {
-    "title": "会话历史",
-    "loading": "加载历史会话...",
-    "currentProject": "当前项目",
-    "all": "全部",
-    "listView": "列表视图",
-    "treeView": "树形视图 (Fork/PR 关系)",
-    "createBranch": "创建分支",
-    "loadingMore": "加载中...",
-    "loadMore": "加载更多 (剩余 {{count}} 条)"
-  },
+
   "emptyState": {
     "startChat": "开始对话吧"
   },

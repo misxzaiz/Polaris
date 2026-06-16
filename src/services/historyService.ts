@@ -195,6 +195,7 @@ export const historyService = {
     page: number,
     pageSize: number,
     engines: HistoryEngineFilter[],
+    scope: HistoryScope = 'workspace',
   ): Promise<PagedHistoryResult> {
     try {
       // 多读取一些用于按引擎过滤后仍能填满页（自有会话量通常不大，直接全量读 meta）
@@ -204,9 +205,18 @@ export const historyService = {
         sortOrder: 'desc',
       })
 
-      const filtered = all.items.filter((m) =>
-        engines.includes(m.engineId as HistoryEngineFilter),
-      )
+      const currentWorkspace = useWorkspaceStore.getState().getCurrentWorkspace()
+      const normalizedCurrentPath = currentWorkspace?.path
+        ? normalizeWorkspacePath(currentWorkspace.path)
+        : null
+
+      const filtered = all.items.filter((m) => {
+        if (!engines.includes(m.engineId as HistoryEngineFilter)) return false
+        if (scope === 'workspace' && normalizedCurrentPath && m.workspacePath) {
+          return normalizeWorkspacePath(m.workspacePath) === normalizedCurrentPath
+        }
+        return true
+      })
 
       const total = filtered.length
       const totalPages = Math.ceil(total / pageSize)

@@ -103,7 +103,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
     async (targetPage: number) => {
       const engines = getHistoryEngines(filter)
       if (activeTab === 'self') {
-        return historyService.listSelfHistory(targetPage, PAGE_SIZE, engines)
+        return historyService.listSelfHistory(targetPage, PAGE_SIZE, engines, scope)
       }
       return historyService.listNativeHistory(scope, targetPage, PAGE_SIZE, engines)
     },
@@ -423,30 +423,26 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
 
       {/* 范围 + 引擎筛选 + 视图切换 */}
       <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 border-b border-border-subtle shrink-0">
-        {/* 范围切换（仅引擎历史 Tab 生效） */}
-        {activeTab === 'native' && (
-          <>
-            <button
-              onClick={() => handleScopeChange('workspace')}
-              className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors ${
-                scope === 'workspace' ? 'bg-primary/20 text-primary' : 'text-text-secondary hover:bg-background-hover'
-              }`}
-            >
-              <FolderOpen className="w-3 h-3" />
-              {t('history.currentProject')}
-            </button>
-            <button
-              onClick={() => handleScopeChange('global')}
-              className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors ${
-                scope === 'global' ? 'bg-primary/20 text-primary' : 'text-text-secondary hover:bg-background-hover'
-              }`}
-            >
-              <Globe className="w-3 h-3" />
-              {t('history.all')}
-            </button>
-            <span className="hidden sm:block border-l border-border h-4" />
-          </>
-        )}
+        {/* 范围切换 */}
+        <button
+          onClick={() => handleScopeChange('workspace')}
+          className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors ${
+            scope === 'workspace' ? 'bg-primary/20 text-primary' : 'text-text-secondary hover:bg-background-hover'
+          }`}
+        >
+          <FolderOpen className="w-3 h-3" />
+          {t('history.currentProject')}
+        </button>
+        <button
+          onClick={() => handleScopeChange('global')}
+          className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors ${
+            scope === 'global' ? 'bg-primary/20 text-primary' : 'text-text-secondary hover:bg-background-hover'
+          }`}
+        >
+          <Globe className="w-3 h-3" />
+          {t('history.all')}
+        </button>
+        <span className="hidden sm:block border-l border-border h-4" />
 
         {/* 引擎筛选 */}
         <button
@@ -602,6 +598,12 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
                                 {formatTime(item.timestamp)}
                               </span>
                               {item.fileSize && <span>{formatFileSize(item.fileSize)}</span>}
+                              {scope === 'global' && item.projectPath && (
+                                <span className="flex items-center gap-1 max-w-[120px] truncate" title={item.projectPath}>
+                                  <FolderOpen className="w-3 h-3 shrink-0" />
+                                  <span className="truncate">{getPathBasename(item.projectPath)}</span>
+                                </span>
+                              )}
                             </div>
 
                             {(item.parentSessionId ||
