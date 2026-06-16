@@ -17,8 +17,8 @@ import { ModelProviderTab } from './tabs/ModelProviderTab';
 import { GeneralTab } from './tabs/GeneralTab';
 import { SystemPromptTab } from './tabs/SystemPromptTab';
 import { PromptSnippetTab } from './tabs/PromptSnippetTab';
-import { WindowTab } from './tabs/WindowTab';
-import { TranslateTab } from './tabs/TranslateTab';
+
+
 import { QQBotTab } from './tabs/QQBotTab';
 import { FeishuTab } from './tabs/FeishuTab';
 import { SpeechTab } from './tabs/SpeechTab';
@@ -49,10 +49,8 @@ const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'plugins': 'nav.plugins',
   'system-prompt': 'nav.systemPrompt',
   'prompt-snippet': 'nav.promptSnippet',
-  'window': 'nav.window',
   'ai-engine': 'nav.aiEngine',
   'model-provider': 'nav.modelProvider',
-  'translate': 'nav.translate',
   'qqbot': 'nav.qqbot',
   'feishu': 'nav.feishu',
   'speech': 'nav.speech',
@@ -85,9 +83,7 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
   }, [config]);
 
   const topLevelKeysByTab: Partial<Record<SettingsTabId, (keyof Config)[]>> = {
-    general: ['language', 'theme'],
-    window: ['window'],
-    translate: ['baiduTranslate'],
+    general: ['language', 'theme', 'window', 'baiduTranslate'],
     speech: ['speech', 'tts', 'wakeWord', 'voiceNotification', 'voiceCommands'],
     advanced: ['gitBinPath', 'sessionDir'],
     web: ['web'],
@@ -275,22 +271,6 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
 
             {activeTab === 'prompt-snippet' && (
               <PromptSnippetTab />
-            )}
-
-            {activeTab === 'window' && (
-              <WindowTab
-                config={localConfig}
-                onConfigChange={setLocalConfig}
-                loading={loading}
-              />
-            )}
-
-            {activeTab === 'translate' && (
-              <TranslateTab
-                config={localConfig}
-                onConfigChange={setLocalConfig}
-                loading={loading}
-              />
             )}
 
             {activeTab === 'qqbot' && (

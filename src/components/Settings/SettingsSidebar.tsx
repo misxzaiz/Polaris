@@ -6,9 +6,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   IconAIEngine,
-  IconTranslate,
   IconBot,
-  IconSettings,
   IconSearch,
   IconGeneral,
   IconMic,
@@ -22,10 +20,8 @@ export type SettingsTabId =
   | 'general'
   | 'system-prompt'
   | 'prompt-snippet'
-  | 'window'
   | 'ai-engine'
   | 'model-provider'
-  | 'translate'
   | 'qqbot'
   | 'feishu'
   | 'speech'
@@ -53,10 +49,8 @@ const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'general', icon: <IconGeneral size={16} />, labelKey: 'nav.general' },
   { id: 'system-prompt', icon: <IconMessageSquareText size={16} />, labelKey: 'nav.systemPrompt' },
   { id: 'prompt-snippet', icon: <IconMessageSquareText size={16} />, labelKey: 'nav.promptSnippet' },
-  { id: 'window', icon: <IconSettings size={16} />, labelKey: 'nav.window' },
   { id: 'ai-engine', icon: <IconAIEngine size={16} />, labelKey: 'nav.aiEngine' },
   { id: 'model-provider', icon: <Server size={16} />, labelKey: 'nav.modelProvider' },
-  { id: 'translate', icon: <IconTranslate size={16} />, labelKey: 'nav.translate' },
   { id: 'qqbot', icon: <IconBot size={16} />, labelKey: 'nav.qqbot' },
   { id: 'feishu', icon: <IconBot size={16} />, labelKey: 'nav.feishu' },
   { id: 'speech', icon: <IconMic size={16} />, labelKey: 'nav.speech' },
@@ -69,7 +63,7 @@ const NAV_ITEMS: SettingsNavItem[] = [
 ];
 
 /** 桌面端专属 Tab ID */
-const DESKTOP_ONLY_TABS: SettingsTabId[] = ['app-update', 'window', 'web'];
+const DESKTOP_ONLY_TABS: SettingsTabId[] = ['app-update', 'web'];
 
 export function SettingsSidebar({ activeTab, onTabChange, searchQuery, onSearchChange }: SettingsSidebarProps) {
   const { t } = useTranslation('settings');

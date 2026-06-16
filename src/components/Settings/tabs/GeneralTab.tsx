@@ -4,7 +4,7 @@
  */
 
 import { useTranslation } from 'react-i18next';
-import type { Config } from '@/types';
+import type { Config, WindowSettings } from '@/types';
 
 interface GeneralTabProps {
   config: Config;
@@ -16,6 +16,63 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
   const { t } = useTranslation('settings');
 
   const currentTheme = config.theme ?? 'dark';
+
+  // 获取窗口设置，默认值
+  const windowSettings: WindowSettings = config.window || {
+    normalOpacity: 100,
+    compactOpacity: 100,
+  };
+
+  // 处理大窗透明度变化
+  const handleNormalOpacityChange = (value: number) => {
+    onConfigChange({
+      ...config,
+      window: { ...windowSettings, normalOpacity: value },
+    });
+  };
+
+  // 处理小窗透明度变化
+  const handleCompactOpacityChange = (value: number) => {
+    onConfigChange({
+      ...config,
+      window: { ...windowSettings, compactOpacity: value },
+    });
+  };
+
+  // 透明度滑块组件
+  const OpacitySlider = ({
+    label,
+    hint,
+    value,
+    onChange,
+  }: {
+    label: string;
+    hint: string;
+    value: number;
+    onChange: (value: number) => void;
+  }) => (
+    <div className="flex items-center justify-between">
+      <div className="flex-1 mr-4">
+        <div className="text-sm text-text-primary">{label}</div>
+        <div className="text-xs text-text-secondary">{hint}</div>
+      </div>
+      <div className="flex items-center gap-3">
+        <input
+          type="range"
+          min="0"
+          max="100"
+          step="5"
+          value={value}
+          onChange={(e) => onChange(parseInt(e.target.value, 10))}
+          disabled={loading}
+          className="w-24 h-1.5 bg-border rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
+        />
+        <span className="text-xs text-text-secondary w-10 text-right">
+          {value}%
+        </span>
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -93,6 +150,90 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
                 β
               </span>
             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 窗口透明度设置 */}
+      <div className="p-4 bg-surface rounded-lg border border-border">
+        <h3 className="text-sm font-medium text-text-primary mb-3">
+          {t('window.opacityTitle')}
+        </h3>
+
+        {/* 大窗模式透明度 */}
+        <div className="mb-4">
+          <OpacitySlider
+            label={t('window.normalOpacity')}
+            hint={t('window.normalOpacityHint')}
+            value={windowSettings.normalOpacity}
+            onChange={handleNormalOpacityChange}
+          />
+        </div>
+
+        {/* 小屏模式透明度 */}
+        <OpacitySlider
+          label={t('window.compactOpacity')}
+          hint={t('window.compactOpacityHint')}
+          value={windowSettings.compactOpacity}
+          onChange={handleCompactOpacityChange}
+        />
+      </div>
+
+      {/* 翻译设置 */}
+      <div className="p-4 bg-surface rounded-lg border border-border">
+        <h3 className="text-sm font-medium text-text-primary mb-3">
+          {t('baiduTranslate.title', '百度翻译 API')}
+        </h3>
+
+        <div className="mb-4">
+          <label className="block text-xs text-text-secondary mb-2">
+            App ID
+          </label>
+          <input
+            type="text"
+            value={config.baiduTranslate?.appId || ''}
+            onChange={(e) => onConfigChange({
+              ...config,
+              baiduTranslate: { ...config.baiduTranslate, appId: e.target.value, secretKey: config.baiduTranslate?.secretKey || '' }
+            })}
+            placeholder={t('baiduTranslate.appIdPlaceholder', '百度翻译 App ID')}
+            className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            disabled={loading}
+          />
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-xs text-text-secondary mb-2">
+            Secret Key
+          </label>
+          <input
+            type="password"
+            value={config.baiduTranslate?.secretKey || ''}
+            onChange={(e) => onConfigChange({
+              ...config,
+              baiduTranslate: { ...config.baiduTranslate, appId: config.baiduTranslate?.appId || '', secretKey: e.target.value }
+            })}
+            placeholder={t('baiduTranslate.secretKeyPlaceholder', '百度翻译 Secret Key')}
+            className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            disabled={loading}
+          />
+        </div>
+
+        <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg">
+          <div className="flex items-start gap-2">
+            <svg className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+            </svg>
+            <div className="flex-1">
+              <p className="text-xs text-text-primary">
+                <span className="font-medium">{t('baiduTranslate.configHint', '配置说明：')}</span>
+              </p>
+              <ul className="text-xs text-text-tertiary mt-1 space-y-1 list-disc list-inside">
+                <li>{t('baiduTranslate.platform', '访问百度翻译开放平台申请 API')}</li>
+                <li>{t('baiduTranslate.freeQuota', '标准版免费，每月 200 万字符')}</li>
+                <li>{t('baiduTranslate.usage', '支持选中文字右键翻译')}</li>
+              </ul>
+            </div>
           </div>
         </div>
       </div>
