@@ -110,7 +110,7 @@ jobs:
             fi
           done <<< "$COMMITS"
 
-          cat > release_notes.md << 'NOTES_EOF'
+          cat > release_notes.md << NOTES_EOF
           # Polaris $VERSION 发布说明
 
           本次发布包含 Tauri 桌面端 + Web 独立服务双端产物。
