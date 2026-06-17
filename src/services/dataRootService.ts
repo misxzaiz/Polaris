@@ -93,9 +93,16 @@ export interface MigrateReport {
   items: MigrateItem[]
 }
 
-/** 迁移旧版数据 */
-export async function migrateLegacyData(sources: string[]): Promise<MigrateReport> {
-  return invoke<MigrateReport>('migrate_legacy_data', { options: { sources } })
+/** 迁移旧版数据
+ *
+ * @param sources 用户勾选的源路径
+ * @param overwrite 冲突策略；false（默认）= 合并 + .legacy 副本；true = 旧版直接覆盖新版
+ */
+export async function migrateLegacyData(
+  sources: string[],
+  overwrite = false,
+): Promise<MigrateReport> {
+  return invoke<MigrateReport>('migrate_legacy_data', { options: { sources, overwrite } })
 }
 
 // ============================================================================

@@ -51,9 +51,13 @@ export function DataStorageCard() {
   const [migrating, setMigrating] = useState(false)
   const [report, setReport] = useState<MigrateReport | null>(null)
   const [reportExpanded, setReportExpanded] = useState(false)
+  /** 迁移冲突策略：merge=合并保留新版（默认安全） / overwrite=旧版覆盖新版 */
+  const [migrateMode, setMigrateMode] = useState<'merge' | 'overwrite'>('merge')
 
   // 改路径向导
   const [wizardOpen, setWizardOpen] = useState(false)
+  /** 迁移后是否处于"等重启"状态 */
+  const [restarting, setRestarting] = useState(false)
 
   // OPFS 历史对话迁移
   const [opfsCount, setOpfsCount] = useState<number>(0)
@@ -114,20 +118,21 @@ export function DataStorageCard() {
 
   async function handleMigrate() {
     if (selected.size === 0) return
-    if (
-      !window.confirm(
-        t(
+    const overwrite = migrateMode === 'overwrite'
+    const confirmMsg = overwrite
+      ? t(
+          'dataStorage.confirmMigrateOverwrite',
+          '⚠ 覆盖模式将用旧版数据替换新版同名文件。此操作不可撤销，确认继续？',
+        )
+      : t(
           'dataStorage.confirmMigrate',
           '将合并所选旧数据到当前数据根。原数据保留以便回滚，重复内容不会覆盖。是否继续？',
-        ),
-      )
-    ) {
-      return
-    }
+        )
+    if (!window.confirm(confirmMsg)) return
     setMigrating(true)
     setReport(null)
     try {
-      const r = await migrateLegacyData(Array.from(selected))
+      const r = await migrateLegacyData(Array.from(selected), overwrite)
       setReport(r)
       // 迁移完成后刷新数据根（占用变化）
       void refresh()
@@ -185,6 +190,22 @@ export function DataStorageCard() {
       log.error('OPFS 清理失败', e instanceof Error ? e : new Error(String(e)))
     } finally {
       setOpfsClearing(false)
+    }
+  }
+
+  /** 重启应用让迁移后的数据真正生效 */
+  async function handleRestartApp() {
+    setRestarting(true)
+    try {
+      if (isTauri()) {
+        const { relaunch } = await import('@tauri-apps/plugin-process')
+        await relaunch()
+      } else {
+        window.location.reload()
+      }
+    } catch (e) {
+      log.error('重启失败', e instanceof Error ? e : new Error(String(e)))
+      setRestarting(false)
     }
   }
 
@@ -375,27 +396,99 @@ export function DataStorageCard() {
           </div>
 
           <div className="flex items-center justify-between gap-2">
-            <div className="text-[11px] text-text-tertiary">
-              {t(
-                'dataStorage.legacyMigrateHint',
-                '迁移会复制文件到当前数据根，原目录保留不动。重复内容跳过；冲突文件写入 *.legacy-* 副本。',
-              )}
+            <div className="text-[11px] text-text-tertiary flex-1">
+              {migrateMode === 'merge'
+                ? t(
+                    'dataStorage.legacyMigrateHint',
+                    '合并模式：复制到数据根，重复内容跳过；冲突文件写入 *.legacy-* 副本，新版数据保持不变。',
+                  )
+                : t(
+                    'dataStorage.legacyMigrateHintOverwrite',
+                    '⚠ 覆盖模式：旧版数据直接替换新版同名文件，操作不可撤销。',
+                  )}
             </div>
+          </div>
+
+          {/* 迁移策略选择 */}
+          <div className="flex items-center gap-3 text-xs">
+            <span className="text-text-secondary">
+              {t('dataStorage.migrateMode', '冲突策略')}:
+            </span>
+            <label className="inline-flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="radio"
+                name="migrateMode"
+                checked={migrateMode === 'merge'}
+                onChange={() => setMigrateMode('merge')}
+                disabled={migrating}
+                className="w-3.5 h-3.5"
+              />
+              <span className={migrateMode === 'merge' ? 'text-text-primary' : 'text-text-tertiary'}>
+                {t('dataStorage.modeMerge', '合并（推荐）')}
+              </span>
+            </label>
+            <label className="inline-flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="radio"
+                name="migrateMode"
+                checked={migrateMode === 'overwrite'}
+                onChange={() => setMigrateMode('overwrite')}
+                disabled={migrating}
+                className="w-3.5 h-3.5"
+              />
+              <span className={migrateMode === 'overwrite' ? 'text-amber-500' : 'text-text-tertiary'}>
+                {t('dataStorage.modeOverwrite', '旧版覆盖新版')}
+              </span>
+            </label>
             <button
               type="button"
               onClick={handleMigrate}
               disabled={migrating || selected.size === 0}
-              className="text-xs px-3 py-1.5 bg-primary text-on-primary rounded disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+              className={`ml-auto text-xs px-3 py-1.5 rounded disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${
+                migrateMode === 'overwrite'
+                  ? 'bg-amber-500 text-white'
+                  : 'bg-primary text-on-primary'
+              }`}
             >
               {migrating
                 ? t('dataStorage.migrating', '迁移中…')
-                : t('dataStorage.migrate', '迁移所选 ({{count}})', { count: selected.size })}
+                : migrateMode === 'overwrite'
+                  ? t('dataStorage.migrateOverwrite', '覆盖迁移所选 ({{count}})', { count: selected.size })
+                  : t('dataStorage.migrate', '迁移所选 ({{count}})', { count: selected.size })}
             </button>
           </div>
 
           {/* 迁移报告 */}
           {report && (
             <div className="mt-2 p-3 bg-background-surface border border-border rounded text-xs space-y-2">
+              {/* 需要重启提示 — 仅当确实写入新文件或写入冲突副本时显示 */}
+              {(report.successCount > 0 || report.conflictCount > 0) && (
+                <div className="flex items-start gap-2 p-2 bg-amber-500/10 border border-amber-500/30 rounded">
+                  <span className="text-amber-500 text-base leading-none">⟳</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-amber-500 font-medium">
+                      {t('dataStorage.restartRequired', '迁移完成，请重启应用')}
+                    </div>
+                    <div className="text-text-secondary mt-0.5">
+                      {t(
+                        'dataStorage.restartRequiredHint',
+                        '配置、调度任务、日志等数据已经写入磁盘，但运行中的内存副本还是迁移前的版本。重启后才会真正加载迁移后的数据。',
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRestartApp}
+                    disabled={restarting}
+                    className="flex-shrink-0 text-xs px-3 py-1.5 bg-amber-500 text-white rounded disabled:opacity-50 whitespace-nowrap"
+                  >
+                    {restarting
+                      ? t('dataStorage.restarting', '重启中…')
+                      : t('dataStorage.restartNow', '立即重启')}
+                  </button>
+                </div>
+              )}
+
               <div className="flex items-center gap-3">
                 <span className="text-emerald-500">
                   ✓ {report.successCount} {t('dataStorage.report.copied', '已复制')}

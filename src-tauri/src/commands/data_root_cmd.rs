@@ -168,6 +168,11 @@ pub fn open_path_in_explorer(path: String) -> Result<()> {
 pub struct MigrateOptions {
     /// 用户选定的源路径（必须是 scan_legacy_data 返回的路径之一）
     pub sources: Vec<PathBuf>,
+    /// 冲突时是否覆盖目标
+    /// - false（默认）：合并模式，同内容跳过、异内容写入 *.legacy-{ts} 副本
+    /// - true：覆盖模式，旧版直接替换新版（不可逆）
+    #[serde(default)]
+    pub overwrite: bool,
 }
 
 /// 单文件迁移结果
@@ -209,19 +214,29 @@ pub struct MigrateReport {
 ///
 /// 旧 claude-code-pro 内的子目录直接对应到新 Polaris 同名子目录。
 /// 例外：`logs/` 不迁移（旧日志价值低、占空间），`sessions/` 落到 `cache/sessions`。
+///
+/// **重要**：根级文件（rel 只有一个分量）必须返回不带尾分隔符的纯文件名，
+/// 否则 Windows 会把目标当作目录，fs::copy 报 os error 267。
 fn map_legacy_subpath(rel: &Path) -> Option<PathBuf> {
     let mut comps = rel.components();
     let first = comps.next()?;
     let first_name = first.as_os_str().to_string_lossy();
     let rest: PathBuf = comps.collect();
 
-    match first_name.as_ref() {
+    let mapped_root: PathBuf = match first_name.as_ref() {
         // 跳过：旧日志
-        "logs" => None,
+        "logs" => return None,
         // 改路径：sessions → cache/sessions
-        "sessions" => Some(PathBuf::from("cache").join("sessions").join(rest)),
+        "sessions" => PathBuf::from("cache").join("sessions"),
         // 同名直接复用
-        _ => Some(PathBuf::from(first_name.as_ref()).join(rest)),
+        other => PathBuf::from(other),
+    };
+
+    // rest 为空时不要 join，避免在 Windows 上产生尾部分隔符
+    if rest.as_os_str().is_empty() {
+        Some(mapped_root)
+    } else {
+        Some(mapped_root.join(rest))
     }
 }
 
@@ -251,7 +266,10 @@ fn files_equal(a: &Path, b: &Path) -> bool {
 }
 
 /// 复制单文件，处理冲突
-fn copy_file_with_conflict(src: &Path, dst: &Path, ts: u64) -> MigrateItem {
+///
+/// `overwrite=true` 时：异内容直接覆盖目标（破坏性）。
+/// `overwrite=false` 时：异内容写入 `<name>.legacy-{ts}.<ext>` 副本，原目标保持不变。
+fn copy_file_with_conflict(src: &Path, dst: &Path, ts: u64, overwrite: bool) -> MigrateItem {
     let target_dir = match dst.parent() {
         Some(d) => d,
         None => {
@@ -282,7 +300,25 @@ fn copy_file_with_conflict(src: &Path, dst: &Path, ts: u64) -> MigrateItem {
             };
         }
 
-        // 冲突 → 加 .legacy-{ts} 后缀
+        // 异内容冲突：根据 overwrite 选择策略
+        if overwrite {
+            return match fs::copy(src, dst) {
+                Ok(_) => MigrateItem {
+                    source: src.to_path_buf(),
+                    target: dst.to_path_buf(),
+                    status: MigrateStatus::Copied,
+                    message: Some("已覆盖目标（旧版替换新版）".to_string()),
+                },
+                Err(e) => MigrateItem {
+                    source: src.to_path_buf(),
+                    target: dst.to_path_buf(),
+                    status: MigrateStatus::Failed,
+                    message: Some(format!("覆盖失败: {}", e)),
+                },
+            };
+        }
+
+        // 默认合并模式：写 .legacy-{ts} 副本
         let stem = dst.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
         let ext = dst
             .extension()
@@ -416,7 +452,7 @@ pub fn migrate_legacy_data_inner(options: MigrateOptions) -> Result<MigrateRepor
         });
 
         for (src_file, dst_file) in pending {
-            items.push(copy_file_with_conflict(&src_file, &dst_file, ts));
+            items.push(copy_file_with_conflict(&src_file, &dst_file, ts, options.overwrite));
         }
     }
 
@@ -621,12 +657,15 @@ pub fn validate_data_root_target(options: SetDataRootOptions) -> Result<TargetVa
 }
 
 /// 把目录全部内容复制到目标根（按文件粒度，复用 copy_file_with_conflict）
+///
+/// 切换数据根场景下默认 `overwrite=false`，与迁移合并语义一致：
+/// 目标根理论上应是新建空目录，冲突仅在异常重试时才出现，保留 .legacy 副本更安全。
 fn move_root_contents(src_root: &Path, dst_root: &Path, ts: u64) -> MoveReport {
     let mut items: Vec<MigrateItem> = Vec::new();
 
     walk_files(src_root, src_root, &mut |p, rel| {
         let target = dst_root.join(rel);
-        items.push(copy_file_with_conflict(p, &target, ts));
+        items.push(copy_file_with_conflict(p, &target, ts, false));
     });
 
     let mut success = 0u64;
@@ -739,4 +778,84 @@ pub fn set_data_root_inner(options: SetDataRootOptions) -> Result<SetDataRootRep
 #[tauri::command]
 pub fn set_data_root(options: SetDataRootOptions) -> Result<SetDataRootReport> {
     set_data_root_inner(options)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn map_legacy_subpath_root_file_no_trailing_separator() {
+        // 修复 bug：根级文件不应带尾分隔符
+        let mapped = map_legacy_subpath(Path::new("config.json")).unwrap();
+        let s = mapped.to_string_lossy();
+        assert!(!s.ends_with('\\') && !s.ends_with('/'),
+            "根级文件路径不应带尾分隔符，实际: {:?}", s);
+        assert_eq!(mapped, PathBuf::from("config.json"));
+    }
+
+    #[test]
+    fn map_legacy_subpath_nested_file() {
+        let mapped = map_legacy_subpath(Path::new("scheduler/tasks.json")).unwrap();
+        assert_eq!(mapped, PathBuf::from("scheduler").join("tasks.json"));
+    }
+
+    #[test]
+    fn map_legacy_subpath_logs_filtered() {
+        assert!(map_legacy_subpath(Path::new("logs/app.log")).is_none());
+        assert!(map_legacy_subpath(Path::new("logs")).is_none());
+    }
+
+    #[test]
+    fn map_legacy_subpath_sessions_relocated() {
+        let mapped = map_legacy_subpath(Path::new("sessions/abc.jsonl")).unwrap();
+        assert_eq!(mapped, PathBuf::from("cache").join("sessions").join("abc.jsonl"));
+        // sessions 自身（罕见）也不应带尾分隔符
+        let mapped_root = map_legacy_subpath(Path::new("sessions")).unwrap();
+        assert_eq!(mapped_root, PathBuf::from("cache").join("sessions"));
+    }
+
+    #[test]
+    fn copy_file_overwrite_replaces_target() {
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("src.txt");
+        let dst = tmp.path().join("dst.txt");
+        std::fs::write(&src, b"new").unwrap();
+        std::fs::write(&dst, b"old").unwrap();
+
+        let item = copy_file_with_conflict(&src, &dst, 0, true);
+        matches!(item.status, MigrateStatus::Copied);
+        assert_eq!(std::fs::read(&dst).unwrap(), b"new");
+    }
+
+    #[test]
+    fn copy_file_no_overwrite_writes_legacy_suffix() {
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("src.txt");
+        let dst = tmp.path().join("dst.txt");
+        std::fs::write(&src, b"new").unwrap();
+        std::fs::write(&dst, b"old").unwrap();
+
+        let item = copy_file_with_conflict(&src, &dst, 1234, false);
+        matches!(item.status, MigrateStatus::Conflicted);
+        // 原 dst 内容不变
+        assert_eq!(std::fs::read(&dst).unwrap(), b"old");
+        // .legacy 副本含新内容
+        let legacy = tmp.path().join("dst.legacy-1234.txt");
+        assert!(legacy.exists());
+        assert_eq!(std::fs::read(&legacy).unwrap(), b"new");
+    }
+
+    #[test]
+    fn copy_file_same_content_skipped() {
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("src.txt");
+        let dst = tmp.path().join("dst.txt");
+        std::fs::write(&src, b"same").unwrap();
+        std::fs::write(&dst, b"same").unwrap();
+
+        let item = copy_file_with_conflict(&src, &dst, 0, true);
+        matches!(item.status, MigrateStatus::Skipped);
+    }
 }
