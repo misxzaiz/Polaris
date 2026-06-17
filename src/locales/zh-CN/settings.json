@@ -63,7 +63,7 @@
       "viewCount": "{{count}} 个入口",
       "mcpCount": "{{count}} 个服务",
       "mcpRuntimePlan": "MCP 运行时计划",
-      "mcpRuntimeSummary": "{{enabled}} 个启用，{{disabled}} 个禁用，{{reported}} 个运行状态已返回",
+      "mcpRuntimeSummary": "{{enabled}} 个启用，{{disabled}} 个禁用",
       "enableAllMcp": "启用全部",
       "permissionsTitle": "权限",
     "noPermissions": "无额外权限",

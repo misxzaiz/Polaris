@@ -3,15 +3,17 @@
  *
  * 提供统一的 文件读写/列举/删除 接口，屏蔽底层存储差异。
  *
- * 实现优先级：
- * 1. OPFS（Origin Private File System）—— 浏览器原生文件系统，磁盘级容量，
- *    Tauri WebView2 / WKWebView 均支持。存储为真实 .jsonl 文件。
- * 2. localStorage —— 兜底方案（OPFS 不可用时，如旧环境/测试环境）。
- *    每个会话一个 key，前缀 polaris_dialog_。
+ * 实现优先级（首次调用时确定）：
+ * 1. **TauriBackend** —— 桌面端首选，落到 `<DataRoot>/dialogs/<id>.jsonl`，
+ *    用户可见、可备份、可跟随数据根迁移。
+ * 2. **OPFSBackend** —— 浏览器原生文件系统，按 origin 隔离，磁盘级容量。
+ * 3. **LocalStorageBackend** —— 极端兜底（OPFS 不可用 + 非 Tauri 环境，主要用于测试）。
  *
  * 文件名约定：{externalId}.jsonl
  */
 
+import { invoke } from '@/services/transport'
+import { isTauri } from '@/utils/platform'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('DialogBackend')
@@ -22,7 +24,7 @@ const FILE_EXT = '.jsonl'
 
 /** 存储后端接口 */
 export interface DialogBackend {
-  readonly kind: 'opfs' | 'localstorage'
+  readonly kind: 'tauri' | 'opfs' | 'localstorage'
   /** 写入文件（整体覆写） */
   writeFile(name: string, content: string): Promise<void>
   /** 读取文件内容，不存在返回 null */
@@ -31,6 +33,31 @@ export interface DialogBackend {
   listFiles(): Promise<string[]>
   /** 删除文件 */
   deleteFile(name: string): Promise<void>
+}
+
+// ============================================================================
+// Tauri 磁盘后端（首选，跟随 DataRoot）
+// ============================================================================
+
+export class TauriBackend implements DialogBackend {
+  readonly kind = 'tauri' as const
+
+  async writeFile(name: string, content: string): Promise<void> {
+    await invoke<void>('dialog_write', { name, content })
+  }
+
+  async readFile(name: string): Promise<string | null> {
+    const result = await invoke<string | null>('dialog_read', { name })
+    return result ?? null
+  }
+
+  async listFiles(): Promise<string[]> {
+    return invoke<string[]>('dialog_list')
+  }
+
+  async deleteFile(name: string): Promise<void> {
+    await invoke<void>('dialog_delete', { name })
+  }
 }
 
 // ============================================================================
@@ -152,13 +179,16 @@ class LocalStorageBackend implements DialogBackend {
 
 let backendInstance: DialogBackend | null = null
 
-/** 获取存储后端单例（首次调用时探测 OPFS 可用性） */
+/** 获取存储后端单例（首次调用时根据运行环境选择） */
 export function getDialogBackend(): DialogBackend {
   if (backendInstance) return backendInstance
 
-  if (isOPFSAvailable()) {
+  if (isTauri()) {
+    backendInstance = new TauriBackend()
+    log.info('对话存储使用 Tauri 磁盘后端')
+  } else if (isOPFSAvailable()) {
     backendInstance = new OPFSBackend()
-    log.info('对话存储使用 OPFS 后端')
+    log.info('对话存储使用 OPFS 后端（Web 模式）')
   } else {
     backendInstance = new LocalStorageBackend()
     log.info('对话存储使用 localStorage 后端（OPFS 不可用）')

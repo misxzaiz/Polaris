@@ -293,6 +293,20 @@ pub async fn handle_ipc_bridge(
         "plugin_state_load" => dispatch_plugin_state_load(&state),
         "plugin_state_save" => dispatch_plugin_state_save(&state, &args),
 
+        // ── Data Root ──────────────────────────────────────────────────────
+        "get_data_root_info" => dispatch_get_data_root_info(),
+        "scan_legacy_data_cmd" => dispatch_scan_legacy_data(),
+        "open_path_in_explorer" => dispatch_open_path_in_explorer(&args),
+        "migrate_legacy_data" => dispatch_migrate_legacy_data(&args),
+        "validate_data_root_target" => dispatch_validate_data_root_target(&args),
+        "set_data_root" => dispatch_set_data_root(&args),
+
+        // ── Dialog Storage ─────────────────────────────────────────────────
+        "dialog_list" => dispatch_dialog_list(),
+        "dialog_read" => dispatch_dialog_read(&args),
+        "dialog_write" => dispatch_dialog_write(&args),
+        "dialog_delete" => dispatch_dialog_delete(&args),
+
         // ── Unsupported ────────────────────────────────────────────────────
         _ => {
             tracing::debug!("[Web:IPC] Unsupported command: {}", command);
@@ -1485,11 +1499,7 @@ async fn dispatch_scheduler_start(state: &AppState) -> Result<Json<Value>, WebEr
         Ok(true) => {
             let config_dir = state.app_config_dir.get()
                 .cloned()
-                .unwrap_or_else(|| {
-                    dirs::config_dir()
-                        .unwrap_or_else(|| std::path::PathBuf::from("."))
-                        .join("claude-code-pro")
-                });
+                .unwrap_or_else(|| crate::services::data_root::data_root().config_dir());
 
             let event_tx = state.event_broadcast.clone();
             let mut daemon = crate::services::scheduler_daemon::SchedulerDaemon::new(config_dir, None);
@@ -1557,11 +1567,7 @@ async fn dispatch_scheduler_run_task(state: &AppState, args: &Value) -> Result<J
 
     let config_dir = state.app_config_dir.get()
         .cloned()
-        .unwrap_or_else(|| {
-            dirs::config_dir()
-                .unwrap_or_else(|| std::path::PathBuf::from("."))
-                .join("claude-code-pro")
-        });
+        .unwrap_or_else(|| crate::services::data_root::data_root().config_dir());
 
     let repository = crate::services::unified_scheduler_repository::UnifiedSchedulerRepository::new(config_dir, workspace_path_buf);
     let task = repository.update_task_status(&id, crate::models::scheduler::TaskStatus::Running)
@@ -1578,11 +1584,7 @@ async fn dispatch_scheduler_update_run_status(state: &AppState, args: &Value) ->
 
     let config_dir = state.app_config_dir.get()
         .cloned()
-        .unwrap_or_else(|| {
-            dirs::config_dir()
-                .unwrap_or_else(|| std::path::PathBuf::from("."))
-                .join("claude-code-pro")
-        });
+        .unwrap_or_else(|| crate::services::data_root::data_root().config_dir());
 
     let repository = crate::services::unified_scheduler_repository::UnifiedSchedulerRepository::new(config_dir, workspace_path_buf);
     let task_status = match status.as_str() {
@@ -1845,6 +1847,111 @@ fn dispatch_plugin_state_save(state: &AppState, args: &Value) -> Result<Json<Val
     let service =
         crate::services::plugin_state_service::PluginStateService::new(get_config_dir(state)?);
     json_result!(service.save(&states))
+}
+
+// ── Data Root dispatchers ───────────────────────────────────────────────────
+
+fn dispatch_get_data_root_info() -> Result<Json<Value>, WebError> {
+    let info = crate::commands::data_root_cmd::data_root_info_inner()
+        .map_err(|e| WebError::Internal(format!("get_data_root_info 失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(info).unwrap()))
+}
+
+fn dispatch_scan_legacy_data() -> Result<Json<Value>, WebError> {
+    let list = crate::commands::data_root_cmd::scan_legacy_data_inner()
+        .map_err(|e| WebError::Internal(format!("scan_legacy_data 失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(list).unwrap()))
+}
+
+fn dispatch_open_path_in_explorer(args: &Value) -> Result<Json<Value>, WebError> {
+    let path = args
+        .get("path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("path 参数缺失".to_string()))?;
+    crate::commands::data_root_cmd::open_path_in_explorer_inner(std::path::PathBuf::from(path))
+        .map_err(|e| WebError::Internal(format!("open_path 失败: {}", e)))?;
+    Ok(crate::web::error::ok_response())
+}
+
+fn dispatch_migrate_legacy_data(args: &Value) -> Result<Json<Value>, WebError> {
+    let options = args
+        .get("options")
+        .cloned()
+        .unwrap_or_else(|| args.clone());
+    let parsed: crate::commands::data_root_cmd::MigrateOptions =
+        serde_json::from_value(options)
+            .map_err(|e| WebError::BadRequest(format!("迁移参数解析失败: {}", e)))?;
+    let report = crate::commands::data_root_cmd::migrate_legacy_data_inner(parsed)
+        .map_err(|e| WebError::Internal(format!("迁移失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(report).unwrap()))
+}
+
+fn dispatch_validate_data_root_target(args: &Value) -> Result<Json<Value>, WebError> {
+    let options = args
+        .get("options")
+        .cloned()
+        .unwrap_or_else(|| args.clone());
+    let parsed: crate::commands::data_root_cmd::SetDataRootOptions =
+        serde_json::from_value(options)
+            .map_err(|e| WebError::BadRequest(format!("参数解析失败: {}", e)))?;
+    let result = crate::commands::data_root_cmd::validate_target_inner(&parsed)
+        .map_err(|e| WebError::Internal(format!("校验失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(result).unwrap()))
+}
+
+fn dispatch_set_data_root(args: &Value) -> Result<Json<Value>, WebError> {
+    let options = args
+        .get("options")
+        .cloned()
+        .unwrap_or_else(|| args.clone());
+    let parsed: crate::commands::data_root_cmd::SetDataRootOptions =
+        serde_json::from_value(options)
+            .map_err(|e| WebError::BadRequest(format!("参数解析失败: {}", e)))?;
+    let report = crate::commands::data_root_cmd::set_data_root_inner(parsed)
+        .map_err(|e| WebError::Internal(format!("切换失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(report).unwrap()))
+}
+
+// ── Dialog Storage dispatchers ──────────────────────────────────────────────
+
+fn dispatch_dialog_list() -> Result<Json<Value>, WebError> {
+    let names = crate::commands::dialog_storage::dialog_list_inner()
+        .map_err(|e| WebError::Internal(format!("dialog_list 失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(names).unwrap()))
+}
+
+fn dispatch_dialog_read(args: &Value) -> Result<Json<Value>, WebError> {
+    let name = args
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("name 参数缺失".to_string()))?;
+    let content = crate::commands::dialog_storage::dialog_read_inner(name)
+        .map_err(|e| WebError::Internal(format!("dialog_read 失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(content).unwrap()))
+}
+
+fn dispatch_dialog_write(args: &Value) -> Result<Json<Value>, WebError> {
+    let name = args
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("name 参数缺失".to_string()))?;
+    let content = args
+        .get("content")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("content 参数缺失".to_string()))?;
+    crate::commands::dialog_storage::dialog_write_inner(name, content)
+        .map_err(|e| WebError::Internal(format!("dialog_write 失败: {}", e)))?;
+    Ok(crate::web::error::ok_response())
+}
+
+fn dispatch_dialog_delete(args: &Value) -> Result<Json<Value>, WebError> {
+    let name = args
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("name 参数缺失".to_string()))?;
+    crate::commands::dialog_storage::dialog_delete_inner(name)
+        .map_err(|e| WebError::Internal(format!("dialog_delete 失败: {}", e)))?;
+    Ok(crate::web::error::ok_response())
 }
 
 fn get_mcp_service(state: &AppState) -> Result<crate::services::mcp_manager_service::McpManagerService, WebError> {

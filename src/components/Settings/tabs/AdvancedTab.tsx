@@ -2,9 +2,11 @@
  * 高级配置 Tab
  */
 
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Config } from '@/types';
 import { platform } from '@/utils/path';
+import { getDataRootInfo, type DataRootInfo } from '@/services/dataRootService';
 
 interface AdvancedTabProps {
   config: Config;
@@ -14,6 +16,12 @@ interface AdvancedTabProps {
 
 export function AdvancedTab({ config, onConfigChange, loading }: AdvancedTabProps) {
   const { t } = useTranslation('settings');
+  const [dataRoot, setDataRoot] = useState<DataRootInfo | null>(null);
+
+  useEffect(() => {
+    void getDataRootInfo().then(setDataRoot).catch(() => setDataRoot(null));
+  }, []);
+
   const handleGitBinPathChange = (gitBinPath: string) => {
     onConfigChange({
       ...config,
@@ -79,8 +87,8 @@ export function AdvancedTab({ config, onConfigChange, loading }: AdvancedTabProp
         <h3 className="text-sm font-medium text-text-primary mb-3">{t('advanced.debugInfo')}</h3>
 
         <div className="text-xs text-text-tertiary space-y-1">
-          <p><span className="text-text-secondary">{t('advanced.configFile')}：</span>{platform === 'windows' ? '%APPDATA%\\claude-code-pro\\config.json' : '~/.config/claude-code-pro/config.json'}</p>
-          <p><span className="text-text-secondary">{t('advanced.logDir')}：</span>{platform === 'windows' ? '%LOCALAPPDATA%\\claude-code-pro\\logs' : '~/.local/share/claude-code-pro/logs'}</p>
+          <p><span className="text-text-secondary">{t('advanced.configFile')}：</span>{dataRoot ? `${dataRoot.root}${platform === 'windows' ? '\\' : '/'}config.json` : (platform === 'windows' ? '%APPDATA%\\Polaris\\config.json' : '~/.config/Polaris/config.json')}</p>
+          <p><span className="text-text-secondary">{t('advanced.logDir')}：</span>{dataRoot ? `${dataRoot.root}${platform === 'windows' ? '\\' : '/'}logs` : (platform === 'windows' ? '%APPDATA%\\Polaris\\logs' : '~/.config/Polaris/logs')}</p>
           <p><span className="text-text-secondary">{t('advanced.currentEngine')}：</span>{config.defaultEngine}</p>
         </div>
       </div>

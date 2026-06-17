@@ -15,18 +15,13 @@ use crate::AppState;
 use super::WebError;
 
 /// Resolve AppPaths (config_dir + resource_dir) from AppState.
-/// Falls back to `dirs::config_dir()/claude-code-pro` if not set by Tauri setup.
+/// Falls back to DataRoot if not set by Tauri setup.
 pub fn resolve_app_paths(state: &AppState) -> AppPaths {
     let config_dir = state.app_config_dir.get()
         .cloned()
         .unwrap_or_else(|| {
-            let fallback = dirs::config_dir()
-                .unwrap_or_else(|| {
-                    tracing::warn!("app_config_dir not set and dirs::config_dir() unavailable, falling back to '.'");
-                    std::path::PathBuf::from(".")
-                })
-                .join("claude-code-pro");
-            tracing::debug!("app_config_dir not set, using fallback: {:?}", fallback);
+            let fallback = crate::services::data_root::data_root().config_dir();
+            tracing::debug!("app_config_dir not set, using DataRoot fallback: {:?}", fallback);
             fallback
         });
     let resource_dir = state.resource_dir.get().and_then(|p| p.clone());

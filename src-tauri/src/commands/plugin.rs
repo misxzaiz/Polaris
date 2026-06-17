@@ -45,7 +45,7 @@ pub async fn plugin_discover(
     workspace_path: Option<String>,
 ) -> Result<PluginDiscoveryResult> {
     let config_dir = state.app_config_dir.get().cloned().or_else(|| {
-        dirs::config_dir().map(|dir| dir.join("claude-code-pro"))
+        Some(crate::services::data_root::data_root().config_dir())
     }).ok_or_else(|| crate::error::AppError::ConfigError("无法获取配置目录".to_string()))?;
     let workspace_path = workspace_path.as_deref().map(std::path::Path::new);
 
@@ -58,7 +58,7 @@ pub async fn plugin_discover(
 #[cfg(feature = "tauri-app")]
 fn get_plugin_config_dir(state: &State<'_, AppState>) -> Result<std::path::PathBuf> {
     state.app_config_dir.get().cloned().or_else(|| {
-        dirs::config_dir().map(|dir| dir.join("claude-code-pro"))
+        Some(crate::services::data_root::data_root().config_dir())
     }).ok_or_else(|| crate::error::AppError::ConfigError("无法获取配置目录".to_string()))
 }
 

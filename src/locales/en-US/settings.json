@@ -63,7 +63,7 @@
       "viewCount": "{{count}} entries",
       "mcpCount": "{{count}} services",
       "mcpRuntimePlan": "MCP runtime plan",
-      "mcpRuntimeSummary": "{{enabled}} enabled, {{disabled}} disabled, {{reported}} runtime statuses reported",
+      "mcpRuntimeSummary": "{{enabled}} enabled, {{disabled}} disabled",
       "enableAllMcp": "Enable all",
       "permissionsTitle": "Permissions",
     "noPermissions": "No extra permissions",

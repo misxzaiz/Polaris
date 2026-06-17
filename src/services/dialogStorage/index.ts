@@ -28,3 +28,12 @@ export {
   type ListOptions,
   type PaginatedResult,
 } from './types'
+export {
+  migrateOpfsToTauri,
+  isOpfsMigrated,
+  resetOpfsMigratedFlag,
+  probeOpfsDialogCount,
+  clearOpfsDialogs,
+  type OpfsMigrationReport,
+  type OpfsMigrationItemError,
+} from './opfsMigration'

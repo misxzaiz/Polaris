@@ -860,6 +860,18 @@ pub fn run() {
             commands::claude_settings::write_claude_settings,
             commands::claude_settings::get_claude_settings_path,
             commands::claude_settings::add_claude_permission_rules,
+            // 数据根（DataRoot）相关
+            commands::data_root_cmd::get_data_root_info,
+            commands::data_root_cmd::scan_legacy_data_cmd,
+            commands::data_root_cmd::open_path_in_explorer,
+            commands::data_root_cmd::migrate_legacy_data,
+            commands::data_root_cmd::validate_data_root_target,
+            commands::data_root_cmd::set_data_root,
+            // 历史对话存储
+            commands::dialog_storage::dialog_list,
+            commands::dialog_storage::dialog_read,
+            commands::dialog_storage::dialog_write,
+            commands::dialog_storage::dialog_delete,
             // LSP 语言服务器相关
             commands::lsp::lsp_start,
             commands::lsp::lsp_send,
@@ -929,9 +941,7 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
     );
 
     // 设置 config_dir（替代 Tauri path resolver）
-    let config_dir = dirs::config_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("claude-code-pro");
+    let config_dir = services::data_root::data_root().config_dir();
     let _ = app_state.app_config_dir.set(config_dir.clone());
 
     // 设置 resource_dir 为可执行文件所在目录。

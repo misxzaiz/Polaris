@@ -3,6 +3,8 @@ use tracing::Level;
 use tracing_subscriber::{fmt, prelude::*};
 use tracing_appender::{non_blocking, rolling};
 
+use crate::services::data_root::data_root;
+
 /// 日志服务
 pub struct Logger {
     _guard: Option<non_blocking::WorkerGuard>,
@@ -54,13 +56,7 @@ impl Logger {
 
     /// 获取日志目录
     pub fn log_dir() -> PathBuf {
-        if let Some(data_dir) = dirs::data_local_dir() {
-            data_dir.join("claude-code-pro").join("logs")
-        } else {
-            std::env::current_dir()
-                .unwrap()
-                .join("logs")
-        }
+        data_root().logs_dir()
     }
 
     /// 获取当前日志文件路径

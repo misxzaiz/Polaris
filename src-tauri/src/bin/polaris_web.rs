@@ -15,7 +15,7 @@
 //!
 //! Token authentication is disabled by default. Enable via --token flag,
 //! POLARIS_WEB_TOKEN env var, Web UI Settings page, or edit config.json
-//! at ~/.config/claude-code-pro/config.json
+//! at ~/.config/Polaris/config.json
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 

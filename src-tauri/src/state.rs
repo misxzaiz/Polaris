@@ -12,6 +12,7 @@ use crate::commands::context::ContextMemoryStore;
 use crate::commands::terminal::TerminalManager;
 use crate::integrations::IntegrationManager;
 use crate::services::config_store::ConfigStore;
+use crate::services::data_root::data_root;
 use crate::services::file_watcher::FileWatcherManager;
 use crate::services::lsp::LspManager;
 use crate::services::lsp_config_repository::LspConfigRepository;
@@ -150,9 +151,7 @@ pub fn create_app_state(
     engine_registry: Arc<AsyncMutex<EngineRegistry>>,
     integration_manager: IntegrationManager,
 ) -> AppState {
-    let config_dir = dirs::config_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("claude-code-pro");
+    let config_dir = data_root().config_dir();
 
     AppState {
         config_store: Arc::new(Mutex::new(config_store)),
@@ -192,14 +191,10 @@ impl AppState {
     /// Non-shared fields (integration_manager, terminal_manager, etc.) get fresh
     /// empty instances — the web server never accesses them.
     pub fn clone_for_web(&self) -> AppState {
-        // Carry over app_config_dir if set, fallback to heuristic
+        // Carry over app_config_dir if set, fallback to DataRoot
         let config_dir = self.app_config_dir.get()
             .cloned()
-            .unwrap_or_else(|| {
-                dirs::config_dir()
-                    .unwrap_or_else(|| std::path::PathBuf::from("."))
-                    .join("claude-code-pro")
-            });
+            .unwrap_or_else(|| data_root().config_dir());
 
         // Carry over app_handle if already set
         #[cfg(feature = "tauri-app")]

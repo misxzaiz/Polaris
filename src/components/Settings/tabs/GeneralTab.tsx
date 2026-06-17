@@ -5,6 +5,7 @@
 
 import { useTranslation } from 'react-i18next';
 import type { Config, WindowSettings } from '@/types';
+import { DataStorageCard } from './DataStorageCard';
 
 interface GeneralTabProps {
   config: Config;
@@ -237,6 +238,9 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
           </div>
         </div>
       </div>
+
+      {/* 数据存储 */}
+      <DataStorageCard />
     </div>
   );
 }

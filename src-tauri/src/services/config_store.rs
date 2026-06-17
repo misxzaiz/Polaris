@@ -1,5 +1,6 @@
 use crate::error::{AppError, Result};
 use crate::models::config::{Config, EngineId, HealthStatus};
+use crate::services::data_root::data_root;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::path::{Path, PathBuf};
@@ -20,13 +21,11 @@ pub struct ConfigStore {
 impl ConfigStore {
     /// 创建新的配置存储
     pub fn new() -> Result<Self> {
-        let config_dir = dirs::config_dir()
-            .ok_or_else(|| AppError::ConfigError("无法获取配置目录".to_string()))?
-            .join("claude-code-pro");
+        let config_dir = data_root().config_dir();
 
         eprintln!("配置目录: {:?}", config_dir);
 
-        // 确保配置目录存在
+        // 确保配置目录存在（DataRoot::ensure 已创建，此处兜底）
         std::fs::create_dir_all(&config_dir)?;
         eprintln!("配置目录已创建");
 
@@ -257,10 +256,7 @@ impl ConfigStore {
         if let Some(ref dir) = self.config.session_dir {
             Ok(dir.clone())
         } else {
-            let data_dir = dirs::data_local_dir()
-                .ok_or_else(|| AppError::ConfigError("无法获取数据目录".to_string()))?
-                .join("claude-code-pro")
-                .join("sessions");
+            let data_dir = data_root().cache_dir().join("sessions");
 
             // 确保目录存在
             std::fs::create_dir_all(&data_dir)?;
