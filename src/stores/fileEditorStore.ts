@@ -301,8 +301,57 @@ export const useFileEditorStore = create<FileEditorStore>((set, get) => ({
         },
         isConflicted: false,
       });
+      // 同步刷新缓冲区，避免切走再切回时 switchToFile 又命中旧 buffer
+      get().saveBuffer(currentFile.path, {
+        name: currentFile.name,
+        language: currentFile.language,
+        content: diskContent,
+        originalContent: diskContent,
+        isModified: false,
+      });
     } catch (error) {
       log.error('从磁盘重新加载失败', error instanceof Error ? error : new Error(String(error)));
+    }
+  },
+
+  refreshCurrentFile: async () => {
+    const { currentFile } = get();
+    if (!currentFile) return;
+
+    try {
+      const diskContent = await tauri.getFileContent(currentFile.path) as string;
+
+      // 本地有未保存改动且与磁盘不一致：标记冲突，让用户在 EditorHeader
+      // 决定「重新加载」还是「保留当前」，避免静默丢失改动。
+      if (currentFile.isModified && diskContent !== currentFile.content) {
+        set({ isConflicted: true });
+        log.info('刷新检测到外部修改，存在未保存改动', { path: currentFile.path });
+        return;
+      }
+
+      // 无改动 或 内容已一致：直接覆盖
+      set({
+        currentFile: {
+          ...currentFile,
+          content: diskContent,
+          originalContent: diskContent,
+          isModified: false,
+        },
+        isConflicted: false,
+        status: 'idle',
+        error: null,
+      });
+      get().saveBuffer(currentFile.path, {
+        name: currentFile.name,
+        language: currentFile.language,
+        content: diskContent,
+        originalContent: diskContent,
+        isModified: false,
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '刷新文件失败';
+      log.error('刷新当前文件失败', error instanceof Error ? error : new Error(String(error)));
+      set({ status: 'error', error: errorMessage });
     }
   },
 
@@ -332,6 +381,46 @@ export const useFileEditorStore = create<FileEditorStore>((set, get) => ({
         error: null,
         isConflicted: false,
       });
+
+      // 后台校验磁盘版本：根因修复——避免 Tab 切回时显示旧内容
+      // - 本地无改动且磁盘已变 → 静默用磁盘内容刷新
+      // - 本地有改动且与磁盘冲突 → 标记 isConflicted，由 EditorHeader 提示用户
+      void (async () => {
+        try {
+          const diskContent = await tauri.getFileContent(path) as string;
+          const stateNow = get();
+          // 用户已切走，丢弃本次结果
+          if (stateNow.currentFile?.path !== path) return;
+
+          if (!stateNow.currentFile.isModified) {
+            if (diskContent !== stateNow.currentFile.originalContent) {
+              set({
+                currentFile: {
+                  ...stateNow.currentFile,
+                  content: diskContent,
+                  originalContent: diskContent,
+                  isModified: false,
+                },
+                isConflicted: false,
+              });
+              get().saveBuffer(path, {
+                name: stateNow.currentFile.name,
+                language: stateNow.currentFile.language,
+                content: diskContent,
+                originalContent: diskContent,
+                isModified: false,
+              });
+              log.debug('switchToFile 静默同步磁盘最新内容', { path });
+            }
+          } else if (diskContent !== stateNow.currentFile.originalContent) {
+            useFileEditorStore.getState().setConflicted(true);
+            log.info('switchToFile 检测到外部修改，存在未保存改动', { path });
+          }
+        } catch (e) {
+          log.warn('switchToFile 后台校验磁盘失败', { path, error: String(e) });
+        }
+      })();
+
       return;
     }
 

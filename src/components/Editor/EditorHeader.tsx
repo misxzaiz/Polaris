@@ -1,9 +1,13 @@
 /**
  * 编辑器顶部栏组件
+ *
+ * 仅在需要时渲染（文件已修改 → 显示保存按钮；文件被外部修改 → 显示冲突提示）。
+ * 关闭文件由顶部 TabBar 的关闭按钮负责，此处不再重复，避免额外占用垂直空间。
+ *
+ * 全局快捷键：Ctrl/Cmd+R 强制从磁盘重读当前文件（即使 header 不可见也生效）。
  */
 
-import { useState, useEffect, useRef } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useEffect } from 'react';
 import { useFileEditorStore } from '@/stores';
 import { createLogger } from '@/utils/logger';
 import { modKey } from '@/utils/path';
@@ -15,66 +19,38 @@ interface EditorHeaderProps {
 }
 
 export function EditorHeader({ className = '' }: EditorHeaderProps) {
-  const { t } = useTranslation('fileExplorer');
-  const { currentFile, saveFile, closeFile, status, isConflicted, reloadFromDisk, setConflicted } = useFileEditorStore();
-  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
-  const saveButtonRef = useRef<HTMLButtonElement>(null);
+  const { currentFile, saveFile, status, isConflicted, reloadFromDisk, setConflicted, refreshCurrentFile } = useFileEditorStore();
 
-  // 聚焦到保存按钮
+  // Ctrl/Cmd+R: 强制从磁盘重读当前文件（无未保存改动时静默替换；有改动则标 conflicted 提示）
   useEffect(() => {
-    if (showCloseConfirm && saveButtonRef.current) {
-      saveButtonRef.current.focus();
-    }
-  }, [showCloseConfirm]);
+    if (!currentFile) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      const isMacPlatform = navigator.platform.toLowerCase().includes('mac');
+      const mod = isMacPlatform ? e.metaKey : e.ctrlKey;
+      if (mod && !e.shiftKey && !e.altKey && (e.key === 'r' || e.key === 'R')) {
+        e.preventDefault();
+        refreshCurrentFile().catch((err) => {
+          log.error('刷新文件失败', err instanceof Error ? err : new Error(String(err)));
+        });
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [currentFile, refreshCurrentFile]);
 
   if (!currentFile) return null;
 
   const isSaving = status === 'saving';
   const isModified = currentFile.isModified;
 
+  // 干净且无冲突时无需展示该行，避免占用空间
+  if (!isModified && !isConflicted) return null;
+
   const handleSave = async () => {
     try {
       await saveFile();
     } catch (error) {
       log.error('Failed to save file:', error instanceof Error ? error : new Error(String(error)));
-    }
-  };
-
-  const handleCloseClick = () => {
-    if (isModified) {
-      setShowCloseConfirm(true);
-    } else {
-      closeFile();
-    }
-  };
-
-  const handleDiscardClose = async () => {
-    setShowCloseConfirm(false);
-    try {
-      await closeFile();
-    } catch (error) {
-      log.error('Failed to close file:', error instanceof Error ? error : new Error(String(error)));
-    }
-  };
-
-  const handleCancelClose = () => {
-    setShowCloseConfirm(false);
-  };
-
-  const handleSaveAndClose = async () => {
-    setShowCloseConfirm(false);
-    try {
-      await saveFile();
-      await closeFile();
-    } catch (error) {
-      log.error('Failed to save and close:', error instanceof Error ? error : new Error(String(error)));
-    }
-  };
-
-  const handleDialogKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      handleCancelClose();
     }
   };
 
@@ -102,88 +78,32 @@ export function EditorHeader({ className = '' }: EditorHeaderProps) {
         </div>
       )}
 
-      {/* 操作按钮 */}
-      <div className="flex items-center gap-1 shrink-0">
-        {isModified && (
-          <button
-            onClick={handleSave}
-            disabled={isSaving}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-xs text-text-primary
-                     bg-primary hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed
-                     transition-colors"
-            title={`保存文件 (${modKey}+S)`}
-          >
-            {isSaving ? (
-              <>
-                <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                保存中...
-              </>
-            ) : (
-              <>
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-                </svg>
-                保存
-              </>
-            )}
-          </button>
-        )}
-
+      {/* 保存按钮（仅在已修改时显示） */}
+      {isModified && (
         <button
-          onClick={handleCloseClick}
-          className="p-1 rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover
-                   transition-colors"
-          title="关闭文件"
+          onClick={handleSave}
+          disabled={isSaving}
+          className="flex items-center gap-1 px-2 py-1 rounded-md text-xs text-text-primary
+                   bg-primary hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed
+                   transition-colors shrink-0"
+          title={`保存文件 (${modKey}+S)`}
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          {isSaving ? (
+            <>
+              <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              保存中...
+            </>
+          ) : (
+            <>
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+              </svg>
+              保存
+            </>
+          )}
         </button>
-      </div>
-
-      {/* 未保存确认对话框 */}
-      {showCloseConfirm && (
-        <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-          onKeyDown={handleDialogKeyDown}
-        >
-          <div className="bg-background-elevated rounded-xl p-6 w-full max-w-md border border-border shadow-glow">
-            <h2 className="text-lg font-semibold text-text-primary mb-2">
-              {t('unsavedChanges.title')}
-            </h2>
-
-            <p className="text-sm text-text-secondary whitespace-pre-wrap mb-6">
-              {t('unsavedChanges.message')}
-            </p>
-
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={handleCancelClose}
-                className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-background-hover rounded-lg transition-colors"
-              >
-                {t('unsavedChanges.cancel')}
-              </button>
-              <button
-                type="button"
-                onClick={handleDiscardClose}
-                className="px-4 py-2 text-sm text-white rounded-lg bg-danger hover:bg-danger/90 transition-colors"
-              >
-                {t('unsavedChanges.discard')}
-              </button>
-              <button
-                ref={saveButtonRef}
-                type="button"
-                onClick={handleSaveAndClose}
-                className="px-4 py-2 text-sm text-white rounded-lg bg-primary hover:bg-primary/90 transition-colors"
-              >
-                {t('unsavedChanges.saveAndClose')}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );

@@ -90,8 +90,14 @@ export interface FileEditorActions {
   setOpen: (open: boolean) => void;
   /** 设置文件冲突状态 */
   setConflicted: (conflicted: boolean) => void;
-  /** 从磁盘重新加载文件内容 */
+  /** 从磁盘重新加载文件内容（同步更新缓冲区） */
   reloadFromDisk: () => Promise<void>;
+  /**
+   * 强制从磁盘重读当前文件。
+   * - 本地有未保存改动时：标记 isConflicted，等用户决策；不静默丢失改动。
+   * - 无未保存改动：直接覆盖 currentFile + buffer。
+   */
+  refreshCurrentFile: () => Promise<void>;
   /** 切换到已缓冲的文件（Tab 切换时使用，优先从缓冲区恢复） */
   switchToFile: (path: string, name: string) => Promise<void>;
   /** 设置待跳转行号 */
