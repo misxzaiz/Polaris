@@ -17,10 +17,11 @@ import { TauriIpcTransport } from '@/services/lsp/TauriIpcTransport';
 import { lspConfigList } from '@/services/tauri/lspService';
 import { createLogger } from '@/utils/logger';
 import { ctrlHoverLink } from '../components/Editor/ctrlHoverLink';
-import { jumpToDefinitionCrossFile } from '@/services/lsp/lspNavigation';
-import { jumpToDefinitionIndex } from '@/services/lsp/indexNavigation';
+import { smartJumpLsp } from '@/services/lsp/lspNavigation';
+import { jumpToDefinitionIndex, smartJumpIndex } from '@/services/lsp/indexNavigation';
 import { runFindReferences } from '@/services/lsp/lspReferences';
 import { useLspUiStore } from './lspUiStore';
+import { useEditorSettingsStore } from './editorSettingsStore';
 import { useDiagnosticsStore, type DiagnosticItem } from './diagnosticsStore';
 
 const log = createLogger('LspStore');
@@ -409,8 +410,8 @@ function getExtensionsForClient(
 
 /**
  * 索引模式的编辑器扩展：无 LSP client，仅提供 keymap/鼠标导航。
- * - F12 / Ctrl+Click：跳转定义（启发式）
- * - Shift+F12：查找引用（全词扫描）
+ * - Ctrl+Click：跳转定义
+ * - 快捷键：从 editorSettingsStore 读取（默认 Mod-Alt-b / Alt-Shift-r）
  */
 function getIndexExtensions(
   _filePath: string,
@@ -418,17 +419,18 @@ function getIndexExtensions(
   server: LspServerConfig,
 ): Extension[] {
   const languages = server.languages;
+  const settings = useEditorSettingsStore.getState();
   return [
     keymap.of([
       {
-        key: 'F12',
+        key: settings.lspKeyDefinition,
         run: (view) => {
           void jumpToDefinitionIndex(view, language, languages);
           return true;
         },
       },
       {
-        key: 'Shift-F12',
+        key: settings.lspKeyReferences,
         run: (view) => {
           void runFindReferences(view, { mode: 'index', languages });
           return true;
@@ -443,7 +445,8 @@ function getIndexExtensions(
         if (pos == null) return false;
         event.preventDefault();
         view.dispatch({ selection: { anchor: pos } });
-        void jumpToDefinitionIndex(view, language, languages);
+        // 智能跳转：不在定义处 → 跳定义；已在定义处 → 改查引用
+        void smartJumpIndex(view, language, languages);
         return true;
       },
     }),
@@ -492,13 +495,15 @@ function makeSymbolPaletteKeymap(client: LSPClient, uri: string): Extension {
 }
 
 /**
- * Shift+F12：查找引用（查应用）。LSP 模式发 textDocument/references，
+ * 查找引用（查应用）快捷键。LSP 模式发 textDocument/references，
  * 结果在 ReferencesPanel 浮层展示。
+ * 快捷键读取 editorSettingsStore（默认 Alt-Shift-r）。
  */
 function makeFindReferencesKeymap(client: LSPClient, uri: string): Extension {
+  const settings = useEditorSettingsStore.getState();
   return keymap.of([
     {
-      key: 'Shift-F12',
+      key: settings.lspKeyReferences,
       run: (view) => {
         void runFindReferences(view, { mode: 'lsp', client, uri });
         return true;
@@ -525,8 +530,8 @@ function makeCtrlClickJump(client: LSPClient, currentUri: string): Extension {
       if (pos == null) return false;
       event.preventDefault();
       view.dispatch({ selection: { anchor: pos } });
-      // 异步跳转；失败（未连接/无定义/跨文件打开失败）静默忽略
-      void jumpToDefinitionCrossFile(view, client, currentUri);
+      // 智能跳转：不在定义处 → 跳定义；已在定义处 → 改查引用
+      void smartJumpLsp(view, client, currentUri);
       return true;
     },
   });

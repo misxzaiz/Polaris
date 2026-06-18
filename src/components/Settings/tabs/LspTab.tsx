@@ -15,6 +15,7 @@ import {
   lspConfigToggle,
   lspCheckCommand,
 } from '@/services/tauri/lspService';
+import { KeyCapture } from '@/components/Settings/KeyCapture';
 import { createLogger } from '@/utils/logger';
 import {
   Power,
@@ -274,6 +275,11 @@ export function LspTab() {
   // format on save 开关（持久化在 editorSettingsStore）
   const formatOnSave = useEditorSettingsStore((s) => s.formatOnSave);
   const setFormatOnSave = useEditorSettingsStore((s) => s.setFormatOnSave);
+  // 快捷键自定义
+  const lspKeyDefinition = useEditorSettingsStore((s) => s.lspKeyDefinition);
+  const lspKeyReferences = useEditorSettingsStore((s) => s.lspKeyReferences);
+  const setLspKey = useEditorSettingsStore((s) => s.setLspKey);
+  const resetLspKeys = useEditorSettingsStore((s) => s.resetLspKeys);
 
   const inputCls =
     'bg-background-elevated border border-border-subtle rounded-md px-3 py-1.5 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-primary';
@@ -306,6 +312,57 @@ export function LspTab() {
             }`}
           />
         </button>
+      </div>
+
+      {/* LSP 快捷键自定义 */}
+      <div className="p-3 bg-surface rounded-lg border border-border-subtle space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-medium text-text-primary">
+              {t('lsp.shortcuts.title', { defaultValue: 'LSP 快捷键' })}
+            </div>
+            <div className="text-xs text-text-muted mt-0.5">
+              {t('lsp.shortcuts.hint', {
+                defaultValue: '点击按钮后按下组合键录制；修改后需重新打开文件生效。',
+              })}
+            </div>
+          </div>
+          <button
+            onClick={resetLspKeys}
+            className="px-2 py-1 text-[11px] rounded-md text-text-secondary hover:bg-surface border border-border-subtle hover:border-primary hover:text-primary transition-colors"
+          >
+            {t('lsp.shortcuts.reset', { defaultValue: '重置默认' })}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs text-text-secondary">
+              {t('lsp.shortcuts.definition', { defaultValue: '跳转定义' })}
+            </span>
+            <KeyCapture
+              value={lspKeyDefinition}
+              onChange={(k) => setLspKey('definition', k)}
+              label={t('lsp.shortcuts.definition', { defaultValue: '跳转定义' })}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs text-text-secondary">
+              {t('lsp.shortcuts.references', { defaultValue: '查找引用' })}
+            </span>
+            <KeyCapture
+              value={lspKeyReferences}
+              onChange={(k) => setLspKey('references', k)}
+              label={t('lsp.shortcuts.references', { defaultValue: '查找引用' })}
+            />
+          </div>
+        </div>
+
+        <div className="text-[11px] text-text-muted">
+          {t('lsp.shortcuts.note', {
+            defaultValue: '提示：F12 已被系统占用（DevTools 切换）；Ctrl/Cmd+单击 跳转定义始终保留。',
+          })}
+        </div>
       </div>
 
       {/* 标题和操作 */}
@@ -385,7 +442,7 @@ export function LspTab() {
               <div className="mt-0.5">
                 {t('lsp.helpLowSpec', {
                   defaultValue:
-                    'Java 的 jdtls 会启动 JVM、常驻数百 MB 内存。低配机可改用「索引模式」：基于全词扫描提供跳转定义（F12 / Ctrl+单击）与查找引用（Shift+F12），零常驻进程，不占内存（不含补全/诊断）。',
+                    'Java 的 jdtls 会启动 JVM、常驻数百 MB 内存。低配机可改用「索引模式」：基于全词扫描提供跳转定义与查找引用，零常驻进程，不占内存（不含补全/诊断）。',
                 })}
               </div>
             </div>
@@ -393,7 +450,7 @@ export function LspTab() {
 
           <div className="text-text-muted">
             {t('lsp.helpShortcuts', {
-              defaultValue: '快捷键：F12 / Ctrl+单击 跳转定义 · Shift+F12 查找引用 · Ctrl/Cmd+Shift+O 文件符号。',
+              defaultValue: '默认快捷键：Ctrl/Cmd+Alt+B 跳转定义 · Alt+Shift+R 查找引用 · Ctrl/Cmd+单击 跳转定义（保留）· Ctrl/Cmd+Shift+O 文件符号。可在上方「LSP 快捷键」自定义。',
             })}
           </div>
         </div>

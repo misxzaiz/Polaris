@@ -74,7 +74,16 @@ export function useWindowManager({
   // F12 + Shift+Ctrl+R 快捷键
   useEffect(() => {
     const handleKeyDown = async (e: KeyboardEvent) => {
-      if (e.key === 'F12' && isTauri()) {
+      // 仅"裸 F12"切换 DevTools；带任何修饰键(Shift/Ctrl/Meta/Alt)交给应用内 keymap，
+      // 例如 LSP 的 Shift+F12 查找引用。否则全局监听器会把这些组合也吞掉。
+      if (
+        e.key === 'F12' &&
+        !e.shiftKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        isTauri()
+      ) {
         e.preventDefault();
         try {
           await tauri.invoke('toggle_devtools');

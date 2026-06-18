@@ -144,3 +144,64 @@ export async function jumpToDefinitionCrossFile(
   }
 }
 
+/**
+ * 智能跳转（Ctrl+左键合并行为）：
+ * - 当前光标处不是定义 → 跳定义；
+ * - 当前光标处就是定义 → 改查引用，结果走 ReferencesPanel。
+ *
+ * VSCode/IntelliJ 同款交互。判断启发式：发 definition，看返回的第一个 Location
+ * 是否就在当前 (uri, position)；是则视为"原地"。
+ */
+export async function smartJumpLsp(
+  view: EditorView,
+  client: LSPClient,
+  currentUri: string,
+): Promise<boolean> {
+  try {
+    const head = view.state.selection.main.head;
+    const position = offsetToLspPosition(view, head);
+
+    const result = await client.request<unknown, DefinitionResult>(
+      'textDocument/definition',
+      {
+        textDocument: { uri: currentUri },
+        position,
+      },
+    );
+
+    const loc = firstLocation(result);
+
+    // 没有定义信息 → 直接查引用兜底（用户至少能看到符号在哪些地方）
+    if (!loc) {
+      const { runFindReferences } = await import('./lspReferences');
+      return await runFindReferences(view, { mode: 'lsp', client, uri: currentUri });
+    }
+
+    // 是否在定义处（uri 相同且 position 落在 target range 内）
+    const onDefinition =
+      loc.uri === currentUri &&
+      isPositionInRange(position, loc.range);
+
+    if (onDefinition) {
+      // 原地按下 → 切换为查引用
+      const { runFindReferences } = await import('./lspReferences');
+      return await runFindReferences(view, { mode: 'lsp', client, uri: currentUri });
+    }
+
+    // 引用处按下 → 复用现成跳转流程
+    return await jumpToDefinitionCrossFile(view, client, currentUri);
+  } catch (err) {
+    log.warn('smartJumpLsp failed', { error: String(err) });
+    return false;
+  }
+}
+
+/** 判断 LSP Position 是否落在 LSP Range 内（含端点） */
+function isPositionInRange(pos: LspPosition, range: LspRange): boolean {
+  const { start, end } = range;
+  if (pos.line < start.line || pos.line > end.line) return false;
+  if (pos.line === start.line && pos.character < start.character) return false;
+  if (pos.line === end.line && pos.character > end.character) return false;
+  return true;
+}
+

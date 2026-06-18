@@ -527,8 +527,16 @@
     "helpStep3": "Open a file of that language to trigger the connection; a green dot means success, red means you can click Restart.",
     "helpPresetsTitle": "Common servers and how to install",
     "helpLowSpecTitle": "Low-spec machines / heavy languages (Java, C++)",
-    "helpLowSpec": "Java's jdtls starts a JVM and resides at hundreds of MB. On low-spec machines, use Index mode instead: word-scan based go-to-definition (F12 / Ctrl+Click) and find references (Shift+F12), zero resident process, no memory cost (no completion/diagnostics).",
-    "helpShortcuts": "Shortcuts: F12 / Ctrl+Click go to definition · Shift+F12 find references · Ctrl/Cmd+Shift+O document symbols.",
+    "helpLowSpec": "Java's jdtls starts a JVM and resides at hundreds of MB. On low-spec machines, use Index mode instead: word-scan based go-to-definition and find references, zero resident process, no memory cost (no completion/diagnostics).",
+    "helpShortcuts": "Default shortcuts: Ctrl/Cmd+Alt+B go to definition · Alt+Shift+R find references · Ctrl/Cmd+Click go to definition (kept) · Ctrl/Cmd+Shift+O document symbols. Customize via 'LSP Shortcuts' above.",
+    "shortcuts": {
+      "title": "LSP Shortcuts",
+      "hint": "Click a button and press your combo to record. Reopen files for changes to take effect.",
+      "definition": "Go to Definition",
+      "references": "Find References",
+      "reset": "Reset",
+      "note": "Note: F12 is reserved (DevTools toggle); Ctrl/Cmd+Click go-to-definition is always kept."
+    },
     "presets": "Presets:",
     "mode": "Mode",
     "modeLsp": "LSP (full)",

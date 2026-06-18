@@ -527,8 +527,16 @@
     "helpStep3": "打开一个该语言的文件触发连接，状态灯变绿即成功；变红可点「重启」。",
     "helpPresetsTitle": "常见服务器与安装方式",
     "helpLowSpecTitle": "低配机 / 重型语言（Java、C++）",
-    "helpLowSpec": "Java 的 jdtls 会启动 JVM、常驻数百 MB 内存。低配机可改用「索引模式」：基于全词扫描提供跳转定义（F12 / Ctrl+单击）与查找引用（Shift+F12），零常驻进程，不占内存（不含补全/诊断）。",
-    "helpShortcuts": "快捷键：F12 / Ctrl+单击 跳转定义 · Shift+F12 查找引用 · Ctrl/Cmd+Shift+O 文件符号。",
+    "helpLowSpec": "Java 的 jdtls 会启动 JVM、常驻数百 MB 内存。低配机可改用「索引模式」：基于全词扫描提供跳转定义与查找引用，零常驻进程，不占内存（不含补全/诊断）。",
+    "helpShortcuts": "默认快捷键：Ctrl/Cmd+Alt+B 跳转定义 · Alt+Shift+R 查找引用 · Ctrl/Cmd+单击 跳转定义（保留）· Ctrl/Cmd+Shift+O 文件符号。可在上方「LSP 快捷键」自定义。",
+    "shortcuts": {
+      "title": "LSP 快捷键",
+      "hint": "点击按钮后按下组合键录制；修改后需重新打开文件生效。",
+      "definition": "跳转定义",
+      "references": "查找引用",
+      "reset": "重置默认",
+      "note": "提示：F12 已被系统占用（DevTools 切换）；Ctrl/Cmd+单击 跳转定义始终保留。"
+    },
     "presets": "预设：",
     "mode": "模式",
     "modeLsp": "LSP（完整）",
