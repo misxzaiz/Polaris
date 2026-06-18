@@ -1,59 +1,187 @@
 /**
- * 查找引用结果面板（查应用）—— Shift+F12 触发。
+ * 查找引用结果面板（查应用）—— Shift+F12 / 索引导航触发。
  *
  * 数据来自 `lspUiStore.references`（LSP 模式与索引模式共用形态）。
- * 列表按文件分组，点击条目通过 `fileEditorStore.openFileAtPosition` 跨文件跳转。
+ *
+ * 生产级特性：
+ * - 文件分组 + 折叠/展开（默认折叠超过 5 个文件时）
+ * - 过滤器：路径正则、kind 过滤（call/type/new/...）、隐藏 generated/test
+ * - 行号 + 该行预览（带语言提示色）
+ * - 键盘：↑↓ 导航、Enter 跳转、Esc 关闭、空格折叠当前组
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, Loader2 } from 'lucide-react';
+import { Search, Loader2, ChevronDown, ChevronRight, Filter } from 'lucide-react';
 import { useLspUiStore, type ReferenceItem } from '@/stores/lspUiStore';
 import { useFileEditorStore } from '@/stores/fileEditorStore';
 import { createLogger } from '@/utils/logger';
 
 const log = createLogger('ReferencesPanel');
 
+const AUTO_COLLAPSE_THRESHOLD = 5;
+
 function fileNameOf(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
 }
 
-function ReferencesPanelInner({
-  symbol,
-  loading,
-  items,
-  error,
-  truncated,
-  onClose,
-}: {
+function compressPath(path: string): string {
+  const norm = path.replace(/\\/g, '/');
+  const parts = norm.split('/').filter(Boolean);
+  if (parts.length <= 4) return norm;
+  return '…/' + parts.slice(-4).join('/');
+}
+
+function isGenerated(path: string): boolean {
+  const p = path.replace(/\\/g, '/');
+  return /\/generated|\/build\//.test(p);
+}
+
+function isTest(path: string): boolean {
+  const p = path.replace(/\\/g, '/');
+  return /\/src\/test\/|\/test\//.test(p) || /Test\.java$|Tests\.java$/.test(p);
+}
+
+function refKindBadge(kind: string | undefined): { label: string; cls: string } | null {
+  if (!kind) return null;
+  switch (kind) {
+    case 'call':
+      return { label: 'call', cls: 'text-green-400 bg-green-400/10' };
+    case 'type':
+      return { label: 'type', cls: 'text-blue-400 bg-blue-400/10' };
+    case 'new':
+      return { label: 'new', cls: 'text-purple-400 bg-purple-400/10' };
+    case 'field_read':
+      return { label: 'read', cls: 'text-orange-400 bg-orange-400/10' };
+    case 'field_write':
+      return { label: 'write', cls: 'text-red-400 bg-red-400/10' };
+    case 'import':
+      return { label: 'import', cls: 'text-cyan-400 bg-cyan-400/10' };
+    case 'throws':
+      return { label: 'throws', cls: 'text-pink-400 bg-pink-400/10' };
+    default:
+      return null;
+  }
+}
+
+interface FileGroup {
+  path: string;
+  items: ReferenceItem[];
+}
+
+interface InnerProps {
   symbol: string;
   loading: boolean;
   items: ReferenceItem[];
   error: string | null;
   truncated?: boolean;
   onClose: () => void;
-}) {
-  const [selectedIndex, setSelectedIndex] = useState(0);
+}
+
+function ReferencesPanelInner({ symbol, loading, items, error, truncated, onClose }: InnerProps) {
+  const [pathFilter, setPathFilter] = useState('');
+  const [kindFilter, setKindFilter] = useState<string | null>(null);
+  const [hideGenerated, setHideGenerated] = useState(true);
+  const [hideTest, setHideTest] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  // items 已在 service 层按 path/line 排序；这里仅计算分组边界用于渲染
-  const groupedFlags = useMemo(() => {
-    const flags: boolean[] = [];
-    let prevPath = '';
-    for (const it of items) {
-      flags.push(it.path !== prevPath);
-      prevPath = it.path;
+  // 应用过滤
+  const filtered = useMemo(() => {
+    let out = items;
+    if (pathFilter.trim()) {
+      try {
+        const re = new RegExp(pathFilter, 'i');
+        out = out.filter((it) => re.test(it.path) || re.test(it.preview ?? ''));
+      } catch {
+        // 不是合法正则就当字面量子串
+        const p = pathFilter.toLowerCase();
+        out = out.filter(
+          (it) =>
+            it.path.toLowerCase().includes(p) || (it.preview ?? '').toLowerCase().includes(p),
+        );
+      }
     }
-    return flags;
+    if (kindFilter) {
+      out = out.filter((it) => it.refKind === kindFilter);
+    }
+    if (hideGenerated) {
+      out = out.filter((it) => !isGenerated(it.path));
+    }
+    if (hideTest) {
+      out = out.filter((it) => !isTest(it.path));
+    }
+    return out;
+  }, [items, pathFilter, kindFilter, hideGenerated, hideTest]);
+
+  // 分组
+  const groups: FileGroup[] = useMemo(() => {
+    const map = new Map<string, ReferenceItem[]>();
+    for (const it of filtered) {
+      let arr = map.get(it.path);
+      if (!arr) {
+        arr = [];
+        map.set(it.path, arr);
+      }
+      arr.push(it);
+    }
+    return Array.from(map.entries()).map(([path, items]) => ({ path, items }));
+  }, [filtered]);
+
+  // 自动折叠：文件数超过阈值时默认全折叠
+  useEffect(() => {
+    if (groups.length > AUTO_COLLAPSE_THRESHOLD) {
+      setCollapsedGroups(new Set(groups.map((g) => g.path)));
+    } else {
+      setCollapsedGroups(new Set());
+    }
+  }, [groups.length]);
+
+  // 是否有引用 kind 信息（决定是否显示 kind 过滤器）
+  const availableKinds = useMemo(() => {
+    const set = new Set<string>();
+    for (const it of items) if (it.refKind) set.add(it.refKind);
+    return Array.from(set);
   }, [items]);
 
-  useEffect(() => {
-    setSelectedIndex(0);
-  }, [items]);
+  // 平铺可见项（可见 = 所在组未折叠），用于键盘导航
+  const visibleItems = useMemo(() => {
+    const out: { item: ReferenceItem; key: string }[] = [];
+    for (const g of groups) {
+      if (collapsedGroups.has(g.path)) continue;
+      g.items.forEach((it) => {
+        out.push({ item: it, key: `${it.path}:${it.line}:${it.column}` });
+      });
+    }
+    return out;
+  }, [groups, collapsedGroups]);
 
+  // 默认选中第一个可见项
   useEffect(() => {
-    const el = listRef.current?.querySelector<HTMLElement>(`[data-index="${selectedIndex}"]`);
+    if (visibleItems.length === 0) {
+      setSelectedKey(null);
+      return;
+    }
+    if (!selectedKey || !visibleItems.some((v) => v.key === selectedKey)) {
+      setSelectedKey(visibleItems[0].key);
+    }
+  }, [visibleItems, selectedKey]);
+
+  // 选中项滚到视野
+  useEffect(() => {
+    if (!selectedKey) return;
+    const el = listRef.current?.querySelector<HTMLElement>(`[data-key="${selectedKey}"]`);
     el?.scrollIntoView({ block: 'nearest' });
-  }, [selectedIndex]);
+  }, [selectedKey]);
+
+  function toggleGroup(path: string) {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }
 
   async function jumpTo(item: ReferenceItem) {
     try {
@@ -66,20 +194,32 @@ function ReferencesPanelInner({
     onClose();
   }
 
+  function moveSel(delta: number) {
+    if (visibleItems.length === 0) return;
+    const idx = visibleItems.findIndex((v) => v.key === selectedKey);
+    const next = Math.max(0, Math.min(visibleItems.length - 1, idx + delta));
+    setSelectedKey(visibleItems[next].key);
+  }
+
   function handleKeyDown(e: React.KeyboardEvent) {
+    // 输入框中正在打字 → 仅响应 Esc
+    const tag = (e.target as HTMLElement).tagName;
+    if (tag === 'INPUT' && e.key !== 'Escape') {
+      return;
+    }
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault();
-        setSelectedIndex((i) => Math.min(i + 1, items.length - 1));
+        moveSel(1);
         break;
       case 'ArrowUp':
         e.preventDefault();
-        setSelectedIndex((i) => Math.max(i - 1, 0));
+        moveSel(-1);
         break;
       case 'Enter': {
         e.preventDefault();
-        const it = items[selectedIndex];
-        if (it) void jumpTo(it);
+        const cur = visibleItems.find((v) => v.key === selectedKey);
+        if (cur) void jumpTo(cur.item);
         break;
       }
       case 'Escape':
@@ -89,20 +229,21 @@ function ReferencesPanelInner({
     }
   }
 
-  const fileCount = useMemo(() => new Set(items.map((i) => i.path)).size, [items]);
-
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 pt-[12vh]"
+      className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 pt-[10vh]"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div
-        className="bg-background-elevated rounded-xl w-full max-w-2xl border border-border shadow-glow overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+        className="bg-background-elevated rounded-xl w-full max-w-3xl border border-border shadow-glow overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col"
+        style={{ maxHeight: '78vh' }}
         onKeyDown={handleKeyDown}
         tabIndex={-1}
-        ref={(el) => { el?.focus(); }}
+        ref={(el) => {
+          el?.focus();
+        }}
       >
         {/* 标题 */}
         <div className="px-4 py-2 border-b border-border text-[11px] text-text-tertiary uppercase tracking-wide flex items-center gap-2">
@@ -111,13 +252,60 @@ function ReferencesPanelInner({
           <span className="text-text-primary font-mono normal-case">「{symbol}」</span>
           {!loading && !error && (
             <span className="ml-auto normal-case">
-              {items.length} 处 · {fileCount} 文件{truncated ? ' （已截断）' : ''}
+              {filtered.length}/{items.length} 处 · {groups.length} 文件
+              {truncated ? '（已截断）' : ''}
             </span>
           )}
         </div>
 
+        {/* 过滤器 */}
+        {!loading && !error && items.length > 0 && (
+          <div className="px-4 py-2 border-b border-border/60 bg-background-surface/40 flex items-center gap-2 flex-wrap">
+            <Filter className="w-3 h-3 text-text-tertiary" />
+            <input
+              type="text"
+              value={pathFilter}
+              onChange={(e) => setPathFilter(e.target.value)}
+              placeholder="路径或预览过滤（支持正则）"
+              className="flex-1 min-w-[200px] px-2 py-0.5 text-xs bg-background border border-border rounded focus:outline-none focus:border-primary"
+            />
+            {availableKinds.length > 0 && (
+              <select
+                value={kindFilter ?? ''}
+                onChange={(e) => setKindFilter(e.target.value || null)}
+                className="px-2 py-0.5 text-xs bg-background border border-border rounded"
+              >
+                <option value="">全部 kind</option>
+                {availableKinds.map((k) => (
+                  <option key={k} value={k}>
+                    {k}
+                  </option>
+                ))}
+              </select>
+            )}
+            <label className="text-[11px] text-text-secondary flex items-center gap-1 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={hideGenerated}
+                onChange={(e) => setHideGenerated(e.target.checked)}
+                className="accent-primary"
+              />
+              隐藏 generated
+            </label>
+            <label className="text-[11px] text-text-secondary flex items-center gap-1 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={hideTest}
+                onChange={(e) => setHideTest(e.target.checked)}
+                className="accent-primary"
+              />
+              隐藏 test
+            </label>
+          </div>
+        )}
+
         {/* 列表 */}
-        <div ref={listRef} className="max-h-[60vh] overflow-y-auto">
+        <div ref={listRef} className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="py-10 flex items-center justify-center gap-2 text-text-tertiary text-sm">
               <Loader2 className="w-4 h-4 animate-spin" /> 扫描中…
@@ -130,35 +318,69 @@ function ReferencesPanelInner({
                 <span className="text-danger">查询失败：{error}</span>
               )}
             </div>
-          ) : items.length === 0 ? (
-            <div className="py-10 text-center text-text-tertiary text-sm">没有找到引用</div>
+          ) : groups.length === 0 ? (
+            <div className="py-10 text-center text-text-tertiary text-sm">
+              {items.length === 0 ? '没有找到引用' : '过滤后无结果'}
+            </div>
           ) : (
-            items.map((it, idx) => {
-              const isNewGroup = groupedFlags[idx];
-              const selected = idx === selectedIndex;
+            groups.map((g) => {
+              const collapsed = collapsedGroups.has(g.path);
               return (
-                <div key={`${it.path}:${it.line}:${it.column}:${idx}`}>
-                  {isNewGroup && (
-                    <div className="flex items-center gap-2 px-4 py-1 bg-background-surface/60 border-y border-border/40 text-[11px] sticky top-0">
-                      <span className="text-text-primary font-medium truncate">{fileNameOf(it.path)}</span>
-                      <span className="text-text-tertiary truncate min-w-0">{it.path}</span>
-                    </div>
-                  )}
+                <div key={g.path}>
+                  {/* 组头 */}
                   <button
-                    data-index={idx}
-                    className={`w-full flex items-center gap-3 px-4 py-1.5 text-left transition-colors ${
-                      selected ? 'bg-primary/10' : 'hover:bg-background-hover'
-                    }`}
-                    onClick={() => void jumpTo(it)}
-                    onMouseEnter={() => setSelectedIndex(idx)}
+                    type="button"
+                    onClick={() => toggleGroup(g.path)}
+                    className="w-full flex items-center gap-2 px-4 py-1 bg-background-surface/60 border-y border-border/40 text-[11px] sticky top-0 hover:bg-background-surface/80"
                   >
-                    <span className="text-[10px] text-text-tertiary font-mono flex-shrink-0 w-16 text-right">
-                      {it.line}:{it.column + 1}
+                    {collapsed ? (
+                      <ChevronRight className="w-3 h-3 text-text-tertiary" />
+                    ) : (
+                      <ChevronDown className="w-3 h-3 text-text-tertiary" />
+                    )}
+                    <span className="text-text-primary font-medium truncate">
+                      {fileNameOf(g.path)}
                     </span>
-                    <span className="text-xs text-text-secondary font-mono truncate min-w-0">
-                      {it.preview ?? ''}
+                    <span className="text-text-tertiary truncate min-w-0 flex-1 text-left">
+                      {compressPath(g.path)}
+                    </span>
+                    <span className="text-text-tertiary normal-case flex-shrink-0">
+                      {g.items.length}
                     </span>
                   </button>
+
+                  {/* 组内引用 */}
+                  {!collapsed &&
+                    g.items.map((it) => {
+                      const key = `${it.path}:${it.line}:${it.column}`;
+                      const selected = selectedKey === key;
+                      const badge = refKindBadge(it.refKind);
+                      return (
+                        <button
+                          key={key}
+                          data-key={key}
+                          className={`w-full flex items-center gap-3 px-4 py-1.5 text-left transition-colors ${
+                            selected ? 'bg-primary/10' : 'hover:bg-background-hover'
+                          }`}
+                          onClick={() => void jumpTo(it)}
+                          onMouseEnter={() => setSelectedKey(key)}
+                        >
+                          <span className="text-[10px] text-text-tertiary font-mono flex-shrink-0 w-14 text-right">
+                            {it.line}:{it.column + 1}
+                          </span>
+                          {badge && (
+                            <span
+                              className={`text-[9px] font-mono px-1 rounded flex-shrink-0 ${badge.cls}`}
+                            >
+                              {badge.label}
+                            </span>
+                          )}
+                          <span className="text-xs text-text-secondary font-mono truncate min-w-0 flex-1">
+                            {it.preview ?? ''}
+                          </span>
+                        </button>
+                      );
+                    })}
                 </div>
               );
             })
@@ -169,7 +391,8 @@ function ReferencesPanelInner({
         <div className="px-4 py-1.5 border-t border-border text-[10px] text-text-tertiary flex items-center gap-3">
           <span>↑↓ 导航</span>
           <span>↵ 跳转</span>
-          <span>Esc 关闭</span>
+          <span>点击文件名 折叠</span>
+          <span className="ml-auto">Esc 关闭</span>
         </div>
       </div>
     </div>

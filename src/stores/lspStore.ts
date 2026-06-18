@@ -425,7 +425,7 @@ function getIndexExtensions(
       {
         key: settings.lspKeyDefinition,
         run: (view) => {
-          void jumpToDefinitionIndex(view, language, languages);
+          void jumpToDefinitionIndex(view, language, languages, 'definition-key');
           return true;
         },
       },
@@ -446,7 +446,7 @@ function getIndexExtensions(
         event.preventDefault();
         view.dispatch({ selection: { anchor: pos } });
         // 智能跳转：不在定义处 → 跳定义；已在定义处 → 改查引用
-        void smartJumpIndex(view, language, languages);
+        void smartJumpIndex(view, language, languages, 'ctrl-click');
         return true;
       },
     }),

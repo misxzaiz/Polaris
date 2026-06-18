@@ -11,8 +11,10 @@ import type { LSPClient } from '@codemirror/lsp-client';
 import type { EditorView } from '@codemirror/view';
 import { useLspUiStore, type ReferenceItem } from '@/stores/lspUiStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useFileEditorStore } from '@/stores/fileEditorStore';
 import { lspIndexReferences } from '@/services/tauri/lspService';
 import { extensionsForLanguages } from './languageExtensions';
+import { collectDirtyBuffers } from './dirtyBuffers';
 import { createLogger } from '@/utils/logger';
 
 const log = createLogger('LspReferences');
@@ -130,13 +132,24 @@ export async function runFindReferences(view: EditorView, ctx: RefCtx): Promise<
         return true;
       }
       const exts = extensionsForLanguages(ctx.languages);
-      const matches = await lspIndexReferences(root, symbol, exts);
+      const currentFile = useFileEditorStore.getState().currentFile?.path;
+      const dirty = collectDirtyBuffers();
+      const matches = await lspIndexReferences(
+        root,
+        symbol,
+        exts,
+        currentFile,
+        dirty.length ? dirty : undefined,
+      );
       const items = sortItems(
         matches.map((m) => ({
           path: m.path,
           line: m.line,
           column: m.column,
           preview: m.preview,
+          kind: m.kind,
+          fqn: m.fqn,
+          refKind: m.refKind,
         })),
       );
       useLspUiStore.getState().updateReferences({

@@ -114,6 +114,18 @@ crossbeam-channel = "0.5"
 
 # 文件系统监听
 notify = { version = "6", features = ["macos_kqueue"] }
+notify-debouncer-mini = { version = "0.4", default-features = false, features = ["serde"] }
+
+# 轻量索引引擎（Phase J）
+# - rusqlite bundled: 无需系统 sqlite3
+# - tree-sitter + tree-sitter-java: AST 级 Java 符号提取
+# - rayon: 全量索引并行
+# - xxhash-rust: 文件内容 hash（mtime 不可靠时校验）
+rusqlite = { version = "0.32", features = ["bundled"] }
+tree-sitter = "0.22"
+tree-sitter-java = "0.21"
+rayon = "1.10"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
 tauri-plugin-updater = { version = "2.10.1", optional = true }
 tauri-plugin-process = { version = "2.3.1", optional = true }
 

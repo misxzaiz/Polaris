@@ -924,6 +924,7 @@ mod tests {
             enabled_by_default: true,
             contributes: PluginManifestContributes {
                 views: Vec::new(),
+                panel: None,
                 mcp_servers: vec![PluginMcpServerManifestContribution {
                     id: server_name.to_string(),
                     transport: "stdio".to_string(),

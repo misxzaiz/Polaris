@@ -76,6 +76,7 @@ fn create_test_state() -> Arc<AppState> {
         scheduler_daemon: AsyncMutex::new(None),
         lsp_manager: Mutex::new(LspManager::new()),
         lsp_config: Mutex::new(LspConfigRepository::new(&std::path::PathBuf::from("/tmp"))),
+        lsp_index_service: crate::services::lsp_index::IndexService::new(),
         event_broadcast: crate::web::EventBroadcaster::new(256),
         #[cfg(feature = "tauri-app")]
         app_handle: OnceLock::new(),

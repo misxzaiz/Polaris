@@ -16,6 +16,7 @@ use crate::services::data_root::data_root;
 use crate::services::file_watcher::FileWatcherManager;
 use crate::services::lsp::LspManager;
 use crate::services::lsp_config_repository::LspConfigRepository;
+use crate::services::lsp_index::IndexService;
 use crate::services::scheduler_daemon::SchedulerDaemon;
 use crate::web::server::WebServerHandle;
 
@@ -126,6 +127,8 @@ pub struct AppState {
     pub lsp_manager: Mutex<LspManager>,
     /// LSP 配置持久化
     pub lsp_config: Mutex<LspConfigRepository>,
+    /// 轻量索引引擎（tree-sitter + SQLite，每 workspace 独立 DB）
+    pub lsp_index_service: IndexService,
     /// WebSocket 事件广播通道（Web Access Layer）— 带 seq 与重放缓冲
     pub event_broadcast: crate::web::EventBroadcaster,
     /// Tauri AppHandle — set once during setup, used by Web API handlers
@@ -166,6 +169,7 @@ pub fn create_app_state(
         scheduler_daemon: AsyncMutex::new(None),
         lsp_manager: Mutex::new(LspManager::new()),
         lsp_config: Mutex::new(LspConfigRepository::new(&config_dir)),
+        lsp_index_service: IndexService::new(),
         event_broadcast: crate::web::EventBroadcaster::new(256),
         #[cfg(feature = "tauri-app")]
         app_handle: OnceLock::new(),
@@ -225,6 +229,7 @@ impl AppState {
             scheduler_daemon: AsyncMutex::new(None),
             lsp_manager: Mutex::new(LspManager::new()),
             lsp_config: Mutex::new(LspConfigRepository::new(&config_dir)),
+            lsp_index_service: self.lsp_index_service.clone(),
             event_broadcast: self.event_broadcast.clone(),
             #[cfg(feature = "tauri-app")]
             app_handle,

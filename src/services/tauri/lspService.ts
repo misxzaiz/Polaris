@@ -80,6 +80,38 @@ export interface IndexMatch {
   column: number;
   /** 该行预览文本 */
   preview: string;
+  /** 符号种类（class/interface/method/...）；regex 兜底为 undefined */
+  kind?: string;
+  /** 完整限定名 */
+  fqn?: string;
+  /** 引用种类（call/type/new/...）；仅引用查询有 */
+  refKind?: string;
+  /** 排序得分（调试用） */
+  score?: number;
+}
+
+/** dirty buffer：编辑器里未保存的修改，跳转/查应用时传给后端覆盖 DB 数据 */
+export interface DirtyBuffer {
+  /** 文件绝对路径 */
+  path: string;
+  /** 文件全文 */
+  content: string;
+  /** 语言 ID */
+  language: string;
+}
+
+/** 索引引擎状态（对应后端 IndexStatus） */
+export interface IndexStatus {
+  workspace: string | null;
+  /** 'idle' | 'building' | 'ready' | 'error' */
+  state: string;
+  progressDone: number;
+  progressTotal: number;
+  files: number;
+  symbols: number;
+  refs: number;
+  error: string | null;
+  lastBuiltAt: number | null;
 }
 
 /** 索引模式：查找符号的全部引用 */
@@ -87,8 +119,16 @@ export async function lspIndexReferences(
   root: string,
   symbol: string,
   extensions: string[],
+  currentFile?: string,
+  liveOverrides?: DirtyBuffer[],
 ): Promise<IndexMatch[]> {
-  return invoke('lsp_index_references', { root, symbol, extensions });
+  return invoke('lsp_index_references', {
+    root,
+    symbol,
+    extensions,
+    currentFile: currentFile ?? null,
+    liveOverrides: liveOverrides ?? null,
+  });
 }
 
 /** 索引模式：查找符号的定义候选 */
@@ -97,6 +137,40 @@ export async function lspIndexDefinition(
   symbol: string,
   language: string,
   extensions: string[],
+  currentFile?: string,
+  liveOverrides?: DirtyBuffer[],
 ): Promise<IndexMatch[]> {
-  return invoke('lsp_index_definition', { root, symbol, language, extensions });
+  return invoke('lsp_index_definition', {
+    root,
+    symbol,
+    language,
+    extensions,
+    currentFile: currentFile ?? null,
+    liveOverrides: liveOverrides ?? null,
+  });
+}
+
+/** 打开工作区索引（首次会创建 .polaris/index.db） */
+export async function lspIndexOpen(root: string): Promise<IndexStatus> {
+  return invoke('lsp_index_open', { root });
+}
+
+/** 关闭工作区索引（释放 DB 句柄） */
+export async function lspIndexClose(root: string): Promise<void> {
+  return invoke('lsp_index_close', { root });
+}
+
+/** 触发后台全量重建 */
+export async function lspIndexRebuild(root: string): Promise<void> {
+  return invoke('lsp_index_rebuild', { root });
+}
+
+/** 查询当前索引状态 */
+export async function lspIndexStatus(root: string): Promise<IndexStatus> {
+  return invoke('lsp_index_status', { root });
+}
+
+/** 单文件增量更新（保存文件后调用，可选——watcher 通常会自动触发） */
+export async function lspIndexUpdateFile(root: string, absPath: string): Promise<void> {
+  return invoke('lsp_index_update_file', { root, absPath });
 }

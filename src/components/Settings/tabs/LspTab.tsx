@@ -16,6 +16,7 @@ import {
   lspCheckCommand,
 } from '@/services/tauri/lspService';
 import { KeyCapture } from '@/components/Settings/KeyCapture';
+import { IndexEngineSection } from '@/components/Settings/IndexEngineSection';
 import { createLogger } from '@/utils/logger';
 import {
   Power,
@@ -364,6 +365,9 @@ export function LspTab() {
           })}
         </div>
       </div>
+
+      {/* 索引引擎状态（轻量持久化索引：tree-sitter + SQLite） */}
+      <IndexEngineSection />
 
       {/* 标题和操作 */}
       <div className="flex items-center justify-between">

@@ -134,14 +134,32 @@ pub fn lsp_check_command(command: String) -> Result<LspCommandCheck> {
 
 // ── 轻量索引模式（无常驻进程）─────────────────────
 
+use crate::services::lsp_index::{DirtyBuffer, IndexMatch, IndexStatus};
+
 /// 索引模式：在工作区查找符号的全部引用（查应用）。
+///
+/// `live_overrides` 是前端传入的未保存修改；同 path 的 DB 数据会被替换。
+/// 当前文件 `current_file` 给排序层用（确定 import / package 上下文）。
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn lsp_index_references(
+    state: State<'_, AppState>,
     root: String,
     symbol: String,
     extensions: Vec<String>,
-) -> Result<Vec<crate::services::lsp_index::IndexMatch>> {
+    current_file: Option<String>,
+    live_overrides: Option<Vec<DirtyBuffer>>,
+) -> Result<Vec<IndexMatch>> {
+    let _ = current_file;
+    let svc = state.lsp_index_service.clone();
+    let workspace = std::path::Path::new(&root);
+    let _ = svc.open_workspace(workspace);
+
+    let status = svc.status(workspace);
+    if status.files > 0 {
+        let dirty = live_overrides.unwrap_or_default();
+        return svc.find_references(workspace, &symbol, 5000, &dirty);
+    }
     crate::services::lsp_index::find_references(&root, &symbol, &extensions)
 }
 
@@ -149,10 +167,86 @@ pub fn lsp_index_references(
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn lsp_index_definition(
+    state: State<'_, AppState>,
     root: String,
     symbol: String,
     language: String,
     extensions: Vec<String>,
-) -> Result<Vec<crate::services::lsp_index::IndexMatch>> {
+    current_file: Option<String>,
+    live_overrides: Option<Vec<DirtyBuffer>>,
+) -> Result<Vec<IndexMatch>> {
+    let svc = state.lsp_index_service.clone();
+    let workspace = std::path::Path::new(&root);
+    let _ = svc.open_workspace(workspace);
+
+    let status = svc.status(workspace);
+    if status.files > 0 {
+        let dirty = live_overrides.unwrap_or_default();
+        return svc.find_definition(workspace, &symbol, current_file.as_deref(), &dirty);
+    }
     crate::services::lsp_index::find_definition(&root, &symbol, &language, &extensions)
+}
+
+/// 索引模式：打开工作区的索引引擎（创建/重用 DB）。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn lsp_index_open(
+    state: State<'_, AppState>,
+    root: String,
+) -> Result<IndexStatus> {
+    let svc = state.lsp_index_service.clone();
+    let workspace = std::path::Path::new(&root);
+    let _ = svc.open_workspace(workspace)?;
+    Ok(svc.status(workspace))
+}
+
+/// 索引模式：关闭工作区索引（释放 DB 句柄）。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn lsp_index_close(
+    state: State<'_, AppState>,
+    root: String,
+) -> Result<()> {
+    let svc = state.lsp_index_service.clone();
+    let workspace = std::path::Path::new(&root);
+    svc.close_workspace(workspace);
+    Ok(())
+}
+
+/// 索引模式：触发后台全量重建。立即返回，进度通过事件推送。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn lsp_index_rebuild(
+    state: State<'_, AppState>,
+    root: String,
+) -> Result<()> {
+    let svc = state.lsp_index_service.clone();
+    let workspace = std::path::Path::new(&root);
+    svc.rebuild_full_async(workspace)
+}
+
+/// 索引模式：查询当前状态。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn lsp_index_status(
+    state: State<'_, AppState>,
+    root: String,
+) -> Result<IndexStatus> {
+    let svc = state.lsp_index_service.clone();
+    let workspace = std::path::Path::new(&root);
+    Ok(svc.status(workspace))
+}
+
+/// 索引模式：单文件增量更新（前端保存文件后调用）。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn lsp_index_update_file(
+    state: State<'_, AppState>,
+    root: String,
+    abs_path: String,
+) -> Result<()> {
+    let svc = state.lsp_index_service.clone();
+    let workspace = std::path::Path::new(&root);
+    let abs = std::path::Path::new(&abs_path);
+    svc.update_file(workspace, abs)
 }

@@ -524,6 +524,17 @@ pub fn run() {
             let state = app.state::<AppState>();
             let _ = state.app_handle.set(app.handle().clone());
 
+            // 索引引擎 → 前端事件桥（IndexStatus 推送）
+            {
+                let app_handle = app.handle().clone();
+                state.lsp_index_service.set_status_listener(move |status| {
+                    use tauri::Emitter;
+                    if let Err(e) = app_handle.emit("lsp_index:status", status) {
+                        tracing::debug!("emit lsp_index:status failed: {}", e);
+                    }
+                });
+            }
+
             // Store application paths for consistent path resolution across Tauri & Web API
             if let Ok(config_dir) = app.path().app_config_dir() {
                 let _ = state.app_config_dir.set(config_dir);
@@ -884,6 +895,11 @@ pub fn run() {
             commands::lsp::lsp_check_command,
             commands::lsp::lsp_index_references,
             commands::lsp::lsp_index_definition,
+            commands::lsp::lsp_index_open,
+            commands::lsp::lsp_index_close,
+            commands::lsp::lsp_index_rebuild,
+            commands::lsp::lsp_index_status,
+            commands::lsp::lsp_index_update_file,
             // 模型 Profile 命令
             test_model_profile_connection,
             fetch_models_for_profile,
