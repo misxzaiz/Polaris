@@ -881,6 +881,9 @@ pub fn run() {
             commands::lsp::lsp_config_upsert,
             commands::lsp::lsp_config_remove,
             commands::lsp::lsp_config_toggle,
+            commands::lsp::lsp_check_command,
+            commands::lsp::lsp_index_references,
+            commands::lsp::lsp_index_definition,
             // 模型 Profile 命令
             test_model_profile_connection,
             fetch_models_for_profile,

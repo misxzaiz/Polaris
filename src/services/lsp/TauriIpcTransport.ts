@@ -22,9 +22,12 @@ export class TauriIpcTransport {
   private unlistenData: UnlistenFn | null = null;
   private unlistenExit: UnlistenFn | null = null;
   readonly serverId: string;
+  /** 进程退出回调（崩溃感知）：由 lspStore 注入，用于把状态翻成 error */
+  private onExit: ((reason: string) => void) | null = null;
 
-  constructor(serverId: string) {
+  constructor(serverId: string, onExit?: (reason: string) => void) {
     this.serverId = serverId;
+    this.onExit = onExit ?? null;
   }
 
   /** 启动语言服务器并建立消息通道 */
@@ -43,11 +46,12 @@ export class TauriIpcTransport {
       },
     );
 
-    // 3. 监听进程退出事件
+    // 3. 监听进程退出事件 — 通知 lspStore 标记 error 并清理 client
     this.unlistenExit = await transportListen<string>(
       `lsp-exit-${this.serverId}`,
-      () => {
-        log.warn('LSP server process exited', { serverId: this.serverId });
+      (reason) => {
+        log.warn('LSP server process exited', { serverId: this.serverId, reason });
+        this.onExit?.(typeof reason === 'string' ? reason : 'process exited');
       },
     );
   }

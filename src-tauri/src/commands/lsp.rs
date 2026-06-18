@@ -108,3 +108,51 @@ pub fn lsp_config_toggle(state: State<'_, AppState>, id: String, enabled: bool) 
         .map_err(|e| crate::error::AppError::StateError(e.to_string()))?;
     repo.set_enabled(&id, enabled)
 }
+
+// ── 命令校验 ──────────────────────────────────────
+
+/// 命令存在性校验结果
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LspCommandCheck {
+    /// 是否在 PATH 中找到
+    pub found: bool,
+    /// 解析到的完整路径（找到时）
+    pub resolved_path: Option<String>,
+}
+
+/// 校验语言服务器可执行文件是否存在（设置页"添加服务器"时调用）。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn lsp_check_command(command: String) -> Result<LspCommandCheck> {
+    let resolved = crate::services::lsp::which_command(&command);
+    Ok(LspCommandCheck {
+        found: resolved.is_some(),
+        resolved_path: resolved,
+    })
+}
+
+// ── 轻量索引模式（无常驻进程）─────────────────────
+
+/// 索引模式：在工作区查找符号的全部引用（查应用）。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn lsp_index_references(
+    root: String,
+    symbol: String,
+    extensions: Vec<String>,
+) -> Result<Vec<crate::services::lsp_index::IndexMatch>> {
+    crate::services::lsp_index::find_references(&root, &symbol, &extensions)
+}
+
+/// 索引模式：在工作区查找符号的定义候选（跳转定义）。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn lsp_index_definition(
+    root: String,
+    symbol: String,
+    language: String,
+    extensions: Vec<String>,
+) -> Result<Vec<crate::services::lsp_index::IndexMatch>> {
+    crate::services::lsp_index::find_definition(&root, &symbol, &language, &extensions)
+}

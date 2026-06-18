@@ -21,6 +21,83 @@ use crate::error::{AppError, Result};
 #[cfg(windows)]
 use crate::utils::CREATE_NO_WINDOW;
 
+/// 在 PATH 中解析可执行文件的真实路径。
+///
+/// 返回 `(完整路径, 是否为批处理脚本)`。Windows 上会按 `PATHEXT` 依次补全扩展名，
+/// 因此能命中 npm 全局安装的 `*.cmd`，也能命中原生 `*.exe`。
+///
+/// 解析出真实路径后，原生可执行文件可直接 spawn（避免 `cmd /C` 包装带来的
+/// 额外进程与"路径含空格被拆词"问题）；仅 `.cmd/.bat` 才需要 `cmd` 解释执行。
+fn resolve_executable(command: &str) -> Option<(std::path::PathBuf, bool)> {
+    use std::path::{Path, PathBuf};
+
+    #[cfg(windows)]
+    let exts: Vec<String> = std::env::var("PATHEXT")
+        .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string())
+        .split(';')
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_lowercase())
+        .collect();
+
+    fn is_batch(p: &Path) -> bool {
+        #[cfg(windows)]
+        {
+            matches!(
+                p.extension()
+                    .and_then(|e| e.to_str())
+                    .map(|s| s.to_lowercase())
+                    .as_deref(),
+                Some("cmd") | Some("bat")
+            )
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = p;
+            false
+        }
+    }
+
+    // 给定一个候选基路径，返回真实存在的文件路径（Windows 下尝试补全 PATHEXT）
+    let try_path = |base: &Path| -> Option<PathBuf> {
+        if base.is_file() {
+            return Some(base.to_path_buf());
+        }
+        #[cfg(windows)]
+        {
+            for ext in &exts {
+                let cand = PathBuf::from(format!("{}{}", base.display(), ext));
+                if cand.is_file() {
+                    return Some(cand);
+                }
+            }
+        }
+        None
+    };
+
+    // 1) 命令本身带路径分隔符 → 按绝对/相对路径直接解析
+    if command.contains('/') || command.contains('\\') {
+        return try_path(Path::new(command)).map(|p| {
+            let b = is_batch(&p);
+            (p, b)
+        });
+    }
+
+    // 2) 在 PATH 各目录中查找
+    let path_var = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path_var) {
+        if let Some(found) = try_path(&dir.join(command)) {
+            let b = is_batch(&found);
+            return Some((found, b));
+        }
+    }
+    None
+}
+
+/// 检查命令是否可在 PATH 中找到，返回解析到的完整路径（供设置页校验用）。
+pub fn which_command(command: &str) -> Option<String> {
+    resolve_executable(command).map(|(p, _)| p.to_string_lossy().to_string())
+}
+
 /// LSP 会话：持有子进程和 stdin 句柄
 struct LspSession {
     child: Child,
@@ -77,23 +154,37 @@ impl LspManager {
             let _ = self.sessions.remove(&id);
         }
 
-        // Windows 上 std::process::Command 只搜索 .exe，不搜索 .cmd/.bat
-        // npm 全局安装的可执行文件是 .cmd 脚本，需要通过 cmd.exe /C 包装执行
-        let (actual_command, actual_args) = {
-            #[cfg(windows)]
-            {
-                let full_args: Vec<String> = std::iter::once(command.to_string())
-                    .chain(args.iter().cloned())
-                    .collect();
-                ("cmd".to_string(), {
+        // 解析真实可执行路径：
+        // - 原生可执行（.exe / Unix 二进制）→ 直接 spawn 完整路径，避免 cmd.exe 包装
+        //   与"路径含空格被拆词"的问题；
+        // - npm 全局包脚本（.cmd/.bat）→ 用 cmd /C 执行已解析的完整路径；
+        // - 解析失败 → Windows 回退旧的 cmd /C 行为（再让系统试一次），其它平台直接 spawn
+        //   原命令以暴露清晰的 "not found" 错误。
+        let (actual_command, actual_args) = match resolve_executable(command) {
+            Some((path, is_batch)) => {
+                let path_str = path.to_string_lossy().to_string();
+                if is_batch {
+                    let mut v = vec!["/C".to_string(), path_str];
+                    v.extend(args.iter().cloned());
+                    ("cmd".to_string(), v)
+                } else {
+                    (path_str, args.to_vec())
+                }
+            }
+            None => {
+                #[cfg(windows)]
+                {
+                    let full_args: Vec<String> = std::iter::once(command.to_string())
+                        .chain(args.iter().cloned())
+                        .collect();
                     let mut v = vec!["/C".to_string()];
                     v.extend(full_args);
-                    v
-                })
-            }
-            #[cfg(not(windows))]
-            {
-                (command.to_string(), args.to_vec())
+                    ("cmd".to_string(), v)
+                }
+                #[cfg(not(windows))]
+                {
+                    (command.to_string(), args.to_vec())
+                }
             }
         };
 

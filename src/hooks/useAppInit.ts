@@ -18,6 +18,7 @@ import { useSnippetStore } from '@/stores/snippetStore';
 import { useCliInfoStore } from '@/stores/cliInfoStore';
 import { useTerminalScriptStore } from '@/stores/terminalScriptStore';
 import { usePluginStore } from '@/stores/pluginStore';
+import { useLspStore } from '@/stores/lspStore';
 import { sessionStoreManager } from '@/stores/conversationStore';
 import { bootstrapEngines, type EngineId } from '../core/engine-bootstrap';
 import { bootstrapTools } from '../core/tool-bootstrap';
@@ -200,6 +201,9 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
         useSnippetStore.getState().loadSnippets(),
         useIntegrationStore.getState().loadInstances(),
         useAutoModeStore.getState().fetchConfig(),
+        // 加载 LSP 持久化配置 —— 必须在启动时执行，否则重启后用户自定义的
+        // 语言服务器（如 Java）不会被加载，打开对应文件时静默失效。
+        useLspStore.getState().loadFromBackend(),
       ]);
     } catch (error) {
       log.warn('设置数据预加载部分失败', { error: String(error) });
@@ -251,6 +255,8 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
       const { cleanup } = useIntegrationStore.getState();
       cleanup();
       cleanupCliListeners();
+      // 关闭所有 LSP 语言服务器进程，避免遗留子进程
+      void useLspStore.getState().deactivateAll();
       disconnectTransport();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only init, all deps are stable refs

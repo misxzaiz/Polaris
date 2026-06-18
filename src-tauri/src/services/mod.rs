@@ -34,6 +34,7 @@ pub mod cli_resolver;
 
 pub mod lsp;
 pub mod lsp_config_repository;
+pub mod lsp_index;
 
 pub mod mcp_manager_service;
 pub use mcp_manager_service::McpManagerService;

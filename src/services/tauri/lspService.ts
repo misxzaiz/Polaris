@@ -52,3 +52,51 @@ export async function lspConfigRemove(id: string): Promise<void> {
 export async function lspConfigToggle(id: string, enabled: boolean): Promise<void> {
   return invoke('lsp_config_toggle', { id, enabled });
 }
+
+// ── 命令校验 ──────────────────────────────────────
+
+/** 命令存在性校验结果 */
+export interface LspCommandCheck {
+  /** 是否在 PATH 中找到 */
+  found: boolean;
+  /** 解析到的完整路径（找到时） */
+  resolvedPath: string | null;
+}
+
+/** 校验语言服务器可执行文件是否存在 */
+export async function lspCheckCommand(command: string): Promise<LspCommandCheck> {
+  return invoke('lsp_check_command', { command });
+}
+
+// ── 轻量索引模式（无常驻进程）─────────────────────
+
+/** 索引模式匹配结果（对应后端 lsp_index::IndexMatch） */
+export interface IndexMatch {
+  /** 文件绝对路径 */
+  path: string;
+  /** 行号（1-based） */
+  line: number;
+  /** 列号（0-based） */
+  column: number;
+  /** 该行预览文本 */
+  preview: string;
+}
+
+/** 索引模式：查找符号的全部引用 */
+export async function lspIndexReferences(
+  root: string,
+  symbol: string,
+  extensions: string[],
+): Promise<IndexMatch[]> {
+  return invoke('lsp_index_references', { root, symbol, extensions });
+}
+
+/** 索引模式：查找符号的定义候选 */
+export async function lspIndexDefinition(
+  root: string,
+  symbol: string,
+  language: string,
+  extensions: string[],
+): Promise<IndexMatch[]> {
+  return invoke('lsp_index_definition', { root, symbol, language, extensions });
+}

@@ -18,6 +18,8 @@ import { lspConfigList } from '@/services/tauri/lspService';
 import { createLogger } from '@/utils/logger';
 import { ctrlHoverLink } from '../components/Editor/ctrlHoverLink';
 import { jumpToDefinitionCrossFile } from '@/services/lsp/lspNavigation';
+import { jumpToDefinitionIndex } from '@/services/lsp/indexNavigation';
+import { runFindReferences } from '@/services/lsp/lspReferences';
 import { useLspUiStore } from './lspUiStore';
 import { useDiagnosticsStore, type DiagnosticItem } from './diagnosticsStore';
 
@@ -37,6 +39,13 @@ export interface LspServerConfig {
   args: string[];
   /** 是否启用 */
   enabled: boolean;
+  /**
+   * 运行模式：
+   * - 'lsp'（默认）：启动语言服务器进程，提供补全/诊断/语义导航等完整能力；
+   * - 'index'：轻量索引模式，无常驻进程，用 ripgrep 式扫描提供跳转定义/查找引用，
+   *   适合低配机或重型语言（Java/C++）。
+   */
+  mode?: 'lsp' | 'index';
 }
 
 /** 活跃的 LSP 客户端实例 */
@@ -54,7 +63,7 @@ interface LspState {
   /** 连接状态（key = serverId） */
   status: Map<string, LspConnectionStatus>;
   /** 进行中的连接 Promise（防止并发重复创建） */
-  pendingConnections: Map<string, Promise<{ client: LSPClient; extensions: Extension[] } | null>>;
+  pendingConnections: Map<string, Promise<{ client: LSPClient | null; extensions: Extension[] } | null>>;
 }
 
 export type LspConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -66,7 +75,7 @@ interface LspActions {
     filePath: string,
     language: string,
     rootUri: string,
-  ): Promise<{ client: LSPClient; extensions: Extension[] } | null>;
+  ): Promise<{ client: LSPClient | null; extensions: Extension[] } | null>;
 
   /** 断开指定服务器的连接 */
   deactivateServer(serverId: string): Promise<void>;
@@ -122,6 +131,7 @@ const DEFAULT_SERVERS: LspServerConfig[] = [
     command: 'typescript-language-server',
     args: ['--stdio'],
     enabled: true,
+    mode: 'lsp',
   },
 ];
 
@@ -139,6 +149,17 @@ export const useLspStore = create<LspStore>()((set, get) => ({
     const serverConfig = findServerForLanguage(servers, language);
     if (!serverConfig) return null;
 
+    // 索引模式：无常驻进程，直接返回轻量导航扩展（keymap），不走进程/握手。
+    if (serverConfig.mode === 'index') {
+      set((state) => {
+        const newStatus = new Map(state.status);
+        newStatus.set(serverConfig.id, 'connected');
+        return { status: newStatus };
+      });
+      const extensions = getIndexExtensions(filePath, language, serverConfig);
+      return { client: null, extensions };
+    }
+
     // 复用已有 client
     const existing = clients.get(serverConfig.id);
     if (existing) {
@@ -152,7 +173,7 @@ export const useLspStore = create<LspStore>()((set, get) => ({
     if (pending) {
       log.debug('Waiting for pending LSP connection', { serverId: serverConfig.id });
       const result = await pending;
-      if (result) {
+      if (result && result.client) {
         const extensions = getExtensionsForClient(result.client, filePath, language);
         return { client: result.client, extensions };
       }
@@ -169,7 +190,19 @@ export const useLspStore = create<LspStore>()((set, get) => ({
 
       try {
         const serverId = serverConfig.id;
-        const transport = new TauriIpcTransport(serverId);
+        const transport = new TauriIpcTransport(serverId, (reason) => {
+          // 进程退出/崩溃：标记 error 并移除 client，下次激活时会自动重启
+          set((state) => {
+            const newClients = new Map(state.clients);
+            newClients.delete(serverId);
+            const newStatus = new Map(state.status);
+            newStatus.set(serverId, 'error');
+            const newPending = new Map(state.pendingConnections);
+            newPending.delete(serverId);
+            return { clients: newClients, status: newStatus, pendingConnections: newPending };
+          });
+          log.warn('LSP process exited, marked error', { serverId, reason });
+        });
         await transport.connect(serverConfig.command, serverConfig.args);
 
         // 只把 LSPClientExtension 配置对象放在 client 层级：
@@ -369,6 +402,51 @@ function getExtensionsForClient(
     languageServerSupport(client, uri, languageID),
     makeCtrlClickJump(client, uri),
     makeSymbolPaletteKeymap(client, uri),
+    makeFindReferencesKeymap(client, uri),
+    ctrlHoverLink,
+  ];
+}
+
+/**
+ * 索引模式的编辑器扩展：无 LSP client，仅提供 keymap/鼠标导航。
+ * - F12 / Ctrl+Click：跳转定义（启发式）
+ * - Shift+F12：查找引用（全词扫描）
+ */
+function getIndexExtensions(
+  _filePath: string,
+  language: string,
+  server: LspServerConfig,
+): Extension[] {
+  const languages = server.languages;
+  return [
+    keymap.of([
+      {
+        key: 'F12',
+        run: (view) => {
+          void jumpToDefinitionIndex(view, language, languages);
+          return true;
+        },
+      },
+      {
+        key: 'Shift-F12',
+        run: (view) => {
+          void runFindReferences(view, { mode: 'index', languages });
+          return true;
+        },
+      },
+    ]),
+    EditorView.domEventHandlers({
+      mousedown(event, view) {
+        if (event.button !== 0) return false;
+        if (!(event.ctrlKey || event.metaKey)) return false;
+        const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+        if (pos == null) return false;
+        event.preventDefault();
+        view.dispatch({ selection: { anchor: pos } });
+        void jumpToDefinitionIndex(view, language, languages);
+        return true;
+      },
+    }),
     ctrlHoverLink,
   ];
 }
@@ -407,6 +485,22 @@ function makeSymbolPaletteKeymap(client: LSPClient, uri: string): Extension {
       key: 'Mod-Shift-o',
       run: (view) => {
         useLspUiStore.getState().openSymbolPalette({ view, client, uri });
+        return true;
+      },
+    },
+  ]);
+}
+
+/**
+ * Shift+F12：查找引用（查应用）。LSP 模式发 textDocument/references，
+ * 结果在 ReferencesPanel 浮层展示。
+ */
+function makeFindReferencesKeymap(client: LSPClient, uri: string): Extension {
+  return keymap.of([
+    {
+      key: 'Shift-F12',
+      run: (view) => {
+        void runFindReferences(view, { mode: 'lsp', client, uri });
         return true;
       },
     },

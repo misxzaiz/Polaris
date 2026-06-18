@@ -21,10 +21,18 @@ pub struct LspServerEntry {
     pub args: Vec<String>,
     #[serde(default = "default_enabled")]
     pub enabled: bool,
+    /// 运行模式："lsp"（启动语言服务器进程）或 "index"（轻量索引，无常驻进程）。
+    /// 老配置缺省时按 "lsp" 处理，保证向后兼容。
+    #[serde(default = "default_mode")]
+    pub mode: String,
 }
 
 fn default_enabled() -> bool {
     true
+}
+
+fn default_mode() -> String {
+    "lsp".to_string()
 }
 
 /// 持久化存储结构
@@ -51,6 +59,7 @@ impl Default for LspConfigFile {
                 command: "typescript-language-server".into(),
                 args: vec!["--stdio".into()],
                 enabled: true,
+                mode: "lsp".into(),
             }],
         }
     }

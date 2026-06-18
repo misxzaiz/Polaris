@@ -30,6 +30,7 @@ const CreateWorkspaceModal = lazy(() => import('./components/Workspace/CreateWor
 const CreateSessionModal = lazy(() => import('./components/Session/CreateSessionModal').then(m => ({ default: m.CreateSessionModal })));
 const FileSearchModal = lazy(() => import('./components/Editor/FileSearchModal').then(m => ({ default: m.FileSearchModal })));
 const SymbolPalette = lazy(() => import('./components/Editor/SymbolPalette').then(m => ({ default: m.SymbolPalette })));
+const ReferencesPanel = lazy(() => import('./components/Editor/ReferencesPanel').then(m => ({ default: m.ReferencesPanel })));
 
 import { useConfigStore, useViewStore, useWorkspaceStore, useTabStore } from './stores';
 import { isPluginUiEnabled, usePluginStore } from './stores/pluginStore';
@@ -319,6 +320,11 @@ function App() {
         {/* LSP 符号面板（Mod+Shift+O），只有在 LSP keymap 触发后才有内容挂载 */}
         <Suspense fallback={null}>
           <SymbolPalette />
+        </Suspense>
+
+        {/* LSP 查找引用面板（Shift+F12），仅在触发后挂载内容 */}
+        <Suspense fallback={null}>
+          <ReferencesPanel />
         </Suspense>
 
         {/* 语音伙伴「小陈」：未打开时渲染悬浮入口，打开时全屏通话界面 */}
