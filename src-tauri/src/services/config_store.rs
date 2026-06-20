@@ -640,6 +640,7 @@ impl OldConfig {
             git_bin_path: self.git_bin_path,
             floating_window: Default::default(),
             baidu_translate: None,
+            personal_hub: Default::default(),
             window: Default::default(),
             speech: Default::default(),
             tts: Default::default(),

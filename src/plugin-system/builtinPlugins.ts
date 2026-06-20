@@ -1,9 +1,11 @@
 import type { PolarisPluginManifest } from './types'
 import { pluginRegistry } from './registry'
+import { pluginPanelRegistry } from './panelRegistry'
 import { computerPluginManifest } from '@/plugins/computer/manifest'
 import { requirementPluginManifest } from '@/plugins/requirement/manifest'
 import { schedulerPluginManifest } from '@/plugins/scheduler/manifest'
 import { todoPluginManifest } from '@/plugins/todo/manifest'
+import { personalHubPluginManifest } from '@/plugins/personal-hub/manifest'
 
 const corePluginManifest: PolarisPluginManifest = {
   id: 'polaris.core',
@@ -98,6 +100,12 @@ export function registerBuiltinPlugins(): void {
   pluginRegistry.register(todoPluginManifest)
   pluginRegistry.register(requirementPluginManifest)
   pluginRegistry.register(computerPluginManifest)
+  pluginRegistry.register(personalHubPluginManifest)
+
+  // builtin 插件无 installPath，registry 不会自动注册 panel，需手动注册懒加载入口
+  pluginPanelRegistry.register('personalHub', 'polaris.personal-hub', () =>
+    import('@/components/PersonalHub/PersonalHubPanel').then((m) => ({ default: m.PersonalHubPanel })),
+  )
 }
 
 registerBuiltinPlugins()

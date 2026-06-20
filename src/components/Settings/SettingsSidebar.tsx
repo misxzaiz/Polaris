@@ -12,7 +12,7 @@ import {
   IconMic,
   IconMessageSquareText,
 } from '../Common/Icons';
-import { Download, Shield, Code2, Globe, Blocks, Server } from 'lucide-react';
+import { Download, Shield, Code2, Globe, Blocks, Server, BookOpen } from 'lucide-react';
 import { isTauri } from '@/utils/platform';
 import type { ReactNode } from 'react';
 
@@ -30,7 +30,8 @@ export type SettingsTabId =
   | 'app-update'
   | 'plugins'
   | 'advanced'
-  | 'web';
+  | 'web'
+  | 'personal-hub';
 
 export interface SettingsNavItem {
   id: SettingsTabId;
@@ -59,6 +60,7 @@ const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'plugins', icon: <Blocks size={16} />, labelKey: 'nav.plugins' },
   { id: 'app-update', icon: <Download size={16} />, labelKey: 'nav.appUpdate' },
   { id: 'web', icon: <Globe size={16} />, labelKey: 'nav.web' },
+  { id: 'personal-hub', icon: <BookOpen size={16} />, labelKey: 'nav.personalHub' },
   // { id: 'advanced', icon: <IconSettings size={16} />, labelKey: 'nav.advanced' },
 ];
 

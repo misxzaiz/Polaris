@@ -37,7 +37,8 @@
     "plugins": "插件",
     "mcp": "MCP 服务器",
     "web": "Web 服务",
-    "appUpdate": "应用更新"
+    "appUpdate": "应用更新",
+    "personalHub": "个人空间"
   },
   "messages": {
     "saved": "已保存",
@@ -634,5 +635,23 @@
     "downloadMsi": "下载 MSI",
     "openRelease": "打开发布页",
     "rollbackWarning": "回退会安装更旧的 MSI，可能需要先卸载当前版本。降级前请备份用户配置。"
+  },
+  "personalHub": {
+    "supabaseTitle": "Supabase 配置",
+    "supabaseDesc": "填写个人 Supabase 项目的 URL 与 anon key，用于登录注册与数据同步。anon key 公开，依赖 RLS 行级隔离保证数据安全。",
+    "supabaseUrl": "Supabase URL",
+    "supabaseUrlPlaceholder": "留空使用默认：{{host}}",
+    "supabaseAnonKey": "Supabase Anon Key",
+    "supabaseKeyPlaceholder": "留空使用默认：{{preview}}",
+    "encryptionTitle": "加密密钥",
+    "encryptionDesc": "用于 links 表 description 字段的 AES 加解密。密钥存储在本地配置文件，请妥善保管；丢失后将无法解密历史加密内容。建议使用足够长度的随机字符串。",
+    "encryptionPlaceholder": "输入或生成加密密钥",
+    "show": "显示",
+    "hide": "隐藏",
+    "generate": "生成",
+    "usageTitle": "使用说明",
+    "usage1": "填写 Supabase 配置后点击底部「保存」",
+    "usage2": "在左侧 ActivityBar 点击「个人空间」图标登录",
+    "usage3": "登录后可管理导航、书签与待办，并可选加密描述"
   }
 }

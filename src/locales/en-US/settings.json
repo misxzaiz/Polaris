@@ -37,7 +37,8 @@
     "appUpdate": "App Update",
     "mcp": "MCP Servers",
     "lsp": "Language Servers",
-    "web": "Web Service"
+    "web": "Web Service",
+    "personalHub": "Personal Hub"
   },
   "messages": {
     "saved": "Saved",
@@ -634,5 +635,23 @@
     "downloadMsi": "Download MSI",
     "openRelease": "Open release",
     "rollbackWarning": "Rollback installs an older MSI and may require uninstalling the current version first. Back up user configuration before downgrading."
+  },
+  "personalHub": {
+    "supabaseTitle": "Supabase Configuration",
+    "supabaseDesc": "Enter your Supabase project URL and anon key for sign-in/sign-up and data sync. The anon key is public; row-level security (RLS) keeps data isolated.",
+    "supabaseUrl": "Supabase URL",
+    "supabaseUrlPlaceholder": "Leave empty to use default: {{host}}",
+    "supabaseAnonKey": "Supabase Anon Key",
+    "supabaseKeyPlaceholder": "Leave empty to use default: {{preview}}",
+    "encryptionTitle": "Encryption Key",
+    "encryptionDesc": "Used for AES encryption of the description field in the links table. Stored in the local config file — keep it safe; losing it means previously encrypted content cannot be decrypted. Use a sufficiently long random string.",
+    "encryptionPlaceholder": "Enter or generate an encryption key",
+    "show": "Show",
+    "hide": "Hide",
+    "generate": "Generate",
+    "usageTitle": "Usage",
+    "usage1": "Fill in the Supabase configuration and click \"Save\" at the bottom",
+    "usage2": "Click the \"Personal Hub\" icon in the left ActivityBar to sign in",
+    "usage3": "After signing in, manage navigation, bookmarks and todos, with optional encryption"
   }
 }

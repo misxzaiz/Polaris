@@ -28,6 +28,7 @@ import { AppUpdateTab } from './tabs/AppUpdateTab';
 import { LspTab } from './tabs/LspTab';
 import { WebTab } from './tabs/WebTab';
 import { PluginTab } from './tabs/PluginTab';
+import { PersonalHubTab } from './tabs/PersonalHubTab';
 import { createLogger } from '@/utils/logger';
 import { applyWebServer, getConfig } from '@/services/tauri/configService';
 import { currentMode } from '@/services/transport';
@@ -58,6 +59,7 @@ const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'app-update': 'nav.appUpdate',
   'advanced': 'nav.advanced',
   'web': 'nav.web',
+  'personal-hub': 'nav.personalHub',
 };
 
 export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
@@ -87,6 +89,7 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
     speech: ['speech', 'tts', 'wakeWord', 'voiceNotification', 'voiceCommands'],
     advanced: ['gitBinPath', 'sessionDir'],
     web: ['web'],
+    'personal-hub': ['personalHub'],
     'ai-engine': ['defaultEngine', 'claudeCode', 'codexCode', 'mimoCode'],
     'model-provider': ['modelProfiles', 'activeModelProfileId'],
   };
@@ -315,6 +318,14 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
                 onConfigChange={setLocalConfig}
                 loading={loading}
                 statusRefreshKey={webStatusRefreshKey}
+              />
+            )}
+
+            {activeTab === 'personal-hub' && (
+              <PersonalHubTab
+                config={localConfig}
+                onConfigChange={setLocalConfig}
+                loading={loading}
               />
             )}
           </div>

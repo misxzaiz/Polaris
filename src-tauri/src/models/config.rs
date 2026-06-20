@@ -127,6 +127,49 @@ pub struct BaiduTranslateConfig {
     pub secret_key: String,
 }
 
+/// Personal Hub 内部插件配置
+///
+/// 集成 personal-hub 的 Supabase 接入与字段级加密能力。
+/// URL / anon key 公开，依赖 Supabase RLS 做行级隔离；
+/// 加密密钥用于 links 表 description 字段的 AES 口令模式加解密。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersonalHubConfig {
+    /// Supabase 项目 URL，如 https://xxxx.supabase.co
+    /// 留空时前端使用内置默认值（personal-hub 既有项目）。
+    #[serde(default)]
+    pub supabase_url: String,
+
+    /// Supabase anon key（公开密钥，配合 RLS 使用）
+    /// 留空时前端使用内置默认值。
+    #[serde(default)]
+    pub supabase_anon_key: String,
+
+    /// 字段级加密密钥（口令字符串，crypto-js AES 口令模式派生）
+    #[serde(default)]
+    pub encryption_key: String,
+}
+
+/// Supabase 默认 URL（personal-hub 既有项目）
+fn default_personal_hub_supabase_url() -> String {
+    "https://nynpqrwsautudqblxoir.supabase.co".to_string()
+}
+
+/// Supabase 默认 anon key（personal-hub 既有项目）
+fn default_personal_hub_supabase_anon_key() -> String {
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im55bnBxcndzYXV0dWRxYmx4b2lyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI3MDkzMDksImV4cCI6MjA3ODI4NTMwOX0.rz79QkbbSEQPsrSdbYYFL-nuV_MwdAWhf4-gQ0j_fz4".to_string()
+}
+
+impl Default for PersonalHubConfig {
+    fn default() -> Self {
+        Self {
+            supabase_url: default_personal_hub_supabase_url(),
+            supabase_anon_key: default_personal_hub_supabase_anon_key(),
+            encryption_key: String::new(),
+        }
+    }
+}
+
 /// 模型 Profile — 描述一个第三方模型端点配置
 ///
 /// Claude Code 通过 --settings 临时文件 + 环境变量覆盖路由到 Anthropic 兼容端点。
@@ -849,6 +892,10 @@ pub struct Config {
     #[serde(default)]
     pub baidu_translate: Option<BaiduTranslateConfig>,
 
+    /// Personal Hub 内部插件配置
+    #[serde(default)]
+    pub personal_hub: PersonalHubConfig,
+
     /// QQ Bot 集成配置
     #[serde(default)]
     pub qqbot: QQBotConfig,
@@ -929,6 +976,7 @@ impl Default for Config {
             git_bin_path: None,
             floating_window: FloatingWindowConfig::default(),
             baidu_translate: None,
+            personal_hub: PersonalHubConfig::default(),
             qqbot: QQBotConfig::default(),
             feishu: FeishuConfig::default(),
             window: WindowSettings::default(),
