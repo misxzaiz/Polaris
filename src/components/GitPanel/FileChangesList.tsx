@@ -1,12 +1,17 @@
 /**
  * 文件变更列表组件
  *
- * 显示暂存和未暂存的文件变更
+ * 显示暂存和未暂存的文件变更，支持右键菜单
  */
 
+import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { File, Check, X, Plus, Minus, GitCommit } from 'lucide-react'
+import { File, Check, X, Plus, Minus, GitCommit, RotateCcw, Trash2 } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
+import { useFileExplorerStore } from '@/stores'
+import { useToastStore } from '@/stores/toastStore'
+import { ContextMenu, type ContextMenuItem } from '@/components/FileExplorer/ContextMenu'
+import { ConfirmDialog } from '@/components/Common/ConfirmDialog'
 import type { GitFileChange } from '@/types'
 
 interface FileChangesListProps {
@@ -37,7 +42,83 @@ export function FileChangesList({
   isSelectionDisabled = false
 }: FileChangesListProps) {
   const { t } = useTranslation('git')
-  const { stageFile, unstageFile } = useGitStore()
+  const { stageFile, unstageFile, discardChanges, refreshStatus } = useGitStore()
+  const { delete_file } = useFileExplorerStore()
+  const toast = useToastStore()
+
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null)
+  const [confirmDialog, setConfirmDialog] = useState<{
+    show: boolean
+    title: string
+    message: string
+    type?: 'danger' | 'warning'
+    onConfirm: () => void
+  } | null>(null)
+
+  const closeContextMenu = useCallback(() => setContextMenu(null), [])
+
+  const handleDiscard = useCallback((filePath: string) => {
+    setConfirmDialog({
+      show: true,
+      title: t('confirmDiscardTitle'),
+      message: t('confirmDiscardSingle', { file: filePath }),
+      type: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(null)
+        try {
+          await discardChanges(workspacePath, filePath)
+          toast.success(t('discardSuccess'))
+        } catch {
+          toast.error(t('errors.discardFailed'))
+        }
+      },
+    })
+  }, [workspacePath, discardChanges, toast, t])
+
+  const handleDelete = useCallback((filePath: string) => {
+    setConfirmDialog({
+      show: true,
+      title: t('confirmDeleteTitle'),
+      message: t('confirmDeleteSingle', { file: filePath }),
+      type: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(null)
+        try {
+          await delete_file(filePath)
+          await refreshStatus(workspacePath)
+          toast.success(t('deleteSuccess'))
+        } catch {
+          toast.error(t('errors.deleteFailed'))
+        }
+      },
+    })
+  }, [workspacePath, delete_file, refreshStatus, toast, t])
+
+  const showContextMenu = useCallback((e: React.MouseEvent, items: ContextMenuItem[]) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setContextMenu({ x: e.clientX, y: e.clientY, items })
+  }, [])
+
+  const getStagedMenuItems = useCallback((filePath: string): ContextMenuItem[] => [
+    { id: 'unstage', label: t('unstage'), icon: <X size={14} />, action: () => unstageFile(workspacePath, filePath) },
+    { id: 'discard', label: t('discard'), icon: <RotateCcw size={14} />, action: () => handleDiscard(filePath) },
+    { id: 'sep', label: '-', icon: undefined, action: () => {} },
+    { id: 'delete', label: t('deleteFile'), icon: <Trash2 size={14} />, action: () => handleDelete(filePath) },
+  ], [workspacePath, unstageFile, handleDiscard, handleDelete, t])
+
+  const getUnstagedMenuItems = useCallback((filePath: string): ContextMenuItem[] => [
+    { id: 'stage', label: t('stage'), icon: <Check size={14} />, action: () => stageFile(workspacePath, filePath) },
+    { id: 'discard', label: t('discard'), icon: <RotateCcw size={14} />, action: () => handleDiscard(filePath) },
+    { id: 'sep', label: '-', icon: undefined, action: () => {} },
+    { id: 'delete', label: t('deleteFile'), icon: <Trash2 size={14} />, action: () => handleDelete(filePath) },
+  ], [workspacePath, stageFile, handleDiscard, handleDelete, t])
+
+  const getUntrackedMenuItems = useCallback((filePath: string): ContextMenuItem[] => [
+    { id: 'stage', label: t('stage'), icon: <Check size={14} />, action: () => stageFile(workspacePath, filePath) },
+    { id: 'sep', label: '-', icon: undefined, action: () => {} },
+    { id: 'delete', label: t('deleteFile'), icon: <Trash2 size={14} />, action: () => handleDelete(filePath) },
+  ], [workspacePath, stageFile, handleDelete, t])
 
   const getChangeIcon = (status: GitFileChange['status']) => {
     switch (status) {
@@ -98,6 +179,7 @@ export function FileChangesList({
                 key={file.path}
                 className="flex items-center gap-2 px-4 py-1.5 hover:bg-background-hover group cursor-pointer"
                 onClick={() => onFileClick?.(file, 'staged')}
+                onContextMenu={(e) => showContextMenu(e, getStagedMenuItems(file.path))}
               >
                 <input
                   type="checkbox"
@@ -161,6 +243,7 @@ export function FileChangesList({
                 key={file.path}
                 className="flex items-center gap-2 px-4 py-1.5 hover:bg-background-hover group cursor-pointer"
                 onClick={() => onFileClick?.(file, 'unstaged')}
+                onContextMenu={(e) => showContextMenu(e, getUnstagedMenuItems(file.path))}
               >
                 <input
                   type="checkbox"
@@ -224,6 +307,7 @@ export function FileChangesList({
                 key={path}
                 className="flex items-center gap-2 px-4 py-1.5 hover:bg-background-hover group cursor-pointer"
                 onClick={() => onUntrackedFileClick?.(path)}
+                onContextMenu={(e) => showContextMenu(e, getUntrackedMenuItems(path))}
               >
                 <input
                   type="checkbox"
@@ -254,6 +338,26 @@ export function FileChangesList({
             ))}
           </div>
         </div>
+      )}
+
+      {contextMenu && (
+        <ContextMenu
+          visible
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextMenu.items}
+          onClose={closeContextMenu}
+        />
+      )}
+
+      {confirmDialog?.show && (
+        <ConfirmDialog
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          type={confirmDialog.type}
+          onConfirm={confirmDialog.onConfirm}
+          onCancel={() => setConfirmDialog(null)}
+        />
       )}
     </div>
   )
