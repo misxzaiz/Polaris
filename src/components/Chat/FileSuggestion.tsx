@@ -5,8 +5,9 @@
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { FileMatch } from '@/services/fileSearch';
-import type { Workspace } from '@/types';
+import type { Workspace, EngineId } from '@/types';
 import type { PromptSnippet } from '@/types/promptSnippet';
+import { getEngineDisplayName } from '@/utils/engineDisplay';
 
 // 分离文件名和目录路径
 function splitPath(relativePath: string): { dir: string; name: string } {
@@ -16,9 +17,20 @@ function splitPath(relativePath: string): { dir: string; name: string } {
   return { dir, name };
 }
 
+/** @对话 引用的历史会话条目 */
+export interface ConversationSuggestion {
+  externalId: string;
+  title: string;
+  engineId: EngineId;
+  messageCount: number;
+  updatedAt: string;
+  /** 源对话所属工作区路径（落盘 .polaris-handoff/ 用，优先于当前会话工作区） */
+  workspacePath: string | null;
+}
+
 export interface SuggestionItem {
-  type: 'workspace' | 'file' | 'snippet';
-  data: Workspace | FileMatch | PromptSnippet;
+  type: 'workspace' | 'file' | 'snippet' | 'conversation';
+  data: Workspace | FileMatch | PromptSnippet | ConversationSuggestion;
 }
 
 interface UnifiedSuggestionProps {
@@ -59,6 +71,7 @@ export function UnifiedSuggestion({
   const workspaceItems = items.filter(i => i.type === 'workspace');
   const fileItems = items.filter(i => i.type === 'file');
   const snippetItems = items.filter(i => i.type === 'snippet');
+  const conversationItems = items.filter(i => i.type === 'conversation');
 
   return (
     <div
@@ -193,6 +206,41 @@ export function UnifiedSuggestion({
                 {snippet.description && (
                   <span className="text-xs text-text-tertiary truncate">{snippet.description}</span>
                 )}
+              </div>
+            );
+          })}
+        </>
+      )}
+      {/* 历史对话分组（@对话 引用） */}
+      {conversationItems.length > 0 && (
+        <>
+          <div className="px-3 py-1.5 text-xs text-text-tertiary border-b border-border bg-background-elevated/50 sticky top-0">
+            历史对话
+          </div>
+          {conversationItems.map((item) => {
+            const globalIdx = items.findIndex(i => i === item);
+            const conv = item.data as ConversationSuggestion;
+
+            return (
+              <div
+                key={conv.externalId}
+                data-index={globalIdx}
+                className={`px-3 py-2 cursor-pointer flex items-center gap-2 text-sm ${
+                  globalIdx === selectedIndex
+                    ? 'bg-primary/20 text-text-primary'
+                    : 'text-text-secondary hover:bg-background-hover'
+                }`}
+                onClick={() => onSelect(item)}
+                onMouseEnter={() => onHover(globalIdx)}
+              >
+                <svg className="w-4 h-4 text-text-tertiary shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.8L3 20l1.3-3.9A7.97 7.97 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                <span className="flex-1 truncate font-medium" title={conv.title}>{conv.title}</span>
+                <span className="text-xs text-text-tertiary bg-background-elevated px-1.5 py-0.5 rounded shrink-0">
+                  {getEngineDisplayName(conv.engineId)}
+                </span>
+                <span className="text-xs text-text-tertiary shrink-0">{conv.messageCount}条</span>
               </div>
             );
           })}

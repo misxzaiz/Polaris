@@ -11,12 +11,22 @@ import type { ChatMessage, ContentBlock } from '@/types/chat'
 
 /** 工具结果在 markdown 中的最大保留长度（超出截断，避免文件过大） */
 const TOOL_OUTPUT_MAX = 800
+/** compact 模式下 assistant 文本块的截断长度（控制摘要体积） */
+const COMPACT_TEXT_MAX = 200
 
 export interface MessagesToMarkdownOptions {
   /** 文档标题（通常是会话标题） */
   title?: string
   /** 是否包含 thinking 内容（默认否：省体积、减噪音） */
   includeThinking?: boolean
+  /**
+   * 紧凑摘要模式（默认否）。
+   *
+   * 用于跨引擎续接的 summary 模式：丢掉工具输出、截断 assistant 文本，
+   * 只保留用户意图与助手要点，把任意长度的对话压缩到 ~1-2k token，
+   * 避免新会话初始上下文膨胀。user 文本完整保留（用户意图是核心上下文）。
+   */
+  compact?: boolean
 }
 
 /**
@@ -32,14 +42,16 @@ export function messagesToMarkdown(
   messages: ChatMessage[],
   options: MessagesToMarkdownOptions = {},
 ): string {
-  const { title, includeThinking = false } = options
+  const { title, includeThinking = false, compact = false } = options
   const lines: string[] = []
 
   if (title) {
     lines.push(`# ${title}`, '')
   }
   lines.push(
-    '> 本文件由 Polaris 从历史会话导出，供新会话快速了解此前的对话与进展。',
+    compact
+      ? '> 本文件由 Polaris 从历史会话生成的精简摘要，仅保留用户意图与助手要点（工具输出已省略）。'
+      : '> 本文件由 Polaris 从历史会话导出，供新会话快速了解此前的对话与进展。',
     '',
     '---',
     '',
@@ -51,7 +63,7 @@ export function messagesToMarkdown(
       if (!content) continue
       lines.push('## 👤 用户', '', content, '')
     } else if (message.type === 'assistant') {
-      const blockLines = renderBlocks(message.blocks ?? [], includeThinking)
+      const blockLines = renderBlocks(message.blocks ?? [], includeThinking, compact)
       if (blockLines.length === 0) continue
       lines.push('## 🤖 助手', '', ...blockLines)
     } else if (message.type === 'system') {
@@ -66,14 +78,19 @@ export function messagesToMarkdown(
 }
 
 /** 渲染 assistant 的内容块 */
-function renderBlocks(blocks: ContentBlock[], includeThinking: boolean): string[] {
+function renderBlocks(blocks: ContentBlock[], includeThinking: boolean, compact: boolean): string[] {
   const out: string[] = []
 
   for (const block of blocks) {
     switch (block.type) {
       case 'text': {
-        const text = block.content.trim()
-        if (text) out.push(text, '')
+        const raw = block.content.trim()
+        if (!raw) break
+        // compact 模式截断 assistant 文本，控制摘要体积
+        const text = compact && raw.length > COMPACT_TEXT_MAX
+          ? `${raw.slice(0, COMPACT_TEXT_MAX)}…`
+          : raw
+        out.push(text, '')
         break
       }
       case 'thinking': {
@@ -85,7 +102,8 @@ function renderBlocks(blocks: ContentBlock[], includeThinking: boolean): string[
       case 'tool_call': {
         const args = summarizeToolInput(block.input)
         out.push(`**🔧 ${block.name}**${args ? ` — \`${args}\`` : ''}`, '')
-        if (block.output) {
+        // compact 模式省略工具输出（体积大头），仅保留调用名称与关键入参
+        if (!compact && block.output) {
           const output =
             block.output.length > TOOL_OUTPUT_MAX
               ? `${block.output.slice(0, TOOL_OUTPUT_MAX)}\n…（已截断 ${block.output.length - TOOL_OUTPUT_MAX} 字符）`

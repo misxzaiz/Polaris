@@ -16,7 +16,7 @@ import { useWorkspaceStore, useSessionStore, useToastStore } from '@/stores'
 import { voiceNotificationService } from '@/services/voiceNotificationService'
 import { useActiveSessionInputDraft, useActiveSessionActions, useActiveSessionWorkspace, usePendingQuestions, useActiveSessionPromptSuggestion } from '@/stores/conversationStore/useActiveSession'
 import { useDebouncedCallback } from '@/hooks/useDebounce'
-import { UnifiedSuggestion, type SuggestionItem } from './FileSuggestion'
+import { UnifiedSuggestion, type SuggestionItem, type ConversationSuggestion } from './FileSuggestion'
 import { AttachmentPreview } from './AttachmentPreview'
 import { AutoResizingTextarea } from './AutoResizingTextarea'
 import { QuestionFloatingPanel } from './QuestionFloatingPanel'
@@ -28,6 +28,9 @@ import type { FileMatch } from '@/services/fileSearch'
 import type { Workspace } from '@/types'
 import type { Attachment } from '@/types/attachment'
 import { createLogger } from '@/utils/logger'
+import { normalizeEngineId } from '@/utils/engineDisplay'
+import { dialogStorageService } from '@/services/dialogStorage/service'
+import { packForReference } from '@/services/conversationPackager'
 import type { PromptSnippet } from '@/types/promptSnippet'
 import {
   createAttachment,
@@ -141,9 +144,37 @@ export function ChatInput({
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [suggestionPosition, setSuggestionPosition] = useState({ top: 0, left: 0 })
   const [fileWorkspace, setFileWorkspace] = useState<Workspace | null>(null)
+  // @对话 引用：历史会话建议
+  const [conversationMatches, setConversationMatches] = useState<ConversationSuggestion[]>([])
+  const [conversationMode, setConversationMode] = useState(false)
 
   const { currentWorkspaceId, workspaces } = useWorkspaceStore()
   const { fileMatches, searchFiles, clearResults } = useFileSearch()
+
+  // 加载历史会话列表（全引擎聚合：saveDialog 对所有引擎统一落盘）供 @对话 引用
+  const searchConversations = useCallback(async (query: string) => {
+    try {
+      const result = await dialogStorageService.listConversations({ pageSize: 50 })
+      const q = query.toLowerCase().trim()
+      const items: ConversationSuggestion[] = result.items
+        .filter(m => !q
+          || (m.title ?? '').toLowerCase().includes(q)
+          || (m.firstUserText ?? '').toLowerCase().includes(q))
+        .map(m => ({
+          externalId: m.externalId,
+          title: m.title || '(无标题)',
+          engineId: normalizeEngineId(m.engineId),
+          messageCount: m.messageCount,
+          updatedAt: m.updatedAt,
+          // 源对话工作区：落盘优先用它，避免当前会话无工作区时无法导出
+          workspacePath: m.workspacePath ?? null,
+        }))
+      setConversationMatches(items)
+    } catch (e) {
+      log.warn('加载历史对话列表失败', { error: String(e) })
+      setConversationMatches([])
+    }
+  }, [])
   const {
     setInputLength,
     setAttachmentCount,
@@ -348,6 +379,9 @@ export function ChatInput({
     // 防抖持久化到 Store
     debouncedPersistDraft(newValue, attachments)
 
+    // 非 @对话 分支默认退出历史对话模式（@对话 分支内会重新置 true）
+    setConversationMode(false)
+
     const textarea = textareaRef.current
     if (!textarea || !containerRef.current) return
 
@@ -382,6 +416,22 @@ export function ChatInput({
       setSelectedIndex(0)
       setShowSuggestions(items.length > 0)
       setFileWorkspace(null)
+
+      const position = calculateSuggestionPosition()
+      setSuggestionPosition({ top: position.top, left: position.left })
+      return
+    }
+
+    // 1.5 检测 @对话 引用（历史会话 → packToSummary 落盘 → 转 @path 注入）
+    //     必须在 partialMatch（会匹配中文「对话」）之前拦截
+    const conversationMatch = textBeforeCursor.match(/@对话(?:\s+(\S*))?$/)
+    if (conversationMatch) {
+      setConversationMode(true)
+      setFileWorkspace(null)
+      setSuggestionItems([])
+      setShowSuggestions(true)
+      setSelectedIndex(0)
+      void searchConversations(conversationMatch[1] ?? '')
 
       const position = calculateSuggestionPosition()
       setSuggestionPosition({ top: position.top, left: position.left })
@@ -470,10 +520,11 @@ export function ChatInput({
     setShowSuggestions(false)
     setSuggestionItems([])
     clearResults()
-  }, [workspaces, searchFiles, clearResults, calculateSuggestionPosition, buildSuggestionItems, attachments, debouncedPersistDraft, historyIndex])
+  }, [workspaces, searchFiles, clearResults, calculateSuggestionPosition, buildSuggestionItems, attachments, debouncedPersistDraft, historyIndex, searchConversations])
 
-  // 当 fileMatches 更新时，合并到 suggestionItems
+  // 当 fileMatches 更新时，合并到 suggestionItems（@对话 模式下不合并文件）
   useEffect(() => {
+    if (conversationMode) return
     // 重新构建建议列表，包含工作区和文件
     const workspaceItems = suggestionItems.filter(i => i.type === 'workspace')
     const fileItems: SuggestionItem[] = fileMatches.map(f => ({ type: 'file' as const, data: f }))
@@ -489,6 +540,15 @@ export function ChatInput({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- showSuggestions/suggestionItems toggles visibility only
   }, [fileMatches])
+
+  // @对话 模式：历史会话列表加载后，合并到 suggestionItems
+  useEffect(() => {
+    if (!conversationMode) return
+    const items: SuggestionItem[] = conversationMatches.map(c => ({ type: 'conversation' as const, data: c }))
+    setSuggestionItems(items)
+    setShowSuggestions(items.length > 0)
+    setSelectedIndex(0)
+  }, [conversationMatches, conversationMode])
 
   // 解析自动变量（提前定义，供 selectSuggestion 使用）
   const resolveSnippetAutoVars = useCallback((content: string): string => {
@@ -525,6 +585,48 @@ export function ChatInput({
       setShowSuggestions(false)
       setSuggestionItems([])
       return
+    } else if (item.type === 'conversation') {
+      // @对话 引用：加载源消息 → packForReference 落盘 → 把 @对话 替换为 @path（复用现有 @path 注入链）
+      const conv = item.data as ConversationSuggestion
+      const beforeCursor = textBeforeCursor
+      const afterCursor = textAfterCursor
+      // 落盘工作区：优先用源对话自己的工作区（它本来就在那产生），
+      // 避免当前会话（如无工作区的 mimo 会话）无 path 时报「未关联工作区」。
+      // 两者都没有才真正无法导出。
+      const workspacePath = conv.workspacePath || currentWorkspace?.path || ''
+      setShowSuggestions(false)
+      setSuggestionItems([])
+      setConversationMode(false)
+
+      void (async () => {
+        try {
+          if (!workspacePath) {
+            useToastStore.getState().error(t('handoff.failToast'), t('handoff.reasonNoWorkspace'))
+            return
+          }
+          const messages = await dialogStorageService.getConversationMessages(conv.externalId)
+          if (messages.length === 0) {
+            useToastStore.getState().error(t('handoff.failToast'), t('handoff.emptyContent'))
+            return
+          }
+          // 摘要模式：控制注入体积，避免上下文膨胀
+          const { fileRef } = await packForReference(messages, conv.title, conv.externalId, workspacePath)
+          const replaced = beforeCursor.replace(/@对话(?:\s+\S*)?$/, `@${fileRef.relPath} `) + afterCursor
+          setLocalText(replaced)
+          debouncedPersistDraft(replaced, attachments)
+          log.info('@对话 引用已插入', { externalId: conv.externalId, ref: fileRef.relPath })
+          setTimeout(() => {
+            textarea.focus()
+            const newCursorPos = replaced.length - afterCursor.length
+            textarea.setSelectionRange(newCursorPos, newCursorPos)
+          }, 0)
+        } catch (e) {
+          const err = e instanceof Error ? e : new Error(String(e))
+          log.error('@对话 引用插入失败', err, { externalId: conv.externalId })
+          useToastStore.getState().error(t('handoff.failToast'), err.message)
+        }
+      })()
+      return
     } else if (item.type === 'workspace') {
       const workspace = item.data as Workspace
       newText = textBeforeCursor.replace(/@[\w\u4e00-\u9fa5-/]*$/, `@${workspace.name}:`) + textAfterCursor
@@ -552,7 +654,7 @@ export function ChatInput({
       const newCursorPos = newText.length - textAfterCursor.length
       textarea.setSelectionRange(newCursorPos, newCursorPos)
     }, 0)
-  }, [value, fileWorkspace, attachments, debouncedPersistDraft, resolveSnippetAutoVars])
+  }, [value, fileWorkspace, attachments, debouncedPersistDraft, resolveSnippetAutoVars, currentWorkspace, t])
 
   const handleSend = useCallback(() => {
     const trimmed = value.trim()

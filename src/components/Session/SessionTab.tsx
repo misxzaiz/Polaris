@@ -15,6 +15,7 @@ import { useToastStore } from '@/stores/toastStore'
 import { handoffSessionToNewSession } from '@/services/sessionHandoff'
 import type { SessionMetadata } from '@/stores/conversationStore/types'
 import type { SessionStatus } from '@/types/session'
+import type { EngineId } from '@/types'
 import { getEngineDisplayName, getEngineFullName } from '@/utils/engineDisplay'
 
 interface SessionTabProps {
@@ -42,9 +43,9 @@ export const SessionTab = memo(function SessionTab({
   // 右键菜单状态（按鼠标坐标定位）
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
 
-  // 续接到新会话：导出当前会话内容并开启了解此前进展的新会话
-  const handleHandoff = useCallback(async () => {
-    const result = await handoffSessionToNewSession(session.id)
+  // 续接到新会话：基于当前会话内容开启新会话（可选目标引擎）
+  const handleHandoff = useCallback(async (targetEngineId: EngineId) => {
+    const result = await handoffSessionToNewSession(session.id, targetEngineId)
     if (result.ok) {
       useToastStore.getState().success(t('handoff.successToast'), t('handoff.successToastHint'))
     } else {
@@ -153,6 +154,7 @@ export const SessionTab = memo(function SessionTab({
           x={contextMenu.x}
           y={contextMenu.y}
           sessionId={session.id}
+          sourceEngineId={session.engineId}
           onClose={() => setContextMenu(null)}
           onHandoff={handleHandoff}
         />
