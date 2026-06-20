@@ -291,8 +291,12 @@ export function handleAIEvent(
  */
 async function saveDialog(state: ConversationStore): Promise<void> {
   try {
-    const { conversationId, messages, sessionId } = state
-    if (!conversationId || messages.length === 0) return
+    const { conversationId, sessionId } = state
+    if (!conversationId) return
+    // store 中离屏消息可能已被压缩，持久化前必须恢复为完整态，
+    // 否则压缩态（output 清空 / content 截断）会被写入 JSONL 永久丢失内容。
+    const messages = state.getPersistableMessages()
+    if (messages.length === 0) return
 
     // 会话元数据
     const metadata = sessionStoreManager.getState().sessionMetadata.get(sessionId)

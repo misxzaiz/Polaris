@@ -129,6 +129,10 @@ export const historyService = {
         sessionTitle = (firstUserMessage.content as string).slice(0, 50)
       }
 
+      // 持久化前恢复压缩态消息为完整态，避免把离屏压缩结果（output 清空 /
+      // content 截断）写进 localStorage / JSONL 造成历史内容永久丢失。
+      const persistMessages = store.getPersistableMessages()
+
       // 1. 保存 localStorage（旧版轻量历史，用于降级恢复）
       const historyJson = localStorage.getItem(SESSION_HISTORY_KEY)
       const history: HistoryEntry[] = historyJson ? JSON.parse(historyJson) : []
@@ -137,10 +141,10 @@ export const historyService = {
         id: store.conversationId,
         title: sessionTitle,
         timestamp: new Date().toISOString(),
-        messageCount: store.messages.length,
+        messageCount: persistMessages.length,
         engineId,
         data: {
-          messages: store.messages,
+          messages: persistMessages,
           archivedMessages: store.archivedMessages,
         },
       }
@@ -157,7 +161,7 @@ export const historyService = {
         title: sessionTitle,
         workspaceId: metadata?.workspaceId ?? null,
         workspacePath: resolveWorkspacePath(metadata?.workspaceId),
-        messages: store.messages,
+        messages: persistMessages,
       })
 
       log.info('会话已保存到历史', { sessionTitle })

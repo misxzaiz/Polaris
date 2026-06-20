@@ -239,6 +239,15 @@ export interface ConversationActions {
   // ===== 消息压缩 =====
   /** 当可见区域变化时触发压缩/恢复 */
   onVisibleRangeChange: (start: number, end: number) => void
+  /**
+   * 返回适合持久化的完整消息数组。
+   *
+   * store 中的离屏消息可能已被 MessageCompactor 压缩（output 清空、content 截断、
+   * 带 __compacted__ 标记）。若直接序列化会把这些压缩态写进 JSONL / localStorage，
+   * 导致历史会话重启后内容永久丢失。本方法在持久化前把压缩态消息恢复为完整态：
+   * 优先从 compactor 内存快照恢复，降级到 localStorage 历史。无压缩消息时返回原引用。
+   */
+  getPersistableMessages: () => ChatMessage[]
 
   // ===== 资源清理 =====
   dispose: () => void

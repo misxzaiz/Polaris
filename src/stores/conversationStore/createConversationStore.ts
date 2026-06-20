@@ -10,7 +10,7 @@ import { subscribeWithSelector } from 'zustand/middleware'
 import { invoke } from '@/services/tauri'
 import { speechService } from '@/services/speechService'
 import type { ConversationStore, ConversationState, StoreDeps } from './types'
-import type { ContentBlock, EngineId } from '@/types'
+import type { ContentBlock, EngineId, ChatMessage } from '@/types'
 import { handleAIEvent } from './eventHandler'
 import { sessionStoreManager } from './sessionStoreManager'
 import { parseWorkspaceReferences } from '@/services/workspaceReference'
@@ -1386,6 +1386,35 @@ export function createConversationStore(
         if (changed) {
           set({ messages: newMessages })
         }
+      },
+
+      // ===== 持久化前恢复 =====
+      getPersistableMessages: () => {
+        const { messages, conversationId } = get()
+        let newMessages: ChatMessage[] | null = null
+
+        for (let i = 0; i < messages.length; i++) {
+          const msg = messages[i]
+          if (!isCompacted(msg)) continue
+
+          // 懒初始化新数组，无压缩消息时保持原引用
+          if (!newMessages) newMessages = [...messages]
+
+          // 一级恢复：compactor 内存快照
+          let hydrated = compactor.hydrateMessage(msg)
+          if (hydrated === msg) {
+            // 二级降级：localStorage 历史
+            const fromHistory = hydrateFromLocalStorage(conversationId, msg.id)
+            if (fromHistory) {
+              hydrated = compactor.hydrateFromExternal(msg.id, fromHistory)
+            }
+          }
+          if (hydrated !== msg) {
+            newMessages[i] = hydrated
+          }
+        }
+
+        return newMessages ?? messages
       },
 
       // ===== 资源清理 =====

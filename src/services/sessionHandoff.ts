@@ -102,7 +102,8 @@ export async function handoffSessionToNewSession(
 
   try {
     // 1. 取完整原文（按引擎分流：原生历史 / self JSONL / 内存兜底）
-    const fallbackMessages = [...store.messages, ...(store.archivedMessages ?? [])]
+    // 内存兜底用持久化态（已恢复压缩消息），避免把离屏压缩结果作为续接原文。
+    const fallbackMessages = [...store.getPersistableMessages(), ...(store.archivedMessages ?? [])]
     const chatMessages = await loadConversationMessages(sourceEngineId, conversationId, fallbackMessages)
     if (chatMessages.length === 0) {
       return { ok: false, error: i18n.t('chat:handoff.emptyContent') }
