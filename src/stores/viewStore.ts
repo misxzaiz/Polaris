@@ -32,6 +32,7 @@ interface ViewState {
   leftPanelWidth: number;        // 左侧面板宽度
   rightPanelWidth: number;       // 右侧 AI 面板宽度
   rightPanelCollapsed: boolean;  // 右侧面板是否折叠
+  terminalFullscreen: boolean;   // 终端面板全屏（撑满除 ActivityBar 外全部横向空间）
   activityBarCollapsed: boolean; // ActivityBar 是否折叠（隐藏图标栏）
   terminalScriptPanelCollapsed: boolean; // 终端脚本面板是否折叠
   // 小屏模式状态
@@ -55,8 +56,6 @@ interface ViewActions {
   toggleSessionHistory: () => void;
   toggleNotificationCenter: () => void;
   setShowEditor: (show: boolean) => void;
-  setAIOnlyMode: () => void;
-  resetView: () => void;
   setSidebarWidth: (width: number) => void;
   setEditorWidth: (width: number) => void;
   setDeveloperPanelWidth: (width: number) => void;
@@ -69,6 +68,8 @@ interface ViewActions {
   setLeftPanelWidth: (width: number) => void;
   setRightPanelWidth: (width: number) => void;
   toggleRightPanel: () => void;
+  toggleTerminalFullscreen: () => void; // 切换终端全屏
+  setTerminalFullscreen: (fullscreen: boolean) => void; // 设置终端全屏
   toggleActivityBar: () => void; // 切换 ActivityBar 折叠状态
   toggleTerminalScriptPanelCollapsed: () => void;
   setTerminalScriptPanelCollapsed: (collapsed: boolean) => void;
@@ -113,6 +114,7 @@ export const useViewStore = create<ViewStore>()(
       leftPanelWidth: 280,        // 左侧面板默认宽度
       rightPanelWidth: 400,       // 右侧 AI 面板默认宽度
       rightPanelCollapsed: false, // 右侧面板默认不折叠
+      terminalFullscreen: false,  // 终端默认不全屏
       activityBarCollapsed: false, // ActivityBar 默认不折叠
       terminalScriptPanelCollapsed: true, // 终端脚本默认紧凑显示
       // 小屏模式初始状态
@@ -151,19 +153,7 @@ export const useViewStore = create<ViewStore>()(
       // 切换消息中心面板
       toggleNotificationCenter: () => set((state) => ({ showNotificationCenter: !state.showNotificationCenter })),
 
-      // 仅 AI 对话模式
-      setAIOnlyMode: () => set({
-        showSidebar: false,
-        showEditor: false,
-        showDeveloperPanel: false,
-      }),
-
-      // 重置视图
-      resetView: () => set({
-        showSidebar: true,
-        showEditor: false,
-        showDeveloperPanel: false,
-      }),
+      // 仅 AI 对话模式（已废弃，保留接口位以兼容旧持久化，无调用方）
 
       // 设置侧边栏宽度
       setSidebarWidth: (width: number) => set({ sidebarWidth: width }),
@@ -213,6 +203,12 @@ export const useViewStore = create<ViewStore>()(
 
       // 切换右侧面板折叠状态
       toggleRightPanel: () => set((state) => ({ rightPanelCollapsed: !state.rightPanelCollapsed })),
+
+      // 切换终端全屏状态（撑满除 ActivityBar 外全部横向空间）
+      toggleTerminalFullscreen: () => set((state) => ({ terminalFullscreen: !state.terminalFullscreen })),
+
+      // 设置终端全屏状态
+      setTerminalFullscreen: (fullscreen: boolean) => set({ terminalFullscreen: fullscreen }),
 
       // 切换 ActivityBar 折叠状态
       toggleActivityBar: () => set((state) => ({ activityBarCollapsed: !state.activityBarCollapsed })),

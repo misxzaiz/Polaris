@@ -83,6 +83,7 @@ function App() {
   const leftPanelType = useViewStore(state => state.leftPanelType);
   const pluginStates = usePluginStore(state => state.pluginStates);
   const rightPanelCollapsed = useViewStore(state => state.rightPanelCollapsed);
+  const terminalFullscreen = useViewStore(state => state.terminalFullscreen);
   const toggleRightPanel = useViewStore(state => state.toggleRightPanel);
   const closeLeftPanel = useViewStore(state => state.closeLeftPanel);
   const showSessionHistory = useViewStore(state => state.showSessionHistory);
@@ -150,6 +151,11 @@ function App() {
 
   // 右侧面板填充模式：无编辑器时自适应填充，有编辑器时固定宽度
   const rightPanelFillRemaining = !hasCenterStage;
+
+  // 终端自动填充剩余：终端激活且无编辑器（CenterStage 不渲染）时 flex-1 撑满，
+  // 解决"关闭 AI 面板 + 无打开编辑器 → 终端右侧空一半"问题。
+  // 全屏模式优先级更高，由 fullscreen 分支单独处理。
+  const leftPanelFillRemaining = leftPanelType === 'terminal' && !hasCenterStage && !terminalFullscreen;
 
   const openGitWorkbench = useCallback((options?: { initialGitTab?: string }) => {
     openGitTab(options);
@@ -222,7 +228,7 @@ function App() {
               />
 
               {!isCompact && hasLeftPanel && (
-                <LeftPanel>
+                <LeftPanel fillRemaining={leftPanelFillRemaining} fullscreen={terminalFullscreen}>
                   {leftPanelContent}
                 </LeftPanel>
               )}
@@ -234,9 +240,10 @@ function App() {
                 </LeftPanelDrawer>
               )}
 
-              {!isCompact && hasCenterStage && <CenterStage fillRemaining={!rightPanelCollapsed} />}
+              {/* 终端全屏时让位，不渲染编辑器 */}
+              {!isCompact && hasCenterStage && !terminalFullscreen && <CenterStage fillRemaining={!rightPanelCollapsed} />}
 
-              {(isCompact || !rightPanelCollapsed) && (
+              {(isCompact || (!rightPanelCollapsed && !terminalFullscreen)) && (
                 <RightPanel fillRemaining={rightPanelFillRemaining} forceShow={isCompact}>
                   {error && <ErrorBanner error={error} />}
 

@@ -14,7 +14,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useTerminalScriptStore } from '@/stores/terminalScriptStore';
 import { useThemeStore, type Theme } from '@/stores/themeStore';
-import { Plus, X, Terminal as TerminalIcon } from 'lucide-react';
+import { Plus, X, Terminal as TerminalIcon, Maximize2, Minimize2 } from 'lucide-react';
 import { createLogger } from '@/utils/logger';
 import { TerminalScriptPanel } from './TerminalScriptPanel';
 import { TerminalQuickRunBar } from './TerminalQuickRunBar';
@@ -190,20 +190,31 @@ function TerminalInstance({ sessionId, isActive }: TerminalInstanceProps) {
       }
     };
 
+    // debounce：拖拽调宽时 ResizeObserver 高频回调，避免 fit + IPC 抖动闪烁
+    let rafId = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleFit = () => {
+      // rAF 保证 DOM 已更新；setTimeout 合并连续触发（100ms 内只执行最后一次）
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(handleResize, 100);
+      });
+    };
+
     // 使用 ResizeObserver 监听容器尺寸变化
     // 这样可以响应父容器宽度变化（如拖拽调整左侧面板宽度）
-    const resizeObserver = new ResizeObserver(() => {
-      // 使用 requestAnimationFrame 确保 DOM 更新后再调整
-      requestAnimationFrame(handleResize);
-    });
+    const resizeObserver = new ResizeObserver(scheduleFit);
 
     resizeObserver.observe(container);
 
-    // 初始调整
+    // 初始调整（立即执行，无 debounce）
     requestAnimationFrame(handleResize);
 
     return () => {
       resizeObserver.disconnect();
+      if (rafId) cancelAnimationFrame(rafId);
+      if (timer) clearTimeout(timer);
     };
   }, [sessionId, resize]);
 
@@ -249,6 +260,8 @@ export function TerminalPanel() {
   });
   const terminalScriptPanelCollapsed = useViewStore((state) => state.terminalScriptPanelCollapsed);
   const toggleTerminalScriptPanelCollapsed = useViewStore((state) => state.toggleTerminalScriptPanelCollapsed);
+  const terminalFullscreen = useViewStore((state) => state.terminalFullscreen);
+  const toggleTerminalFullscreen = useViewStore((state) => state.toggleTerminalFullscreen);
   const scripts = useTerminalScriptStore((state) => state.scripts);
   const runScript = useTerminalScriptStore((state) => state.runScript);
   const stopScript = useTerminalScriptStore((state) => state.stopScript);
@@ -296,6 +309,19 @@ export function TerminalPanel() {
     if (!contextSession) return;
     closeSession(contextSession.id).catch((e) => log.error('Failed to close session', e instanceof Error ? e : new Error(String(e))));
   }, [closeSession, contextSession]);
+
+  // ESC 退出终端全屏
+  useEffect(() => {
+    if (!terminalFullscreen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        toggleTerminalFullscreen();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [terminalFullscreen, toggleTerminalFullscreen]);
 
   return (
     <div className="flex flex-col h-full bg-background-base">
@@ -347,6 +373,19 @@ export function TerminalPanel() {
           title="新建终端"
         >
           <Plus size={16} />
+        </button>
+
+        {/* 全屏切换按钮（方案 B1）：撑满除 ActivityBar 外全部横向空间，ESC 退出 */}
+        <button
+          onClick={toggleTerminalFullscreen}
+          className={`flex items-center justify-center w-9 h-9 shrink-0 transition-colors ${
+            terminalFullscreen
+              ? 'text-primary bg-background-hover'
+              : 'text-text-secondary hover:text-text-primary hover:bg-background-hover'
+          }`}
+          title={terminalFullscreen ? '退出全屏 (Esc)' : '终端全屏'}
+        >
+          {terminalFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
         </button>
       </div>
 
