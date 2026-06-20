@@ -1400,16 +1400,17 @@ export function createConversationStore(
           // 懒初始化新数组，无压缩消息时保持原引用
           if (!newMessages) newMessages = [...messages]
 
-          // 一级恢复：compactor 内存快照
-          let hydrated = compactor.hydrateMessage(msg)
-          if (hydrated === msg) {
-            // 二级降级：localStorage 历史
-            const fromHistory = hydrateFromLocalStorage(conversationId, msg.id)
-            if (fromHistory) {
-              hydrated = compactor.hydrateFromExternal(msg.id, fromHistory)
-            }
+          // 只读恢复：持久化路径不应有副作用，避免 hydrateMessage 的 touchSnapshotOrder
+          // 与 hydrateFromExternal 的 saveSnapshot 污染 LRU——后者会把别的内存快照挤出
+          // 队列，导致用户后续滚回该消息时被迫降级到 localStorage（再触发一次 parse）。
+          // 改用 getSnapshot 只读读取；降级直接用 localStorage 结果，不写回快照。
+          const snapshot = compactor.getSnapshot(msg.id)
+          let hydrated: ChatMessage | null = snapshot ?? null
+          if (!hydrated) {
+            // 二级降级：localStorage 历史（命中解析缓存，零重复 parse）
+            hydrated = hydrateFromLocalStorage(conversationId, msg.id)
           }
-          if (hydrated !== msg) {
+          if (hydrated && hydrated !== msg) {
             newMessages[i] = hydrated
           }
         }
