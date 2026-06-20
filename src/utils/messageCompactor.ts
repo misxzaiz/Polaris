@@ -128,16 +128,19 @@ export class MessageCompactor {
       return message
     }
 
-    // 先保存快照
-    this.saveSnapshot(message)
-
     // 根据消息类型执行压缩
+    // 注意：仅对「真正会被压缩」的类型保存快照。否则 system / tool / tool_group
+    // 这类原样返回的消息会白白占用快照 LRU 额度（MAX_SNAPSHOTS），并因反复经过
+    // 此处而被持续 touch 到队尾、永不淘汰，最终挤掉真正需要恢复的 assistant/user
+    // 快照，导致用户滚回历史时只能看到被截断的压缩态。
     switch (message.type) {
       case 'assistant':
+        this.saveSnapshot(message)
         return this.compactAssistantMessage(message) as unknown as T
       case 'user':
+        this.saveSnapshot(message)
         return this.compactUserMessage(message) as unknown as T
-      // system / tool / tool_group 消息较轻，不压缩
+      // system / tool / tool_group 顶层消息暂不压缩，且不占用快照额度
       default:
         return message
     }

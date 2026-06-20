@@ -1373,8 +1373,13 @@ export function createConversationStore(
           if (idx < 0 || idx >= newMessages.length) continue
           const msg = newMessages[idx]
           if (!isCompacted(msg)) {
-            newMessages[idx] = compactor.compactMessage(msg)
-            changed = true
+            const compacted = compactor.compactMessage(msg)
+            // 仅当真正发生压缩（返回新引用）时才标记变更，避免 system /
+            // tool_group 等不可压缩消息无谓触发 set({ messages }) → 整列表重渲染。
+            if (compacted !== msg) {
+              newMessages[idx] = compacted
+              changed = true
+            }
           }
         }
 
