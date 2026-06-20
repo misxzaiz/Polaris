@@ -135,6 +135,9 @@ export function PersonalHubTab({ config, onConfigChange, loading }: PersonalHubT
           <li>{t('personalHub.usage3', '登录后可管理导航、书签与待办，并可选加密描述')}</li>
         </ul>
       </div>
+
+      {/* 自定义配置教程 */}
+      <SetupGuide />
     </div>
   )
 }

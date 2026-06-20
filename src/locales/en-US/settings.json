@@ -652,6 +652,26 @@
     "usageTitle": "Usage",
     "usage1": "Fill in the Supabase configuration and click \"Save\" at the bottom",
     "usage2": "Click the \"Personal Hub\" icon in the left ActivityBar to sign in",
-    "usage3": "After signing in, manage navigation, bookmarks and todos, with optional encryption"
+    "usage3": "After signing in, manage navigation, bookmarks and todos, with optional encryption",
+    "copy": "Copy",
+    "copied": "Copied",
+    "guideTitle": "Custom Supabase Setup Guide",
+    "guideIntro": "A public demo project is preconfigured by default. To use your own Supabase project (independent data, fully customizable), follow these steps:",
+    "step1Title": "Create a Supabase project",
+    "step1Desc": "Sign up at Supabase and create a new project. Note the region and database password.",
+    "step2Title": "Enable Email authentication",
+    "step2Desc": "Go to Authentication → Providers → Email and ensure Email/Password login is enabled.",
+    "step2Note": "Optional: during development, disable \"Confirm email\" under Authentication → Settings so you can sign in immediately after registering.",
+    "step3Title": "Run the schema SQL",
+    "step3Desc": "Go to SQL Editor → New query, paste the script below and run it. It creates the links table, indexes, an updated_at trigger, and RLS row-level security policies. The script is idempotent and safe to re-run.",
+    "step3Note": "Note: RLS policies restrict each row to its owner (auth.uid() = user_id). The anon key is safe to use with RLS; no service_role key is needed.",
+    "step4Title": "Get the Project URL and anon key",
+    "step4Desc": "Go to Project Settings → API and copy the \"Project URL\" and the \"anon public\" key.",
+    "step5Title": "Fill in the config above and save",
+    "step5Desc": "Enter the URL and anon key in the inputs at the top of this page and click \"Save\". Optionally configure an encryption key to encrypt sensitive descriptions.",
+    "securityTitle": "Security notes",
+    "security1": "The anon key is public; combined with RLS policies, leaking it does not grant unauthorized access.",
+    "security2": "Never use the service_role key on the client — it bypasses all RLS.",
+    "security3": "The encryption key is stored only in the local config file; losing it means previously encrypted content cannot be decrypted."
   }
 }

@@ -652,6 +652,26 @@
     "usageTitle": "使用说明",
     "usage1": "填写 Supabase 配置后点击底部「保存」",
     "usage2": "在左侧 ActivityBar 点击「个人空间」图标登录",
-    "usage3": "登录后可管理导航、书签与待办，并可选加密描述"
+    "usage3": "登录后可管理导航、书签与待办，并可选加密描述",
+    "copy": "复制",
+    "copied": "已复制",
+    "guideTitle": "自定义 Supabase 配置教程",
+    "guideIntro": "默认配置已预置一个公共示例项目。若要使用自己的 Supabase 项目（数据独立、可自定义），按以下步骤搭建：",
+    "step1Title": "创建 Supabase 项目",
+    "step1Desc": "访问 Supabase 官网注册并新建项目，记下区域与数据库密码。",
+    "step2Title": "启用 Email 认证",
+    "step2Desc": "进入 Authentication → Providers → Email，确保已启用 Email/Password 登录。",
+    "step2Note": "可选：开发阶段在 Authentication → Settings 关闭「Confirm email」，注册后即可直接登录。",
+    "step3Title": "执行建表 SQL",
+    "step3Desc": "进入 SQL Editor → New query，粘贴下方脚本并运行。将创建 links 表、索引、updated_at 触发器与 RLS 行级安全策略。脚本幂等，可重复执行。",
+    "step3Note": "说明：RLS 策略限制每行只能被所属用户（auth.uid() = user_id）访问，anon key 配合 RLS 即可安全使用，无需暴露 service_role key。",
+    "step4Title": "获取 Project URL 与 anon key",
+    "step4Desc": "进入 Project Settings → API，复制「Project URL」与「anon public」密钥。",
+    "step5Title": "填入上方配置并保存",
+    "step5Desc": "将 URL 与 anon key 填入本页顶部输入框，点击底部「保存」。可选配置加密密钥以加密敏感描述。",
+    "securityTitle": "安全说明",
+    "security1": "anon key 是公开密钥，配合 RLS 行级安全策略使用，泄露不会导致越权。",
+    "security2": "切勿在前端使用 service_role key，它会绕过所有 RLS。",
+    "security3": "加密密钥仅存于本地配置文件，丢失后无法解密历史加密内容。"
   }
 }

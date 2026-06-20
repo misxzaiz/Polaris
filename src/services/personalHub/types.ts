@@ -19,14 +19,10 @@ export interface Link {
   completed?: boolean
   priority?: 'low' | 'medium' | 'high'
   due_date?: string
-  order_index?: number
   is_encrypted?: boolean
   icon?: string
   created_at: string
   updated_at: string
-  // 笔记功能字段（来自 008_notes_feature.sql）
-  view_count?: number
-  keywords?: string[]
 }
 
 export type Priority = 'low' | 'medium' | 'high'
