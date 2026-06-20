@@ -54,6 +54,11 @@ path = "src/bin/polaris_web.rs"
 name = "polaris-computer-mcp"
 path = "src/bin/polaris_computer_mcp.rs"
 
+# 端口管理 MCP server
+[[bin]]
+name = "polaris-port-manager-mcp"
+path = "src/bin/polaris_port_manager_mcp.rs"
+
 [build-dependencies]
 tauri-build = { version = "2.0", features = [], optional = true }
 
