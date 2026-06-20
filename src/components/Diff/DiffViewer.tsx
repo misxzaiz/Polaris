@@ -323,9 +323,11 @@ export function DiffViewer({
                       </span>
                     </>
                   )}
-                  {/* 内容 */}
+                  {/* 内容：使用 whitespace-pre 保留行首缩进与行内对齐空白，
+                      nowrap 会折叠连续空格导致缩进丢失；pre 不自动换行，
+                      由外层 overflow-auto 提供横向滚动，与 split 视图一致 */}
                   <span
-                    className={`flex-1 whitespace-nowrap ${
+                    className={`flex-1 whitespace-pre ${
                       line.type === 'removed' && !isFolded ? 'text-text-tertiary line-through' : 'text-text-secondary'
                     }`}
                   >
