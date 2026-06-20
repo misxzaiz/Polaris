@@ -5,6 +5,7 @@
 
 import { invoke } from '@/services/transport'
 import type { CommitContextChip, DiffContextChip } from '@/types/context';
+import type { GitDiffEntry } from '@/types/git';
 import { createLogger } from '@/utils/logger';
 
 const log = createLogger('GitContextService');
@@ -253,4 +254,44 @@ export async function isInGitRepo(workDir: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * 变更类型 → git status 风格标记
+ */
+const CHANGE_TYPE_FLAG: Record<string, string> = {
+  added: 'A',
+  deleted: 'D',
+  modified: 'M',
+  renamed: 'R',
+  copied: 'C',
+}
+
+/**
+ * 将 GitDiffEntry[] 格式化为变更清单（轻量引用）。
+ *
+ * 用于"AI 生成提交信息"等场景：只列出文件路径、变更类型与行数统计，
+ * **不**附带 old/new 内容。会话已绑定工作区，AI 可自行通过
+ * `git diff --cached` 或读取文件获取完整变更，避免大体积 diff 撑爆 prompt
+ * 且保持实时性。
+ */
+export function formatGitDiffSummary(diffs: GitDiffEntry[]): string {
+  return diffs
+    .map((diff) => {
+      const flag = CHANGE_TYPE_FLAG[diff.change_type] ?? diff.change_type
+      const path =
+        diff.change_type === 'renamed' && diff.old_file_path
+          ? `${diff.old_file_path} → ${diff.file_path}`
+          : diff.file_path
+
+      let suffix = ''
+      if (diff.is_binary) {
+        suffix = '[binary]'
+      } else if (diff.additions != null && diff.deletions != null) {
+        suffix = `(+${diff.additions} -${diff.deletions})`
+      }
+
+      return suffix ? `- ${flag}  ${path} ${suffix}` : `- ${flag}  ${path}`
+    })
+    .join('\n')
 }

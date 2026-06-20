@@ -176,6 +176,8 @@ function createSessionManagerStore() {
         updatedAt: timestamp,
         forkFromId: options.forkFromId,
         modelProfileId: options.modelProfileId,
+        kind: options.kind,
+        commitWorkspaceId: options.commitWorkspaceId,
       }
 
       log.info('创建会话元数据', { sessionId, metadataWorkspaceId: metadata.workspaceId, metadataType: metadata.type, engineId: metadata.engineId })

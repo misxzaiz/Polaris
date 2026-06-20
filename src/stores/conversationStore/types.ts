@@ -282,6 +282,10 @@ export interface SessionMetadata {
    * 解析见 resolveEffectiveProfileId；哨兵不会透传后端。
    */
   modelProfileId?: string
+  /** 会话用途标记。'commit-message' = GitPanel 触发的提交信息生成会话，用于回流定位。 */
+  kind?: 'commit-message'
+  /** 当 kind === 'commit-message' 时，关联的工作区 ID，用于按工作区隔离回流。 */
+  commitWorkspaceId?: string
 }
 
 /**
@@ -304,6 +308,10 @@ export interface CreateSessionOptions {
   forkFromId?: string
   /** 会话绑定的模型 Profile ID（可选，不指定则使用全局默认） */
   modelProfileId?: string
+  /** 会话用途标记（透传到 SessionMetadata.kind） */
+  kind?: 'commit-message'
+  /** commit-message 会话关联的工作区 ID（透传到 SessionMetadata.commitWorkspaceId） */
+  commitWorkspaceId?: string
 }
 
 /**
