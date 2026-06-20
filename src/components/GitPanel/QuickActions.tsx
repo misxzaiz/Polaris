@@ -153,7 +153,7 @@ export function QuickActions({ hasChanges: _hasChanges }: QuickActionsProps) {
             size="sm"
             variant="secondary"
             onClick={handlePush}
-            disabled={isOperating || !currentWorkspace || !status?.branch}
+            disabled={isOperating || !currentWorkspace}
             className="flex-1"
           >
             <Upload size={14} />

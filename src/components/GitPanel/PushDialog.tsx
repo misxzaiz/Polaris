@@ -75,37 +75,55 @@ export function PushDialog({ isOpen, onClose, defaultRemote, defaultBranch }: Pu
       }))
   }, [remoteBranches, selectedRemote])
 
-  // 初始化选择 - 只在打开时执行一次
+  // 初始化选择 - 打开时先刷新数据,再基于最新状态计算默认值
   useEffect(() => {
-    if (isOpen && currentWorkspace) {
-      // 加载数据
-      getRemotes(currentWorkspace.path)
-      getBranches(currentWorkspace.path)
+    if (!isOpen || !currentWorkspace) return
 
-      // 设置默认值 - 使用当前 store 中的值
-      const currentRemotes = useGitStore.getState().remotes
+    // 先同步重置 UI 状态,避免残留上次的勾选/错误
+    setRemoteBranchName('')
+    setUseCustomRemoteBranch(false)
+    setForce(false)
+    setSetUpstream(false)
+    setError(null)
+
+    let cancelled = false
+    const workspacePath = currentWorkspace.path
+
+    void (async () => {
+      // 关键:await 刷新,确保默认值基于最新数据而非旧的 store 快照
+      await Promise.all([
+        getRemotes(workspacePath),
+        getBranches(workspacePath),
+        refreshStatus(workspacePath),
+      ])
+      if (cancelled) return
+
+      const state = useGitStore.getState()
+
+      // 远程默认值
       if (defaultRemote) {
         setSelectedRemote(defaultRemote)
-      } else if (currentRemotes.length > 0) {
-        const origin = currentRemotes.find((r) => r.name === 'origin')
-        setSelectedRemote(origin?.name || currentRemotes[0].name)
+      } else if (state.remotes.length > 0) {
+        const origin = state.remotes.find((r) => r.name === 'origin')
+        setSelectedRemote(origin?.name || state.remotes[0].name)
       }
 
-      const currentStatus = useGitStore.getState().status
+      // 分支默认值:优先 status,其次从分支列表反查 isCurrent 兜底
       if (defaultBranch) {
         setSelectedBranch(defaultBranch)
       } else {
-        setSelectedBranch(currentStatus?.branch || '')
+        setSelectedBranch(
+          state.status?.branch ||
+            state.branches.find((b) => b.isCurrent && !b.isRemote)?.name ||
+            ''
+        )
       }
+    })()
 
-      // 重置状态
-      setRemoteBranchName('')
-      setUseCustomRemoteBranch(false)
-      setForce(false)
-      setSetUpstream(false)
-      setError(null)
+    return () => {
+      cancelled = true
     }
-  }, [isOpen, currentWorkspace, defaultRemote, defaultBranch, getRemotes, getBranches])
+  }, [isOpen, currentWorkspace, defaultRemote, defaultBranch, getRemotes, getBranches, refreshStatus])
 
   // 当本地分支改变时，同步远程分支名（如果未自定义）
   useEffect(() => {
