@@ -84,7 +84,11 @@
     "noFiles": "No files to commit",
     "noMessage": "Please enter a commit message",
     "noStaged": "No staged files",
-    "success": "Commit successful"
+    "success": "Commit successful",
+    "selectEngine": "Select AI engine",
+    "aiSuggestion": "AI suggestion",
+    "adopt": "Adopt",
+    "openSession": "Open session"
   },
   "actions": {
     "stageAll": "Stage All",

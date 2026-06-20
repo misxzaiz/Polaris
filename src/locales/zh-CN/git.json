@@ -84,7 +84,11 @@
     "noFiles": "没有可提交的文件",
     "noMessage": "请输入提交信息",
     "noStaged": "没有已暂存的文件",
-    "success": "提交成功"
+    "success": "提交成功",
+    "selectEngine": "选择 AI 引擎",
+    "aiSuggestion": "AI 建议",
+    "adopt": "采用",
+    "openSession": "打开会话"
   },
   "actions": {
     "stageAll": "暂存全部",
