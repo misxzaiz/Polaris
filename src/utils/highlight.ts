@@ -48,17 +48,23 @@ hljs.registerLanguage('shell', bash)
 /** 高亮结果缓存（LRU，上限 50 条） */
 const highlightCache = new LRUCache<string, string>({ maxSize: 50 })
 
-/** 超过此字节数的代码不做高亮，直接返回纯文本，避免主线程卡死 */
-export const HIGHLIGHT_MAX_BYTES = 200 * 1024 // 200 KB
+/**
+ * 超过此字节数的代码不做高亮，直接返回纯文本，避免主线程卡死。
+ *
+ * 实测：18KB JSON → hljs 41ms + DOMPurify 321ms = 362ms 主线程阻塞；
+ * 36KB → 478ms。DOMPurify 对 span 密集 HTML 的解析是主要开销。
+ * 阈值定 30KB：超过即纯文本，保证中大响应不卡死。
+ */
+export const HIGHLIGHT_MAX_BYTES = 30 * 1024 // 30 KB
 
 /**
- * 生成缓存键
+ * 生成缓存键。
  *
- * 注：仅用长度+前缀会有碰撞风险，但高亮本身幂等且可重算，
- * 牺牲少量正确性换取小键内存占用。
+ * 用完整内容作 key（前缀 + 长度会有碰撞，导致不同响应命中错误缓存）。
+ * 高亮内容本身已受 HIGHLIGHT_MAX_BYTES 限制（≤30KB），完整字符串作 Map key 无内存压力。
  */
 function getCacheKey(code: string, language: string): string {
-  return `${language}:${code.length}:${code.slice(0, 50)}`
+  return `${language}:${code}`
 }
 
 export interface HighlightOptions {

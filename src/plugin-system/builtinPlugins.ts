@@ -9,6 +9,7 @@ import { personalHubPluginManifest } from '@/plugins/personal-hub/manifest'
 import { gitInsightPluginManifest } from '@/plugins/git-insight/manifest'
 import { portManagerPluginManifest } from '@/plugins/port-manager/manifest'
 import { httpClientPluginManifest } from '@/plugins/http-client/manifest'
+import { jsonFormatterPluginManifest } from '@/plugins/json-formatter/manifest'
 
 const corePluginManifest: PolarisPluginManifest = {
   id: 'polaris.core',
@@ -107,6 +108,7 @@ export function registerBuiltinPlugins(): void {
   pluginRegistry.register(gitInsightPluginManifest)
   pluginRegistry.register(portManagerPluginManifest)
   pluginRegistry.register(httpClientPluginManifest)
+  pluginRegistry.register(jsonFormatterPluginManifest)
 
   // builtin 插件无 installPath，registry 不会自动注册 panel，需手动注册懒加载入口
   pluginPanelRegistry.register('personalHub', 'polaris.personal-hub', () =>
@@ -120,6 +122,9 @@ export function registerBuiltinPlugins(): void {
   )
   pluginPanelRegistry.register('httpClient', 'polaris.http-client', () =>
     import('@/components/HttpClientPanel/HttpClientPanel').then((m) => ({ default: m.HttpClientPanel })),
+  )
+  pluginPanelRegistry.register('jsonFormatter', 'polaris.json-formatter', () =>
+    import('@/components/JsonFormatterPanel/JsonFormatterPanel').then((m) => ({ default: m.default })),
   )
 }
 
