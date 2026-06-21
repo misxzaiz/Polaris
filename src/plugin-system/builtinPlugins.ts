@@ -39,12 +39,6 @@ import { vulnerabilityScannerPluginManifest } from '@/plugins/vulnerability-scan
 import { dependencyAuditPluginManifest } from '@/plugins/dependency-audit/manifest'
 import { secretScannerPluginManifest } from '@/plugins/secret-scanner/manifest'
 import { bundleAnalyzerPluginManifest } from '@/plugins/bundle-analyzer/manifest'
-import { performanceProfilerPluginManifest } from '@/plugins/performance-profiler/manifest'
-import { memoryLeakDetectorPluginManifest } from '@/plugins/memory-leak-detector/manifest'
-import { apiDocGeneratorPluginManifest } from '@/plugins/api-doc-generator/manifest'
-import { changelogGeneratorPluginManifest } from '@/plugins/changelog-generator/manifest'
-import { readmeGeneratorPluginManifest } from '@/plugins/readme-generator/manifest'
-import { codeRefactorPluginManifest } from '@/plugins/code-refactor/manifest'
 
 const corePluginManifest: PolarisPluginManifest = {
   id: 'polaris.core',
@@ -173,12 +167,6 @@ export function registerBuiltinPlugins(): void {
   pluginRegistry.register(dependencyAuditPluginManifest)
   pluginRegistry.register(secretScannerPluginManifest)
   pluginRegistry.register(bundleAnalyzerPluginManifest)
-  pluginRegistry.register(performanceProfilerPluginManifest)
-  pluginRegistry.register(memoryLeakDetectorPluginManifest)
-  pluginRegistry.register(apiDocGeneratorPluginManifest)
-  pluginRegistry.register(changelogGeneratorPluginManifest)
-  pluginRegistry.register(readmeGeneratorPluginManifest)
-  pluginRegistry.register(codeRefactorPluginManifest)
 
   // builtin 插件无 installPath，registry 不会自动注册 panel，需手动注册懒加载入口
   pluginPanelRegistry.register('personalHub', 'polaris.personal-hub', () =>
@@ -273,24 +261,6 @@ export function registerBuiltinPlugins(): void {
   )
   pluginPanelRegistry.register('bundleAnalyzer', 'polaris.bundle-analyzer', () =>
     import('@/components/BundleAnalyzerPanel/BundleAnalyzerPanel').then((m) => ({ default: m.BundleAnalyzerPanel })),
-  )
-  pluginPanelRegistry.register('performanceProfiler', 'polaris.performance-profiler', () =>
-    import('@/components/PerformanceProfilerPanel/PerformanceProfilerPanel').then((m) => ({ default: m.PerformanceProfilerPanel })),
-  )
-  pluginPanelRegistry.register('memoryLeakDetector', 'polaris.memory-leak-detector', () =>
-    import('@/components/MemoryLeakDetectorPanel/MemoryLeakDetectorPanel').then((m) => ({ default: m.MemoryLeakDetectorPanel })),
-  )
-  pluginPanelRegistry.register('apiDocGenerator', 'polaris.api-doc-generator', () =>
-    import('@/components/ApiDocGeneratorPanel/ApiDocGeneratorPanel').then((m) => ({ default: m.ApiDocGeneratorPanel })),
-  )
-  pluginPanelRegistry.register('changelogGenerator', 'polaris.changelog-generator', () =>
-    import('@/components/ChangelogGeneratorPanel/ChangelogGeneratorPanel').then((m) => ({ default: m.ChangelogGeneratorPanel })),
-  )
-  pluginPanelRegistry.register('readmeGenerator', 'polaris.readme-generator', () =>
-    import('@/components/ReadmeGeneratorPanel/ReadmeGeneratorPanel').then((m) => ({ default: m.ReadmeGeneratorPanel })),
-  )
-  pluginPanelRegistry.register('codeRefactor', 'polaris.code-refactor', () =>
-    import('@/components/CodeRefactorPanel/CodeRefactorPanel').then((m) => ({ default: m.CodeRefactorPanel })),
   )
 }
 

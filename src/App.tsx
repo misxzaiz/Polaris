@@ -37,12 +37,6 @@ const VulnerabilityScannerPanel = lazy(() => import('./components/VulnerabilityS
 const DependencyAuditPanel = lazy(() => import('./components/DependencyAuditPanel/DependencyAuditPanel').then(m => ({ default: m.DependencyAuditPanel })));
 const SecretScannerPanel = lazy(() => import('./components/SecretScannerPanel/SecretScannerPanel').then(m => ({ default: m.SecretScannerPanel })));
 const BundleAnalyzerPanel = lazy(() => import('./components/BundleAnalyzerPanel/BundleAnalyzerPanel').then(m => ({ default: m.BundleAnalyzerPanel })));
-const PerformanceProfilerPanel = lazy(() => import('./components/PerformanceProfilerPanel/PerformanceProfilerPanel').then(m => ({ default: m.PerformanceProfilerPanel })));
-const MemoryLeakDetectorPanel = lazy(() => import('./components/MemoryLeakDetectorPanel/MemoryLeakDetectorPanel').then(m => ({ default: m.MemoryLeakDetectorPanel })));
-const ApiDocGeneratorPanel = lazy(() => import('./components/ApiDocGeneratorPanel/ApiDocGeneratorPanel').then(m => ({ default: m.ApiDocGeneratorPanel })));
-const ChangelogGeneratorPanel = lazy(() => import('./components/ChangelogGeneratorPanel/ChangelogGeneratorPanel').then(m => ({ default: m.ChangelogGeneratorPanel })));
-const ReadmeGeneratorPanel = lazy(() => import('./components/ReadmeGeneratorPanel/ReadmeGeneratorPanel').then(m => ({ default: m.ReadmeGeneratorPanel })));
-const CodeRefactorPanel = lazy(() => import('./components/CodeRefactorPanel/CodeRefactorPanel').then(m => ({ default: m.CodeRefactorPanel })));
 const CreateWorkspaceModal = lazy(() => import('./components/Workspace/CreateWorkspaceModal').then(m => ({ default: m.CreateWorkspaceModal })));
 const CreateSessionModal = lazy(() => import('./components/Session/CreateSessionModal').then(m => ({ default: m.CreateSessionModal })));
 const FileSearchModal = lazy(() => import('./components/Editor/FileSearchModal').then(m => ({ default: m.FileSearchModal })));
@@ -226,12 +220,6 @@ function App() {
       dependencyAuditContent={<Suspense fallback={loadingFallback}><DependencyAuditPanel pluginId="polaris.dependency-audit" onSendToChat={sendMessage} /></Suspense>}
       secretScannerContent={<Suspense fallback={loadingFallback}><SecretScannerPanel pluginId="polaris.secret-scanner" onSendToChat={sendMessage} /></Suspense>}
       bundleAnalyzerContent={<Suspense fallback={loadingFallback}><BundleAnalyzerPanel pluginId="polaris.bundle-analyzer" onSendToChat={sendMessage} /></Suspense>}
-      performanceProfilerContent={<Suspense fallback={loadingFallback}><PerformanceProfilerPanel pluginId="polaris.performance-profiler" onSendToChat={sendMessage} /></Suspense>}
-      memoryLeakDetectorContent={<Suspense fallback={loadingFallback}><MemoryLeakDetectorPanel pluginId="polaris.memory-leak-detector" onSendToChat={sendMessage} /></Suspense>}
-      apiDocGeneratorContent={<Suspense fallback={loadingFallback}><ApiDocGeneratorPanel pluginId="polaris.api-doc-generator" onSendToChat={sendMessage} /></Suspense>}
-      changelogGeneratorContent={<Suspense fallback={loadingFallback}><ChangelogGeneratorPanel pluginId="polaris.changelog-generator" onSendToChat={sendMessage} /></Suspense>}
-      readmeGeneratorContent={<Suspense fallback={loadingFallback}><ReadmeGeneratorPanel pluginId="polaris.readme-generator" onSendToChat={sendMessage} /></Suspense>}
-      codeRefactorContent={<Suspense fallback={loadingFallback}><CodeRefactorPanel pluginId="polaris.code-refactor" onSendToChat={sendMessage} /></Suspense>}
     />
   );
 
