@@ -19,6 +19,10 @@ import { dialogStorageService } from '@/services/dialogStorage'
 
 const log = createLogger('EventHandler')
 
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined
+}
+
 function parseArtifactPreview(result: unknown): ArtifactPreviewBlock | null {
   const raw = typeof result === 'string'
     ? result
@@ -53,11 +57,12 @@ function parseArtifactPreview(result: unknown): ArtifactPreviewBlock | null {
         title: typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title : 'PRD Prototype',
         contentType: 'html',
         html: parsed.html,
-        sourcePath: typeof parsed.sourcePath === 'string'
-          ? parsed.sourcePath
-          : typeof parsed.source_path === 'string'
-            ? parsed.source_path
-            : undefined,
+        sourcePath: optionalString(parsed.sourcePath) ?? optionalString(parsed.source_path),
+        createdAt: optionalString(parsed.createdAt) ?? optionalString(parsed.created_at),
+        version: typeof parsed.version === 'number' ? parsed.version : undefined,
+        versionLabel: optionalString(parsed.versionLabel) ?? optionalString(parsed.version_label),
+        requirementId: optionalString(parsed.requirementId) ?? optionalString(parsed.requirement_id),
+        description: optionalString(parsed.description),
       }
     } catch {
       continue

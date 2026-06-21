@@ -120,6 +120,16 @@ export interface ArtifactPreviewBlock {
   html: string;
   /** 后端保存的源文件路径（可选，仅作引用展示） */
   sourcePath?: string;
+  /** 预览创建时间（ISO 8601） */
+  createdAt?: string;
+  /** 同一需求下的递增版本号 */
+  version?: number;
+  /** 展示版本名，如 v1、v2、方案 A */
+  versionLabel?: string;
+  /** 关联需求 ID（可选） */
+  requirementId?: string;
+  /** 预览说明或本版本变更摘要（可选） */
+  description?: string;
 }
 
 /** 问题选项 */

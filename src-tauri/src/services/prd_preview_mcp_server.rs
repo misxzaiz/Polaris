@@ -7,6 +7,7 @@ use std::fs;
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 
+use chrono::{SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -59,6 +60,30 @@ struct PreviewArtifact {
     content_type: String,
     source_path: String,
     html: String,
+    created_at: String,
+    version: u32,
+    version_label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    requirement_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PreviewMetadata {
+    artifact_type: String,
+    preview_id: String,
+    title: String,
+    content_type: String,
+    source_path: String,
+    created_at: String,
+    version: u32,
+    version_label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    requirement_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
 }
 
 pub fn run_prd_preview_mcp_server(config_dir: &str, workspace_path: Option<&str>) -> Result<()> {
@@ -158,7 +183,10 @@ fn handle_tools_list() -> Value {
                 "required": ["html"],
                 "properties": {
                     "title": { "type": "string", "description": "预览标题" },
-                    "html": { "type": "string", "minLength": 1, "description": "完整 HTML 源码，建议内联 CSS/JS" }
+                    "html": { "type": "string", "minLength": 1, "description": "完整 HTML 源码，建议内联 CSS/JS" },
+                    "requirementId": { "type": "string", "description": "可选，关联的需求 ID；同一需求下版本号会递增" },
+                    "description": { "type": "string", "description": "可选，预览说明或本版本变更摘要" },
+                    "versionLabel": { "type": "string", "description": "可选，展示版本名；未传时自动生成 v1/v2..." }
                 },
                 "additionalProperties": false
             }
@@ -217,6 +245,12 @@ fn exec_preview_html(args: &Value, repository: &PreviewRepository) -> Result<Val
         .filter(|value| !value.is_empty())
         .unwrap_or("PRD Prototype")
         .to_string();
+    let requirement_id = optional_trimmed_string(args.get("requirementId"));
+    let description = optional_trimmed_string(args.get("description"));
+    let version = repository.next_version(requirement_id.as_deref())?;
+    let version_label =
+        optional_trimmed_string(args.get("versionLabel")).unwrap_or_else(|| format!("v{version}"));
+    let created_at = now_iso();
 
     let preview_id = Uuid::new_v4().to_string();
     let dir = repository.preview_dir(&preview_id)?;
@@ -227,13 +261,32 @@ fn exec_preview_html(args: &Value, repository: &PreviewRepository) -> Result<Val
     fs::write(&index_path, html.as_bytes())
         .map_err(|e| AppError::ProcessError(format!("写入预览 HTML 失败: {}", e)))?;
 
-    let artifact = PreviewArtifact {
+    let metadata = PreviewMetadata {
         artifact_type: ARTIFACT_TYPE.to_string(),
-        preview_id,
+        preview_id: preview_id.clone(),
         title,
         content_type: "html".to_string(),
         source_path: index_path.to_string_lossy().to_string(),
+        created_at,
+        version,
+        version_label,
+        requirement_id,
+        description,
+    };
+    repository.write_metadata(&metadata)?;
+
+    let artifact = PreviewArtifact {
+        artifact_type: metadata.artifact_type.clone(),
+        preview_id,
+        title: metadata.title,
+        content_type: metadata.content_type,
+        source_path: metadata.source_path,
         html,
+        created_at: metadata.created_at,
+        version: metadata.version,
+        version_label: metadata.version_label,
+        requirement_id: metadata.requirement_id,
+        description: metadata.description,
     };
 
     Ok(artifact_result(
@@ -248,14 +301,22 @@ fn exec_read_preview(args: &Value, repository: &PreviewRepository) -> Result<Val
     let html = fs::read_to_string(&path)
         .map_err(|e| AppError::ProcessError(format!("读取预览失败: {}", e)))?;
     validate_html_size(&html)?;
+    let metadata = repository
+        .read_metadata(preview_id)?
+        .unwrap_or_else(|| repository.fallback_metadata(preview_id, &path));
 
     let artifact = PreviewArtifact {
-        artifact_type: ARTIFACT_TYPE.to_string(),
+        artifact_type: metadata.artifact_type,
         preview_id: preview_id.to_string(),
-        title: "PRD Prototype".to_string(),
-        content_type: "html".to_string(),
+        title: metadata.title,
+        content_type: metadata.content_type,
         source_path: path.to_string_lossy().to_string(),
         html,
+        created_at: metadata.created_at,
+        version: metadata.version,
+        version_label: metadata.version_label,
+        requirement_id: metadata.requirement_id,
+        description: metadata.description,
     };
 
     Ok(artifact_result(&artifact, "已读取预览".to_string()))
@@ -268,7 +329,7 @@ fn exec_list_previews(args: &Value, repository: &PreviewRepository) -> Result<Va
         .unwrap_or(20)
         .clamp(1, 50) as usize;
 
-    let mut previews = Vec::new();
+    let mut previews: Vec<PreviewMetadata> = Vec::new();
     if repository.root.exists() {
         let entries = fs::read_dir(&repository.root)
             .map_err(|e| AppError::ProcessError(format!("读取预览目录失败: {}", e)))?;
@@ -285,14 +346,15 @@ fn exec_list_previews(args: &Value, repository: &PreviewRepository) -> Result<Va
             }
             let index_path = path.join("index.html");
             if index_path.exists() {
-                previews.push(json!({
-                    "previewId": preview_id,
-                    "sourcePath": index_path.to_string_lossy().to_string(),
-                }));
+                let metadata = repository
+                    .read_metadata(preview_id)?
+                    .unwrap_or_else(|| repository.fallback_metadata(preview_id, &index_path));
+                previews.push(metadata);
             }
         }
     }
 
+    previews.sort_by(|a, b| b.created_at.cmp(&a.created_at));
     previews.truncate(limit);
     Ok(json!({
         "structuredContent": { "previews": previews },
@@ -336,6 +398,80 @@ impl PreviewRepository {
     fn index_path(&self, preview_id: &str) -> Result<PathBuf> {
         Ok(self.preview_dir(preview_id)?.join("index.html"))
     }
+
+    fn metadata_path(&self, preview_id: &str) -> Result<PathBuf> {
+        Ok(self.preview_dir(preview_id)?.join("metadata.json"))
+    }
+
+    fn write_metadata(&self, metadata: &PreviewMetadata) -> Result<()> {
+        let path = self.metadata_path(&metadata.preview_id)?;
+        let payload = serde_json::to_vec_pretty(metadata)
+            .map_err(|e| AppError::ProcessError(format!("序列化预览元数据失败: {}", e)))?;
+        fs::write(&path, payload)
+            .map_err(|e| AppError::ProcessError(format!("写入预览元数据失败: {}", e)))?;
+        Ok(())
+    }
+
+    fn read_metadata(&self, preview_id: &str) -> Result<Option<PreviewMetadata>> {
+        let path = self.metadata_path(preview_id)?;
+        if !path.exists() {
+            return Ok(None);
+        }
+        let content = fs::read_to_string(&path)
+            .map_err(|e| AppError::ProcessError(format!("读取预览元数据失败: {}", e)))?;
+        let metadata = serde_json::from_str::<PreviewMetadata>(&content)
+            .map_err(|e| AppError::ProcessError(format!("解析预览元数据失败: {}", e)))?;
+        Ok(Some(metadata))
+    }
+
+    fn fallback_metadata(&self, preview_id: &str, index_path: &Path) -> PreviewMetadata {
+        PreviewMetadata {
+            artifact_type: ARTIFACT_TYPE.to_string(),
+            preview_id: preview_id.to_string(),
+            title: "PRD Prototype".to_string(),
+            content_type: "html".to_string(),
+            source_path: index_path.to_string_lossy().to_string(),
+            created_at: file_modified_iso(index_path).unwrap_or_else(now_iso),
+            version: 1,
+            version_label: "v1".to_string(),
+            requirement_id: None,
+            description: None,
+        }
+    }
+
+    fn next_version(&self, requirement_id: Option<&str>) -> Result<u32> {
+        let Some(requirement_id) = requirement_id else {
+            return Ok(1);
+        };
+        if !self.root.exists() {
+            return Ok(1);
+        }
+
+        let mut max_version = 0_u32;
+        let entries = fs::read_dir(&self.root)
+            .map_err(|e| AppError::ProcessError(format!("读取预览目录失败: {}", e)))?;
+        for entry in entries.flatten() {
+            let Some(preview_id) = entry
+                .path()
+                .file_name()
+                .and_then(|value| value.to_str())
+                .map(str::to_string)
+            else {
+                continue;
+            };
+            if !is_safe_preview_id(&preview_id) {
+                continue;
+            }
+            let Some(metadata) = self.read_metadata(&preview_id)? else {
+                continue;
+            };
+            if metadata.requirement_id.as_deref() == Some(requirement_id) {
+                max_version = max_version.max(metadata.version);
+            }
+        }
+
+        Ok(max_version.saturating_add(1))
+    }
 }
 
 fn validate_html_size(html: &str) -> Result<()> {
@@ -354,6 +490,24 @@ fn require_str<'a>(args: &'a Value, key: &str) -> Result<&'a str> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| AppError::ValidationError(format!("缺少字符串参数: {key}")))
+}
+
+fn optional_trimmed_string(value: Option<&Value>) -> Option<String> {
+    value
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn now_iso() -> String {
+    Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
+}
+
+fn file_modified_iso(path: &Path) -> Option<String> {
+    let modified = fs::metadata(path).ok()?.modified().ok()?;
+    let datetime: chrono::DateTime<Utc> = modified.into();
+    Some(datetime.to_rfc3339_opts(SecondsFormat::Millis, true))
 }
 
 fn is_safe_preview_id(value: &str) -> bool {
@@ -392,5 +546,68 @@ mod tests {
         assert!(!is_safe_preview_id("../secret"));
         assert!(!is_safe_preview_id("a/b"));
         assert!(!is_safe_preview_id(""));
+    }
+
+    #[test]
+    fn stores_preview_metadata_and_increments_requirement_versions() {
+        let config_dir = tempfile::tempdir().unwrap();
+        let workspace_dir = tempfile::tempdir().unwrap();
+        let repository = PreviewRepository::new(
+            config_dir.path().to_str().unwrap(),
+            Some(workspace_dir.path().to_str().unwrap()),
+        )
+        .unwrap();
+
+        let first = exec_preview_html(
+            &json!({
+                "title": "Checkout Flow",
+                "html": "<!doctype html><html><body>v1</body></html>",
+                "requirementId": "REQ-100",
+                "description": "Initial prototype"
+            }),
+            &repository,
+        )
+        .unwrap();
+        let first_artifact = &first["structuredContent"];
+        let first_id = first_artifact["previewId"].as_str().unwrap();
+        assert_eq!(first_artifact["version"], Value::from(1));
+        assert_eq!(
+            first_artifact["versionLabel"],
+            Value::String("v1".to_string())
+        );
+        assert_eq!(
+            first_artifact["requirementId"],
+            Value::String("REQ-100".to_string())
+        );
+        assert!(repository.metadata_path(first_id).unwrap().exists());
+
+        let read = exec_read_preview(&json!({ "previewId": first_id }), &repository).unwrap();
+        assert_eq!(
+            read["structuredContent"]["title"],
+            Value::String("Checkout Flow".to_string())
+        );
+        assert_eq!(read["structuredContent"]["version"], Value::from(1));
+
+        let second = exec_preview_html(
+            &json!({
+                "title": "Checkout Flow",
+                "html": "<!doctype html><html><body>v2</body></html>",
+                "requirementId": "REQ-100"
+            }),
+            &repository,
+        )
+        .unwrap();
+        assert_eq!(second["structuredContent"]["version"], Value::from(2));
+        assert_eq!(
+            second["structuredContent"]["versionLabel"],
+            Value::String("v2".to_string())
+        );
+
+        let listed = exec_list_previews(&json!({ "limit": 10 }), &repository).unwrap();
+        let previews = listed["structuredContent"]["previews"].as_array().unwrap();
+        assert_eq!(previews.len(), 2);
+        assert!(previews
+            .iter()
+            .any(|preview| preview["version"] == Value::from(2)));
     }
 }
