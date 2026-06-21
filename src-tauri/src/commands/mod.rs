@@ -25,7 +25,6 @@ pub mod todo;
 pub mod requirement;
 pub mod prompt_snippet;
 pub mod port_manager;
-pub mod http_client;
 
 // 重新导出命令函数，确保它们在模块级别可见
 pub use workspace::validate_workspace_path;

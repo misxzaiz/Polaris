@@ -18,8 +18,6 @@ pub mod unified_requirement_repository;
 pub mod unified_scheduler_repository;
 pub mod port_manager_service;
 pub mod port_manager_mcp_server;
-pub mod http_client_service;
-pub mod http_client_mcp_server;
 pub mod requirements_mcp_server;
 
 #[cfg(windows)]
