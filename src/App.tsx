@@ -84,9 +84,6 @@ function App() {
   const pluginStates = usePluginStore(state => state.pluginStates);
   const rightPanelCollapsed = useViewStore(state => state.rightPanelCollapsed);
   const terminalFullscreen = useViewStore(state => state.terminalFullscreen);
-  const httpClientFullscreen = useViewStore(state => state.httpClientFullscreen);
-  // 任一左侧面板全屏时，CenterStage / RightPanel 让位
-  const leftPanelFullscreen = terminalFullscreen || httpClientFullscreen;
   const toggleRightPanel = useViewStore(state => state.toggleRightPanel);
   const closeLeftPanel = useViewStore(state => state.closeLeftPanel);
   const showSessionHistory = useViewStore(state => state.showSessionHistory);
@@ -158,7 +155,7 @@ function App() {
   // 终端自动填充剩余：终端激活且无编辑器（CenterStage 不渲染）时 flex-1 撑满，
   // 解决"关闭 AI 面板 + 无打开编辑器 → 终端右侧空一半"问题。
   // 全屏模式优先级更高，由 fullscreen 分支单独处理。
-  const leftPanelFillRemaining = leftPanelType === 'terminal' && !hasCenterStage && !leftPanelFullscreen;
+  const leftPanelFillRemaining = leftPanelType === 'terminal' && !hasCenterStage && !terminalFullscreen;
 
   const openGitWorkbench = useCallback((options?: { initialGitTab?: string }) => {
     openGitTab(options);
@@ -231,7 +228,7 @@ function App() {
               />
 
               {!isCompact && hasLeftPanel && (
-                <LeftPanel fillRemaining={leftPanelFillRemaining} fullscreen={leftPanelFullscreen}>
+                <LeftPanel fillRemaining={leftPanelFillRemaining} fullscreen={terminalFullscreen}>
                   {leftPanelContent}
                 </LeftPanel>
               )}
@@ -243,10 +240,10 @@ function App() {
                 </LeftPanelDrawer>
               )}
 
-              {/* 左侧面板全屏时让位，不渲染编辑器 */}
-              {!isCompact && hasCenterStage && !leftPanelFullscreen && <CenterStage fillRemaining={!rightPanelCollapsed} />}
+              {/* 终端全屏时让位，不渲染编辑器 */}
+              {!isCompact && hasCenterStage && !terminalFullscreen && <CenterStage fillRemaining={!rightPanelCollapsed} />}
 
-              {(isCompact || (!rightPanelCollapsed && !leftPanelFullscreen)) && (
+              {(isCompact || (!rightPanelCollapsed && !terminalFullscreen)) && (
                 <RightPanel fillRemaining={rightPanelFillRemaining} forceShow={isCompact}>
                   {error && <ErrorBanner error={error} />}
 
