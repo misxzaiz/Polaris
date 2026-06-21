@@ -53,7 +53,6 @@
     "mcpPanel": "MCP Servers",
     "gitInsightPanel": "Git Insight",
     "httpClientPanel": "HTTP Client",
-    "jsonFormatter": "JSON Tools",
     "showAIPanel": "Show AI Panel",
     "hideAIPanel": "Hide AI Panel",
     "showActivityBar": "Show Activity Bar",

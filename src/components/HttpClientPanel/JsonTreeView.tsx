@@ -22,10 +22,8 @@ interface JsonNode {
 interface ExpandSignal {
   version: number
   open: boolean
-  /** 展开全部时最大展开深度，超过此深度的节点保持折叠，避免同步挂载海量节点卡死 */
-  maxExpandDepth: number
 }
-const ExpandContext = createContext<ExpandSignal>({ version: 0, open: false, maxExpandDepth: Infinity })
+const ExpandContext = createContext<ExpandSignal>({ version: 0, open: false })
 
 function kindOf(v: unknown): NodeKind {
   if (v === null) return 'null'
@@ -85,21 +83,16 @@ function Row({ node, depth }: { node: JsonNode; depth: number }) {
   const signal = useContext(ExpandContext)
   const isContainer = node.kind === 'object' || node.kind === 'array'
 
-  // 全局展开/折叠信号变化时重置本节点 open。
-  // 展开全部时，超过 maxExpandDepth 的节点保持折叠，避免同步挂载海量节点卡死主线程。
+  // 全局展开/折叠信号变化时重置本节点 open
   useEffect(() => {
-    if (signal.open && depth >= signal.maxExpandDepth) {
-      setOpen(false)
-    } else {
-      setOpen(signal.open)
-    }
+    setOpen(signal.open)
   }, [signal.version]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const kids = useMemo(
     () => (isContainer ? childrenOf(node.value, node.path) : []),
     [isContainer, node.value, node.path],
   )
-  const count = kids.length
+  const count = isContainer ? (node.kind === 'array' ? (node.value as unknown[]).length : Object.keys(node.value as object).length) : 0
 
   const copyPath = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -172,11 +165,8 @@ interface JsonTreeViewProps {
   data: unknown
 }
 
-/** 展开全部时的最大深度，超过此深度的节点保持折叠，避免同步挂载海量节点卡死 */
-const MAX_EXPAND_DEPTH = 4
-
 export function JsonTreeView({ data }: JsonTreeViewProps) {
-  const [signal, setSignal] = useState<ExpandSignal>({ version: 0, open: false, maxExpandDepth: MAX_EXPAND_DEPTH })
+  const [signal, setSignal] = useState<ExpandSignal>({ version: 0, open: false })
 
   const root: JsonNode = {
     key: '$',
@@ -185,8 +175,8 @@ export function JsonTreeView({ data }: JsonTreeViewProps) {
     kind: kindOf(data),
   }
 
-  const expandAll = () => setSignal((s) => ({ version: s.version + 1, open: true, maxExpandDepth: MAX_EXPAND_DEPTH }))
-  const collapseAll = () => setSignal((s) => ({ version: s.version + 1, open: false, maxExpandDepth: MAX_EXPAND_DEPTH }))
+  const expandAll = () => setSignal((s) => ({ version: s.version + 1, open: true }))
+  const collapseAll = () => setSignal((s) => ({ version: s.version + 1, open: false }))
 
   return (
     <div className="flex flex-col h-full">

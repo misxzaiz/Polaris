@@ -61,18 +61,16 @@ export function ResponseViewer({ response, error }: { response: HttpResponseInfo
     return response.body
   }, [response, parsed])
 
-  // 异步高亮：仅当当前视图为 pretty 时才调度，避免在 table/tree/raw 视图下
-  // 仍同步跑 hljs+DOMPurify 卡死主线程。超阈值或非 JSON 不高亮，命中缓存秒回。
+  // 异步高亮：用 requestIdleCallback 调度，超阈值不高亮，命中缓存秒回。
   // 高亮完成前先显示纯文本，绝不阻塞渲染。
   useEffect(() => {
-    // 响应变化或切走 pretty 视图时清空旧高亮
+    // 响应变化时先清空旧高亮，避免短暂闪烁上一条响应的高亮
     setHighlightedHtml('')
-    if (view !== 'pretty') return
     if (!prettyBody || !parsed.ok) return
     // 超过高亮阈值：不高亮，直接用纯文本
     if (prettyBody.length > HIGHLIGHT_MAX_BYTES) return
     return scheduleHighlight(prettyBody, 'json', (html) => setHighlightedHtml(html))
-  }, [prettyBody, parsed, view])
+  }, [prettyBody, parsed])
 
   if (error) {
     return (
