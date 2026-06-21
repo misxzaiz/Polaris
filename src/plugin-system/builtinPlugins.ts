@@ -47,18 +47,6 @@ import { readmeGeneratorPluginManifest } from '@/plugins/readme-generator/manife
 import { codeRefactorPluginManifest } from '@/plugins/code-refactor/manifest'
 import { legacyCodeRefactorPluginManifest } from '@/plugins/legacy-code-refactor/manifest'
 import { performanceBottleneckPluginManifest } from '@/plugins/performance-bottleneck/manifest'
-import { databaseSchemaViewerPluginManifest } from '@/plugins/database-schema-viewer/manifest'
-import { queryBuilderPluginManifest } from '@/plugins/query-builder/manifest'
-import { dataMigrationPluginManifest } from '@/plugins/data-migration/manifest'
-import { dockerManagerPluginManifest } from '@/plugins/docker-manager/manifest'
-import { ciCdPipelinePluginManifest } from '@/plugins/ci-cd-pipeline/manifest'
-import { envVarManagerPluginManifest } from '@/plugins/env-var-manager/manifest'
-import { projectTemplatePluginManifest } from '@/plugins/project-template/manifest'
-import { codeSearchPluginManifest } from '@/plugins/code-search/manifest'
-import { logAnalyzerPluginManifest } from '@/plugins/log-analyzer/manifest'
-import { configManagerPluginManifest } from '@/plugins/config-manager/manifest'
-import { deployScriptGeneratorPluginManifest } from '@/plugins/deploy-script-generator/manifest'
-import { codeReviewAssistantPluginManifest } from '@/plugins/code-review-assistant/manifest'
 
 const corePluginManifest: PolarisPluginManifest = {
   id: 'polaris.core',
@@ -195,18 +183,6 @@ export function registerBuiltinPlugins(): void {
   pluginRegistry.register(codeRefactorPluginManifest)
   pluginRegistry.register(legacyCodeRefactorPluginManifest)
   pluginRegistry.register(performanceBottleneckPluginManifest)
-  pluginRegistry.register(databaseSchemaViewerPluginManifest)
-  pluginRegistry.register(queryBuilderPluginManifest)
-  pluginRegistry.register(dataMigrationPluginManifest)
-  pluginRegistry.register(dockerManagerPluginManifest)
-  pluginRegistry.register(ciCdPipelinePluginManifest)
-  pluginRegistry.register(envVarManagerPluginManifest)
-  pluginRegistry.register(projectTemplatePluginManifest)
-  pluginRegistry.register(codeSearchPluginManifest)
-  pluginRegistry.register(logAnalyzerPluginManifest)
-  pluginRegistry.register(configManagerPluginManifest)
-  pluginRegistry.register(deployScriptGeneratorPluginManifest)
-  pluginRegistry.register(codeReviewAssistantPluginManifest)
 
   // builtin 插件无 installPath，registry 不会自动注册 panel，需手动注册懒加载入口
   pluginPanelRegistry.register('personalHub', 'polaris.personal-hub', () =>
@@ -325,27 +301,6 @@ export function registerBuiltinPlugins(): void {
   )
   pluginPanelRegistry.register('performanceBottleneck', 'polaris.performance-bottleneck', () =>
     import('@/components/PerformanceBottleneckPanel/PerformanceBottleneckPanel').then((m) => ({ default: m.PerformanceBottleneckPanel })),
-  )
-  pluginPanelRegistry.register('databaseSchemaViewer', 'polaris.database-schema-viewer', () =>
-    import('@/components/DatabaseSchemaViewerPanel/DatabaseSchemaViewerPanel').then((m) => ({ default: m.DatabaseSchemaViewerPanel })),
-  )
-  pluginPanelRegistry.register('queryBuilder', 'polaris.query-builder', () =>
-    import('@/components/QueryBuilderPanel/QueryBuilderPanel').then((m) => ({ default: m.QueryBuilderPanel })),
-  )
-  pluginPanelRegistry.register('dataMigration', 'polaris.data-migration', () =>
-    import('@/components/DataMigrationPanel/DataMigrationPanel').then((m) => ({ default: m.DataMigrationPanel })),
-  )
-  pluginPanelRegistry.register('dockerManager', 'polaris.docker-manager', () =>
-    import('@/components/DockerManagerPanel/DockerManagerPanel').then((m) => ({ default: m.DockerManagerPanel })),
-  )
-  pluginPanelRegistry.register('ciCdPipeline', 'polaris.ci-cd-pipeline', () =>
-    import('@/components/CiCdPipelinePanel/CiCdPipelinePanel').then((m) => ({ default: m.CiCdPipelinePanel })),
-  )
-  pluginPanelRegistry.register('envVarManager', 'polaris.env-var-manager', () =>
-    import('@/components/EnvVarManagerPanel/EnvVarManagerPanel').then((m) => ({ default: m.EnvVarManagerPanel })),
-  )
-  pluginPanelRegistry.register('projectTemplate', 'polaris.project-template', () =>
-    import('@/components/ProjectTemplatePanel/ProjectTemplatePanel').then((m) => ({ default: m.ProjectTemplatePanel })),
   )
 }
 

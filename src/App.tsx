@@ -45,18 +45,6 @@ const ReadmeGeneratorPanel = lazy(() => import('./components/ReadmeGeneratorPane
 const CodeRefactorPanel = lazy(() => import('./components/CodeRefactorPanel/CodeRefactorPanel').then(m => ({ default: m.CodeRefactorPanel })));
 const LegacyCodeRefactorPanel = lazy(() => import('./components/LegacyCodeRefactorPanel/LegacyCodeRefactorPanel').then(m => ({ default: m.LegacyCodeRefactorPanel })));
 const PerformanceBottleneckPanel = lazy(() => import('./components/PerformanceBottleneckPanel/PerformanceBottleneckPanel').then(m => ({ default: m.PerformanceBottleneckPanel })));
-const DatabaseSchemaViewerPanel = lazy(() => import('./components/DatabaseSchemaViewerPanel/DatabaseSchemaViewerPanel').then(m => ({ default: m.DatabaseSchemaViewerPanel })));
-const QueryBuilderPanel = lazy(() => import('./components/QueryBuilderPanel/QueryBuilderPanel').then(m => ({ default: m.QueryBuilderPanel })));
-const DataMigrationPanel = lazy(() => import('./components/DataMigrationPanel/DataMigrationPanel').then(m => ({ default: m.DataMigrationPanel })));
-const DockerManagerPanel = lazy(() => import('./components/DockerManagerPanel/DockerManagerPanel').then(m => ({ default: m.DockerManagerPanel })));
-const CiCdPipelinePanel = lazy(() => import('./components/CiCdPipelinePanel/CiCdPipelinePanel').then(m => ({ default: m.CiCdPipelinePanel })));
-const EnvVarManagerPanel = lazy(() => import('./components/EnvVarManagerPanel/EnvVarManagerPanel').then(m => ({ default: m.EnvVarManagerPanel })));
-const ProjectTemplatePanel = lazy(() => import('./components/ProjectTemplatePanel/ProjectTemplatePanel').then(m => ({ default: m.ProjectTemplatePanel })));
-const CodeSearchPanel = lazy(() => import('./components/CodeSearchPanel/CodeSearchPanel').then(m => ({ default: m.CodeSearchPanel })));
-const LogAnalyzerPanel = lazy(() => import('./components/LogAnalyzerPanel/LogAnalyzerPanel').then(m => ({ default: m.LogAnalyzerPanel })));
-const ConfigManagerPanel = lazy(() => import('./components/ConfigManagerPanel/ConfigManagerPanel').then(m => ({ default: m.ConfigManagerPanel })));
-const DeployScriptGeneratorPanel = lazy(() => import('./components/DeployScriptGeneratorPanel/DeployScriptGeneratorPanel').then(m => ({ default: m.DeployScriptGeneratorPanel })));
-const CodeReviewAssistantPanel = lazy(() => import('./components/CodeReviewAssistantPanel/CodeReviewAssistantPanel').then(m => ({ default: m.CodeReviewAssistantPanel })));
 const CreateWorkspaceModal = lazy(() => import('./components/Workspace/CreateWorkspaceModal').then(m => ({ default: m.CreateWorkspaceModal })));
 const CreateSessionModal = lazy(() => import('./components/Session/CreateSessionModal').then(m => ({ default: m.CreateSessionModal })));
 const FileSearchModal = lazy(() => import('./components/Editor/FileSearchModal').then(m => ({ default: m.FileSearchModal })));
@@ -248,18 +236,6 @@ function App() {
       codeRefactorContent={<Suspense fallback={loadingFallback}><CodeRefactorPanel pluginId="polaris.code-refactor" onSendToChat={sendMessage} /></Suspense>}
       legacyCodeRefactorContent={<Suspense fallback={loadingFallback}><LegacyCodeRefactorPanel pluginId="polaris.legacy-code-refactor" onSendToChat={sendMessage} /></Suspense>}
       performanceBottleneckContent={<Suspense fallback={loadingFallback}><PerformanceBottleneckPanel pluginId="polaris.performance-bottleneck" onSendToChat={sendMessage} /></Suspense>}
-      databaseSchemaViewerContent={<Suspense fallback={loadingFallback}><DatabaseSchemaViewerPanel pluginId="polaris.database-schema-viewer" onSendToChat={sendMessage} /></Suspense>}
-      queryBuilderContent={<Suspense fallback={loadingFallback}><QueryBuilderPanel pluginId="polaris.query-builder" onSendToChat={sendMessage} /></Suspense>}
-      dataMigrationContent={<Suspense fallback={loadingFallback}><DataMigrationPanel pluginId="polaris.data-migration" onSendToChat={sendMessage} /></Suspense>}
-      dockerManagerContent={<Suspense fallback={loadingFallback}><DockerManagerPanel pluginId="polaris.docker-manager" onSendToChat={sendMessage} /></Suspense>}
-      ciCdPipelineContent={<Suspense fallback={loadingFallback}><CiCdPipelinePanel pluginId="polaris.ci-cd-pipeline" onSendToChat={sendMessage} /></Suspense>}
-      envVarManagerContent={<Suspense fallback={loadingFallback}><EnvVarManagerPanel pluginId="polaris.env-var-manager" onSendToChat={sendMessage} /></Suspense>}
-      projectTemplateContent={<Suspense fallback={loadingFallback}><ProjectTemplatePanel pluginId="polaris.project-template" onSendToChat={sendMessage} /></Suspense>}
-      codeSearchContent={<Suspense fallback={loadingFallback}><CodeSearchPanel pluginId="polaris.code-search" onSendToChat={sendMessage} /></Suspense>}
-      logAnalyzerContent={<Suspense fallback={loadingFallback}><LogAnalyzerPanel pluginId="polaris.log-analyzer" onSendToChat={sendMessage} /></Suspense>}
-      configManagerContent={<Suspense fallback={loadingFallback}><ConfigManagerPanel pluginId="polaris.config-manager" onSendToChat={sendMessage} /></Suspense>}
-      deployScriptGeneratorContent={<Suspense fallback={loadingFallback}><DeployScriptGeneratorPanel pluginId="polaris.deploy-script-generator" onSendToChat={sendMessage} /></Suspense>}
-      codeReviewAssistantContent={<Suspense fallback={loadingFallback}><CodeReviewAssistantPanel pluginId="polaris.code-review-assistant" onSendToChat={sendMessage} /></Suspense>}
     />
   );
 

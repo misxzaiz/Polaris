@@ -216,18 +216,6 @@ export function LeftPanelContent({
   codeRefactorContent?: ReactNode
   legacyCodeRefactorContent?: ReactNode
   performanceBottleneckContent?: ReactNode
-  databaseSchemaViewerContent?: ReactNode
-  queryBuilderContent?: ReactNode
-  dataMigrationContent?: ReactNode
-  dockerManagerContent?: ReactNode
-  ciCdPipelineContent?: ReactNode
-  envVarManagerContent?: ReactNode
-  projectTemplateContent?: ReactNode
-  codeSearchContent?: ReactNode
-  logAnalyzerContent?: ReactNode
-  configManagerContent?: ReactNode
-  deployScriptGeneratorContent?: ReactNode
-  codeReviewAssistantContent?: ReactNode
   currentType?: LeftPanelType
 }) {
   // Hook 必须在条件之外调用
@@ -298,30 +286,6 @@ export function LeftPanelContent({
     return <>{legacyCodeRefactorContent}</>
   } else if (type === 'performanceBottleneck') {
     return <>{performanceBottleneckContent}</>
-  } else if (type === 'databaseSchemaViewer') {
-    return <>{databaseSchemaViewerContent}</>
-  } else if (type === 'queryBuilder') {
-    return <>{queryBuilderContent}</>
-  } else if (type === 'dataMigration') {
-    return <>{dataMigrationContent}</>
-  } else if (type === 'dockerManager') {
-    return <>{dockerManagerContent}</>
-  } else if (type === 'ciCdPipeline') {
-    return <>{ciCdPipelineContent}</>
-  } else if (type === 'envVarManager') {
-    return <>{envVarManagerContent}</>
-  } else if (type === 'projectTemplate') {
-    return <>{projectTemplateContent}</>
-  } else if (type === 'codeSearch') {
-    return <>{codeSearchContent}</>
-  } else if (type === 'logAnalyzer') {
-    return <>{logAnalyzerContent}</>
-  } else if (type === 'configManager') {
-    return <>{configManagerContent}</>
-  } else if (type === 'deployScriptGenerator') {
-    return <>{deployScriptGeneratorContent}</>
-  } else if (type === 'codeReviewAssistant') {
-    return <>{codeReviewAssistantContent}</>
   } else if (pluginPanelRegistry.has(type)) {
     return <PluginPanelHost panelType={type} />
   }
