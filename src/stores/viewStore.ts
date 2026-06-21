@@ -33,6 +33,7 @@ interface ViewState {
   rightPanelWidth: number;       // 右侧 AI 面板宽度
   rightPanelCollapsed: boolean;  // 右侧面板是否折叠
   terminalFullscreen: boolean;   // 终端面板全屏（撑满除 ActivityBar 外全部横向空间）
+  httpClientFullscreen: boolean; // HTTP Client 面板全屏
   activityBarCollapsed: boolean; // ActivityBar 是否折叠（隐藏图标栏）
   terminalScriptPanelCollapsed: boolean; // 终端脚本面板是否折叠
   // 小屏模式状态
@@ -70,6 +71,8 @@ interface ViewActions {
   toggleRightPanel: () => void;
   toggleTerminalFullscreen: () => void; // 切换终端全屏
   setTerminalFullscreen: (fullscreen: boolean) => void; // 设置终端全屏
+  toggleHttpClientFullscreen: () => void; // 切换 HTTP Client 全屏
+  setHttpClientFullscreen: (fullscreen: boolean) => void; // 设置 HTTP Client 全屏
   toggleActivityBar: () => void; // 切换 ActivityBar 折叠状态
   toggleTerminalScriptPanelCollapsed: () => void;
   setTerminalScriptPanelCollapsed: (collapsed: boolean) => void;
@@ -115,6 +118,7 @@ export const useViewStore = create<ViewStore>()(
       rightPanelWidth: 400,       // 右侧 AI 面板默认宽度
       rightPanelCollapsed: false, // 右侧面板默认不折叠
       terminalFullscreen: false,  // 终端默认不全屏
+      httpClientFullscreen: false, // HTTP Client 默认不全屏
       activityBarCollapsed: false, // ActivityBar 默认不折叠
       terminalScriptPanelCollapsed: true, // 终端脚本默认紧凑显示
       // 小屏模式初始状态
@@ -209,6 +213,12 @@ export const useViewStore = create<ViewStore>()(
 
       // 设置终端全屏状态
       setTerminalFullscreen: (fullscreen: boolean) => set({ terminalFullscreen: fullscreen }),
+
+      // 切换 HTTP Client 全屏状态
+      toggleHttpClientFullscreen: () => set((state) => ({ httpClientFullscreen: !state.httpClientFullscreen })),
+
+      // 设置 HTTP Client 全屏状态
+      setHttpClientFullscreen: (fullscreen: boolean) => set({ httpClientFullscreen: fullscreen }),
 
       // 切换 ActivityBar 折叠状态
       toggleActivityBar: () => set((state) => ({ activityBarCollapsed: !state.activityBarCollapsed })),

@@ -20,6 +20,7 @@ pub mod port_manager_service;
 pub mod port_manager_mcp_server;
 pub mod http_client_service;
 pub mod http_client_mcp_server;
+pub mod http_client_storage;
 pub mod requirements_mcp_server;
 
 #[cfg(windows)]

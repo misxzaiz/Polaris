@@ -174,6 +174,7 @@ impl DataRoot {
             self.plugins_dir(),
             self.cache_dir(),
             self.meta_dir(),
+            self.http_client_dir(),
         ] {
             fs::create_dir_all(&dir)?;
         }
@@ -220,6 +221,11 @@ impl DataRoot {
 
     pub fn meta_dir(&self) -> PathBuf {
         self.root.join(".meta")
+    }
+
+    /// HTTP Client 插件数据子目录（请求集合 + 环境变量）
+    pub fn http_client_dir(&self) -> PathBuf {
+        self.root.join("http-client")
     }
 
     /// 写入新的锚点 dataRoot；为 None 表示恢复默认

@@ -911,6 +911,8 @@ pub fn run() {
             commands::port_manager::port_summary,
             // HTTP 客户端
             commands::http_client::http_request,
+            commands::http_client::http_client_read,
+            commands::http_client::http_client_write,
             // 文件下载
             commands::file_explorer::download_file_binary,
             commands::file_explorer::download_directory_to_zip,
