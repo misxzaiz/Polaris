@@ -8,8 +8,8 @@ use super::codex_parser::{
 };
 use crate::ai::session::SessionManager;
 use crate::ai::traits::{
-    AIEngine, EngineId, SessionOptions,
-    EngineMetadata, EngineDistribution, EngineCapabilities, EnvKeyMapping,
+    AIEngine, EngineCapabilities, EngineDistribution, EngineId, EngineMetadata, EnvKeyMapping,
+    SessionOptions,
 };
 use crate::error::{AppError, Result};
 use crate::models::config::Config;
@@ -135,6 +135,110 @@ fn hex_preview(bytes: &[u8], max_len: usize) -> String {
         .map(|byte| format!("{:02X}", byte))
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+const CODEX_DEFAULT_AUTH_ENV_KEYS: &[&str] = &["CODEX_API_KEY", "OPENAI_API_KEY"];
+
+fn is_valid_env_name(value: &str) -> bool {
+    let mut chars = value.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+fn collect_codex_auth_env_keys_from_config(raw: &str) -> BTreeSet<String> {
+    let mut keys = BTreeSet::new();
+    let env_key_re = match regex::Regex::new(r#"(?m)^\s*env_key\s*=\s*"([^"]+)"\s*(?:#.*)?$"#) {
+        Ok(re) => re,
+        Err(_) => return keys,
+    };
+
+    for captures in env_key_re.captures_iter(raw) {
+        if let Some(value) = captures.get(1).map(|m| m.as_str().trim()) {
+            if is_valid_env_name(value) {
+                keys.insert(value.to_string());
+            }
+        }
+    }
+
+    keys
+}
+
+fn collect_codex_auth_env_keys() -> BTreeSet<String> {
+    let mut keys = CODEX_DEFAULT_AUTH_ENV_KEYS
+        .iter()
+        .map(|key| key.to_string())
+        .collect::<BTreeSet<_>>();
+
+    if let Some(config_path) = dirs::home_dir().map(|home| home.join(".codex").join("config.toml"))
+    {
+        if let Ok(raw) = std::fs::read_to_string(config_path) {
+            keys.extend(collect_codex_auth_env_keys_from_config(&raw));
+        }
+    }
+
+    keys
+}
+
+#[cfg(windows)]
+fn parse_reg_query_env_value(output: &str, name: &str) -> Option<String> {
+    for line in output.lines() {
+        let trimmed = line.trim_start();
+        if !trimmed.starts_with(name) {
+            continue;
+        }
+
+        let mut parts = trimmed.split_whitespace();
+        let key = parts.next()?;
+        let value_type = parts.next()?;
+        if key != name || !(value_type == "REG_SZ" || value_type == "REG_EXPAND_SZ") {
+            continue;
+        }
+
+        if let Some(type_index) = trimmed.find(value_type) {
+            let value_start = type_index + value_type.len();
+            let value = trimmed[value_start..].trim();
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(windows)]
+fn read_windows_persistent_env(name: &str) -> Option<String> {
+    if !is_valid_env_name(name) {
+        return None;
+    }
+
+    let hives = [
+        r"HKCU\Environment",
+        r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+    ];
+
+    for hive in hives {
+        let mut cmd = Command::new("reg");
+        cmd.arg("query")
+            .arg(hive)
+            .arg("/v")
+            .arg(name)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        cmd.creation_flags(CREATE_NO_WINDOW);
+
+        let output = match cmd.output() {
+            Ok(output) if output.status.success() => output,
+            _ => continue,
+        };
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if let Some(value) = parse_reg_query_env_value(&stdout, name) {
+            return Some(value);
+        }
+    }
+
+    None
 }
 
 /// OpenAI Codex CLI 引擎
@@ -431,10 +535,32 @@ impl CodexEngine {
         #[cfg(windows)]
         {
             cmd.env("CHCP", "65001");
+            self.inject_persistent_codex_auth_env(cmd, env_overrides);
         }
 
         for (key, value) in env_overrides {
             cmd.env(key, value);
+        }
+    }
+
+    #[cfg(windows)]
+    fn inject_persistent_codex_auth_env(
+        &self,
+        cmd: &mut Command,
+        env_overrides: &std::collections::HashMap<String, String>,
+    ) {
+        for key in collect_codex_auth_env_keys() {
+            if env_overrides.contains_key(&key) || std::env::var_os(&key).is_some() {
+                continue;
+            }
+
+            if let Some(value) = read_windows_persistent_env(&key) {
+                tracing::info!(
+                    "[CodexEngine] 从 Windows 持久环境注入 {} 给 Codex 子进程",
+                    key
+                );
+                cmd.env(key, value);
+            }
         }
     }
 
@@ -754,7 +880,9 @@ impl AIEngine for CodexEngine {
         EngineMetadata {
             id: EngineId::Codex,
             name: "OpenAI Codex".into(),
-            description: Some("OpenAI Codex CLI — 基于 Responses API，支持工具调用与会话续接".into()),
+            description: Some(
+                "OpenAI Codex CLI — 基于 Responses API，支持工具调用与会话续接".into(),
+            ),
             distribution: EngineDistribution::PackageRunner {
                 package: "@openai/codex".into(),
                 cmd: "codex".into(),
@@ -989,6 +1117,41 @@ mod tests {
     }
 
     #[test]
+    fn collects_codex_env_keys_from_config() {
+        let raw = r#"
+model_provider = "codex"
+
+[model_providers.codex]
+env_key = "CODEX_API_KEY"
+
+[model_providers.custom]
+env_key = "CUSTOM_123_API_KEY"
+env_key = "bad-name"
+"#;
+
+        let keys = collect_codex_auth_env_keys_from_config(raw);
+
+        assert!(keys.contains("CODEX_API_KEY"));
+        assert!(keys.contains("CUSTOM_123_API_KEY"));
+        assert!(!keys.contains("bad-name"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn parses_reg_query_env_value() {
+        let output = r#"
+HKEY_CURRENT_USER\Environment
+    CODEX_API_KEY    REG_SZ    secret-value
+"#;
+
+        assert_eq!(
+            parse_reg_query_env_value(output, "CODEX_API_KEY"),
+            Some("secret-value".to_string())
+        );
+        assert_eq!(parse_reg_query_env_value(output, "OPENAI_API_KEY"), None);
+    }
+
+    #[test]
     fn decodes_utf8_process_output_line_without_recovery() {
         let (line, decoded_with) = decode_process_output_line(b"{\"type\":\"turn.completed\"}\n");
 
@@ -1093,7 +1256,9 @@ mod tests {
         assert!(first_config_index < model_flag_index);
         assert!(model_flag_index < model_value_index);
         assert!(model_value_index < message_index);
-        assert!(args.contains(&"model_providers.polaris_test.base_url=\"http://127.0.0.1:12345/v1\"".to_string()));
+        assert!(args.contains(
+            &"model_providers.polaris_test.base_url=\"http://127.0.0.1:12345/v1\"".to_string()
+        ));
         assert!(args.contains(&"model_providers.polaris_test.wire_api=\"responses\"".to_string()));
     }
 }
