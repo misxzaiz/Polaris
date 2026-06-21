@@ -16,8 +16,6 @@ pub mod todo_mcp_server;
 pub mod unified_todo_repository;
 pub mod unified_requirement_repository;
 pub mod unified_scheduler_repository;
-pub mod port_manager_service;
-pub mod port_manager_mcp_server;
 pub mod requirements_mcp_server;
 
 #[cfg(windows)]

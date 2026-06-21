@@ -7,7 +7,6 @@ import { schedulerPluginManifest } from '@/plugins/scheduler/manifest'
 import { todoPluginManifest } from '@/plugins/todo/manifest'
 import { personalHubPluginManifest } from '@/plugins/personal-hub/manifest'
 import { gitInsightPluginManifest } from '@/plugins/git-insight/manifest'
-import { portManagerPluginManifest } from '@/plugins/port-manager/manifest'
 
 const corePluginManifest: PolarisPluginManifest = {
   id: 'polaris.core',
@@ -104,7 +103,6 @@ export function registerBuiltinPlugins(): void {
   pluginRegistry.register(computerPluginManifest)
   pluginRegistry.register(personalHubPluginManifest)
   pluginRegistry.register(gitInsightPluginManifest)
-  pluginRegistry.register(portManagerPluginManifest)
 
   // builtin 插件无 installPath，registry 不会自动注册 panel，需手动注册懒加载入口
   pluginPanelRegistry.register('personalHub', 'polaris.personal-hub', () =>
@@ -112,9 +110,6 @@ export function registerBuiltinPlugins(): void {
   )
   pluginPanelRegistry.register('gitInsight', 'polaris.git-insight', () =>
     import('@/components/GitInsight/GitInsightPanel').then((m) => ({ default: m.GitInsightPanel })),
-  )
-  pluginPanelRegistry.register('portManager', 'polaris.port-manager', () =>
-    import('@/components/PortManagerPanel/PortManagerPanel').then((m) => ({ default: m.PortManagerPanel })),
   )
 }
 

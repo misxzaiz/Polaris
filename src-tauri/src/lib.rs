@@ -903,12 +903,6 @@ pub fn run() {
             // 模型 Profile 命令
             test_model_profile_connection,
             fetch_models_for_profile,
-            // 端口管理相关
-            commands::port_manager::port_list,
-            commands::port_manager::port_find,
-            commands::port_manager::port_check,
-            commands::port_manager::port_kill,
-            commands::port_manager::port_summary,
             // 文件下载
             commands::file_explorer::download_file_binary,
             commands::file_explorer::download_directory_to_zip,
