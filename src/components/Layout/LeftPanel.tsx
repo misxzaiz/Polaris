@@ -171,6 +171,17 @@ export function LeftPanelContent({
   problemsContent,
   demoPluginContent,
   aiConsoleContent,
+  toolMenuContent,
+  complexityAnalyzerContent,
+  dependencyGraphContent,
+  deadCodeDetectorContent,
+  testCoverageContent,
+  testGeneratorContent,
+  mutationTestingContent,
+  vulnerabilityScannerContent,
+  dependencyAuditContent,
+  secretScannerContent,
+  bundleAnalyzerContent,
   currentType,
 }: {
   filesContent: ReactNode
@@ -186,6 +197,17 @@ export function LeftPanelContent({
   problemsContent?: ReactNode
   demoPluginContent?: ReactNode
   aiConsoleContent?: ReactNode
+  toolMenuContent?: ReactNode
+  complexityAnalyzerContent?: ReactNode
+  dependencyGraphContent?: ReactNode
+  deadCodeDetectorContent?: ReactNode
+  testCoverageContent?: ReactNode
+  testGeneratorContent?: ReactNode
+  mutationTestingContent?: ReactNode
+  vulnerabilityScannerContent?: ReactNode
+  dependencyAuditContent?: ReactNode
+  secretScannerContent?: ReactNode
+  bundleAnalyzerContent?: ReactNode
   currentType?: LeftPanelType
 }) {
   // Hook 必须在条件之外调用
@@ -218,6 +240,28 @@ export function LeftPanelContent({
     return <>{demoPluginContent}</>
   } else if (type === 'aiConsole') {
     return <>{aiConsoleContent}</>
+  } else if (type === 'toolMenu') {
+    return <>{toolMenuContent}</>
+  } else if (type === 'complexityAnalyzer') {
+    return <>{complexityAnalyzerContent}</>
+  } else if (type === 'dependencyGraph') {
+    return <>{dependencyGraphContent}</>
+  } else if (type === 'deadCodeDetector') {
+    return <>{deadCodeDetectorContent}</>
+  } else if (type === 'testCoverage') {
+    return <>{testCoverageContent}</>
+  } else if (type === 'testGenerator') {
+    return <>{testGeneratorContent}</>
+  } else if (type === 'mutationTesting') {
+    return <>{mutationTestingContent}</>
+  } else if (type === 'vulnerabilityScanner') {
+    return <>{vulnerabilityScannerContent}</>
+  } else if (type === 'dependencyAudit') {
+    return <>{dependencyAuditContent}</>
+  } else if (type === 'secretScanner') {
+    return <>{secretScannerContent}</>
+  } else if (type === 'bundleAnalyzer') {
+    return <>{bundleAnalyzerContent}</>
   } else if (pluginPanelRegistry.has(type)) {
     return <PluginPanelHost panelType={type} />
   }

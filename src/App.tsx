@@ -26,6 +26,17 @@ const SettingsPage = lazy(() => import('./components/Settings/SettingsPage').the
 const DeveloperPanel = lazy(() => import('./components/Developer/DeveloperPanel').then(m => ({ default: m.DeveloperPanel })));
 const IntegrationPanel = lazy(() => import('./components/Integration/IntegrationPanel').then(m => ({ default: m.IntegrationPanel })));
 const ExecutionConsolePanel = lazy(() => import('./components/ExecutionConsole').then(m => ({ default: m.ExecutionConsolePanel })));
+const ToolMenuPanel = lazy(() => import('./components/ToolMenuPanel/ToolMenuPanel').then(m => ({ default: m.ToolMenuPanel })));
+const ComplexityAnalyzerPanel = lazy(() => import('./components/ComplexityAnalyzerPanel/ComplexityAnalyzerPanel').then(m => ({ default: m.ComplexityAnalyzerPanel })));
+const DependencyGraphPanel = lazy(() => import('./components/DependencyGraphPanel/DependencyGraphPanel').then(m => ({ default: m.DependencyGraphPanel })));
+const DeadCodeDetectorPanel = lazy(() => import('./components/DeadCodeDetectorPanel/DeadCodeDetectorPanel').then(m => ({ default: m.DeadCodeDetectorPanel })));
+const TestCoveragePanel = lazy(() => import('./components/TestCoveragePanel/TestCoveragePanel').then(m => ({ default: m.TestCoveragePanel })));
+const TestGeneratorPanel = lazy(() => import('./components/TestGeneratorPanel/TestGeneratorPanel').then(m => ({ default: m.TestGeneratorPanel })));
+const MutationTestingPanel = lazy(() => import('./components/MutationTestingPanel/MutationTestingPanel').then(m => ({ default: m.MutationTestingPanel })));
+const VulnerabilityScannerPanel = lazy(() => import('./components/VulnerabilityScannerPanel/VulnerabilityScannerPanel').then(m => ({ default: m.VulnerabilityScannerPanel })));
+const DependencyAuditPanel = lazy(() => import('./components/DependencyAuditPanel/DependencyAuditPanel').then(m => ({ default: m.DependencyAuditPanel })));
+const SecretScannerPanel = lazy(() => import('./components/SecretScannerPanel/SecretScannerPanel').then(m => ({ default: m.SecretScannerPanel })));
+const BundleAnalyzerPanel = lazy(() => import('./components/BundleAnalyzerPanel/BundleAnalyzerPanel').then(m => ({ default: m.BundleAnalyzerPanel })));
 const CreateWorkspaceModal = lazy(() => import('./components/Workspace/CreateWorkspaceModal').then(m => ({ default: m.CreateWorkspaceModal })));
 const CreateSessionModal = lazy(() => import('./components/Session/CreateSessionModal').then(m => ({ default: m.CreateSessionModal })));
 const FileSearchModal = lazy(() => import('./components/Editor/FileSearchModal').then(m => ({ default: m.FileSearchModal })));
@@ -198,6 +209,17 @@ function App() {
       aiConsoleContent={<Suspense fallback={loadingFallback}><ExecutionConsolePanel /></Suspense>}
       problemsContent={<ProblemsPanel />}
       demoPluginContent={<DemoPluginPanel onSendToChat={sendMessage} />}
+      toolMenuContent={<Suspense fallback={loadingFallback}><ToolMenuPanel pluginId="polaris.tool-menu" onSendToChat={sendMessage} /></Suspense>}
+      complexityAnalyzerContent={<Suspense fallback={loadingFallback}><ComplexityAnalyzerPanel pluginId="polaris.complexity-analyzer" onSendToChat={sendMessage} /></Suspense>}
+      dependencyGraphContent={<Suspense fallback={loadingFallback}><DependencyGraphPanel pluginId="polaris.dependency-graph" onSendToChat={sendMessage} /></Suspense>}
+      deadCodeDetectorContent={<Suspense fallback={loadingFallback}><DeadCodeDetectorPanel pluginId="polaris.dead-code-detector" onSendToChat={sendMessage} /></Suspense>}
+      testCoverageContent={<Suspense fallback={loadingFallback}><TestCoveragePanel pluginId="polaris.test-coverage" onSendToChat={sendMessage} /></Suspense>}
+      testGeneratorContent={<Suspense fallback={loadingFallback}><TestGeneratorPanel pluginId="polaris.test-generator" onSendToChat={sendMessage} /></Suspense>}
+      mutationTestingContent={<Suspense fallback={loadingFallback}><MutationTestingPanel pluginId="polaris.mutation-testing" onSendToChat={sendMessage} /></Suspense>}
+      vulnerabilityScannerContent={<Suspense fallback={loadingFallback}><VulnerabilityScannerPanel pluginId="polaris.vulnerability-scanner" onSendToChat={sendMessage} /></Suspense>}
+      dependencyAuditContent={<Suspense fallback={loadingFallback}><DependencyAuditPanel pluginId="polaris.dependency-audit" onSendToChat={sendMessage} /></Suspense>}
+      secretScannerContent={<Suspense fallback={loadingFallback}><SecretScannerPanel pluginId="polaris.secret-scanner" onSendToChat={sendMessage} /></Suspense>}
+      bundleAnalyzerContent={<Suspense fallback={loadingFallback}><BundleAnalyzerPanel pluginId="polaris.bundle-analyzer" onSendToChat={sendMessage} /></Suspense>}
     />
   );
 

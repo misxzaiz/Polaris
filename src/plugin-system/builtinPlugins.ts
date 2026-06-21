@@ -34,6 +34,11 @@ import { dependencyGraphPluginManifest } from '@/plugins/dependency-graph/manife
 import { deadCodeDetectorPluginManifest } from '@/plugins/dead-code-detector/manifest'
 import { testCoveragePluginManifest } from '@/plugins/test-coverage/manifest'
 import { testGeneratorPluginManifest } from '@/plugins/test-generator/manifest'
+import { mutationTestingPluginManifest } from '@/plugins/mutation-testing/manifest'
+import { vulnerabilityScannerPluginManifest } from '@/plugins/vulnerability-scanner/manifest'
+import { dependencyAuditPluginManifest } from '@/plugins/dependency-audit/manifest'
+import { secretScannerPluginManifest } from '@/plugins/secret-scanner/manifest'
+import { bundleAnalyzerPluginManifest } from '@/plugins/bundle-analyzer/manifest'
 
 const corePluginManifest: PolarisPluginManifest = {
   id: 'polaris.core',
@@ -157,6 +162,11 @@ export function registerBuiltinPlugins(): void {
   pluginRegistry.register(deadCodeDetectorPluginManifest)
   pluginRegistry.register(testCoveragePluginManifest)
   pluginRegistry.register(testGeneratorPluginManifest)
+  pluginRegistry.register(mutationTestingPluginManifest)
+  pluginRegistry.register(vulnerabilityScannerPluginManifest)
+  pluginRegistry.register(dependencyAuditPluginManifest)
+  pluginRegistry.register(secretScannerPluginManifest)
+  pluginRegistry.register(bundleAnalyzerPluginManifest)
 
   // builtin 插件无 installPath，registry 不会自动注册 panel，需手动注册懒加载入口
   pluginPanelRegistry.register('personalHub', 'polaris.personal-hub', () =>
@@ -236,6 +246,21 @@ export function registerBuiltinPlugins(): void {
   )
   pluginPanelRegistry.register('testGenerator', 'polaris.test-generator', () =>
     import('@/components/TestGeneratorPanel/TestGeneratorPanel').then((m) => ({ default: m.TestGeneratorPanel })),
+  )
+  pluginPanelRegistry.register('mutationTesting', 'polaris.mutation-testing', () =>
+    import('@/components/MutationTestingPanel/MutationTestingPanel').then((m) => ({ default: m.MutationTestingPanel })),
+  )
+  pluginPanelRegistry.register('vulnerabilityScanner', 'polaris.vulnerability-scanner', () =>
+    import('@/components/VulnerabilityScannerPanel/VulnerabilityScannerPanel').then((m) => ({ default: m.VulnerabilityScannerPanel })),
+  )
+  pluginPanelRegistry.register('dependencyAudit', 'polaris.dependency-audit', () =>
+    import('@/components/DependencyAuditPanel/DependencyAuditPanel').then((m) => ({ default: m.DependencyAuditPanel })),
+  )
+  pluginPanelRegistry.register('secretScanner', 'polaris.secret-scanner', () =>
+    import('@/components/SecretScannerPanel/SecretScannerPanel').then((m) => ({ default: m.SecretScannerPanel })),
+  )
+  pluginPanelRegistry.register('bundleAnalyzer', 'polaris.bundle-analyzer', () =>
+    import('@/components/BundleAnalyzerPanel/BundleAnalyzerPanel').then((m) => ({ default: m.BundleAnalyzerPanel })),
   )
 }
 
