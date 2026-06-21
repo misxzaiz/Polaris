@@ -208,6 +208,12 @@ export function LeftPanelContent({
   dependencyAuditContent?: ReactNode
   secretScannerContent?: ReactNode
   bundleAnalyzerContent?: ReactNode
+  performanceProfilerContent?: ReactNode
+  memoryLeakDetectorContent?: ReactNode
+  apiDocGeneratorContent?: ReactNode
+  changelogGeneratorContent?: ReactNode
+  readmeGeneratorContent?: ReactNode
+  codeRefactorContent?: ReactNode
   currentType?: LeftPanelType
 }) {
   // Hook 必须在条件之外调用
@@ -262,6 +268,18 @@ export function LeftPanelContent({
     return <>{secretScannerContent}</>
   } else if (type === 'bundleAnalyzer') {
     return <>{bundleAnalyzerContent}</>
+  } else if (type === 'performanceProfiler') {
+    return <>{performanceProfilerContent}</>
+  } else if (type === 'memoryLeakDetector') {
+    return <>{memoryLeakDetectorContent}</>
+  } else if (type === 'apiDocGenerator') {
+    return <>{apiDocGeneratorContent}</>
+  } else if (type === 'changelogGenerator') {
+    return <>{changelogGeneratorContent}</>
+  } else if (type === 'readmeGenerator') {
+    return <>{readmeGeneratorContent}</>
+  } else if (type === 'codeRefactor') {
+    return <>{codeRefactorContent}</>
   } else if (pluginPanelRegistry.has(type)) {
     return <PluginPanelHost panelType={type} />
   }
