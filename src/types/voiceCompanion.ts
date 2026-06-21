@@ -90,8 +90,9 @@ export const COMPANION_IDENTITY = {
  * @returns 伙伴名称，无唤醒词则返回默认值「小陈」
  */
 export function getCompanionName(wakeWordWords?: string[]): string {
-  if (wakeWordWords?.length > 0 && wakeWordWords[0]) {
-    return wakeWordWords[0];
+  const primaryWakeWord = wakeWordWords?.[0];
+  if (primaryWakeWord) {
+    return primaryWakeWord;
   }
   return COMPANION_IDENTITY.defaultName;
 }

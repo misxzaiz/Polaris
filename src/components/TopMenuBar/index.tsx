@@ -12,7 +12,7 @@
 
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Minus, Square, X, PanelRight, Pin, PanelLeftClose, PanelLeft, Settings } from 'lucide-react';
+import { Minus, Square, X, PanelRight, Pin, PanelLeftClose, PanelLeft, Settings, Grid2X2 } from 'lucide-react';
 import { invoke } from '@/services/transport';
 import { useViewStore } from '@/stores';
 import * as tauri from '@/services/tauri';
@@ -20,6 +20,8 @@ import { isTauri } from '@/utils/platform';
 import { WorkspaceQuickSwitch } from '../Workspace';
 import { NotificationBell } from '../Notification';
 import { createLogger } from '@/utils/logger';
+import { ToolSwitcher } from '../Layout/ToolSwitcher';
+import { useToolSwitcherItems } from '../Layout/toolSwitcherData';
 
 const log = createLogger('TopMenuBar');
 
@@ -35,6 +37,13 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
   const { activityBarCollapsed, toggleActivityBar } = useViewStore();
   const [isMaximized, setIsMaximized] = useState(false);
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
+  const [isToolSwitcherOpen, setIsToolSwitcherOpen] = useState(false);
+  const showTopToolSwitcher = activityBarCollapsed || isCompactMode;
+  const { toolSwitcherItems, activePanelLabel, closeLeftPanel } = useToolSwitcherItems({
+    onOpenSettings,
+    onToggleRightPanel,
+    rightPanelCollapsed,
+  });
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -106,6 +115,35 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
             <WorkspaceQuickSwitch />
           </>
         )}
+
+        {showTopToolSwitcher && (
+          <button
+            onClick={() => setIsToolSwitcherOpen((open) => !open)}
+            className={`ml-2 flex h-7 items-center gap-1.5 rounded-md px-2 text-sm transition-colors ${
+              isToolSwitcherOpen
+                ? 'bg-primary/10 text-primary'
+                : 'text-text-secondary hover:bg-background-hover hover:text-text-primary'
+            }`}
+            title={t('labels.toolSwitcher', { defaultValue: '工具切换器' })}
+            aria-label={t('labels.toolSwitcher', { defaultValue: '工具切换器' })}
+            aria-pressed={isToolSwitcherOpen}
+            data-tauri-drag-region={false}
+          >
+            <Grid2X2 className="h-4 w-4" />
+            {!isCompactMode && (
+              <span>{t('labels.moreTools', { defaultValue: '工具' })}</span>
+            )}
+          </button>
+        )}
+
+        <ToolSwitcher
+          isOpen={Boolean(showTopToolSwitcher && isToolSwitcherOpen)}
+          items={toolSwitcherItems}
+          placement="top"
+          activePanelLabel={activePanelLabel}
+          onCloseActivePanel={closeLeftPanel}
+          onClose={() => setIsToolSwitcherOpen(false)}
+        />
       </div>
 
       {/* 中间:可拖拽区域 (自动填充剩余空间) */}

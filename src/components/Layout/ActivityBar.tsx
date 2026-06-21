@@ -1,19 +1,21 @@
 /**
  * ActivityBar - 左侧 Activity Bar 组件
  *
- * 支持折叠隐藏，悬停悬浮球展开扇形菜单
- * 扇形菜单从悬浮球位置向右展开，包含所有侧边栏功能
+ * 支持折叠隐藏，折叠态通过工具切换器访问所有侧边栏功能。
+ * 展开态保留高频入口，其他工具收纳到分组工具切换器。
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react'
-import { Settings, PanelRight } from 'lucide-react'
+import { useState } from 'react'
+import { Settings, PanelRight, Grid2X2 } from 'lucide-react'
 import { useViewStore } from '@/stores/viewStore'
-import { useDiagnosticsStore } from '@/stores/diagnosticsStore'
 import { ActivityBarIcon } from './ActivityBarIcon'
-import { RadialMenu, RadialMenuTrigger } from './RadialMenu'
+import {
+  PINNED_LEFT_PANEL_TYPES,
+  ToolSwitcher,
+} from './ToolSwitcher'
+import { ProblemsCountBadge, useToolSwitcherItems } from './toolSwitcherData'
 import { useTranslation } from 'react-i18next'
-import { pluginIconMap, pluginRegistry } from '@/plugin-system'
-import { isPluginUiEnabled, usePluginStore } from '@/stores/pluginStore'
+import { pluginIconMap } from '@/plugin-system'
 
 interface ActivityBarProps {
   className?: string
@@ -23,27 +25,8 @@ interface ActivityBarProps {
   onToggleRightPanel?: () => void
   /** 右侧面板是否折叠 */
   rightPanelCollapsed?: boolean
-  /** 强制折叠模式（如小屏模式），忽略 activityBarCollapsed 状态，始终显示半球触发器 */
+  /** 强制折叠模式（如小屏模式），忽略 activityBarCollapsed 状态，入口交给顶部栏 */
   forceCollapsed?: boolean
-}
-
-/** Problems 按钮右下角的错误计数徽章 */
-function ProblemsBadge() {
-  // 订阅 version 以在诊断变化时重渲染
-  useDiagnosticsStore((s) => s.version)
-  // Use getState() to avoid creating new object in selector (causes infinite re-render)
-  const { errors, warnings } = useDiagnosticsStore.getState().summary
-  const total = errors + warnings
-  if (total === 0) return null
-  return (
-    <span
-      className={`absolute -right-0.5 -bottom-0.5 min-w-[14px] h-[14px] px-1 rounded-full text-[9px] font-bold flex items-center justify-center text-white ${
-        errors > 0 ? 'bg-red-500' : 'bg-yellow-500'
-      }`}
-    >
-      {total > 99 ? '99+' : total}
-    </span>
-  )
 }
 
 export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rightPanelCollapsed, forceCollapsed }: ActivityBarProps) {
@@ -52,80 +35,23 @@ export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rig
   const toggleLeftPanel = useViewStore((state) => state.toggleLeftPanel)
   const activityBarCollapsed = useViewStore((state) => state.activityBarCollapsed)
   const toggleActivityBar = useViewStore((state) => state.toggleActivityBar)
-  const pluginStates = usePluginStore((state) => state.pluginStates)
 
-  // 扇形菜单状态 - 支持悬停和点击
-  const [isRadialMenuOpen, setIsRadialMenuOpen] = useState(false)
-  const hideTimerRef = useRef<NodeJS.Timeout | null>(null)
-  // 按下瞬间（pointerdown）的菜单开关状态：触屏 tap 会先合成 mouseenter（hover 打开菜单）
-  // 再触发 click，若 click 直接 toggle 会把刚打开的菜单立即关闭，导致触屏无法打开菜单
-  const pressOpenRef = useRef(false)
+  const [isToolSwitcherOpen, setIsToolSwitcherOpen] = useState(false)
 
-  // 清理定时器
-  useEffect(() => {
-    return () => {
-      if (hideTimerRef.current) {
-        clearTimeout(hideTimerRef.current)
-      }
-    }
-  }, [])
+  const { panelButtons, toolSwitcherItems, activePanelLabel, closeLeftPanel } = useToolSwitcherItems({
+    onOpenSettings,
+    onToggleRightPanel,
+    rightPanelCollapsed,
+  })
 
-  // 悬停处理
-  const handleTriggerHover = useCallback((isHovering: boolean) => {
-    if (isHovering) {
-      // 鼠标进入触发器，取消隐藏定时器并显示菜单
-      if (hideTimerRef.current) {
-        clearTimeout(hideTimerRef.current)
-        hideTimerRef.current = null
-      }
-      setIsRadialMenuOpen(true)
-    }
-    // 鼠标离开触发器时不立即隐藏，等待菜单区域的处理
-  }, [])
+  const pinnedPanelButtons = panelButtons.filter((btn) => PINNED_LEFT_PANEL_TYPES.has(btn.panelType))
+  const hasActiveOverflowPanel = panelButtons.some(
+    (btn) => !PINNED_LEFT_PANEL_TYPES.has(btn.panelType) && btn.panelType === leftPanelType
+  )
 
-  // 菜单区域悬停处理
-  const handleMenuHover = useCallback((isHovering: boolean) => {
-    if (isHovering) {
-      // 鼠标进入菜单，取消隐藏定时器
-      if (hideTimerRef.current) {
-        clearTimeout(hideTimerRef.current)
-        hideTimerRef.current = null
-      }
-    } else {
-      // 鼠标离开菜单，延迟隐藏
-      hideTimerRef.current = setTimeout(() => {
-        setIsRadialMenuOpen(false)
-      }, 200)
-    }
-  }, [])
-
-  const panelButtons = pluginRegistry
-    .listViewContributions('activityBar')
-    .filter((view) => isPluginUiEnabled(pluginStates, view.pluginId))
-
-  // 折叠状态下的渲染（或强制折叠模式）：显示贴边半圆悬浮球 + 扇形菜单
+  // 折叠状态下入口迁移到顶部栏，左侧完全让位。
   if (activityBarCollapsed || forceCollapsed) {
-    return (
-      <>
-        {/* 贴边半圆悬浮触发器 */}
-        <RadialMenuTrigger
-          onHover={handleTriggerHover}
-          onPressStart={() => { pressOpenRef.current = isRadialMenuOpen }}
-          onClick={() => setIsRadialMenuOpen(!pressOpenRef.current)}
-          isOpen={isRadialMenuOpen}
-        />
-
-        {/* 扇形菜单 */}
-        <RadialMenu
-          isOpen={isRadialMenuOpen}
-          onClose={() => setIsRadialMenuOpen(false)}
-          onOpenSettings={onOpenSettings}
-          onToggleRightPanel={onToggleRightPanel}
-          rightPanelCollapsed={rightPanelCollapsed}
-          onHover={handleMenuHover}
-        />
-      </>
-    )
+    return null
   }
 
   // 展开状态：显示传统的垂直图标栏
@@ -142,7 +68,7 @@ export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rig
         <PanelRight className="w-5 h-5" />
       </button>
 
-      {panelButtons.map((btn) => {
+      {pinnedPanelButtons.map((btn) => {
         const Icon = pluginIconMap[btn.icon]
         return (
           <ActivityBarIcon
@@ -152,10 +78,25 @@ export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rig
             active={leftPanelType === btn.panelType}
             onClick={() => toggleLeftPanel(btn.panelType)}
           >
-            {btn.badge === 'problems' && <ProblemsBadge />}
+            {btn.badge === 'problems' && <ProblemsCountBadge />}
           </ActivityBarIcon>
         )
       })}
+
+      <ActivityBarIcon
+        icon={Grid2X2}
+        label={t('labels.moreTools', { defaultValue: '更多工具' })}
+        active={isToolSwitcherOpen || hasActiveOverflowPanel}
+        onClick={() => setIsToolSwitcherOpen((open) => !open)}
+      />
+
+      <ToolSwitcher
+        isOpen={isToolSwitcherOpen}
+        items={toolSwitcherItems}
+        activePanelLabel={activePanelLabel}
+        onCloseActivePanel={closeLeftPanel}
+        onClose={() => setIsToolSwitcherOpen(false)}
+      />
 
       <div className="flex-1" />
 
