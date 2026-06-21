@@ -2,12 +2,11 @@
  * JSON 树查看器
  *
  * 节点级折叠 + 点击叶子复制 JSONPath + 高亮 key/value。
- * 默认全部折叠（仅根容器可展开），提供「展开全部 / 折叠全部」控制。
- * 自研递归组件，不引入新依赖。
+ * 自研递归组件，不引入新依赖。大数组用展开/折叠控制，不做虚拟化（树天然懒展开）。
  */
 
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ChevronRight, Copy, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { ChevronDown, ChevronRight, Copy } from 'lucide-react'
 
 type NodeKind = 'object' | 'array' | 'string' | 'number' | 'boolean' | 'null'
 
@@ -17,13 +16,6 @@ interface JsonNode {
   path: string
   kind: NodeKind
 }
-
-/** 全局展开/折叠信号：变化时所有 Row 重置 open 状态 */
-interface ExpandSignal {
-  version: number
-  open: boolean
-}
-const ExpandContext = createContext<ExpandSignal>({ version: 0, open: false })
 
 function kindOf(v: unknown): NodeKind {
   if (v === null) return 'null'
@@ -78,16 +70,9 @@ const TYPE_BADGE = {
 } as const
 
 function Row({ node, depth }: { node: JsonNode; depth: number }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(depth < 1)
   const [copied, setCopied] = useState(false)
-  const signal = useContext(ExpandContext)
   const isContainer = node.kind === 'object' || node.kind === 'array'
-
-  // 全局展开/折叠信号变化时重置本节点 open
-  useEffect(() => {
-    setOpen(signal.open)
-  }, [signal.version]) // eslint-disable-line react-hooks/exhaustive-deps
-
   const kids = useMemo(
     () => (isContainer ? childrenOf(node.value, node.path) : []),
     [isContainer, node.value, node.path],
@@ -166,42 +151,15 @@ interface JsonTreeViewProps {
 }
 
 export function JsonTreeView({ data }: JsonTreeViewProps) {
-  const [signal, setSignal] = useState<ExpandSignal>({ version: 0, open: false })
-
   const root: JsonNode = {
     key: '$',
     value: data,
     path: '$',
     kind: kindOf(data),
   }
-
-  const expandAll = () => setSignal((s) => ({ version: s.version + 1, open: true }))
-  const collapseAll = () => setSignal((s) => ({ version: s.version + 1, open: false }))
-
   return (
-    <div className="flex flex-col h-full">
-      {/* 工具栏 */}
-      <div className="flex items-center gap-1 px-2 py-1 border-b border-border shrink-0">
-        <button
-          onClick={expandAll}
-          className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded hover:bg-background-elevated text-text-secondary hover:text-text-primary"
-          title="展开全部"
-        >
-          <ChevronsUpDown className="w-3 h-3" /> 展开全部
-        </button>
-        <button
-          onClick={collapseAll}
-          className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded hover:bg-background-elevated text-text-secondary hover:text-text-primary"
-          title="折叠全部"
-        >
-          <ChevronsDownUp className="w-3 h-3" /> 折叠全部
-        </button>
-      </div>
-      <div className="flex-1 min-h-0 overflow-auto p-2 text-[11px] font-mono">
-        <ExpandContext.Provider value={signal}>
-          <Row node={root} depth={0} />
-        </ExpandContext.Provider>
-      </div>
+    <div className="p-2 overflow-auto h-full text-[11px] font-mono">
+      <Row node={root} depth={0} />
     </div>
   )
 }

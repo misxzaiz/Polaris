@@ -15,10 +15,52 @@ import { memo, useState, useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import DOMPurify from 'dompurify';
 import { Copy, Check, List, ListX, ChevronDown, ChevronUp } from 'lucide-react';
-import { scheduleHighlight } from '@/utils/highlight';
+import hljs from 'highlight.js';
+import { LRUCache } from '@/utils/lru-cache';
+
+// 导入常用语言
+import javascript from 'highlight.js/lib/languages/javascript';
+import typescript from 'highlight.js/lib/languages/typescript';
+import python from 'highlight.js/lib/languages/python';
+import rust from 'highlight.js/lib/languages/rust';
+import go from 'highlight.js/lib/languages/go';
+import java from 'highlight.js/lib/languages/java';
+import cpp from 'highlight.js/lib/languages/cpp';
+import sql from 'highlight.js/lib/languages/sql';
+import html from 'highlight.js/lib/languages/xml';
+import css from 'highlight.js/lib/languages/css';
+import json from 'highlight.js/lib/languages/json';
+import bash from 'highlight.js/lib/languages/bash';
+import markdown from 'highlight.js/lib/languages/markdown';
+
+// 注册语言
+hljs.registerLanguage('javascript', javascript);
+hljs.registerLanguage('typescript', typescript);
+hljs.registerLanguage('python', python);
+hljs.registerLanguage('rust', rust);
+hljs.registerLanguage('go', go);
+hljs.registerLanguage('java', java);
+hljs.registerLanguage('cpp', cpp);
+hljs.registerLanguage('sql', sql);
+hljs.registerLanguage('html', html);
+hljs.registerLanguage('css', css);
+hljs.registerLanguage('json', json);
+hljs.registerLanguage('bash', bash);
+hljs.registerLanguage('markdown', markdown);
+hljs.registerLanguage('shell', bash);
+
+// 高亮结果缓存（LRU，上限 50 条）
+const highlightCache = new LRUCache<string, string>({ maxSize: 50 });
 
 /** 代码行数阈值：超过此行数默认折叠 */
 const FOLD_THRESHOLD = 15;
+
+/**
+ * 生成缓存键
+ */
+function getCacheKey(code: string, language: string): string {
+  return `${language}:${code.length}:${code.slice(0, 50)}`;
+}
 
 interface CodeBlockProps {
   /** 代码内容 */
@@ -74,6 +116,58 @@ function getDisplayName(language: string): string {
   };
 
   return displayNames[language] || language.toUpperCase();
+}
+
+/**
+ * 异步执行高亮（使用 requestIdleCallback 或 setTimeout）
+ */
+function scheduleHighlight(
+  code: string,
+  language: string,
+  callback: (result: string) => void
+): () => void {
+  // 检查缓存
+  const cacheKey = getCacheKey(code, language);
+  const cached = highlightCache.get(cacheKey);
+  if (cached !== undefined) {
+    callback(cached);
+    return () => {};
+  }
+
+  let cancelled = false;
+
+  const doHighlight = () => {
+    if (cancelled) return;
+
+    try {
+      const result = hljs.highlight(code, { language }).value;
+      highlightCache.set(cacheKey, result);
+      if (!cancelled) callback(result);
+    } catch {
+      try {
+        const result = hljs.highlightAuto(code).value;
+        highlightCache.set(cacheKey, result);
+        if (!cancelled) callback(result);
+      } catch {
+        if (!cancelled) callback(code);
+      }
+    }
+  };
+
+  // 使用 requestIdleCallback 或 setTimeout 延迟执行
+  if ('requestIdleCallback' in window) {
+    const id = window.requestIdleCallback(doHighlight, { timeout: 100 });
+    return () => {
+      cancelled = true;
+      window.cancelIdleCallback(id);
+    };
+  } else {
+    const id = setTimeout(doHighlight, 16);
+    return () => {
+      cancelled = true;
+      clearTimeout(id);
+    };
+  }
 }
 
 /**

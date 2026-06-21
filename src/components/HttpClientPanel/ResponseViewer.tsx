@@ -5,18 +5,15 @@
  * 响应头可折叠展示，状态码彩色，耗时/大小/最终URL 元信息。
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Copy, Check, ChevronDown, ChevronRight, AlertCircle } from 'lucide-react'
-import { scheduleHighlight, HIGHLIGHT_MAX_BYTES } from '@/utils/highlight'
+import { CodeBlock } from '@/components/Chat/CodeBlock'
 import type { HttpResponseInfo } from './httpClientTypes'
 import { JsonTreeView } from './JsonTreeView'
 import { ResponseTableView } from './ResponseTableView'
 import { ResponsePreview } from './ResponsePreview'
 
 type ViewMode = 'pretty' | 'tree' | 'table' | 'preview' | 'raw'
-
-/** 超过此字节数的响应体不做 JSON.parse 美化，直接展示原文，避免主线程卡死 */
-const PRETTY_MAX_BYTES = 2 * 1024 * 1024 // 2 MB
 
 function statusColor(status: number): string {
   if (status === 0) return 'text-gray-400'
@@ -41,36 +38,15 @@ export function ResponseViewer({ response, error }: { response: HttpResponseInfo
   const [view, setView] = useState<ViewMode>('pretty')
   const [headersOpen, setHeadersOpen] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [highlightedHtml, setHighlightedHtml] = useState<string>('')
 
-  // 解析 JSON：超阈值不解析，避免大响应同步 JSON.parse 卡死主线程。
-  // 此时 tree/table 视图不可用（按钮已按 isJson 隐藏），pretty/raw 走原文。
-  const parsed = useMemo(() => {
-    if (!response) return { ok: false } as const
-    if (response.body.length > PRETTY_MAX_BYTES) return { ok: false } as const
-    return tryParseJson(response.body)
-  }, [response])
+  const parsed = useMemo(() => (response ? tryParseJson(response.body) : { ok: false } as const), [response])
   const contentType = useMemo(() => (response ? contentTypeOf(response.headers) : ''), [response])
 
-  // 美化：仅当 JSON 且未超阈值时格式化，否则直接用原文（避免大响应重复序列化卡死）
   const prettyBody = useMemo(() => {
     if (!response) return ''
-    if (parsed.ok && response.body.length <= PRETTY_MAX_BYTES) {
-      return JSON.stringify(parsed.data, null, 2)
-    }
+    if (parsed.ok) return JSON.stringify(parsed.data, null, 2)
     return response.body
   }, [response, parsed])
-
-  // 异步高亮：用 requestIdleCallback 调度，超阈值不高亮，命中缓存秒回。
-  // 高亮完成前先显示纯文本，绝不阻塞渲染。
-  useEffect(() => {
-    // 响应变化时先清空旧高亮，避免短暂闪烁上一条响应的高亮
-    setHighlightedHtml('')
-    if (!prettyBody || !parsed.ok) return
-    // 超过高亮阈值：不高亮，直接用纯文本
-    if (prettyBody.length > HIGHLIGHT_MAX_BYTES) return
-    return scheduleHighlight(prettyBody, 'json', (html) => setHighlightedHtml(html))
-  }, [prettyBody, parsed])
 
   if (error) {
     return (
@@ -90,6 +66,7 @@ export function ResponseViewer({ response, error }: { response: HttpResponseInfo
   }
 
   const isJson = parsed.ok
+  const isArray = isJson && Array.isArray(parsed.data)
   const isPreviewable =
     contentType.toLowerCase().startsWith('image/') ||
     contentType.toLowerCase().includes('text/html') ||
@@ -159,7 +136,7 @@ export function ResponseViewer({ response, error }: { response: HttpResponseInfo
         {(['pretty', 'tree', 'table', 'preview', 'raw'] as ViewMode[]).map((m) => {
           const disabled =
             (m === 'tree' && !isJson) ||
-            (m === 'table' && !isJson) ||
+            (m === 'table' && (!isJson || (!isArray && !parsed.ok))) ||
             (m === 'preview' && !isPreviewable)
           if (disabled) return null
           return (
@@ -187,13 +164,9 @@ export function ResponseViewer({ response, error }: { response: HttpResponseInfo
       {/* 响应体 */}
       <div className="flex-1 min-h-0 overflow-hidden">
         {effectiveView === 'pretty' && (
-          <pre className="h-full overflow-auto p-2 m-0 text-[11px] font-mono whitespace-pre text-text-primary bg-background-base/40">
-            {highlightedHtml ? (
-              <code className="hljs" dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
-            ) : (
-              <code>{prettyBody || '(空响应体)'}</code>
-            )}
-          </pre>
+          <div className="h-full overflow-auto">
+            <CodeBlock className="language-json">{prettyBody || '(空响应体)'}</CodeBlock>
+          </div>
         )}
         {effectiveView === 'tree' && isJson && <JsonTreeView data={parsed.data} />}
         {effectiveView === 'table' && isJson && <ResponseTableView data={parsed.data} />}
