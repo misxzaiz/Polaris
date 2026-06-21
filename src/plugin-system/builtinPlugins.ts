@@ -45,8 +45,6 @@ import { apiDocGeneratorPluginManifest } from '@/plugins/api-doc-generator/manif
 import { changelogGeneratorPluginManifest } from '@/plugins/changelog-generator/manifest'
 import { readmeGeneratorPluginManifest } from '@/plugins/readme-generator/manifest'
 import { codeRefactorPluginManifest } from '@/plugins/code-refactor/manifest'
-import { legacyCodeRefactorPluginManifest } from '@/plugins/legacy-code-refactor/manifest'
-import { performanceBottleneckPluginManifest } from '@/plugins/performance-bottleneck/manifest'
 
 const corePluginManifest: PolarisPluginManifest = {
   id: 'polaris.core',
@@ -181,8 +179,6 @@ export function registerBuiltinPlugins(): void {
   pluginRegistry.register(changelogGeneratorPluginManifest)
   pluginRegistry.register(readmeGeneratorPluginManifest)
   pluginRegistry.register(codeRefactorPluginManifest)
-  pluginRegistry.register(legacyCodeRefactorPluginManifest)
-  pluginRegistry.register(performanceBottleneckPluginManifest)
 
   // builtin 插件无 installPath，registry 不会自动注册 panel，需手动注册懒加载入口
   pluginPanelRegistry.register('personalHub', 'polaris.personal-hub', () =>
@@ -295,12 +291,6 @@ export function registerBuiltinPlugins(): void {
   )
   pluginPanelRegistry.register('codeRefactor', 'polaris.code-refactor', () =>
     import('@/components/CodeRefactorPanel/CodeRefactorPanel').then((m) => ({ default: m.CodeRefactorPanel })),
-  )
-  pluginPanelRegistry.register('legacyCodeRefactor', 'polaris.legacy-code-refactor', () =>
-    import('@/components/LegacyCodeRefactorPanel/LegacyCodeRefactorPanel').then((m) => ({ default: m.LegacyCodeRefactorPanel })),
-  )
-  pluginPanelRegistry.register('performanceBottleneck', 'polaris.performance-bottleneck', () =>
-    import('@/components/PerformanceBottleneckPanel/PerformanceBottleneckPanel').then((m) => ({ default: m.PerformanceBottleneckPanel })),
   )
 }
 
