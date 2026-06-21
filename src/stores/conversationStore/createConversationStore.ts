@@ -437,6 +437,31 @@ export function createConversationStore(
         }
       },
 
+      appendArtifactPreviewBlock: (artifact) => {
+        if (_textBuffer) get()._flushTextBuffer()
+
+        const { currentMessage, streamingUpdateCounter } = get()
+        if (!currentMessage) {
+          set({
+            currentMessage: createCurrentAssistantMessage([artifact]),
+            streamingUpdateCounter: streamingUpdateCounter + 1,
+          })
+          return
+        }
+
+        const alreadyExists = currentMessage.blocks.some(
+          (block) => block.type === 'artifact_preview' && block.previewId === artifact.previewId
+        )
+        if (alreadyExists) return
+
+        set({
+          currentMessage: {
+            ...currentMessage,
+            blocks: [...currentMessage.blocks, artifact],
+          },
+          streamingUpdateCounter: streamingUpdateCounter + 1,
+        })
+      },
 
       updateCurrentAssistantMessage: (blocks) => {
         const { currentMessage } = get()

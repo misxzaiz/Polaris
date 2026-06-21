@@ -65,7 +65,7 @@ export interface PermissionRequest {
  */
 
 /** 内容块类型 - 用于 Assistant 消息的内容分段 */
-export type ContentBlock = TextBlock | ThinkingBlock | ToolCallBlock | QuestionBlock | PlanModeBlock | AgentRunBlock | ToolGroupBlock | PermissionRequestBlock;
+export type ContentBlock = TextBlock | ThinkingBlock | ToolCallBlock | ArtifactPreviewBlock | QuestionBlock | PlanModeBlock | AgentRunBlock | ToolGroupBlock | PermissionRequestBlock;
 
 /** 文本内容块 */
 export interface TextBlock {
@@ -105,6 +105,21 @@ export interface ToolCallBlock {
     /** AI 修改前的完整文件内容（用于精确撤销） */
     fullOldContent?: string;
   };
+}
+
+/** Artifact 预览内容块 - 用于 MCP 生成的 HTML/原型预览 */
+export interface ArtifactPreviewBlock {
+  type: 'artifact_preview';
+  /** 预览 ID（由 MCP server 返回） */
+  previewId: string;
+  /** 展示标题 */
+  title: string;
+  /** 内容类型，Phase 1 仅支持 HTML */
+  contentType: 'html';
+  /** 自包含 HTML 源码；用于 Web/Tauri 统一 iframe srcDoc 渲染 */
+  html: string;
+  /** 后端保存的源文件路径（可选，仅作引用展示） */
+  sourcePath?: string;
 }
 
 /** 问题选项 */
@@ -518,6 +533,11 @@ export function isThinkingBlock(block: ContentBlock): block is ThinkingBlock {
 /** 类型守卫：判断是否为工具调用块 */
 export function isToolCallBlock(block: ContentBlock): block is ToolCallBlock {
   return block.type === 'tool_call';
+}
+
+/** 类型守卫：判断是否为 Artifact 预览块 */
+export function isArtifactPreviewBlock(block: ContentBlock): block is ArtifactPreviewBlock {
+  return block.type === 'artifact_preview';
 }
 
 /** 类型守卫：判断是否为问题块 */

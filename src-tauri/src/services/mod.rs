@@ -9,6 +9,7 @@ pub mod plugin_service;
 pub mod plugin_state_service;
 pub mod prompt_store;
 pub mod prompt_snippet_service;
+pub mod prd_preview_mcp_server;
 pub mod scheduler;
 pub mod scheduler_daemon;
 pub mod scheduler_mcp_server;

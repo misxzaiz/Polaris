@@ -8,6 +8,7 @@ import { generateUUID } from '@/utils/uuid'
 import { createLogger } from '@/utils/logger'
 import type { AIEvent } from '@/ai-runtime'
 import { isEditTool, extractEditDiff } from '@/utils/diffExtractor'
+import type { ArtifactPreviewBlock } from '@/types'
 import type { ConversationStore } from './types'
 import { voiceNotificationService } from '@/services/voiceNotificationService'
 import { useSessionStore } from '../index'
@@ -17,6 +18,54 @@ import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { dialogStorageService } from '@/services/dialogStorage'
 
 const log = createLogger('EventHandler')
+
+function parseArtifactPreview(result: unknown): ArtifactPreviewBlock | null {
+  const raw = typeof result === 'string'
+    ? result
+    : result && typeof result === 'object'
+      ? JSON.stringify(result)
+      : ''
+  if (!raw.includes('"artifactType"') && !raw.includes('"artifact_type"')) return null
+
+  const candidates: string[] = []
+  const fenced = raw.match(/```json\s*([\s\S]*?)```/i)
+  if (fenced?.[1]) candidates.push(fenced[1].trim())
+  candidates.push(raw.trim())
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate) as Record<string, unknown>
+      const artifactType = parsed.artifactType ?? parsed.artifact_type
+      const contentType = parsed.contentType ?? parsed.content_type
+      const previewId = parsed.previewId ?? parsed.preview_id
+      if (
+        artifactType !== 'polaris.preview' ||
+        contentType !== 'html' ||
+        typeof previewId !== 'string' ||
+        typeof parsed.html !== 'string'
+      ) {
+        continue
+      }
+
+      return {
+        type: 'artifact_preview',
+        previewId,
+        title: typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title : 'PRD Prototype',
+        contentType: 'html',
+        html: parsed.html,
+        sourcePath: typeof parsed.sourcePath === 'string'
+          ? parsed.sourcePath
+          : typeof parsed.source_path === 'string'
+            ? parsed.source_path
+            : undefined,
+      }
+    } catch {
+      continue
+    }
+  }
+
+  return null
+}
 
 /**
  * 处理单个会话的 AI 事件
@@ -100,6 +149,11 @@ export function handleAIEvent(
         event.success ? 'completed' : 'failed',
         output,
       )
+
+      const artifact = event.success ? parseArtifactPreview(event.result) : null
+      if (artifact) {
+        state.appendArtifactPreviewBlock(artifact)
+      }
 
       // Edit 工具：提取 diff 数据写入 block
       const { currentMessage, toolBlockMap } = get()

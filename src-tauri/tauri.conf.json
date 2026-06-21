@@ -35,6 +35,7 @@
       "target/release/polaris-todo-mcp",
       "target/release/polaris-requirements-mcp",
       "target/release/polaris-scheduler-mcp",
+      "target/release/polaris-prd-preview-mcp",
       "target/release/polaris-computer-mcp"
     ],
     "icon": [

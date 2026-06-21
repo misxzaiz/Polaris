@@ -169,6 +169,7 @@ export interface ConversationActions {
   appendToolCallBlock: (toolId: string, toolName: string, input: Record<string, unknown>) => void
   updateToolCallBlock: (toolId: string, status: ToolStatus, output?: string, error?: string) => void
   updateToolCallBlockDiff: (toolId: string, diffData: { oldContent: string; newContent: string; filePath: string }) => void
+  appendArtifactPreviewBlock: (artifact: import('../../types/chat').ArtifactPreviewBlock) => void
   updateCurrentAssistantMessage: (blocks: ContentBlock[]) => void
 
   // ===== 问题块 =====

@@ -14,11 +14,14 @@ const REQUIREMENTS_MCP_SERVER_NAME: &str = "polaris-requirements";
 const REQUIREMENTS_MCP_BIN_NAME: &str = "polaris-requirements-mcp";
 const SCHEDULER_MCP_SERVER_NAME: &str = "polaris-scheduler";
 const SCHEDULER_MCP_BIN_NAME: &str = "polaris-scheduler-mcp";
+const PRD_PREVIEW_MCP_SERVER_NAME: &str = "polaris-prd-preview";
+const PRD_PREVIEW_MCP_BIN_NAME: &str = "polaris-prd-preview-mcp";
 const COMPUTER_MCP_SERVER_NAME: &str = "polaris-computer";
 const COMPUTER_MCP_BIN_NAME: &str = "polaris-computer-mcp";
 const TODO_PLUGIN_ID: &str = "polaris.todo";
 const REQUIREMENTS_PLUGIN_ID: &str = "polaris.requirements";
 const SCHEDULER_PLUGIN_ID: &str = "polaris.scheduler";
+const PRD_PREVIEW_PLUGIN_ID: &str = "polaris.prd-preview";
 const COMPUTER_PLUGIN_ID: &str = "polaris.computer";
 
 /// Platform-aware executable suffix: ".exe" on Windows, "" on Linux/macOS.
@@ -153,6 +156,10 @@ pub fn builtin_plugin_mcp_manifests() -> &'static [BuiltinPluginMcpManifest] {
             mcp_server_names: &[SCHEDULER_MCP_SERVER_NAME],
         },
         BuiltinPluginMcpManifest {
+            plugin_id: PRD_PREVIEW_PLUGIN_ID,
+            mcp_server_names: &[PRD_PREVIEW_MCP_SERVER_NAME],
+        },
+        BuiltinPluginMcpManifest {
             plugin_id: COMPUTER_PLUGIN_ID,
             mcp_server_names: &[COMPUTER_MCP_SERVER_NAME],
         },
@@ -209,6 +216,19 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
             "polaris-computer-mcp",
             "src-tauri/target/debug/polaris-computer-mcp",
             "POLARIS_COMPUTER_MCP_PATH",
+            McpServerArgsMode::ConfigDirAndWorkspace,
+            false,
+        ),
+    );
+    registry.register_plugin_server(
+        PRD_PREVIEW_PLUGIN_ID,
+        PluginMcpServerContribution::builtin(
+            PRD_PREVIEW_MCP_SERVER_NAME,
+            PRD_PREVIEW_MCP_BIN_NAME,
+            "bin/polaris-prd-preview-mcp",
+            "polaris-prd-preview-mcp",
+            "src-tauri/target/debug/polaris-prd-preview-mcp",
+            "POLARIS_PRD_PREVIEW_MCP_PATH",
             McpServerArgsMode::ConfigDirAndWorkspace,
             false,
         ),

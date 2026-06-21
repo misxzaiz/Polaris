@@ -6,6 +6,7 @@ import { requirementPluginManifest } from '@/plugins/requirement/manifest'
 import { schedulerPluginManifest } from '@/plugins/scheduler/manifest'
 import { todoPluginManifest } from '@/plugins/todo/manifest'
 import { personalHubPluginManifest } from '@/plugins/personal-hub/manifest'
+import { prdPreviewPluginManifest } from '@/plugins/prd-preview/manifest'
 
 const corePluginManifest: PolarisPluginManifest = {
   id: 'polaris.core',
@@ -99,6 +100,7 @@ export function registerBuiltinPlugins(): void {
   pluginRegistry.register(schedulerPluginManifest)
   pluginRegistry.register(todoPluginManifest)
   pluginRegistry.register(requirementPluginManifest)
+  pluginRegistry.register(prdPreviewPluginManifest)
   pluginRegistry.register(computerPluginManifest)
   pluginRegistry.register(personalHubPluginManifest)
 

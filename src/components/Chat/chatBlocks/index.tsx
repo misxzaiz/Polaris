@@ -13,6 +13,7 @@ import { PermissionRequestRenderer } from '../PermissionRequestRenderer';
 import { TextBlockRenderer } from './TextBlockRenderer';
 import { ThinkingBlockRenderer } from './ThinkingBlockRenderer';
 import { ToolCallBlockRenderer } from './ToolCallBlockRenderer';
+import { ArtifactPreviewRenderer } from './ArtifactPreviewRenderer';
 
 export function renderContentBlock(
   block: ContentBlock,
@@ -40,6 +41,11 @@ export function renderContentBlock(
       return wrapWithErrorBoundary(
         <ToolCallBlockRenderer block={block} />,
         block.id
+      );
+    case 'artifact_preview':
+      return wrapWithErrorBoundary(
+        <ArtifactPreviewRenderer block={block} />,
+        block.previewId
       );
     case 'question':
       return wrapWithErrorBoundary(

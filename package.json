@@ -12,7 +12,7 @@
     "tauri:dev:win": "tauri dev --config src-tauri/tauri.windows.dev.conf.json",
     "tauri:build": "tauri build",
     "tauri:build:win": "tauri build --config src-tauri/tauri.windows.conf.json",
-    "build:web": "vite build && cd src-tauri && cargo build --release --no-default-features --bin polaris-web --bin polaris-todo-mcp --bin polaris-requirements-mcp --bin polaris-scheduler-mcp",
+    "build:web": "vite build && cd src-tauri && cargo build --release --no-default-features --bin polaris-web --bin polaris-todo-mcp --bin polaris-requirements-mcp --bin polaris-scheduler-mcp --bin polaris-prd-preview-mcp",
     "package:web": "node scripts/package-web.mjs",
     "test": "vitest",
     "test:run": "vitest run",
