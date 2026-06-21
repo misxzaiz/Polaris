@@ -21,6 +21,10 @@ export type PluginIconId =
   | 'Activity'
   | 'GitGraph'
   | 'Globe'
+  | 'Settings'
+  | 'FileText'
+  | 'Search'
+  | 'Database'
 
 export type PluginLeftPanelType = string
 
