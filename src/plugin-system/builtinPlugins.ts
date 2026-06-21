@@ -10,30 +10,6 @@ import { gitInsightPluginManifest } from '@/plugins/git-insight/manifest'
 import { portManagerPluginManifest } from '@/plugins/port-manager/manifest'
 import { httpClientPluginManifest } from '@/plugins/http-client/manifest'
 import { jsonFormatterPluginManifest } from '@/plugins/json-formatter/manifest'
-import { yamlValidatorPluginManifest } from '@/plugins/yaml-validator/manifest'
-import { xmlFormatterPluginManifest } from '@/plugins/xml-formatter/manifest'
-import { toolMenuPluginManifest } from '@/plugins/tool-menu/manifest'
-import { markdownToolsPluginManifest } from '@/plugins/markdown-tools/manifest'
-import { processMonitorPluginManifest } from '@/plugins/process-monitor/manifest'
-import { diskAnalyzerPluginManifest } from '@/plugins/disk-analyzer/manifest'
-import { networkDiagnosticPluginManifest } from '@/plugins/network-diagnostic/manifest'
-import { envManagerPluginManifest } from '@/plugins/env-manager/manifest'
-import { hostEditorPluginManifest } from '@/plugins/host-editor/manifest'
-import { logViewerPluginManifest } from '@/plugins/log-viewer/manifest'
-import { systemInfoPluginManifest } from '@/plugins/system-info/manifest'
-import { textTransformerPluginManifest } from '@/plugins/text-transformer/manifest'
-import { diffViewerPluginManifest } from '@/plugins/diff-viewer/manifest'
-import { batchRenamePluginManifest } from '@/plugins/batch-rename/manifest'
-import { csvViewerPluginManifest } from '@/plugins/csv-viewer/manifest'
-import { jsonTreePluginManifest } from '@/plugins/json-tree/manifest'
-import { apiTesterPluginManifest } from '@/plugins/api-tester/manifest'
-import { dataConverterPluginManifest } from '@/plugins/data-converter/manifest'
-import { encodingDetectorPluginManifest } from '@/plugins/encoding-detector/manifest'
-import { complexityAnalyzerPluginManifest } from '@/plugins/complexity-analyzer/manifest'
-import { dependencyGraphPluginManifest } from '@/plugins/dependency-graph/manifest'
-import { deadCodeDetectorPluginManifest } from '@/plugins/dead-code-detector/manifest'
-import { testCoveragePluginManifest } from '@/plugins/test-coverage/manifest'
-import { testGeneratorPluginManifest } from '@/plugins/test-generator/manifest'
 
 const corePluginManifest: PolarisPluginManifest = {
   id: 'polaris.core',
@@ -133,30 +109,6 @@ export function registerBuiltinPlugins(): void {
   pluginRegistry.register(portManagerPluginManifest)
   pluginRegistry.register(httpClientPluginManifest)
   pluginRegistry.register(jsonFormatterPluginManifest)
-  pluginRegistry.register(yamlValidatorPluginManifest)
-  pluginRegistry.register(xmlFormatterPluginManifest)
-  pluginRegistry.register(markdownToolsPluginManifest)
-  pluginRegistry.register(processMonitorPluginManifest)
-  pluginRegistry.register(diskAnalyzerPluginManifest)
-  pluginRegistry.register(networkDiagnosticPluginManifest)
-  pluginRegistry.register(envManagerPluginManifest)
-  pluginRegistry.register(hostEditorPluginManifest)
-  pluginRegistry.register(logViewerPluginManifest)
-  pluginRegistry.register(systemInfoPluginManifest)
-  pluginRegistry.register(textTransformerPluginManifest)
-  pluginRegistry.register(diffViewerPluginManifest)
-  pluginRegistry.register(batchRenamePluginManifest)
-  pluginRegistry.register(csvViewerPluginManifest)
-  pluginRegistry.register(jsonTreePluginManifest)
-  pluginRegistry.register(apiTesterPluginManifest)
-  pluginRegistry.register(dataConverterPluginManifest)
-  pluginRegistry.register(encodingDetectorPluginManifest)
-  pluginRegistry.register(toolMenuPluginManifest)
-  pluginRegistry.register(complexityAnalyzerPluginManifest)
-  pluginRegistry.register(dependencyGraphPluginManifest)
-  pluginRegistry.register(deadCodeDetectorPluginManifest)
-  pluginRegistry.register(testCoveragePluginManifest)
-  pluginRegistry.register(testGeneratorPluginManifest)
 
   // builtin 插件无 installPath，registry 不会自动注册 panel，需手动注册懒加载入口
   pluginPanelRegistry.register('personalHub', 'polaris.personal-hub', () =>
@@ -173,69 +125,6 @@ export function registerBuiltinPlugins(): void {
   )
   pluginPanelRegistry.register('jsonFormatter', 'polaris.json-formatter', () =>
     import('@/components/JsonFormatterPanel/JsonFormatterPanel').then((m) => ({ default: m.default })),
-  )
-  pluginPanelRegistry.register('yamlValidator', 'polaris.yaml-validator', () =>
-    import('@/components/YamlValidatorPanel/YamlValidatorPanel').then((m) => ({ default: m.default })),
-  )
-  pluginPanelRegistry.register('xmlFormatter', 'polaris.xml-formatter', () =>
-    import('@/components/XmlFormatterPanel/XmlFormatterPanel').then((m) => ({ default: m.default })),
-  )
-  pluginPanelRegistry.register('markdownTools', 'polaris.markdown-tools', () =>
-    import('@/components/MarkdownToolsPanel/MarkdownToolsPanel').then((m) => ({ default: m.default })),
-  )
-  pluginPanelRegistry.register('toolMenu', 'polaris.tool-menu', () =>
-    import('@/components/ToolMenuPanel/ToolMenuPanel').then((m) => ({ default: m.ToolMenuPanel })),
-  )
-  pluginPanelRegistry.register('processMonitor', 'polaris.process-monitor', () =>
-    import('@/components/ProcessMonitorPanel/ProcessMonitorPanel').then((m) => ({ default: m.default })),
-  )
-  pluginPanelRegistry.register('diskAnalyzer', 'polaris.disk-analyzer', () =>
-    import('@/components/DiskAnalyzerPanel/DiskAnalyzerPanel').then((m) => ({ default: m.default })),
-  )
-  pluginPanelRegistry.register('networkDiagnostic', 'polaris.network-diagnostic', () =>
-    import('@/components/NetworkDiagnosticPanel/NetworkDiagnosticPanel').then((m) => ({ default: m.default })),
-  )
-  pluginPanelRegistry.register('envManager', 'polaris.env-manager', () =>
-    import('@/components/EnvManagerPanel/EnvManagerPanel').then((m) => ({ default: m.default })),
-  )
-  pluginPanelRegistry.register('hostEditor', 'polaris.host-editor', () =>
-    import('@/components/HostEditorPanel/HostEditorPanel').then((m) => ({ default: m.default })),
-  )
-  pluginPanelRegistry.register('logViewer', 'polaris.log-viewer', () =>
-    import('@/components/LogViewerPanel/LogViewerPanel').then((m) => ({ default: m.default })),
-  )
-  pluginPanelRegistry.register('systemInfo', 'polaris.system-info', () =>
-    import('@/components/SystemInfoPanel/SystemInfoPanel').then((m) => ({ default: m.default })),
-  )
-  pluginPanelRegistry.register('textTransformer', 'polaris.text-transformer', () =>
-    import('@/components/TextTransformerPanel/TextTransformerPanel').then((m) => ({ default: m.default })),
-  )
-  pluginPanelRegistry.register('diffViewer', 'polaris.diff-viewer', () =>
-    import('@/components/DiffViewerPanel/DiffViewerPanel').then((m) => ({ default: m.default })),
-  )
-  pluginPanelRegistry.register('batchRename', 'polaris.batch-rename', () =>
-    import('@/components/BatchRenamePanel/BatchRenamePanel').then((m) => ({ default: m.default })),
-  )
-  pluginPanelRegistry.register('csvViewer', 'polaris.csv-viewer', () =>
-    import('@/components/CsvViewerPanel/CsvViewerPanel').then((m) => ({ default: m.default })),
-  )
-  pluginPanelRegistry.register('jsonTree', 'polaris.json-tree', () =>
-    import('@/components/JsonTreePanel/JsonTreePanel').then((m) => ({ default: m.default })),
-  )
-  pluginPanelRegistry.register('apiTester', 'polaris.api-tester', () =>
-    import('@/components/ApiTesterPanel/ApiTesterPanel').then((m) => ({ default: m.default })),
-  )
-  pluginPanelRegistry.register('dataConverter', 'polaris.data-converter', () =>
-    import('@/components/DataConverterPanel/DataConverterPanel').then((m) => ({ default: m.default })),
-  )
-  pluginPanelRegistry.register('encodingDetector', 'polaris.encoding-detector', () =>
-    import('@/components/EncodingDetectorPanel/EncodingDetectorPanel').then((m) => ({ default: m.default })),
-  )
-  pluginPanelRegistry.register('testCoverage', 'polaris.test-coverage', () =>
-    import('@/components/TestCoveragePanel/TestCoveragePanel').then((m) => ({ default: m.TestCoveragePanel })),
-  )
-  pluginPanelRegistry.register('testGenerator', 'polaris.test-generator', () =>
-    import('@/components/TestGeneratorPanel/TestGeneratorPanel').then((m) => ({ default: m.TestGeneratorPanel })),
   )
 }
 
