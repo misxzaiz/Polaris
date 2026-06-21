@@ -19,6 +19,9 @@ const COMPUTER_MCP_BIN_NAME: &str = "polaris-computer-mcp";
 const PORT_MANAGER_MCP_SERVER_NAME: &str = "polaris-port-manager";
 const PORT_MANAGER_MCP_BIN_NAME: &str = "polaris-port-manager-mcp";
 const PORT_MANAGER_PLUGIN_ID: &str = "polaris.port-manager";
+const HTTP_CLIENT_MCP_SERVER_NAME: &str = "polaris-http-client";
+const HTTP_CLIENT_MCP_BIN_NAME: &str = "polaris-http-client-mcp";
+const HTTP_CLIENT_PLUGIN_ID: &str = "polaris.http-client";
 const TODO_PLUGIN_ID: &str = "polaris.todo";
 const REQUIREMENTS_PLUGIN_ID: &str = "polaris.requirements";
 const SCHEDULER_PLUGIN_ID: &str = "polaris.scheduler";
@@ -163,6 +166,10 @@ pub fn builtin_plugin_mcp_manifests() -> &'static [BuiltinPluginMcpManifest] {
             plugin_id: PORT_MANAGER_PLUGIN_ID,
             mcp_server_names: &[PORT_MANAGER_MCP_SERVER_NAME],
         },
+        BuiltinPluginMcpManifest {
+            plugin_id: HTTP_CLIENT_PLUGIN_ID,
+            mcp_server_names: &[HTTP_CLIENT_MCP_SERVER_NAME],
+        },
     ]
 }
 
@@ -229,6 +236,19 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
             "polaris-port-manager-mcp",
             "src-tauri/target/debug/polaris-port-manager-mcp",
             "POLARIS_PORT_MANAGER_MCP_PATH",
+            McpServerArgsMode::ConfigDirAndWorkspace,
+            false,
+        ),
+    );
+    registry.register_plugin_server(
+        HTTP_CLIENT_PLUGIN_ID,
+        PluginMcpServerContribution::builtin(
+            HTTP_CLIENT_MCP_SERVER_NAME,
+            HTTP_CLIENT_MCP_BIN_NAME,
+            "bin/polaris-http-client-mcp",
+            "polaris-http-client-mcp",
+            "src-tauri/target/debug/polaris-http-client-mcp",
+            "POLARIS_HTTP_CLIENT_MCP_PATH",
             McpServerArgsMode::ConfigDirAndWorkspace,
             false,
         ),

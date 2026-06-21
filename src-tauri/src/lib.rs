@@ -909,6 +909,8 @@ pub fn run() {
             commands::port_manager::port_check,
             commands::port_manager::port_kill,
             commands::port_manager::port_summary,
+            // HTTP 客户端
+            commands::http_client::http_request,
             // 文件下载
             commands::file_explorer::download_file_binary,
             commands::file_explorer::download_directory_to_zip,

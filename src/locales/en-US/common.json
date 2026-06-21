@@ -52,6 +52,7 @@
     "developerPanel": "Developer Panel",
     "mcpPanel": "MCP Servers",
     "gitInsightPanel": "Git Insight",
+    "httpClientPanel": "HTTP Client",
     "showAIPanel": "Show AI Panel",
     "hideAIPanel": "Hide AI Panel",
     "showActivityBar": "Show Activity Bar",

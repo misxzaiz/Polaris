@@ -53,6 +53,7 @@
     "integrationPanel": "机器人管理",
     "personalHubPanel": "个人空间",
     "gitInsightPanel": "Git 分析",
+    "httpClientPanel": "HTTP 客户端",
     "aiConsolePanel": "AI 执行控制台",
     "mcpPanel": "MCP 服务器",
     "showAIPanel": "显示 AI 面板",
