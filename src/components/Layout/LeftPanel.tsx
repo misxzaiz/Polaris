@@ -214,6 +214,8 @@ export function LeftPanelContent({
   changelogGeneratorContent?: ReactNode
   readmeGeneratorContent?: ReactNode
   codeRefactorContent?: ReactNode
+  legacyCodeRefactorContent?: ReactNode
+  performanceBottleneckContent?: ReactNode
   currentType?: LeftPanelType
 }) {
   // Hook 必须在条件之外调用
@@ -280,6 +282,10 @@ export function LeftPanelContent({
     return <>{readmeGeneratorContent}</>
   } else if (type === 'codeRefactor') {
     return <>{codeRefactorContent}</>
+  } else if (type === 'legacyCodeRefactor') {
+    return <>{legacyCodeRefactorContent}</>
+  } else if (type === 'performanceBottleneck') {
+    return <>{performanceBottleneckContent}</>
   } else if (pluginPanelRegistry.has(type)) {
     return <PluginPanelHost panelType={type} />
   }

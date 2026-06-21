@@ -43,6 +43,8 @@ const ApiDocGeneratorPanel = lazy(() => import('./components/ApiDocGeneratorPane
 const ChangelogGeneratorPanel = lazy(() => import('./components/ChangelogGeneratorPanel/ChangelogGeneratorPanel').then(m => ({ default: m.ChangelogGeneratorPanel })));
 const ReadmeGeneratorPanel = lazy(() => import('./components/ReadmeGeneratorPanel/ReadmeGeneratorPanel').then(m => ({ default: m.ReadmeGeneratorPanel })));
 const CodeRefactorPanel = lazy(() => import('./components/CodeRefactorPanel/CodeRefactorPanel').then(m => ({ default: m.CodeRefactorPanel })));
+const LegacyCodeRefactorPanel = lazy(() => import('./components/LegacyCodeRefactorPanel/LegacyCodeRefactorPanel').then(m => ({ default: m.LegacyCodeRefactorPanel })));
+const PerformanceBottleneckPanel = lazy(() => import('./components/PerformanceBottleneckPanel/PerformanceBottleneckPanel').then(m => ({ default: m.PerformanceBottleneckPanel })));
 const CreateWorkspaceModal = lazy(() => import('./components/Workspace/CreateWorkspaceModal').then(m => ({ default: m.CreateWorkspaceModal })));
 const CreateSessionModal = lazy(() => import('./components/Session/CreateSessionModal').then(m => ({ default: m.CreateSessionModal })));
 const FileSearchModal = lazy(() => import('./components/Editor/FileSearchModal').then(m => ({ default: m.FileSearchModal })));
@@ -232,6 +234,8 @@ function App() {
       changelogGeneratorContent={<Suspense fallback={loadingFallback}><ChangelogGeneratorPanel pluginId="polaris.changelog-generator" onSendToChat={sendMessage} /></Suspense>}
       readmeGeneratorContent={<Suspense fallback={loadingFallback}><ReadmeGeneratorPanel pluginId="polaris.readme-generator" onSendToChat={sendMessage} /></Suspense>}
       codeRefactorContent={<Suspense fallback={loadingFallback}><CodeRefactorPanel pluginId="polaris.code-refactor" onSendToChat={sendMessage} /></Suspense>}
+      legacyCodeRefactorContent={<Suspense fallback={loadingFallback}><LegacyCodeRefactorPanel pluginId="polaris.legacy-code-refactor" onSendToChat={sendMessage} /></Suspense>}
+      performanceBottleneckContent={<Suspense fallback={loadingFallback}><PerformanceBottleneckPanel pluginId="polaris.performance-bottleneck" onSendToChat={sendMessage} /></Suspense>}
     />
   );
 
