@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Copy, EyeOff, Pencil, Play, RotateCcw, Square, Trash2 } from 'lucide-react';
+import { Copy, EyeOff, ExternalLink, Pencil, Play, RotateCcw, Square, Trash2 } from 'lucide-react';
 import type { TerminalScript } from '@/types/terminalScript';
 
 interface TerminalScriptContextMenuProps {
@@ -12,6 +12,7 @@ interface TerminalScriptContextMenuProps {
   onClose: () => void;
   onRun: () => void;
   onStop: () => void;
+  onRunExternal: () => void;
   onEdit: () => void;
   onDuplicate: () => void;
   onDeleteOrHide: () => void;
@@ -27,6 +28,7 @@ export function TerminalScriptContextMenu({
   onClose,
   onRun,
   onStop,
+  onRunExternal,
   onEdit,
   onDuplicate,
   onDeleteOrHide,
@@ -70,6 +72,9 @@ export function TerminalScriptContextMenu({
       </button>
       <button className={itemClass} onClick={() => { onRun(); onClose(); }}>
         <RotateCcw size={13} />重新运行
+      </button>
+      <button className={itemClass} onClick={() => { onRunExternal(); onClose(); }}>
+        <ExternalLink size={13} />在外部终端运行
       </button>
       <div className="my-1 border-t border-border-subtle" />
       <button className={itemClass} onClick={() => { navigator.clipboard?.writeText(script.command); onClose(); }}>
