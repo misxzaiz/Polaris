@@ -16,7 +16,7 @@ import { ResizeHandle } from '../Common'
 interface LeftPanelProps {
   children?: ReactNode
   className?: string
-  /** 是否填充剩余空间（终端激活且无编辑器时自适应撑满，不显示拖拽条） */
+  /** 是否填充剩余空间（激活且无编辑器时自适应撑满，不显示拖拽条） */
   fillRemaining?: boolean
   /** 是否全屏（撑满除 ActivityBar 外全部横向空间，不显示拖拽条） */
   fullscreen?: boolean

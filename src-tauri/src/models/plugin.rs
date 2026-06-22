@@ -131,6 +131,9 @@ pub struct PluginManifestContributes {
 #[serde(rename_all = "camelCase")]
 pub struct PluginPanelContribution {
     pub entry: String,
+    /// 是否支持全屏模式（隐藏其他面板，自适应填充整个工作区）
+    #[serde(default)]
+    pub supports_fullscreen: bool,
 }
 
 /// 插件 UI contribution

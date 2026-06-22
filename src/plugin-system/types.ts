@@ -44,6 +44,8 @@ export interface PluginMcpServerContribution {
 
 export interface PluginPanelContribution {
   entry: string
+  /** 是否支持全屏模式（隐藏其他面板，自适应填充整个工作区） */
+  supportsFullscreen?: boolean
 }
 
 export interface PluginPermissionDeclaration {
