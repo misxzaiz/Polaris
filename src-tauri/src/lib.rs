@@ -844,6 +844,13 @@ pub fn run() {
             commands::plugin::marketplace_update,
             commands::plugin_state::plugin_state_load,
             commands::plugin_state::plugin_state_save,
+            // 插件服务管理
+            commands::plugin_service::plugin_service_start,
+            commands::plugin_service::plugin_service_stop,
+            commands::plugin_service::plugin_service_restart,
+            commands::plugin_service::plugin_service_list_status,
+            commands::plugin_service::plugin_service_stop_for_plugin,
+            commands::plugin_service::plugin_service_autostart,
             // Auto-Mode 相关
             commands::auto_mode::auto_mode_config,
             commands::auto_mode::auto_mode_defaults,

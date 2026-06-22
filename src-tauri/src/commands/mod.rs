@@ -7,6 +7,7 @@ pub mod git;
 pub mod translate;
 pub mod plugin;
 pub mod plugin_state;
+pub mod plugin_service;
 pub mod data_root_cmd;
 #[cfg(feature = "tauri-app")]
 pub use data_root_cmd::{get_data_root_info, scan_legacy_data_cmd, open_path_in_explorer};

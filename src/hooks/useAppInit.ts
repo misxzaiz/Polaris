@@ -18,6 +18,7 @@ import { useSnippetStore } from '@/stores/snippetStore';
 import { useCliInfoStore } from '@/stores/cliInfoStore';
 import { useTerminalScriptStore } from '@/stores/terminalScriptStore';
 import { usePluginStore } from '@/stores/pluginStore';
+import { usePluginServiceStore } from '@/stores/pluginServiceStore';
 import { useLspStore } from '@/stores/lspStore';
 import { useLspIndexStore } from '@/stores/lspIndexStore';
 import { sessionStoreManager } from '@/stores/conversationStore';
@@ -25,6 +26,7 @@ import { bootstrapEngines, type EngineId } from '../core/engine-bootstrap';
 import { bootstrapTools } from '../core/tool-bootstrap';
 import { voiceNotificationService } from '@/services/voiceNotificationService';
 import { discoverInstalledPlugins } from '@/services/pluginDiscoveryService';
+import { pluginServiceManager } from '@/services/pluginServiceManager';
 import { disconnect as disconnectTransport } from '@/services/transport';
 import { createLogger } from '@/utils/logger';
 import { currentMode } from '@/services/transport';
@@ -131,6 +133,25 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
       }
     } catch (err) {
       log.warn('Plugin discovery failed', { error: String(err) });
+    }
+
+    // 启动插件声明的后台服务（autoStart 服务）
+    try {
+      const pluginStates = usePluginStore.getState().pluginStates;
+      const enabledMap: Record<string, { enabled: boolean }> = {};
+      for (const plugin of pluginRegistry.listPlugins()) {
+        const state = pluginStates[plugin.id];
+        const enabled = state ? state.enabled : plugin.enabledByDefault;
+        enabledMap[plugin.id] = { enabled };
+      }
+      const statuses = await pluginServiceManager.autoStartAll(enabledMap, currentWorkspacePath);
+      if (statuses.length > 0) {
+        const store = usePluginServiceStore.getState();
+        store.updateServiceStatuses(statuses);
+        log.info('Plugin services auto-started', { count: statuses.length });
+      }
+    } catch (err) {
+      log.warn('Plugin service autostart failed', { error: String(err) });
     }
 
     if (signal?.aborted) return;

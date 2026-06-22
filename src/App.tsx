@@ -42,6 +42,7 @@ import './index.css';
 
 // 拆分后的 Hooks
 import { useAppInit } from './hooks/useAppInit';
+import { usePluginServiceSync } from './hooks/usePluginServiceSync';
 import { useAppEvents } from './hooks/useAppEvents';
 import { useWindowManager } from './hooks/useWindowManager';
 import { useWorkspaceSync } from './hooks/useWorkspaceSync';
@@ -100,6 +101,8 @@ function App() {
   useAppInit({
     onNoWorkspaces: useCallback(() => setShowCreateWorkspace(true), []),
   });
+
+  usePluginServiceSync();
 
   useAppEvents();
 

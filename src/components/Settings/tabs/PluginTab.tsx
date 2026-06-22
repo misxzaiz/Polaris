@@ -30,6 +30,8 @@ import { listMcpHealthStatuses, type McpHealthStatus } from '@/services/mcpHealt
 import { openInDefaultApp } from '@/services/tauri/windowService'
 import { isTauri } from '@/utils/platform'
 import { usePluginStore } from '@/stores/pluginStore'
+import { usePluginServiceStore } from '@/stores/pluginServiceStore'
+import { pluginServiceManager } from '@/services/pluginServiceManager'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import type { PolarisPluginManifest } from '@/plugin-system/types'
 
@@ -466,6 +468,22 @@ export function PluginTab() {
       pluginRegistry.replaceInstalled(result.plugins)
       setPluginDiscoveryIssues(result.errors)
       setPlugins(pluginRegistry.listPlugins())
+
+      // 触发 autoStart：对发现到的、已启用插件启动 autoStart 服务
+      try {
+        const states = usePluginStore.getState().pluginStates
+        const enabledMap: Record<string, { enabled: boolean }> = {}
+        for (const plugin of pluginRegistry.listPlugins()) {
+          const st = states[plugin.id]
+          enabledMap[plugin.id] = { enabled: st ? st.enabled : plugin.enabledByDefault }
+        }
+        const statuses = await pluginServiceManager.autoStartAll(enabledMap, currentWorkspacePath)
+        if (statuses.length > 0) {
+          usePluginServiceStore.getState().updateServiceStatuses(statuses)
+        }
+      } catch (_err) {
+        // 启动失败不阻塞 UI；服务管理面板会显示错误状态
+      }
     } catch (error) {
       setPluginDiscoveryError(error instanceof Error ? error.message : String(error))
       setPluginDiscoveryIssues([])
@@ -593,6 +611,17 @@ export function PluginTab() {
     setPluginOperationMessage(null)
 
     try {
+      // 卸载前先停止该插件的所有服务，避免文件被进程占用导致删除失败
+      try {
+        const stopped = await pluginServiceManager.stopServicesForPlugin(pluginId)
+        const serviceStore = usePluginServiceStore.getState()
+        for (const status of stopped) {
+          serviceStore.removeServiceStatus(status.pluginId, status.serviceId)
+        }
+      } catch (_err) {
+        // 即便停止失败也继续尝试卸载
+      }
+
       const result = await uninstallLocalPlugin(installPath, currentWorkspacePath)
       if (!result.success) {
         setPluginOperationMessage(result.error ?? t('plugins.uninstallFailed', { defaultValue: 'Plugin uninstall failed' }))
