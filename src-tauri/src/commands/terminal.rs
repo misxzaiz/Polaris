@@ -503,3 +503,120 @@ pub fn terminal_get(
 
     manager.get_session(&session_id)
 }
+
+/// 在外部系统终端中运行命令
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn terminal_open_in_external(
+    command: String,
+    cwd: Option<String>,
+    env: Option<HashMap<String, String>>,
+) -> Result<()> {
+    use std::process::Command;
+
+    let cwd = cwd.unwrap_or_else(|| {
+        std::env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| ".".to_string())
+    });
+
+    #[cfg(windows)]
+    {
+        use std::io::Write;
+
+        // 创建临时 .bat 文件，避免 start 命令的引号解析问题
+        let bat_dir = std::env::temp_dir();
+        let bat_path = bat_dir.join(format!("polaris_external_terminal_{}.bat", std::process::id()));
+
+        let mut bat_content = format!(
+            "@echo off\r\n\
+             chcp 65001 >nul\r\n\
+             cd /d \"{}\"\r\n\
+             {}\r\n",
+            cwd, command
+        );
+
+        // 追加 pause 让窗口保持打开，方便查看输出
+        bat_content.push_str("pause\r\n");
+
+        // 写入临时 .bat 文件
+        let mut bat_file = std::fs::File::create(&bat_path)
+            .map_err(|e| AppError::ProcessError(format!("无法创建临时脚本: {}", e)))?;
+        bat_file.write_all(bat_content.as_bytes())
+            .map_err(|e| AppError::ProcessError(format!("无法写入临时脚本: {}", e)))?;
+        drop(bat_file);
+
+        let mut cmd = Command::new("cmd");
+        cmd.args(["/C", "start", "cmd", "/K", bat_path.to_string_lossy().as_ref()]);
+
+        if let Some(ref env_map) = env {
+            for (key, value) in env_map {
+                cmd.env(key, value);
+            }
+        }
+
+        cmd.spawn()
+            .map_err(|e| AppError::ProcessError(format!("无法启动外部终端: {}", e)))?;
+
+        tracing::info!("[Terminal] 已启动外部终端: cwd={}, command={}, bat={}", cwd, command, bat_path.display());
+    }
+
+    #[cfg(not(windows))]
+    {
+        // Linux/macOS: 尝试常见的终端模拟器
+        let shell_cmd = format!("cd \"{}\" && exec \"$SHELL\"", cwd);
+
+        let terminal_candidates = if cfg!(target_os = "macOS") {
+            vec![
+                // macOS: 优先使用 Terminal.app
+                (vec!["-a", "Terminal"], vec![&shell_cmd]),
+            ]
+        } else {
+            // Linux: 尝试多种终端模拟器
+            vec![
+                ("gnome-terminal", vec!["--", "/bin/sh", "-c", &shell_cmd]),
+                ("konsole", vec!["-e", "/bin/sh", "-c", &shell_cmd]),
+                ("xfce4-terminal", vec!["-e", &shell_cmd]),
+                ("xterm", vec!["-e", &shell_cmd]),
+                ("x-terminal-emulator", vec!["-e", &shell_cmd]),
+            ]
+        };
+
+        let mut spawned = false;
+
+        #[cfg(target_os = "macOS")]
+        {
+            // macOS: 使用 open -a Terminal
+            let result = Command::new("open")
+                .args(["-a", "Terminal", &cwd])
+                .spawn();
+            if result.is_ok() {
+                spawned = true;
+                tracing::info!("[Terminal] 已启动外部终端 (macOS Terminal.app): cwd={}", cwd);
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            for (terminal, args) in &terminal_candidates {
+                let result = Command::new(terminal)
+                    .args(args)
+                    .current_dir(&cwd)
+                    .spawn();
+                if result.is_ok() {
+                    spawned = true;
+                    tracing::info!("[Terminal] 已启动外部终端 ({}): cwd={}", terminal, cwd);
+                    break;
+                }
+            }
+        }
+
+        if !spawned {
+            return Err(AppError::ProcessError(
+                "未找到可用的外部终端模拟器，请手动安装 gnome-terminal、konsole 或 xterm".to_string(),
+            ));
+        }
+    }
+
+    Ok(())
+}

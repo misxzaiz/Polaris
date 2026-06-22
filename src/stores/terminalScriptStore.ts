@@ -38,6 +38,7 @@ interface TerminalScriptState {
   restoreHiddenProjectScripts: () => Promise<void>;
   runScript: (scriptId: string) => Promise<string>;
   stopScript: (scriptId: string) => Promise<void>;
+  runInExternalTerminal: (scriptId: string) => Promise<void>;
   runAutoScripts: (trigger: TerminalScriptAutoRunTrigger, workspacePath?: string | null) => Promise<void>;
   initEventListeners: () => () => void;
   clearError: () => void;
@@ -302,6 +303,22 @@ export const useTerminalScriptStore = create<TerminalScriptState>((set, get) => 
         [scriptId]: { ...runtime, status: 'stopped' },
       },
     }));
+  },
+
+  runInExternalTerminal: async (scriptId) => {
+    const script = get().scripts.find((item) => item.id === scriptId);
+    if (!script) throw new Error('脚本不存在');
+    if (!script.enabled) throw new Error('脚本已禁用');
+    if (!script.command.trim()) throw new Error('脚本命令不能为空');
+    if (isDangerousCommand(script.command) && !window.confirm(`命令可能具有破坏性，确认在外部终端执行：${script.command}?`)) {
+      throw new Error('用户取消执行');
+    }
+
+    await invoke('terminal_open_in_external', {
+      command: script.command,
+      cwd: script.cwd || get().workspacePath || undefined,
+      env: script.env && Object.keys(script.env).length > 0 ? script.env : undefined,
+    });
   },
 
   runAutoScripts: async (trigger, workspacePath = get().workspacePath) => {

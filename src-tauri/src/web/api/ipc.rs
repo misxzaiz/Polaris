@@ -266,6 +266,7 @@ pub async fn handle_ipc_bridge(
         "terminal_list" => dispatch_terminal_list(&state),
         "terminal_get" => dispatch_terminal_get(&state, &args),
         "terminal_discover_scripts" => dispatch_terminal_discover_scripts(&args).await,
+        "terminal_open_in_external" => dispatch_terminal_open_in_external(&args),
 
         // ── Network ──────────────────────────────────────────────────────
         "get_local_ips" => dispatch_get_local_ips(),
@@ -1396,6 +1397,19 @@ fn dispatch_terminal_get(state: &AppState, args: &Value) -> Result<Json<Value>, 
 async fn dispatch_terminal_discover_scripts(args: &Value) -> Result<Json<Value>, WebError> {
     let workspace_path = require_string(args, "workspacePath")?;
     json_result!(crate::commands::terminal_script::terminal_discover_scripts(workspace_path).await)
+}
+
+fn dispatch_terminal_open_in_external(args: &Value) -> Result<Json<Value>, WebError> {
+    let command = require_string(args, "command")?;
+    let cwd = args.get("cwd").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let env = args.get("env").and_then(|v| {
+        if let Some(obj) = v.as_object() {
+            Some(obj.iter().map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string())).collect())
+        } else {
+            None
+        }
+    });
+    json_result!(crate::commands::terminal::terminal_open_in_external(command, cwd, env))
 }
 
 

@@ -61,6 +61,7 @@ export function TerminalScriptPanel({ workspacePath }: TerminalScriptPanelProps)
   const refresh = useTerminalScriptStore((state) => state.refresh);
   const runScript = useTerminalScriptStore((state) => state.runScript);
   const stopScript = useTerminalScriptStore((state) => state.stopScript);
+  const runInExternalTerminal = useTerminalScriptStore((state) => state.runInExternalTerminal);
   const saveScript = useTerminalScriptStore((state) => state.saveScript);
   const createCustomScript = useTerminalScriptStore((state) => state.createCustomScript);
   const deleteScript = useTerminalScriptStore((state) => state.deleteScript);
@@ -138,6 +139,11 @@ export function TerminalScriptPanel({ workspacePath }: TerminalScriptPanelProps)
     if (!selectedScript) return;
     stopScript(selectedScript.id).catch((e) => log.error('Failed to stop script', e instanceof Error ? e : new Error(String(e))));
   }, [selectedScript, stopScript]);
+
+  const handleRunExternal = useCallback(() => {
+    if (!contextScript) return;
+    runInExternalTerminal(contextScript.id).catch((e) => log.error('Failed to run script in external terminal', e instanceof Error ? e : new Error(String(e))));
+  }, [contextScript, runInExternalTerminal]);
 
   const handleCreateCustom = useCallback(() => {
     const name = window.prompt('自定义命令名称');
@@ -375,6 +381,7 @@ export function TerminalScriptPanel({ workspacePath }: TerminalScriptPanelProps)
         onClose={() => setContextMenu((state) => ({ ...state, visible: false }))}
         onRun={() => contextScript && runScript(contextScript.id)}
         onStop={() => contextScript && stopScript(contextScript.id)}
+        onRunExternal={handleRunExternal}
         onEdit={() => contextScript && setSelectedScriptId(contextScript.id)}
         onDuplicate={() => contextScript && handleDuplicate(contextScript)}
         onDeleteOrHide={() => {

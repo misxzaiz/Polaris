@@ -116,6 +116,7 @@ use commands::scheduler::{
 use commands::terminal::{
     terminal_create, terminal_write, terminal_resize,
     terminal_close, terminal_list, terminal_get,
+    terminal_open_in_external,
 };
 #[cfg(feature = "tauri-app")]
 use commands::terminal_script::terminal_discover_scripts;
@@ -804,6 +805,7 @@ pub fn run() {
             terminal_list,
             terminal_get,
             terminal_discover_scripts,
+            terminal_open_in_external,
             // Todo 相关
             commands::todo::list_todos,
             commands::todo::create_todo,
