@@ -106,7 +106,8 @@ process.stdin.on('data', chunk => {
   "contributes": {
     "views": [...],                 // ActivityBar 视图入口
     "mcpServers": [...],            // MCP 工具服务器
-    "panel": { "entry": "..." }     // 可视化面板入口
+    "panel": { "entry": "..." },    // 可视化面板入口
+    "services": [...]               // 后台服务声明（见下方"插件服务管理"章节）
   },
 
   // === 权限声明 ===
@@ -407,6 +408,254 @@ export function registerBuiltinPlugins(): void {
 
 参考 `examples/plugins/demo-mcp-plugin/` 目录中的示例插件。
 
+## 插件服务管理（Services）
+
+部分插件需要在后台运行额外服务（如 HTTP 服务器、数据库代理、WebSocket 服务等）。Polaris 通过声明式 `services` 机制管理这些服务的完整生命周期。
+
+### 使用场景
+
+- 插件需要提供 HTTP API 给面板或外部工具调用
+- 插件需要运行数据库代理、文件服务器等后台进程
+- 插件需要 WebSocket 长连接服务
+
+### 声明服务
+
+在 `plugin.json` 的 `contributes` 中添加 `services` 字段：
+
+```json
+{
+  "id": "relay-devkit",
+  "name": "RELAY DevKit",
+  "version": "1.0.0",
+  "contributes": {
+    "views": [...],
+    "panel": { "entry": "./dist/panel.js" },
+    "services": [
+      {
+        "id": "relay-http",
+        "type": "http",
+        "command": "node",
+        "argsTemplate": ["{{pluginDir}}/server.js", "{{port}}"],
+        "port": 9860,
+        "healthCheck": "/__health",
+        "healthCheckTimeout": 5000,
+        "autoStart": true,
+        "restartOnFailure": true,
+        "maxRestarts": 3,
+        "description": "RELAY HTTP 代理服务"
+      }
+    ]
+  },
+  "permissions": {
+    "network": true
+  }
+}
+```
+
+### 服务类型
+
+| type | 说明 | 适用场景 |
+|------|------|----------|
+| `http` | HTTP/HTTPS 服务器 | API 代理、文件服务、Webhook 接收 |
+| `stdio` | stdin/stdout 进程 | 自定义协议通信、CLI 工具封装 |
+| `worker` | 后台工作进程 | 定时任务、数据同步、日志收集 |
+
+### 服务字段说明
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `id` | string | 是 | 服务唯一标识，同插件内不可重复 |
+| `type` | string | 是 | 服务类型：`http` / `stdio` / `worker` |
+| `command` | string | 是 | 启动命令（如 `node`、`python`、`./server`） |
+| `argsTemplate` | string[] | 否 | 命令参数，支持模板占位符 |
+| `port` | number | 否 | 监听端口（http 类型），不填则自动分配 |
+| `healthCheck` | string | 否 | 健康检查路径（http 类型）或命令 |
+| `healthCheckTimeout` | number | 否 | 健康检查超时（ms），默认 5000 |
+| `autoStart` | boolean | 否 | 插件启用时自动启动，默认 `true` |
+| `restartOnFailure` | boolean | 否 | 服务崩溃时自动重启，默认 `true` |
+| `maxRestarts` | number | 否 | 最大重启次数，默认 3 |
+| `description` | string | 否 | 服务描述，用于 UI 显示 |
+
+### 模板占位符
+
+`argsTemplate` 支持以下占位符：
+
+| 占位符 | 说明 |
+|--------|------|
+| `{{pluginDir}}` | 插件安装目录 |
+| `{{workspacePath}}` | 当前工作区路径 |
+| `{{appConfigDir}}` | 应用配置目录 |
+| `{{port}}` | 自动分配的端口号（http 类型） |
+| `{{serviceId}}` | 当前服务 ID |
+
+### 服务生命周期
+
+```
+插件启用 → autoStart 检查 → 启动服务 → 健康检查 → 运行中
+                                                      ↓
+                                              崩溃 → 自动重启 → 健康检查
+                                                      ↓
+                                              超过 maxRestarts → 停止
+                                                      ↓
+插件禁用 → 停止所有服务 → 清理资源
+```
+
+### 前端 API
+
+插件面板可以通过 `window.__POLARIS_PLUGIN_SERVICES__` 访问服务状态：
+
+```typescript
+interface PluginServiceAPI {
+  /** 获取服务状态 */
+  getStatus(pluginId: string, serviceId: string): Promise<ServiceStatus>
+  /** 启动服务 */
+  start(pluginId: string, serviceId: string): Promise<void>
+  /** 停止服务 */
+  stop(pluginId: string, serviceId: string): Promise<void>
+  /** 重启服务 */
+  restart(pluginId: string, serviceId: string): Promise<void>
+  /** 获取服务日志 */
+  getLogs(pluginId: string, serviceId: string, options?: LogOptions): Promise<string[]>
+}
+
+interface ServiceStatus {
+  state: 'starting' | 'running' | 'stopping' | 'stopped' | 'error'
+  port?: number
+  pid?: number
+  uptime?: number
+  lastError?: string
+  restartCount: number
+}
+
+interface LogOptions {
+  limit?: number
+  since?: number
+  filter?: 'stdout' | 'stderr' | 'all'
+}
+```
+
+### 完整示例：RELAY DevKit 插件
+
+以下是一个需要 HTTP 服务的插件完整示例：
+
+**plugin.json**
+```json
+{
+  "id": "relay-devkit",
+  "name": "RELAY DevKit",
+  "version": "1.0.0",
+  "description": "开发者工具箱：API 客户端、JSON 格式化、SQL 工具",
+  "enabledByDefault": true,
+  "contributes": {
+    "views": [{
+      "id": "relay-devkit.panel",
+      "area": "activityBar",
+      "panelType": "relayDevkit",
+      "icon": "Terminal",
+      "labelKey": "plugins.relayDevkit",
+      "labelDefault": "DevKit",
+      "order": 80
+    }],
+    "panel": {
+      "entry": "./dist/panel.js",
+      "supportsFullscreen": true
+    },
+    "services": [
+      {
+        "id": "relay-server",
+        "type": "http",
+        "command": "node",
+        "argsTemplate": ["{{pluginDir}}/server.js", "{{port}}"],
+        "healthCheck": "/__health",
+        "autoStart": true,
+        "restartOnFailure": true,
+        "description": "RELAY 本地代理服务"
+      }
+    ]
+  },
+  "permissions": {
+    "workspaceRead": true,
+    "network": true,
+    "aiToolAccess": true
+  }
+}
+```
+
+**server.js**
+```javascript
+#!/usr/bin/env node
+import http from 'node:http';
+
+// 从命令行参数获取端口（由框架通过 {{port}} 注入）
+const PORT = parseInt(process.argv[2] || '0', 10) || 9860;
+
+const server = http.createServer((req, res) => {
+  // 健康检查端点
+  if (req.url === '/__health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ status: 'ok', uptime: process.uptime() }));
+  }
+
+  // 业务逻辑...
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Hello from RELAY');
+});
+
+server.listen(PORT, '127.0.0.1', () => {
+  console.log(`RELAY server → http://localhost:${PORT}`);
+  // 通知框架服务已就绪
+  process.send?.({ type: 'ready', port: PORT });
+});
+
+// 优雅关闭
+process.on('SIGTERM', () => {
+  server.close(() => process.exit(0));
+});
+```
+
+**面板中使用服务**
+```tsx
+import { useEffect, useState } from 'react'
+
+export default function DevKitPanel({ pluginId }) {
+  const [serviceStatus, setServiceStatus] = useState(null)
+
+  useEffect(() => {
+    const api = window.__POLARIS_PLUGIN_SERVICES__
+    if (!api) return
+
+    // 轮询服务状态
+    const poll = async () => {
+      const status = await api.getStatus(pluginId, 'relay-server')
+      setServiceStatus(status)
+    }
+
+    poll()
+    const timer = setInterval(poll, 5000)
+    return () => clearInterval(timer)
+  }, [pluginId])
+
+  return (
+    <div>
+      <div>服务状态: {serviceStatus?.state ?? 'loading'}</div>
+      {serviceStatus?.port && <div>端口: {serviceStatus.port}</div>}
+      <button onClick={() => window.__POLARIS_PLUGIN_SERVICES__?.restart(pluginId, 'relay-server')}>
+        重启服务
+      </button>
+    </div>
+  )
+}
+```
+
+### 调试技巧
+
+1. **查看服务日志**：设置 → 插件 → 选择插件 → 查看服务日志
+2. **手动测试**：在终端运行 `node server.js 9860`，确认服务正常
+3. **端口冲突**：不指定端口让框架自动分配，避免冲突
+4. **健康检查**：实现 `/__health` 端点返回 `{"status": "ok"}`
+
+---
+
 ## 常见问题
 
 ### 面板加载失败 "Invalid hook call"
@@ -428,3 +677,19 @@ export function registerBuiltinPlugins(): void {
 2. `argsTemplate` 路径是否正确
 3. Server 脚本是否有执行权限
 4. 在终端手动运行确认无报错
+
+### 插件服务启动失败
+
+检查：
+1. `command` 是否正确（如 `node`、`python`）
+2. `argsTemplate` 路径是否正确
+3. 端口是否被占用
+4. 查看服务日志获取详细错误信息
+5. 确认 `permissions.network` 已设置为 `true`
+
+### 服务频繁重启
+
+可能原因：
+1. 服务启动后立即崩溃 → 检查代码错误
+2. 健康检查失败 → 确认实现了健康检查端点
+3. 端口冲突 → 使用自动分配端口或更换端口

@@ -19,6 +19,7 @@ interface PolarisPluginManifest {
   contributes: {
     views?: PluginViewContribution[]
     mcpServers?: PluginMcpServerContribution[]
+    services?: PluginServiceContribution[]
   }
   permissions: PluginPermissionDeclaration
   origin?: PluginOriginMetadata
@@ -58,6 +59,70 @@ interface PluginMcpServerContribution {
 - `command` 是前端展示/声明字段；后端实际启动路径由 Rust registry 解析。
 - 内置 MCP server 的 `argsTemplate` 目前支持 `{{appConfigDir}}` 和 `{{workspacePath}}`，对应 Rust `McpServerArgsMode::ConfigDirAndWorkspace`。
 - 外部安装插件的 `argsTemplate` 额外支持 `{{pluginDir}}`，用于解析插件安装目录内的脚本或二进制。
+
+## Plugin Service Contribution
+
+```ts
+interface PluginServiceContribution {
+  id: string
+  type: 'http' | 'stdio' | 'worker'
+  command: string
+  argsTemplate?: string[]
+  port?: number
+  healthCheck?: string
+  healthCheckTimeout?: number
+  autoStart?: boolean
+  restartOnFailure?: boolean
+  maxRestarts?: number
+  description?: string
+}
+```
+
+约束：
+
+- `id` 是服务唯一标识，同插件内不可重复。
+- `type` 支持 `http`（HTTP 服务器）、`stdio`（标准输入输出进程）、`worker`（后台工作进程）。
+- `command` 是启动命令，如 `node`、`python`、`./server`。
+- `argsTemplate` 支持模板占位符：`{{port}}`、`{{serviceId}}`、`{{pluginDir}}`、`{{workspacePath}}`、`{{appConfigDir}}`。
+- `port` 仅 `http` 类型有效，不填则自动分配。
+- `healthCheck` 仅 `http` 类型有效，为健康检查路径（如 `/__health`）。
+- `autoStart` 默认 `true`，插件启用时自动启动服务。
+- `restartOnFailure` 默认 `true`，服务崩溃时自动重启。
+- `maxRearts` 默认 3，最大重启次数。
+
+### 服务生命周期
+
+```
+插件启用 → autoStart 检查 → 启动服务 → 健康检查 → 运行中
+                                                      ↓
+                                              崩溃 → 自动重启 → 健康检查
+                                                      ↓
+                                              超过 maxRestarts → 停止
+                                                      ↓
+插件禁用 → 停止所有服务 → 清理资源
+```
+
+### 示例
+
+```json
+{
+  "contributes": {
+    "services": [
+      {
+        "id": "relay-server",
+        "type": "http",
+        "command": "node",
+        "argsTemplate": ["{{pluginDir}}/server.js", "{{port}}"],
+        "healthCheck": "/__health",
+        "autoStart": true,
+        "restartOnFailure": true,
+        "maxRestarts": 3,
+        "description": "RELAY HTTP 代理服务"
+      }
+    ]
+  }
+}
+```
 
 ## 当前内置对齐表
 

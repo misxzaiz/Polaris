@@ -42,6 +42,36 @@ export interface PluginMcpServerContribution {
   argsTemplate?: string[]
 }
 
+export type PluginServiceType = 'http' | 'stdio' | 'worker'
+
+export interface PluginServiceContribution {
+  id: string
+  pluginId: PluginId
+  type: PluginServiceType
+  command: string
+  argsTemplate?: string[]
+  port?: number
+  healthCheck?: string
+  healthCheckTimeout?: number
+  autoStart?: boolean
+  restartOnFailure?: boolean
+  maxRestarts?: number
+  description?: string
+}
+
+export type PluginServiceState = 'starting' | 'running' | 'stopping' | 'stopped' | 'error'
+
+export interface PluginServiceStatus {
+  serviceId: string
+  pluginId: PluginId
+  state: PluginServiceState
+  port?: number
+  pid?: number
+  uptime?: number
+  lastError?: string
+  restartCount: number
+}
+
 export interface PluginPanelContribution {
   entry: string
   /** 是否支持全屏模式（隐藏其他面板，自适应填充整个工作区） */
@@ -81,6 +111,7 @@ export interface PolarisPluginManifest {
   contributes: {
     views?: Omit<PluginViewContribution, 'pluginId'>[]
     mcpServers?: Omit<PluginMcpServerContribution, 'pluginId'>[]
+    services?: Omit<PluginServiceContribution, 'pluginId'>[]
     panel?: PluginPanelContribution
   }
   permissions: PluginPermissionDeclaration

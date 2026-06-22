@@ -122,6 +122,8 @@ pub struct PluginManifestContributes {
     pub views: Vec<PluginViewContribution>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mcp_servers: Vec<PluginMcpServerManifestContribution>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub services: Vec<PluginServiceManifestContribution>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub panel: Option<PluginPanelContribution>,
 }
@@ -161,6 +163,40 @@ pub struct PluginMcpServerManifestContribution {
     pub command: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub args_template: Vec<String>,
+}
+
+/// 插件服务 contribution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginServiceManifestContribution {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub service_type: String,
+    pub command: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args_template: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub health_check: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub health_check_timeout: Option<u64>,
+    #[serde(default = "default_true")]
+    pub auto_start: bool,
+    #[serde(default = "default_true")]
+    pub restart_on_failure: bool,
+    #[serde(default = "default_max_restarts")]
+    pub max_restarts: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_max_restarts() -> u32 {
+    3
 }
 
 /// 插件权限声明
