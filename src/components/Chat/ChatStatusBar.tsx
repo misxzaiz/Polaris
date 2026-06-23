@@ -137,6 +137,9 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
   const companionName = getCompanionName(companionConfig.wakeWord.words);
 
   // 唤醒词 + 语音命令配置（统一读全局 config）
+  const speechConfig = config?.speech;
+  const speechInputEnabled = speechConfig?.enabled ?? true;
+  const speechLanguage = speechConfig?.language ?? 'zh-CN';
   const wakeWordConfig = config?.wakeWord as WakeWordConfig | undefined;
   const voiceCommands = config?.voiceCommands as VoiceCommandConfig | undefined;
   const wakeWordEnabled = wakeWordConfig?.enabled && wakeWordConfig.words.length > 0;
@@ -150,7 +153,7 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
     isSupported: dictationSupported,
     isSecureContext,
     companionOpen,
-  } = useVoiceDictation(appendSpeechTranscript, undefined, {
+  } = useVoiceDictation(appendSpeechTranscript, speechLanguage, {
     voiceCommands,
     wakeWordConfig: wakeWordEnabled ? wakeWordConfig : undefined,
     onCommand: (cmd: VoiceCommand) => {
@@ -298,7 +301,7 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
         )}
       >
         {/* 听写：识别填入输入框 */}
-        {dictationSupported && (
+        {speechInputEnabled && dictationSupported && (
           <button
             onClick={toggleDictation}
             disabled={companionOpen}

@@ -181,7 +181,9 @@ export function useVoiceDictation(
         }
       },
       onStatusChange: (s) => {
-        if (s === 'idle') {
+        if (s === 'listening') {
+          setIsDictating(true);
+        } else if (s === 'idle' || s === 'error') {
           setIsDictating(false);
           setInterimText('');
         }
@@ -205,7 +207,6 @@ export function useVoiceDictation(
       interimResults: true,
     });
     speechService.start();
-    setIsDictating(true);
   }, [optLanguage]);
 
   const toggle = useCallback(() => {

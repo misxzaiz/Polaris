@@ -98,6 +98,9 @@ export class SpeechService {
   /** 记录当前 session 是否正在运行（由 onstart/onend 同步） */
   private runningRef = false;
 
+  /** 记录 start() 已调用但 onstart 尚未回来的过渡态，避免重复 start 抛错 */
+  private startingRef = false;
+
   /** onend 自动重启定时器（pause/stop 时清理，解决不可取消导致循环的根因） */
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -242,6 +245,29 @@ export class SpeechService {
   }
 
   /**
+   * 安全启动底层识别器。
+   *
+   * Web Speech 的 start() 在已启动/启动中再次调用会抛 InvalidStateError。
+   * runningRef 只能在 onstart 后置 true，因此额外用 startingRef 覆盖过渡窗口。
+   */
+  private startRecognition(): void {
+    if (!this.recognition || this.runningRef || this.startingRef) return;
+
+    try {
+      this.startingRef = true;
+      this.recognition.start();
+    } catch (e) {
+      this.startingRef = false;
+      log.error('启动语音识别失败', e as Error);
+      this.onError?.({
+        type: 'unknown',
+        message: e instanceof Error ? e.message : String(e),
+      });
+      this.onStatusChange?.('error');
+    }
+  }
+
+  /**
    * 调度调度：对比期望状态与实际运行状态，决定 start 或 abort
    *
    * 核心调和逻辑：
@@ -253,14 +279,17 @@ export class SpeechService {
     if (!this.recognition) {
       if (this.desiredState === 'listening') {
         this.initRecognition();
+        this.startRecognition();
       }
       return;
     }
 
     if (this.desiredState === 'listening' && !this.runningRef) {
-      this.recognition.start();
-    } else if (this.desiredState !== 'listening' && this.runningRef) {
+      this.startRecognition();
+    } else if (this.desiredState !== 'listening' && (this.runningRef || this.startingRef)) {
       this.recognition.abort();
+      this.startingRef = false;
+      this.runningRef = false;
     }
   }
 
@@ -271,6 +300,7 @@ export class SpeechService {
     if (!this.recognition) return;
 
     this.recognition.onstart = () => {
+      this.startingRef = false;
       this.runningRef = true;
 
       // 代际检查：若 epoch 已变，这是旧会话的启动事件，丢弃
@@ -284,6 +314,7 @@ export class SpeechService {
     };
 
     this.recognition.onend = () => {
+      this.startingRef = false;
       this.runningRef = false;
 
       // 按期望状态决策，而非应不应该保持监听
@@ -301,12 +332,7 @@ export class SpeechService {
           // 双重检查：当前仍在 listening 且实例仍在
           if (this.desiredState === 'listening' && this.recognition) {
             log.info('自动重启语音识别');
-            try {
-              this.recognition.start();
-            } catch (e) {
-              log.error('自动重启失败', e as Error);
-              this.onStatusChange?.('idle');
-            }
+            this.startRecognition();
           }
         }, 100);
       } else {
@@ -317,6 +343,7 @@ export class SpeechService {
     };
 
     this.recognition.onerror = (event: WebSpeechRecognitionErrorEvent) => {
+      this.startingRef = false;
       // 代际检查：epoch 已变说明已被新实例替换，这是旧会话的过期回调，丢弃
       // （pause/stop/start 都会自增 epoch 并创建新实例，旧实例的 onerror 不应再触发）
       //
@@ -402,6 +429,7 @@ export class SpeechService {
     this.clearRestartTimer();
 
     if (this.recognition) {
+      this.startingRef = false;
       this.recognition.stop();  // stop 比 abort 更干净（只触发 onend，不触发 onerror）
     }
   }
@@ -437,6 +465,7 @@ export class SpeechService {
 
     if (this.recognition) {
       this.recognition.abort();
+      this.startingRef = false;
       this.runningRef = false;  // abort 同步标记，不等异步 onend
       log.info('语音识别已暂停');
     }
