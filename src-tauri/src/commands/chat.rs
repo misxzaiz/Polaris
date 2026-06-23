@@ -389,6 +389,7 @@ fn prepare_mcp_config_with_paths(
     options: &ChatRequestOptions,
     engine: &EngineId,
     paths: &AppPaths,
+    ask_listener: Option<crate::services::ask_listener::AskListenerHandle>,
 ) -> Result<PreparedMcpConfig> {
     let enable_mcp_tools = options.enable_mcp_tools.unwrap_or(false);
     if !enable_mcp_tools {
@@ -410,6 +411,7 @@ fn prepare_mcp_config_with_paths(
         paths.resource_dir.clone(),
         app_root,
         std::path::Path::new(work_dir),
+        ask_listener,
     )?;
     let disabled_servers = merge_disabled_mcp_servers(
         options.disabled_mcp_servers.as_deref().unwrap_or(&[]),
@@ -742,7 +744,16 @@ pub async fn start_chat_inner(
     };
 
     tracing::info!("[start_chat_inner] 使用引擎: {:?}", engine);
-    let mcp_config = prepare_mcp_config_with_paths(&options, &engine, app_paths)?;
+    let mcp_config = prepare_mcp_config_with_paths(
+        &options,
+        &engine,
+        app_paths,
+        if state.clone_config().map(|c| c.interaction.ask_mcp_enabled).unwrap_or(true) {
+            state.ask_listener.get().cloned()
+        } else {
+            None
+        },
+    )?;
 
     let ctx_id = options.context_id.clone();
     let emit_ref = callbacks.emit_event.clone();
@@ -886,7 +897,16 @@ pub async fn continue_chat_inner(
         .ok_or_else(|| AppError::ValidationError("必须提供有效的 engine_id".to_string()))?;
 
     tracing::info!("[continue_chat_inner] 使用引擎: {:?}", engine);
-    let mcp_config = prepare_mcp_config_with_paths(&options, &engine, app_paths)?;
+    let mcp_config = prepare_mcp_config_with_paths(
+        &options,
+        &engine,
+        app_paths,
+        if state.clone_config().map(|c| c.interaction.ask_mcp_enabled).unwrap_or(true) {
+            state.ask_listener.get().cloned()
+        } else {
+            None
+        },
+    )?;
 
     let ctx_id = options.context_id.clone();
     let emit_ref = callbacks.emit_event.clone();
@@ -1869,7 +1889,9 @@ pub fn register_pending_question(
 
 /// 回答问题
 ///
-/// 用户提交答案后调用此函数
+/// 用户提交答案后调用此函数。会做两件事：
+///   1. 取出 ask_listener 注册的 oneshot::Sender，触发同回合 tool_result 回填
+///   2. emit `question_answered` 让前端把卡片切到已答态
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn answer_question(
@@ -1887,21 +1909,34 @@ pub async fn answer_question(
         answer.custom_input
     );
 
-    // 更新问题状态并移除已处理的条目（避免内存泄漏）
+    // 1. 取出 ask_listener 注册的 oneshot::Sender，把答案推回 MCP companion。
+    //    如果没有 sender（旧路径未走 MCP），则降级为只做事件广播。
+    if let Some(entry) = state.take_ask_answer_sender(&call_id) {
+        let outcome = crate::services::ask_listener::build_outcome_for_single_answer(
+            &entry,
+            answer.selected.clone(),
+            answer.custom_input.clone(),
+        );
+        if entry.sender.send(outcome).is_err() {
+            tracing::warn!("[answer_question] oneshot 接收端已关闭: {}", call_id);
+        }
+    } else {
+        tracing::debug!(
+            "[answer_question] 无 ask_listener sender，按 legacy 路径处理: {}",
+            call_id
+        );
+    }
+
+    // 2. 清理 pending_questions（ask_listener 也会清理，这里做幂等）
     {
         let mut pending = state
             .pending_questions
             .lock()
             .map_err(|e| AppError::Unknown(e.to_string()))?;
-
-        if pending.remove(&call_id).is_some() {
-            tracing::info!("[answer_question] 已移除待处理问题: {}", call_id);
-        } else {
-            tracing::warn!("[answer_question] 问题不存在: {}", call_id);
-        }
+        pending.remove(&call_id);
     }
 
-    // 发送事件通知前端问题已回答
+    // 3. emit `question_answered`，前端把卡片切到 answered
     let event = serde_json::json!({
         "type": "question_answered",
         "sessionId": session_id,

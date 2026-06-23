@@ -549,6 +549,27 @@ pub fn run() {
                 store.get().clone()
             };
 
+            // 启动 AskUserQuestion 监听器（TCP 127.0.0.1:N）。
+            // 通过 clone_for_web 得到的 state 与原 state 共享 ask_listener (Arc<OnceLock>) 和
+            // ask_answer_senders，因此设置一次即对全局生效。
+            {
+                let state_arc = std::sync::Arc::new(state.clone_for_web());
+                tauri::async_runtime::spawn(async move {
+                    match services::ask_listener::spawn_ask_listener(state_arc.clone()).await {
+                        Ok(handle) => {
+                            tracing::info!(
+                                "[AskListener] 已绑定 port={}",
+                                handle.port
+                            );
+                            let _ = state_arc.ask_listener.set(handle);
+                        }
+                        Err(e) => {
+                            tracing::error!("[AskListener] 启动失败: {}", e);
+                        }
+                    }
+                });
+            }
+
             if web_enabled_for_runtime(config.web.enabled) {
                 let port = web_port_for_runtime(config.web.port);
                 let host = config.web.host.clone();

@@ -72,6 +72,8 @@ fn create_test_state() -> Arc<AppState> {
         terminal_manager: Mutex::new(TerminalManager::new()),
         file_watcher_manager: Mutex::new(FileWatcherManager::new()),
         pending_questions: Arc::new(Mutex::new(HashMap::new())),
+        ask_answer_senders: Arc::new(Mutex::new(HashMap::new())),
+        ask_listener: Arc::new(OnceLock::new()),
         pending_plans: Arc::new(Mutex::new(HashMap::new())),
         scheduler_daemon: AsyncMutex::new(None),
         lsp_manager: Mutex::new(LspManager::new()),

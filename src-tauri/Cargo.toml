@@ -50,6 +50,10 @@ name = "polaris-prd-preview-mcp"
 path = "src/bin/polaris_prd_preview_mcp.rs"
 
 [[bin]]
+name = "polaris-ask-mcp"
+path = "src/bin/polaris_ask_mcp.rs"
+
+[[bin]]
 name = "polaris-web"
 path = "src/bin/polaris_web.rs"
 

@@ -6,7 +6,7 @@
 import React from 'react';
 import type { ContentBlock } from '@/types';
 import { ContentBlockErrorBoundary } from '../ContentBlockErrorBoundary';
-import { QuestionBlockRenderer } from '../QuestionBlockRenderer';
+import { AskQuestionCard } from '../AskQuestionCard';
 import { PlanModeBlockRenderer } from '../PlanModeBlockRenderer';
 import { AgentRunBlockRenderer } from '../AgentRunBlockRenderer';
 import { PermissionRequestRenderer } from '../PermissionRequestRenderer';
@@ -49,7 +49,7 @@ export function renderContentBlock(
       );
     case 'question':
       return wrapWithErrorBoundary(
-        <QuestionBlockRenderer block={block} />,
+        <AskQuestionCard block={block} />,
         block.id
       );
     case 'plan_mode':

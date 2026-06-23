@@ -648,6 +648,7 @@ impl OldConfig {
             voice_notification: None,
             voice_commands: None,
             web: Default::default(),
+            interaction: Default::default(),
             workspaces: Vec::new(),
             current_workspace_id: None,
             terminal_scripts: Default::default(),

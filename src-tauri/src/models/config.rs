@@ -845,6 +845,28 @@ pub struct WorkspaceTerminalScripts {
     pub hidden_discovered_script_ids: Vec<String>,
 }
 
+/// 交互配置（AskUserQuestion 等同回合交互能力）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InteractionConfig {
+    /// 是否允许 AI 在对话中通过 polaris-ask MCP 弹出问题卡片。
+    /// 关闭后将不向 CLI 注入 polaris-ask server，AI 不再能主动提问。
+    #[serde(default = "default_interaction_ask_enabled")]
+    pub ask_mcp_enabled: bool,
+}
+
+impl Default for InteractionConfig {
+    fn default() -> Self {
+        Self {
+            ask_mcp_enabled: true,
+        }
+    }
+}
+
+fn default_interaction_ask_enabled() -> bool {
+    true
+}
+
 /// 应用配置（新版本）
 ///
 /// 使用嵌套结构，支持多个 AI 引擎
@@ -932,6 +954,10 @@ pub struct Config {
     #[serde(default)]
     pub web: WebConfig,
 
+    /// 交互配置（AskUserQuestion 等）
+    #[serde(default)]
+    pub interaction: InteractionConfig,
+
     /// 工作区列表（跨桌面/Web 共享，持久化到配置文件）
     #[serde(default)]
     pub workspaces: Vec<WorkspaceEntry>,
@@ -986,6 +1012,7 @@ impl Default for Config {
             voice_notification: None,
             voice_commands: None,
             web: WebConfig::default(),
+            interaction: InteractionConfig::default(),
             workspaces: Vec::new(),
             current_workspace_id: None,
             terminal_scripts: BTreeMap::new(),

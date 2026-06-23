@@ -119,6 +119,13 @@ pub struct AppState {
     pub file_watcher_manager: Mutex<FileWatcherManager>,
     /// 待回答问题映射：callId -> PendingQuestion
     pub pending_questions: Arc<Mutex<HashMap<String, PendingQuestion>>>,
+    /// AskUserQuestion 应答通道映射：callId -> AskAnswerEntry { sender, questions }
+    /// 由 ask_listener 注册，由 answer_question 取出并 send 触发同回合回填
+    pub ask_answer_senders:
+        Arc<Mutex<HashMap<String, crate::services::ask_listener::AskAnswerEntry>>>,
+    /// AskUserQuestion 监听器端口 / token；启动时设置一次。
+    /// 用 Arc 包裹 OnceLock 以便在 clone_for_web 后跨 AppState 共享同一份。
+    pub ask_listener: Arc<OnceLock<crate::services::ask_listener::AskListenerHandle>>,
     /// 待审批计划映射：planId -> PendingPlan
     pub pending_plans: Arc<Mutex<HashMap<String, PendingPlan>>>,
     /// 调度器守护进程
@@ -167,6 +174,8 @@ pub fn create_app_state(
         terminal_manager: Mutex::new(TerminalManager::new()),
         file_watcher_manager: Mutex::new(FileWatcherManager::new()),
         pending_questions: Arc::new(Mutex::new(HashMap::new())),
+        ask_answer_senders: Arc::new(Mutex::new(HashMap::new())),
+        ask_listener: Arc::new(OnceLock::new()),
         pending_plans: Arc::new(Mutex::new(HashMap::new())),
         scheduler_daemon: AsyncMutex::new(None),
         lsp_manager: Mutex::new(LspManager::new()),
@@ -230,6 +239,8 @@ impl AppState {
             terminal_manager: Mutex::new(TerminalManager::new()),
             file_watcher_manager: Mutex::new(FileWatcherManager::new()),
             pending_questions: self.pending_questions.clone(),
+            ask_answer_senders: self.ask_answer_senders.clone(),
+            ask_listener: self.ask_listener.clone(),
             pending_plans: self.pending_plans.clone(),
             scheduler_daemon: AsyncMutex::new(None),
             lsp_manager: Mutex::new(LspManager::new()),

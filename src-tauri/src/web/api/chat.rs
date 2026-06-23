@@ -235,6 +235,16 @@ pub async fn handle_answer_question(
         pending.remove(&call_id);
     }
 
+    // 通过 ask_listener oneshot 将答案推回 MCP companion（如果存在）。
+    if let Some(entry) = state.take_ask_answer_sender(&call_id) {
+        let outcome = crate::services::ask_listener::build_outcome_for_single_answer(
+            &entry,
+            answer.selected.clone(),
+            answer.custom_input.clone(),
+        );
+        let _ = entry.sender.send(outcome);
+    }
+
     let event = serde_json::json!({
         "type": "question_answered",
         "sessionId": session_id,

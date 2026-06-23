@@ -14,12 +14,11 @@ import { IconSend, IconStop, IconPaperclip } from '../Common/Icons'
 import { Sparkles } from 'lucide-react'
 import { useWorkspaceStore, useSessionStore, useToastStore } from '@/stores'
 import { voiceNotificationService } from '@/services/voiceNotificationService'
-import { useActiveSessionInputDraft, useActiveSessionActions, useActiveSessionWorkspace, usePendingQuestions, useActiveSessionPromptSuggestion } from '@/stores/conversationStore/useActiveSession'
+import { useActiveSessionInputDraft, useActiveSessionActions, useActiveSessionWorkspace, useActiveSessionPromptSuggestion } from '@/stores/conversationStore/useActiveSession'
 import { useDebouncedCallback } from '@/hooks/useDebounce'
 import { UnifiedSuggestion, type SuggestionItem, type ConversationSuggestion } from './FileSuggestion'
 import { AttachmentPreview } from './AttachmentPreview'
 import { AutoResizingTextarea } from './AutoResizingTextarea'
-import { QuestionFloatingPanel } from './QuestionFloatingPanel'
 import { SnippetParamPanel } from './SnippetParamPanel'
 import { useFileSearch } from '@/hooks/useFileSearch'
 import { useSnippetStore } from '@/stores/snippetStore'
@@ -201,20 +200,6 @@ export function ChatInput({
       textareaRef.current?.focus()
     }
   }, [speechTranscript, clearSpeechTranscript, localText, attachments, updateInputDraft, setInputWasVoice])
-
-  // 获取待回答问题列表 & 管理浮窗可见性
-  const pendingQuestions = usePendingQuestions()
-  const [questionPanelHidden, setQuestionPanelHidden] = useState(false)
-
-  // 新的 pending 问题到来时重置隐藏状态
-  const prevPendingIdsRef = useRef('')
-  useEffect(() => {
-    const ids = pendingQuestions.map(q => q.id).join(',')
-    if (ids !== prevPendingIdsRef.current) {
-      setQuestionPanelHidden(false)
-      prevPendingIdsRef.current = ids
-    }
-  }, [pendingQuestions])
 
   // 同步字数到 store
   useEffect(() => {
@@ -690,28 +675,11 @@ export function ChatInput({
     if (editMode) onCancelEdit?.()
     // 重置历史索引
     setHistoryIndex(-1)
-    // 发送后关闭问题浮窗
-    setQuestionPanelHidden(false)
     // 发送后重置语音唤醒状态（回到待命）
     setSpeechWakeActive(false)
     // 语音提醒：发送确认
     voiceNotificationService.notifySendConfirm()
   }, [value, disabled, isStreaming, attachments, onSend, updateInputDraft, cancelPersistDraft, currentWorkspace, setSpeechWakeActive, editMode, onEditSend, onCancelEdit])
-
-  // 问题浮窗：填入格式化文本并直接发送
-  const handleQuestionFillAndSend = useCallback((text: string) => {
-    cancelPersistDraft()
-    onSend(text, currentWorkspace?.path)
-    setLocalText('')
-    setLocalAttachments([])
-    updateInputDraft({ text: '', attachments: [] })
-    setQuestionPanelHidden(true)
-  }, [onSend, cancelPersistDraft, updateInputDraft, currentWorkspace])
-
-  // 问题浮窗：关闭
-  const handleQuestionDismiss = useCallback(() => {
-    setQuestionPanelHidden(true)
-  }, [])
 
   // 处理语音命令（放在 handleSend 之后，避免变量声明顺序问题）
   useEffect(() => {
@@ -849,16 +817,6 @@ export function ChatInput({
 
   return (
     <div className="border-t border-border bg-background-elevated relative" ref={containerRef}>
-      {/* 问题浮窗 - 定位在输入框上方 */}
-      {pendingQuestions.length > 0 && !questionPanelHidden && (
-        <div className="absolute bottom-full left-0 right-0 mb-1 px-2 sm:px-3 z-10">
-          <QuestionFloatingPanel
-            questions={pendingQuestions}
-            onFillAndSend={handleQuestionFillAndSend}
-            onDismiss={handleQuestionDismiss}
-          />
-        </div>
-      )}
       {/* 片段变量填写浮窗 */}
       {activeSnippet && (
         <SnippetParamPanel

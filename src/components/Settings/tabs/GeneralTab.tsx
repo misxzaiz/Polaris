@@ -155,6 +155,54 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
         </div>
       </div>
 
+      {/* 交互设置 — AskUserQuestion 等 */}
+      <div className="p-4 bg-surface rounded-lg border border-border">
+        <h3 className="text-sm font-medium text-text-primary mb-3">
+          {t('interaction.title', '交互')}
+        </h3>
+        <div className="flex items-center justify-between">
+          <div className="flex-1 pr-4">
+            <div className="text-sm text-text-primary">
+              {t('interaction.askMcpEnabled', '允许 AI 弹出问题卡片')}
+            </div>
+            <div className="text-xs text-text-secondary">
+              {t(
+                'interaction.askMcpEnabledHint',
+                '允许 AI 通过 polaris-ask MCP 在对话中弹出问题卡片向你提问。关闭后 AI 将无法主动提问。'
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() =>
+              onConfigChange({
+                ...config,
+                interaction: {
+                  ...(config.interaction ?? { askMcpEnabled: true }),
+                  askMcpEnabled: !(config.interaction?.askMcpEnabled ?? true),
+                },
+              })
+            }
+            disabled={loading}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+              (config.interaction?.askMcpEnabled ?? true)
+                ? 'bg-primary'
+                : 'bg-border'
+            } ${loading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+            aria-pressed={config.interaction?.askMcpEnabled ?? true}
+            aria-label={t('interaction.askMcpEnabled', '允许 AI 弹出问题卡片')}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                (config.interaction?.askMcpEnabled ?? true)
+                  ? 'translate-x-4.5 translate-x-[18px]'
+                  : 'translate-x-0.5'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
       {/* 窗口透明度设置 */}
       <div className="p-4 bg-surface rounded-lg border border-border">
         <h3 className="text-sm font-medium text-text-primary mb-3">

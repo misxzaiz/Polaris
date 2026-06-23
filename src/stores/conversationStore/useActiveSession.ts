@@ -543,56 +543,21 @@ export function useHasPendingQuestion(): boolean {
   return useMemo(() => pendingQuestions.length > 0, [pendingQuestions])
 }
 
-/** 从 block 列表中提取 AskUserQuestion 待回答问题 */
+/**
+ * 从 block 列表中提取 AskUserQuestion 待回答问题。
+ *
+ * 重构后只走 `question` block（由后端 ask_listener emit）。
+ * 旧的 `tool_call.input` fallback 已移除：
+ *  - 原生 AskUserQuestion 工具会被 CLI 标 is_error，无法回填，不应渲染卡片
+ *  - polaris-ask MCP 路径下后端会先 emit `question` 再 emit tool_call/result
+ */
 function extractQuestionsFromBlocks(blocks: import('../../types').ContentBlock[]): import('../../types').QuestionBlock[] {
   const result: import('../../types').QuestionBlock[] = []
-
   for (const block of blocks) {
-    // 1. question 类型 block（后端发出了 question 事件）
     if (block.type === 'question' && (block as import('../../types').QuestionBlock).status === 'pending') {
       result.push(block as import('../../types').QuestionBlock)
     }
-
-    // 2. AskUserQuestion tool_call block
-    if (block.type === 'tool_call' && (block as import('../../types/chat').ToolCallBlock).name === 'AskUserQuestion') {
-      const toolBlock = block as import('../../types/chat').ToolCallBlock
-      if (toolBlock.status === 'failed') continue
-      // 避免与已有 question block 重复
-      if (result.some(q => q.id.startsWith(toolBlock.id))) continue
-
-      const questions = toolBlock.input?.questions
-      if (!Array.isArray(questions)) continue
-
-      for (let i = 0; i < questions.length; i++) {
-        const q = questions[i] as Record<string, unknown>
-        const options = Array.isArray(q.options)
-          ? q.options.map((o: Record<string, unknown>) => ({
-              value: (o.value as string) || (o.label as string) || '',
-              label: o.label as string | undefined,
-              description: o.description as string | undefined,
-              preview: o.preview as string | undefined,
-            }))
-          : []
-        // 当同时存在 header 和 question 时，header 作为类别标签，question 作为问题正文
-        const rawHeader = q.header as string | undefined
-        const rawQuestion = q.question as string | undefined
-        const header = rawQuestion || rawHeader || ''
-        const categoryLabel = rawQuestion && rawHeader ? rawHeader : (q.categoryLabel as string | undefined)
-
-        result.push({
-          type: 'question',
-          id: `${toolBlock.id}_q${i}`,
-          header,
-          categoryLabel,
-          multiSelect: q.multiSelect as boolean | undefined,
-          options,
-          allowCustomInput: q.allowCustomInput as boolean | undefined,
-          status: 'pending',
-        })
-      }
-    }
   }
-
   return result
 }
 

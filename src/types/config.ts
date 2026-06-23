@@ -142,6 +142,12 @@ export interface WebConfig {
   token?: string;
 }
 
+/** 交互配置（AskUserQuestion 等同回合交互能力） */
+export interface InteractionConfig {
+  /** 是否允许 AI 弹出问题卡片（通过 polaris-ask MCP） */
+  askMcpEnabled?: boolean;
+}
+
 /** 工作区条目（持久化到服务端配置，跨桌面/Web 共享） */
 export interface WorkspaceEntry {
   id: string;
@@ -202,6 +208,8 @@ export interface Config {
   voiceCommands?: VoiceCommandEntry[];
   /** Web 服务配置 */
   web?: WebConfig;
+  /** 交互配置（AskUserQuestion 等） */
+  interaction?: InteractionConfig;
   /** 工作区列表（跨桌面/Web 共享） */
   workspaces?: WorkspaceEntry[];
   /** 当前激活的工作区 ID */

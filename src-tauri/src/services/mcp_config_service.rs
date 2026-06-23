@@ -18,11 +18,14 @@ const PRD_PREVIEW_MCP_SERVER_NAME: &str = "polaris-prd-preview";
 const PRD_PREVIEW_MCP_BIN_NAME: &str = "polaris-prd-preview-mcp";
 const COMPUTER_MCP_SERVER_NAME: &str = "polaris-computer";
 const COMPUTER_MCP_BIN_NAME: &str = "polaris-computer-mcp";
+const ASK_MCP_SERVER_NAME: &str = "polaris-ask";
+const ASK_MCP_BIN_NAME: &str = "polaris-ask-mcp";
 const TODO_PLUGIN_ID: &str = "polaris.todo";
 const REQUIREMENTS_PLUGIN_ID: &str = "polaris.requirements";
 const SCHEDULER_PLUGIN_ID: &str = "polaris.scheduler";
 const PRD_PREVIEW_PLUGIN_ID: &str = "polaris.prd-preview";
 const COMPUTER_PLUGIN_ID: &str = "polaris.computer";
+const ASK_PLUGIN_ID: &str = "polaris.ask";
 
 /// Platform-aware executable suffix: ".exe" on Windows, "" on Linux/macOS.
 const EXE_SUFFIX: &str = std::env::consts::EXE_SUFFIX;
@@ -54,6 +57,8 @@ pub enum McpServerTransport {
 pub enum McpServerArgsMode {
     ConfigDirAndWorkspace,
     WorkspaceOnly,
+    /// `--polaris-port <PORT> --polaris-token <TOKEN>` for the ask MCP companion.
+    AskListener,
 }
 
 #[derive(Debug, Clone)]
@@ -163,6 +168,10 @@ pub fn builtin_plugin_mcp_manifests() -> &'static [BuiltinPluginMcpManifest] {
             plugin_id: COMPUTER_PLUGIN_ID,
             mcp_server_names: &[COMPUTER_MCP_SERVER_NAME],
         },
+        BuiltinPluginMcpManifest {
+            plugin_id: ASK_PLUGIN_ID,
+            mcp_server_names: &[ASK_MCP_SERVER_NAME],
+        },
     ]
 }
 
@@ -233,6 +242,19 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
             false,
         ),
     );
+    registry.register_plugin_server(
+        ASK_PLUGIN_ID,
+        PluginMcpServerContribution::builtin(
+            ASK_MCP_SERVER_NAME,
+            ASK_MCP_BIN_NAME,
+            "bin/polaris-ask-mcp",
+            "polaris-ask-mcp",
+            "src-tauri/target/debug/polaris-ask-mcp",
+            "POLARIS_ASK_MCP_PATH",
+            McpServerArgsMode::AskListener,
+            false,
+        ),
+    );
     registry
 }
 
@@ -267,6 +289,7 @@ pub struct WorkspaceMcpConfigService {
     binaries: Vec<ResolvedMcpBinary>,
     external_servers: Vec<ResolvedExternalMcpServer>,
     config_dir: PathBuf,
+    ask_listener: Option<crate::services::ask_listener::AskListenerHandle>,
 }
 
 impl WorkspaceMcpConfigService {
@@ -302,6 +325,7 @@ impl WorkspaceMcpConfigService {
             binaries,
             external_servers: Vec::new(),
             config_dir,
+            ask_listener: None,
         }
     }
 
@@ -352,6 +376,7 @@ impl WorkspaceMcpConfigService {
             binaries,
             external_servers: Vec::new(),
             config_dir,
+            ask_listener: None,
         })
     }
 
@@ -360,6 +385,17 @@ impl WorkspaceMcpConfigService {
         external_servers: Vec<ResolvedExternalMcpServer>,
     ) -> Self {
         self.external_servers = external_servers;
+        self
+    }
+
+    /// Inject the ask-listener handle so the `polaris-ask` binary gets
+    /// `--polaris-port` / `--polaris-token` args. Without this, the
+    /// `AskListener` server is silently skipped.
+    pub fn with_ask_listener(
+        mut self,
+        handle: Option<crate::services::ask_listener::AskListenerHandle>,
+    ) -> Self {
+        self.ask_listener = handle;
         self
     }
 
@@ -403,8 +439,23 @@ impl WorkspaceMcpConfigService {
                 continue;
             }
 
-            let args =
-                build_mcp_server_args(binary.args_mode, &self.config_dir, normalized_workspace);
+            // AskListener mode needs a live listener handle — skip if missing.
+            if matches!(binary.args_mode, McpServerArgsMode::AskListener)
+                && self.ask_listener.is_none()
+            {
+                tracing::info!(
+                    "[MCP] 跳过 {}：ask_listener 未就绪",
+                    binary.server_name
+                );
+                continue;
+            }
+
+            let args = build_mcp_server_args(
+                binary.args_mode,
+                &self.config_dir,
+                normalized_workspace,
+                self.ask_listener.as_ref(),
+            );
 
             servers.insert(
                 binary.server_name.to_string(),
@@ -486,8 +537,22 @@ impl WorkspaceMcpConfigService {
                 continue;
             }
 
-            let server_args =
-                build_mcp_server_args(binary.args_mode, &self.config_dir, normalized_workspace);
+            if matches!(binary.args_mode, McpServerArgsMode::AskListener)
+                && self.ask_listener.is_none()
+            {
+                tracing::info!(
+                    "[MCP] 跳过 Codex {}：ask_listener 未就绪",
+                    binary.server_name
+                );
+                continue;
+            }
+
+            let server_args = build_mcp_server_args(
+                binary.args_mode,
+                &self.config_dir,
+                normalized_workspace,
+                self.ask_listener.as_ref(),
+            );
 
             registered_names.insert(binary.server_name.clone());
             args.push("-c".to_string());
@@ -681,6 +746,7 @@ pub fn resolve_workspace_mcp_runtime_service(
     resource_dir: Option<PathBuf>,
     app_root: PathBuf,
     workspace_path: &Path,
+    ask_listener: Option<crate::services::ask_listener::AskListenerHandle>,
 ) -> Result<(WorkspaceMcpConfigService, Vec<String>)> {
     let service =
         WorkspaceMcpConfigService::from_app_paths(config_dir.clone(), resource_dir, app_root)?;
@@ -690,7 +756,9 @@ pub fn resolve_workspace_mcp_runtime_service(
         resolve_external_plugin_mcp_servers(&config_dir, workspace_path, &plugins, &plugin_states);
 
     Ok((
-        service.with_external_servers(external_servers),
+        service
+            .with_external_servers(external_servers)
+            .with_ask_listener(ask_listener),
         disabled_builtin_servers,
     ))
 }
@@ -715,6 +783,7 @@ fn build_mcp_server_args(
     args_mode: McpServerArgsMode,
     config_dir: &Path,
     workspace_path: &str,
+    ask_listener: Option<&crate::services::ask_listener::AskListenerHandle>,
 ) -> Vec<String> {
     match args_mode {
         McpServerArgsMode::ConfigDirAndWorkspace => vec![
@@ -722,6 +791,20 @@ fn build_mcp_server_args(
             workspace_path.to_string(),
         ],
         McpServerArgsMode::WorkspaceOnly => vec![workspace_path.to_string()],
+        McpServerArgsMode::AskListener => {
+            // Caller is expected to skip when no handle is present; defensive
+            // fallback yields empty args (the companion will then exit with
+            // a clear "缺少 --polaris-port" error).
+            match ask_listener {
+                Some(handle) => vec![
+                    "--polaris-port".to_string(),
+                    handle.port.to_string(),
+                    "--polaris-token".to_string(),
+                    handle.token.clone(),
+                ],
+                None => Vec::new(),
+            }
+        }
     }
 }
 
