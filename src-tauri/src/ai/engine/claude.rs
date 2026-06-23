@@ -400,6 +400,9 @@ impl ClaudeEngine {
                 cmd.arg("--allowedTools").arg(allowed_tools.join(","));
             }
 
+            // 屏蔽 CLI 原生 AskUserQuestion，统一走 polaris-ask MCP（同回合 tool_result 回填）
+            cmd.arg("--disallowedTools").arg("AskUserQuestion");
+
             // 统一使用 stream-json + stdin 模式（无论是否带图片）。
             // 此前对纯文本走 `.arg(message)` 把消息拼进命令行，会在 message 较长时
             // 触发 Windows CreateProcess `lpCommandLine` 32767 字符限制，
@@ -510,6 +513,9 @@ impl ClaudeEngine {
             if !allowed_tools.is_empty() {
                 cmd.arg("--allowedTools").arg(allowed_tools.join(","));
             }
+
+            // 屏蔽 CLI 原生 AskUserQuestion，统一走 polaris-ask MCP（同回合 tool_result 回填）
+            cmd.arg("--disallowedTools").arg("AskUserQuestion");
 
             // 统一使用 stream-json + stdin 模式（与 Windows 分支保持一致），
             // 避免 message 通过命令行参数传递时受平台参数长度限制。
