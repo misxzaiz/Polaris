@@ -99,12 +99,12 @@ export function useVoiceDictation(
       speechService.stop();
       audioFocusManager.release('dictation');
     }
+    setWakeActive(false);
     setIsDictating(false);
     setInterimText('');
-  }, []);
+  }, [setWakeActive]);
 
-  // ===== 启动：注入 SpeechControl + 注册回调 =====
-  useEffect(() => {
+  const registerDictationHandlers = useCallback(() => {
     const speechControl: SpeechControl = {
       pause: () => {
         muteRef.current = true;
@@ -148,6 +148,7 @@ export function useVoiceDictation(
           // 2. 唤醒词模式未启用 → 直接写入
           const wakeConfig = wakeWordConfigRef.current;
           if (!wakeConfig?.enabled) {
+            log.debug('唤醒词未启用，写入听写文本', { text: cleanText });
             onTextRef.current(cleanText);
             setInterimText('');
             return;
@@ -166,13 +167,17 @@ export function useVoiceDictation(
               voiceNotificationService.notifyWakeResponse();
               // 唤醒词后紧跟的内容也写入
               if (match.content) {
+                log.debug('唤醒词后内容写入听写文本', { text: match.content });
                 onTextRef.current(match.content);
               }
+            } else {
+              log.debug('待命状态未匹配唤醒词，丢弃识别文本', { text: cleanText, words: wakeConfig.words });
             }
             // 不匹配 → 丢弃
             setInterimText('');
           } else {
             // 已激活 → 正常写入
+            log.debug('已唤醒，写入听写文本', { text: cleanText });
             onTextRef.current(cleanText);
             setInterimText('');
           }
@@ -195,11 +200,22 @@ export function useVoiceDictation(
     });
   }, [getWakeActive, setWakeActive]);
 
+  // ===== 启动：注入 SpeechControl + 注册回调 =====
+  useEffect(() => {
+    registerDictationHandlers();
+  }, [registerDictationHandlers]);
+
   const start = useCallback(() => {
     if (!speechService.supported) return;
     // 焦点仲裁：通话占用时申请失败，不抢麦克风
     if (!audioFocusManager.request('dictation')) return;
 
+    // speechService 是全局单例，全屏通话会覆盖回调；每次听写启动前都重新夺回处理权。
+    registerDictationHandlers();
+    if (wakeWordConfigRef.current?.enabled) {
+      // 用户手动点击输入框麦克风时，意图已经明确：直接进入听写，不再要求额外唤醒词。
+      setWakeActive(true);
+    }
     speechService.setConfig({
       enabled: true,
       language: optLanguage,
@@ -207,7 +223,7 @@ export function useVoiceDictation(
       interimResults: true,
     });
     speechService.start();
-  }, [optLanguage]);
+  }, [optLanguage, registerDictationHandlers, setWakeActive]);
 
   const toggle = useCallback(() => {
     if (isDictating) stop();

@@ -118,4 +118,26 @@ describe('SpeechService', () => {
 
     expect(onStatusChange).toHaveBeenCalledWith('listening');
   });
+
+  it('allows stop to be called repeatedly while start is pending', async () => {
+    const instance = createRecognition();
+    Object.defineProperty(window, 'webkitSpeechRecognition', {
+      configurable: true,
+      writable: true,
+      value: vi.fn(function MockSpeechRecognition() {
+        return instance;
+      }),
+    });
+
+    const { SpeechService } = await import('./speechService');
+    const service = new SpeechService();
+
+    service.start();
+
+    expect(() => {
+      service.stop();
+      service.stop();
+    }).not.toThrow();
+    expect(instance.stop).toHaveBeenCalledTimes(1);
+  });
 });

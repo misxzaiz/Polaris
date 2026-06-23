@@ -76,6 +76,18 @@ export function useVoiceCompanion() {
   const echoGuardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // 冷却后指纹保留
   const handleResultRef = useRef<(text: string, isFinal: boolean) => void>(() => {}); // 稳定回调引用
 
+  const cleanupCompanionAudio = useCallback(() => {
+    speechService.stop();
+    voiceTts.stop();
+    voiceTts.onStart = undefined;
+    voiceTts.onDone = undefined;
+    speakingTextRef.current = '';
+    bufferRef.current = '';
+    awaitingReplyRef.current = false;
+    streamFedLenRef.current = 0;
+    audioFocusManager.release('companion');
+  }, []);
+
   const clearTimer = (ref: React.MutableRefObject<ReturnType<typeof setTimeout> | null>) => {
     if (ref.current) {
       clearTimeout(ref.current);
@@ -453,17 +465,9 @@ export function useVoiceCompanion() {
       clearTimer(autoSendTimerRef);
       clearTimer(cooldownTimerRef);
       clearTimer(echoGuardTimerRef);
-      speechService.stop();
-      voiceTts.stop();
-      voiceTts.onStart = undefined;
-      voiceTts.onDone = undefined;
-      speakingTextRef.current = '';
-      bufferRef.current = '';
-      awaitingReplyRef.current = false;
-      streamFedLenRef.current = 0;
-      audioFocusManager.release('companion');
+      cleanupCompanionAudio();
     };
-  }, [isOpen, config.language, activate, resetStandbyTimer, enterCooldown, resumeAfterReply]);
+  }, [isOpen, config.language, activate, resetStandbyTimer, enterCooldown, resumeAfterReply, cleanupCompanionAudio]);
 
   // ===== AI 回复 → 流式逐句朗读（Phase 2） =====
   // 流式期间：助手消息每次增长，把新增的可朗读文本增量喂给 voiceTts，
@@ -591,16 +595,11 @@ export function useVoiceCompanion() {
     clearTimer(autoSendTimerRef);
     clearTimer(cooldownTimerRef);
     clearTimer(echoGuardTimerRef);
-    speechService.stop();
-    voiceTts.stop();
-    speakingTextRef.current = '';
-    bufferRef.current = '';
-    awaitingReplyRef.current = false;
-    streamFedLenRef.current = 0;
+    cleanupCompanionAudio();
     const st = useVoiceCompanionStore.getState();
     st.reset();
     st.close();
-  }, []);
+  }, [cleanupCompanionAudio]);
 
   return {
     isOpen,

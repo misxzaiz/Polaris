@@ -287,7 +287,18 @@ export class SpeechService {
     if (this.desiredState === 'listening' && !this.runningRef) {
       this.startRecognition();
     } else if (this.desiredState !== 'listening' && (this.runningRef || this.startingRef)) {
+      this.abortRecognition('状态调和中止语音识别');
+    }
+  }
+
+  private abortRecognition(reason: string): void {
+    if (!this.recognition || (!this.runningRef && !this.startingRef)) return;
+
+    try {
       this.recognition.abort();
+    } catch (e) {
+      log.debug(`${reason}失败`, { error: String(e) });
+    } finally {
       this.startingRef = false;
       this.runningRef = false;
     }
@@ -429,8 +440,15 @@ export class SpeechService {
     this.clearRestartTimer();
 
     if (this.recognition) {
+      if (this.runningRef || this.startingRef) {
+        try {
+          this.recognition.stop();  // stop 比 abort 更干净（只触发 onend，不触发 onerror）
+        } catch (e) {
+          log.debug('停止语音识别失败，回退为本地停止状态', { error: String(e) });
+        }
+      }
       this.startingRef = false;
-      this.recognition.stop();  // stop 比 abort 更干净（只触发 onend，不触发 onerror）
+      this.runningRef = false;
     }
   }
 
@@ -440,9 +458,7 @@ export class SpeechService {
    * 直接 abort 底层实例（等价于 pause，但不改 desiredState，调用方慎用）
    */
   abort(): void {
-    if (this.recognition) {
-      this.recognition.abort();
-    }
+    this.abortRecognition('直接中止语音识别');
   }
 
   /**
@@ -463,12 +479,8 @@ export class SpeechService {
     this.epoch++;  // 代际失效旧会话事件
     this.clearRestartTimer();  // 取消在途重启（根治循环的根因）
 
-    if (this.recognition) {
-      this.recognition.abort();
-      this.startingRef = false;
-      this.runningRef = false;  // abort 同步标记，不等异步 onend
-      log.info('语音识别已暂停');
-    }
+    this.abortRecognition('暂停语音识别');
+    log.info('语音识别已暂停');
   }
 
   /**
