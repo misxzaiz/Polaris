@@ -10,7 +10,6 @@
  *
  * 优化点：
  * - 通知类短文本使用 voicePackageService 预缓存，零延迟播放
- * - 唤醒回应播报期间暂停语音识别，避免把回应语录入输入框
  * - AI 回复朗读为高优先级，可打断低优先级通知
  */
 
@@ -29,31 +28,17 @@ const log = createLogger('VoiceNotification');
 
 type ConfigGetter = () => Config | null;
 
-/** 语音识别控制接口（用于唤醒回应时暂停/恢复） */
-export interface SpeechControl {
-  /** 暂时停止识别 */
-  pause: () => void;
-  /** 恢复识别 */
-  resume: () => void;
-}
-
 /**
  * 语音提醒服务
  */
 class VoiceNotificationService {
   private getConfigStore: ConfigGetter = () => null;
-  private speechControl: SpeechControl | null = null;
 
   /** 绑定配置获取函数 */
   initialize(getConfig: ConfigGetter): void {
     this.getConfigStore = getConfig;
     // 初始化时预生成语音包
     this.preGenerateVoicePackage();
-  }
-
-  /** 绑定语音识别控制（用于唤醒回应时暂停识别） */
-  setSpeechControl(control: SpeechControl): void {
-    this.speechControl = control;
   }
 
   /** 获取语音提醒配置 */
@@ -179,10 +164,10 @@ class VoiceNotificationService {
   /**
    * 唤醒回应（从回应语列表中随机选择）
    *
-   * 时序控制：
-   * 1. pause() → 同步设置 mute flag + 暂停识别器（阻止自动重启）
-   * 2. 播报回应语并等待结束
-   * 3. resume() → 恢复识别器 + 300ms 后关闭 mute flag（等待声学回声消散）
+   * 直接播报回应语，不再操控语音识别器。
+   * 历史曾在播报期间 pause/resume 识别 + 设置 mute 窗口防回声，但跨 hook 的
+   * SpeechControl 单例桥脆弱（companion 与 dictation 互相覆盖会导致 mute flag 卡死），
+   * 已移除。回应语通常为 1~2 字短词，即便被回采也不会卡死识别。
    */
   async notifyWakeResponse(): Promise<void> {
     const config = this.getNotificationConfig();
@@ -191,10 +176,6 @@ class VoiceNotificationService {
     // 语音通话中静默（通话有自己的交互反馈）
     if (audioFocusManager.isHeldBy('companion')) return;
 
-    // 听写未持有焦点时（如 companion 接管了音频焦点），跳过暂停/恢复
-    // 因为 companion 端已有自己的回声管理，且 dictation 的 speechControl 可能未就绪
-    if (!audioFocusManager.isHeldBy('dictation')) return;
-
     const texts = config.wakeResponseTexts;
     if (texts.length === 0) return;
 
@@ -202,27 +183,16 @@ class VoiceNotificationService {
     log.info('播报唤醒回应', { text });
 
     const ttsConfig = this.getTTSConfig();
-    if (!ttsConfig?.enabled) {
-      // TTS 未启用时，不做暂停/恢复（不需要播报）
-      return;
-    }
+    if (!ttsConfig?.enabled) return;
 
-    // 1. 暂停识别（mute flag 立即生效 + 识别器暂停）
-    this.speechControl?.pause();
-
-    // 2. 播报回应语
     const played = await voicePackageService.playCachedAsync(text, ttsConfig.volume);
+    if (played) return;
 
-    if (!played) {
-      try {
-        await ttsService.speak(text);
-      } catch (error) {
-        log.debug('唤醒回应播放失败', { error: String(error) });
-      }
+    try {
+      await ttsService.speak(text);
+    } catch (error) {
+      log.debug('唤醒回应播放失败', { error: String(error) });
     }
-
-    // 3. 播报结束 → 恢复识别（resume 内部有 300ms 声学消散等待）
-    this.speechControl?.resume();
   }
 
   /** 错误提醒 */

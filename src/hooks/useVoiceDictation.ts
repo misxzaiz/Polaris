@@ -23,7 +23,6 @@ import { audioFocusManager } from '@/services/audioFocusManager';
 import { useVoiceCompanionStore } from '@/stores/voiceCompanionStore';
 import { useSessionStore } from '@/stores';
 import { voiceNotificationService } from '@/services/voiceNotificationService';
-import type { SpeechControl } from '@/services/voiceNotificationService';
 import type { SpeechLanguage, VoiceCommand, VoiceCommandConfig, WakeWordConfig } from '@/types/speech';
 import { checkVoiceCommand, matchWakeWord } from '@/types/speech';
 import { createLogger } from '@/utils/logger';
@@ -86,9 +85,6 @@ export function useVoiceDictation(
   useEffect(() => { voiceCommandsRef.current = voiceCommands; }, [voiceCommands]);
   useEffect(() => { wakeWordConfigRef.current = wakeWordConfig; }, [wakeWordConfig]);
 
-  /** 静默标志：唤醒回应播报期间为 true，丢弃所有识别结果 */
-  const muteRef = useRef(false);
-
   const getWakeActive = useCallback(() => useSessionStore.getState().speechWakeActive, []);
   const setWakeActive = useCallback((active: boolean) => {
     useSessionStore.getState().setSpeechWakeActive(active);
@@ -105,30 +101,9 @@ export function useVoiceDictation(
   }, [setWakeActive]);
 
   const registerDictationHandlers = useCallback(() => {
-    const speechControl: SpeechControl = {
-      pause: () => {
-        muteRef.current = true;
-        speechService.pause();
-        log.debug('语音识别已暂停 + 静默窗口开启');
-      },
-      resume: () => {
-        speechService.resume();
-        setTimeout(() => {
-          muteRef.current = false;
-          log.debug('静默窗口关闭，识别结果恢复正常处理');
-        }, 300);
-      },
-    };
-    voiceNotificationService.setSpeechControl(speechControl);
-
-    // 启动时注入回调
+    // 注册识别回调
     speechService.setCallbacks({
       onResult: (text, isFinal) => {
-        if (muteRef.current) {
-          log.debug('静默窗口中，丢弃识别结果', { text });
-          return;
-        }
-
         if (isFinal) {
           const cleanText = text.trim();
           if (!cleanText) {
@@ -200,7 +175,7 @@ export function useVoiceDictation(
     });
   }, [getWakeActive, setWakeActive]);
 
-  // ===== 启动：注入 SpeechControl + 注册回调 =====
+  // ===== 启动：注册识别回调 =====
   useEffect(() => {
     registerDictationHandlers();
   }, [registerDictationHandlers]);

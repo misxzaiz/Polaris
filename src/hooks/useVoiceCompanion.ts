@@ -38,7 +38,6 @@ import {
 import { isAssistantMessage, type AssistantChatMessage } from '@/types/chat';
 import { createLogger } from '@/utils/logger';
 import { voiceNotificationService } from '@/services/voiceNotificationService';
-import type { SpeechControl } from '@/services/voiceNotificationService';
 
 const log = createLogger('useVoiceCompanion');
 
@@ -410,17 +409,6 @@ export function useVoiceCompanion() {
         useVoiceCompanionStore.getState().setError(err.message || '语音识别出错');
       },
     });
-
-    // 注入 SpeechControl：唤醒回应播报时暂停识别防回声
-    const speechControl: SpeechControl = {
-      pause: () => {
-        speechService.pause();
-      },
-      resume: () => {
-        speechService.resume();
-      },
-    };
-    voiceNotificationService.setSpeechControl(speechControl);
 
     voiceTts.onStart = () => {
       const cur = useVoiceCompanionStore.getState();
