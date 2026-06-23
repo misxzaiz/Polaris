@@ -158,7 +158,7 @@ function App() {
   // 左侧面板自适应填充剩余空间：AI 面板折叠 + 无编辑器打开时 flex-1 撑满，
   // 解决"关闭 AI 面板 + 无打开编辑器 → 左侧面板右侧空一半"问题。
   // 终端全屏模式优先级更高，由 fullscreen 分支单独处理。
-  const leftPanelFillRemaining = !hasCenterStage && !terminalFullscreen;
+  const leftPanelFillRemaining = !hasCenterStage && rightPanelCollapsed && !terminalFullscreen;
 
   const openGitWorkbench = useCallback((options?: { initialGitTab?: string }) => {
     openGitTab(options);
