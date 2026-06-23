@@ -286,17 +286,37 @@ export interface QuestionOption {
 }
 
 /**
+ * 单条子问题（与后端 QuestionItem 对齐）
+ */
+export interface QuestionItemData {
+  /** 问题正文（卡片主标题） */
+  question: string
+  /** 短标签（≤12 字，类别 chip） */
+  header: string
+  /** 选项列表 */
+  options: QuestionOption[]
+  /** 是否多选 */
+  multiSelect?: boolean
+  /** 是否允许自定义输入 */
+  allowCustomInput?: boolean
+  /** 类别标签 */
+  categoryLabel?: string
+}
+
+/**
  * Question 事件 - AI 询问用户问题
  */
 export interface QuestionEvent {
   type: 'question'
   /** 会话 ID - 用于事件路由 */
   sessionId: string
-  /** 问题 ID */
+  /** 问题 ID（= callId） */
   questionId: string
-  /** 问题标题 */
+  /** 同一 call 内的全部问题（1-4，新版主字段） */
+  questions?: QuestionItemData[]
+  /** 问题标题（兼容字段：首题摘要） */
   header: string
-  /** 选项列表 */
+  /** 选项列表（兼容字段：首题摘要） */
   options: QuestionOption[]
   /** 是否多选 */
   multiSelect?: boolean
@@ -307,17 +327,33 @@ export interface QuestionEvent {
 }
 
 /**
+ * 单条子答案（与 QuestionItem 对齐）
+ */
+export interface SubAnswerData {
+  /** 选中的选项值 */
+  selected: string[]
+  /** 自定义输入 */
+  customInput?: string
+  /** 该题是否被单独跳过 */
+  declined?: boolean
+}
+
+/**
  * QuestionAnswered 事件 - 用户回答问题
  */
 export interface QuestionAnsweredEvent {
   type: 'question_answered'
   /** 会话 ID - 用于事件路由 */
   sessionId: string
-  /** 问题 ID */
+  /** 问题 ID（= callId） */
   questionId: string
-  /** 用户选择的选项 */
-  selected: string[]
-  /** 用户自定义输入 */
+  /** 每题答案（新版） */
+  answers?: SubAnswerData[]
+  /** 是否整体跳过 */
+  declined?: boolean
+  /** @deprecated 兼容字段：单题路径下的 selected */
+  selected?: string[]
+  /** @deprecated 兼容字段：单题路径下的 customInput */
   customInput?: string
 }
 

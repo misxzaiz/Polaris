@@ -20,7 +20,29 @@ use crate::services::lsp_index::IndexService;
 use crate::services::scheduler_daemon::SchedulerDaemon;
 use crate::web::server::WebServerHandle;
 
-/// 待回答问题信息
+/// 单个问题（同一个 MCP call 可包含 1-4 个）
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestionItem {
+    /// 完整问题文本（卡片正文）
+    pub question: String,
+    /// 短标签（≤12 字，类别 chip）
+    pub header: String,
+    /// 是否多选
+    #[serde(default)]
+    pub multi_select: bool,
+    /// 选项列表
+    pub options: Vec<QuestionOption>,
+    /// 是否允许自定义输入
+    #[serde(default = "default_allow_custom_input")]
+    pub allow_custom_input: bool,
+}
+
+fn default_allow_custom_input() -> bool {
+    true
+}
+
+/// 待回答问题信息（一条对应一个 MCP tool_call）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PendingQuestion {
@@ -28,14 +50,8 @@ pub struct PendingQuestion {
     pub call_id: String,
     /// 会话 ID
     pub session_id: String,
-    /// 问题标题
-    pub header: String,
-    /// 是否多选
-    pub multi_select: bool,
-    /// 选项列表
-    pub options: Vec<QuestionOption>,
-    /// 是否允许自定义输入
-    pub allow_custom_input: bool,
+    /// 同一个 call 包含的全部问题（1-4 个，与 MCP schema 对齐）
+    pub questions: Vec<QuestionItem>,
     /// 问题状态
     pub status: QuestionStatus,
 }
@@ -46,6 +62,8 @@ pub struct PendingQuestion {
 pub struct QuestionOption {
     pub value: String,
     pub label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 /// 问题状态
@@ -56,14 +74,34 @@ pub enum QuestionStatus {
     Answered,
 }
 
-/// 问题答案
+/// 单条子答案
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubAnswer {
+    /// 选中的选项值（按 label 文本对齐）
+    #[serde(default)]
+    pub selected: Vec<String>,
+    /// 自定义输入
+    #[serde(default)]
+    pub custom_input: Option<String>,
+    /// 该题是否被单独跳过（部分跳过场景）
+    #[serde(default)]
+    pub declined: bool,
+}
+
+/// 一个 MCP call 的全部答案（与 PendingQuestion.questions 一一对齐）。
+///
+/// 反序列化时兼容旧版 `{ selected, customInput }` 单题形态：
+/// 通过 #[serde(deny_unknown_fields = false)] 默认 + 自定义 deserializer。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QuestionAnswer {
-    /// 选中的选项值
-    pub selected: Vec<String>,
-    /// 自定义输入
-    pub custom_input: Option<String>,
+    /// 每题答案（顺序对齐 questions）
+    #[serde(default)]
+    pub answers: Vec<SubAnswer>,
+    /// 是否整体跳过（全部 decline）
+    #[serde(default)]
+    pub declined: bool,
 }
 
 // ============================================================================

@@ -298,24 +298,42 @@ export function handleAIEvent(
     // permission_result is handled via plan_approval_result
     // there is no separate permission_result event type
 
-    case 'question':
-      state.appendQuestionBlock(
-        event.questionId,
-        event.header,
-        event.options,
-        event.multiSelect,
-        event.allowCustomInput,
-        event.categoryLabel,
-      )
+    case 'question': {
+      // 新版事件携带 questions[] 全集；老路径仅有顶层 header/options 等字段，
+      // 这里做向后兼容：缺 questions[] 时用首题摘要合成。
+      const questions = event.questions && event.questions.length > 0
+        ? event.questions.map(q => ({
+            question: q.question,
+            header: q.header,
+            multiSelect: q.multiSelect,
+            options: q.options,
+            allowCustomInput: q.allowCustomInput,
+          }))
+        : [{
+            question: event.header,
+            header: event.categoryLabel || '',
+            multiSelect: event.multiSelect,
+            options: event.options,
+            allowCustomInput: event.allowCustomInput,
+          }]
+      state.appendQuestionBlock(event.questionId, questions)
       break
+    }
 
-    case 'question_answered':
-      // QuestionAnsweredEvent has selected and customInput directly
+    case 'question_answered': {
+      // 新版携带 answers[] 数组；老路径只有顶层 selected/customInput
+      const answers = event.answers && event.answers.length > 0
+        ? event.answers
+        : [{
+            selected: event.selected || [],
+            customInput: event.customInput,
+          }]
       state.updateQuestionBlock(event.questionId, {
-        selected: event.selected,
-        customInput: event.customInput,
+        answers,
+        declined: event.declined,
       })
       break
+    }
 
     // Task 事件 - 由 TaskStore 处理，不在 ConversationStore 范围内
     case 'task_metadata':

@@ -21,7 +21,7 @@ use tokio::sync::oneshot;
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
-use crate::state::{AppState, PendingQuestion, QuestionOption, QuestionStatus};
+use crate::state::{AppState, PendingQuestion, QuestionItem, QuestionOption, QuestionStatus, SubAnswer};
 
 /// Maximum frame size we accept on the wire (1 MiB).
 const MAX_FRAME_SIZE: usize = 1_048_576;
@@ -193,30 +193,15 @@ async fn handle_ask_frame(
             .pending_questions
             .lock()
             .map_err(|e| AppError::ProcessError(format!("pending_questions 锁: {}", e)))?;
-        // For the UI we only need the first question's surface (legacy
-        // PendingQuestion shape). The full list is held inside the answer
-        // sender map so we can format outcomes when the user submits.
-        if let Some(first) = questions.first() {
-            pending.insert(
-                call_id.clone(),
-                PendingQuestion {
-                    call_id: call_id.clone(),
-                    session_id: session_id.clone(),
-                    header: first.header.clone(),
-                    multi_select: first.multi_select,
-                    options: first
-                        .options
-                        .iter()
-                        .map(|o| QuestionOption {
-                            value: o.label.clone(),
-                            label: Some(o.label.clone()),
-                        })
-                        .collect(),
-                    allow_custom_input: true,
-                    status: QuestionStatus::Pending,
-                },
-            );
-        }
+        pending.insert(
+            call_id.clone(),
+            PendingQuestion {
+                call_id: call_id.clone(),
+                session_id: session_id.clone(),
+                questions: questions.iter().map(parsed_to_item).collect(),
+                status: QuestionStatus::Pending,
+            },
+        );
     }
     state.register_ask_answer_sender(&call_id, questions.clone(), tx);
 
@@ -290,6 +275,24 @@ pub struct ParsedOption {
     pub description: Option<String>,
 }
 
+fn parsed_to_item(q: &ParsedQuestion) -> QuestionItem {
+    QuestionItem {
+        question: q.question.clone(),
+        header: q.header.clone(),
+        multi_select: q.multi_select,
+        options: q
+            .options
+            .iter()
+            .map(|o| QuestionOption {
+                value: o.label.clone(),
+                label: Some(o.label.clone()),
+                description: o.description.clone(),
+            })
+            .collect(),
+        allow_custom_input: true,
+    }
+}
+
 fn parse_questions(value: &Value) -> Result<Vec<ParsedQuestion>> {
     let arr = value
         .as_array()
@@ -345,68 +348,106 @@ fn emit_question_event(
     call_id: &str,
     questions: &[ParsedQuestion],
 ) {
-    // 前端 QuestionEvent 是扁平的单 question 结构，多 question 时展平成
-    // 多条事件。callId 与 q index 组合成 questionId，以便 answer_question
-    // 通过 callId 回查 oneshot sender（answer_listener 自身用 callId 索引，
-    // 所以这里固定使用 callId，不再拼接 _q{i}）。
-    for (idx, q) in questions.iter().enumerate() {
-        // 当 questions.len() > 1 时把 idx 拼到 questionId 以避免 React key 冲突，
-        // 但 take_ask_answer_sender 仍按 callId 工作（单提交多 question 暂只
-        // 填充第一项的 answer）。
-        let question_id = if questions.len() > 1 {
-            format!("{}_q{}", call_id, idx)
-        } else {
-            call_id.to_string()
-        };
-
-        let options: Vec<Value> = q
-            .options
-            .iter()
-            .map(|o| {
-                // 前端 QuestionOption 要求 `value` 字段；MCP schema 只有 label，
-                // 这里把 label 同时作为 value（标识符）和 label（显示文本）。
-                json!({
-                    "value": o.label,
-                    "label": o.label,
-                    "description": o.description,
+    // 单事件携带全部 questions（即使只有 1 题，也走数组形态以统一前端处理）。
+    // 顶层仍带摘要字段（第一题的 header / options 等）便于旧消费方兼容。
+    let questions_payload: Vec<Value> = questions
+        .iter()
+        .map(|q| {
+            let options: Vec<Value> = q
+                .options
+                .iter()
+                .map(|o| {
+                    // 前端 QuestionOption 要求 `value`；用 label 同时作为
+                    // 标识符与显示文本。
+                    json!({
+                        "value": o.label,
+                        "label": o.label,
+                        "description": o.description,
+                    })
                 })
-            })
-            .collect();
-
-        // 映射 MCP 字段到前端 QuestionEvent：
-        //   MCP `question`（正文）→ 前端 `header`（卡片主标题）
-        //   MCP `header`（≤12 字短标签）→ 前端 `categoryLabel`（类别 chip）
-        let header_for_ui = if q.question.is_empty() {
-            q.header.clone()
-        } else {
-            q.question.clone()
-        };
-
-        let mut payload = json!({
-            "type": "question",
-            "sessionId": session_id,
-            "questionId": question_id,
-            "header": header_for_ui,
-            "options": options,
-            "multiSelect": q.multi_select,
-            "allowCustomInput": true,
-        });
-        if !q.question.is_empty() && !q.header.is_empty() {
-            payload["categoryLabel"] = Value::String(q.header.clone());
-        }
-
-        // Web/WebSocket broadcast — always available.
-        if let Ok(msg) = serde_json::to_string(&payload) {
-            let _ = state.event_broadcast.send(msg);
-        }
-
-        // Tauri webview emission — only when tauri-app feature is on.
-        #[cfg(feature = "tauri-app")]
-        if let Some(handle) = state.app_handle.get() {
-            use tauri::Emitter;
-            if let Err(error) = handle.emit("chat-event", &payload) {
-                tracing::warn!("[AskListener] emit chat-event 失败: {}", error);
+                .collect();
+            // MCP question 是正文，前端 header 字段承载正文；
+            // MCP header 是短标签，映射到 categoryLabel。
+            let body = if q.question.is_empty() {
+                q.header.clone()
+            } else {
+                q.question.clone()
+            };
+            let mut item = json!({
+                "question": body,
+                "header": q.header,        // 短标签
+                "multiSelect": q.multi_select,
+                "options": options,
+                "allowCustomInput": true,
+            });
+            if !q.question.is_empty() && !q.header.is_empty() {
+                item["categoryLabel"] = Value::String(q.header.clone());
             }
+            item
+        })
+        .collect();
+
+    // 顶层摘要：第一题的字段，便于旧消费方
+    let first_body = questions
+        .first()
+        .map(|q| {
+            if q.question.is_empty() {
+                q.header.clone()
+            } else {
+                q.question.clone()
+            }
+        })
+        .unwrap_or_default();
+    let first_options = questions
+        .first()
+        .map(|q| {
+            q.options
+                .iter()
+                .map(|o| {
+                    json!({
+                        "value": o.label,
+                        "label": o.label,
+                        "description": o.description,
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let first_multi = questions.first().map(|q| q.multi_select).unwrap_or(false);
+    let first_category = questions.first().and_then(|q| {
+        if !q.question.is_empty() && !q.header.is_empty() {
+            Some(q.header.clone())
+        } else {
+            None
+        }
+    });
+
+    let mut payload = json!({
+        "type": "question",
+        "sessionId": session_id,
+        "questionId": call_id,
+        "questions": questions_payload,
+        // 兼容字段：填充第一题
+        "header": first_body,
+        "options": first_options,
+        "multiSelect": first_multi,
+        "allowCustomInput": true,
+    });
+    if let Some(category) = first_category {
+        payload["categoryLabel"] = Value::String(category);
+    }
+
+    // Web/WebSocket broadcast — always available.
+    if let Ok(msg) = serde_json::to_string(&payload) {
+        let _ = state.event_broadcast.send(msg);
+    }
+
+    // Tauri webview emission — only when tauri-app feature is on.
+    #[cfg(feature = "tauri-app")]
+    if let Some(handle) = state.app_handle.get() {
+        use tauri::Emitter;
+        if let Err(error) = handle.emit("chat-event", &payload) {
+            tracing::warn!("[AskListener] emit chat-event 失败: {}", error);
         }
     }
 }
@@ -477,52 +518,32 @@ impl AppState {
     }
 
     /// Remove and return the answer entry for a call_id, if present.
-    /// Accepts question ids of the form `{callId}` or `{callId}_q{n}` so the
-    /// frontend can submit per-question while we still route to the single
-    /// oneshot sender registered per tool_call.
-    pub fn take_ask_answer_sender(&self, question_id: &str) -> Option<AskAnswerEntry> {
-        let mut map = self.ask_answer_senders.lock().ok()?;
-        // 1) Direct hit on callId.
-        if let Some(entry) = map.remove(question_id) {
-            return Some(entry);
-        }
-        // 2) Strip trailing `_q{n}` suffix and retry.
-        if let Some(idx) = question_id.rfind("_q") {
-            let base = &question_id[..idx];
-            let suffix = &question_id[idx + 2..];
-            if !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()) {
-                return map.remove(base);
-            }
-        }
-        None
+    pub fn take_ask_answer_sender(&self, call_id: &str) -> Option<AskAnswerEntry> {
+        self.ask_answer_senders.lock().ok()?.remove(call_id)
     }
 }
 
-/// Build a `QuestionOutcome` for the answer of a single question.
-/// Used by `answer_question` Tauri / HTTP handlers — they look up the
-/// `AskAnswerEntry`, build outcome, and `entry.sender.send(outcome)`.
-pub fn build_outcome_for_single_answer(
+/// Build a `QuestionOutcome` from the user-submitted multi-answer payload.
+/// Length-aligns `answers` to `entry.questions` (missing slots get empty
+/// SubAnswer; extra slots are dropped). If `declined == true` the outcome
+/// is reported as a full decline regardless of `answers` content.
+pub fn build_outcome_for_multiple_answers(
     entry: &AskAnswerEntry,
-    selected: Vec<String>,
-    custom_input: Option<String>,
+    answers: Vec<SubAnswer>,
+    declined: bool,
 ) -> QuestionOutcome {
-    // For now Polaris UI answers one question per submission; the companion
-    // schema supports up to 4 questions per call but the existing UX flows
-    // answer them one at a time. We seed the first question's answer and
-    // leave the rest empty so the model still receives a structured array.
-    let mut answers: Vec<QuestionAnswerPayload> = entry
-        .questions
-        .iter()
-        .map(|q| QuestionAnswerPayload {
+    if declined {
+        return QuestionOutcome::declined();
+    }
+    let mut out = Vec::with_capacity(entry.questions.len());
+    for (idx, q) in entry.questions.iter().enumerate() {
+        let sub = answers.get(idx).cloned().unwrap_or_default();
+        out.push(QuestionAnswerPayload {
             question: q.question.clone(),
             header: q.header.clone(),
-            selected: Vec::new(),
-            custom_input: None,
-        })
-        .collect();
-    if let Some(first) = answers.first_mut() {
-        first.selected = selected;
-        first.custom_input = custom_input;
+            selected: sub.selected,
+            custom_input: sub.custom_input,
+        });
     }
-    QuestionOutcome::answer(answers)
+    QuestionOutcome::answer(out)
 }

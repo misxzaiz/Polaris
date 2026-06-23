@@ -29,14 +29,17 @@ fn md5_of(s: &str) -> String {
 
 /// Create a PendingQuestion with sensible test defaults.
 fn make_pending_question(call_id: &str, session_id: &str) -> crate::state::PendingQuestion {
-    use crate::state::QuestionStatus;
+    use crate::state::{QuestionItem, QuestionStatus};
     crate::state::PendingQuestion {
         call_id: call_id.to_string(),
         session_id: session_id.to_string(),
-        header: "Test".to_string(),
-        multi_select: false,
-        options: vec![],
-        allow_custom_input: false,
+        questions: vec![QuestionItem {
+            question: "Test".to_string(),
+            header: "Test".to_string(),
+            multi_select: false,
+            options: vec![],
+            allow_custom_input: false,
+        }],
         status: QuestionStatus::Pending,
     }
 }
@@ -983,7 +986,9 @@ async fn answer_question_with_custom_input() {
     let mut rx = state.event_broadcast.subscribe();
 
     let mut q = make_pending_question("call-custom", "s-custom");
-    q.allow_custom_input = true;
+    if let Some(first) = q.questions.first_mut() {
+        first.allow_custom_input = true;
+    }
     state.pending_questions.lock().unwrap().insert(
         "call-custom".to_string(),
         q,
@@ -1397,7 +1402,9 @@ async fn broadcast_event_contains_correct_fields() {
     let mut rx = state.event_broadcast.subscribe();
 
     let mut q = make_pending_question("call-fields", "s-fields");
-    q.multi_select = true;
+    if let Some(first) = q.questions.first_mut() {
+        first.multi_select = true;
+    }
     state.pending_questions.lock().unwrap().insert(
         "call-fields".to_string(),
         q,

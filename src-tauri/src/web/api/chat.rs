@@ -202,7 +202,16 @@ pub async fn handle_get_history(
 pub struct AnswerQuestionRequest {
     pub session_id: String,
     pub call_id: String,
-    pub selected: Vec<String>,
+    /// 新版字段：多题答案数组
+    #[serde(default)]
+    pub answers: Vec<crate::state::SubAnswer>,
+    /// 新版字段：是否整体跳过
+    #[serde(default)]
+    pub declined: bool,
+    // ===== 兼容字段：旧版单题 payload =====
+    #[serde(default)]
+    pub selected: Option<Vec<String>>,
+    #[serde(default)]
     pub custom_input: Option<String>,
 }
 
@@ -215,9 +224,22 @@ pub async fn handle_answer_question(
     validate_session_id(&req.session_id)?;
     validate_entity_id(&req.call_id, "callId")?;
 
+    // 兼容旧版单题 payload：把顶层 selected/customInput 包装成 answers[0]
+    let answers = if !req.answers.is_empty() {
+        req.answers
+    } else if req.selected.is_some() || req.custom_input.is_some() {
+        vec![crate::state::SubAnswer {
+            selected: req.selected.unwrap_or_default(),
+            custom_input: req.custom_input,
+            declined: false,
+        }]
+    } else {
+        Vec::new()
+    };
+
     let answer = QuestionAnswer {
-        selected: req.selected,
-        custom_input: req.custom_input,
+        answers,
+        declined: req.declined,
     };
     let (call_id, session_id) = (req.call_id, req.session_id);
 
@@ -237,19 +259,28 @@ pub async fn handle_answer_question(
 
     // 通过 ask_listener oneshot 将答案推回 MCP companion（如果存在）。
     if let Some(entry) = state.take_ask_answer_sender(&call_id) {
-        let outcome = crate::services::ask_listener::build_outcome_for_single_answer(
+        let outcome = crate::services::ask_listener::build_outcome_for_multiple_answers(
             &entry,
-            answer.selected.clone(),
-            answer.custom_input.clone(),
+            answer.answers.clone(),
+            answer.declined,
         );
         let _ = entry.sender.send(outcome);
     }
 
+    // 旧测试断言可能引用 answer.selected/customInput，这里同时挂上首题摘要兼容字段
+    let first = answer.answers.first().cloned().unwrap_or_default();
     let event = serde_json::json!({
         "type": "question_answered",
         "sessionId": session_id,
-        "callId": call_id,
-        "answer": answer,
+        "questionId": call_id,
+        "callId": call_id,  // 兼容字段
+        "answers": answer.answers,
+        "declined": answer.declined,
+        // 兼容字段：首题摘要
+        "answer": {
+            "selected": first.selected,
+            "customInput": first.custom_input,
+        },
     });
 
     dual_emit(&state, &event);

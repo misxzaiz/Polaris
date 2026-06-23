@@ -967,6 +967,31 @@ impl QuestionOptionData {
     }
 }
 
+/// 单条问题（与 state::QuestionItem 对齐，但属于事件层）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestionItemData {
+    /// 问题正文（卡片主标题）
+    pub question: String,
+    /// 短标签（≤12 字，类别 chip）
+    pub header: String,
+    /// 选项列表
+    pub options: Vec<QuestionOptionData>,
+    /// 是否多选
+    #[serde(default)]
+    pub multi_select: bool,
+    /// 是否允许自定义输入
+    #[serde(default = "default_true_bool")]
+    pub allow_custom_input: bool,
+    /// 类别标签（多为 header 同步值）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category_label: Option<String>,
+}
+
+fn default_true_bool() -> bool {
+    true
+}
+
 /// Question 事件 - AI 询问用户问题
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -975,19 +1000,23 @@ pub struct QuestionEvent {
     pub event_type: String,
     /// 会话 ID
     pub session_id: String,
-    /// 问题 ID
+    /// 问题 ID（= callId）
     pub question_id: String,
-    /// 问题标题
+    /// 同一 call 内的全部问题（1-4）
+    #[serde(default)]
+    pub questions: Vec<QuestionItemData>,
+    // ===== 兼容字段：填充首题摘要，供旧消费方使用 =====
+    /// 首题正文/标题
     pub header: String,
-    /// 选项列表
+    /// 首题选项列表
     pub options: Vec<QuestionOptionData>,
-    /// 是否多选
+    /// 首题是否多选
     #[serde(skip_serializing_if = "Option::is_none")]
     pub multi_select: Option<bool>,
-    /// 是否允许自定义输入
+    /// 首题是否允许自定义输入
     #[serde(skip_serializing_if = "Option::is_none")]
     pub allow_custom_input: Option<bool>,
-    /// 分类标签
+    /// 首题分类标签
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category_label: Option<String>,
 }
@@ -998,12 +1027,18 @@ impl QuestionEvent {
             event_type: "question".to_string(),
             session_id: session_id.into(),
             question_id: question_id.into(),
+            questions: Vec::new(),
             header: header.into(),
             options,
             multi_select: None,
             allow_custom_input: None,
             category_label: None,
         }
+    }
+
+    pub fn with_questions(mut self, questions: Vec<QuestionItemData>) -> Self {
+        self.questions = questions;
+        self
     }
 
     pub fn with_multi_select(mut self, multi_select: bool) -> Self {
@@ -1022,6 +1057,21 @@ impl QuestionEvent {
     }
 }
 
+/// 单条已回答内容
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubAnswerData {
+    /// 该题选中的选项
+    #[serde(default)]
+    pub selected: Vec<String>,
+    /// 该题自定义输入
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_input: Option<String>,
+    /// 该题是否被单独跳过
+    #[serde(default)]
+    pub declined: bool,
+}
+
 /// QuestionAnswered 事件 - 用户回答问题
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1030,29 +1080,35 @@ pub struct QuestionAnsweredEvent {
     pub event_type: String,
     /// 会话 ID
     pub session_id: String,
-    /// 问题 ID
+    /// 问题 ID（= callId）
     pub question_id: String,
-    /// 用户选择的选项
-    pub selected: Vec<String>,
-    /// 用户自定义输入
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub custom_input: Option<String>,
+    /// 每题答案数组
+    #[serde(default)]
+    pub answers: Vec<SubAnswerData>,
+    /// 是否整体跳过
+    #[serde(default)]
+    pub declined: bool,
 }
 
 impl QuestionAnsweredEvent {
-    pub fn new(session_id: impl Into<String>, question_id: impl Into<String>, selected: Vec<String>) -> Self {
+    pub fn new(session_id: impl Into<String>, question_id: impl Into<String>, answers: Vec<SubAnswerData>) -> Self {
         Self {
             event_type: "question_answered".to_string(),
             session_id: session_id.into(),
             question_id: question_id.into(),
-            selected,
-            custom_input: None,
+            answers,
+            declined: false,
         }
     }
 
-    pub fn with_custom_input(mut self, custom_input: impl Into<String>) -> Self {
-        self.custom_input = Some(custom_input.into());
-        self
+    pub fn declined(session_id: impl Into<String>, question_id: impl Into<String>) -> Self {
+        Self {
+            event_type: "question_answered".to_string(),
+            session_id: session_id.into(),
+            question_id: question_id.into(),
+            answers: Vec::new(),
+            declined: true,
+        }
     }
 }
 

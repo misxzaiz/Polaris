@@ -173,8 +173,17 @@ export interface ConversationActions {
   updateCurrentAssistantMessage: (blocks: ContentBlock[]) => void
 
   // ===== 问题块 =====
-  appendQuestionBlock: (questionId: string, header: string, options: Array<{ value: string; label?: string; description?: string; preview?: string }>, multiSelect?: boolean, allowCustomInput?: boolean, categoryLabel?: string) => void
-  updateQuestionBlock: (questionId: string, answer: { selected: string[]; customInput?: string }) => void
+  appendQuestionBlock: (
+    questionId: string,
+    questions: import('../../types/chat').QuestionItem[]
+  ) => void
+  updateQuestionBlock: (
+    questionId: string,
+    payload: {
+      answers?: import('../../types/chat').SubAnswer[]
+      declined?: boolean
+    }
+  ) => void
 
   // ===== PlanMode =====
   appendPlanModeBlock: (planId: string, sessionId: string, title?: string, description?: string, stages?: import('../../types/chat').PlanStageBlock[]) => void

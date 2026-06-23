@@ -471,17 +471,21 @@ export function createConversationStore(
       },
 
       // ===== 问题块 =====
-      appendQuestionBlock: (questionId, header, options, multiSelect?, allowCustomInput?, categoryLabel?) => {
+      appendQuestionBlock: (questionId, questions) => {
         const { currentMessage, questionBlockMap, streamingUpdateCounter } = get()
+        // 兼容字段：填充首题摘要供旧消费方使用
+        const first = questions[0]
         const block = {
           type: 'question' as const,
           id: questionId,
-          header,
-          options,
-          multiSelect: multiSelect ?? false,
-          allowCustomInput: allowCustomInput ?? true,
-          categoryLabel,
+          questions,
           status: 'pending' as const,
+          // 兼容字段
+          header: first?.question || first?.header,
+          options: first?.options,
+          multiSelect: first?.multiSelect,
+          allowCustomInput: first?.allowCustomInput,
+          categoryLabel: first && first.question && first.header ? first.header : undefined,
         }
         const newMap = new Map(questionBlockMap)
         if (!currentMessage) {
@@ -502,14 +506,28 @@ export function createConversationStore(
         }
       },
 
-      updateQuestionBlock: (questionId, answer) => {
+      updateQuestionBlock: (questionId, payload) => {
         const { currentMessage, questionBlockMap } = get()
         if (!currentMessage) return
         const idx = questionBlockMap.get(questionId)
         if (idx === undefined) return
         const blocks = [...currentMessage.blocks]
         if (blocks[idx]?.type === 'question') {
-          blocks[idx] = { ...blocks[idx], answer, status: 'answered' as const }
+          const existing = blocks[idx] as import('../../types/chat').QuestionBlock
+          const first = payload.answers?.[0]
+          blocks[idx] = {
+            ...existing,
+            answers: payload.answers,
+            declined: payload.declined,
+            status: 'answered' as const,
+            // 兼容字段：首题摘要
+            answer: first
+              ? {
+                  selected: first.selected,
+                  customInput: first.customInput,
+                }
+              : existing.answer,
+          }
           set({ currentMessage: { ...currentMessage, blocks } })
         }
       },

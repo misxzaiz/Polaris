@@ -147,12 +147,40 @@ export interface QuestionOption {
 /** 问题回答状态 */
 export type QuestionStatus = 'pending' | 'answered';
 
-/** 问题答案 */
-export interface QuestionAnswer {
-  /** 选中的选项值列表 */
+/** 单条子答案（与 QuestionItem 一一对齐） */
+export interface SubAnswer {
+  /** 选中的选项值（按 label 文本对齐） */
   selected: string[];
-  /** 自定义输入内容 */
+  /** 自定义输入 */
   customInput?: string;
+  /** 该题是否被单独跳过（部分跳过场景） */
+  declined?: boolean;
+}
+
+/** 问题答案（兼容字段保留 selected/customInput 以承接旧路径） */
+export interface QuestionAnswer {
+  /** 多题答案数组（新版） */
+  answers?: SubAnswer[];
+  /** 是否整体跳过 */
+  declined?: boolean;
+  /** @deprecated 兼容字段：单题路径下的 selected */
+  selected?: string[];
+  /** @deprecated 兼容字段：单题路径下的 customInput */
+  customInput?: string;
+}
+
+/** 单条子问题（同一 MCP call 包含 1-4 个） */
+export interface QuestionItem {
+  /** 完整问题文本（卡片正文） */
+  question: string;
+  /** 短标签（≤12 字，类别 chip） */
+  header: string;
+  /** 是否多选 */
+  multiSelect?: boolean;
+  /** 选项列表 */
+  options: QuestionOption[];
+  /** 是否允许自定义输入 */
+  allowCustomInput?: boolean;
 }
 
 /** 问题内容块 - 用于 AskUserQuestion 工具 */
@@ -160,19 +188,26 @@ export interface QuestionBlock {
   type: 'question';
   /** 工具调用 ID（与 tool_call_start 的 callId 对应） */
   id: string;
-  /** 问题标题 */
-  header: string;
-  /** 类别标签（可选，如 "类别"、"类型" 等） */
-  categoryLabel?: string;
-  /** 是否多选 */
-  multiSelect?: boolean;
-  /** 选项列表 */
-  options: QuestionOption[];
-  /** 是否允许自定义输入 */
-  allowCustomInput?: boolean;
+  /** 同一 call 内的全部问题（新版主字段） */
+  questions: QuestionItem[];
   /** 回答状态 */
   status: QuestionStatus;
-  /** 用户答案 */
+  /** 每题答案数组（新版） */
+  answers?: SubAnswer[];
+  /** 是否整体被跳过 */
+  declined?: boolean;
+  // ===== 兼容字段（旧单题路径） =====
+  /** @deprecated 旧字段：问题标题（首题摘要） */
+  header?: string;
+  /** @deprecated 旧字段：类别标签 */
+  categoryLabel?: string;
+  /** @deprecated 旧字段：是否多选 */
+  multiSelect?: boolean;
+  /** @deprecated 旧字段：选项列表 */
+  options?: QuestionOption[];
+  /** @deprecated 旧字段：是否允许自定义输入 */
+  allowCustomInput?: boolean;
+  /** @deprecated 旧字段：用户答案（首题摘要） */
   answer?: QuestionAnswer;
 }
 

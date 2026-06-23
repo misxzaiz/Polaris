@@ -1871,10 +1871,13 @@ pub fn register_pending_question(
     let question = PendingQuestion {
         call_id: call_id.clone(),
         session_id,
-        header,
-        multi_select,
-        options,
-        allow_custom_input,
+        questions: vec![crate::state::QuestionItem {
+            question: header.clone(),
+            header,
+            multi_select,
+            options,
+            allow_custom_input,
+        }],
         status: QuestionStatus::Pending,
     };
 
@@ -1902,20 +1905,20 @@ pub async fn answer_question(
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<()> {
     tracing::info!(
-        "[answer_question] 回答问题: session={}, call={}, selected={:?}, custom={:?}",
+        "[answer_question] 回答问题: session={}, call={}, sub_answers={}, declined={}",
         session_id,
         call_id,
-        answer.selected,
-        answer.custom_input
+        answer.answers.len(),
+        answer.declined,
     );
 
     // 1. 取出 ask_listener 注册的 oneshot::Sender，把答案推回 MCP companion。
     //    如果没有 sender（旧路径未走 MCP），则降级为只做事件广播。
     if let Some(entry) = state.take_ask_answer_sender(&call_id) {
-        let outcome = crate::services::ask_listener::build_outcome_for_single_answer(
+        let outcome = crate::services::ask_listener::build_outcome_for_multiple_answers(
             &entry,
-            answer.selected.clone(),
-            answer.custom_input.clone(),
+            answer.answers.clone(),
+            answer.declined,
         );
         if entry.sender.send(outcome).is_err() {
             tracing::warn!("[answer_question] oneshot 接收端已关闭: {}", call_id);
@@ -1937,11 +1940,19 @@ pub async fn answer_question(
     }
 
     // 3. emit `question_answered`，前端把卡片切到 answered
+    let first = answer.answers.first().cloned().unwrap_or_default();
     let event = serde_json::json!({
         "type": "question_answered",
         "sessionId": session_id,
-        "callId": call_id,
-        "answer": answer,
+        "questionId": call_id,
+        "callId": call_id,  // 兼容字段
+        "answers": answer.answers,
+        "declined": answer.declined,
+        // 兼容字段：旧 answer 单题摘要
+        "answer": {
+            "selected": first.selected,
+            "customInput": first.custom_input,
+        },
     });
 
     window
