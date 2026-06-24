@@ -17,7 +17,6 @@ import { clsx } from 'clsx';
 import { Check, HelpCircle, CheckCircle, X, ChevronLeft, ChevronRight, SkipForward } from 'lucide-react';
 import { invoke } from '@/services/tauri';
 import { createLogger } from '@/utils/logger';
-import { useActiveSessionConversationId } from '@/stores/conversationStore/useActiveSession';
 import { Button } from '../Common/Button';
 import type { QuestionBlock, QuestionItem, QuestionOption, SubAnswer } from '@/types';
 
@@ -124,7 +123,6 @@ export interface AskQuestionCardProps {
 
 export const AskQuestionCard = memo(function AskQuestionCard({ block }: AskQuestionCardProps) {
   const { t } = useTranslation('chat');
-  const conversationId = useActiveSessionConversationId();
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -203,14 +201,14 @@ export const AskQuestionCard = memo(function AskQuestionCard({ block }: AskQuest
   const submitAll = useCallback(
     async (kind: 'answer' | 'decline-all') => {
       if (isAnswered || state.submitting) return;
-      if (!conversationId) return;
+      if (!block.sessionId) return;
       if (kind === 'answer' && !anyAnswered) return;
 
       dispatch({ type: 'BEGIN_SUBMIT' });
       try {
         if (kind === 'decline-all') {
           await invoke('answer_question', {
-            sessionId: conversationId,
+            sessionId: block.sessionId,
             callId: block.id,
             answer: { answers: [], declined: true },
           });
@@ -221,7 +219,7 @@ export const AskQuestionCard = memo(function AskQuestionCard({ block }: AskQuest
             declined: s.declined,
           }));
           await invoke('answer_question', {
-            sessionId: conversationId,
+            sessionId: block.sessionId,
             callId: block.id,
             answer: { answers, declined: false },
           });
@@ -235,7 +233,7 @@ export const AskQuestionCard = memo(function AskQuestionCard({ block }: AskQuest
         dispatch({ type: 'END_SUBMIT' });
       }
     },
-    [isAnswered, state.submitting, state.per, anyAnswered, conversationId, block.id]
+    [isAnswered, state.submitting, state.per, anyAnswered, block.id, block.sessionId]
   );
 
   // 选项点击

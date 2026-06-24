@@ -316,7 +316,7 @@ export function handleAIEvent(
             options: event.options,
             allowCustomInput: event.allowCustomInput,
           }]
-      state.appendQuestionBlock(event.questionId, questions)
+      state.appendQuestionBlock(event.questionId, event.sessionId, questions)
       break
     }
 
@@ -409,4 +409,3 @@ async function saveDialog(state: ConversationStore): Promise<void> {
     log.error('保存会话到 JSONL 失败', e instanceof Error ? e : new Error(String(e)))
   }
 }
-

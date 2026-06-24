@@ -175,6 +175,7 @@ export interface ConversationActions {
   // ===== 问题块 =====
   appendQuestionBlock: (
     questionId: string,
+    sessionId: string,
     questions: import('../../types/chat').QuestionItem[]
   ) => void
   updateQuestionBlock: (

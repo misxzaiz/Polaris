@@ -412,6 +412,11 @@ fn prepare_mcp_config_with_paths(
         app_root,
         std::path::Path::new(work_dir),
         ask_listener,
+        options
+            .context_id
+            .as_deref()
+            .and_then(|id| id.strip_prefix("session-"))
+            .map(str::to_string),
     )?;
     let disabled_servers = merge_disabled_mcp_servers(
         options.disabled_mcp_servers.as_deref().unwrap_or(&[]),
@@ -1076,6 +1081,18 @@ fn broadcast_chat_event(tx: &crate::web::EventBroadcaster, event: &serde_json::V
         "payload": event,
     });
     let _ = tx.send(ws_msg.to_string());
+}
+
+#[cfg(feature = "tauri-app")]
+fn wrap_session_routed_event(session_id: &str, payload: serde_json::Value) -> serde_json::Value {
+    if session_id.trim().is_empty() {
+        payload
+    } else {
+        serde_json::json!({
+            "contextId": format!("session-{}", session_id),
+            "payload": payload,
+        })
+    }
 }
 
 /// 启动聊天会话
@@ -1955,12 +1972,14 @@ pub async fn answer_question(
         },
     });
 
+    let routed_event = wrap_session_routed_event(&session_id, event);
+
     window
-        .emit("chat-event", &event)
+        .emit("chat-event", &routed_event)
         .map_err(|e| AppError::ProcessError(format!("发送事件失败: {}", e)))?;
 
     // Dual emission: also broadcast to WebSocket clients
-    broadcast_chat_event(&state.event_broadcast, &event);
+    broadcast_chat_event(&state.event_broadcast, &routed_event);
 
     tracing::info!("[answer_question] 答案已提交，事件已发送");
 

@@ -290,6 +290,7 @@ pub struct WorkspaceMcpConfigService {
     external_servers: Vec<ResolvedExternalMcpServer>,
     config_dir: PathBuf,
     ask_listener: Option<crate::services::ask_listener::AskListenerHandle>,
+    ask_route_session_id: Option<String>,
 }
 
 impl WorkspaceMcpConfigService {
@@ -326,6 +327,7 @@ impl WorkspaceMcpConfigService {
             external_servers: Vec::new(),
             config_dir,
             ask_listener: None,
+            ask_route_session_id: None,
         }
     }
 
@@ -377,6 +379,7 @@ impl WorkspaceMcpConfigService {
             external_servers: Vec::new(),
             config_dir,
             ask_listener: None,
+            ask_route_session_id: None,
         })
     }
 
@@ -396,6 +399,14 @@ impl WorkspaceMcpConfigService {
         handle: Option<crate::services::ask_listener::AskListenerHandle>,
     ) -> Self {
         self.ask_listener = handle;
+        self
+    }
+
+    /// Attach the frontend route session id to the ask companion. This keeps
+    /// question events in the same panel as the originating tool call even
+    /// before the backend CLI session id is known.
+    pub fn with_ask_route_session_id(mut self, session_id: Option<String>) -> Self {
+        self.ask_route_session_id = session_id.filter(|id| !id.trim().is_empty());
         self
     }
 
@@ -455,6 +466,7 @@ impl WorkspaceMcpConfigService {
                 &self.config_dir,
                 normalized_workspace,
                 self.ask_listener.as_ref(),
+                self.ask_route_session_id.as_deref(),
             );
 
             servers.insert(
@@ -552,6 +564,7 @@ impl WorkspaceMcpConfigService {
                 &self.config_dir,
                 normalized_workspace,
                 self.ask_listener.as_ref(),
+                self.ask_route_session_id.as_deref(),
             );
 
             registered_names.insert(binary.server_name.clone());
@@ -747,6 +760,7 @@ pub fn resolve_workspace_mcp_runtime_service(
     app_root: PathBuf,
     workspace_path: &Path,
     ask_listener: Option<crate::services::ask_listener::AskListenerHandle>,
+    ask_route_session_id: Option<String>,
 ) -> Result<(WorkspaceMcpConfigService, Vec<String>)> {
     let service =
         WorkspaceMcpConfigService::from_app_paths(config_dir.clone(), resource_dir, app_root)?;
@@ -758,7 +772,8 @@ pub fn resolve_workspace_mcp_runtime_service(
     Ok((
         service
             .with_external_servers(external_servers)
-            .with_ask_listener(ask_listener),
+            .with_ask_listener(ask_listener)
+            .with_ask_route_session_id(ask_route_session_id),
         disabled_builtin_servers,
     ))
 }
@@ -784,6 +799,7 @@ fn build_mcp_server_args(
     config_dir: &Path,
     workspace_path: &str,
     ask_listener: Option<&crate::services::ask_listener::AskListenerHandle>,
+    ask_route_session_id: Option<&str>,
 ) -> Vec<String> {
     match args_mode {
         McpServerArgsMode::ConfigDirAndWorkspace => vec![
@@ -796,12 +812,21 @@ fn build_mcp_server_args(
             // fallback yields empty args (the companion will then exit with
             // a clear "缺少 --polaris-port" error).
             match ask_listener {
-                Some(handle) => vec![
-                    "--polaris-port".to_string(),
-                    handle.port.to_string(),
-                    "--polaris-token".to_string(),
-                    handle.token.clone(),
-                ],
+                Some(handle) => {
+                    let mut args = vec![
+                        "--polaris-port".to_string(),
+                        handle.port.to_string(),
+                        "--polaris-token".to_string(),
+                        handle.token.clone(),
+                    ];
+                    if let Some(session_id) = ask_route_session_id {
+                        if !session_id.trim().is_empty() {
+                            args.push("--polaris-session".to_string());
+                            args.push(session_id.to_string());
+                        }
+                    }
+                    args
+                }
                 None => Vec::new(),
             }
         }

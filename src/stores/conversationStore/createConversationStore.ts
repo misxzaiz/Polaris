@@ -471,13 +471,14 @@ export function createConversationStore(
       },
 
       // ===== 问题块 =====
-      appendQuestionBlock: (questionId, questions) => {
+      appendQuestionBlock: (questionId, sessionId, questions) => {
         const { currentMessage, questionBlockMap, streamingUpdateCounter } = get()
         // 兼容字段：填充首题摘要供旧消费方使用
         const first = questions[0]
         const block = {
           type: 'question' as const,
           id: questionId,
+          sessionId,
           questions,
           status: 'pending' as const,
           // 兼容字段

@@ -188,6 +188,8 @@ export interface QuestionBlock {
   type: 'question';
   /** 工具调用 ID（与 tool_call_start 的 callId 对应） */
   id: string;
+  /** 后端/路由会话 ID，用于提交答案和 question_answered 事件回路 */
+  sessionId?: string;
   /** 同一 call 内的全部问题（新版主字段） */
   questions: QuestionItem[];
   /** 回答状态 */

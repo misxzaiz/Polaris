@@ -1155,6 +1155,7 @@ impl IntegrationManager {
                             aroot,
                             std::path::Path::new(dir),
                             None, // integrations 场景无人类交互通道
+                            None,
                         ) {
                             Ok((service, disabled_servers)) => {
                                 match &engine_id {

@@ -50,6 +50,17 @@ pub fn dual_emit(state: &AppState, event: &serde_json::Value) {
     }
 }
 
+fn wrap_session_routed_event(session_id: &str, payload: serde_json::Value) -> serde_json::Value {
+    if session_id.trim().is_empty() {
+        payload
+    } else {
+        serde_json::json!({
+            "contextId": format!("session-{}", session_id),
+            "payload": payload,
+        })
+    }
+}
+
 /// Create a shared emit callback that captures an `Arc<AppState>` for use in
 /// `ChatCallbacks`. This avoids duplicating the dual-emit logic at every call site.
 pub fn create_emit_callback(state: Arc<AppState>) -> Arc<dyn Fn(serde_json::Value) + Send + Sync> {
@@ -283,7 +294,8 @@ pub async fn handle_answer_question(
         },
     });
 
-    dual_emit(&state, &event);
+    let routed_event = wrap_session_routed_event(&session_id, event);
+    dual_emit(&state, &routed_event);
 
     Ok(ok_response())
 }

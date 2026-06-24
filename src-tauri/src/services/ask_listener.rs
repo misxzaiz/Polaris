@@ -437,8 +437,10 @@ fn emit_question_event(
         payload["categoryLabel"] = Value::String(category);
     }
 
+    let event = wrap_question_route_event(session_id, payload.clone());
+
     // Web/WebSocket broadcast — always available.
-    if let Ok(msg) = serde_json::to_string(&payload) {
+    if let Ok(msg) = serde_json::to_string(&event) {
         let _ = state.event_broadcast.send(msg);
     }
 
@@ -446,9 +448,20 @@ fn emit_question_event(
     #[cfg(feature = "tauri-app")]
     if let Some(handle) = state.app_handle.get() {
         use tauri::Emitter;
-        if let Err(error) = handle.emit("chat-event", &payload) {
+        if let Err(error) = handle.emit("chat-event", &event) {
             tracing::warn!("[AskListener] emit chat-event 失败: {}", error);
         }
+    }
+}
+
+fn wrap_question_route_event(session_id: &str, payload: Value) -> Value {
+    if session_id.trim().is_empty() {
+        payload
+    } else {
+        json!({
+            "contextId": format!("session-{}", session_id),
+            "payload": payload,
+        })
     }
 }
 
