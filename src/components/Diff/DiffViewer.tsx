@@ -4,7 +4,7 @@
  * 支持词级差异高亮和语法着色，提供 IDEA 级别的 diff 体验
  */
 
-import { useMemo, useCallback } from 'react'
+import { useMemo, useCallback, useRef } from 'react'
 import { computeDiff } from '@/services/diffService'
 import { getLanguageFromPath, isHighlightableLanguage } from '@/utils/language'
 import { logger } from '@/utils/logger'
@@ -18,41 +18,25 @@ import { useDiffKeyboard } from './useDiffKeyboard'
 export type DiffViewMode = 'unified' | 'split'
 
 interface DiffViewerProps {
-  /** 原始内容 */
   oldContent?: string
-  /** 修改后内容 */
   newContent?: string
-  /** 变更类型 */
   changeType?: DiffChangeType
-  /** 状态提示 */
   statusHint?: {
     has_conflict: boolean
     message?: string
     current_view: string
   }
-  /** 是否显示状态提示（默认 true） */
   showStatusHint?: boolean
-  /** 最大高度（可选，用于限制高度） */
   maxHeight?: string
-  /** 内容是否被省略（如文件过大） */
   contentOmitted?: boolean
-  /** Diff 展示模式 */
   viewMode?: DiffViewMode
-  /** 文件路径（用于语法高亮检测） */
   filePath?: string
-  /** 多文件列表（用于文件导航） */
   files?: GitDiffEntry[]
-  /** 当前选中的文件路径（用于文件导航） */
   activeFilePath?: string
-  /** 文件选择回调（用于文件导航） */
   onFileSelect?: (filePath: string) => void
-  /** 下一个文件回调（键盘快捷键） */
   onNextFile?: () => void
-  /** 上一个文件回调（键盘快捷键） */
   onPrevFile?: () => void
-  /** 打开文件编辑器回调（键盘快捷键） */
   onOpenFile?: () => void
-  /** 关闭 diff 视图回调（键盘快捷键） */
   onClose?: () => void
 }
 
@@ -152,9 +136,6 @@ function buildSplitRows(lines: DiffLine[]): SplitDiffRow[] {
   return rows
 }
 
-/**
- * 内容省略时的提示组件
- */
 function ContentOmittedPlaceholder({ t }: { t: (key: string) => string }) {
   return (
     <div className="flex flex-col items-center justify-center h-full p-8 text-center">
@@ -169,10 +150,112 @@ function ContentOmittedPlaceholder({ t }: { t: (key: string) => string }) {
   )
 }
 
+/** 行号列固定宽度 */
+const GUTTER_WIDTH = '3.5rem'
+
 /**
- * Diff 查看器组件
- * 支持词级差异高亮、语法着色和文件导航
+ * 渲染单侧的 diff 面板（左或右）
  */
+function SplitSidePanel({
+  rows,
+  side,
+  language,
+  gutterRef,
+  contentRef,
+  onScroll,
+}: {
+  rows: SplitDiffRow[]
+  side: 'left' | 'right'
+  language: string | undefined
+  gutterRef: React.RefObject<HTMLDivElement | null>
+  contentRef: React.RefObject<HTMLDivElement | null>
+  onScroll: (e: React.UIEvent<HTMLDivElement>) => void
+}) {
+  const isRight = side === 'right'
+
+  return (
+    <div className="flex flex-1 min-w-0 overflow-hidden">
+      {/* 行号列 - 固定宽度，不参与横向滚动 */}
+      <div
+        ref={gutterRef}
+        className="flex flex-col shrink-0 select-none overflow-hidden border-r border-border-subtle"
+        style={{ width: GUTTER_WIDTH }}
+      >
+        {rows.map((row, idx) => {
+          const lineNum = isRight ? row.newLineNumber : row.oldLineNumber
+          const rowType = isRight ? row.newType : row.oldType
+          const isChanged = rowType === 'added' || rowType === 'removed'
+
+          return (
+            <div
+              key={idx}
+              className={`px-1.5 py-0.5 text-right text-xs text-text-tertiary ${
+                isChanged
+                  ? isRight ? 'bg-green-500/5' : 'bg-red-500/5'
+                  : ''
+              }`}
+            >
+              {lineNum ?? (rowType === 'empty' ? '' : '\u00D7')}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* 内容列 - 支持独立横向和垂直滚动 */}
+      <div
+        ref={contentRef}
+        className="flex-1 overflow-auto"
+        onScroll={onScroll}
+      >
+        <div className="min-w-full">
+          {rows.map((row, idx) => {
+            const rowType = isRight ? row.newType : row.oldType
+            const content = isRight ? row.newContent : row.oldContent
+            const isChangedRow = row.oldType === 'removed' && row.newType === 'added'
+
+            let bgClass = ''
+            if (isRight) {
+              if (isChangedRow) bgClass = 'bg-green-500/8'
+              else if (rowType === 'added') bgClass = 'bg-green-500/10'
+              else if (rowType === 'empty') bgClass = 'bg-background-elevated/30'
+            } else {
+              if (isChangedRow) bgClass = 'bg-red-500/8'
+              else if (rowType === 'removed') bgClass = 'bg-red-500/10'
+              else if (rowType === 'empty') bgClass = 'bg-background-elevated/30'
+            }
+
+            if (rowType === 'folded') {
+              return (
+                <div
+                  key={idx}
+                  className="px-3 py-1 text-xs text-text-tertiary italic text-center bg-background-elevated/50 whitespace-pre"
+                >
+                  {content}
+                </div>
+              )
+            }
+
+            const mappedType: 'context' | 'added' | 'removed' | 'empty' =
+              rowType === 'folded' ? 'context' : rowType
+
+            return (
+              <div key={idx} className={`px-3 py-0.5 whitespace-pre inline-block min-w-full ${bgClass}`}>
+                <WordDiffSegment
+                  oldText={content}
+                  newText={content}
+                  language={language}
+                  type={mappedType}
+                  isRight={isRight}
+                />
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function DiffViewer({
   oldContent,
   newContent,
@@ -193,7 +276,6 @@ export function DiffViewer({
 }: DiffViewerProps) {
   const { t } = useTranslation('git')
 
-  // 键盘快捷键
   const containerRef = useDiffKeyboard({
     onNextFile,
     onPrevFile,
@@ -202,14 +284,12 @@ export function DiffViewer({
     enabled: !!files && files.length > 1,
   })
 
-  // 检测语言
   const language = useMemo(() => {
     if (!filePath) return undefined
     const lang = getLanguageFromPath(filePath)
     return isHighlightableLanguage(lang) ? lang : undefined
   }, [filePath])
 
-  // 调试日志（仅在开发环境）
   logger.debug('[DiffViewer] 渲染:', {
     oldContentLength: oldContent?.length ?? 0,
     newContentLength: newContent?.length ?? 0,
@@ -219,124 +299,54 @@ export function DiffViewer({
     timestamp: new Date().toISOString(),
   })
 
-  // 根据 change_type 处理 undefined
   const effectiveOldContent = (() => {
-    if (changeType === 'added' && oldContent === undefined) {
-      return ''
-    }
+    if (changeType === 'added' && oldContent === undefined) return ''
     return oldContent ?? ''
   })()
 
   const effectiveNewContent = (() => {
-    if (changeType === 'deleted' && newContent === undefined) {
-      return ''
-    }
+    if (changeType === 'deleted' && newContent === undefined) return ''
     return newContent ?? ''
   })()
 
   const diff = computeDiff(effectiveOldContent, effectiveNewContent)
   const splitRows = viewMode === 'split' ? buildSplitRows(diff.lines) : []
 
-  // 渲染 split 视图中的变更行对（带词级差异）
-  const renderChangedRow = useCallback(
-    (row: SplitDiffRow, idx: number) => {
-      const hasChange = row.oldType === 'removed' || row.newType === 'added'
-      const isChangedRow = row.oldType === 'removed' && row.newType === 'added'
+  // ========== Split 视图：左右面板垂直滚动联动 ==========
+  const leftGutterRef = useRef<HTMLDivElement>(null)
+  const rightGutterRef = useRef<HTMLDivElement>(null)
+  const leftContentRef = useRef<HTMLDivElement>(null)
+  const rightContentRef = useRef<HTMLDivElement>(null)
+  const syncingRef = useRef(false)
 
-      return (
-        <div
-          key={idx}
-          className="grid grid-cols-[4rem_minmax(16rem,1fr)_1px_4rem_minmax(16rem,1fr)]"
-        >
-          {/* 左侧行号 */}
-          <span
-            className={`px-2 py-0.5 text-right text-text-tertiary shrink-0 select-none border-r border-border-subtle ${
-              hasChange ? 'bg-red-500/5' : ''
-            }`}
-          >
-            {row.oldLineNumber ?? (row.oldType === 'empty' ? '' : '×')}
-          </span>
+  const handleLeftScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (syncingRef.current) return
+    syncingRef.current = true
+    const scrollTop = e.currentTarget.scrollTop
+    const scrollLeft = e.currentTarget.scrollLeft
+    // 右侧内容面板同步垂直滚动
+    if (rightContentRef.current) rightContentRef.current.scrollTop = scrollTop
+    // 右侧行号面板同步垂直滚动
+    if (rightGutterRef.current) rightGutterRef.current.scrollTop = scrollTop
+    // 左侧行号面板同步垂直滚动
+    if (leftGutterRef.current) leftGutterRef.current.scrollTop = scrollTop
+    // 右侧内容面板同步横向滚动（Shift+滚轮时）
+    if (rightContentRef.current) rightContentRef.current.scrollLeft = scrollLeft
+    requestAnimationFrame(() => { syncingRef.current = false })
+  }, [])
 
-          {/* 左侧内容 */}
-          <span
-            className={`px-3 py-0.5 ${
-              isChangedRow
-                ? 'bg-red-500/8'
-                : row.oldType === 'removed'
-                  ? 'bg-red-500/10'
-                  : row.oldType === 'empty'
-                    ? 'bg-background-elevated/30'
-                    : ''
-            }`}
-          >
-            {isChangedRow ? (
-              <WordDiffSegment
-                oldText={row.oldContent}
-                newText={row.newContent}
-                language={language}
-                type="removed"
-                isRight={false}
-              />
-            ) : (
-              <WordDiffSegment
-                oldText={row.oldContent}
-                newText={row.oldContent}
-                language={language}
-                type={row.oldType === 'empty' ? 'empty' : row.oldType === 'folded' ? 'context' : row.oldType}
-                isRight={false}
-              />
-            )}
-          </span>
+  const handleRightScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (syncingRef.current) return
+    syncingRef.current = true
+    const scrollTop = e.currentTarget.scrollTop
+    const scrollLeft = e.currentTarget.scrollLeft
+    if (leftContentRef.current) leftContentRef.current.scrollTop = scrollTop
+    if (leftGutterRef.current) leftGutterRef.current.scrollTop = scrollTop
+    if (rightGutterRef.current) rightGutterRef.current.scrollTop = scrollTop
+    if (leftContentRef.current) leftContentRef.current.scrollLeft = scrollLeft
+    requestAnimationFrame(() => { syncingRef.current = false })
+  }, [])
 
-          {/* 中间分割线 */}
-          <div className="bg-border-subtle" />
-
-          {/* 右侧行号 */}
-          <span
-            className={`px-2 py-0.5 text-right text-text-tertiary shrink-0 select-none border-l border-border-subtle ${
-              hasChange ? 'bg-green-500/5' : ''
-            }`}
-          >
-            {row.newLineNumber ?? (row.newType === 'empty' ? '' : '×')}
-          </span>
-
-          {/* 右侧内容 */}
-          <span
-            className={`px-3 py-0.5 ${
-              isChangedRow
-                ? 'bg-green-500/8'
-                : row.newType === 'added'
-                  ? 'bg-green-500/10'
-                  : row.newType === 'empty'
-                    ? 'bg-background-elevated/30'
-                    : ''
-            }`}
-          >
-            {isChangedRow ? (
-              <WordDiffSegment
-                oldText={row.oldContent}
-                newText={row.newContent}
-                language={language}
-                type="added"
-                isRight={true}
-              />
-            ) : (
-              <WordDiffSegment
-                oldText={row.newContent}
-                newText={row.newContent}
-                language={language}
-                type={row.newType === 'empty' ? 'empty' : row.newType === 'folded' ? 'context' : row.newType}
-                isRight={true}
-              />
-            )}
-          </span>
-        </div>
-      )
-    },
-    [language]
-  )
-
-  // 如果内容被省略，显示提示信息
   if (contentOmitted) {
     return <ContentOmittedPlaceholder t={t} />
   }
@@ -348,7 +358,6 @@ export function DiffViewer({
       style={{ maxHeight, height: maxHeight ? undefined : '100%' }}
       tabIndex={-1}
     >
-      {/* 文件导航（多文件时显示） */}
       {files && files.length > 1 && activeFilePath && onFileSelect && (
         <FileNavigator
           files={files}
@@ -357,26 +366,20 @@ export function DiffViewer({
         />
       )}
 
-      {/* 状态提示（可选） */}
       {showStatusHint && statusHint && (
         <div className={`px-4 py-2 border-b flex items-center gap-3 text-xs shrink-0 ${
           statusHint.has_conflict
             ? 'bg-yellow-500/10 border-yellow-500/20'
             : 'bg-blue-500/5 border-blue-500/10'
         }`}>
-          {statusHint.has_conflict && (
-            <span className="text-yellow-600">⚠️</span>
-          )}
+          {statusHint.has_conflict && <span className="text-yellow-600">⚠️</span>}
           <span className="text-text-secondary flex-1">
             {statusHint.message || (statusHint.has_conflict ? t('diff.note') : t('diff.info'))}
           </span>
-          <span className="text-text-tertiary">
-            {statusHint.current_view}
-          </span>
+          <span className="text-text-tertiary">{statusHint.current_view}</span>
         </div>
       )}
 
-      {/* 差异摘要 */}
       <div className="flex items-center gap-4 px-4 py-1.5 bg-background-elevated border-b border-border text-xs shrink-0">
         <span className="text-green-500">+{diff.addedCount}</span>
         <span className="text-red-500">-{diff.removedCount}</span>
@@ -390,103 +393,100 @@ export function DiffViewer({
         )}
       </div>
 
-      {/* 差异内容 */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-hidden">
         {diff.lines.length === 0 ? (
           <div className="text-text-tertiary text-center py-8">{t('diff.noChanges')}</div>
         ) : viewMode === 'split' ? (
-          <div className="min-w-[900px]">
-            {/* 表头 */}
-            <div className="grid grid-cols-[4rem_minmax(16rem,1fr)_1px_4rem_minmax(16rem,1fr)] sticky top-0 z-10 bg-background-elevated border-b border-border text-xs text-text-tertiary">
-              <span className="px-2 py-1 text-right select-none">#</span>
-              <span className="px-3 py-1 font-sans">{t('diff.oldVersion')}</span>
-              <div />
-              <span className="px-2 py-1 text-right select-none">#</span>
-              <span className="px-3 py-1 font-sans">{t('diff.newVersion')}</span>
+          <div className="h-full flex flex-col">
+            {/* 表头 - 固定在顶部 */}
+            <div className="flex shrink-0 bg-background-elevated border-b border-border text-xs text-text-tertiary">
+              <div style={{ width: GUTTER_WIDTH }} className="shrink-0 px-2 py-1 text-right select-none border-r border-border-subtle">#</div>
+              <div className="flex-1 px-3 py-1 font-sans min-w-0">{t('diff.oldVersion')}</div>
+              <div style={{ width: GUTTER_WIDTH }} className="shrink-0 px-2 py-1 text-right select-none border-r border-border-subtle">#</div>
+              <div className="flex-1 px-3 py-1 font-sans min-w-0">{t('diff.newVersion')}</div>
             </div>
 
-            {/* 行内容 */}
-            <div className="space-y-px">
-              {splitRows.map((row, idx) => {
-                const rowIsFolded = row.oldType === 'folded' && row.newType === 'folded'
-                if (rowIsFolded) {
-                  return (
-                    <div
-                      key={idx}
-                      className="grid grid-cols-[4rem_minmax(16rem,1fr)_1px_4rem_minmax(16rem,1fr)] bg-background-elevated/50"
-                    >
-                      <span className="col-span-5 px-3 py-1 text-center text-text-tertiary italic text-xs">
-                        {row.oldContent}
-                      </span>
-                    </div>
-                  )
-                }
-                return renderChangedRow(row, idx)
-              })}
+            {/* 左右面板 */}
+            <div className="flex-1 flex overflow-hidden">
+              <SplitSidePanel
+                rows={splitRows}
+                side="left"
+                language={language}
+                gutterRef={leftGutterRef}
+                contentRef={leftContentRef}
+                onScroll={handleLeftScroll}
+              />
+              {/* 中间分割线 */}
+              <div className="w-px bg-border shrink-0" />
+              <SplitSidePanel
+                rows={splitRows}
+                side="right"
+                language={language}
+                gutterRef={rightGutterRef}
+                contentRef={rightContentRef}
+                onScroll={handleRightScroll}
+              />
             </div>
           </div>
         ) : (
-          /* Unified 视图 */
-          <div className="space-y-px">
-            {diff.lines.map((line, idx) => {
-              const isFolded = line.content.startsWith('⋯') && line.content.endsWith('⋯')
-              return (
-                <div
-                  key={idx}
-                  className={`flex gap-0 px-0 py-0.5 ${
-                    isFolded
-                      ? 'bg-background-elevated/50 text-text-tertiary italic text-center justify-center'
-                      : line.type === 'added'
-                        ? 'bg-green-500/8'
-                        : line.type === 'removed'
-                          ? 'bg-red-500/8'
-                          : ''
-                  }`}
-                >
-                  {!isFolded && (
-                    <>
-                      {/* 旧行号 */}
-                      <span className="w-10 text-right text-text-tertiary shrink-0 select-none pr-1">
-                        {line.oldLineNumber ?? ''}
-                      </span>
-                      {/* 新行号 */}
-                      <span className="w-10 text-right text-text-tertiary shrink-0 select-none pr-1">
-                        {line.newLineNumber ?? ''}
-                      </span>
-                      {/* 标记 */}
-                      <span
-                        className={`w-5 shrink-0 select-none font-bold text-center ${
-                          line.type === 'added'
-                            ? 'text-green-500'
-                            : line.type === 'removed'
-                              ? 'text-red-500'
-                              : 'text-text-tertiary'
-                        }`}
-                      >
-                        {line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ' '}
-                      </span>
-                    </>
-                  )}
-                  {/* 内容 */}
-                  <span
-                    className={`flex-1 whitespace-pre ${
-                      line.type === 'removed' && !isFolded ? 'text-text-tertiary line-through' : 'text-text-secondary'
+          <div className="h-full overflow-auto">
+            <div className="space-y-px min-w-[600px]">
+              {diff.lines.map((line, idx) => {
+                const isFolded = line.content.startsWith('⋯') && line.content.endsWith('⋯')
+                return (
+                  <div
+                    key={idx}
+                    className={`flex gap-0 px-0 py-0.5 ${
+                      isFolded
+                        ? 'bg-background-elevated/50 text-text-tertiary italic text-center justify-center'
+                        : line.type === 'added'
+                          ? 'bg-green-500/8'
+                          : line.type === 'removed'
+                            ? 'bg-red-500/8'
+                            : ''
                     }`}
                   >
-                    {isFolded ? (
-                      line.content
-                    ) : (
-                      <WordDiffSegment
-                        oldText={line.content}
-                        newText={line.content}
-                        language={language}
-                        type={line.type}
-                      />
+                    {!isFolded && (
+                      <>
+                        <span className="w-10 text-right text-text-tertiary shrink-0 select-none pr-1">
+                          {line.oldLineNumber ?? ''}
+                        </span>
+                        <span className="w-10 text-right text-text-tertiary shrink-0 select-none pr-1">
+                          {line.newLineNumber ?? ''}
+                        </span>
+                        <span
+                          className={`w-5 shrink-0 select-none font-bold text-center ${
+                            line.type === 'added'
+                              ? 'text-green-500'
+                              : line.type === 'removed'
+                                ? 'text-red-500'
+                                : 'text-text-tertiary'
+                          }`}
+                        >
+                          {line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ' '}
+                        </span>
+                      </>
                     )}
-                  </span>
-                </div>
-              )
-            })}
+                    <span
+                      className={`flex-1 whitespace-pre ${
+                        line.type === 'removed' && !isFolded ? 'text-text-tertiary line-through' : 'text-text-secondary'
+                      }`}
+                    >
+                      {isFolded ? (
+                        line.content
+                      ) : (
+                        <WordDiffSegment
+                          oldText={line.content}
+                          newText={line.content}
+                          language={language}
+                          type={line.type}
+                        />
+                      )}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         )}
       </div>
@@ -494,10 +494,6 @@ export function DiffViewer({
   )
 }
 
-/**
- * 简化版 Diff 查看器 - 不显示状态提示
- * 为了向后兼容保留的别名
- */
 export function SimpleDiffViewer({ oldContent, newContent }: { oldContent: string; newContent: string }) {
   return (
     <DiffViewer
