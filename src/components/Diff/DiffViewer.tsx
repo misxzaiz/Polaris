@@ -4,7 +4,7 @@
  * 支持词级差异高亮和语法着色，提供 IDEA 级别的 diff 体验
  */
 
-import { useMemo, useCallback, useRef } from 'react'
+import { useMemo, useCallback, useRef, useState, useEffect } from 'react'
 import { computeDiff } from '@/services/diffService'
 import { getLanguageFromPath, isHighlightableLanguage } from '@/utils/language'
 import { logger } from '@/utils/logger'
@@ -34,6 +34,8 @@ interface DiffViewerProps {
   files?: GitDiffEntry[]
   activeFilePath?: string
   onFileSelect?: (filePath: string) => void
+  /** 点击行回调（Ctrl+Click 时触发，传递行号） */
+  onLineClick?: (lineNumber: number) => void
   onNextFile?: () => void
   onPrevFile?: () => void
   onOpenFile?: () => void
@@ -163,6 +165,9 @@ function SplitSidePanel({
   gutterRef,
   contentRef,
   onScroll,
+  changeIndices,
+  focusIndex,
+  onLineClick,
 }: {
   rows: SplitDiffRow[]
   side: 'left' | 'right'
@@ -170,6 +175,9 @@ function SplitSidePanel({
   gutterRef: React.RefObject<HTMLDivElement | null>
   contentRef: React.RefObject<HTMLDivElement | null>
   onScroll: (e: React.UIEvent<HTMLDivElement>) => void
+  changeIndices: number[]
+  focusIndex: number
+  onLineClick?: (lineNumber: number) => void
 }) {
   const isRight = side === 'right'
 
@@ -212,6 +220,7 @@ function SplitSidePanel({
             const rowType = isRight ? row.newType : row.oldType
             const content = isRight ? row.newContent : row.oldContent
             const isChangedRow = row.oldType === 'removed' && row.newType === 'added'
+            const isFocused = changeIndices[focusIndex] === idx
 
             let bgClass = ''
             if (isRight) {
@@ -222,6 +231,11 @@ function SplitSidePanel({
               if (isChangedRow) bgClass = 'bg-red-500/8'
               else if (rowType === 'removed') bgClass = 'bg-red-500/10'
               else if (rowType === 'empty') bgClass = 'bg-background-elevated/30'
+            }
+
+            // 聚焦行高亮
+            if (isFocused) {
+              bgClass = isRight ? 'bg-primary/15 ring-1 ring-inset ring-primary/30' : 'bg-primary/15 ring-1 ring-inset ring-primary/30'
             }
 
             if (rowType === 'folded') {
@@ -235,11 +249,23 @@ function SplitSidePanel({
               )
             }
 
-            const mappedType: 'context' | 'added' | 'removed' | 'empty' =
-              rowType === 'folded' ? 'context' : rowType
+            const mappedType: 'context' | 'added' | 'removed' | 'empty' = rowType
+
+            const handleClick = (e: React.MouseEvent) => {
+              if (e.ctrlKey || e.metaKey) {
+                const lineNum = isRight ? row.newLineNumber : row.oldLineNumber
+                if (lineNum != null) {
+                  onLineClick?.(lineNum)
+                }
+              }
+            }
 
             return (
-              <div key={idx} className={`px-3 py-0.5 whitespace-pre inline-block min-w-full ${bgClass}`}>
+              <div
+                key={idx}
+                className={`px-3 py-0.5 whitespace-pre inline-block min-w-full ${bgClass} cursor-pointer`}
+                onClick={handleClick}
+              >
                 <WordDiffSegment
                   oldText={content}
                   newText={content}
@@ -269,35 +295,20 @@ export function DiffViewer({
   files,
   activeFilePath,
   onFileSelect,
+  onLineClick,
   onNextFile,
   onPrevFile,
   onOpenFile,
   onClose,
 }: DiffViewerProps) {
   const { t } = useTranslation('git')
-
-  const containerRef = useDiffKeyboard({
-    onNextFile,
-    onPrevFile,
-    onOpenFile,
-    onClose,
-    enabled: !!files && files.length > 1,
-  })
+  const [focusIndex, setFocusIndex] = useState(0)
 
   const language = useMemo(() => {
     if (!filePath) return undefined
     const lang = getLanguageFromPath(filePath)
     return isHighlightableLanguage(lang) ? lang : undefined
   }, [filePath])
-
-  logger.debug('[DiffViewer] 渲染:', {
-    oldContentLength: oldContent?.length ?? 0,
-    newContentLength: newContent?.length ?? 0,
-    changeType,
-    contentOmitted,
-    language,
-    timestamp: new Date().toISOString(),
-  })
 
   const effectiveOldContent = (() => {
     if (changeType === 'added' && oldContent === undefined) return ''
@@ -310,7 +321,49 @@ export function DiffViewer({
   })()
 
   const diff = computeDiff(effectiveOldContent, effectiveNewContent)
-  const splitRows = viewMode === 'split' ? buildSplitRows(diff.lines) : []
+  const splitRows = useMemo(() => viewMode === 'split' ? buildSplitRows(diff.lines) : [], [viewMode, diff.lines])
+
+  // 计算所有变更行的索引
+  const changeIndices = useMemo(() => {
+    const indices: number[] = []
+    splitRows.forEach((row, idx) => {
+      if (row.oldType === 'removed' || row.newType === 'added') {
+        indices.push(idx)
+      }
+    })
+    return indices
+  }, [splitRows])
+
+  // 跳到下一个变更点
+  const handleNextChange = useCallback(() => {
+    if (changeIndices.length === 0) return
+    setFocusIndex(prev => (prev + 1) % changeIndices.length)
+  }, [changeIndices.length])
+
+  // 跳到上一个变更点
+  const handlePrevChange = useCallback(() => {
+    if (changeIndices.length === 0) return
+    setFocusIndex(prev => (prev - 1 + changeIndices.length) % changeIndices.length)
+  }, [changeIndices.length])
+
+  const containerRef = useDiffKeyboard({
+    onNextFile,
+    onPrevFile,
+    onOpenFile,
+    onClose,
+    onNextChange: handleNextChange,
+    onPrevChange: handlePrevChange,
+    enabled: true,
+  })
+
+  logger.debug('[DiffViewer] 渲染:', {
+    oldContentLength: oldContent?.length ?? 0,
+    newContentLength: newContent?.length ?? 0,
+    changeType,
+    contentOmitted,
+    language,
+    timestamp: new Date().toISOString(),
+  })
 
   // ========== Split 视图：左右面板垂直滚动联动 ==========
   const leftGutterRef = useRef<HTMLDivElement>(null)
@@ -346,6 +399,23 @@ export function DiffViewer({
     if (leftContentRef.current) leftContentRef.current.scrollLeft = scrollLeft
     requestAnimationFrame(() => { syncingRef.current = false })
   }, [])
+
+  // 聚焦变更时自动滚动到该位置
+  useEffect(() => {
+    if (changeIndices.length === 0) return
+    const targetIdx = changeIndices[focusIndex]
+    if (targetIdx == null) return
+
+    // 计算目标行的偏移量（每行约 24px）
+    const lineHeight = 24
+    const scrollTop = targetIdx * lineHeight
+
+    // 同步滚动所有面板
+    if (leftContentRef.current) leftContentRef.current.scrollTop = scrollTop
+    if (rightContentRef.current) rightContentRef.current.scrollTop = scrollTop
+    if (leftGutterRef.current) leftGutterRef.current.scrollTop = scrollTop
+    if (rightGutterRef.current) rightGutterRef.current.scrollTop = scrollTop
+  }, [focusIndex, changeIndices])
 
   if (contentOmitted) {
     return <ContentOmittedPlaceholder t={t} />
@@ -415,6 +485,9 @@ export function DiffViewer({
                 gutterRef={leftGutterRef}
                 contentRef={leftContentRef}
                 onScroll={handleLeftScroll}
+                changeIndices={changeIndices}
+                focusIndex={focusIndex}
+                onLineClick={onLineClick}
               />
               {/* 中间分割线 */}
               <div className="w-px bg-border shrink-0" />
@@ -425,6 +498,9 @@ export function DiffViewer({
                 gutterRef={rightGutterRef}
                 contentRef={rightContentRef}
                 onScroll={handleRightScroll}
+                changeIndices={changeIndices}
+                focusIndex={focusIndex}
+                onLineClick={onLineClick}
               />
             </div>
           </div>

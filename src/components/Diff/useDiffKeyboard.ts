@@ -2,9 +2,8 @@
  * Diff 视图键盘快捷键 Hook
  *
  * 快捷键：
- * - j / k：下一个 / 上一个变更 hunk
+ * - j / k：下一个 / 上一个变更位置
  * - ] / [：下一个 / 上一个文件
- * - Space：展开/折叠上下文
  * - Enter：打开文件编辑器
  * - Escape：关闭 diff 视图
  */
@@ -12,15 +11,12 @@
 import { useEffect, useCallback, useRef } from 'react'
 
 interface UseDiffKeyboardOptions {
-  /** 下一个文件回调 */
   onNextFile?: () => void
-  /** 上一个文件回调 */
   onPrevFile?: () => void
-  /** 打开文件编辑器回调 */
   onOpenFile?: () => void
-  /** 关闭 diff 视图回调 */
   onClose?: () => void
-  /** 是否启用键盘快捷键（默认 true） */
+  onNextChange?: () => void
+  onPrevChange?: () => void
   enabled?: boolean
 }
 
@@ -29,6 +25,8 @@ export function useDiffKeyboard({
   onPrevFile,
   onOpenFile,
   onClose,
+  onNextChange,
+  onPrevChange,
   enabled = true,
 }: UseDiffKeyboardOptions) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -37,13 +35,20 @@ export function useDiffKeyboard({
     (e: KeyboardEvent) => {
       if (!enabled) return
 
-      // 忽略输入框内的按键
       const target = e.target as HTMLElement
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
         return
       }
 
       switch (e.key) {
+        case 'j':
+          e.preventDefault()
+          onNextChange?.()
+          break
+        case 'k':
+          e.preventDefault()
+          onPrevChange?.()
+          break
         case ']':
           e.preventDefault()
           onNextFile?.()
@@ -64,7 +69,7 @@ export function useDiffKeyboard({
           break
       }
     },
-    [enabled, onNextFile, onPrevFile, onOpenFile, onClose]
+    [enabled, onNextFile, onPrevFile, onOpenFile, onClose, onNextChange, onPrevChange]
   )
 
   useEffect(() => {
