@@ -4,7 +4,7 @@ import { ChevronRight, ChevronDown, Folder, Loader2, Copy, FolderOpen, Download 
 import { clsx } from 'clsx';
 import { FileIcon } from './FileIcon';
 import { ContextMenu, isHtmlFile, type ContextMenuItem } from './ContextMenu';
-import { useFileExplorerStore, useFileEditorStore } from '@/stores';
+import { useFileExplorerStore, useFileEditorStore, useToastStore } from '@/stores';
 import { openInDefaultApp } from '@/services/tauri';
 import { isTauri } from '@/utils/platform';
 import { InputDialog } from '../Common/InputDialog';
@@ -43,11 +43,13 @@ export const FileTreeNode = memo<FileTreeNodeProps>(({
     copy_file,
     cut_file,
     paste_file,
+    save_dropped_file,
     clipboard,
     selected_file: storeSelectedFile,
     highlighted_path,
   } = useFileExplorerStore();
   const { openFile } = useFileEditorStore();
+  const toast = useToastStore();
 
   const nodeRef = useRef<HTMLDivElement>(null);
 
@@ -121,6 +123,7 @@ export const FileTreeNode = memo<FileTreeNodeProps>(({
   };
 
   const isLoading = file.is_dir && loadingFolders.has(normalizePath(file.path));
+  const isCutSource = clipboard?.operation === 'cut' && normalizePath(clipboard.sourcePath) === normalizePath(file.path);
 
   // children 状态:
   // - null/undefined: 尚未加载
@@ -145,6 +148,27 @@ export const FileTreeNode = memo<FileTreeNodeProps>(({
       y: e.clientY,
     });
   }, [file, select_file]);
+
+  const handleNodeDragOver = useCallback((e: React.DragEvent) => {
+    if (!file.is_dir || !e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'copy';
+  }, [file.is_dir]);
+
+  const handleNodeDrop = useCallback(async (e: React.DragEvent) => {
+    if (!file.is_dir) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const files = Array.from(e.dataTransfer.files || []);
+    if (files.length === 0) return;
+
+    for (const droppedFile of files) {
+      await save_dropped_file(file.path, droppedFile);
+    }
+    toast.success(t('toast.dropped'), files.length === 1 ? files[0].name : String(files.length));
+  }, [file.is_dir, file.path, save_dropped_file, t, toast]);
 
   const getMenuItems = useCallback((): ContextMenuItem[] => {
     const items: ContextMenuItem[] = [
@@ -232,6 +256,7 @@ export const FileTreeNode = memo<FileTreeNodeProps>(({
       icon: <Copy size={14} />,
       action: () => {
         copy_file(file);
+        toast.success(t('toast.copied'), file.name);
       },
     });
 
@@ -242,6 +267,7 @@ export const FileTreeNode = memo<FileTreeNodeProps>(({
       icon: <IconEdit size={14} />,
       action: () => {
         cut_file(file);
+        toast.success(t('toast.cut'), file.name);
       },
     });
 
@@ -253,6 +279,7 @@ export const FileTreeNode = memo<FileTreeNodeProps>(({
         icon: <IconFolder size={14} />,
         action: async () => {
           await paste_file(file.path);
+          toast.success(t('toast.pasted'), clipboard.sourceFile.name);
         },
       });
     }
@@ -328,7 +355,7 @@ export const FileTreeNode = memo<FileTreeNodeProps>(({
     }
 
     return items;
-  }, [file, toggle_folder, openFile, t, copy_file, cut_file, paste_file, clipboard]);
+  }, [file, toggle_folder, openFile, t, copy_file, cut_file, paste_file, clipboard, toast]);
 
   const handleInputDialogConfirm = async (value: string) => {
     if (!value) return;
@@ -378,12 +405,15 @@ export const FileTreeNode = memo<FileTreeNodeProps>(({
           'flex items-center px-2 py-1.5 cursor-pointer rounded transition-colors',
           'hover:bg-background-hover',
           isSelected && 'bg-primary/20 border-l-2 border-primary',
+          isCutSource && 'opacity-50',
           isHighlighted && 'animate-pulse bg-primary/30 ring-1 ring-primary/50 rounded'
         )}
         style={{ paddingLeft: `${level * 16 + 8}px` }}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
         onKeyDown={handleKeyDown}
+        onDragOver={handleNodeDragOver}
+        onDrop={handleNodeDrop}
         role="button"
         tabIndex={0}
         aria-label={file.is_dir ? t('ariaLabel.folder', { name: file.name }) : t('ariaLabel.file', { name: file.name })}

@@ -1,9 +1,15 @@
 use crate::error::{AppError, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::fs;
 use std::time::SystemTime;
 use std::collections::HashSet;
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileOperationResult {
+    pub destination_path: String,
+}
 
 const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif"];
 
@@ -307,21 +313,30 @@ pub async fn copy_path(source: String, destination: String) -> Result<()> {
         return Err(AppError::InvalidPath("源路径不存在".to_string()));
     }
 
-    if source_path.is_dir() {
-        // 复制目录
-        copy_dir_all(source_path, dest_path)?;
-    } else {
-        // 复制文件
-        // 确保目标目录存在
-        if let Some(parent) = dest_path.parent() {
-            if !parent.exists() {
-                fs::create_dir_all(parent)?;
-            }
-        }
-        fs::copy(source_path, dest_path)?;
-    }
+    copy_path_to(source_path, dest_path)?;
 
     Ok(())
+}
+
+/// 复制文件或目录到目标目录，自动处理同名冲突
+#[cfg_attr(feature = "tauri-app", tauri::command)]
+pub async fn copy_path_to_directory(source: String, target_dir: String) -> Result<FileOperationResult> {
+    let source_path = Path::new(&source);
+    let target_dir_path = Path::new(&target_dir);
+
+    if !source_path.exists() {
+        return Err(AppError::InvalidPath("源路径不存在".to_string()));
+    }
+    if !target_dir_path.exists() || !target_dir_path.is_dir() {
+        return Err(AppError::InvalidPath("目标目录不存在".to_string()));
+    }
+
+    let destination = next_available_destination(source_path, target_dir_path)?;
+    copy_path_to(source_path, &destination)?;
+
+    Ok(FileOperationResult {
+        destination_path: destination.to_string_lossy().to_string(),
+    })
 }
 
 /// 移动文件或目录
@@ -346,6 +361,72 @@ pub async fn move_path(source: String, destination: String) -> Result<()> {
     Ok(())
 }
 
+/// 移动文件或目录到目标目录，自动处理同名冲突
+#[cfg_attr(feature = "tauri-app", tauri::command)]
+pub async fn move_path_to_directory(source: String, target_dir: String) -> Result<FileOperationResult> {
+    let source_path = Path::new(&source);
+    let target_dir_path = Path::new(&target_dir);
+
+    if !source_path.exists() {
+        return Err(AppError::InvalidPath("源路径不存在".to_string()));
+    }
+    if !target_dir_path.exists() || !target_dir_path.is_dir() {
+        return Err(AppError::InvalidPath("目标目录不存在".to_string()));
+    }
+
+    let destination = next_available_destination(source_path, target_dir_path)?;
+    fs::rename(source_path, &destination)?;
+
+    Ok(FileOperationResult {
+        destination_path: destination.to_string_lossy().to_string(),
+    })
+}
+
+fn copy_path_to(source_path: &Path, dest_path: &Path) -> Result<()> {
+    if source_path.is_dir() {
+        copy_dir_all(source_path, dest_path)?;
+    } else {
+        if let Some(parent) = dest_path.parent() {
+            if !parent.exists() {
+                fs::create_dir_all(parent)?;
+            }
+        }
+        fs::copy(source_path, dest_path)?;
+    }
+
+    Ok(())
+}
+
+fn next_available_destination(source_path: &Path, target_dir: &Path) -> Result<PathBuf> {
+    let file_name = source_path
+        .file_name()
+        .ok_or_else(|| AppError::InvalidPath("源路径缺少文件名".to_string()))?;
+    let candidate = target_dir.join(file_name);
+
+    if !candidate.exists() {
+        return Ok(candidate);
+    }
+
+    let stem = source_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("untitled");
+    let extension = source_path.extension().and_then(|e| e.to_str());
+
+    for index in 1..10_000 {
+        let file_name = match extension {
+            Some(ext) if !ext.is_empty() => format!("{} 副本 {}.{}", stem, index, ext),
+            _ => format!("{} 副本 {}", stem, index),
+        };
+        let candidate = target_dir.join(file_name);
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+
+    Err(AppError::Unknown("无法生成可用的目标文件名".to_string()))
+}
+
 /// 递归复制目录
 fn copy_dir_all(source: &Path, destination: &Path) -> Result<()> {
     fs::create_dir_all(destination)?;
@@ -363,6 +444,35 @@ fn copy_dir_all(source: &Path, destination: &Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// 保存拖入的文件到目标目录，自动处理同名冲突
+#[cfg_attr(feature = "tauri-app", tauri::command)]
+pub async fn save_dropped_file_to_directory(
+    target_dir: String,
+    file_name: String,
+    content_base64: String,
+) -> Result<FileOperationResult> {
+    let target_dir_path = Path::new(&target_dir);
+    if !target_dir_path.exists() || !target_dir_path.is_dir() {
+        return Err(AppError::InvalidPath("目标目录不存在".to_string()));
+    }
+
+    let safe_file_name = Path::new(&file_name)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| AppError::InvalidPath("文件名无效".to_string()))?;
+    let virtual_source = target_dir_path.join(safe_file_name);
+    let destination = next_available_destination(&virtual_source, target_dir_path)?;
+    let bytes = BASE64_STANDARD
+        .decode(content_base64.as_bytes())
+        .map_err(|e| AppError::ParseError(format!("Base64 解码失败: {}", e)))?;
+
+    fs::write(&destination, bytes)?;
+
+    Ok(FileOperationResult {
+        destination_path: destination.to_string_lossy().to_string(),
+    })
 }
 
 /// 检查路径是否存在

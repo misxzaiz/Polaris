@@ -49,6 +49,8 @@ export interface FileClipboard {
   sourcePath: string;
   /** 源文件信息 */
   sourceFile: FileInfo;
+  /** 剪贴板来源 */
+  source: 'internal' | 'system';
 }
 
 export interface FileExplorerState {
@@ -123,6 +125,8 @@ export interface FileExplorerActions {
   cut_file: (file: FileInfo) => void;
   /** 粘贴文件到目标目录 */
   paste_file: (targetPath: string) => Promise<void>;
+  /** 保存拖入的文件到目标目录 */
+  save_dropped_file: (targetPath: string, file: File) => Promise<void>;
   /** 清除剪贴板 */
   clear_clipboard: () => void;
   /** 在文件树中定位并高亮指定路径 */

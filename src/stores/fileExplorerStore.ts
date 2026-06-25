@@ -10,7 +10,7 @@ import { searchFiles } from '@/services/fileSearch';
 import type { FileMatch } from '@/services/fileSearch';
 import { createLogger } from '@/utils/logger';
 import { getParentPath, joinPath, normalizePath } from '@/utils/path';
-import { updateFolderChildren, filterFiles, countFiles } from './fileExplorerStoreUtils';
+import { updateFolderChildren, filterFiles, countFiles, removePathFromTree } from './fileExplorerStoreUtils';
 
 const log = createLogger('FileExplorer');
 
@@ -460,8 +460,12 @@ export const useFileExplorerStore = create<FileExplorerStore>((set, get) => ({
       clipboard: {
         operation: 'copy',
         sourcePath: file.path,
-        sourceFile: file
+        sourceFile: file,
+        source: 'internal',
       }
+    });
+    tauri.setFileClipboard([file.path], 'copy').catch((error) => {
+      log.warn('写入系统文件剪贴板失败', error instanceof Error ? error : new Error(String(error)));
     });
   },
 
@@ -471,36 +475,97 @@ export const useFileExplorerStore = create<FileExplorerStore>((set, get) => ({
       clipboard: {
         operation: 'cut',
         sourcePath: file.path,
-        sourceFile: file
+        sourceFile: file,
+        source: 'internal',
       }
+    });
+    tauri.setFileClipboard([file.path], 'cut').catch((error) => {
+      log.warn('写入系统文件剪贴板失败', error instanceof Error ? error : new Error(String(error)));
     });
   },
 
   // 粘贴文件到目标目录
   paste_file: async (targetPath: string) => {
-    const { clipboard } = get();
-    if (!clipboard) {
+    const internalClipboard = get().clipboard;
+    let operation = internalClipboard?.operation;
+    let sourcePath = internalClipboard?.sourcePath;
+    let sourceFileName = internalClipboard?.sourceFile.name;
+    let clipboardSource = internalClipboard?.source;
+
+    try {
+      const systemClipboard = await tauri.getFileClipboard();
+      if (systemClipboard?.paths.length) {
+        operation = systemClipboard.operation;
+        sourcePath = systemClipboard.paths[0];
+        sourceFileName = sourcePath.split(/[\\/]/).filter(Boolean).pop() || sourcePath;
+        clipboardSource = 'system';
+      }
+    } catch (error) {
+      log.warn('读取系统文件剪贴板失败', error instanceof Error ? error : new Error(String(error)));
+    }
+
+    if (!operation || !sourcePath) {
       return;
     }
 
-    const { operation, sourcePath, sourceFile } = clipboard;
-    const fileName = sourceFile.name;
-    const destPath = joinPath(targetPath, fileName);
+    const sourceParentPath = getParentPath(sourcePath);
 
     try {
       if (operation === 'copy') {
-        await tauri.copyPath(sourcePath, destPath);
+        await tauri.copyPathToDirectory(sourcePath, targetPath);
       } else {
-        // 移动操作
-        await tauri.movePath(sourcePath, destPath);
+        await tauri.movePathToDirectory(sourcePath, targetPath);
         // 清除剪贴板（剪切只能粘贴一次）
         set({ clipboard: null });
       }
 
       // 刷新目标目录
       await get().refresh_folder(targetPath);
+
+      // 剪切跨目录时同步刷新源目录；如果源目录已不存在，则从现有树中移除旧节点。
+      if (operation === 'cut' && sourceParentPath && normalizePath(sourceParentPath) !== normalizePath(targetPath)) {
+        try {
+          await get().refresh_folder(sourceParentPath);
+        } catch {
+          set((state) => ({
+            file_tree: removePathFromTree(state.file_tree, sourcePath),
+          }));
+        }
+      }
+
+      if (clipboardSource === 'system' && sourceFileName) {
+        set({
+          clipboard: {
+            operation,
+            sourcePath,
+            sourceFile: {
+              name: sourceFileName,
+              path: sourcePath,
+              is_dir: false,
+            },
+            source: 'system',
+          },
+        });
+      }
     } catch (error) {
       set({ error: error instanceof Error ? error.message : '粘贴文件失败' });
+    }
+  },
+
+  // 保存拖入的文件到目标目录
+  save_dropped_file: async (targetPath: string, file: File) => {
+    try {
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = '';
+      const chunkSize = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+      }
+      await tauri.saveDroppedFileToDirectory(targetPath, file.name, btoa(binary));
+      await get().refresh_folder(targetPath);
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : '拖入文件失败' });
     }
   },
 

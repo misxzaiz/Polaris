@@ -1,6 +1,7 @@
 pub mod chat;
 pub mod workspace;
 pub mod file_explorer;
+pub mod file_clipboard;
 pub mod window;
 pub mod context;
 pub mod git;

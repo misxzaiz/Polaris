@@ -132,6 +132,11 @@ pub async fn handle_ipc_bridge(
         "rename_file" => dispatch_rename_file(&args).await,
         "copy_path" => dispatch_copy_path(&args).await,
         "move_path" => dispatch_move_path(&args).await,
+        "copy_path_to_directory" => dispatch_copy_path_to_directory(&args).await,
+        "move_path_to_directory" => dispatch_move_path_to_directory(&args).await,
+        "save_dropped_file_to_directory" => dispatch_save_dropped_file_to_directory(&args).await,
+        "set_file_clipboard" => dispatch_set_file_clipboard(&args).await,
+        "get_file_clipboard" => dispatch_get_file_clipboard().await,
         "search_files" => dispatch_search_files(&args).await,
         "search_file_contents" => dispatch_search_file_contents(&args).await,
         "read_commands" => dispatch_read_commands(&args).await,
@@ -859,6 +864,46 @@ async fn dispatch_move_path(args: &Value) -> Result<Json<Value>, WebError> {
     let source = require_string(args, "source")?;
     let destination = require_string(args, "destination")?;
     json_result!(crate::commands::file_explorer::move_path(source, destination).await)
+}
+
+async fn dispatch_copy_path_to_directory(args: &Value) -> Result<Json<Value>, WebError> {
+    let source = require_string(args, "source")?;
+    let target_dir = require_string(args, "targetDir")?;
+    json_result!(crate::commands::file_explorer::copy_path_to_directory(source, target_dir).await)
+}
+
+async fn dispatch_move_path_to_directory(args: &Value) -> Result<Json<Value>, WebError> {
+    let source = require_string(args, "source")?;
+    let target_dir = require_string(args, "targetDir")?;
+    json_result!(crate::commands::file_explorer::move_path_to_directory(source, target_dir).await)
+}
+
+async fn dispatch_save_dropped_file_to_directory(args: &Value) -> Result<Json<Value>, WebError> {
+    let target_dir = require_string(args, "targetDir")?;
+    let file_name = require_string(args, "fileName")?;
+    let content_base64 = require_string(args, "contentBase64")?;
+    json_result!(crate::commands::file_explorer::save_dropped_file_to_directory(target_dir, file_name, content_base64).await)
+}
+
+async fn dispatch_set_file_clipboard(args: &Value) -> Result<Json<Value>, WebError> {
+    let paths = args
+        .get("paths")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| WebError::BadRequest("missing paths".to_string()))?
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect::<Vec<_>>();
+    let operation = serde_json::from_value(
+        args.get("operation")
+            .cloned()
+            .ok_or_else(|| WebError::BadRequest("missing operation".to_string()))?,
+    )
+    .map_err(|e| WebError::BadRequest(e.to_string()))?;
+    json_result!(crate::commands::file_clipboard::set_file_clipboard(paths, operation).await)
+}
+
+async fn dispatch_get_file_clipboard() -> Result<Json<Value>, WebError> {
+    json_result!(crate::commands::file_clipboard::get_file_clipboard().await)
 }
 
 async fn dispatch_search_files(args: &Value) -> Result<Json<Value>, WebError> {

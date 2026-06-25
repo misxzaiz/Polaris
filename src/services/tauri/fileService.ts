@@ -108,14 +108,55 @@ export async function pathExists(path: string) {
   return invoke('path_exists', { path });
 }
 
+/** 复制/移动文件操作结果 */
+export interface FileOperationResult {
+  destinationPath: string;
+}
+
+export type FileClipboardOperation = 'copy' | 'cut';
+
+export interface SystemFileClipboard {
+  operation: FileClipboardOperation;
+  paths: string[];
+}
+
 /** 复制文件或目录 */
 export async function copyPath(source: string, destination: string) {
   return invoke('copy_path', { source, destination });
 }
 
+/** 复制文件或目录到目标目录，自动处理同名冲突 */
+export async function copyPathToDirectory(source: string, targetDir: string): Promise<FileOperationResult> {
+  return invoke('copy_path_to_directory', { source, targetDir });
+}
+
 /** 移动文件或目录 */
 export async function movePath(source: string, destination: string) {
   return invoke('move_path', { source, destination });
+}
+
+/** 移动文件或目录到目标目录，自动处理同名冲突 */
+export async function movePathToDirectory(source: string, targetDir: string): Promise<FileOperationResult> {
+  return invoke('move_path_to_directory', { source, targetDir });
+}
+
+/** 保存拖入的文件到目标目录 */
+export async function saveDroppedFileToDirectory(
+  targetDir: string,
+  fileName: string,
+  contentBase64: string,
+): Promise<FileOperationResult> {
+  return invoke('save_dropped_file_to_directory', { targetDir, fileName, contentBase64 });
+}
+
+/** 写入系统文件剪贴板 */
+export async function setFileClipboard(paths: string[], operation: FileClipboardOperation): Promise<void> {
+  return invoke('set_file_clipboard', { paths, operation });
+}
+
+/** 读取系统文件剪贴板 */
+export async function getFileClipboard(): Promise<SystemFileClipboard | null> {
+  return invoke('get_file_clipboard');
 }
 
 // ============================================================================

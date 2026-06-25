@@ -150,6 +150,13 @@ xcap = "0.9"
 # 默认 features(input+control) 提供键鼠模拟与控件操作(click/double_click/right_click)；
 # clipboard feature 额外提供剪贴板模块与 UIElement::send_text_by_clipboard。
 uiautomation = { version = "0.25", features = ["clipboard"] }
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 [target.'cfg(not(windows))'.dependencies]
 libc = "0.2"

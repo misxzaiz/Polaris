@@ -49,6 +49,12 @@
     "nameInvalid": "文件名包含非法字符或使用了保留名称",
     "nameSame": "新名称与原名称相同"
   },
+  "toast": {
+    "copied": "已复制",
+    "cut": "已剪切",
+    "pasted": "已粘贴",
+    "dropped": "已导入"
+  },
   "empty": {
     "folder": "空文件夹",
     "noResults": "未找到匹配的文件",

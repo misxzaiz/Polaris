@@ -46,7 +46,11 @@ use commands::file_explorer::{
     read_directory, get_file_content, create_file, create_directory,
     delete_file, rename_file, path_exists, read_commands, search_files,
     search_file_contents,
-    copy_path, move_path, save_image_bytes, save_codex_image_artifact,
+    copy_path, move_path, copy_path_to_directory, move_path_to_directory, save_dropped_file_to_directory, save_image_bytes, save_codex_image_artifact,
+};
+#[cfg(feature = "tauri-app")]
+use commands::file_clipboard::{
+    set_file_clipboard, get_file_clipboard,
 };
 #[cfg(feature = "tauri-app")]
 use commands::file_watcher::{
@@ -674,6 +678,11 @@ pub fn run() {
             search_file_contents,
             copy_path,
             move_path,
+            copy_path_to_directory,
+            move_path_to_directory,
+            save_dropped_file_to_directory,
+            set_file_clipboard,
+            get_file_clipboard,
             // 文件监听相关
             fs_watch_start,
             fs_watch_stop,

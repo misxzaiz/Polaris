@@ -49,6 +49,12 @@
     "nameInvalid": "File name contains invalid characters or reserved names",
     "nameSame": "New name is the same as the original"
   },
+  "toast": {
+    "copied": "Copied",
+    "cut": "Cut",
+    "pasted": "Pasted",
+    "dropped": "Imported"
+  },
   "empty": {
     "folder": "Empty folder",
     "noResults": "No matching files found",

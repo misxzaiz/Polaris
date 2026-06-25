@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useFileExplorerStore, useWorkspaceStore, useCommandStore } from '@/stores';
+import { useFileExplorerStore, useWorkspaceStore, useCommandStore, useToastStore } from '@/stores';
 import { initFileWatcherListener, startFileWatcher, stopFileWatcher } from '@/stores/fileExplorerStore';
 import { FileTree } from './FileTree';
 import { SearchBar } from './SearchBar';
@@ -42,7 +42,10 @@ export function FileExplorer() {
     clear_error,
     create_file,
     create_directory,
+    paste_file,
+    save_dropped_file,
   } = useFileExplorerStore();
+  const toast = useToastStore();
 
   const {
     getCurrentWorkspace,
@@ -156,7 +159,7 @@ export function FileExplorer() {
   }, []);
 
   const getContextMenuItems = useCallback((): ContextMenuItem[] => {
-    return [
+    const items: ContextMenuItem[] = [
       {
         id: 'create-file',
         label: t('newFile'),
@@ -187,6 +190,19 @@ export function FileExplorer() {
           closeContextMenu();
         },
       },
+      { id: 'separator-paste', label: '-', icon: undefined, action: () => {} },
+      {
+        id: 'paste',
+        label: t('contextMenu.paste'),
+        icon: <IconFolder size={14} />,
+        disabled: !clipboard || !current_path,
+        action: async () => {
+          if (!clipboard || !current_path) return;
+          await paste_file(current_path);
+          toast.success(t('toast.pasted'), clipboard.sourceFile.name);
+          closeContextMenu();
+        },
+      },
       { id: 'separator', label: '-', icon: undefined, action: () => {} },
       {
         id: 'refresh',
@@ -200,7 +216,9 @@ export function FileExplorer() {
         },
       },
     ];
-  }, [closeContextMenu, handleRefresh, t]);
+
+    return items;
+  }, [clipboard, closeContextMenu, current_path, handleRefresh, paste_file, t, toast]);
 
   // 处理输入对话框确认
   const handleInputDialogConfirm = async (value: string) => {
@@ -231,6 +249,27 @@ export function FileExplorer() {
     return null;
   };
 
+  const handleDropFiles = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!current_path) return;
+    const files = Array.from(e.dataTransfer.files || []);
+    if (files.length === 0) return;
+
+    for (const file of files) {
+      await save_dropped_file(current_path, file);
+    }
+    toast.success(t('toast.dropped'), files.length === 1 ? files[0].name : String(files.length));
+  }, [current_path, save_dropped_file, t, toast]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('Files')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  }, []);
+
   // 获取当前正在查看的工作区
   // 注意：不使用 useMemo，因为 Zustand store 已经做了优化
   // 如果使用 useMemo，依赖项函数引用不变会导致缓存不更新
@@ -260,7 +299,11 @@ export function FileExplorer() {
   const currentWorkspace = getCurrentWorkspace();
 
   return (
-    <div className="h-full flex flex-col">
+    <div
+      className="h-full flex flex-col"
+      onDragOver={handleDragOver}
+      onDrop={handleDropFiles}
+    >
       {/* 顶部区域 */}
       <div className="border-b border-border bg-background-surface">
         {/* 第一行：工作区名称 */}

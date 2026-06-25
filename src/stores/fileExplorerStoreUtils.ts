@@ -22,6 +22,22 @@ export function updateFolderChildren(tree: FileInfo[], folderPath: string, child
   });
 }
 
+/** 从文件树中移除指定路径 */
+export function removePathFromTree(tree: FileInfo[], targetPath: string): FileInfo[] {
+  const normalizedTargetPath = normalizePath(targetPath);
+
+  return tree
+    .filter(file => normalizePath(file.path) !== normalizedTargetPath)
+    .map(file => {
+      if (!file.children) return file;
+
+      return {
+        ...file,
+        children: removePathFromTree(file.children, targetPath),
+      };
+    });
+}
+
 /** 递归过滤文件树 */
 export function filterFiles(files: FileInfo[], query: string): FileInfo[] {
   if (!query.trim()) return files;
