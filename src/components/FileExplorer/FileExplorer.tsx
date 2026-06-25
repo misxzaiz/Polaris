@@ -44,6 +44,7 @@ export function FileExplorer() {
     create_directory,
     paste_file,
     save_dropped_file,
+    clipboard,
   } = useFileExplorerStore();
   const toast = useToastStore();
 

@@ -465,7 +465,9 @@ export const useFileExplorerStore = create<FileExplorerStore>((set, get) => ({
       }
     });
     tauri.setFileClipboard([file.path], 'copy').catch((error) => {
-      log.warn('写入系统文件剪贴板失败', error instanceof Error ? error : new Error(String(error)));
+      log.warn('写入系统文件剪贴板失败', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     });
   },
 
@@ -480,7 +482,9 @@ export const useFileExplorerStore = create<FileExplorerStore>((set, get) => ({
       }
     });
     tauri.setFileClipboard([file.path], 'cut').catch((error) => {
-      log.warn('写入系统文件剪贴板失败', error instanceof Error ? error : new Error(String(error)));
+      log.warn('写入系统文件剪贴板失败', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     });
   },
 
@@ -501,7 +505,9 @@ export const useFileExplorerStore = create<FileExplorerStore>((set, get) => ({
         clipboardSource = 'system';
       }
     } catch (error) {
-      log.warn('读取系统文件剪贴板失败', error instanceof Error ? error : new Error(String(error)));
+      log.warn('读取系统文件剪贴板失败', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
 
     if (!operation || !sourcePath) {
