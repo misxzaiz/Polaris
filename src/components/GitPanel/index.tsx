@@ -146,6 +146,21 @@ export function GitPanel({
     setSelectedDiff(null)
   }
 
+  const getBatchActionCounts = useCallback(() => {
+    if (!status || selectedFiles.size === 0) {
+      return { stageable: 0, unstageable: 0, discardable: 0 }
+    }
+
+    const selected = Array.from(selectedFiles)
+    return {
+      stageable: selected.filter(path =>
+        status.unstaged.some(f => f.path === path) || status.untracked.includes(path)
+      ).length,
+      unstageable: selected.filter(path => status.staged.some(f => f.path === path)).length,
+      discardable: selected.filter(path => status.unstaged.some(f => f.path === path)).length,
+    }
+  }, [selectedFiles, status])
+
   const toggleFileSelection = useCallback((path: string) => {
     setSelectedFiles(prev => {
       const next = new Set(prev)
@@ -161,11 +176,11 @@ export function GitPanel({
   const toggleSelectAll = useCallback(() => {
     if (!status) return
 
-    const allPaths = [
+    const allPaths = Array.from(new Set([
       ...status.staged.map(f => f.path),
       ...status.unstaged.map(f => f.path),
       ...status.untracked
-    ]
+    ]))
 
     setSelectedFiles(prev => {
       const selectedVisibleCount = allPaths.filter(path => prev.has(path)).length
@@ -241,19 +256,24 @@ export function GitPanel({
   const handleBatchDiscard = useCallback(() => {
     if (!currentWorkspace || selectedFiles.size === 0) return
 
+    const discardablePaths = Array.from(selectedFiles).filter(path => {
+      return status?.unstaged.some(f => f.path === path)
+    })
+
+    if (discardablePaths.length === 0) {
+      toast.info(t('noDiscardableSelection'))
+      return
+    }
+
     setConfirmDialog({
       show: true,
       title: t('confirmDiscardTitle'),
-      message: t('confirmDiscard', { count: selectedFiles.size }),
+      message: t('confirmDiscard', { count: discardablePaths.length }),
       type: 'danger',
       onConfirm: async () => {
         setConfirmDialog(null)
         setIsBatchOperating(true)
         try {
-          const discardablePaths = Array.from(selectedFiles).filter(path => {
-            return status?.unstaged.some(f => f.path === path)
-          })
-
           setBatchProgress({ current: 0, total: discardablePaths.length })
 
           for (let i = 0; i < discardablePaths.length; i++) {
@@ -572,12 +592,19 @@ export function GitPanel({
                 onRefresh={() => currentWorkspace && refreshStatus(currentWorkspace.path)}
               />
 
-              {selectedFiles.size > 0 && (
-                <div className="px-3 py-2 bg-primary/5 border-b border-primary/20 flex items-center justify-between gap-2">
+              {selectedFiles.size > 0 && (() => {
+                const counts = getBatchActionCounts()
+                return (
+                <div className="px-3 py-1.5 bg-primary/5 border-b border-primary/20 flex items-center justify-between gap-2">
                   <span className="text-xs text-text-secondary flex-1 truncate">
                     {batchProgress
                       ? t('batchProgress', { current: batchProgress.current, total: batchProgress.total })
-                      : t('selectedFiles', { count: selectedFiles.size })
+                      : t('selectedFilesWithActions', {
+                        count: selectedFiles.size,
+                        stageable: counts.stageable,
+                        unstageable: counts.unstageable,
+                        discardable: counts.discardable,
+                      })
                     }
                   </span>
 
@@ -586,11 +613,12 @@ export function GitPanel({
                       size="sm"
                       variant="primary"
                       onClick={handleBatchStage}
-                      disabled={isBatchOperating || isLoading}
-                      className="px-2"
+                      disabled={isBatchOperating || isLoading || counts.stageable === 0}
+                      className="h-7 px-2 text-xs"
                       title={t('stageSelected')}
                     >
-                      <Check size={14} />
+                      <Check size={13} />
+                      <span>{counts.stageable}</span>
                     </Button>
 
                     <DropdownMenu
@@ -599,32 +627,35 @@ export function GitPanel({
                           size="sm"
                           variant="secondary"
                           disabled={isBatchOperating || isLoading}
-                          className="px-2"
+                          className="h-7 px-2 text-xs"
                           title={t('moreActions')}
                         >
-                          <MoreHorizontal size={14} />
+                          <MoreHorizontal size={13} />
                         </Button>
                       }
                       align="right"
                       items={[
                         {
                           key: 'unstage',
-                          label: t('unstage'),
+                          label: `${t('unstage')} (${counts.unstageable})`,
                           icon: <X size={14} />,
+                          disabled: counts.unstageable === 0,
                           onClick: handleBatchUnstage,
                         },
                         {
                           key: 'discard',
-                          label: t('discard'),
+                          label: `${t('discard')} (${counts.discardable})`,
                           icon: <RotateCcw size={14} />,
                           variant: 'danger',
+                          disabled: counts.discardable === 0,
                           onClick: handleBatchDiscard,
                         },
                       ]}
                     />
                   </div>
                 </div>
-              )}
+                )
+              })()}
 
               <FileChangesList
                 staged={status.staged}

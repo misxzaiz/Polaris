@@ -207,7 +207,7 @@ export function CommitInput({ hasChanges: _hasChanges, selectedFiles }: CommitIn
   }
 
   return (
-    <div className="px-4 py-3 border-t border-border-subtle space-y-2">
+    <div className="px-3 py-2 border-t border-border-subtle space-y-1.5">
       {/* AI 建议回流条 */}
       {showSuggestion && (
         <div className="flex items-start gap-2 p-2 rounded-lg bg-primary/5 border border-primary/20">
@@ -251,8 +251,8 @@ export function CommitInput({ hasChanges: _hasChanges, selectedFiles }: CommitIn
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           placeholder={t('commit.placeholder')}
-          className="w-full px-3 py-2 pr-10 text-sm bg-background-surface border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary resize-none"
-          rows={3}
+          className="w-full px-3 py-1.5 pr-10 text-sm bg-background-surface border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary resize-none"
+          rows={2}
           disabled={isLoading || isGenerating}
         />
 
@@ -300,7 +300,7 @@ export function CommitInput({ hasChanges: _hasChanges, selectedFiles }: CommitIn
         )}
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between min-h-7">
         <span className="text-xs text-text-tertiary">
           {getCommitHint()}
         </span>

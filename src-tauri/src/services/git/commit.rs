@@ -4,11 +4,46 @@
  */
 
 use git2::{Repository, StatusOptions};
+use git2::build::CheckoutBuilder;
 use std::path::Path;
 use tracing::{debug, info, warn};
 
 use crate::models::git::{BatchStageResult, GitServiceError, StageFailure};
 use super::executor::open_repository;
+
+#[derive(Debug, Clone, Copy)]
+enum StagedPathKind {
+    AddedOrModified,
+    Removed,
+}
+
+fn file_status(repo: &Repository, file_path: &str) -> Result<Option<git2::Status>, GitServiceError> {
+    let mut opts = StatusOptions::new();
+    opts.include_untracked(true)
+        .include_ignored(false)
+        .recurse_untracked_dirs(false)
+        .pathspec(file_path);
+
+    let statuses = repo.statuses(Some(&mut opts))?;
+    Ok(statuses.iter().next().map(|entry| entry.status()))
+}
+
+fn stage_path(
+    repo: &Repository,
+    index: &mut git2::Index,
+    file_path: &str,
+) -> Result<StagedPathKind, GitServiceError> {
+    let path = std::path::Path::new(file_path);
+    let status = file_status(repo, file_path)?;
+
+    if matches!(status, Some(status) if status.is_wt_deleted()) {
+        index.remove_path(path)?;
+        Ok(StagedPathKind::Removed)
+    } else {
+        index.add_path(path)?;
+        Ok(StagedPathKind::AddedOrModified)
+    }
+}
 
 /// 提交变更
 pub fn commit(
@@ -55,18 +90,6 @@ pub fn commit(
         let mut added_count = 0;
         let mut removed_count = 0;
 
-        let need_status_check = selected_files.is_none();
-
-        let statuses = if need_status_check {
-            let mut opts = StatusOptions::new();
-            opts.include_untracked(true)
-                .include_ignored(false)
-                .recurse_untracked_dirs(true);
-            Some(repo.statuses(Some(&mut opts))?)
-        } else {
-            None
-        };
-
         for path_str in files_to_stage {
             let path_lower = path_str.to_lowercase();
             if reserved.iter().any(|&r| path_lower.contains(r)) {
@@ -74,32 +97,12 @@ pub fn commit(
                 continue;
             }
 
-            let path = std::path::Path::new(&path_str);
-
-            if let Some(ref statuses) = statuses {
-                let status = statuses
-                    .iter()
-                    .find(|e| e.path() == Some(&path_str))
-                    .map(|e| e.status());
-
-                if let Some(status) = status {
-                    if status.is_wt_deleted() {
-                        match index.remove(path, 0) {
-                            Ok(_) => {
-                                debug!("标记删除文件: {}", path_str);
-                                removed_count += 1;
-                            }
-                            Err(e) => {
-                                debug!("跳过删除文件 {}: {:?}", path_str, e);
-                            }
-                        }
-                        continue;
-                    }
+            match stage_path(&repo, &mut index, &path_str) {
+                Ok(StagedPathKind::Removed) => {
+                    debug!("标记删除文件: {}", path_str);
+                    removed_count += 1;
                 }
-            }
-
-            match index.add_path(path) {
-                Ok(_) => {
+                Ok(StagedPathKind::AddedOrModified) => {
                     added_count += 1;
                 }
                 Err(e) => {
@@ -153,7 +156,7 @@ pub fn stage_file(path: &Path, file_path: &str) -> Result<(), GitServiceError> {
     let repo = open_repository(path)?;
 
     let mut index = repo.index()?;
-    index.add_path(std::path::Path::new(file_path))?;
+    stage_path(&repo, &mut index, file_path)?;
     index.write()?;
 
     Ok(())
@@ -163,10 +166,18 @@ pub fn stage_file(path: &Path, file_path: &str) -> Result<(), GitServiceError> {
 pub fn unstage_file(path: &Path, file_path: &str) -> Result<(), GitServiceError> {
     let repo = open_repository(path)?;
 
-    let mut index = repo.index()?;
-    index.remove_path(std::path::Path::new(file_path))?;
-    index.write()?;
+    let head_obj = match repo.revparse_single("HEAD") {
+        Ok(obj) => obj,
+        Err(_) => {
+            // 空仓库/首次提交场景：取消暂存新增文件只能从 index 移除。
+            let mut index = repo.index()?;
+            index.remove_path(std::path::Path::new(file_path))?;
+            index.write()?;
+            return Ok(());
+        }
+    };
 
+    repo.reset_default(Some(&head_obj), [file_path])?;
     Ok(())
 }
 
@@ -174,29 +185,15 @@ pub fn unstage_file(path: &Path, file_path: &str) -> Result<(), GitServiceError>
 pub fn discard_changes(path: &Path, file_path: &str) -> Result<(), GitServiceError> {
     let repo = open_repository(path)?;
 
-    let mut index = repo.index()?;
+    if matches!(file_status(&repo, file_path)?, Some(status) if status.is_wt_new()) {
+        return Err(GitServiceError::CLIError(
+            "Untracked files cannot be discarded; delete them instead".to_string(),
+        ));
+    }
 
-    // 从 HEAD 恢复文件
-    let head = repo.head()?;
-    let head_commit = head.peel_to_commit()?;
-    let head_tree = head_commit.tree()?;
-
-    let entry = head_tree.get_path(std::path::Path::new(file_path))?;
-
-    let obj = entry.to_object(&repo)?;
-    let blob = obj
-        .as_blob()
-        .ok_or(GitServiceError::CLIError("Not a blob".to_string()))?;
-
-    // 写入文件
-    let workdir = repo.workdir().ok_or(GitServiceError::NotARepository)?;
-    let full_path = workdir.join(file_path);
-
-    std::fs::write(&full_path, blob.content())?;
-
-    // 更新索引
-    index.add_path(std::path::Path::new(file_path))?;
-    index.write()?;
+    let mut checkout = CheckoutBuilder::new();
+    checkout.force().path(file_path);
+    repo.checkout_index(None, Some(&mut checkout))?;
 
     Ok(())
 }
@@ -210,13 +207,11 @@ pub fn batch_stage(path: &Path, file_paths: &[String]) -> Result<BatchStageResul
     let mut failed = Vec::new();
 
     for file_path in file_paths {
-        let path_obj = std::path::Path::new(file_path);
-
-        match index.add_path(path_obj) {
+        match stage_path(&repo, &mut index, file_path) {
             Ok(_) => staged.push(file_path.clone()),
             Err(e) => failed.push(StageFailure {
                 path: file_path.clone(),
-                error: e.message().to_string(),
+                error: e.to_string(),
             }),
         }
     }
