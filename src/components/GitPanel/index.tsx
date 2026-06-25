@@ -4,7 +4,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, GitPullRequest, X, Check, RotateCcw, MoreHorizontal, GitBranch, FolderGit2, FileText, History, Archive, Globe, Tag, GitCommit, FileX, Maximize2 } from 'lucide-react'
+import { ChevronRight, GitPullRequest, X, Check, RotateCcw, MoreHorizontal, GitBranch, FolderGit2, FileText, History, Archive, Globe, Tag, GitCommit, FileX, Maximize2, Rows3, Columns2 } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useToastStore } from '@/stores/toastStore'
@@ -69,6 +69,7 @@ export function GitPanel({
   const [showBlame, setShowBlame] = useState(false)
   const [blameFilePath, setBlameFilePath] = useState<string | null>(null)
   const [targetCommitSha, setTargetCommitSha] = useState<string | null>(null)
+  const [diffViewMode, setDiffViewMode] = useState<'unified' | 'split'>('split')
 
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set())
   const [isBatchOperating, setIsBatchOperating] = useState(false)
@@ -510,6 +511,24 @@ export function GitPanel({
                   {selectedDiff.file_path}
                 </span>
                 <div className="flex items-center gap-1 shrink-0">
+                  <div className="flex items-center bg-background-base border border-border rounded">
+                    <button
+                      type="button"
+                      onClick={() => setDiffViewMode('unified')}
+                      className={`p-1.5 transition-colors ${diffViewMode === 'unified' ? 'text-primary bg-primary/10' : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'}`}
+                      title={t('diff.unifiedView')}
+                    >
+                      <Rows3 size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDiffViewMode('split')}
+                      className={`p-1.5 transition-colors ${diffViewMode === 'split' ? 'text-primary bg-primary/10' : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'}`}
+                      title={t('diff.splitView')}
+                    >
+                      <Columns2 size={13} />
+                    </button>
+                  </div>
                   {onOpenFileInEditor && selectedDiff.change_type !== 'deleted' && (
                     <button
                       type="button"
@@ -539,6 +558,8 @@ export function GitPanel({
                   changeType={selectedDiff.change_type}
                   statusHint={selectedDiff.status_hint}
                   contentOmitted={selectedDiff.content_omitted ?? false}
+                  viewMode={diffViewMode}
+                  filePath={selectedDiff.file_path}
                 />
               </div>
             </div>

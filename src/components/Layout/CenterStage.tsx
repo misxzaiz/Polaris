@@ -6,7 +6,7 @@
 
 import { ReactNode, useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { X, FileDiff, FileText, Image as ImageIcon, GitPullRequest } from 'lucide-react'
+import { X, FileDiff, FileText, Image as ImageIcon, GitPullRequest, Rows3, Columns2 } from 'lucide-react'
 import { useTabStore, Tab } from '@/stores/tabStore'
 import { useFileEditorStore } from '@/stores/fileEditorStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -339,6 +339,7 @@ export function TabContent({ className = '' }: TabContentProps) {
     const targetId = state.viewingWorkspaceId || state.currentWorkspaceId
     return state.workspaces.find(w => w.id === targetId) || null
   })
+  const [diffViewMode, setDiffViewMode] = useState<'unified' | 'split'>('split')
 
   const initialGitTab = typeof activeTab?.metadata?.initialGitTab === 'string'
     ? activeTab.metadata.initialGitTab as ComponentProps<typeof GitPanel>['initialTab']
@@ -396,16 +397,36 @@ export function TabContent({ className = '' }: TabContentProps) {
             <span className="flex-1 min-w-0 truncate" title={activeTab.diffData?.file_path}>
               {activeTab.diffData?.file_path}
             </span>
-            {activeTab.diffData && activeTab.diffData.change_type !== 'deleted' && (
-              <button
-                type="button"
-                onClick={openDiffFileInEditor}
-                className="p-1 text-text-tertiary hover:text-primary hover:bg-background-hover rounded transition-colors shrink-0"
-                title={tGit('history.openFileInEditor')}
-              >
-                <FileText size={14} />
-              </button>
-            )}
+            <div className="flex items-center gap-1 shrink-0">
+              <div className="flex items-center bg-background-base border border-border rounded">
+                <button
+                  type="button"
+                  onClick={() => setDiffViewMode('unified')}
+                  className={`p-1.5 transition-colors ${diffViewMode === 'unified' ? 'text-primary bg-primary/10' : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'}`}
+                  title={tGit('diff.unifiedView')}
+                >
+                  <Rows3 size={13} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDiffViewMode('split')}
+                  className={`p-1.5 transition-colors ${diffViewMode === 'split' ? 'text-primary bg-primary/10' : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'}`}
+                  title={tGit('diff.splitView')}
+                >
+                  <Columns2 size={13} />
+                </button>
+              </div>
+              {activeTab.diffData && activeTab.diffData.change_type !== 'deleted' && (
+                <button
+                  type="button"
+                  onClick={openDiffFileInEditor}
+                  className="p-1 text-text-tertiary hover:text-primary hover:bg-background-hover rounded transition-colors shrink-0"
+                  title={tGit('history.openFileInEditor')}
+                >
+                  <FileText size={14} />
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Diff 内容 */}
@@ -416,6 +437,8 @@ export function TabContent({ className = '' }: TabContentProps) {
               changeType={activeTab.diffData?.change_type}
               statusHint={activeTab.diffData?.status_hint}
               contentOmitted={activeTab.diffData?.content_omitted ?? false}
+              viewMode={diffViewMode}
+              filePath={activeTab.diffData?.file_path}
             />
           </div>
         </div>

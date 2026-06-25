@@ -432,7 +432,12 @@
     "oldVersion": "旧版本",
     "newVersion": "新版本",
     "unifiedView": "统一 Diff",
-    "splitView": "左右对比"
+    "splitView": "左右对比",
+    "split": "分栏",
+    "unified": "统一",
+    "changedFiles": "变更文件",
+    "files": "个文件",
+    "showingLines": "显示 {{count}} / {{total}} 行"
   },
   "ultraReview": {
     "button": "AI 审查",

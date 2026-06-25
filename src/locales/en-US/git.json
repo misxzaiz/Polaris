@@ -432,7 +432,12 @@
     "oldVersion": "Old version",
     "newVersion": "New version",
     "unifiedView": "Unified diff",
-    "splitView": "Side-by-side diff"
+    "splitView": "Side-by-side diff",
+    "split": "Split",
+    "unified": "Unified",
+    "changedFiles": "Changed Files",
+    "files": "files",
+    "showingLines": "Showing {{count}} of {{total}} lines"
   },
   "ultraReview": {
     "button": "AI Review",
