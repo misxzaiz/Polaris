@@ -39,20 +39,13 @@ export interface FileDiff {
   totalLines?: number;
 }
 
-/** 默认上下文行数（变更行前后保留的行数） */
-const CONTEXT_LINES = 3;
-
-/** 默认最大显示行数 */
-const DEFAULT_MAX_LINES = 500;
-
 /**
  * 计算两个字符串的差异
  * @param oldContent 原始内容
  * @param newContent 修改后内容
- * @param maxLines 最大显示行数，超出时仅保留变更附近上下文（默认 500）
  * @returns 差异信息
  */
-export function computeDiff(oldContent: string, newContent: string, maxLines: number = DEFAULT_MAX_LINES): FileDiff {
+export function computeDiff(oldContent: string, newContent: string): FileDiff {
   // 使用 diff 库计算行级差异
   const changes = diffLines(oldContent, newContent);
 
@@ -104,79 +97,15 @@ export function computeDiff(oldContent: string, newContent: string, maxLines: nu
     }
   }
 
-  // 大文件裁剪：仅保留变更行附近上下文
-  const trimmed = trimToChanges(lines, maxLines, addedCount + removedCount);
-
   return {
     oldContent,
     newContent,
-    lines: trimmed.lines,
+    lines,
     addedCount,
     removedCount,
-    truncated: trimmed.truncated,
+    truncated: false,
     totalLines: lines.length,
   };
-}
-
-/**
- * 裁剪 diff 行列表，仅保留变更行附近的上下文
- */
-function trimToChanges(lines: DiffLine[], maxLines: number, changeCount: number): { lines: DiffLine[]; truncated: boolean } {
-  if (lines.length <= maxLines || changeCount === 0) {
-    return { lines, truncated: false };
-  }
-
-  // 标记变更行索引
-  const changeIndices: number[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].type !== 'context') {
-      changeIndices.push(i);
-    }
-  }
-
-  // 计算需要保留的索引范围（变更行前后各 CONTEXT_LINES 行）
-  const keepRanges: [number, number][] = [];
-  for (const idx of changeIndices) {
-    const start = Math.max(0, idx - CONTEXT_LINES);
-    const end = Math.min(lines.length - 1, idx + CONTEXT_LINES);
-    // 合并重叠范围
-    if (keepRanges.length > 0 && start <= keepRanges[keepRanges.length - 1][1] + 1) {
-      keepRanges[keepRanges.length - 1][1] = end;
-    } else {
-      keepRanges.push([start, end]);
-    }
-  }
-
-  // 构建裁剪后的行列表，在范围间隙插入折叠标记
-  const result: DiffLine[] = [];
-  let lastEnd = -1;
-  for (const [start, end] of keepRanges) {
-    if (start > lastEnd + 1) {
-      // 插入折叠标记（表示被省略的行数）
-      const skipped = start - lastEnd - 1;
-      result.push({
-        oldLineNumber: null,
-        newLineNumber: null,
-        type: 'context',
-        content: `⋯ ${skipped} lines folded ⋯`,
-      });
-    }
-    for (let i = start; i <= end; i++) {
-      result.push(lines[i]);
-    }
-    lastEnd = end;
-  }
-  // 尾部省略
-  if (lastEnd < lines.length - 1) {
-    result.push({
-      oldLineNumber: null,
-      newLineNumber: null,
-      type: 'context',
-      content: `⋯ ${lines.length - 1 - lastEnd} lines folded ⋯`,
-    });
-  }
-
-  return { lines: result, truncated: true };
 }
 
 /**

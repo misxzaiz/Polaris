@@ -42,8 +42,8 @@ function ensureInitialized() {
   hljs.registerLanguage('markdown', markdown)
 }
 
-// 高亮结果缓存（LRU，上限 100 条）
-const highlightCache = new LRUCache<string, string>({ maxSize: 100 })
+// 高亮结果缓存（LRU，上限 500 条）
+const highlightCache = new LRUCache<string, string>({ maxSize: 500 })
 
 /**
  * 对代码进行语法高亮

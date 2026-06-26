@@ -5,6 +5,7 @@
  */
 
 import { useMemo, useCallback, useRef, useState, useEffect } from 'react'
+import { Virtuoso, VirtuosoHandle } from 'react-virtuoso'
 import { computeDiff } from '@/services/diffService'
 import { getLanguageFromPath, isHighlightableLanguage } from '@/utils/language'
 import { logger } from '@/utils/logger'
@@ -155,133 +156,6 @@ function ContentOmittedPlaceholder({ t }: { t: (key: string) => string }) {
 /** 行号列固定宽度 */
 const GUTTER_WIDTH = '3.5rem'
 
-/**
- * 渲染单侧的 diff 面板（左或右）
- */
-function SplitSidePanel({
-  rows,
-  side,
-  language,
-  gutterRef,
-  contentRef,
-  onScroll,
-  changeIndices,
-  focusIndex,
-  onLineClick,
-}: {
-  rows: SplitDiffRow[]
-  side: 'left' | 'right'
-  language: string | undefined
-  gutterRef: React.RefObject<HTMLDivElement | null>
-  contentRef: React.RefObject<HTMLDivElement | null>
-  onScroll: (e: React.UIEvent<HTMLDivElement>) => void
-  changeIndices: number[]
-  focusIndex: number
-  onLineClick?: (lineNumber: number) => void
-}) {
-  const isRight = side === 'right'
-
-  return (
-    <div className="flex flex-1 min-w-0 overflow-hidden">
-      {/* 行号列 - 固定宽度，不参与横向滚动 */}
-      <div
-        ref={gutterRef}
-        className="flex flex-col shrink-0 select-none overflow-hidden border-r border-border-subtle"
-        style={{ width: GUTTER_WIDTH }}
-      >
-        {rows.map((row, idx) => {
-          const lineNum = isRight ? row.newLineNumber : row.oldLineNumber
-          const rowType = isRight ? row.newType : row.oldType
-          const isChanged = rowType === 'added' || rowType === 'removed'
-
-          return (
-            <div
-              key={idx}
-              className={`px-1.5 py-0.5 text-right text-xs text-text-tertiary ${
-                isChanged
-                  ? isRight ? 'bg-green-500/5' : 'bg-red-500/5'
-                  : ''
-              }`}
-            >
-              {lineNum ?? (rowType === 'empty' ? '' : '\u00D7')}
-            </div>
-          )
-        })}
-      </div>
-
-      {/* 内容列 - 支持独立横向和垂直滚动 */}
-      <div
-        ref={contentRef}
-        className="flex-1 overflow-auto"
-        onScroll={onScroll}
-      >
-        <div className="min-w-full">
-          {rows.map((row, idx) => {
-            const rowType = isRight ? row.newType : row.oldType
-            const content = isRight ? row.newContent : row.oldContent
-            const isChangedRow = row.oldType === 'removed' && row.newType === 'added'
-            const isFocused = changeIndices[focusIndex] === idx
-
-            let bgClass = ''
-            if (isRight) {
-              if (isChangedRow) bgClass = 'bg-green-500/8'
-              else if (rowType === 'added') bgClass = 'bg-green-500/10'
-              else if (rowType === 'empty') bgClass = 'bg-background-elevated/30'
-            } else {
-              if (isChangedRow) bgClass = 'bg-red-500/8'
-              else if (rowType === 'removed') bgClass = 'bg-red-500/10'
-              else if (rowType === 'empty') bgClass = 'bg-background-elevated/30'
-            }
-
-            // 聚焦行高亮
-            if (isFocused) {
-              bgClass = isRight ? 'bg-primary/15 ring-1 ring-inset ring-primary/30' : 'bg-primary/15 ring-1 ring-inset ring-primary/30'
-            }
-
-            if (rowType === 'folded') {
-              return (
-                <div
-                  key={idx}
-                  className="px-3 py-1 text-xs text-text-tertiary italic text-center bg-background-elevated/50 whitespace-pre"
-                >
-                  {content}
-                </div>
-              )
-            }
-
-            const mappedType: 'context' | 'added' | 'removed' | 'empty' = rowType
-
-            const handleClick = (e: React.MouseEvent) => {
-              if (e.ctrlKey || e.metaKey) {
-                const lineNum = isRight ? row.newLineNumber : row.oldLineNumber
-                if (lineNum != null) {
-                  onLineClick?.(lineNum)
-                }
-              }
-            }
-
-            return (
-              <div
-                key={idx}
-                className={`px-3 py-0.5 whitespace-pre inline-block min-w-full ${bgClass} cursor-pointer`}
-                onClick={handleClick}
-              >
-                <WordDiffSegment
-                  oldText={content}
-                  newText={content}
-                  language={language}
-                  type={mappedType}
-                  isRight={isRight}
-                />
-              </div>
-            )
-          })}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 export function DiffViewer({
   oldContent,
   newContent,
@@ -310,17 +184,17 @@ export function DiffViewer({
     return isHighlightableLanguage(lang) ? lang : undefined
   }, [filePath])
 
-  const effectiveOldContent = (() => {
+  const effectiveOldContent = useMemo(() => {
     if (changeType === 'added' && oldContent === undefined) return ''
     return oldContent ?? ''
-  })()
+  }, [oldContent, changeType])
 
-  const effectiveNewContent = (() => {
+  const effectiveNewContent = useMemo(() => {
     if (changeType === 'deleted' && newContent === undefined) return ''
     return newContent ?? ''
-  })()
+  }, [newContent, changeType])
 
-  const diff = computeDiff(effectiveOldContent, effectiveNewContent)
+  const diff = useMemo(() => computeDiff(effectiveOldContent, effectiveNewContent), [effectiveOldContent, effectiveNewContent])
   const splitRows = useMemo(() => viewMode === 'split' ? buildSplitRows(diff.lines) : [], [viewMode, diff.lines])
 
   // 计算所有变更行的索引
@@ -365,56 +239,14 @@ export function DiffViewer({
     timestamp: new Date().toISOString(),
   })
 
-  // ========== Split 视图：左右面板垂直滚动联动 ==========
-  const leftGutterRef = useRef<HTMLDivElement>(null)
-  const rightGutterRef = useRef<HTMLDivElement>(null)
-  const leftContentRef = useRef<HTMLDivElement>(null)
-  const rightContentRef = useRef<HTMLDivElement>(null)
-  const syncingRef = useRef(false)
-
-  const handleLeftScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    if (syncingRef.current) return
-    syncingRef.current = true
-    const scrollTop = e.currentTarget.scrollTop
-    const scrollLeft = e.currentTarget.scrollLeft
-    // 右侧内容面板同步垂直滚动
-    if (rightContentRef.current) rightContentRef.current.scrollTop = scrollTop
-    // 右侧行号面板同步垂直滚动
-    if (rightGutterRef.current) rightGutterRef.current.scrollTop = scrollTop
-    // 左侧行号面板同步垂直滚动
-    if (leftGutterRef.current) leftGutterRef.current.scrollTop = scrollTop
-    // 右侧内容面板同步横向滚动（Shift+滚轮时）
-    if (rightContentRef.current) rightContentRef.current.scrollLeft = scrollLeft
-    requestAnimationFrame(() => { syncingRef.current = false })
-  }, [])
-
-  const handleRightScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    if (syncingRef.current) return
-    syncingRef.current = true
-    const scrollTop = e.currentTarget.scrollTop
-    const scrollLeft = e.currentTarget.scrollLeft
-    if (leftContentRef.current) leftContentRef.current.scrollTop = scrollTop
-    if (leftGutterRef.current) leftGutterRef.current.scrollTop = scrollTop
-    if (rightGutterRef.current) rightGutterRef.current.scrollTop = scrollTop
-    if (leftContentRef.current) leftContentRef.current.scrollLeft = scrollLeft
-    requestAnimationFrame(() => { syncingRef.current = false })
-  }, [])
+  const virtuosoRef = useRef<VirtuosoHandle>(null)
 
   // 聚焦变更时自动滚动到该位置
   useEffect(() => {
     if (changeIndices.length === 0) return
     const targetIdx = changeIndices[focusIndex]
     if (targetIdx == null) return
-
-    // 计算目标行的偏移量（每行约 24px）
-    const lineHeight = 24
-    const scrollTop = targetIdx * lineHeight
-
-    // 同步滚动所有面板
-    if (leftContentRef.current) leftContentRef.current.scrollTop = scrollTop
-    if (rightContentRef.current) rightContentRef.current.scrollTop = scrollTop
-    if (leftGutterRef.current) leftGutterRef.current.scrollTop = scrollTop
-    if (rightGutterRef.current) rightGutterRef.current.scrollTop = scrollTop
+    virtuosoRef.current?.scrollToIndex({ index: targetIdx, align: 'center' })
   }, [focusIndex, changeIndices])
 
   if (contentOmitted) {
@@ -476,94 +308,162 @@ export function DiffViewer({
               <div className="flex-1 px-3 py-1 font-sans min-w-0">{t('diff.newVersion')}</div>
             </div>
 
-            {/* 左右面板 */}
-            <div className="flex-1 flex overflow-hidden">
-              <SplitSidePanel
-                rows={splitRows}
-                side="left"
-                language={language}
-                gutterRef={leftGutterRef}
-                contentRef={leftContentRef}
-                onScroll={handleLeftScroll}
-                changeIndices={changeIndices}
-                focusIndex={focusIndex}
-                onLineClick={onLineClick}
-              />
-              {/* 中间分割线 */}
-              <div className="w-px bg-border shrink-0" />
-              <SplitSidePanel
-                rows={splitRows}
-                side="right"
-                language={language}
-                gutterRef={rightGutterRef}
-                contentRef={rightContentRef}
-                onScroll={handleRightScroll}
-                changeIndices={changeIndices}
-                focusIndex={focusIndex}
-                onLineClick={onLineClick}
-              />
-            </div>
-          </div>
-        ) : (
-          <div className="h-full overflow-auto">
-            <div className="space-y-px min-w-[600px]">
-              {diff.lines.map((line, idx) => {
-                const isFolded = line.content.startsWith('⋯') && line.content.endsWith('⋯')
-                return (
-                  <div
-                    key={idx}
-                    className={`flex gap-0 px-0 py-0.5 ${
-                      isFolded
-                        ? 'bg-background-elevated/50 text-text-tertiary italic text-center justify-center'
-                        : line.type === 'added'
-                          ? 'bg-green-500/8'
-                          : line.type === 'removed'
-                            ? 'bg-red-500/8'
-                            : ''
-                    }`}
-                  >
-                    {!isFolded && (
-                      <>
-                        <span className="w-10 text-right text-text-tertiary shrink-0 select-none pr-1">
-                          {line.oldLineNumber ?? ''}
-                        </span>
-                        <span className="w-10 text-right text-text-tertiary shrink-0 select-none pr-1">
-                          {line.newLineNumber ?? ''}
-                        </span>
-                        <span
-                          className={`w-5 shrink-0 select-none font-bold text-center ${
-                            line.type === 'added'
-                              ? 'text-green-500'
-                              : line.type === 'removed'
-                                ? 'text-red-500'
-                                : 'text-text-tertiary'
+            {/* 虚拟化左右面板 */}
+            <Virtuoso
+              ref={virtuosoRef}
+              totalCount={splitRows.length}
+              itemContent={(idx) => {
+                const row = splitRows[idx]
+                const isFocused = changeIndices[focusIndex] === idx
+
+                const renderSide = (side: 'left' | 'right') => {
+                  const lineNum = side === 'right' ? row.newLineNumber : row.oldLineNumber
+                  const rowType = side === 'right' ? row.newType : row.oldType
+                  const content = side === 'right' ? row.newContent : row.oldContent
+                  const isChangedRow = row.oldType === 'removed' && row.newType === 'added'
+
+                  let bgClass = ''
+                  if (side === 'right') {
+                    if (isChangedRow) bgClass = 'bg-green-500/8'
+                    else if (rowType === 'added') bgClass = 'bg-green-500/10'
+                    else if (rowType === 'empty') bgClass = 'bg-background-elevated/30'
+                  } else {
+                    if (isChangedRow) bgClass = 'bg-red-500/8'
+                    else if (rowType === 'removed') bgClass = 'bg-red-500/10'
+                    else if (rowType === 'empty') bgClass = 'bg-background-elevated/30'
+                  }
+
+                  if (isFocused) {
+                    bgClass = 'bg-primary/15 ring-1 ring-inset ring-primary/30'
+                  }
+
+                  if (rowType === 'folded') {
+                    return (
+                      <div className="flex-1 flex flex-col overflow-hidden">
+                        <div
+                          className="px-3 py-1 text-xs text-text-tertiary italic text-center bg-background-elevated/50 whitespace-pre"
+                        >
+                          {content}
+                        </div>
+                      </div>
+                    )
+                  }
+
+                  const mappedType: 'context' | 'added' | 'removed' | 'empty' = rowType
+
+                  const handleClick = (e: React.MouseEvent) => {
+                    if (e.ctrlKey || e.metaKey) {
+                      const num = side === 'right' ? row.newLineNumber : row.oldLineNumber
+                      if (num != null) {
+                        onLineClick?.(num)
+                      }
+                    }
+                  }
+
+                  return (
+                    <div className="flex flex-1 min-w-0 overflow-hidden">
+                      <div
+                        className="flex flex-col shrink-0 select-none overflow-hidden border-r border-border-subtle"
+                        style={{ width: GUTTER_WIDTH }}
+                      >
+                        <div
+                          className={`px-1.5 py-0.5 text-right text-xs text-text-tertiary ${
+                            rowType === 'added' || rowType === 'removed'
+                              ? side === 'right' ? 'bg-green-500/5' : 'bg-red-500/5'
+                              : ''
                           }`}
                         >
-                          {line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ' '}
-                        </span>
-                      </>
-                    )}
-                    <span
-                      className={`flex-1 whitespace-pre ${
-                        line.type === 'removed' && !isFolded ? 'text-text-tertiary line-through' : 'text-text-secondary'
-                      }`}
-                    >
-                      {isFolded ? (
-                        line.content
-                      ) : (
+                          {lineNum ?? (rowType === 'empty' ? '' : '\u00D7')}
+                        </div>
+                      </div>
+                      <div
+                        className={`flex-1 px-3 py-0.5 whitespace-pre inline-block min-w-full ${bgClass} cursor-pointer`}
+                        onClick={handleClick}
+                      >
                         <WordDiffSegment
-                          oldText={line.content}
-                          newText={line.content}
+                          oldText={content}
+                          newText={content}
                           language={language}
-                          type={line.type}
+                          type={mappedType}
+                          isRight={side === 'right'}
                         />
-                      )}
-                    </span>
+                      </div>
+                    </div>
+                  )
+                }
+
+                return (
+                  <div className="flex" style={{ height: 24 }}>
+                    {renderSide('left')}
+                    <div className="w-px bg-border shrink-0" />
+                    {renderSide('right')}
                   </div>
                 )
-              })}
-            </div>
+              }}
+              style={{ height: '100%' }}
+            />
           </div>
+        ) : (
+          <Virtuoso
+            ref={virtuosoRef}
+            totalCount={diff.lines.length}
+            itemContent={(idx) => {
+              const line = diff.lines[idx]
+              const isFolded = line.content.startsWith('⋯') && line.content.endsWith('⋯')
+              return (
+                <div
+                  className={`flex gap-0 px-0 py-0.5 ${
+                    isFolded
+                      ? 'bg-background-elevated/50 text-text-tertiary italic text-center justify-center'
+                      : line.type === 'added'
+                        ? 'bg-green-500/8'
+                        : line.type === 'removed'
+                          ? 'bg-red-500/8'
+                          : ''
+                  }`}
+                >
+                  {!isFolded && (
+                    <>
+                      <span className="w-10 text-right text-text-tertiary shrink-0 select-none pr-1">
+                        {line.oldLineNumber ?? ''}
+                      </span>
+                      <span className="w-10 text-right text-text-tertiary shrink-0 select-none pr-1">
+                        {line.newLineNumber ?? ''}
+                      </span>
+                      <span
+                        className={`w-5 shrink-0 select-none font-bold text-center ${
+                          line.type === 'added'
+                            ? 'text-green-500'
+                            : line.type === 'removed'
+                              ? 'text-red-500'
+                              : 'text-text-tertiary'
+                        }`}
+                      >
+                        {line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ' '}
+                      </span>
+                    </>
+                  )}
+                  <span
+                    className={`flex-1 whitespace-pre ${
+                      line.type === 'removed' && !isFolded ? 'text-text-tertiary line-through' : 'text-text-secondary'
+                    }`}
+                  >
+                    {isFolded ? (
+                      line.content
+                    ) : (
+                      <WordDiffSegment
+                        oldText={line.content}
+                        newText={line.content}
+                        language={language}
+                        type={line.type}
+                      />
+                    )}
+                  </span>
+                </div>
+              )
+            }}
+            style={{ height: '100%', minWidth: 600 }}
+          />
         )}
       </div>
     </div>

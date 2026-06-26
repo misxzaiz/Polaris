@@ -6,8 +6,8 @@
 use std::path::Path;
 use bitflags::bitflags;
 
-/// 最大内联 Diff 大小 (200MB)
-pub const MAX_INLINE_DIFF_BYTES: usize = 200 * 1024 * 1024;
+/// 最大内联 Diff 大小 (移除限制，始终返回内容)
+pub const MAX_INLINE_DIFF_BYTES: usize = usize::MAX;
 
 // 文件状态位标记
 bitflags! {
