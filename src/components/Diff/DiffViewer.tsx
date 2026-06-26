@@ -3,7 +3,7 @@
  *
  * 职责：状态栏 + 渲染分流（短内容全量渲染 / 大文件 Virtuoso 虚拟化）+ 键盘导航 + 聚焦滚动。
  * 具体行渲染、行数据构建、变更索引计算已拆分到独立文件：
- * - splitRows.ts / UnifiedDiffRow.tsx / SplitDiffRowView.tsx / useChangeIndices.ts
+ * - splitRows.ts / UnifiedDiffRow.tsx / SplitDiffView.tsx / SplitSideRow.tsx / useChangeIndices.ts
  */
 
 import { useMemo, useCallback, useRef, useState, useEffect } from 'react'
@@ -18,9 +18,8 @@ import { useDiffKeyboard } from './useDiffKeyboard'
 import { useChangeIndices } from './useChangeIndices'
 import { buildSplitRows } from './splitRows'
 import { UnifiedDiffRow } from './UnifiedDiffRow'
-import { SplitDiffRowView } from './SplitDiffRowView'
+import { SplitDiffView } from './SplitDiffView'
 import { ContentOmittedPlaceholder } from './ContentOmittedPlaceholder'
-import { GUTTER_WIDTH } from './types'
 import type { DiffViewMode } from './types'
 
 export type { DiffViewMode } from './types'
@@ -148,8 +147,9 @@ export function DiffViewer({
   const scrollRef = useRef<HTMLDivElement>(null)
   const focusedRowIndex = changeIndices[focusIndex]
 
-  // 聚焦变更时自动滚动到该行
+  // 聚焦变更时自动滚动到该行（unified 路径；split 由 SplitDiffView 自行处理）
   useEffect(() => {
+    if (viewMode === 'split') return
     if (focusedRowIndex == null) return
     if (shouldVirtualize) {
       virtuosoRef.current?.scrollToIndex({ index: focusedRowIndex, align: 'center' })
@@ -159,7 +159,7 @@ export function DiffViewer({
         el.scrollIntoView({ block: 'center', behavior: 'auto' })
       }
     }
-  }, [focusedRowIndex, shouldVirtualize])
+  }, [focusedRowIndex, shouldVirtualize, viewMode])
 
   if (contentOmitted) {
     return <ContentOmittedPlaceholder t={t} />
@@ -171,16 +171,6 @@ export function DiffViewer({
       index={idx}
       focused={focusedRowIndex === idx}
       language={language}
-    />
-  )
-
-  const renderSplitItem = (idx: number) => (
-    <SplitDiffRowView
-      row={splitRows[idx]}
-      index={idx}
-      focused={focusedRowIndex === idx}
-      language={language}
-      onLineClick={onLineClick}
     />
   )
 
@@ -218,30 +208,13 @@ export function DiffViewer({
         {diff.lines.length === 0 ? (
           <div className="text-text-tertiary text-center py-8">{t('diff.noChanges')}</div>
         ) : viewMode === 'split' ? (
-          <div className="h-full flex flex-col">
-            {/* 表头 - 固定在顶部 */}
-            <div className="flex shrink-0 bg-background-elevated border-b border-border text-xs text-text-tertiary">
-              <div style={{ width: GUTTER_WIDTH }} className="shrink-0 px-2 py-1 text-right select-none border-r border-border-subtle">#</div>
-              <div className="flex-1 px-3 py-1 font-sans min-w-0">{t('diff.oldVersion')}</div>
-              <div style={{ width: GUTTER_WIDTH }} className="shrink-0 px-2 py-1 text-right select-none border-r border-border-subtle">#</div>
-              <div className="flex-1 px-3 py-1 font-sans min-w-0">{t('diff.newVersion')}</div>
-            </div>
-
-            {shouldVirtualize ? (
-              <Virtuoso
-                ref={virtuosoRef}
-                totalCount={splitRows.length}
-                itemContent={renderSplitItem}
-                style={{ height: '100%' }}
-              />
-            ) : (
-              <div ref={scrollRef} className="flex-1 overflow-auto">
-                {splitRows.map((_, idx) => (
-                  <div key={idx}>{renderSplitItem(idx)}</div>
-                ))}
-              </div>
-            )}
-          </div>
+          <SplitDiffView
+            rows={splitRows}
+            language={language}
+            focusedRowIndex={focusedRowIndex}
+            onLineClick={onLineClick}
+            t={t}
+          />
         ) : shouldVirtualize ? (
           <Virtuoso
             ref={virtuosoRef}

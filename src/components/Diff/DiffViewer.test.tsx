@@ -53,6 +53,25 @@ describe('DiffViewer', () => {
     expect(added?.textContent).toBe('new')
   })
 
+  it('renders split as two independently scrollable columns with a resize divider', () => {
+    const { container } = render(
+      <div style={{ height: 600, width: 800 }}>
+        <DiffViewer
+          oldContent={'alpha\nold line\nomega\n'}
+          newContent={'alpha\nnew line\nomega\n'}
+          viewMode="split"
+          showStatusHint={false}
+        />
+      </div>,
+    )
+
+    // 可拖拽分隔条存在
+    expect(container.querySelector('.cursor-col-resize')).not.toBeNull()
+    // 两列独立滚动容器（各含行）
+    const cols = container.querySelectorAll('.overflow-auto')
+    expect(cols.length).toBeGreaterThanOrEqual(2)
+  })
+
   it('keeps unified diff as the default view', () => {
     render(
       <div style={{ height: 600, width: 800 }}>

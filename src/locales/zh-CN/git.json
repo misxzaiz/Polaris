@@ -431,6 +431,7 @@
     "noChanges": "无变化",
     "oldVersion": "旧版本",
     "newVersion": "新版本",
+    "dragToResize": "拖拽调整左右宽度（双击复位）",
     "unifiedView": "统一 Diff",
     "splitView": "左右对比",
     "split": "分栏",

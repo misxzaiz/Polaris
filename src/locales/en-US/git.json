@@ -431,6 +431,7 @@
     "noChanges": "No changes",
     "oldVersion": "Old version",
     "newVersion": "New version",
+    "dragToResize": "Drag to resize columns (double-click to reset)",
     "unifiedView": "Unified diff",
     "splitView": "Side-by-side diff",
     "split": "Split",
