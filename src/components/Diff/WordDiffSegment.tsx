@@ -6,7 +6,7 @@
  */
 
 import { useMemo } from 'react'
-import { diffChars } from 'diff'
+import { diffWordsWithSpace } from 'diff'
 import { highlightCode } from '@/utils/syntaxHighlight'
 
 interface WordDiffSegmentProps {
@@ -16,8 +16,12 @@ interface WordDiffSegmentProps {
   newText: string
   /** highlight.js 语言名称 */
   language?: string
-  /** 行类型 */
-  type: 'context' | 'added' | 'removed' | 'empty'
+  /**
+   * 行类型
+   * - context/added/removed/empty：整行渲染（语法高亮或空行）
+   * - changed：split 视图中的「修改行对」，按词级 diff 高亮差异部分
+   */
+  type: 'context' | 'added' | 'removed' | 'empty' | 'changed'
   /** 是否为 split 视图的右侧 */
   isRight?: boolean
 }
@@ -34,7 +38,8 @@ function computeWordDiff(oldText: string, newText: string): {
   oldSegments: WordSegment[]
   newSegments: WordSegment[]
 } {
-  const changes = diffChars(oldText, newText)
+  // 按词（含空白）切分对比，相比字符级对比噪声更小、更接近 IDE 体验
+  const changes = diffWordsWithSpace(oldText, newText)
 
   const oldSegments: WordSegment[] = []
   const newSegments: WordSegment[] = []
@@ -111,9 +116,9 @@ export function WordDiffSegment({
   type,
   isRight = false,
 }: WordDiffSegmentProps) {
-  // 计算词级差异
+  // 计算词级差异（仅 changed 行对需要）
   const { oldSegments, newSegments } = useMemo(() => {
-    if (type === 'context') {
+    if (type !== 'changed') {
       return { oldSegments: [], newSegments: [] }
     }
     return computeWordDiff(oldText, newText)

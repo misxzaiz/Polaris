@@ -18,6 +18,8 @@ interface UseDiffKeyboardOptions {
   onNextChange?: () => void
   onPrevChange?: () => void
   enabled?: boolean
+  /** 挂载后自动聚焦容器（仅全屏/主视图场景使用，内嵌场景不应抢焦） */
+  autoFocus?: boolean
 }
 
 export function useDiffKeyboard({
@@ -28,6 +30,7 @@ export function useDiffKeyboard({
   onNextChange,
   onPrevChange,
   enabled = true,
+  autoFocus = false,
 }: UseDiffKeyboardOptions) {
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -81,6 +84,24 @@ export function useDiffKeyboard({
     container.addEventListener('keydown', handleKeyDown)
     return () => container.removeEventListener('keydown', handleKeyDown)
   }, [enabled, handleKeyDown])
+
+  // 点击 diff 区域内任意位置即聚焦容器，确保 j/k 等快捷键无需额外操作即可生效
+  useEffect(() => {
+    if (!enabled) return
+
+    const container = containerRef.current
+    if (!container) return
+
+    const focusSelf = () => container.focus({ preventScroll: true })
+    container.addEventListener('mousedown', focusSelf)
+    return () => container.removeEventListener('mousedown', focusSelf)
+  }, [enabled])
+
+  // 全屏/主视图场景：挂载后自动聚焦，进入即可用键盘导航
+  useEffect(() => {
+    if (!enabled || !autoFocus) return
+    containerRef.current?.focus({ preventScroll: true })
+  }, [enabled, autoFocus])
 
   return containerRef
 }

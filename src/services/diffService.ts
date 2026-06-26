@@ -33,10 +33,6 @@ export interface FileDiff {
   addedCount: number;
   /** 删除的行数 */
   removedCount: number;
-  /** 是否被裁剪（行数超过 maxLines） */
-  truncated?: boolean;
-  /** 裁剪前的总行数 */
-  totalLines?: number;
 }
 
 /**
@@ -56,7 +52,10 @@ export function computeDiff(oldContent: string, newContent: string): FileDiff {
   let removedCount = 0;
 
   for (const change of changes) {
-    const changeLines = change.value.split('\n');
+    // 按行切分，并归一化 Windows CRLF 行尾（去除每行尾部残留的 \r）
+    const changeLines = change.value
+      .split('\n')
+      .map((line) => (line.endsWith('\r') ? line.slice(0, -1) : line));
     // 移除最后一个空行（split 会多出一个）
     if (changeLines[changeLines.length - 1] === '') {
       changeLines.pop();
@@ -103,8 +102,6 @@ export function computeDiff(oldContent: string, newContent: string): FileDiff {
     lines,
     addedCount,
     removedCount,
-    truncated: false,
-    totalLines: lines.length,
   };
 }
 

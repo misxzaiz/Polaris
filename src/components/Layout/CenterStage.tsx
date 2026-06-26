@@ -334,6 +334,7 @@ export function TabContent({ className = '' }: TabContentProps) {
   const activeTab = useTabStore((state) => state.getActiveTab())
   const openDiffTab = useTabStore((state) => state.openDiffTab)
   const openEditorTab = useTabStore((state) => state.openEditorTab)
+  const closeTab = useTabStore((state) => state.closeTab)
   const switchToFile = useFileEditorStore((state) => state.switchToFile)
   const currentWorkspace = useWorkspaceStore((state) => {
     const targetId = state.viewingWorkspaceId || state.currentWorkspaceId
@@ -439,6 +440,10 @@ export function TabContent({ className = '' }: TabContentProps) {
               contentOmitted={activeTab.diffData?.content_omitted ?? false}
               viewMode={diffViewMode}
               filePath={activeTab.diffData?.file_path}
+              autoFocus
+              onOpenFile={openDiffFileInEditor}
+              onLineClick={openDiffFileInEditor}
+              onClose={() => closeTab(activeTab.id)}
             />
           </div>
         </div>

@@ -112,6 +112,21 @@ export function CommitDetailsPane({
     })
   }, [isFileHistoryMode, onOpenDiffInTab, selectedCommit, selectedFileDiff])
 
+  // 在当前文件列表中切换到上一个 / 下一个文件（供 diff 视图 ]/[ 键盘导航）
+  const navigateFile = useCallback((delta: number) => {
+    if (!selectedFileDiff || filteredSelectedFiles.length === 0) return
+    const currentKey = getDiffKey(selectedFileDiff)
+    const currentIndex = filteredSelectedFiles.findIndex((f) => getDiffKey(f) === currentKey)
+    if (currentIndex === -1) return
+    const nextIndex = (currentIndex + delta + filteredSelectedFiles.length) % filteredSelectedFiles.length
+    onSetSelectedFileDiff(filteredSelectedFiles[nextIndex])
+  }, [filteredSelectedFiles, selectedFileDiff, onSetSelectedFileDiff])
+
+  const openSelectedFileInEditor = useCallback(() => {
+    if (!selectedFileDiff || selectedFileDiff.change_type === 'deleted') return
+    onOpenFileInEditor?.(resolveWorkspacePath(currentWorkspacePath, selectedFileDiff.file_path))
+  }, [selectedFileDiff, onOpenFileInEditor, currentWorkspacePath])
+
   if (!selectedCommit && !isDetailsLoading) {
     return (
       <div className="flex-1 flex items-center justify-center text-text-tertiary text-sm p-6 text-center">
@@ -430,6 +445,13 @@ export function CommitDetailsPane({
                   statusHint={selectedFileDiff.status_hint}
                   contentOmitted={selectedFileDiff.content_omitted ?? false}
                   viewMode={diffViewMode}
+                  filePath={selectedFileDiff.file_path}
+                  autoFocus
+                  onNextFile={() => navigateFile(1)}
+                  onPrevFile={() => navigateFile(-1)}
+                  onOpenFile={openSelectedFileInEditor}
+                  onLineClick={openSelectedFileInEditor}
+                  onClose={onClearSelection}
                 />
               </>
             ) : (

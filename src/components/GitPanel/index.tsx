@@ -560,6 +560,10 @@ export function GitPanel({
                   contentOmitted={selectedDiff.content_omitted ?? false}
                   viewMode={diffViewMode}
                   filePath={selectedDiff.file_path}
+                  autoFocus
+                  onOpenFile={handleOpenSelectedDiffFile}
+                  onLineClick={handleOpenSelectedDiffFile}
+                  onClose={handleCloseDiff}
                 />
               </div>
             </div>
