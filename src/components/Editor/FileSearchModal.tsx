@@ -11,7 +11,8 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { FileIcon } from '../FileExplorer/FileIcon';
 import { useFileExplorerStore, useFileEditorStore } from '@/stores';
-import { searchFileContents, type ContentMatch } from '@/services/tauri';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { searchFileContentsDetailed, type ContentMatch, type ContentSearchResponse } from '@/services/tauri';
 import { Search, Loader2, FileText, FileSearch } from 'lucide-react';
 import type { FileInfo } from '@/types';
 
@@ -96,6 +97,23 @@ function HighlightLineMatch({ line, start, end }: { line: string; start: number;
 }
 
 const MAX_RESULTS = 50;
+const CONTENT_SEARCH_MAX_RESULTS = 300;
+
+type ContentSearchState = Pick<
+  ContentSearchResponse,
+  'matches' | 'truncated' | 'scannedFiles' | 'matchedFiles' | 'skippedFiles' | 'elapsedMs' | 'root' | 'maxResults'
+>;
+
+const EMPTY_CONTENT_SEARCH: ContentSearchState = {
+  matches: [],
+  truncated: false,
+  scannedFiles: 0,
+  matchedFiles: 0,
+  skippedFiles: 0,
+  elapsedMs: 0,
+  root: '',
+  maxResults: CONTENT_SEARCH_MAX_RESULTS,
+};
 
 export function FileSearchModal({ onClose }: FileSearchModalProps) {
   const [query, setQuery] = useState('');
@@ -107,18 +125,22 @@ export function FileSearchModal({ onClose }: FileSearchModalProps) {
   const [isDeepSearching, setIsDeepSearching] = useState(false);
 
   // 内容搜索状态
-  const [contentResults, setContentResults] = useState<ContentMatch[]>([]);
+  const [contentSearch, setContentSearch] = useState<ContentSearchState>(EMPTY_CONTENT_SEARCH);
   const [isContentSearching, setIsContentSearching] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const searchAbort = useRef<AbortController | null>(null);
+  const contentSearchSeq = useRef(0);
   // 标记是否为键盘导航触发，区分鼠标悬停（鼠标悬停不触发 scrollIntoView）
   const isKeyboardNavigationRef = useRef(false);
 
   const { file_tree, current_path, deep_search, revealPath } = useFileExplorerStore();
   const openFileAtLine = useFileEditorStore(s => s.openFileAtLine);
+  const viewingWorkspacePath = useWorkspaceStore(s => s.getViewingWorkspace()?.path ?? null);
+  const currentWorkspacePath = useWorkspaceStore(s => s.getCurrentWorkspace()?.path ?? null);
+  const searchRoot = viewingWorkspacePath ?? currentWorkspacePath ?? current_path;
 
   // 从已加载的文件树中收集所有文件
   const loadedFiles = useMemo(
@@ -144,7 +166,7 @@ export function FileSearchModal({ onClose }: FileSearchModalProps) {
   }, [loadedFiles, deepResults, query]);
 
   // 当前模式的结果
-  const results = searchMode === 'filename' ? filenameResults : contentResults;
+  const results = searchMode === 'filename' ? filenameResults : contentSearch.matches;
   const isLoading = searchMode === 'filename' ? isDeepSearching : isContentSearching;
 
   // 查询或模式变更时重置选中索引
@@ -222,10 +244,18 @@ export function FileSearchModal({ onClose }: FileSearchModalProps) {
 
     const q = query.trim();
     if (!q) {
-      setContentResults([]);
+      setContentSearch(EMPTY_CONTENT_SEARCH);
       setIsContentSearching(false);
       return;
     }
+
+    if (!searchRoot) {
+      setContentSearch(EMPTY_CONTENT_SEARCH);
+      setIsContentSearching(false);
+      return;
+    }
+
+    const seq = ++contentSearchSeq.current;
 
     searchTimer.current = setTimeout(async () => {
       setIsContentSearching(true);
@@ -233,14 +263,19 @@ export function FileSearchModal({ onClose }: FileSearchModalProps) {
       searchAbort.current = abort;
 
       try {
-        const results = await searchFileContents(q, current_path, {}, 100);
-        if (!abort.signal.aborted) {
-          setContentResults(results);
+        const response = await searchFileContentsDetailed(
+          q,
+          searchRoot,
+          { caseSensitive: false, wholeWord: false },
+          CONTENT_SEARCH_MAX_RESULTS,
+        );
+        if (!abort.signal.aborted && seq === contentSearchSeq.current) {
+          setContentSearch(response);
         }
       } catch {
         // 搜索失败，忽略
       } finally {
-        if (!abort.signal.aborted) {
+        if (!abort.signal.aborted && seq === contentSearchSeq.current) {
           setIsContentSearching(false);
         }
       }
@@ -249,7 +284,7 @@ export function FileSearchModal({ onClose }: FileSearchModalProps) {
     return () => {
       clearTimeout(searchTimer.current);
     };
-  }, [query, searchMode, current_path]);
+  }, [query, searchMode, searchRoot]);
 
   // 选中文件名结果：打开编辑器或展开文件夹
   const handleFilenameSelect = useCallback((file: FileInfo) => {
@@ -386,7 +421,7 @@ export function FileSearchModal({ onClose }: FileSearchModalProps) {
           ) : searchMode === 'filename' ? (
             // 文件名搜索结果
             (results as FileInfo[]).map((file, index) => {
-              const relPath = getRelativePath(file.path, current_path);
+              const relPath = getRelativePath(file.path, searchRoot);
               const dirPath = getDirectoryPath(relPath);
               const isSelected = index === selectedIndex;
 
@@ -423,7 +458,7 @@ export function FileSearchModal({ onClose }: FileSearchModalProps) {
 
               return (
                 <div
-                  key={`${match.fullPath}:${match.lineNumber}`}
+                  key={`${match.fullPath}:${match.lineNumber}:${match.matchStart}:${match.matchEnd}:${index}`}
                   data-file-item
                   className={`px-4 py-2 cursor-pointer transition-colors ${
                     isSelected
@@ -468,8 +503,12 @@ export function FileSearchModal({ onClose }: FileSearchModalProps) {
           {searchMode === 'filename' && deepResults !== null && (
             <span className="ml-auto">深度搜索: {deepResults.length} 个结果</span>
           )}
-          {searchMode === 'content' && contentResults.length > 0 && (
-            <span className="ml-auto">{contentResults.length} 个匹配</span>
+          {searchMode === 'content' && contentSearch.matches.length > 0 && (
+            <span className={`ml-auto ${contentSearch.truncated ? 'text-yellow-500' : ''}`}>
+              {contentSearch.truncated
+                ? `显示前 ${contentSearch.matches.length}/${contentSearch.maxResults} 个匹配，结果已截断，请缩小关键词`
+                : `${contentSearch.matches.length} 个匹配 · 扫描 ${contentSearch.scannedFiles} 文件 · ${contentSearch.elapsedMs}ms`}
+            </span>
           )}
         </div>
       </div>

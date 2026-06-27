@@ -3,7 +3,6 @@ use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use std::path::{Path, PathBuf};
 use std::fs;
 use std::time::SystemTime;
-use std::collections::HashSet;
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -760,7 +759,29 @@ pub struct ContentMatch {
     pub match_end: usize,
 }
 
-/// 搜索文件内容
+/// 内容搜索统计响应
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContentSearchResponse {
+    pub matches: Vec<ContentMatch>,
+    pub truncated: bool,
+    pub scanned_files: usize,
+    pub matched_files: usize,
+    pub skipped_files: usize,
+    pub elapsed_ms: u128,
+    pub root: String,
+    pub max_results: usize,
+}
+
+const DEFAULT_CONTENT_SEARCH_LIMIT: usize = 100;
+const HARD_CONTENT_SEARCH_LIMIT: usize = 5_000;
+const MAX_CONTENT_SEARCH_FILE_SIZE: u64 = 2 * 1024 * 1024;
+const CONTENT_SEARCH_EXCLUDED_DIRS: &[&str] = &[
+    ".git", "node_modules", "target", "dist", "build", ".next", ".nuxt", "vendor",
+    ".gradle", "out", "__pycache__",
+];
+
+/// 搜索文件内容（兼容旧 API：仅返回匹配项）
 #[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn search_file_contents(
     work_dir: String,
@@ -769,61 +790,51 @@ pub async fn search_file_contents(
     whole_word: Option<bool>,
     max_results: Option<usize>,
 ) -> Result<Vec<ContentMatch>> {
-    let base_path = Path::new(&work_dir);
-    let max_results = max_results.unwrap_or(100);
-    let case_sensitive = case_sensitive.unwrap_or(false);
-    let whole_word = whole_word.unwrap_or(false);
-
-    if !base_path.exists() {
-        return Ok(Vec::new());
-    }
-
-    if query.trim().is_empty() {
-        return Ok(Vec::new());
-    }
-
-    // 构建正则表达式
-    let pattern = build_content_search_pattern(&query, case_sensitive, whole_word)?;
-
-    // 默认排除目录
-    let exclude_dirs: HashSet<&str> = [
-        "node_modules", ".git", "target", "dist", "build",
-        ".claude", "__pycache__", ".next", ".nuxt", "vendor"
-    ].iter().cloned().collect();
-
-    // 文本文件扩展名白名单
-    let text_extensions: HashSet<&str> = [
-        // Web 前端
-        "ts", "tsx", "js", "jsx", "vue", "svelte", "html", "css", "scss", "sass", "less",
-        // 配置文件
-        "json", "yaml", "yml", "toml", "xml", "ini", "env", "conf", "config",
-        // 后端语言
-        "rs", "go", "py", "java", "kt", "rb", "php", "cs", "swift", "c", "cpp", "h", "hpp",
-        // 脚本
-        "sh", "bash", "zsh", "ps1", "bat", "cmd",
-        // 文档
-        "md", "txt", "rst", "adoc", "org",
-        // 数据
-        "sql", "graphql", "proto",
-        // 其他
-        "zig", "lua", "vim", "ex", "exs", "erl", "hs", "ml", "clj", "lisp", "el"
-    ].iter().cloned().collect();
-
-    let mut results = Vec::new();
-    search_contents_recursive(
-        base_path,
-        base_path,
-        &pattern,
-        &exclude_dirs,
-        &text_extensions,
-        max_results,
-        &mut results,
-    )?;
-
-    Ok(results)
+    Ok(search_file_contents_detailed(work_dir, query, case_sensitive, whole_word, max_results)
+        .await?
+        .matches)
 }
 
-/// 构建内容搜索正则表达式
+/// 搜索文件内容，返回匹配项和扫描统计信息。
+#[cfg_attr(feature = "tauri-app", tauri::command)]
+pub async fn search_file_contents_detailed(
+    work_dir: String,
+    query: String,
+    case_sensitive: Option<bool>,
+    whole_word: Option<bool>,
+    max_results: Option<usize>,
+) -> Result<ContentSearchResponse> {
+    let max_results = max_results
+        .unwrap_or(DEFAULT_CONTENT_SEARCH_LIMIT)
+        .min(HARD_CONTENT_SEARCH_LIMIT);
+    let case_sensitive = case_sensitive.unwrap_or(false);
+    let whole_word = whole_word.unwrap_or(false);
+    let query = query.trim().to_string();
+    let base_path = PathBuf::from(&work_dir);
+    let root = fs::canonicalize(&base_path).unwrap_or(base_path.clone());
+    let root_display = root.to_string_lossy().to_string();
+
+    if !base_path.exists() || query.is_empty() || max_results == 0 {
+        return Ok(ContentSearchResponse {
+            matches: Vec::new(),
+            truncated: false,
+            scanned_files: 0,
+            matched_files: 0,
+            skipped_files: 0,
+            elapsed_ms: 0,
+            root: root_display,
+            max_results,
+        });
+    }
+
+    let pattern = build_content_search_pattern(&query, case_sensitive, whole_word)?;
+
+    tokio::task::spawn_blocking(move || search_file_contents_blocking(root, pattern, max_results))
+        .await
+        .map_err(|e| AppError::Unknown(format!("搜索任务失败: {}", e)))?
+}
+
+/// 构建内容搜索正则表达式。默认是大小写不敏感的字面量搜索。
 fn build_content_search_pattern(
     query: &str,
     case_sensitive: bool,
@@ -835,99 +846,127 @@ fn build_content_search_pattern(
         regex::escape(query)
     };
 
-    let full_pattern = if case_sensitive {
-        pattern
-    } else {
-        format!("(?i){}", pattern)
-    };
-
-    regex::Regex::new(&full_pattern)
+    regex::RegexBuilder::new(&pattern)
+        .case_insensitive(!case_sensitive)
+        .build()
         .map_err(|e| AppError::InvalidPath(format!("无效的搜索模式: {}", e)))
 }
 
-/// 递归搜索文件内容
-fn search_contents_recursive(
-    base_path: &Path,
-    current_path: &Path,
-    pattern: &regex::Regex,
-    exclude_dirs: &HashSet<&str>,
-    text_extensions: &HashSet<&str>,
+fn search_file_contents_blocking(
+    base_path: PathBuf,
+    pattern: regex::Regex,
     max_results: usize,
-    results: &mut Vec<ContentMatch>,
-) -> Result<()> {
-    if results.len() >= max_results {
-        return Ok(());
-    }
+) -> Result<ContentSearchResponse> {
+    let started_at = std::time::Instant::now();
+    let mut matches = Vec::new();
+    let mut scanned_files = 0usize;
+    let mut matched_files = 0usize;
+    let mut skipped_files = 0usize;
+    let mut truncated = false;
 
-    let entries = fs::read_dir(current_path)?;
+    let mut builder = ignore::WalkBuilder::new(&base_path);
+    builder
+        .hidden(false)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true)
+        .ignore(true)
+        .follow_links(false)
+        .filter_entry(|entry| !is_content_search_excluded_entry(entry));
 
-    for entry in entries {
-        if results.len() >= max_results {
+    for entry in builder.build() {
+        if matches.len() >= max_results {
+            truncated = true;
             break;
         }
 
-        let entry = entry?;
-        let path = entry.path();
-        let name = path.file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(_) => {
+                skipped_files += 1;
+                continue;
+            }
+        };
 
-        // 跳过隐藏文件
-        if name.starts_with('.') {
+        let Some(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_file() {
             continue;
         }
 
-        if path.is_dir() {
-            // 跳过排除目录
-            if exclude_dirs.contains(name) {
+        scanned_files += 1;
+        let path = entry.path();
+        let metadata = match fs::metadata(path) {
+            Ok(metadata) => metadata,
+            Err(_) => {
+                skipped_files += 1;
                 continue;
             }
-            // 递归搜索子目录
-            search_contents_recursive(
-                base_path,
-                &path,
-                pattern,
-                exclude_dirs,
-                text_extensions,
-                max_results,
-                results,
-            )?;
-        } else {
-            // 检查扩展名
-            let ext = path.extension()
-                .and_then(|e| e.to_str())
-                .map(|s| s.to_lowercase());
+        };
 
-            if let Some(ref e) = ext {
-                if !text_extensions.contains(e.as_str()) {
-                    continue;
-                }
-            } else {
-                // 无扩展名的文件跳过
+        if metadata.len() > MAX_CONTENT_SEARCH_FILE_SIZE {
+            skipped_files += 1;
+            continue;
+        }
+
+        let bytes = match fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                skipped_files += 1;
                 continue;
             }
+        };
+        if looks_binary(&bytes) {
+            skipped_files += 1;
+            continue;
+        }
 
-            // 检查文件大小（限制 1MB）
-            let metadata = fs::metadata(&path)?;
-            if metadata.len() > 1024 * 1024 {
+        let content = match String::from_utf8(bytes) {
+            Ok(content) => content,
+            Err(_) => {
+                skipped_files += 1;
                 continue;
             }
+        };
 
-            // 读取并搜索文件内容
-            if let Ok(content) = fs::read_to_string(&path) {
-                search_in_file(
-                    base_path,
-                    &path,
-                    &content,
-                    pattern,
-                    max_results,
-                    results,
-                );
-            }
+        let before = matches.len();
+        search_in_file(&base_path, path, &content, &pattern, max_results, &mut matches);
+        if matches.len() > before {
+            matched_files += 1;
+        }
+        if matches.len() >= max_results {
+            truncated = true;
+            break;
         }
     }
 
-    Ok(())
+    Ok(ContentSearchResponse {
+        matches,
+        truncated,
+        scanned_files,
+        matched_files,
+        skipped_files,
+        elapsed_ms: started_at.elapsed().as_millis(),
+        root: base_path.to_string_lossy().to_string(),
+        max_results,
+    })
+}
+
+fn is_content_search_excluded_entry(entry: &ignore::DirEntry) -> bool {
+    if !entry.file_type().is_some_and(|ft| ft.is_dir()) {
+        return false;
+    }
+    let name = entry.file_name().to_string_lossy();
+    CONTENT_SEARCH_EXCLUDED_DIRS.iter().any(|excluded| name == *excluded)
+}
+
+fn looks_binary(bytes: &[u8]) -> bool {
+    bytes.iter().take(8192).any(|b| *b == 0)
+}
+
+fn utf16_offset(s: &str, byte_idx: usize) -> usize {
+    s.get(..byte_idx).unwrap_or("").encode_utf16().count()
 }
 
 /// 在单个文件中搜索
@@ -963,8 +1002,8 @@ fn search_in_file(
             }
 
             let line_number = line_idx + 1; // 1-based
-            let match_start = cap.start();
-            let match_end = cap.end();
+            let match_start = utf16_offset(line, cap.start());
+            let match_end = utf16_offset(line, cap.end());
 
             // 收集上下文（前后各 2 行）
             let context_before: Vec<String> = (1..=2)
@@ -990,6 +1029,87 @@ fn search_in_file(
                 match_end,
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn write_file(path: &Path, content: &str) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(path, content).unwrap();
+    }
+
+    #[test]
+    fn content_search_is_case_insensitive_by_default() {
+        let dir = TempDir::new().unwrap();
+        write_file(&dir.path().join("src/Main.java"), "Hello Polaris");
+        let pattern = build_content_search_pattern("hello", false, false).unwrap();
+        let response = search_file_contents_blocking(dir.path().to_path_buf(), pattern, 10).unwrap();
+        assert_eq!(response.matches.len(), 1);
+        assert_eq!(response.matches[0].line_number, 1);
+    }
+
+    #[test]
+    fn content_search_treats_query_as_literal_text() {
+        let dir = TempDir::new().unwrap();
+        write_file(&dir.path().join("literal.txt"), "a+b? [test]\naxb");
+        let pattern = build_content_search_pattern("a+b? [test]", false, false).unwrap();
+        let response = search_file_contents_blocking(dir.path().to_path_buf(), pattern, 10).unwrap();
+        assert_eq!(response.matches.len(), 1);
+        assert_eq!(response.matches[0].matched_line, "a+b? [test]");
+
+        let pattern = build_content_search_pattern("a.b", false, false).unwrap();
+        let response = search_file_contents_blocking(dir.path().to_path_buf(), pattern, 10).unwrap();
+        assert!(response.matches.is_empty());
+    }
+
+    #[test]
+    fn content_search_returns_utf16_offsets_for_frontend_highlight() {
+        let dir = TempDir::new().unwrap();
+        write_file(&dir.path().join("unicode.txt"), "😀Hello");
+        let pattern = build_content_search_pattern("hello", false, false).unwrap();
+        let response = search_file_contents_blocking(dir.path().to_path_buf(), pattern, 10).unwrap();
+        assert_eq!(response.matches.len(), 1);
+        assert_eq!(response.matches[0].match_start, 2);
+        assert_eq!(response.matches[0].match_end, 7);
+    }
+
+    #[test]
+    fn content_search_respects_gitignore_and_skips_generated_dirs() {
+        let dir = TempDir::new().unwrap();
+        write_file(&dir.path().join(".gitignore"), "ignored.txt\n");
+        write_file(&dir.path().join("ignored.txt"), "needle");
+        write_file(&dir.path().join("node_modules/pkg/index.js"), "needle");
+        write_file(&dir.path().join("src/ok.java"), "needle");
+        let pattern = build_content_search_pattern("needle", false, false).unwrap();
+        let response = search_file_contents_blocking(dir.path().to_path_buf(), pattern, 10).unwrap();
+        assert_eq!(response.matches.len(), 1);
+        assert!(response.matches[0].relative_path.replace('\\', "/").ends_with("src/ok.java"));
+    }
+
+    #[test]
+    fn content_search_includes_no_extension_text_files() {
+        let dir = TempDir::new().unwrap();
+        write_file(&dir.path().join("Dockerfile"), "FROM scratch\n# needle");
+        let pattern = build_content_search_pattern("needle", false, false).unwrap();
+        let response = search_file_contents_blocking(dir.path().to_path_buf(), pattern, 10).unwrap();
+        assert_eq!(response.matches.len(), 1);
+        assert_eq!(response.matches[0].name, "Dockerfile");
+    }
+
+    #[test]
+    fn content_search_reports_truncation() {
+        let dir = TempDir::new().unwrap();
+        write_file(&dir.path().join("many.txt"), "needle\nneedle\nneedle");
+        let pattern = build_content_search_pattern("needle", false, false).unwrap();
+        let response = search_file_contents_blocking(dir.path().to_path_buf(), pattern, 2).unwrap();
+        assert_eq!(response.matches.len(), 2);
+        assert!(response.truncated);
     }
 }
 

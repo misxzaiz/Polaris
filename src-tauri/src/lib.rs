@@ -45,7 +45,7 @@ use commands::window::{
 use commands::file_explorer::{
     read_directory, get_file_content, create_file, create_directory,
     delete_file, rename_file, path_exists, read_commands, search_files,
-    search_file_contents,
+    search_file_contents, search_file_contents_detailed,
     copy_path, move_path, copy_path_to_directory, move_path_to_directory, save_dropped_file_to_directory, save_image_bytes, save_codex_image_artifact,
 };
 #[cfg(feature = "tauri-app")]
@@ -676,6 +676,7 @@ pub fn run() {
             read_commands,
             search_files,
             search_file_contents,
+            search_file_contents_detailed,
             copy_path,
             move_path,
             copy_path_to_directory,

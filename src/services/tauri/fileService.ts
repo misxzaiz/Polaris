@@ -185,6 +185,55 @@ export interface ContentMatch {
   matchEnd: number;
 }
 
+export interface ContentSearchResponse {
+  matches: ContentMatch[];
+  truncated: boolean;
+  scannedFiles: number;
+  matchedFiles: number;
+  skippedFiles: number;
+  elapsedMs: number;
+  root: string;
+  maxResults: number;
+}
+
+/**
+ * 搜索文件内容，返回匹配项和扫描统计信息
+ * @param query 搜索关键词
+ * @param workDir 工作目录
+ * @param options 搜索选项
+ * @param maxResults 最大结果数
+ */
+export async function searchFileContentsDetailed(
+  query: string,
+  workDir: string | null,
+  options?: {
+    caseSensitive?: boolean;
+    wholeWord?: boolean;
+  },
+  maxResults: number = 100
+): Promise<ContentSearchResponse> {
+  if (!workDir || !query.trim()) {
+    return {
+      matches: [],
+      truncated: false,
+      scannedFiles: 0,
+      matchedFiles: 0,
+      skippedFiles: 0,
+      elapsedMs: 0,
+      root: workDir ?? '',
+      maxResults,
+    };
+  }
+
+  return invoke<ContentSearchResponse>('search_file_contents_detailed', {
+    workDir,
+    query: query.trim(),
+    caseSensitive: options?.caseSensitive ?? false,
+    wholeWord: options?.wholeWord ?? false,
+    maxResults,
+  });
+}
+
 /**
  * 搜索文件内容
  * @param query 搜索关键词
@@ -201,17 +250,8 @@ export async function searchFileContents(
   },
   maxResults: number = 100
 ): Promise<ContentMatch[]> {
-  if (!workDir || !query.trim()) {
-    return [];
-  }
-
-  return invoke<ContentMatch[]>('search_file_contents', {
-    workDir,
-    query: query.trim(),
-    caseSensitive: options?.caseSensitive ?? false,
-    wholeWord: options?.wholeWord ?? false,
-    maxResults,
-  });
+  const response = await searchFileContentsDetailed(query, workDir, options, maxResults);
+  return response.matches;
 }
 
 // ============================================================================

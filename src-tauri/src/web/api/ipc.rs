@@ -139,6 +139,7 @@ pub async fn handle_ipc_bridge(
         "get_file_clipboard" => dispatch_get_file_clipboard().await,
         "search_files" => dispatch_search_files(&args).await,
         "search_file_contents" => dispatch_search_file_contents(&args).await,
+        "search_file_contents_detailed" => dispatch_search_file_contents_detailed(&args).await,
         "read_commands" => dispatch_read_commands(&args).await,
         "download_file_binary" => dispatch_download_file_binary(&args).await,
 
@@ -920,6 +921,15 @@ async fn dispatch_search_file_contents(args: &Value) -> Result<Json<Value>, WebE
     let whole_word = args.get("wholeWord").and_then(|v| v.as_bool());
     let max_results = args.get("maxResults").and_then(|v| v.as_u64()).map(|n| n as usize);
     json_result!(crate::commands::file_explorer::search_file_contents(path, query, case_sensitive, whole_word, max_results).await)
+}
+
+async fn dispatch_search_file_contents_detailed(args: &Value) -> Result<Json<Value>, WebError> {
+    let path = require_string(args, "path").or_else(|_| require_string(args, "workDir"))?;
+    let query = require_string(args, "query")?;
+    let case_sensitive = args.get("caseSensitive").and_then(|v| v.as_bool());
+    let whole_word = args.get("wholeWord").and_then(|v| v.as_bool());
+    let max_results = args.get("maxResults").and_then(|v| v.as_u64()).map(|n| n as usize);
+    json_result!(crate::commands::file_explorer::search_file_contents_detailed(path, query, case_sensitive, whole_word, max_results).await)
 }
 
 async fn dispatch_read_commands(args: &Value) -> Result<Json<Value>, WebError> {
