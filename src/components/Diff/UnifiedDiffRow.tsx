@@ -5,6 +5,7 @@
  * 供全量渲染路径的聚焦滚动（scrollIntoView）定位。min-w-max 配合外层 overflow-auto 支持横向滚动。
  */
 
+import { memo } from 'react'
 import type { DiffLine } from '@/services/diffService'
 import { WordDiffSegment } from './WordDiffSegment'
 
@@ -18,7 +19,7 @@ interface UnifiedDiffRowProps {
   language?: string
 }
 
-export function UnifiedDiffRow({ line, index, focused, language }: UnifiedDiffRowProps) {
+function UnifiedDiffRowImpl({ line, index, focused, language }: UnifiedDiffRowProps) {
   const folded = isFolded(line.content)
 
   const rowBg = focused
@@ -73,3 +74,6 @@ export function UnifiedDiffRow({ line, index, focused, language }: UnifiedDiffRo
     </div>
   )
 }
+
+/** memo：diff 引用稳定时，仅 focused 变化的行重渲染，其余跳过（避免大列表整体重算高亮） */
+export const UnifiedDiffRow = memo(UnifiedDiffRowImpl)

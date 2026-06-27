@@ -8,14 +8,13 @@
 
 import { useMemo, useCallback, useRef, useState, useEffect } from 'react'
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso'
-import { computeDiff } from '@/services/diffService'
 import { getLanguageFromPath, isHighlightableLanguage } from '@/utils/language'
-import { logger } from '@/utils/logger'
 import { useTranslation } from 'react-i18next'
 import type { DiffChangeType, GitDiffEntry } from '@/types/git'
 import { FileNavigator } from './FileNavigator'
 import { useDiffKeyboard } from './useDiffKeyboard'
 import { useChangeIndices } from './useChangeIndices'
+import { useAsyncDiff } from './useAsyncDiff'
 import { buildSplitRows } from './splitRows'
 import { UnifiedDiffRow } from './UnifiedDiffRow'
 import { SplitDiffView } from './SplitDiffView'
@@ -93,10 +92,7 @@ export function DiffViewer({
     return newContent ?? ''
   }, [newContent, changeType])
 
-  const diff = useMemo(
-    () => computeDiff(effectiveOldContent, effectiveNewContent),
-    [effectiveOldContent, effectiveNewContent],
-  )
+  const { diff, loading } = useAsyncDiff(effectiveOldContent, effectiveNewContent)
   const splitRows = useMemo(
     () => (viewMode === 'split' ? buildSplitRows(diff.lines) : []),
     [viewMode, diff.lines],
@@ -131,17 +127,10 @@ export function DiffViewer({
     autoFocus,
   })
 
-  logger.debug('[DiffViewer] 渲染:', {
-    oldContentLength: oldContent?.length ?? 0,
-    newContentLength: newContent?.length ?? 0,
-    changeType,
-    contentOmitted,
-    language,
-  })
-
-  // 渲染分流：内嵌（maxHeight）或短内容 → 全量渲染；大文件 → 虚拟化
+  // 渲染分流：短内容 → 全量渲染；大文件 → Virtuoso 虚拟化。
+  // 内嵌（maxHeight）场景同样虚拟化：Virtuoso 取固定高度滚动，避免大文件全量渲染卡顿。
   const rowCount = viewMode === 'split' ? splitRows.length : diff.lines.length
-  const shouldVirtualize = !maxHeight && rowCount > VIRTUALIZE_THRESHOLD
+  const shouldVirtualize = rowCount > VIRTUALIZE_THRESHOLD
 
   const virtuosoRef = useRef<VirtuosoHandle>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -202,10 +191,20 @@ export function DiffViewer({
       <div className="flex items-center gap-4 px-4 py-1.5 bg-background-elevated border-b border-border text-xs shrink-0">
         <span className="text-green-500">+{diff.addedCount}</span>
         <span className="text-red-500">-{diff.removedCount}</span>
+        {diff.degraded && (
+          <span className="text-amber-500" title={t('diff.degradedHint')}>
+            {t('diff.degraded')}
+          </span>
+        )}
       </div>
 
       <div className="flex-1 overflow-hidden">
-        {diff.lines.length === 0 ? (
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 h-full py-8 text-text-tertiary text-sm">
+            <span className="inline-block w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin" />
+            {t('diff.computing')}
+          </div>
+        ) : diff.lines.length === 0 ? (
           <div className="text-text-tertiary text-center py-8">{t('diff.noChanges')}</div>
         ) : viewMode === 'split' ? (
           <SplitDiffView
@@ -220,7 +219,7 @@ export function DiffViewer({
             ref={virtuosoRef}
             totalCount={diff.lines.length}
             itemContent={renderUnifiedItem}
-            style={{ height: '100%' }}
+            style={{ height: maxHeight ?? '100%' }}
           />
         ) : (
           <div ref={scrollRef} className="h-full overflow-auto">

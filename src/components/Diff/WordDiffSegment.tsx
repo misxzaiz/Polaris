@@ -5,7 +5,7 @@
  * 使用 diff 库的 diffChars 函数进行字符级对比
  */
 
-import { useMemo } from 'react'
+import { useMemo, memo } from 'react'
 import { diffWordsWithSpace } from 'diff'
 import { highlightCode } from '@/utils/syntaxHighlight'
 
@@ -109,14 +109,13 @@ function renderHighlightedSegments(
  * 当 type 为 'added' 或 'removed' 时，直接渲染对应文本
  * 当 oldText 和 newText 都有时，进行词级差异对比
  */
-export function WordDiffSegment({
+function WordDiffSegmentImpl({
   oldText,
   newText,
   language,
   type,
   isRight = false,
 }: WordDiffSegmentProps) {
-  // 计算词级差异（仅 changed 行对需要）
   const { oldSegments, newSegments } = useMemo(() => {
     if (type !== 'changed') {
       return { oldSegments: [], newSegments: [] }
@@ -179,3 +178,5 @@ export function WordDiffSegment({
     </span>
   )
 }
+
+export const WordDiffSegment = memo(WordDiffSegmentImpl)

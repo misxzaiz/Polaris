@@ -7,6 +7,7 @@
  * 两列用相同的固定行高（SPLIT_ROW_HEIGHT）保证逐行对齐。
  */
 
+import { memo } from 'react'
 import type { SplitDiffRow, SplitSideType } from './splitRows'
 import { isChangedRow } from './splitRows'
 import { WordDiffSegment } from './WordDiffSegment'
@@ -21,7 +22,7 @@ interface CellProps {
 }
 
 /** 行号单元格（固定行号列内） */
-export function SplitGutterCell({ row, side, focused }: CellProps) {
+function SplitGutterCellImpl({ row, side, focused }: CellProps) {
   const isRight = side === 'right'
   const lineNum = isRight ? row.newLineNumber : row.oldLineNumber
   const rowType = isRight ? row.newType : row.oldType
@@ -65,7 +66,7 @@ interface CodeCellProps extends CellProps {
 }
 
 /** 代码单元格（横向滚动的代码列内） */
-export function SplitCodeCell({ row, side, index, focused, language, onLineClick }: CodeCellProps) {
+function SplitCodeCellImpl({ row, side, index, focused, language, onLineClick }: CodeCellProps) {
   const isRight = side === 'right'
   const rowType = isRight ? row.newType : row.oldType
   const lineNum = isRight ? row.newLineNumber : row.oldLineNumber
@@ -108,3 +109,7 @@ export function SplitCodeCell({ row, side, index, focused, language, onLineClick
     </div>
   )
 }
+
+/** memo：虚拟化窗口内，聚焦切换时仅相关行重渲染 */
+export const SplitGutterCell = memo(SplitGutterCellImpl)
+export const SplitCodeCell = memo(SplitCodeCellImpl)

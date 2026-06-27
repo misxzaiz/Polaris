@@ -1,5 +1,5 @@
 /**
- * Split（并排）双栏视图
+ * Split（并排）双栏视图（窗口化虚拟渲染）
  *
  * 布局：单一 CSS Grid 统一表头与代码区的列 —— 左列(1) / 分隔条(2，跨行) / 右列(3)，
  * 由同一 ratio 驱动，保证「旧/新版本」表头分界与代码区分隔条像素级对齐。
@@ -8,17 +8,21 @@
  * - 行号列不参与横向滚动，天然固定，代码也不会盖到其上；
  * - 左右两个代码列横向 + 纵向联动；行号列纵向跟随。
  *
- * 分隔条可拖拽调宽并持久化。Split 始终全量渲染（不虚拟化），以保证行号固定与横向滚动稳定。
+ * 虚拟化：固定行高（SPLIT_ROW_HEIGHT），按滚动位置只渲染「上 spacer + 可视窗口行 + 下 spacer」，
+ * 既保留行号固定列与各列独立横向滚动（min-w-max 由窗口内最宽行撑开），又把渲染行数从 N 降到一屏。
+ * 分隔条可拖拽调宽并持久化。
  */
 
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useLayoutEffect, useEffect } from 'react'
 import type { SplitDiffRow } from './splitRows'
-import { SplitGutterCell, SplitCodeCell } from './SplitSideRow'
+import { SplitGutterCell, SplitCodeCell, SPLIT_ROW_HEIGHT } from './SplitSideRow'
 import { useSplitRatio } from './useSplitRatio'
 import { useSplitScrollSync } from './useSplitScrollSync'
 import { GUTTER_WIDTH } from './types'
 
 const DIVIDER_WIDTH = 8
+/** 窗口上下额外渲染的行数，缓冲快速滚动时的空白 */
+const OVERSCAN = 12
 
 interface SplitDiffViewProps {
   rows: SplitDiffRow[]
@@ -40,14 +44,41 @@ export function SplitDiffView({ rows, language, focusedRowIndex, onLineClick, t 
 
   useSplitScrollSync(leftCode, rightCode, leftGutter, rightGutter)
 
-  // 聚焦变更：滚动左代码列到目标行，联动带动其余列
+  // 虚拟化窗口状态：滚动偏移 + 视口高度（由左代码列驱动；右列滚动经 scroll-sync 镜像到左列后同样触发）
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewportH, setViewportH] = useState(0)
+
+  useLayoutEffect(() => {
+    if (!leftCode) return
+    const measure = () => setViewportH(leftCode.clientHeight)
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(measure)
+    ro.observe(leftCode)
+    return () => ro.disconnect()
+  }, [leftCode])
+
+  useEffect(() => {
+    if (!leftCode) return
+    const onScroll = () => setScrollTop(leftCode.scrollTop)
+    leftCode.addEventListener('scroll', onScroll, { passive: true })
+    return () => leftCode.removeEventListener('scroll', onScroll)
+  }, [leftCode])
+
+  // 聚焦变更：将目标行滚到视口中央（设置 scrollTop 即触发 scroll-sync 联动 + 窗口重算）
   useEffect(() => {
     if (focusedRowIndex == null || !leftCode) return
-    const el = leftCode.querySelector(`[data-row-index="${focusedRowIndex}"]`)
-    if (el && typeof el.scrollIntoView === 'function') {
-      el.scrollIntoView({ block: 'center', behavior: 'auto' })
-    }
+    const target = focusedRowIndex * SPLIT_ROW_HEIGHT - leftCode.clientHeight / 2 + SPLIT_ROW_HEIGHT / 2
+    leftCode.scrollTop = Math.max(0, target)
   }, [focusedRowIndex, leftCode])
+
+  const total = rows.length
+  const start = Math.max(0, Math.floor(scrollTop / SPLIT_ROW_HEIGHT) - OVERSCAN)
+  const end = Math.min(total, Math.ceil((scrollTop + viewportH) / SPLIT_ROW_HEIGHT) + OVERSCAN)
+  const topPad = start * SPLIT_ROW_HEIGHT
+  const bottomPad = Math.max(0, (total - end) * SPLIT_ROW_HEIGHT)
+  const windowRows: number[] = []
+  for (let i = start; i < end; i++) windowRows.push(i)
 
   const renderSide = (
     side: 'left' | 'right',
@@ -62,20 +93,22 @@ export function SplitDiffView({ rows, language, focusedRowIndex, onLineClick, t 
         className="shrink-0 overflow-hidden border-r border-border-subtle"
         style={{ width: GUTTER_WIDTH }}
       >
-        {rows.map((row, idx) => (
-          <SplitGutterCell key={idx} row={row} side={side} focused={focusedRowIndex === idx} />
-        ))}
+        <div style={{ paddingTop: topPad, paddingBottom: bottomPad }}>
+          {windowRows.map((i) => (
+            <SplitGutterCell key={i} row={rows[i]} side={side} focused={focusedRowIndex === i} />
+          ))}
+        </div>
       </div>
       {/* 代码列：横向 + 纵向滚动 */}
       <div ref={setCode} className="flex-1 overflow-auto">
-        <div className="min-w-max">
-          {rows.map((row, idx) => (
+        <div className="min-w-max" style={{ paddingTop: topPad, paddingBottom: bottomPad }}>
+          {windowRows.map((i) => (
             <SplitCodeCell
-              key={idx}
-              row={row}
+              key={i}
+              row={rows[i]}
               side={side}
-              index={idx}
-              focused={focusedRowIndex === idx}
+              index={i}
+              focused={focusedRowIndex === i}
               language={language}
               onLineClick={onLineClick}
             />
