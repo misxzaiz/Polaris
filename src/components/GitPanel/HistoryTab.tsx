@@ -4,15 +4,12 @@
  * 显示 Git 提交历史列表，支持滚动加载更多，并可查看单个提交的文件和内容。
  */
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
 import type { ChangeEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   GitCommit as GitCommitIcon,
-  User,
-  Clock,
   RefreshCw,
-  ChevronRight,
   Loader2,
   ChevronDown,
   Search,
@@ -45,6 +42,9 @@ import {
   getInitialPaneWidth,
   clamp,
   formatRelativeTime,
+  getCommitTypeColor,
+  getFileStatusBadge,
+  INLINE_FILES_MAX_HEIGHT,
   FILE_LIST_MODE_STORAGE_KEY,
   COMMIT_LIST_WIDTH_STORAGE_KEY,
   FILE_PANE_WIDTH_STORAGE_KEY,
@@ -584,6 +584,38 @@ export function HistoryTab({
     }
   }, [])
 
+  // 在中央编辑器打开某提交中某文件的 diff（复用同一标签页，identity 去重）
+  const openFileDiffInTab = useCallback((commit: GitCommitType, file: GitDiffEntry) => {
+    onOpenDiffInTab?.(file, {
+      identity: `history:${commit.sha}:${getDiffKey(file)}`,
+      titleContext: commit.shortSha,
+      metadata: {
+        commitSha: commit.sha,
+        shortSha: commit.shortSha,
+        source: isFileHistoryMode ? 'file-history' : 'commit-history',
+      },
+    })
+  }, [isFileHistoryMode, onOpenDiffInTab])
+
+  // 侧边栏：再次点击已展开的提交则收起（手风琴）；其余情况加载详情
+  const handleCommitRowClick = useCallback((commit: GitCommitType) => {
+    if (!isWorkbench && selectedCommit?.sha === commit.sha) {
+      clearSelection()
+      return
+    }
+    void loadCommitDetails(commit)
+  }, [clearSelection, isWorkbench, loadCommitDetails, selectedCommit?.sha])
+
+  // 工作台：右侧详情面板；侧边栏：直接在编辑器打开该文件的 diff
+  const handleFileHistoryRowClick = useCallback((entry: GitFileHistoryEntry) => {
+    if (isWorkbench) {
+      selectFileHistoryEntry(entry)
+      return
+    }
+    setSelectedCommit(entry.commit)
+    openFileDiffInTab(entry.commit, entry.file)
+  }, [isWorkbench, openFileDiffInTab, selectFileHistoryEntry])
+
   const stopPaneResize = useCallback(() => {
     if (!paneResizeCleanupRef.current) return
 
@@ -631,85 +663,141 @@ export function HistoryTab({
 
   useEffect(() => stopPaneResize, [stopPaneResize])
 
-  const renderCommitRow = (commit: GitCommitType) => (
-    <div
-      key={commit.sha}
-      onClick={() => loadCommitDetails(commit)}
-      title={commit.message.split('\n')[0]}
-      className={`px-4 py-3 cursor-pointer hover:bg-background-hover transition-colors border-b border-border-subtle ${
-        selectedCommit?.sha === commit.sha ? 'bg-primary/5' : ''
-      }`}
-    >
-      <div className="flex items-start gap-3">
-        <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center">
-          <GitCommitIcon size={12} className="text-primary" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-mono text-text-tertiary bg-background-surface px-1.5 py-0.5 rounded">
-              {commit.shortSha}
-            </span>
-          </div>
-          <div className="text-sm text-text-primary font-medium truncate mb-1">
-            {commit.message.split('\n')[0]}
-          </div>
-          <div className="flex items-center gap-3 text-xs text-text-tertiary min-w-0">
-            <span className="flex items-center gap-1 min-w-0">
-              <User size={10} className="shrink-0" />
-              <span className="truncate">{commit.author}</span>
-            </span>
-            <span className="flex items-center gap-1 shrink-0">
-              <Clock size={10} />
-              {formatRelativeTime(commit.timestamp, t)}
-            </span>
-          </div>
-        </div>
-        <ChevronRight size={14} className="text-text-tertiary flex-shrink-0" />
+  const renderInlineFileRow = (commit: GitCommitType, file: GitDiffEntry) => {
+    const badge = getFileStatusBadge(file.change_type)
+    return (
+      <div
+        key={getDiffKey(file)}
+        onClick={() => openFileDiffInTab(commit, file)}
+        title={`${file.file_path} · ${t('history.openDiffInEditor')}`}
+        className="group flex items-center gap-2 pl-7 pr-2 py-1.5 cursor-pointer border-l-2 border-transparent hover:bg-background-hover hover:border-primary/50 transition-colors"
+      >
+        <span
+          className="w-3.5 h-3.5 rounded-[3px] text-[9px] font-bold flex items-center justify-center shrink-0"
+          style={{ background: `rgb(var(${badge.colorVar}) / 0.16)`, color: `rgb(var(${badge.colorVar}))` }}
+        >
+          {badge.letter}
+        </span>
+        <span
+          className="flex-1 min-w-0 text-xs text-text-secondary group-hover:text-text-primary truncate"
+          style={{ direction: 'rtl', textAlign: 'left' }}
+        >
+          {file.file_path}
+        </span>
+        <span className="text-[10px] shrink-0">
+          <span className="text-success">+{file.additions ?? 0}</span>
+          <span className="text-danger ml-1">-{file.deletions ?? 0}</span>
+        </span>
+        <button
+          type="button"
+          onClick={(event) => { event.stopPropagation(); void loadFileHistory(file.file_path) }}
+          className="p-1 text-text-tertiary hover:text-primary hover:bg-primary/10 rounded transition-colors opacity-0 group-hover:opacity-100 shrink-0"
+          title={t('history.viewFileHistory')}
+        >
+          <FileClock size={12} />
+        </button>
       </div>
-    </div>
-  )
+    )
+  }
 
-  const renderFileHistoryRow = (entry: GitFileHistoryEntry) => (
-    <div
-      key={`${entry.commit.sha}:${getDiffKey(entry.file)}`}
-      onClick={() => selectFileHistoryEntry(entry)}
-      title={entry.commit.message.split('\n')[0]}
-      className={`px-4 py-3 cursor-pointer hover:bg-background-hover transition-colors border-b border-border-subtle ${
-        selectedCommit?.sha === entry.commit.sha ? 'bg-primary/5' : ''
-      }`}
-    >
-      <div className="flex items-start gap-3">
-        <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center">
-          <FileClock size={12} className="text-primary" />
+  // 侧边栏专用：点击提交后在该行下方就地展开的文件清单（文件多时容器内部滚动）
+  const renderInlineDetails = (commit: GitCommitType) => {
+    const isActive = selectedCommit?.sha === commit.sha
+
+    if (isDetailsLoading && isActive) {
+      return (
+        <div className="flex items-center gap-2 pl-7 pr-3 py-3 text-xs text-text-tertiary bg-background-elevated border-y border-border-subtle">
+          <Loader2 size={13} className="animate-spin" />
+          {t('history.loadingDetails')}
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-mono text-text-tertiary bg-background-surface px-1.5 py-0.5 rounded">
-              {entry.commit.shortSha}
-            </span>
-            <span className="text-[10px] text-text-tertiary">
-              <span className="text-success">+{entry.file.additions ?? 0}</span>
-              <span className="text-danger ml-1">-{entry.file.deletions ?? 0}</span>
-            </span>
-          </div>
-          <div className="text-sm text-text-primary font-medium truncate mb-1">
-            {entry.commit.message.split('\n')[0]}
-          </div>
-          <div className="flex items-center gap-3 text-xs text-text-tertiary min-w-0">
-            <span className="flex items-center gap-1 min-w-0">
-              <User size={10} className="shrink-0" />
-              <span className="truncate">{entry.commit.author}</span>
-            </span>
-            <span className="flex items-center gap-1 shrink-0">
-              <Clock size={10} />
-              {formatRelativeTime(entry.commit.timestamp, t)}
-            </span>
-          </div>
+      )
+    }
+
+    if (detailsError && isActive) {
+      return (
+        <div className="pl-7 pr-3 py-2 text-xs text-danger bg-danger/10 border-y border-danger/20">
+          {t('history.detailLoadFailed')}: {detailsError}
         </div>
-        <ChevronRight size={14} className="text-text-tertiary flex-shrink-0" />
+      )
+    }
+
+    if (!selectedDetails || selectedDetails.commit.sha !== commit.sha) return null
+
+    const files = selectedDetails.files
+    return (
+      <div className="bg-background-elevated border-y border-border-subtle">
+        <div className="flex items-center gap-2 pl-7 pr-3 py-1.5 text-[11px] text-text-tertiary">
+          <span className="truncate max-w-[150px]">{commit.author}</span>
+          <span>·</span>
+          <span className="shrink-0">{t('history.filesChanged', { count: files.length })}</span>
+          <span className="text-success shrink-0">+{selectedDetails.totalAdditions}</span>
+          <span className="text-danger shrink-0">-{selectedDetails.totalDeletions}</span>
+        </div>
+        {files.length === 0 ? (
+          <div className="pl-7 pr-3 py-2 text-xs text-text-tertiary">{t('history.noFileChanges')}</div>
+        ) : (
+          <div className="overflow-y-auto" style={{ maxHeight: INLINE_FILES_MAX_HEIGHT }}>
+            {files.map((file) => renderInlineFileRow(commit, file))}
+          </div>
+        )}
       </div>
-    </div>
-  )
+    )
+  }
+
+  const renderCommitRow = (commit: GitCommitType) => {
+    const subject = commit.message.split('\n')[0]
+    const isSelected = selectedCommit?.sha === commit.sha
+
+    return (
+      <Fragment key={commit.sha}>
+        <div
+          onClick={() => handleCommitRowClick(commit)}
+          title={`${subject}\n${commit.author}`}
+          className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer border-l-2 transition-colors ${
+            isSelected ? 'bg-primary/10 border-primary' : 'border-transparent hover:bg-background-hover'
+          }`}
+        >
+          <span
+            className="w-1.5 h-1.5 rounded-full shrink-0"
+            style={{ background: isSelected ? 'rgb(var(--c-primary))' : getCommitTypeColor(commit.message) }}
+          />
+          <span className="text-[11px] font-mono text-text-tertiary shrink-0">{commit.shortSha}</span>
+          <span className={`flex-1 min-w-0 text-[13px] truncate ${isSelected ? 'text-text-primary font-medium' : 'text-text-secondary'}`}>
+            {subject}
+          </span>
+          <span className="text-[11px] text-text-tertiary shrink-0">{formatRelativeTime(commit.timestamp, t)}</span>
+        </div>
+        {!isWorkbench && isSelected && renderInlineDetails(commit)}
+      </Fragment>
+    )
+  }
+
+  const renderFileHistoryRow = (entry: GitFileHistoryEntry) => {
+    const subject = entry.commit.message.split('\n')[0]
+    const isSelected = selectedCommit?.sha === entry.commit.sha
+
+    return (
+      <div
+        key={`${entry.commit.sha}:${getDiffKey(entry.file)}`}
+        onClick={() => handleFileHistoryRowClick(entry)}
+        title={`${subject}\n${entry.commit.author}`}
+        className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer border-l-2 transition-colors ${
+          isSelected ? 'bg-primary/10 border-primary' : 'border-transparent hover:bg-background-hover'
+        }`}
+      >
+        <FileClock size={12} className="text-text-tertiary shrink-0" />
+        <span className="text-[11px] font-mono text-text-tertiary shrink-0">{entry.commit.shortSha}</span>
+        <span className={`flex-1 min-w-0 text-[13px] truncate ${isSelected ? 'text-text-primary font-medium' : 'text-text-secondary'}`}>
+          {subject}
+        </span>
+        <span className="text-[10px] shrink-0">
+          <span className="text-success">+{entry.file.additions ?? 0}</span>
+          <span className="text-danger ml-1">-{entry.file.deletions ?? 0}</span>
+        </span>
+        <span className="text-[11px] text-text-tertiary shrink-0">{formatRelativeTime(entry.commit.timestamp, t)}</span>
+      </div>
+    )
+  }
 
   const renderCommitList = () => {
     const activeItems = isFileHistoryMode ? fileHistoryEntries : commits
@@ -880,13 +968,13 @@ export function HistoryTab({
         </div>
       )}
 
-      <div className={isWorkbench ? 'flex-1 flex min-h-0' : 'flex-1 flex flex-col min-h-0'}>
-        <div
-          className={isWorkbench ? 'relative border-r border-border-subtle flex flex-col min-h-0 shrink-0' : 'flex-1 flex flex-col min-h-0'}
-          style={isWorkbench ? { width: commitListWidth } : undefined}
-        >
-          {renderCommitList()}
-          {isWorkbench && (
+      {isWorkbench ? (
+        <div className="flex-1 flex min-h-0">
+          <div
+            className="relative border-r border-border-subtle flex flex-col min-h-0 shrink-0"
+            style={{ width: commitListWidth }}
+          >
+            {renderCommitList()}
             <div
               role="separator"
               aria-orientation="vertical"
@@ -894,47 +982,51 @@ export function HistoryTab({
               className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-primary/40 transition-colors"
               title={t('history.resizePane')}
             />
+          </div>
+
+          {(selectedCommit || isDetailsLoading || isWorkbench) && (
+            <div className="flex-1 flex min-w-0 min-h-0">
+              <CommitDetailsPane
+                selectedCommit={selectedCommit}
+                selectedDetails={selectedDetails}
+                selectedFileDiff={selectedFileDiff}
+                isDetailsLoading={isDetailsLoading}
+                detailsError={detailsError}
+                fileSearchQuery={fileSearchQuery}
+                fileListMode={fileListMode}
+                diffViewMode={diffViewMode}
+                copiedAction={copiedAction}
+                isCommitMessageExpanded={isCommitMessageExpanded}
+                isFilePaneCollapsed={isFilePaneCollapsed}
+                filePaneWidth={filePaneWidth}
+                filteredSelectedFiles={filteredSelectedFiles}
+                groupedSelectedFiles={groupedSelectedFiles}
+                normalizedFileSearchQuery={normalizedFileSearchQuery}
+                isWorkbench={isWorkbench}
+                isFileHistoryMode={isFileHistoryMode}
+                currentWorkspacePath={currentWorkspace?.path}
+                onSetFileSearchQuery={setFileSearchQuery}
+                onSetFileListMode={setFileListMode}
+                onSetDiffViewMode={setDiffViewMode}
+                onSetCopiedAction={setCopiedAction}
+                onSetIsCommitMessageExpanded={setIsCommitMessageExpanded}
+                onSetIsFilePaneCollapsed={setIsFilePaneCollapsed}
+                onSetSelectedFileDiff={setSelectedFileDiff}
+                onClearSelection={clearSelection}
+                onCopyText={copyText}
+                onLoadFileHistory={loadFileHistory}
+                onOpenDiffInTab={onOpenDiffInTab}
+                onOpenFileInEditor={onOpenFileInEditor}
+                onStartPaneResize={startPaneResize}
+              />
+            </div>
           )}
         </div>
-
-        {(selectedCommit || isDetailsLoading || isWorkbench) && (
-          <div className={isWorkbench ? 'flex-1 flex min-w-0 min-h-0' : 'min-h-[360px] max-h-[70%] flex flex-col border-t border-border-subtle'}>
-            <CommitDetailsPane
-              selectedCommit={selectedCommit}
-              selectedDetails={selectedDetails}
-              selectedFileDiff={selectedFileDiff}
-              isDetailsLoading={isDetailsLoading}
-              detailsError={detailsError}
-              fileSearchQuery={fileSearchQuery}
-              fileListMode={fileListMode}
-              diffViewMode={diffViewMode}
-              copiedAction={copiedAction}
-              isCommitMessageExpanded={isCommitMessageExpanded}
-              isFilePaneCollapsed={isFilePaneCollapsed}
-              filePaneWidth={filePaneWidth}
-              filteredSelectedFiles={filteredSelectedFiles}
-              groupedSelectedFiles={groupedSelectedFiles}
-              normalizedFileSearchQuery={normalizedFileSearchQuery}
-              isWorkbench={isWorkbench}
-              isFileHistoryMode={isFileHistoryMode}
-              currentWorkspacePath={currentWorkspace?.path}
-              onSetFileSearchQuery={setFileSearchQuery}
-              onSetFileListMode={setFileListMode}
-              onSetDiffViewMode={setDiffViewMode}
-              onSetCopiedAction={setCopiedAction}
-              onSetIsCommitMessageExpanded={setIsCommitMessageExpanded}
-              onSetIsFilePaneCollapsed={setIsFilePaneCollapsed}
-              onSetSelectedFileDiff={setSelectedFileDiff}
-              onClearSelection={clearSelection}
-              onCopyText={copyText}
-              onLoadFileHistory={loadFileHistory}
-              onOpenDiffInTab={onOpenDiffInTab}
-              onOpenFileInEditor={onOpenFileInEditor}
-              onStartPaneResize={startPaneResize}
-            />
-          </div>
-        )}
-      </div>
+      ) : (
+        <div className="flex-1 flex flex-col min-h-0">
+          {renderCommitList()}
+        </div>
+      )}
     </div>
   )
 }

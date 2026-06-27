@@ -350,6 +350,45 @@ describe('HistoryTab', () => {
     )
   })
 
+  it('opens a history file diff directly in the editor from the sidebar', async () => {
+    const onOpenDiffInTab = vi.fn()
+    render(<HistoryTab onOpenDiffInTab={onOpenDiffInTab} />)
+
+    fireEvent.click(await screen.findByText('Fix search panel'))
+
+    await waitFor(() => {
+      expect(getCommitDetails).toHaveBeenCalledWith('D:/repo', commits[0].sha)
+    })
+
+    fireEvent.click(await screen.findByText('src/App.tsx'))
+
+    expect(onOpenDiffInTab).toHaveBeenCalledWith(
+      changedFiles[0],
+      expect.objectContaining({
+        identity: `history:${commits[0].sha}::src/App.tsx`,
+        titleContext: commits[0].shortSha,
+        metadata: expect.objectContaining({
+          commitSha: commits[0].sha,
+          source: 'commit-history',
+        }),
+      })
+    )
+  })
+
+  it('collapses the inline file list when the selected commit is clicked again', async () => {
+    render(<HistoryTab />)
+
+    fireEvent.click(await screen.findByText('Fix search panel'))
+
+    expect(await screen.findByText('src/App.tsx')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Fix search panel'))
+
+    await waitFor(() => {
+      expect(screen.queryByText('src/App.tsx')).not.toBeInTheDocument()
+    })
+  })
+
   it('keeps multiline commit messages collapsed until requested', async () => {
     const multilineCommit = {
       ...commits[0],

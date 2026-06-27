@@ -70,3 +70,47 @@ export function formatRelativeTime(timestamp: number | undefined, t: (key: strin
   if (diffDays < 7) return t('history.daysAgo', { count: diffDays })
   return date.toLocaleDateString()
 }
+
+// 内联文件清单的最大高度（px）：超出后容器内部滚动，
+// 避免文件多的提交把后续提交挤出视口。
+export const INLINE_FILES_MAX_HEIGHT = 240
+
+/**
+ * 依据 Conventional Commits 前缀推断提交类型的强调色，
+ * 用于高密度提交列表左侧的状态点。返回可直接用于内联 style 的 CSS 颜色，
+ * 取自主题 CSS 变量，避免依赖 Tailwind 颜色 token 是否注册。
+ */
+export function getCommitTypeColor(message: string): string {
+  const match = /^(\w+)(?:\([^)]*\))?!?:/.exec((message ?? '').trim())
+  switch (match?.[1]?.toLowerCase()) {
+    case 'feat':
+      return 'rgb(var(--c-status-success))'
+    case 'fix':
+      return 'rgb(var(--c-status-danger))'
+    case 'perf':
+      return 'rgb(var(--c-accent-ai))'
+    case 'refactor':
+      return 'rgb(var(--c-status-info))'
+    case 'docs':
+      return 'rgb(var(--c-status-warning))'
+    default:
+      return 'rgb(var(--c-text-tertiary))'
+  }
+}
+
+/**
+ * 变更类型对应的徽标字母与基色 CSS 变量名。
+ * 颜色经 rgb(var(--x) / a) 内联使用，背景取低透明度、文字取实色。
+ */
+export function getFileStatusBadge(changeType: string): { letter: string; colorVar: string } {
+  switch (changeType) {
+    case 'added':
+      return { letter: 'A', colorVar: '--c-status-success' }
+    case 'deleted':
+      return { letter: 'D', colorVar: '--c-status-danger' }
+    case 'renamed':
+      return { letter: 'R', colorVar: '--c-status-info' }
+    default:
+      return { letter: 'M', colorVar: '--c-status-warning' }
+  }
+}
