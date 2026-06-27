@@ -2,6 +2,7 @@
  * 配置相关类型定义
  */
 
+import type { CSSProperties } from 'react'
 import type { SpeechConfig, TTSConfig, WakeWordConfig, VoiceNotificationConfig, VoiceCommandEntry } from './speech'
 import type { ModelProfile } from './modelProfile'
 import type { WorkspaceTerminalScripts } from './terminalScript'
@@ -14,6 +15,125 @@ export type Language = 'zh-CN' | 'en-US'
 
 /** 界面主题 */
 export type Theme = 'dark' | 'light'
+
+/** 对话显示密度 */
+export type ChatDisplayDensity = 'compact' | 'comfortable' | 'spacious'
+
+/** 对话字体族 */
+export type ChatDisplayFontFamily = 'system' | 'serif' | 'mono'
+
+/** AI 对话窗口显示设置 */
+export interface ChatDisplaySettings {
+  /** 正文字号 (px) */
+  fontSize: number;
+  /** 正文行高 */
+  lineHeight: number;
+  /** Markdown 段落间距 (px) */
+  paragraphSpacing: number;
+  /** 消息垂直密度 */
+  messageSpacing: ChatDisplayDensity;
+  /** AI 正文最大宽度 (ch) */
+  contentWidth: number;
+  /** 代码字号 (px) */
+  codeFontSize: number;
+  /** 输入框字号 (px)，为空时跟随正文字号 */
+  inputFontSize?: number;
+  /** 对话字体族 */
+  fontFamily: ChatDisplayFontFamily;
+}
+
+export const DEFAULT_CHAT_DISPLAY_SETTINGS: ChatDisplaySettings = {
+  fontSize: 14,
+  lineHeight: 1.55,
+  paragraphSpacing: 4,
+  messageSpacing: 'comfortable',
+  contentWidth: 78,
+  codeFontSize: 13,
+  fontFamily: 'system',
+}
+
+const CHAT_DISPLAY_FONT_FAMILIES: Record<ChatDisplayFontFamily, string> = {
+  system: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+  serif: 'Georgia, "Times New Roman", "Noto Serif SC", serif',
+  mono: '"JetBrains Mono", "Fira Code", "Cascadia Code", "SF Mono", Consolas, monospace',
+}
+
+const CHAT_DISPLAY_DENSITY = {
+  compact: {
+    messageGap: 6,
+    blockGap: 4,
+    bubblePaddingX: 12,
+    bubblePaddingY: 8,
+    bubbleRadius: 14,
+    codePadding: 12,
+  },
+  comfortable: {
+    messageGap: 10,
+    blockGap: 6,
+    bubblePaddingX: 16,
+    bubblePaddingY: 12,
+    bubbleRadius: 16,
+    codePadding: 16,
+  },
+  spacious: {
+    messageGap: 16,
+    blockGap: 10,
+    bubblePaddingX: 18,
+    bubblePaddingY: 14,
+    bubbleRadius: 18,
+    codePadding: 18,
+  },
+} as const
+
+function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.min(max, Math.max(min, value))
+    : fallback
+}
+
+export function normalizeChatDisplaySettings(settings?: Partial<ChatDisplaySettings> | null): ChatDisplaySettings {
+  const density = settings?.messageSpacing && settings.messageSpacing in CHAT_DISPLAY_DENSITY
+    ? settings.messageSpacing
+    : DEFAULT_CHAT_DISPLAY_SETTINGS.messageSpacing
+  const fontFamily = settings?.fontFamily && settings.fontFamily in CHAT_DISPLAY_FONT_FAMILIES
+    ? settings.fontFamily
+    : DEFAULT_CHAT_DISPLAY_SETTINGS.fontFamily
+
+  return {
+    fontSize: clampNumber(settings?.fontSize, 12, 20, DEFAULT_CHAT_DISPLAY_SETTINGS.fontSize),
+    lineHeight: clampNumber(settings?.lineHeight, 1.35, 1.8, DEFAULT_CHAT_DISPLAY_SETTINGS.lineHeight),
+    paragraphSpacing: clampNumber(settings?.paragraphSpacing, 0, 12, DEFAULT_CHAT_DISPLAY_SETTINGS.paragraphSpacing),
+    messageSpacing: density,
+    contentWidth: clampNumber(settings?.contentWidth, 60, 90, DEFAULT_CHAT_DISPLAY_SETTINGS.contentWidth),
+    codeFontSize: clampNumber(settings?.codeFontSize, 11, 18, DEFAULT_CHAT_DISPLAY_SETTINGS.codeFontSize),
+    inputFontSize: settings?.inputFontSize === undefined
+      ? undefined
+      : clampNumber(settings.inputFontSize, 12, 20, DEFAULT_CHAT_DISPLAY_SETTINGS.fontSize),
+    fontFamily,
+  }
+}
+
+export function getChatDisplayStyleVars(settings?: Partial<ChatDisplaySettings> | null): CSSProperties {
+  const normalized = normalizeChatDisplaySettings(settings)
+  const density = CHAT_DISPLAY_DENSITY[normalized.messageSpacing]
+  const inputFontSize = normalized.inputFontSize ?? normalized.fontSize
+
+  return {
+    '--chat-font-size': `${normalized.fontSize}px`,
+    '--chat-line-height': normalized.lineHeight,
+    '--chat-paragraph-spacing': `${normalized.paragraphSpacing}px`,
+    '--chat-message-gap': `${density.messageGap}px`,
+    '--chat-block-gap': `${density.blockGap}px`,
+    '--chat-bubble-padding-x': `${density.bubblePaddingX}px`,
+    '--chat-bubble-padding-y': `${density.bubblePaddingY}px`,
+    '--chat-bubble-radius': `${density.bubbleRadius}px`,
+    '--chat-content-width': `${normalized.contentWidth}ch`,
+    '--chat-code-font-size': `${normalized.codeFontSize}px`,
+    '--chat-code-padding': `${density.codePadding}px`,
+    '--chat-input-font-size': `${inputFontSize}px`,
+    '--chat-font-family': CHAT_DISPLAY_FONT_FAMILIES[normalized.fontFamily],
+  } as CSSProperties
+}
 
 /** AI 引擎配置 */
 export interface EngineConfig {
@@ -210,6 +330,8 @@ export interface Config {
   web?: WebConfig;
   /** 交互配置（AskUserQuestion 等） */
   interaction?: InteractionConfig;
+  /** AI 对话窗口显示设置 */
+  chatDisplay?: ChatDisplaySettings;
   /** 工作区列表（跨桌面/Web 共享） */
   workspaces?: WorkspaceEntry[];
   /** 当前激活的工作区 ID */

@@ -81,7 +81,7 @@ export const AssistantBubble = memo(function AssistantBubble({
 
   return (
     <>
-      <div className="flex gap-2 my-2 group" onContextMenu={handleContextMenu}>
+      <div className="chat-assistant-message flex gap-2 group" onContextMenu={handleContextMenu}>
         {/* Avatar */}
         <div className="shrink-0 mt-0.5">
           <div className="w-5 h-5 rounded-full bg-primary-faint flex items-center justify-center">
@@ -90,7 +90,7 @@ export const AssistantBubble = memo(function AssistantBubble({
         </div>
 
         {/* 内容 */}
-        <div className="flex-1 space-y-1 min-w-0">
+        <div className="chat-assistant-content flex-1 min-w-0">
           {/* 头部信息 + hover 操作 */}
           <div className="flex items-baseline gap-2">
             <span className="text-sm font-medium text-text-primary">{getEngineDisplayName(message.engineId)}</span>
@@ -131,7 +131,7 @@ export const AssistantBubble = memo(function AssistantBubble({
             // 兼容旧格式（content 字符串）
             <MarkdownImageSurface>
               <div
-                className="prose prose-invert prose-sm max-w-none"
+                className="chat-prose prose prose-invert max-w-none"
                 dangerouslySetInnerHTML={{ __html: formatContent(message.content) }}
               />
             </MarkdownImageSurface>

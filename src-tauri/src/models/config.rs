@@ -569,6 +569,98 @@ impl Default for WindowSettings {
     }
 }
 
+/// 对话显示密度
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ChatDisplayDensity {
+    Compact,
+    Comfortable,
+    Spacious,
+}
+
+impl Default for ChatDisplayDensity {
+    fn default() -> Self {
+        Self::Comfortable
+    }
+}
+
+/// 对话字体族
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ChatDisplayFontFamily {
+    System,
+    Serif,
+    Mono,
+}
+
+impl Default for ChatDisplayFontFamily {
+    fn default() -> Self {
+        Self::System
+    }
+}
+
+/// AI 对话窗口显示设置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatDisplaySettings {
+    /// 正文字号 (px)
+    #[serde(default = "default_chat_font_size")]
+    pub font_size: u8,
+    /// 正文行高
+    #[serde(default = "default_chat_line_height")]
+    pub line_height: f32,
+    /// Markdown 段落间距 (px)
+    #[serde(default = "default_chat_paragraph_spacing")]
+    pub paragraph_spacing: u8,
+    /// 消息垂直密度
+    #[serde(default)]
+    pub message_spacing: ChatDisplayDensity,
+    /// AI 正文最大宽度 (ch)
+    #[serde(default = "default_chat_content_width")]
+    pub content_width: u8,
+    /// 代码字号 (px)
+    #[serde(default = "default_chat_code_font_size")]
+    pub code_font_size: u8,
+    /// 输入框字号 (px)，为空时跟随正文字号
+    #[serde(default)]
+    pub input_font_size: Option<u8>,
+    /// 对话字体族
+    #[serde(default)]
+    pub font_family: ChatDisplayFontFamily,
+}
+
+fn default_chat_font_size() -> u8 { 14 }
+fn default_chat_line_height() -> f32 { 1.55 }
+fn default_chat_paragraph_spacing() -> u8 { 4 }
+fn default_chat_content_width() -> u8 { 78 }
+fn default_chat_code_font_size() -> u8 { 13 }
+
+impl Default for ChatDisplaySettings {
+    fn default() -> Self {
+        Self {
+            font_size: default_chat_font_size(),
+            line_height: default_chat_line_height(),
+            paragraph_spacing: default_chat_paragraph_spacing(),
+            message_spacing: ChatDisplayDensity::default(),
+            content_width: default_chat_content_width(),
+            code_font_size: default_chat_code_font_size(),
+            input_font_size: None,
+            font_family: ChatDisplayFontFamily::default(),
+        }
+    }
+}
+
+impl ChatDisplaySettings {
+    pub fn validate(&mut self) {
+        self.font_size = self.font_size.clamp(12, 20);
+        self.line_height = self.line_height.clamp(1.35, 1.8);
+        self.paragraph_spacing = self.paragraph_spacing.clamp(0, 12);
+        self.content_width = self.content_width.clamp(60, 90);
+        self.code_font_size = self.code_font_size.clamp(11, 18);
+        self.input_font_size = self.input_font_size.map(|size| size.clamp(12, 20));
+    }
+}
+
 /// 语音识别配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -958,6 +1050,10 @@ pub struct Config {
     #[serde(default)]
     pub interaction: InteractionConfig,
 
+    /// AI 对话窗口显示设置
+    #[serde(default)]
+    pub chat_display: ChatDisplaySettings,
+
     /// 工作区列表（跨桌面/Web 共享，持久化到配置文件）
     #[serde(default)]
     pub workspaces: Vec<WorkspaceEntry>,
@@ -1013,6 +1109,7 @@ impl Default for Config {
             voice_commands: None,
             web: WebConfig::default(),
             interaction: InteractionConfig::default(),
+            chat_display: ChatDisplaySettings::default(),
             workspaces: Vec::new(),
             current_workspace_id: None,
             terminal_scripts: BTreeMap::new(),
@@ -1046,11 +1143,12 @@ impl Config {
         self.mimo_code.cli_path.clone()
     }
 
-    /// 确保 default_engine 有效
+    /// 确保 default_engine 与显示设置有效
     pub fn validate(&mut self) {
         if EngineId::parse(&self.default_engine).is_none() {
             self.default_engine = "claude-code".to_string();
         }
+        self.chat_display.validate();
     }
 
     /// 获取当前引擎 ID

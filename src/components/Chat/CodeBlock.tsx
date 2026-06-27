@@ -257,7 +257,7 @@ export const CodeBlock = memo(function CodeBlock({ children, className }: CodeBl
   }, [showLineNumbers, codeString]);
 
   return (
-    <div className="relative group rounded-lg overflow-hidden bg-background-base border border-border-subtle">
+    <div className="chat-code-block relative group rounded-lg overflow-hidden bg-background-base border border-border-subtle">
       {/* 顶部工具栏 */}
       <div className="flex items-center justify-between px-3 py-2 bg-background-elevated border-b border-border-subtle">
         {/* 语言标签 */}
@@ -355,7 +355,7 @@ export const CodeBlock = memo(function CodeBlock({ children, className }: CodeBl
               <span>{t('codeBlock.linesCollapsed', { count: lineCount })}</span>
             </div>
             {/* 显示前 3 行预览 */}
-            <pre className="text-sm text-text-tertiary opacity-60 overflow-hidden" style={{ maxHeight: '4.5em' }}>
+            <pre className="chat-code-text text-text-tertiary opacity-60 overflow-hidden" style={{ maxHeight: '4.5em' }}>
               <code>{codeString.split('\n').slice(0, 3).join('\n')}</code>
             </pre>
             {/* 渐变遮罩 */}
@@ -369,13 +369,13 @@ export const CodeBlock = memo(function CodeBlock({ children, className }: CodeBl
         ) : (
           /* 展开状态：显示完整代码 */
           <pre
-            className={`p-4 !bg-background-base !m-0 !rounded-none ${className || ''}`}
+            className={`chat-code-pre !bg-background-base !m-0 !rounded-none ${className || ''}`}
             style={{
               margin: 0,
             }}
           >
             {showLineNumbers ? (
-              <code className="hljs text-sm">
+              <code className="hljs chat-code-text">
                 {codeWithLineNumbers?.split('\n').map((line, index) => (
                   <div key={index} className="table-row">
                     <span className="table-cell pr-4 text-text-muted select-none text-right border-r border-border-subtle mr-4">
@@ -394,11 +394,11 @@ export const CodeBlock = memo(function CodeBlock({ children, className }: CodeBl
               </code>
             ) : useHighlight ? (
               <code
-                className="hljs text-sm"
+                className="hljs chat-code-text"
                 dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(displayCode, { ALLOWED_TAGS: ['span'], ALLOWED_ATTR: ['class'] }) }}
               />
             ) : (
-              <code className="text-sm text-text-secondary">{codeString}</code>
+              <code className="chat-code-text text-text-secondary">{codeString}</code>
             )}
           </pre>
         )}

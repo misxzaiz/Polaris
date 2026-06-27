@@ -18,6 +18,8 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import type { ChatMessage, AssistantChatMessage, TextBlock, ThinkingBlock } from '@/types';
+import { getChatDisplayStyleVars } from '@/types';
+import { useConfigStore } from '@/stores';
 import { useActiveSessionMessages, useActiveSessionStreaming, useSessionMessages, useSessionStreaming, useActiveSessionActions } from '@/stores/conversationStore/useActiveSession';
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
 import {
@@ -48,6 +50,9 @@ interface EnhancedChatMessagesProps {
 }
 
 export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage }: EnhancedChatMessagesProps = {}) {
+  const chatDisplay = useConfigStore((state) => state.config?.chatDisplay);
+  const chatDisplayStyle = useMemo(() => getChatDisplayStyleVars(chatDisplay), [chatDisplay]);
+
   // 根据是否提供 sessionId 选择使用对应的 hooks
   const activeSessionData = useActiveSessionMessages();
   const activeIsStreaming = useActiveSessionStreaming();
@@ -254,7 +259,7 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
   }), [scrollToMessage, scrollToTop, scrollToBottom]);
 
   return (
-    <div className="flex-1 overflow-hidden flex flex-col">
+    <div className="chat-display-root flex-1 overflow-hidden flex flex-col" style={chatDisplayStyle}>
       {/* 消息列表 */}
       <div className="flex-1 min-h-0 relative">
         <div className="h-full">

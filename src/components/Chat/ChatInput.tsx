@@ -8,11 +8,11 @@
  * - 文件引用 (@/path)
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { IconSend, IconStop, IconPaperclip } from '../Common/Icons'
 import { Sparkles } from 'lucide-react'
-import { useWorkspaceStore, useSessionStore, useToastStore } from '@/stores'
+import { useWorkspaceStore, useSessionStore, useToastStore, useConfigStore } from '@/stores'
 import { voiceNotificationService } from '@/services/voiceNotificationService'
 import { useActiveSessionInputDraft, useActiveSessionActions, useActiveSessionWorkspace, useActiveSessionPromptSuggestion } from '@/stores/conversationStore/useActiveSession'
 import { useDebouncedCallback } from '@/hooks/useDebounce'
@@ -25,6 +25,7 @@ import { useSnippetStore } from '@/stores/snippetStore'
 import { resolveTemplateVariables } from '@/services/workspaceReference'
 import type { FileMatch } from '@/services/fileSearch'
 import type { Workspace } from '@/types'
+import { getChatDisplayStyleVars } from '@/types'
 import type { Attachment } from '@/types/attachment'
 import { createLogger } from '@/utils/logger'
 import { normalizeEngineId } from '@/utils/engineDisplay'
@@ -75,6 +76,8 @@ export function ChatInput({
   statusBarSlot,
 }: ChatInputProps) {
   const { t } = useTranslation('chat')
+  const chatDisplay = useConfigStore((state) => state.config?.chatDisplay)
+  const chatDisplayStyle = useMemo(() => getChatDisplayStyleVars(chatDisplay), [chatDisplay])
 
   // 获取当前会话的工作区
   const currentWorkspace = useActiveSessionWorkspace()
@@ -816,7 +819,7 @@ export function ChatInput({
   const canSend = (value.trim() || attachments.length > 0) && !disabled && !isStreaming
 
   return (
-    <div className="border-t border-border bg-background-elevated relative" ref={containerRef}>
+    <div className="chat-input-root border-t border-border bg-background-elevated relative" ref={containerRef} style={chatDisplayStyle}>
       {/* 片段变量填写浮窗 */}
       {activeSnippet && (
         <SnippetParamPanel
@@ -893,7 +896,7 @@ export function ChatInput({
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder={attachments.length > 0 ? t('input.placeholderWithAttachment') : t('input.placeholder')}
-            className="w-full px-2.5 sm:px-3 pt-2 pb-1 bg-transparent text-text-primary placeholder:text-text-tertiary resize-none outline-none text-sm leading-relaxed border-0"
+            className="chat-input-text w-full px-2.5 sm:px-3 pt-2 pb-1 bg-transparent text-text-primary placeholder:text-text-tertiary resize-none outline-none border-0"
             disabled={disabled}
             maxHeight={200}
             minHeight={40}

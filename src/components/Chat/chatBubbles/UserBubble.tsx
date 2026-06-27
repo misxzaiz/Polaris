@@ -76,8 +76,8 @@ export const UserBubble = memo(function UserBubble({
 
   return (
     <>
-      <div className="flex justify-end my-2 group" onContextMenu={handleContextMenu}>
-        <div className="relative max-w-[85%]">
+      <div className="chat-user-message flex justify-end group" onContextMenu={handleContextMenu}>
+        <div className="chat-user-bubble-wrap relative max-w-[85%]">
           {/* Hover 操作栏 */}
           {onEdit && (
             <div className="absolute -top-8 right-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -97,7 +97,7 @@ export const UserBubble = memo(function UserBubble({
               </button>
             </div>
           )}
-          <div className="px-4 py-3 rounded-2xl
+          <div className="chat-user-bubble
                       bg-gradient-to-br from-primary to-primary-600
                       text-white shadow-glow">
             {/* 附件列表 */}
@@ -125,7 +125,7 @@ export const UserBubble = memo(function UserBubble({
                 })}
               </div>
             )}
-            <div className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+            <div className="chat-user-text whitespace-pre-wrap break-words">
               {message.content}
             </div>
           </div>

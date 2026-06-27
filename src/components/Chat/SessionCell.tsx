@@ -8,7 +8,7 @@
  * - 支持展开/关闭操作
  */
 
-import { memo, useCallback, useState, useRef } from 'react';
+import { memo, useCallback, useState, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { Loader2, XCircle, X, Circle, Maximize2, Minimize2, Square } from 'lucide-react';
@@ -16,7 +16,8 @@ import { SessionMessagesView } from './SessionMessagesView';
 import { useSessionMetadataList, useSessionManagerActions } from '@/stores/conversationStore/sessionStoreManager';
 import { useSessionStreaming, useSessionHasPendingQuestion } from '@/stores/conversationStore/useActiveSession';
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
-import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useWorkspaceStore, useConfigStore } from '@/stores';
+import { getChatDisplayStyleVars } from '@/types';
 import { WorkspaceBadge } from '../Session/WorkspaceBadge';
 import { WorkspaceMenu } from '../Session/WorkspaceMenu';
 import { getEngineDisplayName, getEngineFullName } from '@/utils/engineDisplay';
@@ -51,6 +52,9 @@ export const SessionCell = memo(function SessionCell({
 }: SessionCellProps) {
   const { t } = useTranslation('chat');
   const { switchSession, deleteSession } = useSessionManagerActions();
+
+  const chatDisplay = useConfigStore((state) => state.config?.chatDisplay);
+  const chatDisplayStyle = useMemo(() => getChatDisplayStyleVars(chatDisplay), [chatDisplay]);
 
   // 获取会话元数据
   const sessionMetadata = useSessionMetadataList().find(m => m.id === sessionId);
@@ -204,7 +208,7 @@ export const SessionCell = memo(function SessionCell({
         </div>
 
         {/* 消息区域 - 使用专门的多窗口消息组件 */}
-        <div className="flex-1 min-h-0 overflow-hidden bg-background-base">
+        <div className="chat-display-root flex-1 min-h-0 overflow-hidden bg-background-base" style={chatDisplayStyle}>
           <SessionMessagesView sessionId={sessionId} />
         </div>
       </div>

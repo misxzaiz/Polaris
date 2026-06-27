@@ -28,7 +28,7 @@ export const TextBlockRenderer = memo(function TextBlockRenderer({
   // 优势：流式→非流式切换时无 DOM 结构变化，避免视觉跳变
   return (
     <MarkdownImageSurface>
-      <div className="prose prose-invert prose-sm max-w-none">
+      <div className="chat-prose prose prose-invert max-w-none">
         <ProgressiveStreamingMarkdown content={block.content} completed={!isStreaming} />
       </div>
     </MarkdownImageSurface>
