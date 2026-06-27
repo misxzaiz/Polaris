@@ -272,6 +272,7 @@ pub async fn handle_ipc_bridge(
         "terminal_list" => dispatch_terminal_list(&state),
         "terminal_get" => dispatch_terminal_get(&state, &args),
         "terminal_discover_scripts" => dispatch_terminal_discover_scripts(&args).await,
+        #[cfg(feature = "tauri-app")]
         "terminal_open_in_external" => dispatch_terminal_open_in_external(&args),
 
         // ── Network ──────────────────────────────────────────────────────
@@ -1454,6 +1455,7 @@ async fn dispatch_terminal_discover_scripts(args: &Value) -> Result<Json<Value>,
     json_result!(crate::commands::terminal_script::terminal_discover_scripts(workspace_path).await)
 }
 
+#[cfg(feature = "tauri-app")]
 fn dispatch_terminal_open_in_external(args: &Value) -> Result<Json<Value>, WebError> {
     let command = require_string(args, "command")?;
     let cwd = args.get("cwd").and_then(|v| v.as_str()).map(|s| s.to_string());
