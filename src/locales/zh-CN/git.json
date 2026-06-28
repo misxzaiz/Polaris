@@ -38,7 +38,9 @@
   "restoreSuccess": "文件已恢复",
   "deleteUntrackedSuccess": "新文件已删除",
   "noDiscardableSelection": "当前选择中没有可撤回的修改",
-  "selectedFilesWithActions": "已选 {{count}} · 可加入 {{stageable}} · 可取消 {{unstageable}} · 可撤回 {{discardable}}",
+  "noDeletableSelection": "当前选择中没有可删除的文件",
+  "confirmDelete": "确定要删除 {{count}} 个文件吗？\n\n此操作将从磁盘删除文件，且无法撤销！",
+  "selectedFilesWithActions": "已选 {{count}} · 可加入 {{stageable}} · 可取消 {{unstageable}} · 可撤回 {{discardable}} · 可删除 {{deletable}}",
 
   "tabs": {
     "changes": "变更",
@@ -316,6 +318,7 @@
     "batchStageFailed": "批量暂存失败",
     "batchUnstageFailed": "批量取消暂存失败",
     "batchDiscardFailed": "批量丢弃失败",
+    "batchDeleteFailed": "批量删除失败",
     "initFailed": "初始化仓库失败",
     "getBranchesFailed": "获取分支列表失败",
     "getRemotesFailed": "获取远程仓库失败",
@@ -376,6 +379,7 @@
   "batchStageSuccess": "批量暂存成功",
   "batchUnstageSuccess": "批量取消暂存成功",
   "batchDiscardSuccess": "批量丢弃成功",
+  "batchDeleteSuccess": "批量删除成功",
   "push": {
     "dialogTitle": "推送到远程仓库",
     "selectRemote": "远程仓库",

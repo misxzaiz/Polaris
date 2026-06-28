@@ -1,2 +1,25 @@
 {
+  "rust-analyzer.check.allTargets": true,
+  "rust-analyzer.cargo.features": ["tauri-app"],
+  "rust-analyzer.linkedProjects": [
+    "src-tauri/Cargo.toml"
+  ],
+  "editor.formatOnSave": true,
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/target": true,
+    "**/.git": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/target": true,
+    "**/pnpm-lock.yaml": true
+  },
+  "debug.allowBreakpointsEverywhere": true
 }

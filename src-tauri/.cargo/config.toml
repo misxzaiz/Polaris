@@ -1,0 +1,21 @@
+[build]
+# 使用 mold 链接器加速 debug 构建（如果系统安装了 mold）
+# runner = "mold"
+
+[profile.dev]
+# 保留调试符号，优化级别保持默认（debug 构建更快）
+debug = true
+opt-level = 0
+
+# 增量编译，加速重复构建
+incremental = true
+
+[profile.dev.package."*"]
+# 依赖库使用较高优化级别，减少调试时的噪音
+opt-level = 2
+
+[profile.release]
+# Release 构建优化
+opt-level = 3
+lto = "thin"
+codegen-units = 1

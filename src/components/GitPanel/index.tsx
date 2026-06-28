@@ -4,7 +4,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, GitPullRequest, X, Check, RotateCcw, MoreHorizontal, GitBranch, FolderGit2, FileText, History, Archive, Globe, Tag, GitCommit, FileX, Maximize2, Rows3, Columns2 } from 'lucide-react'
+import { ChevronRight, GitPullRequest, X, Check, RotateCcw, MoreHorizontal, GitBranch, FolderGit2, FileText, History, Archive, Globe, Tag, GitCommit, FileX, Maximize2, Rows3, Columns2, Trash2 } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useToastStore } from '@/stores/toastStore'
@@ -27,6 +27,7 @@ import { logger } from '@/utils/logger'
 import type { GitFileChange, GitDiffEntry } from '@/types'
 import type { OpenDiffTabOptions } from '@/stores/tabStore'
 import { resolveWorkspacePath } from '@/utils/path'
+import { deleteFile } from '@/services/tauri/fileService'
 
 type TabType = 'changes' | 'history' | 'branch' | 'remote' | 'tags' | 'stash' | 'gitignore'
 
@@ -149,7 +150,7 @@ export function GitPanel({
 
   const getBatchActionCounts = useCallback(() => {
     if (!status || selectedFiles.size === 0) {
-      return { stageable: 0, unstageable: 0, discardable: 0 }
+      return { stageable: 0, unstageable: 0, discardable: 0, deletable: 0 }
     }
 
     const selected = Array.from(selectedFiles)
@@ -159,6 +160,9 @@ export function GitPanel({
       ).length,
       unstageable: selected.filter(path => status.staged.some(f => f.path === path)).length,
       discardable: selected.filter(path => status.unstaged.some(f => f.path === path)).length,
+      deletable: selected.filter(path =>
+        status.unstaged.some(f => f.path === path) || status.untracked.includes(path)
+      ).length,
     }
   }, [selectedFiles, status])
 
@@ -297,6 +301,50 @@ export function GitPanel({
       }
     })
   }, [currentWorkspace, selectedFiles, status, discardChanges, refreshStatus, toast, t])
+
+  const handleBatchDelete = useCallback(() => {
+    if (!currentWorkspace || selectedFiles.size === 0) return
+
+    const deletablePaths = Array.from(selectedFiles).filter(path => {
+      return status?.unstaged.some(f => f.path === path) ||
+             status?.untracked.includes(path)
+    })
+
+    if (deletablePaths.length === 0) {
+      toast.info(t('noDeletableSelection'))
+      return
+    }
+
+    setConfirmDialog({
+      show: true,
+      title: t('confirmDeleteTitle'),
+      message: t('confirmDelete', { count: deletablePaths.length }),
+      type: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(null)
+        setIsBatchOperating(true)
+        try {
+          setBatchProgress({ current: 0, total: deletablePaths.length })
+
+          for (let i = 0; i < deletablePaths.length; i++) {
+            const path = deletablePaths[i]
+            await deleteFile(resolveWorkspacePath(currentWorkspace.path, path))
+            setBatchProgress({ current: i + 1, total: deletablePaths.length })
+          }
+
+          await refreshStatus(currentWorkspace.path)
+          setSelectedFiles(new Set())
+          toast.success(t('batchDeleteSuccess'))
+        } catch (err) {
+          toast.error(t('errors.batchDeleteFailed'), err instanceof Error ? err.message : String(err))
+          await refreshStatus(currentWorkspace.path)
+        } finally {
+          setIsBatchOperating(false)
+          setBatchProgress(null)
+        }
+      }
+    })
+  }, [currentWorkspace, selectedFiles, status, refreshStatus, toast, t])
 
   const handleInitRepository = useCallback(async () => {
     if (!currentWorkspace) return
@@ -629,6 +677,7 @@ export function GitPanel({
                         stageable: counts.stageable,
                         unstageable: counts.unstageable,
                         discardable: counts.discardable,
+                        deletable: counts.deletable,
                       })
                     }
                   </span>
@@ -674,6 +723,14 @@ export function GitPanel({
                           variant: 'danger',
                           disabled: counts.discardable === 0,
                           onClick: handleBatchDiscard,
+                        },
+                        {
+                          key: 'delete',
+                          label: `${t('deleteFile')} (${counts.deletable})`,
+                          icon: <Trash2 size={14} />,
+                          variant: 'danger',
+                          disabled: counts.deletable === 0,
+                          onClick: handleBatchDelete,
                         },
                       ]}
                     />

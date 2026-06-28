@@ -38,7 +38,9 @@
   "restoreSuccess": "File restored",
   "deleteUntrackedSuccess": "Untracked file deleted",
   "noDiscardableSelection": "The current selection has no discardable changes",
-  "selectedFilesWithActions": "Selected {{count}} · stage {{stageable}} · unstage {{unstageable}} · discard {{discardable}}",
+  "noDeletableSelection": "The current selection has no deletable files",
+  "confirmDelete": "Are you sure you want to delete {{count}} files?\n\nThis will permanently delete them from disk!",
+  "selectedFilesWithActions": "Selected {{count}} · stage {{stageable}} · unstage {{unstageable}} · discard {{discardable}} · delete {{deletable}}",
 
   "tabs": {
     "changes": "Changes",
@@ -316,6 +318,7 @@
     "batchStageFailed": "Batch stage failed",
     "batchUnstageFailed": "Batch unstage failed",
     "batchDiscardFailed": "Batch discard failed",
+    "batchDeleteFailed": "Batch delete failed",
     "initFailed": "Failed to initialize repository",
     "getBranchesFailed": "Failed to get branch list",
     "getRemotesFailed": "Failed to get remote repositories",
@@ -376,6 +379,7 @@
   "batchStageSuccess": "Batch stage successful",
   "batchUnstageSuccess": "Batch unstage successful",
   "batchDiscardSuccess": "Batch discard successful",
+  "batchDeleteSuccess": "Batch delete successful",
   "push": {
     "dialogTitle": "Push to Remote",
     "selectRemote": "Remote Repository",
