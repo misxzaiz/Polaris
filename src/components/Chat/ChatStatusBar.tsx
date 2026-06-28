@@ -329,7 +329,7 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
         )}
 
         {/* 通话：全屏语音伙伴（声波图标，与听写区分） */}
-        <button
+        {/* <button
           onClick={openVoiceCompanion}
           className={clsx(btnBase, 'text-primary hover:bg-primary/10')}
           title={t('voiceCompanion.entry', `和${companionName}语音通话`)}
@@ -338,7 +338,7 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
           {(withLabel || containerWidth >= BREAKPOINTS.wide) && (
             <span>{companionName}</span>
           )}
-        </button>
+        </button> */}
 
         {/* 朗读：TTS 控制（任意状态可关） */}
         <button
