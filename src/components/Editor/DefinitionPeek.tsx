@@ -185,17 +185,17 @@ function PeekInner({ ctx }: InnerProps) {
       className="bg-background-elevated rounded-lg border border-border shadow-glow overflow-hidden animate-in fade-in zoom-in-95 duration-100"
     >
       {/* 头部 */}
-      <div className="px-3 py-1.5 border-b border-border text-[10px] text-text-tertiary uppercase tracking-wide flex items-center gap-2">
-        <FileCode className="w-3 h-3" />
-        <span>跳转定义</span>
-        <span className="text-text-primary font-mono normal-case">「{symbol}」</span>
-        <span className="ml-auto normal-case text-text-tertiary">
-          {items.length} 候选
+      <div className="px-2.5 py-1 border-b border-border flex items-center gap-1.5">
+        <FileCode className="w-3 h-3 text-text-tertiary" />
+        <span className="text-[10px] text-text-tertiary">跳转定义</span>
+        <span className="text-[10px] text-text-primary font-mono">「{symbol}」</span>
+        <span className="ml-auto text-[9px] text-text-tertiary font-mono">
+          {items.length}候选
         </span>
       </div>
 
       {/* 列表 */}
-      <div ref={listRef} className="max-h-[260px] overflow-y-auto">
+      <div ref={listRef} className="max-h-[240px] overflow-y-auto">
         {visible.map((it, idx) => {
           const selected = idx === selectedIndex;
           const isFirst = idx === 0;
@@ -206,23 +206,23 @@ function PeekInner({ ctx }: InnerProps) {
               data-peek-idx={idx}
               onClick={() => void jump(it)}
               onMouseEnter={() => setSelectedIndex(idx)}
-              className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors ${
+              className={`w-full flex items-center gap-1.5 px-2.5 text-left transition-colors min-h-[20px] ${
                 selected ? 'bg-primary/15' : 'hover:bg-background-hover'
               } ${isFirst ? 'border-l-2 border-primary' : ''}`}
               title={it.path}
             >
               {/* kind 图标 */}
               <span
-                className={`flex-shrink-0 w-4 h-4 rounded text-[10px] font-mono font-bold flex items-center justify-center ${badge.cls}`}
+                className={`flex-shrink-0 w-3.5 h-3.5 rounded text-[9px] font-mono font-bold flex items-center justify-center ${badge.cls}`}
               >
                 {badge.ch}
               </span>
               {/* 主信息：FQN 或 文件名 */}
-              <span className="flex-1 min-w-0 flex flex-col">
-                <span className="text-xs text-text-primary font-mono truncate">
+              <span className="flex-1 min-w-0 flex items-center gap-1">
+                <span className="text-[11px] text-text-primary font-mono truncate">
                   {it.fqn ?? `${fileNameOf(it.path)}`}
                 </span>
-                <span className="text-[10px] text-text-tertiary truncate">
+                <span className="text-[9px] text-text-tertiary font-mono flex-shrink-0">
                   {compressPath(it.path)}:{it.line}
                 </span>
               </span>
@@ -233,22 +233,20 @@ function PeekInner({ ctx }: InnerProps) {
         {remaining > 0 && (
           <button
             onClick={() => promote()}
-            className="w-full flex items-center justify-center gap-2 px-3 py-1.5 text-[11px] text-text-secondary hover:bg-background-hover border-t border-border/40"
+            className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1 text-[10px] text-text-secondary hover:bg-background-hover border-t border-border/40"
           >
-            <span>还有 {remaining} 个候选 — 查看全部</span>
-            <ChevronRight className="w-3 h-3" />
+            <span>+{remaining} 全部</span>
+            <ChevronRight className="w-2.5 h-2.5" />
           </button>
         )}
       </div>
 
       {/* 底部提示 */}
-      <div className="px-3 py-1 border-t border-border text-[10px] text-text-tertiary flex items-center gap-3">
-        <span>↑↓ 导航</span>
-        <span>
-          <CornerDownLeft className="inline w-2.5 h-2.5" /> 跳转
-        </span>
-        <span>Tab 全部</span>
-        <span>Esc 关闭</span>
+      <div className="px-2.5 py-0.5 border-t border-border text-[9px] text-text-tertiary flex items-center gap-2">
+        <span>↑↓</span>
+        <span><CornerDownLeft className="inline w-2 h-2" /> 跳转</span>
+        <span>Tab</span>
+        <span>Esc</span>
       </div>
     </div>
   );

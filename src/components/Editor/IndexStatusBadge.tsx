@@ -120,17 +120,18 @@ function IndexStatusDetail({
   const { icon, label, color } = visualOf(status);
 
   return (
-    <div className="p-3 space-y-2">
-      <div className="flex items-center gap-2">
+    <div className="p-2 space-y-1.5">
+      <div className="flex items-center gap-1.5">
         <span className={color}>{icon}</span>
-        <span className="font-medium text-text-primary">索引引擎</span>
-        <span className="ml-auto text-text-tertiary normal-case">{label}</span>
+        <span className="font-medium text-text-primary text-[11px]">索引引擎</span>
+        <span className="ml-auto text-text-tertiary text-[10px]">{label}</span>
       </div>
 
       {status.state === 'building' && (
         <div>
-          <div className="text-[10px] text-text-tertiary mb-1">
-            构建中：{status.progressDone} / {status.progressTotal || '…'}
+          <div className="flex justify-between text-[9px] text-text-tertiary mb-0.5">
+            <span>构建中</span>
+            <span className="font-mono">{status.progressDone}/{status.progressTotal || '…'}</span>
           </div>
           <div className="h-1 bg-background rounded overflow-hidden">
             <div
@@ -147,46 +148,46 @@ function IndexStatusDetail({
       )}
 
       {status.state === 'error' && status.error && (
-        <div className="text-[11px] text-danger break-words">{status.error}</div>
+        <div className="text-[10px] text-danger break-words">{status.error}</div>
       )}
 
-      <div className="grid grid-cols-3 gap-2 text-[11px]">
+      <div className="grid grid-cols-3 gap-1 text-[10px]">
         <div className="text-center">
           <div className="text-text-secondary font-mono">{formatNumber(status.files)}</div>
-          <div className="text-text-tertiary text-[10px]">文件</div>
+          <div className="text-text-tertiary text-[8px]">文件</div>
         </div>
         <div className="text-center">
           <div className="text-text-secondary font-mono">{formatNumber(status.symbols)}</div>
-          <div className="text-text-tertiary text-[10px]">符号</div>
+          <div className="text-text-tertiary text-[8px]">符号</div>
         </div>
         <div className="text-center">
           <div className="text-text-secondary font-mono">{formatNumber(status.refs)}</div>
-          <div className="text-text-tertiary text-[10px]">引用</div>
+          <div className="text-text-tertiary text-[8px]">引用</div>
         </div>
       </div>
 
       {status.lastBuiltAt && (
-        <div className="text-[10px] text-text-tertiary">
+        <div className="text-[9px] text-text-tertiary">
           上次构建：{relativeTime(status.lastBuiltAt)}
         </div>
       )}
 
-      <div className="flex gap-2 pt-1">
+      <div className="flex gap-1 pt-0.5">
         <button
           onClick={() => void onRebuild()}
           disabled={rebuilding || status.state === 'building'}
-          className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-background hover:bg-background-hover border border-border rounded text-[11px] disabled:opacity-50"
+          className="flex-1 flex items-center justify-center gap-1 px-1.5 py-0.5 bg-background hover:bg-background-hover border border-border rounded text-[10px] disabled:opacity-50"
         >
           {rebuilding || status.state === 'building' ? (
-            <Loader2 className="w-3 h-3 animate-spin" />
+            <Loader2 className="w-2.5 h-2.5 animate-spin" />
           ) : (
-            <RefreshCw className="w-3 h-3" />
+            <RefreshCw className="w-2.5 h-2.5" />
           )}
-          重建索引
+          重建
         </button>
         <button
           onClick={onClose}
-          className="px-2 py-1 hover:bg-background-hover border border-border rounded text-[11px] text-text-tertiary"
+          className="px-1.5 py-0.5 hover:bg-background-hover border border-border rounded text-[10px] text-text-tertiary"
         >
           关闭
         </button>
