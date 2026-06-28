@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   ChevronRight,
@@ -17,6 +17,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   FileClock,
+  Clipboard,
 } from 'lucide-react'
 import { DiffViewer } from '@/components/Diff/DiffViewer'
 import type { DiffViewMode } from '@/components/Diff/DiffViewer'
@@ -29,6 +30,7 @@ import type { OpenDiffTabOptions } from '@/stores/tabStore'
 import { resolveWorkspacePath } from '@/utils/path'
 import { getDiffKey, formatRelativeTime } from './historyTabUtils'
 import type { FileListMode, CopyAction } from './historyTabUtils'
+import { ContextMenu, type ContextMenuItem } from '@/components/FileExplorer/ContextMenu'
 
 interface CommitDetailsPaneProps {
   selectedCommit: GitCommitType | null
@@ -98,6 +100,61 @@ export function CommitDetailsPane({
 }: CommitDetailsPaneProps) {
   const { t } = useTranslation('git')
 
+  const [fileContextMenu, setFileContextMenu] = useState<{ x: number; y: number; file: GitDiffEntry } | null>(null)
+
+  const closeFileContextMenu = useCallback(() => setFileContextMenu(null), [])
+
+  const buildFileContextMenuItems = useCallback((file: GitDiffEntry): ContextMenuItem[] => {
+    const items: ContextMenuItem[] = [
+      {
+        id: 'open-diff',
+        label: t('history.openDiffInEditor'),
+        icon: <ExternalLink size={14} />,
+        action: () => {
+          if (!selectedCommit || !onOpenDiffInTab) return
+          onOpenDiffInTab(file, {
+            identity: `history:${selectedCommit.sha}:${getDiffKey(file)}`,
+            titleContext: selectedCommit.shortSha,
+            metadata: {
+              commitSha: selectedCommit.sha,
+              shortSha: selectedCommit.shortSha,
+              source: isFileHistoryMode ? 'file-history' : 'commit-history',
+            },
+          })
+        },
+      },
+      {
+        id: 'copy-path',
+        label: t('history.copyFilePath'),
+        icon: <Clipboard size={14} />,
+        action: () => onCopyText(file.file_path, 'filePath'),
+      },
+      {
+        id: 'view-history',
+        label: t('history.viewFileHistory'),
+        icon: <FileClock size={14} />,
+        action: () => void onLoadFileHistory(file.file_path),
+      },
+    ]
+
+    if (file.change_type !== 'deleted' && onOpenFileInEditor) {
+      items.push({
+        id: 'open-file',
+        label: t('history.openFileInEditor'),
+        icon: <FileText size={14} />,
+        action: () => onOpenFileInEditor(resolveWorkspacePath(currentWorkspacePath, file.file_path)),
+      })
+    }
+
+    return items
+  }, [currentWorkspacePath, isFileHistoryMode, onLoadFileHistory, onOpenDiffInTab, onOpenFileInEditor, onCopyText, selectedCommit, t])
+
+  const handleFileContextMenu = useCallback((e: React.MouseEvent, file: GitDiffEntry) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setFileContextMenu({ x: e.clientX, y: e.clientY, file })
+  }, [])
+
   const openSelectedDiffInTab = useCallback(() => {
     if (!selectedCommit || !selectedFileDiff) return
 
@@ -152,6 +209,7 @@ export function CommitDetailsPane({
         className={`group flex items-center border-b border-border-subtle hover:bg-background-hover transition-colors ${
           isSelected ? 'bg-primary/5' : ''
         }`}
+        onContextMenu={(e) => handleFileContextMenu(e, file)}
       >
         <button
           type="button"
@@ -462,6 +520,16 @@ export function CommitDetailsPane({
           </div>
         </div>
       ) : null}
+
+      {fileContextMenu && (
+        <ContextMenu
+          visible
+          x={fileContextMenu.x}
+          y={fileContextMenu.y}
+          items={buildFileContextMenuItems(fileContextMenu.file)}
+          onClose={closeFileContextMenu}
+        />
+      )}
     </div>
   )
 }

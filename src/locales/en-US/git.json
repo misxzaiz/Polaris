@@ -297,6 +297,7 @@
     "fileHistorySearchPlaceholder": "Search this file's commits...",
     "clearSearch": "Clear search",
     "noSearchResults": "No matching commits found",
+    "copyFilePath": "Copy file path",
     "timeout": "Request timeout ({{timeout}}ms)",
     "invalidDataFormat": "Invalid data format, expected array, got: {{type}}"
   },

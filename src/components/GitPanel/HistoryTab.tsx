@@ -17,9 +17,13 @@ import {
   FileClock,
   GitBranch as GitBranchIcon,
   ArrowLeft,
+  Copy,
+  GitMerge,
+  RotateCcw,
 } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { useToastStore } from '@/stores/toastStore'
 import type {
   GitCommit as GitCommitType,
   GitCommitDetails,
@@ -28,6 +32,8 @@ import type {
 } from '@/types/git'
 import type { OpenDiffTabOptions } from '@/stores/tabStore'
 import { createLogger } from '@/utils/logger'
+import { ContextMenu, type ContextMenuItem } from '@/components/FileExplorer/ContextMenu'
+import { ConfirmDialog } from '@/components/Common/ConfirmDialog'
 import {
   PAGE_SIZE,
   COMMIT_LIST_MIN_WIDTH,
@@ -114,17 +120,29 @@ export function HistoryTab({
   const copyResetTimerRef = useRef<number | null>(null)
   const paneResizeCleanupRef = useRef<(() => void) | null>(null)
 
+  const [commitContextMenu, setCommitContextMenu] = useState<{ x: number; y: number; commit: GitCommitType } | null>(null)
+  const [confirmDialog, setConfirmDialog] = useState<{
+    show: boolean
+    title: string
+    message: string
+    type?: 'danger' | 'warning'
+    onConfirm: () => void
+  } | null>(null)
+
   const getLog = useGitStore((s) => s.getLog)
   const getCommitDetails = useGitStore((s) => s.getCommitDetails)
   const getFileHistory = useGitStore((s) => s.getFileHistory)
   const branches = useGitStore((s) => s.branches)
   const getBranches = useGitStore((s) => s.getBranches)
   const currentBranchName = useGitStore((s) => s.status?.branch ?? '')
+  const cherryPick = useGitStore((s) => s.cherryPick)
+  const revert = useGitStore((s) => s.revert)
   const currentWorkspace = useWorkspaceStore((s) => {
     const { workspaces, currentWorkspaceId, viewingWorkspaceId } = s
     const targetId = viewingWorkspaceId || currentWorkspaceId
     return workspaces.find(w => w.id === targetId) || null
   })
+  const toast = useToastStore()
 
   const isWorkbench = variant === 'workbench'
   const isFileHistoryMode = fileHistoryPath !== null
@@ -541,6 +559,14 @@ export function HistoryTab({
     loadCommits()
   }, [fileHistoryPath, loadCommits, loadFileHistory])
 
+  const closeCommitContextMenu = useCallback(() => setCommitContextMenu(null), [])
+
+  const handleCommitContextMenu = useCallback((e: React.MouseEvent, commit: GitCommitType) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setCommitContextMenu({ x: e.clientX, y: e.clientY, commit })
+  }, [])
+
   const handleBranchFilterChange = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
     const nextBranch = event.target.value
     if (nextBranch === selectedBranch) return
@@ -583,6 +609,73 @@ export function HistoryTab({
       log.error('Failed to copy commit text', err instanceof Error ? err : new Error(String(err)))
     }
   }, [])
+
+  const buildCommitContextMenuItems = useCallback((commit: GitCommitType): ContextMenuItem[] => {
+    const items: ContextMenuItem[] = [
+      {
+        id: 'copy-sha',
+        label: t('history.copySha'),
+        icon: <Copy size={14} />,
+        action: () => copyText(commit.sha, 'sha'),
+      },
+      {
+        id: 'copy-message',
+        label: t('history.copyMessage'),
+        icon: <Copy size={14} />,
+        action: () => copyText(commit.message, 'message'),
+      },
+      { id: 'sep-1', label: '-', icon: undefined, action: () => {} },
+      {
+        id: 'cherry-pick',
+        label: t('cherryPick.button'),
+        icon: <GitMerge size={14} />,
+        action: () => {
+          if (!currentWorkspace) return
+          setConfirmDialog({
+            show: true,
+            title: t('cherryPick.title'),
+            message: t('cherryPick.confirm'),
+            onConfirm: async () => {
+              setConfirmDialog(null)
+              try {
+                await cherryPick(currentWorkspace.path, commit.sha)
+                toast.success(t('cherryPick.success'))
+                void loadCommits()
+              } catch (err) {
+                const errorMsg = err instanceof Error ? err.message : String(err)
+                toast.error(t('cherryPick.failed', { error: errorMsg }))
+              }
+            },
+          })
+        },
+      },
+      {
+        id: 'revert',
+        label: t('revert.button'),
+        icon: <RotateCcw size={14} />,
+        action: () => {
+          if (!currentWorkspace) return
+          setConfirmDialog({
+            show: true,
+            title: t('revert.title'),
+            message: t('revert.confirm'),
+            onConfirm: async () => {
+              setConfirmDialog(null)
+              try {
+                await revert(currentWorkspace.path, commit.sha)
+                toast.success(t('revert.success'))
+                void loadCommits()
+              } catch (err) {
+                const errorMsg = err instanceof Error ? err.message : String(err)
+                toast.error(t('revert.failed', { error: errorMsg }))
+              }
+            },
+          })
+        },
+      },
+    ]
+    return items
+  }, [cherryPick, copyText, currentWorkspace, loadCommits, revert, t, toast])
 
   // 在中央编辑器打开某提交中某文件的 diff（复用同一标签页，identity 去重）
   const openFileDiffInTab = useCallback((commit: GitCommitType, file: GitDiffEntry) => {
@@ -752,6 +845,7 @@ export function HistoryTab({
       <Fragment key={commit.sha}>
         <div
           onClick={() => handleCommitRowClick(commit)}
+          onContextMenu={(e) => handleCommitContextMenu(e, commit)}
           title={`${subject}\n${commit.author}`}
           className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer border-l-2 transition-colors ${
             isSelected ? 'bg-primary/10 border-primary' : 'border-transparent hover:bg-background-hover'
@@ -780,6 +874,7 @@ export function HistoryTab({
       <div
         key={`${entry.commit.sha}:${getDiffKey(entry.file)}`}
         onClick={() => handleFileHistoryRowClick(entry)}
+        onContextMenu={(e) => handleCommitContextMenu(e, entry.commit)}
         title={`${subject}\n${entry.commit.author}`}
         className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer border-l-2 transition-colors ${
           isSelected ? 'bg-primary/10 border-primary' : 'border-transparent hover:bg-background-hover'
@@ -1026,6 +1121,26 @@ export function HistoryTab({
         <div className="flex-1 flex flex-col min-h-0">
           {renderCommitList()}
         </div>
+      )}
+
+      {commitContextMenu && (
+        <ContextMenu
+          visible
+          x={commitContextMenu.x}
+          y={commitContextMenu.y}
+          items={buildCommitContextMenuItems(commitContextMenu.commit)}
+          onClose={closeCommitContextMenu}
+        />
+      )}
+
+      {confirmDialog?.show && (
+        <ConfirmDialog
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          type={confirmDialog.type}
+          onConfirm={confirmDialog.onConfirm}
+          onCancel={() => setConfirmDialog(null)}
+        />
       )}
     </div>
   )

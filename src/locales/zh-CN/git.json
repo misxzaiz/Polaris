@@ -297,6 +297,7 @@
     "fileHistorySearchPlaceholder": "搜索此文件的提交...",
     "clearSearch": "清空搜索",
     "noSearchResults": "未找到匹配的提交",
+    "copyFilePath": "复制文件路径",
     "timeout": "请求超时 ({{timeout}}ms)",
     "invalidDataFormat": "数据格式错误，期望数组，实际为: {{type}}"
   },
