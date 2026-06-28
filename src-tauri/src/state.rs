@@ -193,8 +193,6 @@ pub struct AppState {
     pub proxy_manager: crate::services::ProxyManager,
     /// 插件服务管理器 — 管理插件声明的后台服务
     pub plugin_service_manager: Arc<crate::services::plugin_service_manager::PluginServiceManager>,
-    /// Spring Boot 内置调试会话管理器（JDI 代理子进程）
-    pub spring_debug: Mutex<crate::commands::spring_boot_debug::DebugManager>,
 }
 
 /// 创建应用状态
@@ -232,7 +230,6 @@ pub fn create_app_state(
         plugin_service_manager: Arc::new(
             crate::services::plugin_service_manager::PluginServiceManager::new(),
         ),
-        spring_debug: Mutex::new(crate::commands::spring_boot_debug::DebugManager::new()),
     }
 }
 
@@ -300,7 +297,6 @@ impl AppState {
             web_server_handle: self.web_server_handle.clone(),
             proxy_manager: crate::services::ProxyManager::new(),
             plugin_service_manager: self.plugin_service_manager.clone(),
-            spring_debug: Mutex::new(crate::commands::spring_boot_debug::DebugManager::new()),
         }
     }
 }

@@ -125,11 +125,6 @@ use commands::terminal::{
 #[cfg(feature = "tauri-app")]
 use commands::terminal_script::terminal_discover_scripts;
 #[cfg(feature = "tauri-app")]
-use commands::spring_boot_debug::{
-    spring_boot_debug_start, spring_boot_debug_send, spring_boot_debug_stop,
-    spring_boot_debug_java_path,
-};
-#[cfg(feature = "tauri-app")]
 use commands::diagnostics::get_todo_mcp_diagnostics;
 #[cfg(feature = "tauri-app")]
 use commands::prompt_snippet::{
@@ -842,11 +837,6 @@ pub fn run() {
             terminal_get,
             terminal_discover_scripts,
             terminal_open_in_external,
-            // Spring Boot 内置调试
-            spring_boot_debug_start,
-            spring_boot_debug_send,
-            spring_boot_debug_stop,
-            spring_boot_debug_java_path,
             // Todo 相关
             commands::todo::list_todos,
             commands::todo::create_todo,

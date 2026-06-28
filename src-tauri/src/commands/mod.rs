@@ -21,12 +21,6 @@ pub mod integration;
 pub mod scheduler;
 pub mod terminal;
 pub mod terminal_script;
-pub mod spring_boot_debug;
-#[cfg(feature = "tauri-app")]
-pub use spring_boot_debug::{
-    spring_boot_debug_start, spring_boot_debug_send, spring_boot_debug_stop,
-    spring_boot_debug_java_path,
-};
 pub mod file_watcher;
 pub mod diagnostics;
 pub mod todo;
