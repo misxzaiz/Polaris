@@ -22,6 +22,7 @@ import { tags } from '@lezer/highlight';
 import { createLogger } from '@/utils/logger';
 import { useFileEditorStore } from '@/stores/fileEditorStore';
 import { useEditorSettingsStore } from '@/stores/editorSettingsStore';
+import { useEditorContextStore } from '@/stores/editorContextStore';
 import { useLspStore } from '@/stores/lspStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { formatDocumentForFile } from '@/services/lsp/lspFormatting';
@@ -201,6 +202,42 @@ export function CodeMirrorEditor({
 
     let cancelled = false;
 
+    /**
+     * 右键菜单上下文捕获：在 contextmenu 事件触发时，
+     * 将当前编辑器的文件路径和选区位置写入 editorContextStore，
+     * 供全局 SelectionContextMenu 读取并生成结构化引用。
+     */
+    function handleContextMenuCapture() {
+      const view = viewRef.current;
+      const currentPath = filePathRef.current;
+      if (!view || !currentPath) return;
+
+      const sel = view.state.selection.main;
+      const doc = view.state.doc;
+
+      const fromLine = doc.lineAt(sel.from);
+      const toLine = doc.lineAt(sel.to);
+
+      const workspace = useWorkspaceStore.getState().getCurrentWorkspace();
+      let relativePath: string | null = null;
+      if (workspace?.path) {
+        const normalized = currentPath.replace(/\\/g, '/');
+        const wsPath = workspace.path.replace(/\\/g, '/').replace(/\/$/, '');
+        relativePath = normalized.startsWith(wsPath)
+          ? normalized.slice(wsPath.length + 1)
+          : normalized;
+      }
+
+      useEditorContextStore.getState().setSelectionContext({
+        filePath: currentPath,
+        relativePath,
+        lineStart: fromLine.number,
+        lineEnd: toLine.number,
+        columnStart: sel.from - fromLine.from + 1,
+        columnEnd: sel.to - toLine.from + 1,
+      });
+    }
+
     // 异步创建编辑器（需要加载语言扩展）
     const createEditor = async () => {
       // 检查缓冲区中是否有缓存的 EditorState
@@ -216,6 +253,9 @@ export function CodeMirrorEditor({
           parent: containerRef.current,
         });
         viewRef.current = view;
+
+        // 注册右键菜单上下文捕获
+        view.dom.addEventListener('contextmenu', handleContextMenuCapture);
 
         // 检查是否有待跳转的行号
         applyPendingGoto(view);
@@ -321,6 +361,9 @@ export function CodeMirrorEditor({
       });
       viewRef.current = view;
 
+      // 注册右键菜单上下文捕获
+      view.dom.addEventListener('contextmenu', handleContextMenuCapture);
+
       log.debug('Editor view created successfully');
 
       // 检查是否有待跳转的行号
@@ -357,6 +400,9 @@ export function CodeMirrorEditor({
     return () => {
       cancelled = true;
       if (viewRef.current) {
+        // 移除右键菜单上下文捕获
+        viewRef.current.dom.removeEventListener('contextmenu', handleContextMenuCapture);
+        useEditorContextStore.getState().clearSelectionContext();
         // 保存 EditorState（保留 undo 历史、光标、折叠等）
         const currentPath = filePathRef.current;
         if (currentPath) {

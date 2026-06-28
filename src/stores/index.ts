@@ -13,6 +13,7 @@ export { useViewStore } from './viewStore';
 export { useGitStore } from './gitStore/index';
 export { useTabStore } from './tabStore';
 export { useEditorSettingsStore } from './editorSettingsStore';
+export { useEditorContextStore } from './editorContextStore';
 export { useTranslateStore } from './translateStore';
 export {
   useIntegrationStore,
