@@ -12,9 +12,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useTranslateStore, useConfigStore, useViewStore, useWorkspaceStore } from '@/stores';
+import { useEditorContextStore } from '@/stores/editorContextStore';
 import { useActiveSessionActions } from '@/stores/conversationStore/useActiveSession';
 import { baiduTranslate } from '@/services/tauri';
-import { Copy, Search, Languages, Quote, MessageSquare, Check, X, Send, Loader2 } from 'lucide-react';
+import { Copy, Search, Languages, Quote, MessageSquare, Check, X, Send, Loader2, FileCode } from 'lucide-react';
 
 interface Position {
   x: number;
@@ -51,6 +52,7 @@ export function SelectionContextMenu() {
   const setSourceText = useTranslateStore((state) => state.setSourceText);
   const { sendMessage } = useActiveSessionActions();
   const currentWorkspace = useWorkspaceStore((state) => state.getCurrentWorkspace());
+  const editorContext = useEditorContextStore((state) => state.selectionContext);
 
   // 右键菜单显示
   const handleContextMenu = useCallback((e: MouseEvent) => {
@@ -99,6 +101,13 @@ export function SelectionContextMenu() {
     };
   }, [handleContextMenu, handleClickOutside, handleKeyDown]);
 
+  // 菜单关闭时清理编辑器上下文
+  useEffect(() => {
+    if (!selection) {
+      useEditorContextStore.getState().clearSelectionContext();
+    }
+  }, [selection]);
+
   // 聚焦输入框
   useEffect(() => {
     if (mode === 'askAIModal' && inputRef.current) {
@@ -109,7 +118,8 @@ export function SelectionContextMenu() {
   // 调整菜单位置
   const adjustPosition = useCallback((pos: Position) => {
     const menuWidth = 280;
-    const menuHeight = mode === 'menu' ? 200 : mode === 'translateResult' ? 180 : 200;
+    const baseHeight = mode === 'menu' ? 200 : mode === 'translateResult' ? 180 : 200;
+    const menuHeight = baseHeight + (editorContext?.filePath ? 36 : 0);
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
 
@@ -124,7 +134,7 @@ export function SelectionContextMenu() {
     }
 
     return { x: Math.max(8, x), y: Math.max(8, y) };
-  }, [mode]);
+  }, [mode, editorContext?.filePath]);
 
   // 复制
   const handleCopy = async () => {
@@ -202,11 +212,37 @@ export function SelectionContextMenu() {
     }
   };
 
-  // 复制引用
+  // 复制引用（带文件相对路径和行列号）
   const handleCopyQuote = async () => {
     if (!selection) return;
-    const quotedText = `> ${selection.text}`;
-    await navigator.clipboard.writeText(quotedText);
+
+    const ctx = editorContext;
+    if (ctx?.relativePath) {
+      const lineInfo = ctx.lineStart === ctx.lineEnd
+        ? `${ctx.lineStart}:${ctx.columnStart}-${ctx.columnEnd}`
+        : `${ctx.lineStart}:${ctx.columnStart}-${ctx.lineEnd}:${ctx.columnEnd}`;
+      await navigator.clipboard.writeText(`# ${ctx.relativePath}:${lineInfo}`);
+    } else {
+      await navigator.clipboard.writeText(selection.text);
+    }
+
+    setSelection(null);
+  };
+
+  // 复制引用（带文件全路径和行列号）
+  const handleCopyFullPathQuote = async () => {
+    if (!selection) return;
+
+    const ctx = editorContext;
+    if (ctx?.filePath) {
+      const lineInfo = ctx.lineStart === ctx.lineEnd
+        ? `${ctx.lineStart}:${ctx.columnStart}-${ctx.columnEnd}`
+        : `${ctx.lineStart}:${ctx.columnStart}-${ctx.lineEnd}:${ctx.columnEnd}`;
+      await navigator.clipboard.writeText(`# ${ctx.filePath}:${lineInfo}`);
+    } else {
+      await navigator.clipboard.writeText(selection.text);
+    }
+
     setSelection(null);
   };
 
@@ -215,12 +251,22 @@ export function SelectionContextMenu() {
     setMode('askAIModal');
   };
 
-  // 发送引用问 AI
+  // 发送引用问 AI（带文件上下文）
   const handleSendAskAI = async () => {
     if (!selection || !currentWorkspace) return;
 
     const question = aiQuestion.trim() || '请解释这段内容';
-    const message = `> ${selection.text}\n\n${question}`;
+    const ctx = editorContext;
+
+    let contextHeader = '';
+    if (ctx?.relativePath) {
+      const lineInfo = ctx.lineStart === ctx.lineEnd
+        ? `行 ${ctx.lineStart}`
+        : `行 ${ctx.lineStart}-${ctx.lineEnd}`;
+      contextHeader = `文件: ${ctx.relativePath} (${lineInfo})\n`;
+    }
+
+    const message = `${contextHeader}> ${selection.text}\n\n${question}`;
 
     await sendMessage(message, currentWorkspace.path);
     setSelection(null);
@@ -371,6 +417,12 @@ export function SelectionContextMenu() {
       label: t('copyQuote') || '复制引用',
       onClick: handleCopyQuote,
     },
+    ...(editorContext?.filePath ? [{
+      id: 'copyFullPathQuote',
+      icon: <FileCode size={14} />,
+      label: '复制全路径引用',
+      onClick: handleCopyFullPathQuote,
+    }] : []),
     {
       id: 'askAI',
       icon: <MessageSquare size={14} />,
