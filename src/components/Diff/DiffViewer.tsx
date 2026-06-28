@@ -150,9 +150,10 @@ export function DiffViewer({
     }
   }, [focusedRowIndex, shouldVirtualize, viewMode])
 
-  if (contentOmitted) {
-    return <ContentOmittedPlaceholder t={t} />
-  }
+  // 移除限制
+  // if (contentOmitted) {
+  //   return <ContentOmittedPlaceholder t={t} />
+  // }
 
   const renderUnifiedItem = (idx: number) => (
     <UnifiedDiffRow
