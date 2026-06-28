@@ -24,6 +24,7 @@ import {
 import { useGitStore } from '@/stores/gitStore/index'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useToastStore } from '@/stores/toastStore'
+import { parseGitError } from '@/stores/gitStore'
 import type {
   GitCommit as GitCommitType,
   GitCommitDetails,
@@ -642,8 +643,7 @@ export function HistoryTab({
                 toast.success(t('cherryPick.success'))
                 void loadCommits()
               } catch (err) {
-                const errorMsg = err instanceof Error ? err.message : String(err)
-                toast.error(t('cherryPick.failed', { error: errorMsg }))
+                toast.error(t('cherryPick.failed', { error: parseGitError(err) }))
               }
             },
           })
@@ -666,8 +666,7 @@ export function HistoryTab({
                 toast.success(t('revert.success'))
                 void loadCommits()
               } catch (err) {
-                const errorMsg = err instanceof Error ? err.message : String(err)
-                toast.error(t('revert.failed', { error: errorMsg }))
+                toast.error(t('revert.failed', { error: parseGitError(err) }))
               }
             },
           })
