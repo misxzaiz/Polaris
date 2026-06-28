@@ -32,6 +32,7 @@
     "scheduler": "定时任务",
     "speech": "语音输入",
     "lsp": "语言服务器",
+    "shortcuts": "快捷键",
     "advanced": "高级",
     "autoMode": "自动模式",
     "plugins": "插件",

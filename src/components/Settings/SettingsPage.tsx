@@ -29,6 +29,7 @@ import { LspTab } from './tabs/LspTab';
 import { WebTab } from './tabs/WebTab';
 import { PluginTab } from './tabs/PluginTab';
 import { PersonalHubTab } from './tabs/PersonalHubTab';
+import { ShortcutsTab } from './tabs/ShortcutsTab';
 import { createLogger } from '@/utils/logger';
 import { applyWebServer, getConfig } from '@/services/tauri/configService';
 import { currentMode } from '@/services/transport';
@@ -56,6 +57,7 @@ const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'feishu': 'nav.feishu',
   'speech': 'nav.speech',
   'lsp': 'nav.lsp',
+  'shortcuts': 'nav.shortcuts',
   'app-update': 'nav.appUpdate',
   'advanced': 'nav.advanced',
   'web': 'nav.web',
@@ -306,6 +308,10 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
 
             {activeTab === 'lsp' && (
               <LspTab />
+            )}
+
+            {activeTab === 'shortcuts' && (
+              <ShortcutsTab />
             )}
 
             {activeTab === 'app-update' && (
