@@ -48,6 +48,7 @@
     "schedulerPanel": "Scheduler",
     "requirementPanel": "Requirements",
     "terminalPanel": "Terminal",
+    "springBootPanel": "Spring Boot",
     "toolPanel": "Tool Panel",
     "developerPanel": "Developer Panel",
     "mcpPanel": "MCP Servers",

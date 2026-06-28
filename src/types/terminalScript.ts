@@ -2,7 +2,7 @@
  * 终端脚本类型定义
  */
 
-export type TerminalScriptSource = 'package.json' | 'user';
+export type TerminalScriptSource = 'package.json' | 'maven' | 'gradle' | 'user';
 
 export type TerminalScriptAutoRunTrigger = 'app_start' | 'workspace_open' | 'terminal_open';
 

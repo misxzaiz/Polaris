@@ -2,7 +2,7 @@
  * CodeMirror 6 编辑器组件
  */
 
-import { useEffect, useRef, useMemo } from 'react';
+import { useEffect, useRef, useMemo, useCallback } from 'react';
 import { EditorState, type Extension } from '@codemirror/state';
 import {
   EditorView,
@@ -28,6 +28,8 @@ import { formatDocumentForFile } from '@/services/lsp/lspFormatting';
 import { indentGuides, indentGuideTheme } from './indentGuides';
 import { trailingWhitespaceHighlight } from './trailingWhitespace';
 import { rainbowBrackets } from './rainbowBrackets';
+import { breakpointGutter, setBreakpointsEffect, setHitLineEffect } from './breakpointGutter';
+import { useSpringBootDebugStore } from '@/stores/springBootDebugStore';
 
 const log = createLogger('Editor');
 
@@ -195,6 +197,24 @@ export function CodeMirrorEditor({
     [onSave, language]
   );
 
+  const toggleBreakpointAtLine = useCallback((line: number) => {
+    const fp = filePathRef.current;
+    if (!fp) return;
+    const content = viewRef.current?.state.doc.toString() ?? value;
+    useSpringBootDebugStore.getState().toggleBreakpoint(fp, line, content);
+  }, [value]);
+
+  // 同步断点 gutter 与命中行高亮到当前文件（仅 Java 启用调试 UI）
+  const syncDebug = useCallback(() => {
+    const view = viewRef.current;
+    const fp = filePathRef.current;
+    if (!view || !fp || language !== 'java') return;
+    const st = useSpringBootDebugStore.getState();
+    const lines = st.breakpoints.filter((b) => b.file === fp).map((b) => b.line);
+    const hit = st.stop && st.stop.file === fp ? st.stop.line : null;
+    view.dispatch({ effects: [setBreakpointsEffect.of(lines), setHitLineEffect.of(hit)] });
+  }, [language]);
+
   // 初始化编辑器（组件通过 key 属性强制重新挂载，所以只需在挂载时执行一次）
   useEffect(() => {
     if (!containerRef.current) return;
@@ -204,7 +224,7 @@ export function CodeMirrorEditor({
     // 异步创建编辑器（需要加载语言扩展）
     const createEditor = async () => {
       // 检查缓冲区中是否有缓存的 EditorState
-      const cachedState = filePath
+      const cachedState = filePath && language !== 'java'
         ? useFileEditorStore.getState().loadBuffer(filePath)?.editorState
         : null;
 
@@ -219,6 +239,7 @@ export function CodeMirrorEditor({
 
         // 检查是否有待跳转的行号
         applyPendingGoto(view);
+        syncDebug();
         return;
       }
 
@@ -241,7 +262,17 @@ export function CodeMirrorEditor({
         dropCursor(),
         rectangularSelection(),
         crosshairCursor(),
-        showLineNumbers ? lineNumbers() : [],
+        showLineNumbers
+          ? lineNumbers({
+              domEventHandlers: {
+                mousedown(view, line) {
+                  if (language !== 'java' || readOnly) return false;
+                  toggleBreakpointAtLine(view.state.doc.lineAt(line.from).number);
+                  return true;
+                },
+              },
+            })
+          : [],
         highlightSelectionMatches(),
         history(),
         bracketMatching(),
@@ -267,6 +298,9 @@ export function CodeMirrorEditor({
         keymap.of([{ key: 'Mod-g', run: gotoLine }]),
         zoomKeymap,
         lintGutter(),
+        ...(language === 'java'
+          ? [breakpointGutter(toggleBreakpointAtLine)]
+          : []),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             const newValue = update.state.doc.toString();
@@ -325,6 +359,7 @@ export function CodeMirrorEditor({
 
       // 检查是否有待跳转的行号
       applyPendingGoto(view);
+      syncDebug();
     };
 
     /**
@@ -369,6 +404,14 @@ export function CodeMirrorEditor({
     // 只在组件挂载时执行，props 变化时通过 key 强制重新挂载
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 订阅调试状态：断点/命中变化时同步到编辑器装饰（仅 Java）
+  useEffect(() => {
+    if (language !== 'java') return;
+    syncDebug();
+    const unsub = useSpringBootDebugStore.subscribe(syncDebug);
+    return unsub;
+  }, [language, syncDebug]);
 
   return (
     <div

@@ -11,6 +11,7 @@ import {
   Film,
   GitPullRequest,
   Languages,
+  Rocket,
   Target,
   Terminal,
   type LucideIcon,
@@ -30,6 +31,7 @@ export const pluginIconMap: Record<PluginIconId, LucideIcon> = {
   Film,
   GitPullRequest,
   Languages,
+  Rocket,
   Terminal,
   Target,
 }

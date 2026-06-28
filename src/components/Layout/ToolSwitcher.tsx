@@ -66,6 +66,7 @@ export function getToolGroup(panelType: string): ToolGroupId {
     case 'terminal':
     case 'scheduler':
     case 'aiConsole':
+    case 'springBoot':
       return 'run'
     case 'todo':
       return 'automation'
