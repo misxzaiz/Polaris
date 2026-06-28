@@ -54,6 +54,15 @@ const corePluginManifest: PolarisPluginManifest = {
         order: 70,
       },
       {
+        id: 'springBoot.panel',
+        area: 'activityBar',
+        panelType: 'springBoot',
+        icon: 'Coffee',
+        labelKey: 'labels.springBootPanel',
+        labelDefault: 'Spring Boot',
+        order: 75,
+      },
+      {
         id: 'developer.panel',
         area: 'activityBar',
         panelType: 'developer',
@@ -107,6 +116,9 @@ export function registerBuiltinPlugins(): void {
   // builtin 插件无 installPath，registry 不会自动注册 panel，需手动注册懒加载入口
   pluginPanelRegistry.register('personalHub', 'polaris.personal-hub', () =>
     import('@/components/PersonalHub/PersonalHubPanel').then((m) => ({ default: m.PersonalHubPanel })),
+  )
+  pluginPanelRegistry.register('springBoot', 'polaris.core', () =>
+    import('@/components/SpringBoot/SpringBootPanel').then((m) => ({ default: m.SpringBootPanel })),
   )
 }
 

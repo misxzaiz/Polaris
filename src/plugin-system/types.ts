@@ -19,6 +19,7 @@ export type PluginIconId =
   | 'AlertCircle'
   | 'Film'
   | 'Activity'
+  | 'Coffee'
 
 export type PluginLeftPanelType = string
 
