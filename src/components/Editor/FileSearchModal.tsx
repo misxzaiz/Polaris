@@ -358,61 +358,61 @@ export function FileSearchModal({ onClose }: FileSearchModalProps) {
       onClick={handleBackdropClick}
     >
       <div
-        className="bg-background-elevated rounded-lg w-full max-w-lg border border-border shadow-glow overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+        className="bg-background-elevated rounded-xl w-full max-w-lg border border-border shadow-glow overflow-hidden animate-in fade-in zoom-in-95 duration-150"
         onKeyDown={handleKeyDown}
       >
+        {/* 模式切换 */}
+        <div className="flex items-center gap-1 px-4 py-2 border-b border-border">
+          <button
+            className={`flex items-center gap-1.5 px-3 py-1 rounded text-sm transition-colors ${
+              searchMode === 'content'
+                ? 'bg-primary/20 text-primary'
+                : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
+            }`}
+            onClick={() => setSearchMode('content')}
+          >
+            <FileSearch className="w-3.5 h-3.5" />
+            内容
+          </button>
+          <button
+            className={`flex items-center gap-1.5 px-3 py-1 rounded text-sm transition-colors ${
+              searchMode === 'filename'
+                ? 'bg-primary/20 text-primary'
+                : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
+            }`}
+            onClick={() => setSearchMode('filename')}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            文件名
+          </button>
+        </div>
+
         {/* 搜索输入框 */}
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
-          <Search className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+          <Search className="w-4 h-4 text-text-tertiary flex-shrink-0" />
           <input
             ref={inputRef}
             type="text"
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder={searchMode === 'filename' ? '搜索文件名...' : '搜索文件内容...'}
-            className="flex-1 bg-transparent text-text-primary placeholder:text-text-tertiary focus:outline-none text-[13px]"
+            className="flex-1 bg-transparent text-text-primary placeholder:text-text-tertiary focus:outline-none text-sm"
             spellCheck={false}
           />
           {isLoading && (
-            <Loader2 className="w-3.5 h-3.5 text-text-tertiary animate-spin flex-shrink-0" />
+            <Loader2 className="w-4 h-4 text-text-tertiary animate-spin flex-shrink-0" />
           )}
-          <kbd className="text-[9px] text-text-tertiary bg-background-surface px-1 py-0.5 rounded border border-border font-mono">
+          <kbd className="text-[10px] text-text-tertiary bg-background-surface px-1.5 py-0.5 rounded border border-border font-mono">
             Esc
           </kbd>
-        </div>
-
-        {/* 模式切换 */}
-        <div className="flex items-center gap-0 px-2 py-1 border-b border-border bg-background-surface/40">
-          <button
-            className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] transition-colors ${
-              searchMode === 'content'
-                ? 'bg-primary/15 text-primary'
-                : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
-            }`}
-            onClick={() => setSearchMode('content')}
-          >
-            <FileSearch className="w-3 h-3" />
-            内容
-          </button>
-          <button
-            className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] transition-colors ${
-              searchMode === 'filename'
-                ? 'bg-primary/15 text-primary'
-                : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
-            }`}
-            onClick={() => setSearchMode('filename')}
-          >
-            <FileText className="w-3 h-3" />
-            文件名
-          </button>
         </div>
 
         {/* 结果列表 */}
         <div ref={listRef} className="max-h-[40vh] overflow-y-auto">
           {results.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-6 text-text-tertiary">
-              <Search className="w-5 h-5 mb-1.5 opacity-50" />
-              <div className="text-xs">
+            <div className="flex flex-col items-center justify-center py-8 text-text-tertiary">
+              <Search className="w-6 h-6 mb-2 opacity-50" />
+              <div className="text-sm">
                 {query.trim()
                   ? (searchMode === 'filename' ? '未找到匹配的文件' : '未找到匹配的内容')
                   : (searchMode === 'filename' ? '工作区无文件' : '输入关键词搜索文件内容')}
@@ -429,7 +429,7 @@ export function FileSearchModal({ onClose }: FileSearchModalProps) {
                 <div
                   key={file.path}
                   data-file-item
-                  className={`flex items-center gap-1.5 px-3 cursor-pointer transition-colors min-h-[22px] ${
+                  className={`flex items-center gap-2 px-4 py-1.5 cursor-pointer transition-colors ${
                     isSelected
                       ? 'bg-primary/10 text-text-primary'
                       : 'text-text-primary hover:bg-background-hover'
@@ -437,13 +437,13 @@ export function FileSearchModal({ onClose }: FileSearchModalProps) {
                   onClick={() => handleFilenameSelect(file)}
                   onMouseEnter={() => setSelectedIndex(index)}
                 >
-                  <FileIcon file={file} className="w-3.5 h-3.5 flex-shrink-0" />
-                  <div className="flex-1 min-w-0 flex items-baseline gap-1.5">
-                    <span className="text-xs truncate">
+                  <FileIcon file={file} className="w-4 h-4 flex-shrink-0" />
+                  <div className="flex-1 min-w-0 flex items-baseline gap-2">
+                    <span className="text-sm truncate">
                       <HighlightMatch text={file.name} query={query} />
                     </span>
                     {dirPath && (
-                      <span className="text-[10px] text-text-tertiary truncate flex-shrink min-w-0">
+                      <span className="text-xs text-text-tertiary truncate flex-shrink min-w-0">
                         {dirPath}
                       </span>
                     )}
@@ -460,7 +460,7 @@ export function FileSearchModal({ onClose }: FileSearchModalProps) {
                 <div
                   key={`${match.fullPath}:${match.lineNumber}:${match.matchStart}:${match.matchEnd}:${index}`}
                   data-file-item
-                  className={`px-3 py-1 cursor-pointer transition-colors ${
+                  className={`px-4 py-2 cursor-pointer transition-colors ${
                     isSelected
                       ? 'bg-primary/10 text-text-primary'
                       : 'text-text-primary hover:bg-background-hover'
@@ -469,19 +469,19 @@ export function FileSearchModal({ onClose }: FileSearchModalProps) {
                   onMouseEnter={() => setSelectedIndex(index)}
                 >
                   {/* 文件名和行号 */}
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-[11px] font-medium truncate">
+                  <div className="flex items-baseline gap-2 mb-1">
+                    <span className="text-sm font-medium truncate">
                       <HighlightMatch text={match.name} query={query} />
                     </span>
-                    <span className="text-[10px] text-primary font-mono">
+                    <span className="text-xs text-primary font-mono">
                       :{match.lineNumber}
                     </span>
-                    <span className="text-[10px] text-text-tertiary truncate flex-1 min-w-0">
+                    <span className="text-xs text-text-tertiary truncate flex-1 min-w-0">
                       {match.relativePath}
                     </span>
                   </div>
                   {/* 匹配行内容 */}
-                  <div className="text-[10px] text-text-secondary font-mono truncate bg-background-surface/60 px-1.5 py-0 rounded mt-0.5">
+                  <div className="text-xs text-text-secondary font-mono truncate bg-background-surface px-2 py-0.5 rounded">
                     <HighlightLineMatch
                       line={match.matchedLine}
                       start={match.matchStart}
@@ -495,19 +495,19 @@ export function FileSearchModal({ onClose }: FileSearchModalProps) {
         </div>
 
         {/* 底部提示 */}
-        <div className="px-3 py-1 border-t border-border text-[9px] text-text-tertiary flex items-center gap-2">
-          <span>Tab 切换</span>
-          <span>↑↓</span>
+        <div className="px-4 py-1.5 border-t border-border text-[10px] text-text-tertiary flex items-center gap-3">
+          <span>Tab 切换模式</span>
+          <span>↑↓ 导航</span>
           <span>↵ 打开</span>
-          <span>Esc</span>
+          <span>Esc 关闭</span>
           {searchMode === 'filename' && deepResults !== null && (
-            <span className="ml-auto font-mono">{deepResults.length}结果</span>
+            <span className="ml-auto">深度搜索: {deepResults.length} 个结果</span>
           )}
           {searchMode === 'content' && contentSearch.matches.length > 0 && (
-            <span className={`ml-auto font-mono ${contentSearch.truncated ? 'text-yellow-500' : ''}`}>
+            <span className={`ml-auto ${contentSearch.truncated ? 'text-yellow-500' : ''}`}>
               {contentSearch.truncated
-                ? `${contentSearch.matches.length}/${contentSearch.maxResults} 截断`
-                : `${contentSearch.matches.length}匹配 · ${contentSearch.elapsedMs}ms`}
+                ? `显示前 ${contentSearch.matches.length}/${contentSearch.maxResults} 个匹配，结果已截断，请缩小关键词`
+                : `${contentSearch.matches.length} 个匹配 · 扫描 ${contentSearch.scannedFiles} 文件 · ${contentSearch.elapsedMs}ms`}
             </span>
           )}
         </div>

@@ -237,8 +237,8 @@ function ReferencesPanelInner({ symbol, loading, items, error, truncated, onClos
       }}
     >
       <div
-        className="bg-background-elevated rounded-lg w-full max-w-3xl border border-border shadow-glow overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col"
-        style={{ maxHeight: '75vh' }}
+        className="bg-background-elevated rounded-xl w-full max-w-3xl border border-border shadow-glow overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col"
+        style={{ maxHeight: '78vh' }}
         onKeyDown={handleKeyDown}
         tabIndex={-1}
         ref={(el) => {
@@ -246,36 +246,36 @@ function ReferencesPanelInner({ symbol, loading, items, error, truncated, onClos
         }}
       >
         {/* 标题 */}
-        <div className="px-3 py-1.5 border-b border-border flex items-center gap-2">
-          <Search className="w-3 h-3 text-text-tertiary" />
-          <span className="text-[11px] text-text-tertiary">查找引用</span>
-          <span className="text-[11px] text-text-primary font-mono">「{symbol}」</span>
+        <div className="px-4 py-2 border-b border-border text-[11px] text-text-tertiary uppercase tracking-wide flex items-center gap-2">
+          <Search className="w-3.5 h-3.5" />
+          <span>查找引用</span>
+          <span className="text-text-primary font-mono normal-case">「{symbol}」</span>
           {!loading && !error && (
-            <span className="ml-auto text-[10px] text-text-tertiary font-mono">
-              {filtered.length}/{items.length} · {groups.length}文件
-              {truncated ? ' ⚠' : ''}
+            <span className="ml-auto normal-case">
+              {filtered.length}/{items.length} 处 · {groups.length} 文件
+              {truncated ? '（已截断）' : ''}
             </span>
           )}
         </div>
 
         {/* 过滤器 */}
         {!loading && !error && items.length > 0 && (
-          <div className="px-3 py-1.5 border-b border-border/60 bg-background-surface/40 flex items-center gap-1.5 flex-wrap">
+          <div className="px-4 py-2 border-b border-border/60 bg-background-surface/40 flex items-center gap-2 flex-wrap">
             <Filter className="w-3 h-3 text-text-tertiary" />
             <input
               type="text"
               value={pathFilter}
               onChange={(e) => setPathFilter(e.target.value)}
-              placeholder="过滤..."
-              className="flex-1 min-w-[140px] px-1.5 py-0.5 text-[10px] bg-background border border-border rounded focus:outline-none focus:border-primary"
+              placeholder="路径或预览过滤（支持正则）"
+              className="flex-1 min-w-[200px] px-2 py-0.5 text-xs bg-background border border-border rounded focus:outline-none focus:border-primary"
             />
             {availableKinds.length > 0 && (
               <select
                 value={kindFilter ?? ''}
                 onChange={(e) => setKindFilter(e.target.value || null)}
-                className="px-1.5 py-0.5 text-[10px] bg-background border border-border rounded"
+                className="px-2 py-0.5 text-xs bg-background border border-border rounded"
               >
-                <option value="">全部</option>
+                <option value="">全部 kind</option>
                 {availableKinds.map((k) => (
                   <option key={k} value={k}>
                     {k}
@@ -283,23 +283,23 @@ function ReferencesPanelInner({ symbol, loading, items, error, truncated, onClos
                 ))}
               </select>
             )}
-            <label className="text-[9px] text-text-secondary flex items-center gap-0.5 cursor-pointer">
+            <label className="text-[11px] text-text-secondary flex items-center gap-1 cursor-pointer">
               <input
                 type="checkbox"
                 checked={hideGenerated}
                 onChange={(e) => setHideGenerated(e.target.checked)}
-                className="accent-primary w-3 h-3"
+                className="accent-primary"
               />
-              generated
+              隐藏 generated
             </label>
-            <label className="text-[9px] text-text-secondary flex items-center gap-0.5 cursor-pointer">
+            <label className="text-[11px] text-text-secondary flex items-center gap-1 cursor-pointer">
               <input
                 type="checkbox"
                 checked={hideTest}
                 onChange={(e) => setHideTest(e.target.checked)}
-                className="accent-primary w-3 h-3"
+                className="accent-primary"
               />
-              test
+              隐藏 test
             </label>
           </div>
         )}
@@ -307,11 +307,11 @@ function ReferencesPanelInner({ symbol, loading, items, error, truncated, onClos
         {/* 列表 */}
         <div ref={listRef} className="flex-1 overflow-y-auto">
           {loading ? (
-            <div className="py-6 flex items-center justify-center gap-2 text-text-tertiary text-xs">
-              <Loader2 className="w-3 h-3 animate-spin" /> 扫描中…
+            <div className="py-10 flex items-center justify-center gap-2 text-text-tertiary text-sm">
+              <Loader2 className="w-4 h-4 animate-spin" /> 扫描中…
             </div>
           ) : error ? (
-            <div className="py-6 text-center text-xs">
+            <div className="py-10 text-center text-sm">
               {error === 'no-workspace' ? (
                 <span className="text-text-tertiary">索引模式需要先打开一个工作区</span>
               ) : (
@@ -319,7 +319,7 @@ function ReferencesPanelInner({ symbol, loading, items, error, truncated, onClos
               )}
             </div>
           ) : groups.length === 0 ? (
-            <div className="py-6 text-center text-text-tertiary text-xs">
+            <div className="py-10 text-center text-text-tertiary text-sm">
               {items.length === 0 ? '没有找到引用' : '过滤后无结果'}
             </div>
           ) : (
@@ -331,7 +331,7 @@ function ReferencesPanelInner({ symbol, loading, items, error, truncated, onClos
                   <button
                     type="button"
                     onClick={() => toggleGroup(g.path)}
-                    className="w-full flex items-center gap-1.5 px-3 py-1 bg-background-surface/60 border-y border-border/40 text-[10px] sticky top-0 hover:bg-background-surface/80"
+                    className="w-full flex items-center gap-2 px-4 py-1 bg-background-surface/60 border-y border-border/40 text-[11px] sticky top-0 hover:bg-background-surface/80"
                   >
                     {collapsed ? (
                       <ChevronRight className="w-3 h-3 text-text-tertiary" />
@@ -341,10 +341,10 @@ function ReferencesPanelInner({ symbol, loading, items, error, truncated, onClos
                     <span className="text-text-primary font-medium truncate">
                       {fileNameOf(g.path)}
                     </span>
-                    <span className="text-text-tertiary truncate min-w-0 flex-1 text-left text-[9px]">
+                    <span className="text-text-tertiary truncate min-w-0 flex-1 text-left">
                       {compressPath(g.path)}
                     </span>
-                    <span className="text-text-tertiary font-mono flex-shrink-0">
+                    <span className="text-text-tertiary normal-case flex-shrink-0">
                       {g.items.length}
                     </span>
                   </button>
@@ -359,23 +359,23 @@ function ReferencesPanelInner({ symbol, loading, items, error, truncated, onClos
                         <button
                           key={key}
                           data-key={key}
-                          className={`w-full flex items-center gap-2 px-3 text-left transition-colors min-h-[20px] ${
+                          className={`w-full flex items-center gap-3 px-4 py-1.5 text-left transition-colors ${
                             selected ? 'bg-primary/10' : 'hover:bg-background-hover'
                           }`}
                           onClick={() => void jumpTo(it)}
                           onMouseEnter={() => setSelectedKey(key)}
                         >
-                          <span className="text-[9px] text-text-tertiary font-mono flex-shrink-0 w-10 text-right">
+                          <span className="text-[10px] text-text-tertiary font-mono flex-shrink-0 w-14 text-right">
                             {it.line}:{it.column + 1}
                           </span>
                           {badge && (
                             <span
-                              className={`text-[8px] font-mono px-1 rounded flex-shrink-0 ${badge.cls}`}
+                              className={`text-[9px] font-mono px-1 rounded flex-shrink-0 ${badge.cls}`}
                             >
                               {badge.label}
                             </span>
                           )}
-                          <span className="text-[10px] text-text-secondary font-mono truncate min-w-0 flex-1">
+                          <span className="text-xs text-text-secondary font-mono truncate min-w-0 flex-1">
                             {it.preview ?? ''}
                           </span>
                         </button>
@@ -388,11 +388,11 @@ function ReferencesPanelInner({ symbol, loading, items, error, truncated, onClos
         </div>
 
         {/* 底部提示 */}
-        <div className="px-3 py-1 border-t border-border text-[9px] text-text-tertiary flex items-center gap-2">
-          <span>↑↓</span>
+        <div className="px-4 py-1.5 border-t border-border text-[10px] text-text-tertiary flex items-center gap-3">
+          <span>↑↓ 导航</span>
           <span>↵ 跳转</span>
-          <span>Space 折叠</span>
-          <span className="ml-auto">Esc</span>
+          <span>点击文件名 折叠</span>
+          <span className="ml-auto">Esc 关闭</span>
         </div>
       </div>
     </div>

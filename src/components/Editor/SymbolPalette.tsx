@@ -263,32 +263,37 @@ function SymbolPaletteInner({
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="bg-background-elevated rounded-lg w-full max-w-xl border border-border shadow-glow overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+        className="bg-background-elevated rounded-xl w-full max-w-xl border border-border shadow-glow overflow-hidden animate-in fade-in zoom-in-95 duration-150"
         onKeyDown={handleKeyDown}
       >
+        {/* 标题 */}
+        <div className="px-4 py-2 border-b border-border text-[11px] text-text-tertiary uppercase tracking-wide">
+          Go to Symbol
+        </div>
+
         {/* 搜索输入框 */}
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
-          <Search className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+          <Search className="w-4 h-4 text-text-tertiary flex-shrink-0" />
           <input
             ref={inputRef}
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索符号..."
-            className="flex-1 bg-transparent text-text-primary placeholder:text-text-tertiary focus:outline-none text-[13px]"
+            placeholder="搜索当前文件的符号..."
+            className="flex-1 bg-transparent text-text-primary placeholder:text-text-tertiary focus:outline-none text-sm"
             spellCheck={false}
           />
-          <kbd className="text-[9px] text-text-tertiary bg-background-surface px-1 py-0.5 rounded border border-border font-mono">Esc</kbd>
+          <kbd className="text-[10px] text-text-tertiary bg-background-surface px-1.5 py-0.5 rounded border border-border font-mono">Esc</kbd>
         </div>
 
         {/* 列表 */}
-        <div ref={listRef} className="max-h-[45vh] overflow-y-auto">
+        <div ref={listRef} className="max-h-[50vh] overflow-y-auto">
           {loading ? (
-            <div className="py-6 text-center text-text-tertiary text-xs">加载中…</div>
+            <div className="py-8 text-center text-text-tertiary text-sm">加载中…</div>
           ) : error ? (
-            <div className="py-6 text-center text-danger text-xs">请求失败：{error}</div>
+            <div className="py-8 text-center text-danger text-sm">请求失败：{error}</div>
           ) : filtered.length === 0 ? (
-            <div className="py-6 text-center text-text-tertiary text-xs">
+            <div className="py-8 text-center text-text-tertiary text-sm">
               {symbols.length === 0 ? '当前文件没有可用的符号' : '没有匹配的符号'}
             </div>
           ) : (
@@ -299,27 +304,27 @@ function SymbolPaletteInner({
                 <div
                   key={`${sym.name}-${sym.range.start.line}-${sym.range.start.character}-${idx}`}
                   data-index={idx}
-                  className={`flex items-center gap-1.5 px-3 cursor-pointer transition-colors min-h-[22px] ${
+                  className={`flex items-center gap-2 px-4 py-1.5 cursor-pointer transition-colors ${
                     selected
                       ? 'bg-primary/10 text-text-primary'
                       : 'text-text-primary hover:bg-background-hover'
                   }`}
                   onClick={() => jumpToSymbol(sym)}
                   onMouseEnter={() => setSelectedIndex(idx)}
-                  style={{ paddingLeft: 12 + sym.depth * 10 }}
+                  style={{ paddingLeft: 16 + sym.depth * 12 }}
                 >
                   <span
-                    className="inline-flex items-center justify-center w-4 h-4 text-[9px] font-mono rounded flex-shrink-0"
-                    style={{ color: meta.color, backgroundColor: `${meta.color}15` }}
+                    className="inline-flex items-center justify-center w-5 h-5 text-[10px] font-mono rounded border border-border bg-background-surface flex-shrink-0"
+                    style={{ color: meta.color }}
                     title={meta.label}
                   >
                     {meta.label}
                   </span>
-                  <span className="text-xs truncate flex-shrink-0 font-medium">{sym.name}</span>
+                  <span className="text-sm truncate flex-shrink-0 font-medium">{sym.name}</span>
                   {sym.detail && (
-                    <span className="text-[10px] text-text-tertiary truncate min-w-0 font-mono">{sym.detail}</span>
+                    <span className="text-xs text-text-tertiary truncate min-w-0">{sym.detail}</span>
                   )}
-                  <span className="ml-auto text-[9px] text-text-tertiary font-mono flex-shrink-0">
+                  <span className="ml-auto text-[10px] text-text-tertiary font-mono flex-shrink-0">
                     :{sym.range.start.line + 1}
                   </span>
                 </div>
@@ -329,12 +334,12 @@ function SymbolPaletteInner({
         </div>
 
         {/* 底部提示 */}
-        <div className="px-3 py-1 border-t border-border text-[9px] text-text-tertiary flex items-center gap-2">
-          <span>↑↓</span>
+        <div className="px-4 py-1.5 border-t border-border text-[10px] text-text-tertiary flex items-center gap-3">
+          <span>↑↓ 导航</span>
           <span>↵ 跳转</span>
-          <span>Esc</span>
+          <span>Esc 关闭</span>
           {!loading && (
-            <span className="ml-auto font-mono">{filtered.length}/{symbols.length}</span>
+            <span className="ml-auto">{filtered.length} / {symbols.length}</span>
           )}
         </div>
       </div>
