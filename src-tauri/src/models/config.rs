@@ -200,10 +200,17 @@ pub struct ModelProfile {
     ///   Polaris 内嵌代理负责格式转换
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wire_api: Option<String>,
-    /// 适用的引擎。
-    /// - `None` 或 `"both"`：同时适用于 Claude Code 和 Codex CLI
-    /// - `"claude"`：仅适用于 Claude Code
-    /// - `"codex"`：仅适用于 Codex CLI
+    /// 适用的引擎（多选）。
+    /// - `None` 或空数组：适用于所有引擎
+    /// - 非空数组：仅适用于列出的引擎
+    /// - 引擎标识：`"claude"` / `"codex"` / `"simple-ai"` / `"mimo"`
+    ///
+    /// 历史兼容：旧数据使用 `target_engine: Option<String>` 单值字段，
+    /// 由 `resolve_target_engines()` 做回退迁移。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_engines: Option<Vec<String>>,
+    /// 历史兼容字段（仅用于反序列化旧数据，不再写入）。
+    /// 由 `resolve_target_engines()` 做回退迁移。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_engine: Option<String>,
     /// 供应商分类。
@@ -236,6 +243,35 @@ pub struct ModelProfile {
     /// 最后更新时间 (ISO 8601)
     #[serde(default)]
     pub updated_at: Option<String>,
+}
+
+impl ModelProfile {
+    /// 解析适用引擎列表，兼容旧数据。
+    ///
+    /// 优先级：
+    /// 1. `target_engines` 非空 → 直接返回
+    /// 2. 旧字段 `target_engine`：
+    ///    - `"both"` / `"all"` / `None` → 返回空 Vec（全选）
+    ///    - 单值 → 返回包含该值的 Vec
+    /// 3. 无旧字段 → 返回空 Vec（全选）
+    pub fn resolve_target_engines(&self) -> Vec<String> {
+        if let Some(ref engines) = self.target_engines {
+            if !engines.is_empty() {
+                return engines.clone();
+            }
+        }
+        match self.target_engine.as_deref() {
+            None | Some("both") | Some("all") => vec![],
+            Some(engine) => vec![engine.to_string()],
+        }
+    }
+
+    /// 判断 Profile 是否适用于指定引擎。
+    /// 空列表 = 全选 = 适用于所有引擎。
+    pub fn is_for_engine(&self, engine: &str) -> bool {
+        let engines = self.resolve_target_engines();
+        engines.is_empty() || engines.contains(&engine.to_string())
+    }
 }
 
 /// QQ Bot 实例配置

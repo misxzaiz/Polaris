@@ -199,8 +199,8 @@ fn cascade_active_model_profile(config: &Config) {
     };
 
     // 仅当 Profile 适用于 Claude Code 时才写入 Claude settings.json
-    let target = profile.target_engine.as_deref().unwrap_or("both");
-    if target != "claude" && target != "both" && target != "all" {
+    let engines = profile.resolve_target_engines();
+    if !engines.is_empty() && !engines.contains(&"claude".to_string()) {
         return;
     }
 

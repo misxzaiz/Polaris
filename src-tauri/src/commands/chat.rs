@@ -482,33 +482,30 @@ async fn apply_model_profile_options(
     };
 
     tracing::info!(
-        "[{}] 使用模型 Profile: {} ({}), wireApi={:?}, targetEngine={:?}, category={:?}",
+        "[{}] 使用模型 Profile: {} ({}), wireApi={:?}, targetEngines={:?}, category={:?}",
         log_scope,
         profile.name,
         profile.model,
         profile.wire_api,
-        profile.target_engine,
+        profile.resolve_target_engines(),
         profile.category
     );
 
     // 检查 Profile 是否适用于当前引擎。
-    // "both" 和 "all" 均视为通配（适用于所有引擎）；其余须与当前引擎精确匹配。
-    let target = profile.target_engine.as_deref().unwrap_or("both");
     let expected_engine = match engine {
         EngineId::ClaudeCode => "claude",
         EngineId::Codex => "codex",
         EngineId::SimpleAI => "simple-ai",
         EngineId::MimoCode => "mimo",
     };
-    let is_universal = target == "both" || target == "all";
-    if !is_universal && target != expected_engine {
+    if !profile.is_for_engine(expected_engine) {
         // 同样不静默跳过：明确告知用户所选 Profile 不适用于当前引擎，引导重新选择。
         tracing::warn!(
-            "[{}] Profile {} 不适用于引擎 {:?}（targetEngine={:?}），中断请求",
+            "[{}] Profile {} 不适用于引擎 {:?}（targetEngines={:?}），中断请求",
             log_scope,
             profile.name,
             engine,
-            target
+            profile.resolve_target_engines()
         );
         return Err(AppError::ClientError(
             "errors:modelProfile.incompatibleRuntime".to_string(),

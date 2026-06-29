@@ -758,6 +758,7 @@ mod tests {
             model: "glm-5.1".to_string(),
             active: true,
             wire_api: None,
+            target_engines: None,
             target_engine: None,
             category: None,
             description: None,

@@ -24,14 +24,16 @@ export type WireApi = 'anthropic-messages' | 'openai-chat-completions' | 'openai
  */
 export type AuthType = 'auth_token' | 'api_key' | 'custom_env' | 'none'
 
-/** Profile 适用的引擎
- * - 'claude': 仅适用于 Claude Code 引擎
- * - 'codex': 仅适用于 Codex CLI 引擎
- * - 'both': 同时适用于 Claude 和 Codex
- * - 'simple-ai': 仅适用于 Simple AI 引擎
- * - 'all': 适用于所有引擎
+/** Profile 适用的引擎（多选）
+ * - 'claude': 适用于 Claude Code 引擎
+ * - 'codex': 适用于 Codex CLI 引擎
+ * - 'simple-ai': 适用于 Simple AI 引擎
+ * - 'mimo': 适用于 Mimo 引擎
+ *
+ * 历史兼容：旧数据使用 `targetEngine?: ProfileTargetEngine` 单值字段，
+ * 由 `resolveTargetEngines()` 做回退迁移，不再新增。
  */
-export type ProfileTargetEngine = 'claude' | 'codex' | 'both' | 'simple-ai' | 'all'
+export type ProfileTargetEngine = 'claude' | 'codex' | 'simple-ai' | 'mimo'
 
 /** 供应商分类 — 决定预设引导和提示文案
  * - 'official': 官方直连（Anthropic / OpenAI）
@@ -83,12 +85,17 @@ export interface ModelProfile {
    */
   wireApi?: WireApi
   /**
-   * 适用的引擎。
-   * - 'claude': 仅适用于 Claude Code
-   * - 'codex': 仅适用于 Codex CLI
-   * - 'both': 同时适用于两个引擎
+   * 适用的引擎（多选）。
+   * - 空数组或未设置：适用于所有引擎
+   * - 非空数组：仅适用于列出的引擎
    */
-  targetEngine?: ProfileTargetEngine
+  targetEngines?: ProfileTargetEngine[]
+  /** 历史兼容字段（仅用于读取旧数据，不再写入）。
+ * 旧值可能为 'both' / 'all' / 'claude' / 'codex' / 'simple-ai'。
+ * 由 `resolveTargetEngines()` 做回退迁移。
+ * @deprecated 使用 `targetEngines` 替代
+ */
+  targetEngine?: string
   /**
    * 供应商分类，决定预设引导和提示文案。
    */
@@ -120,7 +127,7 @@ export interface CreateModelProfileParams {
   apiKey: string
   model: string
   wireApi?: WireApi
-  targetEngine?: ProfileTargetEngine
+  targetEngines?: ProfileTargetEngine[]
   category?: ProfileCategory
   description?: string
   authType?: AuthType
@@ -137,7 +144,7 @@ export interface UpdateModelProfileParams {
   apiKey?: string
   model?: string
   wireApi?: WireApi
-  targetEngine?: ProfileTargetEngine
+  targetEngines?: ProfileTargetEngine[]
   category?: ProfileCategory
   description?: string
   authType?: AuthType
@@ -175,8 +182,8 @@ export interface ProviderPreset {
   icon?: string
   /** 默认 category */
   category: ProfileCategory
-  /** 默认 targetEngine */
-  defaultTargetEngine: ProfileTargetEngine
+  /** 默认适用引擎（空数组 = 全部引擎） */
+  defaultTargetEngines: ProfileTargetEngine[]
   /** 默认 wireApi */
   defaultWireApi: WireApi
   /** 常用模型列表（用户可快速选择） */
@@ -195,7 +202,7 @@ export const COMMON_PROVIDER_PRESETS: ProviderPreset[] = [
     name: 'SiliconFlow (硅基流动)',
     icon: 'silicon',
     category: 'aggregator',
-    defaultTargetEngine: 'both',
+    defaultTargetEngines: [],
     defaultWireApi: 'anthropic-messages',
     commonModels: ['glm-4', 'deepseek-v3', 'Qwen-2.5-72B'],
     baseUrls: ['https://api.siliconflow.cn'],
@@ -206,7 +213,7 @@ export const COMMON_PROVIDER_PRESETS: ProviderPreset[] = [
     name: 'OpenRouter',
     icon: 'openrouter',
     category: 'aggregator',
-    defaultTargetEngine: 'both',
+    defaultTargetEngines: [],
     defaultWireApi: 'openai-chat-completions',
     commonModels: ['anthropic/claude-3.5-sonnet', 'openai/gpt-4o'],
     baseUrls: ['https://openrouter.ai/api/v1'],
@@ -217,7 +224,7 @@ export const COMMON_PROVIDER_PRESETS: ProviderPreset[] = [
     name: '火山引擎 (Volcengine)',
     icon: 'volcengine',
     category: 'cn_official',
-    defaultTargetEngine: 'both',
+    defaultTargetEngines: [],
     defaultWireApi: 'anthropic-messages',
     commonModels: ['glm-4', 'Yi-Lightning', 'Qwen-Max'],
     baseUrls: ['https://ark.cn-beijing.volces.com/api/v3'],
@@ -228,7 +235,7 @@ export const COMMON_PROVIDER_PRESETS: ProviderPreset[] = [
     name: 'Together AI',
     icon: 'together',
     category: 'aggregator',
-    defaultTargetEngine: 'both',
+    defaultTargetEngines: [],
     defaultWireApi: 'openai-chat-completions',
     commonModels: ['meta-llama/Llama-3-70b-chat-hf'],
     baseUrls: ['https://api.together.xyz/v1'],
@@ -239,7 +246,7 @@ export const COMMON_PROVIDER_PRESETS: ProviderPreset[] = [
     name: '自定义端点',
     icon: 'custom',
     category: 'custom',
-    defaultTargetEngine: 'both',
+    defaultTargetEngines: [],
     defaultWireApi: 'anthropic-messages',
     commonModels: [],
     baseUrls: [],
@@ -252,15 +259,38 @@ export function generateProfileId(): string {
   return `profile_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 }
 
+/**
+ * 解析 Profile 的适用引擎列表，兼容旧数据。
+ *
+ * 优先级：
+ * 1. `targetEngines` 非空 → 直接返回
+ * 2. 旧字段 `targetEngine`：
+ *    - 'both' / 'all' / undefined → 返回 []（全选）
+ *    - 单值 → 返回 [单值]
+ * 3. 无旧字段 → 返回 []（全选）
+ */
+export function resolveTargetEngines(profile: {
+  targetEngines?: ProfileTargetEngine[]
+  targetEngine?: string
+}): ProfileTargetEngine[] {
+  if (profile.targetEngines && profile.targetEngines.length > 0) {
+    return profile.targetEngines
+  }
+  const old = profile.targetEngine
+  if (!old || old === 'both' || old === 'all') {
+    return []
+  }
+  return [old as ProfileTargetEngine]
+}
+
 /** 判断 Profile 是否适用于指定引擎 */
 export function isProfileForEngine(
   profile: ModelProfile,
   engine: 'claude' | 'codex' | 'simple-ai' | 'mimo',
 ): boolean {
-  if (!profile.targetEngine || profile.targetEngine === 'both' || profile.targetEngine === 'all') {
-    return true
-  }
-  return profile.targetEngine === engine
+  const engines = resolveTargetEngines(profile)
+  // 空数组 = 全选 = 适用于所有引擎
+  return engines.length === 0 || engines.includes(engine)
 }
 
 /** 获取 Profile 的 category 显示名称 */

@@ -185,9 +185,10 @@
       "label": "Target Engine",
       "claude": "Claude Code",
       "codex": "Codex CLI",
-      "both": "Both (Claude + Codex)",
       "simple-ai": "Simple AI",
-      "all": "All Engines"
+      "mimo": "Mimo",
+      "selectAll": "Select All",
+      "allEngines": "Applies to all engines"
     },
     "category": {
       "label": "Provider Category",

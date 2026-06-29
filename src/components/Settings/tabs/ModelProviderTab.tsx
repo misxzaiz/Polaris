@@ -26,7 +26,7 @@ import type {
   ProfileCategory,
   AuthType,
 } from '@/types'
-import { COMMON_PROVIDER_PRESETS, OFFICIAL_API_PROFILE, type ProviderPreset, type ConnectionTestResult, resolveAuthType } from '@/types/modelProfile'
+import { COMMON_PROVIDER_PRESETS, OFFICIAL_API_PROFILE, type ProviderPreset, type ConnectionTestResult, resolveAuthType, resolveTargetEngines, isProfileForEngine } from '@/types/modelProfile'
 import {
   testModelProfileConnection,
   fetchModelsForProfile,
@@ -54,6 +54,9 @@ import {
 
 const log = createLogger('ModelProviderTab')
 
+/** 所有引擎列表（用于编辑器多选） */
+const ALL_ENGINES: ProfileTargetEngine[] = ['claude', 'codex', 'simple-ai', 'mimo']
+
 type EngineFilter = 'all' | 'claude' | 'codex'
 
 /** 键值对（用于 customHeaders / customEnv 的表单态） */
@@ -69,7 +72,7 @@ interface ProfileForm {
   apiKey: string
   model: string
   wireApi: WireApi
-  targetEngine: ProfileTargetEngine
+  targetEngines: ProfileTargetEngine[]
   category: ProfileCategory | ''
   description: string
   authType: AuthType
@@ -84,7 +87,7 @@ const EMPTY_FORM: ProfileForm = {
   apiKey: '',
   model: '',
   wireApi: 'anthropic-messages',
-  targetEngine: 'both',
+  targetEngines: [],
   category: '',
   description: '',
   authType: 'auth_token',
@@ -129,7 +132,7 @@ function formToProbeProfile(form: ProfileForm): ModelProfile {
     model: form.model,
     active: false,
     wireApi: form.wireApi,
-    targetEngine: form.targetEngine,
+    targetEngines: form.targetEngines,
     category: form.category || undefined,
     authType: form.authType,
     apiKeyEnvName: form.apiKeyEnvName || undefined,
@@ -230,7 +233,7 @@ function ProfileCard({
   onTestConnection: (p: ModelProfile) => void
 }) {
   const { t } = useTranslation(['settings', 'common'])
-  const engine = profile.targetEngine ?? 'both'
+  const engineList = resolveTargetEngines(profile)
   const wire = profile.wireApi ?? 'anthropic-messages'
 
   return (
@@ -256,16 +259,16 @@ function ProfileCard({
         <div className="flex items-center gap-2 flex-wrap">
           <Globe size={12} className="text-text-tertiary shrink-0" />
           <span className="text-sm font-medium text-text-primary truncate">{profile.name}</span>
-          {(engine === 'both' || engine === 'claude') && (
+          {engineList.length === 0 || engineList.includes('claude') ? (
             <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 shrink-0">
               Claude
             </span>
-          )}
-          {(engine === 'both' || engine === 'codex') && (
+          ) : null}
+          {engineList.length === 0 || engineList.includes('codex') ? (
             <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 shrink-0">
               Codex
             </span>
-          )}
+          ) : null}
           {wire === 'openai-chat-completions' && (
             <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 shrink-0">
               OpenAI Chat
@@ -372,7 +375,7 @@ function ProfileEditorModal({
       apiKey: initialProfile.apiKey,
       model: initialProfile.model,
       wireApi: initialProfile.wireApi ?? 'anthropic-messages',
-      targetEngine: initialProfile.targetEngine ?? 'both',
+      targetEngines: resolveTargetEngines(initialProfile),
       category: initialProfile.category ?? '',
       description: initialProfile.description ?? '',
       authType: resolveAuthType(initialProfile),
@@ -652,14 +655,35 @@ function ProfileEditorModal({
             </div>
             <div>
               <label className={labelClass}>{t('modelProfile.targetEngine.label')}</label>
-              <div className="grid grid-cols-3 gap-2">
-                {(['claude', 'codex', 'simple-ai', 'both', 'all'] as ProfileTargetEngine[]).map((engineOption) => (
+              {/* 全选切换 */}
+              <button
+                type="button"
+                onClick={() => {
+                  const allSelected = ALL_ENGINES.every((e) => form.targetEngines.includes(e))
+                  patch({ targetEngines: allSelected ? [] : [...ALL_ENGINES] })
+                }}
+                className="mb-2 px-2 py-1 text-[10px] rounded-md border transition-all hover:border-primary/30"
+              >
+                {ALL_ENGINES.every((e) => form.targetEngines.includes(e))
+                  ? t('modelProfile.targetEngine.selectAll')
+                  : t('modelProfile.targetEngine.selectAll')}
+              </button>
+              {/* 引擎多选 */}
+              <div className="grid grid-cols-2 gap-2">
+                {ALL_ENGINES.map((engineOption) => (
                   <button
                     key={engineOption}
                     type="button"
-                    onClick={() => patch({ targetEngine: engineOption })}
+                    onClick={() => {
+                      const selected = form.targetEngines.includes(engineOption)
+                      patch({
+                        targetEngines: selected
+                          ? form.targetEngines.filter((e) => e !== engineOption)
+                          : [...form.targetEngines, engineOption],
+                      })
+                    }}
                     className={`px-3 py-1.5 text-xs rounded-md border transition-all ${
-                      form.targetEngine === engineOption
+                      form.targetEngines.includes(engineOption)
                         ? 'border-primary bg-primary/10 text-primary'
                         : 'border-border bg-background-surface text-text-tertiary hover:border-primary/30'
                     }`}
@@ -668,6 +692,9 @@ function ProfileEditorModal({
                   </button>
                 ))}
               </div>
+              {form.targetEngines.length === 0 && (
+                <p className="text-[11px] text-text-tertiary mt-1">{t('modelProfile.targetEngine.allEngines')}</p>
+              )}
             </div>
             <div>
               <label className={labelClass}>{t('modelProfile.category.label')}</label>
@@ -812,9 +839,12 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
   const filteredProfiles = useMemo(() => {
     const q = search.trim().toLowerCase()
     return profiles.filter((p) => {
-      const engine = p.targetEngine ?? 'both'
-      const matchEngine = engineFilter === 'all' || engine === 'both' || engine === engineFilter
-      if (!matchEngine) return false
+      if (engineFilter === 'all') {
+        // 全部筛选：显示所有 Profile
+      } else {
+        // 按引擎筛选：用 isProfileForEngine 判断
+        if (!isProfileForEngine(p, engineFilter)) return false
+      }
       if (!q) return true
       return (
         p.name.toLowerCase().includes(q) ||
@@ -835,7 +865,7 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
         model: preset.commonModels[0] || '',
         active: false,
         wireApi: preset.defaultWireApi,
-        targetEngine: preset.defaultTargetEngine,
+        targetEngines: preset.defaultTargetEngines,
         category: preset.category,
         description: preset.description,
       })
@@ -875,7 +905,7 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
       apiKey: form.apiKey,
       model: form.model.trim(),
       wireApi: form.wireApi,
-      targetEngine: form.targetEngine,
+      targetEngines: form.targetEngines,
       category: form.category || undefined,
       description: form.description.trim() || undefined,
       authType: form.authType,
