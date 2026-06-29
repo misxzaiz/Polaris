@@ -32,7 +32,7 @@ export const createBranchSlice: BranchSlice = (set, get) => ({
   },
 
   // 创建分支
-  async createBranch(workspacePath: string, name: string, checkout = false) {
+  async createBranch(workspacePath: string, name: string, checkout = false, startPoint?: string) {
     set({ isLoading: true, error: null })
 
     try {
@@ -40,6 +40,7 @@ export const createBranchSlice: BranchSlice = (set, get) => ({
         workspacePath,
         name,
         checkout,
+        startPoint,
       })
 
       // 刷新状态和分支列表

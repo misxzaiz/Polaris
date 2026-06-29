@@ -149,7 +149,7 @@ export interface StatusActions {
  */
 export interface BranchActions {
   getBranches: (workspacePath: string) => Promise<void>
-  createBranch: (workspacePath: string, name: string, checkout?: boolean) => Promise<void>
+  createBranch: (workspacePath: string, name: string, checkout?: boolean, startPoint?: string) => Promise<void>
   deleteBranch: (workspacePath: string, name: string, force?: boolean) => Promise<void>
   renameBranch: (workspacePath: string, oldName: string, newName: string) => Promise<void>
   checkoutBranch: (workspacePath: string, name: string) => Promise<void>

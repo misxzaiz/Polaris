@@ -20,12 +20,14 @@ import {
   GitCompare,
   Trash2,
   ChevronRight,
+  Copy,
 } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useToastStore } from '@/stores/toastStore'
 import { formatGitTimestamp } from '@/utils/gitFormat'
 import type { GitBranch, GitMergeResult, GitRebaseResult } from '@/types/git'
+import { ContextMenu, type ContextMenuItem } from '@/components/FileExplorer/ContextMenu'
 import {
   SwitchConfirmDialog,
   CreateBranchDialog,
@@ -51,6 +53,7 @@ export function BranchTab() {
   // 创建分支状态
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
+  const [createBasedOn, setCreateBasedOn] = useState<string | undefined>(undefined)
 
   const status = useGitStore((s) => s.status)
   const getBranches = useGitStore((s) => s.getBranches)
@@ -166,7 +169,7 @@ export function BranchTab() {
     setError(null)
   }, [])
 
-  const handleCreateBranch = useCallback(async (name: string, checkout: boolean) => {
+  const handleCreateBranch = useCallback(async (name: string, checkout: boolean, basedOn?: string) => {
     if (!currentWorkspace || !name.trim()) return
 
     const branchName = name.trim()
@@ -183,7 +186,7 @@ export function BranchTab() {
     setIsCreating(true)
     setError(null)
     try {
-      await createBranch(currentWorkspace.path, branchName, checkout)
+      await createBranch(currentWorkspace.path, branchName, checkout, basedOn)
       await loadBranches()
       await refreshStatus(currentWorkspace.path)
       setShowCreateDialog(false)
@@ -196,6 +199,15 @@ export function BranchTab() {
       setIsCreating(false)
     }
   }, [currentWorkspace, branches, createBranch, loadBranches, refreshStatus, t, toast])
+
+  // 右键菜单状态
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    items: ContextMenuItem[];
+  } | null>(null)
+
+  const closeContextMenu = useCallback(() => setContextMenu(null), [])
 
   // 删除分支状态
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
@@ -419,6 +431,134 @@ export function BranchTab() {
     setShowRebaseDialog(true)
   }, [])
 
+  // 构建分支行右键菜单
+  const buildBranchMenuItems = useCallback((branch: GitBranch): ContextMenuItem[] => {
+    const items: ContextMenuItem[] = []
+    const isCurrent = branch.isCurrent
+    const isRemote = branch.isRemote
+
+    if (!isCurrent || !isRemote) {
+      // Checkout
+      if (!isCurrent) {
+        items.push({
+          id: 'checkout',
+          label: t('branch.contextMenu.checkout'),
+          icon: <Check size={14} />,
+          action: () => handleSwitchBranch(branch.name),
+          disabled: isSwitching,
+        })
+      }
+
+      // New Branch from Here
+      items.push({
+        id: 'newBranch',
+        label: t('branch.contextMenu.newBranchFromHere'),
+        icon: <GitBranchIcon size={14} />,
+        action: () => {
+          setContextMenu(null)
+          setCreateBasedOn(branch.name)
+          setShowCreateDialog(true)
+        },
+        disabled: isCreating,
+      })
+
+      // Copy Reference Name
+      items.push({
+        id: 'copyRef',
+        label: t('branch.contextMenu.copyReferenceName'),
+        icon: <Copy size={14} />,
+        action: async () => {
+          try {
+            await navigator.clipboard.writeText(branch.name)
+            toast.success(t('branch.contextMenu.copySuccess'))
+          } catch {
+            toast.error(t('errors.copyFailed'))
+          }
+        },
+      })
+    }
+
+    if (!isCurrent && !isRemote) {
+      items.push({ id: 'sep-1', label: '-', icon: undefined, action: () => {} })
+
+      // Merge into Current
+      items.push({
+        id: 'merge',
+        label: t('branch.contextMenu.mergeIntoCurrent'),
+        icon: <GitMerge size={14} />,
+        action: () => openMergeDialog(branch.name),
+        disabled: isSwitching || isMerging,
+      })
+
+      // Rebase Current onto
+      items.push({
+        id: 'rebase',
+        label: t('branch.contextMenu.rebaseCurrentOnto'),
+        icon: <GitCompare size={14} />,
+        action: () => openRebaseDialog(branch.name),
+        disabled: isSwitching || isRebasing,
+      })
+
+      items.push({ id: 'sep-2', label: '-', icon: undefined, action: () => {} })
+    }
+
+    if (!isRemote) {
+      // Rename
+      items.push({
+        id: 'rename',
+        label: t('branch.rename'),
+        icon: <Edit2 size={14} />,
+        action: () => openRenameDialog(branch.name),
+        disabled: isSwitching || isRenaming,
+      })
+
+      // Delete (not current)
+      if (!isCurrent) {
+        items.push({
+          id: 'delete',
+          label: t('branch.delete'),
+          icon: <Trash2 size={14} />,
+          action: () => openDeleteDialog(branch.name),
+          disabled: isSwitching || isDeleting,
+        })
+      }
+    }
+
+    return items
+  }, [t, isSwitching, isCreating, isMerging, isRebasing, isRenaming, isDeleting, toast, handleSwitchBranch, openMergeDialog, openRebaseDialog, openRenameDialog, openDeleteDialog])
+
+  // 构建空白区域右键菜单
+  const buildEmptyMenuItems = useCallback((): ContextMenuItem[] => {
+    return [
+      {
+        id: 'createBranch',
+        label: t('branch.create'),
+        icon: <Plus size={14} />,
+        action: () => {
+          setCreateBasedOn(undefined)
+          setShowCreateDialog(true)
+        },
+        disabled: isCreating,
+      },
+      {
+        id: 'refresh',
+        label: t('refresh', { ns: 'common' }),
+        icon: <RefreshCw size={14} />,
+        action: () => loadBranches(),
+        disabled: isLoading,
+      },
+    ]
+  }, [t, isCreating, isLoading, loadBranches])
+
+  // 处理右键事件
+  const handleContextMenu = useCallback((e: React.MouseEvent, branch?: GitBranch | null) => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    const items = branch ? buildBranchMenuItems(branch) : buildEmptyMenuItems()
+    setContextMenu({ x: e.clientX, y: e.clientY, items })
+  }, [buildBranchMenuItems, buildEmptyMenuItems])
+
   const localBranches = useMemo(() =>
     branches.filter((b) => !b.isRemote),
     [branches]
@@ -439,9 +579,11 @@ export function BranchTab() {
     return (
       <div
         key={branch.name}
+        data-branch-name={branch.name}
         className={`w-full px-4 py-3 flex items-start gap-3 hover:bg-background-hover transition-colors border-b border-border-subtle group ${
           isCurrent ? 'bg-primary/5' : ''
         } ${isRemote ? 'opacity-70' : ''}`}
+        onContextMenu={(e) => handleContextMenu(e, branch)}
       >
         <div
           className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center ${
@@ -562,7 +704,10 @@ export function BranchTab() {
         </span>
         <div className="flex items-center gap-1">
           <button
-            onClick={() => setShowCreateDialog(true)}
+            onClick={() => {
+              setCreateBasedOn(undefined)
+              setShowCreateDialog(true)
+            }}
             disabled={isLoading || isSwitching}
             className="p-1 text-text-tertiary hover:text-primary hover:bg-primary/10 rounded transition-colors disabled:opacity-50"
             title={t('branch.create')}
@@ -586,7 +731,7 @@ export function BranchTab() {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div className="flex-1 overflow-y-auto min-h-0" onContextMenu={(e) => handleContextMenu(e, null)}>
         {isLoading && branches.length === 0 ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 size={20} className="animate-spin text-text-tertiary" />
@@ -629,8 +774,12 @@ export function BranchTab() {
         <CreateBranchDialog
           currentBranch={status?.branch || 'HEAD'}
           isCreating={isCreating}
+          basedOn={createBasedOn}
           onConfirm={handleCreateBranch}
-          onClose={() => setShowCreateDialog(false)}
+          onClose={() => {
+            setShowCreateDialog(false)
+            setCreateBasedOn(undefined)
+          }}
         />
       )}
 
@@ -689,6 +838,16 @@ export function BranchTab() {
             setBranchToRebase(null)
             setRebaseResult(null)
           }}
+        />
+      )}
+
+      {contextMenu && (
+        <ContextMenu
+          visible
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextMenu.items}
+          onClose={closeContextMenu}
         />
       )}
     </div>

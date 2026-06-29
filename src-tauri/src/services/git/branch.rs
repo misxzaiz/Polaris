@@ -85,7 +85,7 @@ pub fn get_branches(path: &Path) -> Result<Vec<GitBranch>, GitServiceError> {
 }
 
 /// 创建分支
-pub fn create_branch(path: &Path, name: &str, checkout: bool) -> Result<(), GitServiceError> {
+pub fn create_branch(path: &Path, name: &str, checkout: bool, start_point: Option<&str>) -> Result<(), GitServiceError> {
     let repo = open_repository(path)?;
 
     // 验证分支名
@@ -107,10 +107,19 @@ pub fn create_branch(path: &Path, name: &str, checkout: bool) -> Result<(), GitS
         return Ok(());
     }
 
-    // 非空仓库：正常创建分支
-    let head = repo.head()?.peel_to_commit()?;
+    // 确定分支起始点：使用指定的 start_point 或当前 HEAD
+    let start_commit = if let Some(sp) = start_point {
+        repo.revparse_single(sp)?
+            .peel_to_commit()
+            .map_err(|_| GitServiceError::BranchNotFound(format!(
+                "Invalid start point: {}",
+                sp
+            )))?
+    } else {
+        repo.head()?.peel_to_commit()?
+    };
 
-    repo.branch(name, &head, false)?;
+    repo.branch(name, &start_commit, false)?;
 
     if checkout {
         let obj = repo.revparse_single(&format!("refs/heads/{}", name))?;

@@ -167,7 +167,15 @@
     "stashAndSwitch": "Stash 并切换",
     "stashAndSwitchDesc": "将变更保存到 stash 后切换分支",
     "forceSwitch": "强制切换",
-    "forceSwitchDesc": "直接切换，可能丢失未提交的变更"
+    "forceSwitchDesc": "直接切换，可能丢失未提交的变更",
+    "contextMenu": {
+      "checkout": "Checkout",
+      "newBranchFromHere": "基于此创建分支",
+      "copyReferenceName": "复制引用名",
+      "copySuccess": "已复制到剪贴板",
+      "mergeIntoCurrent": "合并到当前分支",
+      "rebaseCurrentOnto": "当前分支变基到"
+    }
   },
   "remote": {
     "title": "远程仓库",

@@ -138,9 +138,10 @@ pub fn git_create_branch(
     workspacePath: String,
     name: String,
     checkout: bool,
+    start_point: Option<String>,
 ) -> Result<(), GitError> {
     let path = PathBuf::from(workspacePath);
-    GitService::create_branch(&path, &name, checkout).map_err(GitError::from)
+    GitService::create_branch(&path, &name, checkout, start_point.as_deref()).map_err(GitError::from)
 }
 
 /// 切换分支

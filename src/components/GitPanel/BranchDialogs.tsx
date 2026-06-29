@@ -106,6 +106,8 @@ interface CreateBranchDialogProps {
   isCreating: boolean
   onConfirm: (name: string, checkout: boolean) => void
   onClose: () => void
+  /** 基于指定分支创建（可选，不传则基于 currentBranch） */
+  basedOn?: string
 }
 
 export function CreateBranchDialog({
@@ -113,6 +115,7 @@ export function CreateBranchDialog({
   isCreating,
   onConfirm,
   onClose,
+  basedOn,
 }: CreateBranchDialogProps) {
   const { t } = useTranslation('git')
   const [name, setName] = useState('')
@@ -124,6 +127,8 @@ export function CreateBranchDialog({
     setName('')
     setCheckout(true)
   }
+
+  const sourceBranch = basedOn || currentBranch || 'HEAD'
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -169,7 +174,7 @@ export function CreateBranchDialog({
           </label>
 
           <div className="text-xs text-text-tertiary">
-            {t('branch.createFrom', { branch: currentBranch || 'HEAD' })}
+            {t('branch.createFrom', { branch: sourceBranch })}
           </div>
         </div>
 

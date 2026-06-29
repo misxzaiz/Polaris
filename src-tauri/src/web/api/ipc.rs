@@ -1035,7 +1035,8 @@ fn dispatch_git_create_branch(args: &Value) -> Result<Json<Value>, WebError> {
     let wp = require_string(args, "workspacePath")?;
     let name = require_string(args, "name")?;
     let checkout = args.get("checkout").and_then(|v| v.as_bool()).unwrap_or(true);
-    Ok(Json(serde_json::to_value(crate::commands::git::git_create_branch(wp, name, checkout).map_err(git_err)?).unwrap_or_default()))
+    let start_point = args.get("startPoint").and_then(|v| v.as_str()).map(String::from);
+    Ok(Json(serde_json::to_value(crate::commands::git::git_create_branch(wp, name, checkout, start_point).map_err(git_err)?).unwrap_or_default()))
 }
 
 fn dispatch_git_rename_branch(args: &Value) -> Result<Json<Value>, WebError> {

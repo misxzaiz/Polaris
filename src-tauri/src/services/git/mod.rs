@@ -119,8 +119,8 @@ impl GitService {
     }
 
     /// 创建分支
-    pub fn create_branch(path: &Path, name: &str, checkout: bool) -> Result<(), GitServiceError> {
-        create_branch(path, name, checkout)
+    pub fn create_branch(path: &Path, name: &str, checkout: bool, start_point: Option<&str>) -> Result<(), GitServiceError> {
+        create_branch(path, name, checkout, start_point)
     }
 
     /// 切换分支

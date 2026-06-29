@@ -167,7 +167,15 @@
     "stashAndSwitch": "Stash and Switch",
     "stashAndSwitchDesc": "Save changes to stash before switching",
     "forceSwitch": "Force Switch",
-    "forceSwitchDesc": "Switch directly, may lose uncommitted changes"
+    "forceSwitchDesc": "Switch directly, may lose uncommitted changes",
+    "contextMenu": {
+      "checkout": "Checkout",
+      "newBranchFromHere": "New Branch from Here",
+      "copyReferenceName": "Copy Reference Name",
+      "copySuccess": "Copied to clipboard",
+      "mergeIntoCurrent": "Merge into Current",
+      "rebaseCurrentOnto": "Rebase Current onto"
+    }
   },
   "remote": {
     "title": "Remote Repositories",
