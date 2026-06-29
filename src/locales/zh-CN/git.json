@@ -175,7 +175,8 @@
       "copySuccess": "已复制到剪贴板",
       "mergeIntoCurrent": "合并到当前分支",
       "rebaseCurrentOnto": "当前分支变基到"
-    }
+    },
+    "searchPlaceholder": "搜索分支"
   },
   "remote": {
     "title": "远程仓库",

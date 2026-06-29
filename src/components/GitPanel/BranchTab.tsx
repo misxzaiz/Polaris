@@ -11,7 +11,6 @@ import {
   Check,
   RefreshCw,
   Loader2,
-  GitCommit,
   Globe,
   FolderGit2,
   Plus,
@@ -19,8 +18,8 @@ import {
   GitMerge,
   GitCompare,
   Trash2,
-  ChevronRight,
   Copy,
+  Search,
 } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -49,6 +48,9 @@ export function BranchTab() {
   const [isSwitching, setIsSwitching] = useState(false)
   const [switchState, setSwitchState] = useState<SwitchState>({ type: 'idle' })
   const [error, setError] = useState<string | null>(null)
+
+  // 搜索过滤状态
+  const [searchTerm, setSearchTerm] = useState('')
 
   // 创建分支状态
   const [showCreateDialog, setShowCreateDialog] = useState(false)
@@ -559,150 +561,103 @@ export function BranchTab() {
     setContextMenu({ x: e.clientX, y: e.clientY, items })
   }, [buildBranchMenuItems, buildEmptyMenuItems])
 
-  const localBranches = useMemo(() =>
-    branches.filter((b) => !b.isRemote),
-    [branches]
-  )
+  const localBranches = useMemo(() => {
+    const filtered = branches.filter((b) => !b.isRemote)
+    if (!searchTerm) return filtered
+    return filtered.filter((b) => b.name.toLowerCase().includes(searchTerm.toLowerCase()))
+  }, [branches, searchTerm])
 
-  const remoteBranches = useMemo(() =>
-    branches.filter((b) => b.isRemote),
-    [branches]
-  )
+  const remoteBranches = useMemo(() => {
+    const filtered = branches.filter((b) => b.isRemote)
+    if (!searchTerm) return filtered
+    return filtered.filter((b) => b.name.toLowerCase().includes(searchTerm.toLowerCase()))
+  }, [branches, searchTerm])
 
   const formatTime = (timestamp?: number) => {
     if (!timestamp) return ''
     return formatGitTimestamp(timestamp, t)
   }
 
-  const renderBranchItem = (branch: GitBranch, isRemote = false) => {
+  const renderBranchItem = (branch: GitBranch) => {
     const isCurrent = branch.isCurrent
+    const isRemote = branch.isRemote
+
     return (
       <div
         key={branch.name}
         data-branch-name={branch.name}
-        className={`w-full px-4 py-3 flex items-start gap-3 hover:bg-background-hover transition-colors border-b border-border-subtle group ${
+        className={`w-full px-3 py-1.5 flex items-center gap-2 hover:bg-background-hover transition-colors border-b border-border-subtle cursor-pointer group ${
           isCurrent ? 'bg-primary/5' : ''
         } ${isRemote ? 'opacity-70' : ''}`}
         onContextMenu={(e) => handleContextMenu(e, branch)}
+        onClick={() => !isRemote && handleSwitchBranch(branch.name)}
       >
-        <div
-          className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center ${
-            isCurrent ? 'bg-primary/20' : isRemote ? 'bg-info/10' : 'bg-background-surface'
-          }`}
-        >
+        {/* 图标 */}
+        <div className="flex-shrink-0 w-4 h-4 flex items-center justify-center">
           {isCurrent ? (
-            <Check size={12} className="text-primary" />
+            <Check size={10} className="text-primary" />
           ) : isRemote ? (
-            <Globe size={12} className="text-info" />
+            <Globe size={10} className="text-info" />
           ) : (
-            <GitBranchIcon size={12} className="text-text-tertiary" />
+            <GitBranchIcon size={10} className="text-text-tertiary" />
           )}
         </div>
-        <div className="flex-1 min-w-0 cursor-pointer" onClick={() => !isRemote && handleSwitchBranch(branch.name)}>
-          <div className="flex items-center gap-2 mb-1">
-            <span
-              className={`text-sm font-medium truncate ${
-                isCurrent ? 'text-primary' : 'text-text-primary'
-              }`}
-            >
-              {branch.name}
-            </span>
-            {isCurrent && (
-              <span className="text-[10px] px-1.5 py-0.5 bg-primary/20 text-primary rounded">
-                {t('branch.current')}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-3 text-xs text-text-tertiary">
-            {branch.commit && (
-              <span className="flex items-center gap-1">
-                <GitCommit size={10} />
-                <span className="font-mono">{branch.commit.slice(0, 7)}</span>
-              </span>
-            )}
-            {branch.lastCommitDate && (
-              <span>{formatTime(branch.lastCommitDate)}</span>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          {!isRemote && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                openRenameDialog(branch.name)
-              }}
-              disabled={isSwitching || isRenaming}
-              className="p-1 text-text-tertiary hover:text-primary hover:bg-primary/10 rounded transition-colors disabled:opacity-50"
-              title={t('branch.rename')}
-            >
-              <Edit2 size={14} />
-            </button>
-          )}
-          {!isRemote && !isCurrent && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                openMergeDialog(branch.name)
-              }}
-              disabled={isSwitching || isMerging}
-              className="p-1 text-text-tertiary hover:text-success hover:bg-success/10 rounded transition-colors disabled:opacity-50"
-              title={t('branch.merge')}
-            >
-              <GitMerge size={14} />
-            </button>
-          )}
-          {!isRemote && !isCurrent && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                openRebaseDialog(branch.name)
-              }}
-              disabled={isSwitching || isRebasing}
-              className="p-1 text-text-tertiary hover:text-info hover:bg-info/10 rounded transition-colors disabled:opacity-50"
-              title={t('branch.rebase')}
-            >
-              <GitCompare size={14} />
-            </button>
-          )}
-          {!isRemote && !isCurrent && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                openDeleteDialog(branch.name)
-              }}
-              disabled={isSwitching || isDeleting}
-              className="p-1 text-text-tertiary hover:text-danger hover:bg-danger/10 rounded transition-colors disabled:opacity-50"
-              title={t('branch.delete')}
-            >
-              <Trash2 size={14} />
-            </button>
-          )}
-          {!isRemote && (
-            <ChevronRight
-              size={14}
-              className={`flex-shrink-0 mt-1 ${
-                isCurrent ? 'text-primary/50' : 'text-text-tertiary'
-              }`}
-            />
-          )}
-        </div>
+
+        {/* 分支名 */}
+        <span
+          className={`flex-1 min-w-0 text-sm truncate ${
+            isCurrent ? 'text-primary font-medium' : 'text-text-primary'
+          }`}
+          title={branch.name}
+        >
+          {branch.name}
+        </span>
+
+        {/* SHA */}
+        {branch.commit && (
+          <span className="font-mono text-xs text-text-tertiary flex-shrink-0">
+            {branch.commit.slice(0, 7)}
+          </span>
+        )}
+
+        {/* 时间（远程分支不显示） */}
+        {!isRemote && branch.lastCommitDate && (
+          <span className="text-xs text-text-tertiary flex-shrink-0">
+            {formatTime(branch.lastCommitDate)}
+          </span>
+        )}
+
+        {/* 当前标记 */}
+        {isCurrent && (
+          <span className="text-[10px] px-1.5 py-0.5 bg-primary/20 text-primary rounded flex-shrink-0">
+            {t('branch.current')}
+          </span>
+        )}
       </div>
     )
   }
 
   return (
     <div className="flex flex-col min-h-0">
-      <div className="px-4 py-2 border-b border-border-subtle flex items-center justify-between shrink-0">
+      <div className="px-3 py-2 border-b border-border-subtle flex items-center gap-2 shrink-0">
         <span className="text-sm font-medium text-text-primary">
           {t('branch.title')}
-          {localBranches.length > 0 && (
-            <span className="ml-2 text-xs text-text-tertiary">
-              ({localBranches.length})
-            </span>
-          )}
+          <span className="ml-2 text-xs text-text-tertiary">
+            ({localBranches.length + remoteBranches.length})
+          </span>
         </span>
+        <div className="flex-1" />
         <div className="flex items-center gap-1">
+          <div className="flex items-center bg-background-surface border border-border-subtle rounded-md px-1.5 py-1 gap-1 max-w-[140px]">
+            <Search size={12} className="text-text-tertiary flex-shrink-0" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder={t('branch.searchPlaceholder', '搜索')}
+              className="bg-transparent border-0 outline-none text-xs text-text-primary placeholder:text-text-tertiary w-full"
+            />
+          </div>
           <button
             onClick={() => {
               setCreateBasedOn(undefined)
@@ -726,7 +681,7 @@ export function BranchTab() {
       </div>
 
       {error && (
-        <div className="px-4 py-2 text-xs text-danger bg-danger/10 border-b border-danger/20">
+        <div className="px-3 py-2 text-xs text-danger bg-danger/10 border-b border-danger/20">
           {error}
         </div>
       )}
@@ -743,17 +698,16 @@ export function BranchTab() {
           </div>
         ) : (
           <>
-            <div className="px-4 py-1.5 text-xs font-medium text-text-tertiary bg-background-surface border-b border-border-subtle sticky top-0">
-              {t('branch.local')} ({localBranches.length})
-            </div>
-            {localBranches.map((branch) => renderBranchItem(branch, false))}
+            {localBranches.map((branch) => renderBranchItem(branch))}
 
             {remoteBranches.length > 0 && (
               <>
-                <div className="px-4 py-1.5 text-xs font-medium text-text-tertiary bg-background-surface border-b border-border-subtle sticky top-0 mt-1">
-                  {t('branch.remote')} ({remoteBranches.length})
+                <div className="flex items-center gap-3 px-3 py-1.5 text-xs font-medium text-text-tertiary border-b border-border-subtle">
+                  <span className="flex-1 h-px bg-border-subtle" />
+                  <span>{t('branch.remote')} ({remoteBranches.length})</span>
+                  <span className="flex-1 h-px bg-border-subtle" />
                 </div>
-                {remoteBranches.map((branch) => renderBranchItem(branch, true))}
+                {remoteBranches.map((branch) => renderBranchItem(branch))}
               </>
             )}
           </>
