@@ -48,6 +48,7 @@ import {
   Server,
   Eye,
   EyeOff,
+  Copy,
 } from 'lucide-react'
 
 const log = createLogger('ModelProviderTab')
@@ -215,6 +216,7 @@ function ProfileCard({
   onActivate,
   onEdit,
   onDelete,
+  onDuplicate,
   onTestConnection,
 }: {
   profile: ModelProfile
@@ -223,6 +225,7 @@ function ProfileCard({
   onActivate: () => void
   onEdit: (p: ModelProfile) => void
   onDelete: (id: string) => void
+  onDuplicate: (p: ModelProfile) => void
   onTestConnection: (p: ModelProfile) => void
 }) {
   const { t } = useTranslation(['settings', 'common'])
@@ -292,6 +295,13 @@ function ProfileCard({
           disabled={isTesting}
         >
           {isTesting ? <Loader2 size={14} className="animate-spin" /> : <TestTube size={14} />}
+        </button>
+        <button
+          onClick={() => onDuplicate(profile)}
+          className="p-1 text-text-tertiary hover:text-emerald-400 transition-colors"
+          title={t('modelProfile.duplicate')}
+        >
+          <Copy size={14} />
         </button>
         <button
           onClick={() => onEdit(profile)}
@@ -775,6 +785,16 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
     setShowEditor(true)
   }
 
+  const openDuplicate = (profile: ModelProfile) => {
+    setEditingProfile({
+      ...profile,
+      id: '',
+      name: `${profile.name} (副本)`,
+      active: false,
+    })
+    setShowEditor(true)
+  }
+
   const closeEditor = () => {
     setShowEditor(false)
     setEditingProfile(null)
@@ -968,6 +988,7 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
               isTesting={testingProfileId === profile.id}
               onActivate={() => handleActivate(profile)}
               onEdit={openEdit}
+              onDuplicate={openDuplicate}
               onDelete={handleDelete}
               onTestConnection={handleTestConnection}
             />

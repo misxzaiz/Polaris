@@ -116,6 +116,7 @@
     "edit": "Edit",
     "save": "Save",
     "delete": "Delete",
+    "duplicate": "Duplicate",
     "profileName": "Profile Name",
     "baseUrl": "API Endpoint URL (e.g. https://api.siliconflow.cn)",
     "apiKey": "API Key",
