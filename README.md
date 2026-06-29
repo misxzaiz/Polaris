@@ -74,9 +74,11 @@ pnpm run package:web
 
 本项目在开发和灵感阶段参考或使用了以下服务与工具，特此感谢：
 
+- [sensenova(商汤)](https://platform.sensenova.cn/)
 - [Claude Code](https://github.com/anthropics/claude-code)
 - [Codex (OpenAI)](https://github.com/openai/codex)
 - [iFlow(白月光)](https://cli.iflow.cn/?)
+- [百度翻译](https://fanyi-api.baidu.com/)
 - [cc-switch](https://github.com/farion1231/cc-switch)
 - [CodeG](https://github.com/xintaofei/codeg)
 - [GLM (智谱)](https://open.bigmodel.cn/)
