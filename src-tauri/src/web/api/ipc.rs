@@ -1668,12 +1668,6 @@ async fn dispatch_scheduler_update_run_status(state: &AppState, args: &Value) ->
 
     Ok(Json(serde_json::to_value(task).unwrap()))
 }
-fn dispatch_scheduler_read_protocol_docs(_state: &AppState, _args: &Value) -> Result<Json<Value>, WebError> {
-    Ok(Json(serde_json::json!([])))
-}
-fn dispatch_scheduler_build_protocol_prompt(_state: &AppState, _args: &Value) -> Result<Json<Value>, WebError> {
-    Ok(Json(Value::String(String::new())))
-}
 
 fn dispatch_git_pull(args: &Value) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Json<Value>, WebError>> + Send>> {
     let wp = match require_string(args, "workspacePath") {

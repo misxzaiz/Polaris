@@ -169,6 +169,7 @@ async fn update_config(config: Config, state: tauri::State<'_, AppState>) -> Res
         store.update(config)?;
         store.get().clone()
     };
+    cascade_active_model_profile(&next_config);
     refresh_engine_configs(&state, next_config.clone()).await;
     Ok(())
 }
@@ -182,6 +183,7 @@ async fn update_config_patch(patch: serde_json::Value, state: tauri::State<'_, A
             .map_err(|e| error::AppError::Unknown(e.to_string()))?;
         store.patch(patch)?
     };
+    cascade_active_model_profile(&saved_config);
     refresh_engine_configs(&state, saved_config.clone()).await;
     Ok(saved_config)
 }

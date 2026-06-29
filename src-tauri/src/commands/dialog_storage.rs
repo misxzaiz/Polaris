@@ -6,7 +6,7 @@
 //! 写入策略：原子写入（`*.jsonl.tmp` → rename），避免崩溃时半截 jsonl。
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::error::{AppError, Result};
 use crate::services::data_root::data_root;

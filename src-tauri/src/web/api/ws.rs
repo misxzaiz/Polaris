@@ -81,7 +81,7 @@ fn validate_ws_token(query: &WsAuthParams, state: &AppState) -> Result<(), u16> 
 
 /// WebSocket upgrade handler — validates token from query parameter, then initiates the connection.
 /// Browser WebSocket API doesn't support custom headers, so auth token is passed as `?token=<md5>`.
-pub async fn ws_handler(
+pub(crate) async fn ws_handler(
     ws: WebSocketUpgrade,
     Query(query): Query<WsAuthParams>,
     State(state): State<Arc<AppState>>,

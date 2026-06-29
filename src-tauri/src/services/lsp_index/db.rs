@@ -13,7 +13,7 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use crate::error::{AppError, Result};
 
 use super::model::{
-    FileIndex, ImportEntry, IndexStatus, RefEntry, RefKind, Symbol, SymbolKind,
+    FileIndex, ImportEntry, IndexStatus, RefKind, SymbolKind,
 };
 
 /// schema 版本。修改 schema 必须递增此版本，并在打开时触发重建。

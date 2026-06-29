@@ -2,20 +2,42 @@
 # 使用 mold 链接器加速 debug 构建（如果系统安装了 mold）
 # runner = "mold"
 
+# 使用 LLD 链接器（LLVM），比默认 MSVC 链接器更快
+# 需要安装: rustup component add llvm-tools
+[target.x86_64-pc-windows-msvc]
+rustflags = [
+    "-C", "link-arg=/STACK:8388608",
+    "-C", "link-arg=/OPT:REF,ICF",
+]
+
 [profile.dev]
-# 保留调试符号，优化级别保持默认（debug 构建更快）
+# 保留调试符号
 debug = true
 opt-level = 0
-
-# 增量编译，加速重复构建
 incremental = true
+# 减少 dev 构建的 codegen units 以加快编译
+codegen-units = 16
 
 [profile.dev.package."*"]
 # 依赖库使用较高优化级别，减少调试时的噪音
 opt-level = 2
+# 依赖库使用更多 codegen units 以加快编译
+codegen-units = 16
 
 [profile.release]
 # Release 构建优化
 opt-level = 3
 lto = "thin"
-codegen-units = 1
+# codegen-units: 1 最优但最慢，16 平衡速度与优化
+# 开发时使用 16，发布前可改为 1 以获得最佳性能
+codegen-units = 16
+# 启用 panic=abort，减小二进制体积并提高性能
+panic = "abort"
+# 启用 strip，移除调试符号以减小体积
+strip = true
+# 增量编译
+incremental = true
+
+[profile.release.package."*"]
+# 依赖库使用更多 codegen units 以加快编译
+codegen-units = 16
