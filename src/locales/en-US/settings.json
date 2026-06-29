@@ -147,6 +147,8 @@
     "cancel": "Cancel",
     "created": "Profile created",
     "updated": "Profile updated",
+    "quickInput": "Quick Input",
+    "quickInputPlaceholder": "Paste: [URL] [model name] [API key] — auto-fills below",
     "sectionBasic": "Basic Info",
     "sectionAuth": "Authentication",
     "sectionProtocol": "Protocol & Scope",

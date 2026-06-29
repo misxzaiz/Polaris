@@ -147,6 +147,8 @@
     "cancel": "取消",
     "created": "已创建 Profile",
     "updated": "已更新 Profile",
+    "quickInput": "快速输入",
+    "quickInputPlaceholder": "粘贴：[URL] [模型名] [API Key] — 自动填充下方表单",
     "sectionBasic": "基础信息",
     "sectionAuth": "认证配置",
     "sectionProtocol": "协议与适用范围",

@@ -49,6 +49,7 @@ import {
   Eye,
   EyeOff,
   Copy,
+  Zap,
 } from 'lucide-react'
 
 const log = createLogger('ModelProviderTab')
@@ -322,6 +323,32 @@ function ProfileCard({
   )
 }
 
+/** 解析快速输入文本：格式为 `[url] [model] [apikey]`（空格分隔，apikey 可含空格） */
+function parseQuickInput(text: string): { baseUrl: string; model: string; apiKey: string } | null {
+  const trimmed = text.trim()
+  if (!trimmed) return null
+
+  // 按空格分割，第一个 token 若为 URL 则作为 baseUrl
+  // 之后第一个非 URL token 为 model，剩余全部为 apiKey
+  const tokens = trimmed.split(/\s+/)
+
+  // 找到 URL 位置（第一个以 http 开头的 token）
+  const urlIdx = tokens.findIndex((t) => t.startsWith('http://') || t.startsWith('https://'))
+  if (urlIdx === -1) return null
+
+  const baseUrl = tokens[urlIdx]
+  // URL 之后的第一个 token 为 model，再往后全部为 apiKey
+  const modelIdx = urlIdx + 1
+  if (modelIdx >= tokens.length) return null
+
+  const model = tokens[modelIdx]
+  const apiKey = tokens.slice(modelIdx + 1).join(' ').trim()
+
+  if (!model) return null
+
+  return { baseUrl, model, apiKey }
+}
+
 // ---------- 编辑器弹层 ----------
 
 function ProfileEditorModal({
@@ -450,6 +477,44 @@ function ProfileEditorModal({
 
         {/* 表单主体（可滚动） */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          {/* 快速输入 — 仅新建时显示 */}
+          {!editing && (
+            <div className={sectionClass}>
+              <div className={`${sectionTitleClass} flex items-center gap-1.5`}>
+                <Zap size={12} />
+                {t('modelProfile.quickInput')}
+              </div>
+              <div>
+                <input
+                  type="text"
+                  placeholder={t('modelProfile.quickInputPlaceholder')}
+                  onPaste={(e) => {
+                    // 粘贴后异步读取剪贴板文本并解析
+                    const pasted = e.clipboardData.getData('text')
+                    const parsed = parseQuickInput(pasted)
+                    if (parsed) {
+                      // 仅当表单字段仍为空时才自动填充，避免覆盖用户已有输入
+                      setForm((prev) => {
+                        const next = { ...prev }
+                        if (!prev.baseUrl) next.baseUrl = parsed.baseUrl
+                        if (!prev.model) next.model = parsed.model
+                        if (!prev.name) next.name = parsed.model
+                        if (!prev.apiKey) next.apiKey = parsed.apiKey
+                        return next
+                      })
+                    }
+                  }}
+                  className={`${fieldClass} font-mono text-xs`}
+                />
+                <p className="text-[11px] text-text-tertiary mt-1">
+                  <code className="text-[10px] bg-background-surface px-1 py-0.5 rounded">
+                    https://api.example.com model-name sk-xxxxxxxx
+                  </code>
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* 基础信息 */}
           <div className={sectionClass}>
             <div className={sectionTitleClass}>{t('modelProfile.sectionBasic')}</div>
