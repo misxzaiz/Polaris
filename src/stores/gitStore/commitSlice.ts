@@ -192,4 +192,25 @@ export const createCommitSlice: CommitSlice = (set, get) => ({
       return []
     }
   },
+
+  // 检出指定提交（detached HEAD）
+  async checkoutCommit(workspacePath: string, commitSha: string) {
+    set({ isLoading: true, error: null })
+
+    try {
+      await invoke('git_checkout_commit', {
+        workspacePath,
+        commitSha,
+      })
+
+      // 刷新状态和分支列表
+      await get().refreshStatus(workspacePath)
+      await get().getBranches(workspacePath)
+
+      set({ isLoading: false })
+    } catch (err) {
+      set({ error: parseGitError(err), isLoading: false })
+      throw err
+    }
+  },
 })

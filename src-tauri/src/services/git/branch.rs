@@ -369,3 +369,16 @@ pub fn merge_branch(
         files_changed,
     })
 }
+
+/// 检出指定提交（detached HEAD）
+pub fn checkout_commit(path: &Path, commit_sha: &str) -> Result<(), GitServiceError> {
+    let repo = open_repository(path)?;
+    let oid = git2::Oid::from_str(commit_sha)
+        .map_err(|_| GitServiceError::CommitNotFound(commit_sha.to_string()))?;
+    let commit = repo.find_commit(oid)
+        .map_err(|_| GitServiceError::CommitNotFound(commit_sha.to_string()))?;
+    let tree = commit.tree()?;
+    repo.checkout_tree(tree.as_object(), None)?;
+    repo.set_head_detached(oid)?;
+    Ok(())
+}

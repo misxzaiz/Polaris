@@ -192,6 +192,7 @@ export interface CommitActions {
   getLog: (workspacePath: string, limit?: number, skip?: number, branch?: string) => Promise<GitCommit[]>
   getCommitDetails: (workspacePath: string, commitSha: string) => Promise<GitCommitDetails>
   getFileHistory: (workspacePath: string, filePath: string, limit?: number, skip?: number, branch?: string) => Promise<GitFileHistoryEntry[]>
+  checkoutCommit: (workspacePath: string, commitSha: string) => Promise<void>
 }
 
 /**
@@ -214,6 +215,7 @@ export interface AdvancedActions {
   revert: (workspacePath: string, commitSha: string) => Promise<GitRevertResult>
   revertAbort: (workspacePath: string) => Promise<void>
   revertContinue: (workspacePath: string) => Promise<GitRevertResult>
+  reset: (workspacePath: string, mode: 'soft' | 'mixed' | 'hard', commitSha: string) => Promise<void>
 }
 
 /**

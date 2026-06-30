@@ -585,3 +585,35 @@ pub fn git_get_gitignore_templates() -> Vec<GitIgnoreTemplate> {
     GitService::get_gitignore_templates()
 }
 
+
+/// 检出指定提交（detached HEAD）
+#[cfg_attr(feature = "tauri-app", tauri::command)]
+pub fn git_checkout_commit(
+    workspacePath: String,
+    commitSha: String,
+) -> Result<(), GitError> {
+    let path = std::path::PathBuf::from(workspacePath);
+    GitService::checkout_commit(&path, &commitSha).map_err(GitError::from)
+}
+
+/// Git Reset
+#[cfg_attr(feature = "tauri-app", tauri::command)]
+pub fn git_reset(
+    workspacePath: String,
+    mode: String,
+    commitSha: String,
+) -> Result<(), GitError> {
+    use crate::services::git::ResetMode;
+    let path = std::path::PathBuf::from(workspacePath);
+    let reset_mode = match mode.as_str() {
+        "soft" => ResetMode::Soft,
+        "mixed" => ResetMode::Mixed,
+        "hard" => ResetMode::Hard,
+        _ => return Err(GitError {
+            code: "INVALID_ARGUMENT".to_string(),
+            message: format!("Unknown reset mode: {}. Expected: soft, mixed, or hard", mode),
+            details: None,
+        }),
+    };
+    GitService::reset(&path, &commitSha, reset_mode).map_err(GitError::from)
+}

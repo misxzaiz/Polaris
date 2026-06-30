@@ -20,6 +20,10 @@ import {
   Copy,
   GitMerge,
   RotateCcw,
+  Undo2,
+  GitBranchPlus,
+  Tag,
+  Trash2,
 } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -60,6 +64,8 @@ import {
 } from './historyTabUtils'
 import type { FileListMode, CopyAction } from './historyTabUtils'
 import { CommitDetailsPane } from './CommitDetailsPane'
+import { CreateBranchFromCommitDialog } from './CreateBranchFromCommitDialog'
+import { CreateTagFromCommitDialog } from './CreateTagFromCommitDialog'
 
 const log = createLogger('HistoryTab')
 
@@ -129,6 +135,8 @@ export function HistoryTab({
     type?: 'danger' | 'warning'
     onConfirm: () => void
   } | null>(null)
+  const [createBranchFromCommit, setCreateBranchFromCommit] = useState<GitCommitType | null>(null)
+  const [createTagFromCommit, setCreateTagFromCommit] = useState<GitCommitType | null>(null)
 
   const getLog = useGitStore((s) => s.getLog)
   const getCommitDetails = useGitStore((s) => s.getCommitDetails)
@@ -138,6 +146,8 @@ export function HistoryTab({
   const currentBranchName = useGitStore((s) => s.status?.branch ?? '')
   const cherryPick = useGitStore((s) => s.cherryPick)
   const revert = useGitStore((s) => s.revert)
+  const reset = useGitStore((s) => s.reset)
+  const checkoutCommit = useGitStore((s) => s.checkoutCommit)
   const currentWorkspace = useWorkspaceStore((s) => {
     const { workspaces, currentWorkspaceId, viewingWorkspaceId } = s
     const targetId = viewingWorkspaceId || currentWorkspaceId
@@ -612,7 +622,9 @@ export function HistoryTab({
   }, [])
 
   const buildCommitContextMenuItems = useCallback((commit: GitCommitType): ContextMenuItem[] => {
+    const isHeadCommit = commits.length > 0 && commits[0].sha === commit.sha
     const items: ContextMenuItem[] = [
+      // -- Copy --
       {
         id: 'copy-sha',
         label: t('history.copySha'),
@@ -625,7 +637,60 @@ export function HistoryTab({
         icon: <Copy size={14} />,
         action: () => copyText(commit.message, 'message'),
       },
+      {
+        id: 'copy-author',
+        label: t('history.copyAuthor'),
+        icon: <Copy size={14} />,
+        action: () => copyText(commit.author, 'author'),
+      },
+      {
+        id: 'copy-author-email',
+        label: t('history.copyAuthorEmail'),
+        icon: <Copy size={14} />,
+        action: () => copyText(commit.authorEmail, 'authorEmail'),
+      },
       { id: 'sep-1', label: '-', icon: undefined, action: () => {} },
+
+      // -- Branch/Tag --
+      {
+        id: 'create-branch',
+        label: t('history.createBranch'),
+        icon: <GitBranchPlus size={14} />,
+        action: () => setCreateBranchFromCommit(commit),
+      },
+      {
+        id: 'create-tag',
+        label: t('history.createTag'),
+        icon: <Tag size={14} />,
+        action: () => setCreateTagFromCommit(commit),
+      },
+      {
+        id: 'checkout-commit',
+        label: t('history.checkoutCommit'),
+        icon: <GitBranchIcon size={14} />,
+        action: () => {
+          if (!currentWorkspace) return
+          setConfirmDialog({
+            show: true,
+            title: t('history.checkoutCommitTitle'),
+            message: t('history.checkoutCommitConfirm'),
+            type: 'warning',
+            onConfirm: async () => {
+              setConfirmDialog(null)
+              try {
+                await checkoutCommit(currentWorkspace.path, commit.sha)
+                toast.success(t('history.checkoutCommitSuccess'))
+                void loadCommits()
+              } catch (err) {
+                toast.error(t('history.checkoutCommitFailed', { error: parseGitError(err) }))
+              }
+            },
+          })
+        },
+      },
+      { id: 'sep-2', label: '-', icon: undefined, action: () => {} },
+
+      // -- Cherry-pick / Revert --
       {
         id: 'cherry-pick',
         label: t('cherryPick.button'),
@@ -672,9 +737,61 @@ export function HistoryTab({
           })
         },
       },
+      { id: 'sep-3', label: '-', icon: undefined, action: () => {} },
+
+      // -- Reset (HEAD commit only) --
+      {
+        id: 'undo-commit',
+        label: t('history.undoCommit'),
+        icon: <Undo2 size={14} />,
+        disabled: !isHeadCommit,
+        action: () => {
+          if (!currentWorkspace) return
+          setConfirmDialog({
+            show: true,
+            title: t('history.undoCommitTitle'),
+            message: t('history.undoCommitConfirm'),
+            onConfirm: async () => {
+              setConfirmDialog(null)
+              try {
+                await reset(currentWorkspace.path, 'soft', commit.sha + '^')
+                toast.success(t('history.undoCommitSuccess'))
+                void loadCommits()
+              } catch (err) {
+                toast.error(t('history.undoCommitFailed', { error: parseGitError(err) }))
+              }
+            },
+          })
+        },
+      },
+      {
+        id: 'drop-commit',
+        label: t('history.dropCommit'),
+        icon: <Trash2 size={14} />,
+        disabled: !isHeadCommit,
+        action: () => {
+          if (!currentWorkspace) return
+          setConfirmDialog({
+            show: true,
+            title: t('history.dropCommitTitle'),
+            message: t('history.dropCommitConfirm'),
+            type: 'danger',
+            onConfirm: async () => {
+              setConfirmDialog(null)
+              try {
+                await reset(currentWorkspace.path, 'hard', commit.sha + '^')
+                toast.success(t('history.dropCommitSuccess'))
+                void loadCommits()
+              } catch (err) {
+                toast.error(t('history.dropCommitFailed', { error: parseGitError(err) }))
+              }
+            },
+          })
+        },
+      },
     ]
     return items
-  }, [cherryPick, copyText, currentWorkspace, loadCommits, revert, t, toast])
+  }, [cherryPick, checkoutCommit, commits, copyText, currentWorkspace, loadCommits, reset, revert, t, toast])
 
   // 在中央编辑器打开某提交中某文件的 diff（复用同一标签页，identity 去重）
   const openFileDiffInTab = useCallback((commit: GitCommitType, file: GitDiffEntry) => {
@@ -1139,6 +1256,27 @@ export function HistoryTab({
           type={confirmDialog.type}
           onConfirm={confirmDialog.onConfirm}
           onCancel={() => setConfirmDialog(null)}
+        />
+      )}
+
+      {createBranchFromCommit && currentWorkspace && (
+        <CreateBranchFromCommitDialog
+          commit={createBranchFromCommit}
+          workspacePath={currentWorkspace.path}
+          onClose={() => setCreateBranchFromCommit(null)}
+          onSuccess={() => {
+            setCreateBranchFromCommit(null)
+            void loadCommits()
+          }}
+        />
+      )}
+
+      {createTagFromCommit && currentWorkspace && (
+        <CreateTagFromCommitDialog
+          commit={createTagFromCommit}
+          workspacePath={currentWorkspace.path}
+          onClose={() => setCreateTagFromCommit(null)}
+          onSuccess={() => setCreateTagFromCommit(null)}
         />
       )}
     </div>

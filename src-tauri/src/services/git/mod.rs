@@ -17,6 +17,7 @@ mod commit;
 mod remote;
 mod log;
 mod stash;
+mod reset;
 mod gitignore;
 
 // 重导出公共 API
@@ -26,7 +27,7 @@ pub use diff::{
     get_diff, get_worktree_diff, get_index_diff, get_worktree_file_diff,
     get_index_file_diff,
 };
-pub use branch::{get_branches, create_branch, checkout_branch, delete_branch, rename_branch, merge_branch};
+pub use branch::{get_branches, create_branch, checkout_branch, delete_branch, rename_branch, merge_branch, checkout_commit};
 pub use tag::{get_tags, create_tag, delete_tag};
 pub use rebase::{rebase_branch, rebase_abort, rebase_continue};
 pub use cherry_pick::{cherry_pick, cherry_pick_abort, cherry_pick_continue};
@@ -38,6 +39,7 @@ pub use remote::{
 };
 pub use log::{get_log, get_commit_details, get_file_history, blame_file};
 pub use stash::{stash_save, stash_list, stash_pop, stash_drop};
+pub use reset::{reset, ResetMode};
 pub use gitignore::{get_gitignore, save_gitignore, add_to_gitignore, get_gitignore_templates};
 
 use std::path::Path;
@@ -141,6 +143,16 @@ impl GitService {
     /// 合并分支
     pub fn merge_branch(path: &Path, source_branch: &str, no_ff: bool) -> Result<GitMergeResult, GitServiceError> {
         merge_branch(path, source_branch, no_ff)
+    }
+
+    /// 检出指定提交（detached HEAD）
+    pub fn checkout_commit(path: &Path, commit_sha: &str) -> Result<(), GitServiceError> {
+        checkout_commit(path, commit_sha)
+    }
+
+    /// Reset HEAD
+    pub fn reset(path: &Path, commit_sha: &str, mode: ResetMode) -> Result<(), GitServiceError> {
+        reset(path, commit_sha, mode)
     }
 
     // ========================================================================

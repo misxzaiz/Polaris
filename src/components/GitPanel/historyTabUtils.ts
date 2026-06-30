@@ -13,7 +13,7 @@ export const FILE_PANE_MIN_WIDTH = 240
 export const FILE_PANE_MAX_WIDTH = 520
 
 export type FileListMode = 'list' | 'tree'
-export type CopyAction = 'sha' | 'message' | 'filePath'
+export type CopyAction = 'sha' | 'message' | 'filePath' | 'author' | 'authorEmail'
 
 export const getDiffKey = (file: GitDiffEntry) => `${file.old_file_path ?? ''}:${file.file_path}`
 

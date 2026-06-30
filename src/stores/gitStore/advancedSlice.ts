@@ -134,4 +134,25 @@ export const createAdvancedSlice: AdvancedSlice = (set, get) => ({
       throw err
     }
   },
+
+  // Git Reset
+  async reset(workspacePath: string, mode: 'soft' | 'mixed' | 'hard', commitSha: string) {
+    set({ isLoading: true, error: null })
+
+    try {
+      await invoke('git_reset', {
+        workspacePath,
+        mode,
+        commitSha,
+      })
+
+      // 刷新状态
+      await get().refreshStatus(workspacePath)
+
+      set({ isLoading: false })
+    } catch (err) {
+      set({ error: parseGitError(err), isLoading: false })
+      throw err
+    }
+  },
 })
