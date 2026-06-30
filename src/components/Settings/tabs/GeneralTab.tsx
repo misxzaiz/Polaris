@@ -319,16 +319,6 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
             onChange={(paragraphSpacing) => updateChatDisplay({ paragraphSpacing })}
           />
           <ChatSlider
-            label={t('chatDisplay.contentWidth')}
-            hint={t('chatDisplay.contentWidthHint')}
-            value={chatDisplay.contentWidth}
-            min={60}
-            max={90}
-            step={2}
-            suffix="ch"
-            onChange={(contentWidth) => updateChatDisplay({ contentWidth })}
-          />
-          <ChatSlider
             label={t('chatDisplay.codeFontSize')}
             hint={t('chatDisplay.codeFontSizeHint')}
             value={chatDisplay.codeFontSize}

@@ -400,7 +400,6 @@ body {
   --chat-bubble-padding-x: 16px;
   --chat-bubble-padding-y: 12px;
   --chat-bubble-radius: 16px;
-  --chat-content-width: 78ch;
   --chat-code-font-size: 13px;
   --chat-code-padding: 16px;
   --chat-input-font-size: 14px;
@@ -440,7 +439,7 @@ body {
 }
 
 .chat-prose {
-  max-width: var(--chat-content-width);
+  /* max-width intentionally removed — content adapts to flex parent */
   font-family: var(--chat-font-family);
   font-size: var(--chat-font-size);
   line-height: var(--chat-line-height);
@@ -487,12 +486,6 @@ body {
 
 .chat-code-text {
   line-height: 1.6;
-}
-
-@media (max-width: 640px) {
-  .chat-prose {
-    max-width: 100%;
-  }
 }
 
 /* ============================================

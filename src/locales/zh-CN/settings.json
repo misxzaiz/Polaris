@@ -246,8 +246,6 @@
     "lineHeightHint": "控制多行文本的阅读舒适度。",
     "paragraphSpacing": "段落间距",
     "paragraphSpacingHint": "控制 Markdown 段落、列表和引用的垂直节奏。",
-    "contentWidth": "正文宽度",
-    "contentWidthHint": "限制 AI 回复的最大行宽，提升长文本可读性。",
     "codeFontSize": "代码字号",
     "codeFontSizeHint": "影响 Markdown 代码块和行内代码。",
     "fontFamily": "字体风格",

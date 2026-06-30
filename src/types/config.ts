@@ -32,7 +32,7 @@ export interface ChatDisplaySettings {
   paragraphSpacing: number;
   /** 消息垂直密度 */
   messageSpacing: ChatDisplayDensity;
-  /** AI 正文最大宽度 (ch) */
+  /** @deprecated no longer constrains width — content adapts to flex parent width */
   contentWidth: number;
   /** 代码字号 (px) */
   codeFontSize: number;
@@ -127,7 +127,7 @@ export function getChatDisplayStyleVars(settings?: Partial<ChatDisplaySettings> 
     '--chat-bubble-padding-x': `${density.bubblePaddingX}px`,
     '--chat-bubble-padding-y': `${density.bubblePaddingY}px`,
     '--chat-bubble-radius': `${density.bubbleRadius}px`,
-    '--chat-content-width': `${normalized.contentWidth}ch`,
+    // '--chat-content-width': removed — content width is unconstrained (flex parent handles it)
     '--chat-code-font-size': `${normalized.codeFontSize}px`,
     '--chat-code-padding': `${density.codePadding}px`,
     '--chat-input-font-size': `${inputFontSize}px`,
