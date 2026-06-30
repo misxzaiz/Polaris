@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
-import type { ChangeEvent, PointerEvent as ReactPointerEvent } from 'react'
+import type { PointerEvent as ReactPointerEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   GitCommit as GitCommitIcon,
@@ -102,6 +102,8 @@ export function HistoryTab({
   const [fileHistoryHasMore, setFileHistoryHasMore] = useState(true)
   const [fileHistoryTotalCount, setFileHistoryTotalCount] = useState(0)
   const [selectedBranch, setSelectedBranch] = useState('')
+  const [branchSelectOpen, setBranchSelectOpen] = useState(false)
+  const branchSelectRef = useRef<HTMLDivElement>(null)
   const [fileSearchQuery, setFileSearchQuery] = useState('')
   const [fileListMode, setFileListMode] = useState<FileListMode>(getInitialFileListMode)
   const [diffViewMode, setDiffViewMode] = useState<import('@/components/Diff/DiffViewer').DiffViewMode>(getInitialDiffViewMode)
@@ -507,6 +509,19 @@ export function HistoryTab({
     void getBranches(currentWorkspace.path)
   }, [currentWorkspace, getBranches])
 
+  // 点击外部关闭分支选择下拉框
+  useEffect(() => {
+    if (!branchSelectOpen) return
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (branchSelectRef.current && !branchSelectRef.current.contains(e.target as Node)) {
+        setBranchSelectOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [branchSelectOpen])
+
   useEffect(() => {
     writeLocalStorage(FILE_LIST_MODE_STORAGE_KEY, fileListMode)
   }, [fileListMode])
@@ -578,11 +593,11 @@ export function HistoryTab({
     setCommitContextMenu({ x: e.clientX, y: e.clientY, commit })
   }, [])
 
-  const handleBranchFilterChange = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
-    const nextBranch = event.target.value
+  const handleBranchFilterChange = useCallback((nextBranch: string) => {
     if (nextBranch === selectedBranch) return
 
     setSelectedBranch(nextBranch)
+    setBranchSelectOpen(false)
     setSearchQuery('')
     hasAutoSelectedRef.current = false
     clearFileHistoryMode()
@@ -1110,29 +1125,69 @@ export function HistoryTab({
           </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <label
-            className="h-7 max-w-[180px] flex items-center gap-1.5 px-2 bg-background-surface border border-border rounded text-text-tertiary focus-within:ring-1 focus-within:ring-primary"
-            title={t('history.branchFilter')}
-          >
-            <GitBranchIcon size={13} className="shrink-0" />
-            <select
-              value={selectedBranch}
-              onChange={handleBranchFilterChange}
+          <div ref={branchSelectRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setBranchSelectOpen(prev => !prev)}
               aria-label={t('history.branchFilter')}
-              className="min-w-0 max-w-[140px] bg-transparent text-xs text-text-secondary focus:outline-none"
+              aria-expanded={branchSelectOpen}
+              aria-haspopup="listbox"
+              className="h-7 flex items-center gap-1.5 pl-2 pr-1.5 text-xs bg-background-surface border border-border rounded text-text-tertiary hover:bg-background-hover hover:border-primary/30 transition-colors cursor-pointer"
+              title={t('history.branchFilter')}
             >
-              <option value="">
-                {t('history.currentBranchFilter', {
+              <GitBranchIcon size={12} className="shrink-0 text-primary" />
+              <span className="max-w-[120px] text-text-secondary truncate">
+                {selectedBranch || t('history.currentBranchFilter', {
                   branch: currentBranchName || t('history.head'),
                 })}
-              </option>
-              {branchOptions.map((branch) => (
-                <option key={branch.name} value={branch.name}>
-                  {branch.name}
-                </option>
-              ))}
-            </select>
-          </label>
+              </span>
+              <ChevronDown size={11} className="shrink-0 opacity-40" />
+            </button>
+
+            {branchSelectOpen && (
+              <div
+                className="absolute top-full mt-1 left-0 z-50 min-w-[180px] max-h-[60vh] overflow-y-auto bg-background-elevated border border-border rounded-lg shadow-lg py-1"
+                role="listbox"
+              >
+                <button
+                  type="button"
+                  onClick={() => handleBranchFilterChange('')}
+                  className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-background-hover transition-colors ${
+                    !selectedBranch ? 'bg-primary/8 text-primary' : 'text-text-primary'
+                  }`}
+                  role="option"
+                  aria-selected={!selectedBranch}
+                >
+                  <GitBranchIcon size={12} className="shrink-0 text-primary" />
+                  <span className="flex-1 truncate">{t('history.currentBranchFilter', {
+                    branch: currentBranchName || t('history.head'),
+                  })}</span>
+                  <span className="text-[10px] text-text-tertiary bg-background-surface px-1.5 py-0.5 rounded shrink-0">HEAD</span>
+                </button>
+
+                {branchOptions.length > 0 && (
+                  <>
+                    <div className="mx-2 my-1 h-px bg-border" />
+                    {branchOptions.map((branch) => (
+                      <button
+                        key={branch.name}
+                        type="button"
+                        onClick={() => handleBranchFilterChange(branch.name!)}
+                        className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-background-hover transition-colors ${
+                          selectedBranch === branch.name ? 'bg-primary/8 text-primary' : 'text-text-secondary'
+                        }`}
+                        role="option"
+                        aria-selected={selectedBranch === branch.name}
+                      >
+                        <span className="w-4 shrink-0 text-center text-[10px]">{selectedBranch === branch.name ? '✓' : ''}</span>
+                        <span className="truncate">{branch.name}</span>
+                      </button>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
           <button
             type="button"
             onClick={handleRefresh}
