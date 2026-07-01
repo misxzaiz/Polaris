@@ -99,6 +99,27 @@ pub fn chat_to_codex_response(body: Value) -> Result<Value, ProxyError> {
                         "content": [{"type": "output_text", "text": content}]
                     }));
                 }
+            } else if let Some(reasoning) = message.get("reasoning").and_then(|v| v.as_str()) {
+                if !reasoning.is_empty() {
+                    output.push(json!({
+                        "type": "message",
+                        "id": format!("msg_{}", safe_suffix(&id)),
+                        "status": "completed",
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": reasoning}]
+                    }));
+                }
+            } else if let Some(reasoning_content) = message.get("reasoning_content").and_then(|v| v.as_str()) {
+                // DeepSeek 系列模型将回复内容放在 reasoning_content 而非 content
+                if !reasoning_content.is_empty() {
+                    output.push(json!({
+                        "type": "message",
+                        "id": format!("msg_{}", safe_suffix(&id)),
+                        "status": "completed",
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": reasoning_content}]
+                    }));
+                }
             }
 
             if let Some(tool_calls) = message.get("tool_calls").and_then(|v| v.as_array()) {
@@ -153,6 +174,10 @@ pub fn chat_sse_to_codex_responses_sse(body_str: &str) -> String {
     let mut completed = false;
     let mut usage = json!({"input_tokens": 0, "output_tokens": 0, "total_tokens": 0});
     let mut sse = String::new();
+    // 累积所有 delta 文本，用于结尾的 output_item.done 事件。
+    // Codex 把 output_item.done 携带的 text 作为消息最终权威值，
+    // 若写空字符串会覆盖 delta 累积的内容，导致前端显示空消息。
+    let mut accumulated_text = String::new();
 
     for line in body_str.lines() {
         let Some(data) = line.strip_prefix("data: ").map(str::trim) else {
@@ -240,8 +265,28 @@ pub fn chat_sse_to_codex_responses_sse(body_str: &str) -> String {
         let Some(choice) = chunk.get("choices").and_then(|v| v.as_array()).and_then(|v| v.first()) else {
             continue;
         };
-        if let Some(content) = choice.pointer("/delta/content").and_then(|v| v.as_str()) {
-            if !content.is_empty() {
+
+        // 记录上游 chunk 原始内容供调试
+        let has_content = choice.pointer("/delta/content").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).is_some();
+        let has_reasoning = choice.pointer("/delta/reasoning").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).is_some();
+        let has_reasoning_content = choice.pointer("/delta/reasoning_content").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).is_some();
+        if !has_content && (has_reasoning || has_reasoning_content) {
+            let text = choice.pointer("/delta/reasoning").and_then(|v| v.as_str())
+                .or_else(|| choice.pointer("/delta/reasoning_content").and_then(|v| v.as_str()))
+                .unwrap_or("");
+            tracing::info!("[CodexSSE] 上游无 delta.content，降级提取 reasoning/reasoning_content: {:?}", text);
+        }
+
+        // 提取输出文本：优先 content，降级 reasoning（sensenova-6.7），再降级 reasoning_content（deepseek-v4）
+        let output_text = choice.pointer("/delta/content")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .or_else(|| choice.pointer("/delta/reasoning").and_then(|v| v.as_str()).filter(|s| !s.is_empty()))
+            .or_else(|| choice.pointer("/delta/reasoning_content").and_then(|v| v.as_str()).filter(|s| !s.is_empty()));
+
+        if let Some(text) = output_text {
+            if !text.is_empty() {
+                accumulated_text.push_str(text);
                 emit_response_event(
                     &mut sse,
                     "response.output_text.delta",
@@ -251,7 +296,7 @@ pub fn chat_sse_to_codex_responses_sse(body_str: &str) -> String {
                         "item_id": format!("msg_{}", safe_suffix(&response_id)),
                         "output_index": 0,
                         "content_index": 0,
-                        "delta": content
+                        "delta": text
                     }),
                 );
                 sequence += 1;
@@ -286,7 +331,7 @@ pub fn chat_sse_to_codex_responses_sse(body_str: &str) -> String {
                 "item_id": format!("msg_{}", safe_suffix(&response_id)),
                 "output_index": 0,
                 "content_index": 0,
-                "part": {"type": "output_text", "text": ""}
+                "part": {"type": "output_text", "text": accumulated_text}
             }),
         );
         sequence += 1;
@@ -302,7 +347,7 @@ pub fn chat_sse_to_codex_responses_sse(body_str: &str) -> String {
                     "type": "message",
                     "status": "completed",
                     "role": "assistant",
-                    "content": [{"type": "output_text", "text": ""}]
+                    "content": [{"type": "output_text", "text": accumulated_text}]
                 }
             }),
         );
@@ -342,9 +387,15 @@ fn convert_responses_input_item(item: &Value, messages: &mut Vec<Value>) {
     match item_type {
         Some("message") | None => {
             let role = item.get("role").and_then(|v| v.as_str()).unwrap_or("user");
+            // Codex Responses API 使用 "developer" 角色，但 Chat Completions API
+            // 仅支持 "system" / "user" / "assistant" / "tool"。映射 developer → system。
+            let chat_role = match role {
+                "developer" => "system",
+                other => other,
+            };
             let content = item.get("content");
             messages.push(json!({
-                "role": role,
+                "role": chat_role,
                 "content": responses_content_to_chat_content(content)
             }));
         }
@@ -573,5 +624,22 @@ mod tests {
         assert!(output.contains("\"delta\":\"O\""));
         assert!(output.contains("\"delta\":\"K\""));
         assert!(output.contains("response.completed"));
+        // output_item.done 必须携带累积文本，否则 Codex 显示空消息
+        assert!(output.contains("\"text\":\"OK\""));
+    }
+
+    #[test]
+    fn sse_accumulates_reasoning_when_no_content() {
+        // Sensenova / DeepSeek 把回复放在 delta.reasoning / delta.reasoning_content
+        let input = concat!(
+            "data: {\"id\":\"c1\",\"model\":\"m\",\"choices\":[{\"delta\":{\"reasoning\":\"hel\"}}]}\n",
+            "data: {\"id\":\"c1\",\"model\":\"m\",\"choices\":[{\"delta\":{\"reasoning_content\":\"lo\"},\"finish_reason\":\"stop\"}]}\n",
+            "data: [DONE]\n"
+        );
+        let output = chat_sse_to_codex_responses_sse(input);
+        assert!(output.contains("\"delta\":\"hel\""));
+        assert!(output.contains("\"delta\":\"lo\""));
+        // 累积文本应出现在结尾事件中
+        assert!(output.contains("\"text\":\"hello\""));
     }
 }
