@@ -62,17 +62,19 @@ export default defineConfig(async () => ({
       output: {
         // Manual chunk splitting to separate large dependencies
         manualChunks: (id) => {
+          const normalizePath = (p: string) => p.replace(/\\/g, '/');
+
+          // === node_modules 第三方库 ===
           // React core libraries
           if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) {
             return 'react-vendor';
           }
-          // CodeMirror editor related - 只在主窗口使用
+          // CodeMirror editor related
           if (id.includes('@codemirror')) {
             return 'codemirror';
           }
-          // Mermaid diagram library - 使用更精确的匹配
+          // Mermaid diagram library
           if (id.includes('node_modules/mermaid')) {
-            // 将 mermaid 的不同部分分离
             if (id.includes('mermaid/dist/diagrams')) {
               return 'mermaid-diagrams';
             }
@@ -89,7 +91,7 @@ export default defineConfig(async () => ({
           if (id.includes('katex')) {
             return 'katex';
           }
-          // Markdown and utility libraries
+          // Common utilities: marked, dompurify, zustand
           if (id.includes('marked') || id.includes('dompurify') || id.includes('zustand')) {
             return 'utils';
           }
@@ -100,6 +102,42 @@ export default defineConfig(async () => ({
           // Lodash and other utility libraries
           if (id.includes('lodash') || id.includes('clsx') || id.includes('class-variance-authority')) {
             return 'lodash';
+          }
+
+          // === src/ 应用代码分 chunk ===
+          // 大型功能模块按需拆分，减小主 chunk 体积
+          const srcPath = normalizePath(id);
+
+          // Chat 模块：体积最大 (7.8MB 源文件) — 始终渲染但入口即加载
+          if (srcPath.includes('/src/components/Chat/')) {
+            return 'app-chat';
+          }
+          // Diff 查看器：仅在查看差异时使用
+          if (srcPath.includes('/src/components/Diff/')) {
+            return 'app-diff';
+          }
+          // Editor + Settings：由于 LSP stores/services 被 Settings/LspTab 引用，
+          // 独立分 chunk 会形成循环依赖，合并为同一 chunk。
+          if (
+            srcPath.includes('/src/components/Editor/') ||
+            srcPath.includes('/src/components/Settings/') ||
+            srcPath.includes('/src/services/lsp/')
+          ) {
+            return 'app-editor-settings';
+          }
+          // GitPanel：仅当 Git 面板打开时加载
+          if (srcPath.includes('/src/components/GitPanel/')) {
+            return 'app-git';
+          }
+          // Scheduler 调度器面板
+          if (srcPath.includes('/src/components/Scheduler/')) {
+            return 'app-scheduler';
+          }
+          // Settings 设置页（React 层已 lazy；与 Editor 合并于 app-editor-settings）
+          // 不再单独分 chunk——LSP stores/services 与 Settings 交叉引用。
+          // Terminal 终端面板
+          if (srcPath.includes('/src/components/Terminal/')) {
+            return 'app-terminal';
           }
         },
         // Set separate CSS file for each chunk

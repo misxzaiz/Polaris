@@ -2,6 +2,12 @@
 
 use serde_json::{json, Value};
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+use crate::utils::CREATE_NO_WINDOW;
+
 use super::{truncate_chars, Tool, ToolContext, ToolOutcome};
 
 pub(super) struct BashTool;
@@ -58,10 +64,18 @@ fn run_bash(command: &str, workdir: Option<&str>, default_dir: &str) -> ToolOutc
         flag = "-c";
     }
 
-    let output = std::process::Command::new(shell)
-        .args([flag, command])
-        .current_dir(cwd)
-        .output();
+    let output = if cfg!(windows) {
+        std::process::Command::new(shell)
+            .args([flag, command])
+            .current_dir(cwd)
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+    } else {
+        std::process::Command::new(shell)
+            .args([flag, command])
+            .current_dir(cwd)
+            .output()
+    };
 
     match output {
         Ok(o) => {

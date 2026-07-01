@@ -13,7 +13,7 @@ import { useTranslation } from 'react-i18next';
 import { useConfigStore, useSessionStore } from '@/stores';
 import { useActiveSessionStreaming, useHasPendingQuestion, useHasActivePlan, useActiveSessionMessages } from '@/stores/conversationStore/useActiveSession';
 import { useSessionConfig } from '@/stores/sessionConfigStore';
-import { Paperclip, MoreHorizontal, Loader2, Mic, AudioLines, Volume2, VolumeX, RefreshCw, ShieldAlert } from 'lucide-react';
+import { Paperclip, MoreHorizontal, Loader2, Mic, Volume2, VolumeX, RefreshCw, ShieldAlert } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useTTS } from '@/hooks/useTTS';
 import { useVoiceDictation } from '@/hooks/useVoiceDictation';
@@ -25,8 +25,6 @@ import { getSelectedEngineHealth } from '@/utils/engineHealth';
 import { normalizeEngineId } from '@/utils/engineDisplay';
 import { getEngineSelectors } from '@/utils/engineCapabilities';
 import { useActiveSessionId, useSessionMetadataList } from '@/stores/conversationStore/sessionStoreManager';
-import { useVoiceCompanionStore } from '@/stores/voiceCompanionStore';
-import { getCompanionName } from '@/types/voiceCompanion';
 import { voiceNotificationService } from '@/services/voiceNotificationService';
 import { isAssistantMessage } from '@/types/chat';
 import { currentMode } from '@/services/transport';
@@ -130,11 +128,7 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
   const [expanded, setExpanded] = useState(false);
 
   // ===== 语音区 =====
-  // 全屏语音伙伴入口
-  const openVoiceCompanion = useVoiceCompanionStore((s) => s.open);
-  // 语音伙伴配置（用于获取动态唤醒词名称）
-  const companionConfig = useVoiceCompanionStore((s) => s.config);
-  const companionName = getCompanionName(companionConfig.wakeWord.words);
+  // 语音伙伴配置预留（用于动态唤醒词名称等）
 
   // 唤醒词 + 语音命令配置（统一读全局 config）
   const speechConfig = config?.speech;
