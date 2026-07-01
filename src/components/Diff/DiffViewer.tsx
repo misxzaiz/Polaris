@@ -36,8 +36,6 @@ interface DiffViewerProps {
   }
   showStatusHint?: boolean
   maxHeight?: string
-  /** @deprecated 不再使用，保留用于兼容调用方传参 */
-  contentOmitted?: boolean
   viewMode?: DiffViewMode
   filePath?: string
   files?: GitDiffEntry[]
@@ -148,11 +146,6 @@ export function DiffViewer({
       }
     }
   }, [focusedRowIndex, shouldVirtualize, viewMode])
-
-  // 移除限制
-  // if (contentOmitted) {
-  //   return <ContentOmittedPlaceholder t={t} />
-  // }
 
   const renderUnifiedItem = (idx: number) => (
     <UnifiedDiffRow

@@ -501,7 +501,6 @@ export function CommitDetailsPane({
                   newContent={selectedFileDiff.new_content}
                   changeType={selectedFileDiff.change_type}
                   statusHint={selectedFileDiff.status_hint}
-                  contentOmitted={selectedFileDiff.content_omitted ?? false}
                   viewMode={diffViewMode}
                   filePath={selectedFileDiff.file_path}
                   autoFocus

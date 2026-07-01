@@ -605,7 +605,6 @@ export function GitPanel({
                   newContent={selectedDiff.new_content}
                   changeType={selectedDiff.change_type}
                   statusHint={selectedDiff.status_hint}
-                  contentOmitted={selectedDiff.content_omitted ?? false}
                   viewMode={diffViewMode}
                   filePath={selectedDiff.file_path}
                   autoFocus
