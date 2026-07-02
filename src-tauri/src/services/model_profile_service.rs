@@ -359,31 +359,48 @@ impl ModelProfileService {
     /// 该文件告诉 Codex CLI 模型的元数据（context_window、tools 支持等），
     /// 避免 "Model metadata not found" 警告和回退行为。
     ///
-    /// 实现策略（参考 cc-switch）：从 Codex 内置 gpt-5.5 模板克隆，仅覆盖
-    /// slug/display_name/context_window 等少量字段。这样所有必填字段
-    /// （model_messages、experimental_supported_tools 等）都从模板继承，
-    /// 不会因手写遗漏导致 Codex 解析失败。
-    ///
     /// 写入 `~/.codex/polaris-model-catalog.json`，每次调用重新生成。
     pub fn write_codex_proxy_model_catalog(profile: &ModelProfile) -> Result<PathBuf> {
         let codex_dir = Self::codex_config_dir();
         let catalog_path = codex_dir.join(Self::CODEX_MODEL_CATALOG_FILENAME);
 
-        let mut entry = Self::load_codex_model_template()?;
-
-        // 仅覆盖识别第三方模型所需的字段，其余字段保留模板原值
-        entry["slug"] = serde_json::json!(profile.model);
-        entry["display_name"] = serde_json::json!(profile.name);
-        entry["description"] = serde_json::json!(format!("{} - {}", profile.name, profile.model));
-        entry["context_window"] = serde_json::json!(128000);
-        entry["max_context_window"] = serde_json::json!(128000);
-        entry["priority"] = serde_json::json!(500);
-        entry["additional_speed_tiers"] = serde_json::json!([]);
-        entry["service_tiers"] = serde_json::json!([]);
-        entry["availability_nux"] = serde_json::Value::Null;
-        entry["upgrade"] = serde_json::Value::Null;
-
-        let catalog = serde_json::json!({ "models": [entry] });
+        let catalog = serde_json::json!({
+            "models": [{
+                "slug": profile.model,
+                "display_name": profile.name,
+                "description": format!("{} - {}", profile.name, profile.model),
+                "context_window": 128000,
+                "max_context_window": 128000,
+                "effective_context_window_percent": 95,
+                "supports_parallel_tool_calls": true,
+                "shell_type": "shell_command",
+                "apply_patch_tool_type": "freeform",
+                "supported_reasoning_levels": [
+                    {"effort": "low", "description": "Fast responses with lighter reasoning"},
+                    {"effort": "medium", "description": "Balances speed and reasoning depth for everyday tasks"},
+                    {"effort": "high", "description": "Greater reasoning depth for complex problems"}
+                ],
+                "default_reasoning_level": "medium",
+                "visibility": "list",
+                "supported_in_api": true,
+                "priority": 500,
+                "additional_speed_tiers": [],
+                "service_tiers": [],
+                "upgrade": null,
+                "availability_nux": null,
+                "input_modalities": ["text"],
+                "supports_search_tool": false,
+                "supports_reasoning_summaries": true,
+                "support_verbosity": false,
+                "supports_image_detail_original": false,
+                "base_instructions": "You are Codex, a coding agent. You and the user share one workspace, and your job is to collaborate with them until their goal is genuinely handled.\n\nYou are an expert software engineer with deep knowledge across the full stack. You are proactive, thorough, and focused on delivering working solutions. You read the codebase carefully, resist easy assumptions, and let the shape of the existing system teach you how to move.\n\nYou parallelize tool calls whenever you can, especially file reads. You prefer the repo's existing patterns, frameworks, and local helper APIs over inventing new abstractions.",
+                "truncation_policy": {
+                    "mode": "bytes",
+                    "limit": 10000
+                },
+                "experimental_supported_tools": []
+            }]
+        });
 
         // 确保 ~/.codex/ 目录存在
         if let Some(parent) = catalog_path.parent() {
@@ -405,46 +422,6 @@ impl ModelProfileService {
             profile.model
         );
         Ok(catalog_path)
-    }
-
-    /// 加载 Codex gpt-5.5 模型模板。
-    ///
-    /// 优先级：
-    /// 1. 运行时执行 `codex debug models --bundled` 获取最新模板
-    /// 2. 失败时回退到编译时内嵌的静态模板
-    fn load_codex_model_template() -> Result<serde_json::Value> {
-        // ① 尝试从 Codex CLI 获取最新模板
-        if let Some(template) = Self::load_codex_template_from_cli() {
-            return Ok(template);
-        }
-        // ② 静态 fallback
-        const TEMPLATE_JSON: &str = include_str!("gpt55_model_catalog_template.json");
-        serde_json::from_str(TEMPLATE_JSON).map_err(|e| {
-            crate::error::AppError::ProcessError(format!("解析内嵌 gpt-5.5 模板失败: {}", e))
-        })
-    }
-
-    /// 运行 `codex debug models --bundled` 提取 gpt-5.5 模板条目。
-    fn load_codex_template_from_cli() -> Option<serde_json::Value> {
-        let output = std::process::Command::new("codex")
-            .args(["debug", "models", "--bundled"])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .output()
-            .ok()?;
-        if !output.status.success() {
-            return None;
-        }
-        let catalog: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
-        catalog
-            .get("models")
-            .and_then(|m| m.as_array())
-            .and_then(|models| {
-                models
-                    .iter()
-                    .find(|m| m.get("slug").and_then(|s| s.as_str()) == Some("gpt-5.5"))
-            })
-            .cloned()
     }
 
     /// 清理 Codex 模型目录文件
