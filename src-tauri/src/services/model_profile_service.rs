@@ -273,9 +273,6 @@ impl ModelProfileService {
     /// 生成 Codex 代理转换模式的 provider 参数。
     ///
     /// Codex CLI 始终请求本地 `/v1/responses`，Polaris 代理将其转换到上游 Chat Completions 端点。
-    /// 同时注入模型目录（model_catalog_json），避免"Model metadata not found"警告。
-    /// 模型目录路径使用绝对路径，因为 -c 命令行参数没有配置文件目录上下文，
-    /// 相对路径会被解析为当前工作目录而非 ~/.codex/。
     pub fn generate_codex_proxy_config_args(
         profile: &ModelProfile,
         proxy_addr: SocketAddr,
@@ -283,10 +280,6 @@ impl ModelProfileService {
         let provider_id = Self::codex_provider_id(profile);
         let env_key = Self::codex_api_key_env(profile);
         let base_url = format!("http://{}/v1", proxy_addr);
-        let catalog_abs_path = Self::codex_config_dir()
-            .join(Self::CODEX_MODEL_CATALOG_FILENAME)
-            .to_string_lossy()
-            .replace('\\', "\\\\");
 
         vec![
             "-c".to_string(),
@@ -314,10 +307,6 @@ impl ModelProfileService {
             ),
             "-c".to_string(),
             format!("model_providers.{}.wire_api=\"responses\"", provider_id),
-            // 注入模型目录指针（使用绝对路径，因 -c 参数无文件目录上下文），
-            // 让 Codex 获取准确的模型元数据
-            "-c".to_string(),
-            format!("model_catalog_json=\"{}\"", catalog_abs_path),
         ]
     }
 
@@ -331,109 +320,6 @@ impl ModelProfileService {
             }
         }
         env
-    }
-
-    // ========================================================================
-    // Codex 模型目录（Model Catalog）
-    //
-    // Codex CLI 需要模型目录文件来获得模型元数据（context_window、tools 支持、
-    // reasoning 能力等）。对于非 OpenAI 模型，如果不提供该文件，Codex 会报
-    // "Model metadata not found" 警告并使用 fallback 默认值。
-    //
-    // 该文件写入 ~/.codex/polaris-model-catalog.json，通过 config.toml 的
-    // model_catalog_json 字段指向它。参考 cc-switch 的实现。
-    // ========================================================================
-
-    /// Codex 模型目录文件名
-    pub const CODEX_MODEL_CATALOG_FILENAME: &str = "polaris-model-catalog.json";
-
-    /// 获取 ~/.codex/ 目录路径
-    fn codex_config_dir() -> PathBuf {
-        dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(".codex")
-    }
-
-    /// 为 Codex 代理模式生成模型目录文件。
-    ///
-    /// 该文件告诉 Codex CLI 模型的元数据（context_window、tools 支持等），
-    /// 避免 "Model metadata not found" 警告和回退行为。
-    ///
-    /// 写入 `~/.codex/polaris-model-catalog.json`，每次调用重新生成。
-    pub fn write_codex_proxy_model_catalog(profile: &ModelProfile) -> Result<PathBuf> {
-        let codex_dir = Self::codex_config_dir();
-        let catalog_path = codex_dir.join(Self::CODEX_MODEL_CATALOG_FILENAME);
-
-        let catalog = serde_json::json!({
-            "models": [{
-                "slug": profile.model,
-                "display_name": profile.name,
-                "description": format!("{} - {}", profile.name, profile.model),
-                "context_window": 128000,
-                "max_context_window": 128000,
-                "effective_context_window_percent": 95,
-                "supports_parallel_tool_calls": true,
-                "shell_type": "shell_command",
-                "apply_patch_tool_type": "freeform",
-                "supported_reasoning_levels": [
-                    {"effort": "low", "description": "Fast responses with lighter reasoning"},
-                    {"effort": "medium", "description": "Balances speed and reasoning depth for everyday tasks"},
-                    {"effort": "high", "description": "Greater reasoning depth for complex problems"}
-                ],
-                "default_reasoning_level": "medium",
-                "visibility": "list",
-                "supported_in_api": true,
-                "priority": 500,
-                "additional_speed_tiers": [],
-                "service_tiers": [],
-                "upgrade": null,
-                "availability_nux": null,
-                "input_modalities": ["text"],
-                "supports_search_tool": false,
-                "supports_reasoning_summaries": true,
-                "support_verbosity": false,
-                "supports_image_detail_original": false,
-                "base_instructions": "You are Codex, a coding agent. You and the user share one workspace, and your job is to collaborate with them until their goal is genuinely handled.\n\nYou are an expert software engineer with deep knowledge across the full stack. You are proactive, thorough, and focused on delivering working solutions. You read the codebase carefully, resist easy assumptions, and let the shape of the existing system teach you how to move.\n\nYou parallelize tool calls whenever you can, especially file reads. You prefer the repo's existing patterns, frameworks, and local helper APIs over inventing new abstractions.",
-                "truncation_policy": {
-                    "mode": "bytes",
-                    "limit": 10000
-                },
-                "experimental_supported_tools": []
-            }]
-        });
-
-        // 确保 ~/.codex/ 目录存在
-        if let Some(parent) = catalog_path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                crate::error::AppError::ProcessError(format!("创建 Codex 配置目录失败: {}", e))
-            })?;
-        }
-
-        let content = serde_json::to_string_pretty(&catalog).map_err(|e| {
-            crate::error::AppError::ProcessError(format!("序列化 Codex 模型目录失败: {}", e))
-        })?;
-        std::fs::write(&catalog_path, &content).map_err(|e| {
-            crate::error::AppError::ProcessError(format!("写入 Codex 模型目录失败: {}", e))
-        })?;
-
-        tracing::info!(
-            "[ModelProfileService] 写入 Codex 模型目录: {:?} (model={})",
-            catalog_path,
-            profile.model
-        );
-        Ok(catalog_path)
-    }
-
-    /// 清理 Codex 模型目录文件
-    pub fn cleanup_codex_model_catalog() -> Result<()> {
-        let catalog_path = Self::codex_config_dir().join(Self::CODEX_MODEL_CATALOG_FILENAME);
-        if catalog_path.exists() {
-            std::fs::remove_file(&catalog_path).map_err(|e| {
-                crate::error::AppError::ProcessError(format!("清理 Codex 模型目录失败: {}", e))
-            })?;
-            tracing::info!("[ModelProfileService] 清理 Codex 模型目录: {:?}", catalog_path);
-        }
-        Ok(())
     }
 
     // ========================================================================
@@ -937,8 +823,6 @@ mod tests {
         assert!(joined.contains("model_providers.polaris_profile_test_1.base_url=\"http://127.0.0.1:12345/v1\""));
         assert!(joined.contains("model_providers.polaris_profile_test_1.env_key=\"POLARIS_PROFILE_TEST_1_API_KEY\""));
         assert!(joined.contains("model_providers.polaris_profile_test_1.wire_api=\"responses\""));
-        assert!(joined.contains("model_catalog_json="));
-        assert!(joined.contains("polaris-model-catalog.json"));
     }
 
     #[test]

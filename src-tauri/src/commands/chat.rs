@@ -627,11 +627,6 @@ async fn apply_model_profile_options(
                     .await
                 {
                     Ok(proxy_addr) => {
-                        // 写入 Codex 模型目录，避免 "Model metadata not found" 警告
-                        if let Err(e) = crate::services::ModelProfileService::write_codex_proxy_model_catalog(profile) {
-                            tracing::warn!("[{}] 写入 Codex 模型目录失败: {}", log_scope, e);
-                        }
-
                         let codex_args = crate::services::ModelProfileService::generate_codex_proxy_config_args(profile, proxy_addr);
                         session_opts.codex_config_args.extend(codex_args);
 

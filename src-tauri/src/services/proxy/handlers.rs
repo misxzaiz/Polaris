@@ -195,11 +195,6 @@ async fn handle_codex_streaming(state: ProxyState, chat_body: Value) -> Response
         Ok(response) => match response.bytes().await {
             Ok(body_bytes) => {
                 let body_str = String::from_utf8_lossy(&body_bytes);
-                tracing::info!(
-                    "[CodexStreaming] 上游 SSE 体: {}bytes, 前 500 字符: {:?}",
-                    body_bytes.len(),
-                    &body_str[..body_str.len().min(500)]
-                );
                 let sse_body = chat_sse_to_codex_responses_sse(&body_str);
                 Response::builder()
                     .status(StatusCode::OK)
