@@ -437,6 +437,7 @@ export function TabContent({ className = '' }: TabContentProps) {
               newContent={activeTab.diffData?.new_content}
               changeType={activeTab.diffData?.change_type}
               statusHint={activeTab.diffData?.status_hint}
+              contentOmitted={activeTab.diffData?.content_omitted ?? false}
               viewMode={diffViewMode}
               filePath={activeTab.diffData?.file_path}
               autoFocus

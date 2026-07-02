@@ -128,6 +128,7 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
   const [expanded, setExpanded] = useState(false);
 
   // ===== 语音区 =====
+  // 语音伙伴配置预留（用于动态唤醒词名称等）
 
   // 唤醒词 + 语音命令配置（统一读全局 config）
   const speechConfig = config?.speech;
@@ -321,7 +322,17 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
           </button>
         )}
 
-        {/* 通话：全屏语音伙伴（已移除） */}
+        {/* 通话：全屏语音伙伴（声波图标，与听写区分） */}
+        {/* <button
+          onClick={openVoiceCompanion}
+          className={clsx(btnBase, 'text-primary hover:bg-primary/10')}
+          title={t('voiceCompanion.entry', `和${companionName}语音通话`)}
+        >
+          <AudioLines size={13} />
+          {(withLabel || containerWidth >= BREAKPOINTS.wide) && (
+            <span>{companionName}</span>
+          )}
+        </button> */}
 
         {/* 朗读：TTS 控制（任意状态可关） */}
         <button
