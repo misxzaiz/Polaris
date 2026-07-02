@@ -18,6 +18,7 @@ import { useAsyncDiff } from './useAsyncDiff'
 import { buildSplitRows } from './splitRows'
 import { UnifiedDiffRow } from './UnifiedDiffRow'
 import { SplitDiffView } from './SplitDiffView'
+import { ContentOmittedPlaceholder } from './ContentOmittedPlaceholder'
 import type { DiffViewMode } from './types'
 
 export type { DiffViewMode } from './types'
@@ -36,7 +37,6 @@ interface DiffViewerProps {
   }
   showStatusHint?: boolean
   maxHeight?: string
-  /** @deprecated 不再使用，保留用于兼容调用方传参 */
   contentOmitted?: boolean
   viewMode?: DiffViewMode
   filePath?: string
@@ -60,6 +60,7 @@ export function DiffViewer({
   statusHint,
   showStatusHint = true,
   maxHeight,
+  contentOmitted = false,
   viewMode = 'unified',
   filePath,
   files,
