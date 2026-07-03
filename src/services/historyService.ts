@@ -56,6 +56,8 @@ export interface UnifiedHistoryItem {
   outputTokens?: number
   projectPath?: string
   claudeProjectName?: string
+  /** 首条用户消息摘要（用于列表二级预览 + 搜索） */
+  snippet?: string
 
   // === Fork 关系字段 ===
   parentSessionId?: string
@@ -235,6 +237,7 @@ export const historyService = {
         engineId: m.engineId,
         source: 'self' as const,
         projectPath: m.workspacePath ?? undefined,
+        snippet: m.firstUserText || undefined,
       }))
 
       return { items, total, page, pageSize, totalPages, hasMore: page < totalPages }

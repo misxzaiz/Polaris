@@ -7,8 +7,39 @@
 
 import { describe, it, expect, beforeEach } from 'vitest'
 import { dialogStorageService } from './service'
-import { __setDialogBackendForTest } from './dialogBackend'
+import { __setDialogBackendForTest, type DialogBackend, type DialogMetaEntry } from './dialogBackend'
 import type { ChatMessage, UserChatMessage, AssistantChatMessage } from '@/types'
+
+/**
+ * 确定性内存后端：解耦测试与运行环境探测（isTauri/OPFS 在测试环境不可靠），
+ * 同时覆盖高效列举路径 listMeta（仅取每个文件首行）。
+ */
+class InMemoryBackend implements DialogBackend {
+  readonly kind = 'localstorage' as const
+  private files = new Map<string, string>()
+
+  async writeFile(name: string, content: string): Promise<void> {
+    this.files.set(name, content)
+  }
+  async readFile(name: string): Promise<string | null> {
+    return this.files.has(name) ? this.files.get(name)! : null
+  }
+  async listFiles(): Promise<string[]> {
+    return [...this.files.keys()]
+  }
+  async listMeta(): Promise<DialogMetaEntry[]> {
+    const out: DialogMetaEntry[] = []
+    for (const [name, content] of this.files) {
+      const nl = content.indexOf('\n')
+      const metaLine = (nl === -1 ? content : content.slice(0, nl)).trim()
+      if (metaLine) out.push({ name, metaLine })
+    }
+    return out
+  }
+  async deleteFile(name: string): Promise<void> {
+    this.files.delete(name)
+  }
+}
 
 function userMsg(id: string, content: string): UserChatMessage {
   return { id, type: 'user', timestamp: '2026-06-16T00:00:00.000Z', content }
@@ -26,8 +57,8 @@ function assistantMsg(id: string, text: string): AssistantChatMessage {
 
 beforeEach(() => {
   localStorage.clear()
-  // 重置后端单例 → 重新探测（jsdom 无 OPFS，将选 localStorage）
-  __setDialogBackendForTest(null)
+  // 注入确定性内存后端，避免依赖运行环境探测（isTauri/OPFS 在测试中不稳定）
+  __setDialogBackendForTest(new InMemoryBackend())
 })
 
 describe('dialogStorageService - 保存与读取', () => {

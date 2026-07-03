@@ -8,6 +8,7 @@ export {
   __setDialogBackendForTest,
   dialogFileName,
   type DialogBackend,
+  type DialogMetaEntry,
 } from './dialogBackend'
 export {
   serializeDialog,

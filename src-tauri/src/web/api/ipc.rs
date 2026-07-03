@@ -311,6 +311,7 @@ pub async fn handle_ipc_bridge(
 
         // ── Dialog Storage ─────────────────────────────────────────────────
         "dialog_list" => dispatch_dialog_list(),
+        "dialog_list_meta" => dispatch_dialog_list_meta(),
         "dialog_read" => dispatch_dialog_read(&args),
         "dialog_write" => dispatch_dialog_write(&args),
         "dialog_delete" => dispatch_dialog_delete(&args),
@@ -1984,6 +1985,12 @@ fn dispatch_dialog_list() -> Result<Json<Value>, WebError> {
     let names = crate::commands::dialog_storage::dialog_list_inner()
         .map_err(|e| WebError::Internal(format!("dialog_list 失败: {}", e)))?;
     Ok(Json(serde_json::to_value(names).unwrap()))
+}
+
+fn dispatch_dialog_list_meta() -> Result<Json<Value>, WebError> {
+    let entries = crate::commands::dialog_storage::dialog_list_meta_inner()
+        .map_err(|e| WebError::Internal(format!("dialog_list_meta 失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(entries).unwrap()))
 }
 
 fn dispatch_dialog_read(args: &Value) -> Result<Json<Value>, WebError> {

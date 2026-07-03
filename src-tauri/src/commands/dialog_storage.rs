@@ -6,13 +6,25 @@
 //! 写入策略：原子写入（`*.jsonl.tmp` → rename），避免崩溃时半截 jsonl。
 
 use std::fs;
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
+
+use serde::Serialize;
 
 use crate::error::{AppError, Result};
 use crate::services::data_root::data_root;
 
 const DIALOG_FILE_EXT: &str = ".jsonl";
 const MAX_NAME_LEN: usize = 255;
+
+/// 列表 meta 条目：文件名 + 该文件首行(DialogMeta JSON 字符串)。
+/// 仅读首行 → 会话列表无需把整份 jsonl(可能数 MB)读进内存/走 IPC。
+#[derive(Serialize)]
+pub struct DialogMetaEntry {
+    pub name: String,
+    #[serde(rename = "metaLine")]
+    pub meta_line: String,
+}
 
 fn validate_name(name: &str) -> Result<()> {
     if name.is_empty() || name.len() > MAX_NAME_LEN {
@@ -88,6 +100,41 @@ pub fn dialog_read_inner(name: &str) -> Result<Option<String>> {
     Ok(Some(fs::read_to_string(&p)?))
 }
 
+/// 高效列举:仅读取每个 jsonl 文件的**首行**(DialogMeta),不加载消息体。
+/// 会话越大收益越明显(几十 MB 的历史文件只读几百字节)。
+pub fn dialog_list_meta_inner() -> Result<Vec<DialogMetaEntry>> {
+    let dir = dialogs_dir()?;
+    let mut out: Vec<DialogMetaEntry> = Vec::new();
+    if let Ok(entries) = fs::read_dir(&dir) {
+        for e in entries.flatten() {
+            let name = match e.file_name().to_str() {
+                Some(n) if n.ends_with(DIALOG_FILE_EXT) => n.to_string(),
+                _ => continue,
+            };
+            let file = match fs::File::open(e.path()) {
+                Ok(f) => f,
+                Err(_) => continue,
+            };
+            let mut reader = BufReader::new(file);
+            let mut first_line = String::new();
+            match reader.read_line(&mut first_line) {
+                Ok(0) => continue, // 空文件
+                Ok(_) => {
+                    let trimmed = first_line.trim_end_matches(['\n', '\r']).to_string();
+                    if !trimmed.is_empty() {
+                        out.push(DialogMetaEntry {
+                            name,
+                            meta_line: trimmed,
+                        });
+                    }
+                }
+                Err(_) => continue,
+            }
+        }
+    }
+    Ok(out)
+}
+
 pub fn dialog_write_inner(name: &str, content: &str) -> Result<()> {
     let target = dialog_path(name)?;
     let parent = target
@@ -119,6 +166,12 @@ pub fn dialog_delete_inner(name: &str) -> Result<()> {
 #[tauri::command]
 pub fn dialog_list() -> Result<Vec<String>> {
     dialog_list_inner()
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn dialog_list_meta() -> Result<Vec<DialogMetaEntry>> {
+    dialog_list_meta_inner()
 }
 
 #[cfg(feature = "tauri-app")]

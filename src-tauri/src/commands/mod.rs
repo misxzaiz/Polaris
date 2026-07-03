@@ -15,7 +15,7 @@ pub use data_root_cmd::{get_data_root_info, scan_legacy_data_cmd, open_path_in_e
 
 pub mod dialog_storage;
 #[cfg(feature = "tauri-app")]
-pub use dialog_storage::{dialog_list, dialog_read, dialog_write, dialog_delete};
+pub use dialog_storage::{dialog_list, dialog_list_meta, dialog_read, dialog_write, dialog_delete};
 
 pub mod integration;
 pub mod scheduler;

@@ -22,6 +22,24 @@ const DIALOG_DIR = 'dialogs'
 const LS_PREFIX = 'polaris_dialog_'
 const FILE_EXT = '.jsonl'
 
+/**
+ * 列表 meta 条目：文件名 + 该文件首行(DialogMeta JSON 字符串)。
+ * 仅需首行即可渲染会话列表，避免读取整份 jsonl(可能数 MB)。
+ */
+export interface DialogMetaEntry {
+  name: string
+  metaLine: string
+}
+
+/** OPFS/localStorage 提取首行时读取的最大字节数(meta 行远小于此，足够安全) */
+const META_SLICE_BYTES = 262144 // 256KB
+
+/** 从整份文本中提取并 trim 首行 */
+function extractFirstLine(content: string): string {
+  const nl = content.indexOf('\n')
+  return (nl === -1 ? content : content.slice(0, nl)).trim()
+}
+
 /** 存储后端接口 */
 export interface DialogBackend {
   readonly kind: 'tauri' | 'opfs' | 'localstorage'
@@ -33,6 +51,11 @@ export interface DialogBackend {
   listFiles(): Promise<string[]>
   /** 删除文件 */
   deleteFile(name: string): Promise<void>
+  /**
+   * 高效列举：仅读取每个文件首行(meta)，用于会话列表。
+   * 可选：旧的测试 mock 后端可不实现，service 层会自动降级到 readFile 循环。
+   */
+  listMeta?(): Promise<DialogMetaEntry[]>
 }
 
 // ============================================================================
@@ -53,6 +76,10 @@ export class TauriBackend implements DialogBackend {
 
   async listFiles(): Promise<string[]> {
     return invoke<string[]>('dialog_list')
+  }
+
+  async listMeta(): Promise<DialogMetaEntry[]> {
+    return invoke<DialogMetaEntry[]>('dialog_list_meta')
   }
 
   async deleteFile(name: string): Promise<void> {
@@ -121,6 +148,26 @@ export class OPFSBackend implements DialogBackend {
     return names
   }
 
+  async listMeta(): Promise<DialogMetaEntry[]> {
+    const dir = await this.getDir()
+    const out: DialogMetaEntry[] = []
+    const iterable = dir as unknown as { keys(): AsyncIterable<string> }
+    for await (const name of iterable.keys()) {
+      if (typeof name !== 'string' || !name.endsWith(FILE_EXT)) continue
+      try {
+        const fileHandle = await dir.getFileHandle(name, { create: false })
+        const file = await fileHandle.getFile()
+        // 只读文件首段：meta 行必在其中，避免把整份消息体读进内存
+        const text = await file.slice(0, META_SLICE_BYTES).text()
+        const metaLine = extractFirstLine(text)
+        if (metaLine) out.push({ name, metaLine })
+      } catch {
+        /* 跳过坏文件 */
+      }
+    }
+    return out
+  }
+
   async deleteFile(name: string): Promise<void> {
     try {
       const dir = await this.getDir()
@@ -166,6 +213,18 @@ class LocalStorageBackend implements DialogBackend {
       }
     }
     return names
+  }
+
+  async listMeta(): Promise<DialogMetaEntry[]> {
+    const out: DialogMetaEntry[] = []
+    const names = await this.listFiles()
+    for (const name of names) {
+      const content = localStorage.getItem(this.keyFor(name))
+      if (!content) continue
+      const metaLine = extractFirstLine(content)
+      if (metaLine) out.push({ name, metaLine })
+    }
+    return out
   }
 
   async deleteFile(name: string): Promise<void> {

@@ -7,7 +7,7 @@
 
 import { createLogger } from '@/utils/logger'
 import type { ChatMessage } from '@/types'
-import { getDialogBackend, dialogFileName } from './dialogBackend'
+import { getDialogBackend, dialogFileName, type DialogBackend } from './dialogBackend'
 import { serializeDialog, parseDialog, parseMeta, buildMeta } from './jsonlCodec'
 import type {
   DialogMeta,
@@ -21,6 +21,18 @@ import type {
 const log = createLogger('DialogStorageService')
 
 const DEFAULT_PAGE_SIZE = 20
+
+/**
+ * meta 列表内存缓存：会话列表面板在切 Tab/范围/筛选时会连续多次请求列表，
+ * 缓存 meta 首行解析结果，避免短时间内重复扫描后端。写入/删除会立即失效；
+ * 后端实例变更（DataRoot 迁移 / 测试注入）也会自动失效（比对 backend 引用）。
+ */
+const META_CACHE_TTL = 5000 // ms
+let metaCache: { metas: DialogMeta[]; ts: number; backend: DialogBackend } | null = null
+
+function invalidateMetaCache(): void {
+  metaCache = null
+}
 
 class DialogStorageServiceImpl {
   /**
@@ -60,6 +72,7 @@ class DialogStorageServiceImpl {
 
     const jsonl = serializeDialog(meta, input.messages)
     await backend.writeFile(fileName, jsonl)
+    invalidateMetaCache()
     log.info('会话已保存到 JSONL', {
       externalId: input.externalId,
       messageCount: input.messages.length,
@@ -68,33 +81,56 @@ class DialogStorageServiceImpl {
   }
 
   /**
+   * 加载全部会话 meta（带短 TTL 缓存）。
+   * 优先用后端 `listMeta`（仅读首行，高效）；旧 mock 后端无此方法时降级到逐文件 readFile。
+   */
+  private async loadAllMetas(): Promise<DialogMeta[]> {
+    const backend = getDialogBackend()
+    if (metaCache && metaCache.backend === backend && Date.now() - metaCache.ts < META_CACHE_TTL) {
+      return metaCache.metas
+    }
+
+    const metas: DialogMeta[] = []
+
+    if (typeof backend.listMeta === 'function') {
+      const entries = await backend.listMeta()
+      for (const entry of entries) {
+        const meta = parseMeta(entry.metaLine)
+        if (meta) metas.push(meta)
+      }
+    } else {
+      // 降级：逐文件读取（仅老测试 mock 后端会走到）
+      const fileNames = await backend.listFiles()
+      for (const name of fileNames) {
+        try {
+          const content = await backend.readFile(name)
+          if (!content) continue
+          const meta = parseMeta(content)
+          if (meta) metas.push(meta)
+        } catch {
+          /* 跳过坏文件 */
+        }
+      }
+    }
+
+    metaCache = { metas, ts: Date.now(), backend }
+    return metas
+  }
+
+  /**
    * 分页列出会话（只读 meta 行，不解析完整消息 → 高效）
    */
   async listConversations(options?: ListOptions): Promise<PaginatedResult<DialogSummary>> {
-    const backend = getDialogBackend()
     const page = options?.page || 1
     const pageSize = options?.pageSize || DEFAULT_PAGE_SIZE
     const sortOrder = options?.sortOrder || 'desc'
 
-    let fileNames: string[] = []
+    let metas: DialogMeta[]
     try {
-      fileNames = await backend.listFiles()
+      metas = [...(await this.loadAllMetas())]
     } catch (e) {
-      log.warn('列出对话文件失败', { error: String(e) })
+      log.warn('列出对话失败', { error: String(e) })
       return { items: [], total: 0, page, pageSize, totalPages: 0, hasMore: false }
-    }
-
-    // 读取每个文件的 meta 行
-    const metas: DialogMeta[] = []
-    for (const name of fileNames) {
-      try {
-        const content = await backend.readFile(name)
-        if (!content) continue
-        const meta = parseMeta(content)
-        if (meta) metas.push(meta)
-      } catch {
-        /* 跳过坏文件 */
-      }
     }
 
     // 按 updatedAt 排序
@@ -148,6 +184,7 @@ class DialogStorageServiceImpl {
   async deleteConversation(externalId: string): Promise<void> {
     const backend = getDialogBackend()
     await backend.deleteFile(dialogFileName(externalId))
+    invalidateMetaCache()
     log.info('会话已删除', { externalId })
   }
 }

@@ -20,6 +20,7 @@ import { Clock, MessageSquare, Trash2, RotateCcw, HardDrive, Loader2, X, Chevron
 import { ForkIndicator } from './ForkIndicator'
 import { SessionTree } from './SessionTree'
 import { ForkSessionDialog } from './ForkSessionDialog'
+import { SessionPreviewModal } from './SessionPreviewModal'
 import { getEngineFullName } from '@/utils/engineDisplay'
 import { getPathBasename, normalizeWorkspacePath } from '@/utils/workspacePath'
 
@@ -94,6 +95,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [forkTarget, setForkTarget] = useState<UnifiedHistoryItem | null>(null)
+  const [previewTarget, setPreviewTarget] = useState<UnifiedHistoryItem | null>(null)
 
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const currentWorkspace = useWorkspaceStore((state) => state.getCurrentWorkspace())
@@ -324,10 +326,15 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
     }
   }
 
-  // 过滤历史（客户端搜索）
+  // 过滤历史（客户端搜索：匹配标题 + 首条用户消息摘要）
   const filteredHistory = allHistory.filter((item) => {
     if (filter !== 'all' && item.engineId !== filter) return false
-    if (searchQuery && !item.title.toLowerCase().includes(searchQuery.toLowerCase())) return false
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      const inTitle = item.title.toLowerCase().includes(q)
+      const inSnippet = item.snippet ? item.snippet.toLowerCase().includes(q) : false
+      if (!inTitle && !inSnippet) return false
+    }
     return true
   })
 
@@ -580,13 +587,31 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
                             <EngineIcon className="w-4 h-4" />
                           </div>
 
-                          <div className="flex-1 min-w-0">
+                          <div
+                            className="flex-1 min-w-0 cursor-pointer"
+                            onClick={() => setPreviewTarget(item)}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault()
+                                setPreviewTarget(item)
+                              }
+                            }}
+                            title={t('preview.openHint', '点击预览完整对话')}
+                          >
                             <div className="flex items-center gap-2 mb-1">
                               <h3 className="text-sm font-medium text-text-primary truncate">{item.title}</h3>
                               <span className={`text-xs px-1.5 py-0.5 rounded ${engineInfo.bgColor}`}>
                                 {engineInfo.name}
                               </span>
                             </div>
+
+                            {item.snippet && (
+                              <p className="text-xs text-text-secondary line-clamp-2 mb-1.5 leading-snug">
+                                {item.snippet}
+                              </p>
+                            )}
 
                             <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs text-text-tertiary mb-1.5">
                               <span className="flex items-center gap-1">
@@ -714,6 +739,22 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
           sourceSession={forkTarget}
           onConfirm={(branchName) => handleFork(forkTarget, branchName)}
           onCancel={() => setForkTarget(null)}
+        />
+      )}
+
+      {/* 只读会话预览：无需恢复即可查看完整上下文 */}
+      {previewTarget && (
+        <SessionPreviewModal
+          item={previewTarget}
+          onRestore={(item) => {
+            setPreviewTarget(null)
+            handleRestore(item)
+          }}
+          onFork={(item) => {
+            setPreviewTarget(null)
+            setForkTarget(item)
+          }}
+          onClose={() => setPreviewTarget(null)}
         />
       )}
     </div>

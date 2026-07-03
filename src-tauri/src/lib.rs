@@ -931,6 +931,7 @@ pub fn run() {
             commands::data_root_cmd::set_data_root,
             // 历史对话存储
             commands::dialog_storage::dialog_list,
+            commands::dialog_storage::dialog_list_meta,
             commands::dialog_storage::dialog_read,
             commands::dialog_storage::dialog_write,
             commands::dialog_storage::dialog_delete,
