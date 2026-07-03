@@ -279,6 +279,16 @@
     "selfStorageHint": "自有存储的对话历史（JSONL）",
     "engineStorageHint": "引擎原生会话历史"
   },
+  "preview": {
+    "close": "关闭",
+    "loading": "正在加载对话内容…",
+    "empty": "无法加载对话内容，数据可能已过期或为空",
+    "scrollToBottom": "滚动到底部",
+    "fork": "创建分支",
+    "continue": "继续该会话",
+    "readOnlyHint": "只读预览 · 无需恢复即可查看完整上下文",
+    "openHint": "点击预览完整对话"
+  },
   "statusBar": {
     "conversations": "对话",
     "tools": "工具",

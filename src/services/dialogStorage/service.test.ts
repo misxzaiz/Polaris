@@ -167,7 +167,8 @@ describe('dialogStorageService - 幂等（根治重复累积）', () => {
 
 describe('dialogStorageService - 列表分页', () => {
   beforeEach(async () => {
-    // 造 5 个会话，updatedAt 通过保存顺序区分（buildMeta 用当前时间，顺序递增）
+    // 造 5 个会话，updatedAt 通过保存顺序区分（buildMeta 用当前时间，顺序递增）。
+    // 两次保存之间留 2ms 间隔，确保 updatedAt 毫秒级严格递增，避免稳定排序保留文件序导致顺序错乱。
     for (let i = 1; i <= 5; i++) {
       await dialogStorageService.saveConversation({
         externalId: `conv-${i}`,
@@ -175,6 +176,7 @@ describe('dialogStorageService - 列表分页', () => {
         title: `会话${i}`,
         messages: [userMsg(`u${i}`, `消息${i}`)],
       })
+      await new Promise((r) => setTimeout(r, 2))
     }
   })
 

@@ -280,6 +280,16 @@
     "selfStorageHint": "Self-stored conversation history (JSONL)",
     "engineStorageHint": "Engine native session history"
   },
+  "preview": {
+    "close": "Close",
+    "loading": "Loading conversation…",
+    "empty": "Unable to load conversation. Data may be expired or empty.",
+    "scrollToBottom": "Scroll to bottom",
+    "fork": "Fork",
+    "continue": "Continue session",
+    "readOnlyHint": "Read-only preview · view full context without restoring",
+    "openHint": "Click to preview full conversation"
+  },
   "statusBar": {
     "conversations": "conversations",
     "tools": "tools",
