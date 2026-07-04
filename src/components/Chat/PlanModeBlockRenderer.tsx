@@ -40,13 +40,39 @@ export interface PlanModeBlockRendererProps {
 // 状态配置
 // ========================================
 
+// ========================================
+// 类型定义
+// ========================================
+
+type PlanStatusAnimation = 'animate-spin' | undefined;
+
+interface PlanStatusEntry {
+  icon: React.FC<any>;
+  color: string;
+  bg: string;
+  labelKey: string;
+  animation?: PlanStatusAnimation;
+}
+
+interface PlanTaskStatusEntry {
+  icon: React.FC<any>;
+  color: string;
+  bg: string;
+  animation?: PlanStatusAnimation;
+}
+
+// ========================================
+// 状态配置
+// ========================================
+
 /** PlanMode 状态配置 */
-export const PLAN_STATUS_CONFIG = {
+export const PLAN_STATUS_CONFIG: PlanStatusEntry = {
   drafting: {
     icon: Loader2,
     color: 'text-violet-500',
     bg: 'bg-violet-500/10',
     labelKey: 'plan.statusDrafting',
+    animation: 'animate-spin',
   },
   pending_approval: {
     icon: Clock,
@@ -68,9 +94,10 @@ export const PLAN_STATUS_CONFIG = {
   },
   executing: {
     icon: Loader2,
-    color: 'text-blue-500 animate-spin',
+    color: 'text-blue-500',
     bg: 'bg-blue-500/10',
     labelKey: 'plan.statusExecuting',
+    animation: 'animate-spin',
   },
   completed: {
     icon: Check,
@@ -84,16 +111,16 @@ export const PLAN_STATUS_CONFIG = {
     bg: 'bg-gray-500/10',
     labelKey: 'plan.statusCanceled',
   },
-} as const;
+};
 
 /** PlanMode 任务状态配置 */
-export const PLAN_TASK_STATUS_CONFIG = {
+export const PLAN_TASK_STATUS_CONFIG: PlanTaskStatusEntry = {
   pending: { icon: Circle, color: 'text-gray-400', bg: 'bg-gray-500/10' },
-  in_progress: { icon: Loader2, color: 'text-violet-500', bg: 'bg-violet-500/10' },
+  in_progress: { icon: Loader2, color: 'text-violet-500', bg: 'bg-violet-500/10', animation: 'animate-spin' },
   completed: { icon: Check, color: 'text-green-500', bg: 'bg-green-500/10' },
   failed: { icon: XCircle, color: 'text-red-500', bg: 'bg-red-500/10' },
   skipped: { icon: ChevronRight, color: 'text-gray-400', bg: 'bg-gray-500/10' },
-} as const;
+};
 
 // ========================================
 // 子组件
@@ -154,6 +181,7 @@ const PlanStageRenderer = memo(function PlanStageRenderer({
             className={clsx(
               'w-3.5 h-3.5',
               statusConfig.color,
+              statusConfig.animation,
               stage.status === 'in_progress' && 'text-violet-500'
             )}
           />
@@ -205,7 +233,7 @@ const PlanStageRenderer = memo(function PlanStageRenderer({
                     className={clsx(
                       'w-3.5 h-3.5 mt-0.5 shrink-0',
                       taskConfig.color,
-                      task.status === 'in_progress' && 'animate-spin'
+                      taskConfig.animation && taskConfig.animation
                     )}
                   />
                   <span
@@ -397,7 +425,7 @@ export const PlanModeBlockRenderer = memo(function PlanModeBlockRenderer({
             className={clsx(
               'w-4 h-4',
               statusConfig.color,
-              block.status === 'drafting' && 'animate-spin'
+              statusConfig.animation && statusConfig.animation
             )}
           />
         </div>
@@ -562,7 +590,7 @@ export const SimplifiedPlanModeRenderer = memo(function SimplifiedPlanModeRender
       className="my-1 flex items-center gap-2 text-xs text-text-tertiary"
       aria-label={t('plan.planModeAriaLabel', { title: block.title || t('plan.defaultTitle') })}
     >
-      <StatusIcon className={clsx('w-3 h-3', statusConfig.color)} aria-hidden="true" />
+      <StatusIcon className={clsx('w-3 h-3', statusConfig.color, statusConfig.animation && statusConfig.animation)} aria-hidden="true" />
       <ClipboardList className="w-3 h-3 text-violet-500" aria-hidden="true" />
       <span className="truncate">{block.title || t('plan.defaultTitle')}</span>
       {totalTasks > 0 && (
