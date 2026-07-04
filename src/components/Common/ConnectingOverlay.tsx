@@ -95,6 +95,9 @@ export function ConnectingOverlay() {
           <p className="text-sm text-text-secondary">
             {isConnecting ? t('connection.connectingHint') : shouldShowTokenInput ? t('connection.tokenRequiredHint') : shouldShowCliFailure ? t('connection.connectFailedHintEngine', { name: selectedEngine.name }) : ''}
           </p>
+          <p className="text-sm text-text-secondary">
+            连接后，需要刷新一下页面进行初始化
+          </p>
         </div>
 
         {/* Token 输入界面 (Web 模式鉴权) */}
