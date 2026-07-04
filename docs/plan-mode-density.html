@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PlanMode 高密度设计对比</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a1e;
+      color: #e0e0e0;
+      padding: 40px;
+    }
+    .container { max-width: 600px; margin: 0 auto; }
+    h1 { font-size: 20px; margin-bottom: 8px; color: #fff; }
+    .subtitle { font-size: 12px; color: #888; margin-bottom: 24px; }
+    .section { margin-bottom: 32px; }
+    .section-title { 
+      font-size: 13px; 
+      font-weight: 600; 
+      color: #8b5cf6;
+      margin-bottom: 12px;
+    }
+    
+    /* ========== 高密度卡片样式 ========== */
+    .plan-card {
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 8px;
+      background: rgba(30, 30, 35, 0.9);
+      overflow: hidden;
+    }
+    
+    /* 头部 */
+    .plan-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #eab308;
+      flex-shrink: 0;
+    }
+    .plan-title {
+      font-size: 13px;
+      font-weight: 500;
+      flex: 1;
+    }
+    .plan-badge {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 3px;
+      background: rgba(234, 179, 8, 0.12);
+      color: #eab308;
+    }
+    
+    /* 进度条 */
+    .plan-progress {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 10px 4px;
+    }
+    .progress-bar {
+      flex: 1;
+      height: 4px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: #8b5cf6;
+      border-radius: 2px;
+    }
+    .progress-text {
+      font-size: 10px;
+      color: #666;
+      white-space: nowrap;
+    }
+    
+    /* 分隔线 */
+    .divider {
+      height: 1px;
+      background: rgba(255,255,255,0.06);
+      margin: 0 10px;
+    }
+    
+    /* 步骤列表 */
+    .steps-container {
+      padding: 6px 10px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    
+    /* 单个步骤 */
+    .step-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .step-indicator-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .step-indicator {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 10px;
+    }
+    .step-indicator.completed {
+      background: rgba(34, 197, 94, 0.15);
+    }
+    .step-indicator.completed::after { content: '✓'; color: #22c55e; font-size: 9px; }
+    .step-indicator.in-progress {
+      background: rgba(139, 92, 246, 0.15);
+    }
+    .step-indicator.in-progress::after { content: '⟳'; color: #8b5cf6; font-size: 10px; }
+    .step-indicator.pending {
+      border: 1.5px solid rgba(255,255,255,0.1);
+      color: #666;
+    }
+    .step-connector {
+      width: 1px;
+      flex: 1;
+      min-height: 14px;
+      margin-top: 2px;
+      background: rgba(255,255,255,0.06);
+    }
+    .step-connector.completed {
+      background: rgba(34, 197, 94, 0.3);
+    }
+    .step-content {
+      flex: 1;
+      padding: 2px 0;
+    }
+    .step-text {
+      font-size: 13px;
+      line-height: 1.3;
+    }
+    .step-text.completed {
+      color: #666;
+      text-decoration: line-through;
+    }
+    .step-text.in-progress {
+      color: #e0e0e0;
+    }
+    .step-text.pending {
+      color: #999;
+    }
+    
+    /* 按钮区 */
+    .plan-buttons {
+      display: flex;
+      gap: 6px;
+      padding: 6px 10px;
+    }
+    .plan-btn {
+      flex: 1;
+      padding: 6px;
+      border-radius: 4px;
+      border: none;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      text-align: center;
+    }
+    .plan-btn-primary { background: #8b5cf6; color: #fff; }
+    .plan-btn-danger { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+    
+    /* 对比标签 */
+    .label {
+      display: inline-block;
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      margin-bottom: 8px;
+    }
+    .label-after { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
+    
+    /* 说明 */
+    .notes {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 6px;
+      padding: 12px;
+      margin-top: 16px;
+    }
+    .notes h3 {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #8b5cf6;
+    }
+    .notes ul {
+      list-style: none;
+      font-size: 12px;
+      color: #999;
+    }
+    .notes li {
+      margin-bottom: 4px;
+      padding-left: 12px;
+      position: relative;
+    }
+    .notes li::before {
+      content: '•';
+      position: absolute;
+      left: 0;
+      color: #8b5cf6;
+    }
+    .notes .highlight {
+      color: #e0e0e0;
+      font-weight: 500;
+    }
+    
+    /* 尺寸对比 */
+    .size-comparison {
+      display: flex;
+      gap: 16px;
+      margin-top: 12px;
+      padding: 8px;
+      background: rgba(139, 92, 246, 0.05);
+      border-radius: 6px;
+    }
+    .size-item {
+      text-align: center;
+      flex: 1;
+    }
+    .size-label { font-size: 10px; color: #666; margin-bottom: 2px; }
+    .size-value { font-size: 20px; font-weight: 600; color: #8b5cf6; }
+    .size-unit { font-size: 11px; color: #666; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>PlanMode 高密度设计</h1>
+    <p class="subtitle">优化间距，提升信息密度</p>
+    
+    <div class="section">
+      <span class="label label-after">优化后 - 高密度</span>
+      <div class="section-title">实现用户认证模块</div>
+      
+      <div class="plan-card">
+        <div class="plan-header">
+          <div class="status-dot"></div>
+          <span class="plan-title">实现用户认证模块</span>
+          <span class="plan-badge">待审批</span>
+        </div>
+        
+        <div class="plan-progress">
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: 60%"></div>
+          </div>
+          <span class="progress-text">3/5</span>
+        </div>
+        
+        <div class="divider"></div>
+        
+        <div class="steps-container">
+          <div class="step-item">
+            <div class="step-indicator-wrapper">
+              <div class="step-indicator completed"></div>
+              <div class="step-connector completed"></div>
+            </div>
+            <div class="step-content">
+              <div class="step-text completed">创建测试计划</div>
+            </div>
+          </div>
+          
+          <div class="step-item">
+            <div class="step-indicator-wrapper">
+              <div class="step-indicator in-progress"></div>
+              <div class="step-connector"></div>
+            </div>
+            <div class="step-content">
+              <div class="step-text in-progress">更新计划进度</div>
+            </div>
+          </div>
+          
+          <div class="step-item">
+            <div class="step-indicator-wrapper">
+              <div class="step-indicator pending">3</div>
+              <div class="step-connector"></div>
+            </div>
+            <div class="step-content">
+              <div class="step-text pending">完成测试</div>
+            </div>
+          </div>
+          
+          <div class="step-item">
+            <div class="step-indicator-wrapper">
+              <div class="step-indicator pending">4</div>
+              <div class="step-connector"></div>
+            </div>
+            <div class="step-content">
+              <div class="step-text pending">编写文档</div>
+            </div>
+          </div>
+          
+          <div class="step-item">
+            <div class="step-indicator-wrapper">
+              <div class="step-indicator pending">5</div>
+            </div>
+            <div class="step-content">
+              <div class="step-text pending">代码审查</div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="divider"></div>
+        
+        <div class="plan-buttons">
+          <button class="plan-btn plan-btn-primary">批准</button>
+          <button class="plan-btn plan-btn-danger">拒绝</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 优化说明 -->
+    <div class="notes">
+      <h3>高密度优化要点</h3>
+      <ul>
+        <li><span class="highlight">头部间距</span>：padding 从 py-2.5 缩至 py-1.5，减少 40%</li>
+        <li><span class="highlight">步骤指示器</span>：从 w-5 h-5 (20px) 缩至 w-4 h-4 (16px)</li>
+        <li><span class="highlight">步骤间距</span>：从 pb-3 缩至 py-0.5，减少 75%</li>
+        <li><span class="highlight">竖线高度</span>：从 min-h-[20px] 缩至 min-h-[14px]</li>
+        <li><span class="highlight">进度条</span>：从 py-2 缩至 pb-1.5，内联显示</li>
+        <li><span class="highlight">按钮高度</span>：从 h-7 (28px) 缩至 h-6 (24px)</li>
+        <li><span class="highlight">字号优化</span>：标题 13px，步骤 13px，按钮 11px</li>
+      </ul>
+    </div>
+    
+    <!-- 尺寸对比 -->
+    <div class="size-comparison">
+      <div class="size-item">
+        <div class="size-label">优化前高度</div>
+        <div class="size-value">~260<span class="size-unit">px</span></div>
+      </div>
+      <div class="size-item">
+        <div class="size-label">优化后高度</div>
+        <div class="size-value">~180<span class="size-unit">px</span></div>
+      </div>
+      <div class="size-item">
+        <div class="size-label">空间节省</div>
+        <div class="size-value" style="color: #22c55e;">~31<span class="size-unit">%</span></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

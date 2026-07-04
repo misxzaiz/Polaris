@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PlanMode 卡片原型对比</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a1e;
+      color: #e0e0e0;
+      padding: 40px;
+    }
+    .container { max-width: 800px; margin: 0 auto; }
+    h1 { font-size: 24px; margin-bottom: 8px; color: #fff; }
+    .subtitle { font-size: 14px; color: #888; margin-bottom: 40px; }
+    .section { margin-bottom: 48px; }
+    .section-title { 
+      font-size: 16px; 
+      font-weight: 600; 
+      color: #aaa; 
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 16px;
+    }
+    
+    /* ========== 当前样式（问题展示） ========== */
+    .current-card {
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      background: rgba(139, 92, 246, 0.05);
+      overflow: hidden;
+    }
+    .current-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    .current-status-icon {
+      width: 20px;
+      height: 20px;
+      background: rgba(234, 179, 8, 0.1);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .current-status-icon::after {
+      content: '⏳';
+      font-size: 12px;
+    }
+    .current-title-icon {
+      width: 20px;
+      height: 20px;
+      color: #8b5cf6;
+    }
+    .current-title {
+      font-size: 14px;
+      font-weight: 500;
+      flex: 1;
+    }
+    .current-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 12px;
+      background: rgba(234, 179, 8, 0.1);
+      color: #eab308;
+    }
+    .current-progress {
+      padding: 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    .current-progress-bar {
+      height: 8px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .current-progress-fill {
+      height: 100%;
+      background: #8b5cf6;
+      border-radius: 4px;
+      transition: width 0.3s;
+    }
+    .current-stages {
+      padding: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    
+    /* 问题1：阶段卡片嵌套 */
+    .current-stage {
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 8px;
+      margin-bottom: 8px;
+      overflow: hidden;
+    }
+    .current-stage-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      background: rgba(255,255,255,0.02);
+      cursor: pointer;
+    }
+    .current-stage-icon {
+      width: 16px;
+      height: 16px;
+      background: rgba(139, 92, 246, 0.1);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+    }
+    .current-stage-icon::after { content: '✓'; color: #8b5cf6; }
+    .current-stage-name { font-size: 13px; flex: 1; }
+    .current-stage-count { font-size: 11px; color: #666; }
+    .current-stage-chevron { font-size: 10px; color: #666; }
+    .current-stage-content {
+      padding: 8px 12px 12px;
+      border-top: 1px solid rgba(255,255,255,0.05);
+      background: rgba(255,255,255,0.015);
+    }
+    .current-task {
+      display: flex;
+      align-items: start;
+      gap: 8px;
+      padding: 8px;
+      background: rgba(255,255,255,0.03);
+      border-radius: 6px;
+      margin-bottom: 4px;
+    }
+    .current-task-icon {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: rgba(34, 197, 94, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 8px;
+      margin-top: 2px;
+      flex-shrink: 0;
+    }
+    .current-task-icon::after { content: '✓'; color: #22c55e; }
+    .current-task-text { font-size: 12px; color: #999; text-decoration: line-through; }
+    .current-buttons {
+      display: flex;
+      gap: 8px;
+      padding: 12px;
+      border-top: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.02);
+    }
+    .current-btn {
+      flex: 1;
+      padding: 10px;
+      border-radius: 8px;
+      border: none;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .current-btn-primary { background: #8b5cf6; color: #fff; }
+    .current-btn-danger { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+    
+    /* ========== 优化后样式 ========== */
+    .optimized-card {
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      background: rgba(30, 30, 35, 0.8);
+    }
+    .optimized-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+    }
+    .optimized-status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #eab308;
+      flex-shrink: 0;
+    }
+    .optimized-title {
+      font-size: 13px;
+      font-weight: 500;
+      flex: 1;
+    }
+    .optimized-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(234, 179, 8, 0.12);
+      color: #eab308;
+    }
+    .optimized-divider {
+      height: 1px;
+      background: rgba(255,255,255,0.06);
+      margin: 0 12px;
+    }
+    .optimized-progress {
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .optimized-progress-bar {
+      flex: 1;
+      height: 4px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .optimized-progress-fill {
+      height: 100%;
+      background: #8b5cf6;
+      border-radius: 2px;
+    }
+    .optimized-progress-text {
+      font-size: 11px;
+      color: #666;
+      white-space: nowrap;
+    }
+    
+    /* 优化：扁平化阶段列表 */
+    .optimized-stages {
+      padding: 0 12px 8px;
+    }
+    .optimized-stage {
+      position: relative;
+    }
+    .optimized-stage:not(:last-child)::after {
+      content: '';
+      position: absolute;
+      left: 15px;
+      top: 32px;
+      bottom: 0;
+      width: 1px;
+      background: rgba(255,255,255,0.06);
+    }
+    .optimized-stage-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 0;
+      cursor: pointer;
+    }
+    .optimized-stage-dot {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: rgba(139, 92, 246, 0.12);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      color: #8b5cf6;
+      flex-shrink: 0;
+      z-index: 1;
+    }
+    .optimized-stage-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .optimized-stage-name {
+      font-size: 13px;
+      font-weight: 500;
+      color: #e0e0e0;
+    }
+    .optimized-stage-meta {
+      font-size: 11px;
+      color: #666;
+      margin-top: 1px;
+    }
+    .optimized-stage-chevron {
+      font-size: 10px;
+      color: #666;
+      transition: transform 0.2s;
+    }
+    
+    /* 优化：内联任务列表 */
+    .optimized-tasks {
+      padding-left: 32px;
+      padding-bottom: 4px;
+    }
+    .optimized-task {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 0;
+    }
+    .optimized-task-check {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 1.5px solid rgba(255,255,255,0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .optimized-task-check.done {
+      background: rgba(34, 197, 94, 0.15);
+      border-color: transparent;
+    }
+    .optimized-task-check.done::after { content: '✓'; color: #22c55e; font-size: 9px; }
+    .optimized-task-text {
+      font-size: 12px;
+      color: #888;
+    }
+    .optimized-task-text.done {
+      color: #555;
+      text-decoration: line-through;
+    }
+    
+    /* 优化：紧凑按钮 */
+    .optimized-buttons {
+      display: flex;
+      gap: 6px;
+      padding: 8px 12px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+    }
+    .optimized-btn {
+      flex: 1;
+      padding: 7px;
+      border-radius: 6px;
+      border: none;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+    .optimized-btn-primary { background: #8b5cf6; color: #fff; }
+    .optimized-btn-secondary { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+    
+    /* 对比标签 */
+    .label {
+      display: inline-block;
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-bottom: 8px;
+    }
+    .label-before { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+    .label-after { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
+    
+    /* 对比容器 */
+    .comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+    }
+    
+    /* 说明 */
+    .notes {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 8px;
+      padding: 16px;
+      margin-top: 24px;
+    }
+    .notes h3 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      color: #8b5cf6;
+    }
+    .notes ul {
+      list-style: none;
+      font-size: 13px;
+      color: #999;
+    }
+    .notes li {
+      margin-bottom: 8px;
+      padding-left: 16px;
+      position: relative;
+    }
+    .notes li::before {
+      content: '•';
+      position: absolute;
+      left: 0;
+      color: #8b5cf6;
+    }
+    .notes .highlight {
+      color: #e0e0e0;
+      font-weight: 500;
+    }
+    
+    /* 尺寸对比 */
+    .size-comparison {
+      display: flex;
+      gap: 24px;
+      margin-top: 16px;
+      padding: 12px;
+      background: rgba(139, 92, 246, 0.05);
+      border-radius: 8px;
+    }
+    .size-item {
+      text-align: center;
+      flex: 1;
+    }
+    .size-label { font-size: 11px; color: #666; margin-bottom: 4px; }
+    .size-value { font-size: 24px; font-weight: 600; color: #8b5cf6; }
+    .size-unit { font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>PlanMode 卡片原型对比</h1>
+    <p class="subtitle">左侧为当前问题样式，右侧为优化后方案</p>
+    
+    <div class="comparison">
+      <!-- ========== 当前样式 ========== -->
+      <div class="section">
+        <span class="label label-before">当前样式 - 问题</span>
+        
+        <div class="current-card">
+          <div class="current-header">
+            <div class="current-status-icon"></div>
+            <div class="current-title-icon">📋</div>
+            <span class="current-title">实现用户认证模块</span>
+            <span class="current-badge">待审批</span>
+          </div>
+          
+          <div class="current-progress">
+            <div class="current-progress-bar">
+              <div class="current-progress-fill" style="width: 60%"></div>
+            </div>
+          </div>
+          
+          <div class="current-stages">
+            <!-- 问题：卡片嵌套卡片 -->
+            <div class="current-stage">
+              <div class="current-stage-header">
+                <div class="current-stage-icon"></div>
+                <span class="current-stage-name">阶段 1: 后端 API</span>
+                <span class="current-stage-count">2/3</span>
+                <span class="current-stage-chevron">▼</span>
+              </div>
+              <div class="current-stage-content">
+                <div class="current-task">
+                  <div class="current-task-icon"></div>
+                  <span class="current-task-text">创建用户表</span>
+                </div>
+                <div class="current-task">
+                  <div class="current-task-icon"></div>
+                  <span class="current-task-text">实现登录接口</span>
+                </div>
+                <div class="current-task">
+                  <div class="current-task-icon" style="background: rgba(255,255,255,0.05); border: 1.5px solid rgba(255,255,255,0.15);"></div>
+                  <span class="current-task-text" style="color: #ccc; text-decoration: none;">实现注册接口</span>
+                </div>
+              </div>
+            </div>
+            
+            <div class="current-stage">
+              <div class="current-stage-header">
+                <div class="current-stage-icon" style="background: rgba(234, 179, 8, 0.1);">
+                  <span style="color: #eab308; font-size: 10px;">⏳</span>
+                </div>
+                <span class="current-stage-name">阶段 2: 前端页面</span>
+                <span class="current-stage-count">0/2</span>
+                <span class="current-stage-chevron">▶</span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="current-buttons">
+            <button class="current-btn current-btn-primary">👍 批准</button>
+            <button class="current-btn current-btn-danger">👎 拒绝</button>
+          </div>
+        </div>
+      </div>
+      
+      <!-- ========== 优化后样式 ========== -->
+      <div class="section">
+        <span class="label label-after">优化后 - 紧凑清晰</span>
+        
+        <div class="optimized-card">
+          <div class="optimized-header">
+            <div class="optimized-status-dot"></div>
+            <span class="optimized-title">实现用户认证模块</span>
+            <span class="optimized-badge">待审批</span>
+          </div>
+          
+          <div class="optimized-divider"></div>
+          
+          <div class="optimized-progress">
+            <div class="optimized-progress-bar">
+              <div class="optimized-progress-fill" style="width: 60%"></div>
+            </div>
+            <span class="optimized-progress-text">3/5 任务</span>
+          </div>
+          
+          <div class="optimized-stages">
+            <!-- 优化：扁平化，无边框 -->
+            <div class="optimized-stage">
+              <div class="optimized-stage-header">
+                <div class="optimized-stage-dot">✓</div>
+                <div class="optimized-stage-info">
+                  <div class="optimized-stage-name">阶段 1: 后端 API</div>
+                  <div class="optimized-stage-meta">2/3 已完成</div>
+                </div>
+                <span class="optimized-stage-chevron">▼</span>
+              </div>
+              <div class="optimized-tasks">
+                <div class="optimized-task">
+                  <div class="optimized-task-check done"></div>
+                  <span class="optimized-task-text done">创建用户表</span>
+                </div>
+                <div class="optimized-task">
+                  <div class="optimized-task-check done"></div>
+                  <span class="optimized-task-text done">实现登录接口</span>
+                </div>
+                <div class="optimized-task">
+                  <div class="optimized-task-check"></div>
+                  <span class="optimized-task-text">实现注册接口</span>
+                </div>
+              </div>
+            </div>
+            
+            <div class="optimized-stage">
+              <div class="optimized-stage-header">
+                <div class="optimized-stage-dot" style="background: rgba(234, 179, 8, 0.12); color: #eab308;">⏳</div>
+                <div class="optimized-stage-info">
+                  <div class="optimized-stage-name">阶段 2: 前端页面</div>
+                  <div class="optimized-stage-meta">0/2 待开始</div>
+                </div>
+                <span class="optimized-stage-chevron">▶</span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="optimized-buttons">
+            <button class="optimized-btn optimized-btn-primary">批准</button>
+            <button class="optimized-btn optimized-btn-secondary">拒绝</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 优化说明 -->
+    <div class="notes">
+      <h3>优化要点</h3>
+      <ul>
+        <li><span class="highlight">移除卡片嵌套</span>：阶段不再使用独立边框卡片，改用左侧竖线连接</li>
+        <li><span class="highlight">扁平化层次</span>：主卡片 → 分隔线 → 阶段列表 → 任务，清晰的视觉层次</li>
+        <li><span class="highlight">紧凑间距</span>：padding 从 12px 优化为 8-10px，整体高度降低约 30%</li>
+        <li><span class="highlight">简化图标</span>：状态用小圆点表示，阶段用带数字/符号的圆圈</li>
+        <li><span class="highlight">内联任务</span>：任务直接显示在阶段下方，无需展开容器</li>
+        <li><span class="highlight">精简按钮</span>：移除图标，仅保留文字，减少视觉噪音</li>
+      </ul>
+    </div>
+    
+    <!-- 尺寸对比 -->
+    <div class="size-comparison">
+      <div class="size-item">
+        <div class="size-label">当前高度</div>
+        <div class="size-value">~380<span class="size-unit">px</span></div>
+      </div>
+      <div class="size-item">
+        <div class="size-label">优化后高度</div>
+        <div class="size-value">~260<span class="size-unit">px</span></div>
+      </div>
+      <div class="size-item">
+        <div class="size-label">空间节省</div>
+        <div class="size-value" style="color: #22c55e;">~32<span class="size-unit">%</span></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
