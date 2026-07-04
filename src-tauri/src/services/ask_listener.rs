@@ -439,8 +439,13 @@ fn emit_question_event(
 
     let event = wrap_question_route_event(session_id, payload.clone());
 
-    // Web/WebSocket broadcast — always available.
-    if let Ok(msg) = serde_json::to_string(&event) {
+    // Web/WebSocket broadcast — wrap in envelope for event routing.
+    // Frontend httpTransport filters messages without "event" field.
+    let ws_msg = serde_json::json!({
+        "event": "chat-event",
+        "payload": event,
+    });
+    if let Ok(msg) = serde_json::to_string(&ws_msg) {
         let _ = state.event_broadcast.send(msg);
     }
 
