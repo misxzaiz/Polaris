@@ -463,6 +463,36 @@ export function createConversationStore(
         })
       },
 
+      appendMediaPreviewBlock: (media) => {
+        if (_textBuffer) get()._flushTextBuffer()
+
+        const { currentMessage, streamingUpdateCounter } = get()
+        if (!currentMessage) {
+          set({
+            currentMessage: createCurrentAssistantMessage([media]),
+            streamingUpdateCounter: streamingUpdateCounter + 1,
+          })
+          return
+        }
+
+        // Deduplicate: if a media block with the same videoId or url already exists, skip
+        const alreadyExists = currentMessage.blocks.some((block) => {
+          if (block.type !== 'media_preview') return false
+          if (media.videoId && block.videoId === media.videoId) return true
+          if (media.url && block.url === media.url) return true
+          return false
+        })
+        if (alreadyExists) return
+
+        set({
+          currentMessage: {
+            ...currentMessage,
+            blocks: [...currentMessage.blocks, media],
+          },
+          streamingUpdateCounter: streamingUpdateCounter + 1,
+        })
+      },
+
       updateCurrentAssistantMessage: (blocks) => {
         const { currentMessage } = get()
         if (currentMessage) {

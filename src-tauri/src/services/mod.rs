@@ -21,6 +21,7 @@ pub mod unified_todo_repository;
 pub mod unified_requirement_repository;
 pub mod unified_scheduler_repository;
 pub mod requirements_mcp_server;
+pub mod agnes_mcp_server;
 
 #[cfg(windows)]
 pub mod computer_control;

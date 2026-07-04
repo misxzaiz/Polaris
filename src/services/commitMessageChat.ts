@@ -98,7 +98,7 @@ export async function openCommitMessageChat(
   const userContent =
     '本次提交涉及以下暂存的 Git 变更（变更清单）：\n\n' +
     diffSummary +
-    '\n\n请使用 `git diff --cached` 查看完整变更内容（若无法运行命令则读取上述相关文件），据此生成一条 Conventional Commits 格式的提交信息。只输出消息本身，不要解释、不要代码块标记。'
+    '\n\n请使用 `git diff --cached` 查看完整变更内容（若无法运行命令则读取上述相关文件），据此生成一条 Conventional Commits 格式的提交信息。只输出消息本身，不要解释、不要代码块标记。消息具体内容使用中文。'
 
   await store.getState().sendMessage(userContent, workspacePath, undefined, {
     oneTimeSystemPrompt: COMMIT_MSG_SYSTEM_PROMPT,
