@@ -373,6 +373,8 @@ pub struct ChatCallbacks {
 struct PreparedMcpConfig {
     claude_config_path: Option<String>,
     codex_config_args: Vec<String>,
+    /// SimpleAI 直接消费的 MCP server 列表（Phase 4b；CLI 引擎不用）。
+    simple_ai_mcp_servers: Option<Vec<crate::services::mcp_config_service::ResolvedExternalMcpServer>>,
 }
 
 fn merge_disabled_mcp_servers(requested: &[String], persisted: Vec<String>) -> Vec<String> {
@@ -430,6 +432,7 @@ fn prepare_mcp_config_with_paths(
             Ok(PreparedMcpConfig {
                 claude_config_path: Some(config_path.to_string_lossy().to_string()),
                 codex_config_args: Vec::new(),
+                simple_ai_mcp_servers: None,
             })
         }
         EngineId::Codex => {
@@ -438,13 +441,46 @@ fn prepare_mcp_config_with_paths(
             Ok(PreparedMcpConfig {
                 claude_config_path: None,
                 codex_config_args,
+                simple_ai_mcp_servers: None,
             })
         }
         EngineId::SimpleAI => {
-            // SimpleAI 不使用 MCP
+            // SimpleAI 直接消费 MCP server（Phase 4b + 内置桥接）：
+            // service 已合并内置（polaris.builtin）+ 外部插件，按 disabled 过滤。
+            let mut servers = service.resolved_simple_ai_servers(work_dir, &disabled_servers);
+            // aiToolAccess 门控：内置（plugin_id="polaris.builtin"）总暴露；
+            // 外部插件检查 aiToolAccess（决策 §12-7：只对 SimpleAI 过滤，CLI 引擎不变）。
+            let (_, plugins) = crate::services::mcp_config_service::load_plugin_mcp_runtime_state(
+                &paths.config_dir,
+                std::path::Path::new(work_dir),
+            );
+            servers.retain(|s| {
+                if s.plugin_id == "polaris.builtin" {
+                    return true;
+                }
+                plugins
+                    .iter()
+                    .find(|p| p.id == s.plugin_id)
+                    .map(|p| p.permissions.ai_tool_access.unwrap_or(false))
+                    .unwrap_or(false)
+            });
+            if !servers.is_empty() {
+                let builtin_count = servers
+                    .iter()
+                    .filter(|s| s.plugin_id == "polaris.builtin")
+                    .count();
+                let plugin_count = servers.len() - builtin_count;
+                tracing::info!(
+                    "[SimpleAI] 解析到 {} 个可用 MCP server（内置 {} + 插件 {}，aiToolAccess 已过滤）",
+                    servers.len(),
+                    builtin_count,
+                    plugin_count
+                );
+            }
             Ok(PreparedMcpConfig {
                 claude_config_path: None,
                 codex_config_args: Vec::new(),
+                simple_ai_mcp_servers: Some(servers),
             })
         }
         EngineId::MimoCode => {
@@ -452,6 +488,7 @@ fn prepare_mcp_config_with_paths(
             Ok(PreparedMcpConfig {
                 claude_config_path: None,
                 codex_config_args: Vec::new(),
+                simple_ai_mcp_servers: None,
             })
         }
     }
@@ -751,7 +788,7 @@ pub async fn start_chat_inner(
     };
 
     tracing::info!("[start_chat_inner] 使用引擎: {:?}", engine);
-    let mcp_config = prepare_mcp_config_with_paths(
+    let mut mcp_config = prepare_mcp_config_with_paths(
         &options,
         &engine,
         app_paths,
@@ -810,6 +847,11 @@ pub async fn start_chat_inner(
     }
     if !mcp_config.codex_config_args.is_empty() {
         session_opts = session_opts.with_codex_config_args(mcp_config.codex_config_args);
+    }
+    if let Some(servers) = mcp_config.simple_ai_mcp_servers.take() {
+        if !servers.is_empty() {
+            session_opts = session_opts.with_mcp_servers(servers);
+        }
     }
     if let Some(ref dirs) = options.additional_dirs {
         session_opts.additional_dirs = dirs.clone();
@@ -904,7 +946,7 @@ pub async fn continue_chat_inner(
         .ok_or_else(|| AppError::ValidationError("必须提供有效的 engine_id".to_string()))?;
 
     tracing::info!("[continue_chat_inner] 使用引擎: {:?}", engine);
-    let mcp_config = prepare_mcp_config_with_paths(
+    let mut mcp_config = prepare_mcp_config_with_paths(
         &options,
         &engine,
         app_paths,
@@ -963,6 +1005,11 @@ pub async fn continue_chat_inner(
     }
     if !mcp_config.codex_config_args.is_empty() {
         session_opts = session_opts.with_codex_config_args(mcp_config.codex_config_args);
+    }
+    if let Some(servers) = mcp_config.simple_ai_mcp_servers.take() {
+        if !servers.is_empty() {
+            session_opts = session_opts.with_mcp_servers(servers);
+        }
     }
     if let Some(ref dirs) = options.additional_dirs {
         session_opts.additional_dirs = dirs.clone();

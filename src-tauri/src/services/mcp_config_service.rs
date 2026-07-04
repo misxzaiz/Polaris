@@ -622,6 +622,79 @@ impl WorkspaceMcpConfigService {
 
         Ok(args)
     }
+
+    /// 返回 SimpleAI 直接消费的 MCP server 列表（**内置 + 外部插件**合并，已过滤 disabled）。
+    ///
+    /// 与 `prepare_workspace_config`（写 .mcp.json 给 Claude CLI）对齐：内置 MCP 走 binary
+    /// 解析 + `build_mcp_server_args`，外部插件走 `external_servers`。同名校验：内置优先
+    /// （与 `external_plugin_mcp_server_does_not_override_builtin_server` 测试语义一致）。
+    ///
+    /// 内置 MCP 的 `plugin_id` 设为 `"polaris.builtin"`，SimpleAI 分支据此跳过 `aiToolAccess`
+    /// 门控（内置默认信任）；外部插件由 SimpleAI 分支另行检查 `aiToolAccess`。
+    pub fn resolved_simple_ai_servers(
+        &self,
+        workspace_path: &str,
+        disabled_server_names: &[String],
+    ) -> Vec<ResolvedExternalMcpServer> {
+        let mut servers: Vec<ResolvedExternalMcpServer> = Vec::new();
+
+        // 内置 MCP（todo/requirements/scheduler/prd-preview/computer/ask）
+        for binary in &self.binaries {
+            if is_server_disabled(disabled_server_names, &binary.server_name) {
+                tracing::info!("[MCP] SimpleAI 跳过已禁用内置 MCP: {}", binary.server_name);
+                continue;
+            }
+            if !binary.executable_path.exists() {
+                tracing::warn!(
+                    "[MCP] SimpleAI 跳过内置 MCP {}，可执行文件不存在: {}",
+                    binary.server_name,
+                    binary.executable_path.display()
+                );
+                continue;
+            }
+            // ask MCP 需 listener handle
+            if matches!(binary.args_mode, McpServerArgsMode::AskListener)
+                && self.ask_listener.is_none()
+            {
+                tracing::info!("[MCP] SimpleAI 跳过 {}：ask_listener 未就绪", binary.server_name);
+                continue;
+            }
+            let args = build_mcp_server_args(
+                binary.args_mode,
+                &self.config_dir,
+                workspace_path,
+                self.ask_listener.as_ref(),
+                self.ask_route_session_id.as_deref(),
+            );
+            servers.push(ResolvedExternalMcpServer {
+                plugin_id: "polaris.builtin".to_string(),
+                server_name: binary.server_name.clone(),
+                command: strip_unc_prefix(&binary.executable_path.to_string_lossy()),
+                args,
+            });
+        }
+
+        // 外部插件 MCP（与内置同名时跳过，内置优先）
+        for server in &self.external_servers {
+            if is_server_disabled(disabled_server_names, &server.server_name) {
+                tracing::info!(
+                    "[MCP] SimpleAI 跳过已禁用外部插件 MCP: {}",
+                    server.server_name
+                );
+                continue;
+            }
+            if servers.iter().any(|s| s.server_name == server.server_name) {
+                tracing::warn!(
+                    "[MCP] SimpleAI 跳过外部插件 MCP {}，与内置同名",
+                    server.server_name
+                );
+                continue;
+            }
+            servers.push(server.clone());
+        }
+
+        servers
+    }
 }
 
 pub fn resolve_external_plugin_mcp_servers(
@@ -1063,6 +1136,7 @@ mod tests {
                         "{{appConfigDir}}".to_string(),
                     ],
                 }],
+                services: Vec::new(),
             },
             permissions: PluginManifestPermissions::default(),
             origin: PluginOriginMetadata::default(),

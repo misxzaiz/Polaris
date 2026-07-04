@@ -6,6 +6,7 @@ use super::{truncate_chars, Tool, ToolContext, ToolOutcome};
 
 pub(super) struct BashTool;
 
+#[async_trait::async_trait]
 impl Tool for BashTool {
     fn name(&self) -> &'static str {
         "bash"
@@ -35,10 +36,16 @@ impl Tool for BashTool {
         })
     }
 
-    fn execute(&self, args: &Value, ctx: &ToolContext) -> ToolOutcome {
-        let command = args["command"].as_str().unwrap_or("");
-        let workdir_override = args["workdir"].as_str();
-        run_bash(command, workdir_override, ctx.work_dir)
+    async fn execute(&self, args: &Value, ctx: &ToolContext<'_>) -> ToolOutcome {
+        let command = args["command"].as_str().unwrap_or("").to_string();
+        let workdir_override = args["workdir"].as_str().map(String::from);
+        let default_dir = ctx.work_dir.to_string();
+        // bash 可能长时阻塞（npm install / dev server），用 spawn_blocking 避免占用 tokio worker。
+        tokio::task::spawn_blocking(move || {
+            run_bash(&command, workdir_override.as_deref(), &default_dir)
+        })
+        .await
+        .unwrap_or_else(|e| ToolOutcome::fail(format!("bash task panicked: {}", e)))
     }
 }
 

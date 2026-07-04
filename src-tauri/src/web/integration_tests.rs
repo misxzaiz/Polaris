@@ -90,6 +90,10 @@ fn create_test_state() -> Arc<AppState> {
         start_time: Some(std::time::Instant::now()),
         web_server_handle: Arc::new(AsyncMutex::new(None)),
         proxy_manager: crate::services::ProxyManager::new(),
+        spring_boot_manager: Mutex::new(crate::commands::spring_boot::SpringBootManager::new()),
+        plugin_service_manager: Arc::new(
+            crate::services::plugin_service_manager::PluginServiceManager::new(),
+        ),
     })
 }
 

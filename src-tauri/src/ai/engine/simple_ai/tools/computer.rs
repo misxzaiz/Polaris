@@ -20,6 +20,7 @@ const TEXT_OUTPUT_CAP: usize = 16_000;
 
 pub(super) struct ComputerTool;
 
+#[async_trait::async_trait]
 impl Tool for ComputerTool {
     fn name(&self) -> &'static str {
         "computer"
@@ -79,11 +80,15 @@ find_element=查找/等待控件并返回信息(name 或 automation_id)；list_w
         })
     }
 
-    fn execute(&self, args: &Value, _ctx: &ToolContext) -> ToolOutcome {
-        match run(args) {
+    async fn execute(&self, args: &Value, _ctx: &ToolContext<'_>) -> ToolOutcome {
+        // computer 含 std::thread::sleep 与阻塞 Mutex，用 spawn_blocking 避免占用 tokio worker。
+        let args = args.clone();
+        tokio::task::spawn_blocking(move || match run(&args) {
             Ok(text) => ToolOutcome::ok(text),
             Err(error) => ToolOutcome::fail(error.to_message()),
-        }
+        })
+        .await
+        .unwrap_or_else(|e| ToolOutcome::fail(format!("computer task panicked: {}", e)))
     }
 }
 

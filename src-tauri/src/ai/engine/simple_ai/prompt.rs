@@ -31,7 +31,8 @@ headers or gratuitous comments.\n\
 - Tools: prefer the dedicated tools (`search_files`, `glob`, `read_file`, `apply_patch`) over \
 shell equivalents — they behave identically across platforms. Use `glob` to find files by name and \
 `search_files` to search file contents. Consult the `<environment_context>` message for the \
-working directory, OS, and shell before running commands.\n\
+working directory, OS, and shell before running commands. If a `# Available skills` \
+section is present, call `read_skill` to load a matching skill's full instructions before proceeding.\n\
 - Safety: never revert or discard changes you did not make — if you notice unexpected modifications \
 in the working tree, stop and ask the user rather than reverting. Never run destructive commands \
 such as `rm -rf`, `git reset --hard`, or `git checkout --` unless the user explicitly asks, and \

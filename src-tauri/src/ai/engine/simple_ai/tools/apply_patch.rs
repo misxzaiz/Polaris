@@ -28,6 +28,7 @@ use super::{Tool, ToolContext, ToolOutcome};
 
 pub(super) struct ApplyPatchTool;
 
+#[async_trait::async_trait]
 impl Tool for ApplyPatchTool {
     fn name(&self) -> &'static str {
         "apply_patch"
@@ -53,7 +54,7 @@ impl Tool for ApplyPatchTool {
         })
     }
 
-    fn execute(&self, args: &Value, ctx: &ToolContext) -> ToolOutcome {
+    async fn execute(&self, args: &Value, ctx: &ToolContext<'_>) -> ToolOutcome {
         let input = args["input"].as_str().unwrap_or("");
         match parse_patch(input) {
             Ok(ops) => match apply_ops(&ops, ctx.work_dir) {

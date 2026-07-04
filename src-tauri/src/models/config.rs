@@ -178,7 +178,7 @@ impl Default for PersonalHubConfig {
 /// 当 `wire_api` 为 `"openai-chat-completions"` 时，Polaris 内嵌代理会透明地
 /// 将 Claude CLI 的 Anthropic Messages 请求转换为 OpenAI Chat Completions
 /// 格式发送给上游端点，再将响应转换回 Anthropic 格式返回给 CLI。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelProfile {
     /// 唯一 ID

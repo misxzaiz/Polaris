@@ -185,6 +185,8 @@ fn build_openai_chat_body(model: &str, messages: &[Value], tools: &[Value]) -> V
         "model": model,
         "messages": messages,
         "stream": true,
+        // 请求末包携带 usage（prompt_tokens/completion_tokens/total_tokens）。
+        "stream_options": { "include_usage": true },
     });
     if !tools.is_empty() {
         body["tools"] = json!(tools);
@@ -404,6 +406,19 @@ pub enum StreamDelta {
     Thinking(String),
 }
 
+/// 单轮请求的 token 使用量（三协议统一表示）。
+///
+/// - OpenAIChat：末包 `usage{prompt_tokens, completion_tokens, total_tokens}`。
+/// - Anthropic：`message_start.message.usage.input_tokens` +
+///   `message_delta.usage.output_tokens`（分两次累积）。
+/// - Responses：`response.completed.response.usage`。
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Usage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub total_tokens: u64,
+}
+
 /// 累积中的工具调用（统一中间表示）。
 #[derive(Debug, Default, Clone)]
 struct ToolCallAccum {
@@ -422,6 +437,9 @@ pub struct StreamState {
     block_index: HashMap<usize, usize>,
     /// Responses：output item id → tool_calls 下标。
     item_index: HashMap<String, usize>,
+    /// 累积的 token usage（流末出现；Anthropic 的 input_tokens 在 message_start，
+    /// output_tokens 在 message_delta，分两次更新）。
+    usage: Option<Usage>,
 }
 
 impl StreamState {
@@ -431,6 +449,7 @@ impl StreamState {
             tool_calls: Vec::new(),
             block_index: HashMap::new(),
             item_index: HashMap::new(),
+            usage: None,
         }
     }
 
@@ -470,6 +489,11 @@ impl StreamState {
             .collect()
     }
 
+    /// 取出本轮累积的 token usage（流末有效）。
+    pub fn finish_usage(&self) -> Option<Usage> {
+        self.usage
+    }
+
     fn feed_openai_chat(&mut self, chunk: &Value, out: &mut Vec<StreamDelta>) {
         let delta = &chunk["choices"][0]["delta"];
 
@@ -502,6 +526,14 @@ impl StreamState {
                     call.arguments.push_str(args);
                 }
             }
+        }
+        // OpenAIChat：末包带 usage（需请求 stream_options.include_usage）。
+        if let Some(u) = chunk.get("usage").filter(|v| v.is_object()) {
+            self.usage = Some(Usage {
+                input_tokens: u["prompt_tokens"].as_u64().unwrap_or(0),
+                output_tokens: u["completion_tokens"].as_u64().unwrap_or(0),
+                total_tokens: u["total_tokens"].as_u64().unwrap_or(0),
+            });
         }
     }
 
@@ -551,6 +583,25 @@ impl StreamState {
                     }
                     _ => {}
                 }
+            }
+            "message_start" => {
+                let input = chunk
+                    .pointer("/message/usage/input_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let mut usage = self.usage.unwrap_or_default();
+                usage.input_tokens = input;
+                self.usage = Some(usage);
+            }
+            "message_delta" => {
+                let output = chunk
+                    .pointer("/usage/output_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let mut usage = self.usage.unwrap_or_default();
+                usage.output_tokens = output;
+                usage.total_tokens = usage.input_tokens + usage.output_tokens;
+                self.usage = Some(usage);
             }
             _ => {}
         }
@@ -604,6 +655,18 @@ impl StreamState {
                     }
                 }
             }
+            "response.completed" => {
+                if let Some(u) = chunk
+                    .pointer("/response/usage")
+                    .filter(|v| v.is_object())
+                {
+                    self.usage = Some(Usage {
+                        input_tokens: u["input_tokens"].as_u64().unwrap_or(0),
+                        output_tokens: u["output_tokens"].as_u64().unwrap_or(0),
+                        total_tokens: u["total_tokens"].as_u64().unwrap_or(0),
+                    });
+                }
+            }
             _ => {}
         }
     }
@@ -630,6 +693,61 @@ mod tests {
                 }
             }
         })]
+    }
+
+    #[test]
+    fn openai_chat_usage_parsed_from_final_chunk() {
+        let mut s = StreamState::new(WireProtocol::OpenAIChat);
+        let chunk = json!({
+            "choices": [],
+            "usage": { "prompt_tokens": 120, "completion_tokens": 30, "total_tokens": 150 }
+        });
+        let _ = s.feed(&chunk);
+        let usage = s.finish_usage().expect("usage");
+        assert_eq!(usage.input_tokens, 120);
+        assert_eq!(usage.output_tokens, 30);
+        assert_eq!(usage.total_tokens, 150);
+    }
+
+    #[test]
+    fn anthropic_usage_accumulated_across_messages() {
+        let mut s = StreamState::new(WireProtocol::Anthropic);
+        // message_start 携带 input_tokens。
+        let start = json!({
+            "type": "message_start",
+            "message": { "usage": { "input_tokens": 200 } }
+        });
+        let _ = s.feed(&start);
+        let mid = s.finish_usage().expect("usage after start");
+        assert_eq!(mid.input_tokens, 200);
+        assert_eq!(mid.output_tokens, 0);
+
+        // message_delta 携带 output_tokens；total 由二者相加。
+        let delta = json!({
+            "type": "message_delta",
+            "usage": { "output_tokens": 80 }
+        });
+        let _ = s.feed(&delta);
+        let final_usage = s.finish_usage().expect("usage after delta");
+        assert_eq!(final_usage.input_tokens, 200);
+        assert_eq!(final_usage.output_tokens, 80);
+        assert_eq!(final_usage.total_tokens, 280);
+    }
+
+    #[test]
+    fn responses_usage_parsed_from_completed_event() {
+        let mut s = StreamState::new(WireProtocol::Responses);
+        let chunk = json!({
+            "type": "response.completed",
+            "response": {
+                "usage": { "input_tokens": 50, "output_tokens": 25, "total_tokens": 75 }
+            }
+        });
+        let _ = s.feed(&chunk);
+        let usage = s.finish_usage().expect("usage");
+        assert_eq!(usage.input_tokens, 50);
+        assert_eq!(usage.output_tokens, 25);
+        assert_eq!(usage.total_tokens, 75);
     }
 
     #[test]

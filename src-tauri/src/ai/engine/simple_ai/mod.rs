@@ -18,11 +18,18 @@
  */
 
 mod chat_loop;
+mod compact;
 mod context;
 mod history;
+mod mcp;
 mod prompt;
+mod retry;
 mod session;
+mod skill;
 mod tools;
+
+// Agent preset（Phase 4d）：需在 mod 声明后引用，单独放此。
+mod agent;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -180,9 +187,46 @@ impl AIEngine for SimpleAIEngine {
         let session_id = self.next_session_id();
         let work_dir = options.work_dir.clone().unwrap_or_else(|| ".".to_string());
 
-        // 系统提示词
+        // Skill 索引（Phase 4c）：扫描 .polaris/skills/*/SKILL.md，注入索引消息 + 供 read_skill 工具按需读全文。
+        let skills_list = skill::discover_skills(&work_dir);
+        let skills_map: std::collections::HashMap<String, skill::SkillEntry> = skills_list
+            .iter()
+            .map(|s| (s.name.clone(), s.clone()))
+            .collect();
+        if !skills_list.is_empty() {
+            tracing::info!(
+                "[SimpleAI] 发现 {} 个 skill：{}",
+                skills_list.len(),
+                skills_list.iter().map(|s| s.name.as_str()).collect::<Vec<_>>().join(", ")
+            );
+        }
+
+        // 系统提示词（Phase 4d：options.agent 指定时读 .polaris/agents/<name>.md 覆盖 persona；
+        // 用户显式传 system_prompt 时完全覆盖，agent 不生效——决策 §12-3）。
         let system_prompt = if let Some(custom) = &options.system_prompt {
             custom.clone()
+        } else if let Some(agent_name) = &options.agent {
+            match agent::load_agent(&work_dir, agent_name) {
+                Some(agent) => {
+                    tracing::info!(
+                        "[SimpleAI] 使用 agent '{}' 的 system prompt",
+                        agent_name
+                    );
+                    agent.system_prompt
+                }
+                None => {
+                    tracing::warn!(
+                        "[SimpleAI] 未找到 agent '{}'，回退默认 persona",
+                        agent_name
+                    );
+                    let mut prompt = build_system_prompt();
+                    if let Some(append) = &options.append_system_prompt {
+                        prompt.push('\n');
+                        prompt.push_str(append);
+                    }
+                    prompt
+                }
+            }
         } else {
             let mut prompt = build_system_prompt();
             if let Some(append) = &options.append_system_prompt {
@@ -192,11 +236,14 @@ impl AIEngine for SimpleAIEngine {
             prompt
         };
 
-        // 构建初始消息：system → 上下文消息（environment_context + 项目指令）→ 历史 → 首轮 user。
+        // 构建初始消息：system → 上下文消息（environment_context + 项目指令）→ skill 索引 → 历史 → 首轮 user。
         // 上下文消息仅首轮注入；continue_session 不重复注入（已在历史中）。
         let mut messages: Vec<Value> = vec![json!({ "role": "system", "content": system_prompt })];
         for ctx_msg in build_context_messages(&work_dir) {
             messages.push(ctx_msg);
+        }
+        if let Some(skill_index) = skill::build_skill_index_message(&skills_list) {
+            messages.push(skill_index);
         }
         for entry in &options.message_history {
             messages.push(json!({ "role": entry.role, "content": entry.content }));
@@ -228,6 +275,8 @@ impl AIEngine for SimpleAIEngine {
         let sessions = Arc::clone(&self.sessions);
         let sid = session_id.clone();
         let cb: Arc<dyn Fn(AIEvent) + Send + Sync> = options.event_callback.clone();
+        let mcp_servers = options.mcp_servers.clone();
+        let skills_map = skills_map.clone();
         tokio::spawn(async move {
             tracing::info!("[SimpleAI] 后台任务启动, session={}", sid);
             sessions.lock().await.insert(sid.clone(), session);
@@ -240,6 +289,9 @@ impl AIEngine for SimpleAIEngine {
                 &work_dir,
                 &cb,
                 &mut abort_rx,
+                &mcp_servers,
+                &skills_map,
+                0,
             )
             .await;
 
@@ -285,6 +337,13 @@ impl AIEngine for SimpleAIEngine {
 
         let work_dir = options.work_dir.clone().unwrap_or_else(|| ".".to_string());
 
+        // Skill 索引（Phase 4c）：continue_session 不重新注入索引消息（已在历史中），
+        // 但仍需 skills_map 供 read_skill 工具按需读全文。
+        let skills_map: std::collections::HashMap<String, skill::SkillEntry> = {
+            let list = skill::discover_skills(&work_dir);
+            list.into_iter().map(|s| (s.name.clone(), s)).collect()
+        };
+
         let _ = (options.event_callback)(AIEvent::UserMessage(UserMessageEvent::new(
             session_id,
             message.to_string(),
@@ -294,6 +353,8 @@ impl AIEngine for SimpleAIEngine {
         let sid = session_id.to_string();
         let msg = message.to_string();
         let cb: Arc<dyn Fn(AIEvent) + Send + Sync> = options.event_callback.clone();
+        let mcp_servers = options.mcp_servers.clone();
+        let skills_map = skills_map.clone();
 
         tokio::spawn(async move {
             tracing::info!("[SimpleAI] continue_session 后台任务启动, session={}", sid);
@@ -324,6 +385,9 @@ impl AIEngine for SimpleAIEngine {
                 &work_dir,
                 &cb,
                 &mut abort_rx,
+                &mcp_servers,
+                &skills_map,
+                0,
             )
             .await;
 

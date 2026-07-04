@@ -39,6 +39,7 @@ fn is_skip_dir(entry: &walkdir::DirEntry) -> bool {
 
 pub(super) struct SearchFilesTool;
 
+#[async_trait::async_trait]
 impl Tool for SearchFilesTool {
     fn name(&self) -> &'static str {
         "search_files"
@@ -63,7 +64,7 @@ impl Tool for SearchFilesTool {
         })
     }
 
-    fn execute(&self, args: &Value, ctx: &ToolContext) -> ToolOutcome {
+    async fn execute(&self, args: &Value, ctx: &ToolContext<'_>) -> ToolOutcome {
         run_search_files(
             args["pattern"].as_str().unwrap_or(""),
             args["path"].as_str(),
@@ -146,6 +147,7 @@ fn run_search_files(
 
 pub(super) struct GlobTool;
 
+#[async_trait::async_trait]
 impl Tool for GlobTool {
     fn name(&self) -> &'static str {
         "glob"
@@ -169,7 +171,7 @@ impl Tool for GlobTool {
         })
     }
 
-    fn execute(&self, args: &Value, ctx: &ToolContext) -> ToolOutcome {
+    async fn execute(&self, args: &Value, ctx: &ToolContext<'_>) -> ToolOutcome {
         run_glob(
             args["pattern"].as_str().unwrap_or(""),
             args["path"].as_str(),

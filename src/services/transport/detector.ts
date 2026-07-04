@@ -14,23 +14,31 @@ function isTestEnv(): boolean {
 }
 
 /**
+ * 检测是否为移动平台（Android / iOS）
+ *
+ * 移动端 Tauri WebView 内嵌完整前端，通过本地 HTTP 服务器提供 API，
+ * 必须走 HTTP 模式而非 Tauri IPC。
+ */
+function isMobilePlatform(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  return /Android|iPhone|iPad|iPod/i.test(ua);
+}
+
+/**
  * 检测当前传输模式
  *
- * Tauri 注入 `window.__TAURI_INTERNALS__`，但仅凭这个判断不够：
- * Tauri Android 的 wry runtime 用 `addDocumentStartJavaScript(script, setOf("*"))`
- * 把初始化脚本注入到所有 origin，所以手机 App 跳转到远端 polaris-web 后
- * 全局对象仍然存在。此时必须走 HTTP 模式（fetch + Bearer token）。
- *
- * 桌面端 / 真本地 mobile shell 的 hostname：
- *   - "localhost"        (Linux/macOS: tauri://localhost)
- *   - "tauri.localhost"  (Windows/Android: http(s)://tauri.localhost)
- *   - ""                 (某些 scheme 下 hostname 可能为空)
- *
- * 远端加载后 hostname 是 IP 或自定义域名，必须走 HTTP。
+ * 桌面端 Tauri 使用 IPC 直连（hostname = localhost / tauri.localhost）。
+ * 移动端 Tauri WebView 内嵌前端，同样走 HTTP + WebSocket。
+ * 浏览器直接访问 polaris-web 也走 HTTP。
  */
 export function detectTransport(): TransportMode {
   if (isTestEnv()) return 'tauri';
   if (typeof window === 'undefined') return 'http';
+
+  // 移动端始终走 HTTP 模式（内嵌前端 + 本地 HTTP 服务）
+  if (isMobilePlatform()) return 'http';
+
   if (!('__TAURI_INTERNALS__' in window)) return 'http';
 
   const hostname = window.location.hostname;

@@ -20,6 +20,7 @@ use crate::models::ai_event::{
 };
 use crate::models::AIEvent;
 
+use super::compact;
 use super::history;
 use super::tools::{ToolContext, ToolRegistry};
 
@@ -50,6 +51,9 @@ pub(super) async fn run_chat_loop(
     work_dir: &str,
     event_callback: &Arc<dyn Fn(AIEvent) + Send + Sync>,
     abort_rx: &mut watch::Receiver<bool>,
+    mcp_servers: &[crate::services::mcp_config_service::ResolvedExternalMcpServer],
+    skills: &std::collections::HashMap<String, super::skill::SkillEntry>,
+    depth: u32,
 ) -> Result<()> {
     let protocol = WireProtocol::from_wire_api(profile.wire_api.as_deref());
     tracing::info!(
@@ -73,11 +77,40 @@ pub(super) async fn run_chat_loop(
         .unwrap_or(DEFAULT_MAX_TOOL_ROUNDS);
 
     // 工具注册表 + 本轮 schema。新增工具无需改动本循环。
-    let registry = ToolRegistry::with_builtins();
+    let mut registry = ToolRegistry::with_builtins();
+    // dispatch_agent 默认开启；SIMPLE_AI_DISABLE_SUBAGENT=1 时移除（决策 §12-4）。
+    let subagent_disabled = profile
+        .custom_env
+        .as_ref()
+        .and_then(|m| m.get("SIMPLE_AI_DISABLE_SUBAGENT"))
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    if subagent_disabled {
+        tracing::info!("[SimpleAI] dispatch_agent 已禁用（SIMPLE_AI_DISABLE_SUBAGENT）");
+        registry = registry.without_tool("dispatch_agent");
+    }
+    // MCP 工具池（Phase 4b）：若有已启用的 MCP server，spawn 并注入工具。
+    if !mcp_servers.is_empty() {
+        let pool = Arc::new(super::mcp::McpClientPool::from_servers(mcp_servers.to_vec()).await);
+        tracing::info!(
+            "[SimpleAI] MCP pool 就绪：{} 个 server 连接，{} 个工具",
+            pool.connected_count(),
+            pool.tool_specs().len()
+        );
+        registry = registry.with_mcp(pool);
+    }
     let tools = registry.specs();
     // update_plan 的计划面板状态：每轮首次调用先发 plan_start。
     let plan_id = format!("{}-plan", session_id);
     let plan_started = AtomicBool::new(false);
+
+    // 上下文压缩配置（Phase 3.3）：累计 input 达窗口 75% 时触发摘要压缩。
+    let context_window = read_env_u64(
+        &profile.custom_env,
+        "SIMPLE_AI_CONTEXT_WINDOW",
+        compact::DEFAULT_CONTEXT_WINDOW,
+    );
+    let mut usage_acc = compact::UsageAccumulator::default();
 
     let mut round: u64 = 0;
 
@@ -100,6 +133,16 @@ pub(super) async fn run_chat_loop(
         // 裁剪历史中超长的 assistant 输出，避免长会话撑爆上下文窗口（零额外 API 调用）。
         history::truncate_history_assistant_outputs(messages, HISTORY_ASSISTANT_TOKEN_CAP);
 
+        // 上下文压缩（Phase 3.3）：累计 input 达阈值时，发摘要请求替换历史区间。
+        if usage_acc.should_compact(context_window) {
+            tracing::info!(
+                "[SimpleAI] 触发上下文压缩（累计 input={}，window={}）",
+                usage_acc.total_input,
+                context_window
+            );
+            compact::compact_history(messages, profile, event_callback, session_id).await?;
+        }
+
         // 构建请求体（按线路协议转换内部 OpenAI 消息格式）
         let body = build_request_body(protocol, &profile.model, messages, &tools);
         if tools.is_empty() {
@@ -112,17 +155,14 @@ pub(super) async fn run_chat_loop(
             );
         }
 
-        // HTTP 请求
+        // HTTP 请求（含 429/5xx 指数退避重试，见 super::retry::send_with_retry）。
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(request_timeout_secs))
             .build()
             .map_err(|e| AppError::ProcessError(format!("HTTP client error: {}", e)))?;
 
         let url = protocol.build_url(&profile.base_url);
-        tracing::info!("[SimpleAI] 发送 API 请求: {} (model={})", url, profile.model);
-
         let mut req = client.post(&url).header("Content-Type", "application/json");
-
         for (k, v) in protocol.auth_headers(&profile.api_key) {
             req = req.header(k, v);
         }
@@ -131,27 +171,26 @@ pub(super) async fn run_chat_loop(
                 req = req.header(k.as_str(), v.as_str());
             }
         }
+        let req = req.body(body.to_string());
 
-        let response = req
-            .body(body.to_string())
-            .send()
-            .await
-            .map_err(|e| {
-                tracing::error!("[SimpleAI] API 请求失败: {}", e);
-                AppError::ProcessError(format!("API request failed: {}", e))
-            })?;
-
-        let status = response.status();
-        tracing::info!("[SimpleAI] API 响应状态: {}", status);
-
-        if !status.is_success() {
-            let error_body = response.text().await.unwrap_or_default();
-            tracing::error!("[SimpleAI] API 错误 ({}): {}", status, error_body);
-            return Err(AppError::ProcessError(format!(
-                "API error ({}): {}",
-                status, error_body
-            )));
-        }
+        let retry_max = read_env_u64(
+            &profile.custom_env,
+            "SIMPLE_AI_RETRY_MAX",
+            super::retry::DEFAULT_RETRY_MAX_ATTEMPTS as u64,
+        ) as u32;
+        let retry_base_ms = read_env_u64(
+            &profile.custom_env,
+            "SIMPLE_AI_RETRY_BASE_MS",
+            super::retry::DEFAULT_RETRY_BASE_MS,
+        );
+        tracing::info!(
+            "[SimpleAI] 发送 API 请求: {} (model={}, retry_max={})",
+            url,
+            profile.model,
+            retry_max
+        );
+        let response = super::retry::send_with_retry(req, retry_max, retry_base_ms).await?;
+        tracing::info!("[SimpleAI] API 响应状态: {}", response.status());
 
         // 流式解析 SSE
         let mut stream = response.bytes_stream();
@@ -228,6 +267,17 @@ pub(super) async fn run_chat_loop(
 
         // 流处理完毕
         let mut tool_calls = stream_state.finish_tool_calls();
+        // token usage（Phase 3.1）：三协议在流末解析，仅日志上报；专用 UsageEvent 待前端 types 同步后启用。
+        if let Some(usage) = stream_state.finish_usage() {
+            usage_acc.add(usage.input_tokens);
+            tracing::info!(
+                "[SimpleAI] token usage: input={}, output={}, total={} (累计 input={})",
+                usage.input_tokens,
+                usage.output_tokens,
+                usage.total_tokens,
+                usage_acc.total_input
+            );
+        }
         tracing::info!(
             "[SimpleAI] 流处理完毕, session={}, content_len={}, tool_calls={}, first_100_chars={:?}",
             session_id,
@@ -287,8 +337,12 @@ pub(super) async fn run_chat_loop(
                 event_callback,
                 plan_id: &plan_id,
                 plan_started: &plan_started,
+                skills,
+                profile,
+                mcp_servers,
+                subagent_depth: depth,
             };
-            let outcome = registry.dispatch(tool_name, &args, &ctx);
+            let outcome = registry.dispatch(tool_name, &args, &ctx).await;
 
             let mut end_event =
                 ToolCallEndEvent::new(session_id, tool_name.to_string(), outcome.success);

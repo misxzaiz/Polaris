@@ -22,6 +22,7 @@ use crate::models::AIEvent;
 
 pub(super) struct UpdatePlanTool;
 
+#[async_trait::async_trait]
 impl Tool for UpdatePlanTool {
     fn name(&self) -> &'static str {
         "update_plan"
@@ -63,7 +64,7 @@ impl Tool for UpdatePlanTool {
         })
     }
 
-    fn execute(&self, args: &Value, ctx: &ToolContext) -> ToolOutcome {
+    async fn execute(&self, args: &Value, ctx: &ToolContext<'_>) -> ToolOutcome {
         let Some(plan_arr) = args["plan"].as_array() else {
             return ToolOutcome::fail("update_plan requires a 'plan' array".to_string());
         };
@@ -154,16 +155,24 @@ mod tests {
         (events, cb)
     }
 
-    #[test]
-    fn first_call_emits_plan_start_then_content() {
+    #[tokio::test]
+    async fn first_call_emits_plan_start_then_content() {
         let (events, cb) = collector();
         let started = AtomicBool::new(false);
+        let skills = std::collections::HashMap::new();
+        let profile = crate::models::config::ModelProfile::default();
+        let mcp_servers: Vec<crate::services::mcp_config_service::ResolvedExternalMcpServer> =
+            Vec::new();
         let ctx = ToolContext {
             work_dir: ".",
             session_id: "s1",
             event_callback: &cb,
             plan_id: "s1-plan",
             plan_started: &started,
+            skills: &skills,
+            profile: &profile,
+            mcp_servers: &mcp_servers,
+            subagent_depth: 0,
         };
         let args = json!({
             "explanation": "kick off",
@@ -173,7 +182,7 @@ mod tests {
                 {"step": "third", "status": "pending"}
             ]
         });
-        let out = UpdatePlanTool.execute(&args, &ctx);
+        let out = UpdatePlanTool.execute(&args, &ctx).await;
         assert!(out.success);
         assert!(out.content.contains("[x] first"));
         assert!(out.content.contains("[~] second"));
@@ -192,21 +201,29 @@ mod tests {
         }
     }
 
-    #[test]
-    fn second_call_does_not_reemit_plan_start_and_completes() {
+    #[tokio::test]
+    async fn second_call_does_not_reemit_plan_start_and_completes() {
         let (events, cb) = collector();
         let started = AtomicBool::new(false);
+        let skills = std::collections::HashMap::new();
+        let profile = crate::models::config::ModelProfile::default();
+        let mcp_servers: Vec<crate::services::mcp_config_service::ResolvedExternalMcpServer> =
+            Vec::new();
         let ctx = ToolContext {
             work_dir: ".",
             session_id: "s1",
             event_callback: &cb,
             plan_id: "s1-plan",
             plan_started: &started,
+            skills: &skills,
+            profile: &profile,
+            mcp_servers: &mcp_servers,
+            subagent_depth: 0,
         };
         let first = json!({ "plan": [{"step": "a", "status": "in_progress"}] });
-        UpdatePlanTool.execute(&first, &ctx);
+        UpdatePlanTool.execute(&first, &ctx).await;
         let second = json!({ "plan": [{"step": "a", "status": "completed"}] });
-        UpdatePlanTool.execute(&second, &ctx);
+        UpdatePlanTool.execute(&second, &ctx).await;
 
         let evs = events.lock().unwrap();
         // 首次 2 个（start+content），二次仅 1 个（content）
@@ -220,18 +237,26 @@ mod tests {
         }
     }
 
-    #[test]
-    fn empty_plan_is_rejected() {
+    #[tokio::test]
+    async fn empty_plan_is_rejected() {
         let (_events, cb) = collector();
         let started = AtomicBool::new(false);
+        let skills = std::collections::HashMap::new();
+        let profile = crate::models::config::ModelProfile::default();
+        let mcp_servers: Vec<crate::services::mcp_config_service::ResolvedExternalMcpServer> =
+            Vec::new();
         let ctx = ToolContext {
             work_dir: ".",
             session_id: "s1",
             event_callback: &cb,
             plan_id: "s1-plan",
             plan_started: &started,
+            skills: &skills,
+            profile: &profile,
+            mcp_servers: &mcp_servers,
+            subagent_depth: 0,
         };
-        let out = UpdatePlanTool.execute(&json!({ "plan": [] }), &ctx);
+        let out = UpdatePlanTool.execute(&json!({ "plan": [] }), &ctx).await;
         assert!(!out.success);
     }
 }

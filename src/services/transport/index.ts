@@ -64,6 +64,37 @@ function handleResumeGap(): void {
 /** 当前传输模式 */
 export const currentMode = detectTransport();
 
+/**
+ * 判断是否为移动端 Tauri（内嵌前端 + 本地 HTTP 服务模式）
+ * 移动端需要从 Rust 后端读取服务器配置，而非使用 window.location.origin
+ */
+function isMobileTauri(): boolean {
+  return currentMode === 'http' && typeof navigator !== 'undefined' &&
+    /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) &&
+    ('__TAURI_INTERNALS__' in window);
+}
+
+/**
+ * 尝试从移动端 Rust 后端加载服务器配置到 localStorage。
+ * 启动时异步调用，不阻塞 transport 初始化。
+ */
+async function loadMobileServerConfig(): Promise<void> {
+  if (!isMobileTauri()) return;
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const config = await invoke<{ server_url: string; token: string }>('get_server_config');
+    if (config?.server_url) {
+      localStorage.setItem('polaris_server_url', config.server_url);
+      if (config.token) {
+        localStorage.setItem('polaris_web_token_md5', config.token);
+      }
+      log.info(`Mobile server config loaded: ${config.server_url}`);
+    }
+  } catch (err) {
+    log.warn('Failed to load mobile server config', err instanceof Error ? err : new Error(String(err)));
+  }
+}
+
 /** 全局传输适配器单例 */
 const transport = currentMode === 'tauri'
   ? tauriTransport
@@ -74,6 +105,17 @@ const transport = currentMode === 'tauri'
         onResumeGap: handleResumeGap,
       },
     );
+
+// 移动端异步加载服务器配置，加载完成后重新连接
+if (isMobileTauri()) {
+  loadMobileServerConfig().then(() => {
+    const url = getServerUrl();
+    if (url && transport.manualReconnect) {
+      log.info('Mobile config loaded, reconnecting...');
+      transport.manualReconnect().catch(() => {});
+    }
+  });
+}
 
 const LOCAL_EVENTS = new Set([
   'file:opened',

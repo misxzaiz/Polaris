@@ -112,6 +112,8 @@ pub struct SessionOptions {
     pub append_system_prompt: Option<String>,
     /// Claude Code MCP 配置文件路径
     pub mcp_config_path: Option<String>,
+    /// SimpleAI 直接消费的 MCP server 列表（Phase 4b；CLI 引擎忽略，仍走 mcp_config_path）
+    pub mcp_servers: Vec<crate::services::mcp_config_service::ResolvedExternalMcpServer>,
     /// 事件回调（接收标准化的 AIEvent）
     pub event_callback: Arc<dyn Fn(AIEvent) + Send + Sync>,
     /// 完成回调
@@ -175,6 +177,7 @@ impl SessionOptions {
             system_prompt: None,
             append_system_prompt: None,
             mcp_config_path: None,
+            mcp_servers: Vec::new(),
             event_callback: Arc::new(event_callback),
             on_complete: None,
             on_error: None,
@@ -215,6 +218,15 @@ impl SessionOptions {
     /// 设置 Claude Code MCP 配置路径
     pub fn with_mcp_config_path(mut self, path: impl Into<String>) -> Self {
         self.mcp_config_path = Some(path.into());
+        self
+    }
+
+    /// 设置 SimpleAI 直接消费的 MCP server 列表（Phase 4b）
+    pub fn with_mcp_servers(
+        mut self,
+        servers: Vec<crate::services::mcp_config_service::ResolvedExternalMcpServer>,
+    ) -> Self {
+        self.mcp_servers = servers;
         self
     }
 

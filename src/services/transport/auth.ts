@@ -5,14 +5,46 @@
 const SERVER_URL_KEY = 'polaris_server_url';
 const TOKEN_MD5_KEY = 'polaris_web_token_md5';
 
-/** 获取服务器地址（localStorage 或当前页面 origin） */
+/**
+ * 获取服务器地址
+ *
+ * 优先级: localStorage > window.location.origin
+ * 移动端 Tauri 中，window.location.origin 是 tauri://localhost，
+ * 不可用作 API 地址，因此移动端必须通过 localStorage 预设服务器地址。
+ */
 export function getServerUrl(): string {
-  return localStorage.getItem(SERVER_URL_KEY) || window.location.origin;
+  const stored = localStorage.getItem(SERVER_URL_KEY);
+  if (stored) return stored;
+
+  // 移动端 Tauri WebView 的 origin 是 tauri.localhost，不可用
+  const origin = window.location.origin;
+  if (origin.includes('tauri.localhost') || origin === 'tauri://localhost') {
+    return '';
+  }
+
+  return origin;
 }
 
 /** 保存服务器地址 */
 export function storeServerUrl(url: string): void {
   localStorage.setItem(SERVER_URL_KEY, url);
+  // 移动端同步保存到 Rust 后端（持久化到文件）
+  saveToMobileBackend(url);
+}
+
+/**
+ * 将服务器配置同步保存到移动端 Rust 后端
+ * 静默失败，不影响主流程
+ */
+async function saveToMobileBackend(url: string): Promise<void> {
+  try {
+    if (!('__TAURI_INTERNALS__' in window)) return;
+    const { invoke } = await import('@tauri-apps/api/core');
+    const token = localStorage.getItem(TOKEN_MD5_KEY) || '';
+    await invoke('set_server_config', { serverUrl: url, token });
+  } catch {
+    // 移动端后端不可用时静默忽略
+  }
 }
 
 /** 读取 token 的 md5（为空表示不启用鉴权） */

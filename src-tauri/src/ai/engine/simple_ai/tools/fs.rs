@@ -21,6 +21,7 @@ fn resolve_path(path: &str, workdir: &str) -> PathBuf {
 
 pub(super) struct ReadFileTool;
 
+#[async_trait::async_trait]
 impl Tool for ReadFileTool {
     fn name(&self) -> &'static str {
         "read_file"
@@ -43,7 +44,7 @@ impl Tool for ReadFileTool {
         })
     }
 
-    fn execute(&self, args: &Value, ctx: &ToolContext) -> ToolOutcome {
+    async fn execute(&self, args: &Value, ctx: &ToolContext<'_>) -> ToolOutcome {
         read_file_op(args["path"].as_str().unwrap_or(""), ctx.work_dir)
     }
 }
@@ -62,6 +63,7 @@ fn read_file_op(path: &str, workdir: &str) -> ToolOutcome {
 
 pub(super) struct WriteFileTool;
 
+#[async_trait::async_trait]
 impl Tool for WriteFileTool {
     fn name(&self) -> &'static str {
         "write_file"
@@ -85,7 +87,7 @@ impl Tool for WriteFileTool {
         })
     }
 
-    fn execute(&self, args: &Value, ctx: &ToolContext) -> ToolOutcome {
+    async fn execute(&self, args: &Value, ctx: &ToolContext<'_>) -> ToolOutcome {
         write_file_op(
             args["path"].as_str().unwrap_or(""),
             args["content"].as_str().unwrap_or(""),
@@ -117,6 +119,7 @@ fn write_file_op(path: &str, content: &str, workdir: &str) -> ToolOutcome {
 
 pub(super) struct ListDirectoryTool;
 
+#[async_trait::async_trait]
 impl Tool for ListDirectoryTool {
     fn name(&self) -> &'static str {
         "list_directory"
@@ -139,7 +142,7 @@ impl Tool for ListDirectoryTool {
         })
     }
 
-    fn execute(&self, args: &Value, ctx: &ToolContext) -> ToolOutcome {
+    async fn execute(&self, args: &Value, ctx: &ToolContext<'_>) -> ToolOutcome {
         list_directory_op(args["path"].as_str().unwrap_or("."), ctx.work_dir)
     }
 }
@@ -180,6 +183,7 @@ fn list_directory_op(path: &str, workdir: &str) -> ToolOutcome {
 
 pub(super) struct EditFileTool;
 
+#[async_trait::async_trait]
 impl Tool for EditFileTool {
     fn name(&self) -> &'static str {
         "edit_file"
@@ -204,7 +208,7 @@ impl Tool for EditFileTool {
         })
     }
 
-    fn execute(&self, args: &Value, ctx: &ToolContext) -> ToolOutcome {
+    async fn execute(&self, args: &Value, ctx: &ToolContext<'_>) -> ToolOutcome {
         edit_file_op(
             args["path"].as_str().unwrap_or(""),
             args["old_string"].as_str().unwrap_or(""),
