@@ -154,7 +154,7 @@ const PlanStageRenderer = memo(function PlanStageRenderer({
             className={clsx(
               'w-3.5 h-3.5',
               statusConfig.color,
-              stage.status === 'in_progress' && 'animate-spin'
+              stage.status === 'in_progress' && 'text-violet-500'
             )}
           />
         </div>
