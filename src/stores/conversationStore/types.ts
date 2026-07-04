@@ -170,7 +170,6 @@ export interface ConversationActions {
   updateToolCallBlock: (toolId: string, status: ToolStatus, output?: string, error?: string) => void
   updateToolCallBlockDiff: (toolId: string, diffData: { oldContent: string; newContent: string; filePath: string }) => void
   appendArtifactPreviewBlock: (artifact: import('../../types/chat').ArtifactPreviewBlock) => void
-  appendMediaPreviewBlock: (media: import('../../types/chat').MediaPreviewBlock) => void
   updateCurrentAssistantMessage: (blocks: ContentBlock[]) => void
 
   // ===== 问题块 =====

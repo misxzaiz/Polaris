@@ -6,8 +6,7 @@
       "target/release/polaris-requirements-mcp.exe",
       "target/release/polaris-scheduler-mcp.exe",
       "target/release/polaris-prd-preview-mcp.exe",
-      "target/release/polaris-computer-mcp.exe",
-      "target/release/polaris-agnes-mcp.exe"
+      "target/release/polaris-computer-mcp.exe"
     ]
   }
 }

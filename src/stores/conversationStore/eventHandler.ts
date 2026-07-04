@@ -8,7 +8,7 @@ import { generateUUID } from '@/utils/uuid'
 import { createLogger } from '@/utils/logger'
 import type { AIEvent } from '@/ai-runtime'
 import { isEditTool, extractEditDiff } from '@/utils/diffExtractor'
-import type { ArtifactPreviewBlock, MediaPreviewBlock } from '@/types'
+import type { ArtifactPreviewBlock } from '@/types'
 import type { ConversationStore } from './types'
 import { voiceNotificationService } from '@/services/voiceNotificationService'
 import { useSessionStore } from '../index'
@@ -63,52 +63,6 @@ function parseArtifactPreview(result: unknown): ArtifactPreviewBlock | null {
         versionLabel: optionalString(parsed.versionLabel) ?? optionalString(parsed.version_label),
         requirementId: optionalString(parsed.requirementId) ?? optionalString(parsed.requirement_id),
         description: optionalString(parsed.description),
-      }
-    } catch {
-      continue
-    }
-  }
-
-  return null
-}
-
-function parseMediaPreview(result: unknown): MediaPreviewBlock | null {
-  const raw = typeof result === 'string'
-    ? result
-    : result && typeof result === 'object'
-      ? JSON.stringify(result)
-      : ''
-  if (!raw.includes('"type":') || !raw.includes('"mediaType"')) return null
-
-  const candidates: string[] = []
-  const fenced = raw.match(/```json\s*([\s\S]*?)```/i)
-  if (fenced?.[1]) candidates.push(fenced[1].trim())
-  candidates.push(raw.trim())
-
-  for (const candidate of candidates) {
-    try {
-      const parsed = JSON.parse(candidate) as Record<string, unknown>
-      const sc = parsed.structuredContent as Record<string, unknown> | undefined
-      if (!sc) continue
-
-      const mediaType = sc.type as string | undefined
-      if (mediaType !== 'image' && mediaType !== 'video') continue
-
-      return {
-        type: 'media_preview',
-        mediaType,
-        url: typeof sc.url === 'string' ? sc.url : undefined,
-        base64: typeof sc.base64 === 'string' ? sc.base64 : undefined,
-        mimeType: typeof sc.mimeType === 'string' ? sc.mimeType : undefined,
-        model: typeof sc.model === 'string' ? sc.model : undefined,
-        size: typeof sc.size === 'string' ? sc.size : undefined,
-        prompt: typeof sc.prompt === 'string' ? sc.prompt : undefined,
-        seconds: typeof sc.seconds === 'string' ? sc.seconds : undefined,
-        videoId: typeof sc.videoId === 'string' ? sc.videoId : undefined,
-        status: typeof sc.status === 'string' ? sc.status : undefined,
-        progress: typeof sc.progress === 'number' ? sc.progress : undefined,
-        waiting: typeof sc.waiting === 'boolean' ? sc.waiting : undefined,
-        error: typeof sc.error === 'string' ? sc.error : undefined,
       }
     } catch {
       continue
@@ -204,11 +158,6 @@ export function handleAIEvent(
       const artifact = event.success ? parseArtifactPreview(event.result) : null
       if (artifact) {
         state.appendArtifactPreviewBlock(artifact)
-      }
-
-      const mediaPreview = event.success ? parseMediaPreview(event.result) : null
-      if (mediaPreview) {
-        state.appendMediaPreviewBlock(mediaPreview)
       }
 
       // Edit 工具：提取 diff 数据写入 block

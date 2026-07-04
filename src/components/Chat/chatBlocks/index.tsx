@@ -14,7 +14,6 @@ import { TextBlockRenderer } from './TextBlockRenderer';
 import { ThinkingBlockRenderer } from './ThinkingBlockRenderer';
 import { ToolCallBlockRenderer } from './ToolCallBlockRenderer';
 import { ArtifactPreviewRenderer } from './ArtifactPreviewRenderer';
-import { MediaPreviewRenderer } from './MediaPreviewRenderer';
 
 export function renderContentBlock(
   block: ContentBlock,
@@ -47,11 +46,6 @@ export function renderContentBlock(
       return wrapWithErrorBoundary(
         <ArtifactPreviewRenderer block={block} />,
         block.previewId
-      );
-    case 'media_preview':
-      return wrapWithErrorBoundary(
-        <MediaPreviewRenderer block={block} />,
-        `media-${block.mediaType}-${block.url?.slice(0, 20) || block.videoId || 'unknown'}`
       );
     case 'question':
       return wrapWithErrorBoundary(

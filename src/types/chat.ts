@@ -65,7 +65,7 @@ export interface PermissionRequest {
  */
 
 /** 内容块类型 - 用于 Assistant 消息的内容分段 */
-export type ContentBlock = TextBlock | ThinkingBlock | ToolCallBlock | ArtifactPreviewBlock | MediaPreviewBlock | QuestionBlock | PlanModeBlock | AgentRunBlock | ToolGroupBlock | PermissionRequestBlock;
+export type ContentBlock = TextBlock | ThinkingBlock | ToolCallBlock | ArtifactPreviewBlock | QuestionBlock | PlanModeBlock | AgentRunBlock | ToolGroupBlock | PermissionRequestBlock;
 
 /** 文本内容块 */
 export interface TextBlock {
@@ -130,37 +130,6 @@ export interface ArtifactPreviewBlock {
   requirementId?: string;
   /** 预览说明或本版本变更摘要（可选） */
   description?: string;
-}
-
-/** 媒体预览内容块 - 用于图片/视频等媒体资源的渲染 */
-export interface MediaPreviewBlock {
-  type: 'media_preview';
-  /** 媒体类型 */
-  mediaType: 'image' | 'video';
-  /** 媒体 URL（优先使用） */
-  url?: string;
-  /** Base64 数据（图片时使用） */
-  base64?: string;
-  /** MIME 类型 */
-  mimeType?: string;
-  /** 模型名称 */
-  model?: string;
-  /** 尺寸信息 */
-  size?: string;
-  /** 生成提示词 */
-  prompt?: string;
-  /** 视频时长（秒） */
-  seconds?: string;
-  /** 视频 ID（用于轮询状态） */
-  videoId?: string;
-  /** 任务状态 */
-  status?: string;
-  /** 进度百分比 */
-  progress?: number;
-  /** 是否正在等待中 */
-  waiting?: boolean;
-  /** 错误信息 */
-  error?: string;
 }
 
 /** 问题选项 */
@@ -616,11 +585,6 @@ export function isToolCallBlock(block: ContentBlock): block is ToolCallBlock {
 /** 类型守卫：判断是否为 Artifact 预览块 */
 export function isArtifactPreviewBlock(block: ContentBlock): block is ArtifactPreviewBlock {
   return block.type === 'artifact_preview';
-}
-
-/** 类型守卫：判断是否为媒体预览块 */
-export function isMediaPreviewBlock(block: ContentBlock): block is MediaPreviewBlock {
-  return block.type === 'media_preview';
 }
 
 /** 类型守卫：判断是否为问题块 */
