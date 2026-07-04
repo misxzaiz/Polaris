@@ -1,18 +1,10 @@
 /**
  * 计划模式块渲染器组件
  *
- * 用于 PlanMode 的交互界面，采用左侧彩条 + 扁平化阶段行设计。
- * - 显示计划标题、整体进度、阶段列表
- * - 支持阶段展开/折叠查看任务明细
+ * 用于 PlanMode 工具的交互界面
+ * - 显示计划标题、阶段列表
  * - 支持审批/拒绝操作
- * - 支持键盘导航与无障碍
- *
- * 设计原则
- * ---------
- * 1. 去嵌套 —— 阶段不再是 `border rounded-lg` 包裹的卡片，改用分隔线 + 圆点表示层级
- * 2. 去紫 —— 用 indigo（介于蓝紫之间）替代 violet-500，与项目蓝调更协调
- * 3. 去冗余 —— 整体进度只保留一条；阶段用 `N/M 完成/进行中` 元信息替代独立进度条
- * 4. 小按钮 —— 审批按钮紧凑布局，不占满整宽
+ * - 支持键盘导航
  */
 
 import { memo, useState, useCallback, useRef, useEffect } from 'react';
@@ -21,9 +13,17 @@ import { clsx } from 'clsx';
 import { invoke } from '@/services/tauri';
 import { createLogger } from '@/utils/logger';
 import {
+  Check,
+  XCircle,
   Loader2,
   ChevronDown,
   ChevronRight,
+  Circle,
+  ThumbsUp,
+  ThumbsDown,
+  X,
+  Clock,
+  ListChecks,
   ClipboardList,
 } from 'lucide-react';
 import { useActiveSessionConversationId, useActiveSessionActions } from '@/stores/conversationStore/useActiveSession';
@@ -40,102 +40,94 @@ export interface PlanModeBlockRendererProps {
 // 状态配置
 // ========================================
 
+// ========================================
+// 类型定义
+// ========================================
+
 type PlanStatusAnimation = 'animate-spin' | undefined;
 
 interface PlanStatusEntry {
+  icon: React.FC<any>;
   color: string;
   bg: string;
   labelKey: string;
-  barColor: string;
   animation?: PlanStatusAnimation;
 }
 
 interface PlanTaskStatusEntry {
+  icon: React.FC<any>;
   color: string;
-  dotColor: string;
+  bg: string;
   animation?: PlanStatusAnimation;
 }
 
+// ========================================
+// 状态配置
+// ========================================
+
 /** PlanMode 状态配置 */
-export const PLAN_STATUS_CONFIG: Record<string, PlanStatusEntry> = {
+export const PLAN_STATUS_CONFIG: PlanStatusEntry = {
   drafting: {
-    color: 'text-yellow-500',
-    bg: 'bg-yellow-500/10',
+    icon: Loader2,
+    color: 'text-violet-500',
+    bg: 'bg-violet-500/10',
     labelKey: 'plan.statusDrafting',
-    barColor: 'bg-yellow-500',
     animation: 'animate-spin',
   },
   pending_approval: {
+    icon: Clock,
     color: 'text-yellow-500',
     bg: 'bg-yellow-500/10',
     labelKey: 'plan.statusPendingApproval',
-    barColor: 'bg-yellow-500',
   },
   approved: {
-    color: 'text-primary',
-    bg: 'bg-primary/10',
+    icon: ThumbsUp,
+    color: 'text-green-500',
+    bg: 'bg-green-500/10',
     labelKey: 'plan.statusApproved',
-    barColor: 'bg-primary',
   },
   rejected: {
+    icon: ThumbsDown,
     color: 'text-red-500',
     bg: 'bg-red-500/10',
     labelKey: 'plan.statusRejected',
-    barColor: 'bg-red-500',
   },
   executing: {
-    color: 'text-primary',
-    bg: 'bg-primary/10',
+    icon: Loader2,
+    color: 'text-blue-500',
+    bg: 'bg-blue-500/10',
     labelKey: 'plan.statusExecuting',
-    barColor: 'bg-primary',
     animation: 'animate-spin',
   },
   completed: {
+    icon: Check,
     color: 'text-success',
     bg: 'bg-success/10',
     labelKey: 'plan.statusCompleted',
-    barColor: 'bg-success',
   },
   canceled: {
+    icon: X,
     color: 'text-gray-500',
     bg: 'bg-gray-500/10',
     labelKey: 'plan.statusCanceled',
-    barColor: 'bg-gray-500',
   },
 };
 
-/** 阶段/任务状态配置（仅视觉，不包裹） */
-export const PLAN_TASK_STATUS_CONFIG: Record<string, PlanTaskStatusEntry> = {
-  pending:     { color: 'text-text-muted', dotColor: 'bg-text-muted' },
-  in_progress: { color: 'text-primary',    dotColor: 'bg-primary',    animation: 'animate-spin' },
-  completed:   { color: 'text-success',    dotColor: 'bg-success' },
-  failed:      { color: 'text-red-500',    dotColor: 'bg-red-500' },
-  skipped:     { color: 'text-text-muted', dotColor: 'bg-gray-500' },
+/** PlanMode 任务状态配置 */
+export const PLAN_TASK_STATUS_CONFIG: PlanTaskStatusEntry = {
+  pending: { icon: Circle, color: 'text-gray-400', bg: 'bg-gray-500/10' },
+  in_progress: { icon: Loader2, color: 'text-violet-500', bg: 'bg-violet-500/10', animation: 'animate-spin' },
+  completed: { icon: Check, color: 'text-green-500', bg: 'bg-green-500/10' },
+  failed: { icon: XCircle, color: 'text-red-500', bg: 'bg-red-500/10' },
+  skipped: { icon: ChevronRight, color: 'text-gray-400', bg: 'bg-gray-500/10' },
 };
 
 // ========================================
 // 子组件
 // ========================================
 
-/** 阶段状态图标 —— 根据阶段 status 返回对应小元素 */
-function StageStatusDot({ status }: { status: PlanStageBlock['status'] }) {
-  switch (status) {
-    case 'completed':
-      return <span className="w-1.5 h-1.5 rounded-full bg-success block" />;
-    case 'in_progress':
-      return <span className="w-1.5 h-1.5 rounded-full bg-primary block animate-pulse" />;
-    case 'failed':
-      return <span className="w-1.5 h-1.5 rounded-full bg-red-500 block" />;
-    default:
-      return <span className="w-1.5 h-1.5 rounded-full bg-text-muted block" />;
-  }
-}
-
-/**
- * 扁平化阶段行 —— 不再是 `border rounded-lg` 包裹的卡片，仅用圆点 + 分隔线表示层级。
- * 点击可展开任务列表（任务以左侧竖线连接，无独立卡片）。
- */
-const PlanStageRow = memo(function PlanStageRow({
+/** 计划阶段组件 */
+const PlanStageRenderer = memo(function PlanStageRenderer({
   stage,
   isExpanded = false,
   onToggle,
@@ -145,10 +137,13 @@ const PlanStageRow = memo(function PlanStageRow({
   onToggle?: () => void;
 }) {
   const { t } = useTranslation('chat');
+  const statusConfig = PLAN_TASK_STATUS_CONFIG[stage.status];
+  const StatusIcon = statusConfig.icon;
 
+  // 计算阶段进度
   const totalTasks = stage.tasks.length;
   const completedTasks = stage.tasks.filter(task => task.status === 'completed').length;
-  const isInProgress = stage.status === 'in_progress';
+  const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
   // 键盘支持：Enter/Space 展开/折叠
   const handleKeyDown = useCallback(
@@ -161,13 +156,9 @@ const PlanStageRow = memo(function PlanStageRow({
     [onToggle]
   );
 
-  const metaText = totalTasks > 0
-    ? `${completedTasks}/${totalTasks} ${isInProgress ? t('plan.stageInProgress') : t('plan.stageCompleted')}`
-    : `${totalTasks} tasks`;
-
   return (
-    <>
-      {/* 阶段行 —— 无卡片外壳，仅用 padding + 分隔线 */}
+    <div className="border border-border-subtle rounded-lg overflow-hidden">
+      {/* 阶段头部 */}
       <div
         onClick={onToggle}
         onKeyDown={handleKeyDown}
@@ -180,47 +171,79 @@ const PlanStageRow = memo(function PlanStageRow({
           total: totalTasks,
         })}
         className={clsx(
-          'flex items-center gap-2 px-3 py-1.5 cursor-pointer transition-colors',
-          'focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-1 focus:ring-offset-background-elevated',
-          isExpanded && 'hover:bg-background-hover/50'
+          'flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-background-hover transition-colors',
+          'focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-1',
+          stage.status === 'in_progress' && 'bg-violet-500/5'
         )}
       >
-        <StageStatusDot status={stage.status} />
-        <span className="text-xs text-text-muted w-3 shrink-0 font-mono">{stage.stageId}</span>
-        <span className={clsx(
-          'text-sm font-medium flex-1 truncate',
-          stage.status === 'completed' && 'text-text-secondary',
-          isInProgress && 'text-text-primary',
-          stage.status === 'failed' && 'text-red-400'
-        )}>
+        <div className={clsx('p-1 rounded', statusConfig.bg)}>
+          <StatusIcon
+            className={clsx(
+              'w-3.5 h-3.5',
+              statusConfig.color,
+              statusConfig.animation,
+              stage.status === 'in_progress' && 'text-violet-500'
+            )}
+          />
+        </div>
+        <span className="text-sm font-medium text-text-primary flex-1 truncate">
           {stage.name}
         </span>
         {totalTasks > 0 && (
-          <span className="text-xs text-text-tertiary shrink-0">{metaText}</span>
+          <span className="text-xs text-text-tertiary">
+            {completedTasks}/{totalTasks}
+          </span>
         )}
-        {isExpanded
-          ? <ChevronDown className="w-3.5 h-3.5 text-text-muted shrink-0" />
-          : <ChevronRight className="w-3.5 h-3.5 text-text-muted shrink-0" />}
+        {isExpanded ? (
+          <ChevronDown className="w-4 h-4 text-text-muted" />
+        ) : (
+          <ChevronRight className="w-4 h-4 text-text-muted" />
+        )}
       </div>
 
-      {/* 展开的任务列表 —— 无独立卡片，用左侧竖线连接 */}
+      {/* 阶段内容 */}
       {isExpanded && stage.tasks.length > 0 && (
-        <div className="px-3 pb-2 pt-0.5">
-          <div className="ml-5 pl-3 border-l border-border-subtle space-y-1">
+        <div className="px-3 py-2 border-t border-border-subtle bg-background-subtle/30">
+          {/* 进度条 */}
+          {totalTasks > 0 && (
+            <div className="mb-2">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="flex-1 bg-background-base rounded-full h-1.5 overflow-hidden">
+                  <div
+                    className="bg-violet-500 h-full transition-all duration-300"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+                <span className="text-xs text-text-tertiary">{progress}%</span>
+              </div>
+            </div>
+          )}
+
+          {/* 任务列表 */}
+          <div className="space-y-1">
             {stage.tasks.map((task, idx) => {
-              const config = PLAN_TASK_STATUS_CONFIG[task.status];
-              const isDone = task.status === 'completed';
+              const taskConfig = PLAN_TASK_STATUS_CONFIG[task.status];
+              const TaskIcon = taskConfig.icon;
               return (
-                <div key={task.taskId || idx} className="flex items-center gap-2">
-                  <span className={clsx(
-                    'w-1.5 h-1.5 rounded-full block shrink-0',
-                    config.dotColor,
-                    config.animation && 'animate-pulse'
-                  )} />
-                  <span className={clsx(
-                    'text-xs flex-1',
-                    isDone ? 'text-text-tertiary line-through' : 'text-text-secondary'
-                  )}>
+                <div
+                  key={task.taskId || idx}
+                  className="flex items-start gap-2 p-1.5 rounded bg-background-surface/50"
+                >
+                  <TaskIcon
+                    className={clsx(
+                      'w-3.5 h-3.5 mt-0.5 shrink-0',
+                      taskConfig.color,
+                      taskConfig.animation && taskConfig.animation
+                    )}
+                  />
+                  <span
+                    className={clsx(
+                      'text-xs flex-1',
+                      task.status === 'completed'
+                        ? 'text-text-tertiary line-through'
+                        : 'text-text-secondary'
+                    )}
+                  >
                     {task.description}
                   </span>
                 </div>
@@ -229,7 +252,7 @@ const PlanStageRow = memo(function PlanStageRow({
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 });
 
@@ -254,6 +277,7 @@ export const PlanModeBlockRenderer = memo(function PlanModeBlockRenderer({
   const { continueChat } = useActiveSessionActions();
 
   const statusConfig = PLAN_STATUS_CONFIG[block.status];
+  const StatusIcon = statusConfig.icon;
 
   // 是否可交互
   const isInteractive = block.status === 'pending_approval' && block.isActive;
@@ -388,50 +412,58 @@ export const PlanModeBlockRenderer = memo(function PlanModeBlockRenderer({
       aria-label={t('plan.planModeAriaLabel', { title: block.title || t('plan.defaultTitle') })}
       onKeyDown={handleKeyDown}
       className={clsx(
-        'my-2 rounded-lg border overflow-hidden border-l-2 border-l-primary',
-        block.isActive && block.status !== 'completed'
-          ? 'bg-gradient-to-r from-primary/5 to-transparent border border-primary/20'
-          : 'bg-background-elevated border-border',
-        block.status === 'completed' && 'border-l-success'
+        'my-2 rounded-lg border overflow-hidden',
+        block.isActive
+          ? 'bg-violet-500/5 border-violet-500/30'
+          : 'bg-background-surface border-border'
       )}
     >
-      {/* 头部 —— 单图标（标题内），无重复 ListChecks */}
-      <div className="flex items-center gap-2 px-3 py-2">
-        <span className="text-sm font-medium text-text-primary flex-1 truncate">
+      {/* 头部 */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-inherit bg-inherit/50">
+        <div className={clsx('p-1.5 rounded', statusConfig.bg)}>
+          <StatusIcon
+            className={clsx(
+              'w-4 h-4',
+              statusConfig.color,
+              statusConfig.animation && statusConfig.animation
+            )}
+          />
+        </div>
+        <ListChecks className="w-4 h-4 text-violet-500" />
+        <span className="text-sm font-medium text-text-primary">
           {block.title || t('plan.defaultTitle')}
         </span>
-        <span className={clsx(
-          'text-xs px-2 py-0.5 rounded-full shrink-0',
-          statusConfig.bg, statusConfig.color
-        )}>
+        <span className={clsx('ml-auto text-xs px-2 py-0.5 rounded-full', statusConfig.bg, statusConfig.color)}>
           {t(statusConfig.labelKey)}
         </span>
       </div>
 
-      {/* 描述 —— 与头部无分割线，用 margin 自然分隔 */}
+      {/* 描述 */}
       {block.description && (
-        <div className="px-3 pb-2 text-xs text-text-secondary leading-relaxed">
+        <div className="px-3 py-2 text-xs text-text-secondary border-b border-inherit bg-inherit/30">
           {block.description}
         </div>
       )}
 
-      {/* 整体进度 —— 只在 executing/completed 且有任务时显示 */}
-      {totalTasks > 0 && (block.status === 'executing' || block.status === 'completed') && (
-        <div className="px-3 py-1.5 flex items-center gap-2">
-          <div className="flex-1 bg-background-surface rounded-full h-1.5 overflow-hidden">
-            <div
-              className={clsx('h-full transition-all duration-300 rounded-full', statusConfig.barColor)}
-              style={{ width: `${progress}%` }}
-            />
+      {/* 整体进度 */}
+      {totalTasks > 0 && (
+        <div className="px-3 py-2 border-b border-inherit">
+          <div className="flex items-center gap-2">
+            <div className="flex-1 bg-background-base rounded-full h-2 overflow-hidden">
+              <div
+                className="bg-violet-500 h-full transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <span className="text-xs text-text-tertiary">{completedTasks}/{totalTasks}</span>
           </div>
-          <span className="text-xs text-text-tertiary shrink-0">{completedTasks}/{totalTasks}</span>
         </div>
       )}
 
-      {/* 阶段列表 —— 扁平化，无滚动容器（由外层 chat 控制高度） */}
-      <div className="border-t border-border-subtle">
+      {/* 阶段列表 - 可滚动 */}
+      <div className="max-h-[300px] overflow-y-auto p-3 space-y-2">
         {block.stages.map(stage => (
-          <PlanStageRow
+          <PlanStageRenderer
             key={stage.stageId}
             stage={stage}
             isExpanded={expandedStages.has(stage.stageId)}
@@ -440,9 +472,9 @@ export const PlanModeBlockRenderer = memo(function PlanModeBlockRenderer({
         ))}
       </div>
 
-      {/* 反馈输入框 —— 紧凑布局，按钮不占满整宽 */}
+      {/* 反馈输入框 */}
       {isInteractive && showFeedbackInput && (
-        <div className="px-3 py-2 border-t border-border-subtle">
+        <div className="px-3 py-2 border-t border-inherit bg-inherit/30">
           <label className="sr-only" htmlFor="plan-feedback-input">
             {t('plan.feedbackLabel')}
           </label>
@@ -455,16 +487,17 @@ export const PlanModeBlockRenderer = memo(function PlanModeBlockRenderer({
             placeholder={t('plan.feedbackPlaceholder')}
             aria-label={t('plan.feedbackLabel')}
             disabled={isSubmitting}
-            className="w-full px-3 py-1.5 rounded-md text-sm bg-background-surface border border-border
-                       focus:border-primary focus:ring-2 focus:ring-primary/30 outline-none
+            className="w-full px-3 py-2 rounded-md text-sm bg-bg-secondary border border-border
+                       focus:border-violet-500 focus:ring-2 focus:ring-violet-500 outline-none
                        placeholder:text-text-tertiary disabled:opacity-50"
           />
-          <div className="flex items-center gap-2 mt-2 justify-end">
+          <div className="flex items-center gap-2 mt-2">
             <Button
               variant="ghost"
               size="sm"
               onClick={() => setShowFeedbackInput(false)}
               disabled={isSubmitting}
+              className="flex-1"
             >
               {t('plan.cancel')}
             </Button>
@@ -473,20 +506,25 @@ export const PlanModeBlockRenderer = memo(function PlanModeBlockRenderer({
               size="sm"
               onClick={handleReject}
               disabled={isSubmitting}
+              className="flex-1"
             >
-              {isSubmitting && <Loader2 className="w-3 h-3 animate-spin mr-1" />}
+              {isSubmitting ? (
+                <Loader2 className="w-3 h-3 animate-spin mr-1" />
+              ) : (
+                <ThumbsDown className="w-3 h-3 mr-1" />
+              )}
               {t('plan.confirmReject')}
             </Button>
           </div>
         </div>
       )}
 
-      {/* 审批按钮 —— 紧凑布局，不占满整宽 */}
+      {/* 审批按钮 */}
       {isInteractive && !showFeedbackInput && (
         <div
           role="group"
           aria-label={t('plan.approvalButtonsLabel')}
-          className="flex items-center gap-2 px-3 py-2 border-t border-border-subtle justify-end"
+          className="flex items-center gap-2 px-3 py-2 border-t border-inherit bg-inherit/30"
         >
           <Button
             variant="primary"
@@ -494,8 +532,13 @@ export const PlanModeBlockRenderer = memo(function PlanModeBlockRenderer({
             onClick={handleApprove}
             disabled={isSubmitting}
             aria-label={t('plan.approveAriaLabel')}
+            className="flex-1"
           >
-            {isSubmitting && <Loader2 className="w-3 h-3 animate-spin mr-1" />}
+            {isSubmitting ? (
+              <Loader2 className="w-3 h-3 animate-spin mr-1" />
+            ) : (
+              <ThumbsUp className="w-3 h-3 mr-1" />
+            )}
             {t('plan.approve')}
           </Button>
           <Button
@@ -504,7 +547,9 @@ export const PlanModeBlockRenderer = memo(function PlanModeBlockRenderer({
             onClick={() => setShowFeedbackInput(true)}
             disabled={isSubmitting}
             aria-label={t('plan.rejectAriaLabel')}
+            className="flex-1"
           >
+            <ThumbsDown className="w-3 h-3 mr-1" />
             {t('plan.reject')}
           </Button>
         </div>
@@ -512,7 +557,7 @@ export const PlanModeBlockRenderer = memo(function PlanModeBlockRenderer({
 
       {/* 反馈信息 */}
       {block.feedback && (
-        <div className="px-3 py-2 border-t border-border-subtle bg-danger-faint/50">
+        <div className="px-3 py-2 border-t border-inherit bg-red-500/5">
           <div className="text-xs text-red-400">{block.feedback}</div>
         </div>
       )}
@@ -531,6 +576,8 @@ export const SimplifiedPlanModeRenderer = memo(function SimplifiedPlanModeRender
   block: PlanModeBlock;
 }) {
   const { t } = useTranslation('chat');
+  const statusConfig = PLAN_STATUS_CONFIG[block.status];
+  const StatusIcon = statusConfig.icon;
 
   const totalTasks = block.stages.reduce((sum, s) => sum + s.tasks.length, 0);
   const completedTasks = block.stages.reduce(
@@ -543,8 +590,8 @@ export const SimplifiedPlanModeRenderer = memo(function SimplifiedPlanModeRender
       className="my-1 flex items-center gap-2 text-xs text-text-tertiary"
       aria-label={t('plan.planModeAriaLabel', { title: block.title || t('plan.defaultTitle') })}
     >
-      <span className="w-1.5 h-1.5 rounded-full bg-primary block shrink-0" aria-hidden="true" />
-      <ClipboardList className="w-3 h-3 text-primary shrink-0" aria-hidden="true" />
+      <StatusIcon className={clsx('w-3 h-3', statusConfig.color, statusConfig.animation && statusConfig.animation)} aria-hidden="true" />
+      <ClipboardList className="w-3 h-3 text-violet-500" aria-hidden="true" />
       <span className="truncate">{block.title || t('plan.defaultTitle')}</span>
       {totalTasks > 0 && (
         <span className="text-text-secondary">{completedTasks}/{totalTasks}</span>
