@@ -1,5 +1,7 @@
 /*! bash 工具：执行 shell 命令 */
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use serde_json::{json, Value};
 
 use super::{truncate_chars, Tool, ToolContext, ToolOutcome};
@@ -65,10 +67,17 @@ fn run_bash(command: &str, workdir: Option<&str>, default_dir: &str) -> ToolOutc
         flag = "-c";
     }
 
-    let output = std::process::Command::new(shell)
-        .args([flag, command])
-        .current_dir(cwd)
-        .output();
+    let mut cmd = std::process::Command::new(shell);
+    cmd.args([flag, command])
+        .current_dir(cwd);
+
+    #[cfg(windows)]
+    {
+        use crate::utils::CREATE_NO_WINDOW;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let output = cmd.output();
 
     match output {
         Ok(o) => {
