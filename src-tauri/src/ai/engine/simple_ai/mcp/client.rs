@@ -22,6 +22,13 @@ use super::types::{
     InitializeResult, JsonRpcRequest, JsonRpcResponse, McpCallResult, McpTool, ToolsListResult,
 };
 
+/// 单次 MCP 请求的默认超时（秒）。
+///
+/// 生成式工具（如 Agnes 文生图/视频）可能耗时数十秒到数分钟，
+/// 30s 过紧；统一放宽到 10 分钟兜底。控制面方法（initialize/tools/list）
+/// 实际秒回，不受影响。
+const MCP_CALL_TIMEOUT_SECS: u64 = 600;
+
 /// 单个 MCP server 的客户端连接。
 pub(crate) struct McpClient {
     server_name: String,
@@ -125,7 +132,7 @@ impl McpClient {
         Ok(())
     }
 
-    /// 发请求并等响应（30s 超时）。
+    /// 发请求并等响应（默认 10 分钟超时，见 `MCP_CALL_TIMEOUT_SECS`）。
     async fn call_method(&self, method: &str, params: Option<Value>) -> Result<Value> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();
@@ -155,7 +162,7 @@ impl McpClient {
                 .map_err(|e| AppError::ProcessError(format!("flush MCP stdin: {}", e)))?;
         }
 
-        let response = tokio::time::timeout(Duration::from_secs(30), rx)
+        let response = tokio::time::timeout(Duration::from_secs(MCP_CALL_TIMEOUT_SECS), rx)
             .await
             .map_err(|_| {
                 // 超时时清理 pending，避免 sender 泄漏。
@@ -165,8 +172,8 @@ impl McpClient {
                     pending.lock().await.remove(&id);
                 });
                 AppError::ProcessError(format!(
-                    "MCP '{}' method '{}' timeout (30s)",
-                    self.server_name, method
+                    "MCP '{}' method '{}' timeout ({}s)",
+                    self.server_name, method, MCP_CALL_TIMEOUT_SECS
                 ))
             })?
             .map_err(|_| {
