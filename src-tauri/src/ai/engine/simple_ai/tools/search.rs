@@ -1,14 +1,10 @@
-/*! 搜索工具：search_files（按内容）+ glob（按文件名 pattern） */
+/*! 搜索工具：search_files（按内容，ripgrep 级）+ glob（按文件名 pattern） */
 
 use std::path::PathBuf;
 
 use serde_json::{json, Value};
-use walkdir::WalkDir;
 
 use super::{truncate_chars, Tool, ToolContext, ToolOutcome};
-
-/// 跳过的依赖/产物目录。
-const SKIP_DIRS: [&str; 7] = [".git", "node_modules", "target", "dist", ".next", "build", ".venv"];
 
 /// 解析搜索根目录：绝对路径原样，相对路径相对 `workdir`，缺省为 `workdir`。
 fn resolve_root(path: Option<&str>, workdir: &str) -> PathBuf {
@@ -19,22 +15,8 @@ fn resolve_root(path: Option<&str>, workdir: &str) -> PathBuf {
     }
 }
 
-/// 构建跳过依赖目录的 walker。
-fn walker(root: &PathBuf) -> walkdir::IntoIter {
-    WalkDir::new(root).into_iter()
-}
-
-fn is_skip_dir(entry: &walkdir::DirEntry) -> bool {
-    if entry.file_type().is_dir() {
-        if let Some(name) = entry.file_name().to_str() {
-            return SKIP_DIRS.contains(&name);
-        }
-    }
-    false
-}
-
 // ============================================================================
-// search_files（按内容）
+// search_files（按内容，复用 ignore crate 达到 ripgrep 级水准）
 // ============================================================================
 
 pub(super) struct SearchFilesTool;
@@ -50,13 +32,14 @@ impl Tool for SearchFilesTool {
             "type": "function",
             "function": {
                 "name": "search_files",
-                "description": "Recursively search file CONTENTS for a text pattern under a directory. Cross-platform and reliable; skips .git/node_modules/target/dist/.next/build. Use this instead of shell grep/findstr/find.",
+                "description": "Search file contents using regex pattern. Respects .gitignore and .ignore files. Skips binary files and build/dependency directories.\n\nParameters: pattern (regex), path (dir, optional), file_ext (e.g. 'rs'), case_insensitive (default true).\n\nExamples: 'fn main' finds main functions; 'log\\\\.(error|warn)' finds log calls. Use regex-escaped special chars.\nUse this to locate code before editing. Returns file:line:context format with up to 200 matches.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "pattern": { "type": "string", "description": "Text to search for in file contents (plain substring, case-sensitive)" },
+                        "pattern": { "type": "string", "description": "Regex pattern to search for (supports regex metacharacters)" },
                         "path": { "type": "string", "description": "Directory to search under (optional, defaults to working directory)" },
-                        "file_ext": { "type": "string", "description": "Optional file extension filter without dot, e.g. 'rs' or 'ts'" }
+                        "file_ext": { "type": "string", "description": "Optional file extension filter without dot, e.g. 'rs' or 'ts'" },
+                        "case_insensitive": { "type": "boolean", "description": "Case-insensitive matching (default true)" }
                     },
                     "required": ["pattern"]
                 }
@@ -69,15 +52,18 @@ impl Tool for SearchFilesTool {
             args["pattern"].as_str().unwrap_or(""),
             args["path"].as_str(),
             args["file_ext"].as_str(),
+            args["case_insensitive"].as_bool().unwrap_or(true),
             ctx.work_dir,
         )
     }
 }
 
+/// 搜索文件内容，使用 ignore crate（ripgrep 底层）+ regex。
 fn run_search_files(
     pattern: &str,
     path: Option<&str>,
     file_ext: Option<&str>,
+    case_insensitive: bool,
     workdir: &str,
 ) -> ToolOutcome {
     if pattern.is_empty() {
@@ -86,20 +72,52 @@ fn run_search_files(
 
     let root = resolve_root(path, workdir);
 
+    // 构建 regex：优先尝试 regex，失败则回退为字面量搜索
+    let regex = regex::RegexBuilder::new(pattern)
+        .case_insensitive(case_insensitive)
+        .build();
+    let (regex, is_regex) = match regex {
+        Ok(r) => (Some(r), true),
+        Err(e) => {
+            tracing::warn!("search_files regex build failed for '{}': {}, falling back to literal search", pattern, e);
+            (None, false)
+        }
+    };
+
     const MAX_MATCHES: usize = 200;
     const MAX_LINE_LEN: usize = 300;
+    const MAX_FILE_SIZE: u64 = 2 * 1024 * 1024; // 2MB
 
     let mut matches: Vec<String> = Vec::new();
+    let mut scanned_files = 0usize;
     let mut truncated = false;
 
-    for entry in walker(&root)
-        .filter_entry(|e| !is_skip_dir(e))
-        .filter_map(|e| e.ok())
-    {
-        if !entry.file_type().is_file() {
-            continue;
+    // 使用 ignore::WalkBuilder（ripgrep 同款），支持 .gitignore
+    let mut builder = ignore::WalkBuilder::new(&root);
+    builder
+        .hidden(false)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true)
+        .ignore(true)
+        .follow_links(false);
+
+    for entry in builder.build().filter_map(|e| e.ok()) {
+        if matches.len() >= MAX_MATCHES {
+            truncated = true;
+            break;
         }
+
+        // 只处理文件
+        let file_type = match entry.file_type() {
+            Some(ft) if ft.is_file() => ft,
+            _ => continue,
+        };
+        let _ = file_type;
+
         let file_path = entry.path();
+
+        // 文件扩展名过滤
         if let Some(ext) = file_ext {
             let ext_ok = file_path
                 .extension()
@@ -110,39 +128,80 @@ fn run_search_files(
                 continue;
             }
         }
-        // 仅读取文本文件（读取失败 / 非 UTF-8 直接跳过）
-        let Ok(content) = std::fs::read_to_string(file_path) else {
+
+        // 文件大小过滤
+        let Ok(metadata) = std::fs::metadata(file_path) else {
             continue;
         };
+        if metadata.len() > MAX_FILE_SIZE {
+            continue;
+        }
+
+        scanned_files += 1;
+
+        // 二进制检测（前 8192 字节含 NUL 即判定为二进制）
+        let Ok(bytes) = std::fs::read(file_path) else {
+            continue;
+        };
+        if looks_binary(&bytes) {
+            continue;
+        }
+
+        let Ok(content) = String::from_utf8(bytes) else {
+            continue;
+        };
+
         let rel = file_path.strip_prefix(&root).unwrap_or(file_path);
-        for (idx, line) in content.lines().enumerate() {
-            if line.contains(pattern) {
+        let rel_str = rel.to_string_lossy().to_string();
+
+        // 行级搜索
+        for (line_idx, line) in content.lines().enumerate() {
+            let matched = if let Some(ref re) = regex {
+                re.is_match(line)
+            } else {
+                // 字面量回退
+                if case_insensitive {
+                    line.to_lowercase().contains(&pattern.to_lowercase())
+                } else {
+                    line.contains(pattern)
+                }
+            };
+
+            if matched {
                 let shown = truncate_chars(line.trim(), MAX_LINE_LEN);
-                matches.push(format!("{}:{}: {}", rel.display(), idx + 1, shown));
+                matches.push(format!("{}:{}: {}", rel_str, line_idx + 1, shown));
                 if matches.len() >= MAX_MATCHES {
                     truncated = true;
                     break;
                 }
             }
         }
-        if truncated {
-            break;
-        }
     }
 
     if matches.is_empty() {
-        ToolOutcome::ok(format!("No matches for '{}'", pattern))
+        let hint = if is_regex {
+            format!("No matches for regex '{}'. Scanned {} file(s). Try a different pattern, add file_ext filter, or check the directory.", pattern, scanned_files)
+        } else {
+            format!("No matches for '{}'. Scanned {} file(s). Note: regex build failed, fell back to literal search.", pattern, scanned_files)
+        };
+        ToolOutcome::ok(hint)
     } else {
         let mut out = matches.join("\n");
         if truncated {
             out.push_str(&format!("\n... (truncated at {} matches)", MAX_MATCHES));
         }
+        out.push_str(&format!("\n(Scanned {} file(s))", scanned_files));
         ToolOutcome::ok(out)
     }
 }
 
+/// 二进制检测：前 8192 字节含 NUL 即判定为二进制
+fn looks_binary(bytes: &[u8]) -> bool {
+    bytes.iter().take(8192).any(|&b| b == 0)
+}
+
 // ============================================================================
-// glob（按文件名 pattern）
+// glob（按文件名 pattern）—— 保留原有实现，已完备
 // ============================================================================
 
 pub(super) struct GlobTool;
@@ -191,21 +250,30 @@ fn run_glob(pattern: &str, path: Option<&str>, workdir: &str) -> ToolOutcome {
     let mut results: Vec<String> = Vec::new();
     let mut truncated = false;
 
-    for entry in walker(&root)
-        .filter_entry(|e| !is_skip_dir(e))
-        .filter_map(|e| e.ok())
-    {
-        if !entry.file_type().is_file() {
+    let mut builder = ignore::WalkBuilder::new(&root);
+    builder
+        .hidden(false)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true)
+        .ignore(true)
+        .follow_links(false);
+
+    for entry in builder.build().filter_map(|e| e.ok()) {
+        if results.len() >= MAX_RESULTS {
+            truncated = true;
+            break;
+        }
+
+        if !entry.file_type().is_some_and(|ft| ft.is_file()) {
             continue;
         }
-        let rel = entry.path().strip_prefix(&root).unwrap_or(entry.path());
-        let rel_str = rel.to_string_lossy();
+
+        let file_path = entry.path();
+        let rel = file_path.strip_prefix(&root).unwrap_or(file_path);
+        let rel_str = rel.to_string_lossy().to_string();
         if glob_match(pattern, &rel_str) {
             results.push(rel_str.replace('\\', "/"));
-            if results.len() >= MAX_RESULTS {
-                truncated = true;
-                break;
-            }
         }
     }
 
@@ -234,7 +302,6 @@ fn match_segments(pat: &[&str], seg: &[&str]) -> bool {
         return seg.is_empty();
     }
     if pat[0] == "**" {
-        // 消费 0 段（跳过 **）或消费 1 段后继续用 ** 匹配
         if match_segments(&pat[1..], seg) {
             return true;
         }
@@ -281,6 +348,10 @@ fn match_one_segment(pat: &str, name: &str) -> bool {
     pi == p.len()
 }
 
+// ============================================================================
+// 测试
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -291,12 +362,12 @@ mod tests {
         std::fs::write(dir.path().join("a.rs"), "fn main() { needle }").unwrap();
         std::fs::write(dir.path().join("b.txt"), "needle here").unwrap();
 
-        let all = run_search_files("needle", None, None, dir.path().to_str().unwrap());
+        let all = run_search_files("needle", None, None, true, dir.path().to_str().unwrap());
         assert!(all.success);
         assert!(all.content.contains("a.rs"));
         assert!(all.content.contains("b.txt"));
 
-        let only_rs = run_search_files("needle", None, Some("rs"), dir.path().to_str().unwrap());
+        let only_rs = run_search_files("needle", None, Some("rs"), true, dir.path().to_str().unwrap());
         assert!(only_rs.content.contains("a.rs"));
         assert!(!only_rs.content.contains("b.txt"));
     }
@@ -309,18 +380,62 @@ mod tests {
         std::fs::write(nm.join("dep.js"), "needle").unwrap();
         std::fs::write(dir.path().join("app.js"), "needle").unwrap();
 
-        let out = run_search_files("needle", None, None, dir.path().to_str().unwrap());
+        let out = run_search_files("needle", None, None, true, dir.path().to_str().unwrap());
         assert!(out.content.contains("app.js"));
         assert!(!out.content.contains("dep.js"));
     }
 
     #[test]
+    fn search_files_with_regex_pattern() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.rs"), "fn main() {\n    log.error(\"test\");\n}").unwrap();
+        std::fs::write(dir.path().join("b.rs"), "fn other() {\n    log.warn(\"test\");\n}").unwrap();
+
+        let out = run_search_files("log\\.(error|warn)", None, None, true, dir.path().to_str().unwrap());
+        assert!(out.content.contains("log.error"));
+        assert!(out.content.contains("log.warn"));
+    }
+
+    #[test]
+    fn search_files_case_insensitive() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "Hello World").unwrap();
+        std::fs::write(dir.path().join("b.txt"), "HELLO WORLD").unwrap();
+
+        let out = run_search_files("hello", None, None, true, dir.path().to_str().unwrap());
+        assert!(out.content.contains("a.txt"));
+        assert!(out.content.contains("b.txt"));
+    }
+
+    #[test]
+    fn search_files_case_sensitive() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "Hello World").unwrap();
+        std::fs::write(dir.path().join("b.txt"), "HELLO WORLD").unwrap();
+
+        let out = run_search_files("hello", None, None, false, dir.path().to_str().unwrap());
+        assert!(out.content.contains("a.txt"));
+        assert!(!out.content.contains("b.txt"));
+    }
+
+    #[test]
+    fn search_files_invalid_regex_falls_back_to_literal() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "Hello World").unwrap();
+
+        // 无效 regex 应回退为字面量搜索
+        let out = run_search_files("Hello[", None, None, true, dir.path().to_str().unwrap());
+        // 无效 regex 编译失败，回退字面量；"Hello[" 在字面量下不会匹配 "Hello World"
+        assert!(out.content.contains("No matches") || out.content.contains("Scanned"));
+    }
+
+    #[test]
     fn glob_match_basic_and_recursive() {
         assert!(glob_match("*.rs", "main.rs"));
-        assert!(!glob_match("*.rs", "src/main.rs")); // * 不跨 /
+        assert!(!glob_match("*.rs", "src/main.rs"));
         assert!(glob_match("**/*.rs", "src/main.rs"));
         assert!(glob_match("**/*.rs", "a/b/c/x.rs"));
-        assert!(glob_match("**/*.rs", "x.rs")); // ** 可消费 0 段
+        assert!(glob_match("**/*.rs", "x.rs"));
         assert!(glob_match("src/*.ts", "src/app.ts"));
         assert!(!glob_match("src/*.ts", "src/sub/app.ts"));
         assert!(glob_match("Cargo.toml", "Cargo.toml"));

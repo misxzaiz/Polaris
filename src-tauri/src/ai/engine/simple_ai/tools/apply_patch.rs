@@ -331,8 +331,10 @@ fn splice(lines: &mut Vec<String>, at: usize, remove: usize, insert: &[String]) 
 }
 
 fn apply_chunks(content: &str, chunks: &[Chunk]) -> Result<String, String> {
-    let mut lines: Vec<String> = content.lines().map(String::from).collect();
-    let trailing_newline = content.ends_with('\n');
+    // 归一化换行为 LF，避免 Windows CRLF 导致上下文匹配失败
+    let normalized = content.replace("\r\n", "\n");
+    let trailing_newline = normalized.ends_with('\n');
+    let mut lines: Vec<String> = normalized.lines().map(String::from).collect();
     let mut search_from = 0usize;
 
     for (ci, chunk) in chunks.iter().enumerate() {
@@ -360,7 +362,7 @@ fn apply_chunks(content: &str, chunks: &[Chunk]) -> Result<String, String> {
             }
             None => {
                 return Err(format!(
-                    "chunk {}: could not locate the lines to replace (the surrounding context may not match the file)",
+                    "chunk {}: could not locate the lines to replace. Re-read the file with read_file to get current line numbers and content.",
                     ci + 1
                 ))
             }

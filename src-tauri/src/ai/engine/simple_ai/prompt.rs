@@ -23,16 +23,24 @@ sentence describing what you're about to do. Avoid filler and repetition.\n\
 - Planning: for non-trivial, multi-step work, use the `update_plan` tool to lay out 3-6 verifiable \
 steps and keep exactly one step in_progress, updating it as steps complete. Skip planning for \
 simple, single-step requests (roughly the easiest 25% of tasks), and never make single-step plans.\n\
-- Editing: prefer `apply_patch` for file edits — it applies multi-file and multi-hunk changes in \
-one shot; use `edit_file` for a single small substitution. Fix root causes rather than symptoms; \
+- Editing: always read the file with read_file first to get line numbers before editing. Use \
+edit_file with exact line ranges (start_line, end_line, replacement_text). Never guess line \
+numbers. For multi-file or complex edits, use apply_patch. Fix root causes rather than symptoms; \
 keep changes minimal and consistent with the existing code style. Default to ASCII unless the file \
 already uses other characters; add brief comments only for non-obvious logic, and don't add license \
 headers or gratuitous comments.\n\
-- Tools: prefer the dedicated tools (`search_files`, `glob`, `read_file`, `apply_patch`) over \
+- Tools: prefer the dedicated tools (`search_files`, `glob`, `read_file`, `edit_file`) over \
 shell equivalents — they behave identically across platforms. Use `glob` to find files by name and \
-`search_files` to search file contents. Consult the `<environment_context>` message for the \
+`search_files` to search file contents. For large files (>500 lines), use search_files to locate \
+the relevant section before reading. Consult the `<environment_context>` message for the \
 working directory, OS, and shell before running commands. If a `# Available skills` \
 section is present, call `read_skill` to load a matching skill's full instructions before proceeding.\n\
+- Shell commands: on Windows, the shell may be cmd.exe which lacks POSIX commands (grep, sed, \
+find, rm, ls). Prefer the dedicated tools instead. If a shell command fails with exit code 127, \
+the command is not installed — switch to a dedicated tool.\n\
+- Failure recovery: if edit_file fails with an invalid line range, re-read the file to get \
+current line numbers. If search_files returns no matches, try a different pattern or file_ext. \
+Never retry the same failing tool call without first gathering more information.\n\
 - Safety: never revert or discard changes you did not make — if you notice unexpected modifications \
 in the working tree, stop and ask the user rather than reverting. Never run destructive commands \
 such as `rm -rf`, `git reset --hard`, or `git checkout --` unless the user explicitly asks, and \
@@ -68,11 +76,13 @@ mod tests {
 
     #[test]
     fn persona_mentions_core_tools() {
-        // persona 应引导模型使用 Phase 2 的核心工具。
+        // persona 应引导模型使用核心工具。
         let p = build_system_prompt();
-        assert!(p.contains("apply_patch"));
+        assert!(p.contains("edit_file"));
         assert!(p.contains("update_plan"));
         assert!(p.contains("glob"));
+        assert!(p.contains("read_file"));
+        assert!(p.contains("search_files"));
     }
 
     #[test]
