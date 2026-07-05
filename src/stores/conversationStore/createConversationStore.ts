@@ -60,6 +60,7 @@ function createInitialState(sessionId: string): ConversationState {
     pendingToolGroup: null,
     permissionRequestBlockMap: new Map(),
     activePermissionRequestId: null,
+    pluginCardBlockMap: new Map(),
     sessionAllowedTools: [],
     streamingUpdateCounter: 0,
 
@@ -181,6 +182,7 @@ export function createConversationStore(
           pendingToolGroup: null,
           permissionRequestBlockMap: new Map(),
           activePermissionRequestId: null,
+          pluginCardBlockMap: new Map(),
         })
       },
 
@@ -529,6 +531,49 @@ export function createConversationStore(
                 }
               : existing.answer,
           }
+          set({ currentMessage: { ...currentMessage, blocks } })
+        }
+      },
+
+      // ===== PluginCard =====
+      appendPluginCardBlock: (block) => {
+        if (_textBuffer) get()._flushTextBuffer()
+
+        const { currentMessage, pluginCardBlockMap, streamingUpdateCounter } = get()
+        const newMap = new Map(pluginCardBlockMap)
+
+        // 幂等：同 id 卡片不重复追加（tool_call_end 与 plugin_card 事件可能并发到达）
+        if (currentMessage?.blocks.some((b) => b.type === 'plugin_card' && b.id === block.id)) {
+          return
+        }
+
+        if (!currentMessage) {
+          newMap.set(block.id, 0)
+          set({
+            currentMessage: createCurrentAssistantMessage([block]),
+            pluginCardBlockMap: newMap,
+            streamingUpdateCounter: streamingUpdateCounter + 1,
+          })
+        } else {
+          const blocks = [...currentMessage.blocks, block]
+          newMap.set(block.id, blocks.length - 1)
+          set({
+            currentMessage: { ...currentMessage, blocks },
+            pluginCardBlockMap: newMap,
+            streamingUpdateCounter: streamingUpdateCounter + 1,
+          })
+        }
+      },
+
+      updatePluginCardBlock: (id, updates) => {
+        const { currentMessage, pluginCardBlockMap } = get()
+        if (!currentMessage) return
+        const idx = pluginCardBlockMap.get(id)
+        if (idx === undefined) return
+        const blocks = [...currentMessage.blocks]
+        if (blocks[idx]?.type === 'plugin_card') {
+          const existing = blocks[idx] as import('../../types/chat').PluginCardBlock
+          blocks[idx] = { ...existing, ...updates }
           set({ currentMessage: { ...currentMessage, blocks } })
         }
       },
@@ -954,6 +999,16 @@ export function createConversationStore(
             ) {
               modified = true
               return { ...block, status: 'expired' as const }
+            }
+            // 历史恢复：仍 pending 的交互型插件卡片一律置为 declined
+            // （后端 oneshot 已随进程退出而 drop，无法再回填 tool_result）
+            if (
+              block.type === 'plugin_card' &&
+              block.mode === 'interaction' &&
+              block.status === 'pending'
+            ) {
+              modified = true
+              return { ...block, status: 'declined' as const }
             }
             return block
           })

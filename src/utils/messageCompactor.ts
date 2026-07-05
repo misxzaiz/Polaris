@@ -282,7 +282,7 @@ export class MessageCompactor {
         return this.compactTextBlock(block)
       case 'tool_group':
         return this.compactToolGroupBlock(block)
-      // question / plan_mode / agent_run / permission_request 不压缩
+      // question / plan_mode / agent_run / permission_request / plugin_card / artifact_preview 不压缩
       default:
         return block
     }

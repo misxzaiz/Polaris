@@ -79,6 +79,36 @@ export interface PluginPanelContribution {
   supportsFullscreen?: boolean
 }
 
+/**
+ * 聊天卡片渲染模式
+ * - result: 展示型。消费 MCP 工具返回结果，追加独立卡片渲染（Rust 零改动）
+ * - interaction: 交互型。插件 MCP server 经伴生通道请求同回合用户输入，
+ *   卡片提交后回填 tool_result 给 AI（复用 ask 通道）
+ */
+export type PluginChatCardMode = 'result' | 'interaction'
+
+/**
+ * 聊天卡片贡献点声明（manifest.contributes.chatCards[]）
+ *
+ * 按完整工具名 `mcp__{mcpServerId}__{tool}` 匹配 → 由插件自定义渲染。
+ * 安全约束：mcpServerId 必须属于本插件声明的 mcpServers[].id，
+ * 防止插件劫持内置工具或其他插件的渲染。
+ */
+export interface PluginChatCardContribution {
+  /** 插件内唯一 id */
+  id: string
+  /** 归属插件 id（注册时注入） */
+  pluginId: PluginId
+  /** React 组件入口（外部插件相对 installPath；内置插件手动注册 loader，可省略） */
+  entry?: string
+  /** 目标 MCP server id，必须属于本插件的 mcpServers 声明 */
+  mcpServerId: string
+  /** server 内工具名列表（不含 mcp__ 前缀） */
+  tools: string[]
+  /** 渲染模式，默认 result */
+  mode: PluginChatCardMode
+}
+
 export interface PluginPermissionDeclaration {
   workspaceRead?: boolean
   workspaceWrite?: boolean
@@ -114,6 +144,7 @@ export interface PolarisPluginManifest {
     mcpServers?: Omit<PluginMcpServerContribution, 'pluginId'>[]
     services?: Omit<PluginServiceContribution, 'pluginId'>[]
     panel?: PluginPanelContribution
+    chatCards?: Omit<PluginChatCardContribution, 'pluginId'>[]
   }
   permissions: PluginPermissionDeclaration
   origin?: PluginOriginMetadata
@@ -127,3 +158,45 @@ export type PluginPanelComponent = ComponentType<{
 }>
 
 export type PluginPanelLoader = () => Promise<{ default: PluginPanelComponent }>
+
+/**
+ * 聊天卡片渲染状态
+ * - ready: 展示型数据就绪
+ * - pending: 交互型等待用户操作
+ * - answered: 交互型已提交
+ * - declined: 交互型被跳过/超时
+ * - failed: 结果解析或渲染失败
+ */
+export type PluginChatCardStatus = 'ready' | 'pending' | 'answered' | 'declined' | 'failed'
+
+/**
+ * 传给插件卡片组件的 props 契约（对插件开发者暴露的 API）
+ */
+export interface PluginChatCardProps {
+  /** 归属插件 id */
+  pluginId: string
+  /** 贡献点 id（chatCards[].id） */
+  cardId: string
+  /** 完整工具名 mcp__{server}__{tool}，兜底展示用 */
+  toolName: string
+  /** 渲染模式 */
+  mode: PluginChatCardMode
+  /** 渲染状态 */
+  status: PluginChatCardStatus
+  /**
+   * 卡片数据。
+   * - result 模式：MCP 工具结果的最佳解析（结构化对象或原始字符串）
+   * - interaction 模式：伴生进程发来的请求 payload
+   */
+  data: unknown
+  /** interaction 模式已提交的应答（历史恢复时回显） */
+  response?: unknown
+  /** 注入下一轮聊天消息（展示型可用） */
+  onSendToChat?: (message: string) => void | Promise<void>
+  /** 提交应答（仅 interaction 且 status === 'pending' 时提供） */
+  respond?: (result: unknown) => Promise<void>
+}
+
+export type PluginChatCardComponent = ComponentType<PluginChatCardProps>
+
+export type PluginChatCardLoader = () => Promise<{ default: PluginChatCardComponent }>

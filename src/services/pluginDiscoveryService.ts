@@ -5,6 +5,7 @@ import type {
   PluginOriginMetadata,
   PluginManifestSource,
   PluginMcpServerContribution,
+  PluginChatCardContribution,
   PluginPanelContribution,
   PluginPermissionDeclaration,
   PluginViewContribution,
@@ -59,6 +60,7 @@ export interface PluginDiscoveryResult {
 const VALID_VIEW_AREAS = new Set(['activityBar'])
 const VALID_TRANSPORTS = new Set(['stdio', 'http'])
 const VALID_SOURCE_KINDS = new Set(['user', 'project'])
+const VALID_CARD_MODES = new Set(['result', 'interaction'])
 const VALID_PLUGIN_ICONS = new Set<PluginIconId>([
   'Files',
   'GitPullRequest',
@@ -194,6 +196,54 @@ function normalizePanel(value: unknown): PluginPanelContribution | undefined {
   return { entry }
 }
 
+/**
+ * 归一化 chatCards 贡献点。
+ *
+ * 安全校验：mcpServerId 必须属于本插件声明的 mcpServers[].id，否则丢弃该卡片
+ * （防止插件劫持内置工具或其他插件的渲染）。
+ */
+function normalizeChatCards(
+  value: unknown,
+  ownMcpServerIds: Set<string>,
+  errors: string[]
+): Omit<PluginChatCardContribution, 'pluginId'>[] {
+  if (!Array.isArray(value)) return []
+
+  return value.flatMap((item, index) => {
+    if (!isRecord(item)) {
+      errors.push(`contributes.chatCards[${index}] must be an object`)
+      return []
+    }
+
+    const id = asString(item.id)
+    const mcpServerId = asString(item.mcpServerId)
+    const mode = asString(item.mode) ?? 'result'
+    const tools = Array.isArray(item.tools)
+      ? item.tools.filter((tool): tool is string => typeof tool === 'string' && tool.trim().length > 0)
+      : []
+
+    if (!id || !mcpServerId || !VALID_CARD_MODES.has(mode) || tools.length === 0) {
+      errors.push(`contributes.chatCards[${index}] is invalid and was ignored`)
+      return []
+    }
+
+    if (!ownMcpServerIds.has(mcpServerId)) {
+      errors.push(
+        `contributes.chatCards[${index}].mcpServerId "${mcpServerId}" is not declared in this plugin's mcpServers and was ignored`
+      )
+      return []
+    }
+
+    return [{
+      id,
+      entry: asString(item.entry),
+      mcpServerId,
+      tools,
+      mode: mode as PluginChatCardContribution['mode'],
+    }]
+  })
+}
+
 export function normalizeDiscoveredPlugin(raw: unknown): PolarisPluginManifest | null {
   return validateDiscoveredPlugin(raw).plugin
 }
@@ -223,6 +273,9 @@ export function validateDiscoveredPlugin(raw: unknown): {
 
   const contributes = isRecord(raw.contributes) ? raw.contributes : {}
 
+  const mcpServers = normalizeMcpServers(contributes.mcpServers, errors)
+  const ownMcpServerIds = new Set(mcpServers.map((server) => server.id))
+
   return {
     plugin: {
       id,
@@ -233,8 +286,9 @@ export function validateDiscoveredPlugin(raw: unknown): {
       enabledByDefault: raw.enabledByDefault === true,
       contributes: {
         views: normalizeViews(contributes.views, errors),
-        mcpServers: normalizeMcpServers(contributes.mcpServers, errors),
+        mcpServers,
         panel: normalizePanel(contributes.panel),
+        chatCards: normalizeChatCards(contributes.chatCards, ownMcpServerIds, errors),
       },
       permissions: normalizePermissions(raw.permissions),
       origin: normalizeOrigin(raw.origin),

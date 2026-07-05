@@ -8,7 +8,8 @@ import { generateUUID } from '@/utils/uuid'
 import { createLogger } from '@/utils/logger'
 import type { AIEvent } from '@/ai-runtime'
 import { isEditTool, extractEditDiff } from '@/utils/diffExtractor'
-import type { ArtifactPreviewBlock } from '@/types'
+import type { PluginCardBlock } from '@/types'
+import { chatCardRegistry } from '@/plugin-system/chatCardRegistry'
 import type { ConversationStore } from './types'
 import { voiceNotificationService } from '@/services/voiceNotificationService'
 import { useSessionStore } from '../index'
@@ -19,57 +20,43 @@ import { dialogStorageService } from '@/services/dialogStorage'
 
 const log = createLogger('EventHandler')
 
-function optionalString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim() ? value : undefined
-}
+/**
+ * 解析 MCP 工具结果为插件卡片数据。
+ *
+ * 优先级：
+ * 1. structuredContent（MCP 标准结构化结果，如 PRD 预览的 artifact）
+ * 2. 字符串结果中的 fenced ```json 块
+ * 3. 字符串结果直接 JSON.parse
+ * 4. 原始值（字符串/对象）兜底
+ *
+ * 解析失败不抛错，返回原始值由卡片组件自行防御。
+ */
+function parseCardData(result: unknown): unknown {
+  if (result && typeof result === 'object') {
+    const obj = result as Record<string, unknown>
+    if (obj.structuredContent !== undefined) {
+      return obj.structuredContent
+    }
+    return result
+  }
 
-function parseArtifactPreview(result: unknown): ArtifactPreviewBlock | null {
-  const raw = typeof result === 'string'
-    ? result
-    : result && typeof result === 'object'
-      ? JSON.stringify(result)
-      : ''
-  if (!raw.includes('"artifactType"') && !raw.includes('"artifact_type"')) return null
-
-  const candidates: string[] = []
-  const fenced = raw.match(/```json\s*([\s\S]*?)```/i)
-  if (fenced?.[1]) candidates.push(fenced[1].trim())
-  candidates.push(raw.trim())
-
-  for (const candidate of candidates) {
+  if (typeof result === 'string') {
+    const fenced = result.match(/```json\s*([\s\S]*?)```/i)
+    if (fenced?.[1]) {
+      try {
+        return JSON.parse(fenced[1].trim())
+      } catch {
+        // 落到直接 parse
+      }
+    }
     try {
-      const parsed = JSON.parse(candidate) as Record<string, unknown>
-      const artifactType = parsed.artifactType ?? parsed.artifact_type
-      const contentType = parsed.contentType ?? parsed.content_type
-      const previewId = parsed.previewId ?? parsed.preview_id
-      if (
-        artifactType !== 'polaris.preview' ||
-        contentType !== 'html' ||
-        typeof previewId !== 'string' ||
-        typeof parsed.html !== 'string'
-      ) {
-        continue
-      }
-
-      return {
-        type: 'artifact_preview',
-        previewId,
-        title: typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title : 'PRD Prototype',
-        contentType: 'html',
-        html: parsed.html,
-        sourcePath: optionalString(parsed.sourcePath) ?? optionalString(parsed.source_path),
-        createdAt: optionalString(parsed.createdAt) ?? optionalString(parsed.created_at),
-        version: typeof parsed.version === 'number' ? parsed.version : undefined,
-        versionLabel: optionalString(parsed.versionLabel) ?? optionalString(parsed.version_label),
-        requirementId: optionalString(parsed.requirementId) ?? optionalString(parsed.requirement_id),
-        description: optionalString(parsed.description),
-      }
+      return JSON.parse(result.trim())
     } catch {
-      continue
+      return result
     }
   }
 
-  return null
+  return result
 }
 
 /**
@@ -155,9 +142,24 @@ export function handleAIEvent(
         output,
       )
 
-      const artifact = event.success ? parseArtifactPreview(event.result) : null
-      if (artifact) {
-        state.appendArtifactPreviewBlock(artifact)
+      // 插件自定义卡片（result 模式）：按工具名查注册表，命中则追加独立卡片。
+      // 与工具调用卡并存（双卡模式）。interaction 模式由独立的 plugin_card 事件驱动。
+      if (event.success) {
+        const cardEntry = chatCardRegistry.match(event.tool)
+        if (cardEntry && cardEntry.mode === 'result') {
+          const cardBlock: PluginCardBlock = {
+            type: 'plugin_card',
+            id: callId,
+            pluginId: cardEntry.pluginId,
+            cardId: cardEntry.cardId,
+            toolName: event.tool,
+            mode: 'result',
+            status: 'ready',
+            data: parseCardData(event.result),
+            createdAt: new Date().toISOString(),
+          }
+          state.appendPluginCardBlock(cardBlock)
+        }
       }
 
       // Edit 工具：提取 diff 数据写入 block

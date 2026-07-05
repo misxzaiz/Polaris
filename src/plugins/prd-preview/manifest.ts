@@ -16,6 +16,15 @@ export const prdPreviewPluginManifest: PolarisPluginManifest = {
         argsTemplate: ['{{appConfigDir}}', '{{workspacePath}}'],
       },
     ],
+    chatCards: [
+      {
+        id: 'preview-card',
+        // 内置插件无 installPath，loader 在 builtinPlugins.ts 手动注册
+        mcpServerId: 'polaris-prd-preview',
+        tools: ['preview_html', 'read_preview'],
+        mode: 'result',
+      },
+    ],
   },
   permissions: {
     workspaceRead: true,

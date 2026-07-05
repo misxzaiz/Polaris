@@ -1,5 +1,6 @@
 export { pluginRegistry } from './registry'
 export { pluginPanelRegistry } from './panelRegistry'
+export { chatCardRegistry } from './chatCardRegistry'
 export { pluginIconMap } from './icons'
 export {
   listEnabledPluginMcpServers,
@@ -7,6 +8,12 @@ export {
   type PluginMcpServerStatus,
 } from './mcp'
 export type {
+  PluginChatCardComponent,
+  PluginChatCardContribution,
+  PluginChatCardLoader,
+  PluginChatCardMode,
+  PluginChatCardProps,
+  PluginChatCardStatus,
   PluginIconId,
   PluginId,
   PluginLeftPanelType,

@@ -119,6 +119,7 @@ export interface ConversationState {
   pendingToolGroup: PendingToolGroup | null
   permissionRequestBlockMap: Map<string, number>
   activePermissionRequestId: string | null
+  pluginCardBlockMap: Map<string, number>
   /** 会话级工具放行集合（scope=session/global 的批准项累积；--resume 续聊自动并入 allowedTools）。绑定会话生命周期，不持久化。 */
   sessionAllowedTools: string[]
   streamingUpdateCounter: number
@@ -191,6 +192,10 @@ export interface ConversationActions {
   updatePlanModeBlock: (planId: string, updates: Partial<import('../../types/chat').PlanModeBlock>) => void
   updatePlanStageStatus: (planId: string, stageId: string, status: 'pending' | 'in_progress' | 'completed' | 'failed', tasks?: import('../../types/chat').PlanTaskBlock[]) => void
   setActivePlan: (planId: string | null) => void
+
+  // ===== PluginCard =====
+  appendPluginCardBlock: (block: import('../../types/chat').PluginCardBlock) => void
+  updatePluginCardBlock: (id: string, updates: Partial<import('../../types/chat').PluginCardBlock>) => void
 
   // ===== AgentRun =====
   appendAgentRunBlock: (taskId: string, agentType: string, capabilities?: string[]) => void

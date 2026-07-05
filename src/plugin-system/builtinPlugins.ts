@@ -1,6 +1,7 @@
 import type { PolarisPluginManifest } from './types'
 import { pluginRegistry } from './registry'
 import { pluginPanelRegistry } from './panelRegistry'
+import { chatCardRegistry } from './chatCardRegistry'
 import { computerPluginManifest } from '@/plugins/computer/manifest'
 import { requirementPluginManifest } from '@/plugins/requirement/manifest'
 import { schedulerPluginManifest } from '@/plugins/scheduler/manifest'
@@ -124,6 +125,19 @@ export function registerBuiltinPlugins(): void {
   )
   pluginPanelRegistry.register('springBoot', 'polaris.core', () =>
     import('@/components/SpringBoot/SpringBootPanel').then((m) => ({ default: m.SpringBootPanel })),
+  )
+
+  // builtin 插件聊天卡片 loader 手动注册（无 installPath）
+  // PRD 预览：mcp__polaris-prd-preview__preview_html / read_preview
+  chatCardRegistry.registerBuiltin(
+    'polaris.prd-preview',
+    {
+      id: 'preview-card',
+      mcpServerId: 'polaris-prd-preview',
+      tools: ['preview_html', 'read_preview'],
+      mode: 'result',
+    },
+    () => import('@/plugins/prd-preview/PrdPreviewCard').then((m) => ({ default: m.PrdPreviewCard })),
   )
 }
 

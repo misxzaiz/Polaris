@@ -65,7 +65,7 @@ export interface PermissionRequest {
  */
 
 /** 内容块类型 - 用于 Assistant 消息的内容分段 */
-export type ContentBlock = TextBlock | ThinkingBlock | ToolCallBlock | ArtifactPreviewBlock | QuestionBlock | PlanModeBlock | AgentRunBlock | ToolGroupBlock | PermissionRequestBlock;
+export type ContentBlock = TextBlock | ThinkingBlock | ToolCallBlock | ArtifactPreviewBlock | QuestionBlock | PlanModeBlock | AgentRunBlock | ToolGroupBlock | PermissionRequestBlock | PluginCardBlock;
 
 /** 文本内容块 */
 export interface TextBlock {
@@ -130,6 +130,44 @@ export interface ArtifactPreviewBlock {
   requirementId?: string;
   /** 预览说明或本版本变更摘要（可选） */
   description?: string;
+}
+
+/** 插件自定义卡片渲染模式 */
+export type PluginCardMode = 'result' | 'interaction';
+
+/** 插件卡片状态 */
+export type PluginCardStatus = 'ready' | 'pending' | 'answered' | 'declined' | 'failed';
+
+/**
+ * 插件自定义卡片内容块 - 由插件按 mcp__{server}__{tool} 匹配后自定义渲染。
+ * 一种 block 覆盖展示型（result）与交互型（interaction）两种模式。
+ */
+export interface PluginCardBlock {
+  type: 'plugin_card';
+  /** result 模式 = callId；interaction 模式 = interactionId */
+  id: string;
+  /** 归属插件 id */
+  pluginId: string;
+  /** 贡献点 id（chatCards[].id） */
+  cardId: string;
+  /** 完整工具名 mcp__{server}__{tool}，兜底展示用 */
+  toolName: string;
+  /** 渲染模式 */
+  mode: PluginCardMode;
+  /** 渲染状态 */
+  status: PluginCardStatus;
+  /**
+   * 卡片数据。
+   * - result：MCP 工具结果最佳解析（结构化对象或原始字符串）
+   * - interaction：伴生进程发来的请求 payload
+   */
+  data: unknown;
+  /** 交互应答路由的会话 ID（interaction 模式） */
+  sessionId?: string;
+  /** interaction 已提交的应答（历史恢复回显） */
+  response?: unknown;
+  /** 创建时间（ISO 8601） */
+  createdAt: string;
 }
 
 /** 问题选项 */
@@ -610,4 +648,9 @@ export function isToolGroupBlock(block: ContentBlock): block is ToolGroupBlock {
 /** 类型守卫：判断是否为权限请求块 */
 export function isPermissionRequestBlock(block: ContentBlock): block is PermissionRequestBlock {
   return block.type === 'permission_request';
+}
+
+/** 类型守卫：判断是否为插件自定义卡片块 */
+export function isPluginCardBlock(block: ContentBlock): block is PluginCardBlock {
+  return block.type === 'plugin_card';
 }
