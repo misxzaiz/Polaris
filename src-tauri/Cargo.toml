@@ -54,6 +54,10 @@ name = "polaris-ask-mcp"
 path = "src/bin/polaris_ask_mcp.rs"
 
 [[bin]]
+name = "polaris-agnes-mcp"
+path = "src/bin/polaris_agnes_mcp.rs"
+
+[[bin]]
 name = "polaris-web"
 path = "src/bin/polaris_web.rs"
 
@@ -92,7 +96,7 @@ git2 = "0.18"
 similar = "2.4"
 bitflags = "2.4"
 walkdir = "2"
-reqwest = { version = "0.11", default-features = false, features = ["json", "stream", "rustls-tls"] }
+reqwest = { version = "0.11", default-features = false, features = ["json", "stream", "rustls-tls", "blocking"] }
 futures-util = "0.3"
 md5 = "0.7"
 zip = { version = "0.6", default-features = false, features = ["deflate"] }

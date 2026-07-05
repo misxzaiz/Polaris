@@ -7,6 +7,7 @@ import { schedulerPluginManifest } from '@/plugins/scheduler/manifest'
 import { todoPluginManifest } from '@/plugins/todo/manifest'
 import { personalHubPluginManifest } from '@/plugins/personal-hub/manifest'
 import { prdPreviewPluginManifest } from '@/plugins/prd-preview/manifest'
+import { agnesPluginManifest } from '@/plugins/agnes/manifest'
 
 const corePluginManifest: PolarisPluginManifest = {
   id: 'polaris.core',
@@ -112,10 +113,14 @@ export function registerBuiltinPlugins(): void {
   pluginRegistry.register(prdPreviewPluginManifest)
   pluginRegistry.register(computerPluginManifest)
   pluginRegistry.register(personalHubPluginManifest)
+  pluginRegistry.register(agnesPluginManifest)
 
   // builtin 插件无 installPath，registry 不会自动注册 panel，需手动注册懒加载入口
   pluginPanelRegistry.register('personalHub', 'polaris.personal-hub', () =>
     import('@/components/PersonalHub/PersonalHubPanel').then((m) => ({ default: m.PersonalHubPanel })),
+  )
+  pluginPanelRegistry.register('agnes', 'polaris.agnes', () =>
+    import('@/plugins/agnes/AgnesPanel').then((m) => ({ default: m.default })),
   )
   pluginPanelRegistry.register('springBoot', 'polaris.core', () =>
     import('@/components/SpringBoot/SpringBootPanel').then((m) => ({ default: m.SpringBootPanel })),

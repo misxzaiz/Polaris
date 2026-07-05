@@ -896,6 +896,12 @@ pub fn run() {
             // Auto-Mode 相关
             commands::auto_mode::auto_mode_config,
             commands::auto_mode::auto_mode_defaults,
+            // Agnes 多模态插件面板命令
+            commands::agnes::agnes_get_config,
+            commands::agnes::agnes_save_config,
+            commands::agnes::agnes_generate_image,
+            commands::agnes::agnes_create_video,
+            commands::agnes::agnes_query_video,
             // CLI 信息查询相关
             commands::cli_info::cli_get_agents,
             commands::cli_info::cli_get_auth_status,

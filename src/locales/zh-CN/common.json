@@ -53,6 +53,7 @@
     "developerPanel": "开发者面板",
     "integrationPanel": "机器人管理",
     "personalHubPanel": "个人空间",
+    "agnesPanel": "Agnes 多模态",
     "aiConsolePanel": "AI 执行控制台",
     "mcpPanel": "MCP 服务器",
     "showAIPanel": "显示 AI 面板",
