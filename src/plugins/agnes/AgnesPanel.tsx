@@ -1,16 +1,11 @@
 /**
  * AgnesPanel - Agnes 多模态插件主面板。
  *
- * 三个 Tab：
- *  - 生图（文生图 / 图生图）
- *  - 生视频（文生 / 图生 / 多图 / 关键帧，异步轮询）
- *  - 设置（base_url / api_key / 默认模型与尺寸）
- *
- * 直接调用 src-tauri/src/commands/agnes.rs 暴露的 Tauri command，
- * 与 MCP server 共享 <appConfigDir>/agnes/config.json。
+ * 状态由 useAgnesMediaStore（模块作用域）持有，Tab 切换/面板切换都不丢失，
+ * 视频轮询也由 store 管理、组件卸载不中断。详见 store.ts。
  */
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import {
   Image as ImageIcon,
   Video as VideoIcon,
@@ -25,19 +20,14 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import {
-  agnesCreateVideo,
-  agnesGenerateImage,
   agnesGetConfig,
-  agnesQueryVideo,
   agnesSaveConfig,
   fileToDataUrl,
   FRAME_PRESETS,
   IMAGE_SIZE_PRESETS,
-  toDataUrl,
   type AgnesConfigView,
-  type AgnesImageResult,
-  type AgnesVideoTask,
 } from './api'
+import { useAgnesMediaStore } from './store'
 import type { PluginPanelComponent } from '@/plugin-system/types'
 
 type Tab = 'image' | 'video' | 'settings'
@@ -87,7 +77,7 @@ const AgnesPanel: PluginPanelComponent = ({ pluginId, onSendToChat }) => {
       )}
 
       <div className="flex-1 overflow-hidden">
-        {tab === 'image' && <ImageTab disabled={noKey} onSendToChat={onSendToChat} defaultSize={config?.defaultSize} />}
+        {tab === 'image' && <ImageTab disabled={noKey} onSendToChat={onSendToChat} />}
         {tab === 'video' && <VideoTab disabled={noKey} onSendToChat={onSendToChat} />}
         {tab === 'settings' && <SettingsTab config={config} loading={configLoading} onSaved={refreshConfig} />}
       </div>
@@ -119,57 +109,38 @@ function TabButton({ active, onClick, icon, label }: { active: boolean; onClick:
 }
 
 // ============================================================================
-// 生图 Tab
+// 生图 Tab（状态来自 store）
 // ============================================================================
 
-interface ImageHistoryItem {
-  prompt: string
-  size: string
-  src: string // url 或 data URL
-  model: string
-}
-
-function ImageTab({ disabled, onSendToChat, defaultSize }: { disabled: boolean; onSendToChat?: (m: string) => void | Promise<void>; defaultSize?: string }) {
+function ImageTab({ disabled, onSendToChat }: { disabled: boolean; onSendToChat?: (m: string) => void | Promise<void> }) {
   const { t } = useTranslation()
-  const [prompt, setPrompt] = useState('')
-  const [size, setSize] = useState(defaultSize ?? '1024x1024')
-  const [mode, setMode] = useState<'text' | 'image'>('text')
-  const [inputImages, setInputImages] = useState<string[]>([])
-  const [responseFormat, setResponseFormat] = useState<'url' | 'b64_json'>('url')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [history, setHistory] = useState<ImageHistoryItem[]>([])
-
-  useEffect(() => {
-    if (defaultSize) setSize(defaultSize)
-  }, [defaultSize])
+  // 逐字段订阅，避免不必要重渲染
+  const prompt = useAgnesMediaStore((s) => s.image.prompt)
+  const size = useAgnesMediaStore((s) => s.image.size)
+  const mode = useAgnesMediaStore((s) => s.image.mode)
+  const inputImages = useAgnesMediaStore((s) => s.image.inputImages)
+  const responseFormat = useAgnesMediaStore((s) => s.image.responseFormat)
+  const history = useAgnesMediaStore((s) => s.image.history)
+  const loading = useAgnesMediaStore((s) => s.image.loading)
+  const error = useAgnesMediaStore((s) => s.image.error)
+  const setPrompt = useAgnesMediaStore((s) => s.setImagePrompt)
+  const setSize = useAgnesMediaStore((s) => s.setImageSize)
+  const setMode = useAgnesMediaStore((s) => s.setImageMode)
+  const addInputImages = useAgnesMediaStore((s) => s.addInputImages)
+  const removeInputImage = useAgnesMediaStore((s) => s.removeInputImage)
+  const setResponseFormat = useAgnesMediaStore((s) => s.setResponseFormat)
+  const generateImage = useAgnesMediaStore((s) => s.generateImage)
 
   const handleUpload = useCallback(async (files: FileList | null) => {
     if (!files) return
     const datas = await Promise.all(Array.from(files).slice(0, 4).map(fileToDataUrl))
-    setInputImages((prev) => [...prev, ...datas].slice(0, 4))
-  }, [])
+    addInputImages(datas)
+  }, [addInputImages])
 
-  const handleGenerate = useCallback(async () => {
+  const handleGenerate = useCallback(() => {
     if (disabled || !prompt.trim()) return
-    setLoading(true)
-    setError(null)
-    try {
-      const result: AgnesImageResult = await agnesGenerateImage({
-        prompt: prompt.trim(),
-        size,
-        images: mode === 'image' ? inputImages : undefined,
-        responseFormat,
-      })
-      const src = result.url ?? (result.base64 ? toDataUrl(result.base64, result.mimeType ?? 'image/png') : '')
-      if (!src) throw new Error('响应缺少 url 或 base64')
-      setHistory((prev) => [{ prompt: prompt.trim(), size, src, model: result.model }, ...prev].slice(0, 12))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
-    }
-  }, [disabled, prompt, size, mode, inputImages, responseFormat])
+    void generateImage()
+  }, [disabled, prompt, generateImage])
 
   return (
     <div className="flex h-full flex-col gap-3 overflow-auto p-3">
@@ -191,7 +162,7 @@ function ImageTab({ disabled, onSendToChat, defaultSize }: { disabled: boolean; 
                 <img src={src} alt="" className="h-full w-full object-cover" />
                 <button
                   type="button"
-                  onClick={() => setInputImages((prev) => prev.filter((_, idx) => idx !== i))}
+                  onClick={() => removeInputImage(i)}
                   className="absolute right-0 top-0 bg-background-elevated/80 p-0.5 text-text-secondary hover:text-text-primary"
                 >
                   <X size={10} />
@@ -253,7 +224,7 @@ function ImageTab({ disabled, onSendToChat, defaultSize }: { disabled: boolean; 
           <div className="text-[11px] font-medium text-text-secondary">{t('agnes.history', { defaultValue: '历史' })}</div>
           <div className="grid grid-cols-2 gap-2">
             {history.map((item, i) => (
-              <div key={i} className="group relative overflow-hidden rounded-md border border-border-subtle">
+              <div key={`${item.createdAt}-${i}`} className="group relative overflow-hidden rounded-md border border-border-subtle">
                 <img src={item.src} alt={item.prompt} className="aspect-square w-full object-cover" />
                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-1.5 opacity-0 transition-opacity group-hover:opacity-100">
                   <div className="line-clamp-2 text-[10px] text-white/90">{item.prompt}</div>
@@ -274,108 +245,46 @@ function ImageTab({ disabled, onSendToChat, defaultSize }: { disabled: boolean; 
 }
 
 // ============================================================================
-// 生视频 Tab
+// 生视频 Tab（状态来自 store；轮询由 store 管理）
 // ============================================================================
-
-interface VideoHistoryItem {
-  prompt: string
-  videoId: string
-  status: string
-  progress: number
-  url: string | null
-  seconds: string | null
-}
 
 function VideoTab({ disabled, onSendToChat }: { disabled: boolean; onSendToChat?: (m: string) => void | Promise<void> }) {
   const { t } = useTranslation()
-  const [prompt, setPrompt] = useState('')
-  const [presetIdx, setPresetIdx] = useState(1) // 默认约 5 秒
-  const [mode, setMode] = useState<'text' | 'image' | 'multi' | 'keyframes'>('text')
-  const [image, setImage] = useState<string | null>(null)
-  const [images, setImages] = useState<string[]>([])
-  const [negativePrompt, setNegativePrompt] = useState('')
-  const [seed, setSeed] = useState<string>('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [history, setHistory] = useState<VideoHistoryItem[]>([])
-  const pollTimers = useRef<Record<string, ReturnType<typeof setInterval>>>({})
-
-  // 卸载时清理轮询
-  useEffect(() => {
-    return () => {
-      Object.values(pollTimers.current).forEach(clearInterval)
-    }
-  }, [])
+  const prompt = useAgnesMediaStore((s) => s.video.prompt)
+  const presetIdx = useAgnesMediaStore((s) => s.video.presetIdx)
+  const mode = useAgnesMediaStore((s) => s.video.mode)
+  const image = useAgnesMediaStore((s) => s.video.image)
+  const images = useAgnesMediaStore((s) => s.video.images)
+  const negativePrompt = useAgnesMediaStore((s) => s.video.negativePrompt)
+  const seed = useAgnesMediaStore((s) => s.video.seed)
+  const history = useAgnesMediaStore((s) => s.video.history)
+  const loading = useAgnesMediaStore((s) => s.video.loading)
+  const error = useAgnesMediaStore((s) => s.video.error)
+  const setPrompt = useAgnesMediaStore((s) => s.setVideoPrompt)
+  const setPresetIdx = useAgnesMediaStore((s) => s.setPresetIdx)
+  const setMode = useAgnesMediaStore((s) => s.setVideoMode)
+  const setVideoImage = useAgnesMediaStore((s) => s.setVideoImage)
+  const addVideoImages = useAgnesMediaStore((s) => s.addVideoImages)
+  const removeVideoImage = useAgnesMediaStore((s) => s.removeVideoImage)
+  const setNegativePrompt = useAgnesMediaStore((s) => s.setNegativePrompt)
+  const setSeed = useAgnesMediaStore((s) => s.setSeed)
+  const createVideo = useAgnesMediaStore((s) => s.createVideo)
 
   const handleUploadSingle = useCallback(async (files: FileList | null) => {
     if (!files?.[0]) return
-    setImage(await fileToDataUrl(files[0]))
-  }, [])
+    setVideoImage(await fileToDataUrl(files[0]))
+  }, [setVideoImage])
 
   const handleUploadMulti = useCallback(async (files: FileList | null) => {
     if (!files) return
     const datas = await Promise.all(Array.from(files).slice(0, 4).map(fileToDataUrl))
-    setImages((prev) => [...prev, ...datas].slice(0, 4))
-  }, [])
+    addVideoImages(datas)
+  }, [addVideoImages])
 
-  const updateHistoryItem = useCallback((videoId: string, patch: Partial<VideoHistoryItem>) => {
-    setHistory((prev) => prev.map((item) => (item.videoId === videoId ? { ...item, ...patch } : item)))
-  }, [])
-
-  const startPolling = useCallback((videoId: string) => {
-    if (pollTimers.current[videoId]) return
-    const tick = async () => {
-      try {
-        const task = await agnesQueryVideo(videoId)
-        updateHistoryItem(videoId, { status: task.status, progress: task.progress, url: task.url, seconds: task.seconds })
-        if (task.status === 'completed' || task.status === 'failed') {
-          clearInterval(pollTimers.current[videoId])
-          delete pollTimers.current[videoId]
-        }
-      } catch (e) {
-        console.error('[Agnes] poll failed', e)
-      }
-    }
-    pollTimers.current[videoId] = setInterval(tick, 5000)
-    // 首次立即查一次
-    tick()
-  }, [updateHistoryItem])
-
-  const handleCreate = useCallback(async () => {
+  const handleCreate = useCallback(() => {
     if (disabled || !prompt.trim()) return
-    setLoading(true)
-    setError(null)
-    try {
-      const preset = FRAME_PRESETS[presetIdx]
-      const task: AgnesVideoTask = await agnesCreateVideo({
-        prompt: prompt.trim(),
-        numFrames: preset.frames,
-        frameRate: preset.rate,
-        image: mode === 'image' && image ? image : undefined,
-        images: (mode === 'multi' || mode === 'keyframes') ? images : undefined,
-        mode: mode === 'image' ? 'ti2vid' : mode === 'keyframes' ? 'keyframes' : undefined,
-        negativePrompt: negativePrompt.trim() || undefined,
-        seed: seed.trim() ? Number(seed) : undefined,
-      })
-      if (task.framesNormalized) {
-        setError(t('agnes.framesNormalized', { defaultValue: '帧数已自动纠正为合法值 8n+1。' }))
-      }
-      const item: VideoHistoryItem = {
-        prompt: prompt.trim(),
-        videoId: task.videoId,
-        status: task.status,
-        progress: task.progress,
-        url: null,
-        seconds: task.seconds,
-      }
-      setHistory((prev) => [item, ...prev].slice(0, 8))
-      startPolling(task.videoId)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
-    }
-  }, [disabled, prompt, presetIdx, mode, image, images, negativePrompt, seed, t, startPolling])
+    void createVideo()
+  }, [disabled, prompt, createVideo])
 
   return (
     <div className="flex h-full flex-col gap-3 overflow-auto p-3">
@@ -394,7 +303,7 @@ function VideoTab({ disabled, onSendToChat }: { disabled: boolean; onSendToChat?
           {image ? (
             <div className="relative h-20 w-32 overflow-hidden rounded border border-border-subtle">
               <img src={image} alt="" className="h-full w-full object-cover" />
-              <button type="button" onClick={() => setImage(null)} className="absolute right-0 top-0 bg-background-elevated/80 p-0.5 text-text-secondary hover:text-text-primary"><X size={10} /></button>
+              <button type="button" onClick={() => setVideoImage(null)} className="absolute right-0 top-0 bg-background-elevated/80 p-0.5 text-text-secondary hover:text-text-primary"><X size={10} /></button>
             </div>
           ) : (
             <label className="flex h-20 w-32 cursor-pointer items-center justify-center rounded border border-dashed border-border-subtle text-text-muted hover:border-accent hover:text-accent">
@@ -411,7 +320,7 @@ function VideoTab({ disabled, onSendToChat }: { disabled: boolean; onSendToChat?
             {images.map((src, i) => (
               <div key={i} className="relative h-16 w-16 overflow-hidden rounded border border-border-subtle">
                 <img src={src} alt="" className="h-full w-full object-cover" />
-                <button type="button" onClick={() => setImages((prev) => prev.filter((_, idx) => idx !== i))} className="absolute right-0 top-0 bg-background-elevated/80 p-0.5 text-text-secondary hover:text-text-primary"><X size={10} /></button>
+                <button type="button" onClick={() => removeVideoImage(i)} className="absolute right-0 top-0 bg-background-elevated/80 p-0.5 text-text-secondary hover:text-text-primary"><X size={10} /></button>
               </div>
             ))}
             <label className="flex h-16 w-16 cursor-pointer items-center justify-center rounded border border-dashed border-border-subtle text-text-muted hover:border-accent hover:text-accent">
@@ -483,7 +392,7 @@ function VideoTab({ disabled, onSendToChat }: { disabled: boolean; onSendToChat?
         {loading ? t('agnes.creating', { defaultValue: '创建中…' }) : t('agnes.createVideo', { defaultValue: '创建视频' })}
       </button>
 
-      {/* 任务列表 */}
+      {/* 任务列表（来自 store，切 Tab/面板都不丢；轮询在后台持续） */}
       {history.length > 0 && (
         <div className="space-y-2">
           <div className="text-[11px] font-medium text-text-secondary">{t('agnes.tasks', { defaultValue: '任务' })}</div>
@@ -521,7 +430,7 @@ function VideoTab({ disabled, onSendToChat }: { disabled: boolean; onSendToChat?
 }
 
 // ============================================================================
-// 设置 Tab
+// 设置 Tab（表单本地状态即可，配置落盘由后端负责）
 // ============================================================================
 
 function SettingsTab({ config, loading, onSaved }: { config: AgnesConfigView | null; loading: boolean; onSaved: () => void }) {
@@ -548,7 +457,7 @@ function SettingsTab({ config, loading, onSaved }: { config: AgnesConfigView | n
     setMsg(null)
     try {
       await agnesSaveConfig({
-        apiKey: apiKey || undefined, // 留空则不改
+        apiKey: apiKey || undefined,
         apiBase,
         imageModel,
         videoModel,
