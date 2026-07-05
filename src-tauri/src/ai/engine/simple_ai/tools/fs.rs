@@ -48,13 +48,19 @@ impl Tool for ReadFileTool {
 
     async fn execute(&self, args: &Value, ctx: &ToolContext<'_>) -> ToolOutcome {
         let path = args["path"].as_str().unwrap_or("");
-        let offset = args["offset"].as_i64().unwrap_or(1) as usize;
-        let limit = args["limit"].as_i64().map(|v| v as usize);
+        let offset = match args["offset"].as_i64() {
+            Some(v) if v > 0 => v as usize,
+            _ => 1, // 负数/0 无效，回退到 1
+        };
+        let limit = args["limit"].as_i64().map(|v| v as usize).and_then(|v| if v > 0 { Some(v) } else { None });
         read_file_op(path, ctx.work_dir, offset, limit)
     }
 }
 
 /// 读取文件并返回带行号的内容。支持 offset/limit 参数读取指定行范围。
+/// 默认不指定 offset/limit 时，最多输出 DEFAULT_MAX_OUTPUT_LINES 行，防止大文件撑爆上下文。
+const DEFAULT_MAX_OUTPUT_LINES: usize = 1000;
+
 fn read_file_op(path: &str, workdir: &str, offset: usize, limit: Option<usize>) -> ToolOutcome {
     let full_path = resolve_path(path, workdir);
     match std::fs::read_to_string(&full_path) {
@@ -65,7 +71,19 @@ fn read_file_op(path: &str, workdir: &str, offset: usize, limit: Option<usize>) 
 
             // 计算实际读取范围
             let start = if offset == 0 { 0 } else { offset.saturating_sub(1) };
-            let end = limit.map_or(total_lines, |l| (start + l).min(total_lines));
+            let raw_end = limit.map_or(total_lines, |l| (start + l).min(total_lines));
+
+            // 未指定 limit 时，应用默认行限制（避免大文件撑爆上下文）
+            let (end, limit_applied) = if limit.is_some() {
+                (raw_end, false)
+            } else {
+                let max_end = start.saturating_add(DEFAULT_MAX_OUTPUT_LINES).min(total_lines);
+                if raw_end > max_end {
+                    (max_end, true)
+                } else {
+                    (raw_end, false)
+                }
+            };
 
             if start >= total_lines {
                 return ToolOutcome::fail(format!(
@@ -91,6 +109,14 @@ fn read_file_op(path: &str, workdir: &str, offset: usize, limit: Option<usize>) 
                     end,
                     total_lines,
                     total_bytes
+                ));
+            } else if limit_applied {
+                output.push_str(&format!(
+                    "---\nShowing first {} of {} lines ({} bytes total). Use offset={} to continue reading.",
+                    end - start,
+                    total_lines,
+                    total_bytes,
+                    end + 1
                 ));
             } else if total_lines > 500 {
                 output.push_str(&format!(
@@ -259,10 +285,26 @@ impl Tool for EditFileTool {
 
     async fn execute(&self, args: &Value, ctx: &ToolContext<'_>) -> ToolOutcome {
         let path = args["path"].as_str().unwrap_or("");
-        let start_line = args["start_line"].as_i64().unwrap_or(0) as usize;
-        let end_line = args["end_line"].as_i64().unwrap_or(0) as usize;
-        let replacement_text = args["replacement_text"].as_str().unwrap_or("");
-        edit_file_op(path, start_line, end_line, replacement_text, ctx.work_dir)
+
+        // 行号参数验证：负数/0 无效
+        let start_line = match args["start_line"].as_i64() {
+            Some(v) if v > 0 => v as usize,
+            _ => return ToolOutcome::fail("edit_file: start_line must be a positive integer".to_string()),
+        };
+        let end_line = match args["end_line"].as_i64() {
+            Some(v) if v > 0 => v as usize,
+            _ => return ToolOutcome::fail("edit_file: end_line must be a positive integer".to_string()),
+        };
+
+        // replacement_text 必须显式提供；缺失时返回错误而非静默删除
+        let replacement_text = match args["replacement_text"].as_str() {
+            Some(v) => v.to_string(),
+            None => return ToolOutcome::fail(
+                "edit_file: replacement_text is required (pass empty string to delete lines)".to_string()
+            ),
+        };
+
+        edit_file_op(path, start_line, end_line, &replacement_text, ctx.work_dir)
     }
 }
 

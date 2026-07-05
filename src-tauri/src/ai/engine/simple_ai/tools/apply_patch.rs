@@ -362,9 +362,19 @@ fn apply_chunks(content: &str, chunks: &[Chunk]) -> Result<String, String> {
             }
             None => {
                 return Err(format!(
-                    "chunk {}: could not locate the lines to replace. Re-read the file with read_file to get current line numbers and content.",
-                    ci + 1
-                ))
+                    "chunk {}: could not locate the lines to replace.\n\
+                    Expected context (first 3 lines):\n{}\n\
+                    Hint: the file may have changed since you read it. Re-read with read_file to get current content.\n\
+                    Actual file content at position {} (up to 5 lines):\n{}",
+                    ci + 1,
+                    chunk.old_lines.iter().take(3).map(|l| format!("  {:?}", l)).collect::<Vec<_>>().join("\n"),
+                    start,
+                    lines.iter().enumerate()
+                        .skip(start)
+                        .take(5)
+                        .map(|(i, l)| format!("  line {}: {:?}", i + 1, l))
+                        .collect::<Vec<_>>().join("\n")
+                ));
             }
         }
     }

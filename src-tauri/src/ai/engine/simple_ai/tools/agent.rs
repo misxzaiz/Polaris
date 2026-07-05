@@ -13,7 +13,6 @@
  */
 
 use serde_json::{json, Value};
-use tokio::sync::watch;
 
 use crate::error::Result;
 use crate::models::AIEvent;
@@ -80,8 +79,8 @@ impl Tool for DispatchAgentTool {
             json!({ "role": "user", "content": task }),
         ];
 
-        // 子会话独立 abort_rx（独立 watch；TODO: 父中断时联动子会话）。
-        let (_, mut child_abort_rx) = watch::channel(false);
+        // 子会话共享父 abort_rx（父中断时联动子会话）
+        let mut child_abort_rx = ctx.abort_rx.clone();
 
         // 子会话复用父 skills（read_skill 可用）。
         let child_skills = ctx.skills.clone();

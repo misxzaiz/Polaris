@@ -61,6 +61,20 @@ fn detect_shell() -> (&'static str, Option<String>) {
                 return ("git_bash", Some(bash_path.to_string_lossy().to_string()));
             }
         }
+        // 1b. 通过 where.exe 探测 Git Bash（更通用）
+        if let Ok(output) = std::process::Command::new("where")
+            .arg("bash")
+            .output()
+        {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                if let Some(bash_path) = stdout.lines().next() {
+                    if !bash_path.is_empty() && std::path::Path::new(bash_path).exists() {
+                        return ("git_bash", Some(bash_path.to_string()));
+                    }
+                }
+            }
+        }
         // 2. 尝试 PowerShell
         let pwsh_path = std::path::Path::new("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe");
         if pwsh_path.exists() {

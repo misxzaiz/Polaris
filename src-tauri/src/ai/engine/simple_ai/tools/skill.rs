@@ -77,6 +77,7 @@ mod tests {
             profile,
             mcp_servers,
             subagent_depth: 0,
+            abort_rx: &{ watch::channel(false).1 }
         }
     }
 

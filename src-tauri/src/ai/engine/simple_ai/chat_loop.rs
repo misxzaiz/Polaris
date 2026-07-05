@@ -341,6 +341,7 @@ pub(super) async fn run_chat_loop(
                 profile,
                 mcp_servers,
                 subagent_depth: depth,
+                abort_rx,
             };
             let outcome = registry.dispatch(tool_name, &args, &ctx).await;
 

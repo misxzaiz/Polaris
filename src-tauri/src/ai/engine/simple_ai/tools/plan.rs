@@ -146,6 +146,7 @@ mod tests {
     use super::*;
     use std::sync::atomic::AtomicBool;
     use std::sync::{Arc, Mutex};
+    use tokio::sync::watch;
 
     fn collector() -> (Arc<Mutex<Vec<AIEvent>>>, Arc<dyn Fn(AIEvent) + Send + Sync>) {
         let events: Arc<Mutex<Vec<AIEvent>>> = Arc::new(Mutex::new(Vec::new()));
@@ -173,6 +174,7 @@ mod tests {
             profile: &profile,
             mcp_servers: &mcp_servers,
             subagent_depth: 0,
+            abort_rx: &{ watch::channel(false).1 }
         };
         let args = json!({
             "explanation": "kick off",
@@ -219,6 +221,7 @@ mod tests {
             profile: &profile,
             mcp_servers: &mcp_servers,
             subagent_depth: 0,
+            abort_rx: &{ watch::channel(false).1 }
         };
         let first = json!({ "plan": [{"step": "a", "status": "in_progress"}] });
         UpdatePlanTool.execute(&first, &ctx).await;
@@ -255,6 +258,7 @@ mod tests {
             profile: &profile,
             mcp_servers: &mcp_servers,
             subagent_depth: 0,
+            abort_rx: &{ watch::channel(false).1 }
         };
         let out = UpdatePlanTool.execute(&json!({ "plan": [] }), &ctx).await;
         assert!(!out.success);

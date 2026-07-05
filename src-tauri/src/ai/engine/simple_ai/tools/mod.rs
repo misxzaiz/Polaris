@@ -24,6 +24,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde_json::Value;
+use tokio::sync::watch;
 
 use crate::models::AIEvent;
 
@@ -79,6 +80,8 @@ pub(crate) struct ToolContext<'a> {
     pub mcp_servers: &'a [crate::services::mcp_config_service::ResolvedExternalMcpServer],
     /// 子代理递归深度（Phase 5：0=顶层，超 SUBAGENT_MAX_DEPTH 拒绝）
     pub subagent_depth: u32,
+    /// 父会话的中断信号接收端（Phase 6：subagent 联动用）
+    pub abort_rx: &'a watch::Receiver<bool>,
 }
 
 /// 子代理最大递归深度（Phase 5）。
@@ -158,6 +161,16 @@ impl ToolRegistry {
         self
     }
 
+    /// 按白名单过滤工具集（仅保留白名单中的工具 + MCP 工具）。
+    /// 空白名单 = 不过滤。
+    pub(super) fn with_allowed_tools(mut self, allowed: &[String]) -> Self {
+        if allowed.is_empty() {
+            return self;
+        }
+        self.tools.retain(|t| allowed.iter().any(|a| a == t.name()));
+        self
+    }
+
     /// 全部工具的 OpenAI function schema（内置 + MCP）。
     pub(super) fn specs(&self) -> Vec<Value> {
         let mut specs: Vec<Value> = self.tools.iter().map(|t| t.spec()).collect();
@@ -191,6 +204,7 @@ impl ToolRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::sync::watch;
 
     #[test]
     fn truncate_chars_is_utf8_safe_and_char_bounded() {
@@ -240,6 +254,7 @@ mod tests {
         let profile = crate::models::config::ModelProfile::default();
         let mcp_servers: Vec<crate::services::mcp_config_service::ResolvedExternalMcpServer> =
             Vec::new();
+        let (_abort_tx, abort_rx) = watch::channel(false);
         let ctx = ToolContext {
             work_dir: ".",
             session_id: "s",
@@ -250,6 +265,7 @@ mod tests {
             profile: &profile,
             mcp_servers: &mcp_servers,
             subagent_depth: 0,
+            abort_rx: &abort_rx,
         };
         let out = reg
             .dispatch("nonexistent_tool", &serde_json::json!({}), &ctx)
