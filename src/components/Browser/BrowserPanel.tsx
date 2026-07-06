@@ -14,20 +14,23 @@ import {
   RefreshCw,
   Search,
 } from 'lucide-react'
-import { Webview } from '@tauri-apps/api/webview'
-import { LogicalPosition, LogicalSize, getCurrentWindow } from '@tauri-apps/api/window'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { clsx } from 'clsx'
 import { useTranslation } from 'react-i18next'
 import {
+  browserClearData,
+  browserClose,
+  browserCreate,
   browserGetPageContext,
   browserHistory,
   browserNavigate,
-  browserRegister,
   browserReload,
+  browserSetBounds,
   browserToggleDevtools,
-  browserUnregister,
   normalizeBrowserUrl,
+  type BrowserBounds,
   type BrowserPageContext,
+  type BrowserSessionInfo,
 } from '@/services/tauri/browserService'
 import { useActiveSessionActions } from '@/stores/conversationStore/useActiveSession'
 import { useToastStore } from '@/stores/toastStore'
@@ -88,9 +91,9 @@ function formatContextForChat(context: BrowserPageContext, mode: 'learn' | 'modi
 export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: BrowserPanelProps) {
   const { t } = useTranslation('common')
   const containerRef = useRef<HTMLDivElement>(null)
-  const webviewRef = useRef<Webview | null>(null)
   const rafRef = useRef<number | null>(null)
   const mountedRef = useRef(false)
+  const readyRef = useRef(false)
   const webviewLabel = useMemo(() => makeWebviewLabel(tabId), [tabId])
   const normalizedInitialUrl = useMemo(() => normalizeBrowserUrl(initialUrl), [initialUrl])
 
@@ -104,21 +107,26 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
   const toast = useToastStore()
   const currentWorkspace = useWorkspaceStore((state) => state.getCurrentWorkspace())
 
-  const syncBounds = useCallback(async () => {
-    const webview = webviewRef.current
+  const getContainerBounds = useCallback((): BrowserBounds | null => {
     const container = containerRef.current
-    if (!webview || !container) return
+    if (!container) return null
 
     const rect = container.getBoundingClientRect()
-    if (rect.width < 1 || rect.height < 1) {
-      await webview.hide().catch(() => undefined)
-      return
+    return {
+      x: Math.round(rect.left),
+      y: Math.round(rect.top),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
     }
-
-    await webview.setPosition(new LogicalPosition(Math.round(rect.left), Math.round(rect.top)))
-    await webview.setSize(new LogicalSize(Math.round(rect.width), Math.round(rect.height)))
-    await webview.show()
   }, [])
+
+  const syncBounds = useCallback(async () => {
+    if (!readyRef.current) return
+    const bounds = getContainerBounds()
+    if (!bounds) return
+
+    await browserSetBounds(webviewLabel, bounds)
+  }, [getContainerBounds, webviewLabel])
 
   const scheduleSyncBounds = useCallback(() => {
     if (rafRef.current !== null) {
@@ -134,54 +142,41 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
 
   useEffect(() => {
     mountedRef.current = true
+    readyRef.current = false
 
     if (!isTauriRuntime()) {
       setStatus('native-unavailable')
       return () => {
         mountedRef.current = false
+        readyRef.current = false
       }
     }
 
     let resizeObserver: ResizeObserver | null = null
     let cleanup = false
+    let unlistenSession: UnlistenFn | null = null
 
     async function createNativeWebview() {
       setLoading(true)
       setError(null)
       try {
-        const existing = await Webview.getByLabel(webviewLabel)
-        if (existing) {
-          await existing.close().catch(() => undefined)
-        }
+        const bounds = getContainerBounds() ?? { x: 0, y: 0, width: 320, height: 240 }
+        await browserCreate(webviewLabel, tabId, normalizedInitialUrl, bounds, 'Browser')
 
-        const hostWindow = getCurrentWindow()
-        const rect = containerRef.current?.getBoundingClientRect()
-        const webview = new Webview(hostWindow, webviewLabel, {
-          url: normalizedInitialUrl,
-          x: Math.round(rect?.left ?? 0),
-          y: Math.round(rect?.top ?? 0),
-          width: Math.max(1, Math.round(rect?.width ?? 320)),
-          height: Math.max(1, Math.round(rect?.height ?? 240)),
-          focus: false,
-          devtools: true,
-          dragDropEnabled: false,
-          backgroundColor: '#0f0f11',
+        unlistenSession = await listen<BrowserSessionInfo>('browser://session-updated', (event) => {
+          const session = event.payload
+          if (session.label !== webviewLabel) return
+
+          if (session.url) {
+            setCurrentUrl(session.url)
+            setAddress(session.url)
+          }
         })
 
-        webviewRef.current = webview
-
-        await browserRegister(webviewLabel, tabId, normalizedInitialUrl, 'Browser')
+        readyRef.current = true
         setStatus('ready')
         setCurrentUrl(normalizedInitialUrl)
         setAddress(normalizedInitialUrl)
-
-        await webview.once('tauri://created', () => {
-          scheduleSyncBounds()
-        })
-        await webview.once('tauri://error', (event) => {
-          setStatus('error')
-          setError(String(event.payload ?? 'WebView create failed'))
-        })
 
         resizeObserver = new ResizeObserver(scheduleSyncBounds)
         if (containerRef.current) {
@@ -207,19 +202,18 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
     return () => {
       cleanup = true
       mountedRef.current = false
+      readyRef.current = false
       resizeObserver?.disconnect()
+      unlistenSession?.()
       window.removeEventListener('resize', scheduleSyncBounds)
       window.removeEventListener('scroll', scheduleSyncBounds, true)
       if (rafRef.current !== null) {
         window.cancelAnimationFrame(rafRef.current)
         rafRef.current = null
       }
-      browserUnregister(webviewLabel).catch(() => undefined)
-      const webview = webviewRef.current
-      webviewRef.current = null
-      webview?.close().catch(() => undefined)
+      browserClose(webviewLabel).catch(() => undefined)
     }
-  }, [normalizedInitialUrl, scheduleSyncBounds, tabId, webviewLabel])
+  }, [getContainerBounds, normalizedInitialUrl, scheduleSyncBounds, tabId, webviewLabel])
 
   const navigateTo = useCallback(
     async (rawUrl: string) => {
@@ -233,14 +227,13 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
           return
         }
         await browserNavigate(webviewLabel, nextUrl)
-        await browserRegister(webviewLabel, tabId, nextUrl, 'Browser')
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e))
       } finally {
         setLoading(false)
       }
     },
-    [status, tabId, webviewLabel]
+    [status, webviewLabel]
   )
 
   const handleSubmit = useCallback(
@@ -453,7 +446,7 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
         <button
           type="button"
           onClick={() => {
-            webviewRef.current?.clearAllBrowsingData().catch((e) => setError(String(e)))
+            browserClearData(webviewLabel).catch((e) => setError(String(e)))
           }}
           disabled={status !== 'ready'}
           className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary disabled:opacity-45"

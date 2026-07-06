@@ -18,6 +18,13 @@ export interface BrowserPageContext {
   links: Array<{ text: string; href: string }>
 }
 
+export interface BrowserBounds {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 export function normalizeBrowserUrl(input: string): string {
   const trimmed = input.trim()
   if (!trimmed) return 'https://www.bing.com'
@@ -44,6 +51,28 @@ export async function browserRegister(
   title?: string
 ): Promise<BrowserSessionInfo> {
   return invoke<BrowserSessionInfo>('browser_register', { label, tabId, url, title })
+}
+
+export async function browserCreate(
+  label: string,
+  tabId: string,
+  url: string,
+  bounds: BrowserBounds,
+  title = 'Browser'
+): Promise<BrowserSessionInfo> {
+  return invoke<BrowserSessionInfo>('browser_create', { label, tabId, url, bounds, title })
+}
+
+export async function browserSetBounds(label: string, bounds: BrowserBounds): Promise<void> {
+  return invoke<void>('browser_set_bounds', { label, bounds })
+}
+
+export async function browserClose(label: string): Promise<void> {
+  return invoke<void>('browser_close', { label })
+}
+
+export async function browserClearData(label: string): Promise<void> {
+  return invoke<void>('browser_clear_data', { label })
 }
 
 export async function browserUnregister(label: string): Promise<void> {

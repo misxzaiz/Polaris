@@ -8,7 +8,10 @@ use serde_json::Value;
 use crate::error::{AppError, Result};
 
 #[cfg(feature = "tauri-app")]
-use tauri::{AppHandle, Manager};
+use tauri::{
+    webview::{NewWindowResponse, WebviewBuilder},
+    AppHandle, Emitter, Manager, WebviewUrl,
+};
 
 #[cfg(feature = "tauri-app")]
 static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
@@ -26,6 +29,15 @@ pub struct BrowserSessionInfo {
     pub url: Option<String>,
     pub title: Option<String>,
     pub updated_at: u64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserBounds {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -165,19 +177,37 @@ fn upsert_session(
 }
 
 #[cfg(feature = "tauri-app")]
+fn emit_session_update(app: &AppHandle, session: &BrowserSessionInfo) {
+    let _ = app.emit("browser://session-updated", session);
+}
+
+#[cfg(feature = "tauri-app")]
+fn upsert_session_and_emit(
+    app: &AppHandle,
+    label: String,
+    tab_id: Option<String>,
+    url: Option<String>,
+    title: Option<String>,
+) -> Result<BrowserSessionInfo> {
+    let session = upsert_session(label, tab_id, url, title)?;
+    emit_session_update(app, &session);
+    Ok(session)
+}
+
+#[cfg(feature = "tauri-app")]
 pub fn browser_navigate_with_app(app: &AppHandle, label: &str, url: &str) -> Result<String> {
     let normalized = normalize_url(url)?;
     let webview = get_webview(app, label)?;
     webview.navigate(normalized.clone())?;
     let normalized = normalized.to_string();
-    let _ = upsert_session(label.to_string(), None, Some(normalized.clone()), None);
+    let _ = upsert_session_and_emit(app, label.to_string(), None, Some(normalized.clone()), None);
     Ok(normalized)
 }
 
 #[cfg(feature = "tauri-app")]
 pub fn browser_reload_with_app(app: &AppHandle, label: &str) -> Result<()> {
     get_webview(app, label)?.reload()?;
-    let _ = upsert_session(label.to_string(), None, None, None);
+    let _ = upsert_session_and_emit(app, label.to_string(), None, None, None);
     Ok(())
 }
 
@@ -193,7 +223,7 @@ pub fn browser_history_with_app(app: &AppHandle, label: &str, direction: &str) -
         }
     };
     get_webview(app, label)?.eval(script)?;
-    let _ = upsert_session(label.to_string(), None, None, None);
+    let _ = upsert_session_and_emit(app, label.to_string(), None, None, None);
     Ok(())
 }
 
@@ -272,13 +302,134 @@ pub fn browser_toggle_devtools_with_app(app: &AppHandle, label: &str) -> Result<
 
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
+pub async fn browser_create(
+    app: AppHandle,
+    label: String,
+    tab_id: Option<String>,
+    url: String,
+    title: Option<String>,
+    bounds: BrowserBounds,
+) -> Result<BrowserSessionInfo> {
+    let normalized = normalize_url(&url)?;
+
+    if let Some(existing) = app.get_webview(&label) {
+        let _ = existing.close();
+    }
+
+    let host_window = app
+        .get_window("main")
+        .ok_or_else(|| AppError::ValidationError("主窗口不存在，无法创建内置浏览器".to_string()))?;
+
+    let nav_app = app.clone();
+    let nav_label = label.clone();
+    let title_app = app.clone();
+    let title_label = label.clone();
+    let new_window_app = app.clone();
+    let new_window_label = label.clone();
+
+    let builder = WebviewBuilder::new(label.clone(), WebviewUrl::External(normalized.clone()))
+        .devtools(true)
+        .focused(false)
+        .on_navigation(move |next_url| {
+            let _ = upsert_session_and_emit(
+                &nav_app,
+                nav_label.clone(),
+                None,
+                Some(next_url.to_string()),
+                None,
+            );
+            true
+        })
+        .on_document_title_changed(move |_webview, next_title| {
+            let _ = upsert_session_and_emit(
+                &title_app,
+                title_label.clone(),
+                None,
+                None,
+                Some(next_title),
+            );
+        })
+        .on_new_window(move |next_url, _features| {
+            if let Some(webview) = new_window_app.get_webview(&new_window_label) {
+                let _ = webview.navigate(next_url.clone());
+                let _ = upsert_session_and_emit(
+                    &new_window_app,
+                    new_window_label.clone(),
+                    None,
+                    Some(next_url.to_string()),
+                    None,
+                );
+            }
+            NewWindowResponse::Deny
+        });
+
+    host_window.add_child(
+        builder,
+        tauri::LogicalPosition::new(bounds.x, bounds.y),
+        tauri::LogicalSize::new(bounds.width.max(1.0), bounds.height.max(1.0)),
+    )?;
+
+    upsert_session_and_emit(
+        &app,
+        label,
+        tab_id,
+        Some(normalized.to_string()),
+        title.or_else(|| Some("Browser".to_string())),
+    )
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_set_bounds(
+    app: AppHandle,
+    label: String,
+    bounds: BrowserBounds,
+) -> Result<()> {
+    let webview = get_webview(&app, &label)?;
+    if bounds.width < 1.0 || bounds.height < 1.0 {
+        webview.hide()?;
+        return Ok(());
+    }
+
+    webview.set_position(tauri::LogicalPosition::new(bounds.x.round(), bounds.y.round()))?;
+    webview.set_size(tauri::LogicalSize::new(
+        bounds.width.round().max(1.0),
+        bounds.height.round().max(1.0),
+    ))?;
+    webview.show()?;
+    Ok(())
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_close(app: AppHandle, label: String) -> Result<()> {
+    if let Some(webview) = app.get_webview(&label) {
+        let _ = webview.close();
+    }
+    let mut guard = sessions()
+        .lock()
+        .map_err(|e| AppError::Unknown(format!("浏览器会话表锁异常: {e}")))?;
+    guard.remove(&label);
+    Ok(())
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_clear_data(app: AppHandle, label: String) -> Result<()> {
+    get_webview(&app, &label)?.clear_all_browsing_data()?;
+    Ok(())
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
 pub async fn browser_register(
     label: String,
     tab_id: Option<String>,
     url: Option<String>,
     title: Option<String>,
 ) -> Result<BrowserSessionInfo> {
-    upsert_session(label, tab_id, url, title)
+    let session = upsert_session(label, tab_id, url, title)?;
+    Ok(session)
 }
 
 #[cfg(feature = "tauri-app")]
