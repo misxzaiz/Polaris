@@ -6,7 +6,7 @@
 
 import { ReactNode, useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { X, FileDiff, FileText, Image as ImageIcon, GitPullRequest, Rows3, Columns2 } from 'lucide-react'
+import { X, FileDiff, FileText, Image as ImageIcon, GitPullRequest, Rows3, Columns2, Globe2 } from 'lucide-react'
 import { useTabStore, Tab } from '@/stores/tabStore'
 import { useFileEditorStore } from '@/stores/fileEditorStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -16,6 +16,7 @@ import { GitPanel } from '@/components/GitPanel'
 import { EditorPanel, BreadcrumbBar } from '@/components/Editor'
 import { TabContextMenu } from './TabContextMenu'
 import { ImagePreview } from '@/components/Preview/ImagePreview'
+import { BrowserPanel } from '@/components/Browser'
 import { UnsavedDialog } from '@/components/Common/UnsavedDialog'
 import { useToastStore } from '@/stores/toastStore'
 import { getFileNameFromPath, resolveWorkspacePath } from '@/utils/path'
@@ -86,6 +87,9 @@ export function TabBar({ className = '' }: TabBarProps) {
     }
     if (tab.type === 'git') {
       return <GitPullRequest size={14} />
+    }
+    if (tab.type === 'browser') {
+      return <Globe2 size={14} />
     }
     return <FileText size={14} />
   }
@@ -460,6 +464,16 @@ export function TabContent({ className = '' }: TabContentProps) {
             onOpenFileInEditor={(filePath) => {
               openEditorTab(filePath, getFileNameFromPath(filePath))
             }}
+          />
+        </div>
+      )
+
+    case 'browser':
+      return (
+        <div className={`flex-1 flex flex-col overflow-hidden ${className}`}>
+          <BrowserPanel
+            tabId={activeTab.id}
+            initialUrl={typeof activeTab.metadata?.url === 'string' ? activeTab.metadata.url : undefined}
           />
         </div>
       )

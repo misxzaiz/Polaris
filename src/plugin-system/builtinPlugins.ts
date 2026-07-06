@@ -38,6 +38,15 @@ const corePluginManifest: PolarisPluginManifest = {
         order: 20,
       },
       {
+        id: 'browser.panel',
+        area: 'activityBar',
+        panelType: 'browser',
+        icon: 'Globe2',
+        labelKey: 'labels.browserPanel',
+        labelDefault: 'Browser',
+        order: 30,
+      },
+      {
         id: 'translate.panel',
         area: 'activityBar',
         panelType: 'translate',

@@ -11,7 +11,7 @@ import { useFileEditorStore } from './fileEditorStore'
 import { getFileNameFromPath } from '@/utils/path'
 
 /** Tab 类型 */
-export type TabType = 'editor' | 'diff' | 'preview' | 'git'
+export type TabType = 'editor' | 'diff' | 'preview' | 'git' | 'browser'
 
 /** Tab 数据结构 */
 export interface Tab {
@@ -53,6 +53,7 @@ interface TabActions {
   openPreviewTab: (filePath: string, title?: string, metadata?: Record<string, any>) => string
   openDiffTab: (diff: GitDiffEntry, options?: OpenDiffTabOptions) => string
   openGitTab: (options?: OpenGitTabOptions) => string
+  openBrowserTab: (url?: string, title?: string) => string
   closeTab: (tabId: string) => void
   switchTab: (tabId: string) => void
   closeAllTabs: () => void
@@ -182,6 +183,48 @@ export const useTabStore = create<TabStore>()(
           title: 'Git',
           closable: true,
           metadata,
+        }
+
+        set((state) => ({
+          tabs: [...state.tabs, newTab],
+          activeTabId: tabId,
+        }))
+
+        return tabId
+      },
+
+      // 打开内置浏览器 Tab
+      openBrowserTab: (url = 'https://www.bing.com', title = 'Browser') => {
+        const existingTab = get().tabs.find((tab) => tab.type === 'browser')
+
+        if (existingTab) {
+          set((state) => ({
+            tabs: state.tabs.map((tab) =>
+              tab.id === existingTab.id
+                ? {
+                    ...tab,
+                    title,
+                    metadata: {
+                      ...tab.metadata,
+                      url,
+                    },
+                  }
+                : tab
+            ),
+            activeTabId: existingTab.id,
+          }))
+          return existingTab.id
+        }
+
+        const tabId = `browser-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+        const newTab: Tab = {
+          id: tabId,
+          type: 'browser',
+          title,
+          closable: true,
+          metadata: {
+            url,
+          },
         }
 
         set((state) => ({

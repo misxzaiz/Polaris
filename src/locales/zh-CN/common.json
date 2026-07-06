@@ -42,6 +42,7 @@
     "aiChat": "AI 对话",
     "fileExplorer": "文件浏览器",
     "gitPanel": "Git 面板",
+    "browserPanel": "内置浏览器",
     "todoPanel": "待办面板",
     "sessionsPanel": "会话管理",
     "translatePanel": "翻译面板",
@@ -131,6 +132,22 @@
     "unsavedChangesMessage": "\"{{name}}\" 有未保存的更改。是否保存？",
     "save": "保存",
     "dontSave": "不保存"
+  },
+  "browser": {
+    "address": "地址",
+    "addressPlaceholder": "输入网址或搜索内容",
+    "back": "后退",
+    "forward": "前进",
+    "go": "访问",
+    "explainSelection": "讲解当前网页或选区",
+    "modifyPage": "让 AI 协助修改页面",
+    "devtools": "开发者工具",
+    "openExternal": "外部浏览器打开",
+    "clearData": "清理浏览数据",
+    "clearDataShort": "清理",
+    "nativeFailed": "内置浏览器启动失败",
+    "launcherHint": "打开学习网站、文档或本地开发页面，然后把网页上下文发送给 AI。",
+    "openTab": "打开浏览器标签"
   },
   "connection": {
     "connecting": "正在连接 Claude Code",

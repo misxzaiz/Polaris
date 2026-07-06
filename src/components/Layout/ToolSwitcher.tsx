@@ -32,7 +32,7 @@ interface ToolSwitcherProps {
   onCloseActivePanel?: () => void
 }
 
-export const PINNED_LEFT_PANEL_TYPES = new Set(['files', 'git', 'terminal', 'problems'])
+export const PINNED_LEFT_PANEL_TYPES = new Set(['files', 'git', 'browser', 'terminal', 'problems'])
 
 const TOOL_GROUP_ORDER: ToolGroupId[] = [
   'context',
@@ -57,6 +57,7 @@ const TOOL_GROUP_LABELS: Record<ToolGroupId, string> = {
 export function getToolGroup(panelType: string): ToolGroupId {
   switch (panelType) {
     case 'files':
+    case 'browser':
     case 'requirement':
     case 'personalHub':
       return 'context'

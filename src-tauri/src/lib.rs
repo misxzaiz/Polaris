@@ -538,6 +538,7 @@ pub fn run() {
             // Store AppHandle in AppState for dual emission (Web API → Tauri webview)
             let state = app.state::<AppState>();
             let _ = state.app_handle.set(app.handle().clone());
+            commands::browser::set_browser_app_handle(app.handle().clone());
 
             // 索引引擎 → 前端事件桥（IndexStatus 推送）
             {
@@ -703,6 +704,14 @@ pub fn run() {
             toggle_devtools,
             set_always_on_top,
             is_always_on_top,
+            commands::browser::browser_register,
+            commands::browser::browser_unregister,
+            commands::browser::browser_list_sessions,
+            commands::browser::browser_navigate,
+            commands::browser::browser_reload,
+            commands::browser::browser_history,
+            commands::browser::browser_get_page_context,
+            commands::browser::browser_toggle_devtools,
             // 上下文管理相关
             context_upsert,
             context_upsert_many,

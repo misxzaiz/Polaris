@@ -36,6 +36,8 @@ function getToolDescription(panelType: string): string | undefined {
       return '工作区文件、目录与引用'
     case 'git':
       return '变更、提交、分支与审查'
+    case 'browser':
+      return '学习网页、本地预览与 AI 页面上下文'
     case 'todo':
       return '工作区待办与任务拆解'
     case 'translate':

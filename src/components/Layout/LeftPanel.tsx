@@ -160,6 +160,7 @@ export function LeftPanelDrawer({ children, onClose }: LeftPanelDrawerProps) {
 export function LeftPanelContent({
   filesContent,
   gitContent,
+  browserContent,
   todoContent,
   translateContent,
   schedulerContent,
@@ -175,6 +176,7 @@ export function LeftPanelContent({
 }: {
   filesContent: ReactNode
   gitContent: ReactNode
+  browserContent?: ReactNode
   todoContent: ReactNode
   translateContent?: ReactNode
   schedulerContent?: ReactNode
@@ -196,6 +198,8 @@ export function LeftPanelContent({
     return <>{filesContent}</>
   } else if (type === 'git') {
     return <>{gitContent}</>
+  } else if (type === 'browser') {
+    return <>{browserContent}</>
   } else if (type === 'todo') {
     return <>{todoContent}</>
   } else if (type === 'translate') {

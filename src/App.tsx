@@ -18,6 +18,7 @@ import { RequirementPanel } from './components/RequirementPanel/RequirementPanel
 import { TerminalPanel } from './components/Terminal/TerminalPanel';
 import { ProblemsPanel } from './components/Problems/ProblemsPanel';
 import { DemoPluginPanel } from './components/Plugins/DemoPluginPanel';
+import { BrowserLauncherPanel } from './components/Browser';
 import { NotificationCenterPanel } from './components/Notification';
 import { VoiceCompanionOverlay } from './components/VoiceCompanion';
 
@@ -188,6 +189,7 @@ function App() {
           onOpenWorkbench={openGitWorkbench}
         />
       )}
+      browserContent={<BrowserLauncherPanel />}
       todoContent={<SimpleTodoPanel />}
       translateContent={<TranslatePanel onSendToChat={sendMessage} />}
       schedulerContent={<SchedulerPanel />}

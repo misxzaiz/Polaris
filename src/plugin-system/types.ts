@@ -18,6 +18,7 @@ export type PluginIconId =
   | 'BookOpen'
   | 'AlertCircle'
   | 'Film'
+  | 'Globe2'
   | 'Activity'
   | 'Coffee'
 

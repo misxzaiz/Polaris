@@ -68,6 +68,7 @@ mod tests {
         profile: &'a crate::models::config::ModelProfile,
         mcp_servers: &'a [crate::services::mcp_config_service::ResolvedExternalMcpServer],
     ) -> ToolContext<'a> {
+        let abort_rx = Box::leak(Box::new(watch::channel(false).1));
         ToolContext {
             work_dir: ".",
             session_id: "s",
@@ -78,7 +79,7 @@ mod tests {
             profile,
             mcp_servers,
             subagent_depth: 0,
-            abort_rx: &{ watch::channel(false).1 }
+            abort_rx,
         }
     }
 

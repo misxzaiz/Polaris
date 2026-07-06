@@ -70,7 +70,7 @@ path = "src/bin/polaris_computer_mcp.rs"
 tauri-build = { version = "2.0", features = [], optional = true }
 
 [dependencies]
-tauri = { version = "2.0", features = ["devtools"], optional = true }
+tauri = { version = "2.0", features = ["devtools", "unstable"], optional = true }
 tauri-plugin-opener = { version = "2", optional = true }
 tauri-plugin-dialog = { version = "2.7", optional = true }
 serde = { version = "1", features = ["derive"] }

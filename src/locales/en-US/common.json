@@ -42,6 +42,7 @@
     "aiChat": "AI Chat",
     "fileExplorer": "File Explorer",
     "gitPanel": "Git Panel",
+    "browserPanel": "Browser",
     "todoPanel": "Todo Panel",
     "sessionsPanel": "Sessions",
     "translatePanel": "Translate Panel",
@@ -130,6 +131,22 @@
     "unsavedChangesMessage": "\"{{name}}\" has unsaved changes. Do you want to save?",
     "save": "Save",
     "dontSave": "Don't Save"
+  },
+  "browser": {
+    "address": "Address",
+    "addressPlaceholder": "Enter a URL or search",
+    "back": "Back",
+    "forward": "Forward",
+    "go": "Go",
+    "explainSelection": "Explain current page or selection",
+    "modifyPage": "Ask AI to help modify this page",
+    "devtools": "DevTools",
+    "openExternal": "Open externally",
+    "clearData": "Clear browsing data",
+    "clearDataShort": "Clear",
+    "nativeFailed": "Built-in browser failed to start",
+    "launcherHint": "Open learning sites, docs, or local development pages, then send page context to AI.",
+    "openTab": "Open Browser Tab"
   },
   "connection": {
     "connecting": "Connecting to Claude Code",
