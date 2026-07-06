@@ -11,10 +11,15 @@ import {
   ExternalLink,
   Globe2,
   Hammer,
+  ListTree,
   Loader2,
+  MousePointer2,
+  PanelBottom,
   RefreshCw,
   Search,
   Sparkles,
+  Terminal,
+  X,
 } from 'lucide-react'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { clsx } from 'clsx'
@@ -26,11 +31,13 @@ import {
   browserHistory,
   browserNavigate,
   browserReload,
+  browserSetAiOverlay,
   browserSetBounds,
   browserToggleDevtools,
   makeBrowserWebviewLabel,
   normalizeBrowserUrl,
   type BrowserBounds,
+  type BrowserOperationEvent,
   type BrowserPageContext,
   type BrowserSessionInfo,
 } from '@/services/tauri/browserService'
@@ -53,8 +60,19 @@ const QUICK_STARTS = [
   { key: 'tauri', url: 'https://tauri.app', label: 'Tauri' },
 ]
 
+const MAX_OPERATION_EVENTS = 8
+
 function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+}
+
+function isLocalDevUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1'
+  } catch {
+    return false
+  }
 }
 
 function formatContextForChat(context: BrowserPageContext, mode: 'learn' | 'modify'): string {
@@ -110,11 +128,19 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState<'idle' | 'ready' | 'native-unavailable' | 'error'>('idle')
   const [error, setError] = useState<string | null>(null)
+  const [aiPanelOpen, setAiPanelOpen] = useState(false)
+  const [aiOperationMode, setAiOperationMode] = useState(false)
+  const [highlightCount, setHighlightCount] = useState<number | null>(null)
+  const [contextPreview, setContextPreview] = useState<BrowserPageContext | null>(null)
+  const [contextLoading, setContextLoading] = useState(false)
+  const [operationEvents, setOperationEvents] = useState<BrowserOperationEvent[]>([])
 
   const { sendMessage } = useActiveSessionActions()
   const toast = useToastStore()
   const currentWorkspace = useWorkspaceStore((state) => state.getCurrentWorkspace())
   const updateBrowserTab = useTabStore((state) => state.updateBrowserTab)
+  const isLocalDev = useMemo(() => isLocalDevUrl(currentUrl), [currentUrl])
+  const latestOperation = operationEvents[0]
 
   const getContainerBounds = useCallback((): BrowserBounds | null => {
     const container = containerRef.current
@@ -164,6 +190,7 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
     let resizeObserver: ResizeObserver | null = null
     let cleanup = false
     let unlistenSession: UnlistenFn | null = null
+    let unlistenOperation: UnlistenFn | null = null
 
     async function createNativeWebview() {
       setLoading(true)
@@ -187,6 +214,12 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
             setPageTitle(session.title)
             updateBrowserTab(tabId, { title: session.title })
           }
+        })
+        unlistenOperation = await listen<BrowserOperationEvent>('browser://operation', (event) => {
+          const operation = event.payload
+          if (operation.label !== webviewLabel) return
+
+          setOperationEvents((items) => [operation, ...items].slice(0, MAX_OPERATION_EVENTS))
         })
 
         readyRef.current = true
@@ -225,15 +258,47 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
       readyRef.current = false
       resizeObserver?.disconnect()
       unlistenSession?.()
+      unlistenOperation?.()
       window.removeEventListener('resize', scheduleSyncBounds)
       window.removeEventListener('scroll', scheduleSyncBounds, true)
       if (rafRef.current !== null) {
         window.cancelAnimationFrame(rafRef.current)
         rafRef.current = null
       }
+      browserSetAiOverlay(webviewLabel, false).catch(() => undefined)
       browserSetBounds(webviewLabel, { x: 0, y: 0, width: 0, height: 0 }).catch(() => undefined)
     }
   }, [getContainerBounds, normalizedInitialUrl, scheduleSyncBounds, tabId, updateBrowserTab, webviewLabel])
+
+  useEffect(() => {
+    if (!isTauriRuntime() || status !== 'ready') {
+      return
+    }
+
+    let cancelled = false
+    const timeout = window.setTimeout(
+      () => {
+        browserSetAiOverlay(webviewLabel, aiOperationMode)
+          .then((result) => {
+            if (cancelled) return
+            setHighlightCount(result.enabled ? result.count : null)
+          })
+          .catch((e) => {
+            if (cancelled) return
+            setHighlightCount(null)
+            if (aiOperationMode) {
+              setError(e instanceof Error ? e.message : String(e))
+            }
+          })
+      },
+      aiOperationMode ? 350 : 0
+    )
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeout)
+    }
+  }, [aiOperationMode, currentUrl, status, webviewLabel])
 
   const navigateTo = useCallback(
     async (rawUrl: string) => {
@@ -301,6 +366,33 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
     [currentUrl, currentWorkspace, sendMessage, status, t, toast, webviewLabel]
   )
 
+  const refreshContextPreview = useCallback(async () => {
+    setContextLoading(true)
+    setError(null)
+    try {
+      const context = status === 'native-unavailable'
+        ? {
+            title: pageTitle || 'Browser',
+            url: currentUrl,
+            selectedText: '',
+            metaDescription: '',
+            text: '',
+            headings: [],
+            links: [],
+          }
+        : await browserGetPageContext(webviewLabel)
+
+      setContextPreview(context)
+      setAiPanelOpen(true)
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      setError(message)
+      toast.error(message)
+    } finally {
+      setContextLoading(false)
+    }
+  }, [currentUrl, pageTitle, status, toast, webviewLabel])
+
   const openExternal = useCallback(async () => {
     try {
       const { openUrl } = await import('@tauri-apps/plugin-opener')
@@ -332,6 +424,15 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
       return currentUrl
     }
   }, [currentUrl])
+  const contextExcerpt = useMemo(() => {
+    const selected = contextPreview?.selectedText.trim()
+    const text = selected || contextPreview?.metaDescription || contextPreview?.text || ''
+    return text.trim().slice(0, 520)
+  }, [contextPreview])
+  const contextHeadings = useMemo(
+    () => contextPreview?.headings.filter((heading) => heading.text).slice(0, 5) ?? [],
+    [contextPreview]
+  )
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background-base">
@@ -411,6 +512,33 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
           >
             <Hammer size={15} />
             <span className="hidden xl:inline">{t('browser.devMode', { defaultValue: '修改' })}</span>
+          </button>
+          <button
+            type="button"
+            className={taskButtonClass}
+            onClick={refreshContextPreview}
+            disabled={contextLoading}
+            title={t('browser.previewContext', { defaultValue: '预览发送给 AI 的网页上下文' })}
+          >
+            {contextLoading ? <Loader2 size={15} className="animate-spin" /> : <ListTree size={15} />}
+            <span className="hidden 2xl:inline">
+              {t('browser.contextPreview', { defaultValue: '上下文' })}
+            </span>
+          </button>
+          <button
+            type="button"
+            className={clsx(
+              taskButtonClass,
+              aiOperationMode && 'border-primary/60 bg-primary/10 text-primary hover:text-primary'
+            )}
+            onClick={() => setAiOperationMode((enabled) => !enabled)}
+            disabled={status !== 'ready'}
+            title={t('browser.operationModeHint', { defaultValue: '显示 AI 可点击/可填写元素编号' })}
+          >
+            <MousePointer2 size={15} />
+            <span className="hidden 2xl:inline">
+              {t('browser.operationMode', { defaultValue: 'AI 操作' })}
+            </span>
           </button>
           <button
             type="button"
@@ -494,6 +622,126 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
         )}
       </div>
 
+      {aiPanelOpen && (
+        <div className="shrink-0 border-t border-border-subtle bg-background-elevated px-3 py-2">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2 text-xs font-medium text-text-secondary">
+              <PanelBottom size={14} className="text-primary" />
+              <span className="truncate">
+                {t('browser.aiPanel', { defaultValue: '网页上下文与 AI 操作' })}
+              </span>
+              {isLocalDev && (
+                <span className="inline-flex shrink-0 items-center gap-1 rounded border border-success/30 bg-success/10 px-1.5 py-0.5 text-[11px] text-success">
+                  <Terminal size={11} />
+                  {t('browser.localDev', { defaultValue: '本地开发页' })}
+                </span>
+              )}
+              {aiOperationMode && highlightCount !== null && (
+                <span className="shrink-0 rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary">
+                  {t('browser.highlightCount', {
+                    count: highlightCount,
+                    defaultValue: '已标记 {{count}} 个元素',
+                  })}
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setAiPanelOpen(false)}
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-text-tertiary hover:bg-background-hover hover:text-text-primary"
+              title={t('buttons.close')}
+            >
+              <X size={13} />
+            </button>
+          </div>
+
+          <div className="grid max-h-40 min-h-0 grid-cols-[minmax(0,1fr)_minmax(220px,320px)] gap-3 overflow-hidden max-lg:grid-cols-1">
+            <div className="min-w-0 overflow-hidden rounded-md border border-border-subtle bg-background-surface p-2">
+              <div className="mb-1 flex min-w-0 items-center justify-between gap-2">
+                <div className="min-w-0 truncate text-xs font-medium text-text-primary">
+                  {contextPreview?.title || pageTitle || t('browser.contextPreview', { defaultValue: '上下文' })}
+                </div>
+                {contextPreview?.selectedText.trim() && (
+                  <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary">
+                    {t('browser.hasSelection', { defaultValue: '已选区' })}
+                  </span>
+                )}
+              </div>
+              <div className="mb-1 truncate text-[11px] text-text-tertiary">
+                {contextPreview?.url || currentUrl}
+              </div>
+              <div className="line-clamp-2 text-xs leading-5 text-text-secondary">
+                {contextExcerpt || t('browser.noContextPreview', { defaultValue: '还没有读取网页上下文。' })}
+              </div>
+              {contextHeadings.length > 0 && (
+                <div className="mt-1 flex min-w-0 flex-wrap gap-1 overflow-hidden">
+                  {contextHeadings.map((heading, index) => (
+                    <span
+                      key={`${heading.level}-${heading.text}-${index}`}
+                      className="max-w-[180px] truncate rounded border border-border-subtle px-1.5 py-0.5 text-[11px] text-text-tertiary"
+                      title={heading.text}
+                    >
+                      H{heading.level} {heading.text}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="min-w-0 overflow-hidden rounded-md border border-border-subtle bg-background-surface p-2">
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <div className="text-xs font-medium text-text-primary">
+                  {t('browser.operationLog', { defaultValue: 'AI 操作日志' })}
+                </div>
+                <span className="text-[11px] text-text-tertiary">{operationEvents.length}</span>
+              </div>
+              <div className="flex max-h-24 flex-col gap-1 overflow-hidden">
+                {operationEvents.length === 0 ? (
+                  <div className="text-xs text-text-tertiary">
+                    {t('browser.noOperationLog', { defaultValue: '暂无 AI 浏览器操作。' })}
+                  </div>
+                ) : (
+                  operationEvents.slice(0, 4).map((operation) => (
+                    <div key={`${operation.timestamp}-${operation.action}`} className="flex min-w-0 items-center gap-2 text-xs">
+                      <span
+                        className={clsx(
+                          'h-1.5 w-1.5 shrink-0 rounded-full',
+                          operation.status === 'success'
+                            ? 'bg-success'
+                            : operation.status === 'warning'
+                              ? 'bg-warning'
+                              : 'bg-danger'
+                        )}
+                      />
+                      <span className="shrink-0 text-text-tertiary">{operation.action}</span>
+                      <span className="min-w-0 truncate text-text-secondary">
+                        {operation.target ? `${operation.message}: ${operation.target}` : operation.message}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!aiPanelOpen && latestOperation && (
+        <button
+          type="button"
+          onClick={() => setAiPanelOpen(true)}
+          className="flex h-8 shrink-0 items-center gap-2 border-t border-border-subtle bg-background-elevated px-3 text-left text-xs text-text-secondary hover:bg-background-hover"
+        >
+          <Sparkles size={13} className="shrink-0 text-primary" />
+          <span className="shrink-0 font-medium text-text-primary">
+            {t('browser.operationLog', { defaultValue: 'AI 操作日志' })}
+          </span>
+          <span className="min-w-0 truncate">
+            {latestOperation.target ? `${latestOperation.message}: ${latestOperation.target}` : latestOperation.message}
+          </span>
+        </button>
+      )}
+
       <div className="flex h-7 shrink-0 items-center justify-between border-t border-border-subtle bg-background-elevated px-3 text-[11px] text-text-tertiary">
         <div className="flex min-w-0 items-center gap-2">
           <span
@@ -504,8 +752,25 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
           />
           <span className="shrink-0 truncate font-medium text-text-secondary">{hostText}</span>
           <span className="min-w-0 truncate">{pageTitle || currentUrl}</span>
+          {isLocalDev && (
+            <span className="hidden shrink-0 items-center gap-1 rounded bg-success/10 px-1.5 py-0.5 text-success md:inline-flex">
+              <Terminal size={11} />
+              {t('browser.localDev', { defaultValue: '本地开发页' })}
+            </span>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          {aiOperationMode && (
+            <span className="hidden items-center gap-1 text-primary lg:inline-flex">
+              <MousePointer2 size={12} />
+              {highlightCount === null
+                ? t('browser.operationMode', { defaultValue: 'AI 操作' })
+                : t('browser.highlightCount', {
+                    count: highlightCount,
+                    defaultValue: '已标记 {{count}} 个元素',
+                  })}
+            </span>
+          )}
           <span className="hidden items-center gap-1 text-text-tertiary lg:inline-flex">
             <Sparkles size={12} />
             {t('browser.aiReady', { defaultValue: 'AI 可读取并操作当前页' })}

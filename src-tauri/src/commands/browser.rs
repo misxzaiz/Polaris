@@ -80,6 +80,26 @@ pub struct BrowserInteractionResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct BrowserOperationEvent {
+    pub label: String,
+    pub source: String,
+    pub action: String,
+    pub status: String,
+    pub message: String,
+    pub target: Option<String>,
+    pub url: Option<String>,
+    pub timestamp: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserOverlayResult {
+    pub enabled: bool,
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BrowserPageContext {
     pub title: String,
     pub url: String,
@@ -234,6 +254,29 @@ fn upsert_session_and_emit(
     let session = upsert_session(label, tab_id, url, title)?;
     emit_session_update(app, &session);
     Ok(session)
+}
+
+#[cfg(feature = "tauri-app")]
+pub fn emit_browser_operation_with_app(
+    app: &AppHandle,
+    label: &str,
+    action: &str,
+    status: &str,
+    message: String,
+    target: Option<String>,
+    url: Option<String>,
+) {
+    let event = BrowserOperationEvent {
+        label: label.to_string(),
+        source: "ai".to_string(),
+        action: action.to_string(),
+        status: status.to_string(),
+        message,
+        target,
+        url,
+        timestamp: now_ms(),
+    };
+    let _ = app.emit("browser://operation", event);
 }
 
 #[cfg(feature = "tauri-app")]
@@ -400,6 +443,23 @@ pub async fn browser_fill_with_app(
 }
 
 #[cfg(feature = "tauri-app")]
+pub async fn browser_set_ai_overlay_with_app(
+    app: &AppHandle,
+    label: &str,
+    enabled: bool,
+) -> Result<BrowserOverlayResult> {
+    let script = format!(
+        "(() => {{ const overlayEnabled = {}; {} }})()",
+        if enabled { "true" } else { "false" },
+        AI_OVERLAY_SCRIPT_BODY
+    );
+    let raw = browser_eval_with_app(app, label, &script, Some(3_500)).await?;
+    let value = parse_eval_json(&raw)?;
+    serde_json::from_value(value)
+        .map_err(|e| AppError::ValidationError(format!("浏览器高亮结果格式错误: {e}")))
+}
+
+#[cfg(feature = "tauri-app")]
 pub fn browser_toggle_devtools_with_app(app: &AppHandle, label: &str) -> Result<()> {
     let webview = get_webview(app, label)?;
     if webview.is_devtools_open() {
@@ -525,6 +585,16 @@ pub async fn browser_set_bounds(
 ) -> Result<()> {
     let webview = get_webview(&app, &label)?;
     apply_webview_bounds(&webview, bounds)
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_set_ai_overlay(
+    app: AppHandle,
+    label: String,
+    enabled: bool,
+) -> Result<BrowserOverlayResult> {
+    browser_set_ai_overlay_with_app(&app, &label, enabled).await
 }
 
 #[cfg(feature = "tauri-app")]
@@ -826,4 +896,128 @@ if (target.isContentEditable) {
 target.dispatchEvent(new Event('input', { bubbles: true }));
 target.dispatchEvent(new Event('change', { bubbles: true }));
 return JSON.stringify({ ok: true, action: 'fill', index, text: targetLabel, url: String(location.href), message: '已填写目标元素' });
+"#;
+
+#[cfg(feature = "tauri-app")]
+const AI_OVERLAY_SCRIPT_BODY: &str = r#"
+const existingCleanup = window.__POLARIS_AI_OVERLAY_CLEANUP__;
+if (typeof existingCleanup === 'function') {
+  existingCleanup();
+}
+
+if (!overlayEnabled) {
+  return JSON.stringify({ enabled: false, count: 0 });
+}
+
+const clean = (value, max = 80) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
+const selector = ['a[href]', 'button', 'input', 'textarea', 'select', '[role="button"]', '[role="link"]', '[contenteditable="true"]', '[tabindex]:not([tabindex="-1"])'].join(',');
+const root = document.createElement('div');
+root.id = '__polaris_ai_overlay__';
+root.style.position = 'fixed';
+root.style.inset = '0';
+root.style.pointerEvents = 'none';
+root.style.zIndex = '2147483646';
+root.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+document.documentElement.appendChild(root);
+
+const isVisible = (element) => {
+  const style = window.getComputedStyle(element);
+  const rect = element.getBoundingClientRect();
+  return rect.width > 0
+    && rect.height > 0
+    && rect.bottom >= 0
+    && rect.right >= 0
+    && rect.top <= window.innerHeight
+    && rect.left <= window.innerWidth
+    && style.visibility !== 'hidden'
+    && style.display !== 'none'
+    && element.getAttribute('aria-hidden') !== 'true';
+};
+const labelOf = (element) => clean(
+  element.innerText
+    || element.value
+    || element.getAttribute('aria-label')
+    || element.getAttribute('title')
+    || element.getAttribute('placeholder')
+    || element.href
+    || ''
+);
+const isFillable = (element) => {
+  const tag = element.tagName.toLowerCase();
+  const role = element.getAttribute('role');
+  const type = (element.getAttribute('type') || '').toLowerCase();
+  const nonTextInputTypes = ['button', 'submit', 'reset', 'checkbox', 'radio', 'file', 'image', 'hidden'];
+  return element.isContentEditable
+    || tag === 'textarea'
+    || tag === 'select'
+    || role === 'textbox'
+    || (tag === 'input' && !nonTextInputTypes.includes(type));
+};
+const render = () => {
+  const elements = Array.from(document.querySelectorAll(selector))
+    .filter(isVisible)
+    .filter((element) => labelOf(element) || ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName))
+    .slice(0, 80);
+  const nodes = elements.map((element, index) => {
+    const rect = element.getBoundingClientRect();
+    const box = document.createElement('div');
+    const fillable = isFillable(element);
+    box.style.position = 'fixed';
+    box.style.left = `${Math.max(rect.left, 0)}px`;
+    box.style.top = `${Math.max(rect.top, 0)}px`;
+    box.style.width = `${Math.max(rect.width, 8)}px`;
+    box.style.height = `${Math.max(rect.height, 8)}px`;
+    box.style.border = fillable ? '2px solid rgba(34, 197, 94, 0.95)' : '2px solid rgba(59, 130, 246, 0.95)';
+    box.style.background = fillable ? 'rgba(34, 197, 94, 0.10)' : 'rgba(59, 130, 246, 0.10)';
+    box.style.borderRadius = '6px';
+    box.style.boxSizing = 'border-box';
+    box.style.boxShadow = '0 0 0 1px rgba(15, 23, 42, 0.35)';
+    const badge = document.createElement('div');
+    badge.textContent = String(index);
+    badge.title = labelOf(element);
+    badge.style.position = 'absolute';
+    badge.style.left = '-1px';
+    badge.style.top = '-18px';
+    badge.style.minWidth = '18px';
+    badge.style.height = '18px';
+    badge.style.padding = '0 5px';
+    badge.style.borderRadius = '5px';
+    badge.style.background = fillable ? 'rgb(22, 163, 74)' : 'rgb(37, 99, 235)';
+    badge.style.color = 'white';
+    badge.style.fontSize = '11px';
+    badge.style.fontWeight = '650';
+    badge.style.lineHeight = '18px';
+    badge.style.textAlign = 'center';
+    box.appendChild(badge);
+    return box;
+  });
+  root.replaceChildren(...nodes);
+  return elements.length;
+};
+
+let animationFrame = 0;
+const scheduleRender = () => {
+  if (animationFrame) {
+    window.cancelAnimationFrame(animationFrame);
+  }
+  animationFrame = window.requestAnimationFrame(() => {
+    animationFrame = 0;
+    render();
+  });
+};
+const cleanup = () => {
+  if (animationFrame) {
+    window.cancelAnimationFrame(animationFrame);
+  }
+  window.removeEventListener('scroll', scheduleRender, true);
+  window.removeEventListener('resize', scheduleRender);
+  root.remove();
+  delete window.__POLARIS_AI_OVERLAY_CLEANUP__;
+};
+window.__POLARIS_AI_OVERLAY_CLEANUP__ = cleanup;
+window.addEventListener('scroll', scheduleRender, true);
+window.addEventListener('resize', scheduleRender);
+
+const count = render();
+return JSON.stringify({ enabled: true, count });
 "#;

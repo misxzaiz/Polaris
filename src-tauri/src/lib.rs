@@ -706,6 +706,7 @@ pub fn run() {
             is_always_on_top,
             commands::browser::browser_create,
             commands::browser::browser_set_bounds,
+            commands::browser::browser_set_ai_overlay,
             commands::browser::browser_close,
             commands::browser::browser_clear_data,
             commands::browser::browser_register,

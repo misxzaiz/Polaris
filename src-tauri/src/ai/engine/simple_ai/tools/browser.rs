@@ -10,7 +10,7 @@ use crate::commands::browser::{
     browser_app_handle, browser_click_with_app, browser_fill_with_app,
     browser_get_interactive_elements_with_app, browser_get_page_context_with_app,
     browser_history_with_app, browser_list_registered_sessions, browser_navigate_with_app,
-    browser_reload_with_app, resolve_browser_label,
+    browser_reload_with_app, emit_browser_operation_with_app, resolve_browser_label,
 };
 
 use super::{truncate_chars, Tool, ToolContext, ToolOutcome};
@@ -96,16 +96,47 @@ async fn run(args: &Value) -> crate::Result<String> {
                 crate::error::AppError::ValidationError("navigate 缺少 url".to_string())
             })?;
             let normalized = browser_navigate_with_app(&app, &label, url)?;
+            emit_browser_operation_with_app(
+                &app,
+                &label,
+                "navigate",
+                "success",
+                format!("AI 导航到 {normalized}"),
+                None,
+                Some(normalized.clone()),
+            );
             Ok(format!("已导航内置浏览器 {label} 到 {normalized}"))
         }
         "context" => {
             let context = browser_get_page_context_with_app(&app, &label).await?;
+            emit_browser_operation_with_app(
+                &app,
+                &label,
+                "context",
+                "success",
+                if context.title.trim().is_empty() {
+                    "AI 读取页面上下文".to_string()
+                } else {
+                    format!("AI 读取页面上下文：{}", truncate_chars(&context.title, 80))
+                },
+                None,
+                Some(context.url.clone()),
+            );
             let json = serde_json::to_string_pretty(&context)
                 .unwrap_or_else(|_| "无法序列化浏览器上下文".to_string());
             Ok(truncate_chars(&json, BROWSER_OUTPUT_CAP))
         }
         "inspect" => {
             let elements = browser_get_interactive_elements_with_app(&app, &label).await?;
+            emit_browser_operation_with_app(
+                &app,
+                &label,
+                "inspect",
+                "success",
+                format!("AI 检查到 {} 个可操作元素", elements.len()),
+                None,
+                None,
+            );
             if elements.is_empty() {
                 return Ok("当前页面没有发现可操作元素。".to_string());
             }
@@ -117,6 +148,15 @@ async fn run(args: &Value) -> crate::Result<String> {
             let index = parse_index(args)?;
             let text = args.get("text").and_then(Value::as_str);
             let result = browser_click_with_app(&app, &label, index, text).await?;
+            emit_browser_operation_with_app(
+                &app,
+                &label,
+                "click",
+                if result.ok { "success" } else { "warning" },
+                result.message.clone(),
+                target_text(&result.text),
+                Some(result.url.clone()),
+            );
             let json = serde_json::to_string_pretty(&result)
                 .unwrap_or_else(|_| "无法序列化浏览器点击结果".to_string());
             Ok(json)
@@ -128,25 +168,70 @@ async fn run(args: &Value) -> crate::Result<String> {
                 crate::error::AppError::ValidationError("fill 缺少 value".to_string())
             })?;
             let result = browser_fill_with_app(&app, &label, index, text, value).await?;
+            emit_browser_operation_with_app(
+                &app,
+                &label,
+                "fill",
+                if result.ok { "success" } else { "warning" },
+                result.message.clone(),
+                target_text(&result.text),
+                Some(result.url.clone()),
+            );
             let json = serde_json::to_string_pretty(&result)
                 .unwrap_or_else(|_| "无法序列化浏览器输入结果".to_string());
             Ok(json)
         }
         "reload" => {
             browser_reload_with_app(&app, &label)?;
+            emit_browser_operation_with_app(
+                &app,
+                &label,
+                "reload",
+                "success",
+                "AI 刷新了当前页面".to_string(),
+                None,
+                None,
+            );
             Ok(format!("已刷新内置浏览器 {label}"))
         }
         "back" => {
             browser_history_with_app(&app, &label, "back")?;
+            emit_browser_operation_with_app(
+                &app,
+                &label,
+                "back",
+                "success",
+                "AI 后退到上一页".to_string(),
+                None,
+                None,
+            );
             Ok(format!("已让内置浏览器 {label} 后退"))
         }
         "forward" => {
             browser_history_with_app(&app, &label, "forward")?;
+            emit_browser_operation_with_app(
+                &app,
+                &label,
+                "forward",
+                "success",
+                "AI 前进到下一页".to_string(),
+                None,
+                None,
+            );
             Ok(format!("已让内置浏览器 {label} 前进"))
         }
         other => Err(crate::error::AppError::ValidationError(format!(
             "未知 browser action: {other}"
         ))),
+    }
+}
+
+fn target_text(text: &str) -> Option<String> {
+    let text = text.trim();
+    if text.is_empty() {
+        None
+    } else {
+        Some(truncate_chars(text, 120))
     }
 }
 

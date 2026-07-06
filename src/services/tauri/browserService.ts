@@ -18,6 +18,22 @@ export interface BrowserPageContext {
   links: Array<{ text: string; href: string }>
 }
 
+export interface BrowserOperationEvent {
+  label: string
+  source: string
+  action: string
+  status: 'success' | 'warning' | 'error' | string
+  message: string
+  target?: string | null
+  url?: string | null
+  timestamp: number
+}
+
+export interface BrowserOverlayResult {
+  enabled: boolean
+  count: number
+}
+
 export interface BrowserBounds {
   x: number
   y: number
@@ -69,6 +85,10 @@ export async function browserCreate(
 
 export async function browserSetBounds(label: string, bounds: BrowserBounds): Promise<void> {
   return invoke<void>('browser_set_bounds', { label, bounds })
+}
+
+export async function browserSetAiOverlay(label: string, enabled: boolean): Promise<BrowserOverlayResult> {
+  return invoke<BrowserOverlayResult>('browser_set_ai_overlay', { label, enabled })
 }
 
 export async function browserClose(label: string): Promise<void> {
