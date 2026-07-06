@@ -9,6 +9,7 @@ import { persist } from 'zustand/middleware'
 import type { GitDiffEntry } from '@/types/git'
 import { useFileEditorStore } from './fileEditorStore'
 import { getFileNameFromPath } from '@/utils/path'
+import { browserClose, makeBrowserWebviewLabel } from '@/services/tauri/browserService'
 
 /** Tab 类型 */
 export type TabType = 'editor' | 'diff' | 'preview' | 'git' | 'browser'
@@ -63,6 +64,7 @@ interface TabActions {
 
   // Dirty 状态管理
   setTabDirty: (tabId: string, isDirty: boolean) => void
+  updateBrowserTab: (tabId: string, updates: { url?: string; title?: string }) => void
   getDirtyTabs: () => Tab[]
   hasDirtyTabs: () => boolean
 
@@ -72,6 +74,14 @@ interface TabActions {
 }
 
 export type TabStore = TabState & TabActions
+
+function closeBrowserResources(tabs: Tab[]) {
+  tabs
+    .filter((tab) => tab.type === 'browser')
+    .forEach((tab) => {
+      browserClose(makeBrowserWebviewLabel(tab.id)).catch(() => undefined)
+    })
+}
 
 export const useTabStore = create<TabStore>()(
   persist(
@@ -287,6 +297,9 @@ export const useTabStore = create<TabStore>()(
           if (closedTab?.filePath) {
             useFileEditorStore.getState().removeBuffer(closedTab.filePath)
           }
+          if (closedTab?.type === 'browser') {
+            closeBrowserResources([closedTab])
+          }
 
           return {
             tabs: newTabs,
@@ -302,6 +315,7 @@ export const useTabStore = create<TabStore>()(
 
       // 关闭所有 Tab
       closeAllTabs: () => {
+        closeBrowserResources(get().tabs)
         set({
           tabs: [],
           activeTabId: null,
@@ -310,6 +324,7 @@ export const useTabStore = create<TabStore>()(
 
       // 关闭其他 Tab
       closeOtherTabs: (tabId: string) => {
+        closeBrowserResources(get().tabs.filter((tab) => tab.id !== tabId))
         set((state) => ({
           tabs: state.tabs.filter((tab) => tab.id === tabId),
           activeTabId: tabId,
@@ -331,6 +346,7 @@ export const useTabStore = create<TabStore>()(
               useFileEditorStore.getState().removeBuffer(tab.filePath)
             }
           })
+          closeBrowserResources(removed)
 
           // 如果当前激活 Tab 被关闭了，切换到最后一个保留的 Tab
           const isActiveRemoved = !kept.some((t) => t.id === state.activeTabId)
@@ -354,6 +370,7 @@ export const useTabStore = create<TabStore>()(
               useFileEditorStore.getState().removeBuffer(tab.filePath)
             }
           })
+          closeBrowserResources(removed)
 
           // 如果当前激活 Tab 被关闭了，切换到最后一个保留的 Tab
           const isActiveRemoved = !kept.some((t) => t.id === state.activeTabId)
@@ -382,6 +399,27 @@ export const useTabStore = create<TabStore>()(
           tabs: state.tabs.map((tab) =>
             tab.id === tabId ? { ...tab, isDirty } : tab
           ),
+        }))
+      },
+
+      updateBrowserTab: (tabId: string, updates: { url?: string; title?: string }) => {
+        set((state) => ({
+          tabs: state.tabs.map((tab) => {
+            if (tab.id !== tabId || tab.type !== 'browser') {
+              return tab
+            }
+
+            const nextTitle = updates.title?.trim()
+            return {
+              ...tab,
+              title: nextTitle || tab.title,
+              metadata: {
+                ...tab.metadata,
+                ...(updates.url ? { url: updates.url } : {}),
+                ...(nextTitle ? { pageTitle: nextTitle } : {}),
+              },
+            }
+          }),
         }))
       },
 

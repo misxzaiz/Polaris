@@ -6,20 +6,21 @@ import {
   BookOpen,
   Bug,
   Code2,
+  Copy,
   Eraser,
   ExternalLink,
   Globe2,
+  Hammer,
   Loader2,
-  MessageSquare,
   RefreshCw,
   Search,
+  Sparkles,
 } from 'lucide-react'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { clsx } from 'clsx'
 import { useTranslation } from 'react-i18next'
 import {
   browserClearData,
-  browserClose,
   browserCreate,
   browserGetPageContext,
   browserHistory,
@@ -27,6 +28,7 @@ import {
   browserReload,
   browserSetBounds,
   browserToggleDevtools,
+  makeBrowserWebviewLabel,
   normalizeBrowserUrl,
   type BrowserBounds,
   type BrowserPageContext,
@@ -43,12 +45,16 @@ interface BrowserPanelProps {
   initialUrl?: string
 }
 
+const QUICK_STARTS = [
+  { key: 'search', url: 'https://www.bing.com', label: 'Bing' },
+  { key: 'local5173', url: 'localhost:5173', label: 'localhost:5173' },
+  { key: 'local3000', url: 'localhost:3000', label: 'localhost:3000' },
+  { key: 'mdn', url: 'https://developer.mozilla.org', label: 'MDN' },
+  { key: 'tauri', url: 'https://tauri.app', label: 'Tauri' },
+]
+
 function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
-}
-
-function makeWebviewLabel(tabId: string): string {
-  return `browser-${tabId.replace(/[^a-zA-Z0-9_:/-]/g, '-')}`
 }
 
 function formatContextForChat(context: BrowserPageContext, mode: 'learn' | 'modify'): string {
@@ -94,11 +100,13 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
   const rafRef = useRef<number | null>(null)
   const mountedRef = useRef(false)
   const readyRef = useRef(false)
-  const webviewLabel = useMemo(() => makeWebviewLabel(tabId), [tabId])
+  const addressFocusedRef = useRef(false)
+  const webviewLabel = useMemo(() => makeBrowserWebviewLabel(tabId), [tabId])
   const normalizedInitialUrl = useMemo(() => normalizeBrowserUrl(initialUrl), [initialUrl])
 
   const [address, setAddress] = useState(normalizedInitialUrl)
   const [currentUrl, setCurrentUrl] = useState(normalizedInitialUrl)
+  const [pageTitle, setPageTitle] = useState('Browser')
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState<'idle' | 'ready' | 'native-unavailable' | 'error'>('idle')
   const [error, setError] = useState<string | null>(null)
@@ -106,6 +114,7 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
   const { sendMessage } = useActiveSessionActions()
   const toast = useToastStore()
   const currentWorkspace = useWorkspaceStore((state) => state.getCurrentWorkspace())
+  const updateBrowserTab = useTabStore((state) => state.updateBrowserTab)
 
   const getContainerBounds = useCallback((): BrowserBounds | null => {
     const container = containerRef.current
@@ -161,7 +170,7 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
       setError(null)
       try {
         const bounds = getContainerBounds() ?? { x: 0, y: 0, width: 320, height: 240 }
-        await browserCreate(webviewLabel, tabId, normalizedInitialUrl, bounds, 'Browser')
+        const session = await browserCreate(webviewLabel, tabId, normalizedInitialUrl, bounds, 'Browser')
 
         unlistenSession = await listen<BrowserSessionInfo>('browser://session-updated', (event) => {
           const session = event.payload
@@ -169,14 +178,25 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
 
           if (session.url) {
             setCurrentUrl(session.url)
-            setAddress(session.url)
+            if (!addressFocusedRef.current) {
+              setAddress(session.url)
+            }
+            updateBrowserTab(tabId, { url: session.url })
+          }
+          if (session.title) {
+            setPageTitle(session.title)
+            updateBrowserTab(tabId, { title: session.title })
           }
         })
 
         readyRef.current = true
         setStatus('ready')
-        setCurrentUrl(normalizedInitialUrl)
-        setAddress(normalizedInitialUrl)
+        const nextUrl = session.url || normalizedInitialUrl
+        const nextTitle = session.title || 'Browser'
+        setCurrentUrl(nextUrl)
+        setAddress(nextUrl)
+        setPageTitle(nextTitle)
+        updateBrowserTab(tabId, { url: nextUrl, title: nextTitle })
 
         resizeObserver = new ResizeObserver(scheduleSyncBounds)
         if (containerRef.current) {
@@ -211,9 +231,9 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
         window.cancelAnimationFrame(rafRef.current)
         rafRef.current = null
       }
-      browserClose(webviewLabel).catch(() => undefined)
+      browserSetBounds(webviewLabel, { x: 0, y: 0, width: 0, height: 0 }).catch(() => undefined)
     }
-  }, [getContainerBounds, normalizedInitialUrl, scheduleSyncBounds, tabId, webviewLabel])
+  }, [getContainerBounds, normalizedInitialUrl, scheduleSyncBounds, tabId, updateBrowserTab, webviewLabel])
 
   const navigateTo = useCallback(
     async (rawUrl: string) => {
@@ -222,6 +242,8 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
       setError(null)
       setAddress(nextUrl)
       setCurrentUrl(nextUrl)
+      setPageTitle('Browser')
+      updateBrowserTab(tabId, { url: nextUrl, title: 'Browser' })
       try {
         if (status === 'native-unavailable') {
           return
@@ -233,12 +255,13 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
         setLoading(false)
       }
     },
-    [status, webviewLabel]
+    [status, tabId, updateBrowserTab, webviewLabel]
   )
 
   const handleSubmit = useCallback(
     (event: FormEvent) => {
       event.preventDefault()
+      addressFocusedRef.current = false
       navigateTo(address)
     },
     [address, navigateTo]
@@ -287,8 +310,28 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
     }
   }, [currentUrl])
 
+  const copyUrl = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(currentUrl)
+      toast.success(t('buttons.copied'))
+    } catch (e) {
+      const message = e instanceof Error ? e.message : t('browser.copyFailed', { defaultValue: '复制地址失败' })
+      setError(message)
+      toast.error(message)
+    }
+  }, [currentUrl, t, toast])
+
   const toolbarButtonClass =
     'flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-background-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-45'
+  const taskButtonClass =
+    'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border-subtle bg-background-surface px-2.5 text-xs font-medium text-text-secondary transition-colors hover:bg-background-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-45'
+  const hostText = useMemo(() => {
+    try {
+      return new URL(currentUrl).host || currentUrl
+    } catch {
+      return currentUrl
+    }
+  }, [currentUrl])
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background-base">
@@ -329,6 +372,12 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
             <input
               value={address}
               onChange={(event) => setAddress(event.target.value)}
+              onFocus={() => {
+                addressFocusedRef.current = true
+              }}
+              onBlur={() => {
+                addressFocusedRef.current = false
+              }}
               className="min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-tertiary"
               placeholder={t('browser.addressPlaceholder', { defaultValue: '输入网址或搜索内容' })}
             />
@@ -345,19 +394,23 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
         <div className="flex items-center gap-1">
           <button
             type="button"
-            className={toolbarButtonClass}
+            className={taskButtonClass}
             onClick={() => handleContextToChat('learn')}
+            disabled={loading}
             title={t('browser.explainSelection', { defaultValue: '讲解当前网页或选区' })}
           >
             <BookOpen size={15} />
+            <span className="hidden xl:inline">{t('browser.learnMode', { defaultValue: '讲解' })}</span>
           </button>
           <button
             type="button"
-            className={toolbarButtonClass}
+            className={taskButtonClass}
             onClick={() => handleContextToChat('modify')}
+            disabled={loading}
             title={t('browser.modifyPage', { defaultValue: '让 AI 协助修改页面' })}
           >
-            <MessageSquare size={15} />
+            <Hammer size={15} />
+            <span className="hidden xl:inline">{t('browser.devMode', { defaultValue: '修改' })}</span>
           </button>
           <button
             type="button"
@@ -367,6 +420,14 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
             title={t('browser.devtools', { defaultValue: '开发者工具' })}
           >
             <Bug size={15} />
+          </button>
+          <button
+            type="button"
+            className={toolbarButtonClass}
+            onClick={copyUrl}
+            title={t('browser.copyUrl', { defaultValue: '复制当前地址' })}
+          >
+            <Copy size={15} />
           </button>
           <button
             type="button"
@@ -441,20 +502,27 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
               status === 'ready' ? 'bg-success' : status === 'error' ? 'bg-danger' : 'bg-warning'
             )}
           />
-          <span className="truncate">{currentUrl}</span>
+          <span className="shrink-0 truncate font-medium text-text-secondary">{hostText}</span>
+          <span className="min-w-0 truncate">{pageTitle || currentUrl}</span>
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            browserClearData(webviewLabel).catch((e) => setError(String(e)))
-          }}
-          disabled={status !== 'ready'}
-          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary disabled:opacity-45"
-          title={t('browser.clearData', { defaultValue: '清理浏览数据' })}
-        >
-          <Eraser size={12} />
-          <span>{t('browser.clearDataShort', { defaultValue: '清理' })}</span>
-        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          <span className="hidden items-center gap-1 text-text-tertiary lg:inline-flex">
+            <Sparkles size={12} />
+            {t('browser.aiReady', { defaultValue: 'AI 可读取并操作当前页' })}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              browserClearData(webviewLabel).catch((e) => setError(String(e)))
+            }}
+            disabled={status !== 'ready'}
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary disabled:opacity-45"
+            title={t('browser.clearData', { defaultValue: '清理浏览数据' })}
+          >
+            <Eraser size={12} />
+            <span>{t('browser.clearDataShort', { defaultValue: '清理' })}</span>
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -472,6 +540,12 @@ export function BrowserLauncherPanel() {
     closeLeftPanel()
   }, [closeLeftPanel, openBrowserTab, url])
 
+  const openUrl = useCallback((nextUrl: string) => {
+    const normalized = normalizeBrowserUrl(nextUrl)
+    openBrowserTab(normalized, 'Browser')
+    closeLeftPanel()
+  }, [closeLeftPanel, openBrowserTab])
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-background-elevated">
       <div className="flex items-center gap-2 border-b border-border px-4 py-3">
@@ -486,6 +560,20 @@ export function BrowserLauncherPanel() {
           {t('browser.launcherHint', {
             defaultValue: '打开学习网站、文档或本地开发页面，然后把网页上下文发送给 AI。',
           })}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {QUICK_STARTS.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => openUrl(item.url)}
+              className="flex h-8 min-w-0 items-center gap-2 rounded-md border border-border-subtle bg-background-surface px-2 text-left text-xs text-text-secondary transition-colors hover:bg-background-hover hover:text-text-primary"
+              title={item.url}
+            >
+              <Globe2 size={13} className="shrink-0 text-text-tertiary" />
+              <span className="min-w-0 truncate">{item.label}</span>
+            </button>
+          ))}
         </div>
         <div className="flex flex-col gap-2">
           <label className="text-xs font-medium text-text-secondary">

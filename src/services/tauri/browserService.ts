@@ -25,6 +25,10 @@ export interface BrowserBounds {
   height: number
 }
 
+export function makeBrowserWebviewLabel(tabId: string): string {
+  return `browser-${tabId.replace(/[^a-zA-Z0-9_:/-]/g, '-')}`
+}
+
 export function normalizeBrowserUrl(input: string): string {
   const trimmed = input.trim()
   if (!trimmed) return 'https://www.bing.com'

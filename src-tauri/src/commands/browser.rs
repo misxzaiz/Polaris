@@ -56,6 +56,30 @@ pub struct BrowserLink {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct BrowserInteractiveElement {
+    pub index: usize,
+    pub kind: String,
+    pub text: String,
+    pub value: String,
+    pub placeholder: String,
+    pub href: String,
+    pub disabled: bool,
+    pub fillable: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserInteractionResult {
+    pub ok: bool,
+    pub action: String,
+    pub index: Option<usize>,
+    pub text: String,
+    pub url: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BrowserPageContext {
     pub title: String,
     pub url: String,
@@ -104,8 +128,7 @@ fn normalize_url(input: &str) -> Result<url::Url> {
         format!("https://{}", trimmed)
     };
 
-    url::Url::parse(&candidate)
-        .map_err(|e| AppError::ValidationError(format!("URL 无效: {e}")))
+    url::Url::parse(&candidate).map_err(|e| AppError::ValidationError(format!("URL 无效: {e}")))
 }
 
 pub fn resolve_browser_label(label: Option<&str>) -> Result<String> {
@@ -174,6 +197,25 @@ fn upsert_session(
     };
     guard.insert(label, session.clone());
     Ok(session)
+}
+
+#[cfg(feature = "tauri-app")]
+fn apply_webview_bounds(webview: &tauri::Webview, bounds: BrowserBounds) -> Result<()> {
+    if bounds.width < 1.0 || bounds.height < 1.0 {
+        webview.hide()?;
+        return Ok(());
+    }
+
+    webview.set_position(tauri::LogicalPosition::new(
+        bounds.x.round(),
+        bounds.y.round(),
+    ))?;
+    webview.set_size(tauri::LogicalSize::new(
+        bounds.width.round().max(1.0),
+        bounds.height.round().max(1.0),
+    ))?;
+    webview.show()?;
+    Ok(())
 }
 
 #[cfg(feature = "tauri-app")]
@@ -280,13 +322,81 @@ pub async fn browser_get_page_context_with_app(
     let value = parse_eval_json(&raw)?;
     let context: BrowserPageContext = serde_json::from_value(value)
         .map_err(|e| AppError::ValidationError(format!("浏览器上下文格式错误: {e}")))?;
-    let _ = upsert_session(
+    let _ = upsert_session_and_emit(
+        app,
         label.to_string(),
         None,
         Some(context.url.clone()),
         Some(context.title.clone()),
     );
     Ok(context)
+}
+
+#[cfg(feature = "tauri-app")]
+pub async fn browser_get_interactive_elements_with_app(
+    app: &AppHandle,
+    label: &str,
+) -> Result<Vec<BrowserInteractiveElement>> {
+    let raw = browser_eval_with_app(app, label, INTERACTIVE_ELEMENTS_SCRIPT, Some(3_500)).await?;
+    let value = parse_eval_json(&raw)?;
+    serde_json::from_value(value)
+        .map_err(|e| AppError::ValidationError(format!("浏览器可操作元素格式错误: {e}")))
+}
+
+#[cfg(feature = "tauri-app")]
+pub async fn browser_click_with_app(
+    app: &AppHandle,
+    label: &str,
+    index: Option<usize>,
+    text: Option<&str>,
+) -> Result<BrowserInteractionResult> {
+    if index.is_none() && text.map(str::trim).unwrap_or_default().is_empty() {
+        return Err(AppError::ValidationError(
+            "click 需要 index 或 text".to_string(),
+        ));
+    }
+
+    let script = format!(
+        "(() => {{ const requestedIndex = {}; const requestedText = {}; {} }})()",
+        index
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "null".to_string()),
+        serde_json::to_string(&text.unwrap_or_default()).unwrap_or_else(|_| "\"\"".to_string()),
+        CLICK_ELEMENT_SCRIPT_BODY
+    );
+    let raw = browser_eval_with_app(app, label, &script, Some(3_500)).await?;
+    let value = parse_eval_json(&raw)?;
+    serde_json::from_value(value)
+        .map_err(|e| AppError::ValidationError(format!("浏览器点击结果格式错误: {e}")))
+}
+
+#[cfg(feature = "tauri-app")]
+pub async fn browser_fill_with_app(
+    app: &AppHandle,
+    label: &str,
+    index: Option<usize>,
+    text: Option<&str>,
+    value: &str,
+) -> Result<BrowserInteractionResult> {
+    if index.is_none() && text.map(str::trim).unwrap_or_default().is_empty() {
+        return Err(AppError::ValidationError(
+            "fill 需要 index 或 text".to_string(),
+        ));
+    }
+
+    let script = format!(
+        "(() => {{ const requestedIndex = {}; const requestedText = {}; const fillValue = {}; {} }})()",
+        index
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "null".to_string()),
+        serde_json::to_string(&text.unwrap_or_default()).unwrap_or_else(|_| "\"\"".to_string()),
+        serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string()),
+        FILL_ELEMENT_SCRIPT_BODY
+    );
+    let raw = browser_eval_with_app(app, label, &script, Some(3_500)).await?;
+    let value = parse_eval_json(&raw)?;
+    serde_json::from_value(value)
+        .map_err(|e| AppError::ValidationError(format!("浏览器输入结果格式错误: {e}")))
 }
 
 #[cfg(feature = "tauri-app")]
@@ -313,7 +423,35 @@ pub async fn browser_create(
     let normalized = normalize_url(&url)?;
 
     if let Some(existing) = app.get_webview(&label) {
-        let _ = existing.close();
+        let normalized_string = normalized.to_string();
+        let current_url = existing
+            .url()
+            .ok()
+            .map(|url| url.to_string())
+            .unwrap_or_else(|| normalized_string.clone());
+
+        let is_same_url = current_url == normalized_string;
+
+        if !is_same_url {
+            existing.navigate(normalized.clone())?;
+        }
+
+        apply_webview_bounds(&existing, bounds)?;
+        return upsert_session_and_emit(
+            &app,
+            label,
+            tab_id,
+            Some(if is_same_url {
+                current_url
+            } else {
+                normalized_string
+            }),
+            if is_same_url {
+                None
+            } else {
+                title.or_else(|| Some("Browser".to_string()))
+            },
+        );
     }
 
     let host_window = app
@@ -386,18 +524,7 @@ pub async fn browser_set_bounds(
     bounds: BrowserBounds,
 ) -> Result<()> {
     let webview = get_webview(&app, &label)?;
-    if bounds.width < 1.0 || bounds.height < 1.0 {
-        webview.hide()?;
-        return Ok(());
-    }
-
-    webview.set_position(tauri::LogicalPosition::new(bounds.x.round(), bounds.y.round()))?;
-    webview.set_size(tauri::LogicalSize::new(
-        bounds.width.round().max(1.0),
-        bounds.height.round().max(1.0),
-    ))?;
-    webview.show()?;
-    Ok(())
+    apply_webview_bounds(&webview, bounds)
 }
 
 #[cfg(feature = "tauri-app")]
@@ -468,10 +595,7 @@ pub async fn browser_history(app: AppHandle, label: String, direction: String) -
 
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn browser_get_page_context(
-    app: AppHandle,
-    label: String,
-) -> Result<BrowserPageContext> {
+pub async fn browser_get_page_context(app: AppHandle, label: String) -> Result<BrowserPageContext> {
     browser_get_page_context_with_app(&app, &label).await
 }
 
@@ -519,4 +643,187 @@ const PAGE_CONTEXT_SCRIPT: &str = r#"
     links
   });
 })()
+"#;
+
+#[cfg(feature = "tauri-app")]
+const INTERACTIVE_ELEMENTS_SCRIPT: &str = r#"
+(() => {
+  const clean = (value, max = 220) => String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max);
+  const selector = [
+    'a[href]',
+    'button',
+    'input',
+    'textarea',
+    'select',
+    '[role="button"]',
+    '[role="link"]',
+    '[contenteditable="true"]',
+    '[tabindex]:not([tabindex="-1"])'
+  ].join(',');
+  const isVisible = (element) => {
+    const style = window.getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0
+      && rect.height > 0
+      && style.visibility !== 'hidden'
+      && style.display !== 'none'
+      && element.getAttribute('aria-hidden') !== 'true';
+  };
+  const kindOf = (element) => {
+    const tag = element.tagName.toLowerCase();
+    const role = element.getAttribute('role');
+    const type = element.getAttribute('type');
+    if (tag === 'a') return 'link';
+    if (tag === 'input') return type ? `input:${type}` : 'input';
+    if (tag === 'textarea') return 'textarea';
+    if (tag === 'select') return 'select';
+    if (tag === 'button') return 'button';
+    if (role) return role;
+    if (element.isContentEditable) return 'editable';
+    return tag;
+  };
+  const labelOf = (element) => clean(
+    element.innerText
+      || element.value
+      || element.getAttribute('aria-label')
+      || element.getAttribute('title')
+      || element.getAttribute('placeholder')
+      || element.href
+      || ''
+  );
+  const isFillable = (element) => {
+    const tag = element.tagName.toLowerCase();
+    const role = element.getAttribute('role');
+    const type = (element.getAttribute('type') || '').toLowerCase();
+    const nonTextInputTypes = ['button', 'submit', 'reset', 'checkbox', 'radio', 'file', 'image', 'hidden'];
+    return element.isContentEditable
+      || tag === 'textarea'
+      || tag === 'select'
+      || role === 'textbox'
+      || (tag === 'input' && !nonTextInputTypes.includes(type));
+  };
+  const isDisabled = (element) => Boolean(
+    element.disabled
+      || element.readOnly
+      || element.getAttribute('aria-disabled') === 'true'
+  );
+  const elements = Array.from(document.querySelectorAll(selector))
+    .filter((element) => isVisible(element))
+    .filter((element) => labelOf(element) || ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName))
+    .slice(0, 80)
+    .map((element, index) => ({
+      index,
+      kind: kindOf(element),
+      text: labelOf(element),
+      value: clean(element.value || ''),
+      placeholder: clean(element.getAttribute('placeholder') || ''),
+      href: clean(element.href || '', 500),
+      disabled: isDisabled(element),
+      fillable: isFillable(element) && !isDisabled(element)
+    }));
+  return JSON.stringify(elements);
+})()
+"#;
+
+#[cfg(feature = "tauri-app")]
+const CLICK_ELEMENT_SCRIPT_BODY: &str = r#"
+const clean = (value, max = 220) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
+const selector = ['a[href]', 'button', 'input', 'textarea', 'select', '[role="button"]', '[role="link"]', '[contenteditable="true"]', '[tabindex]:not([tabindex="-1"])'].join(',');
+const isVisible = (element) => {
+  const style = window.getComputedStyle(element);
+  const rect = element.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none' && element.getAttribute('aria-hidden') !== 'true';
+};
+const labelOf = (element) => clean(element.innerText || element.value || element.getAttribute('aria-label') || element.getAttribute('title') || element.getAttribute('placeholder') || element.href || '');
+const elements = Array.from(document.querySelectorAll(selector)).filter(isVisible).filter((element) => labelOf(element) || ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName)).slice(0, 80);
+const query = clean(requestedText).toLowerCase();
+let index = Number.isInteger(requestedIndex) ? requestedIndex : -1;
+let target = index >= 0 ? elements[index] : null;
+if (!target && query) {
+  index = elements.findIndex((element) => labelOf(element).toLowerCase().includes(query));
+  target = index >= 0 ? elements[index] : null;
+}
+if (!target) {
+  return JSON.stringify({ ok: false, action: 'click', index: null, text: requestedText || '', url: String(location.href), message: '未找到可点击元素' });
+}
+if (target.disabled || target.getAttribute('aria-disabled') === 'true') {
+  return JSON.stringify({ ok: false, action: 'click', index, text: labelOf(target), url: String(location.href), message: '目标元素已禁用' });
+}
+target.scrollIntoView({ block: 'center', inline: 'center' });
+if (target.tagName === 'A') {
+  target.setAttribute('target', '_self');
+}
+target.focus({ preventScroll: true });
+target.click();
+return JSON.stringify({ ok: true, action: 'click', index, text: labelOf(target), url: String(location.href), message: '已点击目标元素' });
+"#;
+
+#[cfg(feature = "tauri-app")]
+const FILL_ELEMENT_SCRIPT_BODY: &str = r#"
+const clean = (value, max = 220) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
+const selector = ['a[href]', 'button', 'input', 'textarea', 'select', '[role="button"]', '[role="link"]', '[contenteditable="true"]', '[tabindex]:not([tabindex="-1"])'].join(',');
+const isVisible = (element) => {
+  const style = window.getComputedStyle(element);
+  const rect = element.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none' && element.getAttribute('aria-hidden') !== 'true';
+};
+const labelOf = (element) => clean(element.innerText || element.value || element.getAttribute('aria-label') || element.getAttribute('title') || element.getAttribute('placeholder') || element.href || '');
+const isFillable = (element) => {
+  const tag = element.tagName.toLowerCase();
+  const role = element.getAttribute('role');
+  const type = (element.getAttribute('type') || '').toLowerCase();
+  const nonTextInputTypes = ['button', 'submit', 'reset', 'checkbox', 'radio', 'file', 'image', 'hidden'];
+  return element.isContentEditable
+    || tag === 'textarea'
+    || tag === 'select'
+    || role === 'textbox'
+    || (tag === 'input' && !nonTextInputTypes.includes(type));
+};
+const setNativeValue = (element, value) => {
+  const prototype = element instanceof HTMLTextAreaElement
+    ? HTMLTextAreaElement.prototype
+    : element instanceof HTMLSelectElement
+      ? HTMLSelectElement.prototype
+      : HTMLInputElement.prototype;
+  const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value');
+  if (descriptor && descriptor.set) {
+    descriptor.set.call(element, value);
+  } else {
+    element.value = value;
+  }
+};
+const elements = Array.from(document.querySelectorAll(selector)).filter(isVisible).filter((element) => labelOf(element) || ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName)).slice(0, 80);
+const query = clean(requestedText).toLowerCase();
+let index = Number.isInteger(requestedIndex) ? requestedIndex : -1;
+let target = index >= 0 ? elements[index] : null;
+if (!target && query) {
+  index = elements.findIndex((element) => labelOf(element).toLowerCase().includes(query));
+  target = index >= 0 ? elements[index] : null;
+}
+if (!target) {
+  return JSON.stringify({ ok: false, action: 'fill', index: null, text: requestedText || '', url: String(location.href), message: '未找到可输入元素' });
+}
+const targetLabel = labelOf(target);
+if (!isFillable(target)) {
+  return JSON.stringify({ ok: false, action: 'fill', index, text: targetLabel, url: String(location.href), message: '目标元素不可输入' });
+}
+if (target.disabled || target.readOnly || target.getAttribute('aria-disabled') === 'true') {
+  return JSON.stringify({ ok: false, action: 'fill', index, text: targetLabel, url: String(location.href), message: '目标元素不可输入' });
+}
+target.scrollIntoView({ block: 'center', inline: 'center' });
+target.focus({ preventScroll: true });
+if (target.isContentEditable) {
+  target.textContent = fillValue;
+} else if (target.tagName === 'SELECT') {
+  const option = Array.from(target.options).find((item) => item.value === fillValue || clean(item.textContent).includes(fillValue));
+  setNativeValue(target, option ? option.value : fillValue);
+} else {
+  setNativeValue(target, fillValue);
+}
+target.dispatchEvent(new Event('input', { bubbles: true }));
+target.dispatchEvent(new Event('change', { bubbles: true }));
+return JSON.stringify({ ok: true, action: 'fill', index, text: targetLabel, url: String(location.href), message: '已填写目标元素' });
 "#;
