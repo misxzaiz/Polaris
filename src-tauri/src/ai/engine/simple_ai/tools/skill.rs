@@ -59,6 +59,7 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
+    use tokio::sync::watch;
 
     fn make_ctx<'a>(
         skills: &'a HashMap<String, SkillEntry>,

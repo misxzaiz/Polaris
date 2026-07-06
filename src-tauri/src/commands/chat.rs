@@ -1913,6 +1913,15 @@ pub async fn get_claude_code_session_history(
 
 use crate::state::{PendingQuestion, QuestionAnswer, QuestionOption, QuestionStatus};
 
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginCardResponse {
+    #[serde(default)]
+    pub result: serde_json::Value,
+    #[serde(default)]
+    pub declined: bool,
+}
+
 /// 注册待回答问题
 ///
 /// 当收到 ask_user_question 工具调用时调用此函数
@@ -2031,6 +2040,79 @@ pub async fn answer_question(
     broadcast_chat_event(&state.event_broadcast, &routed_event);
 
     tracing::info!("[answer_question] 答案已提交，事件已发送");
+
+    Ok(())
+}
+
+/// 回答插件交互卡片。
+///
+/// 取出 ask_listener 注册的 oneshot::Sender，将结果回填给插件 MCP server，
+/// 再广播 `plugin_card_answered` 让前端卡片切换到已处理状态。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn respond_plugin_card(
+    session_id: String,
+    interaction_id: String,
+    response: PluginCardResponse,
+    window: Window,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<()> {
+    tracing::info!(
+        "[respond_plugin_card] 回答插件卡片: session={}, interaction={}, declined={}",
+        session_id,
+        interaction_id,
+        response.declined,
+    );
+
+    {
+        let mut pending = state
+            .pending_plugin_cards
+            .lock()
+            .map_err(|e| AppError::Unknown(e.to_string()))?;
+        if let Some(card) = pending.get(&interaction_id) {
+            if card.session_id != session_id {
+                return Err(AppError::ValidationError(format!(
+                    "session_id mismatch: expected {}, got {}",
+                    card.session_id, session_id
+                )));
+            }
+        }
+        pending.remove(&interaction_id);
+    }
+
+    let result = response.result.clone();
+    let outcome = if response.declined {
+        crate::services::ask_listener::PluginCardOutcome::declined()
+    } else {
+        crate::services::ask_listener::PluginCardOutcome::answer(result.clone())
+    };
+    if let Some(entry) = state.take_plugin_card_answer_sender(&interaction_id) {
+        if entry.sender.send(outcome).is_err() {
+            tracing::warn!(
+                "[respond_plugin_card] oneshot 接收端已关闭: {}",
+                interaction_id
+            );
+        }
+    } else {
+        tracing::debug!(
+            "[respond_plugin_card] 无 plugin card sender，按事件广播处理: {}",
+            interaction_id
+        );
+    }
+
+    let event = serde_json::json!({
+        "type": "plugin_card_answered",
+        "sessionId": session_id,
+        "interactionId": interaction_id,
+        "declined": response.declined,
+        "result": result,
+    });
+    let routed_event = wrap_session_routed_event(&session_id, event);
+
+    window
+        .emit("chat-event", &routed_event)
+        .map_err(|e| AppError::ProcessError(format!("发送事件失败: {}", e)))?;
+    broadcast_chat_event(&state.event_broadcast, &routed_event);
 
     Ok(())
 }

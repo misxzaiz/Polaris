@@ -27,8 +27,20 @@
         "command": "node",
         "argsTemplate": [
           "{{pluginDir}}/mcp/demo-mcp-server.js",
-          "{{workspacePath}}"
+          "{{workspacePath}}",
+          "--polaris-port={{polarisPort}}",
+          "--polaris-token={{polarisToken}}",
+          "--polaris-session={{sessionId}}"
         ]
+      }
+    ],
+    "chatCards": [
+      {
+        "id": "demo-confirm-card",
+        "entry": "cards/demo-confirm-card.js",
+        "mcpServerId": "example-demo-mcp",
+        "tools": ["demo_confirm"],
+        "mode": "interaction"
       }
     ]
   },

@@ -125,6 +125,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/chat/interrupt", post(api::chat::handle_interrupt))
         .route("/chat/history/{session_id}", get(api::chat::handle_get_history))
         .route("/chat/answer-question", post(api::chat::handle_answer_question))
+        .route("/chat/respond-plugin-card", post(api::chat::handle_respond_plugin_card))
         .route("/chat/approve-plan", post(api::chat::handle_approve_plan))
         .route("/chat/reject-plan", post(api::chat::handle_reject_plan))
         // Artifacts

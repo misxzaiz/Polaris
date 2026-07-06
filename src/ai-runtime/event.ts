@@ -357,6 +357,30 @@ export interface QuestionAnsweredEvent {
   customInput?: string
 }
 
+/**
+ * PluginCard 事件 - 插件 MCP server 请求同回合用户交互
+ */
+export interface PluginCardEvent {
+  type: 'plugin_card'
+  sessionId: string
+  interactionId: string
+  pluginId: string
+  cardId: string
+  toolName: string
+  payload: unknown
+}
+
+/**
+ * PluginCardAnswered 事件 - 插件交互卡片已回答/跳过
+ */
+export interface PluginCardAnsweredEvent {
+  type: 'plugin_card_answered'
+  sessionId: string
+  interactionId: string
+  declined?: boolean
+  result?: unknown
+}
+
 // ========================================
 // Todo 相关事件
 // ========================================
@@ -672,6 +696,8 @@ export type AIEvent =
   | AgentRunEndEvent
   | QuestionEvent
   | QuestionAnsweredEvent
+  | PluginCardEvent
+  | PluginCardAnsweredEvent
   | TodoCreatedEvent
   | TodoUpdatedEvent
   | TodoDeletedEvent
@@ -1040,6 +1066,8 @@ const AI_EVENT_TYPES = new Set([
   'agent_run_end',
   'question',
   'question_answered',
+  'plugin_card',
+  'plugin_card_answered',
   'todo_created',
   'todo_updated',
   'todo_deleted',
@@ -1077,6 +1105,14 @@ export function isAIEvent(value: unknown): value is AIEvent {
 
 export function isQuestionAnsweredEvent(event: AIEvent): event is QuestionAnsweredEvent {
   return event.type === 'question_answered'
+}
+
+export function isPluginCardEvent(event: AIEvent): event is PluginCardEvent {
+  return event.type === 'plugin_card'
+}
+
+export function isPluginCardAnsweredEvent(event: AIEvent): event is PluginCardAnsweredEvent {
+  return event.type === 'plugin_card_answered'
 }
 
 // ========================================

@@ -28,6 +28,7 @@ use commands::chat::{
     list_sessions, get_session_history, delete_session,
     list_claude_code_sessions, get_claude_code_session_history,
     register_pending_question, answer_question, get_pending_questions, clear_answered_questions,
+    respond_plugin_card,
     // PlanMode 相关
     register_pending_plan, approve_plan, reject_plan, get_pending_plans, clear_processed_plans,
     // stdin 输入
@@ -658,6 +659,7 @@ pub fn run() {
             // AskUserQuestion 相关
             register_pending_question,
             answer_question,
+            respond_plugin_card,
             get_pending_questions,
             clear_answered_questions,
             // PlanMode 相关

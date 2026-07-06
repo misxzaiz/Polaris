@@ -75,6 +75,29 @@ pub enum QuestionStatus {
     Answered,
 }
 
+/// 插件交互卡片状态
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PluginCardStatus {
+    Pending,
+    Answered,
+    Declined,
+}
+
+/// 待回答插件交互卡片
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingPluginCard {
+    pub interaction_id: String,
+    pub session_id: String,
+    pub call_id: Option<String>,
+    pub plugin_id: String,
+    pub card_id: String,
+    pub tool_name: String,
+    pub payload: serde_json::Value,
+    pub status: PluginCardStatus,
+}
+
 /// 单条子答案
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -164,6 +187,11 @@ pub struct AppState {
     /// 由 ask_listener 注册，由 answer_question 取出并 send 触发同回合回填
     pub ask_answer_senders:
         Arc<Mutex<HashMap<String, crate::services::ask_listener::AskAnswerEntry>>>,
+    /// 待回答插件交互卡片映射：interactionId -> PendingPluginCard
+    pub pending_plugin_cards: Arc<Mutex<HashMap<String, PendingPluginCard>>>,
+    /// 插件交互卡片应答通道映射：interactionId -> PluginCardAnswerEntry
+    pub plugin_card_answer_senders:
+        Arc<Mutex<HashMap<String, crate::services::ask_listener::PluginCardAnswerEntry>>>,
     /// AskUserQuestion 监听器端口 / token；启动时设置一次。
     /// 用 Arc 包裹 OnceLock 以便在 clone_for_web 后跨 AppState 共享同一份。
     pub ask_listener: Arc<OnceLock<crate::services::ask_listener::AskListenerHandle>>,
@@ -217,6 +245,8 @@ pub fn create_app_state(
             file_watcher_manager: Mutex::new(FileWatcherManager::new()),
         pending_questions: Arc::new(Mutex::new(HashMap::new())),
         ask_answer_senders: Arc::new(Mutex::new(HashMap::new())),
+        pending_plugin_cards: Arc::new(Mutex::new(HashMap::new())),
+        plugin_card_answer_senders: Arc::new(Mutex::new(HashMap::new())),
         ask_listener: Arc::new(OnceLock::new()),
         pending_plans: Arc::new(Mutex::new(HashMap::new())),
         scheduler_daemon: AsyncMutex::new(None),
@@ -283,6 +313,8 @@ impl AppState {
             file_watcher_manager: Mutex::new(FileWatcherManager::new()),
             pending_questions: self.pending_questions.clone(),
             ask_answer_senders: self.ask_answer_senders.clone(),
+            pending_plugin_cards: self.pending_plugin_cards.clone(),
+            plugin_card_answer_senders: self.plugin_card_answer_senders.clone(),
             ask_listener: self.ask_listener.clone(),
             pending_plans: self.pending_plans.clone(),
             scheduler_daemon: AsyncMutex::new(None),

@@ -76,6 +76,23 @@ export async function answerQuestion(
   });
 }
 
+/** 回答插件交互卡片 */
+export async function respondPluginCard(
+  sessionId: string,
+  interactionId: string,
+  result: unknown,
+  declined = false
+): Promise<void> {
+  return invoke('respond_plugin_card', {
+    sessionId,
+    interactionId,
+    response: {
+      result,
+      declined,
+    },
+  });
+}
+
 /** 获取待回答问题列表 */
 export async function getPendingQuestions(sessionId?: string): Promise<PendingQuestion[]> {
   return invoke<PendingQuestion[]>('get_pending_questions', { sessionId });

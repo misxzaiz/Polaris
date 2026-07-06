@@ -337,6 +337,30 @@ export function handleAIEvent(
       break
     }
 
+    case 'plugin_card': {
+      const block: PluginCardBlock = {
+        type: 'plugin_card',
+        id: event.interactionId,
+        pluginId: event.pluginId,
+        cardId: event.cardId,
+        toolName: event.toolName,
+        mode: 'interaction',
+        status: 'pending',
+        data: event.payload,
+        sessionId: event.sessionId,
+        createdAt: new Date().toISOString(),
+      }
+      state.appendPluginCardBlock(block)
+      break
+    }
+
+    case 'plugin_card_answered':
+      state.updatePluginCardBlock(event.interactionId, {
+        status: event.declined ? 'declined' : 'answered',
+        response: event.result,
+      })
+      break
+
     // Task 事件 - 由 TaskStore 处理，不在 ConversationStore 范围内
     case 'task_metadata':
     case 'task_progress':

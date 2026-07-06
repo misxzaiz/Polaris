@@ -12,6 +12,7 @@
 //! See `services::ask_mcp_server` for the client side and the frame protocol.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -21,10 +22,14 @@ use tokio::sync::oneshot;
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
-use crate::state::{AppState, PendingQuestion, QuestionItem, QuestionOption, QuestionStatus, SubAnswer};
+use crate::state::{
+    AppState, PendingPluginCard, PendingQuestion, PluginCardStatus, QuestionItem, QuestionOption,
+    QuestionStatus, SubAnswer,
+};
 
 /// Maximum frame size we accept on the wire (1 MiB).
 const MAX_FRAME_SIZE: usize = 1_048_576;
+const PLUGIN_CARD_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// Final answer payload that goes back to the companion → CLI tool_result.
 #[derive(Debug, Clone, Serialize)]
@@ -64,6 +69,35 @@ pub struct QuestionAnswerPayload {
     pub header: String,
     pub selected: Vec<String>,
     pub custom_input: Option<String>,
+}
+
+/// Final answer payload that goes back to a plugin MCP server waiting for an
+/// interaction card response.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginCardOutcome {
+    #[serde(rename = "type")]
+    pub kind: &'static str,
+    pub declined: bool,
+    pub result: Value,
+}
+
+impl PluginCardOutcome {
+    pub fn answer(result: Value) -> Self {
+        Self {
+            kind: "card_answer",
+            declined: false,
+            result,
+        }
+    }
+
+    pub fn declined() -> Self {
+        Self {
+            kind: "card_answer",
+            declined: true,
+            result: Value::Null,
+        }
+    }
 }
 
 /// Handle returned by [`spawn_ask_listener`]; carries the bound port + auth
@@ -133,12 +167,17 @@ async fn handle_connection(
 
     match kind {
         "ask" => handle_ask_frame(&mut stream, frame, state, &expected_token).await,
+        "card" => handle_card_frame(&mut stream, frame, state, &expected_token).await,
         "cancel" => {
             // Cancel frames arrive when the CLI sends notifications/cancelled
             // to the companion. We simply remove any matching pending entry
             // so the awaiting oneshot is dropped (sending will error and the
             // companion returns a declined outcome).
             handle_cancel_frame(frame, state, &expected_token);
+            Ok(())
+        }
+        "card_cancel" => {
+            handle_card_cancel_frame(frame, state, &expected_token);
             Ok(())
         }
         other => Err(AppError::ValidationError(format!(
@@ -235,6 +274,129 @@ async fn handle_ask_frame(
     Ok(())
 }
 
+async fn handle_card_frame(
+    stream: &mut TcpStream,
+    frame: Value,
+    state: Arc<AppState>,
+    expected_token: &str,
+) -> Result<()> {
+    let token = frame
+        .get("token")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if token != expected_token {
+        return Err(AppError::ValidationError("ask_listener token 不匹配".into()));
+    }
+
+    let session_id = frame
+        .get("sessionId")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let interaction_id = frame
+        .get("interactionId")
+        .or_else(|| frame.get("callId"))
+        .and_then(Value::as_str)
+        .filter(|id| !id.trim().is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    let call_id = frame
+        .get("callId")
+        .and_then(Value::as_str)
+        .filter(|id| !id.trim().is_empty())
+        .map(str::to_string);
+    let plugin_id = frame
+        .get("pluginId")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let card_id = frame
+        .get("cardId")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let tool_name = frame
+        .get("toolName")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let payload = frame.get("payload").cloned().unwrap_or(Value::Null);
+
+    if plugin_id.trim().is_empty() {
+        return Err(AppError::ValidationError("card 帧缺少 pluginId".into()));
+    }
+    if card_id.trim().is_empty() {
+        return Err(AppError::ValidationError("card 帧缺少 cardId".into()));
+    }
+
+    let (tx, rx) = oneshot::channel::<PluginCardOutcome>();
+    {
+        let mut pending = state
+            .pending_plugin_cards
+            .lock()
+            .map_err(|e| AppError::ProcessError(format!("pending_plugin_cards 锁: {}", e)))?;
+        pending.insert(
+            interaction_id.clone(),
+            PendingPluginCard {
+                interaction_id: interaction_id.clone(),
+                session_id: session_id.clone(),
+                call_id,
+                plugin_id: plugin_id.clone(),
+                card_id: card_id.clone(),
+                tool_name: tool_name.clone(),
+                payload: payload.clone(),
+                status: PluginCardStatus::Pending,
+            },
+        );
+    }
+    state.register_plugin_card_answer_sender(&interaction_id, tx);
+
+    emit_plugin_card_event(
+        &state,
+        &session_id,
+        &interaction_id,
+        &plugin_id,
+        &card_id,
+        &tool_name,
+        payload,
+    );
+
+    let outcome = match tokio::time::timeout(PLUGIN_CARD_TIMEOUT, rx).await {
+        Ok(Ok(outcome)) => outcome,
+        Ok(Err(_recv_err)) => {
+            tracing::info!(
+                "[AskListener] interaction_id={} oneshot 被丢弃，按 declined 处理",
+                interaction_id
+            );
+            PluginCardOutcome::declined()
+        }
+        Err(_elapsed) => {
+            tracing::info!(
+                "[AskListener] interaction_id={} 超时，按 declined 处理",
+                interaction_id
+            );
+            emit_plugin_card_answered_event(
+                &state,
+                &session_id,
+                &interaction_id,
+                true,
+                Value::Null,
+            );
+            PluginCardOutcome::declined()
+        }
+    };
+
+    write_frame(stream, &serde_json::to_value(&outcome)?).await?;
+    let _ = stream.shutdown().await;
+
+    if let Ok(mut pending) = state.pending_plugin_cards.lock() {
+        pending.remove(&interaction_id);
+    }
+    state.take_plugin_card_answer_sender(&interaction_id);
+
+    Ok(())
+}
+
 fn handle_cancel_frame(frame: Value, state: Arc<AppState>, expected_token: &str) {
     let token = frame
         .get("token")
@@ -258,6 +420,45 @@ fn handle_cancel_frame(frame: Value, state: Arc<AppState>, expected_token: &str)
     if let Ok(mut pending) = state.pending_questions.lock() {
         pending.remove(&call_id);
     }
+}
+
+fn handle_card_cancel_frame(frame: Value, state: Arc<AppState>, expected_token: &str) {
+    let token = frame
+        .get("token")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if token != expected_token {
+        tracing::warn!("[AskListener] card_cancel token 不匹配");
+        return;
+    }
+    let interaction_id = frame
+        .get("interactionId")
+        .or_else(|| frame.get("callId"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    if interaction_id.is_empty() {
+        return;
+    }
+    let session_id = state
+        .pending_plugin_cards
+        .lock()
+        .ok()
+        .and_then(|pending| pending.get(&interaction_id).map(|card| card.session_id.clone()))
+        .unwrap_or_default();
+    if let Some(entry) = state.take_plugin_card_answer_sender(&interaction_id) {
+        let _ = entry.sender.send(PluginCardOutcome::declined());
+    }
+    if let Ok(mut pending) = state.pending_plugin_cards.lock() {
+        pending.remove(&interaction_id);
+    }
+    emit_plugin_card_answered_event(
+        &state,
+        &session_id,
+        &interaction_id,
+        true,
+        Value::Null,
+    );
 }
 
 /// Parsed `questions[i]` for internal use.
@@ -470,6 +671,68 @@ fn wrap_question_route_event(session_id: &str, payload: Value) -> Value {
     }
 }
 
+fn emit_plugin_card_event(
+    state: &AppState,
+    session_id: &str,
+    interaction_id: &str,
+    plugin_id: &str,
+    card_id: &str,
+    tool_name: &str,
+    payload: Value,
+) {
+    let event = wrap_question_route_event(
+        session_id,
+        json!({
+            "type": "plugin_card",
+            "sessionId": session_id,
+            "interactionId": interaction_id,
+            "pluginId": plugin_id,
+            "cardId": card_id,
+            "toolName": tool_name,
+            "payload": payload,
+        }),
+    );
+    emit_chat_event(state, &event);
+}
+
+pub(crate) fn emit_plugin_card_answered_event(
+    state: &AppState,
+    session_id: &str,
+    interaction_id: &str,
+    declined: bool,
+    result: Value,
+) {
+    let event = wrap_question_route_event(
+        session_id,
+        json!({
+            "type": "plugin_card_answered",
+            "sessionId": session_id,
+            "interactionId": interaction_id,
+            "declined": declined,
+            "result": result,
+        }),
+    );
+    emit_chat_event(state, &event);
+}
+
+fn emit_chat_event(state: &AppState, event: &Value) {
+    let ws_msg = serde_json::json!({
+        "event": "chat-event",
+        "payload": event,
+    });
+    if let Ok(msg) = serde_json::to_string(&ws_msg) {
+        let _ = state.event_broadcast.send(msg);
+    }
+
+    #[cfg(feature = "tauri-app")]
+    if let Some(handle) = state.app_handle.get() {
+        use tauri::Emitter;
+        if let Err(error) = handle.emit("chat-event", event) {
+            tracing::warn!("[AskListener] emit chat-event 失败: {}", error);
+        }
+    }
+}
+
 // ============================================================================
 // Frame I/O (u32 LE length prefix + UTF-8 JSON body)
 // ============================================================================
@@ -522,6 +785,11 @@ pub struct AskAnswerEntry {
     pub sender: oneshot::Sender<QuestionOutcome>,
 }
 
+/// Internal entry stored in `AppState.plugin_card_answer_senders`.
+pub struct PluginCardAnswerEntry {
+    pub sender: oneshot::Sender<PluginCardOutcome>,
+}
+
 impl AppState {
     /// Register a oneshot answer sender keyed by call_id.
     pub(crate) fn register_ask_answer_sender(
@@ -538,6 +806,29 @@ impl AppState {
     /// Remove and return the answer entry for a call_id, if present.
     pub fn take_ask_answer_sender(&self, call_id: &str) -> Option<AskAnswerEntry> {
         self.ask_answer_senders.lock().ok()?.remove(call_id)
+    }
+
+    pub(crate) fn register_plugin_card_answer_sender(
+        &self,
+        interaction_id: &str,
+        sender: oneshot::Sender<PluginCardOutcome>,
+    ) {
+        if let Ok(mut map) = self.plugin_card_answer_senders.lock() {
+            map.insert(
+                interaction_id.to_string(),
+                PluginCardAnswerEntry { sender },
+            );
+        }
+    }
+
+    pub fn take_plugin_card_answer_sender(
+        &self,
+        interaction_id: &str,
+    ) -> Option<PluginCardAnswerEntry> {
+        self.plugin_card_answer_senders
+            .lock()
+            .ok()?
+            .remove(interaction_id)
     }
 }
 

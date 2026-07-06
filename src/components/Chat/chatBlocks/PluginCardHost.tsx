@@ -17,6 +17,7 @@ import type { PluginChatCardComponent, PluginChatCardProps } from '@/plugin-syst
 import type { PluginCardBlock } from '@/types'
 import { copyToClipboard } from '@/utils/clipboard'
 import { createLogger } from '@/utils/logger'
+import { respondPluginCard } from '@/services/tauri/chatService'
 
 const log = createLogger('PluginCardHost')
 
@@ -165,6 +166,12 @@ export function PluginCardHost({ block, onSendToChat }: PluginCardHostProps) {
     return <LoadingFallback />
   }
 
+  const respond = block.mode === 'interaction' && block.status === 'pending' && block.sessionId
+    ? async (result: unknown) => {
+        await respondPluginCard(block.sessionId!, block.id, result)
+      }
+    : undefined
+
   const props: PluginChatCardProps = {
     pluginId: block.pluginId,
     cardId: block.cardId,
@@ -174,7 +181,7 @@ export function PluginCardHost({ block, onSendToChat }: PluginCardHostProps) {
     data: block.data,
     response: block.response,
     onSendToChat,
-    // respond 由 Phase 3 接入（interaction 模式）；此处对 pending 的交互卡片不提供 respond
+    respond,
   }
 
   return (

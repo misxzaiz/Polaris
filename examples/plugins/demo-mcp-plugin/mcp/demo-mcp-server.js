@@ -1,6 +1,22 @@
 #!/usr/bin/env node
 
-const workspacePath = process.argv[2] || process.cwd()
+const net = require('node:net')
+
+const positionalArgs = []
+const options = new Map()
+for (const arg of process.argv.slice(2)) {
+  if (arg.startsWith('--') && arg.includes('=')) {
+    const [key, ...rest] = arg.slice(2).split('=')
+    options.set(key, rest.join('='))
+  } else {
+    positionalArgs.push(arg)
+  }
+}
+
+const workspacePath = positionalArgs[0] || process.cwd()
+const polarisPort = Number(options.get('polaris-port') || 0)
+const polarisToken = options.get('polaris-token') || ''
+const polarisSession = options.get('polaris-session') || ''
 
 function send(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`)
@@ -22,6 +38,72 @@ function error(id, code, message) {
       code,
       message,
     },
+  })
+}
+
+function writeFrame(socket, value) {
+  const body = Buffer.from(JSON.stringify(value), 'utf8')
+  const len = Buffer.allocUnsafe(4)
+  len.writeUInt32LE(body.length, 0)
+  socket.write(Buffer.concat([len, body]))
+}
+
+function readFrame(socket) {
+  return new Promise((resolve, reject) => {
+    let buffer = Buffer.alloc(0)
+
+    socket.on('data', (chunk) => {
+      buffer = Buffer.concat([buffer, chunk])
+      if (buffer.length < 4) return
+
+      const len = buffer.readUInt32LE(0)
+      if (len <= 0 || len > 1024 * 1024) {
+        reject(new Error(`Invalid frame length: ${len}`))
+        socket.destroy()
+        return
+      }
+      if (buffer.length < 4 + len) return
+
+      const body = buffer.subarray(4, 4 + len)
+      try {
+        resolve(JSON.parse(body.toString('utf8')))
+      } catch (err) {
+        reject(err)
+      } finally {
+        socket.end()
+      }
+    })
+    socket.on('error', reject)
+    socket.on('end', () => reject(new Error('Socket closed before frame arrived')))
+  })
+}
+
+function requestPluginCard(payload) {
+  if (!polarisPort || !polarisToken) {
+    return Promise.resolve({
+      declined: true,
+      result: {
+        reason: 'Polaris interaction channel is not configured.',
+      },
+    })
+  }
+
+  const interactionId = `demo-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection({ host: '127.0.0.1', port: polarisPort }, () => {
+      writeFrame(socket, {
+        type: 'card',
+        token: polarisToken,
+        sessionId: polarisSession,
+        interactionId,
+        callId: interactionId,
+        pluginId: 'example.demo-mcp',
+        cardId: 'demo-confirm-card',
+        toolName: 'mcp__example-demo-mcp__demo_confirm',
+        payload,
+      })
+    })
+    readFrame(socket).then(resolve, reject)
   })
 }
 
@@ -49,11 +131,26 @@ function listTools(id) {
           properties: {},
         },
       },
+      {
+        name: 'demo_confirm',
+        description: 'Shows a custom plugin chat card and waits for the user response.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            title: {
+              type: 'string',
+            },
+            detail: {
+              type: 'string',
+            },
+          },
+        },
+      },
     ],
   })
 }
 
-function callTool(id, params) {
+async function callTool(id, params) {
   const name = params?.name
   const args = params?.arguments || {}
 
@@ -66,6 +163,33 @@ function callTool(id, params) {
         },
       ],
     })
+    return
+  }
+
+  if (name === 'demo_confirm') {
+    try {
+      const answer = await requestPluginCard({
+        title: String(args.title || 'Demo confirmation'),
+        detail: String(args.detail || 'Choose a response in the custom plugin card.'),
+        workspacePath,
+        choices: [
+          { id: 'approve', label: 'Approve' },
+          { id: 'revise', label: 'Revise' },
+          { id: 'decline', label: 'Decline' },
+        ],
+      })
+      result(id, {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(answer, null, 2),
+          },
+        ],
+        structuredContent: answer,
+      })
+    } catch (err) {
+      error(id, -32000, err instanceof Error ? err.message : String(err))
+    }
     return
   }
 
@@ -105,7 +229,7 @@ function handle(message) {
   }
 
   if (message.method === 'tools/call') {
-    callTool(message.id, message.params)
+    void callTool(message.id, message.params)
     return
   }
 

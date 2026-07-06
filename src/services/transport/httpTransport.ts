@@ -30,6 +30,7 @@ const COMMAND_ROUTE_MAP: Record<string, string> = {
   interrupt_chat: '/api/chat/interrupt',
   get_session_history: '/api/chat/history',
   answer_question: '/api/chat/answer-question',
+  respond_plugin_card: '/api/chat/respond-plugin-card',
   approve_plan: '/api/chat/approve-plan',
   reject_plan: '/api/chat/reject-plan',
   // Legacy Claude Code session history commands — dedicated endpoints returning flat arrays

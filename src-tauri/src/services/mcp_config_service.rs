@@ -722,6 +722,8 @@ pub fn resolve_external_plugin_mcp_servers(
     workspace_path: &Path,
     plugins: &[DiscoveredPluginManifest],
     plugin_states: &PluginStateMap,
+    ask_listener: Option<&crate::services::ask_listener::AskListenerHandle>,
+    ask_route_session_id: Option<&str>,
 ) -> Vec<ResolvedExternalMcpServer> {
     let workspace = workspace_path.to_string_lossy().to_string();
     let app_config_dir = config_dir.to_string_lossy().to_string();
@@ -762,18 +764,35 @@ pub fn resolve_external_plugin_mcp_servers(
                 tracing::warn!("[MCP] 跳过插件 {} 的无效 MCP server 声明", plugin.id);
                 continue;
             }
+            if external_server_requires_listener(server) && ask_listener.is_none() {
+                tracing::info!(
+                    "[MCP] 跳过插件 {} 的 MCP server {}：ask_listener 未就绪",
+                    plugin.id,
+                    server.id
+                );
+                continue;
+            }
 
             let command = expand_external_mcp_template(
                 &server.command,
                 plugin_dir,
                 &workspace,
                 &app_config_dir,
+                ask_listener,
+                ask_route_session_id,
             );
             let args = server
                 .args_template
                 .iter()
                 .map(|arg| {
-                    expand_external_mcp_template(arg, plugin_dir, &workspace, &app_config_dir)
+                    expand_external_mcp_template(
+                        arg,
+                        plugin_dir,
+                        &workspace,
+                        &app_config_dir,
+                        ask_listener,
+                        ask_route_session_id,
+                    )
                 })
                 .collect();
 
@@ -787,6 +806,17 @@ pub fn resolve_external_plugin_mcp_servers(
     }
 
     resolved
+}
+
+fn external_server_requires_listener(
+    server: &crate::models::plugin::PluginMcpServerManifestContribution,
+) -> bool {
+    server.command.contains("{{polarisPort}}")
+        || server.command.contains("{{polarisToken}}")
+        || server
+            .args_template
+            .iter()
+            .any(|arg| arg.contains("{{polarisPort}}") || arg.contains("{{polarisToken}}"))
 }
 
 fn is_plugin_mcp_enabled(plugin: &DiscoveredPluginManifest, state: Option<&PluginState>) -> bool {
@@ -859,8 +889,14 @@ pub fn resolve_workspace_mcp_runtime_service(
         WorkspaceMcpConfigService::from_app_paths(config_dir.clone(), resource_dir, app_root)?;
     let (plugin_states, plugins) = load_plugin_mcp_runtime_state(&config_dir, workspace_path);
     let disabled_builtin_servers = disabled_builtin_mcp_server_names(&plugin_states);
-    let external_servers =
-        resolve_external_plugin_mcp_servers(&config_dir, workspace_path, &plugins, &plugin_states);
+    let external_servers = resolve_external_plugin_mcp_servers(
+        &config_dir,
+        workspace_path,
+        &plugins,
+        &plugin_states,
+        ask_listener.as_ref(),
+        ask_route_session_id.as_deref(),
+    );
 
     Ok((
         service
@@ -876,11 +912,23 @@ fn expand_external_mcp_template(
     plugin_dir: &str,
     workspace_path: &str,
     app_config_dir: &str,
+    ask_listener: Option<&crate::services::ask_listener::AskListenerHandle>,
+    ask_route_session_id: Option<&str>,
 ) -> String {
+    let port = ask_listener
+        .map(|handle| handle.port.to_string())
+        .unwrap_or_default();
+    let token = ask_listener
+        .map(|handle| handle.token.clone())
+        .unwrap_or_default();
+    let session_id = ask_route_session_id.unwrap_or_default();
     value
         .replace("{{pluginDir}}", plugin_dir)
         .replace("{{workspacePath}}", workspace_path)
         .replace("{{appConfigDir}}", app_config_dir)
+        .replace("{{polarisPort}}", &port)
+        .replace("{{polarisToken}}", &token)
+        .replace("{{sessionId}}", session_id)
 }
 
 fn is_server_disabled(disabled_server_names: &[String], server_name: &str) -> bool {
@@ -1498,7 +1546,14 @@ mod tests {
         );
 
         let servers =
-            resolve_external_plugin_mcp_servers(&config_dir, &workspace, &[plugin], &states);
+            resolve_external_plugin_mcp_servers(
+                &config_dir,
+                &workspace,
+                &[plugin],
+                &states,
+                None,
+                None,
+            );
 
         assert_eq!(servers.len(), 1);
         assert_eq!(servers[0].plugin_id, "example.demo-mcp");

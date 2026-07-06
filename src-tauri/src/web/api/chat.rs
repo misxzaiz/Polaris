@@ -302,6 +302,89 @@ pub async fn handle_answer_question(
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RespondPluginCardRequest {
+    pub session_id: String,
+    pub interaction_id: String,
+    #[serde(default)]
+    pub result: serde_json::Value,
+    #[serde(default)]
+    pub declined: bool,
+    #[serde(default)]
+    pub response: Option<RespondPluginCardPayload>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RespondPluginCardPayload {
+    #[serde(default)]
+    pub result: serde_json::Value,
+    #[serde(default)]
+    pub declined: bool,
+}
+
+/// Answer a pending plugin interaction card.
+pub async fn handle_respond_plugin_card(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<RespondPluginCardRequest>,
+) -> Result<impl IntoResponse, WebError> {
+    validate_session_id(&req.session_id)?;
+    validate_entity_id(&req.interaction_id, "interactionId")?;
+    let result = req
+        .response
+        .as_ref()
+        .map(|response| response.result.clone())
+        .unwrap_or_else(|| req.result.clone());
+    let declined = req
+        .response
+        .as_ref()
+        .map(|response| response.declined)
+        .unwrap_or(req.declined);
+
+    {
+        let mut pending = state
+            .pending_plugin_cards
+            .lock()
+            .map_err(|e| WebError::Internal(e.to_string()))?;
+        if let Some(card) = pending.get(&req.interaction_id) {
+            if card.session_id != req.session_id {
+                return Err(WebError::BadRequest(format!(
+                    "session_id mismatch: expected {}, got {}",
+                    card.session_id, req.session_id
+                )));
+            }
+        } else {
+            return Err(WebError::NotFound(format!(
+                "No pending plugin card found for interactionId: {}",
+                req.interaction_id
+            )));
+        }
+        pending.remove(&req.interaction_id);
+    }
+
+    let outcome = if declined {
+        crate::services::ask_listener::PluginCardOutcome::declined()
+    } else {
+        crate::services::ask_listener::PluginCardOutcome::answer(result.clone())
+    };
+    if let Some(entry) = state.take_plugin_card_answer_sender(&req.interaction_id) {
+        let _ = entry.sender.send(outcome);
+    }
+
+    let event = serde_json::json!({
+        "type": "plugin_card_answered",
+        "sessionId": req.session_id,
+        "interactionId": req.interaction_id,
+        "declined": declined,
+        "result": result,
+    });
+    let routed_event = wrap_session_routed_event(&req.session_id, event);
+    dual_emit(&state, &routed_event);
+
+    Ok(ok_response())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PlanDecisionRequest {
     pub session_id: String,
     pub plan_id: String,
