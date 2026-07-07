@@ -468,15 +468,38 @@ export function TabContent({ className = '' }: TabContentProps) {
         </div>
       )
 
-    case 'browser':
+    case 'browser': {
+      const requestedUrl =
+        typeof activeTab.metadata?.requestedUrl === 'string' ? activeTab.metadata.requestedUrl : undefined
+      const navigationRequestId =
+        typeof activeTab.metadata?.navigationRequestId === 'number'
+          ? activeTab.metadata.navigationRequestId
+          : undefined
+      const hasPendingNavigationRequest =
+        activeTab.metadata?.navigationRequestPending === true &&
+        requestedUrl !== undefined &&
+        navigationRequestId !== undefined
+      const browserInitialUrl = hasPendingNavigationRequest
+        ? requestedUrl
+        : typeof activeTab.metadata?.currentUrl === 'string'
+          ? activeTab.metadata.currentUrl
+          : typeof activeTab.metadata?.initialUrl === 'string'
+            ? activeTab.metadata.initialUrl
+            : typeof activeTab.metadata?.url === 'string'
+              ? activeTab.metadata.url
+              : undefined
+
       return (
         <div className={`flex-1 flex flex-col overflow-hidden ${className}`}>
           <BrowserPanel
             tabId={activeTab.id}
-            initialUrl={typeof activeTab.metadata?.url === 'string' ? activeTab.metadata.url : undefined}
+            initialUrl={browserInitialUrl}
+            navigationRequestUrl={hasPendingNavigationRequest ? requestedUrl : undefined}
+            navigationRequestId={hasPendingNavigationRequest ? navigationRequestId : undefined}
           />
         </div>
       )
+    }
 
     case 'preview':
       if (activeTab.metadata?.kind === 'image') {

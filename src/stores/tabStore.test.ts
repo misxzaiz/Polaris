@@ -68,4 +68,43 @@ describe('tabStore', () => {
     expect(state.tabs.filter((tab) => tab.type === 'diff')).toHaveLength(1)
     expect(state.getTabById(firstTabId)?.diffData?.new_content).toBe('second')
   })
+
+  it('keeps browser session updates separate from navigation requests', () => {
+    const tabId = useTabStore.getState().openBrowserTab('https://www.bing.com', 'Browser')
+
+    let tab = useTabStore.getState().getTabById(tabId)
+    const firstRequestId = tab?.metadata?.navigationRequestId
+    expect(tab?.type).toBe('browser')
+    expect(tab?.metadata?.initialUrl).toBe('https://www.bing.com')
+    expect(tab?.metadata?.currentUrl).toBe('https://www.bing.com')
+    expect(tab?.metadata?.requestedUrl).toBe('https://www.bing.com')
+    expect(tab?.metadata?.navigationRequestPending).toBe(true)
+    expect(typeof firstRequestId).toBe('number')
+
+    useTabStore.getState().markBrowserNavigationHandled(tabId, firstRequestId)
+
+    useTabStore.getState().updateBrowserTab(tabId, {
+      url: 'https://learn.example/page',
+      title: 'Learning',
+    })
+
+    tab = useTabStore.getState().getTabById(tabId)
+    expect(tab?.title).toBe('Learning')
+    expect(tab?.metadata?.initialUrl).toBe('https://www.bing.com')
+    expect(tab?.metadata?.currentUrl).toBe('https://learn.example/page')
+    expect(tab?.metadata?.requestedUrl).toBe('https://www.bing.com')
+    expect(tab?.metadata?.navigationRequestPending).toBe(false)
+    expect(tab?.metadata?.navigationRequestHandledId).toBe(firstRequestId)
+    expect(tab?.metadata?.url).toBeUndefined()
+
+    const reusedTabId = useTabStore.getState().openBrowserTab('https://developer.mozilla.org', 'Browser')
+    tab = useTabStore.getState().getTabById(tabId)
+
+    expect(reusedTabId).toBe(tabId)
+    expect(tab?.metadata?.initialUrl).toBe('https://www.bing.com')
+    expect(tab?.metadata?.currentUrl).toBe('https://learn.example/page')
+    expect(tab?.metadata?.requestedUrl).toBe('https://developer.mozilla.org')
+    expect(tab?.metadata?.navigationRequestPending).toBe(true)
+    expect(tab?.metadata?.navigationRequestId).toBeGreaterThan(firstRequestId)
+  })
 })

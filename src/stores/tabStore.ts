@@ -65,6 +65,7 @@ interface TabActions {
   // Dirty 状态管理
   setTabDirty: (tabId: string, isDirty: boolean) => void
   updateBrowserTab: (tabId: string, updates: { url?: string; title?: string }) => void
+  markBrowserNavigationHandled: (tabId: string, requestId: number) => void
   getDirtyTabs: () => Tab[]
   hasDirtyTabs: () => boolean
 
@@ -81,6 +82,13 @@ function closeBrowserResources(tabs: Tab[]) {
     .forEach((tab) => {
       browserClose(makeBrowserWebviewLabel(tab.id)).catch(() => undefined)
     })
+}
+
+let browserNavigationRequestSequence = 0
+
+function nextBrowserNavigationRequestId(): number {
+  browserNavigationRequestSequence += 1
+  return browserNavigationRequestSequence
 }
 
 export const useTabStore = create<TabStore>()(
@@ -206,6 +214,7 @@ export const useTabStore = create<TabStore>()(
       // 打开内置浏览器 Tab
       openBrowserTab: (url = 'https://www.bing.com', title = 'Browser') => {
         const existingTab = get().tabs.find((tab) => tab.type === 'browser')
+        const requestId = nextBrowserNavigationRequestId()
 
         if (existingTab) {
           set((state) => ({
@@ -216,7 +225,9 @@ export const useTabStore = create<TabStore>()(
                     title,
                     metadata: {
                       ...tab.metadata,
-                      url,
+                      requestedUrl: url,
+                      navigationRequestId: requestId,
+                      navigationRequestPending: true,
                     },
                   }
                 : tab
@@ -233,7 +244,11 @@ export const useTabStore = create<TabStore>()(
           title,
           closable: true,
           metadata: {
-            url,
+            initialUrl: url,
+            currentUrl: url,
+            requestedUrl: url,
+            navigationRequestId: requestId,
+            navigationRequestPending: true,
           },
         }
 
@@ -415,8 +430,30 @@ export const useTabStore = create<TabStore>()(
               title: nextTitle || tab.title,
               metadata: {
                 ...tab.metadata,
-                ...(updates.url ? { url: updates.url } : {}),
+                ...(updates.url ? { currentUrl: updates.url } : {}),
                 ...(nextTitle ? { pageTitle: nextTitle } : {}),
+              },
+            }
+          }),
+        }))
+      },
+      markBrowserNavigationHandled: (tabId: string, requestId: number) => {
+        set((state) => ({
+          tabs: state.tabs.map((tab) => {
+            if (
+              tab.id !== tabId ||
+              tab.type !== 'browser' ||
+              tab.metadata?.navigationRequestId !== requestId
+            ) {
+              return tab
+            }
+
+            return {
+              ...tab,
+              metadata: {
+                ...tab.metadata,
+                navigationRequestPending: false,
+                navigationRequestHandledId: requestId,
               },
             }
           }),

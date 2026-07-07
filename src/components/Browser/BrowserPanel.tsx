@@ -53,6 +53,8 @@ import { useViewStore } from '@/stores/viewStore'
 interface BrowserPanelProps {
   tabId: string
   initialUrl?: string
+  navigationRequestUrl?: string
+  navigationRequestId?: number
 }
 
 const QUICK_STARTS = [
@@ -115,15 +117,30 @@ function formatContextForChat(context: BrowserPageContext, mode: 'learn' | 'modi
     .join('\n')
 }
 
-export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: BrowserPanelProps) {
+export function BrowserPanel({
+  tabId,
+  initialUrl = 'https://www.bing.com',
+  navigationRequestUrl,
+  navigationRequestId,
+}: BrowserPanelProps) {
   const { t } = useTranslation('common')
   const containerRef = useRef<HTMLDivElement>(null)
   const rafRef = useRef<number | null>(null)
   const mountedRef = useRef(false)
   const readyRef = useRef(false)
   const addressFocusedRef = useRef(false)
+  const initialUrlRef = useRef<string | null>(null)
   const webviewLabel = useMemo(() => makeBrowserWebviewLabel(tabId), [tabId])
-  const normalizedInitialUrl = useMemo(() => normalizeBrowserUrl(initialUrl), [initialUrl])
+  const normalizedInitialUrl = initialUrlRef.current ?? normalizeBrowserUrl(initialUrl)
+  if (initialUrlRef.current === null) {
+    initialUrlRef.current = normalizedInitialUrl
+  }
+  const initialNavigationRequestId =
+    navigationRequestUrl && normalizeBrowserUrl(navigationRequestUrl) === normalizedInitialUrl
+      ? navigationRequestId
+      : undefined
+  const initialNavigationRequestRef = useRef<number | undefined>(initialNavigationRequestId)
+  const lastNavigationRequestRef = useRef<number | undefined>(initialNavigationRequestRef.current)
 
   const [address, setAddress] = useState(normalizedInitialUrl)
   const [currentUrl, setCurrentUrl] = useState(normalizedInitialUrl)
@@ -144,6 +161,7 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
   const toast = useToastStore()
   const currentWorkspace = useWorkspaceStore((state) => state.getCurrentWorkspace())
   const updateBrowserTab = useTabStore((state) => state.updateBrowserTab)
+  const markBrowserNavigationHandled = useTabStore((state) => state.markBrowserNavigationHandled)
   const isLocalDev = useMemo(() => isLocalDevUrl(currentUrl), [currentUrl])
   const latestOperation = operationEvents[0]
 
@@ -235,6 +253,10 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
         setAddress(nextUrl)
         setPageTitle(nextTitle)
         updateBrowserTab(tabId, { url: nextUrl, title: nextTitle })
+        const handledRequestId = initialNavigationRequestRef.current
+        if (handledRequestId !== undefined) {
+          markBrowserNavigationHandled(tabId, handledRequestId)
+        }
 
         resizeObserver = new ResizeObserver(scheduleSyncBounds)
         if (containerRef.current) {
@@ -273,7 +295,15 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
       browserSetAiOverlay(webviewLabel, false).catch(() => undefined)
       browserSetBounds(webviewLabel, { x: 0, y: 0, width: 0, height: 0 }).catch(() => undefined)
     }
-  }, [getContainerBounds, normalizedInitialUrl, scheduleSyncBounds, tabId, updateBrowserTab, webviewLabel])
+  }, [
+    getContainerBounds,
+    markBrowserNavigationHandled,
+    normalizedInitialUrl,
+    scheduleSyncBounds,
+    tabId,
+    updateBrowserTab,
+    webviewLabel,
+  ])
 
   useEffect(() => {
     if (!isTauriRuntime() || status !== 'ready') {
@@ -338,6 +368,23 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
     },
     [address, navigateTo]
   )
+
+  useEffect(() => {
+    if (navigationRequestId === undefined || !navigationRequestUrl) {
+      return
+    }
+    if (lastNavigationRequestRef.current === navigationRequestId) {
+      return
+    }
+    if (status !== 'ready' && status !== 'native-unavailable') {
+      return
+    }
+
+    lastNavigationRequestRef.current = navigationRequestId
+    void navigateTo(navigationRequestUrl).then(() => {
+      markBrowserNavigationHandled(tabId, navigationRequestId)
+    })
+  }, [markBrowserNavigationHandled, navigateTo, navigationRequestId, navigationRequestUrl, status, tabId])
 
   const handleContextToChat = useCallback(
     async (mode: 'learn' | 'modify') => {
@@ -830,18 +877,23 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
         </div>
       )}
 
-      {!aiPanelOpen && latestOperation && (
+      {!aiPanelOpen && (
         <button
           type="button"
           onClick={() => setAiPanelOpen(true)}
-          className="flex h-8 shrink-0 items-center gap-2 border-t border-border-subtle bg-background-elevated px-3 text-left text-xs text-text-secondary hover:bg-background-hover"
+          disabled={!latestOperation}
+          className="flex h-8 shrink-0 items-center gap-2 border-t border-border-subtle bg-background-elevated px-3 text-left text-xs text-text-secondary hover:bg-background-hover disabled:cursor-default disabled:hover:bg-background-elevated"
         >
-          <Sparkles size={13} className="shrink-0 text-primary" />
+          <Sparkles size={13} className={clsx('shrink-0', latestOperation ? 'text-primary' : 'text-text-tertiary')} />
           <span className="shrink-0 font-medium text-text-primary">
             {t('browser.operationLog', { defaultValue: 'AI 操作日志' })}
           </span>
           <span className="min-w-0 truncate">
-            {latestOperation.target ? `${latestOperation.message}: ${latestOperation.target}` : latestOperation.message}
+            {latestOperation
+              ? latestOperation.target
+                ? `${latestOperation.message}: ${latestOperation.target}`
+                : latestOperation.message
+              : t('browser.noOperationLog', { defaultValue: '暂无 AI 浏览器操作。' })}
           </span>
         </button>
       )}
