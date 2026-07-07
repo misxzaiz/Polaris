@@ -129,4 +129,16 @@ describe('tabStore', () => {
     expect(agentTab?.metadata?.browserAgentKey).toBe('agent-1')
     expect(state.activeTabId).toBe(agentTabId)
   })
+
+  it('does not persist live tabs across app restarts', () => {
+    useTabStore.getState().openBrowserTab('https://example.com', 'Browser')
+    useTabStore.getState().openGitTab({ initialGitTab: 'status' })
+
+    const persisted = JSON.parse(window.localStorage.getItem('tab-store') || '{}')
+
+    expect(persisted.state).toEqual({
+      tabs: [],
+      activeTabId: null,
+    })
+  })
 })

@@ -484,8 +484,9 @@ export const useTabStore = create<TabStore>()(
     }),
     {
       name: 'tab-store',
-      // 不持久化 tabs，每次启动都是空状态
-      // 这样可以确保 hasOpenTabs 正确反映当前状态
+      // 不持久化 tabs，每次启动都是空状态。
+      // Browser WebView 是进程内 native 资源，不能通过前端 metadata 安全恢复。
+      partialize: () => ({ tabs: [], activeTabId: null }),
     }
   )
 )

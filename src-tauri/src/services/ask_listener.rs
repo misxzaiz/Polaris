@@ -442,18 +442,15 @@ async fn dispatch_browser_frame(frame: Value) -> Result<Value> {
         browser_acquire_with_app, browser_app_handle, browser_click_with_app,
         browser_fill_with_app, browser_get_diagnostics_with_app,
         browser_get_interactive_elements_with_app, browser_get_page_context_with_app,
-        browser_history_with_app, browser_list_registered_sessions, browser_navigate_with_app,
-        browser_reload_with_app, emit_browser_operation_with_app, resolve_browser_label_for_agent,
+        browser_history_with_app, browser_list_registered_sessions_with_app,
+        browser_navigate_ai_with_app, browser_reload_with_app, emit_browser_operation_with_app,
+        resolve_browser_label_for_agent_with_app,
     };
 
     let action = frame
         .get("action")
         .and_then(Value::as_str)
         .ok_or_else(|| AppError::ValidationError("browser 帧缺少 action".to_string()))?;
-
-    if action == "list" {
-        return serde_json::to_value(browser_list_registered_sessions()?).map_err(Into::into);
-    }
 
     let agent_key = frame
         .get("agentKey")
@@ -468,6 +465,11 @@ async fn dispatch_browser_frame(frame: Value) -> Result<Value> {
                 .filter(|value| !value.trim().is_empty())
         });
     let app = browser_app_handle()?;
+
+    if action == "list" {
+        return serde_json::to_value(browser_list_registered_sessions_with_app(&app)?)
+            .map_err(Into::into);
+    }
 
     if action == "acquire" {
         let result = browser_acquire_with_app(
@@ -486,8 +488,11 @@ async fn dispatch_browser_frame(frame: Value) -> Result<Value> {
         return serde_json::to_value(result).map_err(Into::into);
     }
 
-    let label =
-        resolve_browser_label_for_agent(frame.get("label").and_then(Value::as_str), agent_key)?;
+    let label = resolve_browser_label_for_agent_with_app(
+        &app,
+        frame.get("label").and_then(Value::as_str),
+        agent_key,
+    )?;
 
     match action {
         "navigate" => {
@@ -495,7 +500,7 @@ async fn dispatch_browser_frame(frame: Value) -> Result<Value> {
                 .get("url")
                 .and_then(Value::as_str)
                 .ok_or_else(|| AppError::ValidationError("browser navigate 缺少 url".into()))?;
-            let normalized = browser_navigate_with_app(&app, &label, url)?;
+            let normalized = browser_navigate_ai_with_app(&app, &label, url)?;
             emit_browser_operation_with_app(
                 &app,
                 &label,

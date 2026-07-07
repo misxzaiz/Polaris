@@ -295,6 +295,22 @@ fn normalize_url(input: &str) -> Result<url::Url> {
     url::Url::parse(&candidate).map_err(|e| AppError::ValidationError(format!("URL 无效: {e}")))
 }
 
+fn ensure_ai_navigation_url_allowed(url: &url::Url) -> Result<()> {
+    if url.scheme() == "file" {
+        return Err(AppError::ValidationError(
+            "AI/MCP 浏览器导航暂不允许 file:// URL；请使用文件工具读取本地文件，或由用户手动打开。"
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn normalize_ai_navigation_url(input: &str) -> Result<url::Url> {
+    let url = normalize_url(input)?;
+    ensure_ai_navigation_url_allowed(&url)?;
+    Ok(url)
+}
+
 pub fn resolve_browser_label(label: Option<&str>) -> Result<String> {
     resolve_browser_label_for_agent(label, None)
 }
@@ -372,6 +388,16 @@ fn unbind_browser_label(label: &str) {
     }
 }
 
+fn forget_browser_session_state(label: &str) -> Result<()> {
+    sessions()
+        .lock()
+        .map_err(|e| AppError::Unknown(format!("浏览器会话表锁异常: {e}")))?
+        .remove(label);
+    forget_browser_bounds(label);
+    unbind_browser_label(label);
+    Ok(())
+}
+
 pub fn browser_list_registered_sessions() -> Result<Vec<BrowserSessionInfo>> {
     let mut list: Vec<_> = sessions()
         .lock()
@@ -398,8 +424,58 @@ pub fn browser_app_handle() -> Result<AppHandle> {
 
 #[cfg(feature = "tauri-app")]
 fn get_webview(app: &AppHandle, label: &str) -> Result<tauri::Webview> {
-    app.get_webview(label)
-        .ok_or_else(|| AppError::ValidationError(format!("浏览器 WebView 不存在: {label}")))
+    if let Some(webview) = app.get_webview(label) {
+        return Ok(webview);
+    }
+    let _ = forget_browser_session_state(label);
+    Err(AppError::ValidationError(format!(
+        "浏览器 WebView 不存在: {label}"
+    )))
+}
+
+#[cfg(feature = "tauri-app")]
+fn prune_stale_browser_sessions_with_app(app: &AppHandle) -> Result<()> {
+    let labels: Vec<String> = sessions()
+        .lock()
+        .map_err(|e| AppError::Unknown(format!("浏览器会话表锁异常: {e}")))?
+        .keys()
+        .cloned()
+        .collect();
+
+    for label in labels {
+        if app.get_webview(&label).is_none() {
+            forget_browser_session_state(&label)?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(feature = "tauri-app")]
+pub fn browser_list_registered_sessions_with_app(
+    app: &AppHandle,
+) -> Result<Vec<BrowserSessionInfo>> {
+    prune_stale_browser_sessions_with_app(app)?;
+    browser_list_registered_sessions()
+}
+
+#[cfg(feature = "tauri-app")]
+pub fn resolve_browser_label_for_agent_with_app(
+    app: &AppHandle,
+    label: Option<&str>,
+    agent_key: Option<&str>,
+) -> Result<String> {
+    if let Some(label) = optional_trimmed(label) {
+        if app.get_webview(&label).is_some() {
+            return Ok(label);
+        }
+        let _ = forget_browser_session_state(&label);
+        return Err(AppError::ValidationError(format!(
+            "浏览器 WebView 不存在: {label}"
+        )));
+    }
+
+    prune_stale_browser_sessions_with_app(app)?;
+    resolve_browser_label_for_agent(None, agent_key)
 }
 
 fn upsert_session(
@@ -553,8 +629,9 @@ pub async fn browser_acquire_with_app(
     let agent_key = optional_trimmed(agent_key);
     let mode = normalize_acquire_mode(mode)?;
     let title = optional_trimmed(title).unwrap_or_else(|| "Browser".to_string());
+    prune_stale_browser_sessions_with_app(app)?;
     let normalized_url = match optional_trimmed(url) {
-        Some(url) => Some(normalize_url(&url)?.to_string()),
+        Some(url) => Some(normalize_ai_navigation_url(&url)?.to_string()),
         None => None,
     };
 
@@ -563,7 +640,7 @@ pub async fn browser_acquire_with_app(
             .ok_or_else(|| AppError::ValidationError(format!("浏览器 WebView 不存在: {label}")))?;
         bind_browser_agent(agent_key.as_deref(), &label)?;
         if let Some(url) = normalized_url.as_deref() {
-            let navigated = browser_navigate_with_app(app, &label, url)?;
+            let navigated = browser_navigate_ai_with_app(app, &label, url)?;
             let session = upsert_session_and_emit(
                 app,
                 label.clone(),
@@ -594,7 +671,7 @@ pub async fn browser_acquire_with_app(
         if let Some(agent_key_value) = agent_key.as_deref() {
             if let Some(bound_label) = bound_browser_label_for_agent(Some(agent_key_value))? {
                 if let Some(url) = normalized_url.as_deref() {
-                    let navigated = browser_navigate_with_app(app, &bound_label, url)?;
+                    let navigated = browser_navigate_ai_with_app(app, &bound_label, url)?;
                     let session = upsert_session_and_emit(
                         app,
                         bound_label.clone(),
@@ -627,9 +704,9 @@ pub async fn browser_acquire_with_app(
     }
 
     if mode == "reuse" {
-        if let Ok(reused_label) = resolve_browser_label(None) {
+        if let Ok(reused_label) = resolve_browser_label_for_agent_with_app(app, None, None) {
             let session = if let Some(url) = normalized_url.as_deref() {
-                let navigated = browser_navigate_with_app(app, &reused_label, url)?;
+                let navigated = browser_navigate_ai_with_app(app, &reused_label, url)?;
                 upsert_session_and_emit(
                     app,
                     reused_label.clone(),
@@ -707,6 +784,21 @@ pub async fn browser_acquire_with_app(
 #[cfg(feature = "tauri-app")]
 pub fn browser_navigate_with_app(app: &AppHandle, label: &str, url: &str) -> Result<String> {
     let normalized = normalize_url(url)?;
+    browser_navigate_normalized_with_app(app, label, normalized)
+}
+
+#[cfg(feature = "tauri-app")]
+pub fn browser_navigate_ai_with_app(app: &AppHandle, label: &str, url: &str) -> Result<String> {
+    let normalized = normalize_ai_navigation_url(url)?;
+    browser_navigate_normalized_with_app(app, label, normalized)
+}
+
+#[cfg(feature = "tauri-app")]
+fn browser_navigate_normalized_with_app(
+    app: &AppHandle,
+    label: &str,
+    normalized: url::Url,
+) -> Result<String> {
     let webview = get_webview(app, label)?;
     webview.navigate(normalized.clone())?;
     let normalized = normalized.to_string();
@@ -1173,13 +1265,7 @@ pub async fn browser_close(app: AppHandle, label: String) -> Result<()> {
     if let Some(webview) = app.get_webview(&label) {
         let _ = webview.close();
     }
-    let mut guard = sessions()
-        .lock()
-        .map_err(|e| AppError::Unknown(format!("浏览器会话表锁异常: {e}")))?;
-    guard.remove(&label);
-    forget_browser_bounds(&label);
-    unbind_browser_label(&label);
-    Ok(())
+    forget_browser_session_state(&label)
 }
 
 #[cfg(feature = "tauri-app")]
@@ -1204,19 +1290,13 @@ pub async fn browser_register(
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn browser_unregister(label: String) -> Result<()> {
-    let mut guard = sessions()
-        .lock()
-        .map_err(|e| AppError::Unknown(format!("浏览器会话表锁异常: {e}")))?;
-    guard.remove(&label);
-    forget_browser_bounds(&label);
-    unbind_browser_label(&label);
-    Ok(())
+    forget_browser_session_state(&label)
 }
 
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn browser_list_sessions() -> Result<Vec<BrowserSessionInfo>> {
-    browser_list_registered_sessions()
+pub async fn browser_list_sessions(app: AppHandle) -> Result<Vec<BrowserSessionInfo>> {
+    browser_list_registered_sessions_with_app(&app)
 }
 
 #[cfg(feature = "tauri-app")]
@@ -2221,5 +2301,53 @@ mod browser_script_tests {
         assert_eq!(normalize_acquire_mode(None).unwrap(), "auto");
         assert_eq!(normalize_acquire_mode(Some(" create ")).unwrap(), "create");
         assert!(normalize_acquire_mode(Some("unexpected")).is_err());
+    }
+
+    #[test]
+    fn ai_navigation_rejects_file_urls() {
+        assert!(normalize_ai_navigation_url("https://example.com").is_ok());
+        assert!(normalize_ai_navigation_url("localhost:3000").is_ok());
+
+        let error = normalize_ai_navigation_url("file:///C:/Users/example/secret.txt")
+            .expect_err("file URLs must be rejected for AI/MCP navigation");
+        assert!(error.to_message().contains("file://"));
+    }
+
+    #[test]
+    fn forget_browser_session_state_removes_related_state() {
+        let _guard = TEST_STATE_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap();
+        sessions().lock().unwrap().clear();
+        bounds_store().lock().unwrap().clear();
+        agent_bindings().lock().unwrap().clear();
+
+        upsert_session(
+            "browser-stale".to_string(),
+            Some("tab-stale".to_string()),
+            Some("https://stale.example/".to_string()),
+            Some("Stale".to_string()),
+        )
+        .unwrap();
+        remember_browser_bounds(
+            "browser-stale",
+            BrowserBounds {
+                x: 10.0,
+                y: 10.0,
+                width: 320.0,
+                height: 240.0,
+            },
+        )
+        .unwrap();
+        bind_browser_agent(Some("agent-1"), "browser-stale").unwrap();
+
+        forget_browser_session_state("browser-stale").unwrap();
+
+        assert!(session_for_label("browser-stale").unwrap().is_none());
+        assert!(browser_bounds("browser-stale").unwrap().is_none());
+        assert!(bound_browser_label_for_agent(Some("agent-1"))
+            .unwrap()
+            .is_none());
     }
 }

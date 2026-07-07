@@ -9,9 +9,10 @@ use serde_json::{json, Value};
 use crate::commands::browser::{
     browser_acquire_with_app, browser_app_handle, browser_click_with_app, browser_fill_with_app,
     browser_get_diagnostics_with_app, browser_get_interactive_elements_with_app,
-    browser_get_page_context_with_app, browser_history_with_app, browser_list_registered_sessions,
-    browser_navigate_with_app, browser_reload_with_app, emit_browser_operation_with_app,
-    resolve_browser_label_for_agent,
+    browser_get_page_context_with_app, browser_history_with_app,
+    browser_list_registered_sessions_with_app, browser_navigate_ai_with_app,
+    browser_reload_with_app, emit_browser_operation_with_app,
+    resolve_browser_label_for_agent_with_app,
 };
 
 use super::{truncate_chars, Tool, ToolContext, ToolOutcome};
@@ -101,8 +102,10 @@ async fn run(args: &Value, ctx: &ToolContext<'_>) -> crate::Result<String> {
         crate::error::AppError::ValidationError("browser 缺少 action".to_string())
     })?;
 
+    let app = browser_app_handle()?;
+
     if action == "list" {
-        let sessions = browser_list_registered_sessions()?;
+        let sessions = browser_list_registered_sessions_with_app(&app)?;
         if sessions.is_empty() {
             return Ok("当前没有打开的 Polaris 内置浏览器。".to_string());
         }
@@ -115,7 +118,6 @@ async fn run(args: &Value, ctx: &ToolContext<'_>) -> crate::Result<String> {
         .and_then(Value::as_str)
         .filter(|value| !value.trim().is_empty())
         .unwrap_or(ctx.session_id);
-    let app = browser_app_handle()?;
 
     if action == "acquire" {
         let result = browser_acquire_with_app(
@@ -135,7 +137,8 @@ async fn run(args: &Value, ctx: &ToolContext<'_>) -> crate::Result<String> {
         return Ok(json);
     }
 
-    let label = resolve_browser_label_for_agent(
+    let label = resolve_browser_label_for_agent_with_app(
+        &app,
         args.get("label").and_then(Value::as_str),
         Some(agent_key),
     )?;
@@ -145,7 +148,7 @@ async fn run(args: &Value, ctx: &ToolContext<'_>) -> crate::Result<String> {
             let url = args.get("url").and_then(Value::as_str).ok_or_else(|| {
                 crate::error::AppError::ValidationError("navigate 缺少 url".to_string())
             })?;
-            let normalized = browser_navigate_with_app(&app, &label, url)?;
+            let normalized = browser_navigate_ai_with_app(&app, &label, url)?;
             emit_browser_operation_with_app(
                 &app,
                 &label,
