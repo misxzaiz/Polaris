@@ -7,6 +7,8 @@
       "target/release/polaris-scheduler-mcp.exe",
       "target/release/polaris-prd-preview-mcp.exe",
       "target/release/polaris-computer-mcp.exe",
+      "target/release/polaris-ask-mcp.exe",
+      "target/release/polaris-browser-mcp.exe",
       "target/release/polaris-agnes-mcp.exe"
     ]
   }

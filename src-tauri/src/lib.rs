@@ -716,6 +716,7 @@ pub fn run() {
             commands::browser::browser_reload,
             commands::browser::browser_history,
             commands::browser::browser_get_page_context,
+            commands::browser::browser_get_diagnostics,
             commands::browser::browser_toggle_devtools,
             // 上下文管理相关
             context_upsert,

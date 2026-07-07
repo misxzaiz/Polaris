@@ -17,6 +17,7 @@ use tauri::{
 static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 
 static BROWSER_SESSIONS: OnceLock<Mutex<HashMap<String, BrowserSessionInfo>>> = OnceLock::new();
+static BROWSER_BOUNDS: OnceLock<Mutex<HashMap<String, BrowserBounds>>> = OnceLock::new();
 
 const DEFAULT_EVAL_TIMEOUT_MS: u64 = 2_500;
 const MAX_EVAL_TIMEOUT_MS: u64 = 10_000;
@@ -110,8 +111,81 @@ pub struct BrowserPageContext {
     pub links: Vec<BrowserLink>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserRect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserViewport {
+    pub width: f64,
+    pub height: f64,
+    pub device_pixel_ratio: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserConsoleMessage {
+    pub level: String,
+    pub message: String,
+    pub url: String,
+    pub timestamp: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserVisualElement {
+    pub index: usize,
+    pub kind: String,
+    pub text: String,
+    pub rect: BrowserRect,
+    pub fillable: bool,
+    pub disabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserScreenshot {
+    pub mime_type: String,
+    pub data: String,
+    pub width: u32,
+    pub height: u32,
+    pub scale: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserVisualSnapshot {
+    pub title: String,
+    pub url: String,
+    pub viewport: BrowserViewport,
+    pub elements: Vec<BrowserVisualElement>,
+    #[serde(default)]
+    pub screenshot: Option<BrowserScreenshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserDiagnostics {
+    pub session: Option<BrowserSessionInfo>,
+    pub context: BrowserPageContext,
+    pub elements: Vec<BrowserInteractiveElement>,
+    pub visual: BrowserVisualSnapshot,
+    pub console_messages: Vec<BrowserConsoleMessage>,
+    pub screenshot_error: Option<String>,
+}
+
 fn sessions() -> &'static Mutex<HashMap<String, BrowserSessionInfo>> {
     BROWSER_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn bounds_store() -> &'static Mutex<HashMap<String, BrowserBounds>> {
+    BROWSER_BOUNDS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 fn now_ms() -> u64 {
@@ -217,6 +291,40 @@ fn upsert_session(
     };
     guard.insert(label, session.clone());
     Ok(session)
+}
+
+fn session_for_label(label: &str) -> Result<Option<BrowserSessionInfo>> {
+    Ok(sessions()
+        .lock()
+        .map_err(|e| AppError::Unknown(format!("浏览器会话表锁异常: {e}")))?
+        .get(label)
+        .cloned())
+}
+
+fn remember_browser_bounds(label: &str, bounds: BrowserBounds) -> Result<()> {
+    let mut guard = bounds_store()
+        .lock()
+        .map_err(|e| AppError::Unknown(format!("浏览器边界表锁异常: {e}")))?;
+    if bounds.width < 1.0 || bounds.height < 1.0 {
+        guard.remove(label);
+    } else {
+        guard.insert(label.to_string(), bounds);
+    }
+    Ok(())
+}
+
+fn forget_browser_bounds(label: &str) {
+    if let Ok(mut guard) = bounds_store().lock() {
+        guard.remove(label);
+    }
+}
+
+fn browser_bounds(label: &str) -> Result<Option<BrowserBounds>> {
+    Ok(bounds_store()
+        .lock()
+        .map_err(|e| AppError::Unknown(format!("浏览器边界表锁异常: {e}")))?
+        .get(label)
+        .copied())
 }
 
 #[cfg(feature = "tauri-app")]
@@ -460,6 +568,126 @@ pub async fn browser_set_ai_overlay_with_app(
 }
 
 #[cfg(feature = "tauri-app")]
+pub async fn browser_get_diagnostics_with_app(
+    app: &AppHandle,
+    label: &str,
+    include_screenshot: bool,
+) -> Result<BrowserDiagnostics> {
+    let context = browser_get_page_context_with_app(app, label).await?;
+    let elements = browser_get_interactive_elements_with_app(app, label).await?;
+    let raw = browser_eval_with_app(app, label, DIAGNOSTICS_SCRIPT, Some(3_500)).await?;
+    let value = parse_eval_json(&raw)?;
+    let mut visual: BrowserVisualSnapshot = serde_json::from_value(
+        value
+            .get("visual")
+            .cloned()
+            .ok_or_else(|| AppError::ValidationError("浏览器诊断缺少 visual".to_string()))?,
+    )
+    .map_err(|e| AppError::ValidationError(format!("浏览器视觉诊断格式错误: {e}")))?;
+    let console_messages: Vec<BrowserConsoleMessage> = serde_json::from_value(
+        value
+            .get("consoleMessages")
+            .cloned()
+            .unwrap_or_else(|| Value::Array(Vec::new())),
+    )
+    .map_err(|e| AppError::ValidationError(format!("浏览器 Console 诊断格式错误: {e}")))?;
+
+    let mut screenshot_error = None;
+    if include_screenshot {
+        match capture_browser_screenshot(app, label, 0.75) {
+            Ok(Some(screenshot)) => {
+                visual.screenshot = Some(screenshot);
+            }
+            Ok(None) => {
+                screenshot_error = Some("当前平台暂不支持内置浏览器区域截图".to_string());
+            }
+            Err(error) => {
+                screenshot_error = Some(error.to_message());
+            }
+        }
+    }
+
+    let diagnostics = BrowserDiagnostics {
+        session: session_for_label(label)?,
+        context,
+        elements,
+        visual,
+        console_messages,
+        screenshot_error,
+    };
+
+    emit_browser_operation_with_app(
+        app,
+        label,
+        "diagnostics",
+        "success",
+        format!(
+            "AI 读取浏览器诊断：{} 个可操作元素，{} 条 Console",
+            diagnostics.elements.len(),
+            diagnostics.console_messages.len()
+        ),
+        None,
+        Some(diagnostics.context.url.clone()),
+    );
+
+    Ok(diagnostics)
+}
+
+#[cfg(all(feature = "tauri-app", windows))]
+fn capture_browser_screenshot(
+    app: &AppHandle,
+    label: &str,
+    scale: f32,
+) -> Result<Option<BrowserScreenshot>> {
+    let Some(bounds) = browser_bounds(label)? else {
+        return Err(AppError::ValidationError(
+            "缺少浏览器位置，暂时无法截图".to_string(),
+        ));
+    };
+    if bounds.width < 1.0 || bounds.height < 1.0 {
+        return Err(AppError::ValidationError(
+            "浏览器区域不可见，暂时无法截图".to_string(),
+        ));
+    }
+
+    let window = app
+        .get_window("main")
+        .ok_or_else(|| AppError::ValidationError("主窗口不存在，无法截图".to_string()))?;
+    let scale_factor = window.scale_factor().unwrap_or(1.0);
+    let position = window
+        .outer_position()
+        .map_err(|e| AppError::ProcessError(format!("读取窗口位置失败: {e}")))?;
+    let x = ((position.x as f64) + bounds.x * scale_factor)
+        .round()
+        .max(0.0) as u32;
+    let y = ((position.y as f64) + bounds.y * scale_factor)
+        .round()
+        .max(0.0) as u32;
+    let width = (bounds.width * scale_factor).round().max(1.0) as u32;
+    let height = (bounds.height * scale_factor).round().max(1.0) as u32;
+
+    let controller_config = crate::services::computer_control::ComputerConfig::from_env();
+    let controller = crate::services::computer_control::ComputerController::new(controller_config)?;
+    let shot = controller.screenshot(Some(0), Some((x, y, width, height)), Some(scale))?;
+    Ok(Some(BrowserScreenshot {
+        mime_type: "image/png".to_string(),
+        data: shot.png_base64,
+        width: shot.width,
+        height: shot.height,
+        scale,
+    }))
+}
+
+#[cfg(all(feature = "tauri-app", not(windows)))]
+fn capture_browser_screenshot(
+    _app: &AppHandle,
+    _label: &str,
+    _scale: f32,
+) -> Result<Option<BrowserScreenshot>> {
+    Ok(None)
+}
+
+#[cfg(feature = "tauri-app")]
 pub fn browser_toggle_devtools_with_app(app: &AppHandle, label: &str) -> Result<()> {
     let webview = get_webview(app, label)?;
     if webview.is_devtools_open() {
@@ -497,6 +725,7 @@ pub async fn browser_create(
         }
 
         apply_webview_bounds(&existing, bounds)?;
+        remember_browser_bounds(&label, bounds)?;
         return upsert_session_and_emit(
             &app,
             label,
@@ -567,6 +796,7 @@ pub async fn browser_create(
         tauri::LogicalSize::new(bounds.width.max(1.0), bounds.height.max(1.0)),
     )?;
 
+    remember_browser_bounds(&label, bounds)?;
     upsert_session_and_emit(
         &app,
         label,
@@ -584,7 +814,9 @@ pub async fn browser_set_bounds(
     bounds: BrowserBounds,
 ) -> Result<()> {
     let webview = get_webview(&app, &label)?;
-    apply_webview_bounds(&webview, bounds)
+    apply_webview_bounds(&webview, bounds)?;
+    remember_browser_bounds(&label, bounds)?;
+    Ok(())
 }
 
 #[cfg(feature = "tauri-app")]
@@ -607,6 +839,7 @@ pub async fn browser_close(app: AppHandle, label: String) -> Result<()> {
         .lock()
         .map_err(|e| AppError::Unknown(format!("浏览器会话表锁异常: {e}")))?;
     guard.remove(&label);
+    forget_browser_bounds(&label);
     Ok(())
 }
 
@@ -636,6 +869,7 @@ pub async fn browser_unregister(label: String) -> Result<()> {
         .lock()
         .map_err(|e| AppError::Unknown(format!("浏览器会话表锁异常: {e}")))?;
     guard.remove(&label);
+    forget_browser_bounds(&label);
     Ok(())
 }
 
@@ -667,6 +901,16 @@ pub async fn browser_history(app: AppHandle, label: String, direction: String) -
 #[tauri::command]
 pub async fn browser_get_page_context(app: AppHandle, label: String) -> Result<BrowserPageContext> {
     browser_get_page_context_with_app(&app, &label).await
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_get_diagnostics(
+    app: AppHandle,
+    label: String,
+    include_screenshot: Option<bool>,
+) -> Result<BrowserDiagnostics> {
+    browser_get_diagnostics_with_app(&app, &label, include_screenshot.unwrap_or(false)).await
 }
 
 #[cfg(feature = "tauri-app")]
@@ -795,6 +1039,153 @@ const INTERACTIVE_ELEMENTS_SCRIPT: &str = r#"
       fillable: isFillable(element) && !isDisabled(element)
     }));
   return JSON.stringify(elements);
+})()
+"#;
+
+#[cfg(feature = "tauri-app")]
+const DIAGNOSTICS_SCRIPT: &str = r#"
+(() => {
+  const clean = (value, max = 220) => String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max);
+  const now = () => Date.now();
+
+  if (!window.__POLARIS_BROWSER_CONSOLE__) {
+    const buffer = [];
+    const push = (level, args) => {
+      try {
+        buffer.push({
+          level,
+          message: Array.from(args || []).map((item) => {
+            if (typeof item === 'string') return item;
+            try { return JSON.stringify(item); } catch { return String(item); }
+          }).join(' ').slice(0, 2000),
+          url: String(location.href),
+          timestamp: now()
+        });
+        if (buffer.length > 120) buffer.splice(0, buffer.length - 120);
+      } catch {}
+    };
+    const original = {};
+    ['debug', 'log', 'info', 'warn', 'error'].forEach((level) => {
+      original[level] = console[level];
+      console[level] = function(...args) {
+        push(level, args);
+        return original[level]?.apply(this, args);
+      };
+    });
+    window.addEventListener('error', (event) => {
+      push('error', [event.message || 'Script error', event.filename || '', event.lineno || '']);
+    });
+    window.addEventListener('unhandledrejection', (event) => {
+      push('error', ['Unhandled promise rejection', event.reason || '']);
+    });
+    Object.defineProperty(window, '__POLARIS_BROWSER_CONSOLE__', {
+      value: buffer,
+      configurable: true
+    });
+  }
+
+  const selector = [
+    'a[href]',
+    'button',
+    'input',
+    'textarea',
+    'select',
+    '[role="button"]',
+    '[role="link"]',
+    '[contenteditable="true"]',
+    '[tabindex]:not([tabindex="-1"])'
+  ].join(',');
+  const isVisible = (element) => {
+    const style = window.getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0
+      && rect.height > 0
+      && rect.bottom >= 0
+      && rect.right >= 0
+      && rect.top <= window.innerHeight
+      && rect.left <= window.innerWidth
+      && style.visibility !== 'hidden'
+      && style.display !== 'none'
+      && element.getAttribute('aria-hidden') !== 'true';
+  };
+  const kindOf = (element) => {
+    const tag = element.tagName.toLowerCase();
+    const role = element.getAttribute('role');
+    const type = element.getAttribute('type');
+    if (tag === 'a') return 'link';
+    if (tag === 'input') return type ? `input:${type}` : 'input';
+    if (tag === 'textarea') return 'textarea';
+    if (tag === 'select') return 'select';
+    if (tag === 'button') return 'button';
+    if (role) return role;
+    if (element.isContentEditable) return 'editable';
+    return tag;
+  };
+  const labelOf = (element) => clean(
+    element.innerText
+      || element.value
+      || element.getAttribute('aria-label')
+      || element.getAttribute('title')
+      || element.getAttribute('placeholder')
+      || element.href
+      || ''
+  );
+  const isFillable = (element) => {
+    const tag = element.tagName.toLowerCase();
+    const role = element.getAttribute('role');
+    const type = (element.getAttribute('type') || '').toLowerCase();
+    const nonTextInputTypes = ['button', 'submit', 'reset', 'checkbox', 'radio', 'file', 'image', 'hidden'];
+    return element.isContentEditable
+      || tag === 'textarea'
+      || tag === 'select'
+      || role === 'textbox'
+      || (tag === 'input' && !nonTextInputTypes.includes(type));
+  };
+  const isDisabled = (element) => Boolean(
+    element.disabled
+      || element.readOnly
+      || element.getAttribute('aria-disabled') === 'true'
+  );
+
+  const elements = Array.from(document.querySelectorAll(selector))
+    .filter(isVisible)
+    .filter((element) => labelOf(element) || ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName))
+    .slice(0, 80)
+    .map((element, index) => {
+      const rect = element.getBoundingClientRect();
+      const disabled = isDisabled(element);
+      return {
+        index,
+        kind: kindOf(element),
+        text: labelOf(element),
+        rect: {
+          x: Math.round(rect.left),
+          y: Math.round(rect.top),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height)
+        },
+        fillable: isFillable(element) && !disabled,
+        disabled
+      };
+    });
+
+  return JSON.stringify({
+    visual: {
+      title: clean(document.title || '', 300),
+      url: String(location.href),
+      viewport: {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        devicePixelRatio: window.devicePixelRatio || 1
+      },
+      elements,
+      screenshot: null
+    },
+    consoleMessages: (window.__POLARIS_BROWSER_CONSOLE__ || []).slice(-80)
+  });
 })()
 "#;
 

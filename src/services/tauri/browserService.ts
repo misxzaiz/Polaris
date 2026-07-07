@@ -29,6 +29,71 @@ export interface BrowserOperationEvent {
   timestamp: number
 }
 
+export interface BrowserRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface BrowserViewport {
+  width: number
+  height: number
+  devicePixelRatio: number
+}
+
+export interface BrowserInteractiveElement {
+  index: number
+  kind: string
+  text: string
+  value: string
+  placeholder: string
+  href: string
+  disabled: boolean
+  fillable: boolean
+}
+
+export interface BrowserConsoleMessage {
+  level: string
+  message: string
+  url: string
+  timestamp: number
+}
+
+export interface BrowserVisualElement {
+  index: number
+  kind: string
+  text: string
+  rect: BrowserRect
+  fillable: boolean
+  disabled: boolean
+}
+
+export interface BrowserScreenshot {
+  mimeType: string
+  data: string
+  width: number
+  height: number
+  scale: number
+}
+
+export interface BrowserVisualSnapshot {
+  title: string
+  url: string
+  viewport: BrowserViewport
+  elements: BrowserVisualElement[]
+  screenshot?: BrowserScreenshot | null
+}
+
+export interface BrowserDiagnostics {
+  session?: BrowserSessionInfo | null
+  context: BrowserPageContext
+  elements: BrowserInteractiveElement[]
+  visual: BrowserVisualSnapshot
+  consoleMessages: BrowserConsoleMessage[]
+  screenshotError?: string | null
+}
+
 export interface BrowserOverlayResult {
   enabled: boolean
   count: number
@@ -121,6 +186,13 @@ export async function browserHistory(label: string, direction: 'back' | 'forward
 
 export async function browserGetPageContext(label: string): Promise<BrowserPageContext> {
   return invoke<BrowserPageContext>('browser_get_page_context', { label })
+}
+
+export async function browserGetDiagnostics(
+  label: string,
+  includeScreenshot = false
+): Promise<BrowserDiagnostics> {
+  return invoke<BrowserDiagnostics>('browser_get_diagnostics', { label, includeScreenshot })
 }
 
 export async function browserToggleDevtools(label: string): Promise<void> {

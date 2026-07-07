@@ -27,8 +27,9 @@ use crate::state::{
     QuestionStatus, SubAnswer,
 };
 
-/// Maximum frame size we accept on the wire (1 MiB).
-const MAX_FRAME_SIZE: usize = 1_048_576;
+/// Maximum frame size we accept on the wire. Browser diagnostics may include
+/// a clipped PNG screenshot, so this is larger than the original ask-only cap.
+const MAX_FRAME_SIZE: usize = 16 * 1024 * 1024;
 const PLUGIN_CARD_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// Final answer payload that goes back to the companion → CLI tool_result.
@@ -168,6 +169,12 @@ async fn handle_connection(
     match kind {
         "ask" => handle_ask_frame(&mut stream, frame, state, &expected_token).await,
         "card" => handle_card_frame(&mut stream, frame, state, &expected_token).await,
+        #[cfg(feature = "tauri-app")]
+        "browser" => handle_browser_frame(&mut stream, frame, &expected_token).await,
+        #[cfg(not(feature = "tauri-app"))]
+        "browser" => Err(AppError::ValidationError(
+            "browser 帧需要 tauri-app 功能".into(),
+        )),
         "cancel" => {
             // Cancel frames arrive when the CLI sends notifications/cancelled
             // to the companion. We simply remove any matching pending entry
@@ -180,10 +187,7 @@ async fn handle_connection(
             handle_card_cancel_frame(frame, state, &expected_token);
             Ok(())
         }
-        other => Err(AppError::ValidationError(format!(
-            "未知帧类型: {}",
-            other
-        ))),
+        other => Err(AppError::ValidationError(format!("未知帧类型: {}", other))),
     }
 }
 
@@ -199,7 +203,9 @@ async fn handle_ask_frame(
         .and_then(Value::as_str)
         .unwrap_or_default();
     if token != expected_token {
-        return Err(AppError::ValidationError("ask_listener token 不匹配".into()));
+        return Err(AppError::ValidationError(
+            "ask_listener token 不匹配".into(),
+        ));
     }
 
     let session_id = frame
@@ -216,10 +222,7 @@ async fn handle_ask_frame(
         return Err(AppError::ValidationError("ask 帧缺少 callId".into()));
     }
 
-    let questions_value = frame
-        .get("questions")
-        .cloned()
-        .unwrap_or_else(|| json!([]));
+    let questions_value = frame.get("questions").cloned().unwrap_or_else(|| json!([]));
     let questions = parse_questions(&questions_value)?;
     if questions.is_empty() {
         return Err(AppError::ValidationError("ask 帧 questions 为空".into()));
@@ -285,7 +288,9 @@ async fn handle_card_frame(
         .and_then(Value::as_str)
         .unwrap_or_default();
     if token != expected_token {
-        return Err(AppError::ValidationError("ask_listener token 不匹配".into()));
+        return Err(AppError::ValidationError(
+            "ask_listener token 不匹配".into(),
+        ));
     }
 
     let session_id = frame
@@ -397,6 +402,242 @@ async fn handle_card_frame(
     Ok(())
 }
 
+#[cfg(feature = "tauri-app")]
+async fn handle_browser_frame(
+    stream: &mut TcpStream,
+    frame: Value,
+    expected_token: &str,
+) -> Result<()> {
+    let token = frame
+        .get("token")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if token != expected_token {
+        return Err(AppError::ValidationError(
+            "ask_listener token 不匹配".into(),
+        ));
+    }
+
+    let outcome = match dispatch_browser_frame(frame).await {
+        Ok(result) => json!({
+            "type": "browser_result",
+            "ok": true,
+            "result": result,
+        }),
+        Err(error) => json!({
+            "type": "browser_result",
+            "ok": false,
+            "error": error.to_message(),
+        }),
+    };
+
+    write_frame(stream, &outcome).await?;
+    let _ = stream.shutdown().await;
+    Ok(())
+}
+
+#[cfg(feature = "tauri-app")]
+async fn dispatch_browser_frame(frame: Value) -> Result<Value> {
+    use crate::commands::browser::{
+        browser_app_handle, browser_click_with_app, browser_fill_with_app,
+        browser_get_diagnostics_with_app, browser_get_interactive_elements_with_app,
+        browser_get_page_context_with_app, browser_history_with_app,
+        browser_list_registered_sessions, browser_navigate_with_app, browser_reload_with_app,
+        emit_browser_operation_with_app, resolve_browser_label,
+    };
+
+    let action = frame
+        .get("action")
+        .and_then(Value::as_str)
+        .ok_or_else(|| AppError::ValidationError("browser 帧缺少 action".to_string()))?;
+
+    if action == "list" {
+        return serde_json::to_value(browser_list_registered_sessions()?).map_err(Into::into);
+    }
+
+    let label = resolve_browser_label(frame.get("label").and_then(Value::as_str))?;
+    let app = browser_app_handle()?;
+
+    match action {
+        "navigate" => {
+            let url = frame
+                .get("url")
+                .and_then(Value::as_str)
+                .ok_or_else(|| AppError::ValidationError("browser navigate 缺少 url".into()))?;
+            let normalized = browser_navigate_with_app(&app, &label, url)?;
+            emit_browser_operation_with_app(
+                &app,
+                &label,
+                "navigate",
+                "success",
+                format!("Claude/MCP 导航到 {normalized}"),
+                None,
+                Some(normalized.clone()),
+            );
+            Ok(json!({ "label": label, "url": normalized }))
+        }
+        "context" => {
+            let context = browser_get_page_context_with_app(&app, &label).await?;
+            emit_browser_operation_with_app(
+                &app,
+                &label,
+                "context",
+                "success",
+                if context.title.trim().is_empty() {
+                    "Claude/MCP 读取页面上下文".to_string()
+                } else {
+                    format!(
+                        "Claude/MCP 读取页面上下文：{}",
+                        truncate_for_log(&context.title, 80)
+                    )
+                },
+                None,
+                Some(context.url.clone()),
+            );
+            serde_json::to_value(context).map_err(Into::into)
+        }
+        "diagnostics" => {
+            let include_screenshot = frame
+                .get("includeScreenshot")
+                .or_else(|| frame.get("include_screenshot"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let diagnostics =
+                browser_get_diagnostics_with_app(&app, &label, include_screenshot).await?;
+            serde_json::to_value(diagnostics).map_err(Into::into)
+        }
+        "inspect" => {
+            let elements = browser_get_interactive_elements_with_app(&app, &label).await?;
+            emit_browser_operation_with_app(
+                &app,
+                &label,
+                "inspect",
+                "success",
+                format!("Claude/MCP 检查到 {} 个可操作元素", elements.len()),
+                None,
+                None,
+            );
+            serde_json::to_value(elements).map_err(Into::into)
+        }
+        "click" => {
+            let result = browser_click_with_app(
+                &app,
+                &label,
+                frame_index(&frame)?,
+                frame.get("text").and_then(Value::as_str),
+            )
+            .await?;
+            emit_browser_operation_with_app(
+                &app,
+                &label,
+                "click",
+                if result.ok { "success" } else { "warning" },
+                result.message.clone(),
+                non_empty_target(&result.text),
+                Some(result.url.clone()),
+            );
+            serde_json::to_value(result).map_err(Into::into)
+        }
+        "fill" => {
+            let value = frame
+                .get("value")
+                .and_then(Value::as_str)
+                .ok_or_else(|| AppError::ValidationError("browser fill 缺少 value".into()))?;
+            let result = browser_fill_with_app(
+                &app,
+                &label,
+                frame_index(&frame)?,
+                frame.get("text").and_then(Value::as_str),
+                value,
+            )
+            .await?;
+            emit_browser_operation_with_app(
+                &app,
+                &label,
+                "fill",
+                if result.ok { "success" } else { "warning" },
+                result.message.clone(),
+                non_empty_target(&result.text),
+                Some(result.url.clone()),
+            );
+            serde_json::to_value(result).map_err(Into::into)
+        }
+        "reload" => {
+            browser_reload_with_app(&app, &label)?;
+            emit_browser_operation_with_app(
+                &app,
+                &label,
+                "reload",
+                "success",
+                "Claude/MCP 刷新了当前页面".to_string(),
+                None,
+                None,
+            );
+            Ok(json!({ "label": label, "reloaded": true }))
+        }
+        "back" => {
+            browser_history_with_app(&app, &label, "back")?;
+            emit_browser_operation_with_app(
+                &app,
+                &label,
+                "back",
+                "success",
+                "Claude/MCP 后退到上一页".to_string(),
+                None,
+                None,
+            );
+            Ok(json!({ "label": label, "direction": "back" }))
+        }
+        "forward" => {
+            browser_history_with_app(&app, &label, "forward")?;
+            emit_browser_operation_with_app(
+                &app,
+                &label,
+                "forward",
+                "success",
+                "Claude/MCP 前进到下一页".to_string(),
+                None,
+                None,
+            );
+            Ok(json!({ "label": label, "direction": "forward" }))
+        }
+        other => Err(AppError::ValidationError(format!(
+            "未知 browser action: {other}"
+        ))),
+    }
+}
+
+#[cfg(feature = "tauri-app")]
+fn frame_index(frame: &Value) -> Result<Option<usize>> {
+    match frame.get("index").and_then(Value::as_i64) {
+        Some(index) if index >= 0 => Ok(Some(index as usize)),
+        Some(_) => Err(AppError::ValidationError("index 不能为负数".to_string())),
+        None => Ok(None),
+    }
+}
+
+#[cfg(feature = "tauri-app")]
+fn non_empty_target(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(truncate_for_log(trimmed, 120))
+    }
+}
+
+#[cfg(feature = "tauri-app")]
+fn truncate_for_log(value: &str, max_chars: usize) -> String {
+    let mut out = String::new();
+    for ch in value.chars().take(max_chars) {
+        out.push(ch);
+    }
+    if value.chars().count() > max_chars {
+        out.push('…');
+    }
+    out
+}
+
 fn handle_cancel_frame(frame: Value, state: Arc<AppState>, expected_token: &str) {
     let token = frame
         .get("token")
@@ -444,7 +685,11 @@ fn handle_card_cancel_frame(frame: Value, state: Arc<AppState>, expected_token: 
         .pending_plugin_cards
         .lock()
         .ok()
-        .and_then(|pending| pending.get(&interaction_id).map(|card| card.session_id.clone()))
+        .and_then(|pending| {
+            pending
+                .get(&interaction_id)
+                .map(|card| card.session_id.clone())
+        })
         .unwrap_or_default();
     if let Some(entry) = state.take_plugin_card_answer_sender(&interaction_id) {
         let _ = entry.sender.send(PluginCardOutcome::declined());
@@ -452,13 +697,7 @@ fn handle_card_cancel_frame(frame: Value, state: Arc<AppState>, expected_token: 
     if let Ok(mut pending) = state.pending_plugin_cards.lock() {
         pending.remove(&interaction_id);
     }
-    emit_plugin_card_answered_event(
-        &state,
-        &session_id,
-        &interaction_id,
-        true,
-        Value::Null,
-    );
+    emit_plugin_card_answered_event(&state, &session_id, &interaction_id, true, Value::Null);
 }
 
 /// Parsed `questions[i]` for internal use.
@@ -758,8 +997,7 @@ async fn read_frame(stream: &mut TcpStream) -> Result<Value> {
 
 async fn write_frame(stream: &mut TcpStream, value: &Value) -> Result<()> {
     let body = serde_json::to_vec(value)?;
-    let len = u32::try_from(body.len())
-        .map_err(|_| AppError::ProcessError("帧体过大".into()))?;
+    let len = u32::try_from(body.len()).map_err(|_| AppError::ProcessError("帧体过大".into()))?;
     stream
         .write_all(&len.to_le_bytes())
         .await
@@ -814,10 +1052,7 @@ impl AppState {
         sender: oneshot::Sender<PluginCardOutcome>,
     ) {
         if let Ok(mut map) = self.plugin_card_answer_senders.lock() {
-            map.insert(
-                interaction_id.to_string(),
-                PluginCardAnswerEntry { sender },
-            );
+            map.insert(interaction_id.to_string(), PluginCardAnswerEntry { sender });
         }
     }
 

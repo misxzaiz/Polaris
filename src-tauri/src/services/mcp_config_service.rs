@@ -20,6 +20,8 @@ const COMPUTER_MCP_SERVER_NAME: &str = "polaris-computer";
 const COMPUTER_MCP_BIN_NAME: &str = "polaris-computer-mcp";
 const ASK_MCP_SERVER_NAME: &str = "polaris-ask";
 const ASK_MCP_BIN_NAME: &str = "polaris-ask-mcp";
+const BROWSER_MCP_SERVER_NAME: &str = "polaris-browser";
+const BROWSER_MCP_BIN_NAME: &str = "polaris-browser-mcp";
 const AGNES_MCP_SERVER_NAME: &str = "polaris-agnes";
 const AGNES_MCP_BIN_NAME: &str = "polaris-agnes-mcp";
 const TODO_PLUGIN_ID: &str = "polaris.todo";
@@ -28,6 +30,7 @@ const SCHEDULER_PLUGIN_ID: &str = "polaris.scheduler";
 const PRD_PREVIEW_PLUGIN_ID: &str = "polaris.prd-preview";
 const COMPUTER_PLUGIN_ID: &str = "polaris.computer";
 const ASK_PLUGIN_ID: &str = "polaris.ask";
+const BROWSER_PLUGIN_ID: &str = "polaris.browser";
 const AGNES_PLUGIN_ID: &str = "polaris.agnes";
 
 /// Platform-aware executable suffix: ".exe" on Windows, "" on Linux/macOS.
@@ -176,6 +179,10 @@ pub fn builtin_plugin_mcp_manifests() -> &'static [BuiltinPluginMcpManifest] {
             mcp_server_names: &[ASK_MCP_SERVER_NAME],
         },
         BuiltinPluginMcpManifest {
+            plugin_id: BROWSER_PLUGIN_ID,
+            mcp_server_names: &[BROWSER_MCP_SERVER_NAME],
+        },
+        BuiltinPluginMcpManifest {
             plugin_id: AGNES_PLUGIN_ID,
             mcp_server_names: &[AGNES_MCP_SERVER_NAME],
         },
@@ -258,6 +265,19 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
             "polaris-ask-mcp",
             "src-tauri/target/debug/polaris-ask-mcp",
             "POLARIS_ASK_MCP_PATH",
+            McpServerArgsMode::AskListener,
+            false,
+        ),
+    );
+    registry.register_plugin_server(
+        BROWSER_PLUGIN_ID,
+        PluginMcpServerContribution::builtin(
+            BROWSER_MCP_SERVER_NAME,
+            BROWSER_MCP_BIN_NAME,
+            "bin/polaris-browser-mcp",
+            "polaris-browser-mcp",
+            "src-tauri/target/debug/polaris-browser-mcp",
+            "POLARIS_BROWSER_MCP_PATH",
             McpServerArgsMode::AskListener,
             false,
         ),

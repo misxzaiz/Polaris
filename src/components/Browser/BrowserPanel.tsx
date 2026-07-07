@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
+  Activity,
   ArrowLeft,
   ArrowRight,
   BookOpen,
@@ -27,6 +28,7 @@ import { useTranslation } from 'react-i18next'
 import {
   browserClearData,
   browserCreate,
+  browserGetDiagnostics,
   browserGetPageContext,
   browserHistory,
   browserNavigate,
@@ -37,6 +39,7 @@ import {
   makeBrowserWebviewLabel,
   normalizeBrowserUrl,
   type BrowserBounds,
+  type BrowserDiagnostics,
   type BrowserOperationEvent,
   type BrowserPageContext,
   type BrowserSessionInfo,
@@ -132,7 +135,9 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
   const [aiOperationMode, setAiOperationMode] = useState(false)
   const [highlightCount, setHighlightCount] = useState<number | null>(null)
   const [contextPreview, setContextPreview] = useState<BrowserPageContext | null>(null)
+  const [diagnostics, setDiagnostics] = useState<BrowserDiagnostics | null>(null)
   const [contextLoading, setContextLoading] = useState(false)
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false)
   const [operationEvents, setOperationEvents] = useState<BrowserOperationEvent[]>([])
 
   const { sendMessage } = useActiveSessionActions()
@@ -308,6 +313,8 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
       setAddress(nextUrl)
       setCurrentUrl(nextUrl)
       setPageTitle('Browser')
+      setDiagnostics(null)
+      setContextPreview(null)
       updateBrowserTab(tabId, { url: nextUrl, title: 'Browser' })
       try {
         if (status === 'native-unavailable') {
@@ -393,6 +400,29 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
     }
   }, [currentUrl, pageTitle, status, toast, webviewLabel])
 
+  const refreshDiagnostics = useCallback(async () => {
+    if (status === 'native-unavailable') {
+      setAiPanelOpen(true)
+      setDiagnostics(null)
+      return
+    }
+
+    setDiagnosticsLoading(true)
+    setError(null)
+    try {
+      const result = await browserGetDiagnostics(webviewLabel, false)
+      setDiagnostics(result)
+      setContextPreview(result.context)
+      setAiPanelOpen(true)
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      setError(message)
+      toast.error(message)
+    } finally {
+      setDiagnosticsLoading(false)
+    }
+  }, [status, toast, webviewLabel])
+
   const openExternal = useCallback(async () => {
     try {
       const { openUrl } = await import('@tauri-apps/plugin-opener')
@@ -432,6 +462,23 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
   const contextHeadings = useMemo(
     () => contextPreview?.headings.filter((heading) => heading.text).slice(0, 5) ?? [],
     [contextPreview]
+  )
+  const diagnosticsIssueCount = useMemo(
+    () =>
+      diagnostics?.consoleMessages.filter((item) =>
+        ['error', 'warn'].includes(item.level.toLowerCase())
+      ).length ?? 0,
+    [diagnostics]
+  )
+  const diagnosticsLatestIssue = useMemo(
+    () => {
+      const issues =
+        diagnostics?.consoleMessages.filter((item) =>
+          ['error', 'warn'].includes(item.level.toLowerCase())
+        ) ?? []
+      return issues[issues.length - 1]
+    },
+    [diagnostics]
   )
 
   return (
@@ -523,6 +570,18 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
             {contextLoading ? <Loader2 size={15} className="animate-spin" /> : <ListTree size={15} />}
             <span className="hidden 2xl:inline">
               {t('browser.contextPreview', { defaultValue: '上下文' })}
+            </span>
+          </button>
+          <button
+            type="button"
+            className={taskButtonClass}
+            onClick={refreshDiagnostics}
+            disabled={diagnosticsLoading || status !== 'ready'}
+            title={t('browser.diagnosticsHint', { defaultValue: '读取 DOM、Console 和可操作元素诊断' })}
+          >
+            {diagnosticsLoading ? <Loader2 size={15} className="animate-spin" /> : <Activity size={15} />}
+            <span className="hidden 2xl:inline">
+              {t('browser.diagnostics', { defaultValue: '诊断' })}
             </span>
           </button>
           <button
@@ -695,6 +754,51 @@ export function BrowserPanel({ tabId, initialUrl = 'https://www.bing.com' }: Bro
                 </div>
                 <span className="text-[11px] text-text-tertiary">{operationEvents.length}</span>
               </div>
+              {diagnostics && (
+                <div className="mb-2 border-b border-border-subtle pb-2">
+                  <div className="mb-1 flex items-center justify-between gap-2 text-[11px]">
+                    <span className="font-medium text-text-secondary">
+                      {t('browser.diagnostics', { defaultValue: '诊断' })}
+                    </span>
+                    <span
+                      className={clsx(
+                        diagnosticsIssueCount > 0 ? 'text-warning' : 'text-success'
+                      )}
+                    >
+                      {diagnosticsIssueCount > 0
+                        ? t('browser.consoleIssues', {
+                            count: diagnosticsIssueCount,
+                            defaultValue: '{{count}} 条 Console 风险',
+                          })
+                        : t('browser.consoleClean', { defaultValue: 'Console 正常' })}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1 text-[11px] text-text-tertiary">
+                    <span>
+                      {t('browser.actionableCount', {
+                        count: diagnostics.elements.length,
+                        defaultValue: '可操作 {{count}}',
+                      })}
+                    </span>
+                    <span>
+                      {t('browser.visibleCount', {
+                        count: diagnostics.visual.elements.length,
+                        defaultValue: '可视 {{count}}',
+                      })}
+                    </span>
+                    <span>
+                      {diagnostics.visual.screenshot
+                        ? t('browser.screenshotReady', { defaultValue: '截图可用' })
+                        : t('browser.textOnlyDiagnostics', { defaultValue: '文本诊断' })}
+                    </span>
+                  </div>
+                  {diagnosticsLatestIssue && (
+                    <div className="mt-1 truncate text-[11px] text-text-secondary" title={diagnosticsLatestIssue.message}>
+                      {diagnosticsLatestIssue.level}: {diagnosticsLatestIssue.message}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="flex max-h-24 flex-col gap-1 overflow-hidden">
                 {operationEvents.length === 0 ? (
                   <div className="text-xs text-text-tertiary">

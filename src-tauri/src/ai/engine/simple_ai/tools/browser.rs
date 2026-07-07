@@ -8,9 +8,10 @@ use serde_json::{json, Value};
 
 use crate::commands::browser::{
     browser_app_handle, browser_click_with_app, browser_fill_with_app,
-    browser_get_interactive_elements_with_app, browser_get_page_context_with_app,
-    browser_history_with_app, browser_list_registered_sessions, browser_navigate_with_app,
-    browser_reload_with_app, emit_browser_operation_with_app, resolve_browser_label,
+    browser_get_diagnostics_with_app, browser_get_interactive_elements_with_app,
+    browser_get_page_context_with_app, browser_history_with_app, browser_list_registered_sessions,
+    browser_navigate_with_app, browser_reload_with_app, emit_browser_operation_with_app,
+    resolve_browser_label,
 };
 
 use super::{truncate_chars, Tool, ToolContext, ToolOutcome};
@@ -30,14 +31,14 @@ impl Tool for BrowserTool {
             "type": "function",
             "function": {
                 "name": "browser",
-                "description": "操作 Polaris 内置浏览器。可列出当前浏览器、导航到 URL、后退、前进、刷新、读取页面上下文、列出可操作元素，并按 inspect 返回的 index 或可见文本点击/填写。fill 应优先选择 fillable=true 的元素。只作用于 Polaris 内置浏览器 Tab；如未打开浏览器，先让用户打开浏览器面板。",
+                "description": "操作 Polaris 内置浏览器。可列出当前浏览器、导航到 URL、后退、前进、刷新、读取页面上下文、诊断页面 DOM/Console/可视元素、列出可操作元素，并按 inspect 返回的 index 或可见文本点击/填写。fill 应优先选择 fillable=true 的元素。只作用于 Polaris 内置浏览器 Tab；如未打开浏览器，先让用户打开浏览器面板。",
                 "parameters": {
                     "type": "object",
                     "required": ["action"],
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["list", "navigate", "context", "inspect", "click", "fill", "reload", "back", "forward"]
+                            "enum": ["list", "navigate", "context", "diagnostics", "inspect", "click", "fill", "reload", "back", "forward"]
                         },
                         "label": {
                             "type": "string",
@@ -58,6 +59,10 @@ impl Tool for BrowserTool {
                         "value": {
                             "type": "string",
                             "description": "fill 要输入的文本"
+                        },
+                        "includeScreenshot": {
+                            "type": "boolean",
+                            "description": "diagnostics 是否尝试返回当前内置浏览器区域截图。默认 false；需要视觉判断时再开启。"
                         }
                     },
                     "additionalProperties": false
@@ -142,6 +147,17 @@ async fn run(args: &Value) -> crate::Result<String> {
             }
             let json = serde_json::to_string_pretty(&elements)
                 .unwrap_or_else(|_| "无法序列化浏览器可操作元素".to_string());
+            Ok(truncate_chars(&json, BROWSER_OUTPUT_CAP))
+        }
+        "diagnostics" => {
+            let include_screenshot = args
+                .get("includeScreenshot")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let diagnostics =
+                browser_get_diagnostics_with_app(&app, &label, include_screenshot).await?;
+            let json = serde_json::to_string_pretty(&diagnostics)
+                .unwrap_or_else(|_| "无法序列化浏览器诊断".to_string());
             Ok(truncate_chars(&json, BROWSER_OUTPUT_CAP))
         }
         "click" => {
