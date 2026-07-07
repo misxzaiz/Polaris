@@ -47,6 +47,10 @@ const mcpBins = [
   { name: 'polaris-requirements-mcp', required: false },
   { name: 'polaris-scheduler-mcp', required: false },
   { name: 'polaris-prd-preview-mcp', required: false },
+  { name: 'polaris-computer-mcp', required: false },
+  { name: 'polaris-ask-mcp', required: false },
+  { name: 'polaris-browser-mcp', required: false },
+  { name: 'polaris-agnes-mcp', required: false },
 ];
 const mcpBinFile = (n) => (isWindows ? `${n}.exe` : n);
 

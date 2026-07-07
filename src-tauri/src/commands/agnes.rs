@@ -9,6 +9,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+#[cfg(feature = "tauri-app")]
 use tauri::{Manager, State, Window};
 
 use crate::error::{AppError, Result};
@@ -74,6 +75,7 @@ pub struct AgnesVideoTask {
 // 配置读写
 // ============================================================================
 
+#[cfg(feature = "tauri-app")]
 fn config_dir_from_window(window: &Window) -> Result<PathBuf> {
     window
         .path()
@@ -450,5 +452,6 @@ const _: &str = DEFAULT_IMAGE_MODEL;
 const _: &str = DEFAULT_VIDEO_MODEL;
 
 // AppState 占位：保持命令签名与其它面板一致，便于未来扩展。
+#[cfg(feature = "tauri-app")]
 #[allow(dead_code)]
 type _AppStateStub = State<'static, crate::AppState>;
