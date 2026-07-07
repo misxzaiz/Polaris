@@ -12,6 +12,8 @@ use serde_json::Value;
 /// 上游线路格式（决定 URL 与请求/响应转换方式）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProxyWireApi {
+    /// Anthropic Messages（/v1/messages），净化后直通转发
+    AnthropicMessages,
     /// OpenAI Chat Completions（/v1/chat/completions）
     ChatCompletions,
     /// OpenAI Responses（/v1/responses）
@@ -24,6 +26,7 @@ impl ProxyWireApi {
     /// 从 Profile 的 wireApi 字符串解析（None / 其他 → Chat Completions）
     pub fn from_profile_wire_api(s: Option<&str>) -> Self {
         match s {
+            Some("anthropic-messages") => ProxyWireApi::AnthropicMessages,
             Some("openai-responses") => ProxyWireApi::Responses,
             _ => ProxyWireApi::ChatCompletions,
         }
@@ -75,11 +78,21 @@ impl ForwarderConfig {
     }
 
     /// 将自定义请求头应用到 reqwest 请求构建器
-    fn apply_custom_headers(&self, mut builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+    fn apply_custom_headers(
+        &self,
+        mut builder: reqwest::RequestBuilder,
+    ) -> reqwest::RequestBuilder {
         for (k, v) in &self.custom_headers {
             builder = builder.header(k.as_str(), v.as_str());
         }
         builder
+    }
+
+    fn apply_protocol_headers(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        match self.wire_api {
+            ProxyWireApi::AnthropicMessages => builder.header("anthropic-version", "2023-06-01"),
+            _ => builder,
+        }
     }
 }
 
@@ -87,6 +100,15 @@ impl ForwarderConfig {
 fn build_upstream_url(base_url: &str, wire_api: ProxyWireApi) -> String {
     let base = base_url.trim_end_matches('/');
     match wire_api {
+        ProxyWireApi::AnthropicMessages => {
+            if base.ends_with("/messages") {
+                base.to_string()
+            } else if base.ends_with("/v1") {
+                format!("{}/messages", base)
+            } else {
+                format!("{}/v1/messages", base)
+            }
+        }
         ProxyWireApi::Responses => {
             if base.ends_with("/responses") {
                 base.to_string()
@@ -109,22 +131,20 @@ fn build_upstream_url(base_url: &str, wire_api: ProxyWireApi) -> String {
 }
 
 /// 转发非流式请求到上游
-pub async fn forward_request(
-    config: &ForwarderConfig,
-    body: &Value,
-) -> Result<Value, ProxyError> {
+pub async fn forward_request(config: &ForwarderConfig, body: &Value) -> Result<Value, ProxyError> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(config.timeout_secs))
         .build()
         .map_err(|e| ProxyError::Server(format!("创建 HTTP 客户端失败: {}", e)))?;
 
-    let response = client
+    let mut req_builder = client
         .post(&config.upstream_url)
         .header("Authorization", format!("Bearer {}", config.api_key))
         .header("Content-Type", "application/json")
-        .json(body)
-        .send()
-        .await?;
+        .json(body);
+    req_builder = config.apply_protocol_headers(req_builder);
+    req_builder = config.apply_custom_headers(req_builder);
+    let response = req_builder.send().await?;
 
     let status = response.status();
     if !status.is_success() {
@@ -155,18 +175,25 @@ pub async fn forward_streaming_request(
         "[Forwarder] 发送请求到 {}: model={}, messages={}, tools={}, body_size={}bytes",
         config.upstream_url,
         body.get("model").and_then(|v| v.as_str()).unwrap_or("?"),
-        body.get("messages").and_then(|m| m.as_array()).map(|a| a.len()).unwrap_or(0),
-        body.get("tools").and_then(|t| t.as_array()).map(|a| a.len()).unwrap_or(0),
+        body.get("messages")
+            .and_then(|m| m.as_array())
+            .map(|a| a.len())
+            .unwrap_or(0),
+        body.get("tools")
+            .and_then(|t| t.as_array())
+            .map(|a| a.len())
+            .unwrap_or(0),
         body_str.len()
     );
 
-    let response = client
+    let mut req_builder = client
         .post(&config.upstream_url)
         .header("Authorization", format!("Bearer {}", config.api_key))
         .header("Content-Type", "application/json")
-        .json(body)
-        .send()
-        .await?;
+        .json(body);
+    req_builder = config.apply_protocol_headers(req_builder);
+    req_builder = config.apply_custom_headers(req_builder);
+    let response = req_builder.send().await?;
 
     let status = response.status();
     if !status.is_success() {
@@ -232,9 +259,9 @@ pub async fn forward_raw_response(
             .header("Authorization", format!("Bearer {}", config.api_key))
             .header("Content-Type", "application/json")
             .body(body_str.clone());
+        req_builder = config.apply_protocol_headers(req_builder);
         req_builder = config.apply_custom_headers(req_builder);
-        let response = match req_builder.send().await
-        {
+        let response = match req_builder.send().await {
             Ok(resp) => resp,
             Err(e) => {
                 tracing::warn!("[Forwarder] 请求发送失败 (attempt {}): {}", attempt + 1, e);
@@ -308,8 +335,33 @@ mod tests {
             "https://api.deepseek.com/v1/chat/completions"
         );
         assert_eq!(
-            build_upstream_url("https://api.deepseek.com/v1/", ProxyWireApi::ChatCompletions),
+            build_upstream_url(
+                "https://api.deepseek.com/v1/",
+                ProxyWireApi::ChatCompletions
+            ),
             "https://api.deepseek.com/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn test_build_upstream_url_anthropic_messages() {
+        assert_eq!(
+            build_upstream_url("https://api.anthropic.com", ProxyWireApi::AnthropicMessages),
+            "https://api.anthropic.com/v1/messages"
+        );
+        assert_eq!(
+            build_upstream_url(
+                "https://api.anthropic.com/v1",
+                ProxyWireApi::AnthropicMessages
+            ),
+            "https://api.anthropic.com/v1/messages"
+        );
+        assert_eq!(
+            build_upstream_url(
+                "https://api.anthropic.com/v1/messages",
+                ProxyWireApi::AnthropicMessages
+            ),
+            "https://api.anthropic.com/v1/messages"
         );
     }
 
@@ -324,7 +376,10 @@ mod tests {
             "https://api.openai.com/v1/responses"
         );
         assert_eq!(
-            build_upstream_url("https://api.openai.com/v1/responses", ProxyWireApi::Responses),
+            build_upstream_url(
+                "https://api.openai.com/v1/responses",
+                ProxyWireApi::Responses
+            ),
             "https://api.openai.com/v1/responses"
         );
     }

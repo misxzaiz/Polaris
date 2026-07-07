@@ -65,7 +65,12 @@ pub fn codex_responses_to_chat(body: Value) -> Result<Value, ProxyError> {
 
     if let Some(tool_choice) = body.get("tool_choice") {
         result["tool_choice"] = responses_tool_choice_to_chat(tool_choice);
-    } else if result.get("tools").and_then(|v| v.as_array()).map(|a| !a.is_empty()).unwrap_or(false) {
+    } else if result
+        .get("tools")
+        .and_then(|v| v.as_array())
+        .map(|a| !a.is_empty())
+        .unwrap_or(false)
+    {
         // 当 Codex 发送了 tools 但没有指定 tool_choice 时，
         // 默认设为 "auto"，让模型自主决定是否调用工具。
         // 某些上游 API 需要显式设置 tool_choice 才会触发工具调用。
@@ -92,7 +97,11 @@ pub fn chat_to_codex_response(body: Value) -> Result<Value, ProxyError> {
     let mut status = "completed";
     let mut incomplete_details = Value::Null;
 
-    if let Some(choice) = body.get("choices").and_then(|v| v.as_array()).and_then(|v| v.first()) {
+    if let Some(choice) = body
+        .get("choices")
+        .and_then(|v| v.as_array())
+        .and_then(|v| v.first())
+    {
         if let Some(message) = choice.get("message") {
             if let Some(content) = message.get("content").and_then(|v| v.as_str()) {
                 if !content.is_empty() {
@@ -114,7 +123,9 @@ pub fn chat_to_codex_response(body: Value) -> Result<Value, ProxyError> {
                         "content": [{"type": "output_text", "text": reasoning}]
                     }));
                 }
-            } else if let Some(reasoning_content) = message.get("reasoning_content").and_then(|v| v.as_str()) {
+            } else if let Some(reasoning_content) =
+                message.get("reasoning_content").and_then(|v| v.as_str())
+            {
                 // DeepSeek 系列模型将回复内容放在 reasoning_content 而非 content
                 if !reasoning_content.is_empty() {
                     output.push(json!({
@@ -289,29 +300,69 @@ pub fn chat_sse_to_codex_responses_sse(body_str: &str) -> String {
             output_index_started = true;
         }
 
-        let Some(choice) = chunk.get("choices").and_then(|v| v.as_array()).and_then(|v| v.first()) else {
+        let Some(choice) = chunk
+            .get("choices")
+            .and_then(|v| v.as_array())
+            .and_then(|v| v.first())
+        else {
             continue;
         };
 
         // 记录上游 chunk 原始内容供调试
-        let has_content = choice.pointer("/delta/content").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).is_some();
-        let has_reasoning = choice.pointer("/delta/reasoning").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).is_some();
-        let has_reasoning_content = choice.pointer("/delta/reasoning_content").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).is_some();
-        let has_tool_calls = choice.pointer("/delta/tool_calls").and_then(|v| v.as_array()).filter(|a| !a.is_empty()).is_some();
+        let has_content = choice
+            .pointer("/delta/content")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .is_some();
+        let has_reasoning = choice
+            .pointer("/delta/reasoning")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .is_some();
+        let has_reasoning_content = choice
+            .pointer("/delta/reasoning_content")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .is_some();
+        let has_tool_calls = choice
+            .pointer("/delta/tool_calls")
+            .and_then(|v| v.as_array())
+            .filter(|a| !a.is_empty())
+            .is_some();
 
         if !has_content && (has_reasoning || has_reasoning_content) && !has_tool_calls {
-            let text = choice.pointer("/delta/reasoning").and_then(|v| v.as_str())
-                .or_else(|| choice.pointer("/delta/reasoning_content").and_then(|v| v.as_str()))
+            let text = choice
+                .pointer("/delta/reasoning")
+                .and_then(|v| v.as_str())
+                .or_else(|| {
+                    choice
+                        .pointer("/delta/reasoning_content")
+                        .and_then(|v| v.as_str())
+                })
                 .unwrap_or("");
-            tracing::info!("[CodexSSE] 上游无 delta.content，降级提取 reasoning/reasoning_content: {:?}", text);
+            tracing::info!(
+                "[CodexSSE] 上游无 delta.content，降级提取 reasoning/reasoning_content: {:?}",
+                text
+            );
         }
 
         // 提取输出文本：优先 content，降级 reasoning（sensenova-6.7），再降级 reasoning_content（deepseek-v4）
-        let output_text = choice.pointer("/delta/content")
+        let output_text = choice
+            .pointer("/delta/content")
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
-            .or_else(|| choice.pointer("/delta/reasoning").and_then(|v| v.as_str()).filter(|s| !s.is_empty()))
-            .or_else(|| choice.pointer("/delta/reasoning_content").and_then(|v| v.as_str()).filter(|s| !s.is_empty()));
+            .or_else(|| {
+                choice
+                    .pointer("/delta/reasoning")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+            })
+            .or_else(|| {
+                choice
+                    .pointer("/delta/reasoning_content")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+            });
 
         if let Some(text) = output_text {
             if !text.is_empty() {
@@ -336,7 +387,10 @@ pub fn chat_sse_to_codex_responses_sse(body_str: &str) -> String {
         // 上游 Chat Completions 流式返回的 tool_calls delta 需要转换为
         // Responses API 的 function_call 事件序列：
         //   output_item.added (type: function_call) → function_call_arguments.delta → output_item.done
-        if let Some(tool_calls) = choice.pointer("/delta/tool_calls").and_then(|v| v.as_array()) {
+        if let Some(tool_calls) = choice
+            .pointer("/delta/tool_calls")
+            .and_then(|v| v.as_array())
+        {
             for tc_delta in tool_calls {
                 let tc_index = tc_delta.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
                 let output_index = *tool_index_to_output.entry(tc_index).or_insert_with(|| {
@@ -345,11 +399,13 @@ pub fn chat_sse_to_codex_responses_sse(body_str: &str) -> String {
                     idx
                 });
 
-                let entry = tool_call_accumulators.entry(output_index).or_insert_with(|| ToolCallAccum {
-                    id: String::new(),
-                    name: String::new(),
-                    arguments: String::new(),
-                });
+                let entry = tool_call_accumulators
+                    .entry(output_index)
+                    .or_insert_with(|| ToolCallAccum {
+                        id: String::new(),
+                        name: String::new(),
+                        arguments: String::new(),
+                    });
 
                 if let Some(id) = tc_delta.get("id").and_then(|v| v.as_str()) {
                     if !id.is_empty() {
@@ -361,7 +417,10 @@ pub fn chat_sse_to_codex_responses_sse(body_str: &str) -> String {
                         entry.name = name.to_string();
                     }
                 }
-                if let Some(args) = tc_delta.pointer("/function/arguments").and_then(|v| v.as_str()) {
+                if let Some(args) = tc_delta
+                    .pointer("/function/arguments")
+                    .and_then(|v| v.as_str())
+                {
                     if !args.is_empty() {
                         entry.arguments.push_str(args);
                     }
@@ -369,8 +428,14 @@ pub fn chat_sse_to_codex_responses_sse(body_str: &str) -> String {
 
                 // 发出 output_item.added 事件（仅首次）
                 if !tool_call_started.contains(&output_index) {
-                    let call_id = tc_delta.get("id").and_then(|v| v.as_str()).unwrap_or("call_polaris");
-                    let name = tc_delta.pointer("/function/name").and_then(|v| v.as_str()).unwrap_or("unknown");
+                    let call_id = tc_delta
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("call_polaris");
+                    let name = tc_delta
+                        .pointer("/function/name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
                     emit_response_event(
                         &mut sse,
                         "response.output_item.added",
@@ -393,7 +458,10 @@ pub fn chat_sse_to_codex_responses_sse(body_str: &str) -> String {
                 }
 
                 // 发出 arguments delta
-                if let Some(args) = tc_delta.pointer("/function/arguments").and_then(|v| v.as_str()) {
+                if let Some(args) = tc_delta
+                    .pointer("/function/arguments")
+                    .and_then(|v| v.as_str())
+                {
                     if !args.is_empty() {
                         emit_response_event(
                             &mut sse,
@@ -480,9 +548,21 @@ pub fn chat_sse_to_codex_responses_sse(body_str: &str) -> String {
     sorted_output_indices.sort();
     for output_index in &sorted_output_indices {
         if let Some(tc) = tool_call_accumulators.get(output_index) {
-            let call_id = if tc.id.is_empty() { "call_polaris" } else { &tc.id };
-            let name = if tc.name.is_empty() { "unknown" } else { &tc.name };
-            let arguments = if tc.arguments.is_empty() { "{}" } else { &tc.arguments };
+            let call_id = if tc.id.is_empty() {
+                "call_polaris"
+            } else {
+                &tc.id
+            };
+            let name = if tc.name.is_empty() {
+                "unknown"
+            } else {
+                &tc.name
+            };
+            let arguments = if tc.arguments.is_empty() {
+                "{}"
+            } else {
+                &tc.arguments
+            };
             emit_response_event(
                 &mut sse,
                 "response.output_item.done",
@@ -507,7 +587,13 @@ pub fn chat_sse_to_codex_responses_sse(body_str: &str) -> String {
     // 如果模型调用了工具，response 状态用 "in_progress" 而非 "completed"
     // 因为 Codex 需要先执行工具再完成 turn
     let has_tool_calls = !tool_call_accumulators.is_empty();
-    let response_status = if completed && !has_tool_calls { "completed" } else if has_tool_calls { "in_progress" } else { "completed" };
+    let response_status = if completed && !has_tool_calls {
+        "completed"
+    } else if has_tool_calls {
+        "in_progress"
+    } else {
+        "completed"
+    };
 
     emit_response_event(
         &mut sse,
@@ -603,13 +689,16 @@ fn responses_content_to_chat_content(content: Option<&Value>) -> Value {
                             .and_then(|v| v.as_str())
                             .or_else(|| part.pointer("/image_url/url").and_then(|v| v.as_str()))
                         {
-                            chat_parts.push(json!({"type": "image_url", "image_url": {"url": url}}));
+                            chat_parts
+                                .push(json!({"type": "image_url", "image_url": {"url": url}}));
                         }
                     }
                     _ => {}
                 }
             }
-            if chat_parts.len() == 1 && chat_parts[0].get("type").and_then(|v| v.as_str()) == Some("text") {
+            if chat_parts.len() == 1
+                && chat_parts[0].get("type").and_then(|v| v.as_str()) == Some("text")
+            {
                 chat_parts[0].get("text").cloned().unwrap_or(json!(""))
             } else {
                 json!(chat_parts)
@@ -660,7 +749,10 @@ fn responses_tool_choice_to_chat(tool_choice: &Value) -> Value {
 }
 
 fn chat_tool_call_to_response_item(call: &Value) -> Option<Value> {
-    let id = call.get("id").and_then(|v| v.as_str()).unwrap_or("call_polaris");
+    let id = call
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("call_polaris");
     let function = call.get("function")?;
     Some(json!({
         "type": "function_call",
@@ -824,16 +916,25 @@ mod tests {
         assert!(output.contains("the files."));
 
         // 应该有 function_call output_item.added 事件
-        assert!(output.contains("function_call_added") || output.contains("\"type\":\"function_call\""),
-            "输出应包含 function_call 类型的 output_item: {}", output);
+        assert!(
+            output.contains("function_call_added") || output.contains("\"type\":\"function_call\""),
+            "输出应包含 function_call 类型的 output_item: {}",
+            output
+        );
 
         // 应该有 function_call_arguments.delta 事件
-        assert!(output.contains("function_call_arguments.delta"),
-            "输出应包含 function_call_arguments.delta 事件: {:?}", &output[..output.len().min(200)]);
+        assert!(
+            output.contains("function_call_arguments.delta"),
+            "输出应包含 function_call_arguments.delta 事件: {:?}",
+            &output[..output.len().min(200)]
+        );
 
         // 应该有 function_call 的 output_item.done 事件
-        assert!(output.contains("\"arguments\":\"{\\\"com\\\""),
-            "arguments delta 应包含累积的参数: {:?}", &output[..output.len().min(200)]);
+        assert!(
+            output.contains("\"arguments\":\"{\\\"com\\\""),
+            "arguments delta 应包含累积的参数: {:?}",
+            &output[..output.len().min(200)]
+        );
 
         // tool_calls 的 finish_reason 应让 response 状态为 in_progress
         assert!(output.contains("response.completed"));
@@ -856,23 +957,28 @@ mod tests {
                 "finish_reason": "tool_calls"
             }],
             "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
-        })).unwrap();
+        }))
+        .unwrap();
 
         // 状态应为 in_progress（工具调用需要执行）
-        assert_eq!(result["status"], "in_progress",
-            "工具调用响应状态应为 in_progress，实际: {}", result["status"]);
+        assert_eq!(
+            result["status"], "in_progress",
+            "工具调用响应状态应为 in_progress，实际: {}",
+            result["status"]
+        );
 
         // 输出列表应包含 function_call 项
         let output = result["output"].as_array().unwrap();
-        let has_function_call = output.iter().any(|item|
-            item.get("type").and_then(|v| v.as_str()) == Some("function_call")
-        );
+        let has_function_call = output
+            .iter()
+            .any(|item| item.get("type").and_then(|v| v.as_str()) == Some("function_call"));
         assert!(has_function_call, "输出应包含 function_call: {:?}", output);
 
         // 函数调用应有正确的名称和参数
-        let fc = output.iter().find(|item|
-            item.get("type").and_then(|v| v.as_str()) == Some("function_call")
-        ).unwrap();
+        let fc = output
+            .iter()
+            .find(|item| item.get("type").and_then(|v| v.as_str()) == Some("function_call"))
+            .unwrap();
         assert_eq!(fc["name"], "bash");
         assert!(fc["arguments"].as_str().unwrap_or("").contains("ls"));
     }
@@ -886,7 +992,10 @@ mod tests {
         })).unwrap();
 
         assert!(result.get("tools").is_some(), "tools 应被传递");
-        assert_eq!(result["tool_choice"], "auto",
-            "未指定 tool_choice 时有 tools 应默认 auto, 实际: {:?}", result["tool_choice"]);
+        assert_eq!(
+            result["tool_choice"], "auto",
+            "未指定 tool_choice 时有 tools 应默认 auto, 实际: {:?}",
+            result["tool_choice"]
+        );
     }
 }

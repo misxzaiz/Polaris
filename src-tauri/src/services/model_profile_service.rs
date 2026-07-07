@@ -47,6 +47,26 @@ impl ModelProfileService {
         profile.wire_api.as_deref() == Some("openai-chat-completions")
     }
 
+    /// 判断 Anthropic Messages 端点是否明确支持 Anthropic provider-owned
+    /// server tool blocks（例如 `server_tool_use` / `web_search_tool_result`）。
+    ///
+    /// 第三方 Anthropic-compatible 端点经常只支持普通 client blocks。为避免
+    /// Claude CLI resume 历史原样透传导致 400，只有官方 Anthropic host 才默认
+    /// 认为支持 server tools，其余端点走 Polaris 净化代理。
+    pub fn supports_anthropic_server_tool_blocks(profile: &ModelProfile) -> bool {
+        let wire = profile.wire_api.as_deref().unwrap_or("anthropic-messages");
+        if wire != "anthropic-messages" {
+            return false;
+        }
+
+        let category_is_official = profile.category.as_deref() == Some("official");
+        let base_url = profile.base_url.to_ascii_lowercase();
+        let host_is_anthropic =
+            base_url.contains("api.anthropic.com") || base_url.contains("anthropic.com");
+
+        category_is_official && host_is_anthropic
+    }
+
     /// 生成代理模式的 settings overlay
     ///
     /// 当 Profile 使用 OpenAI Chat Completions 格式时，ANTHROPIC_BASE_URL 指向
@@ -76,7 +96,10 @@ impl ModelProfileService {
     ) -> Result<PathBuf> {
         let overlay = Self::generate_proxy_settings_overlay(profile, proxy_addr);
         let json_str = serde_json::to_string_pretty(&overlay).map_err(|e| {
-            crate::error::AppError::ProcessError(format!("序列化 proxy settings overlay 失败: {}", e))
+            crate::error::AppError::ProcessError(format!(
+                "序列化 proxy settings overlay 失败: {}",
+                e
+            ))
         })?;
 
         let temp_dir = std::env::temp_dir();
@@ -84,10 +107,16 @@ impl ModelProfileService {
         let path = temp_dir.join(&file_name);
 
         std::fs::write(&path, json_str).map_err(|e| {
-            crate::error::AppError::ProcessError(format!("写入 proxy settings overlay 文件失败: {}", e))
+            crate::error::AppError::ProcessError(format!(
+                "写入 proxy settings overlay 文件失败: {}",
+                e
+            ))
         })?;
 
-        tracing::info!("[ModelProfileService] 写入 proxy settings overlay: {:?}", path);
+        tracing::info!(
+            "[ModelProfileService] 写入 proxy settings overlay: {:?}",
+            path
+        );
         Ok(path)
     }
 
@@ -234,7 +263,10 @@ impl ModelProfileService {
                 toml_string(&env_key).unwrap_or_else(|_| format!("\"{}\"", env_key))
             ),
             "-c".to_string(),
-            format!("model_providers.{}.wire_api=\"{}\"", provider_id, codex_wire),
+            format!(
+                "model_providers.{}.wire_api=\"{}\"",
+                provider_id, codex_wire
+            ),
         ]
     }
 
@@ -324,7 +356,10 @@ impl ModelProfileService {
     /// 生成 Codex 代理转换模式的环境变量覆盖。
     pub fn generate_codex_proxy_env_overrides(profile: &ModelProfile) -> HashMap<String, String> {
         let mut env = HashMap::new();
-        env.insert(Self::codex_api_key_env(profile), "PROXY_MANAGED".to_string());
+        env.insert(
+            Self::codex_api_key_env(profile),
+            "PROXY_MANAGED".to_string(),
+        );
         if let Some(custom) = &profile.custom_env {
             for (k, v) in custom {
                 env.insert(k.clone(), v.clone());
@@ -454,7 +489,10 @@ impl ModelProfileService {
             std::fs::remove_file(&catalog_path).map_err(|e| {
                 crate::error::AppError::ProcessError(format!("清理 Codex 模型目录失败: {}", e))
             })?;
-            tracing::info!("[ModelProfileService] 清理 Codex 模型目录: {:?}", catalog_path);
+            tracing::info!(
+                "[ModelProfileService] 清理 Codex 模型目录: {:?}",
+                catalog_path
+            );
         }
         Ok(())
     }
@@ -473,9 +511,7 @@ impl ModelProfileService {
     /// 保留用户手工编辑的其他配置。
     pub fn cascade_to_claude_settings(profile: &ModelProfile) -> Result<()> {
         let claude_config_dir = dirs::config_dir()
-            .ok_or_else(|| {
-                crate::error::AppError::ConfigError("无法获取用户配置目录".to_string())
-            })?
+            .ok_or_else(|| crate::error::AppError::ConfigError("无法获取用户配置目录".to_string()))?
             .join("claude");
 
         let settings_path = claude_config_dir.join("settings.json");
@@ -507,10 +543,7 @@ impl ModelProfileService {
         // 确保父目录存在
         if let Some(parent) = settings_path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| {
-                crate::error::AppError::ProcessError(format!(
-                    "创建 Claude 配置目录失败: {}",
-                    e
-                ))
+                crate::error::AppError::ProcessError(format!("创建 Claude 配置目录失败: {}", e))
             })?;
         }
 
@@ -522,10 +555,7 @@ impl ModelProfileService {
             .collect();
 
         if let Some(config) = settings.as_object_mut() {
-            config.insert(
-                "env".to_string(),
-                serde_json::Value::Object(env_map),
-            );
+            config.insert("env".to_string(), serde_json::Value::Object(env_map));
         } else {
             // settings 不是 object（极端情况），重建
             settings = serde_json::json!({ "env": env_map });
@@ -534,10 +564,7 @@ impl ModelProfileService {
         // 原子写入（先写临时文件再 rename）
         let tmp_path = settings_path.with_extension("json.tmp");
         let pretty = serde_json::to_string_pretty(&settings).map_err(|e| {
-            crate::error::AppError::ProcessError(format!(
-                "序列化 Claude settings.json 失败: {}",
-                e
-            ))
+            crate::error::AppError::ProcessError(format!("序列化 Claude settings.json 失败: {}", e))
         })?;
         std::fs::write(&tmp_path, &pretty).map_err(|e| {
             crate::error::AppError::ProcessError(format!(
@@ -546,10 +573,7 @@ impl ModelProfileService {
             ))
         })?;
         std::fs::rename(&tmp_path, &settings_path).map_err(|e| {
-            crate::error::AppError::ProcessError(format!(
-                "替换 Claude settings.json 失败: {}",
-                e
-            ))
+            crate::error::AppError::ProcessError(format!("替换 Claude settings.json 失败: {}", e))
         })?;
 
         tracing::info!(
@@ -566,9 +590,7 @@ impl ModelProfileService {
     /// 仅移除 `env` 键，保留其他配置不变。
     pub fn clear_claude_settings_env() -> Result<()> {
         let settings_path = dirs::config_dir()
-            .ok_or_else(|| {
-                crate::error::AppError::ConfigError("无法获取用户配置目录".to_string())
-            })?
+            .ok_or_else(|| crate::error::AppError::ConfigError("无法获取用户配置目录".to_string()))?
             .join("claude")
             .join("settings.json");
 
@@ -588,10 +610,7 @@ impl ModelProfileService {
 
         let tmp_path = settings_path.with_extension("json.tmp");
         let pretty = serde_json::to_string_pretty(&settings).map_err(|e| {
-            crate::error::AppError::ProcessError(format!(
-                "序列化 Claude settings.json 失败: {}",
-                e
-            ))
+            crate::error::AppError::ProcessError(format!("序列化 Claude settings.json 失败: {}", e))
         })?;
         std::fs::write(&tmp_path, &pretty)?;
         std::fs::rename(&tmp_path, &settings_path)?;
@@ -654,10 +673,9 @@ impl ModelProfileService {
         }
         req = Self::apply_custom_headers(req, profile);
 
-        let resp = req
-            .send()
-            .await
-            .map_err(|e| crate::error::AppError::ProcessError(format!("请求模型列表失败: {}", e)))?;
+        let resp = req.send().await.map_err(|e| {
+            crate::error::AppError::ProcessError(format!("请求模型列表失败: {}", e))
+        })?;
 
         let status = resp.status();
         if !status.is_success() {
@@ -669,10 +687,9 @@ impl ModelProfileService {
             )));
         }
 
-        let json: serde_json::Value = resp
-            .json()
-            .await
-            .map_err(|e| crate::error::AppError::ProcessError(format!("解析模型列表失败: {}", e)))?;
+        let json: serde_json::Value = resp.json().await.map_err(|e| {
+            crate::error::AppError::ProcessError(format!("解析模型列表失败: {}", e))
+        })?;
 
         let mut models = Vec::new();
         let arr = json
@@ -943,7 +960,8 @@ mod tests {
         let joined = args.join("\n");
 
         assert!(joined.contains("model_providers.polaris_profile_test_1.wire_api=\"chat\""));
-        assert!(joined.contains("model_providers.polaris_profile_test_1.base_url=\"https://ruoli.dev/v1\""));
+        assert!(joined
+            .contains("model_providers.polaris_profile_test_1.base_url=\"https://ruoli.dev/v1\""));
     }
 
     #[test]
@@ -957,8 +975,12 @@ mod tests {
         let joined = args.join("\n");
 
         assert!(joined.contains("model_provider=\"polaris_profile_test_1\""));
-        assert!(joined.contains("model_providers.polaris_profile_test_1.base_url=\"http://127.0.0.1:12345/v1\""));
-        assert!(joined.contains("model_providers.polaris_profile_test_1.env_key=\"POLARIS_PROFILE_TEST_1_API_KEY\""));
+        assert!(joined.contains(
+            "model_providers.polaris_profile_test_1.base_url=\"http://127.0.0.1:12345/v1\""
+        ));
+        assert!(joined.contains(
+            "model_providers.polaris_profile_test_1.env_key=\"POLARIS_PROFILE_TEST_1_API_KEY\""
+        ));
         assert!(joined.contains("model_providers.polaris_profile_test_1.wire_api=\"responses\""));
         assert!(joined.contains("model_catalog_json="));
         assert!(joined.contains("polaris-model-catalog.json"));
@@ -975,7 +997,33 @@ mod tests {
 
         let env = ModelProfileService::generate_codex_proxy_env_overrides(&p);
 
-        assert_eq!(env.get("POLARIS_PROFILE_TEST_1_API_KEY"), Some(&"PROXY_MANAGED".to_string()));
+        assert_eq!(
+            env.get("POLARIS_PROFILE_TEST_1_API_KEY"),
+            Some(&"PROXY_MANAGED".to_string())
+        );
         assert_eq!(env.get("EXTRA_HEADER"), Some(&"1".to_string()));
+    }
+
+    #[test]
+    fn third_party_anthropic_messages_profile_does_not_support_server_tool_blocks() {
+        let mut p = profile();
+        p.wire_api = Some("anthropic-messages".to_string());
+        p.category = Some("third_party".to_string());
+
+        assert!(!ModelProfileService::supports_anthropic_server_tool_blocks(
+            &p
+        ));
+    }
+
+    #[test]
+    fn official_anthropic_profile_supports_server_tool_blocks() {
+        let mut p = profile();
+        p.base_url = "https://api.anthropic.com/v1".to_string();
+        p.wire_api = Some("anthropic-messages".to_string());
+        p.category = Some("official".to_string());
+
+        assert!(ModelProfileService::supports_anthropic_server_tool_blocks(
+            &p
+        ));
     }
 }

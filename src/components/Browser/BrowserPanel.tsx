@@ -26,6 +26,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { clsx } from 'clsx'
 import { useTranslation } from 'react-i18next'
 import {
+  browserAcquireComplete,
   browserClearData,
   browserCreate,
   browserGetDiagnostics,
@@ -55,6 +56,8 @@ interface BrowserPanelProps {
   initialUrl?: string
   navigationRequestUrl?: string
   navigationRequestId?: number
+  acquireRequestId?: string
+  acquireCreated?: boolean
 }
 
 const QUICK_STARTS = [
@@ -203,6 +206,8 @@ export function BrowserPanel({
   initialUrl = 'https://www.bing.com',
   navigationRequestUrl,
   navigationRequestId,
+  acquireRequestId,
+  acquireCreated,
 }: BrowserPanelProps) {
   const { t } = useTranslation('common')
   const rootRef = useRef<HTMLDivElement>(null)
@@ -224,6 +229,7 @@ export function BrowserPanel({
       : undefined
   const initialNavigationRequestRef = useRef<number | undefined>(initialNavigationRequestId)
   const lastNavigationRequestRef = useRef<number | undefined>(initialNavigationRequestRef.current)
+  const completedAcquireRequestRef = useRef<string | undefined>(undefined)
 
   const [address, setAddress] = useState(normalizedInitialUrl)
   const [currentUrl, setCurrentUrl] = useState(normalizedInitialUrl)
@@ -305,6 +311,26 @@ export function BrowserPanel({
     let unlistenOperation: UnlistenFn | null = null
     let mutationObserver: MutationObserver | null = null
 
+    async function completeAcquire(
+      session: BrowserSessionInfo,
+      created: boolean,
+      acquireError?: string
+    ) {
+      if (!acquireRequestId || completedAcquireRequestRef.current === acquireRequestId) {
+        return
+      }
+      completedAcquireRequestRef.current = acquireRequestId
+      await browserAcquireComplete({
+        requestId: acquireRequestId,
+        label: acquireError ? undefined : webviewLabel,
+        tabId: acquireError ? undefined : tabId,
+        url: acquireError ? undefined : session.url || normalizedInitialUrl,
+        title: acquireError ? undefined : session.title || 'Browser',
+        created: acquireError ? undefined : created,
+        error: acquireError,
+      }).catch(() => undefined)
+    }
+
     async function createNativeWebview() {
       setLoading(true)
       setError(null)
@@ -348,6 +374,7 @@ export function BrowserPanel({
         if (handledRequestId !== undefined) {
           markBrowserNavigationHandled(tabId, handledRequestId)
         }
+        void completeAcquire(session, acquireCreated ?? true)
 
         resizeObserver = new ResizeObserver(scheduleSyncBounds)
         if (containerRef.current) {
@@ -375,9 +402,21 @@ export function BrowserPanel({
         })
         scheduleSyncBounds()
       } catch (e) {
+        const message = e instanceof Error ? e.message : String(e)
+        void completeAcquire(
+          {
+            label: webviewLabel,
+            tabId,
+            url: normalizedInitialUrl,
+            title: 'Browser',
+            updatedAt: Date.now(),
+          },
+          false,
+          message
+        )
         if (!cleanup && mountedRef.current) {
           setStatus('error')
-          setError(e instanceof Error ? e.message : String(e))
+          setError(message)
         }
       } finally {
         if (!cleanup && mountedRef.current) {
@@ -410,6 +449,8 @@ export function BrowserPanel({
     }
   }, [
     getContainerBounds,
+    acquireCreated,
+    acquireRequestId,
     markBrowserNavigationHandled,
     normalizedInitialUrl,
     scheduleSyncBounds,

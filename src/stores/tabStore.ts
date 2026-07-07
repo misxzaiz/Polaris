@@ -43,6 +43,12 @@ export interface OpenDiffTabOptions {
   metadata?: Record<string, any>
 }
 
+export interface OpenBrowserTabOptions {
+  reuseExisting?: boolean
+  activate?: boolean
+  metadata?: Record<string, any>
+}
+
 interface TabState {
   tabs: Tab[]
   activeTabId: string | null
@@ -54,7 +60,7 @@ interface TabActions {
   openPreviewTab: (filePath: string, title?: string, metadata?: Record<string, any>) => string
   openDiffTab: (diff: GitDiffEntry, options?: OpenDiffTabOptions) => string
   openGitTab: (options?: OpenGitTabOptions) => string
-  openBrowserTab: (url?: string, title?: string) => string
+  openBrowserTab: (url?: string, title?: string, options?: OpenBrowserTabOptions) => string
   closeTab: (tabId: string) => void
   switchTab: (tabId: string) => void
   closeAllTabs: () => void
@@ -212,8 +218,12 @@ export const useTabStore = create<TabStore>()(
       },
 
       // 打开内置浏览器 Tab
-      openBrowserTab: (url = 'https://www.bing.com', title = 'Browser') => {
-        const existingTab = get().tabs.find((tab) => tab.type === 'browser')
+      openBrowserTab: (url = 'https://www.bing.com', title = 'Browser', options = {}) => {
+        const reuseExisting = options.reuseExisting ?? true
+        const activate = options.activate ?? true
+        const existingTab = reuseExisting
+          ? get().tabs.find((tab) => tab.type === 'browser')
+          : undefined
         const requestId = nextBrowserNavigationRequestId()
 
         if (existingTab) {
@@ -225,6 +235,7 @@ export const useTabStore = create<TabStore>()(
                     title,
                     metadata: {
                       ...tab.metadata,
+                      ...options.metadata,
                       requestedUrl: url,
                       navigationRequestId: requestId,
                       navigationRequestPending: true,
@@ -232,7 +243,7 @@ export const useTabStore = create<TabStore>()(
                   }
                 : tab
             ),
-            activeTabId: existingTab.id,
+            activeTabId: activate || !state.activeTabId ? existingTab.id : state.activeTabId,
           }))
           return existingTab.id
         }
@@ -249,12 +260,13 @@ export const useTabStore = create<TabStore>()(
             requestedUrl: url,
             navigationRequestId: requestId,
             navigationRequestPending: true,
+            ...options.metadata,
           },
         }
 
         set((state) => ({
           tabs: [...state.tabs, newTab],
-          activeTabId: tabId,
+          activeTabId: activate || !state.activeTabId ? tabId : state.activeTabId,
         }))
 
         return tabId

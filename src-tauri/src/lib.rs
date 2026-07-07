@@ -712,6 +712,8 @@ pub fn run() {
             commands::browser::browser_register,
             commands::browser::browser_unregister,
             commands::browser::browser_list_sessions,
+            commands::browser::browser_acquire,
+            commands::browser::browser_acquire_complete,
             commands::browser::browser_navigate,
             commands::browser::browser_reload,
             commands::browser::browser_history,

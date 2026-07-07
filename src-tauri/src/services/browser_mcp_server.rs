@@ -135,7 +135,7 @@ fn handle_initialize() -> Value {
 fn handle_tools_list() -> Value {
     let label_property = json!({
         "type": "string",
-        "description": "Optional Polaris browser WebView label. Omit to use the most recently active built-in browser tab."
+        "description": "Optional Polaris browser WebView label. Omit to use this agent's acquired tab when available, otherwise the most recently active built-in browser tab."
     });
     let index_property = json!({
         "type": "integer",
@@ -152,6 +152,23 @@ fn handle_tools_list() -> Value {
             "name": "browser_list",
             "description": "List currently open Polaris built-in browser tabs. Use this first when no browser label is known.",
             "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+        },
+        {
+            "name": "browser_acquire",
+            "description": "Acquire a Polaris built-in browser tab for this agent. By default, this creates a dedicated tab when the agent has no bound tab; pass label or mode='reuse' to bind an existing tab.",
+            "inputSchema": { "type": "object", "properties": {
+                "label": label_property,
+                "url": { "type": "string", "description": "Optional URL or search query to open in the acquired tab." },
+                "title": { "type": "string", "description": "Optional tab title while the page is loading." },
+                "mode": {
+                    "type": "string",
+                    "enum": ["auto", "create", "reuse"],
+                    "default": "auto",
+                    "description": "auto reuses this agent's bound tab or creates a new one; create always opens a new tab; reuse binds the most recent existing tab when possible."
+                },
+                "agentKey": { "type": "string", "description": "Optional stable owner key. Defaults to the Polaris session id injected into this MCP server." },
+                "activate": { "type": "boolean", "default": true, "description": "Whether to switch the workbench to the acquired browser tab." }
+            }, "additionalProperties": false }
         },
         {
             "name": "browser_navigate",
@@ -269,6 +286,7 @@ fn handle_tools_call(params: Value, config: &BrowserMcpConfig) -> Result<Value> 
 fn tool_name_to_action(name: &str) -> Result<&'static str> {
     match name {
         "browser_list" => Ok("list"),
+        "browser_acquire" => Ok("acquire"),
         "browser_navigate" => Ok("navigate"),
         "browser_context" => Ok("context"),
         "browser_diagnostics" => Ok("diagnostics"),
@@ -305,6 +323,10 @@ fn browser_frame(config: &BrowserMcpConfig, action: &str, args: &Value) -> Value
         "text",
         "value",
         "includeScreenshot",
+        "title",
+        "mode",
+        "agentKey",
+        "activate",
     ] {
         if let Some(value) = args.get(key) {
             frame.insert(key.to_string(), value.clone());
@@ -434,6 +456,7 @@ mod tests {
             .filter_map(|tool| tool.get("name").and_then(Value::as_str))
             .collect();
         assert!(names.contains(&"browser_list"));
+        assert!(names.contains(&"browser_acquire"));
         assert!(names.contains(&"browser_diagnostics"));
         assert!(names.contains(&"browser_click"));
         assert!(names.contains(&"browser_fill"));

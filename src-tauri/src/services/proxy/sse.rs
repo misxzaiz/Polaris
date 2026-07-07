@@ -77,9 +77,13 @@ mod tests {
 
     #[test]
     fn take_sse_block_double_newline() {
-        let mut buf = "event: message_start\ndata: {\"type\":\"start\"}\n\nevent: next\n".to_string();
+        let mut buf =
+            "event: message_start\ndata: {\"type\":\"start\"}\n\nevent: next\n".to_string();
         let block = take_sse_block(&mut buf);
-        assert_eq!(block, Some("event: message_start\ndata: {\"type\":\"start\"}".to_string()));
+        assert_eq!(
+            block,
+            Some("event: message_start\ndata: {\"type\":\"start\"}".to_string())
+        );
         assert_eq!(buf, "event: next\n");
     }
 
@@ -99,7 +103,10 @@ mod tests {
 
     #[test]
     fn strip_sse_field_with_space() {
-        assert_eq!(strip_sse_field("data: hello world", "data"), Some("hello world"));
+        assert_eq!(
+            strip_sse_field("data: hello world", "data"),
+            Some("hello world")
+        );
     }
 
     #[test]
@@ -128,11 +135,11 @@ mod tests {
         let mut remainder = Vec::new();
         // "中" 的 UTF-8 编码是 E4 B8 AD（3 bytes），"文" 是 E6 96 87（3 bytes）
         let full = "中文".as_bytes(); // E4 B8 AD E6 96 87
-        // 发送前 5 个字节：完整的 "中" + "文" 的前 2 个字节
+                                      // 发送前 5 个字节：完整的 "中" + "文" 的前 2 个字节
         append_utf8_safe(&mut buf, &mut remainder, &Bytes::from(&full[..5]));
         assert_eq!(buf, "中");
         assert_eq!(remainder, vec![0xE6, 0x96]); // "文" 的前 2 个字节
-        // 发送剩余字节
+                                                 // 发送剩余字节
         append_utf8_safe(&mut buf, &mut remainder, &Bytes::from(&full[5..]));
         assert_eq!(buf, "中文");
         assert!(remainder.is_empty());

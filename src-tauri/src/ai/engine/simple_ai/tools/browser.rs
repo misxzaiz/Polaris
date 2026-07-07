@@ -7,11 +7,11 @@
 use serde_json::{json, Value};
 
 use crate::commands::browser::{
-    browser_app_handle, browser_click_with_app, browser_fill_with_app,
+    browser_acquire_with_app, browser_app_handle, browser_click_with_app, browser_fill_with_app,
     browser_get_diagnostics_with_app, browser_get_interactive_elements_with_app,
     browser_get_page_context_with_app, browser_history_with_app, browser_list_registered_sessions,
     browser_navigate_with_app, browser_reload_with_app, emit_browser_operation_with_app,
-    resolve_browser_label,
+    resolve_browser_label_for_agent,
 };
 
 use super::{truncate_chars, Tool, ToolContext, ToolOutcome};
@@ -31,18 +31,35 @@ impl Tool for BrowserTool {
             "type": "function",
             "function": {
                 "name": "browser",
-                "description": "操作 Polaris 内置浏览器。可列出当前浏览器、导航到 URL、后退、前进、刷新、读取页面上下文、诊断页面 DOM/Console/可视元素、列出可操作元素，并按 inspect 返回的 index 或可见文本点击/填写。fill 应优先选择 fillable=true 的元素。只作用于 Polaris 内置浏览器 Tab；如未打开浏览器，先让用户打开浏览器面板。",
+                "description": "Operate Polaris built-in browser tabs. Use acquire first when the agent needs a tab: it binds this agent to an existing label or creates a dedicated browser tab. Later actions without label use the current agent binding before falling back to the most recent tab. Supports navigation, page context, diagnostics, inspect, click, fill, reload, back, and forward.",
                 "parameters": {
                     "type": "object",
                     "required": ["action"],
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["list", "navigate", "context", "diagnostics", "inspect", "click", "fill", "reload", "back", "forward"]
+                            "enum": ["list", "acquire", "navigate", "context", "diagnostics", "inspect", "click", "fill", "reload", "back", "forward"]
+                        },
+                        "mode": {
+                            "type": "string",
+                            "enum": ["auto", "create", "reuse"],
+                            "description": "acquire 模式：auto 复用当前 agent 已绑定 tab 或新建；create 总是新建；reuse 优先选择已有 tab"
+                        },
+                        "agentKey": {
+                            "type": "string",
+                            "description": "浏览器归属 key；省略时使用当前 SimpleAI 会话/子 agent session_id"
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "acquire 新建 tab 时的临时标题"
+                        },
+                        "activate": {
+                            "type": "boolean",
+                            "description": "acquire/select 时是否切换到对应浏览器 tab，默认 true"
                         },
                         "label": {
                             "type": "string",
-                            "description": "浏览器 WebView label；省略时使用最近活动的内置浏览器"
+                            "description": "浏览器 WebView label；acquire 时传入可选择现有 tab；其他 action 省略时优先使用当前 agent 已绑定 tab"
                         },
                         "url": {
                             "type": "string",
@@ -71,15 +88,15 @@ impl Tool for BrowserTool {
         })
     }
 
-    async fn execute(&self, args: &Value, _ctx: &ToolContext<'_>) -> ToolOutcome {
-        match run(args).await {
+    async fn execute(&self, args: &Value, ctx: &ToolContext<'_>) -> ToolOutcome {
+        match run(args, ctx).await {
             Ok(text) => ToolOutcome::ok(text),
             Err(error) => ToolOutcome::fail(error.to_message()),
         }
     }
 }
 
-async fn run(args: &Value) -> crate::Result<String> {
+async fn run(args: &Value, ctx: &ToolContext<'_>) -> crate::Result<String> {
     let action = args.get("action").and_then(Value::as_str).ok_or_else(|| {
         crate::error::AppError::ValidationError("browser 缺少 action".to_string())
     })?;
@@ -92,8 +109,36 @@ async fn run(args: &Value) -> crate::Result<String> {
         return Ok(serde_json::to_string_pretty(&sessions).unwrap_or_else(|_| "[]".to_string()));
     }
 
-    let label = resolve_browser_label(args.get("label").and_then(Value::as_str))?;
+    let agent_key = args
+        .get("agentKey")
+        .or_else(|| args.get("agent_key"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or(ctx.session_id);
     let app = browser_app_handle()?;
+
+    if action == "acquire" {
+        let result = browser_acquire_with_app(
+            &app,
+            Some(agent_key),
+            args.get("label").and_then(Value::as_str),
+            args.get("url").and_then(Value::as_str),
+            args.get("title").and_then(Value::as_str),
+            args.get("mode").and_then(Value::as_str),
+            args.get("activate")
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
+        )
+        .await?;
+        let json = serde_json::to_string_pretty(&result)
+            .unwrap_or_else(|_| "无法序列化浏览器 acquire 结果".to_string());
+        return Ok(json);
+    }
+
+    let label = resolve_browser_label_for_agent(
+        args.get("label").and_then(Value::as_str),
+        Some(agent_key),
+    )?;
 
     match action {
         "navigate" => {

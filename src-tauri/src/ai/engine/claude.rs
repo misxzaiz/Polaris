@@ -5,8 +5,8 @@ use std::process::{Child, Command, Stdio};
 use crate::ai::event_parser::EventParser;
 use crate::ai::session::SessionManager;
 use crate::ai::traits::{
-    AIEngine, EngineId, SessionOptions, ImageAttachment,
-    EngineMetadata, EngineDistribution, EngineCapabilities, EnvKeyMapping,
+    AIEngine, EngineCapabilities, EngineDistribution, EngineId, EngineMetadata, EnvKeyMapping,
+    ImageAttachment, SessionOptions,
 };
 use crate::error::{AppError, Result};
 use crate::models::config::Config;
@@ -70,6 +70,40 @@ fn resolve_permission_mode<'a>(user_mode: Option<&'a str>) -> &'a str {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn merged_disallowed_tools_keeps_default_and_dedupes_extra_tools() {
+        let tools = merged_disallowed_tools(&[
+            "WebSearch".to_string(),
+            "WebFetch".to_string(),
+            "WebSearch".to_string(),
+            "".to_string(),
+        ]);
+
+        assert_eq!(
+            tools,
+            vec![
+                "AskUserQuestion".to_string(),
+                "WebSearch".to_string(),
+                "WebFetch".to_string(),
+            ]
+        );
+    }
+}
+
+fn merged_disallowed_tools(extra_tools: &[String]) -> Vec<String> {
+    let mut tools = vec!["AskUserQuestion".to_string()];
+    for tool in extra_tools {
+        if !tool.trim().is_empty() && !tools.iter().any(|existing| existing == tool) {
+            tools.push(tool.clone());
+        }
+    }
+    tools
+}
+
 /// Claude Code CLI 安装类型
 #[cfg(windows)]
 #[derive(Debug, Clone)]
@@ -120,7 +154,10 @@ impl ClaudeEngine {
 
         // 提前检查路径是否存在
         if !path.exists() {
-            return Err(AppError::ProcessError(format!("CLI 路径不存在: {}", cli_path)));
+            return Err(AppError::ProcessError(format!(
+                "CLI 路径不存在: {}",
+                cli_path
+            )));
         }
 
         // 情况 1: 如果是 .exe 文件且不在 node_modules 中，可能是独立可执行文件
@@ -150,7 +187,10 @@ impl ClaudeEngine {
             });
         }
 
-        Ok(CliType::NpmWrapper { node_exe: _node_exe, cli_js: cli_target })
+        Ok(CliType::NpmWrapper {
+            node_exe: _node_exe,
+            cli_js: cli_target,
+        })
     }
 
     /// 判断一个 exe 文件是否可能是独立的 Claude Code
@@ -158,9 +198,7 @@ impl ClaudeEngine {
     fn is_likely_standalone_exe(&self, exe_path: &str) -> bool {
         // 策略 1: 检查文件名是否包含 "claude"
         let path = Path::new(exe_path);
-        let file_name = path.file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
+        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
         if !file_name.to_lowercase().contains("claude") {
             return false;
@@ -180,7 +218,11 @@ impl ClaudeEngine {
 
         // 策略 3: 检查同一目录下是否有 node_modules/@anthropic-ai/claude-code
         if let Some(parent) = path.parent() {
-            let has_node_modules = parent.join("node_modules").join("@anthropic-ai").join("claude-code").exists();
+            let has_node_modules = parent
+                .join("node_modules")
+                .join("@anthropic-ai")
+                .join("claude-code")
+                .exists();
             if !has_node_modules {
                 // 没有 node_modules，可能是独立可执行文件
                 return true;
@@ -223,15 +265,13 @@ impl ClaudeEngine {
             // 需要检测 CLI 类型
             let cli_path = match self.cli_path {
                 Some(ref p) => p.clone(),
-                None => {
-                    match self.get_cli_path() {
-                        Ok(p) => p.to_string(),
-                        Err(e) => {
-                            tracing::error!("[ClaudeEngine] 获取 CLI 路径失败: {}", e);
-                            return false;
-                        }
+                None => match self.get_cli_path() {
+                    Ok(p) => p.to_string(),
+                    Err(e) => {
+                        tracing::error!("[ClaudeEngine] 获取 CLI 路径失败: {}", e);
+                        return false;
                     }
-                }
+                },
             };
 
             tracing::info!("[ClaudeEngine] 检测 CLI 类型: {}", cli_path);
@@ -245,7 +285,10 @@ impl ClaudeEngine {
                         CliType::Standalone { exe_path } => {
                             let exists = Path::new(exe_path).exists();
                             if !exists {
-                                tracing::error!("[ClaudeEngine] 独立可执行文件不存在: {}", exe_path);
+                                tracing::error!(
+                                    "[ClaudeEngine] 独立可执行文件不存在: {}",
+                                    exe_path
+                                );
                             }
                             exists
                         }
@@ -284,8 +327,8 @@ impl ClaudeEngine {
                     return false;
                 }
             };
-            Path::new(&cli_path).exists() ||
-                std::process::Command::new("which")
+            Path::new(&cli_path).exists()
+                || std::process::Command::new("which")
                     .arg(&cli_path)
                     .output()
                     .map(|o| o.status.success())
@@ -307,6 +350,7 @@ impl ClaudeEngine {
         effort: Option<&str>,
         permission_mode: Option<&str>,
         allowed_tools: &[String],
+        disallowed_tools: &[String],
         image_attachments: &[ImageAttachment],
         fork_session: bool,
         settings_overlay_path: Option<&str>,
@@ -318,7 +362,10 @@ impl ClaudeEngine {
                     // 独立可执行文件 - 直接执行
                     Command::new(exe_path)
                 }
-                Some(CliType::NpmWrapper { ref node_exe, ref cli_js }) => {
+                Some(CliType::NpmWrapper {
+                    ref node_exe,
+                    ref cli_js,
+                }) => {
                     // npm/pnpm 安装 - 使用 node.exe 执行 cli.js
                     let mut c = Command::new(node_exe);
                     c.arg(cli_js);
@@ -400,8 +447,11 @@ impl ClaudeEngine {
                 cmd.arg("--allowedTools").arg(allowed_tools.join(","));
             }
 
-            // 屏蔽 CLI 原生 AskUserQuestion，统一走 polaris-ask MCP（同回合 tool_result 回填）
-            cmd.arg("--disallowedTools").arg("AskUserQuestion");
+            // 屏蔽 CLI 原生 AskUserQuestion，统一走 polaris-ask MCP（同回合 tool_result 回填）。
+            // 部分第三方 Anthropic-compatible 端点不支持 provider-owned server tools，
+            // 由上层按 profile 能力追加 WebSearch/WebFetch 等禁用项。
+            let disallowed = merged_disallowed_tools(disallowed_tools);
+            cmd.arg("--disallowedTools").arg(disallowed.join(","));
 
             // 统一使用 stream-json + stdin 模式（无论是否带图片）。
             // 此前对纯文本走 `.arg(message)` 把消息拼进命令行，会在 message 较长时
@@ -438,7 +488,9 @@ impl ClaudeEngine {
 
         #[cfg(not(windows))]
         {
-            let cli_path = self.cli_path.as_ref()
+            let cli_path = self
+                .cli_path
+                .as_ref()
                 .ok_or_else(|| AppError::ProcessError("CLI 路径未初始化".to_string()))?;
 
             let mut cmd = Command::new(cli_path);
@@ -514,8 +566,11 @@ impl ClaudeEngine {
                 cmd.arg("--allowedTools").arg(allowed_tools.join(","));
             }
 
-            // 屏蔽 CLI 原生 AskUserQuestion，统一走 polaris-ask MCP（同回合 tool_result 回填）
-            cmd.arg("--disallowedTools").arg("AskUserQuestion");
+            // 屏蔽 CLI 原生 AskUserQuestion，统一走 polaris-ask MCP（同回合 tool_result 回填）。
+            // 部分第三方 Anthropic-compatible 端点不支持 provider-owned server tools，
+            // 由上层按 profile 能力追加 WebSearch/WebFetch 等禁用项。
+            let disallowed = merged_disallowed_tools(disallowed_tools);
+            cmd.arg("--disallowedTools").arg(disallowed.join(","));
 
             // 统一使用 stream-json + stdin 模式（与 Windows 分支保持一致），
             // 避免 message 通过命令行参数传递时受平台参数长度限制。
@@ -550,7 +605,12 @@ impl ClaudeEngine {
     }
 
     /// 配置命令（设置工作目录、环境变量等）
-    fn configure_command(&self, cmd: &mut Command, work_dir: Option<&str>, env_overrides: &std::collections::HashMap<String, String>) {
+    fn configure_command(
+        &self,
+        cmd: &mut Command,
+        work_dir: Option<&str>,
+        env_overrides: &std::collections::HashMap<String, String>,
+    ) {
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -617,10 +677,14 @@ impl ClaudeEngine {
         let json_line = serde_json::to_string(&user_msg)
             .map_err(|e| AppError::ProcessError(format!("序列化 stream-json 失败: {}", e)))?;
 
-        tracing::info!("[ClaudeEngine] 发送 stream-json 消息，{} bytes，{} 张图片",
-            json_line.len(), image_attachments.len());
+        tracing::info!(
+            "[ClaudeEngine] 发送 stream-json 消息，{} bytes，{} 张图片",
+            json_line.len(),
+            image_attachments.len()
+        );
 
-        stdin.write_all(json_line.as_bytes())
+        stdin
+            .write_all(json_line.as_bytes())
             .and_then(|_| stdin.write_all(b"\n"))
             .and_then(|_| stdin.flush())
             .map_err(|e| AppError::ProcessError(format!("写入 stdin 失败: {}", e)))?;
@@ -653,7 +717,8 @@ impl ClaudeEngine {
     #[cfg(windows)]
     fn format_command_for_log(cmd: &Command) -> String {
         let program = cmd.get_program().to_string_lossy().to_string();
-        let args: Vec<String> = cmd.get_args()
+        let args: Vec<String> = cmd
+            .get_args()
             .map(|a| {
                 let s = a.to_string_lossy();
                 // 如果参数包含空格或特殊字符，用引号包裹
@@ -670,7 +735,8 @@ impl ClaudeEngine {
     #[cfg(not(windows))]
     fn format_command_for_log(cmd: &Command) -> String {
         let program = cmd.get_program().to_string_lossy().to_string();
-        let args: Vec<String> = cmd.get_args()
+        let args: Vec<String> = cmd
+            .get_args()
             .map(|a| {
                 let s = a.to_string_lossy();
                 if s.contains(' ') || s.contains('"') || s.contains('\'') {
@@ -736,8 +802,12 @@ impl ClaudeEngine {
 
                 // 如果有初始数据（如 stream-json 图片消息），立即发送
                 if let Some(initial) = initial_stdin_data {
-                    tracing::info!("[ClaudeEngine] 发送初始 stdin 数据: {} bytes", initial.len());
-                    if let Err(e) = stdin_writer.write_all(initial.as_bytes())
+                    tracing::info!(
+                        "[ClaudeEngine] 发送初始 stdin 数据: {} bytes",
+                        initial.len()
+                    );
+                    if let Err(e) = stdin_writer
+                        .write_all(initial.as_bytes())
                         .and_then(|_| stdin_writer.write_all(b"\n"))
                         .and_then(|_| stdin_writer.flush())
                     {
@@ -816,12 +886,25 @@ impl ClaudeEngine {
                         // 非 fork 模式：不跳过 init（init 报告真实文件系统 ID）
                         let should_skip = is_init && skip_init_session_id;
                         if !should_skip {
-                            if let Some(serde_json::Value::String(real_id)) = extra.get("session_id") {
+                            if let Some(serde_json::Value::String(real_id)) =
+                                extra.get("session_id")
+                            {
                                 parser.set_session_id(real_id);
                                 SessionManager::update_session_id_shared(
-                                    &sessions, &temp_id, real_id, pid, "claude", Some(sender_for_update.clone())
+                                    &sessions,
+                                    &temp_id,
+                                    real_id,
+                                    pid,
+                                    "claude",
+                                    Some(sender_for_update.clone()),
                                 );
-                                tracing::info!("[ClaudeEngine] session_id 更新: {} -> {} (init={}, fork={})", temp_id, real_id, is_init, skip_init_session_id);
+                                tracing::info!(
+                                    "[ClaudeEngine] session_id 更新: {} -> {} (init={}, fork={})",
+                                    temp_id,
+                                    real_id,
+                                    is_init,
+                                    skip_init_session_id
+                                );
 
                                 // 通知外部 session_id 已更新
                                 if let Some(ref cb) = on_session_id_update {
@@ -875,7 +958,10 @@ impl AIEngine for ClaudeEngine {
         EngineMetadata {
             id: EngineId::ClaudeCode,
             name: "Claude Code".into(),
-            description: Some("Anthropic 官方 Claude CLI — 支持工具调用、多模态图片、流式输出、会话续接与分支".into()),
+            description: Some(
+                "Anthropic 官方 Claude CLI — 支持工具调用、多模态图片、流式输出、会话续接与分支"
+                    .into(),
+            ),
             distribution: EngineDistribution::PackageRunner {
                 package: "@anthropic-ai/claude-code".into(),
                 cmd: "claude".into(),
@@ -912,14 +998,13 @@ impl AIEngine for ClaudeEngine {
         true
     }
 
-    fn start_session(
-        &mut self,
-        message: &str,
-        options: SessionOptions,
-    ) -> Result<String> {
+    fn start_session(&mut self, message: &str, options: SessionOptions) -> Result<String> {
         tracing::info!("[ClaudeEngine] 启动会话，消息长度: {}", message.len());
         tracing::info!("[ClaudeEngine] 系统提示词: {:?}", options.system_prompt);
-        tracing::info!("[ClaudeEngine] 拓展系统提示词: {:?}", options.append_system_prompt);
+        tracing::info!(
+            "[ClaudeEngine] 拓展系统提示词: {:?}",
+            options.append_system_prompt
+        );
         tracing::info!("[ClaudeEngine] 工作目录: {:?}", options.work_dir);
         tracing::info!("[ClaudeEngine] MCP 配置路径: {:?}", options.mcp_config_path);
 
@@ -962,8 +1047,9 @@ impl AIEngine for ClaudeEngine {
             Self::send_stream_json_message(&mut json_bytes, message, &options.image_attachments)?;
             // 加换行符
             json_bytes.extend_from_slice(b"\n");
-            Some(String::from_utf8(json_bytes)
-                .map_err(|e| AppError::ProcessError(format!("stream-json 数据包含非 UTF-8: {}", e)))?)
+            Some(String::from_utf8(json_bytes).map_err(|e| {
+                AppError::ProcessError(format!("stream-json 数据包含非 UTF-8: {}", e))
+            })?)
         };
 
         // 构建命令
@@ -985,11 +1071,16 @@ impl AIEngine for ClaudeEngine {
             options.effort.as_deref(),
             options.permission_mode.as_deref(),
             &options.allowed_tools,
+            &options.disallowed_tools,
             &options.image_attachments,
             fork_flag,
             options.settings_overlay_path.as_deref(),
         )?;
-        self.configure_command(&mut cmd, options.work_dir.as_deref(), &options.env_overrides);
+        self.configure_command(
+            &mut cmd,
+            options.work_dir.as_deref(),
+            &options.env_overrides,
+        );
 
         // 打印可复制的命令（方便调试）
         let cmd_str = Self::format_command_for_log(&cmd);
@@ -997,19 +1088,30 @@ impl AIEngine for ClaudeEngine {
         eprintln!("\n[ClaudeEngine] 执行命令:\n{}\n", cmd_str);
 
         // 启动进程
-        let child = cmd.spawn()
+        let child = cmd
+            .spawn()
             .map_err(|e| Self::map_spawn_error(e, message.len(), "启动 Claude 进程失败"))?;
 
         let pid = child.id();
         let temp_id = uuid::Uuid::new_v4().to_string();
 
-        tracing::info!("[ClaudeEngine] 进程启动，PID: {}, 临时 ID: {}", pid, temp_id);
+        tracing::info!(
+            "[ClaudeEngine] 进程启动，PID: {}, 临时 ID: {}",
+            pid,
+            temp_id
+        );
 
         // 启动事件读取，获取 input_sender（传递初始 stdin 数据）
-        let input_sender = self.spawn_event_reader(child, temp_id.clone(), pid, options, initial_stdin_data);
+        let input_sender =
+            self.spawn_event_reader(child, temp_id.clone(), pid, options, initial_stdin_data);
 
         // 注册会话（带 stdin 发送器）
-        self.sessions.register_with_sender(temp_id.clone(), pid, "claude".to_string(), Some(input_sender))?;
+        self.sessions.register_with_sender(
+            temp_id.clone(),
+            pid,
+            "claude".to_string(),
+            Some(input_sender),
+        )?;
 
         Ok(temp_id)
     }
@@ -1020,9 +1122,16 @@ impl AIEngine for ClaudeEngine {
         message: &str,
         options: SessionOptions,
     ) -> Result<()> {
-        tracing::info!("[ClaudeEngine] 继续会话: {}, 消息长度: {}", session_id, message.len());
+        tracing::info!(
+            "[ClaudeEngine] 继续会话: {}, 消息长度: {}",
+            session_id,
+            message.len()
+        );
         tracing::info!("[ClaudeEngine] 系统提示词: {:?}", options.system_prompt);
-        tracing::info!("[ClaudeEngine] 拓展系统提示词: {:?}", options.append_system_prompt);
+        tracing::info!(
+            "[ClaudeEngine] 拓展系统提示词: {:?}",
+            options.append_system_prompt
+        );
         tracing::info!("[ClaudeEngine] 工作目录: {:?}", options.work_dir);
         tracing::info!("[ClaudeEngine] MCP 配置路径: {:?}", options.mcp_config_path);
 
@@ -1033,7 +1142,11 @@ impl AIEngine for ClaudeEngine {
 
         // 获取会话信息，找到真实的 session_id
         let real_session_id = if let Some(info) = self.sessions.get(session_id) {
-            tracing::info!("[ClaudeEngine] 找到会话，真实 ID: {}, PID: {}", info.id, info.pid);
+            tracing::info!(
+                "[ClaudeEngine] 找到会话，真实 ID: {}, PID: {}",
+                info.id,
+                info.pid
+            );
             // 终止旧进程
             tracing::info!("[ClaudeEngine] 终止旧进程 PID: {}", info.pid);
             let _ = self.sessions.kill_process(session_id);
@@ -1045,11 +1158,18 @@ impl AIEngine for ClaudeEngine {
         };
 
         // 确定工作目录
-        let work_dir = options.work_dir.clone()
-            .or_else(|| self.config.work_dir.as_ref().map(|p| p.to_string_lossy().to_string()));
+        let work_dir = options.work_dir.clone().or_else(|| {
+            self.config
+                .work_dir
+                .as_ref()
+                .map(|p| p.to_string_lossy().to_string())
+        });
 
         tracing::info!("[ClaudeEngine] 工作目录: {:?}", work_dir);
-        tracing::info!("[ClaudeEngine] 使用 --resume 参数，session_id: {}", real_session_id);
+        tracing::info!(
+            "[ClaudeEngine] 使用 --resume 参数，session_id: {}",
+            real_session_id
+        );
 
         // 构建初始 stdin 数据：统一使用 stream-json 格式（无论是否带图片）。
         // 与 start_session 一致，避免 message 通过命令行传递时受平台参数长度限制。
@@ -1057,8 +1177,9 @@ impl AIEngine for ClaudeEngine {
             let mut json_bytes = Vec::new();
             Self::send_stream_json_message(&mut json_bytes, message, &options.image_attachments)?;
             json_bytes.extend_from_slice(b"\n");
-            Some(String::from_utf8(json_bytes)
-                .map_err(|e| AppError::ProcessError(format!("stream-json 数据包含非 UTF-8: {}", e)))?)
+            Some(String::from_utf8(json_bytes).map_err(|e| {
+                AppError::ProcessError(format!("stream-json 数据包含非 UTF-8: {}", e))
+            })?)
         };
 
         // 构建命令（带 --resume，使用真实 session_id）
@@ -1074,6 +1195,7 @@ impl AIEngine for ClaudeEngine {
             options.effort.as_deref(),
             options.permission_mode.as_deref(),
             &options.allowed_tools,
+            &options.disallowed_tools,
             &options.image_attachments,
             false, // continue_session 不 fork
             options.settings_overlay_path.as_deref(),
@@ -1086,7 +1208,8 @@ impl AIEngine for ClaudeEngine {
         eprintln!("\n[ClaudeEngine] 执行命令:\n{}\n", cmd_str);
 
         // 启动进程
-        let child = cmd.spawn()
+        let child = cmd
+            .spawn()
             .map_err(|e| Self::map_spawn_error(e, message.len(), "继续 Claude 会话失败"))?;
 
         let pid = child.id();
@@ -1094,10 +1217,21 @@ impl AIEngine for ClaudeEngine {
         tracing::info!("[ClaudeEngine] 进程启动，PID: {}", pid);
 
         // 启动事件读取，获取 input_sender（传递初始 stdin 数据）
-        let input_sender = self.spawn_event_reader(child, real_session_id.clone(), pid, options, initial_stdin_data);
+        let input_sender = self.spawn_event_reader(
+            child,
+            real_session_id.clone(),
+            pid,
+            options,
+            initial_stdin_data,
+        );
 
         // 更新会话 PID（使用真实 session_id，带 stdin 发送器）
-        self.sessions.register_with_sender(real_session_id.clone(), pid, "claude".to_string(), Some(input_sender))?;
+        self.sessions.register_with_sender(
+            real_session_id.clone(),
+            pid,
+            "claude".to_string(),
+            Some(input_sender),
+        )?;
 
         Ok(())
     }
@@ -1133,7 +1267,11 @@ impl AIEngine for ClaudeEngine {
     }
 
     fn send_input(&mut self, session_id: &str, input: &str) -> Result<bool> {
-        tracing::info!("[ClaudeEngine] 向会话 {} 发送输入: {} bytes", session_id, input.len());
+        tracing::info!(
+            "[ClaudeEngine] 向会话 {} 发送输入: {} bytes",
+            session_id,
+            input.len()
+        );
         self.sessions.send_input(session_id, input)
     }
 
@@ -1163,10 +1301,14 @@ impl AIEngine for ClaudeEngine {
 #[cfg(windows)]
 fn resolve_node_and_cli(claude_cmd_path: &str) -> Result<(String, String)> {
     let cmd_path = Path::new(claude_cmd_path);
-    let cmd_parent = cmd_path.parent()
+    let cmd_parent = cmd_path
+        .parent()
         .ok_or_else(|| AppError::ProcessError("无法获取 claude.cmd 的父目录".to_string()))?;
 
-    tracing::info!("[ClaudeEngine] 解析 node 和 cli.js，基础路径: {:?}", cmd_parent);
+    tracing::info!(
+        "[ClaudeEngine] 解析 node 和 cli.js，基础路径: {:?}",
+        cmd_parent
+    );
 
     // 1. 尝试查找 node.exe
     let node_exe = find_node_exe(cmd_parent)?;
@@ -1220,7 +1362,9 @@ fn find_node_exe(base_dir: &Path) -> Result<String> {
         }
     }
 
-    Err(AppError::ProcessError("无法找到 node.exe，请确保 Node.js 已安装".to_string()))
+    Err(AppError::ProcessError(
+        "无法找到 node.exe，请确保 Node.js 已安装".to_string(),
+    ))
 }
 
 #[cfg(windows)]
@@ -1307,12 +1451,16 @@ fn find_cli_binary(base_dir: &Path, node_exe_path: &str) -> Result<String> {
             .join("claude-code");
         let pnpm_binary = pnpm_pkg.join("bin").join("claude.exe");
         if pnpm_binary.exists() {
-            tracing::info!("[ClaudeEngine] 在 LOCALAPPDATA\\pnpm\\global\\node_modules 找到 bin/claude.exe");
+            tracing::info!(
+                "[ClaudeEngine] 在 LOCALAPPDATA\\pnpm\\global\\node_modules 找到 bin/claude.exe"
+            );
             return Ok(pnpm_binary.to_string_lossy().to_string());
         }
         let pnpm_default = pnpm_pkg.join("cli.js");
         if pnpm_default.exists() {
-            tracing::info!("[ClaudeEngine] 在 LOCALAPPDATA\\pnpm\\global\\node_modules 找到 cli.js");
+            tracing::info!(
+                "[ClaudeEngine] 在 LOCALAPPDATA\\pnpm\\global\\node_modules 找到 cli.js"
+            );
             return Ok(pnpm_default.to_string_lossy().to_string());
         }
     }
@@ -1411,7 +1559,8 @@ fn find_cli_binary(base_dir: &Path, node_exe_path: &str) -> Result<String> {
         "无法找到 Claude Code。请确保已安装:\n\
         npm install -g @anthropic-ai/claude-code\n\
         或\n\
-        pnpm add -g @anthropic-ai/claude-code".to_string(),
+        pnpm add -g @anthropic-ai/claude-code"
+            .to_string(),
     ))
 }
 

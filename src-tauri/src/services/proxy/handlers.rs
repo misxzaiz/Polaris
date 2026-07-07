@@ -15,6 +15,7 @@ use super::codex_chat::{
     chat_sse_to_codex_responses_sse, chat_to_codex_response, codex_responses_to_chat,
 };
 use super::forwarder::{forward_raw_response, ForwarderConfig, ProxyWireApi};
+use super::sanitizer::{sanitize_anthropic_messages_body, AnthropicProviderCapability};
 use super::transform::{
     anthropic_to_openai, anthropic_to_responses, openai_to_anthropic, responses_to_anthropic,
 };
@@ -49,10 +50,34 @@ pub async fn handle_messages(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
+    if state.forwarder.wire_api == ProxyWireApi::AnthropicMessages {
+        let sanitized_body = sanitize_anthropic_messages_body(
+            anthropic_body,
+            AnthropicProviderCapability {
+                supports_server_tools: false,
+            },
+        );
+        tracing::info!(
+            "[Proxy] Anthropic 直通净化请求: model={}, stream={}, messages={}",
+            sanitized_body
+                .get("model")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?"),
+            is_streaming,
+            sanitized_body
+                .get("messages")
+                .and_then(|m| m.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0)
+        );
+        return handle_anthropic_passthrough(state, sanitized_body, is_streaming).await;
+    }
+
     // 根据线路格式转换 Anthropic → 上游（Chat Completions / Responses）
     let upstream_result = match state.forwarder.wire_api {
         ProxyWireApi::Responses => anthropic_to_responses(anthropic_body),
         ProxyWireApi::ChatCompletions => anthropic_to_openai(anthropic_body),
+        ProxyWireApi::AnthropicMessages => unreachable!("handled above"),
         ProxyWireApi::CodexResponsesToChatCompletions => {
             return error_response(
                 StatusCode::BAD_REQUEST,
@@ -64,13 +89,19 @@ pub async fn handle_messages(
         Ok(v) => v,
         Err(e) => {
             tracing::error!("[Proxy] 格式转换失败: {}", e);
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("格式转换失败: {}", e));
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("格式转换失败: {}", e),
+            );
         }
     };
 
     tracing::info!(
         "[Proxy] 转换后请求: model={}, stream={}, messages={}, tools={}",
-        openai_body.get("model").and_then(|v| v.as_str()).unwrap_or("?"),
+        openai_body
+            .get("model")
+            .and_then(|v| v.as_str())
+            .unwrap_or("?"),
         is_streaming,
         openai_body
             .get("messages")
@@ -99,6 +130,55 @@ pub async fn handle_messages(
     };
     tracing::info!("[Proxy] 请求处理完成，耗时: {:?}", start.elapsed());
     result
+}
+
+async fn handle_anthropic_passthrough(
+    state: ProxyState,
+    body: Value,
+    is_streaming: bool,
+) -> Response {
+    match forward_raw_response(&state.forwarder, &body).await {
+        Ok(response) => {
+            let status =
+                StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+            let content_type = response
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string)
+                .unwrap_or_else(|| {
+                    if is_streaming {
+                        "text/event-stream".to_string()
+                    } else {
+                        "application/json".to_string()
+                    }
+                });
+
+            match response.bytes().await {
+                Ok(bytes) => Response::builder()
+                    .status(status)
+                    .header("Content-Type", content_type)
+                    .body(Body::from(bytes))
+                    .unwrap_or_else(|_| {
+                        error_response(StatusCode::INTERNAL_SERVER_ERROR, "构建直通响应失败")
+                    }),
+                Err(e) => {
+                    tracing::error!("[Proxy] 读取 Anthropic 直通上游响应失败: {}", e);
+                    error_response(StatusCode::BAD_GATEWAY, &format!("读取上游响应失败: {}", e))
+                }
+            }
+        }
+        Err(e) => {
+            tracing::error!("[Proxy] Anthropic 直通上游请求失败: {}", e);
+            let status = StatusCode::from_u16(e.status_code()).unwrap_or(StatusCode::BAD_GATEWAY);
+            let message = if e.to_string().contains("server_tool_use") {
+                "上游拒绝 server_tool_use 历史块；请确认该会话已通过 Polaris 净化代理重试，或切换到支持 Anthropic server tools 的供应商。".to_string()
+            } else {
+                format!("上游请求失败: {}", e)
+            };
+            error_response(status, &message)
+        }
+    }
 }
 
 /// 处理 Codex/OpenAI Responses API 请求
@@ -133,13 +213,19 @@ pub async fn handle_responses(
         Ok(v) => v,
         Err(e) => {
             tracing::error!("[Proxy] Codex Responses 转 Chat 失败: {}", e);
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("格式转换失败: {}", e));
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("格式转换失败: {}", e),
+            );
         }
     };
 
     tracing::info!(
         "[Proxy] Codex Responses 转 Chat: model={}, stream={}, messages={}, tools={}",
-        chat_body.get("model").and_then(|v| v.as_str()).unwrap_or("?"),
+        chat_body
+            .get("model")
+            .and_then(|v| v.as_str())
+            .unwrap_or("?"),
         is_streaming,
         chat_body
             .get("messages")
@@ -168,16 +254,26 @@ async fn handle_codex_non_streaming(state: ProxyState, chat_body: Value) -> Resp
                     Ok(responses_response) => Response::builder()
                         .status(StatusCode::OK)
                         .header("Content-Type", "application/json")
-                        .body(Body::from(serde_json::to_string(&responses_response).unwrap_or_default()))
-                        .unwrap_or_else(|_| error_response(StatusCode::INTERNAL_SERVER_ERROR, "构建响应失败")),
+                        .body(Body::from(
+                            serde_json::to_string(&responses_response).unwrap_or_default(),
+                        ))
+                        .unwrap_or_else(|_| {
+                            error_response(StatusCode::INTERNAL_SERVER_ERROR, "构建响应失败")
+                        }),
                     Err(e) => {
                         tracing::error!("[Proxy] Chat 响应转 Codex Responses 失败: {}", e);
-                        error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("响应格式转换失败: {}", e))
+                        error_response(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            &format!("响应格式转换失败: {}", e),
+                        )
                     }
                 },
                 Err(e) => {
                     tracing::error!("[Proxy] Codex 上游 Chat 响应 JSON 解析失败: {}", e);
-                    error_response(StatusCode::BAD_GATEWAY, &format!("上游响应无效 JSON: {}", e))
+                    error_response(
+                        StatusCode::BAD_GATEWAY,
+                        &format!("上游响应无效 JSON: {}", e),
+                    )
                 }
             },
             Err(e) => error_response(StatusCode::BAD_GATEWAY, &format!("读取上游响应失败: {}", e)),
@@ -206,7 +302,9 @@ async fn handle_codex_streaming(state: ProxyState, chat_body: Value) -> Response
                     .header("Content-Type", "text/event-stream")
                     .header("Cache-Control", "no-cache")
                     .body(Body::from(sse_body))
-                    .unwrap_or_else(|_| error_response(StatusCode::INTERNAL_SERVER_ERROR, "构建流式响应失败"))
+                    .unwrap_or_else(|_| {
+                        error_response(StatusCode::INTERNAL_SERVER_ERROR, "构建流式响应失败")
+                    })
             }
             Err(e) => error_response(StatusCode::BAD_GATEWAY, &format!("读取上游响应失败: {}", e)),
         },
@@ -224,56 +322,60 @@ async fn handle_non_streaming(state: ProxyState, openai_body: Value) -> Response
         Ok(response) => {
             let status = response.status();
             match response.text().await {
-                Ok(body_text) => {
-                    match serde_json::from_str::<Value>(&body_text) {
-                        Ok(openai_response) => {
-                            let converted = match state.forwarder.wire_api {
-                                ProxyWireApi::Responses => responses_to_anthropic(openai_response),
-                                ProxyWireApi::ChatCompletions => openai_to_anthropic(openai_response),
-                                ProxyWireApi::CodexResponsesToChatCompletions => {
-                                    return error_response(
-                                        StatusCode::BAD_REQUEST,
-                                        "Codex Responses 代理模式请使用 /v1/responses 入口",
-                                    );
-                                }
-                            };
-                            match converted {
-                                Ok(anthropic_response) => {
-                                    let json_str =
-                                        serde_json::to_string(&anthropic_response).unwrap_or_default();
-                                    Response::builder()
-                                        .status(StatusCode::OK)
-                                        .header("Content-Type", "application/json")
-                                        .body(Body::from(json_str))
-                                        .unwrap_or_else(|_| {
-                                            error_response(
-                                                StatusCode::INTERNAL_SERVER_ERROR,
-                                                "构建响应失败",
-                                            )
-                                        })
-                                }
-                                Err(e) => {
-                                    tracing::error!("[Proxy] 响应格式转换失败: {}", e);
-                                    error_response(
-                                        StatusCode::INTERNAL_SERVER_ERROR,
-                                        &format!("响应格式转换失败: {}", e),
-                                    )
-                                }
+                Ok(body_text) => match serde_json::from_str::<Value>(&body_text) {
+                    Ok(openai_response) => {
+                        let converted = match state.forwarder.wire_api {
+                            ProxyWireApi::Responses => responses_to_anthropic(openai_response),
+                            ProxyWireApi::ChatCompletions => openai_to_anthropic(openai_response),
+                            ProxyWireApi::AnthropicMessages => {
+                                return error_response(
+                                    StatusCode::BAD_REQUEST,
+                                    "Anthropic 直通代理模式不应进入 OpenAI 响应转换",
+                                );
+                            }
+                            ProxyWireApi::CodexResponsesToChatCompletions => {
+                                return error_response(
+                                    StatusCode::BAD_REQUEST,
+                                    "Codex Responses 代理模式请使用 /v1/responses 入口",
+                                );
+                            }
+                        };
+                        match converted {
+                            Ok(anthropic_response) => {
+                                let json_str =
+                                    serde_json::to_string(&anthropic_response).unwrap_or_default();
+                                Response::builder()
+                                    .status(StatusCode::OK)
+                                    .header("Content-Type", "application/json")
+                                    .body(Body::from(json_str))
+                                    .unwrap_or_else(|_| {
+                                        error_response(
+                                            StatusCode::INTERNAL_SERVER_ERROR,
+                                            "构建响应失败",
+                                        )
+                                    })
+                            }
+                            Err(e) => {
+                                tracing::error!("[Proxy] 响应格式转换失败: {}", e);
+                                error_response(
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    &format!("响应格式转换失败: {}", e),
+                                )
                             }
                         }
-                        Err(e) => {
-                            tracing::error!(
-                                "[Proxy] 上游响应 JSON 解析失败 (status={}): {}",
-                                status,
-                                e
-                            );
-                            error_response(
-                                StatusCode::BAD_GATEWAY,
-                                &format!("上游响应无效 JSON: {}", e),
-                            )
-                        }
                     }
-                }
+                    Err(e) => {
+                        tracing::error!(
+                            "[Proxy] 上游响应 JSON 解析失败 (status={}): {}",
+                            status,
+                            e
+                        );
+                        error_response(
+                            StatusCode::BAD_GATEWAY,
+                            &format!("上游响应无效 JSON: {}", e),
+                        )
+                    }
+                },
                 Err(e) => {
                     tracing::error!("[Proxy] 读取上游响应失败: {}", e);
                     error_response(StatusCode::BAD_GATEWAY, &format!("读取上游响应失败: {}", e))
@@ -333,12 +435,19 @@ async fn handle_streaming(state: ProxyState, openai_body: Value) -> Response {
                 Ok(b) => b,
                 Err(e) => {
                     tracing::error!("[Proxy] 读取上游流式响应体失败: {}", e);
-                    return error_response(StatusCode::BAD_GATEWAY, &format!("读取上游响应失败: {}", e));
+                    return error_response(
+                        StatusCode::BAD_GATEWAY,
+                        &format!("读取上游响应失败: {}", e),
+                    );
                 }
             };
 
             let body_str = String::from_utf8_lossy(&body_bytes);
-            tracing::info!("[Proxy] 上游流式响应: {}bytes, {}lines", body_bytes.len(), body_str.lines().count());
+            tracing::info!(
+                "[Proxy] 上游流式响应: {}bytes, {}lines",
+                body_bytes.len(),
+                body_str.lines().count()
+            );
 
             // --- 第一阶段：根据线路格式收集 chunk 数据 ---
             let StreamCollected {
@@ -351,6 +460,12 @@ async fn handle_streaming(state: ProxyState, openai_body: Value) -> Response {
             } = match state.forwarder.wire_api {
                 ProxyWireApi::Responses => collect_from_responses_sse(&body_str),
                 ProxyWireApi::ChatCompletions => collect_from_chat_sse(&body_str),
+                ProxyWireApi::AnthropicMessages => {
+                    return error_response(
+                        StatusCode::BAD_REQUEST,
+                        "Anthropic 直通代理模式不应进入 OpenAI 流式转换",
+                    );
+                }
                 ProxyWireApi::CodexResponsesToChatCompletions => {
                     return error_response(
                         StatusCode::BAD_REQUEST,
@@ -387,42 +502,45 @@ async fn handle_streaming(state: ProxyState, openai_body: Value) -> Response {
             };
 
             // 关闭当前活跃 block
-            let close_block = |events: &mut Vec<Value>, active: &mut ActiveBlock, index: &mut u32| {
-                if *active != ActiveBlock::None {
-                    events.push(json!({
-                        "event": "content_block_stop",
-                        "data": {"type": "content_block_stop", "index": *index}
-                    }));
-                    *index += 1;
-                    *active = ActiveBlock::None;
-                }
-            };
+            let close_block =
+                |events: &mut Vec<Value>, active: &mut ActiveBlock, index: &mut u32| {
+                    if *active != ActiveBlock::None {
+                        events.push(json!({
+                            "event": "content_block_stop",
+                            "data": {"type": "content_block_stop", "index": *index}
+                        }));
+                        *index += 1;
+                        *active = ActiveBlock::None;
+                    }
+                };
 
             // 开启新的 text block
-            let open_text_block = |events: &mut Vec<Value>, active: &mut ActiveBlock, index: u32| {
-                events.push(json!({
-                    "event": "content_block_start",
-                    "data": {
-                        "type": "content_block_start",
-                        "index": index,
-                        "content_block": {"type": "text", "text": ""}
-                    }
-                }));
-                *active = ActiveBlock::Text;
-            };
+            let open_text_block =
+                |events: &mut Vec<Value>, active: &mut ActiveBlock, index: u32| {
+                    events.push(json!({
+                        "event": "content_block_start",
+                        "data": {
+                            "type": "content_block_start",
+                            "index": index,
+                            "content_block": {"type": "text", "text": ""}
+                        }
+                    }));
+                    *active = ActiveBlock::Text;
+                };
 
             // 开启新的 thinking block
-            let open_thinking_block = |events: &mut Vec<Value>, active: &mut ActiveBlock, index: u32| {
-                events.push(json!({
-                    "event": "content_block_start",
-                    "data": {
-                        "type": "content_block_start",
-                        "index": index,
-                        "content_block": {"type": "thinking", "thinking": ""}
-                    }
-                }));
-                *active = ActiveBlock::Thinking;
-            };
+            let open_thinking_block =
+                |events: &mut Vec<Value>, active: &mut ActiveBlock, index: u32| {
+                    events.push(json!({
+                        "event": "content_block_start",
+                        "data": {
+                            "type": "content_block_start",
+                            "index": index,
+                            "content_block": {"type": "thinking", "thinking": ""}
+                        }
+                    }));
+                    *active = ActiveBlock::Thinking;
+                };
 
             // 处理所有内容 delta
             for delta in &content_deltas {
@@ -469,10 +587,19 @@ async fn handle_streaming(state: ProxyState, openai_body: Value) -> Response {
                 ensure_message_start(&mut events, &mut has_content);
                 for tc in tool_calls {
                     let input: Value = serde_json::from_str(&tc.arguments).unwrap_or_else(|e| {
-                        tracing::warn!("[Proxy] 工具调用 arguments JSON 解析失败 ({}): {}", e, &tc.arguments[..tc.arguments.len().min(200)]);
+                        tracing::warn!(
+                            "[Proxy] 工具调用 arguments JSON 解析失败 ({}): {}",
+                            e,
+                            &tc.arguments[..tc.arguments.len().min(200)]
+                        );
                         json!({})
                     });
-                    tracing::info!("[Proxy] 生成 tool_use block: id={}, name={}, args_len={}", tc.id, tc.name, tc.arguments.len());
+                    tracing::info!(
+                        "[Proxy] 生成 tool_use block: id={}, name={}, args_len={}",
+                        tc.id,
+                        tc.name,
+                        tc.arguments.len()
+                    );
 
                     events.push(json!({
                         "event": "content_block_start",
@@ -524,8 +651,12 @@ async fn handle_streaming(state: ProxyState, openai_body: Value) -> Response {
             events.push(json!({"event": "message_delta", "data": {"type": "message_delta", "delta": {"stop_reason": stop_reason, "stop_sequence": null}, "usage": usage_json}}));
             events.push(json!({"event": "message_stop", "data": {"type": "message_stop"}}));
 
-            tracing::info!("[Proxy] 生成 {} 个 Anthropic SSE 事件 (text_deltas={}, tool_calls={})",
-                events.len(), content_deltas.len(), tool_call_count);
+            tracing::info!(
+                "[Proxy] 生成 {} 个 Anthropic SSE 事件 (text_deltas={}, tool_calls={})",
+                events.len(),
+                content_deltas.len(),
+                tool_call_count
+            );
 
             // 构建 SSE 响应体
             let mut sse_body = String::new();
@@ -540,7 +671,9 @@ async fn handle_streaming(state: ProxyState, openai_body: Value) -> Response {
                 .header("Content-Type", "text/event-stream")
                 .header("Cache-Control", "no-cache")
                 .body(Body::from(sse_body))
-                .unwrap_or_else(|_| error_response(StatusCode::INTERNAL_SERVER_ERROR, "构建流式响应失败"))
+                .unwrap_or_else(|_| {
+                    error_response(StatusCode::INTERNAL_SERVER_ERROR, "构建流式响应失败")
+                })
         }
         Err(e) => {
             tracing::error!("[Proxy] 上游流式请求失败: {}", e);
@@ -572,7 +705,11 @@ fn collect_from_chat_sse(body_str: &str) -> StreamCollected {
         let chunk: super::models::OpenAIStreamChunk = match serde_json::from_str(data) {
             Ok(c) => c,
             Err(e) => {
-                tracing::warn!("[Proxy] 跳过无法解析的 chunk: {} - {}", e, &data[..data.len().min(100)]);
+                tracing::warn!(
+                    "[Proxy] 跳过无法解析的 chunk: {} - {}",
+                    e,
+                    &data[..data.len().min(100)]
+                );
                 continue;
             }
         };
@@ -584,7 +721,8 @@ fn collect_from_chat_sse(body_str: &str) -> StreamCollected {
             model = chunk.model.clone();
         }
         if let Some(u) = &chunk.usage {
-            usage_json = json!({"input_tokens": u.prompt_tokens, "output_tokens": u.completion_tokens});
+            usage_json =
+                json!({"input_tokens": u.prompt_tokens, "output_tokens": u.completion_tokens});
         }
         if chunk.choices.is_empty() {
             continue;

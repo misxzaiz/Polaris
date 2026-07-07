@@ -424,9 +424,7 @@ fn build_start_usage(usage: Option<&super::models::OpenAIUsage>) -> Value {
 
 /// 构建 message_delta 事件
 fn build_message_delta_event(stop_reason: Option<String>, usage_json: Option<Value>) -> Value {
-    let usage = usage_json.unwrap_or_else(|| {
-        json!({"input_tokens": 0, "output_tokens": 0})
-    });
+    let usage = usage_json.unwrap_or_else(|| json!({"input_tokens": 0, "output_tokens": 0}));
     json!({
         "type": "message_delta",
         "delta": {
@@ -468,7 +466,11 @@ mod tests {
         // OpenAI 兼容 usage chunk — choices 为空数组！
         let data = r#"{"id":"chatcmpl-test","object":"chat.completion.chunk","created":1780682244,"model":"test-model","system_fingerprint":"","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12,"prompt_tokens_details":{"cached_tokens":0,"text_tokens":0},"input_tokens":0,"output_tokens":0}}"#;
         let result = serde_json::from_str::<OpenAIStreamChunk>(data);
-        assert!(result.is_ok(), "Failed to parse usage chunk: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Failed to parse usage chunk: {:?}",
+            result.err()
+        );
         let chunk = result.unwrap();
         assert_eq!(chunk.choices.len(), 0);
         assert!(chunk.usage.is_some());

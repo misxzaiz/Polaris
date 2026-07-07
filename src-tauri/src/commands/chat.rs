@@ -11,11 +11,11 @@ use crate::ai::{
     ClaudeHistoryProvider, CodexHistoryProvider, HistoryMessage, SessionHistoryProvider,
     SessionMeta,
 };
-use crate::services::proxy::ProxyWireApi;
 use crate::ai::{EngineId, ImageAttachment, PagedResult, Pagination, SessionOptions};
 use crate::error::{AppError, Result};
 use crate::models::AIEvent;
 use crate::services::mcp_config_service::resolve_workspace_mcp_runtime_service;
+use crate::services::proxy::ProxyWireApi;
 #[cfg(feature = "tauri-app")]
 use tauri::{Emitter, Manager, State, Window};
 #[cfg(feature = "tauri-app")]
@@ -102,6 +102,18 @@ pub struct ChatRequestOptions {
 // ============================================================================
 // 辅助函数
 // ============================================================================
+
+fn with_additional_disallowed_tools(
+    mut session_opts: SessionOptions,
+    tools: &[&str],
+) -> SessionOptions {
+    for tool in tools {
+        if !session_opts.disallowed_tools.iter().any(|t| t == tool) {
+            session_opts.disallowed_tools.push((*tool).to_string());
+        }
+    }
+    session_opts
+}
 
 /// 附件处理结果
 struct ProcessedAttachment {
@@ -374,7 +386,8 @@ struct PreparedMcpConfig {
     claude_config_path: Option<String>,
     codex_config_args: Vec<String>,
     /// SimpleAI 直接消费的 MCP server 列表（Phase 4b；CLI 引擎不用）。
-    simple_ai_mcp_servers: Option<Vec<crate::services::mcp_config_service::ResolvedExternalMcpServer>>,
+    simple_ai_mcp_servers:
+        Option<Vec<crate::services::mcp_config_service::ResolvedExternalMcpServer>>,
 }
 
 fn merge_disabled_mcp_servers(requested: &[String], persisted: Vec<String>) -> Vec<String> {
@@ -512,7 +525,11 @@ async fn apply_model_profile_options(
     let Some(profile) = profiles.iter().find(|p| p.id == *profile_id) else {
         // 用户明确选择了某 Profile，但配置中已不存在（可能已删除或未同步）。
         // 不再静默回退到官方端点（会产生意外费用/答非所选），而是中断并提示用户。
-        tracing::warn!("[{}] 未找到模型 Profile: {}，中断请求", log_scope, profile_id);
+        tracing::warn!(
+            "[{}] 未找到模型 Profile: {}，中断请求",
+            log_scope,
+            profile_id
+        );
         return Err(AppError::ClientError(
             "errors:modelProfile.notFoundRuntime".to_string(),
         ));
@@ -552,11 +569,21 @@ async fn apply_model_profile_options(
     match engine {
         EngineId::ClaudeCode => {
             let wire = profile.wire_api.as_deref();
-            let use_proxy =
-                matches!(wire, Some("openai-chat-completions") | Some("openai-responses"));
+            let use_openai_proxy = matches!(
+                wire,
+                Some("openai-chat-completions") | Some("openai-responses")
+            );
+            let use_anthropic_sanitized_proxy = !use_openai_proxy
+                && !crate::services::ModelProfileService::supports_anthropic_server_tool_blocks(
+                    profile,
+                );
+            let use_proxy = use_openai_proxy || use_anthropic_sanitized_proxy;
             if use_proxy {
-                let proxy_wire =
-                    crate::services::proxy::ProxyWireApi::from_profile_wire_api(wire);
+                let proxy_wire = if use_anthropic_sanitized_proxy {
+                    crate::services::proxy::ProxyWireApi::AnthropicMessages
+                } else {
+                    crate::services::proxy::ProxyWireApi::from_profile_wire_api(wire)
+                };
                 let custom_headers = profile.custom_headers.clone().unwrap_or_default();
                 // 启动本地代理（Chat Completions 或 Responses 线路，由 proxy_wire 决定转换方式）
                 tracing::info!(
@@ -586,8 +613,7 @@ async fn apply_model_profile_options(
                         );
 
                         match crate::services::ModelProfileService::write_proxy_settings_overlay(
-                            profile,
-                            proxy_addr,
+                            profile, proxy_addr,
                         ) {
                             Ok(path) => {
                                 session_opts = session_opts
@@ -604,10 +630,14 @@ async fn apply_model_profile_options(
 
                         // 代理模式下 env overrides 只需设置基础覆盖（API key 由代理管理）
                         let mut env_overrides = std::collections::HashMap::new();
-                        env_overrides
-                            .insert("ANTHROPIC_BASE_URL".to_string(), format!("http://{}", proxy_addr));
-                        env_overrides
-                            .insert("ANTHROPIC_AUTH_TOKEN".to_string(), "PROXY_MANAGED".to_string());
+                        env_overrides.insert(
+                            "ANTHROPIC_BASE_URL".to_string(),
+                            format!("http://{}", proxy_addr),
+                        );
+                        env_overrides.insert(
+                            "ANTHROPIC_AUTH_TOKEN".to_string(),
+                            "PROXY_MANAGED".to_string(),
+                        );
                         // 合并用户自定义环境变量
                         if let Some(custom) = &profile.custom_env {
                             for (k, v) in custom {
@@ -615,6 +645,12 @@ async fn apply_model_profile_options(
                             }
                         }
                         session_opts = session_opts.with_env_overrides(env_overrides);
+                        if use_anthropic_sanitized_proxy {
+                            session_opts = with_additional_disallowed_tools(
+                                session_opts,
+                                &["WebSearch", "WebFetch"],
+                            );
+                        }
                     }
                     Err(e) => {
                         tracing::error!("[{}] 启动代理失败: {}", log_scope, e);
@@ -665,24 +701,39 @@ async fn apply_model_profile_options(
                 {
                     Ok(proxy_addr) => {
                         // 写入 Codex 模型目录，避免 "Model metadata not found" 警告
-                        if let Err(e) = crate::services::ModelProfileService::write_codex_proxy_model_catalog(profile) {
+                        if let Err(e) =
+                            crate::services::ModelProfileService::write_codex_proxy_model_catalog(
+                                profile,
+                            )
+                        {
                             tracing::warn!("[{}] 写入 Codex 模型目录失败: {}", log_scope, e);
                         }
 
-                        let codex_args = crate::services::ModelProfileService::generate_codex_proxy_config_args(profile, proxy_addr);
+                        let codex_args =
+                            crate::services::ModelProfileService::generate_codex_proxy_config_args(
+                                profile, proxy_addr,
+                            );
                         session_opts.codex_config_args.extend(codex_args);
 
                         let env_overrides = crate::services::ModelProfileService::generate_codex_proxy_env_overrides(profile);
                         session_opts.env_overrides.extend(env_overrides);
                     }
                     Err(e) => {
-                        tracing::error!("[{}] 启动 Codex Responses 代理失败，回退到直连: {}", log_scope, e);
+                        tracing::error!(
+                            "[{}] 启动 Codex Responses 代理失败，回退到直连: {}",
+                            log_scope,
+                            e
+                        );
                         let codex_args =
-                            crate::services::ModelProfileService::generate_codex_config_args(profile);
+                            crate::services::ModelProfileService::generate_codex_config_args(
+                                profile,
+                            );
                         session_opts.codex_config_args.extend(codex_args);
 
                         let env_overrides =
-                            crate::services::ModelProfileService::generate_codex_env_overrides(profile);
+                            crate::services::ModelProfileService::generate_codex_env_overrides(
+                                profile,
+                            );
                         session_opts.env_overrides.extend(env_overrides);
                     }
                 }
@@ -715,7 +766,8 @@ async fn apply_model_profile_options(
             // Mimo 引擎使用模型配置（通过 --model 传递）
             tracing::info!(
                 "[{}] Mimo 引擎使用 Profile 模型: {}",
-                log_scope, profile.model
+                log_scope,
+                profile.model
             );
             // Mimo 不直接使用 env_overrides，由 CLI 自身处理认证
         }
@@ -792,7 +844,11 @@ pub async fn start_chat_inner(
         &options,
         &engine,
         app_paths,
-        if state.clone_config().map(|c| c.interaction.ask_mcp_enabled).unwrap_or(true) {
+        if state
+            .clone_config()
+            .map(|c| c.interaction.ask_mcp_enabled)
+            .unwrap_or(true)
+        {
             state.ask_listener.get().cloned()
         } else {
             None
@@ -950,7 +1006,11 @@ pub async fn continue_chat_inner(
         &options,
         &engine,
         app_paths,
-        if state.clone_config().map(|c| c.interaction.ask_mcp_enabled).unwrap_or(true) {
+        if state
+            .clone_config()
+            .map(|c| c.interaction.ask_mcp_enabled)
+            .unwrap_or(true)
+        {
             state.ask_listener.get().cloned()
         } else {
             None

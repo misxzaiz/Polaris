@@ -107,4 +107,26 @@ describe('tabStore', () => {
     expect(tab?.metadata?.navigationRequestPending).toBe(true)
     expect(tab?.metadata?.navigationRequestId).toBeGreaterThan(firstRequestId)
   })
+
+  it('can create a dedicated browser tab when reuse is disabled', () => {
+    const firstTabId = useTabStore.getState().openBrowserTab('https://www.bing.com', 'Browser')
+    const agentTabId = useTabStore.getState().openBrowserTab('https://example.com', 'Agent Browser', {
+      reuseExisting: false,
+      metadata: {
+        browserAcquireRequestId: 'request-1',
+        browserAgentKey: 'agent-1',
+      },
+    })
+
+    const state = useTabStore.getState()
+    const agentTab = state.getTabById(agentTabId)
+
+    expect(agentTabId).not.toBe(firstTabId)
+    expect(state.tabs.filter((tab) => tab.type === 'browser')).toHaveLength(2)
+    expect(agentTab?.title).toBe('Agent Browser')
+    expect(agentTab?.metadata?.initialUrl).toBe('https://example.com')
+    expect(agentTab?.metadata?.browserAcquireRequestId).toBe('request-1')
+    expect(agentTab?.metadata?.browserAgentKey).toBe('agent-1')
+    expect(state.activeTabId).toBe(agentTabId)
+  })
 })

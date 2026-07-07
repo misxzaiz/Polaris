@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
+use tokio::sync::oneshot;
+use uuid::Uuid;
 
 use crate::error::{AppError, Result};
 
@@ -19,9 +21,16 @@ static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 static BROWSER_SESSIONS: OnceLock<Mutex<HashMap<String, BrowserSessionInfo>>> = OnceLock::new();
 static BROWSER_BOUNDS: OnceLock<Mutex<HashMap<String, BrowserBounds>>> = OnceLock::new();
 static BROWSER_CREATE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+static BROWSER_AGENT_BINDINGS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+static BROWSER_ACQUIRE_PENDING: OnceLock<Mutex<HashMap<String, BrowserAcquireSender>>> =
+    OnceLock::new();
 
 const DEFAULT_EVAL_TIMEOUT_MS: u64 = 2_500;
 const MAX_EVAL_TIMEOUT_MS: u64 = 10_000;
+const BROWSER_ACQUIRE_TIMEOUT_SECS: u64 = 15;
+
+type BrowserAcquireSender =
+    oneshot::Sender<std::result::Result<BrowserAcquireFrontendResult, String>>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,6 +40,36 @@ pub struct BrowserSessionInfo {
     pub url: Option<String>,
     pub title: Option<String>,
     pub updated_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserAcquireRequest {
+    pub request_id: String,
+    pub agent_key: Option<String>,
+    pub url: String,
+    pub title: Option<String>,
+    pub activate: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserAcquireResult {
+    pub label: String,
+    pub tab_id: Option<String>,
+    pub url: Option<String>,
+    pub title: Option<String>,
+    pub created: bool,
+    pub bound_agent_key: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct BrowserAcquireFrontendResult {
+    label: String,
+    tab_id: Option<String>,
+    url: Option<String>,
+    title: Option<String>,
+    created: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -193,11 +232,37 @@ fn create_lock() -> &'static Mutex<()> {
     BROWSER_CREATE_LOCK.get_or_init(|| Mutex::new(()))
 }
 
+fn agent_bindings() -> &'static Mutex<HashMap<String, String>> {
+    BROWSER_AGENT_BINDINGS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn acquire_pending() -> &'static Mutex<HashMap<String, BrowserAcquireSender>> {
+    BROWSER_ACQUIRE_PENDING.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or_default()
+}
+
+fn optional_trimmed(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn normalize_acquire_mode(mode: Option<&str>) -> Result<&'static str> {
+    match optional_trimmed(mode).as_deref().unwrap_or("auto") {
+        "auto" => Ok("auto"),
+        "create" => Ok("create"),
+        "reuse" => Ok("reuse"),
+        other => Err(AppError::ValidationError(format!(
+            "browser acquire mode 无效: {other}"
+        ))),
+    }
 }
 
 fn normalize_url(input: &str) -> Result<url::Url> {
@@ -231,8 +296,32 @@ fn normalize_url(input: &str) -> Result<url::Url> {
 }
 
 pub fn resolve_browser_label(label: Option<&str>) -> Result<String> {
-    if let Some(label) = label.map(str::trim).filter(|label| !label.is_empty()) {
-        return Ok(label.to_string());
+    resolve_browser_label_for_agent(label, None)
+}
+
+pub fn resolve_browser_label_for_agent(
+    label: Option<&str>,
+    agent_key: Option<&str>,
+) -> Result<String> {
+    if let Some(label) = optional_trimmed(label) {
+        return Ok(label);
+    }
+
+    if let Some(agent_key) = optional_trimmed(agent_key) {
+        let bound_label = agent_bindings()
+            .lock()
+            .map_err(|e| AppError::Unknown(format!("浏览器 agent 绑定表锁异常: {e}")))?
+            .get(&agent_key)
+            .cloned();
+
+        if let Some(bound_label) = bound_label {
+            if session_for_label(&bound_label)?.is_some() {
+                return Ok(bound_label);
+            }
+            if let Ok(mut guard) = agent_bindings().lock() {
+                guard.remove(&agent_key);
+            }
+        }
     }
 
     let guard = sessions()
@@ -244,6 +333,43 @@ pub fn resolve_browser_label(label: Option<&str>) -> Result<String> {
         .max_by_key(|session| session.updated_at)
         .map(|session| session.label.clone())
         .ok_or_else(|| AppError::ValidationError("当前没有打开的内置浏览器".to_string()))
+}
+
+pub fn bind_browser_agent(agent_key: Option<&str>, label: &str) -> Result<()> {
+    let Some(agent_key) = optional_trimmed(agent_key) else {
+        return Ok(());
+    };
+    agent_bindings()
+        .lock()
+        .map_err(|e| AppError::Unknown(format!("浏览器 agent 绑定表锁异常: {e}")))?
+        .insert(agent_key, label.to_string());
+    Ok(())
+}
+
+fn bound_browser_label_for_agent(agent_key: Option<&str>) -> Result<Option<String>> {
+    let Some(agent_key) = optional_trimmed(agent_key) else {
+        return Ok(None);
+    };
+    let bound_label = agent_bindings()
+        .lock()
+        .map_err(|e| AppError::Unknown(format!("浏览器 agent 绑定表锁异常: {e}")))?
+        .get(&agent_key)
+        .cloned();
+    if let Some(bound_label) = bound_label {
+        if session_for_label(&bound_label)?.is_some() {
+            return Ok(Some(bound_label));
+        }
+        if let Ok(mut guard) = agent_bindings().lock() {
+            guard.remove(&agent_key);
+        }
+    }
+    Ok(None)
+}
+
+fn unbind_browser_label(label: &str) {
+    if let Ok(mut guard) = agent_bindings().lock() {
+        guard.retain(|_, bound_label| bound_label != label);
+    }
 }
 
 pub fn browser_list_registered_sessions() -> Result<Vec<BrowserSessionInfo>> {
@@ -390,6 +516,192 @@ pub fn emit_browser_operation_with_app(
         timestamp: now_ms(),
     };
     let _ = app.emit("browser://operation", event);
+}
+
+#[cfg(feature = "tauri-app")]
+fn emit_activate_tab_request(app: &AppHandle, tab_id: Option<&str>) {
+    if let Some(tab_id) = tab_id.map(str::trim).filter(|tab_id| !tab_id.is_empty()) {
+        let _ = app.emit("browser://activate-tab-request", json!({ "tabId": tab_id }));
+    }
+}
+
+fn acquire_result_from_session(
+    session: BrowserSessionInfo,
+    created: bool,
+    agent_key: Option<&str>,
+) -> BrowserAcquireResult {
+    BrowserAcquireResult {
+        label: session.label,
+        tab_id: session.tab_id,
+        url: session.url,
+        title: session.title,
+        created,
+        bound_agent_key: optional_trimmed(agent_key),
+    }
+}
+
+#[cfg(feature = "tauri-app")]
+pub async fn browser_acquire_with_app(
+    app: &AppHandle,
+    agent_key: Option<&str>,
+    label: Option<&str>,
+    url: Option<&str>,
+    title: Option<&str>,
+    mode: Option<&str>,
+    activate: bool,
+) -> Result<BrowserAcquireResult> {
+    let agent_key = optional_trimmed(agent_key);
+    let mode = normalize_acquire_mode(mode)?;
+    let title = optional_trimmed(title).unwrap_or_else(|| "Browser".to_string());
+    let normalized_url = match optional_trimmed(url) {
+        Some(url) => Some(normalize_url(&url)?.to_string()),
+        None => None,
+    };
+
+    if let Some(label) = optional_trimmed(label) {
+        let session = session_for_label(&label)?
+            .ok_or_else(|| AppError::ValidationError(format!("浏览器 WebView 不存在: {label}")))?;
+        bind_browser_agent(agent_key.as_deref(), &label)?;
+        if let Some(url) = normalized_url.as_deref() {
+            let navigated = browser_navigate_with_app(app, &label, url)?;
+            let session = upsert_session_and_emit(
+                app,
+                label.clone(),
+                None,
+                Some(navigated),
+                Some(title.clone()),
+            )?;
+            if activate {
+                emit_activate_tab_request(app, session.tab_id.as_deref());
+            }
+            return Ok(acquire_result_from_session(
+                session,
+                false,
+                agent_key.as_deref(),
+            ));
+        }
+        if activate {
+            emit_activate_tab_request(app, session.tab_id.as_deref());
+        }
+        return Ok(acquire_result_from_session(
+            session,
+            false,
+            agent_key.as_deref(),
+        ));
+    }
+
+    if mode != "create" {
+        if let Some(agent_key_value) = agent_key.as_deref() {
+            if let Some(bound_label) = bound_browser_label_for_agent(Some(agent_key_value))? {
+                if let Some(url) = normalized_url.as_deref() {
+                    let navigated = browser_navigate_with_app(app, &bound_label, url)?;
+                    let session = upsert_session_and_emit(
+                        app,
+                        bound_label.clone(),
+                        None,
+                        Some(navigated),
+                        Some(title.clone()),
+                    )?;
+                    if activate {
+                        emit_activate_tab_request(app, session.tab_id.as_deref());
+                    }
+                    return Ok(acquire_result_from_session(
+                        session,
+                        false,
+                        agent_key.as_deref(),
+                    ));
+                }
+                let session = session_for_label(&bound_label)?.ok_or_else(|| {
+                    AppError::ValidationError(format!("浏览器 WebView 不存在: {bound_label}"))
+                })?;
+                if activate {
+                    emit_activate_tab_request(app, session.tab_id.as_deref());
+                }
+                return Ok(acquire_result_from_session(
+                    session,
+                    false,
+                    agent_key.as_deref(),
+                ));
+            }
+        }
+    }
+
+    if mode == "reuse" {
+        if let Ok(reused_label) = resolve_browser_label(None) {
+            let session = if let Some(url) = normalized_url.as_deref() {
+                let navigated = browser_navigate_with_app(app, &reused_label, url)?;
+                upsert_session_and_emit(
+                    app,
+                    reused_label.clone(),
+                    None,
+                    Some(navigated),
+                    Some(title.clone()),
+                )?
+            } else {
+                session_for_label(&reused_label)?.ok_or_else(|| {
+                    AppError::ValidationError(format!("浏览器 WebView 不存在: {reused_label}"))
+                })?
+            };
+            bind_browser_agent(agent_key.as_deref(), &reused_label)?;
+            if activate {
+                emit_activate_tab_request(app, session.tab_id.as_deref());
+            }
+            return Ok(acquire_result_from_session(
+                session,
+                false,
+                agent_key.as_deref(),
+            ));
+        }
+    }
+
+    let request_id = Uuid::new_v4().to_string();
+    let request = BrowserAcquireRequest {
+        request_id: request_id.clone(),
+        agent_key: agent_key.clone(),
+        url: normalized_url.unwrap_or_else(|| "https://www.bing.com/".to_string()),
+        title: Some(title),
+        // A newly-created native WebView is mounted by the active BrowserPanel.
+        activate: true,
+    };
+    let (tx, rx) = oneshot::channel();
+    acquire_pending()
+        .lock()
+        .map_err(|e| AppError::Unknown(format!("浏览器 acquire 等待表锁异常: {e}")))?
+        .insert(request_id.clone(), tx);
+
+    if let Err(error) = app.emit("browser://acquire-request", request) {
+        if let Ok(mut guard) = acquire_pending().lock() {
+            guard.remove(&request_id);
+        }
+        return Err(error.into());
+    }
+
+    let frontend_result =
+        match tokio::time::timeout(Duration::from_secs(BROWSER_ACQUIRE_TIMEOUT_SECS), rx).await {
+            Ok(Ok(Ok(result))) => result,
+            Ok(Ok(Err(error))) => return Err(AppError::ProcessError(error)),
+            Ok(Err(_)) => {
+                return Err(AppError::ProcessError(
+                    "浏览器 acquire 请求被取消".to_string(),
+                ));
+            }
+            Err(_) => {
+                if let Ok(mut guard) = acquire_pending().lock() {
+                    guard.remove(&request_id);
+                }
+                return Err(AppError::Timeout);
+            }
+        };
+
+    bind_browser_agent(agent_key.as_deref(), &frontend_result.label)?;
+    Ok(BrowserAcquireResult {
+        label: frontend_result.label,
+        tab_id: frontend_result.tab_id,
+        url: frontend_result.url,
+        title: frontend_result.title,
+        created: frontend_result.created,
+        bound_agent_key: agent_key,
+    })
 }
 
 #[cfg(feature = "tauri-app")]
@@ -866,6 +1178,7 @@ pub async fn browser_close(app: AppHandle, label: String) -> Result<()> {
         .map_err(|e| AppError::Unknown(format!("浏览器会话表锁异常: {e}")))?;
     guard.remove(&label);
     forget_browser_bounds(&label);
+    unbind_browser_label(&label);
     Ok(())
 }
 
@@ -896,6 +1209,7 @@ pub async fn browser_unregister(label: String) -> Result<()> {
         .map_err(|e| AppError::Unknown(format!("浏览器会话表锁异常: {e}")))?;
     guard.remove(&label);
     forget_browser_bounds(&label);
+    unbind_browser_label(&label);
     Ok(())
 }
 
@@ -903,6 +1217,68 @@ pub async fn browser_unregister(label: String) -> Result<()> {
 #[tauri::command]
 pub async fn browser_list_sessions() -> Result<Vec<BrowserSessionInfo>> {
     browser_list_registered_sessions()
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_acquire(
+    app: AppHandle,
+    agent_key: Option<String>,
+    label: Option<String>,
+    url: Option<String>,
+    title: Option<String>,
+    mode: Option<String>,
+    activate: Option<bool>,
+) -> Result<BrowserAcquireResult> {
+    browser_acquire_with_app(
+        &app,
+        agent_key.as_deref(),
+        label.as_deref(),
+        url.as_deref(),
+        title.as_deref(),
+        mode.as_deref(),
+        activate.unwrap_or(true),
+    )
+    .await
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_acquire_complete(
+    request_id: String,
+    label: Option<String>,
+    tab_id: Option<String>,
+    url: Option<String>,
+    title: Option<String>,
+    created: Option<bool>,
+    error: Option<String>,
+) -> Result<()> {
+    let sender = acquire_pending()
+        .lock()
+        .map_err(|e| AppError::Unknown(format!("浏览器 acquire 等待表锁异常: {e}")))?
+        .remove(&request_id);
+
+    let Some(sender) = sender else {
+        return Ok(());
+    };
+
+    let outcome = if let Some(error) = optional_trimmed(error.as_deref()) {
+        Err(error)
+    } else {
+        match optional_trimmed(label.as_deref()) {
+            Some(label) => Ok(BrowserAcquireFrontendResult {
+                label,
+                tab_id: optional_trimmed(tab_id.as_deref()),
+                url: optional_trimmed(url.as_deref()),
+                title: optional_trimmed(title.as_deref()),
+                created: created.unwrap_or(true),
+            }),
+            None => Err("browser_acquire_complete 缺少 label".to_string()),
+        }
+    };
+
+    let _ = sender.send(outcome);
+    Ok(())
 }
 
 #[cfg(feature = "tauri-app")]
@@ -1750,6 +2126,9 @@ fn ai_overlay_script(enabled: bool) -> String {
 #[cfg(test)]
 mod browser_script_tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    static TEST_STATE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
     #[test]
     fn collector_covers_modern_interactive_patterns() {
@@ -1777,5 +2156,70 @@ mod browser_script_tests {
         assert!(fill_element_script(None, "Search", "Polaris")
             .contains("collectPolarisInteractiveElements"));
         assert!(ai_overlay_script(true).contains("collectPolarisInteractiveElements"));
+    }
+
+    #[test]
+    fn agent_binding_takes_precedence_over_recent_session() {
+        let _guard = TEST_STATE_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap();
+        sessions().lock().unwrap().clear();
+        agent_bindings().lock().unwrap().clear();
+
+        upsert_session(
+            "browser-agent".to_string(),
+            Some("tab-agent".to_string()),
+            Some("https://agent.example/".to_string()),
+            Some("Agent".to_string()),
+        )
+        .unwrap();
+        bind_browser_agent(Some("agent-1"), "browser-agent").unwrap();
+        upsert_session(
+            "browser-recent".to_string(),
+            Some("tab-recent".to_string()),
+            Some("https://recent.example/".to_string()),
+            Some("Recent".to_string()),
+        )
+        .unwrap();
+
+        assert_eq!(
+            resolve_browser_label_for_agent(None, Some("agent-1")).unwrap(),
+            "browser-agent"
+        );
+    }
+
+    #[test]
+    fn stale_agent_binding_falls_back_to_available_session() {
+        let _guard = TEST_STATE_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap();
+        sessions().lock().unwrap().clear();
+        agent_bindings().lock().unwrap().clear();
+
+        bind_browser_agent(Some("agent-1"), "browser-missing").unwrap();
+        upsert_session(
+            "browser-only".to_string(),
+            Some("tab-only".to_string()),
+            Some("https://only.example/".to_string()),
+            Some("Only".to_string()),
+        )
+        .unwrap();
+
+        assert_eq!(
+            resolve_browser_label_for_agent(None, Some("agent-1")).unwrap(),
+            "browser-only"
+        );
+        assert!(bound_browser_label_for_agent(Some("agent-1"))
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn acquire_mode_rejects_invalid_values() {
+        assert_eq!(normalize_acquire_mode(None).unwrap(), "auto");
+        assert_eq!(normalize_acquire_mode(Some(" create ")).unwrap(), "create");
+        assert!(normalize_acquire_mode(Some("unexpected")).is_err());
     }
 }

@@ -14,6 +14,7 @@ pub mod error;
 pub mod forwarder;
 pub mod handlers;
 pub mod models;
+pub mod sanitizer;
 pub mod server;
 pub mod sse;
 pub mod streaming;
@@ -58,10 +59,7 @@ impl ProxyManager {
 
         // 停止已有的代理
         if let Some(old) = proxies.remove(profile_id) {
-            tracing::info!(
-                "[ProxyManager] 停止 profile {} 的旧代理",
-                profile_id
-            );
+            tracing::info!("[ProxyManager] 停止 profile {} 的旧代理", profile_id);
             old.shutdown();
         }
 

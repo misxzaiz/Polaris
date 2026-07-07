@@ -136,6 +136,8 @@ pub struct SessionOptions {
     pub permission_mode: Option<String>,
     /// 允许的工具列表（通过 --allowedTools 传递）
     pub allowed_tools: Vec<String>,
+    /// 禁用的工具列表（通过 --disallowedTools 传递）
+    pub disallowed_tools: Vec<String>,
     /// 图片附件列表（非空时切换到 stream-json 输入模式）
     pub image_attachments: Vec<ImageAttachment>,
     /// Fork 来源会话 ID（配合 --resume 使用 --fork-session 创建分支会话）
@@ -189,6 +191,7 @@ impl SessionOptions {
             effort: None,
             permission_mode: None,
             allowed_tools: Vec::new(),
+            disallowed_tools: Vec::new(),
             image_attachments: Vec::new(),
             fork_session_id: None,
             settings_overlay_path: None,
@@ -290,6 +293,12 @@ impl SessionOptions {
     /// 设置允许的工具列表
     pub fn with_allowed_tools(mut self, tools: Vec<String>) -> Self {
         self.allowed_tools = tools;
+        self
+    }
+
+    /// 设置禁用的工具列表
+    pub fn with_disallowed_tools(mut self, tools: Vec<String>) -> Self {
+        self.disallowed_tools = tools;
         self
     }
 

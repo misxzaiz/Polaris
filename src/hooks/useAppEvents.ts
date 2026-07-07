@@ -19,6 +19,7 @@ import { useSchedulerStore } from '@/stores/schedulerStore';
 import { useToastStore } from '@/stores/toastStore';
 import { sessionStoreManager } from '@/stores/conversationStore';
 import { getEventRouter } from '@/services/eventRouter';
+import { browserAcquireComplete, normalizeBrowserUrl, type BrowserAcquireRequest } from '@/services/tauri/browserService';
 import { initExecutionConsoleListeners } from '@/stores/executionConsoleStore';
 import { isAIEvent } from '@/ai-runtime';
 import i18n from '@/i18n';
@@ -102,6 +103,45 @@ export function useAppEvents() {
       const { path, name, kind } = payload;
       log.info('file:preview event', { path, name, kind });
       useTabStore.getState().openPreviewTab(path, name, { kind });
+    });
+
+    return () => {
+      unlistenPromise.then(unlisten => unlisten());
+    };
+  }, []);
+
+  // browser://acquire-request -> create an agent-owned browser tab
+  useEffect(() => {
+    const unlistenPromise = listen<BrowserAcquireRequest>('browser://acquire-request', async (payload) => {
+      try {
+        const normalizedUrl = normalizeBrowserUrl(payload.url);
+        useTabStore.getState().openBrowserTab(normalizedUrl, payload.title || 'Browser', {
+          reuseExisting: false,
+          activate: payload.activate !== false,
+          metadata: {
+            browserAcquireRequestId: payload.requestId,
+            browserAgentKey: payload.agentKey || undefined,
+            browserAcquireCreated: true,
+          },
+        });
+      } catch (error) {
+        await browserAcquireComplete({
+          requestId: payload.requestId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    });
+
+    return () => {
+      unlistenPromise.then(unlisten => unlisten());
+    };
+  }, []);
+
+  // browser://activate-tab-request -> focus a browser tab by id
+  useEffect(() => {
+    const unlistenPromise = listen<{ tabId: string }>('browser://activate-tab-request', (payload) => {
+      if (!payload.tabId) return;
+      useTabStore.getState().switchTab(payload.tabId);
     });
 
     return () => {

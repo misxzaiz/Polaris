@@ -496,6 +496,12 @@ export function TabContent({ className = '' }: TabContentProps) {
             initialUrl={browserInitialUrl}
             navigationRequestUrl={hasPendingNavigationRequest ? requestedUrl : undefined}
             navigationRequestId={hasPendingNavigationRequest ? navigationRequestId : undefined}
+            acquireRequestId={
+              typeof activeTab.metadata?.browserAcquireRequestId === 'string'
+                ? activeTab.metadata.browserAcquireRequestId
+                : undefined
+            }
+            acquireCreated={activeTab.metadata?.browserAcquireCreated === true}
           />
         </div>
       )

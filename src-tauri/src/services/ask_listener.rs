@@ -439,11 +439,11 @@ async fn handle_browser_frame(
 #[cfg(feature = "tauri-app")]
 async fn dispatch_browser_frame(frame: Value) -> Result<Value> {
     use crate::commands::browser::{
-        browser_app_handle, browser_click_with_app, browser_fill_with_app,
-        browser_get_diagnostics_with_app, browser_get_interactive_elements_with_app,
-        browser_get_page_context_with_app, browser_history_with_app,
-        browser_list_registered_sessions, browser_navigate_with_app, browser_reload_with_app,
-        emit_browser_operation_with_app, resolve_browser_label,
+        browser_acquire_with_app, browser_app_handle, browser_click_with_app,
+        browser_fill_with_app, browser_get_diagnostics_with_app,
+        browser_get_interactive_elements_with_app, browser_get_page_context_with_app,
+        browser_history_with_app, browser_list_registered_sessions, browser_navigate_with_app,
+        browser_reload_with_app, emit_browser_operation_with_app, resolve_browser_label_for_agent,
     };
 
     let action = frame
@@ -455,8 +455,39 @@ async fn dispatch_browser_frame(frame: Value) -> Result<Value> {
         return serde_json::to_value(browser_list_registered_sessions()?).map_err(Into::into);
     }
 
-    let label = resolve_browser_label(frame.get("label").and_then(Value::as_str))?;
+    let agent_key = frame
+        .get("agentKey")
+        .or_else(|| frame.get("agent_key"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            frame
+                .get("sessionId")
+                .or_else(|| frame.get("session_id"))
+                .and_then(Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+        });
     let app = browser_app_handle()?;
+
+    if action == "acquire" {
+        let result = browser_acquire_with_app(
+            &app,
+            agent_key,
+            frame.get("label").and_then(Value::as_str),
+            frame.get("url").and_then(Value::as_str),
+            frame.get("title").and_then(Value::as_str),
+            frame.get("mode").and_then(Value::as_str),
+            frame
+                .get("activate")
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
+        )
+        .await?;
+        return serde_json::to_value(result).map_err(Into::into);
+    }
+
+    let label =
+        resolve_browser_label_for_agent(frame.get("label").and_then(Value::as_str), agent_key)?;
 
     match action {
         "navigate" => {

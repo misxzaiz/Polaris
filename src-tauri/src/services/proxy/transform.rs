@@ -91,9 +91,7 @@ pub fn anthropic_to_openai(body: Value) -> Result<Value, ProxyError> {
     if let Some(tools) = body.get("tools").and_then(|t| t.as_array()) {
         let openai_tools: Vec<Value> = tools
             .iter()
-            .filter(|t| {
-                t.get("type").and_then(|v| v.as_str()) != Some("BatchTool")
-            })
+            .filter(|t| t.get("type").and_then(|v| v.as_str()) != Some("BatchTool"))
             .map(|t| {
                 let mut function = json!({
                     "name": t.get("name").and_then(|n| n.as_str()).unwrap_or(""),
@@ -138,7 +136,10 @@ pub fn openai_to_anthropic(body: Value) -> Result<Value, ProxyError> {
         .unwrap_or("unknown")
         .to_string();
 
-    let choice = body.get("choices").and_then(|c| c.as_array()).and_then(|a| a.first());
+    let choice = body
+        .get("choices")
+        .and_then(|c| c.as_array())
+        .and_then(|a| a.first());
 
     let (content_blocks, stop_reason) = if let Some(choice) = choice {
         let message = choice.get("message");
@@ -202,8 +203,7 @@ pub fn openai_to_anthropic(body: Value) -> Result<Value, ProxyError> {
                         .pointer("/function/arguments")
                         .and_then(|v| v.as_str())
                         .unwrap_or("{}");
-                    let input: Value =
-                        serde_json::from_str(args_str).unwrap_or(json!({}));
+                    let input: Value = serde_json::from_str(args_str).unwrap_or(json!({}));
                     blocks.push(json!({
                         "type": "tool_use",
                         "id": id,
@@ -231,10 +231,7 @@ pub fn openai_to_anthropic(body: Value) -> Result<Value, ProxyError> {
 
         (blocks, anthropic_stop)
     } else {
-        (
-            vec![json!({"type": "text", "text": ""})],
-            "end_turn",
-        )
+        (vec![json!({"type": "text", "text": ""})], "end_turn")
     };
 
     // 构建 usage
@@ -427,7 +424,10 @@ pub fn responses_to_anthropic(body: Value) -> Result<Value, ProxyError> {
                         .or_else(|| item.get("id").and_then(|v| v.as_str()))
                         .unwrap_or("");
                     let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                    let args_str = item.get("arguments").and_then(|v| v.as_str()).unwrap_or("{}");
+                    let args_str = item
+                        .get("arguments")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("{}");
                     let parsed: Value = serde_json::from_str(args_str).unwrap_or(json!({}));
                     blocks.push(json!({
                         "type": "tool_use",
@@ -650,7 +650,10 @@ fn convert_user_message(content: Option<&Value>) -> Result<Vec<Value>, ProxyErro
             "image" => {
                 // Anthropic image block → OpenAI image_url
                 if let Some(source) = block.get("source") {
-                    let media_type = source.get("media_type").and_then(|m| m.as_str()).unwrap_or("image/png");
+                    let media_type = source
+                        .get("media_type")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("image/png");
                     let data = source.get("data").and_then(|d| d.as_str()).unwrap_or("");
                     image_parts.push(json!({
                         "type": "image_url",
@@ -662,7 +665,10 @@ fn convert_user_message(content: Option<&Value>) -> Result<Vec<Value>, ProxyErro
             }
             "tool_result" => {
                 // tool_result 作为单独的 tool message 处理
-                let tool_use_id = block.get("tool_use_id").and_then(|v| v.as_str()).unwrap_or("");
+                let tool_use_id = block
+                    .get("tool_use_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 let result_content = extract_tool_result_text(block);
                 messages.push(json!({
                     "role": "tool",
@@ -1214,7 +1220,10 @@ mod tests {
         assert_eq!(tools.len(), 1);
         assert_eq!(tools[0]["type"], "function");
         assert_eq!(tools[0]["name"], "read_file");
-        assert_eq!(tools[0]["parameters"]["properties"]["path"]["type"], "string");
+        assert_eq!(
+            tools[0]["parameters"]["properties"]["path"]["type"],
+            "string"
+        );
         assert_eq!(result["tool_choice"], "required");
     }
 

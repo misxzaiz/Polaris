@@ -8,6 +8,23 @@ export interface BrowserSessionInfo {
   updatedAt: number
 }
 
+export interface BrowserAcquireRequest {
+  requestId: string
+  agentKey?: string | null
+  url: string
+  title?: string | null
+  activate?: boolean | null
+}
+
+export interface BrowserAcquireResult {
+  label: string
+  tabId?: string | null
+  url?: string | null
+  title?: string | null
+  created: boolean
+  boundAgentKey?: string | null
+}
+
 export interface BrowserPageContext {
   title: string
   url: string
@@ -170,6 +187,29 @@ export async function browserUnregister(label: string): Promise<void> {
 
 export async function browserListSessions(): Promise<BrowserSessionInfo[]> {
   return invoke<BrowserSessionInfo[]>('browser_list_sessions')
+}
+
+export async function browserAcquireComplete(params: {
+  requestId: string
+  label?: string
+  tabId?: string
+  url?: string
+  title?: string
+  created?: boolean
+  error?: string
+}): Promise<void> {
+  return invoke<void>('browser_acquire_complete', params)
+}
+
+export async function browserAcquire(params: {
+  agentKey?: string
+  label?: string
+  url?: string
+  title?: string
+  mode?: 'auto' | 'create' | 'reuse'
+  activate?: boolean
+}): Promise<BrowserAcquireResult> {
+  return invoke<BrowserAcquireResult>('browser_acquire', params)
 }
 
 export async function browserNavigate(label: string, url: string): Promise<string> {
