@@ -68,9 +68,15 @@ importers:
       '@codemirror/view':
         specifier: ^6.39.8
         version: 6.41.1
+      '@lezer/common':
+        specifier: ^1.5.2
+        version: 1.5.2
       '@lezer/highlight':
         specifier: ^1.2.3
         version: 1.2.3
+      '@lezer/lr':
+        specifier: ^1.4.10
+        version: 1.4.10
       '@openai/codex':
         specifier: ^0.137.0
         version: 0.137.0
@@ -181,8 +187,8 @@ importers:
         specifier: ^2.11.4
         version: 2.11.4
       '@tauri-apps/cli-win32-x64-msvc':
-        specifier: 2.11.0
-        version: 2.11.0
+        specifier: 2.11.4
+        version: 2.11.4
       '@testing-library/jest-dom':
         specifier: ^6.9.1
         version: 6.9.1

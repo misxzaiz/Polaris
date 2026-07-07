@@ -18,6 +18,7 @@ static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 
 static BROWSER_SESSIONS: OnceLock<Mutex<HashMap<String, BrowserSessionInfo>>> = OnceLock::new();
 static BROWSER_BOUNDS: OnceLock<Mutex<HashMap<String, BrowserBounds>>> = OnceLock::new();
+static BROWSER_CREATE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 const DEFAULT_EVAL_TIMEOUT_MS: u64 = 2_500;
 const MAX_EVAL_TIMEOUT_MS: u64 = 10_000;
@@ -186,6 +187,10 @@ fn sessions() -> &'static Mutex<HashMap<String, BrowserSessionInfo>> {
 
 fn bounds_store() -> &'static Mutex<HashMap<String, BrowserBounds>> {
     BROWSER_BOUNDS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn create_lock() -> &'static Mutex<()> {
+    BROWSER_CREATE_LOCK.get_or_init(|| Mutex::new(()))
 }
 
 fn now_ms() -> u64 {
@@ -699,48 +704,63 @@ pub fn browser_toggle_devtools_with_app(app: &AppHandle, label: &str) -> Result<
 }
 
 #[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn browser_create(
-    app: AppHandle,
+fn reuse_browser_webview(
+    app: &AppHandle,
+    label: String,
+    tab_id: Option<String>,
+    normalized: url::Url,
+    title: Option<String>,
+    bounds: BrowserBounds,
+    existing: tauri::Webview,
+) -> Result<BrowserSessionInfo> {
+    let normalized_string = normalized.to_string();
+    let current_url = existing
+        .url()
+        .ok()
+        .map(|url| url.to_string())
+        .unwrap_or_else(|| normalized_string.clone());
+
+    let is_same_url = current_url == normalized_string;
+
+    if !is_same_url {
+        existing.navigate(normalized)?;
+    }
+
+    apply_webview_bounds(&existing, bounds)?;
+    remember_browser_bounds(&label, bounds)?;
+    upsert_session_and_emit(
+        app,
+        label,
+        tab_id,
+        Some(if is_same_url {
+            current_url
+        } else {
+            normalized_string
+        }),
+        if is_same_url {
+            None
+        } else {
+            title.or_else(|| Some("Browser".to_string()))
+        },
+    )
+}
+
+#[cfg(feature = "tauri-app")]
+fn browser_create_with_app(
+    app: &AppHandle,
     label: String,
     tab_id: Option<String>,
     url: String,
     title: Option<String>,
     bounds: BrowserBounds,
 ) -> Result<BrowserSessionInfo> {
+    let _create_guard = create_lock()
+        .lock()
+        .map_err(|e| AppError::Unknown(format!("浏览器创建锁异常: {e}")))?;
     let normalized = normalize_url(&url)?;
 
     if let Some(existing) = app.get_webview(&label) {
-        let normalized_string = normalized.to_string();
-        let current_url = existing
-            .url()
-            .ok()
-            .map(|url| url.to_string())
-            .unwrap_or_else(|| normalized_string.clone());
-
-        let is_same_url = current_url == normalized_string;
-
-        if !is_same_url {
-            existing.navigate(normalized.clone())?;
-        }
-
-        apply_webview_bounds(&existing, bounds)?;
-        remember_browser_bounds(&label, bounds)?;
-        return upsert_session_and_emit(
-            &app,
-            label,
-            tab_id,
-            Some(if is_same_url {
-                current_url
-            } else {
-                normalized_string
-            }),
-            if is_same_url {
-                None
-            } else {
-                title.or_else(|| Some("Browser".to_string()))
-            },
-        );
+        return reuse_browser_webview(app, label, tab_id, normalized, title, bounds, existing);
     }
 
     let host_window = app
@@ -790,20 +810,43 @@ pub async fn browser_create(
             NewWindowResponse::Deny
         });
 
-    host_window.add_child(
+    if let Err(error) = host_window.add_child(
         builder,
         tauri::LogicalPosition::new(bounds.x, bounds.y),
         tauri::LogicalSize::new(bounds.width.max(1.0), bounds.height.max(1.0)),
-    )?;
+    ) {
+        if let Some(existing) = app.get_webview(&label) {
+            tracing::warn!(
+                "[Browser] 创建 WebView 时发现 label 已存在，改为复用: {} ({})",
+                label,
+                error
+            );
+            return reuse_browser_webview(app, label, tab_id, normalized, title, bounds, existing);
+        }
+        return Err(error.into());
+    }
 
     remember_browser_bounds(&label, bounds)?;
     upsert_session_and_emit(
-        &app,
+        app,
         label,
         tab_id,
         Some(normalized.to_string()),
         title.or_else(|| Some("Browser".to_string())),
     )
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_create(
+    app: AppHandle,
+    label: String,
+    tab_id: Option<String>,
+    url: String,
+    title: Option<String>,
+    bounds: BrowserBounds,
+) -> Result<BrowserSessionInfo> {
+    browser_create_with_app(&app, label, tab_id, url, title, bounds)
 }
 
 #[cfg(feature = "tauri-app")]
