@@ -66,9 +66,90 @@ const QUICK_STARTS = [
 ]
 
 const MAX_OPERATION_EVENTS = 8
+const MIN_OCCLUDING_Z_INDEX = 40
+const HIDDEN_BROWSER_BOUNDS: BrowserBounds = { x: 0, y: 0, width: 0, height: 0 }
+const OCCLUDING_ELEMENT_SELECTOR = [
+  '[data-native-webview-overlay]',
+  '[role="dialog"]',
+  '[aria-modal="true"]',
+  '.fixed',
+  '.absolute',
+].join(',')
 
 function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+}
+
+function parseZIndex(value: string): number {
+  if (!value || value === 'auto') return 0
+  const parsed = Number.parseInt(value, 10)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function boundsEqual(a: BrowserBounds | null, b: BrowserBounds): boolean {
+  return (
+    a !== null &&
+    a.x === b.x &&
+    a.y === b.y &&
+    a.width === b.width &&
+    a.height === b.height
+  )
+}
+
+function rectIntersectsBrowserBounds(rect: DOMRect, bounds: BrowserBounds): boolean {
+  return (
+    rect.right > bounds.x &&
+    rect.left < bounds.x + bounds.width &&
+    rect.bottom > bounds.y &&
+    rect.top < bounds.y + bounds.height
+  )
+}
+
+function isElementRendered(element: HTMLElement): boolean {
+  const style = window.getComputedStyle(element)
+  if (
+    style.display === 'none' ||
+    style.visibility === 'hidden' ||
+    style.visibility === 'collapse' ||
+    Number(style.opacity || '1') <= 0.01
+  ) {
+    return false
+  }
+
+  const rect = element.getBoundingClientRect()
+  return rect.width >= 1 && rect.height >= 1
+}
+
+function isBrowserOccludedByAppOverlay(
+  browserBounds: BrowserBounds,
+  browserRoot: HTMLElement | null
+): boolean {
+  if (browserBounds.width < 1 || browserBounds.height < 1) {
+    return true
+  }
+
+  const candidates = document.body.querySelectorAll<HTMLElement>(OCCLUDING_ELEMENT_SELECTOR)
+  for (const element of candidates) {
+    if (browserRoot?.contains(element)) continue
+    if (!isElementRendered(element)) continue
+
+    const style = window.getComputedStyle(element)
+    const isExplicitOverlay = element.hasAttribute('data-native-webview-overlay')
+    const isModal = element.getAttribute('aria-modal') === 'true' || element.getAttribute('role') === 'dialog'
+    const canOverlayNativeWebview =
+      isExplicitOverlay ||
+      isModal ||
+      (['fixed', 'absolute', 'sticky'].includes(style.position) &&
+        parseZIndex(style.zIndex) >= MIN_OCCLUDING_Z_INDEX)
+
+    if (!canOverlayNativeWebview) continue
+
+    if (rectIntersectsBrowserBounds(element.getBoundingClientRect(), browserBounds)) {
+      return true
+    }
+  }
+
+  return false
 }
 
 function isLocalDevUrl(url: string): boolean {
@@ -124,11 +205,13 @@ export function BrowserPanel({
   navigationRequestId,
 }: BrowserPanelProps) {
   const { t } = useTranslation('common')
+  const rootRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const rafRef = useRef<number | null>(null)
   const mountedRef = useRef(false)
   const readyRef = useRef(false)
   const addressFocusedRef = useRef(false)
+  const lastAppliedBoundsRef = useRef<BrowserBounds | null>(null)
   const initialUrlRef = useRef<string | null>(null)
   const webviewLabel = useMemo(() => makeBrowserWebviewLabel(tabId), [tabId])
   const normalizedInitialUrl = initialUrlRef.current ?? normalizeBrowserUrl(initialUrl)
@@ -183,7 +266,13 @@ export function BrowserPanel({
     const bounds = getContainerBounds()
     if (!bounds) return
 
-    await browserSetBounds(webviewLabel, bounds)
+    const nextBounds = isBrowserOccludedByAppOverlay(bounds, rootRef.current)
+      ? HIDDEN_BROWSER_BOUNDS
+      : bounds
+    if (boundsEqual(lastAppliedBoundsRef.current, nextBounds)) return
+
+    await browserSetBounds(webviewLabel, nextBounds)
+    lastAppliedBoundsRef.current = nextBounds
   }, [getContainerBounds, webviewLabel])
 
   const scheduleSyncBounds = useCallback(() => {
@@ -214,6 +303,7 @@ export function BrowserPanel({
     let cleanup = false
     let unlistenSession: UnlistenFn | null = null
     let unlistenOperation: UnlistenFn | null = null
+    let mutationObserver: MutationObserver | null = null
 
     async function createNativeWebview() {
       setLoading(true)
@@ -221,6 +311,7 @@ export function BrowserPanel({
       try {
         const bounds = getContainerBounds() ?? { x: 0, y: 0, width: 320, height: 240 }
         const session = await browserCreate(webviewLabel, tabId, normalizedInitialUrl, bounds, 'Browser')
+        lastAppliedBoundsRef.current = bounds
 
         unlistenSession = await listen<BrowserSessionInfo>('browser://session-updated', (event) => {
           const session = event.payload
@@ -264,6 +355,24 @@ export function BrowserPanel({
         }
         window.addEventListener('resize', scheduleSyncBounds)
         window.addEventListener('scroll', scheduleSyncBounds, true)
+        document.addEventListener('animationend', scheduleSyncBounds, true)
+        document.addEventListener('transitionend', scheduleSyncBounds, true)
+        mutationObserver = new MutationObserver(scheduleSyncBounds)
+        mutationObserver.observe(document.body, {
+          attributes: true,
+          attributeFilter: [
+            'aria-hidden',
+            'aria-modal',
+            'class',
+            'data-native-webview-overlay',
+            'hidden',
+            'open',
+            'role',
+            'style',
+          ],
+          childList: true,
+          subtree: true,
+        })
         scheduleSyncBounds()
       } catch (e) {
         if (!cleanup && mountedRef.current) {
@@ -284,16 +393,20 @@ export function BrowserPanel({
       mountedRef.current = false
       readyRef.current = false
       resizeObserver?.disconnect()
+      mutationObserver?.disconnect()
       unlistenSession?.()
       unlistenOperation?.()
       window.removeEventListener('resize', scheduleSyncBounds)
       window.removeEventListener('scroll', scheduleSyncBounds, true)
+      document.removeEventListener('animationend', scheduleSyncBounds, true)
+      document.removeEventListener('transitionend', scheduleSyncBounds, true)
       if (rafRef.current !== null) {
         window.cancelAnimationFrame(rafRef.current)
         rafRef.current = null
       }
       browserSetAiOverlay(webviewLabel, false).catch(() => undefined)
       browserSetBounds(webviewLabel, { x: 0, y: 0, width: 0, height: 0 }).catch(() => undefined)
+      lastAppliedBoundsRef.current = HIDDEN_BROWSER_BOUNDS
     }
   }, [
     getContainerBounds,
@@ -529,7 +642,7 @@ export function BrowserPanel({
   )
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background-base">
+    <div ref={rootRef} className="flex h-full min-h-0 flex-col overflow-hidden bg-background-base">
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border-subtle bg-background-elevated px-3">
         <div className="flex items-center gap-1">
           <button

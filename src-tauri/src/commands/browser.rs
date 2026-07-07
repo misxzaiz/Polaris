@@ -493,7 +493,8 @@ pub async fn browser_get_interactive_elements_with_app(
     app: &AppHandle,
     label: &str,
 ) -> Result<Vec<BrowserInteractiveElement>> {
-    let raw = browser_eval_with_app(app, label, INTERACTIVE_ELEMENTS_SCRIPT, Some(3_500)).await?;
+    let script = interactive_elements_script();
+    let raw = browser_eval_with_app(app, label, &script, Some(3_500)).await?;
     let value = parse_eval_json(&raw)?;
     serde_json::from_value(value)
         .map_err(|e| AppError::ValidationError(format!("浏览器可操作元素格式错误: {e}")))
@@ -512,14 +513,7 @@ pub async fn browser_click_with_app(
         ));
     }
 
-    let script = format!(
-        "(() => {{ const requestedIndex = {}; const requestedText = {}; {} }})()",
-        index
-            .map(|value| value.to_string())
-            .unwrap_or_else(|| "null".to_string()),
-        serde_json::to_string(&text.unwrap_or_default()).unwrap_or_else(|_| "\"\"".to_string()),
-        CLICK_ELEMENT_SCRIPT_BODY
-    );
+    let script = click_element_script(index, text.unwrap_or_default());
     let raw = browser_eval_with_app(app, label, &script, Some(3_500)).await?;
     let value = parse_eval_json(&raw)?;
     serde_json::from_value(value)
@@ -540,15 +534,7 @@ pub async fn browser_fill_with_app(
         ));
     }
 
-    let script = format!(
-        "(() => {{ const requestedIndex = {}; const requestedText = {}; const fillValue = {}; {} }})()",
-        index
-            .map(|value| value.to_string())
-            .unwrap_or_else(|| "null".to_string()),
-        serde_json::to_string(&text.unwrap_or_default()).unwrap_or_else(|_| "\"\"".to_string()),
-        serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string()),
-        FILL_ELEMENT_SCRIPT_BODY
-    );
+    let script = fill_element_script(index, text.unwrap_or_default(), value);
     let raw = browser_eval_with_app(app, label, &script, Some(3_500)).await?;
     let value = parse_eval_json(&raw)?;
     serde_json::from_value(value)
@@ -561,11 +547,7 @@ pub async fn browser_set_ai_overlay_with_app(
     label: &str,
     enabled: bool,
 ) -> Result<BrowserOverlayResult> {
-    let script = format!(
-        "(() => {{ const overlayEnabled = {}; {} }})()",
-        if enabled { "true" } else { "false" },
-        AI_OVERLAY_SCRIPT_BODY
-    );
+    let script = ai_overlay_script(enabled);
     let raw = browser_eval_with_app(app, label, &script, Some(3_500)).await?;
     let value = parse_eval_json(&raw)?;
     serde_json::from_value(value)
@@ -580,7 +562,8 @@ pub async fn browser_get_diagnostics_with_app(
 ) -> Result<BrowserDiagnostics> {
     let context = browser_get_page_context_with_app(app, label).await?;
     let elements = browser_get_interactive_elements_with_app(app, label).await?;
-    let raw = browser_eval_with_app(app, label, DIAGNOSTICS_SCRIPT, Some(3_500)).await?;
+    let script = diagnostics_script();
+    let raw = browser_eval_with_app(app, label, &script, Some(3_500)).await?;
     let value = parse_eval_json(&raw)?;
     let mut visual: BrowserVisualSnapshot = serde_json::from_value(
         value
@@ -1002,296 +985,585 @@ const PAGE_CONTEXT_SCRIPT: &str = r#"
 })()
 "#;
 
-#[cfg(feature = "tauri-app")]
-const INTERACTIVE_ELEMENTS_SCRIPT: &str = r#"
-(() => {
-  const clean = (value, max = 220) => String(value || '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, max);
-  const selector = [
-    'a[href]',
-    'button',
-    'input',
-    'textarea',
-    'select',
-    '[role="button"]',
-    '[role="link"]',
-    '[contenteditable="true"]',
-    '[tabindex]:not([tabindex="-1"])'
-  ].join(',');
-  const isVisible = (element) => {
-    const style = window.getComputedStyle(element);
-    const rect = element.getBoundingClientRect();
-    return rect.width > 0
-      && rect.height > 0
-      && style.visibility !== 'hidden'
-      && style.display !== 'none'
-      && element.getAttribute('aria-hidden') !== 'true';
-  };
-  const kindOf = (element) => {
-    const tag = element.tagName.toLowerCase();
-    const role = element.getAttribute('role');
-    const type = element.getAttribute('type');
-    if (tag === 'a') return 'link';
-    if (tag === 'input') return type ? `input:${type}` : 'input';
-    if (tag === 'textarea') return 'textarea';
-    if (tag === 'select') return 'select';
-    if (tag === 'button') return 'button';
-    if (role) return role;
-    if (element.isContentEditable) return 'editable';
-    return tag;
-  };
-  const labelOf = (element) => clean(
-    element.innerText
-      || element.value
-      || element.getAttribute('aria-label')
-      || element.getAttribute('title')
-      || element.getAttribute('placeholder')
-      || element.href
-      || ''
-  );
-  const isFillable = (element) => {
-    const tag = element.tagName.toLowerCase();
-    const role = element.getAttribute('role');
-    const type = (element.getAttribute('type') || '').toLowerCase();
-    const nonTextInputTypes = ['button', 'submit', 'reset', 'checkbox', 'radio', 'file', 'image', 'hidden'];
-    return element.isContentEditable
-      || tag === 'textarea'
-      || tag === 'select'
-      || role === 'textbox'
-      || (tag === 'input' && !nonTextInputTypes.includes(type));
-  };
-  const isDisabled = (element) => Boolean(
-    element.disabled
-      || element.readOnly
-      || element.getAttribute('aria-disabled') === 'true'
-  );
-  const elements = Array.from(document.querySelectorAll(selector))
-    .filter((element) => isVisible(element))
-    .filter((element) => labelOf(element) || ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName))
-    .slice(0, 80)
-    .map((element, index) => ({
-      index,
-      kind: kindOf(element),
-      text: labelOf(element),
-      value: clean(element.value || ''),
-      placeholder: clean(element.getAttribute('placeholder') || ''),
-      href: clean(element.href || '', 500),
-      disabled: isDisabled(element),
-      fillable: isFillable(element) && !isDisabled(element)
-    }));
-  return JSON.stringify(elements);
-})()
-"#;
+macro_rules! polaris_interactive_collector_script {
+    () => {
+        r#"
+const POLARIS_INTERACTIVE_SELECTOR = [
+  'a[href]',
+  'button',
+  'input:not([type="hidden"])',
+  'textarea',
+  'select',
+  'summary',
+  'area[href]',
+  'label[for]',
+  '[role="button"]',
+  '[role="link"]',
+  '[role="menuitem"]',
+  '[role="menuitemcheckbox"]',
+  '[role="menuitemradio"]',
+  '[role="tab"]',
+  '[role="option"]',
+  '[role="checkbox"]',
+  '[role="radio"]',
+  '[role="switch"]',
+  '[role="textbox"]',
+  '[role="searchbox"]',
+  '[role="combobox"]',
+  '[role="slider"]',
+  '[role="spinbutton"]',
+  '[aria-pressed]',
+  '[aria-selected]',
+  '[aria-checked]',
+  '[contenteditable]:not([contenteditable="false"])',
+  '[tabindex]:not([tabindex="-1"])',
+  '[onclick]',
+  '[jsaction]',
+  '[aria-haspopup]',
+  '[aria-expanded]',
+  '[aria-controls]',
+  '[popovertarget]',
+  '[commandfor]',
+  '[data-action]',
+  '[data-click]',
+  '[data-command]',
+  '[data-href]',
+  '[data-url]',
+  '[data-route]'
+].join(',');
 
-#[cfg(feature = "tauri-app")]
-const DIAGNOSTICS_SCRIPT: &str = r#"
-(() => {
-  const clean = (value, max = 220) => String(value || '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, max);
-  const now = () => Date.now();
+const POLARIS_CLICKABLE_ROLES = new Set([
+  'button', 'link', 'menuitem', 'menuitemcheckbox', 'menuitemradio',
+  'tab', 'option', 'checkbox', 'radio', 'switch', 'combobox',
+  'listbox', 'treeitem', 'gridcell', 'slider', 'spinbutton'
+]);
+const POLARIS_FILLABLE_ROLES = new Set(['textbox', 'searchbox', 'combobox', 'spinbutton', 'slider']);
+const POLARIS_SCAN_LIMIT = 5000;
 
-  if (!window.__POLARIS_BROWSER_CONSOLE__) {
-    const buffer = [];
-    const push = (level, args) => {
-      try {
-        buffer.push({
-          level,
-          message: Array.from(args || []).map((item) => {
-            if (typeof item === 'string') return item;
-            try { return JSON.stringify(item); } catch { return String(item); }
-          }).join(' ').slice(0, 2000),
-          url: String(location.href),
-          timestamp: now()
-        });
-        if (buffer.length > 120) buffer.splice(0, buffer.length - 120);
-      } catch {}
-    };
-    const original = {};
-    ['debug', 'log', 'info', 'warn', 'error'].forEach((level) => {
-      original[level] = console[level];
-      console[level] = function(...args) {
-        push(level, args);
-        return original[level]?.apply(this, args);
-      };
-    });
-    window.addEventListener('error', (event) => {
-      push('error', [event.message || 'Script error', event.filename || '', event.lineno || '']);
-    });
-    window.addEventListener('unhandledrejection', (event) => {
-      push('error', ['Unhandled promise rejection', event.reason || '']);
-    });
-    Object.defineProperty(window, '__POLARIS_BROWSER_CONSOLE__', {
-      value: buffer,
-      configurable: true
-    });
+const clean = (value, max = 220) => String(value || '')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .slice(0, max);
+
+const ownerWindowOf = (element) => element?.ownerDocument?.defaultView || window;
+const styleOf = (element) => ownerWindowOf(element).getComputedStyle(element);
+const tagOf = (element) => String(element?.tagName || '').toLowerCase();
+const roleOf = (element) => clean(element.getAttribute('role') || '', 80).toLowerCase();
+const isElement = (value) => value && value.nodeType === 1;
+const cssEscape = (value) => window.CSS?.escape
+  ? window.CSS.escape(String(value))
+  : String(value).replace(/["\\]/g, '\\$&');
+
+const ariaLabelledByText = (element) => {
+  const doc = element.ownerDocument || document;
+  const ids = clean(element.getAttribute('aria-labelledby') || '', 500).split(' ').filter(Boolean);
+  return clean(ids.map((id) => doc.getElementById(id)?.textContent || '').join(' '), 240);
+};
+
+const associatedLabelText = (element) => {
+  const doc = element.ownerDocument || document;
+  const id = element.getAttribute('id');
+  let explicit = '';
+  if (id) {
+    try {
+      explicit = Array.from(doc.querySelectorAll(`label[for="${cssEscape(id)}"]`)).map((label) => label.innerText || label.textContent || '').join(' ');
+    } catch {}
   }
+  const implicit = element.closest?.('label')?.innerText || '';
+  return clean(`${explicit} ${implicit}`, 240);
+};
 
-  const selector = [
-    'a[href]',
-    'button',
-    'input',
-    'textarea',
-    'select',
-    '[role="button"]',
-    '[role="link"]',
-    '[contenteditable="true"]',
-    '[tabindex]:not([tabindex="-1"])'
-  ].join(',');
-  const isVisible = (element) => {
-    const style = window.getComputedStyle(element);
-    const rect = element.getBoundingClientRect();
-    return rect.width > 0
-      && rect.height > 0
-      && rect.bottom >= 0
-      && rect.right >= 0
-      && rect.top <= window.innerHeight
-      && rect.left <= window.innerWidth
-      && style.visibility !== 'hidden'
-      && style.display !== 'none'
-      && element.getAttribute('aria-hidden') !== 'true';
-  };
-  const kindOf = (element) => {
-    const tag = element.tagName.toLowerCase();
-    const role = element.getAttribute('role');
-    const type = element.getAttribute('type');
-    if (tag === 'a') return 'link';
-    if (tag === 'input') return type ? `input:${type}` : 'input';
-    if (tag === 'textarea') return 'textarea';
-    if (tag === 'select') return 'select';
-    if (tag === 'button') return 'button';
-    if (role) return role;
-    if (element.isContentEditable) return 'editable';
-    return tag;
-  };
-  const labelOf = (element) => clean(
+const descriptorOf = (element) => {
+  const tag = tagOf(element) || 'element';
+  const id = clean(element.getAttribute('id') || '', 80);
+  const name = clean(element.getAttribute('name') || '', 80);
+  const testId = clean(
+    element.getAttribute('data-testid')
+      || element.getAttribute('data-test')
+      || element.getAttribute('data-cy')
+      || '',
+    100
+  );
+  const className = clean(String(element.getAttribute('class') || '').split(/\s+/).slice(0, 2).join('.'), 80);
+  return clean([
+    tag,
+    id ? `#${id}` : '',
+    name ? `[name=${name}]` : '',
+    testId ? `[testid=${testId}]` : '',
+    !id && !name && !testId && className ? `.${className}` : ''
+  ].filter(Boolean).join(''), 160);
+};
+
+const textAlternativeOf = (element) => {
+  const svgTitle = element.querySelector?.('svg title, title')?.textContent || '';
+  const labelled = ariaLabelledByText(element);
+  const associated = associatedLabelText(element);
+  return clean(
     element.innerText
       || element.value
       || element.getAttribute('aria-label')
+      || labelled
+      || associated
+      || element.getAttribute('alt')
       || element.getAttribute('title')
       || element.getAttribute('placeholder')
+      || svgTitle
+      || element.getAttribute('data-label')
+      || element.getAttribute('data-testid')
+      || element.getAttribute('data-test')
+      || element.getAttribute('data-cy')
+      || element.getAttribute('name')
+      || element.getAttribute('id')
       || element.href
-      || ''
+      || '',
+    240
   );
-  const isFillable = (element) => {
-    const tag = element.tagName.toLowerCase();
-    const role = element.getAttribute('role');
-    const type = (element.getAttribute('type') || '').toLowerCase();
-    const nonTextInputTypes = ['button', 'submit', 'reset', 'checkbox', 'radio', 'file', 'image', 'hidden'];
-    return element.isContentEditable
-      || tag === 'textarea'
-      || tag === 'select'
-      || role === 'textbox'
-      || (tag === 'input' && !nonTextInputTypes.includes(type));
-  };
-  const isDisabled = (element) => Boolean(
-    element.disabled
-      || element.readOnly
-      || element.getAttribute('aria-disabled') === 'true'
-  );
-
-  const elements = Array.from(document.querySelectorAll(selector))
-    .filter(isVisible)
-    .filter((element) => labelOf(element) || ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName))
-    .slice(0, 80)
-    .map((element, index) => {
-      const rect = element.getBoundingClientRect();
-      const disabled = isDisabled(element);
-      return {
-        index,
-        kind: kindOf(element),
-        text: labelOf(element),
-        rect: {
-          x: Math.round(rect.left),
-          y: Math.round(rect.top),
-          width: Math.round(rect.width),
-          height: Math.round(rect.height)
-        },
-        fillable: isFillable(element) && !disabled,
-        disabled
-      };
-    });
-
-  return JSON.stringify({
-    visual: {
-      title: clean(document.title || '', 300),
-      url: String(location.href),
-      viewport: {
-        width: window.innerWidth,
-        height: window.innerHeight,
-        devicePixelRatio: window.devicePixelRatio || 1
-      },
-      elements,
-      screenshot: null
-    },
-    consoleMessages: (window.__POLARIS_BROWSER_CONSOLE__ || []).slice(-80)
-  });
-})()
-"#;
-
-#[cfg(feature = "tauri-app")]
-const CLICK_ELEMENT_SCRIPT_BODY: &str = r#"
-const clean = (value, max = 220) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
-const selector = ['a[href]', 'button', 'input', 'textarea', 'select', '[role="button"]', '[role="link"]', '[contenteditable="true"]', '[tabindex]:not([tabindex="-1"])'].join(',');
-const isVisible = (element) => {
-  const style = window.getComputedStyle(element);
-  const rect = element.getBoundingClientRect();
-  return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none' && element.getAttribute('aria-hidden') !== 'true';
 };
-const labelOf = (element) => clean(element.innerText || element.value || element.getAttribute('aria-label') || element.getAttribute('title') || element.getAttribute('placeholder') || element.href || '');
-const elements = Array.from(document.querySelectorAll(selector)).filter(isVisible).filter((element) => labelOf(element) || ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName)).slice(0, 80);
-const query = clean(requestedText).toLowerCase();
-let index = Number.isInteger(requestedIndex) ? requestedIndex : -1;
-let target = index >= 0 ? elements[index] : null;
-if (!target && query) {
-  index = elements.findIndex((element) => labelOf(element).toLowerCase().includes(query));
-  target = index >= 0 ? elements[index] : null;
-}
-if (!target) {
-  return JSON.stringify({ ok: false, action: 'click', index: null, text: requestedText || '', url: String(location.href), message: '未找到可点击元素' });
-}
-if (target.disabled || target.getAttribute('aria-disabled') === 'true') {
-  return JSON.stringify({ ok: false, action: 'click', index, text: labelOf(target), url: String(location.href), message: '目标元素已禁用' });
-}
-target.scrollIntoView({ block: 'center', inline: 'center' });
-if (target.tagName === 'A') {
-  target.setAttribute('target', '_self');
-}
-target.focus({ preventScroll: true });
-target.click();
-return JSON.stringify({ ok: true, action: 'click', index, text: labelOf(target), url: String(location.href), message: '已点击目标元素' });
-"#;
 
-#[cfg(feature = "tauri-app")]
-const FILL_ELEMENT_SCRIPT_BODY: &str = r#"
-const clean = (value, max = 220) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
-const selector = ['a[href]', 'button', 'input', 'textarea', 'select', '[role="button"]', '[role="link"]', '[contenteditable="true"]', '[tabindex]:not([tabindex="-1"])'].join(',');
-const isVisible = (element) => {
-  const style = window.getComputedStyle(element);
-  const rect = element.getBoundingClientRect();
-  return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none' && element.getAttribute('aria-hidden') !== 'true';
+const labelOf = (element) => textAlternativeOf(element) || descriptorOf(element);
+
+const kindOf = (element) => {
+  const tag = tagOf(element);
+  const role = roleOf(element);
+  const type = clean(element.getAttribute('type') || '', 40).toLowerCase();
+  if (tag === 'a') return 'link';
+  if (tag === 'area') return 'link';
+  if (tag === 'input') return type ? `input:${type}` : 'input';
+  if (tag === 'textarea') return 'textarea';
+  if (tag === 'select') return 'select';
+  if (tag === 'button') return 'button';
+  if (tag === 'summary') return 'summary';
+  if (tag === 'label' && element.hasAttribute('for')) return 'label';
+  if (role) return role;
+  if (element.isContentEditable) return 'editable';
+  return tag || 'element';
 };
-const labelOf = (element) => clean(element.innerText || element.value || element.getAttribute('aria-label') || element.getAttribute('title') || element.getAttribute('placeholder') || element.href || '');
+
+const isNativeInteractive = (element) => {
+  const tag = tagOf(element);
+  return tag === 'a' && element.hasAttribute('href')
+    || tag === 'area' && element.hasAttribute('href')
+    || tag === 'button'
+    || tag === 'textarea'
+    || tag === 'select'
+    || tag === 'summary'
+    || (tag === 'label' && element.hasAttribute('for'))
+    || (tag === 'input' && (element.getAttribute('type') || '').toLowerCase() !== 'hidden');
+};
+
 const isFillable = (element) => {
-  const tag = element.tagName.toLowerCase();
-  const role = element.getAttribute('role');
-  const type = (element.getAttribute('type') || '').toLowerCase();
-  const nonTextInputTypes = ['button', 'submit', 'reset', 'checkbox', 'radio', 'file', 'image', 'hidden'];
+  const tag = tagOf(element);
+  const role = roleOf(element);
+  const type = clean(element.getAttribute('type') || '', 40).toLowerCase();
+  const nonTextInputTypes = ['button', 'submit', 'reset', 'checkbox', 'radio', 'file', 'image', 'hidden', 'range', 'color'];
   return element.isContentEditable
     || tag === 'textarea'
     || tag === 'select'
-    || role === 'textbox'
+    || POLARIS_FILLABLE_ROLES.has(role)
     || (tag === 'input' && !nonTextInputTypes.includes(type));
 };
+
+const isReadOnly = (element) => Boolean(
+  element.readOnly || element.getAttribute('aria-readonly') === 'true'
+);
+
+const isDisabled = (element) => Boolean(
+  element.disabled
+    || element.closest?.('[disabled], [aria-disabled="true"], [inert]')
+    || element.getAttribute('aria-disabled') === 'true'
+);
+
+const hasInteractiveAttribute = (element) => {
+  const names = typeof element.getAttributeNames === 'function'
+    ? element.getAttributeNames().map((name) => name.toLowerCase())
+    : [];
+  return Boolean(
+    element.hasAttribute('onclick')
+      || typeof element.onclick === 'function'
+      || element.hasAttribute('jsaction')
+      || element.hasAttribute('aria-haspopup')
+      || element.hasAttribute('aria-expanded')
+      || element.hasAttribute('aria-controls')
+      || element.hasAttribute('aria-pressed')
+      || element.hasAttribute('aria-selected')
+      || element.hasAttribute('aria-checked')
+      || element.hasAttribute('popovertarget')
+      || element.hasAttribute('commandfor')
+      || element.hasAttribute('data-action')
+      || element.hasAttribute('data-click')
+      || element.hasAttribute('data-command')
+      || element.hasAttribute('data-href')
+      || element.hasAttribute('data-url')
+      || element.hasAttribute('data-route')
+      || names.some((name) => [
+        'ng-click',
+        'x-on:click',
+        'v-on:click',
+        '@click',
+        'wire:click',
+        'data-bs-toggle',
+        'data-toggle',
+        'hx-get',
+        'hx-post'
+      ].includes(name))
+  );
+};
+
+const rectOf = (element, offset) => {
+  const rect = element.getBoundingClientRect();
+  return {
+    left: rect.left + offset.x,
+    top: rect.top + offset.y,
+    right: rect.right + offset.x,
+    bottom: rect.bottom + offset.y,
+    width: rect.width,
+    height: rect.height
+  };
+};
+
+const intersectsViewport = (rect) => rect.bottom >= 0
+  && rect.right >= 0
+  && rect.top <= window.innerHeight
+  && rect.left <= window.innerWidth;
+
+const isVisible = (element, offset, viewportOnly) => {
+  if (!isElement(element)) return false;
+  const tag = tagOf(element);
+  if (['html', 'body', 'head', 'script', 'style', 'meta', 'link', 'noscript', 'template'].includes(tag)) {
+    return false;
+  }
+  const style = styleOf(element);
+  const rect = rectOf(element, offset);
+  return rect.width > 0
+    && rect.height > 0
+    && (!viewportOnly || intersectsViewport(rect))
+    && style.visibility !== 'hidden'
+    && style.visibility !== 'collapse'
+    && style.display !== 'none'
+    && Number(style.opacity || '1') > 0.01
+    && element.getAttribute('aria-hidden') !== 'true'
+    && !element.closest?.('[hidden], [aria-hidden="true"]');
+};
+
+const looksInteractive = (element) => {
+  const role = roleOf(element);
+  const style = styleOf(element);
+  return isNativeInteractive(element)
+    || element.isContentEditable
+    || POLARIS_CLICKABLE_ROLES.has(role)
+    || POLARIS_FILLABLE_ROLES.has(role)
+    || element.matches?.('[tabindex]:not([tabindex="-1"])')
+    || hasInteractiveAttribute(element)
+    || style.cursor === 'pointer';
+};
+
+const scoreOf = (element) => {
+  const role = roleOf(element);
+  const style = styleOf(element);
+  let score = 0;
+  if (isNativeInteractive(element)) score += 80;
+  if (POLARIS_CLICKABLE_ROLES.has(role) || POLARIS_FILLABLE_ROLES.has(role)) score += 70;
+  if (element.isContentEditable) score += 65;
+  if (element.matches?.('[tabindex]:not([tabindex="-1"])')) score += 45;
+  if (hasInteractiveAttribute(element)) score += 35;
+  if (style.cursor === 'pointer') score += 25;
+  if (textAlternativeOf(element)) score += 8;
+  return score;
+};
+
+const buildSearchText = (element, label) => clean([
+  label,
+  element.value,
+  element.getAttribute('placeholder'),
+  element.getAttribute('aria-label'),
+  ariaLabelledByText(element),
+  associatedLabelText(element),
+  element.getAttribute('title'),
+  element.getAttribute('alt'),
+  element.getAttribute('name'),
+  element.getAttribute('id'),
+  element.getAttribute('data-testid'),
+  element.getAttribute('data-test'),
+  element.getAttribute('data-cy'),
+  element.href
+].filter(Boolean).join(' '), 800).toLowerCase();
+
+const collectRoots = () => {
+  const roots = [];
+  const visit = (root, offset, depth, frames) => {
+    if (!root || depth > 3) return;
+    roots.push({ root, offset, frames });
+    let nodes = [];
+    try {
+      nodes = Array.from(root.querySelectorAll('*')).slice(0, POLARIS_SCAN_LIMIT);
+    } catch {
+      return;
+    }
+    for (const node of nodes) {
+      if (node.shadowRoot) {
+        visit(node.shadowRoot, offset, depth + 1, frames);
+      }
+      if (tagOf(node) === 'iframe') {
+        try {
+          const doc = node.contentDocument;
+          if (doc) {
+            const frameRect = node.getBoundingClientRect();
+            visit(doc, { x: offset.x + frameRect.left, y: offset.y + frameRect.top }, depth + 1, frames.concat(node));
+          }
+        } catch {}
+      }
+    }
+  };
+  visit(document, { x: 0, y: 0 }, 0, []);
+  return roots;
+};
+
+const sameRect = (a, b) => Math.abs(a.left - b.left) < 2
+  && Math.abs(a.top - b.top) < 2
+  && Math.abs(a.width - b.width) < 2
+  && Math.abs(a.height - b.height) < 2;
+
+const collectPolarisInteractiveElements = (options = {}) => {
+  const viewportOnly = options.viewportOnly === true;
+  const maxElements = Number.isFinite(options.maxElements) ? options.maxElements : 220;
+  const candidates = [];
+  const seen = new WeakSet();
+  let order = 0;
+
+  const addCandidate = (element, offset, frames) => {
+    if (!isElement(element) || seen.has(element)) return;
+    seen.add(element);
+    if (!looksInteractive(element) || !isVisible(element, offset, viewportOnly)) return;
+    const rect = rectOf(element, offset);
+    const label = labelOf(element);
+    candidates.push({
+      element,
+      rect,
+      label,
+      searchText: buildSearchText(element, label),
+      kind: kindOf(element),
+      value: clean(element.value || '', 220),
+      placeholder: clean(element.getAttribute('placeholder') || '', 220),
+      href: clean(element.href || element.getAttribute('data-href') || '', 500),
+      disabled: isDisabled(element),
+      fillable: isFillable(element) && !isDisabled(element) && !isReadOnly(element),
+      frames,
+      score: scoreOf(element),
+      order: order++
+    });
+  };
+
+  for (const { root, offset, frames } of collectRoots()) {
+    let selected = [];
+    try {
+      selected = Array.from(root.querySelectorAll(POLARIS_INTERACTIVE_SELECTOR));
+    } catch {}
+    selected.forEach((element) => addCandidate(element, offset, frames));
+
+    let all = [];
+    try {
+      all = Array.from(root.querySelectorAll('*')).slice(0, POLARIS_SCAN_LIMIT);
+    } catch {}
+    all.forEach((element) => {
+      try {
+        if (hasInteractiveAttribute(element) || styleOf(element).cursor === 'pointer' || typeof element.onclick === 'function') {
+          addCandidate(element, offset, frames);
+        }
+      } catch {}
+    });
+  }
+
+  const ranked = candidates.sort((a, b) => b.score - a.score || a.order - b.order);
+  const kept = [];
+  for (const candidate of ranked) {
+    const duplicate = kept.some((existing) => existing.element === candidate.element
+      || (sameRect(existing.rect, candidate.rect) && existing.label === candidate.label && existing.kind === candidate.kind)
+      || (existing.element.contains?.(candidate.element) && sameRect(existing.rect, candidate.rect)));
+    if (!duplicate) kept.push(candidate);
+  }
+
+  kept.sort((a, b) => {
+    const aInView = intersectsViewport(a.rect) ? 0 : 1;
+    const bInView = intersectsViewport(b.rect) ? 0 : 1;
+    return aInView - bInView
+      || a.rect.top - b.rect.top
+      || a.rect.left - b.rect.left
+      || a.order - b.order;
+  });
+
+  return kept.slice(0, maxElements);
+};
+
+const toPolarisInteractiveElement = (entry, index) => ({
+  index,
+  kind: entry.kind,
+  text: clean(entry.label, 240),
+  value: entry.value,
+  placeholder: entry.placeholder,
+  href: entry.href,
+  disabled: entry.disabled,
+  fillable: entry.fillable
+});
+
+const toPolarisVisualElement = (entry, index) => ({
+  index,
+  kind: entry.kind,
+  text: clean(entry.label, 240),
+  rect: {
+    x: Math.round(entry.rect.left),
+    y: Math.round(entry.rect.top),
+    width: Math.round(entry.rect.width),
+    height: Math.round(entry.rect.height)
+  },
+  fillable: entry.fillable,
+  disabled: entry.disabled
+});
+"#
+    };
+}
+
+const CONSOLE_CAPTURE_SCRIPT: &str = r#"
+const now = () => Date.now();
+if (!window.__POLARIS_BROWSER_CONSOLE__) {
+  const buffer = [];
+  const push = (level, args) => {
+    try {
+      buffer.push({
+        level,
+        message: Array.from(args || []).map((item) => {
+          if (typeof item === 'string') return item;
+          try { return JSON.stringify(item); } catch { return String(item); }
+        }).join(' ').slice(0, 2000),
+        url: String(location.href),
+        timestamp: now()
+      });
+      if (buffer.length > 120) buffer.splice(0, buffer.length - 120);
+    } catch {}
+  };
+  const original = {};
+  ['debug', 'log', 'info', 'warn', 'error'].forEach((level) => {
+    original[level] = console[level];
+    console[level] = function(...args) {
+      push(level, args);
+      return original[level]?.apply(this, args);
+    };
+  });
+  window.addEventListener('error', (event) => {
+    push('error', [event.message || 'Script error', event.filename || '', event.lineno || '']);
+  });
+  window.addEventListener('unhandledrejection', (event) => {
+    push('error', ['Unhandled promise rejection', event.reason || '']);
+  });
+  Object.defineProperty(window, '__POLARIS_BROWSER_CONSOLE__', {
+    value: buffer,
+    configurable: true
+  });
+}
+"#;
+
+const INTERACTIVE_ELEMENTS_SCRIPT_BODY: &str = r#"
+const elements = collectPolarisInteractiveElements({ viewportOnly: false, maxElements: 220 })
+  .map((entry, index) => toPolarisInteractiveElement(entry, index));
+return JSON.stringify(elements);
+"#;
+
+const DIAGNOSTICS_SCRIPT_BODY: &str = r#"
+const elements = collectPolarisInteractiveElements({ viewportOnly: true, maxElements: 180 })
+  .map((entry, index) => toPolarisVisualElement(entry, index));
+return JSON.stringify({
+  visual: {
+    title: clean(document.title || '', 300),
+    url: String(location.href),
+    viewport: {
+      width: window.innerWidth,
+      height: window.innerHeight,
+      devicePixelRatio: window.devicePixelRatio || 1
+    },
+    elements,
+    screenshot: null
+  },
+  consoleMessages: (window.__POLARIS_BROWSER_CONSOLE__ || []).slice(-80)
+});
+"#;
+
+const CLICK_ELEMENT_SCRIPT_BODY: &str = r#"
+const entries = collectPolarisInteractiveElements({ viewportOnly: false, maxElements: 240 });
+const query = clean(requestedText, 240).toLowerCase();
+let index = Number.isInteger(requestedIndex) ? requestedIndex : -1;
+let entry = index >= 0 ? entries[index] : null;
+if (!entry && query) {
+  index = entries.findIndex((item) => item.searchText.includes(query));
+  entry = index >= 0 ? entries[index] : null;
+}
+if (!entry) {
+  return JSON.stringify({ ok: false, action: 'click', index: null, text: requestedText || '', url: String(location.href), message: '未找到可点击元素' });
+}
+if (entry.disabled) {
+  return JSON.stringify({ ok: false, action: 'click', index, text: entry.label, url: String(location.href), message: '目标元素已禁用' });
+}
+const target = entry.element;
+for (const frame of entry.frames || []) {
+  try { frame.scrollIntoView({ block: 'center', inline: 'center' }); } catch {}
+}
+target.scrollIntoView({ block: 'center', inline: 'center' });
+if (tagOf(target) === 'a') {
+  target.setAttribute('target', '_self');
+}
+try { target.focus({ preventScroll: true }); } catch {}
+const view = ownerWindowOf(target);
+const targetRect = target.getBoundingClientRect();
+const clientX = targetRect.left + Math.max(1, Math.min(targetRect.width / 2, targetRect.width - 1));
+const clientY = targetRect.top + Math.max(1, Math.min(targetRect.height / 2, targetRect.height - 1));
+const dispatchMouse = (type) => {
+  try {
+    target.dispatchEvent(new view.MouseEvent(type, { bubbles: true, cancelable: true, view, clientX, clientY, button: 0, buttons: type === 'mouseup' ? 0 : 1 }));
+  } catch {}
+};
+const dispatchPointer = (type) => {
+  try {
+    if (view.PointerEvent) {
+      target.dispatchEvent(new view.PointerEvent(type, { bubbles: true, cancelable: true, pointerType: 'mouse', clientX, clientY, button: 0, buttons: type === 'pointerup' ? 0 : 1, view }));
+    }
+  } catch {}
+};
+dispatchPointer('pointerdown');
+dispatchMouse('mousedown');
+dispatchPointer('pointerup');
+dispatchMouse('mouseup');
+if (typeof target.click === 'function') {
+  target.click();
+} else {
+  dispatchMouse('click');
+}
+return JSON.stringify({ ok: true, action: 'click', index, text: entry.label, url: String(location.href), message: '已点击目标元素' });
+"#;
+
+const FILL_ELEMENT_SCRIPT_BODY: &str = r#"
+const entries = collectPolarisInteractiveElements({ viewportOnly: false, maxElements: 240 });
+const query = clean(requestedText, 240).toLowerCase();
+let index = Number.isInteger(requestedIndex) ? requestedIndex : -1;
+let entry = index >= 0 ? entries[index] : null;
+if (!entry && query) {
+  index = entries.findIndex((item) => item.searchText.includes(query));
+  entry = index >= 0 ? entries[index] : null;
+}
+if (!entry) {
+  return JSON.stringify({ ok: false, action: 'fill', index: null, text: requestedText || '', url: String(location.href), message: '未找到可输入元素' });
+}
+const target = entry.element;
+if (!entry.fillable) {
+  return JSON.stringify({ ok: false, action: 'fill', index, text: entry.label, url: String(location.href), message: '目标元素不可输入' });
+}
+if (entry.disabled) {
+  return JSON.stringify({ ok: false, action: 'fill', index, text: entry.label, url: String(location.href), message: '目标元素不可输入' });
+}
 const setNativeValue = (element, value) => {
-  const prototype = element instanceof HTMLTextAreaElement
-    ? HTMLTextAreaElement.prototype
-    : element instanceof HTMLSelectElement
-      ? HTMLSelectElement.prototype
-      : HTMLInputElement.prototype;
+  const view = ownerWindowOf(element);
+  const prototype = element instanceof view.HTMLTextAreaElement
+    ? view.HTMLTextAreaElement.prototype
+    : element instanceof view.HTMLSelectElement
+      ? view.HTMLSelectElement.prototype
+      : view.HTMLInputElement.prototype;
   const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value');
   if (descriptor && descriptor.set) {
     descriptor.set.call(element, value);
@@ -1299,40 +1571,27 @@ const setNativeValue = (element, value) => {
     element.value = value;
   }
 };
-const elements = Array.from(document.querySelectorAll(selector)).filter(isVisible).filter((element) => labelOf(element) || ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName)).slice(0, 80);
-const query = clean(requestedText).toLowerCase();
-let index = Number.isInteger(requestedIndex) ? requestedIndex : -1;
-let target = index >= 0 ? elements[index] : null;
-if (!target && query) {
-  index = elements.findIndex((element) => labelOf(element).toLowerCase().includes(query));
-  target = index >= 0 ? elements[index] : null;
-}
-if (!target) {
-  return JSON.stringify({ ok: false, action: 'fill', index: null, text: requestedText || '', url: String(location.href), message: '未找到可输入元素' });
-}
-const targetLabel = labelOf(target);
-if (!isFillable(target)) {
-  return JSON.stringify({ ok: false, action: 'fill', index, text: targetLabel, url: String(location.href), message: '目标元素不可输入' });
-}
-if (target.disabled || target.readOnly || target.getAttribute('aria-disabled') === 'true') {
-  return JSON.stringify({ ok: false, action: 'fill', index, text: targetLabel, url: String(location.href), message: '目标元素不可输入' });
+for (const frame of entry.frames || []) {
+  try { frame.scrollIntoView({ block: 'center', inline: 'center' }); } catch {}
 }
 target.scrollIntoView({ block: 'center', inline: 'center' });
-target.focus({ preventScroll: true });
+try { target.focus({ preventScroll: true }); } catch {}
 if (target.isContentEditable) {
   target.textContent = fillValue;
-} else if (target.tagName === 'SELECT') {
+} else if (tagOf(target) === 'select') {
   const option = Array.from(target.options).find((item) => item.value === fillValue || clean(item.textContent).includes(fillValue));
   setNativeValue(target, option ? option.value : fillValue);
-} else {
+} else if ('value' in target) {
   setNativeValue(target, fillValue);
+} else {
+  target.textContent = fillValue;
 }
-target.dispatchEvent(new Event('input', { bubbles: true }));
-target.dispatchEvent(new Event('change', { bubbles: true }));
-return JSON.stringify({ ok: true, action: 'fill', index, text: targetLabel, url: String(location.href), message: '已填写目标元素' });
+const view = ownerWindowOf(target);
+target.dispatchEvent(new view.Event('input', { bubbles: true }));
+target.dispatchEvent(new view.Event('change', { bubbles: true }));
+return JSON.stringify({ ok: true, action: 'fill', index, text: entry.label, url: String(location.href), message: '已填写目标元素' });
 "#;
 
-#[cfg(feature = "tauri-app")]
 const AI_OVERLAY_SCRIPT_BODY: &str = r#"
 const existingCleanup = window.__POLARIS_AI_OVERLAY_CLEANUP__;
 if (typeof existingCleanup === 'function') {
@@ -1343,8 +1602,6 @@ if (!overlayEnabled) {
   return JSON.stringify({ enabled: false, count: 0 });
 }
 
-const clean = (value, max = 80) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
-const selector = ['a[href]', 'button', 'input', 'textarea', 'select', '[role="button"]', '[role="link"]', '[contenteditable="true"]', '[tabindex]:not([tabindex="-1"])'].join(',');
 const root = document.createElement('div');
 root.id = '__polaris_ai_overlay__';
 root.style.position = 'fixed';
@@ -1354,61 +1611,24 @@ root.style.zIndex = '2147483646';
 root.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 document.documentElement.appendChild(root);
 
-const isVisible = (element) => {
-  const style = window.getComputedStyle(element);
-  const rect = element.getBoundingClientRect();
-  return rect.width > 0
-    && rect.height > 0
-    && rect.bottom >= 0
-    && rect.right >= 0
-    && rect.top <= window.innerHeight
-    && rect.left <= window.innerWidth
-    && style.visibility !== 'hidden'
-    && style.display !== 'none'
-    && element.getAttribute('aria-hidden') !== 'true';
-};
-const labelOf = (element) => clean(
-  element.innerText
-    || element.value
-    || element.getAttribute('aria-label')
-    || element.getAttribute('title')
-    || element.getAttribute('placeholder')
-    || element.href
-    || ''
-);
-const isFillable = (element) => {
-  const tag = element.tagName.toLowerCase();
-  const role = element.getAttribute('role');
-  const type = (element.getAttribute('type') || '').toLowerCase();
-  const nonTextInputTypes = ['button', 'submit', 'reset', 'checkbox', 'radio', 'file', 'image', 'hidden'];
-  return element.isContentEditable
-    || tag === 'textarea'
-    || tag === 'select'
-    || role === 'textbox'
-    || (tag === 'input' && !nonTextInputTypes.includes(type));
-};
 const render = () => {
-  const elements = Array.from(document.querySelectorAll(selector))
-    .filter(isVisible)
-    .filter((element) => labelOf(element) || ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName))
-    .slice(0, 80);
-  const nodes = elements.map((element, index) => {
-    const rect = element.getBoundingClientRect();
+  const entries = collectPolarisInteractiveElements({ viewportOnly: true, maxElements: 180 });
+  const nodes = entries.map((entry, index) => {
+    const rect = entry.rect;
     const box = document.createElement('div');
-    const fillable = isFillable(element);
     box.style.position = 'fixed';
     box.style.left = `${Math.max(rect.left, 0)}px`;
     box.style.top = `${Math.max(rect.top, 0)}px`;
     box.style.width = `${Math.max(rect.width, 8)}px`;
     box.style.height = `${Math.max(rect.height, 8)}px`;
-    box.style.border = fillable ? '2px solid rgba(34, 197, 94, 0.95)' : '2px solid rgba(59, 130, 246, 0.95)';
-    box.style.background = fillable ? 'rgba(34, 197, 94, 0.10)' : 'rgba(59, 130, 246, 0.10)';
+    box.style.border = entry.fillable ? '2px solid rgba(34, 197, 94, 0.95)' : '2px solid rgba(59, 130, 246, 0.95)';
+    box.style.background = entry.fillable ? 'rgba(34, 197, 94, 0.10)' : 'rgba(59, 130, 246, 0.10)';
     box.style.borderRadius = '6px';
     box.style.boxSizing = 'border-box';
     box.style.boxShadow = '0 0 0 1px rgba(15, 23, 42, 0.35)';
     const badge = document.createElement('div');
     badge.textContent = String(index);
-    badge.title = labelOf(element);
+    badge.title = entry.label;
     badge.style.position = 'absolute';
     badge.style.left = '-1px';
     badge.style.top = '-18px';
@@ -1416,7 +1636,7 @@ const render = () => {
     badge.style.height = '18px';
     badge.style.padding = '0 5px';
     badge.style.borderRadius = '5px';
-    badge.style.background = fillable ? 'rgb(22, 163, 74)' : 'rgb(37, 99, 235)';
+    badge.style.background = entry.fillable ? 'rgb(22, 163, 74)' : 'rgb(37, 99, 235)';
     badge.style.color = 'white';
     badge.style.fontSize = '11px';
     badge.style.fontWeight = '650';
@@ -1426,7 +1646,7 @@ const render = () => {
     return box;
   });
   root.replaceChildren(...nodes);
-  return elements.length;
+  return entries.length;
 };
 
 let animationFrame = 0;
@@ -1455,3 +1675,107 @@ window.addEventListener('resize', scheduleRender);
 const count = render();
 return JSON.stringify({ enabled: true, count });
 "#;
+
+fn script_with_collector(body: &str) -> String {
+    let mut script = String::from("(() => {\n");
+    script.push_str(polaris_interactive_collector_script!());
+    script.push('\n');
+    script.push_str(body);
+    script.push_str("\n})()");
+    script
+}
+
+fn interactive_elements_script() -> String {
+    script_with_collector(INTERACTIVE_ELEMENTS_SCRIPT_BODY)
+}
+
+fn diagnostics_script() -> String {
+    let mut script = String::from("(() => {\n");
+    script.push_str(CONSOLE_CAPTURE_SCRIPT);
+    script.push('\n');
+    script.push_str(polaris_interactive_collector_script!());
+    script.push('\n');
+    script.push_str(DIAGNOSTICS_SCRIPT_BODY);
+    script.push_str("\n})()");
+    script
+}
+
+fn click_element_script(index: Option<usize>, text: &str) -> String {
+    let mut script = String::from("(() => {\nconst requestedIndex = ");
+    script.push_str(
+        &index
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "null".to_string()),
+    );
+    script.push_str(";\nconst requestedText = ");
+    script.push_str(&serde_json::to_string(text).unwrap_or_else(|_| "\"\"".to_string()));
+    script.push_str(";\n");
+    script.push_str(polaris_interactive_collector_script!());
+    script.push('\n');
+    script.push_str(CLICK_ELEMENT_SCRIPT_BODY);
+    script.push_str("\n})()");
+    script
+}
+
+fn fill_element_script(index: Option<usize>, text: &str, value: &str) -> String {
+    let mut script = String::from("(() => {\nconst requestedIndex = ");
+    script.push_str(
+        &index
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "null".to_string()),
+    );
+    script.push_str(";\nconst requestedText = ");
+    script.push_str(&serde_json::to_string(text).unwrap_or_else(|_| "\"\"".to_string()));
+    script.push_str(";\nconst fillValue = ");
+    script.push_str(&serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string()));
+    script.push_str(";\n");
+    script.push_str(polaris_interactive_collector_script!());
+    script.push('\n');
+    script.push_str(FILL_ELEMENT_SCRIPT_BODY);
+    script.push_str("\n})()");
+    script
+}
+
+fn ai_overlay_script(enabled: bool) -> String {
+    let mut script = String::from("(() => {\nconst overlayEnabled = ");
+    script.push_str(if enabled { "true" } else { "false" });
+    script.push_str(";\n");
+    script.push_str(polaris_interactive_collector_script!());
+    script.push('\n');
+    script.push_str(AI_OVERLAY_SCRIPT_BODY);
+    script.push_str("\n})()");
+    script
+}
+
+#[cfg(test)]
+mod browser_script_tests {
+    use super::*;
+
+    #[test]
+    fn collector_covers_modern_interactive_patterns() {
+        let script = interactive_elements_script();
+        assert!(script.contains("[role=\"menuitem\"]"));
+        assert!(script.contains("label[for]"));
+        assert!(script.contains("[aria-expanded]"));
+        assert!(script.contains("[jsaction]"));
+        assert!(script.contains("[data-command]"));
+        assert!(script.contains("style.cursor === 'pointer'"));
+        assert!(script.contains("node.shadowRoot"));
+        assert!(script.contains("contentDocument"));
+        assert!(script.contains("frames.concat(node)"));
+        assert!(script.contains("isReadOnly(element)"));
+        assert!(script.contains("maxElements: 220"));
+        assert!(!script.contains("slice(0, 80)"));
+    }
+
+    #[test]
+    fn all_browser_actions_share_the_collector() {
+        assert!(diagnostics_script().contains("collectPolarisInteractiveElements"));
+        assert!(
+            click_element_script(Some(1), "Search").contains("collectPolarisInteractiveElements")
+        );
+        assert!(fill_element_script(None, "Search", "Polaris")
+            .contains("collectPolarisInteractiveElements"));
+        assert!(ai_overlay_script(true).contains("collectPolarisInteractiveElements"));
+    }
+}
