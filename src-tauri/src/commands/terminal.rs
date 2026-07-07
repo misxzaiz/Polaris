@@ -564,27 +564,9 @@ pub fn terminal_open_in_external(
     #[cfg(not(windows))]
     {
         // Linux/macOS: 尝试常见的终端模拟器
-        let shell_cmd = format!("cd \"{}\" && exec \"$SHELL\"", cwd);
-
-        let terminal_candidates = if cfg!(target_os = "macOS") {
-            vec![
-                // macOS: 优先使用 Terminal.app
-                (vec!["-a", "Terminal"], vec![&shell_cmd]),
-            ]
-        } else {
-            // Linux: 尝试多种终端模拟器
-            vec![
-                ("gnome-terminal", vec!["--", "/bin/sh", "-c", &shell_cmd]),
-                ("konsole", vec!["-e", "/bin/sh", "-c", &shell_cmd]),
-                ("xfce4-terminal", vec!["-e", &shell_cmd]),
-                ("xterm", vec!["-e", &shell_cmd]),
-                ("x-terminal-emulator", vec!["-e", &shell_cmd]),
-            ]
-        };
-
         let mut spawned = false;
 
-        #[cfg(target_os = "macOS")]
+        #[cfg(target_os = "macos")]
         {
             // macOS: 使用 open -a Terminal
             let result = Command::new("open")
@@ -598,6 +580,15 @@ pub fn terminal_open_in_external(
 
         #[cfg(target_os = "linux")]
         {
+            let shell_cmd = format!("cd \"{}\" && exec \"$SHELL\"", cwd);
+            let terminal_candidates = vec![
+                ("gnome-terminal", vec!["--", "/bin/sh", "-c", shell_cmd.as_str()]),
+                ("konsole", vec!["-e", "/bin/sh", "-c", shell_cmd.as_str()]),
+                ("xfce4-terminal", vec!["-e", shell_cmd.as_str()]),
+                ("xterm", vec!["-e", shell_cmd.as_str()]),
+                ("x-terminal-emulator", vec!["-e", shell_cmd.as_str()]),
+            ];
+
             for (terminal, args) in &terminal_candidates {
                 let result = Command::new(terminal)
                     .args(args)
