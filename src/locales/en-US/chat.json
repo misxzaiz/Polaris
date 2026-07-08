@@ -241,7 +241,9 @@
     "copyMessage": "Copy message content",
     "copied": "Copied",
     "edit": "Edit",
-    "regenerate": "Regenerate"
+    "regenerate": "Regenerate",
+    "speak": "Read Aloud",
+    "stopSpeaking": "Stop"
   },
   "history": {
     "title": "Session History",

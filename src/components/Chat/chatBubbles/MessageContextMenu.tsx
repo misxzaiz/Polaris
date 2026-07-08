@@ -4,7 +4,10 @@
 
 import { memo, useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, Copy, ArrowUp, ChevronsUp, ChevronsDown } from 'lucide-react';
+import { ttsService } from '@/services/ttsService';
+import { extractReadableText } from '../chatUtils/helpers';
+import { Check, Copy, ArrowUp, ChevronsUp, ChevronsDown, Volume2, Square, Loader2 } from 'lucide-react';
+import type { AssistantChatMessage, UserChatMessage } from '@/types';
 
 export const MessageContextMenu = memo(function MessageContextMenu({
   visible,
@@ -12,6 +15,7 @@ export const MessageContextMenu = memo(function MessageContextMenu({
   y,
   messageIndex,
   messageText,
+  message,
   onScrollToMessage,
   onScrollToTop,
   onScrollToBottom,
@@ -22,6 +26,7 @@ export const MessageContextMenu = memo(function MessageContextMenu({
   y: number;
   messageIndex?: number;
   messageText?: string;
+  message?: AssistantChatMessage | UserChatMessage;
   onScrollToMessage?: (index: number) => void;
   onScrollToTop?: () => void;
   onScrollToBottom?: () => void;
@@ -31,6 +36,7 @@ export const MessageContextMenu = memo(function MessageContextMenu({
   const menuRef = useRef<HTMLDivElement>(null);
   const positionRef = useRef({ x, y });
   const [copied, setCopied] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
 
   // 更新位置引用
   useEffect(() => {
@@ -125,6 +131,30 @@ export const MessageContextMenu = memo(function MessageContextMenu({
     }
   }, [messageText, onClose]);
 
+  // TTS 状态同步：菜单显示时注册回调，隐藏时清理
+  useEffect(() => {
+    if (!visible) return;
+
+    const setStatus = (status: string) => setIsSpeaking(status === 'playing' || status === 'synthesizing');
+    ttsService.setCallbacks({ onStatusChange: setStatus });
+    setIsSpeaking(ttsService.isPlaying());
+
+    return () => {
+      ttsService.setCallbacks({});
+    };
+  }, [visible]);
+
+  // 朗读消息（使用 stripMarkdown 后的纯文本，避免读到 markdown 源码）
+  const handleSpeak = useCallback(async () => {
+    const readable = message ? extractReadableText(message) : '';
+    if (!readable) return;
+    if (ttsService.isPlaying()) {
+      ttsService.stop();
+      return;
+    }
+    await ttsService.speak(readable, { force: true });
+  }, [message]);
+
   if (!visible) return null;
 
   const hasJumpActions = messageIndex !== undefined && onScrollToMessage;
@@ -187,6 +217,27 @@ export const MessageContextMenu = memo(function MessageContextMenu({
         >
           {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
           <span>{copied ? t('contextMenu.copied') : t('contextMenu.copyMessage')}</span>
+        </button>
+      )}
+
+      {/* 朗读消息 */}
+      {hasCopyAction && (
+        <button
+          type="button"
+          className="w-full px-3 py-2 text-left text-sm text-text-secondary hover:bg-background-hover hover:text-text-primary flex items-center gap-2 transition-colors"
+          onClick={handleSpeak}
+        >
+          {ttsService.getStatus() === 'synthesizing' && <Loader2 size={14} className="animate-spin text-warning" />}
+          {isSpeaking && ttsService.isPlaying() ? (
+            <Square size={14} className="text-primary" />
+          ) : (
+            <Volume2 size={14} />
+          )}
+          <span>
+            {isSpeaking && ttsService.isPlaying()
+              ? t('contextMenu.stopSpeaking')
+              : t('contextMenu.speak')}
+          </span>
         </button>
       )}
     </div>

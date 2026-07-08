@@ -140,6 +140,7 @@ export const UserBubble = memo(function UserBubble({
           y={contextMenu.y}
           messageIndex={messageIndex}
           messageText={message.content}
+          message={message}
           onScrollToMessage={onScrollToMessage}
           onScrollToTop={onScrollToTop}
           onScrollToBottom={onScrollToBottom}

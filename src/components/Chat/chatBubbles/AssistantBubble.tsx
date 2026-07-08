@@ -158,6 +158,7 @@ export const AssistantBubble = memo(function AssistantBubble({
           y={contextMenu.y}
           messageIndex={messageIndex}
           messageText={messageText}
+          message={message}
           onScrollToMessage={onScrollToMessage}
           onScrollToTop={onScrollToTop}
           onScrollToBottom={onScrollToBottom}

@@ -21,6 +21,8 @@
   "referenceContent": "Reference Content",
   "yourQuestion": "Your Question",
   "questionPlaceholder": "Enter your question...",
+  "speak": "Read Aloud",
+  "stopSpeaking": "Stop",
   "errors": {
     "notConfigured": "Please configure Baidu Translate API in settings",
     "failed": "Translation failed",

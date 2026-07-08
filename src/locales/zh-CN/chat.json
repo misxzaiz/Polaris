@@ -240,7 +240,9 @@
     "copyMessage": "复制消息内容",
     "copied": "已复制",
     "edit": "编辑",
-    "regenerate": "重新生成"
+    "regenerate": "重新生成",
+    "speak": "朗读",
+    "stopSpeaking": "停止朗读"
   },
   "history": {
     "title": "会话历史",

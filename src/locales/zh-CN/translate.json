@@ -21,6 +21,8 @@
   "referenceContent": "引用内容",
   "yourQuestion": "你的问题",
   "questionPlaceholder": "请输入问题...",
+  "speak": "朗读",
+  "stopSpeaking": "停止朗读",
   "errors": {
     "notConfigured": "请先在设置中配置百度翻译 API",
     "failed": "翻译失败",
