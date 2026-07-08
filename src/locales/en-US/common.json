@@ -127,6 +127,7 @@
     "previewInDevelopment": "Preview feature in development...",
     "closeOthers": "Close Others",
     "closeAll": "Close All",
+    "refresh": "Refresh",
     "unsavedChanges": "Unsaved Changes",
     "unsavedChangesMessage": "\"{{name}}\" has unsaved changes. Do you want to save?",
     "save": "Save",

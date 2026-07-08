@@ -4,6 +4,7 @@
 
 import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+import { RefreshCw } from 'lucide-react'
 
 interface TabContextMenuProps {
   visible: boolean
@@ -18,6 +19,7 @@ interface TabContextMenuProps {
   onCopyPath?: (tabId: string) => void
   onCopyRelativePath?: (tabId: string) => void
   onRevealInExplorer?: (tabId: string) => void
+  onRefreshTab?: (tabId: string) => void
   tabId: string
 }
 
@@ -34,6 +36,7 @@ export function TabContextMenu({
   onCopyPath,
   onCopyRelativePath,
   onRevealInExplorer,
+  onRefreshTab,
   tabId,
 }: TabContextMenuProps) {
   const { t } = useTranslation('common')
@@ -124,6 +127,23 @@ export function TabContextMenu({
       >
         {t('tabs.closeAll')}
       </button>
+
+      {/* 刷新操作（有 refresh 回调时显示，browser tab 有原生 reload 不显示） */}
+      {onRefreshTab && (
+        <>
+          <div className="my-1 border-t border-border-subtle" />
+          <button
+            onClick={() => {
+              onRefreshTab(tabId)
+              onClose()
+            }}
+            className="w-full px-4 py-2 text-left text-sm text-text-primary hover:bg-background-hover transition-colors flex items-center gap-2"
+          >
+            <RefreshCw size={12} />
+            <span>{t('tabs.refresh', '刷新')}</span>
+          </button>
+        </>
+      )}
 
       {/* 路径操作（仅 editor tab 有 filePath 时显示） */}
       {(onCopyPath || onCopyRelativePath || onRevealInExplorer) && (

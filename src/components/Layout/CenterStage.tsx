@@ -173,6 +173,43 @@ export function TabBar({ className = '' }: TabBarProps) {
     setUnsavedDialog({ visible: false, tabId: '', fileName: '' })
   }, [])
 
+  // 刷新 Tab（关闭旧 Tab → 重新打开，跳过 browser tab（浏览器有原生 reload））
+  const handleRefreshTab = useCallback((tabId: string) => {
+    const tab = tabs.find(t => t.id === tabId)
+    if (!tab || tab.type === 'browser') return
+
+    // 同步 dirty 状态并检查
+    syncEditorDirtyToTab(tab)
+    if (checkTabDirty(tab)) {
+      setUnsavedDialog({
+        visible: true,
+        tabId: tab.id,
+        fileName: tab.title,
+      })
+      return
+    }
+
+    // 先关闭 Tab（清理缓冲区和资源）
+    closeTab(tabId)
+
+    // 根据 Tab 类型重新打开
+    if (tab.type === 'editor' && tab.filePath) {
+      useFileEditorStore.getState().openFile(tab.filePath, tab.title)
+    } else if (tab.type === 'preview' && tab.filePath) {
+      useTabStore.getState().openPreviewTab(tab.filePath, tab.title, tab.metadata)
+    } else if (tab.type === 'diff' && tab.diffData) {
+      useTabStore.getState().openDiffTab(tab.diffData, {
+        identity: tab.metadata?.diffIdentity,
+        titleContext: tab.metadata?.diffTitleContext,
+        metadata: tab.metadata,
+      })
+    } else if (tab.type === 'git') {
+      useTabStore.getState().openGitTab({
+        initialGitTab: tab.metadata?.initialGitTab,
+      })
+    }
+  }, [tabs, syncEditorDirtyToTab, checkTabDirty, closeTab])
+
   // 右键菜单处理
   const handleContextMenu = useCallback(
     (e: React.MouseEvent, tabId: string) => {
@@ -288,6 +325,7 @@ export function TabBar({ className = '' }: TabBarProps) {
         }}
         onCloseRight={closeRightTabs}
         onCloseSaved={closeSavedTabs}
+        onRefreshTab={handleRefreshTab}
         onCopyPath={(tabId) => {
           const tab = tabs.find(t => t.id === tabId)
           if (tab?.filePath) {
