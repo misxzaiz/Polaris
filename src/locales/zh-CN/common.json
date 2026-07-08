@@ -129,6 +129,7 @@
     "closeOthers": "关闭其他",
     "closeAll": "关闭所有",
     "refresh": "刷新",
+    "refreshFailed": "刷新失败",
     "unsavedChanges": "未保存的更改",
     "unsavedChangesMessage": "\"{{name}}\" 有未保存的更改。是否保存？",
     "save": "保存",

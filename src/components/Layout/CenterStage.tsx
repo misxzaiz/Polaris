@@ -174,7 +174,7 @@ export function TabBar({ className = '' }: TabBarProps) {
   }, [])
 
   // 刷新 Tab（关闭旧 Tab → 重新打开，跳过 browser tab（浏览器有原生 reload））
-  const handleRefreshTab = useCallback((tabId: string) => {
+  const handleRefreshTab = useCallback(async (tabId: string) => {
     const tab = tabs.find(t => t.id === tabId)
     if (!tab || tab.type === 'browser') return
 
@@ -193,22 +193,50 @@ export function TabBar({ className = '' }: TabBarProps) {
     closeTab(tabId)
 
     // 根据 Tab 类型重新打开
-    if (tab.type === 'editor' && tab.filePath) {
-      useFileEditorStore.getState().openFile(tab.filePath, tab.title)
-    } else if (tab.type === 'preview' && tab.filePath) {
-      useTabStore.getState().openPreviewTab(tab.filePath, tab.title, tab.metadata)
-    } else if (tab.type === 'diff' && tab.diffData) {
-      useTabStore.getState().openDiffTab(tab.diffData, {
-        identity: tab.metadata?.diffIdentity,
-        titleContext: tab.metadata?.diffTitleContext,
-        metadata: tab.metadata,
-      })
-    } else if (tab.type === 'git') {
-      useTabStore.getState().openGitTab({
-        initialGitTab: tab.metadata?.initialGitTab,
-      })
+    try {
+      if (tab.type === 'editor' && tab.filePath) {
+        await useFileEditorStore.getState().openFile(tab.filePath, tab.title)
+      } else if (tab.type === 'preview' && tab.filePath) {
+        useTabStore.getState().openPreviewTab(tab.filePath, tab.title, tab.metadata)
+      } else if (tab.type === 'diff' && tab.diffData) {
+        // Diff 刷新需要重新获取最新的 diff 数据（旧数据来自当前 git 快照，可能已过时）
+        const currentWorkspacePath = currentWorkspace?.path
+        if (currentWorkspacePath && tab.metadata?.diffIdentity) {
+          const { useGitStore } = await import('@/stores/gitStore')
+          const gitStore = useGitStore.getState()
+          // 获取当前工作区状态来确定 base commit
+          if (gitStore.status?.commit) {
+            await gitStore.getDiffs(currentWorkspacePath, gitStore.status.commit)
+            // 从最新的 diffs 中找到对应文件的 diff
+            const refreshedDiff = gitStore.diffs.find(d => d.file_path === tab.diffData?.file_path)
+            if (refreshedDiff) {
+              useTabStore.getState().openDiffTab(refreshedDiff, {
+                identity: tab.metadata.diffIdentity,
+                titleContext: tab.metadata.diffTitleContext,
+                metadata: tab.metadata,
+              })
+              return
+            }
+          }
+        }
+        // 退回到使用原有 diffData 打开
+        useTabStore.getState().openDiffTab(tab.diffData, {
+          identity: tab.metadata?.diffIdentity,
+          titleContext: tab.metadata?.diffTitleContext,
+          metadata: tab.metadata,
+        })
+      } else if (tab.type === 'git') {
+        useTabStore.getState().openGitTab({
+          initialGitTab: tab.metadata?.initialGitTab,
+        })
+      }
+    } catch (err) {
+      toast.error(
+        t('tabs.refreshFailed', '刷新失败'),
+        err instanceof Error ? err.message : String(err),
+      )
     }
-  }, [tabs, syncEditorDirtyToTab, checkTabDirty, closeTab])
+  }, [tabs, currentWorkspace, syncEditorDirtyToTab, checkTabDirty, closeTab, toast, t])
 
   // 右键菜单处理
   const handleContextMenu = useCallback(
