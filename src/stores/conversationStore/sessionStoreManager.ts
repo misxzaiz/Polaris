@@ -176,6 +176,7 @@ function createSessionManagerStore() {
         updatedAt: timestamp,
         forkFromId: options.forkFromId,
         modelProfileId: options.modelProfileId,
+        model: options.model,
         kind: options.kind,
         commitWorkspaceId: options.commitWorkspaceId,
       }
@@ -384,7 +385,7 @@ function createSessionManagerStore() {
         viewState.requestScrollToSession(sessionId)
       }
 
-      // P1: 切换会话时，把该会话的生效 Profile 同步到状态栏镜像。
+      // P1: 切换会话时，把该会话的生效 Profile 与模型同步到状态栏镜像。
       // 生效值 = 会话覆盖 ?? 全局默认；这样无覆盖会话显示并使用全局默认，与发送逻辑一致。
       const targetMetadata = get().sessionMetadata.get(sessionId)
       if (targetMetadata) {
@@ -396,6 +397,9 @@ function createSessionManagerStore() {
           ? ''
           : (sessionOverride ?? globalDefault ?? '')
         useSessionConfig.getState().setModelProfileId(mirror)
+
+        // 会话级模型镜像：有覆盖时用之，未设置时清空（让状态栏反映全局默认）。
+        useSessionConfig.getState().setModel(targetMetadata.model ?? '')
       }
 
       log.info('切换会话', { sessionId })
@@ -479,6 +483,28 @@ function createSessionManagerStore() {
       })
 
       log.info('更新会话 Profile', { sessionId, modelProfileId })
+    },
+
+    updateSessionModel: (sessionId, model) => {
+      const metadata = get().sessionMetadata.get(sessionId)
+      if (!metadata) {
+        log.warn('会话不存在', { sessionId })
+        return
+      }
+
+      set((state) => {
+        const newMetadata = new Map(state.sessionMetadata)
+        newMetadata.set(sessionId, {
+          ...metadata,
+          // null = 清除会话级覆盖（→ 跟随全局默认）；字符串（含空串）原样保留。
+          // 用 ?? 而非 ||：只把 null/undefined 当「清除」，避免误伤有意义的值。
+          model: model ?? undefined,
+          updatedAt: new Date().toISOString(),
+        })
+        return { sessionMetadata: newMetadata }
+      })
+
+      log.info('更新会话模型', { sessionId, model })
     },
 
     makeSessionVisible: (sessionId: string) => {
@@ -891,6 +917,8 @@ const cachedActions = {
   get switchSession() { return sessionStoreManager.getState().switchSession },
   get updateSessionTitle() { return sessionStoreManager.getState().updateSessionTitle },
   get updateSessionEngine() { return sessionStoreManager.getState().updateSessionEngine },
+  get updateSessionModelProfile() { return sessionStoreManager.getState().updateSessionModelProfile },
+  get updateSessionModel() { return sessionStoreManager.getState().updateSessionModel },
   get makeSessionVisible() { return sessionStoreManager.getState().makeSessionVisible },
   get addToBackground() { return sessionStoreManager.getState().addToBackground },
   get removeFromBackground() { return sessionStoreManager.getState().removeFromBackground },

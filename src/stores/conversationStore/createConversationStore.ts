@@ -1125,6 +1125,8 @@ export function createConversationStore(
             sessionConfig.modelProfileId,
             getActiveModelProfile()?.id,
           )
+          // 会话级模型优先，未设置时降级到全局 sessionConfig 解析结果（resolveRuntimeConfigForEngine）。
+          const resolvedModel = sessionMeta?.model ?? runtimeConfig.model
           const disabledMcpServers = getDisabledPluginMcpServers()
 
           // 一次性系统提示（语音伙伴人格等）：经 appendSystemPrompt 通道注入，
@@ -1144,7 +1146,7 @@ export function createConversationStore(
             attachments: attachmentsForBackend,
             additionalDirs: contextWorkspaces.map(w => w.path).filter(Boolean),
             agent: runtimeConfig.agent,
-            model: runtimeConfig.model,
+            model: resolvedModel,
             effort: runtimeConfig.effort,
             permissionMode: runtimeConfig.permissionMode,
             allowedTools: sendOptions?.allowedTools && sendOptions.allowedTools.length > 0
@@ -1261,6 +1263,8 @@ export function createConversationStore(
           sessionConfig.modelProfileId,
           getActiveModelProfile()?.id,
         )
+        // 会话级模型优先，未设置时降级到全局 sessionConfig 解析结果（resolveRuntimeConfigForEngine）。
+        const resolvedModel = sessionMeta?.model ?? runtimeConfig.model
         const disabledMcpServers = getDisabledPluginMcpServers()
 
         try {
@@ -1277,7 +1281,7 @@ export function createConversationStore(
               disabledMcpServers,
               additionalDirs: contextWorkspaces.map(w => w.path).filter(Boolean),
               agent: runtimeConfig.agent,
-              model: runtimeConfig.model,
+              model: resolvedModel,
               effort: runtimeConfig.effort,
               permissionMode: runtimeConfig.permissionMode,
               // 并入会话级放行集合：scope=session/global 授权过的工具在本会话续聊中持续放行（每次新进程 --resume 自动携带）。

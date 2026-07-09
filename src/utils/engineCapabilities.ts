@@ -10,14 +10,16 @@
  * | 选择器     | claude-code | codex | simple-ai | mimo |
  * |-----------|:-----------:|:-----:|:---------:|:----:|
  * | agent     | ✅ --agent  | ❌    | ❌        | ❌   |
- * | model     | ✅ 别名     | ✅    | ❌(用profile.model) | ✅ provider/model |
+ * | model     | ✅ 别名     | ✅    | ✅(用profile.model) | ✅ provider/model |
  * | effort    | ✅          | ❌    | ❌        | ❌   |
  * | permission| ✅          | ✅    | ❌        | ✅(仅bypass) |
  * | profile   | ✅          | ✅    | ✅(必需)  | ❌(内置认证,选了会报 incompatibleRuntime) |
  *
  * 说明：
  * - codex 后端 build_command 不接收 agent / effort，展示它们只会误导用户。
- * - simple-ai 完全由 profile 的 baseUrl/apiKey/model 驱动，其余项均为 no-op。
+ * - simple-ai 的 model 选择器由所选 Profile 的 modelOptions 驱动（commands/chat.rs
+ *   apply_model_profile_options 优先使用前端 selected_model），agent/effort/permission
+ *   由文件系统与自定义配置驱动，不暴露。
  * - mimo 使用内置认证，profile 不仅无效，且 targetEngine 不匹配时后端会中断请求
  *   （见 commands/chat.rs apply_model_profile_options 的 incompatibleRuntime 分支）。
  */
@@ -37,7 +39,7 @@ export type SelectorType = 'agent' | 'model' | 'effort' | 'permission' | 'profil
 const ENGINE_SELECTOR_CAPABILITIES: Record<string, SelectorType[]> = {
   'claude-code': ['agent', 'model', 'effort', 'permission', 'profile'],
   codex: ['model', 'permission', 'profile'],
-  'simple-ai': ['profile'],
+  'simple-ai': ['model', 'profile'],
   mimo: ['model', 'permission'],
 }
 

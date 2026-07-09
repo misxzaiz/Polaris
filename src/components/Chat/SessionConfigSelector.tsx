@@ -129,13 +129,23 @@ export function SessionConfigSelector({
           : 'claude'
 
   // 模型列表：根据当前选中的 Profile 动态生成。
-  // - 选择官方 API（modelProfileId='' 或未选 Profile）：使用官方模型档位
+  // - 选择官方 API（modelProfileId='' 或未选 Profile）：
+  //   · claude / mimo：使用官方模型档位
+  //   · codex：使用 Profile 模型或空（无 Profile 时显示通用项）
+  //   · simple-ai：必须由 Profile 提供，无 Profile 时为空（SimpleAI 无官方通道）
   // - 选择某个 Profile：使用该 Profile 的 modelOptions（为空时回退到 [model]）
   const modelList = useMemo(() => {
     const profileId = config.modelProfileId
-    if (!profileId) return PRESET_MODELS
+    if (!profileId) {
+      // SimpleAI 模型完全由 Profile 驱动，无 Profile 时不可选模型
+      if (currentEngine === 'simple-ai') return []
+      return PRESET_MODELS
+    }
     const profile = profiles.find(p => p.id === profileId)
-    if (!profile) return PRESET_MODELS
+    if (!profile) {
+      if (currentEngine === 'simple-ai') return []
+      return PRESET_MODELS
+    }
     const options = (profile.modelOptions?.length ? profile.modelOptions : [profile.model]).filter(Boolean)
     return options.map(m => ({
       id: m,
@@ -143,7 +153,7 @@ export function SessionConfigSelector({
       description: '',
       supportsStreaming: true,
     }))
-  }, [config.modelProfileId, profiles])
+  }, [config.modelProfileId, profiles, currentEngine])
 
   // 按当前引擎过滤 Profile 列表
   const compatibleProfiles = useMemo(() => {
@@ -200,14 +210,15 @@ export function SessionConfigSelector({
       ...config,
       ...nextConfig,
     })
-    // P1: Profile 是会话级覆盖 — 写入当前会话的 metadata，实现窗口间隔离。
-    // 不写全局 modelProfileStore（避免泄漏到其他无覆盖会话）；全局默认仅由设置页管理。
-    if (type === 'profile') {
-      const activeId = sessionStoreManager.getState().activeSessionId
-      if (activeId) {
+    // P1: Profile / Model 是会话级覆盖 — 写入当前会话的 metadata，实现窗口间隔离。
+    const activeId = sessionStoreManager.getState().activeSessionId
+    if (activeId) {
+      if (type === 'profile') {
         // 空值 = 用户明确选「官方 API」：用哨兵记录，与「未设置 → 跟随全局」区分，
         // 使会话级官方覆盖优先于全局默认（否则发送时会被静默回退到全局 Profile）。
         sessionStoreManager.getState().updateSessionModelProfile(activeId, value || OFFICIAL_API_PROFILE)
+      } else if (type === 'model') {
+        sessionStoreManager.getState().updateSessionModel(activeId, value)
       }
     }
     setOpenDropdown(null)
