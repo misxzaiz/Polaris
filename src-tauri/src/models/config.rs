@@ -191,6 +191,9 @@ pub struct ModelProfile {
     pub api_key: String,
     /// 目标模型名称（发给代理端点的模型标识）
     pub model: String,
+    /// 该供应商可选模型列表；为空时回退到 model
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_options: Option<Vec<String>>,
     /// 是否为当前激活 Profile
     #[serde(default)]
     pub active: bool,
@@ -224,6 +227,9 @@ pub struct ModelProfile {
     /// 可选：Profile 描述
     #[serde(default)]
     pub description: Option<String>,
+    /// 上次从端点拉取的模型列表（仅前端 UI 缓存用）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fetched_models: Option<Vec<String>>,
     /// 认证方式：auth_token（默认）/ api_key / custom_env / none。
     /// None 时按 "auth_token" 处理，兼容旧数据。
     #[serde(default, skip_serializing_if = "Option::is_none")]

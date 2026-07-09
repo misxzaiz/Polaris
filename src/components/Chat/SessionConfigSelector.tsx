@@ -56,18 +56,6 @@ function wireApiBadge(wireApi?: WireApi): string {
   }
 }
 
-/** Profile 线路协议的简短名称（描述文案用） */
-function wireApiShortLabel(wireApi?: WireApi): string {
-  switch (wireApi) {
-    case 'openai-chat-completions':
-      return 'OpenAI Chat'
-    case 'openai-responses':
-      return 'OpenAI Responses'
-    default:
-      return 'Anthropic'
-  }
-}
-
 /** 安全解析 baseUrl 主机名，非法 URL 时回退原串（避免选择器渲染崩溃） */
 function safeHostname(baseUrl: string): string {
   try {
@@ -140,10 +128,22 @@ export function SessionConfigSelector({
           ? 'mimo'
           : 'claude'
 
-  // 模型列表：仅官方模型档位（opus/sonnet/haiku）。
-  // 第三方端点请使用独立的「端点（profile）」选择器——model 字段会原样传给 CLI 的 --model，
-  // 混入 profile: 项会被当作无效模型名，故此处不再合并 Profile。
-  const modelList = PRESET_MODELS
+  // 模型列表：根据当前选中的 Profile 动态生成。
+  // - 选择官方 API（modelProfileId='' 或未选 Profile）：使用官方模型档位
+  // - 选择某个 Profile：使用该 Profile 的 modelOptions（为空时回退到 [model]）
+  const modelList = useMemo(() => {
+    const profileId = config.modelProfileId
+    if (!profileId) return PRESET_MODELS
+    const profile = profiles.find(p => p.id === profileId)
+    if (!profile) return PRESET_MODELS
+    const options = (profile.modelOptions?.length ? profile.modelOptions : [profile.model]).filter(Boolean)
+    return options.map(m => ({
+      id: m,
+      name: m,
+      description: '',
+      supportsStreaming: true,
+    }))
+  }, [config.modelProfileId, profiles])
 
   // 按当前引擎过滤 Profile 列表
   const compatibleProfiles = useMemo(() => {
@@ -159,16 +159,16 @@ export function SessionConfigSelector({
 
   const getModelLabel = useCallback((modelId?: string) => {
     if (!modelId) return t('sessionConfig.noModel')
-    // Profile 模型
-    if (modelId.startsWith('profile:')) {
-      const profileId = modelId.slice('profile:'.length)
-      const profile = profiles.find(p => p.id === profileId)
-      return profile ? `🔄 ${profile.name}` : modelId
+    // 检查当前选中 Profile 的模型列表
+    const activeProfile = profiles.find(p => p.id === config.modelProfileId)
+    if (activeProfile) {
+      const options = activeProfile.modelOptions?.length ? activeProfile.modelOptions : [activeProfile.model]
+      if (options.includes(modelId)) return modelId
     }
     // 官方模型
     const model = PRESET_MODELS.find(m => m.id === modelId)
     return model?.name || modelId
-  }, [t, profiles])
+  }, [t, profiles, config.modelProfileId])
 
   const getEffortLabel = useCallback((effort?: EffortLevel | '') => {
     if (!effort) return t('sessionConfig.noEffort')
@@ -188,9 +188,17 @@ export function SessionConfigSelector({
     if (value === '__skipped__') return
     // 处理字段名映射
     const configKey = type === 'permission' ? 'permissionMode' : type === 'profile' ? 'modelProfileId' : type
+    // 切换供应商时自动重置模型选择
+    const nextConfig: Partial<SessionRuntimeConfig> = {
+      [configKey]: value,
+    }
+    if (type === 'profile') {
+      // 切换到官方 API 或新供应商时，清空模型选择（让用户重新选或默认）
+      nextConfig.model = ''
+    }
     onChange({
       ...config,
-      [configKey]: value,
+      ...nextConfig,
     })
     // P1: Profile 是会话级覆盖 — 写入当前会话的 metadata，实现窗口间隔离。
     // 不写全局 modelProfileStore（避免泄漏到其他无覆盖会话）；全局默认仅由设置页管理。
@@ -266,11 +274,14 @@ export function SessionConfigSelector({
           description: t('sessionConfig.officialApiDesc'),
         })
         // 过滤出与当前引擎兼容的 Profile
-        items.push(...compatibleProfiles.map(p => ({
-          value: p.id,
-          label: `${wireApiBadge(p.wireApi)} ${p.name}`,
-          description: p.description || `${p.model} @ ${safeHostname(p.baseUrl)} · ${wireApiShortLabel(p.wireApi)}`,
-        })))
+        items.push(...compatibleProfiles.map(p => {
+          const modelCount = p.modelOptions?.length || 1
+          return {
+            value: p.id,
+            label: `${wireApiBadge(p.wireApi)} ${p.name}`,
+            description: p.description || `${p.baseUrl ? safeHostname(p.baseUrl) : ''} · ${modelCount} 个模型`,
+          }
+        }))
         // 如果有被过滤掉的 Profile，显示提示
         const skippedCount = profiles.length - compatibleProfiles.length
         if (skippedCount > 0) {
@@ -362,7 +373,7 @@ export function SessionConfigSelector({
     },
     profile: {
       icon: <Plug size={12} />,
-      label: t('sessionConfig.profile'),
+      label: t('sessionConfig.provider'),
       getValue: () => {
         if (!config.modelProfileId) return t('sessionConfig.noProfile')
         const profile = profiles.find(p => p.id === config.modelProfileId)

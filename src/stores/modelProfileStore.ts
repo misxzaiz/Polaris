@@ -77,6 +77,7 @@ export const useModelProfileStore = create<ModelProfileState>()((set, get) => ({
       baseUrl: params.baseUrl,
       apiKey: params.apiKey,
       model: params.model,
+      modelOptions: params.modelOptions,
       wireApi: params.wireApi,
       targetEngines: params.targetEngines,
       category: params.category,

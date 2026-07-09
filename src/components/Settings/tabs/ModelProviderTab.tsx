@@ -71,6 +71,8 @@ interface ProfileForm {
   baseUrl: string
   apiKey: string
   model: string
+  modelOptions: string[]
+  fetchedModels: string[]
   wireApi: WireApi
   targetEngines: ProfileTargetEngine[]
   category: ProfileCategory | ''
@@ -86,6 +88,8 @@ const EMPTY_FORM: ProfileForm = {
   baseUrl: '',
   apiKey: '',
   model: '',
+  modelOptions: [],
+  fetchedModels: [],
   wireApi: 'anthropic-messages',
   targetEngines: [],
   category: '',
@@ -122,6 +126,10 @@ function safeHostname(url: string): string {
   }
 }
 
+function normalizeModelOptions(model: string, modelOptions: string[] = [], fetchedModels: string[] = []): string[] {
+  return [...new Set([model, ...modelOptions, ...fetchedModels].map(m => m.trim()).filter(Boolean))]
+}
+
 /** 由表单构造用于「连接测试 / 拉取模型」的临时 Profile */
 function formToProbeProfile(form: ProfileForm): ModelProfile {
   return {
@@ -130,6 +138,7 @@ function formToProbeProfile(form: ProfileForm): ModelProfile {
     baseUrl: form.baseUrl,
     apiKey: form.apiKey,
     model: form.model,
+    modelOptions: normalizeModelOptions(form.model, form.modelOptions, form.fetchedModels),
     active: false,
     wireApi: form.wireApi,
     targetEngines: form.targetEngines,
@@ -374,6 +383,8 @@ function ProfileEditorModal({
       baseUrl: initialProfile.baseUrl,
       apiKey: initialProfile.apiKey,
       model: initialProfile.model,
+      modelOptions: [...(initialProfile.modelOptions ?? [])],
+      fetchedModels: [...(initialProfile.fetchedModels ?? [])],
       wireApi: initialProfile.wireApi ?? 'anthropic-messages',
       targetEngines: resolveTargetEngines(initialProfile),
       category: initialProfile.category ?? '',
@@ -384,7 +395,6 @@ function ProfileEditorModal({
       customEnv: recordToPairs(initialProfile.customEnv),
     }
   })
-  const [fetchedModels, setFetchedModels] = useState<string[]>(initialProfile?.fetchedModels ?? [])
   const [fetching, setFetching] = useState(false)
   const [testing, setTesting] = useState(false)
   const [showApiKey, setShowApiKey] = useState(false)
@@ -407,7 +417,9 @@ function ProfileEditorModal({
     setFetching(true)
     try {
       const models = await fetchModelsForProfile(formToProbeProfile(form))
-      setFetchedModels(models)
+      // 合并去重后写入 form.fetchedModels，并并入 modelOptions 供保存持久化
+      const merged = normalizeModelOptions(form.model, form.modelOptions, models)
+      patch({ fetchedModels: models, modelOptions: merged })
       if (models.length > 0) {
         success(t('modelProfile.fetchModels'), t('modelProfile.fetchModelsSuccess', { count: models.length }))
         if (!form.model) patch({ model: models[0] })
@@ -546,11 +558,20 @@ function ProfileEditorModal({
                   type="text"
                   list="model-provider-fetched-models"
                   value={form.model}
-                  onChange={(e) => patch({ model: e.target.value })}
+                  onChange={(e) => {
+                    const next = e.target.value
+                    // 同步进 modelOptions：新值非空且不在列表中时追加，保证默认模型始终可选
+                    patch({
+                      model: next,
+                      modelOptions: next.trim() && !form.modelOptions.includes(next.trim())
+                        ? [...form.modelOptions, next.trim()]
+                        : form.modelOptions,
+                    })
+                  }}
                   className={fieldClass}
                 />
                 <datalist id="model-provider-fetched-models">
-                  {fetchedModels.map((m) => (
+                  {form.fetchedModels.map((m) => (
                     <option key={m} value={m} />
                   ))}
                 </datalist>
@@ -565,11 +586,63 @@ function ProfileEditorModal({
                   {t('modelProfile.fetchModels')}
                 </button>
               </div>
-              {fetchedModels.length > 0 && (
+              {form.fetchedModels.length > 0 && (
                 <p className="text-[11px] text-text-tertiary mt-1">
-                  {t('modelProfile.fetchedModelsHint', { count: fetchedModels.length })}
+                  {t('modelProfile.fetchedModelsHint', { count: form.fetchedModels.length })}
                 </p>
               )}
+              {/* 可选模型列表：默认模型必须来自此列表 */}
+              <div className="mt-2 space-y-1.5">
+                {form.modelOptions.map((m, idx) => (
+                  <div key={`${m}-${idx}`} className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => patch({ model: m })}
+                      className={`shrink-0 w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${
+                        form.model === m ? 'border-primary bg-primary' : 'border-border'
+                      }`}
+                      title={form.model === m ? t('modelProfile.defaultModel') : t('modelProfile.setAsDefault')}
+                    >
+                      {form.model === m && <Check size={10} className="text-white" />}
+                    </button>
+                    <input
+                      type="text"
+                      value={m}
+                      onChange={(e) => {
+                        const next = e.target.value
+                        const updated = [...form.modelOptions]
+                        updated[idx] = next
+                        patch({ modelOptions: updated, model: form.model === m ? next : form.model })
+                      }}
+                      className={`${fieldClass} text-xs font-mono`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const updated = form.modelOptions.filter((_, i) => i !== idx)
+                        // 删除的是默认模型 → 自动切到列表第一项
+                        const nextModel = form.model === m ? (updated[0] ?? '') : form.model
+                        patch({ modelOptions: updated, model: nextModel })
+                      }}
+                      className="shrink-0 p-1 text-text-tertiary hover:text-red-500 transition-colors"
+                      title={t('common:delete')}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = form.modelOptions.includes('') ? form.modelOptions : [...form.modelOptions, '']
+                    patch({ modelOptions: next })
+                  }}
+                  className="flex items-center gap-1 text-xs text-primary hover:text-primary-hover transition-colors"
+                >
+                  <Plus size={12} />
+                  {t('modelProfile.addModelOption')}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -863,6 +936,7 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
         baseUrl: preset.baseUrls[0] || '',
         apiKey: '',
         model: preset.commonModels[0] || '',
+        modelOptions: [...preset.commonModels],
         active: false,
         wireApi: preset.defaultWireApi,
         targetEngines: preset.defaultTargetEngines,
@@ -885,6 +959,7 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
       ...profile,
       id: '',
       name: `${profile.name} (副本)`,
+      modelOptions: [...(profile.modelOptions ?? [])],
       active: false,
     })
     setShowEditor(true)
@@ -904,6 +979,7 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
       baseUrl: form.baseUrl.trim(),
       apiKey: form.apiKey,
       model: form.model.trim(),
+      modelOptions: normalizeModelOptions(form.model, form.modelOptions, form.fetchedModels),
       wireApi: form.wireApi,
       targetEngines: form.targetEngines,
       category: form.category || undefined,

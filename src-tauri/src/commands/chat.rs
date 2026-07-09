@@ -773,7 +773,21 @@ async fn apply_model_profile_options(
         }
     }
 
-    Ok(session_opts.with_model(profile.model.clone()))
+    // 如果前端传入了模型，优先使用前端选择的模型（Profile 多模型选择）
+    // 否则回退到 Profile 默认模型
+    let selected_model = session_opts.model.clone().unwrap_or_else(|| profile.model.clone());
+
+    // 如果选了非默认模型，更新日志
+    if selected_model != profile.model {
+        tracing::info!(
+            "[{}] Profile 使用前端选择的模型: {}（Profile 默认: {}）",
+            log_scope,
+            selected_model,
+            profile.model
+        );
+    }
+
+    Ok(session_opts.with_model(selected_model))
 }
 
 // ============================================================================

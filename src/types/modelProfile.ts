@@ -73,8 +73,10 @@ export interface ModelProfile {
   baseUrl: string
   /** API 密钥 */
   apiKey: string
-  /** 目标模型名称（发给代理端点的模型标识） */
+  /** 目标模型名称（默认模型，发给代理端点的模型标识） */
   model: string
+  /** 该供应商可选模型列表；为空时回退到 model */
+  modelOptions?: string[]
   /** 是否为当前激活 Profile */
   active: boolean
   /**
@@ -126,6 +128,7 @@ export interface CreateModelProfileParams {
   baseUrl: string
   apiKey: string
   model: string
+  modelOptions?: string[]
   wireApi?: WireApi
   targetEngines?: ProfileTargetEngine[]
   category?: ProfileCategory
@@ -143,6 +146,7 @@ export interface UpdateModelProfileParams {
   baseUrl?: string
   apiKey?: string
   model?: string
+  modelOptions?: string[]
   wireApi?: WireApi
   targetEngines?: ProfileTargetEngine[]
   category?: ProfileCategory
