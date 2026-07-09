@@ -511,6 +511,7 @@
     "effort": "努力",
     "permission": "权限",
     "profile": "端点",
+    "provider": "供应商",
     "noProfile": "官方 API",
     "officialApi": "官方 API",
     "officialApiDesc": "使用官方 Anthropic 端点（不通过 Profile）",

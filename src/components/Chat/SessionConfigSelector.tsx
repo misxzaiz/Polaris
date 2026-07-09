@@ -556,7 +556,7 @@ export function CompactSessionSelector({
     model: t('sessionConfig.model'),
     effort: t('sessionConfig.effort'),
     permission: t('sessionConfig.permission'),
-    profile: t('sessionConfig.profile'),
+    profile: t('sessionConfig.provider'),
   }
 
   return (

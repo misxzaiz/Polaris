@@ -512,6 +512,7 @@
     "effort": "Effort",
     "permission": "Permission",
     "profile": "Endpoint",
+    "provider": "Provider",
     "noProfile": "Official API",
     "officialApi": "Official API",
     "officialApiDesc": "Use the official Anthropic endpoint (no profile)",
