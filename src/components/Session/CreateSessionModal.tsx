@@ -271,24 +271,35 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
                 <div className="max-h-32 overflow-y-auto border border-border rounded-lg">
                   {filteredWorkspaces
                     .filter(w => w.id !== primaryWorkspaceId)
-                    .map((workspace, index, arr) => (
-                      <label
-                        key={workspace.id}
-                        className={cn(
-                          'flex items-center px-3 py-2 text-sm cursor-pointer',
-                          'hover:bg-background-hover transition-colors',
-                          index !== arr.length - 1 && 'border-b border-border-subtle'
-                        )}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={contextWorkspaceIds.includes(workspace.id)}
-                          onChange={() => handleToggleContextWorkspace(workspace.id)}
-                          className="w-4 h-4 rounded border-border text-primary focus:ring-primary shrink-0"
-                        />
-                        <span className="ml-2 truncate text-text-secondary">{workspace.name}</span>
-                      </label>
-                    ))}
+                    .map((workspace, index, arr) => {
+                      const isContext = contextWorkspaceIds.includes(workspace.id)
+                      return (
+                        <label
+                          key={workspace.id}
+                          className={cn(
+                            'flex items-start px-3 py-2 text-sm cursor-pointer',
+                            'hover:bg-background-hover transition-colors',
+                            index !== arr.length - 1 && 'border-b border-border-subtle',
+                            isContext && 'bg-primary/5'
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isContext}
+                            onChange={() => handleToggleContextWorkspace(workspace.id)}
+                            className="w-4 h-4 mt-0.5 rounded border-border text-primary focus:ring-primary shrink-0"
+                          />
+                          <div className="ml-2 min-w-0 flex-1">
+                            <div className={cn('truncate', isContext ? 'text-primary' : 'text-text-secondary')}>
+                              {workspace.name}
+                            </div>
+                            <div className="text-xs truncate text-text-tertiary mt-0.5">
+                              {workspace.path}
+                            </div>
+                          </div>
+                        </label>
+                      )
+                    })}
                 </div>
                 {contextWorkspaceIds.length > 0 && (
                   <p className="mt-2 text-xs text-text-tertiary">

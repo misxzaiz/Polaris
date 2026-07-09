@@ -425,7 +425,14 @@
     "title": "New session",
     "newChat": "New chat {{number}}",
     "aiEngine": "AI Engine",
-    "noWorkspace": "No workspace"
+    "noWorkspace": "No workspace",
+    "searchWorkspace": "Search workspace...",
+    "noResults": "No matching workspace",
+    "create": "Create",
+    "selectPrimaryHint": "Select a primary workspace; use + on the right to add context",
+    "contextCount": "Context {{count}}",
+    "addContext": "Add context workspace",
+    "removeContext": "Remove context workspace"
   },
   "multiSession": {
     "mode": "Multi-session window mode",

@@ -424,7 +424,14 @@
     "title": "新建会话",
     "newChat": "新对话 {{number}}",
     "aiEngine": "AI 引擎",
-    "noWorkspace": "无工作区"
+    "noWorkspace": "无工作区",
+    "searchWorkspace": "搜索工作区...",
+    "noResults": "无匹配工作区",
+    "create": "创建",
+    "selectPrimaryHint": "选择主工作区，右侧 + 可添加关联",
+    "contextCount": "关联 {{count}}",
+    "addContext": "添加关联工作区",
+    "removeContext": "移除关联工作区"
   },
   "multiSession": {
     "mode": "多会话窗口模式",
