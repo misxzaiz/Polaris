@@ -12,7 +12,6 @@ import type { PluginCardBlock } from '@/types'
 import { chatCardRegistry } from '@/plugin-system/chatCardRegistry'
 import type { ConversationStore } from './types'
 import { voiceNotificationService } from '@/services/voiceNotificationService'
-import { useSessionStore } from '../index'
 import { sessionStoreManager } from './sessionStoreManager'
 import { normalizeEngineId } from '@/utils/engineDisplay'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -81,23 +80,11 @@ export function handleAIEvent(
       break
 
     case 'session_end': {
-      const completedMessage = state.finishMessage()
+      state.finishMessage()
       set({
         isStreaming: false,
         progressMessage: null,
       })
-      // 语音提醒：AI 回复自动朗读
-      if (completedMessage) {
-        // 检查是否为语音输入触发的对话
-        const { inputWasVoice, setInputWasVoice } = useSessionStore.getState()
-        // force: true = 语音输入强制播放, false = 键盘输入不播放
-        voiceNotificationService.speakAIResponse(completedMessage, { force: inputWasVoice })
-        // 重置语音输入标记
-        if (inputWasVoice) {
-          setInputWasVoice(false)
-        }
-      }
-
       // 保存到自有 JSONL 存储（整体覆写，幂等保序）
       // 必须用 get() 取 finishMessage() 之后的最新 state，否则会丢失最后一条 AI 回复
       saveDialog(get())

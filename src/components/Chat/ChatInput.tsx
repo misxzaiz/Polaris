@@ -186,7 +186,6 @@ export function ChatInput({
     clearSpeechTranscript,
     setSpeechCommand,
     setSpeechWakeActive,
-    setInputWasVoice,
   } = useSessionStore()
 
   // 处理语音识别文字
@@ -197,12 +196,10 @@ export function ChatInput({
       setLocalText(newText)
       // 持久化到 Store（立即，不防抖，因为是一次性追加）
       updateInputDraft({ text: newText, attachments })
-      // 标记输入来源为语音
-      setInputWasVoice(true)
       clearSpeechTranscript()
       textareaRef.current?.focus()
     }
-  }, [speechTranscript, clearSpeechTranscript, localText, attachments, updateInputDraft, setInputWasVoice])
+  }, [speechTranscript, clearSpeechTranscript, localText, attachments, updateInputDraft])
 
   // 同步字数到 store
   useEffect(() => {
