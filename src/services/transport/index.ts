@@ -19,6 +19,7 @@ import { detectTransport } from './detector';
 import { tauriTransport } from './tauriTransport';
 import { createHttpTransport } from './httpTransport';
 import type { ConnectionStatus } from './httpTransport';
+import type { TransportAdapter } from './types';
 import { getServerUrl } from './auth';
 import { useToastStore } from '@/stores/toastStore';
 import { createLogger } from '@/utils/logger';
@@ -74,6 +75,26 @@ function isMobileTauri(): boolean {
     ('__TAURI_INTERNALS__' in window);
 }
 
+function createConfiguredHttpTransport(): TransportAdapter {
+  return createHttpTransport(
+    getServerUrl(),
+    {
+      onStatusChange: handleConnectionStatusChange,
+      onResumeGap: handleResumeGap,
+    },
+  );
+}
+
+let transport: TransportAdapter = currentMode === 'tauri'
+  ? tauriTransport
+  : createConfiguredHttpTransport();
+
+function rebuildHttpTransport(): void {
+  if (currentMode !== 'http') return;
+  transport.disconnect?.();
+  transport = createConfiguredHttpTransport();
+}
+
 /**
  * 尝试从移动端 Rust 后端加载服务器配置到 localStorage。
  * 启动时异步调用，不阻塞 transport 初始化。
@@ -82,29 +103,20 @@ async function loadMobileServerConfig(): Promise<void> {
   if (!isMobileTauri()) return;
   try {
     const { invoke } = await import('@tauri-apps/api/core');
-    const config = await invoke<{ server_url: string; token: string }>('get_server_config');
-    if (config?.server_url) {
-      localStorage.setItem('polaris_server_url', config.server_url);
+    const config = await invoke<{ serverUrl?: string; server_url?: string; token?: string }>('get_server_config');
+    const serverUrl = config?.serverUrl || config?.server_url || '';
+    if (serverUrl) {
+      localStorage.setItem('polaris_server_url', serverUrl);
       if (config.token) {
         localStorage.setItem('polaris_web_token_md5', config.token);
       }
-      log.info(`Mobile server config loaded: ${config.server_url}`);
+      rebuildHttpTransport();
+      log.info(`Mobile server config loaded: ${serverUrl}`);
     }
   } catch (err) {
-    log.warn('Failed to load mobile server config', err instanceof Error ? err : new Error(String(err)));
+    log.warn('Failed to load mobile server config', { error: err instanceof Error ? err.message : String(err) });
   }
 }
-
-/** 全局传输适配器单例 */
-const transport = currentMode === 'tauri'
-  ? tauriTransport
-  : createHttpTransport(
-      getServerUrl(),
-      {
-        onStatusChange: handleConnectionStatusChange,
-        onResumeGap: handleResumeGap,
-      },
-    );
 
 // 移动端异步加载服务器配置，加载完成后重新连接
 if (isMobileTauri()) {

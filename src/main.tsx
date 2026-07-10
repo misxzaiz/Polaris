@@ -2,6 +2,8 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import * as ReactJSXRuntime from "react/jsx-runtime";
 import App from "./App";
+import MobileApp from "./mobile/MobileApp";
+import { shouldRenderMobileApp } from "./mobile/platform";
 import "./i18n";
 
 // 暴露宿主 React 给外部插件面板使用
@@ -21,10 +23,12 @@ import "./i18n";
 
 const root = document.getElementById("root") as HTMLElement;
 
+const RootApp = shouldRenderMobileApp() ? MobileApp : App;
+
 // Both Tauri desktop and Web (HTTP) modes render the main App directly.
-// No token authentication required.
+// Mobile Tauri renders a dedicated app shell to avoid loading desktop-only panes.
 ReactDOM.createRoot(root).render(
   <React.StrictMode>
-    <App />
+    <RootApp />
   </React.StrictMode>,
 );

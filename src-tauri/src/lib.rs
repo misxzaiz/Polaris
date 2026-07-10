@@ -35,7 +35,10 @@ use commands::chat::{
     send_input,
 };
 #[cfg(feature = "tauri-app")]
-use commands::{validate_workspace_path, get_directory_info, get_home_dir};
+use commands::{
+    get_directory_info, get_home_dir, get_server_config, set_server_config,
+    validate_workspace_path,
+};
 #[cfg(feature = "tauri-app")]
 use commands::window::{
     toggle_devtools,
@@ -630,6 +633,8 @@ pub fn run() {
             apply_web_server,
             get_web_server_status,
             get_local_ips,
+            get_server_config,
+            set_server_config,
             set_work_dir,
             set_claude_cmd,
             reset_cli_config,

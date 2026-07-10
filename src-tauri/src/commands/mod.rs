@@ -14,6 +14,10 @@ pub mod data_root_cmd;
 #[cfg(feature = "tauri-app")]
 pub use data_root_cmd::{get_data_root_info, scan_legacy_data_cmd, open_path_in_explorer};
 
+pub mod mobile_config;
+#[cfg(feature = "tauri-app")]
+pub use mobile_config::{get_server_config, set_server_config};
+
 pub mod dialog_storage;
 #[cfg(feature = "tauri-app")]
 pub use dialog_storage::{dialog_list, dialog_list_meta, dialog_read, dialog_write, dialog_delete};

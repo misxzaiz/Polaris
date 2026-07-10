@@ -25,6 +25,12 @@ export function getServerUrl(): string {
   return origin;
 }
 
+function isMobileTauri(): boolean {
+  return typeof navigator !== 'undefined' &&
+    /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) &&
+    ('__TAURI_INTERNALS__' in window);
+}
+
 /** 保存服务器地址 */
 export function storeServerUrl(url: string): void {
   localStorage.setItem(SERVER_URL_KEY, url);
@@ -38,7 +44,7 @@ export function storeServerUrl(url: string): void {
  */
 async function saveToMobileBackend(url: string): Promise<void> {
   try {
-    if (!('__TAURI_INTERNALS__' in window)) return;
+    if (!isMobileTauri()) return;
     const { invoke } = await import('@tauri-apps/api/core');
     const token = localStorage.getItem(TOKEN_MD5_KEY) || '';
     await invoke('set_server_config', { serverUrl: url, token });
@@ -55,6 +61,7 @@ export function getTokenMd5(): string {
 /** 保存 token 的 md5（传入空字符串表示清空/关闭鉴权） */
 export function storeTokenMd5(tokenMd5: string): void {
   localStorage.setItem(TOKEN_MD5_KEY, tokenMd5);
+  saveToMobileBackend(localStorage.getItem(SERVER_URL_KEY) || '');
 }
 
 function rotl(x: number, n: number): number {
