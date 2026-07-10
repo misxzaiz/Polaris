@@ -16,14 +16,11 @@ import {
   Check,
   XCircle,
   Loader2,
-  ThumbsDown,
-  X,
-  Clock,
   ClipboardList,
 } from 'lucide-react';
 import { useActiveSessionConversationId, useActiveSessionActions } from '@/stores/conversationStore/useActiveSession';
 import { Button } from '../Common/Button';
-import type { PlanModeBlock } from '@/types';
+import type { PlanModeBlock, PlanModeStatus } from '@/types';
 
 const log = createLogger('PlanModeBlock');
 
@@ -61,7 +58,7 @@ interface PlanStatusEntry {
 }
 
 /** PlanMode 状态配置 */
-export const PLAN_STATUS_CONFIG: PlanStatusEntry = {
+export const PLAN_STATUS_CONFIG: Record<PlanModeStatus, PlanStatusEntry> = {
   drafting: {
     color: 'text-violet-500',
     bg: 'bg-violet-500/10',
@@ -507,7 +504,6 @@ export const SimplifiedPlanModeRenderer = memo(function SimplifiedPlanModeRender
   block: PlanModeBlock;
 }) {
   const { t } = useTranslation('chat');
-  const statusConfig = PLAN_STATUS_CONFIG[block.status];
 
   // 计算进度
   let totalTasks = 0;
