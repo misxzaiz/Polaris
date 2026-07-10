@@ -891,7 +891,6 @@ pub async fn start_chat_inner(
     let ctx_id_for_session = options.context_id.clone();
     let emit_ref2 = callbacks.emit_event.clone();
     let session_id_update_callback = move |new_session_id: String| {
-        tracing::info!("[start_chat_inner] session_id 更新: {}", new_session_id);
         let event_json = if let Some(ref cid) = ctx_id_for_session {
             serde_json::json!({ "contextId": cid, "payload": { "type": "session_start", "sessionId": new_session_id } })
         } else {
@@ -1053,7 +1052,6 @@ pub async fn continue_chat_inner(
     let ctx_id_for_session = options.context_id.clone();
     let emit_ref2 = callbacks.emit_event.clone();
     let session_id_update_callback = move |new_session_id: String| {
-        tracing::info!("[continue_chat_inner] session_id 更新: {}", new_session_id);
         let event_json = if let Some(ref cid) = ctx_id_for_session {
             serde_json::json!({ "contextId": cid, "payload": { "type": "session_start", "sessionId": new_session_id } })
         } else {
@@ -1119,6 +1117,25 @@ pub async fn continue_chat_inner(
             images.len()
         );
         session_opts = session_opts.with_image_attachments(images);
+    }
+
+    // ──────────────────────────────────────────────────────
+    // FIX(race): 先杀掉旧 claude 进程，再处理代理。
+    //
+    // 旧顺序是 `apply_model_profile_options`（含 start_proxy/kill 旧代理）
+    // 在 `registry.continue_session`（含 kill_process）之前执行。这导致：
+    //   1. 旧代理被杀，端口关闭
+    //   2. 但旧 claude 进程还活着，有 in-flight 请求在等上游响应（可能长达 180s）
+    //   3. claude.exe 立刻收到 ConnectionRefused
+    //
+    // 新顺序：先杀旧进程，确保没有 in-flight 请求后，再安全地切换代理。
+    // try_interrupt_all 是安全的：kill 一个已不存在的进程会静默返回 false。
+    // ──────────────────────────────────────────────────────
+    {
+        let mut registry = state.engine_registry.lock().await;
+        // 用 try_interrupt_all 而非指定 engine_id：per-session 多引擎改造后，
+        // 前端 metadata.engineId 可能与后端实际引擎错配，遍历所有引擎最稳妥。
+        registry.try_interrupt_all(&session_id);
     }
 
     session_opts = apply_model_profile_options(
