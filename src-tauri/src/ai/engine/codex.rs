@@ -719,11 +719,6 @@ impl CodexEngine {
                         SessionManager::update_session_id_shared(
                             &sessions, &temp_id, thread_id, pid, "codex", None,
                         );
-                        tracing::info!(
-                            "[CodexEngine] session_id 更新: {} -> {}",
-                            temp_id,
-                            thread_id
-                        );
 
                         // 通知外部 session_id 已更新
                         if let Some(ref cb) = on_session_id_update {

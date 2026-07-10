@@ -567,7 +567,6 @@ impl MimocodeEngine {
                         SessionManager::update_session_id_shared(
                             &sessions, &real_session_id, sid, pid, "mimo", Some(input_sender.clone())
                         );
-                        tracing::info!("[MimocodeEngine] session_id 更新: {} -> {}", real_session_id, sid);
                         real_session_id = sid.clone();
 
                         if let Some(ref cb) = on_session_id_update {

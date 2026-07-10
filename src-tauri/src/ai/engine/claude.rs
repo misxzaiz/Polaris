@@ -898,13 +898,6 @@ impl ClaudeEngine {
                                     "claude",
                                     Some(sender_for_update.clone()),
                                 );
-                                tracing::info!(
-                                    "[ClaudeEngine] session_id 更新: {} -> {} (init={}, fork={})",
-                                    temp_id,
-                                    real_id,
-                                    is_init,
-                                    skip_init_session_id
-                                );
 
                                 // 通知外部 session_id 已更新
                                 if let Some(ref cb) = on_session_id_update {
