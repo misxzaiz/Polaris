@@ -95,6 +95,9 @@ function rebuildHttpTransport(): void {
   transport = createConfiguredHttpTransport();
 }
 
+/** 供 MobileConnectionGate 在用户保存新服务地址后重建 HTTP transport */
+export const rebuildTransport = rebuildHttpTransport;
+
 /**
  * 尝试从移动端 Rust 后端加载服务器配置到 localStorage。
  * 启动时异步调用，不阻塞 transport 初始化。
@@ -119,15 +122,18 @@ async function loadMobileServerConfig(): Promise<void> {
 }
 
 // 移动端异步加载服务器配置，加载完成后重新连接
-if (isMobileTauri()) {
-  loadMobileServerConfig().then(() => {
-    const url = getServerUrl();
-    if (url && transport.manualReconnect) {
-      log.info('Mobile config loaded, reconnecting...');
-      transport.manualReconnect().catch(() => {});
-    }
-  });
-}
+const mobileConfigLoadPromise = isMobileTauri()
+  ? loadMobileServerConfig().then(() => {
+      const url = getServerUrl();
+      if (url && transport.manualReconnect) {
+        log.info('Mobile config loaded, reconnecting...');
+        transport.manualReconnect().catch(() => {});
+      }
+    })
+  : Promise.resolve();
+
+/** 供 MobileConnectionGate 等组件等待移动端配置从后端加载完毕 */
+export const waitForMobileConfig = (): Promise<void> => mobileConfigLoadPromise;
 
 const LOCAL_EVENTS = new Set([
   'file:opened',

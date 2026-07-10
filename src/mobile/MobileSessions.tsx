@@ -335,15 +335,31 @@ function MobileChatSession({ session, onBack }: { session: MobileSessionDetail; 
   }, [pendingCard?.planId, session.id]);
 
   const handlePermissionResponse = useCallback(async (approve: boolean) => {
-    // 权限请求走 reject_plan/approve_plan 之外的专用路径；
-    // 此处简化为 approve_plan / reject_plan，与桌面端保持策略一致。
-    if (!pendingCard?.planId) {
-      // 无 planId 时，直接发送一条消息绕过（简单 fallback）
-      setInput(approve ? '继续' : '取消');
-      return;
+    // 移动端没有 ConversationStore，权限决策通过向会话发送用户消息完成。
+    // 桌面端走 resolvePermissionRequest + addSessionAllowedTools 路径；
+    // 移动端简化为发送"批准"或"拒绝"消息，由 AI 自行理解用户意图。
+    setPendingCard(null);
+    const userMessage: ChatMessage = {
+      id: `mobile-perm-${Date.now()}`,
+      type: 'user',
+      content: approve ? '批准' : '拒绝',
+      timestamp: new Date().toISOString(),
+    };
+    setMessages(current => [...current, userMessage]);
+    try {
+      await invoke('continue_chat', {
+        sessionId: session.id,
+        message: approve ? '批准' : '拒绝',
+        options: {
+          engineId: session.engineId,
+          workDir: session.projectPath,
+          contextId: `mobile-${session.id}`,
+        },
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     }
-    await handleApprovePlan(approve);
-  }, [pendingCard, handleApprovePlan]);
+  }, [session.engineId, session.id, session.projectPath]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Button } from '@/components/Common';
 import { getServerUrl, md5Hex, storeServerUrl, storeTokenMd5 } from '@/services/transport/auth';
+import { waitForMobileConfig, rebuildTransport } from '@/services/transport';
 import { getConfig, healthCheck } from '@/services/tauri/configService';
 import type { Config } from '@/types';
 
@@ -13,30 +14,6 @@ export interface MobileConnectionState {
   connected: boolean;
   serverUrl: string;
   openSettings: () => void;
-}
-
-function isMobileTauriRuntime(): boolean {
-  return typeof navigator !== 'undefined' &&
-    /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) &&
-    ('__TAURI_INTERNALS__' in window);
-}
-
-/**
- * 尝试从移动端 Rust 后端读取已持久化的服务配置。
- * 仅限移动 Tauri 环境；返回 null 表示不可用或未配置。
- */
-async function tryLoadMobileServerConfig(): Promise<{ serverUrl: string; token: string } | null> {
-  if (!isMobileTauriRuntime()) return null;
-  try {
-    const { invoke } = await import('@tauri-apps/api/core');
-    const config = await invoke<{ serverUrl?: string; server_url?: string; token?: string }>('get_server_config');
-    const serverUrl = config?.serverUrl || config?.server_url || '';
-    const token = config?.token || '';
-    if (!serverUrl) return null;
-    return { serverUrl, token };
-  } catch {
-    return null;
-  }
 }
 
 export function MobileConnectionGate({ children }: MobileConnectionGateProps) {
@@ -75,25 +52,10 @@ export function MobileConnectionGate({ children }: MobileConnectionGateProps) {
   }, []);
 
   useEffect(() => {
-    // 启动时若 localStorage 为空，尝试从移动后端回填隐藏配置
-    // 解决 Tauri 启动时序：transport 的 loadMobileServerConfig 异步完成前，
-    // Gate 已 mount 且 getServerUrl() 还空 → 立即显示配置页的竞态。
+    // 等待 transport 层模块级 loadMobileServerConfig 完成（加载后端配置 + rebuildHttpTransport）
+    // 避免 MobileConnectionGate 与模块级异步配置加载竞态，以及重复做同一次 Tauri invoke。
     const initialCheck = async () => {
-      if (getServerUrl()) {
-        await checkConnection();
-        return;
-      }
-      const backendConfig = await tryLoadMobileServerConfig();
-      if (backendConfig) {
-        storeServerUrl(backendConfig.serverUrl);
-        if (backendConfig.token) {
-          storeTokenMd5(backendConfig.token);
-        }
-        // 填入后再跑连接检查
-        await checkConnection();
-        return;
-      }
-      // 无后端配置 → 显示设置页（checkConnection 也会走到 setShowSettings(true)）
+      await waitForMobileConfig();
       await checkConnection();
     };
 
@@ -108,6 +70,8 @@ export function MobileConnectionGate({ children }: MobileConnectionGateProps) {
     if (tokenInput.trim()) {
       storeTokenMd5(await md5Hex(tokenInput.trim()));
     }
+    // 保存新 URL 后重建 HTTP transport（刷新 baseUrl 闭包）
+    rebuildTransport();
     await checkConnection();
   };
 
