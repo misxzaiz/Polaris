@@ -4,13 +4,16 @@
  */
 
 use std::collections::{HashMap, HashSet};
+#[cfg(not(target_os = "android"))]
 use std::io::{Read as _, Write as _};
 use std::sync::{Arc, Mutex};
+#[cfg(not(target_os = "android"))]
 use std::thread;
 
+#[cfg(not(target_os = "android"))]
 use portable_pty::{native_pty_system, CommandBuilder, PtyPair, PtySize};
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "tauri-app")]
+#[cfg(all(feature = "tauri-app", not(target_os = "android")))]
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
@@ -63,7 +66,7 @@ pub struct TerminalExitEvent {
 /// 转发到 WebSocket。事件 payload 保持和前端现有类型一致。
 #[derive(Clone)]
 pub enum TerminalEventSink {
-    #[cfg(feature = "tauri-app")]
+    #[cfg(all(feature = "tauri-app", not(target_os = "android")))]
     Tauri(AppHandle),
     Web(crate::web::EventBroadcaster),
 }
@@ -71,7 +74,7 @@ pub enum TerminalEventSink {
 impl TerminalEventSink {
     fn emit_output(&self, event: TerminalOutputEvent) {
         match self {
-            #[cfg(feature = "tauri-app")]
+            #[cfg(all(feature = "tauri-app", not(target_os = "android")))]
             TerminalEventSink::Tauri(app_handle) => {
                 let _ = app_handle.emit("terminal:output", event);
             }
@@ -87,7 +90,7 @@ impl TerminalEventSink {
 
     fn emit_exit(&self, event: TerminalExitEvent) {
         match self {
-            #[cfg(feature = "tauri-app")]
+            #[cfg(all(feature = "tauri-app", not(target_os = "android")))]
             TerminalEventSink::Tauri(app_handle) => {
                 let _ = app_handle.emit("terminal:exit", event);
             }
@@ -105,12 +108,14 @@ impl TerminalEventSink {
 /// 终端会话管理器
 pub struct TerminalManager {
     /// PTY 会话映射
+    #[cfg(not(target_os = "android"))]
     sessions: Mutex<HashMap<String, PtySession>>,
     /// 已退出但尚未被显式关闭的会话
     closed_sessions: Arc<Mutex<HashSet<String>>>,
 }
 
 /// PTY 会话内部结构
+#[cfg(not(target_os = "android"))]
 struct PtySession {
     /// PTY pair
     #[allow(dead_code)]
@@ -133,12 +138,14 @@ impl TerminalManager {
     /// 创建新的终端管理器
     pub fn new() -> Self {
         Self {
+            #[cfg(not(target_os = "android"))]
             sessions: Mutex::new(HashMap::new()),
             closed_sessions: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
     /// 创建新的终端会话
+    #[cfg(not(target_os = "android"))]
     pub fn create_session(
         &self,
         event_sink: TerminalEventSink,

@@ -96,7 +96,7 @@ glob = "0.3"
 base64 = "0.22"
 urlencoding = "2"
 url = "2"
-git2 = "0.18"
+git2 = { version = "0.18", features = ["vendored-openssl"] }
 similar = "2.4"
 bitflags = "2.4"
 walkdir = "2"
@@ -126,7 +126,7 @@ bytes = "1"
 cron = "0.12"
 
 # 终端 PTY 支持
-portable-pty = "0.8"
+# Android 端是远程伴生端，不承载本机 PTY；避免 portable-pty/termios 阻塞 APK 交叉编译。
 crossbeam-channel = "0.5"
 
 # 文件系统监听
@@ -166,6 +166,9 @@ windows-sys = { version = "0.59", features = [
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+portable-pty = "0.8"
 
 [target.'cfg(not(windows))'.dependencies]
 libc = "0.2"
