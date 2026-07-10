@@ -3,6 +3,7 @@ import type { Config } from '@/types';
 import { MobileSessions, type MobileSessionDetail } from './MobileSessions';
 import { MobileTasks } from './MobileTasks';
 import { MobileWorkspaces } from './MobileWorkspaces';
+import { isDevMobileMode } from './platform';
 
 type MobileTab = 'sessions' | 'tasks' | 'workspaces' | 'settings';
 
@@ -40,8 +41,9 @@ export function MobileShell({
   const workspacePath = currentWorkspace?.path || config?.workDir || null;
 
   return (
-    <div className="flex min-h-[100dvh] flex-col bg-background-base text-text-primary">
-      <header className="shrink-0 border-b border-border bg-background-elevated px-4 pb-3 pt-[calc(env(safe-area-inset-top)+12px)]">
+    <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-background-base text-text-primary">
+      <div className={`w-full max-w-[412px] flex min-h-[100dvh] flex-col bg-background-base text-text-primary ${isDevMobileMode() ? 'dev-mobile-wrapper' : ''}`}>
+        <header className="shrink-0 border-b border-border bg-background-elevated px-4 pb-3 pt-[calc(env(safe-area-inset-top)+12px)]">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="text-lg font-semibold">Polaris</div>
@@ -107,6 +109,7 @@ export function MobileShell({
           })}
         </div>
       </nav>
+      </div>
     </div>
   );
 }
