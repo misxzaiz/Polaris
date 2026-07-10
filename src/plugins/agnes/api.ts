@@ -58,7 +58,7 @@ export interface AgnesSaveConfigInput {
 }
 
 export function agnesSaveConfig(input: AgnesSaveConfigInput): Promise<AgnesConfigView> {
-  return invoke<AgnesConfigView>('agnes_save_config', input)
+  return invoke<AgnesConfigView>('agnes_save_config', { ...input })
 }
 
 // ============================================================================
@@ -73,7 +73,7 @@ export interface AgnesGenerateImageInput {
 }
 
 export function agnesGenerateImage(input: AgnesGenerateImageInput): Promise<AgnesImageResult> {
-  return invoke<AgnesImageResult>('agnes_generate_image', input)
+  return invoke<AgnesImageResult>('agnes_generate_image', { ...input })
 }
 
 // ============================================================================
@@ -95,7 +95,7 @@ export interface AgnesCreateVideoInput {
 }
 
 export function agnesCreateVideo(input: AgnesCreateVideoInput): Promise<AgnesVideoTask> {
-  return invoke<AgnesVideoTask>('agnes_create_video', input)
+  return invoke<AgnesVideoTask>('agnes_create_video', { ...input })
 }
 
 export function agnesQueryVideo(videoId: string): Promise<AgnesVideoTask> {
