@@ -75,3 +75,14 @@ ngrok
 
 # CodeX / AI tools generated logs
 .codex*
+
+# APK build outputs
+*.apk
+
+# Auto-generated Tauri bindings
+/src-tauri/gen/
+
+# Local debugging artifacts
+nul
+test_*.html
+xhs_browser_region.png
