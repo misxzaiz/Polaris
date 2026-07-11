@@ -105,7 +105,9 @@ pub async fn api_auth(
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "{\"error\":\"Internal error\"}").into_response(),
     };
 
-    let Some(raw_token) = required else {
+    // Token 为 None 或空字符串均视为未设置 → API 开放（无鉴权）。
+    // Serde 反序列化时 `"token": ""` 会产生 `Some("")`，需归一化。
+    let Some(raw_token) = required.filter(|t| !t.is_empty()) else {
         return next.run(req).await;
     };
 
