@@ -513,6 +513,7 @@ async fn apply_model_profile_options(
     engine: &EngineId,
     state: &crate::AppState,
     log_scope: &str,
+    session_id: &str,
 ) -> Result<SessionOptions> {
     let Some(profile_id) = profile_id else {
         return Ok(session_opts);
@@ -596,6 +597,7 @@ async fn apply_model_profile_options(
                 match state
                     .proxy_manager
                     .start_proxy(
+                        session_id,
                         &profile.id,
                         &profile.base_url,
                         &profile.api_key,
@@ -606,10 +608,11 @@ async fn apply_model_profile_options(
                 {
                     Ok(proxy_addr) => {
                         tracing::info!(
-                            "[{}] 代理已启动: {} -> http://{}",
+                            "[{}] 代理已启动: {} -> http://{} (session={})",
                             log_scope,
                             profile.name,
-                            proxy_addr
+                            proxy_addr,
+                            session_id
                         );
 
                         match crate::services::ModelProfileService::write_proxy_settings_overlay(
@@ -691,6 +694,7 @@ async fn apply_model_profile_options(
                 match state
                     .proxy_manager
                     .start_proxy(
+                        session_id,
                         &format!("codex:{}", profile.id),
                         &profile.base_url,
                         &profile.api_key,
@@ -961,12 +965,17 @@ pub async fn start_chat_inner(
         session_opts = session_opts.with_image_attachments(images);
     }
 
+    // 为当前会话生成一个临时 session_id，传给 start_proxy 作为代理索引。
+    // 避免按 profile_id 索引代理时跨会话互相干扰。
+    let session_id = uuid::Uuid::new_v4().to_string();
+
     session_opts = apply_model_profile_options(
         session_opts,
         options.model_profile_id.as_ref(),
         &engine,
         state,
         "start_chat_inner",
+        &session_id,
     )
     .await?;
 
@@ -1120,21 +1129,17 @@ pub async fn continue_chat_inner(
     }
 
     // ──────────────────────────────────────────────────────
-    // FIX(race): 先杀掉旧 claude 进程，再处理代理。
+    // 先杀掉本会话的旧 claude 进程，再处理代理。
     //
-    // 旧顺序是 `apply_model_profile_options`（含 start_proxy/kill 旧代理）
-    // 在 `registry.continue_session`（含 kill_process）之前执行。这导致：
-    //   1. 旧代理被杀，端口关闭
-    //   2. 但旧 claude 进程还活着，有 in-flight 请求在等上游响应（可能长达 180s）
-    //   3. claude.exe 立刻收到 ConnectionRefused
+    // 同一会话继续对话时，旧进程可能仍有 in-flight 请求在等上游响应；
+    // 若先杀代理再杀进程，旧进程的下一轮请求会收到 ConnectionRefused。
+    // 这里先 try_interrupt_all 杀旧进程（跨引擎兜底），再 start_proxy。
     //
-    // 新顺序：先杀旧进程，确保没有 in-flight 请求后，再安全地切换代理。
-    // try_interrupt_all 是安全的：kill 一个已不存在的进程会静默返回 false。
+    // 注意：代理以 session_id 为 key（见 ProxyManager），不同会话互不干扰，
+    // 因此这里只会影响本会话的代理。
     // ──────────────────────────────────────────────────────
     {
         let mut registry = state.engine_registry.lock().await;
-        // 用 try_interrupt_all 而非指定 engine_id：per-session 多引擎改造后，
-        // 前端 metadata.engineId 可能与后端实际引擎错配，遍历所有引擎最稳妥。
         registry.try_interrupt_all(&session_id);
     }
 
@@ -1144,6 +1149,7 @@ pub async fn continue_chat_inner(
         &engine,
         state,
         "continue_chat_inner",
+        &session_id,
     )
     .await?;
 
