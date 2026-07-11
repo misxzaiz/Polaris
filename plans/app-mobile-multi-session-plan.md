@@ -8,26 +8,32 @@
 
 ## 实施状态（2026-07-12）
 
-### Phase 1 — 已落地（代码）
+### 产品决策更新（同日晚）
 
-- 新增 `src/mobile/runtime/`：
-  - `types.ts` — 状态模型 / contextId 约定
-  - `applyAIEvent.ts` — 纯函数事件归约
-  - `mobileSessionRuntime.ts` — 全局 listen + 多会话 store
-  - `mobileSessionRuntime.test.ts` — 路由/并行/淘汰单测
-- `MobileSessions.tsx` / `MobileSessionTabs.tsx` 已接入 Runtime
-- 组件内 `listen/unlisten` 已移除；切 Tab 后台会话继续收事件
-- Tab 状态圆点：running / waiting / error
-- 聊天页增加中断按钮（`interrupt_chat`）
-- 旧 `mobileMultiSessionStore` / `useMobileSession` 暂保留未引用（待 Phase 2 清理）
+用户确认：**手机浏览器上完整 Web 体验已足够好，APK 应直接复用 Web `App`**，不再默认进入独立 `MobileApp` companion 壳。
 
-### 待做
+| 入口 | UI |
+|------|-----|
+| 手机浏览器访问 polaris-web | 完整 `App`（compact） |
+| **APK** | 完整 `App` + `MobileConnectionGate`（仅配服务地址/Token） |
+| `?mobile=1` | 旧 `MobileApp` 壳（调试保留） |
 
-- Phase 2：四引擎列表 + 新建会话 + 权限正规化
-- Phase 3：PendingBanner + 重连 resync
-- Phase 4/5：渲染增强与工程化
+代码：`platform.shouldRenderMobileApp()` 仅 `?mobile=1` 为 true；`main.tsx` 对 mobile Tauri 包一层 ConnectionGate。
+
+### Phase 1 — 已落地（companion 壳路径，现为可选调试）
+
+- `src/mobile/runtime/*` 多会话 Runtime（旧壳仍可用）
+- React #185 selectTabSessions 缓存修复
+
+### 后续（在「复用 Web」路线下）
+
+- APK 首次连接 / Token 体验打磨（Gate 与 Web ConnectingOverlay 衔接）
+- 小屏 Web compact 体验回归（APK WebView 视口、safe-area）
+- 旧 MobileApp / Runtime 代码可择机归档或删除
+- 不再以「把 companion 做成第二套聊天」为主线
 
 ---
+
 
 ## 0. 结论摘要
 

@@ -3,7 +3,8 @@ import ReactDOM from "react-dom/client";
 import * as ReactJSXRuntime from "react/jsx-runtime";
 import App from "./App";
 import MobileApp from "./mobile/MobileApp";
-import { shouldRenderMobileApp } from "./mobile/platform";
+import { MobileConnectionGate } from "./mobile/MobileConnectionGate";
+import { isMobileTauriRuntime, shouldRenderMobileApp } from "./mobile/platform";
 import "./i18n";
 
 // 暴露宿主 React 给外部插件面板使用
@@ -23,10 +24,28 @@ import "./i18n";
 
 const root = document.getElementById("root") as HTMLElement;
 
-const RootApp = shouldRenderMobileApp() ? MobileApp : App;
+/**
+ * 根组件选择：
+ * - ?mobile=1：旧 MobileApp companion（调试）
+ * - 移动端 Tauri APK：完整 Web App + 连接配置 Gate（无 serverUrl 时先配地址/Token）
+ * - 其它（桌面 / 手机浏览器访问 polaris-web）：完整 Web App
+ */
+function RootApp() {
+  if (shouldRenderMobileApp()) {
+    return <MobileApp />;
+  }
 
-// Both Tauri desktop and Web (HTTP) modes render the main App directly.
-// Mobile Tauri renders a dedicated app shell to avoid loading desktop-only panes.
+  if (isMobileTauriRuntime()) {
+    return (
+      <MobileConnectionGate>
+        {() => <App />}
+      </MobileConnectionGate>
+    );
+  }
+
+  return <App />;
+}
+
 ReactDOM.createRoot(root).render(
   <React.StrictMode>
     <RootApp />
