@@ -200,13 +200,26 @@ pub(super) async fn run_chat_loop(
 
         loop {
             if *abort_rx.borrow() {
+                tracing::warn!(
+                    "[SimpleAI] [DIAG] abort_rx 被置为 true, 提前结束, session={session_id}"
+                );
                 let _ = event_callback(AIEvent::SessionEnd(SessionEndEvent::new(session_id)));
                 return Ok(());
             }
 
             let chunk = tokio::select! {
-                chunk = stream.next() => chunk,
+                chunk = stream.next() => {
+                    if chunk.is_none() {
+                        tracing::warn!(
+                            "[SimpleAI] [DIAG] stream 提前结束（无 chunk），session={session_id}"
+                        );
+                    }
+                    chunk
+                }
                 _ = abort_rx.changed() => {
+                    tracing::warn!(
+                        "[SimpleAI] [DIAG] abort_rx.changed() 触发, 提前结束, session={session_id}"
+                    );
                     let _ = event_callback(AIEvent::SessionEnd(SessionEndEvent::new(session_id)));
                     return Ok(());
                 }

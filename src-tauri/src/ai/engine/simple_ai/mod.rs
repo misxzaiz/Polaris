@@ -364,13 +364,19 @@ impl AIEngine for SimpleAIEngine {
                 let mut guard = sessions.lock().await;
                 if let Some(session) = guard.get_mut(&sid) {
                     session.is_running = true;
-                    // 重置中断 latch:watch::channel 一旦 send(true) 永久为 true,
-                    // 若用户曾在上一轮点过"停止",后续 continue 会在 run_chat_loop
-                    // 检查点立刻 SessionEnd 不输出。在 clone 前重置回 false,确保
-                    // 新 task 读到的是干净状态。send 早于 clone,且同处持锁块内,
-                    // 时序可靠(watch 新 receiver 初始即当前值)。
-                    let _ = session.abort_tx.send(false);
-                    (session.messages.clone(), session.abort_rx.clone())
+                    // 替换整个 watch channel 而非 send(false) 重置 latch。
+                    //
+                    // watch::channel 的 changed() 基于版本号判断（shared_version > last_seen）,
+                    // send(false) 仍会递增版本号,导致刚 clone 出的 receiver 的 changed()
+                    // 立刻返回（版本号 1 > 0）,提前触发 abort session_end（即"无法继续对话"根因）。
+                    //
+                    // 新 channel 的 receiver 始终从版本 0 开始,确保 changed() 仅在有新
+                    // abort_tx.send(true) 时触发,不产生假阳性。
+                    let (new_tx, new_rx) = watch::channel(false);
+                    session.abort_tx = new_tx;
+                    let task_rx = new_rx.clone();
+                    session.abort_rx = new_rx;
+                    (session.messages.clone(), task_rx)
                 } else {
                     // 会话不存在（异常路径）：用仅含系统提示词的初始历史兜底。
                     let system_prompt = build_system_prompt();
