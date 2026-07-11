@@ -1,6 +1,6 @@
 import { MessageSquare, Settings, CheckSquare, FolderKanban } from 'lucide-react';
 import type { Config } from '@/types';
-import { MobileSessions, type MobileSessionDetail } from './MobileSessions';
+import { MobileSessions } from './MobileSessions';
 import { MobileTasks } from './MobileTasks';
 import { MobileWorkspaces } from './MobileWorkspaces';
 import { isDevMobileMode } from './platform';
@@ -9,13 +9,10 @@ type MobileTab = 'sessions' | 'tasks' | 'workspaces' | 'settings';
 
 interface MobileShellProps {
   activeTab: MobileTab;
-  activeSession: MobileSessionDetail | null;
   config: Config | null;
   connected: boolean;
   serverUrl: string;
   onTabChange: (tab: MobileTab) => void;
-  onOpenSession: (session: MobileSessionDetail) => void;
-  onCloseSession: () => void;
   onOpenConnectionSettings: () => void;
 }
 
@@ -28,13 +25,10 @@ const tabs: Array<{ id: MobileTab; label: string; icon: typeof MessageSquare }> 
 
 export function MobileShell({
   activeTab,
-  activeSession,
   config,
   connected,
   serverUrl,
   onTabChange,
-  onOpenSession,
-  onCloseSession,
   onOpenConnectionSettings,
 }: MobileShellProps) {
   const currentWorkspace = config?.workspaces?.find(workspace => workspace.id === config.currentWorkspaceId);
@@ -67,13 +61,7 @@ export function MobileShell({
       </header>
 
       <main className="flex-1 overflow-y-auto px-4 py-4 pb-[calc(env(safe-area-inset-bottom)+88px)]">
-        {activeTab === 'sessions' && (
-          <MobileSessions
-            activeSession={activeSession}
-            onOpenSession={onOpenSession}
-            onCloseSession={onCloseSession}
-          />
-        )}
+        {activeTab === 'sessions' && <MobileSessions />}
         {activeTab === 'tasks' && <MobileTasks workspacePath={workspacePath} />}
         {activeTab === 'workspaces' && <MobileWorkspaces workspacePath={workspacePath} config={config} />}
         {activeTab === 'settings' && (

@@ -6,12 +6,10 @@ import { getClaudeCodeHistoryService, type PagedResult, type SessionMetaResponse
 import { getCodexHistoryService } from '@/services/codexHistoryService';
 import type { ChatMessage, EngineId } from '@/types';
 import type { AIEvent } from '@/ai-runtime/event';
-
-interface MobileSessionsProps {
-  activeSession: MobileSessionDetail | null;
-  onOpenSession: (session: MobileSessionDetail) => void;
-  onCloseSession: () => void;
-}
+import { renderChatMessage } from '@/components/Chat/renderChatMessage';
+import { useMobileSession, dispatchAIEvent, type PendingCard } from './hooks/useMobileSession';
+import { useMobileMultiSessionStore } from './stores/mobileMultiSessionStore';
+import { MobileSessionTabs } from './components/MobileSessionTabs';
 
 export interface MobileSessionItem {
   id: string;
@@ -26,12 +24,36 @@ export interface MobileSessionDetail extends MobileSessionItem {
   messages: ChatMessage[];
 }
 
-export function MobileSessions({ activeSession, onOpenSession, onCloseSession }: MobileSessionsProps) {
+export function MobileSessions() {
+  const sessions = useMobileMultiSessionStore(s => s.sessions);
+  const activeSessionId = useMobileMultiSessionStore(s => s.activeSessionId);
+  const addSession = useMobileMultiSessionStore(s => s.addSession);
+  const clearActive = useMobileMultiSessionStore(s => s.clearActive);
+
+  const activeSession = sessions.find(s => s.id === activeSessionId) ?? null;
+
+  // Tab 条 + 按钮在所有视图都可用（有钉住会话时）
+  const tabBar = sessions.length > 0 ? (
+    <MobileSessionTabs onAddNew={clearActive /* + 按钮回到列表添加新会话 */} />
+  ) : null;
+
+  // 有激活会话 → 渲染聊天页
   if (activeSession) {
-    return <MobileChatSession session={activeSession} onBack={onCloseSession} />;
+    return (
+      <div className="flex flex-col gap-3">
+        {tabBar}
+        <MobileChatSession session={activeSession} onBack={clearActive} />
+      </div>
+    );
   }
 
-  return <MobileSessionList onOpenSession={onOpenSession} />;
+  // 无激活会话 → 列表
+  return (
+    <div className="flex flex-col gap-3">
+      {tabBar}
+      <MobileSessionList onOpenSession={addSession} />
+    </div>
+  );
 }
 
 function MobileSessionList({ onOpenSession }: { onOpenSession: (session: MobileSessionDetail) => void }) {
@@ -142,145 +164,23 @@ function MobileSessionList({ onOpenSession }: { onOpenSession: (session: MobileS
 }
 
 function MobileChatSession({ session, onBack }: { session: MobileSessionDetail; onBack: () => void }) {
-  const [messages, setMessages] = useState(session.messages);
-  const [input, setInput] = useState('');
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    messages,
+    input,
+    sending,
+    error,
+    pendingCard,
+    getPartial,
+    setPartial,
+    setMessages,
+    setInput,
+    setSending,
+    setError,
+    setPendingCard,
+    persistToCache,
+  } = useMobileSession(session.id, session.messages);
   const unlistenRef = useRef<(() => void) | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  /** 积累 buffer：收到 assistant_message 时追加，result 时落盘 */
-  const partialRef = useRef<{ id: string; content: string } | null>(null);
-
-  /** 当前待处理交互：question / plan_approval_request / permission_request */
-  const [pendingCard, setPendingCard] = useState<{
-    type: 'question' | 'plan_approval_request' | 'permission_request';
-    questionId?: string;
-    planId?: string;
-    questions?: Array<{ question: string; options: Array<{ value: string; label?: string }>; multiSelect?: boolean; allowCustomInput?: boolean }>;
-    header?: string;
-    options?: Array<{ value: string; label?: string }>;
-    multiSelect?: boolean;
-    allowCustomInput?: boolean;
-    message?: string;
-    toolName?: string;
-    toolUseId?: string;
-    extra?: string;
-  } | null>(null);
-
-  useEffect(() => {
-    const setup = async () => {
-      try {
-        const unlisten = await listen<{ contextId?: string; payload: AIEvent }>('chat-event', (event) => {
-          // 只处理本会话的事件
-          const expectedContextId = `session-${session.id}`;
-          if (event.contextId && event.contextId !== expectedContextId) return;
-
-          const aiEvent = typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload;
-          if (!aiEvent || typeof aiEvent.type !== 'string') return;
-
-          switch (aiEvent.type) {
-            case 'assistant_message': {
-              const content = aiEvent.content ?? '';
-              const isDelta = aiEvent.isDelta === true;
-              if (isDelta && partialRef.current) {
-                // 增量追加
-                partialRef.current.content += content;
-                setMessages(current => {
-                  const updated = [...current];
-                  const lastIdx = updated.length - 1;
-                  if (lastIdx >= 0 && updated[lastIdx]?.type === 'assistant') {
-                    updated[lastIdx] = { ...updated[lastIdx], content: partialRef.current!.content };
-                  }
-                  return updated;
-                });
-              } else {
-                // 首次 content 或非增量
-                partialRef.current = { id: `msg-${Date.now()}`, content };
-                setMessages(current => [
-                  ...current,
-                  {
-                    id: partialRef.current!.id,
-                    type: 'assistant',
-                    content: partialRef.current!.content,
-                    blocks: [{ type: 'text', content }],
-                    timestamp: new Date().toISOString(),
-                  } as ChatMessage,
-                ]);
-              }
-              break;
-            }
-            case 'result':
-              // 最终结果，刷新完整消息列表
-              partialRef.current = null;
-              setSending(false);
-              void refreshHistory();
-              break;
-            case 'error':
-              setError(aiEvent.message || '会话出错');
-              setSending(false);
-              partialRef.current = null;
-              break;
-            case 'session_end':
-              setSending(false);
-              partialRef.current = null;
-              break;
-            case 'question': {
-              // AI 询问用户问题
-              setPendingCard({
-                type: 'question',
-                questionId: aiEvent.questionId,
-                questions: aiEvent.questions,
-                header: aiEvent.header,
-                options: aiEvent.options,
-                multiSelect: aiEvent.multiSelect,
-                allowCustomInput: aiEvent.allowCustomInput,
-              });
-              break;
-            }
-            case 'question_answered':
-              setPendingCard(null);
-              setSending(false);
-              break;
-            case 'plan_approval_request': {
-              setPendingCard({
-                type: 'plan_approval_request',
-                planId: aiEvent.planId,
-                message: aiEvent.message,
-              });
-              break;
-            }
-            case 'plan_approval_result':
-            case 'plan_end':
-              setPendingCard(null);
-              setSending(false);
-              break;
-            case 'permission_request':
-              setPendingCard({
-                type: 'permission_request',
-                toolName: aiEvent.denials?.[0]?.toolName,
-                toolUseId: aiEvent.denials?.[0]?.toolUseId,
-                extra: aiEvent.denials?.[0]?.reason ?? (aiEvent.denials?.[0]?.toolInput ? JSON.stringify(aiEvent.denials[0].toolInput) : ''),
-              });
-              break;
-            default:
-              // token / thinking / tool_call_start 等实时事件暂不渲染
-              break;
-          }
-        });
-        unlistenRef.current = unlisten;
-      } catch {
-        // WS 不可用时静默
-      }
-    };
-
-    void setup();
-    return () => {
-      unlistenRef.current?.();
-      unlistenRef.current = null;
-      partialRef.current = null;
-    };
-  }, [session.id]);
 
   /** 发送后重新拉取消息列表，保证完整性 */
   const refreshHistory = useCallback(async () => {
@@ -299,7 +199,47 @@ function MobileChatSession({ session, onBack }: { session: MobileSessionDetail; 
     } catch {
       // 静默失败，用当前缓冲消息
     }
-  }, [session.engineId, session.id]);
+  }, [session.engineId, session.id, setMessages]);
+
+  useEffect(() => {
+    const setup = async () => {
+      try {
+        const unlisten = await listen<{ contextId?: string; payload: AIEvent }>('chat-event', (event) => {
+          // 只处理本会话的事件
+          // 发送端（send / handlePermissionResponse）传 contextId: `mobile-${session.id}`，
+          // 后端原样透传，因此监听端必须用相同前缀，否则所有自己的事件都被过滤丢弃 → 消息不回显。
+          const expectedContextId = `mobile-${session.id}`;
+          if (event.contextId && event.contextId !== expectedContextId) return;
+
+          const aiEvent = typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload;
+          if (!aiEvent || typeof aiEvent.type !== 'string') return;
+
+          dispatchAIEvent(aiEvent, {
+            sessionId: session.id,
+            getPartial,
+            setPartial,
+            setMessages,
+            setSending,
+            setError,
+            setPendingCard,
+            onResult: () => void refreshHistory(),
+          });
+        });
+        unlistenRef.current = unlisten;
+      } catch {
+        // WS 不可用时静默
+      }
+    };
+
+    void setup();
+    return () => {
+      // 卸载前把响应式状态写回缓存，保证 Tab 切换后能恢复
+      persistToCache();
+      unlistenRef.current?.();
+      unlistenRef.current = null;
+    };
+    // getPartial/setPartial 等是稳定回调；显式依赖 session.id 避免漏更新
+  }, [session.id, getPartial, setPartial, setMessages, setSending, setError, setPendingCard, persistToCache, refreshHistory]);
 
   /** 处理待确认交互的回复 */
   const handleAnswerQuestion = useCallback(async (selected: string[], declined: boolean) => {
@@ -412,8 +352,10 @@ function MobileChatSession({ session, onBack }: { session: MobileSessionDetail; 
       {error && <div className="rounded-xl border border-danger/30 bg-danger-faint px-3 py-2 text-sm text-danger">{error}</div>}
 
       <div className="flex-1 space-y-3 overflow-y-auto pb-2">
-        {messages.map(message => (
-          <MessageBubble key={message.id} message={message} />
+        {messages.map((message, index) => (
+          <div key={message.id}>
+            {renderChatMessage(message, index, undefined, undefined)}
+          </div>
         ))}
         <div ref={messagesEndRef} />
       </div>
@@ -454,49 +396,13 @@ function MobileChatSession({ session, onBack }: { session: MobileSessionDetail; 
   );
 }
 
-function messageToText(message: ChatMessage): string {
-  if ('content' in message && typeof message.content === 'string' && message.content) return message.content;
-  if (message.type === 'assistant') {
-    return message.blocks
-      .map(block => block.type === 'text' || block.type === 'thinking' ? block.content : `[${block.type}]`)
-      .join('\n');
-  }
-  if (message.type === 'tool') return message.summary;
-  if (message.type === 'tool_group') return message.summary;
-  return '';
-}
-
-function MessageBubble({ message }: { message: ChatMessage }) {
-  const isUser = message.type === 'user';
-  const content = messageToText(message);
-  return (
-    <div className={clsx('flex', isUser ? 'justify-end' : 'justify-start')}>
-      <div className={clsx(
-        'max-w-[88%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm leading-6',
-        isUser ? 'bg-primary text-white' : 'border border-border bg-background-elevated text-text-primary',
-      )}>
-        {content || `[${message.type}]`}
-      </div>
-    </div>
-  );
-}
-
 function PendingCardCard({
   card,
   onAnswerQuestion,
   onApprovePlan,
   onPermissionResponse,
 }: {
-  card: {
-    type: 'question' | 'plan_approval_request' | 'permission_request';
-    questions?: Array<{ question: string; options: Array<{ value: string; label?: string }>; multiSelect?: boolean; allowCustomInput?: boolean }>;
-    header?: string;
-    options?: Array<{ value: string; label?: string }>;
-    multiSelect?: boolean;
-    message?: string;
-    toolName?: string;
-    extra?: string;
-  };
+  card: PendingCard;
   onAnswerQuestion: (selected: string[], declined: boolean) => void;
   onApprovePlan: (approve: boolean) => void;
   onPermissionResponse: (approve: boolean) => void;
