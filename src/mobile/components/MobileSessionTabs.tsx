@@ -36,6 +36,7 @@ function statusDotClass(status: MobileSessionStatus): string {
 }
 
 export function MobileSessionTabs({ onAddNew }: MobileSessionTabsProps) {
+  // selectTabSessions 内部有引用缓存；仍只读 tab 列表渲染所需字段
   const sessions = useMobileSessionRuntime(selectTabSessions);
   const activeSessionId = useMobileSessionRuntime((s) => s.activeSessionId);
   const setActiveSession = useMobileSessionRuntime((s) => s.setActiveSession);

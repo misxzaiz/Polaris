@@ -31,7 +31,6 @@ import { renderChatMessage } from '@/components/Chat/renderChatMessage';
 import {
   useMobileSessionRuntime,
   selectActiveSession,
-  selectTabSessions,
   setMobileHistoryRefresher,
 } from './runtime/mobileSessionRuntime';
 import type { PendingCard, SessionRuntimeState } from './runtime/types';
@@ -52,15 +51,15 @@ export interface MobileSessionDetail extends MobileSessionItem {
 
 export function MobileSessions() {
   const activeSession = useMobileSessionRuntime(selectActiveSession);
-  const tabSessions = useMobileSessionRuntime(selectTabSessions);
+  // tabOrder 长度用于是否渲染 Tab 条；避免直接依赖会分配新数组的 selector 结果做结构判断以外的用途
+  const tabCount = useMobileSessionRuntime((s) => s.tabOrder.length);
   const openSession = useMobileSessionRuntime((s) => s.openSession);
   const clearActive = useMobileSessionRuntime((s) => s.clearActive);
-  const ensureInitialized = useMobileSessionRuntime((s) => s.ensureInitialized);
   const [openError, setOpenError] = useState<string | null>(null);
 
-  // 全局 listen + 历史刷新器（只挂一次）
+  // 全局 listen + 历史刷新器（只挂一次；用 getState 避免把 action 放进依赖）
   useEffect(() => {
-    void ensureInitialized();
+    void useMobileSessionRuntime.getState().ensureInitialized();
 
     setMobileHistoryRefresher(async (session) => {
       try {
@@ -80,7 +79,7 @@ export function MobileSessions() {
     return () => {
       setMobileHistoryRefresher(null);
     };
-  }, [ensureInitialized]);
+  }, []);
 
   const handleOpenSession = useCallback(
     (detail: MobileSessionDetail) => {
@@ -100,7 +99,7 @@ export function MobileSessions() {
   );
 
   const tabBar =
-    tabSessions.length > 0 ? (
+    tabCount > 0 ? (
       <MobileSessionTabs onAddNew={clearActive} />
     ) : null;
 

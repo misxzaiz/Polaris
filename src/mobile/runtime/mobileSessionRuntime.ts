@@ -564,10 +564,24 @@ export const useMobileSessionRuntime = create<MobileSessionRuntimeStore>((set, g
 // Selectors / hooks helpers
 // ============================================================================
 
+/**
+ * 缓存 selectTabSessions 结果，避免每次订阅比较都拿到新数组引用。
+ * Zustand 默认用 Object.is；selector 每次 map 出新数组会触发 React #185 无限重渲染。
+ */
+let cachedTabOrder: string[] | null = null;
+let cachedSessionsMap: Record<string, SessionRuntimeState> | null = null;
+let cachedTabSessions: SessionRuntimeState[] = [];
+
 export function selectTabSessions(state: MobileSessionRuntimeStore): SessionRuntimeState[] {
-  return state.tabOrder
+  if (state.tabOrder === cachedTabOrder && state.sessions === cachedSessionsMap) {
+    return cachedTabSessions;
+  }
+  cachedTabOrder = state.tabOrder;
+  cachedSessionsMap = state.sessions;
+  cachedTabSessions = state.tabOrder
     .map((id) => state.sessions[id])
     .filter((s): s is SessionRuntimeState => !!s);
+  return cachedTabSessions;
 }
 
 export function selectActiveSession(state: MobileSessionRuntimeStore): SessionRuntimeState | null {
@@ -577,4 +591,11 @@ export function selectActiveSession(state: MobileSessionRuntimeStore): SessionRu
 
 export function selectWaitingCount(state: MobileSessionRuntimeStore): number {
   return Object.values(state.sessions).filter((s) => s.status === 'waiting').length;
+}
+
+/** 供测试重置 selector 缓存 */
+export function __resetTabSessionsCacheForTests() {
+  cachedTabOrder = null;
+  cachedSessionsMap = null;
+  cachedTabSessions = [];
 }

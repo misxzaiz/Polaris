@@ -18,6 +18,8 @@ import { applyAIEvent } from './applyAIEvent';
 import {
   useMobileSessionRuntime,
   setMobileHistoryRefresher,
+  __resetTabSessionsCacheForTests,
+  selectTabSessions,
 } from './mobileSessionRuntime';
 import {
   MAX_MOBILE_TABS,
@@ -106,6 +108,17 @@ describe('MobileSessionRuntime store', () => {
   beforeEach(() => {
     setMobileHistoryRefresher(null);
     useMobileSessionRuntime.getState().reset();
+    __resetTabSessionsCacheForTests();
+  });
+
+  it('selectTabSessions returns stable reference when store unchanged', () => {
+    const store = useMobileSessionRuntime.getState();
+    store.openSession(baseMeta('a'));
+    const state = useMobileSessionRuntime.getState();
+    const first = selectTabSessions(state);
+    const second = selectTabSessions(state);
+    expect(first).toBe(second);
+    expect(first).toHaveLength(1);
   });
 
   it('openSession activates and keeps state when reopened', () => {
