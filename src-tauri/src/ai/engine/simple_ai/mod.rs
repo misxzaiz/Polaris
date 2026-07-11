@@ -364,6 +364,12 @@ impl AIEngine for SimpleAIEngine {
                 let mut guard = sessions.lock().await;
                 if let Some(session) = guard.get_mut(&sid) {
                     session.is_running = true;
+                    // 重置中断 latch:watch::channel 一旦 send(true) 永久为 true,
+                    // 若用户曾在上一轮点过"停止",后续 continue 会在 run_chat_loop
+                    // 检查点立刻 SessionEnd 不输出。在 clone 前重置回 false,确保
+                    // 新 task 读到的是干净状态。send 早于 clone,且同处持锁块内,
+                    // 时序可靠(watch 新 receiver 初始即当前值)。
+                    let _ = session.abort_tx.send(false);
                     (session.messages.clone(), session.abort_rx.clone())
                 } else {
                     // 会话不存在（异常路径）：用仅含系统提示词的初始历史兜底。
