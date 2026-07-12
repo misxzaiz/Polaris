@@ -52,12 +52,24 @@ export function PromptSnippetTab() {
       : ['.polaris/skills', '.polaris/agents']).join('\n'));
   }, [config?.skillPaths]);
 
+  // 获取 DataRoot 路径用于展示默认提示
+  const [dataRootHint, setDataRootHint] = useState('');
+  useEffect(() => {
+    import('@/services/dataRootService').then(({ getDataRootInfo }) => {
+      getDataRootInfo().then(info => setDataRootHint(info.root)).catch(() => {});
+    }).catch(() => {});
+  }, []);
+
+  const pluginsById = new Map(pluginRegistry.listPlugins().map(plugin => [plugin.id, plugin]));
   const mcpServers = listPluginMcpServerStatuses(pluginStates)
     .filter(server => server.enabled)
-    .map(server => ({
-      ...server,
-      pluginName: pluginRegistry.listPlugins().find(plugin => plugin.id === server.pluginId)?.name ?? server.pluginId,
-    }));
+    .map(server => {
+      const plugin = pluginsById.get(server.pluginId);
+      return {
+        ...server,
+        pluginName: plugin?.name ?? server.pluginId,
+      };
+    });
 
   const handleSaveSkillPaths = async () => {
     const skillPaths = [...new Set(skillPathsText
@@ -175,6 +187,11 @@ export function PromptSnippetTab() {
           <h3 className="text-sm font-medium text-text-primary">斜杠命令来源</h3>
           <p className="text-xs text-text-tertiary mt-1">
             输入 / 可统一搜索快捷片段、Skill 和已启用的 MCP。相对路径按当前工作区解析，每行一个路径。
+            {!config?.skillPaths?.length && (
+              <span className="ml-1 text-primary">
+                当前为默认模式：除下方路径外，还会自动扫描数据存储路径{dataRootHint ? `（${dataRootHint}）` : ''}下的 skills、agents 目录。
+              </span>
+            )}
           </p>
         </div>
 
@@ -184,7 +201,7 @@ export function PromptSnippetTab() {
             value={skillPathsText}
             onChange={event => setSkillPathsText(event.target.value)}
             rows={3}
-            placeholder={'.polaris/skills\n.polaris/agents\nD:\\shared\\skills'}
+            placeholder={'.polaris/skills\n.polaris/agents\n（留空或只填上方路径，会自动扫描数据存储路径下的 skills、agents）'}
             className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm font-mono text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-primary resize-y"
           />
           <div className="flex items-center justify-between gap-3">

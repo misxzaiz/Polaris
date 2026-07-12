@@ -112,7 +112,10 @@
     "viewInGitPanel": "View in Git Panel",
     "copyCommand": "Copy command",
     "copyOutput": "Copy output",
-    "copied": "Copied"
+    "copied": "Copied",
+    "fileChanges": "File Changes",
+    "fileDeleted": "File deleted",
+    "planUpdated": "Plan updated (see details in the plan panel)"
   },
   "thinking": {
     "title": "Thinking"

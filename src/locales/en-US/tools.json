@@ -36,7 +36,11 @@
     "analyze": "Analyze",
     "codeAnalysis": "Code Analysis",
     "webRequest": "Web Request",
-    "ask": "Ask"
+    "ask": "Ask",
+    "applyPatch": "Apply Patch",
+    "updatePlan": "Update Plan",
+    "browser": "Browser",
+    "computer": "Computer"
   },
   "actions": {
     "editing": "Editing",

@@ -8,6 +8,7 @@ import { generateUUID } from '@/utils/uuid'
 import { createLogger } from '@/utils/logger'
 import type { AIEvent } from '@/ai-runtime'
 import { isEditTool, extractEditDiff } from '@/utils/diffExtractor'
+import { parseApplyPatch } from '@/utils/patchParser'
 import type { PluginCardBlock } from '@/types'
 import { chatCardRegistry } from '@/plugin-system/chatCardRegistry'
 import type { ConversationStore } from './types'
@@ -158,6 +159,16 @@ export function handleAIEvent(
           const diff = extractEditDiff(block)
           if (diff) {
             state.updateToolCallBlockDiff(callId, diff)
+          }
+        }
+        // apply_patch 工具：解析补丁信封，写入 patchData
+        if (block?.type === 'tool_call' && block.name === 'apply_patch') {
+          const patchInput = block.input?.input as string
+          if (patchInput) {
+            const parsed = parseApplyPatch(patchInput)
+            if (parsed && parsed.files.length > 0) {
+              state.updateToolCallBlockPatch(callId, parsed.files)
+            }
           }
         }
       }

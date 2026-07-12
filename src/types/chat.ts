@@ -105,6 +105,17 @@ export interface ToolCallBlock {
     /** AI 修改前的完整文件内容（用于精确撤销） */
     fullOldContent?: string;
   };
+  /** 补丁数据（用于 apply_patch 多文件补丁渲染） */
+  patchData?: {
+    type: 'add' | 'update' | 'delete';
+    filePath: string;
+    movePath?: string;
+    chunkCount: number;
+    addedLines: number;
+    removedLines: number;
+    oldContent: string;
+    newContent: string;
+  }[];
 }
 
 /** Artifact 预览内容块 - 用于 MCP 生成的 HTML/原型预览 */

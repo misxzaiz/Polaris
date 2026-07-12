@@ -439,6 +439,18 @@ export function createConversationStore(
         }
       },
 
+      updateToolCallBlockPatch: (toolId, patchData) => {
+        const { currentMessage, toolBlockMap } = get()
+        if (!currentMessage) return
+        const idx = toolBlockMap.get(toolId)
+        if (idx === undefined) return
+        const blocks = [...currentMessage.blocks]
+        if (blocks[idx]?.type === 'tool_call') {
+          blocks[idx] = { ...blocks[idx], patchData }
+          set({ currentMessage: { ...currentMessage, blocks } })
+        }
+      },
+
       appendArtifactPreviewBlock: (artifact) => {
         if (_textBuffer) get()._flushTextBuffer()
 

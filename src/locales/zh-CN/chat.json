@@ -111,7 +111,10 @@
     "viewInGitPanel": "在 Git 面板查看",
     "copyCommand": "复制命令",
     "copyOutput": "复制输出",
-    "copied": "已复制"
+    "copied": "已复制",
+    "fileChanges": "文件变更",
+    "fileDeleted": "文件已删除",
+    "planUpdated": "计划已更新（详细步骤见右侧计划面板）"
   },
   "thinking": {
     "title": "思考"

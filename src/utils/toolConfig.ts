@@ -89,6 +89,18 @@ const TOOL_SHORT_NAMES: Record<string, string> = {
   'delete_file': 'D',
   'Analyze': 'Z',
   'analyze': 'Z',
+
+  // SimpleAI 引擎工具
+  'bash': 'B',
+  'edit_file': 'E',
+  'list_directory': 'L',
+  'glob': 'G',
+  'apply_patch': 'P',
+  'update_plan': 'P',
+  'read_skill': 'K',
+  'dispatch_agent': 'A',
+  'browser': 'W',
+  'computer': 'C',
 };
 
 /** 获取工具缩写名称 */
@@ -155,6 +167,18 @@ const TOOL_ICONS: Record<string, React.ComponentType<{ className?: string }>> = 
   'skill': Layers,
   'AskUserQuestion': Sparkles,
   'ask_user_question': Sparkles,
+
+  // SimpleAI 引擎工具
+  'bash': Terminal,
+  'edit_file': Edit2,
+  'list_directory': FolderOpen,
+  'glob': FileSearch,
+  'apply_patch': GitPullRequest,
+  'update_plan': ListChecks,
+  'read_skill': Layers,
+  'dispatch_agent': Cpu,
+  'browser': Globe2,
+  'computer': Cpu,
   'default': Wrench,
 };
 
@@ -291,6 +315,18 @@ const TOOL_CATEGORY: Record<string, ToolCategory> = {
   'skill': 'agent',
   'AskUserQuestion': 'other',
   'ask_user_question': 'other',
+
+  // SimpleAI 引擎工具
+  'bash': 'execute',
+  'edit_file': 'edit',
+  'list_directory': 'list',
+  'glob': 'search',
+  'apply_patch': 'edit',
+  'update_plan': 'manage',
+  'read_skill': 'agent',
+  'dispatch_agent': 'agent',
+  'browser': 'network',
+  'computer': 'execute',
 };
 
 const TOOL_LABEL_KEYS: Record<string, string> = {
@@ -340,6 +376,18 @@ const TOOL_LABEL_KEYS: Record<string, string> = {
   'web_fetch': 'labels.webRequest',
   'AskUserQuestion': 'labels.ask',
   'ask_user_question': 'labels.ask',
+
+  // SimpleAI 引擎工具
+  'bash': 'labels.execute',
+  'edit_file': 'labels.edit',
+  'list_directory': 'labels.list',
+  'glob': 'labels.searchFiles',
+  'apply_patch': 'labels.applyPatch',
+  'update_plan': 'labels.updatePlan',
+  'read_skill': 'labels.skill',
+  'dispatch_agent': 'labels.agent',
+  'browser': 'labels.browser',
+  'computer': 'labels.computer',
 };
 
 export function getToolConfig(toolName: string): ToolConfig {
@@ -416,13 +464,40 @@ export function extractToolKeyInfo(toolName: string, input: Record<string, unkno
     }
   }
 
+  // SimpleAI edit_file：提取路径 + 行号范围
+  if (toolName === 'edit_file' && input) {
+    const path = input.path as string | undefined;
+    const startLine = input.start_line as number | undefined;
+    const endLine = input.end_line as number | undefined;
+    const fileName = path ? path.split('/').pop() || path.split('\\').pop() || path : '';
+    if (fileName && startLine && endLine) {
+      return `${fileName} L${startLine}-L${endLine}`;
+    }
+    if (fileName) return fileName;
+  }
+
+  // SimpleAI apply_patch：从补丁信封提取文件数
+  if (toolName === 'apply_patch' && input) {
+    const raw = input.input as string | undefined;
+    if (raw) {
+      const fileCount = (raw.match(/\*\*\* (Add|Update|Delete) File:/g) || []).length;
+      if (fileCount > 0) return `${fileCount} 文件`;
+    }
+  }
+
+  // SimpleAI update_plan：提取步骤数
+  if (toolName === 'update_plan' && input) {
+    const plan = input.plan as Array<unknown> | undefined;
+    if (Array.isArray(plan)) return `${plan.length} 步`;
+  }
+
   switch (category) {
     case 'read':
     case 'edit':
     case 'write':
     case 'delete':
       // Glob 工具：优先提取 pattern 而非 path（path 是搜索根目录）
-      if (toolName === 'Glob' && input?.pattern) {
+      if (toolName.toLowerCase() === 'glob' && input?.pattern) {
         const p = input.pattern as string;
         return p.length > 40 ? p.slice(0, 37) + '...' : p;
       }

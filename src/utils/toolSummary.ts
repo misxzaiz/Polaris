@@ -303,6 +303,71 @@ export function generateCollapsedSummary(
     };
   }
 
+  // SimpleAI list_directory：显示目录/文件数
+  if (normalizedToolName.includes('list_directory') || normalizedToolName.includes('list_dir')) {
+    if (output) {
+      const items = output.trim().split('\n').filter(f => f.trim());
+      const dirs = items.filter(i => i.endsWith('/')).length;
+      const files = items.length - dirs;
+      const parts: string[] = [];
+      if (dirs > 0) parts.push(`${dirs} dirs`);
+      if (files > 0) parts.push(`${files} ${t('output.files')}`);
+      return {
+        target: filePath || toolName,
+        summary: parts.join(' · ') || `${items.length} ${t('output.files')}`,
+        summaryType: 'files',
+      };
+    }
+    return {
+      target: filePath || toolName,
+      summary: '',
+      summaryType: 'status',
+    };
+  }
+
+  // SimpleAI apply_patch：显示文件数和增删行数
+  if (normalizedToolName.includes('apply_patch')) {
+    const patchInput = (input?.input) as string | undefined;
+    if (patchInput && typeof patchInput === 'string') {
+      const fileCount = (patchInput.match(/\*\*\* (Add|Update|Delete) File:/g) || []).length;
+      const addedLines = (patchInput.match(/^\+[^+]/gm) || []).length;
+      const removedLines = (patchInput.match(/^-[^-]/gm) || []).length;
+      if (fileCount > 0) {
+        return {
+          target: `${fileCount} ${t('output.files')}`,
+          summary: `+${addedLines} -${removedLines}`,
+          summaryType: 'diff',
+        };
+      }
+    }
+    return {
+      target: toolName,
+      summary: '',
+      summaryType: 'status',
+    };
+  }
+
+  // SimpleAI update_plan：显示步骤数和完成进度
+  if (normalizedToolName.includes('update_plan')) {
+    const plan = input?.plan as Array<{ status?: string }> | undefined;
+    if (Array.isArray(plan)) {
+      const completed = plan.filter(p => p.status === 'completed').length;
+      const summaryText = completed === plan.length
+        ? `${plan.length} ${t('output.todos')}`
+        : `${completed}/${plan.length}`;
+      return {
+        target: toolName,
+        summary: summaryText,
+        summaryType: 'count',
+      };
+    }
+    return {
+      target: toolName,
+      summary: '',
+      summaryType: 'status',
+    };
+  }
+
   // Edit 工具：显示 diff 统计
   if (normalizedToolName.includes('edit') || normalizedToolName.includes('str_replace')) {
     // 优先从 output 解析 diff 统计
@@ -315,6 +380,18 @@ export function generateCollapsedSummary(
       if (typeof oldStr === 'string' && typeof newStr === 'string') {
         const removed = oldStr.split('\n').length
         const added = newStr.split('\n').length
+        diffStats = `+${added} -${removed}`
+      }
+    }
+
+    // SimpleAI edit_file：行号范围替换，从 replacement_text 行数推算
+    if (!diffStats && input) {
+      const startLine = (input.start_line) as number | undefined
+      const endLine = (input.end_line) as number | undefined
+      const replacement = (input.replacement_text) as string | undefined
+      if (typeof startLine === 'number' && typeof endLine === 'number' && typeof replacement === 'string') {
+        const removed = endLine - startLine + 1
+        const added = replacement === '' ? 0 : replacement.split('\n').length
         diffStats = `+${added} -${removed}`
       }
     }

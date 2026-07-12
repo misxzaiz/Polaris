@@ -6,7 +6,7 @@ import { memo, useState, useMemo, useCallback } from 'react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { Check, XCircle, ChevronDown, ChevronRight, Code, FileDiff, Copy } from 'lucide-react';
+import { Check, XCircle, ChevronDown, ChevronRight, Code, FileDiff, Copy, ListChecks } from 'lucide-react';
 import type { ToolCallBlock } from '@/types';
 import { getToolConfig, extractToolKeyInfo, getToolShortName } from '@/utils/toolConfig';
 import { extractFullFilePath, extractFullCommand } from '@/utils/toolInputExtractor';
@@ -26,6 +26,7 @@ import { STATUS_CONFIG } from '../chatUtils/constants';
 import { isTodoWriteTool, isGrepTool, parseTodoInput } from '../chatUtils/helpers';
 import { GrepOutputRenderer } from './GrepOutputRenderer';
 import { TodoWriteInputRenderer } from './TodoWriteRenderer';
+import { PatchDiffRenderer } from './PatchDiffRenderer';
 
 export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block }: { block: ToolCallBlock }) {
   const { t } = useTranslation('chat');
@@ -158,8 +159,18 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
     return isEdit && isCompleted && hasDiff;
   }, [block.name, block.status, block.diffData]);
 
+  // 是否有补丁数据（apply_patch）
+  const hasPatchData = useMemo(() => {
+    return block.name === 'apply_patch' && block.patchData && block.patchData.length > 0;
+  }, [block.name, block.patchData]);
+
+  // 是否为 update_plan（降级展示）
+  const isUpdatePlan = useMemo(() => {
+    return block.name === 'update_plan';
+  }, [block.name]);
+
   // 是否使用专用输出渲染器
-  const useCustomRenderer = grepData !== null;
+  const useCustomRenderer = grepData !== null || hasPatchData;
 
   // 状态动画类
   const statusAnimationClass = useMemo(() => {
@@ -355,8 +366,23 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
             </div>
           )}
 
-          {/* 非Edit工具或无Diff：显示输入参数 */}
-          {!showDiffButton && hasInput && (
+          {/* apply_patch：多文件补丁渲染 */}
+          {hasPatchData && (
+            <PatchDiffRenderer block={block} />
+          )}
+
+          {/* update_plan：降级展示，仅显示简要信息 */}
+          {isUpdatePlan && (
+            <div className="mb-3">
+              <div className="text-xs text-text-tertiary flex items-center gap-1.5 italic">
+                <ListChecks className="w-3 h-3" />
+                {t('tool.planUpdated')}
+              </div>
+            </div>
+          )}
+
+          {/* 非Edit/补丁/计划工具或无Diff：显示输入参数 */}
+          {!showDiffButton && !hasPatchData && !isUpdatePlan && hasInput && (
             <div className="mb-3">
               <div className="text-xs text-text-muted mb-1.5 flex items-center gap-1.5">
                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">

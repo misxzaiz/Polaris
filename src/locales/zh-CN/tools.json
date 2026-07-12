@@ -36,7 +36,11 @@
     "analyze": "分析",
     "codeAnalysis": "代码分析",
     "webRequest": "网络请求",
-    "ask": "询问"
+    "ask": "询问",
+    "applyPatch": "应用补丁",
+    "updatePlan": "更新计划",
+    "browser": "浏览器",
+    "computer": "电脑操作"
   },
   "actions": {
     "editing": "正在编辑",
