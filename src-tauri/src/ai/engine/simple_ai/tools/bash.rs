@@ -2,6 +2,8 @@
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
+#[cfg(windows)]
+use std::path::Path;
 use serde_json::{json, Value};
 
 use super::{truncate_chars, Tool, ToolContext, ToolOutcome};
@@ -19,7 +21,7 @@ impl Tool for BashTool {
             "type": "function",
             "function": {
                 "name": "bash",
-                "description": "Execute a shell command and return its output. \n\nOn Windows: the shell is auto-detected (Git Bash preferred, then PowerShell, then cmd.exe). POSIX commands (grep, sed, find, rm, ls) may not be available on cmd.exe — prefer the dedicated tools (search_files, glob, read_file, edit_file) which work identically across platforms.\n\nIf a shell command fails with exit code 127, the command is not installed or not in PATH — use a dedicated tool instead.\n\nUse this to run build tools, scripts, and system commands, not for file content search/edit.",
+                "description": "Execute a shell command and return its output. \n\nOn Windows: the shell is auto-detected (Git Bash preferred, then PowerShell, then cmd.exe). POSIX commands (grep, sed, find, rm, ls) may not be available on cmd.exe — prefer the dedicated tools (search_files, glob, read_file, edit_file) which work identically across platforms.\n\nIMPORTANT: Bash-specific syntax (&&, ||, 2>/dev/null, $(...)) only works with Git Bash. When the auto-detected shell is PowerShell or cmd.exe, these constructs fail. Rewrite using PowerShell syntax (-and, -or, 2>$null, Get-Content, Select-String) or use dedicated tools instead.\n\nIf a shell command fails with exit code 127, the command is not installed or not in PATH — use a dedicated tool instead.\n\nUse this to run build tools, scripts, and system commands, not for file content search/edit.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -83,17 +85,30 @@ fn detect_shell_windows() -> (&'static str, Option<String>) {
     where_cmd.creation_flags(CREATE_NO_WINDOW);
     if let Ok(output) = where_cmd.output() {
         if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stdout = decode_windows_output(&output.stdout);
             // 遍历所有结果，跳过 WSL 的 bash（无法正确处理 Windows 路径）
             for line in stdout.lines() {
                 let bash_path = line.trim();
-                if bash_path.is_empty() || !std::path::Path::new(bash_path).exists() {
+                if bash_path.is_empty() || !Path::new(bash_path).exists() {
                     continue;
                 }
                 if !is_wsl_bash(bash_path) {
                     return ("git_bash", Some(bash_path.to_string()));
                 }
             }
+        }
+    }
+    // 1c. where.exe 不可靠时的兜底：扫描 Git for Windows 常见安装路径
+    // 这三个路径在 Git for Windows 所有版本中高度稳定，
+    // 用于覆盖 Tauri 桌面应用启动时 PATH 不含 Git 的 usr/bin 目录的场景。
+    static GIT_BASH_FALLBACKS: &[&str] = &[
+        r"C:\Program Files\Git\usr\bin\bash.exe",
+        r"C:\Program Files (x86)\Git\usr\bin\bash.exe",
+        r"C:\Git\usr\bin\bash.exe",
+    ];
+    for path in GIT_BASH_FALLBACKS {
+        if Path::new(path).exists() {
+            return ("git_bash", Some((*path).to_string()));
         }
     }
     // 2. 尝试 PowerShell
@@ -115,6 +130,48 @@ fn is_wsl_bash(path: &str) -> bool {
     lower.contains("system32") || lower.contains("syswow64") || lower.contains("windowsapps")
 }
 
+/// 解码 Windows 进程输出。
+/// 优先级：UTF-8 → GBK（CP936）→ UTF-8 lossy。
+/// 适配 PowerShell 5.1（GBK）与 Git Bash / PowerShell 7（UTF-8）的混用场景。
+fn decode_windows_output(bytes: &[u8]) -> String {
+    match std::str::from_utf8(bytes) {
+        Ok(s) => s.to_string(),
+        Err(_) => {
+            // 参考 codex.rs::decode_process_output_line 的同一模式
+            let (decoded, had_errors) = encoding_rs::GBK.decode_without_bom_handling(bytes);
+            if !had_errors {
+                decoded.into_owned()
+            } else {
+                String::from_utf8_lossy(bytes).into_owned()
+            }
+        }
+    }
+}
+
+/// 检测命令中是否含有 Bash 特有语法（PowerShell 5.1 / cmd.exe 不支持）。
+///
+/// 启发式检测，不追求 100% 精确——宁可漏报（让有效命令正常执行），也不误伤。
+fn has_bash_syntax(cmd: &str) -> bool {
+    for line in cmd.split('\n') {
+        let l = line.trim();
+        if l.contains("/dev/null") {
+            return true;
+        }
+        if l.contains("2>&1") {
+            return true;
+        }
+        // && 和 || 作为语句分隔符（PowerShell 5.1 不支持）
+        if l.contains(" && ") || l.contains(" || ") || l.starts_with("&& ") || l.ends_with(" ||") {
+            return true;
+        }
+        // $(...) 命令替换
+        if l.contains("$(") {
+            return true;
+        }
+    }
+    false
+}
+
 fn run_bash(command: &str, workdir: Option<&str>, default_dir: &str) -> ToolOutcome {
     let cwd = workdir.unwrap_or(default_dir);
 
@@ -124,18 +181,42 @@ fn run_bash(command: &str, workdir: Option<&str>, default_dir: &str) -> ToolOutc
     let mut cmd = std::process::Command::new(shell_exe);
     cmd.current_dir(cwd);
 
-    match shell_name {
-        "git_bash" | "sh" => {
-            cmd.arg("-c").arg(command);
-        }
-        "pwsh" => {
-            cmd.arg("-Command").arg(command);
-        }
-        "cmd" => {
-            cmd.arg("/C").arg(command);
-        }
-        _ => {}
-    }
+    let (is_bash_shell, uses_powershell_cmd) = if shell_name == "git_bash" || shell_name == "sh" {
+        cmd.arg("-c").arg(command);
+        (true, false)
+    } else if shell_name == "pwsh" {
+        cmd.arg("-Command").arg(command);
+        (false, true)
+    } else if shell_name == "cmd" {
+        cmd.arg("/C").arg(command);
+        (false, false)
+    } else {
+        (false, false)
+    };
+
+    // 非 Bash shell：执行前检测 Bash 语法并给出前置提示
+    // 避免命令裸奔到 shell 被拒导致只收到乱码 stderr
+    let syntax_hint = if !is_bash_shell && has_bash_syntax(command) {
+        let hint = if uses_powershell_cmd {
+            "[Shell hint] The auto-detected shell is PowerShell 5.1, which does not support \
+             Bash syntax (&&, ||, 2>/dev/null, $(), etc.).\n\
+             Consider: (1) rewrite using PowerShell syntax (-and, -or, 2>$null, Get-Content, \
+             Select-String); or (2) use dedicated tools (search_files, glob, read_file, edit_file)\
+             which work across all shells.\n\
+             ---\n\
+             Command: "
+        } else {
+            "[Shell hint] The auto-detected shell is cmd.exe, which does not support \
+             Bash syntax (&&, ||, 2>/dev/null, $(), etc.).\n\
+             Consider using dedicated tools (search_files, glob, read_file, edit_file) for \
+             file operations, or install Git Bash for POSIX command support.\n\
+             ---\n\
+             Command: "
+        };
+        Some(format!("{}\n{}", hint, truncate_chars(command, 512)))
+    } else {
+        None
+    };
 
     #[cfg(windows)]
     {
@@ -147,12 +228,20 @@ fn run_bash(command: &str, workdir: Option<&str>, default_dir: &str) -> ToolOutc
 
     match output {
         Ok(o) => {
-            let stdout = String::from_utf8_lossy(&o.stdout);
-            let stderr = String::from_utf8_lossy(&o.stderr);
+            let stdout = decode_windows_output(&o.stdout);
+            let stderr = decode_windows_output(&o.stderr);
             let exit_code = o.status.code().unwrap_or(-1);
 
-            let mut result = String::new();
+            let mut result = if let Some(hint) = syntax_hint {
+                hint
+            } else {
+                String::new()
+            };
+
             if !stdout.is_empty() {
+                if !result.is_empty() {
+                    result.push('\n');
+                }
                 result.push_str(&stdout);
             }
             if !stderr.is_empty() {
