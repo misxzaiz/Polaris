@@ -1,5 +1,5 @@
 /**
- * 统一建议下拉组件 - 合并工作区、文件和快捷片段建议
+ * 统一建议下拉组件 - 合并工作区、文件、快捷片段、Skill 和 MCP 建议
  */
 
 import { useEffect, useRef } from 'react';
@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import type { FileMatch } from '@/services/fileSearch';
 import type { Workspace, EngineId } from '@/types';
 import type { PromptSnippet } from '@/types/promptSnippet';
+import type { SkillItem as SkillItemType } from '@/types/skill';
 import { getEngineDisplayName } from '@/utils/engineDisplay';
 
 // 分离文件名和目录路径
@@ -29,9 +30,19 @@ export interface ConversationSuggestion {
 }
 
 export interface SuggestionItem {
-  type: 'workspace' | 'file' | 'snippet' | 'conversation';
-  data: Workspace | FileMatch | PromptSnippet | ConversationSuggestion;
+  type: 'workspace' | 'file' | 'snippet' | 'skill' | 'mcp' | 'conversation';
+  data: Workspace | FileMatch | PromptSnippet | SkillItemType | ConversationSuggestion | McpServerItem;
 }
+
+/** Skill 条目（用于 / 命令建议） */
+export interface McpServerItem {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+/** MCP Server 条目（用于 / 命令建议） */
+// Note: SkillItem is now imported from @/types/skill as SkillItemType
 
 interface UnifiedSuggestionProps {
   items: SuggestionItem[];
@@ -71,6 +82,8 @@ export function UnifiedSuggestion({
   const workspaceItems = items.filter(i => i.type === 'workspace');
   const fileItems = items.filter(i => i.type === 'file');
   const snippetItems = items.filter(i => i.type === 'snippet');
+  const skillItems = items.filter(i => i.type === 'skill');
+  const mcpItems = items.filter(i => i.type === 'mcp');
   const conversationItems = items.filter(i => i.type === 'conversation');
 
   return (
@@ -180,6 +193,7 @@ export function UnifiedSuggestion({
           })}
         </>
       )}
+
       {/* 快捷片段分组 */}
       {snippetItems.length > 0 && (
         <>
@@ -211,6 +225,71 @@ export function UnifiedSuggestion({
           })}
         </>
       )}
+
+      {/* Skill 分组 */}
+      {skillItems.length > 0 && (
+        <>
+          <div className="px-3 py-1.5 text-xs text-text-tertiary border-b border-border bg-background-elevated/50 sticky top-0">
+            Skill
+          </div>
+          {skillItems.map((item) => {
+            const globalIdx = items.findIndex(i => i === item);
+            const skill = item.data as SkillItemType;
+
+            return (
+              <div
+                key={skill.id}
+                data-index={globalIdx}
+                className={`px-3 py-2 cursor-pointer flex items-center gap-2 text-sm ${
+                  globalIdx === selectedIndex
+                    ? 'bg-primary/20 text-text-primary'
+                    : 'text-text-secondary hover:bg-background-hover'
+                }`}
+                onClick={() => onSelect(item)}
+                onMouseEnter={() => onHover(globalIdx)}
+              >
+                <span className="font-mono text-sm text-green-500 shrink-0">/{skill.name}</span>
+                {skill.description && (
+                  <span className="text-xs text-text-tertiary truncate">{skill.description}</span>
+                )}
+              </div>
+            );
+          })}
+        </>
+      )}
+
+      {/* MCP 分组 */}
+      {mcpItems.length > 0 && (
+        <>
+          <div className="px-3 py-1.5 text-xs text-text-tertiary border-b border-border bg-background-elevated/50 sticky top-0">
+            MCP 插件
+          </div>
+          {mcpItems.map((item) => {
+            const globalIdx = items.findIndex(i => i === item);
+            const mcp = item.data as McpServerItem;
+
+            return (
+              <div
+                key={mcp.id}
+                data-index={globalIdx}
+                className={`px-3 py-2 cursor-pointer flex items-center gap-2 text-sm ${
+                  globalIdx === selectedIndex
+                    ? 'bg-primary/20 text-text-primary'
+                    : 'text-text-secondary hover:bg-background-hover'
+                }`}
+                onClick={() => onSelect(item)}
+                onMouseEnter={() => onHover(globalIdx)}
+              >
+                <span className="font-mono text-sm text-blue-500 shrink-0">/{mcp.id}</span>
+                {mcp.name && (
+                  <span className="text-xs text-text-tertiary truncate">{mcp.name}</span>
+                )}
+              </div>
+            );
+          })}
+        </>
+      )}
+
       {/* 历史对话分组（@对话 引用） */}
       {conversationItems.length > 0 && (
         <>

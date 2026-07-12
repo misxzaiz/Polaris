@@ -51,42 +51,68 @@ impl Tool for BashTool {
 }
 
 /// 检测可用的 shell（按优先级：Git Bash → PowerShell → 系统默认）
+///
+/// 结果在进程内缓存，避免每次调用 bash 工具都弹出 where.exe 窗口。
 fn detect_shell() -> (&'static str, Option<String>) {
     #[cfg(windows)]
     {
-        // 1. 尝试 Git Bash（最常见）
-        if let Ok(git_root) = std::env::var("GIT_INSTALL_ROOT") {
-            let bash_path = std::path::Path::new(&git_root).join("usr/bin/bash.exe");
-            if bash_path.exists() {
-                return ("git_bash", Some(bash_path.to_string_lossy().to_string()));
-            }
-        }
-        // 1b. 通过 where.exe 探测 Git Bash（更通用）
-        if let Ok(output) = std::process::Command::new("where")
-            .arg("bash")
-            .output()
-        {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                if let Some(bash_path) = stdout.lines().next() {
-                    if !bash_path.is_empty() && std::path::Path::new(bash_path).exists() {
-                        return ("git_bash", Some(bash_path.to_string()));
-                    }
-                }
-            }
-        }
-        // 2. 尝试 PowerShell
-        let pwsh_path = std::path::Path::new("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe");
-        if pwsh_path.exists() {
-            return ("pwsh", Some(pwsh_path.to_string_lossy().to_string()));
-        }
-        // 3. 回退 cmd
-        return ("cmd", None);
+        use std::sync::OnceLock;
+        static SHELL: OnceLock<(&'static str, Option<String>)> = OnceLock::new();
+        SHELL.get_or_init(detect_shell_windows).clone()
     }
     #[cfg(not(windows))]
     {
         ("sh", None)
     }
+}
+
+#[cfg(windows)]
+fn detect_shell_windows() -> (&'static str, Option<String>) {
+    // 1. 尝试 Git Bash（最常见）
+    if let Ok(git_root) = std::env::var("GIT_INSTALL_ROOT") {
+        let bash_path = std::path::Path::new(&git_root).join("usr/bin/bash.exe");
+        if bash_path.exists() {
+            return ("git_bash", Some(bash_path.to_string_lossy().to_string()));
+        }
+    }
+    // 1b. 通过 where.exe 探测 Git Bash（更通用）
+    // CREATE_NO_WINDOW 防止 where.exe 弹出控制台窗口
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    let mut where_cmd = std::process::Command::new("where");
+    where_cmd.arg("bash");
+    where_cmd.creation_flags(CREATE_NO_WINDOW);
+    if let Ok(output) = where_cmd.output() {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            // 遍历所有结果，跳过 WSL 的 bash（无法正确处理 Windows 路径）
+            for line in stdout.lines() {
+                let bash_path = line.trim();
+                if bash_path.is_empty() || !std::path::Path::new(bash_path).exists() {
+                    continue;
+                }
+                if !is_wsl_bash(bash_path) {
+                    return ("git_bash", Some(bash_path.to_string()));
+                }
+            }
+        }
+    }
+    // 2. 尝试 PowerShell
+    let pwsh_path = std::path::Path::new("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe");
+    if pwsh_path.exists() {
+        return ("pwsh", Some(pwsh_path.to_string_lossy().to_string()));
+    }
+    // 3. 回退 cmd
+    ("cmd", None)
+}
+
+/// 判断是否为 WSL 的 bash（位于 System32/WindowsApps 下的是 WSL 启动器，
+/// 不是原生 Windows bash，无法正确处理 `D:\` 等 Windows 路径）
+#[cfg(windows)]
+fn is_wsl_bash(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    // WSL launcher at C:\Windows\System32\bash.exe
+    // WSL distro launchers in WindowsApps
+    lower.contains("system32") || lower.contains("syswow64") || lower.contains("windowsapps")
 }
 
 fn run_bash(command: &str, workdir: Option<&str>, default_dir: &str) -> ToolOutcome {

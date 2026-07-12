@@ -32,6 +32,11 @@ import { normalizeEngineId } from '@/utils/engineDisplay'
 import { dialogStorageService } from '@/services/dialogStorage/service'
 import { packForReference } from '@/services/conversationPackager'
 import type { PromptSnippet } from '@/types/promptSnippet'
+import type { SkillItem } from '@/types/skill'
+import { McpServerItem } from './FileSuggestion'
+import { useSkillStore } from '@/stores/skillStore'
+import { pluginRegistry, listEnabledPluginMcpServers } from '@/plugin-system'
+import { usePluginStore } from '@/stores/pluginStore'
 import {
   createAttachment,
   validateAttachment,
@@ -78,10 +83,23 @@ export function ChatInput({
   const { t } = useTranslation('chat')
   const chatDisplay = useConfigStore((state) => state.config?.chatDisplay)
   const chatDisplayStyle = useMemo(() => getChatDisplayStyleVars(chatDisplay), [chatDisplay])
+// 获取启用的 MCP Server（供 / 命令使用）
+  const pluginStates = usePluginStore((state) => state.pluginStates)
+  const enabledMcpServers = useMemo(() => {
+    const pluginsById = new Map(pluginRegistry.listPlugins().map(p => [p.id, p]))
+    return listEnabledPluginMcpServers(pluginStates)
+      .map(server => ({
+        id: server.id,
+        name: pluginsById.get(server.pluginId)?.name ?? server.id,
+      }))
+      .filter(s => s.name)
+  }, [pluginStates])
 
-  // 获取当前会话的工作区
+// 获取当前会话的工作区
   const currentWorkspace = useActiveSessionWorkspace()
 
+  /** 选中片段时的光标位置信息（用于局部替换） */
+  const [snippetTriggerBefore, setSnippetTriggerBefore] = useState<{ before: string; cursor: number } | null>(null)
   // 使用 Store 中的输入草稿（用于会话切换同步）
   const inputDraft = useActiveSessionInputDraft()
   const promptSuggestion = useActiveSessionPromptSuggestion()
@@ -375,12 +393,29 @@ export function ChatInput({
 
     // === 0. 片段触发检测（行首 / ，必须在所有 @ 检测之前） ===
     // 仅在整个输入内容以 / 开头时触发（排除 @/path 中的 /）
-    if (newValue.startsWith('/') && !newValue.includes('@')) {
-      const query = newValue.slice(1).toLowerCase()
+// === 0. / 命令触发检测（任意位置，必须在所有 @ 检测之前） ===
+    // 规则：光标前最后一个片段以 / 开头，且 / 前是词边界（行首、空格、或标点符号）
+    // 排除 @/path 中的 /（@ 后面的 / 不触发）
+    const slashMatch = textBeforeCursor.match(/(^|[\s(,\[;])\/(\S*)$/)
+    if (slashMatch && !textBeforeCursor.match(/@\/[^\s]*$/)) {
+      const query = slashMatch[2].toLowerCase()
       const snippets = useSnippetStore.getState().snippets
-      const matched: SuggestionItem[] = snippets
-        .filter(s => s.enabled && s.name.toLowerCase().startsWith(query))
-        .map(s => ({ type: 'snippet' as const, data: s }))
+      const skills = useSkillStore.getState().skills
+
+      const matched: SuggestionItem[] = [
+        // 快捷片段
+        ...snippets
+          .filter(s => s.enabled && s.name.toLowerCase().startsWith(query))
+          .map(s => ({ type: 'snippet' as const, data: s })),
+        // Skill
+        ...skills
+          .filter(s => s.name.toLowerCase().startsWith(query))
+          .map(s => ({ type: 'skill' as const, data: s })),
+        // MCP 插件
+        ...enabledMcpServers
+          .filter(m => m.id.toLowerCase().startsWith(query))
+          .map(m => ({ type: 'mcp' as const, data: m })),
+      ]
 
       if (matched.length > 0) {
         setSuggestionItems(matched)

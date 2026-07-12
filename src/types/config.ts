@@ -342,6 +342,8 @@ export interface Config {
   modelProfiles?: ModelProfile[];
   /** 当前激活的模型 Profile ID（为空时使用官方模型） */
   activeModelProfileId?: string;
+  /** Skill 读取路径列表（支持全局绝对路径，工作区相对路径由应用层处理） */
+  skillPaths?: string[];
 }
 
 /** 配置 patch：只包含要更新的顶层字段，null 用于清空可选字段 */

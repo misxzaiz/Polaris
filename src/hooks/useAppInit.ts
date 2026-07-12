@@ -15,6 +15,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useIntegrationStore } from '@/stores/integrationStore';
 import { useAutoModeStore } from '@/stores/autoModeStore';
 import { useSnippetStore } from '@/stores/snippetStore';
+import { useSkillStore } from '@/stores/skillStore';
 import { useCliInfoStore } from '@/stores/cliInfoStore';
 import { useTerminalScriptStore } from '@/stores/terminalScriptStore';
 import { usePluginStore } from '@/stores/pluginStore';
@@ -217,10 +218,11 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
       }
     }
 
-    // 预加载设置相关数据
+// 预加载设置相关数据
     try {
       await Promise.all([
         useSnippetStore.getState().loadSnippets(),
+        useSkillStore.getState().loadSkills(),
         useIntegrationStore.getState().loadInstances(),
         useAutoModeStore.getState().fetchConfig(),
         // 加载 LSP 持久化配置 —— 必须在启动时执行，否则重启后用户自定义的
