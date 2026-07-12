@@ -176,8 +176,8 @@ export function CommitInput({ hasChanges: _hasChanges, selectedFiles }: CommitIn
   }, [handleGenerateWithEngine])
 
   const handleAdoptSuggestion = useCallback(() => {
-    if (suggestion.text) {
-      setMessage(suggestion.text)
+    if (suggestion.text?.trim()) {
+      setMessage(suggestion.text.trim())
     }
   }, [suggestion.text])
 

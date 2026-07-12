@@ -182,7 +182,7 @@ export function PromptSnippetTab() {
 
   return (
     <div className="space-y-4">
-      <div className="border border-border rounded-lg p-4 space-y-4">
+      {/* <div className="border border-border rounded-lg p-4 space-y-4">
         <div>
           <h3 className="text-sm font-medium text-text-primary">斜杠命令来源</h3>
           <p className="text-xs text-text-tertiary mt-1">
@@ -262,7 +262,7 @@ export function PromptSnippetTab() {
             </div>
           </div>
         </div>
-      </div>
+      </div> */}
 
       {/* 标题 + 新建按钮 */}
       <div className="flex items-center justify-between">
