@@ -634,11 +634,11 @@ export function ChatInput({
       return
     } else if (item.type === 'skill') {
       const skill = item.data as SkillItem
-      applySlashReplacement(`请使用 skill \`${skill.id}\` 处理以下请求：`)
+      applySlashReplacement(`skill-${skill.id} `)
       return
     } else if (item.type === 'mcp') {
       const mcp = item.data as McpServerItem
-      applySlashReplacement(`请优先使用 MCP \`${mcp.id}\` 的工具完成：`)
+      applySlashReplacement(`mcp-${mcp.id} `)
       return
     } else if (item.type === 'conversation') {
       // @对话 引用：加载源消息 → packForReference 落盘 → 把 @对话 替换为 @path（复用现有 @path 注入链）
