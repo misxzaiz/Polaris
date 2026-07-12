@@ -391,12 +391,10 @@ export function ChatInput({
     const cursorPosition = textarea.selectionStart
     const textBeforeCursor = newValue.slice(0, cursorPosition)
 
-    // === 0. 片段触发检测（行首 / ，必须在所有 @ 检测之前） ===
-    // 仅在整个输入内容以 / 开头时触发（排除 @/path 中的 /）
-// === 0. / 命令触发检测（任意位置，必须在所有 @ 检测之前） ===
+    // === 0. / 命令触发检测（任意位置，必须在所有 @ 检测之前） ===
     // 规则：光标前最后一个片段以 / 开头，且 / 前是词边界（行首、空格、或标点符号）
     // 排除 @/path 中的 /（@ 后面的 / 不触发）
-    const slashMatch = textBeforeCursor.match(/(^|[\s(,\[;])\/(\S*)$/)
+    const slashMatch = textBeforeCursor.match(/(^|[\s(,;]|\[)\/(\S*)$/)
     if (slashMatch && !textBeforeCursor.match(/@\/[^\s]*$/)) {
       const query = slashMatch[2].toLowerCase()
       const snippets = useSnippetStore.getState().snippets
@@ -405,15 +403,26 @@ export function ChatInput({
       const matched: SuggestionItem[] = [
         // 快捷片段
         ...snippets
-          .filter(s => s.enabled && s.name.toLowerCase().startsWith(query))
+          .filter(s => s.enabled && (
+            s.name.toLowerCase().includes(query)
+            || (s.description?.toLowerCase().includes(query) ?? false)
+          ))
           .map(s => ({ type: 'snippet' as const, data: s })),
         // Skill
         ...skills
-          .filter(s => s.name.toLowerCase().startsWith(query))
+          .filter(s => (
+            s.id.toLowerCase().includes(query)
+            || s.name.toLowerCase().includes(query)
+            || (s.description?.toLowerCase().includes(query) ?? false)
+          ))
           .map(s => ({ type: 'skill' as const, data: s })),
         // MCP 插件
         ...enabledMcpServers
-          .filter(m => m.id.toLowerCase().startsWith(query))
+          .filter(m => (
+            m.id.toLowerCase().includes(query)
+            || m.name.toLowerCase().includes(query)
+            || m.id.toLowerCase().replace(/^polaris[-_.]/, '').includes(query)
+          ))
           .map(m => ({ type: 'mcp' as const, data: m })),
       ]
 
@@ -540,7 +549,7 @@ export function ChatInput({
     setShowSuggestions(false)
     setSuggestionItems([])
     clearResults()
-  }, [workspaces, searchFiles, clearResults, calculateSuggestionPosition, buildSuggestionItems, attachments, debouncedPersistDraft, historyIndex, searchConversations])
+  }, [workspaces, searchFiles, clearResults, calculateSuggestionPosition, buildSuggestionItems, attachments, debouncedPersistDraft, historyIndex, searchConversations, enabledMcpServers])
 
   // 当 fileMatches 更新时，合并到 suggestionItems（@对话 模式下不合并文件）
   useEffect(() => {
@@ -588,22 +597,48 @@ export function ChatInput({
     const textBeforeCursor = value.slice(0, cursorPosition)
     const textAfterCursor = value.slice(cursorPosition)
 
+    const replaceSlashToken = (replacement: string): string => {
+      const slashToken = textBeforeCursor.match(/(^|[\s(,;]|\[)\/\S*$/)
+      if (!slashToken || slashToken.index === undefined) return value
+      const tokenStart = slashToken.index + slashToken[1].length
+      return textBeforeCursor.slice(0, tokenStart) + replacement + textAfterCursor
+    }
+
+    const applySlashReplacement = (replacement: string) => {
+      const replaced = replaceSlashToken(replacement)
+      setLocalText(replaced)
+      updateInputDraft({ text: replaced, attachments })
+      setShowSuggestions(false)
+      setSuggestionItems([])
+      setTimeout(() => {
+        textarea.focus()
+        const cursor = replaced.length - textAfterCursor.length
+        textarea.setSelectionRange(cursor, cursor)
+      }, 0)
+    }
+
     let newText: string
 
     if (item.type === 'snippet') {
-      // 片段选中：清除 /xxx，弹出变量填写或直接展开
+      // 片段选中：仅替换光标处的 /xxx，保留前后文本。
       const snippet = item.data as PromptSnippet
       const expanded = resolveSnippetAutoVars(snippet.content)
       if (snippet.variables.length > 0) {
-        // 有用户变量，弹出填写面板
+        setSnippetTriggerBefore({ before: textBeforeCursor, cursor: cursorPosition })
         setActiveSnippet(snippet)
       } else {
-        // 无变量，直接展开
-        setLocalText(expanded)
-        debouncedPersistDraft(expanded, attachments)
+        applySlashReplacement(expanded)
       }
       setShowSuggestions(false)
       setSuggestionItems([])
+      return
+    } else if (item.type === 'skill') {
+      const skill = item.data as SkillItem
+      applySlashReplacement(`请使用 skill \`${skill.id}\` 处理以下请求：`)
+      return
+    } else if (item.type === 'mcp') {
+      const mcp = item.data as McpServerItem
+      applySlashReplacement(`请优先使用 MCP \`${mcp.id}\` 的工具完成：`)
       return
     } else if (item.type === 'conversation') {
       // @对话 引用：加载源消息 → packForReference 落盘 → 把 @对话 替换为 @path（复用现有 @path 注入链）
@@ -674,7 +709,7 @@ export function ChatInput({
       const newCursorPos = newText.length - textAfterCursor.length
       textarea.setSelectionRange(newCursorPos, newCursorPos)
     }, 0)
-  }, [value, fileWorkspace, attachments, debouncedPersistDraft, resolveSnippetAutoVars, currentWorkspace, t])
+  }, [value, fileWorkspace, attachments, debouncedPersistDraft, resolveSnippetAutoVars, currentWorkspace, t, updateInputDraft])
 
   const handleSend = useCallback(() => {
     const trimmed = value.trim()
@@ -858,12 +893,26 @@ export function ChatInput({
           snippet={activeSnippet}
           onExpand={(content) => {
             const expanded = resolveSnippetAutoVars(content)
-            setLocalText(expanded)
+            let nextText = expanded
+            if (snippetTriggerBefore) {
+              const match = snippetTriggerBefore.before.match(/(^|[\s(,;]|\[)\/\S*$/)
+              if (match && match.index !== undefined) {
+                const tokenStart = match.index + match[1].length
+                nextText = snippetTriggerBefore.before.slice(0, tokenStart)
+                  + expanded
+                  + localText.slice(snippetTriggerBefore.cursor)
+              }
+            }
+            setLocalText(nextText)
             setActiveSnippet(null)
-            debouncedPersistDraft(expanded, attachments)
+            setSnippetTriggerBefore(null)
+            updateInputDraft({ text: nextText, attachments })
             setTimeout(() => textareaRef.current?.focus(), 0)
           }}
-          onCancel={() => setActiveSnippet(null)}
+          onCancel={() => {
+            setActiveSnippet(null)
+            setSnippetTriggerBefore(null)
+          }}
         />
       )}
       {/* 编辑模式提示条 */}

@@ -1116,6 +1116,10 @@ pub struct Config {
     #[serde(default)]
     pub active_model_profile_id: Option<String>,
 
+    /// Skill 读取路径列表。支持绝对路径；相对路径由前端按当前工作区解析。
+    #[serde(default)]
+    pub skill_paths: Vec<String>,
+
     // === 旧字段，保持向后兼容 ===
     /// @deprecated 请使用 claude_code.cli_path
     #[serde(default)]
@@ -1157,6 +1161,7 @@ impl Default for Config {
             terminal_scripts: BTreeMap::new(),
             model_profiles: Vec::new(),
             active_model_profile_id: None,
+            skill_paths: Vec::new(),
             claude_cmd: None,
         }
     }

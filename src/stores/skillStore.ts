@@ -12,6 +12,7 @@ import { create } from 'zustand';
 import * as tauri from '@/services/tauri';
 import type { SkillItem } from '@/types/skill';
 import { useConfigStore } from './configStore';
+import { useWorkspaceStore } from './workspaceStore';
 import { createLogger } from '@/utils/logger';
 
 const log = createLogger('SkillStore');
@@ -88,7 +89,7 @@ async function scanSubdirFormat(dirPath: string): Promise<SkillItem[]> {
 async function scanFlatFormat(dirPath: string): Promise<SkillItem[]> {
   const results: SkillItem[] = [];
   try {
-const entries = await tauri.readDirectory(dirPath) as Array<{ name: string; path: string; isDir: boolean }>;
+    const entries = await tauri.readDirectory(dirPath) as Array<{ name: string; path: string; isDir: boolean }>;
     for (const entry of entries) {
       if (!entry.isDir && entry.name.toLowerCase().endsWith('.md')) {
         const filePath = `${dirPath}/${entry.name}`;
@@ -96,7 +97,7 @@ const entries = await tauri.readDirectory(dirPath) as Array<{ name: string; path
           const content = await tauri.readFile(filePath);
           results.push(parseSkillContent(content, filePath, entry.name));
         } catch {
-log.warn('读取 Skill 文件失败', { path: filePath });
+          log.warn('读取 Skill 文件失败', { path: filePath });
         }
       }
     }
@@ -130,15 +131,23 @@ export const useSkillStore = create<SkillState>((set, get) => ({
   loadSkills: async () => {
     set({ loading: true });
     const config = useConfigStore.getState().config;
-    const skillPaths = config?.skillPaths ?? [];
+    const configuredPaths = config?.skillPaths;
+    const skillPaths = configuredPaths && configuredPaths.length > 0
+      ? configuredPaths
+      : ['.polaris/skills', '.polaris/agents'];
+    const workspacePath = useWorkspaceStore.getState().getCurrentWorkspace()?.path;
     const allSkills: SkillItem[] = [];
     const seenIds = new Set<string>();
 
     for (const rawPath of skillPaths) {
       if (!rawPath) continue;
+      const isAbsolute = /^(?:[a-zA-Z]:[\\/]|[\\/]{2}|\/)/.test(rawPath);
+      const resolvedPath = isAbsolute || !workspacePath
+        ? rawPath
+        : `${workspacePath.replace(/[\\/]$/, '')}/${rawPath.replace(/^[\\/]/, '')}`;
 
       // 尝试扫描子目录格式（SKILL.md）
-      const subdirSkills = await scanSubdirFormat(rawPath);
+      const subdirSkills = await scanSubdirFormat(resolvedPath);
       for (const skill of subdirSkills) {
         if (!seenIds.has(skill.id)) {
           seenIds.add(skill.id);
@@ -147,7 +156,7 @@ export const useSkillStore = create<SkillState>((set, get) => ({
       }
 
       // 尝试扫描平铺格式（*.md）
-      const flatSkills = await scanFlatFormat(rawPath);
+      const flatSkills = await scanFlatFormat(resolvedPath);
       for (const skill of flatSkills) {
         if (!seenIds.has(skill.id)) {
           seenIds.add(skill.id);

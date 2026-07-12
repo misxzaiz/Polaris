@@ -7,7 +7,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSnippetStore } from '@/stores/snippetStore';
-import { useToastStore } from '@/stores';
+import { useConfigStore, useToastStore } from '@/stores';
+import { useSkillStore } from '@/stores/skillStore';
+import { usePluginStore } from '@/stores/pluginStore';
+import { listPluginMcpServerStatuses, pluginRegistry } from '@/plugin-system';
 import type { PromptSnippet, SnippetVariable, CreateSnippetParams, UpdateSnippetParams } from '@/types/promptSnippet';
 import { extractVariables, AUTO_VARIABLES } from '@/types/promptSnippet';
 import { IconPlus, IconEdit, IconTrash } from '../../Common/Icons';
@@ -31,13 +34,44 @@ const EMPTY_FORM: SnippetFormData = {
 export function PromptSnippetTab() {
   const { t } = useTranslation('promptSnippet');
   const { snippets, loadSnippets, createSnippet, updateSnippet, deleteSnippet } = useSnippetStore();
+  const { skills, loading: skillsLoading, loadSkills } = useSkillStore();
+  const config = useConfigStore(state => state.config);
+  const updateConfigPatch = useConfigStore(state => state.updateConfigPatch);
+  const pluginStates = usePluginStore(state => state.pluginStates);
   const { addToast } = useToastStore();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<SnippetFormData>(EMPTY_FORM);
   const [showForm, setShowForm] = useState(false);
+  const [skillPathsText, setSkillPathsText] = useState('');
 
   useEffect(() => { loadSnippets(); }, [loadSnippets]);
+  useEffect(() => {
+    setSkillPathsText((config?.skillPaths?.length
+      ? config.skillPaths
+      : ['.polaris/skills', '.polaris/agents']).join('\n'));
+  }, [config?.skillPaths]);
+
+  const mcpServers = listPluginMcpServerStatuses(pluginStates)
+    .filter(server => server.enabled)
+    .map(server => ({
+      ...server,
+      pluginName: pluginRegistry.listPlugins().find(plugin => plugin.id === server.pluginId)?.name ?? server.pluginId,
+    }));
+
+  const handleSaveSkillPaths = async () => {
+    const skillPaths = [...new Set(skillPathsText
+      .split(/\r?\n/)
+      .map(path => path.trim())
+      .filter(Boolean))];
+    try {
+      await updateConfigPatch({ skillPaths });
+      await loadSkills();
+      addToast({ type: 'success', title: 'Skill 路径已保存' });
+    } catch (err) {
+      addToast({ type: 'error', title: err instanceof Error ? err.message : String(err) });
+    }
+  };
 
   const handleCreate = () => {
     setEditingId(null);
@@ -136,6 +170,83 @@ export function PromptSnippetTab() {
 
   return (
     <div className="space-y-4">
+      <div className="border border-border rounded-lg p-4 space-y-4">
+        <div>
+          <h3 className="text-sm font-medium text-text-primary">斜杠命令来源</h3>
+          <p className="text-xs text-text-tertiary mt-1">
+            输入 / 可统一搜索快捷片段、Skill 和已启用的 MCP。相对路径按当前工作区解析，每行一个路径。
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm text-text-secondary">Skill 读取路径</label>
+          <textarea
+            value={skillPathsText}
+            onChange={event => setSkillPathsText(event.target.value)}
+            rows={3}
+            placeholder={'.polaris/skills\n.polaris/agents\nD:\\shared\\skills'}
+            className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm font-mono text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-primary resize-y"
+          />
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs text-text-tertiary">
+              支持 &lt;目录&gt;/&lt;name&gt;/SKILL.md 和目录内平铺的 *.md。
+            </span>
+            <div className="flex gap-2 shrink-0">
+              <button
+                onClick={() => void loadSkills()}
+                disabled={skillsLoading}
+                className="px-3 py-1.5 text-xs border border-border rounded-lg text-text-secondary hover:text-text-primary hover:bg-background-hover disabled:opacity-50"
+              >
+                刷新
+              </button>
+              <button
+                onClick={() => void handleSaveSkillPaths()}
+                className="px-3 py-1.5 text-xs bg-primary text-white rounded-lg hover:bg-primary-hover"
+              >
+                保存路径
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <div className="border border-border-subtle rounded-lg overflow-hidden">
+            <div className="px-3 py-2 text-xs font-medium text-text-secondary bg-background-hover">
+              已发现 Skill（{skills.length}）
+            </div>
+            <div className="max-h-40 overflow-auto">
+              {skills.length === 0 ? (
+                <div className="px-3 py-3 text-xs text-text-tertiary">未发现 Skill，请检查路径后刷新。</div>
+              ) : skills.map(skill => (
+                <div key={`${skill.id}:${skill.filePath}`} className="px-3 py-2 border-t border-border-subtle">
+                  <div className="font-mono text-xs text-text-primary">/{skill.id}</div>
+                  <div className="text-xs text-text-tertiary truncate" title={skill.filePath}>{skill.filePath}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="border border-border-subtle rounded-lg overflow-hidden">
+            <div className="px-3 py-2 text-xs font-medium text-text-secondary bg-background-hover">
+              已启用 MCP（{mcpServers.length}）
+            </div>
+            <div className="max-h-40 overflow-auto">
+              {mcpServers.length === 0 ? (
+                <div className="px-3 py-3 text-xs text-text-tertiary">暂无已启用 MCP。</div>
+              ) : mcpServers.map(server => (
+                <div key={`${server.pluginId}:${server.id}`} className="px-3 py-2 border-t border-border-subtle">
+                  <div className="font-mono text-xs text-text-primary">/{server.id}</div>
+                  <div className="text-xs text-text-tertiary">{server.pluginName}</div>
+                </div>
+              ))}
+            </div>
+            <div className="px-3 py-2 border-t border-border-subtle text-xs text-text-tertiary">
+              MCP 无文件路径，来自插件 Manifest；启用状态在插件管理中维护。
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* 标题 + 新建按钮 */}
       <div className="flex items-center justify-between">
         <div>
