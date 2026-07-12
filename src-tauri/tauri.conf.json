@@ -31,15 +31,7 @@
     "targets": "all",
     "createUpdaterArtifacts": false,
     "resources": [
-      "../dist",
-      "target/release/polaris-todo-mcp",
-      "target/release/polaris-requirements-mcp",
-      "target/release/polaris-scheduler-mcp",
-      "target/release/polaris-prd-preview-mcp",
-      "target/release/polaris-computer-mcp",
-      "target/release/polaris-ask-mcp",
-      "target/release/polaris-browser-mcp",
-      "target/release/polaris-agnes-mcp"
+      "../dist"
     ],
     "icon": [
       "icons/32x32.png",

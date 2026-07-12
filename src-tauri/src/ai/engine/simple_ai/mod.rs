@@ -199,8 +199,6 @@ impl AIEngine for SimpleAIEngine {
         }
 
         let session_id = self.next_session_id();
-
-        let session_id = self.next_session_id();
         let work_dir = options.work_dir.clone().unwrap_or_else(|| ".".to_string());
 
         // Skill 索引（Phase 4c）：扫描 .polaris/skills/*/SKILL.md，注入索引消息 + 供 read_skill 工具按需读全文。
@@ -341,7 +339,8 @@ impl AIEngine for SimpleAIEngine {
         session_id: &str,
         message: &str,
         options: SessionOptions,
-// 优先从 env_overrides 获取精确的 profile ID
+    ) -> std::result::Result<(), AppError> {
+        // 优先从 env_overrides 获取精确的 profile ID
         let profile_id = options.env_overrides.get("__simple_ai_profile_id").map(|s| s.as_str());
         let mut profile = self
             .find_active_profile(profile_id)
@@ -364,8 +363,7 @@ impl AIEngine for SimpleAIEngine {
 
         let work_dir = options.work_dir.clone().unwrap_or_else(|| ".".to_string());
 
-        let work_dir = options.work_dir.clone().unwrap_or_else(|| ".".to_string());
-
+        // Skill
         // Skill 索引（Phase 4c）：continue_session 不重新注入索引消息（已在历史中），
         // 但仍需 skills_map 供 read_skill 工具按需读全文。
         let skills_map: std::collections::HashMap<String, skill::SkillEntry> = {
