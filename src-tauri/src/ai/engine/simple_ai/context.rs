@@ -34,6 +34,9 @@ pub(super) fn build_context_messages(work_dir: &str) -> Vec<Value> {
 }
 
 /// 结构化环境上下文（XML 片段）。
+///
+/// shell 由 `detect_shell()` 动态检测（复用 bash.rs 的缓存逻辑），
+/// 让 LLM 准确知道当前 shell 类型，避免生成不适配的命令语法。
 fn build_environment_context(work_dir: &str) -> String {
     let os = if cfg!(windows) {
         "Windows"
@@ -42,7 +45,7 @@ fn build_environment_context(work_dir: &str) -> String {
     } else {
         "Linux"
     };
-    let shell = if cfg!(windows) { "cmd.exe" } else { "sh" };
+    let shell = super::tools::detect_shell().0;
     let date = chrono::Local::now().format("%Y-%m-%d").to_string();
     let cwd = xml_escape(&display_path(work_dir));
     format!(

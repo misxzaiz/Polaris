@@ -32,6 +32,7 @@ use crate::models::AIEvent;
 
 use agent::DispatchAgentTool;
 use apply_patch::ApplyPatchTool;
+pub(crate) use bash::detect_shell;
 use bash::BashTool;
 #[cfg(feature = "tauri-app")]
 use browser::BrowserTool;

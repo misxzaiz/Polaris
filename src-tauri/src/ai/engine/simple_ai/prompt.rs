@@ -35,9 +35,13 @@ shell equivalents — they behave identically across platforms. Use `glob` to fi
 the relevant section before reading. Consult the `<environment_context>` message for the \
 working directory, OS, and shell before running commands. If a `# Available skills` \
 section is present, call `read_skill` to load a matching skill's full instructions before proceeding.\n\
-- Shell commands: on Windows, the shell may be cmd.exe which lacks POSIX commands (grep, sed, \
-find, rm, ls). Prefer the dedicated tools instead. If a shell command fails with exit code 127, \
-the command is not installed — switch to a dedicated tool.\n\
+- Shell commands: on Windows, the auto-detected shell is shown in `<environment_context>` \
+as one of `git_bash` (POSIX syntax: &&, ||, /dev/null, grep, sed, cat all work), `pwsh` \
+(PowerShell syntax: -and, -or, 2>$null, Get-Content, Select-String), or `cmd` (cmd.exe \
+syntax: dir, type, findstr — no POSIX commands). Use the syntax matching the actual shell. \
+If a shell command fails with exit code 127, the command is not installed or uses the wrong \
+shell's syntax — switch to a dedicated tool. Prefer dedicated tools for file content \
+search/edit regardless of shell.\n\
 - Failure recovery: if edit_file fails with an invalid line range, re-read the file to get \
 current line numbers. If search_files returns no matches, try a different pattern or file_ext. \
 Never retry the same failing tool call without first gathering more information.\n\

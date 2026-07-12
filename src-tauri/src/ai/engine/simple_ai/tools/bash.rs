@@ -55,7 +55,9 @@ impl Tool for BashTool {
 /// 检测可用的 shell（按优先级：Git Bash → PowerShell → 系统默认）
 ///
 /// 结果在进程内缓存，避免每次调用 bash 工具都弹出 where.exe 窗口。
-fn detect_shell() -> (&'static str, Option<String>) {
+///
+/// 同时供 `context.rs` 注入 `<environment_context>` 使用，让 LLM 获知实际 shell 类型。
+pub(crate) fn detect_shell() -> (&'static str, Option<String>) {
     #[cfg(windows)]
     {
         use std::sync::OnceLock;
@@ -181,7 +183,13 @@ fn run_bash(command: &str, workdir: Option<&str>, default_dir: &str) -> ToolOutc
     let mut cmd = std::process::Command::new(shell_exe);
     cmd.current_dir(cwd);
 
-    let (is_bash_shell, uses_powershell_cmd) = if shell_name == "git_bash" || shell_name == "sh" {
+    let (is_bash_shell, uses_powershell_cmd) = if shell_name == "git_bash" {
+        // 使用 `-l` 让 Git Bash 以 login shell 模式启动，
+        // 确保执行 /etc/profile 设置 MSYS2 PATH（包含 /usr/bin、/bin 等），
+        // 避免从桌面启动的程序因 PATH 不含 MSYS2 路径导致 `ls`、`grep`、`cat` 等命令找不到。
+        cmd.arg("-l").arg("-c").arg(command);
+        (true, false)
+    } else if shell_name == "sh" {
         cmd.arg("-c").arg(command);
         (true, false)
     } else if shell_name == "pwsh" {
@@ -251,18 +259,27 @@ fn run_bash(command: &str, workdir: Option<&str>, default_dir: &str) -> ToolOutc
                 result.push_str(&format!("[stderr]\n{}", stderr));
             }
 
-            // 退出码解读（提供友好提示）
+            // 退出码解读：根据实际 shell 生成针对性提示（避免写死 "cmd.exe" 误导 LLM）
+            let cmd_not_found_hint = if shell_name == "git_bash" || shell_name == "sh" {
+                // Git Bash 下 exit 127：可能是用了 cmd / PowerShell 专有命令
+                format!("[Shell hint] Exit code 127: command not found. The shell is {}, but the \
+                 command may use cmd.exe or PowerShell syntax (e.g. dir→ls, type→cat, \
+                 findstr→grep, Get-Content→read_file tool). \
+                 Use dedicated tools (search_files, glob, read_file, edit_file) for file operations.]",
+                    shell_name)
+            } else if shell_name == "pwsh" {
+                "[Shell hint] Exit code 127: command not found. The shell is PowerShell 5.1. \
+                 Use PowerShell syntax (Get-Content, Select-String, Get-ChildItem) or \
+                 dedicated tools (search_files, glob, read_file, edit_file).]".to_string()
+            } else {
+                "[Shell hint] Exit code 127: command not found. The shell is cmd.exe; \
+                 POSIX commands are not available. Use dedicated tools or install Git Bash.]".to_string()
+            };
             if exit_code == 127 {
                 if !result.is_empty() {
                     result.push('\n');
                 }
-                result.push_str(&format!(
-                    "\n[Shell hint] Exit code 127: command not found. \
-                    On Windows cmd.exe, POSIX commands like grep/sed/find/rm/ls are not available. \
-                    Use the dedicated tools: search_files (for grep/findstr), \
-                    glob (for find), edit_file (for sed), read_file (for cat). \
-                    If using Git Bash or PowerShell, these commands may work.]"
-                ));
+                result.push_str(&format!("\n{}", cmd_not_found_hint));
             } else if exit_code != 0 {
                 if !result.is_empty() {
                     result.push('\n');
