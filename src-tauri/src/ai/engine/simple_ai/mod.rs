@@ -174,7 +174,7 @@ impl AIEngine for SimpleAIEngine {
     fn start_session(&mut self, message: &str, options: SessionOptions) -> Result<String> {
         // 优先从 env_overrides 获取精确的 profile ID（由 apply_model_profile_options 设置）
         let profile_id = options.env_overrides.get("__simple_ai_profile_id").map(|s| s.as_str());
-        let profile = self
+        let mut profile = self
             .find_active_profile(profile_id)
             .cloned()
             .ok_or_else(|| {
@@ -183,6 +183,22 @@ impl AIEngine for SimpleAIEngine {
                         .to_string(),
                 )
             })?;
+
+        // 如果前端显式传入了模型（通过 SessionOptions.model），覆盖 Profile 默认模型。
+        // apply_model_profile_options 已在前置步骤完成「前端优先、Profile 兜底」的选择，
+        // 此处需尊重该结果，否则前端选中的模型会被 profile.model 静默覆盖。
+        if let Some(frontend_model) = options.model {
+            if frontend_model != profile.model {
+                tracing::info!(
+                    "[SimpleAI] 使用前端选择的模型: {}（Profile 默认: {}）",
+                    frontend_model,
+                    profile.model
+                );
+                profile.model = frontend_model;
+            }
+        }
+
+        let session_id = self.next_session_id();
 
         let session_id = self.next_session_id();
         let work_dir = options.work_dir.clone().unwrap_or_else(|| ".".to_string());
@@ -325,15 +341,28 @@ impl AIEngine for SimpleAIEngine {
         session_id: &str,
         message: &str,
         options: SessionOptions,
-    ) -> Result<()> {
-        // 优先从 env_overrides 获取精确的 profile ID
+// 优先从 env_overrides 获取精确的 profile ID
         let profile_id = options.env_overrides.get("__simple_ai_profile_id").map(|s| s.as_str());
-        let profile = self
+        let mut profile = self
             .find_active_profile(profile_id)
             .cloned()
             .ok_or_else(|| {
                 AppError::ProcessError("No suitable model profile found.".to_string())
             })?;
+
+        // 如果前端显式传入了模型，覆盖 Profile 默认模型（同 start_session 逻辑）。
+        if let Some(frontend_model) = options.model {
+            if frontend_model != profile.model {
+                tracing::info!(
+                    "[SimpleAI] continue_session 使用前端选择的模型: {}（Profile 默认: {}）",
+                    frontend_model,
+                    profile.model
+                );
+                profile.model = frontend_model;
+            }
+        }
+
+        let work_dir = options.work_dir.clone().unwrap_or_else(|| ".".to_string());
 
         let work_dir = options.work_dir.clone().unwrap_or_else(|| ".".to_string());
 
