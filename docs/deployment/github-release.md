@@ -166,6 +166,83 @@ git push origin vx.x.x
 
 ---
 
+## v10.1.1 构建记录
+
+**构建时间**: 2026-07-12 (UTC)
+**Release 页面**: https://github.com/misxzaiz/Polaris/releases/tag/v10.1.1
+
+### 构建产物
+
+| 产物 | 大小 | 平台 | 说明 |
+|---|---|---|---|
+| `polaris_10.1.1_x64-setup.exe` | - | Windows x64 | NSIS 安装程序 |
+| `polaris_10.1.1_x64_en-US.msi` | - | Windows x64 | MSI 安装程序 |
+| `polaris_10.1.1_amd64.deb` | - | Linux x64 | Debian/Ubuntu 安装包 |
+| `polaris-10.1.1-1.x86_64.rpm` | - | Linux x64 | Red Hat/Fedora 安装包 |
+| `polaris_10.1.1_amd64.AppImage` | - | Linux x64 | 便携版（双击运行） |
+| `polaris-web-10.1.1-win-x64.zip` | - | Windows x64 | Web 独立服务 |
+| `polaris-web-10.1.1-linux-x86_64.tar.gz` | - | Linux x64 | Web 独立服务 |
+| `polaris-web-10.1.1-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务 |
+| `latest.json` | - | - | 自动更新元数据 |
+
+### 签名文件
+
+所有安装包均附带 `.sig` 签名文件，用于 Tauri 自动更新验证。
+
+### 快速安装
+
+**Windows (NSIS)**:
+```
+下载 polaris_10.1.1_x64-setup.exe → 双击运行
+```
+
+**Windows (MSI)**:
+```
+下载 polaris_10.1.1_x64_en-US.msi → 双击运行
+```
+
+**Linux (Debian/Ubuntu)**:
+```bash
+sudo dpkg -i polaris_10.1.1_amd64.deb
+```
+
+**Linux (AppImage)**:
+```bash
+chmod +x polaris_10.1.1_amd64.AppImage
+./polaris_10.1.1_amd64.AppImage
+```
+
+**Web 独立服务 (Linux)**:
+```bash
+tar xzf polaris-web-10.1.1-linux-x86_64.tar.gz
+cd polaris-web
+./start.sh
+# 浏览器访问 http://localhost:9830
+```
+
+**Web 独立服务 (Windows)**:
+```
+解压 polaris-web-10.1.1-win-x64.zip
+双击 start.bat
+浏览器访问 http://localhost:9830
+```
+
+**Web 独立服务 (macOS)**:
+```bash
+tar xzf polaris-web-10.1.1-macos-arm64.tar.gz
+cd polaris-web
+./start.sh
+# 浏览器访问 http://localhost:9830
+```
+
+### 修复的问题
+
+- （待补充）
+
+---
+
+## v9.9.7 构建记录
+
 ## v9.9.7 构建记录
 
 **构建时间**: 2026-06-15 15:33 - 15:54 (UTC)
