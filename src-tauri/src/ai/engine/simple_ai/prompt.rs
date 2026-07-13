@@ -64,7 +64,18 @@ warrants it.";
 ///
 /// 环境信息由 `context` 模块独立注入，故此处不再依赖 `work_dir`。
 pub(super) fn build_system_prompt() -> String {
-    PERSONA.to_string()
+    format!(
+        "{}\n\
+        \n\
+        # Context boundaries\n\
+        - This conversation has a finite context window. You cannot recall information from \
+        many turns ago.\n\
+        - If you need details that were discussed earlier, ask the user to re-share them or \
+        check relevant files.\n\
+        - The `<environment_context>` and project instructions at the start of the conversation \
+        are always available to you — never rely on memory of them.",
+        PERSONA
+    )
 }
 
 #[cfg(test)]

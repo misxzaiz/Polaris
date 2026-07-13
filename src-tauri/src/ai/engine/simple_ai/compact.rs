@@ -1,76 +1,55 @@
-/*! 上下文压缩（Phase 3.3）
+/*! 手动上下文压缩（Phase 1）
 
-累计每轮 `usage.input_tokens`，超过窗口阈值（默认 75%）时把 `system` 之后、
-最近一条 `user` 之前的历史连同交接摘要指令发一次**非流式**请求，得 summary
-替换被压缩区间。兜底：压缩失败或区间太短 → 移除最早一个完整 turn（user +
-assistant + tool*），保留 `system` 与最近上下文。
+自动压缩已禁用。本模块提供 `compact_history()` 供手动调用（如 tauri command），
+将指定区间替换为摘要 user 消息。失败时**不修改**消息历史，返回错误。
 
 设计要点：
-- 纯逻辑（`should_compact` / `select_compact_range` / `fallback_drop_oldest`）单测覆盖。
-- `compact_history` 是 async 胶水：序列化区间 → 请求 summary → 替换 / 兜底。
-- 摘要请求复用 `build_request_body` 构造后改 `stream:false`，经 `retry::send_with_retry` 发送。
-- 三协议非流式响应解析在 `extract_summary_text`。
- */
-
-use std::sync::Arc;
+- `select_compact_range` 接收 `bootstrap_end` 参数，压缩区间从 bootstrap 之后开始，
+  保护 system prompt / environment_context / AGENTS.md / Skill 索引不被压缩。
+- `compact_history` 失败时返回 `AppError::ProcessError`，不删除任何消息。
+- `fallback_drop_oldest` 已删除（Phase 0 决策：不自动删除历史）。
+- `request_summary` / `extract_summary_text` 保留供手动调用复用。
+*/
 
 use serde_json::{json, Value};
 
 use crate::ai::engine::simple_ai_protocol::{self, WireProtocol};
 use crate::error::{AppError, Result};
-use crate::models::ai_event::ProgressEvent;
-use crate::models::AIEvent;
 
 use super::retry;
 
-/// 默认上下文窗口（token）。`SIMPLE_AI_CONTEXT_WINDOW` 可覆盖（决策 §12-5）。
-pub(super) const DEFAULT_CONTEXT_WINDOW: u64 = 128_000;
-/// 触发压缩的阈值比例（累计 input / window）。
-const COMPACT_THRESHOLD: f64 = 0.75;
 /// 压缩请求超时（秒）。摘要请求应比对话快。
 const COMPACT_TIMEOUT_SECS: u64 = 60;
 
-/// 累计每轮 input_tokens。
-#[derive(Debug, Default, Clone, Copy)]
-pub(super) struct UsageAccumulator {
-    pub total_input: u64,
-}
-
-impl UsageAccumulator {
-    pub fn add(&mut self, input_tokens: u64) {
-        self.total_input = self.total_input.saturating_add(input_tokens);
-    }
-    /// 累计 input 达窗口的 `COMPACT_THRESHOLD` 时触发。
-    pub fn should_compact(&self, window: u64) -> bool {
-        let threshold = ((window as f64) * COMPACT_THRESHOLD) as u64;
-        self.total_input >= threshold
-    }
-}
-
 /// 选取待压缩区间 `[start, end)`：
-/// - `start = 1`（跳过 system）；
+/// - `start = bootstrap_end`（跳过 system / 环境上下文 / 项目指令 / Skill 索引）；
 /// - `end` = 最近一条 `user` 之前，且不切断 `assistant(tool_calls) → tool` 配对
 ///   （若 end-1 是 tool，回退到 tool 序列前的 assistant）。
 /// 返回 None 表示历史太短不宜压缩。
-pub(super) fn select_compact_range(messages: &[Value]) -> Option<(usize, usize)> {
-    // 至少 system + 2 turn（user/assistant/user/assistant）才有压缩价值。
-    if messages.len() < 4 {
+pub(super) fn select_compact_range(messages: &[Value], bootstrap_end: usize) -> Option<(usize, usize)> {
+    let start = bootstrap_end;
+    // 至少 bootstrap + 2 turn（user/assistant/user/assistant）才有压缩价值。
+    if messages.len() < start.saturating_add(3) {
         return None;
     }
+    // 从尾向前找最后一条 role=="user" 的消息（index >= start）。
     let last_user = messages
         .iter()
-        .rposition(|m| m.get("role").and_then(|r| r.as_str()) == Some("user"))?;
-    if last_user <= 1 {
+        .enumerate()
+        .rev()
+        .find(|(i, m)| *i >= start && m.get("role").and_then(|r| r.as_str()) == Some("user"))
+        .map(|(i, _)| i);
+    let Some(last_user) = last_user else {
         return None;
-    }
-    let mut end = last_user;
+    };
+let mut end = last_user;
     // 回退到 tool 配对边界之前：end 之前若是 tool，说明 tool 序列开头有 assistant(tool_calls)，
     // 切断会破坏配对，故 end 回退到该 assistant 之前。
-    while end > 1 && messages[end - 1].get("role").and_then(|r| r.as_str()) == Some("tool") {
+    while end > start && messages[end - 1].get("role").and_then(|r| r.as_str()) == Some("tool") {
         end -= 1;
     }
     // 同理，end-1 若是带 tool_calls 的 assistant（无后续 tool 但有 tool_calls 字段）也回退。
-    if end > 1 {
+    if end > start {
         let prev = &messages[end - 1];
         if prev.get("role").and_then(|r| r.as_str()) == Some("assistant")
             && prev.get("tool_calls").is_some()
@@ -78,10 +57,10 @@ pub(super) fn select_compact_range(messages: &[Value]) -> Option<(usize, usize)>
             end -= 1;
         }
     }
-    if end <= 1 {
+    if end <= start {
         return None;
     }
-    Some((1, end))
+    Some((start, end))
 }
 
 /// 交接摘要指令（仿 codex compact prompt 语义）。
@@ -191,24 +170,28 @@ fn extract_summary_text(protocol: WireProtocol, json: &Value) -> Result<String> 
     }
 }
 
-/// 压缩历史：把 `[start, end)` 区间替换为单条 summary user 消息；失败则兜底移除最早 turn。
+/// 手动压缩历史：把 `[start, end)` 区间替换为单条 summary user 消息。
+/// 失败时不修改消息历史，返回错误。
+///
+/// `bootstrap_end` 是系统提示词、环境上下文、项目指令、Skill 索引的结束索引，
+/// 压缩区间从该索引之后开始，保护 bootstrap 内容不被压缩。
 pub(super) async fn compact_history(
     messages: &mut Vec<Value>,
+    bootstrap_end: usize,
     profile: &crate::models::config::ModelProfile,
-    event_callback: &Arc<dyn Fn(AIEvent) + Send + Sync>,
-    session_id: &str,
 ) -> Result<()> {
-    let _ = event_callback(AIEvent::Progress(ProgressEvent::new(
-        session_id,
-        "正在压缩上下文…".to_string(),
-    )));
+    tracing::info!(
+        "[SimpleAI] 手动压缩上下文，bootstrap_end={}, total_messages={}",
+        bootstrap_end,
+        messages.len()
+    );
 
-    let (start, end) = match select_compact_range(messages) {
+    let (start, end) = match select_compact_range(messages, bootstrap_end) {
         Some(r) => r,
         None => {
-            tracing::warn!("[SimpleAI] 历史太短无法压缩，回退到移除最早 turn");
-            fallback_drop_oldest(messages);
-            return Ok(());
+            return Err(AppError::ProcessError(
+                "历史太短，无法压缩（bootstrap 之后至少需要 2 个完整回合）".to_string(),
+            ));
         }
     };
 
@@ -223,52 +206,30 @@ pub(super) async fn compact_history(
         .collect::<Vec<_>>()
         .join("\n\n");
 
-    match request_summary(profile, &history_text).await {
-        Ok(summary) if !summary.trim().is_empty() => {
-            let compressed_count = end - start;
-            messages.drain(start..end);
-            messages.insert(
-                start,
-                json!({ "role": "user", "content": format!("[compacted summary]\n{}", summary.trim()) }),
-            );
-            tracing::info!(
-                "[SimpleAI] 上下文已压缩：{} 条消息 → 1 条 summary",
-                compressed_count
-            );
-        }
-        _ => {
-            tracing::warn!("[SimpleAI] 上下文压缩失败，回退到移除最早 turn");
-            fallback_drop_oldest(messages);
-        }
-    }
-    Ok(())
-}
+    let summary = request_summary(profile, &history_text)
+        .await
+        .map_err(|e| {
+            tracing::error!("[SimpleAI] 摘要请求失败：{}", e);
+            AppError::ProcessError(format!("上下文压缩失败：{}", e))
+        })?;
 
-/// 兜底：移除最早一个完整 turn（user + assistant + tool*），保留 system 与后续 turns。
-/// 若仅有一个 user turn（移除会丢最近上下文）则不动。
-fn fallback_drop_oldest(messages: &mut Vec<Value>) {
-    if messages.len() < 3 {
-        return;
+    if summary.trim().is_empty() {
+        return Err(AppError::ProcessError(
+            "上下文压缩失败：摘要请求返回空响应".to_string(),
+        ));
     }
-    // 第一个 user（index >= 1）。
-    let first_user = match messages
-        .iter()
-        .skip(1)
-        .position(|m| m.get("role").and_then(|r| r.as_str()) == Some("user"))
-    {
-        Some(p) => p + 1,
-        None => return,
-    };
-    // 下一个 user（turn 边界）。
-    let next_user = messages
-        .iter()
-        .skip(first_user + 1)
-        .position(|m| m.get("role").and_then(|r| r.as_str()) == Some("user"));
-    let end = match next_user {
-        Some(p) => first_user + 1 + p,
-        None => return, // 只有一个 turn，不移除。
-    };
-    messages.drain(first_user..end);
+
+    let compressed_count = end - start;
+    messages.drain(start..end);
+    messages.insert(
+        start,
+        json!({ "role": "user", "content": format!("[compacted summary]\n{}", summary.trim()) }),
+    );
+    tracing::info!(
+        "[SimpleAI] 上下文已压缩：{} 条消息 → 1 条 summary",
+        compressed_count
+    );
+    Ok(())
 }
 
 #[cfg(test)]
@@ -276,37 +237,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn accumulator_should_compact_at_threshold() {
-        let mut acc = UsageAccumulator::default();
-        acc.add(50_000);
-        assert!(!acc.should_compact(128_000)); // 50k < 96k
-        acc.add(50_000);
-        assert!(acc.should_compact(128_000)); // 100k > 96k
-    }
-
-    #[test]
-    fn accumulator_saturates() {
-        let mut acc = UsageAccumulator::default();
-        acc.add(u64::MAX);
-        acc.add(10);
-        assert_eq!(acc.total_input, u64::MAX);
-    }
-
-    #[test]
     fn select_range_returns_none_for_short_history() {
         let msgs = vec![json!({"role":"system","content":"s"})];
-        assert!(select_compact_range(&msgs).is_none());
+        assert!(select_compact_range(&msgs, 1).is_none());
         let msgs = vec![
             json!({"role":"system","content":"s"}),
             json!({"role":"user","content":"u"}),
         ];
-        assert!(select_compact_range(&msgs).is_none());
+        assert!(select_compact_range(&msgs, 1).is_none());
         let msgs = vec![
             json!({"role":"system","content":"s"}),
             json!({"role":"user","content":"u1"}),
             json!({"role":"assistant","content":"a1"}),
         ];
-        assert!(select_compact_range(&msgs).is_none()); // 无末尾 user
+        assert!(select_compact_range(&msgs, 1).is_none()); // 无末尾 user
     }
 
     #[test]
@@ -317,9 +261,24 @@ mod tests {
             json!({"role":"assistant","content":"a1"}),
             json!({"role":"user","content":"u2"}),
         ];
-        let (start, end) = select_compact_range(&msgs).unwrap();
+        let (start, end) = select_compact_range(&msgs, 1).unwrap();
         assert_eq!(start, 1);
         assert_eq!(end, 3); // [1,3) = u1, a1
+    }
+
+    #[test]
+    fn select_range_respects_bootstrap_end() {
+        let msgs = vec![
+            json!({"role":"system","content":"s"}),
+            json!({"role":"user","content":"env_context"}),
+            json!({"role":"user","content":"project_instructions"}),
+            json!({"role":"user","content":"u1"}),
+            json!({"role":"assistant","content":"a1"}),
+            json!({"role":"user","content":"u2"}),
+        ];
+        let (start, end) = select_compact_range(&msgs, 3).unwrap();
+        assert_eq!(start, 3); // 从 bootstrap_end=3 开始，不压缩 env_context/project_instructions
+        assert_eq!(end, 5); // [3,5) = u1, a1
     }
 
     #[test]
@@ -332,52 +291,9 @@ mod tests {
             json!({"role":"tool","content":"r"}),
             json!({"role":"user","content":"u2"}),
         ];
-        let (start, end) = select_compact_range(&msgs).unwrap();
+        let (start, end) = select_compact_range(&msgs, 1).unwrap();
         assert_eq!(start, 1);
         assert_eq!(end, 2); // [1,2) = u1，不含 assistant(tool_calls)+tool
-    }
-
-    #[test]
-    fn fallback_drops_oldest_complete_turn() {
-        let mut msgs = vec![
-            json!({"role":"system","content":"s"}),
-            json!({"role":"user","content":"u1"}),
-            json!({"role":"assistant","content":"a1"}),
-            json!({"role":"user","content":"u2"}),
-            json!({"role":"assistant","content":"a2"}),
-        ];
-        fallback_drop_oldest(&mut msgs);
-        assert_eq!(msgs.len(), 3);
-        assert_eq!(msgs[0]["role"], "system");
-        assert_eq!(msgs[1]["role"], "user");
-        assert_eq!(msgs[1]["content"], "u2");
-    }
-
-    #[test]
-    fn fallback_drops_assistant_with_tool_results() {
-        let mut msgs = vec![
-            json!({"role":"system","content":"s"}),
-            json!({"role":"user","content":"u1"}),
-            json!({"role":"assistant","content":"","tool_calls":[{"id":"x"}]}),
-            json!({"role":"tool","content":"r"}),
-            json!({"role":"user","content":"u2"}),
-        ];
-        fallback_drop_oldest(&mut msgs);
-        assert_eq!(msgs.len(), 2);
-        assert_eq!(msgs[0]["role"], "system");
-        assert_eq!(msgs[1]["role"], "user");
-        assert_eq!(msgs[1]["content"], "u2");
-    }
-
-    #[test]
-    fn fallback_preserves_single_turn() {
-        let mut msgs = vec![
-            json!({"role":"system","content":"s"}),
-            json!({"role":"user","content":"u1"}),
-            json!({"role":"assistant","content":"a1"}),
-        ];
-        fallback_drop_oldest(&mut msgs);
-        assert_eq!(msgs.len(), 3); // 不动
     }
 
     #[test]

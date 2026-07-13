@@ -20,7 +20,6 @@ use crate::models::ai_event::{
 };
 use crate::models::AIEvent;
 
-use super::compact;
 use super::history;
 use super::tools::{ToolContext, ToolRegistry};
 
@@ -103,15 +102,6 @@ pub(super) async fn run_chat_loop(
     // update_plan 的计划面板状态：每轮首次调用先发 plan_start。
     let plan_id = format!("{}-plan", session_id);
     let plan_started = AtomicBool::new(false);
-
-    // 上下文压缩配置（Phase 3.3）：累计 input 达窗口 75% 时触发摘要压缩。
-    let context_window = read_env_u64(
-        &profile.custom_env,
-        "SIMPLE_AI_CONTEXT_WINDOW",
-        compact::DEFAULT_CONTEXT_WINDOW,
-    );
-    let mut usage_acc = compact::UsageAccumulator::default();
-
     let mut round: u64 = 0;
 
     loop {
@@ -132,16 +122,6 @@ pub(super) async fn run_chat_loop(
 
         // 裁剪历史中超长的 assistant 输出，避免长会话撑爆上下文窗口（零额外 API 调用）。
         history::truncate_history_assistant_outputs(messages, HISTORY_ASSISTANT_TOKEN_CAP);
-
-        // 上下文压缩（Phase 3.3）：累计 input 达阈值时，发摘要请求替换历史区间。
-        if usage_acc.should_compact(context_window) {
-            tracing::info!(
-                "[SimpleAI] 触发上下文压缩（累计 input={}，window={}）",
-                usage_acc.total_input,
-                context_window
-            );
-            compact::compact_history(messages, profile, event_callback, session_id).await?;
-        }
 
         // 构建请求体（按线路协议转换内部 OpenAI 消息格式）
         let body = build_request_body(protocol, &profile.model, messages, &tools);
@@ -280,15 +260,13 @@ pub(super) async fn run_chat_loop(
 
         // 流处理完毕
         let mut tool_calls = stream_state.finish_tool_calls();
-        // token usage（Phase 3.1）：三协议在流末解析，仅日志上报；专用 UsageEvent 待前端 types 同步后启用。
+        // token usage：三协议在流末解析，仅日志上报。
         if let Some(usage) = stream_state.finish_usage() {
-            usage_acc.add(usage.input_tokens);
             tracing::info!(
-                "[SimpleAI] token usage: input={}, output={}, total={} (累计 input={})",
+                "[SimpleAI] token usage: input={}, output={}, total={}",
                 usage.input_tokens,
                 usage.output_tokens,
                 usage.total_tokens,
-                usage_acc.total_input
             );
         }
         tracing::info!(
