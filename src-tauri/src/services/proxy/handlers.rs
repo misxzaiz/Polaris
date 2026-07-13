@@ -5,7 +5,7 @@
 
 use axum::{
     body::Body,
-    extract::State,
+    extract::{RawQuery, State},
     http::{HeaderMap, StatusCode},
     response::Response,
 };
@@ -14,11 +14,51 @@ use serde_json::{json, Value};
 use super::codex_chat::{
     chat_sse_to_codex_responses_sse, chat_to_codex_response, codex_responses_to_chat,
 };
-use super::forwarder::{forward_raw_response, ForwarderConfig, ProxyWireApi};
+use super::forwarder::{
+    forward_raw_response, ForwarderConfig, ProxyWireApi, RequestPassthrough,
+};
 use super::sanitizer::{sanitize_anthropic_messages_body, AnthropicProviderCapability};
 use super::transform::{
     anthropic_to_openai, anthropic_to_responses, openai_to_anthropic, responses_to_anthropic,
 };
+
+/// 不透传给上游的入站请求头（小写）：
+/// hop-by-hop 头由本地连接管理；认证头以 Profile 配置替换；
+/// content-type / accept-encoding 由转发客户端自行设置。
+const PASSTHROUGH_SKIP_HEADERS: &[&str] = &[
+    "host",
+    "content-length",
+    "content-type",
+    "connection",
+    "accept-encoding",
+    "transfer-encoding",
+    "authorization",
+    "x-api-key",
+    "proxy-connection",
+    "keep-alive",
+    "te",
+    "trailer",
+    "upgrade",
+    "expect",
+];
+
+/// 过滤入站请求头，保留可安全透传给上游的部分
+///
+/// Claude CLI 的 `anthropic-beta`（1M 上下文等能力开关）、`user-agent`、
+/// `x-app`、`x-stainless-*` 等都必须原样到达上游，否则部分供应商
+/// 会拒绝请求或以不同能力集响应。
+fn filter_passthrough_headers(headers: &HeaderMap) -> Vec<(String, String)> {
+    headers
+        .iter()
+        .filter(|(name, _)| !PASSTHROUGH_SKIP_HEADERS.contains(&name.as_str()))
+        .filter_map(|(name, value)| {
+            value
+                .to_str()
+                .ok()
+                .map(|v| (name.as_str().to_string(), v.to_string()))
+        })
+        .collect()
+}
 
 /// 代理服务器共享状态
 #[derive(Debug, Clone)]
@@ -32,7 +72,8 @@ pub struct ProxyState {
 /// `POST /v1/messages`
 pub async fn handle_messages(
     State(state): State<ProxyState>,
-    _headers: HeaderMap,
+    RawQuery(raw_query): RawQuery,
+    headers: HeaderMap,
     body: String,
 ) -> Response {
     // 解析 Anthropic 请求
@@ -57,8 +98,14 @@ pub async fn handle_messages(
                 supports_server_tools: false,
             },
         );
+        // 直通模式：透传客户端原始头（含 anthropic-beta 能力开关）与 query，
+        // 使上游看到的请求与 CLI 直连时一致
+        let passthrough = RequestPassthrough {
+            headers: filter_passthrough_headers(&headers),
+            query: raw_query,
+        };
         tracing::info!(
-            "[Proxy] Anthropic 直通净化请求: model={}, stream={}, messages={}",
+            "[Proxy] Anthropic 直通净化请求: model={}, stream={}, messages={}, 透传头={}, beta={:?}",
             sanitized_body
                 .get("model")
                 .and_then(|v| v.as_str())
@@ -68,9 +115,12 @@ pub async fn handle_messages(
                 .get("messages")
                 .and_then(|m| m.as_array())
                 .map(|a| a.len())
-                .unwrap_or(0)
+                .unwrap_or(0),
+            passthrough.headers.len(),
+            headers.get("anthropic-beta").and_then(|v| v.to_str().ok())
         );
-        return handle_anthropic_passthrough(state, sanitized_body, is_streaming).await;
+        return handle_anthropic_passthrough(state, sanitized_body, is_streaming, passthrough)
+            .await;
     }
 
     // 根据线路格式转换 Anthropic → 上游（Chat Completions / Responses）
@@ -136,8 +186,9 @@ async fn handle_anthropic_passthrough(
     state: ProxyState,
     body: Value,
     is_streaming: bool,
+    passthrough: RequestPassthrough,
 ) -> Response {
-    match forward_raw_response(&state.forwarder, &body).await {
+    match forward_raw_response(&state.forwarder, &body, Some(&passthrough)).await {
         Ok(response) => {
             let status =
                 StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
@@ -247,7 +298,7 @@ pub async fn handle_responses(
 }
 
 async fn handle_codex_non_streaming(state: ProxyState, chat_body: Value) -> Response {
-    match forward_raw_response(&state.forwarder, &chat_body).await {
+    match forward_raw_response(&state.forwarder, &chat_body, None).await {
         Ok(response) => match response.text().await {
             Ok(body_text) => match serde_json::from_str::<Value>(&body_text) {
                 Ok(chat_response) => match chat_to_codex_response(chat_response) {
@@ -287,7 +338,7 @@ async fn handle_codex_non_streaming(state: ProxyState, chat_body: Value) -> Resp
 }
 
 async fn handle_codex_streaming(state: ProxyState, chat_body: Value) -> Response {
-    match forward_raw_response(&state.forwarder, &chat_body).await {
+    match forward_raw_response(&state.forwarder, &chat_body, None).await {
         Ok(response) => match response.bytes().await {
             Ok(body_bytes) => {
                 let body_str = String::from_utf8_lossy(&body_bytes);
@@ -318,7 +369,7 @@ async fn handle_codex_streaming(state: ProxyState, chat_body: Value) -> Response
 
 /// 处理非流式请求
 async fn handle_non_streaming(state: ProxyState, openai_body: Value) -> Response {
-    match forward_raw_response(&state.forwarder, &openai_body).await {
+    match forward_raw_response(&state.forwarder, &openai_body, None).await {
         Ok(response) => {
             let status = response.status();
             match response.text().await {
@@ -429,7 +480,7 @@ enum ActiveBlock {
 /// 使用状态机将连续的 text/reasoning chunks 合并到同一个 content_block，
 /// 避免每个 chunk 独立成块导致 markdown 渲染（表格、代码块、列表等）断裂。
 async fn handle_streaming(state: ProxyState, openai_body: Value) -> Response {
-    match forward_raw_response(&state.forwarder, &openai_body).await {
+    match forward_raw_response(&state.forwarder, &openai_body, None).await {
         Ok(response) => {
             let body_bytes = match response.bytes().await {
                 Ok(b) => b,
@@ -984,4 +1035,38 @@ fn error_response(status: StatusCode, message: &str) -> Response {
                 .body(Body::empty())
                 .unwrap()
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderValue;
+
+    #[test]
+    fn filter_keeps_capability_headers_and_strips_auth() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "anthropic-beta",
+            HeaderValue::from_static("context-1m-2025-08-07"),
+        );
+        headers.insert("user-agent", HeaderValue::from_static("claude-cli/2.0.0"));
+        headers.insert("x-app", HeaderValue::from_static("cli"));
+        headers.insert("authorization", HeaderValue::from_static("Bearer leak"));
+        headers.insert("x-api-key", HeaderValue::from_static("leak"));
+        headers.insert("host", HeaderValue::from_static("127.0.0.1:1234"));
+        headers.insert("content-length", HeaderValue::from_static("42"));
+        headers.insert("accept-encoding", HeaderValue::from_static("gzip"));
+
+        let filtered = filter_passthrough_headers(&headers);
+        let names: Vec<&str> = filtered.iter().map(|(k, _)| k.as_str()).collect();
+
+        assert!(names.contains(&"anthropic-beta"));
+        assert!(names.contains(&"user-agent"));
+        assert!(names.contains(&"x-app"));
+        assert!(!names.contains(&"authorization"));
+        assert!(!names.contains(&"x-api-key"));
+        assert!(!names.contains(&"host"));
+        assert!(!names.contains(&"content-length"));
+        assert!(!names.contains(&"accept-encoding"));
+    }
 }

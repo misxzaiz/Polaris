@@ -6,8 +6,23 @@
 use super::error::ProxyError;
 use bytes::Bytes;
 use futures_util::stream::Stream;
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::Response;
 use serde_json::Value;
+
+/// 每请求透传上下文（Anthropic 直通模式）
+///
+/// Claude CLI 依赖 `anthropic-beta`（如 `context-1m-2025-08-07` 开启 1M 上下文）、
+/// `user-agent` / `x-app` 等原始请求头以及 `?beta=true` query 与上游协商能力；
+/// 部分中转站还会对这些特征做校验。直通模式必须原样透传，否则上游行为不一致
+/// （例如 1M 上下文被判定为未启用）。
+#[derive(Debug, Clone, Default)]
+pub struct RequestPassthrough {
+    /// 已过滤的入站请求头（不含 hop-by-hop 与认证头）
+    pub headers: Vec<(String, String)>,
+    /// 入站请求的原始 query string（不含 `?`）
+    pub query: Option<String>,
+}
 
 /// 上游线路格式（决定 URL 与请求/响应转换方式）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,21 +92,62 @@ impl ForwarderConfig {
         }
     }
 
-    /// 将自定义请求头应用到 reqwest 请求构建器
-    fn apply_custom_headers(
-        &self,
-        mut builder: reqwest::RequestBuilder,
-    ) -> reqwest::RequestBuilder {
-        for (k, v) in &self.custom_headers {
-            builder = builder.header(k.as_str(), v.as_str());
+    /// 构建上游请求头
+    ///
+    /// 合并顺序（后者覆盖前者）：
+    /// 1. 透传的客户端原始头（已在 handler 层过滤 hop-by-hop / 认证头）
+    /// 2. 认证与内容类型（Authorization / Content-Type，始终以 Profile 配置为准）
+    /// 3. 协议头（anthropic-version，仅在透传头未携带时补充）
+    /// 4. Profile 的自定义头（最高优先级）
+    fn build_request_headers(&self, passthrough: Option<&RequestPassthrough>) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+
+        if let Some(p) = passthrough {
+            for (k, v) in &p.headers {
+                if let (Ok(name), Ok(value)) = (
+                    HeaderName::from_bytes(k.as_bytes()),
+                    HeaderValue::from_str(v),
+                ) {
+                    headers.append(name, value);
+                } else {
+                    tracing::warn!("[Forwarder] 跳过无效透传头: {}", k);
+                }
+            }
         }
-        builder
+
+        if let Ok(auth) = HeaderValue::from_str(&format!("Bearer {}", self.api_key)) {
+            headers.insert(reqwest::header::AUTHORIZATION, auth);
+        }
+        headers.insert(
+            reqwest::header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
+        );
+
+        if self.wire_api == ProxyWireApi::AnthropicMessages
+            && !headers.contains_key("anthropic-version")
+        {
+            headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
+        }
+
+        for (k, v) in &self.custom_headers {
+            if let (Ok(name), Ok(value)) = (
+                HeaderName::from_bytes(k.as_bytes()),
+                HeaderValue::from_str(v),
+            ) {
+                headers.insert(name, value);
+            } else {
+                tracing::warn!("[Forwarder] 跳过无效自定义头: {}", k);
+            }
+        }
+
+        headers
     }
 
-    fn apply_protocol_headers(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        match self.wire_api {
-            ProxyWireApi::AnthropicMessages => builder.header("anthropic-version", "2023-06-01"),
-            _ => builder,
+    /// 目标 URL：附加透传的原始 query string（如 Claude CLI 的 `?beta=true`）
+    fn request_url(&self, passthrough: Option<&RequestPassthrough>) -> String {
+        match passthrough.and_then(|p| p.query.as_deref()) {
+            Some(q) if !q.is_empty() => format!("{}?{}", self.upstream_url, q),
+            _ => self.upstream_url.clone(),
         }
     }
 }
@@ -137,13 +193,10 @@ pub async fn forward_request(config: &ForwarderConfig, body: &Value) -> Result<V
         .build()
         .map_err(|e| ProxyError::Server(format!("创建 HTTP 客户端失败: {}", e)))?;
 
-    let mut req_builder = client
+    let req_builder = client
         .post(&config.upstream_url)
-        .header("Authorization", format!("Bearer {}", config.api_key))
-        .header("Content-Type", "application/json")
+        .headers(config.build_request_headers(None))
         .json(body);
-    req_builder = config.apply_protocol_headers(req_builder);
-    req_builder = config.apply_custom_headers(req_builder);
     let response = req_builder.send().await?;
 
     let status = response.status();
@@ -186,13 +239,10 @@ pub async fn forward_streaming_request(
         body_str.len()
     );
 
-    let mut req_builder = client
+    let req_builder = client
         .post(&config.upstream_url)
-        .header("Authorization", format!("Bearer {}", config.api_key))
-        .header("Content-Type", "application/json")
+        .headers(config.build_request_headers(None))
         .json(body);
-    req_builder = config.apply_protocol_headers(req_builder);
-    req_builder = config.apply_custom_headers(req_builder);
     let response = req_builder.send().await?;
 
     let status = response.status();
@@ -219,9 +269,13 @@ const MAX_RETRIES: u32 = 2;
 ///
 /// 对超时和 5xx 错误自动重试（最多 MAX_RETRIES 次），
 /// 解决上游 API 偶尔超时的问题。
+///
+/// `passthrough` 仅在 Anthropic 直通模式下传入：携带客户端原始请求头与 query，
+/// 使代理转发的请求与 CLI 直连时一致。
 pub async fn forward_raw_response(
     config: &ForwarderConfig,
     body: &Value,
+    passthrough: Option<&RequestPassthrough>,
 ) -> Result<Response, ProxyError> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(config.timeout_secs))
@@ -229,15 +283,19 @@ pub async fn forward_raw_response(
         .build()
         .map_err(|e| ProxyError::Server(format!("创建 HTTP 客户端失败: {}", e)))?;
 
+    let url = config.request_url(passthrough);
+    let headers = config.build_request_headers(passthrough);
+
     let body_str = serde_json::to_string(body).unwrap_or_default();
     tracing::info!(
-        "[Forwarder] 发送请求到 {}: model={}, messages={}, tools={}, body_size={}bytes, timeout={}s",
-        config.upstream_url,
+        "[Forwarder] 发送请求到 {}: model={}, messages={}, tools={}, body_size={}bytes, timeout={}s, 透传头={}",
+        url,
         body.get("model").and_then(|v| v.as_str()).unwrap_or("?"),
         body.get("messages").and_then(|m| m.as_array()).map(|a| a.len()).unwrap_or(0),
         body.get("tools").and_then(|t| t.as_array()).map(|a| a.len()).unwrap_or(0),
         body_str.len(),
-        config.timeout_secs
+        config.timeout_secs,
+        passthrough.map(|p| p.headers.len()).unwrap_or(0)
     );
 
     let mut last_error: Option<ProxyError> = None;
@@ -254,13 +312,10 @@ pub async fn forward_raw_response(
             tokio::time::sleep(delay).await;
         }
 
-        let mut req_builder = client
-            .post(&config.upstream_url)
-            .header("Authorization", format!("Bearer {}", config.api_key))
-            .header("Content-Type", "application/json")
+        let req_builder = client
+            .post(&url)
+            .headers(headers.clone())
             .body(body_str.clone());
-        req_builder = config.apply_protocol_headers(req_builder);
-        req_builder = config.apply_custom_headers(req_builder);
         let response = match req_builder.send().await {
             Ok(resp) => resp,
             Err(e) => {
@@ -381,6 +436,101 @@ mod tests {
                 ProxyWireApi::Responses
             ),
             "https://api.openai.com/v1/responses"
+        );
+    }
+
+    fn anthropic_config() -> ForwarderConfig {
+        ForwarderConfig::with_options(
+            "https://relay.example.com",
+            "sk-test",
+            ProxyWireApi::AnthropicMessages,
+            std::collections::HashMap::new(),
+        )
+    }
+
+    #[test]
+    fn passthrough_headers_are_forwarded() {
+        let config = anthropic_config();
+        let passthrough = RequestPassthrough {
+            headers: vec![
+                (
+                    "anthropic-beta".to_string(),
+                    "context-1m-2025-08-07".to_string(),
+                ),
+                ("user-agent".to_string(), "claude-cli/2.0.0".to_string()),
+            ],
+            query: None,
+        };
+
+        let headers = config.build_request_headers(Some(&passthrough));
+
+        assert_eq!(
+            headers.get("anthropic-beta").unwrap(),
+            "context-1m-2025-08-07"
+        );
+        assert_eq!(headers.get("user-agent").unwrap(), "claude-cli/2.0.0");
+    }
+
+    #[test]
+    fn auth_always_overrides_passthrough() {
+        let config = anthropic_config();
+        let passthrough = RequestPassthrough {
+            headers: vec![("anthropic-version".to_string(), "2024-01-01".to_string())],
+            query: None,
+        };
+
+        let headers = config.build_request_headers(Some(&passthrough));
+
+        assert_eq!(headers.get("authorization").unwrap(), "Bearer sk-test");
+        assert_eq!(headers.get("content-type").unwrap(), "application/json");
+        // 透传的 anthropic-version 优先于默认值
+        assert_eq!(headers.get("anthropic-version").unwrap(), "2024-01-01");
+    }
+
+    #[test]
+    fn anthropic_version_defaults_when_absent() {
+        let config = anthropic_config();
+        let headers = config.build_request_headers(None);
+        assert_eq!(headers.get("anthropic-version").unwrap(), "2023-06-01");
+    }
+
+    #[test]
+    fn custom_headers_override_passthrough() {
+        let mut custom = std::collections::HashMap::new();
+        custom.insert("anthropic-beta".to_string(), "custom-beta".to_string());
+        let config = ForwarderConfig::with_options(
+            "https://relay.example.com",
+            "sk-test",
+            ProxyWireApi::AnthropicMessages,
+            custom,
+        );
+        let passthrough = RequestPassthrough {
+            headers: vec![(
+                "anthropic-beta".to_string(),
+                "context-1m-2025-08-07".to_string(),
+            )],
+            query: None,
+        };
+
+        let headers = config.build_request_headers(Some(&passthrough));
+        assert_eq!(headers.get("anthropic-beta").unwrap(), "custom-beta");
+    }
+
+    #[test]
+    fn request_url_appends_query() {
+        let config = anthropic_config();
+        let passthrough = RequestPassthrough {
+            headers: Vec::new(),
+            query: Some("beta=true".to_string()),
+        };
+
+        assert_eq!(
+            config.request_url(Some(&passthrough)),
+            "https://relay.example.com/v1/messages?beta=true"
+        );
+        assert_eq!(
+            config.request_url(None),
+            "https://relay.example.com/v1/messages"
         );
     }
 }
