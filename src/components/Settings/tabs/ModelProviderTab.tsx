@@ -81,6 +81,10 @@ interface ProfileForm {
   apiKeyEnvName: string
   customHeaders: KeyValuePair[]
   customEnv: KeyValuePair[]
+  /** 单次输出 token 上限；表单态存字符串，提交时解析正整数 */
+  maxTokens: string
+  /** 上下文窗口 token；表单态存字符串，提交时解析正整数 */
+  contextWindow: string
 }
 
 const EMPTY_FORM: ProfileForm = {
@@ -98,6 +102,8 @@ const EMPTY_FORM: ProfileForm = {
   apiKeyEnvName: '',
   customHeaders: [],
   customEnv: [],
+  maxTokens: '',
+  contextWindow: '',
 }
 
 // ---------- 辅助函数 ----------
@@ -115,6 +121,12 @@ function pairsToRecord(pairs: KeyValuePair[]): Record<string, string> | undefine
     .filter(([key]) => key.length > 0)
   if (entries.length === 0) return undefined
   return Object.fromEntries(entries)
+}
+
+/** 表单数字串 → 正整数；空/非法/非正返回 undefined（不落盘） */
+function parsePositiveInt(s: string): number | undefined {
+  const n = parseInt(s.trim(), 10)
+  return Number.isFinite(n) && n > 0 ? n : undefined
 }
 
 /** 安全解析 hostname，非法 URL 返回原串 */
@@ -393,6 +405,8 @@ function ProfileEditorModal({
       apiKeyEnvName: initialProfile.apiKeyEnvName ?? '',
       customHeaders: recordToPairs(initialProfile.customHeaders),
       customEnv: recordToPairs(initialProfile.customEnv),
+      maxTokens: initialProfile.maxTokens != null ? String(initialProfile.maxTokens) : '',
+      contextWindow: initialProfile.contextWindow != null ? String(initialProfile.contextWindow) : '',
     }
   })
   const [fetching, setFetching] = useState(false)
@@ -789,6 +803,30 @@ function ProfileEditorModal({
           {/* 高级选项 */}
           <div className={sectionClass}>
             <div className={sectionTitleClass}>{t('modelProfile.sectionAdvanced')}</div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={labelClass}>{t('modelProfile.maxTokens')}</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={form.maxTokens}
+                  onChange={(e) => patch({ maxTokens: e.target.value })}
+                  placeholder={t('modelProfile.maxTokensPlaceholder')}
+                  className={fieldClass}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>{t('modelProfile.contextWindow')}</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={form.contextWindow}
+                  onChange={(e) => patch({ contextWindow: e.target.value })}
+                  placeholder={t('modelProfile.contextWindowPlaceholder')}
+                  className={fieldClass}
+                />
+              </div>
+            </div>
             <div>
               <label className={labelClass}>{t('modelProfile.customHeaders')}</label>
               <KeyValueEditor
@@ -988,6 +1026,8 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
       apiKeyEnvName: form.apiKeyEnvName.trim() || undefined,
       customHeaders: pairsToRecord(form.customHeaders),
       customEnv: pairsToRecord(form.customEnv),
+      maxTokens: parsePositiveInt(form.maxTokens),
+      contextWindow: parsePositiveInt(form.contextWindow),
     }
 
     if (isEditing && editingProfile) {

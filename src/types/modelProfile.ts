@@ -114,6 +114,16 @@ export interface ModelProfile {
   customHeaders?: Record<string, string>
   /** 注入 CLI 子进程的额外环境变量 */
   customEnv?: Record<string, string>
+  /**
+   * 单次响应输出 token 上限（max_tokens）。仅 SimpleAI 引擎请求路径生效。
+   * 留空：OpenAI Chat 协议不发该字段（供应商默认）；Anthropic/Responses 协议回退 8192。
+   */
+  maxTokens?: number
+  /**
+   * 上下文窗口（token），驱动 SimpleAI 压缩触发阈值（window × 0.75）。
+   * 留空：custom_env SIMPLE_AI_CONTEXT_WINDOW（兼容）→ 默认 1,000,000。
+   */
+  contextWindow?: number
   /** 上次从端点拉取的模型列表（仅前端 UI 缓存用） */
   fetchedModels?: string[]
   /** 创建时间 (ISO 8601) */
@@ -137,6 +147,8 @@ export interface CreateModelProfileParams {
   apiKeyEnvName?: string
   customHeaders?: Record<string, string>
   customEnv?: Record<string, string>
+  maxTokens?: number
+  contextWindow?: number
 }
 
 /** 更新 Profile 的参数 */
@@ -155,6 +167,8 @@ export interface UpdateModelProfileParams {
   apiKeyEnvName?: string
   customHeaders?: Record<string, string>
   customEnv?: Record<string, string>
+  maxTokens?: number
+  contextWindow?: number
 }
 
 /**

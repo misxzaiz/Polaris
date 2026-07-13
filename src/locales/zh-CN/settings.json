@@ -167,6 +167,10 @@
     "customEnv": "自定义环境变量",
     "addHeader": "添加请求头",
     "addEnv": "添加环境变量",
+    "maxTokens": "单次输出上限 (max_tokens)",
+    "maxTokensPlaceholder": "留空 = 供应商默认",
+    "contextWindow": "上下文窗口 (tokens)",
+    "contextWindowPlaceholder": "留空 = 1,000,000",
     "filter": {
       "all": "全部",
       "claude": "Claude",

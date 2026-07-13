@@ -86,6 +86,8 @@ export const useModelProfileStore = create<ModelProfileState>()((set, get) => ({
       apiKeyEnvName: params.apiKeyEnvName,
       customHeaders: params.customHeaders,
       customEnv: params.customEnv,
+      maxTokens: params.maxTokens,
+      contextWindow: params.contextWindow,
       active: false,
       createdAt: now,
       updatedAt: now,

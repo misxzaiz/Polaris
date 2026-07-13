@@ -167,20 +167,30 @@ pub fn tools_for_protocol(protocol: WireProtocol, openai_tools: &[Value]) -> Vec
 // ============================================================================
 
 /// 构建流式请求体（`stream` 字段已内置为 `true`）。
+///
+/// `max_tokens`：单次输出上限（来自 ModelProfile.max_tokens 或调用方显式指定）。
+/// - `None`：OpenAIChat 不发该字段（供应商默认）；Anthropic/Responses 回退 `DEFAULT_MAX_TOKENS`。
+/// - `Some(v)`：三协议均显式携带（OpenAIChat=`max_tokens`，Responses=`max_output_tokens`）。
 pub fn build_request_body(
     protocol: WireProtocol,
     model: &str,
     messages: &[Value],
     openai_tools: &[Value],
+    max_tokens: Option<u64>,
 ) -> Value {
     match protocol {
-        WireProtocol::OpenAIChat => build_openai_chat_body(model, messages, openai_tools),
-        WireProtocol::Anthropic => build_anthropic_body(model, messages, openai_tools),
-        WireProtocol::Responses => build_responses_body(model, messages, openai_tools),
+        WireProtocol::OpenAIChat => build_openai_chat_body(model, messages, openai_tools, max_tokens),
+        WireProtocol::Anthropic => build_anthropic_body(model, messages, openai_tools, max_tokens),
+        WireProtocol::Responses => build_responses_body(model, messages, openai_tools, max_tokens),
     }
 }
 
-fn build_openai_chat_body(model: &str, messages: &[Value], tools: &[Value]) -> Value {
+fn build_openai_chat_body(
+    model: &str,
+    messages: &[Value],
+    tools: &[Value],
+    max_tokens: Option<u64>,
+) -> Value {
     let mut body = json!({
         "model": model,
         "messages": messages,
@@ -188,6 +198,10 @@ fn build_openai_chat_body(model: &str, messages: &[Value], tools: &[Value]) -> V
         // 请求末包携带 usage（prompt_tokens/completion_tokens/total_tokens）。
         "stream_options": { "include_usage": true },
     });
+    // 仅发 max_tokens 不发 max_completion_tokens：兼容网关（ding 实测）认前者，双发有冲突风险。
+    if let Some(v) = max_tokens {
+        body["max_tokens"] = json!(v);
+    }
     if !tools.is_empty() {
         body["tools"] = json!(tools);
         body["tool_choice"] = json!("auto");
@@ -201,7 +215,12 @@ fn build_openai_chat_body(model: &str, messages: &[Value], tools: &[Value]) -> V
 /// - `assistant.tool_calls` → `content[]` 中的 `tool_use` block；
 /// - `tool` 角色 → `user` turn 中的 `tool_result` block（连续工具结果合并到同一 user 消息，
 ///   满足 Anthropic 对 user/assistant 交替的要求）。
-fn build_anthropic_body(model: &str, messages: &[Value], openai_tools: &[Value]) -> Value {
+fn build_anthropic_body(
+    model: &str,
+    messages: &[Value],
+    openai_tools: &[Value],
+    max_tokens: Option<u64>,
+) -> Value {
     let mut system_parts: Vec<String> = Vec::new();
     let mut out: Vec<Value> = Vec::new();
 
@@ -299,7 +318,7 @@ fn build_anthropic_body(model: &str, messages: &[Value], openai_tools: &[Value])
 
     let mut body = json!({
         "model": model,
-        "max_tokens": DEFAULT_MAX_TOKENS,
+        "max_tokens": max_tokens.unwrap_or(DEFAULT_MAX_TOKENS),
         "messages": out,
         "stream": true,
     });
@@ -318,7 +337,12 @@ fn build_anthropic_body(model: &str, messages: &[Value], openai_tools: &[Value])
 /// - `system` → 顶层 `instructions`；
 /// - `assistant.tool_calls` → `input[]` 中的 `function_call` item；
 /// - `tool` 角色 → `function_call_output` item。
-fn build_responses_body(model: &str, messages: &[Value], openai_tools: &[Value]) -> Value {
+fn build_responses_body(
+    model: &str,
+    messages: &[Value],
+    openai_tools: &[Value],
+    max_tokens: Option<u64>,
+) -> Value {
     let mut instructions_parts: Vec<String> = Vec::new();
     let mut input: Vec<Value> = Vec::new();
 
@@ -380,7 +404,7 @@ fn build_responses_body(model: &str, messages: &[Value], openai_tools: &[Value])
     let mut body = json!({
         "model": model,
         "input": input,
-        "max_output_tokens": DEFAULT_MAX_TOKENS,
+        "max_output_tokens": max_tokens.unwrap_or(DEFAULT_MAX_TOKENS),
         "stream": true,
     });
     if !instructions_parts.is_empty() {
@@ -440,6 +464,9 @@ pub struct StreamState {
     /// 累积的 token usage（流末出现；Anthropic 的 input_tokens 在 message_start，
     /// output_tokens 在 message_delta，分两次更新）。
     usage: Option<Usage>,
+    /// 流末终止原因（统一为 OpenAI 语义：stop / length / tool_calls / ...）。
+    /// Anthropic 的 max_tokens、Responses 的 incomplete(max_output_tokens) 归一化为 "length"。
+    finish_reason: Option<String>,
 }
 
 impl StreamState {
@@ -450,6 +477,7 @@ impl StreamState {
             block_index: HashMap::new(),
             item_index: HashMap::new(),
             usage: None,
+            finish_reason: None,
         }
     }
 
@@ -494,15 +522,40 @@ impl StreamState {
         self.usage
     }
 
-    fn feed_openai_chat(&mut self, chunk: &Value, out: &mut Vec<StreamDelta>) {
-        let delta = &chunk["choices"][0]["delta"];
+    /// 取出流末终止原因（统一 OpenAI 语义；"length" 表示被 max_tokens 截断）。
+    pub fn finish_reason(&self) -> Option<&str> {
+        self.finish_reason.as_deref()
+    }
 
-        if let Some(content) = delta["content"].as_str() {
-            if !content.is_empty() {
-                out.push(StreamDelta::Text(content.to_string()));
+    fn feed_openai_chat(&mut self, chunk: &Value, out: &mut Vec<StreamDelta>) {
+        let choice = &chunk["choices"][0];
+        let delta = &choice["delta"];
+
+        // 内容：str 直接用；部分网关变体返回 parts 数组（type=text 的 text 拼接）。
+        match &delta["content"] {
+            Value::String(content) => {
+                if !content.is_empty() {
+                    out.push(StreamDelta::Text(content.clone()));
+                }
             }
+            Value::Array(parts) => {
+                for part in parts {
+                    if let Some(t) = part.get("text").and_then(|v| v.as_str()) {
+                        if !t.is_empty() {
+                            out.push(StreamDelta::Text(t.to_string()));
+                        }
+                    }
+                }
+            }
+            _ => {}
         }
-        if let Some(thinking) = delta["reasoning_content"].as_str() {
+        // 思考：依序兼容 reasoning_content（DeepSeek/GLM/vLLM）→ reasoning（SenseNova/
+        // OpenRouter/xAI/Groq）→ thinking（少数变体）。对象型变体 as_str()=None 自动跳过。
+        let thinking = delta["reasoning_content"]
+            .as_str()
+            .or_else(|| delta["reasoning"].as_str())
+            .or_else(|| delta["thinking"].as_str());
+        if let Some(thinking) = thinking {
             if !thinking.is_empty() {
                 out.push(StreamDelta::Thinking(thinking.to_string()));
             }
@@ -525,6 +578,12 @@ impl StreamState {
                 if let Some(args) = tc_delta["function"]["arguments"].as_str() {
                     call.arguments.push_str(args);
                 }
+            }
+        }
+        // 流末终止原因（tool_calls / stop / length）。
+        if let Some(fr) = choice.get("finish_reason").and_then(|v| v.as_str()) {
+            if !fr.is_empty() {
+                self.finish_reason = Some(fr.to_string());
             }
         }
         // OpenAIChat：末包带 usage（需请求 stream_options.include_usage）。
@@ -602,6 +661,14 @@ impl StreamState {
                 usage.output_tokens = output;
                 usage.total_tokens = usage.input_tokens + usage.output_tokens;
                 self.usage = Some(usage);
+                // stop_reason 归一化为 OpenAI 语义（max_tokens → length）。
+                if let Some(sr) = chunk.pointer("/delta/stop_reason").and_then(|v| v.as_str()) {
+                    self.finish_reason = Some(match sr {
+                        "max_tokens" => "length".to_string(),
+                        "tool_use" => "tool_calls".to_string(),
+                        other => other.to_string(),
+                    });
+                }
             }
             _ => {}
         }
@@ -666,6 +733,23 @@ impl StreamState {
                         total_tokens: u["total_tokens"].as_u64().unwrap_or(0),
                     });
                 }
+                if self.finish_reason.is_none() {
+                    self.finish_reason = Some("stop".to_string());
+                }
+            }
+            // 输出被 max_output_tokens 截断等未完成态，归一化为 "length"。
+            "response.incomplete" => {
+                let reason = chunk
+                    .pointer("/response/incomplete_details/reason")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                self.finish_reason = Some(if reason == "max_output_tokens" {
+                    "length".to_string()
+                } else if reason.is_empty() {
+                    "incomplete".to_string()
+                } else {
+                    reason.to_string()
+                });
             }
             _ => {}
         }
@@ -835,7 +919,7 @@ mod tests {
             }),
             json!({ "role": "tool", "tool_call_id": "toolu_1", "content": "file.txt" }),
         ];
-        let body = build_request_body(WireProtocol::Anthropic, "claude-x", &messages, &sample_tools());
+        let body = build_request_body(WireProtocol::Anthropic, "claude-x", &messages, &sample_tools(), None);
 
         assert_eq!(body["system"], "You are helpful");
         assert_eq!(body["max_tokens"], DEFAULT_MAX_TOKENS);
@@ -867,7 +951,7 @@ mod tests {
             }),
             json!({ "role": "tool", "tool_call_id": "call_1", "content": "done" }),
         ];
-        let body = build_request_body(WireProtocol::Responses, "gpt-x", &messages, &sample_tools());
+        let body = build_request_body(WireProtocol::Responses, "gpt-x", &messages, &sample_tools(), None);
 
         assert_eq!(body["instructions"], "sys");
         assert_eq!(body["max_output_tokens"], DEFAULT_MAX_TOKENS);
@@ -961,7 +1045,7 @@ mod tests {
             json!({ "role": "user", "content": "# Project instructions\nrules" }),
             json!({ "role": "user", "content": "actual question" }),
         ];
-        let body = build_request_body(WireProtocol::Anthropic, "claude-x", &messages, &[]);
+        let body = build_request_body(WireProtocol::Anthropic, "claude-x", &messages, &[], None);
         let msgs = body["messages"].as_array().unwrap();
         assert_eq!(msgs.len(), 1);
         assert_eq!(msgs[0]["role"], "user");
@@ -978,12 +1062,92 @@ mod tests {
             json!({ "role": "tool", "tool_call_id": "t1", "content": "result" }),
             json!({ "role": "user", "content": "follow-up" }),
         ];
-        let body = build_request_body(WireProtocol::Anthropic, "claude-x", &messages, &[]);
+        let body = build_request_body(WireProtocol::Anthropic, "claude-x", &messages, &[], None);
         let msgs = body["messages"].as_array().unwrap();
         assert_eq!(msgs.len(), 1);
         let arr = msgs[0]["content"].as_array().unwrap();
         assert_eq!(arr[0]["type"], "tool_result");
         assert_eq!(arr[1]["type"], "text");
         assert_eq!(arr[1]["text"], "follow-up");
+    }
+
+    #[test]
+    fn openai_chat_thinking_falls_back_to_reasoning_field() {
+        // SenseNova / OpenRouter / xAI 风格：思考在 delta.reasoning 而非 reasoning_content。
+        let mut state = StreamState::new(WireProtocol::OpenAIChat);
+        let d = state.feed(&json!({ "choices": [{ "delta": { "reasoning": "think..." } }] }));
+        assert_eq!(d, vec![StreamDelta::Thinking("think...".to_string())]);
+        // thinking 变体。
+        let d = state.feed(&json!({ "choices": [{ "delta": { "thinking": "more" } }] }));
+        assert_eq!(d, vec![StreamDelta::Thinking("more".to_string())]);
+        // reasoning_content 优先级最高，且不重复推送其他字段。
+        let d = state.feed(&json!({ "choices": [{ "delta": {
+            "reasoning_content": "primary", "reasoning": "ignored"
+        } }] }));
+        assert_eq!(d, vec![StreamDelta::Thinking("primary".to_string())]);
+        // 对象型 reasoning 变体安全跳过。
+        let d = state.feed(&json!({ "choices": [{ "delta": { "reasoning": {"detail": 1} } }] }));
+        assert!(d.is_empty());
+    }
+
+    #[test]
+    fn openai_chat_content_parts_array_concatenated() {
+        let mut state = StreamState::new(WireProtocol::OpenAIChat);
+        let d = state.feed(&json!({ "choices": [{ "delta": { "content": [
+            { "type": "text", "text": "a" },
+            { "type": "text", "text": "b" }
+        ] } }] }));
+        assert_eq!(
+            d,
+            vec![
+                StreamDelta::Text("a".to_string()),
+                StreamDelta::Text("b".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn openai_chat_records_finish_reason() {
+        let mut state = StreamState::new(WireProtocol::OpenAIChat);
+        assert!(state.finish_reason().is_none());
+        state.feed(&json!({ "choices": [{ "delta": {}, "finish_reason": "length" }] }));
+        assert_eq!(state.finish_reason(), Some("length"));
+    }
+
+    #[test]
+    fn anthropic_stop_reason_normalized() {
+        let mut state = StreamState::new(WireProtocol::Anthropic);
+        state.feed(&json!({
+            "type": "message_delta",
+            "delta": { "stop_reason": "max_tokens" },
+            "usage": { "output_tokens": 5 }
+        }));
+        assert_eq!(state.finish_reason(), Some("length"));
+    }
+
+    #[test]
+    fn responses_incomplete_normalized_to_length() {
+        let mut state = StreamState::new(WireProtocol::Responses);
+        state.feed(&json!({
+            "type": "response.incomplete",
+            "response": { "incomplete_details": { "reason": "max_output_tokens" } }
+        }));
+        assert_eq!(state.finish_reason(), Some("length"));
+    }
+
+    #[test]
+    fn max_tokens_injection_per_protocol() {
+        let messages = vec![json!({ "role": "user", "content": "hi" })];
+        // OpenAIChat：None 不发，Some 显式携带。
+        let body = build_request_body(WireProtocol::OpenAIChat, "m", &messages, &[], None);
+        assert!(body.get("max_tokens").is_none());
+        let body = build_request_body(WireProtocol::OpenAIChat, "m", &messages, &[], Some(16384));
+        assert_eq!(body["max_tokens"], 16384);
+        // Anthropic：None 回退默认，Some 覆盖。
+        let body = build_request_body(WireProtocol::Anthropic, "m", &messages, &[], Some(4096));
+        assert_eq!(body["max_tokens"], 4096);
+        // Responses：Some 覆盖 max_output_tokens。
+        let body = build_request_body(WireProtocol::Responses, "m", &messages, &[], Some(2048));
+        assert_eq!(body["max_output_tokens"], 2048);
     }
 }

@@ -104,13 +104,22 @@ pub(super) async fn run_chat_loop(
     let plan_id = format!("{}-plan", session_id);
     let plan_started = AtomicBool::new(false);
 
-    // 上下文压缩配置（Phase 3.3）：累计 input 达窗口 75% 时触发摘要压缩。
-    let context_window = read_env_u64(
-        &profile.custom_env,
-        "SIMPLE_AI_CONTEXT_WINDOW",
-        compact::DEFAULT_CONTEXT_WINDOW,
-    );
+    // 上下文压缩配置（Phase 3.3）：最近一轮 input 达窗口 75% 时触发摘要压缩。
+    // 窗口三级优先：ModelProfile.context_window > custom_env SIMPLE_AI_CONTEXT_WINDOW > 默认 1M。
+    let context_window = profile
+        .context_window
+        .filter(|v| *v > 0)
+        .unwrap_or_else(|| {
+            read_env_u64(
+                &profile.custom_env,
+                "SIMPLE_AI_CONTEXT_WINDOW",
+                compact::DEFAULT_CONTEXT_WINDOW,
+            )
+        });
     let mut usage_acc = compact::UsageAccumulator::default();
+    // 压缩效果监督：刚压缩过一轮仍超阈 → 压不动，本 turn 熔断（防每轮空耗摘要请求）。
+    let mut rounds_since_compact: Option<u32> = None;
+    let mut compact_exhausted = false;
 
     let mut round: u64 = 0;
 
@@ -133,18 +142,34 @@ pub(super) async fn run_chat_loop(
         // 裁剪历史中超长的 assistant 输出，避免长会话撑爆上下文窗口（零额外 API 调用）。
         history::truncate_history_assistant_outputs(messages, HISTORY_ASSISTANT_TOKEN_CAP);
 
-        // 上下文压缩（Phase 3.3）：累计 input 达阈值时，发摘要请求替换历史区间。
-        if usage_acc.should_compact(context_window) {
-            tracing::info!(
-                "[SimpleAI] 触发上下文压缩（累计 input={}，window={}）",
-                usage_acc.total_input,
-                context_window
-            );
-            compact::compact_history(messages, profile, event_callback, session_id).await?;
+        // 上下文压缩（Phase 3.3）：最近一轮 input 达阈值时，发摘要请求替换历史区间。
+        if !compact_exhausted && usage_acc.should_compact(context_window, messages) {
+            if rounds_since_compact == Some(1) {
+                compact_exhausted = true;
+                tracing::warn!(
+                    "[SimpleAI] 压缩无效（压缩后 input 仍超阈值），本轮任务内不再压缩"
+                );
+            } else {
+                tracing::info!(
+                    "[SimpleAI] 触发上下文压缩（最近一轮 input={}，window={}，累计 input={}）",
+                    usage_acc.last_input,
+                    context_window,
+                    usage_acc.total_input
+                );
+                let compacted =
+                    compact::compact_history(messages, profile, event_callback, session_id)
+                        .await?;
+                if compacted {
+                    // 清零触发基准，待下一轮真实 usage 刷新（天然一轮冷却）。
+                    usage_acc.reset_last();
+                    rounds_since_compact = Some(0);
+                }
+                // 区间过小跳过时不重置：下一轮消息增多后区间可选再压。
+            }
         }
 
         // 构建请求体（按线路协议转换内部 OpenAI 消息格式）
-        let body = build_request_body(protocol, &profile.model, messages, &tools);
+        let body = build_request_body(protocol, &profile.model, messages, &tools, profile.max_tokens);
         if tools.is_empty() {
             tracing::warn!("[SimpleAI] 工具列表为空!");
         } else {
@@ -210,8 +235,9 @@ pub(super) async fn run_chat_loop(
             let chunk = tokio::select! {
                 chunk = stream.next() => {
                     if chunk.is_none() {
-                        tracing::warn!(
-                            "[SimpleAI] [DIAG] stream 提前结束（无 chunk），session={session_id}"
+                        // 流自然结束（服务端关闭连接，部分网关不发 [DONE]），正常路径。
+                        tracing::debug!(
+                            "[SimpleAI] stream 结束（无更多 chunk），session={session_id}"
                         );
                     }
                     chunk
@@ -246,7 +272,8 @@ pub(super) async fn run_chat_loop(
                     continue;
                 }
 
-                let Some(data) = line.strip_prefix("data: ") else {
+                // SSE 规范允许 "data:" 后无空格，部分自建网关如此发送。
+                let Some(data) = line.strip_prefix("data:") else {
                     continue;
                 };
                 let data = data.trim();
@@ -289,6 +316,17 @@ pub(super) async fn run_chat_loop(
                 usage.output_tokens,
                 usage.total_tokens,
                 usage_acc.total_input
+            );
+        }
+        // 压缩效果监督计数（每完成一轮 +1；Some(1) 表示"刚压缩后的第一轮"）。
+        if let Some(r) = rounds_since_compact.as_mut() {
+            *r += 1;
+        }
+        // 输出被 max_tokens 截断时明确告警（可在供应商配置中调大 maxTokens）。
+        if stream_state.finish_reason() == Some("length") {
+            tracing::warn!(
+                "[SimpleAI] 输出被 max_tokens 截断（finish_reason=length），\
+                 可在模型供应商配置中调大 maxTokens, session={session_id}"
             );
         }
         tracing::info!(

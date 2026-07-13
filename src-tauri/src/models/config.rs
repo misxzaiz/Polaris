@@ -243,6 +243,15 @@ pub struct ModelProfile {
     /// 注入 CLI 子进程的额外环境变量
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_env: Option<std::collections::HashMap<String, String>>,
+    /// 单次响应输出 token 上限（max_tokens）。
+    /// - None：OpenAI Chat 协议不发该字段（用供应商默认）；Anthropic/Responses 协议回退 8192（必填/建议填）。
+    /// - Some(v)：三协议均显式携带。仅 SimpleAI 引擎请求路径生效。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u64>,
+    /// 上下文窗口（token），驱动 SimpleAI 压缩触发阈值（window × 0.75）。
+    /// None → custom_env `SIMPLE_AI_CONTEXT_WINDOW`（向后兼容）→ 默认 1_000_000。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<u64>,
     /// 创建时间 (ISO 8601)
     #[serde(default)]
     pub created_at: Option<String>,

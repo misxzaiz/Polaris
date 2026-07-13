@@ -167,6 +167,10 @@
     "customEnv": "Custom Environment Variables",
     "addHeader": "Add Header",
     "addEnv": "Add Variable",
+    "maxTokens": "Max Output Tokens (max_tokens)",
+    "maxTokensPlaceholder": "Empty = provider default",
+    "contextWindow": "Context Window (tokens)",
+    "contextWindowPlaceholder": "Empty = 1,000,000",
     "filter": {
       "all": "All",
       "claude": "Claude",
