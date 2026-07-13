@@ -529,5 +529,24 @@
     "customInputPlaceholder": "输入 {{type}} 值...",
     "cancel": "取消",
     "confirm": "确认"
+  },
+  "cliCommand": {
+    "groupLabel": "CLI 命令",
+    "desc": {
+      "compact": "压缩上下文（摘要历史对话，释放窗口空间）",
+      "context": "查看上下文占用明细",
+      "usage": "查看本会话成本与 token 消耗",
+      "mcp": "查看 MCP 服务器连接状态",
+      "model": "查看当前生效模型",
+      "recap": "生成一行会话回顾",
+      "custom": "CLI 自定义命令"
+    },
+    "clearBlockedTitle": "已拦截 {{command}}",
+    "clearBlockedDetail": "该命令会清空 CLI 侧上下文，导致与界面历史脱节。请使用 Polaris 的新建会话。",
+    "compactDivider": {
+      "manual": "上下文已压缩",
+      "auto": "上下文已自动压缩",
+      "tokens": "{{pre}} → {{post}} tokens"
+    }
   }
 }

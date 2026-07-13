@@ -671,6 +671,50 @@ export interface PromptSuggestionEvent {
 }
 
 /**
+ * CLI 会话初始化事件
+ *
+ * 来自 Claude CLI stream-json 的 system/init，每轮对话（每次 CLI 进程启动）都会下发，
+ * 携带该会话环境的动态能力数据。
+ */
+export interface CliInitEvent {
+  type: 'cli_init'
+  /** 会话 ID - 用于事件路由 */
+  sessionId: string
+  /** 可用工具列表 */
+  tools?: string[]
+  /** MCP 服务器状态 */
+  mcpServers?: Array<{ name: string; status: string }>
+  /** 可用 Agent 列表 */
+  agents?: string[]
+  /** 可用技能列表 */
+  skills?: string[]
+  /** 当前模型 */
+  model?: string | null
+  /** CLI 版本 */
+  claudeCodeVersion?: string | null
+  /** 可用斜杠命令列表（内置命令 + skill + 自定义命令） */
+  slashCommands?: string[]
+}
+
+/**
+ * 上下文压缩完成事件
+ *
+ * 来自 Claude CLI stream-json 的 system/compact_boundary，
+ * 手动 /compact 与 CLI autoCompact 自动压缩均会触发。
+ */
+export interface ContextCompactedEvent {
+  type: 'context_compacted'
+  /** 会话 ID - 用于事件路由 */
+  sessionId: string
+  /** 触发方式："manual"（/compact）| "auto"（自动压缩） */
+  trigger: string
+  /** 压缩前 token 数 */
+  preTokens?: number
+  /** 压缩后 token 数 */
+  postTokens?: number
+}
+
+/**
  * AI Event - 所有事件的联合类型
  *
  * UI 层只能消费此类型的事件，禁止直接解析 CLI 输出。
@@ -715,6 +759,10 @@ export type AIEvent =
   | HookEvent
   // 下一步提示建议事件
   | PromptSuggestionEvent
+  // CLI 会话初始化事件
+  | CliInitEvent
+  // 上下文压缩完成事件
+  | ContextCompactedEvent
 
 /**
  * 事件监听器类型

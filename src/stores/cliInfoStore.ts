@@ -64,6 +64,8 @@ export interface CliInitEventData {
   model?: string
   /** CLI 版本 */
   claudeCodeVersion?: string
+  /** 可用斜杠命令列表（内置命令 + skill + 自定义命令） */
+  slashCommands?: string[]
 }
 
 // ============================================================
@@ -83,6 +85,8 @@ interface CliInfoState {
   mcpServers: McpServerStatus[]
   /** 可用技能列表 */
   skills: string[]
+  /** 可用斜杠命令列表（来自 CLI init 事件，每轮对话刷新） */
+  slashCommands: string[]
   /** 当前模型 */
   currentModel: string | null
   /** 加载状态 */
@@ -122,6 +126,7 @@ export const useCliInfoStore = create<CliInfoState>((set, get) => ({
   tools: [],
   mcpServers: [],
   skills: [],
+  slashCommands: [],
   currentModel: null,
   loading: false,
   error: null,
@@ -207,6 +212,11 @@ export const useCliInfoStore = create<CliInfoState>((set, get) => ({
       updates.skills = data.skills
     }
 
+    // 更新斜杠命令列表（内置命令 + skill + 自定义命令）
+    if (data.slashCommands && data.slashCommands.length > 0) {
+      updates.slashCommands = data.slashCommands
+    }
+
     // 更新当前模型
     if (data.model) {
       updates.currentModel = data.model
@@ -244,6 +254,7 @@ export const useCliInfoStore = create<CliInfoState>((set, get) => ({
       tools: [],
       mcpServers: [],
       skills: [],
+      slashCommands: [],
       currentModel: null,
       loading: false,
       error: null,

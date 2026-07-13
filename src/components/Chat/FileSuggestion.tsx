@@ -8,6 +8,7 @@ import type { FileMatch } from '@/services/fileSearch';
 import type { Workspace, EngineId } from '@/types';
 import type { PromptSnippet } from '@/types/promptSnippet';
 import type { SkillItem as SkillItemType } from '@/types/skill';
+import type { CliCommandSuggestion } from '@/services/cliSlashCommands';
 import { getEngineDisplayName } from '@/utils/engineDisplay';
 
 // 分离文件名和目录路径
@@ -30,8 +31,8 @@ export interface ConversationSuggestion {
 }
 
 export interface SuggestionItem {
-  type: 'workspace' | 'file' | 'snippet' | 'skill' | 'mcp' | 'conversation';
-  data: Workspace | FileMatch | PromptSnippet | SkillItemType | ConversationSuggestion | McpServerItem;
+  type: 'workspace' | 'file' | 'snippet' | 'skill' | 'mcp' | 'conversation' | 'cli-command';
+  data: Workspace | FileMatch | PromptSnippet | SkillItemType | ConversationSuggestion | McpServerItem | CliCommandSuggestion;
 }
 
 /** Skill 条目（用于 / 命令建议） */
@@ -63,6 +64,7 @@ export function UnifiedSuggestion({
 }: UnifiedSuggestionProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { t } = useTranslation('promptSnippet');
+  const { t: tChat } = useTranslation('chat');
 
   // 滚动选中项到视图
   useEffect(() => {
@@ -82,6 +84,7 @@ export function UnifiedSuggestion({
   const workspaceItems = items.filter(i => i.type === 'workspace');
   const fileItems = items.filter(i => i.type === 'file');
   const snippetItems = items.filter(i => i.type === 'snippet');
+  const cliCommandItems = items.filter(i => i.type === 'cli-command');
   const skillItems = items.filter(i => i.type === 'skill');
   const mcpItems = items.filter(i => i.type === 'mcp');
   const conversationItems = items.filter(i => i.type === 'conversation');
@@ -220,6 +223,41 @@ export function UnifiedSuggestion({
                 {snippet.description && (
                   <span className="text-xs text-text-tertiary truncate">{snippet.description}</span>
                 )}
+              </div>
+            );
+          })}
+        </>
+      )}
+
+      {/* CLI 命令分组（Claude 引擎会话，消息以 / 开头时由 CLI 直接执行） */}
+      {cliCommandItems.length > 0 && (
+        <>
+          <div className="px-3 py-1.5 text-xs text-text-tertiary border-b border-border bg-background-elevated/50 sticky top-0">
+            {tChat('cliCommand.groupLabel')}
+          </div>
+          {cliCommandItems.map((item) => {
+            const globalIdx = items.findIndex(i => i === item);
+            const cmd = item.data as CliCommandSuggestion;
+
+            return (
+              <div
+                key={`cli-${cmd.name}`}
+                data-index={globalIdx}
+                className={`px-3 py-2 cursor-pointer flex items-center gap-2 text-sm ${
+                  globalIdx === selectedIndex
+                    ? 'bg-primary/20 text-text-primary'
+                    : 'text-text-secondary hover:bg-background-hover'
+                }`}
+                onClick={() => onSelect(item)}
+                onMouseEnter={() => onHover(globalIdx)}
+              >
+                <span className="font-mono text-sm text-amber-500 shrink-0">/{cmd.name}</span>
+                {cmd.argumentHint && (
+                  <span className="font-mono text-xs text-text-tertiary shrink-0">{cmd.argumentHint}</span>
+                )}
+                <span className="text-xs text-text-tertiary truncate">
+                  {tChat(`cliCommand.desc.${cmd.descKey}`)}
+                </span>
               </div>
             );
           })}

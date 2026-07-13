@@ -16,6 +16,7 @@ import { voiceNotificationService } from '@/services/voiceNotificationService'
 import { sessionStoreManager } from './sessionStoreManager'
 import { normalizeEngineId } from '@/utils/engineDisplay'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { useCliInfoStore } from '@/stores/cliInfoStore'
 import { dialogStorageService } from '@/services/dialogStorage'
 
 const log = createLogger('EventHandler')
@@ -293,6 +294,28 @@ export function handleAIEvent(
       // 下一步提示建议：保存到 store，由输入框渲染为可点击气泡。
       // 仅保留最近一条；空字符串视为清除。
       set({ promptSuggestion: event.suggestion?.trim() ? event.suggestion : null })
+      break
+
+    case 'cli_init':
+      // CLI 会话初始化：把动态能力数据（工具/MCP/skill/模型/斜杠命令）同步到全局 store，
+      // 供输入框命令建议、状态栏等消费。每轮对话（每次 CLI 进程启动）都会刷新。
+      useCliInfoStore.getState().updateFromInit({
+        sessionId: event.sessionId,
+        tools: event.tools,
+        mcpServers: event.mcpServers,
+        agents: event.agents,
+        skills: event.skills,
+        model: event.model ?? undefined,
+        claudeCodeVersion: event.claudeCodeVersion ?? undefined,
+        slashCommands: event.slashCommands,
+      })
+      break
+
+    case 'context_compacted':
+      // 上下文压缩完成（/compact 或 autoCompact）：插入分隔条块，
+      // 标记此处之前的上下文已被摘要压缩。
+      state.appendContextCompactBlock(event.trigger, event.preTokens, event.postTokens)
+      set({ progressMessage: null })
       break
 
     // permission_result is handled via plan_approval_result

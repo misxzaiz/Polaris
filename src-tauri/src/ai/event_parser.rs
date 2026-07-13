@@ -11,6 +11,7 @@ use crate::models::{
     ToolCallEndEvent, ToolCallInfo, ToolCallStartEvent, ToolCallStatus, UserMessageEvent,
     PermissionDenial, PermissionRequestEvent,
     CliInitEvent, McpServerStatus, HookEvent, PromptSuggestionEvent,
+    ContextCompactedEvent,
 };
 use std::collections::HashMap;
 
@@ -200,6 +201,48 @@ impl EventParser {
             return self.parse_hook_event(&subtype, extra);
         }
 
+        // 压缩进行中提示（/compact 或 autoCompact 触发时 CLI 发出
+        // system/status {"status":"compacting"}；结束时 status 为 null，忽略）
+        if subtype == "status" {
+            if extra.get("status").and_then(|v| v.as_str()) == Some("compacting") {
+                return vec![AIEvent::Progress(ProgressEvent::new(
+                    &self.session_id,
+                    "🗜️ 正在压缩上下文…",
+                ))];
+            }
+            return vec![];
+        }
+
+        // 压缩完成边界（system/compact_boundary，含 compact_metadata 元数据）。
+        // 手动 /compact 与 autoCompact 自动压缩均触发，转为 ContextCompacted 事件
+        // 由前端渲染为"上下文已压缩"分隔条。
+        if subtype == "compact_boundary" {
+            let meta = extra.get("compact_metadata");
+            let trigger = meta
+                .and_then(|m| m.get("trigger"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("manual")
+                .to_string();
+            let pre_tokens = meta
+                .and_then(|m| m.get("pre_tokens"))
+                .and_then(|v| v.as_u64());
+            let post_tokens = meta
+                .and_then(|m| m.get("post_tokens"))
+                .and_then(|v| v.as_u64());
+            tracing::info!(
+                "[EventParser] 上下文压缩完成: trigger={}, pre_tokens={:?}, post_tokens={:?}",
+                trigger,
+                pre_tokens,
+                post_tokens
+            );
+            return vec![AIEvent::ContextCompacted(ContextCompactedEvent::new(
+                &self.session_id,
+                trigger,
+                pre_tokens,
+                post_tokens,
+            ))];
+        }
+
         // 已知的有意义子类型映射
         let message_map = HashMap::from([
             ("reading", "📖"),     // 读取文件
@@ -276,6 +319,15 @@ impl EventParser {
         // 提取 version
         if let Some(version) = extra.get("claude_code_version").and_then(|v| v.as_str()) {
             init_event = init_event.with_version(version.to_string());
+        }
+
+        // 提取 slash_commands（内置命令 + skill + 自定义命令，供前端输入框命令建议）
+        if let Some(slash_commands) = extra.get("slash_commands").and_then(|v| v.as_array()) {
+            let slash_commands: Vec<String> = slash_commands
+                .iter()
+                .filter_map(|c| c.as_str().map(String::from))
+                .collect();
+            init_event = init_event.with_slash_commands(slash_commands);
         }
 
         tracing::info!(

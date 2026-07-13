@@ -35,6 +35,14 @@ import type { PromptSnippet } from '@/types/promptSnippet'
 import type { SkillItem } from '@/types/skill'
 import { McpServerItem } from './FileSuggestion'
 import { useSkillStore } from '@/stores/skillStore'
+import { useCliInfoStore } from '@/stores/cliInfoStore'
+import { useActiveSessionId } from '@/stores/conversationStore/sessionStoreManager'
+import { resolveSessionEngine } from '@/stores/conversationStore/conversationStoreUtils'
+import {
+  getCliCommandSuggestions,
+  matchBlockedCliCommand,
+  type CliCommandSuggestion,
+} from '@/services/cliSlashCommands'
 import { pluginRegistry, listEnabledPluginMcpServers } from '@/plugin-system'
 import { usePluginStore } from '@/stores/pluginStore'
 import {
@@ -97,6 +105,14 @@ export function ChatInput({
 
 // 获取当前会话的工作区
   const currentWorkspace = useActiveSessionWorkspace()
+
+  // 当前会话引擎：CLI 斜杠命令建议/拦截仅对 Claude Code 引擎生效
+  const activeSessionId = useActiveSessionId()
+  const defaultEngine = useConfigStore((state) => state.config?.defaultEngine)
+  const isClaudeEngine = useMemo(
+    () => resolveSessionEngine(activeSessionId ?? '', defaultEngine) === 'claude-code',
+    [activeSessionId, defaultEngine]
+  )
 
   /** 选中片段时的光标位置信息（用于局部替换） */
   const [snippetTriggerBefore, setSnippetTriggerBefore] = useState<{ before: string; cursor: number } | null>(null)
@@ -400,6 +416,17 @@ export function ChatInput({
       const snippets = useSnippetStore.getState().snippets
       const skills = useSkillStore.getState().skills
 
+      // CLI 命令建议：仅 Claude 引擎、且 / 是消息首字符时提供
+      // （与 CLI 语义对齐：只有整条消息以 / 开头才会被解析为命令）
+      const isMessageStart = slashMatch.index === 0 && slashMatch[1] === ''
+      const cliCommandItems: SuggestionItem[] = isClaudeEngine && isMessageStart
+        ? getCliCommandSuggestions(
+            query,
+            useCliInfoStore.getState().slashCommands,
+            new Set(skills.flatMap(s => [s.id, s.name])),
+          ).map(c => ({ type: 'cli-command' as const, data: c }))
+        : []
+
       const matched: SuggestionItem[] = [
         // 快捷片段
         ...snippets
@@ -408,6 +435,8 @@ export function ChatInput({
             || (s.description?.toLowerCase().includes(query) ?? false)
           ))
           .map(s => ({ type: 'snippet' as const, data: s })),
+        // CLI 命令（顺序须与 UnifiedSuggestion 分组渲染顺序一致，保证键盘导航连贯）
+        ...cliCommandItems,
         // Skill
         ...skills
           .filter(s => (
@@ -549,7 +578,7 @@ export function ChatInput({
     setShowSuggestions(false)
     setSuggestionItems([])
     clearResults()
-  }, [workspaces, searchFiles, clearResults, calculateSuggestionPosition, buildSuggestionItems, attachments, debouncedPersistDraft, historyIndex, searchConversations, enabledMcpServers])
+  }, [workspaces, searchFiles, clearResults, calculateSuggestionPosition, buildSuggestionItems, attachments, debouncedPersistDraft, historyIndex, searchConversations, enabledMcpServers, isClaudeEngine])
 
   // 当 fileMatches 更新时，合并到 suggestionItems（@对话 模式下不合并文件）
   useEffect(() => {
@@ -631,6 +660,11 @@ export function ChatInput({
       }
       setShowSuggestions(false)
       setSuggestionItems([])
+      return
+    } else if (item.type === 'cli-command') {
+      // CLI 命令：保留斜杠插入 `/name `，回车后整条消息交给 Claude CLI 解析执行
+      const cmd = item.data as CliCommandSuggestion
+      applySlashReplacement(`/${cmd.name} `)
       return
     } else if (item.type === 'skill') {
       const skill = item.data as SkillItem
@@ -716,6 +750,19 @@ export function ChatInput({
     if ((disabled || isStreaming) && attachments.length === 0) return
     if (!trimmed && attachments.length === 0) return
 
+    // Claude 引擎：拦截 /clear（及别名）—— CLI 侧会新开对话，
+    // 导致 CLI 上下文与 Polaris 界面历史脱钩。清空上下文请用 Polaris 新建会话。
+    if (isClaudeEngine) {
+      const blocked = matchBlockedCliCommand(trimmed)
+      if (blocked) {
+        useToastStore.getState().info(
+          t('cliCommand.clearBlockedTitle', { command: `/${blocked}` }),
+          t('cliCommand.clearBlockedDetail')
+        )
+        return
+      }
+    }
+
     // 取消 pending 的防抖回调，防止旧值写回 Store
     cancelPersistDraft()
 
@@ -749,7 +796,7 @@ export function ChatInput({
     setSpeechWakeActive(false)
     // 语音提醒：发送确认
     voiceNotificationService.notifySendConfirm()
-  }, [value, disabled, isStreaming, attachments, onSend, updateInputDraft, cancelPersistDraft, currentWorkspace, setSpeechWakeActive, editMode, onEditSend, onCancelEdit])
+  }, [value, disabled, isStreaming, attachments, onSend, updateInputDraft, cancelPersistDraft, currentWorkspace, setSpeechWakeActive, editMode, onEditSend, onCancelEdit, isClaudeEngine, t])
 
   // 处理语音命令（放在 handleSend 之后，避免变量声明顺序问题）
   useEffect(() => {

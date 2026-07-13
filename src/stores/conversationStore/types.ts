@@ -199,6 +199,9 @@ export interface ConversationActions {
   appendPluginCardBlock: (block: import('../../types/chat').PluginCardBlock) => void
   updatePluginCardBlock: (id: string, updates: Partial<import('../../types/chat').PluginCardBlock>) => void
 
+  // ===== 上下文压缩（Claude CLI /compact 或 autoCompact 完成） =====
+  appendContextCompactBlock: (trigger: string, preTokens?: number, postTokens?: number) => void
+
   // ===== AgentRun =====
   appendAgentRunBlock: (taskId: string, agentType: string, capabilities?: string[]) => void
   updateAgentRunBlock: (taskId: string, updates: Partial<import('../../types/chat').AgentRunBlock>) => void

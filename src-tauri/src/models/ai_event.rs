@@ -1138,6 +1138,9 @@ pub struct CliInitEvent {
     /// CLI 版本
     #[serde(default)]
     pub claude_code_version: Option<String>,
+    /// 可用斜杠命令列表（内置命令 + skill + 自定义命令，来自 init 事件 slash_commands 字段）
+    #[serde(default)]
+    pub slash_commands: Vec<String>,
 }
 
 /// MCP 服务器状态
@@ -1161,6 +1164,7 @@ impl CliInitEvent {
             skills: Vec::new(),
             model: None,
             claude_code_version: None,
+            slash_commands: Vec::new(),
         }
     }
 
@@ -1192,6 +1196,53 @@ impl CliInitEvent {
     pub fn with_version(mut self, version: String) -> Self {
         self.claude_code_version = Some(version);
         self
+    }
+
+    pub fn with_slash_commands(mut self, slash_commands: Vec<String>) -> Self {
+        self.slash_commands = slash_commands;
+        self
+    }
+}
+
+// ============================================================================
+// 上下文压缩事件
+// ============================================================================
+
+/// 上下文压缩完成事件
+///
+/// 来自 Claude CLI stream-json 的 `system/compact_boundary`，
+/// 手动 `/compact` 与 CLI autoCompact 自动压缩均会触发。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextCompactedEvent {
+    #[serde(rename = "type")]
+    pub event_type: String,
+    /// 会话 ID - 用于事件路由
+    pub session_id: String,
+    /// 触发方式："manual"（/compact）| "auto"（自动压缩）
+    pub trigger: String,
+    /// 压缩前 token 数
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pre_tokens: Option<u64>,
+    /// 压缩后 token 数
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub post_tokens: Option<u64>,
+}
+
+impl ContextCompactedEvent {
+    pub fn new(
+        session_id: impl Into<String>,
+        trigger: impl Into<String>,
+        pre_tokens: Option<u64>,
+        post_tokens: Option<u64>,
+    ) -> Self {
+        Self {
+            event_type: "context_compacted".to_string(),
+            session_id: session_id.into(),
+            trigger: trigger.into(),
+            pre_tokens,
+            post_tokens,
+        }
     }
 }
 
@@ -1329,6 +1380,8 @@ pub enum AIEvent {
     QuestionAnswered(QuestionAnsweredEvent),
     // CLI Init 事件
     CliInit(CliInitEvent),
+    // 上下文压缩事件
+    ContextCompacted(ContextCompactedEvent),
     // Hook 生命周期事件
     Hook(HookEvent),
     // 提示建议事件
@@ -1365,6 +1418,7 @@ impl AIEvent {
             AIEvent::Question(e) => &e.event_type,
             AIEvent::QuestionAnswered(e) => &e.event_type,
             AIEvent::CliInit(e) => &e.event_type,
+            AIEvent::ContextCompacted(e) => &e.event_type,
             AIEvent::Hook(e) => &e.event_type,
             AIEvent::PromptSuggestion(e) => &e.event_type,
         }
@@ -1453,6 +1507,7 @@ impl AIEvent {
             AIEvent::Question(e) => &e.session_id,
             AIEvent::QuestionAnswered(e) => &e.session_id,
             AIEvent::CliInit(e) => &e.session_id,
+            AIEvent::ContextCompacted(e) => &e.session_id,
             AIEvent::Hook(e) => &e.session_id,
             AIEvent::PromptSuggestion(e) => &e.session_id,
         }

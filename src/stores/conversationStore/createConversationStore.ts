@@ -590,6 +590,32 @@ export function createConversationStore(
         }
       },
 
+      appendContextCompactBlock: (trigger, preTokens, postTokens) => {
+        if (_textBuffer) get()._flushTextBuffer()
+
+        const block: import('../../types/chat').ContextCompactBlock = {
+          type: 'context_compact',
+          id: generateUUID(),
+          trigger,
+          preTokens,
+          postTokens,
+          createdAt: new Date().toISOString(),
+        }
+
+        const { currentMessage, streamingUpdateCounter } = get()
+        if (!currentMessage) {
+          set({
+            currentMessage: createCurrentAssistantMessage([block]),
+            streamingUpdateCounter: streamingUpdateCounter + 1,
+          })
+        } else {
+          set({
+            currentMessage: { ...currentMessage, blocks: [...currentMessage.blocks, block] },
+            streamingUpdateCounter: streamingUpdateCounter + 1,
+          })
+        }
+      },
+
       // ===== PlanMode =====
       appendPlanModeBlock: (planId, sessionId, title?, description?, stages?) => {
         const { currentMessage, planBlockMap, streamingUpdateCounter } = get()

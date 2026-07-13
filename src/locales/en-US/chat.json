@@ -530,5 +530,24 @@
     "customInputPlaceholder": "Enter {{type}} value...",
     "cancel": "Cancel",
     "confirm": "Confirm"
+  },
+  "cliCommand": {
+    "groupLabel": "CLI Commands",
+    "desc": {
+      "compact": "Compact context (summarize history to free window space)",
+      "context": "Show context usage breakdown",
+      "usage": "Show session cost and token usage",
+      "mcp": "Show MCP server connection status",
+      "model": "Show the current model",
+      "recap": "Generate a one-line session recap",
+      "custom": "CLI custom command"
+    },
+    "clearBlockedTitle": "{{command}} blocked",
+    "clearBlockedDetail": "This command clears the CLI-side context and desyncs it from the visible history. Use Polaris's New Session instead.",
+    "compactDivider": {
+      "manual": "Context compacted",
+      "auto": "Context auto-compacted",
+      "tokens": "{{pre}} → {{post}} tokens"
+    }
   }
 }

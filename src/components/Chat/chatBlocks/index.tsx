@@ -15,6 +15,7 @@ import { ThinkingBlockRenderer } from './ThinkingBlockRenderer';
 import { ToolCallBlockRenderer } from './ToolCallBlockRenderer';
 import { ArtifactPreviewRenderer } from './ArtifactPreviewRenderer';
 import { PluginCardHost } from './PluginCardHost';
+import { ContextCompactRenderer } from './ContextCompactRenderer';
 
 export function renderContentBlock(
   block: ContentBlock,
@@ -71,6 +72,11 @@ export function renderContentBlock(
     case 'plugin_card':
       return wrapWithErrorBoundary(
         <PluginCardHost block={block} />,
+        block.id
+      );
+    case 'context_compact':
+      return wrapWithErrorBoundary(
+        <ContextCompactRenderer block={block} />,
         block.id
       );
     default:

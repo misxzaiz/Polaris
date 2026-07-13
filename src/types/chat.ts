@@ -65,12 +65,29 @@ export interface PermissionRequest {
  */
 
 /** 内容块类型 - 用于 Assistant 消息的内容分段 */
-export type ContentBlock = TextBlock | ThinkingBlock | ToolCallBlock | ArtifactPreviewBlock | QuestionBlock | PlanModeBlock | AgentRunBlock | ToolGroupBlock | PermissionRequestBlock | PluginCardBlock;
+export type ContentBlock = TextBlock | ThinkingBlock | ToolCallBlock | ArtifactPreviewBlock | QuestionBlock | PlanModeBlock | AgentRunBlock | ToolGroupBlock | PermissionRequestBlock | PluginCardBlock | ContextCompactBlock;
 
 /** 文本内容块 */
 export interface TextBlock {
   type: 'text';
   content: string;
+}
+
+/**
+ * 上下文压缩分隔块 - Claude CLI /compact 或 autoCompact 完成后插入，
+ * 渲染为聊天流中的细分隔条，标记此处之前的上下文已被摘要压缩。
+ */
+export interface ContextCompactBlock {
+  type: 'context_compact';
+  id: string;
+  /** 触发方式："manual"（/compact）| "auto"（自动压缩） */
+  trigger: string;
+  /** 压缩前 token 数 */
+  preTokens?: number;
+  /** 压缩后 token 数 */
+  postTokens?: number;
+  /** 压缩完成时间（ISO 8601） */
+  createdAt: string;
 }
 
 /** 思考过程内容块 */

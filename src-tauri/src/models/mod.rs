@@ -24,6 +24,8 @@ pub use ai_event::{
     PermissionDenial, PermissionRequestEvent,
     // CliInit 类型
     CliInitEvent, McpServerStatus,
+    // 上下文压缩类型
+    ContextCompactedEvent,
     // Hook 类型
     HookEvent,
     // PromptSuggestion 类型
