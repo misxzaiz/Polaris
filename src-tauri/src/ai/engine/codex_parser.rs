@@ -180,12 +180,11 @@ pub fn codex_event_to_ai_events(event: CodexEvent, session_id: &str) -> Vec<AIEv
                         .message
                         .or(item.text)
                         .unwrap_or_else(|| "Unknown error".to_string());
-                    // 过滤掉 Codex 的 deprecation 警告（非致命）
-                    if msg.contains("deprecated") || msg.contains("Enable it with") {
-                        vec![]
-                    } else {
-                        vec![AIEvent::error(session_id, msg)]
-                    }
+                    // item.completed 级别的 error 是 Codex 的诊断消息（如模型元数据缺失、
+                    // 配置项废弃告警），不是会话失败信号——真正的失败走 turn.failed / 顶层
+                    // StreamError 分支。统一降级为非终止的 progress，避免误杀正常完成的会话。
+                    tracing::warn!("[CodexParser] item error（非致命，降级为 progress）: {}", msg);
+                    vec![AIEvent::progress(session_id, format!("Codex: {}", msg))]
                 }
                 _ => vec![],
             }
@@ -366,11 +365,51 @@ mod tests {
     }
 
     #[test]
-    fn skip_deprecation_warning() {
+    fn deprecation_warning_becomes_progress() {
         let json = r#"{"type":"item.completed","item":{"id":"item_0","type":"error","message":"`[features].collab` is deprecated. Use `[features].multi_agent` instead."}}"#;
         let event = parse_codex_line(json).unwrap();
         let ai_events = codex_event_to_ai_events(event, "test-session");
-        assert!(ai_events.is_empty());
+        assert_eq!(ai_events.len(), 1);
+        assert!(matches!(&ai_events[0], AIEvent::Progress(_)));
+    }
+
+    #[test]
+    fn metadata_warning_becomes_progress() {
+        // 真实故障用例：自定义 provider + 非官方模型名时 Codex 必发的非致命警告，
+        // 曾被误判为致命错误导致会话被终止、后续 agent_message 丢失
+        let json = r#"{"type":"item.completed","item":{"id":"item_0","type":"error","message":"Model metadata for `gpt-5.6-sol` not found. Defaulting to fallback metadata; this can degrade performance and cause issues."}}"#;
+        let event = parse_codex_line(json).unwrap();
+        let ai_events = codex_event_to_ai_events(event, "test-session");
+        assert_eq!(ai_events.len(), 1);
+        match &ai_events[0] {
+            AIEvent::Progress(e) => {
+                assert!(e.message.as_deref().unwrap_or("").contains("Model metadata"));
+            }
+            other => panic!("Expected Progress, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn item_error_never_produces_error_or_session_end() {
+        let json = r#"{"type":"item.completed","item":{"id":"item_0","type":"error","message":"anything at all"}}"#;
+        let event = parse_codex_line(json).unwrap();
+        let ai_events = codex_event_to_ai_events(event, "test-session");
+        assert!(ai_events
+            .iter()
+            .all(|e| !matches!(e, AIEvent::Error(_) | AIEvent::SessionEnd(_))));
+    }
+
+    #[test]
+    fn turn_failed_produces_error_and_session_end() {
+        let json = r#"{"type":"turn.failed","error":{"message":"boom"}}"#;
+        let event = parse_codex_line(json).unwrap();
+        let ai_events = codex_event_to_ai_events(event, "test-session");
+        assert_eq!(ai_events.len(), 2);
+        match &ai_events[0] {
+            AIEvent::Error(e) => assert_eq!(e.error, "boom"),
+            other => panic!("Expected Error, got {:?}", other),
+        }
+        assert!(matches!(&ai_events[1], AIEvent::SessionEnd(_)));
     }
 
     #[test]

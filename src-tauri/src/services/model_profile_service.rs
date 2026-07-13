@@ -911,17 +911,7 @@ mod tests {
             api_key: "secret".to_string(),
             model: "glm-5.1".to_string(),
             active: true,
-            wire_api: None,
-            target_engines: None,
-            target_engine: None,
-            category: None,
-            description: None,
-            auth_type: None,
-            api_key_env_name: None,
-            custom_headers: None,
-            custom_env: None,
-            created_at: None,
-            updated_at: None,
+            ..Default::default()
         }
     }
 

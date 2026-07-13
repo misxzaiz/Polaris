@@ -1,6 +1,6 @@
 # SimpleAI 压缩修复 + 内容字段兼容 + maxTokens/contextWindow 配置（最终版实施方案）
 
-> 状态：**最终版，待指令实施**。
+> 状态：**已实施**（commit `37cf4229`，2026-07-14）。`cargo check --lib` 通过；单测见 `simple_ai_protocol.rs` / `compact.rs` 测试区；实机验证步骤见第六节。
 > 依据：2026-07-13 ding 网关（`120.79.164.155:9850`）实测 + 全链路代码走读 + 用户实测反馈（窗口普遍支持 1M，不可写死，须可配置）。
 > 探测脚本可复跑：`.polaris/tmp/probe_providers.py`、`probe_more.py`。
 
