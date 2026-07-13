@@ -119,6 +119,32 @@ export interface SessionEndEvent {
 }
 
 /**
+ * 会话交接事件。
+ *
+ * 后端创建新的 runtime session，但前端保持同一个可视对话、完整消息历史和 store。
+ * 收到后必须将 conversationId 从 sessionId 更新为 newSessionId。
+ */
+export interface SessionHandoffEvent {
+  type: 'session_handoff'
+  /** 旧 runtime session ID（事件的路由 ID） */
+  sessionId: string
+  newSessionId: string
+  stableConversationId: string
+  reason: 'compaction' | 'runtime_recovery'
+  generation: number
+  tokensBefore: number
+  tokensAfter: number
+  turnsArchived: number
+}
+
+/** 压缩失败事件：旧 runtime session 与上下文完全不变。 */
+export interface CompactionFailedEvent {
+  type: 'compaction_failed'
+  sessionId: string
+  error: string
+}
+
+/**
  * 用户消息事件
  */
 export interface UserMessageEvent {
@@ -686,6 +712,8 @@ export type AIEvent =
   | ErrorEvent
   | SessionStartEvent
   | SessionEndEvent
+  | SessionHandoffEvent
+  | CompactionFailedEvent
   | UserMessageEvent
   | AssistantMessageEvent
   | TaskMetadataEvent
@@ -1056,6 +1084,8 @@ const AI_EVENT_TYPES = new Set([
   'error',
   'session_start',
   'session_end',
+  'session_handoff',
+  'compaction_failed',
   'user_message',
   'assistant_message',
   'task_metadata',

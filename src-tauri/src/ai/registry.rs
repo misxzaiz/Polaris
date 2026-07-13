@@ -126,6 +126,18 @@ impl EngineRegistry {
         engine.continue_session(session_id, message, options)
     }
 
+    /// 请求上下文压缩。引擎通过 SessionHandoffEvent 通知前端新的 runtime session。
+    pub fn compact_session(
+        &mut self,
+        engine_id: EngineId,
+        session_id: &str,
+        options: SessionOptions,
+    ) -> Result<()> {
+        let engine = self.get_mut(&engine_id)
+            .ok_or_else(|| AppError::ValidationError(format!("引擎 {} 未注册", engine_id)))?;
+        engine.compact_session(session_id, options)
+    }
+
     /// 中断会话
     pub fn interrupt(&mut self, engine_id: &EngineId, session_id: &str) -> Result<()> {
         let engine = self.get_mut(engine_id)

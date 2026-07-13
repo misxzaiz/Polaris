@@ -61,6 +61,7 @@ class DialogStorageServiceImpl {
 
     const meta = buildMeta({
       externalId: input.externalId,
+      stableConversationId: input.stableConversationId,
       engineId: input.engineId,
       title: input.title,
       workspaceId: input.workspaceId,

@@ -27,6 +27,8 @@ const COMMAND_ROUTE_MAP: Record<string, string> = {
   // Chat
   start_chat: '/api/chat/send',
   continue_chat: '/api/chat/send',
+  compact_chat: '/api/chat/compact',
+  delete_simple_ai_checkpoints: '/api/chat/delete-checkpoints',
   interrupt_chat: '/api/chat/interrupt',
   get_session_history: '/api/chat/history',
   answer_question: '/api/chat/answer-question',

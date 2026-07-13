@@ -11,7 +11,7 @@
 import { memo, useCallback, useState, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { Loader2, XCircle, X, Circle, Maximize2, Minimize2, Square } from 'lucide-react';
+import { Loader2, XCircle, X, Circle, Maximize2, Minimize2, Square, Archive } from 'lucide-react';
 import { SessionMessagesView } from './SessionMessagesView';
 import { useSessionMetadataList, useSessionManagerActions } from '@/stores/conversationStore/sessionStoreManager';
 import { useSessionStreaming, useSessionHasPendingQuestion } from '@/stores/conversationStore/useActiveSession';
@@ -105,6 +105,12 @@ export const SessionCell = memo(function SessionCell({
     sessionStoreManager.getState().interruptSession(sessionId);
   }, [sessionId]);
 
+  // 手动压缩 SimpleAI 上下文。会保持当前可视对话，后端仅交接 runtime session。
+  const handleCompactContext = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    sessionStoreManager.getState().getStore(sessionId)?.compactContext();
+  }, [sessionId]);
+
   // 展开/收起
   const handleExpand = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -181,6 +187,17 @@ export const SessionCell = memo(function SessionCell({
               title={t('sessionCell.interrupt')}
             >
               <Square className="w-3 h-3" />
+            </button>
+          )}
+
+          {/* 压缩上下文 - 仅空闲 SimpleAI 会话可用 */}
+          {engineId === 'simple-ai' && !isStreaming && (
+            <button
+              onClick={handleCompactContext}
+              className="shrink-0 p-0.5 rounded text-text-muted hover:text-text-primary hover:bg-background-hover transition-colors"
+              title="压缩上下文"
+            >
+              <Archive className="w-3 h-3" />
             </button>
           )}
 

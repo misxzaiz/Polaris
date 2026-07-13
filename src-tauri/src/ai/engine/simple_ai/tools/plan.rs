@@ -167,6 +167,7 @@ mod tests {
         let ctx = ToolContext {
             work_dir: ".",
             session_id: "s1",
+            stable_conversation_id: "stable-s1",
             event_callback: &cb,
             plan_id: "s1-plan",
             plan_started: &started,
@@ -214,6 +215,7 @@ mod tests {
         let ctx = ToolContext {
             work_dir: ".",
             session_id: "s1",
+            stable_conversation_id: "stable-s1",
             event_callback: &cb,
             plan_id: "s1-plan",
             plan_started: &started,
@@ -251,6 +253,7 @@ mod tests {
         let ctx = ToolContext {
             work_dir: ".",
             session_id: "s1",
+            stable_conversation_id: "stable-s1",
             event_callback: &cb,
             plan_id: "s1-plan",
             plan_started: &started,

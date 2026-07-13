@@ -318,6 +318,13 @@ export function useActiveSessionActions() {
         if (!store) return
         return store.continueChat(prompt, allowedTools)
       },
+      compactContext: async () => {
+        const sessionId = sessionStoreManager.getState().activeSessionId
+        if (!sessionId) return
+        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
+        if (!store) return
+        return store.compactContext()
+      },
       deleteMessage: (messageId: string) => {
         const sessionId = sessionStoreManager.getState().activeSessionId
         if (!sessionId) return

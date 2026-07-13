@@ -8,7 +8,7 @@ const log = createLogger('App');
 import { TopMenuBar as TopMenuBarComponent } from './components/TopMenuBar';
 import { GitPanel } from './components/GitPanel';
 import { ActivityBar, LeftPanel, LeftPanelContent, LeftPanelDrawer, CenterStage, RightPanel } from './components/Layout';
-import { EnhancedChatMessages, ChatInput, ChatStatusBar, SessionHistoryPanel, MultiSessionGrid, MultiWindowMenu, NewSessionButton, ErrorBanner } from './components/Chat';
+import { EnhancedChatMessages, ChatInput, ChatStatusBar, SessionHistoryPanel, MultiSessionGrid, MultiWindowMenu, NewSessionButton, CompactContextButton, ErrorBanner } from './components/Chat';
 import type { EditMode } from './components/Chat';
 import type { SettingsTabId } from './components/Settings/SettingsSidebar';
 import { SimpleTodoPanel } from './components/TodoPanel/SimpleTodoPanel';
@@ -268,6 +268,7 @@ function App() {
                     onEditSend={handleEditSend}
                     statusBarSlot={
                       <ChatStatusBar embedded>
+                        <CompactContextButton />
                         <MultiWindowMenu />
                         <NewSessionButton />
                       </ChatStatusBar>

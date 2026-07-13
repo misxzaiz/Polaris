@@ -37,6 +37,25 @@ fn parse_retry_after(value: Option<&str>) -> Option<Duration> {
     value?.parse::<u64>().ok().map(Duration::from_secs)
 }
 
+/// 兼容不同 provider 的上下文超限错误文案。
+pub(super) fn is_context_limit_error(status: u16, body: &str) -> bool {
+    if !matches!(status, 400 | 413 | 422) {
+        return false;
+    }
+    let lower = body.to_ascii_lowercase();
+    [
+        "context_length_exceeded",
+        "maximum context length",
+        "context window",
+        "too many tokens",
+        "prompt is too long",
+        "input is too long",
+        "request too large",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
+}
+
 /// 带重试地发送请求。
 ///
 /// 成功（2xx）返回 `Response`；不可重试错误或达上限后返回最后一次错误。
@@ -65,6 +84,9 @@ pub(super) async fn send_with_retry(
                 );
                 let body = resp.text().await.unwrap_or_default();
                 let err = format!("API error ({}): {}", status, body);
+                if is_context_limit_error(status, &body) {
+                    return Err(AppError::ContextLimit(err));
+                }
                 if !is_retryable_status(status) || attempt >= max_attempts {
                     return Err(AppError::ProcessError(err));
                 }
@@ -116,6 +138,14 @@ mod tests {
         assert!(!is_retryable_status(404));
         assert!(!is_retryable_status(200));
         assert!(!is_retryable_status(301));
+    }
+
+    #[test]
+    fn detects_context_limit_errors() {
+        assert!(is_context_limit_error(400, r#"{"code":"context_length_exceeded"}"#));
+        assert!(is_context_limit_error(413, "maximum context length exceeded"));
+        assert!(!is_context_limit_error(401, "context window"));
+        assert!(!is_context_limit_error(400, "invalid parameter"));
     }
 
     #[test]

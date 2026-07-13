@@ -27,8 +27,10 @@ export interface DialogMeta {
   v: number
   /** 行类型判别 */
   type: 'meta'
-  /** 外部会话 ID（= 前端 conversationId，文件名也用它） */
+  /** 外部 runtime session ID（文件名也用它） */
   externalId: string
+  /** 前端稳定对话 ID；SimpleAI runtime 旋转和应用重启后保持不变 */
+  stableConversationId?: string
   /** AI 引擎 */
   engineId: EngineId
   /** 会话标题 */
@@ -79,6 +81,7 @@ export type DialogSummary = DialogMeta
 /** 保存会话的输入参数 */
 export interface SaveDialogInput {
   externalId: string
+  stableConversationId?: string
   engineId: EngineId
   title: string
   workspaceId?: string | null
