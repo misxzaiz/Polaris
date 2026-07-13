@@ -273,14 +273,10 @@ impl AIEngine for SimpleAIEngine {
             message.to_string(),
         )));
 
-        // 计算 bootstrap_end：system prompt + 环境上下文 + 项目指令 + Skill 索引。
-        // 这些消息受保护，不参与上下文压缩。
-        let bootstrap_end = messages.len() - options.message_history.len() - 1; // -1 排除首轮 user 消息
         // 创建会话：初始即带上 system + 历史 + 首轮 user 消息，并标记运行中。
         // 这样即便运行期间用户触发 continue_session，也能读到完整初始上下文而非空历史。
         let mut session = SimpleAISession::new(work_dir.clone());
         session.messages = messages.clone();
-        session.bootstrap_end = bootstrap_end;
         session.is_running = true;
         let mut abort_rx = session.abort_rx.clone();
 
@@ -409,21 +405,17 @@ impl AIEngine for SimpleAIEngine {
                     session.abort_rx = new_rx;
                     (session.messages.clone(), task_rx)
                 } else {
-                    tracing::error!(
-                        "[SimpleAI] continue_session 找不到 session={}，发出 SessionNotFound 错误",
-                        sid
-                    );
-                    let _ = cb(AIEvent::Error(ErrorEvent::new(
-                        &sid,
-                        format!("会话 {} 不存在，请重新开始对话。", sid),
-                    )));
-                    let _ = cb(AIEvent::SessionEnd(SessionEndEvent::new(&sid)));
-                    return;
+                    // 会话不存在（异常路径）：用仅含系统提示词的初始历史兜底。
+                    let system_prompt = build_system_prompt();
+                    let (_, rx) = watch::channel(false);
+                    (
+                        vec![json!({ "role": "system", "content": system_prompt })],
+                        rx,
+                    )
                 }
             };
 
             existing_messages.push(json!({ "role": "user", "content": msg }));
-
 
             let result = run_chat_loop(
                 &sid,
