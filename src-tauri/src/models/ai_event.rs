@@ -319,90 +319,6 @@ impl SessionEndEvent {
     }
 }
 
-/// 会话交接事件。
-///
-/// 旧 runtime session 仍保留完整历史，但不再接收新消息；前端保持当前可视对话，
-/// 将后续请求路由到 `new_session_id`。不会伴随 SessionEnd/SessionStart 事件。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SessionHandoffEvent {
-    #[serde(rename = "type")]
-    pub event_type: String,
-    /// 旧 runtime session ID；同时是事件路由 ID。
-    pub session_id: String,
-    pub new_session_id: String,
-    pub stable_conversation_id: String,
-    /// `compaction` 或 `runtime_recovery`
-    pub reason: String,
-    pub generation: u64,
-    pub tokens_before: usize,
-    pub tokens_after: usize,
-    pub turns_archived: usize,
-}
-
-impl SessionHandoffEvent {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        old_session_id: impl Into<String>,
-        new_session_id: impl Into<String>,
-        stable_conversation_id: impl Into<String>,
-        generation: u64,
-        tokens_before: usize,
-        tokens_after: usize,
-        turns_archived: usize,
-    ) -> Self {
-        Self {
-            event_type: "session_handoff".to_string(),
-            session_id: old_session_id.into(),
-            new_session_id: new_session_id.into(),
-            stable_conversation_id: stable_conversation_id.into(),
-            reason: "compaction".to_string(),
-            generation,
-            tokens_before,
-            tokens_after,
-            turns_archived,
-        }
-    }
-    pub fn runtime_recovery(
-        old_session_id: impl Into<String>,
-        new_session_id: impl Into<String>,
-        stable_conversation_id: impl Into<String>,
-        generation: u64,
-    ) -> Self {
-        let mut event = Self::new(
-            old_session_id,
-            new_session_id,
-            stable_conversation_id,
-            generation,
-            0,
-            0,
-            0,
-        );
-        event.reason = "runtime_recovery".to_string();
-        event
-    }
-}
-
-/// 压缩失败事件。失败时旧 session 和原 messages 保持不变。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CompactionFailedEvent {
-    #[serde(rename = "type")]
-    pub event_type: String,
-    pub session_id: String,
-    pub error: String,
-}
-
-impl CompactionFailedEvent {
-    pub fn new(session_id: impl Into<String>, error: impl Into<String>) -> Self {
-        Self {
-            event_type: "compaction_failed".to_string(),
-            session_id: session_id.into(),
-            error: error.into(),
-        }
-    }
-}
-
 /// 用户消息事件
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1391,8 +1307,6 @@ pub enum AIEvent {
     Error(ErrorEvent),
     SessionStart(SessionStartEvent),
     SessionEnd(SessionEndEvent),
-    SessionHandoff(SessionHandoffEvent),
-    CompactionFailed(CompactionFailedEvent),
     UserMessage(UserMessageEvent),
     AssistantMessage(AssistantMessageEvent),
     TaskMetadata(TaskMetadataEvent),
@@ -1434,8 +1348,6 @@ impl AIEvent {
             AIEvent::Error(e) => &e.event_type,
             AIEvent::SessionStart(e) => &e.event_type,
             AIEvent::SessionEnd(e) => &e.event_type,
-            AIEvent::SessionHandoff(e) => &e.event_type,
-            AIEvent::CompactionFailed(e) => &e.event_type,
             AIEvent::UserMessage(e) => &e.event_type,
             AIEvent::AssistantMessage(e) => &e.event_type,
             AIEvent::TaskMetadata(e) => &e.event_type,
@@ -1524,8 +1436,6 @@ impl AIEvent {
             AIEvent::Error(e) => &e.session_id,
             AIEvent::SessionStart(e) => &e.session_id,
             AIEvent::SessionEnd(e) => &e.session_id,
-            AIEvent::SessionHandoff(e) => &e.session_id,
-            AIEvent::CompactionFailed(e) => &e.session_id,
             AIEvent::UserMessage(e) => &e.session_id,
             AIEvent::AssistantMessage(e) => &e.session_id,
             AIEvent::TaskMetadata(e) => &e.session_id,

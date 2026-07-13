@@ -22,7 +22,7 @@ use models::config::{Config, HealthStatus};
 use services::config_store::ConfigStore;
 use services::logger::Logger;
 #[cfg(feature = "tauri-app")]
-use commands::chat::{start_chat, continue_chat, compact_chat, delete_simple_ai_checkpoints, interrupt_chat};
+use commands::chat::{start_chat, continue_chat, interrupt_chat};
 #[cfg(feature = "tauri-app")]
 use commands::chat::{
     list_sessions, get_session_history, delete_session,
@@ -654,8 +654,6 @@ pub fn run() {
             // 聊天相关（统一接口）
             start_chat,
             continue_chat,
-            compact_chat,
-            delete_simple_ai_checkpoints,
             interrupt_chat,
             // 统一会话历史接口（支持分页）
             list_sessions,

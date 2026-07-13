@@ -97,10 +97,6 @@ pub struct ChatRequestOptions {
     /// 模型 Profile ID（用于查找第三方端点配置）
     #[serde(default)]
     pub model_profile_id: Option<String>,
-    /// 稳定对话 ID（前端 SessionMetadata.id），用于跨 runtime session 的上下文交接。
-    /// 透传到 SimpleAI env_overrides，SimpleAI 按此 ID 组织 checkpoint。
-    #[serde(default)]
-    pub stable_conversation_id: Option<String>,
 }
 
 // ============================================================================
@@ -983,18 +979,6 @@ pub async fn start_chat_inner(
     )
     .await?;
 
-    // Phase 0a: SimpleAI 透传稳定对话 ID（跨 runtime session 上下文交接）。
-    if engine == EngineId::SimpleAI {
-        let stable_sid = options.stable_conversation_id
-            .filter(|s| !s.is_empty());
-        if let Some(ref sid) = stable_sid {
-            session_opts.env_overrides.insert(
-                "__stable_conversation_id".to_string(),
-                sid.clone(),
-            );
-        }
-    }
-
     let mut registry = state.engine_registry.lock().await;
     registry.start_session(Some(engine), &final_message, session_opts)
 }
@@ -1179,73 +1163,8 @@ pub async fn continue_chat_inner(
     )
     .await?;
 
-    // Phase 0a: SimpleAI 透传稳定对话 ID（跨 runtime session 上下文交接）。
-    if engine == EngineId::SimpleAI {
-        let stable_sid = options.stable_conversation_id
-            .filter(|s| !s.is_empty());
-        if let Some(ref sid) = stable_sid {
-            session_opts.env_overrides.insert(
-                "__stable_conversation_id".to_string(),
-                sid.clone(),
-            );
-        }
-    }
-
     let mut registry = state.engine_registry.lock().await;
     registry.continue_session(engine, &session_id, &final_message, session_opts)
-}
-
-pub async fn compact_chat_inner(
-    session_id: String,
-    options: ChatRequestOptions,
-    state: &crate::AppState,
-    callbacks: ChatCallbacks,
-) -> Result<()> {
-    let engine = options
-        .engine_id
-        .as_deref()
-        .and_then(EngineId::parse)
-        .unwrap_or(EngineId::SimpleAI);
-    if engine != EngineId::SimpleAI {
-        return Err(AppError::ValidationError(
-            "仅 SimpleAI 支持上下文压缩".to_string(),
-        ));
-    }
-
-    let context_id = options.context_id.clone();
-    let emit_event = callbacks.emit_event.clone();
-    let event_callback = move |event: AIEvent| {
-        let payload = serde_json::json!({
-            "contextId": context_id.as_deref().unwrap_or("main"),
-            "payload": event,
-        });
-        emit_event(payload);
-    };
-    let mut session_opts = SessionOptions::new(event_callback);
-    if let Some(work_dir) = options.work_dir.clone() {
-        session_opts = session_opts.with_work_dir(work_dir);
-    }
-    if let Some(model) = options.model.clone() {
-        session_opts = session_opts.with_model(model);
-    }
-
-    session_opts = apply_model_profile_options(
-        session_opts,
-        options.model_profile_id.as_ref(),
-        &engine,
-        state,
-        "compact_chat_inner",
-        &session_id,
-    )
-    .await?;
-    if let Some(stable_id) = options.stable_conversation_id.filter(|value| !value.is_empty()) {
-        session_opts
-            .env_overrides
-            .insert("__stable_conversation_id".to_string(), stable_id);
-    }
-
-    let mut registry = state.engine_registry.lock().await;
-    registry.compact_session(engine, &session_id, session_opts)
 }
 
 pub async fn interrupt_chat_inner(
@@ -1393,33 +1312,6 @@ pub async fn continue_chat(
     };
 
     continue_chat_inner(session_id, message, options, &state, callbacks, &app_paths).await
-}
-
-/// 删除稳定对话对应的 SimpleAI checkpoint 档案。
-#[cfg_attr(feature = "tauri-app", tauri::command)]
-pub async fn delete_simple_ai_checkpoints(stable_conversation_id: String) -> Result<()> {
-    crate::ai::engine::delete_context_checkpoints(&stable_conversation_id)
-}
-
-/// 手动压缩 SimpleAI 上下文。成功后通过 session_handoff 事件切换 runtime session。
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn compact_chat(
-    session_id: String,
-    window: Window,
-    state: State<'_, crate::AppState>,
-    options: ChatRequestOptions,
-) -> Result<()> {
-    let window_clone = window.clone();
-    let broadcast_tx = state.event_broadcast.clone();
-    let callbacks = ChatCallbacks {
-        emit_event: Arc::new(move |json: serde_json::Value| {
-            let _ = window_clone.emit("chat-event", &json);
-            broadcast_chat_event(&broadcast_tx, &json);
-        }),
-        notify_complete: Arc::new(|| {}),
-    };
-    compact_chat_inner(session_id, options, &state, callbacks).await
 }
 
 /// 中断聊天会话

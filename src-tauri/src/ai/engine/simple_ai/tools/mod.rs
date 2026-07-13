@@ -11,7 +11,6 @@
 mod apply_patch;
 mod agent;
 mod bash;
-mod context_archive;
 #[cfg(feature = "tauri-app")]
 mod browser;
 #[cfg(windows)]
@@ -35,7 +34,6 @@ use agent::DispatchAgentTool;
 use apply_patch::ApplyPatchTool;
 pub(crate) use bash::detect_shell;
 use bash::BashTool;
-use context_archive::ReadContextArchiveTool;
 #[cfg(feature = "tauri-app")]
 use browser::BrowserTool;
 use fs::{EditFileTool, ListDirectoryTool, ReadFileTool, WriteFileTool};
@@ -71,10 +69,8 @@ impl ToolOutcome {
 pub(crate) struct ToolContext<'a> {
     /// 会话工作目录（相对路径以此为基准）
     pub work_dir: &'a str,
-    /// runtime session ID（用于发事件）
+    /// 会话 ID（用于发事件）
     pub session_id: &'a str,
-    /// 稳定对话 ID（checkpoint 查询仅限此 ID）
-    pub stable_conversation_id: &'a str,
     /// 事件回调（update_plan 等带副作用的工具用于推送前端事件）
     pub event_callback: &'a Arc<dyn Fn(AIEvent) + Send + Sync>,
     /// 本轮计划面板的稳定 plan_id
@@ -146,7 +142,6 @@ impl ToolRegistry {
             Box::new(ApplyPatchTool),
             Box::new(UpdatePlanTool),
             Box::new(ReadSkillTool),
-            Box::new(ReadContextArchiveTool),
             Box::new(DispatchAgentTool),
         ];
         // 内置浏览器工具仅桌面 Tauri 运行时可用：它依赖 AppHandle 控制当前打开的 WebView。
@@ -247,7 +242,6 @@ mod tests {
             "apply_patch",
             "update_plan",
             "read_skill",
-            "read_context_archive",
             "dispatch_agent",
         ] {
             assert!(names.contains(&expected), "missing tool: {}", expected);
@@ -257,18 +251,18 @@ mod tests {
         // Windows 上额外注册 1 个 computer 工具（电脑操作）。
         #[cfg(all(windows, feature = "tauri-app"))]
         {
-            assert_eq!(specs.len(), 14);
+            assert_eq!(specs.len(), 13);
             assert!(names.contains(&"computer"));
         }
         #[cfg(all(windows, not(feature = "tauri-app")))]
         {
-            assert_eq!(specs.len(), 13);
+            assert_eq!(specs.len(), 12);
             assert!(names.contains(&"computer"));
         }
         #[cfg(all(not(windows), feature = "tauri-app"))]
-        assert_eq!(specs.len(), 13);
-        #[cfg(all(not(windows), not(feature = "tauri-app")))]
         assert_eq!(specs.len(), 12);
+        #[cfg(all(not(windows), not(feature = "tauri-app")))]
+        assert_eq!(specs.len(), 11);
 
         // 未知工具经 async dispatch 返回失败。
         let cb: Arc<dyn Fn(AIEvent) + Send + Sync> = Arc::new(|_| ());
@@ -281,7 +275,6 @@ mod tests {
         let ctx = ToolContext {
             work_dir: ".",
             session_id: "s",
-            stable_conversation_id: "stable-s",
             event_callback: &cb,
             plan_id: "s-plan",
             plan_started: &started,

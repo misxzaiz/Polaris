@@ -51,7 +51,6 @@ export function extractTags(messages: ChatMessage[]): string[] {
  */
 export function buildMeta(input: {
   externalId: string
-  stableConversationId?: string
   engineId: DialogMeta['engineId']
   title: string
   workspaceId?: string | null
@@ -65,7 +64,6 @@ export function buildMeta(input: {
     v: DIALOG_FORMAT_VERSION,
     type: 'meta',
     externalId: input.externalId,
-    ...(input.stableConversationId ? { stableConversationId: input.stableConversationId } : {}),
     engineId: input.engineId,
     title: input.title,
     workspaceId: input.workspaceId ?? null,

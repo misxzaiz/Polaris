@@ -248,8 +248,6 @@ export interface ConversationActions {
   ) => Promise<void>
   /** 继续会话（用于回答问题/审批计划/权限重试后） */
   continueChat: (prompt?: string, allowedTools?: string[]) => Promise<void>
-  /** 手动压缩 SimpleAI 上下文；成功后以 session_handoff 事件切换 runtime session。 */
-  compactContext: () => Promise<void>
   interrupt: () => Promise<void>
   regenerateResponse: (assistantMessageId: string) => Promise<void>
   editAndResend: (userMessageId: string, newContent: string) => Promise<void>
@@ -335,8 +333,6 @@ export interface CreateSessionOptions {
   engineId?: string
   /** 静默模式：不自动激活，不显示在 UI */
   silentMode?: boolean
-  /** 从自有 JSONL 恢复时沿用的稳定对话 ID（SimpleAI checkpoint 键） */
-  stableConversationId?: string
   /** Fork 来源会话 ID（Fork 场景下记录源会话，发消息时用于 --fork-session） */
   forkFromId?: string
   /** 会话绑定的模型 Profile ID（可选，不指定则使用全局默认） */
@@ -394,7 +390,7 @@ export interface SessionManagerActions {
   // ===== 会话生命周期 =====
   createSession: (options: CreateSessionOptions) => string
   /** 从历史创建会话（恢复历史消息） */
-  createSessionFromHistory: (options: import('../../types').ChatMessage[], conversationId: string | null, metadata?: { title?: string; workspaceId?: string; forkFromId?: string; engineId?: EngineId; stableConversationId?: string }) => string
+  createSessionFromHistory: (options: import('../../types').ChatMessage[], conversationId: string | null, metadata?: { title?: string; workspaceId?: string; forkFromId?: string; engineId?: EngineId }) => string
   deleteSession: (sessionId: string) => void
   switchSession: (sessionId: string) => void
   /** 更新会话标题 */

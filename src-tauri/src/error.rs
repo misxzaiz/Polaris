@@ -50,14 +50,6 @@ pub enum AppError {
     #[error("Session not found: {0}")]
     SessionNotFound(String),
 
-    /// 会话正在运行，无法执行新操作
-    #[error("Session already running: {0}")]
-    SessionAlreadyRunning(String),
-
-    /// 会话已被压缩归档，不可继续
-    #[error("Session archived: {0}")]
-    SessionArchived(String),
-
     /// 权限被拒绝
     #[error("Permission denied: {0}")]
     PermissionDenied(String),
@@ -69,10 +61,6 @@ pub enum AppError {
     /// 超时
     #[error("Operation timed out")]
     Timeout,
-
-    /// 模型上下文长度超限，可触发一次 checkpoint + handoff 恢复
-    #[error("Context limit exceeded: {0}")]
-    ContextLimit(String),
 
     /// 网络错误
     #[error("Network error: {0}")]
@@ -148,12 +136,9 @@ impl AppError {
             AppError::SerializationError(e) => format!("序列化错误: {}", e),
             AppError::ConfigError(e) => format!("配置错误: {}", e),
             AppError::SessionNotFound(id) => format!("会话不存在: {}", id),
-            AppError::SessionAlreadyRunning(id) => format!("会话正在运行，无法继续: {}", id),
-            AppError::SessionArchived(id) => format!("会话已归档，无法继续: {}", id),
             AppError::PermissionDenied(e) => format!("权限被拒绝: {}", e),
             AppError::InvalidPath(path) => format!("无效路径: {}", path),
             AppError::Timeout => "操作超时".to_string(),
-            AppError::ContextLimit(e) => format!("模型上下文长度超限: {}", e),
             AppError::NetworkError(e) => format!("网络错误: {}", e),
             AppError::AuthError(e) => format!("认证错误: {}", e),
             AppError::ApiError(e) => format!("API 错误: {}", e),

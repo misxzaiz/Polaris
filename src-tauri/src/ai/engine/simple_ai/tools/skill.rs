@@ -72,7 +72,6 @@ mod tests {
         ToolContext {
             work_dir: ".",
             session_id: "s",
-            stable_conversation_id: "stable-s",
             event_callback: cb,
             plan_id: "s-plan",
             plan_started: started,

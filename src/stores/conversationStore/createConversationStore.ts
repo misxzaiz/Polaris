@@ -1165,10 +1165,6 @@ export function createConversationStore(
               ? sendOptions.allowedTools
               : undefined,
             modelProfileId,
-            // Phase 0a: 透传稳定对话 ID（前端 SessionMetadata.id）到后端 SimpleAI。
-            // 跨 runtime session 的上下文交接 — 旧 session 归档后新 session 按此 ID 组织 checkpoint。
-            // 仅 SimpleAI 消费，其他引擎忽略。
-            stableConversationId: get().sessionId || undefined,
           }
 
           if (conversationId) {
@@ -1314,56 +1310,6 @@ export function createConversationStore(
             error: resolveChatError(e, { conversationId, workspaceDir: actualWorkspaceDir }),
             isStreaming: false,
             currentMessage: null,
-            progressMessage: null,
-          })
-        }
-      },
-
-      compactContext: async () => {
-        const { conversationId, sessionId, isStreaming } = get()
-        if (!conversationId) {
-          set({ error: '没有活动会话可压缩' })
-          return
-        }
-        if (isStreaming) {
-          set({ error: '当前会话正在运行，完成后再压缩上下文' })
-          return
-        }
-
-        const config = deps.getConfig()
-        const engine = resolveSessionEngine(sessionId, config?.defaultEngine)
-        if (engine !== 'simple-ai') {
-          set({ error: '仅 SimpleAI 支持压缩上下文' })
-          return
-        }
-        const router = deps.getEventRouter()
-        await router.initialize()
-        const sessionConfig = getSessionConfig()
-        const runtimeConfig = resolveRuntimeConfigForEngine(sessionConfig, engine)
-        const metadata = sessionStoreManager.getState().sessionMetadata.get(sessionId)
-        const modelProfileId = resolveEffectiveProfileId(
-          metadata?.modelProfileId,
-          sessionConfig.modelProfileId,
-          getActiveModelProfile()?.id,
-        )
-
-        set({ isStreaming: true, error: null, progressMessage: '正在压缩上下文…' })
-        try {
-          await invoke('compact_chat', {
-            sessionId: conversationId,
-            options: {
-              contextId: deps.contextId,
-              engineId: engine,
-              workDir: deps.getWorkspace()?.path,
-              model: metadata?.model ?? runtimeConfig.model,
-              modelProfileId,
-              stableConversationId: sessionId,
-            },
-          })
-        } catch (e) {
-          set({
-            error: resolveChatError(e, { conversationId, workspaceDir: deps.getWorkspace()?.path }),
-            isStreaming: false,
             progressMessage: null,
           })
         }

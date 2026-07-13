@@ -18,9 +18,6 @@
  */
 
 mod chat_loop;
-mod checkpoint_store;
-mod compaction_plan;
-mod coordinator;
 mod compact;
 mod context;
 mod history;
@@ -46,7 +43,7 @@ use crate::ai::traits::{
 };
 use crate::error::{AppError, Result};
 use crate::models::ai_event::{
-    CompactionFailedEvent, ErrorEvent, SessionEndEvent, SessionStartEvent, UserMessageEvent,
+    ErrorEvent, SessionEndEvent, SessionStartEvent, UserMessageEvent,
 };
 use crate::models::config::Config;
 use crate::models::AIEvent;
@@ -55,11 +52,6 @@ use chat_loop::run_chat_loop;
 use context::build_context_messages;
 use prompt::build_system_prompt;
 use session::SimpleAISession;
-
-pub(crate) fn delete_context_checkpoints(stable_conversation_id: &str) -> Result<()> {
-    checkpoint_store::ContextCheckpointStore::from_data_root()
-        .delete_all(stable_conversation_id)
-}
 
 // ============================================================================
 // 引擎
@@ -111,109 +103,6 @@ impl SimpleAIEngine {
         }
 
         profiles.iter().find(|p| p.active)
-    }
-}
-
-async fn claim_runtime_turn(
-    sessions: &Arc<Mutex<HashMap<String, SimpleAISession>>>,
-    session_id: &str,
-) -> Result<(Vec<Value>, watch::Receiver<bool>, u64, String)> {
-    let mut guard = sessions.lock().await;
-    let session = guard
-        .get_mut(session_id)
-        .ok_or_else(|| AppError::SessionNotFound(session_id.to_string()))?;
-    if session.is_archived {
-        return Err(AppError::SessionArchived(session_id.to_string()));
-    }
-    if session.is_running {
-        return Err(AppError::SessionAlreadyRunning(session_id.to_string()));
-    }
-    let (new_tx, new_rx) = watch::channel(false);
-    session.abort_tx = new_tx;
-    session.abort_rx = new_rx.clone();
-    session.is_running = true;
-    let generation = session.next_turn_generation();
-    Ok((
-        session.messages.clone(),
-        new_rx,
-        generation,
-        session.stable_conversation_id.clone(),
-    ))
-}
-
-async fn recover_context_limit_once(
-    sessions: Arc<Mutex<HashMap<String, SimpleAISession>>>,
-    old_session_id: String,
-    profile: crate::models::config::ModelProfile,
-    work_dir: String,
-    event_callback: Arc<dyn Fn(AIEvent) + Send + Sync>,
-    mcp_servers: Vec<crate::services::mcp_config_service::ResolvedExternalMcpServer>,
-    skills: std::collections::HashMap<String, skill::SkillEntry>,
-) -> Result<()> {
-    let new_session_id = format!("simple-ai-{}", uuid::Uuid::new_v4());
-    let input = coordinator::begin_compaction(
-        &sessions,
-        &old_session_id,
-        new_session_id,
-        None,
-    )
-    .await?;
-    let handoff = coordinator::compact_and_handoff(
-        Arc::clone(&sessions),
-        input,
-        profile.clone(),
-        Arc::clone(&event_callback),
-        coordinator::CompactionTrigger::Recovery,
-    )
-    .await?;
-
-    let (mut messages, mut abort_rx, turn_generation, stable_conversation_id) = {
-        let mut guard = sessions.lock().await;
-        let session = guard
-            .get_mut(&handoff.new_session_id)
-            .ok_or_else(|| AppError::SessionNotFound(handoff.new_session_id.clone()))?;
-        session.is_running = true;
-        let generation = session.next_turn_generation();
-        (
-            session.messages.clone(),
-            session.abort_rx.clone(),
-            generation,
-            session.stable_conversation_id.clone(),
-        )
-    };
-
-    let retry_result = run_chat_loop(
-        &handoff.new_session_id,
-        &stable_conversation_id,
-        &mut messages,
-        &profile,
-        &work_dir,
-        &event_callback,
-        &mut abort_rx,
-        &mcp_servers,
-        &skills,
-        0,
-    )
-    .await;
-
-    {
-        let mut guard = sessions.lock().await;
-        if let Some(session) = guard.get_mut(&handoff.new_session_id) {
-            if session.turn_generation == turn_generation && !session.is_archived {
-                session.messages = messages;
-                session.is_running = false;
-            }
-        }
-    }
-
-    match retry_result {
-        Ok(()) => {
-            let _ = event_callback(AIEvent::SessionEnd(SessionEndEvent::new(
-                &handoff.new_session_id,
-            )));
-            Ok(())
-        }
-        Err(error) => Err(error),
     }
 }
 
@@ -370,8 +259,6 @@ impl AIEngine for SimpleAIEngine {
         if let Some(skill_index) = skill::build_skill_index_message(&skills_list) {
             messages.push(skill_index);
         }
-        // bootstrap 固定上下文到这里结束；导入历史和用户消息可以被未来的压缩计划分组。
-        let bootstrap_end = messages.len();
         for entry in &options.message_history {
             messages.push(json!({ "role": entry.role, "content": entry.content }));
         }
@@ -387,17 +274,10 @@ impl AIEngine for SimpleAIEngine {
         )));
 
         // 创建会话：初始即带上 system + 历史 + 首轮 user 消息，并标记运行中。
+        // 这样即便运行期间用户触发 continue_session，也能读到完整初始上下文而非空历史。
         let mut session = SimpleAISession::new(work_dir.clone());
         session.messages = messages.clone();
         session.is_running = true;
-        session.bootstrap_end = bootstrap_end;
-        session.stable_conversation_id = options
-            .env_overrides
-            .get("__stable_conversation_id")
-            .map(|s| s.clone())
-            .unwrap_or_else(|| session_id.clone());
-        let turn_generation = session.next_turn_generation();
-        let stable_conversation_id = session.stable_conversation_id.clone();
         let mut abort_rx = session.abort_rx.clone();
 
         // 启动后台任务：先插入会话，再跑对话循环，结束后回写完整历史。
@@ -418,7 +298,6 @@ impl AIEngine for SimpleAIEngine {
             // messages 为 spawn 局部独占，避免 run_chat_loop 长时间持锁阻塞 interrupt。
             let result = run_chat_loop(
                 &sid,
-                &stable_conversation_id,
                 &mut messages,
                 &profile,
                 &work_dir,
@@ -434,18 +313,8 @@ impl AIEngine for SimpleAIEngine {
             {
                 let mut guard = sessions.lock().await;
                 if let Some(s) = guard.get_mut(&sid) {
-                    // 仅当前 turn generation 可回写，防止过期任务覆盖新状态。
-                    if s.turn_generation == turn_generation && !s.is_archived {
-                        s.messages = messages;
-                        s.is_running = false;
-                    } else {
-                        tracing::warn!(
-                            "[SimpleAI] 忽略过期 turn 回写, session={}, task_generation={}, current_generation={}",
-                            sid,
-                            turn_generation,
-                            s.turn_generation
-                        );
-                    }
+                    s.messages = messages;
+                    s.is_running = false;
                 }
             }
 
@@ -453,33 +322,6 @@ impl AIEngine for SimpleAIEngine {
                 Ok(()) => {
                     tracing::info!("[SimpleAI] 对话循环完成, session={}", sid);
                     let _ = cb(AIEvent::SessionEnd(SessionEndEvent::new(&sid)));
-                    coordinator::auto_compact_after_turn(
-                        Arc::clone(&sessions),
-                        sid.clone(),
-                        profile.clone(),
-                        Arc::clone(&cb),
-                    )
-                    .await;
-                }
-                Err(AppError::ContextLimit(detail)) => {
-                    tracing::warn!(
-                        "[SimpleAI] 首轮触发上下文上限，执行单次 handoff recovery: {}",
-                        detail
-                    );
-                    if let Err(recovery_error) = recover_context_limit_once(
-                        Arc::clone(&sessions),
-                        sid.clone(),
-                        profile.clone(),
-                        work_dir.clone(),
-                        Arc::clone(&cb),
-                        mcp_servers.clone(),
-                        skills_map.clone(),
-                    )
-                    .await
-                    {
-                        let _ = cb(AIEvent::Error(ErrorEvent::new(&sid, recovery_error.to_message())));
-                        let _ = cb(AIEvent::SessionEnd(SessionEndEvent::new(&sid)));
-                    }
                 }
                 Err(e) => {
                     tracing::error!("[SimpleAI] 对话循环失败, session={}, error={}", sid, e);
@@ -522,6 +364,8 @@ impl AIEngine for SimpleAIEngine {
         let work_dir = options.work_dir.clone().unwrap_or_else(|| ".".to_string());
 
         // Skill
+        // Skill 索引（Phase 4c）：continue_session 不重新注入索引消息（已在历史中），
+        // 但仍需 skills_map 供 read_skill 工具按需读全文。
         let skills_map: std::collections::HashMap<String, skill::SkillEntry> = {
             let list = skill::discover_skills(&work_dir);
             list.into_iter().map(|s| (s.name.clone(), s)).collect()
@@ -538,59 +382,43 @@ impl AIEngine for SimpleAIEngine {
         let cb: Arc<dyn Fn(AIEvent) + Send + Sync> = options.event_callback.clone();
         let mcp_servers = options.mcp_servers.clone();
         let skills_map = skills_map.clone();
-        let stable_id = options
-            .env_overrides
-            .get("__stable_conversation_id")
-            .cloned();
-        let restored_session_id = self.next_session_id();
 
         tokio::spawn(async move {
             tracing::info!("[SimpleAI] continue_session 后台任务启动, session={}", sid);
 
-            // 优先续接现有 runtime；应用重启后 runtime 缺失时，从最新完整 checkpoint 恢复。
-            let (runtime_sid, payload) = match claim_runtime_turn(&sessions, &sid).await {
-                Ok(payload) => (sid.clone(), payload),
-                Err(AppError::SessionNotFound(_)) => {
-                    let Some(stable_id) = stable_id.as_deref() else {
-                        let error = AppError::SessionNotFound(sid.clone());
-                        let _ = cb(AIEvent::Error(ErrorEvent::new(&sid, error.to_message())));
-                        return;
-                    };
-                    let recovered = coordinator::restore_runtime_from_checkpoint(
-                        &sessions,
-                        &sid,
-                        restored_session_id,
-                        stable_id,
-                        &cb,
+            // 获取会话历史与中断接收端，并标记运行中（单次加锁完成）。
+            let (mut existing_messages, mut abort_rx) = {
+                let mut guard = sessions.lock().await;
+                if let Some(session) = guard.get_mut(&sid) {
+                    session.is_running = true;
+                    // 替换整个 watch channel 而非 send(false) 重置 latch。
+                    //
+                    // watch::channel 的 changed() 基于版本号判断（shared_version > last_seen）,
+                    // send(false) 仍会递增版本号,导致刚 clone 出的 receiver 的 changed()
+                    // 立刻返回（版本号 1 > 0）,提前触发 abort session_end（即"无法继续对话"根因）。
+                    //
+                    // 新 channel 的 receiver 始终从版本 0 开始,确保 changed() 仅在有新
+                    // abort_tx.send(true) 时触发,不产生假阳性。
+                    let (new_tx, new_rx) = watch::channel(false);
+                    session.abort_tx = new_tx;
+                    let task_rx = new_rx.clone();
+                    session.abort_rx = new_rx;
+                    (session.messages.clone(), task_rx)
+                } else {
+                    // 会话不存在（异常路径）：用仅含系统提示词的初始历史兜底。
+                    let system_prompt = build_system_prompt();
+                    let (_, rx) = watch::channel(false);
+                    (
+                        vec![json!({ "role": "system", "content": system_prompt })],
+                        rx,
                     )
-                    .await;
-                    let runtime_sid = match recovered {
-                        Ok(value) => value,
-                        Err(error) => {
-                            let _ = cb(AIEvent::Error(ErrorEvent::new(&sid, error.to_message())));
-                            return;
-                        }
-                    };
-                    match claim_runtime_turn(&sessions, &runtime_sid).await {
-                        Ok(payload) => (runtime_sid, payload),
-                        Err(error) => {
-                            let _ = cb(AIEvent::Error(ErrorEvent::new(&sid, error.to_message())));
-                            return;
-                        }
-                    }
-                }
-                Err(error) => {
-                    let _ = cb(AIEvent::Error(ErrorEvent::new(&sid, error.to_message())));
-                    return;
                 }
             };
-            let (mut existing_messages, mut abort_rx, turn_generation, stable_conversation_id) = payload;
 
             existing_messages.push(json!({ "role": "user", "content": msg }));
 
             let result = run_chat_loop(
-                &runtime_sid,
-                &stable_conversation_id,
+                &sid,
                 &mut existing_messages,
                 &profile,
                 &work_dir,
@@ -602,114 +430,25 @@ impl AIEngine for SimpleAIEngine {
             )
             .await;
 
-            // 更新实际 runtime session 的历史。
+            // 更新会话历史
             {
                 let mut guard = sessions.lock().await;
-                if let Some(session) = guard.get_mut(&runtime_sid) {
-                    if session.turn_generation == turn_generation && !session.is_archived {
-                        session.messages = existing_messages;
-                        session.is_running = false;
-                    } else {
-                        tracing::warn!(
-                            "[SimpleAI] 忽略过期 continue 回写, session={}, task_generation={}, current_generation={}",
-                            runtime_sid,
-                            turn_generation,
-                            session.turn_generation
-                        );
-                    }
+                if let Some(session) = guard.get_mut(&sid) {
+                    session.messages = existing_messages;
+                    session.is_running = false;
                 }
             }
 
             match result {
                 Ok(()) => {
-                    tracing::info!("[SimpleAI] continue 完成, session={}", runtime_sid);
-                    let _ = cb(AIEvent::SessionEnd(SessionEndEvent::new(&runtime_sid)));
-                    coordinator::auto_compact_after_turn(
-                        Arc::clone(&sessions),
-                        runtime_sid.clone(),
-                        profile.clone(),
-                        Arc::clone(&cb),
-                    )
-                    .await;
-                }
-                Err(AppError::ContextLimit(detail)) => {
-                    tracing::warn!(
-                        "[SimpleAI] continue 触发上下文上限，执行单次 handoff recovery: {}",
-                        detail
-                    );
-                    if let Err(recovery_error) = recover_context_limit_once(
-                        Arc::clone(&sessions),
-                        runtime_sid.clone(),
-                        profile.clone(),
-                        work_dir.clone(),
-                        Arc::clone(&cb),
-                        mcp_servers.clone(),
-                        skills_map.clone(),
-                    )
-                    .await
-                    {
-                        let _ = cb(AIEvent::Error(ErrorEvent::new(&runtime_sid, recovery_error.to_message())));
-                        let _ = cb(AIEvent::SessionEnd(SessionEndEvent::new(&runtime_sid)));
-                    }
+                    tracing::info!("[SimpleAI] continue 完成, session={}", sid);
+                    let _ = cb(AIEvent::SessionEnd(SessionEndEvent::new(&sid)));
                 }
                 Err(e) => {
-                    tracing::error!("[SimpleAI] continue 失败, session={}, error={}", runtime_sid, e);
-                    let _ = cb(AIEvent::Error(ErrorEvent::new(&runtime_sid, e.to_string())));
-                    let _ = cb(AIEvent::SessionEnd(SessionEndEvent::new(&runtime_sid)));
+                    tracing::error!("[SimpleAI] continue 失败, session={}, error={}", sid, e);
+                    let _ = cb(AIEvent::Error(ErrorEvent::new(&sid, e.to_string())));
+                    let _ = cb(AIEvent::SessionEnd(SessionEndEvent::new(&sid)));
                 }
-            }
-        });
-
-        Ok(())
-    }
-
-    fn compact_session(&mut self, session_id: &str, options: SessionOptions) -> Result<()> {
-        let profile_id = options
-            .env_overrides
-            .get("__simple_ai_profile_id")
-            .map(|value| value.as_str());
-        let profile = self
-            .find_active_profile(profile_id)
-            .cloned()
-            .ok_or_else(|| AppError::ProcessError("No suitable model profile found.".to_string()))?;
-        let new_session_id = self.next_session_id();
-        let stable_id = options
-            .env_overrides
-            .get("__stable_conversation_id")
-            .cloned();
-        let old_session_id = session_id.to_string();
-        let sessions = Arc::clone(&self.sessions);
-        let callback = options.event_callback.clone();
-
-        tokio::spawn(async move {
-            let begin = coordinator::begin_compaction(
-                &sessions,
-                &old_session_id,
-                new_session_id,
-                stable_id.as_deref(),
-            )
-            .await;
-            let input = match begin {
-                Ok(input) => input,
-                Err(error) => {
-                    let _ = callback(AIEvent::CompactionFailed(CompactionFailedEvent::new(
-                        &old_session_id,
-                        error.to_message(),
-                    )));
-                    return;
-                }
-            };
-
-            if let Err(error) = coordinator::compact_and_handoff(
-                Arc::clone(&sessions),
-                input,
-                profile,
-                Arc::clone(&callback),
-                coordinator::CompactionTrigger::Manual,
-            )
-            .await
-            {
-                coordinator::fail_compaction(&sessions, &old_session_id, &error, &callback).await;
             }
         });
 

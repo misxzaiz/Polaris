@@ -20,9 +20,6 @@ import { dialogStorageService } from '@/services/dialogStorage'
 
 const log = createLogger('EventHandler')
 
-/** 正在进行的 JSONL 保存；handoff 迁移会等待旧 runtime 的保存完成。 */
-const pendingDialogSaves = new Map<string, Promise<boolean>>()
-
 /**
  * 解析 MCP 工具结果为插件卡片数据。
  *
@@ -100,77 +97,6 @@ export function handleAIEvent(
       })
       break
     }
-
-    case 'session_handoff': {
-      // 新 runtime session 接替旧 runtime session；同一个前端 store/可视历史持续使用。
-      //
-      // 两个不变量：
-      //   1. state.conversationId 必须切到 newSessionId — 后续用户消息由前端以 conversationId
-      //      作为 session ID 发送到后端，旧 session 已 archived，只有新 session 能接收。
-      //   2. 历史列表的 JSONL 文件索引键必须保持不变 — 否则"点击历史"按旧 externalId 查找
-      //      会找不到文件（"会话不存在"）。
-      //
-      // 解决：state.conversationId = newSessionId（路由正确），但持久化时仍用旧的
-      // oldConversationId 作为 externalId，原地覆写同一 JSONL 文件（内容完整，索引键不变）。
-      // 不删除旧 JSONL 文件。
-      const oldConversationId = state.conversationId || event.sessionId
-      const newRuntimeSessionId = event.newSessionId
-
-      // 注册新的 runtime session ID → 本 store 的路由（旧 ID 仍然注册，保证旧 ID 事件也能续接）。
-      sessionStoreManager.getState().registerConversationId(newRuntimeSessionId, state.sessionId)
-
-      state.finishMessage()
-      const markerContent = event.reason === 'runtime_recovery'
-        ? 'Runtime context restored from the latest local checkpoint.'
-        : `Earlier context condensed — archived ${event.turnsArchived} complete turn(s); retained context is ready.`
-      state.addMessage({
-        id: generateUUID(),
-        type: 'system',
-        timestamp: new Date().toISOString(),
-        content: markerContent,
-      })
-      // conversationId 切到 newSessionId，供后续消息路由使用。
-      set({
-        conversationId: newRuntimeSessionId,
-        isStreaming: false,
-        progressMessage: null,
-        error: null,
-      })
-      // 等待旧 ID 的保存完成，再覆写同一 JSONL 文件（externalId = oldConversationId）
-      // 以包含完整对话历史（含交接标记）。不删除旧 JSONL。
-      const previousSave = oldConversationId
-        ? pendingDialogSaves.get(oldConversationId) ?? Promise.resolve(true)
-        : Promise.resolve(true)
-      void previousSave.then(() => {
-        return saveDialog(get(), oldConversationId)
-      }).then((saved) => {
-        if (!saved) {
-          log.warn('会话交接后历史保存失败，旧 JSONL 文件仍存在但内容可能未更新')
-        }
-      }).catch((error) => {
-        log.error('会话交接后的历史保存失败', error instanceof Error ? error : new Error(String(error)))
-      })
-      log.info('Session context handed off (conversationId preserved for history)', {
-        oldConversationId,
-        newRuntimeSessionId,
-        oldSessionId: event.sessionId,
-        newSessionId: event.newSessionId,
-        generation: event.generation,
-      })
-      break
-    }
-
-    case 'compaction_failed':
-      set({
-        error: event.error,
-        isStreaming: false,
-        progressMessage: null,
-      })
-      log.warn('Context compaction failed; original session remains unchanged', {
-        sessionId: event.sessionId,
-        error: event.error,
-      })
-      break
 
     case 'token':
       state.appendTextBlock(event.value)
@@ -463,31 +389,15 @@ export function handleAIEvent(
  * 在 session_end 时整体覆写该会话文件（一个会话一个 .jsonl）。
  * 整存整取 → 幂等、保序、不重复，根治 IndexedDB 方案的消息错乱。
  * 完整序列化 ChatMessage（含 blocks/附件）→ 恢复时无损还原。
- *
- * @param targetExternalId 可选：覆盖 JSONL 文件的 externalId。
- * 默认使用 state.conversationId。handoff 场景下传入旧 conversationId 以保持历史连续。
  */
-function saveDialog(state: ConversationStore, targetExternalId?: string): Promise<boolean> {
-  const conversationId = state.conversationId
-  if (!conversationId) return Promise.resolve(false)
-  const operation = persistDialog(state, targetExternalId ?? conversationId)
-  pendingDialogSaves.set(conversationId, operation)
-  void operation.finally(() => {
-    if (pendingDialogSaves.get(conversationId) === operation) {
-      pendingDialogSaves.delete(conversationId)
-    }
-  })
-  return operation
-}
-
-async function persistDialog(state: ConversationStore, externalId: string): Promise<boolean> {
+async function saveDialog(state: ConversationStore): Promise<void> {
   try {
     const { conversationId, sessionId } = state
-    if (!conversationId) return false
+    if (!conversationId) return
     // store 中离屏消息可能已被压缩，持久化前必须恢复为完整态，
     // 否则压缩态（output 清空 / content 截断）会被写入 JSONL 永久丢失内容。
     const messages = state.getPersistableMessages()
-    if (messages.length === 0) return false
+    if (messages.length === 0) return
 
     // 会话元数据
     const metadata = sessionStoreManager.getState().sessionMetadata.get(sessionId)
@@ -510,8 +420,7 @@ async function persistDialog(state: ConversationStore, externalId: string): Prom
     }
 
     await dialogStorageService.saveConversation({
-      externalId,
-      stableConversationId: sessionId,
+      externalId: conversationId,
       engineId,
       title,
       workspaceId: metadata?.workspaceId ?? null,
@@ -519,10 +428,8 @@ async function persistDialog(state: ConversationStore, externalId: string): Prom
       messages,
     })
 
-    log.info('会话已保存到 JSONL', { conversationId, messageCount: messages.length, externalId })
-    return true
+    log.info('会话已保存到 JSONL', { conversationId, messageCount: messages.length })
   } catch (e) {
     log.error('保存会话到 JSONL 失败', e instanceof Error ? e : new Error(String(e)))
-    return false
   }
 }

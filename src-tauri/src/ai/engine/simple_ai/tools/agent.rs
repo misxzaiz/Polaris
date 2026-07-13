@@ -103,7 +103,6 @@ impl Tool for DispatchAgentTool {
         let profile = ctx.profile.clone();
         let result: Result<()> = run_chat_loop(
             &child_session_id,
-            ctx.stable_conversation_id,
             &mut child_messages,
             &profile,
             ctx.work_dir,

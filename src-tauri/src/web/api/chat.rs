@@ -6,7 +6,7 @@ use std::sync::Arc;
 #[cfg(feature = "tauri-app")]
 use tauri::Emitter;
 
-use crate::commands::chat::{ChatCallbacks, ChatRequestOptions, AppPaths, start_chat_inner, continue_chat_inner, compact_chat_inner, interrupt_chat_inner};
+use crate::commands::chat::{ChatCallbacks, ChatRequestOptions, AppPaths, start_chat_inner, continue_chat_inner, interrupt_chat_inner};
 use crate::ai::SessionHistoryProvider;
 use crate::state::QuestionAnswer;
 use crate::web::error::ok_response;
@@ -144,39 +144,6 @@ pub async fn handle_send_message(
             Ok(Json(serde_json::json!(sid)))
         }
     }
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DeleteCheckpointsRequest {
-    pub stable_conversation_id: String,
-}
-
-pub async fn handle_delete_checkpoints(
-    Json(req): Json<DeleteCheckpointsRequest>,
-) -> Result<impl IntoResponse, WebError> {
-    crate::commands::chat::delete_simple_ai_checkpoints(req.stable_conversation_id).await?;
-    Ok(ok_response())
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CompactRequest {
-    pub session_id: String,
-    #[serde(default)]
-    pub options: Option<ChatRequestOptions>,
-}
-
-/// Manually compact a SimpleAI runtime session and hand off to a fresh runtime ID.
-pub async fn handle_compact(
-    State(state): State<Arc<AppState>>,
-    Json(req): Json<CompactRequest>,
-) -> Result<impl IntoResponse, WebError> {
-    validate_session_id(&req.session_id)?;
-    let mut options = req.options.unwrap_or_default();
-    let (callbacks, _) = build_web_callbacks(&state, &mut options);
-    compact_chat_inner(req.session_id, options, &state, callbacks).await?;
-    Ok(ok_response())
 }
 
 #[derive(Debug, Deserialize)]

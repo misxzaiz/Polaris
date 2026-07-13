@@ -389,14 +389,6 @@ pub trait AIEngine: Send + Sync {
         options: SessionOptions,
     ) -> Result<()>;
 
-    /// 压缩会话上下文。支持的引擎会交接到新 runtime session，
-    /// 但保持前端可视对话与完整历史不变。
-    fn compact_session(&mut self, _session_id: &str, _options: SessionOptions) -> Result<()> {
-        Err(crate::error::AppError::StateError(
-            "当前 AI 引擎不支持上下文压缩".to_string(),
-        ))
-    }
-
     fn interrupt(&mut self, session_id: &str) -> Result<()>;
 
     fn send_input(&mut self, _session_id: &str, _input: &str) -> Result<bool> {

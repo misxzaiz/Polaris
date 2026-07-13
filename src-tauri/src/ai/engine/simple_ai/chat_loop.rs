@@ -20,6 +20,7 @@ use crate::models::ai_event::{
 };
 use crate::models::AIEvent;
 
+use super::compact;
 use super::history;
 use super::tools::{ToolContext, ToolRegistry};
 
@@ -38,16 +39,13 @@ const STREAM_IDLE_TIMEOUT_SECS: u64 = 120;
 /// 控制，而非数轮次封顶；codex `session/turn.rs` 的工具循环本身无轮次上限）。可经
 /// ModelProfile.custom_env 的 `SIMPLE_AI_MAX_TOOL_ROUNDS` 设为正整数作为防御性兜底。
 ///
-/// 注意：SimpleAI 当前已禁用原地上下文压缩（Phase 0b：`UsageAccumulator::should_compact`
-/// 始终返回 false，`fallback_drop_oldest` 已移除）。等待 Phase 2 的 CompactionCoordinator
-/// 实现“新 session 交接”方案。当前阶段若上下文接近窗口上限，会触发 provider 的
-/// context-length 错误而终止（见 docs/adr/0005-simpleai-hybrid-context-compaction.md）。
+/// 注意：SimpleAI 尚未实现上下文压缩(compact)，无限轮次下超长任务的 token 会单调增长，
+/// 最终可能触发 API 的上下文超限错误而终止（详见 docs/simple-ai-codex-refactor-plan.md）。
 const DEFAULT_MAX_TOOL_ROUNDS: u64 = 0;
 
 /// 发起 OpenAI Chat Completions 流式请求，执行工具调用循环
 pub(super) async fn run_chat_loop(
     session_id: &str,
-    stable_conversation_id: &str,
     messages: &mut Vec<Value>,
     profile: &crate::models::config::ModelProfile,
     work_dir: &str,
@@ -106,6 +104,14 @@ pub(super) async fn run_chat_loop(
     let plan_id = format!("{}-plan", session_id);
     let plan_started = AtomicBool::new(false);
 
+    // 上下文压缩配置（Phase 3.3）：累计 input 达窗口 75% 时触发摘要压缩。
+    let context_window = read_env_u64(
+        &profile.custom_env,
+        "SIMPLE_AI_CONTEXT_WINDOW",
+        compact::DEFAULT_CONTEXT_WINDOW,
+    );
+    let mut usage_acc = compact::UsageAccumulator::default();
+
     let mut round: u64 = 0;
 
     loop {
@@ -126,6 +132,16 @@ pub(super) async fn run_chat_loop(
 
         // 裁剪历史中超长的 assistant 输出，避免长会话撑爆上下文窗口（零额外 API 调用）。
         history::truncate_history_assistant_outputs(messages, HISTORY_ASSISTANT_TOKEN_CAP);
+
+        // 上下文压缩（Phase 3.3）：累计 input 达阈值时，发摘要请求替换历史区间。
+        if usage_acc.should_compact(context_window) {
+            tracing::info!(
+                "[SimpleAI] 触发上下文压缩（累计 input={}，window={}）",
+                usage_acc.total_input,
+                context_window
+            );
+            compact::compact_history(messages, profile, event_callback, session_id).await?;
+        }
 
         // 构建请求体（按线路协议转换内部 OpenAI 消息格式）
         let body = build_request_body(protocol, &profile.model, messages, &tools);
@@ -266,11 +282,13 @@ pub(super) async fn run_chat_loop(
         let mut tool_calls = stream_state.finish_tool_calls();
         // token usage（Phase 3.1）：三协议在流末解析，仅日志上报；专用 UsageEvent 待前端 types 同步后启用。
         if let Some(usage) = stream_state.finish_usage() {
+            usage_acc.add(usage.input_tokens);
             tracing::info!(
-                "[SimpleAI] token usage: input={}, output={}, total={}",
+                "[SimpleAI] token usage: input={}, output={}, total={} (累计 input={})",
                 usage.input_tokens,
                 usage.output_tokens,
                 usage.total_tokens,
+                usage_acc.total_input
             );
         }
         tracing::info!(
@@ -329,7 +347,6 @@ pub(super) async fn run_chat_loop(
             let ctx = ToolContext {
                 work_dir,
                 session_id,
-                stable_conversation_id,
                 event_callback,
                 plan_id: &plan_id,
                 plan_started: &plan_started,

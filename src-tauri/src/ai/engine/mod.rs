@@ -11,5 +11,4 @@ mod mimo;
 pub use claude::ClaudeEngine;
 pub use codex::CodexEngine;
 pub use simple_ai::SimpleAIEngine;
-pub(crate) use simple_ai::delete_context_checkpoints;
 pub use mimo::MimocodeEngine;

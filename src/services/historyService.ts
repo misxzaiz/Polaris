@@ -20,7 +20,6 @@ import { getCodexHistoryService } from './codexHistoryService'
 import { normalizeEngineId } from '@/utils/engineDisplay'
 import { getPathBasename, normalizeWorkspacePath } from '@/utils/workspacePath'
 import { dialogStorageService } from './dialogStorage'
-import { invoke as invokeTauri } from './tauri'
 
 const log = createLogger('HistoryService')
 
@@ -361,12 +360,7 @@ export const historyService = {
       const newSessionId = sessionStoreManager.getState().createSessionFromHistory(
         loaded.messages,
         loaded.externalSessionId || sessionId,
-        {
-          title: loaded.title,
-          workspaceId,
-          engineId: loaded.engineId,
-          stableConversationId: loaded.stableConversationId ?? undefined,
-        },
+        { title: loaded.title, workspaceId, engineId: loaded.engineId },
       )
 
       log.info('从历史恢复成功', {
@@ -402,7 +396,6 @@ export const historyService = {
     title: string
     engineId: EngineId
     externalSessionId: string | null
-    stableConversationId: string | null
     workspacePath: string | null
     source: UnifiedHistoryItem['source']
   }> {
@@ -415,7 +408,6 @@ export const historyService = {
           title: record.meta.title,
           engineId: normalizeEngineId(engineId || record.meta.engineId),
           externalSessionId: sessionId,
-          stableConversationId: record.meta.stableConversationId ?? null,
           workspacePath: record.meta.workspacePath,
           source: 'self',
         }
@@ -441,7 +433,6 @@ export const historyService = {
         title: localSession?.title || titleHint || '恢复的 Codex 会话',
         engineId: 'codex',
         externalSessionId: sessionId,
-        stableConversationId: null,
         workspacePath: null,
         source: 'codex-native',
       }
@@ -455,7 +446,6 @@ export const historyService = {
         title: localSession.title,
         engineId: restoredEngineId,
         externalSessionId: localSession.id,
-        stableConversationId: null,
         workspacePath: null,
         source: 'local',
       }
@@ -474,7 +464,6 @@ export const historyService = {
           title: titleHint || '恢复的会话',
           engineId: 'claude-code',
           externalSessionId: sessionId,
-          stableConversationId: null,
           workspacePath: null,
           source: 'claude-code-native',
         }
@@ -486,7 +475,6 @@ export const historyService = {
       title: titleHint || '恢复的会话',
       engineId: normalizeEngineId(engineId),
       externalSessionId: sessionId,
-      stableConversationId: null,
       workspacePath: null,
       source: 'self',
     }
@@ -528,19 +516,6 @@ export const historyService = {
   ): Promise<void> {
     try {
       if (source === 'self') {
-        const record = await dialogStorageService.getConversation(sessionId)
-        const stableConversationId = record?.meta.stableConversationId
-        if (stableConversationId && record?.meta.engineId === 'simple-ai') {
-          try {
-            await invokeTauri('delete_simple_ai_checkpoints', { stableConversationId })
-          } catch (error) {
-            // checkpoint 清理失败不应阻止用户删除可见历史，但必须留下诊断日志。
-            log.warn('SimpleAI checkpoint 清理失败', {
-              stableConversationId,
-              error: String(error),
-            })
-          }
-        }
         await dialogStorageService.deleteConversation(sessionId)
         return
       }
@@ -554,7 +529,8 @@ export const historyService = {
       }
 
       // 引擎原生
-      await invokeTauri('delete_session', {
+      const { invoke } = await import('../services/tauri')
+      await invoke('delete_session', {
         sessionId,
         engineId: engineId || (source === 'codex-native' ? 'codex' : 'claude-code'),
       })
