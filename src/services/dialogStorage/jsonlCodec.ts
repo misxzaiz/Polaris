@@ -52,8 +52,6 @@ export function extractTags(messages: ChatMessage[]): string[] {
 export function buildMeta(input: {
   externalId: string
   stableConversationId?: string
-  modelProfileId?: string
-  model?: string
   engineId: DialogMeta['engineId']
   title: string
   workspaceId?: string | null
@@ -68,8 +66,6 @@ export function buildMeta(input: {
     type: 'meta',
     externalId: input.externalId,
     stableConversationId: input.stableConversationId,
-    modelProfileId: input.modelProfileId,
-    model: input.model,
     engineId: input.engineId,
     title: input.title,
     workspaceId: input.workspaceId ?? null,
@@ -184,8 +180,6 @@ function normalizeMeta(obj: Record<string, unknown>): DialogMeta {
     stableConversationId: typeof obj.stableConversationId === 'string'
       ? obj.stableConversationId
       : undefined,
-    modelProfileId: typeof obj.modelProfileId === 'string' ? obj.modelProfileId : undefined,
-    model: typeof obj.model === 'string' ? obj.model : undefined,
     engineId: (obj.engineId as DialogMeta['engineId']) ?? 'claude-code',
     title: String(obj.title ?? '未命名会话'),
     workspaceId: (obj.workspaceId as string | null) ?? null,

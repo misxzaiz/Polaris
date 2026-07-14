@@ -31,10 +31,6 @@ export interface DialogMeta {
   externalId: string
   /** Polaris 稳定可视对话 ID；SimpleAI checkpoint 以此为键，runtime 重建时保持不变。 */
   stableConversationId?: string
-  /** SimpleAI/CLI 会话绑定的模型 Profile，用于 runtime 重建后保持原供应商。 */
-  modelProfileId?: string
-  /** 会话绑定模型，用于 runtime 重建后保持原模型。 */
-  model?: string
   /** AI 引擎 */
   engineId: EngineId
   /** 会话标题 */
@@ -86,8 +82,6 @@ export type DialogSummary = DialogMeta
 export interface SaveDialogInput {
   externalId: string
   stableConversationId?: string
-  modelProfileId?: string
-  model?: string
   engineId: EngineId
   title: string
   workspaceId?: string | null

@@ -201,7 +201,8 @@ impl TokenEstimator {
             tools,
             None,
         );
-        let wire_estimate = estimate_wire_body_tokens(&wire_body);
+        let wire_json = serde_json::to_string(&wire_body).unwrap_or_default();
+        let wire_estimate = approximate_text_tokens(&wire_json);
         ((wire_estimate as f64) * self.calibration_factor()).ceil() as usize
     }
 
@@ -245,11 +246,6 @@ impl TokenEstimator {
         let threshold = (usable_budget as f64) * COMPACT_HARD_RATIO;
         (estimated_size as f64) >= threshold
     }
-}
-
-pub(super) fn estimate_wire_body_tokens(body: &Value) -> usize {
-    let wire_json = serde_json::to_string(body).unwrap_or_default();
-    approximate_text_tokens(&wire_json)
 }
 
 // ============================================================================
@@ -491,17 +487,7 @@ pub fn render_message_for_compaction(messages: &[Value], start: usize, end: usiz
                         .get("tool_call_id")
                         .and_then(|id| id.as_str())
                         .unwrap_or("");
-                    let name = msg.get("name").and_then(Value::as_str).unwrap_or("unknown");
-                    let success = msg.get("success").and_then(Value::as_bool);
-                    lines.push(format!(
-                        "[tool result]: name={}, id={}, success={}, content={}",
-                        name,
-                        call_id,
-                        success
-                            .map(|value| value.to_string())
-                            .unwrap_or_else(|| "unknown".to_string()),
-                        content
-                    ));
+                    lines.push(format!("[tool result (id={} )]: {}", call_id, content));
                 }
             }
             "system" => {
@@ -652,12 +638,12 @@ mod tests {
                     {"id": "call_1", "function": {"name": "bash", "arguments": "{}"}}
                 ]
             }),
-            serde_json::json!({"role": "tool", "tool_call_id": "call_1", "name": "bash", "success": true, "content": "file1\nfile2"}),
+            serde_json::json!({"role": "tool", "tool_call_id": "call_1", "content": "file1\nfile2"}),
         ];
 
         let rendered = render_message_for_compaction(&messages, 0, 3);
         assert!(rendered.contains("[user]: list files"));
         assert!(rendered.contains("[assistant tool_call]: bash"));
-        assert!(rendered.contains("[tool result]: name=bash, id=call_1, success=true"));
+        assert!(rendered.contains("[tool result"));
     }
 }

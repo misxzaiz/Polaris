@@ -86,7 +86,6 @@ async fn maybe_auto_compact_messages(
         profile,
         tool_specs: stats.tool_specs.clone(),
         latest_provider_input_tokens: stats.latest_provider_input_tokens,
-        latest_local_input_tokens: stats.latest_local_input_tokens,
         trigger: coordinator::CompactionTrigger::AutoSoft,
     };
     if !coordinator::should_auto_compact(&input) {
@@ -134,8 +133,6 @@ async fn run_chat_loop_with_context_recovery(
     work_dir: &str,
     bootstrap_end: usize,
     profile_id: Option<String>,
-    previous_provider_input_tokens: Option<u64>,
-    previous_local_input_tokens: Option<usize>,
     profile: &crate::models::config::ModelProfile,
     messages: &mut Vec<Value>,
     callback: &Arc<dyn Fn(AIEvent) + Send + Sync>,
@@ -150,11 +147,7 @@ async fn run_chat_loop_with_context_recovery(
     // Any failed provider/recovery path restores this exact pre-request snapshot. The current
     // user message is already present, but no partial assistant/tool mutation is retained.
     let turn_snapshot = messages.clone();
-    let mut stats = chat_loop::ChatLoopStats {
-        latest_provider_input_tokens: previous_provider_input_tokens,
-        latest_local_input_tokens: previous_local_input_tokens,
-        ..Default::default()
-    };
+    let mut stats = chat_loop::ChatLoopStats::default();
     let first = run_chat_loop(
         runtime_session_id,
         messages,
@@ -170,7 +163,12 @@ async fn run_chat_loop_with_context_recovery(
     .await;
 
     match first {
-        Ok(()) => (Ok(stats), None, None),
+        Ok(()) => {
+            if stats.aborted {
+                *messages = turn_snapshot;
+            }
+            (Ok(stats), None, None)
+        }
         Err(error) if error.is_context_limit() => {
             let pre_compaction_messages = messages.clone();
             let _ = callback(AIEvent::Progress(ProgressEvent::new(
@@ -187,30 +185,16 @@ async fn run_chat_loop_with_context_recovery(
                 profile: profile.clone(),
                 tool_specs: stats.tool_specs.clone(),
                 latest_provider_input_tokens: stats.latest_provider_input_tokens,
-                latest_local_input_tokens: stats.latest_local_input_tokens,
                 trigger: coordinator::CompactionTrigger::ContextLimitRecovery,
             };
             let outcome = match coordinator::compact_snapshot(input, callback).await {
                 Ok(outcome) => outcome,
                 Err(compaction_error) => {
-                    let rollback_error = coordinator::rollback_latest_matching_checkpoint(
-                        stable_conversation_id,
-                        runtime_session_id,
-                        &pre_compaction_messages,
-                        turn_snapshot.clone(),
-                    )
-                    .err();
                     *messages = turn_snapshot;
-                    let mut reason = format!(
+                    let reason = format!(
                         "上下文超限恢复压缩失败：{}；原请求未重试，历史保持不变",
                         compaction_error.to_message()
                     );
-                    if let Some(rollback_error) = rollback_error {
-                        reason.push_str(&format!(
-                            "；rollback checkpoint 失败：{}",
-                            rollback_error.to_message()
-                        ));
-                    }
                     return (
                         Err(AppError::ProcessError(format!(
                             "{}；原始供应商错误：{}",
@@ -229,11 +213,7 @@ async fn run_chat_loop_with_context_recovery(
                 runtime_session_id,
                 "checkpoint 已完成，正在单次重试原请求…",
             )));
-            let mut retry_stats = chat_loop::ChatLoopStats {
-                latest_provider_input_tokens: stats.latest_provider_input_tokens,
-                latest_local_input_tokens: stats.latest_local_input_tokens,
-                ..Default::default()
-            };
+            let mut retry_stats = chat_loop::ChatLoopStats::default();
             let retry = run_chat_loop(
                 runtime_session_id,
                 messages,
@@ -250,6 +230,10 @@ async fn run_chat_loop_with_context_recovery(
 
             match retry {
                 Ok(()) => {
+                    if retry_stats.aborted {
+                        *messages = turn_snapshot;
+                        return (Ok(retry_stats), None, None);
+                    }
                     let mut archived_messages = pre_compaction_messages;
                     archived_messages.extend_from_slice(&messages[compacted_base_len..]);
                     if let Err(checkpoint_error) = coordinator::finalize_recovery_checkpoint(
@@ -257,23 +241,11 @@ async fn run_chat_loop_with_context_recovery(
                         outcome.checkpoint_generation,
                         archived_messages,
                     ) {
-                        let rollback_error = coordinator::rollback_recovery_checkpoint(
-                            stable_conversation_id,
-                            outcome.checkpoint_generation,
-                            turn_snapshot.clone(),
-                        )
-                        .err();
                         *messages = turn_snapshot;
-                        let mut reason = format!(
+                        let reason = format!(
                             "上下文恢复 checkpoint 最终写入失败：{}；历史保持不变",
                             checkpoint_error.to_message()
                         );
-                        if let Some(rollback_error) = rollback_error {
-                            reason.push_str(&format!(
-                                "；rollback checkpoint 也失败：{}",
-                                rollback_error.to_message()
-                            ));
-                        }
                         return (
                             Err(AppError::ProcessError(reason.clone())),
                             None,
@@ -283,23 +255,11 @@ async fn run_chat_loop_with_context_recovery(
                     (Ok(retry_stats), Some(outcome), None)
                 }
                 Err(retry_error) => {
-                    let rollback_error = coordinator::rollback_recovery_checkpoint(
-                        stable_conversation_id,
-                        outcome.checkpoint_generation,
-                        turn_snapshot.clone(),
-                    )
-                    .err();
                     *messages = turn_snapshot;
-                    let mut reason = format!(
+                    let reason = format!(
                         "上下文压缩后单次重试失败：{}；历史保持不变",
                         retry_error.to_message()
                     );
-                    if let Some(rollback_error) = rollback_error {
-                        reason.push_str(&format!(
-                            "；rollback checkpoint 失败：{}",
-                            rollback_error.to_message()
-                        ));
-                    }
                     (Err(retry_error), None, Some(reason))
                 }
             }
@@ -575,8 +535,6 @@ impl AIEngine for SimpleAIEngine {
                 &work_dir,
                 bootstrap_end,
                 profile_id.clone(),
-                None,
-                None,
                 &profile,
                 &mut messages,
                 &cb,
@@ -616,12 +574,7 @@ impl AIEngine for SimpleAIEngine {
                         s.messages = messages;
                         s.is_running = false;
                         if let Ok(stats) = &result {
-                            if stats.latest_provider_input_tokens.is_some()
-                                && stats.latest_local_input_tokens.is_some()
-                            {
-                                s.latest_provider_input_tokens = stats.latest_provider_input_tokens;
-                                s.latest_local_input_tokens = stats.latest_local_input_tokens;
-                            }
+                            s.latest_provider_input_tokens = stats.latest_provider_input_tokens;
                             s.latest_tool_specs = stats.tool_specs.clone();
                         }
                         let committed_outcome = recovery_outcome.as_ref().or(auto_outcome.as_ref());
@@ -639,12 +592,7 @@ impl AIEngine for SimpleAIEngine {
                         } else if auto_failure.is_some() || recovery_failure.is_some() {
                             s.compaction_state.consecutive_failures =
                                 s.compaction_state.consecutive_failures.saturating_add(1);
-                            s.compaction_state.status =
-                                if s.compaction_state.consecutive_failures >= 3 {
-                                    session::CompactionStatus::Disabled
-                                } else {
-                                    session::CompactionStatus::Idle
-                                };
+                            s.compaction_state.status = session::CompactionStatus::Idle;
                         }
                         true
                     } else {
@@ -702,10 +650,8 @@ impl AIEngine for SimpleAIEngine {
         options: SessionOptions,
     ) -> std::result::Result<(), AppError> {
         // 优先从 env_overrides 获取精确的 profile ID
-        let mut profile_id = options.env_overrides.get("__simple_ai_profile_id").cloned();
+        let profile_id = options.env_overrides.get("__simple_ai_profile_id").cloned();
         let requested_stable_id = options.stable_conversation_id.clone();
-        let requested_model = options.model.clone();
-        let available_profiles = self.config.model_profiles.clone();
         let mut profile = self
             .find_active_profile(profile_id.as_deref())
             .cloned()
@@ -740,10 +686,6 @@ impl AIEngine for SimpleAIEngine {
             bootstrap_end,
             restored_generation,
             work_dir,
-            previous_provider_input_tokens,
-            previous_local_input_tokens,
-            auto_compaction_allowed,
-            active_checkpoint_generation,
         ) = {
             let mut guard = self
                 .sessions
@@ -756,20 +698,6 @@ impl AIEngine for SimpleAIEngine {
                     .filter(|value| !value.trim().is_empty())
                     .ok_or_else(|| AppError::SessionNotFound(session_id.to_string()))?;
                 let checkpoint = coordinator::load_latest_checkpoint(stable_id)?;
-                if profile_id.is_none() {
-                    if let Some(checkpoint_profile_id) = checkpoint.model_profile_id.as_deref() {
-                        if let Some(checkpoint_profile) = available_profiles
-                            .iter()
-                            .find(|candidate| candidate.id == checkpoint_profile_id)
-                        {
-                            profile = checkpoint_profile.clone();
-                            profile_id = Some(checkpoint_profile.id.clone());
-                        }
-                    }
-                }
-                if requested_model.is_none() {
-                    profile.model = checkpoint.model.clone();
-                }
                 let checkpoint_is_compacted = checkpoint
                     .briefing
                     .as_deref()
@@ -783,8 +711,8 @@ impl AIEngine for SimpleAIEngine {
                 restored.latest_profile = Some(profile.clone());
                 restored.latest_profile_id = profile_id.clone();
                 restored.compaction_state.generation = checkpoint.generation;
-                restored.compaction_state.active_checkpoint =
-                    checkpoint_is_compacted.then_some(checkpoint.generation);
+                restored.compaction_state.active_checkpoint = checkpoint_is_compacted
+                    .then_some(checkpoint.generation);
                 restored.compaction_state.last_compacted_at_ms = Some(checkpoint.created_at_ms);
                 restored_generation = Some(checkpoint.generation);
                 guard.insert(session_id.to_string(), restored);
@@ -813,10 +741,6 @@ impl AIEngine for SimpleAIEngine {
                 session.bootstrap_end,
                 restored_generation,
                 session.work_dir.clone(),
-                session.latest_provider_input_tokens,
-                session.latest_local_input_tokens,
-                session.compaction_state.status != session::CompactionStatus::Disabled,
-                session.compaction_state.active_checkpoint,
             )
         };
 
@@ -851,8 +775,6 @@ impl AIEngine for SimpleAIEngine {
                 &work_dir,
                 bootstrap_end,
                 profile_id.clone(),
-                previous_provider_input_tokens,
-                previous_local_input_tokens,
                 &profile,
                 &mut existing_messages,
                 &cb,
@@ -864,7 +786,7 @@ impl AIEngine for SimpleAIEngine {
 
             let mut auto_outcome = None;
             let mut auto_failure = None;
-            if recovery_outcome.is_none() && auto_compaction_allowed {
+            if recovery_outcome.is_none() {
                 if let Ok(stats) = &result {
                     let (next_messages, outcome, failure) = maybe_auto_compact_messages(
                         &sid,
@@ -892,13 +814,8 @@ impl AIEngine for SimpleAIEngine {
                         session.messages = existing_messages;
                         session.is_running = false;
                         if let Ok(stats) = &result {
-                            if stats.latest_provider_input_tokens.is_some()
-                                && stats.latest_local_input_tokens.is_some()
-                            {
-                                session.latest_provider_input_tokens =
-                                    stats.latest_provider_input_tokens;
-                                session.latest_local_input_tokens = stats.latest_local_input_tokens;
-                            }
+                            session.latest_provider_input_tokens =
+                                stats.latest_provider_input_tokens;
                             session.latest_tool_specs = stats.tool_specs.clone();
                         }
                         let committed_outcome = recovery_outcome.as_ref().or(auto_outcome.as_ref());
@@ -918,12 +835,7 @@ impl AIEngine for SimpleAIEngine {
                                 .compaction_state
                                 .consecutive_failures
                                 .saturating_add(1);
-                            session.compaction_state.status =
-                                if session.compaction_state.consecutive_failures >= 3 {
-                                    session::CompactionStatus::Disabled
-                                } else {
-                                    session::CompactionStatus::Idle
-                                };
+                            session.compaction_state.status = session::CompactionStatus::Idle;
                         }
                         true
                     } else {
@@ -977,8 +889,15 @@ impl AIEngine for SimpleAIEngine {
     fn compact_session(&mut self, session_id: &str, options: SessionOptions) -> Result<()> {
         let profile_id = options.env_overrides.get("__simple_ai_profile_id").cloned();
         let requested_stable_id = options.stable_conversation_id.clone();
-        let requested_model = options.model.clone();
-        let configured_profile = self.find_active_profile(profile_id.as_deref()).cloned();
+        let mut profile = self
+            .find_active_profile(profile_id.as_deref())
+            .cloned()
+            .ok_or_else(|| {
+                AppError::ProcessError("No suitable model profile found.".to_string())
+            })?;
+        if let Some(model) = options.model {
+            profile.model = model;
+        }
 
         let callback: Arc<dyn Fn(AIEvent) + Send + Sync> = options.event_callback.clone();
         let sid = session_id.to_string();
@@ -1011,21 +930,6 @@ impl AIEngine for SimpleAIEngine {
             ) {
                 return Err(AppError::StateError("会话正在压缩上下文".to_string()));
             }
-            let mut profile = if profile_id.is_none() {
-                session.latest_profile.clone().or(configured_profile.clone())
-            } else {
-                configured_profile.clone()
-            }
-            .ok_or_else(|| {
-                AppError::ProcessError("No suitable model profile found.".to_string())
-            })?;
-            if let Some(model) = requested_model.clone() {
-                profile.model = model;
-            }
-            session.latest_profile = Some(profile.clone());
-            session.latest_profile_id = profile_id
-                .clone()
-                .or_else(|| session.latest_profile_id.clone());
             session.is_running = true;
             session.compaction_state.status = session::CompactionStatus::Planning;
             let generation = session.next_turn_generation();
@@ -1042,7 +946,6 @@ impl AIEngine for SimpleAIEngine {
                     profile: profile.clone(),
                     tool_specs: session.latest_tool_specs.clone(),
                     latest_provider_input_tokens: session.latest_provider_input_tokens,
-                    latest_local_input_tokens: session.latest_local_input_tokens,
                     trigger: coordinator::CompactionTrigger::Manual,
                 },
                 generation,

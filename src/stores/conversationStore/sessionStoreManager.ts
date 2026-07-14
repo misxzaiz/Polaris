@@ -277,8 +277,6 @@ function createSessionManagerStore() {
         title: metadata?.title || `历史会话 ${get().stores.size + 1}`,
         forkFromId: metadata?.forkFromId,
         engineId: metadata?.engineId,
-        modelProfileId: metadata?.modelProfileId,
-        model: metadata?.model,
       })
 
       // 获取新创建的 Store 并设置历史消息
