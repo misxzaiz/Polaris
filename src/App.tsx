@@ -8,7 +8,7 @@ const log = createLogger('App');
 import { TopMenuBar as TopMenuBarComponent } from './components/TopMenuBar';
 import { GitPanel } from './components/GitPanel';
 import { ActivityBar, LeftPanel, LeftPanelContent, LeftPanelDrawer, CenterStage, RightPanel } from './components/Layout';
-import { EnhancedChatMessages, ChatInput, ChatStatusBar, SessionHistoryPanel, MultiSessionGrid, MultiWindowMenu, NewSessionButton, ErrorBanner } from './components/Chat';
+import { EnhancedChatMessages, ChatInput, ChatStatusBar, SessionHistoryPanel, MultiSessionGrid, MultiWindowMenu, NewSessionButton, CompactHandoffButton, CompactHandoffProgress, ErrorBanner } from './components/Chat';
 import type { EditMode } from './components/Chat';
 import type { SettingsTabId } from './components/Settings/SettingsSidebar';
 import { SimpleTodoPanel } from './components/TodoPanel/SimpleTodoPanel';
@@ -270,6 +270,7 @@ function App() {
                       <ChatStatusBar embedded>
                         <MultiWindowMenu />
                         <NewSessionButton />
+                        <CompactHandoffButton />
                       </ChatStatusBar>
                     }
                   />
@@ -278,6 +279,9 @@ function App() {
             </>
           )}
         </div>
+
+        {/* 压缩交接后台进度胶囊（右下角，不阻塞界面） */}
+        <CompactHandoffProgress />
 
         {showCreateWorkspace && (
           <Suspense fallback={<div className="flex items-center justify-center text-text-muted">{t('status.loading')}</div>}>

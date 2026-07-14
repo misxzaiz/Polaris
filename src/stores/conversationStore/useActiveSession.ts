@@ -230,6 +230,16 @@ export function useActiveSessionInputDraft() {
 }
 
 /**
+ * 获取活跃会话的待发送简报（压缩交接产物）
+ */
+export function useActiveSessionPendingBriefing() {
+  return useActiveSessionSelector(
+    useCallback((state: ConversationState) => state.pendingBriefing, []),
+    null
+  )
+}
+
+/**
  * 获取活跃会话的下一步提示建议（--prompt-suggestions）
  */
 export function useActiveSessionPromptSuggestion() {
@@ -353,6 +363,13 @@ export function useActiveSessionActions() {
         const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
         if (!store) return
         return store.clearInputDraft()
+      },
+      setPendingBriefing: (briefing: string | null) => {
+        const sessionId = sessionStoreManager.getState().activeSessionId
+        if (!sessionId) return
+        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
+        if (!store) return
+        return store.setPendingBriefing(briefing)
       },
       setPromptSuggestion: (suggestion: string | null) => {
         const sessionId = sessionStoreManager.getState().activeSessionId

@@ -18,6 +18,8 @@ export { MultiSessionGrid } from './MultiSessionGrid';
 export { MultiWindowMenu } from './MultiWindowMenu';
 export { SessionCell } from './SessionCell';
 export { NewSessionButton } from './NewSessionButton';
+export { CompactHandoffButton } from './CompactHandoffButton';
+export { CompactHandoffProgress } from './CompactHandoffProgress';
 
 // 错误提示
 export { ErrorBanner } from './ErrorBanner';

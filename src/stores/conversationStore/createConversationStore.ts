@@ -78,6 +78,9 @@ function createInitialState(sessionId: string): ConversationState {
       attachments: [],
     },
 
+    // 待发送简报（压缩交接产物）
+    pendingBriefing: null,
+
     // 工作区关联
     workspaceId: null,
 
@@ -227,6 +230,10 @@ export function createConversationStore(
             attachments: [],
           },
         })
+      },
+
+      setPendingBriefing: (briefing) => {
+        set({ pendingBriefing: briefing && briefing.trim() ? briefing : null })
       },
 
       // ===== 流式构建 =====
@@ -1169,9 +1176,20 @@ export function createConversationStore(
 
           // 一次性系统提示（语音伙伴人格等）：经 appendSystemPrompt 通道注入，
           // 仅本次请求生效，不出现在消息流中
-          const appendPrompt = sendOptions?.oneTimeSystemPrompt
-            ? `${workspacePrompt}\n\n${sendOptions.oneTimeSystemPrompt}`
+          // 待发送简报（压缩交接产物）也经此通道作为一次性上下文带出，随后清空。
+          const pendingBriefing = get().pendingBriefing
+          const oneTimeParts = [
+            pendingBriefing
+              ? i18n.t('chat:compactHandoff.contextPreamble', { briefing: pendingBriefing })
+              : '',
+            sendOptions?.oneTimeSystemPrompt ?? '',
+          ].filter(Boolean)
+          const appendPrompt = oneTimeParts.length > 0
+            ? `${workspacePrompt}\n\n${oneTimeParts.join('\n\n')}`
             : workspacePrompt
+          if (pendingBriefing) {
+            set({ pendingBriefing: null })
+          }
 
           const chatOptions = {
             appendSystemPrompt: normalizeForInvoke(appendPrompt),
@@ -1183,10 +1201,10 @@ export function createConversationStore(
             disabledMcpServers,
             attachments: attachmentsForBackend,
             additionalDirs: contextWorkspaces.map(w => w.path).filter(Boolean),
-            agent: runtimeConfig.agent,
+            agent: sendOptions?.runtimeOverride?.agent ?? runtimeConfig.agent,
             model: resolvedModel,
-            effort: runtimeConfig.effort,
-            permissionMode: runtimeConfig.permissionMode,
+            effort: sendOptions?.runtimeOverride?.effort ?? runtimeConfig.effort,
+            permissionMode: sendOptions?.runtimeOverride?.permissionMode ?? runtimeConfig.permissionMode,
             allowedTools: sendOptions?.allowedTools && sendOptions.allowedTools.length > 0
               ? sendOptions.allowedTools
               : undefined,

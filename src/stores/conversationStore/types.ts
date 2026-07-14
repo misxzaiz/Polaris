@@ -87,6 +87,16 @@ export interface SendMessageOptions {
    * 经 appendSystemPrompt 通道注入引擎，用于语音伙伴人格等场景。
    */
   oneTimeSystemPrompt?: string
+  /**
+   * 一次性运行时配置覆盖（仅本次发送生效，不写入会话级 metadata、不改全局状态栏配置）。
+   * 用于「压缩交接」等编排场景：以指定 agent/effort/permissionMode 静默驱动某会话，
+   * 而不污染用户的常规会话配置。留空的字段回退到常规解析链。
+   */
+  runtimeOverride?: {
+    agent?: string
+    effort?: string
+    permissionMode?: string
+  }
 }
 
 // ============================================================================
@@ -139,6 +149,13 @@ export interface ConversationState {
   // ===== 输入草稿 =====
   inputDraft: InputDraft
 
+  /**
+   * 待发送简报（压缩交接产物）。非空时输入框上方展示可编辑卡片，
+   * 用户发送自己的消息时作为一次性系统上下文（oneTimeSystemPrompt）随之带出，
+   * 不占用输入框、不进入用户消息气泡。发送后自动清空。
+   */
+  pendingBriefing: string | null
+
   // ===== 工作区关联 =====
   workspaceId: string | null
 
@@ -161,6 +178,9 @@ export interface ConversationActions {
   // ===== 输入草稿 =====
   updateInputDraft: (draft: InputDraft) => void
   clearInputDraft: () => void
+
+  /** 设置/清空待发送简报（压缩交接产物）；传 null 清空 */
+  setPendingBriefing: (briefing: string | null) => void
 
   // ===== 流式构建 =====
   appendTextBlock: (content: string) => void

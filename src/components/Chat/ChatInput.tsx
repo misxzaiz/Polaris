@@ -20,6 +20,7 @@ import { UnifiedSuggestion, type SuggestionItem, type ConversationSuggestion } f
 import { AttachmentPreview } from './AttachmentPreview'
 import { AutoResizingTextarea } from './AutoResizingTextarea'
 import { SnippetParamPanel } from './SnippetParamPanel'
+import { PendingBriefingCard } from './PendingBriefingCard'
 import { useFileSearch } from '@/hooks/useFileSearch'
 import { useSnippetStore } from '@/stores/snippetStore'
 import { resolveTemplateVariables } from '@/services/workspaceReference'
@@ -934,6 +935,8 @@ export function ChatInput({
 
   return (
     <div className="chat-input-root border-t border-border bg-background-elevated relative" ref={containerRef} style={chatDisplayStyle}>
+      {/* 待发送简报卡片（压缩交接产物，随下一条消息作为上下文发出） */}
+      <PendingBriefingCard />
       {/* 片段变量填写浮窗 */}
       {activeSnippet && (
         <SnippetParamPanel
