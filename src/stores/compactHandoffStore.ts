@@ -61,6 +61,10 @@ export const useCompactHandoffStore = create<CompactHandoffState>((set, get) => 
     set({ task: { id, sourceTitle: params.sourceTitle, stage: 'loading' } })
 
     void (async () => {
+      // 用户取消标志（信号事件监听，仅标记，不做清理）
+      let cancelled = false
+      abort.signal.addEventListener('abort', () => { cancelled = true }, { once: true })
+
       try {
         const result = await compactAndHandoff({
           sessionId: params.sessionId,
@@ -68,13 +72,15 @@ export const useCompactHandoffStore = create<CompactHandoffState>((set, get) => 
           newSession: params.newSession,
           signal: abort.signal,
           onStage: (stage) => {
-            // 任务可能已被新任务替换（快速取消+重启），仅更新仍匹配的任务
             const cur = get().task
             if (cur?.id === id) set({ task: { ...cur, stage } })
           },
         })
 
-        if (result.ok && result.newSessionId) {
+        if (cancelled) {
+          // 用户取消了，无声退出（不弹 error toast）
+          log.info('后台压缩交接被用户取消', { id })
+        } else if (result.ok && result.newSessionId) {
           const newSessionId = result.newSessionId
           useToastStore.getState().addToast({
             type: 'success',
@@ -82,7 +88,6 @@ export const useCompactHandoffStore = create<CompactHandoffState>((set, get) => 
             message: i18n.t('chat:compactHandoff.successToastHint'),
             duration: 8000,
             sessionId: newSessionId,
-            // 点击才跳转：不打断用户当前正在查看的对话
             action: {
               label: i18n.t('chat:compactHandoff.gotoNewSession'),
               onClick: () => sessionStoreManager.getState().switchSession(newSessionId),
@@ -96,11 +101,15 @@ export const useCompactHandoffStore = create<CompactHandoffState>((set, get) => 
           )
         }
       } catch (e) {
-        useToastStore.getState().error(i18n.t('chat:compactHandoff.failToast'), String(e))
-        log.error('后台压缩交接异常', e instanceof Error ? e : new Error(String(e)))
+        if (cancelled) {
+          // 取消时抛出的 Abort 类错误不弹 error toast
+          log.info('后台压缩交接取消完成', { id })
+        } else {
+          useToastStore.getState().error(i18n.t('chat:compactHandoff.failToast'), String(e))
+          log.error('后台压缩交接异常', e instanceof Error ? e : new Error(String(e)))
+        }
       } finally {
         if (activeAbort === abort) activeAbort = null
-        // 仅当仍是本任务时清空（避免覆盖后继任务）
         if (get().task?.id === id) set({ task: null })
       }
     })()
@@ -110,8 +119,7 @@ export const useCompactHandoffStore = create<CompactHandoffState>((set, get) => 
 
   cancel: () => {
     activeAbort?.abort()
-    // 实际清空由 compactAndHandoff 的 finally + 上面的 finally 完成；
-    // 这里立即置空以让 UI 即时反馈（服务侧会中断静默会话并清理）。
+    // UI 即时清掉进度胶囊；实际清理由服务侧的 finally 完成
     set({ task: null })
   },
 }))
