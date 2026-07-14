@@ -215,13 +215,10 @@ pub(super) async fn compact_snapshot(
     let briefing = request_summary(&input.profile, &evidence, checkpoint_generation).await?;
     let briefing = validate_briefing(&briefing, checkpoint_generation)?;
 
-    checkpoint.briefing = Some(briefing.clone());
-    store.write(&checkpoint)?;
-
     let mut messages = input.messages[..input.bootstrap_end].to_vec();
     messages.push(json!({
         "role": "user",
-        "content": briefing,
+        "content": briefing.clone(),
         "_polaris_internal": "context_compaction",
         "generation": checkpoint_generation,
     }));
@@ -250,6 +247,11 @@ pub(super) async fn compact_snapshot(
             "本次压缩预计回收量不足，已跳过提交".to_string(),
         ));
     }
+
+    // 只有所有语义与预算校验均通过后，才把 briefing 标记为可恢复状态。此前留下的
+    // checkpoint 始终是完整原历史，不会在 runtime 恢复时误应用被拒绝的摘要。
+    checkpoint.briefing = Some(briefing);
+    store.write(&checkpoint)?;
 
     Ok(CompactionOutcome {
         messages,
@@ -375,16 +377,17 @@ pub(super) fn rollback_latest_matching_checkpoint(
     Ok(true)
 }
 
-/// Keep an active compacted checkpoint current between compactions. The suffix must start at a
-/// user-turn boundary and is appended only after the turn has fully completed (or was explicitly
+/// Keep the latest durable snapshot current between compactions. The snapshot may be compacted
+/// or a full fallback left by a failed/undone compaction. The suffix must start at a user-turn
+/// boundary and is appended only after the turn has fully completed (or was explicitly
 /// interrupted with its visible partial assistant text persisted).
-pub(super) fn append_checkpoint_tail(
+pub(super) fn append_latest_checkpoint_tail(
     stable_conversation_id: &str,
-    generation: u64,
+    base_messages: &[Value],
     suffix: &[Value],
-) -> Result<()> {
+) -> Result<Option<u64>> {
     if suffix.is_empty() {
-        return Ok(());
+        return Ok(None);
     }
     if suffix
         .first()
@@ -397,19 +400,37 @@ pub(super) fn append_checkpoint_tail(
         ));
     }
     let store = ContextCheckpointStore::from_data_root();
-    let mut checkpoint = store.load(stable_conversation_id, generation)?;
-    if checkpoint
-        .briefing
-        .as_deref()
-        .is_none_or(|value| value.trim().is_empty())
-        || checkpoint.recent_tail_start.is_none()
-    {
-        return Err(AppError::StateError(
-            "不能向未激活的 checkpoint 追加回合".to_string(),
-        ));
+    let mut checkpoint = match store.load_latest(stable_conversation_id) {
+        Ok(checkpoint) => checkpoint,
+        Err(AppError::SessionNotFound(_)) => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let generation = checkpoint.generation;
+    let restored = restore_messages(&checkpoint)?;
+    if !checkpoint_tail_needs_append(&restored, base_messages, suffix)? {
+        return Ok(Some(generation));
     }
     checkpoint.archived_messages.extend_from_slice(suffix);
-    store.write(&checkpoint)
+    store.write(&checkpoint)?;
+    Ok(Some(generation))
+}
+
+fn checkpoint_tail_needs_append(
+    restored_messages: &[Value],
+    base_messages: &[Value],
+    suffix: &[Value],
+) -> Result<bool> {
+    let mut expected_messages = base_messages.to_vec();
+    expected_messages.extend_from_slice(suffix);
+    if restored_messages == expected_messages {
+        return Ok(false);
+    }
+    if restored_messages == base_messages {
+        return Ok(true);
+    }
+    Err(AppError::StateError(
+        "最新 checkpoint 与当前 runtime 基线不一致，拒绝盲目追加".to_string(),
+    ))
 }
 
 pub(super) fn delete_checkpoints(stable_conversation_id: &str) -> Result<()> {
@@ -491,5 +512,25 @@ mod tests {
         assert_eq!(restored[0]["role"], "system");
         assert_eq!(restored[1]["_polaris_internal"], "context_compaction");
         assert_eq!(restored[2]["content"], "recent");
+    }
+
+    #[test]
+    fn checkpoint_tail_sync_distinguishes_base_complete_and_divergent_states() {
+        let base = vec![
+            json!({"role":"system","content":"s"}),
+            json!({"role":"user","content":"same"}),
+        ];
+        let suffix = vec![
+            json!({"role":"user","content":"same"}),
+            json!({"role":"assistant","content":"same"}),
+        ];
+        assert!(checkpoint_tail_needs_append(&base, &base, &suffix).unwrap());
+
+        let mut complete = base.clone();
+        complete.extend_from_slice(&suffix);
+        assert!(!checkpoint_tail_needs_append(&complete, &base, &suffix).unwrap());
+
+        let divergent = vec![json!({"role":"system","content":"other"})];
+        assert!(checkpoint_tail_needs_append(&divergent, &base, &suffix).is_err());
     }
 }

@@ -743,7 +743,6 @@ impl AIEngine for SimpleAIEngine {
             previous_provider_input_tokens,
             previous_local_input_tokens,
             auto_compaction_allowed,
-            active_checkpoint_generation,
         ) = {
             let mut guard = self
                 .sessions
@@ -816,7 +815,6 @@ impl AIEngine for SimpleAIEngine {
                 session.latest_provider_input_tokens,
                 session.latest_local_input_tokens,
                 session.compaction_state.status != session::CompactionStatus::Disabled,
-                session.compaction_state.active_checkpoint,
             )
         };
 
@@ -843,24 +841,27 @@ impl AIEngine for SimpleAIEngine {
         tokio::spawn(async move {
             tracing::info!("[SimpleAI] continue_session 后台任务启动, session={}", sid);
 
+            let turn_start = existing_messages.len();
             existing_messages.push(json!({ "role": "user", "content": msg }));
+            let turn_request_messages = existing_messages.clone();
 
-            let (result, recovery_outcome, recovery_failure) = run_chat_loop_with_context_recovery(
-                &sid,
-                &stable_conversation_id,
-                &work_dir,
-                bootstrap_end,
-                profile_id.clone(),
-                previous_provider_input_tokens,
-                previous_local_input_tokens,
-                &profile,
-                &mut existing_messages,
-                &cb,
-                &mut abort_rx,
-                &mcp_servers,
-                &skills_map,
-            )
-            .await;
+            let (mut result, recovery_outcome, mut recovery_failure) =
+                run_chat_loop_with_context_recovery(
+                    &sid,
+                    &stable_conversation_id,
+                    &work_dir,
+                    bootstrap_end,
+                    profile_id.clone(),
+                    previous_provider_input_tokens,
+                    previous_local_input_tokens,
+                    &profile,
+                    &mut existing_messages,
+                    &cb,
+                    &mut abort_rx,
+                    &mcp_servers,
+                    &skills_map,
+                )
+                .await;
 
             let mut auto_outcome = None;
             let mut auto_failure = None;
@@ -881,6 +882,24 @@ impl AIEngine for SimpleAIEngine {
                     existing_messages = next_messages;
                     auto_outcome = outcome;
                     auto_failure = failure;
+                }
+            }
+
+            // 若本轮没有生成新 checkpoint，则先把完整新增回合持久化到最新 durable snapshot，
+            // 再提交内存消息。这样两次压缩之间的回合也能在 runtime 丢失后恢复。
+            if result.is_ok() && recovery_outcome.is_none() && auto_outcome.is_none() {
+                if let Err(error) = coordinator::append_latest_checkpoint_tail(
+                    &stable_conversation_id,
+                    &existing_messages[..turn_start],
+                    &existing_messages[turn_start..],
+                ) {
+                    existing_messages = turn_request_messages;
+                    let reason = format!(
+                        "活动 checkpoint 增量写入失败：{}；本轮内存历史未提交",
+                        error.to_message()
+                    );
+                    recovery_failure = Some(reason.clone());
+                    result = Err(AppError::ProcessError(reason));
                 }
             }
 
@@ -1012,7 +1031,10 @@ impl AIEngine for SimpleAIEngine {
                 return Err(AppError::StateError("会话正在压缩上下文".to_string()));
             }
             let mut profile = if profile_id.is_none() {
-                session.latest_profile.clone().or(configured_profile.clone())
+                session
+                    .latest_profile
+                    .clone()
+                    .or(configured_profile.clone())
             } else {
                 configured_profile.clone()
             }
