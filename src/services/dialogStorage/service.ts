@@ -6,7 +6,6 @@
  */
 
 import { createLogger } from '@/utils/logger'
-import { invoke } from '@/services/tauri'
 import type { ChatMessage } from '@/types'
 import { getDialogBackend, dialogFileName, type DialogBackend } from './dialogBackend'
 import { serializeDialog, parseDialog, parseMeta, buildMeta } from './jsonlCodec'
@@ -62,7 +61,6 @@ class DialogStorageServiceImpl {
 
     const meta = buildMeta({
       externalId: input.externalId,
-      stableConversationId: input.stableConversationId,
       engineId: input.engineId,
       title: input.title,
       workspaceId: input.workspaceId,
@@ -185,29 +183,7 @@ class DialogStorageServiceImpl {
   /** 删除会话 */
   async deleteConversation(externalId: string): Promise<void> {
     const backend = getDialogBackend()
-    let stableConversationId = externalId
-    try {
-      const existing = await backend.readFile(dialogFileName(externalId))
-      const meta = existing ? parseMeta(existing) : null
-      stableConversationId = meta?.stableConversationId || externalId
-    } catch (error) {
-      log.warn('读取待删除会话元数据失败，使用 externalId 清理 checkpoint', {
-        externalId,
-        error: String(error),
-      })
-    }
     await backend.deleteFile(dialogFileName(externalId))
-    try {
-      await invoke('delete_simple_ai_checkpoints', { stableConversationId })
-    } catch (error) {
-      // 对话文件已经删除；checkpoint 清理失败不应把删除动作伪装成失败，
-      // 但必须留下可诊断日志，后续保留策略仍会限制每个对话最多三个 generation。
-      log.warn('清理 SimpleAI 上下文 checkpoint 失败', {
-        externalId,
-        stableConversationId,
-        error: String(error),
-      })
-    }
     invalidateMetaCache()
     log.info('会话已删除', { externalId })
   }

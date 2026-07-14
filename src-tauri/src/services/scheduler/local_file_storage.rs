@@ -11,8 +11,8 @@
 
 use crate::error::{AppError, Result};
 use crate::models::scheduler::{
-    apply_template, CreateTaskParams, CreateTemplateParams, PromptTemplate, ScheduledTask,
-    TaskCategory, TaskMode, TaskStatus, TaskStore, TemplateStore, TriggerType,
+    apply_template, CreateTaskParams, CreateTemplateParams, PromptTemplate, ScheduledTask, TaskCategory, TaskMode,
+    TaskStatus, TaskStore, TemplateStore, TriggerType,
 };
 use crate::services::scheduler::storage::{TaskStorage, TaskUpdateParams, WorkspaceInfo};
 use chrono::Utc;
@@ -121,8 +121,7 @@ impl LocalFileStorage {
             empty
         } else {
             let content = std::fs::read_to_string(&file_path)?;
-            let raw_json: serde_json::Value =
-                serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}));
+            let raw_json: serde_json::Value = serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}));
             normalize_file_data(raw_json)
         };
 
@@ -270,13 +269,13 @@ fn validate_trigger_value(trigger_type: &TriggerType, value: &str) -> Result<()>
 
             if num_part.is_empty() || unit_part.is_empty() {
                 return Err(AppError::ValidationError(
-                    "间隔时间格式无效，请使用如 '1h', '30m', '1d' 的格式".to_string(),
+                    "间隔时间格式无效，请使用如 '1h', '30m', '1d' 的格式".to_string()
                 ));
             }
 
-            let num: u64 = num_part
-                .parse()
-                .map_err(|_| AppError::ValidationError("间隔时间数字部分无效".to_string()))?;
+            let num: u64 = num_part.parse().map_err(|_| {
+                AppError::ValidationError("间隔时间数字部分无效".to_string())
+            })?;
 
             if num == 0 {
                 return Err(AppError::ValidationError("间隔时间不能为零".to_string()));
@@ -284,7 +283,7 @@ fn validate_trigger_value(trigger_type: &TriggerType, value: &str) -> Result<()>
 
             if !matches!(unit_part.as_str(), "s" | "m" | "h" | "d" | "w") {
                 return Err(AppError::ValidationError(
-                    "间隔时间单位无效，请使用 s(秒), m(分), h(时), d(天), w(周)".to_string(),
+                    "间隔时间单位无效，请使用 s(秒), m(分), h(时), d(天), w(周)".to_string()
                 ));
             }
         }
@@ -299,7 +298,7 @@ fn validate_trigger_value(trigger_type: &TriggerType, value: &str) -> Result<()>
             let fields: Vec<&str> = value.split_whitespace().collect();
             if fields.len() < 5 || fields.len() > 6 {
                 return Err(AppError::ValidationError(
-                    "Cron 表达式格式无效，应为 5 或 6 个字段".to_string(),
+                    "Cron 表达式格式无效，应为 5 或 6 个字段".to_string()
                 ));
             }
         }
@@ -339,12 +338,7 @@ impl TaskStorage for LocalFileStorage {
         Ok(data.tasks.into_iter().find(|task| task.id == id))
     }
 
-    fn create_task(
-        &self,
-        params: CreateTaskParams,
-        workspace_path: Option<String>,
-        workspace_name: Option<String>,
-    ) -> Result<ScheduledTask> {
+    fn create_task(&self, params: CreateTaskParams, workspace_path: Option<String>, workspace_name: Option<String>) -> Result<ScheduledTask> {
         let name = params.name.trim();
         if name.is_empty() {
             return Err(AppError::ValidationError("任务名称不能为空".to_string()));
@@ -362,9 +356,7 @@ impl TaskStorage for LocalFileStorage {
         let now = Utc::now().timestamp();
         let id = Uuid::new_v4().to_string();
 
-        let next_run_at = params
-            .trigger_type
-            .calculate_next_run(&params.trigger_value, now);
+        let next_run_at = params.trigger_type.calculate_next_run(&params.trigger_value, now);
 
         let task = ScheduledTask {
             id: id.clone(),
@@ -425,9 +417,7 @@ impl TaskStorage for LocalFileStorage {
         }
 
         // Validate trigger value if being updated
-        if let (Some(trigger_type), Some(trigger_value)) =
-            (&updates.trigger_type, &updates.trigger_value)
-        {
+        if let (Some(trigger_type), Some(trigger_value)) = (&updates.trigger_type, &updates.trigger_value) {
             validate_trigger_value(trigger_type, trigger_value)?;
         }
 
@@ -526,9 +516,7 @@ impl TaskStorage for LocalFileStorage {
         task.updated_at = Utc::now().timestamp();
 
         if updates.next_run_at.is_none() {
-            task.next_run_at = task
-                .trigger_type
-                .calculate_next_run(&task.trigger_value, task.updated_at);
+            task.next_run_at = task.trigger_type.calculate_next_run(&task.trigger_value, task.updated_at);
         }
 
         let result = task.clone();
@@ -565,9 +553,7 @@ impl TaskStorage for LocalFileStorage {
         if task.trigger_type == TriggerType::AfterCompletion && status == TaskStatus::Running {
             task.next_run_at = None;
         } else {
-            task.next_run_at = task
-                .trigger_type
-                .calculate_next_run(&task.trigger_value, now);
+            task.next_run_at = task.trigger_type.calculate_next_run(&task.trigger_value, now);
         }
 
         let result = task.clone();
@@ -576,13 +562,10 @@ impl TaskStorage for LocalFileStorage {
     }
 
     fn toggle_task(&self, id: &str, enabled: bool) -> Result<ScheduledTask> {
-        self.update_task(
-            id,
-            TaskUpdateParams {
-                enabled: Some(enabled),
-                ..Default::default()
-            },
-        )
+        self.update_task(id, TaskUpdateParams {
+            enabled: Some(enabled),
+            ..Default::default()
+        })
     }
 
     fn get_workspace_breakdown(&self) -> Result<BTreeMap<String, usize>> {
@@ -590,47 +573,26 @@ impl TaskStorage for LocalFileStorage {
         let mut breakdown = BTreeMap::new();
 
         for task in tasks {
-            let key = task
-                .workspace_name
-                .clone()
-                .unwrap_or_else(|| "全局".to_string());
+            let key = task.workspace_name.clone().unwrap_or_else(|| "全局".to_string());
             *breakdown.entry(key).or_insert(0) += 1;
         }
 
         Ok(breakdown)
     }
 
-    fn list_tasks_by_category(
-        &self,
-        category: TaskCategory,
-        workspace_path: Option<&str>,
-    ) -> Result<Vec<ScheduledTask>> {
+    fn list_tasks_by_category(&self, category: TaskCategory, workspace_path: Option<&str>) -> Result<Vec<ScheduledTask>> {
         let tasks = self.list_tasks(workspace_path)?;
-        Ok(tasks
-            .into_iter()
-            .filter(|t| t.category == category)
-            .collect())
+        Ok(tasks.into_iter().filter(|t| t.category == category).collect())
     }
 
-    fn list_tasks_by_mode(
-        &self,
-        mode: TaskMode,
-        workspace_path: Option<&str>,
-    ) -> Result<Vec<ScheduledTask>> {
+    fn list_tasks_by_mode(&self, mode: TaskMode, workspace_path: Option<&str>) -> Result<Vec<ScheduledTask>> {
         let tasks = self.list_tasks(workspace_path)?;
         Ok(tasks.into_iter().filter(|t| t.mode == mode).collect())
     }
 
-    fn list_tasks_by_group(
-        &self,
-        group: &str,
-        workspace_path: Option<&str>,
-    ) -> Result<Vec<ScheduledTask>> {
+    fn list_tasks_by_group(&self, group: &str, workspace_path: Option<&str>) -> Result<Vec<ScheduledTask>> {
         let tasks = self.list_tasks(workspace_path)?;
-        Ok(tasks
-            .into_iter()
-            .filter(|t| t.group.as_deref() == Some(group))
-            .collect())
+        Ok(tasks.into_iter().filter(|t| t.group.as_deref() == Some(group)).collect())
     }
 
     // =========================================================================
@@ -736,14 +698,8 @@ impl TaskStorage for LocalFileStorage {
         Ok(result)
     }
 
-    fn build_prompt_with_template(
-        &self,
-        template_id: &str,
-        task_name: &str,
-        user_prompt: &str,
-    ) -> Result<String> {
-        let template = self
-            .get_template(template_id)?
+    fn build_prompt_with_template(&self, template_id: &str, task_name: &str, user_prompt: &str) -> Result<String> {
+        let template = self.get_template(template_id)?
             .ok_or_else(|| AppError::template_error(template_id, "模板不存在"))?;
 
         // Validate template is enabled
@@ -810,12 +766,7 @@ fn normalize_file_data(raw_json: serde_json::Value) -> TaskStore {
     let tasks = raw_json
         .get("tasks")
         .and_then(|value| value.as_array())
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(normalize_task_item)
-                .collect::<Vec<_>>()
-        })
+        .map(|items| items.iter().filter_map(normalize_task_item).collect::<Vec<_>>())
         .unwrap_or_default();
 
     TaskStore { tasks }
@@ -828,21 +779,13 @@ fn normalize_task_item(value: &serde_json::Value) -> Option<ScheduledTask> {
         return None;
     }
 
-    let name = object
-        .get("name")
-        .and_then(|v| v.as_str())
-        .unwrap_or(id)
-        .trim()
-        .to_string();
+    let name = object.get("name").and_then(|v| v.as_str()).unwrap_or(id).trim().to_string();
     let now = Utc::now().timestamp();
 
     Some(ScheduledTask {
         id: id.to_string(),
         name,
-        enabled: object
-            .get("enabled")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true),
+        enabled: object.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
         trigger_type: parse_trigger_type(object.get("triggerType")).unwrap_or_default(),
         trigger_value: object
             .get("triggerValue")
@@ -864,14 +807,8 @@ fn normalize_task_item(value: &serde_json::Value) -> Option<ScheduledTask> {
         last_run_at: object.get("lastRunAt").and_then(|v| v.as_i64()),
         last_run_status: parse_task_status(object.get("lastRunStatus")),
         next_run_at: object.get("nextRunAt").and_then(|v| v.as_i64()),
-        created_at: object
-            .get("createdAt")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(now),
-        updated_at: object
-            .get("updatedAt")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(now),
+        created_at: object.get("createdAt").and_then(|v| v.as_i64()).unwrap_or(now),
+        updated_at: object.get("updatedAt").and_then(|v| v.as_i64()).unwrap_or(now),
         workspace_path: optional_string_field(object.get("workspacePath")),
         workspace_name: optional_string_field(object.get("workspaceName")),
         mode: parse_task_mode(object.get("mode")).unwrap_or_default(),
@@ -880,32 +817,14 @@ fn normalize_task_item(value: &serde_json::Value) -> Option<ScheduledTask> {
         mission: optional_string_field(object.get("mission")),
         template_id: optional_string_field(object.get("templateId")),
         template_params: parse_template_params(object.get("templateParams")),
-        max_runs: object
-            .get("maxRuns")
-            .and_then(|v| v.as_u64())
-            .map(|n| n as u32),
-        current_runs: object
-            .get("currentRuns")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u32,
-        max_retries: object
-            .get("maxRetries")
-            .and_then(|v| v.as_u64())
-            .map(|n| n as u32),
-        retry_count: object
-            .get("retryCount")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u32,
+        max_runs: object.get("maxRuns").and_then(|v| v.as_u64()).map(|n| n as u32),
+        current_runs: object.get("currentRuns").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+        max_retries: object.get("maxRetries").and_then(|v| v.as_u64()).map(|n| n as u32),
+        retry_count: object.get("retryCount").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
         retry_interval: optional_string_field(object.get("retryInterval")),
-        timeout_minutes: object
-            .get("timeoutMinutes")
-            .and_then(|v| v.as_u64())
-            .map(|n| n as u32),
+        timeout_minutes: object.get("timeoutMinutes").and_then(|v| v.as_u64()).map(|n| n as u32),
         group: optional_string_field(object.get("group")),
-        notify_on_complete: object
-            .get("notifyOnComplete")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true),
+        notify_on_complete: object.get("notifyOnComplete").and_then(|v| v.as_bool()).unwrap_or(true),
     })
 }
 
@@ -1064,15 +983,11 @@ mod tests {
             )
             .unwrap();
 
-        let dev_tasks = storage
-            .list_tasks_by_category(TaskCategory::Development, None)
-            .unwrap();
+        let dev_tasks = storage.list_tasks_by_category(TaskCategory::Development, None).unwrap();
         assert_eq!(dev_tasks.len(), 1);
         assert_eq!(dev_tasks[0].name, "开发任务");
 
-        let protocol_tasks = storage
-            .list_tasks_by_mode(TaskMode::Protocol, None)
-            .unwrap();
+        let protocol_tasks = storage.list_tasks_by_mode(TaskMode::Protocol, None).unwrap();
         assert_eq!(protocol_tasks.len(), 1);
 
         let _ = std::fs::remove_dir_all(&storage_dir);

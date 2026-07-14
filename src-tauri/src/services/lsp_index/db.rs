@@ -12,7 +12,9 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 use crate::error::{AppError, Result};
 
-use super::model::{FileIndex, ImportEntry, IndexStatus, RefKind, SymbolKind};
+use super::model::{
+    FileIndex, ImportEntry, IndexStatus, RefKind, SymbolKind,
+};
 
 /// schema 版本。修改 schema 必须递增此版本，并在打开时触发重建。
 pub const SCHEMA_VERSION: i64 = 1;
@@ -82,7 +84,7 @@ impl IndexDb {
         // 额外提升大批量写入吞吐
         conn.pragma_update(None, "temp_store", "MEMORY").ok();
         conn.pragma_update(None, "cache_size", -16_000).ok(); // ~16MB cache
-                                                              // 启动时清理可能膨胀的 WAL
+        // 启动时清理可能膨胀的 WAL
         conn.pragma_update(None, "wal_checkpoint", "TRUNCATE").ok();
         Ok(())
     }
@@ -297,9 +299,7 @@ impl IndexDb {
             .optional()
             .map_err(|e| AppError::StateError(e.to_string()))?;
         let mut stmt = conn
-            .prepare(
-                "SELECT fqn, short_name, is_static, is_wildcard FROM imports WHERE file_id = ?1",
-            )
+            .prepare("SELECT fqn, short_name, is_static, is_wildcard FROM imports WHERE file_id = ?1")
             .map_err(|e| AppError::StateError(e.to_string()))?;
         let imports: Vec<ImportEntry> = stmt
             .query_map(params![file_id], |row| {

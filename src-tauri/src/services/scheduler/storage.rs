@@ -66,12 +66,7 @@ pub trait TaskStorage: Send + Sync {
     fn get_task(&self, id: &str) -> Result<Option<ScheduledTask>>;
 
     /// Create a new task
-    fn create_task(
-        &self,
-        params: CreateTaskParams,
-        workspace_path: Option<String>,
-        workspace_name: Option<String>,
-    ) -> Result<ScheduledTask>;
+    fn create_task(&self, params: CreateTaskParams, workspace_path: Option<String>, workspace_name: Option<String>) -> Result<ScheduledTask>;
 
     /// Update a task
     fn update_task(&self, id: &str, updates: TaskUpdateParams) -> Result<ScheduledTask>;
@@ -89,25 +84,13 @@ pub trait TaskStorage: Send + Sync {
     fn get_workspace_breakdown(&self) -> Result<BTreeMap<String, usize>>;
 
     /// List tasks by category
-    fn list_tasks_by_category(
-        &self,
-        category: TaskCategory,
-        workspace_path: Option<&str>,
-    ) -> Result<Vec<ScheduledTask>>;
+    fn list_tasks_by_category(&self, category: TaskCategory, workspace_path: Option<&str>) -> Result<Vec<ScheduledTask>>;
 
     /// List tasks by mode
-    fn list_tasks_by_mode(
-        &self,
-        mode: TaskMode,
-        workspace_path: Option<&str>,
-    ) -> Result<Vec<ScheduledTask>>;
+    fn list_tasks_by_mode(&self, mode: TaskMode, workspace_path: Option<&str>) -> Result<Vec<ScheduledTask>>;
 
     /// List tasks by group
-    fn list_tasks_by_group(
-        &self,
-        group: &str,
-        workspace_path: Option<&str>,
-    ) -> Result<Vec<ScheduledTask>>;
+    fn list_tasks_by_group(&self, group: &str, workspace_path: Option<&str>) -> Result<Vec<ScheduledTask>>;
 
     // =========================================================================
     // Template Operations
@@ -132,12 +115,7 @@ pub trait TaskStorage: Send + Sync {
     fn toggle_template(&self, id: &str, enabled: bool) -> Result<PromptTemplate>;
 
     /// Build prompt with template
-    fn build_prompt_with_template(
-        &self,
-        template_id: &str,
-        task_name: &str,
-        user_prompt: &str,
-    ) -> Result<String>;
+    fn build_prompt_with_template(&self, template_id: &str, task_name: &str, user_prompt: &str) -> Result<String>;
 
     // =========================================================================
     // Workspace Operations

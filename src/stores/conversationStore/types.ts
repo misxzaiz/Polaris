@@ -130,10 +130,6 @@ export interface ConversationState {
   isStreaming: boolean
   error: string | null
   progressMessage: string | null
-  /** SimpleAI 最近一次压缩仍可在下一条用户请求前撤销。 */
-  canRestoreCompaction: boolean
-  /** SimpleAI 正在生成并提交上下文压缩 checkpoint。 */
-  isCompacting: boolean
   /** 下一步提示建议（--prompt-suggestions），点击填入输入框；null 表示无建议 */
   promptSuggestion: string | null
 
@@ -204,14 +200,7 @@ export interface ConversationActions {
   updatePluginCardBlock: (id: string, updates: Partial<import('../../types/chat').PluginCardBlock>) => void
 
   // ===== 上下文压缩（Claude CLI /compact 或 autoCompact 完成） =====
-  appendContextCompactBlock: (
-    trigger: string,
-    preTokens?: number,
-    postTokens?: number,
-    generation?: number,
-    archivedTurns?: number,
-    retainedTurns?: number,
-  ) => void
+  appendContextCompactBlock: (trigger: string, preTokens?: number, postTokens?: number) => void
 
   // ===== AgentRun =====
   appendAgentRunBlock: (taskId: string, agentType: string, capabilities?: string[]) => void
@@ -263,10 +252,6 @@ export interface ConversationActions {
   /** 继续会话（用于回答问题/审批计划/权限重试后） */
   continueChat: (prompt?: string, allowedTools?: string[]) => Promise<void>
   interrupt: () => Promise<void>
-  /** 手动压缩当前 SimpleAI runtime 上下文，不改变可视对话或 runtime ID。 */
-  compactContext: () => Promise<void>
-  /** 在下一条用户请求前撤销最近一次 SimpleAI 上下文压缩。 */
-  restoreCompactedContext: () => Promise<void>
   regenerateResponse: (assistantMessageId: string) => Promise<void>
   editAndResend: (userMessageId: string, newContent: string) => Promise<void>
   /** 从归档中加载更多消息 */
@@ -408,7 +393,7 @@ export interface SessionManagerActions {
   // ===== 会话生命周期 =====
   createSession: (options: CreateSessionOptions) => string
   /** 从历史创建会话（恢复历史消息） */
-  createSessionFromHistory: (options: import('../../types').ChatMessage[], conversationId: string | null, metadata?: { title?: string; workspaceId?: string; forkFromId?: string; engineId?: EngineId; stableConversationId?: string }) => string
+  createSessionFromHistory: (options: import('../../types').ChatMessage[], conversationId: string | null, metadata?: { title?: string; workspaceId?: string; forkFromId?: string; engineId?: EngineId }) => string
   deleteSession: (sessionId: string) => void
   switchSession: (sessionId: string) => void
   /** 更新会话标题 */

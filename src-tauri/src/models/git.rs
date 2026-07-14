@@ -91,6 +91,7 @@ pub struct GitRepositoryStatus {
     pub is_empty: bool,
 }
 
+
 // ============================================================================
 // Git Diff
 // ============================================================================
@@ -585,7 +586,11 @@ impl From<GitServiceError> for GitError {
                 e.message().to_string(),
                 Some(format!("{:?}", e)),
             ),
-            GitServiceError::IoError(e) => ("IO_ERROR".to_string(), e.to_string(), None),
+            GitServiceError::IoError(e) => (
+                "IO_ERROR".to_string(),
+                e.to_string(),
+                None,
+            ),
             GitServiceError::NotARepository => (
                 "NOT_A_REPOSITORY".to_string(),
                 "Path is not a Git repository".to_string(),
@@ -644,14 +649,14 @@ impl From<GitServiceError> for GitError {
                 format!("CLI tool '{}' not found in PATH", cli),
                 Some("Please install the CLI tool and ensure it's in your PATH".to_string()),
             ),
-            GitServiceError::CLIError(err) => ("CLI_ERROR".to_string(), err, None),
+            GitServiceError::CLIError(err) => (
+                "CLI_ERROR".to_string(),
+                err,
+                None,
+            ),
         };
 
-        Self {
-            code,
-            message,
-            details,
-        }
+        Self { code, message, details }
     }
 }
 

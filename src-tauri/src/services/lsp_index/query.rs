@@ -9,7 +9,10 @@ use super::db::{IndexDb, RefRow, SymbolRow};
 use super::model::{IndexMatch, RefKind, SymbolKind};
 
 /// 查询定义候选。
-pub fn find_definition_rows(db: &IndexDb, name: &str) -> Result<Vec<SymbolRow>> {
+pub fn find_definition_rows(
+    db: &IndexDb,
+    name: &str,
+) -> Result<Vec<SymbolRow>> {
     db.find_symbols_by_name(name)
 }
 

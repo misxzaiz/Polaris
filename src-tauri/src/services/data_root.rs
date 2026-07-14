@@ -248,7 +248,8 @@ static DATA_ROOT: OnceLock<DataRoot> = OnceLock::new();
 /// 通过此函数访问统一根。
 pub fn data_root() -> &'static DataRoot {
     DATA_ROOT.get_or_init(|| {
-        DataRoot::resolve_default().expect("DataRoot 初始化失败：无法解析或创建数据根目录")
+        DataRoot::resolve_default()
+            .expect("DataRoot 初始化失败：无法解析或创建数据根目录")
     })
 }
 
@@ -403,8 +404,7 @@ mod tests {
         let json = serde_json::to_string_pretty(&anchor).unwrap();
         fs::write(&anchor_path, json).unwrap();
 
-        let loaded: Anchor =
-            serde_json::from_str(&fs::read_to_string(&anchor_path).unwrap()).unwrap();
+        let loaded: Anchor = serde_json::from_str(&fs::read_to_string(&anchor_path).unwrap()).unwrap();
         assert_eq!(loaded.schema_version, ANCHOR_SCHEMA_VERSION);
         assert_eq!(loaded.data_root, Some(custom));
     }

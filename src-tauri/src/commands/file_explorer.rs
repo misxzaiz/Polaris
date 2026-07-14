@@ -1,7 +1,7 @@
 use crate::error::{AppError, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use std::fs;
 use std::path::{Path, PathBuf};
+use std::fs;
 use std::time::SystemTime;
 
 #[derive(serde::Serialize)]
@@ -56,50 +56,47 @@ pub struct FileInfo {
 #[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn read_directory(path: String) -> Result<Vec<FileInfo>> {
     let path_obj = Path::new(&path);
-
+    
     if !path_obj.exists() {
         return Err(AppError::InvalidPath("路径不存在".to_string()));
     }
-
+    
     if !path_obj.is_dir() {
         return Err(AppError::InvalidPath("不是目录".to_string()));
     }
-
+    
     let mut files = Vec::new();
-
+    
     let entries = fs::read_dir(path_obj)?;
-
+    
     for entry in entries {
         let entry = entry?;
         let metadata = entry.metadata()?;
-
+        
         let file_path = entry.path();
-        let name = file_path
-            .file_name()
+        let name = file_path.file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("Unknown")
             .to_string();
-
+        
         let is_dir = metadata.is_dir();
         let size = if !is_dir { Some(metadata.len()) } else { None };
-
+        
         // 获取修改时间
-        let modified = metadata
-            .modified()
+        let modified = metadata.modified()
             .ok()
             .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
             .map(|d| d.as_secs().to_string());
-
+        
         // 获取文件扩展名
         let extension = if !is_dir {
-            file_path
-                .extension()
+            file_path.extension()
                 .and_then(|ext| ext.to_str())
                 .map(|s| s.to_lowercase())
         } else {
             None
         };
-
+        
         let file_info = FileInfo {
             name,
             path: file_path.to_string_lossy().to_string(),
@@ -109,17 +106,19 @@ pub async fn read_directory(path: String) -> Result<Vec<FileInfo>> {
             extension,
             children: None, // 子目录内容预留，需要懒加载
         };
-
+        
         files.push(file_info);
     }
-
+    
     // 排序：目录在前，然后按名称排序
-    files.sort_by(|a, b| match (a.is_dir, b.is_dir) {
-        (true, false) => std::cmp::Ordering::Less,
-        (false, true) => std::cmp::Ordering::Greater,
-        _ => a.name.cmp(&b.name),
+    files.sort_by(|a, b| {
+        match (a.is_dir, b.is_dir) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => a.name.cmp(&b.name),
+        }
     });
-
+    
     Ok(files)
 }
 
@@ -127,24 +126,24 @@ pub async fn read_directory(path: String) -> Result<Vec<FileInfo>> {
 #[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn get_file_content(path: String) -> Result<String> {
     let path_obj = Path::new(&path);
-
+    
     if !path_obj.exists() {
         return Err(AppError::InvalidPath("文件不存在".to_string()));
     }
-
+    
     if path_obj.is_dir() {
         return Err(AppError::InvalidPath("是目录，不是文件".to_string()));
     }
-
+    
     // 检查文件大小，限制为1MB
     let metadata = fs::metadata(path_obj)?;
-
+    
     if metadata.len() > 1024 * 1024 {
         return Err(AppError::InvalidPath("文件过大，超过1MB限制".to_string()));
     }
-
+    
     let content = fs::read_to_string(path_obj)?;
-
+    
     Ok(content)
 }
 
@@ -152,21 +151,21 @@ pub async fn get_file_content(path: String) -> Result<String> {
 #[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn create_file(path: String, content: Option<String>) -> Result<()> {
     let path_obj = Path::new(&path);
-
+    
     // 检查父目录是否存在
     if let Some(parent) = path_obj.parent() {
         if !parent.exists() {
             fs::create_dir_all(parent)?;
         }
     }
-
+    
     // 创建文件
     if let Some(content) = content {
         fs::write(path_obj, content)?;
     } else {
         fs::File::create(path_obj)?;
     }
-
+    
     Ok(())
 }
 
@@ -175,9 +174,7 @@ fn is_supported_image_path(path: &Path) -> bool {
         .and_then(|v| v.to_str())
         .map(|ext| {
             let ext = ext.to_ascii_lowercase();
-            IMAGE_EXTENSIONS
-                .iter()
-                .any(|candidate| *candidate == ext.as_str())
+            IMAGE_EXTENSIONS.iter().any(|candidate| *candidate == ext.as_str())
         })
         .unwrap_or(false)
 }
@@ -215,8 +212,8 @@ fn codex_generated_image_path(thread_id: &str, file_name: &str) -> Result<std::p
         return Err(AppError::InvalidPath("不支持的图片类型".to_string()));
     }
 
-    let home =
-        dirs::home_dir().ok_or_else(|| AppError::InvalidPath("无法获取用户目录".to_string()))?;
+    let home = dirs::home_dir()
+        .ok_or_else(|| AppError::InvalidPath("无法获取用户目录".to_string()))?;
 
     Ok(home
         .join(".codex")
@@ -262,7 +259,7 @@ pub async fn save_codex_image_artifact(
 #[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn create_directory(path: String) -> Result<()> {
     fs::create_dir_all(&path)?;
-
+    
     Ok(())
 }
 
@@ -270,17 +267,17 @@ pub async fn create_directory(path: String) -> Result<()> {
 #[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn delete_file(path: String) -> Result<()> {
     let path_obj = Path::new(&path);
-
+    
     if !path_obj.exists() {
         return Err(AppError::InvalidPath("路径不存在".to_string()));
     }
-
+    
     if path_obj.is_dir() {
         fs::remove_dir_all(path_obj)?;
     } else {
         fs::remove_file(path_obj)?;
     }
-
+    
     Ok(())
 }
 
@@ -288,18 +285,18 @@ pub async fn delete_file(path: String) -> Result<()> {
 #[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn rename_file(old_path: String, new_name: String) -> Result<()> {
     let old_path_obj = Path::new(&old_path);
-
+    
     if !old_path_obj.exists() {
         return Err(AppError::InvalidPath("文件不存在".to_string()));
     }
-
+    
     // 构建新路径
     let new_path = if let Some(parent) = old_path_obj.parent() {
         parent.join(&new_name)
     } else {
         Path::new(&new_name).to_path_buf()
     };
-
+    
     fs::rename(old_path_obj, &new_path)?;
 
     Ok(())
@@ -322,10 +319,7 @@ pub async fn copy_path(source: String, destination: String) -> Result<()> {
 
 /// 复制文件或目录到目标目录，自动处理同名冲突
 #[cfg_attr(feature = "tauri-app", tauri::command)]
-pub async fn copy_path_to_directory(
-    source: String,
-    target_dir: String,
-) -> Result<FileOperationResult> {
+pub async fn copy_path_to_directory(source: String, target_dir: String) -> Result<FileOperationResult> {
     let source_path = Path::new(&source);
     let target_dir_path = Path::new(&target_dir);
 
@@ -368,10 +362,7 @@ pub async fn move_path(source: String, destination: String) -> Result<()> {
 
 /// 移动文件或目录到目标目录，自动处理同名冲突
 #[cfg_attr(feature = "tauri-app", tauri::command)]
-pub async fn move_path_to_directory(
-    source: String,
-    target_dir: String,
-) -> Result<FileOperationResult> {
+pub async fn move_path_to_directory(source: String, target_dir: String) -> Result<FileOperationResult> {
     let source_path = Path::new(&source);
     let target_dir_path = Path::new(&target_dir);
 
@@ -580,14 +571,15 @@ fn parse_command_file(content: &str, path: &Path) -> Result<CommandFile> {
 
     // 提取命令内容（frontmatter 之后的部分）
     let command_content = if frontmatter_end > 0 {
-        lines
-            .get(frontmatter_end + 1)
+        lines.get(frontmatter_end + 1)
             .map_or("", |s| *s)
             .trim()
             .to_string()
     } else {
         // 没有 frontmatter，第一行就是命令
-        lines.first().map_or("", |s| s.trim()).to_string()
+        lines.first()
+            .map_or("", |s| s.trim())
+            .to_string()
     };
 
     Ok(CommandFile {
@@ -622,7 +614,7 @@ fn parse_simple_params(params_str: &str) -> Vec<CommandParam> {
 pub async fn search_files(
     work_dir: String,
     query: String,
-    max_results: Option<usize>,
+    max_results: Option<usize>
 ) -> Result<Vec<FileMatch>> {
     let base_path = Path::new(&work_dir);
     let max_results = max_results.unwrap_or(20);
@@ -636,10 +628,7 @@ pub async fn search_files(
 
     // 解析查询：可能是 "path/file" 格式
     let query_parts: Vec<String> = query_lower.split('/').map(|s| s.to_string()).collect();
-    let name_query = query_parts
-        .last()
-        .map(|s| s.as_str())
-        .unwrap_or(&query_lower);
+    let name_query = query_parts.last().map(|s| s.as_str()).unwrap_or(&query_lower);
     let path_filters: Vec<String> = if query_parts.len() > 1 {
         query_parts[..query_parts.len() - 1].to_vec()
     } else {
@@ -684,7 +673,9 @@ fn search_recursive(
 
         let entry = entry?;
         let path = entry.path();
-        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let name = path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
 
         // 跳过隐藏文件和特殊目录
         if name.starts_with('.') || name == "node_modules" || name == "target" {
@@ -702,9 +693,7 @@ fn search_recursive(
         // 检查路径过滤器
         let relative_path_lower = relative_path.to_lowercase();
         let passes_path_filter = path_filters.is_empty()
-            || path_filters
-                .iter()
-                .all(|filter| relative_path_lower.contains(filter));
+            || path_filters.iter().all(|filter| relative_path_lower.contains(filter));
 
         // 如果名称匹配查询，添加到结果（文件和文件夹都可以）
         if name_lower.contains(name_query) && passes_path_filter {
@@ -788,17 +777,8 @@ const DEFAULT_CONTENT_SEARCH_LIMIT: usize = 100;
 const HARD_CONTENT_SEARCH_LIMIT: usize = 5_000;
 const MAX_CONTENT_SEARCH_FILE_SIZE: u64 = 2 * 1024 * 1024;
 const CONTENT_SEARCH_EXCLUDED_DIRS: &[&str] = &[
-    ".git",
-    "node_modules",
-    "target",
-    "dist",
-    "build",
-    ".next",
-    ".nuxt",
-    "vendor",
-    ".gradle",
-    "out",
-    "__pycache__",
+    ".git", "node_modules", "target", "dist", "build", ".next", ".nuxt", "vendor",
+    ".gradle", "out", "__pycache__",
 ];
 
 /// 搜索文件内容（兼容旧 API：仅返回匹配项）
@@ -810,11 +790,9 @@ pub async fn search_file_contents(
     whole_word: Option<bool>,
     max_results: Option<usize>,
 ) -> Result<Vec<ContentMatch>> {
-    Ok(
-        search_file_contents_detailed(work_dir, query, case_sensitive, whole_word, max_results)
-            .await?
-            .matches,
-    )
+    Ok(search_file_contents_detailed(work_dir, query, case_sensitive, whole_word, max_results)
+        .await?
+        .matches)
 }
 
 /// 搜索文件内容，返回匹配项和扫描统计信息。
@@ -953,14 +931,7 @@ fn search_file_contents_blocking(
         };
 
         let before = matches.len();
-        search_in_file(
-            &base_path,
-            path,
-            &content,
-            &pattern,
-            max_results,
-            &mut matches,
-        );
+        search_in_file(&base_path, path, &content, &pattern, max_results, &mut matches);
         if matches.len() > before {
             matched_files += 1;
         }
@@ -987,9 +958,7 @@ fn is_content_search_excluded_entry(entry: &ignore::DirEntry) -> bool {
         return false;
     }
     let name = entry.file_name().to_string_lossy();
-    CONTENT_SEARCH_EXCLUDED_DIRS
-        .iter()
-        .any(|excluded| name == *excluded)
+    CONTENT_SEARCH_EXCLUDED_DIRS.iter().any(|excluded| name == *excluded)
 }
 
 fn looks_binary(bytes: &[u8]) -> bool {
@@ -1015,8 +984,7 @@ fn search_in_file(
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|| file_path.to_string_lossy().to_string());
 
-    let name = file_path
-        .file_name()
+    let name = file_path.file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("unknown")
         .to_string();
@@ -1081,8 +1049,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         write_file(&dir.path().join("src/Main.java"), "Hello Polaris");
         let pattern = build_content_search_pattern("hello", false, false).unwrap();
-        let response =
-            search_file_contents_blocking(dir.path().to_path_buf(), pattern, 10).unwrap();
+        let response = search_file_contents_blocking(dir.path().to_path_buf(), pattern, 10).unwrap();
         assert_eq!(response.matches.len(), 1);
         assert_eq!(response.matches[0].line_number, 1);
     }
@@ -1092,14 +1059,12 @@ mod tests {
         let dir = TempDir::new().unwrap();
         write_file(&dir.path().join("literal.txt"), "a+b? [test]\naxb");
         let pattern = build_content_search_pattern("a+b? [test]", false, false).unwrap();
-        let response =
-            search_file_contents_blocking(dir.path().to_path_buf(), pattern, 10).unwrap();
+        let response = search_file_contents_blocking(dir.path().to_path_buf(), pattern, 10).unwrap();
         assert_eq!(response.matches.len(), 1);
         assert_eq!(response.matches[0].matched_line, "a+b? [test]");
 
         let pattern = build_content_search_pattern("a.b", false, false).unwrap();
-        let response =
-            search_file_contents_blocking(dir.path().to_path_buf(), pattern, 10).unwrap();
+        let response = search_file_contents_blocking(dir.path().to_path_buf(), pattern, 10).unwrap();
         assert!(response.matches.is_empty());
     }
 
@@ -1108,8 +1073,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         write_file(&dir.path().join("unicode.txt"), "😀Hello");
         let pattern = build_content_search_pattern("hello", false, false).unwrap();
-        let response =
-            search_file_contents_blocking(dir.path().to_path_buf(), pattern, 10).unwrap();
+        let response = search_file_contents_blocking(dir.path().to_path_buf(), pattern, 10).unwrap();
         assert_eq!(response.matches.len(), 1);
         assert_eq!(response.matches[0].match_start, 2);
         assert_eq!(response.matches[0].match_end, 7);
@@ -1123,13 +1087,9 @@ mod tests {
         write_file(&dir.path().join("node_modules/pkg/index.js"), "needle");
         write_file(&dir.path().join("src/ok.java"), "needle");
         let pattern = build_content_search_pattern("needle", false, false).unwrap();
-        let response =
-            search_file_contents_blocking(dir.path().to_path_buf(), pattern, 10).unwrap();
+        let response = search_file_contents_blocking(dir.path().to_path_buf(), pattern, 10).unwrap();
         assert_eq!(response.matches.len(), 1);
-        assert!(response.matches[0]
-            .relative_path
-            .replace('\\', "/")
-            .ends_with("src/ok.java"));
+        assert!(response.matches[0].relative_path.replace('\\', "/").ends_with("src/ok.java"));
     }
 
     #[test]
@@ -1137,8 +1097,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         write_file(&dir.path().join("Dockerfile"), "FROM scratch\n# needle");
         let pattern = build_content_search_pattern("needle", false, false).unwrap();
-        let response =
-            search_file_contents_blocking(dir.path().to_path_buf(), pattern, 10).unwrap();
+        let response = search_file_contents_blocking(dir.path().to_path_buf(), pattern, 10).unwrap();
         assert_eq!(response.matches.len(), 1);
         assert_eq!(response.matches[0].name, "Dockerfile");
     }
@@ -1247,18 +1206,16 @@ pub async fn download_directory_to_zip(dir_path: String) -> Result<String> {
     let mut zip_bytes = Vec::new();
     {
         let mut archive = zip::ZipWriter::new(std::io::Cursor::new(&mut zip_bytes));
-        let options =
-            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        let options = zip::write::FileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
 
         for (name, data) in entries {
-            archive
-                .start_file(name, options)
+            archive.start_file(name, options)
                 .map_err(|e| AppError::Unknown(e.to_string()))?;
             std::io::Write::write_all(&mut archive, &data)
                 .map_err(|e| AppError::Unknown(e.to_string()))?;
         }
-        archive
-            .finish()
+        archive.finish()
             .map_err(|e| AppError::Unknown(e.to_string()))?;
     }
 

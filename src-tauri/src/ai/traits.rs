@@ -6,7 +6,7 @@
  * 其他模块通过 `pub use crate::ai::EngineId` 引用，严禁重复定义。
  */
 
-use crate::error::{AppError, Result};
+use crate::error::Result;
 use crate::models::config::Config;
 use crate::models::AIEvent;
 use serde::{Deserialize, Serialize};
@@ -150,8 +150,6 @@ pub struct SessionOptions {
     /// 环境变量覆盖（ANTHROPIC_BASE_URL / AUTH_TOKEN / MODEL 等）
     /// 用于将请求路由到第三方 Anthropic 兼容端点
     pub env_overrides: HashMap<String, String>,
-    /// 前端稳定对话 ID。SimpleAI 用它组织 checkpoint；CLI 引擎忽略。
-    pub stable_conversation_id: Option<String>,
 }
 
 /// 图片附件（用于 stream-json 模式原生传递给模型）
@@ -199,7 +197,6 @@ impl SessionOptions {
             settings_overlay_path: None,
             codex_config_args: Vec::new(),
             env_overrides: HashMap::new(),
-            stable_conversation_id: None,
         }
     }
 
@@ -328,11 +325,6 @@ impl SessionOptions {
         self.env_overrides = overrides;
         self
     }
-
-    pub fn with_stable_conversation_id(mut self, id: impl Into<String>) -> Self {
-        self.stable_conversation_id = Some(id.into());
-        self
-    }
 }
 
 /// AI 引擎 Trait
@@ -396,20 +388,6 @@ pub trait AIEngine: Send + Sync {
         message: &str,
         options: SessionOptions,
     ) -> Result<()>;
-
-    /// 在不改变可视对话身份的前提下压缩运行时上下文。
-    fn compact_session(&mut self, _session_id: &str, _options: SessionOptions) -> Result<()> {
-        Err(AppError::StateError(
-            "当前 AI 引擎不支持上下文压缩".to_string(),
-        ))
-    }
-
-    /// 恢复最近一次压缩前的完整运行时上下文。
-    fn restore_compaction(&mut self, _session_id: &str, _options: SessionOptions) -> Result<()> {
-        Err(AppError::StateError(
-            "当前 AI 引擎不支持恢复压缩上下文".to_string(),
-        ))
-    }
 
     fn interrupt(&mut self, session_id: &str) -> Result<()>;
 

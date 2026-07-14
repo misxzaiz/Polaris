@@ -172,14 +172,14 @@ impl TerminalManager {
 
         let session_id = Uuid::new_v4().to_string();
         let session_name = name.unwrap_or_else(|| {
-            let count = self.sessions.lock().map(|s| s.len() + 1).unwrap_or(1);
+            let count = self.sessions.lock()
+                .map(|s| s.len() + 1)
+                .unwrap_or(1);
             format!("Terminal {}", count)
         });
 
         // 构建命令 - 使用系统默认 shell
-        let initial_command = initial_command
-            .map(|command| command.trim().to_string())
-            .filter(|command| !command.is_empty());
+        let initial_command = initial_command.map(|command| command.trim().to_string()).filter(|command| !command.is_empty());
 
         let mut cmd = if cfg!(windows) {
             // Windows: 使用 cmd 并设置 UTF-8 编码解决中文乱码
@@ -263,7 +263,7 @@ impl TerminalManager {
                         // 发送输出数据
                         let data = base64::Engine::encode(
                             &base64::engine::general_purpose::STANDARD,
-                            &buffer[..n],
+                            &buffer[..n]
                         );
                         event_sink_clone.emit_output(TerminalOutputEvent {
                             session_id: session_id_clone.clone(),
@@ -297,23 +297,22 @@ impl TerminalManager {
 
     /// 写入数据到终端
     pub fn write(&self, session_id: &str, data: &str) -> Result<()> {
-        let mut sessions = self
-            .sessions
+        let mut sessions = self.sessions
             .lock()
             .map_err(|e| AppError::StateError(format!("无法获取锁: {}", e)))?;
 
         if let Some(session) = sessions.get_mut(session_id) {
             // 解码 base64 数据
-            let decoded = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, data)
-                .map_err(|e| AppError::ParseError(format!("Base64 解码失败: {}", e)))?;
+            let decoded = base64::Engine::decode(
+                &base64::engine::general_purpose::STANDARD,
+                data
+            ).map_err(|e| AppError::ParseError(format!("Base64 解码失败: {}", e)))?;
 
-            session
-                .writer
+            session.writer
                 .write_all(&decoded)
                 .map_err(|e| AppError::ProcessError(format!("写入失败: {}", e)))?;
 
-            session
-                .writer
+            session.writer
                 .flush()
                 .map_err(|e| AppError::ProcessError(format!("刷新失败: {}", e)))?;
 
@@ -325,15 +324,12 @@ impl TerminalManager {
 
     /// 调整终端大小
     pub fn resize(&self, session_id: &str, cols: u16, rows: u16) -> Result<()> {
-        let sessions = self
-            .sessions
+        let sessions = self.sessions
             .lock()
             .map_err(|e| AppError::StateError(format!("无法获取锁: {}", e)))?;
 
         if let Some(session) = sessions.get(session_id) {
-            session
-                .pair
-                .master
+            session.pair.master
                 .resize(PtySize {
                     rows,
                     cols,
@@ -350,8 +346,7 @@ impl TerminalManager {
 
     /// 关闭终端会话
     pub fn close_session(&self, session_id: &str) -> Result<()> {
-        let mut sessions = self
-            .sessions
+        let mut sessions = self.sessions
             .lock()
             .map_err(|e| AppError::StateError(format!("无法获取锁: {}", e)))?;
 
@@ -378,13 +373,11 @@ impl TerminalManager {
 
     /// 获取所有会话
     pub fn list_sessions(&self) -> Result<Vec<TerminalSession>> {
-        let sessions = self
-            .sessions
+        let sessions = self.sessions
             .lock()
             .map_err(|e| AppError::StateError(format!("无法获取锁: {}", e)))?;
 
-        let closed = self
-            .closed_sessions
+        let closed = self.closed_sessions
             .lock()
             .map_err(|e| AppError::StateError(format!("无法获取锁: {}", e)))?;
 
@@ -397,13 +390,11 @@ impl TerminalManager {
 
     /// 获取单个会话
     pub fn get_session(&self, session_id: &str) -> Result<TerminalSession> {
-        let sessions = self
-            .sessions
+        let sessions = self.sessions
             .lock()
             .map_err(|e| AppError::StateError(format!("无法获取锁: {}", e)))?;
 
-        let closed = self
-            .closed_sessions
+        let closed = self.closed_sessions
             .lock()
             .map_err(|e| AppError::StateError(format!("无法获取锁: {}", e)))?;
 
@@ -437,9 +428,7 @@ pub fn terminal_create(
     purpose: Option<String>,
     script_id: Option<String>,
 ) -> Result<TerminalSession> {
-    let manager = state
-        .terminal_manager
-        .lock()
+    let manager = state.terminal_manager.lock()
         .map_err(|e| AppError::StateError(e.to_string()))?;
 
     manager.create_session(
@@ -463,9 +452,7 @@ pub fn terminal_write(
     session_id: String,
     data: String,
 ) -> Result<()> {
-    let manager = state
-        .terminal_manager
-        .lock()
+    let manager = state.terminal_manager.lock()
         .map_err(|e| AppError::StateError(e.to_string()))?;
 
     manager.write(&session_id, &data)
@@ -480,9 +467,7 @@ pub fn terminal_resize(
     cols: u16,
     rows: u16,
 ) -> Result<()> {
-    let manager = state
-        .terminal_manager
-        .lock()
+    let manager = state.terminal_manager.lock()
         .map_err(|e| AppError::StateError(e.to_string()))?;
 
     manager.resize(&session_id, cols, rows)
@@ -491,10 +476,11 @@ pub fn terminal_resize(
 /// 关闭终端会话
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub fn terminal_close(state: tauri::State<AppState>, session_id: String) -> Result<()> {
-    let manager = state
-        .terminal_manager
-        .lock()
+pub fn terminal_close(
+    state: tauri::State<AppState>,
+    session_id: String,
+) -> Result<()> {
+    let manager = state.terminal_manager.lock()
         .map_err(|e| AppError::StateError(e.to_string()))?;
 
     manager.close_session(&session_id)
@@ -503,10 +489,10 @@ pub fn terminal_close(state: tauri::State<AppState>, session_id: String) -> Resu
 /// 获取所有终端会话
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub fn terminal_list(state: tauri::State<AppState>) -> Result<Vec<TerminalSession>> {
-    let manager = state
-        .terminal_manager
-        .lock()
+pub fn terminal_list(
+    state: tauri::State<AppState>,
+) -> Result<Vec<TerminalSession>> {
+    let manager = state.terminal_manager.lock()
         .map_err(|e| AppError::StateError(e.to_string()))?;
 
     manager.list_sessions()
@@ -515,10 +501,11 @@ pub fn terminal_list(state: tauri::State<AppState>) -> Result<Vec<TerminalSessio
 /// 获取单个终端会话
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub fn terminal_get(state: tauri::State<AppState>, session_id: String) -> Result<TerminalSession> {
-    let manager = state
-        .terminal_manager
-        .lock()
+pub fn terminal_get(
+    state: tauri::State<AppState>,
+    session_id: String,
+) -> Result<TerminalSession> {
+    let manager = state.terminal_manager.lock()
         .map_err(|e| AppError::StateError(e.to_string()))?;
 
     manager.get_session(&session_id)
@@ -546,10 +533,7 @@ pub fn terminal_open_in_external(
 
         // 创建临时 .bat 文件，避免 start 命令的引号解析问题
         let bat_dir = std::env::temp_dir();
-        let bat_path = bat_dir.join(format!(
-            "polaris_external_terminal_{}.bat",
-            std::process::id()
-        ));
+        let bat_path = bat_dir.join(format!("polaris_external_terminal_{}.bat", std::process::id()));
 
         let mut bat_content = format!(
             "@echo off\r\n\
@@ -565,19 +549,12 @@ pub fn terminal_open_in_external(
         // 写入临时 .bat 文件
         let mut bat_file = std::fs::File::create(&bat_path)
             .map_err(|e| AppError::ProcessError(format!("无法创建临时脚本: {}", e)))?;
-        bat_file
-            .write_all(bat_content.as_bytes())
+        bat_file.write_all(bat_content.as_bytes())
             .map_err(|e| AppError::ProcessError(format!("无法写入临时脚本: {}", e)))?;
         drop(bat_file);
 
         let mut cmd = Command::new("cmd");
-        cmd.args([
-            "/C",
-            "start",
-            "cmd",
-            "/K",
-            bat_path.to_string_lossy().as_ref(),
-        ]);
+        cmd.args(["/C", "start", "cmd", "/K", bat_path.to_string_lossy().as_ref()]);
 
         if let Some(ref env_map) = env {
             for (key, value) in env_map {
@@ -588,12 +565,7 @@ pub fn terminal_open_in_external(
         cmd.spawn()
             .map_err(|e| AppError::ProcessError(format!("无法启动外部终端: {}", e)))?;
 
-        tracing::info!(
-            "[Terminal] 已启动外部终端: cwd={}, command={}, bat={}",
-            cwd,
-            command,
-            bat_path.display()
-        );
+        tracing::info!("[Terminal] 已启动外部终端: cwd={}, command={}, bat={}", cwd, command, bat_path.display());
     }
 
     #[cfg(not(windows))]
@@ -604,13 +576,12 @@ pub fn terminal_open_in_external(
         #[cfg(target_os = "macos")]
         {
             // macOS: 使用 open -a Terminal
-            let result = Command::new("open").args(["-a", "Terminal", &cwd]).spawn();
+            let result = Command::new("open")
+                .args(["-a", "Terminal", &cwd])
+                .spawn();
             if result.is_ok() {
                 spawned = true;
-                tracing::info!(
-                    "[Terminal] 已启动外部终端 (macOS Terminal.app): cwd={}",
-                    cwd
-                );
+                tracing::info!("[Terminal] 已启动外部终端 (macOS Terminal.app): cwd={}", cwd);
             }
         }
 
@@ -618,10 +589,7 @@ pub fn terminal_open_in_external(
         {
             let shell_cmd = format!("cd \"{}\" && exec \"$SHELL\"", cwd);
             let terminal_candidates = vec![
-                (
-                    "gnome-terminal",
-                    vec!["--", "/bin/sh", "-c", shell_cmd.as_str()],
-                ),
+                ("gnome-terminal", vec!["--", "/bin/sh", "-c", shell_cmd.as_str()]),
                 ("konsole", vec!["-e", "/bin/sh", "-c", shell_cmd.as_str()]),
                 ("xfce4-terminal", vec!["-e", shell_cmd.as_str()]),
                 ("xterm", vec!["-e", shell_cmd.as_str()]),
@@ -629,7 +597,10 @@ pub fn terminal_open_in_external(
             ];
 
             for (terminal, args) in &terminal_candidates {
-                let result = Command::new(terminal).args(args).current_dir(&cwd).spawn();
+                let result = Command::new(terminal)
+                    .args(args)
+                    .current_dir(&cwd)
+                    .spawn();
                 if result.is_ok() {
                     spawned = true;
                     tracing::info!("[Terminal] 已启动外部终端 ({}): cwd={}", terminal, cwd);
@@ -640,8 +611,7 @@ pub fn terminal_open_in_external(
 
         if !spawned {
             return Err(AppError::ProcessError(
-                "未找到可用的外部终端模拟器，请手动安装 gnome-terminal、konsole 或 xterm"
-                    .to_string(),
+                "未找到可用的外部终端模拟器，请手动安装 gnome-terminal、konsole 或 xterm".to_string(),
             ));
         }
     }

@@ -104,10 +104,7 @@ pub fn scan_legacy_data_inner() -> Result<Vec<LegacySource>> {
 /// 在系统资源管理器中打开路径
 pub fn open_path_in_explorer_inner(path: PathBuf) -> Result<()> {
     if !path.exists() {
-        return Err(AppError::InvalidPath(format!(
-            "路径不存在: {}",
-            path.display()
-        )));
+        return Err(AppError::InvalidPath(format!("路径不存在: {}", path.display())));
     }
 
     // tauri_plugin_opener 在 lib 里已初始化；这里直接走 OS 命令兜底，
@@ -322,10 +319,7 @@ fn copy_file_with_conflict(src: &Path, dst: &Path, ts: u64, overwrite: bool) -> 
         }
 
         // 默认合并模式：写 .legacy-{ts} 副本
-        let stem = dst
-            .file_stem()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_default();
+        let stem = dst.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
         let ext = dst
             .extension()
             .map(|s| format!(".{}", s.to_string_lossy()))
@@ -430,8 +424,7 @@ pub fn migrate_legacy_data_inner(options: MigrateOptions) -> Result<MigrateRepor
 
         // 安全检查：不能把数据根自身或其子路径作为源
         let src_canonical = fs::canonicalize(src).unwrap_or_else(|_| src.clone());
-        let target_canonical =
-            fs::canonicalize(&target_root).unwrap_or_else(|_| target_root.clone());
+        let target_canonical = fs::canonicalize(&target_root).unwrap_or_else(|_| target_root.clone());
         if src_canonical == target_canonical || src_canonical.starts_with(&target_canonical) {
             items.push(MigrateItem {
                 source: src.clone(),
@@ -459,12 +452,7 @@ pub fn migrate_legacy_data_inner(options: MigrateOptions) -> Result<MigrateRepor
         });
 
         for (src_file, dst_file) in pending {
-            items.push(copy_file_with_conflict(
-                &src_file,
-                &dst_file,
-                ts,
-                options.overwrite,
-            ));
+            items.push(copy_file_with_conflict(&src_file, &dst_file, ts, options.overwrite));
         }
     }
 
@@ -599,12 +587,14 @@ pub fn validate_target_inner(opts: &SetDataRootOptions) -> Result<TargetValidati
     }
 
     // 3. 不能是当前根的子路径
-    if resolved_canonical.starts_with(&current_canonical) && resolved_canonical != current_canonical
+    if resolved_canonical.starts_with(&current_canonical)
+        && resolved_canonical != current_canonical
     {
         errors.push("目标路径在当前数据根内部，禁止设置".to_string());
     }
     // 4. 当前根不能是目标的子路径（move 后会丢失数据）
-    if current_canonical.starts_with(&resolved_canonical) && current_canonical != resolved_canonical
+    if current_canonical.starts_with(&resolved_canonical)
+        && current_canonical != resolved_canonical
     {
         errors.push("目标路径包含当前数据根，禁止设置".to_string());
     }
@@ -643,10 +633,8 @@ pub fn validate_target_inner(opts: &SetDataRootOptions) -> Result<TargetValidati
                 .flatten()
                 .any(|entry| entry.file_name() != ".polaris-write-test");
             if has_content {
-                warnings.push(
-                    "目标目录非空，已有内容将与迁移文件合并（同名以 .legacy-* 后缀保留）"
-                        .to_string(),
-                );
+                warnings
+                    .push("目标目录非空，已有内容将与迁移文件合并（同名以 .legacy-* 后缀保留）".to_string());
             }
         }
     }
@@ -695,9 +683,7 @@ fn move_root_contents(src_root: &Path, dst_root: &Path, ts: u64) -> MoveReport {
 
     // 写日志到目标根的 .meta（迁移成功后，新数据根才是权威）
     let _ = fs::create_dir_all(dst_root.join(".meta"));
-    let log_file = dst_root
-        .join(".meta")
-        .join(format!("relocation-{}.json", ts));
+    let log_file = dst_root.join(".meta").join(format!("relocation-{}.json", ts));
     let truncated = items.len() > 5000;
     let log_payload = MoveReport {
         success_count: success,
@@ -755,9 +741,7 @@ pub fn set_data_root_inner(options: SetDataRootOptions) -> Result<SetDataRootRep
         move_report = Some(report);
 
         // 标记旧根为 superseded（不删除，留 7 天供用户回滚）
-        let superseded_marker = old_root
-            .join(".meta")
-            .join(format!("superseded-{}.json", ts));
+        let superseded_marker = old_root.join(".meta").join(format!("superseded-{}.json", ts));
         let _ = fs::create_dir_all(old_root.join(".meta"));
         let payload = serde_json::json!({
             "supersededAt": ts,
@@ -806,11 +790,8 @@ mod tests {
         // 修复 bug：根级文件不应带尾分隔符
         let mapped = map_legacy_subpath(Path::new("config.json")).unwrap();
         let s = mapped.to_string_lossy();
-        assert!(
-            !s.ends_with('\\') && !s.ends_with('/'),
-            "根级文件路径不应带尾分隔符，实际: {:?}",
-            s
-        );
+        assert!(!s.ends_with('\\') && !s.ends_with('/'),
+            "根级文件路径不应带尾分隔符，实际: {:?}", s);
         assert_eq!(mapped, PathBuf::from("config.json"));
     }
 
@@ -829,10 +810,7 @@ mod tests {
     #[test]
     fn map_legacy_subpath_sessions_relocated() {
         let mapped = map_legacy_subpath(Path::new("sessions/abc.jsonl")).unwrap();
-        assert_eq!(
-            mapped,
-            PathBuf::from("cache").join("sessions").join("abc.jsonl")
-        );
+        assert_eq!(mapped, PathBuf::from("cache").join("sessions").join("abc.jsonl"));
         // sessions 自身（罕见）也不应带尾分隔符
         let mapped_root = map_legacy_subpath(Path::new("sessions")).unwrap();
         assert_eq!(mapped_root, PathBuf::from("cache").join("sessions"));

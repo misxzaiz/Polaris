@@ -6,13 +6,13 @@
 use std::path::Path;
 use tracing::info;
 
-use super::executor::open_repository;
 use crate::models::git::{GitCherryPickResult, GitServiceError};
+use super::executor::open_repository;
 
 #[cfg(windows)]
-use super::utils::CREATE_NO_WINDOW;
-#[cfg(windows)]
 use std::os::windows::process::CommandExt;
+#[cfg(windows)]
+use super::utils::CREATE_NO_WINDOW;
 
 /// Cherry-pick 提交
 pub fn cherry_pick(path: &Path, commit_sha: &str) -> Result<GitCherryPickResult, GitServiceError> {
@@ -76,9 +76,8 @@ pub fn cherry_pick(path: &Path, commit_sha: &str) -> Result<GitCherryPickResult,
             finished: true,
         })
     } else {
-        let has_conflicts = stderr.contains("CONFLICT")
-            || stderr.contains("conflict")
-            || stdout.contains("CONFLICT");
+        let has_conflicts =
+            stderr.contains("CONFLICT") || stderr.contains("conflict") || stdout.contains("CONFLICT");
 
         let conflicts = if has_conflicts {
             get_conflict_files(path)?
@@ -172,11 +171,7 @@ pub fn cherry_pick_continue(path: &Path) -> Result<GitCherryPickResult, GitServi
     } else {
         let has_conflicts = stderr.contains("CONFLICT") || stderr.contains("conflict");
 
-        let conflicts = if has_conflicts {
-            get_conflict_files(path)?
-        } else {
-            vec![]
-        };
+        let conflicts = if has_conflicts { get_conflict_files(path)? } else { vec![] };
 
         if has_conflicts {
             Ok(GitCherryPickResult {

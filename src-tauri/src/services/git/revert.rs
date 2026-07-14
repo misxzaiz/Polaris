@@ -6,13 +6,13 @@
 use std::path::Path;
 use tracing::info;
 
-use super::executor::open_repository;
 use crate::models::git::{GitRevertResult, GitServiceError};
+use super::executor::open_repository;
 
 #[cfg(windows)]
-use super::utils::CREATE_NO_WINDOW;
-#[cfg(windows)]
 use std::os::windows::process::CommandExt;
+#[cfg(windows)]
+use super::utils::CREATE_NO_WINDOW;
 
 /// Revert 提交
 pub fn revert(path: &Path, commit_sha: &str) -> Result<GitRevertResult, GitServiceError> {
@@ -172,11 +172,7 @@ pub fn revert_continue(path: &Path) -> Result<GitRevertResult, GitServiceError> 
     } else {
         let has_conflicts = stderr.contains("CONFLICT") || stderr.contains("conflict");
 
-        let conflicts = if has_conflicts {
-            get_conflict_files(path)?
-        } else {
-            vec![]
-        };
+        let conflicts = if has_conflicts { get_conflict_files(path)? } else { vec![] };
 
         if has_conflicts {
             Ok(GitRevertResult {

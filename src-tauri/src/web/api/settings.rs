@@ -3,8 +3,8 @@ use axum::response::IntoResponse;
 use axum::Json;
 use std::sync::Arc;
 
-use super::WebError;
 use crate::AppState;
+use super::WebError;
 
 /// Get current application configuration.
 pub async fn handle_get_settings(

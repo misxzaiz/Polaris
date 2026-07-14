@@ -2,10 +2,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use axum::extract::{
-    ws::{Message, WebSocket, WebSocketUpgrade},
-    Query, State,
-};
+use axum::extract::{State, Query, ws::{WebSocket, WebSocketUpgrade, Message}};
 use axum::response::IntoResponse;
 use serde::Deserialize;
 use tokio::sync::broadcast;
@@ -91,11 +88,7 @@ pub(crate) async fn ws_handler(
 ) -> impl IntoResponse {
     // Validate token before upgrading
     if let Err(_status) = validate_ws_token(&query, &state) {
-        return (
-            axum::http::StatusCode::UNAUTHORIZED,
-            axum::Json(serde_json::json!({"error": "Unauthorized"})),
-        )
-            .into_response();
+        return (axum::http::StatusCode::UNAUTHORIZED, axum::Json(serde_json::json!({"error": "Unauthorized"}))).into_response();
     }
 
     ws.max_frame_size(MAX_FRAME_SIZE)
@@ -228,11 +221,7 @@ async fn handle_resume(
         "gap": replay.gap,
         "count": total,
     });
-    if socket
-        .send(Message::Text(start_msg.to_string().into()))
-        .await
-        .is_err()
-    {
+    if socket.send(Message::Text(start_msg.to_string().into())).await.is_err() {
         return Err(());
     }
 
@@ -253,11 +242,7 @@ async fn handle_resume(
         "latestSeq": latest_seq,
         "replayed": sent,
     });
-    if socket
-        .send(Message::Text(complete_msg.to_string().into()))
-        .await
-        .is_err()
-    {
+    if socket.send(Message::Text(complete_msg.to_string().into())).await.is_err() {
         return Err(());
     }
 
@@ -286,9 +271,7 @@ fn extract_event_type(json: &str) -> Option<&str> {
     let pos = json.find(marker)?;
     let rest = json[pos + marker.len()..].trim_start();
     let rest = rest.strip_prefix(':')?.trim_start();
-    if !rest.starts_with('"') {
-        return None;
-    }
+    if !rest.starts_with('"') { return None; }
     let value = &rest[1..];
     let end = value.find('"')?;
     Some(&value[..end])
@@ -315,10 +298,7 @@ mod tests {
     fn test_should_send_non_matching_subscription() {
         let mut subs = HashSet::new();
         subs.insert("chat-event".to_string());
-        assert!(!should_send(
-            r#"{"event":"session-event","payload":{}}"#,
-            &subs
-        ));
+        assert!(!should_send(r#"{"event":"session-event","payload":{}}"#, &subs));
     }
 
     #[test]
@@ -330,18 +310,12 @@ mod tests {
 
     #[test]
     fn test_extract_event_type_basic() {
-        assert_eq!(
-            extract_event_type(r#"{"event":"chat-event","payload":{}}"#),
-            Some("chat-event")
-        );
+        assert_eq!(extract_event_type(r#"{"event":"chat-event","payload":{}}"#), Some("chat-event"));
     }
 
     #[test]
     fn test_extract_event_type_with_spaces() {
-        assert_eq!(
-            extract_event_type(r#"{"event" : "session-event" ,"payload":{}}"#),
-            Some("session-event")
-        );
+        assert_eq!(extract_event_type(r#"{"event" : "session-event" ,"payload":{}}"#), Some("session-event"));
     }
 
     #[test]
@@ -359,21 +333,15 @@ mod tests {
         let mut subs = HashSet::new();
         subs.insert("chat-event".to_string());
         subs.insert("session-event".to_string());
-        assert!(should_send(
-            r#"{"event":"session-event","payload":{}}"#,
-            &subs
-        ));
-        assert!(!should_send(
-            r#"{"event":"unknown-event","payload":{}}"#,
-            &subs
-        ));
+        assert!(should_send(r#"{"event":"session-event","payload":{}}"#, &subs));
+        assert!(!should_send(r#"{"event":"unknown-event","payload":{}}"#, &subs));
     }
 
     #[test]
     fn test_deserialize_subscribe() {
-        let msg: ClientMessage =
-            serde_json::from_str(r#"{"type":"subscribe","events":["chat-event","session-event"]}"#)
-                .unwrap();
+        let msg: ClientMessage = serde_json::from_str(
+            r#"{"type":"subscribe","events":["chat-event","session-event"]}"#
+        ).unwrap();
         match msg {
             ClientMessage::Subscribe { events } => {
                 assert_eq!(events, vec!["chat-event", "session-event"]);
@@ -384,8 +352,9 @@ mod tests {
 
     #[test]
     fn test_deserialize_unsubscribe() {
-        let msg: ClientMessage =
-            serde_json::from_str(r#"{"type":"unsubscribe","events":["chat-event"]}"#).unwrap();
+        let msg: ClientMessage = serde_json::from_str(
+            r#"{"type":"unsubscribe","events":["chat-event"]}"#
+        ).unwrap();
         match msg {
             ClientMessage::Unsubscribe { events } => {
                 assert_eq!(events, vec!["chat-event"]);
@@ -396,13 +365,17 @@ mod tests {
 
     #[test]
     fn test_deserialize_ping() {
-        let msg: ClientMessage = serde_json::from_str(r#"{"type":"ping"}"#).unwrap();
+        let msg: ClientMessage = serde_json::from_str(
+            r#"{"type":"ping"}"#
+        ).unwrap();
         matches!(msg, ClientMessage::Ping);
     }
 
     #[test]
     fn test_deserialize_resume() {
-        let msg: ClientMessage = serde_json::from_str(r#"{"type":"resume","lastSeq":42}"#).unwrap();
+        let msg: ClientMessage = serde_json::from_str(
+            r#"{"type":"resume","lastSeq":42}"#
+        ).unwrap();
         match msg {
             ClientMessage::Resume { last_seq } => assert_eq!(last_seq, 42),
             _ => panic!("Expected Resume"),

@@ -284,11 +284,7 @@ fn handle_request(
     let id = request.id.unwrap_or(Value::Null);
 
     if request.jsonrpc != "2.0" {
-        return error_response(
-            id,
-            -32600,
-            "Invalid Request: jsonrpc must be 2.0".to_string(),
-        );
+        return error_response(id, -32600, "Invalid Request: jsonrpc must be 2.0".to_string());
     }
 
     let result = match request.method.as_str() {
@@ -422,10 +418,7 @@ fn handle_tools_call(
         .get("name")
         .and_then(Value::as_str)
         .ok_or_else(|| AppError::ValidationError("tools/call 缺少 name".to_string()))?;
-    let args = params
-        .get("arguments")
-        .cloned()
-        .unwrap_or_else(|| json!({}));
+    let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
 
     // Reload config from disk on every call so panel edits apply without restart.
     let mut config = AgnesConfig::load(config_dir);
@@ -524,9 +517,7 @@ fn exec_generate_image(
             "content": [ { "type": "text", "text": "已生成图片（Base64）" } ]
         }))
     } else {
-        Err(AppError::ProcessError(
-            "响应中缺少 url 或 b64_json".to_string(),
-        ))
+        Err(AppError::ProcessError("响应中缺少 url 或 b64_json".to_string()))
     }
 }
 
@@ -619,19 +610,9 @@ fn exec_generate_video(
         .or_else(|| resp.get("id").and_then(Value::as_str))
         .ok_or_else(|| AppError::ProcessError("响应中缺少 video_id".to_string()))?
         .to_string();
-    let task_id = resp
-        .get("task_id")
-        .and_then(Value::as_str)
-        .map(String::from);
-    let status = resp
-        .get("status")
-        .and_then(Value::as_str)
-        .unwrap_or("queued");
-    let seconds = resp
-        .get("seconds")
-        .and_then(Value::as_str)
-        .unwrap_or("?")
-        .to_string();
+    let task_id = resp.get("task_id").and_then(Value::as_str).map(String::from);
+    let status = resp.get("status").and_then(Value::as_str).unwrap_or("queued");
+    let seconds = resp.get("seconds").and_then(Value::as_str).unwrap_or("?").to_string();
 
     let frames_note = if requested_frames != num_frames {
         format!("（帧数 {requested_frames} 已纠正为合法值 {num_frames}）")
@@ -659,10 +640,7 @@ fn exec_generate_video(
     loop {
         thread::sleep(Duration::from_millis(VIDEO_POLL_INTERVAL_MS));
         let poll = query_video_raw(client, config, &video_id)?;
-        let poll_status = poll
-            .get("status")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown");
+        let poll_status = poll.get("status").and_then(Value::as_str).unwrap_or("unknown");
         let progress = poll.get("progress").and_then(Value::as_u64).unwrap_or(0);
 
         match poll_status {
@@ -719,10 +697,7 @@ fn exec_query_video(
     let video_id = require_str(args, "videoId")?;
     let resp = query_video_raw(client, config, video_id)?;
 
-    let status = resp
-        .get("status")
-        .and_then(Value::as_str)
-        .unwrap_or("unknown");
+    let status = resp.get("status").and_then(Value::as_str).unwrap_or("unknown");
     let progress = resp.get("progress").and_then(Value::as_u64).unwrap_or(0);
 
     match status {
@@ -779,9 +754,7 @@ fn query_video_raw(
     );
     match api_get(client, config, &url) {
         Ok(v) => Ok(v),
-        Err(AppError::ProcessError(msg)) if msg.contains("404") => {
-            Ok(json!({ "status": "queued", "progress": 0 }))
-        }
+        Err(AppError::ProcessError(msg)) if msg.contains("404") => Ok(json!({ "status": "queued", "progress": 0 })),
         Err(e) => Err(e),
     }
 }
@@ -866,14 +839,7 @@ pub fn mask_key(key: &str) -> String {
         return "*".repeat(chars.len());
     }
     let head: String = chars.iter().take(4).collect();
-    let tail: String = chars
-        .iter()
-        .rev()
-        .take(4)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect();
+    let tail: String = chars.iter().rev().take(4).collect::<Vec<_>>().into_iter().rev().collect();
     format!("{head}...{tail}")
 }
 
@@ -921,14 +887,8 @@ mod tests {
     #[test]
     fn initialize_returns_protocol_metadata() {
         let value = handle_initialize();
-        assert_eq!(
-            value["protocolVersion"],
-            Value::String(PROTOCOL_VERSION.to_string())
-        );
-        assert_eq!(
-            value["serverInfo"]["name"],
-            Value::String(SERVER_NAME.to_string())
-        );
+        assert_eq!(value["protocolVersion"], Value::String(PROTOCOL_VERSION.to_string()));
+        assert_eq!(value["serverInfo"]["name"], Value::String(SERVER_NAME.to_string()));
     }
 
     #[test]
@@ -955,7 +915,7 @@ mod tests {
         assert_eq!(normalize_num_frames(100), 97); // 8*12+1
         assert_eq!(normalize_num_frames(1), 9); // floor
         assert_eq!(normalize_num_frames(10_000), 441); // cap
-                                                       // Every result satisfies 8n+1.
+        // Every result satisfies 8n+1.
         for n in [1u32, 50, 121, 200, 441, 999] {
             let f = normalize_num_frames(n);
             assert_eq!((f - 1) % 8, 0);

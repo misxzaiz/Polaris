@@ -336,7 +336,10 @@ impl PromptConfig {
         preset
             .module_ids
             .iter()
-            .filter_map(|id| self.get_module(id).filter(|m| m.enabled))
+            .filter_map(|id| {
+                self.get_module(id)
+                    .filter(|m| m.enabled)
+            })
             .collect()
     }
 

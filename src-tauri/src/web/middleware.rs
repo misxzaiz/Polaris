@@ -1,8 +1,8 @@
 use axum::body::Body;
-use axum::extract::State;
 use axum::http::{Request, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
+use axum::extract::State;
 use std::sync::Arc;
 
 use crate::AppState;
@@ -73,8 +73,7 @@ fn is_auth_skipped_path(path: &str) -> bool {
 /// Extract the token value from an `Authorization: Bearer <value>` header.
 fn parse_bearer_token(header: &str) -> Option<&str> {
     let header = header.trim();
-    header
-        .strip_prefix("Bearer ")
+    header.strip_prefix("Bearer ")
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
 }
@@ -103,13 +102,7 @@ pub async fn api_auth(
 
     let required = match state.clone_config_web().map(|c| c.web.token) {
         Ok(token_opt) => token_opt,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "{\"error\":\"Internal error\"}",
-            )
-                .into_response()
-        }
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "{\"error\":\"Internal error\"}").into_response(),
     };
 
     // Token 为 None 或空字符串均视为未设置 → API 开放（无鉴权）。
@@ -121,9 +114,7 @@ pub async fn api_auth(
     // Frontend sends MD5 of the raw token; compute the expected MD5 server-side.
     let expected_md5 = md5_hex(&raw_token);
 
-    let header = req
-        .headers()
-        .get(axum::http::header::AUTHORIZATION)
+    let header = req.headers().get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(parse_bearer_token);
 
@@ -132,11 +123,7 @@ pub async fn api_auth(
     });
 
     if !ok {
-        return (
-            StatusCode::UNAUTHORIZED,
-            axum::Json(serde_json::json!({"error": "Unauthorized"})),
-        )
-            .into_response();
+        return (StatusCode::UNAUTHORIZED, axum::Json(serde_json::json!({"error": "Unauthorized"}))).into_response();
     }
 
     next.run(req).await

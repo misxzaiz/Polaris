@@ -7,9 +7,7 @@ use async_trait::async_trait;
 use std::path::Path;
 use tokio::sync::mpsc::Sender;
 
-use super::types::{
-    IntegrationMessage, IntegrationStatus, MediaDownload, MessageContent, Platform, SendTarget,
-};
+use super::types::{IntegrationMessage, IntegrationStatus, MediaDownload, MessageContent, Platform, SendTarget};
 use crate::error::Result;
 
 /// 平台集成 Trait

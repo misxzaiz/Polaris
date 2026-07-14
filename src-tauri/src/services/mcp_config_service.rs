@@ -494,7 +494,10 @@ impl WorkspaceMcpConfigService {
             if matches!(binary.args_mode, McpServerArgsMode::AskListener)
                 && self.ask_listener.is_none()
             {
-                tracing::info!("[MCP] 跳过 {}：ask_listener 未就绪", binary.server_name);
+                tracing::info!(
+                    "[MCP] 跳过 {}：ask_listener 未就绪",
+                    binary.server_name
+                );
                 continue;
             }
 
@@ -693,10 +696,7 @@ impl WorkspaceMcpConfigService {
             if matches!(binary.args_mode, McpServerArgsMode::AskListener)
                 && self.ask_listener.is_none()
             {
-                tracing::info!(
-                    "[MCP] SimpleAI 跳过 {}：ask_listener 未就绪",
-                    binary.server_name
-                );
+                tracing::info!("[MCP] SimpleAI 跳过 {}：ask_listener 未就绪", binary.server_name);
                 continue;
             }
             let args = build_mcp_server_args(
@@ -1565,14 +1565,15 @@ mod tests {
             },
         );
 
-        let servers = resolve_external_plugin_mcp_servers(
-            &config_dir,
-            &workspace,
-            &[plugin],
-            &states,
-            None,
-            None,
-        );
+        let servers =
+            resolve_external_plugin_mcp_servers(
+                &config_dir,
+                &workspace,
+                &[plugin],
+                &states,
+                None,
+                None,
+            );
 
         assert_eq!(servers.len(), 1);
         assert_eq!(servers[0].plugin_id, "example.demo-mcp");

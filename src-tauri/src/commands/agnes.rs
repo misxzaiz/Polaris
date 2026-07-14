@@ -237,10 +237,7 @@ pub async fn agnes_generate_image(
 
     Ok(AgnesImageResult {
         url: data.get("url").and_then(Value::as_str).map(String::from),
-        base64: data
-            .get("b64_json")
-            .and_then(Value::as_str)
-            .map(String::from),
+        base64: data.get("b64_json").and_then(Value::as_str).map(String::from),
         mime_type: Some("image/png".to_string()),
         revised_prompt: data
             .get("revised_prompt")
@@ -341,20 +338,14 @@ pub async fn agnes_create_video(
 
     Ok(AgnesVideoTask {
         video_id,
-        task_id: resp
-            .get("task_id")
-            .and_then(Value::as_str)
-            .map(String::from),
+        task_id: resp.get("task_id").and_then(Value::as_str).map(String::from),
         status: resp
             .get("status")
             .and_then(Value::as_str)
             .unwrap_or("queued")
             .to_string(),
         progress: resp.get("progress").and_then(Value::as_u64).unwrap_or(0),
-        seconds: resp
-            .get("seconds")
-            .and_then(Value::as_str)
-            .map(String::from),
+        seconds: resp.get("seconds").and_then(Value::as_str).map(String::from),
         size: resp.get("size").and_then(Value::as_str).map(String::from),
         url: None,
         error: None,
@@ -364,7 +355,10 @@ pub async fn agnes_create_video(
 
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn agnes_query_video(window: Window, video_id: String) -> Result<AgnesVideoTask> {
+pub async fn agnes_query_video(
+    window: Window,
+    video_id: String,
+) -> Result<AgnesVideoTask> {
     let dir = config_dir_from_window(&window)?;
     let config = AgnesConfig::load(&dir);
     config.validate()?;
@@ -411,10 +405,7 @@ pub async fn agnes_query_video(window: Window, video_id: String) -> Result<Agnes
         task_id: None,
         status,
         progress,
-        seconds: resp
-            .get("seconds")
-            .and_then(Value::as_str)
-            .map(String::from),
+        seconds: resp.get("seconds").and_then(Value::as_str).map(String::from),
         size: resp.get("size").and_then(Value::as_str).map(String::from),
         url,
         error,

@@ -2,8 +2,8 @@
 //!
 //! 封装 Claude CLI 的信息查询命令 (agents, auth status, version, check installed)
 
-use std::path::Path;
 use std::process::Command;
+use std::path::Path;
 
 use crate::error::{AppError, Result};
 use crate::models::cli_info::{CliAgentInfo, CliAuthStatus};
@@ -31,9 +31,9 @@ impl CliInfoService {
         let mut cmd = self.build_command();
         cmd.args(args);
 
-        let output = cmd
-            .output()
-            .map_err(|e| AppError::ProcessError(format!("执行 Claude CLI 失败: {}", e)))?;
+        let output = cmd.output().map_err(|e| {
+            AppError::ProcessError(format!("执行 Claude CLI 失败: {}", e))
+        })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -73,8 +73,9 @@ impl CliInfoService {
     /// 调用 `claude auth status` 并解析 JSON 输出
     pub fn get_auth_status(&self) -> Result<CliAuthStatus> {
         let output = self.execute_claude(&["auth", "status"])?;
-        let auth: CliAuthStatus = serde_json::from_str(&output)
-            .map_err(|e| AppError::ParseError(format!("解析认证状态失败: {}", e)))?;
+        let auth: CliAuthStatus = serde_json::from_str(&output).map_err(|e| {
+            AppError::ParseError(format!("解析认证状态失败: {}", e))
+        })?;
         Ok(auth)
     }
 
@@ -118,9 +119,9 @@ impl CliInfoService {
             cmd.arg("--json");
         }
 
-        let output = cmd
-            .output()
-            .map_err(|e| AppError::ProcessError(format!("执行 claude ultrareview 失败: {}", e)))?;
+        let output = cmd.output().map_err(|e| {
+            AppError::ProcessError(format!("执行 claude ultrareview 失败: {}", e))
+        })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -162,9 +163,7 @@ impl CliInfoService {
             return Err(AppError::ValidationError("提取内容不能为空".to_string()));
         }
         if schema_json.trim().is_empty() {
-            return Err(AppError::ValidationError(
-                "JSON Schema 不能为空".to_string(),
-            ));
+            return Err(AppError::ValidationError("JSON Schema 不能为空".to_string()));
         }
 
         // `--json-schema` 接受文件路径：写入系统临时文件，执行后删除。
@@ -275,7 +274,9 @@ pub fn check_cli_installed(cli_name: &str) -> bool {
     #[cfg(not(windows))]
     {
         // Unix 使用 which 命令
-        let output = Command::new("which").arg(cli_name).output();
+        let output = Command::new("which")
+            .arg(cli_name)
+            .output();
 
         match output {
             Ok(o) => o.status.success(),
@@ -361,9 +362,7 @@ pub fn get_cli_version(cli_name: &str) -> Result<String> {
         cmd.arg("--version")
             .creation_flags(CREATE_NO_WINDOW)
             .output()
-            .map_err(|e| {
-                AppError::ProcessError(format!("执行 {} --version 失败: {}", cli_name, e))
-            })?
+            .map_err(|e| AppError::ProcessError(format!("执行 {} --version 失败: {}", cli_name, e)))?
     };
 
     #[cfg(not(windows))]
@@ -512,31 +511,16 @@ Built-in agents:
     #[test]
     fn test_format_agent_display_name() {
         assert_eq!(format_agent_display_name("pua:cto-p10"), "Cto P10");
-        assert_eq!(
-            format_agent_display_name("superpowers:code-reviewer"),
-            "Code Reviewer"
-        );
-        assert_eq!(
-            format_agent_display_name("general-purpose"),
-            "General Purpose"
-        );
+        assert_eq!(format_agent_display_name("superpowers:code-reviewer"), "Code Reviewer");
+        assert_eq!(format_agent_display_name("general-purpose"), "General Purpose");
         assert_eq!(format_agent_display_name("Explore"), "Explore");
     }
 
     #[test]
     fn test_parse_agent_line() {
-        assert_eq!(
-            parse_agent_line("pua:cto-p10 · opus"),
-            Some(("pua:cto-p10".into(), "opus".into()))
-        );
-        assert_eq!(
-            parse_agent_line("Explore · haiku"),
-            Some(("Explore".into(), "haiku".into()))
-        );
-        assert_eq!(
-            parse_agent_line("general-purpose · inherit"),
-            Some(("general-purpose".into(), "inherit".into()))
-        );
+        assert_eq!(parse_agent_line("pua:cto-p10 · opus"), Some(("pua:cto-p10".into(), "opus".into())));
+        assert_eq!(parse_agent_line("Explore · haiku"), Some(("Explore".into(), "haiku".into())));
+        assert_eq!(parse_agent_line("general-purpose · inherit"), Some(("general-purpose".into(), "inherit".into())));
         assert_eq!(parse_agent_line(""), None);
         assert_eq!(parse_agent_line("8 active agents"), None);
     }

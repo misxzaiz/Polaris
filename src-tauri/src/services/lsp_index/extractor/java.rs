@@ -94,15 +94,7 @@ fn try_extract(rel_path: &str, _abs_path: &Path, source: &str) -> Result<FileInd
 
     // Pass 3: 引用
     let mut cursor = root.walk();
-    walk_references(
-        root,
-        &mut cursor,
-        bytes,
-        &lines,
-        &fi.imports,
-        fi.package.as_deref(),
-        &mut fi.refs,
-    );
+    walk_references(root, &mut cursor, bytes, &lines, &fi.imports, fi.package.as_deref(), &mut fi.refs);
 
     // refs 上限
     if fi.refs.len() > 50_000 {
@@ -119,9 +111,10 @@ fn extract_package_and_imports(root: Node<'_>, src: &[u8], fi: &mut FileIndex) {
     for child in root.children(&mut cursor) {
         match child.kind() {
             "package_declaration" => {
-                if let Some(scoped) =
-                    first_named_of_kinds(child, &["scoped_identifier", "identifier"])
-                {
+                if let Some(scoped) = first_named_of_kinds(
+                    child,
+                    &["scoped_identifier", "identifier"],
+                ) {
                     if let Ok(s) = scoped.utf8_text(src) {
                         fi.package = Some(s.to_string());
                     }
@@ -130,15 +123,19 @@ fn extract_package_and_imports(root: Node<'_>, src: &[u8], fi: &mut FileIndex) {
             "import_declaration" => {
                 let is_static = has_anonymous_child(child, "static");
                 let is_wildcard = has_anonymous_child(child, "asterisk");
-                if let Some(ident) =
-                    first_named_of_kinds(child, &["scoped_identifier", "identifier"])
-                {
+                if let Some(ident) = first_named_of_kinds(
+                    child,
+                    &["scoped_identifier", "identifier"],
+                ) {
                     if let Ok(fqn_full) = ident.utf8_text(src) {
                         let (fqn, short) = if is_wildcard {
                             (fqn_full.to_string(), None)
                         } else {
                             // 取最后一段作为 short_name
-                            let last = fqn_full.rsplit('.').next().map(|s| s.to_string());
+                            let last = fqn_full
+                                .rsplit('.')
+                                .next()
+                                .map(|s| s.to_string());
                             (fqn_full.to_string(), last)
                         };
                         fi.imports.push(ImportEntry {
@@ -371,8 +368,7 @@ fn walk_references<'a>(
             // foo() / obj.foo() / Foo.foo()
             if let Some(name_node) = node.child_by_field_name("name") {
                 if let Ok(name) = name_node.utf8_text(src) {
-                    let target_fqn =
-                        resolve_method_invocation_target(node, src, imports, package, name);
+                    let target_fqn = resolve_method_invocation_target(node, src, imports, package, name);
                     let line_text = preview_of(lines, name_node.start_position().row);
                     refs.push(RefEntry {
                         name: name.to_string(),
@@ -559,14 +555,13 @@ fn innermost_type_name<'a>(node: Node<'a>, src: &[u8]) -> Option<(Node<'a>, Stri
 }
 
 /// 从 imports/package 解析类型短名 → FQN（best-effort）
-fn resolve_type_target(
-    short: &str,
-    imports: &[ImportEntry],
-    package: Option<&str>,
-) -> Option<String> {
+fn resolve_type_target(short: &str, imports: &[ImportEntry], package: Option<&str>) -> Option<String> {
     // 1. 显式 import
     for imp in imports {
-        if !imp.is_wildcard && !imp.is_static && imp.short_name.as_deref() == Some(short) {
+        if !imp.is_wildcard
+            && !imp.is_static
+            && imp.short_name.as_deref() == Some(short)
+        {
             return Some(imp.fqn.clone());
         }
     }
@@ -670,10 +665,7 @@ fn is_java_lang_type(short: &str) -> bool {
 }
 
 fn starts_uppercase(s: &str) -> bool {
-    s.chars()
-        .next()
-        .map(|c| c.is_ascii_uppercase())
-        .unwrap_or(false)
+    s.chars().next().map(|c| c.is_ascii_uppercase()).unwrap_or(false)
 }
 
 // ── 行/列归一化 ────────────────────────────────────────────
@@ -701,9 +693,7 @@ fn utf8_col_to_utf16(lines: &[&str], pos: tree_sitter::Point) -> u32 {
 
 fn preview_of(lines: &[&str], row: usize) -> String {
     let raw = lines.get(row).copied().unwrap_or("");
-    let trimmed = raw
-        .trim_end_matches(|c: char| c == '\n' || c == '\r')
-        .trim();
+    let trimmed = raw.trim_end_matches(|c: char| c == '\n' || c == '\r').trim();
     if trimmed.chars().count() > 200 {
         let s: String = trimmed.chars().take(200).collect();
         format!("{}…", s)

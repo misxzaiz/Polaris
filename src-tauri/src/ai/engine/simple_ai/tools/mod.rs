@@ -8,8 +8,8 @@
  * / glob / apply_patch / update_plan。
  */
 
-mod agent;
 mod apply_patch;
+mod agent;
 mod bash;
 #[cfg(feature = "tauri-app")]
 mod browser;
@@ -56,16 +56,10 @@ pub(crate) struct ToolOutcome {
 
 impl ToolOutcome {
     pub(crate) fn ok(content: impl Into<String>) -> Self {
-        Self {
-            content: content.into(),
-            success: true,
-        }
+        Self { content: content.into(), success: true }
     }
     pub(crate) fn fail(content: impl Into<String>) -> Self {
-        Self {
-            content: content.into(),
-            success: false,
-        }
+        Self { content: content.into(), success: false }
     }
 }
 

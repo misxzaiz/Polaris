@@ -97,9 +97,6 @@ pub struct ChatRequestOptions {
     /// 模型 Profile ID（用于查找第三方端点配置）
     #[serde(default)]
     pub model_profile_id: Option<String>,
-    /// 前端稳定会话 ID。与后端 runtime session ID 分离。
-    #[serde(default)]
-    pub stable_conversation_id: Option<String>,
 }
 
 // ============================================================================
@@ -782,10 +779,7 @@ async fn apply_model_profile_options(
 
     // 如果前端传入了模型，优先使用前端选择的模型（Profile 多模型选择）
     // 否则回退到 Profile 默认模型
-    let selected_model = session_opts
-        .model
-        .clone()
-        .unwrap_or_else(|| profile.model.clone());
+    let selected_model = session_opts.model.clone().unwrap_or_else(|| profile.model.clone());
 
     // 如果选了非默认模型，更新日志
     if selected_model != profile.model {
@@ -911,7 +905,6 @@ pub async fn start_chat_inner(
 
     let mut session_opts = SessionOptions::new(event_callback);
     session_opts.on_session_id_update = Some(Arc::new(session_id_update_callback));
-    session_opts.stable_conversation_id = options.stable_conversation_id.clone();
 
     if let Some(ref dir) = options.work_dir {
         session_opts = session_opts.with_work_dir(dir.clone());
@@ -1078,7 +1071,6 @@ pub async fn continue_chat_inner(
 
     let mut session_opts = SessionOptions::new(event_callback);
     session_opts.on_session_id_update = Some(Arc::new(session_id_update_callback));
-    session_opts.stable_conversation_id = options.stable_conversation_id.clone();
 
     if let Some(ref dir) = options.work_dir {
         session_opts = session_opts.with_work_dir(dir.clone());
@@ -1173,81 +1165,6 @@ pub async fn continue_chat_inner(
 
     let mut registry = state.engine_registry.lock().await;
     registry.continue_session(engine, &session_id, &final_message, session_opts)
-}
-
-pub async fn compact_chat_inner(
-    session_id: String,
-    options: ChatRequestOptions,
-    state: &crate::AppState,
-    callbacks: ChatCallbacks,
-) -> Result<()> {
-    let engine = options
-        .engine_id
-        .as_ref()
-        .and_then(|id| EngineId::parse(id))
-        .unwrap_or(EngineId::SimpleAI);
-    if engine != EngineId::SimpleAI {
-        return Err(AppError::ValidationError(
-            "仅 SimpleAI 支持应用内上下文压缩".to_string(),
-        ));
-    }
-
-    let context_id = options.context_id.clone();
-    let emit = callbacks.emit_event.clone();
-    let event_callback = move |event: AIEvent| {
-        let envelope = serde_json::json!({
-            "contextId": context_id.as_deref().unwrap_or("main"),
-            "payload": event,
-        });
-        emit(envelope);
-    };
-    let mut session_options = SessionOptions::new(event_callback);
-    session_options.work_dir = options.work_dir.clone();
-    session_options.model = options.model.clone();
-    session_options.stable_conversation_id = options.stable_conversation_id.clone();
-    session_options = apply_model_profile_options(
-        session_options,
-        options.model_profile_id.as_ref(),
-        &engine,
-        state,
-        "compact_chat_inner",
-        &session_id,
-    )
-    .await?;
-
-    let mut registry = state.engine_registry.lock().await;
-    registry.compact_session(engine, &session_id, session_options)
-}
-
-pub async fn restore_compacted_context_inner(
-    session_id: String,
-    options: ChatRequestOptions,
-    state: &crate::AppState,
-    callbacks: ChatCallbacks,
-) -> Result<()> {
-    let engine = options
-        .engine_id
-        .as_ref()
-        .and_then(|id| EngineId::parse(id))
-        .unwrap_or(EngineId::SimpleAI);
-    if engine != EngineId::SimpleAI {
-        return Err(AppError::ValidationError(
-            "仅 SimpleAI 支持恢复压缩上下文".to_string(),
-        ));
-    }
-    let context_id = options.context_id.clone();
-    let emit = callbacks.emit_event.clone();
-    let event_callback = move |event: AIEvent| {
-        let envelope = serde_json::json!({
-            "contextId": context_id.as_deref().unwrap_or("main"),
-            "payload": event,
-        });
-        emit(envelope);
-    };
-    let mut session_options = SessionOptions::new(event_callback);
-    session_options.stable_conversation_id = options.stable_conversation_id;
-    let mut registry = state.engine_registry.lock().await;
-    registry.restore_compaction(engine, &session_id, session_options)
 }
 
 pub async fn interrupt_chat_inner(
@@ -1395,55 +1312,6 @@ pub async fn continue_chat(
     };
 
     continue_chat_inner(session_id, message, options, &state, callbacks, &app_paths).await
-}
-
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn compact_chat(
-    session_id: String,
-    window: Window,
-    state: State<'_, crate::AppState>,
-    options: ChatRequestOptions,
-) -> Result<()> {
-    let window_clone = window.clone();
-    let broadcast_tx = state.event_broadcast.clone();
-    let callbacks = ChatCallbacks {
-        emit_event: Arc::new(move |json: serde_json::Value| {
-            let _ = window_clone.emit("chat-event", &json);
-            broadcast_chat_event(&broadcast_tx, &json);
-        }),
-        notify_complete: Arc::new(|| {}),
-    };
-    compact_chat_inner(session_id, options, &state, callbacks).await
-}
-
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn restore_compacted_context(
-    session_id: String,
-    window: Window,
-    state: State<'_, crate::AppState>,
-    options: ChatRequestOptions,
-) -> Result<()> {
-    let window_clone = window.clone();
-    let broadcast_tx = state.event_broadcast.clone();
-    let callbacks = ChatCallbacks {
-        emit_event: Arc::new(move |json: serde_json::Value| {
-            let _ = window_clone.emit("chat-event", &json);
-            broadcast_chat_event(&broadcast_tx, &json);
-        }),
-        notify_complete: Arc::new(|| {}),
-    };
-    restore_compacted_context_inner(session_id, options, &state, callbacks).await
-}
-
-#[cfg_attr(feature = "tauri-app", tauri::command)]
-pub async fn delete_simple_ai_checkpoints(stable_conversation_id: String) -> Result<()> {
-    tokio::task::spawn_blocking(move || {
-        crate::ai::engine::delete_context_checkpoints(&stable_conversation_id)
-    })
-    .await
-    .map_err(|error| AppError::ProcessError(format!("checkpoint 清理任务失败: {error}")))?
 }
 
 /// 中断聊天会话

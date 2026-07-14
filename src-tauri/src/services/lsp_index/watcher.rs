@@ -29,8 +29,8 @@ impl IndexService {
     /// 启动 workspace 的文件 watcher。
     /// 调用方负责持有返回的 WatcherHandle；drop 即停止。
     pub fn start_watcher(&self, workspace: &Path) -> Result<WatcherHandle> {
-        let workspace_buf =
-            std::fs::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf());
+        let workspace_buf = std::fs::canonicalize(workspace)
+            .unwrap_or_else(|_| workspace.to_path_buf());
 
         let svc = self.clone();
         let workspace_clone = workspace_buf.clone();

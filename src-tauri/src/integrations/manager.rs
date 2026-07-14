@@ -8,21 +8,21 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::sync::{mpsc, Mutex, oneshot};
 #[cfg(feature = "tauri-app")]
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::sync::{mpsc, oneshot, Mutex};
 
-use super::commands::{get_help_text, BotCommand, CommandParser, PromptMode};
-use super::common::{ConversationStore, SessionManager};
-use super::feishu::FeishuAdapter;
-use super::instance_registry::{InstanceConfig, InstanceId, InstanceRegistry, PlatformInstance};
+use super::common::{SessionManager, ConversationStore};
 use super::qqbot::QQBotAdapter;
+use super::feishu::FeishuAdapter;
 use super::traits::PlatformIntegration;
 use super::types::*;
+use super::commands::{BotCommand, CommandParser, get_help_text, PromptMode};
+use super::instance_registry::{InstanceRegistry, PlatformInstance, InstanceConfig, InstanceId};
 use crate::ai::{EngineRegistry, SessionOptions};
-use crate::error::Result;
-use crate::models::config::{FeishuConfig, FeishuRuntimeConfig, QQBotConfig, QQBotRuntimeConfig};
 use crate::services::mcp_config_service::resolve_workspace_mcp_runtime_service;
+use crate::error::Result;
+use crate::models::config::{QQBotConfig, QQBotRuntimeConfig, FeishuConfig, FeishuRuntimeConfig};
 use crate::services::prompt_store::PromptStore;
 
 /// 集成管理器
@@ -107,12 +107,7 @@ impl IntegrationManager {
 
     /// 初始化
     #[cfg(feature = "tauri-app")]
-    pub async fn init(
-        &mut self,
-        qqbot_config: Option<QQBotConfig>,
-        feishu_config: Option<FeishuConfig>,
-        app_handle: AppHandle,
-    ) {
+    pub async fn init(&mut self, qqbot_config: Option<QQBotConfig>, feishu_config: Option<FeishuConfig>, app_handle: AppHandle) {
         self.app_handle = Some(app_handle.clone());
 
         // 创建消息通道（仅在未创建时，避免重复 init 时覆盖）
@@ -136,15 +131,11 @@ impl IntegrationManager {
                     name: instance_config.name.clone(),
                     platform: Platform::QQBot,
                     config: InstanceConfig::QQBot(runtime_config),
-                    created_at: instance_config
-                        .created_at
-                        .as_ref()
+                    created_at: instance_config.created_at.as_ref()
                         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                         .map(|dt| dt.with_timezone(&chrono::Utc))
                         .unwrap_or_else(chrono::Utc::now),
-                    last_active: instance_config
-                        .last_active
-                        .as_ref()
+                    last_active: instance_config.last_active.as_ref()
                         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                         .map(|dt| dt.with_timezone(&chrono::Utc)),
                     enabled: instance_config.enabled,
@@ -156,25 +147,16 @@ impl IntegrationManager {
                 registry.activate(active_id);
             }
 
-            tracing::info!(
-                "[IntegrationManager] ✅ QQ Bot 实例已加载 (共 {} 个)",
-                config.instances.len()
-            );
+            tracing::info!("[IntegrationManager] ✅ QQ Bot 实例已加载 (共 {} 个)", config.instances.len());
 
             if let Some(active_instance) = registry.get_active(Platform::QQBot) {
                 if let InstanceConfig::QQBot(qqbot_cfg) = &active_instance.config {
-                    if qqbot_cfg.enabled
-                        && !qqbot_cfg.app_id.is_empty()
-                        && !qqbot_cfg.client_secret.is_empty()
-                    {
+                    if qqbot_cfg.enabled && !qqbot_cfg.app_id.is_empty() && !qqbot_cfg.client_secret.is_empty() {
                         // 只在 adapters 中不存在时才创建，避免覆盖已有连接
                         let mut adapters = self.adapters.lock().await;
                         adapters.entry(Platform::QQBot).or_insert_with(|| {
                             let adapter = QQBotAdapter::new(qqbot_cfg.clone());
-                            tracing::info!(
-                                "[IntegrationManager] ✅ 创建 QQBot 适配器: {}",
-                                active_instance.name
-                            );
+                            tracing::info!("[IntegrationManager] ✅ 创建 QQBot 适配器: {}", active_instance.name);
                             Box::new(adapter)
                         });
                     }
@@ -196,15 +178,11 @@ impl IntegrationManager {
                     name: instance_config.name.clone(),
                     platform: Platform::Feishu,
                     config: InstanceConfig::Feishu(runtime_config),
-                    created_at: instance_config
-                        .created_at
-                        .as_ref()
+                    created_at: instance_config.created_at.as_ref()
                         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                         .map(|dt| dt.with_timezone(&chrono::Utc))
                         .unwrap_or_else(chrono::Utc::now),
-                    last_active: instance_config
-                        .last_active
-                        .as_ref()
+                    last_active: instance_config.last_active.as_ref()
                         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                         .map(|dt| dt.with_timezone(&chrono::Utc)),
                     enabled: instance_config.enabled,
@@ -216,25 +194,16 @@ impl IntegrationManager {
                 registry.activate(active_id);
             }
 
-            tracing::info!(
-                "[IntegrationManager] ✅ Feishu 实例已加载 (共 {} 个)",
-                config.instances.len()
-            );
+            tracing::info!("[IntegrationManager] ✅ Feishu 实例已加载 (共 {} 个)", config.instances.len());
 
             if let Some(active_instance) = registry.get_active(Platform::Feishu) {
                 if let InstanceConfig::Feishu(feishu_cfg) = &active_instance.config {
-                    if feishu_cfg.enabled
-                        && !feishu_cfg.app_id.is_empty()
-                        && !feishu_cfg.app_secret.is_empty()
-                    {
+                    if feishu_cfg.enabled && !feishu_cfg.app_id.is_empty() && !feishu_cfg.app_secret.is_empty() {
                         // 只在 adapters 中不存在时才创建，避免覆盖已有连接
                         let mut adapters = self.adapters.lock().await;
                         adapters.entry(Platform::Feishu).or_insert_with(|| {
                             let adapter = FeishuAdapter::new(feishu_cfg.clone());
-                            tracing::info!(
-                                "[IntegrationManager] ✅ 创建 Feishu 适配器: {}",
-                                active_instance.name
-                            );
+                            tracing::info!("[IntegrationManager] ✅ 创建 Feishu 适配器: {}", active_instance.name);
                             Box::new(adapter)
                         });
                     }
@@ -243,16 +212,12 @@ impl IntegrationManager {
         }
     }
 
+
     /// 启动指定平台
     pub async fn start(&mut self, platform: Platform) -> Result<()> {
-        tracing::info!(
-            "[IntegrationManager] 🚀 start() 被调用，platform: {}",
-            platform
-        );
+        tracing::info!("[IntegrationManager] 🚀 start() 被调用，platform: {}", platform);
 
-        let tx = self
-            .message_tx
-            .as_ref()
+        let tx = self.message_tx.as_ref()
             .ok_or_else(|| crate::error::AppError::StateError("消息通道未初始化".to_string()))?
             .clone();
 
@@ -262,10 +227,7 @@ impl IntegrationManager {
             if let Some(adapter) = adapters.get_mut(&platform) {
                 // 避免重复连接：如果已连接则跳过
                 if adapter.is_connected() {
-                    tracing::info!(
-                        "[IntegrationManager] {} 已连接，跳过重复 connect()",
-                        platform
-                    );
+                    tracing::info!("[IntegrationManager] {} 已连接，跳过重复 connect()", platform);
                     return Ok(());
                 }
                 adapter.connect(tx).await?;
@@ -287,7 +249,8 @@ impl IntegrationManager {
     /// 处理消息（统一入口）
     async fn handle_message(
         msg: IntegrationMessage,
-        #[cfg(feature = "tauri-app")] app_handle: AppHandle,
+        #[cfg(feature = "tauri-app")]
+        app_handle: AppHandle,
         platform: Platform,
         adapters: Arc<Mutex<HashMap<Platform, Box<dyn PlatformIntegration>>>>,
         engine_registry: Option<Arc<Mutex<EngineRegistry>>>,
@@ -303,11 +266,7 @@ impl IntegrationManager {
             let state = states.get_or_create(&conversation_id);
             if state.work_dir.is_none() {
                 if let Some(wd) = Self::get_instance_work_dir(&instance_registry, platform).await {
-                    tracing::info!(
-                        "[IntegrationManager] 📂 注入默认工作区: conversation={}, work_dir={}",
-                        conversation_id,
-                        wd
-                    );
+                    tracing::info!("[IntegrationManager] 📂 注入默认工作区: conversation={}, work_dir={}", conversation_id, wd);
                     state.work_dir = Some(wd);
                 }
             }
@@ -342,8 +301,7 @@ impl IntegrationManager {
                 engine_registry.as_ref(),
                 conversation_states.clone(),
                 active_sessions.clone(),
-            )
-            .await;
+            ).await;
 
             // 发送命令回复
             if let Some(reply_text) = reply {
@@ -390,9 +348,7 @@ impl IntegrationManager {
         // 确定保存目录
         let media_dir = match work_dir {
             Some(dir) => std::path::PathBuf::from(dir).join(".media"),
-            None => crate::services::data_root::data_root()
-                .cache_dir()
-                .join("media"),
+            None => crate::services::data_root::data_root().cache_dir().join("media"),
         };
 
         // 创建目录（如不存在）
@@ -426,10 +382,7 @@ impl IntegrationManager {
         }
 
         let result = parts.join("\n");
-        tracing::info!(
-            "[IntegrationManager] 📎 媒体处理结果: {} chars",
-            result.len()
-        );
+        tracing::info!("[IntegrationManager] 📎 媒体处理结果: {} chars", result.len());
         result
     }
 
@@ -439,8 +392,7 @@ impl IntegrationManager {
         platform: Platform,
     ) -> Option<String> {
         let registry = instance_registry.lock().await;
-        registry
-            .get_active(platform)
+        registry.get_active(platform)
             .and_then(|inst| match &inst.config {
                 InstanceConfig::QQBot(cfg) => cfg.work_dir.clone(),
                 InstanceConfig::Feishu(cfg) => cfg.work_dir.clone(),
@@ -457,11 +409,7 @@ impl IntegrationManager {
         active_sessions: Arc<Mutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
     ) -> Option<String> {
         match cmd {
-            BotCommand::SwitchProvider {
-                provider,
-                custom_prompt,
-                replace_mode,
-            } => {
+            BotCommand::SwitchProvider { provider, custom_prompt, replace_mode } => {
                 // 检查引擎是否可用
                 if let Some(registry) = engine_registry {
                     let registry = registry.lock().await;
@@ -475,20 +423,12 @@ impl IntegrationManager {
                 let state = states.get_or_create(conversation_id);
                 state.switch_engine(&provider);
                 state.custom_prompt = custom_prompt.clone();
-                state.prompt_mode = if replace_mode {
-                    PromptMode::Replace
-                } else {
-                    PromptMode::Append
-                };
+                state.prompt_mode = if replace_mode { PromptMode::Replace } else { PromptMode::Append };
 
                 let prompt_info = match custom_prompt {
                     Some(p) => {
                         let preview: String = p.chars().take(20).collect();
-                        let preview = if preview.len() < p.len() {
-                            format!("{}...", preview)
-                        } else {
-                            preview
-                        };
+                        let preview = if preview.len() < p.len() { format!("{}...", preview) } else { preview };
                         format!("（提示词: {}）", preview)
                     }
                     None => "".to_string(),
@@ -502,17 +442,8 @@ impl IntegrationManager {
                 if let Some(registry) = engine_registry {
                     let reg = registry.lock().await;
                     for engine_id in reg.list_available() {
-                        let status = if reg.is_available(&engine_id) {
-                            "✅ 可用"
-                        } else {
-                            "❌ 不可用"
-                        };
-                        lines.push(format!(
-                            "• {} — {} ({})",
-                            engine_id.display_name(),
-                            engine_id,
-                            status
-                        ));
+                        let status = if reg.is_available(&engine_id) { "✅ 可用" } else { "❌ 不可用" };
+                        lines.push(format!("• {} — {} ({})", engine_id.display_name(), engine_id, status));
                     }
                     if reg.list_available().is_empty() {
                         lines.push("⚠️ 没有已注册的引擎".to_string());
@@ -521,8 +452,7 @@ impl IntegrationManager {
                     lines.push("⚠️ 引擎注册表未初始化".to_string());
                 }
 
-                lines
-                    .push("\n💡 使用 `/claude [提示词]` 或 `/codex [提示词]` 切换引擎".to_string());
+                lines.push("\n💡 使用 `/claude [提示词]` 或 `/codex [提示词]` 切换引擎".to_string());
                 Some(lines.join("\n"))
             }
 
@@ -543,10 +473,7 @@ impl IntegrationManager {
 
                 if let Some(state) = states.get(conversation_id) {
                     lines.push(format!("🤖 模型: {}", state.engine_id));
-                    lines.push(format!(
-                        "📁 工作目录: {}",
-                        state.work_dir.as_deref().unwrap_or("默认")
-                    ));
+                    lines.push(format!("📁 工作目录: {}", state.work_dir.as_deref().unwrap_or("默认")));
 
                     // 工作区详情
                     if let Some(ref work_dir) = state.work_dir {
@@ -564,18 +491,13 @@ impl IntegrationManager {
                     // 显示预设信息
                     if let Some(ref preset_id) = state.prompt_preset_id {
                         // 尝试解析预设名称
-                        let preset_display =
-                            Self::resolve_preset_display_name(preset_id, state.work_dir.as_deref());
+                        let preset_display = Self::resolve_preset_display_name(preset_id, state.work_dir.as_deref());
                         lines.push(format!("🎯 预设: {}", preset_display));
                     }
 
                     if let Some(ref prompt) = state.custom_prompt {
                         let preview: String = prompt.chars().take(30).collect();
-                        let truncated = if preview.len() < prompt.len() {
-                            format!("{}...", preview)
-                        } else {
-                            preview
-                        };
+                        let truncated = if preview.len() < prompt.len() { format!("{}...", preview) } else { preview };
                         lines.push(format!("📝 提示词: {}", truncated));
                     }
 
@@ -591,17 +513,8 @@ impl IntegrationManager {
                     lines.push("\n**可用引擎**:".to_string());
                     let registry = registry.lock().await;
                     for engine_id in registry.list_available() {
-                        let status = if registry.is_available(&engine_id) {
-                            "✅"
-                        } else {
-                            "❌"
-                        };
-                        lines.push(format!(
-                            "  {} {} ({})",
-                            status,
-                            engine_id.display_name(),
-                            engine_id
-                        ));
+                        let status = if registry.is_available(&engine_id) { "✅" } else { "❌" };
+                        lines.push(format!("  {} {} ({})", status, engine_id.display_name(), engine_id));
                     }
                 }
 
@@ -623,14 +536,10 @@ impl IntegrationManager {
 
                 let is_git = path_buf.join(".git").exists();
                 let git_hint = if is_git { " (Git 仓库)" } else { "" };
-                let name = path_buf
-                    .file_name()
+                let name = path_buf.file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("unknown");
-                Some(format!(
-                    "✅ 工作目录已设置为: {}{}\n📂 工作区: {}",
-                    path, git_hint, name
-                ))
+                Some(format!("✅ 工作目录已设置为: {}{}\n📂 工作区: {}", path, git_hint, name))
             }
 
             BotCommand::GetPath => {
@@ -665,9 +574,7 @@ impl IntegrationManager {
                                 // 尝试获取分支名
                                 let git_head = path_buf.join(".git/HEAD");
                                 if let Ok(head_content) = std::fs::read_to_string(&git_head) {
-                                    if let Some(branch) =
-                                        head_content.strip_prefix("ref: refs/heads/")
-                                    {
+                                    if let Some(branch) = head_content.strip_prefix("ref: refs/heads/") {
                                         lines.push(format!("🌿 当前分支: {}", branch.trim()));
                                     }
                                 }
@@ -692,10 +599,7 @@ impl IntegrationManager {
                                     }
                                 }
                             } else {
-                                lines.push(
-                                    "⚙️ Polaris 工作区: 否（使用 /path 设置包含 .polaris 的目录）"
-                                        .to_string(),
-                                );
+                                lines.push("⚙️ Polaris 工作区: 否（使用 /path 设置包含 .polaris 的目录）".to_string());
                             }
                         }
                         None => {
@@ -718,10 +622,7 @@ impl IntegrationManager {
                 if let Some(ref session_id) = state.ai_session_id {
                     let short_id: String = session_id.chars().take(8).collect();
                     state.pending_resume = true;
-                    Some(format!(
-                        "✅ 已标记恢复会话 {}\n💡 下一条消息将自动继续该会话",
-                        short_id
-                    ))
+                    Some(format!("✅ 已标记恢复会话 {}\n💡 下一条消息将自动继续该会话", short_id))
                 } else {
                     Some("⚠️ 没有历史 AI 会话可恢复".to_string())
                 }
@@ -777,10 +678,7 @@ impl IntegrationManager {
                         let work_dir = state.work_dir.clone();
                         let work_dir_path = work_dir.as_deref().unwrap_or(".");
 
-                        let display_name = if Self::validate_preset_exists(
-                            &resolved_id,
-                            work_dir_path,
-                        ) {
+                        let display_name = if Self::validate_preset_exists(&resolved_id, work_dir_path) {
                             state.prompt_preset_id = Some(resolved_id.clone());
                             Self::resolve_preset_display_name(&resolved_id, Some(work_dir_path))
                         } else {
@@ -812,7 +710,8 @@ impl IntegrationManager {
             BotCommand::ListPresets => {
                 let work_dir = {
                     let states = conversation_states.lock().await;
-                    states.get(conversation_id).and_then(|s| s.work_dir.clone())
+                    states.get(conversation_id)
+                        .and_then(|s| s.work_dir.clone())
                 };
                 let work_dir_path = work_dir.as_deref().unwrap_or(".");
                 let presets = Self::get_available_presets(work_dir_path);
@@ -833,7 +732,9 @@ impl IntegrationManager {
                 Some(lines.join("\n"))
             }
 
-            BotCommand::Help => Some(get_help_text()),
+            BotCommand::Help => {
+                Some(get_help_text())
+            }
 
             BotCommand::Unknown => {
                 None // 不应该到达这里
@@ -860,9 +761,7 @@ impl IntegrationManager {
     }
 
     /// 从工具参数中提取文件名（仅 basename）
-    fn extract_file_basename(
-        args: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> Option<String> {
+    fn extract_file_basename(args: &std::collections::HashMap<String, serde_json::Value>) -> Option<String> {
         for key in &["path", "file_path", "filePath", "filename", "file"] {
             if let Some(val) = args.get(*key).and_then(|v| v.as_str()) {
                 if !val.is_empty() {
@@ -875,17 +774,11 @@ impl IntegrationManager {
     }
 
     /// 从工具参数中提取命令
-    fn extract_command(
-        args: &std::collections::HashMap<String, serde_json::Value>,
-        max_len: usize,
-    ) -> Option<String> {
+    fn extract_command(args: &std::collections::HashMap<String, serde_json::Value>, max_len: usize) -> Option<String> {
         for key in &["command", "cmd", "command_string"] {
             if let Some(val) = args.get(*key).and_then(|v| v.as_str()) {
                 if !val.is_empty() {
-                    return Some(Self::truncate_str(
-                        &Self::sanitize_command_for_display(val),
-                        max_len,
-                    ));
+                    return Some(Self::truncate_str(&Self::sanitize_command_for_display(val), max_len));
                 }
             }
         }
@@ -893,10 +786,7 @@ impl IntegrationManager {
     }
 
     /// 从工具参数中提取搜索词
-    fn extract_search_query(
-        args: &std::collections::HashMap<String, serde_json::Value>,
-        max_len: usize,
-    ) -> Option<String> {
+    fn extract_search_query(args: &std::collections::HashMap<String, serde_json::Value>, max_len: usize) -> Option<String> {
         for key in &["query", "q", "search", "keyword", "pattern", "regex"] {
             if let Some(val) = args.get(*key).and_then(|v| v.as_str()) {
                 if !val.is_empty() {
@@ -908,18 +798,13 @@ impl IntegrationManager {
     }
 
     /// 从工具参数中提取 URL 简称
-    fn extract_url_brief(
-        args: &std::collections::HashMap<String, serde_json::Value>,
-        max_len: usize,
-    ) -> Option<String> {
+    fn extract_url_brief(args: &std::collections::HashMap<String, serde_json::Value>, max_len: usize) -> Option<String> {
         for key in &["url", "uri", "href"] {
             if let Some(val) = args.get(*key).and_then(|v| v.as_str()) {
                 if !val.is_empty() {
                     // 简化显示：取 hostname + 路径前段
                     let simplified = if val.starts_with("http://") || val.starts_with("https://") {
-                        let stripped = val
-                            .trim_start_matches("https://")
-                            .trim_start_matches("http://");
+                        let stripped = val.trim_start_matches("https://").trim_start_matches("http://");
                         let path_end = stripped.find('?').unwrap_or(stripped.len());
                         &stripped[..path_end]
                     } else {
@@ -951,7 +836,10 @@ impl IntegrationManager {
             let Some(last) = result.chars().last() else {
                 break;
             };
-            let paired = matches!((first, last), ('"', '"') | ('\'', '\'') | ('`', '`'));
+            let paired = matches!(
+                (first, last),
+                ('"', '"') | ('\'', '\'') | ('`', '`')
+            );
             if !paired || result.chars().count() < 2 {
                 break;
             }
@@ -1010,8 +898,7 @@ impl IntegrationManager {
 
     fn tool_display_label(tool_name: &str) -> &'static str {
         match tool_name.to_lowercase().as_str() {
-            "bash" | "bashcommand" | "run_command" | "execute" | "shell" | "shell_command"
-            | "command_execution" => "执行命令",
+            "bash" | "bashcommand" | "run_command" | "execute" | "shell" | "shell_command" | "command_execution" => "执行命令",
             "read" | "readfile" | "read_file" => "读取文件",
             "write" | "writefile" | "write_file" => "写入文件",
             "createfile" | "create_file" => "创建文件",
@@ -1028,12 +915,7 @@ impl IntegrationManager {
         }
     }
 
-    fn format_tool_progress_message(
-        tool_name: &str,
-        brief: &str,
-        running: bool,
-        success: Option<bool>,
-    ) -> String {
+    fn format_tool_progress_message(tool_name: &str, brief: &str, running: bool, success: Option<bool>) -> String {
         let label = Self::tool_display_label(tool_name);
         if running {
             if brief.is_empty() {
@@ -1042,11 +924,7 @@ impl IntegrationManager {
                 format!("正在{}: {}", label, brief)
             }
         } else {
-            let status = if success.unwrap_or(false) {
-                "完成 ✅"
-            } else {
-                "失败 ❌"
-            };
+            let status = if success.unwrap_or(false) { "完成 ✅" } else { "失败 ❌" };
             if brief.is_empty() {
                 format!("{}{}", label, status)
             } else {
@@ -1058,10 +936,7 @@ impl IntegrationManager {
     /// 根据工具名和参数生成简短描述
     ///
     /// 等价于前端 `extractToolKeyInfo()`，根据工具类型从 args 中提取关键信息
-    fn format_tool_brief(
-        tool_name: &str,
-        args: &std::collections::HashMap<String, serde_json::Value>,
-    ) -> String {
+    fn format_tool_brief(tool_name: &str, args: &std::collections::HashMap<String, serde_json::Value>) -> String {
         let name_lower = tool_name.to_lowercase();
 
         // Skill 工具：提取 skill 参数
@@ -1104,21 +979,11 @@ impl IntegrationManager {
         }
 
         // 文件类工具（Read / Write / Edit / Delete）
-        if matches!(
-            name_lower.as_str(),
-            "read"
-                | "readfile"
-                | "read_file"
-                | "write"
-                | "writefile"
-                | "write_file"
-                | "create_file"
-                | "edit"
-                | "edit3"
-                | "str_replace_editor"
-                | "delete"
-                | "deletefile"
-                | "remove"
+        if matches!(name_lower.as_str(),
+            "read" | "readfile" | "read_file" |
+            "write" | "writefile" | "write_file" | "create_file" |
+            "edit" | "edit3" | "str_replace_editor" |
+            "delete" | "deletefile" | "remove"
         ) {
             if let Some(name) = Self::extract_file_basename(args) {
                 return name;
@@ -1126,30 +991,21 @@ impl IntegrationManager {
         }
 
         // Bash / 执行类
-        if matches!(
-            name_lower.as_str(),
-            "bash" | "bashcommand" | "run_command" | "execute"
-        ) {
+        if matches!(name_lower.as_str(), "bash" | "bashcommand" | "run_command" | "execute") {
             if let Some(cmd) = Self::extract_command(args, 40) {
                 return cmd;
             }
         }
 
         // Grep / 搜索类
-        if matches!(
-            name_lower.as_str(),
-            "grep" | "search" | "searchfiles" | "websearch" | "web_search"
-        ) {
+        if matches!(name_lower.as_str(), "grep" | "search" | "searchfiles" | "websearch" | "web_search") {
             if let Some(q) = Self::extract_search_query(args, 30) {
                 return q;
             }
         }
 
         // 网络请求类
-        if matches!(
-            name_lower.as_str(),
-            "webfetch" | "web_fetch" | "httprequest" | "http_request"
-        ) {
+        if matches!(name_lower.as_str(), "webfetch" | "web_fetch" | "httprequest" | "http_request") {
             if let Some(url) = Self::extract_url_brief(args, 30) {
                 return url;
             }
@@ -1159,8 +1015,7 @@ impl IntegrationManager {
         if name_lower == "todowrite" {
             if let Some(todos) = args.get("todos").and_then(|v| v.as_array()) {
                 let total = todos.len();
-                let completed = todos
-                    .iter()
+                let completed = todos.iter()
                     .filter(|t| t.get("status").and_then(|s| s.as_str()) == Some("completed"))
                     .count();
                 return if completed == total && total > 0 {
@@ -1193,11 +1048,7 @@ impl IntegrationManager {
             conversation_states,
             active_sessions,
         } = ctx;
-        tracing::info!(
-            "[IntegrationManager] 🤖 开始 AI 回复: conversation={}, message_len={}",
-            conversation_id,
-            message.len()
-        );
+        tracing::info!("[IntegrationManager] 🤖 开始 AI 回复: conversation={}, message_len={}", conversation_id, message.len());
 
         // 获取会话状态（包括已有的 ai_session_id）
         let (engine_id, work_dir, system_prompt, existing_session_id, is_resuming) = {
@@ -1215,36 +1066,43 @@ impl IntegrationManager {
                 Platform::QQBot => "QQ",
                 Platform::Feishu => "飞书",
             };
-            let default_prompt = format!(
-                "你是一个友好的助手，通过 {} 回复用户消息。回复简洁、有帮助。",
-                platform_name
-            );
+            let default_prompt = format!("你是一个友好的助手，通过 {} 回复用户消息。回复简洁、有帮助。", platform_name);
 
             // 优先使用预设提示词，其次使用自定义提示词
             let system_prompt = if let Some(ref preset_id) = state.prompt_preset_id {
                 let work_dir_path = state.work_dir.clone().unwrap_or_else(|| ".".to_string());
                 match Self::build_prompt_from_preset(preset_id, &work_dir_path) {
-                    Some(preset_prompt) => match &state.custom_prompt {
-                        Some(custom) => match state.prompt_mode {
-                            PromptMode::Append => format!("{}\n\n{}", preset_prompt, custom),
-                            PromptMode::Replace => custom.clone(),
-                        },
-                        None => preset_prompt,
-                    },
-                    None => match &state.custom_prompt {
-                        Some(custom) => match state.prompt_mode {
-                            PromptMode::Append => format!("{}\n\n{}", default_prompt, custom),
-                            PromptMode::Replace => custom.clone(),
-                        },
-                        None => default_prompt,
-                    },
+                    Some(preset_prompt) => {
+                        match &state.custom_prompt {
+                            Some(custom) => {
+                                match state.prompt_mode {
+                                    PromptMode::Append => format!("{}\n\n{}", preset_prompt, custom),
+                                    PromptMode::Replace => custom.clone(),
+                                }
+                            }
+                            None => preset_prompt,
+                        }
+                    }
+                    None => {
+                        match &state.custom_prompt {
+                            Some(custom) => {
+                                match state.prompt_mode {
+                                    PromptMode::Append => format!("{}\n\n{}", default_prompt, custom),
+                                    PromptMode::Replace => custom.clone(),
+                                }
+                            }
+                            None => default_prompt,
+                        }
+                    }
                 }
             } else {
                 match &state.custom_prompt {
-                    Some(custom) => match state.prompt_mode {
-                        PromptMode::Append => format!("{}\n\n{}", default_prompt, custom),
-                        PromptMode::Replace => custom.clone(),
-                    },
+                    Some(custom) => {
+                        match state.prompt_mode {
+                            PromptMode::Append => format!("{}\n\n{}", default_prompt, custom),
+                            PromptMode::Replace => custom.clone(),
+                        }
+                    }
                     None => default_prompt,
                 }
             };
@@ -1269,13 +1127,7 @@ impl IntegrationManager {
             let registry = engine_registry.lock().await;
             if !registry.is_available(&engine_id) {
                 tracing::error!("[IntegrationManager] ❌ {} 引擎不可用", engine_id);
-                Self::send_reply(
-                    &adapters,
-                    platform,
-                    &conversation_id,
-                    &format!("❌ {} 引擎不可用", engine_id),
-                )
-                .await;
+                Self::send_reply(&adapters, platform, &conversation_id, &format!("❌ {} 引擎不可用", engine_id)).await;
                 return;
             }
         }
@@ -1307,31 +1159,20 @@ impl IntegrationManager {
                         ) {
                             Ok((service, disabled_servers)) => {
                                 match &engine_id {
-                                    crate::ai::EngineId::ClaudeCode => {
-                                        match service.prepare_workspace_config_with_disabled(
-                                            dir,
-                                            &disabled_servers,
-                                        ) {
-                                            Ok(path) => {
-                                                tracing::info!("[IntegrationManager] ✅ Claude MCP 配置已准备: {}", path.display());
-                                                IntegrationMcpConfig {
-                                                    claude_config_path: Some(
-                                                        path.to_string_lossy().to_string(),
-                                                    ),
-                                                    codex_config_args: Vec::new(),
-                                                }
-                                            }
-                                            Err(e) => {
-                                                tracing::warn!("[IntegrationManager] ⚠️ Claude MCP 配置生成失败: {}，继续无 MCP 模式", e.to_message());
-                                                IntegrationMcpConfig::default()
-                                            }
+                                    crate::ai::EngineId::ClaudeCode => match service.prepare_workspace_config_with_disabled(dir, &disabled_servers) {
+                                    Ok(path) => {
+                                        tracing::info!("[IntegrationManager] ✅ Claude MCP 配置已准备: {}", path.display());
+                                        IntegrationMcpConfig {
+                                            claude_config_path: Some(path.to_string_lossy().to_string()),
+                                            codex_config_args: Vec::new(),
                                         }
                                     }
-                                    crate::ai::EngineId::Codex => match service
-                                        .prepare_workspace_codex_config_args_with_disabled(
-                                            dir,
-                                            &disabled_servers,
-                                        ) {
+                                    Err(e) => {
+                                        tracing::warn!("[IntegrationManager] ⚠️ Claude MCP 配置生成失败: {}，继续无 MCP 模式", e.to_message());
+                                        IntegrationMcpConfig::default()
+                                    }
+                                    },
+                                    crate::ai::EngineId::Codex => match service.prepare_workspace_codex_config_args_with_disabled(dir, &disabled_servers) {
                                         Ok(args) => {
                                             tracing::info!("[IntegrationManager] ✅ Codex MCP 配置已准备: {} 个参数", args.len());
                                             IntegrationMcpConfig {
@@ -1348,14 +1189,12 @@ impl IntegrationManager {
                                         // SimpleAI 不使用 MCP，返回默认空配置
                                         tracing::info!("[IntegrationManager] SimpleAI 引擎不使用 MCP，跳过配置");
                                         IntegrationMcpConfig::default()
-                                    }
+                                    },
                                     crate::ai::EngineId::MimoCode => {
                                         // Mimo 不使用 MCP，返回默认空配置
-                                        tracing::info!(
-                                            "[IntegrationManager] Mimo 引擎不使用 MCP，跳过配置"
-                                        );
+                                        tracing::info!("[IntegrationManager] Mimo 引擎不使用 MCP，跳过配置");
                                         IntegrationMcpConfig::default()
-                                    }
+                                    },
                                 }
                             }
                             Err(e) => {
@@ -1374,30 +1213,12 @@ impl IntegrationManager {
         if is_resuming {
             if let Some(ref sid) = existing_session_id {
                 let short_id: String = sid.chars().take(8).collect();
-                Self::send_reply(
-                    &adapters,
-                    platform,
-                    &conversation_id,
-                    &format!("🔄 正在恢复会话 {}...", short_id),
-                )
-                .await;
+                Self::send_reply(&adapters, platform, &conversation_id, &format!("🔄 正在恢复会话 {}...", short_id)).await;
             } else {
-                Self::send_reply(
-                    &adapters,
-                    platform,
-                    &conversation_id,
-                    "✅ 已接收到消息，正在处理中",
-                )
-                .await;
+                Self::send_reply(&adapters, platform, &conversation_id, "✅ 已接收到消息，正在处理中").await;
             }
         } else {
-            Self::send_reply(
-                &adapters,
-                platform,
-                &conversation_id,
-                "✅ 已接收到消息，正在处理中",
-            )
-            .await;
+            Self::send_reply(&adapters, platform, &conversation_id, "✅ 已接收到消息，正在处理中").await;
         }
 
         // 用于累积最终回复文本（仅 AssistantMessage / Token / Result）
@@ -1408,7 +1229,7 @@ impl IntegrationManager {
         let last_progress_time = Arc::new(std::sync::Mutex::new(
             std::time::Instant::now()
                 .checked_sub(std::time::Duration::from_secs(10))
-                .unwrap_or_else(std::time::Instant::now),
+                .unwrap_or_else(std::time::Instant::now)
         ));
         let last_progress_time_clone = last_progress_time.clone();
 
@@ -1435,10 +1256,7 @@ impl IntegrationManager {
         // 提前 clone adapters 给闭包使用，避免 move 后无法再访问
         let adapters_for_callback = adapters.clone();
         let callback = move |event: crate::models::AIEvent| {
-            tracing::debug!(
-                "[IntegrationManager] 收到事件: {:?}",
-                std::mem::discriminant(&event)
-            );
+            tracing::debug!("[IntegrationManager] 收到事件: {:?}", std::mem::discriminant(&event));
 
             match &event {
                 // 思考事件：发送思考摘要
@@ -1473,9 +1291,7 @@ impl IntegrationManager {
                     let should_send = {
                         if let Ok(mut last) = last_progress_time_clone.try_lock() {
                             let now = std::time::Instant::now();
-                            if now.duration_since(*last)
-                                >= std::time::Duration::from_millis(PROGRESS_THROTTLE_MS)
-                            {
+                            if now.duration_since(*last) >= std::time::Duration::from_millis(PROGRESS_THROTTLE_MS) {
                                 *last = now;
                                 true
                             } else {
@@ -1497,22 +1313,13 @@ impl IntegrationManager {
                 // 工具调用结束：不受节流限制
                 crate::models::AIEvent::ToolCallEnd(tc) => {
                     // 从缓存取出描述
-                    let brief = tc
-                        .call_id
-                        .as_ref()
+                    let brief = tc.call_id.as_ref()
                         .and_then(|id| {
-                            tool_brief_cache_clone
-                                .try_lock()
-                                .ok()
+                            tool_brief_cache_clone.try_lock().ok()
                                 .and_then(|mut cache| cache.remove(id))
                         })
                         .unwrap_or_default();
-                    let msg = Self::format_tool_progress_message(
-                        &tc.tool,
-                        &brief,
-                        false,
-                        Some(tc.success),
-                    );
+                    let msg = Self::format_tool_progress_message(&tc.tool, &brief, false, Some(tc.success));
                     let adapters = adapters_for_callback.clone();
                     let conv_id = conversation_id_for_callback.clone();
                     rt_handle.spawn(async move {
@@ -1536,14 +1343,11 @@ impl IntegrationManager {
 
                             // 发送增量更新到前端（Polaris 本地监控面板保留流式预览，不影响外部平台）
                             #[cfg(feature = "tauri-app")]
-                            let _ = app_handle_for_callback.emit(
-                                "integration:ai:delta",
-                                serde_json::json!({
-                                    "conversationId": conversation_id_for_callback,
-                                    "text": text,
-                                    "isDelta": true
-                                }),
-                            );
+                            let _ = app_handle_for_callback.emit("integration:ai:delta", serde_json::json!({
+                                "conversationId": conversation_id_for_callback,
+                                "text": text,
+                                "isDelta": true
+                            }));
                         }
                     }
                 }
@@ -1587,10 +1391,7 @@ impl IntegrationManager {
         let task_conversation_id_for_update = conversation_id.clone();
         let conversation_states_for_update = conversation_states.clone();
         let session_id_update_callback = Arc::new(move |new_session_id: String| {
-            tracing::info!(
-                "[IntegrationManager] 📌 Session ID 更新回调: {}",
-                &new_session_id[..8.min(new_session_id.len())]
-            );
+            tracing::info!("[IntegrationManager] 📌 Session ID 更新回调: {}", &new_session_id[..8.min(new_session_id.len())]);
             if let Ok(mut states) = conversation_states_for_update.try_lock() {
                 states.set_ai_session(&task_conversation_id_for_update, new_session_id);
             }
@@ -1605,10 +1406,7 @@ impl IntegrationManager {
             let session_id_for_response: String;
 
             if let Some(ref existing_id) = existing_session_id {
-                tracing::info!(
-                    "[IntegrationManager] 🔄 继续已有会话: {}",
-                    &existing_id[..8.min(existing_id.len())]
-                );
+                tracing::info!("[IntegrationManager] 🔄 继续已有会话: {}", &existing_id[..8.min(existing_id.len())]);
 
                 let result = {
                     let mut registry = task_engine_registry.lock().await;
@@ -1624,8 +1422,7 @@ impl IntegrationManager {
                         options = options.with_mcp_config_path(mcp_path);
                     }
                     if !task_mcp_config.codex_config_args.is_empty() {
-                        options = options
-                            .with_codex_config_args(task_mcp_config.codex_config_args.clone());
+                        options = options.with_codex_config_args(task_mcp_config.codex_config_args.clone());
                     }
 
                     registry.continue_session(engine_id, existing_id, &message, options)
@@ -1638,20 +1435,11 @@ impl IntegrationManager {
                     Err(e) => {
                         tracing::error!("[IntegrationManager] 继续会话失败: {:?}", e);
                         #[cfg(feature = "tauri-app")]
-                        let _ = task_app_handle.emit(
-                            "integration:ai:error",
-                            serde_json::json!({
-                                "conversationId": task_conversation_id,
-                                "error": e.to_string()
-                            }),
-                        );
-                        Self::send_reply(
-                            &task_adapters,
-                            platform,
-                            &task_conversation_id,
-                            &format!("❌ AI 调用失败: {}", e),
-                        )
-                        .await;
+                        let _ = task_app_handle.emit("integration:ai:error", serde_json::json!({
+                            "conversationId": task_conversation_id,
+                            "error": e.to_string()
+                        }));
+                        Self::send_reply(&task_adapters, platform, &task_conversation_id, &format!("❌ AI 调用失败: {}", e)).await;
 
                         let mut sessions = task_active_sessions.lock().await;
                         sessions.remove(&task_conversation_id);
@@ -1675,8 +1463,7 @@ impl IntegrationManager {
                         options = options.with_mcp_config_path(mcp_path);
                     }
                     if !task_mcp_config.codex_config_args.is_empty() {
-                        options = options
-                            .with_codex_config_args(task_mcp_config.codex_config_args.clone());
+                        options = options.with_codex_config_args(task_mcp_config.codex_config_args.clone());
                     }
 
                     registry.start_session(Some(engine_id), &message, options)
@@ -1684,10 +1471,7 @@ impl IntegrationManager {
 
                 match result {
                     Ok(session_id) => {
-                        tracing::info!(
-                            "[IntegrationManager] AI 会话创建: session_id={}",
-                            session_id
-                        );
+                        tracing::info!("[IntegrationManager] AI 会话创建: session_id={}", session_id);
                         session_id_for_response = session_id.clone();
 
                         {
@@ -1698,20 +1482,11 @@ impl IntegrationManager {
                     Err(e) => {
                         tracing::error!("[IntegrationManager] 创建会话失败: {:?}", e);
                         #[cfg(feature = "tauri-app")]
-                        let _ = task_app_handle.emit(
-                            "integration:ai:error",
-                            serde_json::json!({
-                                "conversationId": task_conversation_id,
-                                "error": e.to_string()
-                            }),
-                        );
-                        Self::send_reply(
-                            &task_adapters,
-                            platform,
-                            &task_conversation_id,
-                            &format!("❌ AI 调用失败: {}", e),
-                        )
-                        .await;
+                        let _ = task_app_handle.emit("integration:ai:error", serde_json::json!({
+                            "conversationId": task_conversation_id,
+                            "error": e.to_string()
+                        }));
+                        Self::send_reply(&task_adapters, platform, &task_conversation_id, &format!("❌ AI 调用失败: {}", e)).await;
 
                         let mut sessions = task_active_sessions.lock().await;
                         sessions.remove(&task_conversation_id);
@@ -1730,30 +1505,20 @@ impl IntegrationManager {
 
             // 发送完整回复事件到前端
             #[cfg(feature = "tauri-app")]
-            let _ = task_app_handle.emit(
-                "integration:ai:complete",
-                serde_json::json!({
-                    "conversationId": task_conversation_id,
-                    "sessionId": session_id_for_response,
-                    "text": final_text
-                }),
-            );
+            let _ = task_app_handle.emit("integration:ai:complete", serde_json::json!({
+                "conversationId": task_conversation_id,
+                "sessionId": session_id_for_response,
+                "text": final_text
+            }));
 
             // 整段发送 AI 回复正文（替代回调中的流式逐片段），再补一条完成通知
             if !final_text.is_empty() {
                 let elapsed = start_time.elapsed();
                 // 先发送完整正文：IM 用户收到一条完整回复，而非打字机式碎片
-                Self::send_reply(&task_adapters, platform, &task_conversation_id, &final_text)
-                    .await;
+                Self::send_reply(&task_adapters, platform, &task_conversation_id, &final_text).await;
                 // 再发送处理完成通知（含耗时）
                 let complete_msg = format!("✅ 处理完成（⏰ {:.1}s）", elapsed.as_secs_f32());
-                Self::send_reply(
-                    &task_adapters,
-                    platform,
-                    &task_conversation_id,
-                    &complete_msg,
-                )
-                .await;
+                Self::send_reply(&task_adapters, platform, &task_conversation_id, &complete_msg).await;
             } else {
                 tracing::warn!("[IntegrationManager] ⚠️ AI 返回空文本，不发送回复");
             }
@@ -1847,7 +1612,10 @@ impl IntegrationManager {
     /// 获取所有状态
     pub async fn all_status(&self) -> HashMap<Platform, IntegrationStatus> {
         let adapters = self.adapters.lock().await;
-        adapters.iter().map(|(p, a)| (*p, a.status())).collect()
+        adapters
+            .iter()
+            .map(|(p, a)| (*p, a.status()))
+            .collect()
     }
 
     /// 处理消息 (从通道读取并转发到前端)
@@ -1923,11 +1691,7 @@ impl IntegrationManager {
     /// 按平台获取实例列表
     pub async fn list_instances_by_platform(&self, platform: Platform) -> Vec<PlatformInstance> {
         let registry = self.instance_registry.lock().await;
-        registry
-            .get_by_platform(platform)
-            .into_iter()
-            .cloned()
-            .collect()
+        registry.get_by_platform(platform).into_iter().cloned().collect()
     }
 
     /// 获取当前激活的实例
@@ -1997,17 +1761,11 @@ impl IntegrationManager {
         // 4. 创建新的 Adapter
         let adapter: Box<dyn PlatformIntegration> = match &instance.config {
             InstanceConfig::QQBot(config) => {
-                tracing::info!(
-                    "[IntegrationManager] 创建新的 QQBot Adapter: {}",
-                    instance.name
-                );
+                tracing::info!("[IntegrationManager] 创建新的 QQBot Adapter: {}", instance.name);
                 Box::new(QQBotAdapter::new(config.clone()))
             }
             InstanceConfig::Feishu(config) => {
-                tracing::info!(
-                    "[IntegrationManager] 创建新的 Feishu Adapter: {}",
-                    instance.name
-                );
+                tracing::info!("[IntegrationManager] 创建新的 Feishu Adapter: {}", instance.name);
                 Box::new(FeishuAdapter::new(config.clone()))
             }
         };
@@ -2026,9 +1784,7 @@ impl IntegrationManager {
 
         // 7. 建立连接
         tracing::info!("[IntegrationManager] switch_instance 步骤 7: 建立连接");
-        let tx = self
-            .message_tx
-            .as_ref()
+        let tx = self.message_tx.as_ref()
             .ok_or_else(|| crate::error::AppError::StateError("消息通道未初始化".to_string()))?
             .clone();
 
@@ -2115,10 +1871,7 @@ impl IntegrationManager {
                             let mut sessions = task_active_sessions.lock().await;
                             if let Some(handle) = sessions.remove(&conv_id) {
                                 handle.abort();
-                                tracing::info!(
-                                    "[IntegrationManager] 🛑 中断旧任务，处理新消息: {}",
-                                    conv_id
-                                );
+                                tracing::info!("[IntegrationManager] 🛑 中断旧任务，处理新消息: {}", conv_id);
                             }
                         }
 
@@ -2126,16 +1879,14 @@ impl IntegrationManager {
                         Self::handle_message(
                             msg,
                             #[cfg(feature = "tauri-app")]
-                            task_app_handle
-                                .expect("app_handle guaranteed Some by has_handle check"),
+                            task_app_handle.expect("app_handle guaranteed Some by has_handle check"),
                             msg_platform,
                             task_adapters,
                             task_engine_registry,
                             task_conversation_states,
                             task_active_sessions,
                             task_instance_registry,
-                        )
-                        .await;
+                        ).await;
                     });
                 }
 
@@ -2144,9 +1895,7 @@ impl IntegrationManager {
 
             self.message_task = Some(task);
         } else {
-            tracing::error!(
-                "[IntegrationManager] ❌ 无法启动消息处理任务: message_rx 或 app_handle 为空"
-            );
+            tracing::error!("[IntegrationManager] ❌ 无法启动消息处理任务: message_rx 或 app_handle 为空");
         }
     }
 
@@ -2253,10 +2002,7 @@ impl IntegrationManager {
             Ok(store) => store.get_preset(preset_id).is_some(),
             Err(_) => {
                 // PromptStore 不可用时，接受系统预设
-                matches!(
-                    preset_id,
-                    "preset-default" | "preset-minimal" | "preset-full"
-                )
+                matches!(preset_id, "preset-default" | "preset-minimal" | "preset-full")
             }
         }
     }
@@ -2267,11 +2013,12 @@ impl IntegrationManager {
         let work_path = Path::new(work_dir);
 
         match PromptStore::from_work_dir(work_path) {
-            Ok(store) => store
-                .get_presets()
-                .iter()
-                .map(|p| (p.id.clone(), p.name.clone()))
-                .collect(),
+            Ok(store) => {
+                store.get_presets()
+                    .iter()
+                    .map(|p| (p.id.clone(), p.name.clone()))
+                    .collect()
+            }
             Err(_) => {
                 // PromptStore 不可用时，返回默认预设列表
                 vec![
@@ -2320,33 +2067,23 @@ impl IntegrationManager {
                 } else if store.get_preset(preset_id).is_some() {
                     preset_id
                 } else {
-                    tracing::warn!(
-                        "[IntegrationManager] 预设不存在: {} (尝试 {})",
-                        preset_id,
-                        resolved_id
-                    );
+                    tracing::warn!("[IntegrationManager] 预设不存在: {} (尝试 {})", preset_id, resolved_id);
                     return None;
                 };
 
                 // 构建变量表
                 let mut variables = std::collections::HashMap::new();
                 variables.insert("workspace_path".to_string(), work_dir.to_string());
-                variables.insert(
-                    "workspace_name".to_string(),
-                    work_path
-                        .file_name()
+                variables.insert("workspace_name".to_string(),
+                    work_path.file_name()
                         .and_then(|n| n.to_str())
                         .unwrap_or("workspace")
-                        .to_string(),
+                        .to_string()
                 );
 
                 // 构建提示词
                 let prompt = store.build_prompt(lookup_id, &variables);
-                tracing::info!(
-                    "[IntegrationManager] 📝 从预设 '{}' 构建提示词, 长度: {}",
-                    lookup_id,
-                    prompt.len()
-                );
+                tracing::info!("[IntegrationManager] 📝 从预设 '{}' 构建提示词, 长度: {}", lookup_id, prompt.len());
                 Some(prompt)
             }
             Err(e) => {

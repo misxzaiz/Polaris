@@ -86,8 +86,7 @@ pub fn screenshot(
 
 /// 枚举当前可见的顶层窗口（标题/应用/位置/状态），跳过无标题窗口（噪声）。
 pub fn list_windows() -> Result<Value> {
-    let windows =
-        Window::all().map_err(|e| AppError::ProcessError(format!("枚举窗口失败: {e}")))?;
+    let windows = Window::all().map_err(|e| AppError::ProcessError(format!("枚举窗口失败: {e}")))?;
     let mut list = Vec::new();
     for w in &windows {
         let title = w.title().unwrap_or_default();

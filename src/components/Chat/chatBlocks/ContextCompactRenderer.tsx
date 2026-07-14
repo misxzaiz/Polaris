@@ -20,9 +20,7 @@ export function ContextCompactRenderer({ block }: { block: ContextCompactBlock }
   const post = formatTokens(block.postTokens);
   const label = block.trigger === 'auto'
     ? t('cliCommand.compactDivider.auto')
-    : block.trigger === 'recovery'
-      ? t('cliCommand.compactDivider.recovery')
-      : t('cliCommand.compactDivider.manual');
+    : t('cliCommand.compactDivider.manual');
 
   return (
     <div className="flex items-center gap-3 my-3 select-none" data-testid="context-compact-divider">
@@ -33,14 +31,6 @@ export function ContextCompactRenderer({ block }: { block: ContextCompactBlock }
         {pre && post && (
           <span className="font-mono">
             {t('cliCommand.compactDivider.tokens', { pre, post })}
-          </span>
-        )}
-        {block.archivedTurns !== undefined && block.retainedTurns !== undefined && (
-          <span>
-            {t('cliCommand.compactDivider.turns', {
-              archived: block.archivedTurns,
-              retained: block.retainedTurns,
-            })}
           </span>
         )}
       </div>

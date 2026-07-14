@@ -13,9 +13,7 @@ use crate::state::AppState;
 /// 获取 Claude CLI 路径
 #[cfg(feature = "tauri-app")]
 fn get_claude_path(state: &State<'_, AppState>) -> Result<String> {
-    let store = state
-        .config_store
-        .lock()
+    let store = state.config_store.lock()
         .map_err(|e| crate::error::AppError::Unknown(e.to_string()))?;
     Ok(store.get().get_claude_cmd())
 }

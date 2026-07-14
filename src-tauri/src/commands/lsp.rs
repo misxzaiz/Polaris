@@ -190,7 +190,10 @@ pub fn lsp_index_definition(
 /// 索引模式：打开工作区的索引引擎（创建/重用 DB）。
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub fn lsp_index_open(state: State<'_, AppState>, root: String) -> Result<IndexStatus> {
+pub fn lsp_index_open(
+    state: State<'_, AppState>,
+    root: String,
+) -> Result<IndexStatus> {
     let svc = state.lsp_index_service.clone();
     let workspace = std::path::Path::new(&root);
     let _ = svc.open_workspace(workspace)?;
@@ -200,7 +203,10 @@ pub fn lsp_index_open(state: State<'_, AppState>, root: String) -> Result<IndexS
 /// 索引模式：关闭工作区索引（释放 DB 句柄）。
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub fn lsp_index_close(state: State<'_, AppState>, root: String) -> Result<()> {
+pub fn lsp_index_close(
+    state: State<'_, AppState>,
+    root: String,
+) -> Result<()> {
     let svc = state.lsp_index_service.clone();
     let workspace = std::path::Path::new(&root);
     svc.close_workspace(workspace);
@@ -210,7 +216,10 @@ pub fn lsp_index_close(state: State<'_, AppState>, root: String) -> Result<()> {
 /// 索引模式：触发后台全量重建。立即返回，进度通过事件推送。
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub fn lsp_index_rebuild(state: State<'_, AppState>, root: String) -> Result<()> {
+pub fn lsp_index_rebuild(
+    state: State<'_, AppState>,
+    root: String,
+) -> Result<()> {
     let svc = state.lsp_index_service.clone();
     let workspace = std::path::Path::new(&root);
     svc.rebuild_full_async(workspace)
@@ -219,7 +228,10 @@ pub fn lsp_index_rebuild(state: State<'_, AppState>, root: String) -> Result<()>
 /// 索引模式：查询当前状态。
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub fn lsp_index_status(state: State<'_, AppState>, root: String) -> Result<IndexStatus> {
+pub fn lsp_index_status(
+    state: State<'_, AppState>,
+    root: String,
+) -> Result<IndexStatus> {
     let svc = state.lsp_index_service.clone();
     let workspace = std::path::Path::new(&root);
     Ok(svc.status(workspace))

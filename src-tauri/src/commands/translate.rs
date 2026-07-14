@@ -34,55 +34,57 @@ pub async fn baidu_translate(
     ];
 
     match client.post(url).form(&params).send().await {
-        Ok(response) => match response.json::<BaiduResponse>().await {
-            Ok(data) => {
-                if let Some(error_code) = data.error_code {
-                    let error_msg = match error_code.as_str() {
-                        "52000" => "成功",
-                        "52001" => "请求超时",
-                        "52002" => "系统错误",
-                        "52003" => "未授权用户",
-                        "54000" => "必填参数为空",
-                        "54001" => "签名错误",
-                        "54003" => "访问频率受限",
-                        "58000" => "客户端IP非法",
-                        "58001" => "译文语言方向不支持",
-                        "58002" => "服务当前已关闭",
-                        "90107" => "认证未通过或未生效",
-                        _ => &error_code,
-                    };
-                    return TranslateResult {
-                        success: false,
-                        result: None,
-                        error: Some(error_msg.to_string()),
-                    };
-                }
+        Ok(response) => {
+            match response.json::<BaiduResponse>().await {
+                Ok(data) => {
+                    if let Some(error_code) = data.error_code {
+                        let error_msg = match error_code.as_str() {
+                            "52000" => "成功",
+                            "52001" => "请求超时",
+                            "52002" => "系统错误",
+                            "52003" => "未授权用户",
+                            "54000" => "必填参数为空",
+                            "54001" => "签名错误",
+                            "54003" => "访问频率受限",
+                            "58000" => "客户端IP非法",
+                            "58001" => "译文语言方向不支持",
+                            "58002" => "服务当前已关闭",
+                            "90107" => "认证未通过或未生效",
+                            _ => &error_code,
+                        };
+                        return TranslateResult {
+                            success: false,
+                            result: None,
+                            error: Some(error_msg.to_string()),
+                        };
+                    }
 
-                if let Some(trans_result) = data.trans_result {
-                    let translated = trans_result
-                        .iter()
-                        .map(|t| t.dst.as_str())
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    TranslateResult {
-                        success: true,
-                        result: Some(translated),
-                        error: None,
-                    }
-                } else {
-                    TranslateResult {
-                        success: false,
-                        result: None,
-                        error: Some("翻译结果为空".to_string()),
+                    if let Some(trans_result) = data.trans_result {
+                        let translated = trans_result
+                            .iter()
+                            .map(|t| t.dst.as_str())
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        TranslateResult {
+                            success: true,
+                            result: Some(translated),
+                            error: None,
+                        }
+                    } else {
+                        TranslateResult {
+                            success: false,
+                            result: None,
+                            error: Some("翻译结果为空".to_string()),
+                        }
                     }
                 }
+                Err(e) => TranslateResult {
+                    success: false,
+                    result: None,
+                    error: Some(format!("解析响应失败: {}", e)),
+                },
             }
-            Err(e) => TranslateResult {
-                success: false,
-                result: None,
-                error: Some(format!("解析响应失败: {}", e)),
-            },
-        },
+        }
         Err(e) => TranslateResult {
             success: false,
             result: None,

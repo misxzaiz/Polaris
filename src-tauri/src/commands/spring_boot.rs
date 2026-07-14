@@ -125,18 +125,14 @@ impl SpringBootManager {
 
     /// 获取所有运行中的应用
     pub fn list_apps(&self) -> Result<Vec<SpringBootApp>> {
-        let apps = self
-            .apps
-            .lock()
+        let apps = self.apps.lock()
             .map_err(|e| AppError::StateError(format!("无法获取锁: {}", e)))?;
         Ok(apps.values().cloned().collect())
     }
 
     /// 获取单个应用
     pub fn get_app(&self, id: &str) -> Result<SpringBootApp> {
-        let apps = self
-            .apps
-            .lock()
+        let apps = self.apps.lock()
             .map_err(|e| AppError::StateError(format!("无法获取锁: {}", e)))?;
         apps.get(id)
             .cloned()
@@ -145,9 +141,7 @@ impl SpringBootManager {
 
     /// 更新应用状态
     pub fn update_app(&self, app: SpringBootApp) -> Result<()> {
-        let mut apps = self
-            .apps
-            .lock()
+        let mut apps = self.apps.lock()
             .map_err(|e| AppError::StateError(format!("无法获取锁: {}", e)))?;
         apps.insert(app.id.clone(), app);
         Ok(())
@@ -155,35 +149,27 @@ impl SpringBootManager {
 
     /// 移除应用
     pub fn remove_app(&self, id: &str) -> Result<()> {
-        let mut apps = self
-            .apps
-            .lock()
+        let mut apps = self.apps.lock()
             .map_err(|e| AppError::StateError(format!("无法获取锁: {}", e)))?;
         apps.remove(id);
-
-        let mut session_map = self
-            .session_map
-            .lock()
+        
+        let mut session_map = self.session_map.lock()
             .map_err(|e| AppError::StateError(format!("无法获取锁: {}", e)))?;
         session_map.remove(id);
-
+        
         Ok(())
     }
 
     /// 获取终端会话 ID
     pub fn get_session_id(&self, app_id: &str) -> Result<Option<String>> {
-        let session_map = self
-            .session_map
-            .lock()
+        let session_map = self.session_map.lock()
             .map_err(|e| AppError::StateError(format!("无法获取锁: {}", e)))?;
         Ok(session_map.get(app_id).cloned())
     }
 
     /// 设置终端会话 ID
     pub fn set_session_id(&self, app_id: &str, session_id: &str) -> Result<()> {
-        let mut session_map = self
-            .session_map
-            .lock()
+        let mut session_map = self.session_map.lock()
             .map_err(|e| AppError::StateError(format!("无法获取锁: {}", e)))?;
         session_map.insert(app_id.to_string(), session_id.to_string());
         Ok(())
@@ -199,7 +185,7 @@ impl SpringBootManager {
 #[tauri::command]
 pub fn spring_boot_detect_project(path: String) -> Result<SpringBootProject> {
     let project_path = PathBuf::from(&path);
-
+    
     if !project_path.exists() {
         return Err(AppError::ValidationError(format!("路径不存在: {}", path)));
     }
@@ -207,9 +193,7 @@ pub fn spring_boot_detect_project(path: String) -> Result<SpringBootProject> {
     // 检测构建工具
     let (build_tool, config_file) = if project_path.join("pom.xml").exists() {
         (BuildTool::Maven, "pom.xml")
-    } else if project_path.join("build.gradle").exists()
-        || project_path.join("build.gradle.kts").exists()
-    {
+    } else if project_path.join("build.gradle").exists() || project_path.join("build.gradle.kts").exists() {
         let file = if project_path.join("build.gradle.kts").exists() {
             "build.gradle.kts"
         } else {
@@ -217,9 +201,7 @@ pub fn spring_boot_detect_project(path: String) -> Result<SpringBootProject> {
         };
         (BuildTool::Gradle, file)
     } else {
-        return Err(AppError::ValidationError(
-            "未找到 Maven 或 Gradle 配置文件".to_string(),
-        ));
+        return Err(AppError::ValidationError("未找到 Maven 或 Gradle 配置文件".to_string()));
     };
 
     // 读取配置文件内容
@@ -227,8 +209,7 @@ pub fn spring_boot_detect_project(path: String) -> Result<SpringBootProject> {
         .map_err(|e| AppError::IoError(e))?;
 
     // 提取项目名称
-    let name = project_path
-        .file_name()
+    let name = project_path.file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("spring-boot-app")
         .to_string();
@@ -270,7 +251,7 @@ pub async fn spring_boot_start(
 ) -> Result<SpringBootApp> {
     // 检测项目
     let project = spring_boot_detect_project(config.project_path.clone())?;
-
+    
     let app_id = uuid::Uuid::new_v4().to_string();
     let port = config.app_port.unwrap_or(project.port.unwrap_or(8080));
     let debug_port = config.debug_port.unwrap_or(5005);
@@ -278,23 +259,21 @@ pub async fn spring_boot_start(
 
     // 构建启动命令
     let (command, jvm_env_args) = build_start_command(&project, &config, debug, debug_port, port);
-
+    
     // 创建终端会话
-    let terminal_manager = state
-        .terminal_manager
-        .lock()
+    let terminal_manager = state.terminal_manager.lock()
         .map_err(|e| AppError::StateError(e.to_string()))?;
-
+    
     let mut env = config.env.unwrap_or_default();
     env.insert("SPRING_BOOT_APP_ID".to_string(), app_id.clone());
-
+    
     // Windows: 通过环境变量传递 JVM 参数
     if let Some(jvm_args) = jvm_env_args {
         env.insert("MAVEN_OPTS".to_string(), jvm_args.clone());
         // Gradle 也使用 GRADLE_OPTS 或 JAVA_OPTS
         env.insert("JAVA_OPTS".to_string(), jvm_args);
     }
-
+    
     let session = terminal_manager.create_session(
         crate::commands::terminal::TerminalEventSink::Tauri(app_handle),
         Some(format!("Spring Boot: {}", project.name)),
@@ -306,7 +285,7 @@ pub async fn spring_boot_start(
         Some("spring-boot".to_string()),
         None,
     )?;
-
+    
     drop(terminal_manager);
 
     // 记录应用信息
@@ -323,11 +302,9 @@ pub async fn spring_boot_start(
         debug_port: if debug { Some(debug_port) } else { None },
     };
 
-    let manager = state
-        .spring_boot_manager
-        .lock()
+    let manager = state.spring_boot_manager.lock()
         .map_err(|e| AppError::StateError(e.to_string()))?;
-
+    
     manager.update_app(app_info.clone())?;
     manager.set_session_id(&app_id, &session.id)?;
 
@@ -337,38 +314,34 @@ pub async fn spring_boot_start(
 /// 停止 Spring Boot 应用
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn spring_boot_stop(state: State<'_, AppState>, app_id: String) -> Result<()> {
-    let manager = state
-        .spring_boot_manager
-        .lock()
+pub async fn spring_boot_stop(
+    state: State<'_, AppState>,
+    app_id: String,
+) -> Result<()> {
+    let manager = state.spring_boot_manager.lock()
         .map_err(|e| AppError::StateError(e.to_string()))?;
-
-    let session_id = manager
-        .get_session_id(&app_id)?
+    
+    let session_id = manager.get_session_id(&app_id)?
         .ok_or_else(|| AppError::SessionNotFound(format!("未找到应用: {}", app_id)))?;
-
+    
     let mut app = manager.get_app(&app_id)?;
     app.status = AppStatus::Stopping;
     manager.update_app(app)?;
-
+    
     drop(manager);
 
     // 关闭终端会话
-    let terminal_manager = state
-        .terminal_manager
-        .lock()
+    let terminal_manager = state.terminal_manager.lock()
         .map_err(|e| AppError::StateError(e.to_string()))?;
-
+    
     terminal_manager.close_session(&session_id)?;
-
+    
     drop(terminal_manager);
 
     // 更新状态
-    let manager = state
-        .spring_boot_manager
-        .lock()
+    let manager = state.spring_boot_manager.lock()
         .map_err(|e| AppError::StateError(e.to_string()))?;
-
+    
     let mut app = manager.get_app(&app_id)?;
     app.status = AppStatus::Stopped;
     manager.update_app(app)?;
@@ -380,10 +353,10 @@ pub async fn spring_boot_stop(state: State<'_, AppState>, app_id: String) -> Res
 /// 获取所有 Spring Boot 应用状态
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub fn spring_boot_list_apps(state: State<'_, AppState>) -> Result<Vec<SpringBootApp>> {
-    let manager = state
-        .spring_boot_manager
-        .lock()
+pub fn spring_boot_list_apps(
+    state: State<'_, AppState>,
+) -> Result<Vec<SpringBootApp>> {
+    let manager = state.spring_boot_manager.lock()
         .map_err(|e| AppError::StateError(e.to_string()))?;
     manager.list_apps()
 }
@@ -391,10 +364,11 @@ pub fn spring_boot_list_apps(state: State<'_, AppState>) -> Result<Vec<SpringBoo
 /// 获取单个应用状态
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub fn spring_boot_get_app(state: State<'_, AppState>, app_id: String) -> Result<SpringBootApp> {
-    let manager = state
-        .spring_boot_manager
-        .lock()
+pub fn spring_boot_get_app(
+    state: State<'_, AppState>,
+    app_id: String,
+) -> Result<SpringBootApp> {
+    let manager = state.spring_boot_manager.lock()
         .map_err(|e| AppError::StateError(e.to_string()))?;
     manager.get_app(&app_id)
 }
@@ -408,11 +382,9 @@ pub fn spring_boot_update_status(
     status: AppStatus,
     error: Option<String>,
 ) -> Result<()> {
-    let manager = state
-        .spring_boot_manager
-        .lock()
+    let manager = state.spring_boot_manager.lock()
         .map_err(|e| AppError::StateError(e.to_string()))?;
-
+    
     let mut app = manager.get_app(&app_id)?;
     app.status = status;
     app.error = error;
@@ -434,10 +406,10 @@ fn build_start_command(
     // 返回 (命令, 额外的环境变量JVM参数)
     let mut parts = Vec::new();
     let mut env_jvm_args: Option<String> = None;
-
+    
     // Windows 和 Unix 使用不同的命令
     let is_windows = cfg!(windows);
-
+    
     // 构建 JVM 参数
     let mut jvm_args = Vec::new();
     if debug {
@@ -449,12 +421,12 @@ fn build_start_command(
     if let Some(extra) = &config.jvm_args {
         jvm_args.extend(extra.clone());
     }
-
+    
     // Windows 上使用环境变量传递 JVM 参数更可靠
     if is_windows && !jvm_args.is_empty() {
         env_jvm_args = Some(jvm_args.join(" "));
     }
-
+    
     match project.build_tool {
         BuildTool::Maven => {
             if is_windows {
@@ -463,18 +435,15 @@ fn build_start_command(
                 parts.push("./mvnw".to_string());
             }
             parts.push("spring-boot:run".to_string());
-
+            
             // JVM 参数 (仅在非Windows时直接传递)
             if !is_windows && !jvm_args.is_empty() {
-                parts.push(format!(
-                    "-Dspring-boot.run.jvmArguments={}",
-                    jvm_args.join(" ")
-                ));
+                parts.push(format!("-Dspring-boot.run.jvmArguments={}", jvm_args.join(" ")));
             }
-
+            
             // 应用端口
             parts.push(format!("-Dserver.port={}", app_port));
-
+            
             // 额外的 Maven 参数
             if let Some(extra) = &config.build_args {
                 parts.extend(extra.clone());
@@ -487,22 +456,22 @@ fn build_start_command(
                 parts.push("./gradlew".to_string());
             }
             parts.push("bootRun".to_string());
-
+            
             // JVM 参数 (仅在非Windows时直接传递)
             if !is_windows && !jvm_args.is_empty() {
                 parts.push(format!("--args={}", jvm_args.join(" ")));
             }
-
+            
             // 应用端口
             parts.push(format!("-Dserver.port={}", app_port));
-
+            
             // 额外的 Gradle 参数
             if let Some(extra) = &config.build_args {
                 parts.extend(extra.clone());
             }
         }
     }
-
+    
     (parts.join(" "), env_jvm_args)
 }
 
@@ -635,8 +604,7 @@ fn extract_package(content: &str) -> Option<String> {
 /// 提取配置的端口
 fn extract_port(project_path: &PathBuf) -> Option<u16> {
     // 检查 application.properties
-    let props_path = project_path
-        .join("src")
+    let props_path = project_path.join("src")
         .join("main")
         .join("resources")
         .join("application.properties");
@@ -647,8 +615,7 @@ fn extract_port(project_path: &PathBuf) -> Option<u16> {
     }
 
     // 检查 application.yml
-    let yml_path = project_path
-        .join("src")
+    let yml_path = project_path.join("src")
         .join("main")
         .join("resources")
         .join("application.yml");
@@ -680,7 +647,7 @@ fn extract_port_from_yml(content: &str) -> Option<u16> {
 
     for line in &lines {
         let trimmed = line.trim();
-
+        
         if trimmed.starts_with("server:") {
             in_server = true;
             indent_level = line.len() - line.trim_start().len();
@@ -711,7 +678,7 @@ fn extract_port_from_yml(content: &str) -> Option<u16> {
 #[tauri::command]
 pub fn spring_boot_check_port(port: u16) -> Result<bool> {
     use std::net::TcpListener;
-
+    
     match TcpListener::bind(format!("127.0.0.1:{}", port)) {
         Ok(_) => Ok(false), // 端口可用
         Err(_) => Ok(true), // 端口被占用
@@ -723,14 +690,14 @@ pub fn spring_boot_check_port(port: u16) -> Result<bool> {
 #[tauri::command]
 pub fn spring_boot_find_available_port(start: Option<u16>) -> Result<u16> {
     use std::net::TcpListener;
-
+    
     let start_port = start.unwrap_or(8080);
-
+    
     for port in start_port..65535 {
         if TcpListener::bind(format!("127.0.0.1:{}", port)).is_ok() {
             return Ok(port);
         }
     }
-
+    
     Err(AppError::ProcessError("未找到可用端口".to_string()))
 }

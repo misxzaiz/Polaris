@@ -5,12 +5,12 @@
 
 use std::path::Path;
 
-use crate::models::git::{GitServiceError, GitStashEntry};
+use crate::models::git::{GitStashEntry, GitServiceError};
 
 #[cfg(windows)]
-use super::utils::CREATE_NO_WINDOW;
-#[cfg(windows)]
 use std::os::windows::process::CommandExt;
+#[cfg(windows)]
+use super::utils::CREATE_NO_WINDOW;
 
 /// 保存 Stash
 pub fn stash_save(
@@ -63,7 +63,9 @@ pub fn stash_list(path: &Path) -> Result<Vec<GitStashEntry>, GitServiceError> {
     for line in stdout.lines() {
         let parts: Vec<&str> = line.split('|').collect();
         if parts.len() >= 4 {
-            let index_str = parts[0].trim_start_matches("stash@{").trim_end_matches("}");
+            let index_str = parts[0]
+                .trim_start_matches("stash@{")
+                .trim_end_matches("}");
             entries.push(GitStashEntry {
                 index: index_str.parse().unwrap_or(0),
                 message: parts[1].to_string(),

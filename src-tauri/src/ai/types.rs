@@ -49,12 +49,14 @@ pub struct EngineDescriptor {
 impl EngineDescriptor {
     /// 获取所有引擎描述
     pub fn all() -> Vec<Self> {
-        vec![Self {
-            id: "claude".to_string(),
-            name: "Claude Code".to_string(),
-            description: "Anthropic 官方 Claude CLI".to_string(),
-            available: true, // 实际可用性需要运行时检查
-        }]
+        vec![
+            Self {
+                id: "claude".to_string(),
+                name: "Claude Code".to_string(),
+                description: "Anthropic 官方 Claude CLI".to_string(),
+                available: true, // 实际可用性需要运行时检查
+            },
+        ]
     }
 }
 
@@ -67,16 +69,8 @@ pub fn extract_text_from_event(event: &crate::models::events::StreamEvent) -> Op
         StreamEvent::TextDelta { text } => Some(text.clone()),
         StreamEvent::Result { extra, .. } => {
             // 尝试从 extra 中提取文本
-            extra
-                .get("result")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-                .or_else(|| {
-                    extra
-                        .get("text")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string())
-                })
+            extra.get("result").and_then(|v| v.as_str()).map(|s| s.to_string())
+                .or_else(|| extra.get("text").and_then(|v| v.as_str()).map(|s| s.to_string()))
         }
         StreamEvent::Assistant { message } => {
             // 从 message.content 数组中提取文本

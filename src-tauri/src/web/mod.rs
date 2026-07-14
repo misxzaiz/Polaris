@@ -13,8 +13,8 @@ use std::sync::MutexGuard;
 
 use serde::{Deserialize, Deserializer};
 
-use crate::services::config_store::ConfigStore;
 use crate::state::{PendingPlan, PendingQuestion};
+use crate::services::config_store::ConfigStore;
 use crate::AppState;
 use error::WebError;
 
@@ -65,25 +65,15 @@ pub fn parse_pagination(query: &PaginationQuery) -> crate::ai::Pagination {
 /// Web-specific lock helpers — consolidate the `lock().map_err(WebError::Internal)` pattern.
 impl AppState {
     pub fn lock_config(&self) -> Result<MutexGuard<'_, ConfigStore>, WebError> {
-        self.config_store
-            .lock()
-            .map_err(|e| WebError::Internal(e.to_string()))
+        self.config_store.lock().map_err(|e| WebError::Internal(e.to_string()))
     }
 
-    pub fn lock_pending_questions(
-        &self,
-    ) -> Result<MutexGuard<'_, HashMap<String, PendingQuestion>>, WebError> {
-        self.pending_questions
-            .lock()
-            .map_err(|e| WebError::Internal(e.to_string()))
+    pub fn lock_pending_questions(&self) -> Result<MutexGuard<'_, HashMap<String, PendingQuestion>>, WebError> {
+        self.pending_questions.lock().map_err(|e| WebError::Internal(e.to_string()))
     }
 
-    pub fn lock_pending_plans(
-        &self,
-    ) -> Result<MutexGuard<'_, HashMap<String, PendingPlan>>, WebError> {
-        self.pending_plans
-            .lock()
-            .map_err(|e| WebError::Internal(e.to_string()))
+    pub fn lock_pending_plans(&self) -> Result<MutexGuard<'_, HashMap<String, PendingPlan>>, WebError> {
+        self.pending_plans.lock().map_err(|e| WebError::Internal(e.to_string()))
     }
 
     /// Clone the current config, returning a WebError directly.
@@ -105,19 +95,10 @@ pub fn validate_entity_id(id: &str, field: &str) -> Result<(), WebError> {
         return Err(WebError::BadRequest(format!("{} must not be empty", field)));
     }
     if id.len() > 128 {
-        return Err(WebError::BadRequest(format!(
-            "{} too long (max 128 chars)",
-            field
-        )));
+        return Err(WebError::BadRequest(format!("{} too long (max 128 chars)", field)));
     }
-    if !id
-        .chars()
-        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
-    {
-        return Err(WebError::BadRequest(format!(
-            "{} contains invalid characters",
-            field
-        )));
+    if !id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+        return Err(WebError::BadRequest(format!("{} contains invalid characters", field)));
     }
     Ok(())
 }

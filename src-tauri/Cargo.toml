@@ -163,7 +163,6 @@ windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
     "Win32_System_DataExchange",
     "Win32_System_Memory",
-    "Win32_Storage_FileSystem",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }

@@ -30,9 +30,9 @@ impl AutoModeService {
         let mut cmd = self.build_command();
         cmd.args(args);
 
-        let output = cmd
-            .output()
-            .map_err(|e| AppError::ProcessError(format!("执行 Claude CLI 失败: {}", e)))?;
+        let output = cmd.output().map_err(|e| {
+            AppError::ProcessError(format!("执行 Claude CLI 失败: {}", e))
+        })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -65,8 +65,9 @@ impl AutoModeService {
     pub fn get_config(&self) -> Result<AutoModeConfig> {
         let output = self.execute_claude(&["auto-mode", "config"])?;
 
-        let config: AutoModeConfig = serde_json::from_str(&output)
-            .map_err(|e| AppError::ProcessError(format!("解析自动模式配置失败: {}", e)))?;
+        let config: AutoModeConfig = serde_json::from_str(&output).map_err(|e| {
+            AppError::ProcessError(format!("解析自动模式配置失败: {}", e))
+        })?;
 
         Ok(config)
     }
@@ -77,8 +78,9 @@ impl AutoModeService {
     pub fn get_defaults(&self) -> Result<AutoModeDefaults> {
         let output = self.execute_claude(&["auto-mode", "defaults"])?;
 
-        let defaults: AutoModeDefaults = serde_json::from_str(&output)
-            .map_err(|e| AppError::ProcessError(format!("解析默认配置失败: {}", e)))?;
+        let defaults: AutoModeDefaults = serde_json::from_str(&output).map_err(|e| {
+            AppError::ProcessError(format!("解析默认配置失败: {}", e))
+        })?;
 
         Ok(defaults)
     }

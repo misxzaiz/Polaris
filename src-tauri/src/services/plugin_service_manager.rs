@@ -378,13 +378,9 @@ impl PluginServiceManager {
         // 取出 contribution / install_path / ctx 备用
         let saved = {
             let services = self.services.lock().await;
-            services.get(&make_key(plugin_id, service_id)).map(|m| {
-                (
-                    m.contribution.clone(),
-                    m.install_path.clone(),
-                    m.ctx.clone(),
-                )
-            })
+            services
+                .get(&make_key(plugin_id, service_id))
+                .map(|m| (m.contribution.clone(), m.install_path.clone(), m.ctx.clone()))
         };
 
         let (contribution, install_path, ctx) = match saved {
@@ -409,11 +405,13 @@ impl PluginServiceManager {
     }
 
     /// 获取单个服务状态
-    pub async fn get_status(&self, plugin_id: &str, service_id: &str) -> Option<ServiceStatus> {
+    pub async fn get_status(
+        &self,
+        plugin_id: &str,
+        service_id: &str,
+    ) -> Option<ServiceStatus> {
         let services = self.services.lock().await;
-        services
-            .get(&make_key(plugin_id, service_id))
-            .map(snapshot_status)
+        services.get(&make_key(plugin_id, service_id)).map(snapshot_status)
     }
 
     /// 停止所有服务（应用退出时使用）
@@ -534,10 +532,8 @@ impl PluginServiceManager {
 
                 if m.status.restart_count >= m.contribution.max_restarts {
                     m.status.state = ServiceState::Error;
-                    m.status.last_error = Some(format!(
-                        "Exceeded max restarts ({})",
-                        m.contribution.max_restarts
-                    ));
+                    m.status.last_error =
+                        Some(format!("Exceeded max restarts ({})", m.contribution.max_restarts));
                     tracing::error!(
                         plugin_id = %m.plugin_id,
                         service_id = %m.contribution.id,

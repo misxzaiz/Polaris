@@ -6,8 +6,8 @@
 use crate::error::{AppError, Result};
 use crate::models::prompt::{PromptConfig, PromptModule, PromptPreset, SceneMapping, SceneType};
 use std::collections::HashMap;
-use std::fs;
 use std::path::{Path, PathBuf};
+use std::fs;
 
 /// 提示词存储管理器
 pub struct PromptStore {
@@ -37,10 +37,7 @@ impl PromptStore {
             config
         };
 
-        Ok(Self {
-            config,
-            config_path,
-        })
+        Ok(Self { config, config_path })
     }
 
     /// 从工作目录创建提示词存储
@@ -51,8 +48,8 @@ impl PromptStore {
     /// 从文件加载配置
     fn load_from_file(path: &Path) -> Result<PromptConfig> {
         let content = fs::read_to_string(path)?;
-        let config: PromptConfig =
-            serde_json::from_str(&content).unwrap_or_else(|_| PromptConfig::with_defaults());
+        let config: PromptConfig = serde_json::from_str(&content)
+            .unwrap_or_else(|_| PromptConfig::with_defaults());
         Ok(config)
     }
 
@@ -155,10 +152,7 @@ impl PromptStore {
     pub fn add_module(&mut self, module: PromptModule) -> Result<()> {
         // 检查 ID 是否已存在
         if self.config.modules.iter().any(|m| m.id == module.id) {
-            return Err(AppError::ConfigError(format!(
-                "模块 ID 已存在: {}",
-                module.id
-            )));
+            return Err(AppError::ConfigError(format!("模块 ID 已存在: {}", module.id)));
         }
         self.config.modules.push(module);
         self.config.touch();
@@ -207,10 +201,7 @@ impl PromptStore {
     pub fn add_preset(&mut self, preset: PromptPreset) -> Result<()> {
         // 检查 ID 是否已存在
         if self.config.presets.iter().any(|p| p.id == preset.id) {
-            return Err(AppError::ConfigError(format!(
-                "预设 ID 已存在: {}",
-                preset.id
-            )));
+            return Err(AppError::ConfigError(format!("预设 ID 已存在: {}", preset.id)));
         }
 
         // 验证所有模块 ID 存在
@@ -294,17 +285,10 @@ impl PromptStore {
             return Err(AppError::ConfigError(format!("预设不存在: {}", preset_id)));
         }
 
-        if let Some(mapping) = self
-            .config
-            .scene_mapping
-            .iter_mut()
-            .find(|m| m.scene == scene)
-        {
+        if let Some(mapping) = self.config.scene_mapping.iter_mut().find(|m| m.scene == scene) {
             mapping.default_preset_id = preset_id;
         } else {
-            self.config
-                .scene_mapping
-                .push(SceneMapping::new(scene, preset_id));
+            self.config.scene_mapping.push(SceneMapping::new(scene, preset_id));
         }
 
         self.config.touch();
@@ -316,9 +300,6 @@ impl Default for PromptStore {
     fn default() -> Self {
         let config = PromptConfig::with_defaults();
         let config_path = PathBuf::from(".polaris/prompt_config.json");
-        Self {
-            config,
-            config_path,
-        }
+        Self { config, config_path }
     }
 }

@@ -166,11 +166,7 @@ impl ComputerController {
     }
 
     /// 前台控件树（无障碍 UIAutomation）。`interactable_only` 剔除无名噪声节点。
-    pub fn inspect_ui(
-        &self,
-        max_depth: usize,
-        interactable_only: bool,
-    ) -> Result<serde_json::Value> {
+    pub fn inspect_ui(&self, max_depth: usize, interactable_only: bool) -> Result<serde_json::Value> {
         self.ensure_enabled()?;
         tracing::info!(target: "computer", max_depth, "inspect_ui");
         inspect::inspect_ui(max_depth, INSPECT_SIBLING_CAP, interactable_only)
@@ -196,23 +192,12 @@ impl ComputerController {
         button: &str,
         count: u32,
     ) -> Result<()> {
-        self.guard_action(&format!(
-            "click(x={x:?},y={y:?},button={button},count={count})"
-        ))?;
+        self.guard_action(&format!("click(x={x:?},y={y:?},button={button},count={count})"))?;
         input::click(&mut self.enigo, x, y, button, count)
     }
 
-    pub fn drag(
-        &mut self,
-        from_x: i32,
-        from_y: i32,
-        to_x: i32,
-        to_y: i32,
-        button: &str,
-    ) -> Result<()> {
-        self.guard_action(&format!(
-            "drag(({from_x},{from_y})->({to_x},{to_y}),button={button})"
-        ))?;
+    pub fn drag(&mut self, from_x: i32, from_y: i32, to_x: i32, to_y: i32, button: &str) -> Result<()> {
+        self.guard_action(&format!("drag(({from_x},{from_y})->({to_x},{to_y}),button={button})"))?;
         input::drag(&mut self.enigo, from_x, from_y, to_x, to_y, button)
     }
 
@@ -257,9 +242,7 @@ impl ComputerController {
         button: &str,
         count: u32,
     ) -> Result<String> {
-        self.guard_action(&format!(
-            "click_element(name={name:?},id={automation_id:?})"
-        ))?;
+        self.guard_action(&format!("click_element(name={name:?},id={automation_id:?})"))?;
         inspect::click_element(name, automation_id, button, count)
     }
 

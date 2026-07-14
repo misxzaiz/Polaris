@@ -199,23 +199,6 @@ export function useActiveSessionStreaming() {
   )
 }
 
-/** 获取 SimpleAI 上下文压缩状态。 */
-export function useActiveSessionCompaction() {
-  const isCompacting = useActiveSessionSelector(
-    useCallback((state: ConversationState) => state.isCompacting, []),
-    false
-  )
-  const canRestoreCompaction = useActiveSessionSelector(
-    useCallback((state: ConversationState) => state.canRestoreCompaction, []),
-    false
-  )
-
-  return useMemo(
-    () => ({ isCompacting, canRestoreCompaction }),
-    [isCompacting, canRestoreCompaction]
-  )
-}
-
 /**
  * 获取活跃会话的错误状态
  */
@@ -327,20 +310,6 @@ export function useActiveSessionActions() {
         const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
         if (!store) return
         return store.interrupt()
-      },
-      compactContext: async () => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.compactContext()
-      },
-      restoreCompactedContext: async () => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.restoreCompactedContext()
       },
       continueChat: async (prompt?: string, allowedTools?: string[]) => {
         const sessionId = sessionStoreManager.getState().activeSessionId

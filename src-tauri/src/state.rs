@@ -240,9 +240,9 @@ pub fn create_app_state(
         context_store: Arc::new(Mutex::new(ContextMemoryStore::new())),
         integration_manager: AsyncMutex::new(integration_manager),
         engine_registry,
-        terminal_manager: Mutex::new(TerminalManager::new()),
-        spring_boot_manager: Mutex::new(SpringBootManager::new()),
-        file_watcher_manager: Mutex::new(FileWatcherManager::new()),
+            terminal_manager: Mutex::new(TerminalManager::new()),
+            spring_boot_manager: Mutex::new(SpringBootManager::new()),
+            file_watcher_manager: Mutex::new(FileWatcherManager::new()),
         pending_questions: Arc::new(Mutex::new(HashMap::new())),
         ask_answer_senders: Arc::new(Mutex::new(HashMap::new())),
         pending_plugin_cards: Arc::new(Mutex::new(HashMap::new())),
@@ -271,7 +271,8 @@ impl AppState {
     /// Clone the current config by briefly acquiring the config_store lock.
     /// Consolidates the lock-clone-drop pattern used in multiple web handlers.
     pub fn clone_config(&self) -> Result<crate::models::config::Config, String> {
-        let store = self.config_store.lock().map_err(|e| e.to_string())?;
+        let store = self.config_store.lock()
+            .map_err(|e| e.to_string())?;
         Ok(store.get().clone())
     }
 
@@ -281,9 +282,7 @@ impl AppState {
     /// empty instances — the web server never accesses them.
     pub fn clone_for_web(&self) -> AppState {
         // Carry over app_config_dir if set, fallback to DataRoot
-        let config_dir = self
-            .app_config_dir
-            .get()
+        let config_dir = self.app_config_dir.get()
             .cloned()
             .unwrap_or_else(|| data_root().config_dir());
 
@@ -309,8 +308,8 @@ impl AppState {
             context_store: self.context_store.clone(),
             integration_manager: AsyncMutex::new(IntegrationManager::new()),
             engine_registry: self.engine_registry.clone(),
-            terminal_manager: Mutex::new(TerminalManager::new()),
-            spring_boot_manager: Mutex::new(SpringBootManager::new()),
+        terminal_manager: Mutex::new(TerminalManager::new()),
+        spring_boot_manager: Mutex::new(SpringBootManager::new()),
             file_watcher_manager: Mutex::new(FileWatcherManager::new()),
             pending_questions: self.pending_questions.clone(),
             ask_answer_senders: self.ask_answer_senders.clone(),

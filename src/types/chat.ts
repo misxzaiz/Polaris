@@ -80,15 +80,12 @@ export interface TextBlock {
 export interface ContextCompactBlock {
   type: 'context_compact';
   id: string;
-  /** 触发方式："manual"（/compact）| "auto"（自动压缩）| "recovery"（超限恢复） */
+  /** 触发方式："manual"（/compact）| "auto"（自动压缩） */
   trigger: string;
   /** 压缩前 token 数 */
   preTokens?: number;
   /** 压缩后 token 数 */
   postTokens?: number;
-  generation?: number;
-  archivedTurns?: number;
-  retainedTurns?: number;
   /** 压缩完成时间（ISO 8601） */
   createdAt: string;
 }

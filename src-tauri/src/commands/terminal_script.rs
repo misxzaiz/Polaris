@@ -19,17 +19,13 @@ pub struct DiscoveredTerminalScript {
 
 /// 发现工作区可运行脚本。首期支持 package.json scripts。
 #[cfg_attr(feature = "tauri-app", tauri::command)]
-pub async fn terminal_discover_scripts(
-    workspace_path: String,
-) -> Result<Vec<DiscoveredTerminalScript>> {
+pub async fn terminal_discover_scripts(workspace_path: String) -> Result<Vec<DiscoveredTerminalScript>> {
     discover_scripts_in_workspace(Path::new(&workspace_path))
 }
 
 fn discover_scripts_in_workspace(workspace_path: &Path) -> Result<Vec<DiscoveredTerminalScript>> {
     if !workspace_path.exists() || !workspace_path.is_dir() {
-        return Err(AppError::InvalidPath(
-            "工作区路径不存在或不是目录".to_string(),
-        ));
+        return Err(AppError::InvalidPath("工作区路径不存在或不是目录".to_string()));
     }
 
     let mut scripts = Vec::new();
@@ -84,12 +80,7 @@ fn detect_node_runner(workspace_path: &Path) -> String {
 
     candidates
         .iter()
-        .find_map(|(file, runner)| {
-            workspace_path
-                .join(file)
-                .exists()
-                .then(|| (*runner).to_string())
-        })
+        .find_map(|(file, runner)| workspace_path.join(file).exists().then(|| (*runner).to_string()))
         .unwrap_or_else(|| "npm".to_string())
 }
 
@@ -120,9 +111,7 @@ mod tests {
         let scripts = discover_scripts_in_workspace(root).unwrap();
 
         assert_eq!(scripts.len(), 3);
-        assert!(scripts
-            .iter()
-            .any(|s| s.name == "tauri:dev" && s.command == "npm run tauri:dev"));
+        assert!(scripts.iter().any(|s| s.name == "tauri:dev" && s.command == "npm run tauri:dev"));
     }
 
     #[test]

@@ -9,9 +9,7 @@ use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
 use crate::error::Result;
-use crate::models::todo::{
-    QueryScope, TodoCreateParams, TodoItem, TodoPriority, TodoStatus, TodoUpdateParams,
-};
+use crate::models::todo::{QueryScope, TodoCreateParams, TodoItem, TodoPriority, TodoStatus, TodoUpdateParams};
 use crate::services::unified_todo_repository::UnifiedTodoRepository;
 
 // ============================================================================
@@ -36,14 +34,14 @@ pub struct ListTodosParams {
 
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn list_todos(params: ListTodosParams, app: AppHandle) -> Result<Vec<TodoItem>> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
+pub async fn list_todos(
+    params: ListTodosParams,
+    app: AppHandle,
+) -> Result<Vec<TodoItem>> {
+    let config_dir = app.path().app_config_dir()
         .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
 
-    let workspace_path = params
-        .workspace_path
+    let workspace_path = params.workspace_path
         .filter(|p| !p.trim().is_empty())
         .map(PathBuf::from);
 
@@ -114,14 +112,14 @@ pub struct TodoCreateSubtask {
 
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn create_todo(params: CreateTodoParams, app: AppHandle) -> Result<TodoItem> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
+pub async fn create_todo(
+    params: CreateTodoParams,
+    app: AppHandle,
+) -> Result<TodoItem> {
+    let config_dir = app.path().app_config_dir()
         .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
 
-    let workspace_path = params
-        .workspace_path
+    let workspace_path = params.workspace_path
         .filter(|p| !p.trim().is_empty())
         .map(PathBuf::from);
 
@@ -132,8 +130,7 @@ pub async fn create_todo(params: CreateTodoParams, app: AppHandle) -> Result<Tod
         repository.register_workspace().ok();
     }
 
-    let priority = params
-        .priority
+    let priority = params.priority
         .and_then(|p| parse_priority(&p).ok())
         .unwrap_or_default();
 
@@ -146,10 +143,9 @@ pub async fn create_todo(params: CreateTodoParams, app: AppHandle) -> Result<Tod
         due_date: params.due_date,
         estimated_hours: params.estimated_hours,
         subtasks: params.subtasks.map(|items| {
-            items
-                .into_iter()
-                .map(|s| crate::models::todo::TodoCreateSubtask { title: s.title })
-                .collect()
+            items.into_iter().map(|s| crate::models::todo::TodoCreateSubtask {
+                title: s.title,
+            }).collect()
         }),
         ..Default::default()
     };
@@ -194,14 +190,14 @@ pub struct UpdateTodoParams {
 
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn update_todo(params: UpdateTodoParams, app: AppHandle) -> Result<TodoItem> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
+pub async fn update_todo(
+    params: UpdateTodoParams,
+    app: AppHandle,
+) -> Result<TodoItem> {
+    let config_dir = app.path().app_config_dir()
         .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
 
-    let workspace_path = params
-        .workspace_path
+    let workspace_path = params.workspace_path
         .filter(|p| !p.trim().is_empty())
         .map(PathBuf::from);
 
@@ -243,14 +239,14 @@ pub struct DeleteTodoParams {
 
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn delete_todo(params: DeleteTodoParams, app: AppHandle) -> Result<TodoItem> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
+pub async fn delete_todo(
+    params: DeleteTodoParams,
+    app: AppHandle,
+) -> Result<TodoItem> {
+    let config_dir = app.path().app_config_dir()
         .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
 
-    let workspace_path = params
-        .workspace_path
+    let workspace_path = params.workspace_path
         .filter(|p| !p.trim().is_empty())
         .map(PathBuf::from);
 
@@ -273,27 +269,24 @@ pub struct StartTodoParams {
 
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn start_todo(params: StartTodoParams, app: AppHandle) -> Result<TodoItem> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
+pub async fn start_todo(
+    params: StartTodoParams,
+    app: AppHandle,
+) -> Result<TodoItem> {
+    let config_dir = app.path().app_config_dir()
         .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
 
-    let workspace_path = params
-        .workspace_path
+    let workspace_path = params.workspace_path
         .filter(|p| !p.trim().is_empty())
         .map(PathBuf::from);
 
     let repository = UnifiedTodoRepository::new(config_dir, workspace_path);
 
-    repository.update_todo(
-        &params.id,
-        TodoUpdateParams {
-            status: Some(TodoStatus::InProgress),
-            last_progress: params.last_progress,
-            ..Default::default()
-        },
-    )
+    repository.update_todo(&params.id, TodoUpdateParams {
+        status: Some(TodoStatus::InProgress),
+        last_progress: params.last_progress,
+        ..Default::default()
+    })
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -306,27 +299,24 @@ pub struct CompleteTodoParams {
 
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn complete_todo(params: CompleteTodoParams, app: AppHandle) -> Result<TodoItem> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
+pub async fn complete_todo(
+    params: CompleteTodoParams,
+    app: AppHandle,
+) -> Result<TodoItem> {
+    let config_dir = app.path().app_config_dir()
         .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
 
-    let workspace_path = params
-        .workspace_path
+    let workspace_path = params.workspace_path
         .filter(|p| !p.trim().is_empty())
         .map(PathBuf::from);
 
     let repository = UnifiedTodoRepository::new(config_dir, workspace_path);
 
-    repository.update_todo(
-        &params.id,
-        TodoUpdateParams {
-            status: Some(TodoStatus::Completed),
-            last_progress: params.last_progress,
-            ..Default::default()
-        },
-    )
+    repository.update_todo(&params.id, TodoUpdateParams {
+        status: Some(TodoStatus::Completed),
+        last_progress: params.last_progress,
+        ..Default::default()
+    })
 }
 
 // ============================================================================
@@ -345,13 +335,10 @@ pub async fn get_todo_workspace_breakdown(
     params: GetBreakdownParams,
     app: AppHandle,
 ) -> Result<BTreeMap<String, usize>> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
+    let config_dir = app.path().app_config_dir()
         .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
 
-    let workspace_path = params
-        .workspace_path
+    let workspace_path = params.workspace_path
         .filter(|p| !p.trim().is_empty())
         .map(PathBuf::from);
 
@@ -370,10 +357,7 @@ fn parse_status(value: &str) -> Result<TodoStatus> {
         "in_progress" => Ok(TodoStatus::InProgress),
         "completed" => Ok(TodoStatus::Completed),
         "cancelled" => Ok(TodoStatus::Cancelled),
-        _ => Err(crate::error::AppError::ValidationError(format!(
-            "无效状态: {}",
-            value
-        ))),
+        _ => Err(crate::error::AppError::ValidationError(format!("无效状态: {}", value))),
     }
 }
 
@@ -383,9 +367,6 @@ fn parse_priority(value: &str) -> Result<TodoPriority> {
         "normal" => Ok(TodoPriority::Normal),
         "high" => Ok(TodoPriority::High),
         "urgent" => Ok(TodoPriority::Urgent),
-        _ => Err(crate::error::AppError::ValidationError(format!(
-            "无效优先级: {}",
-            value
-        ))),
+        _ => Err(crate::error::AppError::ValidationError(format!("无效优先级: {}", value))),
     }
 }

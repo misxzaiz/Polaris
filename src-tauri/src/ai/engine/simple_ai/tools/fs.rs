@@ -52,11 +52,7 @@ impl Tool for ReadFileTool {
             Some(v) if v > 0 => v as usize,
             _ => 1, // 负数/0 无效，回退到 1
         };
-        let limit =
-            args["limit"]
-                .as_i64()
-                .map(|v| v as usize)
-                .and_then(|v| if v > 0 { Some(v) } else { None });
+        let limit = args["limit"].as_i64().map(|v| v as usize).and_then(|v| if v > 0 { Some(v) } else { None });
         read_file_op(path, ctx.work_dir, offset, limit)
     }
 }
@@ -74,20 +70,14 @@ fn read_file_op(path: &str, workdir: &str, offset: usize, limit: Option<usize>) 
             let total_bytes = content.len();
 
             // 计算实际读取范围
-            let start = if offset == 0 {
-                0
-            } else {
-                offset.saturating_sub(1)
-            };
+            let start = if offset == 0 { 0 } else { offset.saturating_sub(1) };
             let raw_end = limit.map_or(total_lines, |l| (start + l).min(total_lines));
 
             // 未指定 limit 时，应用默认行限制（避免大文件撑爆上下文）
             let (end, limit_applied) = if limit.is_some() {
                 (raw_end, false)
             } else {
-                let max_end = start
-                    .saturating_add(DEFAULT_MAX_OUTPUT_LINES)
-                    .min(total_lines);
+                let max_end = start.saturating_add(DEFAULT_MAX_OUTPUT_LINES).min(total_lines);
                 if raw_end > max_end {
                     (max_end, true)
                 } else {
@@ -137,11 +127,7 @@ fn read_file_op(path: &str, workdir: &str, offset: usize, limit: Option<usize>) 
 
             ToolOutcome::ok(output)
         }
-        Err(e) => ToolOutcome::fail(format!(
-            "Failed to read file '{}': {}",
-            full_path.display(),
-            e
-        )),
+        Err(e) => ToolOutcome::fail(format!("Failed to read file '{}': {}", full_path.display(), e)),
     }
 }
 
@@ -196,15 +182,8 @@ fn write_file_op(path: &str, content: &str, workdir: &str) -> ToolOutcome {
         }
     }
     match std::fs::write(&full_path, content) {
-        Ok(_) => ToolOutcome::ok(format!(
-            "File written successfully: {}",
-            full_path.display()
-        )),
-        Err(e) => ToolOutcome::fail(format!(
-            "Failed to write file '{}': {}",
-            full_path.display(),
-            e
-        )),
+        Ok(_) => ToolOutcome::ok(format!("File written successfully: {}", full_path.display())),
+        Err(e) => ToolOutcome::fail(format!("Failed to write file '{}': {}", full_path.display(), e)),
     }
 }
 
@@ -268,11 +247,7 @@ fn list_directory_op(path: &str, workdir: &str) -> ToolOutcome {
                 ToolOutcome::ok(items.join("\n"))
             }
         }
-        Err(e) => ToolOutcome::fail(format!(
-            "Failed to list directory '{}': {}",
-            full_path.display(),
-            e
-        )),
+        Err(e) => ToolOutcome::fail(format!("Failed to list directory '{}': {}", full_path.display(), e)),
     }
 }
 
@@ -314,30 +289,20 @@ impl Tool for EditFileTool {
         // 行号参数验证：负数/0 无效
         let start_line = match args["start_line"].as_i64() {
             Some(v) if v > 0 => v as usize,
-            _ => {
-                return ToolOutcome::fail(
-                    "edit_file: start_line must be a positive integer".to_string(),
-                )
-            }
+            _ => return ToolOutcome::fail("edit_file: start_line must be a positive integer".to_string()),
         };
         let end_line = match args["end_line"].as_i64() {
             Some(v) if v > 0 => v as usize,
-            _ => {
-                return ToolOutcome::fail(
-                    "edit_file: end_line must be a positive integer".to_string(),
-                )
-            }
+            _ => return ToolOutcome::fail("edit_file: end_line must be a positive integer".to_string()),
         };
 
         // replacement_text 必须显式提供；缺失时返回错误而非静默删除
-        let replacement_text =
-            match args["replacement_text"].as_str() {
-                Some(v) => v.to_string(),
-                None => return ToolOutcome::fail(
-                    "edit_file: replacement_text is required (pass empty string to delete lines)"
-                        .to_string(),
-                ),
-            };
+        let replacement_text = match args["replacement_text"].as_str() {
+            Some(v) => v.to_string(),
+            None => return ToolOutcome::fail(
+                "edit_file: replacement_text is required (pass empty string to delete lines)".to_string()
+            ),
+        };
 
         edit_file_op(path, start_line, end_line, &replacement_text, ctx.work_dir)
     }
@@ -507,18 +472,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.txt");
         std::fs::write(&file, "hello\nworld\nfoo\n").unwrap();
-        let outcome = edit_file_op(
-            file.to_str().unwrap(),
-            2,
-            2,
-            "WORLD",
-            dir.path().to_str().unwrap(),
-        );
+        let outcome = edit_file_op(file.to_str().unwrap(), 2, 2, "WORLD", dir.path().to_str().unwrap());
         assert!(outcome.success);
-        assert_eq!(
-            std::fs::read_to_string(&file).unwrap(),
-            "hello\nWORLD\nfoo\n"
-        );
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "hello\nWORLD\nfoo\n");
     }
 
     #[test]
@@ -526,12 +482,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.txt");
         std::fs::write(&file, "a\nb\nc\n").unwrap();
-        let outcome = read_file_op(
-            file.to_str().unwrap(),
-            dir.path().to_str().unwrap(),
-            1,
-            None,
-        );
+        let outcome = read_file_op(file.to_str().unwrap(), dir.path().to_str().unwrap(), 1, None);
         assert!(outcome.success);
         assert!(outcome.content.contains("     1\ta"));
         assert!(outcome.content.contains("     2\tb"));
@@ -543,12 +494,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.txt");
         std::fs::write(&file, "a\nb\nc\nd\ne\n").unwrap();
-        let outcome = read_file_op(
-            file.to_str().unwrap(),
-            dir.path().to_str().unwrap(),
-            2,
-            Some(2),
-        );
+        let outcome = read_file_op(file.to_str().unwrap(), dir.path().to_str().unwrap(), 2, Some(2));
         assert!(outcome.success);
         assert!(outcome.content.contains("Showing lines 2-3"));
         assert!(outcome.content.contains("     2\tb"));
@@ -560,12 +506,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.txt");
         std::fs::write(&file, "a\nb\n").unwrap();
-        let outcome = read_file_op(
-            file.to_str().unwrap(),
-            dir.path().to_str().unwrap(),
-            10,
-            None,
-        );
+        let outcome = read_file_op(file.to_str().unwrap(), dir.path().to_str().unwrap(), 10, None);
         assert!(!outcome.success);
         assert!(outcome.content.contains("Offset 10"));
     }

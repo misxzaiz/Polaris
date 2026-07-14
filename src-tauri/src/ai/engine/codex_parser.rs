@@ -183,10 +183,7 @@ pub fn codex_event_to_ai_events(event: CodexEvent, session_id: &str) -> Vec<AIEv
                     // item.completed 级别的 error 是 Codex 的诊断消息（如模型元数据缺失、
                     // 配置项废弃告警），不是会话失败信号——真正的失败走 turn.failed / 顶层
                     // StreamError 分支。统一降级为非终止的 progress，避免误杀正常完成的会话。
-                    tracing::warn!(
-                        "[CodexParser] item error（非致命，降级为 progress）: {}",
-                        msg
-                    );
+                    tracing::warn!("[CodexParser] item error（非致命，降级为 progress）: {}", msg);
                     vec![AIEvent::progress(session_id, format!("Codex: {}", msg))]
                 }
                 _ => vec![],
@@ -386,11 +383,7 @@ mod tests {
         assert_eq!(ai_events.len(), 1);
         match &ai_events[0] {
             AIEvent::Progress(e) => {
-                assert!(e
-                    .message
-                    .as_deref()
-                    .unwrap_or("")
-                    .contains("Model metadata"));
+                assert!(e.message.as_deref().unwrap_or("").contains("Model metadata"));
             }
             other => panic!("Expected Progress, got {:?}", other),
         }

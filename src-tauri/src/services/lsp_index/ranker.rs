@@ -52,7 +52,10 @@ impl<'a> RankContext<'a> {
 }
 
 /// 给定一组 SymbolRow，按 RankContext 打分 → 返回 (score, row) 降序排列。
-pub fn rank_definition(candidates: Vec<SymbolRow>, ctx: &RankContext<'_>) -> Vec<(i32, SymbolRow)> {
+pub fn rank_definition(
+    candidates: Vec<SymbolRow>,
+    ctx: &RankContext<'_>,
+) -> Vec<(i32, SymbolRow)> {
     let mut scored: Vec<(i32, SymbolRow)> = candidates
         .into_iter()
         .map(|s| (score_definition(&s, ctx), s))

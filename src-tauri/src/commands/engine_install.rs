@@ -92,11 +92,7 @@ pub async fn engine_uninstall(
     run_npm_streaming(
         &app,
         &task_id,
-        vec![
-            "uninstall".to_string(),
-            "-g".to_string(),
-            npm_package.clone(),
-        ],
+        vec!["uninstall".to_string(), "-g".to_string(), npm_package.clone()],
         &npm_package,
     )
     .await
@@ -203,10 +199,7 @@ async fn run_npm_streaming(
         cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
         let mut child = cmd.spawn().map_err(|e| {
-            let msg = format!(
-                "启动 npm 失败: {}（请确认已安装 Node.js / npm 并在 PATH 中）",
-                e
-            );
+            let msg = format!("启动 npm 失败: {}（请确认已安装 Node.js / npm 并在 PATH 中）", e);
             emit_install(&app, &task_id, "error", &msg);
             AppError::ProcessError(msg)
         })?;

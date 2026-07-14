@@ -121,7 +121,9 @@ impl SchedulerLock {
         let handle = unsafe { create_mutex(ptr::null_mut(), 0, wide_name.as_ptr()) };
 
         if handle.is_null() {
-            return Err(io::Error::other("CreateMutex 返回 NULL"));
+            return Err(io::Error::other(
+                "CreateMutex 返回 NULL",
+            ));
         }
 
         let err = unsafe { get_last_error() };
@@ -174,7 +176,9 @@ impl SchedulerLock {
             .open(&lock_path)?;
 
         // 尝试获取排他锁（非阻塞）
-        let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+        let result = unsafe {
+            libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB)
+        };
 
         if result != 0 {
             let err = io::Error::last_os_error();
@@ -227,7 +231,8 @@ impl Drop for SchedulerLock {
                 // 动态加载 CloseHandle
                 if let Ok(kernel32) = unsafe { libloading::Library::new("kernel32.dll") } {
                     if let Ok(close_handle) =
-                        unsafe { kernel32.get(b"CloseHandle") } as Result<_, _>
+                        unsafe { kernel32.get(b"CloseHandle") }
+                            as Result<_, _>
                     {
                         let close_handle: libloading::Symbol<
                             unsafe extern "system" fn(*mut std::ffi::c_void) -> i32,
@@ -260,10 +265,7 @@ pub struct LockStatus {
 
 /// 检查当前进程是否持有锁
 pub fn is_holding_lock() -> bool {
-    HELD_LOCK
-        .lock()
-        .map(|guard| guard.is_some())
-        .unwrap_or(false)
+    HELD_LOCK.lock().map(|guard| guard.is_some()).unwrap_or(false)
 }
 
 /// 尝试获取锁并存储到全局变量
@@ -271,9 +273,7 @@ pub fn is_holding_lock() -> bool {
 pub fn acquire_and_hold_lock() -> io::Result<bool> {
     // 先检查是否已经持有锁
     {
-        let held = HELD_LOCK
-            .lock()
-            .map_err(|e| io::Error::other(e.to_string()))?;
+        let held = HELD_LOCK.lock().map_err(|e| io::Error::other(e.to_string()))?;
         if held.is_some() {
             tracing::info!("[acquire_and_hold_lock] 当前实例已持有锁");
             return Ok(true);
@@ -284,9 +284,7 @@ pub fn acquire_and_hold_lock() -> io::Result<bool> {
     match SchedulerLock::try_acquire() {
         Ok(Some(lock)) => {
             // 存储到全局变量
-            let mut held = HELD_LOCK
-                .lock()
-                .map_err(|e| io::Error::other(e.to_string()))?;
+            let mut held = HELD_LOCK.lock().map_err(|e| io::Error::other(e.to_string()))?;
             *held = Some(lock);
             tracing::info!("[acquire_and_hold_lock] 成功获取并存储调度器锁");
             Ok(true)
@@ -304,9 +302,7 @@ pub fn acquire_and_hold_lock() -> io::Result<bool> {
 
 /// 释放持有的锁
 pub fn release_held_lock() -> io::Result<()> {
-    let mut held = HELD_LOCK
-        .lock()
-        .map_err(|e| io::Error::other(e.to_string()))?;
+    let mut held = HELD_LOCK.lock().map_err(|e| io::Error::other(e.to_string()))?;
     if held.take().is_some() {
         tracing::info!("[release_held_lock] 已释放持有的调度器锁");
     } else {

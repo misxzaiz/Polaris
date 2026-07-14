@@ -3,8 +3,8 @@
  * 提供二进制检测、状态标志等辅助功能
  */
 
-use bitflags::bitflags;
 use std::path::Path;
+use bitflags::bitflags;
 
 /// 最大内联 Diff 大小 (移除限制，始终返回内容)
 pub const MAX_INLINE_DIFF_BYTES: usize = usize::MAX;
@@ -42,11 +42,16 @@ pub const BINARY_EXTENSIONS: &[&str] = &[
     // 图片
     "png", "jpg", "jpeg", "gif", "bmp", "ico", "webp", "svg", "psd", "ai",
     // 压缩文件
-    "zip", "gz", "tar", "rar", "7z", "bz2", "xz", "zst", // 可执行文件
-    "exe", "dll", "so", "dylib", "app", "bin", // 字体
-    "ttf", "otf", "woff", "woff2", "eot", // 媒体
-    "mp3", "mp4", "avi", "mov", "wav", "flac", "ogg", "webm", "mkv", // Office
-    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", // 其他
+    "zip", "gz", "tar", "rar", "7z", "bz2", "xz", "zst",
+    // 可执行文件
+    "exe", "dll", "so", "dylib", "app", "bin",
+    // 字体
+    "ttf", "otf", "woff", "woff2", "eot",
+    // 媒体
+    "mp3", "mp4", "avi", "mov", "wav", "flac", "ogg", "webm", "mkv",
+    // Office
+    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+    // 其他
     "sqlite", "db", "jar", "class", "pyc",
 ];
 

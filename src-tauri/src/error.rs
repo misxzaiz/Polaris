@@ -74,10 +74,6 @@ pub enum AppError {
     #[error("API error: {0}")]
     ApiError(String),
 
-    /// 模型供应商明确拒绝了超出上下文窗口的请求。
-    #[error("Context limit exceeded (HTTP {status}): {message}")]
-    ContextLimit { status: u16, message: String },
-
     /// 验证错误
     #[error("Validation error: {0}")]
     ValidationError(String),
@@ -146,19 +142,11 @@ impl AppError {
             AppError::NetworkError(e) => format!("网络错误: {}", e),
             AppError::AuthError(e) => format!("认证错误: {}", e),
             AppError::ApiError(e) => format!("API 错误: {}", e),
-            AppError::ContextLimit { message, .. } => {
-                format!("上下文窗口已超限: {}", message)
-            }
             AppError::ValidationError(e) => format!("验证错误: {}", e),
             AppError::StateError(e) => format!("状态错误: {}", e),
             AppError::SchedulerError(e) => format!("调度器错误: {}", e),
-            AppError::TaskError { task_id, message } => {
-                format!("任务错误 [{}]: {}", task_id, message)
-            }
-            AppError::TemplateError {
-                template_id,
-                message,
-            } => format!("模板错误 [{}]: {}", template_id, message),
+            AppError::TaskError { task_id, message } => format!("任务错误 [{}]: {}", task_id, message),
+            AppError::TemplateError { template_id, message } => format!("模板错误 [{}]: {}", template_id, message),
             AppError::ProtocolError { message, task_path } => {
                 if let Some(path) = task_path {
                     format!("协议错误 [{}]: {}", path, message)
@@ -194,9 +182,5 @@ impl AppError {
             message: message.into(),
             task_path,
         }
-    }
-
-    pub fn is_context_limit(&self) -> bool {
-        matches!(self, AppError::ContextLimit { .. })
     }
 }

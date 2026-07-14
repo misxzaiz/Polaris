@@ -4,53 +4,52 @@
  */
 
 // 子模块
-mod branch;
-mod cherry_pick;
-mod commit;
-mod diff;
-mod executor;
-mod gitignore;
-mod log;
-mod rebase;
-mod remote;
-mod reset;
-mod revert;
-mod stash;
-mod status;
-mod tag;
 mod utils;
+mod executor;
+mod status;
+mod diff;
+mod branch;
+mod tag;
+mod rebase;
+mod cherry_pick;
+mod revert;
+mod commit;
+mod remote;
+mod log;
+mod stash;
+mod reset;
+mod gitignore;
 
 // 重导出公共 API
-pub use branch::{
-    checkout_branch, checkout_commit, create_branch, delete_branch, get_branches, merge_branch,
-    rename_branch,
-};
-pub use cherry_pick::{cherry_pick, cherry_pick_abort, cherry_pick_continue};
-pub use commit::{batch_stage, commit, discard_changes, stage_file, unstage_file};
-pub use diff::{
-    get_diff, get_index_diff, get_index_file_diff, get_worktree_diff, get_worktree_file_diff,
-};
 pub use executor::{init_repository, is_repository};
-pub use gitignore::{add_to_gitignore, get_gitignore, get_gitignore_templates, save_gitignore};
-pub use log::{blame_file, get_commit_details, get_file_history, get_log};
-pub use rebase::{rebase_abort, rebase_branch, rebase_continue};
-pub use remote::{
-    add_remote, create_pr, delete_remote, detect_git_host, get_pr_status, get_remotes, pull,
-    push_branch, push_set_upstream,
-};
-pub use reset::{reset, ResetMode};
-pub use revert::{revert, revert_abort, revert_continue};
-pub use stash::{stash_drop, stash_list, stash_pop, stash_save};
 pub use status::get_status;
-pub use tag::{create_tag, delete_tag, get_tags};
+pub use diff::{
+    get_diff, get_worktree_diff, get_index_diff, get_worktree_file_diff,
+    get_index_file_diff,
+};
+pub use branch::{get_branches, create_branch, checkout_branch, delete_branch, rename_branch, merge_branch, checkout_commit};
+pub use tag::{get_tags, create_tag, delete_tag};
+pub use rebase::{rebase_branch, rebase_abort, rebase_continue};
+pub use cherry_pick::{cherry_pick, cherry_pick_abort, cherry_pick_continue};
+pub use revert::{revert, revert_abort, revert_continue};
+pub use commit::{commit, stage_file, unstage_file, discard_changes, batch_stage};
+pub use remote::{
+    get_remotes, detect_git_host, add_remote, delete_remote,
+    push_branch, push_set_upstream, create_pr, get_pr_status, pull,
+};
+pub use log::{get_log, get_commit_details, get_file_history, blame_file};
+pub use stash::{stash_save, stash_list, stash_pop, stash_drop};
+pub use reset::{reset, ResetMode};
+pub use gitignore::{get_gitignore, save_gitignore, add_to_gitignore, get_gitignore_templates};
 
 use std::path::Path;
 
 use crate::models::git::{
-    BatchStageResult, CreatePROptions, GitBlameResult, GitBranch, GitCherryPickResult, GitCommit,
-    GitCommitDetails, GitDiffEntry, GitFileHistoryEntry, GitIgnoreResult, GitIgnoreTemplate,
-    GitMergeResult, GitPullResult, GitRebaseResult, GitRemote, GitRepositoryStatus,
-    GitRevertResult, GitServiceError, GitStashEntry, GitTag, PullRequest,
+    BatchStageResult, CreatePROptions, GitBlameResult, GitBranch, GitCherryPickResult,
+    GitCommit, GitCommitDetails, GitDiffEntry, GitFileHistoryEntry, GitIgnoreResult,
+    GitIgnoreTemplate, GitMergeResult, GitPullResult, GitRebaseResult, GitRemote,
+    GitRepositoryStatus, GitRevertResult, GitStashEntry, GitTag,
+    GitServiceError, PullRequest,
 };
 
 /// Git 服务
@@ -70,10 +69,7 @@ impl GitService {
     }
 
     /// 初始化 Git 仓库
-    pub fn init_repository(
-        path: &Path,
-        initial_branch: Option<&str>,
-    ) -> Result<String, GitServiceError> {
+    pub fn init_repository(path: &Path, initial_branch: Option<&str>) -> Result<String, GitServiceError> {
         init_repository(path, initial_branch)
     }
 
@@ -106,18 +102,12 @@ impl GitService {
     }
 
     /// 获取单个文件在工作区的 Diff
-    pub fn get_worktree_file_diff(
-        path: &Path,
-        file_path: &str,
-    ) -> Result<GitDiffEntry, GitServiceError> {
+    pub fn get_worktree_file_diff(path: &Path, file_path: &str) -> Result<GitDiffEntry, GitServiceError> {
         get_worktree_file_diff(path, file_path)
     }
 
     /// 获取单个文件在暂存区的 Diff
-    pub fn get_index_file_diff(
-        path: &Path,
-        file_path: &str,
-    ) -> Result<GitDiffEntry, GitServiceError> {
+    pub fn get_index_file_diff(path: &Path, file_path: &str) -> Result<GitDiffEntry, GitServiceError> {
         get_index_file_diff(path, file_path)
     }
 
@@ -131,12 +121,7 @@ impl GitService {
     }
 
     /// 创建分支
-    pub fn create_branch(
-        path: &Path,
-        name: &str,
-        checkout: bool,
-        start_point: Option<&str>,
-    ) -> Result<(), GitServiceError> {
+    pub fn create_branch(path: &Path, name: &str, checkout: bool, start_point: Option<&str>) -> Result<(), GitServiceError> {
         create_branch(path, name, checkout, start_point)
     }
 
@@ -151,20 +136,12 @@ impl GitService {
     }
 
     /// 重命名分支
-    pub fn rename_branch(
-        path: &Path,
-        old_name: &str,
-        new_name: &str,
-    ) -> Result<(), GitServiceError> {
+    pub fn rename_branch(path: &Path, old_name: &str, new_name: &str) -> Result<(), GitServiceError> {
         rename_branch(path, old_name, new_name)
     }
 
     /// 合并分支
-    pub fn merge_branch(
-        path: &Path,
-        source_branch: &str,
-        no_ff: bool,
-    ) -> Result<GitMergeResult, GitServiceError> {
+    pub fn merge_branch(path: &Path, source_branch: &str, no_ff: bool) -> Result<GitMergeResult, GitServiceError> {
         merge_branch(path, source_branch, no_ff)
     }
 
@@ -207,10 +184,7 @@ impl GitService {
     // ========================================================================
 
     /// 变基分支
-    pub fn rebase_branch(
-        path: &Path,
-        source_branch: &str,
-    ) -> Result<GitRebaseResult, GitServiceError> {
+    pub fn rebase_branch(path: &Path, source_branch: &str) -> Result<GitRebaseResult, GitServiceError> {
         rebase_branch(path, source_branch)
     }
 
@@ -229,10 +203,7 @@ impl GitService {
     // ========================================================================
 
     /// Cherry-pick 提交
-    pub fn cherry_pick(
-        path: &Path,
-        commit_sha: &str,
-    ) -> Result<GitCherryPickResult, GitServiceError> {
+    pub fn cherry_pick(path: &Path, commit_sha: &str) -> Result<GitCherryPickResult, GitServiceError> {
         cherry_pick(path, commit_sha)
     }
 
@@ -295,10 +266,7 @@ impl GitService {
     }
 
     /// 批量暂存文件
-    pub fn batch_stage(
-        path: &Path,
-        file_paths: &[String],
-    ) -> Result<BatchStageResult, GitServiceError> {
+    pub fn batch_stage(path: &Path, file_paths: &[String]) -> Result<BatchStageResult, GitServiceError> {
         batch_stage(path, file_paths)
     }
 
@@ -348,10 +316,7 @@ impl GitService {
     }
 
     /// 创建 Pull Request
-    pub fn create_pr(
-        path: &Path,
-        options: &CreatePROptions,
-    ) -> Result<PullRequest, GitServiceError> {
+    pub fn create_pr(path: &Path, options: &CreatePROptions) -> Result<PullRequest, GitServiceError> {
         create_pr(path, options)
     }
 

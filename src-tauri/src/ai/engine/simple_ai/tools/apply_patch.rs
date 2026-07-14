@@ -98,11 +98,7 @@ struct Chunk {
 
 impl Chunk {
     fn empty() -> Self {
-        Self {
-            context: None,
-            old_lines: Vec::new(),
-            new_lines: Vec::new(),
-        }
+        Self { context: None, old_lines: Vec::new(), new_lines: Vec::new() }
     }
 }
 
@@ -124,7 +120,10 @@ fn strip_marker<'a>(trimmed: &'a str, marker: &str) -> Option<&'a str> {
 
 fn is_file_marker(line: &str) -> bool {
     let t = line.trim();
-    t.starts_with(ADD_FILE) || t.starts_with(DELETE_FILE) || t.starts_with(UPDATE_FILE) || t == END
+    t.starts_with(ADD_FILE)
+        || t.starts_with(DELETE_FILE)
+        || t.starts_with(UPDATE_FILE)
+        || t == END
 }
 
 fn parse_patch(patch: &str) -> Result<Vec<FileOp>, String> {
@@ -157,17 +156,12 @@ fn parse_patch(patch: &str) -> Result<Vec<FileOp>, String> {
                 }
                 i += 1;
             }
-            ops.push(FileOp::Add {
-                path,
-                content: content.join("\n"),
-            });
+            ops.push(FileOp::Add { path, content: content.join("\n") });
             continue;
         }
 
         if let Some(rest) = strip_marker(trimmed, DELETE_FILE) {
-            ops.push(FileOp::Delete {
-                path: rest.to_string(),
-            });
+            ops.push(FileOp::Delete { path: rest.to_string() });
             i += 1;
             continue;
         }
@@ -194,11 +188,7 @@ fn parse_patch(patch: &str) -> Result<Vec<FileOp>, String> {
                     }
                     let ctx = l[2..].trim();
                     cur = Some(Chunk {
-                        context: if ctx.is_empty() {
-                            None
-                        } else {
-                            Some(ctx.to_string())
-                        },
+                        context: if ctx.is_empty() { None } else { Some(ctx.to_string()) },
                         old_lines: Vec::new(),
                         new_lines: Vec::new(),
                     });
@@ -227,11 +217,7 @@ fn parse_patch(patch: &str) -> Result<Vec<FileOp>, String> {
             if let Some(c) = cur.take() {
                 chunks.push(c);
             }
-            ops.push(FileOp::Update {
-                path,
-                move_to,
-                chunks,
-            });
+            ops.push(FileOp::Update { path, move_to, chunks });
             continue;
         }
 
@@ -268,19 +254,17 @@ fn apply_ops(ops: &[FileOp], workdir: &str) -> Result<String, String> {
                     std::fs::create_dir_all(parent)
                         .map_err(|e| format!("create dir for '{}': {}", path, e))?;
                 }
-                std::fs::write(&full, content).map_err(|e| format!("write '{}': {}", path, e))?;
+                std::fs::write(&full, content)
+                    .map_err(|e| format!("write '{}': {}", path, e))?;
                 summary.push(format!("Added {}", path));
             }
             FileOp::Delete { path } => {
                 let full = resolve(path, workdir);
-                std::fs::remove_file(&full).map_err(|e| format!("delete '{}': {}", path, e))?;
+                std::fs::remove_file(&full)
+                    .map_err(|e| format!("delete '{}': {}", path, e))?;
                 summary.push(format!("Deleted {}", path));
             }
-            FileOp::Update {
-                path,
-                move_to,
-                chunks,
-            } => {
+            FileOp::Update { path, move_to, chunks } => {
                 let full = resolve(path, workdir);
                 let content = std::fs::read_to_string(&full)
                     .map_err(|e| format!("read '{}': {}", path, e))?;
@@ -359,11 +343,7 @@ fn apply_chunks(content: &str, chunks: &[Chunk]) -> Result<String, String> {
             match find_line(&lines, ctx, search_from) {
                 Some(idx) => start = idx + 1,
                 None => {
-                    return Err(format!(
-                        "chunk {}: context anchor '{}' not found",
-                        ci + 1,
-                        ctx
-                    ))
+                    return Err(format!("chunk {}: context anchor '{}' not found", ci + 1, ctx))
                 }
             }
         }
@@ -426,25 +406,10 @@ mod tests {
 *** End Patch";
         let ops = parse_patch(patch).unwrap();
         assert_eq!(ops.len(), 3);
-        assert_eq!(
-            ops[0],
-            FileOp::Add {
-                path: "new.txt".into(),
-                content: "hello\nworld".into()
-            }
-        );
-        assert_eq!(
-            ops[1],
-            FileOp::Delete {
-                path: "old.txt".into()
-            }
-        );
+        assert_eq!(ops[0], FileOp::Add { path: "new.txt".into(), content: "hello\nworld".into() });
+        assert_eq!(ops[1], FileOp::Delete { path: "old.txt".into() });
         match &ops[2] {
-            FileOp::Update {
-                path,
-                move_to,
-                chunks,
-            } => {
+            FileOp::Update { path, move_to, chunks } => {
                 assert_eq!(path, "edit.txt");
                 assert!(move_to.is_none());
                 assert_eq!(chunks.len(), 1);
@@ -523,10 +488,7 @@ mod tests {
         assert!(summary.contains("Updated edit.txt"));
         assert!(summary.contains("Deleted old.txt"));
 
-        assert_eq!(
-            std::fs::read_to_string(dir.path().join("created.txt")).unwrap(),
-            "brand new"
-        );
+        assert_eq!(std::fs::read_to_string(dir.path().join("created.txt")).unwrap(), "brand new");
         assert_eq!(
             std::fs::read_to_string(dir.path().join("edit.txt")).unwrap(),
             "alpha\nBETA\ngamma\n"
@@ -553,9 +515,6 @@ mod tests {
         apply_ops(&ops, wd).unwrap();
 
         assert!(!dir.path().join("a.txt").exists());
-        assert_eq!(
-            std::fs::read_to_string(dir.path().join("b.txt")).unwrap(),
-            "one\nTWO\n"
-        );
+        assert_eq!(std::fs::read_to_string(dir.path().join("b.txt")).unwrap(), "one\nTWO\n");
     }
 }

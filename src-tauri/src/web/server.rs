@@ -4,8 +4,8 @@ use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
-use super::router::create_router;
 use crate::AppState;
+use super::router::create_router;
 
 const ENV_WEB_PORT: &str = "POLARIS_WEB_PORT";
 
@@ -134,12 +134,7 @@ impl WebServer {
                     port += 1;
                 }
                 Err(e) => {
-                    tracing::error!(
-                        "[Web] Failed to bind from {}:{}: {}",
-                        host,
-                        preferred_port,
-                        e
-                    );
+                    tracing::error!("[Web] Failed to bind from {}:{}: {}", host, preferred_port, e);
                     return Err(e.into());
                 }
             }
@@ -154,11 +149,7 @@ impl WebServer {
         let addr = addr.to_string();
         let (host, port) = addr
             .rsplit_once(':')
-            .and_then(|(host, port)| {
-                port.parse::<u16>()
-                    .ok()
-                    .map(|port| (host.to_string(), port))
-            })
+            .and_then(|(host, port)| port.parse::<u16>().ok().map(|port| (host.to_string(), port)))
             .unwrap_or_else(|| (addr.clone(), 0));
 
         let task = tokio::spawn(async move {

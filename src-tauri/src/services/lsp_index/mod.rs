@@ -45,7 +45,11 @@ pub fn find_definition(
 }
 
 /// 查找符号引用（兼容旧 API：无 workspace service 时回退）
-pub fn find_references(root: &str, symbol: &str, extensions: &[String]) -> Result<Vec<IndexMatch>> {
+pub fn find_references(
+    root: &str,
+    symbol: &str,
+    extensions: &[String],
+) -> Result<Vec<IndexMatch>> {
     regex_fallback::find_references(root, symbol, extensions)
         .map(|v| v.into_iter().map(legacy_to_match).collect())
 }

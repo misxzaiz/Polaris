@@ -360,12 +360,7 @@ export const historyService = {
       const newSessionId = sessionStoreManager.getState().createSessionFromHistory(
         loaded.messages,
         loaded.externalSessionId || sessionId,
-        {
-          title: loaded.title,
-          workspaceId,
-          engineId: loaded.engineId,
-          stableConversationId: loaded.stableConversationId || undefined,
-        },
+        { title: loaded.title, workspaceId, engineId: loaded.engineId },
       )
 
       log.info('从历史恢复成功', {
@@ -401,7 +396,6 @@ export const historyService = {
     title: string
     engineId: EngineId
     externalSessionId: string | null
-    stableConversationId: string | null
     workspacePath: string | null
     source: UnifiedHistoryItem['source']
   }> {
@@ -414,7 +408,6 @@ export const historyService = {
           title: record.meta.title,
           engineId: normalizeEngineId(engineId || record.meta.engineId),
           externalSessionId: sessionId,
-          stableConversationId: record.meta.stableConversationId || null,
           workspacePath: record.meta.workspacePath,
           source: 'self',
         }
@@ -440,7 +433,6 @@ export const historyService = {
         title: localSession?.title || titleHint || '恢复的 Codex 会话',
         engineId: 'codex',
         externalSessionId: sessionId,
-        stableConversationId: null,
         workspacePath: null,
         source: 'codex-native',
       }
@@ -454,7 +446,6 @@ export const historyService = {
         title: localSession.title,
         engineId: restoredEngineId,
         externalSessionId: localSession.id,
-        stableConversationId: null,
         workspacePath: null,
         source: 'local',
       }
@@ -473,7 +464,6 @@ export const historyService = {
           title: titleHint || '恢复的会话',
           engineId: 'claude-code',
           externalSessionId: sessionId,
-          stableConversationId: null,
           workspacePath: null,
           source: 'claude-code-native',
         }
@@ -485,7 +475,6 @@ export const historyService = {
       title: titleHint || '恢复的会话',
       engineId: normalizeEngineId(engineId),
       externalSessionId: sessionId,
-      stableConversationId: null,
       workspacePath: null,
       source: 'self',
     }

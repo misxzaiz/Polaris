@@ -80,11 +80,7 @@ fn read_session_meta_only(path: &Path) -> Option<SessionMetaHead> {
             .and_then(|v| v.as_str())
             .or_else(|| json.get("timestamp").and_then(|v| v.as_str()))
             .map(|s| s.to_string());
-        return Some(SessionMetaHead {
-            session_id,
-            cwd,
-            created_at,
-        });
+        return Some(SessionMetaHead { session_id, cwd, created_at });
     }
 
     None
@@ -211,10 +207,7 @@ impl CodexHistoryProvider {
         Self::text_from_content_array(content, "text")
     }
 
-    fn parse_messages(
-        path: &Path,
-        pagination: &Pagination,
-    ) -> Result<(Vec<HistoryMessage>, usize)> {
+    fn parse_messages(path: &Path, pagination: &Pagination) -> Result<(Vec<HistoryMessage>, usize)> {
         use std::io::{BufRead, BufReader};
 
         let file = std::fs::File::open(path)
@@ -224,8 +217,7 @@ impl CodexHistoryProvider {
         let mut all_messages = Vec::new();
 
         for line in reader.lines() {
-            let line =
-                line.map_err(|e| AppError::ValidationError(format!("读取 Codex 历史失败: {}", e)))?;
+            let line = line.map_err(|e| AppError::ValidationError(format!("读取 Codex 历史失败: {}", e)))?;
             if line.trim().is_empty() {
                 continue;
             }
@@ -283,15 +275,7 @@ impl CodexHistoryProvider {
         Ok((items, total))
     }
 
-    fn parse_metadata(
-        path: &Path,
-    ) -> (
-        Option<String>,
-        usize,
-        Option<String>,
-        Option<String>,
-        Option<String>,
-    ) {
+    fn parse_metadata(path: &Path) -> (Option<String>, usize, Option<String>, Option<String>, Option<String>) {
         use std::io::{BufRead, BufReader};
 
         let mut summary = None;
@@ -485,12 +469,7 @@ impl CodexHistoryProvider {
             });
         }
 
-        Ok(PagedResult::new(
-            items,
-            total,
-            pagination.page,
-            pagination.page_size,
-        ))
+        Ok(PagedResult::new(items, total, pagination.page, pagination.page_size))
     }
 }
 
@@ -512,17 +491,12 @@ impl SessionHistoryProvider for CodexHistoryProvider {
         session_id: &str,
         pagination: Pagination,
     ) -> Result<PagedResult<HistoryMessage>> {
-        let session_file = self.find_session_file(session_id).ok_or_else(|| {
-            AppError::ValidationError(format!("Codex 会话不存在: {}", session_id))
-        })?;
+        let session_file = self
+            .find_session_file(session_id)
+            .ok_or_else(|| AppError::ValidationError(format!("Codex 会话不存在: {}", session_id)))?;
 
         let (items, total) = Self::parse_messages(&session_file, &pagination)?;
-        Ok(PagedResult::new(
-            items,
-            total,
-            pagination.page,
-            pagination.page_size,
-        ))
+        Ok(PagedResult::new(items, total, pagination.page, pagination.page_size))
     }
 
     fn get_message(&self, session_id: &str, message_id: &str) -> Result<Option<HistoryMessage>> {
@@ -531,7 +505,10 @@ impl SessionHistoryProvider for CodexHistoryProvider {
             None => return Ok(None),
         };
 
-        let (messages, _) = Self::parse_messages(&session_file, &Pagination::new(1, usize::MAX))?;
+        let (messages, _) = Self::parse_messages(
+            &session_file,
+            &Pagination::new(1, usize::MAX),
+        )?;
 
         Ok(messages
             .into_iter()
@@ -539,9 +516,9 @@ impl SessionHistoryProvider for CodexHistoryProvider {
     }
 
     fn delete_session(&self, session_id: &str) -> Result<()> {
-        let session_file = self.find_session_file(session_id).ok_or_else(|| {
-            AppError::ValidationError(format!("Codex 会话不存在: {}", session_id))
-        })?;
+        let session_file = self
+            .find_session_file(session_id)
+            .ok_or_else(|| AppError::ValidationError(format!("Codex 会话不存在: {}", session_id)))?;
 
         std::fs::remove_file(&session_file)
             .map_err(|e| AppError::ValidationError(format!("删除 Codex 会话失败: {}", e)))?;
@@ -563,9 +540,7 @@ mod tests {
     #[test]
     fn parses_codex_metadata_and_messages() {
         let dir = tempfile::tempdir().unwrap();
-        let file_path = dir
-            .path()
-            .join("rollout-2026-05-01T00-00-00-session-1.jsonl");
+        let file_path = dir.path().join("rollout-2026-05-01T00-00-00-session-1.jsonl");
         let mut file = std::fs::File::create(&file_path).unwrap();
 
         writeln!(
@@ -699,10 +674,7 @@ mod tests {
             .unwrap();
         assert_eq!(result_a.total, 1);
         assert_eq!(result_a.items[0].session_id, "sid-A");
-        assert_eq!(
-            result_a.items[0].project_path.as_deref(),
-            Some("/tmp/projA")
-        );
+        assert_eq!(result_a.items[0].project_path.as_deref(), Some("/tmp/projA"));
         assert_eq!(result_a.items[0].summary.as_deref(), Some("msgA"));
 
         // 不过滤：返回两条

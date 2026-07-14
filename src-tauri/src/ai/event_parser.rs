@@ -6,10 +6,12 @@
 
 use crate::models::events::StreamEvent;
 use crate::models::{
-    AIEvent, AssistantMessageEvent, CliInitEvent, ContextCompactedEvent, ErrorEvent, HookEvent,
-    McpServerStatus, PermissionDenial, PermissionRequestEvent, ProgressEvent,
-    PromptSuggestionEvent, SessionEndEvent, SessionEndReason, ThinkingEvent, ToolCallEndEvent,
-    ToolCallInfo, ToolCallStartEvent, ToolCallStatus, UserMessageEvent,
+    AIEvent, AssistantMessageEvent, ErrorEvent, ProgressEvent,
+    SessionEndEvent, SessionEndReason, ThinkingEvent,
+    ToolCallEndEvent, ToolCallInfo, ToolCallStartEvent, ToolCallStatus, UserMessageEvent,
+    PermissionDenial, PermissionRequestEvent,
+    CliInitEvent, McpServerStatus, HookEvent, PromptSuggestionEvent,
+    ContextCompactedEvent,
 };
 use std::collections::HashMap;
 
@@ -121,59 +123,60 @@ impl EventParser {
     /// 一个原始事件可能产生多个 AIEvent（如 assistant 消息包含工具调用）
     pub fn parse(&mut self, event: StreamEvent) -> Vec<AIEvent> {
         match event {
-            StreamEvent::System { subtype, extra } => self.parse_system_event(subtype, extra),
-            StreamEvent::Assistant { message } => self.parse_assistant_event(message),
-            StreamEvent::User { message } => self.parse_user_event(message),
-            StreamEvent::TextDelta { text } => {
-                vec![AIEvent::AssistantMessage(AssistantMessageEvent::new(
-                    &self.session_id,
-                    text,
-                    true,
-                ))]
+            StreamEvent::System { subtype, extra } => {
+                self.parse_system_event(subtype, extra)
             }
-            StreamEvent::ToolStart {
-                tool_use_id,
-                tool_name,
-                input,
-            } => self.parse_tool_start(tool_use_id, tool_name, input),
+            StreamEvent::Assistant { message } => {
+                self.parse_assistant_event(message)
+            }
+            StreamEvent::User { message } => {
+                self.parse_user_event(message)
+            }
+            StreamEvent::TextDelta { text } => {
+                vec![AIEvent::AssistantMessage(AssistantMessageEvent::new(&self.session_id, text, true))]
+            }
+            StreamEvent::ToolStart { tool_use_id, tool_name, input } => {
+                self.parse_tool_start(tool_use_id, tool_name, input)
+            }
             StreamEvent::Thinking { thinking, .. } => {
                 // 思考过程发送独立的 Thinking 事件
-                vec![AIEvent::Thinking(ThinkingEvent::new(
-                    &self.session_id,
-                    thinking,
-                ))]
+                vec![AIEvent::Thinking(ThinkingEvent::new(&self.session_id, thinking))]
             }
-            StreamEvent::ToolEnd {
-                tool_use_id,
-                tool_name,
-                output,
-            } => self.parse_tool_end(tool_use_id, tool_name, output),
-            StreamEvent::PermissionRequest {
-                session_id,
-                denials,
-            } => {
+            StreamEvent::ToolEnd { tool_use_id, tool_name, output } => {
+                self.parse_tool_end(tool_use_id, tool_name, output)
+            }
+            StreamEvent::PermissionRequest { session_id, denials } => {
                 // 将 StreamEvent 的 PermissionDenial 转换为 AIEvent 的 PermissionDenial
                 let permission_denials: Vec<PermissionDenial> = denials
                     .into_iter()
-                    .map(|d| PermissionDenial::new(d.tool_name, d.reason).with_extra(d.extra))
+                    .map(|d| {
+                        PermissionDenial::new(d.tool_name, d.reason)
+                            .with_extra(d.extra)
+                    })
                     .collect();
 
-                vec![AIEvent::PermissionRequest(PermissionRequestEvent::new(
-                    session_id,
-                    permission_denials,
-                ))]
+                vec![AIEvent::PermissionRequest(
+                    PermissionRequestEvent::new(session_id, permission_denials)
+                )]
             }
-            StreamEvent::Result { subtype, extra } => self.parse_result_event(subtype, extra),
+            StreamEvent::Result { subtype, extra } => {
+                self.parse_result_event(subtype, extra)
+            }
             StreamEvent::Error { error } => {
                 vec![AIEvent::Error(ErrorEvent::new(&self.session_id, error))]
             }
             StreamEvent::SessionEnd => {
                 vec![AIEvent::SessionEnd(
-                    SessionEndEvent::new(&self.session_id).with_reason(SessionEndReason::Completed),
+                    SessionEndEvent::new(&self.session_id)
+                        .with_reason(SessionEndReason::Completed)
                 )]
             }
-            StreamEvent::StreamEventChunk { event } => self.parse_stream_event_chunk(event),
-            StreamEvent::PromptSuggestion { extra } => self.parse_prompt_suggestion(extra),
+            StreamEvent::StreamEventChunk { event } => {
+                self.parse_stream_event_chunk(event)
+            }
+            StreamEvent::PromptSuggestion { extra } => {
+                self.parse_prompt_suggestion(extra)
+            }
         }
     }
 
@@ -242,10 +245,10 @@ impl EventParser {
 
         // 已知的有意义子类型映射
         let message_map = HashMap::from([
-            ("reading", "📖"),   // 读取文件
-            ("writing", "✏️"),   // 写入文件
-            ("thinking", "🤔"),  // 思考中
-            ("searching", "🔍"), // 搜索中
+            ("reading", "📖"),     // 读取文件
+            ("writing", "✏️"),     // 写入文件
+            ("thinking", "🤔"),    // 思考中
+            ("searching", "🔍"),   // 搜索中
         ]);
 
         let message = if let Some(&msg) = message_map.get(subtype.as_str()) {
@@ -258,14 +261,14 @@ impl EventParser {
             return vec![];
         };
 
-        vec![AIEvent::Progress(ProgressEvent::new(
-            &self.session_id,
-            message,
-        ))]
+        vec![AIEvent::Progress(ProgressEvent::new(&self.session_id, message))]
     }
 
     /// 解析 init 事件 - 提取 CLI 动态数据
-    fn parse_init_event(&self, extra: HashMap<String, serde_json::Value>) -> Vec<AIEvent> {
+    fn parse_init_event(
+        &self,
+        extra: HashMap<String, serde_json::Value>,
+    ) -> Vec<AIEvent> {
         let mut init_event = CliInitEvent::new(&self.session_id);
 
         // 提取 tools
@@ -374,18 +377,14 @@ impl EventParser {
     ///
     /// 真实字段名未在本环境验证，按多个候选键防御性提取建议文本；
     /// 全部缺失或为空时返回空，不发出事件。
-    fn parse_prompt_suggestion(&self, extra: HashMap<String, serde_json::Value>) -> Vec<AIEvent> {
-        let suggestion = [
-            "suggestion",
-            "text",
-            "prompt",
-            "content",
-            "value",
-            "message",
-        ]
-        .iter()
-        .find_map(|key| extra.get(*key).and_then(|v| v.as_str()))
-        .map(|s| s.to_string());
+    fn parse_prompt_suggestion(
+        &self,
+        extra: HashMap<String, serde_json::Value>,
+    ) -> Vec<AIEvent> {
+        let suggestion = ["suggestion", "text", "prompt", "content", "value", "message"]
+            .iter()
+            .find_map(|key| extra.get(*key).and_then(|v| v.as_str()))
+            .map(|s| s.to_string());
 
         match suggestion {
             Some(s) if !s.trim().is_empty() => {
@@ -473,10 +472,7 @@ impl EventParser {
                     .unwrap_or(false);
                 if is_thinking && !self.thinking_buffer.trim().is_empty() {
                     let thinking = std::mem::take(&mut self.thinking_buffer);
-                    return vec![AIEvent::Thinking(ThinkingEvent::new(
-                        &self.session_id,
-                        thinking,
-                    ))];
+                    return vec![AIEvent::Thinking(ThinkingEvent::new(&self.session_id, thinking))];
                 }
                 vec![]
             }
@@ -512,10 +508,7 @@ impl EventParser {
         // 若本 turn 已通过 stream_event 流式发送过 thinking，则跳过，避免与完整快照重复
         if !self.streamed_thinking_this_turn {
             for thinking in &thinking_blocks {
-                results.push(AIEvent::Thinking(ThinkingEvent::new(
-                    &self.session_id,
-                    thinking.clone(),
-                )));
+                results.push(AIEvent::Thinking(ThinkingEvent::new(&self.session_id, thinking.clone())));
             }
         }
 
@@ -525,7 +518,7 @@ impl EventParser {
         if !self.streamed_text_this_turn && (!text.is_empty() || !tool_calls.is_empty()) {
             results.push(AIEvent::AssistantMessage(
                 AssistantMessageEvent::new(&self.session_id, text, false)
-                    .with_tool_calls(tool_calls.clone()),
+                    .with_tool_calls(tool_calls.clone())
             ));
         }
 
@@ -533,7 +526,7 @@ impl EventParser {
         for tc in &tool_calls {
             results.push(AIEvent::ToolCallStart(
                 ToolCallStartEvent::new(&self.session_id, tc.name.clone(), tc.args.clone())
-                    .with_call_id(tc.id.clone()),
+                    .with_call_id(tc.id.clone())
             ));
         }
 
@@ -577,8 +570,7 @@ impl EventParser {
             for item in content {
                 if let Some(obj) = item.as_object() {
                     if obj.get("type").and_then(|t| t.as_str()) == Some("tool_result") {
-                        let tool_use_id = obj
-                            .get("tool_use_id")
+                        let tool_use_id = obj.get("tool_use_id")
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
@@ -591,18 +583,17 @@ impl EventParser {
                         if let Some(tc) = self.tool_call_manager.end_tool_call(
                             &tool_use_id,
                             Some(serde_json::Value::String(output.clone())),
-                            success,
+                            success
                         ) {
                             // 找到了对应的工具调用
                             let status_emoji = if success { "✅" } else { "❌" };
                             results.push(AIEvent::Progress(ProgressEvent::new(
-                                &self.session_id,
-                                format!("{} {}", status_emoji, tc.name),
+                                &self.session_id, format!("{} {}", status_emoji, tc.name)
                             )));
                             results.push(AIEvent::ToolCallEnd(
                                 ToolCallEndEvent::new(&self.session_id, tc.name, success)
                                     .with_call_id(tool_use_id)
-                                    .with_result(serde_json::Value::String(output)),
+                                    .with_result(serde_json::Value::String(output))
                             ));
                         } else {
                             // 找不到对应的工具调用（可能是 assistant 消息中的 tool_use 未被正确记录）
@@ -613,13 +604,9 @@ impl EventParser {
                             );
                             let _status_emoji = if success { "✅" } else { "❌" };
                             results.push(AIEvent::ToolCallEnd(
-                                ToolCallEndEvent::new(
-                                    &self.session_id,
-                                    "unknown".to_string(),
-                                    success,
-                                )
-                                .with_call_id(tool_use_id)
-                                .with_result(serde_json::Value::String(output)),
+                                ToolCallEndEvent::new(&self.session_id, "unknown".to_string(), success)
+                                    .with_call_id(tool_use_id)
+                                    .with_result(serde_json::Value::String(output))
                             ));
                         }
                     }
@@ -630,20 +617,14 @@ impl EventParser {
         // 2. 提取文本内容
         let text = self.extract_text_content(&message);
         if !text.is_empty() {
-            results.push(AIEvent::UserMessage(UserMessageEvent::new(
-                &self.session_id,
-                text,
-            )));
+            results.push(AIEvent::UserMessage(UserMessageEvent::new(&self.session_id, text)));
         }
 
         results
     }
 
     /// 从 tool_result 对象中提取输出内容
-    fn extract_tool_result_content(
-        &self,
-        obj: &serde_json::Map<String, serde_json::Value>,
-    ) -> String {
+    fn extract_tool_result_content(&self, obj: &serde_json::Map<String, serde_json::Value>) -> String {
         // 1. 尝试直接从 content 字段提取
         if let Some(content) = obj.get("content") {
             if let Some(s) = content.as_str() {
@@ -651,8 +632,7 @@ impl EventParser {
             }
             // content 可能是数组
             if let Some(arr) = content.as_array() {
-                let texts: Vec<&str> = arr
-                    .iter()
+                let texts: Vec<&str> = arr.iter()
                     .filter_map(|item| {
                         if item.get("type").and_then(|t| t.as_str()) == Some("text") {
                             item.get("text").and_then(|t| t.as_str())
@@ -683,7 +663,9 @@ impl EventParser {
         input: serde_json::Value,
     ) -> Vec<AIEvent> {
         let args = if let Some(obj) = input.as_object() {
-            obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+            obj.iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect()
         } else {
             HashMap::new()
         };
@@ -695,13 +677,10 @@ impl EventParser {
         );
 
         vec![
-            AIEvent::Progress(ProgressEvent::new(
-                &self.session_id,
-                format!("🔧 {}", tool_name),
-            )),
+            AIEvent::Progress(ProgressEvent::new(&self.session_id, format!("🔧 {}", tool_name))),
             AIEvent::ToolCallStart(
                 ToolCallStartEvent::new(&self.session_id, tool_name, args)
-                    .with_call_id(tool_use_id),
+                    .with_call_id(tool_use_id)
             ),
         ]
     }
@@ -717,20 +696,14 @@ impl EventParser {
         let result = output.map(serde_json::Value::String);
 
         // 更新工具调用状态
-        if let Some(tc) =
-            self.tool_call_manager
-                .end_tool_call(&tool_use_id, result.clone(), success)
-        {
+        if let Some(tc) = self.tool_call_manager.end_tool_call(&tool_use_id, result.clone(), success) {
             let status_emoji = if success { "✅" } else { "❌" };
             return vec![
-                AIEvent::Progress(ProgressEvent::new(
-                    &self.session_id,
-                    format!("{} {}", status_emoji, tc.name),
-                )),
+                AIEvent::Progress(ProgressEvent::new(&self.session_id, format!("{} {}", status_emoji, tc.name))),
                 AIEvent::ToolCallEnd(
                     ToolCallEndEvent::new(&self.session_id, tc.name, success)
                         .with_call_id(tool_use_id)
-                        .with_result(result.unwrap_or(serde_json::Value::Null)),
+                        .with_result(result.unwrap_or(serde_json::Value::Null))
                 ),
             ];
         }
@@ -739,18 +712,14 @@ impl EventParser {
         if let Some(name) = &tool_name {
             if let Some(tc) = self.tool_call_manager.find_running_by_name(name) {
                 let tc_id = tc.id.clone();
-                self.tool_call_manager
-                    .end_tool_call(&tc_id, result.clone(), success);
+                self.tool_call_manager.end_tool_call(&tc_id, result.clone(), success);
                 let status_emoji = if success { "✅" } else { "❌" };
                 return vec![
-                    AIEvent::Progress(ProgressEvent::new(
-                        &self.session_id,
-                        format!("{} {}", status_emoji, name),
-                    )),
+                    AIEvent::Progress(ProgressEvent::new(&self.session_id, format!("{} {}", status_emoji, name))),
                     AIEvent::ToolCallEnd(
                         ToolCallEndEvent::new(&self.session_id, name.clone(), success)
                             .with_call_id(tc_id)
-                            .with_result(result.unwrap_or(serde_json::Value::Null)),
+                            .with_result(result.unwrap_or(serde_json::Value::Null))
                     ),
                 ];
             }
@@ -760,10 +729,7 @@ impl EventParser {
         if let Some(name) = tool_name {
             let status_emoji = if success { "✅" } else { "❌" };
             vec![
-                AIEvent::Progress(ProgressEvent::new(
-                    &self.session_id,
-                    format!("{} {}", status_emoji, name),
-                )),
+                AIEvent::Progress(ProgressEvent::new(&self.session_id, format!("{} {}", status_emoji, name))),
                 AIEvent::ToolCallEnd(ToolCallEndEvent::new(&self.session_id, name, success)),
             ]
         } else {
@@ -781,17 +747,14 @@ impl EventParser {
         if let Some(denials_val) = extra.get("permission_denials") {
             if let Some(denial_arr) = denials_val.as_array() {
                 if !denial_arr.is_empty() {
-                    let parsed_denials: Vec<PermissionDenial> = denial_arr
-                        .iter()
+                    let parsed_denials: Vec<PermissionDenial> = denial_arr.iter()
                         .map(|d| {
                             // 从 JSON 中提取 tool_name 和 reason
-                            let tool_name = d
-                                .get("tool_name")
+                            let tool_name = d.get("tool_name")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("unknown")
                                 .to_string();
-                            let reason = d
-                                .get("reason")
+                            let reason = d.get("reason")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("权限被拒绝")
                                 .to_string();
@@ -819,14 +782,13 @@ impl EventParser {
                             parsed_denials.len()
                         );
                         let mut events = vec![AIEvent::PermissionRequest(
-                            PermissionRequestEvent::new(&self.session_id, parsed_denials),
+                            PermissionRequestEvent::new(&self.session_id, parsed_denials)
                         )];
                         // 仍然发送 result 事件（如果有 output）
                         if let Some(output) = extra.get("output") {
-                            events.push(AIEvent::Result(crate::models::ResultEvent::new(
-                                &self.session_id,
-                                output.clone(),
-                            )));
+                            events.push(AIEvent::Result(
+                                crate::models::ResultEvent::new(&self.session_id, output.clone())
+                            ));
                         }
                         return events;
                     }
@@ -838,34 +800,22 @@ impl EventParser {
         match subtype.as_str() {
             "success" => {
                 if let Some(output) = extra.get("output") {
-                    vec![AIEvent::Result(crate::models::ResultEvent::new(
-                        &self.session_id,
-                        output.clone(),
-                    ))]
+                    vec![AIEvent::Result(crate::models::ResultEvent::new(&self.session_id, output.clone()))]
                 } else {
                     vec![]
                 }
             }
             "canceled" => {
-                vec![AIEvent::Progress(ProgressEvent::new(
-                    &self.session_id,
-                    "⚠️ 任务已取消",
-                ))]
+                vec![AIEvent::Progress(ProgressEvent::new(&self.session_id, "⚠️ 任务已取消"))]
             }
             _ => {
                 if let Some(output) = extra.get("output") {
                     vec![
                         AIEvent::Progress(ProgressEvent::new(&self.session_id, &subtype)),
-                        AIEvent::Result(crate::models::ResultEvent::new(
-                            &self.session_id,
-                            output.clone(),
-                        )),
+                        AIEvent::Result(crate::models::ResultEvent::new(&self.session_id, output.clone())),
                     ]
                 } else {
-                    vec![AIEvent::Progress(ProgressEvent::new(
-                        &self.session_id,
-                        &subtype,
-                    ))]
+                    vec![AIEvent::Progress(ProgressEvent::new(&self.session_id, &subtype))]
                 }
             }
         }
@@ -914,11 +864,14 @@ impl EventParser {
                     let args: HashMap<String, serde_json::Value> = item
                         .get("input")
                         .and_then(|i| i.as_object())
-                        .map(|obj| obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+                        .map(|obj| {
+                            obj.iter()
+                                .map(|(k, v)| (k.clone(), v.clone()))
+                                .collect()
+                        })
                         .unwrap_or_default();
 
-                    self.tool_call_manager
-                        .start_tool_call(name.clone(), id.clone(), args.clone());
+                    self.tool_call_manager.start_tool_call(name.clone(), id.clone(), args.clone());
 
                     tool_calls.push(ToolCallInfo {
                         id,

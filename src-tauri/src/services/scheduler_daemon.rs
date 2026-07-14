@@ -90,10 +90,7 @@ impl SchedulerDaemon {
         let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
         self.stop_signal = Some(stop_tx);
 
-        tracing::info!(
-            "[SchedulerDaemon] 启动守护进程，检查间隔: {}秒",
-            CHECK_INTERVAL_SECS
-        );
+        tracing::info!("[SchedulerDaemon] 启动守护进程，检查间隔: {}秒", CHECK_INTERVAL_SECS);
 
         tokio::spawn(async move {
             let mut stop_rx = stop_rx;
@@ -110,10 +107,7 @@ impl SchedulerDaemon {
                     break;
                 }
 
-                if let Err(e) =
-                    check_and_notify_due_tasks_tauri(&app_handle, &config_dir, &workspace_path)
-                        .await
-                {
+                if let Err(e) = check_and_notify_due_tasks_tauri(&app_handle, &config_dir, &workspace_path).await {
                     tracing::error!("[SchedulerDaemon] 检查任务失败: {}", e);
                 }
 
@@ -142,10 +136,7 @@ impl SchedulerDaemon {
         let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
         self.stop_signal = Some(stop_tx);
 
-        tracing::info!(
-            "[SchedulerDaemon] 启动守护进程 (web mode)，检查间隔: {}秒",
-            CHECK_INTERVAL_SECS
-        );
+        tracing::info!("[SchedulerDaemon] 启动守护进程 (web mode)，检查间隔: {}秒", CHECK_INTERVAL_SECS);
 
         tokio::spawn(async move {
             let mut stop_rx = stop_rx;
@@ -162,10 +153,7 @@ impl SchedulerDaemon {
                     break;
                 }
 
-                if let Err(e) =
-                    check_and_notify_due_tasks_broadcast(&event_tx, &config_dir, &workspace_path)
-                        .await
-                {
+                if let Err(e) = check_and_notify_due_tasks_broadcast(&event_tx, &config_dir, &workspace_path).await {
                     tracing::error!("[SchedulerDaemon] 检查任务失败: {}", e);
                 }
 
@@ -211,8 +199,7 @@ async fn check_and_notify_due_tasks_tauri(
     config_dir: &Path,
     workspace_path: &Option<PathBuf>,
 ) -> Result<()> {
-    let repository =
-        UnifiedSchedulerRepository::new(config_dir.to_path_buf(), workspace_path.clone());
+    let repository = UnifiedSchedulerRepository::new(config_dir.to_path_buf(), workspace_path.clone());
     let tasks = repository.list_tasks()?;
     let now = chrono::Utc::now().timestamp();
 
@@ -225,8 +212,7 @@ async fn check_and_notify_due_tasks_tauri(
             if next_run_at <= now {
                 tracing::info!(
                     "[SchedulerDaemon] 任务到期: {} (ID: {})",
-                    task.name,
-                    task.id
+                    task.name, task.id
                 );
 
                 let event = TaskDueEvent {
@@ -259,8 +245,7 @@ async fn check_and_notify_due_tasks_broadcast(
     config_dir: &Path,
     workspace_path: &Option<PathBuf>,
 ) -> Result<()> {
-    let repository =
-        UnifiedSchedulerRepository::new(config_dir.to_path_buf(), workspace_path.clone());
+    let repository = UnifiedSchedulerRepository::new(config_dir.to_path_buf(), workspace_path.clone());
     let tasks = repository.list_tasks()?;
     let now = chrono::Utc::now().timestamp();
 
@@ -273,8 +258,7 @@ async fn check_and_notify_due_tasks_broadcast(
             if next_run_at <= now {
                 tracing::info!(
                     "[SchedulerDaemon] 任务到期: {} (ID: {})",
-                    task.name,
-                    task.id
+                    task.name, task.id
                 );
 
                 let event = TaskDueEvent {
@@ -317,19 +301,15 @@ fn update_next_run_time(
     let next_run_at = if task.trigger_type == TriggerType::AfterCompletion {
         None
     } else {
-        task.trigger_type
-            .calculate_next_run(&task.trigger_value, now)
+        task.trigger_type.calculate_next_run(&task.trigger_value, now)
     };
 
     // 更新任务
-    repository.update_task(
-        &task.id,
-        TaskUpdateParams {
-            next_run_at,
-            last_run_at: Some(now),
-            ..Default::default()
-        },
-    )?;
+    repository.update_task(&task.id, TaskUpdateParams {
+        next_run_at,
+        last_run_at: Some(now),
+        ..Default::default()
+    })?;
 
     tracing::info!(
         "[SchedulerDaemon] 更新任务下次执行时间: {} -> {:?}",

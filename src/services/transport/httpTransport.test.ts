@@ -199,22 +199,4 @@ describe('createHttpTransport', () => {
       expect.objectContaining({ method: 'GET' })
     );
   });
-
-  it.each([
-    ['compact_chat', '/api/chat/compact'],
-    ['restore_compacted_context', '/api/chat/restore-compacted-context'],
-    ['delete_simple_ai_checkpoints', '/api/chat/checkpoints/delete'],
-  ])('routes %s to its SimpleAI context endpoint', async (command, path) => {
-    const transport = createHttpTransport('http://127.0.0.1:9800');
-    const args = command === 'delete_simple_ai_checkpoints'
-      ? { stableConversationId: 'stable-1' }
-      : { sessionId: 'runtime-1', options: { engineId: 'simple-ai' } };
-
-    await transport.invoke(command, args);
-
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      `http://127.0.0.1:9800${path}`,
-      expect.objectContaining({ method: 'POST', body: JSON.stringify(args) })
-    );
-  });
 });

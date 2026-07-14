@@ -156,9 +156,7 @@ fn display_path(work_dir: &str) -> String {
 
 /// 最小 XML 转义（路径/属性值用）。
 fn xml_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
 /// 按字节预算安全截断（不切断 UTF-8 多字节序列）。
@@ -234,10 +232,7 @@ mod tests {
         let instr = msgs[1]["content"].as_str().unwrap();
         let ri = instr.find("ROOT_RULE").unwrap();
         let si = instr.find("SUB_RULE").unwrap();
-        assert!(
-            ri < si,
-            "root instructions should precede subdir instructions"
-        );
+        assert!(ri < si, "root instructions should precede subdir instructions");
     }
 
     #[test]

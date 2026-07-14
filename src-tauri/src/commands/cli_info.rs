@@ -7,15 +7,13 @@ use tauri::State;
 
 use crate::error::Result;
 use crate::models::cli_info::{CliAgentInfo, CliAuthStatus};
-use crate::services::cli_info_service::{check_cli_installed, get_cli_version, CliInfoService};
+use crate::services::cli_info_service::{CliInfoService, check_cli_installed, get_cli_version};
 use crate::state::AppState;
 
 /// 获取 Claude CLI 路径
 #[cfg(feature = "tauri-app")]
 fn get_claude_path(state: &State<'_, AppState>) -> Result<String> {
-    let store = state
-        .config_store
-        .lock()
+    let store = state.config_store.lock()
         .map_err(|e| crate::error::AppError::Unknown(e.to_string()))?;
     Ok(store.get().get_claude_cmd())
 }
@@ -25,7 +23,9 @@ fn get_claude_path(state: &State<'_, AppState>) -> Result<String> {
 /// 调用 `claude agents` 获取动态 Agent 列表
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn cli_get_agents(state: State<'_, AppState>) -> Result<Vec<CliAgentInfo>> {
+pub async fn cli_get_agents(
+    state: State<'_, AppState>,
+) -> Result<Vec<CliAgentInfo>> {
     let claude_path = get_claude_path(&state)?;
     let service = CliInfoService::new(claude_path);
     service.get_agents()
@@ -36,7 +36,9 @@ pub async fn cli_get_agents(state: State<'_, AppState>) -> Result<Vec<CliAgentIn
 /// 调用 `claude auth status` 获取当前认证信息
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn cli_get_auth_status(state: State<'_, AppState>) -> Result<CliAuthStatus> {
+pub async fn cli_get_auth_status(
+    state: State<'_, AppState>,
+) -> Result<CliAuthStatus> {
     let claude_path = get_claude_path(&state)?;
     let service = CliInfoService::new(claude_path);
     service.get_auth_status()
@@ -47,7 +49,9 @@ pub async fn cli_get_auth_status(state: State<'_, AppState>) -> Result<CliAuthSt
 /// 调用 `claude --version` 获取版本信息
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn cli_get_version(state: State<'_, AppState>) -> Result<String> {
+pub async fn cli_get_version(
+    state: State<'_, AppState>,
+) -> Result<String> {
     let claude_path = get_claude_path(&state)?;
     let service = CliInfoService::new(claude_path);
     service.get_version()

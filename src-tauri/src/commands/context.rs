@@ -286,9 +286,7 @@ impl ContextMemoryStore {
     }
 
     pub fn query(&self, request: &ContextQueryRequest) -> ContextQueryResult {
-        let mut entries: Vec<ContextEntry> = self
-            .entries
-            .values()
+        let mut entries: Vec<ContextEntry> = self.entries.values()
             .filter(|entry| {
                 // 过滤条件
                 if let Some(workspace_id) = &request.workspace_id {
@@ -444,7 +442,9 @@ pub async fn context_remove(
 /// 清空所有上下文
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn context_clear(store: State<'_, Arc<Mutex<ContextMemoryStore>>>) -> Result<(), String> {
+pub async fn context_clear(
+    store: State<'_, Arc<Mutex<ContextMemoryStore>>>,
+) -> Result<(), String> {
     let mut guard = store.lock().map_err(|e| e.to_string())?;
     guard.clear();
     Ok(())

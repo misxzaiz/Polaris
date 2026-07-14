@@ -48,7 +48,10 @@ impl UnifiedSchedulerRepository {
     }
 
     /// Create a new unified scheduler repository with custom storage backend
-    pub fn with_storage(storage: Box<dyn TaskStorage>, current_workspace: Option<PathBuf>) -> Self {
+    pub fn with_storage(
+        storage: Box<dyn TaskStorage>,
+        current_workspace: Option<PathBuf>,
+    ) -> Self {
         let current_workspace_name = current_workspace
             .as_ref()
             .and_then(|p| p.file_name())
@@ -71,16 +74,12 @@ impl UnifiedSchedulerRepository {
         let workspace_path = workspace.to_string_lossy().to_string();
         let workspace_name = self.current_workspace_name.clone().unwrap_or_default();
 
-        self.storage
-            .register_workspace(&workspace_path, &workspace_name)
+        self.storage.register_workspace(&workspace_path, &workspace_name)
     }
 
     /// List all tasks (filtered by current workspace if set)
     pub fn list_tasks(&self) -> Result<Vec<ScheduledTask>> {
-        let workspace_path = self
-            .current_workspace
-            .as_ref()
-            .map(|p| p.to_string_lossy().to_string());
+        let workspace_path = self.current_workspace.as_ref().map(|p| p.to_string_lossy().to_string());
         self.storage.list_tasks(workspace_path.as_deref())
     }
 
@@ -96,14 +95,10 @@ impl UnifiedSchedulerRepository {
             return Err(AppError::ValidationError("任务名称不能为空".to_string()));
         }
 
-        let workspace_path = self
-            .current_workspace
-            .as_ref()
-            .map(|p| p.to_string_lossy().to_string());
+        let workspace_path = self.current_workspace.as_ref().map(|p| p.to_string_lossy().to_string());
         let workspace_name = self.current_workspace_name.clone();
 
-        self.storage
-            .create_task(params, workspace_path, workspace_name)
+        self.storage.create_task(params, workspace_path, workspace_name)
     }
 
     /// Update a task
@@ -133,32 +128,20 @@ impl UnifiedSchedulerRepository {
 
     /// List tasks by category
     pub fn list_tasks_by_category(&self, category: TaskCategory) -> Result<Vec<ScheduledTask>> {
-        let workspace_path = self
-            .current_workspace
-            .as_ref()
-            .map(|p| p.to_string_lossy().to_string());
-        self.storage
-            .list_tasks_by_category(category, workspace_path.as_deref())
+        let workspace_path = self.current_workspace.as_ref().map(|p| p.to_string_lossy().to_string());
+        self.storage.list_tasks_by_category(category, workspace_path.as_deref())
     }
 
     /// List tasks by mode
     pub fn list_tasks_by_mode(&self, mode: TaskMode) -> Result<Vec<ScheduledTask>> {
-        let workspace_path = self
-            .current_workspace
-            .as_ref()
-            .map(|p| p.to_string_lossy().to_string());
-        self.storage
-            .list_tasks_by_mode(mode, workspace_path.as_deref())
+        let workspace_path = self.current_workspace.as_ref().map(|p| p.to_string_lossy().to_string());
+        self.storage.list_tasks_by_mode(mode, workspace_path.as_deref())
     }
 
     /// List tasks by group
     pub fn list_tasks_by_group(&self, group: &str) -> Result<Vec<ScheduledTask>> {
-        let workspace_path = self
-            .current_workspace
-            .as_ref()
-            .map(|p| p.to_string_lossy().to_string());
-        self.storage
-            .list_tasks_by_group(group, workspace_path.as_deref())
+        let workspace_path = self.current_workspace.as_ref().map(|p| p.to_string_lossy().to_string());
+        self.storage.list_tasks_by_group(group, workspace_path.as_deref())
     }
 
     // =========================================================================
@@ -201,14 +184,8 @@ impl UnifiedSchedulerRepository {
     }
 
     /// Get a template and apply it to build the final prompt
-    pub fn build_prompt_with_template(
-        &self,
-        template_id: &str,
-        task_name: &str,
-        user_prompt: &str,
-    ) -> Result<String> {
-        self.storage
-            .build_prompt_with_template(template_id, task_name, user_prompt)
+    pub fn build_prompt_with_template(&self, template_id: &str, task_name: &str, user_prompt: &str) -> Result<String> {
+        self.storage.build_prompt_with_template(template_id, task_name, user_prompt)
     }
 
     // =========================================================================
@@ -301,9 +278,7 @@ mod tests {
         })
         .unwrap();
 
-        let dev_tasks = repo
-            .list_tasks_by_category(TaskCategory::Development)
-            .unwrap();
+        let dev_tasks = repo.list_tasks_by_category(TaskCategory::Development).unwrap();
         assert_eq!(dev_tasks.len(), 1);
         assert_eq!(dev_tasks[0].name, "开发任务");
 

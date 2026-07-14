@@ -70,7 +70,8 @@ fn parse_skill(content: &str, dir: &Path) -> Option<SkillEntry> {
             if let Some(rest) = l.strip_prefix("name:") {
                 name = Some(rest.trim().trim_matches('"').trim_matches('\'').to_string());
             } else if let Some(rest) = l.strip_prefix("description:") {
-                description = Some(rest.trim().trim_matches('"').trim_matches('\'').to_string());
+                description =
+                    Some(rest.trim().trim_matches('"').trim_matches('\'').to_string());
             }
         }
     }
@@ -106,10 +107,7 @@ pub(crate) fn build_skill_index_message(skills: &[SkillEntry]) -> Option<Value> 
             .to_string(),
     );
     for s in skills {
-        lines.push(format!(
-            "- name: {}\n  description: {}",
-            s.name, s.description
-        ));
+        lines.push(format!("- name: {}\n  description: {}", s.name, s.description));
     }
     Some(json!({ "role": "user", "content": lines.join("\n") }))
 }

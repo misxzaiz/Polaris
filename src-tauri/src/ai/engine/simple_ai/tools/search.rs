@@ -79,11 +79,7 @@ fn run_search_files(
     let (regex, is_regex) = match regex {
         Ok(r) => (Some(r), true),
         Err(e) => {
-            tracing::warn!(
-                "search_files regex build failed for '{}': {}, falling back to literal search",
-                pattern,
-                e
-            );
+            tracing::warn!("search_files regex build failed for '{}': {}, falling back to literal search", pattern, e);
             (None, false)
         }
     };
@@ -371,13 +367,7 @@ mod tests {
         assert!(all.content.contains("a.rs"));
         assert!(all.content.contains("b.txt"));
 
-        let only_rs = run_search_files(
-            "needle",
-            None,
-            Some("rs"),
-            true,
-            dir.path().to_str().unwrap(),
-        );
+        let only_rs = run_search_files("needle", None, Some("rs"), true, dir.path().to_str().unwrap());
         assert!(only_rs.content.contains("a.rs"));
         assert!(!only_rs.content.contains("b.txt"));
     }
@@ -398,24 +388,10 @@ mod tests {
     #[test]
     fn search_files_with_regex_pattern() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("a.rs"),
-            "fn main() {\n    log.error(\"test\");\n}",
-        )
-        .unwrap();
-        std::fs::write(
-            dir.path().join("b.rs"),
-            "fn other() {\n    log.warn(\"test\");\n}",
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("a.rs"), "fn main() {\n    log.error(\"test\");\n}").unwrap();
+        std::fs::write(dir.path().join("b.rs"), "fn other() {\n    log.warn(\"test\");\n}").unwrap();
 
-        let out = run_search_files(
-            "log\\.(error|warn)",
-            None,
-            None,
-            true,
-            dir.path().to_str().unwrap(),
-        );
+        let out = run_search_files("log\\.(error|warn)", None, None, true, dir.path().to_str().unwrap());
         assert!(out.content.contains("log.error"));
         assert!(out.content.contains("log.warn"));
     }

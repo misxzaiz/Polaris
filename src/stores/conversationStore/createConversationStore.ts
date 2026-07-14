@@ -70,8 +70,6 @@ function createInitialState(sessionId: string): ConversationState {
     isStreaming: false,
     error: null,
     progressMessage: null,
-    canRestoreCompaction: false,
-    isCompacting: false,
     promptSuggestion: null,
 
     // 输入草稿
@@ -185,9 +183,6 @@ export function createConversationStore(
           permissionRequestBlockMap: new Map(),
           activePermissionRequestId: null,
           pluginCardBlockMap: new Map(),
-          canRestoreCompaction: false,
-          isCompacting: false,
-          progressMessage: null,
         })
       },
 
@@ -595,14 +590,7 @@ export function createConversationStore(
         }
       },
 
-      appendContextCompactBlock: (
-        trigger,
-        preTokens,
-        postTokens,
-        generation,
-        archivedTurns,
-        retainedTurns,
-      ) => {
+      appendContextCompactBlock: (trigger, preTokens, postTokens) => {
         if (_textBuffer) get()._flushTextBuffer()
 
         const block: import('../../types/chat').ContextCompactBlock = {
@@ -611,9 +599,6 @@ export function createConversationStore(
           trigger,
           preTokens,
           postTokens,
-          generation,
-          archivedTurns,
-          retainedTurns,
           createdAt: new Date().toISOString(),
         }
 
@@ -1076,8 +1061,6 @@ export function createConversationStore(
           error: null,
           currentMessage: null,
           progressMessage: null,
-          canRestoreCompaction: false,
-          isCompacting: false,
           visibleRange: null,
         })
       },
@@ -1088,11 +1071,7 @@ export function createConversationStore(
       // ===== 主动操作 =====
 
       sendMessage: async (content, workspaceDir?, attachments?, sendOptions?) => {
-        const { conversationId, sessionId, messages, isCompacting } = get()
-        if (isCompacting) {
-          set({ error: i18n.t('chat:contextCompaction.busy') })
-          return
-        }
+        const { conversationId, sessionId, messages } = get()
         const config = deps.getConfig()
         const engine = resolveSessionEngine(sessionId, config?.defaultEngine)
 
@@ -1156,7 +1135,6 @@ export function createConversationStore(
         set({
           isStreaming: true,
           error: null,
-          canRestoreCompaction: false,
           currentMessage: null,
           toolBlockMap: new Map(),
         })
@@ -1200,7 +1178,6 @@ export function createConversationStore(
             systemPrompt: userPrompt ? normalizeForInvoke(userPrompt) : null,
             workDir: actualWorkspaceDir,
             contextId: deps.contextId,
-            stableConversationId: sessionId,
             engineId: engine,
             enableMcpTools: true,
             disabledMcpServers,
@@ -1284,87 +1261,6 @@ export function createConversationStore(
         }
       },
 
-      compactContext: async () => {
-        const { conversationId, sessionId, isStreaming, isCompacting } = get()
-        if (!conversationId || isStreaming || isCompacting) return
-
-        const config = deps.getConfig()
-        const engine = resolveSessionEngine(sessionId, config?.defaultEngine)
-        if (engine !== 'simple-ai') return
-
-        const currentWorkspace = deps.getWorkspace()
-        const sessionConfig = getSessionConfig()
-        const runtimeConfig = resolveRuntimeConfigForEngine(sessionConfig, engine)
-        const sessionMeta = sessionStoreManager.getState().sessionMetadata.get(sessionId)
-        const modelProfileId = resolveEffectiveProfileId(
-          sessionMeta?.modelProfileId,
-          sessionConfig.modelProfileId,
-          getActiveModelProfile()?.id,
-        )
-
-        set({
-          isCompacting: true,
-          error: null,
-          progressMessage: i18n.t('chat:contextCompaction.compacting'),
-        })
-
-        try {
-          const router = deps.getEventRouter()
-          await router.initialize()
-          await invoke('compact_chat', {
-            sessionId: conversationId,
-            options: {
-              workDir: currentWorkspace?.path,
-              contextId: deps.contextId,
-              stableConversationId: sessionId,
-              engineId: engine,
-              model: sessionMeta?.model ?? runtimeConfig.model,
-              modelProfileId,
-            },
-          })
-        } catch (e) {
-          set({
-            isCompacting: false,
-            progressMessage: null,
-            error: resolveChatError(e, { conversationId, workspaceDir: currentWorkspace?.path }),
-          })
-        }
-      },
-
-      restoreCompactedContext: async () => {
-        const { conversationId, sessionId, isStreaming, isCompacting, canRestoreCompaction } = get()
-        if (!conversationId || isStreaming || isCompacting || !canRestoreCompaction) return
-
-        const config = deps.getConfig()
-        const engine = resolveSessionEngine(sessionId, config?.defaultEngine)
-        if (engine !== 'simple-ai') return
-
-        set({
-          isCompacting: true,
-          error: null,
-          progressMessage: i18n.t('chat:contextCompaction.restoring'),
-        })
-
-        try {
-          const router = deps.getEventRouter()
-          await router.initialize()
-          await invoke('restore_compacted_context', {
-            sessionId: conversationId,
-            options: {
-              contextId: deps.contextId,
-              stableConversationId: sessionId,
-              engineId: engine,
-            },
-          })
-        } catch (e) {
-          set({
-            isCompacting: false,
-            progressMessage: null,
-            error: resolveChatError(e, { conversationId }),
-          })
-        }
-      },
-
       continueChat: async (prompt = '', allowedTools?: string[]) => {
         const { conversationId } = get()
         if (!conversationId) {
@@ -1418,7 +1314,6 @@ export function createConversationStore(
               systemPrompt: userPrompt ? normalizeForInvoke(userPrompt) : null,
               workDir: actualWorkspaceDir,
               contextId: deps.contextId,
-              stableConversationId: get().sessionId,
               engineId: currentEngine,
               enableMcpTools: true,
               disabledMcpServers,

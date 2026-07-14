@@ -5,8 +5,8 @@
 
 use std::path::Path;
 
+use crate::models::git::{GitTag, GitServiceError};
 use super::executor::open_repository;
-use crate::models::git::{GitServiceError, GitTag};
 
 /// 获取所有标签
 pub fn get_tags(path: &Path) -> Result<Vec<GitTag>, GitServiceError> {
@@ -122,9 +122,7 @@ pub fn create_tag(
         // 获取创建的标签信息
         let tag_obj = repo.find_tag(tag_id)?;
         let message = tag_obj.message().map(|s| s.to_string());
-        let tagger = tag_obj
-            .tagger()
-            .and_then(|s| s.name().map(|n| n.to_string()));
+        let tagger = tag_obj.tagger().and_then(|s| s.name().map(|n| n.to_string()));
         let timestamp = tag_obj.tagger().map(|s| {
             let time = s.when();
             time.seconds()
@@ -161,9 +159,9 @@ pub fn delete_tag(path: &Path, name: &str) -> Result<(), GitServiceError> {
 
     // 查找标签引用
     let tag_ref = format!("refs/tags/{}", name);
-    let mut reference = repo
-        .find_reference(&tag_ref)
-        .map_err(|_| GitServiceError::CLIError(format!("Tag '{}' not found", name)))?;
+    let mut reference = repo.find_reference(&tag_ref).map_err(|_| {
+        GitServiceError::CLIError(format!("Tag '{}' not found", name))
+    })?;
 
     // 删除标签
     reference.delete()?;
