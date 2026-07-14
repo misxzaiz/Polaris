@@ -48,6 +48,7 @@ pub(super) struct CompactionInput {
     pub(super) profile: crate::models::config::ModelProfile,
     pub(super) tool_specs: Vec<Value>,
     pub(super) latest_provider_input_tokens: Option<u64>,
+    pub(super) latest_local_input_tokens: Option<usize>,
     pub(super) trigger: CompactionTrigger,
 }
 
@@ -92,14 +93,11 @@ pub(super) fn auto_compaction_enabled(profile: &crate::models::config::ModelProf
 pub(super) fn estimate_snapshot(input: &CompactionInput) -> (TokenEstimator, usize, u64) {
     let mut estimator = TokenEstimator::new();
     let protocol = WireProtocol::from_wire_api(input.profile.wire_api.as_deref());
-    let local = estimator.estimate_request_size(
-        &input.messages,
-        &input.tool_specs,
-        context_window(&input.profile),
-        protocol,
-    );
-    if let Some(actual) = input.latest_provider_input_tokens {
-        estimator.calibrate(actual, local);
+    if let (Some(actual), Some(previous_local)) = (
+        input.latest_provider_input_tokens,
+        input.latest_local_input_tokens,
+    ) {
+        estimator.calibrate(actual, previous_local);
     }
     let estimated = estimator.estimate_request_size(
         &input.messages,
@@ -335,6 +333,82 @@ pub(super) fn mark_checkpoint_restored(
     let mut checkpoint = store.load(stable_conversation_id, generation)?;
     checkpoint.briefing = None;
     checkpoint.recent_tail_start = None;
+    store.write(&checkpoint)
+}
+
+/// A context-limit retry that fails must not become the next runtime-recovery state. Rewrite the
+/// known generation as a full, non-compacted snapshot before the caller rolls memory back.
+pub(super) fn rollback_recovery_checkpoint(
+    stable_conversation_id: &str,
+    generation: u64,
+    archived_messages: Vec<Value>,
+) -> Result<()> {
+    let store = ContextCheckpointStore::from_data_root();
+    let mut checkpoint = store.load(stable_conversation_id, generation)?;
+    checkpoint.archived_messages = archived_messages;
+    checkpoint.briefing = None;
+    checkpoint.recent_tail_start = None;
+    store.write(&checkpoint)
+}
+
+pub(super) fn rollback_latest_matching_checkpoint(
+    stable_conversation_id: &str,
+    runtime_session_id: &str,
+    expected_archived_messages: &[Value],
+    archived_messages: Vec<Value>,
+) -> Result<bool> {
+    let store = ContextCheckpointStore::from_data_root();
+    let mut checkpoint = match store.load_latest(stable_conversation_id) {
+        Ok(checkpoint) => checkpoint,
+        Err(AppError::SessionNotFound(_)) => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    if checkpoint.runtime_session_id != runtime_session_id
+        || checkpoint.archived_messages != expected_archived_messages
+    {
+        return Ok(false);
+    }
+    checkpoint.archived_messages = archived_messages;
+    checkpoint.briefing = None;
+    checkpoint.recent_tail_start = None;
+    store.write(&checkpoint)?;
+    Ok(true)
+}
+
+/// Keep an active compacted checkpoint current between compactions. The suffix must start at a
+/// user-turn boundary and is appended only after the turn has fully completed (or was explicitly
+/// interrupted with its visible partial assistant text persisted).
+pub(super) fn append_checkpoint_tail(
+    stable_conversation_id: &str,
+    generation: u64,
+    suffix: &[Value],
+) -> Result<()> {
+    if suffix.is_empty() {
+        return Ok(());
+    }
+    if suffix
+        .first()
+        .and_then(|message| message.get("role"))
+        .and_then(Value::as_str)
+        != Some("user")
+    {
+        return Err(AppError::StateError(
+            "checkpoint 增量后缀未从完整用户回合开始".to_string(),
+        ));
+    }
+    let store = ContextCheckpointStore::from_data_root();
+    let mut checkpoint = store.load(stable_conversation_id, generation)?;
+    if checkpoint
+        .briefing
+        .as_deref()
+        .is_none_or(|value| value.trim().is_empty())
+        || checkpoint.recent_tail_start.is_none()
+    {
+        return Err(AppError::StateError(
+            "不能向未激活的 checkpoint 追加回合".to_string(),
+        ));
+    }
+    checkpoint.archived_messages.extend_from_slice(suffix);
     store.write(&checkpoint)
 }
 

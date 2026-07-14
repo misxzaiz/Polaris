@@ -365,6 +365,8 @@ export const historyService = {
           workspaceId,
           engineId: loaded.engineId,
           stableConversationId: loaded.stableConversationId || undefined,
+          modelProfileId: loaded.modelProfileId || undefined,
+          model: loaded.model || undefined,
         },
       )
 
@@ -402,6 +404,8 @@ export const historyService = {
     engineId: EngineId
     externalSessionId: string | null
     stableConversationId: string | null
+    modelProfileId: string | null
+    model: string | null
     workspacePath: string | null
     source: UnifiedHistoryItem['source']
   }> {
@@ -415,6 +419,8 @@ export const historyService = {
           engineId: normalizeEngineId(engineId || record.meta.engineId),
           externalSessionId: sessionId,
           stableConversationId: record.meta.stableConversationId || null,
+          modelProfileId: record.meta.modelProfileId || null,
+          model: record.meta.model || null,
           workspacePath: record.meta.workspacePath,
           source: 'self',
         }
@@ -441,6 +447,8 @@ export const historyService = {
         engineId: 'codex',
         externalSessionId: sessionId,
         stableConversationId: null,
+        modelProfileId: null,
+        model: null,
         workspacePath: null,
         source: 'codex-native',
       }
@@ -455,6 +463,8 @@ export const historyService = {
         engineId: restoredEngineId,
         externalSessionId: localSession.id,
         stableConversationId: null,
+        modelProfileId: null,
+        model: null,
         workspacePath: null,
         source: 'local',
       }
@@ -474,6 +484,8 @@ export const historyService = {
           engineId: 'claude-code',
           externalSessionId: sessionId,
           stableConversationId: null,
+          modelProfileId: null,
+          model: null,
           workspacePath: null,
           source: 'claude-code-native',
         }
@@ -486,6 +498,8 @@ export const historyService = {
       engineId: normalizeEngineId(engineId),
       externalSessionId: sessionId,
       stableConversationId: null,
+      modelProfileId: null,
+      model: null,
       workspacePath: null,
       source: 'self',
     }

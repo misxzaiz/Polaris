@@ -61,6 +61,8 @@ pub(super) struct SimpleAISession {
     pub(super) latest_request_tokens: Option<usize>,
     /// 最近一次 provider 返回的 input token，用于校准本地估算。
     pub(super) latest_provider_input_tokens: Option<u64>,
+    /// 与 provider usage 同一次请求的本地 wire 估算，避免拿“响应追加后的快照”错误校准。
+    pub(super) latest_local_input_tokens: Option<usize>,
     /// 最近一次请求使用的工具定义，供 idle 手动压缩准确估算。
     pub(super) latest_tool_specs: Vec<Value>,
     /// 最近一次实际使用的模型 Profile，供 idle 手动压缩和恢复使用。
@@ -84,6 +86,7 @@ impl SimpleAISession {
             turn_generation: 0,
             latest_request_tokens: None,
             latest_provider_input_tokens: None,
+            latest_local_input_tokens: None,
             latest_tool_specs: Vec::new(),
             latest_profile: None,
             latest_profile_id: None,

@@ -20,14 +20,16 @@ use crate::models::ai_event::{
 };
 use crate::models::AIEvent;
 
+use super::compaction_plan::estimate_wire_body_tokens;
 use super::history;
 use super::tools::{ToolContext, ToolRegistry};
 
 #[derive(Debug, Default)]
 pub(super) struct ChatLoopStats {
     pub(super) latest_provider_input_tokens: Option<u64>,
+    /// 与 provider usage 对应的那一次最终 wire request 本地估算，用于正确校准后续快照。
+    pub(super) latest_local_input_tokens: Option<usize>,
     pub(super) tool_specs: Vec<Value>,
-    pub(super) aborted: bool,
 }
 
 /// 历史中单条 assistant 文本输出的 token 上限，超出则截断头部（约 16k 字符）。
@@ -135,7 +137,6 @@ pub(super) async fn run_chat_loop(
         round += 1;
 
         if *abort_rx.borrow() {
-            stats.aborted = true;
             return Ok(());
         }
 
@@ -152,6 +153,7 @@ pub(super) async fn run_chat_loop(
             &tools,
             profile.max_tokens,
         );
+        let request_local_input_tokens = estimate_wire_body_tokens(&body);
         if tools.is_empty() {
             tracing::warn!("[SimpleAI] 工具列表为空!");
         } else {
@@ -210,7 +212,7 @@ pub(super) async fn run_chat_loop(
                 tracing::warn!(
                     "[SimpleAI] [DIAG] abort_rx 被置为 true, 提前结束, session={session_id}"
                 );
-                stats.aborted = true;
+                push_partial_assistant(messages, &assistant_content);
                 return Ok(());
             }
 
@@ -228,7 +230,7 @@ pub(super) async fn run_chat_loop(
                     tracing::warn!(
                         "[SimpleAI] [DIAG] abort_rx.changed() 触发, 提前结束, session={session_id}"
                     );
-                    stats.aborted = true;
+                    push_partial_assistant(messages, &assistant_content);
                     return Ok(());
                 }
                 _ = tokio::time::sleep(std::time::Duration::from_secs(stream_idle_secs)) => {
@@ -289,6 +291,7 @@ pub(super) async fn run_chat_loop(
         // token usage（Phase 3.1）：三协议在流末解析，仅日志上报；专用 UsageEvent 待前端 types 同步后启用。
         if let Some(usage) = stream_state.finish_usage() {
             stats.latest_provider_input_tokens = Some(usage.input_tokens);
+            stats.latest_local_input_tokens = Some(request_local_input_tokens);
             tracing::info!(
                 "[SimpleAI] token usage: input={}, output={}, total={}",
                 usage.input_tokens,
@@ -391,6 +394,17 @@ pub(super) async fn run_chat_loop(
     Ok(())
 }
 
+fn push_partial_assistant(messages: &mut Vec<Value>, assistant_content: &str) {
+    if assistant_content.is_empty() {
+        return;
+    }
+    messages.push(json!({
+        "role": "assistant",
+        "content": assistant_content,
+        "_polaris_partial": true,
+    }));
+}
+
 /// 从 profile 的 `custom_env` 读取一个正整数 u64 配置；缺失/非法/为 0 时回退默认值。
 fn read_env_u64(
     custom_env: &Option<std::collections::HashMap<String, String>>,
@@ -403,4 +417,26 @@ fn read_env_u64(
         .and_then(|v| v.parse::<u64>().ok())
         .filter(|&n| n > 0)
         .unwrap_or(default)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn interrupted_visible_text_is_kept_in_runtime_history() {
+        let mut messages = vec![json!({"role": "user", "content": "question"})];
+        push_partial_assistant(&mut messages, "partial answer");
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[1]["role"], "assistant");
+        assert_eq!(messages[1]["content"], "partial answer");
+        assert_eq!(messages[1]["_polaris_partial"], true);
+    }
+
+    #[test]
+    fn empty_interruption_does_not_create_an_assistant_message() {
+        let mut messages = vec![json!({"role": "user", "content": "question"})];
+        push_partial_assistant(&mut messages, "");
+        assert_eq!(messages.len(), 1);
+    }
 }

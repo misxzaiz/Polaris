@@ -195,7 +195,8 @@ export function handleAIEvent(
       break
 
     case 'user_message':
-      // 用户消息通常由前端发送，这里忽略
+      // 任一客户端推进到下一用户回合后，最近 checkpoint 的一次性 undo 权限失效。
+      set({ canRestoreCompaction: false })
       break
 
     case 'plan_start':
@@ -530,6 +531,8 @@ async function saveDialog(state: ConversationStore): Promise<void> {
     await dialogStorageService.saveConversation({
       externalId: conversationId,
       stableConversationId: sessionId,
+      modelProfileId: metadata?.modelProfileId,
+      model: metadata?.model,
       engineId,
       title,
       workspaceId: metadata?.workspaceId ?? null,

@@ -104,6 +104,21 @@ describe('jsonlCodec - 往返保真', () => {
     expect(parsed!.meta.title).toBe('测试会话')
   })
 
+  it('稳定对话 ID 随 meta 往返，用于 SimpleAI checkpoint 恢复', () => {
+    const messages: ChatMessage[] = [userMsg('u1', 'hello')]
+    const meta = buildMeta({
+      ...META_BASE,
+      stableConversationId: 'stable-visible-1',
+      modelProfileId: 'profile-1',
+      model: 'model-1',
+      messages,
+    })
+    const parsed = parseDialog(serializeDialog(meta, messages))
+    expect(parsed!.meta.stableConversationId).toBe('stable-visible-1')
+    expect(parsed!.meta.modelProfileId).toBe('profile-1')
+    expect(parsed!.meta.model).toBe('model-1')
+  })
+
   it('所有消息类型都能往返', () => {
     const messages: ChatMessage[] = [
       userMsg('u1', '问题'),

@@ -192,31 +192,6 @@ impl ContextCheckpointStore {
         Ok(())
     }
 
-    /// 读取最近一个已生成 briefing 的完整 checkpoint。
-    /// 压缩失败可能留下仅含原始历史的准备 checkpoint，运行时恢复必须跳过它。
-    pub(super) fn load_latest_complete(
-        &self,
-        stable_conversation_id: &str,
-    ) -> Result<ContextCheckpoint> {
-        let manifest = self
-            .read_manifest(stable_conversation_id)?
-            .ok_or_else(|| AppError::SessionNotFound(stable_conversation_id.to_string()))?;
-        for entry in manifest.checkpoints.iter().rev() {
-            let checkpoint = self.load(stable_conversation_id, entry.generation)?;
-            if checkpoint
-                .briefing
-                .as_deref()
-                .is_some_and(|value| !value.trim().is_empty())
-                && checkpoint.recent_tail_start.is_some()
-            {
-                return Ok(checkpoint);
-            }
-        }
-        Err(AppError::StateError(
-            "没有可用于运行时恢复的完整 checkpoint".to_string(),
-        ))
-    }
-
     pub(super) fn load_latest(&self, stable_conversation_id: &str) -> Result<ContextCheckpoint> {
         let manifest = self
             .read_manifest(stable_conversation_id)?
@@ -430,5 +405,21 @@ mod tests {
             store.load("stable-abc", 1).unwrap().archived_messages[0]["content"],
             "updated"
         );
+    }
+
+    #[test]
+    fn retention_keeps_only_three_latest_generations() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = ContextCheckpointStore::for_test(temp.path().to_path_buf());
+        for generation in 1..=5 {
+            store.write(&checkpoint(generation)).unwrap();
+        }
+        let dir = temp.path().join("stable-abc");
+        assert!(!dir.join(checkpoint_file_name(1)).exists());
+        assert!(!dir.join(checkpoint_file_name(2)).exists());
+        assert!(dir.join(checkpoint_file_name(3)).exists());
+        assert!(dir.join(checkpoint_file_name(4)).exists());
+        assert!(dir.join(checkpoint_file_name(5)).exists());
+        assert_eq!(store.load_latest("stable-abc").unwrap().generation, 5);
     }
 }
