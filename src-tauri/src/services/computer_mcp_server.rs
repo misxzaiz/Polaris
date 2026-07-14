@@ -95,7 +95,11 @@ fn handle_request(
     let id = request.id.unwrap_or(Value::Null);
 
     if request.jsonrpc != "2.0" {
-        return error_response(id, -32600, "Invalid Request: jsonrpc must be 2.0".to_string());
+        return error_response(
+            id,
+            -32600,
+            "Invalid Request: jsonrpc must be 2.0".to_string(),
+        );
     }
 
     let result = match request.method.as_str() {
@@ -284,7 +288,10 @@ fn handle_tools_call(params: Value, controller: &mut ComputerController) -> Resu
         .get("name")
         .and_then(Value::as_str)
         .ok_or_else(|| AppError::ValidationError("tools/call 缺少 name".to_string()))?;
-    let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
+    let args = params
+        .get("arguments")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
 
     match name {
         "screenshot" => exec_screenshot(&args, controller),
@@ -315,7 +322,10 @@ fn handle_tools_call(params: Value, controller: &mut ComputerController) -> Resu
 // ============================================================================
 
 fn exec_screenshot(args: &Value, c: &mut ComputerController) -> Result<Value> {
-    let monitor = args.get("monitor").and_then(Value::as_u64).map(|v| v as usize);
+    let monitor = args
+        .get("monitor")
+        .and_then(Value::as_u64)
+        .map(|v| v as usize);
     let region = args.get("region").and_then(|r| {
         Some((
             r.get("x")?.as_u64()? as u32,
@@ -337,21 +347,31 @@ fn exec_screenshot(args: &Value, c: &mut ComputerController) -> Result<Value> {
 
 fn exec_cursor_position(c: &mut ComputerController) -> Result<Value> {
     let (x, y) = c.cursor_position()?;
-    Ok(text_result(json!({ "x": x, "y": y }), format!("光标位置: ({x}, {y})")))
+    Ok(text_result(
+        json!({ "x": x, "y": y }),
+        format!("光标位置: ({x}, {y})"),
+    ))
 }
 
 fn exec_move_mouse(args: &Value, c: &mut ComputerController) -> Result<Value> {
     let x = require_i32(args, "x")?;
     let y = require_i32(args, "y")?;
     c.move_mouse(x, y)?;
-    Ok(text_result(json!({ "x": x, "y": y }), format!("已移动鼠标到 ({x}, {y})")))
+    Ok(text_result(
+        json!({ "x": x, "y": y }),
+        format!("已移动鼠标到 ({x}, {y})"),
+    ))
 }
 
 fn exec_click(args: &Value, c: &mut ComputerController) -> Result<Value> {
     let x = optional_i32(args, "x");
     let y = optional_i32(args, "y");
     let button = args.get("button").and_then(Value::as_str).unwrap_or("left");
-    let count = args.get("count").and_then(Value::as_u64).unwrap_or(1).clamp(1, 3) as u32;
+    let count = args
+        .get("count")
+        .and_then(Value::as_u64)
+        .unwrap_or(1)
+        .clamp(1, 3) as u32;
     c.click(x, y, button, count)?;
     Ok(text_result(
         json!({ "button": button, "count": count }),
@@ -375,44 +395,70 @@ fn exec_drag(args: &Value, c: &mut ComputerController) -> Result<Value> {
 fn exec_mouse_down(args: &Value, c: &mut ComputerController) -> Result<Value> {
     let button = args.get("button").and_then(Value::as_str).unwrap_or("left");
     c.mouse_down(optional_i32(args, "x"), optional_i32(args, "y"), button)?;
-    Ok(text_result(json!({ "button": button }), format!("已按下 {button} 键")))
+    Ok(text_result(
+        json!({ "button": button }),
+        format!("已按下 {button} 键"),
+    ))
 }
 
 fn exec_mouse_up(args: &Value, c: &mut ComputerController) -> Result<Value> {
     let button = args.get("button").and_then(Value::as_str).unwrap_or("left");
     c.mouse_up(optional_i32(args, "x"), optional_i32(args, "y"), button)?;
-    Ok(text_result(json!({ "button": button }), format!("已释放 {button} 键")))
+    Ok(text_result(
+        json!({ "button": button }),
+        format!("已释放 {button} 键"),
+    ))
 }
 
 fn exec_type_text(args: &Value, c: &mut ComputerController) -> Result<Value> {
     let text = require_str(args, "text")?;
     c.type_text(text)?;
     let count = text.chars().count();
-    Ok(text_result(json!({ "typed": count }), format!("已输入 {count} 个字符")))
+    Ok(text_result(
+        json!({ "typed": count }),
+        format!("已输入 {count} 个字符"),
+    ))
 }
 
 fn exec_press_key(args: &Value, c: &mut ComputerController) -> Result<Value> {
     let keys = require_str(args, "keys")?;
     c.press_key(keys)?;
-    Ok(text_result(json!({ "keys": keys }), format!("已按下 {keys}")))
+    Ok(text_result(
+        json!({ "keys": keys }),
+        format!("已按下 {keys}"),
+    ))
 }
 
 fn exec_hold_key(args: &Value, c: &mut ComputerController) -> Result<Value> {
     let keys = require_str(args, "keys")?;
-    let ms = args.get("ms").and_then(Value::as_u64).unwrap_or(500).min(MAX_HOLD_MS);
+    let ms = args
+        .get("ms")
+        .and_then(Value::as_u64)
+        .unwrap_or(500)
+        .min(MAX_HOLD_MS);
     c.hold_key(keys, ms)?;
-    Ok(text_result(json!({ "keys": keys, "ms": ms }), format!("已按住 {keys} {ms}ms")))
+    Ok(text_result(
+        json!({ "keys": keys, "ms": ms }),
+        format!("已按住 {keys} {ms}ms"),
+    ))
 }
 
 fn exec_scroll(args: &Value, c: &mut ComputerController) -> Result<Value> {
     let dx = optional_i32(args, "dx").unwrap_or(0);
     let dy = optional_i32(args, "dy").unwrap_or(0);
     c.scroll(dx, dy)?;
-    Ok(text_result(json!({ "dx": dx, "dy": dy }), format!("已滚动 ({dx}, {dy})")))
+    Ok(text_result(
+        json!({ "dx": dx, "dy": dy }),
+        format!("已滚动 ({dx}, {dy})"),
+    ))
 }
 
 fn exec_wait(args: &Value) -> Result<Value> {
-    let ms = args.get("ms").and_then(Value::as_u64).unwrap_or(500).min(MAX_WAIT_MS);
+    let ms = args
+        .get("ms")
+        .and_then(Value::as_u64)
+        .unwrap_or(500)
+        .min(MAX_WAIT_MS);
     thread::sleep(Duration::from_millis(ms));
     Ok(text_result(json!({ "ms": ms }), format!("已等待 {ms} ms")))
 }
@@ -423,7 +469,10 @@ fn exec_inspect_ui(args: &Value, c: &mut ComputerController) -> Result<Value> {
         .and_then(Value::as_u64)
         .unwrap_or(3)
         .clamp(1, MAX_INSPECT_DEPTH) as usize;
-    let interactable_only = args.get("interactable_only").and_then(Value::as_bool).unwrap_or(false);
+    let interactable_only = args
+        .get("interactable_only")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let tree = c.inspect_ui(max_depth, interactable_only)?;
     Ok(json!({
         "structuredContent": tree,
@@ -435,7 +484,11 @@ fn exec_click_element(args: &Value, c: &mut ComputerController) -> Result<Value>
     let name = args.get("name").and_then(Value::as_str);
     let automation_id = args.get("automation_id").and_then(Value::as_str);
     let button = args.get("button").and_then(Value::as_str).unwrap_or("left");
-    let count = args.get("count").and_then(Value::as_u64).unwrap_or(1).clamp(1, 2) as u32;
+    let count = args
+        .get("count")
+        .and_then(Value::as_u64)
+        .unwrap_or(1)
+        .clamp(1, 2) as u32;
     let label = c.click_element(name, automation_id, button, count)?;
     Ok(text_result(json!({ "clicked": label }), label))
 }
@@ -453,14 +506,22 @@ fn exec_clipboard(args: &Value, c: &mut ComputerController) -> Result<Value> {
     match action {
         "get" => {
             let text = c.clipboard_get()?;
-            Ok(text_result(json!({ "text": text }), format!("剪贴板内容（{} 字符）", text.chars().count())))
+            Ok(text_result(
+                json!({ "text": text }),
+                format!("剪贴板内容（{} 字符）", text.chars().count()),
+            ))
         }
         "set" => {
             let text = require_str(args, "text")?;
             c.clipboard_set(text)?;
-            Ok(text_result(json!({ "set": true }), format!("已写入剪贴板（{} 字符）", text.chars().count())))
+            Ok(text_result(
+                json!({ "set": true }),
+                format!("已写入剪贴板（{} 字符）", text.chars().count()),
+            ))
         }
-        other => Err(AppError::ValidationError(format!("未知 clipboard action: {other}"))),
+        other => Err(AppError::ValidationError(format!(
+            "未知 clipboard action: {other}"
+        ))),
     }
 }
 
@@ -572,8 +633,14 @@ mod tests {
     #[test]
     fn initialize_returns_protocol_metadata() {
         let value = handle_initialize();
-        assert_eq!(value["protocolVersion"], Value::String(PROTOCOL_VERSION.to_string()));
-        assert_eq!(value["serverInfo"]["name"], Value::String(SERVER_NAME.to_string()));
+        assert_eq!(
+            value["protocolVersion"],
+            Value::String(PROTOCOL_VERSION.to_string())
+        );
+        assert_eq!(
+            value["serverInfo"]["name"],
+            Value::String(SERVER_NAME.to_string())
+        );
     }
 
     #[test]

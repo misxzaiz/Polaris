@@ -86,9 +86,7 @@ pub async fn plugin_service_restart(
 /// 列出所有服务状态
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn plugin_service_list_status(
-    state: State<'_, AppState>,
-) -> Result<Vec<ServiceStatus>> {
+pub async fn plugin_service_list_status(state: State<'_, AppState>) -> Result<Vec<ServiceStatus>> {
     Ok(state.plugin_service_manager.list_status().await)
 }
 

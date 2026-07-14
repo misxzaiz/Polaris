@@ -1,11 +1,11 @@
 use axum::extract::State;
 use axum::response::IntoResponse;
 use axum::Json;
-use std::sync::Arc;
 use serde::Deserialize;
+use std::sync::Arc;
 
-use crate::AppState;
 use super::WebError;
+use crate::AppState;
 
 /// Verify endpoint — checks if the provided Bearer token matches config.web.token.
 ///
@@ -58,10 +58,13 @@ pub async fn handle_token_exchange(
             let expected_md5 = format!("{:x}", md5::compute(expected_token.as_bytes()));
 
             let valid = req.token == expected_token.as_str()
-                || subtle::ConstantTimeEq::ct_eq(req.token.as_bytes(), expected_md5.as_bytes()).into();
+                || subtle::ConstantTimeEq::ct_eq(req.token.as_bytes(), expected_md5.as_bytes())
+                    .into();
 
             if valid {
-                Ok(Json(serde_json::json!({ "valid": true, "token": expected_md5 })))
+                Ok(Json(
+                    serde_json::json!({ "valid": true, "token": expected_md5 }),
+                ))
             } else {
                 Err(WebError::Unauthorized)
             }

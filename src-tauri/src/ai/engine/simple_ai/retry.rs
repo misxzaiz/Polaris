@@ -37,6 +37,49 @@ fn parse_retry_after(value: Option<&str>) -> Option<Duration> {
     value?.parse::<u64>().ok().map(Duration::from_secs)
 }
 
+/// 三条协议及常见兼容网关的上下文超限错误归一化。
+///
+/// OpenAI Chat/Responses 常用 `context_length_exceeded`，Anthropic 常用
+/// `invalid_request_error` + `prompt is too long`；部分代理只返回纯文本或 413。
+pub(super) fn is_context_limit_response(status: u16, body: &str) -> bool {
+    let lower = body.to_ascii_lowercase();
+    let explicit_codes = [
+        "context_length_exceeded",
+        "context_window_exceeded",
+        "prompt_too_long",
+        "input_too_long",
+        "max_context_length",
+    ];
+    if explicit_codes.iter().any(|code| lower.contains(code)) {
+        return true;
+    }
+
+    let phrases = [
+        "maximum context length",
+        "max context length",
+        "context length exceeded",
+        "context window exceeded",
+        "exceeds the context window",
+        "exceed context limit",
+        "prompt is too long",
+        "prompt too long",
+        "input is too long",
+        "input too long",
+        "too many tokens",
+        "token limit exceeded",
+        "maximum number of tokens allowed",
+    ];
+    if phrases.iter().any(|phrase| lower.contains(phrase)) {
+        return true;
+    }
+
+    status == 413
+        && (lower.contains("context")
+            || lower.contains("token")
+            || lower.contains("prompt")
+            || lower.contains("request too large"))
+}
+
 /// 带重试地发送请求。
 ///
 /// 成功（2xx）返回 `Response`；不可重试错误或达上限后返回最后一次错误。
@@ -64,6 +107,12 @@ pub(super) async fn send_with_retry(
                         .and_then(|v| v.to_str().ok()),
                 );
                 let body = resp.text().await.unwrap_or_default();
+                if is_context_limit_response(status, &body) {
+                    return Err(AppError::ContextLimit {
+                        status,
+                        message: body,
+                    });
+                }
                 let err = format!("API error ({}): {}", status, body);
                 if !is_retryable_status(status) || attempt >= max_attempts {
                     return Err(AppError::ProcessError(err));
@@ -141,6 +190,27 @@ mod tests {
         assert_eq!(parse_retry_after(None), None);
         assert_eq!(parse_retry_after(Some("not-a-number")), None);
         // HTTP 日期格式不支持
-        assert_eq!(parse_retry_after(Some("Wed, 21 Oct 2025 07:28:00 GMT")), None);
+        assert_eq!(
+            parse_retry_after(Some("Wed, 21 Oct 2025 07:28:00 GMT")),
+            None
+        );
+    }
+
+    #[test]
+    fn context_limit_classifier_covers_three_protocol_families() {
+        assert!(is_context_limit_response(
+            400,
+            r#"{"error":{"code":"context_length_exceeded","message":"maximum context length is 128k"}}"#
+        ));
+        assert!(is_context_limit_response(
+            400,
+            r#"{"type":"error","error":{"type":"invalid_request_error","message":"prompt is too long: 210000 tokens"}}"#
+        ));
+        assert!(is_context_limit_response(
+            413,
+            r#"{"error":{"message":"Request too large for the model context window"}}"#
+        ));
+        assert!(!is_context_limit_response(429, "rate limit exceeded"));
+        assert!(!is_context_limit_response(400, "invalid tool schema"));
     }
 }

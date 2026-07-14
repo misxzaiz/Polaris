@@ -4,11 +4,11 @@
  * 注意：实例数据现在统一存储在 config.json 中，此模块仅作为运行时缓存。
  */
 
-use std::collections::HashMap;
-use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
-use crate::models::config::{QQBotRuntimeConfig, FeishuRuntimeConfig};
 use super::types::Platform;
+use crate::models::config::{FeishuRuntimeConfig, QQBotRuntimeConfig};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// 实例 ID
 pub type InstanceId = String;
@@ -173,7 +173,8 @@ impl InstanceRegistry {
     pub fn activate(&mut self, instance_id: &str) -> bool {
         if let Some(instance) = self.get(instance_id) {
             let platform_key = format!("{:?}", instance.platform);
-            self.active_instances.insert(platform_key, instance_id.to_string());
+            self.active_instances
+                .insert(platform_key, instance_id.to_string());
             true
         } else {
             false

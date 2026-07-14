@@ -6,7 +6,9 @@
 use tauri::State;
 
 use crate::error::Result;
-use crate::services::mcp_manager_service::{McpHealthStatus, McpManagerService, McpServerAggregate};
+use crate::services::mcp_manager_service::{
+    McpHealthStatus, McpManagerService, McpServerAggregate,
+};
 use crate::state::AppState;
 
 /// 获取 Claude CLI 路径
@@ -51,9 +53,7 @@ pub async fn mcp_get_server(
 /// 调用 `claude mcp list` 获取运行时状态
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn mcp_health_check(
-    state: State<'_, AppState>,
-) -> Result<Vec<McpHealthStatus>> {
+pub async fn mcp_health_check(state: State<'_, AppState>) -> Result<Vec<McpHealthStatus>> {
     let claude_path = get_claude_path(&state)?;
     let service = McpManagerService::new(claude_path);
     service.health_check()

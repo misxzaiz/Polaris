@@ -19,7 +19,10 @@ pub fn open_repository(path: &Path) -> Result<Repository, GitServiceError> {
 }
 
 /// 初始化 Git 仓库
-pub fn init_repository(path: &Path, initial_branch: Option<&str>) -> Result<String, GitServiceError> {
+pub fn init_repository(
+    path: &Path,
+    initial_branch: Option<&str>,
+) -> Result<String, GitServiceError> {
     let branch_name = initial_branch.unwrap_or("main");
 
     let repo = git2::Repository::init_opts(

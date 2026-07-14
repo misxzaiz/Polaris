@@ -119,7 +119,11 @@ pub struct ToolCallStartEvent {
 }
 
 impl ToolCallStartEvent {
-    pub fn new(session_id: impl Into<String>, tool: String, args: HashMap<String, serde_json::Value>) -> Self {
+    pub fn new(
+        session_id: impl Into<String>,
+        tool: String,
+        args: HashMap<String, serde_json::Value>,
+    ) -> Self {
         Self {
             event_type: "tool_call_start".to_string(),
             session_id: session_id.into(),
@@ -411,7 +415,11 @@ pub struct TaskMetadataEvent {
 }
 
 impl TaskMetadataEvent {
-    pub fn new(session_id: impl Into<String>, task_id: impl Into<String>, status: TaskStatus) -> Self {
+    pub fn new(
+        session_id: impl Into<String>,
+        task_id: impl Into<String>,
+        status: TaskStatus,
+    ) -> Self {
         Self {
             event_type: "task_metadata".to_string(),
             session_id: session_id.into(),
@@ -486,7 +494,11 @@ pub struct TaskCompletedEvent {
 }
 
 impl TaskCompletedEvent {
-    pub fn new(session_id: impl Into<String>, task_id: impl Into<String>, status: TaskStatus) -> Self {
+    pub fn new(
+        session_id: impl Into<String>,
+        task_id: impl Into<String>,
+        status: TaskStatus,
+    ) -> Self {
         Self {
             event_type: "task_completed".to_string(),
             session_id: session_id.into(),
@@ -736,11 +748,7 @@ pub struct PlanApprovalResultEvent {
 }
 
 impl PlanApprovalResultEvent {
-    pub fn new(
-        session_id: impl Into<String>,
-        plan_id: impl Into<String>,
-        approved: bool,
-    ) -> Self {
+    pub fn new(session_id: impl Into<String>, plan_id: impl Into<String>, approved: bool) -> Self {
         Self {
             event_type: "plan_approval_result".to_string(),
             session_id: session_id.into(),
@@ -870,7 +878,11 @@ pub struct AgentRunStartEvent {
 }
 
 impl AgentRunStartEvent {
-    pub fn new(session_id: impl Into<String>, task_id: impl Into<String>, agent_type: impl Into<String>) -> Self {
+    pub fn new(
+        session_id: impl Into<String>,
+        task_id: impl Into<String>,
+        agent_type: impl Into<String>,
+    ) -> Self {
         Self {
             event_type: "agent_run_start".to_string(),
             session_id: session_id.into(),
@@ -1022,7 +1034,12 @@ pub struct QuestionEvent {
 }
 
 impl QuestionEvent {
-    pub fn new(session_id: impl Into<String>, question_id: impl Into<String>, header: impl Into<String>, options: Vec<QuestionOptionData>) -> Self {
+    pub fn new(
+        session_id: impl Into<String>,
+        question_id: impl Into<String>,
+        header: impl Into<String>,
+        options: Vec<QuestionOptionData>,
+    ) -> Self {
         Self {
             event_type: "question".to_string(),
             session_id: session_id.into(),
@@ -1091,7 +1108,11 @@ pub struct QuestionAnsweredEvent {
 }
 
 impl QuestionAnsweredEvent {
-    pub fn new(session_id: impl Into<String>, question_id: impl Into<String>, answers: Vec<SubAnswerData>) -> Self {
+    pub fn new(
+        session_id: impl Into<String>,
+        question_id: impl Into<String>,
+        answers: Vec<SubAnswerData>,
+    ) -> Self {
         Self {
             event_type: "question_answered".to_string(),
             session_id: session_id.into(),
@@ -1227,6 +1248,13 @@ pub struct ContextCompactedEvent {
     /// 压缩后 token 数
     #[serde(skip_serializing_if = "Option::is_none")]
     pub post_tokens: Option<u64>,
+    /// SimpleAI checkpoint generation；Claude CLI 事件为空。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generation: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub archived_turns: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retained_turns: Option<usize>,
 }
 
 impl ContextCompactedEvent {
@@ -1242,6 +1270,55 @@ impl ContextCompactedEvent {
             trigger: trigger.into(),
             pre_tokens,
             post_tokens,
+            generation: None,
+            archived_turns: None,
+            retained_turns: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextCompactionFailedEvent {
+    #[serde(rename = "type")]
+    pub event_type: String,
+    pub session_id: String,
+    pub trigger: String,
+    pub error: String,
+}
+
+impl ContextCompactionFailedEvent {
+    pub fn new(
+        session_id: impl Into<String>,
+        trigger: impl Into<String>,
+        error: impl Into<String>,
+    ) -> Self {
+        Self {
+            event_type: "context_compaction_failed".to_string(),
+            session_id: session_id.into(),
+            trigger: trigger.into(),
+            error: error.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextRestoredEvent {
+    #[serde(rename = "type")]
+    pub event_type: String,
+    pub session_id: String,
+    pub generation: u64,
+    pub reason: String,
+}
+
+impl ContextRestoredEvent {
+    pub fn new(session_id: impl Into<String>, generation: u64, reason: impl Into<String>) -> Self {
+        Self {
+            event_type: "context_restored".to_string(),
+            session_id: session_id.into(),
+            generation,
+            reason: reason.into(),
         }
     }
 }
@@ -1382,6 +1459,8 @@ pub enum AIEvent {
     CliInit(CliInitEvent),
     // 上下文压缩事件
     ContextCompacted(ContextCompactedEvent),
+    ContextCompactionFailed(ContextCompactionFailedEvent),
+    ContextRestored(ContextRestoredEvent),
     // Hook 生命周期事件
     Hook(HookEvent),
     // 提示建议事件
@@ -1419,6 +1498,8 @@ impl AIEvent {
             AIEvent::QuestionAnswered(e) => &e.event_type,
             AIEvent::CliInit(e) => &e.event_type,
             AIEvent::ContextCompacted(e) => &e.event_type,
+            AIEvent::ContextCompactionFailed(e) => &e.event_type,
+            AIEvent::ContextRestored(e) => &e.event_type,
             AIEvent::Hook(e) => &e.event_type,
             AIEvent::PromptSuggestion(e) => &e.event_type,
         }
@@ -1439,12 +1520,20 @@ impl AIEvent {
     }
 
     /// 创建工具调用开始事件
-    pub fn tool_call_start(session_id: impl Into<String>, tool: impl Into<String>, args: HashMap<String, serde_json::Value>) -> Self {
+    pub fn tool_call_start(
+        session_id: impl Into<String>,
+        tool: impl Into<String>,
+        args: HashMap<String, serde_json::Value>,
+    ) -> Self {
         AIEvent::ToolCallStart(ToolCallStartEvent::new(session_id, tool.into(), args))
     }
 
     /// 创建工具调用结束事件
-    pub fn tool_call_end(session_id: impl Into<String>, tool: impl Into<String>, success: bool) -> Self {
+    pub fn tool_call_end(
+        session_id: impl Into<String>,
+        tool: impl Into<String>,
+        success: bool,
+    ) -> Self {
         AIEvent::ToolCallEnd(ToolCallEndEvent::new(session_id, tool.into(), success))
     }
 
@@ -1474,7 +1563,11 @@ impl AIEvent {
     }
 
     /// 创建 AI 消息事件
-    pub fn assistant_message(session_id: impl Into<String>, content: impl Into<String>, is_delta: bool) -> Self {
+    pub fn assistant_message(
+        session_id: impl Into<String>,
+        content: impl Into<String>,
+        is_delta: bool,
+    ) -> Self {
         AIEvent::AssistantMessage(AssistantMessageEvent::new(session_id, content, is_delta))
     }
 
@@ -1508,6 +1601,8 @@ impl AIEvent {
             AIEvent::QuestionAnswered(e) => &e.session_id,
             AIEvent::CliInit(e) => &e.session_id,
             AIEvent::ContextCompacted(e) => &e.session_id,
+            AIEvent::ContextCompactionFailed(e) => &e.session_id,
+            AIEvent::ContextRestored(e) => &e.session_id,
             AIEvent::Hook(e) => &e.session_id,
             AIEvent::PromptSuggestion(e) => &e.session_id,
         }
@@ -1571,7 +1666,11 @@ impl AIEvent {
                 id: e.call_id.clone().unwrap_or_default(),
                 name: e.tool.clone(),
                 args: HashMap::new(),
-                status: if e.success { ToolCallStatus::Completed } else { ToolCallStatus::Failed },
+                status: if e.success {
+                    ToolCallStatus::Completed
+                } else {
+                    ToolCallStatus::Failed
+                },
                 result: e.result.clone(),
             }),
             _ => None,

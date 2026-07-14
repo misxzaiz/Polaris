@@ -14,7 +14,13 @@ import { IconSend, IconStop, IconPaperclip } from '../Common/Icons'
 import { Sparkles } from 'lucide-react'
 import { useWorkspaceStore, useSessionStore, useToastStore, useConfigStore } from '@/stores'
 import { voiceNotificationService } from '@/services/voiceNotificationService'
-import { useActiveSessionInputDraft, useActiveSessionActions, useActiveSessionWorkspace, useActiveSessionPromptSuggestion } from '@/stores/conversationStore/useActiveSession'
+import {
+  useActiveSessionActions,
+  useActiveSessionCompaction,
+  useActiveSessionInputDraft,
+  useActiveSessionPromptSuggestion,
+  useActiveSessionWorkspace,
+} from '@/stores/conversationStore/useActiveSession'
 import { useDebouncedCallback } from '@/hooks/useDebounce'
 import { UnifiedSuggestion, type SuggestionItem, type ConversationSuggestion } from './FileSuggestion'
 import { AttachmentPreview } from './AttachmentPreview'
@@ -109,17 +115,20 @@ export function ChatInput({
   // 当前会话引擎：CLI 斜杠命令建议/拦截仅对 Claude Code 引擎生效
   const activeSessionId = useActiveSessionId()
   const defaultEngine = useConfigStore((state) => state.config?.defaultEngine)
-  const isClaudeEngine = useMemo(
-    () => resolveSessionEngine(activeSessionId ?? '', defaultEngine) === 'claude-code',
+  const activeEngine = useMemo(
+    () => resolveSessionEngine(activeSessionId ?? '', defaultEngine),
     [activeSessionId, defaultEngine]
   )
+  const isClaudeEngine = activeEngine === 'claude-code'
+  const isSimpleAIEngine = activeEngine === 'simple-ai'
 
   /** 选中片段时的光标位置信息（用于局部替换） */
   const [snippetTriggerBefore, setSnippetTriggerBefore] = useState<{ before: string; cursor: number } | null>(null)
   // 使用 Store 中的输入草稿（用于会话切换同步）
   const inputDraft = useActiveSessionInputDraft()
   const promptSuggestion = useActiveSessionPromptSuggestion()
-  const { updateInputDraft, clearInputDraft, setPromptSuggestion } = useActiveSessionActions()
+  const { isCompacting } = useActiveSessionCompaction()
+  const { updateInputDraft, clearInputDraft, setPromptSuggestion, compactContext } = useActiveSessionActions()
 
   // 本地 state（即时响应）
   const [localText, setLocalText] = useState('')
@@ -747,8 +756,22 @@ export function ChatInput({
 
   const handleSend = useCallback(() => {
     const trimmed = value.trim()
+    if (isCompacting) return
     if ((disabled || isStreaming) && attachments.length === 0) return
     if (!trimmed && attachments.length === 0) return
+
+    // SimpleAI 的 /compact 是 Polaris 内部操作：不作为用户消息写入可视历史，
+    // 也不交给模型或 CLI。runtime ID 保持不变，完成后由事件插入压缩分隔条。
+    if (isSimpleAIEngine && attachments.length === 0 && /^\/compact\s*$/i.test(trimmed)) {
+      cancelPersistDraft()
+      void compactContext()
+      setLocalText('')
+      setLocalAttachments([])
+      updateInputDraft({ text: '', attachments: [] })
+      setHistoryIndex(-1)
+      setSpeechWakeActive(false)
+      return
+    }
 
     // Claude 引擎：拦截 /clear（及别名）—— CLI 侧会新开对话，
     // 导致 CLI 上下文与 Polaris 界面历史脱钩。清空上下文请用 Polaris 新建会话。
@@ -796,7 +819,7 @@ export function ChatInput({
     setSpeechWakeActive(false)
     // 语音提醒：发送确认
     voiceNotificationService.notifySendConfirm()
-  }, [value, disabled, isStreaming, attachments, onSend, updateInputDraft, cancelPersistDraft, currentWorkspace, setSpeechWakeActive, editMode, onEditSend, onCancelEdit, isClaudeEngine, t])
+  }, [value, disabled, isStreaming, isCompacting, attachments, onSend, updateInputDraft, cancelPersistDraft, currentWorkspace, setSpeechWakeActive, editMode, onEditSend, onCancelEdit, isClaudeEngine, isSimpleAIEngine, compactContext, t])
 
   // 处理语音命令（放在 handleSend 之后，避免变量声明顺序问题）
   useEffect(() => {
@@ -930,7 +953,7 @@ export function ChatInput({
     return () => document.removeEventListener('click', handleClickOutside)
   }, [])
 
-  const canSend = (value.trim() || attachments.length > 0) && !disabled && !isStreaming
+  const canSend = (value.trim() || attachments.length > 0) && !disabled && !isStreaming && !isCompacting
 
   return (
     <div className="chat-input-root border-t border-border bg-background-elevated relative" ref={containerRef} style={chatDisplayStyle}>
@@ -975,7 +998,7 @@ export function ChatInput({
         </div>
       )}
       {/* 下一步建议气泡（--prompt-suggestions）：仅在输入框为空、非流式、非编辑态时展示 */}
-      {promptSuggestion && !value.trim() && !isStreaming && !editMode && (
+      {promptSuggestion && !value.trim() && !isStreaming && !isCompacting && !editMode && (
         <div className="px-2 sm:px-3 pt-2">
           <button
             type="button"
@@ -1025,7 +1048,7 @@ export function ChatInput({
             onPaste={handlePaste}
             placeholder={attachments.length > 0 ? t('input.placeholderWithAttachment') : t('input.placeholder')}
             className="chat-input-text w-full px-2.5 sm:px-3 pt-2 pb-1 bg-transparent text-text-primary placeholder:text-text-tertiary resize-none outline-none border-0"
-            disabled={disabled}
+            disabled={disabled || isCompacting}
             maxHeight={200}
             minHeight={40}
           />
@@ -1036,7 +1059,7 @@ export function ChatInput({
             <div className="flex items-center gap-1 shrink-0">
               <button
                 onClick={openFileDialog}
-                disabled={disabled || isStreaming}
+                disabled={disabled || isStreaming || isCompacting}
                 className="shrink-0 p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors disabled:opacity-50"
                 title={t('input.addAttachment')}
               >

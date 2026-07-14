@@ -3,13 +3,13 @@
  * 提供提交、暂存、取消暂存、丢弃变更等功能
  */
 
-use git2::{Repository, StatusOptions};
 use git2::build::CheckoutBuilder;
+use git2::{Repository, StatusOptions};
 use std::path::Path;
 use tracing::{debug, info, warn};
 
-use crate::models::git::{BatchStageResult, GitServiceError, StageFailure};
 use super::executor::open_repository;
+use crate::models::git::{BatchStageResult, GitServiceError, StageFailure};
 
 #[derive(Debug, Clone, Copy)]
 enum StagedPathKind {
@@ -17,7 +17,10 @@ enum StagedPathKind {
     Removed,
 }
 
-fn file_status(repo: &Repository, file_path: &str) -> Result<Option<git2::Status>, GitServiceError> {
+fn file_status(
+    repo: &Repository,
+    file_path: &str,
+) -> Result<Option<git2::Status>, GitServiceError> {
     let mut opts = StatusOptions::new();
     opts.include_untracked(true)
         .include_ignored(false)
@@ -121,7 +124,9 @@ pub fn commit(
 
     // 检查是否有变更
     if index.is_empty() {
-        return Err(GitServiceError::CLIError("No changes to commit".to_string()));
+        return Err(GitServiceError::CLIError(
+            "No changes to commit".to_string(),
+        ));
     }
 
     let tree_id = index.write_tree()?;
@@ -138,14 +143,7 @@ pub fn commit(
         let head = repo.head()?;
         let parent_commit = head.peel_to_commit()?;
 
-        repo.commit(
-            Some("HEAD"),
-            &sig,
-            &sig,
-            message,
-            &tree,
-            &[&parent_commit],
-        )?
+        repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[&parent_commit])?
     };
 
     Ok(oid.to_string())
@@ -199,7 +197,10 @@ pub fn discard_changes(path: &Path, file_path: &str) -> Result<(), GitServiceErr
 }
 
 /// 批量暂存文件
-pub fn batch_stage(path: &Path, file_paths: &[String]) -> Result<BatchStageResult, GitServiceError> {
+pub fn batch_stage(
+    path: &Path,
+    file_paths: &[String],
+) -> Result<BatchStageResult, GitServiceError> {
     let repo = open_repository(path)?;
     let mut index = repo.index()?;
 

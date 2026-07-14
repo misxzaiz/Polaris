@@ -3,11 +3,11 @@
  * 管理所有注册的 AI 引擎，提供统一的访问接口。
  */
 
-use std::collections::HashMap;
-use crate::error::{AppError, Result};
-use crate::models::config::Config;
 use super::traits::{AIEngine, EngineId, SessionOptions};
 use super::types::EngineStatus;
+use crate::error::{AppError, Result};
+use crate::models::config::Config;
+use std::collections::HashMap;
 
 /// 引擎注册表
 pub struct EngineRegistry {
@@ -100,11 +100,13 @@ impl EngineRegistry {
     ) -> Result<String> {
         let id = engine_id.unwrap_or_else(|| self.default_engine.clone());
 
-        let engine = self.get_mut(&id)
+        let engine = self
+            .get_mut(&id)
             .ok_or_else(|| AppError::ValidationError(format!("引擎 {} 未注册", id)))?;
 
         if !engine.is_available() {
-            let reason = engine.unavailable_reason()
+            let reason = engine
+                .unavailable_reason()
                 .unwrap_or_else(|| "引擎不可用".to_string());
             return Err(AppError::ValidationError(reason));
         }
@@ -120,15 +122,41 @@ impl EngineRegistry {
         message: &str,
         options: SessionOptions,
     ) -> Result<()> {
-        let engine = self.get_mut(&engine_id)
+        let engine = self
+            .get_mut(&engine_id)
             .ok_or_else(|| AppError::ValidationError(format!("引擎 {} 未注册", engine_id)))?;
 
         engine.continue_session(session_id, message, options)
     }
 
+    pub fn compact_session(
+        &mut self,
+        engine_id: EngineId,
+        session_id: &str,
+        options: SessionOptions,
+    ) -> Result<()> {
+        let engine = self
+            .get_mut(&engine_id)
+            .ok_or_else(|| AppError::ValidationError(format!("引擎 {} 未注册", engine_id)))?;
+        engine.compact_session(session_id, options)
+    }
+
+    pub fn restore_compaction(
+        &mut self,
+        engine_id: EngineId,
+        session_id: &str,
+        options: SessionOptions,
+    ) -> Result<()> {
+        let engine = self
+            .get_mut(&engine_id)
+            .ok_or_else(|| AppError::ValidationError(format!("引擎 {} 未注册", engine_id)))?;
+        engine.restore_compaction(session_id, options)
+    }
+
     /// 中断会话
     pub fn interrupt(&mut self, engine_id: &EngineId, session_id: &str) -> Result<()> {
-        let engine = self.get_mut(engine_id)
+        let engine = self
+            .get_mut(engine_id)
             .ok_or_else(|| AppError::ValidationError(format!("引擎 {} 未注册", engine_id)))?;
 
         engine.interrupt(session_id)
@@ -149,7 +177,9 @@ impl EngineRegistry {
     ///
     /// Web 端断线重连后查询会话存活状态，用于恢复前端 isStreaming。
     pub fn is_session_active(&self, session_id: &str) -> bool {
-        self.engines.values().any(|engine| engine.has_active_session(session_id))
+        self.engines
+            .values()
+            .any(|engine| engine.has_active_session(session_id))
     }
 
     /// 向会话发送输入
@@ -240,11 +270,7 @@ mod tests {
             true
         }
 
-        fn start_session(
-            &mut self,
-            _message: &str,
-            _options: SessionOptions,
-        ) -> Result<String> {
+        fn start_session(&mut self, _message: &str, _options: SessionOptions) -> Result<String> {
             Err(AppError::Unknown("not implemented in mock".to_string()))
         }
 

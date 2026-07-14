@@ -1,4 +1,4 @@
-﻿use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// 权限拒绝详情
@@ -24,15 +24,11 @@ pub enum StreamEvent {
 
     /// 助手消息
     #[serde(rename = "assistant")]
-    Assistant {
-        message: serde_json::Value,
-    },
+    Assistant { message: serde_json::Value },
 
     /// 用户消息（包含工具结果）
     #[serde(rename = "user")]
-    User {
-        message: serde_json::Value,
-    },
+    User { message: serde_json::Value },
 
     /// 文本内容
     #[serde(rename = "text_delta")]
@@ -50,10 +46,7 @@ pub enum StreamEvent {
 
     /// 思考过程（Codex reasoning）
     #[serde(rename = "thinking")]
-    Thinking {
-        id: String,
-        thinking: String,
-    },
+    Thinking { id: String, thinking: String },
 
     /// 工具调用结束
     #[serde(rename = "tool_end")]

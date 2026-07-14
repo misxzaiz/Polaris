@@ -1,9 +1,9 @@
 //! Claude Settings 文件读写命令
 
+use crate::error::{AppError, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use serde::{Deserialize, Serialize};
-use crate::error::{AppError, Result};
 
 /// Claude settings.json 结构
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -97,7 +97,10 @@ pub async fn get_claude_settings_path() -> Result<String> {
 /// 向 settings.json 的 permissions 列表追加规则（去重保序）。
 /// kind: "allow" | "deny" | "ask"。返回更新后的完整 settings 供前端同步。
 #[cfg_attr(feature = "tauri-app", tauri::command)]
-pub async fn add_claude_permission_rules(rules: Vec<String>, kind: String) -> Result<ClaudeSettings> {
+pub async fn add_claude_permission_rules(
+    rules: Vec<String>,
+    kind: String,
+) -> Result<ClaudeSettings> {
     let mut settings = read_claude_settings().await?;
     let mut perms = settings.permissions.take().unwrap_or_default();
     {
@@ -105,7 +108,12 @@ pub async fn add_claude_permission_rules(rules: Vec<String>, kind: String) -> Re
             "allow" => &mut perms.allow,
             "deny" => &mut perms.deny,
             "ask" => &mut perms.ask,
-            other => return Err(AppError::ProcessError(format!("未知权限列表类型: {}", other))),
+            other => {
+                return Err(AppError::ProcessError(format!(
+                    "未知权限列表类型: {}",
+                    other
+                )))
+            }
         };
         for rule in rules {
             let rule = rule.trim().to_string();

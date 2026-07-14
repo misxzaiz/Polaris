@@ -16,7 +16,7 @@ use crate::error::{AppError, Result};
 use super::builder;
 use super::db::IndexDb;
 use super::extractor;
-use super::model::{DirtyBuffer, FileIndex, IndexMatch, IndexStatus, ImportEntry};
+use super::model::{DirtyBuffer, FileIndex, ImportEntry, IndexMatch, IndexStatus};
 use super::query;
 use super::ranker::{rank_definition, RankContext};
 
@@ -92,7 +92,11 @@ impl IndexService {
         let last_built_at = db.get_last_built_at();
         let initial_status = IndexStatus {
             workspace: Some(key.to_string_lossy().to_string()),
-            state: if files == 0 { "idle".into() } else { "ready".into() },
+            state: if files == 0 {
+                "idle".into()
+            } else {
+                "ready".into()
+            },
             progress_done: 0,
             progress_total: 0,
             files,
@@ -210,9 +214,9 @@ impl IndexService {
         let key = canonicalize_or_self(workspace);
         let ws = {
             let map = self.inner.lock().unwrap();
-            map.get(&key).cloned().ok_or_else(|| {
-                AppError::StateError("workspace 未打开".into())
-            })?
+            map.get(&key)
+                .cloned()
+                .ok_or_else(|| AppError::StateError("workspace 未打开".into()))?
         };
         builder::build_one(&ws.db, &key, abs_path)?;
         if let Ok((files, symbols, refs)) = ws.db.stats() {
@@ -227,9 +231,9 @@ impl IndexService {
         let key = canonicalize_or_self(workspace);
         let ws = {
             let map = self.inner.lock().unwrap();
-            map.get(&key).cloned().ok_or_else(|| {
-                AppError::StateError("workspace 未打开".into())
-            })?
+            map.get(&key)
+                .cloned()
+                .ok_or_else(|| AppError::StateError("workspace 未打开".into()))?
         };
         let rel = abs_path
             .strip_prefix(&key)
@@ -323,10 +327,8 @@ impl IndexService {
         } else {
             Vec::new()
         };
-        let pkg_owned: Option<String> = live_ctx
-            .as_ref()
-            .and_then(|(p, _)| p.clone())
-            .or_else(|| {
+        let pkg_owned: Option<String> =
+            live_ctx.as_ref().and_then(|(p, _)| p.clone()).or_else(|| {
                 ws.as_ref()
                     .and_then(|w| w.db.read_query_context(&current_rel).ok())
                     .and_then(|c| c.package)

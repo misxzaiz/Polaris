@@ -9,7 +9,7 @@ import { createLogger } from '@/utils/logger'
 import type { AIEvent } from '@/ai-runtime'
 import { isEditTool, extractEditDiff } from '@/utils/diffExtractor'
 import { parseApplyPatch } from '@/utils/patchParser'
-import type { PluginCardBlock } from '@/types'
+import type { ContentBlock, PluginCardBlock } from '@/types'
 import { chatCardRegistry } from '@/plugin-system/chatCardRegistry'
 import type { ConversationStore } from './types'
 import { voiceNotificationService } from '@/services/voiceNotificationService'
@@ -314,9 +314,94 @@ export function handleAIEvent(
     case 'context_compacted':
       // 上下文压缩完成（/compact 或 autoCompact）：插入分隔条块，
       // 标记此处之前的上下文已被摘要压缩。
-      state.appendContextCompactBlock(event.trigger, event.preTokens, event.postTokens)
-      set({ progressMessage: null })
+      state.appendContextCompactBlock(
+        event.trigger,
+        event.preTokens,
+        event.postTokens,
+        event.generation,
+        event.archivedTurns,
+        event.retainedTurns,
+      )
+      // 应用内手动压缩不产生 session_end；空闲态下必须立即归档该分隔块，
+      // 否则 EnhancedChatMessages 会因 isStreaming=false 而隐藏 currentMessage。
+      if (!get().isStreaming) {
+        get().finishMessage()
+        saveDialog(get())
+      }
+      set({
+        progressMessage: null,
+        canRestoreCompaction: event.generation !== undefined,
+        isCompacting: false,
+      })
       break
+
+    case 'context_compaction_failed':
+      set({
+        progressMessage: null,
+        error: event.error,
+        isCompacting: false,
+      })
+      break
+
+    case 'context_restored': {
+      if (event.reason !== 'undo_compaction') {
+        set({
+          progressMessage: null,
+          canRestoreCompaction: false,
+          isCompacting: false,
+        })
+        break
+      }
+      const current = get()
+      let removed = false
+      const removeMarker = <T extends { blocks: ContentBlock[] }>(message: T): T | null => {
+        let index = -1
+        for (let blockIndex = message.blocks.length - 1; blockIndex >= 0; blockIndex -= 1) {
+          const block = message.blocks[blockIndex]
+          if (
+            block.type === 'context_compact'
+            && (block.generation === undefined || block.generation === event.generation)
+          ) {
+            index = blockIndex
+            break
+          }
+        }
+        if (index < 0) return message
+        removed = true
+        const blocks = message.blocks.filter((_, blockIndex) => blockIndex !== index)
+        return blocks.length > 0 ? { ...message, blocks } : null
+      }
+
+      let currentMessage = current.currentMessage
+      if (currentMessage) {
+        currentMessage = removeMarker(currentMessage)
+      }
+
+      let messages = current.messages
+      if (!removed) {
+        for (let index = messages.length - 1; index >= 0; index -= 1) {
+          const message = messages[index]
+          if (message.type !== 'assistant') continue
+          const next = removeMarker(message)
+          if (next !== message) {
+            messages = next
+              ? messages.map((item, itemIndex) => itemIndex === index ? next : item)
+              : messages.filter((_, itemIndex) => itemIndex !== index)
+            break
+          }
+        }
+      }
+
+      set({
+        messages,
+        currentMessage,
+        progressMessage: null,
+        canRestoreCompaction: false,
+        isCompacting: false,
+      })
+      saveDialog(get())
+      break
+    }
 
     // permission_result is handled via plan_approval_result
     // there is no separate permission_result event type
@@ -444,6 +529,7 @@ async function saveDialog(state: ConversationStore): Promise<void> {
 
     await dialogStorageService.saveConversation({
       externalId: conversationId,
+      stableConversationId: sessionId,
       engineId,
       title,
       workspaceId: metadata?.workspaceId ?? null,

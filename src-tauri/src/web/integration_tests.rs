@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use axum::body::Body;
-use axum::http::{Method, Request, StatusCode};
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
+use axum::http::{Method, Request, StatusCode};
 use tokio::sync::Mutex as AsyncMutex;
 use tower::ServiceExt;
 
@@ -462,10 +462,11 @@ async fn terminal_discover_scripts_available_via_web_ipc() {
 #[tokio::test]
 async fn answer_question_updates_state() {
     let state = create_test_state();
-    state.pending_questions.lock().unwrap().insert(
-        "call-1".to_string(),
-        make_pending_question("call-1", "s1"),
-    );
+    state
+        .pending_questions
+        .lock()
+        .unwrap()
+        .insert("call-1".to_string(), make_pending_question("call-1", "s1"));
 
     let app = create_router(state.clone());
     let req = Request::builder()
@@ -489,10 +490,11 @@ async fn answer_question_updates_state() {
 async fn approve_plan_updates_state() {
     let state = create_test_state();
 
-    state.pending_plans.lock().unwrap().insert(
-        "plan-1".to_string(),
-        make_pending_plan("plan-1", "s1"),
-    );
+    state
+        .pending_plans
+        .lock()
+        .unwrap()
+        .insert("plan-1".to_string(), make_pending_plan("plan-1", "s1"));
 
     let app = create_router(state.clone());
     let req = Request::builder()
@@ -500,9 +502,7 @@ async fn approve_plan_updates_state() {
         .uri("/api/chat/approve-plan")
         .header(AUTHORIZATION, format!("Bearer {}", md5_of(TEST_TOKEN)))
         .header(CONTENT_TYPE, "application/json")
-        .body(Body::from(
-            r#"{"sessionId":"s1","planId":"plan-1"}"#,
-        ))
+        .body(Body::from(r#"{"sessionId":"s1","planId":"plan-1"}"#))
         .unwrap();
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
@@ -516,10 +516,11 @@ async fn approve_plan_updates_state() {
 async fn reject_plan_updates_state() {
     let state = create_test_state();
 
-    state.pending_plans.lock().unwrap().insert(
-        "plan-2".to_string(),
-        make_pending_plan("plan-2", "s1"),
-    );
+    state
+        .pending_plans
+        .lock()
+        .unwrap()
+        .insert("plan-2".to_string(), make_pending_plan("plan-2", "s1"));
 
     let app = create_router(state.clone());
     let req = Request::builder()
@@ -581,10 +582,11 @@ async fn approve_plan_broadcasts_event() {
     let state = create_test_state();
     let mut rx = state.event_broadcast.subscribe();
 
-    state.pending_plans.lock().unwrap().insert(
-        "plan-bc".to_string(),
-        make_pending_plan("plan-bc", "s-bc"),
-    );
+    state
+        .pending_plans
+        .lock()
+        .unwrap()
+        .insert("plan-bc".to_string(), make_pending_plan("plan-bc", "s-bc"));
 
     let app = create_router(state.clone());
     let req = Request::builder()
@@ -592,9 +594,7 @@ async fn approve_plan_broadcasts_event() {
         .uri("/api/chat/approve-plan")
         .header(AUTHORIZATION, format!("Bearer {}", md5_of(TEST_TOKEN)))
         .header(CONTENT_TYPE, "application/json")
-        .body(Body::from(
-            r#"{"sessionId":"s-bc","planId":"plan-bc"}"#,
-        ))
+        .body(Body::from(r#"{"sessionId":"s-bc","planId":"plan-bc"}"#))
         .unwrap();
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
@@ -808,9 +808,7 @@ async fn approve_plan_without_pending_returns_not_found() {
         .uri("/api/chat/approve-plan")
         .header(AUTHORIZATION, format!("Bearer {}", md5_of(TEST_TOKEN)))
         .header(CONTENT_TYPE, "application/json")
-        .body(Body::from(
-            r#"{"sessionId":"s1","planId":"nonexistent"}"#,
-        ))
+        .body(Body::from(r#"{"sessionId":"s1","planId":"nonexistent"}"#))
         .unwrap();
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
@@ -824,9 +822,7 @@ async fn reject_plan_without_pending_returns_not_found() {
         .uri("/api/chat/reject-plan")
         .header(AUTHORIZATION, format!("Bearer {}", md5_of(TEST_TOKEN)))
         .header(CONTENT_TYPE, "application/json")
-        .body(Body::from(
-            r#"{"sessionId":"s1","planId":"nonexistent"}"#,
-        ))
+        .body(Body::from(r#"{"sessionId":"s1","planId":"nonexistent"}"#))
         .unwrap();
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
@@ -851,7 +847,10 @@ fn clone_for_web_preserves_shared_state() {
 
     // Shared Arc fields should point to the same allocation
     assert!(Arc::ptr_eq(&state.sessions, &cloned.sessions));
-    assert!(Arc::ptr_eq(&state.pending_questions, &cloned.pending_questions));
+    assert!(Arc::ptr_eq(
+        &state.pending_questions,
+        &cloned.pending_questions
+    ));
     assert!(Arc::ptr_eq(&state.pending_plans, &cloned.pending_plans));
     assert!(Arc::ptr_eq(&state.config_store, &cloned.config_store));
 
@@ -937,7 +936,10 @@ async fn query_param_token_with_other_params_not_supported() {
     let app = test_app();
     let req = Request::builder()
         .method(Method::GET)
-        .uri(format!("/api/settings?foo=bar&token={}&baz=qux", TEST_TOKEN))
+        .uri(format!(
+            "/api/settings?foo=bar&token={}&baz=qux",
+            TEST_TOKEN
+        ))
         .body(Body::empty())
         .unwrap();
     let res = app.oneshot(req).await.unwrap();
@@ -995,10 +997,11 @@ async fn answer_question_with_custom_input() {
     if let Some(first) = q.questions.first_mut() {
         first.allow_custom_input = true;
     }
-    state.pending_questions.lock().unwrap().insert(
-        "call-custom".to_string(),
-        q,
-    );
+    state
+        .pending_questions
+        .lock()
+        .unwrap()
+        .insert("call-custom".to_string(), q);
 
     let app = create_router(state.clone());
     let req = Request::builder()
@@ -1024,10 +1027,11 @@ async fn answer_question_with_custom_input() {
 async fn approve_plan_with_feedback() {
     let state = create_test_state();
 
-    state.pending_plans.lock().unwrap().insert(
-        "plan-fb".to_string(),
-        make_pending_plan("plan-fb", "s-fb"),
-    );
+    state
+        .pending_plans
+        .lock()
+        .unwrap()
+        .insert("plan-fb".to_string(), make_pending_plan("plan-fb", "s-fb"));
 
     let app = create_router(state.clone());
     let req = Request::builder()
@@ -1126,7 +1130,10 @@ async fn session_list_unsupported_engine() {
 
     let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert!(json["error"].as_str().unwrap().contains("Unsupported engine"));
+    assert!(json["error"]
+        .as_str()
+        .unwrap()
+        .contains("Unsupported engine"));
 }
 
 #[tokio::test]
@@ -1181,13 +1188,17 @@ async fn missing_content_type_for_json_endpoint() {
         .method(Method::POST)
         .uri("/api/chat/answer-question")
         .header(AUTHORIZATION, format!("Bearer {}", md5_of(TEST_TOKEN)))
-        .body(Body::from(r#"{"sessionId":"s1","callId":"c1","selected":["a"]}"#))
+        .body(Body::from(
+            r#"{"sessionId":"s1","callId":"c1","selected":["a"]}"#,
+        ))
         .unwrap();
     let res = app.oneshot(req).await.unwrap();
     // Without Content-Type, axum won't parse JSON — expect 400 or 422
-    assert!(res.status() == StatusCode::BAD_REQUEST
-        || res.status() == StatusCode::UNSUPPORTED_MEDIA_TYPE
-        || res.status() == StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        res.status() == StatusCode::BAD_REQUEST
+            || res.status() == StatusCode::UNSUPPORTED_MEDIA_TYPE
+            || res.status() == StatusCode::UNPROCESSABLE_ENTITY
+    );
 }
 
 #[tokio::test]
@@ -1275,9 +1286,7 @@ async fn concurrent_plan_approve_reject() {
                 .uri("/api/chat/approve-plan")
                 .header(AUTHORIZATION, format!("Bearer {}", md5_of(TEST_TOKEN)))
                 .header(CONTENT_TYPE, "application/json")
-                .body(Body::from(
-                    r#"{"sessionId":"s-race","planId":"plan-race"}"#,
-                ))
+                .body(Body::from(r#"{"sessionId":"s-race","planId":"plan-race"}"#))
                 .unwrap();
             app.oneshot(req).await.unwrap()
         }));
@@ -1362,7 +1371,9 @@ async fn concurrent_settings_read_write() {
     for handle in handles {
         let res = handle.await.unwrap();
         // Reads: OK, Writes: OK — no deadlock
-        assert!(res.status() == StatusCode::OK || res.status() == StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(
+            res.status() == StatusCode::OK || res.status() == StatusCode::INTERNAL_SERVER_ERROR
+        );
     }
 }
 
@@ -1411,10 +1422,11 @@ async fn broadcast_event_contains_correct_fields() {
     if let Some(first) = q.questions.first_mut() {
         first.multi_select = true;
     }
-    state.pending_questions.lock().unwrap().insert(
-        "call-fields".to_string(),
-        q,
-    );
+    state
+        .pending_questions
+        .lock()
+        .unwrap()
+        .insert("call-fields".to_string(), q);
 
     let app = create_router(state.clone());
     let req = Request::builder()

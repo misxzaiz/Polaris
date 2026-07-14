@@ -7,8 +7,8 @@ use git2::BranchType;
 use std::path::Path;
 use tracing::info;
 
-use crate::models::git::{GitBranch, GitMergeResult, GitServiceError};
 use super::executor::open_repository;
+use crate::models::git::{GitBranch, GitMergeResult, GitServiceError};
 
 /// 获取所有分支
 pub fn get_branches(path: &Path) -> Result<Vec<GitBranch>, GitServiceError> {
@@ -85,7 +85,12 @@ pub fn get_branches(path: &Path) -> Result<Vec<GitBranch>, GitServiceError> {
 }
 
 /// 创建分支
-pub fn create_branch(path: &Path, name: &str, checkout: bool, start_point: Option<&str>) -> Result<(), GitServiceError> {
+pub fn create_branch(
+    path: &Path,
+    name: &str,
+    checkout: bool,
+    start_point: Option<&str>,
+) -> Result<(), GitServiceError> {
     let repo = open_repository(path)?;
 
     // 验证分支名
@@ -111,10 +116,7 @@ pub fn create_branch(path: &Path, name: &str, checkout: bool, start_point: Optio
     let start_commit = if let Some(sp) = start_point {
         repo.revparse_single(sp)?
             .peel_to_commit()
-            .map_err(|_| GitServiceError::BranchNotFound(format!(
-                "Invalid start point: {}",
-                sp
-            )))?
+            .map_err(|_| GitServiceError::BranchNotFound(format!("Invalid start point: {}", sp)))?
     } else {
         repo.head()?.peel_to_commit()?
     };
@@ -375,7 +377,8 @@ pub fn checkout_commit(path: &Path, commit_sha: &str) -> Result<(), GitServiceEr
     let repo = open_repository(path)?;
     let oid = git2::Oid::from_str(commit_sha)
         .map_err(|_| GitServiceError::CommitNotFound(commit_sha.to_string()))?;
-    let commit = repo.find_commit(oid)
+    let commit = repo
+        .find_commit(oid)
         .map_err(|_| GitServiceError::CommitNotFound(commit_sha.to_string()))?;
     let tree = commit.tree()?;
     repo.checkout_tree(tree.as_object(), None)?;

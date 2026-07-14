@@ -4,13 +4,13 @@ use axum::Json;
 use serde::Deserialize;
 use std::sync::Arc;
 
-use crate::ai::{CodexHistoryProvider, SessionHistoryProvider};
-use crate::commands::chat::{ChatRequestOptions, start_chat_inner};
-use crate::web::api::chat::{run_claude_blocking, build_web_callbacks};
-use crate::web::error::ok_response;
-use crate::web::{validate_session_id, PaginationQuery, parse_pagination};
-use crate::AppState;
 use super::WebError;
+use crate::ai::{CodexHistoryProvider, SessionHistoryProvider};
+use crate::commands::chat::{start_chat_inner, ChatRequestOptions};
+use crate::web::api::chat::{build_web_callbacks, run_claude_blocking};
+use crate::web::error::ok_response;
+use crate::web::{parse_pagination, validate_session_id, PaginationQuery};
+use crate::AppState;
 
 /// Validate that the engine_id is supported. Returns the normalized engine string.
 fn validate_engine(engine_id: &str) -> Result<&'static str, WebError> {
@@ -18,7 +18,10 @@ fn validate_engine(engine_id: &str) -> Result<&'static str, WebError> {
         "claude" | "claude-code" => Ok("claude-code"),
         "codex" | "openai-codex" => Ok("codex"),
         "simple-ai" | "simpleai" => Ok("simple-ai"),
-        _ => Err(WebError::BadRequest(format!("Unsupported engine: {}", engine_id))),
+        _ => Err(WebError::BadRequest(format!(
+            "Unsupported engine: {}",
+            engine_id
+        ))),
     }
 }
 
@@ -49,17 +52,18 @@ pub async fn handle_list_sessions(
     let work_dir = query.work_dir;
     let config = state.clone_config().map_err(WebError::Internal)?;
     let result = match engine {
-        "claude-code" => run_claude_blocking(&state, move |provider| {
-            provider.list_sessions(work_dir.as_deref(), pagination)
-        }).await?,
-        "codex" => {
-            tokio::task::spawn_blocking(move || {
-                let provider = CodexHistoryProvider::new(config);
+        "claude-code" => {
+            run_claude_blocking(&state, move |provider| {
                 provider.list_sessions(work_dir.as_deref(), pagination)
             })
-            .await
-            .map_err(|e| WebError::Internal(e.to_string()))??
+            .await?
         }
+        "codex" => tokio::task::spawn_blocking(move || {
+            let provider = CodexHistoryProvider::new(config);
+            provider.list_sessions(work_dir.as_deref(), pagination)
+        })
+        .await
+        .map_err(|e| WebError::Internal(e.to_string()))??,
         _ => unreachable!(),
     };
     Ok(Json(result))
@@ -81,13 +85,16 @@ pub async fn handle_create_session(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateSessionRequest>,
 ) -> Result<impl IntoResponse, WebError> {
-    let message = req.message
+    let message = req
+        .message
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .ok_or_else(|| WebError::BadRequest(
-            "Provide a message to start a new session, or use POST /api/chat/send".to_string()
-        ))?
+        .ok_or_else(|| {
+            WebError::BadRequest(
+                "Provide a message to start a new session, or use POST /api/chat/send".to_string(),
+            )
+        })?
         .to_string();
 
     let mut options = req.options.unwrap_or_default();
@@ -118,9 +125,8 @@ pub async fn handle_delete_session(
     let config = state.clone_config().map_err(WebError::Internal)?;
     match engine {
         "claude-code" => {
-            run_claude_blocking(&state, move |provider| {
-                provider.delete_session(&session_id)
-            }).await?;
+            run_claude_blocking(&state, move |provider| provider.delete_session(&session_id))
+                .await?;
         }
         "codex" => {
             tokio::task::spawn_blocking(move || {
@@ -162,9 +168,13 @@ pub async fn handle_list_claude_sessions(
     let work_dir = query.work_dir;
     let result = run_claude_blocking(&state, move |provider| {
         // Use a large page size to effectively return all sessions
-        let pagination = crate::ai::history::Pagination { page: 1, page_size: 10_000 };
+        let pagination = crate::ai::history::Pagination {
+            page: 1,
+            page_size: 10_000,
+        };
         provider.list_sessions(work_dir.as_deref(), pagination)
-    }).await?;
+    })
+    .await?;
     // Return only the items array, not the PagedResult wrapper
     Ok(Json(result.items))
 }
@@ -181,9 +191,13 @@ pub async fn handle_get_claude_session_history(
 
     let result = run_claude_blocking(&state, move |provider| {
         // Use a large page size to effectively return all messages
-        let pagination = crate::ai::history::Pagination { page: 1, page_size: 100_000 };
+        let pagination = crate::ai::history::Pagination {
+            page: 1,
+            page_size: 100_000,
+        };
         provider.get_session_history(&session_id, pagination)
-    }).await?;
+    })
+    .await?;
     // Return only the items array, not the PagedResult wrapper
     Ok(Json(result.items))
 }

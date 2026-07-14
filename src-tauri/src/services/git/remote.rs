@@ -5,16 +5,16 @@
 
 use std::path::Path;
 
+use super::executor::open_repository;
 use crate::models::git::{
     CreatePROptions, GitHostType, GitPullResult, GitRemote, GitServiceError, PRReviewStatus,
     PRState, PullRequest,
 };
-use super::executor::open_repository;
 
 #[cfg(windows)]
-use std::os::windows::process::CommandExt;
-#[cfg(windows)]
 use super::utils::CREATE_NO_WINDOW;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 
 /// 获取远程仓库
 pub fn get_remotes(path: &Path) -> Result<Vec<GitRemote>, GitServiceError> {
@@ -103,7 +103,11 @@ pub fn push_branch(
         .arg("push")
         .arg(remote_name)
         .arg(&refspec)
-        .arg(if force { "--force" } else { "--force-with-lease" })
+        .arg(if force {
+            "--force"
+        } else {
+            "--force-with-lease"
+        })
         .current_dir(path)
         .creation_flags(CREATE_NO_WINDOW)
         .output()?;
@@ -113,7 +117,11 @@ pub fn push_branch(
         .arg("push")
         .arg(remote_name)
         .arg(&refspec)
-        .arg(if force { "--force" } else { "--force-with-lease" })
+        .arg(if force {
+            "--force"
+        } else {
+            "--force-with-lease"
+        })
         .current_dir(path)
         .output()?;
 
@@ -198,7 +206,10 @@ fn get_remote_url(path: &Path, remote_name: &str) -> Result<String, GitServiceEr
 }
 
 /// 使用 gh CLI 创建 GitHub PR
-fn create_github_pr(path: &Path, options: &CreatePROptions) -> Result<PullRequest, GitServiceError> {
+fn create_github_pr(
+    path: &Path,
+    options: &CreatePROptions,
+) -> Result<PullRequest, GitServiceError> {
     // 检查 gh 是否可用
     #[cfg(windows)]
     let check = std::process::Command::new("gh")
@@ -319,21 +330,30 @@ fn create_github_pr(path: &Path, options: &CreatePROptions) -> Result<PullReques
 }
 
 /// 使用 git CLI 创建 GitLab MR（暂不支持）
-fn create_gitlab_pr(_path: &Path, _options: &CreatePROptions) -> Result<PullRequest, GitServiceError> {
+fn create_gitlab_pr(
+    _path: &Path,
+    _options: &CreatePROptions,
+) -> Result<PullRequest, GitServiceError> {
     Err(GitServiceError::CLIError(
         "GitLab MR creation not yet supported".to_string(),
     ))
 }
 
 /// 使用 az CLI 创建 Azure DevOps PR（暂不支持）
-fn create_azure_pr(_path: &Path, _options: &CreatePROptions) -> Result<PullRequest, GitServiceError> {
+fn create_azure_pr(
+    _path: &Path,
+    _options: &CreatePROptions,
+) -> Result<PullRequest, GitServiceError> {
     Err(GitServiceError::CLIError(
         "Azure DevOps PR creation not yet supported".to_string(),
     ))
 }
 
 /// 使用 git CLI 创建 Bitbucket PR（暂不支持）
-fn create_bitbucket_pr(_path: &Path, _options: &CreatePROptions) -> Result<PullRequest, GitServiceError> {
+fn create_bitbucket_pr(
+    _path: &Path,
+    _options: &CreatePROptions,
+) -> Result<PullRequest, GitServiceError> {
     Err(GitServiceError::CLIError(
         "Bitbucket PR creation not yet supported".to_string(),
     ))

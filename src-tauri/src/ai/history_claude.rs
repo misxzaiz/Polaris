@@ -62,7 +62,9 @@ impl ClaudeHistoryProvider {
         let claude_dir = Self::get_claude_dir();
 
         if let Some(project) = project_path {
-            let path = claude_dir.join(project).join(format!("{}.jsonl", session_id));
+            let path = claude_dir
+                .join(project)
+                .join(format!("{}.jsonl", session_id));
             if path.exists() {
                 return Some(path);
             }
@@ -84,7 +86,11 @@ impl ClaudeHistoryProvider {
     }
 
     /// 解析 JSONL 文件中的消息（用于 get_session_history）
-    fn parse_jsonl_messages(&self, path: &PathBuf, pagination: &Pagination) -> Result<(Vec<HistoryMessage>, usize)> {
+    fn parse_jsonl_messages(
+        &self,
+        path: &PathBuf,
+        pagination: &Pagination,
+    ) -> Result<(Vec<HistoryMessage>, usize)> {
         use std::io::{BufRead, BufReader};
 
         let file = std::fs::File::open(path)
@@ -103,13 +109,21 @@ impl ClaudeHistoryProvider {
                 if let Some(msg_type) = json.get("type").and_then(|t| t.as_str()) {
                     match msg_type {
                         "user" => {
-                            if let Some(content) = json.get("message").and_then(|m| m.get("content")) {
+                            if let Some(content) =
+                                json.get("message").and_then(|m| m.get("content"))
+                            {
                                 if let Some(text) = content.as_str() {
                                     all_messages.push(HistoryMessage {
-                                        message_id: json.get("uuid").and_then(|u| u.as_str()).map(|s| s.to_string()),
+                                        message_id: json
+                                            .get("uuid")
+                                            .and_then(|u| u.as_str())
+                                            .map(|s| s.to_string()),
                                         role: "user".to_string(),
                                         content: text.to_string(),
-                                        timestamp: json.get("timestamp").and_then(|t| t.as_str()).map(|s| s.to_string()),
+                                        timestamp: json
+                                            .get("timestamp")
+                                            .and_then(|t| t.as_str())
+                                            .map(|s| s.to_string()),
                                         tool_calls: None,
                                         tool_result: None,
                                         usage: None,
@@ -122,13 +136,23 @@ impl ClaudeHistoryProvider {
                                 if let Some(content) = message.get("content") {
                                     if let Some(arr) = content.as_array() {
                                         for item in arr {
-                                            if item.get("type").and_then(|t| t.as_str()) == Some("text") {
-                                                if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
+                                            if item.get("type").and_then(|t| t.as_str())
+                                                == Some("text")
+                                            {
+                                                if let Some(text) =
+                                                    item.get("text").and_then(|t| t.as_str())
+                                                {
                                                     all_messages.push(HistoryMessage {
-                                                        message_id: json.get("uuid").and_then(|u| u.as_str()).map(|s| s.to_string()),
+                                                        message_id: json
+                                                            .get("uuid")
+                                                            .and_then(|u| u.as_str())
+                                                            .map(|s| s.to_string()),
                                                         role: "assistant".to_string(),
                                                         content: text.to_string(),
-                                                        timestamp: json.get("timestamp").and_then(|t| t.as_str()).map(|s| s.to_string()),
+                                                        timestamp: json
+                                                            .get("timestamp")
+                                                            .and_then(|t| t.as_str())
+                                                            .map(|s| s.to_string()),
                                                         tool_calls: None,
                                                         tool_result: None,
                                                         usage: None,
@@ -150,11 +174,7 @@ impl ClaudeHistoryProvider {
         let skip = pagination.skip();
         let take = pagination.take();
 
-        let items: Vec<HistoryMessage> = all_messages
-            .into_iter()
-            .skip(skip)
-            .take(take)
-            .collect();
+        let items: Vec<HistoryMessage> = all_messages.into_iter().skip(skip).take(take).collect();
 
         Ok((items, total))
     }
@@ -163,7 +183,13 @@ impl ClaudeHistoryProvider {
     /// 返回 (first_prompt, message_count, created, real_cwd, git_branch)
     fn parse_session_metadata_light(
         file_path: &PathBuf,
-    ) -> (Option<String>, usize, Option<String>, Option<String>, Option<String>) {
+    ) -> (
+        Option<String>,
+        usize,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) {
         use std::io::{BufRead, BufReader};
 
         let mut first_prompt: Option<String> = None;
@@ -189,16 +215,21 @@ impl ClaudeHistoryProvider {
                         if msg_type == "user" {
                             message_count += 1;
                             if first_prompt.is_none() {
-                                if let Some(content) = json.get("message").and_then(|m| m.get("content")) {
+                                if let Some(content) =
+                                    json.get("message").and_then(|m| m.get("content"))
+                                {
                                     let prompt_text = if let Some(text) = content.as_str() {
                                         Some(text.to_string())
                                     } else if let Some(arr) = content.as_array() {
                                         arr.iter()
                                             .find(|item| {
-                                                item.get("type").and_then(|t| t.as_str()) == Some("text")
+                                                item.get("type").and_then(|t| t.as_str())
+                                                    == Some("text")
                                             })
                                             .and_then(|item| {
-                                                item.get("text").and_then(|t| t.as_str()).map(|s| s.to_string())
+                                                item.get("text")
+                                                    .and_then(|t| t.as_str())
+                                                    .map(|s| s.to_string())
                                             })
                                     } else {
                                         None
@@ -206,7 +237,10 @@ impl ClaudeHistoryProvider {
 
                                     if let Some(text) = prompt_text {
                                         let title = if text.chars().count() > 100 {
-                                            format!("{}...", text.chars().take(100).collect::<String>())
+                                            format!(
+                                                "{}...",
+                                                text.chars().take(100).collect::<String>()
+                                            )
                                         } else {
                                             text
                                         };
@@ -215,14 +249,20 @@ impl ClaudeHistoryProvider {
                                 }
                             }
                             if created.is_none() {
-                                created = json.get("timestamp").and_then(|t| t.as_str()).map(String::from);
+                                created = json
+                                    .get("timestamp")
+                                    .and_then(|t| t.as_str())
+                                    .map(String::from);
                             }
                             if cwd.is_none() {
                                 cwd = json.get("cwd").and_then(|c| c.as_str()).map(String::from);
                             }
                             // 提取 gitBranch
                             if git_branch.is_none() {
-                                git_branch = json.get("gitBranch").and_then(|b| b.as_str()).map(String::from);
+                                git_branch = json
+                                    .get("gitBranch")
+                                    .and_then(|b| b.as_str())
+                                    .map(String::from);
                             }
                         } else if msg_type == "assistant" {
                             message_count += 1;
@@ -308,7 +348,8 @@ impl SessionHistoryProvider for ClaudeHistoryProvider {
         let mut stat_entries: Vec<StatEntry> = Vec::new();
 
         for dir in &dirs_to_scan {
-            let project_dir_name = dir.file_name()
+            let project_dir_name = dir
+                .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
 
@@ -317,10 +358,10 @@ impl SessionHistoryProvider for ClaudeHistoryProvider {
                     let path = session_entry.path();
                     if path.extension().map(|e| e == "jsonl").unwrap_or(false) {
                         if let Ok(metadata) = std::fs::metadata(&path) {
-                            let mtime = metadata.modified()
-                                .unwrap_or(SystemTime::UNIX_EPOCH);
+                            let mtime = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
                             let file_size = metadata.len();
-                            let session_id = path.file_stem()
+                            let session_id = path
+                                .file_stem()
                                 .map(|s| s.to_string_lossy().to_string())
                                 .unwrap_or_default();
 
@@ -353,7 +394,8 @@ impl SessionHistoryProvider for ClaudeHistoryProvider {
             let (first_prompt, message_count, created, real_cwd, git_branch) =
                 Self::parse_session_metadata_light(&entry.file_path);
 
-            let updated_at = entry.mtime
+            let updated_at = entry
+                .mtime
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .ok()
                 .and_then(|d| {
@@ -362,9 +404,9 @@ impl SessionHistoryProvider for ClaudeHistoryProvider {
                 });
 
             // 从 git_branch 推断 PR 关联
-            let linked_pr = git_branch.as_ref().and_then(|branch| {
-                Self::extract_pr_from_branch(branch)
-            });
+            let linked_pr = git_branch
+                .as_ref()
+                .and_then(|branch| Self::extract_pr_from_branch(branch));
 
             items.push(SessionMeta {
                 session_id: entry.session_id.clone(),
@@ -385,7 +427,12 @@ impl SessionHistoryProvider for ClaudeHistoryProvider {
             });
         }
 
-        Ok(PagedResult::new(items, total, pagination.page, pagination.page_size))
+        Ok(PagedResult::new(
+            items,
+            total,
+            pagination.page,
+            pagination.page_size,
+        ))
     }
 
     fn get_session_history(
@@ -393,12 +440,18 @@ impl SessionHistoryProvider for ClaudeHistoryProvider {
         session_id: &str,
         pagination: Pagination,
     ) -> Result<PagedResult<HistoryMessage>> {
-        let session_file = self.find_session_file(session_id, None)
+        let session_file = self
+            .find_session_file(session_id, None)
             .ok_or_else(|| AppError::ValidationError(format!("会话不存在: {}", session_id)))?;
 
         let (items, total) = self.parse_jsonl_messages(&session_file, &pagination)?;
 
-        Ok(PagedResult::new(items, total, pagination.page, pagination.page_size))
+        Ok(PagedResult::new(
+            items,
+            total,
+            pagination.page,
+            pagination.page_size,
+        ))
     }
 
     fn get_message(&self, session_id: &str, message_id: &str) -> Result<Option<HistoryMessage>> {
@@ -424,13 +477,18 @@ impl SessionHistoryProvider for ClaudeHistoryProvider {
                     if let Some(msg_type) = json.get("type").and_then(|t| t.as_str()) {
                         match msg_type {
                             "user" => {
-                                if let Some(content) = json.get("message").and_then(|m| m.get("content")) {
+                                if let Some(content) =
+                                    json.get("message").and_then(|m| m.get("content"))
+                                {
                                     if let Some(text) = content.as_str() {
                                         return Ok(Some(HistoryMessage {
                                             message_id: Some(message_id.to_string()),
                                             role: "user".to_string(),
                                             content: text.to_string(),
-                                            timestamp: json.get("timestamp").and_then(|t| t.as_str()).map(|s| s.to_string()),
+                                            timestamp: json
+                                                .get("timestamp")
+                                                .and_then(|t| t.as_str())
+                                                .map(|s| s.to_string()),
                                             tool_calls: None,
                                             tool_result: None,
                                             usage: None,
@@ -443,13 +501,22 @@ impl SessionHistoryProvider for ClaudeHistoryProvider {
                                     if let Some(content) = message.get("content") {
                                         if let Some(arr) = content.as_array() {
                                             for item in arr {
-                                                if item.get("type").and_then(|t| t.as_str()) == Some("text") {
-                                                    if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
+                                                if item.get("type").and_then(|t| t.as_str())
+                                                    == Some("text")
+                                                {
+                                                    if let Some(text) =
+                                                        item.get("text").and_then(|t| t.as_str())
+                                                    {
                                                         return Ok(Some(HistoryMessage {
-                                                            message_id: Some(message_id.to_string()),
+                                                            message_id: Some(
+                                                                message_id.to_string(),
+                                                            ),
                                                             role: "assistant".to_string(),
                                                             content: text.to_string(),
-                                                            timestamp: json.get("timestamp").and_then(|t| t.as_str()).map(|s| s.to_string()),
+                                                            timestamp: json
+                                                                .get("timestamp")
+                                                                .and_then(|t| t.as_str())
+                                                                .map(|s| s.to_string()),
                                                             tool_calls: None,
                                                             tool_result: None,
                                                             usage: None,
@@ -472,7 +539,8 @@ impl SessionHistoryProvider for ClaudeHistoryProvider {
     }
 
     fn delete_session(&self, session_id: &str) -> Result<()> {
-        let session_file = self.find_session_file(session_id, None)
+        let session_file = self
+            .find_session_file(session_id, None)
             .ok_or_else(|| AppError::ValidationError(format!("会话不存在: {}", session_id)))?;
 
         std::fs::remove_file(&session_file)

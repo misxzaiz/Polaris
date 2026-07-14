@@ -174,7 +174,7 @@ mod tests {
             profile: &profile,
             mcp_servers: &mcp_servers,
             subagent_depth: 0,
-            abort_rx: &{ watch::channel(false).1 }
+            abort_rx: &{ watch::channel(false).1 },
         };
         let args = json!({
             "explanation": "kick off",
@@ -221,7 +221,7 @@ mod tests {
             profile: &profile,
             mcp_servers: &mcp_servers,
             subagent_depth: 0,
-            abort_rx: &{ watch::channel(false).1 }
+            abort_rx: &{ watch::channel(false).1 },
         };
         let first = json!({ "plan": [{"step": "a", "status": "in_progress"}] });
         UpdatePlanTool.execute(&first, &ctx).await;
@@ -258,7 +258,7 @@ mod tests {
             profile: &profile,
             mcp_servers: &mcp_servers,
             subagent_depth: 0,
-            abort_rx: &{ watch::channel(false).1 }
+            abort_rx: &{ watch::channel(false).1 },
         };
         let out = UpdatePlanTool.execute(&json!({ "plan": [] }), &ctx).await;
         assert!(!out.success);

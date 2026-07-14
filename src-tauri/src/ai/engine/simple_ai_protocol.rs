@@ -107,7 +107,10 @@ impl WireProtocol {
         match self {
             WireProtocol::Anthropic => vec![
                 ("x-api-key".to_string(), api_key.to_string()),
-                ("anthropic-version".to_string(), ANTHROPIC_VERSION.to_string()),
+                (
+                    "anthropic-version".to_string(),
+                    ANTHROPIC_VERSION.to_string(),
+                ),
             ],
             WireProtocol::OpenAIChat | WireProtocol::Responses => {
                 vec![("Authorization".to_string(), format!("Bearer {}", api_key))]
@@ -179,7 +182,9 @@ pub fn build_request_body(
     max_tokens: Option<u64>,
 ) -> Value {
     match protocol {
-        WireProtocol::OpenAIChat => build_openai_chat_body(model, messages, openai_tools, max_tokens),
+        WireProtocol::OpenAIChat => {
+            build_openai_chat_body(model, messages, openai_tools, max_tokens)
+        }
         WireProtocol::Anthropic => build_anthropic_body(model, messages, openai_tools, max_tokens),
         WireProtocol::Responses => build_responses_body(model, messages, openai_tools, max_tokens),
     }
@@ -604,7 +609,11 @@ impl StreamState {
                 let block = &chunk["content_block"];
                 if block.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
                     self.tool_calls.push(ToolCallAccum {
-                        id: block.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        id: block
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
                         name: block
                             .get("name")
                             .and_then(|v| v.as_str())
@@ -694,7 +703,11 @@ impl StreamState {
             "response.output_item.added" => {
                 let item = &chunk["item"];
                 if item.get("type").and_then(|t| t.as_str()) == Some("function_call") {
-                    let item_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let item_id = item
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     if !item_id.is_empty() {
                         self.tool_calls.push(ToolCallAccum {
                             id: item
@@ -723,10 +736,7 @@ impl StreamState {
                 }
             }
             "response.completed" => {
-                if let Some(u) = chunk
-                    .pointer("/response/usage")
-                    .filter(|v| v.is_object())
-                {
+                if let Some(u) = chunk.pointer("/response/usage").filter(|v| v.is_object()) {
                     self.usage = Some(Usage {
                         input_tokens: u["input_tokens"].as_u64().unwrap_or(0),
                         output_tokens: u["output_tokens"].as_u64().unwrap_or(0),
@@ -877,7 +887,10 @@ mod tests {
             WireProtocol::Anthropic.auth_headers("k"),
             vec![
                 ("x-api-key".to_string(), "k".to_string()),
-                ("anthropic-version".to_string(), ANTHROPIC_VERSION.to_string()),
+                (
+                    "anthropic-version".to_string(),
+                    ANTHROPIC_VERSION.to_string()
+                ),
             ]
         );
         assert_eq!(
@@ -891,7 +904,10 @@ mod tests {
     fn tools_convert_to_anthropic_input_schema() {
         let tools = tools_for_protocol(WireProtocol::Anthropic, &sample_tools());
         assert_eq!(tools[0]["name"], "bash");
-        assert_eq!(tools[0]["input_schema"]["properties"]["command"]["type"], "string");
+        assert_eq!(
+            tools[0]["input_schema"]["properties"]["command"]["type"],
+            "string"
+        );
         assert!(tools[0].get("function").is_none());
     }
 
@@ -919,7 +935,13 @@ mod tests {
             }),
             json!({ "role": "tool", "tool_call_id": "toolu_1", "content": "file.txt" }),
         ];
-        let body = build_request_body(WireProtocol::Anthropic, "claude-x", &messages, &sample_tools(), None);
+        let body = build_request_body(
+            WireProtocol::Anthropic,
+            "claude-x",
+            &messages,
+            &sample_tools(),
+            None,
+        );
 
         assert_eq!(body["system"], "You are helpful");
         assert_eq!(body["max_tokens"], DEFAULT_MAX_TOKENS);
@@ -951,12 +973,20 @@ mod tests {
             }),
             json!({ "role": "tool", "tool_call_id": "call_1", "content": "done" }),
         ];
-        let body = build_request_body(WireProtocol::Responses, "gpt-x", &messages, &sample_tools(), None);
+        let body = build_request_body(
+            WireProtocol::Responses,
+            "gpt-x",
+            &messages,
+            &sample_tools(),
+            None,
+        );
 
         assert_eq!(body["instructions"], "sys");
         assert_eq!(body["max_output_tokens"], DEFAULT_MAX_TOKENS);
         let input = body["input"].as_array().unwrap();
-        assert!(input.iter().any(|i| i["type"] == "function_call" && i["call_id"] == "call_1"));
+        assert!(input
+            .iter()
+            .any(|i| i["type"] == "function_call" && i["call_id"] == "call_1"));
         assert!(input
             .iter()
             .any(|i| i["type"] == "function_call_output" && i["call_id"] == "call_1"));

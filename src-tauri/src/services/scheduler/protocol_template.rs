@@ -5,8 +5,8 @@
 
 use crate::error::{AppError, Result};
 use crate::models::scheduler::{
-    CreateProtocolTemplateParams, ProtocolTemplate, ProtocolTemplateStore,
-    TaskCategory, get_builtin_protocol_templates,
+    get_builtin_protocol_templates, CreateProtocolTemplateParams, ProtocolTemplate,
+    ProtocolTemplateStore, TaskCategory,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -78,7 +78,10 @@ impl ProtocolTemplateService {
     }
 
     /// Get templates by category
-    pub fn list_templates_by_category(&self, category: TaskCategory) -> Result<Vec<ProtocolTemplate>> {
+    pub fn list_templates_by_category(
+        &self,
+        category: TaskCategory,
+    ) -> Result<Vec<ProtocolTemplate>> {
         let all = self.list_templates()?;
         Ok(all.into_iter().filter(|t| t.category == category).collect())
     }
@@ -96,7 +99,10 @@ impl ProtocolTemplateService {
     }
 
     /// Create a custom template
-    pub fn create_template(&self, params: CreateProtocolTemplateParams) -> Result<ProtocolTemplate> {
+    pub fn create_template(
+        &self,
+        params: CreateProtocolTemplateParams,
+    ) -> Result<ProtocolTemplate> {
         // Validate template name
         let name = params.name.trim();
         if name.is_empty() {
@@ -106,7 +112,9 @@ impl ProtocolTemplateService {
         // Validate protocol config mission template
         let mission_template = params.protocol_config.mission_template.trim();
         if mission_template.is_empty() {
-            return Err(AppError::ValidationError("任务目标模板不能为空".to_string()));
+            return Err(AppError::ValidationError(
+                "任务目标模板不能为空".to_string(),
+            ));
         }
 
         let mut store = self.load_store()?;
@@ -141,7 +149,11 @@ impl ProtocolTemplateService {
     }
 
     /// Update a custom template
-    pub fn update_template(&self, id: &str, params: CreateProtocolTemplateParams) -> Result<Option<ProtocolTemplate>> {
+    pub fn update_template(
+        &self,
+        id: &str,
+        params: CreateProtocolTemplateParams,
+    ) -> Result<Option<ProtocolTemplate>> {
         // Cannot update built-in templates
         if self.is_builtin_template(id) {
             return Err(AppError::template_error(id, "内置模板不能修改"));
@@ -156,7 +168,9 @@ impl ProtocolTemplateService {
         // Validate protocol config mission template
         let mission_template = params.protocol_config.mission_template.trim();
         if mission_template.is_empty() {
-            return Err(AppError::ValidationError("任务目标模板不能为空".to_string()));
+            return Err(AppError::ValidationError(
+                "任务目标模板不能为空".to_string(),
+            ));
         }
 
         let mut store = self.load_store()?;
@@ -239,7 +253,9 @@ impl ProtocolTemplateService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::scheduler::{ProtocolTemplateConfig, TemplateParam, TemplateParamType, TriggerType};
+    use crate::models::scheduler::{
+        ProtocolTemplateConfig, TemplateParam, TemplateParamType, TriggerType,
+    };
     use tempfile::TempDir;
 
     fn temp_config_dir() -> (TempDir, PathBuf) {
@@ -319,10 +335,14 @@ mod tests {
         let (_temp_dir, config_dir) = temp_config_dir();
         let service = ProtocolTemplateService::new(&config_dir);
 
-        let dev_templates = service.list_templates_by_category(TaskCategory::Development).unwrap();
+        let dev_templates = service
+            .list_templates_by_category(TaskCategory::Development)
+            .unwrap();
         assert!(dev_templates.iter().any(|t| t.id == "dev-feature"));
 
-        let review_templates = service.list_templates_by_category(TaskCategory::Review).unwrap();
+        let review_templates = service
+            .list_templates_by_category(TaskCategory::Review)
+            .unwrap();
         assert!(review_templates.iter().any(|t| t.id == "review-code"));
     }
 

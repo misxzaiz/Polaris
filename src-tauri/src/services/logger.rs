@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use tracing::Level;
-use tracing_subscriber::{fmt, prelude::*};
 use tracing_appender::{non_blocking, rolling};
+use tracing_subscriber::{fmt, prelude::*};
 
 use crate::services::data_root::data_root;
 
@@ -41,17 +41,19 @@ impl Logger {
                 fmt::layer()
                     .with_writer(std::io::stdout)
                     .with_ansi(true)
-                    .with_target(false)
+                    .with_target(false),
             )
             .with(
                 fmt::layer()
                     .with_writer(non_blocking_appender)
                     .with_ansi(false)
-                    .with_target(true)
+                    .with_target(true),
             )
             .init();
 
-        Self { _guard: Some(guard) }
+        Self {
+            _guard: Some(guard),
+        }
     }
 
     /// 获取日志目录
@@ -72,8 +74,9 @@ impl Logger {
         for entry in std::fs::read_dir(log_dir)? {
             let entry = entry?;
             let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("log") ||
-               path.extension().and_then(|s| s.to_str()) == Some("gz") {
+            if path.extension().and_then(|s| s.to_str()) == Some("log")
+                || path.extension().and_then(|s| s.to_str()) == Some("gz")
+            {
                 std::fs::remove_file(path)?;
             }
         }

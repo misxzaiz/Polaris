@@ -7,8 +7,8 @@ use tauri::State;
 
 use crate::error::Result;
 use crate::models::plugin::{
-    Marketplace, PluginDiscoveryResult, PluginListResult, PluginOperationResult,
-    PluginInstallLocations, PluginManifestSourceKind, PluginManifestValidationResult, PluginScope,
+    Marketplace, PluginDiscoveryResult, PluginInstallLocations, PluginListResult,
+    PluginManifestSourceKind, PluginManifestValidationResult, PluginOperationResult, PluginScope,
     PluginUpdateCheckResult,
 };
 use crate::services::plugin_service::PluginService;
@@ -17,7 +17,9 @@ use crate::state::AppState;
 /// 获取 Claude CLI 路径
 #[cfg(feature = "tauri-app")]
 fn get_claude_path(state: &State<'_, AppState>) -> Result<String> {
-    let store = state.config_store.lock()
+    let store = state
+        .config_store
+        .lock()
         .map_err(|e| crate::error::AppError::Unknown(e.to_string()))?;
     Ok(store.get().get_claude_cmd())
 }
@@ -27,10 +29,7 @@ fn get_claude_path(state: &State<'_, AppState>) -> Result<String> {
 /// 获取已安装和可选的可用的插件列表
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn plugin_list(
-    state: State<'_, AppState>,
-    available: bool,
-) -> Result<PluginListResult> {
+pub async fn plugin_list(state: State<'_, AppState>, available: bool) -> Result<PluginListResult> {
     let claude_path = get_claude_path(&state)?;
     let service = PluginService::new(claude_path);
 
@@ -44,9 +43,12 @@ pub async fn plugin_discover(
     state: State<'_, AppState>,
     workspace_path: Option<String>,
 ) -> Result<PluginDiscoveryResult> {
-    let config_dir = state.app_config_dir.get().cloned().or_else(|| {
-        Some(crate::services::data_root::data_root().config_dir())
-    }).ok_or_else(|| crate::error::AppError::ConfigError("无法获取配置目录".to_string()))?;
+    let config_dir = state
+        .app_config_dir
+        .get()
+        .cloned()
+        .or_else(|| Some(crate::services::data_root::data_root().config_dir()))
+        .ok_or_else(|| crate::error::AppError::ConfigError("无法获取配置目录".to_string()))?;
     let workspace_path = workspace_path.as_deref().map(std::path::Path::new);
 
     Ok(PluginService::discover_installed_plugins(
@@ -57,9 +59,12 @@ pub async fn plugin_discover(
 
 #[cfg(feature = "tauri-app")]
 fn get_plugin_config_dir(state: &State<'_, AppState>) -> Result<std::path::PathBuf> {
-    state.app_config_dir.get().cloned().or_else(|| {
-        Some(crate::services::data_root::data_root().config_dir())
-    }).ok_or_else(|| crate::error::AppError::ConfigError("无法获取配置目录".to_string()))
+    state
+        .app_config_dir
+        .get()
+        .cloned()
+        .or_else(|| Some(crate::services::data_root::data_root().config_dir()))
+        .ok_or_else(|| crate::error::AppError::ConfigError("无法获取配置目录".to_string()))
 }
 
 fn parse_local_plugin_scope(scope: &str) -> PluginManifestSourceKind {
@@ -79,7 +84,10 @@ pub async fn plugin_install_locations(
     let config_dir = get_plugin_config_dir(&state)?;
     let workspace_path = workspace_path.as_deref().map(std::path::Path::new);
 
-    Ok(PluginService::install_locations(&config_dir, workspace_path))
+    Ok(PluginService::install_locations(
+        &config_dir,
+        workspace_path,
+    ))
 }
 
 #[cfg(feature = "tauri-app")]
@@ -87,7 +95,9 @@ pub async fn plugin_install_locations(
 pub async fn plugin_validate_manifest(
     source_path: String,
 ) -> Result<PluginManifestValidationResult> {
-    Ok(PluginService::validate_plugin_manifest(std::path::Path::new(&source_path)))
+    Ok(PluginService::validate_plugin_manifest(
+        std::path::Path::new(&source_path),
+    ))
 }
 
 /// 从本地目录安装 Polaris 插件
@@ -169,9 +179,7 @@ pub async fn plugin_uninstall_local(
 
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn plugin_check_update(
-    install_path: String,
-) -> Result<PluginUpdateCheckResult> {
+pub async fn plugin_check_update(install_path: String) -> Result<PluginUpdateCheckResult> {
     Ok(PluginService::check_local_plugin_update(std::path::Path::new(&install_path)).await)
 }
 
@@ -312,10 +320,7 @@ pub async fn marketplace_list(state: State<'_, AppState>) -> Result<Vec<Marketpl
 /// 添加市场
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn marketplace_add(
-    state: State<'_, AppState>,
-    source: String,
-) -> Result<Marketplace> {
+pub async fn marketplace_add(state: State<'_, AppState>, source: String) -> Result<Marketplace> {
     let claude_path = get_claude_path(&state)?;
     let service = PluginService::new(claude_path);
 
@@ -325,10 +330,7 @@ pub async fn marketplace_add(
 /// 移除市场
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn marketplace_remove(
-    state: State<'_, AppState>,
-    name: String,
-) -> Result<()> {
+pub async fn marketplace_remove(state: State<'_, AppState>, name: String) -> Result<()> {
     let claude_path = get_claude_path(&state)?;
     let service = PluginService::new(claude_path);
 
@@ -338,10 +340,7 @@ pub async fn marketplace_remove(
 /// 更新市场
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn marketplace_update(
-    state: State<'_, AppState>,
-    name: Option<String>,
-) -> Result<()> {
+pub async fn marketplace_update(state: State<'_, AppState>, name: Option<String>) -> Result<()> {
     let claude_path = get_claude_path(&state)?;
     let service = PluginService::new(claude_path);
 

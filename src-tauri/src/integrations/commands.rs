@@ -14,8 +14,8 @@
  * - 帮助: /help, /帮助
  */
 
-use serde::{Deserialize, Serialize};
 use crate::ai::EngineId;
+use serde::{Deserialize, Serialize};
 
 /// 提示词模式
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -40,9 +40,7 @@ pub enum BotCommand {
     /// 显示当前引擎信息（/agent, /engines）
     EngineInfo,
     /// 切换提示词预设
-    SwitchPreset {
-        preset_id: Option<String>,
-    },
+    SwitchPreset { preset_id: Option<String> },
     /// 列出可用预设
     ListPresets,
     /// 中断当前对话
@@ -191,7 +189,6 @@ impl CommandParser {
 
         (custom_prompt, replace_mode)
     }
-
 }
 
 /// 会话状态
@@ -329,7 +326,8 @@ pub fn get_help_text() -> String {
 `/status` - 查看会话状态
 `/agent` - 查看当前引擎信息
 `/help` - 显示帮助
-"#.to_string()
+"#
+    .to_string()
 }
 
 #[cfg(test)]
@@ -422,15 +420,30 @@ mod tests {
 
     #[test]
     fn test_parse_interrupt() {
-        assert!(matches!(CommandParser::parse("/stop"), Some(BotCommand::Interrupt)));
-        assert!(matches!(CommandParser::parse("/end"), Some(BotCommand::Interrupt)));
-        assert!(matches!(CommandParser::parse("/停止"), Some(BotCommand::Interrupt)));
+        assert!(matches!(
+            CommandParser::parse("/stop"),
+            Some(BotCommand::Interrupt)
+        ));
+        assert!(matches!(
+            CommandParser::parse("/end"),
+            Some(BotCommand::Interrupt)
+        ));
+        assert!(matches!(
+            CommandParser::parse("/停止"),
+            Some(BotCommand::Interrupt)
+        ));
     }
 
     #[test]
     fn test_parse_status() {
-        assert!(matches!(CommandParser::parse("/status"), Some(BotCommand::Status)));
-        assert!(matches!(CommandParser::parse("/状态"), Some(BotCommand::Status)));
+        assert!(matches!(
+            CommandParser::parse("/status"),
+            Some(BotCommand::Status)
+        ));
+        assert!(matches!(
+            CommandParser::parse("/状态"),
+            Some(BotCommand::Status)
+        ));
     }
 
     #[test]
@@ -447,28 +460,58 @@ mod tests {
 
     #[test]
     fn test_parse_workspace() {
-        assert!(matches!(CommandParser::parse("/workspace"), Some(BotCommand::Workspace)));
-        assert!(matches!(CommandParser::parse("/工作区"), Some(BotCommand::Workspace)));
+        assert!(matches!(
+            CommandParser::parse("/workspace"),
+            Some(BotCommand::Workspace)
+        ));
+        assert!(matches!(
+            CommandParser::parse("/工作区"),
+            Some(BotCommand::Workspace)
+        ));
     }
 
     #[test]
     fn test_parse_clear() {
-        assert!(matches!(CommandParser::parse("/clear"), Some(BotCommand::Clear)));
-        assert!(matches!(CommandParser::parse("/清除"), Some(BotCommand::Clear)));
+        assert!(matches!(
+            CommandParser::parse("/clear"),
+            Some(BotCommand::Clear)
+        ));
+        assert!(matches!(
+            CommandParser::parse("/清除"),
+            Some(BotCommand::Clear)
+        ));
     }
 
     #[test]
     fn test_parse_restart() {
-        assert!(matches!(CommandParser::parse("/restart"), Some(BotCommand::Restart)));
-        assert!(matches!(CommandParser::parse("/rs"), Some(BotCommand::Restart)));
-        assert!(matches!(CommandParser::parse("/重启"), Some(BotCommand::Restart)));
+        assert!(matches!(
+            CommandParser::parse("/restart"),
+            Some(BotCommand::Restart)
+        ));
+        assert!(matches!(
+            CommandParser::parse("/rs"),
+            Some(BotCommand::Restart)
+        ));
+        assert!(matches!(
+            CommandParser::parse("/重启"),
+            Some(BotCommand::Restart)
+        ));
     }
 
     #[test]
     fn test_parse_resume() {
-        assert!(matches!(CommandParser::parse("/resume"), Some(BotCommand::Resume)));
-        assert!(matches!(CommandParser::parse("/继续"), Some(BotCommand::Resume)));
-        assert!(matches!(CommandParser::parse("/恢复"), Some(BotCommand::Resume)));
+        assert!(matches!(
+            CommandParser::parse("/resume"),
+            Some(BotCommand::Resume)
+        ));
+        assert!(matches!(
+            CommandParser::parse("/继续"),
+            Some(BotCommand::Resume)
+        ));
+        assert!(matches!(
+            CommandParser::parse("/恢复"),
+            Some(BotCommand::Resume)
+        ));
     }
 
     #[test]

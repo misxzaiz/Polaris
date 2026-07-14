@@ -100,9 +100,7 @@ mod tests {
         let mcp_servers: Vec<crate::services::mcp_config_service::ResolvedExternalMcpServer> =
             Vec::new();
         let ctx = make_ctx(&skills, &cb, &started, &profile, &mcp_servers);
-        let out = ReadSkillTool
-            .execute(&json!({ "name": "pdf" }), &ctx)
-            .await;
+        let out = ReadSkillTool.execute(&json!({ "name": "pdf" }), &ctx).await;
         assert!(out.success);
         assert!(out.content.contains("Extract text from PDFs"));
     }

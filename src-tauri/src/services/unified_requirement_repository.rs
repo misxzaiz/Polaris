@@ -78,7 +78,11 @@ impl UnifiedRequirementRepository {
         let workspace_path = workspace.to_string_lossy().to_string();
         let now = now_iso();
 
-        if let Some(existing) = data.workspaces.iter_mut().find(|w| w.path == workspace_path) {
+        if let Some(existing) = data
+            .workspaces
+            .iter_mut()
+            .find(|w| w.path == workspace_path)
+        {
             existing.last_accessed_at = now;
         } else {
             data.workspaces.push(WorkspaceInfo {
@@ -102,7 +106,9 @@ impl UnifiedRequirementRepository {
                     let workspace_path = workspace.to_string_lossy().to_string();
                     all_requirements
                         .into_iter()
-                        .filter(|req| req.workspace_path.as_deref() == Some(workspace_path.as_str()))
+                        .filter(|req| {
+                            req.workspace_path.as_deref() == Some(workspace_path.as_str())
+                        })
                         .collect()
                 } else {
                     all_requirements
@@ -136,8 +142,15 @@ impl UnifiedRequirementRepository {
         }
 
         let mut data = self.read_file_data()?;
-        if data.requirements.iter().any(|item| item.title.trim() == title) {
-            return Err(AppError::ValidationError(format!("已存在同名需求: {}", title)));
+        if data
+            .requirements
+            .iter()
+            .any(|item| item.title.trim() == title)
+        {
+            return Err(AppError::ValidationError(format!(
+                "已存在同名需求: {}",
+                title
+            )));
         }
 
         let now = now_millis();
@@ -188,7 +201,11 @@ impl UnifiedRequirementRepository {
     }
 
     /// Update a requirement
-    pub fn update_requirement(&self, id: &str, updates: RequirementUpdateParams) -> Result<RequirementItem> {
+    pub fn update_requirement(
+        &self,
+        id: &str,
+        updates: RequirementUpdateParams,
+    ) -> Result<RequirementItem> {
         let mut data = self.read_file_data()?;
         let requirement = data
             .requirements
@@ -312,7 +329,10 @@ impl UnifiedRequirementRepository {
     pub fn read_prototype(&self, prototype_path: &str) -> Result<String> {
         let full_path = self.storage_dir.join(prototype_path);
         if !full_path.exists() {
-            return Err(AppError::ValidationError(format!("原型文件不存在: {}", prototype_path)));
+            return Err(AppError::ValidationError(format!(
+                "原型文件不存在: {}",
+                prototype_path
+            )));
         }
         Ok(std::fs::read_to_string(&full_path)?)
     }
@@ -323,7 +343,10 @@ impl UnifiedRequirementRepository {
         let mut breakdown = BTreeMap::new();
 
         for req in requirements {
-            let key = req.workspace_name.clone().unwrap_or_else(|| "全局".to_string());
+            let key = req
+                .workspace_name
+                .clone()
+                .unwrap_or_else(|| "全局".to_string());
             *breakdown.entry(key).or_insert(0) += 1;
         }
 
@@ -344,7 +367,8 @@ impl UnifiedRequirementRepository {
         }
 
         let content = std::fs::read_to_string(&file_path)?;
-        let raw_json: serde_json::Value = serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}));
+        let raw_json: serde_json::Value =
+            serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}));
 
         Ok(normalize_file_data(raw_json))
     }
@@ -418,7 +442,12 @@ fn normalize_file_data(raw_json: serde_json::Value) -> RequirementFileData {
     let requirements = raw_json
         .get("requirements")
         .and_then(|value| value.as_array())
-        .map(|items| items.iter().filter_map(normalize_requirement_item).collect())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(normalize_requirement_item)
+                .collect()
+        })
         .unwrap_or_default();
 
     RequirementFileData {
@@ -436,42 +465,103 @@ fn normalize_requirement_item(raw: &serde_json::Value) -> Option<RequirementItem
     }
 
     let now = now_millis();
-    let title = object.get("title").and_then(|value| value.as_str()).unwrap_or(id).trim().to_string();
-    let description = object.get("description").and_then(|value| value.as_str()).unwrap_or_default().to_string();
+    let title = object
+        .get("title")
+        .and_then(|value| value.as_str())
+        .unwrap_or(id)
+        .trim()
+        .to_string();
+    let description = object
+        .get("description")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .to_string();
 
     Some(RequirementItem {
         id: id.to_string(),
         title,
         description,
-        status: object.get("status").and_then(parse_status).unwrap_or_default(),
-        priority: object.get("priority").and_then(parse_priority).unwrap_or_default(),
+        status: object
+            .get("status")
+            .and_then(parse_status)
+            .unwrap_or_default(),
+        priority: object
+            .get("priority")
+            .and_then(parse_priority)
+            .unwrap_or_default(),
         tags: object
             .get("tags")
             .and_then(|value| value.as_array())
             .map(|items| {
                 items
                     .iter()
-                    .filter_map(|item| item.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string))
+                    .filter_map(|item| {
+                        item.as_str()
+                            .map(str::trim)
+                            .filter(|s| !s.is_empty())
+                            .map(str::to_string)
+                    })
                     .collect()
             })
             .unwrap_or_default(),
-        prototype_path: object.get("prototypePath").and_then(|value| value.as_str()).map(str::to_string),
-        has_prototype: object.get("hasPrototype").and_then(|value| value.as_bool()).unwrap_or(false),
-        generated_by: object.get("generatedBy").and_then(parse_source).unwrap_or_default(),
-        generated_at: object.get("generatedAt").and_then(|value| value.as_i64()).unwrap_or(now),
-        generator_task_id: object.get("generatorTaskId").and_then(|value| value.as_str()).map(str::to_string),
+        prototype_path: object
+            .get("prototypePath")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
+        has_prototype: object
+            .get("hasPrototype")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false),
+        generated_by: object
+            .get("generatedBy")
+            .and_then(parse_source)
+            .unwrap_or_default(),
+        generated_at: object
+            .get("generatedAt")
+            .and_then(|value| value.as_i64())
+            .unwrap_or(now),
+        generator_task_id: object
+            .get("generatorTaskId")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
         reviewed_at: object.get("reviewedAt").and_then(|value| value.as_i64()),
-        review_note: object.get("reviewNote").and_then(|value| value.as_str()).map(str::to_string),
-        execute_config: object.get("executeConfig").and_then(normalize_execute_config),
-        execute_log: object.get("executeLog").and_then(|value| value.as_str()).map(str::to_string),
+        review_note: object
+            .get("reviewNote")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
+        execute_config: object
+            .get("executeConfig")
+            .and_then(normalize_execute_config),
+        execute_log: object
+            .get("executeLog")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
         executed_at: object.get("executedAt").and_then(|value| value.as_i64()),
         completed_at: object.get("completedAt").and_then(|value| value.as_i64()),
-        session_id: object.get("sessionId").and_then(|value| value.as_str()).map(str::to_string),
-        execute_error: object.get("executeError").and_then(|value| value.as_str()).map(str::to_string),
-        created_at: object.get("createdAt").and_then(|value| value.as_i64()).unwrap_or(now),
-        updated_at: object.get("updatedAt").and_then(|value| value.as_i64()).unwrap_or(now),
-        workspace_path: object.get("workspacePath").and_then(|value| value.as_str()).map(str::to_string),
-        workspace_name: object.get("workspaceName").and_then(|value| value.as_str()).map(str::to_string),
+        session_id: object
+            .get("sessionId")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
+        execute_error: object
+            .get("executeError")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
+        created_at: object
+            .get("createdAt")
+            .and_then(|value| value.as_i64())
+            .unwrap_or(now),
+        updated_at: object
+            .get("updatedAt")
+            .and_then(|value| value.as_i64())
+            .unwrap_or(now),
+        workspace_path: object
+            .get("workspacePath")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
+        workspace_name: object
+            .get("workspaceName")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
     })
 }
 
@@ -479,8 +569,14 @@ fn normalize_execute_config(raw: &serde_json::Value) -> Option<RequirementExecut
     let object = raw.as_object()?;
     Some(RequirementExecuteConfig {
         scheduled_at: object.get("scheduledAt").and_then(|value| value.as_i64()),
-        engine_id: object.get("engineId").and_then(|value| value.as_str()).map(str::to_string),
-        work_dir: object.get("workDir").and_then(|value| value.as_str()).map(str::to_string),
+        engine_id: object
+            .get("engineId")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
+        work_dir: object
+            .get("workDir")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
     })
 }
 
@@ -491,22 +587,32 @@ fn apply_status_side_effects(
 ) {
     let now = now_millis();
 
-    if matches!(next, RequirementStatus::Approved | RequirementStatus::Rejected)
-        && matches!(previous, RequirementStatus::Draft | RequirementStatus::Pending)
-    {
+    if matches!(
+        next,
+        RequirementStatus::Approved | RequirementStatus::Rejected
+    ) && matches!(
+        previous,
+        RequirementStatus::Draft | RequirementStatus::Pending
+    ) {
         requirement.reviewed_at = Some(now);
     }
 
-    if matches!(next, RequirementStatus::Executing) && !matches!(previous, RequirementStatus::Executing) {
+    if matches!(next, RequirementStatus::Executing)
+        && !matches!(previous, RequirementStatus::Executing)
+    {
         requirement.executed_at = Some(now);
     }
 
-    if matches!(next, RequirementStatus::Completed) && !matches!(previous, RequirementStatus::Completed) {
+    if matches!(next, RequirementStatus::Completed)
+        && !matches!(previous, RequirementStatus::Completed)
+    {
         requirement.completed_at = Some(now);
     }
 
     if !matches!(next, RequirementStatus::Completed) {
-        requirement.completed_at = requirement.completed_at.filter(|_| matches!(next, RequirementStatus::Completed));
+        requirement.completed_at = requirement
+            .completed_at
+            .filter(|_| matches!(next, RequirementStatus::Completed));
     }
 }
 
@@ -519,7 +625,9 @@ fn sanitize_tags(tags: Option<Vec<String>>) -> Vec<String> {
 }
 
 fn sanitize_optional_string(value: Option<String>) -> Option<String> {
-    value.map(|value| value.trim().to_string()).filter(|value| !value.is_empty())
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn sanitize_execute_config(config: RequirementExecuteConfig) -> RequirementExecuteConfig {

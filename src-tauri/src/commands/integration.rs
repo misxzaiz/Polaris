@@ -7,20 +7,15 @@ use std::collections::HashMap;
 #[cfg(feature = "tauri-app")]
 use tauri::State;
 
-use crate::error::{Result, AppError};
+use crate::error::{AppError, Result};
+use crate::integrations::instance_registry::{InstanceId, PlatformInstance};
 use crate::integrations::types::*;
-use crate::integrations::instance_registry::{PlatformInstance, InstanceId};
-use crate::models::config::{
-    QQBotConfig, QQBotInstanceConfig, FeishuConfig, FeishuInstanceConfig,
-};
+use crate::models::config::{FeishuConfig, FeishuInstanceConfig, QQBotConfig, QQBotInstanceConfig};
 
 /// 启动集成平台
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn start_integration(
-    platform: String,
-    state: State<'_, crate::AppState>,
-) -> Result<()> {
+pub async fn start_integration(platform: String, state: State<'_, crate::AppState>) -> Result<()> {
     let platform: Platform = platform
         .parse()
         .map_err(|e: String| AppError::ValidationError(e))?;
@@ -32,10 +27,7 @@ pub async fn start_integration(
 /// 停止集成平台
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn stop_integration(
-    platform: String,
-    state: State<'_, crate::AppState>,
-) -> Result<()> {
+pub async fn stop_integration(platform: String, state: State<'_, crate::AppState>) -> Result<()> {
     let platform: Platform = platform
         .parse()
         .map_err(|e: String| AppError::ValidationError(e))?;
@@ -270,12 +262,19 @@ async fn sync_instances_to_config(state: &State<'_, crate::AppState>) -> Result<
             .await
             .map(|i| i.id);
 
-        (qqbot_instances, feishu_instances, qqbot_active_id, feishu_active_id)
+        (
+            qqbot_instances,
+            feishu_instances,
+            qqbot_active_id,
+            feishu_active_id,
+        )
     };
     // manager async lock 已释放
 
     // Step 2: 更新 ConfigStore（sync lock）
-    let mut config_store = state.config_store.lock()
+    let mut config_store = state
+        .config_store
+        .lock()
         .map_err(|_| AppError::StateError("ConfigStore lock poisoned".to_string()))?;
     let qqbot_enabled = config_store.get().qqbot.enabled;
     let feishu_enabled = config_store.get().feishu.enabled;

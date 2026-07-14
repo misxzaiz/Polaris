@@ -31,7 +31,9 @@ pub async fn toggle_devtools(app: AppHandle, window_label: Option<String>) -> Re
 #[tauri::command]
 pub async fn set_always_on_top(app: AppHandle, always_on_top: bool) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("main") {
-        window.set_always_on_top(always_on_top).map_err(|e| e.to_string())?;
+        window
+            .set_always_on_top(always_on_top)
+            .map_err(|e| e.to_string())?;
         Ok(())
     } else {
         Err("主窗口不存在".to_string())

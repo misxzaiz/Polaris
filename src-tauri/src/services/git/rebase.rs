@@ -6,13 +6,13 @@
 use std::path::Path;
 use tracing::info;
 
-use crate::models::git::{GitRebaseResult, GitServiceError};
 use super::executor::open_repository;
+use crate::models::git::{GitRebaseResult, GitServiceError};
 
 #[cfg(windows)]
-use std::os::windows::process::CommandExt;
-#[cfg(windows)]
 use super::utils::CREATE_NO_WINDOW;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 
 /// 变基分支
 pub fn rebase_branch(path: &Path, source_branch: &str) -> Result<GitRebaseResult, GitServiceError> {
@@ -206,7 +206,11 @@ pub fn rebase_continue(path: &Path) -> Result<GitRebaseResult, GitServiceError> 
     } else {
         let has_conflicts = stderr.contains("CONFLICT") || stderr.contains("conflict");
 
-        let conflicts = if has_conflicts { get_conflict_files(path)? } else { vec![] };
+        let conflicts = if has_conflicts {
+            get_conflict_files(path)?
+        } else {
+            vec![]
+        };
 
         if has_conflicts {
             Ok(GitRebaseResult {

@@ -307,7 +307,14 @@
     "syncRecover": "Sync & recover: reconnect and restore content lost while disconnected",
     "syncRecoverDone": "Recovered, receiving new content",
     "syncRecoverNothing": "Nothing to recover for this session",
-    "syncRecoverFailed": "Sync recovery failed"
+    "syncRecoverFailed": "Sync recovery failed",
+    "compactContext": "Compact SimpleAI context",
+    "restoreContext": "Undo the latest context compaction"
+  },
+  "contextCompaction": {
+    "compacting": "Compacting context…",
+    "restoring": "Restoring pre-compaction context…",
+    "busy": "Context compaction is in progress. Please wait."
   },
   "search": {
     "placeholder": "Search messages...",
@@ -547,7 +554,9 @@
     "compactDivider": {
       "manual": "Context compacted",
       "auto": "Context auto-compacted",
-      "tokens": "{{pre}} → {{post}} tokens"
+      "recovery": "Context limit recovered by compaction",
+      "tokens": "{{pre}} → {{post}} tokens",
+      "turns": "{{archived}} archived, {{retained}} retained"
     }
   }
 }

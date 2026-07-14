@@ -21,14 +21,16 @@ pub fn git_init_repository(
     initialBranch: Option<String>,
 ) -> Result<String, GitError> {
     let path = PathBuf::from(workspacePath);
-    GitService::init_repository(&path, initialBranch.as_deref())
-        .map_err(GitError::from)
+    GitService::init_repository(&path, initialBranch.as_deref()).map_err(GitError::from)
 }
 
 /// 获取仓库状态
 #[cfg_attr(feature = "tauri-app", tauri::command)]
 pub fn git_get_status(workspacePath: String) -> Result<GitRepositoryStatus, GitError> {
-    eprintln!("[Tauri Command] git_get_status 被调用，路径: {}", workspacePath);
+    eprintln!(
+        "[Tauri Command] git_get_status 被调用，路径: {}",
+        workspacePath
+    );
 
     let path = PathBuf::from(workspacePath);
 
@@ -124,10 +126,7 @@ pub fn git_delete_tag(workspacePath: String, name: String) -> Result<(), GitErro
 
 /// 获取文件 Blame 信息
 #[cfg_attr(feature = "tauri-app", tauri::command)]
-pub fn git_blame_file(
-    workspacePath: String,
-    filePath: String,
-) -> Result<GitBlameResult, GitError> {
+pub fn git_blame_file(workspacePath: String, filePath: String) -> Result<GitBlameResult, GitError> {
     let path = PathBuf::from(workspacePath);
     GitService::blame_file(&path, &filePath).map_err(GitError::from)
 }
@@ -141,26 +140,20 @@ pub fn git_create_branch(
     start_point: Option<String>,
 ) -> Result<(), GitError> {
     let path = PathBuf::from(workspacePath);
-    GitService::create_branch(&path, &name, checkout, start_point.as_deref()).map_err(GitError::from)
+    GitService::create_branch(&path, &name, checkout, start_point.as_deref())
+        .map_err(GitError::from)
 }
 
 /// 切换分支
 #[cfg_attr(feature = "tauri-app", tauri::command)]
-pub fn git_checkout_branch(
-    workspacePath: String,
-    name: String,
-) -> Result<(), GitError> {
+pub fn git_checkout_branch(workspacePath: String, name: String) -> Result<(), GitError> {
     let path = PathBuf::from(workspacePath);
     GitService::checkout_branch(&path, &name).map_err(GitError::from)
 }
 
 /// 删除分支
 #[cfg_attr(feature = "tauri-app", tauri::command)]
-pub fn git_delete_branch(
-    workspacePath: String,
-    name: String,
-    force: bool,
-) -> Result<(), GitError> {
+pub fn git_delete_branch(workspacePath: String, name: String, force: bool) -> Result<(), GitError> {
     let path = PathBuf::from(workspacePath);
     GitService::delete_branch(&path, &name, force).map_err(GitError::from)
 }
@@ -237,10 +230,7 @@ pub fn git_cherry_pick_continue(workspacePath: String) -> Result<GitCherryPickRe
 
 /// Revert 提交
 #[cfg_attr(feature = "tauri-app", tauri::command)]
-pub fn git_revert(
-    workspacePath: String,
-    commitSha: String,
-) -> Result<GitRevertResult, GitError> {
+pub fn git_revert(workspacePath: String, commitSha: String) -> Result<GitRevertResult, GitError> {
     let path = PathBuf::from(workspacePath);
     GitService::revert(&path, &commitSha).map_err(GitError::from)
 }
@@ -291,7 +281,10 @@ pub async fn git_commit_changes(
 /// 暂存文件
 #[cfg_attr(feature = "tauri-app", tauri::command)]
 pub fn git_stage_file(workspacePath: String, filePath: String) -> Result<(), GitError> {
-    eprintln!("[Tauri Command] git_stage_file 被调用，workspace_path: {}, file_path: {}", workspacePath, filePath);
+    eprintln!(
+        "[Tauri Command] git_stage_file 被调用，workspace_path: {}, file_path: {}",
+        workspacePath, filePath
+    );
     let path = PathBuf::from(workspacePath);
     GitService::stage_file(&path, &filePath).map_err(GitError::from)
 }
@@ -358,7 +351,14 @@ pub fn git_push_branch(
     remoteBranchName: Option<String>,
 ) -> Result<(), GitError> {
     let path = PathBuf::from(workspacePath);
-    GitService::push_branch(&path, &branchName, &remoteName, force, remoteBranchName.as_deref()).map_err(GitError::from)
+    GitService::push_branch(
+        &path,
+        &branchName,
+        &remoteName,
+        force,
+        remoteBranchName.as_deref(),
+    )
+    .map_err(GitError::from)
 }
 
 /// 推送分支并设置上游
@@ -370,7 +370,8 @@ pub fn git_push_set_upstream(
     remoteBranchName: Option<String>,
 ) -> Result<(), GitError> {
     let path = PathBuf::from(workspacePath);
-    GitService::push_set_upstream(&path, &branchName, &remoteName, remoteBranchName.as_deref()).map_err(GitError::from)
+    GitService::push_set_upstream(&path, &branchName, &remoteName, remoteBranchName.as_deref())
+        .map_err(GitError::from)
 }
 
 /// 拉取远程更新
@@ -466,20 +467,14 @@ pub fn git_stash_list(workspacePath: String) -> Result<Vec<GitStashEntry>, GitEr
 
 /// 应用 Stash
 #[cfg_attr(feature = "tauri-app", tauri::command)]
-pub fn git_stash_pop(
-    workspacePath: String,
-    index: Option<usize>,
-) -> Result<(), GitError> {
+pub fn git_stash_pop(workspacePath: String, index: Option<usize>) -> Result<(), GitError> {
     let path = PathBuf::from(workspacePath);
     GitService::stash_pop(&path, index).map_err(GitError::from)
 }
 
 /// 删除 Stash
 #[cfg_attr(feature = "tauri-app", tauri::command)]
-pub fn git_stash_drop(
-    workspacePath: String,
-    index: usize,
-) -> Result<(), GitError> {
+pub fn git_stash_drop(workspacePath: String, index: usize) -> Result<(), GitError> {
     let path = PathBuf::from(workspacePath);
     GitService::stash_drop(&path, index).map_err(GitError::from)
 }
@@ -496,10 +491,7 @@ pub fn git_create_pr(
 
 /// 获取 PR 状态
 #[cfg_attr(feature = "tauri-app", tauri::command)]
-pub fn git_get_pr_status(
-    workspacePath: String,
-    prNumber: u64,
-) -> Result<PullRequest, GitError> {
+pub fn git_get_pr_status(workspacePath: String, prNumber: u64) -> Result<PullRequest, GitError> {
     let path = PathBuf::from(workspacePath);
     GitService::get_pr_status(&path, prNumber).map_err(GitError::from)
 }
@@ -585,35 +577,32 @@ pub fn git_get_gitignore_templates() -> Vec<GitIgnoreTemplate> {
     GitService::get_gitignore_templates()
 }
 
-
 /// 检出指定提交（detached HEAD）
 #[cfg_attr(feature = "tauri-app", tauri::command)]
-pub fn git_checkout_commit(
-    workspacePath: String,
-    commitSha: String,
-) -> Result<(), GitError> {
+pub fn git_checkout_commit(workspacePath: String, commitSha: String) -> Result<(), GitError> {
     let path = std::path::PathBuf::from(workspacePath);
     GitService::checkout_commit(&path, &commitSha).map_err(GitError::from)
 }
 
 /// Git Reset
 #[cfg_attr(feature = "tauri-app", tauri::command)]
-pub fn git_reset(
-    workspacePath: String,
-    mode: String,
-    commitSha: String,
-) -> Result<(), GitError> {
+pub fn git_reset(workspacePath: String, mode: String, commitSha: String) -> Result<(), GitError> {
     use crate::services::git::ResetMode;
     let path = std::path::PathBuf::from(workspacePath);
     let reset_mode = match mode.as_str() {
         "soft" => ResetMode::Soft,
         "mixed" => ResetMode::Mixed,
         "hard" => ResetMode::Hard,
-        _ => return Err(GitError {
-            code: "INVALID_ARGUMENT".to_string(),
-            message: format!("Unknown reset mode: {}. Expected: soft, mixed, or hard", mode),
-            details: None,
-        }),
+        _ => {
+            return Err(GitError {
+                code: "INVALID_ARGUMENT".to_string(),
+                message: format!(
+                    "Unknown reset mode: {}. Expected: soft, mixed, or hard",
+                    mode
+                ),
+                details: None,
+            })
+        }
     };
     GitService::reset(&path, &commitSha, reset_mode).map_err(GitError::from)
 }

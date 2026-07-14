@@ -7,12 +7,11 @@ use std::path::Path;
 
 use git2::{DiffOptions, Oid, Repository};
 
-use crate::models::git::{
-    GitBlameLine, GitBlameResult, GitCommit, GitCommitDetails, GitFileHistoryEntry,
-    GitServiceError,
-};
 use super::diff::convert_diff;
 use super::executor::open_repository;
+use crate::models::git::{
+    GitBlameLine, GitBlameResult, GitCommit, GitCommitDetails, GitFileHistoryEntry, GitServiceError,
+};
 
 fn commit_to_model(commit: &git2::Commit<'_>) -> GitCommit {
     let sha = commit.id().to_string();
@@ -182,15 +181,14 @@ pub fn get_file_history(
             continue;
         }
 
-        let matching_index = files
-            .iter()
-            .position(|file| {
-                file.file_path.replace('\\', "/") == normalized_file_path
-                    || file.old_file_path
-                        .as_ref()
-                        .map(|old_path| old_path.replace('\\', "/") == normalized_file_path)
-                        .unwrap_or(false)
-            });
+        let matching_index = files.iter().position(|file| {
+            file.file_path.replace('\\', "/") == normalized_file_path
+                || file
+                    .old_file_path
+                    .as_ref()
+                    .map(|old_path| old_path.replace('\\', "/") == normalized_file_path)
+                    .unwrap_or(false)
+        });
         let file = matching_index
             .map(|index| files.remove(index))
             .or_else(|| files.into_iter().next());

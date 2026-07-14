@@ -331,8 +331,14 @@ mod tests {
             service: 33554678,
             method: 1,
             headers: vec![
-                Header { key: "type".into(), value: "event".into() },
-                Header { key: "message_id".into(), value: "abc-123".into() },
+                Header {
+                    key: "type".into(),
+                    value: "event".into(),
+                },
+                Header {
+                    key: "message_id".into(),
+                    value: "abc-123".into(),
+                },
             ],
             payload: br#"{"schema":"2.0"}"#.to_vec(),
             ..Default::default()

@@ -72,7 +72,6 @@ pub enum FloatingWindowMode {
     Manual,
 }
 
-
 impl FloatingWindowMode {
     /// 转换为字符串
     pub fn as_str(&self) -> &'static str {
@@ -326,8 +325,12 @@ pub struct QQBotInstanceConfig {
     pub work_dir: Option<String>,
 }
 
-fn default_instance_enabled() -> bool { true }
-fn default_auto_connect() -> bool { true }
+fn default_instance_enabled() -> bool {
+    true
+}
+fn default_auto_connect() -> bool {
+    true
+}
 
 impl Default for QQBotInstanceConfig {
     fn default() -> Self {
@@ -566,7 +569,6 @@ pub struct FeishuConfig {
     pub active_instance_id: Option<String>,
 }
 
-
 fn default_floating_window_enabled() -> bool {
     false
 }
@@ -680,11 +682,21 @@ pub struct ChatDisplaySettings {
     pub font_family: ChatDisplayFontFamily,
 }
 
-fn default_chat_font_size() -> u8 { 14 }
-fn default_chat_line_height() -> f32 { 1.55 }
-fn default_chat_paragraph_spacing() -> u8 { 4 }
-fn default_chat_content_width() -> u8 { 78 }
-fn default_chat_code_font_size() -> u8 { 13 }
+fn default_chat_font_size() -> u8 {
+    14
+}
+fn default_chat_line_height() -> f32 {
+    1.55
+}
+fn default_chat_paragraph_spacing() -> u8 {
+    4
+}
+fn default_chat_content_width() -> u8 {
+    78
+}
+fn default_chat_code_font_size() -> u8 {
+    13
+}
 
 impl Default for ChatDisplaySettings {
     fn default() -> Self {
@@ -779,17 +791,33 @@ pub struct VoiceNotificationConfig {
     pub background_notify_text: String,
 }
 
-fn default_notif_enabled() -> bool { true }
-fn default_notif_send_confirm() -> bool { true }
-fn default_notif_send_confirm_text() -> String { "已发送".to_string() }
-fn default_notif_wake_response() -> bool { true }
+fn default_notif_enabled() -> bool {
+    true
+}
+fn default_notif_send_confirm() -> bool {
+    true
+}
+fn default_notif_send_confirm_text() -> String {
+    "已发送".to_string()
+}
+fn default_notif_wake_response() -> bool {
+    true
+}
 fn default_notif_wake_response_texts() -> Vec<String> {
     vec!["在的".to_string(), "我在".to_string(), "嗯嗯".to_string()]
 }
-fn default_notif_error_alert() -> bool { true }
-fn default_notif_error_alert_text() -> String { "出错了".to_string() }
-fn default_notif_background_notify() -> bool { true }
-fn default_notif_background_notify_text() -> String { "后台任务完成了".to_string() }
+fn default_notif_error_alert() -> bool {
+    true
+}
+fn default_notif_error_alert_text() -> String {
+    "出错了".to_string()
+}
+fn default_notif_background_notify() -> bool {
+    true
+}
+fn default_notif_background_notify_text() -> String {
+    "后台任务完成了".to_string()
+}
 
 impl Default for VoiceNotificationConfig {
     fn default() -> Self {
@@ -822,8 +850,12 @@ pub struct VoiceCommandEntry {
     pub keywords: Vec<String>,
 }
 
-fn default_speech_enabled() -> bool { true }
-fn default_speech_language() -> String { "zh-CN".to_string() }
+fn default_speech_enabled() -> bool {
+    true
+}
+fn default_speech_language() -> String {
+    "zh-CN".to_string()
+}
 
 impl Default for SpeechConfig {
     fn default() -> Self {
@@ -859,10 +891,18 @@ pub struct TTSConfig {
     pub auto_play: bool,
 }
 
-fn default_tts_voice() -> String { "zh-CN-XiaoxiaoNeural".to_string() }
-fn default_tts_rate() -> String { "+0%".to_string() }
-fn default_tts_volume() -> f64 { 1.0 }
-fn default_tts_auto_play() -> bool { true }
+fn default_tts_voice() -> String {
+    "zh-CN-XiaoxiaoNeural".to_string()
+}
+fn default_tts_rate() -> String {
+    "+0%".to_string()
+}
+fn default_tts_volume() -> f64 {
+    1.0
+}
+fn default_tts_auto_play() -> bool {
+    true
+}
 
 impl Default for TTSConfig {
     fn default() -> Self {
@@ -897,9 +937,15 @@ pub struct WebConfig {
     pub token: Option<String>,
 }
 
-fn default_web_host() -> String { "0.0.0.0".to_string() }
-fn default_web_port() -> u16 { 9830 }
-fn default_web_enabled() -> bool { true }
+fn default_web_host() -> String {
+    "0.0.0.0".to_string()
+}
+fn default_web_port() -> u16 {
+    9830
+}
+fn default_web_enabled() -> bool {
+    true
+}
 
 impl Default for WebConfig {
     fn default() -> Self {
@@ -1209,8 +1255,7 @@ impl Config {
 
     /// 获取当前引擎 ID
     pub fn get_engine_id(&self) -> EngineId {
-        EngineId::parse(&self.default_engine)
-            .unwrap_or(EngineId::ClaudeCode)
+        EngineId::parse(&self.default_engine).unwrap_or(EngineId::ClaudeCode)
     }
 
     /// 设置默认引擎

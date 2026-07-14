@@ -24,12 +24,12 @@ use std::process::{Child, Command, Stdio};
 
 use crate::ai::session::SessionManager;
 use crate::ai::traits::{
-    AIEngine, EngineId, SessionOptions, ImageAttachment,
-    EngineMetadata, EngineDistribution, EngineCapabilities, EnvKeyMapping,
+    AIEngine, EngineCapabilities, EngineDistribution, EngineId, EngineMetadata, EnvKeyMapping,
+    ImageAttachment, SessionOptions,
 };
 use crate::error::{AppError, Result};
 use crate::models::config::Config;
-use crate::models::{AIEvent, ToolCallStartEvent, ToolCallEndEvent};
+use crate::models::{AIEvent, ToolCallEndEvent, ToolCallStartEvent};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -71,31 +71,36 @@ impl MimoStreamEvent {
 /// - `step_start` / `step_finish`: 轮次边界，无需透出
 fn mimo_event_to_ai_events(event: &MimoStreamEvent, sid: &str) -> Vec<AIEvent> {
     match event.event_type.as_str() {
-        "text" => {
-            match event.part.get("text").and_then(|t| t.as_str()) {
-                Some(text) if !text.is_empty() => {
-                    vec![AIEvent::assistant_message(sid, text, false)]
-                }
-                _ => vec![],
+        "text" => match event.part.get("text").and_then(|t| t.as_str()) {
+            Some(text) if !text.is_empty() => {
+                vec![AIEvent::assistant_message(sid, text, false)]
             }
-        }
-        "reasoning" => {
-            match event.part.get("text").and_then(|t| t.as_str()) {
-                Some(text) if !text.is_empty() => vec![AIEvent::thinking(sid, text)],
-                _ => vec![],
-            }
-        }
+            _ => vec![],
+        },
+        "reasoning" => match event.part.get("text").and_then(|t| t.as_str()) {
+            Some(text) if !text.is_empty() => vec![AIEvent::thinking(sid, text)],
+            _ => vec![],
+        },
         "tool_use" => {
-            let tool = event.part.get("tool")
+            let tool = event
+                .part
+                .get("tool")
                 .and_then(|t| t.as_str())
                 .unwrap_or("unknown")
                 .to_string();
-            let call_id = event.part.get("callID")
+            let call_id = event
+                .part
+                .get("callID")
                 .and_then(|c| c.as_str())
                 .map(|s| s.to_string());
-            let state = event.part.get("state").cloned().unwrap_or(serde_json::Value::Null);
+            let state = event
+                .part
+                .get("state")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
 
-            let args: HashMap<String, serde_json::Value> = state.get("input")
+            let args: HashMap<String, serde_json::Value> = state
+                .get("input")
                 .and_then(|i| i.as_object())
                 .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
                 .unwrap_or_default();
@@ -119,7 +124,9 @@ fn mimo_event_to_ai_events(event: &MimoStreamEvent, sid: &str) -> Vec<AIEvent> {
         "step_start" | "step_finish" => vec![],
         "error" => {
             // 防御性提取：错误事件形态未实测，按候选字段降级取值
-            let message = event.part.get("text")
+            let message = event
+                .part
+                .get("text")
                 .or_else(|| event.part.get("message"))
                 .or_else(|| event.part.get("error"))
                 .and_then(|v| v.as_str())
@@ -218,14 +225,19 @@ impl MimocodeEngine {
                 if output.status.success() {
                     let stdout = String::from_utf8_lossy(&output.stdout);
                     // 优先 .cmd/.exe 行（where 可能先输出无扩展名的 shell 脚本）
-                    let best = stdout.lines()
+                    let best = stdout
+                        .lines()
                         .map(|l| l.trim())
                         .filter(|l| !l.is_empty() && Path::new(l).exists())
                         .max_by_key(|l| {
                             let lower = l.to_ascii_lowercase();
-                            if lower.ends_with(".exe") { 2 }
-                            else if lower.ends_with(".cmd") || lower.ends_with(".bat") { 1 }
-                            else { 0 }
+                            if lower.ends_with(".exe") {
+                                2
+                            } else if lower.ends_with(".cmd") || lower.ends_with(".bat") {
+                                1
+                            } else {
+                                0
+                            }
                         });
                     if let Some(path_str) = best {
                         tracing::info!("[MimocodeEngine] 通过 where 找到: {}", path_str);
@@ -297,9 +309,7 @@ impl MimocodeEngine {
         cmd.arg(&cli_path);
         #[cfg(windows)]
         cmd.creation_flags(CREATE_NO_WINDOW);
-        cmd.output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
+        cmd.output().map(|o| o.status.success()).unwrap_or(false)
     }
 
     /// 构建 `mimo run` 命令
@@ -319,7 +329,9 @@ impl MimocodeEngine {
         image_attachments: &[ImageAttachment],
         fork_session: bool,
     ) -> Result<Command> {
-        let cli_path = self.cli_path.as_ref()
+        let cli_path = self
+            .cli_path
+            .as_ref()
             .ok_or_else(|| AppError::ProcessError("CLI 路径未初始化".to_string()))?;
 
         let mut cmd = Self::create_command(cli_path);
@@ -419,7 +431,12 @@ impl MimocodeEngine {
     }
 
     /// 配置命令（设置工作目录、环境变量等）
-    fn configure_command(&self, cmd: &mut Command, work_dir: Option<&str>, env_overrides: &std::collections::HashMap<String, String>) {
+    fn configure_command(
+        &self,
+        cmd: &mut Command,
+        work_dir: Option<&str>,
+        env_overrides: &std::collections::HashMap<String, String>,
+    ) {
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -508,7 +525,8 @@ impl MimocodeEngine {
 
                 // 如果有初始数据，立即发送
                 if let Some(initial) = initial_stdin_data {
-                    if let Err(e) = stdin_writer.write_all(initial.as_bytes())
+                    if let Err(e) = stdin_writer
+                        .write_all(initial.as_bytes())
                         .and_then(|_| stdin_writer.flush())
                     {
                         tracing::error!("[MimocodeEngine] 发送初始 stdin 数据失败: {}", e);
@@ -565,7 +583,12 @@ impl MimocodeEngine {
                 if let Some(ref sid) = mimo_event.session_id {
                     if !sid.is_empty() && *sid != real_session_id {
                         SessionManager::update_session_id_shared(
-                            &sessions, &real_session_id, sid, pid, "mimo", Some(input_sender.clone())
+                            &sessions,
+                            &real_session_id,
+                            sid,
+                            pid,
+                            "mimo",
+                            Some(input_sender.clone()),
                         );
                         real_session_id = sid.clone();
 
@@ -595,7 +618,10 @@ impl MimocodeEngine {
                 );
                 event_callback(AIEvent::error(
                     &real_session_id,
-                    format!("Mimo CLI 输出无法解析（{} 行）。请检查 Mimo CLI 版本兼容性", line_count),
+                    format!(
+                        "Mimo CLI 输出无法解析（{} 行）。请检查 Mimo CLI 版本兼容性",
+                        line_count
+                    ),
                 ));
             }
             event_callback(AIEvent::session_end(&real_session_id));
@@ -626,7 +652,9 @@ impl AIEngine for MimocodeEngine {
         EngineMetadata {
             id: EngineId::MimoCode,
             name: "Mimo Code".into(),
-            description: Some("Mimo (Mimocode) CLI — 支持多模型提供商、工具调用、流式输出与会话续接".into()),
+            description: Some(
+                "Mimo (Mimocode) CLI — 支持多模型提供商、工具调用、流式输出与会话续接".into(),
+            ),
             distribution: EngineDistribution::PackageRunner {
                 package: "mimocode".into(),
                 cmd: "mimo".into(),
@@ -655,11 +683,7 @@ impl AIEngine for MimocodeEngine {
         None
     }
 
-    fn start_session(
-        &mut self,
-        message: &str,
-        options: SessionOptions,
-    ) -> Result<String> {
+    fn start_session(&mut self, message: &str, options: SessionOptions) -> Result<String> {
         tracing::info!("[MimocodeEngine] 启动会话，消息长度: {}", message.len());
 
         let cli_path = self.get_cli_path()?;
@@ -695,21 +719,40 @@ impl AIEngine for MimocodeEngine {
             &options.image_attachments,
             fork_flag,
         )?;
-        self.configure_command(&mut cmd, options.work_dir.as_deref(), &options.env_overrides);
+        self.configure_command(
+            &mut cmd,
+            options.work_dir.as_deref(),
+            &options.env_overrides,
+        );
 
-        let cmd_str = format!("{:?} {:?}", cmd.get_program(), cmd.get_args().collect::<Vec<_>>());
+        let cmd_str = format!(
+            "{:?} {:?}",
+            cmd.get_program(),
+            cmd.get_args().collect::<Vec<_>>()
+        );
         tracing::info!("[MimocodeEngine] 执行命令: {}", cmd_str);
 
-        let child = cmd.spawn()
+        let child = cmd
+            .spawn()
             .map_err(|e| AppError::ProcessError(format!("启动 Mimo 进程失败: {}", e)))?;
 
         let pid = child.id();
         let temp_id = uuid::Uuid::new_v4().to_string();
 
-        tracing::info!("[MimocodeEngine] 进程启动，PID: {}, 临时 ID: {}", pid, temp_id);
+        tracing::info!(
+            "[MimocodeEngine] 进程启动，PID: {}, 临时 ID: {}",
+            pid,
+            temp_id
+        );
 
-        let input_sender = self.spawn_event_reader(child, temp_id.clone(), pid, options, initial_stdin_data);
-        self.sessions.register_with_sender(temp_id.clone(), pid, "mimo".to_string(), Some(input_sender))?;
+        let input_sender =
+            self.spawn_event_reader(child, temp_id.clone(), pid, options, initial_stdin_data);
+        self.sessions.register_with_sender(
+            temp_id.clone(),
+            pid,
+            "mimo".to_string(),
+            Some(input_sender),
+        )?;
 
         Ok(temp_id)
     }
@@ -720,14 +763,22 @@ impl AIEngine for MimocodeEngine {
         message: &str,
         options: SessionOptions,
     ) -> Result<()> {
-        tracing::info!("[MimocodeEngine] 继续会话: {}, 消息长度: {}", session_id, message.len());
+        tracing::info!(
+            "[MimocodeEngine] 继续会话: {}, 消息长度: {}",
+            session_id,
+            message.len()
+        );
 
         if !self.check_cli_available() {
             return Err(AppError::ProcessError("Mimo CLI 不可用".to_string()));
         }
 
         let real_session_id = if let Some(info) = self.sessions.get(session_id) {
-            tracing::info!("[MimocodeEngine] 找到会话，真实 ID: {}, PID: {}", info.id, info.pid);
+            tracing::info!(
+                "[MimocodeEngine] 找到会话，真实 ID: {}, PID: {}",
+                info.id,
+                info.pid
+            );
             let _ = self.sessions.kill_process(session_id);
             std::thread::sleep(std::time::Duration::from_millis(100));
             info.id.clone()
@@ -752,17 +803,37 @@ impl AIEngine for MimocodeEngine {
             &options.image_attachments,
             false,
         )?;
-        self.configure_command(&mut cmd, options.work_dir.as_deref(), &options.env_overrides);
+        self.configure_command(
+            &mut cmd,
+            options.work_dir.as_deref(),
+            &options.env_overrides,
+        );
 
-        let cmd_str = format!("{:?} {:?}", cmd.get_program(), cmd.get_args().collect::<Vec<_>>());
+        let cmd_str = format!(
+            "{:?} {:?}",
+            cmd.get_program(),
+            cmd.get_args().collect::<Vec<_>>()
+        );
         tracing::info!("[MimocodeEngine] 执行命令: {}", cmd_str);
 
-        let child = cmd.spawn()
+        let child = cmd
+            .spawn()
             .map_err(|e| AppError::ProcessError(format!("继续 Mimo 会话失败: {}", e)))?;
 
         let pid = child.id();
-        let input_sender = self.spawn_event_reader(child, real_session_id.clone(), pid, options, initial_stdin_data);
-        self.sessions.register_with_sender(real_session_id.clone(), pid, "mimo".to_string(), Some(input_sender))?;
+        let input_sender = self.spawn_event_reader(
+            child,
+            real_session_id.clone(),
+            pid,
+            options,
+            initial_stdin_data,
+        );
+        self.sessions.register_with_sender(
+            real_session_id.clone(),
+            pid,
+            "mimo".to_string(),
+            Some(input_sender),
+        )?;
 
         Ok(())
     }
@@ -783,14 +854,22 @@ impl AIEngine for MimocodeEngine {
                 )))
             }
             Err(e) => {
-                tracing::warn!("[MimocodeEngine] kill_process 返回 Err: {} ({})", e, session_id);
+                tracing::warn!(
+                    "[MimocodeEngine] kill_process 返回 Err: {} ({})",
+                    e,
+                    session_id
+                );
                 Err(e)
             }
         }
     }
 
     fn send_input(&mut self, session_id: &str, input: &str) -> Result<bool> {
-        tracing::info!("[MimocodeEngine] 向会话 {} 发送输入: {} bytes", session_id, input.len());
+        tracing::info!(
+            "[MimocodeEngine] 向会话 {} 发送输入: {} bytes",
+            session_id,
+            input.len()
+        );
         self.sessions.send_input(session_id, input)
     }
 
@@ -823,7 +902,10 @@ mod tests {
         let line = r#"{"type":"text","timestamp":1781264045893,"sessionID":"ses_14463c683ffec856zhbCb7o0jZ","part":{"id":"prt_1","messageID":"msg_1","sessionID":"ses_14463c683ffec856zhbCb7o0jZ","type":"text","text":"pong","time":{"start":1,"end":2}}}"#;
         let event = parse(line);
         assert_eq!(event.event_type, "text");
-        assert_eq!(event.session_id.as_deref(), Some("ses_14463c683ffec856zhbCb7o0jZ"));
+        assert_eq!(
+            event.session_id.as_deref(),
+            Some("ses_14463c683ffec856zhbCb7o0jZ")
+        );
 
         let events = mimo_event_to_ai_events(&event, "sid");
         assert_eq!(events.len(), 1);
@@ -874,8 +956,12 @@ mod tests {
     /// step_start / step_finish 为轮次边界，不透出
     #[test]
     fn test_step_events_are_ignored() {
-        let start = parse(r#"{"type":"step_start","timestamp":1,"sessionID":"ses_1","part":{"type":"step-start"}}"#);
-        let finish = parse(r#"{"type":"step_finish","timestamp":1,"sessionID":"ses_1","part":{"type":"step-finish","reason":"stop","tokens":{"total":1}}}"#);
+        let start = parse(
+            r#"{"type":"step_start","timestamp":1,"sessionID":"ses_1","part":{"type":"step-start"}}"#,
+        );
+        let finish = parse(
+            r#"{"type":"step_finish","timestamp":1,"sessionID":"ses_1","part":{"type":"step-finish","reason":"stop","tokens":{"total":1}}}"#,
+        );
         assert!(mimo_event_to_ai_events(&start, "sid").is_empty());
         assert!(mimo_event_to_ai_events(&finish, "sid").is_empty());
     }

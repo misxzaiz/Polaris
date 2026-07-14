@@ -7,8 +7,8 @@ use std::path::Path;
 
 use git2::ResetType;
 
-use crate::models::git::GitServiceError;
 use super::executor::open_repository;
+use crate::models::git::GitServiceError;
 
 /// Reset 模式
 pub enum ResetMode {
@@ -35,7 +35,8 @@ pub fn reset(path: &Path, commit_sha: &str, mode: ResetMode) -> Result<(), GitSe
     let repo = open_repository(path)?;
     let oid = git2::Oid::from_str(commit_sha)
         .map_err(|_| GitServiceError::CommitNotFound(commit_sha.to_string()))?;
-    let commit = repo.find_commit(oid)
+    let commit = repo
+        .find_commit(oid)
         .map_err(|_| GitServiceError::CommitNotFound(commit_sha.to_string()))?;
     repo.reset(commit.as_object(), mode.into(), None)?;
     Ok(())

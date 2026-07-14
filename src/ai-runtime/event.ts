@@ -706,12 +706,30 @@ export interface ContextCompactedEvent {
   type: 'context_compacted'
   /** 会话 ID - 用于事件路由 */
   sessionId: string
-  /** 触发方式："manual"（/compact）| "auto"（自动压缩） */
+  /** 触发方式："manual"（/compact）| "auto"（自动压缩）| "recovery"（超限恢复） */
   trigger: string
   /** 压缩前 token 数 */
   preTokens?: number
   /** 压缩后 token 数 */
   postTokens?: number
+  /** SimpleAI checkpoint generation */
+  generation?: number
+  archivedTurns?: number
+  retainedTurns?: number
+}
+
+export interface ContextCompactionFailedEvent {
+  type: 'context_compaction_failed'
+  sessionId: string
+  trigger: string
+  error: string
+}
+
+export interface ContextRestoredEvent {
+  type: 'context_restored'
+  sessionId: string
+  generation: number
+  reason: string
 }
 
 /**
@@ -763,6 +781,8 @@ export type AIEvent =
   | CliInitEvent
   // 上下文压缩完成事件
   | ContextCompactedEvent
+  | ContextCompactionFailedEvent
+  | ContextRestoredEvent
 
 /**
  * 事件监听器类型

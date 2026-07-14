@@ -14,11 +14,10 @@
 
 use serde_json::{json, Value};
 
-use crate::error::Result;
 use crate::models::AIEvent;
 
 use super::super::agent;
-use super::super::chat_loop::run_chat_loop;
+use super::super::chat_loop::{run_chat_loop, ChatLoopStats};
 use super::{truncate_chars, Tool, ToolContext, ToolOutcome, SUBAGENT_MAX_DEPTH};
 
 pub(super) struct DispatchAgentTool;
@@ -96,12 +95,17 @@ impl Tool for DispatchAgentTool {
         let _ = (ctx.event_callback)(AIEvent::Progress(
             crate::models::ai_event::ProgressEvent::new(
                 ctx.session_id,
-                format!("dispatching sub-agent '{}' (depth {})", agent_name, ctx.subagent_depth + 1),
+                format!(
+                    "dispatching sub-agent '{}' (depth {})",
+                    agent_name,
+                    ctx.subagent_depth + 1
+                ),
             ),
         ));
 
         let profile = ctx.profile.clone();
-        let result: Result<()> = run_chat_loop(
+        let mut stats = ChatLoopStats::default();
+        let result = run_chat_loop(
             &child_session_id,
             &mut child_messages,
             &profile,
@@ -110,12 +114,13 @@ impl Tool for DispatchAgentTool {
             &mut child_abort_rx,
             ctx.mcp_servers,
             &child_skills,
+            &mut stats,
             ctx.subagent_depth + 1,
         )
         .await;
 
         match result {
-            Ok(()) => {
+            Ok(_) => {
                 let last_assistant = child_messages
                     .iter()
                     .rev()

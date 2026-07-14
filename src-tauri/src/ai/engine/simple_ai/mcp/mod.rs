@@ -53,10 +53,8 @@ impl McpClientPool {
                     let client = Arc::new(client);
                     let tools = client.tools().await;
                     for tool in &tools {
-                        let mcp_name = format!(
-                            "{}{}__{}",
-                            MCP_PREFIX, server.server_name, tool.name
-                        );
+                        let mcp_name =
+                            format!("{}{}__{}", MCP_PREFIX, server.server_name, tool.name);
                         tool_index.insert(
                             mcp_name.clone(),
                             (server.server_name.clone(), tool.name.clone()),
@@ -95,9 +93,7 @@ impl McpClientPool {
         };
         let client = match self.clients.get(&server_name) {
             Some(c) => Arc::clone(c),
-            None => {
-                return ToolOutcome::fail(format!("MCP server not connected: {}", server_name))
-            }
+            None => return ToolOutcome::fail(format!("MCP server not connected: {}", server_name)),
         };
         match client.call_tool(&tool_name, args).await {
             Ok(result) => {
@@ -135,9 +131,9 @@ impl McpClientPool {
 
 /// `McpTool` → OpenAI function spec。
 fn mcp_tool_to_spec(mcp_name: &str, tool: &McpTool) -> Value {
-    let parameters = tool.input_schema.clone().unwrap_or_else(|| {
-        json!({ "type": "object", "properties": {}, "additionalProperties": true })
-    });
+    let parameters = tool.input_schema.clone().unwrap_or_else(
+        || json!({ "type": "object", "properties": {}, "additionalProperties": true }),
+    );
     json!({
         "type": "function",
         "function": {

@@ -7,11 +7,9 @@ use git2::{Diff, DiffDelta, DiffOptions, Oid, Repository};
 use std::path::Path;
 use tracing::debug;
 
-use crate::models::git::{
-    DiffChangeType, GitDiffEntry, GitDiffStatusHint, GitServiceError,
-};
 use super::executor::open_repository;
 use super::utils::{is_binary_by_extension, is_binary_bytes, MAX_INLINE_DIFF_BYTES};
+use crate::models::git::{DiffChangeType, GitDiffEntry, GitDiffStatusHint, GitServiceError};
 
 /// 文件 Diff 内容
 ///
@@ -144,13 +142,17 @@ pub fn get_index_file_diff(path: &Path, file_path: &str) -> Result<GitDiffEntry,
     let diff = repo.diff_tree_to_index(Some(&head_tree), None, Some(&mut diffopts))?;
 
     let entries = convert_diff(&repo, &diff)?;
-    entries.into_iter().next().ok_or_else(|| {
-        GitServiceError::CLIError(format!("文件 {} 没有变更", file_path))
-    })
+    entries
+        .into_iter()
+        .next()
+        .ok_or_else(|| GitServiceError::CLIError(format!("文件 {} 没有变更", file_path)))
 }
 
 /// 将 git2::Diff 转换为 GitDiffEntry
-pub(super) fn convert_diff(repo: &Repository, diff: &Diff) -> Result<Vec<GitDiffEntry>, GitServiceError> {
+pub(super) fn convert_diff(
+    repo: &Repository,
+    diff: &Diff,
+) -> Result<Vec<GitDiffEntry>, GitServiceError> {
     let mut entries = Vec::new();
 
     for delta in diff.deltas() {
@@ -162,13 +164,12 @@ pub(super) fn convert_diff(repo: &Repository, diff: &Diff) -> Result<Vec<GitDiff
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default();
 
-        let old_file_path = if delta.status() == git2::Delta::Renamed
-            || delta.status() == git2::Delta::Copied
-        {
-            old_path.map(|p| p.to_string_lossy().to_string())
-        } else {
-            None
-        };
+        let old_file_path =
+            if delta.status() == git2::Delta::Renamed || delta.status() == git2::Delta::Copied {
+                old_path.map(|p| p.to_string_lossy().to_string())
+            } else {
+                None
+            };
 
         let change_type = match delta.status() {
             git2::Delta::Added => DiffChangeType::Added,
@@ -385,11 +386,7 @@ fn get_diff_head_to_workdir_direct(
                             if is_bin {
                                 Some(None)
                             } else {
-                                Some(
-                                    std::str::from_utf8(&bytes)
-                                        .ok()
-                                        .map(|s| s.to_string()),
-                                )
+                                Some(std::str::from_utf8(&bytes).ok().map(|s| s.to_string()))
                             }
                         }
                         Err(_) => Some(None),
@@ -412,8 +409,7 @@ fn get_diff_head_to_workdir_direct(
     };
 
     // 4. 计算 content_omitted
-    let content_omitted =
-        matches!(&old_content, Some(None)) || matches!(&new_content, Some(None));
+    let content_omitted = matches!(&old_content, Some(None)) || matches!(&new_content, Some(None));
 
     // 5. 判断是否为二进制
     let is_binary = matches!(&new_content, Some(None));
@@ -478,8 +474,9 @@ fn get_diff_index_to_workdir(
                     debug!("暂存区内容为二进制");
                     Some(None)
                 } else {
-                    let content =
-                        std::str::from_utf8(blob.content()).ok().map(|s| s.to_string());
+                    let content = std::str::from_utf8(blob.content())
+                        .ok()
+                        .map(|s| s.to_string());
                     debug!(
                         "从 blob 读取暂存区内容成功，长度: {:?}",
                         content.as_ref().map(|s| s.len())
@@ -511,9 +508,11 @@ fn get_diff_index_to_workdir(
                     if is_bin || bytes.len() > MAX_INLINE_DIFF_BYTES {
                         Some(None)
                     } else {
-                        let content =
-                            std::str::from_utf8(&bytes).ok().map(|s| s.to_string());
-                        debug!("工作区文本内容长度: {:?}", content.as_ref().map(|s| s.len()));
+                        let content = std::str::from_utf8(&bytes).ok().map(|s| s.to_string());
+                        debug!(
+                            "工作区文本内容长度: {:?}",
+                            content.as_ref().map(|s| s.len())
+                        );
                         Some(content)
                     }
                 }
@@ -551,8 +550,7 @@ fn get_diff_index_to_workdir(
     };
 
     // 4. 计算 content_omitted
-    let content_omitted =
-        matches!(&old_content, Some(None)) || matches!(&new_content, Some(None));
+    let content_omitted = matches!(&old_content, Some(None)) || matches!(&new_content, Some(None));
 
     // 5. 提取内容
     let old = old_content.and_then(|o| o);

@@ -5,9 +5,9 @@
  * 支持通过 channel 向进程 stdin 发送输入。
  */
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex, mpsc::Sender};
 use crate::error::{AppError, Result};
+use std::collections::HashMap;
+use std::sync::{mpsc::Sender, Arc, Mutex};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -84,7 +84,9 @@ impl SessionManager {
             input_sender,
         };
 
-        let mut sessions = self.sessions.lock()
+        let mut sessions = self
+            .sessions
+            .lock()
             .map_err(|e| AppError::Unknown(format!("锁获取失败: {}", e)))?;
         sessions.insert(session_id, info);
 
@@ -97,12 +99,15 @@ impl SessionManager {
     /// - Ok(true): 发送成功
     /// - Ok(false): 会话不存在或没有 stdin 发送器
     pub fn send_input(&self, session_id: &str, input: &str) -> Result<bool> {
-        let sessions = self.sessions.lock()
+        let sessions = self
+            .sessions
+            .lock()
             .map_err(|e| AppError::Unknown(format!("锁获取失败: {}", e)))?;
 
         if let Some(info) = sessions.get(session_id) {
             if let Some(ref sender) = info.input_sender {
-                sender.send(input.to_string())
+                sender
+                    .send(input.to_string())
                     .map_err(|e| AppError::ProcessError(format!("发送输入失败: {}", e)))?;
                 tracing::info!("[SessionManager] 已向会话 {} 发送输入", session_id);
                 return Ok(true);
@@ -120,7 +125,9 @@ impl SessionManager {
     /// 保留旧 ID 作为别名，这样用临时 ID 也能找到会话
     #[allow(dead_code)]
     pub fn update_session_id(&self, old_id: &str, new_id: &str) -> Result<()> {
-        let mut sessions = self.sessions.lock()
+        let mut sessions = self
+            .sessions
+            .lock()
             .map_err(|e| AppError::Unknown(format!("锁获取失败: {}", e)))?;
 
         if let Some(mut info) = sessions.remove(old_id) {
@@ -178,11 +185,19 @@ impl SessionManager {
     /// 获取活动会话数量（按真实 ID 计数）
     pub fn count(&self) -> usize {
         let sessions = self.sessions.lock().ok();
-        sessions.map(|s| {
-            s.values()
-                .filter(|info| info.id == *s.keys().find(|k| s.get(*k).map(|i| i.id == **k).unwrap_or(false)).unwrap_or(&String::new()))
-                .count()
-        }).unwrap_or(0)
+        sessions
+            .map(|s| {
+                s.values()
+                    .filter(|info| {
+                        info.id
+                            == *s
+                                .keys()
+                                .find(|k| s.get(*k).map(|i| i.id == **k).unwrap_or(false))
+                                .unwrap_or(&String::new())
+                    })
+                    .count()
+            })
+            .unwrap_or(0)
     }
 
     /// 获取会话管理器的共享引用
@@ -265,10 +280,7 @@ impl SessionManager {
 
             let kill_succeeded = match output {
                 Ok(o) if o.status.success() => {
-                    tracing::info!(
-                        "[SessionManager] taskkill 成功终止进程树 PID={}",
-                        pid
-                    );
+                    tracing::info!("[SessionManager] taskkill 成功终止进程树 PID={}", pid);
                     true
                 }
                 Ok(o) => {
@@ -299,10 +311,7 @@ impl SessionManager {
 
             if kill_succeeded {
                 self.remove(session_id);
-                tracing::info!(
-                    "[SessionManager] session {} 已从 map 移除",
-                    session_id
-                );
+                tracing::info!("[SessionManager] session {} 已从 map 移除", session_id);
                 return Ok(true);
             }
             // taskkill 命令本身失败 -> 不撒谎,让上层兜底重试
@@ -344,10 +353,7 @@ impl SessionManager {
 
             if kill_succeeded {
                 self.remove(session_id);
-                tracing::info!(
-                    "[SessionManager] session {} 已从 map 移除",
-                    session_id
-                );
+                tracing::info!("[SessionManager] session {} 已从 map 移除", session_id);
                 return Ok(true);
             }
             Ok(false)

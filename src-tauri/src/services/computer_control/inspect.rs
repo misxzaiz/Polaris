@@ -86,9 +86,11 @@ pub fn find_element_info(
     }
     if let Some(aid) = automation_id {
         let aid = aid.to_string();
-        matcher = matcher.filter_fn(Box::new(move |e: &UIElement| -> uiautomation::Result<bool> {
-            Ok(e.get_automation_id().map(|x| x == aid).unwrap_or(false))
-        }));
+        matcher = matcher.filter_fn(Box::new(
+            move |e: &UIElement| -> uiautomation::Result<bool> {
+                Ok(e.get_automation_id().map(|x| x == aid).unwrap_or(false))
+            },
+        ));
     }
     let element = matcher
         .find_first()
@@ -133,9 +135,11 @@ fn find_element(
     }
     if let Some(aid) = automation_id {
         let aid = aid.to_string();
-        matcher = matcher.filter_fn(Box::new(move |e: &UIElement| -> uiautomation::Result<bool> {
-            Ok(e.get_automation_id().map(|x| x == aid).unwrap_or(false))
-        }));
+        matcher = matcher.filter_fn(Box::new(
+            move |e: &UIElement| -> uiautomation::Result<bool> {
+                Ok(e.get_automation_id().map(|x| x == aid).unwrap_or(false))
+            },
+        ));
     }
     matcher
         .find_first()
@@ -157,9 +161,14 @@ fn walk(
     if depth < max_depth {
         if let Ok(mut child) = walker.get_first_child(element) {
             loop {
-                if let Some(child_json) =
-                    walk(walker, &child, max_depth, sibling_cap, interactable_only, depth + 1)
-                {
+                if let Some(child_json) = walk(
+                    walker,
+                    &child,
+                    max_depth,
+                    sibling_cap,
+                    interactable_only,
+                    depth + 1,
+                ) {
                     children.push(child_json);
                 }
                 if children.len() >= sibling_cap {

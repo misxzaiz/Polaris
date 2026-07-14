@@ -20,11 +20,21 @@ pub(super) fn approx_token_count(text: &str) -> usize {
     (text.chars().count() + 3) / 4
 }
 
-/// 将历史中超过 `per_msg_token_cap` 的 assistant 文本输出逐条截断，保留头部并加标注。
+/// 构建仅用于 wire request 的历史投影。原始 session 消息永不被修改。
+pub(super) fn project_history_for_request(
+    messages: &[Value],
+    per_msg_token_cap: usize,
+) -> Vec<Value> {
+    let mut projected = messages.to_vec();
+    truncate_history_assistant_outputs(&mut projected, per_msg_token_cap);
+    projected
+}
+
+/// 将投影中超过 `per_msg_token_cap` 的 assistant 文本输出逐条截断，保留头部并加标注。
 ///
 /// 仅处理 `role == "assistant"` 且 `content` 为字符串者；不增删消息、不改顺序、
 /// 不触碰 `tool_calls` 字段，也不动 user / tool / system 消息。
-pub(super) fn truncate_history_assistant_outputs(messages: &mut [Value], per_msg_token_cap: usize) {
+fn truncate_history_assistant_outputs(messages: &mut [Value], per_msg_token_cap: usize) {
     if per_msg_token_cap == 0 {
         return;
     }
@@ -124,5 +134,16 @@ mod tests {
         })];
         truncate_history_assistant_outputs(&mut msgs, 1);
         assert_eq!(msgs[0]["content"], Value::Null);
+    }
+
+    #[test]
+    fn request_projection_never_mutates_original_history() {
+        let original = vec![json!({ "role": "assistant", "content": "x".repeat(1000) })];
+        let projected = project_history_for_request(&original, 10);
+        assert_eq!(original[0]["content"].as_str().unwrap().len(), 1000);
+        assert!(projected[0]["content"]
+            .as_str()
+            .unwrap()
+            .contains("truncated"));
     }
 }

@@ -109,7 +109,11 @@ fn handle_request(request: JsonRpcRequest, config: &AskMcpConfig) -> JsonRpcResp
     let id = request.id.unwrap_or(Value::Null);
 
     if request.jsonrpc != "2.0" {
-        return error_response(id, -32600, "Invalid Request: jsonrpc must be 2.0".to_string());
+        return error_response(
+            id,
+            -32600,
+            "Invalid Request: jsonrpc must be 2.0".to_string(),
+        );
     }
 
     let result = match request.method.as_str() {
@@ -293,8 +297,7 @@ fn request_answer_via_tcp(port: u16, ask_frame: &Value) -> Result<Value> {
 /// Write a length-prefixed JSON frame: u32 LE length + UTF-8 bytes.
 fn write_frame(stream: &mut TcpStream, value: &Value) -> Result<()> {
     let body = serde_json::to_vec(value)?;
-    let len = u32::try_from(body.len())
-        .map_err(|_| AppError::ProcessError("帧体过大".into()))?;
+    let len = u32::try_from(body.len()).map_err(|_| AppError::ProcessError("帧体过大".into()))?;
     stream.write_all(&len.to_le_bytes())?;
     stream.write_all(&body)?;
     stream.flush()?;
@@ -337,11 +340,12 @@ mod tests {
         let v = handle_tools_list();
         let tools = v.get("tools").and_then(|t| t.as_array()).unwrap();
         assert_eq!(tools.len(), 1);
-        assert_eq!(tools[0].get("name").and_then(|s| s.as_str()), Some(TOOL_NAME));
+        assert_eq!(
+            tools[0].get("name").and_then(|s| s.as_str()),
+            Some(TOOL_NAME)
+        );
         let schema = tools[0].get("inputSchema").unwrap();
-        let q = schema
-            .pointer("/properties/questions")
-            .unwrap();
+        let q = schema.pointer("/properties/questions").unwrap();
         assert_eq!(q.get("minItems").and_then(|v| v.as_u64()), Some(1));
         assert_eq!(q.get("maxItems").and_then(|v| v.as_u64()), Some(4));
         let opts = q.pointer("/items/properties/options").unwrap();

@@ -1,10 +1,10 @@
 /*! bash 工具：执行 shell 命令 */
 
+use serde_json::{json, Value};
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 use std::path::Path;
-use serde_json::{json, Value};
 
 use super::{truncate_chars, Tool, ToolContext, ToolOutcome};
 
@@ -114,7 +114,8 @@ fn detect_shell_windows() -> (&'static str, Option<String>) {
         }
     }
     // 2. 尝试 PowerShell
-    let pwsh_path = std::path::Path::new("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe");
+    let pwsh_path =
+        std::path::Path::new("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe");
     if pwsh_path.exists() {
         return ("pwsh", Some(pwsh_path.to_string_lossy().to_string()));
     }
@@ -270,10 +271,12 @@ fn run_bash(command: &str, workdir: Option<&str>, default_dir: &str) -> ToolOutc
             } else if shell_name == "pwsh" {
                 "[Shell hint] Exit code 127: command not found. The shell is PowerShell 5.1. \
                  Use PowerShell syntax (Get-Content, Select-String, Get-ChildItem) or \
-                 dedicated tools (search_files, glob, read_file, edit_file).]".to_string()
+                 dedicated tools (search_files, glob, read_file, edit_file).]"
+                    .to_string()
             } else {
                 "[Shell hint] Exit code 127: command not found. The shell is cmd.exe; \
-                 POSIX commands are not available. Use dedicated tools or install Git Bash.]".to_string()
+                 POSIX commands are not available. Use dedicated tools or install Git Bash.]"
+                    .to_string()
             };
             if exit_code == 127 {
                 if !result.is_empty() {
@@ -299,7 +302,10 @@ fn run_bash(command: &str, workdir: Option<&str>, default_dir: &str) -> ToolOutc
                 ToolOutcome::fail(content)
             }
         }
-        Err(e) => ToolOutcome::fail(format!("Failed to execute command with {}: {}", shell_name, e)),
+        Err(e) => ToolOutcome::fail(format!(
+            "Failed to execute command with {}: {}",
+            shell_name, e
+        )),
     }
 }
 

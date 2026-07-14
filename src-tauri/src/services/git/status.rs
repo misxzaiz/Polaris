@@ -8,9 +8,9 @@ use std::collections::HashMap;
 use std::path::Path;
 use tracing::{debug, info, warn};
 
-use crate::models::git::{GitFileChange, GitFileStatus, GitRepositoryStatus};
 use super::executor::open_repository;
 use super::utils::{FileStatusFlags, FileStatusInfo};
+use crate::models::git::{GitFileChange, GitFileStatus, GitRepositoryStatus};
 
 /// 文件状态集合
 ///
@@ -48,7 +48,8 @@ pub fn get_status(path: &Path) -> Result<GitRepositoryStatus, crate::models::git
     // 获取 HEAD 信息 - 处理引用不存在的情况
     let (branch, commit, short_commit) = if is_empty {
         // 空仓库：通过 HEAD 引用的 symbolic_target 获取分支名
-        let branch_name = repo.find_reference("HEAD")
+        let branch_name = repo
+            .find_reference("HEAD")
             .ok()
             .and_then(|r| r.symbolic_target().map(|s| s.to_string()))
             .and_then(|s| {
@@ -110,9 +111,7 @@ pub fn get_status(path: &Path) -> Result<GitRepositoryStatus, crate::models::git
 }
 
 /// 解析文件状态（重构版：合并多状态条目）
-fn parse_statuses(
-    repo: &Repository,
-) -> Result<FileStatuses, crate::models::git::GitServiceError> {
+fn parse_statuses(repo: &Repository) -> Result<FileStatuses, crate::models::git::GitServiceError> {
     let mut opts = StatusOptions::new();
     opts.include_untracked(true)
         .include_ignored(false)
@@ -148,10 +147,12 @@ fn parse_statuses(
         );
 
         // 获取或创建文件状态信息
-        let info = file_map.entry(path.clone()).or_insert_with(|| FileStatusInfo {
-            path: path.clone(),
-            flags: FileStatusFlags::empty(),
-        });
+        let info = file_map
+            .entry(path.clone())
+            .or_insert_with(|| FileStatusInfo {
+                path: path.clone(),
+                flags: FileStatusFlags::empty(),
+            });
 
         // 合并索引状态
         if status.is_index_new() {
@@ -318,10 +319,9 @@ fn get_ahead_behind(
         let branch_oid = branch.get().target().ok_or_else(|| {
             crate::models::git::GitServiceError::BranchNotFound(branch_name.to_string())
         })?;
-        let upstream_oid = upstream_branch
-            .get()
-            .target()
-            .ok_or_else(|| crate::models::git::GitServiceError::BranchNotFound("upstream".to_string()))?;
+        let upstream_oid = upstream_branch.get().target().ok_or_else(|| {
+            crate::models::git::GitServiceError::BranchNotFound("upstream".to_string())
+        })?;
 
         Ok(repo.graph_ahead_behind(branch_oid, upstream_oid)?)
     } else {

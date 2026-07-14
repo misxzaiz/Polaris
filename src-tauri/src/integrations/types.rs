@@ -135,7 +135,9 @@ impl IntegrationMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum MessageContent {
-    Text { text: String },
+    Text {
+        text: String,
+    },
     Image {
         url: String,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -143,7 +145,11 @@ pub enum MessageContent {
         #[serde(skip_serializing_if = "Option::is_none")]
         local_path: Option<String>,
     },
-    File { name: String, url: String, size: u64 },
+    File {
+        name: String,
+        url: String,
+        size: u64,
+    },
     Audio {
         url: String,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -151,7 +157,9 @@ pub enum MessageContent {
         #[serde(skip_serializing_if = "Option::is_none")]
         transcript: Option<String>,
     },
-    Mixed { items: Vec<MessageContent> },
+    Mixed {
+        items: Vec<MessageContent>,
+    },
 }
 
 impl MessageContent {
@@ -164,9 +172,7 @@ impl MessageContent {
     pub fn as_text(&self) -> Option<&str> {
         match self {
             MessageContent::Text { text } => Some(text),
-            MessageContent::Mixed { items } => items
-                .iter()
-                .find_map(|item| item.as_text()),
+            MessageContent::Mixed { items } => items.iter().find_map(|item| item.as_text()),
             _ => None,
         }
     }
@@ -269,7 +275,11 @@ impl IntegrationStatus {
         self
     }
 
-    pub fn with_error_detail(mut self, error: impl Into<String>, detail: impl Into<String>) -> Self {
+    pub fn with_error_detail(
+        mut self,
+        error: impl Into<String>,
+        detail: impl Into<String>,
+    ) -> Self {
         self.error = Some(error.into());
         self.error_detail = Some(detail.into());
         self.connection_state = ConnectionState::Failed;

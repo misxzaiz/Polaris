@@ -9,7 +9,9 @@ use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
 use crate::error::Result;
-use crate::models::scheduler::{CreateTaskParams, ScheduledTask, TaskCategory, TaskMode, TriggerType};
+use crate::models::scheduler::{
+    CreateTaskParams, ScheduledTask, TaskCategory, TaskMode, TriggerType,
+};
 use crate::services::scheduler::protocol_task::ProtocolTaskService;
 use crate::services::scheduler::TaskUpdateParams;
 use crate::services::unified_scheduler_repository::UnifiedSchedulerRepository;
@@ -27,7 +29,10 @@ fn get_config_dir(app: &AppHandle) -> Result<PathBuf> {
 }
 
 #[cfg(feature = "tauri-app")]
-fn get_repository(app: &AppHandle, workspace_path: Option<String>) -> Result<UnifiedSchedulerRepository> {
+fn get_repository(
+    app: &AppHandle,
+    workspace_path: Option<String>,
+) -> Result<UnifiedSchedulerRepository> {
     let config_dir = get_config_dir(app)?;
     let workspace_path = workspace_path
         .filter(|p| !p.trim().is_empty())
@@ -81,17 +86,18 @@ pub async fn scheduler_create_task(
 
         // 创建协议任务文档结构
         let task_path = ProtocolTaskService::create_task_structure(
-            &work_dir,
-            &task.id,
-            &mission,
-            None, // TODO: 支持模板内容
-        ).map_err(crate::error::AppError::IoError)?;
+            &work_dir, &task.id, &mission, None, // TODO: 支持模板内容
+        )
+        .map_err(crate::error::AppError::IoError)?;
 
         // 更新任务的 task_path
-        task = repository.update_task(&task.id, TaskUpdateParams {
-            task_path: Some(task_path),
-            ..Default::default()
-        })?;
+        task = repository.update_task(
+            &task.id,
+            TaskUpdateParams {
+                task_path: Some(task_path),
+                ..Default::default()
+            },
+        )?;
     }
 
     Ok(task)
@@ -106,34 +112,37 @@ pub async fn scheduler_update_task(
     app: AppHandle,
 ) -> Result<ScheduledTask> {
     let repository = get_repository(&app, workspace_path)?;
-    repository.update_task(&task.id, TaskUpdateParams {
-        name: Some(task.name),
-        enabled: Some(task.enabled),
-        trigger_type: Some(task.trigger_type),
-        trigger_value: Some(task.trigger_value),
-        engine_id: Some(task.engine_id),
-        prompt: Some(task.prompt),
-        work_dir: task.work_dir,
-        description: task.description,
-        // === 任务模式 ===
-        mode: Some(task.mode),
-        category: Some(task.category),
-        // === 协议模式属性 ===
-        mission: task.mission,
-        template_id: task.template_id,
-        template_params: task.template_params,
-        // === 执行控制 ===
-        max_runs: task.max_runs,
-        current_runs: Some(task.current_runs),
-        max_retries: task.max_retries,
-        retry_count: Some(task.retry_count),
-        retry_interval: task.retry_interval,
-        timeout_minutes: task.timeout_minutes,
-        // === 其他 ===
-        group: task.group,
-        notify_on_complete: Some(task.notify_on_complete),
-        ..Default::default()
-    })
+    repository.update_task(
+        &task.id,
+        TaskUpdateParams {
+            name: Some(task.name),
+            enabled: Some(task.enabled),
+            trigger_type: Some(task.trigger_type),
+            trigger_value: Some(task.trigger_value),
+            engine_id: Some(task.engine_id),
+            prompt: Some(task.prompt),
+            work_dir: task.work_dir,
+            description: task.description,
+            // === 任务模式 ===
+            mode: Some(task.mode),
+            category: Some(task.category),
+            // === 协议模式属性 ===
+            mission: task.mission,
+            template_id: task.template_id,
+            template_params: task.template_params,
+            // === 执行控制 ===
+            max_runs: task.max_runs,
+            current_runs: Some(task.current_runs),
+            max_retries: task.max_retries,
+            retry_count: Some(task.retry_count),
+            retry_interval: task.retry_interval,
+            timeout_minutes: task.timeout_minutes,
+            // === 其他 ===
+            group: task.group,
+            notify_on_complete: Some(task.notify_on_complete),
+            ..Default::default()
+        },
+    )
 }
 
 /// 删除任务
@@ -333,13 +342,12 @@ pub async fn scheduler_start(app: AppHandle) -> Result<SchedulerStatus> {
             tracing::info!("[Scheduler] 调度器启动成功，已获取锁");
 
             // 启动后台守护进程
-            let config_dir = app.path()
-                .app_config_dir()
-                .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
+            let config_dir = app.path().app_config_dir().map_err(|e| {
+                crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e))
+            })?;
 
             let mut daemon = crate::services::scheduler_daemon::SchedulerDaemon::new(
-                config_dir,
-                None, // workspace_path
+                config_dir, None, // workspace_path
             );
 
             daemon.start(app.clone())?;
@@ -371,7 +379,10 @@ pub async fn scheduler_start(app: AppHandle) -> Result<SchedulerStatus> {
         }
         Err(e) => {
             tracing::error!("[Scheduler] 启动失败: {}", e);
-            Err(crate::error::AppError::ProcessError(format!("启动调度器失败: {}", e)))
+            Err(crate::error::AppError::ProcessError(format!(
+                "启动调度器失败: {}",
+                e
+            )))
         }
     }
 }
@@ -419,7 +430,10 @@ pub async fn scheduler_stop(app: AppHandle) -> Result<SchedulerStatus> {
         }
         Err(e) => {
             tracing::error!("[Scheduler] 停止失败: {}", e);
-            Err(crate::error::AppError::ProcessError(format!("停止调度器失败: {}", e)))
+            Err(crate::error::AppError::ProcessError(format!(
+                "停止调度器失败: {}",
+                e
+            )))
         }
     }
 }
@@ -638,10 +652,7 @@ pub async fn scheduler_update_memory_tasks(
 
 /// 清空用户补充（处理完成后）
 #[cfg_attr(feature = "tauri-app", tauri::command)]
-pub async fn scheduler_clear_supplement(
-    task_path: String,
-    work_dir: String,
-) -> Result<()> {
+pub async fn scheduler_clear_supplement(task_path: String, work_dir: String) -> Result<()> {
     ProtocolTaskService::clear_supplement(&work_dir, &task_path)
         .map_err(crate::error::AppError::IoError)
 }
@@ -666,8 +677,14 @@ pub async fn scheduler_backup_document(
     content: String,
     summary: Option<String>,
 ) -> Result<String> {
-    ProtocolTaskService::backup_document(&work_dir, &task_path, &doc_name, &content, summary.as_deref())
-        .map_err(crate::error::AppError::IoError)
+    ProtocolTaskService::backup_document(
+        &work_dir,
+        &task_path,
+        &doc_name,
+        &content,
+        summary.as_deref(),
+    )
+    .map_err(crate::error::AppError::IoError)
 }
 
 /// 检查用户补充是否有内容
@@ -704,9 +721,7 @@ fn get_template_service(app: &AppHandle) -> Result<ProtocolTemplateService> {
 /// 列出所有协议模板（内置 + 自定义）
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn scheduler_list_protocol_templates(
-    app: AppHandle,
-) -> Result<Vec<ProtocolTemplate>> {
+pub async fn scheduler_list_protocol_templates(app: AppHandle) -> Result<Vec<ProtocolTemplate>> {
     let service = get_template_service(&app)?;
     service.list_templates()
 }
@@ -759,10 +774,7 @@ pub async fn scheduler_update_protocol_template(
 /// 删除自定义协议模板
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub async fn scheduler_delete_protocol_template(
-    id: String,
-    app: AppHandle,
-) -> Result<bool> {
+pub async fn scheduler_delete_protocol_template(id: String, app: AppHandle) -> Result<bool> {
     let service = get_template_service(&app)?;
     service.delete_template(&id)
 }
@@ -792,10 +804,7 @@ pub fn scheduler_render_protocol_document(
 ///
 /// 读取协议文档、用户补充、记忆文件，组合成完整的 prompt
 #[cfg_attr(feature = "tauri-app", tauri::command)]
-pub fn scheduler_build_protocol_prompt(
-    task_path: String,
-    work_dir: String,
-) -> Result<String> {
+pub fn scheduler_build_protocol_prompt(task_path: String, work_dir: String) -> Result<String> {
     // 读取所有协议文档
     let protocol = ProtocolTaskService::read_protocol(&work_dir, &task_path)
         .map_err(crate::error::AppError::IoError)?;

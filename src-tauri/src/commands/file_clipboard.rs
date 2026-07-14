@@ -32,8 +32,8 @@ mod platform {
     use std::ptr::copy_nonoverlapping;
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::System::DataExchange::{
-        CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
-        RegisterClipboardFormatW, SetClipboardData,
+        CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable,
+        OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
     };
     use windows_sys::Win32::System::Memory::{
         GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE, GMEM_ZEROINIT,
@@ -160,7 +160,9 @@ mod platform {
             let dropfiles = locked as *const DROPFILES;
             if (*dropfiles).fWide == 0 {
                 GlobalUnlock(hdrop);
-                return Err(AppError::Unknown("暂不支持非 Unicode 文件剪贴板".to_string()));
+                return Err(AppError::Unknown(
+                    "暂不支持非 Unicode 文件剪贴板".to_string(),
+                ));
             }
 
             let total_size = GlobalSize(hdrop);
@@ -235,8 +237,13 @@ mod platform {
     use super::{FileClipboardOperation, SystemFileClipboard};
     use crate::error::{AppError, Result};
 
-    pub fn set_file_clipboard(_paths: Vec<String>, _operation: FileClipboardOperation) -> Result<()> {
-        Err(AppError::Unknown("系统文件剪贴板暂仅支持 Windows".to_string()))
+    pub fn set_file_clipboard(
+        _paths: Vec<String>,
+        _operation: FileClipboardOperation,
+    ) -> Result<()> {
+        Err(AppError::Unknown(
+            "系统文件剪贴板暂仅支持 Windows".to_string(),
+        ))
     }
 
     pub fn get_file_clipboard() -> Result<Option<SystemFileClipboard>> {
@@ -245,7 +252,10 @@ mod platform {
 }
 
 #[cfg_attr(feature = "tauri-app", tauri::command)]
-pub async fn set_file_clipboard(paths: Vec<String>, operation: FileClipboardOperation) -> Result<()> {
+pub async fn set_file_clipboard(
+    paths: Vec<String>,
+    operation: FileClipboardOperation,
+) -> Result<()> {
     platform::set_file_clipboard(paths, operation)
 }
 

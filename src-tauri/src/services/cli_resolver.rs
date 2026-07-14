@@ -7,8 +7,8 @@
 //! - v2.1.122+: `bin/claude.exe` 原生二进制（直接执行，无需 Node.js）
 //! - v2.1.98 及更早: `cli.js` Node.js 脚本（需要 node.exe + cli.js）
 
-use std::process::Command;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use crate::error::{AppError, Result};
 
@@ -94,7 +94,10 @@ pub fn detect_cli_type(cli_path: &str) -> Result<CliType> {
 
     // 提前检查路径是否存在
     if !path.exists() {
-        return Err(AppError::ProcessError(format!("CLI 路径不存在: {}", cli_path)));
+        return Err(AppError::ProcessError(format!(
+            "CLI 路径不存在: {}",
+            cli_path
+        )));
     }
 
     // 情况 1: 如果是 .exe 文件且不在 node_modules 中，可能是独立可执行文件
@@ -124,7 +127,10 @@ pub fn detect_cli_type(cli_path: &str) -> Result<CliType> {
         });
     }
 
-    Ok(CliType::NpmWrapper { node_exe: _node_exe, cli_js: cli_target })
+    Ok(CliType::NpmWrapper {
+        node_exe: _node_exe,
+        cli_js: cli_target,
+    })
 }
 
 /// 判断一个 exe 文件是否可能是独立的 Claude Code
@@ -132,9 +138,7 @@ pub fn detect_cli_type(cli_path: &str) -> Result<CliType> {
 pub fn is_likely_standalone_exe(exe_path: &str) -> bool {
     // 策略 1: 检查文件名是否包含 "claude"
     let path = Path::new(exe_path);
-    let file_name = path.file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("");
+    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
     if !file_name.to_lowercase().contains("claude") {
         return false;
@@ -154,7 +158,11 @@ pub fn is_likely_standalone_exe(exe_path: &str) -> bool {
 
     // 策略 3: 检查同一目录下是否有 node_modules/@anthropic-ai/claude-code
     if let Some(parent) = path.parent() {
-        let has_node_modules = parent.join("node_modules").join("@anthropic-ai").join("claude-code").exists();
+        let has_node_modules = parent
+            .join("node_modules")
+            .join("@anthropic-ai")
+            .join("claude-code")
+            .exists();
         if !has_node_modules {
             // 没有 node_modules，可能是独立可执行文件
             return true;
@@ -171,10 +179,14 @@ pub fn is_likely_standalone_exe(exe_path: &str) -> bool {
 #[cfg(windows)]
 fn resolve_node_and_cli(claude_cmd_path: &str) -> Result<(String, String)> {
     let cmd_path = Path::new(claude_cmd_path);
-    let cmd_parent = cmd_path.parent()
+    let cmd_parent = cmd_path
+        .parent()
         .ok_or_else(|| AppError::ProcessError("无法获取 claude.cmd 的父目录".to_string()))?;
 
-    tracing::info!("[CliResolver] 解析 node 和 cli.js，基础路径: {:?}", cmd_parent);
+    tracing::info!(
+        "[CliResolver] 解析 node 和 cli.js，基础路径: {:?}",
+        cmd_parent
+    );
 
     // 1. 尝试查找 node.exe
     let node_exe = find_node_exe(cmd_parent)?;
@@ -228,7 +240,9 @@ fn find_node_exe(base_dir: &Path) -> Result<String> {
         }
     }
 
-    Err(AppError::ProcessError("无法找到 node.exe，请确保 Node.js 已安装".to_string()))
+    Err(AppError::ProcessError(
+        "无法找到 node.exe，请确保 Node.js 已安装".to_string(),
+    ))
 }
 
 #[cfg(windows)]
@@ -315,7 +329,9 @@ fn find_cli_binary(base_dir: &Path, node_exe_path: &str) -> Result<String> {
             .join("claude-code");
         let pnpm_binary = pnpm_pkg.join("bin").join("claude.exe");
         if pnpm_binary.exists() {
-            tracing::info!("[CliResolver] 在 LOCALAPPDATA\\pnpm\\global\\node_modules 找到 bin/claude.exe");
+            tracing::info!(
+                "[CliResolver] 在 LOCALAPPDATA\\pnpm\\global\\node_modules 找到 bin/claude.exe"
+            );
             return Ok(pnpm_binary.to_string_lossy().to_string());
         }
         let pnpm_default = pnpm_pkg.join("cli.js");
@@ -419,7 +435,8 @@ fn find_cli_binary(base_dir: &Path, node_exe_path: &str) -> Result<String> {
         "无法找到 Claude Code。请确保已安装:\n\
         npm install -g @anthropic-ai/claude-code\n\
         或\n\
-        pnpm add -g @anthropic-ai/claude-code".to_string(),
+        pnpm add -g @anthropic-ai/claude-code"
+            .to_string(),
     ))
 }
 
@@ -506,7 +523,11 @@ mod tests {
         match result.unwrap() {
             CliType::NpmWrapper { node_exe, cli_js } => {
                 assert!(node_exe.ends_with("node.exe"), "node_exe 应指向 node.exe");
-                assert!(cli_js.ends_with("cli.js"), "cli_js 应指向 cli.js，实际: {}", cli_js);
+                assert!(
+                    cli_js.ends_with("cli.js"),
+                    "cli_js 应指向 cli.js，实际: {}",
+                    cli_js
+                );
             }
             CliType::Standalone { .. } => {
                 panic!("仅有 cli.js 应被识别为 NpmWrapper，不应是 Standalone");

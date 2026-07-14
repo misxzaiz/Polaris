@@ -1,9 +1,7 @@
 //! 快捷片段 Tauri 命令
 
 use crate::error::{AppError, Result};
-use crate::models::prompt_snippet::{
-    CreateSnippetParams, PromptSnippet, UpdateSnippetParams,
-};
+use crate::models::prompt_snippet::{CreateSnippetParams, PromptSnippet, UpdateSnippetParams};
 use crate::services::prompt_snippet_service::PromptSnippetService;
 #[cfg(feature = "tauri-app")]
 use tauri::{AppHandle, Manager};

@@ -117,8 +117,12 @@ impl McpClient {
             "clientInfo": { "name": "polaris-simple-ai", "version": "1.0" }
         });
         let result_value = self.call_method("initialize", Some(params)).await?;
-        let init: InitializeResult = serde_json::from_value(result_value)
-            .map_err(|e| AppError::ProcessError(format!("parse initialize from '{}': {}", self.server_name, e)))?;
+        let init: InitializeResult = serde_json::from_value(result_value).map_err(|e| {
+            AppError::ProcessError(format!(
+                "parse initialize from '{}': {}",
+                self.server_name, e
+            ))
+        })?;
         if let Some(pv) = init.protocol_version.as_deref() {
             tracing::info!(
                 "[SimpleAI-MCP] '{}' 协商协议版本: {}（client 请求 2025-06-18）",
@@ -152,10 +156,9 @@ impl McpClient {
                 .write_all(line.as_bytes())
                 .await
                 .map_err(|e| AppError::ProcessError(format!("write to MCP stdin: {}", e)))?;
-            stdin
-                .write_all(b"\n")
-                .await
-                .map_err(|e| AppError::ProcessError(format!("write newline to MCP stdin: {}", e)))?;
+            stdin.write_all(b"\n").await.map_err(|e| {
+                AppError::ProcessError(format!("write newline to MCP stdin: {}", e))
+            })?;
             stdin
                 .flush()
                 .await

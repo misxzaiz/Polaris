@@ -29,6 +29,8 @@ export interface DialogMeta {
   type: 'meta'
   /** 外部会话 ID（= 前端 conversationId，文件名也用它） */
   externalId: string
+  /** Polaris 稳定可视对话 ID；SimpleAI checkpoint 以此为键，runtime 重建时保持不变。 */
+  stableConversationId?: string
   /** AI 引擎 */
   engineId: EngineId
   /** 会话标题 */
@@ -79,6 +81,7 @@ export type DialogSummary = DialogMeta
 /** 保存会话的输入参数 */
 export interface SaveDialogInput {
   externalId: string
+  stableConversationId?: string
   engineId: EngineId
   title: string
   workspaceId?: string | null

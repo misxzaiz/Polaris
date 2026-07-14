@@ -15,12 +15,12 @@ use tauri::Emitter;
 use tokio::sync::{mpsc::Sender, RwLock};
 use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
 
-use crate::error::{AppError, Result};
-use crate::models::config::FeishuRuntimeConfig;
 use super::super::common::MessageDedup;
 use super::super::traits::PlatformIntegration;
 use super::super::types::*;
-use super::frame::{Frame, ClientConfig, MESSAGE_TYPE_EVENT};
+use super::frame::{ClientConfig, Frame, MESSAGE_TYPE_EVENT};
+use crate::error::{AppError, Result};
+use crate::models::config::FeishuRuntimeConfig;
 
 /// 飞书 API 基础 URL
 const FEISHU_API_BASE: &str = "https://open.feishu.cn";
@@ -117,7 +117,10 @@ impl FeishuAdapter {
         let client = reqwest::Client::new();
 
         let response = client
-            .post(format!("{}/open-apis/auth/v3/tenant_access_token/internal/", FEISHU_API_BASE))
+            .post(format!(
+                "{}/open-apis/auth/v3/tenant_access_token/internal/",
+                FEISHU_API_BASE
+            ))
             .json(&serde_json::json!({
                 "app_id": self.config.app_id,
                 "app_secret": self.config.app_secret
@@ -128,7 +131,10 @@ impl FeishuAdapter {
 
         if !response.status().is_success() {
             let error = response.text().await.unwrap_or_default();
-            return Err(AppError::AuthError(format!("获取 Tenant Access Token 失败: {}", error)));
+            return Err(AppError::AuthError(format!(
+                "获取 Tenant Access Token 失败: {}",
+                error
+            )));
         }
 
         let data: serde_json::Value = response
@@ -138,8 +144,14 @@ impl FeishuAdapter {
 
         let code = data.get("code").and_then(|v| v.as_i64()).unwrap_or(-1);
         if code != 0 {
-            let msg = data.get("msg").and_then(|v| v.as_str()).unwrap_or("unknown");
-            return Err(AppError::AuthError(format!("飞书认证失败: code={}, msg={}", code, msg)));
+            let msg = data
+                .get("msg")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            return Err(AppError::AuthError(format!(
+                "飞书认证失败: code={}, msg={}",
+                code, msg
+            )));
         }
 
         self.access_token = data
@@ -147,21 +159,24 @@ impl FeishuAdapter {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        let expire = data
-            .get("expire")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(7200);
+        let expire = data.get("expire").and_then(|v| v.as_i64()).unwrap_or(7200);
 
         // 提前 5 分钟过期
         self.token_expire_at = chrono::Utc::now().timestamp() + expire - 300;
 
         if let Some(ref token) = self.access_token {
             let preview: String = token.chars().take(8).collect();
-            tracing::info!("[Feishu] ✅ Tenant access token obtained: {}..., expires in {}s", preview, expire);
+            tracing::info!(
+                "[Feishu] ✅ Tenant access token obtained: {}..., expires in {}s",
+                preview,
+                expire
+            );
         }
 
         if self.access_token.is_none() {
-            return Err(AppError::AuthError("响应中没有 tenant_access_token".to_string()));
+            return Err(AppError::AuthError(
+                "响应中没有 tenant_access_token".to_string(),
+            ));
         }
 
         Ok(())
@@ -203,7 +218,8 @@ impl FeishuAdapter {
             let status = response.status();
             let error = response.text().await.unwrap_or_default();
             return Err(AppError::ApiError(format!(
-                "获取 WebSocket 端点失败: HTTP {}, body={}", status, error
+                "获取 WebSocket 端点失败: HTTP {}, body={}",
+                status, error
             )));
         }
 
@@ -214,7 +230,10 @@ impl FeishuAdapter {
 
         let code = data.get("code").and_then(|v| v.as_i64()).unwrap_or(-1);
         if code != 0 {
-            let msg = data.get("msg").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let msg = data
+                .get("msg")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
 
             // 针对常见错误码提供详细指引
             let hint = match code {
@@ -237,10 +256,16 @@ impl FeishuAdapter {
         // 官方 SDK 响应字段为大写 "URL"（参见 ws/model.go Endpoint.Url 的 json tag）
         let url = data
             .get("data")
-            .and_then(|d| d.get("URL").or_else(|| d.get("url")).or_else(|| d.get("endpoint")))
+            .and_then(|d| {
+                d.get("URL")
+                    .or_else(|| d.get("url"))
+                    .or_else(|| d.get("endpoint"))
+            })
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
-            .ok_or_else(|| AppError::ApiError(format!("响应中没有 WebSocket 端点 URL: {}", data)))?;
+            .ok_or_else(|| {
+                AppError::ApiError(format!("响应中没有 WebSocket 端点 URL: {}", data))
+            })?;
 
         Ok((url, data))
     }
@@ -266,7 +291,10 @@ impl FeishuAdapter {
         }
 
         // 获取 chat_id 作为会话 ID
-        let chat_id = message.get("chat_id").and_then(|v| v.as_str()).unwrap_or("");
+        let chat_id = message
+            .get("chat_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         let conversation_id = format!("feishu_{}", chat_id);
 
         // 获取发送者 ID
@@ -292,8 +320,14 @@ impl FeishuAdapter {
             });
 
         // 解析消息内容
-        let msg_type = message.get("message_type").and_then(|v| v.as_str()).unwrap_or("text");
-        let content_str = message.get("content").and_then(|v| v.as_str()).unwrap_or("{}");
+        let msg_type = message
+            .get("message_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("text");
+        let content_str = message
+            .get("content")
+            .and_then(|v| v.as_str())
+            .unwrap_or("{}");
 
         let content = match msg_type {
             "text" => {
@@ -419,7 +453,9 @@ impl FeishuAdapter {
         resource_type: &str, // "image" 或 "file"
     ) -> Result<Vec<u8>> {
         let client = reqwest::Client::new();
-        let token = self.access_token.as_ref()
+        let token = self
+            .access_token
+            .as_ref()
             .ok_or_else(|| AppError::AuthError("未获取 access token".to_string()))?;
 
         let url = format!(
@@ -427,7 +463,11 @@ impl FeishuAdapter {
             FEISHU_API_BASE, message_id, resource_key, resource_type
         );
 
-        tracing::info!("[Feishu] 📥 下载资源: type={}, key={}", resource_type, resource_key);
+        tracing::info!(
+            "[Feishu] 📥 下载资源: type={}, key={}",
+            resource_type,
+            resource_key
+        );
 
         let response = client
             .get(&url)
@@ -440,11 +480,14 @@ impl FeishuAdapter {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             return Err(AppError::ApiError(format!(
-                "下载资源失败: HTTP {}, body={}", status, body
+                "下载资源失败: HTTP {}, body={}",
+                status, body
             )));
         }
 
-        let bytes = response.bytes().await
+        let bytes = response
+            .bytes()
+            .await
             .map_err(|e| AppError::NetworkError(e.to_string()))?;
 
         tracing::info!("[Feishu] ✅ 资源下载完成: {} bytes", bytes.len());
@@ -476,11 +519,17 @@ impl FeishuAdapter {
     }
 
     /// 发送消息到飞书
-    async fn send_feishu_message(&self, receive_id: &str, msg_type: &str, content: &str) -> Result<()> {
+    async fn send_feishu_message(
+        &self,
+        receive_id: &str,
+        msg_type: &str,
+        content: &str,
+    ) -> Result<()> {
         let client = reqwest::Client::new();
-        let token = self.access_token.as_ref().ok_or_else(|| {
-            AppError::AuthError("未认证".to_string())
-        })?;
+        let token = self
+            .access_token
+            .as_ref()
+            .ok_or_else(|| AppError::AuthError("未认证".to_string()))?;
 
         let url = format!(
             "{}/open-apis/im/v1/messages?receive_id_type=chat_id",
@@ -512,8 +561,14 @@ impl FeishuAdapter {
 
         let code = data.get("code").and_then(|v| v.as_i64()).unwrap_or(-1);
         if code != 0 {
-            let msg = data.get("msg").and_then(|v| v.as_str()).unwrap_or("unknown");
-            return Err(AppError::ApiError(format!("发送飞书消息失败: code={}, msg={}", code, msg)));
+            let msg = data
+                .get("msg")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            return Err(AppError::ApiError(format!(
+                "发送飞书消息失败: code={}, msg={}",
+                code, msg
+            )));
         }
 
         tracing::debug!("[Feishu] ✅ 消息已发送到 {}", receive_id);
@@ -549,7 +604,11 @@ impl PlatformIntegration for FeishuAdapter {
         self.update_state(ConnectionState::Connecting).await;
 
         if let Err(e) = self.ensure_valid_token().await {
-            self.set_error("获取 Tenant Access Token 失败".to_string(), Some(e.to_string())).await;
+            self.set_error(
+                "获取 Tenant Access Token 失败".to_string(),
+                Some(e.to_string()),
+            )
+            .await;
             return Err(e);
         }
         tracing::info!("[Feishu] ✅ Tenant Access Token 有效");
@@ -559,7 +618,8 @@ impl PlatformIntegration for FeishuAdapter {
         let (ws_url, endpoint_data) = match self.get_ws_endpoint().await {
             Ok(url) => url,
             Err(e) => {
-                self.set_error("获取 WebSocket 端点失败".to_string(), Some(e.to_string())).await;
+                self.set_error("获取 WebSocket 端点失败".to_string(), Some(e.to_string()))
+                    .await;
                 return Err(e);
             }
         };
@@ -580,13 +640,17 @@ impl PlatformIntegration for FeishuAdapter {
         let service_id = Frame::extract_service_id(&ws_url);
 
         // 6. 获取服务端下发的 ping 间隔（秒），默认 90s
-        let ping_interval = endpoint_data.get("data")
+        let ping_interval = endpoint_data
+            .get("data")
             .and_then(|d| d.get("ClientConfig"))
             .and_then(|cc| serde_json::from_value::<ClientConfig>(cc.clone()).ok())
             .map(|c| c.PingInterval)
             .unwrap_or(90);
         let ping_duration = tokio::time::Duration::from_secs(ping_interval);
-        tracing::info!("[Feishu] Ping interval: {}s (from ClientConfig)", ping_interval);
+        tracing::info!(
+            "[Feishu] Ping interval: {}s (from ClientConfig)",
+            ping_interval
+        );
 
         // 7. 克隆必要的数据
         let tx = message_tx.clone();
@@ -617,7 +681,10 @@ impl PlatformIntegration for FeishuAdapter {
                     if let Err(e) = write.send(WsMessage::Binary(ping.encode())).await {
                         tracing::error!("[Feishu] ❌ 初始 Ping 发送失败: {}", e);
                     } else {
-                        tracing::debug!("[Feishu] Initial Ping sent (service_id={})", current_service_id);
+                        tracing::debug!(
+                            "[Feishu] Initial Ping sent (service_id={})",
+                            current_service_id
+                        );
                     }
 
                     // 连接成功，标记 Ready
@@ -628,7 +695,7 @@ impl PlatformIntegration for FeishuAdapter {
                         state.error_detail = None;
                     }
 
-                        #[cfg(feature = "tauri-app")]
+                    #[cfg(feature = "tauri-app")]
                     if let Some(ref app_handle) = app_handle {
                         let status = IntegrationStatus {
                             platform: Platform::Feishu,
@@ -893,13 +960,24 @@ impl PlatformIntegration for FeishuAdapter {
             }
             Ok(Err(_)) => {
                 tracing::error!("[Feishu] ❌ READY 通道关闭");
-                self.set_error("鉴权超时".to_string(), Some("READY 通道意外关闭".to_string())).await;
+                self.set_error(
+                    "鉴权超时".to_string(),
+                    Some("READY 通道意外关闭".to_string()),
+                )
+                .await;
                 Err(AppError::AuthError("鉴权过程中发生错误".to_string()))
             }
             Err(_) => {
                 tracing::error!("[Feishu] ❌ 等待鉴权超时（{}秒）", CONNECT_TIMEOUT_SECS);
-                self.set_error("连接超时".to_string(), Some(format!("等待 {} 秒后超时", CONNECT_TIMEOUT_SECS))).await;
-                Err(AppError::AuthError(format!("连接超时（{}秒）", CONNECT_TIMEOUT_SECS)))
+                self.set_error(
+                    "连接超时".to_string(),
+                    Some(format!("等待 {} 秒后超时", CONNECT_TIMEOUT_SECS)),
+                )
+                .await;
+                Err(AppError::AuthError(format!(
+                    "连接超时（{}秒）",
+                    CONNECT_TIMEOUT_SECS
+                )))
             }
         }
     }
@@ -917,10 +995,7 @@ impl PlatformIntegration for FeishuAdapter {
 
         // 2. 等待任务结束
         if let Some(task) = self.ws_task.take() {
-            let result = tokio::time::timeout(
-                tokio::time::Duration::from_secs(3),
-                task,
-            ).await;
+            let result = tokio::time::timeout(tokio::time::Duration::from_secs(3), task).await;
 
             match result {
                 Ok(Ok(())) => {
@@ -988,7 +1063,8 @@ impl PlatformIntegration for FeishuAdapter {
         let mut results = Vec::new();
 
         for (key, type_param, fallback_name) in media_items {
-            let label = if fallback_name.starts_with("image") || fallback_name.starts_with("audio") {
+            let label = if fallback_name.starts_with("image") || fallback_name.starts_with("audio")
+            {
                 match type_param.as_str() {
                     "image" => "图片".to_string(),
                     _ => "语音".to_string(),
@@ -1000,7 +1076,10 @@ impl PlatformIntegration for FeishuAdapter {
             match self.download_resource(message_id, &key, &type_param).await {
                 Ok(bytes) => {
                     let timestamp = chrono::Utc::now().timestamp();
-                    let safe_name = fallback_name.replace(|c: char| !c.is_alphanumeric() && c != '.' && c != '-' && c != '_', "_");
+                    let safe_name = fallback_name.replace(
+                        |c: char| !c.is_alphanumeric() && c != '.' && c != '-' && c != '_',
+                        "_",
+                    );
                     let file_name = format!("{}_{}", timestamp, safe_name);
                     let file_path = save_dir.join(&file_name);
 
@@ -1014,13 +1093,19 @@ impl PlatformIntegration for FeishuAdapter {
                         }
                         Err(e) => {
                             tracing::error!("[Feishu] ❌ 写入文件失败: {}", e);
-                            results.push(MediaDownload { label, local_path: None });
+                            results.push(MediaDownload {
+                                label,
+                                local_path: None,
+                            });
                         }
                     }
                 }
                 Err(e) => {
                     tracing::error!("[Feishu] ❌ 下载资源失败: {}", e);
-                    results.push(MediaDownload { label, local_path: None });
+                    results.push(MediaDownload {
+                        label,
+                        local_path: None,
+                    });
                 }
             }
         }
@@ -1031,9 +1116,9 @@ impl PlatformIntegration for FeishuAdapter {
     async fn send(&mut self, target: SendTarget, content: MessageContent) -> Result<()> {
         self.ensure_valid_token().await?;
 
-        let text = content.as_text().ok_or_else(|| {
-            AppError::ValidationError("目前只支持发送文本消息".to_string())
-        })?;
+        let text = content
+            .as_text()
+            .ok_or_else(|| AppError::ValidationError("目前只支持发送文本消息".to_string()))?;
 
         match target {
             SendTarget::Conversation(ref conv_id) => {
@@ -1045,18 +1130,20 @@ impl PlatformIntegration for FeishuAdapter {
                 };
 
                 let content_json = serde_json::json!({"text": text}).to_string();
-                self.send_feishu_message(chat_id, "text", &content_json).await
+                self.send_feishu_message(chat_id, "text", &content_json)
+                    .await
             }
             SendTarget::Channel(ref chat_id) => {
                 let content_json = serde_json::json!({"text": text}).to_string();
-                self.send_feishu_message(chat_id, "text", &content_json).await
+                self.send_feishu_message(chat_id, "text", &content_json)
+                    .await
             }
-            SendTarget::User(ref _user_id) => {
-                Err(AppError::ValidationError("飞书暂不支持按用户 ID 直接发送，请使用 chat_id".to_string()))
-            }
-            SendTarget::Webhook(_) => {
-                Err(AppError::ValidationError("飞书不支持 Webhook 发送".to_string()))
-            }
+            SendTarget::User(ref _user_id) => Err(AppError::ValidationError(
+                "飞书暂不支持按用户 ID 直接发送，请使用 chat_id".to_string(),
+            )),
+            SendTarget::Webhook(_) => Err(AppError::ValidationError(
+                "飞书不支持 Webhook 发送".to_string(),
+            )),
         }
     }
 

@@ -14,9 +14,7 @@ use serde_json::{json, Value};
 use super::codex_chat::{
     chat_sse_to_codex_responses_sse, chat_to_codex_response, codex_responses_to_chat,
 };
-use super::forwarder::{
-    forward_raw_response, ForwarderConfig, ProxyWireApi, RequestPassthrough,
-};
+use super::forwarder::{forward_raw_response, ForwarderConfig, ProxyWireApi, RequestPassthrough};
 use super::sanitizer::{sanitize_anthropic_messages_body, AnthropicProviderCapability};
 use super::transform::{
     anthropic_to_openai, anthropic_to_responses, openai_to_anthropic, responses_to_anthropic,

@@ -14,20 +14,19 @@ use tauri::Emitter;
 use tokio::sync::{mpsc::Sender, RwLock};
 use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
 
-use crate::error::{AppError, Result};
-use crate::models::config::{QQBotRuntimeConfig, QQBotInstanceConfig};
 use super::super::common::MessageDedup;
 use super::super::traits::PlatformIntegration;
 use super::super::types::*;
+use crate::error::{AppError, Result};
+use crate::models::config::{QQBotInstanceConfig, QQBotRuntimeConfig};
 
 /// QQ Bot Intents
 /// 参考: https://bot.q.qq.com/wiki/develop/api-v2/
 /// 注意: 只请求必要的 intents，避免权限不足导致连接失败
-const INTENTS_DEFAULT: u32 =
-    (1 << 9) |   // GUILD_MESSAGES - 频道消息
+const INTENTS_DEFAULT: u32 = (1 << 9) |   // GUILD_MESSAGES - 频道消息
     (1 << 12) |  // DIRECT_MESSAGE - 私信
     (1 << 25) |  // AT_MESSAGES - @消息
-    (1 << 30);   // PUBLIC_GUILD_MESSAGES - 公域频道消息
+    (1 << 30); // PUBLIC_GUILD_MESSAGES - 公域频道消息
 
 /// 连接超时时间（秒）
 const CONNECT_TIMEOUT_SECS: u64 = 15;
@@ -162,7 +161,10 @@ impl QQBotAdapter {
 
         if !response.status().is_success() {
             let error = response.text().await.unwrap_or_default();
-            return Err(AppError::AuthError(format!("获取 Access Token 失败: {}", error)));
+            return Err(AppError::AuthError(format!(
+                "获取 Access Token 失败: {}",
+                error
+            )));
         }
 
         let data: serde_json::Value = response
@@ -186,7 +188,11 @@ impl QQBotAdapter {
         // 打印 token 信息（只显示前8个字符）
         if let Some(ref token) = self.access_token {
             let token_preview: String = token.chars().take(8).collect();
-            tracing::info!("[QQBot] ✅ Access token obtained: {}..., expires in {}s", token_preview, expires_in);
+            tracing::info!(
+                "[QQBot] ✅ Access token obtained: {}..., expires in {}s",
+                token_preview,
+                expires_in
+            );
         }
 
         if self.access_token.is_none() {
@@ -226,7 +232,10 @@ impl QQBotAdapter {
 
         if !response.status().is_success() {
             let error = response.text().await.unwrap_or_default();
-            return Err(AppError::ApiError(format!("获取 Gateway URL 失败: {}", error)));
+            return Err(AppError::ApiError(format!(
+                "获取 Gateway URL 失败: {}",
+                error
+            )));
         }
 
         let data: serde_json::Value = response
@@ -235,17 +244,25 @@ impl QQBotAdapter {
             .map_err(|e| AppError::ParseError(e.to_string()))?;
 
         // 打印完整响应用于调试
-        tracing::info!("[QQBot] 📋 Gateway 响应: {}", serde_json::to_string(&data).unwrap_or_default());
+        tracing::info!(
+            "[QQBot] 📋 Gateway 响应: {}",
+            serde_json::to_string(&data).unwrap_or_default()
+        );
 
         // 检查 session_start_limit
         if let Some(limit) = data.get("session_start_limit") {
             let total = limit.get("total").and_then(|v| v.as_i64()).unwrap_or(0);
             let remaining = limit.get("remaining").and_then(|v| v.as_i64()).unwrap_or(0);
-            let reset_after = limit.get("reset_after").and_then(|v| v.as_i64()).unwrap_or(0);
+            let reset_after = limit
+                .get("reset_after")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
 
             tracing::info!(
                 "[QQBot] 📊 Session 限制: total={}, remaining={}, reset_after={}ms",
-                total, remaining, reset_after
+                total,
+                remaining,
+                reset_after
             );
 
             if remaining <= 0 {
@@ -269,10 +286,7 @@ impl QQBotAdapter {
 
     /// 解析消息内容
     fn parse_content(raw: &serde_json::Value) -> MessageContent {
-        let content = raw
-            .get("content")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let content = raw.get("content").and_then(|v| v.as_str()).unwrap_or("");
 
         // 检查附件
         if let Some(attachments) = raw.get("attachments").and_then(|v| v.as_array()) {
@@ -311,20 +325,12 @@ impl QQBotAdapter {
                     } else if content_type.starts_with("video/") {
                         let name = filename.unwrap_or_else(|| "video.mp4".to_string());
                         let size = att.get("size").and_then(|v| v.as_u64()).unwrap_or(0);
-                        items.push(MessageContent::File {
-                            name,
-                            url,
-                            size,
-                        });
+                        items.push(MessageContent::File { name, url, size });
                     } else {
                         // 其他附件类型按文件处理
                         let name = filename.unwrap_or_else(|| "file".to_string());
                         let size = att.get("size").and_then(|v| v.as_u64()).unwrap_or(0);
-                        items.push(MessageContent::File {
-                            name,
-                            url,
-                            size,
-                        });
+                        items.push(MessageContent::File { name, url, size });
                     }
                 }
 
@@ -412,8 +418,8 @@ impl QQBotAdapter {
         let author = event_data.get("author").cloned().unwrap_or_default();
         let sender_id = author
             .get("id")
-            .or_else(|| author.get("member_openid"))  // 群聊使用 member_openid
-            .or_else(|| author.get("user_openid"))    // C2C 使用 user_openid
+            .or_else(|| author.get("member_openid")) // 群聊使用 member_openid
+            .or_else(|| author.get("user_openid")) // C2C 使用 user_openid
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
@@ -431,7 +437,11 @@ impl QQBotAdapter {
 
         // 使用字符安全的截断方式
         let content_preview: String = content.chars().take(50).collect();
-        let content_preview = if content_preview.len() < content.len() { format!("{}...", content_preview) } else { content_preview };
+        let content_preview = if content_preview.len() < content.len() {
+            format!("{}...", content_preview)
+        } else {
+            content_preview
+        };
         tracing::info!(
             "[QQBot] 📝 消息详情: type={}, sender={}, conversation={}, content={}",
             msg_type,
@@ -457,19 +467,35 @@ impl QQBotAdapter {
     /// 解析关闭帧错误码
     fn parse_close_error(code: u16, reason: &str) -> (String, String) {
         match code {
-            4903 => {
-                ("连接被拒绝".to_string(),
-                 "可能是以下原因:\n\
+            4903 => (
+                "连接被拒绝".to_string(),
+                "可能是以下原因:\n\
                   1. 同一个 Bot 只能有一个 WebSocket 连接\n\
                   2. Token 无效或过期\n\
                   3. 应用未开通所请求的 intents 权限\n\
-                  4. Shard 配置与 Gateway 返回的不匹配".to_string())
-            }
-            4004 => ("Token 无效".to_string(), "请检查 App ID 和 Client Secret 是否正确".to_string()),
-            4010 => ("无效的 Shard 配置".to_string(), "请检查 Shard 配置".to_string()),
-            4011 => ("Shard 数量超过限制".to_string(), "请减少 Shard 数量".to_string()),
-            4012 => ("无效的 Intents".to_string(), "请检查 Intents 配置".to_string()),
-            4013 => ("Intents 超出白名单范围".to_string(), "请申请相应的 intents 权限".to_string()),
+                  4. Shard 配置与 Gateway 返回的不匹配"
+                    .to_string(),
+            ),
+            4004 => (
+                "Token 无效".to_string(),
+                "请检查 App ID 和 Client Secret 是否正确".to_string(),
+            ),
+            4010 => (
+                "无效的 Shard 配置".to_string(),
+                "请检查 Shard 配置".to_string(),
+            ),
+            4011 => (
+                "Shard 数量超过限制".to_string(),
+                "请减少 Shard 数量".to_string(),
+            ),
+            4012 => (
+                "无效的 Intents".to_string(),
+                "请检查 Intents 配置".to_string(),
+            ),
+            4013 => (
+                "Intents 超出白名单范围".to_string(),
+                "请申请相应的 intents 权限".to_string(),
+            ),
             _ => (format!("连接关闭: {}", code), reason.to_string()),
         }
     }
@@ -480,10 +506,20 @@ impl QQBotAdapter {
         let mut items = Vec::new();
         match content {
             MessageContent::Image { url, file_name, .. } => {
-                items.push((url.clone(), file_name.clone().unwrap_or_else(|| "image.png".to_string()), 0));
+                items.push((
+                    url.clone(),
+                    file_name.clone().unwrap_or_else(|| "image.png".to_string()),
+                    0,
+                ));
             }
             MessageContent::Audio { url, file_name, .. } => {
-                items.push((url.clone(), file_name.clone().unwrap_or_else(|| "audio.silk".to_string()), 0));
+                items.push((
+                    url.clone(),
+                    file_name
+                        .clone()
+                        .unwrap_or_else(|| "audio.silk".to_string()),
+                    0,
+                ));
             }
             MessageContent::File { name, url, size } => {
                 items.push((url.clone(), name.clone(), *size));
@@ -527,7 +563,8 @@ impl PlatformIntegration for QQBotAdapter {
         self.update_state(ConnectionState::Connecting).await;
 
         if let Err(e) = self.ensure_valid_token().await {
-            self.set_error("获取 Access Token 失败".to_string(), Some(e.to_string())).await;
+            self.set_error("获取 Access Token 失败".to_string(), Some(e.to_string()))
+                .await;
             return Err(e);
         }
         tracing::info!("[QQBot] ✅ Access Token 有效");
@@ -537,7 +574,8 @@ impl PlatformIntegration for QQBotAdapter {
         let gateway_url = match self.get_gateway_url().await {
             Ok(url) => url,
             Err(e) => {
-                self.set_error("获取 Gateway URL 失败".to_string(), Some(e.to_string())).await;
+                self.set_error("获取 Gateway URL 失败".to_string(), Some(e.to_string()))
+                    .await;
                 return Err(e);
             }
         };
@@ -594,13 +632,11 @@ impl PlatformIntegration for QQBotAdapter {
 
                     tracing::info!("[QQBot] 📋 鉴权载荷: intents={}", INTENTS_DEFAULT);
 
-                    if let Err(e) = write
-                        .send(WsMessage::Text(auth_payload.to_string()))
-                        .await
-                    {
+                    if let Err(e) = write.send(WsMessage::Text(auth_payload.to_string())).await {
                         tracing::error!("[QQBot] Failed to send auth: {}", e);
                         if let Some(tx) = ready_tx.take() {
-                            let _ = tx.send(Err(AppError::AuthError(format!("发送鉴权消息失败: {}", e))));
+                            let _ = tx
+                                .send(Err(AppError::AuthError(format!("发送鉴权消息失败: {}", e))));
                         }
                         return;
                     }
@@ -913,13 +949,24 @@ impl PlatformIntegration for QQBotAdapter {
             }
             Ok(Err(_)) => {
                 tracing::error!("[QQBot] ❌ READY 通道关闭");
-                self.set_error("鉴权超时".to_string(), Some("READY 通道意外关闭".to_string())).await;
+                self.set_error(
+                    "鉴权超时".to_string(),
+                    Some("READY 通道意外关闭".to_string()),
+                )
+                .await;
                 Err(AppError::AuthError("鉴权过程中发生错误".to_string()))
             }
             Err(_) => {
                 tracing::error!("[QQBot] ❌ 等待鉴权超时（{}秒）", CONNECT_TIMEOUT_SECS);
-                self.set_error("连接超时".to_string(), Some(format!("等待 {} 秒后超时", CONNECT_TIMEOUT_SECS))).await;
-                Err(AppError::AuthError(format!("连接超时（{}秒）", CONNECT_TIMEOUT_SECS)))
+                self.set_error(
+                    "连接超时".to_string(),
+                    Some(format!("等待 {} 秒后超时", CONNECT_TIMEOUT_SECS)),
+                )
+                .await;
+                Err(AppError::AuthError(format!(
+                    "连接超时（{}秒）",
+                    CONNECT_TIMEOUT_SECS
+                )))
             }
         }
     }
@@ -939,10 +986,7 @@ impl PlatformIntegration for QQBotAdapter {
         // 2. 等待任务结束（带超时）
         if let Some(task) = self.ws_task.take() {
             // 给任务一点时间优雅关闭
-            let result = tokio::time::timeout(
-                tokio::time::Duration::from_secs(3),
-                task
-            ).await;
+            let result = tokio::time::timeout(tokio::time::Duration::from_secs(3), task).await;
 
             match result {
                 Ok(Ok(())) => {
@@ -990,7 +1034,11 @@ impl PlatformIntegration for QQBotAdapter {
         let mut results = Vec::new();
 
         for (url, filename, size) in media_items {
-            let label = if filename.starts_with("image") || filename.ends_with(".png") || filename.ends_with(".jpg") || filename.ends_with(".jpeg") {
+            let label = if filename.starts_with("image")
+                || filename.ends_with(".png")
+                || filename.ends_with(".jpg")
+                || filename.ends_with(".jpeg")
+            {
                 "图片".to_string()
             } else if filename.starts_with("audio") || filename.ends_with(".silk") {
                 "语音".to_string()
@@ -1007,41 +1055,54 @@ impl PlatformIntegration for QQBotAdapter {
 
             let client = reqwest::Client::new();
             match client.get(&url).send().await {
-                Ok(response) if response.status().is_success() => {
-                    match response.bytes().await {
-                        Ok(bytes) => {
-                            let timestamp = chrono::Utc::now().timestamp();
-                            let safe_name = filename.replace(|c: char| !c.is_alphanumeric() && c != '.' && c != '-' && c != '_', "_");
-                            let file_name = format!("{}_{}", timestamp, safe_name);
-                            let file_path = save_dir.join(&file_name);
+                Ok(response) if response.status().is_success() => match response.bytes().await {
+                    Ok(bytes) => {
+                        let timestamp = chrono::Utc::now().timestamp();
+                        let safe_name = filename.replace(
+                            |c: char| !c.is_alphanumeric() && c != '.' && c != '-' && c != '_',
+                            "_",
+                        );
+                        let file_name = format!("{}_{}", timestamp, safe_name);
+                        let file_path = save_dir.join(&file_name);
 
-                            match tokio::fs::write(&file_path, &bytes).await {
-                                Ok(_) => {
-                                    tracing::info!("[QQBot] ✅ 媒体已保存: {}", file_path.display());
-                                    results.push(MediaDownload {
-                                        label,
-                                        local_path: Some(file_path.to_string_lossy().to_string()),
-                                    });
-                                }
-                                Err(e) => {
-                                    tracing::error!("[QQBot] ❌ 写入文件失败: {}", e);
-                                    results.push(MediaDownload { label, local_path: None });
-                                }
+                        match tokio::fs::write(&file_path, &bytes).await {
+                            Ok(_) => {
+                                tracing::info!("[QQBot] ✅ 媒体已保存: {}", file_path.display());
+                                results.push(MediaDownload {
+                                    label,
+                                    local_path: Some(file_path.to_string_lossy().to_string()),
+                                });
+                            }
+                            Err(e) => {
+                                tracing::error!("[QQBot] ❌ 写入文件失败: {}", e);
+                                results.push(MediaDownload {
+                                    label,
+                                    local_path: None,
+                                });
                             }
                         }
-                        Err(e) => {
-                            tracing::error!("[QQBot] ❌ 读取响应体失败: {}", e);
-                            results.push(MediaDownload { label, local_path: None });
-                        }
                     }
-                }
+                    Err(e) => {
+                        tracing::error!("[QQBot] ❌ 读取响应体失败: {}", e);
+                        results.push(MediaDownload {
+                            label,
+                            local_path: None,
+                        });
+                    }
+                },
                 Ok(response) => {
                     tracing::error!("[QQBot] ❌ 下载失败: HTTP {}", response.status());
-                    results.push(MediaDownload { label, local_path: None });
+                    results.push(MediaDownload {
+                        label,
+                        local_path: None,
+                    });
                 }
                 Err(e) => {
                     tracing::error!("[QQBot] ❌ 下载请求失败: {}", e);
-                    results.push(MediaDownload { label, local_path: None });
+                    results.push(MediaDownload {
+                        label,
+                        local_path: None,
+                    });
                 }
             }
         }
@@ -1053,13 +1114,14 @@ impl PlatformIntegration for QQBotAdapter {
         // 关键：发送前确保 Token 有效
         self.ensure_valid_token().await?;
 
-        let text = content.as_text().ok_or_else(|| {
-            AppError::ValidationError("目前只支持发送文本消息".to_string())
-        })?;
+        let text = content
+            .as_text()
+            .ok_or_else(|| AppError::ValidationError("目前只支持发送文本消息".to_string()))?;
 
-        let access_token = self.access_token.as_ref().ok_or_else(|| {
-            AppError::AuthError("未认证".to_string())
-        })?;
+        let access_token = self
+            .access_token
+            .as_ref()
+            .ok_or_else(|| AppError::AuthError("未认证".to_string()))?;
 
         let client = reqwest::Client::new();
 
@@ -1124,13 +1186,19 @@ impl PlatformIntegration for QQBotAdapter {
                 // 自动判断类型
                 if conv_id.starts_with("c2c_") {
                     let openid = conv_id.strip_prefix("c2c_").unwrap();
-                    return self.send(SendTarget::User(openid.to_string()), content).await;
+                    return self
+                        .send(SendTarget::User(openid.to_string()), content)
+                        .await;
                 } else {
-                    return self.send(SendTarget::Channel(conv_id.clone()), content).await;
+                    return self
+                        .send(SendTarget::Channel(conv_id.clone()), content)
+                        .await;
                 }
             }
             SendTarget::Webhook(_) => {
-                return Err(AppError::ValidationError("QQBot 不支持 Webhook 发送".to_string()));
+                return Err(AppError::ValidationError(
+                    "QQBot 不支持 Webhook 发送".to_string(),
+                ));
             }
         }
 

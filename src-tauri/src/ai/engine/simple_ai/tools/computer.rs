@@ -32,14 +32,14 @@ impl Tool for ComputerTool {
             "function": {
                 "name": "computer",
                 "description": "控制本机桌面：通过 action 指定操作。\
-inspect_ui=（优先用）返回前台控件树（每控件含 name/controlType/automationId/rect/center），用于定位元素；\
-click_element=按控件名/automationId 直接点击（不靠坐标，最可靠）；set_text=按控件填入文本；\
-cursor_position=取光标坐标；move_mouse=移动到 (x,y)；click=点击（x,y/button/count，count=1/2/3 连击）；\
-drag=拖拽（from_x,from_y→to_x,to_y）；mouse_down/mouse_up=按下/释放鼠标键；\
-type_text=输入 text；press_key=组合键 keys（如 ctrl+c）；hold_key=按住 keys 共 ms 毫秒；\
-scroll=滚动（dx,dy）；clipboard_get/clipboard_set=读/写剪贴板；wait=等待 ms；\
-find_element=查找/等待控件并返回信息(name 或 automation_id)；list_windows=列出顶层窗口；activate_window=按 title 激活窗口。\
-高危操作，会真实控制鼠标键盘；把光标移到屏幕角落可紧急中断（failsafe）。",
+        inspect_ui=（优先用）返回前台控件树（每控件含 name/controlType/automationId/rect/center），用于定位元素；\
+        click_element=按控件名/automationId 直接点击（不靠坐标，最可靠）；set_text=按控件填入文本；\
+        cursor_position=取光标坐标；move_mouse=移动到 (x,y)；click=点击（x,y/button/count，count=1/2/3 连击）；\
+        drag=拖拽（from_x,from_y→to_x,to_y）；mouse_down/mouse_up=按下/释放鼠标键；\
+        type_text=输入 text；press_key=组合键 keys（如 ctrl+c）；hold_key=按住 keys 共 ms 毫秒；\
+        scroll=滚动（dx,dy）；clipboard_get/clipboard_set=读/写剪贴板；wait=等待 ms；\
+        find_element=查找/等待控件并返回信息(name 或 automation_id)；list_windows=列出顶层窗口；activate_window=按 title 激活窗口。\
+        高危操作，会真实控制鼠标键盘；把光标移到屏幕角落可紧急中断（failsafe）。",
                 "parameters": {
                     "type": "object",
                     "required": ["action"],
@@ -100,7 +100,11 @@ fn run(args: &Value) -> Result<String> {
 
     // wait 不需要控制器。
     if action == "wait" {
-        let ms = args.get("ms").and_then(Value::as_u64).unwrap_or(500).min(10_000);
+        let ms = args
+            .get("ms")
+            .and_then(Value::as_u64)
+            .unwrap_or(500)
+            .min(10_000);
         std::thread::sleep(std::time::Duration::from_millis(ms));
         return Ok(format!("已等待 {ms} ms"));
     }
@@ -127,7 +131,11 @@ fn run(args: &Value) -> Result<String> {
             let x = optional_i32(args, "x");
             let y = optional_i32(args, "y");
             let button = args.get("button").and_then(Value::as_str).unwrap_or("left");
-            let count = args.get("count").and_then(Value::as_u64).unwrap_or(1).clamp(1, 3) as u32;
+            let count = args
+                .get("count")
+                .and_then(Value::as_u64)
+                .unwrap_or(1)
+                .clamp(1, 3) as u32;
             controller.click(x, y, button, count)?;
             Ok(format!("已点击 {button} 键 x{count}"))
         }
@@ -162,7 +170,11 @@ fn run(args: &Value) -> Result<String> {
         }
         "hold_key" => {
             let keys = require_str(args, "keys")?;
-            let ms = args.get("ms").and_then(Value::as_u64).unwrap_or(500).min(10_000);
+            let ms = args
+                .get("ms")
+                .and_then(Value::as_u64)
+                .unwrap_or(500)
+                .min(10_000);
             controller.hold_key(keys, ms)?;
             Ok(format!("已按住 {keys} {ms}ms"))
         }
@@ -173,8 +185,15 @@ fn run(args: &Value) -> Result<String> {
             Ok(format!("已滚动 ({dx}, {dy})"))
         }
         "inspect_ui" => {
-            let max_depth = args.get("max_depth").and_then(Value::as_u64).unwrap_or(3).clamp(1, 8) as usize;
-            let interactable_only = args.get("interactable_only").and_then(Value::as_bool).unwrap_or(false);
+            let max_depth = args
+                .get("max_depth")
+                .and_then(Value::as_u64)
+                .unwrap_or(3)
+                .clamp(1, 8) as usize;
+            let interactable_only = args
+                .get("interactable_only")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             let tree = controller.inspect_ui(max_depth, interactable_only)?;
             let pretty = serde_json::to_string_pretty(&tree).unwrap_or_else(|_| tree.to_string());
             Ok(truncate_chars(&pretty, TEXT_OUTPUT_CAP))
@@ -183,7 +202,11 @@ fn run(args: &Value) -> Result<String> {
             let name = args.get("name").and_then(Value::as_str);
             let automation_id = args.get("automation_id").and_then(Value::as_str);
             let button = args.get("button").and_then(Value::as_str).unwrap_or("left");
-            let count = args.get("count").and_then(Value::as_u64).unwrap_or(1).clamp(1, 2) as u32;
+            let count = args
+                .get("count")
+                .and_then(Value::as_u64)
+                .unwrap_or(1)
+                .clamp(1, 2) as u32;
             controller.click_element(name, automation_id, button, count)
         }
         "set_text" => {

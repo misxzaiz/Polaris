@@ -3,10 +3,10 @@
  * 管理每个会话的状态，包括当前引擎、工作目录、提示词等。
  */
 
-use std::collections::HashMap;
-use chrono::Utc;
-use crate::ai::EngineId;
 use super::super::commands::{ConversationState, PromptMode};
+use crate::ai::EngineId;
+use chrono::Utc;
+use std::collections::HashMap;
 
 /// 会话状态存储
 #[allow(dead_code)]
@@ -57,7 +57,8 @@ impl ConversationStore {
             state.ai_session_id = Some(ai_session_id);
             // 更新引擎最新会话映射
             let engine_id = state.get_engine_id();
-            self.engine_last_conversation.insert(engine_id, conversation_id.to_string());
+            self.engine_last_conversation
+                .insert(engine_id, conversation_id.to_string());
         }
     }
 
@@ -111,7 +112,9 @@ impl ConversationStore {
 
     /// 获取引擎的最新会话 ID
     pub fn get_last_conversation(&self, engine_id: EngineId) -> Option<&str> {
-        self.engine_last_conversation.get(&engine_id).map(|s: &String| s.as_str())
+        self.engine_last_conversation
+            .get(&engine_id)
+            .map(|s: &String| s.as_str())
     }
 
     /// 获取所有会话数量
@@ -124,9 +127,8 @@ impl ConversationStore {
         let now = Utc::now().timestamp_millis();
         let threshold = now - max_inactive_ms;
 
-        self.states.retain(|_, state| {
-            state.last_activity > threshold
-        });
+        self.states
+            .retain(|_, state| state.last_activity > threshold);
     }
 
     /// 清空所有会话

@@ -133,9 +133,9 @@ impl McpManagerService {
         let mut cmd = self.build_command();
         cmd.args(args);
 
-        let output = cmd.output().map_err(|e| {
-            AppError::ProcessError(format!("执行 Claude CLI 失败: {}", e))
-        })?;
+        let output = cmd
+            .output()
+            .map_err(|e| AppError::ProcessError(format!("执行 Claude CLI 失败: {}", e)))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -186,13 +186,17 @@ impl McpManagerService {
 
         // 3. <workspace>/.claude/settings.json (用户/项目)
         if !workspace_path.is_empty() {
-            let project_settings = PathBuf::from(workspace_path).join(".claude").join("settings.json");
+            let project_settings = PathBuf::from(workspace_path)
+                .join(".claude")
+                .join("settings.json");
             paths.push((project_settings, McpScope::User));
         }
 
         // 4. <workspace>/.claude/settings.local.json (用户/项目本地)
         if !workspace_path.is_empty() {
-            let project_local = PathBuf::from(workspace_path).join(".claude").join("settings.local.json");
+            let project_local = PathBuf::from(workspace_path)
+                .join(".claude")
+                .join("settings.local.json");
             paths.push((project_local, McpScope::User));
         }
 
@@ -226,18 +230,13 @@ impl McpManagerService {
 
     /// 解析单个配置文件中的 MCP 服务器列表
     fn read_mcp_config(path: &PathBuf, scope: &McpScope) -> Result<Vec<McpServerInfo>> {
-        let content = std::fs::read_to_string(path).map_err(|e| {
-            AppError::IoError(e)
-        })?;
+        let content = std::fs::read_to_string(path).map_err(|e| AppError::IoError(e))?;
 
-        let json: serde_json::Value = serde_json::from_str(&content).map_err(|e| {
-            AppError::ParseError(format!("解析 {} 失败: {}", path.display(), e))
-        })?;
+        let json: serde_json::Value = serde_json::from_str(&content)
+            .map_err(|e| AppError::ParseError(format!("解析 {} 失败: {}", path.display(), e)))?;
 
         // 尝试 "mcpServers" 或 "mcp_servers" 键
-        let mcp_value = json
-            .get("mcpServers")
-            .or_else(|| json.get("mcp_servers"));
+        let mcp_value = json.get("mcpServers").or_else(|| json.get("mcp_servers"));
 
         let mcp_obj = match mcp_value {
             Some(serde_json::Value::Object(map)) => map,
@@ -344,9 +343,15 @@ impl McpManagerService {
                 let (connected, status) = if status_part.starts_with("✓") {
                     (true, status_part.trim_start_matches("✓").trim().to_string())
                 } else if status_part.starts_with("!") {
-                    (false, status_part.trim_start_matches("!").trim().to_string())
+                    (
+                        false,
+                        status_part.trim_start_matches("!").trim().to_string(),
+                    )
                 } else if status_part.starts_with("✗") {
-                    (false, status_part.trim_start_matches("✗").trim().to_string())
+                    (
+                        false,
+                        status_part.trim_start_matches("✗").trim().to_string(),
+                    )
                 } else {
                     (false, status_part.to_string())
                 };
@@ -482,10 +487,7 @@ impl McpManagerService {
         // 按名称聚合配置
         let mut config_map: HashMap<String, Vec<McpServerInfo>> = HashMap::new();
         for cfg in configs {
-            config_map
-                .entry(cfg.name.clone())
-                .or_default()
-                .push(cfg);
+            config_map.entry(cfg.name.clone()).or_default().push(cfg);
         }
 
         // 获取健康状态
@@ -523,10 +525,7 @@ impl McpManagerService {
     /// 获取单个 MCP 服务器的聚合信息
     pub fn get_server(&self, name: &str, workspace_path: &str) -> Result<McpServerAggregate> {
         let configs = self.list_configs(workspace_path);
-        let filtered: Vec<McpServerInfo> = configs
-            .into_iter()
-            .filter(|c| c.name == name)
-            .collect();
+        let filtered: Vec<McpServerInfo> = configs.into_iter().filter(|c| c.name == name).collect();
 
         let health = self.health_check_one(name).ok();
 
@@ -544,11 +543,15 @@ impl McpManagerService {
     /// 添加 MCP 服务器
     ///
     /// 通过 `claude mcp add` 命令添加服务器
-    pub fn add_server(&self, name: &str, command: &str, args: &[String], transport: &str, scope: &str) -> Result<()> {
-        let mut cmd_args = vec![
-            "mcp".to_string(),
-            "add".to_string(),
-        ];
+    pub fn add_server(
+        &self,
+        name: &str,
+        command: &str,
+        args: &[String],
+        transport: &str,
+        scope: &str,
+    ) -> Result<()> {
+        let mut cmd_args = vec!["mcp".to_string(), "add".to_string()];
 
         // 传输类型
         if transport != "stdio" {
@@ -573,7 +576,8 @@ impl McpManagerService {
             }
         }
 
-        let output = self.execute_claude(&cmd_args.iter().map(|s| s.as_str()).collect::<Vec<_>>())?;
+        let output =
+            self.execute_claude(&cmd_args.iter().map(|s| s.as_str()).collect::<Vec<_>>())?;
         tracing::info!("[McpManager] 添加 MCP 服务器 {}: {}", name, output.trim());
         Ok(())
     }
@@ -601,10 +605,14 @@ impl McpManagerService {
     /// 对于需要认证的 HTTP 服务器，调用 `claude mcp add` 重新触发认证
     pub fn start_auth(&self, name: &str, url: &str, scope: &str) -> Result<()> {
         let cmd_args = vec![
-            "mcp", "add",
-            "--transport", "http",
-            "--scope", scope,
-            name, url,
+            "mcp",
+            "add",
+            "--transport",
+            "http",
+            "--scope",
+            scope,
+            name,
+            url,
         ];
 
         let output = self.execute_claude(&cmd_args)?;
@@ -658,7 +666,10 @@ plugin:figma:figma: https://mcp.figma.com/mcp (HTTP) - ! Needs authentication"#;
         assert_eq!(status.name, "polaris-todo");
         assert!(status.connected);
         assert_eq!(status.status, "Connected");
-        assert_eq!(status.command, Some("/path/to/polaris-todo-mcp /config /workspace".to_string()));
+        assert_eq!(
+            status.command,
+            Some("/path/to/polaris-todo-mcp /config /workspace".to_string())
+        );
     }
 
     #[test]
@@ -683,7 +694,8 @@ plugin:figma:figma: https://mcp.figma.com/mcp (HTTP) - ! Needs authentication"#;
                 "API_KEY": "test123"
             }
         });
-        let info = McpManagerService::parse_server_config("test-server", &value, &McpScope::Global).unwrap();
+        let info = McpManagerService::parse_server_config("test-server", &value, &McpScope::Global)
+            .unwrap();
         assert_eq!(info.name, "test-server");
         assert_eq!(info.command, Some("npx".to_string()));
         assert_eq!(info.args, vec!["-y", "@some/mcp-server"]);
@@ -697,9 +709,14 @@ plugin:figma:figma: https://mcp.figma.com/mcp (HTTP) - ! Needs authentication"#;
         let value = serde_json::json!({
             "url": "https://mcp.example.com/mcp"
         });
-        let info = McpManagerService::parse_server_config("remote-server", &value, &McpScope::Project).unwrap();
+        let info =
+            McpManagerService::parse_server_config("remote-server", &value, &McpScope::Project)
+                .unwrap();
         assert_eq!(info.name, "remote-server");
-        assert_eq!(info.command, Some("https://mcp.example.com/mcp".to_string()));
+        assert_eq!(
+            info.command,
+            Some("https://mcp.example.com/mcp".to_string())
+        );
         assert_eq!(info.transport, McpTransport::Http);
         assert_eq!(info.scope, McpScope::Project);
     }

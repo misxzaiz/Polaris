@@ -11,9 +11,17 @@
 import { useState, useCallback, useEffect, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConfigStore, useSessionStore } from '@/stores';
-import { useActiveSessionStreaming, useHasPendingQuestion, useHasActivePlan, useActiveSessionMessages } from '@/stores/conversationStore/useActiveSession';
+import {
+  useActiveSessionActions,
+  useActiveSessionCompaction,
+  useActiveSessionConversationId,
+  useActiveSessionMessages,
+  useActiveSessionStreaming,
+  useHasActivePlan,
+  useHasPendingQuestion,
+} from '@/stores/conversationStore/useActiveSession';
 import { useSessionConfig } from '@/stores/sessionConfigStore';
-import { Paperclip, MoreHorizontal, Loader2, Mic, Volume2, VolumeX, RefreshCw, ShieldAlert } from 'lucide-react';
+import { Paperclip, MoreHorizontal, Loader2, Mic, Volume2, VolumeX, RefreshCw, ShieldAlert, Minimize2, Undo2 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useTTS } from '@/hooks/useTTS';
 import { useVoiceDictation } from '@/hooks/useVoiceDictation';
@@ -88,6 +96,9 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
   const { t } = useTranslation('chat');
   const { config, healthStatus, updateConfigPatch } = useConfigStore();
   const isStreaming = useActiveSessionStreaming();
+  const conversationId = useActiveSessionConversationId();
+  const { isCompacting, canRestoreCompaction } = useActiveSessionCompaction();
+  const { compactContext, restoreCompactedContext } = useActiveSessionActions();
   const activeSessionId = useActiveSessionId();
   const sessionMetadataList = useSessionMetadataList();
   const {
@@ -116,6 +127,7 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
   // 当前活动引擎：决定哪些配置选择器对该引擎有效（避免向 mimo 展示会报错的 profile 等）
   const activeSessionMetadata = sessionMetadataList.find(session => session.id === activeSessionId);
   const activeEngineId = normalizeEngineId(activeSessionMetadata?.engineId || config?.defaultEngine);
+  const isSimpleAI = activeEngineId === 'simple-ai';
   const engineSelectors = getEngineSelectors(activeEngineId);
 
   // 根据宽度 + 引擎能力决定主行显示哪些选择器
@@ -404,6 +416,37 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
         <div className="flex items-center gap-2 min-w-0">
           {children}
           {children && <span className="w-px h-3.5 bg-border-subtle shrink-0" aria-hidden="true" />}
+          {isSimpleAI && conversationId && (
+            <>
+              <button
+                type="button"
+                onClick={() => void compactContext()}
+                disabled={isStreaming || isCompacting}
+                className={clsx(
+                  'flex items-center p-1 rounded transition-colors shrink-0',
+                  isCompacting
+                    ? 'text-primary cursor-wait'
+                    : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover',
+                  (isStreaming || isCompacting) && 'opacity-50',
+                )}
+                title={t('statusBar.compactContext', '压缩 SimpleAI 上下文')}
+                aria-label={t('statusBar.compactContext', '压缩 SimpleAI 上下文')}
+              >
+                {isCompacting ? <Loader2 size={13} className="animate-spin" /> : <Minimize2 size={13} />}
+              </button>
+              <button
+                type="button"
+                onClick={() => void restoreCompactedContext()}
+                disabled={isStreaming || isCompacting || !canRestoreCompaction}
+                className="flex items-center p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors shrink-0 disabled:opacity-35 disabled:cursor-not-allowed"
+                title={t('statusBar.restoreContext', '撤销最近一次上下文压缩')}
+                aria-label={t('statusBar.restoreContext', '撤销最近一次上下文压缩')}
+              >
+                <Undo2 size={13} />
+              </button>
+              <span className="w-px h-3.5 bg-border-subtle shrink-0" aria-hidden="true" />
+            </>
+          )}
           {visibleTypes.length > 0 && (
             <SessionConfigSelector
               config={sessionConfig}

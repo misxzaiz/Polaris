@@ -3,10 +3,10 @@
 //! Manages creation, reading, backup, and cleanup of protocol task documents.
 //! Protocol mode uses a document-driven workflow with persistent memory.
 
+use chrono::Local;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
-use chrono::Local;
 
 /// Task directory name format: YYYYMMDDHHMMSS
 const TIMESTAMP_FORMAT: &str = "%Y%m%d%H%M%S";
@@ -317,27 +317,30 @@ impl ProtocolTaskService {
 
     /// Read supplement document
     pub fn read_supplement(work_dir: &str, task_path: &str) -> io::Result<String> {
-        let path = PathBuf::from(work_dir).join(task_path).join("supplement.md");
+        let path = PathBuf::from(work_dir)
+            .join(task_path)
+            .join("supplement.md");
         fs::read_to_string(path)
     }
 
     /// Read memory index
     pub fn read_memory_index(work_dir: &str, task_path: &str) -> io::Result<String> {
-        let path = PathBuf::from(work_dir).join(task_path).join("memory/index.md");
+        let path = PathBuf::from(work_dir)
+            .join(task_path)
+            .join("memory/index.md");
         fs::read_to_string(path)
     }
 
     /// Read memory tasks
     pub fn read_memory_tasks(work_dir: &str, task_path: &str) -> io::Result<String> {
-        let path = PathBuf::from(work_dir).join(task_path).join("memory/tasks.md");
+        let path = PathBuf::from(work_dir)
+            .join(task_path)
+            .join("memory/tasks.md");
         fs::read_to_string(path)
     }
 
     /// Read all memory files as a tuple
-    pub fn read_all_memory(
-        work_dir: &str,
-        task_path: &str,
-    ) -> io::Result<(String, String)> {
+    pub fn read_all_memory(work_dir: &str, task_path: &str) -> io::Result<(String, String)> {
         let index = Self::read_memory_index(work_dir, task_path)?;
         let tasks = Self::read_memory_tasks(work_dir, task_path)?;
         Ok((index, tasks))
@@ -355,19 +358,25 @@ impl ProtocolTaskService {
 
     /// Update supplement document
     pub fn update_supplement(work_dir: &str, task_path: &str, content: &str) -> io::Result<()> {
-        let path = PathBuf::from(work_dir).join(task_path).join("supplement.md");
+        let path = PathBuf::from(work_dir)
+            .join(task_path)
+            .join("supplement.md");
         fs::write(path, content)
     }
 
     /// Update memory index
     pub fn update_memory_index(work_dir: &str, task_path: &str, content: &str) -> io::Result<()> {
-        let path = PathBuf::from(work_dir).join(task_path).join("memory/index.md");
+        let path = PathBuf::from(work_dir)
+            .join(task_path)
+            .join("memory/index.md");
         fs::write(path, content)
     }
 
     /// Update memory tasks
     pub fn update_memory_tasks(work_dir: &str, task_path: &str, content: &str) -> io::Result<()> {
-        let path = PathBuf::from(work_dir).join(task_path).join("memory/tasks.md");
+        let path = PathBuf::from(work_dir)
+            .join(task_path)
+            .join("memory/tasks.md");
         fs::write(path, content)
     }
 
@@ -385,11 +394,7 @@ impl ProtocolTaskService {
     /// Backup supplement content
     ///
     /// Saves the supplement content to history with timestamp
-    pub fn backup_supplement(
-        work_dir: &str,
-        task_path: &str,
-        content: &str,
-    ) -> io::Result<String> {
+    pub fn backup_supplement(work_dir: &str, task_path: &str, content: &str) -> io::Result<String> {
         let backup_timestamp = Local::now().format("%Y%m%d-%H%M%S");
         let task_timestamp = Self::extract_timestamp(task_path).unwrap_or_default();
 

@@ -4,152 +4,179 @@
 // 仅在非 tauri-app（web）模式放宽 lint；桌面 / CI 构建保留完整告警，不受影响。
 #![cfg_attr(not(feature = "tauri-app"), allow(warnings))]
 
+pub mod ai; // 公开 ai 模块以支持适配层测试
+pub mod commands;
 pub mod error;
+mod integrations;
 pub mod models;
 pub mod services;
-pub mod commands;
-mod integrations;
-pub mod ai;  // 公开 ai 模块以支持适配层测试
 mod state;
 mod utils;
 pub mod web;
 
-pub use state::AppState;
 pub use error::{AppError, Result};
+pub use state::AppState;
 
 #[cfg(feature = "tauri-app")]
-use models::config::{Config, HealthStatus};
-use services::config_store::ConfigStore;
-use services::logger::Logger;
-#[cfg(feature = "tauri-app")]
-use commands::chat::{start_chat, continue_chat, interrupt_chat};
-#[cfg(feature = "tauri-app")]
 use commands::chat::{
-    list_sessions, get_session_history, delete_session,
-    list_claude_code_sessions, get_claude_code_session_history,
-    register_pending_question, answer_question, get_pending_questions, clear_answered_questions,
-    respond_plugin_card,
+    answer_question,
+    approve_plan,
+    clear_answered_questions,
+    clear_processed_plans,
+    delete_session,
+    get_claude_code_session_history,
+    get_pending_plans,
+    get_pending_questions,
+    get_session_history,
+    list_claude_code_sessions,
+    list_sessions,
     // PlanMode 相关
-    register_pending_plan, approve_plan, reject_plan, get_pending_plans, clear_processed_plans,
+    register_pending_plan,
+    register_pending_question,
+    reject_plan,
+    respond_plugin_card,
     // stdin 输入
     send_input,
 };
 #[cfg(feature = "tauri-app")]
-use commands::{
-    get_directory_info, get_home_dir, get_server_config, set_server_config,
-    validate_workspace_path,
-};
-#[cfg(feature = "tauri-app")]
-use commands::window::{
-    toggle_devtools,
-    set_always_on_top,
-    is_always_on_top,
-};
-#[cfg(feature = "tauri-app")]
-use commands::file_explorer::{
-    read_directory, get_file_content, create_file, create_directory,
-    delete_file, rename_file, path_exists, read_commands, search_files,
-    search_file_contents, search_file_contents_detailed,
-    copy_path, move_path, copy_path_to_directory, move_path_to_directory, save_dropped_file_to_directory, save_image_bytes, save_codex_image_artifact,
-};
-#[cfg(feature = "tauri-app")]
-use commands::file_clipboard::{
-    set_file_clipboard, get_file_clipboard,
-};
-#[cfg(feature = "tauri-app")]
-use commands::file_watcher::{
-    fs_watch_start, fs_watch_stop, fs_watch_status,
+use commands::chat::{
+    compact_chat, continue_chat, delete_simple_ai_checkpoints, interrupt_chat,
+    restore_compacted_context, start_chat,
 };
 #[cfg(feature = "tauri-app")]
 use commands::context::{
-    context_upsert, context_upsert_many, context_query, context_get_all,
-    context_remove, context_clear,
-    ide_report_current_file, ide_report_file_structure, ide_report_diagnostics,
+    context_clear, context_get_all, context_query, context_remove, context_upsert,
+    context_upsert_many, ide_report_current_file, ide_report_diagnostics,
+    ide_report_file_structure,
 };
+#[cfg(feature = "tauri-app")]
+use commands::diagnostics::get_todo_mcp_diagnostics;
+#[cfg(feature = "tauri-app")]
+use commands::file_clipboard::{get_file_clipboard, set_file_clipboard};
+#[cfg(feature = "tauri-app")]
+use commands::file_explorer::{
+    copy_path, copy_path_to_directory, create_directory, create_file, delete_file,
+    get_file_content, move_path, move_path_to_directory, path_exists, read_commands,
+    read_directory, rename_file, save_codex_image_artifact, save_dropped_file_to_directory,
+    save_image_bytes, search_file_contents, search_file_contents_detailed, search_files,
+};
+#[cfg(feature = "tauri-app")]
+use commands::file_watcher::{fs_watch_start, fs_watch_status, fs_watch_stop};
 #[cfg(feature = "tauri-app")]
 use commands::git::{
-    git_is_repository, git_init_repository, git_get_status, git_get_diffs,
-    git_get_worktree_diff, git_get_index_diff, git_get_worktree_file_diff, git_get_index_file_diff,
-    git_get_branches,
-    git_create_branch, git_checkout_branch, git_delete_branch, git_rename_branch, git_merge_branch, git_commit_changes,
-    git_stage_file, git_unstage_file, git_discard_changes,
-    git_get_remotes, git_add_remote, git_remove_remote, git_detect_host, git_push_branch, git_push_set_upstream, git_create_pr, git_get_pr_status,
-    git_pull, git_get_log, git_get_commit_details, git_get_file_history, git_batch_stage,
-    git_stash_save, git_stash_list, git_stash_pop, git_stash_drop,
-    git_rebase_branch, git_rebase_abort, git_rebase_continue,
-    git_cherry_pick, git_cherry_pick_abort, git_cherry_pick_continue,
-    git_revert, git_revert_abort, git_revert_continue,
-    git_checkout_commit, git_reset,
-    git_get_tags, git_create_tag, git_delete_tag, git_blame_file,
-    git_get_gitignore, git_save_gitignore, git_add_to_gitignore, git_get_gitignore_templates,
-    test_param_serialization, write_file_absolute, read_file_absolute,
+    git_add_remote, git_add_to_gitignore, git_batch_stage, git_blame_file, git_checkout_branch,
+    git_checkout_commit, git_cherry_pick, git_cherry_pick_abort, git_cherry_pick_continue,
+    git_commit_changes, git_create_branch, git_create_pr, git_create_tag, git_delete_branch,
+    git_delete_tag, git_detect_host, git_discard_changes, git_get_branches, git_get_commit_details,
+    git_get_diffs, git_get_file_history, git_get_gitignore, git_get_gitignore_templates,
+    git_get_index_diff, git_get_index_file_diff, git_get_log, git_get_pr_status, git_get_remotes,
+    git_get_status, git_get_tags, git_get_worktree_diff, git_get_worktree_file_diff,
+    git_init_repository, git_is_repository, git_merge_branch, git_pull, git_push_branch,
+    git_push_set_upstream, git_rebase_abort, git_rebase_branch, git_rebase_continue,
+    git_remove_remote, git_rename_branch, git_reset, git_revert, git_revert_abort,
+    git_revert_continue, git_save_gitignore, git_stage_file, git_stash_drop, git_stash_list,
+    git_stash_pop, git_stash_save, git_unstage_file, read_file_absolute, test_param_serialization,
+    write_file_absolute,
 };
 #[cfg(feature = "tauri-app")]
-use commands::translate::baidu_translate;
-#[cfg(feature = "tauri-app")]
 use commands::integration::{
-    start_integration, stop_integration, get_integration_status,
-    get_all_integration_status, send_integration_message,
-    get_integration_sessions, init_integration,
-    add_integration_instance, remove_integration_instance,
+    add_integration_instance, disconnect_integration_instance, get_active_integration_instance,
+    get_all_integration_status, get_integration_sessions, get_integration_status, init_integration,
     list_integration_instances, list_integration_instances_by_platform,
-    get_active_integration_instance, switch_integration_instance,
-    disconnect_integration_instance, update_integration_instance,
+    remove_integration_instance, send_integration_message, start_integration, stop_integration,
+    switch_integration_instance, update_integration_instance,
+};
+#[cfg(feature = "tauri-app")]
+use commands::prompt_snippet::{
+    snippet_create, snippet_delete, snippet_get, snippet_list, snippet_update,
 };
 #[cfg(feature = "tauri-app")]
 use commands::scheduler::{
-    scheduler_list_tasks, scheduler_get_task, scheduler_create_task,
-    scheduler_update_task, scheduler_delete_task, scheduler_toggle_task,
-    scheduler_validate_trigger, scheduler_parse_interval, scheduler_get_workspace_breakdown,
-    scheduler_list_tasks_by_category, scheduler_list_tasks_by_mode, scheduler_list_tasks_by_group,
-    scheduler_get_lock_status, scheduler_acquire_lock, scheduler_release_lock,
-    scheduler_run_task, scheduler_update_run_status,
-    scheduler_get_status, scheduler_start, scheduler_stop,
-    // Template commands
-    scheduler_list_templates, scheduler_get_template, scheduler_create_template,
-    scheduler_update_template, scheduler_delete_template, scheduler_toggle_template,
+    scheduler_acquire_lock,
+    scheduler_backup_document,
+    scheduler_backup_supplement,
     scheduler_build_prompt,
-    // Protocol task commands
-    scheduler_read_protocol_documents, scheduler_update_protocol, scheduler_update_supplement,
-    scheduler_update_memory_index, scheduler_update_memory_tasks, scheduler_clear_supplement,
-    scheduler_backup_supplement, scheduler_backup_document, scheduler_has_supplement_content,
-    scheduler_needs_backup, scheduler_extract_user_content,
-    // Protocol template commands
-    scheduler_list_protocol_templates, scheduler_list_protocol_templates_by_category,
-    scheduler_get_protocol_template, scheduler_create_protocol_template,
-    scheduler_update_protocol_template, scheduler_delete_protocol_template,
-    scheduler_toggle_protocol_template, scheduler_render_protocol_document,
     scheduler_build_protocol_prompt,
+    scheduler_clear_supplement,
+    scheduler_create_protocol_template,
+    scheduler_create_task,
+    scheduler_create_template,
+    scheduler_delete_protocol_template,
+    scheduler_delete_task,
+    scheduler_delete_template,
+    scheduler_extract_user_content,
+    scheduler_get_lock_status,
+    scheduler_get_protocol_template,
+    scheduler_get_status,
+    scheduler_get_task,
+    scheduler_get_template,
+    scheduler_get_workspace_breakdown,
+    scheduler_has_supplement_content,
+    // Protocol template commands
+    scheduler_list_protocol_templates,
+    scheduler_list_protocol_templates_by_category,
+    scheduler_list_tasks,
+    scheduler_list_tasks_by_category,
+    scheduler_list_tasks_by_group,
+    scheduler_list_tasks_by_mode,
+    // Template commands
+    scheduler_list_templates,
+    scheduler_needs_backup,
+    scheduler_parse_interval,
+    // Protocol task commands
+    scheduler_read_protocol_documents,
+    scheduler_release_lock,
+    scheduler_render_protocol_document,
+    scheduler_run_task,
+    scheduler_start,
+    scheduler_stop,
+    scheduler_toggle_protocol_template,
+    scheduler_toggle_task,
+    scheduler_toggle_template,
+    scheduler_update_memory_index,
+    scheduler_update_memory_tasks,
+    scheduler_update_protocol,
+    scheduler_update_protocol_template,
+    scheduler_update_run_status,
+    scheduler_update_supplement,
+    scheduler_update_task,
+    scheduler_update_template,
+    scheduler_validate_trigger,
+};
+#[cfg(feature = "tauri-app")]
+use commands::spring_boot::{
+    spring_boot_check_port, spring_boot_detect_project, spring_boot_find_available_port,
+    spring_boot_get_app, spring_boot_list_apps, spring_boot_start, spring_boot_stop,
+    spring_boot_update_status,
 };
 #[cfg(feature = "tauri-app")]
 use commands::terminal::{
-    terminal_create, terminal_write, terminal_resize,
-    terminal_close, terminal_list, terminal_get,
-    terminal_open_in_external,
+    terminal_close, terminal_create, terminal_get, terminal_list, terminal_open_in_external,
+    terminal_resize, terminal_write,
 };
 #[cfg(feature = "tauri-app")]
 use commands::terminal_script::terminal_discover_scripts;
 #[cfg(feature = "tauri-app")]
-use commands::diagnostics::get_todo_mcp_diagnostics;
+use commands::translate::baidu_translate;
 #[cfg(feature = "tauri-app")]
-use commands::prompt_snippet::{
-    snippet_list, snippet_get, snippet_create, snippet_update, snippet_delete,
+use commands::window::{is_always_on_top, set_always_on_top, toggle_devtools};
+#[cfg(feature = "tauri-app")]
+use commands::{fetch_models_for_profile, test_model_profile_connection};
+#[cfg(feature = "tauri-app")]
+use commands::{
+    get_directory_info, get_home_dir, get_server_config, set_server_config, validate_workspace_path,
 };
 #[cfg(feature = "tauri-app")]
-use commands::{test_model_profile_connection, fetch_models_for_profile};
-#[cfg(feature = "tauri-app")]
-use commands::spring_boot::{
-    spring_boot_detect_project, spring_boot_start, spring_boot_stop,
-    spring_boot_list_apps, spring_boot_get_app, spring_boot_update_status,
-    spring_boot_check_port, spring_boot_find_available_port,
-};
+use models::config::{Config, HealthStatus};
+use services::config_store::ConfigStore;
+use services::logger::Logger;
 
-use std::sync::Arc;
-use tokio::sync::Mutex as AsyncMutex;
 use ai::EngineRegistry;
 use integrations::IntegrationManager;
+use std::sync::Arc;
 #[cfg(feature = "tauri-app")]
 use tauri::Manager;
+use tokio::sync::Mutex as AsyncMutex;
 
 // ============================================================================
 // Tauri Commands
@@ -159,7 +186,9 @@ use tauri::Manager;
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 fn get_config(state: tauri::State<AppState>) -> Result<Config> {
-    let store = state.config_store.lock()
+    let store = state
+        .config_store
+        .lock()
         .map_err(|e| error::AppError::Unknown(e.to_string()))?;
     Ok(store.get().clone())
 }
@@ -169,7 +198,9 @@ fn get_config(state: tauri::State<AppState>) -> Result<Config> {
 #[tauri::command]
 async fn update_config(config: Config, state: tauri::State<'_, AppState>) -> Result<()> {
     let next_config = {
-        let mut store = state.config_store.lock()
+        let mut store = state
+            .config_store
+            .lock()
             .map_err(|e| error::AppError::Unknown(e.to_string()))?;
         store.update(config)?;
         store.get().clone()
@@ -182,9 +213,14 @@ async fn update_config(config: Config, state: tauri::State<'_, AppState>) -> Res
 /// 按字段合并更新配置
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-async fn update_config_patch(patch: serde_json::Value, state: tauri::State<'_, AppState>) -> Result<Config> {
+async fn update_config_patch(
+    patch: serde_json::Value,
+    state: tauri::State<'_, AppState>,
+) -> Result<Config> {
     let saved_config = {
-        let mut store = state.config_store.lock()
+        let mut store = state
+            .config_store
+            .lock()
             .map_err(|e| error::AppError::Unknown(e.to_string()))?;
         store.patch(patch)?
     };
@@ -211,9 +247,7 @@ fn cascade_active_model_profile(config: &Config) {
         return;
     }
 
-    if let Err(e) =
-        crate::services::ModelProfileService::cascade_to_claude_settings(profile)
-    {
+    if let Err(e) = crate::services::ModelProfileService::cascade_to_claude_settings(profile) {
         tracing::warn!(
             "[update_config] 级联写入 Claude settings.json 失败 (Profile {}): {}",
             profile.id,
@@ -303,9 +337,13 @@ async fn start_configured_web_server(
 /// 保存 Web 配置后，前端应调用此命令以即时生效，无需重启应用。
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-async fn apply_web_server(state: tauri::State<'_, AppState>) -> std::result::Result<web::server::WebServerStatus, error::AppError> {
+async fn apply_web_server(
+    state: tauri::State<'_, AppState>,
+) -> std::result::Result<web::server::WebServerStatus, error::AppError> {
     let config = {
-        let store = state.config_store.lock()
+        let store = state
+            .config_store
+            .lock()
             .map_err(|e| error::AppError::Unknown(e.to_string()))?;
         store.get().clone()
     };
@@ -321,7 +359,9 @@ async fn apply_web_server(state: tauri::State<'_, AppState>) -> std::result::Res
 
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-async fn get_web_server_status(state: tauri::State<'_, AppState>) -> std::result::Result<web::server::WebServerStatus, error::AppError> {
+async fn get_web_server_status(
+    state: tauri::State<'_, AppState>,
+) -> std::result::Result<web::server::WebServerStatus, error::AppError> {
     Ok(current_web_server_status(&state).await)
 }
 
@@ -329,8 +369,8 @@ async fn get_web_server_status(state: tauri::State<'_, AppState>) -> std::result
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 fn get_local_ips() -> std::result::Result<Vec<String>, error::AppError> {
-    let interfaces = if_addrs::get_if_addrs()
-        .map_err(|e| error::AppError::Unknown(e.to_string()))?;
+    let interfaces =
+        if_addrs::get_if_addrs().map_err(|e| error::AppError::Unknown(e.to_string()))?;
     let mut ips: Vec<(String, u32)> = interfaces
         .into_iter()
         .filter(|iface| !iface.is_loopback() && iface.addr.ip().is_ipv4())
@@ -351,8 +391,17 @@ pub(crate) fn ip_interface_priority(ip: &str, iface_name: &str) -> u32 {
 
     // 1. 虚拟网卡名称匹配
     const VIRTUAL_KEYWORDS: &[&str] = &[
-        "virtualbox", "vmware", "hyper-v", "wsl", "docker",
-        "vethernet", "virbr", "bluestacks", "nox", "memu", "ldplayer",
+        "virtualbox",
+        "vmware",
+        "hyper-v",
+        "wsl",
+        "docker",
+        "vethernet",
+        "virbr",
+        "bluestacks",
+        "nox",
+        "memu",
+        "ldplayer",
     ];
     if VIRTUAL_KEYWORDS.iter().any(|k| name_lower.contains(k)) {
         return 100;
@@ -362,18 +411,13 @@ pub(crate) fn ip_interface_priority(ip: &str, iface_name: &str) -> u32 {
     //    192.168.56.x  → VirtualBox Host-Only（默认网段）
     //    192.168.153.x → VMware NAT（常见默认）
     //    169.254.x.x   → Link-Local（APIPA，不可路由）
-    if ip.starts_with("192.168.56.")
-        || ip.starts_with("192.168.153.")
-        || ip.starts_with("169.254.")
+    if ip.starts_with("192.168.56.") || ip.starts_with("192.168.153.") || ip.starts_with("169.254.")
     {
         return 90;
     }
 
     // 3. Docker 默认 bridge 网段
-    if ip.starts_with("172.17.")
-        || ip.starts_with("172.18.")
-        || ip.starts_with("172.19.")
-    {
+    if ip.starts_with("172.17.") || ip.starts_with("172.18.") || ip.starts_with("172.19.") {
         return 80;
     }
 
@@ -385,7 +429,9 @@ pub(crate) fn ip_interface_priority(ip: &str, iface_name: &str) -> u32 {
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 fn set_work_dir(path: Option<String>, state: tauri::State<AppState>) -> Result<()> {
-    let mut store = state.config_store.lock()
+    let mut store = state
+        .config_store
+        .lock()
         .map_err(|e| error::AppError::Unknown(e.to_string()))?;
     let path_buf = path.map(|p| p.into());
     store.set_work_dir(path_buf)
@@ -396,7 +442,9 @@ fn set_work_dir(path: Option<String>, state: tauri::State<AppState>) -> Result<(
 #[tauri::command]
 async fn set_claude_cmd(cmd: String, state: tauri::State<'_, AppState>) -> Result<()> {
     let next_config = {
-        let mut store = state.config_store.lock()
+        let mut store = state
+            .config_store
+            .lock()
             .map_err(|e| error::AppError::Unknown(e.to_string()))?;
         store.set_claude_cmd(cmd)?;
         store.get().clone()
@@ -412,7 +460,9 @@ async fn set_claude_cmd(cmd: String, state: tauri::State<'_, AppState>) -> Resul
 #[tauri::command]
 async fn reset_cli_config(state: tauri::State<'_, AppState>) -> Result<Config> {
     let next_config = {
-        let mut store = state.config_store.lock()
+        let mut store = state
+            .config_store
+            .lock()
             .map_err(|e| error::AppError::Unknown(e.to_string()))?;
         let mut config = store.get().clone();
         config.claude_code.cli_path = "claude".to_string();
@@ -461,15 +511,11 @@ fn validate_claude_path(path: String) -> PathValidationResult {
     }
 }
 
-
 /// 健康检查
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 fn health_check(state: tauri::State<AppState>) -> HealthStatus {
-    let store = state.config_store.lock()
-        .unwrap_or_else(|e| {
-            e.into_inner()
-        });
+    let store = state.config_store.lock().unwrap_or_else(|e| e.into_inner());
     store.health_status()
 }
 
@@ -477,8 +523,7 @@ fn health_check(state: tauri::State<AppState>) -> HealthStatus {
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 fn detect_claude(state: tauri::State<AppState>) -> Option<String> {
-    let store = state.config_store.lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let store = state.config_store.lock().unwrap_or_else(|e| e.into_inner());
     store.detect_claude()
 }
 
@@ -490,8 +535,7 @@ fn detect_claude(state: tauri::State<AppState>) -> Option<String> {
 #[cfg(feature = "tauri-app")]
 pub fn run() {
     // 初始化配置存储
-    let config_store = ConfigStore::new()
-        .expect("无法初始化配置存储");
+    let config_store = ConfigStore::new().expect("无法初始化配置存储");
 
     // 启用日志系统（使用 RUST_LOG 环境变量控制日志级别）
     // 开发: RUST_LOG=polaris=debug
@@ -515,16 +559,16 @@ pub fn run() {
     engine_registry.register(ai::MimocodeEngine::new(config.clone()));
 
     // 设置默认引擎
-    let default_engine = ai::EngineId::parse(&config.default_engine)
-        .unwrap_or(ai::EngineId::ClaudeCode);
+    let default_engine =
+        ai::EngineId::parse(&config.default_engine).unwrap_or(ai::EngineId::ClaudeCode);
     let _ = engine_registry.set_default(default_engine);
 
     // 使用 Arc 共享 engine_registry (使用 tokio::sync::Mutex 支持异步)
     let engine_registry_arc = Arc::new(AsyncMutex::new(engine_registry));
 
     // 初始化 IntegrationManager，共享 engine_registry
-    let integration_manager = IntegrationManager::new()
-        .with_engine_registry(engine_registry_arc.clone());
+    let integration_manager =
+        IntegrationManager::new().with_engine_registry(engine_registry_arc.clone());
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -562,8 +606,11 @@ pub fn run() {
 
             // Conditionally start the web server based on WebConfig.enabled
             let config = {
-                let store = state.config_store.lock()
-                    .unwrap_or_else(|e: std::sync::PoisonError<std::sync::MutexGuard<'_, ConfigStore>>| e.into_inner());
+                let store = state.config_store.lock().unwrap_or_else(
+                    |e: std::sync::PoisonError<std::sync::MutexGuard<'_, ConfigStore>>| {
+                        e.into_inner()
+                    },
+                );
                 store.get().clone()
             };
 
@@ -575,10 +622,7 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     match services::ask_listener::spawn_ask_listener(state_arc.clone()).await {
                         Ok(handle) => {
-                            tracing::info!(
-                                "[AskListener] 已绑定 port={}",
-                                handle.port
-                            );
+                            tracing::info!("[AskListener] 已绑定 port={}", handle.port);
                             let _ = state_arc.ask_listener.set(handle);
                         }
                         Err(e) => {
@@ -654,6 +698,9 @@ pub fn run() {
             // 聊天相关（统一接口）
             start_chat,
             continue_chat,
+            compact_chat,
+            restore_compacted_context,
+            delete_simple_ai_checkpoints,
             interrupt_chat,
             // 统一会话历史接口（支持分页）
             list_sessions,
@@ -1014,8 +1061,7 @@ pub fn run() {
 /// 参数优先级: cli_* > 环境变量 > 配置文件
 pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token: Option<String>) {
     // 初始化配置存储
-    let mut config_store = ConfigStore::new()
-        .expect("无法初始化配置存储");
+    let mut config_store = ConfigStore::new().expect("无法初始化配置存储");
 
     // 启用日志系统
     let _logger_guard = Logger::init(true);
@@ -1034,21 +1080,17 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
     engine_registry.register(ai::CodexEngine::new(config.clone()));
     engine_registry.register(ai::SimpleAIEngine::new(config.clone()));
     engine_registry.register(ai::MimocodeEngine::new(config.clone()));
-    let default_engine = ai::EngineId::parse(&config.default_engine)
-        .unwrap_or(ai::EngineId::ClaudeCode);
+    let default_engine =
+        ai::EngineId::parse(&config.default_engine).unwrap_or(ai::EngineId::ClaudeCode);
     let _ = engine_registry.set_default(default_engine);
     let engine_registry_arc = Arc::new(AsyncMutex::new(engine_registry));
 
     // 初始化 IntegrationManager
-    let integration_manager = IntegrationManager::new()
-        .with_engine_registry(engine_registry_arc.clone());
+    let integration_manager =
+        IntegrationManager::new().with_engine_registry(engine_registry_arc.clone());
 
     // 创建应用状态
-    let app_state = state::create_app_state(
-        config_store,
-        engine_registry_arc,
-        integration_manager,
-    );
+    let app_state = state::create_app_state(config_store, engine_registry_arc, integration_manager);
 
     // 设置 config_dir（替代 Tauri path resolver）
     let config_dir = services::data_root::data_root().config_dir();
@@ -1065,7 +1107,10 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
         .and_then(|p| p.parent().map(|d| d.to_path_buf()))
     {
         Some(exe_dir) => {
-            tracing::info!("[Polaris-Web] resource_dir 设为可执行文件目录: {:?}", exe_dir);
+            tracing::info!(
+                "[Polaris-Web] resource_dir 设为可执行文件目录: {:?}",
+                exe_dir
+            );
             let _ = app_state.resource_dir.set(Some(exe_dir));
         }
         None => {
@@ -1081,24 +1126,28 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
 
     // 启动 Web 服务器（优先级: CLI > 环境变量 > 配置文件）
     let port = cli_port
-        .or_else(|| std::env::var("POLARIS_WEB_PORT").ok().and_then(|v| v.parse().ok()))
+        .or_else(|| {
+            std::env::var("POLARIS_WEB_PORT")
+                .ok()
+                .and_then(|v| v.parse().ok())
+        })
         .unwrap_or_else(|| web_port_for_runtime(config.web.port));
-    let host = cli_host
-        .unwrap_or_else(|| config.web.host.clone());
+    let host = cli_host.unwrap_or_else(|| config.web.host.clone());
     let state = Arc::new(app_state);
     let web_server = web::server::WebServer::new(state);
 
-    tracing::info!("[Polaris-Web] Starting standalone web server on {}:{}", host, port);
+    tracing::info!(
+        "[Polaris-Web] Starting standalone web server on {}:{}",
+        host,
+        port
+    );
 
-    let rt = tokio::runtime::Runtime::new()
-        .expect("Failed to create tokio runtime");
+    let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
     rt.block_on(async move {
         // 调度器守护进程内部使用 tokio::spawn，必须在 Tokio runtime 上下文内启动，
         // 否则会 panic "there is no reactor running"。
-        let mut scheduler_daemon = services::scheduler_daemon::SchedulerDaemon::new(
-            scheduler_config_dir,
-            None,
-        );
+        let mut scheduler_daemon =
+            services::scheduler_daemon::SchedulerDaemon::new(scheduler_config_dir, None);
         if let Err(e) = scheduler_daemon.start_with_broadcast(event_tx) {
             tracing::warn!("[Polaris-Web] 调度器守护进程启动失败: {}", e);
         } else {

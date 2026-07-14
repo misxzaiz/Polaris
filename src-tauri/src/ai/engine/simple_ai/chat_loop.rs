@@ -16,13 +16,19 @@ use crate::ai::engine::simple_ai_protocol::{
 };
 use crate::error::{AppError, Result};
 use crate::models::ai_event::{
-    ProgressEvent, SessionEndEvent, ThinkingEvent, TokenEvent, ToolCallEndEvent, ToolCallStartEvent,
+    ProgressEvent, ThinkingEvent, TokenEvent, ToolCallEndEvent, ToolCallStartEvent,
 };
 use crate::models::AIEvent;
 
-use super::compact;
 use super::history;
 use super::tools::{ToolContext, ToolRegistry};
+
+#[derive(Debug, Default)]
+pub(super) struct ChatLoopStats {
+    pub(super) latest_provider_input_tokens: Option<u64>,
+    pub(super) tool_specs: Vec<Value>,
+    pub(super) aborted: bool,
+}
 
 /// 历史中单条 assistant 文本输出的 token 上限，超出则截断头部（约 16k 字符）。
 /// 仅截真正巨大的输出（如模型贴大段代码/文件），正常回答不受影响；零额外 API 调用。
@@ -39,8 +45,8 @@ const STREAM_IDLE_TIMEOUT_SECS: u64 = 120;
 /// 控制，而非数轮次封顶；codex `session/turn.rs` 的工具循环本身无轮次上限）。可经
 /// ModelProfile.custom_env 的 `SIMPLE_AI_MAX_TOOL_ROUNDS` 设为正整数作为防御性兜底。
 ///
-/// 注意：SimpleAI 尚未实现上下文压缩(compact)，无限轮次下超长任务的 token 会单调增长，
-/// 最终可能触发 API 的上下文超限错误而终止（详见 docs/simple-ai-codex-refactor-plan.md）。
+/// 常规上下文压缩由 turn 外层的 coordinator 在安全边界执行。本循环内部只负责
+/// 完整执行当前工具回合，禁止在 assistant tool_call 与后续推理之间改写历史。
 const DEFAULT_MAX_TOOL_ROUNDS: u64 = 0;
 
 /// 发起 OpenAI Chat Completions 流式请求，执行工具调用循环
@@ -53,6 +59,7 @@ pub(super) async fn run_chat_loop(
     abort_rx: &mut watch::Receiver<bool>,
     mcp_servers: &[crate::services::mcp_config_service::ResolvedExternalMcpServer],
     skills: &std::collections::HashMap<String, super::skill::SkillEntry>,
+    stats: &mut ChatLoopStats,
     depth: u32,
 ) -> Result<()> {
     let protocol = WireProtocol::from_wire_api(profile.wire_api.as_deref());
@@ -63,10 +70,16 @@ pub(super) async fn run_chat_loop(
     );
 
     // 超时配置：默认常量，可经 profile.custom_env 覆盖（不改 ModelProfile 结构/前端）。
-    let request_timeout_secs =
-        read_env_u64(&profile.custom_env, "SIMPLE_AI_TIMEOUT_SECS", DEFAULT_REQUEST_TIMEOUT_SECS);
-    let stream_idle_secs =
-        read_env_u64(&profile.custom_env, "SIMPLE_AI_STREAM_IDLE_SECS", STREAM_IDLE_TIMEOUT_SECS);
+    let request_timeout_secs = read_env_u64(
+        &profile.custom_env,
+        "SIMPLE_AI_TIMEOUT_SECS",
+        DEFAULT_REQUEST_TIMEOUT_SECS,
+    );
+    let stream_idle_secs = read_env_u64(
+        &profile.custom_env,
+        "SIMPLE_AI_STREAM_IDLE_SECS",
+        STREAM_IDLE_TIMEOUT_SECS,
+    );
     // 工具调用轮次上限：0 = 不限制（默认）。这里不复用 read_env_u64（它会把 0 视为非法回退），
     // 因为 0 对轮次而言是合法的「无限制」语义。
     let max_tool_rounds = profile
@@ -100,26 +113,10 @@ pub(super) async fn run_chat_loop(
         registry = registry.with_mcp(pool);
     }
     let tools = registry.specs();
+    stats.tool_specs = tools.clone();
     // update_plan 的计划面板状态：每轮首次调用先发 plan_start。
     let plan_id = format!("{}-plan", session_id);
     let plan_started = AtomicBool::new(false);
-
-    // 上下文压缩配置（Phase 3.3）：最近一轮 input 达窗口 75% 时触发摘要压缩。
-    // 窗口三级优先：ModelProfile.context_window > custom_env SIMPLE_AI_CONTEXT_WINDOW > 默认 1M。
-    let context_window = profile
-        .context_window
-        .filter(|v| *v > 0)
-        .unwrap_or_else(|| {
-            read_env_u64(
-                &profile.custom_env,
-                "SIMPLE_AI_CONTEXT_WINDOW",
-                compact::DEFAULT_CONTEXT_WINDOW,
-            )
-        });
-    let mut usage_acc = compact::UsageAccumulator::default();
-    // 压缩效果监督：刚压缩过一轮仍超阈 → 压不动，本 turn 熔断（防每轮空耗摘要请求）。
-    let mut rounds_since_compact: Option<u32> = None;
-    let mut compact_exhausted = false;
 
     let mut round: u64 = 0;
 
@@ -128,48 +125,33 @@ pub(super) async fn run_chat_loop(
         if max_tool_rounds > 0 && round >= max_tool_rounds {
             let _ = event_callback(AIEvent::Progress(ProgressEvent::new(
                 session_id,
-                format!("Reached configured tool call round cap ({}), stopping.", max_tool_rounds),
+                format!(
+                    "Reached configured tool call round cap ({}), stopping.",
+                    max_tool_rounds
+                ),
             )));
             break;
         }
         round += 1;
 
         if *abort_rx.borrow() {
-            let _ = event_callback(AIEvent::SessionEnd(SessionEndEvent::new(session_id)));
+            stats.aborted = true;
             return Ok(());
         }
 
-        // 裁剪历史中超长的 assistant 输出，避免长会话撑爆上下文窗口（零额外 API 调用）。
-        history::truncate_history_assistant_outputs(messages, HISTORY_ASSISTANT_TOKEN_CAP);
-
-        // 上下文压缩（Phase 3.3）：最近一轮 input 达阈值时，发摘要请求替换历史区间。
-        if !compact_exhausted && usage_acc.should_compact(context_window, messages) {
-            if rounds_since_compact == Some(1) {
-                compact_exhausted = true;
-                tracing::warn!(
-                    "[SimpleAI] 压缩无效（压缩后 input 仍超阈值），本轮任务内不再压缩"
-                );
-            } else {
-                tracing::info!(
-                    "[SimpleAI] 触发上下文压缩（最近一轮 input={}，window={}，累计 input={}）",
-                    usage_acc.last_input,
-                    context_window,
-                    usage_acc.total_input
-                );
-                let compacted =
-                    compact::compact_history(messages, profile, event_callback, session_id)
-                        .await?;
-                if compacted {
-                    // 清零触发基准，待下一轮真实 usage 刷新（天然一轮冷却）。
-                    usage_acc.reset_last();
-                    rounds_since_compact = Some(0);
-                }
-                // 区间过小跳过时不重置：下一轮消息增多后区间可选再压。
-            }
-        }
+        // 只为本次 wire request 构建裁剪投影；session/checkpoint 中的原始历史保持不变。
+        // 这样网络错误、取消或摘要失败都不会把投影永久写回会话。
+        let request_messages =
+            history::project_history_for_request(messages, HISTORY_ASSISTANT_TOKEN_CAP);
 
         // 构建请求体（按线路协议转换内部 OpenAI 消息格式）
-        let body = build_request_body(protocol, &profile.model, messages, &tools, profile.max_tokens);
+        let body = build_request_body(
+            protocol,
+            &profile.model,
+            &request_messages,
+            &tools,
+            profile.max_tokens,
+        );
         if tools.is_empty() {
             tracing::warn!("[SimpleAI] 工具列表为空!");
         } else {
@@ -228,7 +210,7 @@ pub(super) async fn run_chat_loop(
                 tracing::warn!(
                     "[SimpleAI] [DIAG] abort_rx 被置为 true, 提前结束, session={session_id}"
                 );
-                let _ = event_callback(AIEvent::SessionEnd(SessionEndEvent::new(session_id)));
+                stats.aborted = true;
                 return Ok(());
             }
 
@@ -246,7 +228,7 @@ pub(super) async fn run_chat_loop(
                     tracing::warn!(
                         "[SimpleAI] [DIAG] abort_rx.changed() 触发, 提前结束, session={session_id}"
                     );
-                    let _ = event_callback(AIEvent::SessionEnd(SessionEndEvent::new(session_id)));
+                    stats.aborted = true;
                     return Ok(());
                 }
                 _ = tokio::time::sleep(std::time::Duration::from_secs(stream_idle_secs)) => {
@@ -259,8 +241,8 @@ pub(super) async fn run_chat_loop(
 
             let Some(chunk_result) = chunk else { break };
 
-            let bytes = chunk_result
-                .map_err(|e| AppError::ProcessError(format!("Stream error: {}", e)))?;
+            let bytes =
+                chunk_result.map_err(|e| AppError::ProcessError(format!("Stream error: {}", e)))?;
 
             buffer.push_str(&String::from_utf8_lossy(&bytes));
 
@@ -289,15 +271,12 @@ pub(super) async fn run_chat_loop(
                     match delta {
                         StreamDelta::Text(text) => {
                             assistant_content.push_str(&text);
-                            let _ = event_callback(AIEvent::Token(TokenEvent::new(
-                                session_id,
-                                text,
-                            )));
+                            let _ =
+                                event_callback(AIEvent::Token(TokenEvent::new(session_id, text)));
                         }
                         StreamDelta::Thinking(thinking) => {
                             let _ = event_callback(AIEvent::Thinking(ThinkingEvent::new(
-                                session_id,
-                                thinking,
+                                session_id, thinking,
                             )));
                         }
                     }
@@ -309,18 +288,13 @@ pub(super) async fn run_chat_loop(
         let mut tool_calls = stream_state.finish_tool_calls();
         // token usage（Phase 3.1）：三协议在流末解析，仅日志上报；专用 UsageEvent 待前端 types 同步后启用。
         if let Some(usage) = stream_state.finish_usage() {
-            usage_acc.add(usage.input_tokens);
+            stats.latest_provider_input_tokens = Some(usage.input_tokens);
             tracing::info!(
-                "[SimpleAI] token usage: input={}, output={}, total={} (累计 input={})",
+                "[SimpleAI] token usage: input={}, output={}, total={}",
                 usage.input_tokens,
                 usage.output_tokens,
-                usage.total_tokens,
-                usage_acc.total_input
+                usage.total_tokens
             );
-        }
-        // 压缩效果监督计数（每完成一轮 +1；Some(1) 表示"刚压缩后的第一轮"）。
-        if let Some(r) = rounds_since_compact.as_mut() {
-            *r += 1;
         }
         // 输出被 max_tokens 截断时明确告警（可在供应商配置中调大 maxTokens）。
         if stream_state.finish_reason() == Some("length") {
@@ -405,6 +379,8 @@ pub(super) async fn run_chat_loop(
             messages.push(json!({
                 "role": "tool",
                 "tool_call_id": call_id,
+                "name": tool_name,
+                "success": outcome.success,
                 "content": outcome.content
             }));
         }

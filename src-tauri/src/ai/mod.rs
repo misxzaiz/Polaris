@@ -7,27 +7,25 @@
  * - Mimo Code (Mimocode)
  */
 
-pub mod traits;
-pub mod types;
-pub mod session;
-pub mod registry;
 pub mod engine;
+pub mod event_parser;
 pub mod history;
 pub mod history_claude;
 pub mod history_codex;
-pub mod event_parser;
+pub mod registry;
+pub mod session;
+pub mod traits;
+pub mod types;
 
-pub use traits::{
-    EngineId, SessionOptions, HistoryEntry, ImageAttachment, EngineMetadata,
-    EngineDistribution, EngineCapabilities, EnvKeyMapping, PlatformBinary,
-};
-pub use registry::EngineRegistry;
 pub use engine::ClaudeEngine;
 pub use engine::CodexEngine;
-pub use engine::SimpleAIEngine;
 pub use engine::MimocodeEngine;
-pub use history::{
-    Pagination, PagedResult, SessionMeta, HistoryMessage, SessionHistoryProvider,
-};
+pub use engine::SimpleAIEngine;
+pub use history::{HistoryMessage, PagedResult, Pagination, SessionHistoryProvider, SessionMeta};
 pub use history_claude::ClaudeHistoryProvider;
 pub use history_codex::CodexHistoryProvider;
+pub use registry::EngineRegistry;
+pub use traits::{
+    EngineCapabilities, EngineDistribution, EngineId, EngineMetadata, EnvKeyMapping, HistoryEntry,
+    ImageAttachment, PlatformBinary, SessionOptions,
+};

@@ -5,8 +5,8 @@
 
 use crate::error::{AppError, Result};
 use crate::models::todo::{
-    QueryScope, TodoCreateParams, TodoFileData, TodoItem, TodoPriority, TodoStatus,
-    TodoSubtask, TodoUpdateParams,
+    QueryScope, TodoCreateParams, TodoFileData, TodoItem, TodoPriority, TodoStatus, TodoSubtask,
+    TodoUpdateParams,
 };
 use chrono::Utc;
 use std::collections::BTreeMap;
@@ -75,7 +75,11 @@ impl UnifiedTodoRepository {
         let now = now_iso();
 
         // Update or add workspace
-        if let Some(existing) = data.workspaces.iter_mut().find(|w| w.path == workspace_path) {
+        if let Some(existing) = data
+            .workspaces
+            .iter_mut()
+            .find(|w| w.path == workspace_path)
+        {
             existing.last_accessed_at = now;
         } else {
             data.workspaces.push(WorkspaceInfo {
@@ -100,7 +104,9 @@ impl UnifiedTodoRepository {
                     let workspace_path = workspace.to_string_lossy().to_string();
                     all_todos
                         .into_iter()
-                        .filter(|todo| todo.workspace_path.as_deref() == Some(workspace_path.as_str()))
+                        .filter(|todo| {
+                            todo.workspace_path.as_deref() == Some(workspace_path.as_str())
+                        })
                         .collect()
                 } else {
                     // No workspace, return todos without workspace (legacy global)
@@ -152,24 +158,26 @@ impl UnifiedTodoRepository {
             related_files: sanitize_optional_vec(params.related_files),
             session_id: sanitize_optional_string(params.session_id),
             workspace_id: sanitize_optional_string(params.workspace_id),
-            subtasks: params.subtasks.map(|items| {
-                items
-                    .into_iter()
-                    .filter_map(|subtask| {
-                        let title = subtask.title.trim();
-                        if title.is_empty() {
-                            return None;
-                        }
-                        Some(TodoSubtask {
-                            id: Uuid::new_v4().to_string(),
-                            title: title.to_string(),
-                            completed: false,
-                            created_at: Some(now.clone()),
+            subtasks: params
+                .subtasks
+                .map(|items| {
+                    items
+                        .into_iter()
+                        .filter_map(|subtask| {
+                            let title = subtask.title.trim();
+                            if title.is_empty() {
+                                return None;
+                            }
+                            Some(TodoSubtask {
+                                id: Uuid::new_v4().to_string(),
+                                title: title.to_string(),
+                                completed: false,
+                                created_at: Some(now.clone()),
+                            })
                         })
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .filter(|items| !items.is_empty()),
+                        .collect::<Vec<_>>()
+                })
+                .filter(|items| !items.is_empty()),
             due_date: sanitize_optional_string(params.due_date),
             reminder_time: None,
             estimated_hours: params.estimated_hours,
@@ -299,7 +307,10 @@ impl UnifiedTodoRepository {
         let mut breakdown = BTreeMap::new();
 
         for todo in todos {
-            let key = todo.workspace_name.clone().unwrap_or_else(|| "全局".to_string());
+            let key = todo
+                .workspace_name
+                .clone()
+                .unwrap_or_else(|| "全局".to_string());
             *breakdown.entry(key).or_insert(0) += 1;
         }
 
@@ -320,7 +331,8 @@ impl UnifiedTodoRepository {
         }
 
         let content = std::fs::read_to_string(&file_path)?;
-        let raw_json: serde_json::Value = serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}));
+        let raw_json: serde_json::Value =
+            serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}));
 
         Ok(normalize_file_data(raw_json))
     }
@@ -394,7 +406,12 @@ fn normalize_file_data(raw_json: serde_json::Value) -> TodoFileData {
     let todos = raw_json
         .get("todos")
         .and_then(|value| value.as_array())
-        .map(|items| items.iter().filter_map(normalize_todo_item).collect::<Vec<_>>())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(normalize_todo_item)
+                .collect::<Vec<_>>()
+        })
         .unwrap_or_default();
 
     TodoFileData {
@@ -443,7 +460,9 @@ fn normalize_todo_item(value: &serde_json::Value) -> Option<TodoItem> {
         subtasks: normalize_subtasks(object.get("subtasks")),
         due_date: optional_string_field(object.get("dueDate")),
         reminder_time: optional_string_field(object.get("reminderTime")),
-        estimated_hours: object.get("estimatedHours").and_then(|value| value.as_f64()),
+        estimated_hours: object
+            .get("estimatedHours")
+            .and_then(|value| value.as_f64()),
         spent_hours: object.get("spentHours").and_then(|value| value.as_f64()),
         depends_on: optional_string_array(object.get("dependsOn")),
         blockers: optional_string_array(object.get("blockers")),
@@ -478,7 +497,10 @@ fn normalize_subtasks(value: Option<&serde_json::Value>) -> Option<Vec<TodoSubta
                             .map(|value| value.to_string())
                             .unwrap_or_else(|| Uuid::new_v4().to_string()),
                         title,
-                        completed: object.get("completed").and_then(|value| value.as_bool()).unwrap_or(false),
+                        completed: object
+                            .get("completed")
+                            .and_then(|value| value.as_bool())
+                            .unwrap_or(false),
                         created_at: optional_string_field(object.get("createdAt")),
                     })
                 })
@@ -629,19 +651,21 @@ mod tests {
 
         // Create todo in workspace A
         let repo_a = UnifiedTodoRepository::new(config_dir.clone(), Some(workspace_a.clone()));
-        repo_a.create_todo(TodoCreateParams {
-            content: "Workspace A todo".to_string(),
-            ..Default::default()
-        })
-        .unwrap();
+        repo_a
+            .create_todo(TodoCreateParams {
+                content: "Workspace A todo".to_string(),
+                ..Default::default()
+            })
+            .unwrap();
 
         // Create todo in workspace B
         let repo_b = UnifiedTodoRepository::new(config_dir.clone(), Some(workspace_b.clone()));
-        repo_b.create_todo(TodoCreateParams {
-            content: "Workspace B todo".to_string(),
-            ..Default::default()
-        })
-        .unwrap();
+        repo_b
+            .create_todo(TodoCreateParams {
+                content: "Workspace B todo".to_string(),
+                ..Default::default()
+            })
+            .unwrap();
 
         // Both todos should be in the same file
         let repo_all = UnifiedTodoRepository::new(config_dir.clone(), None);

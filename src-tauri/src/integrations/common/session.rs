@@ -3,9 +3,9 @@
  * 管理平台会话的创建、更新和删除。
  */
 
-use std::collections::HashMap;
-use chrono::Utc;
 use super::super::types::IntegrationSession;
+use chrono::Utc;
+use std::collections::HashMap;
 
 /// 会话管理器
 #[allow(dead_code)]
@@ -75,9 +75,8 @@ impl SessionManager {
         let now = Utc::now().timestamp_millis();
         let threshold = now - max_inactive_ms;
 
-        self.sessions.retain(|_, session| {
-            session.updated_at > threshold
-        });
+        self.sessions
+            .retain(|_, session| session.updated_at > threshold);
     }
 }
 

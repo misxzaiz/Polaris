@@ -90,10 +90,7 @@ impl EventBroadcaster {
     /// 与 `broadcast::Sender::send` 不同：即使当前没有任何订阅者
     /// （返回 `Err(SendError)`），事件也已写入重放缓冲——断线的客户端
     /// 重连后仍可补回这段时间的事件。这正是锁屏场景的核心诉求。
-    pub fn send(
-        &self,
-        msg: String,
-    ) -> Result<usize, broadcast::error::SendError<String>> {
+    pub fn send(&self, msg: String) -> Result<usize, broadcast::error::SendError<String>> {
         let seq = self.seq.fetch_add(1, Ordering::SeqCst) + 1;
         let stamped = inject_seq(&msg, seq);
 
@@ -119,7 +116,10 @@ impl EventBroadcaster {
     /// `gap = true` 表示 last_seq 之后存在已被淘汰的事件，补发不完整。
     pub fn replay_after(&self, last_seq: u64) -> ReplayResult {
         let Ok(buf) = self.buffer.lock() else {
-            return ReplayResult { events: Vec::new(), gap: true };
+            return ReplayResult {
+                events: Vec::new(),
+                gap: true,
+            };
         };
 
         let gap = last_seq < buf.evicted_through;

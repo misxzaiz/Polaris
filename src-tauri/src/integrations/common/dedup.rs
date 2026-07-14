@@ -3,8 +3,8 @@
  * 基于滑动时间窗口的消息去重机制。
  */
 
-use std::collections::HashMap;
 use chrono::Utc;
+use std::collections::HashMap;
 
 /// 消息去重器
 ///

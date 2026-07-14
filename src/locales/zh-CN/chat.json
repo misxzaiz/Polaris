@@ -306,7 +306,14 @@
     "syncRecover": "同步恢复：重连并补回断线丢失的内容",
     "syncRecoverDone": "已恢复，继续接收新内容",
     "syncRecoverNothing": "当前会话无需恢复",
-    "syncRecoverFailed": "同步恢复失败"
+    "syncRecoverFailed": "同步恢复失败",
+    "compactContext": "压缩 SimpleAI 上下文",
+    "restoreContext": "撤销最近一次上下文压缩"
+  },
+  "contextCompaction": {
+    "compacting": "正在压缩上下文…",
+    "restoring": "正在恢复压缩前上下文…",
+    "busy": "上下文压缩正在进行，请稍候"
   },
   "search": {
     "placeholder": "搜索消息...",
@@ -546,7 +553,9 @@
     "compactDivider": {
       "manual": "上下文已压缩",
       "auto": "上下文已自动压缩",
-      "tokens": "{{pre}} → {{post}} tokens"
+      "recovery": "上下文超限，已压缩并恢复请求",
+      "tokens": "{{pre}} → {{post}} tokens",
+      "turns": "归档 {{archived}} 回合，保留 {{retained}} 回合"
     }
   }
 }

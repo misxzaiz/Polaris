@@ -271,6 +271,7 @@ function createSessionManagerStore() {
     createSessionFromHistory: (messages, conversationId, metadata) => {
       // 创建新会话
       const sessionId = get().createSession({
+        id: metadata?.stableConversationId,
         type: metadata?.workspaceId ? 'project' : 'free',
         workspaceId: metadata?.workspaceId,
         title: metadata?.title || `历史会话 ${get().stores.size + 1}`,

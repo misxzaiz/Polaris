@@ -75,7 +75,9 @@ impl ProxyManager {
 
         tracing::info!(
             "[ProxyManager] 为 session {} (profile={}) 启动代理: http://{}",
-            session_id, profile_id, addr
+            session_id,
+            profile_id,
+            addr
         );
 
         proxies.insert(session_id.to_string(), handle);
@@ -95,14 +97,12 @@ impl ProxyManager {
         if let Some(handle) = proxies.remove(session_id) {
             tracing::info!(
                 "[ProxyManager] 停止 session {} 的代理: http://{}",
-                session_id, handle.addr
+                session_id,
+                handle.addr
             );
             handle.shutdown();
         } else {
-            tracing::info!(
-                "[ProxyManager] session {} 无活跃代理可停",
-                session_id
-            );
+            tracing::info!("[ProxyManager] session {} 无活跃代理可停", session_id);
         }
     }
 
@@ -112,7 +112,8 @@ impl ProxyManager {
         for (id, handle) in proxies.drain() {
             tracing::info!(
                 "[ProxyManager] 停止 session {} 的代理: http://{}",
-                id, handle.addr
+                id,
+                handle.addr
             );
             handle.shutdown();
         }

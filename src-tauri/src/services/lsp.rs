@@ -202,12 +202,14 @@ impl LspManager {
             AppError::ProcessError(format!("Failed to spawn LSP server '{}': {}", command, e))
         })?;
 
-        let stdin = child.stdin.take().ok_or_else(|| {
-            AppError::ProcessError("Failed to get stdin handle".to_string())
-        })?;
-        let stdout = child.stdout.take().ok_or_else(|| {
-            AppError::ProcessError("Failed to get stdout handle".to_string())
-        })?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| AppError::ProcessError("Failed to get stdin handle".to_string()))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| AppError::ProcessError("Failed to get stdout handle".to_string()))?;
         let stderr = child.stderr.take();
 
         let session_id = id.clone();
@@ -225,10 +227,7 @@ impl LspManager {
                     match reader.read_line(&mut line) {
                         Ok(0) => break,
                         Ok(_) => {
-                            let _ = ea.emit(
-                                &format!("lsp-stderr-{}", sid),
-                                line.trim_end(),
-                            );
+                            let _ = ea.emit(&format!("lsp-stderr-{}", sid), line.trim_end());
                         }
                         Err(_) => break,
                     }
@@ -261,8 +260,8 @@ impl LspManager {
                         }
                         Err(_) => {
                             // 进程退出或读取错误
-                            let _ =
-                                exit_app.emit(&format!("lsp-exit-{}", session_id), "process exited");
+                            let _ = exit_app
+                                .emit(&format!("lsp-exit-{}", session_id), "process exited");
                             return;
                         }
                     }
@@ -293,7 +292,13 @@ impl LspManager {
             }
         });
 
-        self.sessions.insert(id, LspSession { child, stdin: Some(stdin) });
+        self.sessions.insert(
+            id,
+            LspSession {
+                child,
+                stdin: Some(stdin),
+            },
+        );
         Ok(())
     }
 
@@ -306,9 +311,10 @@ impl LspManager {
             .get_mut(id)
             .ok_or_else(|| AppError::SessionNotFound(id.to_string()))?;
 
-        let stdin = session.stdin.as_mut().ok_or_else(|| {
-            AppError::ProcessError("LSP stdin closed".to_string())
-        })?;
+        let stdin = session
+            .stdin
+            .as_mut()
+            .ok_or_else(|| AppError::ProcessError("LSP stdin closed".to_string()))?;
 
         let frame = format!("Content-Length: {}\r\n\r\n{}", json.len(), json);
         stdin

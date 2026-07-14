@@ -6,26 +6,33 @@ use std::sync::Arc;
 #[cfg(feature = "tauri-app")]
 use tauri::Emitter;
 
-use crate::commands::chat::{ChatCallbacks, ChatRequestOptions, AppPaths, start_chat_inner, continue_chat_inner, interrupt_chat_inner};
+use super::WebError;
 use crate::ai::SessionHistoryProvider;
+use crate::commands::chat::{
+    compact_chat_inner, continue_chat_inner, interrupt_chat_inner, restore_compacted_context_inner,
+    start_chat_inner, AppPaths, ChatCallbacks, ChatRequestOptions,
+};
 use crate::state::QuestionAnswer;
 use crate::web::error::ok_response;
-use crate::web::{validate_session_id, validate_entity_id, PaginationQuery, parse_pagination};
+use crate::web::{parse_pagination, validate_entity_id, validate_session_id, PaginationQuery};
 use crate::AppState;
-use super::WebError;
 
 /// Resolve AppPaths (config_dir + resource_dir) from AppState.
 /// Falls back to DataRoot if not set by Tauri setup.
 pub fn resolve_app_paths(state: &AppState) -> AppPaths {
-    let config_dir = state.app_config_dir.get()
-        .cloned()
-        .unwrap_or_else(|| {
-            let fallback = crate::services::data_root::data_root().config_dir();
-            tracing::debug!("app_config_dir not set, using DataRoot fallback: {:?}", fallback);
+    let config_dir = state.app_config_dir.get().cloned().unwrap_or_else(|| {
+        let fallback = crate::services::data_root::data_root().config_dir();
+        tracing::debug!(
+            "app_config_dir not set, using DataRoot fallback: {:?}",
             fallback
-        });
+        );
+        fallback
+    });
     let resource_dir = state.resource_dir.get().and_then(|p| p.clone());
-    AppPaths { config_dir, resource_dir }
+    AppPaths {
+        config_dir,
+        resource_dir,
+    }
 }
 
 /// Dual-emit: broadcast event to both WebSocket clients and Tauri webview.
@@ -40,7 +47,10 @@ pub fn dual_emit(state: &AppState, event: &serde_json::Value) {
         "payload": event,
     });
     if let Err(e) = state.event_broadcast.send(ws_msg.to_string()) {
-        tracing::warn!("WebSocket broadcast send failed (no active receivers): {}", e);
+        tracing::warn!(
+            "WebSocket broadcast send failed (no active receivers): {}",
+            e
+        );
     }
     #[cfg(feature = "tauri-app")]
     if let Some(handle) = state.app_handle.get() {
@@ -71,22 +81,28 @@ pub fn create_emit_callback(state: Arc<AppState>) -> Arc<dyn Fn(serde_json::Valu
 
 /// Build ChatCallbacks and AppPaths for a web-initiated chat operation.
 /// Sets context_id to "web" if not already specified.
-pub fn build_web_callbacks(state: &Arc<AppState>, options: &mut ChatRequestOptions) -> (ChatCallbacks, AppPaths) {
+pub fn build_web_callbacks(
+    state: &Arc<AppState>,
+    options: &mut ChatRequestOptions,
+) -> (ChatCallbacks, AppPaths) {
     if options.context_id.is_none() {
         options.context_id = Some("web".to_string());
     }
     let emit_event = create_emit_callback(state.clone());
     let notify_complete = Arc::new(|| {});
     let app_paths = resolve_app_paths(state);
-    (ChatCallbacks { emit_event, notify_complete }, app_paths)
+    (
+        ChatCallbacks {
+            emit_event,
+            notify_complete,
+        },
+        app_paths,
+    )
 }
 
 /// Run a blocking Claude history provider operation on the blocking thread pool.
 /// Handles config cloning, spawn_blocking, and error mapping boilerplate.
-pub async fn run_claude_blocking<F, T>(
-    state: &AppState,
-    f: F,
-) -> Result<T, WebError>
+pub async fn run_claude_blocking<F, T>(state: &AppState, f: F) -> Result<T, WebError>
 where
     F: FnOnce(crate::ai::ClaudeHistoryProvider) -> crate::error::Result<T> + Send + 'static,
     T: Send + 'static,
@@ -117,7 +133,9 @@ pub async fn handle_send_message(
 ) -> Result<impl IntoResponse, WebError> {
     let message = req.message.trim().to_string();
     if message.is_empty() {
-        return Err(WebError::BadRequest("message must not be empty".to_string()));
+        return Err(WebError::BadRequest(
+            "message must not be empty".to_string(),
+        ));
     }
 
     let mut options = req.options.unwrap_or_default();
@@ -163,6 +181,57 @@ pub async fn handle_interrupt(
     Ok(ok_response())
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextCompactionRequest {
+    pub session_id: String,
+    #[serde(default)]
+    pub options: Option<ChatRequestOptions>,
+}
+
+/// Compact a SimpleAI session while preserving its visible conversation and runtime ID.
+pub async fn handle_compact_context(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<ContextCompactionRequest>,
+) -> Result<impl IntoResponse, WebError> {
+    validate_session_id(&req.session_id)?;
+    let mut options = req.options.unwrap_or_default();
+    let (callbacks, _) = build_web_callbacks(&state, &mut options);
+    compact_chat_inner(req.session_id, options, &state, callbacks).await?;
+    Ok(ok_response())
+}
+
+/// Restore the latest pre-compaction checkpoint before the next user turn starts.
+pub async fn handle_restore_compacted_context(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<ContextCompactionRequest>,
+) -> Result<impl IntoResponse, WebError> {
+    validate_session_id(&req.session_id)?;
+    let mut options = req.options.unwrap_or_default();
+    let (callbacks, _) = build_web_callbacks(&state, &mut options);
+    restore_compacted_context_inner(req.session_id, options, &state, callbacks).await?;
+    Ok(ok_response())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteContextCheckpointsRequest {
+    pub stable_conversation_id: String,
+}
+
+/// Remove all recoverability checkpoints when the persisted conversation is deleted.
+pub async fn handle_delete_context_checkpoints(
+    Json(req): Json<DeleteContextCheckpointsRequest>,
+) -> Result<impl IntoResponse, WebError> {
+    validate_entity_id(&req.stable_conversation_id, "stableConversationId")?;
+    tokio::task::spawn_blocking(move || {
+        crate::ai::engine::delete_context_checkpoints(&req.stable_conversation_id)
+    })
+    .await
+    .map_err(|error| WebError::Internal(error.to_string()))??;
+    Ok(ok_response())
+}
+
 /// Get message history for a specific session.
 /// Accepts optional `?page=1&page_size=50` query parameters.
 /// Uses spawn_blocking to offload filesystem I/O from the async runtime.
@@ -186,13 +255,21 @@ pub async fn handle_get_history(
     let engine = match params.engine_id.as_deref().unwrap_or("claude-code") {
         "claude" | "claude-code" => "claude-code",
         "codex" | "openai-codex" => "codex",
-        other => return Err(WebError::BadRequest(format!("Unsupported engine: {}", other))),
+        other => {
+            return Err(WebError::BadRequest(format!(
+                "Unsupported engine: {}",
+                other
+            )))
+        }
     };
 
     let result = match engine {
-        "claude-code" => run_claude_blocking(&state, move |provider| {
-            provider.get_session_history(&session_id, pagination)
-        }).await?,
+        "claude-code" => {
+            run_claude_blocking(&state, move |provider| {
+                provider.get_session_history(&session_id, pagination)
+            })
+            .await?
+        }
         "codex" => {
             let config = state.clone_config_web()?;
             tokio::task::spawn_blocking(move || {
@@ -257,7 +334,10 @@ pub async fn handle_answer_question(
     {
         let mut pending = state.lock_pending_questions()?;
         let Some(question) = pending.get(&call_id) else {
-            return Err(WebError::NotFound(format!("No pending question found for callId: {}", call_id)));
+            return Err(WebError::NotFound(format!(
+                "No pending question found for callId: {}",
+                call_id
+            )));
         };
         if question.session_id != session_id {
             return Err(WebError::BadRequest(format!(
@@ -404,7 +484,10 @@ async fn handle_plan_decision(
     {
         let mut pending = state.lock_pending_plans()?;
         let Some(plan) = pending.get(&plan_id) else {
-            return Err(WebError::NotFound(format!("No pending plan found for planId: {}", plan_id)));
+            return Err(WebError::NotFound(format!(
+                "No pending plan found for planId: {}",
+                plan_id
+            )));
         };
         if plan.session_id != session_id {
             return Err(WebError::BadRequest(format!(

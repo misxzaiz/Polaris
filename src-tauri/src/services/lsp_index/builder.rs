@@ -24,7 +24,11 @@ use super::model::FileIndex;
 pub type ProgressFn = Arc<dyn Fn(u32, u32) + Send + Sync>;
 
 /// 全量构建。返回 (索引文件数, 错误数)。
-pub fn build_full(db: &IndexDb, workspace: &Path, progress: Option<ProgressFn>) -> Result<(u32, u32)> {
+pub fn build_full(
+    db: &IndexDb,
+    workspace: &Path,
+    progress: Option<ProgressFn>,
+) -> Result<(u32, u32)> {
     let files = collect_indexable_files(workspace);
     let total = files.len() as u32;
 
@@ -64,10 +68,7 @@ pub fn build_full(db: &IndexDb, workspace: &Path, progress: Option<ProgressFn>) 
                 Err(_) => return None,
             };
 
-            let ext = abs
-                .extension()
-                .and_then(|s| s.to_str())
-                .unwrap_or("");
+            let ext = abs.extension().and_then(|s| s.to_str()).unwrap_or("");
             let lang = extractor::language_for_ext(ext)?;
 
             let extracted_opt = match extractor::extract(&rel, abs, lang, &source) {

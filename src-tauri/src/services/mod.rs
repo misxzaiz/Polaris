@@ -1,3 +1,7 @@
+pub mod agnes_mcp_server;
+pub mod ask_listener;
+pub mod ask_mcp_server;
+pub mod browser_mcp_server;
 pub mod config_store;
 pub mod data_root;
 pub mod file_watcher;
@@ -8,27 +12,22 @@ pub mod mcp_diagnostics_service;
 pub mod plugin_service;
 pub mod plugin_service_manager;
 pub mod plugin_state_service;
-pub mod prompt_store;
-pub mod prompt_snippet_service;
-pub mod ask_mcp_server;
-pub mod ask_listener;
-pub mod browser_mcp_server;
 pub mod prd_preview_mcp_server;
+pub mod prompt_snippet_service;
+pub mod prompt_store;
+pub mod requirements_mcp_server;
 pub mod scheduler;
 pub mod scheduler_daemon;
 pub mod scheduler_mcp_server;
 pub mod todo_mcp_server;
-pub mod unified_todo_repository;
 pub mod unified_requirement_repository;
 pub mod unified_scheduler_repository;
-pub mod requirements_mcp_server;
-pub mod agnes_mcp_server;
+pub mod unified_todo_repository;
 
 #[cfg(windows)]
 pub mod computer_control;
 #[cfg(windows)]
 pub mod computer_mcp_server;
-
 
 pub mod auto_mode_service;
 pub use auto_mode_service::AutoModeService;

@@ -523,19 +523,16 @@ impl TriggerType {
                 use cron::Schedule;
                 use std::str::FromStr;
 
-                Schedule::from_str(trigger_value)
-                    .ok()
-                    .and_then(|schedule| {
-                        schedule
-                            .upcoming(chrono::Utc)
-                            .next()
-                            .map(|dt| dt.timestamp())
-                    })
+                Schedule::from_str(trigger_value).ok().and_then(|schedule| {
+                    schedule
+                        .upcoming(chrono::Utc)
+                        .next()
+                        .map(|dt| dt.timestamp())
+                })
             }
             TriggerType::Interval | TriggerType::AfterCompletion => {
                 // 解析间隔表达式 (30s, 5m, 2h, 1d)
-                parse_interval(trigger_value)
-                    .map(|interval_secs| now + interval_secs)
+                parse_interval(trigger_value).map(|interval_secs| now + interval_secs)
             }
         }
     }
@@ -553,10 +550,10 @@ pub fn parse_interval(value: &str) -> Option<i64> {
     let num: i64 = num_str.parse().ok()?;
 
     let multiplier = match unit.to_lowercase().as_str() {
-        "s" => 1,           // 秒
-        "m" => 60,          // 分钟
-        "h" => 3600,        // 小时
-        "d" => 86400,       // 天
+        "s" => 1,     // 秒
+        "m" => 60,    // 分钟
+        "h" => 3600,  // 小时
+        "d" => 86400, // 天
         _ => return None,
     };
 
@@ -939,7 +936,10 @@ pub fn render_protocol_template(template: &str, params: &HashMap<String, String>
 }
 
 /// 生成协议文档
-pub fn generate_protocol_document(template: &ProtocolTemplate, params: &HashMap<String, String>) -> String {
+pub fn generate_protocol_document(
+    template: &ProtocolTemplate,
+    params: &HashMap<String, String>,
+) -> String {
     let now = chrono::Utc::now();
     let date_time = now.format("%Y-%m-%d %H:%M:%S").to_string();
 
@@ -977,7 +977,11 @@ pub fn generate_protocol_document(template: &ProtocolTemplate, params: &HashMap<
         date_time,
         template.category,
         mission,
-        template.protocol_config.execution_rules.as_deref().unwrap_or("按需执行任务")
+        template
+            .protocol_config
+            .execution_rules
+            .as_deref()
+            .unwrap_or("按需执行任务")
     );
 
     // 添加自定义区块
@@ -998,7 +1002,9 @@ pub fn generate_protocol_document(template: &ProtocolTemplate, params: &HashMap<
     doc.push_str("\n---\n\n## 补充\n\n> 用于临时调整任务方向或补充要求\n\n");
 
     // 添加协议更新说明
-    doc.push_str("\n---\n\n## 协议更新\n\n可修改本协议，修改时记录：\n- 修改内容\n- 修改原因\n- 预期效果\n");
+    doc.push_str(
+        "\n---\n\n## 协议更新\n\n可修改本协议，修改时记录：\n- 修改内容\n- 修改原因\n- 预期效果\n",
+    );
 
     doc
 }

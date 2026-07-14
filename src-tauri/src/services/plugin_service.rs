@@ -446,18 +446,23 @@ impl PluginService {
         workspace_path: Option<&Path>,
         install_path: &Path,
     ) -> Result<PluginOperationResult> {
-        let target = Self::canonicalize_allowed_plugin_dir(
-            app_config_dir,
-            workspace_path,
-            install_path,
-        )?;
+        let target =
+            Self::canonicalize_allowed_plugin_dir(app_config_dir, workspace_path, install_path)?;
         let installed_manifest_path = Self::find_manifest_path(&target).ok_or_else(|| {
-            AppError::ConfigError("插件目录缺少 plugin.json / .codex-plugin/plugin.json".to_string())
+            AppError::ConfigError(
+                "插件目录缺少 plugin.json / .codex-plugin/plugin.json".to_string(),
+            )
         })?;
         let installed_manifest = Self::read_manifest(&installed_manifest_path)?;
-        let update_url = installed_manifest.origin.update_url.clone().ok_or_else(|| {
-            AppError::ConfigError("插件 manifest 未声明 origin.updateUrl，无法应用更新".to_string())
-        })?;
+        let update_url = installed_manifest
+            .origin
+            .update_url
+            .clone()
+            .ok_or_else(|| {
+                AppError::ConfigError(
+                    "插件 manifest 未声明 origin.updateUrl，无法应用更新".to_string(),
+                )
+            })?;
         let latest_manifest = Self::read_update_manifest(&update_url).await?;
         if latest_manifest.id != installed_manifest.id {
             return Ok(PluginOperationResult {
@@ -465,8 +470,7 @@ impl PluginService {
                 message: None,
                 error: Some(format!(
                     "更新 manifest 插件 ID 不匹配: 当前 {}，远端 {}",
-                    installed_manifest.id,
-                    latest_manifest.id
+                    installed_manifest.id, latest_manifest.id
                 )),
             });
         }
@@ -476,14 +480,15 @@ impl PluginService {
                 message: None,
                 error: Some(format!(
                     "未发现可应用的新版本: 当前 {}，远端 {}",
-                    installed_manifest.version,
-                    latest_manifest.version
+                    installed_manifest.version, latest_manifest.version
                 )),
             });
         }
 
         let download_url = latest_manifest.origin.download_url.clone().ok_or_else(|| {
-            AppError::ConfigError("更新 manifest 未声明 origin.downloadUrl，无法下载安装包".to_string())
+            AppError::ConfigError(
+                "更新 manifest 未声明 origin.downloadUrl，无法下载安装包".to_string(),
+            )
         })?;
         let download_url = Self::resolve_source_url(&update_url, &download_url);
         let source = Self::download_plugin_source(&download_url).await?;
@@ -494,9 +499,12 @@ impl PluginService {
             .prefix(".polaris-plugin-update-")
             .tempdir_in(temp_parent)?;
         let validation = Self::copy_prepared_plugin_source(&source, staging.path())?;
-        let candidate_manifest_path = Self::find_manifest_path(staging.path()).ok_or_else(|| {
-            AppError::ConfigError("更新包缺少 plugin.json / .codex-plugin/plugin.json".to_string())
-        })?;
+        let candidate_manifest_path =
+            Self::find_manifest_path(staging.path()).ok_or_else(|| {
+                AppError::ConfigError(
+                    "更新包缺少 plugin.json / .codex-plugin/plugin.json".to_string(),
+                )
+            })?;
         let candidate_manifest = Self::read_manifest(&candidate_manifest_path)?;
         if candidate_manifest.id != installed_manifest.id {
             return Ok(PluginOperationResult {
@@ -504,8 +512,7 @@ impl PluginService {
                 message: None,
                 error: Some(format!(
                     "更新包插件 ID 不匹配: 当前 {}，安装包 {}",
-                    installed_manifest.id,
-                    candidate_manifest.id
+                    installed_manifest.id, candidate_manifest.id
                 )),
             });
         }
@@ -515,8 +522,7 @@ impl PluginService {
                 message: None,
                 error: Some(format!(
                     "更新包版本未高于当前版本: 当前 {}，安装包 {}",
-                    installed_manifest.version,
-                    candidate_manifest.version
+                    installed_manifest.version, candidate_manifest.version
                 )),
             });
         }
@@ -538,10 +544,8 @@ impl PluginService {
 
         let install_result: Result<()> = match std::fs::rename(&staging_path, &target) {
             Ok(()) => Ok(()),
-            Err(_) => {
-                Self::copy_dir_recursive(&staging_path, &target)
-                    .and_then(|()| Ok(std::fs::remove_dir_all(&staging_path)?))
-            }
+            Err(_) => Self::copy_dir_recursive(&staging_path, &target)
+                .and_then(|()| Ok(std::fs::remove_dir_all(&staging_path)?)),
         };
 
         if let Err(error) = install_result {
@@ -575,9 +579,7 @@ impl PluginService {
             success: true,
             message: Some(format!(
                 "已更新插件 {}: {} -> {}",
-                installed_manifest.id,
-                installed_manifest.version,
-                candidate_manifest.version
+                installed_manifest.id, installed_manifest.version, candidate_manifest.version
             )),
             error: None,
         })
@@ -588,11 +590,8 @@ impl PluginService {
         workspace_path: Option<&Path>,
         install_path: &Path,
     ) -> Result<PluginOperationResult> {
-        let target = Self::canonicalize_allowed_plugin_dir(
-            app_config_dir,
-            workspace_path,
-            install_path,
-        )?;
+        let target =
+            Self::canonicalize_allowed_plugin_dir(app_config_dir, workspace_path, install_path)?;
 
         std::fs::remove_dir_all(&target)?;
 
@@ -760,14 +759,21 @@ impl PluginService {
                 .get(update_url)
                 .send()
                 .await
-                .map_err(|error| AppError::ProcessError(format!("获取插件更新 manifest 失败: {}", error)))?
+                .map_err(|error| {
+                    AppError::ProcessError(format!("获取插件更新 manifest 失败: {}", error))
+                })?
                 .error_for_status()
-                .map_err(|error| AppError::ProcessError(format!("获取插件更新 manifest 失败: {}", error)))?
+                .map_err(|error| {
+                    AppError::ProcessError(format!("获取插件更新 manifest 失败: {}", error))
+                })?
                 .text()
                 .await
-                .map_err(|error| AppError::ProcessError(format!("读取插件更新 manifest 失败: {}", error)))?;
-            serde_json::from_str::<PluginManifestFile>(&content)
-                .map_err(|error| AppError::ConfigError(format!("插件更新 manifest 格式错误: {}", error)))
+                .map_err(|error| {
+                    AppError::ProcessError(format!("读取插件更新 manifest 失败: {}", error))
+                })?;
+            serde_json::from_str::<PluginManifestFile>(&content).map_err(|error| {
+                AppError::ConfigError(format!("插件更新 manifest 格式错误: {}", error))
+            })
         } else {
             Self::read_manifest(Path::new(update_url))
         }
@@ -955,11 +961,15 @@ impl PluginService {
                 .get(reqwest::header::CONTENT_TYPE)
                 .and_then(|value| value.to_str().ok())
                 .map(str::to_string);
-            let bytes = response
-                .bytes()
-                .await
-                .map_err(|error| AppError::NetworkError(format!("读取插件下载内容失败: {}", error)))?;
-            return Self::prepare_downloaded_plugin_source(source_url, content_type.as_deref(), bytes.as_ref()).await;
+            let bytes = response.bytes().await.map_err(|error| {
+                AppError::NetworkError(format!("读取插件下载内容失败: {}", error))
+            })?;
+            return Self::prepare_downloaded_plugin_source(
+                source_url,
+                content_type.as_deref(),
+                bytes.as_ref(),
+            )
+            .await;
         }
 
         Self::prepare_package_source(Path::new(source_url))
@@ -1027,7 +1037,13 @@ impl PluginService {
 
         let directories = std::fs::read_dir(root)?
             .filter_map(|entry| entry.ok())
-            .filter_map(|entry| entry.file_type().ok().filter(|file_type| file_type.is_dir()).map(|_| entry.path()))
+            .filter_map(|entry| {
+                entry
+                    .file_type()
+                    .ok()
+                    .filter(|file_type| file_type.is_dir())
+                    .map(|_| entry.path())
+            })
             .collect::<Vec<_>>();
 
         if directories.len() == 1 && Self::find_manifest_path(&directories[0]).is_some() {
@@ -1035,20 +1051,25 @@ impl PluginService {
         }
 
         Err(AppError::ConfigError(
-            "插件安装包必须在根目录或唯一顶层目录中包含 plugin.json / .codex-plugin/plugin.json".to_string(),
+            "插件安装包必须在根目录或唯一顶层目录中包含 plugin.json / .codex-plugin/plugin.json"
+                .to_string(),
         ))
     }
 
     fn extract_zip_reader<R: Read + Seek>(reader: R, target: &Path) -> Result<()> {
-        let mut archive = zip::ZipArchive::new(reader)
-            .map_err(|error| AppError::ConfigError(format!("插件 zip 安装包格式错误: {}", error)))?;
+        let mut archive = zip::ZipArchive::new(reader).map_err(|error| {
+            AppError::ConfigError(format!("插件 zip 安装包格式错误: {}", error))
+        })?;
 
         for index in 0..archive.len() {
-            let mut file = archive
-                .by_index(index)
-                .map_err(|error| AppError::ConfigError(format!("读取插件 zip 安装包失败: {}", error)))?;
+            let mut file = archive.by_index(index).map_err(|error| {
+                AppError::ConfigError(format!("读取插件 zip 安装包失败: {}", error))
+            })?;
             let enclosed_path = file.enclosed_name().ok_or_else(|| {
-                AppError::PermissionDenied(format!("插件 zip 安装包包含不安全路径: {}", file.name()))
+                AppError::PermissionDenied(format!(
+                    "插件 zip 安装包包含不安全路径: {}",
+                    file.name()
+                ))
             })?;
             let output_path = target.join(enclosed_path);
 
@@ -1073,9 +1094,16 @@ impl PluginService {
     }
 
     fn looks_like_zip_url(source_url: &str, content_type: Option<&str>, bytes: &[u8]) -> bool {
-        source_url.to_ascii_lowercase().split('?').next().unwrap_or_default().ends_with(".zip")
+        source_url
+            .to_ascii_lowercase()
+            .split('?')
+            .next()
+            .unwrap_or_default()
+            .ends_with(".zip")
             || content_type
-                .map(|value| value.contains("application/zip") || value.contains("application/octet-stream"))
+                .map(|value| {
+                    value.contains("application/zip") || value.contains("application/octet-stream")
+                })
                 .unwrap_or(false)
             || bytes.starts_with(b"PK\x03\x04")
     }
@@ -1110,61 +1138,124 @@ impl PluginService {
         let content = match std::fs::read_to_string(path) {
             Ok(content) => content,
             Err(error) => {
-                Self::push_validation_error(&mut result, &path_text, format!("无法读取插件 manifest: {}", error));
+                Self::push_validation_error(
+                    &mut result,
+                    &path_text,
+                    format!("无法读取插件 manifest: {}", error),
+                );
                 return result;
             }
         };
         let manifest = match serde_json::from_str::<PluginManifestFile>(&content) {
             Ok(manifest) => manifest,
             Err(error) => {
-                Self::push_validation_error(&mut result, &path_text, format!("插件 manifest 格式错误: {}", error));
+                Self::push_validation_error(
+                    &mut result,
+                    &path_text,
+                    format!("插件 manifest 格式错误: {}", error),
+                );
                 return result;
             }
         };
 
         result.plugin_id = Some(manifest.id.clone());
         if manifest.id.trim().is_empty() {
-            Self::push_validation_error(&mut result, &path_text, "id is required and must be a non-empty string");
+            Self::push_validation_error(
+                &mut result,
+                &path_text,
+                "id is required and must be a non-empty string",
+            );
         }
         if manifest.name.trim().is_empty() {
-            Self::push_validation_error(&mut result, &path_text, "name is required and must be a non-empty string");
+            Self::push_validation_error(
+                &mut result,
+                &path_text,
+                "name is required and must be a non-empty string",
+            );
         }
         if manifest.version.trim().is_empty() {
-            Self::push_validation_error(&mut result, &path_text, "version is required and must be a non-empty string");
+            Self::push_validation_error(
+                &mut result,
+                &path_text,
+                "version is required and must be a non-empty string",
+            );
         }
 
         for (index, view) in manifest.contributes.views.iter().enumerate() {
             let prefix = format!("contributes.views[{}]", index);
             if view.id.trim().is_empty() {
-                Self::push_validation_error(&mut result, &path_text, format!("{}.id is required", prefix));
+                Self::push_validation_error(
+                    &mut result,
+                    &path_text,
+                    format!("{}.id is required", prefix),
+                );
             }
             if view.area != "activityBar" {
-                Self::push_validation_error(&mut result, &path_text, format!("{}.area has unsupported value: {}", prefix, view.area));
+                Self::push_validation_error(
+                    &mut result,
+                    &path_text,
+                    format!("{}.area has unsupported value: {}", prefix, view.area),
+                );
             }
             if view.panel_type.trim().is_empty() {
-                Self::push_validation_error(&mut result, &path_text, format!("{}.panelType is required", prefix));
+                Self::push_validation_error(
+                    &mut result,
+                    &path_text,
+                    format!("{}.panelType is required", prefix),
+                );
             }
             if !VALID_PLUGIN_ICONS.contains(&view.icon.as_str()) {
-                Self::push_validation_error(&mut result, &path_text, format!("{}.icon has unsupported value: {}", prefix, view.icon));
+                Self::push_validation_error(
+                    &mut result,
+                    &path_text,
+                    format!("{}.icon has unsupported value: {}", prefix, view.icon),
+                );
             }
             if view.label_key.trim().is_empty() {
-                Self::push_validation_error(&mut result, &path_text, format!("{}.labelKey is required", prefix));
+                Self::push_validation_error(
+                    &mut result,
+                    &path_text,
+                    format!("{}.labelKey is required", prefix),
+                );
             }
-            if view.badge.as_deref().is_some_and(|badge| badge != "problems") {
-                Self::push_validation_error(&mut result, &path_text, format!("{}.badge must be problems", prefix));
+            if view
+                .badge
+                .as_deref()
+                .is_some_and(|badge| badge != "problems")
+            {
+                Self::push_validation_error(
+                    &mut result,
+                    &path_text,
+                    format!("{}.badge must be problems", prefix),
+                );
             }
         }
 
         for (index, server) in manifest.contributes.mcp_servers.iter().enumerate() {
             let prefix = format!("contributes.mcpServers[{}]", index);
             if server.id.trim().is_empty() {
-                Self::push_validation_error(&mut result, &path_text, format!("{}.id is required", prefix));
+                Self::push_validation_error(
+                    &mut result,
+                    &path_text,
+                    format!("{}.id is required", prefix),
+                );
             }
             if !VALID_TRANSPORTS.contains(&server.transport.as_str()) {
-                Self::push_validation_error(&mut result, &path_text, format!("{}.transport has unsupported value: {}", prefix, server.transport));
+                Self::push_validation_error(
+                    &mut result,
+                    &path_text,
+                    format!(
+                        "{}.transport has unsupported value: {}",
+                        prefix, server.transport
+                    ),
+                );
             }
             if server.command.trim().is_empty() {
-                Self::push_validation_error(&mut result, &path_text, format!("{}.command is required", prefix));
+                Self::push_validation_error(
+                    &mut result,
+                    &path_text,
+                    format!("{}.command is required", prefix),
+                );
             }
         }
 
