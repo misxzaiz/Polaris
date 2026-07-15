@@ -20,6 +20,9 @@ import { normalizeEngineId, getEngineFullName } from '@/utils/engineDisplay'
 import { useToastStore } from '@/stores/toastStore'
 import { getDefaultCompactInstruction } from '@/services/contextCompactHandoff'
 import { useCompactHandoffStore } from '@/stores/compactHandoffStore'
+import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
+import { getSessionConfig } from '@/stores/sessionConfigStore'
+import { resolveEffectiveProfileId } from '@/stores/conversationStore/conversationStoreUtils'
 import type { EngineId } from '@/types'
 
 interface CompactHandoffModalProps {
@@ -172,10 +175,27 @@ export function CompactHandoffModal({
 
   const profiles = useModelProfileStore((s) => s.profiles)
 
-  // 表单状态：引擎默认沿用源会话引擎
+  // 源会话当前生效的供应商(Profile)与模型：作为压缩配置默认值，
+  // 让「压缩」默认沿用你当前对话正在用的线路，无需重复挑选。
+  // 解析链与 sendMessage 一致：会话级覆盖 > 状态栏镜像 > 全局激活 Profile。
+  const sourceDefaults = useMemo(() => {
+    const meta = sessionStoreManager.getState().sessionMetadata.get(sessionId)
+    const sessionConfig = getSessionConfig()
+    const activeProfileId = useModelProfileStore.getState().activeProfileId ?? undefined
+    const profileId = resolveEffectiveProfileId(
+      meta?.modelProfileId,
+      sessionConfig.modelProfileId,
+      activeProfileId,
+    ) ?? '' // undefined = 官方 API = 空
+    const model = meta?.model || sessionConfig.model || ''
+    return { profileId, model }
+    // sessionId 变化才重算（同一 modal 生命周期内源会话固定）
+  }, [sessionId])
+
+  // 表单状态：引擎默认沿用源会话引擎；供应商/模型默认沿用源会话当前线路
   const [compactEngine, setCompactEngine] = useState<EngineId>(sourceEngine)
-  const [compactProfileId, setCompactProfileId] = useState('')
-  const [compactModel, setCompactModel] = useState('')
+  const [compactProfileId, setCompactProfileId] = useState(sourceDefaults.profileId)
+  const [compactModel, setCompactModel] = useState(sourceDefaults.model)
   const [instruction, setInstruction] = useState(() => getDefaultCompactInstruction())
   const [newEngine, setNewEngine] = useState<EngineId>(sourceEngine)
   const [showInstruction, setShowInstruction] = useState(false)
@@ -193,10 +213,14 @@ export function CompactHandoffModal({
 
   const modelOptions = useMemo<SelectOption[]>(() => {
     const profile = profiles.find((p) => p.id === compactProfileId)
-    if (!profile) return []
-    const opts = (profile.modelOptions?.length ? profile.modelOptions : [profile.model]).filter(Boolean)
-    return opts.map((m) => ({ value: m, label: m }))
-  }, [profiles, compactProfileId])
+    const base = profile
+      ? (profile.modelOptions?.length ? profile.modelOptions : [profile.model]).filter(Boolean)
+      : []
+    const set = new Set(base)
+    // 保证预选/自定义模型始终可见（源会话模型可能不在 Profile 列表内）
+    if (compactModel) set.add(compactModel)
+    return [...set].map((m) => ({ value: m, label: m }))
+  }, [profiles, compactProfileId, compactModel])
 
   const handleStart = () => {
     const started = useCompactHandoffStore.getState().start({
