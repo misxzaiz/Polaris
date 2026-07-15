@@ -105,7 +105,7 @@ pub(super) async fn run_chat_loop(
     let plan_started = AtomicBool::new(false);
 
     // 上下文压缩配置（Phase 3.3）：最近一轮 input 达窗口 75% 时触发摘要压缩。
-    // 窗口三级优先：ModelProfile.context_window > custom_env SIMPLE_AI_CONTEXT_WINDOW > 默认 1M。
+    // 窗口三级优先：ModelProfile.context_window > custom_env SIMPLE_AI_CONTEXT_WINDOW > 默认 180K。
     let context_window = profile
         .context_window
         .filter(|v| *v > 0)
@@ -157,7 +157,7 @@ pub(super) async fn run_chat_loop(
                     usage_acc.total_input
                 );
                 let compacted =
-                    compact::compact_history(messages, profile, event_callback, session_id)
+                    compact::compact_history(messages, profile, context_window, event_callback, session_id)
                         .await?;
                 if compacted {
                     // 清零触发基准，待下一轮真实 usage 刷新（天然一轮冷却）。

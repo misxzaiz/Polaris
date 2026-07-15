@@ -203,3 +203,96 @@ bootstrap boundary、briefing、recent-tail boundary、校验值。
 **本会话下一步实施 Phase 1（窗口错配修复，纯配置层、零 Rust、可 cargo check 验证）**，
 这是能立刻止血、风险最低、且直击用户最初报错根因的一项。Phase 2~6 留待后续会话
 在有完整测试环境时推进，按本规划文档分阶段执行。
+
+---
+
+## 附：Phase 2 滚动分段摘要 — 具体实施方案（函数级）
+
+> 补充于 2026-07-15。目标：让 SimpleAI 后端原地压缩在「待压区间本身超窗」时也能完成，
+> 不再一次性把全区间发给模型（避免压缩请求自身 400）。默认路径（区间不超预算）
+> 行为与现状字节级一致，仅在超预算时启用分段，回归风险最低。
+
+### 文件：`src-tauri/src/ai/engine/simple_ai/compact.rs`
+
+#### 新增常量
+```rust
+/// 单段摘要输入的 token 预算（占窗口比例）。区间估算超过 window×此值时触发分段。
+const SEGMENT_INPUT_BUDGET_RATIO: f64 = 0.5;
+/// 分段数量硬上限（防极端长历史产生过多请求）。超过则尾部并入最后一段并 log。
+const MAX_SEGMENTS: usize = 12;
+/// 滚动合并指令：把已有摘要与新片段合并为更新后的完整摘要。
+const COMPACT_ROLLING_INSTRUCTION: &str = "You are incrementally compacting a long conversation. \
+You are given an existing summary and a new segment of raw conversation. Merge them into a single \
+updated handoff summary that preserves all key decisions, established facts, file paths touched, \
+outstanding errors, and current task state from BOTH. Reply with ONLY the merged summary.";
+```
+
+#### 新增纯函数（可单测，cargo check 验证）
+```rust
+/// 估算单条消息的 token（复用 chars/4，含工具调用 JSON）。
+fn estimate_message_tokens(m: &Value) -> u64;
+
+/// 把 [start,end) 按 token 预算切成若干段，**只在 user 消息前切**
+/// （turn 边界），保证永不切断 assistant.tool_calls 与后续 tool result 配对。
+/// 单个超预算的 turn 自成一段（可接受：仍远小于整段历史）。
+/// 段数超 MAX_SEGMENTS 时停止再切、余下并入最后一段。
+/// 返回相对 messages 的绝对索引区间 [(s,e), ...]，至少 1 段。
+fn segment_compact_range(
+    messages: &[Value], start: usize, end: usize, per_segment_budget: u64,
+) -> Vec<(usize, usize)>;
+```
+切段逻辑：
+```
+seg_start = start; acc = 0
+for i in start..end:
+    acc += estimate_message_tokens(&messages[i])
+    let at_user_boundary = i+1 < end && role(&messages[i+1]) == "user"
+    let under_cap = segments.len() + 1 < MAX_SEGMENTS
+    if acc >= budget && at_user_boundary && under_cap:
+        segments.push((seg_start, i+1)); seg_start = i+1; acc = 0
+segments.push((seg_start, end))
+```
+
+#### 新增异步编排
+```rust
+/// 滚动分段摘要：区间不超预算 → 单次 request_summary（现状路径）；
+/// 超预算 → 分段，逐段 request_summary_once，滚动带入上一段摘要合并。
+async fn summarize_range_rolling(
+    messages: &[Value], start: usize, end: usize, window: u64,
+    profile: &ModelProfile,
+    event_callback: &Arc<dyn Fn(AIEvent) + Send + Sync>, session_id: &str,
+) -> Result<String>;
+```
+逻辑：
+- `budget = (window as f64 * SEGMENT_INPUT_BUDGET_RATIO) as u64`
+- `segments = segment_compact_range(...)`；`segments.len() == 1` → 复用 `request_summary(profile, whole_text)`（**与现状完全一致**）
+- 否则逐段：进度提示「压缩上下文… 第 i/n 段」；首段直接摘要，后续段以
+  `<existing_summary>…</existing_summary>\n<new_segment>…</new_segment>` 为输入 +
+  `COMPACT_ROLLING_INSTRUCTION`；最终 `running` 即合并简报。
+
+#### 修改 `compact_history` 签名与调用
+```rust
+pub(super) async fn compact_history(
+    messages: &mut Vec<Value>, profile: &ModelProfile,
+    window: u64,                                 // 新增
+    event_callback: &Arc<...>, session_id: &str,
+) -> Result<bool>
+```
+内部：`request_summary(profile, &history_text)` 一处替换为
+`summarize_range_rolling(messages, start, end, window, profile, event_callback, session_id)`。
+失败兜底暂保留 `fallback_drop_oldest`（Phase 3 再移除）。
+
+### 文件：`src-tauri/src/ai/engine/simple_ai/chat_loop.rs`
+调用点（约 line 160）传入已解析的 `context_window`：
+```rust
+compact::compact_history(messages, profile, context_window, event_callback, session_id).await?
+```
+
+### 验证
+- `cargo check --lib`（本机不能运行 Tauri 测试，只能编译验证）。
+- `segment_compact_range` / `estimate_message_tokens` 加单测（编译期即验证逻辑）：
+  单段不切、超预算多段、单超大 turn 自成段、MAX_SEGMENTS 封顶、只在 user 前切。
+
+### 回归控制
+- 区间不超 `window×0.5` 时走 `segments.len()==1` 分支 = 现状 `request_summary`，行为不变。
+- 仅长历史（超预算）触发分段，属于原本必然 400 的场景，只会更好不会更坏。

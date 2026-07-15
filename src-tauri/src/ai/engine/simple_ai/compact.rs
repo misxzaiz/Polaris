@@ -31,13 +31,11 @@ use super::retry;
 /// 默认上下文窗口（token）。优先级：`ModelProfile.context_window` > custom_env
 /// `SIMPLE_AI_CONTEXT_WINDOW` > 本值。
 ///
-/// ⚠️ 窗口错配陷阱：此默认值基于官方 API 的 1M 窗口。若通过中转站/聚合代理/
-/// 自部署网关（如 ding/sensenova/自建 proxy）使用模型，上游真实窗口可能远小于
-/// 1M（常见 256K 甚至 128K）。此时必须在 Model Profile 中显式设置 contextWindow
-/// 为真实窗口，否则压缩阈值（window × 0.75）按 1M 算 → 压缩时机被推迟到超出
-/// 上游窗口之后 → 压缩请求自身被上游 400 拒绝（"input prompt len > window"），
-/// 这是多数压缩失效报错的直接原因。
-pub(super) const DEFAULT_CONTEXT_WINDOW: u64 = 1_000_000;
+/// ⚠️ 窗口错配陷阱：默认值已从 1M 调整为 180K，更贴合多数第三方供应商的真实窗口。
+/// 若通过中转站/聚合代理/自部署网关使用模型，上游真实窗口可能远小于此（如 256K
+/// 甚至 128K），此时必须在 Model Profile 中显式设置 contextWindow 为真实窗口，否则
+/// 压缩阈值（window × 0.75）估算不准 → 压缩请求可能被上游 400 拒绝。
+pub(super) const DEFAULT_CONTEXT_WINDOW: u64 = 180_000;
 /// 触发压缩的阈值比例（最近一轮 input / window）。
 const COMPACT_THRESHOLD: f64 = 0.75;
 /// 压缩请求超时（秒）。摘要请求应比对话快。
@@ -48,6 +46,11 @@ pub(super) const DEFAULT_COMPACT_KEEP_RECENT: usize = 6;
 /// 待压缩区间的最小消息数；低于此规模压缩收益不抵成本（也天然挡住
 /// "仅剩上次 summary 反复自摘要"的退化）。
 const COMPACT_MIN_RANGE: usize = 4;
+/// 单段摘要输入的 token 预算（占窗口比例）。待压区间估算超过 window×此值时
+/// 启用滚动分段摘要，避免把整段超窗历史一次性发给模型（压缩请求自身 400）。
+const SEGMENT_INPUT_BUDGET_RATIO: f64 = 0.5;
+/// 分段数量硬上限（防极端长历史产生过多摘要请求）。超过则余下并入最后一段并 log。
+const MAX_SEGMENTS: usize = 12;
 /// 摘要请求输出预算；截断时以重试预算再试一次。
 const SUMMARY_MAX_TOKENS: u64 = 2048;
 const SUMMARY_RETRY_MAX_TOKENS: u64 = 4096;
@@ -94,26 +97,31 @@ impl UsageAccumulator {
 
 /// 粗粒度 token 估算：全部消息 content / tool_calls 字符数 ÷ CHARS_PER_TOKEN。
 fn estimate_tokens(messages: &[Value]) -> u64 {
-    let chars: usize = messages
-        .iter()
-        .map(|m| {
-            let content_len = match m.get("content") {
-                Some(Value::String(s)) => s.len(),
-                Some(Value::Array(parts)) => parts
-                    .iter()
-                    .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
-                    .map(|t| t.len())
-                    .sum(),
-                _ => 0,
-            };
-            let tool_calls_len = m
-                .get("tool_calls")
-                .map(|tc| tc.to_string().len())
-                .unwrap_or(0);
-            content_len + tool_calls_len
-        })
-        .sum();
+    let chars: usize = messages.iter().map(message_chars).sum();
     (chars / CHARS_PER_TOKEN) as u64
+}
+
+/// 单条消息计入估算的字符数（content 文本 + tool_calls JSON）。
+fn message_chars(m: &Value) -> usize {
+    let content_len = match m.get("content") {
+        Some(Value::String(s)) => s.len(),
+        Some(Value::Array(parts)) => parts
+            .iter()
+            .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
+            .map(|t| t.len())
+            .sum(),
+        _ => 0,
+    };
+    let tool_calls_len = m
+        .get("tool_calls")
+        .map(|tc| tc.to_string().len())
+        .unwrap_or(0);
+    content_len + tool_calls_len
+}
+
+/// 单条消息的粗粒度 token 估算（用于分段预算累计）。
+fn estimate_message_tokens(m: &Value) -> u64 {
+    (message_chars(m) / CHARS_PER_TOKEN) as u64
 }
 
 fn role(m: &Value) -> &str {
@@ -152,6 +160,41 @@ pub(super) fn select_compact_range(
     Some((1, end))
 }
 
+/// 把待压缩区间 `[start, end)` 按 token 预算切成若干段，**只在 user 消息前切**
+/// （turn 边界），保证永不切断 assistant.tool_calls 与其后的 tool result 配对。
+///
+/// - 单个自身超预算的 turn 自成一段（可接受：仍远小于整段历史，且不切配对）；
+/// - 段数达到 `MAX_SEGMENTS` 前一段时停止再切，余下并入最后一段（防请求爆炸）；
+/// - 返回相对 `messages` 的绝对索引区间 `[(s, e), ...]`，至少 1 段。
+///   `[start, end)` 为空时返回空 vec（调用方保证非空）。
+fn segment_compact_range(
+    messages: &[Value],
+    start: usize,
+    end: usize,
+    per_segment_budget: u64,
+) -> Vec<(usize, usize)> {
+    let mut segments = Vec::new();
+    if start >= end {
+        return segments;
+    }
+    let budget = per_segment_budget.max(1);
+    let mut seg_start = start;
+    let mut acc: u64 = 0;
+    for i in start..end {
+        acc = acc.saturating_add(estimate_message_tokens(&messages[i]));
+        let at_user_boundary = i + 1 < end && role(&messages[i + 1]) == "user";
+        // 段数封顶前一段就停切，剩余合并进最后一段。
+        let under_cap = segments.len() + 1 < MAX_SEGMENTS;
+        if acc >= budget && at_user_boundary && under_cap {
+            segments.push((seg_start, i + 1));
+            seg_start = i + 1;
+            acc = 0;
+        }
+    }
+    segments.push((seg_start, end));
+    segments
+}
+
 /// 交接摘要指令（仿 codex compact prompt 语义）。
 const COMPACT_INSTRUCTION: &str = "You are compacting a conversation history. Summarize the \
 following messages into a concise handoff summary: key decisions, established facts, file paths \
@@ -160,6 +203,14 @@ touched, outstanding errors, and the current task state. Reply with ONLY the sum
 /// 截断重试时追加的指令（reasoning 模型把预算耗在思考上时）。
 const COMPACT_RETRY_SUFFIX: &str = "\nOutput the summary directly. Do NOT show any thinking or \
 reasoning process.";
+
+/// 滚动分段合并指令：把「已有摘要」与「新对话片段」合并为更新后的完整摘要。
+/// 用于超窗历史的分段压缩，逐段滚动带入上一段摘要，保证跨段决策链连续。
+const COMPACT_ROLLING_INSTRUCTION: &str = "You are incrementally compacting a long conversation. \
+You are given an existing summary and a new segment of raw conversation. Merge them into a single \
+updated handoff summary that preserves all key decisions, established facts, file paths touched, \
+outstanding errors, and the current task state from BOTH the existing summary and the new segment. \
+Reply with ONLY the merged summary, no preamble.";
 
 /// 摘要请求失败原因（决定是否值得加大预算重试）。
 #[derive(Debug)]
@@ -173,12 +224,13 @@ enum SummaryFailure {
 /// 发起一次非流式摘要请求。
 async fn request_summary_once(
     profile: &crate::models::config::ModelProfile,
+    base_instruction: &str,
     history_text: &str,
     max_tokens: u64,
     extra_instruction: &str,
 ) -> std::result::Result<String, SummaryFailure> {
     let protocol = WireProtocol::from_wire_api(profile.wire_api.as_deref());
-    let instruction = format!("{}{}", COMPACT_INSTRUCTION, extra_instruction);
+    let instruction = format!("{}{}", base_instruction, extra_instruction);
     let messages = vec![
         json!({ "role": "system", "content": instruction }),
         json!({ "role": "user", "content": history_text }),
@@ -227,9 +279,10 @@ async fn request_summary_once(
 /// 发起摘要请求；被截断时加大预算 + 抑制思考指令重试一次。
 async fn request_summary(
     profile: &crate::models::config::ModelProfile,
+    base_instruction: &str,
     history_text: &str,
 ) -> Result<String> {
-    match request_summary_once(profile, history_text, SUMMARY_MAX_TOKENS, "").await {
+    match request_summary_once(profile, base_instruction, history_text, SUMMARY_MAX_TOKENS, "").await {
         Ok(s) => Ok(s),
         Err(SummaryFailure::Truncated) => {
             tracing::warn!(
@@ -238,6 +291,7 @@ async fn request_summary(
             );
             match request_summary_once(
                 profile,
+                base_instruction,
                 history_text,
                 SUMMARY_RETRY_MAX_TOKENS,
                 COMPACT_RETRY_SUFFIX,
@@ -253,6 +307,63 @@ async fn request_summary(
         }
         Err(SummaryFailure::Other(e)) => Err(e),
     }
+}
+
+/// 滚动分段摘要：区间估算不超预算 → 单次摘要（与现状一致）；超预算 → 按 turn
+/// 边界分段，逐段摘要并滚动带入上一段摘要合并，每次请求只发一段（永不撞窗口）。
+async fn summarize_range_rolling(
+    messages: &[Value],
+    start: usize,
+    end: usize,
+    window: u64,
+    profile: &crate::models::config::ModelProfile,
+    event_callback: &Arc<dyn Fn(AIEvent) + Send + Sync>,
+    session_id: &str,
+) -> Result<String> {
+    let per_segment_budget = ((window as f64) * SEGMENT_INPUT_BUDGET_RATIO) as u64;
+    let segments = segment_compact_range(messages, start, end, per_segment_budget);
+
+    let serialize_seg = |s: usize, e: usize| -> String {
+        messages[s..e]
+            .iter()
+            .map(serialize_message)
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    };
+
+    // 不超预算（或退化为单段）→ 与现状完全一致的单次摘要路径。
+    if segments.len() <= 1 {
+        let (s, e) = segments.first().copied().unwrap_or((start, end));
+        return request_summary(profile, COMPACT_INSTRUCTION, &serialize_seg(s, e)).await;
+    }
+
+    tracing::info!(
+        "[SimpleAI] 待压区间超预算，启用滚动分段摘要：{} 段（每段预算 ~{} token）",
+        segments.len(),
+        per_segment_budget
+    );
+
+    let total = segments.len();
+    let mut running = String::new();
+    for (idx, (s, e)) in segments.into_iter().enumerate() {
+        let _ = event_callback(AIEvent::Progress(ProgressEvent::new(
+            session_id,
+            format!("正在压缩上下文…（第 {}/{} 段）", idx + 1, total),
+        )));
+        let seg_text = serialize_seg(s, e);
+        running = if running.is_empty() {
+            // 首段：普通摘要。
+            request_summary(profile, COMPACT_INSTRUCTION, &seg_text).await?
+        } else {
+            // 后续段：把已有摘要与新片段一起交给模型合并。
+            let merged_input = format!(
+                "<existing_summary>\n{}\n</existing_summary>\n\n<new_segment>\n{}\n</new_segment>",
+                running, seg_text
+            );
+            request_summary(profile, COMPACT_ROLLING_INSTRUCTION, &merged_input).await?
+        };
+    }
+    Ok(running)
 }
 
 /// 从非流式响应提取 summary 文本（三协议），并区分"截断"与其他失败。
@@ -399,6 +510,7 @@ fn serialize_message(m: &Value) -> String {
 pub(super) async fn compact_history(
     messages: &mut Vec<Value>,
     profile: &crate::models::config::ModelProfile,
+    window: u64,
     event_callback: &Arc<dyn Fn(AIEvent) + Send + Sync>,
     session_id: &str,
 ) -> Result<bool> {
@@ -424,14 +536,8 @@ pub(super) async fn compact_history(
         "正在压缩上下文…".to_string(),
     )));
 
-    // 序列化待压缩区间为文本（保留工具调用/结果的关键信息）。
-    let history_text = messages[start..end]
-        .iter()
-        .map(serialize_message)
-        .collect::<Vec<_>>()
-        .join("\n\n");
-
-    match request_summary(profile, &history_text).await {
+    // 摘要：区间不超预算走单次；超预算（本身超窗，原本必 400）走滚动分段。
+    match summarize_range_rolling(messages, start, end, window, profile, event_callback, session_id).await {
         Ok(summary) if !summary.trim().is_empty() => {
             let compressed_count = end - start;
             messages.drain(start..end);
@@ -602,6 +708,88 @@ mod tests {
         let (start, end) = select_compact_range(&msgs, 0).unwrap();
         assert_eq!(start, 1);
         assert_eq!(end, msgs.len() - 1);
+    }
+
+    // ---- segment_compact_range ----
+
+    /// 造一条约 n 字符的 user / assistant 消息（用于分段预算测试）。
+    fn msg_of(role: &str, n: usize) -> Value {
+        json!({"role": role, "content": "x".repeat(n)})
+    }
+
+    #[test]
+    fn segment_single_when_under_budget() {
+        // 区间小于预算 → 单段（走现状单次摘要路径）。
+        let msgs = vec![
+            msg_of("user", 40),
+            msg_of("assistant", 40),
+            msg_of("user", 40),
+        ];
+        // 预算 1000 token ≫ 区间 ~30 token。
+        let segs = segment_compact_range(&msgs, 0, msgs.len(), 1000);
+        assert_eq!(segs, vec![(0, 3)]);
+    }
+
+    #[test]
+    fn segment_cuts_only_before_user() {
+        // 预算很小，应在每个 user 边界切；tool 配对不被切断。
+        // 0=u 1=a(tc) 2=tool 3=u 4=a 5=u 6=a
+        let msgs = vec![
+            msg_of("user", 400),
+            a_tc(),
+            tool(),
+            msg_of("user", 400),
+            msg_of("assistant", 400),
+            msg_of("user", 400),
+            msg_of("assistant", 400),
+        ];
+        // 每条 ~100 token，预算 100 → 每到 user 前就切。
+        let segs = segment_compact_range(&msgs, 0, msgs.len(), 100);
+        // 段边界只可能在 index 3、5（user 前），不会落在 tool(2) 上。
+        for (_, e) in &segs {
+            if *e < msgs.len() {
+                assert_eq!(role(&msgs[*e]), "user", "切点必须在 user 前");
+            }
+        }
+        // 首段包含 [u, a(tc), tool] 完整配对。
+        assert_eq!(segs[0], (0, 3));
+    }
+
+    #[test]
+    fn segment_oversized_turn_stays_whole() {
+        // 单个 turn 自身超预算：不切断，自成一段。
+        // 0=u(巨大) 1=a(tc) 2=tool 3=u
+        let msgs = vec![
+            msg_of("user", 4000),
+            a_tc(),
+            tool(),
+            msg_of("user", 40),
+        ];
+        let segs = segment_compact_range(&msgs, 0, msgs.len(), 100);
+        assert_eq!(segs[0], (0, 3)); // 超预算的首 turn 整体成段，未切断 tool 配对
+    }
+
+    #[test]
+    fn segment_respects_max_segments_cap() {
+        // 大量 user 消息 + 极小预算：段数不超过 MAX_SEGMENTS。
+        let mut msgs = Vec::new();
+        for _ in 0..40 {
+            msgs.push(msg_of("user", 400)); // 每条 ~100 token
+        }
+        let segs = segment_compact_range(&msgs, 0, msgs.len(), 1);
+        assert!(segs.len() <= MAX_SEGMENTS, "段数 {} 超过封顶 {}", segs.len(), MAX_SEGMENTS);
+        // 覆盖完整、无空洞、无重叠。
+        assert_eq!(segs.first().unwrap().0, 0);
+        assert_eq!(segs.last().unwrap().1, msgs.len());
+        for w in segs.windows(2) {
+            assert_eq!(w[0].1, w[1].0);
+        }
+    }
+
+    #[test]
+    fn segment_empty_range_is_empty() {
+        let msgs = vec![msg_of("user", 10)];
+        assert!(segment_compact_range(&msgs, 1, 1, 100).is_empty());
     }
 
     #[test]
