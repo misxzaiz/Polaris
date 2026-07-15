@@ -276,8 +276,10 @@ async function createHandoffSession(params: CreateHandoffParams): Promise<Handof
  * - claude-code / codex：从 CLI 原生历史文件读完整原文
  * - simple-ai / mimo：从 self JSONL 读完整原文
  * - 加载失败或无 conversationId：回退内存消息（可能已被压缩，记 warn）
+ *
+ * 亦被压缩交接（contextCompactHandoff）复用作为源消息加载器。
  */
-async function loadConversationMessages(
+export async function loadConversationMessages(
   engineId: EngineId,
   conversationId: string,
   fallbackMessages: ChatMessage[],

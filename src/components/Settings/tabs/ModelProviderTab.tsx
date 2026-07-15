@@ -572,16 +572,7 @@ function ProfileEditorModal({
                   type="text"
                   list="model-provider-fetched-models"
                   value={form.model}
-                  onChange={(e) => {
-                    const next = e.target.value
-                    // 同步进 modelOptions：新值非空且不在列表中时追加，保证默认模型始终可选
-                    patch({
-                      model: next,
-                      modelOptions: next.trim() && !form.modelOptions.includes(next.trim())
-                        ? [...form.modelOptions, next.trim()]
-                        : form.modelOptions,
-                    })
-                  }}
+                  onChange={(e) => patch({ model: e.target.value })}
                   className={fieldClass}
                 />
                 <datalist id="model-provider-fetched-models">
@@ -608,7 +599,7 @@ function ProfileEditorModal({
               {/* 可选模型列表：默认模型必须来自此列表 */}
               <div className="mt-2 space-y-1.5">
                 {form.modelOptions.map((m, idx) => (
-                  <div key={`${m}-${idx}`} className="flex items-center gap-2">
+                  <div key={idx} className="flex items-center gap-2">
                     <button
                       type="button"
                       onClick={() => patch({ model: m })}
