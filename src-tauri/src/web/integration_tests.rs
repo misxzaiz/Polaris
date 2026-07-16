@@ -78,6 +78,7 @@ fn create_test_state() -> Arc<AppState> {
         ask_answer_senders: Arc::new(Mutex::new(HashMap::new())),
         pending_plugin_cards: Arc::new(Mutex::new(HashMap::new())),
         plugin_card_answer_senders: Arc::new(Mutex::new(HashMap::new())),
+        dispatched_tasks: Arc::new(Mutex::new(HashMap::new())),
         ask_listener: Arc::new(OnceLock::new()),
         pending_plans: Arc::new(Mutex::new(HashMap::new())),
         scheduler_daemon: AsyncMutex::new(None),

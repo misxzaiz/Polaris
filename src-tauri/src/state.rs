@@ -162,6 +162,36 @@ pub struct PendingPlan {
     pub feedback: Option<String>,
 }
 
+/// 派发任务记录（dispatch_task MCP 工具创建，前端执行并回报状态）
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DispatchedTask {
+    /// 派发 ID（MCP 工具生成的 UUID）
+    pub dispatch_id: String,
+    /// 目标会话 ID（格式：dispatch-{depth}-{shortid}）
+    pub session_id: String,
+    /// 来源会话 ID（可能为空）
+    pub source_session_id: String,
+    /// 任务标题
+    pub title: String,
+    /// 任务提示词
+    pub prompt: String,
+    /// 目标工作目录（未指定则由前端继承来源会话）
+    pub work_dir: Option<String>,
+    /// 目标引擎（未指定则由前端继承来源会话）
+    pub engine_id: Option<String>,
+    /// 派发深度（1 = 普通会话派发，2 = 派发会话再派发；上限 2）
+    pub depth: u32,
+    /// 状态：pending | running | completed | failed
+    pub status: String,
+    /// 完成摘要（前端回报，供 check_dispatched_task 返回给来源 AI）
+    pub summary: Option<String>,
+    /// 创建时间（Unix 秒）
+    pub created_at: i64,
+    /// 最后更新时间（Unix 秒）
+    pub updated_at: i64,
+}
+
 /// 全局配置状态
 pub struct AppState {
     /// 配置存储
@@ -192,6 +222,9 @@ pub struct AppState {
     /// 插件交互卡片应答通道映射：interactionId -> PluginCardAnswerEntry
     pub plugin_card_answer_senders:
         Arc<Mutex<HashMap<String, crate::services::ask_listener::PluginCardAnswerEntry>>>,
+    /// 派发任务注册表：dispatchId -> DispatchedTask
+    /// 由 ask_listener 的 dispatch 帧创建，前端执行后通过 dispatch_report_status 回报状态
+    pub dispatched_tasks: Arc<Mutex<HashMap<String, DispatchedTask>>>,
     /// AskUserQuestion 监听器端口 / token；启动时设置一次。
     /// 用 Arc 包裹 OnceLock 以便在 clone_for_web 后跨 AppState 共享同一份。
     pub ask_listener: Arc<OnceLock<crate::services::ask_listener::AskListenerHandle>>,
@@ -247,6 +280,7 @@ pub fn create_app_state(
         ask_answer_senders: Arc::new(Mutex::new(HashMap::new())),
         pending_plugin_cards: Arc::new(Mutex::new(HashMap::new())),
         plugin_card_answer_senders: Arc::new(Mutex::new(HashMap::new())),
+        dispatched_tasks: Arc::new(Mutex::new(HashMap::new())),
         ask_listener: Arc::new(OnceLock::new()),
         pending_plans: Arc::new(Mutex::new(HashMap::new())),
         scheduler_daemon: AsyncMutex::new(None),
@@ -315,6 +349,7 @@ impl AppState {
             ask_answer_senders: self.ask_answer_senders.clone(),
             pending_plugin_cards: self.pending_plugin_cards.clone(),
             plugin_card_answer_senders: self.plugin_card_answer_senders.clone(),
+            dispatched_tasks: self.dispatched_tasks.clone(),
             ask_listener: self.ask_listener.clone(),
             pending_plans: self.pending_plans.clone(),
             scheduler_daemon: AsyncMutex::new(None),
@@ -335,5 +370,64 @@ impl AppState {
             proxy_manager: crate::services::ProxyManager::new(),
             plugin_service_manager: self.plugin_service_manager.clone(),
         }
+    }
+
+    // ===== 派发任务注册表 =====
+
+    /// 插入新的派发任务记录
+    pub fn insert_dispatched_task(&self, task: DispatchedTask) {
+        if let Ok(mut tasks) = self.dispatched_tasks.lock() {
+            tasks.insert(task.dispatch_id.clone(), task);
+        }
+    }
+
+    /// 更新派发任务状态（返回 false 表示记录不存在）
+    pub fn update_dispatched_task_status(
+        &self,
+        dispatch_id: &str,
+        status: &str,
+        summary: Option<String>,
+    ) -> bool {
+        let Ok(mut tasks) = self.dispatched_tasks.lock() else {
+            return false;
+        };
+        match tasks.get_mut(dispatch_id) {
+            Some(task) => {
+                task.status = status.to_string();
+                if summary.is_some() {
+                    task.summary = summary;
+                }
+                task.updated_at = chrono::Utc::now().timestamp();
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// 查询派发任务记录
+    pub fn get_dispatched_task(&self, dispatch_id: &str) -> Option<DispatchedTask> {
+        self.dispatched_tasks
+            .lock()
+            .ok()
+            .and_then(|tasks| tasks.get(dispatch_id).cloned())
+    }
+
+    /// 活跃（pending/running）派发任务数。忽略超过 30 分钟未更新的陈旧记录，
+    /// 避免前端异常退出导致并发额度被永久占用。
+    pub fn active_dispatched_task_count(&self) -> usize {
+        const STALE_SECS: i64 = 30 * 60;
+        let now = chrono::Utc::now().timestamp();
+        self.dispatched_tasks
+            .lock()
+            .map(|tasks| {
+                tasks
+                    .values()
+                    .filter(|t| {
+                        matches!(t.status.as_str(), "pending" | "running")
+                            && now - t.updated_at < STALE_SECS
+                    })
+                    .count()
+            })
+            .unwrap_or(0)
     }
 }

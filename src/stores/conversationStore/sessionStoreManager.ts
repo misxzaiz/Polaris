@@ -612,16 +612,18 @@ function createSessionManagerStore() {
 
       // 如果会话不存在，自动创建
       if (!store) {
-        // 检测是否为 scheduler 任务（静默模式）
+        // 检测是否为 scheduler/dispatch 任务（静默模式，不抢占当前 Tab）
         const isSchedulerTask = routeSessionId.startsWith('scheduler-')
-        
-        log.info('事件路由时自动创建会话', { routeSessionId, silentMode: isSchedulerTask })
-        
+        const isDispatchTask = routeSessionId.startsWith('dispatch-')
+        const silentMode = isSchedulerTask || isDispatchTask
+
+        log.info('事件路由时自动创建会话', { routeSessionId, silentMode })
+
         get().createSession({
           id: routeSessionId,
           type: 'free',
-          title: isSchedulerTask ? '定时任务' : '新对话',
-          silentMode: isSchedulerTask, // scheduler 任务使用静默模式
+          title: isSchedulerTask ? '定时任务' : isDispatchTask ? '派发任务' : '新对话',
+          silentMode,
         })
         store = get().stores.get(routeSessionId)
 

@@ -249,7 +249,7 @@ pub struct ModelProfile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u64>,
     /// 上下文窗口（token），驱动 SimpleAI 压缩触发阈值（window × 0.75）。
-    /// None → custom_env `SIMPLE_AI_CONTEXT_WINDOW`（向后兼容）→ 默认 1_000_000。
+/// None → custom_env `SIMPLE_AI_CONTEXT_WINDOW`（向后兼容）→ 默认 180_000。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_window: Option<u64>,
     /// 创建时间 (ISO 8601)

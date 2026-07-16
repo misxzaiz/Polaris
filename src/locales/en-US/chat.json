@@ -1,4 +1,7 @@
 {
+  "dispatch": {
+    "defaultTitle": "Dispatched Task"
+  },
   "input": {
     "placeholder": "Type a message... (Enter to send, Shift+Enter for new line)",
     "placeholderWithAttachment": "Describe your question or send directly...",

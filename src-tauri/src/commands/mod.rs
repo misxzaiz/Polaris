@@ -1,4 +1,5 @@
 pub mod chat;
+pub mod dispatch;
 pub mod workspace;
 pub mod file_explorer;
 pub mod file_clipboard;

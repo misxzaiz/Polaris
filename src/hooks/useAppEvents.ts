@@ -19,6 +19,7 @@ import { useSchedulerStore } from '@/stores/schedulerStore';
 import { useToastStore } from '@/stores/toastStore';
 import { sessionStoreManager } from '@/stores/conversationStore';
 import { getEventRouter } from '@/services/eventRouter';
+import { initDispatchTaskListener } from '@/services/dispatchTaskService';
 import { browserAcquireComplete, normalizeBrowserUrl, type BrowserAcquireRequest } from '@/services/tauri/browserService';
 import { initExecutionConsoleListeners } from '@/stores/executionConsoleStore';
 import { isAIEvent } from '@/ai-runtime';
@@ -82,6 +83,11 @@ export function useAppEvents() {
     return () => {
       unlistenPromise.then(unlisten => unlisten());
     };
+  }, []);
+
+  // 派发任务请求（dispatch_task MCP）→ 创建静默后台会话执行
+  useEffect(() => {
+    return initDispatchTaskListener();
   }, []);
 
   // file:opened → 创建 Editor Tab

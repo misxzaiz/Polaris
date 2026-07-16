@@ -54,6 +54,10 @@ name = "polaris-ask-mcp"
 path = "src/bin/polaris_ask_mcp.rs"
 
 [[bin]]
+name = "polaris-dispatch-mcp"
+path = "src/bin/polaris_dispatch_mcp.rs"
+
+[[bin]]
 name = "polaris-browser-mcp"
 path = "src/bin/polaris_browser_mcp.rs"
 

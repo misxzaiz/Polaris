@@ -111,6 +111,15 @@ export class EventRouter {
           return
         }
 
+        // 派发任务：contextId 格式为 "dispatch-{depth}-{id}"
+        // 同 scheduler，必须走 contextId 路由到 dispatchTaskService 注册的 handler，
+        // 否则会被 payload.sessionId（后端会话 ID）兜底路由到错误的会话
+        if (routedEvent.contextId.startsWith('dispatch-')) {
+          log.debug('派发任务使用 contextId 路由', { contextId: routedEvent.contextId })
+          this.dispatch(routedEvent)
+          return
+        }
+
         const frontendSessionId = extractFrontendSessionId(routedEvent.contextId)
 
         if (frontendSessionId && this.useSessionIdRouting) {

@@ -54,8 +54,13 @@ import {
 
 const log = createLogger('ModelProviderTab')
 
-/** 所有引擎列表（用于编辑器多选） */
-const ALL_ENGINES: ProfileTargetEngine[] = ['claude', 'codex', 'simple-ai', 'mimo']
+
+/** 上下文窗口快捷预设值（对应 locale 中的 key） */
+const CONTEXT_WINDOW_PRESETS: Record<string, string> = {
+  '180k': '180000',
+  '256k': '256000',
+  '1m': '1000000',
+};
 
 type EngineFilter = 'all' | 'claude' | 'codex'
 
@@ -794,7 +799,7 @@ function ProfileEditorModal({
           {/* 高级选项 */}
           <div className={sectionClass}>
             <div className={sectionTitleClass}>{t('modelProfile.sectionAdvanced')}</div>
-            <div className="grid grid-cols-2 gap-3">
+<div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={labelClass}>{t('modelProfile.maxTokens')}</label>
                 <input
@@ -808,17 +813,38 @@ function ProfileEditorModal({
               </div>
               <div>
                 <label className={labelClass}>{t('modelProfile.contextWindow')}</label>
-                <input
-                  type="number"
-                  min={1}
-                  value={form.contextWindow}
-                  onChange={(e) => patch({ contextWindow: e.target.value })}
-                  placeholder={t('modelProfile.contextWindowPlaceholder')}
-                  className={fieldClass}
-                />
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex gap-1.5">
+                    {(['180k', '256k', '1m'] as const).map((key) => {
+                      const isActive = form.contextWindow === CONTEXT_WINDOW_PRESETS[key];
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => patch({ contextWindow: CONTEXT_WINDOW_PRESETS[key] })}
+                          className={`flex-1 px-2 py-1.5 text-xs rounded-md border transition-colors ${
+                            isActive
+                              ? 'bg-primary/15 border-primary text-primary font-semibold'
+                              : 'bg-background-surface border-border text-text-secondary hover:border-text-tertiary'
+                          }`}
+                        >
+                          {t(`modelProfile.contextWindowPresets.${key}`)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <input
+                    type="number"
+                    min={1}
+                    value={form.contextWindow}
+                    onChange={(e) => patch({ contextWindow: e.target.value })}
+                    placeholder={t('modelProfile.contextWindowPlaceholder')}
+                    className={fieldClass}
+                  />
+                </div>
               </div>
             </div>
-            <div>
+          <div>
               <label className={labelClass}>{t('modelProfile.customHeaders')}</label>
               <KeyValueEditor
                 pairs={form.customHeaders}

@@ -49,6 +49,7 @@ const mcpBins = [
   { name: 'polaris-prd-preview-mcp', required: false },
   { name: 'polaris-computer-mcp', required: false },
   { name: 'polaris-ask-mcp', required: false },
+  { name: 'polaris-dispatch-mcp', required: false },
   { name: 'polaris-browser-mcp', required: false },
   { name: 'polaris-agnes-mcp', required: false },
 ];

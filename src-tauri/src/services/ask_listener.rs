@@ -23,14 +23,18 @@ use uuid::Uuid;
 
 use crate::error::{AppError, Result};
 use crate::state::{
-    AppState, PendingPluginCard, PendingQuestion, PluginCardStatus, QuestionItem, QuestionOption,
-    QuestionStatus, SubAnswer,
+    AppState, DispatchedTask, PendingPluginCard, PendingQuestion, PluginCardStatus, QuestionItem,
+    QuestionOption, QuestionStatus, SubAnswer,
 };
 
 /// Maximum frame size we accept on the wire. Browser diagnostics may include
 /// a clipped PNG screenshot, so this is larger than the original ask-only cap.
 const MAX_FRAME_SIZE: usize = 16 * 1024 * 1024;
 const PLUGIN_CARD_TIMEOUT: Duration = Duration::from_secs(180);
+/// 派发深度上限：普通会话派发为 1，派发会话再派发为 2，2 层封顶（防循环派发）。
+const MAX_DISPATCH_DEPTH: u32 = 2;
+/// 同时处于 pending/running 的派发任务上限（防 AI 一次派发把机器打满）。
+const MAX_ACTIVE_DISPATCHES: usize = 3;
 
 /// Final answer payload that goes back to the companion → CLI tool_result.
 #[derive(Debug, Clone, Serialize)]
@@ -186,6 +190,10 @@ async fn handle_connection(
         "card_cancel" => {
             handle_card_cancel_frame(frame, state, &expected_token);
             Ok(())
+        }
+        "dispatch" => handle_dispatch_frame(&mut stream, frame, state, &expected_token).await,
+        "dispatch_status" => {
+            handle_dispatch_status_frame(&mut stream, frame, state, &expected_token).await
         }
         other => Err(AppError::ValidationError(format!("未知帧类型: {}", other))),
     }
@@ -400,6 +408,231 @@ async fn handle_card_frame(
     state.take_plugin_card_answer_sender(&interaction_id);
 
     Ok(())
+}
+
+/// 解析来源会话的派发深度：`dispatch-{depth}-{id}` → depth，普通会话 → 0。
+fn parse_dispatch_depth(source_session_id: &str) -> u32 {
+    source_session_id
+        .strip_prefix("dispatch-")
+        .and_then(|rest| rest.split('-').next())
+        .and_then(|seg| seg.parse::<u32>().ok())
+        .unwrap_or(if source_session_id.starts_with("dispatch-") {
+            1
+        } else {
+            0
+        })
+}
+
+/// 处理 dispatch 帧：登记派发任务 → 通知前端创建后台会话执行 → 立即回 ack。
+/// 派发是 fire-and-forget 的：本函数不等待任务执行，来源会话同回合继续。
+async fn handle_dispatch_frame(
+    stream: &mut TcpStream,
+    frame: Value,
+    state: Arc<AppState>,
+    expected_token: &str,
+) -> Result<()> {
+    let token = frame
+        .get("token")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if token != expected_token {
+        return Err(AppError::ValidationError(
+            "ask_listener token 不匹配".into(),
+        ));
+    }
+
+    let reply = build_dispatch_reply(&frame, &state);
+    if reply.get("ok").and_then(Value::as_bool) == Some(true) {
+        // 通知前端执行（前端监听 dispatch-task-request，创建静默会话并 start_chat）
+        emit_dispatch_request_event(&state, &reply, &frame);
+    }
+
+    write_frame(stream, &reply).await?;
+    let _ = stream.shutdown().await;
+    Ok(())
+}
+
+/// 校验派发请求并登记任务记录，返回 ack/错误帧。不产生副作用以外的 IO。
+fn build_dispatch_reply(frame: &Value, state: &AppState) -> Value {
+    let prompt = frame
+        .get("prompt")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default();
+    if prompt.is_empty() {
+        return dispatch_error_reply("dispatch 帧缺少 prompt");
+    }
+
+    let source_session_id = frame
+        .get("sessionId")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+
+    // 深度限制：防止派发会话无限递归派发
+    let depth = parse_dispatch_depth(&source_session_id) + 1;
+    if depth > MAX_DISPATCH_DEPTH {
+        return dispatch_error_reply(&format!(
+            "派发深度已达上限（{}），当前会话不能再派发子任务",
+            MAX_DISPATCH_DEPTH
+        ));
+    }
+
+    // 并发限制：防止资源被并行引擎进程打满
+    let active = state.active_dispatched_task_count();
+    if active >= MAX_ACTIVE_DISPATCHES {
+        return dispatch_error_reply(&format!(
+            "已有 {} 个派发任务在执行（上限 {}），请等待现有任务完成后再派发，可用 check_dispatched_task 查询进度",
+            active, MAX_ACTIVE_DISPATCHES
+        ));
+    }
+
+    let dispatch_id = frame
+        .get("dispatchId")
+        .and_then(Value::as_str)
+        .filter(|id| !id.trim().is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+
+    let short_id: String = Uuid::new_v4().simple().to_string()[..8].to_string();
+    let session_id = format!("dispatch-{}-{}", depth, short_id);
+
+    let title = frame
+        .get("title")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            let mut t: String = prompt.chars().take(24).collect();
+            if prompt.chars().count() > 24 {
+                t.push('…');
+            }
+            t
+        });
+
+    let now = chrono::Utc::now().timestamp();
+    let task = DispatchedTask {
+        dispatch_id: dispatch_id.clone(),
+        session_id: session_id.clone(),
+        source_session_id,
+        title,
+        prompt: prompt.to_string(),
+        work_dir: frame
+            .get("workDir")
+            .and_then(Value::as_str)
+            .filter(|d| !d.trim().is_empty())
+            .map(str::to_string),
+        engine_id: frame
+            .get("engineId")
+            .and_then(Value::as_str)
+            .filter(|e| !e.trim().is_empty())
+            .map(str::to_string),
+        depth,
+        status: "pending".to_string(),
+        summary: None,
+        created_at: now,
+        updated_at: now,
+    };
+
+    tracing::info!(
+        "[AskListener] 派发任务登记: dispatch_id={}, session_id={}, depth={}, title={}",
+        task.dispatch_id,
+        task.session_id,
+        task.depth,
+        task.title
+    );
+    state.insert_dispatched_task(task);
+
+    json!({
+        "type": "dispatch_result",
+        "ok": true,
+        "dispatchId": dispatch_id,
+        "sessionId": session_id,
+        "note": "任务已派发到后台会话执行，当前会话不会被阻塞；可用 check_dispatched_task 查询进度",
+    })
+}
+
+fn dispatch_error_reply(message: &str) -> Value {
+    json!({
+        "type": "dispatch_result",
+        "ok": false,
+        "error": message,
+    })
+}
+
+/// 处理 dispatch_status 帧：查询派发任务状态并立即回帧。
+async fn handle_dispatch_status_frame(
+    stream: &mut TcpStream,
+    frame: Value,
+    state: Arc<AppState>,
+    expected_token: &str,
+) -> Result<()> {
+    let token = frame
+        .get("token")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if token != expected_token {
+        return Err(AppError::ValidationError(
+            "ask_listener token 不匹配".into(),
+        ));
+    }
+
+    let dispatch_id = frame
+        .get("dispatchId")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+
+    let reply = match state.get_dispatched_task(dispatch_id) {
+        Some(task) => json!({
+            "type": "dispatch_status_result",
+            "ok": true,
+            "task": task,
+        }),
+        None => json!({
+            "type": "dispatch_status_result",
+            "ok": false,
+            "error": format!("未找到派发任务: {}", dispatch_id),
+        }),
+    };
+
+    write_frame(stream, &reply).await?;
+    let _ = stream.shutdown().await;
+    Ok(())
+}
+
+/// 向前端发出派发执行请求事件。
+///
+/// 单消费者语义（与 SchedulerDaemon 一致）：桌面模式只 emit Tauri 事件由桌面
+/// 前端执行；无 AppHandle（web-only 模式）时才走 WebSocket 广播，避免桌面与
+/// 远程 Web 客户端同时执行同一任务。
+fn emit_dispatch_request_event(state: &AppState, reply: &Value, frame: &Value) {
+    let payload = json!({
+        "dispatchId": reply.get("dispatchId").cloned().unwrap_or(Value::Null),
+        "sessionId": reply.get("sessionId").cloned().unwrap_or(Value::Null),
+        "sourceSessionId": frame.get("sessionId").cloned().unwrap_or(Value::Null),
+        "prompt": frame.get("prompt").cloned().unwrap_or(Value::Null),
+        "title": frame.get("title").cloned().unwrap_or(Value::Null),
+        "workDir": frame.get("workDir").cloned().unwrap_or(Value::Null),
+        "engineId": frame.get("engineId").cloned().unwrap_or(Value::Null),
+    });
+
+    #[cfg(feature = "tauri-app")]
+    if let Some(handle) = state.app_handle.get() {
+        use tauri::Emitter;
+        if let Err(error) = handle.emit("dispatch-task-request", &payload) {
+            tracing::warn!("[AskListener] emit dispatch-task-request 失败: {}", error);
+        }
+        return;
+    }
+
+    let ws_msg = serde_json::json!({
+        "event": "dispatch-task-request",
+        "payload": payload,
+    });
+    if let Ok(msg) = serde_json::to_string(&ws_msg) {
+        let _ = state.event_broadcast.send(msg);
+    }
 }
 
 #[cfg(feature = "tauri-app")]

@@ -20,6 +20,8 @@ const COMPUTER_MCP_SERVER_NAME: &str = "polaris-computer";
 const COMPUTER_MCP_BIN_NAME: &str = "polaris-computer-mcp";
 const ASK_MCP_SERVER_NAME: &str = "polaris-ask";
 const ASK_MCP_BIN_NAME: &str = "polaris-ask-mcp";
+const DISPATCH_MCP_SERVER_NAME: &str = "polaris-dispatch";
+const DISPATCH_MCP_BIN_NAME: &str = "polaris-dispatch-mcp";
 const BROWSER_MCP_SERVER_NAME: &str = "polaris-browser";
 const BROWSER_MCP_BIN_NAME: &str = "polaris-browser-mcp";
 const AGNES_MCP_SERVER_NAME: &str = "polaris-agnes";
@@ -30,6 +32,7 @@ const SCHEDULER_PLUGIN_ID: &str = "polaris.scheduler";
 const PRD_PREVIEW_PLUGIN_ID: &str = "polaris.prd-preview";
 const COMPUTER_PLUGIN_ID: &str = "polaris.computer";
 const ASK_PLUGIN_ID: &str = "polaris.ask";
+const DISPATCH_PLUGIN_ID: &str = "polaris.dispatch";
 const BROWSER_PLUGIN_ID: &str = "polaris.browser";
 const AGNES_PLUGIN_ID: &str = "polaris.agnes";
 
@@ -179,6 +182,10 @@ pub fn builtin_plugin_mcp_manifests() -> &'static [BuiltinPluginMcpManifest] {
             mcp_server_names: &[ASK_MCP_SERVER_NAME],
         },
         BuiltinPluginMcpManifest {
+            plugin_id: DISPATCH_PLUGIN_ID,
+            mcp_server_names: &[DISPATCH_MCP_SERVER_NAME],
+        },
+        BuiltinPluginMcpManifest {
             plugin_id: BROWSER_PLUGIN_ID,
             mcp_server_names: &[BROWSER_MCP_SERVER_NAME],
         },
@@ -265,6 +272,19 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
             "polaris-ask-mcp",
             "src-tauri/target/debug/polaris-ask-mcp",
             "POLARIS_ASK_MCP_PATH",
+            McpServerArgsMode::AskListener,
+            false,
+        ),
+    );
+    registry.register_plugin_server(
+        DISPATCH_PLUGIN_ID,
+        PluginMcpServerContribution::builtin(
+            DISPATCH_MCP_SERVER_NAME,
+            DISPATCH_MCP_BIN_NAME,
+            "bin/polaris-dispatch-mcp",
+            "polaris-dispatch-mcp",
+            "src-tauri/target/debug/polaris-dispatch-mcp",
+            "POLARIS_DISPATCH_MCP_PATH",
             McpServerArgsMode::AskListener,
             false,
         ),

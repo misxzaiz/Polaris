@@ -35,6 +35,8 @@ use commands::chat::{
     send_input,
 };
 #[cfg(feature = "tauri-app")]
+use commands::dispatch::dispatch_report_status;
+#[cfg(feature = "tauri-app")]
 use commands::{
     get_directory_info, get_home_dir, get_server_config, set_server_config,
     validate_workspace_path,
@@ -676,6 +678,8 @@ pub fn run() {
             clear_processed_plans,
             // stdin 输入
             send_input,
+            // 派发任务（dispatch_task MCP）状态回报
+            dispatch_report_status,
             // 工作区相关
             validate_workspace_path,
             get_directory_info,

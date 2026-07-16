@@ -70,6 +70,7 @@ jobs:
             touch src-tauri/target/release/polaris-computer-mcp.exe
             touch src-tauri/target/release/polaris-prd-preview-mcp.exe
             touch src-tauri/target/release/polaris-ask-mcp.exe
+            touch src-tauri/target/release/polaris-dispatch-mcp.exe
             touch src-tauri/target/release/polaris-browser-mcp.exe
             touch src-tauri/target/release/polaris-agnes-mcp.exe
           else
@@ -79,6 +80,7 @@ jobs:
             touch src-tauri/target/release/polaris-computer-mcp
             touch src-tauri/target/release/polaris-prd-preview-mcp
             touch src-tauri/target/release/polaris-ask-mcp
+            touch src-tauri/target/release/polaris-dispatch-mcp
             touch src-tauri/target/release/polaris-browser-mcp
             touch src-tauri/target/release/polaris-agnes-mcp
             chmod +x src-tauri/target/release/polaris-*
@@ -87,7 +89,7 @@ jobs:
       - name: Build MCP binaries
         shell: bash
         run: |
-          cargo build --manifest-path src-tauri/Cargo.toml --release --bin polaris-todo-mcp --bin polaris-requirements-mcp --bin polaris-scheduler-mcp --bin polaris-computer-mcp --bin polaris-prd-preview-mcp --bin polaris-ask-mcp --bin polaris-browser-mcp --bin polaris-agnes-mcp
+          cargo build --manifest-path src-tauri/Cargo.toml --release --bin polaris-todo-mcp --bin polaris-requirements-mcp --bin polaris-scheduler-mcp --bin polaris-computer-mcp --bin polaris-prd-preview-mcp --bin polaris-ask-mcp --bin polaris-dispatch-mcp --bin polaris-browser-mcp --bin polaris-agnes-mcp
 
       - name: Generate release notes
         id: notes

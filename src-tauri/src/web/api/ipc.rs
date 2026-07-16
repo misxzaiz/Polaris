@@ -69,6 +69,9 @@ pub async fn handle_ipc_bridge(
         "snippet_update" => dispatch_snippet_update(&state, &args),
         "snippet_delete" => dispatch_snippet_delete(&state, &args),
 
+        // ── Dispatched tasks (dispatch_task MCP) ───────────────────────────
+        "dispatch_report_status" => dispatch_report_dispatch_status(&state, &args),
+
         // ── Scheduler: Task CRUD ───────────────────────────────────────────
         "scheduler_list_tasks" => dispatch_scheduler_list_tasks(&state, &args),
         "scheduler_get_task" => dispatch_scheduler_get_task(&state, &args),
@@ -429,6 +432,21 @@ fn dispatch_snippet_get(state: &AppState, args: &Value) -> Result<Json<Value>, W
     let id = require_string(args, "id")?;
     let service = get_snippet_service(state)?;
     json_result!(service.get_snippet(&id))
+}
+
+fn dispatch_report_dispatch_status(
+    state: &AppState,
+    args: &Value,
+) -> Result<Json<Value>, WebError> {
+    let dispatch_id = require_string(args, "dispatchId")?;
+    let status = require_string(args, "status")?;
+    let summary = args
+        .get("summary")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    crate::commands::dispatch::report_dispatch_status_impl(state, &dispatch_id, &status, summary)
+        .map_err(|e| WebError::BadRequest(e.to_message()))?;
+    Ok(Json(Value::Null))
 }
 
 fn dispatch_snippet_create(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {

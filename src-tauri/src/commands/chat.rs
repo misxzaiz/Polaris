@@ -427,11 +427,14 @@ fn prepare_mcp_config_with_paths(
         app_root,
         std::path::Path::new(work_dir),
         ask_listener,
-        options
-            .context_id
-            .as_deref()
-            .and_then(|id| id.strip_prefix("session-"))
-            .map(str::to_string),
+        options.context_id.as_deref().and_then(|id| {
+            // 普通会话 contextId 为 "session-{sessionId}"，剥前缀得到前端会话 ID；
+            // 派发会话 contextId 为 "dispatch-{depth}-{id}"，整体透传——伴生 MCP 据此
+            // 做事件路由与派发深度限制（见 ask_listener::parse_dispatch_depth）。
+            id.strip_prefix("session-")
+                .map(str::to_string)
+                .or_else(|| id.starts_with("dispatch-").then(|| id.to_string()))
+        }),
     )?;
     let disabled_servers = merge_disabled_mcp_servers(
         options.disabled_mcp_servers.as_deref().unwrap_or(&[]),
