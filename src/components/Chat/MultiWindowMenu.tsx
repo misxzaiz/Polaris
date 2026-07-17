@@ -85,9 +85,7 @@ export const MultiWindowMenu = memo(function MultiWindowMenu() {
           'p-1.5 rounded transition-colors',
           isOpen
             ? 'bg-primary/10 text-primary'
-            : multiSessionMode
-              ? 'bg-primary text-white'
-              : 'text-text-muted hover:text-text-primary hover:bg-background-hover'
+            : 'text-text-muted hover:text-text-primary hover:bg-background-hover'
         )}
         title={t('multiWindow.settings')}
         aria-label={t('multiWindow.settings')}
