@@ -76,6 +76,21 @@ export const DispatchCenterButton = memo(function DispatchCenterButton() {
   const [records, setRecords] = useState<DispatchTaskRecord[]>([])
   const [loading, setLoading] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  // fixed 定位坐标：按钮可能位于状态栏任意位置，absolute 对齐会向左/右溢出视口，
+  // 且受祖先 overflow 裁剪；改为按钮 rect + 视口钳制的 fixed 定位
+  const [panelPos, setPanelPos] = useState<{ left: number; bottom: number } | null>(null)
+
+  const PANEL_WIDTH = 340
+  const PANEL_MARGIN = 8
+
+  const updatePanelPos = useCallback(() => {
+    const rect = containerRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const maxLeft = window.innerWidth - PANEL_WIDTH - PANEL_MARGIN
+    const left = Math.max(PANEL_MARGIN, Math.min(rect.left, maxLeft))
+    const bottom = Math.max(PANEL_MARGIN, window.innerHeight - rect.top + PANEL_MARGIN)
+    setPanelPos({ left, bottom })
+  }, [])
 
   // 实时任务视图（running 徽标数 + 面板内实时动态）
   const liveTasks = useDispatchStore((s) => s.tasks)
@@ -96,8 +111,18 @@ export const DispatchCenterButton = memo(function DispatchCenterButton() {
   }, [])
 
   useEffect(() => {
-    if (open) void refresh()
-  }, [open, refresh])
+    if (open) {
+      updatePanelPos()
+      void refresh()
+    }
+  }, [open, refresh, updatePanelPos])
+
+  // 窗口尺寸变化时重算面板位置
+  useEffect(() => {
+    if (!open) return
+    window.addEventListener('resize', updatePanelPos)
+    return () => window.removeEventListener('resize', updatePanelPos)
+  }, [open, updatePanelPos])
 
   // 点击面板外关闭
   useEffect(() => {
@@ -161,8 +186,11 @@ export const DispatchCenterButton = memo(function DispatchCenterButton() {
         )}
       </button>
 
-      {open && (
-        <div className="absolute bottom-full right-0 mb-2 w-[340px] max-h-[420px] flex flex-col rounded-lg border border-border bg-background-elevated shadow-lg z-50">
+      {open && panelPos && (
+        <div
+          className="fixed w-[340px] max-h-[420px] flex flex-col rounded-lg border border-border bg-background-elevated shadow-lg z-50"
+          style={{ left: panelPos.left, bottom: panelPos.bottom }}
+        >
           <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
             <Rocket className="w-3.5 h-3.5 text-primary" />
             <span className="text-xs font-medium text-text-primary">
