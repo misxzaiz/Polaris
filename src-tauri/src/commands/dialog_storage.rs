@@ -147,7 +147,171 @@ pub fn dialog_write_inner(name: &str, content: &str) -> Result<()> {
         fs::remove_file(&target)?;
     }
     fs::rename(&tmp, &target)?;
+    // 索引维护（尽力而为，绝不阻塞主写路径）
+    crate::services::dialog_index::on_self_write(name, content);
     Ok(())
+}
+
+/// 增量追加消息行（WAL 式崩溃保护）。
+///
+/// - 文件不存在：用 `meta_line` 建档后写入（原子写）；缺 meta 报错。
+/// - 文件已存在：直接 append；若文件末尾无换行（旧版 serialize 不带尾换行），先补 `\n`。
+///
+/// 追加的行必须是单行 JSON（含 `\n` 会破坏 JSONL 结构，直接拒绝）。
+/// meta 行的 messageCount/updatedAt 允许暂时陈旧——轮末的整体覆写（consolidation）会规整。
+pub fn dialog_append_inner(name: &str, meta_line: Option<&str>, lines: &[String]) -> Result<()> {
+    if lines.is_empty() {
+        return Ok(());
+    }
+    for l in lines {
+        if l.contains('\n') {
+            return Err(AppError::ValidationError(
+                "追加行不允许包含换行符".to_string(),
+            ));
+        }
+    }
+
+    let target = dialog_path(name)?;
+    let parent = target
+        .parent()
+        .ok_or_else(|| AppError::ConfigError("无法解析对话目录".to_string()))?;
+    fs::create_dir_all(parent)?;
+
+    if !target.exists() {
+        let meta = meta_line.ok_or_else(|| {
+            AppError::ValidationError("首次追加缺少 meta 行".to_string())
+        })?;
+        let mut content = String::new();
+        content.push_str(meta.trim());
+        content.push('\n');
+        for l in lines {
+            content.push_str(l);
+            content.push('\n');
+        }
+        let tmp = parent.join(format!("{}.tmp", name));
+        fs::write(&tmp, content)?;
+        fs::rename(&tmp, &target)?;
+        crate::services::dialog_index::on_self_append(name, meta_line, lines);
+        return Ok(());
+    }
+
+    use std::io::{Read, Seek, SeekFrom, Write};
+    let mut file = fs::OpenOptions::new()
+        .read(true)
+        .append(true)
+        .open(&target)?;
+    let len = file.metadata()?.len();
+    let mut needs_nl = false;
+    if len > 0 {
+        let mut buf = [0u8; 1];
+        file.seek(SeekFrom::Start(len - 1))?;
+        file.read_exact(&mut buf)?;
+        needs_nl = buf[0] != b'\n';
+    }
+    let mut payload = String::new();
+    if needs_nl {
+        payload.push('\n');
+    }
+    for l in lines {
+        payload.push_str(l);
+        payload.push('\n');
+    }
+    file.write_all(payload.as_bytes())?;
+    crate::services::dialog_index::on_self_append(name, meta_line, lines);
+    Ok(())
+}
+
+/// 分页读取结果：meta 行 + 按 seq 升序的一页消息行（原始 JSON 字符串，前端只 parse 本页）。
+#[derive(Serialize)]
+pub struct DialogPage {
+    #[serde(rename = "metaLine")]
+    pub meta_line: String,
+    /// 本页消息行（seq 升序）
+    pub lines: Vec<String>,
+    /// 消息行总数
+    pub total: usize,
+    /// 本页之前是否还有更早的消息
+    #[serde(rename = "hasMore")]
+    pub has_more: bool,
+}
+
+/// 行探测：只反序列化 type/seq 两个字段，避免构建完整 Value 树。
+#[derive(serde::Deserialize)]
+struct LineProbe {
+    #[serde(rename = "type")]
+    kind: String,
+    seq: Option<i64>,
+}
+
+/// 尾部优先分页读取：返回 seq < `before_seq`（缺省为全部）中最新的 `limit` 条。
+///
+/// 大会话（数 MB JSONL）恢复时只读尾页，前端无需整份 parse。
+/// 行按 seq 排序（与前端 parseDialog 同规则：缺 seq 的按出现顺序兜底），容忍行序错乱。
+pub fn dialog_read_page_inner(
+    name: &str,
+    before_seq: Option<i64>,
+    limit: usize,
+) -> Result<Option<DialogPage>> {
+    let p = dialog_path(name)?;
+    if !p.exists() {
+        return Ok(None);
+    }
+    let limit = limit.clamp(1, 1000);
+
+    let file = fs::File::open(&p)?;
+    let reader = BufReader::new(file);
+
+    let mut meta_line: Option<String> = None;
+    // (seq, 原始行)
+    let mut msg_lines: Vec<(i64, String)> = Vec::new();
+    let mut fallback_seq: i64 = 0;
+
+    for line in reader.lines().map_while(|r| r.ok()) {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let probe: LineProbe = match serde_json::from_str(trimmed) {
+            Ok(pr) => pr,
+            Err(_) => continue, // 坏行跳过
+        };
+        match probe.kind.as_str() {
+            "meta" => {
+                if meta_line.is_none() {
+                    meta_line = Some(trimmed.to_string());
+                }
+            }
+            "msg" => {
+                let seq = probe.seq.unwrap_or(fallback_seq);
+                msg_lines.push((seq, trimmed.to_string()));
+                fallback_seq += 1;
+            }
+            _ => {}
+        }
+    }
+
+    let meta_line = match meta_line {
+        Some(m) => m,
+        None => return Ok(None), // 无 meta 视为无效会话
+    };
+
+    msg_lines.sort_by_key(|(seq, _)| *seq);
+    let total = msg_lines.len();
+
+    let eligible: Vec<(i64, String)> = match before_seq {
+        Some(before) => msg_lines.into_iter().filter(|(s, _)| *s < before).collect(),
+        None => msg_lines,
+    };
+    let has_more = eligible.len() > limit;
+    let start = eligible.len().saturating_sub(limit);
+    let lines: Vec<String> = eligible[start..].iter().map(|(_, l)| l.clone()).collect();
+
+    Ok(Some(DialogPage {
+        meta_line,
+        lines,
+        total,
+        has_more,
+    }))
 }
 
 pub fn dialog_delete_inner(name: &str) -> Result<()> {
@@ -155,6 +319,7 @@ pub fn dialog_delete_inner(name: &str) -> Result<()> {
     if p.exists() {
         fs::remove_file(&p)?;
     }
+    crate::services::dialog_index::on_self_delete(name);
     Ok(())
 }
 
@@ -184,6 +349,22 @@ pub fn dialog_read(name: String) -> Result<Option<String>> {
 #[tauri::command]
 pub fn dialog_write(name: String, content: String) -> Result<()> {
     dialog_write_inner(&name, &content)
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn dialog_append(name: String, meta_line: Option<String>, lines: Vec<String>) -> Result<()> {
+    dialog_append_inner(&name, meta_line.as_deref(), &lines)
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn dialog_read_page(
+    name: String,
+    before_seq: Option<i64>,
+    limit: usize,
+) -> Result<Option<DialogPage>> {
+    dialog_read_page_inner(&name, before_seq, limit)
 }
 
 #[cfg(feature = "tauri-app")]

@@ -243,6 +243,11 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
         log.warn('终端脚本自动执行失败', { error: String(error) });
       }
     }
+
+    // OPFS 存量会话上行（幂等，后台静默）：Web 端历史会话统一收敛到服务端存储
+    void import('@/services/dialogStorage').then(({ maybeAutoMigrateOpfs }) =>
+      maybeAutoMigrateOpfs(),
+    );
   });
 
   // 初始化配置（只执行一次）

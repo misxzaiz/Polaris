@@ -16,6 +16,7 @@ import {
   extractFirstUserText,
   extractTags,
 } from './jsonlCodec'
+import { DIALOG_FORMAT_VERSION } from './types'
 import type {
   ChatMessage,
   UserChatMessage,
@@ -283,7 +284,7 @@ describe('jsonlCodec - 分析列', () => {
     expect(meta.messageCount).toBe(2)
     expect(meta.firstUserText).toBe('问题')
     expect(meta.tags).toContain('Grep')
-    expect(meta.v).toBe(1)
+    expect(meta.v).toBe(DIALOG_FORMAT_VERSION)
     expect(meta.type).toBe('meta')
   })
 })

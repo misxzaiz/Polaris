@@ -21,7 +21,14 @@ pub use mobile_config::{get_server_config, set_server_config};
 
 pub mod dialog_storage;
 #[cfg(feature = "tauri-app")]
-pub use dialog_storage::{dialog_list, dialog_list_meta, dialog_read, dialog_write, dialog_delete};
+pub use dialog_storage::{
+    dialog_append, dialog_delete, dialog_list, dialog_list_meta, dialog_read, dialog_read_page,
+    dialog_write,
+};
+
+pub mod history_index;
+#[cfg(feature = "tauri-app")]
+pub use history_index::{history_mark, history_query, history_search};
 
 pub mod integration;
 pub mod scheduler;

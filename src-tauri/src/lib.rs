@@ -973,8 +973,14 @@ pub fn run() {
             commands::dialog_storage::dialog_list,
             commands::dialog_storage::dialog_list_meta,
             commands::dialog_storage::dialog_read,
+            commands::dialog_storage::dialog_read_page,
             commands::dialog_storage::dialog_write,
+            commands::dialog_storage::dialog_append,
             commands::dialog_storage::dialog_delete,
+            // 会话历史索引（统一时间线 / 全文搜索 / 标注）
+            commands::history_index::history_query,
+            commands::history_index::history_search,
+            commands::history_index::history_mark,
             // LSP 语言服务器相关
             commands::lsp::lsp_start,
             commands::lsp::lsp_send,

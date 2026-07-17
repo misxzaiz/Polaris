@@ -96,13 +96,13 @@ impl CodexHistoryProvider {
         Self { config }
     }
 
-    fn get_codex_sessions_dir() -> PathBuf {
+    pub(crate) fn get_codex_sessions_dir() -> PathBuf {
         dirs::home_dir()
             .map(|home| home.join(".codex").join("sessions"))
             .unwrap_or_else(|| PathBuf::from(".codex").join("sessions"))
     }
 
-    fn collect_jsonl_files(dir: &Path, files: &mut Vec<PathBuf>) {
+    pub(crate) fn collect_jsonl_files(dir: &Path, files: &mut Vec<PathBuf>) {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;
         };
@@ -275,7 +275,7 @@ impl CodexHistoryProvider {
         Ok((items, total))
     }
 
-    fn parse_metadata(path: &Path) -> (Option<String>, usize, Option<String>, Option<String>, Option<String>) {
+    pub(crate) fn parse_metadata(path: &Path) -> (Option<String>, usize, Option<String>, Option<String>, Option<String>) {
         use std::io::{BufRead, BufReader};
 
         let mut summary = None;

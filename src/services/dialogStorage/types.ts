@@ -14,8 +14,8 @@
 
 import type { ChatMessage, EngineId } from '@/types'
 
-/** 当前 JSONL 格式版本（用于未来兼容性迁移） */
-export const DIALOG_FORMAT_VERSION = 1
+/** 当前 JSONL 格式版本（用于未来兼容性迁移）。v2：新增 preview（最后一条消息摘要） */
+export const DIALOG_FORMAT_VERSION = 2
 
 // ============================================================================
 // JSONL 行类型
@@ -46,6 +46,8 @@ export interface DialogMeta {
   // === 分析列 ===
   /** 首条用户消息文本（用于摘要/搜索） */
   firstUserText?: string
+  /** 最后一条消息摘要（续聊场景的列表预览，v2 新增） */
+  preview?: string
   /** 标签（工具调用名称去重，用于分析/检索） */
   tags?: string[]
 }
@@ -84,6 +86,16 @@ export interface SaveDialogInput {
   workspaceId?: string | null
   workspacePath?: string | null
   messages: ChatMessage[]
+  /**
+   * messages[0] 对应的磁盘 seq（尾部优先分页恢复的会话 > 0）。
+   * 整体覆写时磁盘上 seq < baseSeq 的更早消息会被保留合并，防止分页窗口覆写截断历史。
+   */
+  baseSeq?: number
+  /**
+   * 前缀兜底来源：引擎轮换 conversationId 后，新文件缺少 seq < baseSeq 的前缀时，
+   * 从该会话文件复制（通常为分页恢复时的原会话 ID）。
+   */
+  prefixSourceExternalId?: string
 }
 
 /** 分页选项 */
@@ -100,5 +112,18 @@ export interface PaginatedResult<T> {
   page: number
   pageSize: number
   totalPages: number
+  hasMore: boolean
+}
+
+/** 尾部优先分页读取结果（恢复/预览大会话时只取一页） */
+export interface DialogPageResult {
+  meta: DialogMeta
+  /** 本页消息（seq 升序） */
+  messages: ChatMessage[]
+  /** 本页最早一条消息的 seq（作为下一页 beforeSeq 游标）；空页为 null */
+  earliestSeq: number | null
+  /** 消息总数 */
+  total: number
+  /** 本页之前是否还有更早的消息 */
   hasMore: boolean
 }

@@ -86,20 +86,15 @@ export function resolveChatError(e: unknown, context: Record<string, unknown>): 
 // 历史消息降级恢复
 // ============================================================================
 
-/** localStorage 历史记录 key（与 historyService 保持一致） */
-const SESSION_HISTORY_KEY = 'event_chat_session_history'
-
-interface HistoryData {
-  messages: ChatMessage[]
-}
-
-interface HistoryEntry {
-  id: string
-  data: HistoryData
-}
+// 说明：此前这里有一条「localStorage 历史（event_chat_session_history）」的
+// 压缩消息二级恢复链路（hydrateFromLocalStorage + 解析缓存）。该 key 的写入方
+// （historyService.saveToHistory）早已无人调用，链路恒 miss——这正是
+// "长会话滚回历史只见截断内容 / 截断态被覆写进 JSONL"的根因。
+// 现压缩消息的磁盘兜底统一走自有 JSONL：
+// dialogStorageService.getCachedFullMessage / loadMessageMap。
 
 /**
- * 校验 localStorage 恢复的消息是否具有完整结构
+ * 校验外部来源恢复的消息是否具有完整结构
  * 防止因数据污染或版本不兼容导致坏数据注入 store
  */
 export function isValidMessageStructure(msg: unknown): msg is ChatMessage {
@@ -111,69 +106,6 @@ export function isValidMessageStructure(msg: unknown): msg is ChatMessage {
   // user 消息必须有 content 字符串
   if (m.type === 'user') return typeof m.content === 'string'
   return true
-}
-
-/**
- * localStorage 历史解析缓存
- *
- * `hydrateFromLocalStorage` 是压缩消息的二级降级恢复路径：当 MessageCompactor
- * 内存快照被 LRU(20) 淘汰后，滚动恢复（onVisibleRangeChange）与持久化前恢复
- * （getPersistableMessages，session_end 触发）都会落到此处。该路径在长会话快速
- * 滚动时会被频繁触发——单次 range 变化可能对 safe zone 内多条压缩消息各调一次。
- * 而每次 `JSON.parse` 整段历史（最多 50 个会话的完整消息，含工具输出 / diff，
- * 可达数十 MB）会阻塞主线程，导致滚动卡顿。
- *
- * 这里以「raw 字符串值相等」为失效条件缓存解析结果：同一 raw 下只 parse 一次，
- * 后续命中走内存线性查找。`historyService.saveToHistory` 写入新历史后 raw 改变，
- * 下次调用自动重建——无需跨模块通知，零耦合。
- */
-const historyCache: { raw: string | null; entries: HistoryEntry[] } = {
-  raw: null,
-  entries: [],
-}
-
-/** 读取并缓存 localStorage 历史条目（raw 不变时复用解析结果） */
-function getHistoryEntries(): HistoryEntry[] {
-  let raw: string | null
-  try {
-    raw = localStorage.getItem(SESSION_HISTORY_KEY)
-  } catch {
-    raw = null
-  }
-
-  if (raw === historyCache.raw) {
-    return historyCache.entries
-  }
-
-  let entries: HistoryEntry[] = []
-  if (raw) {
-    try {
-      entries = JSON.parse(raw) as HistoryEntry[]
-    } catch {
-      entries = []
-    }
-  }
-
-  historyCache.raw = raw
-  historyCache.entries = entries
-  return entries
-}
-
-/**
- * 从 localStorage 恢复指定消息的完整数据
- * 用于 compactor 快照被 LRU 淘汰后的降级恢复
- */
-export function hydrateFromLocalStorage(
-  conversationId: string | null,
-  messageId: string
-): ChatMessage | null {
-  if (!conversationId) return null
-  const entries = getHistoryEntries()
-  const entry = entries.find((e) => e.id === conversationId)
-  if (!entry?.data?.messages) return null
-  const found = entry.data.messages.find((m) => m.id === messageId)
-  if (!found || !isValidMessageStructure(found)) return null
-  return found
 }
 
 /**

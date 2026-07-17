@@ -1,22 +1,24 @@
 /**
- * OPFS → Tauri 磁盘 对话存储迁移
+ * OPFS → 远程后端 对话存储迁移
  *
- * 把存在于浏览器 OPFS 中的历史 jsonl 对话迁移到 `<DataRoot>/dialogs/` 磁盘目录。
+ * 把存在于浏览器 OPFS 中的历史 jsonl 对话迁移到服务端 `<DataRoot>/dialogs/`。
  *
- * 触发条件：仅 Tauri 桌面端可用。Web 模式继续用 OPFS。
+ * 触发条件：transport 可达（Tauri 桌面端 IPC 或 Web/HTTP）。
+ * Web 模式此前把会话存进浏览器私有 OPFS（跨浏览器不互通的根因），
+ * 统一改走远程后端后，本迁移负责把存量数据上行。
  *
  * 迁移流程：
  *   1. 探测 OPFS 是否可用（不可用 → 跳过，无事可做）
  *   2. 列举 OPFS 全部 jsonl
- *   3. 逐个读 OPFS → 写 Tauri 后端 → 读回校验
+ *   3. 逐个读 OPFS → 写远程后端 → 读回校验
  *   4. 全部成功后写本地标记，避免重复迁移
  *   5. 失败的项目记录到报告，用户可重试
  *
  * 不主动删除 OPFS 数据：用户可在迁移成功后手动清理（避免不可逆）。
  */
 
-import { OPFSBackend, TauriBackend } from './dialogBackend'
-import { isTauri } from '@/utils/platform'
+import { OPFSBackend, RemoteBackend } from './dialogBackend'
+import { isTauri, isWeb } from '@/utils/platform'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('OpfsMigration')
@@ -94,15 +96,15 @@ export async function probeOpfsDialogCount(): Promise<number> {
 export async function migrateOpfsToTauri(
   overwrite = false,
 ): Promise<OpfsMigrationReport> {
-  if (!isTauri()) {
-    throw new Error('OPFS 迁移仅在 Tauri 桌面端可用')
+  if (!isTauri() && !isWeb()) {
+    throw new Error('OPFS 迁移需要后端可达（Tauri IPC 或 HTTP）')
   }
   if (!isOPFSAvailable()) {
     return { total: 0, success: 0, skipped: 0, failed: 0, errors: [], flagged: false }
   }
 
   const opfs = new OPFSBackend()
-  const tauri = new TauriBackend()
+  const remote = new RemoteBackend()
 
   let names: string[] = []
   try {
@@ -116,18 +118,18 @@ export async function migrateOpfsToTauri(
   let skipped = 0
   let failed = 0
 
-  // 预读 Tauri 已存在列表，避免逐个 read 浪费 IPC
-  let tauriExisting: Set<string>
+  // 预读远程端已存在列表，避免逐个 read 浪费 IPC
+  let remoteExisting: Set<string>
   try {
-    tauriExisting = new Set(await tauri.listFiles())
+    remoteExisting = new Set(await remote.listFiles())
   } catch (e) {
-    log.warn('列举 Tauri 后端失败，按未存在处理', { error: String(e) })
-    tauriExisting = new Set()
+    log.warn('列举远程后端失败，按未存在处理', { error: String(e) })
+    remoteExisting = new Set()
   }
 
   for (const name of names) {
     try {
-      if (!overwrite && tauriExisting.has(name)) {
+      if (!overwrite && remoteExisting.has(name)) {
         skipped++
         continue
       }
@@ -138,9 +140,9 @@ export async function migrateOpfsToTauri(
         errors.push({ name, error: 'OPFS 读取返回 null' })
         continue
       }
-      await tauri.writeFile(name, content)
+      await remote.writeFile(name, content)
       // 校验：读回比对
-      const back = await tauri.readFile(name)
+      const back = await remote.readFile(name)
       if (back !== content) {
         failed++
         errors.push({ name, error: '写入后校验内容不一致' })
@@ -172,6 +174,38 @@ export async function migrateOpfsToTauri(
     failed,
     errors,
     flagged,
+  }
+}
+
+/**
+ * 启动时静默自动迁移（幂等）。
+ *
+ * Web 端此前把会话存进浏览器 OPFS,统一改走远程后端后,
+ * 首次启动把存量数据上行；无存量/已迁移则打标记跳过。
+ * 失败不打扰用户,下次启动自动重试。
+ */
+export async function maybeAutoMigrateOpfs(): Promise<void> {
+  try {
+    if (!isTauri() && !isWeb()) return
+    if (isOpfsMigrated()) return
+    const count = await probeOpfsDialogCount()
+    if (count === 0) {
+      try {
+        localStorage.setItem(MIGRATED_FLAG_KEY, '1')
+      } catch {
+        /* ignore */
+      }
+      return
+    }
+    const report = await migrateOpfsToTauri(false)
+    log.info('OPFS 存量会话自动迁移完成', {
+      total: report.total,
+      success: report.success,
+      skipped: report.skipped,
+      failed: report.failed,
+    })
+  } catch (e) {
+    log.warn('OPFS 自动迁移失败（下次启动重试）', { error: String(e) })
   }
 }
 

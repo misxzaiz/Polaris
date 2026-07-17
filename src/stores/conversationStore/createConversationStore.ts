@@ -24,13 +24,14 @@ import {
   resolveSessionEngine,
   resolveRuntimeConfigForEngine,
   getDisabledPluginMcpServers,
-  hydrateFromLocalStorage,
   generateTitleFromMessage,
   buildWorkspacePrompts,
   normalizeForInvoke,
   resolveChatError,
   resolveEffectiveProfileId,
 } from './conversationStoreUtils'
+import { dialogStorageService } from '@/services/dialogStorage'
+import { cancelScheduledFlush } from './eventHandler'
 import { useDispatchStore } from '@/stores/dispatchStore'
 import { useConfigStore } from '../configStore'
 
@@ -133,6 +134,13 @@ function createInitialState(sessionId: string): ConversationState {
     // 可见区域追踪
     visibleRange: null,
 
+    // 增量落盘水位（WAL 崩溃保护）
+    persistedSeq: 0,
+    persistedConversationId: null,
+
+    // 历史分页（尾部优先恢复）
+    historyPaging: null,
+
     // 元数据
     sessionId,
   }
@@ -176,6 +184,8 @@ export function createConversationStore(
   let _paragraphTimer: ReturnType<typeof setTimeout> | null = null
   // 上一次压缩操作的可见范围，用于防止反馈循环（压缩→高度变化→新 range→再压缩）
   let _lastCompactionRange: { start: number; end: number } | null = null
+  // 磁盘分页加载锁：防止向上滚动连续触发重复读盘
+  let _loadingOlderPage = false
   // 流式 flush 超时间隔（ms）。
   // 取舍说明：该值决定段落内部文字更新帧率（1000/interval fps）。
   // - 曾为 200ms：渲染成本低，但文字以 5fps "一坨坨"跳出，观感卡顿（详见 temp/streaming-mvp）
@@ -1059,7 +1069,7 @@ export function createConversationStore(
       setPromptSuggestion: (suggestion) => set({ promptSuggestion: suggestion }),
 
       // ===== 历史恢复 =====
-      setMessagesFromHistory: (messages, conversationId) => {
+      setMessagesFromHistory: (messages, conversationId, paging) => {
         // 清除旧会话的压缩快照，避免快照与消息不匹配
         compactor.clearSnapshots()
         _lastCompactionRange = null // 重置压缩范围，防止旧范围阻止新会话首次压缩
@@ -1115,6 +1125,12 @@ export function createConversationStore(
           currentMessage: null,
           progressMessage: null,
           visibleRange: null,
+          // 恢复的消息本就来自磁盘 → 水位直接对齐，避免下轮 session_start 全量重刷；
+          // Fork（conversationId=null）水位归零，首轮 session_start 把完整历史写入新文件
+          persistedSeq: conversationId ? processedMessages.length : 0,
+          persistedConversationId: conversationId,
+          // 尾部优先恢复：记录向上翻页游标（无分页信息 = 已全量在内存）
+          historyPaging: paging ?? null,
         })
       },
 
@@ -1514,15 +1530,58 @@ export function createConversationStore(
       },
 
       loadMoreArchivedMessages: (count = 20) => {
-        const { archivedMessages, messages } = get()
-        if (archivedMessages.length === 0) return
-        const loadCount = Math.min(count, archivedMessages.length)
-        const toLoad = archivedMessages.slice(-loadCount)
-        const remaining = archivedMessages.slice(0, -loadCount)
-        set({
-          messages: [...toLoad, ...messages],
-          archivedMessages: remaining,
-        })
+        const { archivedMessages, messages, historyPaging, conversationId } = get()
+
+        // 1) 内存归档兜底（历史遗留路径，通常为空）
+        if (archivedMessages.length > 0) {
+          const loadCount = Math.min(count, archivedMessages.length)
+          const toLoad = archivedMessages.slice(-loadCount)
+          const remaining = archivedMessages.slice(0, -loadCount)
+          set({
+            messages: [...toLoad, ...messages],
+            archivedMessages: remaining,
+          })
+          return
+        }
+
+        // 2) 磁盘分页：尾部优先恢复的会话向上滚动时按需补读更早的消息
+        if (!historyPaging || !historyPaging.hasMore || _loadingOlderPage) return
+        _loadingOlderPage = true
+        const { earliestSeq, sourceId } = historyPaging
+        const persistedSeqAtCall = get().persistedSeq
+        void dialogStorageService
+          .getConversationPage(sourceId, earliestSeq, count)
+          .then((page) => {
+            const cur = get()
+            // 会话已切换/游标已变/落盘水位推进（并发防护）→ 丢弃本次结果，用户再滚动会重试
+            if (
+              cur.conversationId !== conversationId ||
+              cur.historyPaging?.earliestSeq !== earliestSeq ||
+              cur.persistedSeq !== persistedSeqAtCall
+            ) {
+              return
+            }
+            if (!page || page.messages.length === 0) {
+              set({ historyPaging: { ...historyPaging, hasMore: false } })
+              return
+            }
+            // 去重防御：磁盘页可能与内存窗口重叠（seq 漂移的极端情况）
+            const inMemory = new Set(cur.messages.map((m) => m.id))
+            const fresh = page.messages.filter((m) => !inMemory.has(m.id))
+            set({
+              messages: fresh.length > 0 ? [...fresh, ...cur.messages] : cur.messages,
+              // 前缀增长 → 已落盘计数同步增长（这些消息本就来自磁盘）
+              persistedSeq: cur.persistedSeq + fresh.length,
+              historyPaging: {
+                earliestSeq: page.earliestSeq ?? earliestSeq,
+                hasMore: page.hasMore,
+                sourceId,
+              },
+            })
+          })
+          .finally(() => {
+            _loadingOlderPage = false
+          })
       },
 
       // ===== 消息压缩 =====
@@ -1554,6 +1613,7 @@ export function createConversationStore(
 
         const newMessages = [...messages]
         let changed = false
+        let needDiskLoad = false
 
         // 恢复进入可见区域的消息
         for (const idx of toHydrate) {
@@ -1562,11 +1622,13 @@ export function createConversationStore(
           if (isCompacted(msg)) {
             // 一级恢复：从 compactor 快照 Map 恢复
             let hydrated = compactor.hydrateMessage(msg)
-            if (hydrated === msg) {
-              // 快照未命中，二级降级：从 localStorage 历史恢复
-              const fromHistory = hydrateFromLocalStorage(conversationId, msg.id)
-              if (fromHistory) {
-                hydrated = compactor.hydrateFromExternal(msg.id, fromHistory)
+            if (hydrated === msg && conversationId) {
+              // 快照未命中，二级降级：从自有 JSONL 的磁盘缓存恢复（磁盘上有完整版本）
+              const fromDisk = dialogStorageService.getCachedFullMessage(conversationId, msg.id)
+              if (fromDisk) {
+                hydrated = compactor.hydrateFromExternal(msg.id, fromDisk)
+              } else if (!dialogStorageService.hasMessageMapCache(conversationId)) {
+                needDiskLoad = true
               }
             }
             if (hydrated !== msg) {
@@ -1574,6 +1636,34 @@ export function createConversationStore(
               changed = true
             }
           }
+        }
+
+        // 磁盘缓存未加载 → 异步加载后补一次可见区恢复（一次读盘，之后走同步缓存）
+        if (needDiskLoad && conversationId) {
+          void dialogStorageService.loadMessageMap(conversationId).then((map) => {
+            if (!map || map.size === 0) return
+            const s = get()
+            if (s.conversationId !== conversationId || !s.visibleRange) return
+            const { toHydrate: hydrateIdx } = compactor.computeRangeActions(
+              s.messages.length,
+              s.visibleRange.start,
+              s.visibleRange.end,
+            )
+            const patched = [...s.messages]
+            let dirty = false
+            for (const idx of hydrateIdx) {
+              if (idx < 0 || idx >= patched.length) continue
+              const m = patched[idx]
+              if (m && isCompacted(m)) {
+                const full = map.get(m.id)
+                if (full) {
+                  patched[idx] = compactor.hydrateFromExternal(m.id, full)
+                  dirty = true
+                }
+              }
+            }
+            if (dirty) set({ messages: patched })
+          })
         }
 
         // 压缩离开可见区域的消息
@@ -1610,13 +1700,14 @@ export function createConversationStore(
 
           // 只读恢复：持久化路径不应有副作用，避免 hydrateMessage 的 touchSnapshotOrder
           // 与 hydrateFromExternal 的 saveSnapshot 污染 LRU——后者会把别的内存快照挤出
-          // 队列，导致用户后续滚回该消息时被迫降级到 localStorage（再触发一次 parse）。
-          // 改用 getSnapshot 只读读取；降级直接用 localStorage 结果，不写回快照。
+          // 队列，导致用户后续滚回该消息时被迫降级到磁盘（再触发一次读盘）。
+          // 改用 getSnapshot 只读读取；降级读磁盘缓存（只读），不写回快照。
+          // 两级都 miss 时保持压缩态——saveConversation 的合并保护会以磁盘完整版为准。
           const snapshot = compactor.getSnapshot(msg.id)
           let hydrated: ChatMessage | null = snapshot ?? null
-          if (!hydrated) {
-            // 二级降级：localStorage 历史（命中解析缓存，零重复 parse）
-            hydrated = hydrateFromLocalStorage(conversationId, msg.id)
+          if (!hydrated && conversationId) {
+            // 二级降级：自有 JSONL 磁盘缓存（同步只读；未加载时交给合并保护兜底）
+            hydrated = dialogStorageService.getCachedFullMessage(conversationId, msg.id)
           }
           if (hydrated && hydrated !== msg) {
             newMessages[i] = hydrated
@@ -1634,6 +1725,9 @@ export function createConversationStore(
           _paragraphTimer = null
         }
         _textBuffer = ''
+
+        // 取消挂起的增量落盘（会话销毁后不再需要）
+        cancelScheduledFlush(sessionId)
 
         // 清理压缩器快照
         compactor.clearSnapshots()

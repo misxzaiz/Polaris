@@ -43,14 +43,17 @@ export function SessionPreviewModal({ item, onRestore, onFork, onClose }: Sessio
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [atBottom, setAtBottom] = useState(true)
+  const [paging, setPaging] = useState<{ earliestSeq: number; hasMore: boolean; sourceId: string } | null>(null)
+  const [loadingEarlier, setLoadingEarlier] = useState(false)
   const virtuosoRef = useRef<VirtuosoHandle>(null)
 
-  // 加载会话消息（只读，不创建 session）
+  // 加载会话消息（只读，不创建 session；自有存储走尾部优先分页）
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setError(false)
     setMessages([])
+    setPaging(null)
     ;(async () => {
       try {
         const loaded = await historyService.loadMessagesForItem(
@@ -62,6 +65,7 @@ export function SessionPreviewModal({ item, onRestore, onFork, onClose }: Sessio
         )
         if (cancelled) return
         setMessages(loaded.messages)
+        setPaging(loaded.paging)
         if (loaded.messages.length === 0) setError(true)
       } catch (e) {
         if (cancelled) return
@@ -75,6 +79,39 @@ export function SessionPreviewModal({ item, onRestore, onFork, onClose }: Sessio
       cancelled = true
     }
   }, [item.id, item.engineId, item.projectPath, item.claudeProjectName, item.title])
+
+  // 向上补读更早的消息（分页游标）
+  const loadEarlier = async () => {
+    if (!paging || !paging.hasMore || loadingEarlier) return
+    setLoadingEarlier(true)
+    try {
+      const { dialogStorageService } = await import('@/services/dialogStorage')
+      const page = await dialogStorageService.getConversationPage(
+        paging.sourceId,
+        paging.earliestSeq,
+        100,
+      )
+      if (!page || page.messages.length === 0) {
+        setPaging({ ...paging, hasMore: false })
+        return
+      }
+      const existing = new Set(messages.map((m) => m.id))
+      const fresh = page.messages.filter((m) => !existing.has(m.id))
+      setMessages((prev) => [...fresh, ...prev])
+      setPaging({
+        earliestSeq: page.earliestSeq ?? paging.earliestSeq,
+        hasMore: page.hasMore,
+        sourceId: paging.sourceId,
+      })
+      requestAnimationFrame(() => {
+        virtuosoRef.current?.scrollToIndex({ index: fresh.length, align: 'start' })
+      })
+    } catch (e) {
+      log.warn('预览补读更早消息失败', { error: String(e) })
+    } finally {
+      setLoadingEarlier(false)
+    }
+  }
 
   // ESC 关闭
   useEffect(() => {
@@ -164,7 +201,27 @@ export function SessionPreviewModal({ item, onRestore, onFork, onClose }: Sessio
                 atBottomStateChange={setAtBottom}
                 atBottomThreshold={120}
                 increaseViewportBy={{ top: 200, bottom: 300 }}
-                components={{ Footer: () => <div style={{ height: 24 }} /> }}
+                initialTopMostItemIndex={Math.max(0, messages.length - 1)}
+                components={{
+                  Footer: () => <div style={{ height: 24 }} />,
+                  ...(paging?.hasMore
+                    ? {
+                        Header: () => (
+                          <div className="flex items-center justify-center py-2">
+                            <button
+                              onClick={loadEarlier}
+                              disabled={loadingEarlier}
+                              className="px-3 py-1.5 text-xs rounded-full border border-border-subtle bg-background-elevated/70 text-text-secondary hover:text-text-primary hover:border-primary/40 transition-colors disabled:opacity-60"
+                            >
+                              {loadingEarlier
+                                ? t('preview.loadingEarlier', '正在加载更早的消息…')
+                                : t('preview.loadEarlier', '加载更早的消息')}
+                            </button>
+                          </div>
+                        ),
+                      }
+                    : {}),
+                }}
               />
               {!atBottom && (
                 <button

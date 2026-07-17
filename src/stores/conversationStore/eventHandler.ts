@@ -9,7 +9,7 @@ import { createLogger } from '@/utils/logger'
 import type { AIEvent } from '@/ai-runtime'
 import { isEditTool, extractEditDiff } from '@/utils/diffExtractor'
 import { parseApplyPatch } from '@/utils/patchParser'
-import type { PluginCardBlock } from '@/types'
+import type { PluginCardBlock, ChatMessage } from '@/types'
 import { chatCardRegistry } from '@/plugin-system/chatCardRegistry'
 import type { ConversationStore } from './types'
 import { voiceNotificationService } from '@/services/voiceNotificationService'
@@ -78,18 +78,22 @@ export function handleAIEvent(
         error: null,
         promptSuggestion: null,
       })
+      // 轮次开始即落盘：把水位之后的消息（本轮用户消息；引擎轮换会话 ID/Fork 时为完整历史）
+      // 增量写入 JSONL——用户消息从此不等轮末,发出即持久化。
+      void flushNewMessages(get, set)
       log.info('Session started', { sessionId: event.sessionId })
       break
 
     case 'session_end': {
+      cancelScheduledFlush(state.sessionId)
       state.finishMessage()
       set({
         isStreaming: false,
         progressMessage: null,
       })
-      // 保存到自有 JSONL 存储（整体覆写，幂等保序）
+      // 保存到自有 JSONL 存储（轮末规整覆写：合并保护 + 前缀保留 + seq 重排）
       // 必须用 get() 取 finishMessage() 之后的最新 state，否则会丢失最后一条 AI 回复
-      saveDialog(get())
+      saveDialog(get, set)
 
       log.info('Session ended', {
         sessionId: state.sessionId,
@@ -404,52 +408,179 @@ export function handleAIEvent(
       log.warn('Unhandled event type', { type: (_exhaustive as { type: string }).type })
     }
   }
+
+  // WAL 兜底：本次事件若使 messages 增长（如问题流程中途归档 currentMessage），
+  // 防抖调度一次增量落盘。session_start/session_end 的显式落盘已覆盖主路径，
+  // 这里只兜边缘时机；无新消息时是零成本 no-op。
+  if (event.type !== 'session_end') {
+    scheduleDialogFlush(state.sessionId, get, set)
+  }
 }
 
 /**
- * 保存会话到自有 JSONL 存储
+ * 提取会话保存所需的元数据（标题/引擎/工作区），saveDialog 与增量 flush 共用。
+ */
+function buildDialogMetaInput(state: ConversationStore, messages: ChatMessage[]): {
+  engineId: ReturnType<typeof normalizeEngineId>
+  title: string
+  workspaceId: string | null
+  workspacePath: string | null
+} {
+  const metadata = sessionStoreManager.getState().sessionMetadata.get(state.sessionId)
+  const engineId = normalizeEngineId(metadata?.engineId)
+
+  // 标题：优先首条用户消息，其次 metadata.title
+  const firstUserMessage = messages.find((m) => m.type === 'user')
+  let title = metadata?.title || '新会话'
+  if (firstUserMessage && 'content' in firstUserMessage && firstUserMessage.content) {
+    title = (firstUserMessage.content as string).slice(0, 50)
+  }
+
+  // 工作区路径（用于按项目过滤 / 恢复时定位工作区）
+  let workspacePath: string | null = null
+  if (metadata?.workspaceId) {
+    const ws = useWorkspaceStore
+      .getState()
+      .workspaces.find((w) => w.id === metadata.workspaceId)
+    workspacePath = ws?.path ?? null
+  }
+
+  return { engineId, title, workspaceId: metadata?.workspaceId ?? null, workspacePath }
+}
+
+// ============================================================================
+// 增量落盘（WAL 崩溃保护）
+// ============================================================================
+
+/** 每会话一个 debounce 定时器：消息完成后短暂静默即落盘 */
+const flushTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const FLUSH_DEBOUNCE_MS = 1500
+
+type GetState = () => ConversationStore
+type SetState = (partial: Partial<ConversationStore>) => void
+
+/** 调度一次防抖增量落盘（消息完成/出错等时机调用；session_end 的规整覆写会取消它） */
+export function scheduleDialogFlush(sessionId: string, get: GetState, set: SetState): void {
+  const state = get()
+  if (!state.conversationId) return
+  const baseSeq = state.persistedConversationId === state.conversationId ? state.persistedSeq : 0
+  if (state.messages.length <= baseSeq) return
+
+  const existing = flushTimers.get(sessionId)
+  if (existing) clearTimeout(existing)
+  flushTimers.set(
+    sessionId,
+    setTimeout(() => {
+      flushTimers.delete(sessionId)
+      void flushNewMessages(get, set)
+    }, FLUSH_DEBOUNCE_MS),
+  )
+}
+
+/** 取消挂起的防抖落盘（轮末规整覆写已覆盖全部内容时） */
+export function cancelScheduledFlush(sessionId: string): void {
+  const existing = flushTimers.get(sessionId)
+  if (existing) {
+    clearTimeout(existing)
+    flushTimers.delete(sessionId)
+  }
+}
+
+/**
+ * 把水位之后的新完成消息增量追加到 JSONL（WAL）。
+ *
+ * - 消息刚完成即落盘 → 必然是完整态（未被离屏压缩），从时序上根绝"截断态入盘"。
+ * - conversationId 变化（引擎轮换会话 ID / Fork 后首轮）→ 水位归零，完整历史写入新文件。
+ * - 崩溃/刷新最多丢正在流式中的半条消息。
+ */
+async function flushNewMessages(get: GetState, set: SetState): Promise<void> {
+  try {
+    const state = get()
+    const { conversationId, messages } = state
+    if (!conversationId || messages.length === 0) return
+
+    const sameFile = state.persistedConversationId === conversationId
+    const baseSeq = sameFile ? state.persistedSeq : 0
+    if (messages.length <= baseSeq) {
+      if (!sameFile) {
+        set({ persistedConversationId: conversationId, persistedSeq: 0 })
+      }
+      return
+    }
+
+    const newMessages = messages.slice(baseSeq)
+    const metaInput = buildDialogMetaInput(state, messages)
+    // 分页恢复的会话：messages[0] 的磁盘 seq 偏移（引擎轮换 conversationId 后
+    // 仍保留偏移，为轮末从原文件复制前缀预留 seq 区间）
+    const seqOffset = state.historyPaging?.earliestSeq ?? 0
+
+    await dialogStorageService.appendConversationMessages(
+      {
+        externalId: conversationId,
+        ...metaInput,
+        messages: newMessages,
+      },
+      seqOffset + baseSeq,
+    )
+
+    // 成功后推进水位（期间 messages 可能又增长，只推进到本次覆盖的长度）
+    const cur = get()
+    if (cur.conversationId === conversationId) {
+      set({
+        persistedSeq: baseSeq + newMessages.length,
+        persistedConversationId: conversationId,
+      })
+    }
+  } catch (e) {
+    // 落盘失败不影响会话；轮末规整覆写会兜底
+    log.warn('增量落盘失败（轮末整体保存兜底）', { error: String(e) })
+  }
+}
+
+/**
+ * 保存会话到自有 JSONL 存储（轮末规整）
  *
  * 在 session_end 时整体覆写该会话文件（一个会话一个 .jsonl）。
- * 整存整取 → 幂等、保序、不重复，根治 IndexedDB 方案的消息错乱。
- * 完整序列化 ChatMessage（含 blocks/附件）→ 恢复时无损还原。
+ * 整存整取 → 幂等、保序、不重复；配合三道保护不丢内容：
+ * 1. getPersistableMessages 用内存快照/磁盘缓存恢复压缩态；
+ * 2. saveConversation 合并保护：仍为压缩态的消息不覆盖磁盘完整版；
+ * 3. 分页恢复的会话保留磁盘前缀（窗口外的更早消息）。
  */
-async function saveDialog(state: ConversationStore): Promise<void> {
+async function saveDialog(get: GetState, set: SetState): Promise<void> {
   try {
-    const { conversationId, sessionId } = state
+    const state = get()
+    const { conversationId } = state
     if (!conversationId) return
     // store 中离屏消息可能已被压缩，持久化前必须恢复为完整态，
     // 否则压缩态（output 清空 / content 截断）会被写入 JSONL 永久丢失内容。
     const messages = state.getPersistableMessages()
     if (messages.length === 0) return
 
-    // 会话元数据
-    const metadata = sessionStoreManager.getState().sessionMetadata.get(sessionId)
-    const engineId = normalizeEngineId(metadata?.engineId)
+    const metaInput = buildDialogMetaInput(state, messages)
+    const paging = state.historyPaging
+    const baseSeq = paging?.earliestSeq ?? 0
 
-    // 标题：优先首条用户消息，其次 metadata.title
-    const firstUserMessage = messages.find((m) => m.type === 'user')
-    let title = metadata?.title || '新会话'
-    if (firstUserMessage && 'content' in firstUserMessage && firstUserMessage.content) {
-      title = (firstUserMessage.content as string).slice(0, 50)
-    }
-
-    // 工作区路径（用于按项目过滤 / 恢复时定位工作区）
-    let workspacePath: string | null = null
-    if (metadata?.workspaceId) {
-      const ws = useWorkspaceStore
-        .getState()
-        .workspaces.find((w) => w.id === metadata.workspaceId)
-      workspacePath = ws?.path ?? null
-    }
-
-    await dialogStorageService.saveConversation({
+    const { prefixCount } = await dialogStorageService.saveConversation({
       externalId: conversationId,
-      engineId,
-      title,
-      workspaceId: metadata?.workspaceId ?? null,
-      workspacePath,
+      ...metaInput,
       messages,
+      baseSeq,
+      prefixSourceExternalId: paging?.sourceId,
     })
+
+    // 覆写后磁盘 seq 已重排为 [0..prefixCount+N)：校正水位与分页游标（前缀已自包含 → sourceId 指回自身）
+    const cur = get()
+    if (cur.conversationId === conversationId) {
+      set({
+        // 水位 = 本次实际落盘的条数（保存期间新到的消息留给下次 flush）
+        persistedSeq: Math.min(messages.length, cur.messages.length),
+        persistedConversationId: conversationId,
+        historyPaging:
+          prefixCount > 0
+            ? { earliestSeq: prefixCount, hasMore: true, sourceId: conversationId }
+            : null,
+      })
+    }
 
     log.info('会话已保存到 JSONL', { conversationId, messageCount: messages.length })
   } catch (e) {

@@ -235,3 +235,157 @@ describe('dialogStorageService - 删除', () => {
     expect(await dialogStorageService.hasConversation('remove')).toBe(false)
   })
 })
+
+// ============================================================================
+// Phase 0：数据止损行为
+// ============================================================================
+
+/** 构造压缩态消息（messageCompactor 的 __compacted__ 标记 + 截断内容） */
+function compactedUserMsg(id: string, truncated: string): UserChatMessage {
+  return {
+    id,
+    type: 'user',
+    timestamp: '2026-06-16T00:00:00.000Z',
+    content: truncated,
+    __compacted__: true,
+  } as unknown as UserChatMessage
+}
+
+describe('dialogStorageService - 合并保护（截断态不覆盖磁盘完整版）', () => {
+  it('压缩态消息覆写时保留磁盘上的完整版本', async () => {
+    // 第一次保存：完整内容
+    await dialogStorageService.saveConversation({
+      externalId: 'conv-merge',
+      engineId: 'claude-code',
+      title: '合并保护',
+      messages: [userMsg('m1', '这是完整的原始内容，绝不能被截断态覆盖'), userMsg('m2', '第二条')],
+    })
+
+    // 第二次保存：m1 已被离屏压缩成截断态（快照恢复失败的场景）
+    await dialogStorageService.saveConversation({
+      externalId: 'conv-merge',
+      engineId: 'claude-code',
+      title: '合并保护',
+      messages: [compactedUserMsg('m1', '这是完整的...'), userMsg('m2', '第二条'), userMsg('m3', '新消息')],
+    })
+
+    const record = await dialogStorageService.getConversation('conv-merge')
+    expect(record).not.toBeNull()
+    expect(record!.messages.length).toBe(3)
+    const m1 = record!.messages.find((m) => m.id === 'm1') as UserChatMessage
+    // 磁盘完整版胜出，截断态没有入盘
+    expect(m1.content).toBe('这是完整的原始内容，绝不能被截断态覆盖')
+    expect('__compacted__' in m1).toBe(false)
+  })
+
+  it('磁盘无完整版时压缩态保持原样（不丢消息）', async () => {
+    await dialogStorageService.saveConversation({
+      externalId: 'conv-merge-2',
+      engineId: 'claude-code',
+      title: '无备份',
+      messages: [compactedUserMsg('m1', '截断...')],
+    })
+    const record = await dialogStorageService.getConversation('conv-merge-2')
+    expect(record!.messages.length).toBe(1)
+    expect((record!.messages[0] as UserChatMessage).content).toBe('截断...')
+  })
+})
+
+describe('dialogStorageService - 增量追加（WAL）', () => {
+  it('append 建档 + 续追加，读回顺序完整', async () => {
+    await dialogStorageService.appendConversationMessages(
+      {
+        externalId: 'conv-append',
+        engineId: 'claude-code',
+        title: '增量',
+        messages: [userMsg('u1', '第一条')],
+      },
+      0,
+    )
+    await dialogStorageService.appendConversationMessages(
+      {
+        externalId: 'conv-append',
+        engineId: 'claude-code',
+        title: '增量',
+        messages: [assistantMsg('a1', '回复一'), userMsg('u2', '第二条')],
+      },
+      1,
+    )
+
+    const record = await dialogStorageService.getConversation('conv-append')
+    expect(record).not.toBeNull()
+    expect(record!.messages.map((m) => m.id)).toEqual(['u1', 'a1', 'u2'])
+  })
+
+  it('append 后整体覆写（轮末规整）幂等且不重复', async () => {
+    await dialogStorageService.appendConversationMessages(
+      {
+        externalId: 'conv-append-2',
+        engineId: 'claude-code',
+        title: 'WAL',
+        messages: [userMsg('u1', 'Q'), assistantMsg('a1', 'A')],
+      },
+      0,
+    )
+    // 轮末整体覆写同一批消息（saveDialog 语义）
+    await dialogStorageService.saveConversation({
+      externalId: 'conv-append-2',
+      engineId: 'claude-code',
+      title: 'WAL',
+      messages: [userMsg('u1', 'Q'), assistantMsg('a1', 'A')],
+    })
+
+    const record = await dialogStorageService.getConversation('conv-append-2')
+    expect(record!.messages.length).toBe(2)
+    expect(record!.messages.map((m) => m.id)).toEqual(['u1', 'a1'])
+  })
+})
+
+describe('dialogStorageService - 分页读取与前缀保留', () => {
+  it('getConversationPage 降级路径：整读 + 内存分页（尾部优先）', async () => {
+    const msgs = Array.from({ length: 10 }, (_, i) => userMsg(`p${i}`, `消息${i}`))
+    await dialogStorageService.saveConversation({
+      externalId: 'conv-page',
+      engineId: 'claude-code',
+      title: '分页',
+      messages: msgs,
+    })
+
+    const tail = await dialogStorageService.getConversationPage('conv-page', null, 4)
+    expect(tail).not.toBeNull()
+    expect(tail!.messages.map((m) => m.id)).toEqual(['p6', 'p7', 'p8', 'p9'])
+    expect(tail!.hasMore).toBe(true)
+    expect(tail!.total).toBe(10)
+
+    // 用游标继续向上翻
+    const prev = await dialogStorageService.getConversationPage('conv-page', tail!.earliestSeq, 4)
+    expect(prev!.messages.map((m) => m.id)).toEqual(['p2', 'p3', 'p4', 'p5'])
+  })
+
+  it('分页窗口覆写保留磁盘前缀（baseSeq），不截断历史', async () => {
+    const msgs = Array.from({ length: 8 }, (_, i) => userMsg(`s${i}`, `内容${i}`))
+    await dialogStorageService.saveConversation({
+      externalId: 'conv-prefix',
+      engineId: 'claude-code',
+      title: '前缀',
+      messages: msgs,
+    })
+
+    // 模拟尾部优先恢复：窗口只有最后 3 条（seq 5..7）+ 新增 1 条，baseSeq=5
+    const window = [userMsg('s5', '内容5'), userMsg('s6', '内容6'), userMsg('s7', '内容7'), userMsg('s8', '新增')]
+    const { prefixCount } = await dialogStorageService.saveConversation({
+      externalId: 'conv-prefix',
+      engineId: 'claude-code',
+      title: '前缀',
+      messages: window,
+      baseSeq: 5,
+    })
+
+    expect(prefixCount).toBe(5)
+    const record = await dialogStorageService.getConversation('conv-prefix')
+    expect(record!.messages.length).toBe(9)
+    expect(record!.messages.map((m) => m.id)).toEqual([
+      's0', 's1', 's2', 's3', 's4', 's5', 's6', 's7', 's8',
+    ])
+  })
+})

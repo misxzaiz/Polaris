@@ -4,16 +4,17 @@
  * 提供统一的 文件读写/列举/删除 接口，屏蔽底层存储差异。
  *
  * 实现优先级（首次调用时确定）：
- * 1. **TauriBackend** —— 桌面端首选，落到 `<DataRoot>/dialogs/<id>.jsonl`，
- *    用户可见、可备份、可跟随数据根迁移。
- * 2. **OPFSBackend** —— 浏览器原生文件系统，按 origin 隔离，磁盘级容量。
+ * 1. **RemoteBackend** —— 只要 transport 可达（Tauri IPC 或 Web/HTTP）即首选，
+ *    落到服务端 `<DataRoot>/dialogs/`：用户可见、可备份、**全端共享**
+ *    （桌面 / 任意浏览器 / 移动 WebView 看到同一份历史）。
+ * 2. **OPFSBackend** —— 仅后端完全不可达时的离线兜底（纯静态 Web 场景），按浏览器隔离。
  * 3. **LocalStorageBackend** —— 极端兜底（OPFS 不可用 + 非 Tauri 环境，主要用于测试）。
  *
  * 文件名约定：{externalId}.jsonl
  */
 
 import { invoke } from '@/services/transport'
-import { isTauri } from '@/utils/platform'
+import { isTauri, isWeb } from '@/utils/platform'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('DialogBackend')
@@ -24,11 +25,22 @@ const FILE_EXT = '.jsonl'
 
 /**
  * 列表 meta 条目：文件名 + 该文件首行(DialogMeta JSON 字符串)。
- * 仅需首行即可渲染会话列表，避免读取整份 jsonl(可能数 MB)。
+ * 仅需首行即可渲染会话列表,避免读取整份 jsonl(可能数 MB)。
  */
 export interface DialogMetaEntry {
   name: string
   metaLine: string
+}
+
+/** 尾部优先分页读取的原始结果（行未解析,由 service 层按需 parse） */
+export interface DialogPageRaw {
+  metaLine: string
+  /** 本页消息行（seq 升序,原始 JSON 字符串） */
+  lines: string[]
+  /** 消息行总数 */
+  total: number
+  /** 本页之前是否还有更早的消息 */
+  hasMore: boolean
 }
 
 /** OPFS/localStorage 提取首行时读取的最大字节数(meta 行远小于此，足够安全) */
@@ -42,7 +54,7 @@ function extractFirstLine(content: string): string {
 
 /** 存储后端接口 */
 export interface DialogBackend {
-  readonly kind: 'tauri' | 'opfs' | 'localstorage'
+  readonly kind: 'remote' | 'opfs' | 'localstorage'
   /** 写入文件（整体覆写） */
   writeFile(name: string, content: string): Promise<void>
   /** 读取文件内容，不存在返回 null */
@@ -56,14 +68,24 @@ export interface DialogBackend {
    * 可选：旧的测试 mock 后端可不实现，service 层会自动降级到 readFile 循环。
    */
   listMeta?(): Promise<DialogMetaEntry[]>
+  /**
+   * 增量追加消息行（WAL 式崩溃保护）。文件不存在时用 metaLine 建档。
+   * 可选：不实现时 service 层降级为 读-拼-写。
+   */
+  appendFile?(name: string, metaLine: string, lines: string[]): Promise<void>
+  /**
+   * 尾部优先分页读取（大会话恢复只取一页）。
+   * 可选：不实现时 service 层降级为整读 + 内存分页。
+   */
+  readPage?(name: string, beforeSeq: number | null, limit: number): Promise<DialogPageRaw | null>
 }
 
 // ============================================================================
-// Tauri 磁盘后端（首选，跟随 DataRoot）
+// 远程后端（首选：Tauri IPC / Web HTTP 同一套命令,落服务端磁盘,全端共享）
 // ============================================================================
 
-export class TauriBackend implements DialogBackend {
-  readonly kind = 'tauri' as const
+export class RemoteBackend implements DialogBackend {
+  readonly kind = 'remote' as const
 
   async writeFile(name: string, content: string): Promise<void> {
     await invoke<void>('dialog_write', { name, content })
@@ -82,13 +104,30 @@ export class TauriBackend implements DialogBackend {
     return invoke<DialogMetaEntry[]>('dialog_list_meta')
   }
 
+  async appendFile(name: string, metaLine: string, lines: string[]): Promise<void> {
+    await invoke<void>('dialog_append', { name, metaLine, lines })
+  }
+
+  async readPage(
+    name: string,
+    beforeSeq: number | null,
+    limit: number,
+  ): Promise<DialogPageRaw | null> {
+    const result = await invoke<DialogPageRaw | null>('dialog_read_page', {
+      name,
+      beforeSeq: beforeSeq ?? undefined,
+      limit,
+    })
+    return result ?? null
+  }
+
   async deleteFile(name: string): Promise<void> {
     await invoke<void>('dialog_delete', { name })
   }
 }
 
 // ============================================================================
-// OPFS 后端
+// OPFS 后端（离线兜底）
 // ============================================================================
 
 function isOPFSAvailable(): boolean {
@@ -131,6 +170,40 @@ export class OPFSBackend implements DialogBackend {
     } catch {
       // 文件不存在
       return null
+    }
+  }
+
+  async appendFile(name: string, metaLine: string, lines: string[]): Promise<void> {
+    const dir = await this.getDir()
+    let exists = true
+    let size = 0
+    let endsWithNewline = true
+    try {
+      const fh = await dir.getFileHandle(name, { create: false })
+      const file = await fh.getFile()
+      size = file.size
+      if (size > 0) {
+        const tailText = await file.slice(size - 1).text()
+        endsWithNewline = tailText.endsWith('\n')
+      }
+    } catch {
+      exists = false
+    }
+
+    const fileHandle = await dir.getFileHandle(name, { create: true })
+    // keepExistingData + 定位到文件尾：真 append,不整读旧内容
+    const writable = await fileHandle.createWritable({ keepExistingData: exists })
+    try {
+      let payload = ''
+      if (!exists) {
+        payload += metaLine.trim() + '\n'
+      } else if (size > 0 && !endsWithNewline) {
+        payload += '\n'
+      }
+      payload += lines.join('\n') + '\n'
+      await writable.write({ type: 'write', position: exists ? size : 0, data: payload })
+    } finally {
+      await writable.close()
     }
   }
 
@@ -203,6 +276,16 @@ class LocalStorageBackend implements DialogBackend {
     return localStorage.getItem(this.keyFor(name))
   }
 
+  async appendFile(name: string, metaLine: string, lines: string[]): Promise<void> {
+    const existing = localStorage.getItem(this.keyFor(name))
+    if (existing == null) {
+      await this.writeFile(name, metaLine.trim() + '\n' + lines.join('\n') + '\n')
+      return
+    }
+    const sep = existing.endsWith('\n') || existing.length === 0 ? '' : '\n'
+    await this.writeFile(name, existing + sep + lines.join('\n') + '\n')
+  }
+
   async listFiles(): Promise<string[]> {
     const names: string[] = []
     for (let i = 0; i < localStorage.length; i++) {
@@ -242,12 +325,13 @@ let backendInstance: DialogBackend | null = null
 export function getDialogBackend(): DialogBackend {
   if (backendInstance) return backendInstance
 
-  if (isTauri()) {
-    backendInstance = new TauriBackend()
-    log.info('对话存储使用 Tauri 磁盘后端')
+  if (isTauri() || isWeb()) {
+    // transport 可达（Tauri IPC 或 HTTP）→ 统一落服务端磁盘,全端共享同一份历史
+    backendInstance = new RemoteBackend()
+    log.info('对话存储使用远程后端', { transport: isTauri() ? 'tauri' : 'http' })
   } else if (isOPFSAvailable()) {
     backendInstance = new OPFSBackend()
-    log.info('对话存储使用 OPFS 后端（Web 模式）')
+    log.info('对话存储使用 OPFS 后端（离线模式,数据仅存本浏览器）')
   } else {
     backendInstance = new LocalStorageBackend()
     log.info('对话存储使用 localStorage 后端（OPFS 不可用）')

@@ -161,6 +161,23 @@ export interface ConversationState {
 
   // ===== 可见区域追踪（消息压缩） =====
   visibleRange: { start: number; end: number } | null
+
+  // ===== 增量落盘水位（WAL 崩溃保护） =====
+  /** 已增量落盘的消息条数（messages 前缀长度）；轮末整体覆写后推进到 messages.length */
+  persistedSeq: number
+  /** 水位对应的 conversationId；变化（如引擎轮换会话 ID / Fork）时水位归零重刷 */
+  persistedConversationId: string | null
+
+  // ===== 历史分页（尾部优先恢复） =====
+  /**
+   * 磁盘侧还有更早消息未加载时的分页游标：
+   * - earliestSeq = 当前已加载最早一条的磁盘 seq（不变量：messages[i] 的磁盘 seq = earliestSeq + i），
+   *   向上滚动用它继续取上一页；
+   * - sourceId = 前缀所在的会话文件（引擎轮换 conversationId 后仍从原文件取更早消息，
+   *   轮末规整会把前缀复制进新文件后指回自身）。
+   * null 表示消息已全量在内存（新会话 / 小会话 / 归档读尽）。
+   */
+  historyPaging: { earliestSeq: number; hasMore: boolean; sourceId: string } | null
 }
 
 // ============================================================================
@@ -256,8 +273,12 @@ export interface ConversationActions {
   setPromptSuggestion: (suggestion: string | null) => void
 
   // ===== 历史恢复 =====
-  /** 设置初始消息（用于从历史恢复） */
-  setMessagesFromHistory: (messages: ChatMessage[], conversationId: string | null) => void
+  /** 设置初始消息（用于从历史恢复）；paging 非空 = 尾部优先分页恢复（更早消息按需从磁盘补读） */
+  setMessagesFromHistory: (
+    messages: ChatMessage[],
+    conversationId: string | null,
+    paging?: { earliestSeq: number; hasMore: boolean; sourceId: string } | null
+  ) => void
 
   // ===== 事件处理（核心） =====
   handleAIEvent: (event: AIEvent) => void
@@ -274,7 +295,7 @@ export interface ConversationActions {
   interrupt: () => Promise<void>
   regenerateResponse: (assistantMessageId: string) => Promise<void>
   editAndResend: (userMessageId: string, newContent: string) => Promise<void>
-  /** 从归档中加载更多消息 */
+  /** 从磁盘归档中加载更早的消息（向上滚动分页；同步内存归档兜底） */
   loadMoreArchivedMessages: (count?: number) => void
 
   // ===== 消息压缩 =====
@@ -413,7 +434,7 @@ export interface SessionManagerActions {
   // ===== 会话生命周期 =====
   createSession: (options: CreateSessionOptions) => string
   /** 从历史创建会话（恢复历史消息） */
-  createSessionFromHistory: (options: import('../../types').ChatMessage[], conversationId: string | null, metadata?: { title?: string; workspaceId?: string; forkFromId?: string; engineId?: EngineId }) => string
+  createSessionFromHistory: (options: import('../../types').ChatMessage[], conversationId: string | null, metadata?: { title?: string; workspaceId?: string; forkFromId?: string; engineId?: EngineId; paging?: { earliestSeq: number; hasMore: boolean; sourceId: string } | null }) => string
   deleteSession: (sessionId: string) => void
   switchSession: (sessionId: string) => void
   /** 更新会话标题 */

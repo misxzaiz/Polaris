@@ -39,7 +39,7 @@ impl ClaudeHistoryProvider {
     }
 
     /// 获取 Claude Code 项目目录
-    fn get_claude_dir() -> PathBuf {
+    pub(crate) fn get_claude_dir() -> PathBuf {
         if cfg!(windows) {
             std::env::var("USERPROFILE")
                 .map(|p| PathBuf::from(p).join(".claude").join("projects"))
@@ -161,7 +161,7 @@ impl ClaudeHistoryProvider {
 
     /// 解析会话元数据（只读取必要数据）
     /// 返回 (first_prompt, message_count, created, real_cwd, git_branch)
-    fn parse_session_metadata_light(
+    pub(crate) fn parse_session_metadata_light(
         file_path: &PathBuf,
     ) -> (Option<String>, usize, Option<String>, Option<String>, Option<String>) {
         use std::io::{BufRead, BufReader};

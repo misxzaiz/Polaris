@@ -278,10 +278,10 @@ function createSessionManagerStore() {
         engineId: metadata?.engineId,
       })
 
-      // 获取新创建的 Store 并设置历史消息
+      // 获取新创建的 Store 并设置历史消息（paging 非空 = 尾部优先分页恢复）
       const store = get().stores.get(sessionId)
       if (store) {
-        store.getState().setMessagesFromHistory(messages, conversationId)
+        store.getState().setMessagesFromHistory(messages, conversationId, metadata?.paging)
 
         // 注册 conversationId → sessionId 反向索引（历史恢复场景）
         if (conversationId) {

@@ -28,6 +28,32 @@ export function extractFirstUserText(messages: ChatMessage[]): string {
 }
 
 /**
+ * 提取最后一条消息摘要（用于列表预览：续聊场景「上次聊到哪」比首条消息更有用）
+ * 优先 assistant 末条 text block，其次 user content；压缩成单行、截 160 字。
+ */
+export function extractPreview(messages: ChatMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]
+    let text = ''
+    if (msg.type === 'assistant' && Array.isArray(msg.blocks)) {
+      for (let j = msg.blocks.length - 1; j >= 0; j--) {
+        const block = msg.blocks[j]
+        if (block.type === 'text' && block.content?.trim()) {
+          text = block.content
+          break
+        }
+      }
+    } else if (msg.type === 'user' && typeof msg.content === 'string') {
+      text = msg.content
+    }
+    if (text.trim()) {
+      return text.trim().replace(/\s+/g, ' ').slice(0, 160)
+    }
+  }
+  return ''
+}
+
+/**
  * 从消息列表提取标签（assistant.blocks 中的 tool_call 名称 + tool/tool_group 名称）
  */
 export function extractTags(messages: ChatMessage[]): string[] {
@@ -72,7 +98,33 @@ export function buildMeta(input: {
     updatedAt: input.updatedAt ?? now,
     messageCount: input.messages.length,
     firstUserText: extractFirstUserText(input.messages),
+    preview: extractPreview(input.messages),
     tags: extractTags(input.messages),
+  }
+}
+
+/** 序列化单条消息行（增量 append 用） */
+export function serializeMessageLine(message: ChatMessage, seq: number): string {
+  const line: DialogMessageLine = { type: 'msg', seq, message }
+  return JSON.stringify(line)
+}
+
+/** 解析单条消息行（分页读取用）；坏行/非消息行返回 null */
+export function parseMessageLine(raw: string): DialogMessageLine | null {
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  try {
+    const obj = JSON.parse(trimmed) as Record<string, unknown>
+    if (obj?.type !== 'msg' || !obj.message || typeof obj.message !== 'object') return null
+    const message = obj.message as ChatMessage
+    if (!isValidMessage(message)) return null
+    return {
+      type: 'msg',
+      seq: typeof obj.seq === 'number' ? obj.seq : 0,
+      message,
+    }
+  } catch {
+    return null
   }
 }
 
@@ -101,6 +153,20 @@ export function serializeDialog(meta: DialogMeta, messages: ChatMessage[]): stri
  * - 消息行按 seq 升序排序；缺 seq 的按出现顺序兜底
  */
 export function parseDialog(jsonl: string): DialogRecord | null {
+  const parsed = parseDialogLines(jsonl)
+  if (!parsed) return null
+  const messages = parsed.lines.map((l) => l.message)
+  parsed.meta.messageCount = messages.length
+  return { meta: parsed.meta, messages }
+}
+
+/**
+ * 解析 JSONL 为 meta + 带 seq 的有序消息行（保留 seq，供分页/合并使用）。
+ * 排序 + 按消息 id 去重（后写的行代表更新状态，保留首次出现位置 + 最后内容）。
+ */
+export function parseDialogLines(
+  jsonl: string,
+): { meta: DialogMeta; lines: DialogMessageLine[] } | null {
   if (!jsonl || !jsonl.trim()) return null
 
   const rawLines = jsonl.split('\n')
@@ -124,7 +190,7 @@ export function parseDialog(jsonl: string): DialogRecord | null {
     const obj = parsed as Record<string, unknown>
 
     if (obj.type === 'meta') {
-      meta = normalizeMeta(obj)
+      if (!meta) meta = normalizeMeta(obj)
     } else if (obj.type === 'msg' && obj.message && typeof obj.message === 'object') {
       const seq = typeof obj.seq === 'number' ? obj.seq : fallbackSeq
       msgLines.push({ type: 'msg', seq, message: obj.message as ChatMessage })
@@ -136,14 +202,21 @@ export function parseDialog(jsonl: string): DialogRecord | null {
 
   // 按 seq 升序排序，保证顺序正确（核心：根治错乱）
   msgLines.sort((a, b) => a.seq - b.seq)
-  const messages = msgLines
-    .map((l) => l.message)
-    .filter((m): m is ChatMessage => isValidMessage(m))
 
-  // 用实际解析出的消息数修正 messageCount
-  meta.messageCount = messages.length
+  // 按消息 id 去重：WAL 式增量 append 与轮末整体覆写并存时，同一条消息可能出现
+  // 多行（append 竞速 rewrite）。保留「首次出现的位置 + 最后一次出现的内容」。
+  const byId = new Map<string, DialogMessageLine>()
+  for (const l of msgLines) {
+    if (!isValidMessage(l.message)) continue
+    const existing = byId.get(l.message.id)
+    if (existing) {
+      existing.message = l.message
+    } else {
+      byId.set(l.message.id, { ...l })
+    }
+  }
 
-  return { meta, messages }
+  return { meta, lines: [...byId.values()] }
 }
 
 /**
@@ -183,6 +256,7 @@ function normalizeMeta(obj: Record<string, unknown>): DialogMeta {
     updatedAt: String(obj.updatedAt ?? new Date().toISOString()),
     messageCount: typeof obj.messageCount === 'number' ? obj.messageCount : 0,
     firstUserText: typeof obj.firstUserText === 'string' ? obj.firstUserText : undefined,
+    preview: typeof obj.preview === 'string' ? obj.preview : undefined,
     tags: Array.isArray(obj.tags) ? (obj.tags as string[]) : undefined,
   }
 }

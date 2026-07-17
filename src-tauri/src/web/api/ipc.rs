@@ -330,8 +330,15 @@ pub async fn handle_ipc_bridge(
         "dialog_list" => dispatch_dialog_list(),
         "dialog_list_meta" => dispatch_dialog_list_meta(),
         "dialog_read" => dispatch_dialog_read(&args),
+        "dialog_read_page" => dispatch_dialog_read_page(&args),
         "dialog_write" => dispatch_dialog_write(&args),
+        "dialog_append" => dispatch_dialog_append(&args),
         "dialog_delete" => dispatch_dialog_delete(&args),
+
+        // ── History Index ──────────────────────────────────────────────────
+        "history_query" => dispatch_history_query(&args),
+        "history_search" => dispatch_history_search(&args),
+        "history_mark" => dispatch_history_mark(&args),
 
         // ── Unsupported ────────────────────────────────────────────────────
         _ => {
@@ -2094,6 +2101,41 @@ fn dispatch_dialog_write(args: &Value) -> Result<Json<Value>, WebError> {
     Ok(crate::web::error::ok_response())
 }
 
+fn dispatch_dialog_append(args: &Value) -> Result<Json<Value>, WebError> {
+    let name = args
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("name 参数缺失".to_string()))?;
+    let meta_line = args.get("metaLine").and_then(|v| v.as_str());
+    let lines: Vec<String> = args
+        .get("lines")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .ok_or_else(|| WebError::BadRequest("lines 参数缺失".to_string()))?;
+    crate::commands::dialog_storage::dialog_append_inner(name, meta_line, &lines)
+        .map_err(|e| WebError::Internal(format!("dialog_append 失败: {}", e)))?;
+    Ok(crate::web::error::ok_response())
+}
+
+fn dispatch_dialog_read_page(args: &Value) -> Result<Json<Value>, WebError> {
+    let name = args
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("name 参数缺失".to_string()))?;
+    let before_seq = args.get("beforeSeq").and_then(|v| v.as_i64());
+    let limit = args
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(50) as usize;
+    let page = crate::commands::dialog_storage::dialog_read_page_inner(name, before_seq, limit)
+        .map_err(|e| WebError::Internal(format!("dialog_read_page 失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(page).unwrap()))
+}
+
 fn dispatch_dialog_delete(args: &Value) -> Result<Json<Value>, WebError> {
     let name = args
         .get("name")
@@ -2101,6 +2143,43 @@ fn dispatch_dialog_delete(args: &Value) -> Result<Json<Value>, WebError> {
         .ok_or_else(|| WebError::BadRequest("name 参数缺失".to_string()))?;
     crate::commands::dialog_storage::dialog_delete_inner(name)
         .map_err(|e| WebError::Internal(format!("dialog_delete 失败: {}", e)))?;
+    Ok(crate::web::error::ok_response())
+}
+
+// ── History Index dispatchers ───────────────────────────────────────────────
+
+fn dispatch_history_query(args: &Value) -> Result<Json<Value>, WebError> {
+    let params_value = args.get("params").cloned().unwrap_or_else(|| args.clone());
+    let params: crate::services::dialog_index::HistoryQueryParams =
+        serde_json::from_value(params_value)
+            .map_err(|e| WebError::BadRequest(format!("history_query 参数解析失败: {}", e)))?;
+    let result = crate::services::dialog_index::history_query_inner(params)
+        .map_err(|e| WebError::Internal(format!("history_query 失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(result).unwrap()))
+}
+
+fn dispatch_history_search(args: &Value) -> Result<Json<Value>, WebError> {
+    let query = args
+        .get("query")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("query 参数缺失".to_string()))?;
+    let workspace_path = args.get("workspacePath").and_then(|v| v.as_str());
+    let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as u32;
+    let result = crate::services::dialog_index::history_search_inner(query, workspace_path, limit)
+        .map_err(|e| WebError::Internal(format!("history_search 失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(result).unwrap()))
+}
+
+fn dispatch_history_mark(args: &Value) -> Result<Json<Value>, WebError> {
+    let id = args
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("id 参数缺失".to_string()))?;
+    let marks: crate::services::dialog_index::HistoryMarks =
+        serde_json::from_value(args.get("marks").cloned().unwrap_or(Value::Null))
+            .map_err(|e| WebError::BadRequest(format!("marks 参数解析失败: {}", e)))?;
+    crate::services::dialog_index::history_mark_inner(id, marks)
+        .map_err(|e| WebError::Internal(format!("history_mark 失败: {}", e)))?;
     Ok(crate::web::error::ok_response())
 }
 

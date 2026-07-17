@@ -31,14 +31,16 @@ import {
   probeOpfsDialogCount,
   type OpfsMigrationReport,
 } from '@/services/dialogStorage'
-import { isTauri } from '@/utils/platform'
+import { isTauri, isWeb } from '@/utils/platform'
 import { createLogger } from '@/utils/logger'
 import { ChangeDataRootWizard } from './ChangeDataRootWizard'
+import { useHistoryPrefsStore, HISTORY_PREFS_LIMITS } from '@/stores/historyPrefsStore'
 
 const log = createLogger('DataStorageCard')
 
 export function DataStorageCard() {
   const { t } = useTranslation('settings')
+  const historyPrefs = useHistoryPrefsStore()
   const [info, setInfo] = useState<DataRootInfo | null>(null)
   const [legacy, setLegacy] = useState<LegacySource[]>([])
   const [loading, setLoading] = useState(true)
@@ -570,8 +572,8 @@ export function DataStorageCard() {
         </div>
       )}
 
-      {/* 历史对话迁移（OPFS → 磁盘） */}
-      {isTauri() && opfsCount > 0 && (
+      {/* 历史对话迁移（OPFS → 服务端磁盘）：桌面/Web 均可用，启动时也会自动迁移 */}
+      {(isTauri() || isWeb()) && opfsCount > 0 && (
         <div className="border-t border-border pt-3 space-y-2">
           <div className="flex items-center justify-between">
             <div className="text-xs text-text-secondary">
@@ -652,6 +654,37 @@ export function DataStorageCard() {
         </div>
       )}
 
+      {/* 会话历史体验配置 */}
+      <div className="border-t border-border pt-3 space-y-2">
+        <div className="text-xs text-text-secondary">
+          {t('dataStorage.historyPrefsTitle', '会话历史体验')}
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <HistoryPrefField
+            label={t('dataStorage.historyListPageSize', '列表每页条数')}
+            value={historyPrefs.listPageSize}
+            min={HISTORY_PREFS_LIMITS.listPageSize.min}
+            max={HISTORY_PREFS_LIMITS.listPageSize.max}
+            onChange={historyPrefs.setListPageSize}
+          />
+          <HistoryPrefField
+            label={t('dataStorage.historyRestorePageSize', '恢复首屏消息数')}
+            hint={t('dataStorage.historyRestoreHint', '更早消息向上滚动按需加载')}
+            value={historyPrefs.restorePageSize}
+            min={HISTORY_PREFS_LIMITS.restorePageSize.min}
+            max={HISTORY_PREFS_LIMITS.restorePageSize.max}
+            onChange={historyPrefs.setRestorePageSize}
+          />
+          <HistoryPrefField
+            label={t('dataStorage.historyRecentCards', '「继续工作」卡片数')}
+            value={historyPrefs.recentCards}
+            min={HISTORY_PREFS_LIMITS.recentCards.min}
+            max={HISTORY_PREFS_LIMITS.recentCards.max}
+            onChange={historyPrefs.setRecentCards}
+          />
+        </div>
+      </div>
+
       {wizardOpen && info && (
         <ChangeDataRootWizard
           current={info}
@@ -660,5 +693,37 @@ export function DataStorageCard() {
         />
       )}
     </div>
+  )
+}
+
+/** 会话历史体验的单个数字配置项 */
+function HistoryPrefField({
+  label,
+  hint,
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  label: string
+  hint?: string
+  value: number
+  min: number
+  max: number
+  onChange: (n: number) => void
+}) {
+  return (
+    <label className="flex flex-col gap-1 text-[11px] text-text-tertiary">
+      <span>{label}</span>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full px-2 py-1.5 text-xs bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary/50 text-text-primary"
+      />
+      {hint && <span className="text-[10px] text-text-muted">{hint}</span>}
+    </label>
   )
 }

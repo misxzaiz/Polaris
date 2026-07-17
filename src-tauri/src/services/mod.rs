@@ -1,5 +1,6 @@
 pub mod config_store;
 pub mod data_root;
+pub mod dialog_index;
 pub mod file_watcher;
 pub mod git;
 pub mod logger;

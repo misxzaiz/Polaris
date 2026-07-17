@@ -31,6 +31,7 @@ export {
 } from './types'
 export {
   migrateOpfsToTauri,
+  maybeAutoMigrateOpfs,
   isOpfsMigrated,
   resetOpfsMigratedFlag,
   probeOpfsDialogCount,

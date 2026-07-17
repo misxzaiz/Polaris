@@ -20,8 +20,9 @@ import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import type { ChatMessage, AssistantChatMessage, TextBlock, ThinkingBlock } from '@/types';
 import { getChatDisplayStyleVars } from '@/types';
 import { useConfigStore } from '@/stores';
-import { useActiveSessionMessages, useActiveSessionStreaming, useSessionMessages, useSessionStreaming, useActiveSessionActions } from '@/stores/conversationStore/useActiveSession';
+import { useActiveSessionMessages, useActiveSessionStreaming, useSessionMessages, useSessionStreaming, useActiveSessionActions, useSessionHistoryPaging } from '@/stores/conversationStore/useActiveSession';
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
+import { useHistoryPrefsStore } from '@/stores/historyPrefsStore';
 import {
   findCurrentRoundIndexForRange,
   getRoundScrollTargetIndex,
@@ -81,6 +82,51 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
     if (!store) return;
     return store.onVisibleRangeChange(start, end);
   }, [sessionId]);
+
+  // ===== 尾部优先恢复：向上补读更早的消息 =====
+  const historyPaging = useSessionHistoryPaging(sessionId ?? null);
+  const restorePageSize = useHistoryPrefsStore((s) => s.restorePageSize);
+  const [loadingEarlier, setLoadingEarlier] = useState(false);
+  /** 请求补读时的 (首条消息 id, 消息数)，用于识别 prepend 并恢复滚动位置 */
+  const pendingPrependRef = useRef<{ firstId: string | null; len: number } | null>(null);
+
+  const handleLoadEarlier = useCallback(() => {
+    if (loadingEarlier) return;
+    const targetId = sessionId ?? sessionStoreManager.getState().activeSessionId;
+    if (!targetId) return;
+    const store = sessionStoreManager.getState().stores.get(targetId)?.getState();
+    if (!store || !store.historyPaging?.hasMore) return;
+    setLoadingEarlier(true);
+    pendingPrependRef.current = {
+      firstId: store.messages[0]?.id ?? null,
+      len: store.messages.length,
+    };
+    store.loadMoreArchivedMessages(restorePageSize);
+  }, [sessionId, loadingEarlier, restorePageSize]);
+
+  // prepend 完成后恢复滚动位置（旧首条消息回到视口顶部）
+  useEffect(() => {
+    const pending = pendingPrependRef.current;
+    if (!pending) return;
+    const firstId = messages[0]?.id ?? null;
+    if (messages.length > pending.len && firstId !== pending.firstId) {
+      const added = messages.length - pending.len;
+      pendingPrependRef.current = null;
+      setLoadingEarlier(false);
+      requestAnimationFrame(() => {
+        virtuosoRef.current?.scrollToIndex({ index: added, align: 'start' });
+      });
+    } else if (messages.length <= pending.len && firstId === pending.firstId) {
+      // 没有更早消息（hasMore 边界）→ 解除加载态
+      const timer = setTimeout(() => {
+        if (pendingPrependRef.current === pending) {
+          pendingPrependRef.current = null;
+          setLoadingEarlier(false);
+        }
+      }, 1200);
+      return () => clearTimeout(timer);
+    }
+  }, [messages]);
 
   // 性能优化：流式阶段合并 currentMessage 到消息列表
   const prevDisplayMessagesRef = useRef<ChatMessage[]>([]);
@@ -258,6 +304,24 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
     scrollToBottom,
   }), [scrollToMessage, scrollToTop, scrollToBottom]);
 
+  // 「加载更早」头部：磁盘上还有未加载的更早消息时出现（尾部优先恢复）
+  const hasEarlier = !!historyPaging?.hasMore;
+  const LoadEarlierHeader = useMemo(() => {
+    if (!hasEarlier) return undefined;
+    const Header = () => (
+      <div className="flex items-center justify-center py-2">
+        <button
+          onClick={handleLoadEarlier}
+          disabled={loadingEarlier}
+          className="px-3 py-1.5 text-xs rounded-full border border-border-subtle bg-background-elevated/70 text-text-secondary hover:text-text-primary hover:border-primary/40 transition-colors disabled:opacity-60"
+        >
+          {loadingEarlier ? '正在加载更早的消息…' : '加载更早的消息'}
+        </button>
+      </div>
+    );
+    return Header;
+  }, [hasEarlier, loadingEarlier, handleLoadEarlier]);
+
   return (
     <div className="chat-display-root flex-1 overflow-hidden flex flex-col" style={chatDisplayStyle}>
       {/* 消息列表 */}
@@ -276,11 +340,13 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
               components={{
                 EmptyPlaceholder: () => null,
                 Footer: () => <div style={FOOTER_SPACER_STYLE} />,
+                ...(LoadEarlierHeader ? { Header: LoadEarlierHeader } : {}),
               }}
               followOutput={autoScroll ? (isStreaming ? true : 'smooth') : false}
               atBottomStateChange={handleAtBottomStateChange}
               atBottomThreshold={150}
               rangeChanged={handleRangeChange}
+              startReached={hasEarlier ? handleLoadEarlier : undefined}
               increaseViewportBy={VIEWPORT_EXTENSION}
               initialTopMostItemIndex={displayMessages.length - 1}
             />

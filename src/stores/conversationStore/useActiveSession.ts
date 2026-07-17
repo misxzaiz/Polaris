@@ -200,6 +200,23 @@ export function useActiveSessionStreaming() {
 }
 
 /**
+ * 获取指定会话（缺省活跃会话）的历史分页游标
+ * （尾部优先恢复：非空表示磁盘上还有更早消息，可向上补读）
+ */
+export function useSessionHistoryPaging(sessionId: string | null) {
+  const active = useActiveSessionSelector(
+    useCallback((state: ConversationState) => state.historyPaging, []),
+    null
+  )
+  const specific = useSessionSelector(
+    sessionId,
+    useCallback((state: ConversationState) => state.historyPaging, []),
+    null
+  )
+  return sessionId ? specific : active
+}
+
+/**
  * 获取活跃会话的错误状态
  */
 export function useActiveSessionError() {
