@@ -405,6 +405,7 @@ fn prepare_mcp_config_with_paths(
     engine: &EngineId,
     paths: &AppPaths,
     ask_listener: Option<crate::services::ask_listener::AskListenerHandle>,
+    ask_mcp_enabled: bool,
 ) -> Result<PreparedMcpConfig> {
     let enable_mcp_tools = options.enable_mcp_tools.unwrap_or(false);
     if !enable_mcp_tools {
@@ -436,10 +437,15 @@ fn prepare_mcp_config_with_paths(
                 .or_else(|| id.starts_with("dispatch-").then(|| id.to_string()))
         }),
     )?;
-    let disabled_servers = merge_disabled_mcp_servers(
+    let mut disabled_servers = merge_disabled_mcp_servers(
         options.disabled_mcp_servers.as_deref().unwrap_or(&[]),
         persisted_disabled_servers,
     );
+    // InteractionConfig 门控只作用于 polaris-ask 本身；listener handle 仍传入，
+    // 同为 AskListener 模式的 polaris-dispatch / polaris-browser 不被连坐。
+    if !ask_mcp_enabled && !disabled_servers.iter().any(|name| name == "polaris-ask") {
+        disabled_servers.push("polaris-ask".to_string());
+    }
 
     match engine {
         EngineId::ClaudeCode => {
@@ -865,15 +871,11 @@ pub async fn start_chat_inner(
         &options,
         &engine,
         app_paths,
-        if state
+        state.ask_listener.get().cloned(),
+        state
             .clone_config()
             .map(|c| c.interaction.ask_mcp_enabled)
-            .unwrap_or(true)
-        {
-            state.ask_listener.get().cloned()
-        } else {
-            None
-        },
+            .unwrap_or(true),
     )?;
 
     let ctx_id = options.context_id.clone();
@@ -1031,15 +1033,11 @@ pub async fn continue_chat_inner(
         &options,
         &engine,
         app_paths,
-        if state
+        state.ask_listener.get().cloned(),
+        state
             .clone_config()
             .map(|c| c.interaction.ask_mcp_enabled)
-            .unwrap_or(true)
-        {
-            state.ask_listener.get().cloned()
-        } else {
-            None
-        },
+            .unwrap_or(true),
     )?;
 
     let ctx_id = options.context_id.clone();

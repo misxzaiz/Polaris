@@ -1,6 +1,6 @@
 # 派发任务 Phase 2 实施记录——"AI 团队协作闭环"
 
-> 状态：**P0 + P1 + P2 已全部实施完成（2026-07-17）**，P3 未启动
+> 状态：**P0 + P1 + P2 + P3 全部实施完成（2026-07-17）**
 > 验证：cargo check（lib/tests/web-only）零错误；tsc 零新增错误；vitest 派发相关 12 测试 + conversationStore 61 测试全绿；MCP stdio 冒烟四工具正常
 > 设计原则：**结果找人，而不是人找结果**。派发、进度、结果、下一步全部收敛在来源会话；后台会话只是执行细节。
 
@@ -35,9 +35,12 @@
 - **Profile 继承链**（前端 `resolveModelProfileId`）：'official' → 不传；显式 id 直用；未指定 → 源会话绑定 → 全局激活；mimo 强制官方
 - 卡片显示 `{role} · {title}` 与 engine/model 标识
 
-## P3 未启动（后续候选）
+## P3 管理与持久化 ✅
 
-后台任务中心（升级现有胶囊统一派发+scheduler+后台会话）、`dispatched_tasks` 持久化 + 历史重跑、链式编排。
+- **注册表持久化**（state.rs）：`<config_dir>/dispatch_tasks.json` 原子写入（tmp+rename），insert/update/delete 写穿；启动加载（lib.rs 桌面 setup + web main 两处 `load_dispatched_tasks`），上次运行未结束的 pending/running 标记 failed（"应用重启，任务已中断"）；内存与落盘同步裁剪至最近 100 条（按 updated_at，活跃任务时间戳新天然保留）
+- **列表/删除命令**：`dispatch_list_tasks`（updated_at 降序）/ `dispatch_delete_task` + ipc.rs web 分支
+- **后台任务中心**（`src/components/Chat/DispatchCenter.tsx`）：状态栏火箭图标 + running 数徽标，弹出面板列出全部记录（后端持久化真相 + dispatchStore 实时动态合并）；执行中 = 实时动态 + 打开会话/中断；历史 = 摘要 + **重新派发**（相同参数经 dispatch_create_task 重派，role 优先还原）+ 删除记录；挂载于 ChatStatusBar（App.tsx，CompactHandoffButton 旁）
+- 链式编排：按既定决策不做（回流感知 + continue 已可人机协同串流水线，待需求验证）
 
 ## 关键工程决策存档
 
