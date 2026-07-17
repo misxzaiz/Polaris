@@ -135,6 +135,31 @@ pub fn dispatch_create_task(
     )
 }
 
+/// 列出全部派发任务（任务中心数据源，按 updated_at 降序）
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn dispatch_list_tasks(
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<Vec<DispatchedTask>> {
+    Ok(state.list_dispatched_tasks())
+}
+
+/// 删除派发任务记录（不影响已存在的会话）
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn dispatch_delete_task(
+    dispatch_id: String,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<()> {
+    if !state.delete_dispatched_task(&dispatch_id) {
+        return Err(AppError::ValidationError(format!(
+            "未找到派发任务: {}",
+            dispatch_id
+        )));
+    }
+    Ok(())
+}
+
 /// 前端回报派发任务执行状态
 #[cfg(feature = "tauri-app")]
 #[tauri::command]

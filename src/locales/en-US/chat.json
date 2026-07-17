@@ -25,7 +25,13 @@
     "usageDetail": "/dispatch [@role] task content",
     "dispatchedTitle": "Dispatched",
     "dispatchedDetail": "Task \"{{title}}\" is running in a background session",
-    "dispatchFailed": "Dispatch failed"
+    "dispatchFailed": "Dispatch failed",
+    "centerTooltip": "Background Task Center",
+    "centerTitle": "Background Task Center",
+    "centerCount": "{{count}} records",
+    "centerEmpty": "No dispatched tasks yet. Try /dispatch <task>",
+    "rerun": "Re-dispatch",
+    "deleteRecord": "Delete"
   },
   "input": {
     "placeholder": "Type a message... (Enter to send, Shift+Enter for new line)",

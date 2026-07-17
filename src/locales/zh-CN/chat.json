@@ -25,7 +25,13 @@
     "usageDetail": "/dispatch [@角色] 任务内容",
     "dispatchedTitle": "已派发",
     "dispatchedDetail": "任务「{{title}}」已在后台会话执行",
-    "dispatchFailed": "派发失败"
+    "dispatchFailed": "派发失败",
+    "centerTooltip": "后台任务中心",
+    "centerTitle": "后台任务中心",
+    "centerCount": "{{count}} 条记录",
+    "centerEmpty": "暂无派发任务，试试 /dispatch 任务内容",
+    "rerun": "重新派发",
+    "deleteRecord": "删除"
   },
   "input": {
     "placeholder": "输入消息... (Enter 发送, Shift+Enter 换行)",

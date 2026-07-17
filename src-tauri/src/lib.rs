@@ -35,7 +35,7 @@ use commands::chat::{
     send_input,
 };
 #[cfg(feature = "tauri-app")]
-use commands::dispatch::{dispatch_report_status, dispatch_create_task};
+use commands::dispatch::{dispatch_report_status, dispatch_create_task, dispatch_list_tasks, dispatch_delete_task};
 #[cfg(feature = "tauri-app")]
 use commands::{
     get_directory_info, get_home_dir, get_server_config, set_server_config,
@@ -562,6 +562,9 @@ pub fn run() {
             }
             let _ = state.resource_dir.set(app.path().resource_dir().ok());
 
+            // 加载历史派发任务注册表（上次运行未结束的任务标记为中断）
+            state.load_dispatched_tasks();
+
             // Conditionally start the web server based on WebConfig.enabled
             let config = {
                 let store = state.config_store.lock()
@@ -681,6 +684,8 @@ pub fn run() {
             // 派发任务（dispatch_task MCP）状态回报
             dispatch_report_status,
             dispatch_create_task,
+            dispatch_list_tasks,
+            dispatch_delete_task,
             // 工作区相关
             validate_workspace_path,
             get_directory_info,
@@ -1058,6 +1063,9 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
     // 设置 config_dir（替代 Tauri path resolver）
     let config_dir = services::data_root::data_root().config_dir();
     let _ = app_state.app_config_dir.set(config_dir.clone());
+
+    // 加载历史派发任务注册表（上次运行未结束的任务标记为中断）
+    app_state.load_dispatched_tasks();
 
     // 设置 resource_dir 为可执行文件所在目录。
     // Web 独立部署没有 Tauri 的资源解析器，若不设置 resource_dir，内置 MCP 二进制的解析会

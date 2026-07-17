@@ -395,11 +395,101 @@ impl AppState {
 
     // ===== 派发任务注册表 =====
 
+    /// 持久化文件路径（app_config_dir 未设置时返回 None，跳过持久化）
+    fn dispatched_tasks_path(&self) -> Option<std::path::PathBuf> {
+        self.app_config_dir
+            .get()
+            .map(|dir| dir.join("dispatch_tasks.json"))
+    }
+
+    /// 注册表持久化上限（按 updated_at 保留最近 N 条，活跃任务因时间戳新天然保留）
+    const MAX_PERSISTED_DISPATCHED_TASKS: usize = 100;
+
+    /// 将注册表落盘（写入失败仅告警，不影响主流程）。
+    /// 同时对内存表做同规则裁剪，防止长期运行无限增长。
+    pub fn persist_dispatched_tasks(&self) {
+        let Some(path) = self.dispatched_tasks_path() else {
+            return;
+        };
+        let tasks: Vec<DispatchedTask> = {
+            let Ok(mut map) = self.dispatched_tasks.lock() else {
+                return;
+            };
+            if map.len() > Self::MAX_PERSISTED_DISPATCHED_TASKS {
+                let mut all: Vec<_> = map.values().cloned().collect();
+                all.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+                let keep: std::collections::HashSet<String> = all
+                    .iter()
+                    .take(Self::MAX_PERSISTED_DISPATCHED_TASKS)
+                    .map(|t| t.dispatch_id.clone())
+                    .collect();
+                map.retain(|id, _| keep.contains(id));
+            }
+            let mut all: Vec<_> = map.values().cloned().collect();
+            all.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+            all
+        };
+
+        let write = || -> std::io::Result<()> {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let temp = path.with_extension("json.tmp");
+            let content = serde_json::to_string_pretty(&tasks)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            std::fs::write(&temp, content)?;
+            std::fs::rename(&temp, &path)?;
+            Ok(())
+        };
+        if let Err(error) = write() {
+            tracing::warn!("[Dispatch] 注册表落盘失败: {}", error);
+        }
+    }
+
+    /// 启动时加载注册表。上一次运行中未结束的任务（pending/running）已随进程
+    /// 退出而中断，标记为 failed 并注明原因。
+    pub fn load_dispatched_tasks(&self) {
+        let Some(path) = self.dispatched_tasks_path() else {
+            return;
+        };
+        let content = match std::fs::read_to_string(&path) {
+            Ok(content) => content,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+            Err(error) => {
+                tracing::warn!("[Dispatch] 注册表读取失败: {}", error);
+                return;
+            }
+        };
+        let tasks: Vec<DispatchedTask> = match serde_json::from_str(&content) {
+            Ok(tasks) => tasks,
+            Err(error) => {
+                tracing::warn!("[Dispatch] 注册表解析失败，忽略历史记录: {}", error);
+                return;
+            }
+        };
+
+        let Ok(mut map) = self.dispatched_tasks.lock() else {
+            return;
+        };
+        for mut task in tasks {
+            if matches!(task.status.as_str(), "pending" | "running") {
+                task.status = "failed".to_string();
+                if task.summary.is_none() {
+                    task.summary = Some("应用重启，任务已中断".to_string());
+                }
+                task.latest_activity = None;
+            }
+            map.entry(task.dispatch_id.clone()).or_insert(task);
+        }
+        tracing::info!("[Dispatch] 已加载 {} 条历史派发记录", map.len());
+    }
+
     /// 插入新的派发任务记录
     pub fn insert_dispatched_task(&self, task: DispatchedTask) {
         if let Ok(mut tasks) = self.dispatched_tasks.lock() {
             tasks.insert(task.dispatch_id.clone(), task);
         }
+        self.persist_dispatched_tasks();
     }
 
     /// 通用更新派发任务（返回 false 表示记录不存在）；自动刷新 updated_at
@@ -408,17 +498,47 @@ impl AppState {
         dispatch_id: &str,
         mutate: F,
     ) -> bool {
-        let Ok(mut tasks) = self.dispatched_tasks.lock() else {
-            return false;
-        };
-        match tasks.get_mut(dispatch_id) {
-            Some(task) => {
-                mutate(task);
-                task.updated_at = chrono::Utc::now().timestamp();
-                true
+        let updated = {
+            let Ok(mut tasks) = self.dispatched_tasks.lock() else {
+                return false;
+            };
+            match tasks.get_mut(dispatch_id) {
+                Some(task) => {
+                    mutate(task);
+                    task.updated_at = chrono::Utc::now().timestamp();
+                    true
+                }
+                None => false,
             }
-            None => false,
+        };
+        if updated {
+            self.persist_dispatched_tasks();
         }
+        updated
+    }
+
+    /// 删除派发任务记录（任务中心"删除记录"）
+    pub fn delete_dispatched_task(&self, dispatch_id: &str) -> bool {
+        let removed = self
+            .dispatched_tasks
+            .lock()
+            .map(|mut tasks| tasks.remove(dispatch_id).is_some())
+            .unwrap_or(false);
+        if removed {
+            self.persist_dispatched_tasks();
+        }
+        removed
+    }
+
+    /// 列出全部派发任务（按 updated_at 降序）
+    pub fn list_dispatched_tasks(&self) -> Vec<DispatchedTask> {
+        let mut tasks: Vec<DispatchedTask> = self
+            .dispatched_tasks
+            .lock()
+            .map(|map| map.values().cloned().collect())
+            .unwrap_or_default();
+        tasks.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        tasks
     }
 
     /// 更新派发任务状态（返回 false 表示记录不存在）

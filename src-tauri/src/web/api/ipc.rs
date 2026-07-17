@@ -72,6 +72,19 @@ pub async fn handle_ipc_bridge(
         // ── Dispatched tasks (dispatch_task MCP) ───────────────────────────
         "dispatch_report_status" => dispatch_report_dispatch_status(&state, &args),
         "dispatch_create_task" => dispatch_create_dispatch_task(&state, &args),
+        "dispatch_list_tasks" => {
+            let tasks = state.list_dispatched_tasks();
+            serde_json::to_value(tasks)
+                .map(Json)
+                .map_err(|e| WebError::Internal(format!("序列化派发任务失败: {}", e)))
+        }
+        "dispatch_delete_task" => {
+            let dispatch_id = require_string(&args, "dispatchId")?;
+            if !state.delete_dispatched_task(&dispatch_id) {
+                return Err(WebError::BadRequest(format!("未找到派发任务: {}", dispatch_id)));
+            }
+            Ok(Json(Value::Null))
+        }
 
         // ── Scheduler: Task CRUD ───────────────────────────────────────────
         "scheduler_list_tasks" => dispatch_scheduler_list_tasks(&state, &args),
