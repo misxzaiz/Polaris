@@ -17,7 +17,7 @@ import {
   useActiveSessionId,
 } from './sessionStoreManager'
 import { useWorkspaceStore } from '../workspaceStore'
-import type { ConversationStore, ConversationState, ConversationStoreInstance, InputDraft } from './types'
+import type { ConversationStore, ConversationState, ConversationStoreInstance, InputDraft, PromptOptimizeState } from './types'
 import type { ContentBlock } from '@/types'
 import type { ChatMessage } from '@/types/chat'
 
@@ -33,6 +33,16 @@ import type { ChatMessage } from '@/types/chat'
 const EMPTY_MESSAGES: ChatMessage[] = []
 const EMPTY_INPUT_DRAFT: InputDraft = { text: '', attachments: [] }
 const EMPTY_BLOCK_MAP: Map<string, number> = new Map()
+const EMPTY_PROMPT_OPTIMIZE: PromptOptimizeState = {
+  status: 'idle',
+  history: [],
+  cursor: -1,
+  sourceSnapshot: null,
+  pendingResult: null,
+  pendingMeta: null,
+  optimizeSessionId: null,
+  error: null,
+}
 
 /**
  * 订阅活跃会话的特定状态
@@ -267,6 +277,16 @@ export function useActiveSessionPromptSuggestion() {
 }
 
 /**
+ * 获取活跃会话的提示词优化状态（版本栈 / 优化进度）
+ */
+export function useActiveSessionPromptOptimize() {
+  return useActiveSessionSelector(
+    useCallback((state: ConversationState) => state.promptOptimize, []),
+    EMPTY_PROMPT_OPTIMIZE
+  )
+}
+
+/**
  * 获取活跃会话的工作区
  */
 export function useActiveSessionWorkspace() {
@@ -394,6 +414,43 @@ export function useActiveSessionActions() {
         const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
         if (!store) return
         return store.setPromptSuggestion(suggestion)
+      },
+      // 提示词优化（版本栈操作；begin/complete/fail 由 promptOptimizeService 调用）
+      undoPromptOptimize: () => {
+        const sessionId = sessionStoreManager.getState().activeSessionId
+        if (!sessionId) return
+        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
+        if (!store) return
+        return store.undoPromptOptimize()
+      },
+      redoPromptOptimize: () => {
+        const sessionId = sessionStoreManager.getState().activeSessionId
+        if (!sessionId) return
+        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
+        if (!store) return
+        return store.redoPromptOptimize()
+      },
+      applyPendingPromptOptimize: () => {
+        const sessionId = sessionStoreManager.getState().activeSessionId
+        if (!sessionId) return
+        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
+        if (!store) return
+        return store.applyPendingPromptOptimize()
+      },
+      resetPromptOptimize: () => {
+        const sessionId = sessionStoreManager.getState().activeSessionId
+        if (!sessionId) return
+        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
+        if (!store) return
+        return store.resetPromptOptimize()
+      },
+      /** 清除优化错误提示（保留版本栈；failPromptOptimize(null) 的语义封装） */
+      clearPromptOptimizeError: () => {
+        const sessionId = sessionStoreManager.getState().activeSessionId
+        if (!sessionId) return
+        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
+        if (!store) return
+        return store.failPromptOptimize(null)
       },
       clearError: () => {
         const sessionId = sessionStoreManager.getState().activeSessionId

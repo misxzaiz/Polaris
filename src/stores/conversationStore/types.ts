@@ -57,6 +57,52 @@ export interface InputDraft {
 }
 
 // ============================================================================
+// 提示词优化类型
+// ============================================================================
+
+/** 提示词优化版本栈中的一个版本 */
+export interface PromptVersion {
+  text: string
+  /**
+   * original = 首次优化触发时的原始输入；
+   * edited   = 用户手改后再优化/回滚时的快照；
+   * optimized = AI 优化产物
+   */
+  origin: 'original' | 'edited' | 'optimized'
+  /** origin === 'optimized' 时记录来源引擎 */
+  engineId?: EngineId
+  /** origin === 'optimized' 时记录来源模型（可选） */
+  model?: string
+  createdAt: number
+}
+
+/**
+ * 提示词优化状态（per-session 内存态，不持久化）。
+ *
+ * 版本栈语义：history[0] 恒为首次优化时的原始输入；cursor 指向输入框当前
+ * 文本对应的版本；回滚/重做移动 cursor 并把版本文本写回 inputDraft
+ * （ChatInput 通过既有 inputDraft 同步 effect 回填本地文本）。
+ */
+export interface PromptOptimizeState {
+  /** idle = 空闲；running = 优化中；ready = 完成但输入被手改，待用户点击应用 */
+  status: 'idle' | 'running' | 'ready'
+  /** 版本栈（空数组 = 从未优化过） */
+  history: PromptVersion[]
+  /** 当前输入框文本对应的版本下标（history 为空时为 -1） */
+  cursor: number
+  /** 本轮优化触发时的输入快照（完成时做冲突检测） */
+  sourceSnapshot: string | null
+  /** status === 'ready' 时的待应用结果 */
+  pendingResult: string | null
+  /** 本轮优化的引擎/模型（结果入栈时随版本记录） */
+  pendingMeta: { engineId: EngineId; model?: string } | null
+  /** 本轮优化使用的静默会话 ID（流式预览订阅 / 取消中断用） */
+  optimizeSessionId: string | null
+  /** 最近一次优化失败的错误信息（进入 running 时清空） */
+  error: string | null
+}
+
+// ============================================================================
 // 依赖注入接口
 // ============================================================================
 
@@ -156,6 +202,9 @@ export interface ConversationState {
    */
   pendingBriefing: string | null
 
+  // ===== 提示词优化（版本栈内存态） =====
+  promptOptimize: PromptOptimizeState
+
   // ===== 工作区关联 =====
   workspaceId: string | null
 
@@ -198,6 +247,29 @@ export interface ConversationActions {
 
   /** 设置/清空待发送简报（压缩交接产物）；传 null 清空 */
   setPendingBriefing: (briefing: string | null) => void
+
+  // ===== 提示词优化（版本栈） =====
+  /**
+   * 开始一轮优化：登记快照/引擎/优化会话，status → running。
+   * 版本栈处理：首轮把原文入栈；多轮先截断 redo 分支，输入被手改则手改文本先入栈。
+   */
+  beginPromptOptimize: (sourceText: string, meta: { engineId: EngineId; model?: string; optimizeSessionId: string }) => void
+  /**
+   * 优化完成回填：输入与快照一致 → 结果入栈并写回 inputDraft；
+   * 输入被手改 → status → ready，结果暂存 pendingResult 待用户点击应用。
+   * 仅在 status === 'running' 时生效。
+   */
+  completePromptOptimize: (resultText: string) => void
+  /** 应用 ready 状态的待应用结果（当前手改文本先入栈保留） */
+  applyPendingPromptOptimize: () => void
+  /** 优化失败/取消：status → idle（版本栈保留），error 可为 null（用户主动取消） */
+  failPromptOptimize: (error: string | null) => void
+  /** 回滚到上一版本（当前文本有未入栈手改时先入栈保留，可 redo 回来） */
+  undoPromptOptimize: () => void
+  /** 重做到下一版本（当前文本被手改时为 no-op，避免覆盖丢失） */
+  redoPromptOptimize: () => void
+  /** 清空优化状态（发送消息 / 清空草稿时调用） */
+  resetPromptOptimize: () => void
 
   // ===== 流式构建 =====
   appendTextBlock: (content: string) => void
@@ -355,8 +427,12 @@ export interface SessionMetadata {
   modelProfileId?: string
   /** 会话绑定的模型名（如 'sonnet'、'opus'）。undefined 时发送降级到全局 sessionConfig.model。 */
   model?: string
-  /** 会话用途标记。'commit-message' = GitPanel 触发的提交信息生成会话，用于回流定位。 */
-  kind?: 'commit-message'
+  /**
+   * 会话用途标记。
+   * - 'commit-message'  = GitPanel 触发的提交信息生成会话，用于回流定位
+   * - 'prompt-optimize' = 输入框提示词优化的一次性静默会话（完成后即删除）
+   */
+  kind?: 'commit-message' | 'prompt-optimize'
   /** 当 kind === 'commit-message' 时，关联的工作区 ID，用于按工作区隔离回流。 */
   commitWorkspaceId?: string
 }
@@ -384,7 +460,7 @@ export interface CreateSessionOptions {
   /** 会话绑定的模型名（可选，不指定则使用全局默认） */
   model?: string
   /** 会话用途标记（透传到 SessionMetadata.kind） */
-  kind?: 'commit-message'
+  kind?: 'commit-message' | 'prompt-optimize'
   /** commit-message 会话关联的工作区 ID（透传到 SessionMetadata.commitWorkspaceId） */
   commitWorkspaceId?: string
 }

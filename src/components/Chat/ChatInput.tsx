@@ -11,10 +11,17 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { IconSend, IconStop, IconPaperclip } from '../Common/Icons'
-import { Sparkles } from 'lucide-react'
+import { Sparkles, Wand2, Undo2, Redo2, Loader2, Check, X, Bot, Cpu, Zap } from 'lucide-react'
 import { useWorkspaceStore, useSessionStore, useToastStore, useConfigStore } from '@/stores'
 import { voiceNotificationService } from '@/services/voiceNotificationService'
-import { useActiveSessionInputDraft, useActiveSessionActions, useActiveSessionWorkspace, useActiveSessionPromptSuggestion } from '@/stores/conversationStore/useActiveSession'
+import { useActiveSessionInputDraft, useActiveSessionActions, useActiveSessionWorkspace, useActiveSessionPromptSuggestion, useActiveSessionPromptOptimize } from '@/stores/conversationStore/useActiveSession'
+import {
+  runPromptOptimize,
+  cancelPromptOptimize,
+  usePromptOptimizePreview,
+  readStoredOptimizeEngine,
+  storeOptimizeEngine,
+} from '@/services/promptOptimizeService'
 import { useDebouncedCallback } from '@/hooks/useDebounce'
 import { UnifiedSuggestion, type SuggestionItem, type ConversationSuggestion } from './FileSuggestion'
 import { AttachmentPreview } from './AttachmentPreview'
@@ -25,11 +32,11 @@ import { useFileSearch } from '@/hooks/useFileSearch'
 import { useSnippetStore } from '@/stores/snippetStore'
 import { resolveTemplateVariables } from '@/services/workspaceReference'
 import type { FileMatch } from '@/services/fileSearch'
-import type { Workspace } from '@/types'
+import type { Workspace, EngineId } from '@/types'
 import { getChatDisplayStyleVars } from '@/types'
 import type { Attachment } from '@/types/attachment'
 import { createLogger } from '@/utils/logger'
-import { normalizeEngineId } from '@/utils/engineDisplay'
+import { normalizeEngineId, getEngineFullName } from '@/utils/engineDisplay'
 import { dialogStorageService } from '@/services/dialogStorage/service'
 import { packForReference } from '@/services/conversationPackager'
 import type { PromptSnippet } from '@/types/promptSnippet'
@@ -56,6 +63,14 @@ import {
 } from '@/types/attachment'
 
 const log = createLogger('ChatInput')
+
+/** 提示词优化可选引擎（与 CommitInput 的引擎浮层保持一致） */
+const OPTIMIZE_ENGINE_OPTIONS: Array<{ id: EngineId; label: string; Icon: typeof Bot }> = [
+  { id: 'claude-code', label: 'Claude', Icon: Bot },
+  { id: 'codex', label: 'Codex', Icon: Cpu },
+  { id: 'simple-ai', label: 'Simple', Icon: Zap },
+  { id: 'mimo', label: 'Mimo', Icon: Sparkles },
+]
 
 export interface EditMode {
   messageId: string
@@ -121,7 +136,20 @@ export function ChatInput({
   // 使用 Store 中的输入草稿（用于会话切换同步）
   const inputDraft = useActiveSessionInputDraft()
   const promptSuggestion = useActiveSessionPromptSuggestion()
-  const { updateInputDraft, clearInputDraft, setPromptSuggestion } = useActiveSessionActions()
+  const {
+    updateInputDraft, clearInputDraft, setPromptSuggestion,
+    undoPromptOptimize, redoPromptOptimize, applyPendingPromptOptimize,
+    resetPromptOptimize, clearPromptOptimizeError,
+  } = useActiveSessionActions()
+
+  // 提示词优化状态（per-session 版本栈）+ 优化会话流式预览
+  const promptOptimize = useActiveSessionPromptOptimize()
+  const optimizePreview = usePromptOptimizePreview(
+    promptOptimize.status === 'running' ? promptOptimize.optimizeSessionId : null
+  )
+  const [optimizePickerOpen, setOptimizePickerOpen] = useState(false)
+  const optimizePickerRef = useRef<HTMLDivElement>(null)
+  const optimizeButtonRef = useRef<HTMLButtonElement>(null)
 
   // 本地 state（即时响应）
   const [localText, setLocalText] = useState('')
@@ -365,6 +393,95 @@ export function ChatInput({
   const openFileDialog = useCallback(() => {
     fileInputRef.current?.click()
   }, [])
+
+  // ===== 提示词优化 =====
+  const optimizeRunning = promptOptimize.status === 'running'
+  // 以 / 开头的输入会被解析为命令，优化会破坏命令语义
+  const isSlashCommandInput = value.trimStart().startsWith('/')
+  // 不要求关联工作区：优化会话可无工作区运行（free），与无工作区聊天一致
+  const canOptimize = Boolean(
+    value.trim() && !optimizeRunning && !editMode && !isSlashCommandInput && !disabled && activeSessionId
+  )
+
+  // 点击外部关闭优化引擎浮层
+  useEffect(() => {
+    if (!optimizePickerOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        optimizePickerRef.current && !optimizePickerRef.current.contains(e.target as Node) &&
+        optimizeButtonRef.current && !optimizeButtonRef.current.contains(e.target as Node)
+      ) {
+        setOptimizePickerOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [optimizePickerOpen])
+
+  /** 版本栈操作前把本地文本同步进 store 草稿（消除 300ms 防抖差，保证手改判定/冲突检测基线准确） */
+  const syncDraftNow = useCallback(() => {
+    cancelPersistDraft()
+    updateInputDraft({ text: value, attachments })
+  }, [cancelPersistDraft, updateInputDraft, value, attachments])
+
+  const handleOptimizeWithEngine = useCallback((engineId: EngineId) => {
+    setOptimizePickerOpen(false)
+    if (!canOptimize || !activeSessionId) return
+    storeOptimizeEngine(engineId)
+    setLastOptimizeEngine(engineId)
+    syncDraftNow()
+    // 工作区解析与发送消息对齐：会话关联工作区 → 全局当前工作区 → 无（free 优化会话）
+    const workspace = currentWorkspace ?? workspaces.find((w) => w.id === currentWorkspaceId) ?? null
+    void runPromptOptimize({
+      sourceSessionId: activeSessionId,
+      workspaceId: workspace?.id,
+      workspacePath: workspace?.path,
+      engineId,
+      sourceText: value,
+    })
+  }, [canOptimize, activeSessionId, value, syncDraftNow, currentWorkspace, workspaces, currentWorkspaceId])
+
+  const handleCancelOptimize = useCallback(() => {
+    if (activeSessionId) cancelPromptOptimize(activeSessionId)
+  }, [activeSessionId])
+
+  const handleUndoOptimize = useCallback(() => {
+    syncDraftNow()
+    undoPromptOptimize()
+  }, [syncDraftNow, undoPromptOptimize])
+
+  const handleRedoOptimize = useCallback(() => {
+    syncDraftNow()
+    redoPromptOptimize()
+  }, [syncDraftNow, redoPromptOptimize])
+
+  const handleApplyOptimizeResult = useCallback(() => {
+    syncDraftNow()
+    applyPendingPromptOptimize()
+  }, [syncDraftNow, applyPendingPromptOptimize])
+
+  // 版本控件可见性/可用性
+  const optimizeCursorText = promptOptimize.history[promptOptimize.cursor]?.text ?? ''
+  const showVersionControls = promptOptimize.status === 'idle' && promptOptimize.history.length > 1
+  const canUndoVersion = promptOptimize.status === 'idle' && promptOptimize.history.length > 0
+    && (promptOptimize.cursor > 0 || value !== optimizeCursorText)
+  // redo 需当前文本与栈内当前版本一致（手改后禁用，防覆盖丢失）
+  const canRedoVersion = promptOptimize.status === 'idle'
+    && promptOptimize.cursor < promptOptimize.history.length - 1
+    && value === optimizeCursorText
+
+  // 上次所选优化引擎（浮层勾选标记；选择后持久化到 localStorage）
+  const [lastOptimizeEngine, setLastOptimizeEngine] = useState<EngineId>(
+    () => readStoredOptimizeEngine(normalizeEngineId(defaultEngine))
+  )
+
+  const optimizeTitle = useMemo(() => {
+    if (optimizeRunning) return t('promptOptimize.running')
+    if (editMode) return t('promptOptimize.editModeBlocked')
+    if (isSlashCommandInput) return t('promptOptimize.slashBlocked')
+    if (!value.trim()) return t('promptOptimize.emptyInput')
+    return t('promptOptimize.buttonTitle')
+  }, [optimizeRunning, editMode, isSlashCommandInput, value, t])
 
   // 构建统一建议列表
   const buildSuggestionItems = useCallback((
@@ -760,6 +877,7 @@ export function ChatInput({
       setLocalText('')
       updateInputDraft({ text: '', attachments: [] })
       setHistoryIndex(-1)
+      resetPromptOptimize()
       return
     }
 
@@ -774,6 +892,11 @@ export function ChatInput({
         )
         return
       }
+    }
+
+    // 优化进行中发送 = 用户放弃本轮优化结果
+    if (optimizeRunning && activeSessionId) {
+      cancelPromptOptimize(activeSessionId)
     }
 
     // 取消 pending 的防抖回调，防止旧值写回 Store
@@ -801,6 +924,8 @@ export function ChatInput({
     setLocalAttachments([])
     // 清空 Store 草稿
     updateInputDraft({ text: '', attachments: [] })
+    // 清空提示词优化版本栈（草稿已发出，版本历史随之失效）
+    resetPromptOptimize()
     // 退出编辑模式
     if (editMode) onCancelEdit?.()
     // 重置历史索引
@@ -809,7 +934,7 @@ export function ChatInput({
     setSpeechWakeActive(false)
     // 语音提醒：发送确认
     voiceNotificationService.notifySendConfirm()
-  }, [value, disabled, isStreaming, attachments, onSend, updateInputDraft, cancelPersistDraft, currentWorkspace, setSpeechWakeActive, editMode, onEditSend, onCancelEdit, isClaudeEngine, t])
+  }, [value, disabled, isStreaming, attachments, onSend, updateInputDraft, cancelPersistDraft, currentWorkspace, setSpeechWakeActive, editMode, onEditSend, onCancelEdit, isClaudeEngine, t, optimizeRunning, activeSessionId, resetPromptOptimize])
 
   // 处理语音命令（放在 handleSend 之后，避免变量声明顺序问题）
   useEffect(() => {
@@ -827,12 +952,13 @@ export function ChatInput({
         setLocalAttachments([])
         // 清除 Store
         clearInputDraft()
+        resetPromptOptimize()
         break
       // 'interrupt' 已在 ChatStatusBar 处理
     }
 
     setSpeechCommand(null)
-  }, [speechCommand, isStreaming, setSpeechCommand, clearInputDraft, handleSend])
+  }, [speechCommand, isStreaming, setSpeechCommand, clearInputDraft, handleSend, resetPromptOptimize])
 
   // 键盘事件处理
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1008,6 +1134,71 @@ export function ChatInput({
           </button>
         </div>
       )}
+      {/* 提示词优化胶囊：优化中（流式预览 + 取消） */}
+      {optimizeRunning && (
+        <div className="px-2 sm:px-3 pt-2">
+          <div className="flex items-start gap-1.5 max-w-full px-2.5 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-xs text-primary/90">
+            <Loader2 size={13} className="shrink-0 mt-0.5 animate-spin" />
+            <span className="flex-1 min-w-0 line-clamp-2 break-words whitespace-pre-wrap">
+              {optimizePreview.text || t('promptOptimize.running')}
+            </span>
+            <button
+              onClick={handleCancelOptimize}
+              className="shrink-0 p-0.5 rounded hover:bg-primary/20 transition-colors"
+              title={t('promptOptimize.cancel')}
+            >
+              <X size={12} />
+            </button>
+          </div>
+        </div>
+      )}
+      {/* 提示词优化胶囊：结果就绪（输入被手改，待用户确认应用） */}
+      {promptOptimize.status === 'ready' && promptOptimize.pendingResult && (
+        <div className="px-2 sm:px-3 pt-2">
+          <div className="flex items-start gap-1.5 max-w-full px-2.5 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-xs text-primary/90">
+            <Wand2 size={13} className="shrink-0 mt-0.5 opacity-70" />
+            <div className="flex-1 min-w-0">
+              <span className="font-medium">{t('promptOptimize.readyTitle')}</span>
+              <p className="line-clamp-2 break-words text-primary/70 mt-0.5">{promptOptimize.pendingResult}</p>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                onClick={handleApplyOptimizeResult}
+                className="flex items-center gap-1 px-2 py-1 text-[11px] text-primary hover:bg-primary/20 rounded transition-colors"
+                title={t('promptOptimize.applyHint')}
+              >
+                <Check size={12} />
+                {t('promptOptimize.apply')}
+              </button>
+              <button
+                onClick={resetPromptOptimize}
+                className="p-0.5 rounded text-primary/60 hover:bg-primary/20 transition-colors"
+                title={t('promptOptimize.discard')}
+              >
+                <X size={12} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 提示词优化胶囊：失败（原文无损，可关闭后重试） */}
+      {promptOptimize.status === 'idle' && promptOptimize.error && (
+        <div className="px-2 sm:px-3 pt-2">
+          <div className="flex items-start gap-1.5 max-w-full px-2.5 py-1.5 rounded-lg bg-danger/10 border border-danger/20 text-xs text-danger">
+            <Wand2 size={13} className="shrink-0 mt-0.5 opacity-70" />
+            <span className="flex-1 min-w-0 line-clamp-2 break-words">
+              {t('promptOptimize.errorPrefix')}{promptOptimize.error}
+            </span>
+            <button
+              onClick={clearPromptOptimizeError}
+              className="shrink-0 p-0.5 rounded hover:bg-danger/20 transition-colors"
+              title={t('promptOptimize.dismissError')}
+            >
+              <X size={12} />
+            </button>
+          </div>
+        </div>
+      )}
       <div className="p-2 sm:p-3">
         {/* 输入框统一容器（纵向布局：附件预览 + textarea + 底部工具栏） */}
         <div
@@ -1047,7 +1238,7 @@ export function ChatInput({
 
           {/* 底部工具栏 - 单行 flex justify-between */}
           <div className="flex items-center gap-1 px-1.5 sm:px-2 pb-1.5 pt-0.5">
-            {/* 左侧：附件按钮 */}
+            {/* 左侧：附件按钮 + 提示词优化 + 版本控件 */}
             <div className="flex items-center gap-1 shrink-0">
               <button
                 onClick={openFileDialog}
@@ -1057,6 +1248,72 @@ export function ChatInput({
               >
                 <IconPaperclip size={16} />
               </button>
+              {/* 提示词优化按钮 + 引擎选择浮层 */}
+              <div className="relative">
+                <button
+                  ref={optimizeButtonRef}
+                  onClick={() => setOptimizePickerOpen((v) => !v)}
+                  disabled={!canOptimize}
+                  className="shrink-0 p-1.5 rounded-md text-text-tertiary hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={optimizeTitle}
+                >
+                  {optimizeRunning ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Wand2 size={16} />
+                  )}
+                </button>
+                {optimizePickerOpen && (
+                  <div
+                    ref={optimizePickerRef}
+                    className="absolute left-0 bottom-full mb-1 z-50 min-w-[180px] py-1 rounded-lg shadow-lg bg-background-elevated border border-border"
+                  >
+                    <div className="px-2 pb-1.5 text-[11px] font-medium text-text-tertiary">
+                      {t('promptOptimize.selectEngine')}
+                    </div>
+                    {OPTIMIZE_ENGINE_OPTIONS.map(({ id, label, Icon }) => (
+                      <button
+                        key={id}
+                        onClick={() => handleOptimizeWithEngine(id)}
+                        className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs transition-colors ${
+                          lastOptimizeEngine === id
+                            ? 'text-primary bg-primary/10'
+                            : 'text-text-secondary hover:text-text-primary hover:bg-background-hover'
+                        }`}
+                        title={getEngineFullName(id)}
+                      >
+                        <Icon className="w-3.5 h-3.5" />
+                        <span className="flex-1 text-left">{label}</span>
+                        {lastOptimizeEngine === id && <Check size={12} />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {/* 版本控件：回滚 / 版本指示 / 重做 */}
+              {showVersionControls && (
+                <div className="flex items-center gap-0.5 shrink-0 text-text-tertiary">
+                  <button
+                    onClick={handleUndoOptimize}
+                    disabled={!canUndoVersion}
+                    className="p-1 rounded-md hover:text-text-primary hover:bg-background-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    title={t('promptOptimize.undo')}
+                  >
+                    <Undo2 size={14} />
+                  </button>
+                  <span className="text-[10px] tabular-nums px-0.5 select-none" title={t('promptOptimize.versionIndicator')}>
+                    {promptOptimize.cursor + 1}/{promptOptimize.history.length}
+                  </span>
+                  <button
+                    onClick={handleRedoOptimize}
+                    disabled={!canRedoVersion}
+                    className="p-1 rounded-md hover:text-text-primary hover:bg-background-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    title={t('promptOptimize.redo')}
+                  >
+                    <Redo2 size={14} />
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* 中段：嵌入式状态栏（会话配置/语音区等） */}

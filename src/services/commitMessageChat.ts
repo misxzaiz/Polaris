@@ -14,10 +14,9 @@ import { useStore } from 'zustand'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { useViewStore } from '@/stores'
 import { formatGitDiffSummary } from '@/services/gitContextService'
-import { isTextBlock } from '@/types/chat'
-import type { AssistantChatMessage } from '@/types/chat'
+import { pickLatestAssistantText } from '@/services/assistantTextUtils'
 import type { GitDiffEntry } from '@/types/git'
-import type { ConversationState, ConversationStoreInstance } from '@/stores/conversationStore/types'
+import type { ConversationStoreInstance } from '@/stores/conversationStore/types'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('CommitMessageChat')
@@ -108,45 +107,9 @@ export async function openCommitMessageChat(
 }
 
 /**
- * 从助手消息中提取纯文本（拼接所有 text block）。
+ * 从助手消息中提取纯文本 / 找出最新一条助手消息的文本：
+ * 已抽至 @/services/assistantTextUtils 共享（提示词优化等场景复用）。
  */
-function extractAssistantText(message: AssistantChatMessage | null | undefined): string {
-  if (!message) return ''
-  if (message.content) return message.content
-  return message.blocks
-    .filter(isTextBlock)
-    .map((b) => (b as { content: string }).content)
-    .join('')
-}
-
-/**
- * 找出最新一条助手消息的文本。
- *
- * 流式中的 currentMessage 优先于已归档 messages 的末条 assistant，
- * 这样追问微调时回流条能实时跟随最新输出。
- */
-function pickLatestAssistantText(state: ConversationState): string {
-  if (state.currentMessage) {
-    const text = extractAssistantText({
-      id: state.currentMessage.id,
-      type: 'assistant',
-      engineId: state.currentMessage.engineId,
-      blocks: state.currentMessage.blocks,
-      isStreaming: true,
-      timestamp: new Date().toISOString(),
-    } as AssistantChatMessage)
-    if (text) return text
-  }
-
-  for (let i = state.messages.length - 1; i >= 0; i--) {
-    const msg = state.messages[i]
-    if (msg.type === 'assistant') {
-      const text = extractAssistantText(msg as AssistantChatMessage)
-      if (text) return text
-    }
-  }
-  return ''
-}
 
 const EMPTY_SNAPSHOT: { text: string; isStreaming: boolean; sessionId: string | null } = {
   text: '',

@@ -2,7 +2,7 @@
 
 > 需求：在聊天输入框中支持对用户输入的提示词进行 AI 优化；可选择 AI 引擎及模型；支持回滚到原始输入、还原后重新优化（可换引擎/模型多轮迭代）。
 >
-> 状态：方案分析（未实施）
+> 状态：**Phase 1 已实施**（2026-07-18，实施记录见文末第 6 节）；Phase 2/3 未实施
 > 日期：2026-07-18
 
 ---
@@ -226,3 +226,47 @@ export async function runPromptOptimize(opts: {
 3. **隐藏会话堆积**：按 workspace 复用单会话 + LRU 自然回收；Phase 2 加清理。
 4. **会话列表过滤遗漏**：统一走 `useVisibleSessionMetadataList()` 选择器收敛过滤点。
 5. **回滚栈与草稿持久化的一致性**：版本栈仅内存态，应用重启后仅剩草稿文本（可接受，明确不做持久化）。
+
+---
+
+## 6. Phase 1 实施记录（2026-07-18）
+
+### 6.1 与原方案的偏差（实施时的更优解）
+
+| 原方案 | 实际实施 | 原因 |
+|--------|----------|------|
+| 新增 `useVisibleSessionMetadataList()` 过滤隐藏会话 | 直接用现成 `silentMode: true` | 调研发现 `SessionMetadata.silentMode` 早已存在（dispatch/scheduler 在用），QuickSwitchPanel / SourceOverview 均已过滤，零新增过滤点 |
+| 优化会话按 workspace 复用单会话 | **每轮新建一次性静默会话** | `updateSessionEngine` 仅对空会话生效——复用会话无法换引擎；且多轮优化上下文互相污染、白耗 token |
+| 完成后清理优化会话 | **不主动删除，交由 LRU 驱逐回收** | `deleteSession` 后若有迟到事件，eventRouter 会自动重建**可见**空会话（`sessionStoreManager.ts` 事件路由自动建会话逻辑）；静默会话本就不可见，LRU（MAX_IDLE_STORES=5）很快回收 |
+| 版本控件操作直接 setLocalText | **store 层直接写 `inputDraft`** | ChatInput 已有 `useEffect([inputDraft])` 同步 effect，store 写草稿即自动回填本地文本，主界面/AIPopover 两处 ChatInput 行为天然一致 |
+
+### 6.2 版本栈语义的实施细化
+
+- undo 时若有未入栈手改：手改文本自动入栈（origin='edited'）再回退，redo 可回到手改文本（不丢内容）。
+- redo 时若当前文本被手改：no-op（redo 会覆盖手改，宁可不动）；UI 侧同条件禁用按钮。
+- 所有版本操作（含触发优化）前 UI 先 `cancelPersistDraft() + updateInputDraft(当前文本)` 消除 300ms 防抖差，保证冲突检测/手改判定基线准确。
+- 完成时冲突检测：`inputDraft.text !== sourceSnapshot` → 转 `ready` 状态胶囊（点击应用，应用时当前手改文本先入栈保留）。
+- 发送消息 / `/dispatch` 派发 / 语音 clear → `resetPromptOptimize()` 清栈；发送时若优化中先 `cancelPromptOptimize()`。
+- **不要求关联工作区**（首版误加硬约束后修正）：`useActiveSessionWorkspace()` 读的是会话 store 的 workspaceId，free 会话/未绑定会话恒为 null，即使全局选了工作区也会被误禁。修正为与发送消息一致的解析链：会话关联工作区 → 全局当前工作区 → 无（创建 free 类型优化会话，workDir 由 sendMessage 解析链兜底）。
+
+### 6.3 改动文件清单
+
+| 文件 | 改动 |
+|------|------|
+| `src/stores/conversationStore/types.ts` | `PromptVersion` / `PromptOptimizeState` 类型 + `ConversationState.promptOptimize` + 7 个 actions 声明 + kind union 扩展 `'prompt-optimize'` |
+| `src/stores/conversationStore/createConversationStore.ts` | 初始状态 + begin/complete/applyPending/fail/undo/redo/reset 七个 action 实现 |
+| `src/stores/conversationStore/useActiveSession.ts` | `useActiveSessionPromptOptimize()` hook + actions 暴露（undo/redo/applyPending/reset/clearError） |
+| `src/services/promptOptimizeService.ts` | 新建：一次性静默会话 + oneTimeSystemPrompt + 订阅 isStreaming 回落收口 + 180s 超时兜底 + `usePromptOptimizePreview` 流式预览 hook + 引擎记忆 localStorage |
+| `src/services/assistantTextUtils.ts` | 新建：`extractAssistantText` / `pickLatestAssistantText`（自 commitMessageChat 抽出共享） |
+| `src/services/commitMessageChat.ts` | 改用共享 assistantTextUtils（纯搬移） |
+| `src/components/Chat/ChatInput.tsx` | ✨(Wand2) 按钮 + 引擎浮层 + 三态胶囊（优化中/就绪/失败）+ ↶ vN/M ↷ 版本控件 + 发送/清空清理 |
+| `src/locales/{zh-CN,en-US}/chat.json` | `promptOptimize.*` 23 条文案 |
+| `src/stores/conversationStore/promptOptimize.test.ts` | 新建：版本栈状态机 7 用例（首轮入栈/undo-redo/冲突 ready/分支截断/手改保护/失败保留栈/空结果） |
+
+### 6.4 验证情况
+
+- `tsc --noEmit`：零新增错误（ModelProviderTab/PromptSnippetTab 的既有错误与本次无关，已用 stash 基线确认）。
+- eslint：改动文件零新增问题。
+- vitest：conversationStore + dispatch 既有 68 用例全过；新增 promptOptimize 7 用例全过。
+- `vite build`：生产构建成功，无 manualChunks TDZ 问题。
+- 运行时四引擎实测（优化→回滚→重新优化→发送）：**待用户在 tauri:dev 环境验证**（本机无法运行 Tauri 原生环境）。

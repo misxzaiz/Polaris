@@ -128,6 +128,18 @@ function createInitialState(sessionId: string): ConversationState {
     // 待发送简报（压缩交接产物）
     pendingBriefing: null,
 
+    // 提示词优化（版本栈内存态，不持久化）
+    promptOptimize: {
+      status: 'idle',
+      history: [],
+      cursor: -1,
+      sourceSnapshot: null,
+      pendingResult: null,
+      pendingMeta: null,
+      optimizeSessionId: null,
+      error: null,
+    },
+
     // 工作区关联
     workspaceId: null,
 
@@ -290,6 +302,191 @@ export function createConversationStore(
 
       setPendingBriefing: (briefing) => {
         set({ pendingBriefing: briefing && briefing.trim() ? briefing : null })
+      },
+
+      // ===== 提示词优化（版本栈） =====
+      beginPromptOptimize: (sourceText, meta) => {
+        const po = get().promptOptimize
+        if (po.status === 'running') return
+
+        let history = po.history
+        let cursor = po.cursor
+        if (history.length === 0) {
+          history = [{ text: sourceText, origin: 'original', createdAt: Date.now() }]
+          cursor = 0
+        } else {
+          // 丢弃 redo 分支；输入被手改则手改文本先入栈（保留可回滚）
+          history = history.slice(0, cursor + 1)
+          if (history[cursor].text !== sourceText) {
+            history = [...history, { text: sourceText, origin: 'edited', createdAt: Date.now() }]
+            cursor = history.length - 1
+          }
+        }
+
+        set({
+          promptOptimize: {
+            status: 'running',
+            history,
+            cursor,
+            sourceSnapshot: sourceText,
+            pendingResult: null,
+            pendingMeta: { engineId: meta.engineId, model: meta.model },
+            optimizeSessionId: meta.optimizeSessionId,
+            error: null,
+          },
+        })
+      },
+
+      completePromptOptimize: (resultText) => {
+        const state = get()
+        const po = state.promptOptimize
+        if (po.status !== 'running') return
+
+        const text = resultText.trim()
+        if (!text) {
+          set({
+            promptOptimize: {
+              ...po,
+              status: 'idle',
+              sourceSnapshot: null,
+              pendingMeta: null,
+              optimizeSessionId: null,
+              // i18n 未初始化（测试环境等）时兜底，保证错误提示非空
+              error: i18n.t('chat:promptOptimize.errorEmpty', '优化结果为空，请重试') || '优化结果为空，请重试',
+            },
+          })
+          return
+        }
+
+        // 输入被手改（与触发快照不一致）→ 不覆盖，转待应用
+        if ((po.sourceSnapshot ?? '') !== state.inputDraft.text) {
+          set({ promptOptimize: { ...po, status: 'ready', pendingResult: text } })
+          return
+        }
+
+        const history = [
+          ...po.history,
+          {
+            text,
+            origin: 'optimized' as const,
+            engineId: po.pendingMeta?.engineId,
+            model: po.pendingMeta?.model,
+            createdAt: Date.now(),
+          },
+        ]
+        set({
+          promptOptimize: {
+            status: 'idle',
+            history,
+            cursor: history.length - 1,
+            sourceSnapshot: null,
+            pendingResult: null,
+            pendingMeta: null,
+            optimizeSessionId: null,
+            error: null,
+          },
+          inputDraft: { text, attachments: state.inputDraft.attachments },
+        })
+      },
+
+      applyPendingPromptOptimize: () => {
+        const state = get()
+        const po = state.promptOptimize
+        if (po.status !== 'ready' || !po.pendingResult) return
+
+        const currentInput = state.inputDraft.text
+        let history = po.history.slice(0, po.cursor + 1)
+        // 当前手改文本先入栈保留（可回滚回来）
+        if (history.length > 0 && history[history.length - 1].text !== currentInput && currentInput.trim()) {
+          history = [...history, { text: currentInput, origin: 'edited' as const, createdAt: Date.now() }]
+        }
+        const next = [
+          ...history,
+          {
+            text: po.pendingResult,
+            origin: 'optimized' as const,
+            engineId: po.pendingMeta?.engineId,
+            model: po.pendingMeta?.model,
+            createdAt: Date.now(),
+          },
+        ]
+        set({
+          promptOptimize: {
+            status: 'idle',
+            history: next,
+            cursor: next.length - 1,
+            sourceSnapshot: null,
+            pendingResult: null,
+            pendingMeta: null,
+            optimizeSessionId: null,
+            error: null,
+          },
+          inputDraft: { text: po.pendingResult, attachments: state.inputDraft.attachments },
+        })
+      },
+
+      failPromptOptimize: (error) => {
+        const po = get().promptOptimize
+        set({
+          promptOptimize: {
+            ...po,
+            status: 'idle',
+            sourceSnapshot: null,
+            pendingResult: null,
+            pendingMeta: null,
+            optimizeSessionId: null,
+            error,
+          },
+        })
+      },
+
+      undoPromptOptimize: () => {
+        const state = get()
+        const po = state.promptOptimize
+        if (po.status !== 'idle' || po.history.length === 0 || po.cursor < 0) return
+
+        let history = po.history
+        let cursor = po.cursor
+        // 当前文本有未入栈的手改 → 先入栈（截断 redo 分支），undo 后可 redo 回来
+        if (state.inputDraft.text !== history[cursor].text) {
+          history = [...history.slice(0, cursor + 1), { text: state.inputDraft.text, origin: 'edited' as const, createdAt: Date.now() }]
+          cursor = history.length - 1
+        }
+        if (cursor <= 0) return
+        cursor -= 1
+        set({
+          promptOptimize: { ...po, history, cursor },
+          inputDraft: { text: history[cursor].text, attachments: state.inputDraft.attachments },
+        })
+      },
+
+      redoPromptOptimize: () => {
+        const state = get()
+        const po = state.promptOptimize
+        if (po.status !== 'idle' || po.cursor >= po.history.length - 1) return
+        // 当前文本被手改（与栈内当前版本不符）→ redo 会覆盖手改内容，直接忽略
+        if (state.inputDraft.text !== po.history[po.cursor].text) return
+
+        const cursor = po.cursor + 1
+        set({
+          promptOptimize: { ...po, cursor },
+          inputDraft: { text: po.history[cursor].text, attachments: state.inputDraft.attachments },
+        })
+      },
+
+      resetPromptOptimize: () => {
+        set({
+          promptOptimize: {
+            status: 'idle',
+            history: [],
+            cursor: -1,
+            sourceSnapshot: null,
+            pendingResult: null,
+            pendingMeta: null,
+            optimizeSessionId: null,
+            error: null,
+          },
+        })
       },
 
       // ===== 流式构建 =====
