@@ -1010,6 +1010,64 @@ fn default_interaction_ask_enabled() -> bool {
     true
 }
 
+/// 派发队员预设：用户预定义"角色 → 引擎/供应商/模型/职责提示词"组合，
+/// AI 派发时按角色名引用（dispatch_task 的 role 参数），成本与安全由用户掌控。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DispatchPreset {
+    /// 唯一 ID
+    pub id: String,
+    /// 角色名（如"测试员"），dispatch_task role 参数按此匹配
+    pub name: String,
+    /// 引擎 ID（如 "claude-code"）
+    pub engine_id: String,
+    /// 模型 Profile ID（第三方端点）；None = 官方端点
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_profile_id: Option<String>,
+    /// 具体模型名；None = 引擎/Profile 默认
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// 角色职责系统提示词（追加注入派发会话）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub append_system_prompt: Option<String>,
+    /// 权限模式；None = 继承默认
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<String>,
+}
+
+/// 派发任务配置（dispatch_task MCP 行为）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DispatchConfig {
+    /// 派发策略："auto"（默认，直接执行）| "ask"（每次派发弹确认）
+    #[serde(default = "default_dispatch_policy")]
+    pub policy: String,
+    /// 派发任务完成后是否把结果摘要注入来源会话的下一回合（一次性系统提示）
+    #[serde(default = "default_dispatch_auto_inject")]
+    pub auto_inject_reports: bool,
+    /// 队员预设列表
+    #[serde(default)]
+    pub presets: Vec<DispatchPreset>,
+}
+
+impl Default for DispatchConfig {
+    fn default() -> Self {
+        Self {
+            policy: default_dispatch_policy(),
+            auto_inject_reports: default_dispatch_auto_inject(),
+            presets: Vec::new(),
+        }
+    }
+}
+
+fn default_dispatch_policy() -> String {
+    "auto".to_string()
+}
+
+fn default_dispatch_auto_inject() -> bool {
+    true
+}
+
 /// 应用配置（新版本）
 ///
 /// 使用嵌套结构，支持多个 AI 引擎
@@ -1101,6 +1159,10 @@ pub struct Config {
     #[serde(default)]
     pub interaction: InteractionConfig,
 
+    /// 派发任务配置（dispatch_task MCP 策略/结果注入/队员预设）
+    #[serde(default)]
+    pub dispatch: DispatchConfig,
+
     /// AI 对话窗口显示设置
     #[serde(default)]
     pub chat_display: ChatDisplaySettings,
@@ -1164,6 +1226,7 @@ impl Default for Config {
             voice_commands: None,
             web: WebConfig::default(),
             interaction: InteractionConfig::default(),
+            dispatch: DispatchConfig::default(),
             chat_display: ChatDisplaySettings::default(),
             workspaces: Vec::new(),
             current_workspace_id: None,

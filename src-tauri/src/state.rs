@@ -182,10 +182,31 @@ pub struct DispatchedTask {
     pub engine_id: Option<String>,
     /// 派发深度（1 = 普通会话派发，2 = 派发会话再派发；上限 2）
     pub depth: u32,
+    /// 队员角色名（按预设派发时记录）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    /// 解析后的模型 Profile ID；"official" 哨兵 = 显式官方端点
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_profile_id: Option<String>,
+    /// 解析后的模型名
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// 角色职责系统提示词（追加注入派发会话）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub append_system_prompt: Option<String>,
+    /// 权限模式
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<String>,
     /// 状态：pending | running | completed | failed
     pub status: String,
     /// 完成摘要（前端回报，供 check_dispatched_task 返回给来源 AI）
     pub summary: Option<String>,
+    /// 最新动作单行摘要（执行中由前端节流回报，check 工具可见）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latest_activity: Option<String>,
+    /// 后端会话 ID（前端启动成功后回报，续派/恢复路径使用）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conversation_id: Option<String>,
     /// 创建时间（Unix 秒）
     pub created_at: i64,
     /// 最后更新时间（Unix 秒）
@@ -381,6 +402,25 @@ impl AppState {
         }
     }
 
+    /// 通用更新派发任务（返回 false 表示记录不存在）；自动刷新 updated_at
+    pub fn update_dispatched_task<F: FnOnce(&mut DispatchedTask)>(
+        &self,
+        dispatch_id: &str,
+        mutate: F,
+    ) -> bool {
+        let Ok(mut tasks) = self.dispatched_tasks.lock() else {
+            return false;
+        };
+        match tasks.get_mut(dispatch_id) {
+            Some(task) => {
+                mutate(task);
+                task.updated_at = chrono::Utc::now().timestamp();
+                true
+            }
+            None => false,
+        }
+    }
+
     /// 更新派发任务状态（返回 false 表示记录不存在）
     pub fn update_dispatched_task_status(
         &self,
@@ -388,20 +428,12 @@ impl AppState {
         status: &str,
         summary: Option<String>,
     ) -> bool {
-        let Ok(mut tasks) = self.dispatched_tasks.lock() else {
-            return false;
-        };
-        match tasks.get_mut(dispatch_id) {
-            Some(task) => {
-                task.status = status.to_string();
-                if summary.is_some() {
-                    task.summary = summary;
-                }
-                task.updated_at = chrono::Utc::now().timestamp();
-                true
+        self.update_dispatched_task(dispatch_id, |task| {
+            task.status = status.to_string();
+            if summary.is_some() {
+                task.summary = summary;
             }
-            None => false,
-        }
+        })
     }
 
     /// 查询派发任务记录

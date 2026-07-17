@@ -1,6 +1,31 @@
 {
   "dispatch": {
-    "defaultTitle": "派发任务"
+    "defaultTitle": "派发任务",
+    "cardTitle": "派发任务",
+    "cardTitleWithRole": "{{role}} · {{title}}",
+    "staleCard": "会话已结束或来自历史记录",
+    "openSession": "打开会话",
+    "interrupt": "中断",
+    "followUp": "追加指令",
+    "followUpPlaceholder": "给这个后台会话追加下一步指令...",
+    "handOff": "让 AI 处理结果",
+    "send": "发送",
+    "expand": "展开全部",
+    "collapse": "收起",
+    "reportDone": "已完成",
+    "reportFailed": "失败",
+    "reportPreamble": "你先前派发的后台任务已有结果，请结合以下报告继续当前工作：\n{{reports}}",
+    "handOffMessage": "后台派发任务「{{title}}」{{status}}，请处理其结果：\n{{summary}}",
+    "confirmTitle": "派发确认",
+    "confirmMessage": "AI 请求派发后台任务「{{title}}」，是否允许执行？",
+    "confirmAllow": "允许",
+    "confirmDeny": "拒绝",
+    "userDeclined": "用户拒绝了本次派发",
+    "usageTitle": "用法",
+    "usageDetail": "/dispatch [@角色] 任务内容",
+    "dispatchedTitle": "已派发",
+    "dispatchedDetail": "任务「{{title}}」已在后台会话执行",
+    "dispatchFailed": "派发失败"
   },
   "input": {
     "placeholder": "输入消息... (Enter 发送, Shift+Enter 换行)",
@@ -120,7 +145,9 @@
     "planUpdated": "计划已更新（详细步骤见右侧计划面板）"
   },
   "thinking": {
-    "title": "思考"
+    "title": "思考",
+    "streaming": "思考中...",
+    "charCount": "{{display}} 字"
   },
   "question": {
     "answered": "已回答",
@@ -501,14 +528,8 @@
       "backgroundRunning": "后台运行"
     }
   },
-
   "emptyState": {
     "startChat": "开始对话吧"
-  },
-  "thinking": {
-    "title": "思考",
-    "streaming": "思考中...",
-    "charCount": "{{display}} 字"
   },
   "compact": {
     "typing": "正在输入...",
@@ -555,7 +576,7 @@
     "noEffort": "不设置",
     "noPermission": "不设置",
     "officialApi": "官方 API",
-    "officialApiDesc": "使用 Anthropic 官方端点",
+    "officialApiDesc": "使用官方 Anthropic 端点（不通过 Profile）",
     "custom": "自定义...",
     "agentTooltip": "选择 Agent",
     "modelTooltip": "选择模型",
@@ -569,8 +590,6 @@
     "profile": "端点",
     "provider": "供应商",
     "noProfile": "官方 API",
-    "officialApi": "官方 API",
-    "officialApiDesc": "使用官方 Anthropic 端点（不通过 Profile）",
     "customInputLabel": "输入自定义 {{type}} 值：",
     "customInputPlaceholder": "输入 {{type}} 值...",
     "cancel": "取消",

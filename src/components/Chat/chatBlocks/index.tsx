@@ -16,6 +16,10 @@ import { ToolCallBlockRenderer } from './ToolCallBlockRenderer';
 import { ArtifactPreviewRenderer } from './ArtifactPreviewRenderer';
 import { PluginCardHost } from './PluginCardHost';
 import { ContextCompactRenderer } from './ContextCompactRenderer';
+import { DispatchTaskCard } from '../DispatchTaskCard';
+
+/** dispatch_task 工具块渲染为专属派发卡片（实时状态/动态/操作） */
+const DISPATCH_TOOL_NAME = 'mcp__polaris-dispatch__dispatch_task';
 
 export function renderContentBlock(
   block: ContentBlock,
@@ -40,6 +44,12 @@ export function renderContentBlock(
         `thinking-${block.content.slice(0, 20)}`
       );
     case 'tool_call':
+      if (block.name === DISPATCH_TOOL_NAME) {
+        return wrapWithErrorBoundary(
+          <DispatchTaskCard block={block} />,
+          block.id
+        );
+      }
       return wrapWithErrorBoundary(
         <ToolCallBlockRenderer block={block} />,
         block.id

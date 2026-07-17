@@ -38,6 +38,8 @@ const SERVER_VERSION: &str = "0.1.0";
 const PROTOCOL_VERSION: &str = "2024-11-05";
 const DISPATCH_TOOL_NAME: &str = "dispatch_task";
 const CHECK_TOOL_NAME: &str = "check_dispatched_task";
+const CONTINUE_TOOL_NAME: &str = "continue_dispatched_task";
+const TARGETS_TOOL_NAME: &str = "list_dispatch_targets";
 
 /// Server-level configuration, parsed from CLI args.
 pub struct DispatchMcpConfig {
@@ -190,7 +192,19 @@ fn handle_tools_list() -> Value {
                         },
                         "engineId": {
                             "type": "string",
-                            "description": "AI engine id for the new session (e.g. 'claude'). Omit to inherit the current session's engine."
+                            "description": "AI engine id for the new session (e.g. 'claude-code'). Omit to inherit the current session's engine. Ignored when role is set."
+                        },
+                        "role": {
+                            "type": "string",
+                            "description": "Team member preset name configured by the user (e.g. '测试员'). Takes precedence over engineId/provider. Use list_dispatch_targets to see available roles."
+                        },
+                        "provider": {
+                            "type": "string",
+                            "description": "Model provider (profile) name or id, or 'official' for the official endpoint. Use list_dispatch_targets to enumerate. Ignored when role is set."
+                        },
+                        "model": {
+                            "type": "string",
+                            "description": "Specific model name for the new session (e.g. a cheaper model for routine verification)."
                         }
                     },
                     "additionalProperties": false
@@ -201,8 +215,9 @@ fn handle_tools_list() -> Value {
                 "description": concat!(
                     "Query the status of a previously dispatched background task. ",
                     "Returns { status: pending|running|completed|failed, summary?, ",
-                    "sessionId, title }. `summary` contains the final assistant answer ",
-                    "of the background session once it completes."
+                    "latestActivity?, sessionId, title }. `latestActivity` shows what the ",
+                    "background session is doing right now; `summary` contains its final ",
+                    "assistant answer once it completes."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -213,6 +228,44 @@ fn handle_tools_list() -> Value {
                             "description": "Dispatch id returned by dispatch_task."
                         }
                     },
+                    "additionalProperties": false
+                }
+            },
+            {
+                "name": CONTINUE_TOOL_NAME,
+                "description": concat!(
+                    "Send a follow-up instruction to a FINISHED dispatched task — it ",
+                    "continues in the SAME background session with full context preserved ",
+                    "(e.g. after fixing a bug, ask the tester session to re-verify). ",
+                    "Rejected while the task is still running. Fire-and-forget like ",
+                    "dispatch_task: returns immediately, use check_dispatched_task to poll."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["dispatchId", "prompt"],
+                    "properties": {
+                        "dispatchId": {
+                            "type": "string",
+                            "description": "Dispatch id returned by dispatch_task."
+                        },
+                        "prompt": {
+                            "type": "string",
+                            "description": "Follow-up instruction for the background session."
+                        }
+                    },
+                    "additionalProperties": false
+                }
+            },
+            {
+                "name": TARGETS_TOOL_NAME,
+                "description": concat!(
+                    "List available dispatch targets: team member presets (roles), ",
+                    "engines, and model providers with their models. Call this before ",
+                    "dispatch_task when you want to pick a specific role/provider/model."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
                     "additionalProperties": false
                 }
             }
@@ -234,6 +287,11 @@ fn handle_tools_call(params: Value, config: &DispatchMcpConfig) -> Result<Value>
     let frame = match name {
         DISPATCH_TOOL_NAME => build_dispatch_frame(&arguments, config)?,
         CHECK_TOOL_NAME => build_status_frame(&arguments, config)?,
+        CONTINUE_TOOL_NAME => build_continue_frame(&arguments, config)?,
+        TARGETS_TOOL_NAME => json!({
+            "type": "dispatch_targets",
+            "token": config.token,
+        }),
         other => return Err(AppError::ValidationError(format!("未知工具: {}", other))),
     };
 
@@ -284,6 +342,31 @@ fn build_dispatch_frame(arguments: &Value, config: &DispatchMcpConfig) -> Result
         "title": arguments.get("title").and_then(Value::as_str).unwrap_or_default(),
         "workDir": arguments.get("workDir").and_then(Value::as_str),
         "engineId": arguments.get("engineId").and_then(Value::as_str),
+        "role": arguments.get("role").and_then(Value::as_str),
+        "provider": arguments.get("provider").and_then(Value::as_str),
+        "model": arguments.get("model").and_then(Value::as_str),
+    }))
+}
+
+fn build_continue_frame(arguments: &Value, config: &DispatchMcpConfig) -> Result<Value> {
+    let dispatch_id = arguments
+        .get("dispatchId")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .ok_or_else(|| AppError::ValidationError("缺少 dispatchId 参数".into()))?;
+    let prompt = arguments
+        .get("prompt")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .ok_or_else(|| AppError::ValidationError("缺少 prompt 参数".into()))?;
+
+    Ok(json!({
+        "type": "dispatch_continue",
+        "token": config.token,
+        "dispatchId": dispatch_id,
+        "prompt": prompt,
     }))
 }
 
@@ -369,10 +452,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tools_list_returns_both_tools() {
+    fn tools_list_returns_all_tools() {
         let v = handle_tools_list();
         let tools = v.get("tools").and_then(|t| t.as_array()).unwrap();
-        assert_eq!(tools.len(), 2);
+        assert_eq!(tools.len(), 4);
         assert_eq!(
             tools[0].get("name").and_then(|s| s.as_str()),
             Some(DISPATCH_TOOL_NAME)
@@ -381,12 +464,36 @@ mod tests {
             tools[1].get("name").and_then(|s| s.as_str()),
             Some(CHECK_TOOL_NAME)
         );
+        assert_eq!(
+            tools[2].get("name").and_then(|s| s.as_str()),
+            Some(CONTINUE_TOOL_NAME)
+        );
+        assert_eq!(
+            tools[3].get("name").and_then(|s| s.as_str()),
+            Some(TARGETS_TOOL_NAME)
+        );
         let required = tools[0]
             .pointer("/inputSchema/required")
             .and_then(|r| r.as_array())
             .unwrap();
         assert_eq!(required.len(), 1);
         assert_eq!(required[0].as_str(), Some("prompt"));
+    }
+
+    #[test]
+    fn continue_frame_requires_both_params() {
+        let cfg = DispatchMcpConfig {
+            port: 0,
+            token: "t".into(),
+            session_id: None,
+        };
+        assert!(build_continue_frame(&json!({ "dispatchId": "d1" }), &cfg).is_err());
+        assert!(build_continue_frame(&json!({ "prompt": "go" }), &cfg).is_err());
+        let frame = build_continue_frame(&json!({ "dispatchId": "d1", "prompt": "go" }), &cfg).unwrap();
+        assert_eq!(
+            frame.get("type").and_then(Value::as_str),
+            Some("dispatch_continue")
+        );
     }
 
     #[test]

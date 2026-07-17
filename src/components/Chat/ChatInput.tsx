@@ -44,6 +44,7 @@ import {
   matchBlockedCliCommand,
   type CliCommandSuggestion,
 } from '@/services/cliSlashCommands'
+import { parseDispatchSlashCommand, dispatchFromUser } from '@/services/dispatchTaskService'
 import { pluginRegistry, listEnabledPluginMcpServers } from '@/plugin-system'
 import { usePluginStore } from '@/stores/pluginStore'
 import {
@@ -750,6 +751,17 @@ export function ChatInput({
     const trimmed = value.trim()
     if ((disabled || isStreaming) && attachments.length === 0) return
     if (!trimmed && attachments.length === 0) return
+
+    // Polaris 本地命令：/dispatch [@角色] 任务内容 → 派发到后台会话执行
+    const dispatchCmd = parseDispatchSlashCommand(trimmed)
+    if (dispatchCmd) {
+      void dispatchFromUser(dispatchCmd)
+      cancelPersistDraft()
+      setLocalText('')
+      updateInputDraft({ text: '', attachments: [] })
+      setHistoryIndex(-1)
+      return
+    }
 
     // Claude 引擎：拦截 /clear（及别名）—— CLI 侧会新开对话，
     // 导致 CLI 上下文与 Polaris 界面历史脱钩。清空上下文请用 Polaris 新建会话。

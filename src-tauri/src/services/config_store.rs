@@ -649,6 +649,7 @@ impl OldConfig {
             voice_commands: None,
             web: Default::default(),
             interaction: Default::default(),
+            dispatch: Default::default(),
             chat_display: Default::default(),
             workspaces: Vec::new(),
             current_workspace_id: None,

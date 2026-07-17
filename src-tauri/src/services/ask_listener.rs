@@ -195,6 +195,12 @@ async fn handle_connection(
         "dispatch_status" => {
             handle_dispatch_status_frame(&mut stream, frame, state, &expected_token).await
         }
+        "dispatch_continue" => {
+            handle_dispatch_continue_frame(&mut stream, frame, state, &expected_token).await
+        }
+        "dispatch_targets" => {
+            handle_dispatch_targets_frame(&mut stream, frame, state, &expected_token).await
+        }
         other => Err(AppError::ValidationError(format!("未知帧类型: {}", other))),
     }
 }
@@ -423,6 +429,248 @@ fn parse_dispatch_depth(source_session_id: &str) -> u32 {
         })
 }
 
+/// 派发注册参数（MCP dispatch 帧与 dispatch_create_task 命令共用）
+#[derive(Debug, Clone, Default)]
+pub struct DispatchTaskParams {
+    pub source_session_id: String,
+    pub prompt: String,
+    pub title: Option<String>,
+    pub work_dir: Option<String>,
+    pub engine_id: Option<String>,
+    /// 队员角色名（优先级最高，命中预设后覆盖 engine/model/profile）
+    pub role: Option<String>,
+    /// 模型供应商：Profile 名称或 id；"official" = 显式官方端点
+    pub provider: Option<String>,
+    pub model: Option<String>,
+    /// 指定 dispatch_id（MCP 帧携带；命令路径留空自动生成）
+    pub dispatch_id: Option<String>,
+}
+
+impl DispatchTaskParams {
+    fn from_frame(frame: &Value) -> Self {
+        let opt_str = |key: &str| {
+            frame
+                .get(key)
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+        };
+        Self {
+            source_session_id: frame
+                .get("sessionId")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            prompt: frame
+                .get("prompt")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .unwrap_or_default()
+                .to_string(),
+            title: opt_str("title"),
+            work_dir: opt_str("workDir"),
+            engine_id: opt_str("engineId"),
+            role: opt_str("role"),
+            provider: opt_str("provider"),
+            model: opt_str("model"),
+            dispatch_id: opt_str("dispatchId"),
+        }
+    }
+}
+
+/// 按角色名解析队员预设；未命中返回含候选列表的错误
+fn resolve_dispatch_preset(
+    config: &crate::models::config::Config,
+    role: &str,
+) -> std::result::Result<crate::models::config::DispatchPreset, String> {
+    let presets = &config.dispatch.presets;
+    if let Some(preset) = presets.iter().find(|p| p.name == role) {
+        return Ok(preset.clone());
+    }
+    let lower = role.to_lowercase();
+    let ci_matches: Vec<_> = presets
+        .iter()
+        .filter(|p| p.name.to_lowercase() == lower)
+        .collect();
+    match ci_matches.len() {
+        1 => Ok(ci_matches[0].clone()),
+        _ => {
+            let available = presets
+                .iter()
+                .map(|p| p.name.as_str())
+                .collect::<Vec<_>>()
+                .join("、");
+            Err(if available.is_empty() {
+                format!("未找到队员预设「{}」，当前未配置任何预设；可改用 provider/model 参数或省略以继承来源会话", role)
+            } else {
+                format!("未找到队员预设「{}」，可用角色：{}", role, available)
+            })
+        }
+    }
+}
+
+/// 按名称/id 解析模型 Profile；歧义或未命中返回含候选的错误。
+/// 返回 Some("official") 哨兵表示显式官方端点。
+fn resolve_dispatch_provider(
+    config: &crate::models::config::Config,
+    provider: &str,
+) -> std::result::Result<Option<String>, String> {
+    if provider.eq_ignore_ascii_case("official") {
+        return Ok(Some("official".to_string()));
+    }
+    let profiles = &config.model_profiles;
+    if let Some(p) = profiles.iter().find(|p| p.id == provider) {
+        return Ok(Some(p.id.clone()));
+    }
+    if let Some(p) = profiles.iter().find(|p| p.name == provider) {
+        return Ok(Some(p.id.clone()));
+    }
+    let lower = provider.to_lowercase();
+    let ci_matches: Vec<_> = profiles
+        .iter()
+        .filter(|p| p.name.to_lowercase().contains(&lower))
+        .collect();
+    match ci_matches.len() {
+        1 => Ok(Some(ci_matches[0].id.clone())),
+        0 => {
+            let available = profiles
+                .iter()
+                .map(|p| p.name.as_str())
+                .collect::<Vec<_>>()
+                .join("、");
+            Err(format!(
+                "未找到模型供应商「{}」，可用：{}（或 \"official\" 使用官方端点）",
+                provider,
+                if available.is_empty() { "无" } else { &available }
+            ))
+        }
+        _ => {
+            let candidates = ci_matches
+                .iter()
+                .map(|p| p.name.as_str())
+                .collect::<Vec<_>>()
+                .join("、");
+            Err(format!(
+                "供应商「{}」匹配到多个 Profile：{}，请使用完整名称",
+                provider, candidates
+            ))
+        }
+    }
+}
+
+/// 校验并登记派发任务（MCP dispatch 帧与 dispatch_create_task 命令共用）。
+///
+/// 完成深度/并发校验与 role/provider 解析，插入注册表并返回任务记录；
+/// 调用方负责把任务下发给前端执行（emit 事件或命令返回值）。
+pub fn register_dispatch_task(
+    state: &AppState,
+    params: DispatchTaskParams,
+) -> std::result::Result<DispatchedTask, String> {
+    if params.prompt.is_empty() {
+        return Err("dispatch 请求缺少 prompt".to_string());
+    }
+
+    // 深度限制：防止派发会话无限递归派发
+    let depth = parse_dispatch_depth(&params.source_session_id) + 1;
+    if depth > MAX_DISPATCH_DEPTH {
+        return Err(format!(
+            "派发深度已达上限（{}），当前会话不能再派发子任务",
+            MAX_DISPATCH_DEPTH
+        ));
+    }
+
+    // 并发限制：防止资源被并行引擎进程打满
+    let active = state.active_dispatched_task_count();
+    if active >= MAX_ACTIVE_DISPATCHES {
+        return Err(format!(
+            "已有 {} 个派发任务在执行（上限 {}），请等待现有任务完成后再派发，可用 check_dispatched_task 查询进度",
+            active, MAX_ACTIVE_DISPATCHES
+        ));
+    }
+
+    // role/provider 解析（需要配置）
+    let config = state.clone_config().unwrap_or_default();
+    let mut engine_id = params.engine_id.clone();
+    let mut model = params.model.clone();
+    let mut model_profile_id: Option<String> = None;
+    let mut append_system_prompt: Option<String> = None;
+    let mut permission_mode: Option<String> = None;
+    let mut role: Option<String> = None;
+
+    if let Some(role_name) = params.role.as_deref() {
+        let preset = resolve_dispatch_preset(&config, role_name)?;
+        role = Some(preset.name.clone());
+        engine_id = Some(preset.engine_id.clone());
+        model_profile_id = preset.model_profile_id.clone();
+        // 预设内 model 为基准，显式 model 参数可细调覆盖
+        model = params.model.clone().or(preset.model.clone());
+        append_system_prompt = preset.append_system_prompt.clone();
+        permission_mode = preset.permission_mode.clone();
+    } else if let Some(provider) = params.provider.as_deref() {
+        model_profile_id = resolve_dispatch_provider(&config, provider)?;
+    }
+
+    // mimo 引擎不支持 Profile：静默剥离并告警（预设保存侧应已拦截）
+    if let Some(engine) = engine_id.as_deref() {
+        if engine.starts_with("mimo")
+            && model_profile_id.as_deref().is_some_and(|id| id != "official")
+        {
+            tracing::warn!("[Dispatch] mimo 引擎不支持模型 Profile，已忽略 profile 配置");
+            model_profile_id = None;
+        }
+    }
+
+    let dispatch_id = params
+        .dispatch_id
+        .clone()
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    let short_id: String = Uuid::new_v4().simple().to_string()[..8].to_string();
+    let session_id = format!("dispatch-{}-{}", depth, short_id);
+
+    let title = params.title.clone().unwrap_or_else(|| {
+        let mut t: String = params.prompt.chars().take(24).collect();
+        if params.prompt.chars().count() > 24 {
+            t.push('…');
+        }
+        t
+    });
+
+    let now = chrono::Utc::now().timestamp();
+    let task = DispatchedTask {
+        dispatch_id: dispatch_id.clone(),
+        session_id,
+        source_session_id: params.source_session_id,
+        title,
+        prompt: params.prompt,
+        work_dir: params.work_dir,
+        engine_id,
+        depth,
+        role,
+        model_profile_id,
+        model,
+        append_system_prompt,
+        permission_mode,
+        status: "pending".to_string(),
+        summary: None,
+        latest_activity: None,
+        conversation_id: None,
+        created_at: now,
+        updated_at: now,
+    };
+
+    tracing::info!(
+        "[Dispatch] 派发任务登记: dispatch_id={}, session_id={}, depth={}, role={:?}, title={}",
+        task.dispatch_id,
+        task.session_id,
+        task.depth,
+        task.role,
+        task.title
+    );
+    state.insert_dispatched_task(task.clone());
+    Ok(task)
+}
+
 /// 处理 dispatch 帧：登记派发任务 → 通知前端创建后台会话执行 → 立即回 ack。
 /// 派发是 fire-and-forget 的：本函数不等待任务执行，来源会话同回合继续。
 async fn handle_dispatch_frame(
@@ -441,123 +689,51 @@ async fn handle_dispatch_frame(
         ));
     }
 
-    let reply = build_dispatch_reply(&frame, &state);
-    if reply.get("ok").and_then(Value::as_bool) == Some(true) {
-        // 通知前端执行（前端监听 dispatch-task-request，创建静默会话并 start_chat）
-        emit_dispatch_request_event(&state, &reply, &frame);
-    }
+    let params = DispatchTaskParams::from_frame(&frame);
+    let reply = match register_dispatch_task(&state, params) {
+        Ok(task) => {
+            // 通知前端执行（前端监听 dispatch-task-request，创建静默会话并 start_chat）
+            emit_dispatch_event(&state, "dispatch-task-request", &dispatch_request_payload(&task));
+            json!({
+                "type": "dispatch_result",
+                "ok": true,
+                "dispatchId": task.dispatch_id,
+                "sessionId": task.session_id,
+                "role": task.role,
+                "note": "任务已派发到后台会话执行，当前会话不会被阻塞；可用 check_dispatched_task 查询进度",
+            })
+        }
+        Err(message) => dispatch_error_reply("dispatch_result", &message),
+    };
 
     write_frame(stream, &reply).await?;
     let _ = stream.shutdown().await;
     Ok(())
 }
 
-/// 校验派发请求并登记任务记录，返回 ack/错误帧。不产生副作用以外的 IO。
-fn build_dispatch_reply(frame: &Value, state: &AppState) -> Value {
-    let prompt = frame
-        .get("prompt")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .unwrap_or_default();
-    if prompt.is_empty() {
-        return dispatch_error_reply("dispatch 帧缺少 prompt");
-    }
-
-    let source_session_id = frame
-        .get("sessionId")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string();
-
-    // 深度限制：防止派发会话无限递归派发
-    let depth = parse_dispatch_depth(&source_session_id) + 1;
-    if depth > MAX_DISPATCH_DEPTH {
-        return dispatch_error_reply(&format!(
-            "派发深度已达上限（{}），当前会话不能再派发子任务",
-            MAX_DISPATCH_DEPTH
-        ));
-    }
-
-    // 并发限制：防止资源被并行引擎进程打满
-    let active = state.active_dispatched_task_count();
-    if active >= MAX_ACTIVE_DISPATCHES {
-        return dispatch_error_reply(&format!(
-            "已有 {} 个派发任务在执行（上限 {}），请等待现有任务完成后再派发，可用 check_dispatched_task 查询进度",
-            active, MAX_ACTIVE_DISPATCHES
-        ));
-    }
-
-    let dispatch_id = frame
-        .get("dispatchId")
-        .and_then(Value::as_str)
-        .filter(|id| !id.trim().is_empty())
-        .map(str::to_string)
-        .unwrap_or_else(|| Uuid::new_v4().to_string());
-
-    let short_id: String = Uuid::new_v4().simple().to_string()[..8].to_string();
-    let session_id = format!("dispatch-{}-{}", depth, short_id);
-
-    let title = frame
-        .get("title")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|t| !t.is_empty())
-        .map(str::to_string)
-        .unwrap_or_else(|| {
-            let mut t: String = prompt.chars().take(24).collect();
-            if prompt.chars().count() > 24 {
-                t.push('…');
-            }
-            t
-        });
-
-    let now = chrono::Utc::now().timestamp();
-    let task = DispatchedTask {
-        dispatch_id: dispatch_id.clone(),
-        session_id: session_id.clone(),
-        source_session_id,
-        title,
-        prompt: prompt.to_string(),
-        work_dir: frame
-            .get("workDir")
-            .and_then(Value::as_str)
-            .filter(|d| !d.trim().is_empty())
-            .map(str::to_string),
-        engine_id: frame
-            .get("engineId")
-            .and_then(Value::as_str)
-            .filter(|e| !e.trim().is_empty())
-            .map(str::to_string),
-        depth,
-        status: "pending".to_string(),
-        summary: None,
-        created_at: now,
-        updated_at: now,
-    };
-
-    tracing::info!(
-        "[AskListener] 派发任务登记: dispatch_id={}, session_id={}, depth={}, title={}",
-        task.dispatch_id,
-        task.session_id,
-        task.depth,
-        task.title
-    );
-    state.insert_dispatched_task(task);
-
+fn dispatch_error_reply(kind: &str, message: &str) -> Value {
     json!({
-        "type": "dispatch_result",
-        "ok": true,
-        "dispatchId": dispatch_id,
-        "sessionId": session_id,
-        "note": "任务已派发到后台会话执行，当前会话不会被阻塞；可用 check_dispatched_task 查询进度",
+        "type": kind,
+        "ok": false,
+        "error": message,
     })
 }
 
-fn dispatch_error_reply(message: &str) -> Value {
+/// 构建 dispatch-task-request 事件负载（与前端 DispatchTaskRequestEvent 对齐）
+fn dispatch_request_payload(task: &DispatchedTask) -> Value {
     json!({
-        "type": "dispatch_result",
-        "ok": false,
-        "error": message,
+        "dispatchId": task.dispatch_id,
+        "sessionId": task.session_id,
+        "sourceSessionId": task.source_session_id,
+        "prompt": task.prompt,
+        "title": task.title,
+        "workDir": task.work_dir,
+        "engineId": task.engine_id,
+        "role": task.role,
+        "modelProfileId": task.model_profile_id,
+        "model": task.model,
+        "appendSystemPrompt": task.append_system_prompt,
+        "permissionMode": task.permission_mode,
     })
 }
 
@@ -589,11 +765,10 @@ async fn handle_dispatch_status_frame(
             "ok": true,
             "task": task,
         }),
-        None => json!({
-            "type": "dispatch_status_result",
-            "ok": false,
-            "error": format!("未找到派发任务: {}", dispatch_id),
-        }),
+        None => dispatch_error_reply(
+            "dispatch_status_result",
+            &format!("未找到派发任务: {}", dispatch_id),
+        ),
     };
 
     write_frame(stream, &reply).await?;
@@ -601,33 +776,154 @@ async fn handle_dispatch_status_frame(
     Ok(())
 }
 
-/// 向前端发出派发执行请求事件。
+/// 处理 dispatch_continue 帧：对已结束的派发任务追加指令（同会话续跑）。
+/// running 状态拒绝（避免并发写同一会话）；深度不变、不占新并发额度。
+async fn handle_dispatch_continue_frame(
+    stream: &mut TcpStream,
+    frame: Value,
+    state: Arc<AppState>,
+    expected_token: &str,
+) -> Result<()> {
+    let token = frame
+        .get("token")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if token != expected_token {
+        return Err(AppError::ValidationError(
+            "ask_listener token 不匹配".into(),
+        ));
+    }
+
+    let dispatch_id = frame
+        .get("dispatchId")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let prompt = frame
+        .get("prompt")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_string();
+
+    let reply = if prompt.is_empty() {
+        dispatch_error_reply("dispatch_continue_result", "缺少 prompt")
+    } else {
+        match state.get_dispatched_task(&dispatch_id) {
+            None => dispatch_error_reply(
+                "dispatch_continue_result",
+                &format!("未找到派发任务: {}", dispatch_id),
+            ),
+            Some(task) if matches!(task.status.as_str(), "pending" | "running") => {
+                dispatch_error_reply(
+                    "dispatch_continue_result",
+                    "任务仍在执行中，请先用 check_dispatched_task 等待其完成",
+                )
+            }
+            Some(task) => {
+                state.update_dispatched_task(&dispatch_id, |t| {
+                    t.status = "running".to_string();
+                    t.latest_activity = None;
+                });
+                emit_dispatch_event(
+                    &state,
+                    "dispatch-task-continue",
+                    &json!({
+                        "dispatchId": task.dispatch_id,
+                        "sessionId": task.session_id,
+                        "prompt": prompt,
+                        "conversationId": task.conversation_id,
+                    }),
+                );
+                json!({
+                    "type": "dispatch_continue_result",
+                    "ok": true,
+                    "dispatchId": task.dispatch_id,
+                    "sessionId": task.session_id,
+                    "note": "追加指令已下发到原后台会话（上下文保留），可用 check_dispatched_task 查询进度",
+                })
+            }
+        }
+    };
+
+    write_frame(stream, &reply).await?;
+    let _ = stream.shutdown().await;
+    Ok(())
+}
+
+/// 处理 dispatch_targets 帧：枚举可用队员预设/引擎/模型供应商（不含密钥字段）。
+async fn handle_dispatch_targets_frame(
+    stream: &mut TcpStream,
+    frame: Value,
+    state: Arc<AppState>,
+    expected_token: &str,
+) -> Result<()> {
+    let token = frame
+        .get("token")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if token != expected_token {
+        return Err(AppError::ValidationError(
+            "ask_listener token 不匹配".into(),
+        ));
+    }
+
+    let config = state.clone_config().unwrap_or_default();
+    let roles: Vec<Value> = config
+        .dispatch
+        .presets
+        .iter()
+        .map(|p| {
+            json!({
+                "name": p.name,
+                "engineId": p.engine_id,
+                "model": p.model,
+                "hasSystemPrompt": p.append_system_prompt.as_deref().is_some_and(|s| !s.trim().is_empty()),
+            })
+        })
+        .collect();
+    let providers: Vec<Value> = config
+        .model_profiles
+        .iter()
+        .map(|p| {
+            json!({
+                "name": p.name,
+                "models": p.model_options.clone().unwrap_or_else(|| vec![p.model.clone()]),
+            })
+        })
+        .collect();
+
+    let reply = json!({
+        "type": "dispatch_targets_result",
+        "ok": true,
+        "roles": roles,
+        "engines": ["claude-code", "codex", "simple-ai", "mimo-code"],
+        "providers": providers,
+        "note": "role 优先于 provider/model；均省略时继承来源会话配置",
+    });
+
+    write_frame(stream, &reply).await?;
+    let _ = stream.shutdown().await;
+    Ok(())
+}
+
+/// 向前端发出派发相关事件。
 ///
 /// 单消费者语义（与 SchedulerDaemon 一致）：桌面模式只 emit Tauri 事件由桌面
 /// 前端执行；无 AppHandle（web-only 模式）时才走 WebSocket 广播，避免桌面与
 /// 远程 Web 客户端同时执行同一任务。
-fn emit_dispatch_request_event(state: &AppState, reply: &Value, frame: &Value) {
-    let payload = json!({
-        "dispatchId": reply.get("dispatchId").cloned().unwrap_or(Value::Null),
-        "sessionId": reply.get("sessionId").cloned().unwrap_or(Value::Null),
-        "sourceSessionId": frame.get("sessionId").cloned().unwrap_or(Value::Null),
-        "prompt": frame.get("prompt").cloned().unwrap_or(Value::Null),
-        "title": frame.get("title").cloned().unwrap_or(Value::Null),
-        "workDir": frame.get("workDir").cloned().unwrap_or(Value::Null),
-        "engineId": frame.get("engineId").cloned().unwrap_or(Value::Null),
-    });
-
+fn emit_dispatch_event(state: &AppState, event_name: &str, payload: &Value) {
     #[cfg(feature = "tauri-app")]
     if let Some(handle) = state.app_handle.get() {
         use tauri::Emitter;
-        if let Err(error) = handle.emit("dispatch-task-request", &payload) {
-            tracing::warn!("[AskListener] emit dispatch-task-request 失败: {}", error);
+        if let Err(error) = handle.emit(event_name, payload) {
+            tracing::warn!("[AskListener] emit {} 失败: {}", event_name, error);
         }
         return;
     }
 
     let ws_msg = serde_json::json!({
-        "event": "dispatch-task-request",
+        "event": event_name,
         "payload": payload,
     });
     if let Ok(msg) = serde_json::to_string(&ws_msg) {
@@ -1359,4 +1655,92 @@ pub fn build_outcome_for_multiple_answers(
         });
     }
     QuestionOutcome::answer(out)
+}
+
+#[cfg(test)]
+mod dispatch_tests {
+    use super::*;
+    use crate::models::config::{Config, DispatchPreset, ModelProfile};
+
+    #[test]
+    fn dispatch_depth_parsing() {
+        assert_eq!(parse_dispatch_depth(""), 0);
+        assert_eq!(parse_dispatch_depth("some-session-id"), 0);
+        assert_eq!(parse_dispatch_depth("dispatch-1-abc12345"), 1);
+        assert_eq!(parse_dispatch_depth("dispatch-2-abc12345"), 2);
+        // 格式异常但带 dispatch- 前缀：按 1 层保守处理
+        assert_eq!(parse_dispatch_depth("dispatch-x"), 1);
+    }
+
+    fn preset(name: &str) -> DispatchPreset {
+        DispatchPreset {
+            id: format!("id-{}", name),
+            name: name.to_string(),
+            engine_id: "claude-code".to_string(),
+            model_profile_id: None,
+            model: Some("haiku".to_string()),
+            append_system_prompt: None,
+            permission_mode: None,
+        }
+    }
+
+    fn profile(id: &str, name: &str) -> ModelProfile {
+        ModelProfile {
+            id: id.to_string(),
+            name: name.to_string(),
+            model: "m1".to_string(),
+            model_options: None,
+            ..serde_json::from_value(serde_json::json!({
+                "id": "", "name": "", "baseUrl": "https://example.com",
+                "apiKey": "sk-test", "model": ""
+            }))
+            .expect("ModelProfile 反序列化默认值")
+        }
+    }
+
+    #[test]
+    fn preset_resolution_exact_and_case_insensitive() {
+        let mut config = Config::default();
+        config.dispatch.presets = vec![preset("测试员"), preset("Docs")];
+
+        assert_eq!(resolve_dispatch_preset(&config, "测试员").unwrap().name, "测试员");
+        assert_eq!(resolve_dispatch_preset(&config, "docs").unwrap().name, "Docs");
+
+        let err = resolve_dispatch_preset(&config, "不存在").unwrap_err();
+        assert!(err.contains("测试员"), "错误信息应列出候选角色: {}", err);
+    }
+
+    #[test]
+    fn provider_resolution_official_exact_and_ambiguous() {
+        let mut config = Config::default();
+        config.model_profiles = vec![
+            profile("p1", "DeepSeek Pro"),
+            profile("p2", "DeepSeek Lite"),
+            profile("p3", "Kimi"),
+        ];
+
+        assert_eq!(
+            resolve_dispatch_provider(&config, "official").unwrap(),
+            Some("official".to_string())
+        );
+        assert_eq!(
+            resolve_dispatch_provider(&config, "p1").unwrap(),
+            Some("p1".to_string())
+        );
+        assert_eq!(
+            resolve_dispatch_provider(&config, "Kimi").unwrap(),
+            Some("p3".to_string())
+        );
+        // 模糊唯一命中
+        assert_eq!(
+            resolve_dispatch_provider(&config, "lite").unwrap(),
+            Some("p2".to_string())
+        );
+        // 歧义：列出候选
+        let err = resolve_dispatch_provider(&config, "deepseek").unwrap_err();
+        assert!(err.contains("DeepSeek Pro") && err.contains("DeepSeek Lite"));
+        // 未命中：列出全部可用
+        let err = resolve_dispatch_provider(&config, "nope").unwrap_err();
+        assert!(err.contains("Kimi"));
+    }
 }

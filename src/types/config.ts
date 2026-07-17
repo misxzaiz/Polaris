@@ -268,6 +268,33 @@ export interface InteractionConfig {
   askMcpEnabled?: boolean;
 }
 
+/** 派发队员预设：角色 → 引擎/供应商/模型/职责提示词 */
+export interface DispatchPreset {
+  id: string;
+  /** 角色名（dispatch_task role 参数按此匹配） */
+  name: string;
+  /** 引擎 ID */
+  engineId: string;
+  /** 模型 Profile ID（第三方端点）；空 = 官方端点 */
+  modelProfileId?: string;
+  /** 具体模型名 */
+  model?: string;
+  /** 角色职责系统提示词 */
+  appendSystemPrompt?: string;
+  /** 权限模式 */
+  permissionMode?: string;
+}
+
+/** 派发任务配置（dispatch_task MCP 行为） */
+export interface DispatchConfig {
+  /** 派发策略："auto"（直接执行）| "ask"（每次派发弹确认） */
+  policy?: 'auto' | 'ask';
+  /** 完成后是否把结果摘要注入来源会话下一回合 */
+  autoInjectReports?: boolean;
+  /** 队员预设列表 */
+  presets?: DispatchPreset[];
+}
+
 /** 工作区条目（持久化到服务端配置，跨桌面/Web 共享） */
 export interface WorkspaceEntry {
   id: string;
@@ -330,6 +357,8 @@ export interface Config {
   web?: WebConfig;
   /** 交互配置（AskUserQuestion 等） */
   interaction?: InteractionConfig;
+  /** 派发任务配置（策略/结果注入/队员预设） */
+  dispatch?: DispatchConfig;
   /** AI 对话窗口显示设置 */
   chatDisplay?: ChatDisplaySettings;
   /** 工作区列表（跨桌面/Web 共享） */

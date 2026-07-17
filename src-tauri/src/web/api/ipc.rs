@@ -71,6 +71,7 @@ pub async fn handle_ipc_bridge(
 
         // ── Dispatched tasks (dispatch_task MCP) ───────────────────────────
         "dispatch_report_status" => dispatch_report_dispatch_status(&state, &args),
+        "dispatch_create_task" => dispatch_create_dispatch_task(&state, &args),
 
         // ── Scheduler: Task CRUD ───────────────────────────────────────────
         "scheduler_list_tasks" => dispatch_scheduler_list_tasks(&state, &args),
@@ -444,9 +445,54 @@ fn dispatch_report_dispatch_status(
         .get("summary")
         .and_then(Value::as_str)
         .map(str::to_string);
-    crate::commands::dispatch::report_dispatch_status_impl(state, &dispatch_id, &status, summary)
-        .map_err(|e| WebError::BadRequest(e.to_message()))?;
+    let latest_activity = args
+        .get("latestActivity")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let conversation_id = args
+        .get("conversationId")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    crate::commands::dispatch::report_dispatch_status_impl(
+        state,
+        &dispatch_id,
+        &status,
+        summary,
+        latest_activity,
+        conversation_id,
+    )
+    .map_err(|e| WebError::BadRequest(e.to_message()))?;
     Ok(Json(Value::Null))
+}
+
+fn dispatch_create_dispatch_task(
+    state: &AppState,
+    args: &Value,
+) -> Result<Json<Value>, WebError> {
+    let opt_str = |key: &str| {
+        args.get(key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    };
+    let prompt = require_string(args, "prompt")?;
+    let params = crate::services::ask_listener::DispatchTaskParams {
+        source_session_id: opt_str("sourceSessionId").unwrap_or_default(),
+        prompt: prompt.trim().to_string(),
+        title: opt_str("title"),
+        work_dir: opt_str("workDir"),
+        engine_id: opt_str("engineId"),
+        role: opt_str("role"),
+        provider: opt_str("provider"),
+        model: opt_str("model"),
+        dispatch_id: None,
+    };
+    let task = crate::commands::dispatch::create_dispatch_task_impl(state, params)
+        .map_err(|e| WebError::BadRequest(e.to_message()))?;
+    let value = serde_json::to_value(task)
+        .map_err(|e| WebError::Internal(format!("序列化派发任务失败: {}", e)))?;
+    Ok(Json(value))
 }
 
 fn dispatch_snippet_create(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {

@@ -31,8 +31,54 @@ import {
   resolveChatError,
   resolveEffectiveProfileId,
 } from './conversationStoreUtils'
+import { useDispatchStore } from '@/stores/dispatchStore'
+import { useConfigStore } from '../configStore'
 
 const log = createLogger('ConversationStore')
+
+/**
+ * 取走本会话的待注入派发报告并格式化为一次性系统提示段。
+ * 无报告返回空串；配置关闭结果注入（dispatch.autoInjectReports=false）时
+ * 报告留在队列（仅卡片可见，不消费）。
+ */
+function formatPendingDispatchReports(sessionId: string): string {
+  try {
+    const dispatchStore = useDispatchStore.getState()
+    if (!dispatchStore.hasReports(sessionId)) return ''
+    if (!isDispatchReportInjectionEnabled()) return ''
+    const reports = dispatchStore.takeReports(sessionId)
+    if (reports.length === 0) return ''
+    const lines = reports.map((r) => {
+      const status = r.status === 'completed'
+        ? i18n.t('chat:dispatch.reportDone', '已完成')
+        : i18n.t('chat:dispatch.reportFailed', '失败')
+      const summary = r.summary?.trim()
+        ? `\n${r.summary.trim()}`
+        : ''
+      return `- 「${r.title}」${status}${summary}`
+    })
+    return i18n.t('chat:dispatch.reportPreamble', {
+      defaultValue: '你先前派发的后台任务已有结果，请结合以下报告继续当前工作：\n{{reports}}',
+      reports: lines.join('\n'),
+      interpolation: { escapeValue: false },
+    })
+  } catch (e) {
+    log.warn('派发报告注入失败', { error: String(e) })
+    return ''
+  }
+}
+
+/** 结果注入开关：读取应用配置 dispatch.autoInjectReports，缺省开启 */
+function isDispatchReportInjectionEnabled(): boolean {
+  try {
+    const config = useConfigStore.getState().config as
+      | { dispatch?: { autoInjectReports?: boolean } }
+      | null
+    return config?.dispatch?.autoInjectReports !== false
+  } catch {
+    return true
+  }
+}
 
 /**
  * ConversationStore 实例类型（包含 getState 方法）
@@ -1177,11 +1223,14 @@ export function createConversationStore(
           // 一次性系统提示（语音伙伴人格等）：经 appendSystemPrompt 通道注入，
           // 仅本次请求生效，不出现在消息流中
           // 待发送简报（压缩交接产物）也经此通道作为一次性上下文带出，随后清空。
+          // 派发任务完成报告同理（结果回流：主 AI 无需用户转述即知晓后台任务结果）。
           const pendingBriefing = get().pendingBriefing
+          const dispatchReportText = formatPendingDispatchReports(sessionId)
           const oneTimeParts = [
             pendingBriefing
               ? i18n.t('chat:compactHandoff.contextPreamble', { briefing: pendingBriefing })
               : '',
+            dispatchReportText,
             sendOptions?.oneTimeSystemPrompt ?? '',
           ].filter(Boolean)
           const appendPrompt = oneTimeParts.length > 0

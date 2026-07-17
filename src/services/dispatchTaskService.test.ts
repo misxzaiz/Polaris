@@ -17,13 +17,22 @@ vi.mock('@/services/transport', () => ({
 }))
 
 vi.mock('@/i18n', () => ({
-  default: { t: (_key: string, fallback?: string) => fallback ?? _key },
+  default: {
+    t: (key: string, arg?: unknown) => {
+      if (typeof arg === 'string') return arg
+      if (arg && typeof arg === 'object' && 'defaultValue' in (arg as Record<string, unknown>)) {
+        return String((arg as Record<string, unknown>).defaultValue)
+      }
+      return key
+    },
+  },
 }))
 
-import { handleDispatchTaskRequest } from './dispatchTaskService'
+import { handleDispatchTaskRequest, continueDispatchedTask, parseDispatchSlashCommand } from './dispatchTaskService'
 import { sessionStoreManager } from '@/stores/conversationStore'
 import { getEventRouter, resetEventRouter } from '@/services/eventRouter'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { useDispatchStore } from '@/stores/dispatchStore'
 
 function resetManager() {
   sessionStoreManager.setState({
@@ -34,6 +43,7 @@ function resetManager() {
     completedNotifications: [],
     conversationIdToStoreId: new Map(),
   })
+  useDispatchStore.setState({ tasks: new Map(), pendingReports: new Map() })
 }
 
 describe('dispatchTaskService', () => {
@@ -146,6 +156,84 @@ describe('dispatchTaskService', () => {
       status: 'completed',
       summary: '测试全部通过',
     })
+
+    // dispatchStore：任务终态 + 报告入队（结果回流数据源）
+    const task = useDispatchStore.getState().getTask('d-3')
+    expect(task?.status).toBe('completed')
+    expect(task?.summary).toBe('测试全部通过')
+  })
+
+  it('queues a report for the source session on completion (result backflow)', async () => {
+    await handleDispatchTaskRequest({
+      dispatchId: 'd-6',
+      sessionId: 'dispatch-1-eee55555',
+      sourceSessionId: 'source-abc',
+      prompt: '任务',
+      title: '回归测试',
+    })
+
+    const router = getEventRouter()
+    ;(router as unknown as { dispatch: (e: { contextId: string; payload: unknown }) => void })[
+      'dispatch'
+    ]({
+      contextId: 'dispatch-1-eee55555',
+      payload: { type: 'session_end', reason: 'completed' },
+    })
+
+    const dispatchStore = useDispatchStore.getState()
+    expect(dispatchStore.hasReports('source-abc')).toBe(true)
+    const reports = dispatchStore.takeReports('source-abc')
+    expect(reports).toHaveLength(1)
+    expect(reports[0]).toMatchObject({ dispatchId: 'd-6', title: '回归测试', status: 'completed' })
+    // 消费即清
+    expect(useDispatchStore.getState().hasReports('source-abc')).toBe(false)
+  })
+
+  it('continues a finished dispatched task in the same session', async () => {
+    await handleDispatchTaskRequest({
+      dispatchId: 'd-7',
+      sessionId: 'dispatch-1-fff66666',
+      prompt: '任务',
+    })
+    const store = sessionStoreManager.getState().stores.get('dispatch-1-fff66666')
+    store!.setState({ conversationId: 'backend-conv-7' })
+
+    // 先结束任务
+    const router = getEventRouter()
+    ;(router as unknown as { dispatch: (e: { contextId: string; payload: unknown }) => void })[
+      'dispatch'
+    ]({
+      contextId: 'dispatch-1-fff66666',
+      payload: { type: 'session_end', reason: 'completed' },
+    })
+    expect(useDispatchStore.getState().getTask('d-7')?.status).toBe('completed')
+
+    invokeMock.mockClear()
+    invokeMock.mockResolvedValue(null)
+    const ok = await continueDispatchedTask('d-7', '再复测一遍')
+    expect(ok).toBe(true)
+
+    const continueCall = invokeMock.mock.calls.find((c) => c[0] === 'continue_chat')
+    expect(continueCall).toBeDefined()
+    const [, payload] = continueCall as [string, { sessionId: string; message: string; options: Record<string, unknown> }]
+    expect(payload.sessionId).toBe('backend-conv-7')
+    expect(payload.message).toBe('再复测一遍')
+    expect(payload.options.contextId).toBe('dispatch-1-fff66666')
+    expect(useDispatchStore.getState().getTask('d-7')?.status).toBe('running')
+  })
+
+  it('refuses to continue a running task', async () => {
+    await handleDispatchTaskRequest({
+      dispatchId: 'd-8',
+      sessionId: 'dispatch-1-ggg77777',
+      prompt: '任务',
+    })
+    expect(useDispatchStore.getState().getTask('d-8')?.status).toBe('running')
+
+    invokeMock.mockClear()
+    const ok = await continueDispatchedTask('d-8', '插队指令')
+    expect(ok).toBe(false)
+    expect(invokeMock.mock.calls.find((c) => c[0] === 'continue_chat')).toBeUndefined()
   })
 
   it('reports failed when start_chat throws', async () => {
@@ -176,5 +264,32 @@ describe('dispatchTaskService', () => {
     })
     expect(sessionStoreManager.getState().stores.size).toBe(0)
     expect(invokeMock).not.toHaveBeenCalled()
+  })
+
+  describe('parseDispatchSlashCommand', () => {
+    it('parses plain command with prompt', () => {
+      expect(parseDispatchSlashCommand('/dispatch 跑全量测试')).toEqual({
+        role: undefined,
+        prompt: '跑全量测试',
+      })
+    })
+
+    it('parses @role syntax', () => {
+      expect(parseDispatchSlashCommand('/dispatch @测试员 回归验证登录模块')).toEqual({
+        role: '测试员',
+        prompt: '回归验证登录模块',
+      })
+    })
+
+    it('handles role without prompt and bare command', () => {
+      expect(parseDispatchSlashCommand('/dispatch @测试员')).toEqual({ role: '测试员', prompt: '' })
+      expect(parseDispatchSlashCommand('/dispatch')).toEqual({ role: undefined, prompt: '' })
+    })
+
+    it('rejects non-dispatch text', () => {
+      expect(parseDispatchSlashCommand('/dispatchxxx 任务')).toBeNull()
+      expect(parseDispatchSlashCommand('普通消息 /dispatch')).toBeNull()
+      expect(parseDispatchSlashCommand('/compact')).toBeNull()
+    })
   })
 })

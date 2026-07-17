@@ -1,6 +1,31 @@
 {
   "dispatch": {
-    "defaultTitle": "Dispatched Task"
+    "defaultTitle": "Dispatched Task",
+    "cardTitle": "Dispatched Task",
+    "cardTitleWithRole": "{{role}} · {{title}}",
+    "staleCard": "Session ended or from history",
+    "openSession": "Open Session",
+    "interrupt": "Interrupt",
+    "followUp": "Follow-up",
+    "followUpPlaceholder": "Send a follow-up instruction to this background session...",
+    "handOff": "Let AI handle result",
+    "send": "Send",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "reportDone": "completed",
+    "reportFailed": "failed",
+    "reportPreamble": "Your previously dispatched background tasks have results. Continue your work with these reports:\n{{reports}}",
+    "handOffMessage": "Background task \"{{title}}\" {{status}}. Please handle its result:\n{{summary}}",
+    "confirmTitle": "Dispatch Confirmation",
+    "confirmMessage": "AI requests to dispatch background task \"{{title}}\". Allow?",
+    "confirmAllow": "Allow",
+    "confirmDeny": "Deny",
+    "userDeclined": "User declined this dispatch",
+    "usageTitle": "Usage",
+    "usageDetail": "/dispatch [@role] task content",
+    "dispatchedTitle": "Dispatched",
+    "dispatchedDetail": "Task \"{{title}}\" is running in a background session",
+    "dispatchFailed": "Dispatch failed"
   },
   "input": {
     "placeholder": "Type a message... (Enter to send, Shift+Enter for new line)",
@@ -121,7 +146,9 @@
     "planUpdated": "Plan updated (see details in the plan panel)"
   },
   "thinking": {
-    "title": "Thinking"
+    "title": "Thinking",
+    "streaming": "Thinking...",
+    "charCount": "{{display}} chars"
   },
   "question": {
     "answered": "Answered",
@@ -502,14 +529,8 @@
       "backgroundRunning": "Background"
     }
   },
-
   "emptyState": {
     "startChat": "Start chatting"
-  },
-  "thinking": {
-    "title": "Thinking",
-    "streaming": "Thinking...",
-    "charCount": "{{display}} chars"
   },
   "compact": {
     "typing": "Typing...",
@@ -556,7 +577,7 @@
     "noEffort": "None",
     "noPermission": "None",
     "officialApi": "Official API",
-    "officialApiDesc": "Use Anthropic official endpoint",
+    "officialApiDesc": "Use the official Anthropic endpoint (no profile)",
     "custom": "Custom...",
     "agentTooltip": "Select Agent",
     "modelTooltip": "Select Model",
@@ -570,8 +591,6 @@
     "profile": "Endpoint",
     "provider": "Provider",
     "noProfile": "Official API",
-    "officialApi": "Official API",
-    "officialApiDesc": "Use the official Anthropic endpoint (no profile)",
     "customInputLabel": "Enter custom {{type}} value:",
     "customInputPlaceholder": "Enter {{type}} value...",
     "cancel": "Cancel",

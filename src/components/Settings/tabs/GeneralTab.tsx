@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import type { Config, WindowSettings, ChatDisplayDensity, ChatDisplayFontFamily } from '@/types';
 import { DEFAULT_CHAT_DISPLAY_SETTINGS, getChatDisplayStyleVars, normalizeChatDisplaySettings } from '@/types';
 import { DataStorageCard } from './DataStorageCard';
+import { DispatchSettingsSection } from './DispatchSettingsSection';
 
 interface GeneralTabProps {
   config: Config;
@@ -422,6 +423,9 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
           </button>
         </div>
       </div>
+
+      {/* 派发任务设置 — 策略/结果注入/队员预设 */}
+      <DispatchSettingsSection config={config} onConfigChange={onConfigChange} loading={loading} />
 
       {/* 窗口透明度设置 */}
       <div className="p-4 bg-surface rounded-lg border border-border">
