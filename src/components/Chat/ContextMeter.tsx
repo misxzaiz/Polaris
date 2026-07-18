@@ -10,6 +10,12 @@
  * **用量口径基准：** 当引擎为 Claude Code 时，input/cacheCreation/cacheRead 来自
  * modelUsage 的累计求和（完整本轮），与 `/usage` 命令输出一致。退化路径读顶层 usage
  * （仅最后一次 API 调用，偏小）。
+ *
+ * **悬浮卡显隐（关键修复）：**
+ * `active` 由锚点容器 + 卡片本身两个独立事件宿主共同维持，覆盖 `mb-2` 间隙造成的
+ * hover 命中区断开：anchor.onMouseLeave 不再关闭卡片（已移除），card.onMouseLeave 兜底
+ * 处理"鼠标从卡片离开到外部"的失活。anchor.onBlur 做 relatedTarget 白检，避免 anchor
+ * 与 card 之间的 Tab 流转误关卡片。
  */
 import { useState, useRef } from 'react';
 import { clsx } from 'clsx';
@@ -39,10 +45,28 @@ function fmtCost(n: number | undefined): string {
   return `$${n.toFixed(4)}`;
 }
 
+/**
+ * 判断焦点相关目标是否仍在 anchor 或 card 区域内。用于 anchor.onBlur 白检，
+ * 避免 Tab 在 anchor↔card 之间流转时误关卡片。
+ */
+function isFocusStillInside(
+  relatedTarget: EventTarget | null,
+  anchorRef: React.RefObject<HTMLDivElement | null>,
+  cardRef: React.RefObject<HTMLDivElement | null>,
+): boolean {
+  const anchor = anchorRef.current;
+  const card = cardRef.current;
+  if (!anchor || !card) return false;
+  if (relatedTarget == null) return false;
+  if (!(relatedTarget instanceof HTMLElement)) return false;
+  return anchor.contains(relatedTarget) || card.contains(relatedTarget);
+}
+
 export function ContextMeter({ usage, contextWindow, labelMode = 'full' }: ContextMeterProps) {
   const [active, setActive] = useState(false);
   const [showRaw, setShowRaw] = useState(false);
   const anchorRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
 
   const window = usage.contextWindow ?? contextWindow ?? 200000;
   const used = usage.input + usage.cacheCreation + usage.cacheRead;
@@ -91,10 +115,14 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full' }: Conte
       aria-label={ariaLabel}
       title={ariaLabel}
       className="relative flex items-center gap-1 px-1.5 py-0.5 rounded-full cursor-default hover:bg-background-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 transition-colors shrink-0"
-      onMouseEnter={() => { setActive(true); setShowRaw(false); }}
-      onMouseLeave={() => { setActive(false); setShowRaw(false); }}
+      onMouseEnter={() => setActive(true)}
       onFocus={() => setActive(true)}
-      onBlur={() => { setActive(false); setShowRaw(false); }}
+      onBlur={(e) => {
+        if (!isFocusStillInside(e.relatedTarget, anchorRef, cardRef)) {
+          setActive(false);
+          setShowRaw(false);
+        }
+      }}
     >
       <svg
         width="22"
@@ -134,10 +162,16 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full' }: Conte
       {/* 悬浮详情卡 */}
       {active && (
         <div
+          ref={cardRef}
           className={clsx(
             'absolute bottom-full right-0 mb-2 z-40 rounded-xl border border-border-subtle bg-background-elevated p-3 shadow-xl',
             showRaw ? 'w-[480px]' : 'w-[310px]',
           )}
+          onMouseEnter={() => setActive(true)}
+          onMouseLeave={() => {
+            setActive(false);
+            setShowRaw(false);
+          }}
         >
           {showRaw && usage.rawPayload ? (
             /* 原始报文查看模式 */
@@ -194,7 +228,7 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full' }: Conte
                     <span className="text-[11px] text-text-muted">模型维度用量</span>
                     <span className="text-[10px] text-text-muted">{modelCount} 模型</span>
                   </div>
-                  {Object.entries(modelUsage).map(([model, m]) => (
+                  {modelUsage && Object.entries(modelUsage).map(([model, m]) => (
                     <div key={model} className="mb-2 last:mb-0">
                       <div className="text-[11px] font-medium text-text-secondary mb-1">{model}</div>
                       <div className="grid grid-cols-[1fr_auto] gap-x-2 gap-y-0.5 text-[11px]">
