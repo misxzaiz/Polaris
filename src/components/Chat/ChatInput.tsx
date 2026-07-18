@@ -1338,8 +1338,10 @@ export function ChatInput({
                 {optimizePickerOpen && (
                   <div
                     ref={optimizePickerRef}
-                    className="absolute left-0 bottom-full mb-1 z-50 w-[220px] rounded-lg shadow-lg bg-background-elevated border border-border py-1.5"
+                    className="absolute left-0 bottom-full mb-1 z-50 w-[220px] rounded-lg shadow-lg bg-background-elevated border border-border flex flex-col max-h-[70vh]"
                   >
+                    {/* 可滚动内容区 */}
+                    <div className="overflow-y-auto overscroll-contain py-1.5">
                     {/* 引擎选择 */}
                     <div className="px-2 pb-1.5 text-[11px] font-medium text-text-tertiary">
                       {t('promptOptimize.selectEngine')}
@@ -1410,7 +1412,7 @@ export function ChatInput({
                           )}
                         </div>
                         {optimizeProfileId && optimizeModelOptions.length > 0 && (
-                          <div className="px-3 py-1 pb-1.5 border-b border-border">
+                          <div className="px-3 py-1 pb-1.5">
                             <span className="text-[10px] text-text-tertiary block mb-1">
                               {t('promptOptimize.model')}
                             </span>
@@ -1428,9 +1430,10 @@ export function ChatInput({
                         )}
                       </>
                     )}
+                    </div>
 
-                    {/* 执行按钮 */}
-                    <div className="px-2 py-2 mt-1">
+                    {/* 执行按钮（黏底） */}
+                    <div className="sticky bottom-0 bg-background-elevated border-t border-border px-2 py-2 rounded-b-lg">
                       <button
                         onClick={handleOptimizeWithConfig}
                         className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-md bg-primary text-white text-xs font-medium hover:bg-primary-hover transition-colors"
