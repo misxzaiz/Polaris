@@ -11,7 +11,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { IconSend, IconStop, IconPaperclip } from '../Common/Icons'
-import { Sparkles, Wand2, Undo2, Redo2, Loader2, Check, X, Bot, Cpu, Zap } from 'lucide-react'
+import { Sparkles, Wand2, Undo2, Redo2, Loader2, Check, X, Bot, Cpu, Zap, ChevronDown } from 'lucide-react'
 import { useWorkspaceStore, useSessionStore, useToastStore, useConfigStore } from '@/stores'
 import { voiceNotificationService } from '@/services/voiceNotificationService'
 import { useActiveSessionInputDraft, useActiveSessionActions, useActiveSessionWorkspace, useActiveSessionPromptSuggestion, useActiveSessionPromptOptimize } from '@/stores/conversationStore/useActiveSession'
@@ -21,6 +21,7 @@ import {
   usePromptOptimizePreview,
   readStoredOptimizeConfig,
   storeOptimizeConfig,
+  type PromptOptimizeConfig,
 } from '@/services/promptOptimizeService'
 import { useDebouncedCallback } from '@/hooks/useDebounce'
 import { UnifiedSuggestion, type SuggestionItem, type ConversationSuggestion } from './FileSuggestion'
@@ -45,11 +46,9 @@ import { McpServerItem } from './FileSuggestion'
 import { useSkillStore } from '@/stores/skillStore'
 import { useCliInfoStore } from '@/stores/cliInfoStore'
 import { useActiveSessionId } from '@/stores/conversationStore/sessionStoreManager'
-import { resolveSessionEngine, resolveEffectiveProfileId } from '@/stores/conversationStore/conversationStoreUtils'
+import { resolveSessionEngine } from '@/stores/conversationStore/conversationStoreUtils'
 import { useModelProfileStore } from '@/stores/modelProfileStore'
 import { isProfileForEngine } from '@/types/modelProfile'
-import { getSessionConfig } from '@/stores/sessionConfigStore'
-import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import type { PromptOptimizeMode } from '@/stores/conversationStore/types'
 import {
   getCliCommandSuggestions,
@@ -77,7 +76,18 @@ const OPTIMIZE_ENGINE_OPTIONS: Array<{ id: EngineId; label: string; Icon: typeof
   { id: 'mimo', label: 'Mimo', Icon: Sparkles },
 ]
 
-/** 将引擎 id 映射到 Profile 过滤用的引擎类别（与 CompactHandoffModal 一致） */
+/** 提示词优化模式选项（标签/提示语走 i18n） */
+const OPTIMIZE_MODE_OPTIONS: Array<{
+  key: PromptOptimizeMode
+  label: string
+  hint: string
+  Icon: typeof Zap
+}> = [
+  { key: 'quick', label: 'promptOptimize.modeQuick', hint: 'promptOptimize.modeQuickHint', Icon: Zap },
+  { key: 'deep', label: 'promptOptimize.modeDeep', hint: 'promptOptimize.modeDeepHint', Icon: Sparkles },
+]
+
+/** 将引擎 id 映射到 Profile 过滤用的引擎类别 */
 function toProfileEngine(engineId: string): 'claude' | 'codex' | 'simple-ai' | 'mimo' {
   const e = normalizeEngineId(engineId)
   return e === 'codex' ? 'codex' : e === 'simple-ai' ? 'simple-ai' : e === 'mimo' ? 'mimo' : 'claude'
@@ -435,11 +445,61 @@ export function ChatInput({
     updateInputDraft({ text: value, attachments })
   }, [cancelPersistDraft, updateInputDraft, value, attachments])
 
-  const handleOptimizeWithEngine = useCallback((engineId: EngineId) => {
+  /** 提示词优化配置：引擎 + 模式 + Profile + 模型（持久化到 localStorage） */
+  const profiles = useModelProfileStore((s) => s.profiles)
+  const [optimizeEngine, setOptimizeEngine] = useState<EngineId>(
+    () => readStoredOptimizeConfig(normalizeEngineId(defaultEngine)).engineId,
+  )
+  const [optimizeMode, setOptimizeMode] = useState<PromptOptimizeMode>('quick')
+  const [optimizeProfileId, setOptimizeProfileId] = useState('')
+  const [optimizeModel, setOptimizeModel] = useState('')
+  const [showOptimizeAdvanced, setShowOptimizeAdvanced] = useState(false)
+
+  // 切换引擎时清空已选的 Profile / 模型
+  const setOptimizeEngineAndReset = useCallback(
+    (id: EngineId) => {
+      setOptimizeEngine(id)
+      setOptimizeProfileId('')
+      setOptimizeModel('')
+    },
+    [],
+  )
+
+  // 引擎 → Profile 列表（排除官方 API，Profile 用空字符串代表官方）
+  const optimizeProfileOptions = useMemo(
+    () =>
+      profiles
+        .filter((p) => isProfileForEngine(p, toProfileEngine(optimizeEngine)))
+        .map((p) => ({ value: p.id, label: p.name, description: p.baseUrl })),
+    [profiles, optimizeEngine],
+  )
+  // 模型列表：走 Profile 的 modelOptions，保留当前已选
+  const optimizeModelOptions = useMemo(() => {
+    const profile = profiles.find((p) => p.id === optimizeProfileId)
+    const base = profile
+      ? (profile.modelOptions?.length ? profile.modelOptions : [profile.model]).filter(Boolean)
+      : []
+    const set = new Set(base)
+    if (optimizeModel) set.add(optimizeModel)
+    return [...set].map((m) => ({ value: m, label: m }))
+  }, [profiles, optimizeProfileId, optimizeModel])
+
+  // 持久化优化配置
+  const persistOptimizeConfig = useCallback(
+    (cfg: PromptOptimizeConfig) => storeOptimizeConfig(cfg),
+    [],
+  )
+
+  const handleOptimizeWithConfig = useCallback(() => {
     setOptimizePickerOpen(false)
     if (!canOptimize || !activeSessionId) return
-    storeOptimizeEngine(engineId)
-    setLastOptimizeEngine(engineId)
+    const cfg: PromptOptimizeConfig = {
+      engineId: optimizeEngine,
+      mode: optimizeMode,
+      modelProfileId: optimizeProfileId || undefined,
+      model: optimizeModel || undefined,
+    }
+    persistOptimizeConfig(cfg)
     syncDraftNow()
     // 工作区解析与发送消息对齐：会话关联工作区 → 全局当前工作区 → 无（free 优化会话）
     const workspace = currentWorkspace ?? workspaces.find((w) => w.id === currentWorkspaceId) ?? null
@@ -447,10 +507,16 @@ export function ChatInput({
       sourceSessionId: activeSessionId,
       workspaceId: workspace?.id,
       workspacePath: workspace?.path,
-      engineId,
+      engineId: optimizeEngine,
+      mode: optimizeMode,
+      modelProfileId: cfg.modelProfileId,
+      model: cfg.model,
       sourceText: value,
     })
-  }, [canOptimize, activeSessionId, value, syncDraftNow, currentWorkspace, workspaces, currentWorkspaceId])
+  }, [
+    canOptimize, activeSessionId, optimizeEngine, optimizeMode, optimizeProfileId, optimizeModel,
+    value, syncDraftNow, currentWorkspace, workspaces, currentWorkspaceId, persistOptimizeConfig,
+  ])
 
   const handleCancelOptimize = useCallback(() => {
     if (activeSessionId) cancelPromptOptimize(activeSessionId)
@@ -480,11 +546,6 @@ export function ChatInput({
   const canRedoVersion = promptOptimize.status === 'idle'
     && promptOptimize.cursor < promptOptimize.history.length - 1
     && value === optimizeCursorText
-
-  // 上次所选优化引擎（浮层勾选标记；选择后持久化到 localStorage）
-  const [lastOptimizeEngine, setLastOptimizeEngine] = useState<EngineId>(
-    () => readStoredOptimizeEngine(normalizeEngineId(defaultEngine))
-  )
 
   const optimizeTitle = useMemo(() => {
     if (optimizeRunning) return t('promptOptimize.running')
@@ -1259,7 +1320,7 @@ export function ChatInput({
               >
                 <IconPaperclip size={16} />
               </button>
-              {/* 提示词优化按钮 + 引擎选择浮层 */}
+              {/* 提示词优化按钮 + 引擎/模式选择浮层 */}
               <div className="relative">
                 <button
                   ref={optimizeButtonRef}
@@ -1277,27 +1338,107 @@ export function ChatInput({
                 {optimizePickerOpen && (
                   <div
                     ref={optimizePickerRef}
-                    className="absolute left-0 bottom-full mb-1 z-50 min-w-[180px] py-1 rounded-lg shadow-lg bg-background-elevated border border-border"
+                    className="absolute left-0 bottom-full mb-1 z-50 w-[220px] rounded-lg shadow-lg bg-background-elevated border border-border py-1.5"
                   >
+                    {/* 引擎选择 */}
                     <div className="px-2 pb-1.5 text-[11px] font-medium text-text-tertiary">
                       {t('promptOptimize.selectEngine')}
                     </div>
                     {OPTIMIZE_ENGINE_OPTIONS.map(({ id, label, Icon }) => (
                       <button
                         key={id}
-                        onClick={() => handleOptimizeWithEngine(id)}
-                        className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs transition-colors ${
-                          lastOptimizeEngine === id
-                            ? 'text-primary bg-primary/10'
-                            : 'text-text-secondary hover:text-text-primary hover:bg-background-hover'
-                        }`}
+                        onClick={() => setOptimizeEngineAndReset(id)}
+                        className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs transition-colors rounded-md hover:bg-background-hover text-text-secondary hover:text-text-primary"
                         title={getEngineFullName(id)}
                       >
                         <Icon className="w-3.5 h-3.5" />
                         <span className="flex-1 text-left">{label}</span>
-                        {lastOptimizeEngine === id && <Check size={12} />}
+                        {optimizeEngine === id && <Check className="w-3 h-3 text-primary" />}
                       </button>
                     ))}
+
+                    {/* 模式切换 */}
+                    <div className="my-1.5 border-t border-border" />
+                    <div className="px-2 pb-1 text-[11px] font-medium text-text-tertiary">
+                      {t('promptOptimize.mode')}
+                    </div>
+                    {OPTIMIZE_MODE_OPTIONS.map(({ key, label, hint, Icon: ModeIcon }) => (
+                      <button
+                        key={key}
+                        onClick={() => setOptimizeMode(key)}
+                        className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs transition-colors rounded-md hover:bg-background-hover text-text-secondary hover:text-text-primary"
+                      >
+                        <ModeIcon className="w-3.5 h-3.5" />
+                        <span className="flex-1 text-left flex flex-col">
+                          <span className="text-xs">{t(label)}</span>
+                          <span className="text-[10px] text-text-tertiary">{t(hint)}</span>
+                        </span>
+                        {optimizeMode === key && <Check className="w-3 h-3 text-primary" />}
+                      </button>
+                    ))}
+
+                    {/* 折叠高级选项：供应商 / 模型 */}
+                    <div className="my-1 border-t border-border" />
+                    <button
+                      onClick={() => setShowOptimizeAdvanced((v) => !v)}
+                      className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs text-text-secondary hover:text-text-primary hover:bg-background-hover transition-colors"
+                    >
+                      <span>{t('promptOptimize.advanced')}</span>
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showOptimizeAdvanced ? 'rotate-180' : ''}`} />
+                    </button>
+                    {showOptimizeAdvanced && (
+                      <>
+                        <div className="px-3 py-1">
+                          <span className="text-[10px] text-text-tertiary block mb-1">
+                            {t('promptOptimize.profile')}
+                          </span>
+                          {optimizeProfileOptions.length > 0 ? (
+                            optimizeProfileOptions.map((p) => (
+                              <button
+                                key={p.value}
+                                onClick={() => { setOptimizeProfileId(p.value); setOptimizeModel('') }}
+                                className="w-full flex items-center justify-between px-1 py-0.5 text-xs rounded hover:bg-background-hover text-text-secondary hover:text-text-primary"
+                              >
+                                <span className="truncate">{p.label}</span>
+                                {optimizeProfileId === p.value && <Check className="w-3 h-3 text-primary shrink-0" />}
+                              </button>
+                            ))
+                          ) : (
+                            <span className="text-[10px] text-text-tertiary italic px-1">
+                              {t('promptOptimize.noProfiles')}
+                            </span>
+                          )}
+                        </div>
+                        {optimizeProfileId && optimizeModelOptions.length > 0 && (
+                          <div className="px-3 py-1 pb-1.5 border-b border-border">
+                            <span className="text-[10px] text-text-tertiary block mb-1">
+                              {t('promptOptimize.model')}
+                            </span>
+                            {optimizeModelOptions.map((m) => (
+                              <button
+                                key={m.value}
+                                onClick={() => setOptimizeModel(m.value)}
+                                className="w-full flex items-center justify-between px-1 py-0.5 text-xs rounded hover:bg-background-hover text-text-secondary hover:text-text-primary"
+                              >
+                                <span className="truncate">{m.label}</span>
+                                {optimizeModel === m.value && <Check className="w-3 h-3 text-primary shrink-0" />}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {/* 执行按钮 */}
+                    <div className="px-2 py-2 mt-1">
+                      <button
+                        onClick={handleOptimizeWithConfig}
+                        className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-md bg-primary text-white text-xs font-medium hover:bg-primary-hover transition-colors"
+                      >
+                        {optimizeMode === 'deep' && <Loader2 className="w-3 h-3" />}
+                        <span>{optimizeMode === 'deep' ? t('promptOptimize.optimizeDeep') : t('promptOptimize.optimize')}</span>
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
