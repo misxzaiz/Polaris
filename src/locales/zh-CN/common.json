@@ -49,7 +49,6 @@
     "schedulerPanel": "定时任务",
     "requirementPanel": "需求队列",
     "terminalPanel": "终端",
-    "springBootPanel": "Spring Boot",
     "toolPanel": "工具面板",
     "developerPanel": "开发者面板",
     "integrationPanel": "机器人管理",

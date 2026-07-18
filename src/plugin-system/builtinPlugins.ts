@@ -65,15 +65,6 @@ const corePluginManifest: PolarisPluginManifest = {
         order: 70,
       },
       {
-        id: 'springBoot.panel',
-        area: 'activityBar',
-        panelType: 'springBoot',
-        icon: 'Coffee',
-        labelKey: 'labels.springBootPanel',
-        labelDefault: 'Spring Boot',
-        order: 75,
-      },
-      {
         id: 'developer.panel',
         area: 'activityBar',
         panelType: 'developer',
@@ -132,10 +123,6 @@ export function registerBuiltinPlugins(): void {
   pluginPanelRegistry.register('agnes', 'polaris.agnes', () =>
     import('@/plugins/agnes/AgnesPanel').then((m) => ({ default: m.default })),
   )
-  pluginPanelRegistry.register('springBoot', 'polaris.core', () =>
-    import('@/components/SpringBoot/SpringBootPanel').then((m) => ({ default: m.SpringBootPanel })),
-  )
-
   // builtin 插件聊天卡片 loader 手动注册（无 installPath）
   // PRD 预览：mcp__polaris-prd-preview__preview_html / read_preview
   chatCardRegistry.registerBuiltin(

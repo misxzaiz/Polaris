@@ -618,7 +618,7 @@ let response = retry_with_backoff(
 
 | 阶段 | 状态 | 关键产出 |
 |---|---|---|
-| **4a** Tool trait 异步化 | ✅ | `Tool::execute` 改 `async_trait`；9 工具签名改造（bash/computer 用 `spawn_blocking`，其余直接 async）；`ToolRegistry::dispatch` 改 async；现有单测改 `#[tokio::test]`。顺手修 2 个预存测试编译错误（`mcp_config_service` 缺 `services` 字段、`integration_tests` AppState 缺 `plugin_service_manager`/`spring_boot_manager`）。 |
+| **4a** Tool trait 异步化 | ✅ | `Tool::execute` 改 `async_trait`；9 工具签名改造（bash/computer 用 `spawn_blocking`，其余直接 async）；`ToolRegistry::dispatch` 改 async；现有单测改 `#[tokio::test]`。顺手修 2 个预存测试编译错误（`mcp_config_service` 缺 `services` 字段、`integration_tests` AppState 缺 `plugin_service_manager`）。 |
 | **3.2** retry 指数退避 | ✅ | 新建 `retry.rs`：`is_retryable_status`/`backoff_delay`/`parse_retry_after` 纯函数 + `send_with_retry`（429/5xx/网络错误重试，尊重 `Retry-After`，默认 3 次 base 500ms，`SIMPLE_AI_RETRY_MAX`/`SIMPLE_AI_RETRY_BASE_MS` 可覆盖）。chat_loop HTTP 请求改走 `send_with_retry`。 |
 | **3.1** usage 三协议解析 | ✅ | `simple_ai_protocol.rs` 加 `Usage` 结构 + `StreamState.usage` 字段 + 三协议解析（OpenAIChat 末包 + `stream_options.include_usage`；Anthropic `message_start`/`message_delta` 分两次累积；Responses `response.completed`）+ `finish_usage()`。chat_loop 流末取 usage 累计 + 日志。 |
 | **3.3** compact 上下文压缩 | ✅ | 新建 `compact.rs`：`UsageAccumulator`（累计 input，`should_compact` 达窗口 75% 触发）+ `select_compact_range`（不切断 tool 配对）+ `compact_history`（发非流式摘要请求替换历史区间，三协议响应解析 `extract_summary_text`）+ `fallback_drop_oldest`（移除最早完整 turn）。`SIMPLE_AI_CONTEXT_WINDOW` 默认 128k 可配。 |

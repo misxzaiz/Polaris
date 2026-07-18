@@ -9,7 +9,6 @@ use tokio::sync::Mutex as AsyncMutex;
 
 use crate::ai::EngineRegistry;
 use crate::commands::context::ContextMemoryStore;
-use crate::commands::spring_boot::SpringBootManager;
 use crate::commands::terminal::TerminalManager;
 use crate::integrations::IntegrationManager;
 use crate::services::config_store::ConfigStore;
@@ -228,8 +227,6 @@ pub struct AppState {
     pub engine_registry: Arc<AsyncMutex<EngineRegistry>>,
     /// 终端管理器
     pub terminal_manager: Mutex<TerminalManager>,
-    /// Spring Boot 运行管理器
-    pub spring_boot_manager: Mutex<SpringBootManager>,
     /// 文件监听管理器
     pub file_watcher_manager: Mutex<FileWatcherManager>,
     /// 待回答问题映射：callId -> PendingQuestion
@@ -295,7 +292,6 @@ pub fn create_app_state(
         integration_manager: AsyncMutex::new(integration_manager),
         engine_registry,
             terminal_manager: Mutex::new(TerminalManager::new()),
-            spring_boot_manager: Mutex::new(SpringBootManager::new()),
             file_watcher_manager: Mutex::new(FileWatcherManager::new()),
         pending_questions: Arc::new(Mutex::new(HashMap::new())),
         ask_answer_senders: Arc::new(Mutex::new(HashMap::new())),
@@ -364,7 +360,6 @@ impl AppState {
             integration_manager: AsyncMutex::new(IntegrationManager::new()),
             engine_registry: self.engine_registry.clone(),
         terminal_manager: Mutex::new(TerminalManager::new()),
-        spring_boot_manager: Mutex::new(SpringBootManager::new()),
             file_watcher_manager: Mutex::new(FileWatcherManager::new()),
             pending_questions: self.pending_questions.clone(),
             ask_answer_senders: self.ask_answer_senders.clone(),

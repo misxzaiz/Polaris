@@ -50,8 +50,6 @@ function getToolDescription(panelType: string): string | undefined {
       return '个人链接与知识收藏'
     case 'terminal':
       return '命令、脚本与运行环境'
-    case 'springBoot':
-      return 'Spring Boot 项目调试与运行'
     case 'developer':
       return '开发者调试工具'
     case 'integration':
