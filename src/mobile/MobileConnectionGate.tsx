@@ -76,9 +76,11 @@ export function MobileConnectionGate({ children }: MobileConnectionGateProps) {
   };
 
   if (showSettings) {
+    // h-[100dvh] + 内部滚动：body 级滚动已全局锁死（index.css），
+    // 软键盘弹出等场景卡片超高时由本层滚动，m-auto 保证溢出时顶部仍可达
     return (
-      <div className="flex min-h-[100dvh] items-center justify-center bg-background-base px-5 py-8 text-text-primary">
-        <div className="w-full max-w-md rounded-3xl border border-border bg-background-elevated p-5 shadow-xl">
+      <div className="flex h-[100dvh] overflow-y-auto bg-background-base px-5 py-8 text-text-primary">
+        <div className="m-auto w-full max-w-md rounded-3xl border border-border bg-background-elevated p-5 shadow-xl">
           <div className="mb-5">
             <h1 className="text-xl font-semibold">连接 Polaris 服务</h1>
             <p className="mt-2 text-sm leading-6 text-text-secondary">

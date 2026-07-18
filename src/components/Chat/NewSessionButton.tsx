@@ -51,6 +51,35 @@ export const NewSessionButton = memo(function NewSessionButton() {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  // fixed 定位坐标：按钮位于状态栏中段，absolute 左对齐时 w-72 面板在窄屏/
+  // 窄聊天面板下会超出视口右缘，被 App 根容器 overflow-hidden 裁剪（视觉上偏右）。
+  // 参照 DispatchCenter 范式：按钮 rect + 视口钳制的 fixed 定位
+  const [panelPos, setPanelPos] = useState<{ left: number; bottom: number } | null>(null);
+
+  const PANEL_WIDTH = 288; // 对应 w-72
+  const PANEL_MARGIN = 8;
+
+  const updatePanelPos = useCallback(() => {
+    const rect = buttonRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const maxLeft = window.innerWidth - PANEL_WIDTH - PANEL_MARGIN;
+    const left = Math.max(PANEL_MARGIN, Math.min(rect.left, maxLeft));
+    // 面板底边贴按钮上方 4px（原 bottom-full mb-1 的间距）
+    const bottom = Math.max(PANEL_MARGIN, window.innerHeight - rect.top + 4);
+    setPanelPos({ left, bottom });
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) updatePanelPos();
+  }, [isOpen, updatePanelPos]);
+
+  // 窗口尺寸变化时重算面板位置
+  useEffect(() => {
+    if (!isOpen) return;
+    window.addEventListener('resize', updatePanelPos);
+    return () => window.removeEventListener('resize', updatePanelPos);
+  }, [isOpen, updatePanelPos]);
+
   // 搜索过滤
   const showSearch = sortedWorkspaces.length > 3;
   const filteredWorkspaces = useWorkspaceFilter(sortedWorkspaces, showSearch ? searchQuery : '');
@@ -152,16 +181,17 @@ export const NewSessionButton = memo(function NewSessionButton() {
         <Plus className="w-4 h-4" />
       </button>
 
-      {/* 下拉菜单 - 向上展开 */}
-      {isOpen && (
+      {/* 下拉菜单 - 向上展开（fixed + 视口钳制，防窄屏下越出右缘被裁剪） */}
+      {isOpen && panelPos && (
         <div
           ref={dropdownRef}
           onKeyDown={handleKeyDown}
           className={clsx(
-            'absolute left-0 bottom-full mb-1 z-50',
-            'w-72 flex flex-col rounded-lg shadow-lg',
+            'fixed z-50',
+            'w-72 max-w-[calc(100vw-16px)] flex flex-col rounded-lg shadow-lg',
             'bg-background-elevated border border-border'
           )}
+          style={{ left: panelPos.left, bottom: panelPos.bottom }}
         >
           <div className="px-2 pb-2 border-b border-border-subtle">
             <div className="px-1 py-1 text-[11px] font-medium text-text-tertiary">{t('newSession.aiEngine')}</div>

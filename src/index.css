@@ -137,11 +137,19 @@ body {
   color: rgb(var(--c-text-primary));
   /* 透明度/主题变化时的平滑过渡 */
   transition: background-color 0.3s ease, color 0.3s ease;
+  /* 全屏应用：所有滚动都在内部容器，锁死 body 级滚动。
+     兜底 Windows 分数缩放取整、fixed 弹窗/抽屉出现时滚动条显隐导致的整页抖动。 */
+  overflow: hidden;
 }
 
 #root {
   width: 100%;
-  min-height: 100vh;
+  /* 固定为视口高度（而非 min-height: 100vh）：移动端浏览器地址栏可见时
+     100vh 取大视口，比 100dvh 高出地址栏一截，body 因此获得滚动余量——
+     弹窗内输入框 autoFocus / 软键盘 / 触摸滚动链都会把整页顶走。
+     100vh 为不支持 dvh 的旧浏览器兜底。 */
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
 }
