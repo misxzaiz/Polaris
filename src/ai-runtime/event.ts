@@ -20,13 +20,25 @@ export interface TokenEvent {
 
 /**
  * 思考过程事件
+ *
+ * 语义由 isDelta 与 phase 组合区分：
+ * - isDelta === true           → 增量追加（thinking_delta）
+ * - isDelta === false, phase   → 标记事件（open / close）
+ * - isDelta === false, no phase → 整段（非 partial 回退 / Codex 路径）
+ * - isDelta === undefined      → 整段（向后兼容）
  */
+export type ThinkingPhase = 'open' | 'close'
+
 export interface ThinkingEvent {
   type: 'thinking'
   /** 会话 ID - 用于事件路由 */
   sessionId: string
-  /** 思考内容 */
+  /** 思考内容（增量时为增量片段；标记事件时为 ""） */
   content: string
+  /** 是否为增量更新 */
+  isDelta?: boolean
+  /** 当 isDelta === false 时，表示开/闭标记 */
+  phase?: ThinkingPhase
 }
 
 /**
@@ -842,9 +854,17 @@ export function createTokenEvent(sessionId: string, value: string): TokenEvent {
 
 /**
  * 创建思考过程事件
+ *
+ * @param sessionId 会话 ID
+ * @param content 思考内容（增量片段或整段）
+ * @param options 可选：增量标记、开闭标记
  */
-export function createThinkingEvent(sessionId: string, content: string): ThinkingEvent {
-  return { type: 'thinking', sessionId, content }
+export function createThinkingEvent(
+  sessionId: string,
+  content: string,
+  options?: { isDelta?: boolean; phase?: ThinkingPhase },
+): ThinkingEvent {
+  return { type: 'thinking', sessionId, content, ...options }
 }
 
 /**
