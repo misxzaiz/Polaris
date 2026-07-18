@@ -10,8 +10,8 @@
 
 import { useState, useCallback, useEffect, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useConfigStore, useSessionStore } from '@/stores';
-import { useActiveSessionStreaming, useHasPendingQuestion, useHasActivePlan, useActiveSessionMessages } from '@/stores/conversationStore/useActiveSession';
+import { useConfigStore, useSessionStore, useModelProfileStore } from '@/stores';
+import { useActiveSessionStreaming, useHasPendingQuestion, useHasActivePlan, useActiveSessionMessages, useActiveSessionUsage } from '@/stores/conversationStore/useActiveSession';
 import { useSessionConfig } from '@/stores/sessionConfigStore';
 import { Paperclip, MoreHorizontal, Loader2, Mic, Volume2, VolumeX, RefreshCw, ShieldAlert } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -21,6 +21,7 @@ import { useContainerWidth } from '@/hooks/useContainerWidth';
 import type { TTSConfig, WakeWordConfig, VoiceCommandConfig, VoiceCommand } from '@/types/speech';
 import { DEFAULT_TTS_CONFIG } from '@/types/speech';
 import { SessionConfigSelector } from './SessionConfigSelector';
+import { ContextMeter } from './ContextMeter';
 import { getSelectedEngineHealth } from '@/utils/engineHealth';
 import { normalizeEngineId } from '@/utils/engineDisplay';
 import { getEngineSelectors } from '@/utils/engineCapabilities';
@@ -109,6 +110,13 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
 
   // 会话配置
   const { config: sessionConfig, setConfig: setSessionConfig } = useSessionConfig();
+
+  // token 用量(上下文水位 + 成本)
+  const usageStats = useActiveSessionUsage();
+  // 上下文窗口分母:优先事件携带值,其次活动 ModelProfile,再由 ContextMeter 兜底 200K
+  const activeProfileContextWindow = useModelProfileStore(
+    useCallback((s) => s.getActiveProfile()?.contextWindow, []),
+  );
 
   // 容器宽度监听
   const { ref: containerRef, width: containerWidth } = useContainerWidth();
@@ -456,6 +464,10 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
             </button>
           )}
           {healthIndicator}
+
+          {usageStats && (
+            <ContextMeter usage={usageStats} contextWindow={activeProfileContextWindow} />
+          )}
 
           {(isStreaming || inputHint || inputLength > 0) && (
             <span className="w-px h-3.5 bg-border-subtle shrink-0" aria-hidden="true" />

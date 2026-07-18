@@ -158,6 +158,29 @@ export interface SendMessageOptions {
  * - 错误和进度信息
  * - 各种 block 映射
  */
+/**
+ * Token 用量统计（会话级）
+ *
+ * 上下文占用 = input + cacheCreation + cacheRead（三项之和，用于水位分子）。
+ * output 不占上下文窗口，但计入成本。
+ */
+export interface UsageStats {
+  /** 最近一轮：未命中缓存的输入 token */
+  input: number
+  /** 最近一轮：写入缓存的 token */
+  cacheCreation: number
+  /** 最近一轮：从缓存读取的 token */
+  cacheRead: number
+  /** 最近一轮：输出 token */
+  output: number
+  /** 推理输出 token（Codex 有） */
+  reasoning?: number
+  /** 上下文窗口大小；缺省时由 UI 从 ModelProfile 取 */
+  contextWindow?: number
+  /** 累计输出 token（跨轮累加，用于成本估算） */
+  totalOutput: number
+}
+
 export interface ConversationState {
   // ===== 消息状态 =====
   messages: ChatMessage[]
@@ -188,6 +211,13 @@ export interface ConversationState {
   progressMessage: string | null
   /** 下一步提示建议（--prompt-suggestions），点击填入输入框；null 表示无建议 */
   promptSuggestion: string | null
+
+  /**
+   * 最近一轮 token 用量（来自 AIEvent.usage）。
+   * 上下文占用 = input + cacheCreation + cacheRead（三项之和）。
+   * null 表示本会话尚未收到用量事件。
+   */
+  usageStats: UsageStats | null
 
   // ===== 元数据 =====
   sessionId: string // 会话唯一标识，由后端返回或前端生成

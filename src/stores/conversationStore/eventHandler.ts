@@ -322,6 +322,23 @@ export function handleAIEvent(
       set({ progressMessage: null })
       break
 
+    case 'usage': {
+      // token 用量：最近一轮覆盖 + output 跨轮累计，供状态栏计算上下文水位与成本。
+      const prev = state.usageStats
+      set({
+        usageStats: {
+          input: event.inputTokens,
+          cacheCreation: event.cacheCreationInputTokens ?? 0,
+          cacheRead: event.cacheReadInputTokens ?? 0,
+          output: event.outputTokens,
+          reasoning: event.reasoningOutputTokens,
+          contextWindow: event.contextWindow,
+          totalOutput: (prev?.totalOutput ?? 0) + event.outputTokens,
+        },
+      })
+      break
+    }
+
     // permission_result is handled via plan_approval_result
     // there is no separate permission_result event type
 

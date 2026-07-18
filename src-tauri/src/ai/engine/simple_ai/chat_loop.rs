@@ -307,7 +307,8 @@ pub(super) async fn run_chat_loop(
 
         // 流处理完毕
         let mut tool_calls = stream_state.finish_tool_calls();
-        // token usage（Phase 3.1）：三协议在流末解析，仅日志上报；专用 UsageEvent 待前端 types 同步后启用。
+        // token usage（Phase 3.1）：三协议在流末解析。日志上报 + 发送 UsageEvent 供前端计算上下文水位。
+        // SimpleAI 协议目前无缓存分类，cacheCreation/cacheRead 传 None，前端水位退化为 input+output。
         if let Some(usage) = stream_state.finish_usage() {
             usage_acc.add(usage.input_tokens);
             tracing::info!(
@@ -317,6 +318,15 @@ pub(super) async fn run_chat_loop(
                 usage.total_tokens,
                 usage_acc.total_input
             );
+            let _ = event_callback(AIEvent::usage(
+                session_id,
+                usage.input_tokens,
+                None,
+                None,
+                usage.output_tokens,
+                None,
+                None,
+            ));
         }
         // 压缩效果监督计数（每完成一轮 +1；Some(1) 表示"刚压缩后的第一轮"）。
         if let Some(r) = rounds_since_compact.as_mut() {

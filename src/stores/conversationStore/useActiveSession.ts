@@ -277,6 +277,16 @@ export function useActiveSessionPromptSuggestion() {
 }
 
 /**
+ * 获取活跃会话的 token 用量统计（上下文水位与成本）
+ */
+export function useActiveSessionUsage() {
+  return useActiveSessionSelector(
+    useCallback((state: ConversationState) => state.usageStats, []),
+    null
+  )
+}
+
+/**
  * 获取活跃会话的提示词优化状态（版本栈 / 优化进度）
  */
 export function useActiveSessionPromptOptimize() {

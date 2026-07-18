@@ -715,6 +715,30 @@ export interface ContextCompactedEvent {
 }
 
 /**
+ * Token 用量事件
+ *
+ * 每轮对话结束时携带本轮 token 分类用量，供前端计算上下文水位与成本。
+ * 上下文占用 = inputTokens + cacheCreationInputTokens + cacheReadInputTokens（三项之和）。
+ */
+export interface UsageEvent {
+  type: 'usage'
+  /** 会话 ID - 用于事件路由 */
+  sessionId: string
+  /** 未命中缓存的输入 token（全价） */
+  inputTokens: number
+  /** 写入缓存的 token（~1.25×） */
+  cacheCreationInputTokens?: number
+  /** 从缓存读取的 token（~0.1×） */
+  cacheReadInputTokens?: number
+  /** 输出 token */
+  outputTokens: number
+  /** 推理输出 token（Codex 有；其余引擎可能无） */
+  reasoningOutputTokens?: number
+  /** 上下文窗口大小；缺省时前端从 ModelProfile 取 */
+  contextWindow?: number
+}
+
+/**
  * AI Event - 所有事件的联合类型
  *
  * UI 层只能消费此类型的事件，禁止直接解析 CLI 输出。
@@ -763,6 +787,8 @@ export type AIEvent =
   | CliInitEvent
   // 上下文压缩完成事件
   | ContextCompactedEvent
+  // Token 用量事件
+  | UsageEvent
 
 /**
  * 事件监听器类型
@@ -879,6 +905,16 @@ export function createAssistantMessageEvent(
 }
 
 /**
+ * 创建用量事件
+ */
+export function createUsageEvent(
+  sessionId: string,
+  usage: Omit<UsageEvent, 'type' | 'sessionId'>
+): UsageEvent {
+  return { type: 'usage', sessionId, ...usage }
+}
+
+/**
  * 判断事件类型
  */
 export function isTokenEvent(event: AIEvent): event is TokenEvent {
@@ -915,6 +951,10 @@ export function isSessionStartEvent(event: AIEvent): event is SessionStartEvent 
 
 export function isSessionEndEvent(event: AIEvent): event is SessionEndEvent {
   return event.type === 'session_end'
+}
+
+export function isUsageEvent(event: AIEvent): event is UsageEvent {
+  return event.type === 'usage'
 }
 
 export function isUserMessageEvent(event: AIEvent): event is UserMessageEvent {
@@ -1133,6 +1173,10 @@ const AI_EVENT_TYPES = new Set([
   'hook',
   // 下一步提示建议事件
   'prompt_suggestion',
+  // 上下文压缩完成事件
+  'context_compacted',
+  // Token 用量事件
+  'usage',
 ])
 
 /**

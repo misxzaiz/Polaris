@@ -1247,6 +1247,63 @@ impl ContextCompactedEvent {
 }
 
 // ============================================================================
+// 用量事件
+// ============================================================================
+
+/// Token 用量事件
+///
+/// 每轮对话结束时携带本轮的 token 分类用量，供前端计算上下文水位与成本。
+/// 上下文占用 = input + cacheCreation + cacheRead（三项之和，非单一 input）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageEvent {
+    #[serde(rename = "type")]
+    pub event_type: String,
+    /// 会话 ID - 用于事件路由
+    pub session_id: String,
+    /// 未命中缓存的输入 token（全价）
+    pub input_tokens: u64,
+    /// 写入缓存的 token（~1.25×）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_creation_input_tokens: Option<u64>,
+    /// 从缓存读取的 token（~0.1×）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_read_input_tokens: Option<u64>,
+    /// 输出 token
+    pub output_tokens: u64,
+    /// 推理输出 token（Codex 有；其余引擎可能无）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_output_tokens: Option<u64>,
+    /// 上下文窗口大小；后端已知则填，否则前端从 ModelProfile 取
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<u64>,
+}
+
+impl UsageEvent {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        session_id: impl Into<String>,
+        input_tokens: u64,
+        cache_creation_input_tokens: Option<u64>,
+        cache_read_input_tokens: Option<u64>,
+        output_tokens: u64,
+        reasoning_output_tokens: Option<u64>,
+        context_window: Option<u64>,
+    ) -> Self {
+        Self {
+            event_type: "usage".to_string(),
+            session_id: session_id.into(),
+            input_tokens,
+            cache_creation_input_tokens,
+            cache_read_input_tokens,
+            output_tokens,
+            reasoning_output_tokens,
+            context_window,
+        }
+    }
+}
+
+// ============================================================================
 // Hook 事件
 // ============================================================================
 
@@ -1382,6 +1439,8 @@ pub enum AIEvent {
     CliInit(CliInitEvent),
     // 上下文压缩事件
     ContextCompacted(ContextCompactedEvent),
+    // Token 用量事件
+    Usage(UsageEvent),
     // Hook 生命周期事件
     Hook(HookEvent),
     // 提示建议事件
@@ -1419,6 +1478,7 @@ impl AIEvent {
             AIEvent::QuestionAnswered(e) => &e.event_type,
             AIEvent::CliInit(e) => &e.event_type,
             AIEvent::ContextCompacted(e) => &e.event_type,
+            AIEvent::Usage(e) => &e.event_type,
             AIEvent::Hook(e) => &e.event_type,
             AIEvent::PromptSuggestion(e) => &e.event_type,
         }
@@ -1468,6 +1528,28 @@ impl AIEvent {
         AIEvent::SessionEnd(SessionEndEvent::new(session_id))
     }
 
+    /// 创建用量事件
+    #[allow(clippy::too_many_arguments)]
+    pub fn usage(
+        session_id: impl Into<String>,
+        input_tokens: u64,
+        cache_creation_input_tokens: Option<u64>,
+        cache_read_input_tokens: Option<u64>,
+        output_tokens: u64,
+        reasoning_output_tokens: Option<u64>,
+        context_window: Option<u64>,
+    ) -> Self {
+        AIEvent::Usage(UsageEvent::new(
+            session_id,
+            input_tokens,
+            cache_creation_input_tokens,
+            cache_read_input_tokens,
+            output_tokens,
+            reasoning_output_tokens,
+            context_window,
+        ))
+    }
+
     /// 创建用户消息事件
     pub fn user_message(session_id: impl Into<String>, content: impl Into<String>) -> Self {
         AIEvent::UserMessage(UserMessageEvent::new(session_id, content))
@@ -1508,6 +1590,7 @@ impl AIEvent {
             AIEvent::QuestionAnswered(e) => &e.session_id,
             AIEvent::CliInit(e) => &e.session_id,
             AIEvent::ContextCompacted(e) => &e.session_id,
+            AIEvent::Usage(e) => &e.session_id,
             AIEvent::Hook(e) => &e.session_id,
             AIEvent::PromptSuggestion(e) => &e.session_id,
         }

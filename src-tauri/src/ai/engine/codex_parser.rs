@@ -75,6 +75,8 @@ pub struct CodexUsage {
     #[serde(default)]
     pub cached_input_tokens: u64,
     #[serde(default)]
+    pub cache_creation_input_tokens: u64,
+    #[serde(default)]
     pub output_tokens: u64,
     #[serde(default)]
     pub reasoning_output_tokens: u64,
@@ -199,6 +201,18 @@ pub fn codex_event_to_ai_events(event: CodexEvent, session_id: &str) -> Vec<AIEv
                     u.output_tokens,
                     u.reasoning_output_tokens
                 );
+                return vec![
+                    AIEvent::usage(
+                        session_id,
+                        u.input_tokens,
+                        Some(u.cache_creation_input_tokens),
+                        Some(u.cached_input_tokens),
+                        u.output_tokens,
+                        Some(u.reasoning_output_tokens),
+                        None,
+                    ),
+                    AIEvent::session_end(session_id),
+                ];
             }
             vec![AIEvent::session_end(session_id)]
         }
@@ -350,11 +364,22 @@ mod tests {
 
     #[test]
     fn parse_turn_completed() {
-        let json = r#"{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":50,"output_tokens":20,"reasoning_output_tokens":10}}"#;
+        let json = r#"{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":50,"cache_creation_input_tokens":30,"output_tokens":20,"reasoning_output_tokens":10}}"#;
         let event = parse_codex_line(json).unwrap();
         let ai_events = codex_event_to_ai_events(event, "test-session");
-        assert_eq!(ai_events.len(), 1);
-        assert!(matches!(&ai_events[0], AIEvent::SessionEnd(_)));
+        // 现在应输出 [Usage, SessionEnd] 两个事件
+        assert_eq!(ai_events.len(), 2);
+        match &ai_events[0] {
+            AIEvent::Usage(u) => {
+                assert_eq!(u.input_tokens, 100);
+                assert_eq!(u.cache_read_input_tokens, Some(50));
+                assert_eq!(u.cache_creation_input_tokens, Some(30));
+                assert_eq!(u.output_tokens, 20);
+                assert_eq!(u.reasoning_output_tokens, Some(10));
+            }
+            other => panic!("expected Usage event, got {:?}", other),
+        }
+        assert!(matches!(&ai_events[1], AIEvent::SessionEnd(_)));
     }
 
     #[test]
