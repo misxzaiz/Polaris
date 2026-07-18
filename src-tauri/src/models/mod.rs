@@ -15,7 +15,7 @@ pub use ai_event::{
     ToolCallStartEvent, ToolCallEndEvent, ProgressEvent,
     ResultEvent, ErrorEvent, SessionEndEvent,
     UserMessageEvent, AssistantMessageEvent, SessionEndReason,
-    ThinkingEvent, ThinkingPhase,
+    ThinkingEvent,
     // PlanMode 类型
     PlanStatus, PlanTaskStatus, PlanStageStatus, PlanTask, PlanStage,
     PlanStartEvent, PlanContentEvent, PlanStageUpdateEvent,

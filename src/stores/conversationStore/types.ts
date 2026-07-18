@@ -319,12 +319,6 @@ export interface ConversationActions {
   /** 内部方法：将缓冲区文本 flush 到 store（流式优化，减少 set() 频率） */
   _flushTextBuffer: () => void
   appendThinkingBlock: (content: string) => void
-  /** 增量 thinking 开启标记：创建 thinking block 并显示 "思考中…" */
-  openThinkingBlock: () => void
-  /** 增量 thinking 追加：追加增量内容到末段 thinking block */
-  appendIncrementalThinking: (content: string) => void
-  /** 增量 thinking 结束标记：隐藏 "思考中…"，冻结内容 */
-  closeThinkingBlock: () => void
   appendToolCallBlock: (toolId: string, toolName: string, input: Record<string, unknown>) => void
   updateToolCallBlock: (toolId: string, status: ToolStatus, output?: string, error?: string) => void
   updateToolCallBlockDiff: (toolId: string, diffData: { oldContent: string; newContent: string; filePath: string }) => void

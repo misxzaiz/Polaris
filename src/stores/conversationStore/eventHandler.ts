@@ -108,19 +108,7 @@ export function handleAIEvent(
       break
 
     case 'thinking':
-      if (event.isDelta === true) {
-        // 增量追加：追加到末段 thinking block（逐字显示）
-        state.appendIncrementalThinking(event.content)
-      } else if (event.phase === 'open') {
-        // 开启标记：创建 thinking block，展示 "思考中…"
-        state.openThinkingBlock()
-      } else if (event.phase === 'close') {
-        // 结束标记：隐藏 "思考中…"，冻结内容，触发步骤提取
-        state.closeThinkingBlock()
-      } else {
-        // 整段（isDelta === undefined / false 且无 phase）：非 partial 回退路径
-        state.appendThinkingBlock(event.content)
-      }
+      state.appendThinkingBlock(event.content)
       break
 
     case 'assistant_message':

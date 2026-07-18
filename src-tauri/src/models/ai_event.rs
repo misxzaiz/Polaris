@@ -87,25 +87,8 @@ pub struct ThinkingEvent {
     pub event_type: String,
     /// 会话 ID - 用于事件路由
     pub session_id: String,
-    /// 思考内容（增量时为增量片段；标记事件时为 ""）
+    /// 思考内容
     pub content: String,
-    /// 是否为增量更新。None = 整段（非 partial 回退 / Codex 路径）；
-    /// Some(true) = 增量追加；Some(false) = 标记事件（需配合 phase）。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub is_delta: Option<bool>,
-    /// 当 is_delta == Some(false) 时，表示开/闭标记。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub phase: Option<ThinkingPhase>,
-}
-
-/// 思考块开/闭标记
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum ThinkingPhase {
-    /// content_block_start (thinking) 触发，通知前端创建 thinking block + "思考中"
-    Open,
-    /// content_block_stop (thinking) 触发，通知前端隐藏 "思考中" + 触发步骤提取
-    Close,
 }
 
 impl ThinkingEvent {
@@ -114,22 +97,7 @@ impl ThinkingEvent {
             event_type: "thinking".to_string(),
             session_id: session_id.into(),
             content: content.into(),
-            is_delta: None,
-            phase: None,
         }
-    }
-
-    /// 标记为增量追加
-    pub fn with_delta(mut self) -> Self {
-        self.is_delta = Some(true);
-        self
-    }
-
-    /// 标记为开/闭事件
-    pub fn with_phase(mut self, phase: ThinkingPhase) -> Self {
-        self.is_delta = Some(false);
-        self.phase = Some(phase);
-        self
     }
 }
 
