@@ -26,7 +26,7 @@ import type {
   ProfileCategory,
   AuthType,
 } from '@/types'
-import { COMMON_PROVIDER_PRESETS, OFFICIAL_API_PROFILE, type ProviderPreset, type ConnectionTestResult, resolveAuthType, resolveTargetEngines, isProfileForEngine } from '@/types/modelProfile'
+import { COMMON_PROVIDER_PRESETS, OFFICIAL_API_PROFILE, type ProviderPreset, type ConnectionTestResult, resolveAuthType, resolveTargetEngines, isProfileForEngine, ALL_ENGINES } from '@/types/modelProfile'
 import {
   testModelProfileConnection,
   fetchModelsForProfile,

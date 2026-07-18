@@ -18,23 +18,26 @@ import { useStore } from 'zustand'
 import { useSyncExternalStore } from 'react'
 import i18n from 'i18next'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
-import { pickLatestAssistantText } from '@/services/assistantTextUtils'
+import { pickLatestAssistantText, extractAssistantText } from '@/services/assistantTextUtils'
 import { normalizeEngineId } from '@/utils/engineDisplay'
 import { createLogger } from '@/utils/logger'
 import type { EngineId } from '@/types'
-import type { ConversationStoreInstance } from '@/stores/conversationStore/types'
+import type { AssistantChatMessage } from '@/types/chat'
+import type { ConversationStore, ConversationStoreInstance, PromptOptimizeMode, SendMessageOptions } from '@/stores/conversationStore/types'
 
 const log = createLogger('PromptOptimize')
 
-/** 上次所选优化引擎的记忆 key */
-const OPTIMIZE_ENGINE_STORAGE_KEY = 'polaris.promptOptimize.engine'
+/** 优化配置记忆 key（引擎 + 模式 + 供应商 + 模型，单一 JSON 对象） */
+const OPTIMIZE_CONFIG_STORAGE_KEY = 'polaris.promptOptimize.config'
 
-/** 单轮优化的超时兜底（CLI 引擎冷启动 + 生成时间） */
-const OPTIMIZE_TIMEOUT_MS = 180_000
+/** 单轮优化的超时兜底 */
+const QUICK_TIMEOUT_MS = 180_000
+/** 深度模式放开工具，多轮往返，超时上调 */
+const DEEP_TIMEOUT_MS = 330_000
 
 /**
- * 优化器约束（经 oneTimeSystemPrompt 注入，不进消息流）。
- * 要求保留原意图/语言/特殊标记，只输出优化后的提示词本身。
+ * 快速模式优化器约束（经 oneTimeSystemPrompt 注入，不进消息流）。
+ * 要求保留原意图/语言/特殊标记，只输出优化后的提示词本身，禁用工具。
  */
 export const PROMPT_OPTIMIZE_SYSTEM_PROMPT = `You are a prompt optimization assistant. The user gives you a draft prompt they intend to send to an AI coding assistant. Rewrite it to be clearer, more specific, and better structured, while strictly preserving:
 1. The user's original intent and scope — never add new requirements or drop existing ones
@@ -44,19 +47,58 @@ Structure the result (context / task / constraints / expected output) only when 
 Do NOT answer or execute the prompt itself. Do NOT use any tools.
 Output ONLY the optimized prompt text — no explanations, no code fences, no preamble.`
 
-export function readStoredOptimizeEngine(defaultEngine: EngineId): EngineId {
-  try {
-    const raw = localStorage.getItem(OPTIMIZE_ENGINE_STORAGE_KEY)
-    if (raw) return normalizeEngineId(raw)
-  } catch {
-    // localStorage 不可用时静默回退
-  }
-  return defaultEngine
+/**
+ * 深度模式优化器约束：放开只读工具，让模型自读项目与对话上下文做贴合改写。
+ * 硬约束：context 仅供措辞精准，绝不新增需求；只读不写不执行；只输出优化文本。
+ */
+export const PROMPT_OPTIMIZE_DEEP_SYSTEM_PROMPT = `You are a prompt optimization assistant with read-only access to the user's current project and conversation.
+
+The user gives you a draft prompt they intend to send to an AI coding assistant. Your job is to rewrite it to be clearer, more specific, and better grounded in the ACTUAL project context.
+
+You MAY use Read / Grep / Glob to inspect:
+- The project's convention files (CLAUDE.md, AGENTS.md, README) to match its terminology and constraints
+- Files, symbols, or paths the draft explicitly references, to make vague mentions concrete
+- The recent conversation context provided, to align the prompt with what the user is currently doing
+
+Strict rules:
+1. Preserve the user's original intent and scope — NEVER add requirements the user did not state, even if the project context suggests them. Context is for making the wording precise, NOT for inventing new tasks.
+2. Preserve the original language (Chinese stays Chinese, English stays English).
+3. Preserve all special tokens verbatim: @/path references, @workspace, /slash-commands, code fences, file paths, URLs.
+4. Do NOT modify any files. Do NOT execute or answer the draft prompt itself. Only reading is allowed.
+5. After reading, output ONLY the optimized prompt text — no explanation of what you read, no tool-call summary, no preamble, no code fences.`
+
+/** 深度模式只读工具白名单（排除 Bash/Write/Edit，防跑偏与全盘扫描） */
+const DEEP_ALLOWED_TOOLS = ['Read', 'Grep', 'Glob']
+
+/** 优化配置（持久化到 localStorage 的偏好） */
+export interface PromptOptimizeConfig {
+  engineId: EngineId
+  mode: PromptOptimizeMode
+  /** 供应商 Profile；'' 或缺省 = 官方 API */
+  modelProfileId?: string
+  model?: string
 }
 
-export function storeOptimizeEngine(engineId: EngineId): void {
+export function readStoredOptimizeConfig(defaultEngine: EngineId): PromptOptimizeConfig {
+  const fallback: PromptOptimizeConfig = { engineId: defaultEngine, mode: 'quick' }
   try {
-    localStorage.setItem(OPTIMIZE_ENGINE_STORAGE_KEY, engineId)
+    const raw = localStorage.getItem(OPTIMIZE_CONFIG_STORAGE_KEY)
+    if (!raw) return fallback
+    const parsed = JSON.parse(raw) as Partial<PromptOptimizeConfig>
+    return {
+      engineId: parsed.engineId ? normalizeEngineId(parsed.engineId) : defaultEngine,
+      mode: parsed.mode === 'deep' ? 'deep' : 'quick',
+      modelProfileId: parsed.modelProfileId || undefined,
+      model: parsed.model || undefined,
+    }
+  } catch {
+    return fallback
+  }
+}
+
+export function storeOptimizeConfig(config: PromptOptimizeConfig): void {
+  try {
+    localStorage.setItem(OPTIMIZE_CONFIG_STORAGE_KEY, JSON.stringify(config))
   } catch {
     // localStorage 不可用时静默
   }
@@ -69,12 +111,43 @@ export interface RunPromptOptimizeOptions {
   workspaceId?: string
   workspacePath?: string
   engineId: EngineId
+  /** 优化模式（quick / deep）；缺省按 quick */
+  mode?: PromptOptimizeMode
+  /** 供应商 Profile（API 型引擎可选；'' / 缺省 = 官方 API） */
+  modelProfileId?: string
+  /** 具体模型（可选） */
+  model?: string
   /** 触发时输入框全文（调用方需先把它同步进 inputDraft，冲突检测以此为基线） */
   sourceText: string
 }
 
 /** 每个源会话的进行中优化清理函数（重复触发/取消时先停旧订阅） */
 const activeRuns = new Map<string, () => void>()
+
+/** 深度模式对话上下文：取源会话近 N 轮消息 */
+const RECENT_CONTEXT_TURNS = 6
+/** 每条消息文本截断上限（防止上下文过长） */
+const RECENT_CONTEXT_PER_MSG = 200
+
+/**
+ * 构造深度模式的对话上下文摘要（近 N 条消息，每条截断）。
+ * 取内存中的可持久化消息，零 IO；只读不改源会话状态。
+ */
+function buildRecentContext(state: ConversationStore): string {
+  const messages = state.getPersistableMessages?.() ?? state.messages ?? []
+  if (messages.length === 0) return ''
+  const recent = messages.slice(-RECENT_CONTEXT_TURNS)
+  const lines: string[] = []
+  for (const msg of recent) {
+    if (msg.type !== 'user' && msg.type !== 'assistant') continue
+    const text = extractAssistantText(msg as AssistantChatMessage).trim()
+    if (!text) continue
+    const role = msg.type === 'user' ? 'User' : 'Assistant'
+    const clipped = text.length > RECENT_CONTEXT_PER_MSG ? `${text.slice(0, RECENT_CONTEXT_PER_MSG)}…` : text
+    lines.push(`${role}: ${clipped}`)
+  }
+  return lines.join('\n')
+}
 
 /**
  * 触发一轮提示词优化。
@@ -83,7 +156,9 @@ const activeRuns = new Map<string, () => void>()
  * 源会话当前没有进行中的优化（promptOptimize.status !== 'running'）。
  */
 export async function runPromptOptimize(options: RunPromptOptimizeOptions): Promise<void> {
-  const { sourceSessionId, workspaceId, workspacePath, engineId, sourceText } = options
+  const { sourceSessionId, workspaceId, workspacePath, engineId, modelProfileId, model, sourceText } = options
+  const mode: PromptOptimizeMode = options.mode === 'deep' ? 'deep' : 'quick'
+  const isDeep = mode === 'deep'
 
   const manager = sessionStoreManager.getState()
   const srcStore = manager.stores.get(sourceSessionId)
@@ -97,12 +172,15 @@ export async function runPromptOptimize(options: RunPromptOptimizeOptions): Prom
 
   // 一次性静默优化会话：不激活、不进列表；完成后交由 LRU 回收。
   // 无工作区时建 free 会话（sendMessage 的 workDir 解析链会自行兜底全局工作区）。
+  // 深度模式的只读工具需要 workDir 才能读项目——无工作区则自动降级为"仅对话上下文"。
   const optimizeSessionId = manager.createSession({
     type: workspaceId ? 'project' : 'free',
     workspaceId,
     contextWorkspaceIds: workspaceId ? [workspaceId] : [],
     workspaceLocked: Boolean(workspaceId),
     engineId,
+    modelProfileId: modelProfileId || undefined,
+    model: model || undefined,
     title: i18n.t('chat:promptOptimize.sessionTitle', '提示词优化'),
     silentMode: true,
     kind: 'prompt-optimize',
@@ -114,8 +192,8 @@ export async function runPromptOptimize(options: RunPromptOptimizeOptions): Prom
     return
   }
 
-  srcStore.getState().beginPromptOptimize(sourceText, { engineId, optimizeSessionId })
-  log.info('开始提示词优化', { sourceSessionId, optimizeSessionId, engineId, sourceLength: sourceText.length })
+  srcStore.getState().beginPromptOptimize(sourceText, { engineId, model, mode, optimizeSessionId })
+  log.info('开始提示词优化', { sourceSessionId, optimizeSessionId, engineId, mode, sourceLength: sourceText.length })
 
   let finished = false
   const cleanupFns: Array<() => void> = []
@@ -176,24 +254,45 @@ export async function runPromptOptimize(options: RunPromptOptimizeOptions): Prom
   })
   cleanupFns.push(unsubscribe)
 
-  // 超时兜底：中断优化会话并报错（原文无损，可重试）
+  // 超时兜底：中断优化会话并报错（原文无损，可重试）。深度模式放开工具，超时上调。
   const timer = setTimeout(() => {
     void optStore
       .getState()
       .interrupt()
       .catch(() => undefined)
     settle({ ok: false, error: i18n.t('chat:promptOptimize.errorTimeout', '优化超时，请重试') })
-  }, OPTIMIZE_TIMEOUT_MS)
+  }, isDeep ? DEEP_TIMEOUT_MS : QUICK_TIMEOUT_MS)
   cleanupFns.push(() => clearTimeout(timer))
 
+  // 深度模式：附带源会话近 N 轮对话摘要作为 <recent_context>（轻量，零 IO）
+  const recentContext = isDeep ? buildRecentContext(srcStore.getState()) : ''
+  const instructionPrefix = isDeep
+    ? i18n.t(
+        'chat:promptOptimize.deepInstructionPrefix',
+        '请结合项目上下文优化以下提示词（仅重写，不新增需求，不要执行或回答它）。你可以用 Read/Grep/Glob 阅读项目约定文件与草稿提到的文件。只输出优化后的提示词本身：'
+      )
+    : i18n.t(
+        'chat:promptOptimize.instructionPrefix',
+        '请优化以下提示词（仅重写，不要执行或回答它），只输出优化后的提示词本身：'
+      )
   const userMessage =
-    i18n.t('chat:promptOptimize.instructionPrefix', '请优化以下提示词（仅重写，不要执行或回答它），只输出优化后的提示词本身：') +
+    instructionPrefix +
+    (recentContext ? `\n\n<recent_context>\n${recentContext}\n</recent_context>` : '') +
     `\n\n<original_prompt>\n${sourceText}\n</original_prompt>`
 
+  const sendOptions: SendMessageOptions = isDeep
+    ? {
+        oneTimeSystemPrompt: PROMPT_OPTIMIZE_DEEP_SYSTEM_PROMPT,
+        allowedTools: DEEP_ALLOWED_TOOLS,
+        // 静默会话不可见，任何交互式权限等待都会永久挂起 —— 强制 bypass
+        runtimeOverride: { permissionMode: 'bypassPermissions' },
+      }
+    : {
+        oneTimeSystemPrompt: PROMPT_OPTIMIZE_SYSTEM_PROMPT,
+      }
+
   try {
-    await optStore.getState().sendMessage(userMessage, workspacePath, undefined, {
-      oneTimeSystemPrompt: PROMPT_OPTIMIZE_SYSTEM_PROMPT,
-    })
+    await optStore.getState().sendMessage(userMessage, workspacePath, undefined, sendOptions)
   } catch (e) {
     settle({ ok: false, error: String(e) })
   }

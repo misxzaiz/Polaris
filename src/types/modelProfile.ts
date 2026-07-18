@@ -35,6 +35,9 @@ export type AuthType = 'auth_token' | 'api_key' | 'custom_env' | 'none'
  */
 export type ProfileTargetEngine = 'claude' | 'codex' | 'simple-ai' | 'mimo'
 
+/** 全部可用引擎列表 — 用于「全选/取消全选」等场景 */
+export const ALL_ENGINES: ProfileTargetEngine[] = ['claude', 'codex', 'simple-ai', 'mimo']
+
 /** 供应商分类 — 决定预设引导和提示文案
  * - 'official': 官方直连（Anthropic / OpenAI）
  * - 'cn_official': 国内官方直连（火山引擎、百度等）

@@ -331,7 +331,7 @@ export function createConversationStore(
             cursor,
             sourceSnapshot: sourceText,
             pendingResult: null,
-            pendingMeta: { engineId: meta.engineId, model: meta.model },
+            pendingMeta: { engineId: meta.engineId, model: meta.model, mode: meta.mode },
             optimizeSessionId: meta.optimizeSessionId,
             error: null,
           },
@@ -372,6 +372,7 @@ export function createConversationStore(
             origin: 'optimized' as const,
             engineId: po.pendingMeta?.engineId,
             model: po.pendingMeta?.model,
+            mode: po.pendingMeta?.mode,
             createdAt: Date.now(),
           },
         ]
@@ -408,6 +409,7 @@ export function createConversationStore(
             origin: 'optimized' as const,
             engineId: po.pendingMeta?.engineId,
             model: po.pendingMeta?.model,
+            mode: po.pendingMeta?.mode,
             createdAt: Date.now(),
           },
         ]

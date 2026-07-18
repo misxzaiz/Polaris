@@ -19,8 +19,8 @@ import {
   runPromptOptimize,
   cancelPromptOptimize,
   usePromptOptimizePreview,
-  readStoredOptimizeEngine,
-  storeOptimizeEngine,
+  readStoredOptimizeConfig,
+  storeOptimizeConfig,
 } from '@/services/promptOptimizeService'
 import { useDebouncedCallback } from '@/hooks/useDebounce'
 import { UnifiedSuggestion, type SuggestionItem, type ConversationSuggestion } from './FileSuggestion'
@@ -45,7 +45,12 @@ import { McpServerItem } from './FileSuggestion'
 import { useSkillStore } from '@/stores/skillStore'
 import { useCliInfoStore } from '@/stores/cliInfoStore'
 import { useActiveSessionId } from '@/stores/conversationStore/sessionStoreManager'
-import { resolveSessionEngine } from '@/stores/conversationStore/conversationStoreUtils'
+import { resolveSessionEngine, resolveEffectiveProfileId } from '@/stores/conversationStore/conversationStoreUtils'
+import { useModelProfileStore } from '@/stores/modelProfileStore'
+import { isProfileForEngine } from '@/types/modelProfile'
+import { getSessionConfig } from '@/stores/sessionConfigStore'
+import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
+import type { PromptOptimizeMode } from '@/stores/conversationStore/types'
 import {
   getCliCommandSuggestions,
   matchBlockedCliCommand,
@@ -71,6 +76,12 @@ const OPTIMIZE_ENGINE_OPTIONS: Array<{ id: EngineId; label: string; Icon: typeof
   { id: 'simple-ai', label: 'Simple', Icon: Zap },
   { id: 'mimo', label: 'Mimo', Icon: Sparkles },
 ]
+
+/** 将引擎 id 映射到 Profile 过滤用的引擎类别（与 CompactHandoffModal 一致） */
+function toProfileEngine(engineId: string): 'claude' | 'codex' | 'simple-ai' | 'mimo' {
+  const e = normalizeEngineId(engineId)
+  return e === 'codex' ? 'codex' : e === 'simple-ai' ? 'simple-ai' : e === 'mimo' ? 'mimo' : 'claude'
+}
 
 export interface EditMode {
   messageId: string

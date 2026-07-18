@@ -743,6 +743,21 @@ impl EventParser {
         subtype: String,
         extra: HashMap<String, serde_json::Value>,
     ) -> Vec<AIEvent> {
+        // Claude CLI result 事件携带整轮 usage（input/cache_creation/cache_read/output），
+        // 解析为 Usage 事件供前端上下文水位条；缺字段按 0 处理。
+        let usage_event = extra.get("usage").and_then(|u| u.as_object()).map(|u| {
+            let g = |k: &str| u.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+            AIEvent::usage(
+                &self.session_id,
+                g("input_tokens"),
+                Some(g("cache_creation_input_tokens")),
+                Some(g("cache_read_input_tokens")),
+                g("output_tokens"),
+                None,
+                None,
+            )
+        });
+
         // 检查是否有 permission_denials（CLI --print 模式下权限拒绝信息）
         if let Some(denials_val) = extra.get("permission_denials") {
             if let Some(denial_arr) = denials_val.as_array() {
@@ -790,6 +805,9 @@ impl EventParser {
                                 crate::models::ResultEvent::new(&self.session_id, output.clone())
                             ));
                         }
+                        if let Some(ue) = usage_event {
+                            events.insert(0, ue);
+                        }
                         return events;
                     }
                 }
@@ -797,7 +815,7 @@ impl EventParser {
         }
 
         // 原有逻辑
-        match subtype.as_str() {
+        let mut events = match subtype.as_str() {
             "success" => {
                 if let Some(output) = extra.get("output") {
                     vec![AIEvent::Result(crate::models::ResultEvent::new(&self.session_id, output.clone()))]
@@ -818,7 +836,11 @@ impl EventParser {
                     vec![AIEvent::Progress(ProgressEvent::new(&self.session_id, &subtype))]
                 }
             }
+        };
+        if let Some(ue) = usage_event {
+            events.insert(0, ue);
         }
+        events
     }
 
     /// 从消息中提取文本内容

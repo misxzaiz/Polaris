@@ -60,6 +60,13 @@ export interface InputDraft {
 // 提示词优化类型
 // ============================================================================
 
+/**
+ * 提示词优化模式。
+ * - quick = 快速优化：零上下文、禁用工具，仅措辞打磨（现状）
+ * - deep  = 深度优化：放开只读工具白名单，让模型自读对话/项目上下文做贴合改写
+ */
+export type PromptOptimizeMode = 'quick' | 'deep'
+
 /** 提示词优化版本栈中的一个版本 */
 export interface PromptVersion {
   text: string
@@ -73,6 +80,8 @@ export interface PromptVersion {
   engineId?: EngineId
   /** origin === 'optimized' 时记录来源模型（可选） */
   model?: string
+  /** origin === 'optimized' 时记录来源模式（quick / deep，回滚时可辨识） */
+  mode?: PromptOptimizeMode
   createdAt: number
 }
 
@@ -94,8 +103,8 @@ export interface PromptOptimizeState {
   sourceSnapshot: string | null
   /** status === 'ready' 时的待应用结果 */
   pendingResult: string | null
-  /** 本轮优化的引擎/模型（结果入栈时随版本记录） */
-  pendingMeta: { engineId: EngineId; model?: string } | null
+  /** 本轮优化的引擎/模型/模式（结果入栈时随版本记录） */
+  pendingMeta: { engineId: EngineId; model?: string; mode?: PromptOptimizeMode } | null
   /** 本轮优化使用的静默会话 ID（流式预览订阅 / 取消中断用） */
   optimizeSessionId: string | null
   /** 最近一次优化失败的错误信息（进入 running 时清空） */
@@ -283,7 +292,7 @@ export interface ConversationActions {
    * 开始一轮优化：登记快照/引擎/优化会话，status → running。
    * 版本栈处理：首轮把原文入栈；多轮先截断 redo 分支，输入被手改则手改文本先入栈。
    */
-  beginPromptOptimize: (sourceText: string, meta: { engineId: EngineId; model?: string; optimizeSessionId: string }) => void
+  beginPromptOptimize: (sourceText: string, meta: { engineId: EngineId; model?: string; mode?: PromptOptimizeMode; optimizeSessionId: string }) => void
   /**
    * 优化完成回填：输入与快照一致 → 结果入栈并写回 inputDraft；
    * 输入被手改 → status → ready，结果暂存 pendingResult 待用户点击应用。
