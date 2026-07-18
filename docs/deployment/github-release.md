@@ -166,6 +166,35 @@ git push origin vx.x.x
 
 ---
 
+## v10.1.4 构建记录
+
+**构建时间**: 2026-07-19 (UTC)
+**Release 页面**: https://github.com/misxzaiz/Polaris/releases/tag/v10.1.4
+
+### 构建产物
+
+| 产物 | 大小 | 平台 | 说明 |
+|---|---|---|---|
+| `polaris_10.1.4_x64-setup.exe` | - | Windows x64 | NSIS 安装程序 |
+| `polaris_10.1.4_x64_en-US.msi` | - | Windows x64 | MSI 安装程序 |
+| `polaris_10.1.4_amd64.deb` | - | Linux x64 | Debian/Ubuntu 安装包 |
+| `polaris-10.1.4-1.x86_64.rpm` | - | Linux x64 | Red Hat/Fedora 安装包 |
+| `polaris_10.1.4_amd64.AppImage` | - | Linux x64 | 便携版（双击运行） |
+| `polaris-web-10.1.4-win-x64.zip` | - | Windows x64 | Web 独立服务 |
+| `polaris-web-10.1.4-linux-x86_64.tar.gz` | - | Linux x64 | Web 独立服务 |
+| `polaris-web-10.1.4-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务 |
+| `latest.json` | - | - | 自动更新元数据 |
+
+### 签名文件
+
+所有安装包均附带 `.sig` 签名文件，用于 Tauri 自动更新验证。
+
+### 修复的问题
+
+- 布局与移动端连接门禁相关修复（NewSessionButton / CreateWorkspaceModal / index.css / MobileConnectionGate）
+
+---
+
 ## v10.1.3 构建记录
 
 **构建时间**: 2026-07-19 (UTC)
