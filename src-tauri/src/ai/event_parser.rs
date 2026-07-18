@@ -738,27 +738,114 @@ impl EventParser {
     }
 
     /// 解析结果事件
+    ///
+    /// **用量提取口径（关键修复）：**
+    /// 1. 优先从 `extra.modelUsage`（按模型累计，本轮所有模型/API 调用的汇总）取值作为水位条基准。
+    ///    这个值反映的是完整本轮用量，与 `/usage` 命令输出口径一致。
+    /// 2. 当 `modelUsage` 为空时退化到 `extra.usage`（顶层 usage 字段，仅最后一次 API 调用）。
+    ///    这个值偏小，仅作兜底。
+    /// 3. 同时透传 `modelUsage` 明细（按模型分解）和原始 result 报文到前端，供按模型维度
+    ///    展示用量和调试查看原始请求/响应。
     fn parse_result_event(
         &self,
         subtype: String,
         extra: HashMap<String, serde_json::Value>,
     ) -> Vec<AIEvent> {
-        // Claude CLI result 事件携带整轮 usage（input/cache_creation/cache_read/output），
-        // 解析为 Usage 事件供前端上下文水位条；缺字段按 0 处理。
-        let usage_event = extra.get("usage").and_then(|u| u.as_object()).map(|u| {
-            let g = |k: &str| u.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
-            AIEvent::usage(
-                &self.session_id,
-                g("input_tokens"),
-                Some(g("cache_creation_input_tokens")),
-                Some(g("cache_read_input_tokens")),
-                g("output_tokens"),
-                None,
-                None,
-            )
-        });
+        // ===== 用量提取：优先 modelUsage（累计），退化到 usage（末次调用）=====
+        let usage_event =
+            // 路径 A：modelUsage 存在且非空 → 用累计值
+            if let Some(mu_obj) = extra.get("modelUsage").and_then(|mu| mu.as_object()) {
+                if mu_obj.is_empty() {
+                    None
+                } else {
+                    let mut breakdown_map: std::collections::HashMap<String, crate::models::ModelUsageBreakdown> = std::collections::HashMap::new();
+                    let mut sum_input = 0u64;
+                    let mut sum_cache_create = 0u64;
+                    let mut sum_cache_read = 0u64;
+                    let mut sum_output = 0u64;
+                    let mut sum_reasoning = 0u64;
+                    let mut ctx_window: Option<u64> = None;
 
-        // 检查是否有 permission_denials（CLI --print 模式下权限拒绝信息）
+                    for (model, fields) in mu_obj {
+                        if let Some(f) = fields.as_object() {
+                            let mi = f.get("inputTokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                            let mo = f.get("outputTokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                            let mcr = f.get("cacheReadInputTokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                            let mcc = f.get("cacheCreationInputTokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                            let mro = f.get("reasoningOutputTokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                            let mcw = f.get("contextWindow").and_then(|v| v.as_u64());
+                            let mmo = f.get("maxOutputTokens").and_then(|v| v.as_u64());
+                            let mcost = f.get("costUSD").and_then(|v| v.as_f64());
+                            let mws = f.get("webSearchRequests").and_then(|v| v.as_u64());
+
+                            sum_input += mi;
+                            sum_cache_create += mcc;
+                            sum_cache_read += mcr;
+                            sum_output += mo;
+                            sum_reasoning += mro;
+                            if mcw.is_some() && ctx_window.is_none() {
+                                ctx_window = mcw;
+                            }
+
+                            let mut bd = crate::models::ModelUsageBreakdown::new(mi, mo);
+                            bd.cache_read_input_tokens = Some(mcr);
+                            bd.cache_creation_input_tokens = Some(mcc);
+                            bd.reasoning_output_tokens = if mro > 0 { Some(mro) } else { None };
+                            bd.context_window = mcw;
+                            bd.max_output_tokens = mmo;
+                            bd.cost_usd = mcost;
+                            bd.web_search_requests = mws;
+                            breakdown_map.insert(model.clone(), bd);
+                        }
+                    }
+
+                    let breakdown_map_clone = breakdown_map.clone();
+                    let raw_payload = serde_json::json!({
+                        "type": "result",
+                        "subtype": subtype.clone(),
+                        "extra": extra.clone(),
+                    });
+                    let usage = AIEvent::Usage(
+                        crate::models::UsageEvent::new(
+                            &self.session_id,
+                            sum_input,
+                            Some(sum_cache_create),
+                            Some(sum_cache_read),
+                            sum_output,
+                            if sum_reasoning > 0 { Some(sum_reasoning) } else { None },
+                            ctx_window,
+                        )
+                        .with_model_usage(breakdown_map_clone)
+                        .with_raw_payload(raw_payload),
+                    );
+                    Some(usage)
+                }
+            }
+            // 路径 B：modelUsage 为空，退化到顶层 usage（仅最后一次 API 调用）
+            else {
+                extra.get("usage").and_then(|u| u.as_object()).map(|u| {
+                    let g = |k: &str| u.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+                    let raw_payload = serde_json::json!({
+                        "type": "result",
+                        "subtype": subtype.clone(),
+                        "extra": extra.clone(),
+                    });
+                    AIEvent::Usage(
+                        crate::models::UsageEvent::new(
+                            &self.session_id,
+                            g("input_tokens"),
+                            Some(g("cache_creation_input_tokens")),
+                            Some(g("cache_read_input_tokens")),
+                            g("output_tokens"),
+                            None,
+                            None,
+                        )
+                        .with_raw_payload(raw_payload),
+                    )
+                })
+            };
+
+        // 检查是否有 permission_denials
         if let Some(denials_val) = extra.get("permission_denials") {
             if let Some(denial_arr) = denials_val.as_array() {
                 if !denial_arr.is_empty() {
@@ -805,8 +892,8 @@ impl EventParser {
                                 crate::models::ResultEvent::new(&self.session_id, output.clone())
                             ));
                         }
-                        if let Some(ue) = usage_event {
-                            events.insert(0, ue);
+                        if let Some(ref ue) = usage_event {
+                            events.insert(0, ue.clone());
                         }
                         return events;
                     }

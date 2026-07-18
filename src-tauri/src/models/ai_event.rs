@@ -1250,10 +1250,66 @@ impl ContextCompactedEvent {
 // 用量事件
 // ============================================================================
 
+/// 单个模型的用量明细
+///
+/// 对应 Claude CLI result 事件里 `modelUsage[model]` 对象，是**本轮所有 API 调用
+/// 对该模型的累计值**（区别于 `result.usage` 顶层字段，后者只是最后一次调用）。
+/// 前端可据此按模型维度展示用量，也是核对水位条与 `/context` 口径的基准。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelUsageBreakdown {
+    /// 未命中缓存的输入 token（全价）
+    pub input_tokens: u64,
+    /// 输出 token
+    pub output_tokens: u64,
+    /// 从缓存读取的 token（~0.1×）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_read_input_tokens: Option<u64>,
+    /// 写入缓存的 token（~1.25×）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_creation_input_tokens: Option<u64>,
+    /// 推理输出 token
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_output_tokens: Option<u64>,
+    /// 该模型的上下文窗口
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<u64>,
+    /// 该模型单次最大输出 token
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<u64>,
+    /// 该模型本轮花费（美元）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
+    /// web 搜索请求次数
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub web_search_requests: Option<u64>,
+}
+
+impl ModelUsageBreakdown {
+    pub fn new(input_tokens: u64, output_tokens: u64) -> Self {
+        Self {
+            input_tokens,
+            output_tokens,
+            cache_read_input_tokens: None,
+            cache_creation_input_tokens: None,
+            reasoning_output_tokens: None,
+            context_window: None,
+            max_output_tokens: None,
+            cost_usd: None,
+            web_search_requests: None,
+        }
+    }
+}
+
 /// Token 用量事件
 ///
 /// 每轮对话结束时携带本轮的 token 分类用量，供前端计算上下文水位与成本。
 /// 上下文占用 = input + cacheCreation + cacheRead（三项之和，非单一 input）。
+///
+/// **口径基准**（Claude Code 引擎）：`modelUsage` 字段为本轮所有模型所有 API 调用
+/// 的**累计值**，是水位条分子基准；`model_usage` 为 None 时退化到顶层 `usage`
+/// 字段（仅最后一次调用，偏小，仅作兜底）。`raw_payload` 保留原始 result 事件
+/// 报文，供前端"查看原始请求/响应"调试链路使用。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageEvent {
@@ -1261,7 +1317,7 @@ pub struct UsageEvent {
     pub event_type: String,
     /// 会话 ID - 用于事件路由
     pub session_id: String,
-    /// 未命中缓存的输入 token（全价）
+    /// 未命中缓存的输入 token（全价）。基准 = modelUsage 累计，退化 = usage 顶层
     pub input_tokens: u64,
     /// 写入缓存的 token（~1.25×）
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1277,6 +1333,13 @@ pub struct UsageEvent {
     /// 上下文窗口大小；后端已知则填，否则前端从 ModelProfile 取
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_window: Option<u64>,
+    /// 按模型维度的用量明细（Claude Code 的 result.modelUsage；其余引擎为 None）。
+    /// 前端据此做按模型区分用量展示与核对。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_usage: Option<HashMap<String, ModelUsageBreakdown>>,
+    /// 原始 result 事件报文（含 headers/usage/modelUsage 等全字段），供调试查看。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_payload: Option<serde_json::Value>,
 }
 
 impl UsageEvent {
@@ -1299,7 +1362,21 @@ impl UsageEvent {
             output_tokens,
             reasoning_output_tokens,
             context_window,
+            model_usage: None,
+            raw_payload: None,
         }
+    }
+
+    /// 附加按模型维度用量明细
+    pub fn with_model_usage(mut self, model_usage: HashMap<String, ModelUsageBreakdown>) -> Self {
+        self.model_usage = if model_usage.is_empty() { None } else { Some(model_usage) };
+        self
+    }
+
+    /// 附加原始报文（供前端查看请求/响应原文）
+    pub fn with_raw_payload(mut self, raw_payload: serde_json::Value) -> Self {
+        self.raw_payload = Some(raw_payload);
+        self
     }
 }
 

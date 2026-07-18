@@ -12,7 +12,7 @@ import type {
   Workspace,
 } from '@/types'
 import type { Attachment } from '@/types/attachment'
-import type { AIEvent } from '@/ai-runtime'
+import type { AIEvent, ModelUsageBreakdown } from '@/ai-runtime'
 import type { StoreApi, UseBoundStore } from 'zustand'
 import type { EventRouter } from '@/services/eventRouter'
 
@@ -174,7 +174,7 @@ export interface SendMessageOptions {
  * output 不占上下文窗口，但计入成本。
  */
 export interface UsageStats {
-  /** 最近一轮：未命中缓存的输入 token */
+  /** 最近一轮：未命中缓存的输入 token（modelUsage 累计值，退化到 usage 顶层） */
   input: number
   /** 最近一轮：写入缓存的 token */
   cacheCreation: number
@@ -188,6 +188,10 @@ export interface UsageStats {
   contextWindow?: number
   /** 累计输出 token（跨轮累加，用于成本估算） */
   totalOutput: number
+  /** 按模型维度的用量明细（model → ModelUsageBreakdown） */
+  modelUsage?: Record<string, ModelUsageBreakdown>
+  /** 原始 result 事件报文（含 usage/modelUsage/cost 等全字段），供调试查看 */
+  rawPayload?: Record<string, unknown>
 }
 
 export interface ConversationState {

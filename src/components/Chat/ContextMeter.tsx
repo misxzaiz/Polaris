@@ -4,9 +4,13 @@
  * 对标 Claude Code 状态行(上下文百分比)+ /cost。
  * 水位分子 = input + cacheCreation + cacheRead(三项之和,非单一 input);
  * 分母 = 会话配置 contextWindow(缺省 200K)。
- * 主行使用紧凑圆圈进度；悬停/聚焦浮出详情卡:token 四分类 + 缓存命中率 + 阈值预警。
+ * 主行使用紧凑圆圈进度；悬停/聚焦浮出详情卡:token 四分类 + 缓存命中率 + 阈值预警 +
+ * 按模型维度用量明细 + 原始报文查看按钮。
+ *
+ * **用量口径基准：** 当引擎为 Claude Code 时，input/cacheCreation/cacheRead 来自
+ * modelUsage 的累计求和（完整本轮），与 `/usage` 命令输出一致。退化路径读顶层 usage
+ * （仅最后一次 API 调用，偏小）。
  */
-
 import { useState, useRef } from 'react';
 import { clsx } from 'clsx';
 import type { UsageStats } from '@/stores/conversationStore/types';
@@ -30,8 +34,14 @@ function fmt(n: number): string {
   return String(n);
 }
 
+function fmtCost(n: number | undefined): string {
+  if (n == null || n === 0) return '';
+  return `$${n.toFixed(4)}`;
+}
+
 export function ContextMeter({ usage, contextWindow, labelMode = 'full' }: ContextMeterProps) {
   const [active, setActive] = useState(false);
+  const [showRaw, setShowRaw] = useState(false);
   const anchorRef = useRef<HTMLDivElement>(null);
 
   const window = usage.contextWindow ?? contextWindow ?? 200000;
@@ -39,6 +49,9 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full' }: Conte
   const pct = window > 0 ? used / window : 0;
   const pctClamped = Math.min(Math.max(pct, 0), 1);
   const hitRate = used > 0 ? Math.round((usage.cacheRead / used) * 100) : 0;
+
+  const modelUsage = usage.modelUsage;
+  const modelCount = modelUsage ? Object.keys(modelUsage).length : 0;
 
   const level =
     pct >= CRITICAL_THRESHOLD ? 'crit' : pct >= COMPACT_THRESHOLD ? 'warn' : 'ok';
@@ -78,10 +91,10 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full' }: Conte
       aria-label={ariaLabel}
       title={ariaLabel}
       className="relative flex items-center gap-1 px-1.5 py-0.5 rounded-full cursor-default hover:bg-background-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 transition-colors shrink-0"
-      onMouseEnter={() => setActive(true)}
-      onMouseLeave={() => setActive(false)}
+      onMouseEnter={() => { setActive(true); setShowRaw(false); }}
+      onMouseLeave={() => { setActive(false); setShowRaw(false); }}
       onFocus={() => setActive(true)}
-      onBlur={() => setActive(false)}
+      onBlur={() => { setActive(false); setShowRaw(false); }}
     >
       <svg
         width="22"
@@ -120,49 +133,122 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full' }: Conte
 
       {/* 悬浮详情卡 */}
       {active && (
-        <div className="absolute bottom-full right-0 mb-2 z-40 w-[280px] rounded-xl border border-border-subtle bg-background-elevated p-3 shadow-xl">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] uppercase tracking-wide text-text-muted">上下文用量</span>
-            <span className={clsx('font-mono text-[11px]', labelColor)}>{percentLabel} · {winLabel}</span>
-          </div>
-          <div className="h-2 rounded bg-background-tertiary overflow-hidden flex mb-2.5 relative">
-            <div className="h-full bg-primary" style={{ width: `${wi}%` }} />
-            <div className="h-full bg-amber-500" style={{ width: `${wc}%` }} />
-            <div className="h-full bg-purple-400" style={{ width: `${wr}%` }} />
-            <div
-              className="absolute top-[-1px] h-[10px] w-px bg-text-tertiary"
-              style={{ left: `${COMPACT_THRESHOLD * 100}%` }}
-            />
-          </div>
-          <div className="grid grid-cols-[1fr_auto] gap-y-1.5 gap-x-3 text-[12px]">
-            <MeterRow color="bg-primary" label="输入 input" value={usage.input} />
-            {usage.cacheCreation > 0 && (
-              <MeterRow color="bg-amber-500" label="缓存写入" value={usage.cacheCreation} />
-            )}
-            {usage.cacheRead > 0 && (
-              <MeterRow color="bg-purple-400" label="缓存读取" value={usage.cacheRead} />
-            )}
-            <MeterRow color="bg-text-tertiary" label="输出 output" value={usage.output} dim />
-          </div>
-          {usage.cacheRead > 0 && (
-            <div className="mt-2.5 pt-2.5 border-t border-border-subtle flex items-center justify-between">
-              <span className="text-[11px] text-text-muted">缓存命中率</span>
-              <span className="font-mono text-[12px] text-purple-400">{hitRate}%</span>
-            </div>
+        <div
+          className={clsx(
+            'absolute bottom-full right-0 mb-2 z-40 rounded-xl border border-border-subtle bg-background-elevated p-3 shadow-xl',
+            showRaw ? 'w-[480px]' : 'w-[310px]',
           )}
-          {level !== 'ok' && (
-            <div
-              className={clsx(
-                'mt-2.5 rounded-md px-2 py-1.5 text-[11px]',
-                level === 'crit'
-                  ? 'bg-red-500/10 text-red-400 border border-red-500/30'
-                  : 'bg-amber-500/10 text-amber-400 border border-amber-500/30',
-              )}
-            >
-              {level === 'crit'
-                ? `逼近上下文窗口(${percentLabel})· 建议压缩交接或开启新会话`
-                : `接近压缩阈值(${percentLabel})· 即将自动压缩上下文`}
+        >
+          {showRaw && usage.rawPayload ? (
+            /* 原始报文查看模式 */
+            <div className="max-h-[400px] overflow-auto">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] uppercase tracking-wide text-text-muted">原始 result 报文</span>
+                <button
+                  className="text-[11px] text-primary hover:underline"
+                  onClick={() => setShowRaw(false)}
+                >
+                  返回
+                </button>
+              </div>
+              <pre className="text-[11px] font-mono text-text-secondary whitespace-pre-wrap break-all leading-relaxed">
+                {JSON.stringify(usage.rawPayload, null, 2)}
+              </pre>
             </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] uppercase tracking-wide text-text-muted">上下文用量</span>
+                <span className={clsx('font-mono text-[11px]', labelColor)}>{percentLabel} · {winLabel}</span>
+              </div>
+              <div className="h-2 rounded bg-background-tertiary overflow-hidden flex mb-2.5 relative">
+                <div className="h-full bg-primary" style={{ width: `${wi}%` }} />
+                <div className="h-full bg-amber-500" style={{ width: `${wc}%` }} />
+                <div className="h-full bg-purple-400" style={{ width: `${wr}%` }} />
+                <div
+                  className="absolute top-[-1px] h-[10px] w-px bg-text-tertiary"
+                  style={{ left: `${COMPACT_THRESHOLD * 100}%` }}
+                />
+              </div>
+              <div className="grid grid-cols-[1fr_auto] gap-y-1.5 gap-x-3 text-[12px]">
+                <MeterRow color="bg-primary" label="输入 input" value={usage.input} />
+                {usage.cacheCreation > 0 && (
+                  <MeterRow color="bg-amber-500" label="缓存写入" value={usage.cacheCreation} />
+                )}
+                {usage.cacheRead > 0 && (
+                  <MeterRow color="bg-purple-400" label="缓存读取" value={usage.cacheRead} />
+                )}
+                <MeterRow color="bg-text-tertiary" label="输出 output" value={usage.output} dim />
+              </div>
+              {usage.cacheRead > 0 && (
+                <div className="mt-2.5 pt-2.5 border-t border-border-subtle flex items-center justify-between">
+                  <span className="text-[11px] text-text-muted">缓存命中率</span>
+                  <span className="font-mono text-[12px] text-purple-400">{hitRate}%</span>
+                </div>
+              )}
+
+              {/* 按模型维度的用量明细 */}
+              {modelCount > 0 && (
+                <div className="mt-2.5 pt-2.5 border-t border-border-subtle">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[11px] text-text-muted">模型维度用量</span>
+                    <span className="text-[10px] text-text-muted">{modelCount} 模型</span>
+                  </div>
+                  {Object.entries(modelUsage).map(([model, m]) => (
+                    <div key={model} className="mb-2 last:mb-0">
+                      <div className="text-[11px] font-medium text-text-secondary mb-1">{model}</div>
+                      <div className="grid grid-cols-[1fr_auto] gap-x-2 gap-y-0.5 text-[11px]">
+                        <MeterRow color="bg-primary/60" label="输入" value={m.inputTokens} dim />
+                        {m.cacheCreationInputTokens != null && m.cacheCreationInputTokens > 0 ? (
+                          <MeterRow color="bg-amber-500/60" label="缓存写入" value={m.cacheCreationInputTokens} dim />
+                        ) : null}
+                        {m.cacheReadInputTokens != null && m.cacheReadInputTokens > 0 ? (
+                          <MeterRow color="bg-purple-400/60" label="缓存读取" value={m.cacheReadInputTokens} dim />
+                        ) : null}
+                        <MeterRow color="bg-text-tertiary/60" label="输出" value={m.outputTokens} dim />
+                        {m.costUsd != null && m.costUsd > 0 ? (
+                          <>
+                            <span className="text-text-muted flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-sm shrink-0 bg-transparent" />
+                              花费
+                            </span>
+                            <span className="font-mono text-right tabular-nums text-text-muted">{fmtCost(m.costUsd)}</span>
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 原始报文查看按钮 */}
+              {usage.rawPayload && (
+                <div className="mt-2.5 pt-2.5 border-t border-border-subtle">
+                  <button
+                    className="flex items-center gap-1 text-[11px] text-text-muted hover:text-primary transition-colors"
+                    onClick={() => setShowRaw(true)}
+                  >
+                    <span className="text-xs">📄</span>
+                    查看原始报文
+                  </button>
+                </div>
+              )}
+
+              {level !== 'ok' && (
+                <div
+                  className={clsx(
+                    'mt-2.5 rounded-md px-2 py-1.5 text-[11px]',
+                    level === 'crit'
+                      ? 'bg-red-500/10 text-red-400 border border-red-500/30'
+                      : 'bg-amber-500/10 text-amber-400 border border-amber-500/30',
+                  )}
+                >
+                  {level === 'crit'
+                    ? `逼近上下文窗口(${percentLabel})· 建议压缩交接或开启新会话`
+                    : `接近压缩阈值(${percentLabel})· 即将自动压缩上下文`}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

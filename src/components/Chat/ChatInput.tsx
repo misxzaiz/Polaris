@@ -1212,7 +1212,7 @@ export function ChatInput({
           <div className="flex items-start gap-1.5 max-w-full px-2.5 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-xs text-primary/90">
             <Loader2 size={13} className="shrink-0 mt-0.5 animate-spin" />
             <span className="flex-1 min-w-0 line-clamp-2 break-words whitespace-pre-wrap">
-              {optimizePreview.text || t('promptOptimize.running')}
+              {t('promptOptimize.running')}
             </span>
             <button
               onClick={handleCancelOptimize}

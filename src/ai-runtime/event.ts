@@ -715,10 +715,39 @@ export interface ContextCompactedEvent {
 }
 
 /**
+ * 单个模型的用量明细（对应 Claude CLI result 的 modelUsage[model]）
+ *
+ * 包含该模型本轮所有 API 调用的累计值，以及模型特有元信息。
+ * 前端用于按模型维度区分用量与成本。
+ */
+export interface ModelUsageBreakdown {
+  /** 未命中缓存的输入 token（全价） */
+  inputTokens: number
+  /** 输出 token */
+  outputTokens: number
+  /** 从缓存读取的 token（~0.1×） */
+  cacheReadInputTokens?: number
+  /** 写入缓存的 token（~1.25×） */
+  cacheCreationInputTokens?: number
+  /** 推理输出 token */
+  reasoningOutputTokens?: number
+  /** 该模型的上下文窗口 */
+  contextWindow?: number
+  /** 该模型单次最大输出 token */
+  maxOutputTokens?: number
+  /** 该模型本轮花费（美元） */
+  costUsd?: number
+  /** web 搜索请求次数 */
+  webSearchRequests?: number
+}
+
+/**
  * Token 用量事件
  *
  * 每轮对话结束时携带本轮 token 分类用量，供前端计算上下文水位与成本。
  * 上下文占用 = inputTokens + cacheCreationInputTokens + cacheReadInputTokens（三项之和）。
+ *
+ * 基准：Claude Code 引擎的 inputTokens/cacheCreation/cacheRead 来自 modelUsage 的累计求和。
  */
 export interface UsageEvent {
   type: 'usage'
@@ -736,6 +765,10 @@ export interface UsageEvent {
   reasoningOutputTokens?: number
   /** 上下文窗口大小；缺省时前端从 ModelProfile 取 */
   contextWindow?: number
+  /** 按模型维度的用量明细（model → ModelUsageBreakdown）。用于按模型区分用量展示。 */
+  modelUsage?: Record<string, ModelUsageBreakdown>
+  /** 原始 result 事件报文（含 usage/modelUsage/cost 等全字段），供调试查看请求/响应。 */
+  rawPayload?: Record<string, unknown>
 }
 
 /**

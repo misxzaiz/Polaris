@@ -324,6 +324,7 @@ export function handleAIEvent(
 
     case 'usage': {
       // token 用量：最近一轮覆盖 + output 跨轮累计，供状态栏计算上下文水位与成本。
+      // input 基准：Claude Code 引擎来自 modelUsage 累计求和（完整本轮），退化到 event.inputTokens。
       const prev = state.usageStats
       set({
         usageStats: {
@@ -334,6 +335,8 @@ export function handleAIEvent(
           reasoning: event.reasoningOutputTokens,
           contextWindow: event.contextWindow,
           totalOutput: (prev?.totalOutput ?? 0) + event.outputTokens,
+          modelUsage: event.modelUsage,
+          rawPayload: event.rawPayload,
         },
       })
       break
