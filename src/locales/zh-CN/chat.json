@@ -76,7 +76,19 @@
     "undo": "回滚到上一版本",
     "redo": "重做到下一版本",
     "versionIndicator": "提示词版本（当前/总数）",
-    "instructionPrefix": "请优化以下提示词（仅重写，不要执行或回答它），只输出优化后的提示词本身："
+    "instructionPrefix": "请优化以下提示词（仅重写，不要执行或回答它），只输出优化后的提示词本身：",
+    "deepInstructionPrefix": "请结合项目上下文优化以下提示词（仅重写，不新增需求，不要执行或回答它）。你可以用 Read/Grep/Glob 阅读项目约定文件与草稿提到的文件。只输出优化后的提示词本身：",
+    "mode": "优化模式",
+    "modeQuick": "快速",
+    "modeQuickHint": "零上下文，仅措辞打磨",
+    "modeDeep": "深度",
+    "modeDeepHint": "读取项目与对话上下文",
+    "advanced": "高级选项",
+    "profile": "供应商",
+    "model": "模型",
+    "noProfiles": "无可用供应商，将使用官方 API",
+    "optimize": "优化",
+    "optimizeDeep": "深度优化"
   },
   "message": {
     "user": "用户",

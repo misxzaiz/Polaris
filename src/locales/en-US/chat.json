@@ -77,7 +77,19 @@
     "undo": "Roll back to previous version",
     "redo": "Redo to next version",
     "versionIndicator": "Prompt version (current/total)",
-    "instructionPrefix": "Optimize the following prompt (rewrite only, do not execute or answer it). Output only the optimized prompt itself:"
+    "instructionPrefix": "Optimize the following prompt (rewrite only, do not execute or answer it). Output only the optimized prompt itself:",
+    "deepInstructionPrefix": "Optimize the following prompt in the context of your project (rewrite only, do not add new requirements, do not execute or answer it). You may use Read/Grep/Glob to inspect convention files and files mentioned in the draft. Output only the optimized prompt itself:",
+    "mode": "Optimization mode",
+    "modeQuick": "Quick",
+    "modeQuickHint": "Zero context, wording only",
+    "modeDeep": "Deep",
+    "modeDeepHint": "Read project and conversation context",
+    "advanced": "Advanced",
+    "profile": "Provider",
+    "model": "Model",
+    "noProfiles": "No providers available; using official API",
+    "optimize": "Optimize",
+    "optimizeDeep": "Deep optimize"
   },
   "message": {
     "user": "User",
