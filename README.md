@@ -94,10 +94,6 @@ pnpm run package:web
 
 如有遗漏或需要补充其他工具，欢迎联系我们加上。
 
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=misxzaiz%2Fpolaris&type=Date)](https://api.star-history.com/svg?repos=misxzaiz%2Fpolaris&type=Date)
-
 ## 许可证
 
 MIT
