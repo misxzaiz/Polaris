@@ -744,10 +744,15 @@ export interface ModelUsageBreakdown {
 /**
  * Token 用量事件
  *
- * 每轮对话结束时携带本轮 token 分类用量，供前端计算上下文水位与成本。
+ * 携带 token 分类用量，供前端计算上下文水位与成本。
  * 上下文占用 = inputTokens + cacheCreationInputTokens + cacheReadInputTokens（三项之和）。
  *
- * 基准：Claude Code 引擎的 inputTokens/cacheCreation/cacheRead 来自 modelUsage 的累计求和。
+ * 双口径（scope 区分，Claude Code 引擎）：
+ * - 'turn'：单次 API 调用快照（流式 message_delta.usage），与 CLI /context 读数一致，
+ *   是上下文水位的准确基准。
+ * - 'cumulative'：本次 run 内所有 API 调用的累计（result.modelUsage 求和），多轮
+ *   工具调用时远大于真实水位，仅用于成本/按模型明细。
+ * - 缺省（Codex/SimpleAI 等其余引擎）：按 cumulative 兜底处理。
  */
 export interface UsageEvent {
   type: 'usage'
@@ -767,6 +772,8 @@ export interface UsageEvent {
   contextWindow?: number
   /** 按模型维度的用量明细（model → ModelUsageBreakdown）。用于按模型区分用量展示。 */
   modelUsage?: Record<string, ModelUsageBreakdown>
+  /** 用量口径：'turn'=单轮快照（水位基准）| 'cumulative'=本次 run 累计（成本口径）。缺省视为 cumulative。 */
+  scope?: 'turn' | 'cumulative'
   /** 原始 result 事件报文（含 usage/modelUsage/cost 等全字段），供调试查看请求/响应。 */
   rawPayload?: Record<string, unknown>
 }

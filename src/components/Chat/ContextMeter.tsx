@@ -5,11 +5,12 @@
  * 水位分子 = input + cacheCreation + cacheRead(三项之和,非单一 input);
  * 分母 = 会话配置 contextWindow(缺省 200K)。
  * 主行使用紧凑圆圈进度；悬停/聚焦浮出详情卡:token 四分类 + 缓存命中率 + 阈值预警 +
- * 按模型维度用量明细 + 原始报文查看按钮。
+ * 按模型维度用量明细 + 原始报文查看入口。
  *
- * **用量口径基准：** 当引擎为 Claude Code 时，input/cacheCreation/cacheRead 来自
- * modelUsage 的累计求和（完整本轮），与 `/usage` 命令输出一致。退化路径读顶层 usage
- * （仅最后一次 API 调用，偏小）。
+ * **用量口径（对标 /context 与 /cost 语义）：** 水位三元组（input/cacheCreation/
+ * cacheRead）优先来自 scope='turn' 的单轮快照（message_delta.usage，与 CLI /context
+ * 读数一致）；引擎未提供快照时由 cumulative 累计兜底（contextSource='cumulative'，
+ * 详情卡标注"估算"）。模型维度明细/成本恒为本次 run 累计（/cost 口径），与水位分开。
  *
  * **悬浮卡显隐（关键修复）：**
  * `active` 由锚点容器 + 卡片本身两个独立事件宿主共同维持，覆盖 `mb-2` 间隙造成的
@@ -192,7 +193,17 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full' }: Conte
           ) : (
             <>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] uppercase tracking-wide text-text-muted">上下文用量</span>
+                <span className="text-[11px] uppercase tracking-wide text-text-muted">
+                  上下文用量
+                  {usage.contextSource === 'cumulative' && (
+                    <span
+                      className="ml-1 normal-case tracking-normal text-amber-400/80"
+                      title="该引擎未提供单轮用量快照，水位按本轮累计估算，多轮工具调用时可能偏大"
+                    >
+                      · 估算
+                    </span>
+                  )}
+                </span>
                 <span className={clsx('font-mono text-[11px]', labelColor)}>{percentLabel} · {winLabel}</span>
               </div>
               <div className="h-2 rounded bg-background-tertiary overflow-hidden flex mb-2.5 relative">
@@ -212,7 +223,7 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full' }: Conte
                 {usage.cacheRead > 0 && (
                   <MeterRow color="bg-purple-400" label="缓存读取" value={usage.cacheRead} />
                 )}
-                <MeterRow color="bg-text-tertiary" label="输出 output" value={usage.output} dim />
+                <MeterRow color="bg-text-tertiary" label="输出(本轮)" value={usage.output} dim />
               </div>
               {usage.cacheRead > 0 && (
                 <div className="mt-2.5 pt-2.5 border-t border-border-subtle flex items-center justify-between">
@@ -221,11 +232,16 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full' }: Conte
                 </div>
               )}
 
-              {/* 按模型维度的用量明细 */}
+              {/* 按模型维度的本轮累计明细（/cost 口径，非当前上下文占用） */}
               {modelCount > 0 && (
                 <div className="mt-2.5 pt-2.5 border-t border-border-subtle">
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[11px] text-text-muted">模型维度用量</span>
+                    <span
+                      className="text-[11px] text-text-muted"
+                      title="本次 run 内所有 API 调用的累计用量与花费（对标 /cost）；多轮工具调用时大于上方的当前上下文占用，属正常现象"
+                    >
+                      本轮累计 · 按模型
+                    </span>
                     <span className="text-[10px] text-text-muted">{modelCount} 模型</span>
                   </div>
                   {modelUsage && Object.entries(modelUsage).map(([model, m]) => (

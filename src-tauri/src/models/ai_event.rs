@@ -1303,13 +1303,19 @@ impl ModelUsageBreakdown {
 
 /// Token 用量事件
 ///
-/// 每轮对话结束时携带本轮的 token 分类用量，供前端计算上下文水位与成本。
+/// 携带 token 分类用量，供前端计算上下文水位与成本。
 /// 上下文占用 = input + cacheCreation + cacheRead（三项之和，非单一 input）。
 ///
-/// **口径基准**（Claude Code 引擎）：`modelUsage` 字段为本轮所有模型所有 API 调用
-/// 的**累计值**，是水位条分子基准；`model_usage` 为 None 时退化到顶层 `usage`
-/// 字段（仅最后一次调用，偏小，仅作兜底）。`raw_payload` 保留原始 result 事件
-/// 报文，供前端"查看原始请求/响应"调试链路使用。
+/// **双口径**（`scope` 字段区分，Claude Code 引擎）：
+/// - `"turn"`：单次 API 调用的用量快照，来自流式 `message_delta.usage`（每轮流末尾
+///   发出一次，后到覆盖先到）。实测与 CLI `/context` 读数逐 token 一致，
+///   是**上下文水位条的唯一准确基准**。
+/// - `"cumulative"`：本次 run 内所有 API 调用的累计值，来自 `result.modelUsage`
+///   （退化到顶层 `usage`）。多轮工具调用时为各轮之和（实测 sum(message_delta)
+///   == result，精确相等），远大于真实水位，仅用于成本/按模型明细展示。
+/// - `None`（Codex/SimpleAI 等其余引擎）：前端视为 cumulative 兜底处理。
+///
+/// `raw_payload` 保留原始 result 事件报文，供前端"查看原始请求/响应"调试链路使用。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageEvent {
@@ -1337,6 +1343,10 @@ pub struct UsageEvent {
     /// 前端据此做按模型区分用量展示与核对。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model_usage: Option<HashMap<String, ModelUsageBreakdown>>,
+    /// 用量口径："turn" = 单次 API 调用快照（水位基准）| "cumulative" = 本次 run 累计
+    /// （成本口径）。None 时前端视为 cumulative（非 Claude Code 引擎兼容）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
     /// 原始 result 事件报文（含 headers/usage/modelUsage 等全字段），供调试查看。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw_payload: Option<serde_json::Value>,
@@ -1363,8 +1373,15 @@ impl UsageEvent {
             reasoning_output_tokens,
             context_window,
             model_usage: None,
+            scope: None,
             raw_payload: None,
         }
+    }
+
+    /// 标记用量口径（"turn" 单轮快照 / "cumulative" 本轮累计）
+    pub fn with_scope(mut self, scope: impl Into<String>) -> Self {
+        self.scope = Some(scope.into());
+        self
     }
 
     /// 附加按模型维度用量明细

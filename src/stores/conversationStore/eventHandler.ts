@@ -323,22 +323,44 @@ export function handleAIEvent(
       break
 
     case 'usage': {
-      // token 用量：最近一轮覆盖 + output 跨轮累计，供状态栏计算上下文水位与成本。
-      // input 基准：Claude Code 引擎来自 modelUsage 累计求和（完整本轮），退化到 event.inputTokens。
+      // token 用量双口径分流（详见 UsageStats 注释）：
+      // - turn（message_delta 单轮快照）：只刷新水位三元组，与 CLI /context 一致；
+      //   同一 run 内每轮覆盖一次，水位随流式实时更新。
+      // - cumulative（result 累计）/ 缺省（Codex/SimpleAI）：更新成本与明细组；
+      //   仅当本 run 未收到过 turn 快照时才兜底覆盖水位（防多轮累计虚高污染），
+      //   并复位 turnSnapshotSeen 供下一 run 重新判定。
       const prev = state.usageStats
-      set({
-        usageStats: {
-          input: event.inputTokens,
-          cacheCreation: event.cacheCreationInputTokens ?? 0,
-          cacheRead: event.cacheReadInputTokens ?? 0,
-          output: event.outputTokens,
-          reasoning: event.reasoningOutputTokens,
-          contextWindow: event.contextWindow,
-          totalOutput: (prev?.totalOutput ?? 0) + event.outputTokens,
-          modelUsage: event.modelUsage,
-          rawPayload: event.rawPayload,
-        },
-      })
+      if (event.scope === 'turn') {
+        set({
+          usageStats: {
+            ...(prev ?? { output: 0, totalOutput: 0 }),
+            input: event.inputTokens,
+            cacheCreation: event.cacheCreationInputTokens ?? 0,
+            cacheRead: event.cacheReadInputTokens ?? 0,
+            contextWindow: event.contextWindow ?? prev?.contextWindow,
+            contextSource: 'turn',
+            turnSnapshotSeen: true,
+          },
+        })
+      } else {
+        // 本 run 已有 turn 快照 → 水位保持快照值；否则用累计值兜底
+        const snap = prev?.turnSnapshotSeen ? prev : null
+        set({
+          usageStats: {
+            input: snap ? snap.input : event.inputTokens,
+            cacheCreation: snap ? snap.cacheCreation : (event.cacheCreationInputTokens ?? 0),
+            cacheRead: snap ? snap.cacheRead : (event.cacheReadInputTokens ?? 0),
+            output: event.outputTokens,
+            reasoning: event.reasoningOutputTokens,
+            contextWindow: event.contextWindow ?? prev?.contextWindow,
+            totalOutput: (prev?.totalOutput ?? 0) + event.outputTokens,
+            modelUsage: event.modelUsage,
+            rawPayload: event.rawPayload,
+            contextSource: snap ? snap.contextSource : 'cumulative',
+            turnSnapshotSeen: false,
+          },
+        })
+      }
       break
     }
 

@@ -399,10 +399,11 @@ impl EventParser {
 
     /// 解析 partial messages 增量事件（stream_event，--include-partial-messages）
     ///
-    /// 包裹的是 Anthropic Messages API 原始 SSE 事件。此处只消费文本与思考增量：
+    /// 包裹的是 Anthropic Messages API 原始 SSE 事件。此处消费文本、思考增量与单轮用量：
     /// - content_block_delta / text_delta     → 增量 AssistantMessage(isDelta=true)，前端追加累积
     /// - content_block_delta / thinking_delta → 累积到 thinking_buffer，在 content_block_stop 时整段发出
     ///   （保证 thinking 块顺序正确，且不被前端 appendThinkingBlock 碎片化）
+    /// - message_delta                        → 提取 usage 发 scope="turn" 的单轮用量快照（水位基准）
     /// - input_json_delta 等                  → 忽略，工具调用统一由完整 assistant 消息的 tool_use 处理
     ///
     /// 同时维护 turn 状态，供 parse_assistant_event 去重（避免增量 + 完整快照导致文本翻倍）。
@@ -477,7 +478,39 @@ impl EventParser {
                 vec![]
             }
 
-            // message_delta / message_stop / 其他：忽略
+            // 每轮 API 调用流末尾的 message_delta：携带该轮真实用量快照
+            // （input_tokens + cache 字段 = 本次调用实际发送的上下文，实测与 CLI
+            // /context 读数逐 token 一致）。发出 scope="turn" 的 Usage 事件作为水位
+            // 基准；同一 run 内每轮各发一次，后到覆盖先到即"最近一轮快照"。
+            // 端点未回传（缺 usage 或输入侧全 0）时不发，避免把水位误置零——
+            // 此时由 result 的 cumulative 事件在前端兜底。
+            "message_delta" => {
+                let usage = match event.get("usage") {
+                    Some(u) => u,
+                    None => return vec![],
+                };
+                let g = |k: &str| usage.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+                let input = g("input_tokens");
+                let cache_creation = g("cache_creation_input_tokens");
+                let cache_read = g("cache_read_input_tokens");
+                if input + cache_creation + cache_read == 0 {
+                    return vec![];
+                }
+                vec![AIEvent::Usage(
+                    crate::models::UsageEvent::new(
+                        &self.session_id,
+                        input,
+                        Some(cache_creation),
+                        Some(cache_read),
+                        g("output_tokens"),
+                        None,
+                        None,
+                    )
+                    .with_scope("turn"),
+                )]
+            }
+
+            // message_stop / 其他：忽略
             // （turn 状态由下一个 message_start 或完整 assistant 消息重置）
             _ => vec![],
         }
@@ -739,19 +772,20 @@ impl EventParser {
 
     /// 解析结果事件
     ///
-    /// **用量提取口径（关键修复）：**
-    /// 1. 优先从 `extra.modelUsage`（按模型累计，本轮所有模型/API 调用的汇总）取值作为水位条基准。
-    ///    这个值反映的是完整本轮用量，与 `/usage` 命令输出口径一致。
-    /// 2. 当 `modelUsage` 为空时退化到 `extra.usage`（顶层 usage 字段，仅最后一次 API 调用）。
-    ///    这个值偏小，仅作兜底。
-    /// 3. 同时透传 `modelUsage` 明细（按模型分解）和原始 result 报文到前端，供按模型维度
+    /// **用量提取口径（scope="cumulative"，成本口径）：**
+    /// 1. 优先从 `extra.modelUsage`（按模型累计）求和，为空时退化到顶层 `extra.usage`。
+    ///    两者均为**本次 run 内所有 API 调用的累计值**（实测 sum(message_delta.usage)
+    ///    == result.usage，精确相等），仅供成本/按模型明细展示，**不作为上下文水位**
+    ///    ——多轮工具调用时为各轮之和，远大于真实水位。水位基准见
+    ///    parse_stream_event_chunk 的 message_delta 分支（scope="turn"）。
+    /// 2. 同时透传 `modelUsage` 明细（按模型分解）和原始 result 报文到前端，供按模型维度
     ///    展示用量和调试查看原始请求/响应。
     fn parse_result_event(
         &self,
         subtype: String,
         extra: HashMap<String, serde_json::Value>,
     ) -> Vec<AIEvent> {
-        // ===== 用量提取：优先 modelUsage（累计），退化到 usage（末次调用）=====
+        // ===== 用量提取（cumulative 累计口径）：优先 modelUsage 求和，退化到顶层 usage =====
         let usage_event =
             // 路径 A：modelUsage 存在且非空 → 用累计值
             if let Some(mu_obj) = extra.get("modelUsage").and_then(|mu| mu.as_object()) {
@@ -816,7 +850,8 @@ impl EventParser {
                             ctx_window,
                         )
                         .with_model_usage(breakdown_map_clone)
-                        .with_raw_payload(raw_payload),
+                        .with_raw_payload(raw_payload)
+                        .with_scope("cumulative"),
                     );
                     Some(usage)
                 }
@@ -840,7 +875,8 @@ impl EventParser {
                             None,
                             None,
                         )
-                        .with_raw_payload(raw_payload),
+                        .with_raw_payload(raw_payload)
+                        .with_scope("cumulative"),
                     )
                 })
             };
@@ -1000,5 +1036,85 @@ impl EventParser {
     #[allow(dead_code)]
     pub fn reset(&mut self) {
         self.tool_call_manager.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::AIEvent;
+
+    /// message_delta 携带 usage → 发出 scope="turn" 的单轮快照 Usage 事件。
+    /// 数值取自真实中转端点样本（两轮工具调用 run 的末轮 delta，
+    /// 与 CLI /context 读数 35.6k 逐 token 吻合）。
+    #[test]
+    fn message_delta_usage_emits_turn_snapshot() {
+        let mut parser = EventParser::new("s1");
+        let event = serde_json::json!({
+            "type": "message_delta",
+            "delta": {"stop_reason": "end_turn"},
+            "usage": {"input_tokens": 35572, "output_tokens": 705, "cache_read_input_tokens": 1024}
+        });
+        let events = parser.parse_stream_event_chunk(event);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            AIEvent::Usage(u) => {
+                assert_eq!(u.scope.as_deref(), Some("turn"));
+                assert_eq!(u.input_tokens, 35572);
+                assert_eq!(u.cache_creation_input_tokens, Some(0));
+                assert_eq!(u.cache_read_input_tokens, Some(1024));
+                assert_eq!(u.output_tokens, 705);
+                assert!(u.context_window.is_none());
+                assert!(u.model_usage.is_none());
+            }
+            other => panic!("期望 Usage 事件，得到 {:?}", other),
+        }
+    }
+
+    /// message_delta 缺 usage 或输入侧全 0（端点不回传）→ 不发事件，避免水位误置零
+    #[test]
+    fn message_delta_without_usage_is_ignored() {
+        let mut parser = EventParser::new("s1");
+        let no_usage = serde_json::json!({"type": "message_delta", "delta": {}});
+        assert!(parser.parse_stream_event_chunk(no_usage).is_empty());
+
+        let zero_usage = serde_json::json!({
+            "type": "message_delta",
+            "usage": {"input_tokens": 0, "output_tokens": 12}
+        });
+        assert!(parser.parse_stream_event_chunk(zero_usage).is_empty());
+    }
+
+    /// result.modelUsage → scope="cumulative" 的累计事件，明细与原始报文保留。
+    /// 数值取自真实样本（两轮 24920+35572=60492，验证累计口径原样透传）。
+    #[test]
+    fn result_model_usage_emits_cumulative() {
+        let parser = EventParser::new("s1");
+        let mut extra = HashMap::new();
+        extra.insert(
+            "modelUsage".to_string(),
+            serde_json::json!({
+                "qusc": {
+                    "inputTokens": 60492, "outputTokens": 795,
+                    "cacheReadInputTokens": 1024, "cacheCreationInputTokens": 0,
+                    "contextWindow": 200000, "costUSD": 0.32
+                }
+            }),
+        );
+        let events = parser.parse_result_event("success".to_string(), extra);
+        let usage = events
+            .iter()
+            .find_map(|e| match e {
+                AIEvent::Usage(u) => Some(u),
+                _ => None,
+            })
+            .expect("应包含 Usage 事件");
+        assert_eq!(usage.scope.as_deref(), Some("cumulative"));
+        assert_eq!(usage.input_tokens, 60492);
+        assert_eq!(usage.cache_read_input_tokens, Some(1024));
+        assert_eq!(usage.context_window, Some(200000));
+        let mu = usage.model_usage.as_ref().expect("modelUsage 明细应保留");
+        assert_eq!(mu.get("qusc").unwrap().cost_usd, Some(0.32));
+        assert!(usage.raw_payload.is_some());
     }
 }

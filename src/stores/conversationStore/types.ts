@@ -172,15 +172,20 @@ export interface SendMessageOptions {
  *
  * 上下文占用 = input + cacheCreation + cacheRead（三项之和，用于水位分子）。
  * output 不占上下文窗口，但计入成本。
+ *
+ * 水位三元组（input/cacheCreation/cacheRead）优先来自 scope='turn' 的单轮快照
+ * （message_delta.usage，与 CLI /context 一致）；引擎未提供快照时由 cumulative
+ * 累计事件兜底（多轮工具调用时可能偏大）。成本/明细组（output/totalOutput/
+ * modelUsage/rawPayload）始终来自 cumulative 事件。
  */
 export interface UsageStats {
-  /** 最近一轮：未命中缓存的输入 token（modelUsage 累计值，退化到 usage 顶层） */
+  /** 水位：未命中缓存的输入 token（turn 快照优先，cumulative 兜底） */
   input: number
-  /** 最近一轮：写入缓存的 token */
+  /** 水位：写入缓存的 token */
   cacheCreation: number
-  /** 最近一轮：从缓存读取的 token */
+  /** 水位：从缓存读取的 token */
   cacheRead: number
-  /** 最近一轮：输出 token */
+  /** 本次 run 输出 token（cumulative 口径） */
   output: number
   /** 推理输出 token（Codex 有） */
   reasoning?: number
@@ -188,8 +193,15 @@ export interface UsageStats {
   contextWindow?: number
   /** 累计输出 token（跨轮累加，用于成本估算） */
   totalOutput: number
-  /** 按模型维度的用量明细（model → ModelUsageBreakdown） */
+  /** 按模型维度的用量明细（model → ModelUsageBreakdown），本次 run 累计（成本口径） */
   modelUsage?: Record<string, ModelUsageBreakdown>
+  /** 水位三元组的口径来源：'turn'=单轮快照（精确）| 'cumulative'=累计兜底（可能偏大） */
+  contextSource?: 'turn' | 'cumulative'
+  /**
+   * 本次 run 内是否已收到 turn 快照。turn 事件置 true；cumulative（run 结束）事件
+   * 消费后复位 false——保证下一 run 若无快照（非流式端点）时累计兜底仍能接管水位。
+   */
+  turnSnapshotSeen?: boolean
   /** 原始 result 事件报文（含 usage/modelUsage/cost 等全字段），供调试查看 */
   rawPayload?: Record<string, unknown>
 }
