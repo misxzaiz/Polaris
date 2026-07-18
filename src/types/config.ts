@@ -6,6 +6,7 @@ import type { CSSProperties } from 'react'
 import type { SpeechConfig, TTSConfig, WakeWordConfig, VoiceNotificationConfig, VoiceCommandEntry } from './speech'
 import type { ModelProfile } from './modelProfile'
 import type { WorkspaceTerminalScripts } from './terminalScript'
+import type { ThemeCustomConfig } from './theme'
 
 /**  引擎 ID */
 export type EngineId = 'claude-code' | 'codex' | 'simple-ai' | 'mimo'
@@ -312,6 +313,8 @@ export interface Config {
   language?: Language;
   /** 界面主题 */
   theme?: Theme;
+  /** 自定义主题配置（配色/背景/特效预设集合） */
+  themeCustom?: ThemeCustomConfig;
   /** Claude Code 引擎配置 */
   claudeCode: {
     /** Claude CLI 命令路径 */

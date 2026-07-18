@@ -12,12 +12,13 @@ import {
   IconMic,
   IconMessageSquareText,
 } from '../Common/Icons';
-import { Download, Shield, Code2, Globe, Blocks, Server, BookOpen, Keyboard } from 'lucide-react';
+import { Download, Shield, Code2, Globe, Blocks, Server, BookOpen, Keyboard, Palette } from 'lucide-react';
 import { isTauri } from '@/utils/platform';
 import type { ReactNode } from 'react';
 
 export type SettingsTabId =
   | 'general'
+  | 'theme-custom'
   | 'system-prompt'
   | 'prompt-snippet'
   | 'ai-engine'
@@ -49,6 +50,7 @@ interface SettingsSidebarProps {
 
 const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'general', icon: <IconGeneral size={16} />, labelKey: 'nav.general' },
+  { id: 'theme-custom', icon: <Palette size={16} />, labelKey: 'nav.themeCustom' },
   { id: 'system-prompt', icon: <IconMessageSquareText size={16} />, labelKey: 'nav.systemPrompt' },
   { id: 'prompt-snippet', icon: <IconMessageSquareText size={16} />, labelKey: 'nav.promptSnippet' },
   { id: 'ai-engine', icon: <IconAIEngine size={16} />, labelKey: 'nav.aiEngine' },

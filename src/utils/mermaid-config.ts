@@ -266,6 +266,84 @@ export const mermaidLightTheme: Partial<MermaidConfig> = {
 };
 
 /**
+ * 读取 CSS 变量的实际颜色并转 hex（Mermaid themeVariables 需要真实颜色值，
+ * 会内部派生阴影，不接受 CSS 变量引用）。
+ */
+function cssVarHex(varName: string): string | null {
+  if (typeof document === 'undefined') return null;
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  if (!raw) return null;
+  const parts = raw.split(/\s+/).map(Number);
+  if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return null;
+  return '#' + parts.map((n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * 用当前生效的 --c-* 变量覆盖 Mermaid 主色/背景/文字/线条，
+ * 使自定义主题的配色也作用于图表。未能读取的变量保持基础主题值。
+ */
+function applyCustomThemeToMermaid(base: Partial<MermaidConfig>): Partial<MermaidConfig> {
+  const primary = cssVarHex('--c-primary');
+  const primaryHover = cssVarHex('--c-primary-hover');
+  const textPrimary = cssVarHex('--c-text-primary');
+  const bgBase = cssVarHex('--c-bg-base');
+  const bgSurface = cssVarHex('--c-bg-surface');
+  const bgElevated = cssVarHex('--c-bg-elevated');
+  const textSecondary = cssVarHex('--c-text-secondary');
+
+  const overrides: Record<string, string> = {};
+  if (primary) {
+    overrides.primaryColor = primary;
+    overrides.actorLineColor = primary;
+    overrides.activationBorderColor = primary;
+    overrides.stroke = primary;
+    overrides.color0 = primary;
+    overrides.pie1 = primary;
+  }
+  if (primaryHover) overrides.primaryBorderColor = primaryHover;
+  if (textPrimary) {
+    overrides.primaryTextColor = textPrimary;
+    overrides.titleColor = textPrimary;
+    overrides.actorTextColor = textPrimary;
+    overrides.signalColor = textPrimary;
+    overrides.signalTextColor = textPrimary;
+    overrides.labelTextColor = textPrimary;
+    overrides.loopTextColor = textPrimary;
+    overrides.classText = textPrimary;
+    overrides.sequenceNumberColor = textPrimary;
+  }
+  if (bgBase) {
+    overrides.background = bgBase;
+    overrides.tertiaryColor = bgBase;
+  }
+  if (bgSurface) {
+    overrides.mainBkg = bgSurface;
+    overrides.secondaryColor = bgSurface;
+    overrides.actorBkg = bgSurface;
+    overrides.labelBoxBkgColor = bgSurface;
+    overrides.boxBkgColor = bgSurface;
+    overrides.activationBkgColor = bgSurface;
+    overrides.entityBackgroundColor = bgSurface;
+    overrides.fill = bgSurface;
+    overrides.edgeLabelBackground = bgSurface;
+    overrides.altSectionBkgColor = bgSurface;
+    overrides.journeyBkgColor = bgSurface;
+  }
+  if (bgElevated) {
+    overrides.clusterBkg = bgElevated;
+    overrides.noteBkgColor = bgElevated;
+    overrides.sectionBkgColor = bgElevated;
+  }
+  if (textSecondary) overrides.lineColor = textSecondary;
+
+  if (Object.keys(overrides).length === 0) return base;
+  return {
+    ...base,
+    themeVariables: { ...base.themeVariables, ...overrides },
+  };
+}
+
+/**
  * 获取当前主题的 Mermaid 配置
  *
  * 在 React 组件中使用：
@@ -282,5 +360,6 @@ export const mermaidLightTheme: Partial<MermaidConfig> = {
  * ```
  */
 export function getMermaidConfig(theme: 'dark' | 'light' = 'dark'): Partial<MermaidConfig> {
-  return theme === 'dark' ? mermaidDarkTheme : mermaidLightTheme;
+  const base = theme === 'dark' ? mermaidDarkTheme : mermaidLightTheme;
+  return applyCustomThemeToMermaid(base);
 }

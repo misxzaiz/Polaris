@@ -20,20 +20,20 @@ import { EditorView } from '@codemirror/view';
    COLOR PALETTE
    ============================================ */
 
-// 背景色系 - 深邃但不是纯黑
+// 背景色系 - 跟随全局 --c-* 变量（自动响应内置明暗切换 + 自定义主题；浏览器 paint 时解析）
 const bg = {
-  primary: '#0d1117',      // 主背景 (GitHub Dark)
-  secondary: '#161b22',    // 次级背景
-  tertiary: '#21262d',     // 三级背景 (面板、浮层)
-  highlight: '#1a3a5c',    // 当前行高亮 - 明显的蓝色背景
+  primary: 'rgb(var(--c-bg-base))',        // 主背景
+  secondary: 'rgb(var(--c-bg-secondary))', // 次级背景
+  tertiary: 'rgb(var(--c-bg-surface))',    // 三级背景 (面板、浮层)
+  highlight: 'rgb(var(--c-primary) / 0.10)', // 当前行高亮 - 主色淡染，跨主题保持"活跃行"观感
 };
 
-// 文本色系 - 柔和的白
+// 文本色系 - 跟随全局 --c-* 变量
 const fg = {
-  primary: '#e6edf3',      // 主文本
-  secondary: '#8b949e',    // 次级文本 (行号、gutter)
-  muted: '#6e7681',        // 弱化文本 (注释、占位符)
-  disabled: '#484f58',     // 禁用状态
+  primary: 'rgb(var(--c-text-primary))',   // 主文本
+  secondary: 'rgb(var(--c-text-tertiary))',// 次级文本 (行号、gutter)
+  muted: 'rgb(var(--c-text-muted))',       // 弱化文本 (注释、占位符)
+  disabled: 'rgb(var(--c-text-muted))',    // 禁用状态
 };
 
 // 语法高亮 - 克制、低饱和度
@@ -55,16 +55,16 @@ const syntax = {
   module: '#d2a8ff',        // 模块名 - 紫色
 };
 
-// UI 强调色
+// UI 强调色 - 跟随全局主色 --c-primary，选区/光标随自定义主题变化
 const accent = {
-  primary: '#58a6ff',       // 主强调色 - 蓝色
-  selection: 'rgba(88, 166, 255, 0.35)',           // 选区（非聚焦）
-  selectionFocused: 'rgba(88, 166, 255, 0.55)',    // 聚焦时选区
-  match: 'rgba(88, 166, 255, 0.40)',               // 匹配高亮 - 更明显
-  matchSelected: 'rgba(88, 166, 255, 0.60)',       // 搜索匹配（当前选中）- 更明显
-  bracketMatch: 'rgba(38, 139, 210, 0.25)',        // 括号匹配背景
-  cursor: '#58a6ff',       // 光标
-  gutterActive: '#e6edf3', // 活跃行号
+  primary: 'rgb(var(--c-primary))',                        // 主强调色
+  selection: 'rgb(var(--c-primary) / 0.28)',               // 选区（非聚焦）
+  selectionFocused: 'rgb(var(--c-primary) / 0.45)',        // 聚焦时选区
+  match: 'rgb(var(--c-primary) / 0.32)',                   // 匹配高亮
+  matchSelected: 'rgb(var(--c-primary) / 0.50)',           // 搜索匹配（当前选中）
+  bracketMatch: 'rgb(var(--c-primary) / 0.22)',            // 括号匹配背景
+  cursor: 'rgb(var(--c-primary))',                         // 光标
+  gutterActive: 'rgb(var(--c-text-primary))',              // 活跃行号
 };
 
 // 状态色

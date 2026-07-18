@@ -15,6 +15,7 @@ import { SettingsSidebar, type SettingsTabId } from './SettingsSidebar';
 import { AIEngineTab } from './tabs/AIEngineTab';
 import { ModelProviderTab } from './tabs/ModelProviderTab';
 import { GeneralTab } from './tabs/GeneralTab';
+import { ThemeCustomTab } from './tabs/ThemeCustomTab';
 import { SystemPromptTab } from './tabs/SystemPromptTab';
 import { PromptSnippetTab } from './tabs/PromptSnippetTab';
 
@@ -47,6 +48,7 @@ interface SettingsPageProps {
 // Tab 标题映射 - 使用 i18n key
 const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'general': 'nav.general',
+  'theme-custom': 'nav.themeCustom',
   'auto-mode': 'nav.autoMode',
   'plugins': 'nav.plugins',
   'system-prompt': 'nav.systemPrompt',
@@ -268,6 +270,10 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
                 onConfigChange={setLocalConfig}
                 loading={loading}
               />
+            )}
+
+            {activeTab === 'theme-custom' && (
+              <ThemeCustomTab />
             )}
 
             {activeTab === 'system-prompt' && (

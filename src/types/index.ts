@@ -4,6 +4,7 @@
 
 export * from './chat';
 export * from './config';
+export * from './theme';
 export * from './workspace';
 export * from './fileExplorer';
 export * from './fileEditor';

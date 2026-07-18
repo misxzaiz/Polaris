@@ -24,8 +24,23 @@ import 'xterm/css/xterm.css';
 
 const log = createLogger('TerminalPanel');
 
-/** 根据主题返回 xterm 终端配色 */
-function getXtermTheme(theme: Theme): ITheme {
+/**
+ * 读取 CSS 变量的实际 RGB 值并转为 xterm 可用的 rgb() 字符串。
+ * xterm theme 是纯 JS 对象、不接受 CSS 变量引用，必须 getComputedStyle 求值。
+ */
+function readCssColor(varName: string, alpha?: number): string | null {
+  if (typeof document === 'undefined') return null;
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  if (!raw) return null;
+  // 变量存的是 "R G B" 三元组
+  const parts = raw.split(/\s+/).map(Number);
+  if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return null;
+  const [r, g, b] = parts;
+  return alpha !== undefined ? `rgba(${r}, ${g}, ${b}, ${alpha})` : `rgb(${r}, ${g}, ${b})`;
+}
+
+/** 基础 ANSI 配色（内置深/浅两套；ANSI 16 色无对应 --c-* 变量，保持固定） */
+function getBaseXtermTheme(theme: Theme): ITheme {
   if (theme === 'light') {
     return {
       background: '#ffffff',
@@ -76,12 +91,33 @@ function getXtermTheme(theme: Theme): ITheme {
   };
 }
 
+/**
+ * 根据主题返回 xterm 终端配色。
+ * 终端"外壳"色（背景/前景/光标/选区）优先跟随全局 --c-* 变量，
+ * 使自定义主题的配色也作用于终端；ANSI 16 色沿用内置基础 palette。
+ */
+function getXtermTheme(theme: Theme): ITheme {
+  const base = getBaseXtermTheme(theme);
+  const background = readCssColor('--c-bg-base');
+  const foreground = readCssColor('--c-text-primary');
+  const cursor = readCssColor('--c-primary');
+  const selection = readCssColor('--c-primary', 0.3);
+  return {
+    ...base,
+    ...(background ? { background } : {}),
+    ...(foreground ? { foreground } : {}),
+    ...(cursor ? { cursor } : {}),
+    ...(background ? { cursorAccent: background } : {}),
+    ...(selection ? { selectionBackground: selection } : {}),
+  };
+}
+
+/** 单个终端实例 */
 interface TerminalInstanceProps {
   sessionId: string;
   isActive: boolean;
 }
 
-/** 单个终端实例 */
 function TerminalInstance({ sessionId, isActive }: TerminalInstanceProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
@@ -89,6 +125,8 @@ function TerminalInstance({ sessionId, isActive }: TerminalInstanceProps) {
   const write = useTerminalStore((state) => state.write);
   const resize = useTerminalStore((state) => state.resize);
   const theme = useThemeStore((state) => state.theme);
+  // 订阅自定义主题：其变化时需要重算 xterm 配色（CSS 变量已更新，重读求值）
+  const themeCustom = useThemeStore((state) => state.themeCustom);
 
   // 初始化终端
   useEffect(() => {
@@ -225,12 +263,12 @@ function TerminalInstance({ sessionId, isActive }: TerminalInstanceProps) {
     }
   }, [isActive]);
 
-  // 主题变化时更新 xterm 配色
+  // 主题变化时更新 xterm 配色（含自定义主题：themeCustom 变化会重读 CSS 变量）
   useEffect(() => {
     const xterm = xtermRef.current;
     if (!xterm) return;
     xterm.options.theme = getXtermTheme(theme);
-  }, [theme]);
+  }, [theme, themeCustom]);
 
   return (
     <div

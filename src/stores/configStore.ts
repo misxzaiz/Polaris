@@ -79,6 +79,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       if (config?.theme) {
         useThemeStore.getState().applyTheme(config.theme);
       }
+      useThemeStore.getState().hydrateThemeCustom(config?.themeCustom);
       set({ config, healthStatus: health, loading: false, isConnecting: false, connectionState });
 
       // 同步 Model Profile 到 modelProfileStore，确保重启后 Profile 仍然生效
@@ -329,6 +330,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       if (config?.theme) {
         useThemeStore.getState().applyTheme(config.theme);
       }
+      useThemeStore.getState().hydrateThemeCustom(config?.themeCustom);
       set({ config, healthStatus: health, loading: false, isConnecting: false, connectionState });
     } catch (e: unknown) {
       // Token still wrong → stay in needsToken state

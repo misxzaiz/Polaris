@@ -1068,6 +1068,43 @@ fn default_dispatch_auto_inject() -> bool {
     true
 }
 
+/// 自定义主题预设
+///
+/// 主题内容（配色/背景/特效）多变，由前端作为单一数据源维护，
+/// 后端以 `serde_json::Value` 透传存储，避免前后端字段漂移。
+/// 预设元信息（id/name 等）用强类型，便于后端做基本校验与迁移。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThemePreset {
+    pub id: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub builtin: Option<bool>,
+    /// 主题内容（CustomTheme），透传存储
+    pub theme: serde_json::Value,
+    #[serde(default)]
+    pub created_at: i64,
+    #[serde(default)]
+    pub updated_at: i64,
+}
+
+/// 自定义主题配置（预设集合 + 激活态）
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThemeCustomConfig {
+    /// 是否启用自定义主题
+    #[serde(default)]
+    pub enabled: bool,
+    /// 当前激活预设 id
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_preset_id: Option<String>,
+    /// 所有预设
+    #[serde(default)]
+    pub presets: Vec<ThemePreset>,
+}
+
 /// 应用配置（新版本）
 ///
 /// 使用嵌套结构，支持多个 AI 引擎
@@ -1085,6 +1122,11 @@ pub struct Config {
     /// 界面主题（"dark" | "light"）
     #[serde(default)]
     pub theme: Option<String>,
+
+    /// 自定义主题配置（配色/背景/特效预设集合）
+    /// 注：不加 validate 重置逻辑，避免静默清空用户主题（Option + serde default 即向后兼容）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theme_custom: Option<ThemeCustomConfig>,
 
     /// Claude Code 引擎配置
     #[serde(default)]
@@ -1207,6 +1249,7 @@ impl Default for Config {
             default_engine: default_default_engine(),
             language: None,
             theme: None,
+            theme_custom: None,
             claude_code: ClaudeCodeConfig::default(),
             codex_code: CodexCodeConfig::default(),
             mimo_code: MimoCodeConfig::default(),
