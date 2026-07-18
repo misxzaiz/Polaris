@@ -137,9 +137,6 @@ body {
   color: rgb(var(--c-text-primary));
   /* 透明度/主题变化时的平滑过渡 */
   transition: background-color 0.3s ease, color 0.3s ease;
-  /* 禁止 body 级滚动——所有滚动由内部 flex 容器（Layout → 各面板）管理。
-     防止 fixed 定位弹窗/抽屉出现时整页位移、scrollbar 显隐导致水平抖动。 */
-  overflow: hidden;
 }
 
 #root {

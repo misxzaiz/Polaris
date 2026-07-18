@@ -524,10 +524,10 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
         <div className={clsx(
           'transition-opacity duration-200',
           embedded && 'absolute bottom-full left-0 right-0 mb-1 z-20',
-          expanded ? 'opacity-100 overflow-visible max-h-[50vh]' : 'opacity-0 overflow-hidden pointer-events-none',
+          expanded ? 'opacity-100 overflow-visible' : 'opacity-0 overflow-hidden pointer-events-none',
         )}>
           <div className={clsx(
-            'flex flex-col gap-2 py-2 overflow-y-auto',
+            'flex flex-col gap-2 py-2',
             embedded
               ? 'px-3 rounded-xl bg-background-elevated border border-border-subtle shadow-xl'
               : 'border-t border-border-subtle/50',
