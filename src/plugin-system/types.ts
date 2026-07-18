@@ -20,7 +20,6 @@ export type PluginIconId =
   | 'Film'
   | 'Globe2'
   | 'Activity'
-  | 'Coffee'
 
 export type PluginLeftPanelType = string
 

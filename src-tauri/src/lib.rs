@@ -139,12 +139,6 @@ use commands::prompt_snippet::{
 };
 #[cfg(feature = "tauri-app")]
 use commands::{test_model_profile_connection, fetch_models_for_profile};
-#[cfg(feature = "tauri-app")]
-use commands::spring_boot::{
-    spring_boot_detect_project, spring_boot_start, spring_boot_stop,
-    spring_boot_list_apps, spring_boot_get_app, spring_boot_update_status,
-    spring_boot_check_port, spring_boot_find_available_port,
-};
 
 use std::sync::Arc;
 use tokio::sync::Mutex as AsyncMutex;
@@ -1001,15 +995,6 @@ pub fn run() {
             // 模型 Profile 命令
             test_model_profile_connection,
             fetch_models_for_profile,
-            // Spring Boot 调试运行相关
-            spring_boot_detect_project,
-            spring_boot_start,
-            spring_boot_stop,
-            spring_boot_list_apps,
-            spring_boot_get_app,
-            spring_boot_update_status,
-            spring_boot_check_port,
-            spring_boot_find_available_port,
             // 文件下载
             commands::file_explorer::download_file_binary,
             commands::file_explorer::download_directory_to_zip,
