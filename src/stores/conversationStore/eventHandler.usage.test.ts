@@ -28,7 +28,7 @@ function makeStore(usageStats: UsageStats | null = null) {
   return { set, get, usage: () => state.usageStats }
 }
 
-function turnEvent(input: number, cacheRead = 0, output = 0): UsageEvent {
+function turnEvent(input: number, cacheRead = 0, output = 0, actualModel?: string): UsageEvent {
   return {
     type: 'usage',
     sessionId: 's1',
@@ -37,10 +37,16 @@ function turnEvent(input: number, cacheRead = 0, output = 0): UsageEvent {
     cacheReadInputTokens: cacheRead,
     outputTokens: output,
     scope: 'turn',
+    actualModel,
   }
 }
 
-function cumulativeEvent(input: number, output: number, scope?: 'cumulative'): UsageEvent {
+function cumulativeEvent(
+  input: number,
+  output: number,
+  scope?: 'cumulative',
+  opts?: { totalCostUsd?: number; modelCost?: number; actualModel?: string },
+): UsageEvent {
   return {
     type: 'usage',
     sessionId: 's1',
@@ -49,9 +55,11 @@ function cumulativeEvent(input: number, output: number, scope?: 'cumulative'): U
     cacheReadInputTokens: 0,
     outputTokens: output,
     contextWindow: 200000,
-    modelUsage: { qusc: { inputTokens: input, outputTokens: output } },
+    modelUsage: { qusc: { inputTokens: input, outputTokens: output, costUsd: opts?.modelCost } },
     rawPayload: { subtype: 'success' },
     scope,
+    totalCostUsd: opts?.totalCostUsd,
+    actualModel: opts?.actualModel,
   }
 }
 
@@ -128,5 +136,35 @@ describe('usage 事件双口径分流', () => {
     expect(u.input).toBe(37174)
     expect(u.contextSource).toBe('cumulative')
     expect(u.totalOutput).toBe(795 + 259)
+  })
+
+  it('turn 快照逐轮记录实际模型并去重累积（中转站动态路由）', () => {
+    const store = makeStore()
+    handleAIEvent(turnEvent(24920, 0, 0, 'glm-5.2'), store.set, store.get)
+    handleAIEvent(turnEvent(35572, 0, 0, 'deepseek-v4-flash'), store.set, store.get)
+    handleAIEvent(turnEvent(37000, 0, 0, 'deepseek-v4-flash'), store.set, store.get)
+
+    const u = store.usage()!
+    expect(u.actualModel).toBe('deepseek-v4-flash')
+    expect(u.actualModels).toEqual(['glm-5.2', 'deepseek-v4-flash'])
+  })
+
+  it('cumulative 跨消息累加会话总量（totalCostUsd 权威口径）', () => {
+    // 数值取自同进程双消息实测：run1 {24248, 8, $0.12144}、run2 {30560, 36, $0.1537}
+    const store = makeStore()
+    handleAIEvent(cumulativeEvent(24248, 8, 'cumulative', { totalCostUsd: 0.12144 }), store.set, store.get)
+    handleAIEvent(cumulativeEvent(30560, 36, 'cumulative', { totalCostUsd: 0.1537 }), store.set, store.get)
+
+    const t = store.usage()!.sessionTotals!
+    expect(t.input).toBe(24248 + 30560)
+    expect(t.output).toBe(8 + 36)
+    expect(t.costUsd).toBeCloseTo(0.12144 + 0.1537, 10)
+    expect(t.runs).toBe(2)
+  })
+
+  it('totalCostUsd 缺失时退化到 modelUsage costUsd 求和', () => {
+    const store = makeStore()
+    handleAIEvent(cumulativeEvent(21872, 73, 'cumulative', { modelCost: 0.111185 }), store.set, store.get)
+    expect(store.usage()!.sessionTotals!.costUsd).toBeCloseTo(0.111185, 10)
   })
 })

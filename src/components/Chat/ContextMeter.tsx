@@ -77,6 +77,9 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full' }: Conte
 
   const modelUsage = usage.modelUsage;
   const modelCount = modelUsage ? Object.keys(modelUsage).length : 0;
+  const totals = usage.sessionTotals;
+  /** 实际路由模型中与配置名不同的部分（官方端点下响应模型 == 配置名，无需标注） */
+  const routedModels = usage.actualModels ?? [];
 
   const level =
     pct >= CRITICAL_THRESHOLD ? 'crit' : pct >= COMPACT_THRESHOLD ? 'warn' : 'ok';
@@ -232,6 +235,62 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full' }: Conte
                 </div>
               )}
 
+              {/* 响应侧实际模型（中转站动态路由时与配置名不同，且逐轮可变） */}
+              {usage.actualModel && (
+                <div className="mt-2.5 pt-2.5 border-t border-border-subtle flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-text-muted shrink-0">实际模型</span>
+                  <span
+                    className="font-mono text-[11px] text-text-secondary truncate"
+                    title={
+                      routedModels.length > 1
+                        ? `本会话实际路由过：${routedModels.join(' → ')}`
+                        : undefined
+                    }
+                  >
+                    {usage.actualModel}
+                    {routedModels.length > 1 && (
+                      <span className="text-text-muted"> +{routedModels.length - 1}</span>
+                    )}
+                  </span>
+                </div>
+              )}
+
+              {/* 会话累计（跨消息累加每次 run 的用量，对标 /cost 总量） */}
+              {totals && totals.runs > 0 && (
+                <div className="mt-2.5 pt-2.5 border-t border-border-subtle">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span
+                      className="text-[11px] text-text-muted"
+                      title="本会话所有消息的累计消耗（对标 /cost）；当前上下文占用看上方水位"
+                    >
+                      会话累计
+                    </span>
+                    <span className="text-[10px] text-text-muted">{totals.runs} 条消息</span>
+                  </div>
+                  <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 text-[11px]">
+                    <MeterRow color="bg-primary/60" label="输入合计" value={totals.input} dim />
+                    {totals.cacheCreation > 0 && (
+                      <MeterRow color="bg-amber-500/60" label="缓存写入合计" value={totals.cacheCreation} dim />
+                    )}
+                    {totals.cacheRead > 0 && (
+                      <MeterRow color="bg-purple-400/60" label="缓存读取合计" value={totals.cacheRead} dim />
+                    )}
+                    <MeterRow color="bg-text-tertiary/60" label="输出合计" value={totals.output} dim />
+                    {totals.costUsd > 0 && (
+                      <>
+                        <span className="text-text-muted flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-sm shrink-0 bg-transparent" />
+                          总花费
+                        </span>
+                        <span className="font-mono text-right tabular-nums text-text-muted">
+                          {fmtCost(totals.costUsd)}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* 按模型维度的本轮累计明细（/cost 口径，非当前上下文占用） */}
               {modelCount > 0 && (
                 <div className="mt-2.5 pt-2.5 border-t border-border-subtle">
@@ -244,9 +303,20 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full' }: Conte
                     </span>
                     <span className="text-[10px] text-text-muted">{modelCount} 模型</span>
                   </div>
-                  {modelUsage && Object.entries(modelUsage).map(([model, m]) => (
+                  {modelUsage && Object.entries(modelUsage).map(([model, m]) => {
+                    // key 是请求侧配置名（如中转站别名 qusc）；实际路由模型不同时标注
+                    const routed = routedModels.filter((am) => am !== model);
+                    return (
                     <div key={model} className="mb-2 last:mb-0">
-                      <div className="text-[11px] font-medium text-text-secondary mb-1">{model}</div>
+                      <div
+                        className="text-[11px] font-medium text-text-secondary mb-1 truncate"
+                        title={routed.length > 0 ? `配置模型 ${model}，实际路由：${routedModels.join(' / ')}` : undefined}
+                      >
+                        {model}
+                        {routed.length > 0 && (
+                          <span className="font-normal text-text-muted"> · 实际 {routed.join(' / ')}</span>
+                        )}
+                      </div>
                       <div className="grid grid-cols-[1fr_auto] gap-x-2 gap-y-0.5 text-[11px]">
                         <MeterRow color="bg-primary/60" label="输入" value={m.inputTokens} dim />
                         {m.cacheCreationInputTokens != null && m.cacheCreationInputTokens > 0 ? (
@@ -267,7 +337,8 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full' }: Conte
                         ) : null}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 

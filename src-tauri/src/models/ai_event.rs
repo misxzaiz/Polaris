@@ -1347,6 +1347,15 @@ pub struct UsageEvent {
     /// （成本口径）。None 时前端视为 cumulative（非 Claude Code 引擎兼容）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scope: Option<String>,
+    /// 响应侧实际模型名（来自 API 响应 message.model，如 "deepseek-v4-flash"）。
+    /// 中转站动态路由时与配置模型名（modelUsage 的 key，请求侧别名）不同，
+    /// 且同一 run 内逐轮可能变化——turn 事件携带该轮实际模型，cumulative 携带最近观测值。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actual_model: Option<String>,
+    /// result 顶层 total_cost_usd（CLI 进程生命周期累计成本；Polaris 每消息新进程，
+    /// 等价于本 run 成本）。比 modelUsage 逐项求和更权威。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_cost_usd: Option<f64>,
     /// 原始 result 事件报文（含 headers/usage/modelUsage 等全字段），供调试查看。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw_payload: Option<serde_json::Value>,
@@ -1374,6 +1383,8 @@ impl UsageEvent {
             context_window,
             model_usage: None,
             scope: None,
+            actual_model: None,
+            total_cost_usd: None,
             raw_payload: None,
         }
     }
@@ -1381,6 +1392,18 @@ impl UsageEvent {
     /// 标记用量口径（"turn" 单轮快照 / "cumulative" 本轮累计）
     pub fn with_scope(mut self, scope: impl Into<String>) -> Self {
         self.scope = Some(scope.into());
+        self
+    }
+
+    /// 附加响应侧实际模型名（None 时不覆盖）
+    pub fn with_actual_model(mut self, actual_model: Option<String>) -> Self {
+        self.actual_model = actual_model;
+        self
+    }
+
+    /// 附加 result 顶层 total_cost_usd
+    pub fn with_total_cost_usd(mut self, total_cost_usd: Option<f64>) -> Self {
+        self.total_cost_usd = total_cost_usd;
         self
     }
 

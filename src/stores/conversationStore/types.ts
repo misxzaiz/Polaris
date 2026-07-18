@@ -167,6 +167,22 @@ export interface SendMessageOptions {
  * - 错误和进度信息
  * - 各种 block 映射
  */
+/** 会话级累计用量（跨消息累加每次 run 的 cumulative 用量事件，对标 /cost 会话总量） */
+export interface SessionUsageTotals {
+  /** 累计未命中缓存输入 token */
+  input: number
+  /** 累计缓存写入 token */
+  cacheCreation: number
+  /** 累计缓存读取 token */
+  cacheRead: number
+  /** 累计输出 token */
+  output: number
+  /** 累计成本（美元）。顶层 total_cost_usd 优先，退化 modelUsage 求和；中转站自定义模型按 CLI 默认定价估算，仅供参考 */
+  costUsd: number
+  /** 已完成的 run（用户消息）数 */
+  runs: number
+}
+
 /**
  * Token 用量统计（会话级）
  *
@@ -176,7 +192,7 @@ export interface SendMessageOptions {
  * 水位三元组（input/cacheCreation/cacheRead）优先来自 scope='turn' 的单轮快照
  * （message_delta.usage，与 CLI /context 一致）；引擎未提供快照时由 cumulative
  * 累计事件兜底（多轮工具调用时可能偏大）。成本/明细组（output/totalOutput/
- * modelUsage/rawPayload）始终来自 cumulative 事件。
+ * modelUsage/rawPayload/sessionTotals）始终来自 cumulative 事件。
  */
 export interface UsageStats {
   /** 水位：未命中缓存的输入 token（turn 快照优先，cumulative 兜底） */
@@ -191,10 +207,16 @@ export interface UsageStats {
   reasoning?: number
   /** 上下文窗口大小；缺省时由 UI 从 ModelProfile 取 */
   contextWindow?: number
-  /** 累计输出 token（跨轮累加，用于成本估算） */
+  /** 累计输出 token（跨轮累加，用于成本估算；全量统计见 sessionTotals） */
   totalOutput: number
-  /** 按模型维度的用量明细（model → ModelUsageBreakdown），本次 run 累计（成本口径） */
+  /** 按模型维度的用量明细（model → ModelUsageBreakdown），本次 run 累计（成本口径）。key 为请求侧配置模型名（如中转站别名 qusc） */
   modelUsage?: Record<string, ModelUsageBreakdown>
+  /** 最近一轮响应侧实际模型（API 响应 message.model；中转站动态路由时与配置名不同且逐轮可变） */
+  actualModel?: string
+  /** 会话内出现过的实际模型（去重保序），供展示路由分布 */
+  actualModels?: string[]
+  /** 会话累计用量与成本（跨消息累加每次 run 的 cumulative 事件） */
+  sessionTotals?: SessionUsageTotals
   /** 水位三元组的口径来源：'turn'=单轮快照（精确）| 'cumulative'=累计兜底（可能偏大） */
   contextSource?: 'turn' | 'cumulative'
   /**

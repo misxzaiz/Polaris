@@ -99,6 +99,10 @@ pub struct EventParser {
     streamed_text_this_turn: bool,
     /// 本 turn 是否已通过 stream_event 流式过 thinking
     streamed_thinking_this_turn: bool,
+    /// 最近观测的响应侧实际模型名（message_start / assistant 消息的 message.model）。
+    /// 中转站动态路由时逐轮可能变化（如 glm-5.2 → deepseek-v4-flash），随 turn 快照
+    /// 与 cumulative 用量事件透传给前端。跨轮保留最近值，不随 turn 状态重置。
+    stream_model: Option<String>,
 }
 
 impl EventParser {
@@ -110,6 +114,7 @@ impl EventParser {
             thinking_buffer: String::new(),
             streamed_text_this_turn: false,
             streamed_thinking_this_turn: false,
+            stream_model: None,
         }
     }
 
@@ -414,9 +419,18 @@ impl EventParser {
         };
 
         match event_type {
-            // 新一轮 assistant 输出开始：重置 turn 状态
+            // 新一轮 assistant 输出开始：重置 turn 状态，并记录该轮实际模型
+            // （响应侧 message.model，中转站动态路由时与配置模型名不同且逐轮可变）
             "message_start" => {
                 self.reset_stream_turn_state();
+                if let Some(model) = event
+                    .get("message")
+                    .and_then(|m| m.get("model"))
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                {
+                    self.stream_model = Some(model.to_string());
+                }
                 vec![]
             }
 
@@ -506,7 +520,8 @@ impl EventParser {
                         None,
                         None,
                     )
-                    .with_scope("turn"),
+                    .with_scope("turn")
+                    .with_actual_model(self.stream_model.clone()),
                 )]
             }
 
@@ -527,6 +542,16 @@ impl EventParser {
     /// 解析助手消息事件
     fn parse_assistant_event(&mut self, message: serde_json::Value) -> Vec<AIEvent> {
         let mut results = Vec::new();
+
+        // 记录响应侧实际模型（整段路径下无 message_start，从完整 assistant 消息提取；
+        // 流式路径下与 message_start 的值相同，重复覆盖无害）
+        if let Some(model) = message
+            .get("model")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+        {
+            self.stream_model = Some(model.to_string());
+        }
 
         // 提取文本内容
         let text = self.extract_text_content(&message);
@@ -786,6 +811,10 @@ impl EventParser {
         extra: HashMap<String, serde_json::Value>,
     ) -> Vec<AIEvent> {
         // ===== 用量提取（cumulative 累计口径）：优先 modelUsage 求和，退化到顶层 usage =====
+        // 注意语义差异（实测）：顶层 usage = 本 run 内各轮之和；modelUsage 与 total_cost_usd
+        // = CLI 进程生命周期累计。Polaris 每条消息起新进程（continue_session kill 旧进程
+        // 后 --resume），两者等价于本 run 值，前端可安全跨消息累加成会话总量。
+        let total_cost_usd = extra.get("total_cost_usd").and_then(|v| v.as_f64());
         let usage_event =
             // 路径 A：modelUsage 存在且非空 → 用累计值
             if let Some(mu_obj) = extra.get("modelUsage").and_then(|mu| mu.as_object()) {
@@ -851,7 +880,9 @@ impl EventParser {
                         )
                         .with_model_usage(breakdown_map_clone)
                         .with_raw_payload(raw_payload)
-                        .with_scope("cumulative"),
+                        .with_scope("cumulative")
+                        .with_actual_model(self.stream_model.clone())
+                        .with_total_cost_usd(total_cost_usd),
                     );
                     Some(usage)
                 }
@@ -876,7 +907,9 @@ impl EventParser {
                             None,
                         )
                         .with_raw_payload(raw_payload)
-                        .with_scope("cumulative"),
+                        .with_scope("cumulative")
+                        .with_actual_model(self.stream_model.clone())
+                        .with_total_cost_usd(total_cost_usd),
                     )
                 })
             };
@@ -1050,6 +1083,11 @@ mod tests {
     #[test]
     fn message_delta_usage_emits_turn_snapshot() {
         let mut parser = EventParser::new("s1");
+        // 该轮流头 message_start 携带响应侧实际模型（中转站动态路由）
+        parser.parse_stream_event_chunk(serde_json::json!({
+            "type": "message_start",
+            "message": {"model": "deepseek-v4-flash", "usage": {"input_tokens": 0}}
+        }));
         let event = serde_json::json!({
             "type": "message_delta",
             "delta": {"stop_reason": "end_turn"},
@@ -1064,6 +1102,7 @@ mod tests {
                 assert_eq!(u.cache_creation_input_tokens, Some(0));
                 assert_eq!(u.cache_read_input_tokens, Some(1024));
                 assert_eq!(u.output_tokens, 705);
+                assert_eq!(u.actual_model.as_deref(), Some("deepseek-v4-flash"));
                 assert!(u.context_window.is_none());
                 assert!(u.model_usage.is_none());
             }
@@ -1085,12 +1124,18 @@ mod tests {
         assert!(parser.parse_stream_event_chunk(zero_usage).is_empty());
     }
 
-    /// result.modelUsage → scope="cumulative" 的累计事件，明细与原始报文保留。
+    /// result.modelUsage → scope="cumulative" 的累计事件，明细/原始报文/顶层成本保留。
     /// 数值取自真实样本（两轮 24920+35572=60492，验证累计口径原样透传）。
     #[test]
     fn result_model_usage_emits_cumulative() {
-        let parser = EventParser::new("s1");
+        let mut parser = EventParser::new("s1");
+        // 先经过一轮流式，记录实际模型供 cumulative 事件携带
+        parser.parse_stream_event_chunk(serde_json::json!({
+            "type": "message_start",
+            "message": {"model": "glm-5.2"}
+        }));
         let mut extra = HashMap::new();
+        extra.insert("total_cost_usd".to_string(), serde_json::json!(0.32));
         extra.insert(
             "modelUsage".to_string(),
             serde_json::json!({
@@ -1113,6 +1158,8 @@ mod tests {
         assert_eq!(usage.input_tokens, 60492);
         assert_eq!(usage.cache_read_input_tokens, Some(1024));
         assert_eq!(usage.context_window, Some(200000));
+        assert_eq!(usage.actual_model.as_deref(), Some("glm-5.2"));
+        assert_eq!(usage.total_cost_usd, Some(0.32));
         let mu = usage.model_usage.as_ref().expect("modelUsage 明细应保留");
         assert_eq!(mu.get("qusc").unwrap().cost_usd, Some(0.32));
         assert!(usage.raw_payload.is_some());

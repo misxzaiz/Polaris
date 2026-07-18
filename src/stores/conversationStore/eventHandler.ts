@@ -21,6 +21,16 @@ import { dialogStorageService } from '@/services/dialogStorage'
 
 const log = createLogger('EventHandler')
 
+/** 会话实际模型集合去重合并（保序）。中转站动态路由时逐轮可能不同（如 glm-5.2 → deepseek-v4-flash） */
+function mergeActualModels(
+  list: string[] | undefined,
+  model: string | undefined,
+): string[] | undefined {
+  if (!model) return list
+  if (list?.includes(model)) return list
+  return [...(list ?? []), model]
+}
+
 /**
  * 解析 MCP 工具结果为插件卡片数据。
  *
@@ -326,9 +336,10 @@ export function handleAIEvent(
       // token 用量双口径分流（详见 UsageStats 注释）：
       // - turn（message_delta 单轮快照）：只刷新水位三元组，与 CLI /context 一致；
       //   同一 run 内每轮覆盖一次，水位随流式实时更新。
-      // - cumulative（result 累计）/ 缺省（Codex/SimpleAI）：更新成本与明细组；
-      //   仅当本 run 未收到过 turn 快照时才兜底覆盖水位（防多轮累计虚高污染），
-      //   并复位 turnSnapshotSeen 供下一 run 重新判定。
+      // - cumulative（result 累计）/ 缺省（Codex/SimpleAI）：更新成本与明细组、
+      //   累加会话总量；仅当本 run 未收到过 turn 快照时才兜底覆盖水位
+      //   （防多轮累计虚高污染），并复位 turnSnapshotSeen 供下一 run 重新判定。
+      // 实际模型（actualModel）随两类事件更新：响应侧 message.model，逐轮可变。
       const prev = state.usageStats
       if (event.scope === 'turn') {
         set({
@@ -338,6 +349,8 @@ export function handleAIEvent(
             cacheCreation: event.cacheCreationInputTokens ?? 0,
             cacheRead: event.cacheReadInputTokens ?? 0,
             contextWindow: event.contextWindow ?? prev?.contextWindow,
+            actualModel: event.actualModel ?? prev?.actualModel,
+            actualModels: mergeActualModels(prev?.actualModels, event.actualModel),
             contextSource: 'turn',
             turnSnapshotSeen: true,
           },
@@ -345,6 +358,11 @@ export function handleAIEvent(
       } else {
         // 本 run 已有 turn 快照 → 水位保持快照值；否则用累计值兜底
         const snap = prev?.turnSnapshotSeen ? prev : null
+        // 本 run 成本：顶层 total_cost_usd 权威，退化到 modelUsage 逐项求和
+        const runCost =
+          event.totalCostUsd ??
+          Object.values(event.modelUsage ?? {}).reduce((s, m) => s + (m.costUsd ?? 0), 0)
+        const prevTotals = prev?.sessionTotals
         set({
           usageStats: {
             input: snap ? snap.input : event.inputTokens,
@@ -356,6 +374,16 @@ export function handleAIEvent(
             totalOutput: (prev?.totalOutput ?? 0) + event.outputTokens,
             modelUsage: event.modelUsage,
             rawPayload: event.rawPayload,
+            actualModel: event.actualModel ?? prev?.actualModel,
+            actualModels: mergeActualModels(prev?.actualModels, event.actualModel),
+            sessionTotals: {
+              input: (prevTotals?.input ?? 0) + event.inputTokens,
+              cacheCreation: (prevTotals?.cacheCreation ?? 0) + (event.cacheCreationInputTokens ?? 0),
+              cacheRead: (prevTotals?.cacheRead ?? 0) + (event.cacheReadInputTokens ?? 0),
+              output: (prevTotals?.output ?? 0) + event.outputTokens,
+              costUsd: (prevTotals?.costUsd ?? 0) + runCost,
+              runs: (prevTotals?.runs ?? 0) + 1,
+            },
             contextSource: snap ? snap.contextSource : 'cumulative',
             turnSnapshotSeen: false,
           },

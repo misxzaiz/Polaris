@@ -774,6 +774,10 @@ export interface UsageEvent {
   modelUsage?: Record<string, ModelUsageBreakdown>
   /** 用量口径：'turn'=单轮快照（水位基准）| 'cumulative'=本次 run 累计（成本口径）。缺省视为 cumulative。 */
   scope?: 'turn' | 'cumulative'
+  /** 响应侧实际模型名（API 响应 message.model，如 deepseek-v4-flash）。中转站动态路由时与配置模型名（modelUsage 的 key）不同，且同一 run 内逐轮可变。 */
+  actualModel?: string
+  /** result 顶层 total_cost_usd（CLI 进程累计；Polaris 每消息新进程 = 本 run 成本）。比 modelUsage 逐项求和权威。 */
+  totalCostUsd?: number
   /** 原始 result 事件报文（含 usage/modelUsage/cost 等全字段），供调试查看请求/响应。 */
   rawPayload?: Record<string, unknown>
 }
