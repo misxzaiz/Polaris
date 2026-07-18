@@ -36,11 +36,11 @@ import { useToastStore } from '@/stores/toastStore';
  */
 const BREAKPOINTS = {
   /** 主行可容纳 profile + model + effort，并显示版本号文字 */
-  wide: 700,
-  /** 主行可容纳 profile + model */
-  medium: 500,
+  wide: 720,
+  /** 主行可容纳 profile + model，并内联语音区 */
+  medium: 560,
   /** 主行仅显示 profile（端点，最高优先级） */
-  narrow: 400,
+  narrow: 420,
 } as const;
 
 type SelectorType = 'agent' | 'model' | 'effort' | 'permission' | 'profile';
@@ -131,6 +131,14 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
   const hiddenTypes = getHiddenTypes(visibleTypes, engineSelectors);
   // 是否在健康圆点旁显示版本号文字（窄屏仅显示圆点）
   const showVersionText = containerWidth >= BREAKPOINTS.wide;
+  // 上下文水位主行标签密度：宽屏显示 token，中宽显示百分比，窄屏只保留圆圈。
+  const contextLabelMode = containerWidth >= BREAKPOINTS.wide
+    ? 'full'
+    : containerWidth >= BREAKPOINTS.medium
+      ? 'percent'
+      : 'icon';
+  // 输入提示在窄屏退化为图标/圆点，避免挤压发送按钮。
+  const showInputHintText = containerWidth >= BREAKPOINTS.medium;
 
   // 展开/收起
   const [expanded, setExpanded] = useState(false);
@@ -291,7 +299,7 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
    */
   const renderVoiceSegment = (variant: 'inline' | 'panel') => {
     const withLabel = variant === 'panel';
-    const btnBase = 'flex items-center gap-1 px-1.5 py-0.5 rounded-full transition-colors shrink-0 disabled:opacity-40';
+    const btnBase = 'flex items-center gap-1 px-1.5 py-0.5 rounded-full transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed';
 
     return (
       <div
@@ -393,7 +401,7 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
     <div
       ref={containerRef}
       className={clsx(
-        'relative grid text-xs text-text-tertiary',
+        'relative grid min-w-0 text-xs text-text-tertiary',
         'transition-[grid-template-rows] duration-200 ease-in-out',
         embedded
           ? 'w-full'
@@ -405,32 +413,39 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
     >
       {/* 主行：[会话操作] │ [配置选择器] … [语音区/健康] │ [输入状态] */}
       <div className={clsx(
-        'flex items-center justify-between gap-1.5 min-w-0',
+        'flex items-center gap-1.5 min-w-0',
         embedded ? 'py-0' : 'py-1.5 gap-2',
       )}>
         {/* 左侧：会话操作 + 配置选择器 + 更多按钮 */}
-        <div className="flex items-center gap-2 min-w-0">
-          {children}
-          {children && <span className="w-px h-3.5 bg-border-subtle shrink-0" aria-hidden="true" />}
+        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+          {children && (
+            <div className="flex items-center gap-1 shrink-0">
+              {children}
+            </div>
+          )}
+          {children && !embedded && <span className="w-px h-3.5 bg-border-subtle shrink-0" aria-hidden="true" />}
           {visibleTypes.length > 0 && (
-            <SessionConfigSelector
-              config={sessionConfig}
-              onChange={setSessionConfig}
-              disabled={isStreaming}
-              visibleTypes={visibleTypes}
-            />
+            <div className="min-w-0">
+              <SessionConfigSelector
+                config={sessionConfig}
+                onChange={setSessionConfig}
+                disabled={isStreaming}
+                visibleTypes={visibleTypes}
+              />
+            </div>
           )}
           {/* 更多按钮：展开低频配置（agent/permission） */}
           {hasOverflow && (
             <button
               onClick={() => setExpanded(prev => !prev)}
               className={clsx(
-                'flex items-center px-1.5 py-0.5 rounded transition-colors shrink-0',
+                'flex items-center justify-center w-6 h-6 rounded-full transition-colors shrink-0',
                 expanded
-                  ? 'bg-primary/10 text-primary'
+                  ? 'bg-primary/10 text-primary ring-1 ring-primary/20'
                   : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover',
               )}
               title={expanded ? t('statusBar.collapse', '收起') : t('statusBar.more', '更多设置')}
+              aria-expanded={expanded}
             >
               <MoreHorizontal size={14} />
             </button>
@@ -438,7 +453,7 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
         </div>
 
         {/* 右侧：语音区(听写/通话/朗读) │ 健康 │ 输入状态 */}
-        <div className="flex items-center gap-2 shrink-0 min-w-0">
+        <div className="flex items-center justify-end gap-1.5 shrink-0 min-w-0">
           {/* 听写实时预览（ghost text） */}
           {isDictating && interimText && (
             <span className="italic text-text-muted truncate max-w-[160px]" title={interimText}>
@@ -466,10 +481,10 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
           {healthIndicator}
 
           {usageStats && (
-            <ContextMeter usage={usageStats} contextWindow={activeProfileContextWindow} />
+            <ContextMeter usage={usageStats} contextWindow={activeProfileContextWindow} labelMode={contextLabelMode} />
           )}
 
-          {(isStreaming || inputHint || inputLength > 0) && (
+          {!embedded && (isStreaming || inputHint || inputLength > 0) && (
             <span className="w-px h-3.5 bg-border-subtle shrink-0" aria-hidden="true" />
           )}
 
@@ -483,14 +498,17 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
 
           {/* 输入状态提示 */}
           {inputHint && (
-            <span className={clsx(
-              'flex items-center gap-1.5',
-              inputHint.type === 'accent' && 'text-accent',
-              inputHint.type === 'violet' && 'text-violet-500'
-            )}>
-              {inputHint.type !== 'default' && <span className="w-1.5 h-1.5 bg-current rounded-full animate-pulse" />}
-              {attachmentCount > 0 && inputHint.type === 'default' && <Paperclip size={12} />}
-              {inputHint.text}
+            <span
+              className={clsx(
+                'flex items-center gap-1.5 min-w-0',
+                inputHint.type === 'accent' && 'text-accent',
+                inputHint.type === 'violet' && 'text-violet-500'
+              )}
+              title={inputHint.text}
+            >
+              {inputHint.type !== 'default' && <span className="w-1.5 h-1.5 bg-current rounded-full animate-pulse shrink-0" />}
+              {attachmentCount > 0 && inputHint.type === 'default' && <Paperclip size={12} className="shrink-0" />}
+              {showInputHintText && <span className="truncate max-w-[140px]">{inputHint.text}</span>}
             </span>
           )}
 
@@ -511,7 +529,7 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
           <div className={clsx(
             'flex flex-col gap-2 py-2',
             embedded
-              ? 'px-3 rounded-lg bg-background-elevated border border-border shadow-medium'
+              ? 'px-3 rounded-xl bg-background-elevated border border-border-subtle shadow-xl'
               : 'border-t border-border-subtle/50',
           )}>
             {!voiceInline && renderVoiceSegment('panel')}

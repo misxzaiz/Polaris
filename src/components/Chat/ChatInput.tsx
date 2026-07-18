@@ -1302,20 +1302,20 @@ export function ChatInput({
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder={attachments.length > 0 ? t('input.placeholderWithAttachment') : t('input.placeholder')}
-            className="chat-input-text w-full px-2.5 sm:px-3 pt-2 pb-1 bg-transparent text-text-primary placeholder:text-text-tertiary resize-none outline-none border-0"
+            className="chat-input-text w-full px-2.5 sm:px-3 pt-2.5 pb-1.5 bg-transparent text-text-primary placeholder:text-text-tertiary resize-none outline-none border-0"
             disabled={disabled}
             maxHeight={200}
             minHeight={40}
           />
 
-          {/* 底部工具栏 - 单行 flex justify-between */}
-          <div className="flex items-center gap-1 px-1.5 sm:px-2 pb-1.5 pt-0.5">
+          {/* 底部工具栏 - 左侧创作辅助 / 中段状态栏 / 右侧发送 */}
+          <div className="flex items-center gap-1.5 min-w-0 px-1.5 sm:px-2 pb-1.5 pt-1 rounded-b-lg sm:rounded-b-xl">
             {/* 左侧：附件按钮 + 提示词优化 + 版本控件 */}
-            <div className="flex items-center gap-1 shrink-0">
+            <div className="flex items-center gap-1 shrink-0 rounded-full px-0.5 py-0.5">
               <button
                 onClick={openFileDialog}
                 disabled={disabled || isStreaming}
-                className="shrink-0 p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors disabled:opacity-50"
+                className="shrink-0 p-1.5 rounded-full text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors disabled:opacity-50"
                 title={t('input.addAttachment')}
               >
                 <IconPaperclip size={16} />
@@ -1326,7 +1326,7 @@ export function ChatInput({
                   ref={optimizeButtonRef}
                   onClick={() => setOptimizePickerOpen((v) => !v)}
                   disabled={!canOptimize}
-                  className="shrink-0 p-1.5 rounded-md text-text-tertiary hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="shrink-0 p-1.5 rounded-full text-text-tertiary hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   title={optimizeTitle}
                 >
                   {optimizeRunning ? (
@@ -1473,7 +1473,7 @@ export function ChatInput({
 
             {/* 中段：嵌入式状态栏（会话配置/语音区等） */}
             {statusBarSlot && (
-              <div className="flex-1 min-w-0 flex items-center">
+              <div className="flex-1 min-w-0 flex items-center px-0.5">
                 {statusBarSlot}
               </div>
             )}
@@ -1481,16 +1481,16 @@ export function ChatInput({
             {!statusBarSlot && <div className="flex-1" />}
 
             {/* 右侧：字数 + 发送/中断 */}
-            <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex items-center gap-1 shrink-0">
               {/* 字数（仅 statusBarSlot 模式下显示） */}
               {statusBarSlot && value.length > 0 && (
-                <span className="text-xs text-text-tertiary tabular-nums">{value.length}</span>
+                <span className="hidden sm:inline-flex text-[11px] text-text-tertiary tabular-nums px-1">{value.length}</span>
               )}
               {/* 发送/中断按钮 */}
               {isStreaming && onInterrupt ? (
                 <button
                   onClick={onInterrupt}
-                  className="shrink-0 p-1.5 rounded-md bg-danger text-white hover:bg-danger-hover transition-colors"
+                  className="shrink-0 p-1.5 rounded-full bg-danger text-white hover:bg-danger-hover transition-colors shadow-soft"
                   title={t('input.interrupt')}
                 >
                   <IconStop size={16} />
@@ -1499,7 +1499,7 @@ export function ChatInput({
                 <button
                   onClick={handleSend}
                   disabled={!canSend}
-                  className="shrink-0 p-1.5 rounded-md bg-primary text-white hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="shrink-0 p-1.5 rounded-full bg-primary text-white hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-soft"
                   title={t('input.send')}
                 >
                   <IconSend size={16} />
