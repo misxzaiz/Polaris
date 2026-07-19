@@ -222,6 +222,70 @@ pub fn load_activation(install_dir: &Path, slug: &str) -> Option<String> {
     None
 }
 
+/// 读取 corpus 中某 agent 的 definition(用于 claude 引擎的 `--agents <json>` 免落盘注入,
+/// 见 `claude-cli-capability-alignment.md` 第 69 行 U2-4)。
+///
+/// 解析 `<install_dir>/corpus/<slug>.md` 的 frontmatter(`description`)与 body(system prompt),
+/// 返回 `(slug, description, system_prompt)`。命中失败返回 None(调用方回退默认 `--agent <slug>` 或忽略)。
+///
+/// 与 SimpleAI `parse_agent` 同构,但此处只取 claude `--agents` JSON 需要的字段(description + prompt body)。
+pub fn load_claude_agent_def(install_dir: &Path, slug: &str) -> Option<(String, String, String)> {
+    let path = install_dir.join("corpus").join(format!("{slug}.md"));
+    let content = match fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => return None,
+    };
+    let (description, body) = parse_frontmatter_and_body(&content);
+    let desc = description.unwrap_or_else(|| slug.to_string());
+    let prompt = if body.trim().is_empty() {
+        content
+    } else {
+        body
+    };
+    Some((slug.to_string(), desc, prompt))
+}
+
+/// 从 corpus `.md` 文本解析 frontmatter 中的 `description` 字段与 body(system prompt)。
+///
+/// 与 `simple_ai/agent.rs::parse_agent` 同构但只取 description + body;不重复 `AgentDefinition` 全字段,
+/// 避免把 simple_ai 模块耦合进 agent_corpus。
+fn parse_frontmatter_and_body(content: &str) -> (Option<String>, String) {
+    let lines: Vec<&str> = content.lines().collect();
+    let fm_start = if lines.first().is_some_and(|l| l.trim() == "---") {
+        1
+    } else {
+        0
+    };
+    let fm_end = if fm_start > 0 {
+        lines[fm_start..]
+            .iter()
+            .position(|l| l.trim() == "---")
+            .map_or(lines.len(), |i| fm_start + i)
+    } else {
+        0
+    };
+    let mut description: Option<String> = None;
+    if fm_end > fm_start {
+        for line in &lines[fm_start..fm_end] {
+            let l = line.trim();
+            if let Some(rest) = l.strip_prefix("description:") {
+                let v = rest.trim().trim_matches('"').trim_matches('\'').to_string();
+                if !v.is_empty() {
+                    description = Some(v);
+                }
+            }
+        }
+    }
+    let body = if fm_end > 0 && fm_end + 1 < lines.len() {
+        lines[fm_end + 1..].join("\n").trim().to_string()
+    } else if fm_end == 0 {
+        content.trim().to_string()
+    } else {
+        String::new()
+    };
+    (description, body)
+}
+
 /// 把 agent-index.md 落为全局 skill `nexus-agent-index`(P1-7,L2 语义路由索引)。
 ///
 /// `skills_dir` 为 `<DataRoot>/skills/`;SimpleAI `discover_skills` 已支持全局回退,
