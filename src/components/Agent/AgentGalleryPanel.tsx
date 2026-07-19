@@ -99,8 +99,9 @@ function AgentCard({
             setAgent(next);
             // P1: 专家会话级隔离 — 同步写入当前会话 metadata，切换会话时回填镜像。
             // 与 ChatInput 的 /agent 命令、SessionConfigSelector 的 model 双写模式对齐。
-            if (activeId) {
-              sessionStoreManager.getState().updateSessionAgent(activeId, next || null);
+            const sid = sessionStoreManager.getState().activeSessionId;
+            if (sid) {
+              sessionStoreManager.getState().updateSessionAgent(sid, next || null);
             }
           }}
           title={isCurrent ? '退出当前会话' : '以该专家身份参与当前会话'}
