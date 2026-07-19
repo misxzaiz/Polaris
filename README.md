@@ -91,6 +91,8 @@ pnpm run package:web
 - [MiMo](https://mimo.mi.com/)
 - [Ruoli](https://ruoli.dev/)
 - [Agnes](https://agnes-ai.com/)
+- [agency-agents](https://github.com/msitarzewski/agency-agents)
+- [agency-agents-zh](https://github.com/jnMetaCode/agency-agents-zh)
 
 如有遗漏或需要补充其他工具，欢迎联系我们加上。
 
